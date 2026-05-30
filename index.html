@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>The Trip Planner</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app">
+
+    <!-- ── HEADER ─────────────────────────────────────────── -->
+    <header class="app-header">
+      <div class="app-logo">
+        <span>🗺️</span> The Trip Planner
+      </div>
+      <p class="app-tagline">Plan smarter. Travel better.</p>
+    </header>
+
+    <!-- ── STEP INDICATOR ────────────────────────────────── -->
+    <nav class="step-indicator" aria-label="Progress steps">
+      <div class="step-node active" data-step="1" aria-current="step">
+        <div class="step-circle"><span class="step-num">1</span></div>
+        <span class="step-label">Destination</span>
+      </div>
+      <div class="step-connector" id="connector-1-2"></div>
+      <div class="step-node" data-step="2">
+        <div class="step-circle"><span class="step-num">2</span></div>
+        <span class="step-label">Transport</span>
+      </div>
+      <div class="step-connector" id="connector-2-3"></div>
+      <div class="step-node" data-step="3">
+        <div class="step-circle"><span class="step-num">3</span></div>
+        <span class="step-label">Summary</span>
+      </div>
+    </nav>
+
+    <!-- ── MAIN ──────────────────────────────────────────── -->
+    <main>
+
+      <!-- STEP 1: Destination & Distance -->
+      <section id="step-1" class="step-panel step-panel--active" aria-label="Step 1: Destination">
+        <h2>Where are you headed?</h2>
+
+        <div class="field-group">
+          <label for="destination">Destination</label>
+          <input
+            type="text"
+            id="destination"
+            placeholder="e.g. Grand Canyon, AZ"
+            autocomplete="off"
+            maxlength="120"
+          >
+          <p class="field-error" id="err-destination" aria-live="polite"></p>
+        </div>
+
+        <div class="field-group">
+          <label for="miles">Distance (miles)</label>
+          <input
+            type="number"
+            id="miles"
+            min="1"
+            max="99999"
+            placeholder="e.g. 450"
+          >
+          <p class="field-error" id="err-miles" aria-live="polite"></p>
+        </div>
+
+        <div class="field-group">
+          <label for="departure-date">Departure Date</label>
+          <input type="date" id="departure-date">
+          <p class="field-error" id="err-date" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <!-- STEP 2: Transport & Time -->
+      <section id="step-2" class="step-panel" aria-label="Step 2: Transport">
+        <h2>How are you getting there?</h2>
+
+        <fieldset class="transport-group">
+          <legend>Transport Type</legend>
+          <div class="transport-options">
+
+            <label class="radio-card">
+              <input type="radio" name="transport" value="Car" checked>
+              <span class="transport-icon">🚗</span>
+              Car
+            </label>
+
+            <label class="radio-card">
+              <input type="radio" name="transport" value="Plane">
+              <span class="transport-icon">✈️</span>
+              Plane
+            </label>
+
+            <label class="radio-card">
+              <input type="radio" name="transport" value="Train">
+              <span class="transport-icon">🚆</span>
+              Train
+            </label>
+
+          </div>
+        </fieldset>
+
+        <div class="field-group" id="speed-group">
+          <label for="speed">Average Speed (MPH)</label>
+          <input
+            type="number"
+            id="speed"
+            value="65"
+            min="1"
+            max="1000"
+          >
+          <p class="field-error" id="err-speed" aria-live="polite"></p>
+        </div>
+
+        <div class="field-group">
+          <label for="departure-time">What time do you want to leave?</label>
+          <input type="time" id="departure-time">
+          <p class="field-error" id="err-time" aria-live="polite"></p>
+        </div>
+      </section>
+
+      <!-- STEP 3: Dashboard -->
+      <section id="step-3" class="step-panel" aria-label="Step 3: Trip Summary">
+        <h2>Your Trip Summary</h2>
+
+        <!-- Summary Card -->
+        <div class="summary-card" id="summary-card">
+          <div class="summary-card-header">
+            <span class="destination-icon">📍</span>
+            <span class="summary-destination" id="s-destination"></span>
+          </div>
+
+          <div class="summary-row">
+            <span class="summary-label">Date</span>
+            <span class="summary-value" id="s-date"></span>
+          </div>
+          <div class="summary-row">
+            <span class="summary-label">Departure Time</span>
+            <span class="summary-value" id="s-departure-time"></span>
+          </div>
+          <div class="summary-row">
+            <span class="summary-label">Transport</span>
+            <span class="summary-value" id="s-transport"></span>
+          </div>
+          <div class="summary-row">
+            <span class="summary-label">Distance</span>
+            <span class="summary-value" id="s-distance"></span>
+          </div>
+          <div class="summary-row">
+            <span class="summary-label">Travel Time</span>
+            <span class="summary-value" id="s-travel-time"></span>
+          </div>
+          <div class="summary-row summary-row--highlight">
+            <span class="summary-label">Estimated Arrival</span>
+            <span class="summary-value" id="s-arrival"></span>
+          </div>
+        </div>
+
+        <!-- Activity Organizer -->
+        <hr class="section-divider">
+
+        <div class="activity-section">
+          <h3>Explore Activities</h3>
+          <p class="activity-hint">Select a category to browse local options.</p>
+
+          <div class="category-buttons" role="group" aria-label="Activity categories">
+            <button class="category-btn" data-category="restaurants">🍔 Restaurants</button>
+            <button class="category-btn" data-category="parks">🌲 Parks &amp; Nature</button>
+            <button class="category-btn" data-category="museums">🏛️ Museums &amp; Sights</button>
+            <button class="category-btn" data-category="hotels">🏨 Hotels &amp; Stays</button>
+          </div>
+
+          <div
+            id="activity-list"
+            class="activity-list"
+            aria-live="polite"
+            aria-label="Activity results"
+          ></div>
+        </div>
+
+      </section>
+
+    </main>
+
+    <!-- ── FOOTER NAV ─────────────────────────────────────── -->
+    <footer class="wizard-footer">
+      <button id="btn-back" class="btn btn--ghost" hidden>Back</button>
+      <button id="btn-next" class="btn btn--primary">Next →</button>
+    </footer>
+
+  </div><!-- /#app -->
+
+  <script src="app.js"></script>
+</body>
+</html>
