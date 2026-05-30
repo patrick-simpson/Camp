@@ -14,11 +14,21 @@
 
     <!-- ── HEADER ─────────────────────────────────────────── -->
     <header class="app-header">
+      <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">🌙</button>
       <div class="app-logo">
         <span>🗺️</span> The Trip Planner
       </div>
       <p class="app-tagline">Plan smarter. Travel better.</p>
     </header>
+
+    <!-- ── RECENT TRIPS ───────────────────────────────────── -->
+    <section id="recent-trips" class="recent-trips" hidden>
+      <div class="recent-trips-header">
+        <h3>Recent Trips</h3>
+        <button id="clear-recent" class="link-btn">Clear all</button>
+      </div>
+      <div id="recent-trips-list" class="recent-trips-list"></div>
+    </section>
 
     <!-- ── STEP INDICATOR ────────────────────────────────── -->
     <nav class="step-indicator" aria-label="Progress steps">
@@ -47,32 +57,57 @@
 
         <div class="field-group">
           <label for="destination">Destination</label>
-          <input
-            type="text"
-            id="destination"
-            placeholder="e.g. Grand Canyon, AZ"
-            autocomplete="off"
-            maxlength="120"
-          >
+          <div class="input-wrap">
+            <input type="text" id="destination" placeholder="e.g. Grand Canyon, AZ" autocomplete="off" maxlength="120">
+            <span class="valid-check" data-for="destination">✓</span>
+          </div>
           <p class="field-error" id="err-destination" aria-live="polite"></p>
         </div>
 
         <div class="field-group">
           <label for="miles">Distance (miles)</label>
-          <input
-            type="number"
-            id="miles"
-            min="1"
-            max="99999"
-            placeholder="e.g. 450"
-          >
+          <div class="input-wrap">
+            <input type="number" id="miles" min="1" max="99999" placeholder="e.g. 450">
+            <span class="valid-check" data-for="miles">✓</span>
+          </div>
           <p class="field-error" id="err-miles" aria-live="polite"></p>
         </div>
 
         <div class="field-group">
           <label for="departure-date">Departure Date</label>
-          <input type="date" id="departure-date">
+          <div class="input-wrap">
+            <input type="date" id="departure-date">
+            <span class="valid-check" data-for="departure-date">✓</span>
+          </div>
           <p class="field-error" id="err-date" aria-live="polite"></p>
+        </div>
+
+        <div class="field-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="round-trip-toggle">
+            <span>This is a round trip</span>
+          </label>
+        </div>
+
+        <div class="field-group" id="return-date-group" hidden>
+          <label for="return-date">Return Date</label>
+          <div class="input-wrap">
+            <input type="date" id="return-date">
+          </div>
+          <p class="field-error" id="err-return-date" aria-live="polite"></p>
+        </div>
+
+        <div class="field-group">
+          <label for="dest-tz">Destination Time Zone Offset (hours, optional)</label>
+          <select id="dest-tz">
+            <option value="0">Same as home (no change)</option>
+            <option value="-3">-3 hrs</option>
+            <option value="-2">-2 hrs</option>
+            <option value="-1">-1 hr</option>
+            <option value="1">+1 hr</option>
+            <option value="2">+2 hrs</option>
+            <option value="3">+3 hrs</option>
+          </select>
         </div>
       </section>
 
@@ -82,45 +117,62 @@
 
         <fieldset class="transport-group">
           <legend>Transport Type</legend>
-          <div class="transport-options">
-
+          <div class="transport-options" role="radiogroup" aria-label="Transport type">
             <label class="radio-card">
               <input type="radio" name="transport" value="Car" checked>
-              <span class="transport-icon">🚗</span>
-              Car
+              <span class="transport-icon">🚗</span> Car
             </label>
-
             <label class="radio-card">
               <input type="radio" name="transport" value="Plane">
-              <span class="transport-icon">✈️</span>
-              Plane
+              <span class="transport-icon">✈️</span> Plane
             </label>
-
             <label class="radio-card">
               <input type="radio" name="transport" value="Train">
-              <span class="transport-icon">🚆</span>
-              Train
+              <span class="transport-icon">🚆</span> Train
             </label>
-
           </div>
         </fieldset>
 
         <div class="field-group" id="speed-group">
           <label for="speed">Average Speed (MPH)</label>
-          <input
-            type="number"
-            id="speed"
-            value="65"
-            min="1"
-            max="1000"
-          >
+          <div class="input-wrap">
+            <input type="number" id="speed" value="65" min="1" max="1000">
+          </div>
           <p class="field-error" id="err-speed" aria-live="polite"></p>
+        </div>
+
+        <!-- Car cost inputs -->
+        <div class="cost-row" id="car-cost-inputs">
+          <div class="field-group">
+            <label for="mpg">Vehicle MPG</label>
+            <input type="number" id="mpg" value="28" min="1" max="200">
+          </div>
+          <div class="field-group">
+            <label for="gas-price">Gas $/gallon</label>
+            <input type="number" id="gas-price" value="3.50" min="0" step="0.01">
+          </div>
         </div>
 
         <div class="field-group">
           <label for="departure-time">What time do you want to leave?</label>
-          <input type="time" id="departure-time">
+          <div class="input-wrap">
+            <input type="time" id="departure-time">
+            <span class="valid-check" data-for="departure-time">✓</span>
+          </div>
           <p class="field-error" id="err-time" aria-live="polite"></p>
+        </div>
+
+        <div class="field-group">
+          <label class="checkbox-label">
+            <input type="checkbox" id="target-arrival-toggle">
+            <span>I need to arrive by a specific time</span>
+          </label>
+        </div>
+
+        <div class="field-group" id="target-arrival-group" hidden>
+          <label for="target-arrival">Target Arrival Time</label>
+          <input type="time" id="target-arrival">
+          <p class="recommend-hint" id="recommend-hint" aria-live="polite"></p>
         </div>
       </section>
 
@@ -128,26 +180,29 @@
       <section id="step-3" class="step-panel" aria-label="Step 3: Trip Summary">
         <h2>Your Trip Summary</h2>
 
-        <!-- Summary Card -->
         <div class="summary-card" id="summary-card">
           <div class="summary-card-header">
             <span class="destination-icon">📍</span>
             <span class="summary-destination" id="s-destination"></span>
           </div>
 
-          <div class="summary-row">
+          <div class="summary-row editable" data-edit-step="1" tabindex="0" role="button" aria-label="Edit date">
             <span class="summary-label">Date</span>
             <span class="summary-value" id="s-date"></span>
           </div>
-          <div class="summary-row">
+          <div class="summary-row editable" data-edit-step="1" tabindex="0" role="button" aria-label="Edit return date" id="s-return-row" hidden>
+            <span class="summary-label">Return</span>
+            <span class="summary-value" id="s-return"></span>
+          </div>
+          <div class="summary-row editable" data-edit-step="2" tabindex="0" role="button" aria-label="Edit departure time">
             <span class="summary-label">Departure Time</span>
             <span class="summary-value" id="s-departure-time"></span>
           </div>
-          <div class="summary-row">
+          <div class="summary-row editable" data-edit-step="2" tabindex="0" role="button" aria-label="Edit transport">
             <span class="summary-label">Transport</span>
             <span class="summary-value" id="s-transport"></span>
           </div>
-          <div class="summary-row">
+          <div class="summary-row editable" data-edit-step="1" tabindex="0" role="button" aria-label="Edit distance">
             <span class="summary-label">Distance</span>
             <span class="summary-value" id="s-distance"></span>
           </div>
@@ -155,15 +210,32 @@
             <span class="summary-label">Travel Time</span>
             <span class="summary-value" id="s-travel-time"></span>
           </div>
+          <div class="summary-row" id="s-breaks-row" hidden>
+            <span class="summary-label">Incl. Rest Stops</span>
+            <span class="summary-value" id="s-breaks"></span>
+          </div>
+          <div class="summary-row" id="s-cost-row">
+            <span class="summary-label">Est. Cost</span>
+            <span class="summary-value" id="s-cost"></span>
+          </div>
           <div class="summary-row summary-row--highlight">
             <span class="summary-label">Estimated Arrival</span>
             <span class="summary-value" id="s-arrival"></span>
           </div>
         </div>
 
-        <!-- Activity Organizer -->
+        <!-- Action buttons -->
+        <div class="summary-actions">
+          <button id="btn-save" class="btn btn--ghost btn--sm">💾 Save Trip</button>
+          <button id="btn-share" class="btn btn--ghost btn--sm">🔗 Share Link</button>
+          <button id="btn-ics" class="btn btn--ghost btn--sm">📅 Add to Calendar</button>
+          <button id="btn-print" class="btn btn--ghost btn--sm">🖨️ Print / PDF</button>
+        </div>
+        <p class="action-feedback" id="action-feedback" aria-live="polite"></p>
+
         <hr class="section-divider">
 
+        <!-- Activity Organizer -->
         <div class="activity-section">
           <h3>Explore Activities</h3>
           <p class="activity-hint">Select a category to browse local options.</p>
@@ -175,12 +247,38 @@
             <button class="category-btn" data-category="hotels">🏨 Hotels &amp; Stays</button>
           </div>
 
-          <div
-            id="activity-list"
-            class="activity-list"
-            aria-live="polite"
-            aria-label="Activity results"
-          ></div>
+          <!-- Search & filters (hidden until a category is open) -->
+          <div class="activity-controls" id="activity-controls" hidden>
+            <input type="text" id="activity-search" class="activity-search" placeholder="🔍 Search this category...">
+            <div class="filter-tags" id="filter-tags">
+              <button class="filter-tag active" data-filter="all">All</button>
+              <button class="filter-tag" data-filter="$">$</button>
+              <button class="filter-tag" data-filter="$$">$$</button>
+              <button class="filter-tag" data-filter="$$$">$$$</button>
+            </div>
+          </div>
+
+          <!-- Empty state -->
+          <div class="activity-empty" id="activity-empty">
+            <div class="activity-empty-icon">🧭</div>
+            <p>Pick a category above to start exploring.</p>
+          </div>
+
+          <div id="activity-list" class="activity-list" aria-live="polite" aria-label="Activity results"></div>
+        </div>
+
+        <hr class="section-divider">
+
+        <!-- Itinerary Builder -->
+        <div class="itinerary-section">
+          <div class="activity-section-header">
+            <h3>My Itinerary</h3>
+            <span class="itinerary-count" id="itinerary-count">0 saved</span>
+          </div>
+          <div id="itinerary-empty" class="itinerary-empty">
+            <p>Star ⭐ activities or click "Add to Itinerary" to build your plan.</p>
+          </div>
+          <div id="itinerary-list" class="itinerary-list"></div>
         </div>
 
       </section>
@@ -194,6 +292,18 @@
     </footer>
 
   </div><!-- /#app -->
+
+  <!-- Confirmation modal -->
+  <div class="modal-overlay" id="confirm-modal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="confirm-title">
+      <h3 id="confirm-title">Start Over?</h3>
+      <p>This will clear your current trip and all saved itinerary items. Continue?</p>
+      <div class="modal-actions">
+        <button class="btn btn--ghost" id="confirm-cancel">Cancel</button>
+        <button class="btn btn--primary" id="confirm-ok">Yes, start over</button>
+      </div>
+    </div>
+  </div>
 
   <script src="app.js"></script>
 </body>
