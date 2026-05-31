@@ -52,11 +52,8 @@
    RESET & BASE
    ============================================================ */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-/* The [hidden] attribute must always win over display rules below
-   (e.g. .modal-overlay/.field-group use display:flex which would
-   otherwise override the attribute's implicit display:none). */
 [hidden] { display: none !important; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 
 html { font-size: 16px; -webkit-font-smoothing: antialiased; }
 
@@ -76,6 +73,35 @@ h3 { font-size: 16px; font-weight: 600; margin-bottom: var(--space-sm); color: v
    APP CONTAINER
    ============================================================ */
 #app { max-width: 620px; margin: 0 auto; }
+
+/* ============================================================
+   IMPROVEMENT 3: PROGRESS BAR
+   ============================================================ */
+.progress-bar-wrap {
+  height: 4px; background: var(--color-border);
+  margin-bottom: var(--space-md);
+  border-radius: 2px; overflow: hidden;
+}
+.progress-bar {
+  height: 100%; background: var(--color-accent);
+  width: 0%; transition: width 500ms cubic-bezier(.4,0,.2,1);
+  border-radius: 2px;
+}
+
+/* ============================================================
+   IMPROVEMENT 3: ENCOURAGEMENT BANNER
+   ============================================================ */
+.encourage-banner {
+  background: linear-gradient(135deg, rgba(59,130,246,.10), rgba(16,185,129,.08));
+  border: 1px solid rgba(59,130,246,.25);
+  border-radius: var(--radius-md);
+  padding: 12px var(--space-md);
+  margin-bottom: var(--space-md);
+  font-size: 14px; font-weight: 600; color: var(--color-accent);
+  text-align: center;
+  animation: bannerIn 350ms ease both;
+}
+@keyframes bannerIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
 
 /* ============================================================
    HEADER
@@ -165,6 +191,70 @@ h3 { font-size: 16px; font-weight: 600; margin-bottom: var(--space-sm); color: v
 .step-connector.complete { background: var(--color-success); }
 
 /* ============================================================
+   IMPROVEMENT 5: TRIP HERO CARD
+   ============================================================ */
+.trip-hero {
+  display: flex; align-items: center; gap: var(--space-md);
+  background: linear-gradient(135deg, var(--color-accent), var(--color-accent-dk));
+  border-radius: var(--radius-lg); padding: var(--space-md);
+  margin-bottom: var(--space-md); color: #fff;
+  box-shadow: 0 4px 20px rgba(59,130,246,.35);
+}
+.trip-hero-emoji { font-size: 48px; line-height: 1; flex-shrink: 0; }
+.trip-hero-body  { flex: 1; min-width: 0; }
+.trip-hero-label { font-size: 11px; font-weight: 600; opacity: .75; text-transform: uppercase; letter-spacing: .7px; }
+.trip-hero-dest  { font-size: 20px; font-weight: 800; letter-spacing: -.3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.trip-hero-meta  { font-size: 12px; opacity: .8; margin-top: 3px; }
+.trip-hero-arrival { text-align: right; flex-shrink: 0; }
+.trip-hero-arrival-label { font-size: 11px; opacity: .75; text-transform: uppercase; letter-spacing: .7px; font-weight: 600; }
+.trip-hero-arrival-time  { font-size: 22px; font-weight: 800; white-space: nowrap; }
+
+@media (max-width: 480px) {
+  .trip-hero { flex-wrap: wrap; gap: var(--space-sm); }
+  .trip-hero-arrival { width: 100%; text-align: left; display: flex; align-items: baseline; gap: var(--space-xs); }
+  .trip-hero-arrival-label::after { content: ':'; }
+  .trip-hero-arrival-time { font-size: 18px; }
+}
+
+/* ============================================================
+   IMPROVEMENT 2: ADVANCED ACCORDION
+   ============================================================ */
+.advanced-accordion { margin-top: var(--space-sm); border: 1.5px solid var(--color-border); border-radius: var(--radius-md); overflow: hidden; }
+.advanced-toggle {
+  display: flex; align-items: center; gap: var(--space-xs);
+  padding: 12px var(--space-md); cursor: pointer; user-select: none;
+  font-size: 13px; font-weight: 600; color: var(--color-muted);
+  list-style: none; background: var(--color-surface);
+  transition: color var(--transition), background var(--transition);
+}
+.advanced-toggle::-webkit-details-marker { display: none; }
+.advanced-toggle::after { content: '▸'; margin-left: auto; transition: transform var(--transition); }
+details[open] .advanced-toggle::after { transform: rotate(90deg); }
+details[open] .advanced-toggle { color: var(--color-accent); background: rgba(59,130,246,.05); }
+.advanced-badge { font-size: 10px; font-weight: 700; background: var(--color-accent); color: #fff; padding: 1px 7px; border-radius: 9999px; }
+.advanced-body { padding: var(--space-md) var(--space-md) var(--space-sm); border-top: 1px solid var(--color-border); }
+
+/* ============================================================
+   STEP HEADING + HINTS
+   ============================================================ */
+.step-heading { margin-bottom: var(--space-md); }
+.step-heading h2 { margin-bottom: 4px; }
+.step-subtitle { font-size: 14px; color: var(--color-muted); }
+.label-hint { font-size: 12px; font-weight: 400; color: var(--color-muted); }
+.field-hint { font-size: 12px; color: var(--color-muted); margin-top: 4px; min-height: 16px; }
+
+/* ============================================================
+   IMPROVEMENT 2: TRANSPORT CONTEXT BANNER
+   ============================================================ */
+.transport-context {
+  font-size: 13px; color: var(--color-muted); padding: 10px 14px;
+  background: var(--color-surface); border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border); margin-bottom: var(--space-md);
+  min-height: 40px;
+  transition: opacity var(--transition);
+}
+
+/* ============================================================
    STEP PANELS
    ============================================================ */
 .step-panel { display: none; opacity: 0; transform: translateY(10px); transition: opacity 280ms ease, transform 280ms ease; }
@@ -231,17 +321,17 @@ input.invalid { border-color: var(--color-error); box-shadow: 0 0 0 3px rgba(239
   position: relative; background: var(--color-bg); color: var(--color-muted); user-select: none;
 }
 .radio-card input[type="radio"] { position: absolute; opacity: 0; pointer-events: none; width: 0; height: 0; }
-.radio-card .transport-icon { display: block; font-size: 22px; margin-bottom: 5px; }
+.radio-card .transport-icon { display: block; font-size: 26px; margin-bottom: 5px; }
+.radio-card .transport-label { display: block; font-size: 14px; font-weight: 700; }
+.radio-card .transport-sub { display: block; font-size: 11px; opacity: .6; margin-top: 2px; }
 .radio-card:has(input:checked) { border-color: var(--color-accent); background: rgba(59, 130, 246, 0.05); color: var(--color-accent); box-shadow: 0 0 0 1px var(--color-accent); }
+.radio-card:has(input:checked) .transport-sub { opacity: .8; }
 .radio-card:hover:not(:has(input:checked)) { border-color: #c4d4f5; }
 
 /* ============================================================
    SUMMARY CARD
    ============================================================ */
-.summary-card { background: var(--color-surface); border-radius: var(--radius-lg); padding: var(--space-md); box-shadow: var(--shadow-card); margin-bottom: var(--space-md); border: 1px solid var(--color-border); }
-.summary-card-header { display: flex; align-items: center; gap: var(--space-xs); margin-bottom: var(--space-md); padding-bottom: var(--space-sm); border-bottom: 1px solid var(--color-border); }
-.summary-card-header .destination-icon { font-size: 20px; }
-.summary-destination { font-size: 18px; font-weight: 700; color: var(--color-text); }
+.summary-card { background: var(--color-surface); border-radius: var(--radius-md); padding: var(--space-sm) var(--space-md); box-shadow: var(--shadow-card); margin-bottom: var(--space-md); border: 1px solid var(--color-border); }
 .summary-row { display: flex; justify-content: space-between; align-items: baseline; padding: 10px 0; border-bottom: 1px solid var(--color-border); gap: var(--space-sm); }
 .summary-row:last-child { border-bottom: none; }
 .summary-label { font-size: 13px; color: var(--color-muted); font-weight: 500; flex-shrink: 0; }
@@ -257,19 +347,31 @@ input.invalid { border-color: var(--color-error); box-shadow: 0 0 0 3px rgba(239
 .action-feedback { font-size: 13px; color: var(--color-success); min-height: 18px; font-weight: 600; }
 
 /* ============================================================
-   ACTIVITY SECTION
+   IMPROVEMENT 4: CATEGORY TILES
    ============================================================ */
 .activity-section { margin-top: var(--space-lg); }
 .activity-section-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: var(--space-sm); }
 .activity-hint { font-size: 13px; color: var(--color-muted); margin-bottom: var(--space-md); }
-.category-buttons { display: flex; flex-wrap: wrap; gap: var(--space-xs); margin-bottom: var(--space-md); }
-.category-btn {
-  padding: 8px 16px; border: 1.5px solid var(--color-border); border-radius: 9999px;
-  background: var(--color-bg); cursor: pointer; font: inherit; font-size: 13px; font-weight: 500;
-  color: var(--color-muted); transition: border-color var(--transition), background var(--transition), color var(--transition), box-shadow var(--transition); white-space: nowrap;
+
+.category-tiles {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-sm);
+  margin-bottom: var(--space-md);
 }
-.category-btn:hover { border-color: var(--color-accent); color: var(--color-accent); }
-.category-btn.active { border-color: var(--color-accent); background: var(--color-accent); color: #fff; box-shadow: 0 2px 8px rgba(59, 130, 246, 0.30); }
+.category-tile {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 6px; padding: var(--space-md) var(--space-sm);
+  border: 1.5px solid var(--color-border); border-radius: var(--radius-md);
+  background: var(--color-surface); cursor: pointer;
+  transition: border-color var(--transition), background var(--transition), box-shadow var(--transition), transform 100ms ease;
+  font: inherit; text-align: center;
+}
+.category-tile:hover { border-color: var(--color-accent); box-shadow: var(--shadow-card-hover); transform: translateY(-2px); }
+.category-tile.active { border-color: var(--color-accent); background: rgba(59,130,246,.07); box-shadow: 0 0 0 1px var(--color-accent); }
+.tile-emoji { font-size: 28px; line-height: 1; }
+.tile-label { font-size: 13px; font-weight: 700; color: var(--color-text); }
+.tile-sub   { font-size: 11px; color: var(--color-muted); }
 
 .activity-controls { display: flex; flex-direction: column; gap: var(--space-sm); margin-bottom: var(--space-md); }
 .activity-search { width: 100%; }

@@ -1,6 +1,172 @@
 /* ============================================================
-   TOP 500 NORTH AMERICAN DESTINATIONS
+   CITY-TO-CITY DISTANCE TABLE (driving miles, approx.)
+   Improvement 1: auto-fill distance when origin + dest are picked.
+   Keys are canonical destination names from DESTINATIONS array.
+   Inner keys are origin names; value is driving miles (one-way).
    ============================================================ */
+
+const CITY_DISTANCES = {
+  'New York City, NY': {
+    'Boston, MA': 215, 'Philadelphia, PA': 95, 'Washington DC, DC': 225,
+    'Baltimore, MD': 185, 'Providence, RI': 180, 'Hartford, CT': 115,
+    'Albany, NY': 150, 'Buffalo, NY': 370, 'Pittsburgh, PA': 370,
+    'Newark, NJ': 16, 'Atlantic City, NJ': 125, 'Chicago, IL': 790,
+    'Miami, FL': 1280, 'Orlando, FL': 1090, 'Nashville, TN': 900,
+    'Charlotte, NC': 630, 'Richmond, VA': 350, 'Cleveland, OH': 460,
+    'Detroit, MI': 590, 'Toronto, ON': 500, 'Montreal, QC': 370,
+  },
+  'Los Angeles, CA': {
+    'San Diego, CA': 120, 'San Francisco, CA': 380, 'Las Vegas, NV': 270,
+    'Phoenix, AZ': 370, 'Portland, OR': 1085, 'Seattle, WA': 1135,
+    'Denver, CO': 1020, 'Salt Lake City, UT': 690, 'Tucson, AZ': 490,
+    'Santa Barbara, CA': 95, 'Bakersfield, CA': 110, 'Sacramento, CA': 385,
+    'Fresno, CA': 220, 'Palm Springs, CA': 110, 'Tijuana, Mexico': 140,
+    'Grand Canyon, AZ': 490, 'Disneyland, CA': 35, 'Malibu, CA': 30,
+  },
+  'Chicago, IL': {
+    'Milwaukee, WI': 92, 'Indianapolis, IN': 180, 'Detroit, MI': 280,
+    'Minneapolis, MN': 410, 'St. Louis, MO': 300, 'Kansas City, MO': 520,
+    'Nashville, TN': 475, 'Cleveland, OH': 345, 'Columbus, OH': 360,
+    'Cincinnati, OH': 300, 'Louisville, KY': 305, 'Madison, WI': 145,
+    'Green Bay, WI': 210, 'Rockford, IL': 90, 'Springfield, IL': 200,
+    'Des Moines, IA': 335, 'Omaha, NE': 490, 'Grand Rapids, MI': 185,
+    'New York City, NY': 790, 'Toronto, ON': 540,
+  },
+  'Las Vegas, NV': {
+    'Los Angeles, CA': 270, 'Phoenix, AZ': 300, 'San Diego, CA': 330,
+    'Salt Lake City, UT': 420, 'Denver, CO': 750, 'San Francisco, CA': 570,
+    'Reno, NV': 440, 'Grand Canyon, AZ': 280, 'Zion, UT': 160,
+    'Bryce Canyon, UT': 260, 'Hoover Dam, NV': 30, 'Death Valley, CA': 120,
+    'Palm Springs, CA': 240, 'Flagstaff, AZ': 225, 'Sedona, AZ': 250,
+  },
+  'Miami, FL': {
+    'Orlando, FL': 235, 'Tampa, FL': 280, 'Fort Lauderdale, FL': 30,
+    'Key West, FL': 160, 'Jacksonville, FL': 340, 'Atlanta, GA': 660,
+    'Charlotte, NC': 730, 'Savannah, GA': 505, 'Nashville, TN': 870,
+    'New York City, NY': 1280, 'Washington DC, DC': 1060, 'Chicago, IL': 1380,
+    'Cancún, Mexico': 550, 'Havana, Cuba': 230, 'Nassau, Bahamas': 190,
+  },
+  'Orlando, FL': {
+    'Miami, FL': 235, 'Tampa, FL': 85, 'Jacksonville, FL': 140,
+    'Daytona Beach, FL': 60, 'Key West, FL': 355, 'Tallahassee, FL': 260,
+    'Atlanta, GA': 440, 'Savannah, GA': 310, 'Charlotte, NC': 500,
+    'New York City, NY': 1090, 'Washington DC, DC': 860, 'Nashville, TN': 650,
+    'Disney World, FL': 20, 'Clearwater, FL': 100,
+  },
+  'Nashville, TN': {
+    'Memphis, TN': 210, 'Knoxville, TN': 180, 'Chattanooga, TN': 135,
+    'Louisville, KY': 175, 'Atlanta, GA': 250, 'Birmingham, AL': 190,
+    'Charlotte, NC': 410, 'St. Louis, MO': 310, 'Chicago, IL': 475,
+    'Cincinnati, OH': 270, 'Indianapolis, IN': 290, 'Cleveland, OH': 410,
+    'Detroit, MI': 520, 'New York City, NY': 900, 'Miami, FL': 870,
+    'Dallas, TX': 670, 'New Orleans, LA': 510,
+  },
+  'Seattle, WA': {
+    'Portland, OR': 175, 'Spokane, WA': 280, 'Vancouver, BC': 140,
+    'Tacoma, WA': 35, 'Olympia, WA': 60, 'Bellingham, WA': 90,
+    'Victoria, BC': 90, 'San Francisco, CA': 810, 'Los Angeles, CA': 1135,
+    'Denver, CO': 1320, 'Salt Lake City, UT': 840, 'Boise, ID': 500,
+    'Missoula, MT': 490, 'Glacier National Park, MT': 370, 'Olympic, WA': 100,
+  },
+  'Denver, CO': {
+    'Colorado Springs, CO': 70, 'Boulder, CO': 30, 'Aspen, CO': 200,
+    'Vail, CO': 100, 'Fort Collins, CO': 65, 'Breckenridge, CO': 90,
+    'Estes Park, CO': 65, 'Telluride, CO': 330, 'Pueblo, CO': 110,
+    'Salt Lake City, UT': 525, 'Las Vegas, NV': 750, 'Albuquerque, NM': 450,
+    'Kansas City, MO': 600, 'Dallas, TX': 990, 'Chicago, IL': 920,
+    'Seattle, WA': 1320, 'Los Angeles, CA': 1020,
+  },
+  'Boston, MA': {
+    'New York City, NY': 215, 'Providence, RI': 50, 'Hartford, CT': 100,
+    'Portland, ME': 110, 'Cape Cod, MA': 70, 'Manchester, NH': 55,
+    'Burlington, VT': 210, 'Albany, NY': 165, 'Worcester, MA': 45,
+    'Springfield, MA': 90, 'Concord, NH': 75, 'Bar Harbor, ME': 260,
+    'Acadia, ME': 270, 'Nantucket, MA': 125, 'Martha\'s Vineyard, MA': 85,
+    'Newport, RI': 70, 'Philadelphia, PA': 310, 'Washington DC, DC': 440,
+  },
+  'New Orleans, LA': {
+    'Baton Rouge, LA': 80, 'Lafayette, LA': 135, 'Biloxi, MS': 90,
+    'Gulfport, MS': 80, 'Mobile, AL': 145, 'Jackson, MS': 185,
+    'Memphis, TN': 395, 'Nashville, TN': 510, 'Atlanta, GA': 470,
+    'Houston, TX': 350, 'Dallas, TX': 500, 'Miami, FL': 875,
+  },
+  'San Francisco, CA': {
+    'Los Angeles, CA': 380, 'Sacramento, CA': 90, 'San Jose, CA': 50,
+    'Oakland, CA': 15, 'Santa Cruz, CA': 75, 'Monterey, CA': 120,
+    'Napa, CA': 55, 'Lake Tahoe, CA': 195, 'Yosemite, CA': 190,
+    'Portland, OR': 640, 'Seattle, WA': 810, 'Las Vegas, NV': 570,
+    'Salt Lake City, UT': 750, 'Reno, NV': 220, 'San Diego, CA': 500,
+  },
+  'Washington DC, DC': {
+    'Baltimore, MD': 40, 'Richmond, VA': 110, 'Philadelphia, PA': 140,
+    'New York City, NY': 225, 'Annapolis, MD': 35, 'Alexandria, VA': 8,
+    'Charlottesville, VA': 115, 'Shenandoah, VA': 105, 'Virginia Beach, VA': 200,
+    'Pittsburgh, PA': 245, 'Charlotte, NC': 390, 'Raleigh, NC': 305,
+    'Boston, MA': 440, 'Chicago, IL': 700, 'Miami, FL': 1060,
+  },
+  'Atlanta, GA': {
+    'Savannah, GA': 250, 'Charlotte, NC': 245, 'Nashville, TN': 250,
+    'Birmingham, AL': 150, 'Chattanooga, TN': 110, 'Knoxville, TN': 175,
+    'Asheville, NC': 210, 'Columbia, SC': 215, 'Charleston, SC': 320,
+    'Jacksonville, FL': 340, 'Orlando, FL': 440, 'Miami, FL': 660,
+    'New Orleans, LA': 470, 'Dallas, TX': 780, 'Chicago, IL': 720,
+  },
+  'Phoenix, AZ': {
+    'Scottsdale, AZ': 15, 'Tucson, AZ': 115, 'Sedona, AZ': 115,
+    'Flagstaff, AZ': 145, 'Grand Canyon, AZ': 230, 'Las Vegas, NV': 300,
+    'Los Angeles, CA': 370, 'San Diego, CA': 355, 'Denver, CO': 600,
+    'Albuquerque, NM': 465, 'Salt Lake City, UT': 650, 'El Paso, TX': 430,
+  },
+  'Grand Canyon, AZ': {
+    'Phoenix, AZ': 230, 'Las Vegas, NV': 280, 'Sedona, AZ': 115,
+    'Flagstaff, AZ': 80, 'Los Angeles, CA': 490, 'Salt Lake City, UT': 400,
+    'Denver, CO': 600, 'Zion, UT': 165, 'Bryce Canyon, UT': 220,
+    'Monument Valley, AZ': 185, 'Page, AZ': 130,
+  },
+  'Vancouver, BC': {
+    'Seattle, WA': 140, 'Victoria, BC': 75, 'Whistler, BC': 75,
+    'Kelowna, BC': 390, 'Calgary, AB': 600, 'Bellingham, WA': 55,
+    'Portland, OR': 315, 'San Francisco, CA': 1080, 'Banff, AB': 540,
+  },
+  'Toronto, ON': {
+    'Niagara Falls, ON': 130, 'Hamilton, ON': 70, 'Ottawa, ON': 450,
+    'Montreal, QC': 540, 'Kingston, ON': 265, 'Detroit, MI': 375,
+    'Buffalo, NY': 155, 'New York City, NY': 500, 'Chicago, IL': 540,
+    'Algonquin Park, ON': 250, 'Muskoka, ON': 170,
+  },
+  'Montreal, QC': {
+    'Quebec City, QC': 255, 'Ottawa, ON': 195, 'Toronto, ON': 540,
+    'Burlington, VT': 100, 'Albany, NY': 235, 'Boston, MA': 310,
+    'New York City, NY': 370, 'Gatineau, QC': 195, 'Laurentians, QC': 90,
+  },
+  'Cancún, Mexico': {
+    'Playa del Carmen, Mexico': 45, 'Tulum, Mexico': 80, 'Merida, Mexico': 200,
+    'Cozumel, Mexico': 65, 'Isla Mujeres, Mexico': 20, 'Akumal, Mexico': 65,
+    'Holbox, Mexico': 140, 'Chichen Itza, Mexico': 120,
+  },
+  'Banff, AB': {
+    'Calgary, AB': 130, 'Lake Louise, AB': 55, 'Canmore, AB': 25,
+    'Jasper, AB': 290, 'Edmonton, AB': 395, 'Vancouver, BC': 850,
+    'Kelowna, BC': 475, 'Glacier National Park, MT': 415,
+  },
+};
+
+/* ============================================================
+   DISTANCE LOOKUP FUNCTION (Improvement 1)
+   Looks up distance between two cities bidirectionally.
+   Returns miles or null if unknown.
+   ============================================================ */
+function lookupDistance(origin, destination) {
+  if (!origin || !destination) return null;
+  const destTable = CITY_DISTANCES[destination];
+  if (destTable && destTable[origin] != null) return destTable[origin];
+  // Check reverse
+  const origTable = CITY_DISTANCES[origin];
+  if (origTable && origTable[destination] != null) return origTable[destination];
+  return null;
+}
+
+
 
 const DESTINATIONS = [
   // Florida

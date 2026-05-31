@@ -15,11 +15,14 @@
     <!-- ── HEADER ─────────────────────────────────────────── -->
     <header class="app-header">
       <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">🌙</button>
-      <div class="app-logo">
-        <span>🗺️</span> The Trip Planner
-      </div>
+      <div class="app-logo"><span>🗺️</span> The Trip Planner</div>
       <p class="app-tagline">Plan smarter. Travel better.</p>
     </header>
+
+    <!-- ── PROGRESS BAR (Improvement 3) ─────────────────── -->
+    <div class="progress-bar-wrap" aria-hidden="true">
+      <div class="progress-bar" id="progress-bar"></div>
+    </div>
 
     <!-- ── RECENT TRIPS ───────────────────────────────────── -->
     <section id="recent-trips" class="recent-trips" hidden>
@@ -48,15 +51,34 @@
       </div>
     </nav>
 
+    <!-- ── ENCOURAGEMENT BANNER (Improvement 3) ──────────── -->
+    <div class="encourage-banner" id="encourage-banner" hidden>
+      <span id="encourage-text"></span>
+    </div>
+
     <!-- ── MAIN ──────────────────────────────────────────── -->
     <main>
 
       <!-- STEP 1: Destination & Distance -->
       <section id="step-1" class="step-panel step-panel--active" aria-label="Step 1: Destination">
-        <h2>Where are you headed?</h2>
+        <div class="step-heading">
+          <h2>Where are you headed?</h2>
+          <p class="step-subtitle">Type a city, park, or place to get started.</p>
+        </div>
 
+        <!-- Origin (Improvement 1) -->
         <div class="field-group">
-          <label for="destination">Where are you going?</label>
+          <label for="origin">🏠 Where are you starting from?</label>
+          <div class="autocomplete-wrapper">
+            <input type="text" id="origin" placeholder="Your home city..." autocomplete="off" maxlength="120">
+            <ul class="autocomplete-list" id="origin-autocomplete-list" hidden></ul>
+          </div>
+          <p class="field-hint" id="origin-hint"></p>
+        </div>
+
+        <!-- Destination -->
+        <div class="field-group">
+          <label for="destination">📍 Where are you going?</label>
           <div class="autocomplete-wrapper">
             <input type="text" id="destination" placeholder="Type a destination..." autocomplete="off" maxlength="120">
             <span class="valid-check" data-for="destination">✓</span>
@@ -65,17 +87,19 @@
           <p class="field-error" id="err-destination" aria-live="polite"></p>
         </div>
 
+        <!-- Distance — auto-filled when both cities picked (Improvement 1) -->
         <div class="field-group">
-          <label for="miles">Distance (miles)</label>
+          <label for="miles">📏 How far away is it? <span class="label-hint">(miles)</span></label>
           <div class="input-wrap">
             <input type="number" id="miles" min="1" max="99999" placeholder="e.g. 450">
             <span class="valid-check" data-for="miles">✓</span>
           </div>
+          <p class="field-hint" id="miles-hint">Not sure? Pick an origin city above and we'll estimate it for you.</p>
           <p class="field-error" id="err-miles" aria-live="polite"></p>
         </div>
 
         <div class="field-group">
-          <label for="departure-date">Departure Date</label>
+          <label for="departure-date">📅 What day are you leaving?</label>
           <div class="input-wrap">
             <input type="date" id="departure-date">
             <span class="valid-check" data-for="departure-date">✓</span>
@@ -86,76 +110,74 @@
         <div class="field-group">
           <label class="checkbox-label">
             <input type="checkbox" id="round-trip-toggle">
-            <span>This is a round trip</span>
+            <span>🔄 This is a round trip</span>
           </label>
         </div>
 
         <div class="field-group" id="return-date-group" hidden>
-          <label for="return-date">Return Date</label>
+          <label for="return-date">📅 When are you coming back?</label>
           <div class="input-wrap">
             <input type="date" id="return-date">
           </div>
           <p class="field-error" id="err-return-date" aria-live="polite"></p>
         </div>
 
-        <div class="field-group">
-          <label for="dest-tz">Destination Time Zone Offset (hours, optional)</label>
-          <select id="dest-tz">
-            <option value="0">Same as home (no change)</option>
-            <option value="-3">-3 hrs</option>
-            <option value="-2">-2 hrs</option>
-            <option value="-1">-1 hr</option>
-            <option value="1">+1 hr</option>
-            <option value="2">+2 hrs</option>
-            <option value="3">+3 hrs</option>
-          </select>
-        </div>
+        <!-- Advanced options accordion (Improvement 2) -->
+        <details class="advanced-accordion" id="advanced-step1">
+          <summary class="advanced-toggle">⚙️ Advanced options</summary>
+          <div class="advanced-body">
+            <div class="field-group">
+              <label for="dest-tz">🌐 Time Zone Difference <span class="label-hint">(destination vs. home)</span></label>
+              <select id="dest-tz">
+                <option value="0">Same time zone (no change)</option>
+                <option value="-3">Destination is 3 hours behind</option>
+                <option value="-2">Destination is 2 hours behind</option>
+                <option value="-1">Destination is 1 hour behind</option>
+                <option value="1">Destination is 1 hour ahead</option>
+                <option value="2">Destination is 2 hours ahead</option>
+                <option value="3">Destination is 3 hours ahead</option>
+              </select>
+            </div>
+          </div>
+        </details>
       </section>
 
       <!-- STEP 2: Transport & Time -->
       <section id="step-2" class="step-panel" aria-label="Step 2: Transport">
-        <h2>How are you getting there?</h2>
+        <div class="step-heading">
+          <h2>How are you getting there?</h2>
+          <p class="step-subtitle" id="step2-subtitle">Pick your transport and tell us when you're leaving.</p>
+        </div>
 
         <fieldset class="transport-group">
-          <legend>Transport Type</legend>
+          <legend class="sr-only">Transport Type</legend>
           <div class="transport-options" role="radiogroup" aria-label="Transport type">
             <label class="radio-card">
               <input type="radio" name="transport" value="Car" checked>
-              <span class="transport-icon">🚗</span> Car
+              <span class="transport-icon">🚗</span>
+              <span class="transport-label">Car</span>
+              <span class="transport-sub">Drive yourself</span>
             </label>
             <label class="radio-card">
               <input type="radio" name="transport" value="Plane">
-              <span class="transport-icon">✈️</span> Plane
+              <span class="transport-icon">✈️</span>
+              <span class="transport-label">Plane</span>
+              <span class="transport-sub">Fly there</span>
             </label>
             <label class="radio-card">
               <input type="radio" name="transport" value="Train">
-              <span class="transport-icon">🚆</span> Train
+              <span class="transport-icon">🚆</span>
+              <span class="transport-label">Train</span>
+              <span class="transport-sub">Rail journey</span>
             </label>
           </div>
         </fieldset>
 
-        <div class="field-group" id="speed-group">
-          <label for="speed">Average Speed (MPH)</label>
-          <div class="input-wrap">
-            <input type="number" id="speed" value="65" min="1" max="1000">
-          </div>
-          <p class="field-error" id="err-speed" aria-live="polite"></p>
-        </div>
-
-        <!-- Car cost inputs -->
-        <div class="cost-row" id="car-cost-inputs">
-          <div class="field-group">
-            <label for="mpg">Vehicle MPG</label>
-            <input type="number" id="mpg" value="28" min="1" max="200">
-          </div>
-          <div class="field-group">
-            <label for="gas-price">Gas $/gallon</label>
-            <input type="number" id="gas-price" value="3.50" min="0" step="0.01">
-          </div>
-        </div>
+        <!-- Transport-specific context banner -->
+        <div class="transport-context" id="transport-context"></div>
 
         <div class="field-group">
-          <label for="departure-time">What time do you want to leave?</label>
+          <label for="departure-time">⏰ What time do you want to leave?</label>
           <div class="input-wrap">
             <input type="time" id="departure-time">
             <span class="valid-check" data-for="departure-time">✓</span>
@@ -166,27 +188,60 @@
         <div class="field-group">
           <label class="checkbox-label">
             <input type="checkbox" id="target-arrival-toggle">
-            <span>I need to arrive by a specific time</span>
+            <span>🎯 I need to arrive by a specific time</span>
           </label>
         </div>
 
         <div class="field-group" id="target-arrival-group" hidden>
-          <label for="target-arrival">Target Arrival Time</label>
+          <label for="target-arrival">What time do you need to arrive?</label>
           <input type="time" id="target-arrival">
           <p class="recommend-hint" id="recommend-hint" aria-live="polite"></p>
         </div>
+
+        <!-- Advanced options accordion (Improvement 2) -->
+        <details class="advanced-accordion" id="advanced-step2">
+          <summary class="advanced-toggle">⚙️ Advanced options <span class="advanced-badge" id="advanced-badge" hidden>customized</span></summary>
+          <div class="advanced-body">
+            <div class="field-group" id="speed-group">
+              <label for="speed">🏎️ Average Speed (MPH)</label>
+              <div class="input-wrap">
+                <input type="number" id="speed" value="65" min="1" max="1000">
+              </div>
+              <p class="field-error" id="err-speed" aria-live="polite"></p>
+            </div>
+            <div class="cost-row" id="car-cost-inputs">
+              <div class="field-group">
+                <label for="mpg">⛽ Vehicle MPG</label>
+                <input type="number" id="mpg" value="28" min="1" max="200">
+              </div>
+              <div class="field-group">
+                <label for="gas-price">💲 Gas price/gallon</label>
+                <input type="number" id="gas-price" value="3.50" min="0" step="0.01">
+              </div>
+            </div>
+          </div>
+        </details>
       </section>
 
       <!-- STEP 3: Dashboard -->
       <section id="step-3" class="step-panel" aria-label="Step 3: Trip Summary">
-        <h2>Your Trip Summary</h2>
 
-        <div class="summary-card" id="summary-card">
-          <div class="summary-card-header">
-            <span class="destination-icon">📍</span>
-            <span class="summary-destination" id="s-destination"></span>
+        <!-- Improvement 5: Trip Hero Card -->
+        <div class="trip-hero" id="trip-hero">
+          <div class="trip-hero-emoji" id="hero-emoji"></div>
+          <div class="trip-hero-body">
+            <div class="trip-hero-label">You're headed to</div>
+            <div class="trip-hero-dest" id="hero-dest"></div>
+            <div class="trip-hero-meta" id="hero-meta"></div>
           </div>
+          <div class="trip-hero-arrival">
+            <div class="trip-hero-arrival-label">Estimated arrival</div>
+            <div class="trip-hero-arrival-time" id="hero-arrival"></div>
+          </div>
+        </div>
 
+        <!-- Summary detail card -->
+        <div class="summary-card" id="summary-card">
           <div class="summary-row editable" data-edit-step="1" tabindex="0" role="button" aria-label="Edit date">
             <span class="summary-label">Date</span>
             <span class="summary-value" id="s-date"></span>
@@ -196,11 +251,11 @@
             <span class="summary-value" id="s-return"></span>
           </div>
           <div class="summary-row editable" data-edit-step="2" tabindex="0" role="button" aria-label="Edit departure time">
-            <span class="summary-label">Departure Time</span>
+            <span class="summary-label">Departure</span>
             <span class="summary-value" id="s-departure-time"></span>
           </div>
           <div class="summary-row editable" data-edit-step="2" tabindex="0" role="button" aria-label="Edit transport">
-            <span class="summary-label">Transport</span>
+            <span class="summary-label">Getting there</span>
             <span class="summary-value" id="s-transport"></span>
           </div>
           <div class="summary-row editable" data-edit-step="1" tabindex="0" role="button" aria-label="Edit distance">
@@ -208,20 +263,16 @@
             <span class="summary-value" id="s-distance"></span>
           </div>
           <div class="summary-row">
-            <span class="summary-label">Travel Time</span>
+            <span class="summary-label">Drive time</span>
             <span class="summary-value" id="s-travel-time"></span>
           </div>
           <div class="summary-row" id="s-breaks-row" hidden>
-            <span class="summary-label">Incl. Rest Stops</span>
+            <span class="summary-label">With rest stops</span>
             <span class="summary-value" id="s-breaks"></span>
           </div>
           <div class="summary-row" id="s-cost-row">
-            <span class="summary-label">Est. Cost</span>
+            <span class="summary-label">Est. cost</span>
             <span class="summary-value" id="s-cost"></span>
-          </div>
-          <div class="summary-row summary-row--highlight">
-            <span class="summary-label">Estimated Arrival</span>
-            <span class="summary-value" id="s-arrival"></span>
           </div>
         </div>
 
@@ -229,41 +280,51 @@
         <div class="summary-actions">
           <button id="btn-save" class="btn btn--ghost btn--sm">💾 Save Trip</button>
           <button id="btn-share" class="btn btn--ghost btn--sm">🔗 Share Link</button>
-          <button id="btn-ics" class="btn btn--ghost btn--sm">📅 Add to Calendar</button>
-          <button id="btn-word" class="btn btn--ghost btn--sm">📄 Export to Word</button>
-          <button id="btn-print" class="btn btn--ghost btn--sm">🖨️ Print / PDF</button>
+          <button id="btn-ics" class="btn btn--ghost btn--sm">📅 Calendar</button>
+          <button id="btn-word" class="btn btn--ghost btn--sm">📄 Word Doc</button>
+          <button id="btn-print" class="btn btn--ghost btn--sm">🖨️ Print</button>
         </div>
         <p class="action-feedback" id="action-feedback" aria-live="polite"></p>
 
         <hr class="section-divider">
 
-        <!-- Activity Organizer -->
+        <!-- Improvement 4: Visual Category Tiles -->
         <div class="activity-section">
-          <h3>Explore Activities</h3>
-          <p class="activity-hint">Select a category to browse local options.</p>
+          <h3>What do you want to do in <span id="activity-dest-name">your destination</span>?</h3>
+          <p class="activity-hint">Tap a category to explore things to do.</p>
 
-          <div class="category-buttons" role="group" aria-label="Activity categories">
-            <button class="category-btn" data-category="restaurants">🍔 Restaurants</button>
-            <button class="category-btn" data-category="parks">🌲 Parks &amp; Nature</button>
-            <button class="category-btn" data-category="museums">🏛️ Museums &amp; Sights</button>
-            <button class="category-btn" data-category="hotels">🏨 Hotels &amp; Stays</button>
+          <div class="category-tiles" id="category-tiles" role="group" aria-label="Activity categories">
+            <button class="category-tile" data-category="restaurants">
+              <span class="tile-emoji">🍔</span>
+              <span class="tile-label">Restaurants</span>
+              <span class="tile-sub">Places to eat</span>
+            </button>
+            <button class="category-tile" data-category="parks">
+              <span class="tile-emoji">🌲</span>
+              <span class="tile-label">Parks &amp; Nature</span>
+              <span class="tile-sub">Outdoors &amp; hiking</span>
+            </button>
+            <button class="category-tile" data-category="museums">
+              <span class="tile-emoji">🏛️</span>
+              <span class="tile-label">Museums &amp; Sights</span>
+              <span class="tile-sub">Learn &amp; explore</span>
+            </button>
+            <button class="category-tile" data-category="hotels">
+              <span class="tile-emoji">🏨</span>
+              <span class="tile-label">Hotels &amp; Stays</span>
+              <span class="tile-sub">Where to sleep</span>
+            </button>
           </div>
 
           <!-- Search & filters (hidden until a category is open) -->
           <div class="activity-controls" id="activity-controls" hidden>
-            <input type="text" id="activity-search" class="activity-search" placeholder="🔍 Search this category...">
+            <input type="text" id="activity-search" class="activity-search" placeholder="🔍 Search...">
             <div class="filter-tags" id="filter-tags">
-              <button class="filter-tag active" data-filter="all">All</button>
-              <button class="filter-tag" data-filter="$">$</button>
-              <button class="filter-tag" data-filter="$$">$$</button>
-              <button class="filter-tag" data-filter="$$$">$$$</button>
+              <button class="filter-tag active" data-filter="all">All prices</button>
+              <button class="filter-tag" data-filter="$">$ Budget</button>
+              <button class="filter-tag" data-filter="$$">$$ Mid</button>
+              <button class="filter-tag" data-filter="$$$">$$$ Splurge</button>
             </div>
-          </div>
-
-          <!-- Empty state -->
-          <div class="activity-empty" id="activity-empty">
-            <div class="activity-empty-icon">🧭</div>
-            <p>Pick a category above to start exploring.</p>
           </div>
 
           <div id="activity-list" class="activity-list" aria-live="polite" aria-label="Activity results"></div>
@@ -278,7 +339,7 @@
             <span class="itinerary-count" id="itinerary-count">0 saved</span>
           </div>
           <div id="itinerary-empty" class="itinerary-empty">
-            <p>Star ⭐ activities or click "Add to Itinerary" to build your plan.</p>
+            <p>Tap ⭐ or "Add to Itinerary" on any activity above to build your plan.</p>
           </div>
           <div id="itinerary-list" class="itinerary-list"></div>
         </div>
@@ -289,7 +350,7 @@
 
     <!-- ── FOOTER NAV ─────────────────────────────────────── -->
     <footer class="wizard-footer">
-      <button id="btn-back" class="btn btn--ghost" hidden>Back</button>
+      <button id="btn-back" class="btn btn--ghost" hidden>← Back</button>
       <button id="btn-next" class="btn btn--primary">Next →</button>
     </footer>
 
