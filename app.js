@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-19T17:23:37Z';
+const CODE_UPDATED_AT = '2026-07-19T17:59:18Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -474,6 +474,34 @@ const ELECTIVES = {
   ],
 };
 
+// ── Meal menu ────────────────────────────────────────────────────
+// What the kitchen is serving, filled in as camp announces each meal.
+// Keyed by day-of-week (0 Sun .. 6 Sat), then by meal block name in
+// lowercase ('breakfast' / 'lunch' / 'supper'). When a meal is listed
+// here, the Happening Now banner names the dish during that block and
+// in the "Up next" line leading into it. Unknown meals just show the
+// plain block label, so this is always safe to leave sparse.
+const MEALS = {
+  0: { supper: { dish: "Shepherd's Pie", emoji: '🥧' } },
+};
+
+function mealInfo(dow, block) {
+  const meals = MEALS[dow];
+  if (!meals || !block) return null;
+  return meals[(block.label || '').toLowerCase()] || null;
+}
+
+// Returns the block as-is, or a copy dressed up with tonight's dish —
+// e.g. "Supper" becomes "Supper — Shepherd's Pie" with a 🥧 emoji.
+function decorateMealBlock(dow, block) {
+  const meal = mealInfo(dow, block);
+  if (!meal) return block;
+  return Object.assign({}, block, {
+    emoji: meal.emoji || block.emoji,
+    label: block.label + ' — ' + meal.dish,
+  });
+}
+
 // Current day-of-week + minutes-since-midnight, in camp time.
 // Debug/preview override: add ?now=<dow>-<hhmm> to the page URL,
 // e.g. ?now=1-1330 previews Monday 1:30pm.
@@ -524,13 +552,15 @@ function nowBannerHtml(dow, minutes) {
 
   // Early morning, before the first block of the day.
   if (minutes < blocks[0].start) {
-    if (dow === 0) return main('🚌', 'Camp starts today!', null, blocks[0]);
-    return main('😴', "Lights out — everyone's sleeping", null, blocks[0]);
+    const first = decorateMealBlock(dow, blocks[0]);
+    if (dow === 0) return main('🚌', 'Camp starts today!', null, first);
+    return main('😴', "Lights out — everyone's sleeping", null, first);
   }
 
-  const b = blocks.find((x) => minutes >= x.start && minutes < x.end);
-  if (!b || b.type === 'games') return null; // game time: the scoreboard says it all
+  const found = blocks.find((x) => minutes >= x.start && minutes < x.end);
+  if (!found || found.type === 'games') return null; // game time: the scoreboard says it all
 
+  const b = decorateMealBlock(dow, found);
   const time = b.noTime ? null : schedRange(b.start, b.end);
   if (b.type === 'elective') {
     const stations = (ELECTIVES[dow] || [])[b.slot] || [];
@@ -540,7 +570,7 @@ function nowBannerHtml(dow, minutes) {
     return main(b.emoji, b.label, time, null) + `<div class="now-stations">${rows}</div>`;
   }
 
-  const next = blocks[blocks.indexOf(b) + 1] || null;
+  const next = decorateMealBlock(dow, blocks[blocks.indexOf(found) + 1] || null);
   return main(b.emoji, b.label, time, next);
 }
 
@@ -609,6 +639,7 @@ let state = loadState() || makeFreshState();
 if (!state.teams || !state.results) state = makeFreshState();
 if (!state.ui) state.ui = { day: defaultDay(), gameId: null };
 if (!state.meta) state.meta = {};
+if (state.theme === undefined) state.theme = null; // pre-theme saves: follow the device
 normalizeSyncedState();
 
 function counselorName(id) {
@@ -1799,6 +1830,7 @@ function renderResult(container, g, result) {
   document.getElementById('clear-result-btn').addEventListener('click', () => {
     if (!confirm('Clear the saved result for ' + g.name + '? Its points come off the week standings.')) return;
     delete state.results[g.id];
+    touchData();
     saveState();
     renderAll();
   });
@@ -2318,6 +2350,7 @@ function resetWeek() {
   state.ui.gameId = null;
   state.ui.picTeam = null;
   clearPhotos().catch(() => {});
+  touchData();
   saveState();
   renderAll();
 }
