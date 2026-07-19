@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-19T22:34:35Z';
+const CODE_UPDATED_AT = '2026-07-19T22:48:53Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -36,17 +36,25 @@ function canEdit() {
 // by position (t0..t5). Teams 5 & 6 keep their placeholder names until
 // their real names come in. Edit any of these in the standings table.
 const DEFAULT_TEAM_NAMES = [
-  'Ferocious Foxes',              // Alyssa, Cam, Sam
-  'Turkey Dinner',               // Bria, Lydia, Zac
-  'Methodic Mediocre Maples',    // Jovi, Brody, Josh
-  'Portidatory Perilous Pumpkins', // Sofia, William
-  'Team 5',                      // Abby, TJ, Ella
-  'Team 6',                      // Lily, Jacob
+  'Ferocious Foxes',                // Alyssa, Cam, Sam
+  'Turkey Dinner',                  // Bria, Lydia, Zac
+  'Methodic Mediocre Maples',       // Jovi, Brody, Josh
+  'Particularly Perilous Pumpkins', // Sofia, William
+  'Patriotic Pilgrims',             // Abby, TJ, Ella
+  "Runaway John Deere's",           // Lily, Jacob
 ];
-// Older deploys seeded generic "Team N" names; any saved roster still
-// carrying one gets migrated to the roster name above. Hand-edited names
-// (anything not matching this list) are left untouched.
-const OLD_PLACEHOLDER_TEAM_NAMES = ['Team 1', 'Team 2', 'Team 3', 'Team 4', 'Team 5', 'Team 6'];
+// Older auto-assigned names to migrate off, per team index — the generic
+// "Team N" seeds plus any earlier name we've since corrected (e.g. the
+// "Portidatory" misread), so devices already carrying one update to the
+// name above. Hand-edited names (not in these lists) are left untouched.
+const OLD_PLACEHOLDER_TEAM_NAMES = [
+  ['Team 1'],
+  ['Team 2'],
+  ['Team 3'],
+  ['Team 4', 'Portidatory Perilous Pumpkins'],
+  ['Team 5'],
+  ['Team 6'],
+];
 // Counselor groups per team, from the printed camp sheet. The (A)/(B)
 // tag is the game-leader assignment: Stephen runs the A teams,
 // Patrick runs the B teams. Editable per-team in the standings table.
@@ -2265,7 +2273,8 @@ function normalizeSyncedState() {
   // "Team N" names and placeholder counselors for the real roster values.
   // Anything hand-edited (not matching a known placeholder) is left alone.
   (state.teams || []).forEach((t, i) => {
-    if (t.name === OLD_PLACEHOLDER_TEAM_NAMES[i] && DEFAULT_TEAM_NAMES[i]) {
+    const oldNames = OLD_PLACEHOLDER_TEAM_NAMES[i];
+    if (oldNames && oldNames.indexOf(t.name) !== -1 && DEFAULT_TEAM_NAMES[i]) {
       t.name = DEFAULT_TEAM_NAMES[i];
     }
     if (t.counselor === undefined || t.counselor === OLD_PLACEHOLDER_COUNSELORS[i]) {
