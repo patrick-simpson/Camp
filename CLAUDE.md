@@ -61,6 +61,19 @@ pattern for any new synced, potentially-empty data shape — don't assume
 "it was an empty array when I wrote it, so it'll still be one when I read
 it back."
 
+Two more sync invariants (both fixed after live testing exposed them —
+don't regress these):
+- **Never push before the first pull.** `pushState()` is gated on
+  `remoteReady`, which flips true only when the first server snapshot
+  arrives. Without it, a device on slow wifi that saves anything before
+  its first sync queues a `set()` of stale local state that wipes
+  everyone's newer scores on connect.
+- **A snapshot key that's missing means "empty", not "keep mine".** The
+  remote merge replaces `results`/`brackets`/`drafts`/`picRounds`/`meta`
+  with `{}` when absent from the snapshot (RTDB prunes empty objects, so
+  absence IS the empty state). Only `teams` is guarded. Treating missing
+  as keep-local made "New week (reset)" silently fail to propagate.
+
 ## Footer timestamps
 
 - **"Code last updated"** — `CODE_UPDATED_AT` constant in `app.js`,
