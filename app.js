@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-19T16:43:43Z';
+const CODE_UPDATED_AT = '2026-07-19T17:23:37Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -33,8 +33,20 @@ function canEdit() {
 }
 
 const DEFAULT_TEAM_NAMES = ['Team 1', 'Team 2', 'Team 3', 'Team 4', 'Team 5', 'Team 6'];
-// Placeholder counselor first names — edit them in the standings table.
-const DEFAULT_COUNSELORS = ['Sarah', 'Mike', 'Emily', 'Josh', 'Rachel', 'Dave'];
+// Counselor groups per team, from the printed camp sheet. The (A)/(B)
+// tag is the game-leader assignment: Stephen runs the A teams,
+// Patrick runs the B teams. Editable per-team in the standings table.
+const DEFAULT_COUNSELORS = [
+  'Alysa/Cam/Sam (B)',
+  'Bria/Lydia/Zac (A)',
+  'Jovi/Brody/Josh (A)',
+  'Sofia/William (B)',
+  'Abby/TJ/Ella (B)',
+  'Lily/Jacob (A)',
+];
+// Earlier deploys seeded these placeholder names; any saved roster still
+// carrying one gets migrated to the real counselor list above.
+const OLD_PLACEHOLDER_COUNSELORS = ['Sarah', 'Mike', 'Emily', 'Josh', 'Rachel', 'Dave'];
 
 const DAY_NAMES = { 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday' };
 
@@ -2066,9 +2078,13 @@ function normalizeSyncedState() {
   Object.values(state.brackets || {}).forEach(normalizeBracket);
   Object.values(state.picRounds || {}).forEach(normalizePicRound);
   Object.values(state.drafts || {}).forEach(normalizeDraft);
-  // Backfill counselors on rosters saved before that field existed.
+  // Backfill counselors on rosters saved before that field existed, and
+  // replace old placeholder names with the real counselor list. Custom
+  // hand-edited values are left alone.
   (state.teams || []).forEach((t, i) => {
-    if (t.counselor === undefined) t.counselor = DEFAULT_COUNSELORS[i] || '';
+    if (t.counselor === undefined || t.counselor === OLD_PLACEHOLDER_COUNSELORS[i]) {
+      t.counselor = DEFAULT_COUNSELORS[i] || '';
+    }
   });
 }
 
