@@ -9,6 +9,11 @@
 
 const STORAGE_KEY = 'campScoreboardV2';
 
+// Light PIN gate — keeps casual visitors out of a public page. Not real
+// security (the code is viewable), just a "you need the number" door.
+const APP_PIN = '1234';
+const UNLOCK_KEY = 'campScoreboardUnlocked';
+
 const DEFAULT_TEAM_NAMES = ['Team 1', 'Team 2', 'Team 3', 'Team 4', 'Team 5', 'Team 6'];
 
 const DAY_NAMES = { 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday' };
@@ -1931,4 +1936,78 @@ function init() {
   renderAll();
 }
 
-document.addEventListener('DOMContentLoaded', init);
+// ── PIN lock gate ────────────────────────────────────────────────
+
+let pinEntry = '';
+let appStarted = false;
+
+function isUnlocked() {
+  try { return localStorage.getItem(UNLOCK_KEY) === '1'; } catch (e) { return false; }
+}
+
+function startApp() {
+  document.getElementById('lock-screen').hidden = true;
+  document.getElementById('app').hidden = false;
+  if (!appStarted) {
+    appStarted = true;
+    init();
+  }
+}
+
+function renderPinDots() {
+  const dots = document.querySelectorAll('#pin-dots .pin-dot');
+  dots.forEach((d, i) => d.classList.toggle('filled', i < pinEntry.length));
+}
+
+function handlePinKey(key) {
+  const errEl = document.getElementById('lock-error');
+  errEl.hidden = true;
+  if (key === 'del') {
+    pinEntry = pinEntry.slice(0, -1);
+    renderPinDots();
+    return;
+  }
+  if (pinEntry.length >= 4) return;
+  pinEntry += key;
+  renderPinDots();
+
+  if (pinEntry.length === 4) {
+    if (pinEntry === APP_PIN) {
+      try { localStorage.setItem(UNLOCK_KEY, '1'); } catch (e) { /* fine, just won't remember */ }
+      setTimeout(startApp, 150);
+    } else {
+      const box = document.querySelector('.lock-box');
+      box.classList.add('shake');
+      errEl.hidden = false;
+      setTimeout(() => {
+        pinEntry = '';
+        renderPinDots();
+        box.classList.remove('shake');
+      }, 500);
+    }
+  }
+}
+
+function bootLockScreen() {
+  const lock = document.getElementById('lock-screen');
+  lock.hidden = false;
+  document.getElementById('keypad').addEventListener('click', (e) => {
+    const btn = e.target.closest('.key');
+    if (btn && btn.dataset.key) handlePinKey(btn.dataset.key);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (document.getElementById('lock-screen').hidden) return;
+    if (e.key >= '0' && e.key <= '9') handlePinKey(e.key);
+    else if (e.key === 'Backspace') handlePinKey('del');
+  });
+}
+
+function boot() {
+  if (isUnlocked()) {
+    startApp();
+  } else {
+    bootLockScreen();
+  }
+}
+
+document.addEventListener('DOMContentLoaded', boot);
