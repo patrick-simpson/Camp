@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-19T12:57:30Z';
+const CODE_UPDATED_AT = '2026-07-19T13:52:51Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -591,7 +591,7 @@ let state = loadState() || makeFreshState();
 if (!state.teams || !state.results) state = makeFreshState();
 if (!state.ui) state.ui = { day: defaultDay(), gameId: null };
 if (!state.meta) state.meta = {};
-Object.values(state.brackets || {}).forEach(normalizeBracket);
+normalizeSyncedState();
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -650,10 +650,10 @@ function initSync() {
         state[k] = remote[k] !== undefined ? remote[k] : {};
       });
       // Realtime Database silently drops empty arrays/nulls on write, so a
-      // freshly-started bracket can come back missing matches/selectedPair
-      // etc. Heal every bracket the instant remote data lands, before any
-      // render sees it.
-      Object.values(state.brackets || {}).forEach(normalizeBracket);
+      // freshly-started bracket or Pictionary round can come back missing
+      // its empty fields. Heal everything the instant remote data lands,
+      // before any render sees it.
+      normalizeSyncedState();
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
       applyingRemote = false;
       if (appStarted) renderAll();
@@ -1084,7 +1084,7 @@ function picRounds() {
 function picRound(teamId) {
   const all = picRounds();
   if (!all[teamId]) all[teamId] = { laps: [], done: false };
-  return all[teamId];
+  return normalizePicRound(all[teamId]);
 }
 
 function picRoundHTML(g) {
@@ -1780,7 +1780,7 @@ function validateMedals(picks) {
 
 function renderTally(container, g) {
   if (!state.drafts[g.id]) state.drafts[g.id] = { scores: {}, medals: {} };
-  const draft = state.drafts[g.id];
+  const draft = normalizeDraft(state.drafts[g.id]);
   const steps = g.counterSteps;
 
   container.innerHTML = `
@@ -1925,7 +1925,7 @@ function updateTallyMedals(g) {
 
 function renderPlacement(container, g) {
   if (!state.drafts[g.id]) state.drafts[g.id] = { medals: {} };
-  const draft = state.drafts[g.id];
+  const draft = normalizeDraft(state.drafts[g.id]);
 
   container.innerHTML = `
     <h3>Podium</h3>
@@ -1987,6 +1987,30 @@ function normalizeBracket(b) {
   if (b.semifinal === undefined) b.semifinal = null;
   if (b.championship === undefined) b.championship = null;
   return b;
+}
+
+// Same guarantee for a Pictionary drawing round: a fresh round is
+// { laps: [], done: false }, and RTDB prunes the empty laps array.
+function normalizePicRound(r) {
+  if (!Array.isArray(r.laps)) r.laps = [];
+  r.done = !!r.done;
+  return r;
+}
+
+// And for a score-entry draft: { scores: {}, medals: {} } — either side
+// can be empty (and thus pruned) while the other has data.
+function normalizeDraft(d) {
+  if (!d.scores) d.scores = {};
+  if (!d.medals) d.medals = {};
+  return d;
+}
+
+// One sweep over every synced shape that can carry pruned-empty fields.
+// Called after loading from localStorage and after every remote merge.
+function normalizeSyncedState() {
+  Object.values(state.brackets || {}).forEach(normalizeBracket);
+  Object.values(state.picRounds || {}).forEach(normalizePicRound);
+  Object.values(state.drafts || {}).forEach(normalizeDraft);
 }
 
 function renderTournament(container, g) {
