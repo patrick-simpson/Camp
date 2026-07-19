@@ -11,8 +11,19 @@ const STORAGE_KEY = 'campScoreboardV2';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
-const APP_PIN = '1234';
+// Two tiers: VIEW_PIN can look but not touch; EDIT_PIN can enter scores.
+const VIEW_PIN = '1234';
+const EDIT_PIN = '4321';
 const UNLOCK_KEY = 'campScoreboardUnlocked';
+const ROLE_KEY = 'campScoreboardRole';
+
+function currentRole() {
+  try { return localStorage.getItem(ROLE_KEY) || 'view'; } catch (e) { return 'view'; }
+}
+
+function canEdit() {
+  return currentRole() === 'edit';
+}
 
 const DEFAULT_TEAM_NAMES = ['Team 1', 'Team 2', 'Team 3', 'Team 4', 'Team 5', 'Team 6'];
 
@@ -1184,7 +1195,7 @@ function renderStandings() {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td class="rank-col">${i + 1}</td>
-      <td><input type="text" class="team-name-input" data-team-id="${team.id}" value="${esc(team.name)}" /></td>
+      <td><input type="text" class="team-name-input" data-team-id="${team.id}" value="${esc(team.name)}" ${canEdit() ? '' : 'disabled'} /></td>
       <td class="medal-col">${s.gold}</td>
       <td class="medal-col">${s.silver}</td>
       <td class="medal-col">${s.bronze}</td>
@@ -1349,7 +1360,8 @@ function renderGameView() {
 
   // Pictionary keeps its tools visible after the result is saved so
   // photos can still be exported; other tools hide once the game is done.
-  if ((g.timer || g.stopwatch || g.prompts) && (g.prompts || !state.results[g.id])) {
+  // Viewers don't get the score-entry tools at all.
+  if (canEdit() && (g.timer || g.stopwatch || g.prompts) && (g.prompts || !state.results[g.id])) {
     renderTools(document.getElementById('tools-area'), g);
   }
 
@@ -1357,6 +1369,8 @@ function renderGameView() {
   const result = state.results[g.id];
   if (result) {
     renderResult(entry, g, result);
+  } else if (!canEdit()) {
+    entry.innerHTML = `<p class="view-only-note">👀 View-only. This game hasn't been scored yet. Tap <strong>🔒 View only</strong> at the top and enter the score PIN to run it.</p>`;
   } else if (g.format === 'tournament') {
     renderTournament(entry, g);
   } else if (g.format === 'tally') {
@@ -1382,8 +1396,9 @@ function renderResult(container, g, result) {
       <div class="medal-row bronze-row">🥉 <strong>${esc(teamName(result.medals.bronze))}</strong></div>
     </div>
     ${extra}
-    <button id="clear-result-btn" class="link-btn danger-link">Clear result &amp; re-enter</button>
+    ${canEdit() ? '<button id="clear-result-btn" class="link-btn danger-link">Clear result &amp; re-enter</button>' : ''}
   `;
+  if (!canEdit()) return;
   document.getElementById('clear-result-btn').addEventListener('click', () => {
     if (!confirm('Clear the saved result for ' + g.name + '? Its medals come off the week count.')) return;
     delete state.results[g.id];
@@ -1933,7 +1948,22 @@ function init() {
     });
   }
 
+  document.getElementById('role-btn').addEventListener('click', showLockScreen);
+  updateRoleButton();
+
   renderAll();
+}
+
+function updateRoleButton() {
+  const btn = document.getElementById('role-btn');
+  if (!btn) return;
+  if (canEdit()) {
+    btn.textContent = '✏️ Editing';
+    btn.title = 'You can enter scores. Tap to lock or switch to view-only.';
+  } else {
+    btn.textContent = '🔒 View only';
+    btn.title = 'View-only. Tap and enter the score PIN to edit.';
+  }
 }
 
 // ── PIN lock gate ────────────────────────────────────────────────
@@ -1945,11 +1975,19 @@ function isUnlocked() {
   try { return localStorage.getItem(UNLOCK_KEY) === '1'; } catch (e) { return false; }
 }
 
+function applyRoleClass() {
+  document.documentElement.classList.toggle('view-only', !canEdit());
+}
+
 function startApp() {
   document.documentElement.classList.remove('locked');
+  applyRoleClass();
   if (!appStarted) {
     appStarted = true;
     init();
+  } else {
+    updateRoleButton();
+    renderAll();
   }
 }
 
@@ -1971,8 +2009,13 @@ function handlePinKey(key) {
   renderPinDots();
 
   if (pinEntry.length === 4) {
-    if (pinEntry === APP_PIN) {
-      try { localStorage.setItem(UNLOCK_KEY, '1'); } catch (e) { /* fine, just won't remember */ }
+    if (pinEntry === VIEW_PIN || pinEntry === EDIT_PIN) {
+      const role = pinEntry === EDIT_PIN ? 'edit' : 'view';
+      try {
+        localStorage.setItem(UNLOCK_KEY, '1');
+        localStorage.setItem(ROLE_KEY, role);
+      } catch (e) { /* fine, just won't remember */ }
+      pinEntry = '';
       setTimeout(startApp, 150);
     } else {
       const box = document.querySelector('.lock-box');
@@ -1987,8 +2030,11 @@ function handlePinKey(key) {
   }
 }
 
-function bootLockScreen() {
-  document.documentElement.classList.add('locked');
+let lockWired = false;
+
+function wireLockKeypad() {
+  if (lockWired) return;
+  lockWired = true;
   document.getElementById('keypad').addEventListener('click', (e) => {
     const btn = e.target.closest('.key');
     if (btn && btn.dataset.key) handlePinKey(btn.dataset.key);
@@ -2000,11 +2046,19 @@ function bootLockScreen() {
   });
 }
 
+function showLockScreen() {
+  pinEntry = '';
+  renderPinDots();
+  document.getElementById('lock-error').hidden = true;
+  document.documentElement.classList.add('locked');
+}
+
 function boot() {
+  wireLockKeypad();
   if (isUnlocked()) {
     startApp();
   } else {
-    bootLockScreen();
+    showLockScreen();
   }
 }
 
