@@ -13,7 +13,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // security (the code is viewable), just a "you need the number" door.
 // Two tiers: VIEW_PIN can look but not touch; EDIT_PIN can enter scores.
 const VIEW_PIN = '1234';
-const EDIT_PIN = '4321';
+const EDIT_PIN = '1880';
 const UNLOCK_KEY = 'campScoreboardUnlocked';
 const ROLE_KEY = 'campScoreboardRole';
 
