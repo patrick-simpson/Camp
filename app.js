@@ -1946,8 +1946,7 @@ function isUnlocked() {
 }
 
 function startApp() {
-  document.getElementById('lock-screen').hidden = true;
-  document.getElementById('app').hidden = false;
+  document.documentElement.classList.remove('locked');
   if (!appStarted) {
     appStarted = true;
     init();
@@ -1989,14 +1988,13 @@ function handlePinKey(key) {
 }
 
 function bootLockScreen() {
-  const lock = document.getElementById('lock-screen');
-  lock.hidden = false;
+  document.documentElement.classList.add('locked');
   document.getElementById('keypad').addEventListener('click', (e) => {
     const btn = e.target.closest('.key');
     if (btn && btn.dataset.key) handlePinKey(btn.dataset.key);
   });
   document.addEventListener('keydown', (e) => {
-    if (document.getElementById('lock-screen').hidden) return;
+    if (!document.documentElement.classList.contains('locked')) return;
     if (e.key >= '0' && e.key <= '9') handlePinKey(e.key);
     else if (e.key === 'Backspace') handlePinKey('del');
   });

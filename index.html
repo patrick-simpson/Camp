@@ -7,12 +7,23 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=8">
+  <script>
+    // Decide lock state before the page paints so we never flash the app,
+    // and never show a blank page: exactly one of #app / #lock-screen shows.
+    (function () {
+      try {
+        if (localStorage.getItem('campScoreboardUnlocked') !== '1') {
+          document.documentElement.classList.add('locked');
+        }
+      } catch (e) { /* if storage is blocked, app just shows */ }
+    })();
+  </script>
 </head>
 <body>
 
   <!-- ── PIN LOCK SCREEN ─────────────────────────────────── -->
-  <div id="lock-screen" class="lock-screen" hidden>
+  <div id="lock-screen" class="lock-screen">
     <div class="lock-box">
       <div class="lock-logo"><span>🏅</span> Camp Scoreboard</div>
       <p class="lock-prompt">Enter PIN to continue</p>
@@ -40,7 +51,7 @@
     </div>
   </div>
 
-  <div id="app" hidden>
+  <div id="app">
 
     <header class="app-header">
       <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">🌙</button>
@@ -90,6 +101,6 @@
     </main>
   </div>
 
-  <script src="app.js"></script>
+  <script src="app.js?v=8"></script>
 </body>
 </html>
