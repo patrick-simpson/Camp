@@ -10,7 +10,37 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <div id="app">
+
+  <!-- ── PIN LOCK SCREEN ─────────────────────────────────── -->
+  <div id="lock-screen" class="lock-screen" hidden>
+    <div class="lock-box">
+      <div class="lock-logo"><span>🏅</span> Camp Scoreboard</div>
+      <p class="lock-prompt">Enter PIN to continue</p>
+      <div class="pin-dots" id="pin-dots">
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+        <span class="pin-dot"></span>
+      </div>
+      <p class="lock-error" id="lock-error" hidden>Wrong PIN — try again</p>
+      <div class="keypad" id="keypad">
+        <button class="key" data-key="1">1</button>
+        <button class="key" data-key="2">2</button>
+        <button class="key" data-key="3">3</button>
+        <button class="key" data-key="4">4</button>
+        <button class="key" data-key="5">5</button>
+        <button class="key" data-key="6">6</button>
+        <button class="key" data-key="7">7</button>
+        <button class="key" data-key="8">8</button>
+        <button class="key" data-key="9">9</button>
+        <button class="key key-blank" disabled></button>
+        <button class="key" data-key="0">0</button>
+        <button class="key key-del" data-key="del">⌫</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="app" hidden>
 
     <header class="app-header">
       <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">🌙</button>

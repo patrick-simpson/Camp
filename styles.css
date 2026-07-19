@@ -72,6 +72,116 @@ body {
 }
 
 /* ============================================================
+   PIN LOCK SCREEN
+   ============================================================ */
+.lock-screen {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: var(--color-bg);
+}
+
+.lock-box {
+  width: 100%;
+  max-width: 320px;
+  text-align: center;
+}
+
+.lock-box.shake {
+  animation: lock-shake 0.4s ease;
+}
+
+@keyframes lock-shake {
+  0%, 100% { transform: translateX(0); }
+  20%, 60% { transform: translateX(-10px); }
+  40%, 80% { transform: translateX(10px); }
+}
+
+.lock-logo {
+  font-size: 1.5rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.lock-prompt {
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+  margin: 0 0 1.5rem;
+}
+
+.pin-dots {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.pin-dot {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+  border: 2px solid var(--color-text-muted);
+  transition: background 0.1s ease, border-color 0.1s ease;
+}
+
+.pin-dot.filled {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+}
+
+.lock-error {
+  color: var(--color-danger);
+  font-size: 0.9rem;
+  font-weight: 600;
+  margin: 0 0 1rem;
+  min-height: 1.1rem;
+}
+
+.keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  margin-top: 0.5rem;
+}
+
+.key {
+  aspect-ratio: 1;
+  border: 1.5px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  border-radius: 50%;
+  font-size: 1.6rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: transform 0.05s ease, background 0.1s ease;
+}
+
+.key:active {
+  transform: scale(0.94);
+  background: var(--color-bg);
+}
+
+.key-blank {
+  border: none;
+  background: transparent;
+  cursor: default;
+}
+
+.key-del {
+  font-size: 1.3rem;
+  border-color: transparent;
+}
+
+/* ============================================================
    HEADER
    ============================================================ */
 .app-header {
