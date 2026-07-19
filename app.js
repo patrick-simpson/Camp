@@ -133,7 +133,7 @@ const GAMES = [
   },
   {
     id: 'axe-throwing', name: 'Axe Throwing', emoji: '🪓', day: 3, session: 'Morning',
-    location: 'Basketball Court', format: 'tally', unit: 'points',
+    location: 'Basketball Court', format: 'tally', unit: 'points', counterSteps: [1, 5],
     headline: 'Every player throws; the team totals decide the medals.',
     rules: [
       { h: 'How to play', items: [
@@ -146,7 +146,7 @@ const GAMES = [
   },
   {
     id: 'inflatable-bowling', name: 'Inflatable Bowling', emoji: '🎳', day: 3, session: 'Morning',
-    location: 'Slip and Slide', format: 'tally', unit: 'points',
+    location: 'Slip and Slide', format: 'tally', unit: 'points', counterSteps: [1, 10],
     headline: 'Four rolls each — pins are 1, strikes are 10.',
     rules: [
       { h: 'Setup', items: [
@@ -164,6 +164,7 @@ const GAMES = [
   {
     id: 'pumpkin-pictionary', name: 'Pumpkin Pictionary', emoji: '🎃', day: 3, session: 'Morning',
     location: 'Chapel Lawn', format: 'tally', unit: 'total time', lowerWins: true, timeInput: true,
+    stopwatch: { targetLaps: 10 },
     headline: 'Draw with your nose in pumpkin puree — fastest total time wins.',
     rules: [
       { h: 'Prep', items: ['Have a list of 10 items ready for each team to draw.'] },
@@ -180,7 +181,7 @@ const GAMES = [
   },
   {
     id: 'color-call-chaos', name: 'Color Call Chaos', emoji: '🌈', day: 3, session: 'Evening',
-    location: 'Chapel Lawn', format: 'tally', unit: 'balls collected',
+    location: 'Chapel Lawn', format: 'tally', unit: 'balls collected', counterSteps: [1],
     headline: 'Hungry-hungry-hippos with color calls — every ball is a point.',
     rules: [
       { h: 'How to play', items: [
@@ -198,6 +199,7 @@ const GAMES = [
   {
     id: 'jeb-ball', name: 'Jeb Ball', emoji: '🧎', day: 4, session: 'Morning',
     location: 'Chapel Lawn', format: 'tournament',
+    timer: { label: 'Half clock', presets: [600, 480, 300] },
     headline: 'Soccer on your knees, batting the ball with your hands. MUST WEAR PANTS.',
     rules: [
       { h: 'Wear pants!', items: ['Everyone plays on their knees all game — long pants required.'] },
@@ -232,6 +234,8 @@ const GAMES = [
   {
     id: 'counselor-hide-seek', name: 'Counselor Hide and Seek', emoji: '🔔', day: 4, session: 'Evening',
     location: 'Campground-wide', format: 'tally', unit: 'points',
+    counterSteps: [5, 10], counterStepLabels: { 5: 'counselor', 10: 'staff' }, counterAllowNegative: true,
+    timer: { label: 'Game clock (ring the bell at the alarm!)', presets: [900, 600, 1200] },
     headline: 'Hunt down hidden staff and march them to the bell for points.',
     rules: [
       { h: 'Setup', items: [
@@ -268,6 +272,7 @@ const GAMES = [
   {
     id: 'pumpkin-patch-plunder', name: 'Pumpkin Patch Plunder', emoji: '🍬', day: 5, session: 'Morning',
     location: 'Chapel Lawn', format: 'tally', unit: 'candy corn', messtival: true,
+    counterSteps: [1], timer: { label: 'Round timer', presets: [60], rounds: 6 },
     headline: 'Fish candy corn out of pumpkin puree — with your mouth.',
     rules: [
       { h: 'How to play', items: [
@@ -354,6 +359,319 @@ function esc(str) {
 
 function gameById(id) {
   return GAMES.find((g) => g.id === id);
+}
+
+// ── Sound effects (Web Audio — no files needed) ──────────────────
+
+let audioCtx = null;
+let masterGain = null;
+
+function getAudio() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
+  if (!audioCtx) {
+    audioCtx = new AC();
+    masterGain = audioCtx.createGain();
+    masterGain.connect(audioCtx.destination);
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function tone(freq, startOffset, dur, type, peak) {
+  const ac = getAudio();
+  if (!ac) return;
+  const t0 = ac.currentTime + startOffset;
+  const o = ac.createOscillator();
+  const g = ac.createGain();
+  o.type = type;
+  o.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(peak, t0 + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g);
+  g.connect(masterGain);
+  o.start(t0);
+  o.stop(t0 + dur + 0.05);
+}
+
+function soundOn() {
+  return state.sound !== false;
+}
+
+function playAlarm() {
+  if (!soundOn() || !getAudio()) return;
+  cutAllSound();
+  for (let i = 0; i < 8; i++) { // ~6.5 seconds of hard two-tone beeping
+    tone(880, i * 0.8, 0.3, 'square', 0.8);
+    tone(660, i * 0.8 + 0.38, 0.3, 'square', 0.8);
+  }
+  if (navigator.vibrate) navigator.vibrate([400, 200, 400, 200, 400, 200, 400]);
+}
+
+// Drop every scheduled beep by orphaning the master gain node.
+function cutAllSound() {
+  if (audioCtx && masterGain) {
+    masterGain.disconnect();
+    masterGain = audioCtx.createGain();
+    masterGain.connect(audioCtx.destination);
+  }
+  if (navigator.vibrate) navigator.vibrate(0);
+}
+
+function playHighScore() {
+  if (!soundOn() || !getAudio()) return;
+  [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone(f, i * 0.09, 0.22, 'triangle', 0.5));
+  tone(1568, 0.4, 0.35, 'sine', 0.3); // sparkle on top
+}
+
+// ── Timers & stopwatches ─────────────────────────────────────────
+// Kept in memory so they keep running while you browse other games.
+
+const liveTimers = {};  // gameId -> countdown state
+const liveWatches = {}; // gameId -> stopwatch state
+let tickHandle = null;
+
+function ensureTicking() {
+  if (!tickHandle) tickHandle = setInterval(tick, 100);
+}
+
+function tick() {
+  const now = Date.now();
+  let anyRunning = false;
+  Object.entries(liveTimers).forEach(([gid, t]) => {
+    if (!t.running) return;
+    anyRunning = true;
+    const remaining = Math.max(0, t.endAt - now);
+    t.remaining = remaining;
+    if (remaining === 0) {
+      t.running = false;
+      t.alarming = true;
+      playAlarm();
+      renderToolsIfCurrent(gid);
+    } else {
+      const el = document.getElementById('cd-display-' + gid);
+      if (el) el.textContent = fmtClock(remaining);
+    }
+  });
+  Object.entries(liveWatches).forEach(([gid, w]) => {
+    if (!w.running) return;
+    anyRunning = true;
+    const lapMs = now - w.startAt;
+    const el = document.getElementById('sw-display-' + gid);
+    if (el) el.textContent = fmtWatch(lapMs);
+    const tot = document.getElementById('sw-total-' + gid);
+    if (tot) tot.textContent = fmtWatch(w.lapsTotal + lapMs);
+  });
+  if (!anyRunning) {
+    clearInterval(tickHandle);
+    tickHandle = null;
+  }
+}
+
+function fmtClock(ms) {
+  const s = Math.ceil(ms / 1000);
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+function fmtWatch(ms) {
+  const ds = Math.floor(ms / 100);
+  const s = Math.floor(ds / 10);
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') + '.' + (ds % 10);
+}
+
+function renderToolsIfCurrent(gid) {
+  if (state.ui.gameId !== gid) return;
+  const wrap = document.getElementById('tools-area');
+  const g = gameById(gid);
+  if (wrap && g) renderTools(wrap, g);
+}
+
+function renderTools(wrap, g) {
+  let html = '';
+  if (g.timer) html += countdownHTML(g);
+  if (g.stopwatch) html += stopwatchHTML(g);
+  wrap.innerHTML = html;
+  if (g.timer) bindCountdown(wrap, g);
+  if (g.stopwatch) bindStopwatch(wrap, g);
+}
+
+// ── Countdown ──
+
+function countdownHTML(g) {
+  let t = liveTimers[g.id];
+  if (!t) {
+    const dur = g.timer.presets[0] * 1000;
+    t = liveTimers[g.id] = { duration: dur, remaining: dur, running: false, alarming: false, round: 1 };
+  }
+  const roundLabel = g.timer.rounds ? `<div class="round-label">Round ${t.round} of ${g.timer.rounds}</div>` : '';
+  const presets = g.timer.presets.length > 1
+    ? `<div class="preset-row">${g.timer.presets.map((p) =>
+        `<button class="preset-chip ${t.duration === p * 1000 ? 'selected' : ''}" data-preset="${p}" ${t.running ? 'disabled' : ''}>${fmtClock(p * 1000)}</button>`).join('')}</div>`
+    : '';
+
+  let mainBtn;
+  if (t.alarming) {
+    mainBtn = `<button class="timer-main-btn alarm-btn" data-action="silence">🔕 Silence</button>`;
+  } else if (t.running) {
+    mainBtn = `<button class="timer-main-btn" data-action="pause">⏸ Pause</button>`;
+  } else if (t.remaining === 0) {
+    mainBtn = g.timer.rounds && t.round < g.timer.rounds
+      ? `<button class="timer-main-btn" data-action="next-round">Next round →</button>`
+      : `<button class="timer-main-btn" data-action="reset">↺ Reset</button>`;
+  } else if (t.remaining < t.duration) {
+    mainBtn = `<button class="timer-main-btn" data-action="start">▶ Resume</button>`;
+  } else {
+    mainBtn = `<button class="timer-main-btn" data-action="start">▶ Start</button>`;
+  }
+
+  return `<div class="tool-box ${t.alarming ? 'alarming' : ''}" data-tool="countdown">
+    <div class="tool-label">⏱️ ${esc(g.timer.label)}</div>
+    ${roundLabel}
+    <div class="big-clock" id="cd-display-${g.id}">${fmtClock(t.remaining)}</div>
+    ${presets}
+    <div class="timer-btn-row">
+      ${mainBtn}
+      ${!t.alarming && t.remaining !== t.duration ? `<button class="timer-side-btn" data-action="reset">↺ Reset</button>` : ''}
+    </div>
+  </div>`;
+}
+
+function bindCountdown(wrap, g) {
+  const box = wrap.querySelector('[data-tool="countdown"]');
+  if (!box) return;
+  const t = liveTimers[g.id];
+
+  box.querySelectorAll('.preset-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      t.duration = parseInt(chip.dataset.preset, 10) * 1000;
+      t.remaining = t.duration;
+      renderTools(wrap, g);
+    });
+  });
+
+  box.querySelectorAll('[data-action]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const a = btn.dataset.action;
+      if (a === 'start') {
+        getAudio(); // unlock audio while we have a user gesture
+        t.endAt = Date.now() + t.remaining;
+        t.running = true;
+        ensureTicking();
+      } else if (a === 'pause') {
+        t.running = false;
+        t.remaining = Math.max(0, t.endAt - Date.now());
+      } else if (a === 'silence') {
+        cutAllSound();
+        t.alarming = false;
+      } else if (a === 'reset') {
+        cutAllSound();
+        t.alarming = false;
+        t.running = false;
+        t.remaining = t.duration;
+      } else if (a === 'next-round') {
+        cutAllSound();
+        t.alarming = false;
+        t.running = false;
+        t.round += 1;
+        t.remaining = t.duration;
+      }
+      renderTools(wrap, g);
+    });
+  });
+}
+
+// ── Stopwatch (lap-based, e.g. Pumpkin Pictionary) ──
+
+function stopwatchHTML(g) {
+  let w = liveWatches[g.id];
+  if (!w) {
+    w = liveWatches[g.id] = { running: false, startAt: 0, laps: [], lapsTotal: 0 };
+  }
+  const lapNum = w.laps.length + 1;
+  const target = g.stopwatch.targetLaps;
+  const mainBtn = w.running
+    ? `<button class="timer-main-btn stop-lap-btn" data-action="stop-lap">⏹ Stop — record item ${w.laps.length + 1}</button>`
+    : `<button class="timer-main-btn" data-action="start-lap">▶ Start item ${lapNum}${target ? ' of ' + target : ''}</button>`;
+
+  return `<div class="tool-box" data-tool="stopwatch">
+    <div class="tool-label">⏱️ Drawing stopwatch</div>
+    <div class="big-clock" id="sw-display-${g.id}">${fmtWatch(w.running ? Date.now() - w.startAt : 0)}</div>
+    <div class="sw-total-line">Team total: <strong id="sw-total-${g.id}">${fmtWatch(w.lapsTotal + (w.running ? Date.now() - w.startAt : 0))}</strong> · ${w.laps.length}${target ? '/' + target : ''} items</div>
+    <div class="timer-btn-row">${mainBtn}</div>
+    ${w.laps.length ? `
+      <div class="sw-laps">${w.laps.map((ms, i) => `<span class="rank-pill">${i + 1}: ${fmtWatch(ms)}</span>`).join('')}</div>
+      <div class="sw-actions">
+        <button class="link-btn" data-action="undo-lap">Undo last item</button>
+        <button class="link-btn danger-link" data-action="reset-watch">Reset stopwatch</button>
+      </div>
+      <div class="sw-save-row">
+        <select id="sw-team-${g.id}">${state.teams.map((tm) => `<option value="${tm.id}">${esc(tm.name)}</option>`).join('')}</select>
+        <button class="secondary-btn" data-action="save-time">Fill team's time</button>
+      </div>` : ''}
+  </div>`;
+}
+
+function bindStopwatch(wrap, g) {
+  const box = wrap.querySelector('[data-tool="stopwatch"]');
+  if (!box) return;
+  const w = liveWatches[g.id];
+
+  box.querySelectorAll('[data-action]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const a = btn.dataset.action;
+      if (a === 'start-lap') {
+        getAudio();
+        w.startAt = Date.now();
+        w.running = true;
+        ensureTicking();
+      } else if (a === 'stop-lap') {
+        const lapMs = Date.now() - w.startAt;
+        w.running = false;
+        w.laps.push(lapMs);
+        w.lapsTotal += lapMs;
+      } else if (a === 'undo-lap') {
+        const last = w.laps.pop();
+        if (last) w.lapsTotal -= last;
+      } else if (a === 'reset-watch') {
+        if (!confirm('Reset the stopwatch and clear all recorded items?')) return;
+        w.running = false;
+        w.laps = [];
+        w.lapsTotal = 0;
+      } else if (a === 'save-time') {
+        const sel = document.getElementById('sw-team-' + g.id);
+        const teamId = sel.value;
+        const draft = state.drafts[g.id] || (state.drafts[g.id] = { scores: {}, medals: {} });
+        const prevLeader = leaderOf(g, draft);
+        const totalSec = w.lapsTotal / 1000;
+        const m = Math.floor(totalSec / 60);
+        const s = totalSec - m * 60;
+        draft.scores[teamId] = m + ':' + (s < 10 ? '0' : '') + s.toFixed(1);
+        draft.medals = {};
+        saveState();
+        checkHighScore(g, draft, teamId, prevLeader);
+        renderAll();
+        return;
+      }
+      renderTools(wrap, g);
+    });
+  });
+}
+
+// ── High-score chime ──
+
+function leaderOf(g, draft) {
+  const ranked = autoRank(g, draft);
+  return ranked.length ? ranked[0] : null;
+}
+
+function checkHighScore(g, draft, teamId, prevLeader) {
+  const newLeader = leaderOf(g, draft);
+  if (!newLeader || newLeader.id !== teamId) return;
+  if (prevLeader && prevLeader.id !== teamId &&
+      (g.lowerWins ? newLeader.v < prevLeader.v : newLeader.v > prevLeader.v)) {
+    playHighScore();
+  }
 }
 
 // ── Time helpers (Pumpkin Pictionary) ────────────────────────────
@@ -563,6 +881,7 @@ function renderGameView() {
         <ul>${sec.items.map((it) => `<li>${esc(it)}</li>`).join('')}</ul>
       `).join('')}
     </details>
+    <div id="tools-area"></div>
     <div id="entry-area"></div>
   `;
   view.innerHTML = html;
@@ -572,6 +891,10 @@ function renderGameView() {
     saveState();
     renderAll();
   });
+
+  if ((g.timer || g.stopwatch) && !state.results[g.id]) {
+    renderTools(document.getElementById('tools-area'), g);
+  }
 
   const entry = document.getElementById('entry-area');
   const result = state.results[g.id];
@@ -656,16 +979,26 @@ function validateMedals(picks) {
 function renderTally(container, g) {
   if (!state.drafts[g.id]) state.drafts[g.id] = { scores: {}, medals: {} };
   const draft = state.drafts[g.id];
+  const steps = g.counterSteps;
 
   container.innerHTML = `
     <h3>Enter team scores <span class="unit-tag">(${esc(g.unit || 'points')}${g.lowerWins ? ' — lowest wins' : ''})</span></h3>
     <div class="score-input-grid">
       ${state.teams.map((t) => `
-        <label class="score-input-row">
-          <span>${esc(t.name)}</span>
-          <input type="text" inputmode="${g.timeInput ? 'numeric' : 'decimal'}" placeholder="${g.timeInput ? 'm:ss' : '0'}"
-            data-team-id="${t.id}" value="${esc(draft.scores[t.id] || '')}" />
-        </label>
+        <div class="score-input-row ${steps ? 'with-counter' : ''}">
+          <div class="score-row-top">
+            <span class="score-team">${esc(t.name)}</span>
+            <input type="text" inputmode="${g.timeInput ? 'numeric' : 'decimal'}" placeholder="${g.timeInput ? 'm:ss' : '0'}"
+              data-team-id="${t.id}" value="${esc(draft.scores[t.id] || '')}" />
+          </div>
+          ${steps ? `<div class="counter-btn-row" data-team-id="${t.id}">
+            <button class="counter-btn minus" data-delta="${-steps[0]}">−${steps[0]}</button>
+            ${steps.map((s) => {
+              const lbl = g.counterStepLabels && g.counterStepLabels[s] ? `<span class="counter-btn-sub">${esc(g.counterStepLabels[s])}</span>` : '';
+              return `<button class="counter-btn plus" data-delta="${s}">+${s}${lbl}</button>`;
+            }).join('')}
+          </div>` : ''}
+        </div>
       `).join('')}
     </div>
     <div id="tally-medals"></div>
@@ -674,10 +1007,37 @@ function renderTally(container, g) {
   `;
 
   container.querySelectorAll('.score-input-row input').forEach((input) => {
+    let leaderBefore = null;
+    input.addEventListener('focus', () => {
+      leaderBefore = leaderOf(g, draft);
+    });
     input.addEventListener('input', () => {
       draft.scores[input.dataset.teamId] = input.value;
       draft.medals = {}; // re-auto-rank when scores change
       saveState();
+      updateTallyMedals(g);
+    });
+    input.addEventListener('change', () => {
+      checkHighScore(g, draft, input.dataset.teamId, leaderBefore);
+      leaderBefore = leaderOf(g, draft);
+    });
+  });
+
+  container.querySelectorAll('.counter-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      getAudio(); // unlock audio on a user gesture
+      const teamId = btn.closest('.counter-btn-row').dataset.teamId;
+      const delta = parseInt(btn.dataset.delta, 10);
+      const prevLeader = leaderOf(g, draft);
+      const current = parseScoreInput(g, draft.scores[teamId] || '') || 0;
+      let next = current + delta;
+      if (next < 0 && !g.counterAllowNegative) next = 0;
+      draft.scores[teamId] = String(next);
+      draft.medals = {};
+      const input = container.querySelector(`input[data-team-id="${teamId}"]`);
+      if (input) input.value = String(next);
+      saveState();
+      checkHighScore(g, draft, teamId, prevLeader);
       updateTallyMedals(g);
     });
   });
@@ -1064,6 +1424,18 @@ function toggleTheme() {
   applyTheme();
 }
 
+function applySoundIcon() {
+  document.getElementById('sound-toggle').textContent = soundOn() ? '🔊' : '🔇';
+}
+
+function toggleSound() {
+  state.sound = !soundOn();
+  if (!soundOn()) cutAllSound();
+  else playHighScore(); // quick confirmation blip
+  saveState();
+  applySoundIcon();
+}
+
 // ── Init ─────────────────────────────────────────────────────────
 
 function renderAll() {
@@ -1075,7 +1447,9 @@ function renderAll() {
 
 function init() {
   applyTheme();
+  applySoundIcon();
   document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
+  document.getElementById('sound-toggle').addEventListener('click', toggleSound);
   document.getElementById('reset-week-btn').addEventListener('click', resetWeek);
   renderAll();
 }

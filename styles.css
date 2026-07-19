@@ -616,6 +616,231 @@ body {
 }
 
 /* ============================================================
+   TIMERS, STOPWATCH & COUNTERS
+   ============================================================ */
+.sound-toggle {
+  right: auto;
+  left: 1rem;
+}
+
+.tool-box {
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+  margin: 0 0 1rem;
+  text-align: center;
+  background: var(--color-bg);
+}
+
+.tool-box.alarming {
+  animation: alarm-flash 0.5s ease-in-out infinite alternate;
+  border-color: var(--color-danger);
+}
+
+@keyframes alarm-flash {
+  from { background: var(--color-bg); }
+  to { background: color-mix(in srgb, var(--color-danger) 25%, var(--color-bg)); }
+}
+
+.tool-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.round-label {
+  margin-top: 0.35rem;
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--color-primary);
+}
+
+.big-clock {
+  font-size: 3.4rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  margin: 0.25rem 0;
+}
+
+.preset-row {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.preset-chip {
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.45rem 0.9rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.preset-chip.selected {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.preset-chip:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.timer-btn-row {
+  display: flex;
+  gap: 0.6rem;
+}
+
+.timer-main-btn {
+  flex: 1;
+  min-height: 3.75rem;
+  background: var(--color-primary);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-md);
+  font-size: 1.2rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.timer-main-btn.alarm-btn {
+  background: var(--color-danger);
+}
+
+.timer-main-btn.stop-lap-btn {
+  background: var(--color-danger);
+}
+
+.timer-side-btn {
+  min-height: 3.75rem;
+  padding: 0 1rem;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  font-size: 1rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.sw-total-line {
+  font-size: 0.95rem;
+  color: var(--color-text-muted);
+  margin-bottom: 0.75rem;
+}
+
+.sw-total-line strong {
+  color: var(--color-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.sw-laps {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem;
+  margin-top: 0.75rem;
+}
+
+.sw-actions {
+  display: flex;
+  justify-content: center;
+  gap: 1.25rem;
+  margin-top: 0.6rem;
+}
+
+.sw-save-row {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+
+.sw-save-row select {
+  flex: 1;
+  border: 1.5px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 0.95rem;
+  font-family: inherit;
+  padding: 0.45rem 0.5rem;
+  border-radius: var(--radius-md);
+}
+
+.counter-btn-row {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.counter-btn {
+  flex: 1;
+  min-height: 3.25rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  border: 1.5px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 1.15rem;
+  font-weight: 800;
+  font-family: inherit;
+  cursor: pointer;
+  transition: transform 0.05s ease;
+}
+
+.counter-btn:active {
+  transform: scale(0.96);
+}
+
+.counter-btn.plus {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
+}
+
+.counter-btn.minus {
+  max-width: 5rem;
+  color: var(--color-danger);
+  border-color: color-mix(in srgb, var(--color-danger) 45%, var(--color-border));
+}
+
+.counter-btn-sub {
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+}
+
+.score-input-row.with-counter {
+  flex-direction: column;
+  align-items: stretch;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.6rem 0.7rem;
+}
+
+.score-row-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  width: 100%;
+}
+
+/* ============================================================
    SCORE ENTRY (tally)
    ============================================================ */
 .unit-tag {
