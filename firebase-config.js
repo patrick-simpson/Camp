@@ -8,7 +8,7 @@
 window.FIREBASE_CONFIG = {
   apiKey: "AIzaSyDLR7a8azixBrSLA07iTTJ8VEaz7O9N5l8",
   authDomain: "camp-89cea.firebaseapp.com",
-  databaseURL: "",
+  databaseURL: "https://camp-89cea-default-rtdb.firebaseio.com",
   projectId: "camp-89cea",
   storageBucket: "camp-89cea.firebasestorage.app",
   messagingSenderId: "245461534043",
