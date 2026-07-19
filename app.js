@@ -933,7 +933,7 @@ async function composeCaptioned(photoBlob, teamStr, promptStr, ms) {
   const img = await loadImage(photoBlob);
   const w = img.width || img.naturalWidth;
   const h = img.height || img.naturalHeight;
-  const bannerH = Math.max(150, Math.round(w * 0.2));
+  const bannerH = Math.max(130, Math.round(w * 0.17));
   const c = document.createElement('canvas');
   c.width = w;
   c.height = h + bannerH;
@@ -973,18 +973,13 @@ async function composeCaptioned(photoBlob, teamStr, promptStr, ms) {
   const maxText = w * 0.72;
 
   x.fillStyle = '#4a2c10';
-  fitFont(x, teamStr, '700', bannerH * 0.28, maxText, serif);
-  x.fillText(teamStr, w / 2, bannerH * 0.3);
+  fitFont(x, teamStr, '700', bannerH * 0.3, maxText, serif);
+  x.fillText(teamStr, w / 2, bannerH * 0.33);
 
   const sub = `drew “${promptStr}” in ${fmtWatch(ms)}`;
   x.fillStyle = '#9c4f0f';
-  fitFont(x, sub, 'italic 400', bannerH * 0.17, maxText, serif);
-  x.fillText(sub, w / 2, bannerH * 0.56);
-
-  const tag = 'H A R V E S T   W E E K   P I C T I O N A R Y';
-  x.fillStyle = '#7a5a2e';
-  fitFont(x, tag, '400', bannerH * 0.09, maxText, serif);
-  x.fillText(tag, w / 2, bannerH * 0.78);
+  fitFont(x, sub, 'italic 400', bannerH * 0.18, maxText, serif);
+  x.fillText(sub, w / 2, bannerH * 0.64);
 
   x.drawImage(img, 0, bannerH);
   return canvasToJpeg(c, 0.9);
