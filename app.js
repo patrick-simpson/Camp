@@ -164,10 +164,10 @@ const GAMES = [
   {
     id: 'pumpkin-pictionary', name: 'Pumpkin Pictionary', emoji: '🎃', day: 3, session: 'Morning',
     location: 'Chapel Lawn', format: 'tally', unit: 'total time', lowerWins: true, timeInput: true,
-    stopwatch: { targetLaps: 10 },
+    prompts: ['Pumpkin', 'Scarecrow', 'Ear of Corn', 'Falling Leaf', 'Apple Pie', 'Hay Bale', 'Turkey', 'Acorn', 'Sunflower', 'Tractor'],
     headline: 'Draw with your nose in pumpkin puree — fastest total time wins.',
     rules: [
-      { h: 'Prep', items: ['Have a list of 10 items ready for each team to draw.'] },
+      { h: 'Prep', items: ['The 10 drawing prompts are built in below — pick a team and run their round right from this page, snapping a photo of each masterpiece as you go.'] },
       { h: 'How to play', items: [
         'One team plays at a time; each team draws 10 items.',
         'The drawer dips their NOSE in pumpkin puree and draws with it on the board.',
@@ -490,10 +490,12 @@ function renderToolsIfCurrent(gid) {
 function renderTools(wrap, g) {
   let html = '';
   if (g.timer) html += countdownHTML(g);
-  if (g.stopwatch) html += stopwatchHTML(g);
+  if (g.prompts) html += picRoundHTML(g);
+  else if (g.stopwatch) html += stopwatchHTML(g);
   wrap.innerHTML = html;
   if (g.timer) bindCountdown(wrap, g);
-  if (g.stopwatch) bindStopwatch(wrap, g);
+  if (g.prompts) bindPicRound(wrap, g);
+  else if (g.stopwatch) bindStopwatch(wrap, g);
 }
 
 // ── Countdown ──
@@ -656,6 +658,389 @@ function bindStopwatch(wrap, g) {
       renderTools(wrap, g);
     });
   });
+}
+
+// ── Photo storage (IndexedDB — photos are too big for localStorage) ──
+
+let photoDBPromise = null;
+
+function photoDB() {
+  if (!photoDBPromise) {
+    photoDBPromise = new Promise((resolve, reject) => {
+      const req = indexedDB.open('campScoreboardPhotos', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('photos');
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  return photoDBPromise;
+}
+
+function idbOp(mode, fn) {
+  return photoDB().then((db) => new Promise((resolve, reject) => {
+    const tx = db.transaction('photos', mode);
+    const req = fn(tx.objectStore('photos'));
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  }));
+}
+
+const putPhoto = (key, blob) => idbOp('readwrite', (s) => s.put(blob, key));
+const getPhoto = (key) => idbOp('readonly', (s) => s.get(key));
+const delPhoto = (key) => idbOp('readwrite', (s) => s.delete(key));
+const clearPhotos = () => idbOp('readwrite', (s) => s.clear());
+
+function picPhotoKey(teamId, idx) {
+  return 'pic:' + teamId + ':' + idx;
+}
+
+function loadImage(blob) {
+  if (window.createImageBitmap) {
+    return createImageBitmap(blob, { imageOrientation: 'from-image' }).catch(() => loadImageViaTag(blob));
+  }
+  return loadImageViaTag(blob);
+}
+
+function loadImageViaTag(blob) {
+  return new Promise((resolve, reject) => {
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('bad image')); };
+    img.src = url;
+  });
+}
+
+function canvasToJpeg(canvas, quality) {
+  return new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality));
+}
+
+// Downscale camera shots so 60 photos don't blow up the phone's storage.
+async function shrinkPhoto(file) {
+  const img = await loadImage(file);
+  const w = img.width || img.naturalWidth;
+  const h = img.height || img.naturalHeight;
+  const scale = Math.min(1, 1600 / Math.max(w, h));
+  const c = document.createElement('canvas');
+  c.width = Math.round(w * scale);
+  c.height = Math.round(h * scale);
+  c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+  return canvasToJpeg(c, 0.85);
+}
+
+// ── Pictionary round runner ─────────────────────────────────────
+
+function picRounds() {
+  if (!state.picRounds) state.picRounds = {};
+  return state.picRounds;
+}
+
+function picRound(teamId) {
+  const all = picRounds();
+  if (!all[teamId]) all[teamId] = { laps: [], done: false };
+  return all[teamId];
+}
+
+function picRoundHTML(g) {
+  let w = liveWatches[g.id];
+  if (!w) w = liveWatches[g.id] = { running: false, startAt: 0, lapsTotal: 0 };
+  const teamId = state.ui.picTeam;
+  const round = teamId ? picRound(teamId) : null;
+
+  const chips = `<div class="pic-team-chips">${state.teams.map((t) => {
+    const r = picRounds()[t.id];
+    const status = r && r.done ? ' ✓' : r && r.laps.length ? ` ${r.laps.length}/10` : '';
+    return `<button class="team-chip pic-team-chip ${teamId === t.id ? 'selected' : ''}" data-team-id="${t.id}" ${w.running ? 'disabled' : ''}>${esc(t.name)}${status}</button>`;
+  }).join('')}</div>`;
+
+  let panel = '';
+  if (round) {
+    const n = round.laps.length;
+    if (!round.done) {
+      const prompt = g.prompts[n];
+      panel = `
+        <div class="pic-prompt-card">
+          <div class="pic-prompt-label">Item ${n + 1} of ${g.prompts.length}</div>
+          <div class="pic-prompt-word">${esc(prompt)}</div>
+        </div>
+        <div class="big-clock" id="sw-display-${g.id}">${fmtWatch(w.running ? Date.now() - w.startAt : 0)}</div>
+        <div class="sw-total-line">Team total: <strong id="sw-total-${g.id}">${fmtWatch(w.lapsTotal + (w.running ? Date.now() - w.startAt : 0))}</strong></div>
+        <div class="timer-btn-row">
+          ${w.running
+            ? `<button class="timer-main-btn stop-lap-btn" data-action="stop-lap">⏹ Guessed it! Stop clock</button>`
+            : `<button class="timer-main-btn" data-action="start-lap">▶ Nose down — start</button>`}
+        </div>`;
+    } else {
+      const photoCount = round.laps.filter((l) => l.photo).length;
+      panel = `
+        <div class="pic-done-banner">🎉 Round complete — total <strong>${fmtWatch(round.laps.reduce((a, l) => a + l.ms, 0))}</strong>. Score filled in below.</div>
+        <div class="timer-btn-row">
+          <button class="timer-main-btn" data-action="export-photos">⬇ Export ${photoCount} captioned photo${photoCount === 1 ? '' : 's'}</button>
+        </div>
+        <p class="muted pic-export-hint" id="pic-export-status">Each photo gets a harvest banner with the team, the prompt, and their time.</p>`;
+    }
+
+    if (round.laps.length) {
+      panel += `<div class="pic-items">${round.laps.map((lap, i) => `
+        <div class="pic-item-row">
+          <span class="pic-item-text">${i + 1}. ${esc(g.prompts[i])} — ${fmtWatch(lap.ms)}</span>
+          <button class="pic-photo-btn ${lap.photo ? 'has-photo' : ''}" data-action="photo" data-lap="${i}">${lap.photo ? '📷 Retake' : '📷 Add photo'}</button>
+        </div>`).join('')}</div>
+        <div class="sw-actions">
+          ${!round.done ? `<button class="link-btn" data-action="undo-lap">Undo last item</button>` : ''}
+          <button class="link-btn danger-link" data-action="reset-round">Reset this team's round</button>
+        </div>`;
+    }
+  } else {
+    panel = `<p class="muted">Pick a team to run their 10 drawings.</p>`;
+  }
+
+  return `<div class="tool-box" data-tool="pic-round">
+    <div class="tool-label">🎨 Drawing round</div>
+    ${chips}
+    ${panel}
+  </div>
+  <input type="file" id="pic-photo-input" accept="image/*" capture="environment" hidden>`;
+}
+
+function bindPicRound(wrap, g) {
+  const box = wrap.querySelector('[data-tool="pic-round"]');
+  if (!box) return;
+  const w = liveWatches[g.id];
+  const photoInput = wrap.querySelector('#pic-photo-input');
+
+  box.querySelectorAll('.pic-team-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      if (w.running) return;
+      state.ui.picTeam = chip.dataset.teamId;
+      const r = picRound(chip.dataset.teamId);
+      w.lapsTotal = r.laps.reduce((a, l) => a + l.ms, 0);
+      saveState();
+      renderTools(wrap, g);
+    });
+  });
+
+  box.querySelectorAll('[data-action]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const a = btn.dataset.action;
+      const teamId = state.ui.picTeam;
+      const round = teamId ? picRound(teamId) : null;
+
+      if (a === 'start-lap') {
+        getAudio();
+        w.startAt = Date.now();
+        w.running = true;
+        ensureTicking();
+      } else if (a === 'stop-lap') {
+        const ms = Date.now() - w.startAt;
+        w.running = false;
+        round.laps.push({ ms, photo: false });
+        w.lapsTotal += ms;
+        if (round.laps.length >= g.prompts.length) {
+          round.done = true;
+          const draft = state.drafts[g.id] || (state.drafts[g.id] = { scores: {}, medals: {} });
+          const prevLeader = leaderOf(g, draft);
+          const totalSec = w.lapsTotal / 1000;
+          const m = Math.floor(totalSec / 60);
+          const s = totalSec - m * 60;
+          draft.scores[teamId] = m + ':' + (s < 10 ? '0' : '') + s.toFixed(1);
+          draft.medals = {};
+          saveState();
+          checkHighScore(g, draft, teamId, prevLeader);
+          renderAll();
+          return;
+        }
+        saveState();
+      } else if (a === 'undo-lap') {
+        const last = round.laps.pop();
+        if (last) {
+          w.lapsTotal -= last.ms;
+          delPhoto(picPhotoKey(teamId, round.laps.length)).catch(() => {});
+        }
+        round.done = false;
+        saveState();
+      } else if (a === 'reset-round') {
+        if (!confirm("Reset this team's round? All their times and photos for this game are cleared.")) return;
+        round.laps.forEach((_, i) => delPhoto(picPhotoKey(teamId, i)).catch(() => {}));
+        round.laps = [];
+        round.done = false;
+        w.lapsTotal = 0;
+        w.running = false;
+        saveState();
+      } else if (a === 'photo') {
+        photoInput.dataset.teamId = teamId;
+        photoInput.dataset.lap = btn.dataset.lap;
+        photoInput.click();
+        return;
+      } else if (a === 'export-photos') {
+        exportTeamPhotos(g, teamId, btn);
+        return;
+      }
+      renderTools(wrap, g);
+    });
+  });
+
+  photoInput.addEventListener('change', async () => {
+    const file = photoInput.files && photoInput.files[0];
+    if (!file) return;
+    const teamId = photoInput.dataset.teamId;
+    const lapIdx = parseInt(photoInput.dataset.lap, 10);
+    try {
+      const blob = await shrinkPhoto(file);
+      await putPhoto(picPhotoKey(teamId, lapIdx), blob);
+      picRound(teamId).laps[lapIdx].photo = true;
+      saveState();
+      renderTools(wrap, g);
+    } catch (e) {
+      alert('Could not save that photo — try again.');
+      console.error(e);
+    }
+  });
+}
+
+// ── Captioned photo export ──
+
+function drawBannerLeaf(x, cx, cy, size, rot, color) {
+  x.save();
+  x.translate(cx, cy);
+  x.rotate(rot);
+  x.fillStyle = color;
+  x.beginPath();
+  x.moveTo(0, -size / 2);
+  x.quadraticCurveTo(size * 0.45, -size * 0.1, 0, size / 2);
+  x.quadraticCurveTo(-size * 0.45, -size * 0.1, 0, -size / 2);
+  x.fill();
+  x.strokeStyle = 'rgba(252, 245, 228, 0.65)';
+  x.lineWidth = Math.max(1, size * 0.05);
+  x.beginPath();
+  x.moveTo(0, -size * 0.36);
+  x.lineTo(0, size * 0.36);
+  x.stroke();
+  x.restore();
+}
+
+function fitFont(x, text, weightStyle, px, maxWidth, family) {
+  let size = px;
+  do {
+    x.font = `${weightStyle} ${Math.round(size)}px ${family}`;
+    if (x.measureText(text).width <= maxWidth) break;
+    size *= 0.94;
+  } while (size > 10);
+  return size;
+}
+
+async function composeCaptioned(photoBlob, teamStr, promptStr, ms) {
+  const img = await loadImage(photoBlob);
+  const w = img.width || img.naturalWidth;
+  const h = img.height || img.naturalHeight;
+  const bannerH = Math.max(150, Math.round(w * 0.2));
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h + bannerH;
+  const x = c.getContext('2d');
+  const serif = `Georgia, 'Times New Roman', serif`;
+
+  // Parchment banner
+  const grad = x.createLinearGradient(0, 0, 0, bannerH);
+  grad.addColorStop(0, '#f9f0da');
+  grad.addColorStop(1, '#eeddb8');
+  x.fillStyle = grad;
+  x.fillRect(0, 0, w, bannerH);
+
+  // Double rule above the photo
+  x.strokeStyle = '#b3591c';
+  x.lineWidth = Math.max(3, w * 0.005);
+  x.beginPath();
+  x.moveTo(w * 0.03, bannerH - x.lineWidth * 3);
+  x.lineTo(w * 0.97, bannerH - x.lineWidth * 3);
+  x.stroke();
+  x.strokeStyle = '#6d3a10';
+  x.lineWidth = Math.max(1.5, w * 0.002);
+  x.beginPath();
+  x.moveTo(w * 0.03, bannerH - w * 0.013);
+  x.lineTo(w * 0.97, bannerH - w * 0.013);
+  x.stroke();
+
+  // Corner leaves
+  drawBannerLeaf(x, w * 0.065, bannerH * 0.42, bannerH * 0.34, -0.55, '#c96f1e');
+  drawBannerLeaf(x, w * 0.045, bannerH * 0.6, bannerH * 0.24, 0.5, '#8a5a12');
+  drawBannerLeaf(x, w * 0.935, bannerH * 0.42, bannerH * 0.34, 0.55, '#c96f1e');
+  drawBannerLeaf(x, w * 0.955, bannerH * 0.6, bannerH * 0.24, -0.5, '#8a5a12');
+
+  // Text
+  x.textAlign = 'center';
+  x.textBaseline = 'middle';
+  const maxText = w * 0.72;
+
+  x.fillStyle = '#4a2c10';
+  fitFont(x, teamStr, '700', bannerH * 0.28, maxText, serif);
+  x.fillText(teamStr, w / 2, bannerH * 0.3);
+
+  const sub = `drew “${promptStr}” in ${fmtWatch(ms)}`;
+  x.fillStyle = '#9c4f0f';
+  fitFont(x, sub, 'italic 400', bannerH * 0.17, maxText, serif);
+  x.fillText(sub, w / 2, bannerH * 0.56);
+
+  const tag = 'H A R V E S T   W E E K   P I C T I O N A R Y';
+  x.fillStyle = '#7a5a2e';
+  fitFont(x, tag, '400', bannerH * 0.09, maxText, serif);
+  x.fillText(tag, w / 2, bannerH * 0.78);
+
+  x.drawImage(img, 0, bannerH);
+  return canvasToJpeg(c, 0.9);
+}
+
+function safeFileName(str) {
+  return str.replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '');
+}
+
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+
+async function exportTeamPhotos(g, teamId, btn) {
+  const round = picRound(teamId);
+  const team = teamName(teamId);
+  const status = document.getElementById('pic-export-status');
+  const say = (msg) => { if (status) status.textContent = msg; };
+
+  btn.disabled = true;
+  try {
+    const files = [];
+    for (let i = 0; i < round.laps.length; i++) {
+      if (!round.laps[i].photo) continue;
+      say(`Building photo ${files.length + 1}…`);
+      const blob = await getPhoto(picPhotoKey(teamId, i));
+      if (!blob) continue;
+      const out = await composeCaptioned(blob, team, g.prompts[i], round.laps[i].ms);
+      files.push(new File([out], `${safeFileName(team)}-${safeFileName(g.prompts[i])}.jpg`, { type: 'image/jpeg' }));
+    }
+    if (!files.length) {
+      say('No photos taken for this team yet — use the Add photo buttons first.');
+      return;
+    }
+    if (navigator.canShare && navigator.canShare({ files })) {
+      say(`Sharing ${files.length} photos…`);
+      await navigator.share({ files, title: team + ' — Pumpkin Pictionary' }).catch(() => {});
+      say(`Shared ${files.length} captioned photos.`);
+    } else {
+      say(`Downloading ${files.length} photos…`);
+      files.forEach((f, i) => setTimeout(() => downloadBlob(f, f.name), i * 500));
+      say(`Downloaded ${files.length} captioned photos.`);
+    }
+  } catch (e) {
+    console.error(e);
+    say('Export hit a snag — try again.');
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 // ── High-score chime ──
@@ -892,7 +1277,9 @@ function renderGameView() {
     renderAll();
   });
 
-  if ((g.timer || g.stopwatch) && !state.results[g.id]) {
+  // Pictionary keeps its tools visible after the result is saved so
+  // photos can still be exported; other tools hide once the game is done.
+  if ((g.timer || g.stopwatch || g.prompts) && (g.prompts || !state.results[g.id])) {
     renderTools(document.getElementById('tools-area'), g);
   }
 
@@ -1400,11 +1787,14 @@ function renderBracketSummary(body, g, b) {
 // ── Reset week ───────────────────────────────────────────────────
 
 function resetWeek() {
-  if (!confirm('Start a new week? This clears every saved game result (team names are kept).')) return;
+  if (!confirm('Start a new week? This clears every saved game result and all Pictionary photos (team names are kept).')) return;
   state.results = {};
   state.brackets = {};
   state.drafts = {};
+  state.picRounds = {};
   state.ui.gameId = null;
+  state.ui.picTeam = null;
+  clearPhotos().catch(() => {});
   saveState();
   renderAll();
 }

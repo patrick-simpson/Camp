@@ -841,6 +841,105 @@ body {
 }
 
 /* ============================================================
+   PICTIONARY ROUND RUNNER
+   ============================================================ */
+.pic-team-chips {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
+.pic-team-chip {
+  padding: 0.55rem 0.3rem;
+  font-size: 0.85rem;
+}
+
+.pic-team-chip:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.pic-prompt-card {
+  background: var(--color-gold-bg);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem;
+  margin: 0.5rem 0;
+}
+
+.pic-prompt-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+}
+
+.pic-prompt-word {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: var(--color-gold);
+  line-height: 1.2;
+}
+
+.pic-done-banner {
+  background: var(--color-gold-bg);
+  color: var(--color-gold);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1rem;
+  font-size: 0.95rem;
+  margin: 0.5rem 0 0.75rem;
+}
+
+.pic-export-hint {
+  margin: 0.5rem 0 0;
+}
+
+.pic-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: 0.85rem;
+  text-align: left;
+}
+
+.pic-item-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  font-size: 0.9rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.45rem 0.6rem;
+  background: var(--color-surface);
+}
+
+.pic-item-text {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.pic-photo-btn {
+  border: 1.5px solid var(--color-primary);
+  background: var(--color-surface);
+  color: var(--color-primary);
+  border-radius: 999px;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.pic-photo-btn.has-photo {
+  border-color: var(--color-gold);
+  background: var(--color-gold-bg);
+  color: var(--color-gold);
+}
+
+/* ============================================================
    SCORE ENTRY (tally)
    ============================================================ */
 .unit-tag {
