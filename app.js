@@ -362,6 +362,76 @@ if (!state.ui) state.ui = { day: defaultDay(), gameId: null };
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  if (!applyingRemote) schedulePush();
+}
+
+// ── Cloud sync (Firebase Realtime Database) ──────────────────────
+// Optional. If window.FIREBASE_CONFIG is filled in (firebase-config.js)
+// and the SDK loaded, scores sync across every device in real time.
+// Otherwise the app runs exactly as before, local-only.
+
+const SYNC_KEYS = ['teams', 'results', 'brackets', 'drafts', 'picRounds'];
+let fbRef = null;
+let applyingRemote = false;
+let pushTimer = null;
+
+function syncEnabled() {
+  return !!fbRef;
+}
+
+function initSync() {
+  const cfg = window.FIREBASE_CONFIG;
+  if (!cfg || !cfg.apiKey || typeof firebase === 'undefined') {
+    updateSyncIndicator();
+    return; // local-only mode
+  }
+  try {
+    firebase.initializeApp(cfg);
+    fbRef = firebase.database().ref('campScoreboard/state');
+    fbRef.on('value', (snap) => {
+      const remote = snap.val();
+      if (!remote) { pushState(); return; } // seed an empty database
+      applyingRemote = true;
+      SYNC_KEYS.forEach((k) => { if (remote[k] !== undefined) state[k] = remote[k]; });
+      if (!state.teams || !state.results) { applyingRemote = false; return; }
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
+      applyingRemote = false;
+      if (appStarted) renderAll();
+    }, (err) => {
+      console.warn('Firebase read failed, staying local', err);
+    });
+    updateSyncIndicator();
+  } catch (e) {
+    console.error('Firebase init failed, staying local-only', e);
+    fbRef = null;
+    updateSyncIndicator();
+  }
+}
+
+function schedulePush() {
+  if (!fbRef) return;
+  clearTimeout(pushTimer);
+  pushTimer = setTimeout(pushState, 400); // coalesce rapid edits
+}
+
+function pushState() {
+  if (!fbRef || applyingRemote) return;
+  const payload = {};
+  SYNC_KEYS.forEach((k) => { payload[k] = state[k] === undefined ? null : state[k]; });
+  // JSON round-trip strips any `undefined` (which Realtime DB rejects).
+  fbRef.set(JSON.parse(JSON.stringify(payload))).catch((e) => console.warn('sync push failed', e));
+}
+
+function updateSyncIndicator() {
+  const el = document.getElementById('sync-status');
+  if (!el) return;
+  if (syncEnabled()) {
+    el.textContent = '☁️ Synced across devices';
+    el.classList.add('synced');
+  } else {
+    el.textContent = '📱 This device only';
+    el.classList.remove('synced');
+  }
 }
 
 function teamName(id) {
@@ -1950,6 +2020,8 @@ function init() {
 
   document.getElementById('role-btn').addEventListener('click', showLockScreen);
   updateRoleButton();
+
+  initSync();
 
   renderAll();
 }

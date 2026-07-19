@@ -597,6 +597,17 @@ html.view-only .role-btn {
   margin-top: 0;
 }
 
+.sync-status {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.sync-status.synced {
+  color: var(--color-primary);
+}
+
 .standings-actions {
   display: flex;
   gap: 0.6rem;
