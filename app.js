@@ -9,6 +9,13 @@
 
 const STORAGE_KEY = 'campScoreboardV2';
 
+// Bump this to the current UTC timestamp (`date -u +%Y-%m-%dT%H:%M:%SZ`)
+// every time app.js/index.html/styles.css changes and gets deployed — it
+// drives the "Code last updated" line in the footer. There's no build
+// step here to stamp this automatically, so it's a manual step alongside
+// the ?v=N cache-bust bump in index.html.
+const CODE_UPDATED_AT = '2026-07-19T12:43:08Z';
+
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
 // Two tiers: VIEW_PIN can look but not touch; EDIT_PIN can enter scores.
@@ -528,6 +535,30 @@ function renderNowBanner() {
   el.innerHTML = html || '';
 }
 
+// Formats an ISO timestamp as camp time, e.g. "Jul 19, 8:47pm ET" —
+// same convention as the schedule banner, so the footer always reads in
+// camp time regardless of which timezone a visiting parent's phone is in.
+function formatEasternStamp(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: CAMP_TZ, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
+  }).formatToParts(d);
+  const get = (type) => (parts.find((p) => p.type === type) || {}).value;
+  return `${get('month')} ${get('day')}, ${get('hour')}:${get('minute')}${(get('dayPeriod') || '').toLowerCase()} ET`;
+}
+
+function renderFooter() {
+  const el = document.getElementById('app-footer');
+  if (!el) return;
+  const dataStamp = formatEasternStamp(state.meta && state.meta.lastDataChangeAt);
+  el.innerHTML = `
+    <p class="footer-line">🛠️ Code last updated: ${esc(formatEasternStamp(CODE_UPDATED_AT) || 'unknown')}</p>
+    <p class="footer-line">📋 Data last updated: ${dataStamp ? esc(dataStamp) : 'No scores entered yet'}</p>
+  `;
+}
+
 // ── State ────────────────────────────────────────────────────────
 
 function loadState() {
@@ -559,6 +590,7 @@ function defaultDay() {
 let state = loadState() || makeFreshState();
 if (!state.teams || !state.results) state = makeFreshState();
 if (!state.ui) state.ui = { day: defaultDay(), gameId: null };
+if (!state.meta) state.meta = {};
 Object.values(state.brackets || {}).forEach(normalizeBracket);
 
 function saveState() {
@@ -566,12 +598,21 @@ function saveState() {
   if (!applyingRemote) schedulePush();
 }
 
+// Stamps "when real scoreboard data last changed" for the footer — a
+// result saved, a bracket match recorded, or a team renamed. Deliberately
+// NOT called for view-only actions (day tab, theme, PIN) so it reflects
+// actual camp activity, not just page traffic.
+function touchData() {
+  if (!state.meta) state.meta = {};
+  state.meta.lastDataChangeAt = new Date().toISOString();
+}
+
 // ── Cloud sync (Firebase Realtime Database) ──────────────────────
 // Optional. If window.FIREBASE_CONFIG is filled in (firebase-config.js)
 // and the SDK loaded, scores sync across every device in real time.
 // Otherwise the app runs exactly as before, local-only.
 
-const SYNC_KEYS = ['teams', 'results', 'brackets', 'drafts', 'picRounds'];
+const SYNC_KEYS = ['teams', 'results', 'brackets', 'drafts', 'picRounds', 'meta'];
 let fbRef = null;
 let applyingRemote = false;
 let pushTimer = null;
@@ -1483,7 +1524,7 @@ function renderStandings() {
     input.addEventListener('change', (e) => {
       const team = state.teams.find((t) => t.id === e.target.dataset.teamId);
       const val = e.target.value.trim();
-      if (team && val) team.name = val;
+      if (team && val) { team.name = val; touchData(); }
       saveState();
       renderAll();
     });
@@ -1808,6 +1849,7 @@ function renderTally(container, g) {
     });
     state.results[g.id] = { medals: picks, scores, savedAt: new Date().toISOString() };
     delete state.drafts[g.id];
+    touchData();
     saveState();
     renderAll();
   });
@@ -1898,6 +1940,7 @@ function renderPlacement(container, g) {
     }
     state.results[g.id] = { medals: picks, savedAt: new Date().toISOString() };
     delete state.drafts[g.id];
+    touchData();
     saveState();
     renderAll();
   });
@@ -2035,6 +2078,7 @@ function renderBracketRound1(body, g, b) {
       b.matches.push({ a, b: c, winner, loser });
       b.pool = b.pool.filter((id) => id !== a && id !== c);
       b.selectedPair = [];
+      touchData();
       saveState();
       renderAll();
     });
@@ -2069,6 +2113,7 @@ function renderBracketBye(body, g, b) {
       b.byeTeamId = byeId;
       b.semifinal = { a: others[0], b: others[1], winner: null, loser: null };
       b.phase = 'semifinal';
+      touchData();
       saveState();
       renderAll();
     });
@@ -2108,6 +2153,7 @@ function renderBracketSemifinal(body, g, b) {
       b.semifinal.loser = loser;
       b.championship = { a: b.byeTeamId, b: winner, winner: null, loser: null };
       b.phase = 'championship';
+      touchData();
       saveState();
       renderAll();
     });
@@ -2138,6 +2184,7 @@ function renderBracketChampionship(body, g, b) {
       b.championship.winner = winner;
       b.championship.loser = loser;
       b.phase = 'summary';
+      touchData();
       saveState();
       renderAll();
     });
@@ -2167,6 +2214,7 @@ function renderBracketSummary(body, g, b) {
       savedAt: new Date().toISOString(),
     };
     delete state.brackets[g.id];
+    touchData();
     saveState();
     renderAll();
   });
@@ -2222,6 +2270,7 @@ function renderAll() {
   renderGameList();
   renderGameView();
   renderStandings();
+  renderFooter();
 }
 
 function init() {

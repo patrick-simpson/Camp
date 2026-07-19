@@ -72,6 +72,22 @@ body {
 }
 
 /* ============================================================
+   FOOTER
+   ============================================================ */
+.app-footer {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0.5rem 1rem 1.5rem;
+  text-align: center;
+}
+
+.footer-line {
+  margin: 0.2rem 0;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+
+/* ============================================================
    PIN LOCK SCREEN
    ============================================================ */
 /* Visibility is driven by the `locked` class on <html>, set by an inline
