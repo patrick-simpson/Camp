@@ -26,6 +26,8 @@ function canEdit() {
 }
 
 const DEFAULT_TEAM_NAMES = ['Team 1', 'Team 2', 'Team 3', 'Team 4', 'Team 5', 'Team 6'];
+// Placeholder counselor first names — edit them in the standings table.
+const DEFAULT_COUNSELORS = ['Sarah', 'Mike', 'Emily', 'Josh', 'Rachel', 'Dave'];
 
 const DAY_NAMES = { 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday' };
 
@@ -342,7 +344,7 @@ function loadState() {
 
 function makeFreshState() {
   return {
-    teams: DEFAULT_TEAM_NAMES.map((name, i) => ({ id: 't' + i, name })),
+    teams: DEFAULT_TEAM_NAMES.map((name, i) => ({ id: 't' + i, name, counselor: DEFAULT_COUNSELORS[i] })),
     results: {},   // gameId -> { medals: {gold, silver, bronze}, scores?, savedAt }
     brackets: {},  // gameId -> in-progress tournament
     drafts: {},    // gameId -> in-progress tally/placement entry
@@ -359,6 +361,13 @@ function defaultDay() {
 let state = loadState() || makeFreshState();
 if (!state.teams || !state.results) state = makeFreshState();
 if (!state.ui) state.ui = { day: defaultDay(), gameId: null };
+// Backfill counselors on state saved before they existed.
+state.teams.forEach((t, i) => { if (t.counselor === undefined) t.counselor = DEFAULT_COUNSELORS[i] || ''; });
+
+function counselorName(id) {
+  const t = state.teams.find((t) => t.id === id);
+  return t && t.counselor ? t.counselor : '';
+}
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -827,16 +836,23 @@ function picRound(teamId) {
   return all[teamId];
 }
 
+function picLapsSum(round) {
+  return round ? round.laps.reduce((a, l) => a + l.ms, 0) : 0;
+}
+
 function picRoundHTML(g) {
   let w = liveWatches[g.id];
   if (!w) w = liveWatches[g.id] = { running: false, startAt: 0, lapsTotal: 0 };
   const teamId = state.ui.picTeam;
   const round = teamId ? picRound(teamId) : null;
+  // Always derive the total from the saved laps — the in-memory copy dies
+  // on reload, and a stale 0 here would fill a short total into the score.
+  w.lapsTotal = picLapsSum(round);
 
   const chips = `<div class="pic-team-chips">${state.teams.map((t) => {
     const r = picRounds()[t.id];
     const status = r && r.done ? ' ✓' : r && r.laps.length ? ` ${r.laps.length}/10` : '';
-    return `<button class="team-chip pic-team-chip ${teamId === t.id ? 'selected' : ''}" data-team-id="${t.id}" ${w.running ? 'disabled' : ''}>${esc(t.name)}${status}</button>`;
+    return `<button class="team-chip pic-team-chip ${teamId === t.id ? 'selected' : ''}" data-team-id="${t.id}" ${w.running ? 'disabled' : ''}>${esc(t.name)}${status}<span class="chip-sub">${esc(counselorName(t.id))}</span></button>`;
   }).join('')}</div>`;
 
   let panel = '';
@@ -921,14 +937,16 @@ function bindPicRound(wrap, g) {
         const ms = Date.now() - w.startAt;
         w.running = false;
         round.laps.push({ ms, photo: false });
-        w.lapsTotal += ms;
+        w.lapsTotal = picLapsSum(round);
         if (round.laps.length >= g.prompts.length) {
           round.done = true;
           const draft = state.drafts[g.id] || (state.drafts[g.id] = { scores: {}, medals: {} });
           const prevLeader = leaderOf(g, draft);
-          const totalSec = w.lapsTotal / 1000;
-          const m = Math.floor(totalSec / 60);
-          const s = totalSec - m * 60;
+          // Total comes straight from the saved laps, floored to the same
+          // decisecond the display shows, so the filled score matches it.
+          const totalDs = Math.floor(picLapsSum(round) / 100);
+          const m = Math.floor(totalDs / 600);
+          const s = (totalDs - m * 600) / 10;
           draft.scores[teamId] = m + ':' + (s < 10 ? '0' : '') + s.toFixed(1);
           draft.medals = {};
           saveState();
@@ -940,10 +958,10 @@ function bindPicRound(wrap, g) {
       } else if (a === 'undo-lap') {
         const last = round.laps.pop();
         if (last) {
-          w.lapsTotal -= last.ms;
           delPhoto(picPhotoKey(teamId, round.laps.length)).catch(() => {});
         }
         round.done = false;
+        w.lapsTotal = picLapsSum(round);
         saveState();
       } else if (a === 'reset-round') {
         if (!confirm("Reset this team's round? All their times and photos for this game are cleared.")) return;
@@ -1154,7 +1172,22 @@ function legacyCopy(text, done) {
 }
 
 function matchupText(g, stage, aId, bId) {
-  return `${g.name} ${stage}: ${teamName(aId)} vs ${teamName(bId)} — head to ${g.location}!`;
+  const withC = (id) => counselorName(id) ? `${teamName(id)} (${counselorName(id)})` : teamName(id);
+  return `${g.name} ${stage}: ${withC(aId)} vs ${withC(bId)} — head to ${g.location}!`;
+}
+
+function matchupCalloutHTML(aId, bId) {
+  const counselors = [counselorName(aId), counselorName(bId)].filter(Boolean);
+  return `<div class="matchup-callout">
+    <p class="call-next-label">Call up next:</p>
+    <p class="call-next-teams">${esc(teamName(aId))} <span class="vs">vs</span> ${esc(teamName(bId))}</p>
+    ${counselors.length === 2 ? `<p class="call-next-counselors">Counselors: ${esc(counselors[0])} &amp; ${esc(counselors[1])}</p>` : ''}
+    <div class="winner-btn-row">
+      <button class="secondary-btn winner-btn" data-winner="${aId}">${esc(teamName(aId))} won</button>
+      <button class="secondary-btn winner-btn" data-winner="${bId}">${esc(teamName(bId))} won</button>
+    </div>
+    <button class="copy-matchup-btn">📋 Copy matchup for text</button>
+  </div>`;
 }
 
 function bindMatchupCopy(body, g, stage, aId, bId) {
@@ -1265,7 +1298,10 @@ function renderStandings() {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td class="rank-col">${i + 1}</td>
-      <td><input type="text" class="team-name-input" data-team-id="${team.id}" value="${esc(team.name)}" ${canEdit() ? '' : 'disabled'} /></td>
+      <td>
+        <input type="text" class="team-name-input" data-team-id="${team.id}" value="${esc(team.name)}" ${canEdit() ? '' : 'disabled'} />
+        <input type="text" class="team-counselor-input" data-team-id="${team.id}" value="${esc(team.counselor || '')}" placeholder="Counselor" ${canEdit() ? '' : 'disabled'} />
+      </td>
       <td class="medal-col">${s.gold}</td>
       <td class="medal-col">${s.silver}</td>
       <td class="medal-col">${s.bronze}</td>
@@ -1278,6 +1314,15 @@ function renderStandings() {
       const team = state.teams.find((t) => t.id === e.target.dataset.teamId);
       const val = e.target.value.trim();
       if (team && val) team.name = val;
+      saveState();
+      renderAll();
+    });
+  });
+
+  tbody.querySelectorAll('.team-counselor-input').forEach((input) => {
+    input.addEventListener('change', (e) => {
+      const team = state.teams.find((t) => t.id === e.target.dataset.teamId);
+      if (team) team.counselor = e.target.value.trim();
       saveState();
       renderAll();
     });
@@ -1529,7 +1574,7 @@ function renderTally(container, g) {
       ${state.teams.map((t) => `
         <div class="score-input-row ${steps ? 'with-counter' : ''}">
           <div class="score-row-top">
-            <span class="score-team">${esc(t.name)}</span>
+            <span class="score-team">${esc(t.name)}<span class="chip-sub">${esc(t.counselor || '')}</span></span>
             <input type="text" inputmode="${g.timeInput ? 'numeric' : 'decimal'}" placeholder="${g.timeInput ? 'm:ss' : '0'}"
               data-team-id="${t.id}" value="${esc(draft.scores[t.id] || '')}" />
           </div>
@@ -1764,20 +1809,11 @@ function renderBracketRound1(body, g, b) {
   let html = `<h3>Round 1 — Match ${b.matches.length + 1} of 3</h3>
     <p class="muted">Pick the two teams to call up next.</p>
     <div class="team-chip-grid">
-      ${b.pool.map((id) => `<button class="team-chip ${b.selectedPair.includes(id) ? 'selected' : ''}" data-team-id="${id}">${esc(teamName(id))}</button>`).join('')}
+      ${b.pool.map((id) => `<button class="team-chip ${b.selectedPair.includes(id) ? 'selected' : ''}" data-team-id="${id}">${esc(teamName(id))}<span class="chip-sub">${esc(counselorName(id))}</span></button>`).join('')}
     </div>`;
 
   if (b.selectedPair.length === 2) {
-    const [a, c] = b.selectedPair;
-    html += `<div class="matchup-callout">
-      <p class="call-next-label">Call up next:</p>
-      <p class="call-next-teams">${esc(teamName(a))} <span class="vs">vs</span> ${esc(teamName(c))}</p>
-      <div class="winner-btn-row">
-        <button class="secondary-btn winner-btn" data-winner="${a}">${esc(teamName(a))} won</button>
-        <button class="secondary-btn winner-btn" data-winner="${c}">${esc(teamName(c))} won</button>
-      </div>
-      <button class="copy-matchup-btn">📋 Copy matchup for text</button>
-    </div>`;
+    html += matchupCalloutHTML(b.selectedPair[0], b.selectedPair[1]);
   }
 
   if (b.matches.length > 0) {
@@ -1835,7 +1871,7 @@ function renderBracketBye(body, g, b) {
     <h3>Who gets the bye?</h3>
     <p class="muted">Check the overall team standings (the official paper one). Whichever of these three Round&nbsp;1 winners has the <strong>lowest points coming into today</strong> skips straight to the Championship.</p>
     <div class="team-chip-grid">
-      ${winners.map((id) => `<button class="team-chip tiebreak-chip" data-team-id="${id}">${esc(teamName(id))}</button>`).join('')}
+      ${winners.map((id) => `<button class="team-chip tiebreak-chip" data-team-id="${id}">${esc(teamName(id))}<span class="chip-sub">${esc(counselorName(id))}</span></button>`).join('')}
     </div>
     <button id="undo-to-round1-btn" class="link-btn">← Back to Round 1</button>
   `;
@@ -1865,15 +1901,7 @@ function renderBracketSemifinal(body, g, b) {
   body.innerHTML = `
     <h3>Semifinal</h3>
     <p class="bye-note">🎟️ <strong>${esc(teamName(b.byeTeamId))}</strong> has the bye — straight to the Championship.</p>
-    <div class="matchup-callout">
-      <p class="call-next-label">Call up next:</p>
-      <p class="call-next-teams">${esc(teamName(b.semifinal.a))} <span class="vs">vs</span> ${esc(teamName(b.semifinal.b))}</p>
-      <div class="winner-btn-row">
-        <button class="secondary-btn winner-btn" data-winner="${b.semifinal.a}">${esc(teamName(b.semifinal.a))} won</button>
-        <button class="secondary-btn winner-btn" data-winner="${b.semifinal.b}">${esc(teamName(b.semifinal.b))} won</button>
-      </div>
-      <button class="copy-matchup-btn">📋 Copy matchup for text</button>
-    </div>
+    ${matchupCalloutHTML(b.semifinal.a, b.semifinal.b)}
   `;
 
   bindMatchupCopy(body, g, 'SEMIFINAL', b.semifinal.a, b.semifinal.b);
@@ -1896,15 +1924,7 @@ function renderBracketChampionship(body, g, b) {
   body.innerHTML = `
     <h3>Championship</h3>
     <p class="bronze-note">🥉 <strong>${esc(teamName(b.semifinal.loser))}</strong> takes the bronze medal.</p>
-    <div class="matchup-callout">
-      <p class="call-next-label">Call up next:</p>
-      <p class="call-next-teams">${esc(teamName(b.championship.a))} <span class="vs">vs</span> ${esc(teamName(b.championship.b))}</p>
-      <div class="winner-btn-row">
-        <button class="secondary-btn winner-btn" data-winner="${b.championship.a}">${esc(teamName(b.championship.a))} won</button>
-        <button class="secondary-btn winner-btn" data-winner="${b.championship.b}">${esc(teamName(b.championship.b))} won</button>
-      </div>
-      <button class="copy-matchup-btn">📋 Copy matchup for text</button>
-    </div>
+    ${matchupCalloutHTML(b.championship.a, b.championship.b)}
   `;
 
   bindMatchupCopy(body, g, 'CHAMPIONSHIP', b.championship.a, b.championship.b);
