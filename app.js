@@ -424,28 +424,28 @@ const STATION_EMOJI = {
 const ELECTIVES = {
   1: [
     [['Swimming', ['Bria', 'Abby']], ['Nerf War', ['Zac', 'Cam']], ['Crafts with Eileen', ['William', 'Jovi']], ['Lawn Games', ['TJ', 'Patrick', 'Sam']], ['Board Games', ['Brody', 'Lydia']]],
-    [['Swimming', ['Alyssa', 'Brody']], ['Crafts with Eileen', ['Bria', 'Lilly']], ['Whiffle Ball', ['TJ', 'Cam']], ['Board Games', ['Jovi', 'Josh', 'Patrick']], ['Slime with Joann', ['Sofi', 'Abby']], ['Laser Tag', ['Zac', 'William']]],
-    [['Swimming', ['Sam', 'TJ', 'Lilly']], ['Slime with Joann', ['Lydia', 'Alyssa']], ['Crafts with Eileen', ['Ella', 'Stephen']], ['Lawn Games', ['Josh', 'Sofi']], ['Board Games', ['Patrick']], ['Slip and Slide', ['Zac', 'Jacob']]],
+    [['Swimming', ['Alysa', 'Brody']], ['Crafts with Eileen', ['Bria', 'Lilly']], ['Whiffle Ball', ['TJ', 'Cam']], ['Board Games', ['Jovi', 'Josh', 'Patrick']], ['Slime with Joann', ['Sofi', 'Abby']], ['Laser Tag', ['Zac', 'William']]],
+    [['Swimming', ['Sam', 'TJ', 'Lilly']], ['Slime with Joann', ['Lydia', 'Alysa']], ['Crafts with Eileen', ['Ella', 'Stephen']], ['Lawn Games', ['Josh', 'Sofi']], ['Board Games', ['Patrick']], ['Slip and Slide', ['Zac', 'Jacob']]],
   ],
   2: [
-    [['Swimming', ['Ella', 'Lydia']], ['Nerf War', ['William', 'Zac']], ['Crafts with Eileen', ['Alyssa', 'Josh']], ['Lawn Games', ['Brody', 'Cam']], ['Board Games', ['Bria', 'Jovi']]],
+    [['Swimming', ['Ella', 'Lydia']], ['Nerf War', ['William', 'Zac']], ['Crafts with Eileen', ['Alysa', 'Josh']], ['Lawn Games', ['Brody', 'Cam']], ['Board Games', ['Bria', 'Jovi']]],
     [['Swimming', ['Sam', 'Sofi']], ['Crafts with Eileen', ['Lilly', 'Abby']], ['Whiffle Ball', ['Jacob', 'TJ']], ['Board Games', ['Ella', 'Stephen']], ['Laser Tag', ['Zac', 'Patrick']]],
-    [['Swimming', ['William', 'Alyssa', 'Lilly']], ['Crafts with Eileen', ['Sofi', 'Lydia']], ['Lawn Games', ['Josh', 'Stephen', 'Cam']], ['Board Games', ['Patrick', 'TJ']], ['Slip and Slide', ['Zac', 'Sam', 'Bria']]],
+    [['Swimming', ['William', 'Alysa', 'Lilly']], ['Crafts with Eileen', ['Sofi', 'Lydia']], ['Lawn Games', ['Josh', 'Stephen', 'Cam']], ['Board Games', ['Patrick', 'TJ']], ['Slip and Slide', ['Zac', 'Sam', 'Bria']]],
   ],
   3: [
     [['Swimming', ['Abby', 'Lilly']], ['Nerf War', ['Zac', 'Brody', 'TJ']], ['Crafts with Eileen', ['William', 'Sam']], ['Lawn Games', ['Sofi', 'Bria']], ['Board Games', ['Cam', 'Jovi']]],
     [['Swimming', ['Ella', 'Bria']], ['Crafts with Eileen', ['Lydia', 'Jovi']], ['Whiffle Ball', ['Sofi', 'TJ']], ['Board Games', ['Patrick', 'Josh', 'Sam']], ['Slime with Joann', ['Brody', 'Stephen']], ['Laser Tag', ['Zac', 'Jacob']]],
-    [['Swimming', ['William', 'Cam']], ['Slime with Joann', ['Alyssa', 'Ella']], ['Crafts with Eileen', ['Lilly', 'Josh']], ['Lawn Games', ['Patrick', 'Stephen']], ['Board Games', ['TJ', 'Abby']], ['Slip and Slide', ['Zac', 'Lydia', 'Jacob']]],
+    [['Swimming', ['William', 'Cam']], ['Slime with Joann', ['Alysa', 'Ella']], ['Crafts with Eileen', ['Lilly', 'Josh']], ['Lawn Games', ['Patrick', 'Stephen']], ['Board Games', ['TJ', 'Abby']], ['Slip and Slide', ['Zac', 'Lydia', 'Jacob']]],
   ],
   4: [
-    [['Swimming', ['Jovi', 'Bria', 'Cam']], ['Nerf War', ['William', 'Zac', 'Lilly']], ['Crafts with Eileen', ['Brody', 'Ella']], ['Lawn Games', ['Patrick', 'Jacob']], ['Board Games', ['Stephen', 'Alyssa']]],
+    [['Swimming', ['Jovi', 'Bria', 'Cam']], ['Nerf War', ['William', 'Zac', 'Lilly']], ['Crafts with Eileen', ['Brody', 'Ella']], ['Lawn Games', ['Patrick', 'Jacob']], ['Board Games', ['Stephen', 'Alysa']]],
     [['Swimming', ['Lilly', 'TJ']], ['Crafts with Eileen', ['Abby', 'Jovi']], ['Whiffle Ball', ['Cam', 'Sam', 'Bria']], ['Board Games', ['Patrick', 'Stephen']], ['Slime with Joann', ['Lydia', 'Sofi', 'William']], ['Laser Tag', ['Zac', 'Brody']]],
-    [['Swimming', ['Alyssa', 'Abby', 'Josh']], ['Slime with Joann', ['Ella', 'Bria']], ['Crafts with Eileen', ['Lydia']], ['Lawn Games', ['Brody', 'Sam']], ['Board Games', ['Sofi', 'TJ']], ['Slip and Slide', ['Zac', 'Stephen']]],
+    [['Swimming', ['Alysa', 'Abby', 'Josh']], ['Slime with Joann', ['Ella', 'Bria']], ['Crafts with Eileen', ['Lydia']], ['Lawn Games', ['Brody', 'Sam']], ['Board Games', ['Sofi', 'TJ']], ['Slip and Slide', ['Zac', 'Stephen']]],
   ],
   5: [
-    [['Swimming', ['Brody', 'Ella', 'TJ']], ['Nerf War', ['Zac', 'Cam', 'Sam']], ['Crafts with Eileen', ['Patrick', 'Alyssa', 'William']], ['Lawn Games', ['Bria', 'Abby']], ['Board Games', ['Lydia', 'Jovi']]],
+    [['Swimming', ['Brody', 'Ella', 'TJ']], ['Nerf War', ['Zac', 'Cam', 'Sam']], ['Crafts with Eileen', ['Patrick', 'Alysa', 'William']], ['Lawn Games', ['Bria', 'Abby']], ['Board Games', ['Lydia', 'Jovi']]],
     [['Swimming', ['Sam', 'Ella']], ['Crafts with Eileen', ['Lilly', 'Jacob']], ['Whiffle Ball', ['Jovi', 'Cam', 'TJ']], ['Board Games', ['Josh', 'Patrick']], ['Slime with Joann', ['Brody', 'Stephen']], ['Laser Tag', ['Zac', 'Bria']]],
-    [['Swimming', ['Cam', 'TJ', 'Lilly']], ['Slime with Joann', ['Abby', 'Sofi']], ['Crafts with Eileen', ['Lydia']], ['Lawn Games', ['Josh', 'Sam']], ['Board Games', ['Stephen']], ['Slip and Slide', ['Zac', 'Alyssa']]],
+    [['Swimming', ['Cam', 'TJ', 'Lilly']], ['Slime with Joann', ['Abby', 'Sofi']], ['Crafts with Eileen', ['Lydia']], ['Lawn Games', ['Josh', 'Sam']], ['Board Games', ['Stephen']], ['Slip and Slide', ['Zac', 'Alysa']]],
   ],
 };
 
@@ -559,6 +559,7 @@ function defaultDay() {
 let state = loadState() || makeFreshState();
 if (!state.teams || !state.results) state = makeFreshState();
 if (!state.ui) state.ui = { day: defaultDay(), gameId: null };
+Object.values(state.brackets || {}).forEach(normalizeBracket);
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -593,6 +594,11 @@ function initSync() {
       if (!remote) { pushState(); return; } // seed an empty database
       applyingRemote = true;
       SYNC_KEYS.forEach((k) => { if (remote[k] !== undefined) state[k] = remote[k]; });
+      // Realtime Database silently drops empty arrays/nulls on write, so a
+      // freshly-started bracket can come back missing matches/selectedPair
+      // etc. Heal every bracket the instant remote data lands, before any
+      // render sees it.
+      Object.values(state.brackets || {}).forEach(normalizeBracket);
       if (!state.teams || !state.results) { applyingRemote = false; return; }
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
       applyingRemote = false;
@@ -1911,6 +1917,22 @@ function freshBracket() {
   };
 }
 
+// Realtime Database can't represent "present but empty" for arrays/nulls —
+// it prunes those keys on write, so a bracket round-tripped through sync
+// can come back missing matches/selectedPair/etc. This restores a safe,
+// well-formed shape in place, whatever the source (sync, storage, or a
+// bug) actually handed us.
+function normalizeBracket(b) {
+  if (!Array.isArray(b.pool)) b.pool = [];
+  if (!Array.isArray(b.selectedPair)) b.selectedPair = [];
+  if (!Array.isArray(b.matches)) b.matches = [];
+  if (!b.phase) b.phase = 'round1';
+  if (b.byeTeamId === undefined) b.byeTeamId = null;
+  if (b.semifinal === undefined) b.semifinal = null;
+  if (b.championship === undefined) b.championship = null;
+  return b;
+}
+
 function renderTournament(container, g) {
   if (!state.brackets[g.id]) {
     container.innerHTML = `
@@ -1926,7 +1948,7 @@ function renderTournament(container, g) {
     return;
   }
 
-  const b = state.brackets[g.id];
+  const b = normalizeBracket(state.brackets[g.id]);
   let html = `<div class="bracket-steps">
     ${['round1', 'bye', 'semifinal', 'championship', 'summary'].map((p, i) => {
       const labels = { round1: 'Round 1', bye: 'Bye', semifinal: 'Semifinal', championship: 'Championship', summary: 'Results' };
