@@ -9,6 +9,13 @@
 
 const STORAGE_KEY = 'campScoreboardV2';
 
+// Bump this to the current UTC timestamp (`date -u +%Y-%m-%dT%H:%M:%SZ`)
+// every time app.js/index.html/styles.css changes and gets deployed — it
+// drives the "Code last updated" line in the footer. There's no build
+// step here to stamp this automatically, so it's a manual step alongside
+// the ?v=N cache-bust bump in index.html.
+const CODE_UPDATED_AT = '2026-07-19T14:34:30Z';
+
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
 // Two tiers: VIEW_PIN can look but not touch; EDIT_PIN can enter scores.
@@ -330,6 +337,230 @@ const GAMES = [
   },
 ];
 
+// ── Live daily schedule ("Happening now" banner) ─────────────────
+// The full week from the printed Junior Camp packet, so the top of the
+// page can say what camp is doing at this very moment. Times are minutes
+// since midnight in CAMP TIME (US Eastern) — never the phone's timezone,
+// so the banner is right even for family checking in from elsewhere.
+// During competition blocks the banner hides; the scoreboard below is
+// the main event then. Blocks are contiguous — findIndex is enough.
+
+const CAMP_TZ = 'America/New_York';
+
+function hm(h, m) { return h * 60 + (m || 0); }
+
+// Shared Monday–Friday daytime rhythm (identical on the paper schedule).
+function weekdayDaytime() {
+  return [
+    { start: hm(7, 30), end: hm(8, 0), label: 'Rising bell & shower', emoji: '⏰', type: 'activity' },
+    { start: hm(8, 0), end: hm(8, 30), label: 'Breakfast', emoji: '🍳', type: 'activity' },
+    { start: hm(8, 30), end: hm(9, 0), label: 'Cabin time & clean up', emoji: '🧹', type: 'activity' },
+    { start: hm(9, 0), end: hm(9, 45), label: 'Bible study', emoji: '📖', type: 'activity' },
+    { start: hm(9, 45), end: hm(10, 0), label: 'Prepare for competitions / team huddle', emoji: '📣', type: 'activity' },
+    { start: hm(10, 0), end: hm(11, 45), label: 'Team competitions', emoji: '🏅', type: 'games' },
+    { start: hm(11, 45), end: hm(12, 0), label: 'Prepare for lunch', emoji: '🧼', type: 'activity' },
+    { start: hm(12, 0), end: hm(12, 30), label: 'Lunch', emoji: '🥪', type: 'activity' },
+    { start: hm(12, 30), end: hm(13, 0), label: 'Team time', emoji: '🤝', type: 'activity' },
+    { start: hm(13, 0), end: hm(13, 15), label: 'Prepare for Elective 1', emoji: '🎒', type: 'activity' },
+    { start: hm(13, 15), end: hm(14, 0), label: 'Elective 1', emoji: '🌟', type: 'elective', slot: 0 },
+    { start: hm(14, 0), end: hm(14, 45), label: 'Snack Shack break', emoji: '🍫', type: 'activity' },
+    { start: hm(14, 45), end: hm(15, 0), label: 'Prepare for Elective 2', emoji: '🎒', type: 'activity' },
+    { start: hm(15, 0), end: hm(15, 45), label: 'Elective 2', emoji: '🌟', type: 'elective', slot: 1 },
+    { start: hm(15, 45), end: hm(16, 0), label: 'Prepare for Elective 3', emoji: '🎒', type: 'activity' },
+    { start: hm(16, 0), end: hm(16, 45), label: 'Elective 3', emoji: '🌟', type: 'elective', slot: 2 },
+    { start: hm(16, 45), end: hm(17, 0), label: 'Prepare for supper', emoji: '🧼', type: 'activity' },
+    { start: hm(17, 0), end: hm(17, 30), label: 'Supper', emoji: '🍽️', type: 'activity' },
+  ];
+}
+
+// Mon–Thu evenings are identical apart from who leads the campfire.
+function weekdayEvening(campfireLeader) {
+  return [
+    { start: hm(17, 30), end: hm(18, 0), label: 'Prepare for competitions / team huddle', emoji: '📣', type: 'activity' },
+    { start: hm(18, 0), end: hm(18, 45), label: 'Evening competition', emoji: '🏅', type: 'games' },
+    { start: hm(18, 45), end: hm(19, 0), label: 'Prepare for evening service', emoji: '⛪', type: 'activity' },
+    { start: hm(19, 0), end: hm(20, 0), label: 'Evening service', emoji: '⛪', type: 'activity' },
+    { start: hm(20, 0), end: hm(21, 15), label: 'Snack and campfire — ' + campfireLeader, emoji: '🔥', type: 'activity' },
+    { start: hm(21, 15), end: hm(21, 30), label: 'Prepare for bed', emoji: '🪥', type: 'activity' },
+    { start: hm(21, 30), end: hm(22, 0), label: 'Cabin devotional', emoji: '🙏', type: 'activity' },
+    { start: hm(22, 0), end: hm(24, 0), label: 'Lights out', emoji: '😴', type: 'activity', noTime: true },
+  ];
+}
+
+const DAY_SCHEDULE = {
+  0: [ // Sunday — arrival day
+    { start: hm(14, 0), end: hm(16, 0), label: 'Registration', emoji: '📝', type: 'activity' },
+    { start: hm(16, 0), end: hm(17, 0), label: 'Welcome to camp / get-to-know-you', emoji: '👋', type: 'activity' },
+    { start: hm(17, 0), end: hm(17, 30), label: 'Supper', emoji: '🍽️', type: 'activity' },
+    { start: hm(17, 30), end: hm(18, 45), label: 'Team assignments (Chapel Lawn)', emoji: '🎽', type: 'activity' },
+    { start: hm(18, 45), end: hm(19, 0), label: 'Prepare for worship service', emoji: '⛪', type: 'activity' },
+    { start: hm(19, 0), end: hm(20, 0), label: 'Worship service', emoji: '⛪', type: 'activity' },
+    { start: hm(20, 0), end: hm(21, 15), label: 'Snack and campfire — Jenn, Laura, Erica & Patrick', emoji: '🔥', type: 'activity' },
+    { start: hm(21, 15), end: hm(22, 0), label: 'Cabin devotional', emoji: '🙏', type: 'activity' },
+    { start: hm(22, 0), end: hm(24, 0), label: 'Lights out', emoji: '😴', type: 'activity', noTime: true },
+  ],
+  1: weekdayDaytime().concat(weekdayEvening('TJ')),
+  2: weekdayDaytime().concat(weekdayEvening('Cam')),
+  3: weekdayDaytime().concat(weekdayEvening('Sofie')),
+  4: weekdayDaytime().concat(weekdayEvening('Jovi')),
+  5: weekdayDaytime().concat([ // Friday evening — Team Skits night, later lights out
+    { start: hm(17, 30), end: hm(18, 0), label: 'Team huddle', emoji: '📣', type: 'activity' },
+    { start: hm(18, 0), end: hm(19, 0), label: 'Final preparations for skits', emoji: '🎭', type: 'activity' },
+    { start: hm(19, 0), end: hm(20, 0), label: 'Team Skits', emoji: '🎭', type: 'activity' },
+    { start: hm(20, 0), end: hm(21, 0), label: 'Evening service', emoji: '⛪', type: 'activity' },
+    { start: hm(21, 0), end: hm(22, 0), label: 'Snack and campfire — Ella', emoji: '🔥', type: 'activity' },
+    { start: hm(22, 0), end: hm(22, 15), label: 'Prepare for bed', emoji: '🪥', type: 'activity' },
+    { start: hm(22, 15), end: hm(22, 30), label: 'Cabin devotional', emoji: '🙏', type: 'activity' },
+    { start: hm(22, 30), end: hm(24, 0), label: 'Lights out', emoji: '😴', type: 'activity', noTime: true },
+  ]),
+  6: [ // Saturday — send-off morning
+    { start: hm(7, 30), end: hm(8, 0), label: 'Rising bell & shower', emoji: '⏰', type: 'activity' },
+    { start: hm(8, 0), end: hm(8, 30), label: 'Breakfast', emoji: '🍳', type: 'activity' },
+    { start: hm(8, 30), end: hm(9, 30), label: 'Cabin time & campground cleanup', emoji: '🧹', type: 'activity' },
+    { start: hm(9, 30), end: hm(10, 0), label: 'Meet in Tabernacle for send-off', emoji: '👋', type: 'activity' },
+    { start: hm(10, 0), end: hm(24, 0), label: "Camp's over — see you next year!", emoji: '👋', type: 'activity', noTime: true },
+  ],
+};
+
+// Who's at which elective station, straight from the handwritten packet.
+// Keyed by day (1 Mon .. 5 Fri), one entry per elective slot (1, 2, 3).
+const STATION_EMOJI = {
+  'Swimming': '🏊', 'Nerf War': '🎯', 'Crafts with Eileen': '🎨',
+  'Lawn Games': '🥏', 'Board Games': '🎲', 'Whiffle Ball': '⚾',
+  'Slime with Joann': '🧪', 'Laser Tag': '⚡', 'Slip and Slide': '💦',
+};
+
+const ELECTIVES = {
+  1: [
+    [['Swimming', ['Bria', 'Abby']], ['Nerf War', ['Zac', 'Cam']], ['Crafts with Eileen', ['William', 'Jovi']], ['Lawn Games', ['TJ', 'Patrick', 'Sam']], ['Board Games', ['Brody', 'Lydia']]],
+    [['Swimming', ['Alysa', 'Brody']], ['Crafts with Eileen', ['Bria', 'Lilly']], ['Whiffle Ball', ['TJ', 'Cam']], ['Board Games', ['Jovi', 'Josh', 'Patrick']], ['Slime with Joann', ['Sofi', 'Abby']], ['Laser Tag', ['Zac', 'William']]],
+    [['Swimming', ['Sam', 'TJ', 'Lilly']], ['Slime with Joann', ['Lydia', 'Alysa']], ['Crafts with Eileen', ['Ella', 'Stephen']], ['Lawn Games', ['Josh', 'Sofi']], ['Board Games', ['Patrick']], ['Slip and Slide', ['Zac', 'Jacob']]],
+  ],
+  2: [
+    [['Swimming', ['Ella', 'Lydia']], ['Nerf War', ['William', 'Zac']], ['Crafts with Eileen', ['Alysa', 'Josh']], ['Lawn Games', ['Brody', 'Cam']], ['Board Games', ['Bria', 'Jovi']]],
+    [['Swimming', ['Sam', 'Sofi']], ['Crafts with Eileen', ['Lilly', 'Abby']], ['Whiffle Ball', ['Jacob', 'TJ']], ['Board Games', ['Ella', 'Stephen']], ['Laser Tag', ['Zac', 'Patrick']]],
+    [['Swimming', ['William', 'Alysa', 'Lilly']], ['Crafts with Eileen', ['Sofi', 'Lydia']], ['Lawn Games', ['Josh', 'Stephen', 'Cam']], ['Board Games', ['Patrick', 'TJ']], ['Slip and Slide', ['Zac', 'Sam', 'Bria']]],
+  ],
+  3: [
+    [['Swimming', ['Abby', 'Lilly']], ['Nerf War', ['Zac', 'Brody', 'TJ']], ['Crafts with Eileen', ['William', 'Sam']], ['Lawn Games', ['Sofi', 'Bria']], ['Board Games', ['Cam', 'Jovi']]],
+    [['Swimming', ['Ella', 'Bria']], ['Crafts with Eileen', ['Lydia', 'Jovi']], ['Whiffle Ball', ['Sofi', 'TJ']], ['Board Games', ['Patrick', 'Josh', 'Sam']], ['Slime with Joann', ['Brody', 'Stephen']], ['Laser Tag', ['Zac', 'Jacob']]],
+    [['Swimming', ['William', 'Cam']], ['Slime with Joann', ['Alysa', 'Ella']], ['Crafts with Eileen', ['Lilly', 'Josh']], ['Lawn Games', ['Patrick', 'Stephen']], ['Board Games', ['TJ', 'Abby']], ['Slip and Slide', ['Zac', 'Lydia', 'Jacob']]],
+  ],
+  4: [
+    [['Swimming', ['Jovi', 'Bria', 'Cam']], ['Nerf War', ['William', 'Zac', 'Lilly']], ['Crafts with Eileen', ['Brody', 'Ella']], ['Lawn Games', ['Patrick', 'Jacob']], ['Board Games', ['Stephen', 'Alysa']]],
+    [['Swimming', ['Lilly', 'TJ']], ['Crafts with Eileen', ['Abby', 'Jovi']], ['Whiffle Ball', ['Cam', 'Sam', 'Bria']], ['Board Games', ['Patrick', 'Stephen']], ['Slime with Joann', ['Lydia', 'Sofi', 'William']], ['Laser Tag', ['Zac', 'Brody']]],
+    [['Swimming', ['Alysa', 'Abby', 'Josh']], ['Slime with Joann', ['Ella', 'Bria']], ['Crafts with Eileen', ['Lydia']], ['Lawn Games', ['Brody', 'Sam']], ['Board Games', ['Sofi', 'TJ']], ['Slip and Slide', ['Zac', 'Stephen']]],
+  ],
+  5: [
+    [['Swimming', ['Brody', 'Ella', 'TJ']], ['Nerf War', ['Zac', 'Cam', 'Sam']], ['Crafts with Eileen', ['Patrick', 'Alysa', 'William']], ['Lawn Games', ['Bria', 'Abby']], ['Board Games', ['Lydia', 'Jovi']]],
+    [['Swimming', ['Sam', 'Ella']], ['Crafts with Eileen', ['Lilly', 'Jacob']], ['Whiffle Ball', ['Jovi', 'Cam', 'TJ']], ['Board Games', ['Josh', 'Patrick']], ['Slime with Joann', ['Brody', 'Stephen']], ['Laser Tag', ['Zac', 'Bria']]],
+    [['Swimming', ['Cam', 'TJ', 'Lilly']], ['Slime with Joann', ['Abby', 'Sofi']], ['Crafts with Eileen', ['Lydia']], ['Lawn Games', ['Josh', 'Sam']], ['Board Games', ['Stephen']], ['Slip and Slide', ['Zac', 'Alysa']]],
+  ],
+};
+
+// Current day-of-week + minutes-since-midnight, in camp time.
+// Debug/preview override: add ?now=<dow>-<hhmm> to the page URL,
+// e.g. ?now=1-1330 previews Monday 1:30pm.
+function campNow() {
+  const m = /[?&]now=(\d)-(\d{3,4})(?:&|$)/.exec(location.search);
+  if (m) {
+    const t = m[2].padStart(4, '0');
+    return { dow: +m[1], minutes: +t.slice(0, 2) * 60 + +t.slice(2) };
+  }
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: CAMP_TZ, weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false,
+    }).formatToParts(new Date());
+    const get = (type) => (parts.find((p) => p.type === type) || {}).value;
+    const dowMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    const hour = parseInt(get('hour'), 10) % 24; // hour12:false renders midnight as "24"
+    return { dow: dowMap[get('weekday')], minutes: hour * 60 + parseInt(get('minute'), 10) };
+  } catch (e) {
+    const d = new Date(); // worst case: device time
+    return { dow: d.getDay(), minutes: d.getHours() * 60 + d.getMinutes() };
+  }
+}
+
+// Named schedClock/schedRange (not fmtClock) — the stopwatch below has
+// its own fmtClock(ms) and function declarations share one namespace.
+function schedClock(mins, withSuffix) {
+  const h = Math.floor(mins / 60) % 24;
+  const mm = mins % 60;
+  const h12 = ((h + 11) % 12) + 1;
+  return h12 + ':' + String(mm).padStart(2, '0') + (withSuffix ? (h < 12 ? 'am' : 'pm') : '');
+}
+
+function schedRange(start, end) {
+  const sameHalf = (start < 720) === (end < 720 || end === 1440);
+  return schedClock(start, !sameHalf) + '–' + schedClock(end, true);
+}
+
+function nowBannerHtml(dow, minutes) {
+  const blocks = DAY_SCHEDULE[dow] || [];
+  if (!blocks.length) return null;
+
+  const eyebrow = '<div class="now-eyebrow">Happening now</div>';
+  const main = (emoji, label, time, next) => eyebrow +
+    `<div class="now-main"><span class="now-emoji">${emoji}</span><div class="now-body">
+      <div class="now-label">${esc(label)}${time ? ` <span class="now-time">${time}</span>` : ''}</div>
+      ${next ? `<div class="now-next">Up next: ${next.emoji} ${esc(next.label)} at ${schedClock(next.start, true)}</div>` : ''}
+    </div></div>`;
+
+  // Early morning, before the first block of the day.
+  if (minutes < blocks[0].start) {
+    if (dow === 0) return main('🚌', 'Camp starts today!', null, blocks[0]);
+    return main('😴', "Lights out — everyone's sleeping", null, blocks[0]);
+  }
+
+  const b = blocks.find((x) => minutes >= x.start && minutes < x.end);
+  if (!b || b.type === 'games') return null; // game time: the scoreboard says it all
+
+  const time = b.noTime ? null : schedRange(b.start, b.end);
+  if (b.type === 'elective') {
+    const stations = (ELECTIVES[dow] || [])[b.slot] || [];
+    const rows = stations.map(([station, kids]) =>
+      `<div class="now-station"><span class="now-station-name">${STATION_EMOJI[station] || '🌟'} ${esc(station)}</span>
+        <span class="now-kids">${kids.map((k) => `<span class="kid-chip">${esc(k)}</span>`).join('')}</span></div>`).join('');
+    return main(b.emoji, b.label, time, null) + `<div class="now-stations">${rows}</div>`;
+  }
+
+  const next = blocks[blocks.indexOf(b) + 1] || null;
+  return main(b.emoji, b.label, time, next);
+}
+
+function renderNowBanner() {
+  const el = document.getElementById('now-banner');
+  if (!el) return;
+  const { dow, minutes } = campNow();
+  const html = nowBannerHtml(dow, minutes);
+  el.hidden = !html;
+  el.innerHTML = html || '';
+}
+
+// Formats an ISO timestamp as camp time, e.g. "Jul 19, 8:47pm ET" —
+// same convention as the schedule banner, so the footer always reads in
+// camp time regardless of which timezone a visiting parent's phone is in.
+function formatEasternStamp(iso) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: CAMP_TZ, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
+  }).formatToParts(d);
+  const get = (type) => (parts.find((p) => p.type === type) || {}).value;
+  return `${get('month')} ${get('day')}, ${get('hour')}:${get('minute')}${(get('dayPeriod') || '').toLowerCase()} ET`;
+}
+
+function renderFooter() {
+  const el = document.getElementById('app-footer');
+  if (!el) return;
+  const dataStamp = formatEasternStamp(state.meta && state.meta.lastDataChangeAt);
+  el.innerHTML = `
+    <p class="footer-line">🛠️ Code last updated: ${esc(formatEasternStamp(CODE_UPDATED_AT) || 'unknown')}</p>
+    <p class="footer-line">📋 Data last updated: ${dataStamp ? esc(dataStamp) : 'No scores entered yet'}</p>
+  `;
+}
+
 // ── State ────────────────────────────────────────────────────────
 
 function loadState() {
@@ -361,8 +592,8 @@ function defaultDay() {
 let state = loadState() || makeFreshState();
 if (!state.teams || !state.results) state = makeFreshState();
 if (!state.ui) state.ui = { day: defaultDay(), gameId: null };
-// Backfill counselors on state saved before they existed.
-state.teams.forEach((t, i) => { if (t.counselor === undefined) t.counselor = DEFAULT_COUNSELORS[i] || ''; });
+if (!state.meta) state.meta = {};
+normalizeSyncedState();
 
 function counselorName(id) {
   const t = state.teams.find((t) => t.id === id);
@@ -374,15 +605,29 @@ function saveState() {
   if (!applyingRemote) schedulePush();
 }
 
+// Stamps "when real scoreboard data last changed" for the footer — a
+// result saved, a bracket match recorded, or a team renamed. Deliberately
+// NOT called for view-only actions (day tab, theme, PIN) so it reflects
+// actual camp activity, not just page traffic.
+function touchData() {
+  if (!state.meta) state.meta = {};
+  state.meta.lastDataChangeAt = new Date().toISOString();
+}
+
 // ── Cloud sync (Firebase Realtime Database) ──────────────────────
 // Optional. If window.FIREBASE_CONFIG is filled in (firebase-config.js)
 // and the SDK loaded, scores sync across every device in real time.
 // Otherwise the app runs exactly as before, local-only.
 
-const SYNC_KEYS = ['teams', 'results', 'brackets', 'drafts', 'picRounds'];
+const SYNC_KEYS = ['teams', 'results', 'brackets', 'drafts', 'picRounds', 'meta'];
 let fbRef = null;
 let applyingRemote = false;
 let pushTimer = null;
+// No pushes until the first server snapshot has landed. Without this, a
+// device on slow camp wifi that saves anything (even a day-tab tap) before
+// its first sync queues a set() of its stale local state — and the SDK
+// delivers that on connect, wiping everyone's newer scores.
+let remoteReady = false;
 
 function syncEnabled() {
   return !!fbRef;
@@ -399,10 +644,23 @@ function initSync() {
     fbRef = firebase.database().ref('campScoreboard/state');
     fbRef.on('value', (snap) => {
       const remote = snap.val();
+      remoteReady = true; // server truth received — pushes may flow now
       if (!remote) { pushState(); return; } // seed an empty database
       applyingRemote = true;
-      SYNC_KEYS.forEach((k) => { if (remote[k] !== undefined) state[k] = remote[k]; });
-      if (!state.teams || !state.results) { applyingRemote = false; return; }
+      // The snapshot is the entire synced tree, so a key missing from it
+      // means "empty" — RTDB prunes empty objects on write. Treating
+      // missing as keep-local made "New week (reset)" un-syncable: other
+      // devices kept their old results and re-pushed them later. Teams
+      // stay guarded — a snapshot without a roster is malformed.
+      if (remote.teams) state.teams = remote.teams;
+      ['results', 'brackets', 'drafts', 'picRounds', 'meta'].forEach((k) => {
+        state[k] = remote[k] !== undefined ? remote[k] : {};
+      });
+      // Realtime Database silently drops empty arrays/nulls on write, so a
+      // freshly-started bracket or Pictionary round can come back missing
+      // its empty fields. Heal everything the instant remote data lands,
+      // before any render sees it.
+      normalizeSyncedState();
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
       applyingRemote = false;
       if (appStarted) renderAll();
@@ -424,7 +682,7 @@ function schedulePush() {
 }
 
 function pushState() {
-  if (!fbRef || applyingRemote) return;
+  if (!fbRef || applyingRemote || !remoteReady) return;
   const payload = {};
   SYNC_KEYS.forEach((k) => { payload[k] = state[k] === undefined ? null : state[k]; });
   // JSON round-trip strips any `undefined` (which Realtime DB rejects).
@@ -833,7 +1091,7 @@ function picRounds() {
 function picRound(teamId) {
   const all = picRounds();
   if (!all[teamId]) all[teamId] = { laps: [], done: false };
-  return all[teamId];
+  return normalizePicRound(all[teamId]);
 }
 
 function picLapsSum(round) {
@@ -938,6 +1196,7 @@ function bindPicRound(wrap, g) {
         w.running = false;
         round.laps.push({ ms, photo: false });
         w.lapsTotal = picLapsSum(round);
+        touchData();
         if (round.laps.length >= g.prompts.length) {
           round.done = true;
           const draft = state.drafts[g.id] || (state.drafts[g.id] = { scores: {}, medals: {} });
@@ -1313,7 +1572,7 @@ function renderStandings() {
     input.addEventListener('change', (e) => {
       const team = state.teams.find((t) => t.id === e.target.dataset.teamId);
       const val = e.target.value.trim();
-      if (team && val) team.name = val;
+      if (team && val) { team.name = val; touchData(); }
       saveState();
       renderAll();
     });
@@ -1323,6 +1582,7 @@ function renderStandings() {
     input.addEventListener('change', (e) => {
       const team = state.teams.find((t) => t.id === e.target.dataset.teamId);
       if (team) team.counselor = e.target.value.trim();
+      touchData();
       saveState();
       renderAll();
     });
@@ -1565,7 +1825,7 @@ function validateMedals(picks) {
 
 function renderTally(container, g) {
   if (!state.drafts[g.id]) state.drafts[g.id] = { scores: {}, medals: {} };
-  const draft = state.drafts[g.id];
+  const draft = normalizeDraft(state.drafts[g.id]);
   const steps = g.counterSteps;
 
   container.innerHTML = `
@@ -1647,6 +1907,7 @@ function renderTally(container, g) {
     });
     state.results[g.id] = { medals: picks, scores, savedAt: new Date().toISOString() };
     delete state.drafts[g.id];
+    touchData();
     saveState();
     renderAll();
   });
@@ -1709,7 +1970,7 @@ function updateTallyMedals(g) {
 
 function renderPlacement(container, g) {
   if (!state.drafts[g.id]) state.drafts[g.id] = { medals: {} };
-  const draft = state.drafts[g.id];
+  const draft = normalizeDraft(state.drafts[g.id]);
 
   container.innerHTML = `
     <h3>Podium</h3>
@@ -1737,6 +1998,7 @@ function renderPlacement(container, g) {
     }
     state.results[g.id] = { medals: picks, savedAt: new Date().toISOString() };
     delete state.drafts[g.id];
+    touchData();
     saveState();
     renderAll();
   });
@@ -1756,6 +2018,50 @@ function freshBracket() {
   };
 }
 
+// Realtime Database can't represent "present but empty" for arrays/nulls —
+// it prunes those keys on write, so a bracket round-tripped through sync
+// can come back missing matches/selectedPair/etc. This restores a safe,
+// well-formed shape in place, whatever the source (sync, storage, or a
+// bug) actually handed us.
+function normalizeBracket(b) {
+  if (!Array.isArray(b.pool)) b.pool = [];
+  if (!Array.isArray(b.selectedPair)) b.selectedPair = [];
+  if (!Array.isArray(b.matches)) b.matches = [];
+  if (!b.phase) b.phase = 'round1';
+  if (b.byeTeamId === undefined) b.byeTeamId = null;
+  if (b.semifinal === undefined) b.semifinal = null;
+  if (b.championship === undefined) b.championship = null;
+  return b;
+}
+
+// Same guarantee for a Pictionary drawing round: a fresh round is
+// { laps: [], done: false }, and RTDB prunes the empty laps array.
+function normalizePicRound(r) {
+  if (!Array.isArray(r.laps)) r.laps = [];
+  r.done = !!r.done;
+  return r;
+}
+
+// And for a score-entry draft: { scores: {}, medals: {} } — either side
+// can be empty (and thus pruned) while the other has data.
+function normalizeDraft(d) {
+  if (!d.scores) d.scores = {};
+  if (!d.medals) d.medals = {};
+  return d;
+}
+
+// One sweep over every synced shape that can carry pruned-empty fields.
+// Called after loading from localStorage and after every remote merge.
+function normalizeSyncedState() {
+  Object.values(state.brackets || {}).forEach(normalizeBracket);
+  Object.values(state.picRounds || {}).forEach(normalizePicRound);
+  Object.values(state.drafts || {}).forEach(normalizeDraft);
+  // Backfill counselors on rosters saved before that field existed.
+  (state.teams || []).forEach((t, i) => {
+    if (t.counselor === undefined) t.counselor = DEFAULT_COUNSELORS[i] || '';
+  });
+}
+
 function renderTournament(container, g) {
   if (!state.brackets[g.id]) {
     container.innerHTML = `
@@ -1771,7 +2077,7 @@ function renderTournament(container, g) {
     return;
   }
 
-  const b = state.brackets[g.id];
+  const b = normalizeBracket(state.brackets[g.id]);
   let html = `<div class="bracket-steps">
     ${['round1', 'bye', 'semifinal', 'championship', 'summary'].map((p, i) => {
       const labels = { round1: 'Round 1', bye: 'Bye', semifinal: 'Semifinal', championship: 'Championship', summary: 'Results' };
@@ -1849,6 +2155,7 @@ function renderBracketRound1(body, g, b) {
       b.matches.push({ a, b: c, winner, loser });
       b.pool = b.pool.filter((id) => id !== a && id !== c);
       b.selectedPair = [];
+      touchData();
       saveState();
       renderAll();
     });
@@ -1883,6 +2190,7 @@ function renderBracketBye(body, g, b) {
       b.byeTeamId = byeId;
       b.semifinal = { a: others[0], b: others[1], winner: null, loser: null };
       b.phase = 'semifinal';
+      touchData();
       saveState();
       renderAll();
     });
@@ -1914,6 +2222,7 @@ function renderBracketSemifinal(body, g, b) {
       b.semifinal.loser = loser;
       b.championship = { a: b.byeTeamId, b: winner, winner: null, loser: null };
       b.phase = 'championship';
+      touchData();
       saveState();
       renderAll();
     });
@@ -1936,6 +2245,7 @@ function renderBracketChampionship(body, g, b) {
       b.championship.winner = winner;
       b.championship.loser = loser;
       b.phase = 'summary';
+      touchData();
       saveState();
       renderAll();
     });
@@ -1965,6 +2275,7 @@ function renderBracketSummary(body, g, b) {
       savedAt: new Date().toISOString(),
     };
     delete state.brackets[g.id];
+    touchData();
     saveState();
     renderAll();
   });
@@ -2015,10 +2326,12 @@ function toggleSound() {
 // ── Init ─────────────────────────────────────────────────────────
 
 function renderAll() {
+  renderNowBanner();
   renderDayTabs();
   renderGameList();
   renderGameView();
   renderStandings();
+  renderFooter();
 }
 
 function init() {
@@ -2044,6 +2357,9 @@ function init() {
   initSync();
 
   renderAll();
+
+  // Keep the "happening now" banner current without any taps.
+  setInterval(renderNowBanner, 30 * 1000);
 }
 
 function updateRoleButton() {
