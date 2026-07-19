@@ -442,6 +442,35 @@ body {
   margin-top: 0;
 }
 
+.standings-actions {
+  display: flex;
+  gap: 0.6rem;
+  margin-bottom: 0.85rem;
+}
+
+.standings-actions .secondary-btn {
+  font-size: 0.88rem;
+  padding: 0.6rem 0.5rem;
+}
+
+.copy-matchup-btn {
+  width: 100%;
+  margin-top: 0.6rem;
+  background: transparent;
+  border: 1.5px dashed var(--color-bronze);
+  color: var(--color-bronze);
+  border-radius: var(--radius-md);
+  padding: 0.6rem 0.75rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+}
+
+.copy-matchup-btn:disabled {
+  opacity: 0.7;
+}
+
 .table-scroll {
   overflow-x: auto;
 }

@@ -1038,6 +1038,76 @@ async function exportTeamPhotos(g, teamId, btn) {
   }
 }
 
+// ── Copy / share helpers ─────────────────────────────────────────
+
+function copyTextToClipboard(text, btn) {
+  const done = () => {
+    if (!btn) return;
+    const orig = btn.textContent;
+    btn.textContent = '✓ Copied!';
+    btn.disabled = true;
+    setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1500);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(done).catch(() => legacyCopy(text, done));
+  } else {
+    legacyCopy(text, done);
+  }
+}
+
+function legacyCopy(text, done) {
+  const ta = document.createElement('textarea');
+  ta.value = text;
+  ta.style.position = 'fixed';
+  ta.style.opacity = '0';
+  document.body.appendChild(ta);
+  ta.select();
+  try { document.execCommand('copy'); } catch (e) { /* nothing else to try */ }
+  ta.remove();
+  done();
+}
+
+function matchupText(g, stage, aId, bId) {
+  return `${g.name} ${stage}: ${teamName(aId)} vs ${teamName(bId)} — head to ${g.location}!`;
+}
+
+function bindMatchupCopy(body, g, stage, aId, bId) {
+  const btn = body.querySelector('.copy-matchup-btn');
+  if (btn) btn.addEventListener('click', () => copyTextToClipboard(matchupText(g, stage, aId, bId), btn));
+}
+
+function standingsSummaryText() {
+  const counts = medalCounts();
+  const ranked = [...state.teams].sort((a, b) => {
+    const sa = counts[a.id], sb = counts[b.id];
+    if (sb.gold !== sa.gold) return sb.gold - sa.gold;
+    if (sb.silver !== sa.silver) return sb.silver - sa.silver;
+    return sb.bronze - sa.bronze;
+  });
+
+  const lines = ['🏅 Camp Scoreboard — ' + new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })];
+  lines.push('');
+  lines.push('Standings:');
+  ranked.forEach((t, i) => {
+    const s = counts[t.id];
+    lines.push(`${i + 1}) ${t.name} · 🥇${s.gold} 🥈${s.silver} 🥉${s.bronze}`);
+  });
+
+  const played = GAMES.filter((g) => state.results[g.id]);
+  if (played.length) {
+    lines.push('');
+    lines.push('Medals so far:');
+    played.forEach((g) => {
+      const m = state.results[g.id].medals;
+      lines.push(`• ${g.name} — 🥇 ${teamName(m.gold)}, 🥈 ${teamName(m.silver)}, 🥉 ${teamName(m.bronze)}`);
+    });
+  } else {
+    lines.push('');
+    lines.push('No games saved yet.');
+  }
+  return lines.join('\n');
+}
+
 // ── High-score chime ──
 
 function leaderOf(g, draft) {
@@ -1616,6 +1686,7 @@ function renderBracketRound1(body, g, b) {
         <button class="secondary-btn winner-btn" data-winner="${a}">${esc(teamName(a))} won</button>
         <button class="secondary-btn winner-btn" data-winner="${c}">${esc(teamName(c))} won</button>
       </div>
+      <button class="copy-matchup-btn">📋 Copy matchup for text</button>
     </div>`;
   }
 
@@ -1628,6 +1699,10 @@ function renderBracketRound1(body, g, b) {
   }
 
   body.innerHTML = html;
+
+  if (b.selectedPair.length === 2) {
+    bindMatchupCopy(body, g, `Round 1 (match ${b.matches.length + 1})`, b.selectedPair[0], b.selectedPair[1]);
+  }
 
   body.querySelectorAll('.team-chip').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -1707,8 +1782,11 @@ function renderBracketSemifinal(body, g, b) {
         <button class="secondary-btn winner-btn" data-winner="${b.semifinal.a}">${esc(teamName(b.semifinal.a))} won</button>
         <button class="secondary-btn winner-btn" data-winner="${b.semifinal.b}">${esc(teamName(b.semifinal.b))} won</button>
       </div>
+      <button class="copy-matchup-btn">📋 Copy matchup for text</button>
     </div>
   `;
+
+  bindMatchupCopy(body, g, 'SEMIFINAL', b.semifinal.a, b.semifinal.b);
 
   body.querySelectorAll('.winner-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -1735,8 +1813,11 @@ function renderBracketChampionship(body, g, b) {
         <button class="secondary-btn winner-btn" data-winner="${b.championship.a}">${esc(teamName(b.championship.a))} won</button>
         <button class="secondary-btn winner-btn" data-winner="${b.championship.b}">${esc(teamName(b.championship.b))} won</button>
       </div>
+      <button class="copy-matchup-btn">📋 Copy matchup for text</button>
     </div>
   `;
+
+  bindMatchupCopy(body, g, 'CHAMPIONSHIP', b.championship.a, b.championship.b);
 
   body.querySelectorAll('.winner-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -1836,6 +1917,17 @@ function init() {
   document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
   document.getElementById('sound-toggle').addEventListener('click', toggleSound);
   document.getElementById('reset-week-btn').addEventListener('click', resetWeek);
+
+  const copyBtn = document.getElementById('copy-standings-btn');
+  copyBtn.addEventListener('click', () => copyTextToClipboard(standingsSummaryText(), copyBtn));
+  const shareBtn = document.getElementById('share-standings-btn');
+  if (navigator.share) {
+    shareBtn.hidden = false;
+    shareBtn.addEventListener('click', () => {
+      navigator.share({ text: standingsSummaryText() }).catch(() => {});
+    });
+  }
+
   renderAll();
 }
 
