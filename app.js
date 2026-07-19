@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-19T14:34:30Z';
+const CODE_UPDATED_AT = '2026-07-19T16:43:43Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -37,6 +37,10 @@ const DEFAULT_TEAM_NAMES = ['Team 1', 'Team 2', 'Team 3', 'Team 4', 'Team 5', 'T
 const DEFAULT_COUNSELORS = ['Sarah', 'Mike', 'Emily', 'Josh', 'Rachel', 'Dave'];
 
 const DAY_NAMES = { 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday' };
+
+// Everything is points based: each medal is worth a fixed number of
+// points, and the week standings rank teams by total points.
+const MEDAL_POINTS = { gold: 7, silver: 5, bronze: 3 };
 
 // ── Game catalog ────────────────────────────────────────────────
 
@@ -1456,19 +1460,14 @@ function bindMatchupCopy(body, g, stage, aId, bId) {
 
 function standingsSummaryText() {
   const counts = medalCounts();
-  const ranked = [...state.teams].sort((a, b) => {
-    const sa = counts[a.id], sb = counts[b.id];
-    if (sb.gold !== sa.gold) return sb.gold - sa.gold;
-    if (sb.silver !== sa.silver) return sb.silver - sa.silver;
-    return sb.bronze - sa.bronze;
-  });
+  const ranked = rankTeamsByPoints(counts);
 
   const lines = ['🏅 Camp Scoreboard — ' + new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })];
   lines.push('');
-  lines.push('Standings:');
+  lines.push(`Standings (🥇 ${MEDAL_POINTS.gold} · 🥈 ${MEDAL_POINTS.silver} · 🥉 ${MEDAL_POINTS.bronze} pts):`);
   ranked.forEach((t, i) => {
     const s = counts[t.id];
-    lines.push(`${i + 1}) ${t.name} · 🥇${s.gold} 🥈${s.silver} 🥉${s.bronze}`);
+    lines.push(`${i + 1}) ${t.name} · ${s.points} pts (🥇${s.gold} 🥈${s.silver} 🥉${s.bronze})`);
   });
 
   const played = GAMES.filter((g) => state.results[g.id]);
@@ -1531,25 +1530,35 @@ function formatScore(game, val) {
 
 function medalCounts() {
   const counts = {};
-  state.teams.forEach((t) => (counts[t.id] = { gold: 0, silver: 0, bronze: 0 }));
+  state.teams.forEach((t) => (counts[t.id] = { gold: 0, silver: 0, bronze: 0, points: 0 }));
   Object.values(state.results).forEach((r) => {
     if (!r || !r.medals) return;
     if (counts[r.medals.gold]) counts[r.medals.gold].gold += 1;
     if (counts[r.medals.silver]) counts[r.medals.silver].silver += 1;
     if (counts[r.medals.bronze]) counts[r.medals.bronze].bronze += 1;
   });
+  Object.values(counts).forEach((c) => {
+    c.points = c.gold * MEDAL_POINTS.gold + c.silver * MEDAL_POINTS.silver + c.bronze * MEDAL_POINTS.bronze;
+  });
   return counts;
+}
+
+// Rank by total points; break point ties by finish quality (golds,
+// then silvers, then bronzes).
+function rankTeamsByPoints(counts) {
+  return [...state.teams].sort((a, b) => {
+    const sa = counts[a.id], sb = counts[b.id];
+    if (sb.points !== sa.points) return sb.points - sa.points;
+    if (sb.gold !== sa.gold) return sb.gold - sa.gold;
+    if (sb.silver !== sa.silver) return sb.silver - sa.silver;
+    return sb.bronze - sa.bronze;
+  });
 }
 
 function renderStandings() {
   const tbody = document.getElementById('standings-tbody');
   const counts = medalCounts();
-  const ranked = [...state.teams].sort((a, b) => {
-    const sa = counts[a.id], sb = counts[b.id];
-    if (sb.gold !== sa.gold) return sb.gold - sa.gold;
-    if (sb.silver !== sa.silver) return sb.silver - sa.silver;
-    return sb.bronze - sa.bronze;
-  });
+  const ranked = rankTeamsByPoints(counts);
 
   tbody.innerHTML = '';
   ranked.forEach((team, i) => {
@@ -1561,6 +1570,7 @@ function renderStandings() {
         <input type="text" class="team-name-input" data-team-id="${team.id}" value="${esc(team.name)}" ${canEdit() ? '' : 'disabled'} />
         <input type="text" class="team-counselor-input" data-team-id="${team.id}" value="${esc(team.counselor || '')}" placeholder="Counselor" ${canEdit() ? '' : 'disabled'} />
       </td>
+      <td class="points-col">${s.points}</td>
       <td class="medal-col">${s.gold}</td>
       <td class="medal-col">${s.silver}</td>
       <td class="medal-col">${s.bronze}</td>
@@ -1766,16 +1776,16 @@ function renderResult(container, g, result) {
   container.innerHTML = `
     <h3>Final results</h3>
     <div class="medal-summary">
-      <div class="medal-row gold-row">🥇 <strong>${esc(teamName(result.medals.gold))}</strong></div>
-      <div class="medal-row silver-row">🥈 <strong>${esc(teamName(result.medals.silver))}</strong></div>
-      <div class="medal-row bronze-row">🥉 <strong>${esc(teamName(result.medals.bronze))}</strong></div>
+      <div class="medal-row gold-row">🥇 <strong>${esc(teamName(result.medals.gold))}</strong> <span class="medal-points">+${MEDAL_POINTS.gold} pts</span></div>
+      <div class="medal-row silver-row">🥈 <strong>${esc(teamName(result.medals.silver))}</strong> <span class="medal-points">+${MEDAL_POINTS.silver} pts</span></div>
+      <div class="medal-row bronze-row">🥉 <strong>${esc(teamName(result.medals.bronze))}</strong> <span class="medal-points">+${MEDAL_POINTS.bronze} pts</span></div>
     </div>
     ${extra}
     ${canEdit() ? '<button id="clear-result-btn" class="link-btn danger-link">Clear result &amp; re-enter</button>' : ''}
   `;
   if (!canEdit()) return;
   document.getElementById('clear-result-btn').addEventListener('click', () => {
-    if (!confirm('Clear the saved result for ' + g.name + '? Its medals come off the week count.')) return;
+    if (!confirm('Clear the saved result for ' + g.name + '? Its points come off the week standings.')) return;
     delete state.results[g.id];
     saveState();
     renderAll();
@@ -1786,9 +1796,9 @@ function renderResult(container, g, result) {
 
 function medalPickerHTML(picks) {
   const slots = [
-    { key: 'gold', label: '🥇 Gold' },
-    { key: 'silver', label: '🥈 Silver' },
-    { key: 'bronze', label: '🥉 Bronze' },
+    { key: 'gold', label: `🥇 Gold · ${MEDAL_POINTS.gold} pts` },
+    { key: 'silver', label: `🥈 Silver · ${MEDAL_POINTS.silver} pts` },
+    { key: 'bronze', label: `🥉 Bronze · ${MEDAL_POINTS.bronze} pts` },
   ];
   return `<div class="medal-picker">
     ${slots.map((s) => `
@@ -2232,7 +2242,7 @@ function renderBracketSemifinal(body, g, b) {
 function renderBracketChampionship(body, g, b) {
   body.innerHTML = `
     <h3>Championship</h3>
-    <p class="bronze-note">🥉 <strong>${esc(teamName(b.semifinal.loser))}</strong> takes the bronze medal.</p>
+    <p class="bronze-note">🥉 <strong>${esc(teamName(b.semifinal.loser))}</strong> takes the bronze medal (+${MEDAL_POINTS.bronze} pts).</p>
     ${matchupCalloutHTML(b.championship.a, b.championship.b)}
   `;
 
@@ -2261,9 +2271,9 @@ function renderBracketSummary(body, g, b) {
   body.innerHTML = `
     <h3>Game results</h3>
     <div class="medal-summary">
-      <div class="medal-row gold-row">🥇 <strong>${esc(teamName(goldId))}</strong></div>
-      <div class="medal-row silver-row">🥈 <strong>${esc(teamName(silverId))}</strong></div>
-      <div class="medal-row bronze-row">🥉 <strong>${esc(teamName(bronzeId))}</strong></div>
+      <div class="medal-row gold-row">🥇 <strong>${esc(teamName(goldId))}</strong> <span class="medal-points">+${MEDAL_POINTS.gold} pts</span></div>
+      <div class="medal-row silver-row">🥈 <strong>${esc(teamName(silverId))}</strong> <span class="medal-points">+${MEDAL_POINTS.silver} pts</span></div>
+      <div class="medal-row bronze-row">🥉 <strong>${esc(teamName(bronzeId))}</strong> <span class="medal-points">+${MEDAL_POINTS.bronze} pts</span></div>
     </div>
     <p class="muted">Eliminated in Round 1: ${eliminated.map((id) => esc(teamName(id))).join(', ')}</p>
     <button id="save-bracket-btn" class="primary-btn">Save Result</button>
