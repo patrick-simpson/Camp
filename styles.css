@@ -74,7 +74,14 @@ body {
 /* ============================================================
    PIN LOCK SCREEN
    ============================================================ */
+/* Visibility is driven by the `locked` class on <html>, set by an inline
+   script before paint. Default (unlocked): app shows, lock hidden. This
+   guarantees the page is never blank even if something fails. */
 .lock-screen {
+  display: none;
+}
+
+html.locked .lock-screen {
   position: fixed;
   inset: 0;
   z-index: 1000;
@@ -83,6 +90,10 @@ body {
   justify-content: center;
   padding: 1.5rem;
   background: var(--color-bg);
+}
+
+html.locked #app {
+  display: none;
 }
 
 .lock-box {
