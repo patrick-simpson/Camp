@@ -559,6 +559,7 @@ function defaultDay() {
 let state = loadState() || makeFreshState();
 if (!state.teams || !state.results) state = makeFreshState();
 if (!state.ui) state.ui = { day: defaultDay(), gameId: null };
+Object.values(state.brackets || {}).forEach(normalizeBracket);
 
 function saveState() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -593,6 +594,11 @@ function initSync() {
       if (!remote) { pushState(); return; } // seed an empty database
       applyingRemote = true;
       SYNC_KEYS.forEach((k) => { if (remote[k] !== undefined) state[k] = remote[k]; });
+      // Realtime Database silently drops empty arrays/nulls on write, so a
+      // freshly-started bracket can come back missing matches/selectedPair
+      // etc. Heal every bracket the instant remote data lands, before any
+      // render sees it.
+      Object.values(state.brackets || {}).forEach(normalizeBracket);
       if (!state.teams || !state.results) { applyingRemote = false; return; }
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
       applyingRemote = false;
@@ -1911,6 +1917,22 @@ function freshBracket() {
   };
 }
 
+// Realtime Database can't represent "present but empty" for arrays/nulls —
+// it prunes those keys on write, so a bracket round-tripped through sync
+// can come back missing matches/selectedPair/etc. This restores a safe,
+// well-formed shape in place, whatever the source (sync, storage, or a
+// bug) actually handed us.
+function normalizeBracket(b) {
+  if (!Array.isArray(b.pool)) b.pool = [];
+  if (!Array.isArray(b.selectedPair)) b.selectedPair = [];
+  if (!Array.isArray(b.matches)) b.matches = [];
+  if (!b.phase) b.phase = 'round1';
+  if (b.byeTeamId === undefined) b.byeTeamId = null;
+  if (b.semifinal === undefined) b.semifinal = null;
+  if (b.championship === undefined) b.championship = null;
+  return b;
+}
+
 function renderTournament(container, g) {
   if (!state.brackets[g.id]) {
     container.innerHTML = `
@@ -1926,7 +1948,7 @@ function renderTournament(container, g) {
     return;
   }
 
-  const b = state.brackets[g.id];
+  const b = normalizeBracket(state.brackets[g.id]);
   let html = `<div class="bracket-steps">
     ${['round1', 'bye', 'semifinal', 'championship', 'summary'].map((p, i) => {
       const labels = { round1: 'Round 1', bye: 'Bye', semifinal: 'Semifinal', championship: 'Championship', summary: 'Results' };
