@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-19T18:44:30Z';
+const CODE_UPDATED_AT = '2026-07-19T22:07:15Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -483,6 +483,11 @@ const ELECTIVES = {
 // plain block label, so this is always safe to leave sparse.
 const MEALS = {
   0: { supper: { dish: "Shepherd's Pie", emoji: '🥧' } },
+  1: {
+    breakfast: { dish: 'Eggs and Bacon', emoji: '🥓' },
+    lunch: { dish: 'Sandwiches', emoji: '🥪' },
+    supper: { dish: 'Mac and Cheese', emoji: '🧀' },
+  },
 };
 
 function mealInfo(dow, block) {
