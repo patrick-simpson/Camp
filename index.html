@@ -14,18 +14,29 @@
 
     <header class="app-header">
       <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">🌙</button>
+      <button id="sound-toggle" class="theme-toggle sound-toggle" aria-label="Toggle sounds" title="Toggle sounds">🔊</button>
       <div class="app-logo"><span>🏅</span> Camp Scoreboard</div>
-      <p class="app-tagline">Round 1 &rarr; Semifinal &rarr; Championship. Know who to call next.</p>
     </header>
 
     <main class="main-wrap">
 
+      <!-- ── DAY TABS ───────────────────────────────────── -->
+      <nav id="day-tabs" class="day-tabs" aria-label="Day of the week"></nav>
+      <p id="day-note" class="day-note" hidden></p>
+
+      <!-- ── GAME LIST (home) ───────────────────────────── -->
+      <section id="game-list"></section>
+
+      <!-- ── GAME VIEW (detail) ─────────────────────────── -->
+      <section id="game-view" class="card game-view" hidden></section>
+
       <!-- ── WEEK STANDINGS ─────────────────────────────── -->
       <section class="card standings-card">
         <div class="card-header-row">
-          <h2>Week Standings</h2>
+          <h2>Week Medal Count</h2>
           <button id="reset-week-btn" class="link-btn danger-link">New week (reset)</button>
         </div>
+        <p class="muted standings-hint">Only counts games saved in this app — your paper scoreboard is the official one.</p>
         <div class="table-scroll">
           <table id="standings-table" class="standings-table">
             <thead>
@@ -39,42 +50,6 @@
             </thead>
             <tbody id="standings-tbody"></tbody>
           </table>
-        </div>
-      </section>
-
-      <!-- ── GAME LAUNCH ────────────────────────────────── -->
-      <section id="launch-card" class="card launch-card">
-        <h2>Ready to run a game?</h2>
-        <p class="muted">Six teams. Round 1 eliminates three. The lowest-standing winner gets the bye into the Championship.</p>
-        <button id="start-game-btn" class="primary-btn">Start New Game</button>
-      </section>
-
-      <!-- ── GAME WIZARD ────────────────────────────────── -->
-      <section id="wizard-card" class="card wizard-card" hidden>
-        <div class="wizard-steps" id="wizard-steps">
-          <span class="wizard-step" data-step="round1">Round 1</span>
-          <span class="wizard-step-arrow">→</span>
-          <span class="wizard-step" data-step="semifinal">Semifinal</span>
-          <span class="wizard-step-arrow">→</span>
-          <span class="wizard-step" data-step="championship">Championship</span>
-          <span class="wizard-step-arrow">→</span>
-          <span class="wizard-step" data-step="summary">Results</span>
-        </div>
-
-        <div id="wizard-body"></div>
-
-        <div class="wizard-footer">
-          <button id="cancel-game-btn" class="link-btn danger-link">Cancel this game</button>
-        </div>
-      </section>
-
-      <!-- ── HISTORY ────────────────────────────────────── -->
-      <section class="card history-card">
-        <div class="card-header-row">
-          <h2>Game History</h2>
-        </div>
-        <div id="history-list" class="history-list">
-          <p class="muted" id="history-empty">No games played yet this week.</p>
         </div>
       </section>
 
