@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-19T17:59:18Z';
+const CODE_UPDATED_AT = '2026-07-19T18:44:30Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -543,7 +543,10 @@ function nowBannerHtml(dow, minutes) {
   const blocks = DAY_SCHEDULE[dow] || [];
   if (!blocks.length) return null;
 
-  const eyebrow = '<div class="now-eyebrow">Happening now</div>';
+  const eyebrow = `<div class="now-eyebrow-row">
+    <span class="now-eyebrow">Happening now</span>
+    <span class="now-open-hint">📅 Full schedule ›</span>
+  </div>`;
   const main = (emoji, label, time, next) => eyebrow +
     `<div class="now-main"><span class="now-emoji">${emoji}</span><div class="now-body">
       <div class="now-label">${esc(label)}${time ? ` <span class="now-time">${time}</span>` : ''}</div>
@@ -581,6 +584,135 @@ function renderNowBanner() {
   const html = nowBannerHtml(dow, minutes);
   el.hidden = !html;
   el.innerHTML = html || '';
+}
+
+// ── Full week schedule sheet (tap the Happening Now banner) ──────
+// A bottom sheet with the whole printed schedule, day by day: a
+// timeline of every block, today's current block highlighted, meals
+// showing their dish, electives showing who's at each station, and
+// competition blocks listing that day's actual games.
+
+const SCHED_DAYS = [
+  { dow: 0, short: 'Sun', full: 'Sunday', tag: 'Arrival day' },
+  { dow: 1, short: 'Mon', full: 'Monday', tag: 'Competition day 1' },
+  { dow: 2, short: 'Tue', full: 'Tuesday', tag: 'Competition day 2' },
+  { dow: 3, short: 'Wed', full: 'Wednesday', tag: 'Competition day 3' },
+  { dow: 4, short: 'Thu', full: 'Thursday', tag: 'Competition day 4' },
+  { dow: 5, short: 'Fri', full: 'Friday', tag: 'Messtival & Team Skits' },
+  { dow: 6, short: 'Sat', full: 'Saturday', tag: 'Send-off' },
+];
+
+let scheduleDay = null; // day shown while the sheet is open (not persisted)
+
+function scheduleOverlayEl() {
+  return document.getElementById('schedule-overlay');
+}
+
+function openSchedule() {
+  scheduleDay = campNow().dow;
+  scheduleOverlayEl().hidden = false;
+  document.body.classList.add('no-scroll');
+  renderSchedule();
+  // Land the reader on "now" (today only — other days start at the top).
+  requestAnimationFrame(() => {
+    const nowCard = document.querySelector('.sched-block.now');
+    if (nowCard) nowCard.scrollIntoView({ block: 'center' });
+    const closeBtn = document.getElementById('schedule-close');
+    if (closeBtn) closeBtn.focus({ preventScroll: true });
+  });
+}
+
+function closeSchedule() {
+  scheduleOverlayEl().hidden = true;
+  document.body.classList.remove('no-scroll');
+  const banner = document.getElementById('now-banner');
+  if (banner && !banner.hidden) banner.focus({ preventScroll: true });
+}
+
+function renderSchedule() {
+  renderScheduleDays();
+  renderScheduleBody();
+}
+
+function renderScheduleDays() {
+  const wrap = document.getElementById('schedule-days');
+  if (!wrap) return;
+  const todayDow = campNow().dow;
+  wrap.innerHTML = SCHED_DAYS.map((d) => `
+    <button class="sched-day-chip ${d.dow === scheduleDay ? 'active' : ''}" data-dow="${d.dow}">
+      ${d.short}${d.dow === todayDow ? '<span class="today-dot" title="Today"></span>' : ''}
+    </button>`).join('');
+  wrap.querySelectorAll('.sched-day-chip').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      scheduleDay = parseInt(btn.dataset.dow, 10);
+      renderSchedule();
+      const body = document.getElementById('schedule-body');
+      if (body) body.scrollTop = 0;
+    });
+  });
+}
+
+function renderScheduleBody() {
+  const wrap = document.getElementById('schedule-body');
+  if (!wrap) return;
+  const dow = scheduleDay;
+  const { dow: nowDow, minutes } = campNow();
+  const isToday = dow === nowDow;
+  const day = SCHED_DAYS[dow] || SCHED_DAYS[0];
+  const blocks = DAY_SCHEDULE[dow] || [];
+
+  const rows = blocks.map((raw) => {
+    const b = decorateMealBlock(dow, raw);
+    const status = !isToday ? '' : minutes >= raw.end ? 'past' : minutes >= raw.start ? 'now' : '';
+    const meal = mealInfo(dow, raw);
+
+    let extra = '';
+    if (raw.type === 'games') {
+      const session = raw.start < 720 ? 'Morning' : 'Evening';
+      const games = GAMES.filter((g) => g.day === dow && g.session === session);
+      if (games.length) {
+        extra = `<div class="sched-games">${games.map((g) =>
+          `<span class="sched-game-chip ${state.results[g.id] ? 'played' : ''}">${g.emoji} ${esc(g.name)}${state.results[g.id] ? ' ✓' : ''}</span>`).join('')}</div>`;
+      }
+    } else if (raw.type === 'elective') {
+      const stations = (ELECTIVES[dow] || [])[raw.slot] || [];
+      if (stations.length) {
+        extra = `<div class="sched-stations">${stations.map(([station, kids]) =>
+          `<div class="sched-station"><span class="sched-station-name">${STATION_EMOJI[station] || '🌟'} ${esc(station)}</span>
+            <span class="sched-station-kids">${kids.map(esc).join(' · ')}</span></div>`).join('')}</div>`;
+      }
+    }
+
+    return `<div class="sched-block ${status} ${meal ? 'meal' : ''}">
+      <div class="sched-rail"><span class="sched-dot"></span></div>
+      <div class="sched-card">
+        <div class="sched-time">${raw.noTime ? '' : schedRange(raw.start, raw.end)}${status === 'now' ? '<span class="sched-now-pill">Now</span>' : ''}</div>
+        <div class="sched-label"><span class="sched-emoji">${b.emoji}</span> ${esc(b.label)}</div>
+        ${extra}
+      </div>
+    </div>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <h3 class="sched-day-title">${day.full} <span class="sched-day-tag">· ${esc(day.tag)}</span></h3>
+    <div class="sched-timeline">${rows || '<p class="muted">Nothing scheduled.</p>'}</div>
+  `;
+}
+
+function wireSchedule() {
+  const banner = document.getElementById('now-banner');
+  banner.setAttribute('role', 'button');
+  banner.tabIndex = 0;
+  banner.setAttribute('aria-label', 'Happening now — tap for the full week schedule');
+  banner.addEventListener('click', openSchedule);
+  banner.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openSchedule(); }
+  });
+  document.getElementById('schedule-close').addEventListener('click', closeSchedule);
+  scheduleOverlayEl().querySelector('.schedule-backdrop').addEventListener('click', closeSchedule);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !scheduleOverlayEl().hidden) closeSchedule();
+  });
 }
 
 // Formats an ISO timestamp as camp time, e.g. "Jul 19, 8:47pm ET" —
@@ -2412,6 +2544,8 @@ function init() {
 
   document.getElementById('role-btn').addEventListener('click', showLockScreen);
   updateRoleButton();
+
+  wireSchedule();
 
   initSync();
 

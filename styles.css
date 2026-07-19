@@ -583,6 +583,349 @@ html.view-only .role-btn {
   font-weight: 600;
 }
 
+/* ── Happening Now: tappable affordance ── */
+.now-banner {
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, transform 0.1s ease, border-color 0.15s ease;
+}
+
+.now-banner:hover {
+  border-left-color: var(--color-primary-dark);
+  box-shadow: 0 4px 14px rgba(16, 24, 40, 0.12), 0 2px 4px rgba(16, 24, 40, 0.06);
+}
+
+.now-banner:active {
+  transform: scale(0.992);
+}
+
+.now-banner:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.now-eyebrow-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.now-eyebrow-row .now-eyebrow {
+  margin-bottom: 0;
+}
+
+.now-open-hint {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+/* ============================================================
+   FULL WEEK SCHEDULE (bottom sheet)
+   ============================================================ */
+body.no-scroll {
+  overflow: hidden;
+}
+
+.schedule-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.schedule-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(16, 24, 40, 0.55);
+  backdrop-filter: blur(2px);
+  animation: sched-fade 0.2s ease;
+}
+
+.schedule-sheet {
+  position: relative;
+  width: 100%;
+  max-width: 640px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg);
+  border-radius: 20px 20px 0 0;
+  box-shadow: 0 -8px 40px rgba(16, 24, 40, 0.25);
+  animation: sched-slide 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  overflow: hidden;
+}
+
+@keyframes sched-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes sched-slide {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .schedule-backdrop,
+  .schedule-sheet { animation: none; }
+}
+
+.schedule-header {
+  flex: 0 0 auto;
+  padding: 0.5rem 1rem 0.75rem;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.schedule-grabber {
+  width: 2.5rem;
+  height: 0.3rem;
+  border-radius: 999px;
+  background: var(--color-border);
+  margin: 0.25rem auto 0.75rem;
+}
+
+.schedule-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.schedule-title {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 800;
+}
+
+.schedule-close {
+  border: none;
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.schedule-close:hover {
+  background: var(--color-border);
+  color: var(--color-text);
+}
+
+.schedule-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.3rem;
+}
+
+.sched-day-chip {
+  position: relative;
+  background: var(--color-bg);
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.2rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sched-day-chip.active {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
+}
+
+.schedule-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 1rem 1rem 2rem;
+}
+
+.sched-day-title {
+  margin: 0 0 1rem;
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.sched-day-tag {
+  color: var(--color-text-muted);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.sched-timeline {
+  position: relative;
+}
+
+.sched-block {
+  display: grid;
+  grid-template-columns: 1.25rem 1fr;
+  gap: 0.65rem;
+}
+
+.sched-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.sched-dot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: var(--color-border);
+  margin-top: 0.9rem;
+  flex: 0 0 auto;
+  z-index: 1;
+}
+
+/* Connecting line between dots. */
+.sched-rail::after {
+  content: '';
+  flex: 1 1 auto;
+  width: 2px;
+  background: var(--color-border);
+  margin-top: -0.1rem;
+}
+
+.sched-block:last-child .sched-rail::after {
+  display: none;
+}
+
+.sched-card {
+  padding: 0.6rem 0.8rem 0.75rem;
+  margin-bottom: 0.6rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  min-width: 0;
+}
+
+.sched-time {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  letter-spacing: 0.01em;
+}
+
+.sched-now-pill {
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.08rem 0.45rem;
+  border-radius: 999px;
+}
+
+.sched-label {
+  margin-top: 0.2rem;
+  font-size: 0.98rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.sched-emoji {
+  font-size: 1.05rem;
+}
+
+/* Current block: highlighted card + filled primary dot. */
+.sched-block.now .sched-card {
+  border-color: var(--color-primary);
+  border-left-width: 4px;
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface));
+  box-shadow: var(--shadow-card);
+}
+
+.sched-block.now .sched-dot {
+  background: var(--color-primary);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary) 22%, transparent);
+}
+
+/* Past blocks: dimmed so the eye lands on what's next. */
+.sched-block.past .sched-card {
+  opacity: 0.55;
+}
+
+.sched-block.past .sched-dot {
+  background: color-mix(in srgb, var(--color-primary) 40%, var(--color-border));
+}
+
+/* Meal blocks get a warm accent. */
+.sched-block.meal .sched-card {
+  background: color-mix(in srgb, var(--color-gold) 8%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-gold) 30%, var(--color-border));
+}
+
+.sched-block.meal.now .sched-card {
+  border-color: var(--color-primary);
+}
+
+/* Competition games listed inside a games block. */
+.sched-games {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.sched-game-chip {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.18rem 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.sched-game-chip.played {
+  background: var(--color-gold-bg);
+  border-color: color-mix(in srgb, var(--color-gold) 45%, var(--color-border));
+  color: var(--color-gold);
+}
+
+/* Electives listed inside an elective block. */
+.sched-stations {
+  margin-top: 0.5rem;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.sched-station {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.5rem;
+  font-size: 0.82rem;
+}
+
+.sched-station-name {
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+
+.sched-station-kids {
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
 /* ============================================================
    GAME VIEW
    ============================================================ */
