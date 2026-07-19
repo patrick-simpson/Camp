@@ -53,6 +53,10 @@ body.dark-theme {
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
@@ -145,6 +149,242 @@ body {
 }
 
 /* ============================================================
+   DAY TABS
+   ============================================================ */
+.day-tabs {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.4rem;
+}
+
+.day-tab {
+  position: relative;
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.6rem 0.25rem;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.day-tab.active {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
+}
+
+.today-dot {
+  position: absolute;
+  top: 0.3rem;
+  right: 0.35rem;
+  width: 0.45rem;
+  height: 0.45rem;
+  border-radius: 50%;
+  background: var(--color-gold);
+}
+
+.day-note {
+  margin: -0.5rem 0 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+/* ============================================================
+   GAME LIST
+   ============================================================ */
+.session-heading {
+  margin: 0.5rem 0 0.1rem;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+}
+
+.session-empty {
+  margin: 0.25rem 0 0;
+}
+
+#game-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.game-card {
+  display: block;
+  width: 100%;
+  text-align: left;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 1rem 1.1rem;
+  cursor: pointer;
+  font-family: inherit;
+  color: var(--color-text);
+  transition: border-color 0.15s ease, transform 0.1s ease;
+}
+
+.game-card:hover {
+  border-color: var(--color-primary);
+}
+
+.game-card:active {
+  transform: scale(0.99);
+}
+
+.game-card.done {
+  border-color: color-mix(in srgb, var(--color-gold) 45%, var(--color-border));
+}
+
+.game-card-top {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.game-emoji {
+  font-size: 1.5rem;
+}
+
+.game-card-titles {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.game-name {
+  font-weight: 700;
+  font-size: 1rem;
+}
+
+.game-loc {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+}
+
+.format-badge {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.25rem 0.5rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.badge-bracket { background: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface)); color: var(--color-primary); }
+.badge-tally { background: var(--color-gold-bg); color: var(--color-gold); }
+.badge-podium { background: var(--color-bronze-bg); color: var(--color-bronze); }
+
+.game-headline {
+  margin: 0.55rem 0 0;
+  font-size: 0.88rem;
+  color: var(--color-text-muted);
+}
+
+.game-result-line {
+  margin-top: 0.6rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  background: var(--color-gold-bg);
+  color: var(--color-gold);
+  border-radius: var(--radius-md);
+  padding: 0.45rem 0.6rem;
+}
+
+.game-progress-line {
+  margin-top: 0.6rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.messtival-banner {
+  background: linear-gradient(90deg, var(--color-gold-bg), var(--color-bronze-bg));
+  color: var(--color-bronze);
+  border-radius: var(--radius-md);
+  padding: 0.7rem 0.9rem;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.messtival-tag {
+  background: var(--color-gold-bg);
+  color: var(--color-gold);
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+/* ============================================================
+   GAME VIEW
+   ============================================================ */
+.back-btn {
+  display: inline-block;
+  margin-bottom: 0.75rem;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.game-view-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.game-view-header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+}
+
+.game-view-header p {
+  margin: 0.2rem 0 0;
+}
+
+.game-emoji-lg {
+  font-size: 2.2rem;
+}
+
+.rules-details {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1rem;
+  margin: 0.75rem 0 1rem;
+  font-size: 0.92rem;
+}
+
+.rules-details summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.rules-details h4 {
+  margin: 0.85rem 0 0.25rem;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.rules-details ul {
+  margin: 0.25rem 0;
+  padding-left: 1.2rem;
+}
+
+.rules-details li {
+  margin-bottom: 0.3rem;
+}
+
+/* ============================================================
    BUTTONS
    ============================================================ */
 .primary-btn {
@@ -198,6 +438,10 @@ body {
 /* ============================================================
    STANDINGS TABLE
    ============================================================ */
+.standings-hint {
+  margin-top: 0;
+}
+
 .table-scroll {
   overflow-x: auto;
 }
@@ -254,23 +498,15 @@ body {
 }
 
 /* ============================================================
-   LAUNCH / WIZARD
+   BRACKET WIZARD
    ============================================================ */
-.launch-card h2 {
-  margin-bottom: 0.25rem;
-}
-
-.launch-card p {
-  margin-bottom: 1rem;
-}
-
-.wizard-steps {
+.bracket-steps {
   display: flex;
   align-items: center;
   gap: 0.35rem;
   margin-bottom: 1.25rem;
   flex-wrap: wrap;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
 }
 
 .wizard-step {
@@ -295,16 +531,11 @@ body {
   color: var(--color-text-muted);
 }
 
-.wizard-card h3 {
-  margin-top: 0;
-}
-
 .wizard-footer {
   margin-top: 1.25rem;
   text-align: center;
 }
 
-/* ── team chips ── */
 .team-chip-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -321,6 +552,7 @@ body {
   font-weight: 600;
   color: var(--color-text);
   cursor: pointer;
+  font-family: inherit;
   transition: all 0.15s ease;
 }
 
@@ -330,11 +562,6 @@ body {
   color: var(--color-primary);
 }
 
-.tiebreak-chip {
-  grid-column: span 1;
-}
-
-/* ── matchup callout ── */
 .matchup-callout {
   background: var(--color-gold-bg);
   border-radius: var(--radius-md);
@@ -388,7 +615,123 @@ body {
   font-size: 0.9rem;
 }
 
-/* ── medal summary ── */
+/* ============================================================
+   SCORE ENTRY (tally)
+   ============================================================ */
+.unit-tag {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+.score-input-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.75rem 0 1rem;
+}
+
+.score-input-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.score-input-row input {
+  width: 7rem;
+  border: 1.5px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 1rem;
+  font-family: inherit;
+  padding: 0.5rem 0.6rem;
+  border-radius: var(--radius-md);
+  text-align: right;
+}
+
+.score-input-row input:focus {
+  border-color: var(--color-primary);
+  outline: none;
+}
+
+.live-ranking {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.5rem 0;
+}
+
+.rank-pill {
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.25rem 0.6rem;
+}
+
+.tie-note {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-bronze);
+  background: var(--color-bronze-bg);
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.7rem;
+}
+
+.medal-picker-heading {
+  margin-bottom: 0.5rem;
+}
+
+/* ============================================================
+   MEDAL PICKER
+   ============================================================ */
+.medal-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.5rem 0 1rem;
+}
+
+.medal-slot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-radius: var(--radius-md);
+  padding: 0.6rem 0.8rem;
+  font-weight: 700;
+  font-size: 0.95rem;
+}
+
+.medal-slot-gold { background: var(--color-gold-bg); color: var(--color-gold); }
+.medal-slot-silver { background: var(--color-silver-bg); color: var(--color-silver); }
+.medal-slot-bronze { background: var(--color-bronze-bg); color: var(--color-bronze); }
+
+.medal-slot select {
+  flex: 1;
+  max-width: 60%;
+  border: 1.5px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 0.95rem;
+  font-family: inherit;
+  padding: 0.45rem 0.5rem;
+  border-radius: var(--radius-md);
+}
+
+.entry-error {
+  color: var(--color-danger);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+/* ============================================================
+   MEDAL SUMMARY
+   ============================================================ */
 .medal-summary {
   display: flex;
   flex-direction: column;
@@ -417,49 +760,21 @@ body {
   color: var(--color-bronze);
 }
 
-/* ============================================================
-   HISTORY
-   ============================================================ */
-.history-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
-
-.history-item {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 0.6rem 0.85rem;
-}
-
-.history-item-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.35rem;
-}
-
-.history-time {
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
-}
-
-.history-medals {
-  display: flex;
-  gap: 0.9rem;
+.score-recap {
+  margin: 0.25rem 0 1rem;
+  padding-left: 1.2rem;
   font-size: 0.9rem;
-  flex-wrap: wrap;
 }
 
 /* ============================================================
    RESPONSIVE
    ============================================================ */
 @media (max-width: 420px) {
-  .team-chip-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-
   .winner-btn-row {
     flex-direction: column;
+  }
+
+  .score-input-row input {
+    width: 5.5rem;
   }
 }
