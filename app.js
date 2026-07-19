@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-19T12:43:08Z';
+const CODE_UPDATED_AT = '2026-07-19T12:57:30Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -616,6 +616,11 @@ const SYNC_KEYS = ['teams', 'results', 'brackets', 'drafts', 'picRounds', 'meta'
 let fbRef = null;
 let applyingRemote = false;
 let pushTimer = null;
+// No pushes until the first server snapshot has landed. Without this, a
+// device on slow camp wifi that saves anything (even a day-tab tap) before
+// its first sync queues a set() of its stale local state — and the SDK
+// delivers that on connect, wiping everyone's newer scores.
+let remoteReady = false;
 
 function syncEnabled() {
   return !!fbRef;
@@ -632,15 +637,23 @@ function initSync() {
     fbRef = firebase.database().ref('campScoreboard/state');
     fbRef.on('value', (snap) => {
       const remote = snap.val();
+      remoteReady = true; // server truth received — pushes may flow now
       if (!remote) { pushState(); return; } // seed an empty database
       applyingRemote = true;
-      SYNC_KEYS.forEach((k) => { if (remote[k] !== undefined) state[k] = remote[k]; });
+      // The snapshot is the entire synced tree, so a key missing from it
+      // means "empty" — RTDB prunes empty objects on write. Treating
+      // missing as keep-local made "New week (reset)" un-syncable: other
+      // devices kept their old results and re-pushed them later. Teams
+      // stay guarded — a snapshot without a roster is malformed.
+      if (remote.teams) state.teams = remote.teams;
+      ['results', 'brackets', 'drafts', 'picRounds', 'meta'].forEach((k) => {
+        state[k] = remote[k] !== undefined ? remote[k] : {};
+      });
       // Realtime Database silently drops empty arrays/nulls on write, so a
       // freshly-started bracket can come back missing matches/selectedPair
       // etc. Heal every bracket the instant remote data lands, before any
       // render sees it.
       Object.values(state.brackets || {}).forEach(normalizeBracket);
-      if (!state.teams || !state.results) { applyingRemote = false; return; }
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
       applyingRemote = false;
       if (appStarted) renderAll();
@@ -662,7 +675,7 @@ function schedulePush() {
 }
 
 function pushState() {
-  if (!fbRef || applyingRemote) return;
+  if (!fbRef || applyingRemote || !remoteReady) return;
   const payload = {};
   SYNC_KEYS.forEach((k) => { payload[k] = state[k] === undefined ? null : state[k]; });
   // JSON round-trip strips any `undefined` (which Realtime DB rejects).
