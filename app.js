@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-20T08:33:11Z';
+const CODE_UPDATED_AT = '2026-07-20T09:06:06Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -436,6 +436,16 @@ function weekdayEvening(campfireLeader) {
   ];
 }
 
+// Every morning before rising bell, by team group (A: Mon/Wed/Fri, B: Tue/Thu/Sat).
+function morningMeetingBlock(dow) {
+  const isATeamDay = dow === 1 || dow === 3 || dow === 5;
+  return {
+    start: hm(7, 0), end: hm(7, 30),
+    label: "Morning meeting (Laura's cottage) — " + (isATeamDay ? 'A teams' : 'B teams'),
+    emoji: '🏡', type: 'activity',
+  };
+}
+
 const DAY_SCHEDULE = {
   0: [ // Sunday — arrival day
     { start: hm(14, 0), end: hm(16, 0), label: 'Registration', emoji: '📝', type: 'activity' },
@@ -448,11 +458,11 @@ const DAY_SCHEDULE = {
     { start: hm(21, 15), end: hm(22, 0), label: 'Cabin devotional', emoji: '🙏', type: 'activity' },
     { start: hm(22, 0), end: hm(24, 0), label: 'Lights out', emoji: '😴', type: 'activity', noTime: true },
   ],
-  1: weekdayDaytime().concat(weekdayEvening('TJ')),
-  2: weekdayDaytime().concat(weekdayEvening('Cam')),
-  3: weekdayDaytime().concat(weekdayEvening('Sofie')),
-  4: weekdayDaytime().concat(weekdayEvening('Jovi')),
-  5: weekdayDaytime().concat([ // Friday evening — Team Skits night, later lights out
+  1: [morningMeetingBlock(1)].concat(weekdayDaytime()).concat(weekdayEvening('TJ')),
+  2: [morningMeetingBlock(2)].concat(weekdayDaytime()).concat(weekdayEvening('Cam')),
+  3: [morningMeetingBlock(3)].concat(weekdayDaytime()).concat(weekdayEvening('Sofie')),
+  4: [morningMeetingBlock(4)].concat(weekdayDaytime()).concat(weekdayEvening('Jovi')),
+  5: [morningMeetingBlock(5)].concat(weekdayDaytime()).concat([ // Friday evening — Team Skits night, later lights out
     { start: hm(17, 30), end: hm(18, 0), label: 'Team huddle', emoji: '📣', type: 'activity' },
     { start: hm(18, 0), end: hm(19, 0), label: 'Final preparations for skits', emoji: '🎭', type: 'activity' },
     { start: hm(19, 0), end: hm(20, 0), label: 'Team Skits', emoji: '🎭', type: 'activity' },
@@ -463,6 +473,7 @@ const DAY_SCHEDULE = {
     { start: hm(22, 30), end: hm(24, 0), label: 'Lights out', emoji: '😴', type: 'activity', noTime: true },
   ]),
   6: [ // Saturday — send-off morning
+    morningMeetingBlock(6),
     { start: hm(7, 30), end: hm(8, 0), label: 'Rising bell & shower', emoji: '⏰', type: 'activity' },
     { start: hm(8, 0), end: hm(8, 30), label: 'Breakfast', emoji: '🍳', type: 'activity' },
     { start: hm(8, 30), end: hm(9, 30), label: 'Cabin time & campground cleanup', emoji: '🧹', type: 'activity' },
