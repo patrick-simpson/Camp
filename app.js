@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-20T08:05:22Z';
+const CODE_UPDATED_AT = '2026-07-20T08:14:30Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -802,7 +802,7 @@ function makeFreshState() {
 }
 
 function defaultDay() {
-  const d = new Date().getDay(); // 0 Sun .. 6 Sat
+  const d = campNow().dow; // camp time (America/New_York), 0 Sun .. 6 Sat
   return d >= 1 && d <= 5 ? d : 1;
 }
 
@@ -895,6 +895,12 @@ function initSync() {
         }
       }
       applyingRemote = true;
+      // Signature of the synced slice before applying this snapshot. RTDB fires
+      // a local `value` event for our own set(), so most snapshots are pure
+      // echoes — re-rendering on those blurs the tally/bonus inputs and
+      // dismisses the iOS keyboard mid-entry. Skip renderAll when nothing
+      // actually changed (below).
+      const beforeSig = syncSignature();
       // The snapshot is the entire synced tree, so a key missing from it
       // means "empty" — RTDB prunes empty objects on write. Treating
       // missing as keep-local made "New week (reset)" un-syncable: other
@@ -911,7 +917,7 @@ function initSync() {
       normalizeSyncedState();
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
       applyingRemote = false;
-      if (appStarted) renderAll();
+      if (appStarted && syncSignature() !== beforeSig) renderAll();
     }, (err) => {
       console.warn('Firebase read failed, staying local', err);
     });
@@ -949,6 +955,13 @@ function pushState() {
   SYNC_KEYS.forEach((k) => { payload[k] = state[k] === undefined ? null : state[k]; });
   // JSON round-trip strips any `undefined` (which Realtime DB rejects).
   fbRef.set(JSON.parse(JSON.stringify(payload))).catch((e) => console.warn('sync push failed', e));
+}
+
+// Cheap content signature of the synced state, used to skip re-rendering on
+// snapshot echoes (including our own set()). JSON order is stable because the
+// keys come from a fixed array.
+function syncSignature() {
+  return JSON.stringify(SYNC_KEYS.map((k) => state[k]));
 }
 
 function updateSyncIndicator() {
@@ -1051,6 +1064,78 @@ const liveTimers = {};  // gameId -> countdown state
 const liveWatches = {}; // gameId -> stopwatch state
 let tickHandle = null;
 
+// Countdowns are DEVICE-LOCAL (never synced) — each phone runs its own clock.
+// Persist so a mid-round reload or an iOS timer-suspend on lock doesn't lose
+// the running countdown; on return we recompute from the wall-clock endAt.
+const TIMER_KEY = 'campScoreboardTimers';
+
+function saveTimers() {
+  try {
+    const out = {};
+    Object.entries(liveTimers).forEach(([gid, t]) => {
+      out[gid] = { endAt: t.endAt || 0, duration: t.duration, remaining: t.remaining, round: t.round, running: t.running, alarming: t.alarming };
+    });
+    localStorage.setItem(TIMER_KEY, JSON.stringify(out));
+  } catch (e) { /* device-local convenience only */ }
+}
+
+function rehydrateTimers() {
+  let saved;
+  try { saved = JSON.parse(localStorage.getItem(TIMER_KEY) || '{}'); } catch (e) { saved = {}; }
+  const now = Date.now();
+  Object.entries(saved).forEach(([gid, t]) => {
+    if (!t || typeof t.duration !== 'number') return;
+    if (t.running && t.endAt) {
+      const remaining = Math.max(0, t.endAt - now);
+      if (remaining === 0) {
+        // Expired while the app was closed/backgrounded — surface it.
+        liveTimers[gid] = { ...t, running: false, remaining: 0, alarming: true };
+      } else {
+        liveTimers[gid] = { ...t, remaining };
+      }
+    } else {
+      liveTimers[gid] = { ...t };
+    }
+  });
+  if (Object.values(liveTimers).some((t) => t.running)) { ensureTicking(); requestWakeLock(); }
+}
+
+// Keep the screen awake while a countdown runs (guarded — not on all browsers).
+let wakeLockSentinel = null;
+function anyTimerRunning() { return Object.values(liveTimers).some((t) => t.running); }
+async function requestWakeLock() {
+  try {
+    if ('wakeLock' in navigator && !wakeLockSentinel && anyTimerRunning()) {
+      wakeLockSentinel = await navigator.wakeLock.request('screen');
+      wakeLockSentinel.addEventListener('release', () => { wakeLockSentinel = null; });
+    }
+  } catch (e) { /* user gesture / permission not available — ignore */ }
+}
+function releaseWakeLock() {
+  if (wakeLockSentinel) { try { wakeLockSentinel.release(); } catch (e) { /* ignore */ } wakeLockSentinel = null; }
+}
+
+// When the phone comes back to the foreground: fire alarms for any countdown
+// that expired while we were away, resume ticking, and re-acquire the wake lock
+// (the browser drops it when the page is hidden).
+function onTimersVisible() {
+  if (document.hidden) return;
+  const now = Date.now();
+  let changed = false;
+  Object.entries(liveTimers).forEach(([gid, t]) => {
+    if (t.running && t.endAt && t.endAt <= now && !t.alarming) {
+      t.running = false;
+      t.remaining = 0;
+      t.alarming = true;
+      changed = true;
+      playAlarm();
+      renderToolsIfCurrent(gid);
+    }
+  });
+  if (changed) saveTimers();
+  if (anyTimerRunning()) { ensureTicking(); requestWakeLock(); }
+}
+
 function ensureTicking() {
   if (!tickHandle) tickHandle = setInterval(tick, 100);
 }
@@ -1066,6 +1151,8 @@ function tick() {
     if (remaining === 0) {
       t.running = false;
       t.alarming = true;
+      saveTimers();
+      if (!anyTimerRunning()) releaseWakeLock();
       playAlarm();
       renderToolsIfCurrent(gid);
     } else {
@@ -1167,6 +1254,7 @@ function bindCountdown(wrap, g) {
     chip.addEventListener('click', () => {
       t.duration = parseInt(chip.dataset.preset, 10) * 1000;
       t.remaining = t.duration;
+      saveTimers();
       renderTools(wrap, g);
     });
   });
@@ -1179,6 +1267,7 @@ function bindCountdown(wrap, g) {
         t.endAt = Date.now() + t.remaining;
         t.running = true;
         ensureTicking();
+        requestWakeLock();
       } else if (a === 'pause') {
         t.running = false;
         t.remaining = Math.max(0, t.endAt - Date.now());
@@ -1197,6 +1286,8 @@ function bindCountdown(wrap, g) {
         t.round += 1;
         t.remaining = t.duration;
       }
+      if (!anyTimerRunning()) releaseWakeLock();
+      saveTimers();
       renderTools(wrap, g);
     });
   });
@@ -1724,7 +1815,8 @@ function standingsSummaryText() {
   const counts = medalCounts();
   const ranked = rankTeamsByPoints(counts);
 
-  const lines = ['🏅 Camp Scoreboard — ' + new Date().toLocaleDateString([], { weekday: 'short', month: 'short', day: 'numeric' })];
+  const campDate = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short', month: 'short', day: 'numeric' }).format(new Date());
+  const lines = ['🏅 Camp Scoreboard — ' + campDate];
   lines.push('');
   lines.push(`Standings (🥇 ${MEDAL_POINTS.gold} · 🥈 ${MEDAL_POINTS.silver} · 🥉 ${MEDAL_POINTS.bronze} pts):`);
   ranked.forEach((t, i) => {
@@ -1773,17 +1865,19 @@ function parseScoreInput(game, raw) {
     const [m, s] = str.split(':');
     const mm = parseInt(m, 10);
     const ss = parseFloat(s);
-    if (isNaN(mm) || isNaN(ss) || ss >= 60) return null;
+    if (isNaN(mm) || isNaN(ss) || ss >= 60 || mm < 0 || ss < 0) return null;
     return mm * 60 + ss;
   }
   const v = parseFloat(str);
-  return isNaN(v) ? null : v;
+  if (isNaN(v) || v < 0) return null; // scores/times are never negative
+  return v;
 }
 
 function formatScore(game, val) {
   if (game.timeInput) {
-    const m = Math.floor(val / 60);
-    const s = Math.round((val - m * 60) * 10) / 10;
+    let m = Math.floor(val / 60);
+    let s = Math.round((val - m * 60) * 10) / 10;
+    if (s >= 60) { m += 1; s -= 60; } // rounding can carry (e.g. 119.97s → 2:00, not 1:60)
     return m + ':' + (s < 10 ? '0' : '') + (Number.isInteger(s) ? s : s.toFixed(1));
   }
   return String(val);
@@ -1807,15 +1901,19 @@ function medalCounts() {
   const counts = {};
   const bonus = bonusTotals();
   state.teams.forEach((t) => (counts[t.id] = { gold: 0, silver: 0, bronze: 0, medalPts: 0, bonus: 0, points: 0 }));
-  Object.values(state.results).forEach((r) => {
+  // Iterate entries so we can weight points per game: Messtival games
+  // (Friday) are worth DOUBLE on the scoreboard. Medal *counts* stay raw;
+  // only the point value doubles.
+  Object.entries(state.results).forEach(([id, r]) => {
     if (!r || !r.medals) return;
-    if (counts[r.medals.gold]) counts[r.medals.gold].gold += 1;
-    if (counts[r.medals.silver]) counts[r.medals.silver].silver += 1;
-    if (counts[r.medals.bronze]) counts[r.medals.bronze].bronze += 1;
+    const g = gameById(id);
+    const mult = g && g.messtival ? 2 : 1;
+    if (counts[r.medals.gold]) { counts[r.medals.gold].gold += 1; counts[r.medals.gold].medalPts += MEDAL_POINTS.gold * mult; }
+    if (counts[r.medals.silver]) { counts[r.medals.silver].silver += 1; counts[r.medals.silver].medalPts += MEDAL_POINTS.silver * mult; }
+    if (counts[r.medals.bronze]) { counts[r.medals.bronze].bronze += 1; counts[r.medals.bronze].medalPts += MEDAL_POINTS.bronze * mult; }
   });
   state.teams.forEach((t) => {
     const c = counts[t.id];
-    c.medalPts = c.gold * MEDAL_POINTS.gold + c.silver * MEDAL_POINTS.silver + c.bronze * MEDAL_POINTS.bronze;
     c.bonus = bonus[t.id] || 0;
     c.points = c.medalPts + c.bonus; // grand total drives the leaderboard
   });
@@ -1868,7 +1966,7 @@ const BONUS_CATEGORIES = {
 
 // Form state for the entry row — lives outside state so it isn't synced
 // or persisted; category/meal persist across adds for fast nightly entry.
-let bonusDraft = { category: 'verse', meal: 'Breakfast', teams: [], points: '', custom: '' };
+let bonusDraft = { category: 'verse', meal: 'Breakfast', teams: [], points: '', custom: '', sign: 1 };
 
 function bonusLabelFor(d) {
   if (d.category === 'verse') return 'Verse memorization';
@@ -1889,7 +1987,7 @@ function renderBonuses() {
   let entryHTML = '';
   if (canEdit()) {
     const mealRow = d.category === 'cleanup'
-      ? `<div class="bonus-meal-row">${['Breakfast', 'Lunch', 'Dinner'].map((m) =>
+      ? `<div class="bonus-meal-row">${['Breakfast', 'Lunch', 'Supper'].map((m) =>
           `<button class="bonus-meal-chip ${d.meal === m ? 'selected' : ''}" data-meal="${m}">${esc(m)}</button>`).join('')}</div>`
       : '';
     const customRow = d.category === 'custom'
@@ -1909,8 +2007,9 @@ function renderBonuses() {
             `<button class="team-chip bonus-team-chip ${d.teams.includes(t.id) ? 'selected' : ''}" data-team-id="${t.id}"><span class="chip-emoji">${teamEmoji(t.id)}</span> ${esc(t.name)}</button>`).join('')}
         </div>
         <div class="bonus-add-row">
+          <button id="bonus-sign" type="button" class="bonus-sign-btn ${d.sign < 0 ? 'neg' : ''}" aria-label="${d.sign < 0 ? 'Subtracting points — tap to add' : 'Adding points — tap to subtract'}">${d.sign < 0 ? '−' : '+'}</button>
           <input type="number" id="bonus-points" class="bonus-points-input" inputmode="numeric" placeholder="Points" value="${esc(d.points)}" />
-          <button id="bonus-add-btn" class="primary-btn">Add points</button>
+          <button id="bonus-add-btn" class="primary-btn">${d.sign < 0 ? 'Subtract points' : 'Add points'}</button>
         </div>
         <p id="bonus-error" class="entry-error" hidden></p>
       </div>`;
@@ -1979,14 +2078,20 @@ function bindBonusEntry(wrap) {
   if (customInput) customInput.addEventListener('input', () => { d.custom = customInput.value; });
   const ptsInput = wrap.querySelector('#bonus-points');
   if (ptsInput) ptsInput.addEventListener('input', () => { d.points = ptsInput.value; });
+  // The iOS numeric keypad has no minus key, so the sign is a toggle button
+  // (points can be deducted, e.g. penalties).
+  const signBtn = wrap.querySelector('#bonus-sign');
+  if (signBtn) signBtn.addEventListener('click', () => { d.sign = d.sign < 0 ? 1 : -1; renderBonuses(); });
 
   const addBtn = wrap.querySelector('#bonus-add-btn');
   if (addBtn) addBtn.addEventListener('click', () => {
     const errEl = wrap.querySelector('#bonus-error');
     const showErr = (msg) => { errEl.textContent = msg; errEl.hidden = false; };
-    const pts = Number(d.points);
+    const mag = Math.abs(Number(d.points));
+    const pts = d.sign * mag;
     if (!d.teams.length) return showErr('Pick at least one team.');
-    if (d.points === '' || isNaN(pts) || pts === 0) return showErr('Enter a non-zero point value.');
+    if (d.points === '' || isNaN(mag) || mag === 0) return showErr('Enter a non-zero point value.');
+    if (!Number.isInteger(pts) || Math.abs(pts) > 100) return showErr('Points must be a whole number from 1 to 100.');
     const label = bonusLabelFor(d);
     const at = new Date().toISOString();
     d.teams.forEach((teamId) => {
@@ -1994,6 +2099,7 @@ function bindBonusEntry(wrap) {
     });
     d.teams = [];
     d.points = '';
+    d.sign = 1; // back to the default (+) for the next entry
     if (d.category === 'custom') d.custom = '';
     touchData();
     saveState();
@@ -2005,7 +2111,7 @@ function bindBonusEntry(wrap) {
 
 function renderDayTabs() {
   const nav = document.getElementById('day-tabs');
-  const todayDow = new Date().getDay();
+  const todayDow = campNow().dow; // camp time, not device time
   nav.innerHTML = [1, 2, 3, 4, 5].map((d) => {
     const isToday = d === todayDow;
     return `<button class="day-tab ${state.ui.day === d ? 'active' : ''}" data-day="${d}">
@@ -2057,7 +2163,7 @@ function renderGameList() {
   let html = '';
   const isMesstival = dayGames.some((g) => g.messtival);
   if (isMesstival) {
-    html += `<div class="messtival-banner">🎉 Messtival day — all games are worth DOUBLE points on the big scoreboard! (Track that on paper.)</div>`;
+    html += `<div class="messtival-banner">🎉 Messtival day — all games are worth DOUBLE points, counted double right here in the standings!</div>`;
   }
 
   sessions.forEach((session) => {
@@ -2126,7 +2232,7 @@ function renderGameView() {
         <p class="muted">📍 ${esc(g.location)} · ${g.session} · <span class="format-badge ${badge.cls}">${badge.label}</span></p>
       </div>
     </div>
-    ${g.messtival ? '<p class="messtival-tag">🎉 Messtival — double points on the paper scoreboard!</p>' : ''}
+    ${g.messtival ? '<p class="messtival-tag">🎉 Messtival — double points, counted double here too!</p>' : ''}
     <details class="rules-details" ${state.results[g.id] ? '' : 'open'}>
       <summary>How to play</summary>
       ${g.rules.map((sec) => `
@@ -2197,11 +2303,12 @@ function renderResult(container, g, result) {
 
 // ── Medal picker (shared by tally + placement) ───────────────────
 
-function medalPickerHTML(picks) {
+function medalPickerHTML(picks, game) {
+  const mult = game && game.messtival ? 2 : 1; // Messtival doubles the points
   const slots = [
-    { key: 'gold', label: `🥇 Gold · ${MEDAL_POINTS.gold} pts` },
-    { key: 'silver', label: `🥈 Silver · ${MEDAL_POINTS.silver} pts` },
-    { key: 'bronze', label: `🥉 Bronze · ${MEDAL_POINTS.bronze} pts` },
+    { key: 'gold', label: `🥇 Gold · ${MEDAL_POINTS.gold * mult} pts` },
+    { key: 'silver', label: `🥈 Silver · ${MEDAL_POINTS.silver * mult} pts` },
+    { key: 'bronze', label: `🥉 Bronze · ${MEDAL_POINTS.bronze * mult} pts` },
   ];
   return `<div class="medal-picker">
     ${slots.map((s) => `
@@ -2368,7 +2475,7 @@ function updateTallyMedals(g) {
       `<span class="rank-pill">${i + 1}. ${esc(teamName(e.id))} · ${formatScore(g, e.v)}</span>`).join('')}</div>` : ''}
     ${tieNote}
     <h3 class="medal-picker-heading">Medals ${ranked.length >= 3 ? '<span class="unit-tag">(auto-filled from scores)</span>' : ''}</h3>
-    ${medalPickerHTML(picks)}
+    ${medalPickerHTML(picks, g)}
   `;
 
   wrap.querySelectorAll('select[data-medal]').forEach((sel) => {
@@ -2388,7 +2495,7 @@ function renderPlacement(container, g) {
   container.innerHTML = `
     <h3>Podium</h3>
     <p class="muted">No score-keeping needed — just record who placed.</p>
-    <div id="placement-medals">${medalPickerHTML(draft.medals)}</div>
+    <div id="placement-medals">${medalPickerHTML(draft.medals, g)}</div>
     <p id="entry-error" class="entry-error" hidden></p>
     <button id="save-result-btn" class="primary-btn">Save Result</button>
   `;
@@ -2757,6 +2864,15 @@ function renderAll() {
   renderStandings();
   renderBonuses();
   renderFooter();
+  refreshOpenSchedule();
+}
+
+// Keep an open schedule sheet in step with time and synced results — its
+// NOW pill, dimming, and ✓ chips otherwise go stale across a block boundary
+// or when a remote result lands.
+function refreshOpenSchedule() {
+  const overlay = scheduleOverlayEl();
+  if (overlay && !overlay.hidden) renderScheduleBody();
 }
 
 function init() {
@@ -2783,10 +2899,14 @@ function init() {
 
   initSync();
 
+  rehydrateTimers();
+  document.addEventListener('visibilitychange', onTimersVisible);
+
   renderAll();
 
-  // Keep the "happening now" banner current without any taps.
-  setInterval(renderNowBanner, 30 * 1000);
+  // Keep the "happening now" banner (and any open schedule sheet) current
+  // without any taps.
+  setInterval(() => { renderNowBanner(); refreshOpenSchedule(); }, 30 * 1000);
 }
 
 function updateRoleButton() {
