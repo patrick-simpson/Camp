@@ -11,12 +11,12 @@
   <meta property="og:description" content="Live camp game scoring — standings, schedule, and team medals.">
   <meta property="og:type" content="website">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8F%85%3C/text%3E%3C/svg%3E">
-  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=29">
-  <link rel="manifest" href="manifest.json?v=29">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=30">
+  <link rel="manifest" href="manifest.json?v=30">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=29">
+  <link rel="stylesheet" href="styles.css?v=30">
   <script>
     // Decide lock state before the page paints so we never flash the app,
     // and never show a blank page: exactly one of #app / #lock-screen shows.
@@ -36,13 +36,13 @@
     <div class="lock-box">
       <div class="lock-logo"><span>🏅</span> Camp Scoreboard</div>
       <p class="lock-prompt">Enter PIN to continue</p>
-      <div class="pin-dots" id="pin-dots">
+      <div class="pin-dots" id="pin-dots" aria-hidden="true">
         <span class="pin-dot"></span>
         <span class="pin-dot"></span>
         <span class="pin-dot"></span>
         <span class="pin-dot"></span>
       </div>
-      <p class="lock-error" id="lock-error" hidden>Wrong PIN — try again</p>
+      <p class="lock-error" id="lock-error" role="alert" hidden>Wrong PIN — try again</p>
       <div class="keypad" id="keypad">
         <button class="key" data-key="1">1</button>
         <button class="key" data-key="2">2</button>
@@ -55,7 +55,7 @@
         <button class="key" data-key="9">9</button>
         <button class="key key-blank" disabled></button>
         <button class="key" data-key="0">0</button>
-        <button class="key key-del" data-key="del">⌫</button>
+        <button class="key key-del" data-key="del" aria-label="Delete digit">⌫</button>
       </div>
     </div>
   </div>
@@ -91,7 +91,7 @@
           <button id="reset-week-btn" class="link-btn danger-link">New week (reset)</button>
         </div>
         <p class="muted standings-hint">Only counts games saved in this app — your paper scoreboard is the official one.</p>
-        <p id="sync-status" class="sync-status"></p>
+        <p id="sync-status" class="sync-status" aria-live="polite"></p>
         <div class="standings-actions">
           <button id="copy-standings-btn" class="secondary-btn">📋 Copy scores &amp; points</button>
           <button id="share-standings-btn" class="secondary-btn" hidden>📤 Share</button>
@@ -100,12 +100,12 @@
           <table id="standings-table" class="standings-table">
             <thead>
               <tr>
-                <th class="rank-col">#</th>
+                <th class="rank-col" aria-label="Rank">#</th>
                 <th>Team</th>
                 <th class="points-col">Pts</th>
-                <th class="medal-col">🥇</th>
-                <th class="medal-col">🥈</th>
-                <th class="medal-col">🥉</th>
+                <th class="medal-col"><span role="img" aria-label="Gold medals">🥇</span></th>
+                <th class="medal-col"><span role="img" aria-label="Silver medals">🥈</span></th>
+                <th class="medal-col"><span role="img" aria-label="Bronze medals">🥉</span></th>
               </tr>
             </thead>
             <tbody id="standings-tbody"></tbody>
@@ -147,7 +147,7 @@
        falls back to local-only mode automatically. -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=29"></script>
-  <script src="app.js?v=29"></script>
+  <script src="firebase-config.js?v=30"></script>
+  <script src="app.js?v=30"></script>
 </body>
 </html>

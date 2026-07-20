@@ -80,6 +80,12 @@ body.dark-theme {
   display: none !important;
 }
 
+/* Keyboard focus ring for every interactive control (mouse/touch unaffected). */
+:is(button, [role="button"], select, input, a):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
 body {
   margin: 0;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
@@ -651,6 +657,33 @@ html.view-only .role-btn {
   white-space: nowrap;
 }
 
+/* Elapsed-time progress bar for the current block. */
+.now-progress {
+  margin-top: 0.6rem;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-border);
+  overflow: hidden;
+}
+.now-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--color-primary);
+  transition: width 0.5s linear;
+}
+
+/* Slim one-line banner shown during competition blocks. */
+.now-slim {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.now-slim-label {
+  font-weight: 700;
+  color: var(--color-text);
+}
+
 /* ============================================================
    FULL WEEK SCHEDULE (bottom sheet)
    ============================================================ */
@@ -680,6 +713,7 @@ body.no-scroll {
   width: 100%;
   max-width: 640px;
   max-height: 90vh;
+  max-height: 90dvh; /* iOS URL bar eats vh; dvh accounts for it */
   display: flex;
   flex-direction: column;
   background: var(--color-bg);
@@ -687,6 +721,14 @@ body.no-scroll {
   box-shadow: var(--shadow-sheet);
   animation: sched-slide 0.28s cubic-bezier(0.22, 1, 0.36, 1);
   overflow: hidden;
+  touch-action: pan-y;
+}
+
+.schedule-overlay.closing .schedule-sheet {
+  animation: sched-slide-out 0.2s ease forwards;
+}
+.schedule-overlay.closing .schedule-backdrop {
+  animation: sched-fade-out 0.2s ease forwards;
 }
 
 @keyframes sched-fade {
@@ -694,14 +736,26 @@ body.no-scroll {
   to { opacity: 1; }
 }
 
+@keyframes sched-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
 @keyframes sched-slide {
   from { transform: translateY(100%); }
   to { transform: translateY(0); }
 }
 
+@keyframes sched-slide-out {
+  from { transform: translateY(0); }
+  to { transform: translateY(100%); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .schedule-backdrop,
-  .schedule-sheet { animation: none; }
+  .schedule-sheet,
+  .schedule-overlay.closing .schedule-sheet,
+  .schedule-overlay.closing .schedule-backdrop { animation: none; }
 }
 
 .schedule-header {
@@ -760,8 +814,8 @@ body.no-scroll {
 
 .sched-day-chip {
   position: relative;
-  background: var(--color-bg);
-  border: 1.5px solid transparent;
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
   border-radius: var(--radius-md);
   padding: 0.5rem 0.2rem;
   font-size: 0.82rem;
@@ -781,7 +835,7 @@ body.no-scroll {
   flex: 1 1 auto;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding: 1rem 1rem 2rem;
+  padding: 1rem 1rem calc(2rem + env(safe-area-inset-bottom));
 }
 
 .sched-day-title {
@@ -1186,6 +1240,18 @@ body.no-scroll {
   opacity: 0.35;
 }
 
+/* Brief flash when a row's points change from a remote sync. */
+@keyframes points-pulse {
+  0% { background: color-mix(in srgb, var(--color-primary) 22%, transparent); }
+  100% { background: transparent; }
+}
+.points-pulse td {
+  animation: points-pulse 0.6s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .points-pulse td { animation: none; }
+}
+
 /* "+N bonus" note under a team's total. */
 .bonus-hint {
   display: block;
@@ -1551,6 +1617,22 @@ body.no-scroll {
   letter-spacing: 0.04em;
   color: var(--color-text-muted);
   font-weight: 700;
+}
+
+.matchup-mascots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin: 0.25rem 0 0.5rem;
+  line-height: 1;
+}
+.matchup-mascot {
+  font-size: 2.75rem;
+}
+.matchup-vs-emoji {
+  font-size: 1.4rem;
+  opacity: 0.85;
 }
 
 .call-next-teams {

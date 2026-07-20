@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-20T08:22:17Z';
+const CODE_UPDATED_AT = '2026-07-20T08:33:11Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -585,34 +585,46 @@ function nowBannerHtml(dow, minutes) {
     <span class="now-eyebrow">Happening now</span>
     <span class="now-open-hint">📅 Full schedule ›</span>
   </div>`;
-  const main = (emoji, label, time, next) => eyebrow +
+  // progress is the elapsed fraction of the current timed block (0–1), or null
+  // to omit the bar (untimed blocks, or before the day's first block).
+  const progressBar = (progress) => progress == null ? '' :
+    `<div class="now-progress" aria-hidden="true"><div class="now-progress-fill" style="width:${Math.round(Math.max(0, Math.min(1, progress)) * 100)}%"></div></div>`;
+  const main = (emoji, label, time, next, progress) => eyebrow +
     `<div class="now-main"><span class="now-emoji">${emoji}</span><div class="now-body">
       <div class="now-label">${esc(label)}${time ? ` <span class="now-time">${time}</span>` : ''}</div>
       ${next ? `<div class="now-next">Up next: ${next.emoji} ${esc(next.label)} at ${schedClock(next.start, true)}</div>` : ''}
-    </div></div>`;
+    </div></div>` + progressBar(progress);
 
   // Early morning, before the first block of the day.
   if (minutes < blocks[0].start) {
     const first = decorateMealBlock(dow, blocks[0]);
-    if (dow === 0) return main('🚌', 'Camp starts today!', null, first);
-    return main('😴', "Lights out — everyone's sleeping", null, first);
+    if (dow === 0) return main('🚌', 'Camp starts today!', null, first, null);
+    return main('😴', "Lights out — everyone's sleeping", null, first, null);
   }
 
   const found = blocks.find((x) => minutes >= x.start && minutes < x.end);
-  if (!found || found.type === 'games') return null; // game time: the scoreboard says it all
+  if (!found) return null;
+
+  // During competition blocks the scoreboard is the main event — keep the
+  // banner to a slim, tappable one-liner rather than hiding it entirely, so the
+  // schedule sheet stays reachable.
+  if (found.type === 'games') {
+    return `<div class="now-slim"><span class="now-slim-label">🏅 Team competitions</span><span class="now-open-hint">📅 Full schedule ›</span></div>`;
+  }
 
   const b = decorateMealBlock(dow, found);
   const time = b.noTime ? null : schedRange(b.start, b.end);
+  const progress = b.noTime ? null : (minutes - b.start) / (b.end - b.start);
   if (b.type === 'elective') {
     const stations = (ELECTIVES[dow] || [])[b.slot] || [];
     const rows = stations.map(([station, kids]) =>
       `<div class="now-station"><span class="now-station-name">${STATION_EMOJI[station] || '🌟'} ${esc(station)}</span>
         <span class="now-kids">${kids.map((k) => `<span class="kid-chip">${esc(k)}</span>`).join('')}</span></div>`).join('');
-    return main(b.emoji, b.label, time, null) + `<div class="now-stations">${rows}</div>`;
+    return main(b.emoji, b.label, time, null, progress) + `<div class="now-stations">${rows}</div>`;
   }
 
   const next = decorateMealBlock(dow, blocks[blocks.indexOf(found) + 1] || null);
-  return main(b.emoji, b.label, time, next);
+  return main(b.emoji, b.label, time, next, progress);
 }
 
 function renderNowBanner() {
@@ -648,8 +660,12 @@ function scheduleOverlayEl() {
 
 function openSchedule() {
   scheduleDay = campNow().dow;
-  scheduleOverlayEl().hidden = false;
+  const overlay = scheduleOverlayEl();
+  overlay.classList.remove('closing');
+  overlay.hidden = false;
   document.body.classList.add('no-scroll');
+  const app = document.getElementById('app');
+  if (app) app.inert = true; // background isn't reachable by tab/AT while the sheet is up
   renderSchedule();
   // Land the reader on "now" (today only — other days start at the top).
   requestAnimationFrame(() => {
@@ -661,10 +677,22 @@ function openSchedule() {
 }
 
 function closeSchedule() {
-  scheduleOverlayEl().hidden = true;
-  document.body.classList.remove('no-scroll');
-  const banner = document.getElementById('now-banner');
-  if (banner && !banner.hidden) banner.focus({ preventScroll: true });
+  const overlay = scheduleOverlayEl();
+  const sheet = overlay.querySelector('.schedule-sheet');
+  if (sheet) sheet.style.transform = ''; // clear any swipe offset
+  const finish = () => {
+    overlay.hidden = true;
+    overlay.classList.remove('closing');
+    document.body.classList.remove('no-scroll');
+    const app = document.getElementById('app');
+    if (app) app.inert = false;
+    const banner = document.getElementById('now-banner');
+    if (banner && !banner.hidden) banner.focus({ preventScroll: true });
+  };
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce) { finish(); return; }
+  overlay.classList.add('closing'); // play the slide-down, then hide
+  setTimeout(finish, 200);
 }
 
 function renderSchedule() {
@@ -677,7 +705,7 @@ function renderScheduleDays() {
   if (!wrap) return;
   const todayDow = campNow().dow;
   wrap.innerHTML = SCHED_DAYS.map((d) => `
-    <button class="sched-day-chip ${d.dow === scheduleDay ? 'active' : ''}" data-dow="${d.dow}">
+    <button class="sched-day-chip ${d.dow === scheduleDay ? 'active' : ''}" data-dow="${d.dow}" aria-pressed="${d.dow === scheduleDay}">
       ${d.short}${d.dow === todayDow ? '<span class="today-dot" title="Today"></span>' : ''}
     </button>`).join('');
   wrap.querySelectorAll('.sched-day-chip').forEach((btn) => {
@@ -751,6 +779,32 @@ function wireSchedule() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && !scheduleOverlayEl().hidden) closeSchedule();
   });
+
+  // Swipe-to-dismiss — only from the header (grabber). The scrollable body
+  // keeps its own scroll; we never hijack it.
+  const header = scheduleOverlayEl().querySelector('.schedule-header');
+  const sheet = scheduleOverlayEl().querySelector('.schedule-sheet');
+  if (header && sheet) {
+    let startY = null;
+    let dy = 0;
+    header.addEventListener('touchstart', (e) => {
+      startY = e.touches[0].clientY;
+      dy = 0;
+      sheet.style.transition = 'none';
+    }, { passive: true });
+    header.addEventListener('touchmove', (e) => {
+      if (startY == null) return;
+      dy = Math.max(0, e.touches[0].clientY - startY); // downward only
+      sheet.style.transform = `translateY(${dy}px)`;
+    }, { passive: true });
+    header.addEventListener('touchend', () => {
+      if (startY == null) return;
+      sheet.style.transition = '';
+      startY = null;
+      if (dy > 90) { closeSchedule(); }
+      else { sheet.style.transform = ''; } // spring back
+    });
+  }
 }
 
 // Formats an ISO timestamp as camp time, e.g. "Jul 19, 8:47pm ET" —
@@ -917,9 +971,24 @@ function initSync() {
       normalizeSyncedState();
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
       applyingRemote = false;
-      if (appStarted && syncSignature() !== beforeSig) renderAll();
+      if (appStarted && syncSignature() !== beforeSig) {
+        remoteJustApplied = true; // let renderStandings pulse rows that changed
+        renderAll();
+      }
     }, (err) => {
+      // A cancelled read (e.g. security rules) is terminal — drop to local-only
+      // and tell the truth in the indicator rather than claiming "Synced".
       console.warn('Firebase read failed, staying local', err);
+      fbRef = null;
+      fbConnected = false;
+      updateSyncIndicator();
+    });
+    // Honest connection state: RTDB's .info/connected flips as wifi comes and
+    // goes, so the indicator can say "Offline — will sync when back" instead of
+    // a permanent "Synced".
+    firebase.database().ref('.info/connected').on('value', (s) => {
+      fbConnected = !!s.val();
+      updateSyncIndicator();
     });
     // Flush a pending debounced push before the page is hidden/suspended. iOS
     // suspends setTimeout when the phone locks, so a result saved right before
@@ -964,14 +1033,19 @@ function syncSignature() {
   return JSON.stringify(SYNC_KEYS.map((k) => state[k]));
 }
 
+let fbConnected = false; // live RTDB connection state (.info/connected)
+
 function updateSyncIndicator() {
   const el = document.getElementById('sync-status');
   if (!el) return;
-  if (syncEnabled()) {
-    el.textContent = '☁️ Synced across devices';
+  if (!syncEnabled()) {
+    el.textContent = '📱 This device only';
+    el.classList.remove('synced');
+  } else if (fbConnected) {
+    el.textContent = '☁️ Synced';
     el.classList.add('synced');
   } else {
-    el.textContent = '📱 This device only';
+    el.textContent = '⚠️ Offline — will sync when back';
     el.classList.remove('synced');
   }
 }
@@ -986,7 +1060,12 @@ function teamName(id) {
 }
 
 function esc(str) {
-  return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function gameById(id) {
@@ -1252,11 +1331,9 @@ function renderTools(wrap, g) {
   let html = '';
   if (g.timer) html += countdownHTML(g);
   if (g.prompts) html += picRoundHTML(g);
-  else if (g.stopwatch) html += stopwatchHTML(g);
   wrap.innerHTML = html;
   if (g.timer) bindCountdown(wrap, g);
   if (g.prompts) bindPicRound(wrap, g);
-  else if (g.stopwatch) bindStopwatch(wrap, g);
 }
 
 // ── Countdown ──
@@ -1348,82 +1425,6 @@ function bindCountdown(wrap, g) {
   });
 }
 
-// ── Stopwatch (lap-based, e.g. Pumpkin Pictionary) ──
-
-function stopwatchHTML(g) {
-  let w = liveWatches[g.id];
-  if (!w) {
-    w = liveWatches[g.id] = { running: false, startAt: 0, laps: [], lapsTotal: 0 };
-  }
-  const lapNum = w.laps.length + 1;
-  const target = g.stopwatch.targetLaps;
-  const mainBtn = w.running
-    ? `<button class="timer-main-btn stop-lap-btn" data-action="stop-lap">⏹ Stop — record item ${w.laps.length + 1}</button>`
-    : `<button class="timer-main-btn" data-action="start-lap">▶ Start item ${lapNum}${target ? ' of ' + target : ''}</button>`;
-
-  return `<div class="tool-box" data-tool="stopwatch">
-    <div class="tool-label">⏱️ Drawing stopwatch</div>
-    <div class="big-clock" id="sw-display-${g.id}">${fmtWatch(w.running ? Date.now() - w.startAt : 0)}</div>
-    <div class="sw-total-line">Team total: <strong id="sw-total-${g.id}">${fmtWatch(w.lapsTotal + (w.running ? Date.now() - w.startAt : 0))}</strong> · ${w.laps.length}${target ? '/' + target : ''} items</div>
-    <div class="timer-btn-row">${mainBtn}</div>
-    ${w.laps.length ? `
-      <div class="sw-laps">${w.laps.map((ms, i) => `<span class="rank-pill">${i + 1}: ${fmtWatch(ms)}</span>`).join('')}</div>
-      <div class="sw-actions">
-        <button class="link-btn" data-action="undo-lap">Undo last item</button>
-        <button class="link-btn danger-link" data-action="reset-watch">Reset stopwatch</button>
-      </div>
-      <div class="sw-save-row">
-        <select id="sw-team-${g.id}">${state.teams.map((tm) => `<option value="${tm.id}">${esc(tm.name)}</option>`).join('')}</select>
-        <button class="secondary-btn" data-action="save-time">Fill team's time</button>
-      </div>` : ''}
-  </div>`;
-}
-
-function bindStopwatch(wrap, g) {
-  const box = wrap.querySelector('[data-tool="stopwatch"]');
-  if (!box) return;
-  const w = liveWatches[g.id];
-
-  box.querySelectorAll('[data-action]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const a = btn.dataset.action;
-      if (a === 'start-lap') {
-        getAudio();
-        w.startAt = Date.now();
-        w.running = true;
-        ensureTicking();
-      } else if (a === 'stop-lap') {
-        const lapMs = Date.now() - w.startAt;
-        w.running = false;
-        w.laps.push(lapMs);
-        w.lapsTotal += lapMs;
-      } else if (a === 'undo-lap') {
-        const last = w.laps.pop();
-        if (last) w.lapsTotal -= last;
-      } else if (a === 'reset-watch') {
-        if (!confirm('Reset the stopwatch and clear all recorded items?')) return;
-        w.running = false;
-        w.laps = [];
-        w.lapsTotal = 0;
-      } else if (a === 'save-time') {
-        const sel = document.getElementById('sw-team-' + g.id);
-        const teamId = sel.value;
-        const draft = state.drafts[g.id] || (state.drafts[g.id] = { scores: {}, medals: {} });
-        const prevLeader = leaderOf(g, draft);
-        const totalSec = w.lapsTotal / 1000;
-        const m = Math.floor(totalSec / 60);
-        const s = totalSec - m * 60;
-        draft.scores[teamId] = m + ':' + (s < 10 ? '0' : '') + s.toFixed(1);
-        draft.medals = {};
-        saveState();
-        checkHighScore(g, draft, teamId, prevLeader);
-        renderAll();
-        return;
-      }
-      renderTools(wrap, g);
-    });
-  });
-}
 
 // ── Photo storage (IndexedDB — photos are too big for localStorage) ──
 
@@ -1549,7 +1550,7 @@ function picRoundHTML(g) {
         <div class="timer-btn-row">
           <button class="timer-main-btn" data-action="export-photos">⬇ Export ${photoCount} captioned photo${photoCount === 1 ? '' : 's'}</button>
         </div>
-        <p class="muted pic-export-hint" id="pic-export-status">Each photo gets a harvest banner with the team, the prompt, and their time.</p>`;
+        <p class="muted pic-export-hint" id="pic-export-status">Each photo gets a harvest banner with the team, the prompt, and their time. Photos live on the phone that took them.</p>`;
     }
 
     if (round.laps.length) {
@@ -1851,6 +1852,11 @@ function matchupCalloutHTML(aId, bId) {
   const counselors = [counselorName(aId), counselorName(bId)].filter(Boolean);
   return `<div class="matchup-callout">
     <p class="call-next-label">Call up next:</p>
+    <div class="matchup-mascots" aria-hidden="true">
+      <span class="matchup-mascot">${teamEmoji(aId)}</span>
+      <span class="matchup-vs-emoji">⚔️</span>
+      <span class="matchup-mascot">${teamEmoji(bId)}</span>
+    </div>
     <p class="call-next-teams">${esc(teamName(aId))} <span class="vs">vs</span> ${esc(teamName(bId))}</p>
     ${counselors.length === 2 ? `<p class="call-next-counselors">Counselors: ${esc(counselors[0])} &amp; ${esc(counselors[1])}</p>` : ''}
     <div class="winner-btn-row">
@@ -1987,10 +1993,18 @@ function rankTeamsByPoints(counts) {
   });
 }
 
+let lastPointsByTeam = null; // for the remote-change pulse
+let remoteJustApplied = false;
+
 function renderStandings() {
   const tbody = document.getElementById('standings-tbody');
   const counts = medalCounts();
   const ranked = rankTeamsByPoints(counts);
+  // Pulse rows whose points changed because of a remote sync (invisible
+  // otherwise). Skip the very first render and local edits (those already
+  // get confetti / direct feedback).
+  const pulseFromRemote = remoteJustApplied && lastPointsByTeam !== null;
+  remoteJustApplied = false;
 
   tbody.innerHTML = '';
   ranked.forEach((team, i) => {
@@ -1999,6 +2013,9 @@ function renderStandings() {
     // Podium tint for the top 3 — but only once real points exist, so
     // Monday's all-zero table stays neutral.
     tr.className = i < 3 && s.points > 0 ? 'podium-row podium-' + (i + 1) : '';
+    if (pulseFromRemote && lastPointsByTeam[team.id] !== undefined && lastPointsByTeam[team.id] !== s.points) {
+      tr.className += ' points-pulse';
+    }
     const medalCell = (n) => `<td class="medal-col">${n ? n : '<span class="zero">0</span>'}</td>`;
     tr.innerHTML = `
       <td class="rank-col">${i + 1}</td>
@@ -2013,6 +2030,8 @@ function renderStandings() {
     `;
     tbody.appendChild(tr);
   });
+  lastPointsByTeam = {};
+  ranked.forEach((team) => { lastPointsByTeam[team.id] = counts[team.id].points; });
 }
 
 // ── Bonus points (extra points, entered + viewed here) ───────────
@@ -2047,7 +2066,7 @@ function renderBonuses() {
   if (canEdit()) {
     const mealRow = d.category === 'cleanup'
       ? `<div class="bonus-meal-row">${['Breakfast', 'Lunch', 'Supper'].map((m) =>
-          `<button class="bonus-meal-chip ${d.meal === m ? 'selected' : ''}" data-meal="${m}">${esc(m)}</button>`).join('')}</div>`
+          `<button class="bonus-meal-chip ${d.meal === m ? 'selected' : ''}" data-meal="${m}" aria-pressed="${d.meal === m}">${esc(m)}</button>`).join('')}</div>`
       : '';
     const customRow = d.category === 'custom'
       ? `<input type="text" id="bonus-custom" class="bonus-custom-input" placeholder="What for?" value="${esc(d.custom)}" maxlength="40" />`
@@ -2056,21 +2075,21 @@ function renderBonuses() {
       <div class="bonus-entry">
         <div class="bonus-cat-row">
           ${Object.entries(BONUS_CATEGORIES).map(([key, c]) =>
-            `<button class="bonus-cat-chip ${d.category === key ? 'selected' : ''}" data-cat="${key}">${c.icon} ${esc(c.label)}</button>`).join('')}
+            `<button class="bonus-cat-chip ${d.category === key ? 'selected' : ''}" data-cat="${key}" aria-pressed="${d.category === key}">${c.icon} ${esc(c.label)}</button>`).join('')}
         </div>
         ${mealRow}
         ${customRow}
         <p class="bonus-entry-hint muted">Pick the team(s) that earned it:</p>
         <div class="bonus-team-chips">
           ${state.teams.map((t) =>
-            `<button class="team-chip bonus-team-chip ${d.teams.includes(t.id) ? 'selected' : ''}" data-team-id="${t.id}"><span class="chip-emoji">${teamEmoji(t.id)}</span> ${esc(t.name)}</button>`).join('')}
+            `<button class="team-chip bonus-team-chip ${d.teams.includes(t.id) ? 'selected' : ''}" data-team-id="${t.id}" aria-pressed="${d.teams.includes(t.id)}"><span class="chip-emoji">${teamEmoji(t.id)}</span> ${esc(t.name)}</button>`).join('')}
         </div>
         <div class="bonus-add-row">
           <button id="bonus-sign" type="button" class="bonus-sign-btn ${d.sign < 0 ? 'neg' : ''}" aria-label="${d.sign < 0 ? 'Subtracting points — tap to add' : 'Adding points — tap to subtract'}">${d.sign < 0 ? '−' : '+'}</button>
           <input type="number" id="bonus-points" class="bonus-points-input" inputmode="numeric" placeholder="Points" value="${esc(d.points)}" />
           <button id="bonus-add-btn" class="primary-btn">${d.sign < 0 ? 'Subtract points' : 'Add points'}</button>
         </div>
-        <p id="bonus-error" class="entry-error" hidden></p>
+        <p id="bonus-error" class="entry-error" role="alert" hidden></p>
       </div>`;
   }
 
@@ -2085,12 +2104,14 @@ function renderBonuses() {
     ? `<ul class="bonus-ledger">${entries.map(([id, b]) => {
         const cat = BONUS_CATEGORIES[b.category] || BONUS_CATEGORIES.custom;
         const when = formatEasternStamp(b.at);
+        // Guard against a partially-synced entry (RTDB can prune a field).
+        const pts = Number(b.points) || 0;
         return `<li class="bonus-item">
           <span class="bonus-item-main">
             <span class="bonus-item-team">${teamEmoji(b.teamId)} ${esc(teamName(b.teamId))}</span>
-            <span class="bonus-item-label">${cat.icon} ${esc(b.label)}${when ? ` · ${esc(when)}` : ''}</span>
+            <span class="bonus-item-label">${cat.icon} ${esc(b.label || 'Bonus')}${when ? ` · ${esc(when)}` : ''}</span>
           </span>
-          <span class="bonus-item-pts ${b.points < 0 ? 'neg' : ''}">${b.points > 0 ? '+' : ''}${esc(String(b.points))}</span>
+          <span class="bonus-item-pts ${pts < 0 ? 'neg' : ''}">${pts > 0 ? '+' : ''}${esc(String(pts))}</span>
           ${canEdit() ? `<button class="bonus-remove-btn" data-bonus-id="${esc(id)}" aria-label="Remove this bonus">✕</button>` : ''}
         </li>`;
       }).join('')}</ul>`
@@ -2173,7 +2194,7 @@ function renderDayTabs() {
   const todayDow = campNow().dow; // camp time, not device time
   nav.innerHTML = [1, 2, 3, 4, 5].map((d) => {
     const isToday = d === todayDow;
-    return `<button class="day-tab ${state.ui.day === d ? 'active' : ''}" data-day="${d}">
+    return `<button class="day-tab ${state.ui.day === d ? 'active' : ''}" data-day="${d}" aria-pressed="${state.ui.day === d}">
       ${DAY_NAMES[d].slice(0, 3)}${isToday ? '<span class="today-dot" title="Today"></span>' : ''}
     </button>`;
   }).join('');
@@ -2313,7 +2334,7 @@ function renderGameView() {
   // Pictionary keeps its tools visible after the result is saved so
   // photos can still be exported; other tools hide once the game is done.
   // Viewers don't get the score-entry tools at all.
-  if (canEdit() && (g.timer || g.stopwatch || g.prompts) && (g.prompts || !state.results[g.id])) {
+  if (canEdit() && (g.timer || g.prompts) && (g.prompts || !state.results[g.id])) {
     renderTools(document.getElementById('tools-area'), g);
   }
 
@@ -2376,7 +2397,7 @@ function medalPickerHTML(picks, game) {
         <select data-medal="${s.key}">
           <option value="">— pick team —</option>
           ${state.teams.map((t) =>
-            `<option value="${t.id}" ${picks[s.key] === t.id ? 'selected' : ''}>${esc(t.name)}</option>`
+            `<option value="${t.id}" ${picks[s.key] === t.id ? 'selected' : ''}>${teamEmoji(t.id)} ${esc(t.name)}</option>`
           ).join('')}
         </select>
       </label>
@@ -2413,7 +2434,7 @@ function renderTally(container, g) {
       ${state.teams.map((t) => `
         <div class="score-input-row ${steps ? 'with-counter' : ''}">
           <div class="score-row-top">
-            <span class="score-team">${esc(t.name)}<span class="chip-sub">${esc(t.counselor || '')}</span></span>
+            <span class="score-team"><span class="chip-emoji">${teamEmoji(t.id)}</span> ${esc(t.name)}<span class="chip-sub">${esc(t.counselor || '')}</span></span>
             <input type="text" inputmode="${g.timeInput ? 'numeric' : 'decimal'}" placeholder="${g.timeInput ? 'm:ss' : '0'}"
               data-team-id="${t.id}" value="${esc(draft.scores[t.id] || '')}" />
           </div>
@@ -2428,7 +2449,7 @@ function renderTally(container, g) {
       `).join('')}
     </div>
     <div id="tally-medals"></div>
-    <p id="entry-error" class="entry-error" hidden></p>
+    <p id="entry-error" class="entry-error" role="alert" hidden></p>
     <button id="save-result-btn" class="primary-btn">Save Result</button>
   `;
 
@@ -2532,7 +2553,7 @@ function updateTallyMedals(g) {
 
   wrap.innerHTML = `
     ${ranked.length ? `<div class="live-ranking">${ranked.map((e, i) =>
-      `<span class="rank-pill">${i + 1}. ${esc(teamName(e.id))} · ${formatScore(g, e.v)}</span>`).join('')}</div>` : ''}
+      `<span class="rank-pill">${i + 1}. ${teamEmoji(e.id)} ${esc(teamName(e.id))} · ${formatScore(g, e.v)}</span>`).join('')}</div>` : ''}
     ${tieNote}
     <h3 class="medal-picker-heading">Medals ${ranked.length >= 3 ? '<span class="unit-tag">(auto-filled from scores)</span>' : ''}</h3>
     ${medalPickerHTML(picks, g)}
@@ -2556,7 +2577,7 @@ function renderPlacement(container, g) {
     <h3>Podium</h3>
     <p class="muted">No score-keeping needed — just record who placed.</p>
     <div id="placement-medals">${medalPickerHTML(draft.medals, g)}</div>
-    <p id="entry-error" class="entry-error" hidden></p>
+    <p id="entry-error" class="entry-error" role="alert" hidden></p>
     <button id="save-result-btn" class="primary-btn">Save Result</button>
   `;
 
@@ -2851,9 +2872,9 @@ function renderBracketSummary(body, g, b) {
   body.innerHTML = `
     <h3>Game results</h3>
     <div class="medal-summary">
-      <div class="medal-row gold-row">🥇 <strong>${esc(teamName(goldId))}</strong> <span class="medal-points">+${MEDAL_POINTS.gold} pts</span></div>
-      <div class="medal-row silver-row">🥈 <strong>${esc(teamName(silverId))}</strong> <span class="medal-points">+${MEDAL_POINTS.silver} pts</span></div>
-      <div class="medal-row bronze-row">🥉 <strong>${esc(teamName(bronzeId))}</strong> <span class="medal-points">+${MEDAL_POINTS.bronze} pts</span></div>
+      <div class="medal-row gold-row">🥇 ${teamEmoji(goldId)} <strong>${esc(teamName(goldId))}</strong> <span class="medal-points">+${MEDAL_POINTS.gold} pts</span></div>
+      <div class="medal-row silver-row">🥈 ${teamEmoji(silverId)} <strong>${esc(teamName(silverId))}</strong> <span class="medal-points">+${MEDAL_POINTS.silver} pts</span></div>
+      <div class="medal-row bronze-row">🥉 ${teamEmoji(bronzeId)} <strong>${esc(teamName(bronzeId))}</strong> <span class="medal-points">+${MEDAL_POINTS.bronze} pts</span></div>
     </div>
     <p class="muted">Eliminated in Round 1: ${eliminated.map((id) => esc(teamName(id))).join(', ')}</p>
     <button id="save-bracket-btn" class="primary-btn">Save Result</button>
