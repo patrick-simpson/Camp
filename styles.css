@@ -2222,6 +2222,15 @@ body.no-scroll {
   margin-left: -0.2rem;
 }
 
+.live-outs-pips {
+  min-width: 3.2rem;
+  text-align: center;
+  font-size: 1.15rem;
+  letter-spacing: 0.15rem;
+  color: var(--color-danger);
+  line-height: 1;
+}
+
 .live-reset {
   display: block;
   margin: 0.5rem auto 0;
