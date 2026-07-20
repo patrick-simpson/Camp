@@ -378,6 +378,107 @@ html.view-only .role-btn {
   transform: rotate(90deg);
 }
 
+.summary-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* "Live now" home-screen card — a game in progress, surfaced + highlighted. */
+.live-home {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 0.85rem;
+}
+.live-home-card {
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  color: var(--color-text);
+  background: var(--color-gold-bg);
+  border: 2px solid var(--color-danger);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 0.85rem 1rem;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  animation: live-pulse 2s ease-in-out infinite;
+}
+@keyframes live-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-danger) 45%, transparent); }
+  70%, 100% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--color-danger) 0%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-home-card { animation: none; }
+}
+.live-home-top {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.live-home-badge {
+  flex: 0 0 auto;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: #fff;
+  background: var(--color-danger);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+}
+.live-home-game {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+.live-home-score {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.live-home-score .lh-team {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  font-size: 0.95rem;
+  overflow-wrap: break-word;
+}
+.live-home-score .lh-team:last-child {
+  text-align: right;
+}
+.live-home-score .lh-nums {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-size: 1.6rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
+}
+.live-home-score .lh-dash {
+  font-size: 1rem;
+  color: var(--color-text-muted);
+}
+.live-home-sub {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+.live-home-matchup {
+  font-size: 1rem;
+  font-weight: 700;
+}
+.live-home-matchup .lh-vs {
+  color: var(--color-text-muted);
+  font-weight: 400;
+  margin: 0 0.2rem;
+}
+
 .muted {
   color: var(--color-text-muted);
   font-size: 0.9rem;

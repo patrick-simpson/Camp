@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-20T13:06:30Z';
+const CODE_UPDATED_AT = '2026-07-20T13:15:44Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -2865,6 +2865,63 @@ function renderGameView() {
   }
 }
 
+// Games with a bracket in progress (started, not yet finalized) — surfaced
+// as a highlighted "Live now" card at the top of the home screen.
+function liveHomeGames() {
+  return GAMES.filter((g) => {
+    const b = state.brackets && state.brackets[g.id];
+    return b && normalizeBracket(b).phase !== 'summary';
+  });
+}
+
+// Renders the highlighted "Live now" card(s) at the top of the home screen so
+// spectators (and refs) see the current matchup + live score without opening
+// the game. Hidden entirely when nothing is live. Kept current by renderAll,
+// which fires on every synced update.
+function renderLiveHome() {
+  const wrap = document.getElementById('live-home');
+  if (!wrap) return;
+  const games = liveHomeGames();
+  if (!games.length) { wrap.hidden = true; wrap.innerHTML = ''; return; }
+  wrap.hidden = false;
+  wrap.innerHTML = games.map((g) => {
+    const b = normalizeBracket(state.brackets[g.id]);
+    const phaseLabel = { round1: 'Round 1', bye: 'Bye', semifinal: 'Semifinal', championship: 'Championship', summary: 'Results' }[b.phase] || '';
+    const pair = currentMatchupOf(g, b);
+    let scoreHTML;
+    if (pair && g.liveTracker) {
+      const l = getLiveMatch(g, pair[0], pair[1]);
+      scoreHTML = `<span class="live-home-score">
+        <span class="lh-team">${teamEmoji(pair[0])} ${esc(teamName(pair[0]))}</span>
+        <span class="lh-nums">${l.hr[pair[0]] || 0}<span class="lh-dash">–</span>${l.hr[pair[1]] || 0}</span>
+        <span class="lh-team">${teamEmoji(pair[1])} ${esc(teamName(pair[1]))}</span>
+      </span>
+      <span class="live-home-sub">Inning ${l.inning} of ${g.liveTracker.innings || 3}</span>`;
+    } else if (pair) {
+      scoreHTML = `<span class="live-home-matchup">${teamEmoji(pair[0])} ${esc(teamName(pair[0]))} <span class="lh-vs">vs</span> ${teamEmoji(pair[1])} ${esc(teamName(pair[1]))}</span>`;
+    } else {
+      scoreHTML = `<span class="live-home-sub">${phaseLabel} in progress — tap to watch</span>`;
+    }
+    return `<button class="live-home-card" data-game-id="${esc(g.id)}">
+      <span class="live-home-top"><span class="live-home-badge">🔴 LIVE</span><span class="live-home-game">${g.emoji} ${esc(g.name)} · ${phaseLabel}</span></span>
+      ${scoreHTML}
+    </button>`;
+  }).join('');
+
+  wrap.querySelectorAll('.live-home-card').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const g = gameById(btn.dataset.gameId);
+      if (!g) return;
+      state.ui.gameId = g.id;
+      state.ui.day = g.day;
+      saveState();
+      renderAll();
+      const gv = document.getElementById('game-view');
+      if (gv) gv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+}
+
 // The matchup a bracket is currently waiting on a winner for — used by the
 // read-only live-watch view so spectators see who's playing right now.
 function currentMatchupOf(g, b) {
@@ -3722,6 +3779,7 @@ function toggleSound() {
 
 function renderAll() {
   renderNowBanner();
+  renderLiveHome();
   renderDayTabs();
   renderGameList();
   renderGameView();
@@ -3745,7 +3803,10 @@ function init() {
   applySoundIcon();
   document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
   document.getElementById('sound-toggle').addEventListener('click', toggleSound);
-  document.getElementById('reset-week-btn').addEventListener('click', resetWeek);
+  document.getElementById('reset-week-btn').addEventListener('click', (e) => {
+    e.preventDefault();  // it lives in the card's <summary> — don't toggle the card
+    resetWeek();
+  });
 
   const copyBtn = document.getElementById('copy-standings-btn');
   copyBtn.addEventListener('click', () => copyTextToClipboard(standingsSummaryText(), copyBtn));
