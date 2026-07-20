@@ -2061,6 +2061,97 @@ body.no-scroll {
   font-size: 0.8rem;
 }
 
+/* Read-only spectator view of a live match */
+.live-watch {
+  background: var(--color-gold-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  text-align: center;
+}
+
+.live-watch-label {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.live-watch-score {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.live-watch-score .lw-team {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  font-size: 1.6rem;
+  line-height: 1;
+}
+.lw-name {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-text);
+  overflow-wrap: break-word;
+}
+
+.lw-nums {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+.lw-num {
+  font-size: 2.4rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
+}
+.lw-dash {
+  font-size: 1.4rem;
+  color: var(--color-text-muted);
+}
+
+.live-watch-inning {
+  margin: 0.6rem 0 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.live-watch-matchup {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+.live-watch-matchup .lw-vs {
+  color: var(--color-text-muted);
+  font-weight: 400;
+  margin: 0 0.25rem;
+}
+
+.live-watch-note {
+  margin: 0.6rem 0 0;
+  font-size: 0.78rem;
+}
+
+.live-watch-done {
+  margin-top: 0.85rem;
+  text-align: left;
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.6rem;
+}
+.live-watch-done p { margin: 0 0 0.3rem; font-size: 0.78rem; }
+.live-watch-done ul { margin: 0; padding-left: 1.1rem; font-size: 0.85rem; }
+.live-watch-done li { margin: 0.15rem 0; }
+
 .call-next-label {
   margin: 0 0 0.25rem;
   font-size: 0.8rem;

@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-20T11:17:57Z';
+const CODE_UPDATED_AT = '2026-07-20T11:30:59Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -891,6 +891,7 @@ function makeFreshState() {
     brackets: {},  // gameId -> in-progress tournament
     drafts: {},    // gameId -> in-progress tally/placement entry
     bonuses: {},   // bonusId -> { teamId, category, label, points, at }
+    live: {},      // gameId -> { key, inning, hr } live match tally (synced so everyone can watch)
     ui: { day: defaultDay(), gameId: null },
     theme: null,
   };
@@ -906,6 +907,7 @@ if (!state.teams || !state.results) state = makeFreshState();
 if (!state.ui) state.ui = { day: defaultDay(), gameId: null };
 if (!state.meta) state.meta = {};
 if (!state.bonuses) state.bonuses = {}; // extra/bonus points ledger
+if (!state.live) state.live = {}; // live match tallies (synced; see liveTracker)
 if (state.theme === undefined) state.theme = null; // pre-theme saves: follow the device
 if (state.notify === undefined) state.notify = false; // device-local, not synced (see SYNC_KEYS)
 // state.followTeam stays `undefined` until the picker is answered (a team id,
@@ -947,7 +949,7 @@ function touchData() {
 // and the SDK loaded, scores sync across every device in real time.
 // Otherwise the app runs exactly as before, local-only.
 
-const SYNC_KEYS = ['teams', 'results', 'brackets', 'drafts', 'picRounds', 'bonuses', 'meta'];
+const SYNC_KEYS = ['teams', 'results', 'brackets', 'drafts', 'picRounds', 'bonuses', 'live', 'meta'];
 let fbRef = null;
 let applyingRemote = false;
 let pushTimer = null;
@@ -1013,7 +1015,7 @@ function initSync() {
       // devices kept their old results and re-pushed them later. Teams
       // stay guarded — a snapshot without a roster is malformed.
       if (remote.teams) state.teams = remote.teams;
-      ['results', 'brackets', 'drafts', 'picRounds', 'bonuses', 'meta'].forEach((k) => {
+      ['results', 'brackets', 'drafts', 'picRounds', 'bonuses', 'live', 'meta'].forEach((k) => {
         state[k] = remote[k] !== undefined ? remote[k] : {};
       });
       // Realtime Database silently drops empty arrays/nulls on write, so a
@@ -2853,7 +2855,7 @@ function renderGameView() {
   if (result) {
     renderResult(entry, g, result);
   } else if (!canEdit()) {
-    entry.innerHTML = `<p class="view-only-note">👀 View-only. This game hasn't been scored yet. Tap <strong>🔒 View only</strong> at the top and enter the score PIN to run it.</p>`;
+    renderLiveWatch(entry, g);
   } else if (g.format === 'tournament') {
     renderTournament(entry, g);
   } else if (g.format === 'tally') {
@@ -2861,6 +2863,71 @@ function renderGameView() {
   } else {
     renderPlacement(entry, g);
   }
+}
+
+// The matchup a bracket is currently waiting on a winner for — used by the
+// read-only live-watch view so spectators see who's playing right now.
+function currentMatchupOf(g, b) {
+  if (!b) return null;
+  if (b.phase === 'round1') {
+    if (Array.isArray(g.roundOneMatchups) && g.roundOneMatchups.length) {
+      return g.roundOneMatchups[(b.matches || []).length] || null;
+    }
+    return (b.selectedPair && b.selectedPair.length === 2) ? b.selectedPair : null;
+  }
+  if (b.phase === 'semifinal' && b.semifinal && b.semifinal.winner == null) return [b.semifinal.a, b.semifinal.b];
+  if (b.phase === 'championship' && b.championship && b.championship.winner == null) return [b.championship.a, b.championship.b];
+  return null;
+}
+
+// Read-only live view for spectators (no score PIN): the current matchup,
+// its live inning/tally (synced from the ref's device), and completed
+// matches. Re-rendered by renderAll whenever a synced update lands.
+function renderLiveWatch(container, g) {
+  const raw = state.brackets && state.brackets[g.id];
+  if (!raw) {
+    container.innerHTML = `<p class="view-only-note">👀 View-only. This game hasn't been scored yet. Tap <strong>🔒 View only</strong> at the top and enter the score PIN to run it.</p>`;
+    return;
+  }
+  const b = normalizeBracket(raw);
+  const phaseLabel = { round1: 'Round 1', bye: 'Bye', semifinal: 'Semifinal', championship: 'Championship', summary: 'Results' }[b.phase] || '';
+  const pair = currentMatchupOf(g, b);
+
+  const done = (b.matches || []).map((m) =>
+    `<li>${teamEmoji(m.winner)} ${esc(teamName(m.winner))} def. ${esc(teamName(m.loser))}</li>`).join('');
+  const doneHTML = done ? `<div class="live-watch-done"><p class="muted">Completed:</p><ul>${done}</ul></div>` : '';
+
+  if (!pair) {
+    container.innerHTML = `<div class="live-watch">
+      <p class="live-watch-label">🔴 ${esc(g.name)} — ${phaseLabel} in progress</p>
+      <p class="muted">Waiting for the next matchup…</p>
+      ${doneHTML}
+    </div>`;
+    return;
+  }
+
+  let scoreHTML;
+  if (g.liveTracker) {
+    const l = getLiveMatch(g, pair[0], pair[1]);
+    const maxInn = g.liveTracker.innings || 3;
+    scoreHTML = `
+      <div class="live-watch-score">
+        <div class="lw-team">${teamEmoji(pair[0])}<span class="lw-name">${esc(teamName(pair[0]))}</span></div>
+        <div class="lw-nums"><span class="lw-num">${l.hr[pair[0]] || 0}</span><span class="lw-dash">–</span><span class="lw-num">${l.hr[pair[1]] || 0}</span></div>
+        <div class="lw-team">${teamEmoji(pair[1])}<span class="lw-name">${esc(teamName(pair[1]))}</span></div>
+      </div>
+      <p class="live-watch-inning">Inning ${l.inning} of ${maxInn} · ${esc(g.liveTracker.unit || 'Points')}</p>`;
+  } else {
+    scoreHTML = `<div class="live-watch-matchup">${teamEmoji(pair[0])} ${esc(teamName(pair[0]))} <span class="lw-vs">vs</span> ${teamEmoji(pair[1])} ${esc(teamName(pair[1]))}</div>`;
+  }
+
+  container.innerHTML = `
+    <div class="live-watch">
+      <p class="live-watch-label">🔴 Live now · ${phaseLabel}</p>
+      ${scoreHTML}
+      <p class="muted live-watch-note">Updates automatically as the ref scores — no refresh needed.</p>
+      ${doneHTML}
+    </div>`;
 }
 
 function renderResult(container, g, result) {
@@ -3162,6 +3229,14 @@ function normalizeDraft(d) {
   return d;
 }
 
+// A live match tally: { key, inning, hr: {teamId: n} }. RTDB prunes an
+// empty hr map and a 0/absent inning, so heal them after a round-trip.
+function normalizeLiveMatch(l) {
+  if (!l.hr) l.hr = {};
+  if (typeof l.inning !== 'number' || l.inning < 1) l.inning = 1;
+  return l;
+}
+
 // One sweep over every synced shape that can carry pruned-empty fields.
 // Called after loading from localStorage and after every remote merge.
 function normalizeSyncedState() {
@@ -3169,6 +3244,8 @@ function normalizeSyncedState() {
   Object.values(state.picRounds || {}).forEach(normalizePicRound);
   Object.values(state.drafts || {}).forEach(normalizeDraft);
   if (!state.bonuses) state.bonuses = {}; // RTDB prunes an empty ledger to nothing
+  if (!state.live) state.live = {}; // RTDB prunes an empty live map to nothing
+  Object.values(state.live).forEach(normalizeLiveMatch);
   // Migrate rosters saved before names/counselors were set: swap generic
   // "Team N" names and placeholder counselors for the real roster values.
   // Anything hand-edited (not matching a known placeholder) is left alone.
@@ -3228,35 +3305,33 @@ function renderTournament(container, g) {
 }
 
 // ── Live match scorekeeper (innings + per-team tally) ────────────
-// A device-local aid for the ref running a match — NOT synced (each ref
-// tallies their own field) and NOT part of scoreboard state. Persisted to
-// localStorage so a phone lock mid-match doesn't lose the count. Keyed by
-// game + matchup, so moving to the next matchup starts a fresh tally.
-const LIVE_MATCH_KEY = 'campLiveMatch';
-
-function loadLiveAll() {
-  try { return JSON.parse(localStorage.getItem(LIVE_MATCH_KEY)) || {}; }
-  catch (e) { return {}; }
-}
+// The ref taps the innings/tally as a match runs; it's synced like the rest
+// of the scoreboard (state.live in SYNC_KEYS) so anyone with the app open —
+// counselors or spectators — watches it update in real time, with
+// localStorage as the offline backup. Keyed by game + matchup, so moving to
+// the next matchup starts a fresh tally.
 
 function getLiveMatch(g, aId, bId) {
   const key = [aId, bId].join('|');
-  const l = loadLiveAll()[g.id];
+  const l = state.live && state.live[g.id];
   if (l && l.key === key) {
-    return { key, inning: Number(l.inning) || 1, hr: (l && l.hr) || {} };
+    return { key, inning: Number(l.inning) || 1, hr: Object.assign({}, l.hr) };
   }
   return { key, inning: 1, hr: {} };
 }
 
 function setLiveMatch(g, l) {
-  const all = loadLiveAll();
-  all[g.id] = l;
-  try { localStorage.setItem(LIVE_MATCH_KEY, JSON.stringify(all)); } catch (e) { /* ignore */ }
+  if (!state.live) state.live = {};
+  state.live[g.id] = { key: l.key, inning: Number(l.inning) || 1, hr: l.hr || {} };
+  touchData();
+  saveState();
 }
 
 function clearLiveMatch(g) {
-  const all = loadLiveAll();
-  if (all[g.id]) { delete all[g.id]; try { localStorage.setItem(LIVE_MATCH_KEY, JSON.stringify(all)); } catch (e) { /* ignore */ } }
+  if (state.live && state.live[g.id]) {
+    delete state.live[g.id];
+    saveState();
+  }
 }
 
 function liveTrackerHTML(g, aId, bId) {
@@ -3595,6 +3670,7 @@ function resetWeek() {
   state.drafts = {};
   state.picRounds = {};
   state.bonuses = {};
+  state.live = {};
   state.ui.gameId = null;
   state.ui.picTeam = null;
   clearPhotos().catch(() => {});
