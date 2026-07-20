@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-20T15:59:19Z';
+const CODE_UPDATED_AT = '2026-07-20T16:26:13Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -2376,15 +2376,15 @@ const BONUS_CATEGORIES = {
   cleanup: { icon: '🧽', label: 'Meal cleanup' },
   custom:  { icon: '✨', label: 'Bonus' },
 };
-// Categories offered in the bonus entry row. 'verse' is intentionally
-// excluded — memory-verse points are recorded in the Memory Verse card
-// below (per day, alongside the day's verse), not here — but it stays in
-// BONUS_CATEGORIES so any legacy verse entry still resolves an icon/label.
-const BONUS_ENTRY_CATEGORIES = ['cleanup', 'custom'];
+// Categories offered in the bonus entry row. 'verse' and 'cleanup' are
+// intentionally excluded — they have their own cards (Memory Verse, Meal
+// Cleanup) — but stay in BONUS_CATEGORIES so any legacy entry still resolves
+// an icon/label. Only free-form 'custom' bonuses are entered here now.
+const BONUS_ENTRY_CATEGORIES = ['custom'];
 
 // Form state for the entry row — lives outside state so it isn't synced
-// or persisted; category/meal persist across adds for fast nightly entry.
-let bonusDraft = { category: 'cleanup', meal: 'Breakfast', teams: [], points: '', custom: '', sign: 1 };
+// or persisted; the fields persist across adds for fast nightly entry.
+let bonusDraft = { category: 'custom', meal: 'Breakfast', teams: [], points: '', custom: '', sign: 1 };
 
 function bonusLabelFor(d) {
   if (d.category === 'verse') return 'Verse memorization';
@@ -2410,11 +2410,13 @@ function renderBonuses() {
     const customRow = d.category === 'custom'
       ? `<input type="text" id="bonus-custom" class="bonus-custom-input" placeholder="What for?" value="${esc(d.custom)}" maxlength="40" />`
       : '';
+    // Only show the category chooser if there's more than one category.
+    const catRow = BONUS_ENTRY_CATEGORIES.length > 1
+      ? `<div class="bonus-cat-row">${BONUS_ENTRY_CATEGORIES.map((key) => { const c = BONUS_CATEGORIES[key]; return `<button class="bonus-cat-chip ${d.category === key ? 'selected' : ''}" data-cat="${key}" aria-pressed="${d.category === key}">${c.icon} ${esc(c.label)}</button>`; }).join('')}</div>`
+      : '';
     entryHTML = `
       <div class="bonus-entry">
-        <div class="bonus-cat-row">
-          ${BONUS_ENTRY_CATEGORIES.map((key) => { const c = BONUS_CATEGORIES[key]; return `<button class="bonus-cat-chip ${d.category === key ? 'selected' : ''}" data-cat="${key}" aria-pressed="${d.category === key}">${c.icon} ${esc(c.label)}</button>`; }).join('')}
-        </div>
+        ${catRow}
         ${mealRow}
         ${customRow}
         <p class="bonus-entry-hint muted">Pick the team(s) that earned it:</p>
@@ -2431,11 +2433,11 @@ function renderBonuses() {
       </div>`;
   }
 
-  // Verse points live in the Memory Verse card, so this card shows only
-  // the non-verse extras (cleanup + custom) in its subtotals and ledger.
+  // Verse and cleanup points have their own cards, so this card shows only
+  // the free-form 'custom' bonuses in its subtotals and ledger.
   const extra = {};
   Object.values(state.bonuses || {}).forEach((b) => {
-    if (b.category === 'verse') return;
+    if (b.category === 'verse' || b.category === 'cleanup') return;
     extra[b.teamId] = (extra[b.teamId] || 0) + (Number(b.points) || 0);
   });
   const withBonus = state.teams.filter((t) => extra[t.id]).sort((a, b) => extra[b.id] - extra[a.id]);
@@ -2445,7 +2447,7 @@ function renderBonuses() {
     : '';
 
   const entries = Object.entries(state.bonuses || {})
-    .filter(([, b]) => b.category !== 'verse')
+    .filter(([, b]) => b.category !== 'verse' && b.category !== 'cleanup')
     .sort((a, b) => (b[1].at || '').localeCompare(a[1].at || ''));
   const ledgerHTML = entries.length
     ? `<ul class="bonus-ledger">${entries.map(([id, b]) => {
@@ -2691,6 +2693,219 @@ function bindVerseEntry(wrap) {
       state.bonuses[newBonusId()] = { teamId, category: 'verse', label, points: pts, at, day: verseDay };
     });
     d.teams = [];
+    d.points = '';
+    touchData();
+    saveState();
+    renderAll();
+  });
+}
+
+// ── Meal cleanup ─────────────────────────────────────────────────
+// Each meal, a team is on cleanup. The rota (who cleans which meal each day)
+// is fixed data below; points earned are stored in the bonus ledger under the
+// 'cleanup' category, tagged with day + meal, so they flow into the week
+// standings — same pattern as Memory Verse. A missing meal key = TBA.
+const MEAL_CLEANUP_MEALS = ['Breakfast', 'Lunch', 'Supper'];
+const MEAL_ICONS = { Breakfast: '🍳', Lunch: '🥪', Supper: '🍲' };
+const MEAL_CLEANUP_SCHEDULE = {
+  1: { Breakfast: 't5', Lunch: 't4', Supper: 't0' }, // Mon: John Deere's / Pilgrims / Foxes
+  2: { Breakfast: 't2', Lunch: 't3', Supper: 't1' }, // Tue: Maples / Pumpkins / Turkey
+  3: {}, // Wed — TBA
+  4: {}, // Thu — TBA
+  5: {}, // Fri — TBA
+};
+
+// The team assigned to a given day + meal, or null (TBA).
+function cleanupAssigned(day, meal) {
+  const d = MEAL_CLEANUP_SCHEDULE[day];
+  return (d && d[meal]) || null;
+}
+
+// Which day's rota the card is showing + the entry draft (not synced).
+let cleanupDay = null;
+let cleanupDraft = { meal: 'Breakfast', teams: [], points: '' };
+
+// day -> { teamId -> total cleanup points } from the 'cleanup' ledger entries.
+function cleanupPointsByDay() {
+  const map = {};
+  Object.values(state.bonuses || {}).forEach((b) => {
+    if (b.category !== 'cleanup') return;
+    const day = Number(b.day) || 0;
+    if (!map[day]) map[day] = {};
+    map[day][b.teamId] = (map[day][b.teamId] || 0) + (Number(b.points) || 0);
+  });
+  return map;
+}
+
+// Total cleanup points recorded for one day + meal.
+function cleanupMealPoints(day, meal) {
+  let sum = 0;
+  Object.values(state.bonuses || {}).forEach((b) => {
+    if (b.category === 'cleanup' && (Number(b.day) || 0) === day && b.meal === meal) {
+      sum += Number(b.points) || 0;
+    }
+  });
+  return sum;
+}
+
+function renderMealCleanup() {
+  const wrap = document.getElementById('cleanup-body');
+  if (!wrap) return;
+  // Default to today (Mon–Fri, else Monday) and pre-target that meal's team.
+  if (cleanupDay == null) {
+    const dow = campNow().dow;
+    cleanupDay = (dow >= 1 && dow <= 5) ? dow : 1;
+    const first = cleanupAssigned(cleanupDay, cleanupDraft.meal);
+    cleanupDraft.teams = first ? [first] : [];
+  }
+  const d = cleanupDraft;
+  const todayDow = campNow().dow;
+
+  const dayChips = `<div class="verse-day-row">${[1, 2, 3, 4, 5].map((dow) =>
+    `<button class="verse-day-chip ${dow === cleanupDay ? 'selected' : ''}" data-cleanup-day="${dow}" aria-pressed="${dow === cleanupDay}">${DAY_NAMES[dow].slice(0, 3)}${dow === todayDow ? '<span class="today-dot" title="Today"></span>' : ''}</button>`).join('')}</div>`;
+
+  const rotaHTML = `<div class="cleanup-rota">${MEAL_CLEANUP_MEALS.map((meal) => {
+    const teamId = cleanupAssigned(cleanupDay, meal);
+    const pts = cleanupMealPoints(cleanupDay, meal);
+    return `<div class="cleanup-meal-row">
+      <span class="cleanup-meal-name">${MEAL_ICONS[meal]} ${esc(meal)}</span>
+      <span class="cleanup-meal-team">${teamId ? `${teamEmoji(teamId)} ${esc(teamName(teamId))}` : '<span class="cleanup-tba">TBA</span>'}</span>
+      ${pts ? `<span class="cleanup-meal-pts">+${pts}</span>` : ''}
+    </div>`;
+  }).join('')}</div>`;
+
+  let entryHTML = '';
+  if (canEdit()) {
+    const assignedId = cleanupAssigned(cleanupDay, d.meal);
+    const mealChips = `<div class="bonus-meal-row">${MEAL_CLEANUP_MEALS.map((m) =>
+      `<button class="bonus-meal-chip ${d.meal === m ? 'selected' : ''}" data-cleanup-meal="${m}" aria-pressed="${d.meal === m}">${esc(m)}</button>`).join('')}</div>`;
+    const assignedLine = assignedId
+      ? `<p class="bonus-entry-hint muted">On the rota for ${esc(DAY_NAMES[cleanupDay])} ${esc(d.meal.toLowerCase())}: ${teamEmoji(assignedId)} ${esc(teamName(assignedId))}</p>`
+      : `<p class="bonus-entry-hint muted">No team assigned for ${esc(DAY_NAMES[cleanupDay])} ${esc(d.meal.toLowerCase())} yet — pick who did it:</p>`;
+    entryHTML = `
+      <div class="verse-entry">
+        ${mealChips}
+        ${assignedLine}
+        <div class="bonus-team-chips">
+          ${state.teams.map((t) =>
+            `<button class="team-chip cleanup-team-chip ${d.teams.includes(t.id) ? 'selected' : ''}" data-team-id="${t.id}" aria-pressed="${d.teams.includes(t.id)}"><span class="chip-emoji">${teamEmoji(t.id)}</span> ${esc(t.name)}</button>`).join('')}
+        </div>
+        <div class="bonus-add-row">
+          <input type="number" id="cleanup-points" class="bonus-points-input" inputmode="numeric" placeholder="Points" value="${esc(d.points)}" />
+          <button id="cleanup-add-btn" class="primary-btn">Add points</button>
+        </div>
+        <p id="cleanup-error" class="entry-error" role="alert" hidden></p>
+      </div>`;
+  }
+
+  const byDay = cleanupPointsByDay();
+  const earned = byDay[cleanupDay] || {};
+  const earnedTeams = state.teams.filter((t) => earned[t.id]).sort((a, b) => earned[b.id] - earned[a.id]);
+  const subtotalsHTML = earnedTeams.length
+    ? `<div class="bonus-subtotals">${earnedTeams.map((t) =>
+        `<span class="bonus-subtotal-chip">${teamEmoji(t.id)} ${esc(t.name)} <strong>+${earned[t.id]}</strong></span>`).join('')}</div>`
+    : '';
+
+  const dayEntries = Object.entries(state.bonuses || {})
+    .filter(([, b]) => b.category === 'cleanup' && (Number(b.day) || 0) === cleanupDay)
+    .sort((a, b) => (b[1].at || '').localeCompare(a[1].at || ''));
+  const ledgerHTML = dayEntries.length
+    ? `<ul class="bonus-ledger">${dayEntries.map(([id, b]) => {
+        const when = formatEasternStamp(b.at);
+        const pts = Number(b.points) || 0;
+        const meal = b.meal || 'Cleanup';
+        return `<li class="bonus-item">
+          <span class="bonus-item-main">
+            <span class="bonus-item-team">${teamEmoji(b.teamId)} ${esc(teamName(b.teamId))}</span>
+            <span class="bonus-item-label">🧽 ${esc(meal)} cleanup${when ? ` · ${esc(when)}` : ''}</span>
+          </span>
+          <span class="bonus-item-pts">+${esc(String(pts))}</span>
+          ${canEdit() ? `<button class="bonus-remove-btn" data-bonus-id="${esc(id)}" aria-label="Remove this cleanup point">✕</button>` : ''}
+        </li>`;
+      }).join('')}</ul>`
+    : `<p class="muted bonus-empty">No cleanup points recorded for ${esc(DAY_NAMES[cleanupDay])} yet.</p>`;
+
+  // Legacy cleanup entries with no day (from the old Bonus card) — surface them
+  // so their points aren't invisible even though they still count in totals.
+  const legacy = Object.entries(state.bonuses || {})
+    .filter(([, b]) => b.category === 'cleanup' && !(Number(b.day) >= 1 && Number(b.day) <= 5))
+    .sort((a, b) => (b[1].at || '').localeCompare(a[1].at || ''));
+  const legacyHTML = legacy.length
+    ? `<p class="bonus-entry-hint muted">Earlier cleanup points (no day set):</p>
+       <ul class="bonus-ledger">${legacy.map(([id, b]) => {
+        const pts = Number(b.points) || 0;
+        return `<li class="bonus-item">
+          <span class="bonus-item-main">
+            <span class="bonus-item-team">${teamEmoji(b.teamId)} ${esc(teamName(b.teamId))}</span>
+            <span class="bonus-item-label">🧽 ${esc(b.label || 'Cleanup')}</span>
+          </span>
+          <span class="bonus-item-pts">+${esc(String(pts))}</span>
+          ${canEdit() ? `<button class="bonus-remove-btn" data-bonus-id="${esc(id)}" aria-label="Remove this cleanup point">✕</button>` : ''}
+        </li>`;
+      }).join('')}</ul>`
+    : '';
+
+  wrap.innerHTML = dayChips + rotaHTML + entryHTML + subtotalsHTML + ledgerHTML + legacyHTML;
+
+  wrap.querySelectorAll('.verse-day-chip').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      cleanupDay = parseInt(btn.dataset.cleanupDay, 10);
+      const a = cleanupAssigned(cleanupDay, d.meal);
+      d.teams = a ? [a] : [];
+      renderMealCleanup();
+    });
+  });
+  if (canEdit()) bindCleanupEntry(wrap);
+  wrap.querySelectorAll('.bonus-remove-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.bonusId;
+      const b = state.bonuses[id];
+      if (!b) return;
+      const pts = Number(b.points) || 0;
+      if (!confirm(`Remove +${pts} cleanup point${pts === 1 ? '' : 's'} for ${teamName(b.teamId)}?`)) return;
+      delete state.bonuses[id];
+      touchData();
+      saveState();
+      renderAll();
+    });
+  });
+}
+
+function bindCleanupEntry(wrap) {
+  const d = cleanupDraft;
+  wrap.querySelectorAll('.bonus-meal-chip').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      d.meal = btn.dataset.cleanupMeal;
+      const a = cleanupAssigned(cleanupDay, d.meal);
+      d.teams = a ? [a] : []; // pre-target the rota's team for this meal
+      renderMealCleanup();
+    });
+  });
+  wrap.querySelectorAll('.cleanup-team-chip').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.teamId;
+      const i = d.teams.indexOf(id);
+      if (i > -1) d.teams.splice(i, 1); else d.teams.push(id);
+      renderMealCleanup();
+    });
+  });
+  const ptsInput = wrap.querySelector('#cleanup-points');
+  if (ptsInput) ptsInput.addEventListener('input', () => { d.points = ptsInput.value; });
+
+  const addBtn = wrap.querySelector('#cleanup-add-btn');
+  if (addBtn) addBtn.addEventListener('click', () => {
+    const errEl = wrap.querySelector('#cleanup-error');
+    const showErr = (msg) => { errEl.textContent = msg; errEl.hidden = false; };
+    const pts = Number(d.points);
+    if (!d.teams.length) return showErr('Pick at least one team.');
+    if (d.points === '' || isNaN(pts) || pts === 0) return showErr('Enter a point value.');
+    if (!Number.isInteger(pts) || pts < 1 || pts > 100) return showErr('Points must be a whole number from 1 to 100.');
+    const label = `${DAY_NAMES[cleanupDay]} ${d.meal} cleanup`;
+    const at = new Date().toISOString();
+    const meal = d.meal;
+    d.teams.forEach((teamId) => {
+      state.bonuses[newBonusId()] = { teamId, category: 'cleanup', label, points: pts, at, day: cleanupDay, meal };
+    });
     d.points = '';
     touchData();
     saveState();
@@ -3875,6 +4090,7 @@ function renderAll() {
   renderGameView();
   renderStandings();
   renderMemoryVerse();
+  renderMealCleanup();
   renderBonuses();
   renderFooter();
   refreshOpenSchedule();

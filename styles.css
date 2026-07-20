@@ -2022,6 +2022,50 @@ body.no-scroll {
   margin-bottom: 1rem;
 }
 
+/* ============================================================
+   MEAL CLEANUP CARD  (reuses .verse-day-*, .bonus-* classes)
+   ============================================================ */
+.cleanup-rota {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.25rem 0 1rem;
+}
+.cleanup-meal-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.55rem 0.7rem;
+}
+.cleanup-meal-name {
+  flex: 0 0 auto;
+  font-weight: 700;
+  font-size: 0.9rem;
+  min-width: 6.2rem;
+}
+.cleanup-meal-team {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  overflow-wrap: break-word;
+}
+.cleanup-tba {
+  color: var(--color-text-muted);
+  font-weight: 600;
+  font-style: italic;
+}
+.cleanup-meal-pts {
+  flex: 0 0 auto;
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--color-gold);
+  font-variant-numeric: tabular-nums;
+}
+
 /* Fixed Round 1 matchup order (e.g. Kangaroo Kickball) */
 .matchup-order {
   background: var(--color-bg);
