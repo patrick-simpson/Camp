@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-20T09:48:57Z';
+const CODE_UPDATED_AT = '2026-07-20T10:38:18Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -2352,14 +2352,19 @@ function wireTeamPicker() {
 // ── Bonus points (extra points, entered + viewed here) ───────────
 
 const BONUS_CATEGORIES = {
-  verse:   { icon: '📖', label: 'Verse memorization' },
+  verse:   { icon: '📖', label: 'Memory verse' },
   cleanup: { icon: '🧽', label: 'Meal cleanup' },
   custom:  { icon: '✨', label: 'Bonus' },
 };
+// Categories offered in the bonus entry row. 'verse' is intentionally
+// excluded — memory-verse points are recorded in the Memory Verse card
+// below (per day, alongside the day's verse), not here — but it stays in
+// BONUS_CATEGORIES so any legacy verse entry still resolves an icon/label.
+const BONUS_ENTRY_CATEGORIES = ['cleanup', 'custom'];
 
 // Form state for the entry row — lives outside state so it isn't synced
 // or persisted; category/meal persist across adds for fast nightly entry.
-let bonusDraft = { category: 'verse', meal: 'Breakfast', teams: [], points: '', custom: '', sign: 1 };
+let bonusDraft = { category: 'cleanup', meal: 'Breakfast', teams: [], points: '', custom: '', sign: 1 };
 
 function bonusLabelFor(d) {
   if (d.category === 'verse') return 'Verse memorization';
@@ -2375,7 +2380,6 @@ function renderBonuses() {
   const wrap = document.getElementById('bonus-body');
   if (!wrap) return;
   const d = bonusDraft;
-  const bonus = bonusTotals();
 
   let entryHTML = '';
   if (canEdit()) {
@@ -2389,8 +2393,7 @@ function renderBonuses() {
     entryHTML = `
       <div class="bonus-entry">
         <div class="bonus-cat-row">
-          ${Object.entries(BONUS_CATEGORIES).map(([key, c]) =>
-            `<button class="bonus-cat-chip ${d.category === key ? 'selected' : ''}" data-cat="${key}" aria-pressed="${d.category === key}">${c.icon} ${esc(c.label)}</button>`).join('')}
+          ${BONUS_ENTRY_CATEGORIES.map((key) => { const c = BONUS_CATEGORIES[key]; return `<button class="bonus-cat-chip ${d.category === key ? 'selected' : ''}" data-cat="${key}" aria-pressed="${d.category === key}">${c.icon} ${esc(c.label)}</button>`; }).join('')}
         </div>
         ${mealRow}
         ${customRow}
@@ -2408,13 +2411,22 @@ function renderBonuses() {
       </div>`;
   }
 
-  const withBonus = state.teams.filter((t) => bonus[t.id]).sort((a, b) => bonus[b.id] - bonus[a.id]);
+  // Verse points live in the Memory Verse card, so this card shows only
+  // the non-verse extras (cleanup + custom) in its subtotals and ledger.
+  const extra = {};
+  Object.values(state.bonuses || {}).forEach((b) => {
+    if (b.category === 'verse') return;
+    extra[b.teamId] = (extra[b.teamId] || 0) + (Number(b.points) || 0);
+  });
+  const withBonus = state.teams.filter((t) => extra[t.id]).sort((a, b) => extra[b.id] - extra[a.id]);
   const subtotalsHTML = withBonus.length
     ? `<div class="bonus-subtotals">${withBonus.map((t) =>
-        `<span class="bonus-subtotal-chip">${teamEmoji(t.id)} ${esc(t.name)} <strong>${bonus[t.id] > 0 ? '+' : ''}${bonus[t.id]}</strong></span>`).join('')}</div>`
+        `<span class="bonus-subtotal-chip">${teamEmoji(t.id)} ${esc(t.name)} <strong>${extra[t.id] > 0 ? '+' : ''}${extra[t.id]}</strong></span>`).join('')}</div>`
     : '';
 
-  const entries = Object.entries(state.bonuses || {}).sort((a, b) => (b[1].at || '').localeCompare(a[1].at || ''));
+  const entries = Object.entries(state.bonuses || {})
+    .filter(([, b]) => b.category !== 'verse')
+    .sort((a, b) => (b[1].at || '').localeCompare(a[1].at || ''));
   const ledgerHTML = entries.length
     ? `<ul class="bonus-ledger">${entries.map(([id, b]) => {
         const cat = BONUS_CATEGORIES[b.category] || BONUS_CATEGORIES.custom;
@@ -2496,6 +2508,170 @@ function bindBonusEntry(wrap) {
     d.points = '';
     d.sign = 1; // back to the default (+) for the next entry
     if (d.category === 'custom') d.custom = '';
+    touchData();
+    saveState();
+    renderAll();
+  });
+}
+
+// ── Memory verses ────────────────────────────────────────────────
+// The week's theme verse + one memory verse per camp day (Mon–Fri),
+// transcribed from the printed "Harvest of the Heart" sheet. Counselors
+// read the day's verse here and award points to teams that recite it;
+// those points are stored in the bonus ledger under the 'verse' category,
+// tagged with the day, so they still flow into the week standings.
+const MEMORY_VERSE_THEME = {
+  title: 'Harvest of the Heart',
+  text: 'I have been crucified with Christ. It is no longer I who live, but Christ who lives in me. And the life I now live in the flesh I live by faith in the Son of God, who loved me and gave himself for me.',
+  ref: 'Galatians 2:20 ESV',
+};
+const MEMORY_VERSES = {
+  1: { text: 'For by grace you have been saved through faith. And this is not your own doing; it is the gift of God, not a result of works, so that no one may boast.', ref: 'Ephesians 2:8–9 ESV' },
+  2: { text: 'We were buried therefore with him by baptism into death, in order that, just as Christ was raised from the dead by the glory of the Father, we too might walk in newness of life.', ref: 'Romans 6:4 ESV' },
+  3: { text: 'There is therefore now no condemnation for those who are in Christ Jesus.', ref: 'Romans 8:1 ESV' },
+  4: { text: 'And I will give you a new heart, and a new spirit I will put within you. And I will remove the heart of stone from your flesh and give you a heart of flesh. And I will put my Spirit within you, and cause you to walk in my statutes and be careful to obey my rules.', ref: 'Ezekiel 36:26–27 ESV' },
+  5: { text: 'If we live by the Spirit, let us also keep in step with the Spirit.', ref: 'Galatians 5:25 ESV' },
+};
+
+// Which day's verse the card is showing, and the point-entry draft. Both
+// live outside state so they aren't synced or persisted (verseDay defaults
+// to today each load; the draft resets after each add).
+let verseDay = null;
+let verseDraft = { teams: [], points: '' };
+
+// dow -> { teamId -> total verse points } from the 'verse' ledger entries.
+function versePointsByDay() {
+  const map = {};
+  Object.values(state.bonuses || {}).forEach((b) => {
+    if (b.category !== 'verse') return;
+    const day = Number(b.day) || 0;
+    if (!map[day]) map[day] = {};
+    map[day][b.teamId] = (map[day][b.teamId] || 0) + (Number(b.points) || 0);
+  });
+  return map;
+}
+
+function renderMemoryVerse() {
+  const wrap = document.getElementById('verse-body');
+  if (!wrap) return;
+  // Default to today's verse (Mon–Fri); fall back to Monday on the weekend.
+  if (verseDay == null) {
+    const dow = campNow().dow;
+    verseDay = (dow >= 1 && dow <= 5) ? dow : 1;
+  }
+  const d = verseDraft;
+  const verse = MEMORY_VERSES[verseDay];
+  const todayDow = campNow().dow;
+
+  const themeHTML = `
+    <div class="verse-theme">
+      <span class="verse-theme-label">📖 Theme Verse · ${esc(MEMORY_VERSE_THEME.title)}</span>
+      <p class="verse-theme-text">“${esc(MEMORY_VERSE_THEME.text)}”</p>
+      <p class="verse-theme-ref">${esc(MEMORY_VERSE_THEME.ref)}</p>
+    </div>`;
+
+  const dayChips = `<div class="verse-day-row">${[1, 2, 3, 4, 5].map((dow) =>
+    `<button class="verse-day-chip ${dow === verseDay ? 'selected' : ''}" data-verse-day="${dow}" aria-pressed="${dow === verseDay}">${DAY_NAMES[dow].slice(0, 3)}${dow === todayDow ? '<span class="today-dot" title="Today"></span>' : ''}</button>`).join('')}</div>`;
+
+  const verseBox = `
+    <div class="verse-day-card">
+      <span class="verse-day-name">${esc(DAY_NAMES[verseDay])}</span>
+      <p class="verse-day-text">“${esc(verse.text)}”</p>
+      <p class="verse-day-ref">${esc(verse.ref)}</p>
+    </div>`;
+
+  let entryHTML = '';
+  if (canEdit()) {
+    entryHTML = `
+      <div class="verse-entry">
+        <p class="bonus-entry-hint muted">Record ${esc(DAY_NAMES[verseDay])}'s verse — pick the team(s) that recited it:</p>
+        <div class="bonus-team-chips">
+          ${state.teams.map((t) =>
+            `<button class="team-chip verse-team-chip ${d.teams.includes(t.id) ? 'selected' : ''}" data-team-id="${t.id}" aria-pressed="${d.teams.includes(t.id)}"><span class="chip-emoji">${teamEmoji(t.id)}</span> ${esc(t.name)}</button>`).join('')}
+        </div>
+        <div class="bonus-add-row">
+          <input type="number" id="verse-points" class="bonus-points-input" inputmode="numeric" placeholder="Points" value="${esc(d.points)}" />
+          <button id="verse-add-btn" class="primary-btn">Add points</button>
+        </div>
+        <p id="verse-error" class="entry-error" role="alert" hidden></p>
+      </div>`;
+  }
+
+  const byDay = versePointsByDay();
+  const earned = byDay[verseDay] || {};
+  const earnedTeams = state.teams.filter((t) => earned[t.id]).sort((a, b) => earned[b.id] - earned[a.id]);
+  const subtotalsHTML = earnedTeams.length
+    ? `<div class="bonus-subtotals">${earnedTeams.map((t) =>
+        `<span class="bonus-subtotal-chip">${teamEmoji(t.id)} ${esc(t.name)} <strong>+${earned[t.id]}</strong></span>`).join('')}</div>`
+    : '';
+
+  const dayEntries = Object.entries(state.bonuses || {})
+    .filter(([, b]) => b.category === 'verse' && (Number(b.day) || 0) === verseDay)
+    .sort((a, b) => (b[1].at || '').localeCompare(a[1].at || ''));
+  const ledgerHTML = dayEntries.length
+    ? `<ul class="bonus-ledger">${dayEntries.map(([id, b]) => {
+        const when = formatEasternStamp(b.at);
+        const pts = Number(b.points) || 0;
+        return `<li class="bonus-item">
+          <span class="bonus-item-main">
+            <span class="bonus-item-team">${teamEmoji(b.teamId)} ${esc(teamName(b.teamId))}</span>
+            <span class="bonus-item-label">📖 ${esc(DAY_NAMES[verseDay])} verse${when ? ` · ${esc(when)}` : ''}</span>
+          </span>
+          <span class="bonus-item-pts">+${esc(String(pts))}</span>
+          ${canEdit() ? `<button class="bonus-remove-btn" data-bonus-id="${esc(id)}" aria-label="Remove this verse point">✕</button>` : ''}
+        </li>`;
+      }).join('')}</ul>`
+    : `<p class="muted bonus-empty">No verse points recorded for ${esc(DAY_NAMES[verseDay])} yet.</p>`;
+
+  wrap.innerHTML = themeHTML + dayChips + verseBox + entryHTML + subtotalsHTML + ledgerHTML;
+
+  wrap.querySelectorAll('.verse-day-chip').forEach((btn) => {
+    btn.addEventListener('click', () => { verseDay = parseInt(btn.dataset.verseDay, 10); renderMemoryVerse(); });
+  });
+  if (canEdit()) bindVerseEntry(wrap);
+  wrap.querySelectorAll('.bonus-remove-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.bonusId;
+      const b = state.bonuses[id];
+      if (!b) return;
+      const pts = Number(b.points) || 0;
+      if (!confirm(`Remove +${pts} verse point${pts === 1 ? '' : 's'} for ${teamName(b.teamId)}?`)) return;
+      delete state.bonuses[id];
+      touchData();
+      saveState();
+      renderAll();
+    });
+  });
+}
+
+function bindVerseEntry(wrap) {
+  const d = verseDraft;
+  wrap.querySelectorAll('.verse-team-chip').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.teamId;
+      const i = d.teams.indexOf(id);
+      if (i > -1) d.teams.splice(i, 1); else d.teams.push(id);
+      renderMemoryVerse();
+    });
+  });
+  const ptsInput = wrap.querySelector('#verse-points');
+  if (ptsInput) ptsInput.addEventListener('input', () => { d.points = ptsInput.value; });
+
+  const addBtn = wrap.querySelector('#verse-add-btn');
+  if (addBtn) addBtn.addEventListener('click', () => {
+    const errEl = wrap.querySelector('#verse-error');
+    const showErr = (msg) => { errEl.textContent = msg; errEl.hidden = false; };
+    const pts = Number(d.points);
+    if (!d.teams.length) return showErr('Pick at least one team.');
+    if (d.points === '' || isNaN(pts) || pts === 0) return showErr('Enter a point value.');
+    if (!Number.isInteger(pts) || pts < 1 || pts > 100) return showErr('Points must be a whole number from 1 to 100.');
+    const label = `${DAY_NAMES[verseDay]} memory verse`;
+    const at = new Date().toISOString();
+    d.teams.forEach((teamId) => {
+      state.bonuses[newBonusId()] = { teamId, category: 'verse', label, points: pts, at, day: verseDay };
+    });
+    d.teams = [];
+    d.points = '';
     touchData();
     saveState();
     renderAll();
@@ -3272,6 +3448,7 @@ function renderAll() {
   renderGameList();
   renderGameView();
   renderStandings();
+  renderMemoryVerse();
   renderBonuses();
   renderFooter();
   refreshOpenSchedule();

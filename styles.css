@@ -1749,6 +1749,112 @@ body.no-scroll {
   margin: 0.5rem 0 0;
 }
 
+/* ============================================================
+   MEMORY VERSE CARD
+   (reuses .bonus-team-chips, .bonus-add-row, .bonus-subtotals,
+    .bonus-ledger, .bonus-item, .bonus-entry-hint)
+   ============================================================ */
+.verse-theme {
+  background: var(--color-gold-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.85rem;
+  margin-bottom: 0.85rem;
+}
+
+.verse-theme-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-gold);
+  margin-bottom: 0.35rem;
+}
+
+.verse-theme-text {
+  margin: 0 0 0.3rem;
+  font-size: 0.9rem;
+  font-style: italic;
+  line-height: 1.45;
+  color: var(--color-text);
+}
+
+.verse-theme-ref {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.verse-day-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.verse-day-chip {
+  position: relative;
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s ease;
+}
+
+.verse-day-chip.selected {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+  color: var(--color-primary);
+}
+
+.verse-day-chip .today-dot {
+  margin-left: 0.35rem;
+}
+
+.verse-day-card {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  padding: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.verse-day-name {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-primary);
+  margin-bottom: 0.4rem;
+}
+
+.verse-day-text {
+  margin: 0 0 0.4rem;
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--color-text);
+}
+
+.verse-day-ref {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.verse-entry {
+  margin-bottom: 1rem;
+}
+
 .matchup-callout {
   background: var(--color-gold-bg);
   border-radius: var(--radius-md);
