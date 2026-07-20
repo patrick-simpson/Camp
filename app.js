@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-20T09:06:06Z';
+const CODE_UPDATED_AT = '2026-07-20T09:23:05Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -54,6 +54,20 @@ const TEAM_EMOJI = {
   t4: '🦅', // Patriotic Pilgrims
   t5: '🚜', // Runaway John Deere's
 };
+// Short-form team names for tight spaces (e.g. the morning meeting banner) —
+// same slots as TEAM_EMOJI, independent of whatever a team gets renamed to.
+const TEAM_ABBREV = {
+  t0: 'Foxes',
+  t1: 'Turkey',
+  t2: 'Maples',
+  t3: 'Pumpkins',
+  t4: 'Pilgrims',
+  t5: 'John Deeres',
+};
+// Game-leader team groups (see DEFAULT_COUNSELORS' (A)/(B) tags below):
+// Stephen runs the A teams, Patrick runs the B teams.
+const TEAM_GROUP_A = ['t1', 't2', 't5'];
+const TEAM_GROUP_B = ['t0', 't3', 't4'];
 // Older auto-assigned names to migrate off, per team index — the generic
 // "Team N" seeds plus any earlier name we've since corrected (e.g. the
 // "Portidatory" misread), so devices already carrying one update to the
@@ -436,12 +450,20 @@ function weekdayEvening(campfireLeader) {
   ];
 }
 
+// e.g. ['t1','t2','t5'] -> "🦃 Turkey, 🍁 Maples & 🚜 John Deeres"
+function joinTeamAbbrevs(ids) {
+  const items = ids.map((id) => TEAM_EMOJI[id] + ' ' + TEAM_ABBREV[id]);
+  if (items.length < 2) return items.join('');
+  return items.slice(0, -1).join(', ') + ' & ' + items[items.length - 1];
+}
+
 // Every morning before rising bell, by team group (A: Mon/Wed/Fri, B: Tue/Thu/Sat).
 function morningMeetingBlock(dow) {
   const isATeamDay = dow === 1 || dow === 3 || dow === 5;
+  const group = isATeamDay ? TEAM_GROUP_A : TEAM_GROUP_B;
   return {
     start: hm(7, 0), end: hm(7, 30),
-    label: "Morning meeting (Laura's cottage) — " + (isATeamDay ? 'A teams' : 'B teams'),
+    label: "Morning meeting (Laura's cottage) — " + joinTeamAbbrevs(group),
     emoji: '🏡', type: 'activity',
   };
 }
