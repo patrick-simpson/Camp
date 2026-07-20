@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-20T16:38:11Z';
+const CODE_UPDATED_AT = '2026-07-20T16:43:40Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -601,6 +601,24 @@ function decorateMealBlock(dow, block) {
   });
 }
 
+// The meal a schedule block represents (Breakfast/Lunch/Supper), or null.
+// Handles decorated labels like "Supper — Shepherd's Pie".
+function blockMealName(label) {
+  const base = String(label || '').split(' — ')[0].trim();
+  return MEAL_CLEANUP_MEALS.includes(base) ? base : null;
+}
+
+// A "🧽 <team>" note naming who's on cleanup for the meal a block represents,
+// shown next to the meal wherever it appears. '' when the block isn't a meal or
+// the day isn't on the cleanup rota; "TBA" for a tracked day not yet assigned.
+function mealCleanupNote(dow, label) {
+  const meal = blockMealName(label);
+  if (!meal || !MEAL_CLEANUP_SCHEDULE[dow]) return '';
+  const teamId = cleanupAssigned(dow, meal);
+  const who = teamId ? `${teamEmoji(teamId)} ${esc(teamName(teamId))}` : 'TBA';
+  return ` <span class="meal-cleanup-note">🧽 ${who}</span>`;
+}
+
 // Current day-of-week + minutes-since-midnight, in camp time.
 // Debug/preview override: add ?now=<dow>-<hhmm> to the page URL,
 // e.g. ?now=1-1330 previews Monday 1:30pm.
@@ -652,8 +670,8 @@ function nowBannerHtml(dow, minutes) {
     `<div class="now-progress" aria-hidden="true"><div class="now-progress-fill" style="width:${Math.round(Math.max(0, Math.min(1, progress)) * 100)}%"></div></div>`;
   const main = (emoji, label, time, next, progress) => eyebrow +
     `<div class="now-main"><span class="now-emoji">${emoji}</span><div class="now-body">
-      <div class="now-label">${esc(label)}${time ? ` <span class="now-time">${time}</span>` : ''}</div>
-      ${next ? `<div class="now-next">Up next: ${next.emoji} ${esc(next.label)} at ${schedClock(next.start, true)}</div>` : ''}
+      <div class="now-label">${esc(label)}${time ? ` <span class="now-time">${time}</span>` : ''}${mealCleanupNote(dow, label)}</div>
+      ${next ? `<div class="now-next">Up next: ${next.emoji} ${esc(next.label)} at ${schedClock(next.start, true)}${mealCleanupNote(dow, next.label)}</div>` : ''}
     </div></div>` + progressBar(progress);
 
   // Early morning, before the first block of the day.
@@ -825,7 +843,7 @@ function renderScheduleBody() {
       <div class="sched-rail"><span class="sched-dot"></span></div>
       <div class="sched-card">
         <div class="sched-time">${raw.noTime ? '' : schedRange(raw.start, raw.end)}${status === 'now' ? '<span class="sched-now-pill">Now</span>' : ''}</div>
-        <div class="sched-label"><span class="sched-emoji">${b.emoji}</span> ${esc(b.label)}</div>
+        <div class="sched-label"><span class="sched-emoji">${b.emoji}</span> ${esc(b.label)}${mealCleanupNote(dow, b.label)}</div>
         ${extra}
       </div>
     </div>`;

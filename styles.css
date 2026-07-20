@@ -2073,6 +2073,16 @@ body.no-scroll {
   font-style: italic;
 }
 
+/* "🧽 <team>" cleanup note shown next to a meal wherever it's mentioned. */
+.meal-cleanup-note {
+  display: inline-block;
+  white-space: nowrap;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  margin-left: 0.35rem;
+}
+
 /* Fixed Round 1 matchup order (e.g. Kangaroo Kickball) */
 .matchup-order {
   background: var(--color-bg);
