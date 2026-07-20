@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-20T10:56:10Z';
+const CODE_UPDATED_AT = '2026-07-20T11:17:57Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -125,6 +125,9 @@ const GAMES = [
     // tournament game has this, Round 1 walks these matchups in order instead
     // of asking you to pick two teams each time.
     roundOneMatchups: [['t0', 't3'], ['t1', 't4'], ['t2', 't5']],
+    // Show a live scorekeeping aid (innings + home runs per team) on each
+    // matchup, to help the ref decide the winner. Local to the device only.
+    liveTracker: { unit: 'Home runs', innings: 3 },
     headline: 'Kickball, but everyone is three-legged with a partner.',
     rules: [
       { h: 'How to play', items: [
@@ -989,6 +992,14 @@ function initSync() {
           return;
         }
       }
+      // A local edit is queued but hasn't reached the server yet (e.g. a
+      // bracket winner tapped in the last 400ms). Adopting this snapshot now
+      // would overwrite it on screen, and the queued push would then persist
+      // the reverted state — the bug where tapping a winner right after the
+      // page loads "does nothing." Keep local; the pending push carries our
+      // edit to the server, and its echo re-syncs everyone. The first
+      // snapshot is handled by the dirtySinceLoad defense just above.
+      if (!firstSnapshot && pushTimer !== null) return;
       applyingRemote = true;
       // Signature of the synced slice before applying this snapshot. RTDB fires
       // a local `value` event for our own set(), so most snapshots are pure
@@ -1058,7 +1069,10 @@ function initSync() {
 function schedulePush() {
   if (!fbRef) return;
   clearTimeout(pushTimer);
-  pushTimer = setTimeout(pushState, 400); // coalesce rapid edits
+  // Null the handle when it fires so `pushTimer !== null` is an accurate
+  // "a local write is queued but not yet sent" signal — the remote merge
+  // uses it to avoid clobbering an un-pushed edit (see initSync).
+  pushTimer = setTimeout(() => { pushTimer = null; pushState(); }, 400); // coalesce rapid edits
 }
 
 function pushState() {
@@ -3178,6 +3192,7 @@ function renderTournament(container, g) {
     `;
     document.getElementById('start-bracket-btn').addEventListener('click', () => {
       state.brackets[g.id] = freshBracket();
+      clearLiveMatch(g); // a new bracket starts with a clean tally
       saveState();
       renderAll();
     });
@@ -3199,6 +3214,7 @@ function renderTournament(container, g) {
   document.getElementById('cancel-bracket-btn').addEventListener('click', () => {
     if (!confirm('Cancel this bracket? Nothing will be saved.')) return;
     delete state.brackets[g.id];
+    clearLiveMatch(g);
     saveState();
     renderAll();
   });
@@ -3209,6 +3225,98 @@ function renderTournament(container, g) {
   else if (b.phase === 'semifinal') renderBracketSemifinal(body, g, b);
   else if (b.phase === 'championship') renderBracketChampionship(body, g, b);
   else renderBracketSummary(body, g, b);
+}
+
+// ── Live match scorekeeper (innings + per-team tally) ────────────
+// A device-local aid for the ref running a match — NOT synced (each ref
+// tallies their own field) and NOT part of scoreboard state. Persisted to
+// localStorage so a phone lock mid-match doesn't lose the count. Keyed by
+// game + matchup, so moving to the next matchup starts a fresh tally.
+const LIVE_MATCH_KEY = 'campLiveMatch';
+
+function loadLiveAll() {
+  try { return JSON.parse(localStorage.getItem(LIVE_MATCH_KEY)) || {}; }
+  catch (e) { return {}; }
+}
+
+function getLiveMatch(g, aId, bId) {
+  const key = [aId, bId].join('|');
+  const l = loadLiveAll()[g.id];
+  if (l && l.key === key) {
+    return { key, inning: Number(l.inning) || 1, hr: (l && l.hr) || {} };
+  }
+  return { key, inning: 1, hr: {} };
+}
+
+function setLiveMatch(g, l) {
+  const all = loadLiveAll();
+  all[g.id] = l;
+  try { localStorage.setItem(LIVE_MATCH_KEY, JSON.stringify(all)); } catch (e) { /* ignore */ }
+}
+
+function clearLiveMatch(g) {
+  const all = loadLiveAll();
+  if (all[g.id]) { delete all[g.id]; try { localStorage.setItem(LIVE_MATCH_KEY, JSON.stringify(all)); } catch (e) { /* ignore */ } }
+}
+
+function liveTrackerHTML(g, aId, bId) {
+  if (!g.liveTracker) return '';
+  const maxInn = g.liveTracker.innings || 3;
+  const unit = g.liveTracker.unit || 'Points';
+  const l = getLiveMatch(g, aId, bId);
+  const row = (id) => `
+    <div class="live-hr-row">
+      <span class="live-hr-team">${teamEmoji(id)} ${esc(teamName(id))}</span>
+      <div class="live-stepper">
+        <button class="live-btn" data-live="hr-down" data-team="${esc(id)}" aria-label="Subtract from ${esc(teamName(id))}">−</button>
+        <span class="live-val" data-hr-team="${esc(id)}">${l.hr[id] || 0}</span>
+        <button class="live-btn" data-live="hr-up" data-team="${esc(id)}" aria-label="Add to ${esc(teamName(id))}">+</button>
+      </div>
+    </div>`;
+  return `<div class="live-tracker">
+    <div class="live-row live-inning-row">
+      <span class="live-label">Inning</span>
+      <div class="live-stepper">
+        <button class="live-btn" data-live="inning-down" aria-label="Previous inning">−</button>
+        <span class="live-val" id="live-inning-val">${l.inning}</span>
+        <span class="live-of">of ${maxInn}</span>
+        <button class="live-btn" data-live="inning-up" aria-label="Next inning">+</button>
+      </div>
+    </div>
+    <div class="live-row live-hr-block">
+      <span class="live-label">${esc(unit)}</span>
+      ${row(aId)}
+      ${row(bId)}
+    </div>
+    <button class="live-reset link-btn" data-live="reset">Reset tally</button>
+  </div>`;
+}
+
+function bindLiveTracker(container, g, aId, bId) {
+  if (!g.liveTracker) return;
+  const maxInn = g.liveTracker.innings || 3;
+  const refresh = () => {
+    const l = getLiveMatch(g, aId, bId);
+    const iv = container.querySelector('#live-inning-val');
+    if (iv) iv.textContent = l.inning;
+    container.querySelectorAll('[data-hr-team]').forEach((el) => {
+      el.textContent = l.hr[el.dataset.hrTeam] || 0;
+    });
+  };
+  container.querySelectorAll('[data-live]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const act = btn.dataset.live;
+      const team = btn.dataset.team;
+      const l = getLiveMatch(g, aId, bId);
+      if (act === 'inning-up') l.inning = Math.min(maxInn, (Number(l.inning) || 1) + 1);
+      else if (act === 'inning-down') l.inning = Math.max(1, (Number(l.inning) || 1) - 1);
+      else if (act === 'hr-up') l.hr[team] = (Number(l.hr[team]) || 0) + 1;
+      else if (act === 'hr-down') l.hr[team] = Math.max(0, (Number(l.hr[team]) || 0) - 1);
+      else if (act === 'reset') { l.inning = 1; l.hr = {}; }
+      setLiveMatch(g, l);
+      refresh();
+    });
+  });
 }
 
 function renderBracketRound1(body, g, b) {
@@ -3234,6 +3342,7 @@ function renderBracketRound1(body, g, b) {
 
   if (b.selectedPair.length === 2) {
     html += matchupCalloutHTML(b.selectedPair[0], b.selectedPair[1]);
+    html += liveTrackerHTML(g, b.selectedPair[0], b.selectedPair[1]);
   }
 
   if (b.matches.length > 0) {
@@ -3248,6 +3357,7 @@ function renderBracketRound1(body, g, b) {
 
   if (b.selectedPair.length === 2) {
     bindMatchupCopy(body, g, `Round 1 (match ${b.matches.length + 1})`, b.selectedPair[0], b.selectedPair[1]);
+    bindLiveTracker(body, g, b.selectedPair[0], b.selectedPair[1]);
   }
 
   body.querySelectorAll('.team-chip').forEach((btn) => {
@@ -3321,6 +3431,7 @@ function renderBracketRound1Fixed(body, g, b, preset) {
 
   if (current) {
     html += matchupCalloutHTML(current[0], current[1]);
+    html += liveTrackerHTML(g, current[0], current[1]);
   }
 
   if (b.matches.length > 0) {
@@ -3331,6 +3442,7 @@ function renderBracketRound1Fixed(body, g, b, preset) {
 
   if (current) {
     bindMatchupCopy(body, g, `Round 1 (match ${currentIndex + 1})`, current[0], current[1]);
+    bindLiveTracker(body, g, current[0], current[1]);
   }
 
   body.querySelectorAll('.winner-btn').forEach((btn) => {
@@ -3397,9 +3509,11 @@ function renderBracketSemifinal(body, g, b) {
     <h3>Semifinal</h3>
     <p class="bye-note">🎟️ <strong>${esc(teamName(b.byeTeamId))}</strong> has the bye — straight to the Championship.</p>
     ${matchupCalloutHTML(b.semifinal.a, b.semifinal.b)}
+    ${liveTrackerHTML(g, b.semifinal.a, b.semifinal.b)}
   `;
 
   bindMatchupCopy(body, g, 'SEMIFINAL', b.semifinal.a, b.semifinal.b);
+  bindLiveTracker(body, g, b.semifinal.a, b.semifinal.b);
 
   body.querySelectorAll('.winner-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -3421,9 +3535,11 @@ function renderBracketChampionship(body, g, b) {
     <h3>Championship</h3>
     <p class="bronze-note">🥉 <strong>${esc(teamName(b.semifinal.loser))}</strong> takes the bronze medal (+${MEDAL_POINTS.bronze} pts).</p>
     ${matchupCalloutHTML(b.championship.a, b.championship.b)}
+    ${liveTrackerHTML(g, b.championship.a, b.championship.b)}
   `;
 
   bindMatchupCopy(body, g, 'CHAMPIONSHIP', b.championship.a, b.championship.b);
+  bindLiveTracker(body, g, b.championship.a, b.championship.b);
 
   body.querySelectorAll('.winner-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -3462,6 +3578,7 @@ function renderBracketSummary(body, g, b) {
       savedAt: new Date().toISOString(),
     };
     delete state.brackets[g.id];
+    clearLiveMatch(g);
     touchData();
     saveState();
     renderAll();
