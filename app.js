@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-20T01:51:03Z';
+const CODE_UPDATED_AT = '2026-07-20T08:05:22Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -820,7 +820,18 @@ function counselorName(id) {
 }
 
 function saveState() {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  // A save made before the first server snapshot lands is "unsynced local
+  // work" — track it so the first snapshot can defend it instead of blindly
+  // adopting a stale remote copy (see the initSync merge). Set before the
+  // write so a quota/private-mode throw doesn't skip the flag.
+  if (!remoteReady) dirtySinceLoad = true;
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch (e) {
+    // Private mode / quota exceeded: cloud + in-memory state still work, so
+    // the Save button shouldn't appear dead. Just warn and keep going.
+    console.warn('localStorage write failed (private mode or quota?)', e);
+  }
   if (!applyingRemote) schedulePush();
 }
 
@@ -847,6 +858,10 @@ let pushTimer = null;
 // its first sync queues a set() of its stale local state — and the SDK
 // delivers that on connect, wiping everyone's newer scores.
 let remoteReady = false;
+// True once anything has been saved locally before the first snapshot landed.
+// Lets the first-snapshot merge defend offline-entered results instead of
+// silently replacing them with a stale server copy.
+let dirtySinceLoad = false;
 
 function syncEnabled() {
   return !!fbRef;
@@ -863,8 +878,22 @@ function initSync() {
     fbRef = firebase.database().ref('campScoreboard/state');
     fbRef.on('value', (snap) => {
       const remote = snap.val();
+      const firstSnapshot = !remoteReady;
       remoteReady = true; // server truth received — pushes may flow now
       if (!remote) { pushState(); return; } // seed an empty database
+      // Defend offline-entered work: if this is the very first snapshot and we
+      // saved something locally before it arrived, and our data is strictly
+      // newer than the server's, push local instead of adopting remote — which
+      // would otherwise wipe a result entered on dead wifi. Timestamps use the
+      // synced meta.lastDataChangeAt (touchData) so only real data edits win.
+      if (firstSnapshot && dirtySinceLoad) {
+        const localAt = state.meta && state.meta.lastDataChangeAt;
+        const remoteAt = remote.meta && remote.meta.lastDataChangeAt;
+        if (localAt && (!remoteAt || localAt > remoteAt)) {
+          pushState();
+          return;
+        }
+      }
       applyingRemote = true;
       // The snapshot is the entire synced tree, so a key missing from it
       // means "empty" — RTDB prunes empty objects on write. Treating
@@ -885,6 +914,20 @@ function initSync() {
       if (appStarted) renderAll();
     }, (err) => {
       console.warn('Firebase read failed, staying local', err);
+    });
+    // Flush a pending debounced push before the page is hidden/suspended. iOS
+    // suspends setTimeout when the phone locks, so a result saved right before
+    // locking would otherwise strand its 400ms push and never reach the server.
+    const flushPush = () => {
+      if (pushTimer) {
+        clearTimeout(pushTimer);
+        pushTimer = null;
+        pushState();
+      }
+    };
+    window.addEventListener('pagehide', flushPush);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) flushPush();
     });
     updateSyncIndicator();
   } catch (e) {
@@ -1900,7 +1943,14 @@ function renderBonuses() {
   if (canEdit()) bindBonusEntry(wrap);
   wrap.querySelectorAll('.bonus-remove-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      delete state.bonuses[btn.dataset.bonusId];
+      const id = btn.dataset.bonusId;
+      const b = state.bonuses[id];
+      if (!b) return;
+      const label = b.label || 'Bonus';
+      const pts = Number(b.points) || 0;
+      // Removals sync everywhere; every other destructive action confirms.
+      if (!confirm(`Remove "${label}" (${pts > 0 ? '+' : ''}${pts} pts) for ${teamName(b.teamId)}?`)) return;
+      delete state.bonuses[id];
       touchData();
       saveState();
       renderAll();
