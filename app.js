@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-20T11:30:59Z';
+const CODE_UPDATED_AT = '2026-07-20T13:06:30Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -2825,7 +2825,7 @@ function renderGameView() {
       </div>
     </div>
     ${g.messtival ? '<p class="messtival-tag">🎉 Messtival — double points, counted double here too!</p>' : ''}
-    <details class="rules-details" ${state.results[g.id] ? '' : 'open'}>
+    <details class="rules-details">
       <summary>How to play</summary>
       ${g.rules.map((sec) => `
         <h4>${esc(sec.h)}</h4>
@@ -3803,9 +3803,19 @@ function applyRoleClass() {
   document.documentElement.classList.toggle('view-only', !canEdit());
 }
 
+// Collapsible cards (Memory Verse, Bonus Points) start expanded for editors —
+// who enter data there — and collapsed for viewers, to keep the spectator
+// screen focused on Week Points and live games. Set once per session/role
+// change (not on every renderAll), so a viewer's manual expand sticks: the
+// card render functions only rewrite the inner body, never this <details>.
+function applyCardDefaults() {
+  document.querySelectorAll('.collapsible-card').forEach((d) => { d.open = canEdit(); });
+}
+
 function startApp() {
   document.documentElement.classList.remove('locked');
   applyRoleClass();
+  applyCardDefaults();
   if (!appStarted) {
     appStarted = true;
     init();

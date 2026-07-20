@@ -146,6 +146,17 @@ html.view-only #reset-week-btn {
   display: none;
 }
 
+/* View-only role: de-clutter — spectators don't need the share/copy tools
+   (Notify stays) or the counselor-oriented helper text. */
+html.view-only #copy-standings-btn,
+html.view-only #share-standings-btn {
+  display: none;
+}
+html.view-only .standings-hint,
+html.view-only .card-desc {
+  display: none;
+}
+
 .view-only-note {
   background: var(--color-bg);
   border: 1px dashed var(--color-border);
@@ -342,6 +353,29 @@ html.view-only .role-btn {
 
 .card-header-row h2 {
   margin: 0;
+}
+
+/* Collapsible cards (Memory Verse, Bonus Points): a <details> styled as a
+   card. Collapsed by default for viewers, expanded for editors (set in JS). */
+.collapsible-card > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.collapsible-card > summary::-webkit-details-marker {
+  display: none;
+}
+.collapsible-card:not([open]) > summary {
+  margin-bottom: 0;
+}
+.card-chevron {
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--color-text-muted);
+  transition: transform 0.2s ease;
+}
+.collapsible-card[open] .card-chevron {
+  transform: rotate(90deg);
 }
 
 .muted {
