@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-20T13:41:08Z';
+const CODE_UPDATED_AT = '2026-07-20T13:48:01Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -126,9 +126,10 @@ const GAMES = [
     // of asking you to pick two teams each time.
     roundOneMatchups: [['t0', 't3'], ['t1', 't4'], ['t2', 't5']],
     // Live scorekeeping aid shown on each matchup (synced so everyone can
-    // watch): innings, outs (3 per side — reaching the limit auto-advances the
-    // inning), and home runs per team.
-    liveTracker: { unit: 'Home runs', innings: 3, outs: 3 },
+    // watch): innings, the kicking team, outs (3 per side — the first team
+    // kicks, 3 outs, the second team kicks, 3 outs, then the next inning),
+    // and home runs per team.
+    liveTracker: { unit: 'Home runs', innings: 3, outs: 3, sideLabel: 'kicking' },
     headline: 'Kickball, but everyone is three-legged with a partner.',
     rules: [
       { h: 'How to play', items: [
@@ -2894,7 +2895,7 @@ function renderLiveHome() {
         <span class="lh-nums">${l.hr[pair[0]] || 0}<span class="lh-dash">–</span>${l.hr[pair[1]] || 0}</span>
         <span class="lh-team">${teamEmoji(pair[1])} ${esc(teamName(pair[1]))}</span>
       </span>
-      <span class="live-home-sub">Inning ${l.inning} of ${g.liveTracker.innings || 3}${g.liveTracker.outs ? ` · ${outsLabel(l.outs)}` : ''}</span>`;
+      <span class="live-home-sub">Inning ${l.inning} of ${g.liveTracker.innings || 3}${g.liveTracker.outs ? ` · ${outsLabel(l.outs)} · ${teamEmoji(kickingTeamId(l, pair[0], pair[1]))} ${esc(teamName(kickingTeamId(l, pair[0], pair[1])))} ${esc(g.liveTracker.sideLabel || 'up')}` : ''}</span>`;
     } else if (pair) {
       scoreHTML = `<span class="live-home-matchup">${teamEmoji(pair[0])} ${esc(teamName(pair[0]))} <span class="lh-vs">vs</span> ${teamEmoji(pair[1])} ${esc(teamName(pair[1]))}</span>`;
     } else {
@@ -2988,7 +2989,8 @@ function renderLiveWatch(container, g) {
         <div class="lw-nums"><span class="lw-num">${l.hr[pair[0]] || 0}</span><span class="lw-dash">–</span><span class="lw-num">${l.hr[pair[1]] || 0}</span></div>
         <div class="lw-team">${teamEmoji(pair[1])}<span class="lw-name">${esc(teamName(pair[1]))}</span></div>
       </div>
-      <p class="live-watch-inning">Inning ${l.inning} of ${maxInn}${g.liveTracker.outs ? ` · ${outsLabel(l.outs)}` : ''} · ${esc(g.liveTracker.unit || 'Points')}</p>`;
+      <p class="live-watch-inning">Inning ${l.inning} of ${maxInn}${g.liveTracker.outs ? ` · ${outsLabel(l.outs)}` : ''}</p>
+      ${g.liveTracker.outs ? `<p class="live-watch-kicking">${teamEmoji(kickingTeamId(l, pair[0], pair[1]))} ${esc(teamName(kickingTeamId(l, pair[0], pair[1])))} ${esc(g.liveTracker.sideLabel || 'up')}</p>` : ''}`;
   } else {
     scoreHTML = `<div class="live-watch-matchup">${teamEmoji(pair[0])} ${esc(teamName(pair[0]))} <span class="lw-vs">vs</span> ${teamEmoji(pair[1])} ${esc(teamName(pair[1]))}</div>`;
   }
@@ -3313,6 +3315,7 @@ function normalizeLiveMatch(l) {
   if (!l.hr) l.hr = {};
   if (typeof l.inning !== 'number' || l.inning < 1) l.inning = 1;
   if (typeof l.outs !== 'number' || l.outs < 0) l.outs = 0;
+  if (l.half !== 1) l.half = 0; // 0 = first team kicking, 1 = second team
   return l;
 }
 
@@ -3394,16 +3397,21 @@ function getLiveMatch(g, aId, bId) {
   const key = [aId, bId].join('|');
   const l = state.live && state.live[g.id];
   if (l && l.key === key) {
-    return { key, inning: Number(l.inning) || 1, outs: Number(l.outs) || 0, hr: Object.assign({}, l.hr) };
+    return { key, inning: Number(l.inning) || 1, outs: Number(l.outs) || 0, half: l.half === 1 ? 1 : 0, hr: Object.assign({}, l.hr) };
   }
-  return { key, inning: 1, outs: 0, hr: {} };
+  return { key, inning: 1, outs: 0, half: 0, hr: {} };
 }
 
 function setLiveMatch(g, l) {
   if (!state.live) state.live = {};
-  state.live[g.id] = { key: l.key, inning: Number(l.inning) || 1, outs: Number(l.outs) || 0, hr: l.hr || {} };
+  state.live[g.id] = { key: l.key, inning: Number(l.inning) || 1, outs: Number(l.outs) || 0, half: l.half === 1 ? 1 : 0, hr: l.hr || {} };
   touchData();
   saveState();
+}
+
+// The team currently kicking, given the half (0 = first team, 1 = second).
+function kickingTeamId(l, aId, bId) {
+  return (Number(l.half) || 0) === 1 ? bId : aId;
 }
 
 // "2 outs" / "1 out" / "0 outs"
@@ -3429,8 +3437,18 @@ function liveTrackerHTML(g, aId, bId) {
   if (!g.liveTracker) return '';
   const maxInn = g.liveTracker.innings || 3;
   const maxOuts = g.liveTracker.outs || 3;
+  const sideLabel = g.liveTracker.sideLabel || 'up';
   const unit = g.liveTracker.unit || 'Points';
   const l = getLiveMatch(g, aId, bId);
+  const kickId = kickingTeamId(l, aId, bId);
+  const kickingRow = maxOuts ? `
+    <div class="live-row live-kicking-row">
+      <span class="live-label">${esc(sideLabel.charAt(0).toUpperCase() + sideLabel.slice(1))}</span>
+      <div class="live-kicking-ctrl">
+        <span class="live-kicking-team" id="live-kicking-team">${teamEmoji(kickId)} ${esc(teamName(kickId))}</span>
+        <button class="live-btn live-switch-btn" data-live="half-toggle" aria-label="Switch ${esc(sideLabel)} team">⇄</button>
+      </div>
+    </div>` : '';
   const outsRow = maxOuts ? `
     <div class="live-row live-inning-row live-outs-row">
       <span class="live-label">Outs</span>
@@ -3459,6 +3477,7 @@ function liveTrackerHTML(g, aId, bId) {
         <button class="live-btn" data-live="inning-up" aria-label="Next inning">+</button>
       </div>
     </div>
+    ${kickingRow}
     ${outsRow}
     <div class="live-row live-hr-block">
       <span class="live-label">${esc(unit)}</span>
@@ -3479,6 +3498,8 @@ function bindLiveTracker(container, g, aId, bId) {
     if (iv) iv.textContent = l.inning;
     const op = container.querySelector('#live-outs-pips');
     if (op) { op.textContent = outsPips(l.outs, maxOuts); op.setAttribute('aria-label', outsLabel(l.outs)); }
+    const kt = container.querySelector('#live-kicking-team');
+    if (kt) { const kid = kickingTeamId(l, aId, bId); kt.textContent = `${teamEmoji(kid)} ${teamName(kid)}`; }
     container.querySelectorAll('[data-hr-team]').forEach((el) => {
       el.textContent = l.hr[el.dataset.hrTeam] || 0;
     });
@@ -3490,20 +3511,30 @@ function bindLiveTracker(container, g, aId, bId) {
       const l = getLiveMatch(g, aId, bId);
       if (act === 'inning-up') l.inning = Math.min(maxInn, (Number(l.inning) || 1) + 1);
       else if (act === 'inning-down') l.inning = Math.max(1, (Number(l.inning) || 1) - 1);
+      else if (act === 'half-toggle') { l.half = (Number(l.half) || 0) === 1 ? 0 : 1; l.outs = 0; }
       else if (act === 'out-up') {
         const o = (Number(l.outs) || 0) + 1;
-        if (o >= maxOuts && (Number(l.inning) || 1) < maxInn) {
-          // Side retired — roll to the next inning with a clean count.
-          l.inning = (Number(l.inning) || 1) + 1;
-          l.outs = 0;
+        if (o >= maxOuts) {
+          if ((Number(l.half) || 0) === 0) {
+            // First team retired — the second team kicks (same inning).
+            l.half = 1;
+            l.outs = 0;
+          } else if ((Number(l.inning) || 1) < maxInn) {
+            // Both teams have kicked — roll to the next inning, first team up.
+            l.inning = (Number(l.inning) || 1) + 1;
+            l.half = 0;
+            l.outs = 0;
+          } else {
+            l.outs = maxOuts; // final inning, both sides done: hold at the limit
+          }
         } else {
-          l.outs = Math.min(maxOuts, o); // final inning: hold at the limit
+          l.outs = o;
         }
       }
       else if (act === 'out-down') l.outs = Math.max(0, (Number(l.outs) || 0) - 1);
       else if (act === 'hr-up') l.hr[team] = (Number(l.hr[team]) || 0) + 1;
       else if (act === 'hr-down') l.hr[team] = Math.max(0, (Number(l.hr[team]) || 0) - 1);
-      else if (act === 'reset') { l.inning = 1; l.outs = 0; l.hr = {}; }
+      else if (act === 'reset') { l.inning = 1; l.outs = 0; l.half = 0; l.hr = {}; }
       setLiveMatch(g, l);
       refresh();
     });

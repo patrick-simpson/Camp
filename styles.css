@@ -2231,6 +2231,36 @@ body.no-scroll {
   line-height: 1;
 }
 
+.live-kicking-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.live-kicking-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.live-kicking-team {
+  font-weight: 700;
+  font-size: 0.95rem;
+  text-align: right;
+  overflow-wrap: break-word;
+}
+.live-switch-btn {
+  font-size: 1.1rem;
+  color: var(--color-text-muted);
+}
+
+.live-watch-kicking {
+  margin: 0.25rem 0 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
 .live-reset {
   display: block;
   margin: 0.5rem auto 0;
