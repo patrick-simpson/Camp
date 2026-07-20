@@ -9,8 +9,13 @@ schedule detail is hardcoded into `app.js` — there's no backend beyond an
 optional Firebase Realtime Database used purely for cross-device sync.
 
 Files: `index.html` (page shell), `app.js` (all logic + game/schedule
-data, ~2200 lines), `styles.css`, `firebase-config.js` (sync config),
+data, ~2800 lines), `styles.css`, `firebase-config.js` (sync config),
 `CNAME` (custom domain).
+
+**There is a reviewed, prioritized improvement backlog in `IMPROVEMENTS.md`**
+(written 2026-07-20 after a full-project audit). If asked to improve, polish,
+or fix the site without more specific direction, start there — P0 items are
+data-safety fixes that should land before further feature work.
 
 ## Deployment: push directly to `main`, no PR
 
