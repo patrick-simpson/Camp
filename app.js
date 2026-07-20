@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-20T10:38:18Z';
+const CODE_UPDATED_AT = '2026-07-20T10:56:10Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -120,6 +120,11 @@ const GAMES = [
   {
     id: 'kangaroo-kickball', name: 'Kangaroo Kickball', emoji: '🦘', day: 1, session: 'Morning',
     location: 'Chapel Lawn', format: 'tournament',
+    // Fixed Round 1 order set by the game leaders (by team id): Foxes vs
+    // Pumpkins, then Turkey vs Pilgrims, then Maples vs John Deeres. When a
+    // tournament game has this, Round 1 walks these matchups in order instead
+    // of asking you to pick two teams each time.
+    roundOneMatchups: [['t0', 't3'], ['t1', 't4'], ['t2', 't5']],
     headline: 'Kickball, but everyone is three-legged with a partner.',
     rules: [
       { h: 'How to play', items: [
@@ -3214,6 +3219,13 @@ function renderBracketRound1(body, g, b) {
     return;
   }
 
+  // Games with a fixed Round 1 order (e.g. Kangaroo Kickball) walk the
+  // preset matchups in order instead of the free "pick two teams" flow.
+  if (Array.isArray(g.roundOneMatchups) && g.roundOneMatchups.length) {
+    renderBracketRound1Fixed(body, g, b, g.roundOneMatchups);
+    return;
+  }
+
   let html = `<h3>Round 1 — Match ${b.matches.length + 1} of 3</h3>
     <p class="muted">Pick the two teams to call up next.</p>
     <div class="team-chip-grid">
@@ -3253,6 +3265,79 @@ function renderBracketRound1(body, g, b) {
     btn.addEventListener('click', () => {
       const winner = btn.dataset.winner;
       const [a, c] = b.selectedPair;
+      const loser = winner === a ? c : a;
+      b.matches.push({ a, b: c, winner, loser });
+      b.pool = b.pool.filter((id) => id !== a && id !== c);
+      b.selectedPair = [];
+      touchData();
+      saveState();
+      renderAll();
+    });
+  });
+
+  const undoBtn = document.getElementById('undo-match-btn');
+  if (undoBtn) {
+    undoBtn.addEventListener('click', () => {
+      const last = b.matches.pop();
+      if (last) b.pool.push(last.a, last.b);
+      saveState();
+      renderAll();
+    });
+  }
+}
+
+// Round 1 driven by a fixed, pre-set matchup order (game.roundOneMatchups).
+// Shows the whole schedule up front — done matches with their winner, the
+// current one flagged NOW, the rest upcoming — so counselors always know
+// who's on deck. Each match just needs a winner tapped; no team-picking.
+function renderBracketRound1Fixed(body, g, b, preset) {
+  const currentIndex = b.matches.length; // matches recorded so far == next index
+  const current = preset[currentIndex] || null;
+
+  const scheduleHTML = `<div class="matchup-order">
+    <p class="matchup-order-label">Match order</p>
+    <ol class="matchup-order-list">
+      ${preset.map((pair, i) => {
+        const [x, y] = pair;
+        let status = 'upcoming';
+        let detail = '';
+        if (i < currentIndex) {
+          status = 'done';
+          const m = b.matches[i];
+          if (m) detail = `<span class="mo-result">✓ ${esc(teamName(m.winner))} won</span>`;
+        } else if (i === currentIndex) {
+          status = 'current';
+          detail = '<span class="mo-now">NOW</span>';
+        }
+        return `<li class="matchup-order-item mo-${status}">
+          <span class="mo-teams">${teamEmoji(x)} ${esc(teamName(x))} <span class="mo-vs">vs</span> ${teamEmoji(y)} ${esc(teamName(y))}</span>
+          ${detail}
+        </li>`;
+      }).join('')}
+    </ol>
+  </div>`;
+
+  let html = `<h3>Round 1 — Match ${currentIndex + 1} of ${preset.length}</h3>` + scheduleHTML;
+
+  if (current) {
+    html += matchupCalloutHTML(current[0], current[1]);
+  }
+
+  if (b.matches.length > 0) {
+    html += `<div class="completed-matches"><button id="undo-match-btn" class="link-btn">Undo last match</button></div>`;
+  }
+
+  body.innerHTML = html;
+
+  if (current) {
+    bindMatchupCopy(body, g, `Round 1 (match ${currentIndex + 1})`, current[0], current[1]);
+  }
+
+  body.querySelectorAll('.winner-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (!current) return;
+      const winner = btn.dataset.winner;
+      const [a, c] = current;
       const loser = winner === a ? c : a;
       b.matches.push({ a, b: c, winner, loser });
       b.pool = b.pool.filter((id) => id !== a && id !== c);

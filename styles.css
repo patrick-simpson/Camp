@@ -1855,6 +1855,101 @@ body.no-scroll {
   margin-bottom: 1rem;
 }
 
+/* Fixed Round 1 matchup order (e.g. Kangaroo Kickball) */
+.matchup-order {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.85rem;
+  margin: 0.5rem 0 0.75rem;
+}
+
+.matchup-order-label {
+  margin: 0 0 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.matchup-order-list {
+  list-style: none;
+  counter-reset: mo;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.matchup-order-item {
+  counter-increment: mo;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.7rem 0.55rem 2.2rem;
+  position: relative;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  font-size: 0.9rem;
+}
+
+.matchup-order-item::before {
+  content: counter(mo);
+  position: absolute;
+  left: 0.7rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.matchup-order-item.mo-current {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+}
+
+.matchup-order-item.mo-done {
+  opacity: 0.72;
+}
+
+.mo-teams {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: break-word;
+}
+
+.mo-vs {
+  font-weight: 400;
+  color: var(--color-text-muted);
+  margin: 0 0.15rem;
+  font-size: 0.82rem;
+}
+
+.mo-now {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: var(--color-primary);
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-primary);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+}
+
+.mo-result {
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-gold);
+}
+
 .matchup-callout {
   background: var(--color-gold-bg);
   border-radius: var(--radius-md);
