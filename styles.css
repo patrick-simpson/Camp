@@ -2066,6 +2066,13 @@ body.no-scroll {
   font-variant-numeric: tabular-nums;
 }
 
+/* "Break" pseudo-station (kids not in an elective slot) — muted vs stations. */
+.now-break .now-station-name,
+.sched-break .sched-station-name {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
 /* Fixed Round 1 matchup order (e.g. Kangaroo Kickball) */
 .matchup-order {
   background: var(--color-bg);

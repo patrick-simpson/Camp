@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-20T16:26:13Z';
+const CODE_UPDATED_AT = '2026-07-20T16:38:11Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -550,6 +550,24 @@ const ELECTIVES = {
   ],
 };
 
+// The full set of kids at camp on a given day = everyone assigned to any
+// station across that day's elective slots. A kid missing from a particular
+// slot is on break for it (see electiveBreakKids).
+function electiveDayRoster(dow) {
+  const set = new Set();
+  (ELECTIVES[dow] || []).forEach((slot) => {
+    (slot || []).forEach(([, kids]) => (kids || []).forEach((k) => set.add(k)));
+  });
+  return set;
+}
+
+// Kids with no station in this elective slot — they're on "Break".
+function electiveBreakKids(dow, slot) {
+  const assigned = new Set();
+  (((ELECTIVES[dow] || [])[slot]) || []).forEach(([, kids]) => (kids || []).forEach((k) => assigned.add(k)));
+  return [...electiveDayRoster(dow)].filter((k) => !assigned.has(k)).sort();
+}
+
 // ── Meal menu ────────────────────────────────────────────────────
 // What the kitchen is serving, filled in as camp announces each meal.
 // Keyed by day-of-week (0 Sun .. 6 Sat), then by meal block name in
@@ -660,9 +678,14 @@ function nowBannerHtml(dow, minutes) {
   const progress = b.noTime ? null : (minutes - b.start) / (b.end - b.start);
   if (b.type === 'elective') {
     const stations = (ELECTIVES[dow] || [])[b.slot] || [];
-    const rows = stations.map(([station, kids]) =>
+    let rows = stations.map(([station, kids]) =>
       `<div class="now-station"><span class="now-station-name">${STATION_EMOJI[station] || '🌟'} ${esc(station)}</span>
         <span class="now-kids">${kids.map((k) => `<span class="kid-chip">${esc(k)}</span>`).join('')}</span></div>`).join('');
+    const breakKids = electiveBreakKids(dow, b.slot);
+    if (breakKids.length) {
+      rows += `<div class="now-station now-break"><span class="now-station-name">☕ Break</span>
+        <span class="now-kids">${breakKids.map((k) => `<span class="kid-chip">${esc(k)}</span>`).join('')}</span></div>`;
+    }
     return main(b.emoji, b.label, time, null, progress) + `<div class="now-stations">${rows}</div>`;
   }
 
@@ -786,9 +809,15 @@ function renderScheduleBody() {
     } else if (raw.type === 'elective') {
       const stations = (ELECTIVES[dow] || [])[raw.slot] || [];
       if (stations.length) {
-        extra = `<div class="sched-stations">${stations.map(([station, kids]) =>
+        let stationRows = stations.map(([station, kids]) =>
           `<div class="sched-station"><span class="sched-station-name">${STATION_EMOJI[station] || '🌟'} ${esc(station)}</span>
-            <span class="sched-station-kids">${kids.map(esc).join(' · ')}</span></div>`).join('')}</div>`;
+            <span class="sched-station-kids">${kids.map(esc).join(' · ')}</span></div>`).join('');
+        const breakKids = electiveBreakKids(dow, raw.slot);
+        if (breakKids.length) {
+          stationRows += `<div class="sched-station sched-break"><span class="sched-station-name">☕ Break</span>
+            <span class="sched-station-kids">${breakKids.map(esc).join(' · ')}</span></div>`;
+        }
+        extra = `<div class="sched-stations">${stationRows}</div>`;
       }
     }
 
