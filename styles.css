@@ -478,6 +478,38 @@ html.view-only .role-btn {
   font-weight: 400;
   margin: 0 0.2rem;
 }
+.live-home-ondeck {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  border-top: 1px dashed var(--color-border);
+  padding-top: 0.4rem;
+  margin-top: 0.1rem;
+}
+
+/* "Your team + Notify" strip — always visible so viewers keep the watch
+   essentials even with Week Points collapsed. */
+.you-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 0.85rem;
+}
+.you-strip .notify-btn {
+  width: 100%;
+}
+.you-strip:empty {
+  display: none;
+}
+
+/* On-deck line in the spectator game-view live-watch */
+.live-watch-ondeck {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
 
 .muted {
   color: var(--color-text-muted);

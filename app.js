@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-20T13:15:44Z';
+const CODE_UPDATED_AT = '2026-07-20T13:30:24Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -1092,28 +1092,34 @@ function syncSignature() {
   return JSON.stringify(SYNC_KEYS.map((k) => state[k]));
 }
 
-// The "who's up next" slot for one bracket, per stage — null when that
-// stage isn't a live open matchup (not yet set, or already decided).
-function bracketMatchupSlot(aId, bId, alreadyDecided) {
-  if (!aId || !bId || alreadyDecided) return null;
+// A matchup "slot" — a stable key for one pairing, so a genuinely NEW matchup
+// can be told apart from an undo/clear across syncs.
+function matchupSlot(aId, bId) {
+  if (!aId || !bId) return null;
   return { aId, bId, key: [aId, bId].sort().join('|') };
 }
 
-function bracketMatchupSlots(b) {
-  if (!b) return null;
-  return {
-    selectedPair: (b.selectedPair && b.selectedPair.length === 2)
-      ? bracketMatchupSlot(b.selectedPair[0], b.selectedPair[1], false) : null,
-    semifinal: b.semifinal
-      ? bracketMatchupSlot(b.semifinal.a, b.semifinal.b, b.semifinal.winner !== null) : null,
-    championship: b.championship
-      ? bracketMatchupSlot(b.championship.a, b.championship.b, b.championship.winner !== null) : null,
-  };
+// The upcoming matchups of a game's bracket that are KNOWN right now: the
+// current (being called up / played) matchup plus the on-deck matchup when it
+// can be determined (a fixed-order Round 1). Works for both fixed-order and
+// free-pick brackets — it reads the same currentMatchupOf/nextMatchupOf the
+// bracket screens use, so it stays correct now that fixed-order Round 1 no
+// longer sets selectedPair.
+function upcomingMatchups(g) {
+  const raw = state.brackets && state.brackets[g.id];
+  if (!raw || g.format !== 'tournament') return [];
+  const b = normalizeBracket(raw);
+  const out = [];
+  const cur = currentMatchupOf(g, b);
+  if (cur) out.push(matchupSlot(cur[0], cur[1]));
+  const nxt = nextMatchupOf(g, b);
+  if (nxt) out.push(matchupSlot(nxt[0], nxt[1]));
+  return out.filter(Boolean);
 }
 
-// gameId -> {selectedPair, semifinal, championship} slot snapshot, so a
-// genuinely NEW matchup can be told apart from an undo/clear across remote
-// syncs — even for a bracket nobody currently has open.
+// gameId -> [slot,...] snapshot of known upcoming matchups, so a genuinely NEW
+// matchup can be told apart from an undo/clear across remote syncs — even for
+// a bracket nobody currently has open.
 let lastBracketSlots = null;
 
 function detectMatchupChanges() {
@@ -1122,36 +1128,27 @@ function detectMatchupChanges() {
   const changes = [];
   GAMES.forEach((g) => {
     if (g.format !== 'tournament') return;
-    const slots = bracketMatchupSlots(state.brackets[g.id]);
-    next[g.id] = slots;
-    if (!slots || prev === null) return; // first time seeing this bracket: seed, don't fire
-    const prevSlots = prev[g.id];
-    ['selectedPair', 'semifinal', 'championship'].forEach((stage) => {
-      const cur = slots[stage];
-      const was = prevSlots && prevSlots[stage];
-      if (cur && (!was || was.key !== cur.key)) {
-        changes.push({ game: g, stage, aId: cur.aId, bId: cur.bId });
-      }
+    const ups = upcomingMatchups(g);
+    next[g.id] = ups;
+    if (prev === null) return; // first time: seed, don't fire
+    const prevKeys = new Set((prev[g.id] || []).map((s) => s.key));
+    ups.forEach((s) => {
+      if (!prevKeys.has(s.key)) changes.push({ game: g, aId: s.aId, bId: s.bId });
     });
   });
   lastBracketSlots = next;
   return changes;
 }
 
-// Scans every live bracket for the first open matchup involving `teamId` —
-// used by the "Your team" summary card. Read-only; mirrors the slot logic
-// the bracket screens themselves use (renderBracketRound1 etc.).
+// The soonest known matchup involving `teamId` (current preferred, then on
+// deck) — used by the "Your team" summary card's "Up next" line.
 function findNextMatchupFor(teamId) {
   if (!teamId) return null;
   for (const g of GAMES) {
     if (g.format !== 'tournament' || state.results[g.id]) continue;
-    const slots = bracketMatchupSlots(state.brackets[g.id]);
-    if (!slots) continue;
-    for (const stage of ['selectedPair', 'semifinal', 'championship']) {
-      const slot = slots[stage];
-      if (slot && (slot.aId === teamId || slot.bId === teamId)) {
-        const opponentId = slot.aId === teamId ? slot.bId : slot.aId;
-        return { game: g, opponentId };
+    for (const s of upcomingMatchups(g)) {
+      if (s.aId === teamId || s.bId === teamId) {
+        return { game: g, opponentId: s.aId === teamId ? s.bId : s.aId };
       }
     }
   }
@@ -2902,9 +2899,14 @@ function renderLiveHome() {
     } else {
       scoreHTML = `<span class="live-home-sub">${phaseLabel} in progress — tap to watch</span>`;
     }
+    const nxt = nextMatchupOf(g, b);
+    const onDeckHTML = nxt
+      ? `<span class="live-home-ondeck">⏭️ Up next: ${teamEmoji(nxt[0])} ${esc(teamName(nxt[0]))} vs ${teamEmoji(nxt[1])} ${esc(teamName(nxt[1]))}</span>`
+      : '';
     return `<button class="live-home-card" data-game-id="${esc(g.id)}">
       <span class="live-home-top"><span class="live-home-badge">🔴 LIVE</span><span class="live-home-game">${g.emoji} ${esc(g.name)} · ${phaseLabel}</span></span>
       ${scoreHTML}
+      ${onDeckHTML}
     </button>`;
   }).join('');
 
@@ -2934,6 +2936,18 @@ function currentMatchupOf(g, b) {
   }
   if (b.phase === 'semifinal' && b.semifinal && b.semifinal.winner == null) return [b.semifinal.a, b.semifinal.b];
   if (b.phase === 'championship' && b.championship && b.championship.winner == null) return [b.championship.a, b.championship.b];
+  return null;
+}
+
+// The matchup that will be played AFTER the current one, when it's already
+// known — i.e. the next pair in a fixed-order Round 1. Returns null when the
+// next pairing can't be known yet (free pick, or a later stage whose teams
+// aren't decided). Drives the "Up next" line under the live score.
+function nextMatchupOf(g, b) {
+  if (!b || b.phase !== 'round1') return null;
+  if (Array.isArray(g.roundOneMatchups) && g.roundOneMatchups.length) {
+    return g.roundOneMatchups[(b.matches || []).length + 1] || null;
+  }
   return null;
 }
 
@@ -2978,10 +2992,16 @@ function renderLiveWatch(container, g) {
     scoreHTML = `<div class="live-watch-matchup">${teamEmoji(pair[0])} ${esc(teamName(pair[0]))} <span class="lw-vs">vs</span> ${teamEmoji(pair[1])} ${esc(teamName(pair[1]))}</div>`;
   }
 
+  const nxt = nextMatchupOf(g, b);
+  const onDeckHTML = nxt
+    ? `<p class="live-watch-ondeck">⏭️ Up next: ${teamEmoji(nxt[0])} ${esc(teamName(nxt[0]))} vs ${teamEmoji(nxt[1])} ${esc(teamName(nxt[1]))}</p>`
+    : '';
+
   container.innerHTML = `
     <div class="live-watch">
       <p class="live-watch-label">🔴 Live now · ${phaseLabel}</p>
       ${scoreHTML}
+      ${onDeckHTML}
       <p class="muted live-watch-note">Updates automatically as the ref scores — no refresh needed.</p>
       ${doneHTML}
     </div>`;
