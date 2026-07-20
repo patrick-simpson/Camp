@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-20T13:48:01Z';
+const CODE_UPDATED_AT = '2026-07-20T15:59:19Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -2885,7 +2885,7 @@ function renderLiveHome() {
   wrap.hidden = false;
   wrap.innerHTML = games.map((g) => {
     const b = normalizeBracket(state.brackets[g.id]);
-    const phaseLabel = { round1: 'Round 1', bye: 'Bye', semifinal: 'Semifinal', championship: 'Championship', summary: 'Results' }[b.phase] || '';
+    const phaseLabel = { round1: 'Round 1', bye: 'Bye', semifinal: 'Championship game', championship: 'Final', summary: 'Results' }[b.phase] || '';
     const pair = currentMatchupOf(g, b);
     let scoreHTML;
     if (pair && g.liveTracker) {
@@ -2963,7 +2963,7 @@ function renderLiveWatch(container, g) {
     return;
   }
   const b = normalizeBracket(raw);
-  const phaseLabel = { round1: 'Round 1', bye: 'Bye', semifinal: 'Semifinal', championship: 'Championship', summary: 'Results' }[b.phase] || '';
+  const phaseLabel = { round1: 'Round 1', bye: 'Bye', semifinal: 'Championship game', championship: 'Final', summary: 'Results' }[b.phase] || '';
   const pair = currentMatchupOf(g, b);
 
   const done = (b.matches || []).map((m) =>
@@ -3361,7 +3361,7 @@ function renderTournament(container, g) {
   const b = normalizeBracket(state.brackets[g.id]);
   let html = `<div class="bracket-steps">
     ${['round1', 'bye', 'semifinal', 'championship', 'summary'].map((p, i) => {
-      const labels = { round1: 'Round 1', bye: 'Bye', semifinal: 'Semifinal', championship: 'Championship', summary: 'Results' };
+      const labels = { round1: 'Round 1', bye: 'Bye', semifinal: 'Championship', championship: 'Final', summary: 'Results' };
       const order = ['round1', 'bye', 'semifinal', 'championship', 'summary'];
       const cls = p === b.phase ? 'active' : order.indexOf(p) < order.indexOf(b.phase) ? 'done' : '';
       return `<span class="wizard-step ${cls}">${labels[p]}</span>${i < 4 ? '<span class="wizard-step-arrow">→</span>' : ''}`;
@@ -3697,7 +3697,7 @@ function renderBracketBye(body, g, b) {
   const winners = b.matches.map((m) => m.winner);
   body.innerHTML = `
     <h3>Who gets the bye?</h3>
-    <p class="muted">Check the overall team standings (the official paper one). Whichever of these three Round&nbsp;1 winners has the <strong>lowest points coming into today</strong> skips straight to the Championship.</p>
+    <p class="muted">Check the overall team standings (the official paper one). Whichever of these three Round&nbsp;1 winners has the <strong>lowest points coming into today</strong> skips straight to the Final.</p>
     <div class="team-chip-grid">
       ${winners.map((id) => `<button class="team-chip tiebreak-chip" data-team-id="${id}">${esc(teamName(id))}<span class="chip-sub">${esc(counselorName(id))}</span></button>`).join('')}
     </div>
@@ -3728,13 +3728,13 @@ function renderBracketBye(body, g, b) {
 
 function renderBracketSemifinal(body, g, b) {
   body.innerHTML = `
-    <h3>Semifinal</h3>
-    <p class="bye-note">🎟️ <strong>${esc(teamName(b.byeTeamId))}</strong> has the bye — straight to the Championship.</p>
+    <h3>Championship Game</h3>
+    <p class="bye-note">🎟️ <strong>${esc(teamName(b.byeTeamId))}</strong> has the bye — straight to the Final.</p>
     ${matchupCalloutHTML(b.semifinal.a, b.semifinal.b)}
     ${liveTrackerHTML(g, b.semifinal.a, b.semifinal.b)}
   `;
 
-  bindMatchupCopy(body, g, 'SEMIFINAL', b.semifinal.a, b.semifinal.b);
+  bindMatchupCopy(body, g, 'Championship game', b.semifinal.a, b.semifinal.b);
   bindLiveTracker(body, g, b.semifinal.a, b.semifinal.b);
 
   body.querySelectorAll('.winner-btn').forEach((btn) => {
@@ -3754,13 +3754,13 @@ function renderBracketSemifinal(body, g, b) {
 
 function renderBracketChampionship(body, g, b) {
   body.innerHTML = `
-    <h3>Championship</h3>
+    <h3>Final</h3>
     <p class="bronze-note">🥉 <strong>${esc(teamName(b.semifinal.loser))}</strong> takes the bronze medal (+${MEDAL_POINTS.bronze} pts).</p>
     ${matchupCalloutHTML(b.championship.a, b.championship.b)}
     ${liveTrackerHTML(g, b.championship.a, b.championship.b)}
   `;
 
-  bindMatchupCopy(body, g, 'CHAMPIONSHIP', b.championship.a, b.championship.b);
+  bindMatchupCopy(body, g, 'Final', b.championship.a, b.championship.b);
   bindLiveTracker(body, g, b.championship.a, b.championship.b);
 
   body.querySelectorAll('.winner-btn').forEach((btn) => {
