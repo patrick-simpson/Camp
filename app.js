@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-19T22:48:53Z';
+const CODE_UPDATED_AT = '2026-07-20T01:51:03Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -33,8 +33,9 @@ function canEdit() {
 }
 
 // Team names from the printed roster, paired to their counselor group
-// by position (t0..t5). Teams 5 & 6 keep their placeholder names until
-// their real names come in. Edit any of these in the standings table.
+// by position (t0..t5). The names are fixed for the week, so the
+// standings show them as static text (with the emoji below) rather than
+// editable fields.
 const DEFAULT_TEAM_NAMES = [
   'Ferocious Foxes',                // Alyssa, Cam, Sam
   'Turkey Dinner',                  // Bria, Lydia, Zac
@@ -43,6 +44,16 @@ const DEFAULT_TEAM_NAMES = [
   'Patriotic Pilgrims',             // Abby, TJ, Ella
   "Runaway John Deere's",           // Lily, Jacob
 ];
+// One emoji mascot per team slot (by id, which is stable at t0..t5), so a
+// long name can be represented compactly wherever space is tight.
+const TEAM_EMOJI = {
+  t0: '🦊', // Ferocious Foxes
+  t1: '🦃', // Turkey Dinner
+  t2: '🍁', // Methodic Mediocre Maples
+  t3: '🎃', // Particularly Perilous Pumpkins
+  t4: '🦅', // Patriotic Pilgrims
+  t5: '🚜', // Runaway John Deere's
+};
 // Older auto-assigned names to migrate off, per team index — the generic
 // "Team N" seeds plus any earlier name we've since corrected (e.g. the
 // "Portidatory" misread), so devices already carrying one update to the
@@ -784,6 +795,7 @@ function makeFreshState() {
     results: {},   // gameId -> { medals: {gold, silver, bronze}, scores?, savedAt }
     brackets: {},  // gameId -> in-progress tournament
     drafts: {},    // gameId -> in-progress tally/placement entry
+    bonuses: {},   // bonusId -> { teamId, category, label, points, at }
     ui: { day: defaultDay(), gameId: null },
     theme: null,
   };
@@ -798,6 +810,7 @@ let state = loadState() || makeFreshState();
 if (!state.teams || !state.results) state = makeFreshState();
 if (!state.ui) state.ui = { day: defaultDay(), gameId: null };
 if (!state.meta) state.meta = {};
+if (!state.bonuses) state.bonuses = {}; // extra/bonus points ledger
 if (state.theme === undefined) state.theme = null; // pre-theme saves: follow the device
 normalizeSyncedState();
 
@@ -825,7 +838,7 @@ function touchData() {
 // and the SDK loaded, scores sync across every device in real time.
 // Otherwise the app runs exactly as before, local-only.
 
-const SYNC_KEYS = ['teams', 'results', 'brackets', 'drafts', 'picRounds', 'meta'];
+const SYNC_KEYS = ['teams', 'results', 'brackets', 'drafts', 'picRounds', 'bonuses', 'meta'];
 let fbRef = null;
 let applyingRemote = false;
 let pushTimer = null;
@@ -859,7 +872,7 @@ function initSync() {
       // devices kept their old results and re-pushed them later. Teams
       // stay guarded — a snapshot without a roster is malformed.
       if (remote.teams) state.teams = remote.teams;
-      ['results', 'brackets', 'drafts', 'picRounds', 'meta'].forEach((k) => {
+      ['results', 'brackets', 'drafts', 'picRounds', 'bonuses', 'meta'].forEach((k) => {
         state[k] = remote[k] !== undefined ? remote[k] : {};
       });
       // Realtime Database silently drops empty arrays/nulls on write, so a
@@ -905,6 +918,10 @@ function updateSyncIndicator() {
     el.textContent = '📱 This device only';
     el.classList.remove('synced');
   }
+}
+
+function teamEmoji(id) {
+  return TEAM_EMOJI[id] || '🏳️';
 }
 
 function teamName(id) {
@@ -1669,7 +1686,8 @@ function standingsSummaryText() {
   lines.push(`Standings (🥇 ${MEDAL_POINTS.gold} · 🥈 ${MEDAL_POINTS.silver} · 🥉 ${MEDAL_POINTS.bronze} pts):`);
   ranked.forEach((t, i) => {
     const s = counts[t.id];
-    lines.push(`${i + 1}) ${t.name} · ${s.points} pts (🥇${s.gold} 🥈${s.silver} 🥉${s.bronze})`);
+    const bonus = s.bonus ? ` ${s.bonus > 0 ? '+' : ''}${s.bonus} bonus` : '';
+    lines.push(`${i + 1}) ${teamEmoji(t.id)} ${t.name} · ${s.points} pts (🥇${s.gold} 🥈${s.silver} 🥉${s.bronze}${bonus})`);
   });
 
   const played = GAMES.filter((g) => state.results[g.id]);
@@ -1730,17 +1748,33 @@ function formatScore(game, val) {
 
 // ── Standings (derived from saved results) ───────────────────────
 
+// Sum of extra/bonus points per team, from the bonus ledger.
+function bonusTotals() {
+  const totals = {};
+  state.teams.forEach((t) => (totals[t.id] = 0));
+  Object.values(state.bonuses || {}).forEach((b) => {
+    if (!b || totals[b.teamId] === undefined) return;
+    const p = Number(b.points);
+    if (!isNaN(p)) totals[b.teamId] += p;
+  });
+  return totals;
+}
+
 function medalCounts() {
   const counts = {};
-  state.teams.forEach((t) => (counts[t.id] = { gold: 0, silver: 0, bronze: 0, points: 0 }));
+  const bonus = bonusTotals();
+  state.teams.forEach((t) => (counts[t.id] = { gold: 0, silver: 0, bronze: 0, medalPts: 0, bonus: 0, points: 0 }));
   Object.values(state.results).forEach((r) => {
     if (!r || !r.medals) return;
     if (counts[r.medals.gold]) counts[r.medals.gold].gold += 1;
     if (counts[r.medals.silver]) counts[r.medals.silver].silver += 1;
     if (counts[r.medals.bronze]) counts[r.medals.bronze].bronze += 1;
   });
-  Object.values(counts).forEach((c) => {
-    c.points = c.gold * MEDAL_POINTS.gold + c.silver * MEDAL_POINTS.silver + c.bronze * MEDAL_POINTS.bronze;
+  state.teams.forEach((t) => {
+    const c = counts[t.id];
+    c.medalPts = c.gold * MEDAL_POINTS.gold + c.silver * MEDAL_POINTS.silver + c.bronze * MEDAL_POINTS.bronze;
+    c.bonus = bonus[t.id] || 0;
+    c.points = c.medalPts + c.bonus; // grand total drives the leaderboard
   });
   return counts;
 }
@@ -1768,36 +1802,152 @@ function renderStandings() {
     const tr = document.createElement('tr');
     tr.innerHTML = `
       <td class="rank-col">${i + 1}</td>
-      <td>
-        <input type="text" class="team-name-input" data-team-id="${team.id}" value="${esc(team.name)}" ${canEdit() ? '' : 'disabled'} />
-        <input type="text" class="team-counselor-input" data-team-id="${team.id}" value="${esc(team.counselor || '')}" placeholder="Counselor" ${canEdit() ? '' : 'disabled'} />
+      <td class="team-cell">
+        <div class="team-name-line"><span class="team-emoji">${teamEmoji(team.id)}</span> <span class="team-name-text">${esc(team.name)}</span></div>
+        ${team.counselor ? `<div class="team-counselor-text">${esc(team.counselor)}</div>` : ''}
       </td>
-      <td class="points-col">${s.points}</td>
+      <td class="points-col">${s.points}${s.bonus ? `<span class="bonus-hint">${s.bonus > 0 ? '+' : ''}${s.bonus} bonus</span>` : ''}</td>
       <td class="medal-col">${s.gold}</td>
       <td class="medal-col">${s.silver}</td>
       <td class="medal-col">${s.bronze}</td>
     `;
     tbody.appendChild(tr);
   });
+}
 
-  tbody.querySelectorAll('.team-name-input').forEach((input) => {
-    input.addEventListener('change', (e) => {
-      const team = state.teams.find((t) => t.id === e.target.dataset.teamId);
-      const val = e.target.value.trim();
-      if (team && val) { team.name = val; touchData(); }
-      saveState();
-      renderAll();
-    });
-  });
+// ── Bonus points (extra points, entered + viewed here) ───────────
 
-  tbody.querySelectorAll('.team-counselor-input').forEach((input) => {
-    input.addEventListener('change', (e) => {
-      const team = state.teams.find((t) => t.id === e.target.dataset.teamId);
-      if (team) team.counselor = e.target.value.trim();
+const BONUS_CATEGORIES = {
+  verse:   { icon: '📖', label: 'Verse memorization' },
+  cleanup: { icon: '🧽', label: 'Meal cleanup' },
+  custom:  { icon: '✨', label: 'Bonus' },
+};
+
+// Form state for the entry row — lives outside state so it isn't synced
+// or persisted; category/meal persist across adds for fast nightly entry.
+let bonusDraft = { category: 'verse', meal: 'Breakfast', teams: [], points: '', custom: '' };
+
+function bonusLabelFor(d) {
+  if (d.category === 'verse') return 'Verse memorization';
+  if (d.category === 'cleanup') return `${d.meal} cleanup`;
+  return (d.custom || '').trim() || 'Bonus';
+}
+
+function newBonusId() {
+  return 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+function renderBonuses() {
+  const wrap = document.getElementById('bonus-body');
+  if (!wrap) return;
+  const d = bonusDraft;
+  const bonus = bonusTotals();
+
+  let entryHTML = '';
+  if (canEdit()) {
+    const mealRow = d.category === 'cleanup'
+      ? `<div class="bonus-meal-row">${['Breakfast', 'Lunch', 'Dinner'].map((m) =>
+          `<button class="bonus-meal-chip ${d.meal === m ? 'selected' : ''}" data-meal="${m}">${esc(m)}</button>`).join('')}</div>`
+      : '';
+    const customRow = d.category === 'custom'
+      ? `<input type="text" id="bonus-custom" class="bonus-custom-input" placeholder="What for?" value="${esc(d.custom)}" maxlength="40" />`
+      : '';
+    entryHTML = `
+      <div class="bonus-entry">
+        <div class="bonus-cat-row">
+          ${Object.entries(BONUS_CATEGORIES).map(([key, c]) =>
+            `<button class="bonus-cat-chip ${d.category === key ? 'selected' : ''}" data-cat="${key}">${c.icon} ${esc(c.label)}</button>`).join('')}
+        </div>
+        ${mealRow}
+        ${customRow}
+        <p class="bonus-entry-hint muted">Pick the team(s) that earned it:</p>
+        <div class="bonus-team-chips">
+          ${state.teams.map((t) =>
+            `<button class="team-chip bonus-team-chip ${d.teams.includes(t.id) ? 'selected' : ''}" data-team-id="${t.id}"><span class="chip-emoji">${teamEmoji(t.id)}</span> ${esc(t.name)}</button>`).join('')}
+        </div>
+        <div class="bonus-add-row">
+          <input type="number" id="bonus-points" class="bonus-points-input" inputmode="numeric" placeholder="Points" value="${esc(d.points)}" />
+          <button id="bonus-add-btn" class="primary-btn">Add points</button>
+        </div>
+        <p id="bonus-error" class="entry-error" hidden></p>
+      </div>`;
+  }
+
+  const withBonus = state.teams.filter((t) => bonus[t.id]).sort((a, b) => bonus[b.id] - bonus[a.id]);
+  const subtotalsHTML = withBonus.length
+    ? `<div class="bonus-subtotals">${withBonus.map((t) =>
+        `<span class="bonus-subtotal-chip">${teamEmoji(t.id)} ${esc(t.name)} <strong>${bonus[t.id] > 0 ? '+' : ''}${bonus[t.id]}</strong></span>`).join('')}</div>`
+    : '';
+
+  const entries = Object.entries(state.bonuses || {}).sort((a, b) => (b[1].at || '').localeCompare(a[1].at || ''));
+  const ledgerHTML = entries.length
+    ? `<ul class="bonus-ledger">${entries.map(([id, b]) => {
+        const cat = BONUS_CATEGORIES[b.category] || BONUS_CATEGORIES.custom;
+        const when = formatEasternStamp(b.at);
+        return `<li class="bonus-item">
+          <span class="bonus-item-main">
+            <span class="bonus-item-team">${teamEmoji(b.teamId)} ${esc(teamName(b.teamId))}</span>
+            <span class="bonus-item-label">${cat.icon} ${esc(b.label)}${when ? ` · ${esc(when)}` : ''}</span>
+          </span>
+          <span class="bonus-item-pts ${b.points < 0 ? 'neg' : ''}">${b.points > 0 ? '+' : ''}${esc(String(b.points))}</span>
+          ${canEdit() ? `<button class="bonus-remove-btn" data-bonus-id="${esc(id)}" aria-label="Remove this bonus">✕</button>` : ''}
+        </li>`;
+      }).join('')}</ul>`
+    : `<p class="muted bonus-empty">No bonus points yet.</p>`;
+
+  wrap.innerHTML = entryHTML + subtotalsHTML + ledgerHTML;
+
+  if (canEdit()) bindBonusEntry(wrap);
+  wrap.querySelectorAll('.bonus-remove-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      delete state.bonuses[btn.dataset.bonusId];
       touchData();
       saveState();
       renderAll();
     });
+  });
+}
+
+function bindBonusEntry(wrap) {
+  const d = bonusDraft;
+
+  wrap.querySelectorAll('.bonus-cat-chip').forEach((btn) => {
+    btn.addEventListener('click', () => { d.category = btn.dataset.cat; renderBonuses(); });
+  });
+  wrap.querySelectorAll('.bonus-meal-chip').forEach((btn) => {
+    btn.addEventListener('click', () => { d.meal = btn.dataset.meal; renderBonuses(); });
+  });
+  wrap.querySelectorAll('.bonus-team-chip').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.teamId;
+      const i = d.teams.indexOf(id);
+      if (i > -1) d.teams.splice(i, 1); else d.teams.push(id);
+      renderBonuses();
+    });
+  });
+  const customInput = wrap.querySelector('#bonus-custom');
+  if (customInput) customInput.addEventListener('input', () => { d.custom = customInput.value; });
+  const ptsInput = wrap.querySelector('#bonus-points');
+  if (ptsInput) ptsInput.addEventListener('input', () => { d.points = ptsInput.value; });
+
+  const addBtn = wrap.querySelector('#bonus-add-btn');
+  if (addBtn) addBtn.addEventListener('click', () => {
+    const errEl = wrap.querySelector('#bonus-error');
+    const showErr = (msg) => { errEl.textContent = msg; errEl.hidden = false; };
+    const pts = Number(d.points);
+    if (!d.teams.length) return showErr('Pick at least one team.');
+    if (d.points === '' || isNaN(pts) || pts === 0) return showErr('Enter a non-zero point value.');
+    const label = bonusLabelFor(d);
+    const at = new Date().toISOString();
+    d.teams.forEach((teamId) => {
+      state.bonuses[newBonusId()] = { teamId, category: d.category, label, points: pts, at };
+    });
+    d.teams = [];
+    d.points = '';
+    if (d.category === 'custom') d.custom = '';
+    touchData();
+    saveState();
+    renderAll();
   });
 }
 
@@ -2269,6 +2419,7 @@ function normalizeSyncedState() {
   Object.values(state.brackets || {}).forEach(normalizeBracket);
   Object.values(state.picRounds || {}).forEach(normalizePicRound);
   Object.values(state.drafts || {}).forEach(normalizeDraft);
+  if (!state.bonuses) state.bonuses = {}; // RTDB prunes an empty ledger to nothing
   // Migrate rosters saved before names/counselors were set: swap generic
   // "Team N" names and placeholder counselors for the real roster values.
   // Anything hand-edited (not matching a known placeholder) is left alone.
@@ -2510,6 +2661,7 @@ function resetWeek() {
   state.brackets = {};
   state.drafts = {};
   state.picRounds = {};
+  state.bonuses = {};
   state.ui.gameId = null;
   state.ui.picTeam = null;
   clearPhotos().catch(() => {});
@@ -2553,6 +2705,7 @@ function renderAll() {
   renderGameList();
   renderGameView();
   renderStandings();
+  renderBonuses();
   renderFooter();
 }
 

@@ -17,8 +17,12 @@
   --color-bronze: #a15c2a;
   --color-bronze-bg: #fbe9de;
   --shadow-card: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-card-hover: 0 4px 14px rgba(16, 24, 40, 0.12), 0 2px 4px rgba(16, 24, 40, 0.06);
+  --shadow-sheet: 0 -8px 40px rgba(16, 24, 40, 0.25);
+  --color-primary-hover: #2540c7; /* darkens on hover; white text stays readable */
   --radius-lg: 16px;
   --radius-md: 10px;
+  --radius-xl: 20px;
 }
 
 body.dark-theme {
@@ -37,6 +41,9 @@ body.dark-theme {
   --color-bronze: #e2a374;
   --color-bronze-bg: #3a2618;
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-card-hover: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-sheet: 0 -8px 40px rgba(0, 0, 0, 0.6);
+  --color-primary-hover: #4a63d6; /* darker than --color-primary so white text holds up */
 }
 
 @media (prefers-color-scheme: dark) {
@@ -258,8 +265,8 @@ html.view-only .role-btn {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 50%;
-  width: 2.25rem;
-  height: 2.25rem;
+  width: 2.75rem;
+  height: 2.75rem;
   font-size: 1.1rem;
   cursor: pointer;
   box-shadow: var(--shadow-card);
@@ -300,7 +307,8 @@ html.view-only .role-btn {
 
 .card h2 {
   margin: 0 0 0.75rem;
-  font-size: 1.05rem;
+  font-size: 1.15rem;
+  font-weight: 800;
 }
 
 .card-header-row {
@@ -522,6 +530,11 @@ html.view-only .role-btn {
   gap: 0.65rem;
 }
 
+.now-body {
+  flex: 1;
+  min-width: 0;
+}
+
 .now-emoji {
   font-size: 1.7rem;
   line-height: 1.15;
@@ -591,7 +604,7 @@ html.view-only .role-btn {
 
 .now-banner:hover {
   border-left-color: var(--color-primary-dark);
-  box-shadow: 0 4px 14px rgba(16, 24, 40, 0.12), 0 2px 4px rgba(16, 24, 40, 0.06);
+  box-shadow: var(--shadow-card-hover);
 }
 
 .now-banner:active {
@@ -654,8 +667,8 @@ body.no-scroll {
   display: flex;
   flex-direction: column;
   background: var(--color-bg);
-  border-radius: 20px 20px 0 0;
-  box-shadow: 0 -8px 40px rgba(16, 24, 40, 0.25);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  box-shadow: var(--shadow-sheet);
   animation: sched-slide 0.28s cubic-bezier(0.22, 1, 0.36, 1);
   overflow: hidden;
 }
@@ -699,7 +712,7 @@ body.no-scroll {
 
 .schedule-title {
   margin: 0;
-  font-size: 1.2rem;
+  font-size: 1.15rem;
   font-weight: 800;
 }
 
@@ -707,8 +720,8 @@ body.no-scroll {
   border: none;
   background: var(--color-bg);
   color: var(--color-text-muted);
-  width: 2rem;
-  height: 2rem;
+  width: 2.75rem;
+  height: 2.75rem;
   border-radius: 50%;
   font-size: 1rem;
   cursor: pointer;
@@ -1004,7 +1017,7 @@ body.no-scroll {
 }
 
 .primary-btn:hover {
-  background: var(--color-primary-dark);
+  background: var(--color-primary-hover);
 }
 
 .secondary-btn {
@@ -1129,6 +1142,18 @@ body.no-scroll {
   font-weight: 700;
 }
 
+/* "+N bonus" note under a team's total. */
+.bonus-hint {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.6rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--color-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
 .medal-points {
   margin-left: auto;
   font-size: 0.85rem;
@@ -1137,40 +1162,37 @@ body.no-scroll {
   white-space: nowrap;
 }
 
-.team-name-input {
-  width: 100%;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--color-text);
+/* Static team identity (names are fixed for the week). */
+.team-cell {
+  padding: 0.4rem 0.4rem;
+}
+
+.team-name-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
   font-size: 0.95rem;
-  font-family: inherit;
-  padding: 0.3rem 0.4rem;
-  border-radius: 6px;
+  font-weight: 700;
+  line-height: 1.25;
 }
 
-.team-name-input:hover,
-.team-name-input:focus {
-  border-color: var(--color-border);
-  background: var(--color-bg);
-  outline: none;
+.team-emoji {
+  font-size: 1.1rem;
+  flex: 0 0 auto;
 }
 
-.team-counselor-input {
-  width: 100%;
-  border: 1px solid transparent;
-  background: transparent;
+.team-name-text {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.team-counselor-text {
+  margin-top: 0.1rem;
+  font-size: 0.75rem;
+  font-weight: 500;
   color: var(--color-text-muted);
-  font-size: 0.78rem;
-  font-family: inherit;
-  padding: 0.05rem 0.4rem 0.2rem;
-  border-radius: 6px;
-}
-
-.team-counselor-input:hover,
-.team-counselor-input:focus {
-  border-color: var(--color-border);
-  background: var(--color-bg);
-  outline: none;
+  line-height: 1.3;
+  overflow-wrap: break-word;
 }
 
 .chip-sub {
@@ -1250,6 +1272,204 @@ body.no-scroll {
   border-color: var(--color-primary);
   background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
   color: var(--color-primary);
+}
+
+/* ============================================================
+   BONUS POINTS CARD
+   ============================================================ */
+.bonus-entry {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.bonus-cat-row,
+.bonus-meal-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.bonus-meal-row {
+  margin-top: 0.5rem;
+}
+
+.bonus-cat-chip,
+.bonus-meal-chip {
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s ease;
+}
+
+.bonus-meal-chip {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
+}
+
+.bonus-cat-chip.selected,
+.bonus-meal-chip.selected {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+  color: var(--color-primary);
+}
+
+.bonus-custom-input,
+.bonus-points-input {
+  border: 1.5px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 0.95rem;
+  border-radius: var(--radius-md);
+  padding: 0.6rem 0.7rem;
+}
+
+.bonus-custom-input {
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.bonus-custom-input:focus,
+.bonus-points-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.bonus-entry-hint {
+  margin: 0.75rem 0 0.4rem;
+  font-size: 0.8rem;
+}
+
+.bonus-team-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.bonus-team-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.85rem;
+  border-radius: 999px;
+}
+
+.chip-emoji {
+  font-size: 1rem;
+}
+
+.bonus-add-row {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+
+.bonus-points-input {
+  width: 6rem;
+  flex: 0 0 auto;
+}
+
+.bonus-add-row .primary-btn {
+  width: auto;
+  flex: 1;
+}
+
+.bonus-subtotals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.85rem;
+}
+
+.bonus-subtotal-chip {
+  background: var(--color-gold-bg);
+  color: var(--color-gold);
+  border-radius: 999px;
+  padding: 0.25rem 0.7rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.bonus-ledger {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.bonus-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.55rem 0.7rem;
+}
+
+.bonus-item-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.bonus-item-team {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 700;
+  overflow-wrap: break-word;
+}
+
+.bonus-item-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  overflow-wrap: break-word;
+}
+
+.bonus-item-pts {
+  flex: 0 0 auto;
+  font-size: 1rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
+}
+
+.bonus-item-pts.neg {
+  color: var(--color-danger);
+}
+
+.bonus-remove-btn {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+  cursor: pointer;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.bonus-remove-btn:hover {
+  background: color-mix(in srgb, var(--color-danger) 15%, transparent);
+  color: var(--color-danger);
+}
+
+.bonus-empty {
+  margin: 0.5rem 0 0;
 }
 
 .matchup-callout {
