@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-20T16:43:40Z';
+const CODE_UPDATED_AT = '2026-07-20T20:45:00Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -991,6 +991,7 @@ function saveState() {
 function touchData() {
   if (!state.meta) state.meta = {};
   state.meta.lastDataChangeAt = new Date().toISOString();
+  dataEditPending = true; // real edit queued — guard it until it's pushed
 }
 
 // ── Cloud sync (Firebase Realtime Database) ──────────────────────
@@ -1011,6 +1012,11 @@ let remoteReady = false;
 // Lets the first-snapshot merge defend offline-entered results instead of
 // silently replacing them with a stale server copy.
 let dirtySinceLoad = false;
+// True while a *data* edit (touchData) is queued but not yet pushed. The merge
+// uses this — not the raw pushTimer — to decide whether to hold off adopting a
+// snapshot, so view-only saves (day tab, theme, notify, follow-team) never
+// block an incoming update or its notification.
+let dataEditPending = false;
 
 function syncEnabled() {
   return !!fbRef;
@@ -1043,14 +1049,16 @@ function initSync() {
           return;
         }
       }
-      // A local edit is queued but hasn't reached the server yet (e.g. a
+      // A local DATA edit is queued but hasn't reached the server yet (e.g. a
       // bracket winner tapped in the last 400ms). Adopting this snapshot now
       // would overwrite it on screen, and the queued push would then persist
       // the reverted state — the bug where tapping a winner right after the
       // page loads "does nothing." Keep local; the pending push carries our
-      // edit to the server, and its echo re-syncs everyone. The first
-      // snapshot is handled by the dirtySinceLoad defense just above.
-      if (!firstSnapshot && pushTimer !== null) return;
+      // edit up, and its echo re-syncs everyone. Gated on dataEditPending (not
+      // the raw pushTimer) so view-only saves — day tab, theme, notify toggle,
+      // follow-team — never make us skip an incoming update or its
+      // notification. The first snapshot is handled by dirtySinceLoad above.
+      if (!firstSnapshot && dataEditPending) return;
       applyingRemote = true;
       // Signature of the synced slice before applying this snapshot. RTDB fires
       // a local `value` event for our own set(), so most snapshots are pure
@@ -1130,6 +1138,7 @@ function pushState() {
   if (!fbRef || applyingRemote || !remoteReady) return;
   const payload = {};
   SYNC_KEYS.forEach((k) => { payload[k] = state[k] === undefined ? null : state[k]; });
+  dataEditPending = false; // current state (incl. any edit) is going to the server
   // JSON round-trip strips any `undefined` (which Realtime DB rejects).
   fbRef.set(JSON.parse(JSON.stringify(payload))).catch((e) => console.warn('sync push failed', e));
 }
@@ -1355,19 +1364,26 @@ function maybeNativeNotification(title, body, tag) {
   } catch (e) { /* unsupported in this context — the toast already showed */ }
 }
 
+// Turn notifications on (idempotent). Must be called from a user gesture so
+// the OS permission prompt + audio unlock are allowed. Caller persists.
+function enableNotify() {
+  getAudio(); // unlock sound from the triggering user gesture
+  if (window.Notification && Notification.permission === 'default') {
+    Notification.requestPermission().catch(() => {});
+  }
+  state.notify = true;
+  updateNotifyButton();
+}
+
 function toggleNotify() {
   if (!state.notify) {
-    getAudio(); // unlock sound from this click's user gesture
-    if (window.Notification && Notification.permission === 'default') {
-      Notification.requestPermission().catch(() => {});
-    }
-    state.notify = true;
+    enableNotify();
     showToast("🔔 You'll get an alert here whenever a team's points change or is called up next — as long as this tab stays open.");
   } else {
     state.notify = false;
+    updateNotifyButton();
   }
   saveState();
-  updateNotifyButton();
 }
 
 function updateNotifyButton() {
@@ -2395,10 +2411,17 @@ function renderTeamPickerOptions() {
   ).join('') + `<button class="team-picker-option team-picker-neutral ${state.followTeam === null ? 'selected' : ''}" data-team-id="">🙅 Neutral / no team</button>`;
   wrap.querySelectorAll('.team-picker-option').forEach((btn) => {
     btn.addEventListener('click', () => {
-      state.followTeam = btn.dataset.teamId || null;
+      const id = btn.dataset.teamId || null;
+      const turnedOnNotify = id && !state.notify;
+      state.followTeam = id;
+      // Following a team opts you into its alerts — the picker promises a
+      // "heads-up when they score or are up next," which only fires when
+      // notifications are on. (Neutral leaves the notify setting alone.)
+      if (id && !state.notify) enableNotify();
       saveState();
       closeTeamPicker();
       renderAll();
+      if (turnedOnNotify) showToast(`🔔 Following ${teamEmoji(id)} ${teamName(id)} — you'll get alerts here when they score or are up next.`);
     });
   });
 }
