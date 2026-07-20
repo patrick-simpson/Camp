@@ -11,12 +11,12 @@
   <meta property="og:description" content="Live camp game scoring — standings, schedule, and team medals.">
   <meta property="og:type" content="website">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8F%85%3C/text%3E%3C/svg%3E">
-  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=33">
-  <link rel="manifest" href="manifest.json?v=33">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=34">
+  <link rel="manifest" href="manifest.json?v=34">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=33">
+  <link rel="stylesheet" href="styles.css?v=34">
   <script>
     // Decide lock state before the page paints so we never flash the app,
     // and never show a blank page: exactly one of #app / #lock-screen shows.
@@ -92,9 +92,11 @@
         </div>
         <p class="muted standings-hint">Only counts games saved in this app — your paper scoreboard is the official one.</p>
         <p id="sync-status" class="sync-status" aria-live="polite"></p>
+        <div id="follow-team-card" class="follow-team-card" hidden></div>
         <div class="standings-actions">
           <button id="copy-standings-btn" class="secondary-btn">📋 Copy scores &amp; points</button>
           <button id="share-standings-btn" class="secondary-btn" hidden>📤 Share</button>
+          <button id="notify-toggle-btn" class="secondary-btn" aria-pressed="false">🔕 Notify me</button>
         </div>
         <div class="table-scroll">
           <table id="standings-table" class="standings-table">
@@ -143,11 +145,24 @@
     </div>
   </div>
 
+  <!-- ── TEAM PICKER (who are you rooting for?) ─────────────────── -->
+  <div id="team-picker-overlay" class="team-picker-overlay" hidden>
+    <div class="team-picker-backdrop"></div>
+    <div class="team-picker-card" role="dialog" aria-modal="true" aria-label="Pick a team to follow">
+      <h2 class="team-picker-title">👋 Which team are you rooting for?</h2>
+      <p class="muted team-picker-hint">You'll get a heads-up here when they score or get called up next.</p>
+      <div id="team-picker-options" class="team-picker-options"></div>
+    </div>
+  </div>
+
+  <!-- ── TOASTS (point-change / matchup alerts) ──────────────────── -->
+  <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="false"></div>
+
   <!-- Firebase SDK (optional cloud sync). If these fail to load, the app
        falls back to local-only mode automatically. -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=33"></script>
-  <script src="app.js?v=33"></script>
+  <script src="firebase-config.js?v=34"></script>
+  <script src="app.js?v=34"></script>
 </body>
 </html>

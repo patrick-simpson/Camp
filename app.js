@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-20T09:34:18Z';
+const CODE_UPDATED_AT = '2026-07-20T09:48:57Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -899,6 +899,9 @@ if (!state.ui) state.ui = { day: defaultDay(), gameId: null };
 if (!state.meta) state.meta = {};
 if (!state.bonuses) state.bonuses = {}; // extra/bonus points ledger
 if (state.theme === undefined) state.theme = null; // pre-theme saves: follow the device
+if (state.notify === undefined) state.notify = false; // device-local, not synced (see SYNC_KEYS)
+// state.followTeam stays `undefined` until the picker is answered (a team id,
+// or null for "neutral/no team") — device-local, not synced.
 normalizeSyncedState();
 
 function counselorName(id) {
@@ -1006,7 +1009,9 @@ function initSync() {
       applyingRemote = false;
       if (appStarted && syncSignature() !== beforeSig) {
         remoteJustApplied = true; // let renderStandings pulse rows that changed
+        const matchupChanges = detectMatchupChanges();
         renderAll();
+        notifyMatchupChanges(matchupChanges);
       }
     }, (err) => {
       // A cancelled read (e.g. security rules) is terminal — drop to local-only
@@ -1064,6 +1069,72 @@ function pushState() {
 // keys come from a fixed array.
 function syncSignature() {
   return JSON.stringify(SYNC_KEYS.map((k) => state[k]));
+}
+
+// The "who's up next" slot for one bracket, per stage — null when that
+// stage isn't a live open matchup (not yet set, or already decided).
+function bracketMatchupSlot(aId, bId, alreadyDecided) {
+  if (!aId || !bId || alreadyDecided) return null;
+  return { aId, bId, key: [aId, bId].sort().join('|') };
+}
+
+function bracketMatchupSlots(b) {
+  if (!b) return null;
+  return {
+    selectedPair: (b.selectedPair && b.selectedPair.length === 2)
+      ? bracketMatchupSlot(b.selectedPair[0], b.selectedPair[1], false) : null,
+    semifinal: b.semifinal
+      ? bracketMatchupSlot(b.semifinal.a, b.semifinal.b, b.semifinal.winner !== null) : null,
+    championship: b.championship
+      ? bracketMatchupSlot(b.championship.a, b.championship.b, b.championship.winner !== null) : null,
+  };
+}
+
+// gameId -> {selectedPair, semifinal, championship} slot snapshot, so a
+// genuinely NEW matchup can be told apart from an undo/clear across remote
+// syncs — even for a bracket nobody currently has open.
+let lastBracketSlots = null;
+
+function detectMatchupChanges() {
+  const prev = lastBracketSlots;
+  const next = {};
+  const changes = [];
+  GAMES.forEach((g) => {
+    if (g.format !== 'tournament') return;
+    const slots = bracketMatchupSlots(state.brackets[g.id]);
+    next[g.id] = slots;
+    if (!slots || prev === null) return; // first time seeing this bracket: seed, don't fire
+    const prevSlots = prev[g.id];
+    ['selectedPair', 'semifinal', 'championship'].forEach((stage) => {
+      const cur = slots[stage];
+      const was = prevSlots && prevSlots[stage];
+      if (cur && (!was || was.key !== cur.key)) {
+        changes.push({ game: g, stage, aId: cur.aId, bId: cur.bId });
+      }
+    });
+  });
+  lastBracketSlots = next;
+  return changes;
+}
+
+// Scans every live bracket for the first open matchup involving `teamId` —
+// used by the "Your team" summary card. Read-only; mirrors the slot logic
+// the bracket screens themselves use (renderBracketRound1 etc.).
+function findNextMatchupFor(teamId) {
+  if (!teamId) return null;
+  for (const g of GAMES) {
+    if (g.format !== 'tournament' || state.results[g.id]) continue;
+    const slots = bracketMatchupSlots(state.brackets[g.id]);
+    if (!slots) continue;
+    for (const stage of ['selectedPair', 'semifinal', 'championship']) {
+      const slot = slots[stage];
+      if (slot && (slot.aId === teamId || slot.bId === teamId)) {
+        const opponentId = slot.aId === teamId ? slot.bId : slot.aId;
+        return { game: g, opponentId };
+      }
+    }
+  }
+  return null;
 }
 
 let fbConnected = false; // live RTDB connection state (.info/connected)
@@ -1167,6 +1238,106 @@ function playHighScore() {
   if (!soundOn() || !getAudio()) return;
   [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => tone(f, i * 0.09, 0.22, 'triangle', 0.5));
   tone(1568, 0.4, 0.35, 'sine', 0.3); // sparkle on top
+}
+
+// Quiet two-note chime for a point-change alert about a team you're not following.
+function playAlertChime() {
+  if (!soundOn() || !getAudio()) return;
+  tone(880, 0, 0.15, 'sine', 0.35);
+  tone(1174.66, 0.12, 0.25, 'sine', 0.3);
+}
+
+// Brighter three-note chime for an alert about the team you're following.
+function playMineChime() {
+  if (!soundOn() || !getAudio()) return;
+  tone(880, 0, 0.15, 'sine', 0.4);
+  tone(1174.66, 0.11, 0.15, 'sine', 0.4);
+  tone(1567.98, 0.22, 0.3, 'sine', 0.4);
+}
+
+// ── In-app toasts + subscribe-to-notifications ───────────────────
+// No service worker / push infra: this only fires while the tab is open on
+// a device, but needs neither billing nor a server deploy. "Mine" alerts
+// (about the followed team) get a fuller toast + OS Notification (only
+// when the tab isn't focused, so it isn't a redundant second alert) and a
+// brighter chime; everyone else's events still show, just quieter.
+
+function notifyOn() {
+  return !!state.notify;
+}
+
+function showToast(message, opts) {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+  const mine = !!(opts && opts.mine);
+  const el = document.createElement('div');
+  el.className = 'toast' + (mine ? ' toast-mine' : '');
+  el.textContent = message;
+  container.appendChild(el);
+  const remove = () => el.remove();
+  setTimeout(() => {
+    el.classList.add('toast-out');
+    setTimeout(remove, 250);
+  }, mine ? 5500 : 4000);
+}
+
+function maybeNativeNotification(title, body, tag) {
+  if (!window.Notification || Notification.permission !== 'granted' || !document.hidden) return;
+  try {
+    new Notification(title, { body, icon: 'apple-touch-icon.png', tag });
+  } catch (e) { /* unsupported in this context — the toast already showed */ }
+}
+
+function toggleNotify() {
+  if (!state.notify) {
+    getAudio(); // unlock sound from this click's user gesture
+    if (window.Notification && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+    state.notify = true;
+    showToast("🔔 You'll get an alert here whenever a team's points change or is called up next — as long as this tab stays open.");
+  } else {
+    state.notify = false;
+  }
+  saveState();
+  updateNotifyButton();
+}
+
+function updateNotifyButton() {
+  const btn = document.getElementById('notify-toggle-btn');
+  if (!btn) return;
+  btn.textContent = state.notify ? '🔔 Notified' : '🔕 Notify me';
+  btn.classList.toggle('active', !!state.notify);
+  btn.setAttribute('aria-pressed', String(!!state.notify));
+}
+
+// changes: [{ team, delta, total }]
+function notifyPointChanges(changes) {
+  if (!state.notify || !changes.length) return;
+  let anyMine = false;
+  changes.forEach(({ team, delta, total }) => {
+    const mine = team.id === state.followTeam;
+    if (mine) anyMine = true;
+    const sign = delta > 0 ? '+' : '';
+    const msg = `${teamEmoji(team.id)} ${esc(team.name)} ${sign}${delta} pts (now ${total})`;
+    showToast(mine ? "Your team scored! " + msg : msg, { mine });
+    if (mine) maybeNativeNotification('🏅 Your team scored!', msg, 'camp-points-' + team.id);
+  });
+  if (anyMine) playMineChime(); else playAlertChime();
+}
+
+// changes: [{ game, stage, aId, bId }]
+function notifyMatchupChanges(changes) {
+  if (!state.notify || !changes.length) return;
+  let anyMine = false;
+  changes.forEach(({ game, aId, bId }) => {
+    const mine = aId === state.followTeam || bId === state.followTeam;
+    if (mine) anyMine = true;
+    const msg = `${teamEmoji(aId)} ${esc(teamName(aId))} vs ${teamEmoji(bId)} ${esc(teamName(bId))} — ${esc(game.name)}`;
+    showToast(mine ? "You're up next! " + msg : "Up next: " + msg, { mine });
+    if (mine) maybeNativeNotification('🏅 Your team is up next!', msg, 'camp-matchup-' + game.id);
+  });
+  if (anyMine) playMineChime(); else playAlertChime();
 }
 
 // Dependency-free confetti burst on "it's official" moments. The winning
@@ -2038,6 +2209,7 @@ function renderStandings() {
   // get confetti / direct feedback).
   const pulseFromRemote = remoteJustApplied && lastPointsByTeam !== null;
   remoteJustApplied = false;
+  const changedTeams = []; // {team, delta, total} — for the notify option
 
   tbody.innerHTML = '';
   ranked.forEach((team, i) => {
@@ -2046,14 +2218,16 @@ function renderStandings() {
     // Podium tint for the top 3 — but only once real points exist, so
     // Monday's all-zero table stays neutral.
     tr.className = i < 3 && s.points > 0 ? 'podium-row podium-' + (i + 1) : '';
+    if (team.id === state.followTeam) tr.className += ' following-row';
     if (pulseFromRemote && lastPointsByTeam[team.id] !== undefined && lastPointsByTeam[team.id] !== s.points) {
       tr.className += ' points-pulse';
+      changedTeams.push({ team, delta: s.points - lastPointsByTeam[team.id], total: s.points });
     }
     const medalCell = (n) => `<td class="medal-col">${n ? n : '<span class="zero">0</span>'}</td>`;
     tr.innerHTML = `
       <td class="rank-col">${i + 1}</td>
       <td class="team-cell">
-        <div class="team-name-line"><span class="team-emoji">${teamEmoji(team.id)}</span> <span class="team-name-text">${esc(team.name)}</span></div>
+        <div class="team-name-line"><span class="team-emoji">${teamEmoji(team.id)}</span> <span class="team-name-text">${esc(team.name)}</span>${team.id === state.followTeam ? ' <span class="following-star" title="You\'re following this team">⭐</span>' : ''}</div>
         ${team.counselor ? `<div class="team-counselor-text">${esc(team.counselor)}</div>` : ''}
       </td>
       <td class="points-col">${s.points}${s.bonus ? `<span class="bonus-hint">${s.bonus > 0 ? '+' : ''}${s.bonus} bonus</span>` : ''}</td>
@@ -2065,6 +2239,114 @@ function renderStandings() {
   });
   lastPointsByTeam = {};
   ranked.forEach((team) => { lastPointsByTeam[team.id] = counts[team.id].points; });
+  renderFollowCard(ranked, counts);
+  if (changedTeams.length) notifyPointChanges(changedTeams);
+}
+
+// "Your team" summary card — rank, points, and next matchup if one's queued.
+function renderFollowCard() {
+  const card = document.getElementById('follow-team-card');
+  if (!card) return;
+  if (state.followTeam === undefined) { card.hidden = true; return; }
+  if (state.followTeam === null) {
+    card.hidden = false;
+    card.innerHTML = `<p class="muted follow-neutral-line">🏳️ Not following a team — <button id="pick-team-link" class="link-btn">pick one</button></p>`;
+    const link = document.getElementById('pick-team-link');
+    if (link) link.addEventListener('click', openTeamPicker);
+    return;
+  }
+  const team = state.teams.find((t) => t.id === state.followTeam);
+  if (!team) { card.hidden = true; return; }
+  const counts = medalCounts();
+  const ranked = rankTeamsByPoints(counts);
+  const rank = ranked.findIndex((t) => t.id === team.id) + 1;
+  const s = counts[team.id];
+  const next = findNextMatchupFor(team.id);
+  const nextLine = next
+    ? `<p class="follow-next-line">⏭️ Up next: vs ${teamEmoji(next.opponentId)} ${esc(teamName(next.opponentId))} in ${esc(next.game.name)}</p>`
+    : '';
+  card.hidden = false;
+  card.innerHTML = `
+    <div class="follow-team-head">
+      <span class="follow-team-emoji">${teamEmoji(team.id)}</span>
+      <div>
+        <div class="follow-team-name">Your team: ${esc(team.name)}</div>
+        <div class="follow-team-stats">${ordinal(rank)} place · ${s.points} pts</div>
+      </div>
+      <button id="change-team-link" class="link-btn follow-change-btn">Change</button>
+    </div>
+    ${nextLine}
+  `;
+  const changeBtn = document.getElementById('change-team-link');
+  if (changeBtn) changeBtn.addEventListener('click', openTeamPicker);
+}
+
+function ordinal(n) {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+// ── Team picker (which team to follow) ────────────────────────────
+// Device-local — shown once after unlocking until answered (a real team,
+// or explicitly "neutral"), reachable again later via the follow-team card.
+
+function teamPickerOverlayEl() {
+  return document.getElementById('team-picker-overlay');
+}
+
+function maybeShowTeamPicker() {
+  if (state.followTeam === undefined) openTeamPicker();
+}
+
+function openTeamPicker() {
+  const overlay = teamPickerOverlayEl();
+  if (!overlay) return;
+  renderTeamPickerOptions();
+  overlay.hidden = false;
+  document.body.classList.add('no-scroll');
+  const app = document.getElementById('app');
+  if (app) app.inert = true;
+}
+
+function closeTeamPicker() {
+  const overlay = teamPickerOverlayEl();
+  if (!overlay) return;
+  overlay.hidden = true;
+  document.body.classList.remove('no-scroll');
+  const app = document.getElementById('app');
+  if (app) app.inert = false;
+}
+
+function renderTeamPickerOptions() {
+  const wrap = document.getElementById('team-picker-options');
+  if (!wrap) return;
+  wrap.innerHTML = state.teams.map((t) =>
+    `<button class="team-picker-option ${state.followTeam === t.id ? 'selected' : ''}" data-team-id="${t.id}">
+      <span class="chip-emoji">${teamEmoji(t.id)}</span> ${esc(t.name)}
+    </button>`
+  ).join('') + `<button class="team-picker-option team-picker-neutral ${state.followTeam === null ? 'selected' : ''}" data-team-id="">🙅 Neutral / no team</button>`;
+  wrap.querySelectorAll('.team-picker-option').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.followTeam = btn.dataset.teamId || null;
+      saveState();
+      closeTeamPicker();
+      renderAll();
+    });
+  });
+}
+
+function wireTeamPicker() {
+  const overlay = teamPickerOverlayEl();
+  if (!overlay) return;
+  const backdrop = overlay.querySelector('.team-picker-backdrop');
+  // Only lets the user dismiss without choosing if they've already answered
+  // once before (skip-by-accident shouldn't leave followTeam unanswered).
+  const dismiss = () => { if (state.followTeam !== undefined) closeTeamPicker(); };
+  if (backdrop) backdrop.addEventListener('click', dismiss);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !overlay.hidden) dismiss();
+  });
 }
 
 // ── Bonus points (extra points, entered + viewed here) ───────────
@@ -3023,6 +3305,10 @@ function init() {
   document.getElementById('role-btn').addEventListener('click', showLockScreen);
   updateRoleButton();
 
+  document.getElementById('notify-toggle-btn').addEventListener('click', toggleNotify);
+  updateNotifyButton();
+  wireTeamPicker();
+
   wireSchedule();
 
   initSync();
@@ -3072,6 +3358,7 @@ function startApp() {
     updateRoleButton();
     renderAll();
   }
+  maybeShowTeamPicker();
 }
 
 function renderPinDots() {

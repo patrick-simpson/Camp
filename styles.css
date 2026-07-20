@@ -758,6 +758,91 @@ body.no-scroll {
   .schedule-overlay.closing .schedule-backdrop { animation: none; }
 }
 
+/* ============================================================
+   TEAM PICKER (which team to follow)
+   ============================================================ */
+.team-picker-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1150;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+}
+
+.team-picker-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(16, 24, 40, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.team-picker-card {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  max-height: 85dvh;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sheet);
+  padding: 1.5rem;
+  animation: team-picker-pop 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes team-picker-pop {
+  from { transform: scale(0.94); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .team-picker-card { animation: none; }
+}
+
+.team-picker-title {
+  margin: 0 0 0.4rem;
+  font-size: 1.2rem;
+}
+
+.team-picker-hint {
+  margin: 0 0 1rem;
+}
+
+.team-picker-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.team-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 1rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.team-picker-option.selected {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
+}
+
+.team-picker-neutral {
+  margin-top: 0.4rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
 .schedule-header {
   flex: 0 0 auto;
   padding: 0.5rem 1rem 0.75rem;
@@ -1141,6 +1226,7 @@ body.no-scroll {
 
 .standings-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.6rem;
   margin-bottom: 0.85rem;
 }
@@ -1148,6 +1234,13 @@ body.no-scroll {
 .standings-actions .secondary-btn {
   font-size: 0.88rem;
   padding: 0.6rem 0.5rem;
+  flex: 1 1 auto;
+  min-width: 6rem;
+}
+
+#notify-toggle-btn.active {
+  background: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface));
+  color: var(--color-primary);
 }
 
 .copy-matchup-btn {
@@ -1235,6 +1328,16 @@ body.no-scroll {
 }
 .podium-3 .rank-col { color: var(--color-bronze); }
 
+/* Followed-team row — a distinct visual channel (outline) from the podium
+   tint (box-shadow) so the two combine cleanly when they overlap. */
+.following-row {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+.following-star {
+  font-size: 0.85em;
+}
+
 /* Dim zeroed medal counts so earned medals stand out. */
 .medal-col .zero {
   opacity: 0.35;
@@ -1250,6 +1353,50 @@ body.no-scroll {
 }
 @media (prefers-reduced-motion: reduce) {
   .points-pulse td { animation: none; }
+}
+
+/* "Your team" summary card. */
+.follow-team-card {
+  margin-bottom: 0.85rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--color-primary) 25%, var(--color-border));
+}
+
+.follow-team-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.follow-team-emoji {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.follow-team-name {
+  font-weight: 700;
+}
+
+.follow-team-stats {
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.follow-change-btn {
+  margin-left: auto;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.follow-next-line {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+}
+
+.follow-neutral-line {
+  margin: 0;
 }
 
 /* "+N bonus" note under a team's total. */
@@ -2146,6 +2293,61 @@ body.no-scroll {
   margin: 0.25rem 0 1rem;
   padding-left: 1.2rem;
   font-size: 0.9rem;
+}
+
+/* ============================================================
+   TOASTS (point-change / matchup alerts)
+   ============================================================ */
+.toast-container {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(1rem + env(safe-area-inset-bottom));
+  z-index: 2200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 1rem;
+  pointer-events: none;
+}
+
+.toast {
+  max-width: 420px;
+  width: 100%;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card-hover);
+  padding: 0.7rem 0.9rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  animation: toast-in 0.22s ease;
+}
+
+.toast-mine {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+}
+
+.toast-out {
+  animation: toast-out 0.25s ease forwards;
+}
+
+@keyframes toast-in {
+  from { transform: translateY(12px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes toast-out {
+  from { transform: translateY(0); opacity: 1; }
+  to { transform: translateY(12px); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast,
+  .toast-out { animation: none; }
 }
 
 /* ============================================================
