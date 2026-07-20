@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-20T21:41:45Z';
+const CODE_UPDATED_AT = '2026-07-20T23:09:45Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -2170,8 +2170,11 @@ function standingsSummaryText() {
   lines.push(`Standings (🥇 ${MEDAL_POINTS.gold} · 🥈 ${MEDAL_POINTS.silver} · 🥉 ${MEDAL_POINTS.bronze} pts):`);
   ranked.forEach((t, i) => {
     const s = counts[t.id];
-    const bonus = s.bonus ? ` ${s.bonus > 0 ? '+' : ''}${s.bonus} bonus` : '';
-    lines.push(`${i + 1}) ${teamEmoji(t.id)} ${t.name} · ${s.points} pts (🥇${s.gold} 🥈${s.silver} 🥉${s.bronze}${bonus})`);
+    const parts = [`🥇${s.gold} 🥈${s.silver} 🥉${s.bronze}`];
+    if (s.verse) parts.push(`📖${s.verse > 0 ? '+' : ''}${s.verse}`);
+    if (s.meals) parts.push(`🧽${s.meals > 0 ? '+' : ''}${s.meals}`);
+    if (s.custom) parts.push(`✨${s.custom > 0 ? '+' : ''}${s.custom}`);
+    lines.push(`${i + 1}) ${teamEmoji(t.id)} ${t.name} · ${s.points} pts (${parts.join(' ')})`);
   });
 
   const played = GAMES.filter((g) => state.results[g.id]);
@@ -2234,22 +2237,29 @@ function formatScore(game, val) {
 
 // ── Standings (derived from saved results) ───────────────────────
 
-// Sum of extra/bonus points per team, from the bonus ledger.
-function bonusTotals() {
+// Extra points per team from the bonus ledger, split by source. Bible
+// memorization ('verse') and meal cleanup ('cleanup') each get their own
+// standings column, so they're totaled separately rather than lumped into a
+// single "bonus" figure; any free-form entry falls in 'custom'.
+function bonusBreakdown() {
   const totals = {};
-  state.teams.forEach((t) => (totals[t.id] = 0));
+  state.teams.forEach((t) => (totals[t.id] = { verse: 0, meals: 0, custom: 0 }));
   Object.values(state.bonuses || {}).forEach((b) => {
-    if (!b || totals[b.teamId] === undefined) return;
+    if (!b || !totals[b.teamId]) return;
     const p = Number(b.points);
-    if (!isNaN(p)) totals[b.teamId] += p;
+    if (isNaN(p)) return;
+    const bucket = b.category === 'verse' ? 'verse'
+      : b.category === 'cleanup' ? 'meals'
+      : 'custom';
+    totals[b.teamId][bucket] += p;
   });
   return totals;
 }
 
 function medalCounts() {
   const counts = {};
-  const bonus = bonusTotals();
-  state.teams.forEach((t) => (counts[t.id] = { gold: 0, silver: 0, bronze: 0, medalPts: 0, bonus: 0, points: 0 }));
+  const extra = bonusBreakdown();
+  state.teams.forEach((t) => (counts[t.id] = { gold: 0, silver: 0, bronze: 0, medalPts: 0, verse: 0, meals: 0, custom: 0, bonus: 0, points: 0 }));
   // Iterate entries so we can weight points per game: Messtival games
   // (Friday) are worth DOUBLE on the scoreboard. Medal *counts* stay raw;
   // only the point value doubles.
@@ -2263,7 +2273,11 @@ function medalCounts() {
   });
   state.teams.forEach((t) => {
     const c = counts[t.id];
-    c.bonus = bonus[t.id] || 0;
+    const e = extra[t.id] || { verse: 0, meals: 0, custom: 0 };
+    c.verse = e.verse;
+    c.meals = e.meals;
+    c.custom = e.custom;
+    c.bonus = e.verse + e.meals + e.custom; // all extras, for the grand total
     c.points = c.medalPts + c.bonus; // grand total drives the leaderboard
   });
   return counts;
@@ -2308,16 +2322,21 @@ function renderStandings() {
       changedTeams.push({ team, delta: s.points - lastPointsByTeam[team.id], total: s.points });
     }
     const medalCell = (n) => `<td class="medal-col">${n ? n : '<span class="zero">0</span>'}</td>`;
+    // Signed cell for the point-source columns (verse / meals): dim a zero,
+    // show a leading + only for positive tallies (deductions keep their −).
+    const extraCell = (n) => `<td class="extra-col">${n ? (n > 0 ? '+' + n : n) : '<span class="zero">0</span>'}</td>`;
     tr.innerHTML = `
       <td class="rank-col">${i + 1}</td>
       <td class="team-cell">
         <div class="team-name-line"><span class="team-emoji">${teamEmoji(team.id)}</span> <span class="team-name-text">${esc(team.name)}</span>${team.id === state.followTeam ? ' <span class="following-star" title="You\'re following this team">⭐</span>' : ''}</div>
         ${team.counselor ? `<div class="team-counselor-text">${esc(team.counselor)}</div>` : ''}
       </td>
-      <td class="points-col">${s.points}${s.bonus ? `<span class="bonus-hint">${s.bonus > 0 ? '+' : ''}${s.bonus} bonus</span>` : ''}</td>
+      <td class="points-col">${s.points}${s.custom ? `<span class="bonus-hint">${s.custom > 0 ? '+' : ''}${s.custom} bonus</span>` : ''}</td>
       ${medalCell(s.gold)}
       ${medalCell(s.silver)}
       ${medalCell(s.bronze)}
+      ${extraCell(s.verse)}
+      ${extraCell(s.meals)}
     `;
     tbody.appendChild(tr);
   });

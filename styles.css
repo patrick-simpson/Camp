@@ -1472,6 +1472,16 @@ body.no-scroll {
   font-weight: 700;
 }
 
+/* Point-source columns: Bible memorization (📖) and meal cleanup (🧽). */
+.extra-col {
+  width: 2.4rem;
+  text-align: center !important;
+  font-variant-numeric: tabular-nums;
+}
+.extra-col .zero {
+  opacity: 0.35;
+}
+
 /* Podium tint for the top 3 (only applied when points > 0). */
 .podium-row td {
   border-bottom-color: transparent;
