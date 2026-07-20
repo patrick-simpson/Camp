@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-20T08:14:30Z';
+const CODE_UPDATED_AT = '2026-07-20T08:22:17Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -1057,6 +1057,61 @@ function playHighScore() {
   tone(1568, 0.4, 0.35, 'sine', 0.3); // sparkle on top
 }
 
+// Dependency-free confetti burst on "it's official" moments. The winning
+// team's mascot rains down among token-colored bits. Respects reduced motion.
+function celebrate(goldTeamId) {
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const canvas = document.createElement('canvas');
+  canvas.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2000';
+  const dpr = window.devicePixelRatio || 1;
+  const W = window.innerWidth, H = window.innerHeight;
+  canvas.width = W * dpr; canvas.height = H * dpr;
+  canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  document.body.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+  const emoji = goldTeamId != null ? teamEmoji(goldTeamId) : '🎉';
+  const colors = ['#3355ff', '#96690a', '#d63b3b', '#6b7280', '#a15c2a', '#e8c15a'];
+  const parts = [];
+  for (let i = 0; i < 80; i++) {
+    const useEmoji = i % 4 === 0;
+    parts.push({
+      x: W / 2 + (Math.random() - 0.5) * W * 0.5,
+      y: H * 0.35 + (Math.random() - 0.5) * 60,
+      vx: (Math.random() - 0.5) * 9,
+      vy: -6 - Math.random() * 8,
+      g: 0.28 + Math.random() * 0.12,
+      size: useEmoji ? 20 + Math.random() * 10 : 6 + Math.random() * 5,
+      rot: Math.random() * Math.PI, vr: (Math.random() - 0.5) * 0.3,
+      color: colors[i % colors.length], emoji: useEmoji,
+    });
+  }
+  const start = performance.now();
+  const DURATION = 1600;
+  function frame(now) {
+    const t = now - start;
+    ctx.clearRect(0, 0, W, H);
+    parts.forEach((p) => {
+      p.vy += p.g; p.x += p.vx; p.y += p.vy; p.rot += p.vr;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, 1 - t / DURATION);
+      ctx.translate(p.x, p.y); ctx.rotate(p.rot);
+      if (p.emoji) {
+        ctx.font = p.size + 'px sans-serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(emoji, 0, 0);
+      } else {
+        ctx.fillStyle = p.color;
+        ctx.fillRect(-p.size / 2, -p.size / 2, p.size, p.size * 0.6);
+      }
+      ctx.restore();
+    });
+    if (t < DURATION) requestAnimationFrame(frame);
+    else canvas.remove();
+  }
+  requestAnimationFrame(frame);
+}
+
 // ── Timers & stopwatches ─────────────────────────────────────────
 // Kept in memory so they keep running while you browse other games.
 
@@ -1941,6 +1996,10 @@ function renderStandings() {
   ranked.forEach((team, i) => {
     const s = counts[team.id];
     const tr = document.createElement('tr');
+    // Podium tint for the top 3 — but only once real points exist, so
+    // Monday's all-zero table stays neutral.
+    tr.className = i < 3 && s.points > 0 ? 'podium-row podium-' + (i + 1) : '';
+    const medalCell = (n) => `<td class="medal-col">${n ? n : '<span class="zero">0</span>'}</td>`;
     tr.innerHTML = `
       <td class="rank-col">${i + 1}</td>
       <td class="team-cell">
@@ -1948,9 +2007,9 @@ function renderStandings() {
         ${team.counselor ? `<div class="team-counselor-text">${esc(team.counselor)}</div>` : ''}
       </td>
       <td class="points-col">${s.points}${s.bonus ? `<span class="bonus-hint">${s.bonus > 0 ? '+' : ''}${s.bonus} bonus</span>` : ''}</td>
-      <td class="medal-col">${s.gold}</td>
-      <td class="medal-col">${s.silver}</td>
-      <td class="medal-col">${s.bronze}</td>
+      ${medalCell(s.gold)}
+      ${medalCell(s.silver)}
+      ${medalCell(s.bronze)}
     `;
     tbody.appendChild(tr);
   });
@@ -2430,6 +2489,7 @@ function renderTally(container, g) {
     touchData();
     saveState();
     renderAll();
+    celebrate(picks.gold);
   });
 }
 
@@ -2521,6 +2581,7 @@ function renderPlacement(container, g) {
     touchData();
     saveState();
     renderAll();
+    celebrate(picks.gold);
   });
 }
 
@@ -2807,6 +2868,7 @@ function renderBracketSummary(body, g, b) {
     touchData();
     saveState();
     renderAll();
+    celebrate(goldId);
   });
 }
 
@@ -2833,7 +2895,19 @@ function applyTheme() {
   const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
   const dark = state.theme === 'dark' || (state.theme === null && prefersDark);
   document.body.classList.toggle('dark-theme', dark);
-  document.getElementById('theme-toggle').textContent = dark ? '☀️' : '🌙';
+  document.body.classList.toggle('light-theme', !dark && state.theme === 'light');
+  const toggle = document.getElementById('theme-toggle');
+  if (toggle) toggle.textContent = dark ? '☀️' : '🌙';
+  // The app can override the OS theme, so keep the browser chrome color in step.
+  // A no-media meta appended last wins over the pre-paint media metas.
+  let meta = document.getElementById('dynamic-theme-color');
+  if (!meta) {
+    meta = document.createElement('meta');
+    meta.name = 'theme-color';
+    meta.id = 'dynamic-theme-color';
+    document.head.appendChild(meta);
+  }
+  meta.content = dark ? '#10141c' : '#f4f6f9';
 }
 
 function toggleTheme() {
@@ -3009,6 +3083,7 @@ function showLockScreen() {
 }
 
 function boot() {
+  applyTheme(); // the lock screen is the first thing everyone sees — theme it too
   wireLockKeypad();
   if (isUnlocked()) {
     startApp();

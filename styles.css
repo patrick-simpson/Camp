@@ -2,15 +2,16 @@
    CUSTOM PROPERTIES
    ============================================================ */
 :root {
+  color-scheme: light;
   --color-bg: #f4f6f9;
   --color-surface: #ffffff;
   --color-border: #e2e6ec;
   --color-text: #1a2233;
-  --color-text-muted: #6b7280;
+  --color-text-muted: #5b6472;
   --color-primary: #3355ff;
   --color-primary-dark: #2540c7;
   --color-danger: #d63b3b;
-  --color-gold: #b8860b;
+  --color-gold: #96690a;
   --color-gold-bg: #fff6dd;
   --color-silver: #6b7280;
   --color-silver-bg: #f1f3f6;
@@ -26,6 +27,7 @@
 }
 
 body.dark-theme {
+  color-scheme: dark;
   --color-bg: #10141c;
   --color-surface: #1a2030;
   --color-border: #2b3145;
@@ -48,11 +50,25 @@ body.dark-theme {
 
 @media (prefers-color-scheme: dark) {
   body:not(.light-theme):not(.dark-theme) {
+    color-scheme: dark;
     --color-bg: #10141c;
     --color-surface: #1a2030;
     --color-border: #2b3145;
     --color-text: #eef1f8;
     --color-text-muted: #9aa3b8;
+    --color-primary: #6b85ff;
+    --color-primary-dark: #8ea0ff;
+    --color-danger: #ff6b6b;
+    --color-gold: #e8c15a;
+    --color-gold-bg: #3a3116;
+    --color-silver: #c3c9d6;
+    --color-silver-bg: #262c3d;
+    --color-bronze: #e2a374;
+    --color-bronze-bg: #3a2618;
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
+    --shadow-card-hover: 0 4px 16px rgba(0, 0, 0, 0.5);
+    --shadow-sheet: 0 -8px 40px rgba(0, 0, 0, 0.6);
+    --color-primary-hover: #4a63d6;
   }
 }
 
@@ -1142,11 +1158,39 @@ body.no-scroll {
   font-weight: 700;
 }
 
+/* Podium tint for the top 3 (only applied when points > 0). */
+.podium-row td {
+  border-bottom-color: transparent;
+}
+.podium-row .rank-col {
+  font-weight: 800;
+}
+.podium-1 {
+  background: var(--color-gold-bg);
+  box-shadow: inset 3px 0 0 var(--color-gold);
+}
+.podium-1 .rank-col { color: var(--color-gold); }
+.podium-2 {
+  background: var(--color-silver-bg);
+  box-shadow: inset 3px 0 0 var(--color-silver);
+}
+.podium-2 .rank-col { color: var(--color-silver); }
+.podium-3 {
+  background: var(--color-bronze-bg);
+  box-shadow: inset 3px 0 0 var(--color-bronze);
+}
+.podium-3 .rank-col { color: var(--color-bronze); }
+
+/* Dim zeroed medal counts so earned medals stand out. */
+.medal-col .zero {
+  opacity: 0.35;
+}
+
 /* "+N bonus" note under a team's total. */
 .bonus-hint {
   display: block;
   margin-top: 0.1rem;
-  font-size: 0.6rem;
+  font-size: 0.7rem;
   font-weight: 700;
   line-height: 1.1;
   color: var(--color-primary);
@@ -1748,10 +1792,9 @@ body.no-scroll {
 
 .counter-btn-sub {
   font-size: 0.65rem;
-  font-weight: 600;
+  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  opacity: 0.75;
 }
 
 .score-input-row.with-counter {
