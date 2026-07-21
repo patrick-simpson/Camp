@@ -47,6 +47,41 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
    this automatically, so it's a manual step, easy to forget.
 3. `node --check app.js` before committing — cheap syntax safety net for a
    single 2000+ line file with no test suite.
+4. If the change is worth telling people about, add an entry to the
+   `CHANGES` array near the top of `app.js` (see "What's new banners"
+   below). Reuse the same UTC timestamp you set for `CODE_UPDATED_AT`.
+
+## What's new banners & auto-reload
+
+**"What's new" banners.** `CHANGES` (top of `app.js`) is a hand-maintained
+list of recent, user-visible changes. Each entry —
+`{ id, at, text }` — renders a dismissible banner at the top of the page
+(`renderWhatsNew`, into `#whats-new`) **for two hours after its `at`
+time**, then auto-expires. Multiple recent changes stack as separate
+banners, each on its own two-hour clock. Rules:
+- `at` is UTC ISO (`date -u +%Y-%m-%dT%H:%M:%SZ`) — normally the same
+  stamp as that deploy's `CODE_UPDATED_AT`.
+- `id` is a stable slug; a viewer's dismissal is remembered per-`id` in
+  `localStorage` (`campScoreboardDismissedChanges`), so clearing one
+  banner never clears the others.
+- Add newest entries to the front; prune ones well past two hours whenever
+  you're editing the list (expired entries render nothing regardless).
+- `renderWhatsNew` runs from `renderAll` and from the 30-second interval,
+  so a banner disappears on its own within ~30s of turning two hours old,
+  no interaction needed.
+
+**Auto-reload on deploy.** Open phones refresh themselves when a newer
+build ships. A freshly-deployed client writes its `CODE_UPDATED_AT` to
+Firebase at `campScoreboard/appVersion` (separate from `state`/`SYNC_KEYS`
+— never touches score sync); any client seeing a newer value calls
+`onNewVersion`. Viewers reload almost immediately; an editor
+mid-score-entry (`editorMidEntry`: a focused input, or a queued/in-flight
+data push) gets a dismissible "tap to refresh" bar (`#update-banner`) and
+auto-reloads only once it's safe — so a score being typed is never lost.
+This is why bumping `CODE_UPDATED_AT` on every deploy matters twice: it
+drives both the footer stamp and the reload trigger. (Existing phones only
+start honoring auto-reload on the deploy *after* the one that introduced
+it.)
 
 ## Firebase Realtime Database gotcha (already bit us once)
 

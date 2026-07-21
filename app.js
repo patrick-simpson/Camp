@@ -14,7 +14,19 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-20T23:09:45Z';
+const CODE_UPDATED_AT = '2026-07-21T02:08:34Z';
+
+// "What's new" banners. Each entry advertises a user-visible change at the top
+// of the page for TWO HOURS after its `at` time, then auto-expires. Every time
+// you ship something worth telling people about, add an entry here (newest
+// first) — same manual discipline as bumping CODE_UPDATED_AT and the ?v=
+// cache-bust. `at` is UTC ISO (`date -u +%Y-%m-%dT%H:%M:%SZ`); `id` is a stable
+// slug so a viewer's dismissal sticks; `text` is the short announcement.
+// Multiple recent changes stack as separate banners, each expiring on its own
+// two-hour clock. Old entries can be pruned once they're well past two hours.
+const CHANGES = [
+  { id: 'ladderball-jebball-live-2026-07-21', at: '2026-07-21T02:08:34Z', text: '🪜 New: Ladder Ball now scores live, point-by-point (cancellation, first to 21) so you can watch each team climb — plus a live goal counter for Jeb Ball, and the app now refreshes itself when a new update ships.' },
+];
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -188,6 +200,11 @@ const GAMES = [
   {
     id: 'ladder-ball', name: 'Ladder Ball', emoji: '🪜', day: 2, session: 'Morning',
     location: 'Basketball Court', format: 'tournament',
+    // Per-round cancellation scorer (see ladderMatchHTML): each round both
+    // teams' rung points are entered, the higher cancels the lower, and the
+    // winner banks the difference — first to EXACTLY 21 (overshoot holds).
+    // Synced live via state.live so spectators watch each total climb.
+    ladderScoring: { top: 3, mid: 2, bottom: 1, target: 21 },
     headline: 'Toss bolas onto the ladder — first to exactly 21.',
     rules: [
       { h: 'Setup', items: [
@@ -298,6 +315,10 @@ const GAMES = [
     id: 'jeb-ball', name: 'Jeb Ball', emoji: '🧎', day: 4, session: 'Morning',
     location: 'Chapel Lawn', format: 'tournament',
     timer: { label: 'Half clock', presets: [600, 480, 300] },
+    // Live per-team goal counter, synced for spectators. outs:0 suppresses the
+    // outs/kicking rows in liveTrackerHTML, leaving just a goal stepper per team
+    // and a half stepper (periodLabel renames "Inning" → "Half").
+    liveTracker: { unit: 'Goals', innings: 2, outs: 0, periodLabel: 'Half' },
     headline: 'Soccer on your knees, batting the ball with your hands. MUST WEAR PANTS.',
     rules: [
       { h: 'Wear pants!', items: ['Everyone plays on their knees all game — long pants required.'] },
@@ -1002,6 +1023,7 @@ function touchData() {
 
 const SYNC_KEYS = ['teams', 'results', 'brackets', 'drafts', 'picRounds', 'bonuses', 'live', 'meta'];
 let fbRef = null;
+let versionRef = null;
 let applyingRemote = false;
 let pushTimer = null;
 // No pushes until the first server snapshot has landed. Without this, a
@@ -1103,6 +1125,20 @@ function initSync() {
     firebase.database().ref('.info/connected').on('value', (s) => {
       fbConnected = !!s.val();
       updateSyncIndicator();
+    });
+    // Build-version broadcast: a freshly-deployed client (its CODE_UPDATED_AT is
+    // newer than what's advertised) writes its build time here; every other
+    // connected client sees a newer value and reloads to pick up the deploy —
+    // safely (see onNewVersion). ISO timestamps compare correctly as strings.
+    // Not part of state/SYNC_KEYS, so it never touches score sync.
+    versionRef = firebase.database().ref('campScoreboard/appVersion');
+    versionRef.on('value', (s) => {
+      const remoteV = s.val();
+      if (!remoteV || CODE_UPDATED_AT > remoteV) {
+        versionRef.set(CODE_UPDATED_AT).catch(() => {}); // announce our (newer) build
+      } else if (remoteV > CODE_UPDATED_AT) {
+        onNewVersion(); // a newer build is live elsewhere — catch up
+      }
     });
     // Flush a pending debounced push before the page is hidden/suspended. iOS
     // suspends setTimeout when the phone locks, so a result saved right before
@@ -3193,14 +3229,24 @@ function renderLiveHome() {
     const phaseLabel = { round1: 'Round 1', bye: 'Bye', semifinal: 'Championship game', championship: 'Final', summary: 'Results' }[b.phase] || '';
     const pair = currentMatchupOf(g, b);
     let scoreHTML;
-    if (pair && g.liveTracker) {
+    if (pair && g.ladderScoring) {
+      const l = getLadderMatch(g, pair[0], pair[1]);
+      const target = g.ladderScoring.target || 21;
+      scoreHTML = `<span class="live-home-score">
+        <span class="lh-team">${teamEmoji(pair[0])} ${esc(teamName(pair[0]))}</span>
+        <span class="lh-nums">${l.a}<span class="lh-dash">–</span>${l.b}</span>
+        <span class="lh-team">${teamEmoji(pair[1])} ${esc(teamName(pair[1]))}</span>
+      </span>
+      <span class="live-home-sub">First to ${target}</span>`;
+    } else if (pair && g.liveTracker) {
       const l = getLiveMatch(g, pair[0], pair[1]);
+      const periodLabel = g.liveTracker.periodLabel || 'Inning';
       scoreHTML = `<span class="live-home-score">
         <span class="lh-team">${teamEmoji(pair[0])} ${esc(teamName(pair[0]))}</span>
         <span class="lh-nums">${l.hr[pair[0]] || 0}<span class="lh-dash">–</span>${l.hr[pair[1]] || 0}</span>
         <span class="lh-team">${teamEmoji(pair[1])} ${esc(teamName(pair[1]))}</span>
       </span>
-      <span class="live-home-sub">Inning ${l.inning} of ${g.liveTracker.innings || 3}${g.liveTracker.outs ? ` · ${outsLabel(l.outs)} · ${teamEmoji(kickingTeamId(l, pair[0], pair[1]))} ${esc(teamName(kickingTeamId(l, pair[0], pair[1])))} ${esc(g.liveTracker.sideLabel || 'up')}` : ''}</span>`;
+      <span class="live-home-sub">${esc(periodLabel)} ${l.inning} of ${g.liveTracker.innings || 3}${g.liveTracker.outs ? ` · ${outsLabel(l.outs)} · ${teamEmoji(kickingTeamId(l, pair[0], pair[1]))} ${esc(teamName(kickingTeamId(l, pair[0], pair[1])))} ${esc(g.liveTracker.sideLabel || 'up')}` : ''}</span>`;
     } else if (pair) {
       scoreHTML = `<span class="live-home-matchup">${teamEmoji(pair[0])} ${esc(teamName(pair[0]))} <span class="lh-vs">vs</span> ${teamEmoji(pair[1])} ${esc(teamName(pair[1]))}</span>`;
     } else {
@@ -3285,16 +3331,27 @@ function renderLiveWatch(container, g) {
   }
 
   let scoreHTML;
-  if (g.liveTracker) {
+  if (g.ladderScoring) {
+    const l = getLadderMatch(g, pair[0], pair[1]);
+    const target = g.ladderScoring.target || 21;
+    scoreHTML = `
+      <div class="live-watch-score">
+        <div class="lw-team">${teamEmoji(pair[0])}<span class="lw-name">${esc(teamName(pair[0]))}</span></div>
+        <div class="lw-nums"><span class="lw-num">${l.a}</span><span class="lw-dash">–</span><span class="lw-num">${l.b}</span></div>
+        <div class="lw-team">${teamEmoji(pair[1])}<span class="lw-name">${esc(teamName(pair[1]))}</span></div>
+      </div>
+      <p class="live-watch-inning">First to exactly ${target}</p>`;
+  } else if (g.liveTracker) {
     const l = getLiveMatch(g, pair[0], pair[1]);
     const maxInn = g.liveTracker.innings || 3;
+    const periodLabel = g.liveTracker.periodLabel || 'Inning';
     scoreHTML = `
       <div class="live-watch-score">
         <div class="lw-team">${teamEmoji(pair[0])}<span class="lw-name">${esc(teamName(pair[0]))}</span></div>
         <div class="lw-nums"><span class="lw-num">${l.hr[pair[0]] || 0}</span><span class="lw-dash">–</span><span class="lw-num">${l.hr[pair[1]] || 0}</span></div>
         <div class="lw-team">${teamEmoji(pair[1])}<span class="lw-name">${esc(teamName(pair[1]))}</span></div>
       </div>
-      <p class="live-watch-inning">Inning ${l.inning} of ${maxInn}${g.liveTracker.outs ? ` · ${outsLabel(l.outs)}` : ''}</p>
+      <p class="live-watch-inning">${esc(periodLabel)} ${l.inning} of ${maxInn}${g.liveTracker.outs ? ` · ${outsLabel(l.outs)}` : ''}</p>
       ${g.liveTracker.outs ? `<p class="live-watch-kicking">${teamEmoji(kickingTeamId(l, pair[0], pair[1]))} ${esc(teamName(kickingTeamId(l, pair[0], pair[1])))} ${esc(g.liveTracker.sideLabel || 'up')}</p>` : ''}`;
   } else {
     scoreHTML = `<div class="live-watch-matchup">${teamEmoji(pair[0])} ${esc(teamName(pair[0]))} <span class="lw-vs">vs</span> ${teamEmoji(pair[1])} ${esc(teamName(pair[1]))}</div>`;
@@ -3617,6 +3674,16 @@ function normalizeDraft(d) {
 // A live match tally: { key, inning, hr: {teamId: n} }. RTDB prunes an
 // empty hr map and a 0/absent inning, so heal them after a round-trip.
 function normalizeLiveMatch(l) {
+  if (l && l.mode === 'ladder') {
+    // Ladder Ball match: running totals + this-round raw points + a round log
+    // for undo. RTDB prunes zeros/empty arrays, so coerce everything back.
+    if (typeof l.a !== 'number' || l.a < 0) l.a = 0;
+    if (typeof l.b !== 'number' || l.b < 0) l.b = 0;
+    if (typeof l.ra !== 'number' || l.ra < 0) l.ra = 0;
+    if (typeof l.rb !== 'number' || l.rb < 0) l.rb = 0;
+    if (!Array.isArray(l.log)) l.log = [];
+    return l;
+  }
   if (!l.hr) l.hr = {};
   if (typeof l.inning !== 'number' || l.inning < 1) l.inning = 1;
   if (typeof l.outs !== 'number' || l.outs < 0) l.outs = 0;
@@ -3651,7 +3718,7 @@ function renderTournament(container, g) {
   if (!state.brackets[g.id]) {
     container.innerHTML = `
       <h3>Run the bracket</h3>
-      <p class="muted">Three first-round matches, then the medal round. The bye goes to the Round&nbsp;1 winner who's LOWEST in the overall standings coming into today — the app will ask you to check.</p>
+      <p class="muted">Three first-round matches, then the medal round. The bye goes to the Round&nbsp;1 winner with the fewest points this week — the app suggests who, using the live standings.</p>
       <button id="start-bracket-btn" class="primary-btn">Start Bracket</button>
     `;
     document.getElementById('start-bracket-btn').addEventListener('click', () => {
@@ -3714,6 +3781,35 @@ function setLiveMatch(g, l) {
   saveState();
 }
 
+// ── Ladder Ball match (per-round cancellation, first to exactly 21) ──
+// Same live/synced model as the kickball tracker, but a different shape:
+// running totals a/b, this-round raw points ra/rb, and a log of scored rounds
+// for undo. Keyed by matchup so a new pairing starts fresh.
+function getLadderMatch(g, aId, bId) {
+  const key = [aId, bId].join('|');
+  const l = state.live && state.live[g.id];
+  if (l && l.mode === 'ladder' && l.key === key) {
+    return { key, mode: 'ladder', a: Number(l.a) || 0, b: Number(l.b) || 0, ra: Number(l.ra) || 0, rb: Number(l.rb) || 0, log: Array.isArray(l.log) ? l.log.slice() : [] };
+  }
+  return { key, mode: 'ladder', a: 0, b: 0, ra: 0, rb: 0, log: [] };
+}
+
+function setLadderMatch(g, l) {
+  if (!state.live) state.live = {};
+  state.live[g.id] = { key: l.key, mode: 'ladder', a: Number(l.a) || 0, b: Number(l.b) || 0, ra: Number(l.ra) || 0, rb: Number(l.rb) || 0, log: Array.isArray(l.log) ? l.log : [] };
+  touchData();
+  saveState();
+}
+
+// The team id that has reached the target (won), or null. Overshoot holds, so
+// totals never exceed the target, but >= keeps this robust.
+function ladderWinnerId(g, l, aId, bId) {
+  const target = (g.ladderScoring && g.ladderScoring.target) || 21;
+  if (l.a >= target) return aId;
+  if (l.b >= target) return bId;
+  return null;
+}
+
 // The team currently kicking, given the half (0 = first team, 1 = second).
 function kickingTeamId(l, aId, bId) {
   return (Number(l.half) || 0) === 1 ? bId : aId;
@@ -3741,7 +3837,7 @@ function clearLiveMatch(g) {
 function liveTrackerHTML(g, aId, bId) {
   if (!g.liveTracker) return '';
   const maxInn = g.liveTracker.innings || 3;
-  const maxOuts = g.liveTracker.outs || 3;
+  const maxOuts = g.liveTracker.outs == null ? 3 : g.liveTracker.outs;
   const sideLabel = g.liveTracker.sideLabel || 'up';
   const unit = g.liveTracker.unit || 'Points';
   const l = getLiveMatch(g, aId, bId);
@@ -3774,9 +3870,9 @@ function liveTrackerHTML(g, aId, bId) {
     </div>`;
   return `<div class="live-tracker">
     <div class="live-row live-inning-row">
-      <span class="live-label">Inning</span>
+      <span class="live-label">${esc(g.liveTracker.periodLabel || 'Inning')}</span>
       <div class="live-stepper">
-        <button class="live-btn" data-live="inning-down" aria-label="Previous inning">−</button>
+        <button class="live-btn" data-live="inning-down" aria-label="Previous ${esc((g.liveTracker.periodLabel || 'inning').toLowerCase())}">−</button>
         <span class="live-val" id="live-inning-val">${l.inning}</span>
         <span class="live-of">of ${maxInn}</span>
         <button class="live-btn" data-live="inning-up" aria-label="Next inning">+</button>
@@ -3796,7 +3892,7 @@ function liveTrackerHTML(g, aId, bId) {
 function bindLiveTracker(container, g, aId, bId) {
   if (!g.liveTracker) return;
   const maxInn = g.liveTracker.innings || 3;
-  const maxOuts = g.liveTracker.outs || 3;
+  const maxOuts = g.liveTracker.outs == null ? 3 : g.liveTracker.outs;
   const refresh = () => {
     const l = getLiveMatch(g, aId, bId);
     const iv = container.querySelector('#live-inning-val');
@@ -3846,6 +3942,118 @@ function bindLiveTracker(container, g, aId, bId) {
   });
 }
 
+// Ladder Ball round scorer. Both teams tap the rungs they landed this round
+// (Top 3 / Mid 2 / Bottom 1); "Score round" applies cancellation — the higher
+// raw total cancels the lower and the winner banks the difference — with the
+// exactly-21 rule (a round that would push a team past 21 is a bust and holds
+// their score). Totals sync live so spectators watch them climb.
+function ladderMatchHTML(g, aId, bId) {
+  if (!g.ladderScoring) return '';
+  const sc = g.ladderScoring;
+  const target = sc.target || 21;
+  const l = getLadderMatch(g, aId, bId);
+  const winner = ladderWinnerId(g, l, aId, bId);
+  const teamBlock = (id, side, total, raw) => `
+    <div class="ladder-team">
+      <div class="ladder-team-head">
+        <span class="ladder-team-name">${teamEmoji(id)} ${esc(teamName(id))}</span>
+        <span class="ladder-total" data-ladder-total="${side}">${total}</span>
+      </div>
+      <div class="ladder-round-line">This round: <span class="ladder-round-val" data-ladder-round="${side}">${raw}</span></div>
+      <div class="ladder-rungs">
+        <button class="live-btn ladder-rung" data-ladder="rung" data-side="${side}" data-pts="${sc.top}">Top +${sc.top}</button>
+        <button class="live-btn ladder-rung" data-ladder="rung" data-side="${side}" data-pts="${sc.mid}">Mid +${sc.mid}</button>
+        <button class="live-btn ladder-rung" data-ladder="rung" data-side="${side}" data-pts="${sc.bottom}">Bot +${sc.bottom}</button>
+        <button class="live-btn ladder-clear" data-ladder="round-clear" data-side="${side}" aria-label="Clear this round for ${esc(teamName(id))}">↺</button>
+      </div>
+    </div>`;
+  const wonBanner = winner
+    ? `<p class="ladder-won">🏆 ${teamEmoji(winner)} ${esc(teamName(winner))} reached ${target}! Tap their <strong>“won”</strong> button above to lock it in.</p>`
+    : '';
+  return `<div class="ladder-tracker">
+    <p class="ladder-target">🪜 First to exactly ${target} · cancellation scoring each round</p>
+    <div class="ladder-teams">
+      ${teamBlock(aId, 'a', l.a, l.ra)}
+      ${teamBlock(bId, 'b', l.b, l.rb)}
+    </div>
+    <button class="primary-btn ladder-score-round" data-ladder="score-round"${winner ? ' disabled' : ''}>Score this round</button>
+    ${l.log.length ? '<button class="link-btn ladder-undo" data-ladder="undo-round">Undo last round</button>' : ''}
+    ${wonBanner}
+  </div>`;
+}
+
+function bindLadderMatch(container, g, aId, bId) {
+  if (!g.ladderScoring) return;
+  const sc = g.ladderScoring;
+  const target = sc.target || 21;
+  const refresh = () => {
+    const l = getLadderMatch(g, aId, bId);
+    const set = (sel, v) => { const el = container.querySelector(sel); if (el) el.textContent = v; };
+    set('[data-ladder-total="a"]', l.a);
+    set('[data-ladder-total="b"]', l.b);
+    set('[data-ladder-round="a"]', l.ra);
+    set('[data-ladder-round="b"]', l.rb);
+  };
+  // Pre-highlight the winning team's "won" button once a team hits 21, so the
+  // ref knows exactly which one advances the bracket.
+  const highlightWinner = () => {
+    const w = ladderWinnerId(g, getLadderMatch(g, aId, bId), aId, bId);
+    container.querySelectorAll('.winner-btn').forEach((btn) => {
+      btn.classList.toggle('winner-ready', w != null && btn.dataset.winner === w);
+    });
+  };
+  container.querySelectorAll('[data-ladder]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const act = btn.dataset.ladder;
+      const l = getLadderMatch(g, aId, bId);
+      if (act === 'rung') {
+        const pts = Number(btn.dataset.pts) || 0;
+        if (btn.dataset.side === 'a') l.ra += pts; else l.rb += pts;
+      } else if (act === 'round-clear') {
+        if (btn.dataset.side === 'a') l.ra = 0; else l.rb = 0;
+      } else if (act === 'score-round') {
+        const delta = Math.abs(l.ra - l.rb);
+        const winSide = l.ra > l.rb ? 'a' : l.rb > l.ra ? 'b' : null;
+        if (winSide && delta > 0) {
+          const cur = winSide === 'a' ? l.a : l.b;
+          const next = cur + delta;
+          const applied = next <= target; // bust (over 21) holds the score
+          if (applied) { if (winSide === 'a') l.a = next; else l.b = next; }
+          l.log.push({ ra: l.ra, rb: l.rb, winner: winSide, delta, applied });
+        } else {
+          l.log.push({ ra: l.ra, rb: l.rb, winner: null, delta: 0, applied: true });
+        }
+        l.ra = 0; l.rb = 0;
+      } else if (act === 'undo-round') {
+        const last = l.log.pop();
+        if (last && last.winner && last.applied) {
+          if (last.winner === 'a') l.a = Math.max(0, l.a - last.delta);
+          else l.b = Math.max(0, l.b - last.delta);
+        }
+      }
+      setLadderMatch(g, l);
+      // A rung/clear tap only changes numbers — refresh in place to stay snappy
+      // and keep scroll position. Scoring or undoing a round can flip the
+      // won-banner / disabled state, so re-render the whole view for those.
+      if (act === 'rung' || act === 'round-clear') { refresh(); highlightWinner(); }
+      else renderAll();
+    });
+  });
+  highlightWinner();
+}
+
+// A tournament match shows either the Ladder Ball round scorer or the generic
+// live tally, depending on the game. One dispatch point keeps the bracket
+// render functions identical across games.
+function matchTrackerHTML(g, aId, bId) {
+  return g.ladderScoring ? ladderMatchHTML(g, aId, bId) : liveTrackerHTML(g, aId, bId);
+}
+
+function bindMatchTracker(container, g, aId, bId) {
+  if (g.ladderScoring) bindLadderMatch(container, g, aId, bId);
+  else bindLiveTracker(container, g, aId, bId);
+}
+
 function renderBracketRound1(body, g, b) {
   if (b.pool.length === 0) {
     b.phase = 'bye';
@@ -3869,7 +4077,7 @@ function renderBracketRound1(body, g, b) {
 
   if (b.selectedPair.length === 2) {
     html += matchupCalloutHTML(b.selectedPair[0], b.selectedPair[1]);
-    html += liveTrackerHTML(g, b.selectedPair[0], b.selectedPair[1]);
+    html += matchTrackerHTML(g, b.selectedPair[0], b.selectedPair[1]);
   }
 
   if (b.matches.length > 0) {
@@ -3884,7 +4092,7 @@ function renderBracketRound1(body, g, b) {
 
   if (b.selectedPair.length === 2) {
     bindMatchupCopy(body, g, `Round 1 (match ${b.matches.length + 1})`, b.selectedPair[0], b.selectedPair[1]);
-    bindLiveTracker(body, g, b.selectedPair[0], b.selectedPair[1]);
+    bindMatchTracker(body, g, b.selectedPair[0], b.selectedPair[1]);
   }
 
   body.querySelectorAll('.team-chip').forEach((btn) => {
@@ -3958,7 +4166,7 @@ function renderBracketRound1Fixed(body, g, b, preset) {
 
   if (current) {
     html += matchupCalloutHTML(current[0], current[1]);
-    html += liveTrackerHTML(g, current[0], current[1]);
+    html += matchTrackerHTML(g, current[0], current[1]);
   }
 
   if (b.matches.length > 0) {
@@ -3969,7 +4177,7 @@ function renderBracketRound1Fixed(body, g, b, preset) {
 
   if (current) {
     bindMatchupCopy(body, g, `Round 1 (match ${currentIndex + 1})`, current[0], current[1]);
-    bindLiveTracker(body, g, current[0], current[1]);
+    bindMatchTracker(body, g, current[0], current[1]);
   }
 
   body.querySelectorAll('.winner-btn').forEach((btn) => {
@@ -4000,11 +4208,23 @@ function renderBracketRound1Fixed(body, g, b, preset) {
 
 function renderBracketBye(body, g, b) {
   const winners = b.matches.map((m) => m.winner);
+  // Suggest the winner with the fewest week points (the trailing team) using
+  // the live standings. If two or more tie for the fewest, don't pick — let
+  // the ref decide, but still show everyone's points.
+  const counts = medalCounts();
+  const pointsOf = (id) => (counts[id] && counts[id].points) || 0;
+  const lowest = winners.reduce((min, id) => Math.min(min, pointsOf(id)), Infinity);
+  const lowCount = winners.filter((id) => pointsOf(id) === lowest).length;
+  const suggestedId = lowCount === 1 ? winners.find((id) => pointsOf(id) === lowest) : null;
   body.innerHTML = `
     <h3>Who gets the bye?</h3>
-    <p class="muted">Check the overall team standings (the official paper one). Whichever of these three Round&nbsp;1 winners has the <strong>lowest points coming into today</strong> skips straight to the Final.</p>
+    <p class="muted">The bye (skip straight to the Final) goes to whichever Round&nbsp;1 winner has the <strong>fewest points this week</strong>. ${suggestedId ? `The app suggests <strong>${esc(teamName(suggestedId))}</strong> — but you decide.` : 'These winners are tied for the fewest, so pick whoever you like.'}</p>
     <div class="team-chip-grid">
-      ${winners.map((id) => `<button class="team-chip tiebreak-chip" data-team-id="${id}">${esc(teamName(id))}<span class="chip-sub">${esc(counselorName(id))}</span></button>`).join('')}
+      ${winners.map((id) => {
+        const p = pointsOf(id);
+        const sug = id === suggestedId;
+        return `<button class="team-chip tiebreak-chip ${sug ? 'suggested-chip' : ''}" data-team-id="${id}">${sug ? '⭐ ' : ''}${esc(teamName(id))}<span class="chip-sub">${p} pt${p === 1 ? '' : 's'} this week${sug ? ' · suggested' : ''}</span></button>`;
+      }).join('')}
     </div>
     <button id="undo-to-round1-btn" class="link-btn">← Back to Round 1</button>
   `;
@@ -4036,11 +4256,11 @@ function renderBracketSemifinal(body, g, b) {
     <h3>Championship Game</h3>
     <p class="bye-note">🎟️ <strong>${esc(teamName(b.byeTeamId))}</strong> has the bye — straight to the Final.</p>
     ${matchupCalloutHTML(b.semifinal.a, b.semifinal.b)}
-    ${liveTrackerHTML(g, b.semifinal.a, b.semifinal.b)}
+    ${matchTrackerHTML(g, b.semifinal.a, b.semifinal.b)}
   `;
 
   bindMatchupCopy(body, g, 'Championship game', b.semifinal.a, b.semifinal.b);
-  bindLiveTracker(body, g, b.semifinal.a, b.semifinal.b);
+  bindMatchTracker(body, g, b.semifinal.a, b.semifinal.b);
 
   body.querySelectorAll('.winner-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -4062,11 +4282,11 @@ function renderBracketChampionship(body, g, b) {
     <h3>Final</h3>
     <p class="bronze-note">🥉 <strong>${esc(teamName(b.semifinal.loser))}</strong> takes the bronze medal (+${MEDAL_POINTS.bronze} pts).</p>
     ${matchupCalloutHTML(b.championship.a, b.championship.b)}
-    ${liveTrackerHTML(g, b.championship.a, b.championship.b)}
+    ${matchTrackerHTML(g, b.championship.a, b.championship.b)}
   `;
 
   bindMatchupCopy(body, g, 'Final', b.championship.a, b.championship.b);
-  bindLiveTracker(body, g, b.championship.a, b.championship.b);
+  bindMatchTracker(body, g, b.championship.a, b.championship.b);
 
   body.querySelectorAll('.winner-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -4113,24 +4333,6 @@ function renderBracketSummary(body, g, b) {
   });
 }
 
-// ── Reset week ───────────────────────────────────────────────────
-
-function resetWeek() {
-  if (!confirm('Start a new week? This clears every saved game result and all Pictionary photos (team names are kept).')) return;
-  state.results = {};
-  state.brackets = {};
-  state.drafts = {};
-  state.picRounds = {};
-  state.bonuses = {};
-  state.live = {};
-  state.ui.gameId = null;
-  state.ui.picTeam = null;
-  clearPhotos().catch(() => {});
-  touchData();
-  saveState();
-  renderAll();
-}
-
 // ── Theme ────────────────────────────────────────────────────────
 
 function applyTheme() {
@@ -4170,9 +4372,120 @@ function toggleSound() {
   applySoundIcon();
 }
 
+// ── "What's new" banners ─────────────────────────────────────────
+// Each CHANGES entry shows a dismissible banner at the top for two hours after
+// it shipped, then expires on its own. Dismissals are per-device (localStorage)
+// and per-change id, so clearing one banner doesn't clear the others.
+const CHANGE_TTL_MS = 2 * 60 * 60 * 1000; // advertise a change for two hours
+const CHANGE_DISMISS_KEY = 'campScoreboardDismissedChanges';
+
+function dismissedChanges() {
+  try { return JSON.parse(localStorage.getItem(CHANGE_DISMISS_KEY) || '[]') || []; }
+  catch (e) { return []; }
+}
+
+function dismissChange(id) {
+  const d = dismissedChanges();
+  if (!d.includes(id)) {
+    d.push(id);
+    try { localStorage.setItem(CHANGE_DISMISS_KEY, JSON.stringify(d)); } catch (e) { /* fine */ }
+  }
+}
+
+function activeChanges() {
+  const now = Date.now();
+  const dismissed = dismissedChanges();
+  return (typeof CHANGES !== 'undefined' ? CHANGES : []).filter((c) => {
+    if (!c || !c.id || !c.at || !c.text) return false;
+    if (dismissed.includes(c.id)) return false;
+    const t = Date.parse(c.at);
+    if (isNaN(t)) return false;
+    const age = now - t;
+    return age >= 0 && age < CHANGE_TTL_MS; // visible until it turns two hours old
+  });
+}
+
+function renderWhatsNew() {
+  const wrap = document.getElementById('whats-new');
+  if (!wrap) return;
+  const active = activeChanges();
+  if (!active.length) { wrap.hidden = true; wrap.innerHTML = ''; return; }
+  wrap.hidden = false;
+  wrap.innerHTML = active.map((c) => `
+    <div class="whats-new-banner" role="status">
+      <span class="whats-new-icon" aria-hidden="true">✨</span>
+      <span class="whats-new-text">${esc(c.text)}</span>
+      <button class="whats-new-dismiss" data-change-id="${esc(c.id)}" aria-label="Dismiss this update">✕</button>
+    </div>`).join('');
+  wrap.querySelectorAll('.whats-new-dismiss').forEach((btn) => {
+    btn.addEventListener('click', () => { dismissChange(btn.dataset.changeId); renderWhatsNew(); });
+  });
+}
+
+// ── Auto-reload on new deploy ────────────────────────────────────
+// A freshly-deployed client announces its build time at campScoreboard/appVersion
+// (see initSync). A client running older code reloads to catch up — immediately
+// for viewers, but only when it's safe for an editor (not mid score-entry), with
+// a tap-to-refresh banner in the meantime so an in-progress score is never lost.
+let newVersionSeen = false;
+
+function editorMidEntry() {
+  const ae = document.activeElement;
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return true;
+  return dataEditPending || pushTimer != null; // a real edit is typed/queued but not yet synced
+}
+
+function showUpdateBanner() {
+  if (document.getElementById('update-banner')) return;
+  const bar = document.createElement('button');
+  bar.id = 'update-banner';
+  bar.className = 'update-banner';
+  bar.type = 'button';
+  bar.textContent = '🔄 New version available — tap to refresh';
+  bar.addEventListener('click', () => location.reload());
+  document.body.appendChild(bar);
+}
+
+function reloadWhenSafe() {
+  if (!canEdit() || !editorMidEntry()) { setTimeout(() => location.reload(), 1200); return; }
+  setTimeout(reloadWhenSafe, 12000); // editor is mid-entry — check back shortly
+}
+
+function onNewVersion() {
+  if (newVersionSeen) return; // a reload is already scheduled/pending
+  newVersionSeen = true;
+  showUpdateBanner();
+  reloadWhenSafe();
+}
+
+// ── Idle auto-collapse ───────────────────────────────────────────
+// After a few minutes of no interaction, collapse the expandable cards so a
+// returning viewer sees a compact page. Never collapses while an editor is
+// mid-entry. Device-local; a manual expand sticks until the next idle stretch.
+let idleTimer = null;
+const IDLE_COLLAPSE_MS = 5 * 60 * 1000;
+
+function collapseCardsForIdle() {
+  if (editorMidEntry()) { resetIdleTimer(); return; } // don't yank a card mid-entry
+  document.querySelectorAll('.collapsible-card[open]').forEach((d) => { d.open = false; });
+}
+
+function resetIdleTimer() {
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(collapseCardsForIdle, IDLE_COLLAPSE_MS);
+}
+
+function startIdleCollapse() {
+  ['pointerdown', 'keydown', 'scroll', 'touchstart'].forEach((ev) =>
+    document.addEventListener(ev, resetIdleTimer, { passive: true }));
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) resetIdleTimer(); });
+  resetIdleTimer();
+}
+
 // ── Init ─────────────────────────────────────────────────────────
 
 function renderAll() {
+  renderWhatsNew();
   renderNowBanner();
   renderLiveHome();
   renderDayTabs();
@@ -4199,10 +4512,6 @@ function init() {
   applySoundIcon();
   document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
   document.getElementById('sound-toggle').addEventListener('click', toggleSound);
-  document.getElementById('reset-week-btn').addEventListener('click', (e) => {
-    e.preventDefault();  // it lives in the card's <summary> — don't toggle the card
-    resetWeek();
-  });
 
   const copyBtn = document.getElementById('copy-standings-btn');
   copyBtn.addEventListener('click', () => copyTextToClipboard(standingsSummaryText(), copyBtn));
@@ -4228,11 +4537,13 @@ function init() {
   rehydrateTimers();
   document.addEventListener('visibilitychange', onTimersVisible);
 
+  startIdleCollapse();
+
   renderAll();
 
   // Keep the "happening now" banner (and any open schedule sheet) current
-  // without any taps.
-  setInterval(() => { renderNowBanner(); refreshOpenSchedule(); }, 30 * 1000);
+  // without any taps — and expire "what's new" banners once they hit two hours.
+  setInterval(() => { renderNowBanner(); refreshOpenSchedule(); renderWhatsNew(); }, 30 * 1000);
 }
 
 function updateRoleButton() {

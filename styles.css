@@ -141,11 +141,6 @@ html.locked #app {
   display: none;
 }
 
-/* View-only role: hide the destructive/edit-only controls entirely. */
-html.view-only #reset-week-btn {
-  display: none;
-}
-
 /* View-only role: de-clutter — spectators don't need the share/copy tools
    (Notify stays) or the counselor-oriented helper text. */
 html.view-only #copy-standings-btn,
@@ -3033,4 +3028,154 @@ body.no-scroll {
   .score-input-row input {
     width: 5.5rem;
   }
+}
+
+/* ============================================================
+   WHAT'S NEW BANNERS (auto-expire 2h after each change)
+   ============================================================ */
+.whats-new {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0 0 0.75rem;
+}
+.whats-new-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  background: var(--color-gold-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.7rem 0.8rem;
+}
+.whats-new-icon { flex: 0 0 auto; font-size: 1.1rem; line-height: 1.3; }
+.whats-new-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text);
+  line-height: 1.35;
+}
+.whats-new-dismiss {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 1.1rem;
+  font-weight: 800;
+  line-height: 1;
+  padding: 0.1rem 0.3rem;
+  cursor: pointer;
+  font-family: inherit;
+  border-radius: var(--radius-md);
+}
+.whats-new-dismiss:active { background: color-mix(in srgb, var(--color-text-muted) 20%, transparent); }
+
+/* New-version tap-to-refresh bar (auto-reload on deploy) */
+.update-banner {
+  position: fixed;
+  left: 50%;
+  bottom: 1rem;
+  transform: translateX(-50%);
+  z-index: 60;
+  max-width: calc(100% - 2rem);
+  border: none;
+  border-radius: 999px;
+  padding: 0.7rem 1.2rem;
+  background: var(--color-primary);
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+
+/* ============================================================
+   LADDER BALL LIVE SCORER
+   ============================================================ */
+.ladder-tracker {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.85rem;
+  margin: 0 0 0.75rem;
+  text-align: center;
+}
+.ladder-target {
+  margin: 0 0 0.7rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+.ladder-teams {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+.ladder-team {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.6rem 0.5rem;
+  background: var(--color-surface);
+}
+.ladder-team-head { margin-bottom: 0.3rem; }
+.ladder-team-name {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-text);
+  overflow-wrap: break-word;
+}
+.ladder-total {
+  display: block;
+  font-size: 2.4rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  color: var(--color-primary);
+}
+.ladder-round-line {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  margin-bottom: 0.45rem;
+}
+.ladder-round-val { font-weight: 800; color: var(--color-text); }
+.ladder-rungs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.35rem;
+}
+.ladder-rung {
+  width: auto;
+  height: auto;
+  border-radius: 999px;
+  padding: 0.4rem 0.65rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.ladder-clear { font-size: 1.1rem; color: var(--color-text-muted); }
+.ladder-score-round { margin: 0.25rem auto 0; }
+.ladder-undo { display: block; margin: 0.5rem auto 0; font-size: 0.8rem; }
+.ladder-won {
+  margin: 0.7rem 0 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+/* Once a team hits 21, spotlight the "won" button that advances the bracket. */
+.winner-btn.winner-ready {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 18%, var(--color-surface));
+  color: var(--color-primary);
+  font-weight: 800;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 35%, transparent);
+}
+/* Bye screen: the suggested (lowest-points) winner */
+.team-chip.suggested-chip {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
 }

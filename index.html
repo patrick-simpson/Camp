@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=50">
+  <link rel="stylesheet" href="styles.css?v=51">
   <script>
     // Decide lock state before the page paints so we never flash the app,
     // and never show a blank page: exactly one of #app / #lock-screen shows.
@@ -71,6 +71,9 @@
 
     <main class="main-wrap">
 
+      <!-- ── WHAT'S NEW (per-change banners; auto-expire 2h after each change) ── -->
+      <section id="whats-new" class="whats-new" hidden></section>
+
       <!-- ── HAPPENING NOW (live schedule banner) ───────── -->
       <section id="now-banner" class="now-banner" hidden></section>
 
@@ -98,7 +101,6 @@
         <summary class="card-header-row">
           <h2>Week Points</h2>
           <span class="summary-right">
-            <button id="reset-week-btn" class="link-btn danger-link">New week (reset)</button>
             <span class="card-chevron" aria-hidden="true">›</span>
           </span>
         </summary>
@@ -195,7 +197,7 @@
        falls back to local-only mode automatically. -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=50"></script>
-  <script src="app.js?v=50"></script>
+  <script src="firebase-config.js?v=51"></script>
+  <script src="app.js?v=51"></script>
 </body>
 </html>
