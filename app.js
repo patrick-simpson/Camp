@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T11:22:19Z';
+const CODE_UPDATED_AT = '2026-07-21T11:37:35Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -25,6 +25,7 @@ const CODE_UPDATED_AT = '2026-07-21T11:22:19Z';
 // Multiple recent changes stack as separate banners, each expiring on its own
 // two-hour clock. Old entries can be pruned once they're well past two hours.
 const CHANGES = [
+  { id: 'team-shield-crest-2026-07-21', at: '2026-07-21T11:37:35Z', text: 'Your team’s hand-drawn shield now shows up as a crest at the top of the page once you pick a team.' },
   { id: 'lights-out-bed-emoji-2026-07-21', at: '2026-07-21T11:22:19Z', text: 'The “Lights out” schedule block now shows a 🛏️ instead of a 😴 face.' },
   { id: 'follow-card-next-cleanup-2026-07-21', at: '2026-07-21T10:49:05Z', text: 'If you’re following a team, your card now shows their next meal cleanup shift too, once it’s assigned — e.g. “Next meal cleanup: Wednesday Lunch.”' },
   { id: 'hide-notified-btn-2026-07-21', at: '2026-07-21T10:41:56Z', text: 'Once you’re signed up for notifications, the “Notify me” button tucks itself away — you don’t need it anymore.' },
@@ -77,6 +78,20 @@ const TEAM_EMOJI = {
   t3: '🎃', // Particularly Perilous Pumpkins
   t4: '🦅', // Patriotic Pilgrims
   t5: '🚜', // Runaway John Deere's
+};
+// Camper-drawn team shield artwork (cropped, transparent PNG/WebP crests under
+// images/team-shields/), keyed by team slot id. Shown as a hero crest on the
+// "Your team" card once a viewer picks a team. Patriotic Pilgrims (t4) is
+// intentionally absent: two shields in the source photo both read as Pilgrims
+// with conflicting names painted on them, so which crest is really theirs is
+// unconfirmed — t4 falls back to its emoji until that's sorted (see
+// images/team-shields/README.md). Missing here === no crest, just the emoji.
+const TEAM_SHIELD = {
+  t0: 'images/team-shields/ferocious-foxes.webp',
+  t1: 'images/team-shields/turkey-dinner.webp',
+  t2: 'images/team-shields/methodic-mediocre-maples.webp',
+  t3: 'images/team-shields/particularly-perilous-pumpkins.webp',
+  t5: 'images/team-shields/runaway-john-deeres.webp',
 };
 // Short-form team names for tight spaces (e.g. the morning meeting banner) —
 // same slots as TEAM_EMOJI, independent of whatever a team gets renamed to.
@@ -1283,6 +1298,12 @@ function updateSyncIndicator() {
 
 function teamEmoji(id) {
   return TEAM_EMOJI[id] || '🏳️';
+}
+
+// Path to a team's shield crest image, or null if we don't have one for that
+// slot (see TEAM_SHIELD) — callers fall back to the emoji.
+function teamShield(id) {
+  return TEAM_SHIELD[id] || null;
 }
 
 function teamName(id) {
@@ -2494,6 +2515,7 @@ function renderFollowCard() {
   if (!card) return;
   if (state.followTeam === undefined) { card.hidden = true; return; }
   if (state.followTeam === null) {
+    card.className = 'follow-team-card';
     card.hidden = false;
     card.innerHTML = `<p class="muted follow-neutral-line">🏳️ Not following a team — <button id="pick-team-link" class="link-btn">pick one</button></p>`;
     const link = document.getElementById('pick-team-link');
@@ -2514,11 +2536,17 @@ function renderFollowCard() {
   const cleanupLine = nextCleanup
     ? `<p class="follow-next-line">🧽 Next meal cleanup: ${esc(DAY_NAMES[nextCleanup.day])} ${esc(nextCleanup.meal)}</p>`
     : '';
+  const shield = teamShield(team.id);
+  const crestHtml = shield
+    ? `<div class="follow-team-crest"><img class="follow-team-shield" src="${shield}" alt="${esc(team.name)} team shield" width="480" height="667" loading="lazy" decoding="async"></div>`
+    : '';
+  card.className = 'follow-team-card' + (shield ? ' has-shield' : '');
   card.hidden = false;
   card.innerHTML = `
+    ${crestHtml}
     <div class="follow-team-head">
-      <span class="follow-team-emoji">${teamEmoji(team.id)}</span>
-      <div>
+      ${shield ? '' : `<span class="follow-team-emoji">${teamEmoji(team.id)}</span>`}
+      <div class="follow-team-headings">
         <div class="follow-team-name">Your team: ${esc(team.name)}</div>
         <div class="follow-team-stats">${ordinal(rank)} place · ${s.points} pts</div>
       </div>
