@@ -232,11 +232,6 @@
       font-weight: 800;
       line-height: 0.95;
       font-size: clamp(2.6rem, 13vw, 7rem);
-      background: linear-gradient(180deg, #fff 0%, #ffde8a 40%, var(--gold) 70%, var(--gold-deep) 100%);
-      -webkit-background-clip: text;
-      background-clip: text;
-      color: transparent;
-      text-shadow: 0 1px 2px rgba(0,0,0,0.45), 0 0 22px rgba(245,196,81,0.4);
       letter-spacing: 1px;
     }
     .pro-title .word { display: inline-block; }
@@ -244,6 +239,16 @@
       display: inline-block;
       transform: translateY(40px) rotateX(-90deg);
       opacity: 0;
+      /* The gradient fill lives on each letter span (not the parent h1)
+         because background-clip:text only clips to an element's OWN text
+         runs — the h1 itself has no direct text (it's all in these nested
+         spans), so putting it on the parent left every letter transparent
+         with no fill, just the inherited text-shadow ghosting through. */
+      background: linear-gradient(180deg, #fff 0%, #ffde8a 40%, var(--gold) 70%, var(--gold-deep) 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.45), 0 0 22px rgba(245,196,81,0.4);
     }
     .stage-pro.run .pro-title .ch { animation: chIn 0.5s cubic-bezier(.2,.8,.2,1) forwards; }
     @keyframes chIn { to { transform: translateY(0) rotateX(0); opacity: 1; } }
