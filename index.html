@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=58">
+  <link rel="stylesheet" href="styles.css?v=59">
   <script>
     // Decide lock state before the page paints so we never flash the app,
     // and never show a blank page: exactly one of #app / #lock-screen shows.
@@ -71,6 +71,12 @@
 
     <main class="main-wrap">
 
+      <!-- ── YOUR TEAM + NOTIFY (right under the role line) ── -->
+      <section class="you-strip">
+        <div id="follow-team-card" class="follow-team-card" hidden></div>
+        <button id="notify-toggle-btn" class="secondary-btn notify-btn" aria-pressed="false">🔕 Notify me</button>
+      </section>
+
       <!-- ── WHAT'S NEW (queued banners; roll in one per hour, 8am–9pm) ── -->
       <section id="whats-new" class="whats-new" hidden></section>
 
@@ -96,12 +102,6 @@
       <!-- ── GAME VIEW (detail; outside the card so it shows even when
            Competitions is collapsed, e.g. opened from a Live-now card) ── -->
       <section id="game-view" class="card game-view" hidden></section>
-
-      <!-- ── YOUR TEAM + NOTIFY (always visible — watch essentials) ── -->
-      <section class="you-strip">
-        <div id="follow-team-card" class="follow-team-card" hidden></div>
-        <button id="notify-toggle-btn" class="secondary-btn notify-btn" aria-pressed="false">🔕 Notify me</button>
-      </section>
 
       <!-- ── WEEK STANDINGS ─────────────────────────────── -->
       <details class="card standings-card collapsible-card" data-card="standings">
@@ -204,7 +204,7 @@
        falls back to local-only mode automatically. -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=58"></script>
-  <script src="app.js?v=58"></script>
+  <script src="firebase-config.js?v=59"></script>
+  <script src="app.js?v=59"></script>
 </body>
 </html>
