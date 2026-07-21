@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=53">
+  <link rel="stylesheet" href="styles.css?v=54">
   <script>
     // Decide lock state before the page paints so we never flash the app,
     // and never show a blank page: exactly one of #app / #lock-screen shows.
@@ -97,7 +97,7 @@
       </section>
 
       <!-- ── WEEK STANDINGS ─────────────────────────────── -->
-      <details class="card standings-card collapsible-card">
+      <details class="card standings-card collapsible-card" data-card="standings">
         <summary class="card-header-row">
           <h2>Week Points</h2>
           <span class="summary-right">
@@ -130,7 +130,7 @@
       </details>
 
       <!-- ── MEMORY VERSE ───────────────────────────────── -->
-      <details class="card verse-card collapsible-card">
+      <details class="card verse-card collapsible-card" data-card="verse">
         <summary class="card-header-row">
           <h2>Memory Verse</h2>
           <span class="card-chevron" aria-hidden="true">›</span>
@@ -140,7 +140,7 @@
       </details>
 
       <!-- ── MEAL CLEANUP ───────────────────────────────── -->
-      <details class="card cleanup-card collapsible-card">
+      <details class="card cleanup-card collapsible-card" data-card="cleanup">
         <summary class="card-header-row">
           <h2>Meal Cleanup</h2>
           <span class="card-chevron" aria-hidden="true">›</span>
@@ -150,7 +150,7 @@
       </details>
 
       <!-- ── BONUS POINTS ───────────────────────────────── -->
-      <details class="card bonus-card collapsible-card">
+      <details class="card bonus-card collapsible-card" data-card="bonus">
         <summary class="card-header-row">
           <h2>Bonus Points</h2>
           <span class="card-chevron" aria-hidden="true">›</span>
@@ -197,7 +197,7 @@
        falls back to local-only mode automatically. -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=53"></script>
-  <script src="app.js?v=53"></script>
+  <script src="firebase-config.js?v=54"></script>
+  <script src="app.js?v=54"></script>
 </body>
 </html>

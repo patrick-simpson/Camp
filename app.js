@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T02:31:00Z';
+const CODE_UPDATED_AT = '2026-07-21T02:41:07Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -435,7 +435,7 @@ const GAMES = [
   },
   {
     id: 'team-skits', name: 'Team Skits', emoji: '🎭', day: 5, session: 'Evening',
-    location: 'Chapel Lawn', format: 'placement',
+    location: 'Tabernacle', format: 'placement',
     headline: 'Each team performs their skit — judged live, top 3 take medals.',
     rules: [
       { h: 'How it works', items: [
@@ -4586,6 +4586,7 @@ function init() {
   document.addEventListener('visibilitychange', onTimersVisible);
 
   startIdleCollapse();
+  wireCardPersistence();
 
   renderAll();
 
@@ -4619,13 +4620,52 @@ function applyRoleClass() {
   document.documentElement.classList.toggle('view-only', !canEdit());
 }
 
-// Collapsible cards (Memory Verse, Bonus Points) start expanded for editors —
-// who enter data there — and collapsed for viewers, to keep the spectator
-// screen focused on Week Points and live games. Set once per session/role
-// change (not on every renderAll), so a viewer's manual expand sticks: the
-// card render functions only rewrite the inner body, never this <details>.
+// Collapsible cards remember their open/closed state per device, so a refresh
+// — including the automatic reload on a new deploy, and the idle auto-collapse
+// — keeps whatever the person (or the idle timer) last left them in. Only the
+// FIRST time a card is seen (nothing saved yet) does it fall back to the
+// role default: open for editors (who enter data there), collapsed for viewers.
+const CARD_STATE_KEY = 'campScoreboardCardOpen';
+// The open value applyCardDefaults last set for each card. The <details>
+// 'toggle' event fires ASYNCHRONOUSLY, so a plain "restoring" flag reset
+// synchronously wouldn't suppress it; instead we ignore any toggle whose value
+// matches what we just applied (the echo of a programmatic set), and persist
+// only genuine changes — a tap, or the idle auto-collapse.
+let programmaticOpen = {};
+
+function cardId(d) {
+  return d.getAttribute('data-card') || '';
+}
+
+function loadCardState() {
+  try { return JSON.parse(localStorage.getItem(CARD_STATE_KEY) || '{}') || {}; }
+  catch (e) { return {}; }
+}
+
 function applyCardDefaults() {
-  document.querySelectorAll('.collapsible-card').forEach((d) => { d.open = canEdit(); });
+  const saved = loadCardState();
+  document.querySelectorAll('.collapsible-card').forEach((d) => {
+    const id = cardId(d);
+    const val = (id && Object.prototype.hasOwnProperty.call(saved, id)) ? !!saved[id] : canEdit();
+    programmaticOpen[id] = val; // so the resulting toggle echo isn't persisted as a "change"
+    d.open = val;
+  });
+}
+
+// Persist a card's state on a genuine change (a tap, or the idle auto-collapse),
+// but not on the echo of a programmatic default we just applied.
+function wireCardPersistence() {
+  document.querySelectorAll('.collapsible-card').forEach((d) => {
+    d.addEventListener('toggle', () => {
+      const id = cardId(d);
+      if (!id) return;
+      if (programmaticOpen[id] === d.open) return; // echo of applyCardDefaults — ignore
+      programmaticOpen[id] = d.open;
+      const map = loadCardState();
+      map[id] = d.open;
+      try { localStorage.setItem(CARD_STATE_KEY, JSON.stringify(map)); } catch (e) { /* fine */ }
+    });
+  });
 }
 
 function startApp() {
