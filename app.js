@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T10:15:34Z';
+const CODE_UPDATED_AT = '2026-07-21T10:35:25Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1046,7 +1046,6 @@ function touchData() {
 
 const SYNC_KEYS = ['teams', 'results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta'];
 let fbRef = null;
-let versionRef = null;
 let applyingRemote = false;
 let pushTimer = null;
 // No pushes until the first server snapshot has landed. Without this, a
@@ -1149,20 +1148,9 @@ function initSync() {
       fbConnected = !!s.val();
       updateSyncIndicator();
     });
-    // Build-version broadcast: a freshly-deployed client (its CODE_UPDATED_AT is
-    // newer than what's advertised) writes its build time here; every other
-    // connected client sees a newer value and reloads to pick up the deploy —
-    // safely (see onNewVersion). ISO timestamps compare correctly as strings.
-    // Not part of state/SYNC_KEYS, so it never touches score sync.
-    versionRef = firebase.database().ref('campScoreboard/appVersion');
-    versionRef.on('value', (s) => {
-      const remoteV = s.val();
-      if (!remoteV || CODE_UPDATED_AT > remoteV) {
-        versionRef.set(CODE_UPDATED_AT).catch(() => {}); // announce our (newer) build
-      } else if (remoteV > CODE_UPDATED_AT) {
-        onNewVersion(); // a newer build is live elsewhere — catch up
-      }
-    });
+    // (Auto-reload is handled by startUpdatePolling — a same-origin poll of the
+    // deployed index.html — so it works on a single device and doesn't depend on
+    // Firebase or another client announcing the build.)
     // Flush a pending debounced push before the page is hidden/suspended. iOS
     // suspends setTimeout when the phone locks, so a result saved right before
     // locking would otherwise strand its 400ms push and never reach the server.
@@ -4709,16 +4697,62 @@ function renderWhatsNew() {
 }
 
 // ── Auto-reload on new deploy ────────────────────────────────────
-// A freshly-deployed client announces its build time at campScoreboard/appVersion
-// (see initSync). A client running older code reloads to catch up — immediately
-// for viewers, but only when it's safe for an editor (not mid score-entry), with
-// a tap-to-refresh banner in the meantime so an in-progress score is never lost.
+// Each client polls the deployed index.html (same-origin, no-store) and compares
+// its app.js?v= number to the one THIS page is running. When the deploy is
+// newer, it reloads to catch up — immediately for viewers, but only when it's
+// safe for an editor (not mid score-entry), with a tap-to-refresh bar in the
+// meantime so an in-progress score is never lost. This is deploy-driven, so it
+// works on a single device without Firebase or another client announcing it.
+// (A client only starts polling once it's running a build that has this code —
+// so a given phone auto-reloads from the NEXT deploy after it loads this one.)
 let newVersionSeen = false;
+const UPDATE_POLL_MS = 2 * 60 * 1000;
 
 function editorMidEntry() {
   const ae = document.activeElement;
   if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return true;
   return dataEditPending || pushTimer != null; // a real edit is typed/queued but not yet synced
+}
+
+// The app.js build number this page loaded with, read off its own <script> tag.
+function myAppVersion() {
+  const s = document.querySelector('script[src*="app.js?v="]');
+  const m = s && (s.getAttribute('src') || '').match(/app\.js\?v=(\d+)/);
+  return m ? Number(m[1]) : null;
+}
+
+async function checkForUpdate() {
+  if (newVersionSeen) return;
+  const mine = myAppVersion();
+  if (!mine) return;
+  try {
+    const res = await fetch('index.html?_=' + Date.now(), { cache: 'no-store' });
+    if (!res.ok) return;
+    const html = await res.text();
+    const m = html.match(/app\.js\?v=(\d+)/);
+    const deployed = m ? Number(m[1]) : null;
+    if (deployed && deployed > mine) onNewVersion();
+  } catch (e) { /* offline / blocked — just try again next tick */ }
+}
+
+function startUpdatePolling() {
+  setInterval(checkForUpdate, UPDATE_POLL_MS);
+  // Phones spend most of camp locked; check the moment the tab comes back too.
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) checkForUpdate(); });
+  checkForUpdate();
+}
+
+// Reload with a cache-buster on the page URL so we actually fetch the new
+// index.html (and thus the new ?v assets), never a stale cached copy — which
+// would otherwise bounce us straight back into "update available" forever.
+function doReload() {
+  try {
+    const u = new URL(location.href);
+    u.searchParams.set('r', String(Date.now()));
+    location.replace(u.toString());
+  } catch (e) {
+    location.reload();
+  }
 }
 
 function showUpdateBanner() {
@@ -4727,13 +4761,13 @@ function showUpdateBanner() {
   bar.id = 'update-banner';
   bar.className = 'update-banner';
   bar.type = 'button';
-  bar.textContent = '🔄 New version available — tap to refresh';
-  bar.addEventListener('click', () => location.reload());
+  bar.textContent = 'New version available — tap to refresh';
+  bar.addEventListener('click', doReload);
   document.body.appendChild(bar);
 }
 
 function reloadWhenSafe() {
-  if (!canEdit() || !editorMidEntry()) { setTimeout(() => location.reload(), 1200); return; }
+  if (!canEdit() || !editorMidEntry()) { setTimeout(doReload, 1200); return; }
   setTimeout(reloadWhenSafe, 12000); // editor is mid-entry — check back shortly
 }
 
@@ -4824,6 +4858,7 @@ function init() {
   document.addEventListener('visibilitychange', onTimersVisible);
 
   startIdleCollapse();
+  startUpdatePolling();
 
   renderAll();
 

@@ -84,17 +84,21 @@ hour**, and only during awake hours. Rules:
   banners advance on their own within ~30s, no interaction needed.
 
 **Auto-reload on deploy.** Open phones refresh themselves when a newer
-build ships. A freshly-deployed client writes its `CODE_UPDATED_AT` to
-Firebase at `campScoreboard/appVersion` (separate from `state`/`SYNC_KEYS`
-— never touches score sync); any client seeing a newer value calls
-`onNewVersion`. Viewers reload almost immediately; an editor
+build ships. Each client polls the deployed `index.html` (same-origin,
+`cache: 'no-store'`, every couple minutes and on tab refocus —
+`startUpdatePolling`/`checkForUpdate`) and compares its `app.js?v=` number
+to the one the page is running (`myAppVersion`). A higher deployed number
+calls `onNewVersion`. This is **deploy-driven and works on a single
+device** — no Firebase or peer announcement involved — which is why the
+`?v=` bump on every deploy is what actually triggers it (bump all three
+assets together, as always). Viewers reload almost immediately; an editor
 mid-score-entry (`editorMidEntry`: a focused input, or a queued/in-flight
 data push) gets a dismissible "tap to refresh" bar (`#update-banner`) and
 auto-reloads only once it's safe — so a score being typed is never lost.
-This is why bumping `CODE_UPDATED_AT` on every deploy matters twice: it
-drives both the footer stamp and the reload trigger. (Existing phones only
-start honoring auto-reload on the deploy *after* the one that introduced
-it.)
+The reload uses `doReload` (adds a throwaway `?r=` cache-buster) so it
+fetches the fresh `index.html` instead of a cached copy and can't loop.
+(A phone only starts polling once it's running a build that has this code,
+so it auto-reloads from the *next* deploy after it loads this one.)
 
 ## Firebase Realtime Database gotcha (already bit us once)
 
