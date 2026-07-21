@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T10:49:05Z';
+const CODE_UPDATED_AT = '2026-07-21T11:22:19Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -25,6 +25,7 @@ const CODE_UPDATED_AT = '2026-07-21T10:49:05Z';
 // Multiple recent changes stack as separate banners, each expiring on its own
 // two-hour clock. Old entries can be pruned once they're well past two hours.
 const CHANGES = [
+  { id: 'lights-out-bed-emoji-2026-07-21', at: '2026-07-21T11:22:19Z', text: 'The “Lights out” schedule block now shows a 🛏️ instead of a 😴 face.' },
   { id: 'follow-card-next-cleanup-2026-07-21', at: '2026-07-21T10:49:05Z', text: 'If you’re following a team, your card now shows their next meal cleanup shift too, once it’s assigned — e.g. “Next meal cleanup: Wednesday Lunch.”' },
   { id: 'hide-notified-btn-2026-07-21', at: '2026-07-21T10:41:56Z', text: 'Once you’re signed up for notifications, the “Notify me” button tucks itself away — you don’t need it anymore.' },
   { id: 'live-rankings-2026-07-21', at: '2026-07-21T02:51:04Z', text: 'Inflatable Bowling and Pumpkin Pictionary now show a live leaderboard anyone can watch — Pictionary keeps the drawing words secret from viewers and totals the times for you.' },
@@ -501,7 +502,7 @@ function weekdayEvening(campfireLeader) {
     { start: hm(20, 0), end: hm(21, 15), label: 'Snack and campfire — ' + campfireLeader, emoji: '🔥', type: 'activity' },
     { start: hm(21, 15), end: hm(21, 30), label: 'Prepare for bed', emoji: '🪥', type: 'activity' },
     { start: hm(21, 30), end: hm(22, 0), label: 'Cabin devotional', emoji: '🙏', type: 'activity' },
-    { start: hm(22, 0), end: hm(24, 0), label: 'Lights out', emoji: '😴', type: 'activity', noTime: true },
+    { start: hm(22, 0), end: hm(24, 0), label: 'Lights out', emoji: '🛏️', type: 'activity', noTime: true },
   ];
 }
 
@@ -533,7 +534,7 @@ const DAY_SCHEDULE = {
     { start: hm(19, 0), end: hm(20, 0), label: 'Worship service', emoji: '⛪', type: 'activity' },
     { start: hm(20, 0), end: hm(21, 15), label: 'Snack and campfire — Jenn, Laura, Erica & Patrick', emoji: '🔥', type: 'activity' },
     { start: hm(21, 15), end: hm(22, 0), label: 'Cabin devotional', emoji: '🙏', type: 'activity' },
-    { start: hm(22, 0), end: hm(24, 0), label: 'Lights out', emoji: '😴', type: 'activity', noTime: true },
+    { start: hm(22, 0), end: hm(24, 0), label: 'Lights out', emoji: '🛏️', type: 'activity', noTime: true },
   ],
   1: [morningMeetingBlock(1)].concat(weekdayDaytime()).concat(weekdayEvening('TJ')),
   2: [morningMeetingBlock(2)].concat(weekdayDaytime()).concat(weekdayEvening('Cam')),
@@ -547,7 +548,7 @@ const DAY_SCHEDULE = {
     { start: hm(21, 0), end: hm(22, 0), label: 'Snack and campfire — Ella', emoji: '🔥', type: 'activity' },
     { start: hm(22, 0), end: hm(22, 15), label: 'Prepare for bed', emoji: '🪥', type: 'activity' },
     { start: hm(22, 15), end: hm(22, 30), label: 'Cabin devotional', emoji: '🙏', type: 'activity' },
-    { start: hm(22, 30), end: hm(24, 0), label: 'Lights out', emoji: '😴', type: 'activity', noTime: true },
+    { start: hm(22, 30), end: hm(24, 0), label: 'Lights out', emoji: '🛏️', type: 'activity', noTime: true },
   ]),
   6: [ // Saturday — send-off morning
     morningMeetingBlock(6),
@@ -724,7 +725,7 @@ function nowBannerHtml(dow, minutes) {
   if (minutes < blocks[0].start) {
     const first = decorateMealBlock(dow, blocks[0]);
     if (dow === 0) return main('🚌', 'Camp starts today!', null, first, null);
-    return main('😴', "Lights out — everyone's sleeping", null, first, null);
+    return main('🛏️', "Lights out — everyone's sleeping", null, first, null);
   }
 
   const found = blocks.find((x) => minutes >= x.start && minutes < x.end);
