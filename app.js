@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T12:18:34Z';
+const CODE_UPDATED_AT = '2026-07-21T12:32:27Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -89,13 +89,15 @@ const TEAM_EMOJI = {
 // images/team-shields/), keyed by team slot id. Shown as a hero crest on the
 // "Your team" card once a viewer picks a team. Missing here === no crest,
 // just the emoji (see images/team-shields/README.md for provenance notes).
+// The ?v= suffix cache-busts the image itself (bump it when a crest file is
+// re-exported, since the <img> URL is otherwise cached indefinitely).
 const TEAM_SHIELD = {
-  t0: 'images/team-shields/ferocious-foxes.webp',
-  t1: 'images/team-shields/turkey-dinner.webp',
-  t2: 'images/team-shields/methodic-mediocre-maples.webp',
-  t3: 'images/team-shields/particularly-perilous-pumpkins.webp',
-  t4: 'images/team-shields/patriotic-pilgrims.webp',
-  t5: 'images/team-shields/runaway-john-deeres.webp',
+  t0: 'images/team-shields/ferocious-foxes.webp?v=2',
+  t1: 'images/team-shields/turkey-dinner.webp?v=2',
+  t2: 'images/team-shields/methodic-mediocre-maples.webp?v=2',
+  t3: 'images/team-shields/particularly-perilous-pumpkins.webp?v=2',
+  t4: 'images/team-shields/patriotic-pilgrims.webp?v=2',
+  t5: 'images/team-shields/runaway-john-deeres.webp?v=2',
 };
 // Short-form team names for tight spaces (e.g. the morning meeting banner) —
 // same slots as TEAM_EMOJI, independent of whatever a team gets renamed to.
