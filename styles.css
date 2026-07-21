@@ -3423,3 +3423,41 @@ body.no-scroll {
   font-weight: 700;
   text-align: center;
 }
+
+/* ============================================================
+   STALLING EASTER EGG — subtle corner dot (→ stalling.html)
+   ============================================================ */
+/* Deliberately easy to miss: a tiny, faint dot pinned to the bottom
+   corner. Sits above content but well below overlays. Grows a touch
+   and gains a little glow when hovered/focused so it's still reachable
+   by anyone who goes looking (or tabs to it). */
+.stalling-egg {
+  position: fixed;
+  right: max(0.5rem, env(safe-area-inset-right));
+  bottom: max(0.5rem, env(safe-area-inset-bottom));
+  z-index: 500;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--color-text-muted);
+  text-decoration: none;
+  border-radius: 50%;
+  opacity: 0.12;
+  transition: opacity 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.stalling-egg:hover,
+.stalling-egg:focus-visible {
+  opacity: 0.85;
+  transform: scale(1.25);
+  box-shadow: 0 0 0 4px rgba(51, 85, 255, 0.12);
+}
+@media (hover: none) {
+  /* On touch devices there's no hover to reveal it, so keep it a hair
+     more findable without shouting. */
+  .stalling-egg { opacity: 0.2; }
+}
