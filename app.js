@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T10:37:48Z';
+const CODE_UPDATED_AT = '2026-07-21T10:41:56Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -25,6 +25,7 @@ const CODE_UPDATED_AT = '2026-07-21T10:37:48Z';
 // Multiple recent changes stack as separate banners, each expiring on its own
 // two-hour clock. Old entries can be pruned once they're well past two hours.
 const CHANGES = [
+  { id: 'hide-notified-btn-2026-07-21', at: '2026-07-21T10:41:56Z', text: 'Once you’re signed up for notifications, the “Notify me” button tucks itself away — you don’t need it anymore.' },
   { id: 'live-rankings-2026-07-21', at: '2026-07-21T02:51:04Z', text: 'Inflatable Bowling and Pumpkin Pictionary now show a live leaderboard anyone can watch — Pictionary keeps the drawing words secret from viewers and totals the times for you.' },
   { id: 'team-skits-scored-2026-07-21', at: '2026-07-21T02:31:00Z', text: 'Team Skits are now scored! Friday night’s skits take gold, silver, and bronze and count in the standings like every other game.' },
   { id: 'ladderball-live-2026-07-21', at: '2026-07-21T02:08:34Z', text: 'Ladder Ball now scores live, point by point — cancellation each round, first to exactly 21 — so you can watch each team’s total climb from any phone.' },
@@ -1437,7 +1438,8 @@ function toggleNotify() {
 function updateNotifyButton() {
   const btn = document.getElementById('notify-toggle-btn');
   if (!btn) return;
-  btn.textContent = state.notify ? '🔔 Notified' : '🔕 Notify me';
+  btn.hidden = !!state.notify;
+  btn.textContent = '🔕 Notify me';
   btn.classList.toggle('active', !!state.notify);
   btn.setAttribute('aria-pressed', String(!!state.notify));
 }
