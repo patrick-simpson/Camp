@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-20T10:56:10Z';
+const CODE_UPDATED_AT = '2026-07-20T23:09:45Z';
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -125,6 +125,11 @@ const GAMES = [
     // tournament game has this, Round 1 walks these matchups in order instead
     // of asking you to pick two teams each time.
     roundOneMatchups: [['t0', 't3'], ['t1', 't4'], ['t2', 't5']],
+    // Live scorekeeping aid shown on each matchup (synced so everyone can
+    // watch): innings, the kicking team, outs (3 per side — the first team
+    // kicks, 3 outs, the second team kicks, 3 outs, then the next inning),
+    // and home runs per team.
+    liveTracker: { unit: 'Home runs', innings: 3, outs: 3, sideLabel: 'kicking' },
     headline: 'Kickball, but everyone is three-legged with a partner.',
     rules: [
       { h: 'How to play', items: [
@@ -515,6 +520,7 @@ const STATION_EMOJI = {
   'Swimming': '🏊', 'Nerf War': '🎯', 'Crafts with Eileen': '🎨',
   'Lawn Games': '🥏', 'Board Games': '🎲', 'Whiffle Ball': '⚾',
   'Slime with Joann': '🧪', 'Laser Tag': '⚡', 'Slip and Slide': '💦',
+  'Slime with Kimberly': '🧪',
 };
 
 const ELECTIVES = {
@@ -525,8 +531,8 @@ const ELECTIVES = {
   ],
   2: [
     [['Swimming', ['Ella', 'Lydia']], ['Nerf War', ['William', 'Zac']], ['Crafts with Eileen', ['Alysa', 'Josh']], ['Lawn Games', ['Brody', 'Cam']], ['Board Games', ['Bria', 'Jovi']]],
-    [['Swimming', ['Sam', 'Sofie']], ['Crafts with Eileen', ['Lilly', 'Abby']], ['Whiffle Ball', ['Jacob', 'TJ']], ['Board Games', ['Ella', 'Stephen']], ['Laser Tag', ['Zac', 'Patrick']]],
-    [['Swimming', ['William', 'Alysa', 'Lilly']], ['Crafts with Eileen', ['Sofie', 'Lydia']], ['Lawn Games', ['Josh', 'Stephen', 'Cam']], ['Board Games', ['Patrick', 'TJ']], ['Slip and Slide', ['Zac', 'Sam', 'Bria']]],
+    [['Swimming', ['Sam', 'Sofie']], ['Crafts with Eileen', ['Lilly', 'Abby']], ['Whiffle Ball', ['Jacob', 'TJ']], ['Board Games', ['Ella', 'Stephen']], ['Laser Tag', ['Zac', 'Patrick']], ['Slime with Kimberly', ['TBA']]],
+    [['Swimming', ['William', 'Alysa', 'Lilly']], ['Crafts with Eileen', ['Sofie', 'Lydia']], ['Lawn Games', ['Josh', 'Stephen', 'Cam']], ['Board Games', ['Patrick', 'TJ']], ['Slip and Slide', ['Zac', 'Sam', 'Bria']], ['Slime with Kimberly', ['Abby']]],
   ],
   3: [
     [['Swimming', ['Abby', 'Lilly']], ['Nerf War', ['Zac', 'Brody', 'TJ']], ['Crafts with Eileen', ['William', 'Sam']], ['Lawn Games', ['Sofie', 'Bria']], ['Board Games', ['Cam', 'Jovi']]],
@@ -544,6 +550,24 @@ const ELECTIVES = {
     [['Swimming', ['Cam', 'TJ', 'Lilly']], ['Slime with Joann', ['Abby', 'Sofie']], ['Crafts with Eileen', ['Lydia']], ['Lawn Games', ['Josh', 'Sam']], ['Board Games', ['Stephen']], ['Slip and Slide', ['Zac', 'Alysa']]],
   ],
 };
+
+// The full set of kids at camp on a given day = everyone assigned to any
+// station across that day's elective slots. A kid missing from a particular
+// slot is on break for it (see electiveBreakKids).
+function electiveDayRoster(dow) {
+  const set = new Set();
+  (ELECTIVES[dow] || []).forEach((slot) => {
+    (slot || []).forEach(([, kids]) => (kids || []).forEach((k) => set.add(k)));
+  });
+  return set;
+}
+
+// Kids with no station in this elective slot — they're on "Break".
+function electiveBreakKids(dow, slot) {
+  const assigned = new Set();
+  (((ELECTIVES[dow] || [])[slot]) || []).forEach(([, kids]) => (kids || []).forEach((k) => assigned.add(k)));
+  return [...electiveDayRoster(dow)].filter((k) => !assigned.has(k)).sort();
+}
 
 // ── Meal menu ────────────────────────────────────────────────────
 // What the kitchen is serving, filled in as camp announces each meal.
@@ -576,6 +600,24 @@ function decorateMealBlock(dow, block) {
     emoji: meal.emoji || block.emoji,
     label: block.label + ' — ' + meal.dish,
   });
+}
+
+// The meal a schedule block represents (Breakfast/Lunch/Supper), or null.
+// Handles decorated labels like "Supper — Shepherd's Pie".
+function blockMealName(label) {
+  const base = String(label || '').split(' — ')[0].trim();
+  return MEAL_CLEANUP_MEALS.includes(base) ? base : null;
+}
+
+// A "🧽 <team>" note naming who's on cleanup for the meal a block represents,
+// shown next to the meal wherever it appears. '' when the block isn't a meal or
+// the day isn't on the cleanup rota; "TBA" for a tracked day not yet assigned.
+function mealCleanupNote(dow, label) {
+  const meal = blockMealName(label);
+  if (!meal || !MEAL_CLEANUP_SCHEDULE[dow]) return '';
+  const teamId = cleanupAssigned(dow, meal);
+  const who = teamId ? `${teamEmoji(teamId)} ${esc(teamName(teamId))}` : 'TBA';
+  return ` <span class="meal-cleanup-note">🧽 ${who}</span>`;
 }
 
 // Current day-of-week + minutes-since-midnight, in camp time.
@@ -629,8 +671,8 @@ function nowBannerHtml(dow, minutes) {
     `<div class="now-progress" aria-hidden="true"><div class="now-progress-fill" style="width:${Math.round(Math.max(0, Math.min(1, progress)) * 100)}%"></div></div>`;
   const main = (emoji, label, time, next, progress) => eyebrow +
     `<div class="now-main"><span class="now-emoji">${emoji}</span><div class="now-body">
-      <div class="now-label">${esc(label)}${time ? ` <span class="now-time">${time}</span>` : ''}</div>
-      ${next ? `<div class="now-next">Up next: ${next.emoji} ${esc(next.label)} at ${schedClock(next.start, true)}</div>` : ''}
+      <div class="now-label">${esc(label)}${time ? ` <span class="now-time">${time}</span>` : ''}${mealCleanupNote(dow, label)}</div>
+      ${next ? `<div class="now-next">Up next: ${next.emoji} ${esc(next.label)} at ${schedClock(next.start, true)}${mealCleanupNote(dow, next.label)}</div>` : ''}
     </div></div>` + progressBar(progress);
 
   // Early morning, before the first block of the day.
@@ -655,9 +697,14 @@ function nowBannerHtml(dow, minutes) {
   const progress = b.noTime ? null : (minutes - b.start) / (b.end - b.start);
   if (b.type === 'elective') {
     const stations = (ELECTIVES[dow] || [])[b.slot] || [];
-    const rows = stations.map(([station, kids]) =>
+    let rows = stations.map(([station, kids]) =>
       `<div class="now-station"><span class="now-station-name">${STATION_EMOJI[station] || '🌟'} ${esc(station)}</span>
         <span class="now-kids">${kids.map((k) => `<span class="kid-chip">${esc(k)}</span>`).join('')}</span></div>`).join('');
+    const breakKids = electiveBreakKids(dow, b.slot);
+    if (breakKids.length) {
+      rows += `<div class="now-station now-break"><span class="now-station-name">☕ Break</span>
+        <span class="now-kids">${breakKids.map((k) => `<span class="kid-chip">${esc(k)}</span>`).join('')}</span></div>`;
+    }
     return main(b.emoji, b.label, time, null, progress) + `<div class="now-stations">${rows}</div>`;
   }
 
@@ -781,9 +828,15 @@ function renderScheduleBody() {
     } else if (raw.type === 'elective') {
       const stations = (ELECTIVES[dow] || [])[raw.slot] || [];
       if (stations.length) {
-        extra = `<div class="sched-stations">${stations.map(([station, kids]) =>
+        let stationRows = stations.map(([station, kids]) =>
           `<div class="sched-station"><span class="sched-station-name">${STATION_EMOJI[station] || '🌟'} ${esc(station)}</span>
-            <span class="sched-station-kids">${kids.map(esc).join(' · ')}</span></div>`).join('')}</div>`;
+            <span class="sched-station-kids">${kids.map(esc).join(' · ')}</span></div>`).join('');
+        const breakKids = electiveBreakKids(dow, raw.slot);
+        if (breakKids.length) {
+          stationRows += `<div class="sched-station sched-break"><span class="sched-station-name">☕ Break</span>
+            <span class="sched-station-kids">${breakKids.map(esc).join(' · ')}</span></div>`;
+        }
+        extra = `<div class="sched-stations">${stationRows}</div>`;
       }
     }
 
@@ -791,7 +844,7 @@ function renderScheduleBody() {
       <div class="sched-rail"><span class="sched-dot"></span></div>
       <div class="sched-card">
         <div class="sched-time">${raw.noTime ? '' : schedRange(raw.start, raw.end)}${status === 'now' ? '<span class="sched-now-pill">Now</span>' : ''}</div>
-        <div class="sched-label"><span class="sched-emoji">${b.emoji}</span> ${esc(b.label)}</div>
+        <div class="sched-label"><span class="sched-emoji">${b.emoji}</span> ${esc(b.label)}${mealCleanupNote(dow, b.label)}</div>
         ${extra}
       </div>
     </div>`;
@@ -888,6 +941,7 @@ function makeFreshState() {
     brackets: {},  // gameId -> in-progress tournament
     drafts: {},    // gameId -> in-progress tally/placement entry
     bonuses: {},   // bonusId -> { teamId, category, label, points, at }
+    live: {},      // gameId -> { key, inning, hr } live match tally (synced so everyone can watch)
     ui: { day: defaultDay(), gameId: null },
     theme: null,
   };
@@ -903,6 +957,7 @@ if (!state.teams || !state.results) state = makeFreshState();
 if (!state.ui) state.ui = { day: defaultDay(), gameId: null };
 if (!state.meta) state.meta = {};
 if (!state.bonuses) state.bonuses = {}; // extra/bonus points ledger
+if (!state.live) state.live = {}; // live match tallies (synced; see liveTracker)
 if (state.theme === undefined) state.theme = null; // pre-theme saves: follow the device
 if (state.notify === undefined) state.notify = false; // device-local, not synced (see SYNC_KEYS)
 // state.followTeam stays `undefined` until the picker is answered (a team id,
@@ -937,6 +992,7 @@ function saveState() {
 function touchData() {
   if (!state.meta) state.meta = {};
   state.meta.lastDataChangeAt = new Date().toISOString();
+  dataEditPending = true; // real edit queued — guard it until it's pushed
 }
 
 // ── Cloud sync (Firebase Realtime Database) ──────────────────────
@@ -944,7 +1000,7 @@ function touchData() {
 // and the SDK loaded, scores sync across every device in real time.
 // Otherwise the app runs exactly as before, local-only.
 
-const SYNC_KEYS = ['teams', 'results', 'brackets', 'drafts', 'picRounds', 'bonuses', 'meta'];
+const SYNC_KEYS = ['teams', 'results', 'brackets', 'drafts', 'picRounds', 'bonuses', 'live', 'meta'];
 let fbRef = null;
 let applyingRemote = false;
 let pushTimer = null;
@@ -957,6 +1013,11 @@ let remoteReady = false;
 // Lets the first-snapshot merge defend offline-entered results instead of
 // silently replacing them with a stale server copy.
 let dirtySinceLoad = false;
+// True while a *data* edit (touchData) is queued but not yet pushed. The merge
+// uses this — not the raw pushTimer — to decide whether to hold off adopting a
+// snapshot, so view-only saves (day tab, theme, notify, follow-team) never
+// block an incoming update or its notification.
+let dataEditPending = false;
 
 function syncEnabled() {
   return !!fbRef;
@@ -989,6 +1050,16 @@ function initSync() {
           return;
         }
       }
+      // A local DATA edit is queued but hasn't reached the server yet (e.g. a
+      // bracket winner tapped in the last 400ms). Adopting this snapshot now
+      // would overwrite it on screen, and the queued push would then persist
+      // the reverted state — the bug where tapping a winner right after the
+      // page loads "does nothing." Keep local; the pending push carries our
+      // edit up, and its echo re-syncs everyone. Gated on dataEditPending (not
+      // the raw pushTimer) so view-only saves — day tab, theme, notify toggle,
+      // follow-team — never make us skip an incoming update or its
+      // notification. The first snapshot is handled by dirtySinceLoad above.
+      if (!firstSnapshot && dataEditPending) return;
       applyingRemote = true;
       // Signature of the synced slice before applying this snapshot. RTDB fires
       // a local `value` event for our own set(), so most snapshots are pure
@@ -1002,7 +1073,7 @@ function initSync() {
       // devices kept their old results and re-pushed them later. Teams
       // stay guarded — a snapshot without a roster is malformed.
       if (remote.teams) state.teams = remote.teams;
-      ['results', 'brackets', 'drafts', 'picRounds', 'bonuses', 'meta'].forEach((k) => {
+      ['results', 'brackets', 'drafts', 'picRounds', 'bonuses', 'live', 'meta'].forEach((k) => {
         state[k] = remote[k] !== undefined ? remote[k] : {};
       });
       // Realtime Database silently drops empty arrays/nulls on write, so a
@@ -1058,13 +1129,17 @@ function initSync() {
 function schedulePush() {
   if (!fbRef) return;
   clearTimeout(pushTimer);
-  pushTimer = setTimeout(pushState, 400); // coalesce rapid edits
+  // Null the handle when it fires so `pushTimer !== null` is an accurate
+  // "a local write is queued but not yet sent" signal — the remote merge
+  // uses it to avoid clobbering an un-pushed edit (see initSync).
+  pushTimer = setTimeout(() => { pushTimer = null; pushState(); }, 400); // coalesce rapid edits
 }
 
 function pushState() {
   if (!fbRef || applyingRemote || !remoteReady) return;
   const payload = {};
   SYNC_KEYS.forEach((k) => { payload[k] = state[k] === undefined ? null : state[k]; });
+  dataEditPending = false; // current state (incl. any edit) is going to the server
   // JSON round-trip strips any `undefined` (which Realtime DB rejects).
   fbRef.set(JSON.parse(JSON.stringify(payload))).catch((e) => console.warn('sync push failed', e));
 }
@@ -1076,28 +1151,34 @@ function syncSignature() {
   return JSON.stringify(SYNC_KEYS.map((k) => state[k]));
 }
 
-// The "who's up next" slot for one bracket, per stage — null when that
-// stage isn't a live open matchup (not yet set, or already decided).
-function bracketMatchupSlot(aId, bId, alreadyDecided) {
-  if (!aId || !bId || alreadyDecided) return null;
+// A matchup "slot" — a stable key for one pairing, so a genuinely NEW matchup
+// can be told apart from an undo/clear across syncs.
+function matchupSlot(aId, bId) {
+  if (!aId || !bId) return null;
   return { aId, bId, key: [aId, bId].sort().join('|') };
 }
 
-function bracketMatchupSlots(b) {
-  if (!b) return null;
-  return {
-    selectedPair: (b.selectedPair && b.selectedPair.length === 2)
-      ? bracketMatchupSlot(b.selectedPair[0], b.selectedPair[1], false) : null,
-    semifinal: b.semifinal
-      ? bracketMatchupSlot(b.semifinal.a, b.semifinal.b, b.semifinal.winner !== null) : null,
-    championship: b.championship
-      ? bracketMatchupSlot(b.championship.a, b.championship.b, b.championship.winner !== null) : null,
-  };
+// The upcoming matchups of a game's bracket that are KNOWN right now: the
+// current (being called up / played) matchup plus the on-deck matchup when it
+// can be determined (a fixed-order Round 1). Works for both fixed-order and
+// free-pick brackets — it reads the same currentMatchupOf/nextMatchupOf the
+// bracket screens use, so it stays correct now that fixed-order Round 1 no
+// longer sets selectedPair.
+function upcomingMatchups(g) {
+  const raw = state.brackets && state.brackets[g.id];
+  if (!raw || g.format !== 'tournament') return [];
+  const b = normalizeBracket(raw);
+  const out = [];
+  const cur = currentMatchupOf(g, b);
+  if (cur) out.push(matchupSlot(cur[0], cur[1]));
+  const nxt = nextMatchupOf(g, b);
+  if (nxt) out.push(matchupSlot(nxt[0], nxt[1]));
+  return out.filter(Boolean);
 }
 
-// gameId -> {selectedPair, semifinal, championship} slot snapshot, so a
-// genuinely NEW matchup can be told apart from an undo/clear across remote
-// syncs — even for a bracket nobody currently has open.
+// gameId -> [slot,...] snapshot of known upcoming matchups, so a genuinely NEW
+// matchup can be told apart from an undo/clear across remote syncs — even for
+// a bracket nobody currently has open.
 let lastBracketSlots = null;
 
 function detectMatchupChanges() {
@@ -1106,36 +1187,27 @@ function detectMatchupChanges() {
   const changes = [];
   GAMES.forEach((g) => {
     if (g.format !== 'tournament') return;
-    const slots = bracketMatchupSlots(state.brackets[g.id]);
-    next[g.id] = slots;
-    if (!slots || prev === null) return; // first time seeing this bracket: seed, don't fire
-    const prevSlots = prev[g.id];
-    ['selectedPair', 'semifinal', 'championship'].forEach((stage) => {
-      const cur = slots[stage];
-      const was = prevSlots && prevSlots[stage];
-      if (cur && (!was || was.key !== cur.key)) {
-        changes.push({ game: g, stage, aId: cur.aId, bId: cur.bId });
-      }
+    const ups = upcomingMatchups(g);
+    next[g.id] = ups;
+    if (prev === null) return; // first time: seed, don't fire
+    const prevKeys = new Set((prev[g.id] || []).map((s) => s.key));
+    ups.forEach((s) => {
+      if (!prevKeys.has(s.key)) changes.push({ game: g, aId: s.aId, bId: s.bId });
     });
   });
   lastBracketSlots = next;
   return changes;
 }
 
-// Scans every live bracket for the first open matchup involving `teamId` —
-// used by the "Your team" summary card. Read-only; mirrors the slot logic
-// the bracket screens themselves use (renderBracketRound1 etc.).
+// The soonest known matchup involving `teamId` (current preferred, then on
+// deck) — used by the "Your team" summary card's "Up next" line.
 function findNextMatchupFor(teamId) {
   if (!teamId) return null;
   for (const g of GAMES) {
     if (g.format !== 'tournament' || state.results[g.id]) continue;
-    const slots = bracketMatchupSlots(state.brackets[g.id]);
-    if (!slots) continue;
-    for (const stage of ['selectedPair', 'semifinal', 'championship']) {
-      const slot = slots[stage];
-      if (slot && (slot.aId === teamId || slot.bId === teamId)) {
-        const opponentId = slot.aId === teamId ? slot.bId : slot.aId;
-        return { game: g, opponentId };
+    for (const s of upcomingMatchups(g)) {
+      if (s.aId === teamId || s.bId === teamId) {
+        return { game: g, opponentId: s.aId === teamId ? s.bId : s.aId };
       }
     }
   }
@@ -1293,19 +1365,26 @@ function maybeNativeNotification(title, body, tag) {
   } catch (e) { /* unsupported in this context — the toast already showed */ }
 }
 
+// Turn notifications on (idempotent). Must be called from a user gesture so
+// the OS permission prompt + audio unlock are allowed. Caller persists.
+function enableNotify() {
+  getAudio(); // unlock sound from the triggering user gesture
+  if (window.Notification && Notification.permission === 'default') {
+    Notification.requestPermission().catch(() => {});
+  }
+  state.notify = true;
+  updateNotifyButton();
+}
+
 function toggleNotify() {
   if (!state.notify) {
-    getAudio(); // unlock sound from this click's user gesture
-    if (window.Notification && Notification.permission === 'default') {
-      Notification.requestPermission().catch(() => {});
-    }
-    state.notify = true;
+    enableNotify();
     showToast("🔔 You'll get an alert here whenever a team's points change or is called up next — as long as this tab stays open.");
   } else {
     state.notify = false;
+    updateNotifyButton();
   }
   saveState();
-  updateNotifyButton();
 }
 
 function updateNotifyButton() {
@@ -2091,8 +2170,11 @@ function standingsSummaryText() {
   lines.push(`Standings (🥇 ${MEDAL_POINTS.gold} · 🥈 ${MEDAL_POINTS.silver} · 🥉 ${MEDAL_POINTS.bronze} pts):`);
   ranked.forEach((t, i) => {
     const s = counts[t.id];
-    const bonus = s.bonus ? ` ${s.bonus > 0 ? '+' : ''}${s.bonus} bonus` : '';
-    lines.push(`${i + 1}) ${teamEmoji(t.id)} ${t.name} · ${s.points} pts (🥇${s.gold} 🥈${s.silver} 🥉${s.bronze}${bonus})`);
+    const parts = [`🥇${s.gold} 🥈${s.silver} 🥉${s.bronze}`];
+    if (s.verse) parts.push(`📖${s.verse > 0 ? '+' : ''}${s.verse}`);
+    if (s.meals) parts.push(`🧽${s.meals > 0 ? '+' : ''}${s.meals}`);
+    if (s.custom) parts.push(`✨${s.custom > 0 ? '+' : ''}${s.custom}`);
+    lines.push(`${i + 1}) ${teamEmoji(t.id)} ${t.name} · ${s.points} pts (${parts.join(' ')})`);
   });
 
   const played = GAMES.filter((g) => state.results[g.id]);
@@ -2155,22 +2237,29 @@ function formatScore(game, val) {
 
 // ── Standings (derived from saved results) ───────────────────────
 
-// Sum of extra/bonus points per team, from the bonus ledger.
-function bonusTotals() {
+// Extra points per team from the bonus ledger, split by source. Bible
+// memorization ('verse') and meal cleanup ('cleanup') each get their own
+// standings column, so they're totaled separately rather than lumped into a
+// single "bonus" figure; any free-form entry falls in 'custom'.
+function bonusBreakdown() {
   const totals = {};
-  state.teams.forEach((t) => (totals[t.id] = 0));
+  state.teams.forEach((t) => (totals[t.id] = { verse: 0, meals: 0, custom: 0 }));
   Object.values(state.bonuses || {}).forEach((b) => {
-    if (!b || totals[b.teamId] === undefined) return;
+    if (!b || !totals[b.teamId]) return;
     const p = Number(b.points);
-    if (!isNaN(p)) totals[b.teamId] += p;
+    if (isNaN(p)) return;
+    const bucket = b.category === 'verse' ? 'verse'
+      : b.category === 'cleanup' ? 'meals'
+      : 'custom';
+    totals[b.teamId][bucket] += p;
   });
   return totals;
 }
 
 function medalCounts() {
   const counts = {};
-  const bonus = bonusTotals();
-  state.teams.forEach((t) => (counts[t.id] = { gold: 0, silver: 0, bronze: 0, medalPts: 0, bonus: 0, points: 0 }));
+  const extra = bonusBreakdown();
+  state.teams.forEach((t) => (counts[t.id] = { gold: 0, silver: 0, bronze: 0, medalPts: 0, verse: 0, meals: 0, custom: 0, bonus: 0, points: 0 }));
   // Iterate entries so we can weight points per game: Messtival games
   // (Friday) are worth DOUBLE on the scoreboard. Medal *counts* stay raw;
   // only the point value doubles.
@@ -2184,7 +2273,11 @@ function medalCounts() {
   });
   state.teams.forEach((t) => {
     const c = counts[t.id];
-    c.bonus = bonus[t.id] || 0;
+    const e = extra[t.id] || { verse: 0, meals: 0, custom: 0 };
+    c.verse = e.verse;
+    c.meals = e.meals;
+    c.custom = e.custom;
+    c.bonus = e.verse + e.meals + e.custom; // all extras, for the grand total
     c.points = c.medalPts + c.bonus; // grand total drives the leaderboard
   });
   return counts;
@@ -2229,16 +2322,21 @@ function renderStandings() {
       changedTeams.push({ team, delta: s.points - lastPointsByTeam[team.id], total: s.points });
     }
     const medalCell = (n) => `<td class="medal-col">${n ? n : '<span class="zero">0</span>'}</td>`;
+    // Signed cell for the point-source columns (verse / meals): dim a zero,
+    // show a leading + only for positive tallies (deductions keep their −).
+    const extraCell = (n) => `<td class="extra-col">${n ? (n > 0 ? '+' + n : n) : '<span class="zero">0</span>'}</td>`;
     tr.innerHTML = `
       <td class="rank-col">${i + 1}</td>
       <td class="team-cell">
         <div class="team-name-line"><span class="team-emoji">${teamEmoji(team.id)}</span> <span class="team-name-text">${esc(team.name)}</span>${team.id === state.followTeam ? ' <span class="following-star" title="You\'re following this team">⭐</span>' : ''}</div>
         ${team.counselor ? `<div class="team-counselor-text">${esc(team.counselor)}</div>` : ''}
       </td>
-      <td class="points-col">${s.points}${s.bonus ? `<span class="bonus-hint">${s.bonus > 0 ? '+' : ''}${s.bonus} bonus</span>` : ''}</td>
+      <td class="points-col">${s.points}${s.custom ? `<span class="bonus-hint">${s.custom > 0 ? '+' : ''}${s.custom} bonus</span>` : ''}</td>
       ${medalCell(s.gold)}
       ${medalCell(s.silver)}
       ${medalCell(s.bronze)}
+      ${extraCell(s.verse)}
+      ${extraCell(s.meals)}
     `;
     tbody.appendChild(tr);
   });
@@ -2333,10 +2431,17 @@ function renderTeamPickerOptions() {
   ).join('') + `<button class="team-picker-option team-picker-neutral ${state.followTeam === null ? 'selected' : ''}" data-team-id="">🙅 Neutral / no team</button>`;
   wrap.querySelectorAll('.team-picker-option').forEach((btn) => {
     btn.addEventListener('click', () => {
-      state.followTeam = btn.dataset.teamId || null;
+      const id = btn.dataset.teamId || null;
+      const turnedOnNotify = id && !state.notify;
+      state.followTeam = id;
+      // Following a team opts you into its alerts — the picker promises a
+      // "heads-up when they score or are up next," which only fires when
+      // notifications are on. (Neutral leaves the notify setting alone.)
+      if (id && !state.notify) enableNotify();
       saveState();
       closeTeamPicker();
       renderAll();
+      if (turnedOnNotify) showToast(`🔔 Following ${teamEmoji(id)} ${teamName(id)} — you'll get alerts here when they score or are up next.`);
     });
   });
 }
@@ -2361,15 +2466,15 @@ const BONUS_CATEGORIES = {
   cleanup: { icon: '🧽', label: 'Meal cleanup' },
   custom:  { icon: '✨', label: 'Bonus' },
 };
-// Categories offered in the bonus entry row. 'verse' is intentionally
-// excluded — memory-verse points are recorded in the Memory Verse card
-// below (per day, alongside the day's verse), not here — but it stays in
-// BONUS_CATEGORIES so any legacy verse entry still resolves an icon/label.
-const BONUS_ENTRY_CATEGORIES = ['cleanup', 'custom'];
+// Categories offered in the bonus entry row. 'verse' and 'cleanup' are
+// intentionally excluded — they have their own cards (Memory Verse, Meal
+// Cleanup) — but stay in BONUS_CATEGORIES so any legacy entry still resolves
+// an icon/label. Only free-form 'custom' bonuses are entered here now.
+const BONUS_ENTRY_CATEGORIES = ['custom'];
 
 // Form state for the entry row — lives outside state so it isn't synced
-// or persisted; category/meal persist across adds for fast nightly entry.
-let bonusDraft = { category: 'cleanup', meal: 'Breakfast', teams: [], points: '', custom: '', sign: 1 };
+// or persisted; the fields persist across adds for fast nightly entry.
+let bonusDraft = { category: 'custom', meal: 'Breakfast', teams: [], points: '', custom: '', sign: 1 };
 
 function bonusLabelFor(d) {
   if (d.category === 'verse') return 'Verse memorization';
@@ -2395,11 +2500,13 @@ function renderBonuses() {
     const customRow = d.category === 'custom'
       ? `<input type="text" id="bonus-custom" class="bonus-custom-input" placeholder="What for?" value="${esc(d.custom)}" maxlength="40" />`
       : '';
+    // Only show the category chooser if there's more than one category.
+    const catRow = BONUS_ENTRY_CATEGORIES.length > 1
+      ? `<div class="bonus-cat-row">${BONUS_ENTRY_CATEGORIES.map((key) => { const c = BONUS_CATEGORIES[key]; return `<button class="bonus-cat-chip ${d.category === key ? 'selected' : ''}" data-cat="${key}" aria-pressed="${d.category === key}">${c.icon} ${esc(c.label)}</button>`; }).join('')}</div>`
+      : '';
     entryHTML = `
       <div class="bonus-entry">
-        <div class="bonus-cat-row">
-          ${BONUS_ENTRY_CATEGORIES.map((key) => { const c = BONUS_CATEGORIES[key]; return `<button class="bonus-cat-chip ${d.category === key ? 'selected' : ''}" data-cat="${key}" aria-pressed="${d.category === key}">${c.icon} ${esc(c.label)}</button>`; }).join('')}
-        </div>
+        ${catRow}
         ${mealRow}
         ${customRow}
         <p class="bonus-entry-hint muted">Pick the team(s) that earned it:</p>
@@ -2416,11 +2523,11 @@ function renderBonuses() {
       </div>`;
   }
 
-  // Verse points live in the Memory Verse card, so this card shows only
-  // the non-verse extras (cleanup + custom) in its subtotals and ledger.
+  // Verse and cleanup points have their own cards, so this card shows only
+  // the free-form 'custom' bonuses in its subtotals and ledger.
   const extra = {};
   Object.values(state.bonuses || {}).forEach((b) => {
-    if (b.category === 'verse') return;
+    if (b.category === 'verse' || b.category === 'cleanup') return;
     extra[b.teamId] = (extra[b.teamId] || 0) + (Number(b.points) || 0);
   });
   const withBonus = state.teams.filter((t) => extra[t.id]).sort((a, b) => extra[b.id] - extra[a.id]);
@@ -2430,7 +2537,7 @@ function renderBonuses() {
     : '';
 
   const entries = Object.entries(state.bonuses || {})
-    .filter(([, b]) => b.category !== 'verse')
+    .filter(([, b]) => b.category !== 'verse' && b.category !== 'cleanup')
     .sort((a, b) => (b[1].at || '').localeCompare(a[1].at || ''));
   const ledgerHTML = entries.length
     ? `<ul class="bonus-ledger">${entries.map(([id, b]) => {
@@ -2683,6 +2790,219 @@ function bindVerseEntry(wrap) {
   });
 }
 
+// ── Meal cleanup ─────────────────────────────────────────────────
+// Each meal, a team is on cleanup. The rota (who cleans which meal each day)
+// is fixed data below; points earned are stored in the bonus ledger under the
+// 'cleanup' category, tagged with day + meal, so they flow into the week
+// standings — same pattern as Memory Verse. A missing meal key = TBA.
+const MEAL_CLEANUP_MEALS = ['Breakfast', 'Lunch', 'Supper'];
+const MEAL_ICONS = { Breakfast: '🍳', Lunch: '🥪', Supper: '🍲' };
+const MEAL_CLEANUP_SCHEDULE = {
+  1: { Breakfast: 't5', Lunch: 't4', Supper: 't0' }, // Mon: John Deere's / Pilgrims / Foxes
+  2: { Breakfast: 't2', Lunch: 't3', Supper: 't1' }, // Tue: Maples / Pumpkins / Turkey
+  3: {}, // Wed — TBA
+  4: {}, // Thu — TBA
+  5: {}, // Fri — TBA
+};
+
+// The team assigned to a given day + meal, or null (TBA).
+function cleanupAssigned(day, meal) {
+  const d = MEAL_CLEANUP_SCHEDULE[day];
+  return (d && d[meal]) || null;
+}
+
+// Which day's rota the card is showing + the entry draft (not synced).
+let cleanupDay = null;
+let cleanupDraft = { meal: 'Breakfast', teams: [], points: '' };
+
+// day -> { teamId -> total cleanup points } from the 'cleanup' ledger entries.
+function cleanupPointsByDay() {
+  const map = {};
+  Object.values(state.bonuses || {}).forEach((b) => {
+    if (b.category !== 'cleanup') return;
+    const day = Number(b.day) || 0;
+    if (!map[day]) map[day] = {};
+    map[day][b.teamId] = (map[day][b.teamId] || 0) + (Number(b.points) || 0);
+  });
+  return map;
+}
+
+// Total cleanup points recorded for one day + meal.
+function cleanupMealPoints(day, meal) {
+  let sum = 0;
+  Object.values(state.bonuses || {}).forEach((b) => {
+    if (b.category === 'cleanup' && (Number(b.day) || 0) === day && b.meal === meal) {
+      sum += Number(b.points) || 0;
+    }
+  });
+  return sum;
+}
+
+function renderMealCleanup() {
+  const wrap = document.getElementById('cleanup-body');
+  if (!wrap) return;
+  // Default to today (Mon–Fri, else Monday) and pre-target that meal's team.
+  if (cleanupDay == null) {
+    const dow = campNow().dow;
+    cleanupDay = (dow >= 1 && dow <= 5) ? dow : 1;
+    const first = cleanupAssigned(cleanupDay, cleanupDraft.meal);
+    cleanupDraft.teams = first ? [first] : [];
+  }
+  const d = cleanupDraft;
+  const todayDow = campNow().dow;
+
+  const dayChips = `<div class="verse-day-row">${[1, 2, 3, 4, 5].map((dow) =>
+    `<button class="verse-day-chip ${dow === cleanupDay ? 'selected' : ''}" data-cleanup-day="${dow}" aria-pressed="${dow === cleanupDay}">${DAY_NAMES[dow].slice(0, 3)}${dow === todayDow ? '<span class="today-dot" title="Today"></span>' : ''}</button>`).join('')}</div>`;
+
+  const rotaHTML = `<div class="cleanup-rota">${MEAL_CLEANUP_MEALS.map((meal) => {
+    const teamId = cleanupAssigned(cleanupDay, meal);
+    const pts = cleanupMealPoints(cleanupDay, meal);
+    return `<div class="cleanup-meal-row">
+      <span class="cleanup-meal-name">${MEAL_ICONS[meal]} ${esc(meal)}</span>
+      <span class="cleanup-meal-team">${teamId ? `${teamEmoji(teamId)} ${esc(teamName(teamId))}` : '<span class="cleanup-tba">TBA</span>'}</span>
+      ${pts ? `<span class="cleanup-meal-pts">+${pts}</span>` : ''}
+    </div>`;
+  }).join('')}</div>`;
+
+  let entryHTML = '';
+  if (canEdit()) {
+    const assignedId = cleanupAssigned(cleanupDay, d.meal);
+    const mealChips = `<div class="bonus-meal-row">${MEAL_CLEANUP_MEALS.map((m) =>
+      `<button class="bonus-meal-chip ${d.meal === m ? 'selected' : ''}" data-cleanup-meal="${m}" aria-pressed="${d.meal === m}">${esc(m)}</button>`).join('')}</div>`;
+    const assignedLine = assignedId
+      ? `<p class="bonus-entry-hint muted">On the rota for ${esc(DAY_NAMES[cleanupDay])} ${esc(d.meal.toLowerCase())}: ${teamEmoji(assignedId)} ${esc(teamName(assignedId))}</p>`
+      : `<p class="bonus-entry-hint muted">No team assigned for ${esc(DAY_NAMES[cleanupDay])} ${esc(d.meal.toLowerCase())} yet — pick who did it:</p>`;
+    entryHTML = `
+      <div class="verse-entry">
+        ${mealChips}
+        ${assignedLine}
+        <div class="bonus-team-chips">
+          ${state.teams.map((t) =>
+            `<button class="team-chip cleanup-team-chip ${d.teams.includes(t.id) ? 'selected' : ''}" data-team-id="${t.id}" aria-pressed="${d.teams.includes(t.id)}"><span class="chip-emoji">${teamEmoji(t.id)}</span> ${esc(t.name)}</button>`).join('')}
+        </div>
+        <div class="bonus-add-row">
+          <input type="number" id="cleanup-points" class="bonus-points-input" inputmode="numeric" placeholder="Points" value="${esc(d.points)}" />
+          <button id="cleanup-add-btn" class="primary-btn">Add points</button>
+        </div>
+        <p id="cleanup-error" class="entry-error" role="alert" hidden></p>
+      </div>`;
+  }
+
+  const byDay = cleanupPointsByDay();
+  const earned = byDay[cleanupDay] || {};
+  const earnedTeams = state.teams.filter((t) => earned[t.id]).sort((a, b) => earned[b.id] - earned[a.id]);
+  const subtotalsHTML = earnedTeams.length
+    ? `<div class="bonus-subtotals">${earnedTeams.map((t) =>
+        `<span class="bonus-subtotal-chip">${teamEmoji(t.id)} ${esc(t.name)} <strong>+${earned[t.id]}</strong></span>`).join('')}</div>`
+    : '';
+
+  const dayEntries = Object.entries(state.bonuses || {})
+    .filter(([, b]) => b.category === 'cleanup' && (Number(b.day) || 0) === cleanupDay)
+    .sort((a, b) => (b[1].at || '').localeCompare(a[1].at || ''));
+  const ledgerHTML = dayEntries.length
+    ? `<ul class="bonus-ledger">${dayEntries.map(([id, b]) => {
+        const when = formatEasternStamp(b.at);
+        const pts = Number(b.points) || 0;
+        const meal = b.meal || 'Cleanup';
+        return `<li class="bonus-item">
+          <span class="bonus-item-main">
+            <span class="bonus-item-team">${teamEmoji(b.teamId)} ${esc(teamName(b.teamId))}</span>
+            <span class="bonus-item-label">🧽 ${esc(meal)} cleanup${when ? ` · ${esc(when)}` : ''}</span>
+          </span>
+          <span class="bonus-item-pts">+${esc(String(pts))}</span>
+          ${canEdit() ? `<button class="bonus-remove-btn" data-bonus-id="${esc(id)}" aria-label="Remove this cleanup point">✕</button>` : ''}
+        </li>`;
+      }).join('')}</ul>`
+    : `<p class="muted bonus-empty">No cleanup points recorded for ${esc(DAY_NAMES[cleanupDay])} yet.</p>`;
+
+  // Legacy cleanup entries with no day (from the old Bonus card) — surface them
+  // so their points aren't invisible even though they still count in totals.
+  const legacy = Object.entries(state.bonuses || {})
+    .filter(([, b]) => b.category === 'cleanup' && !(Number(b.day) >= 1 && Number(b.day) <= 5))
+    .sort((a, b) => (b[1].at || '').localeCompare(a[1].at || ''));
+  const legacyHTML = legacy.length
+    ? `<p class="bonus-entry-hint muted">Earlier cleanup points (no day set):</p>
+       <ul class="bonus-ledger">${legacy.map(([id, b]) => {
+        const pts = Number(b.points) || 0;
+        return `<li class="bonus-item">
+          <span class="bonus-item-main">
+            <span class="bonus-item-team">${teamEmoji(b.teamId)} ${esc(teamName(b.teamId))}</span>
+            <span class="bonus-item-label">🧽 ${esc(b.label || 'Cleanup')}</span>
+          </span>
+          <span class="bonus-item-pts">+${esc(String(pts))}</span>
+          ${canEdit() ? `<button class="bonus-remove-btn" data-bonus-id="${esc(id)}" aria-label="Remove this cleanup point">✕</button>` : ''}
+        </li>`;
+      }).join('')}</ul>`
+    : '';
+
+  wrap.innerHTML = dayChips + rotaHTML + entryHTML + subtotalsHTML + ledgerHTML + legacyHTML;
+
+  wrap.querySelectorAll('.verse-day-chip').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      cleanupDay = parseInt(btn.dataset.cleanupDay, 10);
+      const a = cleanupAssigned(cleanupDay, d.meal);
+      d.teams = a ? [a] : [];
+      renderMealCleanup();
+    });
+  });
+  if (canEdit()) bindCleanupEntry(wrap);
+  wrap.querySelectorAll('.bonus-remove-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.bonusId;
+      const b = state.bonuses[id];
+      if (!b) return;
+      const pts = Number(b.points) || 0;
+      if (!confirm(`Remove +${pts} cleanup point${pts === 1 ? '' : 's'} for ${teamName(b.teamId)}?`)) return;
+      delete state.bonuses[id];
+      touchData();
+      saveState();
+      renderAll();
+    });
+  });
+}
+
+function bindCleanupEntry(wrap) {
+  const d = cleanupDraft;
+  wrap.querySelectorAll('.bonus-meal-chip').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      d.meal = btn.dataset.cleanupMeal;
+      const a = cleanupAssigned(cleanupDay, d.meal);
+      d.teams = a ? [a] : []; // pre-target the rota's team for this meal
+      renderMealCleanup();
+    });
+  });
+  wrap.querySelectorAll('.cleanup-team-chip').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const id = btn.dataset.teamId;
+      const i = d.teams.indexOf(id);
+      if (i > -1) d.teams.splice(i, 1); else d.teams.push(id);
+      renderMealCleanup();
+    });
+  });
+  const ptsInput = wrap.querySelector('#cleanup-points');
+  if (ptsInput) ptsInput.addEventListener('input', () => { d.points = ptsInput.value; });
+
+  const addBtn = wrap.querySelector('#cleanup-add-btn');
+  if (addBtn) addBtn.addEventListener('click', () => {
+    const errEl = wrap.querySelector('#cleanup-error');
+    const showErr = (msg) => { errEl.textContent = msg; errEl.hidden = false; };
+    const pts = Number(d.points);
+    if (!d.teams.length) return showErr('Pick at least one team.');
+    if (d.points === '' || isNaN(pts) || pts === 0) return showErr('Enter a point value.');
+    if (!Number.isInteger(pts) || pts < 1 || pts > 100) return showErr('Points must be a whole number from 1 to 100.');
+    const label = `${DAY_NAMES[cleanupDay]} ${d.meal} cleanup`;
+    const at = new Date().toISOString();
+    const meal = d.meal;
+    d.teams.forEach((teamId) => {
+      state.bonuses[newBonusId()] = { teamId, category: 'cleanup', label, points: pts, at, day: cleanupDay, meal };
+    });
+    d.points = '';
+    touchData();
+    saveState();
+    renderAll();
+  });
+}
+
 // ── Day tabs + game list ─────────────────────────────────────────
 
 function renderDayTabs() {
@@ -2809,7 +3129,7 @@ function renderGameView() {
       </div>
     </div>
     ${g.messtival ? '<p class="messtival-tag">🎉 Messtival — double points, counted double here too!</p>' : ''}
-    <details class="rules-details" ${state.results[g.id] ? '' : 'open'}>
+    <details class="rules-details">
       <summary>How to play</summary>
       ${g.rules.map((sec) => `
         <h4>${esc(sec.h)}</h4>
@@ -2839,7 +3159,7 @@ function renderGameView() {
   if (result) {
     renderResult(entry, g, result);
   } else if (!canEdit()) {
-    entry.innerHTML = `<p class="view-only-note">👀 View-only. This game hasn't been scored yet. Tap <strong>🔒 View only</strong> at the top and enter the score PIN to run it.</p>`;
+    renderLiveWatch(entry, g);
   } else if (g.format === 'tournament') {
     renderTournament(entry, g);
   } else if (g.format === 'tally') {
@@ -2847,6 +3167,152 @@ function renderGameView() {
   } else {
     renderPlacement(entry, g);
   }
+}
+
+// Games with a bracket in progress (started, not yet finalized) — surfaced
+// as a highlighted "Live now" card at the top of the home screen.
+function liveHomeGames() {
+  return GAMES.filter((g) => {
+    const b = state.brackets && state.brackets[g.id];
+    return b && normalizeBracket(b).phase !== 'summary';
+  });
+}
+
+// Renders the highlighted "Live now" card(s) at the top of the home screen so
+// spectators (and refs) see the current matchup + live score without opening
+// the game. Hidden entirely when nothing is live. Kept current by renderAll,
+// which fires on every synced update.
+function renderLiveHome() {
+  const wrap = document.getElementById('live-home');
+  if (!wrap) return;
+  const games = liveHomeGames();
+  if (!games.length) { wrap.hidden = true; wrap.innerHTML = ''; return; }
+  wrap.hidden = false;
+  wrap.innerHTML = games.map((g) => {
+    const b = normalizeBracket(state.brackets[g.id]);
+    const phaseLabel = { round1: 'Round 1', bye: 'Bye', semifinal: 'Championship game', championship: 'Final', summary: 'Results' }[b.phase] || '';
+    const pair = currentMatchupOf(g, b);
+    let scoreHTML;
+    if (pair && g.liveTracker) {
+      const l = getLiveMatch(g, pair[0], pair[1]);
+      scoreHTML = `<span class="live-home-score">
+        <span class="lh-team">${teamEmoji(pair[0])} ${esc(teamName(pair[0]))}</span>
+        <span class="lh-nums">${l.hr[pair[0]] || 0}<span class="lh-dash">–</span>${l.hr[pair[1]] || 0}</span>
+        <span class="lh-team">${teamEmoji(pair[1])} ${esc(teamName(pair[1]))}</span>
+      </span>
+      <span class="live-home-sub">Inning ${l.inning} of ${g.liveTracker.innings || 3}${g.liveTracker.outs ? ` · ${outsLabel(l.outs)} · ${teamEmoji(kickingTeamId(l, pair[0], pair[1]))} ${esc(teamName(kickingTeamId(l, pair[0], pair[1])))} ${esc(g.liveTracker.sideLabel || 'up')}` : ''}</span>`;
+    } else if (pair) {
+      scoreHTML = `<span class="live-home-matchup">${teamEmoji(pair[0])} ${esc(teamName(pair[0]))} <span class="lh-vs">vs</span> ${teamEmoji(pair[1])} ${esc(teamName(pair[1]))}</span>`;
+    } else {
+      scoreHTML = `<span class="live-home-sub">${phaseLabel} in progress — tap to watch</span>`;
+    }
+    const nxt = nextMatchupOf(g, b);
+    const onDeckHTML = nxt
+      ? `<span class="live-home-ondeck">⏭️ Up next: ${teamEmoji(nxt[0])} ${esc(teamName(nxt[0]))} vs ${teamEmoji(nxt[1])} ${esc(teamName(nxt[1]))}</span>`
+      : '';
+    return `<button class="live-home-card" data-game-id="${esc(g.id)}">
+      <span class="live-home-top"><span class="live-home-badge">🔴 LIVE</span><span class="live-home-game">${g.emoji} ${esc(g.name)} · ${phaseLabel}</span></span>
+      ${scoreHTML}
+      ${onDeckHTML}
+    </button>`;
+  }).join('');
+
+  wrap.querySelectorAll('.live-home-card').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const g = gameById(btn.dataset.gameId);
+      if (!g) return;
+      state.ui.gameId = g.id;
+      state.ui.day = g.day;
+      saveState();
+      renderAll();
+      const gv = document.getElementById('game-view');
+      if (gv) gv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  });
+}
+
+// The matchup a bracket is currently waiting on a winner for — used by the
+// read-only live-watch view so spectators see who's playing right now.
+function currentMatchupOf(g, b) {
+  if (!b) return null;
+  if (b.phase === 'round1') {
+    if (Array.isArray(g.roundOneMatchups) && g.roundOneMatchups.length) {
+      return g.roundOneMatchups[(b.matches || []).length] || null;
+    }
+    return (b.selectedPair && b.selectedPair.length === 2) ? b.selectedPair : null;
+  }
+  if (b.phase === 'semifinal' && b.semifinal && b.semifinal.winner == null) return [b.semifinal.a, b.semifinal.b];
+  if (b.phase === 'championship' && b.championship && b.championship.winner == null) return [b.championship.a, b.championship.b];
+  return null;
+}
+
+// The matchup that will be played AFTER the current one, when it's already
+// known — i.e. the next pair in a fixed-order Round 1. Returns null when the
+// next pairing can't be known yet (free pick, or a later stage whose teams
+// aren't decided). Drives the "Up next" line under the live score.
+function nextMatchupOf(g, b) {
+  if (!b || b.phase !== 'round1') return null;
+  if (Array.isArray(g.roundOneMatchups) && g.roundOneMatchups.length) {
+    return g.roundOneMatchups[(b.matches || []).length + 1] || null;
+  }
+  return null;
+}
+
+// Read-only live view for spectators (no score PIN): the current matchup,
+// its live inning/tally (synced from the ref's device), and completed
+// matches. Re-rendered by renderAll whenever a synced update lands.
+function renderLiveWatch(container, g) {
+  const raw = state.brackets && state.brackets[g.id];
+  if (!raw) {
+    container.innerHTML = `<p class="view-only-note">👀 View-only. This game hasn't been scored yet. Tap <strong>🔒 View only</strong> at the top and enter the score PIN to run it.</p>`;
+    return;
+  }
+  const b = normalizeBracket(raw);
+  const phaseLabel = { round1: 'Round 1', bye: 'Bye', semifinal: 'Championship game', championship: 'Final', summary: 'Results' }[b.phase] || '';
+  const pair = currentMatchupOf(g, b);
+
+  const done = (b.matches || []).map((m) =>
+    `<li>${teamEmoji(m.winner)} ${esc(teamName(m.winner))} def. ${esc(teamName(m.loser))}</li>`).join('');
+  const doneHTML = done ? `<div class="live-watch-done"><p class="muted">Completed:</p><ul>${done}</ul></div>` : '';
+
+  if (!pair) {
+    container.innerHTML = `<div class="live-watch">
+      <p class="live-watch-label">🔴 ${esc(g.name)} — ${phaseLabel} in progress</p>
+      <p class="muted">Waiting for the next matchup…</p>
+      ${doneHTML}
+    </div>`;
+    return;
+  }
+
+  let scoreHTML;
+  if (g.liveTracker) {
+    const l = getLiveMatch(g, pair[0], pair[1]);
+    const maxInn = g.liveTracker.innings || 3;
+    scoreHTML = `
+      <div class="live-watch-score">
+        <div class="lw-team">${teamEmoji(pair[0])}<span class="lw-name">${esc(teamName(pair[0]))}</span></div>
+        <div class="lw-nums"><span class="lw-num">${l.hr[pair[0]] || 0}</span><span class="lw-dash">–</span><span class="lw-num">${l.hr[pair[1]] || 0}</span></div>
+        <div class="lw-team">${teamEmoji(pair[1])}<span class="lw-name">${esc(teamName(pair[1]))}</span></div>
+      </div>
+      <p class="live-watch-inning">Inning ${l.inning} of ${maxInn}${g.liveTracker.outs ? ` · ${outsLabel(l.outs)}` : ''}</p>
+      ${g.liveTracker.outs ? `<p class="live-watch-kicking">${teamEmoji(kickingTeamId(l, pair[0], pair[1]))} ${esc(teamName(kickingTeamId(l, pair[0], pair[1])))} ${esc(g.liveTracker.sideLabel || 'up')}</p>` : ''}`;
+  } else {
+    scoreHTML = `<div class="live-watch-matchup">${teamEmoji(pair[0])} ${esc(teamName(pair[0]))} <span class="lw-vs">vs</span> ${teamEmoji(pair[1])} ${esc(teamName(pair[1]))}</div>`;
+  }
+
+  const nxt = nextMatchupOf(g, b);
+  const onDeckHTML = nxt
+    ? `<p class="live-watch-ondeck">⏭️ Up next: ${teamEmoji(nxt[0])} ${esc(teamName(nxt[0]))} vs ${teamEmoji(nxt[1])} ${esc(teamName(nxt[1]))}</p>`
+    : '';
+
+  container.innerHTML = `
+    <div class="live-watch">
+      <p class="live-watch-label">🔴 Live now · ${phaseLabel}</p>
+      ${scoreHTML}
+      ${onDeckHTML}
+      <p class="muted live-watch-note">Updates automatically as the ref scores — no refresh needed.</p>
+      ${doneHTML}
+    </div>`;
 }
 
 function renderResult(container, g, result) {
@@ -3148,6 +3614,16 @@ function normalizeDraft(d) {
   return d;
 }
 
+// A live match tally: { key, inning, hr: {teamId: n} }. RTDB prunes an
+// empty hr map and a 0/absent inning, so heal them after a round-trip.
+function normalizeLiveMatch(l) {
+  if (!l.hr) l.hr = {};
+  if (typeof l.inning !== 'number' || l.inning < 1) l.inning = 1;
+  if (typeof l.outs !== 'number' || l.outs < 0) l.outs = 0;
+  if (l.half !== 1) l.half = 0; // 0 = first team kicking, 1 = second team
+  return l;
+}
+
 // One sweep over every synced shape that can carry pruned-empty fields.
 // Called after loading from localStorage and after every remote merge.
 function normalizeSyncedState() {
@@ -3155,6 +3631,8 @@ function normalizeSyncedState() {
   Object.values(state.picRounds || {}).forEach(normalizePicRound);
   Object.values(state.drafts || {}).forEach(normalizeDraft);
   if (!state.bonuses) state.bonuses = {}; // RTDB prunes an empty ledger to nothing
+  if (!state.live) state.live = {}; // RTDB prunes an empty live map to nothing
+  Object.values(state.live).forEach(normalizeLiveMatch);
   // Migrate rosters saved before names/counselors were set: swap generic
   // "Team N" names and placeholder counselors for the real roster values.
   // Anything hand-edited (not matching a known placeholder) is left alone.
@@ -3178,6 +3656,7 @@ function renderTournament(container, g) {
     `;
     document.getElementById('start-bracket-btn').addEventListener('click', () => {
       state.brackets[g.id] = freshBracket();
+      clearLiveMatch(g); // a new bracket starts with a clean tally
       saveState();
       renderAll();
     });
@@ -3187,7 +3666,7 @@ function renderTournament(container, g) {
   const b = normalizeBracket(state.brackets[g.id]);
   let html = `<div class="bracket-steps">
     ${['round1', 'bye', 'semifinal', 'championship', 'summary'].map((p, i) => {
-      const labels = { round1: 'Round 1', bye: 'Bye', semifinal: 'Semifinal', championship: 'Championship', summary: 'Results' };
+      const labels = { round1: 'Round 1', bye: 'Bye', semifinal: 'Championship', championship: 'Final', summary: 'Results' };
       const order = ['round1', 'bye', 'semifinal', 'championship', 'summary'];
       const cls = p === b.phase ? 'active' : order.indexOf(p) < order.indexOf(b.phase) ? 'done' : '';
       return `<span class="wizard-step ${cls}">${labels[p]}</span>${i < 4 ? '<span class="wizard-step-arrow">→</span>' : ''}`;
@@ -3199,6 +3678,7 @@ function renderTournament(container, g) {
   document.getElementById('cancel-bracket-btn').addEventListener('click', () => {
     if (!confirm('Cancel this bracket? Nothing will be saved.')) return;
     delete state.brackets[g.id];
+    clearLiveMatch(g);
     saveState();
     renderAll();
   });
@@ -3209,6 +3689,161 @@ function renderTournament(container, g) {
   else if (b.phase === 'semifinal') renderBracketSemifinal(body, g, b);
   else if (b.phase === 'championship') renderBracketChampionship(body, g, b);
   else renderBracketSummary(body, g, b);
+}
+
+// ── Live match scorekeeper (innings + per-team tally) ────────────
+// The ref taps the innings/tally as a match runs; it's synced like the rest
+// of the scoreboard (state.live in SYNC_KEYS) so anyone with the app open —
+// counselors or spectators — watches it update in real time, with
+// localStorage as the offline backup. Keyed by game + matchup, so moving to
+// the next matchup starts a fresh tally.
+
+function getLiveMatch(g, aId, bId) {
+  const key = [aId, bId].join('|');
+  const l = state.live && state.live[g.id];
+  if (l && l.key === key) {
+    return { key, inning: Number(l.inning) || 1, outs: Number(l.outs) || 0, half: l.half === 1 ? 1 : 0, hr: Object.assign({}, l.hr) };
+  }
+  return { key, inning: 1, outs: 0, half: 0, hr: {} };
+}
+
+function setLiveMatch(g, l) {
+  if (!state.live) state.live = {};
+  state.live[g.id] = { key: l.key, inning: Number(l.inning) || 1, outs: Number(l.outs) || 0, half: l.half === 1 ? 1 : 0, hr: l.hr || {} };
+  touchData();
+  saveState();
+}
+
+// The team currently kicking, given the half (0 = first team, 1 = second).
+function kickingTeamId(l, aId, bId) {
+  return (Number(l.half) || 0) === 1 ? bId : aId;
+}
+
+// "2 outs" / "1 out" / "0 outs"
+function outsLabel(n) {
+  return `${n} out${n === 1 ? '' : 's'}`;
+}
+
+// Filled/empty pips for the outs display, e.g. ●●○ for 2 of 3.
+function outsPips(n, max) {
+  let s = '';
+  for (let i = 0; i < max; i++) s += i < n ? '●' : '○';
+  return s;
+}
+
+function clearLiveMatch(g) {
+  if (state.live && state.live[g.id]) {
+    delete state.live[g.id];
+    saveState();
+  }
+}
+
+function liveTrackerHTML(g, aId, bId) {
+  if (!g.liveTracker) return '';
+  const maxInn = g.liveTracker.innings || 3;
+  const maxOuts = g.liveTracker.outs || 3;
+  const sideLabel = g.liveTracker.sideLabel || 'up';
+  const unit = g.liveTracker.unit || 'Points';
+  const l = getLiveMatch(g, aId, bId);
+  const kickId = kickingTeamId(l, aId, bId);
+  const kickingRow = maxOuts ? `
+    <div class="live-row live-kicking-row">
+      <span class="live-label">${esc(sideLabel.charAt(0).toUpperCase() + sideLabel.slice(1))}</span>
+      <div class="live-kicking-ctrl">
+        <span class="live-kicking-team" id="live-kicking-team">${teamEmoji(kickId)} ${esc(teamName(kickId))}</span>
+        <button class="live-btn live-switch-btn" data-live="half-toggle" aria-label="Switch ${esc(sideLabel)} team">⇄</button>
+      </div>
+    </div>` : '';
+  const outsRow = maxOuts ? `
+    <div class="live-row live-inning-row live-outs-row">
+      <span class="live-label">Outs</span>
+      <div class="live-stepper">
+        <button class="live-btn" data-live="out-down" aria-label="Remove an out">−</button>
+        <span class="live-outs-pips" id="live-outs-pips" aria-label="${outsLabel(l.outs)}">${outsPips(l.outs, maxOuts)}</span>
+        <button class="live-btn" data-live="out-up" aria-label="Add an out">+</button>
+      </div>
+    </div>` : '';
+  const row = (id) => `
+    <div class="live-hr-row">
+      <span class="live-hr-team">${teamEmoji(id)} ${esc(teamName(id))}</span>
+      <div class="live-stepper">
+        <button class="live-btn" data-live="hr-down" data-team="${esc(id)}" aria-label="Subtract from ${esc(teamName(id))}">−</button>
+        <span class="live-val" data-hr-team="${esc(id)}">${l.hr[id] || 0}</span>
+        <button class="live-btn" data-live="hr-up" data-team="${esc(id)}" aria-label="Add to ${esc(teamName(id))}">+</button>
+      </div>
+    </div>`;
+  return `<div class="live-tracker">
+    <div class="live-row live-inning-row">
+      <span class="live-label">Inning</span>
+      <div class="live-stepper">
+        <button class="live-btn" data-live="inning-down" aria-label="Previous inning">−</button>
+        <span class="live-val" id="live-inning-val">${l.inning}</span>
+        <span class="live-of">of ${maxInn}</span>
+        <button class="live-btn" data-live="inning-up" aria-label="Next inning">+</button>
+      </div>
+    </div>
+    ${kickingRow}
+    ${outsRow}
+    <div class="live-row live-hr-block">
+      <span class="live-label">${esc(unit)}</span>
+      ${row(aId)}
+      ${row(bId)}
+    </div>
+    <button class="live-reset link-btn" data-live="reset">Reset tally</button>
+  </div>`;
+}
+
+function bindLiveTracker(container, g, aId, bId) {
+  if (!g.liveTracker) return;
+  const maxInn = g.liveTracker.innings || 3;
+  const maxOuts = g.liveTracker.outs || 3;
+  const refresh = () => {
+    const l = getLiveMatch(g, aId, bId);
+    const iv = container.querySelector('#live-inning-val');
+    if (iv) iv.textContent = l.inning;
+    const op = container.querySelector('#live-outs-pips');
+    if (op) { op.textContent = outsPips(l.outs, maxOuts); op.setAttribute('aria-label', outsLabel(l.outs)); }
+    const kt = container.querySelector('#live-kicking-team');
+    if (kt) { const kid = kickingTeamId(l, aId, bId); kt.textContent = `${teamEmoji(kid)} ${teamName(kid)}`; }
+    container.querySelectorAll('[data-hr-team]').forEach((el) => {
+      el.textContent = l.hr[el.dataset.hrTeam] || 0;
+    });
+  };
+  container.querySelectorAll('[data-live]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const act = btn.dataset.live;
+      const team = btn.dataset.team;
+      const l = getLiveMatch(g, aId, bId);
+      if (act === 'inning-up') l.inning = Math.min(maxInn, (Number(l.inning) || 1) + 1);
+      else if (act === 'inning-down') l.inning = Math.max(1, (Number(l.inning) || 1) - 1);
+      else if (act === 'half-toggle') { l.half = (Number(l.half) || 0) === 1 ? 0 : 1; l.outs = 0; }
+      else if (act === 'out-up') {
+        const o = (Number(l.outs) || 0) + 1;
+        if (o >= maxOuts) {
+          if ((Number(l.half) || 0) === 0) {
+            // First team retired — the second team kicks (same inning).
+            l.half = 1;
+            l.outs = 0;
+          } else if ((Number(l.inning) || 1) < maxInn) {
+            // Both teams have kicked — roll to the next inning, first team up.
+            l.inning = (Number(l.inning) || 1) + 1;
+            l.half = 0;
+            l.outs = 0;
+          } else {
+            l.outs = maxOuts; // final inning, both sides done: hold at the limit
+          }
+        } else {
+          l.outs = o;
+        }
+      }
+      else if (act === 'out-down') l.outs = Math.max(0, (Number(l.outs) || 0) - 1);
+      else if (act === 'hr-up') l.hr[team] = (Number(l.hr[team]) || 0) + 1;
+      else if (act === 'hr-down') l.hr[team] = Math.max(0, (Number(l.hr[team]) || 0) - 1);
+      else if (act === 'reset') { l.inning = 1; l.outs = 0; l.half = 0; l.hr = {}; }
+      setLiveMatch(g, l);
+      refresh();
+    });
+  });
 }
 
 function renderBracketRound1(body, g, b) {
@@ -3234,6 +3869,7 @@ function renderBracketRound1(body, g, b) {
 
   if (b.selectedPair.length === 2) {
     html += matchupCalloutHTML(b.selectedPair[0], b.selectedPair[1]);
+    html += liveTrackerHTML(g, b.selectedPair[0], b.selectedPair[1]);
   }
 
   if (b.matches.length > 0) {
@@ -3248,6 +3884,7 @@ function renderBracketRound1(body, g, b) {
 
   if (b.selectedPair.length === 2) {
     bindMatchupCopy(body, g, `Round 1 (match ${b.matches.length + 1})`, b.selectedPair[0], b.selectedPair[1]);
+    bindLiveTracker(body, g, b.selectedPair[0], b.selectedPair[1]);
   }
 
   body.querySelectorAll('.team-chip').forEach((btn) => {
@@ -3321,6 +3958,7 @@ function renderBracketRound1Fixed(body, g, b, preset) {
 
   if (current) {
     html += matchupCalloutHTML(current[0], current[1]);
+    html += liveTrackerHTML(g, current[0], current[1]);
   }
 
   if (b.matches.length > 0) {
@@ -3331,6 +3969,7 @@ function renderBracketRound1Fixed(body, g, b, preset) {
 
   if (current) {
     bindMatchupCopy(body, g, `Round 1 (match ${currentIndex + 1})`, current[0], current[1]);
+    bindLiveTracker(body, g, current[0], current[1]);
   }
 
   body.querySelectorAll('.winner-btn').forEach((btn) => {
@@ -3363,7 +4002,7 @@ function renderBracketBye(body, g, b) {
   const winners = b.matches.map((m) => m.winner);
   body.innerHTML = `
     <h3>Who gets the bye?</h3>
-    <p class="muted">Check the overall team standings (the official paper one). Whichever of these three Round&nbsp;1 winners has the <strong>lowest points coming into today</strong> skips straight to the Championship.</p>
+    <p class="muted">Check the overall team standings (the official paper one). Whichever of these three Round&nbsp;1 winners has the <strong>lowest points coming into today</strong> skips straight to the Final.</p>
     <div class="team-chip-grid">
       ${winners.map((id) => `<button class="team-chip tiebreak-chip" data-team-id="${id}">${esc(teamName(id))}<span class="chip-sub">${esc(counselorName(id))}</span></button>`).join('')}
     </div>
@@ -3394,12 +4033,14 @@ function renderBracketBye(body, g, b) {
 
 function renderBracketSemifinal(body, g, b) {
   body.innerHTML = `
-    <h3>Semifinal</h3>
-    <p class="bye-note">🎟️ <strong>${esc(teamName(b.byeTeamId))}</strong> has the bye — straight to the Championship.</p>
+    <h3>Championship Game</h3>
+    <p class="bye-note">🎟️ <strong>${esc(teamName(b.byeTeamId))}</strong> has the bye — straight to the Final.</p>
     ${matchupCalloutHTML(b.semifinal.a, b.semifinal.b)}
+    ${liveTrackerHTML(g, b.semifinal.a, b.semifinal.b)}
   `;
 
-  bindMatchupCopy(body, g, 'SEMIFINAL', b.semifinal.a, b.semifinal.b);
+  bindMatchupCopy(body, g, 'Championship game', b.semifinal.a, b.semifinal.b);
+  bindLiveTracker(body, g, b.semifinal.a, b.semifinal.b);
 
   body.querySelectorAll('.winner-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -3418,12 +4059,14 @@ function renderBracketSemifinal(body, g, b) {
 
 function renderBracketChampionship(body, g, b) {
   body.innerHTML = `
-    <h3>Championship</h3>
+    <h3>Final</h3>
     <p class="bronze-note">🥉 <strong>${esc(teamName(b.semifinal.loser))}</strong> takes the bronze medal (+${MEDAL_POINTS.bronze} pts).</p>
     ${matchupCalloutHTML(b.championship.a, b.championship.b)}
+    ${liveTrackerHTML(g, b.championship.a, b.championship.b)}
   `;
 
-  bindMatchupCopy(body, g, 'CHAMPIONSHIP', b.championship.a, b.championship.b);
+  bindMatchupCopy(body, g, 'Final', b.championship.a, b.championship.b);
+  bindLiveTracker(body, g, b.championship.a, b.championship.b);
 
   body.querySelectorAll('.winner-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -3462,6 +4105,7 @@ function renderBracketSummary(body, g, b) {
       savedAt: new Date().toISOString(),
     };
     delete state.brackets[g.id];
+    clearLiveMatch(g);
     touchData();
     saveState();
     renderAll();
@@ -3478,6 +4122,7 @@ function resetWeek() {
   state.drafts = {};
   state.picRounds = {};
   state.bonuses = {};
+  state.live = {};
   state.ui.gameId = null;
   state.ui.picTeam = null;
   clearPhotos().catch(() => {});
@@ -3529,11 +4174,13 @@ function toggleSound() {
 
 function renderAll() {
   renderNowBanner();
+  renderLiveHome();
   renderDayTabs();
   renderGameList();
   renderGameView();
   renderStandings();
   renderMemoryVerse();
+  renderMealCleanup();
   renderBonuses();
   renderFooter();
   refreshOpenSchedule();
@@ -3552,7 +4199,10 @@ function init() {
   applySoundIcon();
   document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
   document.getElementById('sound-toggle').addEventListener('click', toggleSound);
-  document.getElementById('reset-week-btn').addEventListener('click', resetWeek);
+  document.getElementById('reset-week-btn').addEventListener('click', (e) => {
+    e.preventDefault();  // it lives in the card's <summary> — don't toggle the card
+    resetWeek();
+  });
 
   const copyBtn = document.getElementById('copy-standings-btn');
   copyBtn.addEventListener('click', () => copyTextToClipboard(standingsSummaryText(), copyBtn));
@@ -3610,9 +4260,19 @@ function applyRoleClass() {
   document.documentElement.classList.toggle('view-only', !canEdit());
 }
 
+// Collapsible cards (Memory Verse, Bonus Points) start expanded for editors —
+// who enter data there — and collapsed for viewers, to keep the spectator
+// screen focused on Week Points and live games. Set once per session/role
+// change (not on every renderAll), so a viewer's manual expand sticks: the
+// card render functions only rewrite the inner body, never this <details>.
+function applyCardDefaults() {
+  document.querySelectorAll('.collapsible-card').forEach((d) => { d.open = canEdit(); });
+}
+
 function startApp() {
   document.documentElement.classList.remove('locked');
   applyRoleClass();
+  applyCardDefaults();
   if (!appStarted) {
     appStarted = true;
     init();

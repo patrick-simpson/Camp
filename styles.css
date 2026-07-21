@@ -146,6 +146,17 @@ html.view-only #reset-week-btn {
   display: none;
 }
 
+/* View-only role: de-clutter — spectators don't need the share/copy tools
+   (Notify stays) or the counselor-oriented helper text. */
+html.view-only #copy-standings-btn,
+html.view-only #share-standings-btn {
+  display: none;
+}
+html.view-only .standings-hint,
+html.view-only .card-desc {
+  display: none;
+}
+
 .view-only-note {
   background: var(--color-bg);
   border: 1px dashed var(--color-border);
@@ -342,6 +353,162 @@ html.view-only .role-btn {
 
 .card-header-row h2 {
   margin: 0;
+}
+
+/* Collapsible cards (Memory Verse, Bonus Points): a <details> styled as a
+   card. Collapsed by default for viewers, expanded for editors (set in JS). */
+.collapsible-card > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.collapsible-card > summary::-webkit-details-marker {
+  display: none;
+}
+.collapsible-card:not([open]) > summary {
+  margin-bottom: 0;
+}
+.card-chevron {
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--color-text-muted);
+  transition: transform 0.2s ease;
+}
+.collapsible-card[open] .card-chevron {
+  transform: rotate(90deg);
+}
+
+.summary-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* "Live now" home-screen card — a game in progress, surfaced + highlighted. */
+.live-home {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 0.85rem;
+}
+.live-home-card {
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  color: var(--color-text);
+  background: var(--color-gold-bg);
+  border: 2px solid var(--color-danger);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 0.85rem 1rem;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  animation: live-pulse 2s ease-in-out infinite;
+}
+@keyframes live-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-danger) 45%, transparent); }
+  70%, 100% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--color-danger) 0%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-home-card { animation: none; }
+}
+.live-home-top {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.live-home-badge {
+  flex: 0 0 auto;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: #fff;
+  background: var(--color-danger);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+}
+.live-home-game {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+.live-home-score {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.live-home-score .lh-team {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  font-size: 0.95rem;
+  overflow-wrap: break-word;
+}
+.live-home-score .lh-team:last-child {
+  text-align: right;
+}
+.live-home-score .lh-nums {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-size: 1.6rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
+}
+.live-home-score .lh-dash {
+  font-size: 1rem;
+  color: var(--color-text-muted);
+}
+.live-home-sub {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+.live-home-matchup {
+  font-size: 1rem;
+  font-weight: 700;
+}
+.live-home-matchup .lh-vs {
+  color: var(--color-text-muted);
+  font-weight: 400;
+  margin: 0 0.2rem;
+}
+.live-home-ondeck {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  border-top: 1px dashed var(--color-border);
+  padding-top: 0.4rem;
+  margin-top: 0.1rem;
+}
+
+/* "Your team + Notify" strip — always visible so viewers keep the watch
+   essentials even with Week Points collapsed. */
+.you-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-bottom: 0.85rem;
+}
+.you-strip .notify-btn {
+  width: 100%;
+}
+.you-strip:empty {
+  display: none;
+}
+
+/* On-deck line in the spectator game-view live-watch */
+.live-watch-ondeck {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-text);
 }
 
 .muted {
@@ -1305,6 +1472,16 @@ body.no-scroll {
   font-weight: 700;
 }
 
+/* Point-source columns: Bible memorization (📖) and meal cleanup (🧽). */
+.extra-col {
+  width: 2.4rem;
+  text-align: center !important;
+  font-variant-numeric: tabular-nums;
+}
+.extra-col .zero {
+  opacity: 0.35;
+}
+
 /* Podium tint for the top 3 (only applied when points > 0). */
 .podium-row td {
   border-bottom-color: transparent;
@@ -1855,6 +2032,67 @@ body.no-scroll {
   margin-bottom: 1rem;
 }
 
+/* ============================================================
+   MEAL CLEANUP CARD  (reuses .verse-day-*, .bonus-* classes)
+   ============================================================ */
+.cleanup-rota {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.25rem 0 1rem;
+}
+.cleanup-meal-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.55rem 0.7rem;
+}
+.cleanup-meal-name {
+  flex: 0 0 auto;
+  font-weight: 700;
+  font-size: 0.9rem;
+  min-width: 6.2rem;
+}
+.cleanup-meal-team {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  overflow-wrap: break-word;
+}
+.cleanup-tba {
+  color: var(--color-text-muted);
+  font-weight: 600;
+  font-style: italic;
+}
+.cleanup-meal-pts {
+  flex: 0 0 auto;
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--color-gold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* "Break" pseudo-station (kids not in an elective slot) — muted vs stations. */
+.now-break .now-station-name,
+.sched-break .sched-station-name {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* "🧽 <team>" cleanup note shown next to a meal wherever it's mentioned. */
+.meal-cleanup-note {
+  display: inline-block;
+  white-space: nowrap;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  margin-left: 0.35rem;
+}
+
 /* Fixed Round 1 matchup order (e.g. Kangaroo Kickball) */
 .matchup-order {
   background: var(--color-bg);
@@ -1957,6 +2195,239 @@ body.no-scroll {
   margin: 0.75rem 0;
   text-align: center;
 }
+
+/* Live match scorekeeper (innings + per-team tally) */
+.live-tracker {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.85rem;
+  margin: 0 0 0.75rem;
+}
+
+.live-row {
+  padding: 0.4rem 0;
+}
+.live-row + .live-row {
+  border-top: 1px solid var(--color-border);
+}
+
+.live-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  margin-bottom: 0.35rem;
+}
+
+.live-inning-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.live-inning-row .live-label {
+  margin-bottom: 0;
+}
+
+.live-hr-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+}
+
+.live-hr-team {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  font-size: 0.92rem;
+  overflow-wrap: break-word;
+}
+
+.live-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+}
+
+.live-btn {
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-primary);
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+.live-btn:active {
+  background: color-mix(in srgb, var(--color-primary) 15%, var(--color-surface));
+}
+
+.live-val {
+  min-width: 1.6rem;
+  text-align: center;
+  font-size: 1.3rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+
+.live-of {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  margin-left: -0.2rem;
+}
+
+.live-outs-pips {
+  min-width: 3.2rem;
+  text-align: center;
+  font-size: 1.15rem;
+  letter-spacing: 0.15rem;
+  color: var(--color-danger);
+  line-height: 1;
+}
+
+.live-kicking-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.live-kicking-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.live-kicking-team {
+  font-weight: 700;
+  font-size: 0.95rem;
+  text-align: right;
+  overflow-wrap: break-word;
+}
+.live-switch-btn {
+  font-size: 1.1rem;
+  color: var(--color-text-muted);
+}
+
+.live-watch-kicking {
+  margin: 0.25rem 0 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.live-reset {
+  display: block;
+  margin: 0.5rem auto 0;
+  font-size: 0.8rem;
+}
+
+/* Read-only spectator view of a live match */
+.live-watch {
+  background: var(--color-gold-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  text-align: center;
+}
+
+.live-watch-label {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.live-watch-score {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.live-watch-score .lw-team {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  font-size: 1.6rem;
+  line-height: 1;
+}
+.lw-name {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-text);
+  overflow-wrap: break-word;
+}
+
+.lw-nums {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+.lw-num {
+  font-size: 2.4rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
+}
+.lw-dash {
+  font-size: 1.4rem;
+  color: var(--color-text-muted);
+}
+
+.live-watch-inning {
+  margin: 0.6rem 0 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.live-watch-matchup {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+.live-watch-matchup .lw-vs {
+  color: var(--color-text-muted);
+  font-weight: 400;
+  margin: 0 0.25rem;
+}
+
+.live-watch-note {
+  margin: 0.6rem 0 0;
+  font-size: 0.78rem;
+}
+
+.live-watch-done {
+  margin-top: 0.85rem;
+  text-align: left;
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.6rem;
+}
+.live-watch-done p { margin: 0 0 0.3rem; font-size: 0.78rem; }
+.live-watch-done ul { margin: 0; padding-left: 1.1rem; font-size: 0.85rem; }
+.live-watch-done li { margin: 0.15rem 0; }
 
 .call-next-label {
   margin: 0 0 0.25rem;
