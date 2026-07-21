@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T19:20:15Z';
+const CODE_UPDATED_AT = '2026-07-21T19:48:41Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -79,7 +79,7 @@ const TEAM_SHIELD = {
   t1: 'images/team-shields/turkey-dinner.webp?v=2',
   t2: 'images/team-shields/methodic-mediocre-maples.webp?v=2',
   t3: 'images/team-shields/particularly-perilous-pumpkins.webp?v=2',
-  t4: 'images/team-shields/patriotic-pilgrims.webp?v=3',
+  t4: 'images/team-shields/patriotic-pilgrims.webp?v=4',
   t5: 'images/team-shields/runaway-john-deeres.webp?v=2',
 };
 // Short-form team names for tight spaces (e.g. the morning meeting banner) —
