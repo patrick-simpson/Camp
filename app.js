@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T18:29:32Z';
+const CODE_UPDATED_AT = '2026-07-21T19:20:15Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -24,32 +24,11 @@ const CODE_UPDATED_AT = '2026-07-21T18:29:32Z';
 // slug so a viewer's dismissal sticks; `text` is the short announcement.
 // Multiple recent changes stack as separate banners, each expiring on its own
 // two-hour clock. Old entries can be pruned once they're well past two hours.
-const CHANGES = [
-  { id: 'pilgrims-shield-fixed-2026-07-21', at: '2026-07-21T18:29:32Z', text: 'The Patriotic Pilgrims crest now shows the team’s real shield — the one with the eagle.' },
-  { id: 'whats-new-top-2026-07-21', at: '2026-07-21T14:54:04Z', text: 'Update notices like this one now appear at the very top of the page, above your team.' },
-  { id: 'ladderball-back-basketball-2026-07-21', at: '2026-07-21T13:38:04Z', text: 'Correction: Ladder Ball is on the Basketball Court after all (ignore the earlier Bathroom Lawn note).' },
-  { id: 'elective-weather-2026-07-21', at: '2026-07-21T13:01:54Z', text: 'Future electives now show the forecast for camp — a weather icon and temperature next to each upcoming elective period (with the rain chance when it’s likely), so you can plan for sun or showers.' },
-  { id: 'menu-tuesday-2026-07-21', at: '2026-07-21T12:18:34Z', text: 'Today’s menu: 🥞 pancakes & sausage for breakfast, 🌮 tacos for lunch, and 🍗 chicken nuggets & smiley fries for supper.' },
-  { id: 'whats-new-half-hour-cadence-2026-07-21', at: '2026-07-21T12:09:10Z', text: 'New update banners now roll in every 15 minutes — still visible for two hours each.' },
-  { id: 'pilgrims-shield-crest-2026-07-21', at: '2026-07-21T11:42:55Z', text: 'Patriotic Pilgrims now gets a shield crest too — all six teams have one.' },
-  { id: 'team-shield-crest-2026-07-21', at: '2026-07-21T11:37:35Z', text: 'Your team’s hand-drawn shield now shows up as a crest at the top of the page once you pick a team.' },
-  { id: 'collapse-all-on-load-2026-07-21', at: '2026-07-21T11:22:44Z', text: 'Every section now starts collapsed each time the page loads, so you always open to a tidy, quick-to-scan home screen — tap any section to expand it.' },
-  { id: 'lights-out-bed-emoji-2026-07-21', at: '2026-07-21T11:22:19Z', text: 'The “Lights out” schedule block now shows a 🛏️ instead of a 😴 face.' },
-  { id: 'my-electives-identity-2026-07-21', at: '2026-07-21T11:16:43Z', text: 'Tell the app which counselor you are (right after you pick a team) and it shows “My electives today” up top — plus stars your own station in Happening Now and the full schedule.' },
-  { id: 'morning-meeting-730-2026-07-21', at: '2026-07-21T11:16:43Z', text: 'Morning meeting now starts at 7:30 and shares the slot with rising bell & shower.' },
-  { id: 'follow-card-next-cleanup-2026-07-21', at: '2026-07-21T10:49:05Z', text: 'If you’re following a team, your card now shows their next meal cleanup shift too, once it’s assigned — e.g. “Next meal cleanup: Wednesday Lunch.”' },
-  { id: 'hide-notified-btn-2026-07-21', at: '2026-07-21T10:41:56Z', text: 'Once you’re signed up for notifications, the “Notify me” button tucks itself away — you don’t need it anymore.' },
-  { id: 'live-rankings-2026-07-21', at: '2026-07-21T02:51:04Z', text: 'Inflatable Bowling and Pumpkin Pictionary now show a live leaderboard anyone can watch — Pictionary keeps the drawing words secret from viewers and totals the times for you.' },
-  { id: 'team-skits-scored-2026-07-21', at: '2026-07-21T02:31:00Z', text: 'Team Skits are now scored! Friday night’s skits take gold, silver, and bronze and count in the standings like every other game.' },
-  { id: 'ladderball-live-2026-07-21', at: '2026-07-21T02:08:34Z', text: 'Ladder Ball now scores live, point by point — cancellation each round, first to exactly 21 — so you can watch each team’s total climb from any phone.' },
-  { id: 'jebball-goals-2026-07-21', at: '2026-07-21T02:08:34Z', text: 'Jeb Ball has a live goal counter now — the score updates for everyone watching as goals go in.' },
-  { id: 'auto-refresh-2026-07-21', at: '2026-07-21T02:08:34Z', text: 'The scoreboard updates itself now: when a new version ships, your phone refreshes automatically — or shows a “tap to refresh” bar if you’re mid score-entry, so nothing you’re typing is lost.' },
-  { id: 'auto-collapse-2026-07-21', at: '2026-07-21T02:08:34Z', text: 'The sections tidy themselves up — after a few minutes idle they collapse back down so the page stays quick to scan.' },
-  { id: 'renamed-camp-2026-07-21', at: '2026-07-21T10:11:45Z', text: 'We’re now just “Camp” — same scoreboard, shorter name.' },
-  { id: 'competitions-section-2026-07-21', at: '2026-07-21T10:11:45Z', text: 'The games now live under a collapsible “Competitions” section — tap it open to see the day’s games and tabs.' },
-  { id: 'cumulative-totals-2026-07-21', at: '2026-07-21T10:11:45Z', text: '“Week Points” is now “Cumulative Totals” — the running tally of every team’s points so far.' },
-  { id: 'you-strip-top-2026-07-21', at: '2026-07-21T10:11:45Z', text: 'Your team and the Notify button moved up top, right under the Editing / View-only line, so they’re easy to reach.' },
-];
+// "What's new" banners are discontinued — leave this list EMPTY and do not add
+// entries going forward (owner's call, 2026-07-21). With it empty, activeChanges()
+// returns nothing and no banner ever renders. The queue machinery below is left
+// dormant but harmless.
+const CHANGES = [];
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -604,7 +583,7 @@ const ELECTIVES = {
   ],
   2: [
     [['Swimming', ['Ella', 'Lydia']], ['Nerf War', ['William', 'Zac']], ['Crafts with Eileen', ['Alysa', 'Josh']], ['Lawn Games', ['Brody', 'Cam']], ['Board Games', ['Bria', 'Jovi']]],
-    [['Swimming', ['Sam', 'Sofie']], ['Crafts with Eileen', ['Lilly', 'Abby']], ['Whiffle Ball', ['Jacob', 'TJ']], ['Board Games', ['Ella', 'Stephen']], ['Laser Tag', ['Zac', 'Patrick']], ['Slime with Kimberly', ['TBA']]],
+    [['Swimming', ['Sam', 'Sofie']], ['Crafts with Eileen', ['Lilly', 'Abby']], ['Whiffle Ball', ['Jacob']], ['Board Games', ['Ella', 'Stephen']], ['Laser Tag', ['Zac', 'Patrick']], ['Slime with Kimberly', ['TJ']]],
     [['Swimming', ['William', 'Alysa', 'Lilly']], ['Crafts with Eileen', ['Sofie', 'Lydia']], ['Lawn Games', ['Josh', 'Stephen', 'Cam']], ['Board Games', ['Patrick', 'TJ']], ['Slip and Slide', ['Zac', 'Sam', 'Bria']], ['Slime with Kimberly', ['Abby']]],
   ],
   3: [
@@ -856,8 +835,10 @@ function blockMealName(label) {
 function mealCleanupNote(dow, label) {
   const meal = blockMealName(label);
   if (!meal || !MEAL_CLEANUP_SCHEDULE[dow]) return '';
-  const teamId = cleanupAssigned(dow, meal);
-  const who = teamId ? `${teamEmoji(teamId)} ${esc(teamName(teamId))}` : 'TBA';
+  const teamIds = cleanupAssigned(dow, meal);
+  if (!teamIds) return ` <span class="meal-cleanup-note">🧽 TBA</span>`;
+  const teams = Array.isArray(teamIds) ? teamIds : [teamIds];
+  const who = teams.map(id => `${teamEmoji(id)} ${esc(teamName(id))}`).join(' + ');
   return ` <span class="meal-cleanup-note">🧽 ${who}</span>`;
 }
 
@@ -3276,9 +3257,9 @@ const MEAL_ICONS = { Breakfast: '🍳', Lunch: '🥪', Supper: '🍲' };
 const MEAL_CLEANUP_SCHEDULE = {
   1: { Breakfast: 't5', Lunch: 't4', Supper: 't0' }, // Mon: John Deere's / Pilgrims / Foxes
   2: { Breakfast: 't2', Lunch: 't3', Supper: 't1' }, // Tue: Maples / Pumpkins / Turkey
-  3: {}, // Wed — TBA
-  4: {}, // Thu — TBA
-  5: {}, // Fri — TBA
+  3: { Breakfast: 't0', Lunch: 't5', Supper: 't4' }, // Wed: Foxes / John Deere's / Pilgrims
+  4: { Breakfast: 't1', Lunch: 't2', Supper: 't3' }, // Thu: Turkey / Maples / Pumpkins
+  5: { Breakfast: ['t3', 't4'], Lunch: ['t0', 't1'], Supper: ['t2', 't5'] }, // Fri: (Pumpkin+Pilgrim) / (Foxes+Turkey) / (Maple+John Deere's)
 };
 
 // The team assigned to a given day + meal, or null (TBA).
@@ -3301,7 +3282,9 @@ function findNextCleanupFor(teamId) {
   for (let day = Math.max(todayDow, 1); day <= 5; day++) {
     for (const meal of MEAL_CLEANUP_MEALS) {
       if (day === todayDow && MEAL_START_MINUTES[meal] <= nowMinutes) continue;
-      if (cleanupAssigned(day, meal) === teamId) return { day, meal };
+      const assigned = cleanupAssigned(day, meal);
+      const teams = assigned ? (Array.isArray(assigned) ? assigned : [assigned]) : [];
+      if (teams.includes(teamId)) return { day, meal };
     }
   }
   return null;
@@ -3342,7 +3325,7 @@ function renderMealCleanup() {
     const dow = campNow().dow;
     cleanupDay = (dow >= 1 && dow <= 5) ? dow : 1;
     const first = cleanupAssigned(cleanupDay, cleanupDraft.meal);
-    cleanupDraft.teams = first ? [first] : [];
+    cleanupDraft.teams = first ? (Array.isArray(first) ? first : [first]) : [];
   }
   const d = cleanupDraft;
   const todayDow = campNow().dow;
@@ -3351,22 +3334,30 @@ function renderMealCleanup() {
     `<button class="verse-day-chip ${dow === cleanupDay ? 'selected' : ''}" data-cleanup-day="${dow}" aria-pressed="${dow === cleanupDay}">${DAY_NAMES[dow].slice(0, 3)}${dow === todayDow ? '<span class="today-dot" title="Today"></span>' : ''}</button>`).join('')}</div>`;
 
   const rotaHTML = `<div class="cleanup-rota">${MEAL_CLEANUP_MEALS.map((meal) => {
-    const teamId = cleanupAssigned(cleanupDay, meal);
+    const teamIds = cleanupAssigned(cleanupDay, meal);
     const pts = cleanupMealPoints(cleanupDay, meal);
+    const teams = teamIds ? (Array.isArray(teamIds) ? teamIds : [teamIds]) : [];
+    const teamStr = teams.length > 0
+      ? teams.map(id => `${teamEmoji(id)} ${esc(teamName(id))}`).join(' + ')
+      : '<span class="cleanup-tba">TBA</span>';
     return `<div class="cleanup-meal-row">
       <span class="cleanup-meal-name">${MEAL_ICONS[meal]} ${esc(meal)}</span>
-      <span class="cleanup-meal-team">${teamId ? `${teamEmoji(teamId)} ${esc(teamName(teamId))}` : '<span class="cleanup-tba">TBA</span>'}</span>
+      <span class="cleanup-meal-team">${teamStr}</span>
       ${pts ? `<span class="cleanup-meal-pts">+${pts}</span>` : ''}
     </div>`;
   }).join('')}</div>`;
 
   let entryHTML = '';
   if (canEdit()) {
-    const assignedId = cleanupAssigned(cleanupDay, d.meal);
+    const assignedIds = cleanupAssigned(cleanupDay, d.meal);
     const mealChips = `<div class="bonus-meal-row">${MEAL_CLEANUP_MEALS.map((m) =>
       `<button class="bonus-meal-chip ${d.meal === m ? 'selected' : ''}" data-cleanup-meal="${m}" aria-pressed="${d.meal === m}">${esc(m)}</button>`).join('')}</div>`;
-    const assignedLine = assignedId
-      ? `<p class="bonus-entry-hint muted">On the rota for ${esc(DAY_NAMES[cleanupDay])} ${esc(d.meal.toLowerCase())}: ${teamEmoji(assignedId)} ${esc(teamName(assignedId))}</p>`
+    const assignedLine = assignedIds
+      ? (() => {
+          const teams = Array.isArray(assignedIds) ? assignedIds : [assignedIds];
+          const teamStr = teams.map(id => `${teamEmoji(id)} ${esc(teamName(id))}`).join(' + ');
+          return `<p class="bonus-entry-hint muted">On the rota for ${esc(DAY_NAMES[cleanupDay])} ${esc(d.meal.toLowerCase())}: ${teamStr}</p>`;
+        })()
       : `<p class="bonus-entry-hint muted">No team assigned for ${esc(DAY_NAMES[cleanupDay])} ${esc(d.meal.toLowerCase())} yet — pick who did it:</p>`;
     entryHTML = `
       <div class="verse-entry">
@@ -3437,7 +3428,7 @@ function renderMealCleanup() {
     btn.addEventListener('click', () => {
       cleanupDay = parseInt(btn.dataset.cleanupDay, 10);
       const a = cleanupAssigned(cleanupDay, d.meal);
-      d.teams = a ? [a] : [];
+      d.teams = a ? (Array.isArray(a) ? a : [a]) : [];
       renderMealCleanup();
     });
   });
@@ -3463,7 +3454,7 @@ function bindCleanupEntry(wrap) {
     btn.addEventListener('click', () => {
       d.meal = btn.dataset.cleanupMeal;
       const a = cleanupAssigned(cleanupDay, d.meal);
-      d.teams = a ? [a] : []; // pre-target the rota's team for this meal
+      d.teams = a ? (Array.isArray(a) ? a : [a]) : []; // pre-target the rota's team for this meal
       renderMealCleanup();
     });
   });
