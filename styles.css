@@ -1547,6 +1547,10 @@ body.no-scroll {
   line-height: 1;
 }
 
+.follow-team-headings {
+  min-width: 0;
+}
+
 .follow-team-name {
   font-weight: 700;
 }
@@ -1560,6 +1564,61 @@ body.no-scroll {
   margin-left: auto;
   font-size: 0.82rem;
   white-space: nowrap;
+}
+
+/* When the team has a hand-drawn shield, the card becomes a little crest
+   banner: the shield floats front-and-center over a soft team-tinted wash,
+   with the name and stats centered beneath it. */
+.follow-team-card.has-shield {
+  position: relative;
+  padding-top: 1.05rem;
+  text-align: center;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 50% -10%,
+      color-mix(in srgb, var(--color-primary) 16%, var(--color-surface)),
+      color-mix(in srgb, var(--color-primary) 6%, var(--color-surface)) 70%);
+}
+
+.follow-team-crest {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 0.55rem;
+}
+
+.follow-team-shield {
+  height: 132px;
+  width: auto;
+  max-width: 60%;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 7px rgba(0, 0, 0, 0.32));
+}
+
+.follow-team-card.has-shield .follow-team-head {
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+.follow-team-card.has-shield .follow-team-headings {
+  text-align: center;
+}
+
+.follow-team-card.has-shield .follow-team-name {
+  font-size: 1.05rem;
+}
+
+/* Change button tucks into the top-right corner so it doesn't break the
+   centered crest layout. */
+.follow-team-card.has-shield .follow-change-btn {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.7rem;
+  margin-left: 0;
+}
+
+.follow-team-card.has-shield .follow-next-line {
+  text-align: center;
 }
 
 .follow-next-line {
