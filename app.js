@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T10:41:56Z';
+const CODE_UPDATED_AT = '2026-07-21T10:49:05Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -25,6 +25,7 @@ const CODE_UPDATED_AT = '2026-07-21T10:41:56Z';
 // Multiple recent changes stack as separate banners, each expiring on its own
 // two-hour clock. Old entries can be pruned once they're well past two hours.
 const CHANGES = [
+  { id: 'follow-card-next-cleanup-2026-07-21', at: '2026-07-21T10:49:05Z', text: 'If you’re following a team, your card now shows their next meal cleanup shift too, once it’s assigned — e.g. “Next meal cleanup: Wednesday Lunch.”' },
   { id: 'hide-notified-btn-2026-07-21', at: '2026-07-21T10:41:56Z', text: 'Once you’re signed up for notifications, the “Notify me” button tucks itself away — you don’t need it anymore.' },
   { id: 'live-rankings-2026-07-21', at: '2026-07-21T02:51:04Z', text: 'Inflatable Bowling and Pumpkin Pictionary now show a live leaderboard anyone can watch — Pictionary keeps the drawing words secret from viewers and totals the times for you.' },
   { id: 'team-skits-scored-2026-07-21', at: '2026-07-21T02:31:00Z', text: 'Team Skits are now scored! Friday night’s skits take gold, silver, and bronze and count in the standings like every other game.' },
@@ -2508,6 +2509,10 @@ function renderFollowCard() {
   const nextLine = next
     ? `<p class="follow-next-line">⏭️ Up next: vs ${teamEmoji(next.opponentId)} ${esc(teamName(next.opponentId))} in ${esc(next.game.name)}</p>`
     : '';
+  const nextCleanup = findNextCleanupFor(team.id);
+  const cleanupLine = nextCleanup
+    ? `<p class="follow-next-line">🧽 Next meal cleanup: ${esc(DAY_NAMES[nextCleanup.day])} ${esc(nextCleanup.meal)}</p>`
+    : '';
   card.hidden = false;
   card.innerHTML = `
     <div class="follow-team-head">
@@ -2519,6 +2524,7 @@ function renderFollowCard() {
       <button id="change-team-link" class="link-btn follow-change-btn">Change</button>
     </div>
     ${nextLine}
+    ${cleanupLine}
   `;
   const changeBtn = document.getElementById('change-team-link');
   if (changeBtn) changeBtn.addEventListener('click', openTeamPicker);
@@ -2949,6 +2955,26 @@ const MEAL_CLEANUP_SCHEDULE = {
 function cleanupAssigned(day, meal) {
   const d = MEAL_CLEANUP_SCHEDULE[day];
   return (d && d[meal]) || null;
+}
+
+// Start time of each meal (same across Mon–Fri, per weekdayDaytime above) —
+// lets findNextCleanupFor skip a meal that's already started today.
+const MEAL_START_MINUTES = { Breakfast: hm(8, 0), Lunch: hm(12, 0), Supper: hm(17, 0) };
+
+// The soonest known meal-cleanup duty for `teamId` (today's remaining meals,
+// then the rest of the week) — used by the "Your team" summary card's
+// "Next meal cleanup" line. null if nothing's assigned yet (still TBA) or
+// the week's meals are done.
+function findNextCleanupFor(teamId) {
+  if (!teamId) return null;
+  const { dow: todayDow, minutes: nowMinutes } = campNow();
+  for (let day = Math.max(todayDow, 1); day <= 5; day++) {
+    for (const meal of MEAL_CLEANUP_MEALS) {
+      if (day === todayDow && MEAL_START_MINUTES[meal] <= nowMinutes) continue;
+      if (cleanupAssigned(day, meal) === teamId) return { day, meal };
+    }
+  }
+  return null;
 }
 
 // Which day's rota the card is showing + the entry draft (not synced).
