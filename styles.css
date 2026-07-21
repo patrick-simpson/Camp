@@ -3179,3 +3179,74 @@ body.no-scroll {
   border-color: var(--color-primary);
   background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
 }
+
+/* ============================================================
+   PICTIONARY ITEM-SOURCE CHOOSER + CUSTOM WORDS
+   ============================================================ */
+.pic-setup { text-align: center; padding: 0.5rem 0; }
+.pic-setup-q { font-weight: 700; margin: 0 0 0.6rem; }
+.pic-setup-opts { display: flex; flex-direction: column; gap: 0.5rem; }
+.pic-setup-hint { margin-top: 0.6rem; }
+.pic-mode-strip {
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+  margin-bottom: 0.5rem;
+}
+.pic-mode-strip strong { color: var(--color-text); }
+.pic-words-editor {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.7rem;
+  margin-bottom: 0.7rem;
+}
+.pic-words-editor > summary { font-weight: 700; cursor: pointer; }
+.pic-words-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+.pic-word-row { display: flex; align-items: center; gap: 0.35rem; }
+.pic-word-num { color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+.pic-word-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 8px);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+
+/* ============================================================
+   LIVE TALLY LEADERBOARD (viewer board for Bowling / Pictionary)
+   ============================================================ */
+.live-watch-board { text-align: left; }
+.live-watch-board .live-watch-label { text-align: center; }
+.live-watch-board-sub {
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+  margin: 0 0 0.6rem;
+}
+.lw-rank-list { list-style: none; margin: 0; padding: 0; }
+.lw-rank-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.2rem;
+}
+.lw-rank-row + .lw-rank-row { border-top: 1px solid var(--color-border); }
+.lw-rank-row.lw-podium { font-weight: 700; }
+.lw-rank { min-width: 1.6rem; text-align: center; font-variant-numeric: tabular-nums; }
+.lw-rank-team { flex: 1; min-width: 0; overflow-wrap: break-word; }
+.lw-rank-score { font-variant-numeric: tabular-nums; font-weight: 700; }
+.live-watch-suggest {
+  margin: 0.7rem 0 0;
+  padding-top: 0.6rem;
+  border-top: 1px dashed var(--color-border);
+  font-weight: 700;
+  text-align: center;
+}

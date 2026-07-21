@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T02:41:07Z';
+const CODE_UPDATED_AT = '2026-07-21T02:51:04Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -25,6 +25,7 @@ const CODE_UPDATED_AT = '2026-07-21T02:41:07Z';
 // Multiple recent changes stack as separate banners, each expiring on its own
 // two-hour clock. Old entries can be pruned once they're well past two hours.
 const CHANGES = [
+  { id: 'live-rankings-2026-07-21', at: '2026-07-21T02:51:04Z', text: '🎳 Inflatable Bowling and 🎃 Pumpkin Pictionary now show a live leaderboard anyone can watch — Pictionary keeps the drawing words secret from viewers and totals the times for you.' },
   { id: 'team-skits-scored-2026-07-21', at: '2026-07-21T02:31:00Z', text: '🎭 Team Skits are now scored! Friday night’s skits take gold, silver, and bronze and count in the week standings like every other game.' },
   { id: 'ladderball-live-2026-07-21', at: '2026-07-21T02:08:34Z', text: '🪜 Ladder Ball now scores live, point by point — cancellation each round, first to exactly 21 — so you can watch each team’s total climb from any phone.' },
   { id: 'jebball-goals-2026-07-21', at: '2026-07-21T02:08:34Z', text: '🧎 Jeb Ball has a live goal counter now — the score updates for everyone watching as goals go in.' },
@@ -265,7 +266,7 @@ const GAMES = [
   },
   {
     id: 'inflatable-bowling', name: 'Inflatable Bowling', emoji: '🎳', day: 3, session: 'Morning',
-    location: 'Slip and Slide', format: 'tally', unit: 'points', counterSteps: [1, 10],
+    location: 'Slip and Slide', format: 'tally', unit: 'points', counterSteps: [1, 10], liveRankings: true,
     headline: 'Four rolls each — pins are 1, strikes are 10.',
     rules: [
       { h: 'Setup', items: [
@@ -282,7 +283,7 @@ const GAMES = [
   },
   {
     id: 'pumpkin-pictionary', name: 'Pumpkin Pictionary', emoji: '🎃', day: 3, session: 'Morning',
-    location: 'Chapel Lawn', format: 'tally', unit: 'total time', lowerWins: true, timeInput: true,
+    location: 'Chapel Lawn', format: 'tally', unit: 'total time', lowerWins: true, timeInput: true, liveRankings: true,
     prompts: ['Pumpkin', 'Scarecrow', 'Ear of Corn', 'Falling Leaf', 'Apple Pie', 'Hay Bale', 'Turkey', 'Acorn', 'Sunflower', 'Tractor'],
     headline: 'Draw with your nose in pumpkin puree — fastest total time wins.',
     rules: [
@@ -979,6 +980,7 @@ function makeFreshState() {
     brackets: {},  // gameId -> in-progress tournament
     drafts: {},    // gameId -> in-progress tally/placement entry
     bonuses: {},   // bonusId -> { teamId, category, label, points, at }
+    picSetup: {},  // gameId -> { source: 'pregenerated'|'own'|'numbered', words: [] } (Pictionary item source)
     live: {},      // gameId -> { key, inning, hr } live match tally (synced so everyone can watch)
     ui: { day: defaultDay(), gameId: null },
     theme: null,
@@ -1038,7 +1040,7 @@ function touchData() {
 // and the SDK loaded, scores sync across every device in real time.
 // Otherwise the app runs exactly as before, local-only.
 
-const SYNC_KEYS = ['teams', 'results', 'brackets', 'drafts', 'picRounds', 'bonuses', 'live', 'meta'];
+const SYNC_KEYS = ['teams', 'results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta'];
 let fbRef = null;
 let versionRef = null;
 let applyingRemote = false;
@@ -1112,7 +1114,7 @@ function initSync() {
       // devices kept their old results and re-pushed them later. Teams
       // stay guarded — a snapshot without a roster is malformed.
       if (remote.teams) state.teams = remote.teams;
-      ['results', 'brackets', 'drafts', 'picRounds', 'bonuses', 'live', 'meta'].forEach((k) => {
+      ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta'].forEach((k) => {
         state[k] = remote[k] !== undefined ? remote[k] : {};
       });
       // Realtime Database silently drops empty arrays/nulls on write, so a
@@ -1852,6 +1854,28 @@ function picLapsSum(round) {
   return round ? round.laps.reduce((a, l) => a + l.ms, 0) : 0;
 }
 
+// Pictionary item source, chosen by the ref before the first team runs:
+// 'pregenerated' (the built-in word list), 'own' (ref's own words), or
+// 'numbered' (just "Item N", no words). Synced so every ref device agrees.
+function picSetupFor(gid) {
+  if (!state.picSetup) state.picSetup = {};
+  return state.picSetup[gid] || null;
+}
+
+// The label to show/caption for drawing item i. Words are only ever shown in
+// the ref tools (canEdit) — never to viewers — and in 'numbered' mode there is
+// no secret word at all.
+function promptLabel(g, i) {
+  const s = picSetupFor(g.id);
+  const src = s && s.source;
+  if (src === 'numbered') return `Item ${i + 1}`;
+  if (src === 'own') {
+    const w = s.words && s.words[i];
+    return (w && String(w).trim()) ? String(w).trim() : `Item ${i + 1}`;
+  }
+  return (g.prompts && g.prompts[i]) || `Item ${i + 1}`; // pregenerated default
+}
+
 function picRoundHTML(g) {
   let w = liveWatches[g.id];
   if (!w) w = liveWatches[g.id] = { running: false, startAt: 0, lapsTotal: 0 };
@@ -1860,6 +1884,39 @@ function picRoundHTML(g) {
   // Always derive the total from the saved laps — the in-memory copy dies
   // on reload, and a stale 0 here would fill a short total into the score.
   w.lapsTotal = picLapsSum(round);
+
+  const setup = picSetupFor(g.id);
+  const anyLaps = state.teams.some((t) => { const r = picRounds()[t.id]; return r && r.laps && r.laps.length; });
+
+  // Ask the ref how the items should be shown, before the first team runs.
+  if (!setup) {
+    return `<div class="tool-box" data-tool="pic-round">
+      <div class="tool-label">🎨 Drawing round</div>
+      <div class="pic-setup">
+        <p class="pic-setup-q">How should the ${g.prompts.length} drawing items be shown to the ref?</p>
+        <div class="pic-setup-opts">
+          <button class="secondary-btn" data-pic-source="pregenerated">🎃 Use the built-in list</button>
+          <button class="secondary-btn" data-pic-source="own">✏️ Enter our own</button>
+          <button class="secondary-btn" data-pic-source="numbered">🔢 Just numbered items</button>
+        </div>
+        <p class="muted pic-setup-hint">Viewers never see the words either way — only the live times. This locks once a team has started.</p>
+      </div>
+    </div>`;
+  }
+
+  const modeLabel = { pregenerated: 'Built-in list', own: 'Your own items', numbered: 'Numbered items' }[setup.source] || '';
+  const modeStrip = `<div class="pic-mode-strip">Items: <strong>${esc(modeLabel)}</strong>${anyLaps ? '' : ' · <button class="link-btn" data-pic-source="reset">change</button>'}</div>`;
+
+  const wordsEditor = setup.source === 'own' ? `
+    <details class="pic-words-editor" ${anyLaps ? '' : 'open'}>
+      <summary>✏️ Your ${g.prompts.length} items${anyLaps ? '' : ' — type them in'}</summary>
+      <div class="pic-words-grid">
+        ${Array.from({ length: g.prompts.length }, (_, i) => `
+          <label class="pic-word-row"><span class="pic-word-num">${i + 1}.</span>
+            <input type="text" data-pic-word="${i}" value="${esc((setup.words && setup.words[i]) || '')}" placeholder="Item ${i + 1}" ${anyLaps ? 'disabled' : ''} />
+          </label>`).join('')}
+      </div>
+    </details>` : '';
 
   const chips = `<div class="pic-team-chips">${state.teams.map((t) => {
     const r = picRounds()[t.id];
@@ -1871,11 +1928,12 @@ function picRoundHTML(g) {
   if (round) {
     const n = round.laps.length;
     if (!round.done) {
-      const prompt = g.prompts[n];
+      const prompt = promptLabel(g, n);
+      const hasWord = prompt !== `Item ${n + 1}`; // numbered / blank-own has no secret word
       panel = `
         <div class="pic-prompt-card">
           <div class="pic-prompt-label">Item ${n + 1} of ${g.prompts.length}</div>
-          <div class="pic-prompt-word">${esc(prompt)}</div>
+          ${hasWord ? `<div class="pic-prompt-word">${esc(prompt)}</div>` : ''}
         </div>
         <div class="big-clock" id="sw-display-${g.id}">${fmtWatch(w.running ? Date.now() - w.startAt : 0)}</div>
         <div class="sw-total-line">Team total: <strong id="sw-total-${g.id}">${fmtWatch(w.lapsTotal + (w.running ? Date.now() - w.startAt : 0))}</strong></div>
@@ -1895,11 +1953,15 @@ function picRoundHTML(g) {
     }
 
     if (round.laps.length) {
-      panel += `<div class="pic-items">${round.laps.map((lap, i) => `
+      panel += `<div class="pic-items">${round.laps.map((lap, i) => {
+        const lbl = promptLabel(g, i);
+        const text = lbl === `Item ${i + 1}` ? lbl : `${i + 1}. ${lbl}`;
+        return `
         <div class="pic-item-row">
-          <span class="pic-item-text">${i + 1}. ${esc(g.prompts[i])} — ${fmtWatch(lap.ms)}</span>
+          <span class="pic-item-text">${esc(text)} — ${fmtWatch(lap.ms)}</span>
           <button class="pic-photo-btn ${lap.photo ? 'has-photo' : ''}" data-action="photo" data-lap="${i}">${lap.photo ? '📷 Retake' : '📷 Add photo'}</button>
-        </div>`).join('')}</div>
+        </div>`;
+      }).join('')}</div>
         <div class="sw-actions">
           ${!round.done ? `<button class="link-btn" data-action="undo-lap">Undo last item</button>` : ''}
           <button class="link-btn danger-link" data-action="reset-round">Reset this team's round</button>
@@ -1911,6 +1973,8 @@ function picRoundHTML(g) {
 
   return `<div class="tool-box" data-tool="pic-round">
     <div class="tool-label">🎨 Drawing round</div>
+    ${modeStrip}
+    ${wordsEditor}
     ${chips}
     ${panel}
   </div>
@@ -1931,6 +1995,32 @@ function bindPicRound(wrap, g) {
       w.lapsTotal = r.laps.reduce((a, l) => a + l.ms, 0);
       saveState();
       renderTools(wrap, g);
+    });
+  });
+
+  // Item-source chooser (asked before the first team) + custom-word entry.
+  box.querySelectorAll('[data-pic-source]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const src = btn.dataset.picSource;
+      if (!state.picSetup) state.picSetup = {};
+      if (src === 'reset') {
+        delete state.picSetup[g.id];
+      } else {
+        const prev = state.picSetup[g.id] || {};
+        state.picSetup[g.id] = { source: src, words: Array.isArray(prev.words) ? prev.words : [] };
+      }
+      saveState();
+      renderTools(wrap, g);
+    });
+  });
+
+  box.querySelectorAll('input[data-pic-word]').forEach((inp) => {
+    inp.addEventListener('input', () => {
+      const s = state.picSetup && state.picSetup[g.id];
+      if (!s) return;
+      if (!Array.isArray(s.words)) s.words = [];
+      s.words[parseInt(inp.dataset.picWord, 10)] = inp.value;
+      saveState(); // no full re-render — keep input focus while typing
     });
   });
 
@@ -1997,22 +2087,25 @@ function bindPicRound(wrap, g) {
     });
   });
 
-  photoInput.addEventListener('change', async () => {
-    const file = photoInput.files && photoInput.files[0];
-    if (!file) return;
-    const teamId = photoInput.dataset.teamId;
-    const lapIdx = parseInt(photoInput.dataset.lap, 10);
-    try {
-      const blob = await shrinkPhoto(file);
-      await putPhoto(picPhotoKey(teamId, lapIdx), blob);
-      picRound(teamId).laps[lapIdx].photo = true;
-      saveState();
-      renderTools(wrap, g);
-    } catch (e) {
-      alert('Could not save that photo — try again.');
-      console.error(e);
-    }
-  });
+  // The item-source chooser view has no photo input (no team is running yet).
+  if (photoInput) {
+    photoInput.addEventListener('change', async () => {
+      const file = photoInput.files && photoInput.files[0];
+      if (!file) return;
+      const teamId = photoInput.dataset.teamId;
+      const lapIdx = parseInt(photoInput.dataset.lap, 10);
+      try {
+        const blob = await shrinkPhoto(file);
+        await putPhoto(picPhotoKey(teamId, lapIdx), blob);
+        picRound(teamId).laps[lapIdx].photo = true;
+        saveState();
+        renderTools(wrap, g);
+      } catch (e) {
+        alert('Could not save that photo — try again.');
+        console.error(e);
+      }
+    });
+  }
 }
 
 // ── Captioned photo export ──
@@ -2131,8 +2224,8 @@ async function exportTeamPhotos(g, teamId, btn) {
       say(`Building photo ${files.length + 1}…`);
       const blob = await getPhoto(picPhotoKey(teamId, i));
       if (!blob) continue;
-      const out = await composeCaptioned(blob, team, g.prompts[i], round.laps[i].ms);
-      files.push(new File([out], `${safeFileName(team)}-${safeFileName(g.prompts[i])}.jpg`, { type: 'image/jpeg' }));
+      const out = await composeCaptioned(blob, team, promptLabel(g, i), round.laps[i].ms);
+      files.push(new File([out], `${safeFileName(team)}-${safeFileName(promptLabel(g, i))}.jpg`, { type: 'image/jpeg' }));
     }
     if (!files.length) {
       say('No photos taken for this team yet — use the Add photo buttons first.');
@@ -3218,10 +3311,35 @@ function renderGameView() {
 
 // Games with a bracket in progress (started, not yet finalized) — surfaced
 // as a highlighted "Live now" card at the top of the home screen.
+// Ranked live standings for a `liveRankings` tally game (Inflatable Bowling,
+// Pictionary), read straight from the synced draft scores so viewers see the
+// board climb in real time. For Pictionary the per-team totals are filled by
+// the round runner as each team finishes; only times/points are ever exposed —
+// never the drawing words.
+function tallyRankLive(g) {
+  const d = state.drafts && state.drafts[g.id];
+  const entries = [];
+  if (d && d.scores) {
+    state.teams.forEach((t) => {
+      const raw = d.scores[t.id];
+      if (raw === undefined || String(raw).trim() === '') return;
+      const v = parseScoreInput(g, raw);
+      if (v !== null) entries.push({ id: t.id, v });
+    });
+    entries.sort((a, b) => (g.lowerWins ? a.v - b.v : b.v - a.v));
+  }
+  return entries;
+}
+
+function tallyInProgress(g) {
+  return !!g.liveRankings && !state.results[g.id] && tallyRankLive(g).length > 0;
+}
+
 function liveHomeGames() {
   return GAMES.filter((g) => {
     const b = state.brackets && state.brackets[g.id];
-    return b && normalizeBracket(b).phase !== 'summary';
+    if (b && normalizeBracket(b).phase !== 'summary') return true;
+    return tallyInProgress(g);
   });
 }
 
@@ -3236,6 +3354,7 @@ function renderLiveHome() {
   if (!games.length) { wrap.hidden = true; wrap.innerHTML = ''; return; }
   wrap.hidden = false;
   wrap.innerHTML = games.map((g) => {
+    if (!(state.brackets && state.brackets[g.id])) return liveHomeTallyCard(g); // tally live board
     const b = normalizeBracket(state.brackets[g.id]);
     const phaseLabel = { round1: 'Round 1', bye: 'Bye', semifinal: 'Championship game', championship: 'Final', summary: 'Results' }[b.phase] || '';
     const pair = currentMatchupOf(g, b);
@@ -3288,6 +3407,22 @@ function renderLiveHome() {
   });
 }
 
+// Compact "Live now" card for a tally game being scored (Inflatable Bowling,
+// Pictionary): the current leader + how many teams are in. Times/points only.
+function liveHomeTallyCard(g) {
+  const ranked = tallyRankLive(g);
+  const top = ranked[0];
+  const complete = ranked.length >= state.teams.length;
+  const scoreLine = top
+    ? `<span class="live-home-score"><span class="lh-team">${teamEmoji(top.id)} ${esc(teamName(top.id))}</span><span class="lh-nums">${esc(formatScore(g, top.v))}</span></span>`
+    : '<span class="live-home-sub">Scoring under way…</span>';
+  return `<button class="live-home-card" data-game-id="${esc(g.id)}">
+    <span class="live-home-top"><span class="live-home-badge">🔴 LIVE</span><span class="live-home-game">${g.emoji} ${esc(g.name)}</span></span>
+    ${scoreLine}
+    <span class="live-home-sub">${g.lowerWins ? 'Fastest so far' : 'Leader'} · ${ranked.length}/${state.teams.length} teams in${complete ? ' · 🏅 medals ready' : ''}</span>
+  </button>`;
+}
+
 // The matchup a bracket is currently waiting on a winner for — used by the
 // read-only live-watch view so spectators see who's playing right now.
 function currentMatchupOf(g, b) {
@@ -3318,7 +3453,40 @@ function nextMatchupOf(g, b) {
 // Read-only live view for spectators (no score PIN): the current matchup,
 // its live inning/tally (synced from the ref's device), and completed
 // matches. Re-rendered by renderAll whenever a synced update lands.
+function renderLiveTallyWatch(container, g) {
+  const ranked = tallyRankLive(g);
+  if (!ranked.length) {
+    container.innerHTML = `<div class="live-watch">
+      <p class="live-watch-label">🔴 ${esc(g.name)}</p>
+      <p class="muted">Live rankings will appear here as the ref enters scores — no refresh needed.</p>
+    </div>`;
+    return;
+  }
+  const complete = ranked.length >= state.teams.length;
+  const medals = ['🥇', '🥈', '🥉'];
+  const rows = ranked.map((e, i) => `
+    <li class="lw-rank-row${i < 3 ? ' lw-podium' : ''}">
+      <span class="lw-rank">${complete && i < 3 ? medals[i] : (i + 1) + '.'}</span>
+      <span class="lw-rank-team">${teamEmoji(e.id)} ${esc(teamName(e.id))}</span>
+      <span class="lw-rank-score">${esc(formatScore(g, e.v))}</span>
+    </li>`).join('');
+  container.innerHTML = `<div class="live-watch live-watch-board">
+    <p class="live-watch-label">🔴 Live now · ${esc(g.name)}</p>
+    <p class="live-watch-board-sub">${g.lowerWins ? 'Fastest total time' : 'Team totals'} · ${ranked.length}/${state.teams.length} teams in</p>
+    <ol class="lw-rank-list">${rows}</ol>
+    ${complete
+      ? `<p class="live-watch-suggest">🏅 Suggested: 🥇 ${esc(teamName(ranked[0].id))} · 🥈 ${esc(teamName(ranked[1].id))} · 🥉 ${esc(teamName(ranked[2].id))}</p>`
+      : '<p class="muted live-watch-note">Updates automatically as the ref scores — no refresh needed.</p>'}
+  </div>`;
+}
+
 function renderLiveWatch(container, g) {
+  // Tally games with live rankings (Inflatable Bowling, Pictionary) show a
+  // read-only leaderboard rather than a bracket matchup.
+  if (g.liveRankings && !(state.brackets && state.brackets[g.id])) {
+    renderLiveTallyWatch(container, g);
+    return;
+  }
   const raw = state.brackets && state.brackets[g.id];
   if (!raw) {
     container.innerHTML = `<p class="view-only-note">👀 View-only. This game hasn't been scored yet. Tap <strong>🔒 View only</strong> at the top and enter the score PIN to run it.</p>`;
@@ -3709,6 +3877,19 @@ function normalizeSyncedState() {
   Object.values(state.picRounds || {}).forEach(normalizePicRound);
   Object.values(state.drafts || {}).forEach(normalizeDraft);
   if (!state.bonuses) state.bonuses = {}; // RTDB prunes an empty ledger to nothing
+  if (!state.picSetup) state.picSetup = {}; // RTDB prunes an empty map to nothing
+  // RTDB can round-trip a sparse `words` array back as an object — re-array it.
+  Object.values(state.picSetup).forEach((s) => {
+    if (!s) return;
+    if (Array.isArray(s.words)) return;
+    if (s.words && typeof s.words === 'object') {
+      const arr = [];
+      Object.keys(s.words).forEach((k) => { arr[+k] = s.words[k]; });
+      s.words = arr;
+    } else {
+      s.words = [];
+    }
+  });
   if (!state.live) state.live = {}; // RTDB prunes an empty live map to nothing
   Object.values(state.live).forEach(normalizeLiveMatch);
   // Migrate rosters saved before names/counselors were set: swap generic
