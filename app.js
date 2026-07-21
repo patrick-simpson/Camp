@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T11:37:35Z';
+const CODE_UPDATED_AT = '2026-07-21T11:42:55Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -25,6 +25,7 @@ const CODE_UPDATED_AT = '2026-07-21T11:37:35Z';
 // Multiple recent changes stack as separate banners, each expiring on its own
 // two-hour clock. Old entries can be pruned once they're well past two hours.
 const CHANGES = [
+  { id: 'pilgrims-shield-crest-2026-07-21', at: '2026-07-21T11:42:55Z', text: 'Patriotic Pilgrims now gets a shield crest too — all six teams have one.' },
   { id: 'team-shield-crest-2026-07-21', at: '2026-07-21T11:37:35Z', text: 'Your team’s hand-drawn shield now shows up as a crest at the top of the page once you pick a team.' },
   { id: 'lights-out-bed-emoji-2026-07-21', at: '2026-07-21T11:22:19Z', text: 'The “Lights out” schedule block now shows a 🛏️ instead of a 😴 face.' },
   { id: 'follow-card-next-cleanup-2026-07-21', at: '2026-07-21T10:49:05Z', text: 'If you’re following a team, your card now shows their next meal cleanup shift too, once it’s assigned — e.g. “Next meal cleanup: Wednesday Lunch.”' },
@@ -79,18 +80,16 @@ const TEAM_EMOJI = {
   t4: '🦅', // Patriotic Pilgrims
   t5: '🚜', // Runaway John Deere's
 };
-// Camper-drawn team shield artwork (cropped, transparent PNG/WebP crests under
+// Camper-drawn team shield artwork (cropped, transparent WebP crests under
 // images/team-shields/), keyed by team slot id. Shown as a hero crest on the
-// "Your team" card once a viewer picks a team. Patriotic Pilgrims (t4) is
-// intentionally absent: two shields in the source photo both read as Pilgrims
-// with conflicting names painted on them, so which crest is really theirs is
-// unconfirmed — t4 falls back to its emoji until that's sorted (see
-// images/team-shields/README.md). Missing here === no crest, just the emoji.
+// "Your team" card once a viewer picks a team. Missing here === no crest,
+// just the emoji (see images/team-shields/README.md for provenance notes).
 const TEAM_SHIELD = {
   t0: 'images/team-shields/ferocious-foxes.webp',
   t1: 'images/team-shields/turkey-dinner.webp',
   t2: 'images/team-shields/methodic-mediocre-maples.webp',
   t3: 'images/team-shields/particularly-perilous-pumpkins.webp',
+  t4: 'images/team-shields/patriotic-pilgrims.webp',
   t5: 'images/team-shields/runaway-john-deeres.webp',
 };
 // Short-form team names for tight spaces (e.g. the morning meeting banner) —
