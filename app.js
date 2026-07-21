@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T23:08:23Z';
+const CODE_UPDATED_AT = '2026-07-21T23:25:49Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -56,7 +56,7 @@ const DEFAULT_TEAM_NAMES = [
   'Methodic Mediocre Maples',       // Jovi, Brody, Josh
   'Particularly Perilous Pumpkins', // Sofie, William
   'Patriotic Pilgrims',             // Abby, TJ, Ella
-  "Runaway John Deere's",           // Lily, Jacob
+  'Runaway John Deersz',            // Lily, Jacob (deliberate spelling)
 ];
 // One emoji mascot per team slot (by id, which is stable at t0..t5), so a
 // long name can be represented compactly wherever space is tight.
@@ -66,7 +66,7 @@ const TEAM_EMOJI = {
   t2: '🍁', // Methodic Mediocre Maples
   t3: '🎃', // Particularly Perilous Pumpkins
   t4: '🦅', // Patriotic Pilgrims
-  t5: '🚜', // Runaway John Deere's
+  t5: '🚜', // Runaway John Deersz
 };
 // Camper-drawn team shield artwork (cropped, transparent WebP crests under
 // images/team-shields/), keyed by team slot id. Shown as a hero crest on the
@@ -90,7 +90,7 @@ const TEAM_ABBREV = {
   t2: 'Maples',
   t3: 'Pumpkins',
   t4: 'Pilgrims',
-  t5: 'John Deeres',
+  t5: 'John Deersz',
 };
 // Game-leader team groups (see DEFAULT_COUNSELORS' (A)/(B) tags below):
 // Stephen runs the A teams, Patrick runs the B teams.
@@ -106,7 +106,7 @@ const OLD_PLACEHOLDER_TEAM_NAMES = [
   ['Team 3'],
   ['Team 4', 'Portidatory Perilous Pumpkins'],
   ['Team 5'],
-  ['Team 6'],
+  ['Team 6', "Runaway John Deere's"],
 ];
 // Counselor groups per team, from the printed camp sheet. The (A)/(B)
 // tag is the game-leader assignment: Stephen runs the A teams,
