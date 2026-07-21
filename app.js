@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T20:25:15Z';
+const CODE_UPDATED_AT = '2026-07-21T22:27:07Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -260,6 +260,24 @@ const GAMES = [
         'Your throw hits above the shoulders? YOU are out.',
       ] },
       { h: 'Winning', items: ['Last 3 teams with players standing take gold, silver, and bronze.'] },
+    ],
+  },
+  {
+    id: 'counselor-musical-chairs', name: 'Counselor Musical Chairs', emoji: '🪑', day: 2, session: 'Evening',
+    location: 'Chapel Lawn', format: 'placement',
+    headline: 'The counselors play musical chairs — last ones seated win their team the medals.',
+    rules: [
+      { h: 'Setup', items: [
+        "Each team's counselor(s) play on the team's behalf.",
+        'Chairs in a circle — one FEWER chair than counselors playing.',
+        'Prep: Jen has the music/speaker. Use the orange tab chairs.',
+      ] },
+      { h: 'How to play', items: [
+        'Music plays → counselors walk around the chairs.',
+        'Music stops → grab a seat.',
+        'The counselor left standing is out, and a chair comes out each round.',
+      ] },
+      { h: 'Winning', items: ['The last 3 teams with a counselor still seated take gold, silver, and bronze.'] },
     ],
   },
   {
