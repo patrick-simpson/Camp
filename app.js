@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T10:49:05Z';
+const CODE_UPDATED_AT = '2026-07-21T11:16:43Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -25,6 +25,8 @@ const CODE_UPDATED_AT = '2026-07-21T10:49:05Z';
 // Multiple recent changes stack as separate banners, each expiring on its own
 // two-hour clock. Old entries can be pruned once they're well past two hours.
 const CHANGES = [
+  { id: 'my-electives-identity-2026-07-21', at: '2026-07-21T11:16:43Z', text: 'Tell the app which counselor you are (right after you pick a team) and it shows “My electives today” up top — plus stars your own station in Happening Now and the full schedule.' },
+  { id: 'morning-meeting-730-2026-07-21', at: '2026-07-21T11:16:43Z', text: 'Morning meeting now starts at 7:30 and shares the slot with rising bell & shower.' },
   { id: 'follow-card-next-cleanup-2026-07-21', at: '2026-07-21T10:49:05Z', text: 'If you’re following a team, your card now shows their next meal cleanup shift too, once it’s assigned — e.g. “Next meal cleanup: Wednesday Lunch.”' },
   { id: 'hide-notified-btn-2026-07-21', at: '2026-07-21T10:41:56Z', text: 'Once you’re signed up for notifications, the “Notify me” button tucks itself away — you don’t need it anymore.' },
   { id: 'live-rankings-2026-07-21', at: '2026-07-21T02:51:04Z', text: 'Inflatable Bowling and Pumpkin Pictionary now show a live leaderboard anyone can watch — Pictionary keeps the drawing words secret from viewers and totals the times for you.' },
@@ -468,9 +470,10 @@ const CAMP_TZ = 'America/New_York';
 function hm(h, m) { return h * 60 + (m || 0); }
 
 // Shared Monday–Friday daytime rhythm (identical on the paper schedule).
+// Rising bell & shower now shares its 7:30–8:00 slot with the morning meeting,
+// so it's folded into morningMeetingBlock rather than living here.
 function weekdayDaytime() {
   return [
-    { start: hm(7, 30), end: hm(8, 0), label: 'Rising bell & shower', emoji: '⏰', type: 'activity' },
     { start: hm(8, 0), end: hm(8, 30), label: 'Breakfast', emoji: '🍳', type: 'activity' },
     { start: hm(8, 30), end: hm(9, 0), label: 'Cabin time & clean up', emoji: '🧹', type: 'activity' },
     { start: hm(9, 0), end: hm(9, 45), label: 'Bible study', emoji: '📖', type: 'activity' },
@@ -512,14 +515,16 @@ function joinTeamAbbrevs(ids) {
   return items.slice(0, -1).join(', ') + ' & ' + items[items.length - 1];
 }
 
-// Every morning before rising bell, by team group (A: Mon/Wed/Fri, B: Tue/Thu/Sat).
+// The 7:30–8:00 start to every camp day: rising bell, shower, and the morning
+// meeting at Laura's cottage (that day's team group — A: Mon/Wed/Fri, B:
+// Tue/Thu/Sat) all happen together in this one block.
 function morningMeetingBlock(dow) {
   const isATeamDay = dow === 1 || dow === 3 || dow === 5;
   const group = isATeamDay ? TEAM_GROUP_A : TEAM_GROUP_B;
   return {
-    start: hm(7, 0), end: hm(7, 30),
-    label: "Morning meeting (Laura's cottage) — " + joinTeamAbbrevs(group),
-    emoji: '🏡', type: 'activity',
+    start: hm(7, 30), end: hm(8, 0),
+    label: "Rising bell, shower & morning meeting (Laura's cottage) — " + joinTeamAbbrevs(group),
+    emoji: '⏰', type: 'activity',
   };
 }
 
@@ -550,8 +555,7 @@ const DAY_SCHEDULE = {
     { start: hm(22, 30), end: hm(24, 0), label: 'Lights out', emoji: '😴', type: 'activity', noTime: true },
   ]),
   6: [ // Saturday — send-off morning
-    morningMeetingBlock(6),
-    { start: hm(7, 30), end: hm(8, 0), label: 'Rising bell & shower', emoji: '⏰', type: 'activity' },
+    morningMeetingBlock(6), // rising bell + shower folded into this 7:30 block
     { start: hm(8, 0), end: hm(8, 30), label: 'Breakfast', emoji: '🍳', type: 'activity' },
     { start: hm(8, 30), end: hm(9, 30), label: 'Cabin time & campground cleanup', emoji: '🧹', type: 'activity' },
     { start: hm(9, 30), end: hm(10, 0), label: 'Meet in Tabernacle for send-off', emoji: '👋', type: 'activity' },
@@ -596,6 +600,24 @@ const ELECTIVES = {
   ],
 };
 
+// Device-identity → team. Keyed to the ELECTIVES spellings above ("Lilly",
+// not the standings' "Lily") so a stored identity can look up its own elective
+// assignments directly. Patrick and Stephen appear in ELECTIVES as game-leaders
+// with no team — they're intentionally excluded and never offered as an
+// identity choice. Not editable and not synced (device-local, like state.notify).
+const TEAM_COUNSELORS = {
+  t0: ['Alysa', 'Cam', 'Sam'],   // 🦊 Ferocious Foxes
+  t1: ['Bria', 'Lydia', 'Zac'],  // 🦃 Turkey Dinner
+  t2: ['Jovi', 'Brody', 'Josh'], // 🍁 Methodic Mediocre Maples
+  t3: ['Sofie', 'William'],      // 🎃 Particularly Perilous Pumpkins
+  t4: ['Abby', 'TJ', 'Ella'],    // 🦅 Patriotic Pilgrims
+  t5: ['Lilly', 'Jacob'],        // 🚜 Runaway John Deere's
+};
+
+// Minutes-since-midnight each elective slot starts (Elective 1 / 2 / 3),
+// matching the weekday DAY_SCHEDULE blocks (1:15pm / 3:00pm / 4:00pm).
+const ELECTIVE_SLOT_MIN = [hm(13, 15), hm(15, 0), hm(16, 0)];
+
 // The full set of kids at camp on a given day = everyone assigned to any
 // station across that day's elective slots. A kid missing from a particular
 // slot is on break for it (see electiveBreakKids).
@@ -612,6 +634,37 @@ function electiveBreakKids(dow, slot) {
   const assigned = new Set();
   (((ELECTIVES[dow] || [])[slot]) || []).forEach(([, kids]) => (kids || []).forEach((k) => assigned.add(k)));
   return [...electiveDayRoster(dow)].filter((k) => !assigned.has(k)).sort();
+}
+
+// The team id (t0..t5) a stored identity belongs to, or null if unknown.
+function teamOfCounselor(name) {
+  if (!name) return null;
+  return Object.keys(TEAM_COUNSELORS).find((id) => TEAM_COUNSELORS[id].includes(name)) || null;
+}
+
+// Today's three elective slots for the stored identity (state.identity), as
+// [{ slot, time, station, emoji, onBreak }], or null when there's nothing to
+// show — no identity set, a weekend / no-elective day, or the identity isn't on
+// today's elective sheet at all. Reused by renderMyElectives.
+function myElectivesToday() {
+  const name = state.identity;
+  if (!name) return null;
+  const { dow } = campNow();
+  const day = ELECTIVES[dow];
+  if (!day) return null;                               // dow 0/6 — no electives
+  if (!electiveDayRoster(dow).has(name)) return null;  // not on today's sheet
+  return [0, 1, 2].map((slot) => {
+    const stations = day[slot] || [];
+    const found = stations.find(([, kids]) => kids.includes(name));
+    const station = found ? found[0] : null;
+    return {
+      slot,
+      time: schedClock(ELECTIVE_SLOT_MIN[slot], true),
+      station,
+      emoji: station ? (STATION_EMOJI[station] || '🌟') : '☕',
+      onBreak: !station,
+    };
+  });
 }
 
 // ── Meal menu ────────────────────────────────────────────────────
@@ -741,14 +794,16 @@ function nowBannerHtml(dow, minutes) {
   const time = b.noTime ? null : schedRange(b.start, b.end);
   const progress = b.noTime ? null : (minutes - b.start) / (b.end - b.start);
   if (b.type === 'elective') {
+    const me = state.identity;
+    const chip = (k) => `<span class="kid-chip${k === me ? ' kid-chip-you' : ''}">${esc(k)}${k === me ? ' ⭐' : ''}</span>`;
     const stations = (ELECTIVES[dow] || [])[b.slot] || [];
     let rows = stations.map(([station, kids]) =>
-      `<div class="now-station"><span class="now-station-name">${STATION_EMOJI[station] || '🌟'} ${esc(station)}</span>
-        <span class="now-kids">${kids.map((k) => `<span class="kid-chip">${esc(k)}</span>`).join('')}</span></div>`).join('');
+      `<div class="now-station${kids.includes(me) ? ' now-station-you' : ''}"><span class="now-station-name">${STATION_EMOJI[station] || '🌟'} ${esc(station)}</span>
+        <span class="now-kids">${kids.map(chip).join('')}</span></div>`).join('');
     const breakKids = electiveBreakKids(dow, b.slot);
     if (breakKids.length) {
-      rows += `<div class="now-station now-break"><span class="now-station-name">☕ Break</span>
-        <span class="now-kids">${breakKids.map((k) => `<span class="kid-chip">${esc(k)}</span>`).join('')}</span></div>`;
+      rows += `<div class="now-station now-break${breakKids.includes(me) ? ' now-station-you' : ''}"><span class="now-station-name">☕ Break</span>
+        <span class="now-kids">${breakKids.map(chip).join('')}</span></div>`;
     }
     return main(b.emoji, b.label, time, null, progress) + `<div class="now-stations">${rows}</div>`;
   }
@@ -871,15 +926,17 @@ function renderScheduleBody() {
           `<span class="sched-game-chip ${state.results[g.id] ? 'played' : ''}">${g.emoji} ${esc(g.name)}${state.results[g.id] ? ' ✓' : ''}</span>`).join('')}</div>`;
       }
     } else if (raw.type === 'elective') {
+      const me = state.identity;
+      const kidText = (kids) => kids.map((k) => k === me ? `<span class="sched-you">⭐ ${esc(k)}</span>` : esc(k)).join(' · ');
       const stations = (ELECTIVES[dow] || [])[raw.slot] || [];
       if (stations.length) {
         let stationRows = stations.map(([station, kids]) =>
-          `<div class="sched-station"><span class="sched-station-name">${STATION_EMOJI[station] || '🌟'} ${esc(station)}</span>
-            <span class="sched-station-kids">${kids.map(esc).join(' · ')}</span></div>`).join('');
+          `<div class="sched-station${kids.includes(me) ? ' sched-station-you' : ''}"><span class="sched-station-name">${STATION_EMOJI[station] || '🌟'} ${esc(station)}</span>
+            <span class="sched-station-kids">${kidText(kids)}</span></div>`).join('');
         const breakKids = electiveBreakKids(dow, raw.slot);
         if (breakKids.length) {
-          stationRows += `<div class="sched-station sched-break"><span class="sched-station-name">☕ Break</span>
-            <span class="sched-station-kids">${breakKids.map(esc).join(' · ')}</span></div>`;
+          stationRows += `<div class="sched-station sched-break${breakKids.includes(me) ? ' sched-station-you' : ''}"><span class="sched-station-name">☕ Break</span>
+            <span class="sched-station-kids">${kidText(breakKids)}</span></div>`;
         }
         extra = `<div class="sched-stations">${stationRows}</div>`;
       }
@@ -1008,6 +1065,11 @@ if (state.theme === undefined) state.theme = null; // pre-theme saves: follow th
 if (state.notify === undefined) state.notify = false; // device-local, not synced (see SYNC_KEYS)
 // state.followTeam stays `undefined` until the picker is answered (a team id,
 // or null for "neutral/no team") — device-local, not synced.
+// state.identity is the counselor this device belongs to, and is deliberately
+// left tri-state (device-local, not synced): `undefined` = never asked (so we
+// can proactively prompt on next launch), `null` = asked and skipped ("just
+// cheering"), or a name string. JSON.stringify drops undefined, so "never
+// asked" round-trips through localStorage naturally — same as followTeam.
 normalizeSyncedState();
 
 function counselorName(id) {
@@ -2513,6 +2575,10 @@ function renderFollowCard() {
   const cleanupLine = nextCleanup
     ? `<p class="follow-next-line">🧽 Next meal cleanup: ${esc(DAY_NAMES[nextCleanup.day])} ${esc(nextCleanup.meal)}</p>`
     : '';
+  const you = state.identity;
+  const youLine = you
+    ? `<p class="follow-you-line">⭐ You: ${teamEmoji(team.id)} ${esc(you)} <button id="change-identity-link" class="link-btn">Change</button></p>`
+    : `<p class="follow-you-line follow-you-empty"><button id="set-identity-link" class="link-btn">🙋 Tell us who you are</button> to see your electives</p>`;
   card.hidden = false;
   card.innerHTML = `
     <div class="follow-team-head">
@@ -2525,9 +2591,34 @@ function renderFollowCard() {
     </div>
     ${nextLine}
     ${cleanupLine}
+    ${youLine}
   `;
   const changeBtn = document.getElementById('change-team-link');
   if (changeBtn) changeBtn.addEventListener('click', openTeamPicker);
+  const idBtn = document.getElementById('change-identity-link') || document.getElementById('set-identity-link');
+  if (idBtn) idBtn.addEventListener('click', openIdentityPicker);
+}
+
+// Compact "My electives today" card in the top strip — the stored identity's
+// three slots (time · emoji · station, or Break). Hidden when there's nothing
+// to show (see myElectivesToday). Rendered from renderAll AND the 30s interval
+// so it follows the camp day across a midnight rollover.
+function renderMyElectives() {
+  const card = document.getElementById('my-electives-card');
+  if (!card) return;
+  const rows = myElectivesToday();
+  if (!rows) { card.hidden = true; card.innerHTML = ''; return; }
+  card.hidden = false;
+  card.innerHTML = `
+    <div class="my-el-head"><span class="my-el-title">⭐ My electives today</span></div>
+    <div class="my-el-rows">
+      ${rows.map((r) => `
+        <div class="my-el-row ${r.onBreak ? 'is-break' : ''}">
+          <span class="my-el-time">${r.time}</span>
+          <span class="my-el-emoji">${r.emoji}</span>
+          <span class="my-el-station">${r.onBreak ? 'Break' : esc(r.station)}</span>
+        </div>`).join('')}
+    </div>`;
 }
 
 function ordinal(n) {
@@ -2536,22 +2627,49 @@ function ordinal(n) {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
-// ── Team picker (which team to follow) ────────────────────────────
-// Device-local — shown once after unlocking until answered (a real team,
-// or explicitly "neutral"), reachable again later via the follow-team card.
+// ── Team + identity picker ────────────────────────────────────────
+// A tiny two-step flow in one overlay: first "which team are you rooting
+// for?", then (for a real team) "which one are you?" so a counselor's own
+// electives can be surfaced. Device-local — shown once after unlocking until
+// answered, and reachable again later via the follow-team card. Existing
+// followers from before identity shipped get only the name step on next launch.
+
+// Picker step machine (module-local, not persisted).
+let pickerStep = 'team';       // 'team' | 'identity'
+let pickerTeamId = null;       // team whose counselors the identity step lists
+let pickerNotifyToast = null;  // "following…" toast deferred to the final close
 
 function teamPickerOverlayEl() {
   return document.getElementById('team-picker-overlay');
 }
 
 function maybeShowTeamPicker() {
-  if (state.followTeam === undefined) openTeamPicker();
+  if (state.followTeam === undefined) { openTeamPicker(); return; }
+  // Already following a real team but never answered "which one are you?"
+  // (a fresh install skips this; existing followers get just the name step).
+  if (state.followTeam && state.identity === undefined) openIdentityPicker();
 }
 
 function openTeamPicker() {
+  pickerStep = 'team';
+  pickerNotifyToast = null;
+  showPickerOverlay();
+}
+
+// Jump straight to the identity step (from the follow card, or the launch
+// migration). Only meaningful when a real team is being followed.
+function openIdentityPicker() {
+  if (!state.followTeam) return;
+  pickerStep = 'identity';
+  pickerTeamId = state.followTeam;
+  pickerNotifyToast = null;
+  showPickerOverlay();
+}
+
+function showPickerOverlay() {
   const overlay = teamPickerOverlayEl();
   if (!overlay) return;
-  renderTeamPickerOptions();
+  renderPickerStep();
   overlay.hidden = false;
   document.body.classList.add('no-scroll');
   const app = document.getElementById('app');
@@ -2567,6 +2685,20 @@ function closeTeamPicker() {
   if (app) app.inert = false;
 }
 
+function renderPickerStep() {
+  const title = document.querySelector('.team-picker-title');
+  const hint = document.querySelector('.team-picker-hint');
+  if (pickerStep === 'identity') {
+    if (title) title.textContent = '🙋 Which one are you?';
+    if (hint) hint.textContent = "So we can show your electives whenever you check in. Just cheering? Skip it.";
+    renderIdentityOptions();
+  } else {
+    if (title) title.textContent = '👋 Which team are you rooting for?';
+    if (hint) hint.textContent = "You'll get a heads-up here when they score or get called up next.";
+    renderTeamPickerOptions();
+  }
+}
+
 function renderTeamPickerOptions() {
   const wrap = document.getElementById('team-picker-options');
   if (!wrap) return;
@@ -2579,17 +2711,54 @@ function renderTeamPickerOptions() {
     btn.addEventListener('click', () => {
       const id = btn.dataset.teamId || null;
       const turnedOnNotify = id && !state.notify;
+      // Switching to a different team invalidates a prior identity — re-ask it.
+      if (id !== state.followTeam) state.identity = null;
       state.followTeam = id;
       // Following a team opts you into its alerts — the picker promises a
       // "heads-up when they score or are up next," which only fires when
       // notifications are on. (Neutral leaves the notify setting alone.)
       if (id && !state.notify) enableNotify();
       saveState();
-      closeTeamPicker();
-      renderAll();
-      if (turnedOnNotify) showToast(`🔔 Following ${teamEmoji(id)} ${teamName(id)} — you'll get alerts here when they score or are up next.`);
+      if (!id) {                       // neutral — no team, so no identity step
+        state.identity = null;
+        saveState();
+        closePickerAndRender(null);
+        return;
+      }
+      if (turnedOnNotify) {
+        pickerNotifyToast = `🔔 Following ${teamEmoji(id)} ${teamName(id)} — you'll get alerts here when they score or are up next.`;
+      }
+      // Advance to the identity step (don't close yet).
+      pickerTeamId = id;
+      pickerStep = 'identity';
+      renderPickerStep();
     });
   });
+}
+
+function renderIdentityOptions() {
+  const wrap = document.getElementById('team-picker-options');
+  if (!wrap) return;
+  const names = TEAM_COUNSELORS[pickerTeamId] || [];
+  wrap.innerHTML = names.map((n) =>
+    `<button class="team-picker-option ${state.identity === n ? 'selected' : ''}" data-counselor="${esc(n)}">
+      <span class="chip-emoji">${teamEmoji(pickerTeamId)}</span> ${esc(n)}
+    </button>`
+  ).join('') + `<button class="team-picker-option team-picker-neutral ${state.identity === null ? 'selected' : ''}" data-counselor="">🙌 Skip — I'm just cheering</button>`;
+  wrap.querySelectorAll('.team-picker-option').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.identity = btn.dataset.counselor || null;
+      saveState();
+      closePickerAndRender(pickerNotifyToast);
+    });
+  });
+}
+
+function closePickerAndRender(toast) {
+  closeTeamPicker();
+  renderAll();
+  if (toast) showToast(toast);
+  pickerNotifyToast = null;
 }
 
 function wireTeamPicker() {
@@ -2597,7 +2766,9 @@ function wireTeamPicker() {
   if (!overlay) return;
   const backdrop = overlay.querySelector('.team-picker-backdrop');
   // Only lets the user dismiss without choosing if they've already answered
-  // once before (skip-by-accident shouldn't leave followTeam unanswered).
+  // the team question once (skip-by-accident shouldn't leave followTeam
+  // unanswered). At the identity step followTeam is already set, so a dismiss
+  // there just leaves identity as-is — effectively "skip".
   const dismiss = () => { if (state.followTeam !== undefined) closeTeamPicker(); };
   if (backdrop) backdrop.addEventListener('click', dismiss);
   document.addEventListener('keydown', (e) => {
@@ -4840,6 +5011,7 @@ function renderAll() {
   renderGameList();
   renderGameView();
   renderStandings();
+  renderMyElectives();
   renderMemoryVerse();
   renderMealCleanup();
   renderBonuses();
@@ -4892,7 +5064,7 @@ function init() {
 
   // Keep the "happening now" banner (and any open schedule sheet) current
   // without any taps — and expire "what's new" banners once they hit two hours.
-  setInterval(() => { renderNowBanner(); refreshOpenSchedule(); renderWhatsNew(); }, 30 * 1000);
+  setInterval(() => { renderNowBanner(); refreshOpenSchedule(); renderWhatsNew(); renderMyElectives(); }, 30 * 1000);
 }
 
 function updateRoleButton() {
