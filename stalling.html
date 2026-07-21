@@ -151,6 +151,18 @@
     }
     .stage.show { display: flex; }
 
+    /* ── Blackout gate: pick a show → hard cut to black → any key/tap
+       cues the animation. Sits above everything, including the topbar. ── */
+    .blackout {
+      position: fixed;
+      inset: 0;
+      z-index: 80;
+      background: #000;
+      display: none;
+      cursor: pointer;
+    }
+    .blackout.show { display: block; }
+
     /* ============================================================
        PRO — "Stalling with Patrick"
        A quiet, premium title card. Deep studio dark, one soft key
@@ -531,6 +543,9 @@
 </head>
 <body>
 
+  <!-- Hard-cut black gate shown after a show is picked; any key/tap begins. -->
+  <div class="blackout" id="blackout" aria-hidden="true" role="button" tabindex="-1" aria-label="Press any key to begin"></div>
+
   <div class="topbar">
     <a class="chip" href="index.html">← Back to Camp</a>
     <button class="chip spacer" id="mute-btn" aria-pressed="false" title="Toggle sound">🔊 Sound</button>
@@ -735,6 +750,9 @@
     var crewCaption = document.getElementById('crew-caption');
     var crewTimer = null;
     var current = null;
+    var blackout = document.getElementById('blackout');
+    var pending = null;   // a show is picked and waiting behind the blackout
+    var armAt = 0;        // guards against the selecting click starting it early
 
     // Cadence for the crew cameo: on screen ~10s, then hidden until the
     // next 2-minute mark (start to start). Occasional, not constant.
@@ -804,8 +822,44 @@
       scheduleCrew(CREW_FIRST_MS);
     }
 
-    document.getElementById('btn-pro').addEventListener('click', function () { play('pro'); });
-    document.getElementById('btn-temu').addEventListener('click', function () { play('temu'); });
+    // Pick a show → hard cut to black and wait. The animation only begins
+    // on the next key press or tap (see beginPending).
+    function arm(which) {
+      pending = which;
+      current = null;
+      chooser.style.display = 'none';
+      stagePro.classList.remove('show', 'run');
+      stageTemu.classList.remove('show', 'run');
+      stagePro.setAttribute('aria-hidden', 'true');
+      stageTemu.setAttribute('aria-hidden', 'true');
+      replayBtn.classList.remove('show');
+      stopCrew();
+      blackout.classList.add('show');
+      blackout.setAttribute('aria-hidden', 'false');
+      // Prime the audio context on this gesture so the sting is ready.
+      ensureCtx();
+      armAt = (window.performance && performance.now) ? performance.now() : 0;
+    }
+    function beginPending() {
+      if (!pending) return;
+      var now = (window.performance && performance.now) ? performance.now() : 0;
+      if (now - armAt < 250) return; // ignore the selecting click's trailing events
+      var which = pending;
+      pending = null;
+      blackout.classList.remove('show');
+      blackout.setAttribute('aria-hidden', 'true');
+      play(which);
+    }
+
+    document.getElementById('btn-pro').addEventListener('click', function () { arm('pro'); });
+    document.getElementById('btn-temu').addEventListener('click', function () { arm('temu'); });
+
+    // Any key or any tap on the black screen cues the show.
+    document.addEventListener('keydown', function (e) {
+      if (pending) { e.preventDefault(); beginPending(); }
+    });
+    blackout.addEventListener('pointerdown', function (e) { if (pending) { e.preventDefault(); beginPending(); } });
+    blackout.addEventListener('click', function () { if (pending) beginPending(); });
 
     replayBtn.addEventListener('click', function () {
       if (current) play(current);
@@ -821,6 +875,9 @@
       replayBtn.classList.remove('show');
       chooser.style.display = 'flex';
       current = null;
+      pending = null;
+      blackout.classList.remove('show');
+      blackout.setAttribute('aria-hidden', 'true');
       stopCrew();
     }
     stagePro.addEventListener('click', backToChooser);
