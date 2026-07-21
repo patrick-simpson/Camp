@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T09:59:45Z';
+const CODE_UPDATED_AT = '2026-07-21T10:04:59Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -4820,7 +4820,6 @@ function init() {
   document.addEventListener('visibilitychange', onTimersVisible);
 
   startIdleCollapse();
-  wireCardPersistence();
 
   renderAll();
 
@@ -4854,55 +4853,18 @@ function applyRoleClass() {
   document.documentElement.classList.toggle('view-only', !canEdit());
 }
 
-// Collapsible cards remember their open/closed state per device, so a refresh
-// — including the automatic reload on a new deploy, and the idle auto-collapse
-// — keeps whatever the person (or the idle timer) last left them in. Only the
-// FIRST time a card is seen (nothing saved yet) does it fall back to the
-// role default: open for editors (who enter data there), collapsed for viewers.
-const CARD_STATE_KEY = 'campScoreboardCardOpen';
-// The open value applyCardDefaults last set for each card. The <details>
-// 'toggle' event fires ASYNCHRONOUSLY, so a plain "restoring" flag reset
-// synchronously wouldn't suppress it; instead we ignore any toggle whose value
-// matches what we just applied (the echo of a programmatic set), and persist
-// only genuine changes — a tap, or the idle auto-collapse.
-let programmaticOpen = {};
-
+// Collapsible cards open to their role default on every load — manual
+// collapses/expands aren't remembered across reloads. Competitions defaults
+// collapsed for everyone (tidy home screen); the data cards default open for
+// editors (who enter data there) and collapsed for viewers. The idle timer
+// re-collapses everything after a few minutes of no interaction.
 function cardId(d) {
   return d.getAttribute('data-card') || '';
 }
 
-function loadCardState() {
-  try { return JSON.parse(localStorage.getItem(CARD_STATE_KEY) || '{}') || {}; }
-  catch (e) { return {}; }
-}
-
 function applyCardDefaults() {
-  const saved = loadCardState();
   document.querySelectorAll('.collapsible-card').forEach((d) => {
-    const id = cardId(d);
-    // Competitions defaults collapsed for everyone (like a tidy home screen);
-    // the data cards keep the role default (open for editors, collapsed for
-    // viewers). All of them auto-collapse on idle and remember manual state.
-    const dflt = id === 'competitions' ? false : canEdit();
-    const val = (id && Object.prototype.hasOwnProperty.call(saved, id)) ? !!saved[id] : dflt;
-    programmaticOpen[id] = val; // so the resulting toggle echo isn't persisted as a "change"
-    d.open = val;
-  });
-}
-
-// Persist a card's state on a genuine change (a tap, or the idle auto-collapse),
-// but not on the echo of a programmatic default we just applied.
-function wireCardPersistence() {
-  document.querySelectorAll('.collapsible-card').forEach((d) => {
-    d.addEventListener('toggle', () => {
-      const id = cardId(d);
-      if (!id) return;
-      if (programmaticOpen[id] === d.open) return; // echo of applyCardDefaults — ignore
-      programmaticOpen[id] = d.open;
-      const map = loadCardState();
-      map[id] = d.open;
-      try { localStorage.setItem(CARD_STATE_KEY, JSON.stringify(map)); } catch (e) { /* fine */ }
-    });
+    d.open = cardId(d) === 'competitions' ? false : canEdit();
   });
 }
 

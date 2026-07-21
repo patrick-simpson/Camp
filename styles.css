@@ -484,7 +484,7 @@ html.view-only .role-btn {
 }
 
 /* "Your team + Notify" strip — always visible so viewers keep the watch
-   essentials even with Week Points collapsed. */
+   essentials even with Cumulative Totals collapsed. */
 .you-strip {
   display: flex;
   flex-direction: column;
