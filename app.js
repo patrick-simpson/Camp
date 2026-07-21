@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T12:32:27Z';
+const CODE_UPDATED_AT = '2026-07-21T13:01:54Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -25,6 +25,7 @@ const CODE_UPDATED_AT = '2026-07-21T12:32:27Z';
 // Multiple recent changes stack as separate banners, each expiring on its own
 // two-hour clock. Old entries can be pruned once they're well past two hours.
 const CHANGES = [
+  { id: 'elective-weather-2026-07-21', at: '2026-07-21T13:01:54Z', text: 'Future electives now show the forecast for camp — a weather icon and temperature next to each upcoming elective period (with the rain chance when it’s likely), so you can plan for sun or showers.' },
   { id: 'menu-tuesday-2026-07-21', at: '2026-07-21T12:18:34Z', text: 'Today’s menu: 🥞 pancakes & sausage for breakfast, 🌮 tacos for lunch, and 🍗 chicken nuggets & smiley fries for supper.' },
   { id: 'whats-new-half-hour-cadence-2026-07-21', at: '2026-07-21T12:09:10Z', text: 'New update banners now roll in every 15 minutes — still visible for two hours each.' },
   { id: 'pilgrims-shield-crest-2026-07-21', at: '2026-07-21T11:42:55Z', text: 'Patriotic Pilgrims now gets a shield crest too — all six teams have one.' },
@@ -687,6 +688,120 @@ function myElectivesToday() {
   });
 }
 
+// ── Elective weather forecast ─────────────────────────────────────
+// Shows the forecast next to FUTURE electives (schedule sheet + "My electives
+// today" card). Source: Open-Meteo — free, no API key, CORS-friendly, so it
+// works from a static GitHub Pages site. Coordinates are Campground Rd,
+// Belgrade ME (weather is regional, so town-level precision is plenty).
+// Fails silent when offline/blocked, exactly like the optional Firebase sync.
+const WEATHER_URL = 'https://api.open-meteo.com/v1/forecast'
+  + '?latitude=44.5055&longitude=-69.7791'
+  + '&hourly=temperature_2m,weather_code,precipitation_probability'
+  + '&temperature_unit=fahrenheit&timezone=America%2FNew_York&forecast_days=7';
+const WEATHER_CACHE_KEY = 'campWeatherCache';
+const WEATHER_TTL_MS = 30 * 60 * 1000; // refetch at most every 30 min
+const WEATHER_RAIN_MIN = 40;           // only surface rain % at/above this
+
+// WMO weather_code → { emoji, label }.
+const WEATHER_CODES = {
+  0: { emoji: '☀️', label: 'Clear' }, 1: { emoji: '🌤️', label: 'Mainly clear' },
+  2: { emoji: '⛅', label: 'Partly cloudy' }, 3: { emoji: '☁️', label: 'Overcast' },
+  45: { emoji: '🌫️', label: 'Fog' }, 48: { emoji: '🌫️', label: 'Fog' },
+  51: { emoji: '🌦️', label: 'Light drizzle' }, 53: { emoji: '🌦️', label: 'Drizzle' }, 55: { emoji: '🌦️', label: 'Heavy drizzle' },
+  56: { emoji: '🌧️', label: 'Freezing drizzle' }, 57: { emoji: '🌧️', label: 'Freezing drizzle' },
+  61: { emoji: '🌧️', label: 'Light rain' }, 63: { emoji: '🌧️', label: 'Rain' }, 65: { emoji: '🌧️', label: 'Heavy rain' },
+  66: { emoji: '🌧️', label: 'Freezing rain' }, 67: { emoji: '🌧️', label: 'Freezing rain' },
+  71: { emoji: '🌨️', label: 'Light snow' }, 73: { emoji: '🌨️', label: 'Snow' }, 75: { emoji: '🌨️', label: 'Heavy snow' },
+  77: { emoji: '🌨️', label: 'Snow grains' },
+  80: { emoji: '🌦️', label: 'Rain showers' }, 81: { emoji: '🌦️', label: 'Rain showers' }, 82: { emoji: '⛈️', label: 'Violent showers' },
+  85: { emoji: '🌨️', label: 'Snow showers' }, 86: { emoji: '🌨️', label: 'Snow showers' },
+  95: { emoji: '⛈️', label: 'Thunderstorm' }, 96: { emoji: '⛈️', label: 'Thunderstorm w/ hail' }, 99: { emoji: '⛈️', label: 'Thunderstorm w/ hail' },
+};
+
+// { dates: ['YYYY-MM-DD', …], byTime: { 'YYYY-MM-DDTHH:00': {temp, code, precip} }, at }
+let weatherData = null;
+
+// Today's date in camp time as 'YYYY-MM-DD' (en-CA renders ISO order), used to
+// tell whether a cached forecast is still keyed to the right "today".
+function campDateStr() {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: CAMP_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());
+  } catch (e) { return ''; }
+}
+
+function processWeather(json) {
+  const h = json && json.hourly;
+  if (!h || !Array.isArray(h.time)) return null;
+  const byTime = {};
+  const dates = [];
+  h.time.forEach((t, i) => {
+    byTime[t] = { temp: h.temperature_2m[i], code: h.weather_code[i], precip: h.precipitation_probability[i] };
+    const d = t.slice(0, 10);
+    if (dates[dates.length - 1] !== d) dates.push(d);
+  });
+  return { dates, byTime, at: Date.now() };
+}
+
+// Paint badges in-place once weather lands (schedule sheet + my-electives card).
+function repaintWeather() {
+  renderMyElectives();
+  refreshOpenSchedule();
+}
+
+function loadWeatherCache() {
+  try {
+    const raw = localStorage.getItem(WEATHER_CACHE_KEY);
+    if (!raw) return;
+    const cached = JSON.parse(raw);
+    // Discard a forecast whose day 0 isn't today — the day-offset mapping in
+    // electiveWxHtml assumes dates[0] === today.
+    if (cached && cached.dates && cached.dates[0] === campDateStr()) weatherData = cached;
+  } catch (e) { /* ignore corrupt/absent cache */ }
+}
+
+async function fetchWeather() {
+  try {
+    const res = await fetch(WEATHER_URL, { cache: 'no-store' });
+    if (!res.ok) return;
+    const data = processWeather(await res.json());
+    if (!data) return;
+    weatherData = data;
+    try { localStorage.setItem(WEATHER_CACHE_KEY, JSON.stringify(data)); } catch (e) { /* quota / private mode */ }
+    repaintWeather();
+  } catch (e) { /* offline / blocked — try again next tick */ }
+}
+
+function weatherFresh() {
+  return weatherData && weatherData.dates[0] === campDateStr() && (Date.now() - weatherData.at) < WEATHER_TTL_MS;
+}
+
+function startWeatherUpdates() {
+  loadWeatherCache();
+  if (!weatherFresh()) fetchWeather();
+  setInterval(() => { if (!weatherFresh()) fetchWeather(); }, WEATHER_TTL_MS);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && !weatherFresh()) fetchWeather(); });
+}
+
+// Forecast badge HTML for one elective slot, or '' when it shouldn't show:
+// no data, a past day, a today-slot that already started, beyond the forecast
+// range, or a missing hour. dow is the schedule day being rendered (0–6).
+function electiveWxHtml(dow, slot) {
+  if (!weatherData) return '';
+  const now = campNow();
+  const dayOffset = dow - now.dow;
+  if (dayOffset < 0) return '';                                            // earlier this week
+  if (dayOffset === 0 && ELECTIVE_SLOT_MIN[slot] <= now.minutes) return ''; // today, already started
+  if (dayOffset >= weatherData.dates.length) return '';                    // past the 7-day window
+  const hour = Math.floor(ELECTIVE_SLOT_MIN[slot] / 60);
+  const w = weatherData.byTime[`${weatherData.dates[dayOffset]}T${String(hour).padStart(2, '0')}:00`];
+  if (!w || w.temp == null) return '';
+  const info = WEATHER_CODES[w.code] || { emoji: '🌡️', label: 'Forecast' };
+  const rain = (w.precip != null && w.precip >= WEATHER_RAIN_MIN) ? ` · ${w.precip}%` : '';
+  return `<span class="wx-badge" title="${esc(info.label)} · forecast">${info.emoji} ${Math.round(w.temp)}°${rain}</span>`;
+}
+
 // ── Meal menu ────────────────────────────────────────────────────
 // What the kitchen is serving, filled in as camp announces each meal.
 // Keyed by day-of-week (0 Sun .. 6 Sat), then by meal block name in
@@ -943,6 +1058,7 @@ function renderScheduleBody() {
     const meal = mealInfo(dow, raw);
 
     let extra = '';
+    let labelBadge = ''; // forecast badge next to the label (future electives only)
     if (raw.type === 'games') {
       const session = raw.start < 720 ? 'Morning' : 'Evening';
       const games = GAMES.filter((g) => g.day === dow && g.session === session);
@@ -951,6 +1067,7 @@ function renderScheduleBody() {
           `<span class="sched-game-chip ${state.results[g.id] ? 'played' : ''}">${g.emoji} ${esc(g.name)}${state.results[g.id] ? ' ✓' : ''}</span>`).join('')}</div>`;
       }
     } else if (raw.type === 'elective') {
+      labelBadge = electiveWxHtml(dow, raw.slot);
       const me = state.identity;
       const kidText = (kids) => kids.map((k) => k === me ? `<span class="sched-you">⭐ ${esc(k)}</span>` : esc(k)).join(' · ');
       const stations = (ELECTIVES[dow] || [])[raw.slot] || [];
@@ -971,7 +1088,7 @@ function renderScheduleBody() {
       <div class="sched-rail"><span class="sched-dot"></span></div>
       <div class="sched-card">
         <div class="sched-time">${raw.noTime ? '' : schedRange(raw.start, raw.end)}${status === 'now' ? '<span class="sched-now-pill">Now</span>' : ''}</div>
-        <div class="sched-label"><span class="sched-emoji">${b.emoji}</span> ${esc(b.label)}${mealCleanupNote(dow, b.label)}</div>
+        <div class="sched-label"><span class="sched-emoji">${b.emoji}</span> ${esc(b.label)}${mealCleanupNote(dow, b.label)}${labelBadge}</div>
         ${extra}
       </div>
     </div>`;
@@ -2655,6 +2772,7 @@ function renderMyElectives() {
           <span class="my-el-time">${r.time}</span>
           <span class="my-el-emoji">${r.emoji}</span>
           <span class="my-el-station">${r.onBreak ? 'Break' : esc(r.station)}</span>
+          <span class="my-el-wx">${electiveWxHtml(campNow().dow, r.slot)}</span>
         </div>`).join('')}
     </div>`;
 }
@@ -5099,6 +5217,7 @@ function init() {
 
   startIdleCollapse();
   startUpdatePolling();
+  startWeatherUpdates();
 
   renderAll();
 

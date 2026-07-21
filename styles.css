@@ -1665,13 +1665,14 @@ body.no-scroll {
 }
 .my-el-row {
   display: grid;
-  grid-template-columns: 4.4rem 1.5rem 1fr;
+  grid-template-columns: 4.4rem 1.5rem 1fr auto;
   align-items: center;
   gap: 0.5rem;
   padding: 0.4rem 0.55rem;
   border-radius: var(--radius-md);
   background: var(--color-bg);
 }
+.my-el-wx { justify-self: end; }
 .my-el-time {
   font-variant-numeric: tabular-nums;
   font-weight: 700;
@@ -1693,6 +1694,17 @@ body.no-scroll {
 .my-el-row.is-break .my-el-station {
   font-weight: 600;
   color: var(--color-text-muted);
+}
+
+/* Forecast badge next to a future elective (schedule sheet + my-electives). */
+.wx-badge {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.sched-label .wx-badge {
+  margin-left: 0.4rem;
 }
 
 /* "You" highlight — shared by the Happening-Now chips and the schedule sheet.
