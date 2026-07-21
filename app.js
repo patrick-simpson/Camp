@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T02:08:34Z';
+const CODE_UPDATED_AT = '2026-07-21T02:15:27Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -25,7 +25,10 @@ const CODE_UPDATED_AT = '2026-07-21T02:08:34Z';
 // Multiple recent changes stack as separate banners, each expiring on its own
 // two-hour clock. Old entries can be pruned once they're well past two hours.
 const CHANGES = [
-  { id: 'ladderball-jebball-live-2026-07-21', at: '2026-07-21T02:08:34Z', text: '🪜 New: Ladder Ball now scores live, point-by-point (cancellation, first to 21) so you can watch each team climb — plus a live goal counter for Jeb Ball, and the app now refreshes itself when a new update ships.' },
+  { id: 'ladderball-live-2026-07-21', at: '2026-07-21T02:08:34Z', text: '🪜 Ladder Ball now scores live, point by point — cancellation each round, first to exactly 21 — so you can watch each team’s total climb from any phone.' },
+  { id: 'jebball-goals-2026-07-21', at: '2026-07-21T02:08:34Z', text: '🧎 Jeb Ball has a live goal counter now — the score updates for everyone watching as goals go in.' },
+  { id: 'auto-refresh-2026-07-21', at: '2026-07-21T02:08:34Z', text: '🔄 The scoreboard updates itself now: when a new version ships, your phone refreshes automatically — or shows a “tap to refresh” banner if you’re mid score-entry, so nothing you’re typing is lost.' },
+  { id: 'auto-collapse-2026-07-21', at: '2026-07-21T02:08:34Z', text: '🗂️ The sections tidy themselves up — after a few minutes idle they collapse back down so the page stays quick to scan.' },
 ];
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
@@ -4392,6 +4395,42 @@ function dismissChange(id) {
   }
 }
 
+// The two-hour window counts only "awake" time — it pauses overnight (9pm–8am
+// camp time) so a change that ships late at night isn't spent before anyone
+// sees it; it resumes advertising in the morning. Quiet hours are camp-local
+// (America/New_York, matching every other timestamp in the app), not device
+// time.
+const QUIET_START_HOUR = 21; // 9pm — pause the timer
+const QUIET_END_HOUR = 8;    // 8am — resume the timer
+
+function campHour(ms) {
+  const h = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: '2-digit', hour12: false }).format(new Date(ms));
+  return parseInt(h, 10) % 24; // some engines format midnight as "24"
+}
+
+function isAwakeHours(ms) {
+  const h = campHour(ms);
+  return h >= QUIET_END_HOUR && h < QUIET_START_HOUR; // 8am–9pm
+}
+
+// Awake (non-quiet) milliseconds elapsed between two instants. Sampled at a
+// coarse step — the spans involved are short (a change is only ever live across
+// at most one night, since there are 13 awake hours a day vs a 2-hour budget),
+// and minute-level accuracy is plenty for a banner. Stops early once the cap is
+// reached.
+function awakeElapsedMs(fromMs, toMs, capMs) {
+  if (toMs <= fromMs) return 0;
+  const STEP = 5 * 60 * 1000;
+  let awake = 0;
+  for (let t = fromMs; t < toMs; t += STEP) {
+    if (isAwakeHours(t)) {
+      awake += Math.min(STEP, toMs - t);
+      if (capMs != null && awake >= capMs) return awake; // no need to keep counting
+    }
+  }
+  return awake;
+}
+
 function activeChanges() {
   const now = Date.now();
   const dismissed = dismissedChanges();
@@ -4400,8 +4439,9 @@ function activeChanges() {
     if (dismissed.includes(c.id)) return false;
     const t = Date.parse(c.at);
     if (isNaN(t)) return false;
-    const age = now - t;
-    return age >= 0 && age < CHANGE_TTL_MS; // visible until it turns two hours old
+    if (t > now) return false; // not shipped yet
+    // Advertise until two hours of AWAKE time have passed (quiet hours don't count).
+    return awakeElapsedMs(t, now, CHANGE_TTL_MS) < CHANGE_TTL_MS;
   });
 }
 

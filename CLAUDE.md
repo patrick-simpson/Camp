@@ -69,6 +69,12 @@ banners, each on its own two-hour clock. Rules:
 - `renderWhatsNew` runs from `renderAll` and from the 30-second interval,
   so a banner disappears on its own within ~30s of turning two hours old,
   no interaction needed.
+- The two-hour window counts **awake time only** — it pauses overnight
+  (9pm–8am camp time, `QUIET_START_HOUR`/`QUIET_END_HOUR`) via
+  `awakeElapsedMs`, so a change shipped late at night isn't spent before
+  anyone's awake; it keeps showing and resumes counting at 8am. A change
+  is only ever live across at most one night (13 awake hours/day vs the
+  2-hour budget).
 
 **Auto-reload on deploy.** Open phones refresh themselves when a newer
 build ships. A freshly-deployed client writes its `CODE_UPDATED_AT` to
