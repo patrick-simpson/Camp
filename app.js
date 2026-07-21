@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T22:27:07Z';
+const CODE_UPDATED_AT = '2026-07-21T23:08:23Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -278,6 +278,24 @@ const GAMES = [
         'The counselor left standing is out, and a chair comes out each round.',
       ] },
       { h: 'Winning', items: ['The last 3 teams with a counselor still seated take gold, silver, and bronze.'] },
+    ],
+  },
+  {
+    id: 'gross-food-eating', name: 'Gross Food Eating Competition', emoji: '🤢', day: 2, session: 'Evening',
+    location: 'Dining Hall', format: 'placement',
+    headline: 'Choke down the gross-food gauntlet — first teams to clear their plates medal.',
+    rules: [
+      { h: 'Setup', items: [
+        'ALL teams play, same number of eaters per team.',
+        'Each team gets an identical plate of gross foods to get through.',
+        'Opposing counselors judge — a plate only counts when it is truly finished.',
+      ] },
+      { h: 'How to play', items: [
+        'On "GO", the team works through every item on the plate.',
+        'No spitting it back out — it has to go down and stay down.',
+        'Water is allowed, but the clock keeps running.',
+      ] },
+      { h: 'Winning', items: ['The first 3 teams to finish their whole plate take gold, silver, and bronze.'] },
     ],
   },
   {
