@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T23:25:49Z';
+const CODE_UPDATED_AT = '2026-07-21T23:44:42Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -580,7 +580,18 @@ const DAY_SCHEDULE = {
     { start: hm(22, 0), end: hm(24, 0), label: 'Lights out', emoji: '🛏️', type: 'activity', noTime: true },
   ],
   1: [morningMeetingBlock(1)].concat(weekdayDaytime()).concat(weekdayEvening('TJ')),
-  2: [morningMeetingBlock(2)].concat(weekdayDaytime()).concat(weekdayEvening('Cam')),
+  2: (function () {
+    // Tonight only: Boys cabin movie night (9:15–10pm), slotted in just before
+    // the normal wind-down. It intentionally overlaps "Prepare for bed" and
+    // "Cabin devotional" — added on request, overlap and all. Placing it ahead
+    // of those two in the array lets it win the "Happening Now" banner for the
+    // whole 9:15–10 window while both still appear in the full schedule sheet.
+    const evening = weekdayEvening('Cam');
+    const idx = evening.findIndex((b) => b.start === hm(21, 15));
+    const movie = { start: hm(21, 15), end: hm(22, 0), label: 'Boys cabin movie night', emoji: '🎬', type: 'activity' };
+    evening.splice(idx === -1 ? evening.length : idx, 0, movie);
+    return [morningMeetingBlock(2)].concat(weekdayDaytime()).concat(evening);
+  })(),
   3: [morningMeetingBlock(3)].concat(weekdayDaytime()).concat(weekdayEvening('Sofie')),
   4: [morningMeetingBlock(4)].concat(weekdayDaytime()).concat(weekdayEvening('Jovi')),
   5: [morningMeetingBlock(5)].concat(weekdayDaytime()).concat([ // Friday evening — Team Skits night, later lights out
@@ -968,7 +979,12 @@ function nowBannerHtml(dow, minutes) {
     return main(b.emoji, b.label, time, null, progress) + `<div class="now-stations">${rows}</div>`;
   }
 
-  const next = decorateMealBlock(dow, blocks[blocks.indexOf(found) + 1] || null);
+  // "Up next" = the next block that starts at or after this one ends. Using
+  // the end time (not just index+1) keeps it correct when blocks overlap
+  // (e.g. tonight's movie night sitting over the wind-down) — for a normal,
+  // non-overlapping day this is the very next block, exactly as before.
+  const after = blocks.find((x) => x.start >= found.end);
+  const next = decorateMealBlock(dow, after || null);
   return main(b.emoji, b.label, time, next, progress);
 }
 
