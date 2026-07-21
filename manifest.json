@@ -1,6 +1,6 @@
 {
-  "name": "Camp Scoreboard",
-  "short_name": "Scoreboard",
+  "name": "Camp",
+  "short_name": "Camp",
   "description": "Live camp game scoring — standings, schedule, and team medals.",
   "start_url": "./",
   "scope": "./",

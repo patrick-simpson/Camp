@@ -3,20 +3,20 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <title>Camp Scoreboard</title>
+  <title>Camp</title>
   <meta name="description" content="Live camp game scoring — standings, schedule, and team medals, synced across every device.">
   <meta name="theme-color" content="#f4f6f9" media="(prefers-color-scheme: light)">
   <meta name="theme-color" content="#10141c" media="(prefers-color-scheme: dark)">
-  <meta property="og:title" content="Camp Scoreboard">
+  <meta property="og:title" content="Camp">
   <meta property="og:description" content="Live camp game scoring — standings, schedule, and team medals.">
   <meta property="og:type" content="website">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8F%85%3C/text%3E%3C/svg%3E">
-  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=48">
-  <link rel="manifest" href="manifest.json?v=48">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=57">
+  <link rel="manifest" href="manifest.json?v=57">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=56">
+  <link rel="stylesheet" href="styles.css?v=57">
   <script>
     // Decide lock state before the page paints so we never flash the app,
     // and never show a blank page: exactly one of #app / #lock-screen shows.
@@ -34,7 +34,7 @@
   <!-- ── PIN LOCK SCREEN ─────────────────────────────────── -->
   <div id="lock-screen" class="lock-screen">
     <div class="lock-box">
-      <div class="lock-logo"><span>🏅</span> Camp Scoreboard</div>
+      <div class="lock-logo"><span>🏅</span> Camp</div>
       <p class="lock-prompt">Enter PIN to continue</p>
       <div class="pin-dots" id="pin-dots" aria-hidden="true">
         <span class="pin-dot"></span>
@@ -65,7 +65,7 @@
     <header class="app-header">
       <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">🌙</button>
       <button id="sound-toggle" class="theme-toggle sound-toggle" aria-label="Toggle sounds" title="Toggle sounds">🔊</button>
-      <div class="app-logo"><span>🏅</span> Camp Scoreboard</div>
+      <div class="app-logo"><span>🏅</span> Camp</div>
       <button id="role-btn" class="role-btn"></button>
     </header>
 
@@ -80,14 +80,21 @@
       <!-- ── LIVE NOW (a game in progress — surfaced + highlighted) ── -->
       <section id="live-home" class="live-home" hidden></section>
 
-      <!-- ── DAY TABS ───────────────────────────────────── -->
-      <nav id="day-tabs" class="day-tabs" aria-label="Day of the week"></nav>
-      <p id="day-note" class="day-note" hidden></p>
+      <!-- ── COMPETITIONS (day tabs + game list, collapsible) ── -->
+      <details class="card competitions-card collapsible-card" data-card="competitions">
+        <summary class="card-header-row">
+          <h2>Competitions</h2>
+          <span class="card-chevron" aria-hidden="true">›</span>
+        </summary>
+        <!-- ── DAY TABS ───────────────────────────────── -->
+        <nav id="day-tabs" class="day-tabs" aria-label="Day of the week"></nav>
+        <p id="day-note" class="day-note" hidden></p>
+        <!-- ── GAME LIST ──────────────────────────────── -->
+        <section id="game-list"></section>
+      </details>
 
-      <!-- ── GAME LIST (home) ───────────────────────────── -->
-      <section id="game-list"></section>
-
-      <!-- ── GAME VIEW (detail) ─────────────────────────── -->
+      <!-- ── GAME VIEW (detail; outside the card so it shows even when
+           Competitions is collapsed, e.g. opened from a Live-now card) ── -->
       <section id="game-view" class="card game-view" hidden></section>
 
       <!-- ── YOUR TEAM + NOTIFY (always visible — watch essentials) ── -->
@@ -197,7 +204,7 @@
        falls back to local-only mode automatically. -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=56"></script>
-  <script src="app.js?v=56"></script>
+  <script src="firebase-config.js?v=57"></script>
+  <script src="app.js?v=57"></script>
 </body>
 </html>

@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T09:35:45Z';
+const CODE_UPDATED_AT = '2026-07-21T09:59:45Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -2311,7 +2311,7 @@ function standingsSummaryText() {
   const ranked = rankTeamsByPoints(counts);
 
   const campDate = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short', month: 'short', day: 'numeric' }).format(new Date());
-  const lines = ['🏅 Camp Scoreboard — ' + campDate];
+  const lines = ['🏅 Camp — ' + campDate];
   lines.push('');
   lines.push(`Standings (🥇 ${MEDAL_POINTS.gold} · 🥈 ${MEDAL_POINTS.silver} · 🥉 ${MEDAL_POINTS.bronze} pts):`);
   ranked.forEach((t, i) => {
@@ -4880,7 +4880,11 @@ function applyCardDefaults() {
   const saved = loadCardState();
   document.querySelectorAll('.collapsible-card').forEach((d) => {
     const id = cardId(d);
-    const val = (id && Object.prototype.hasOwnProperty.call(saved, id)) ? !!saved[id] : canEdit();
+    // Competitions defaults collapsed for everyone (like a tidy home screen);
+    // the data cards keep the role default (open for editors, collapsed for
+    // viewers). All of them auto-collapse on idle and remember manual state.
+    const dflt = id === 'competitions' ? false : canEdit();
+    const val = (id && Object.prototype.hasOwnProperty.call(saved, id)) ? !!saved[id] : dflt;
     programmaticOpen[id] = val; // so the resulting toggle echo isn't persisted as a "change"
     d.open = val;
   });
