@@ -7,9 +7,9 @@ Cropped from a camper-drawn shield photo collage, cut to each shield's outline
 - `runaway-john-deeres.webp` — The Runaway John Deere's
 - `methodic-mediocre-maples.webp` — Methodic Mediocre Maples
 - `particularly-perilous-pumpkins.webp` — Particularly Perilous Pumpkins
-- `patriotic-pilgrims.webp` — Patriotic Pilgrims (top of the physical shield
-  reads "Methodic Mediocre," confirmed by Patrick as the correct Pilgrims
-  shield anyway — likely a reused/repainted board)
+- `patriotic-pilgrims.webp` — Patriotic Pilgrims (the correct board: reads
+  "PATRIOTIC … PILGRIMS 2026" with the flag, pilgrim, and bald-eagle artwork;
+  recropped, deskewed, and white-balanced from a fresh photo. Replaced an
+  earlier mismatched board that read "Methodic Mediocre.")
 - `ferocious-foxes.webp` — Ferocious Foxes (fox mascot artwork; a second,
-  distorted photo of this same shield was discarded, as was a second
-  candidate Pilgrims shield with an eagle that turned out not to be it)
+  distorted photo of this same shield was discarded)

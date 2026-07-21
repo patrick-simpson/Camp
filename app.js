@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T14:54:04Z';
+const CODE_UPDATED_AT = '2026-07-21T18:29:32Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -25,6 +25,7 @@ const CODE_UPDATED_AT = '2026-07-21T14:54:04Z';
 // Multiple recent changes stack as separate banners, each expiring on its own
 // two-hour clock. Old entries can be pruned once they're well past two hours.
 const CHANGES = [
+  { id: 'pilgrims-shield-fixed-2026-07-21', at: '2026-07-21T18:29:32Z', text: 'The Patriotic Pilgrims crest now shows the team’s real shield — the one with the eagle.' },
   { id: 'whats-new-top-2026-07-21', at: '2026-07-21T14:54:04Z', text: 'Update notices like this one now appear at the very top of the page, above your team.' },
   { id: 'ladderball-back-basketball-2026-07-21', at: '2026-07-21T13:38:04Z', text: 'Correction: Ladder Ball is on the Basketball Court after all (ignore the earlier Bathroom Lawn note).' },
   { id: 'elective-weather-2026-07-21', at: '2026-07-21T13:01:54Z', text: 'Future electives now show the forecast for camp — a weather icon and temperature next to each upcoming elective period (with the rain chance when it’s likely), so you can plan for sun or showers.' },
@@ -99,7 +100,7 @@ const TEAM_SHIELD = {
   t1: 'images/team-shields/turkey-dinner.webp?v=2',
   t2: 'images/team-shields/methodic-mediocre-maples.webp?v=2',
   t3: 'images/team-shields/particularly-perilous-pumpkins.webp?v=2',
-  t4: 'images/team-shields/patriotic-pilgrims.webp?v=2',
+  t4: 'images/team-shields/patriotic-pilgrims.webp?v=3',
   t5: 'images/team-shields/runaway-john-deeres.webp?v=2',
 };
 // Short-form team names for tight spaces (e.g. the morning meeting banner) —
