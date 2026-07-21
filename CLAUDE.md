@@ -73,7 +73,7 @@ hour**, and only during awake hours. Rules:
 - **One at a time** (`activeChanges`): only the newest entry that has
   rolled in, isn't dismissed, and is still inside its two-hour awake window
   shows — each is superseded by the next as its hour arrives.
-- Awake hours are 8am–9pm camp time (`QUIET_END_HOUR`/`QUIET_START_HOUR`);
+- Awake hours are 7am–9pm camp time (`QUIET_END_HOUR`/`QUIET_START_HOUR`);
   the release schedule and the two-hour visibility window both count awake
   time only (`awakeElapsedMs`), pausing overnight.
 - `id` is a stable slug; a viewer's dismissal is remembered per-`id` in

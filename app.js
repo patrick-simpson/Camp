@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T10:35:25Z';
+const CODE_UPDATED_AT = '2026-07-21T10:37:48Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -4582,7 +4582,7 @@ function dismissChange(id) {
 // (America/New_York, matching every other timestamp in the app), not device
 // time.
 const QUIET_START_HOUR = 21; // 9pm — pause the timer
-const QUIET_END_HOUR = 8;    // 8am — resume the timer
+const QUIET_END_HOUR = 7;    // 7am — resume the timer (first notice rolls in at 7am)
 
 function campHour(ms) {
   const h = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: '2-digit', hour12: false }).format(new Date(ms));
@@ -4591,7 +4591,7 @@ function campHour(ms) {
 
 function isAwakeHours(ms) {
   const h = campHour(ms);
-  return h >= QUIET_END_HOUR && h < QUIET_START_HOUR; // 8am–9pm
+  return h >= QUIET_END_HOUR && h < QUIET_START_HOUR; // 7am–9pm
 }
 
 // Awake (non-quiet) milliseconds elapsed between two instants. Sampled at a
