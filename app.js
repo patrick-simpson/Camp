@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T12:13:13Z';
+const CODE_UPDATED_AT = '2026-07-21T12:18:34Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -25,7 +25,8 @@ const CODE_UPDATED_AT = '2026-07-21T12:13:13Z';
 // Multiple recent changes stack as separate banners, each expiring on its own
 // two-hour clock. Old entries can be pruned once they're well past two hours.
 const CHANGES = [
-  { id: 'whats-new-half-hour-cadence-2026-07-21', at: '2026-07-21T12:09:10Z', text: 'New update banners now roll in every half hour instead of every hour — still visible for two hours each.' },
+  { id: 'menu-tuesday-2026-07-21', at: '2026-07-21T12:18:34Z', text: 'Today’s menu: 🥞 pancakes & sausage for breakfast, 🌮 tacos for lunch, and 🍗 chicken nuggets & smiley fries for supper.' },
+  { id: 'whats-new-half-hour-cadence-2026-07-21', at: '2026-07-21T12:09:10Z', text: 'New update banners now roll in every 15 minutes — still visible for two hours each.' },
   { id: 'pilgrims-shield-crest-2026-07-21', at: '2026-07-21T11:42:55Z', text: 'Patriotic Pilgrims now gets a shield crest too — all six teams have one.' },
   { id: 'team-shield-crest-2026-07-21', at: '2026-07-21T11:37:35Z', text: 'Your team’s hand-drawn shield now shows up as a crest at the top of the page once you pick a team.' },
   { id: 'collapse-all-on-load-2026-07-21', at: '2026-07-21T11:22:44Z', text: 'Every section now starts collapsed each time the page loads, so you always open to a tidy, quick-to-scan home screen — tap any section to expand it.' },
@@ -4847,11 +4848,11 @@ function awakeElapsedMs(fromMs, toMs, capMs) {
 }
 
 // The banners are a QUEUE, not a wall: they roll in one at a time, one every
-// half hour, and only during awake hours (7am–9pm). A change shipped overnight
-// waits for 7am; the rest follow at half-hour intervals behind it. So the
+// 15 minutes, and only during awake hours (7am–9pm). A change shipped overnight
+// waits for 7am; the rest follow at 15-minute intervals behind it. So the
 // batch below, all shipped late at night, starts appearing at 7am and
-// advances every half hour.
-const CHANGE_SPACING_MS = 30 * 60 * 1000; // at most one new banner per half hour
+// advances every 15 minutes.
+const CHANGE_SPACING_MS = 15 * 60 * 1000; // at most one new banner per 15 minutes
 
 // The first awake instant at/after t: if t falls in quiet hours, jump forward
 // to ~8am; otherwise t itself.
@@ -4875,8 +4876,8 @@ function addAwakeMs(fromMs, addMs) {
 }
 
 // Release time of each CHANGES entry (in list order): the later of its own
-// awake-slotted ship time and one half hour (awake) behind the previous
-// release, so they queue up one per half hour. Deterministic from the `at`
+// awake-slotted ship time and 15 minutes (awake) behind the previous
+// release, so they queue up one per 15 minutes. Deterministic from the `at`
 // values.
 function changeReleases() {
   const list = (typeof CHANGES !== 'undefined' ? CHANGES : []);
@@ -4897,7 +4898,7 @@ function changeReleases() {
 
 // One banner at a time: the newest entry that has rolled in, isn't dismissed,
 // and is still inside its two-hour awake window. Each is superseded by the next
-// as its half-hour slot arrives.
+// as its 15-minute slot arrives.
 function activeChanges() {
   const now = Date.now();
   const dismissed = dismissedChanges();
