@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T02:51:04Z';
+const CODE_UPDATED_AT = '2026-07-21T09:35:45Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -4620,18 +4620,71 @@ function awakeElapsedMs(fromMs, toMs, capMs) {
   return awake;
 }
 
+// The banners are a QUEUE, not a wall: they roll in one at a time, one per
+// hour, and only during awake hours (8am–9pm). A change shipped overnight waits
+// for 8am; the rest follow at one-hour intervals behind it. So the batch below,
+// all shipped late at night, starts appearing at 8am and advances hourly.
+const CHANGE_SPACING_MS = 60 * 60 * 1000; // at most one new banner per hour
+
+// The first awake instant at/after t: if t falls in quiet hours, jump forward
+// to ~8am; otherwise t itself.
+function nextAwakeSlot(t) {
+  const STEP = 5 * 60 * 1000;
+  let x = t, guard = 0;
+  while (!isAwakeHours(x) && guard < 4000) { x += STEP; guard++; }
+  return x;
+}
+
+// The instant `addMs` of AWAKE time after fromMs (quiet hours don't count).
+function addAwakeMs(fromMs, addMs) {
+  const STEP = 5 * 60 * 1000;
+  let x = fromMs, remaining = addMs, guard = 0;
+  while (remaining > 0 && guard < 8000) {
+    x += STEP;
+    if (isAwakeHours(x)) remaining -= STEP;
+    guard++;
+  }
+  return x;
+}
+
+// Release time of each CHANGES entry (in list order): the later of its own
+// awake-slotted ship time and one hour (awake) behind the previous release, so
+// they queue up one per hour. Deterministic from the `at` values.
+function changeReleases() {
+  const list = (typeof CHANGES !== 'undefined' ? CHANGES : []);
+  const releases = [];
+  let prev = null;
+  for (let i = 0; i < list.length; i++) {
+    const shipped = Date.parse(list[i] && list[i].at);
+    let r = nextAwakeSlot(isNaN(shipped) ? Date.now() : shipped);
+    if (prev != null) {
+      const spaced = addAwakeMs(prev, CHANGE_SPACING_MS);
+      if (spaced > r) r = spaced;
+    }
+    releases[i] = r;
+    prev = r;
+  }
+  return releases;
+}
+
+// One banner at a time: the newest entry that has rolled in, isn't dismissed,
+// and is still inside its two-hour awake window. Each is superseded by the next
+// as its hour arrives, so exactly one shows per hour.
 function activeChanges() {
   const now = Date.now();
   const dismissed = dismissedChanges();
-  return (typeof CHANGES !== 'undefined' ? CHANGES : []).filter((c) => {
-    if (!c || !c.id || !c.at || !c.text) return false;
-    if (dismissed.includes(c.id)) return false;
-    const t = Date.parse(c.at);
-    if (isNaN(t)) return false;
-    if (t > now) return false; // not shipped yet
-    // Advertise until two hours of AWAKE time have passed (quiet hours don't count).
-    return awakeElapsedMs(t, now, CHANGE_TTL_MS) < CHANGE_TTL_MS;
-  });
+  const list = (typeof CHANGES !== 'undefined' ? CHANGES : []);
+  const releases = changeReleases();
+  for (let i = list.length - 1; i >= 0; i--) {
+    const c = list[i];
+    if (!c || !c.id || !c.text) continue;
+    const r = releases[i];
+    if (now < r) continue;                                        // hasn't rolled in yet
+    if (dismissed.includes(c.id)) continue;
+    if (awakeElapsedMs(r, now, CHANGE_TTL_MS) >= CHANGE_TTL_MS) continue; // past its window
+    return [c];
+  }
+  return [];
 }
 
 function renderWhatsNew() {

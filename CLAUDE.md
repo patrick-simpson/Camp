@@ -54,27 +54,29 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
 ## What's new banners & auto-reload
 
 **"What's new" banners.** `CHANGES` (top of `app.js`) is a hand-maintained
-list of recent, user-visible changes. Each entry —
-`{ id, at, text }` — renders a dismissible banner at the top of the page
-(`renderWhatsNew`, into `#whats-new`) **for two hours after its `at`
-time**, then auto-expires. Multiple recent changes stack as separate
-banners, each on its own two-hour clock. Rules:
+list of recent, user-visible changes. Each entry — `{ id, at, text }` —
+can render a dismissible banner at the top of the page (`renderWhatsNew`,
+into `#whats-new`). They roll in as a **queue, one at a time, one per
+hour**, and only during awake hours. Rules:
 - `at` is UTC ISO (`date -u +%Y-%m-%dT%H:%M:%SZ`) — normally the same
   stamp as that deploy's `CODE_UPDATED_AT`.
+- **Release schedule** (`changeReleases`): each entry's release time is the
+  later of its own awake-slotted ship time (`nextAwakeSlot` — a change
+  shipped in quiet hours waits for 8am) and one awake-hour behind the
+  previous entry's release (`addAwakeMs`, `CHANGE_SPACING_MS`). So a batch
+  shipped overnight starts appearing at ~8am and advances one per hour.
+- **One at a time** (`activeChanges`): only the newest entry that has
+  rolled in, isn't dismissed, and is still inside its two-hour awake window
+  shows — each is superseded by the next as its hour arrives.
+- Awake hours are 8am–9pm camp time (`QUIET_END_HOUR`/`QUIET_START_HOUR`);
+  the release schedule and the two-hour visibility window both count awake
+  time only (`awakeElapsedMs`), pausing overnight.
 - `id` is a stable slug; a viewer's dismissal is remembered per-`id` in
-  `localStorage` (`campScoreboardDismissedChanges`), so clearing one
-  banner never clears the others.
-- Add newest entries to the front; prune ones well past two hours whenever
-  you're editing the list (expired entries render nothing regardless).
-- `renderWhatsNew` runs from `renderAll` and from the 30-second interval,
-  so a banner disappears on its own within ~30s of turning two hours old,
-  no interaction needed.
-- The two-hour window counts **awake time only** — it pauses overnight
-  (9pm–8am camp time, `QUIET_START_HOUR`/`QUIET_END_HOUR`) via
-  `awakeElapsedMs`, so a change shipped late at night isn't spent before
-  anyone's awake; it keeps showing and resumes counting at 8am. A change
-  is only ever live across at most one night (13 awake hours/day vs the
-  2-hour budget).
+  `localStorage` (`campScoreboardDismissedChanges`).
+- List order is the queue order (index 0 rolls in first). Add newest
+  entries to the front; prune long-past ones when editing the list.
+- `renderWhatsNew` runs from `renderAll` and the 30-second interval, so
+  banners advance on their own within ~30s, no interaction needed.
 
 **Auto-reload on deploy.** Open phones refresh themselves when a newer
 build ships. A freshly-deployed client writes its `CODE_UPDATED_AT` to
