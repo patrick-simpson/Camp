@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T11:16:43Z';
+const CODE_UPDATED_AT = '2026-07-21T11:22:44Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -25,6 +25,7 @@ const CODE_UPDATED_AT = '2026-07-21T11:16:43Z';
 // Multiple recent changes stack as separate banners, each expiring on its own
 // two-hour clock. Old entries can be pruned once they're well past two hours.
 const CHANGES = [
+  { id: 'collapse-all-on-load-2026-07-21', at: '2026-07-21T11:22:44Z', text: 'Every section now starts collapsed each time the page loads, so you always open to a tidy, quick-to-scan home screen — tap any section to expand it.' },
   { id: 'my-electives-identity-2026-07-21', at: '2026-07-21T11:16:43Z', text: 'Tell the app which counselor you are (right after you pick a team) and it shows “My electives today” up top — plus stars your own station in Happening Now and the full schedule.' },
   { id: 'morning-meeting-730-2026-07-21', at: '2026-07-21T11:16:43Z', text: 'Morning meeting now starts at 7:30 and shares the slot with rising bell & shower.' },
   { id: 'follow-card-next-cleanup-2026-07-21', at: '2026-07-21T10:49:05Z', text: 'If you’re following a team, your card now shows their next meal cleanup shift too, once it’s assigned — e.g. “Next meal cleanup: Wednesday Lunch.”' },
@@ -5092,18 +5093,13 @@ function applyRoleClass() {
   document.documentElement.classList.toggle('view-only', !canEdit());
 }
 
-// Collapsible cards open to their role default on every load — manual
-// collapses/expands aren't remembered across reloads. Competitions defaults
-// collapsed for everyone (tidy home screen); the data cards default open for
-// editors (who enter data there) and collapsed for viewers. The idle timer
-// re-collapses everything after a few minutes of no interaction.
-function cardId(d) {
-  return d.getAttribute('data-card') || '';
-}
-
+// Every collapsible card starts collapsed on each load — a tidy, quick-to-scan
+// home screen for everyone, editors included. Manual expands aren't remembered
+// across reloads, and the idle timer re-collapses everything after a few
+// minutes of no interaction.
 function applyCardDefaults() {
   document.querySelectorAll('.collapsible-card').forEach((d) => {
-    d.open = cardId(d) === 'competitions' ? false : canEdit();
+    d.open = false;
   });
 }
 
