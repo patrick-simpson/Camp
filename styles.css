@@ -1547,6 +1547,10 @@ body.no-scroll {
   line-height: 1;
 }
 
+.follow-team-headings {
+  min-width: 0;
+}
+
 .follow-team-name {
   font-weight: 700;
 }
@@ -1562,6 +1566,61 @@ body.no-scroll {
   white-space: nowrap;
 }
 
+/* When the team has a hand-drawn shield, the card becomes a little crest
+   banner: the shield floats front-and-center over a soft team-tinted wash,
+   with the name and stats centered beneath it. */
+.follow-team-card.has-shield {
+  position: relative;
+  padding-top: 1.05rem;
+  text-align: center;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 90% at 50% -10%,
+      color-mix(in srgb, var(--color-primary) 16%, var(--color-surface)),
+      color-mix(in srgb, var(--color-primary) 6%, var(--color-surface)) 70%);
+}
+
+.follow-team-crest {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 0.55rem;
+}
+
+.follow-team-shield {
+  height: 132px;
+  width: auto;
+  max-width: 60%;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 7px rgba(0, 0, 0, 0.32));
+}
+
+.follow-team-card.has-shield .follow-team-head {
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+}
+
+.follow-team-card.has-shield .follow-team-headings {
+  text-align: center;
+}
+
+.follow-team-card.has-shield .follow-team-name {
+  font-size: 1.05rem;
+}
+
+/* Change button tucks into the top-right corner so it doesn't break the
+   centered crest layout. */
+.follow-team-card.has-shield .follow-change-btn {
+  position: absolute;
+  top: 0.55rem;
+  right: 0.7rem;
+  margin-left: 0;
+}
+
+.follow-team-card.has-shield .follow-next-line {
+  text-align: center;
+}
+
 .follow-next-line {
   margin: 0.5rem 0 0;
   font-size: 0.85rem;
@@ -1569,6 +1628,110 @@ body.no-scroll {
 
 .follow-neutral-line {
   margin: 0;
+}
+
+/* Follow-card "you are…" line + its Change/set link. */
+.follow-you-line {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+.follow-you-empty {
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+/* "My electives today" card — glanceable time · emoji · station rows, sitting
+   under the follow card in the top .you-strip. */
+.my-electives-card {
+  margin-bottom: 0.85rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--color-primary) 22%, var(--color-border));
+}
+.my-el-head {
+  margin-bottom: 0.5rem;
+}
+.my-el-title {
+  font-weight: 800;
+  font-size: 0.9rem;
+  letter-spacing: 0.01em;
+}
+.my-el-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.my-el-row {
+  display: grid;
+  grid-template-columns: 4.4rem 1.5rem 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+.my-el-wx { justify-self: end; }
+.my-el-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+}
+.my-el-emoji {
+  font-size: 1.05rem;
+  text-align: center;
+  line-height: 1;
+}
+.my-el-station {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.my-el-row.is-break {
+  opacity: 0.72;
+}
+.my-el-row.is-break .my-el-station {
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+/* Forecast badge next to a future elective (schedule sheet + my-electives). */
+.wx-badge {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.sched-label .wx-badge {
+  margin-left: 0.4rem;
+}
+
+/* "You" highlight — shared by the Happening-Now chips and the schedule sheet.
+   All tints ride --color-primary via color-mix, so dark theme adapts for free. */
+.kid-chip-you {
+  background: color-mix(in srgb, var(--color-primary) 18%, var(--color-surface));
+  border-color: var(--color-primary);
+  color: var(--color-primary-dark);
+  font-weight: 800;
+}
+.now-station-you,
+.sched-station-you {
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-bg));
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--color-primary) 45%, transparent);
+}
+/* Base .sched-station has no padding — give the highlighted row room so the
+   ring doesn't hug the text. */
+.sched-station-you {
+  padding: 0.35rem 0.5rem;
+}
+.sched-station-you .sched-station-name {
+  color: var(--color-primary-dark);
+}
+.sched-you {
+  color: var(--color-primary-dark);
+  font-weight: 800;
 }
 
 /* "+N bonus" note under a team's total. */
@@ -3259,4 +3422,42 @@ body.no-scroll {
   border-top: 1px dashed var(--color-border);
   font-weight: 700;
   text-align: center;
+}
+
+/* ============================================================
+   STALLING EASTER EGG — subtle corner dot (→ stalling.html)
+   ============================================================ */
+/* Deliberately easy to miss: a tiny, faint dot pinned to the bottom
+   corner. Sits above content but well below overlays. Grows a touch
+   and gains a little glow when hovered/focused so it's still reachable
+   by anyone who goes looking (or tabs to it). */
+.stalling-egg {
+  position: fixed;
+  right: max(0.5rem, env(safe-area-inset-right));
+  bottom: max(0.5rem, env(safe-area-inset-bottom));
+  z-index: 500;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--color-text-muted);
+  text-decoration: none;
+  border-radius: 50%;
+  opacity: 0.12;
+  transition: opacity 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.stalling-egg:hover,
+.stalling-egg:focus-visible {
+  opacity: 0.85;
+  transform: scale(1.25);
+  box-shadow: 0 0 0 4px rgba(51, 85, 255, 0.12);
+}
+@media (hover: none) {
+  /* On touch devices there's no hover to reveal it, so keep it a hair
+     more findable without shouting. */
+  .stalling-egg { opacity: 0.2; }
 }

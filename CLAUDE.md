@@ -47,18 +47,21 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
    this automatically, so it's a manual step, easy to forget.
 3. `node --check app.js` before committing — cheap syntax safety net for a
    single 2000+ line file with no test suite.
-4. **Always add a `CHANGES` entry for any user-visible change** (new/renamed
-   feature, layout move, scoring behavior, copy the campers will notice) —
-   append it to the `CHANGES` array near the top of `app.js` (see "What's new
-   banners" below). This is not optional; the queue drips notices one per hour,
-   so more entries just means a longer, gentle rollout. Reuse the same UTC
-   timestamp you set for `CODE_UPDATED_AT`. The ONLY changes that skip a
-   notice are purely internal ones a camper could never see (refactors,
-   comment/doc edits, test tweaks).
+4. **Do NOT add "What's new" banner entries.** The banners are discontinued
+   (owner's call, 2026-07-21): the `CHANGES` array at the top of `app.js` is
+   kept EMPTY and must stay that way — do not append entries for user-visible
+   changes. The queue machinery is left in place but dormant (see "What's new
+   banners" below).
 
 ## What's new banners & auto-reload
 
-**"What's new" banners.** `CHANGES` (top of `app.js`) is a hand-maintained
+**"What's new" banners — DISCONTINUED (2026-07-21).** The owner turned these
+off. `CHANGES` (top of `app.js`) is kept EMPTY so no banner ever renders
+(`activeChanges()` returns nothing). Do not add entries. The mechanics below
+are preserved only as documentation of the dormant machinery, in case it's
+ever revived — but the current policy is: no banners.
+
+`CHANGES` was a hand-maintained
 list of recent, user-visible changes. Each entry — `{ id, at, text }` —
 can render a dismissible banner at the top of the page (`renderWhatsNew`,
 into `#whats-new`). They roll in as a **queue, one at a time, one per

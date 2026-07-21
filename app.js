@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T11:22:19Z';
+const CODE_UPDATED_AT = '2026-07-21T20:25:15Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -24,21 +24,11 @@ const CODE_UPDATED_AT = '2026-07-21T11:22:19Z';
 // slug so a viewer's dismissal sticks; `text` is the short announcement.
 // Multiple recent changes stack as separate banners, each expiring on its own
 // two-hour clock. Old entries can be pruned once they're well past two hours.
-const CHANGES = [
-  { id: 'lights-out-bed-emoji-2026-07-21', at: '2026-07-21T11:22:19Z', text: 'The “Lights out” schedule block now shows a 🛏️ instead of a 😴 face.' },
-  { id: 'follow-card-next-cleanup-2026-07-21', at: '2026-07-21T10:49:05Z', text: 'If you’re following a team, your card now shows their next meal cleanup shift too, once it’s assigned — e.g. “Next meal cleanup: Wednesday Lunch.”' },
-  { id: 'hide-notified-btn-2026-07-21', at: '2026-07-21T10:41:56Z', text: 'Once you’re signed up for notifications, the “Notify me” button tucks itself away — you don’t need it anymore.' },
-  { id: 'live-rankings-2026-07-21', at: '2026-07-21T02:51:04Z', text: 'Inflatable Bowling and Pumpkin Pictionary now show a live leaderboard anyone can watch — Pictionary keeps the drawing words secret from viewers and totals the times for you.' },
-  { id: 'team-skits-scored-2026-07-21', at: '2026-07-21T02:31:00Z', text: 'Team Skits are now scored! Friday night’s skits take gold, silver, and bronze and count in the standings like every other game.' },
-  { id: 'ladderball-live-2026-07-21', at: '2026-07-21T02:08:34Z', text: 'Ladder Ball now scores live, point by point — cancellation each round, first to exactly 21 — so you can watch each team’s total climb from any phone.' },
-  { id: 'jebball-goals-2026-07-21', at: '2026-07-21T02:08:34Z', text: 'Jeb Ball has a live goal counter now — the score updates for everyone watching as goals go in.' },
-  { id: 'auto-refresh-2026-07-21', at: '2026-07-21T02:08:34Z', text: 'The scoreboard updates itself now: when a new version ships, your phone refreshes automatically — or shows a “tap to refresh” bar if you’re mid score-entry, so nothing you’re typing is lost.' },
-  { id: 'auto-collapse-2026-07-21', at: '2026-07-21T02:08:34Z', text: 'The sections tidy themselves up — after a few minutes idle they collapse back down so the page stays quick to scan.' },
-  { id: 'renamed-camp-2026-07-21', at: '2026-07-21T10:11:45Z', text: 'We’re now just “Camp” — same scoreboard, shorter name.' },
-  { id: 'competitions-section-2026-07-21', at: '2026-07-21T10:11:45Z', text: 'The games now live under a collapsible “Competitions” section — tap it open to see the day’s games and tabs.' },
-  { id: 'cumulative-totals-2026-07-21', at: '2026-07-21T10:11:45Z', text: '“Week Points” is now “Cumulative Totals” — the running tally of every team’s points so far.' },
-  { id: 'you-strip-top-2026-07-21', at: '2026-07-21T10:11:45Z', text: 'Your team and the Notify button moved up top, right under the Editing / View-only line, so they’re easy to reach.' },
-];
+// "What's new" banners are discontinued — leave this list EMPTY and do not add
+// entries going forward (owner's call, 2026-07-21). With it empty, activeChanges()
+// returns nothing and no banner ever renders. The queue machinery below is left
+// dormant but harmless.
+const CHANGES = [];
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
@@ -77,6 +67,20 @@ const TEAM_EMOJI = {
   t3: '🎃', // Particularly Perilous Pumpkins
   t4: '🦅', // Patriotic Pilgrims
   t5: '🚜', // Runaway John Deere's
+};
+// Camper-drawn team shield artwork (cropped, transparent WebP crests under
+// images/team-shields/), keyed by team slot id. Shown as a hero crest on the
+// "Your team" card once a viewer picks a team. Missing here === no crest,
+// just the emoji (see images/team-shields/README.md for provenance notes).
+// The ?v= suffix cache-busts the image itself (bump it when a crest file is
+// re-exported, since the <img> URL is otherwise cached indefinitely).
+const TEAM_SHIELD = {
+  t0: 'images/team-shields/ferocious-foxes.webp?v=2',
+  t1: 'images/team-shields/turkey-dinner.webp?v=2',
+  t2: 'images/team-shields/methodic-mediocre-maples.webp?v=2',
+  t3: 'images/team-shields/particularly-perilous-pumpkins.webp?v=2',
+  t4: 'images/team-shields/patriotic-pilgrims.webp?v=4',
+  t5: 'images/team-shields/runaway-john-deeres.webp?v=2',
 };
 // Short-form team names for tight spaces (e.g. the morning meeting banner) —
 // same slots as TEAM_EMOJI, independent of whatever a team gets renamed to.
@@ -469,9 +473,10 @@ const CAMP_TZ = 'America/New_York';
 function hm(h, m) { return h * 60 + (m || 0); }
 
 // Shared Monday–Friday daytime rhythm (identical on the paper schedule).
+// Rising bell & shower now shares its 7:30–8:00 slot with the morning meeting,
+// so it's folded into morningMeetingBlock rather than living here.
 function weekdayDaytime() {
   return [
-    { start: hm(7, 30), end: hm(8, 0), label: 'Rising bell & shower', emoji: '⏰', type: 'activity' },
     { start: hm(8, 0), end: hm(8, 30), label: 'Breakfast', emoji: '🍳', type: 'activity' },
     { start: hm(8, 30), end: hm(9, 0), label: 'Cabin time & clean up', emoji: '🧹', type: 'activity' },
     { start: hm(9, 0), end: hm(9, 45), label: 'Bible study', emoji: '📖', type: 'activity' },
@@ -513,14 +518,16 @@ function joinTeamAbbrevs(ids) {
   return items.slice(0, -1).join(', ') + ' & ' + items[items.length - 1];
 }
 
-// Every morning before rising bell, by team group (A: Mon/Wed/Fri, B: Tue/Thu/Sat).
+// The 7:30–8:00 start to every camp day: rising bell, shower, and the morning
+// meeting at Laura's cottage (that day's team group — A: Mon/Wed/Fri, B:
+// Tue/Thu/Sat) all happen together in this one block.
 function morningMeetingBlock(dow) {
   const isATeamDay = dow === 1 || dow === 3 || dow === 5;
   const group = isATeamDay ? TEAM_GROUP_A : TEAM_GROUP_B;
   return {
-    start: hm(7, 0), end: hm(7, 30),
-    label: "Morning meeting (Laura's cottage) — " + joinTeamAbbrevs(group),
-    emoji: '🏡', type: 'activity',
+    start: hm(7, 30), end: hm(8, 0),
+    label: "Rising bell, shower & morning meeting (Laura's cottage) — " + joinTeamAbbrevs(group),
+    emoji: '⏰', type: 'activity',
   };
 }
 
@@ -551,8 +558,7 @@ const DAY_SCHEDULE = {
     { start: hm(22, 30), end: hm(24, 0), label: 'Lights out', emoji: '🛏️', type: 'activity', noTime: true },
   ]),
   6: [ // Saturday — send-off morning
-    morningMeetingBlock(6),
-    { start: hm(7, 30), end: hm(8, 0), label: 'Rising bell & shower', emoji: '⏰', type: 'activity' },
+    morningMeetingBlock(6), // rising bell + shower folded into this 7:30 block
     { start: hm(8, 0), end: hm(8, 30), label: 'Breakfast', emoji: '🍳', type: 'activity' },
     { start: hm(8, 30), end: hm(9, 30), label: 'Cabin time & campground cleanup', emoji: '🧹', type: 'activity' },
     { start: hm(9, 30), end: hm(10, 0), label: 'Meet in Tabernacle for send-off', emoji: '👋', type: 'activity' },
@@ -577,7 +583,7 @@ const ELECTIVES = {
   ],
   2: [
     [['Swimming', ['Ella', 'Lydia']], ['Nerf War', ['William', 'Zac']], ['Crafts with Eileen', ['Alysa', 'Josh']], ['Lawn Games', ['Brody', 'Cam']], ['Board Games', ['Bria', 'Jovi']]],
-    [['Swimming', ['Sam', 'Sofie']], ['Crafts with Eileen', ['Lilly', 'Abby']], ['Whiffle Ball', ['Jacob', 'TJ']], ['Board Games', ['Ella', 'Stephen']], ['Laser Tag', ['Zac', 'Patrick']], ['Slime with Kimberly', ['TBA']]],
+    [['Swimming', ['Sam', 'Sofie']], ['Crafts with Eileen', ['Lilly', 'Abby']], ['Whiffle Ball', ['Jacob']], ['Board Games', ['Ella', 'Stephen']], ['Laser Tag', ['Zac', 'Patrick']], ['Slime with Kimberly', ['TJ']]],
     [['Swimming', ['William', 'Alysa', 'Lilly']], ['Crafts with Eileen', ['Sofie', 'Lydia']], ['Lawn Games', ['Josh', 'Stephen', 'Cam']], ['Board Games', ['Patrick', 'TJ']], ['Slip and Slide', ['Zac', 'Sam', 'Bria']], ['Slime with Kimberly', ['Abby']]],
   ],
   3: [
@@ -597,6 +603,24 @@ const ELECTIVES = {
   ],
 };
 
+// Device-identity → team. Keyed to the ELECTIVES spellings above ("Lilly",
+// not the standings' "Lily") so a stored identity can look up its own elective
+// assignments directly. Patrick and Stephen appear in ELECTIVES as game-leaders
+// with no team — they're intentionally excluded and never offered as an
+// identity choice. Not editable and not synced (device-local, like state.notify).
+const TEAM_COUNSELORS = {
+  t0: ['Alysa', 'Cam', 'Sam'],   // 🦊 Ferocious Foxes
+  t1: ['Bria', 'Lydia', 'Zac'],  // 🦃 Turkey Dinner
+  t2: ['Jovi', 'Brody', 'Josh'], // 🍁 Methodic Mediocre Maples
+  t3: ['Sofie', 'William'],      // 🎃 Particularly Perilous Pumpkins
+  t4: ['Abby', 'TJ', 'Ella'],    // 🦅 Patriotic Pilgrims
+  t5: ['Lilly', 'Jacob'],        // 🚜 Runaway John Deere's
+};
+
+// Minutes-since-midnight each elective slot starts (Elective 1 / 2 / 3),
+// matching the weekday DAY_SCHEDULE blocks (1:15pm / 3:00pm / 4:00pm).
+const ELECTIVE_SLOT_MIN = [hm(13, 15), hm(15, 0), hm(16, 0)];
+
 // The full set of kids at camp on a given day = everyone assigned to any
 // station across that day's elective slots. A kid missing from a particular
 // slot is on break for it (see electiveBreakKids).
@@ -615,6 +639,151 @@ function electiveBreakKids(dow, slot) {
   return [...electiveDayRoster(dow)].filter((k) => !assigned.has(k)).sort();
 }
 
+// The team id (t0..t5) a stored identity belongs to, or null if unknown.
+function teamOfCounselor(name) {
+  if (!name) return null;
+  return Object.keys(TEAM_COUNSELORS).find((id) => TEAM_COUNSELORS[id].includes(name)) || null;
+}
+
+// Today's three elective slots for the stored identity (state.identity), as
+// [{ slot, time, station, emoji, onBreak }], or null when there's nothing to
+// show — no identity set, a weekend / no-elective day, or the identity isn't on
+// today's elective sheet at all. Reused by renderMyElectives.
+function myElectivesToday() {
+  const name = state.identity;
+  if (!name) return null;
+  const { dow } = campNow();
+  const day = ELECTIVES[dow];
+  if (!day) return null;                               // dow 0/6 — no electives
+  if (!electiveDayRoster(dow).has(name)) return null;  // not on today's sheet
+  return [0, 1, 2].map((slot) => {
+    const stations = day[slot] || [];
+    const found = stations.find(([, kids]) => kids.includes(name));
+    const station = found ? found[0] : null;
+    return {
+      slot,
+      time: schedClock(ELECTIVE_SLOT_MIN[slot], true),
+      station,
+      emoji: station ? (STATION_EMOJI[station] || '🌟') : '☕',
+      onBreak: !station,
+    };
+  });
+}
+
+// ── Elective weather forecast ─────────────────────────────────────
+// Shows the forecast next to FUTURE electives (schedule sheet + "My electives
+// today" card). Source: Open-Meteo — free, no API key, CORS-friendly, so it
+// works from a static GitHub Pages site. Coordinates are Campground Rd,
+// Belgrade ME (weather is regional, so town-level precision is plenty).
+// Fails silent when offline/blocked, exactly like the optional Firebase sync.
+const WEATHER_URL = 'https://api.open-meteo.com/v1/forecast'
+  + '?latitude=44.5055&longitude=-69.7791'
+  + '&hourly=temperature_2m,weather_code,precipitation_probability'
+  + '&temperature_unit=fahrenheit&timezone=America%2FNew_York&forecast_days=7';
+const WEATHER_CACHE_KEY = 'campWeatherCache';
+const WEATHER_TTL_MS = 30 * 60 * 1000; // refetch at most every 30 min
+const WEATHER_RAIN_MIN = 40;           // only surface rain % at/above this
+
+// WMO weather_code → { emoji, label }.
+const WEATHER_CODES = {
+  0: { emoji: '☀️', label: 'Clear' }, 1: { emoji: '🌤️', label: 'Mainly clear' },
+  2: { emoji: '⛅', label: 'Partly cloudy' }, 3: { emoji: '☁️', label: 'Overcast' },
+  45: { emoji: '🌫️', label: 'Fog' }, 48: { emoji: '🌫️', label: 'Fog' },
+  51: { emoji: '🌦️', label: 'Light drizzle' }, 53: { emoji: '🌦️', label: 'Drizzle' }, 55: { emoji: '🌦️', label: 'Heavy drizzle' },
+  56: { emoji: '🌧️', label: 'Freezing drizzle' }, 57: { emoji: '🌧️', label: 'Freezing drizzle' },
+  61: { emoji: '🌧️', label: 'Light rain' }, 63: { emoji: '🌧️', label: 'Rain' }, 65: { emoji: '🌧️', label: 'Heavy rain' },
+  66: { emoji: '🌧️', label: 'Freezing rain' }, 67: { emoji: '🌧️', label: 'Freezing rain' },
+  71: { emoji: '🌨️', label: 'Light snow' }, 73: { emoji: '🌨️', label: 'Snow' }, 75: { emoji: '🌨️', label: 'Heavy snow' },
+  77: { emoji: '🌨️', label: 'Snow grains' },
+  80: { emoji: '🌦️', label: 'Rain showers' }, 81: { emoji: '🌦️', label: 'Rain showers' }, 82: { emoji: '⛈️', label: 'Violent showers' },
+  85: { emoji: '🌨️', label: 'Snow showers' }, 86: { emoji: '🌨️', label: 'Snow showers' },
+  95: { emoji: '⛈️', label: 'Thunderstorm' }, 96: { emoji: '⛈️', label: 'Thunderstorm w/ hail' }, 99: { emoji: '⛈️', label: 'Thunderstorm w/ hail' },
+};
+
+// { dates: ['YYYY-MM-DD', …], byTime: { 'YYYY-MM-DDTHH:00': {temp, code, precip} }, at }
+let weatherData = null;
+
+// Today's date in camp time as 'YYYY-MM-DD' (en-CA renders ISO order), used to
+// tell whether a cached forecast is still keyed to the right "today".
+function campDateStr() {
+  try {
+    return new Intl.DateTimeFormat('en-CA', {
+      timeZone: CAMP_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+    }).format(new Date());
+  } catch (e) { return ''; }
+}
+
+function processWeather(json) {
+  const h = json && json.hourly;
+  if (!h || !Array.isArray(h.time)) return null;
+  const byTime = {};
+  const dates = [];
+  h.time.forEach((t, i) => {
+    byTime[t] = { temp: h.temperature_2m[i], code: h.weather_code[i], precip: h.precipitation_probability[i] };
+    const d = t.slice(0, 10);
+    if (dates[dates.length - 1] !== d) dates.push(d);
+  });
+  return { dates, byTime, at: Date.now() };
+}
+
+// Paint badges in-place once weather lands (schedule sheet + my-electives card).
+function repaintWeather() {
+  renderMyElectives();
+  refreshOpenSchedule();
+}
+
+function loadWeatherCache() {
+  try {
+    const raw = localStorage.getItem(WEATHER_CACHE_KEY);
+    if (!raw) return;
+    const cached = JSON.parse(raw);
+    // Discard a forecast whose day 0 isn't today — the day-offset mapping in
+    // electiveWxHtml assumes dates[0] === today.
+    if (cached && cached.dates && cached.dates[0] === campDateStr()) weatherData = cached;
+  } catch (e) { /* ignore corrupt/absent cache */ }
+}
+
+async function fetchWeather() {
+  try {
+    const res = await fetch(WEATHER_URL, { cache: 'no-store' });
+    if (!res.ok) return;
+    const data = processWeather(await res.json());
+    if (!data) return;
+    weatherData = data;
+    try { localStorage.setItem(WEATHER_CACHE_KEY, JSON.stringify(data)); } catch (e) { /* quota / private mode */ }
+    repaintWeather();
+  } catch (e) { /* offline / blocked — try again next tick */ }
+}
+
+function weatherFresh() {
+  return weatherData && weatherData.dates[0] === campDateStr() && (Date.now() - weatherData.at) < WEATHER_TTL_MS;
+}
+
+function startWeatherUpdates() {
+  loadWeatherCache();
+  if (!weatherFresh()) fetchWeather();
+  setInterval(() => { if (!weatherFresh()) fetchWeather(); }, WEATHER_TTL_MS);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && !weatherFresh()) fetchWeather(); });
+}
+
+// Forecast badge HTML for one elective slot, or '' when it shouldn't show:
+// no data, a past day, a today-slot that already started, beyond the forecast
+// range, or a missing hour. dow is the schedule day being rendered (0–6).
+function electiveWxHtml(dow, slot) {
+  if (!weatherData) return '';
+  const now = campNow();
+  const dayOffset = dow - now.dow;
+  if (dayOffset < 0) return '';                                            // earlier this week
+  if (dayOffset === 0 && ELECTIVE_SLOT_MIN[slot] <= now.minutes) return ''; // today, already started
+  if (dayOffset >= weatherData.dates.length) return '';                    // past the 7-day window
+  const hour = Math.floor(ELECTIVE_SLOT_MIN[slot] / 60);
+  const w = weatherData.byTime[`${weatherData.dates[dayOffset]}T${String(hour).padStart(2, '0')}:00`];
+  if (!w || w.temp == null) return '';
+  const info = WEATHER_CODES[w.code] || { emoji: '🌡️', label: 'Forecast' };
+  const rain = (w.precip != null && w.precip >= WEATHER_RAIN_MIN) ? ` · ${w.precip}%` : '';
+  return `<span class="wx-badge" title="${esc(info.label)} · forecast">${info.emoji} ${Math.round(w.temp)}°${rain}</span>`;
+}
+
 // ── Meal menu ────────────────────────────────────────────────────
 // What the kitchen is serving, filled in as camp announces each meal.
 // Keyed by day-of-week (0 Sun .. 6 Sat), then by meal block name in
@@ -628,6 +797,11 @@ const MEALS = {
     breakfast: { dish: 'Eggs and Bacon', emoji: '🥓' },
     lunch: { dish: 'Wraps', emoji: '🌯' },
     supper: { dish: 'Mac and Cheese', emoji: '🧀' },
+  },
+  2: {
+    breakfast: { dish: 'Pancakes and Sausage', emoji: '🥞' },
+    lunch: { dish: 'Tacos', emoji: '🌮' },
+    supper: { dish: 'Chicken Nuggets and Smiley Fries', emoji: '🍗' },
   },
 };
 
@@ -661,8 +835,10 @@ function blockMealName(label) {
 function mealCleanupNote(dow, label) {
   const meal = blockMealName(label);
   if (!meal || !MEAL_CLEANUP_SCHEDULE[dow]) return '';
-  const teamId = cleanupAssigned(dow, meal);
-  const who = teamId ? `${teamEmoji(teamId)} ${esc(teamName(teamId))}` : 'TBA';
+  const teamIds = cleanupAssigned(dow, meal);
+  if (!teamIds) return ` <span class="meal-cleanup-note">🧽 TBA</span>`;
+  const teams = Array.isArray(teamIds) ? teamIds : [teamIds];
+  const who = teams.map(id => `${teamEmoji(id)} ${esc(teamName(id))}`).join(' + ');
   return ` <span class="meal-cleanup-note">🧽 ${who}</span>`;
 }
 
@@ -742,14 +918,16 @@ function nowBannerHtml(dow, minutes) {
   const time = b.noTime ? null : schedRange(b.start, b.end);
   const progress = b.noTime ? null : (minutes - b.start) / (b.end - b.start);
   if (b.type === 'elective') {
+    const me = state.identity;
+    const chip = (k) => `<span class="kid-chip${k === me ? ' kid-chip-you' : ''}">${esc(k)}${k === me ? ' ⭐' : ''}</span>`;
     const stations = (ELECTIVES[dow] || [])[b.slot] || [];
     let rows = stations.map(([station, kids]) =>
-      `<div class="now-station"><span class="now-station-name">${STATION_EMOJI[station] || '🌟'} ${esc(station)}</span>
-        <span class="now-kids">${kids.map((k) => `<span class="kid-chip">${esc(k)}</span>`).join('')}</span></div>`).join('');
+      `<div class="now-station${kids.includes(me) ? ' now-station-you' : ''}"><span class="now-station-name">${STATION_EMOJI[station] || '🌟'} ${esc(station)}</span>
+        <span class="now-kids">${kids.map(chip).join('')}</span></div>`).join('');
     const breakKids = electiveBreakKids(dow, b.slot);
     if (breakKids.length) {
-      rows += `<div class="now-station now-break"><span class="now-station-name">☕ Break</span>
-        <span class="now-kids">${breakKids.map((k) => `<span class="kid-chip">${esc(k)}</span>`).join('')}</span></div>`;
+      rows += `<div class="now-station now-break${breakKids.includes(me) ? ' now-station-you' : ''}"><span class="now-station-name">☕ Break</span>
+        <span class="now-kids">${breakKids.map(chip).join('')}</span></div>`;
     }
     return main(b.emoji, b.label, time, null, progress) + `<div class="now-stations">${rows}</div>`;
   }
@@ -864,6 +1042,7 @@ function renderScheduleBody() {
     const meal = mealInfo(dow, raw);
 
     let extra = '';
+    let labelBadge = ''; // forecast badge next to the label (future electives only)
     if (raw.type === 'games') {
       const session = raw.start < 720 ? 'Morning' : 'Evening';
       const games = GAMES.filter((g) => g.day === dow && g.session === session);
@@ -872,15 +1051,18 @@ function renderScheduleBody() {
           `<span class="sched-game-chip ${state.results[g.id] ? 'played' : ''}">${g.emoji} ${esc(g.name)}${state.results[g.id] ? ' ✓' : ''}</span>`).join('')}</div>`;
       }
     } else if (raw.type === 'elective') {
+      labelBadge = electiveWxHtml(dow, raw.slot);
+      const me = state.identity;
+      const kidText = (kids) => kids.map((k) => k === me ? `<span class="sched-you">⭐ ${esc(k)}</span>` : esc(k)).join(' · ');
       const stations = (ELECTIVES[dow] || [])[raw.slot] || [];
       if (stations.length) {
         let stationRows = stations.map(([station, kids]) =>
-          `<div class="sched-station"><span class="sched-station-name">${STATION_EMOJI[station] || '🌟'} ${esc(station)}</span>
-            <span class="sched-station-kids">${kids.map(esc).join(' · ')}</span></div>`).join('');
+          `<div class="sched-station${kids.includes(me) ? ' sched-station-you' : ''}"><span class="sched-station-name">${STATION_EMOJI[station] || '🌟'} ${esc(station)}</span>
+            <span class="sched-station-kids">${kidText(kids)}</span></div>`).join('');
         const breakKids = electiveBreakKids(dow, raw.slot);
         if (breakKids.length) {
-          stationRows += `<div class="sched-station sched-break"><span class="sched-station-name">☕ Break</span>
-            <span class="sched-station-kids">${breakKids.map(esc).join(' · ')}</span></div>`;
+          stationRows += `<div class="sched-station sched-break${breakKids.includes(me) ? ' sched-station-you' : ''}"><span class="sched-station-name">☕ Break</span>
+            <span class="sched-station-kids">${kidText(breakKids)}</span></div>`;
         }
         extra = `<div class="sched-stations">${stationRows}</div>`;
       }
@@ -890,7 +1072,7 @@ function renderScheduleBody() {
       <div class="sched-rail"><span class="sched-dot"></span></div>
       <div class="sched-card">
         <div class="sched-time">${raw.noTime ? '' : schedRange(raw.start, raw.end)}${status === 'now' ? '<span class="sched-now-pill">Now</span>' : ''}</div>
-        <div class="sched-label"><span class="sched-emoji">${b.emoji}</span> ${esc(b.label)}${mealCleanupNote(dow, b.label)}</div>
+        <div class="sched-label"><span class="sched-emoji">${b.emoji}</span> ${esc(b.label)}${mealCleanupNote(dow, b.label)}${labelBadge}</div>
         ${extra}
       </div>
     </div>`;
@@ -1009,6 +1191,11 @@ if (state.theme === undefined) state.theme = null; // pre-theme saves: follow th
 if (state.notify === undefined) state.notify = false; // device-local, not synced (see SYNC_KEYS)
 // state.followTeam stays `undefined` until the picker is answered (a team id,
 // or null for "neutral/no team") — device-local, not synced.
+// state.identity is the counselor this device belongs to, and is deliberately
+// left tri-state (device-local, not synced): `undefined` = never asked (so we
+// can proactively prompt on next launch), `null` = asked and skipped ("just
+// cheering"), or a name string. JSON.stringify drops undefined, so "never
+// asked" round-trips through localStorage naturally — same as followTeam.
 normalizeSyncedState();
 
 function counselorName(id) {
@@ -1283,6 +1470,12 @@ function updateSyncIndicator() {
 
 function teamEmoji(id) {
   return TEAM_EMOJI[id] || '🏳️';
+}
+
+// Path to a team's shield crest image, or null if we don't have one for that
+// slot (see TEAM_SHIELD) — callers fall back to the emoji.
+function teamShield(id) {
+  return TEAM_SHIELD[id] || null;
 }
 
 function teamName(id) {
@@ -2494,6 +2687,7 @@ function renderFollowCard() {
   if (!card) return;
   if (state.followTeam === undefined) { card.hidden = true; return; }
   if (state.followTeam === null) {
+    card.className = 'follow-team-card';
     card.hidden = false;
     card.innerHTML = `<p class="muted follow-neutral-line">🏳️ Not following a team — <button id="pick-team-link" class="link-btn">pick one</button></p>`;
     const link = document.getElementById('pick-team-link');
@@ -2514,11 +2708,21 @@ function renderFollowCard() {
   const cleanupLine = nextCleanup
     ? `<p class="follow-next-line">🧽 Next meal cleanup: ${esc(DAY_NAMES[nextCleanup.day])} ${esc(nextCleanup.meal)}</p>`
     : '';
+  const you = state.identity;
+  const youLine = you
+    ? `<p class="follow-you-line">⭐ You: ${teamEmoji(team.id)} ${esc(you)} <button id="change-identity-link" class="link-btn">Change</button></p>`
+    : `<p class="follow-you-line follow-you-empty"><button id="set-identity-link" class="link-btn">🙋 Tell us who you are</button> to see your electives</p>`;
+  const shield = teamShield(team.id);
+  const crestHtml = shield
+    ? `<div class="follow-team-crest"><img class="follow-team-shield" src="${shield}" alt="${esc(team.name)} team shield" width="480" height="667" loading="lazy" decoding="async"></div>`
+    : '';
+  card.className = 'follow-team-card' + (shield ? ' has-shield' : '');
   card.hidden = false;
   card.innerHTML = `
+    ${crestHtml}
     <div class="follow-team-head">
-      <span class="follow-team-emoji">${teamEmoji(team.id)}</span>
-      <div>
+      ${shield ? '' : `<span class="follow-team-emoji">${teamEmoji(team.id)}</span>`}
+      <div class="follow-team-headings">
         <div class="follow-team-name">Your team: ${esc(team.name)}</div>
         <div class="follow-team-stats">${ordinal(rank)} place · ${s.points} pts</div>
       </div>
@@ -2526,9 +2730,35 @@ function renderFollowCard() {
     </div>
     ${nextLine}
     ${cleanupLine}
+    ${youLine}
   `;
   const changeBtn = document.getElementById('change-team-link');
   if (changeBtn) changeBtn.addEventListener('click', openTeamPicker);
+  const idBtn = document.getElementById('change-identity-link') || document.getElementById('set-identity-link');
+  if (idBtn) idBtn.addEventListener('click', openIdentityPicker);
+}
+
+// Compact "My electives today" card in the top strip — the stored identity's
+// three slots (time · emoji · station, or Break). Hidden when there's nothing
+// to show (see myElectivesToday). Rendered from renderAll AND the 30s interval
+// so it follows the camp day across a midnight rollover.
+function renderMyElectives() {
+  const card = document.getElementById('my-electives-card');
+  if (!card) return;
+  const rows = myElectivesToday();
+  if (!rows) { card.hidden = true; card.innerHTML = ''; return; }
+  card.hidden = false;
+  card.innerHTML = `
+    <div class="my-el-head"><span class="my-el-title">⭐ My electives today</span></div>
+    <div class="my-el-rows">
+      ${rows.map((r) => `
+        <div class="my-el-row ${r.onBreak ? 'is-break' : ''}">
+          <span class="my-el-time">${r.time}</span>
+          <span class="my-el-emoji">${r.emoji}</span>
+          <span class="my-el-station">${r.onBreak ? 'Break' : esc(r.station)}</span>
+          <span class="my-el-wx">${electiveWxHtml(campNow().dow, r.slot)}</span>
+        </div>`).join('')}
+    </div>`;
 }
 
 function ordinal(n) {
@@ -2537,22 +2767,49 @@ function ordinal(n) {
   return n + (s[(v - 20) % 10] || s[v] || s[0]);
 }
 
-// ── Team picker (which team to follow) ────────────────────────────
-// Device-local — shown once after unlocking until answered (a real team,
-// or explicitly "neutral"), reachable again later via the follow-team card.
+// ── Team + identity picker ────────────────────────────────────────
+// A tiny two-step flow in one overlay: first "which team are you rooting
+// for?", then (for a real team) "which one are you?" so a counselor's own
+// electives can be surfaced. Device-local — shown once after unlocking until
+// answered, and reachable again later via the follow-team card. Existing
+// followers from before identity shipped get only the name step on next launch.
+
+// Picker step machine (module-local, not persisted).
+let pickerStep = 'team';       // 'team' | 'identity'
+let pickerTeamId = null;       // team whose counselors the identity step lists
+let pickerNotifyToast = null;  // "following…" toast deferred to the final close
 
 function teamPickerOverlayEl() {
   return document.getElementById('team-picker-overlay');
 }
 
 function maybeShowTeamPicker() {
-  if (state.followTeam === undefined) openTeamPicker();
+  if (state.followTeam === undefined) { openTeamPicker(); return; }
+  // Already following a real team but never answered "which one are you?"
+  // (a fresh install skips this; existing followers get just the name step).
+  if (state.followTeam && state.identity === undefined) openIdentityPicker();
 }
 
 function openTeamPicker() {
+  pickerStep = 'team';
+  pickerNotifyToast = null;
+  showPickerOverlay();
+}
+
+// Jump straight to the identity step (from the follow card, or the launch
+// migration). Only meaningful when a real team is being followed.
+function openIdentityPicker() {
+  if (!state.followTeam) return;
+  pickerStep = 'identity';
+  pickerTeamId = state.followTeam;
+  pickerNotifyToast = null;
+  showPickerOverlay();
+}
+
+function showPickerOverlay() {
   const overlay = teamPickerOverlayEl();
   if (!overlay) return;
-  renderTeamPickerOptions();
+  renderPickerStep();
   overlay.hidden = false;
   document.body.classList.add('no-scroll');
   const app = document.getElementById('app');
@@ -2568,6 +2825,20 @@ function closeTeamPicker() {
   if (app) app.inert = false;
 }
 
+function renderPickerStep() {
+  const title = document.querySelector('.team-picker-title');
+  const hint = document.querySelector('.team-picker-hint');
+  if (pickerStep === 'identity') {
+    if (title) title.textContent = '🙋 Which one are you?';
+    if (hint) hint.textContent = "So we can show your electives whenever you check in. Just cheering? Skip it.";
+    renderIdentityOptions();
+  } else {
+    if (title) title.textContent = '👋 Which team are you rooting for?';
+    if (hint) hint.textContent = "You'll get a heads-up here when they score or get called up next.";
+    renderTeamPickerOptions();
+  }
+}
+
 function renderTeamPickerOptions() {
   const wrap = document.getElementById('team-picker-options');
   if (!wrap) return;
@@ -2580,17 +2851,54 @@ function renderTeamPickerOptions() {
     btn.addEventListener('click', () => {
       const id = btn.dataset.teamId || null;
       const turnedOnNotify = id && !state.notify;
+      // Switching to a different team invalidates a prior identity — re-ask it.
+      if (id !== state.followTeam) state.identity = null;
       state.followTeam = id;
       // Following a team opts you into its alerts — the picker promises a
       // "heads-up when they score or are up next," which only fires when
       // notifications are on. (Neutral leaves the notify setting alone.)
       if (id && !state.notify) enableNotify();
       saveState();
-      closeTeamPicker();
-      renderAll();
-      if (turnedOnNotify) showToast(`🔔 Following ${teamEmoji(id)} ${teamName(id)} — you'll get alerts here when they score or are up next.`);
+      if (!id) {                       // neutral — no team, so no identity step
+        state.identity = null;
+        saveState();
+        closePickerAndRender(null);
+        return;
+      }
+      if (turnedOnNotify) {
+        pickerNotifyToast = `🔔 Following ${teamEmoji(id)} ${teamName(id)} — you'll get alerts here when they score or are up next.`;
+      }
+      // Advance to the identity step (don't close yet).
+      pickerTeamId = id;
+      pickerStep = 'identity';
+      renderPickerStep();
     });
   });
+}
+
+function renderIdentityOptions() {
+  const wrap = document.getElementById('team-picker-options');
+  if (!wrap) return;
+  const names = TEAM_COUNSELORS[pickerTeamId] || [];
+  wrap.innerHTML = names.map((n) =>
+    `<button class="team-picker-option ${state.identity === n ? 'selected' : ''}" data-counselor="${esc(n)}">
+      <span class="chip-emoji">${teamEmoji(pickerTeamId)}</span> ${esc(n)}
+    </button>`
+  ).join('') + `<button class="team-picker-option team-picker-neutral ${state.identity === null ? 'selected' : ''}" data-counselor="">🙌 Skip — I'm just cheering</button>`;
+  wrap.querySelectorAll('.team-picker-option').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.identity = btn.dataset.counselor || null;
+      saveState();
+      closePickerAndRender(pickerNotifyToast);
+    });
+  });
+}
+
+function closePickerAndRender(toast) {
+  closeTeamPicker();
+  renderAll();
+  if (toast) showToast(toast);
+  pickerNotifyToast = null;
 }
 
 function wireTeamPicker() {
@@ -2598,7 +2906,9 @@ function wireTeamPicker() {
   if (!overlay) return;
   const backdrop = overlay.querySelector('.team-picker-backdrop');
   // Only lets the user dismiss without choosing if they've already answered
-  // once before (skip-by-accident shouldn't leave followTeam unanswered).
+  // the team question once (skip-by-accident shouldn't leave followTeam
+  // unanswered). At the identity step followTeam is already set, so a dismiss
+  // there just leaves identity as-is — effectively "skip".
   const dismiss = () => { if (state.followTeam !== undefined) closeTeamPicker(); };
   if (backdrop) backdrop.addEventListener('click', dismiss);
   document.addEventListener('keydown', (e) => {
@@ -2947,9 +3257,9 @@ const MEAL_ICONS = { Breakfast: '🍳', Lunch: '🥪', Supper: '🍲' };
 const MEAL_CLEANUP_SCHEDULE = {
   1: { Breakfast: 't5', Lunch: 't4', Supper: 't0' }, // Mon: John Deere's / Pilgrims / Foxes
   2: { Breakfast: 't2', Lunch: 't3', Supper: 't1' }, // Tue: Maples / Pumpkins / Turkey
-  3: {}, // Wed — TBA
-  4: {}, // Thu — TBA
-  5: {}, // Fri — TBA
+  3: { Breakfast: 't0', Lunch: 't5', Supper: 't4' }, // Wed: Foxes / John Deere's / Pilgrims
+  4: { Breakfast: 't1', Lunch: 't2', Supper: 't3' }, // Thu: Turkey / Maples / Pumpkins
+  5: { Breakfast: ['t3', 't4'], Lunch: ['t0', 't1'], Supper: ['t2', 't5'] }, // Fri: (Pumpkin+Pilgrim) / (Foxes+Turkey) / (Maple+John Deere's)
 };
 
 // The team assigned to a given day + meal, or null (TBA).
@@ -2972,7 +3282,9 @@ function findNextCleanupFor(teamId) {
   for (let day = Math.max(todayDow, 1); day <= 5; day++) {
     for (const meal of MEAL_CLEANUP_MEALS) {
       if (day === todayDow && MEAL_START_MINUTES[meal] <= nowMinutes) continue;
-      if (cleanupAssigned(day, meal) === teamId) return { day, meal };
+      const assigned = cleanupAssigned(day, meal);
+      const teams = assigned ? (Array.isArray(assigned) ? assigned : [assigned]) : [];
+      if (teams.includes(teamId)) return { day, meal };
     }
   }
   return null;
@@ -3013,7 +3325,7 @@ function renderMealCleanup() {
     const dow = campNow().dow;
     cleanupDay = (dow >= 1 && dow <= 5) ? dow : 1;
     const first = cleanupAssigned(cleanupDay, cleanupDraft.meal);
-    cleanupDraft.teams = first ? [first] : [];
+    cleanupDraft.teams = first ? (Array.isArray(first) ? first : [first]) : [];
   }
   const d = cleanupDraft;
   const todayDow = campNow().dow;
@@ -3022,22 +3334,30 @@ function renderMealCleanup() {
     `<button class="verse-day-chip ${dow === cleanupDay ? 'selected' : ''}" data-cleanup-day="${dow}" aria-pressed="${dow === cleanupDay}">${DAY_NAMES[dow].slice(0, 3)}${dow === todayDow ? '<span class="today-dot" title="Today"></span>' : ''}</button>`).join('')}</div>`;
 
   const rotaHTML = `<div class="cleanup-rota">${MEAL_CLEANUP_MEALS.map((meal) => {
-    const teamId = cleanupAssigned(cleanupDay, meal);
+    const teamIds = cleanupAssigned(cleanupDay, meal);
     const pts = cleanupMealPoints(cleanupDay, meal);
+    const teams = teamIds ? (Array.isArray(teamIds) ? teamIds : [teamIds]) : [];
+    const teamStr = teams.length > 0
+      ? teams.map(id => `${teamEmoji(id)} ${esc(teamName(id))}`).join(' + ')
+      : '<span class="cleanup-tba">TBA</span>';
     return `<div class="cleanup-meal-row">
       <span class="cleanup-meal-name">${MEAL_ICONS[meal]} ${esc(meal)}</span>
-      <span class="cleanup-meal-team">${teamId ? `${teamEmoji(teamId)} ${esc(teamName(teamId))}` : '<span class="cleanup-tba">TBA</span>'}</span>
+      <span class="cleanup-meal-team">${teamStr}</span>
       ${pts ? `<span class="cleanup-meal-pts">+${pts}</span>` : ''}
     </div>`;
   }).join('')}</div>`;
 
   let entryHTML = '';
   if (canEdit()) {
-    const assignedId = cleanupAssigned(cleanupDay, d.meal);
+    const assignedIds = cleanupAssigned(cleanupDay, d.meal);
     const mealChips = `<div class="bonus-meal-row">${MEAL_CLEANUP_MEALS.map((m) =>
       `<button class="bonus-meal-chip ${d.meal === m ? 'selected' : ''}" data-cleanup-meal="${m}" aria-pressed="${d.meal === m}">${esc(m)}</button>`).join('')}</div>`;
-    const assignedLine = assignedId
-      ? `<p class="bonus-entry-hint muted">On the rota for ${esc(DAY_NAMES[cleanupDay])} ${esc(d.meal.toLowerCase())}: ${teamEmoji(assignedId)} ${esc(teamName(assignedId))}</p>`
+    const assignedLine = assignedIds
+      ? (() => {
+          const teams = Array.isArray(assignedIds) ? assignedIds : [assignedIds];
+          const teamStr = teams.map(id => `${teamEmoji(id)} ${esc(teamName(id))}`).join(' + ');
+          return `<p class="bonus-entry-hint muted">On the rota for ${esc(DAY_NAMES[cleanupDay])} ${esc(d.meal.toLowerCase())}: ${teamStr}</p>`;
+        })()
       : `<p class="bonus-entry-hint muted">No team assigned for ${esc(DAY_NAMES[cleanupDay])} ${esc(d.meal.toLowerCase())} yet — pick who did it:</p>`;
     entryHTML = `
       <div class="verse-entry">
@@ -3108,7 +3428,7 @@ function renderMealCleanup() {
     btn.addEventListener('click', () => {
       cleanupDay = parseInt(btn.dataset.cleanupDay, 10);
       const a = cleanupAssigned(cleanupDay, d.meal);
-      d.teams = a ? [a] : [];
+      d.teams = a ? (Array.isArray(a) ? a : [a]) : [];
       renderMealCleanup();
     });
   });
@@ -3134,7 +3454,7 @@ function bindCleanupEntry(wrap) {
     btn.addEventListener('click', () => {
       d.meal = btn.dataset.cleanupMeal;
       const a = cleanupAssigned(cleanupDay, d.meal);
-      d.teams = a ? [a] : []; // pre-target the rota's team for this meal
+      d.teams = a ? (Array.isArray(a) ? a : [a]) : []; // pre-target the rota's team for this meal
       renderMealCleanup();
     });
   });
@@ -4641,11 +4961,12 @@ function awakeElapsedMs(fromMs, toMs, capMs) {
   return awake;
 }
 
-// The banners are a QUEUE, not a wall: they roll in one at a time, one per
-// hour, and only during awake hours (8am–9pm). A change shipped overnight waits
-// for 8am; the rest follow at one-hour intervals behind it. So the batch below,
-// all shipped late at night, starts appearing at 8am and advances hourly.
-const CHANGE_SPACING_MS = 60 * 60 * 1000; // at most one new banner per hour
+// The banners are a QUEUE, not a wall: they roll in one at a time, one every
+// 15 minutes, and only during awake hours (7am–9pm). A change shipped overnight
+// waits for 7am; the rest follow at 15-minute intervals behind it. So the
+// batch below, all shipped late at night, starts appearing at 7am and
+// advances every 15 minutes.
+const CHANGE_SPACING_MS = 15 * 60 * 1000; // at most one new banner per 15 minutes
 
 // The first awake instant at/after t: if t falls in quiet hours, jump forward
 // to ~8am; otherwise t itself.
@@ -4669,8 +4990,9 @@ function addAwakeMs(fromMs, addMs) {
 }
 
 // Release time of each CHANGES entry (in list order): the later of its own
-// awake-slotted ship time and one hour (awake) behind the previous release, so
-// they queue up one per hour. Deterministic from the `at` values.
+// awake-slotted ship time and 15 minutes (awake) behind the previous
+// release, so they queue up one per 15 minutes. Deterministic from the `at`
+// values.
 function changeReleases() {
   const list = (typeof CHANGES !== 'undefined' ? CHANGES : []);
   const releases = [];
@@ -4690,7 +5012,7 @@ function changeReleases() {
 
 // One banner at a time: the newest entry that has rolled in, isn't dismissed,
 // and is still inside its two-hour awake window. Each is superseded by the next
-// as its hour arrives, so exactly one shows per hour.
+// as its 15-minute slot arrives.
 function activeChanges() {
   const now = Date.now();
   const dismissed = dismissedChanges();
@@ -4841,6 +5163,7 @@ function renderAll() {
   renderGameList();
   renderGameView();
   renderStandings();
+  renderMyElectives();
   renderMemoryVerse();
   renderMealCleanup();
   renderBonuses();
@@ -4888,12 +5211,13 @@ function init() {
 
   startIdleCollapse();
   startUpdatePolling();
+  startWeatherUpdates();
 
   renderAll();
 
   // Keep the "happening now" banner (and any open schedule sheet) current
   // without any taps — and expire "what's new" banners once they hit two hours.
-  setInterval(() => { renderNowBanner(); refreshOpenSchedule(); renderWhatsNew(); }, 30 * 1000);
+  setInterval(() => { renderNowBanner(); refreshOpenSchedule(); renderWhatsNew(); renderMyElectives(); }, 30 * 1000);
 }
 
 function updateRoleButton() {
@@ -4921,18 +5245,13 @@ function applyRoleClass() {
   document.documentElement.classList.toggle('view-only', !canEdit());
 }
 
-// Collapsible cards open to their role default on every load — manual
-// collapses/expands aren't remembered across reloads. Competitions defaults
-// collapsed for everyone (tidy home screen); the data cards default open for
-// editors (who enter data there) and collapsed for viewers. The idle timer
-// re-collapses everything after a few minutes of no interaction.
-function cardId(d) {
-  return d.getAttribute('data-card') || '';
-}
-
+// Every collapsible card starts collapsed on each load — a tidy, quick-to-scan
+// home screen for everyone, editors included. Manual expands aren't remembered
+// across reloads, and the idle timer re-collapses everything after a few
+// minutes of no interaction.
 function applyCardDefaults() {
   document.querySelectorAll('.collapsible-card').forEach((d) => {
-    d.open = cardId(d) === 'competitions' ? false : canEdit();
+    d.open = false;
   });
 }
 

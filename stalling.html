@@ -1,0 +1,833 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Stalling with Patrick</title>
+  <meta name="description" content="A little something.">
+  <meta name="theme-color" content="#05070d">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%99%EF%B8%8F%3C/text%3E%3C/svg%3E">
+  <style>
+    * { box-sizing: border-box; }
+    :root {
+      --gold: #f5c451;
+      --gold-deep: #b8860b;
+      --stage-1: #0b1020;
+      --stage-2: #05070d;
+    }
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background: var(--stage-2);
+      color: #fff;
+      font-family: 'Inter', system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      overflow-x: hidden;
+    }
+    body {
+      min-height: 100dvh;
+      display: flex;
+      flex-direction: column;
+    }
+    a { color: inherit; }
+
+    /* ── Top bar ─────────────────────────────────────────── */
+    .topbar {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 40;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: max(0.6rem, env(safe-area-inset-top)) 0.8rem 0.6rem;
+      background: linear-gradient(to bottom, rgba(0,0,0,0.55), rgba(0,0,0,0));
+      pointer-events: none;
+    }
+    .topbar a, .topbar button {
+      pointer-events: auto;
+    }
+    .chip {
+      appearance: none;
+      border: 1px solid rgba(255,255,255,0.22);
+      background: rgba(255,255,255,0.08);
+      color: #fff;
+      font: inherit;
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 0.4rem 0.8rem;
+      border-radius: 999px;
+      text-decoration: none;
+      cursor: pointer;
+      backdrop-filter: blur(6px);
+      transition: background 0.2s ease, transform 0.1s ease;
+      white-space: nowrap;
+    }
+    .chip:hover { background: rgba(255,255,255,0.16); }
+    .chip:active { transform: scale(0.96); }
+    .chip.spacer { margin-left: auto; }
+
+    /* ── Chooser ─────────────────────────────────────────── */
+    .chooser {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1.4rem;
+      padding: 5rem 1.2rem 3rem;
+      text-align: center;
+      background:
+        radial-gradient(1200px 600px at 50% -10%, #16203a 0%, transparent 60%),
+        linear-gradient(180deg, var(--stage-1), var(--stage-2));
+    }
+    .chooser h1 {
+      margin: 0;
+      font-size: clamp(1.5rem, 6vw, 2.4rem);
+      font-weight: 800;
+      letter-spacing: 0.5px;
+    }
+    .chooser .kicker {
+      margin: 0;
+      text-transform: uppercase;
+      letter-spacing: 3px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--gold);
+      opacity: 0.9;
+    }
+    .chooser p.sub { margin: 0; color: #aeb6c9; font-size: 0.95rem; }
+    .cards {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1rem;
+      justify-content: center;
+      width: 100%;
+      max-width: 720px;
+      margin-top: 0.6rem;
+    }
+    .card {
+      flex: 1 1 280px;
+      max-width: 340px;
+      border-radius: 18px;
+      padding: 1.4rem 1.2rem;
+      cursor: pointer;
+      text-align: left;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.04);
+      transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+      font: inherit;
+      color: inherit;
+    }
+    .card:hover { transform: translateY(-4px); }
+    .card .emoji { font-size: 2rem; }
+    .card h2 { margin: 0.5rem 0 0.3rem; font-size: 1.2rem; }
+    .card p { margin: 0; font-size: 0.88rem; color: #aeb6c9; }
+    .card-pro {
+      background: linear-gradient(160deg, rgba(245,196,81,0.14), rgba(255,255,255,0.03));
+      border-color: rgba(245,196,81,0.4);
+    }
+    .card-pro:hover { box-shadow: 0 14px 40px rgba(245,196,81,0.22); border-color: var(--gold); }
+    .card-pro h2 { color: var(--gold); }
+    .card-temu {
+      background: repeating-linear-gradient(45deg, #ff2fb0 0 18px, #16d6ff 18px 36px);
+      border-color: #fff700;
+      color: #000;
+    }
+    .card-temu h2 { font-family: 'Comic Sans MS', 'Comic Sans', 'Chalkboard SE', cursive; color: #000; text-shadow: 1px 1px 0 #fff700; }
+    .card-temu p { color: #111; font-weight: 700; font-family: 'Comic Sans MS', cursive; }
+    .card-temu:hover { box-shadow: 0 14px 40px rgba(255,47,176,0.4); }
+
+    /* ── Stage (shared) ──────────────────────────────────── */
+    .stage {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .stage.show { display: flex; }
+
+    /* ============================================================
+       PRO — "Stalling with Patrick" (late-night polish)
+       ============================================================ */
+    .stage-pro {
+      background:
+        radial-gradient(900px 900px at 50% 120%, rgba(27,43,90,0.6) 0%, transparent 60%),
+        radial-gradient(1400px 700px at 50% -20%, #22305a 0%, transparent 55%),
+        linear-gradient(180deg, #0a0f1f 0%, #05070d 100%);
+    }
+    /* sweeping spotlights */
+    .spotlight {
+      position: absolute;
+      top: -30%;
+      width: 40vmax;
+      height: 160vmax;
+      background: linear-gradient(to bottom, rgba(245,196,81,0.20), rgba(245,196,81,0));
+      filter: blur(8px);
+      transform-origin: top center;
+      opacity: 0;
+      mix-blend-mode: screen;
+    }
+    .stage-pro.run .spot-l { left: 12%; animation: spotSweepL 4.5s ease-in-out infinite; }
+    .stage-pro.run .spot-r { right: 12%; animation: spotSweepR 4.5s ease-in-out infinite; }
+    @keyframes spotSweepL {
+      0% { opacity: 0; transform: rotate(-8deg); }
+      15% { opacity: 0.9; }
+      50% { transform: rotate(14deg); opacity: 0.7; }
+      85% { opacity: 0.9; }
+      100% { opacity: 0; transform: rotate(-8deg); }
+    }
+    @keyframes spotSweepR {
+      0% { opacity: 0; transform: rotate(8deg); }
+      15% { opacity: 0.9; }
+      50% { transform: rotate(-14deg); opacity: 0.7; }
+      85% { opacity: 0.9; }
+      100% { opacity: 0; transform: rotate(8deg); }
+    }
+    /* curtain */
+    .curtain {
+      position: absolute;
+      top: 0; bottom: 0;
+      width: 52%;
+      background:
+        repeating-linear-gradient(90deg, #5e0f1c 0 26px, #7c1526 26px 40px, #4a0a15 40px 60px);
+      box-shadow: inset -20px 0 40px rgba(0,0,0,0.6);
+      z-index: 2;
+    }
+    .curtain-l { left: 0; transform: translateX(-100%); }
+    .curtain-r { right: 0; transform: translateX(100%); box-shadow: inset 20px 0 40px rgba(0,0,0,0.6); }
+    .stage-pro.run .curtain-l { animation: curtainOpenL 1.1s cubic-bezier(.7,0,.3,1) forwards; }
+    .stage-pro.run .curtain-r { animation: curtainOpenR 1.1s cubic-bezier(.7,0,.3,1) forwards; }
+    @keyframes curtainOpenL { from { transform: translateX(0); } to { transform: translateX(-102%); } }
+    @keyframes curtainOpenR { from { transform: translateX(0); } to { transform: translateX(102%); } }
+
+    .pro-inner {
+      position: relative;
+      z-index: 3;
+      text-align: center;
+      padding: 1rem;
+      opacity: 0;
+    }
+    .stage-pro.run .pro-inner { animation: proReveal 0.8s ease 0.55s forwards; }
+    @keyframes proReveal { to { opacity: 1; } }
+
+    .pro-onair {
+      display: inline-block;
+      font-size: 0.7rem;
+      letter-spacing: 4px;
+      font-weight: 800;
+      color: #ff5a5a;
+      border: 2px solid #ff5a5a;
+      border-radius: 6px;
+      padding: 0.25rem 0.6rem;
+      margin-bottom: 1.1rem;
+      text-transform: uppercase;
+    }
+    .stage-pro.run .pro-onair { animation: onairBlink 1s steps(1) 1.2s infinite; }
+    @keyframes onairBlink { 50% { opacity: 0.25; box-shadow: 0 0 24px rgba(255,90,90,0.6); } }
+
+    .pro-title {
+      margin: 0;
+      font-weight: 800;
+      line-height: 0.95;
+      font-size: clamp(2.6rem, 13vw, 7rem);
+      background: linear-gradient(180deg, #fff 0%, #ffde8a 40%, var(--gold) 70%, var(--gold-deep) 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      text-shadow: 0 1px 2px rgba(0,0,0,0.45), 0 0 22px rgba(245,196,81,0.4);
+      letter-spacing: 1px;
+    }
+    .pro-title .word { display: inline-block; }
+    .pro-title .ch {
+      display: inline-block;
+      transform: translateY(40px) rotateX(-90deg);
+      opacity: 0;
+    }
+    .stage-pro.run .pro-title .ch { animation: chIn 0.5s cubic-bezier(.2,.8,.2,1) forwards; }
+    @keyframes chIn { to { transform: translateY(0) rotateX(0); opacity: 1; } }
+
+    .pro-sub {
+      margin: 0.7rem 0 0;
+      font-size: clamp(1rem, 4.5vw, 1.9rem);
+      font-weight: 600;
+      color: #eaf0ff;
+      opacity: 0;
+      letter-spacing: 0.5px;
+    }
+    .stage-pro.run .pro-sub { animation: subIn 0.7s ease 1.35s forwards; }
+    @keyframes subIn { from { opacity: 0; transform: translateY(12px) scale(0.96); } to { opacity: 1; transform: none; } }
+    .pro-sub .name {
+      color: var(--gold);
+      font-weight: 800;
+      position: relative;
+    }
+    .pro-host {
+      margin: 1.4rem 0 0;
+      font-size: 0.85rem;
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      color: #8ea0c8;
+      opacity: 0;
+    }
+    .stage-pro.run .pro-host { animation: subIn 0.7s ease 1.8s forwards; }
+
+    /* twinkle layer */
+    .sparkles { position: absolute; inset: 0; z-index: 1; pointer-events: none; overflow: hidden; }
+    .sparkle {
+      position: absolute;
+      font-size: 1rem;
+      opacity: 0;
+      animation: twinkle 3s ease-in-out infinite;
+    }
+    @keyframes twinkle {
+      0%, 100% { opacity: 0; transform: scale(0.4) rotate(0deg); }
+      50% { opacity: 0.9; transform: scale(1) rotate(30deg); }
+    }
+    /* footlight glow */
+    .footlights {
+      position: absolute;
+      left: 0; right: 0; bottom: 0;
+      height: 22vh;
+      background: radial-gradient(120% 100% at 50% 100%, rgba(245,196,81,0.25), transparent 70%);
+      z-index: 1;
+      pointer-events: none;
+    }
+
+    /* ============================================================
+       TEMU — "Stalling with Temu Patrick" (gloriously low-budget)
+       ============================================================ */
+    .stage-temu {
+      background: repeating-linear-gradient(45deg, #16d6ff 0 40px, #b6ff00 40px 80px);
+      font-family: 'Comic Sans MS', 'Comic Sans', 'Chalkboard SE', 'Chalkboard', cursive;
+    }
+    .temu-inner {
+      position: relative;
+      z-index: 3;
+      text-align: center;
+      padding: 1rem;
+      transform: scale(0.2) rotate(-12deg);
+      opacity: 0;
+    }
+    .stage-temu.run .temu-inner { animation: temuPop 0.9s cubic-bezier(.2,1.6,.4,1) 0.8s forwards; }
+    @keyframes temuPop { to { transform: scale(1) rotate(-2deg); opacity: 1; } }
+
+    .temu-badge {
+      display: inline-block;
+      background: #ff2fb0;
+      color: #fff700;
+      font-weight: 700;
+      padding: 0.3rem 0.7rem;
+      border: 3px dashed #fff700;
+      border-radius: 4px;
+      transform: rotate(-6deg);
+      margin-bottom: 0.8rem;
+      font-size: 0.9rem;
+      text-shadow: 2px 2px 0 #000;
+    }
+    .temu-title {
+      margin: 0;
+      font-size: clamp(2rem, 11vw, 5.5rem);
+      line-height: 1.05;
+      color: #ff0000;
+      -webkit-text-stroke: 3px #fff700;
+      text-stroke: 3px #fff700;
+      text-shadow: 4px 4px 0 #000, -2px -2px 0 #16d6ff;
+    }
+    .stage-temu.run .temu-title { animation: temuWobble 0.35s ease-in-out infinite; }
+    @keyframes temuWobble {
+      0%, 100% { transform: rotate(-2deg) skewX(-2deg); }
+      50% { transform: rotate(2deg) skewX(2deg); }
+    }
+    .temu-sub {
+      margin: 0.6rem 0 0;
+      font-size: clamp(1.1rem, 5vw, 2.2rem);
+      color: #0000ff;
+      font-weight: 700;
+      background: #fff700;
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      transform: rotate(1.5deg);
+      border: 2px solid #000;
+    }
+    .temu-sub .temu-name {
+      color: #ff2fb0;
+      text-decoration: underline wavy #00ff00;
+    }
+    .temu-stars {
+      margin: 0.9rem 0 0;
+      font-size: 1.4rem;
+      letter-spacing: 2px;
+      filter: grayscale(0.2);
+    }
+    .temu-rating { color: #000; font-size: 0.8rem; margin-top: 0.2rem; }
+    /* fake buffering spinner */
+    .temu-buffer {
+      position: absolute;
+      top: 14%;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 0.85rem;
+      color: #000;
+      background: rgba(255,255,255,0.7);
+      padding: 0.3rem 0.7rem;
+      border-radius: 4px;
+      opacity: 0;
+      z-index: 4;
+    }
+    .stage-temu.run .temu-buffer { animation: bufferShow 0.8s ease forwards; }
+    @keyframes bufferShow { 0% { opacity: 1; } 100% { opacity: 0; } }
+    .temu-buffer .sp {
+      display: inline-block;
+      animation: spin 0.6s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    /* flying junk emoji */
+    .junk { position: absolute; inset: 0; overflow: hidden; z-index: 2; pointer-events: none; }
+    .junk span {
+      position: absolute;
+      font-size: 2rem;
+      animation: floatJunk 4s linear infinite;
+    }
+    @keyframes floatJunk {
+      0% { transform: translateY(110vh) rotate(0deg); }
+      100% { transform: translateY(-20vh) rotate(720deg); }
+    }
+    .temu-watermark {
+      position: absolute;
+      bottom: 8%;
+      left: 0; right: 0;
+      text-align: center;
+      color: rgba(0,0,0,0.55);
+      font-size: 0.8rem;
+      z-index: 4;
+      transform: rotate(-3deg);
+    }
+
+    /* ── Slogan (shared) ─────────────────────────────────── */
+    .pro-slogan, .temu-slogan {
+      display: block;
+    }
+    .pro-slogan {
+      margin: 1rem 0 0;
+      font-size: clamp(0.95rem, 3.6vw, 1.35rem);
+      font-weight: 700;
+      font-style: italic;
+      letter-spacing: 0.5px;
+      color: var(--gold);
+      opacity: 0;
+    }
+    .stage-pro.run .pro-slogan { animation: subIn 0.7s ease 1.65s forwards; }
+    .temu-slogan {
+      margin: 0.7rem 0 0;
+      font-size: clamp(1rem, 4.5vw, 1.7rem);
+      color: #000;
+      font-weight: 700;
+      background: #00ff6a;
+      display: inline-block;
+      padding: 0.15rem 0.55rem;
+      transform: rotate(-2deg);
+      border: 2px dashed #ff2fb0;
+    }
+
+    /* ── Crew sticker (bounces in occasionally over both stages) ── */
+    .crew-sticker {
+      position: fixed;
+      z-index: 30;
+      width: min(40vw, 210px);
+      opacity: 0;
+      pointer-events: none;
+      will-change: transform, opacity;
+    }
+    .crew-sticker figure {
+      margin: 0;
+      transform: rotate(-3deg);
+      filter: drop-shadow(0 12px 24px rgba(0,0,0,0.5));
+    }
+    .crew-sticker img {
+      display: block;
+      width: 100%;
+      border-radius: 16px;
+      border: 5px solid #fff;
+    }
+    .crew-sticker figcaption {
+      position: absolute;
+      left: 50%;
+      bottom: -0.7rem;
+      transform: translateX(-50%) rotate(-3deg);
+      background: #ffd23f;
+      color: #111;
+      font-weight: 800;
+      font-size: 0.8rem;
+      padding: 0.15rem 0.6rem;
+      border-radius: 999px;
+      border: 2px solid #111;
+      white-space: nowrap;
+    }
+    .crew-sticker.go { animation: crewInOut 2.6s cubic-bezier(.2,1.5,.4,1) forwards; }
+    @keyframes crewInOut {
+      0%   { opacity: 0; transform: scale(0.1) rotate(-14deg) translateY(50px); }
+      12%  { opacity: 1; transform: scale(1.12) rotate(5deg); }
+      22%  { transform: scale(0.94) rotate(-4deg); }
+      31%  { transform: scale(1.04) rotate(2deg); }
+      40%  { transform: scale(1) rotate(-1deg); }
+      82%  { opacity: 1; transform: scale(1) rotate(-1deg); }
+      100% { opacity: 0; transform: scale(0.5) rotate(10deg) translateY(30px); }
+    }
+
+    /* ── Replay control on stage ─────────────────────────── */
+    .replay {
+      position: fixed;
+      bottom: max(1rem, env(safe-area-inset-bottom));
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 45;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.4s ease;
+    }
+    .replay.show { opacity: 1; pointer-events: auto; }
+
+    @media (prefers-reduced-motion: reduce) {
+      .stage-pro.run .curtain-l,
+      .stage-pro.run .curtain-r,
+      .stage-pro.run .pro-title .ch,
+      .stage-pro.run .pro-inner,
+      .stage-pro.run .pro-sub,
+      .stage-pro.run .pro-host,
+      .stage-pro.run .pro-slogan,
+      .stage-temu.run .temu-inner {
+        animation-duration: 0.01s !important;
+      }
+      .crew-sticker.go { animation-duration: 0.01s !important; }
+      .stage-pro.run .spot-l,
+      .stage-pro.run .spot-r,
+      .stage-temu.run .temu-title,
+      .sparkle, .junk span, .stage-pro.run .pro-onair {
+        animation: none !important;
+        opacity: 1;
+      }
+      .curtain-l, .curtain-r { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="topbar">
+    <a class="chip" href="index.html">← Back to Camp</a>
+    <button class="chip spacer" id="mute-btn" aria-pressed="false" title="Toggle sound">🔊 Sound</button>
+  </div>
+
+  <!-- ── CHOOSER ─────────────────────────────────────────── -->
+  <div class="chooser" id="chooser">
+    <p class="kicker">🎙️ Tonight's Program</p>
+    <h1>Stalling with Patrick</h1>
+    <p class="sub">“Buckle up — we're going nowhere.” Pick your intro; best experienced loud.</p>
+    <div class="cards">
+      <button class="card card-pro" id="btn-pro">
+        <div class="emoji">🌃🎷</div>
+        <h2>Stalling with Patrick</h2>
+        <p>The professional, late-night broadcast intro. Curtains, spotlights, the works.</p>
+      </button>
+      <button class="card card-temu" id="btn-temu">
+        <div class="emoji">📦🤡</div>
+        <h2>Stalling with Temu Patrick</h2>
+        <p>The budget knockoff. Comic Sans. Buffering. Two-and-a-half stars. Ships in 3–6 weeks.</p>
+      </button>
+    </div>
+  </div>
+
+  <!-- ── PRO STAGE ───────────────────────────────────────── -->
+  <div class="stage stage-pro" id="stage-pro" aria-hidden="true">
+    <div class="spotlight spot-l"></div>
+    <div class="spotlight spot-r"></div>
+    <div class="sparkles" id="pro-sparkles"></div>
+    <div class="curtain curtain-l"></div>
+    <div class="curtain curtain-r"></div>
+    <div class="footlights"></div>
+    <div class="pro-inner">
+      <span class="pro-onair">● On Air</span>
+      <h1 class="pro-title" id="pro-title"><span class="word" data-word="STALLING"></span></h1>
+      <p class="pro-sub">with <span class="name">Patrick</span></p>
+      <p class="pro-slogan">“Buckle up — we're going nowhere.”</p>
+      <p class="pro-host">Live from Camp • Est. 2026</p>
+    </div>
+  </div>
+
+  <!-- ── TEMU STAGE ──────────────────────────────────────── -->
+  <div class="stage stage-temu" id="stage-temu" aria-hidden="true">
+    <div class="junk" id="temu-junk"></div>
+    <div class="temu-buffer">Buffering <span class="sp">⏳</span> 47%</div>
+    <div class="temu-inner">
+      <span class="temu-badge">★ AS-SEEN-ONLINE ★</span>
+      <h1 class="temu-title">Stalling with</h1>
+      <p class="temu-sub"><span class="temu-name">Temu Patrick</span></p>
+      <div class="temu-stars">⭐⭐⭐☆☆</div>
+      <div class="temu-rating">"is ok. arrived crushed." — 2.5/5 (11,204 reviews)</div>
+      <p class="temu-slogan">buckle up we going NOWHERE 🚗💨</p>
+    </div>
+    <div class="temu-watermark">© Stalling™ (probably) • not affiliated with real Patrick</div>
+  </div>
+
+  <!-- ── CREW STICKER (bounces in occasionally over the intro) ── -->
+  <div class="crew-sticker" id="crew-sticker" aria-hidden="true">
+    <figure>
+      <img src="images/stalling-crew.jpg" alt="The Stalling with Patrick crew">
+      <figcaption id="crew-caption">🚗 the crew</figcaption>
+    </figure>
+  </div>
+
+  <button class="chip replay" id="replay-btn">↻ Replay</button>
+
+  <script>
+  (function () {
+    'use strict';
+
+    // ── Sound (Web Audio, synthesized — no asset files) ──────────
+    var actx = null;
+    var muted = false;
+    try { muted = localStorage.getItem('stallingMuted') === '1'; } catch (e) {}
+
+    function ensureCtx() {
+      if (muted) return null;
+      try {
+        if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+        if (actx.state === 'suspended') actx.resume();
+        return actx;
+      } catch (e) { return null; }
+    }
+
+    // One tone with an ADSR-ish gain envelope.
+    function tone(freq, start, dur, type, peak) {
+      var ctx = actx; if (!ctx) return;
+      var o = ctx.createOscillator();
+      var g = ctx.createGain();
+      o.type = type || 'sine';
+      o.frequency.setValueAtTime(freq, ctx.currentTime + start);
+      g.gain.setValueAtTime(0.0001, ctx.currentTime + start);
+      g.gain.exponentialRampToValueAtTime(peak || 0.2, ctx.currentTime + start + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + start + dur);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(ctx.currentTime + start);
+      o.stop(ctx.currentTime + start + dur + 0.05);
+    }
+
+    // Pitch slide (for the sad-trombone / kazoo feel).
+    function slide(f1, f2, start, dur, type, peak) {
+      var ctx = actx; if (!ctx) return;
+      var o = ctx.createOscillator();
+      var g = ctx.createGain();
+      o.type = type || 'sawtooth';
+      var t = ctx.currentTime + start;
+      o.frequency.setValueAtTime(f1, t);
+      o.frequency.linearRampToValueAtTime(f2, t + dur);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(peak || 0.18, t + 0.03);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(t); o.stop(t + dur + 0.05);
+    }
+
+    // Short noise burst → soft cymbal / applause swell.
+    function noise(start, dur, peak, hp) {
+      var ctx = actx; if (!ctx) return;
+      var n = Math.floor(ctx.sampleRate * dur);
+      var buf = ctx.createBuffer(1, n, ctx.sampleRate);
+      var d = buf.getChannelData(0);
+      for (var i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / n);
+      var src = ctx.createBufferSource(); src.buffer = buf;
+      var g = ctx.createGain();
+      var f = ctx.createBiquadFilter(); f.type = 'highpass'; f.frequency.value = hp || 2000;
+      g.gain.setValueAtTime(peak || 0.12, ctx.currentTime + start);
+      g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + start + dur);
+      src.connect(f); f.connect(g); g.connect(ctx.destination);
+      src.start(ctx.currentTime + start);
+    }
+
+    // Cartoon "boing" — quick upward pitch bend for the bouncing sticker.
+    function playBoing() {
+      if (!ensureCtx()) return;
+      slide(160, 620, 0.0, 0.18, 'sine', 0.16);
+      slide(620, 500, 0.16, 0.22, 'sine', 0.10);
+    }
+
+    // Polished talk-show sting: rising major arpeggio + shimmer + swell.
+    function playProSting() {
+      if (!ensureCtx()) return;
+      var chord = [392.00, 493.88, 587.33, 783.99]; // G major up to G
+      chord.forEach(function (f, i) { tone(f, i * 0.12, 0.9, 'triangle', 0.16); });
+      tone(783.99, 0.55, 1.4, 'sine', 0.12);       // held top note
+      tone(1174.66, 0.62, 1.1, 'sine', 0.06);      // shimmer overtone
+      noise(0.0, 0.5, 0.05, 6000);                 // soft cymbal
+      noise(0.55, 1.6, 0.05, 1200);                // applause-ish swell
+    }
+
+    // Gloriously cheap sting: kazoo blat + descending sad trombone + buzzer.
+    function playTemuSting() {
+      if (!ensureCtx()) return;
+      slide(300, 320, 0.0, 0.5, 'square', 0.14);   // kazoo blat
+      slide(440, 220, 0.55, 0.9, 'sawtooth', 0.16);// sad trombone down
+      slide(220, 180, 1.5, 0.7, 'sawtooth', 0.14); // ...and lower
+      tone(120, 2.25, 0.5, 'square', 0.16);        // error buzzer
+      tone(115, 2.25, 0.5, 'square', 0.16);
+    }
+
+    // ── Build decorative layers once ─────────────────────────────
+    function seedSparkles() {
+      var host = document.getElementById('pro-sparkles');
+      var chars = ['✦', '✧', '⭐', '·', '✨'];
+      for (var i = 0; i < 26; i++) {
+        var s = document.createElement('span');
+        s.className = 'sparkle';
+        s.textContent = chars[i % chars.length];
+        s.style.left = (Math.random() * 100) + '%';
+        s.style.top = (Math.random() * 100) + '%';
+        s.style.animationDelay = (Math.random() * 3) + 's';
+        s.style.fontSize = (0.6 + Math.random() * 1.4) + 'rem';
+        host.appendChild(s);
+      }
+    }
+    function seedJunk() {
+      var host = document.getElementById('temu-junk');
+      var chars = ['📦', '🤡', '🧦', '⭐', '💸', '🛒', '🔧', '📉', '🥴', '🫠'];
+      for (var i = 0; i < 14; i++) {
+        var s = document.createElement('span');
+        s.textContent = chars[i % chars.length];
+        s.style.left = (Math.random() * 100) + '%';
+        s.style.animationDelay = (Math.random() * 4) + 's';
+        s.style.animationDuration = (3 + Math.random() * 3) + 's';
+        s.style.fontSize = (1.4 + Math.random() * 2) + 'rem';
+        host.appendChild(s);
+      }
+    }
+
+    // Split "STALLING" into per-letter spans with staggered reveal.
+    function buildProTitle() {
+      var word = document.querySelector('#pro-title .word');
+      var text = word.getAttribute('data-word');
+      word.textContent = '';
+      for (var i = 0; i < text.length; i++) {
+        var c = document.createElement('span');
+        c.className = 'ch';
+        c.textContent = text[i];
+        c.style.animationDelay = (0.55 + i * 0.07) + 's';
+        word.appendChild(c);
+      }
+    }
+
+    // ── Stage control ────────────────────────────────────────────
+    var chooser = document.getElementById('chooser');
+    var stagePro = document.getElementById('stage-pro');
+    var stageTemu = document.getElementById('stage-temu');
+    var replayBtn = document.getElementById('replay-btn');
+    var crew = document.getElementById('crew-sticker');
+    var crewCaption = document.getElementById('crew-caption');
+    var crewTimer = null;
+    var current = null;
+
+    // Anchor spots the sticker bounces in from (edges/corners), reset fully
+    // each time so a previous run's top/left doesn't linger.
+    var CREW_SPOTS = [
+      { top: '16%', left: '5%' },
+      { top: '18%', right: '5%' },
+      { bottom: '16%', left: '6%' },
+      { bottom: '18%', right: '6%' },
+      { top: '30%', left: '4%' },
+      { bottom: '24%', left: '50%' }
+    ];
+    var crewPick = 0;
+    function popCrew() {
+      var spot = CREW_SPOTS[crewPick % CREW_SPOTS.length];
+      crewPick++;
+      crew.style.top = crew.style.bottom = crew.style.left = crew.style.right = 'auto';
+      Object.keys(spot).forEach(function (k) { crew.style[k] = spot[k]; });
+      crewCaption.textContent = current === 'temu' ? '📦 shipped crushed' : '🚗 the crew';
+      crew.classList.remove('go');
+      void crew.offsetWidth;
+      crew.classList.add('go');
+      playBoing();
+    }
+    function scheduleCrew() {
+      clearTimeout(crewTimer);
+      var delay = 2600 + Math.random() * 3600; // occasional, not constant
+      crewTimer = setTimeout(function () {
+        if (!current) return;
+        popCrew();
+        scheduleCrew();
+      }, delay);
+    }
+    function stopCrew() {
+      clearTimeout(crewTimer);
+      crew.classList.remove('go');
+    }
+
+    function retrigger(el) {
+      // Restart CSS animations by removing/forcing reflow/re-adding .run
+      el.classList.remove('run');
+      void el.offsetWidth;
+      el.classList.add('run');
+    }
+
+    function play(which) {
+      current = which;
+      chooser.style.display = 'none';
+      if (which === 'pro') {
+        stageTemu.classList.remove('show', 'run');
+        stagePro.classList.add('show');
+        stagePro.setAttribute('aria-hidden', 'false');
+        retrigger(stagePro);
+        playProSting();
+      } else {
+        stagePro.classList.remove('show', 'run');
+        stageTemu.classList.add('show');
+        stageTemu.setAttribute('aria-hidden', 'false');
+        retrigger(stageTemu);
+        playTemuSting();
+      }
+      replayBtn.classList.add('show');
+      scheduleCrew();
+    }
+
+    document.getElementById('btn-pro').addEventListener('click', function () { play('pro'); });
+    document.getElementById('btn-temu').addEventListener('click', function () { play('temu'); });
+
+    replayBtn.addEventListener('click', function () {
+      if (current) play(current);
+    });
+
+    // Tap anywhere on a running stage (not the controls) → back to chooser.
+    function backToChooser(e) {
+      if (e.target.closest('.topbar') || e.target.closest('.replay')) return;
+      stagePro.classList.remove('show', 'run');
+      stageTemu.classList.remove('show', 'run');
+      stagePro.setAttribute('aria-hidden', 'true');
+      stageTemu.setAttribute('aria-hidden', 'true');
+      replayBtn.classList.remove('show');
+      chooser.style.display = 'flex';
+      current = null;
+      stopCrew();
+    }
+    stagePro.addEventListener('click', backToChooser);
+    stageTemu.addEventListener('click', backToChooser);
+
+    // ── Mute toggle ──────────────────────────────────────────────
+    var muteBtn = document.getElementById('mute-btn');
+    function renderMute() {
+      muteBtn.textContent = muted ? '🔇 Muted' : '🔊 Sound';
+      muteBtn.setAttribute('aria-pressed', String(muted));
+    }
+    muteBtn.addEventListener('click', function () {
+      muted = !muted;
+      try { localStorage.setItem('stallingMuted', muted ? '1' : '0'); } catch (e) {}
+      renderMute();
+    });
+    renderMute();
+
+    seedSparkles();
+    seedJunk();
+    buildProTitle();
+  })();
+  </script>
+</body>
+</html>
