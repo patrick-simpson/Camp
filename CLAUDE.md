@@ -47,9 +47,14 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
    this automatically, so it's a manual step, easy to forget.
 3. `node --check app.js` before committing — cheap syntax safety net for a
    single 2000+ line file with no test suite.
-4. If the change is worth telling people about, add an entry to the
-   `CHANGES` array near the top of `app.js` (see "What's new banners"
-   below). Reuse the same UTC timestamp you set for `CODE_UPDATED_AT`.
+4. **Always add a `CHANGES` entry for any user-visible change** (new/renamed
+   feature, layout move, scoring behavior, copy the campers will notice) —
+   append it to the `CHANGES` array near the top of `app.js` (see "What's new
+   banners" below). This is not optional; the queue drips notices one per hour,
+   so more entries just means a longer, gentle rollout. Reuse the same UTC
+   timestamp you set for `CODE_UPDATED_AT`. The ONLY changes that skip a
+   notice are purely internal ones a camper could never see (refactors,
+   comment/doc edits, test tweaks).
 
 ## What's new banners & auto-reload
 

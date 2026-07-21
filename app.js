@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T10:08:25Z';
+const CODE_UPDATED_AT = '2026-07-21T10:11:45Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -31,6 +31,10 @@ const CHANGES = [
   { id: 'jebball-goals-2026-07-21', at: '2026-07-21T02:08:34Z', text: '🧎 Jeb Ball has a live goal counter now — the score updates for everyone watching as goals go in.' },
   { id: 'auto-refresh-2026-07-21', at: '2026-07-21T02:08:34Z', text: '🔄 The scoreboard updates itself now: when a new version ships, your phone refreshes automatically — or shows a “tap to refresh” banner if you’re mid score-entry, so nothing you’re typing is lost.' },
   { id: 'auto-collapse-2026-07-21', at: '2026-07-21T02:08:34Z', text: '🗂️ The sections tidy themselves up — after a few minutes idle they collapse back down so the page stays quick to scan.' },
+  { id: 'renamed-camp-2026-07-21', at: '2026-07-21T10:11:45Z', text: '🏕️ We’re now just “Camp” — same scoreboard, shorter name.' },
+  { id: 'competitions-section-2026-07-21', at: '2026-07-21T10:11:45Z', text: '🏆 The games now live under a collapsible “Competitions” section — tap it open to see the day’s games and tabs.' },
+  { id: 'cumulative-totals-2026-07-21', at: '2026-07-21T10:11:45Z', text: '🧮 “Week Points” is now “Cumulative Totals” — the running tally of every team’s points so far.' },
+  { id: 'you-strip-top-2026-07-21', at: '2026-07-21T10:11:45Z', text: '🔔 Your team and the Notify button moved up top, right under the Editing / View-only line, so they’re easy to reach.' },
 ];
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
