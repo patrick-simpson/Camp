@@ -192,7 +192,6 @@
 
   <div class="topbar">
     <a class="chip" href="stalling.html">← Back</a>
-    <button class="chip spacer" id="sound-btn" aria-pressed="true" title="Toggle sound">🔊 Sound</button>
   </div>
 
   <div id="loading"><span class="spin">🎪</span><span>Loading standings…</span></div>
@@ -395,8 +394,8 @@
     }
     requestAnimationFrame(tick);
 
-    // ── Sound (tiny WebAudio synth; gated on first interaction) ─────
-    var audio = null, muted = false;
+    // ── Sound — disabled by request; kept as no-ops so calls are harmless. ──
+    var audio = null, muted = true;
     function ensureAudio() {
       if (audio || muted) return;
       try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { audio = null; }
@@ -418,14 +417,6 @@
       ensureAudio();
       [523, 659, 784, 1047].forEach(function (f, i) { beep(f, 0.28, i * 0.13, 'triangle', 0.28); });
     }
-    var soundBtn = document.getElementById('sound-btn');
-    soundBtn.addEventListener('click', function () {
-      muted = !muted;
-      soundBtn.setAttribute('aria-pressed', String(!muted));
-      soundBtn.textContent = muted ? '🔇 Muted' : '🔊 Sound';
-      if (!muted) ensureAudio();
-    });
-
     // ── Data loading ───────────────────────────────────────────────
     var liveGroups = null;       // latest live standings (used on intro)
     var haveData = false;
