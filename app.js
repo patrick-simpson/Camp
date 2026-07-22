@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-22T10:46:00Z';
+const CODE_UPDATED_AT = '2026-07-22T12:09:32Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -875,6 +875,11 @@ const MEALS = {
     breakfast: { dish: 'Pancakes and Sausage', emoji: '🥞' },
     lunch: { dish: 'Tacos', emoji: '🌮' },
     supper: { dish: 'Chicken Nuggets and Smiley Fries', emoji: '🍗' },
+  },
+  3: {
+    breakfast: { dish: 'Egg Bake and Muffins', emoji: '🍳' },
+    lunch: { dish: 'Hot Dogs', emoji: '🌭' },
+    supper: { dish: 'Mystery Meat', emoji: '🍖' },
   },
 };
 
