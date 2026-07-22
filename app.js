@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-22T14:53:38Z';
+const CODE_UPDATED_AT = '2026-07-22T17:30:43Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1480,6 +1480,10 @@ function touchData() {
 
 const SYNC_KEYS = ['teams', 'results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta'];
 let fbRef = null;
+// Per-tab id for the "who's here" presence chip — minted once per page load
+// (not persisted) so each open tab counts, and cleans up, independently.
+const presenceId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : newBonusId();
+let presenceCount = 0;
 let applyingRemote = false;
 let pushTimer = null;
 // No pushes until the first server snapshot has landed. Without this, a
@@ -1615,7 +1619,26 @@ function initSync() {
     firebase.database().ref('.info/connected').on('value', (s) => {
       fbConnected = !!s.val();
       updateSyncIndicator();
+      // Re-register presence on every (re)connect — onDisconnect handlers
+      // don't survive a dropped socket, so a reconnect after wifi drops or
+      // the phone waking up needs a fresh one each time.
+      if (fbConnected) {
+        try {
+          const presenceRef = firebase.database().ref('campScoreboard/presence/' + presenceId);
+          presenceRef.onDisconnect().remove();
+          presenceRef.set({ role: currentRole(), at: firebase.database.ServerValue.TIMESTAMP });
+        } catch (e) { /* rules may deny this — presence chip just stays hidden */ }
+      }
     });
+    // Count listener lives here (not inside the connected handler above) so
+    // it's registered exactly once — putting it there would re-subscribe on
+    // every reconnect and stack up duplicate listeners.
+    try {
+      firebase.database().ref('campScoreboard/presence').on('value', (snap) => {
+        presenceCount = snap.numChildren();
+        renderPresence();
+      });
+    } catch (e) { /* ignore — chip just stays hidden */ }
     // (Auto-reload is handled by startUpdatePolling — a same-origin poll of the
     // deployed index.html — so it works on a single device and doesn't depend on
     // Firebase or another client announcing the build.)
@@ -1811,6 +1834,18 @@ function updateSyncIndicator() {
     el.textContent = '⚠️ Offline — will sync when back';
     el.classList.remove('synced');
   }
+}
+
+function renderPresence() {
+  const el = document.getElementById('presence-chip');
+  if (!el) return;
+  if (!syncEnabled() || presenceCount < 1) {
+    el.hidden = true;
+    return;
+  }
+  el.hidden = false;
+  el.textContent = `👥 ${presenceCount}`;
+  el.title = `${presenceCount} device${presenceCount === 1 ? '' : 's'} here now`;
 }
 
 function teamEmoji(id) {
@@ -5669,6 +5704,7 @@ function init() {
   wireHistory();
 
   initSync();
+  renderPresence();
 
   rehydrateTimers();
   document.addEventListener('visibilitychange', onTimersVisible);
