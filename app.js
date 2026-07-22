@@ -2772,17 +2772,19 @@ function renderFollowCard() {
   card.hidden = false;
   card.innerHTML = `
     ${crestHtml}
-    <div class="follow-team-head">
-      ${shield ? '' : `<span class="follow-team-emoji">${teamEmoji(team.id)}</span>`}
-      <div class="follow-team-headings">
-        <div class="follow-team-name">Your team: ${esc(team.name)}</div>
-        <div class="follow-team-stats">${ordinal(rank)} place · ${s.points} pts</div>
+    <div class="follow-team-body">
+      <div class="follow-team-head">
+        ${shield ? '' : `<span class="follow-team-emoji">${teamEmoji(team.id)}</span>`}
+        <div class="follow-team-headings">
+          <div class="follow-team-name">Your team: ${esc(team.name)}</div>
+          <div class="follow-team-stats">${ordinal(rank)} place · ${s.points} pts</div>
+        </div>
+        <button id="change-team-link" class="link-btn follow-change-btn">Change</button>
       </div>
-      <button id="change-team-link" class="link-btn follow-change-btn">Change</button>
+      ${nextLine}
+      ${cleanupLine}
+      ${youLine}
     </div>
-    ${nextLine}
-    ${cleanupLine}
-    ${youLine}
   `;
   const changeBtn = document.getElementById('change-team-link');
   if (changeBtn) changeBtn.addEventListener('click', openTeamPicker);

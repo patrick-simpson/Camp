@@ -1566,59 +1566,42 @@ body.no-scroll {
   white-space: nowrap;
 }
 
-/* When the team has a hand-drawn shield, the card becomes a little crest
-   banner: the shield floats front-and-center over a soft team-tinted wash,
-   with the name and stats centered beneath it. */
+/* When the team has a hand-drawn shield, the card becomes a crest banner:
+   the shield sits on the left, with the name, stats, and next-up lines
+   stacked to its right. (On narrow phones this collapses back to the
+   original centered stacked layout — see the responsive block below.) */
 .follow-team-card.has-shield {
-  position: relative;
-  padding-top: 1.05rem;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
   overflow: hidden;
   background:
-    radial-gradient(120% 90% at 50% -10%,
+    radial-gradient(90% 140% at -10% 50%,
       color-mix(in srgb, var(--color-primary) 16%, var(--color-surface)),
       color-mix(in srgb, var(--color-primary) 6%, var(--color-surface)) 70%);
 }
 
+/* The shield is the only thing on the left; the text body fills the rest. */
 .follow-team-crest {
-  display: flex;
-  justify-content: center;
-  margin-bottom: 0.55rem;
+  flex: 0 0 auto;
+  margin: 0;
 }
 
 .follow-team-shield {
-  height: 132px;
+  display: block;
+  height: 128px;
   width: auto;
-  max-width: 60%;
   object-fit: contain;
   filter: drop-shadow(0 4px 7px rgba(0, 0, 0, 0.32));
 }
 
-.follow-team-card.has-shield .follow-team-head {
-  flex-direction: column;
-  align-items: center;
-  gap: 0.1rem;
-}
-
-.follow-team-card.has-shield .follow-team-headings {
-  text-align: center;
+.follow-team-card.has-shield .follow-team-body {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .follow-team-card.has-shield .follow-team-name {
   font-size: 1.05rem;
-}
-
-/* Change button tucks into the top-right corner so it doesn't break the
-   centered crest layout. */
-.follow-team-card.has-shield .follow-change-btn {
-  position: absolute;
-  top: 0.55rem;
-  right: 0.7rem;
-  margin-left: 0;
-}
-
-.follow-team-card.has-shield .follow-next-line {
-  text-align: center;
 }
 
 .follow-next-line {
@@ -3190,6 +3173,52 @@ body.no-scroll {
 
   .score-input-row input {
     width: 5.5rem;
+  }
+
+  /* The shield-on-the-left crest banner is too cramped on small phones —
+     fall back to the original centered, stacked layout. */
+  .follow-team-card.has-shield {
+    display: block;
+    position: relative;
+    padding-top: 1.05rem;
+    text-align: center;
+    background:
+      radial-gradient(120% 90% at 50% -10%,
+        color-mix(in srgb, var(--color-primary) 16%, var(--color-surface)),
+        color-mix(in srgb, var(--color-primary) 6%, var(--color-surface)) 70%);
+  }
+
+  .follow-team-card.has-shield .follow-team-crest {
+    display: flex;
+    justify-content: center;
+    margin-bottom: 0.55rem;
+  }
+
+  .follow-team-card.has-shield .follow-team-shield {
+    width: auto;
+    height: 132px;
+    max-width: 60%;
+  }
+
+  .follow-team-card.has-shield .follow-team-head {
+    flex-direction: column;
+    align-items: center;
+    gap: 0.1rem;
+  }
+
+  .follow-team-card.has-shield .follow-team-headings {
+    text-align: center;
+  }
+
+  .follow-team-card.has-shield .follow-change-btn {
+    position: absolute;
+    top: 0.55rem;
+    right: 0.7rem;
+    margin-left: 0;
+  }
+
+  .follow-team-card.has-shield .follow-next-line {
+    text-align: center;
   }
 }
 
