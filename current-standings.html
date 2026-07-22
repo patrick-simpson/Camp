@@ -128,12 +128,15 @@
 
     /* ── Standings board (grows) ─────────────────────────── */
     #board {
-      position: relative; z-index: 22; margin: 0 auto; width: min(96vw, 1600px);
+      position: fixed; left: 0; right: 0; bottom: 0; z-index: 22; margin: 0 auto; width: min(96vw, 1600px);
       padding: 0 0.6rem calc(2.2rem + env(safe-area-inset-bottom));
       display: flex; flex-direction: column; gap: clamp(0.3rem, 0.9vh, 0.7rem);
-      transition: all 0.4s;
+      transition: transform 0.55s cubic-bezier(.4, 0, .2, 1), opacity 0.45s ease;
     }
-    #board.final { flex: 1; justify-content: center; padding-top: 1rem; }
+    /* During a team spotlight the board drops off the bottom so the hero owns
+       the whole screen; it slides back up as the team docks into place. */
+    #board.dropped { transform: translateY(115%); opacity: 0; pointer-events: none; }
+    #board.final { position: fixed; inset: 0; justify-content: center; padding-top: 1rem; transform: none; opacity: 1; }
     .row {
       display: grid; grid-template-columns: clamp(3rem,7vw,5rem) 1fr auto;
       align-items: center; gap: clamp(0.6rem, 2vw, 1.6rem);
@@ -556,6 +559,8 @@
       heroWrap.innerHTML = html;
       var hero = heroWrap.querySelector('.hero');
       hero.classList.add('enter');
+      // Drop the board off-screen so the team spotlight is the only thing shown.
+      boardEl.classList.add('dropped');
 
       // confetti: fire the team mascot(s), then keep a light stream.
       var emojis = group.entries.map(function (en) { return teamEmoji(en.team.id); });
@@ -565,10 +570,11 @@
 
       // beat 2: slide points out, medals + bonus in.
       beatTimer = setTimeout(function () { hero.classList.add('beat2'); sfxBreak(); }, 1700);
-      // auto-shrink into the table after ~5s (presenter can skip with →).
-      // If this was the last place, waiting it out rolls into the finale too.
+      // Hold the solo spotlight for 8s, then shrink the team into the table
+      // (presenter can skip with →). If this was the last place, waiting it
+      // out rolls into the finale too.
       var wasLast = orderIdx === order.length - 1;
-      autoTimer = setTimeout(function () { dockCurrent(); if (wasLast) finish(); }, 5000);
+      autoTimer = setTimeout(function () { dockCurrent(); if (wasLast) finish(); }, 8000);
 
       showHint(orderIdx === 0 ? 'Press → for the next place' : (orderIdx === order.length - 1 ? 'Press → to finish' : 'Press → next  ·  ← back'));
     }
@@ -588,6 +594,8 @@
       }
       dockedCount = idx + 1;
       renderBoardRows();
+      // Slide the table back up into view (now holding the just-docked team).
+      boardEl.classList.remove('dropped');
     }
 
     // Board holds docked groups; higher place on top (prepend as we go up).
@@ -671,6 +679,7 @@
       bigIndex = -1;
       dockedCount = order.length;
       renderBoardRows();
+      boardEl.classList.remove('dropped');
       var champGroup = order[order.length - 1]; // first place
       if (isFridayEastern() && champGroup) {
         // Friday: go all out — a full-screen champion celebration (the table
