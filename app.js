@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-22T10:08:35Z';
+const CODE_UPDATED_AT = '2026-07-22T10:28:12Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -95,6 +95,19 @@ const TEAM_SHIELD = {
   t4: 'images/team-shields/patriotic-pilgrims.webp?v=4',
   t5: 'images/team-shields/runaway-john-deeres.webp?v=2',
 };
+// Per-team accent color, tuned to each team's shield/emoji. Drives the "Your
+// team" card's tint, border, and rank pill via the --team-accent CSS custom
+// property (see renderFollowCard / .follow-team-card). Only one team's card
+// shows at a time, so these never sit side by side.
+const TEAM_ACCENT = {
+  t0: '#e2672b', // Ferocious Foxes — fox orange
+  t1: '#9c6420', // Turkey Dinner — roast brown
+  t2: '#c23b22', // Methodic Mediocre Maples — maple red
+  t3: '#e07d10', // Particularly Perilous Pumpkins — pumpkin orange
+  t4: '#345b96', // Patriotic Pilgrims — pilgrim navy
+  t5: '#3a7d34', // Runaway John Deersz — Deere green
+};
+function teamAccent(id) { return TEAM_ACCENT[id] || null; }
 // Short-form team names for tight spaces (e.g. the morning meeting banner) —
 // same slots as TEAM_EMOJI, independent of whatever a team gets renamed to.
 const TEAM_ABBREV = {
@@ -3033,6 +3046,7 @@ function renderFollowCard() {
   if (state.followTeam === undefined) { card.hidden = true; return; }
   if (state.followTeam === null) {
     card.className = 'follow-team-card';
+    card.style.removeProperty('--team-accent');
     card.hidden = false;
     card.innerHTML = `<p class="muted follow-neutral-line">🏳️ Not following a team — <button id="pick-team-link" class="link-btn">pick one</button></p>`;
     const link = document.getElementById('pick-team-link');
@@ -3061,7 +3075,15 @@ function renderFollowCard() {
   const crestHtml = shield
     ? `<div class="follow-team-crest"><img class="follow-team-shield" src="${shield}" alt="${esc(team.name)} team shield" width="480" height="667" loading="lazy" decoding="async"></div>`
     : '';
+  const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '';
+  const statsLine = `<div class="follow-team-stats">
+    <span class="follow-rank-pill">${medal ? medal + ' ' : ''}${ordinal(rank)} place</span>
+    <span class="follow-points">${s.points} pts</span>
+  </div>`;
+  const accent = teamAccent(team.id);
   card.className = 'follow-team-card' + (shield ? ' has-shield' : '');
+  if (accent) card.style.setProperty('--team-accent', accent);
+  else card.style.removeProperty('--team-accent');
   card.hidden = false;
   card.innerHTML = `
     ${crestHtml}
@@ -3070,7 +3092,7 @@ function renderFollowCard() {
         ${shield ? '' : `<span class="follow-team-emoji">${teamEmoji(team.id)}</span>`}
         <div class="follow-team-headings">
           <div class="follow-team-name">${esc(team.name)}</div>
-          <div class="follow-team-stats">${ordinal(rank)} place · ${s.points} pts</div>
+          ${statsLine}
         </div>
         <button id="change-team-link" class="link-btn follow-change-btn">Change</button>
       </div>

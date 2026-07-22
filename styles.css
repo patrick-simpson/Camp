@@ -1532,18 +1532,19 @@ body.no-scroll {
   .points-pulse td { animation: none; }
 }
 
-/* "Your team" summary card. */
+/* "Your team" summary card. Each team sets --team-accent (renderFollowCard);
+   it falls back to the app primary so the neutral / no-shield states still work. */
 .follow-team-card {
   margin-bottom: 0.85rem;
   padding: 0.75rem 0.9rem;
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
-  border: 1px solid color-mix(in srgb, var(--color-primary) 25%, var(--color-border));
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--team-accent, var(--color-primary)) 8%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--team-accent, var(--color-primary)) 25%, var(--color-border));
 }
 
 .follow-team-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.6rem;
 }
 
@@ -1554,14 +1555,40 @@ body.no-scroll {
 
 .follow-team-headings {
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .follow-team-name {
   font-weight: 700;
+  line-height: 1.15;
 }
 
+/* Rank + points sit under the name. */
 .follow-team-stats {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.5rem;
+  margin-top: 0.3rem;
+}
+
+/* Rank pill in the team accent, darkened just enough that white text stays
+   legible for every team color in both light and dark themes. */
+.follow-rank-pill {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #fff;
+  background: color-mix(in srgb, var(--team-accent, var(--color-primary)) 84%, #000);
+  padding: 0.16rem 0.55rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.follow-points {
   font-size: 0.85rem;
+  font-weight: 600;
   color: var(--color-text-muted);
 }
 
@@ -1571,19 +1598,20 @@ body.no-scroll {
   white-space: nowrap;
 }
 
-/* When the team has a hand-drawn shield, the card becomes a crest banner:
-   the shield sits on the left, with the name, stats, and next-up lines
-   stacked to its right. (On narrow phones this collapses back to the
-   original centered stacked layout — see the responsive block below.) */
+/* Crest card: the large shield alone on the left, all text on the right, over
+   a soft left-to-right wash in the team's accent with an accent border. */
 .follow-team-card.has-shield {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: 1.1rem;
+  padding: 0.9rem 1rem;
   overflow: hidden;
+  border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in srgb, var(--team-accent, var(--color-primary)) 40%, var(--color-border));
   background:
-    radial-gradient(90% 140% at -10% 50%,
-      color-mix(in srgb, var(--color-primary) 16%, var(--color-surface)),
-      color-mix(in srgb, var(--color-primary) 6%, var(--color-surface)) 70%);
+    radial-gradient(120% 135% at 0% 50%,
+      color-mix(in srgb, var(--team-accent, var(--color-primary)) 22%, var(--color-surface)),
+      color-mix(in srgb, var(--team-accent, var(--color-primary)) 6%, var(--color-surface)) 66%);
 }
 
 /* The shield is the only thing on the left; the text body fills the rest. */
@@ -1594,10 +1622,10 @@ body.no-scroll {
 
 .follow-team-shield {
   display: block;
-  height: 128px;
+  height: 132px;
   width: auto;
   object-fit: contain;
-  filter: drop-shadow(0 4px 7px rgba(0, 0, 0, 0.32));
+  filter: drop-shadow(0 5px 10px rgba(0, 0, 0, 0.30));
 }
 
 .follow-team-card.has-shield .follow-team-body {
@@ -1605,23 +1633,27 @@ body.no-scroll {
   min-width: 0;
 }
 
+/* Team name is the hero. */
 .follow-team-card.has-shield .follow-team-name {
-  font-size: 1.05rem;
+  font-size: 1.3rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
 }
 
-.follow-next-line {
-  margin: 0.5rem 0 0;
+/* Stacked detail rows (up-next, next cleanup, your name). */
+.follow-next-line,
+.follow-you-line {
+  margin: 0.4rem 0 0;
   font-size: 0.85rem;
+  line-height: 1.3;
+  color: var(--color-text);
 }
 
 .follow-neutral-line {
   margin: 0;
 }
 
-/* Follow-card "you are…" line + its Change/set link. */
 .follow-you-line {
-  margin: 0.5rem 0 0;
-  font-size: 0.85rem;
   font-weight: 600;
 }
 .follow-you-empty {
@@ -3176,50 +3208,19 @@ body.no-scroll {
     width: 5.5rem;
   }
 
-  /* The shield-on-the-left crest banner is too cramped on small phones —
-     fall back to the original centered, stacked layout. */
+  /* Keep the shield large and on the left on phones too — just trim the
+     shield and name a touch so the text column isn't cramped. */
   .follow-team-card.has-shield {
-    display: block;
-    position: relative;
-    padding-top: 1.05rem;
-    text-align: center;
-    background:
-      radial-gradient(120% 90% at 50% -10%,
-        color-mix(in srgb, var(--color-primary) 16%, var(--color-surface)),
-        color-mix(in srgb, var(--color-primary) 6%, var(--color-surface)) 70%);
-  }
-
-  .follow-team-card.has-shield .follow-team-crest {
-    display: flex;
-    justify-content: center;
-    margin-bottom: 0.55rem;
+    gap: 0.85rem;
+    padding: 0.8rem 0.85rem;
   }
 
   .follow-team-card.has-shield .follow-team-shield {
-    width: auto;
-    height: 132px;
-    max-width: 60%;
+    height: 112px;
   }
 
-  .follow-team-card.has-shield .follow-team-head {
-    flex-direction: column;
-    align-items: center;
-    gap: 0.1rem;
-  }
-
-  .follow-team-card.has-shield .follow-team-headings {
-    text-align: center;
-  }
-
-  .follow-team-card.has-shield .follow-change-btn {
-    position: absolute;
-    top: 0.55rem;
-    right: 0.7rem;
-    margin-left: 0;
-  }
-
-  .follow-team-card.has-shield .follow-next-line {
-    text-align: center;
+  .follow-team-card.has-shield .follow-team-name {
+    font-size: 1.15rem;
   }
 }
 
