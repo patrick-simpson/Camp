@@ -16,13 +16,22 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=88">
+  <link rel="stylesheet" href="styles.css?v=89">
 
   <script>
     // Decide lock state before the page paints so we never flash the app,
     // and never show a blank page: exactly one of #app / #lock-screen shows.
     (function () {
       try {
+        // One-time revocation: an editor session unlocked with a retired PIN
+        // (any 'edit' role from before the current epoch) is logged out and
+        // must re-enter the current editor PIN. View sessions are untouched.
+        // Keep these literals in sync with app.js (EDIT_PIN_EPOCH_KEY / EDIT_PIN_EPOCH).
+        if (localStorage.getItem('campScoreboardRole') === 'edit' &&
+            localStorage.getItem('campScoreboardEditEpoch') !== '2026') {
+          localStorage.removeItem('campScoreboardUnlocked');
+          localStorage.removeItem('campScoreboardRole');
+        }
         if (localStorage.getItem('campScoreboardUnlocked') !== '1') {
           document.documentElement.classList.add('locked');
         }
@@ -240,7 +249,7 @@
        falls back to local-only mode automatically. -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=88"></script>
-  <script src="app.js?v=88"></script>
+  <script src="firebase-config.js?v=89"></script>
+  <script src="app.js?v=89"></script>
 </body>
 </html>

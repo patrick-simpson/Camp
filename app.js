@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-22T02:53:52Z';
+const CODE_UPDATED_AT = '2026-07-22T03:03:29Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -32,11 +32,24 @@ const CHANGES = [];
 
 // Light PIN gate — keeps casual visitors out of a public page. Not real
 // security (the code is viewable), just a "you need the number" door.
-// Two tiers: VIEW_PIN can look but not touch; EDIT_PIN can enter scores.
-const VIEW_PIN = '1234';
-const EDIT_PIN = '1880';
+// Two tiers: the view PIN can look but not touch; the edit PIN can enter
+// scores. The PINs are NEVER stored here as plaintext — only salted SHA-256
+// hashes, so reading the page source never reveals the codes. (This is a
+// static site with no server, so the check runs in the browser; a 4-digit
+// code can still be brute-forced from a hash by someone determined. The hash
+// defeats casual view-source snooping and rainbow-table lookups — it is not a
+// guarantee against a motivated attacker.) To change a PIN, hash
+// PIN_SALT + newpin with SHA-256 and paste the hex below.
+const PIN_SALT = 'camp-scoreboard::pin::v1::';
+const VIEW_PIN_HASH = 'a67ed87a9e977e4d169ef173bc360a0f9c3484b644b506c7265877e92afd30ea';
+const EDIT_PIN_HASH = '387feebde8ade150608242b3d3e75d023a23f5342c71578c438e5bde3952b178';
 const UNLOCK_KEY = 'campScoreboardUnlocked';
 const ROLE_KEY = 'campScoreboardRole';
+// Bump EDIT_PIN_EPOCH to force every editor to re-enter the current edit PIN
+// on their next load — used to kick out sessions unlocked with a retired PIN.
+// The same two literals live in index.html's pre-paint guard; keep them in sync.
+const EDIT_PIN_EPOCH_KEY = 'campScoreboardEditEpoch';
+const EDIT_PIN_EPOCH = '2026';
 
 function currentRole() {
   try { return localStorage.getItem(ROLE_KEY) || 'view'; } catch (e) { return 'view'; }
@@ -5418,7 +5431,26 @@ function renderPinDots() {
   dots.forEach((d, i) => d.classList.toggle('filled', i < pinEntry.length));
 }
 
-function handlePinKey(key) {
+// SHA-256 → lowercase hex, via the Web Crypto API (available in any secure
+// context — HTTPS, which the live site always is, and localhost).
+async function sha256Hex(str) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
+  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Resolve a typed PIN to its role by comparing the salted hash — the plaintext
+// PIN is never in the source. Returns 'edit', 'view', or null (no match /
+// crypto unavailable).
+async function pinRole(pin) {
+  try {
+    const h = await sha256Hex(PIN_SALT + pin);
+    if (h === EDIT_PIN_HASH) return 'edit';
+    if (h === VIEW_PIN_HASH) return 'view';
+  } catch (e) { /* crypto.subtle missing (insecure context) — treat as no match */ }
+  return null;
+}
+
+async function handlePinKey(key) {
   const errEl = document.getElementById('lock-error');
   errEl.hidden = true;
   if (key === 'del') {
@@ -5431,11 +5463,16 @@ function handlePinKey(key) {
   renderPinDots();
 
   if (pinEntry.length === 4) {
-    if (pinEntry === VIEW_PIN || pinEntry === EDIT_PIN) {
-      const role = pinEntry === EDIT_PIN ? 'edit' : 'view';
+    const entered = pinEntry;
+    const role = await pinRole(entered);
+    if (pinEntry !== entered) return; // field changed while the hash resolved
+    if (role) {
       try {
         localStorage.setItem(UNLOCK_KEY, '1');
         localStorage.setItem(ROLE_KEY, role);
+        // Mark this device as past the current editor epoch so it isn't kicked
+        // by the one-time old-PIN revocation on the next load.
+        if (role === 'edit') localStorage.setItem(EDIT_PIN_EPOCH_KEY, EDIT_PIN_EPOCH);
       } catch (e) { /* fine, just won't remember */ }
       pinEntry = '';
       setTimeout(startApp, 150);
