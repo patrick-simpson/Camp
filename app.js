@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-22T03:27:34Z';
+const CODE_UPDATED_AT = '2026-07-22T10:08:35Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -3051,11 +3051,11 @@ function renderFollowCard() {
     : '';
   const nextCleanup = findNextCleanupFor(team.id);
   const cleanupLine = nextCleanup
-    ? `<p class="follow-next-line">🧽 Next meal cleanup: ${esc(DAY_NAMES[nextCleanup.day])} ${esc(nextCleanup.meal)}</p>`
+    ? `<p class="follow-next-line">🧽 Next meal cleanup:<br>${esc(DAY_NAMES[nextCleanup.day])} ${esc(nextCleanup.meal)}</p>`
     : '';
   const you = state.identity;
   const youLine = you
-    ? `<p class="follow-you-line">⭐ You: ${teamEmoji(team.id)} ${esc(you)} <button id="change-identity-link" class="link-btn">Change</button></p>`
+    ? `<p class="follow-you-line">${esc(you)} <button id="change-identity-link" class="link-btn">Change</button></p>`
     : `<p class="follow-you-line follow-you-empty"><button id="set-identity-link" class="link-btn">🙋 Tell us who you are</button> to see your electives</p>`;
   const shield = teamShield(team.id);
   const crestHtml = shield
@@ -3069,7 +3069,7 @@ function renderFollowCard() {
       <div class="follow-team-head">
         ${shield ? '' : `<span class="follow-team-emoji">${teamEmoji(team.id)}</span>`}
         <div class="follow-team-headings">
-          <div class="follow-team-name">Your team: ${esc(team.name)}</div>
+          <div class="follow-team-name">${esc(team.name)}</div>
           <div class="follow-team-stats">${ordinal(rank)} place · ${s.points} pts</div>
         </div>
         <button id="change-team-link" class="link-btn follow-change-btn">Change</button>
