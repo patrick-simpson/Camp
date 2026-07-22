@@ -114,7 +114,7 @@
       filter: drop-shadow(0 12px 22px rgba(0,0,0,0.28)); animation: bob 3.4s ease-in-out infinite; }
     .hero-info { display: flex; flex-direction: column; align-items: flex-start; gap: clamp(0.3rem, 1.4vh, 1.1rem); min-width: 0; }
     .hero-emoji { font-size: 0.9em; line-height: 1; }
-    .hero-name { font-size: clamp(1.8rem, 6vw, 7rem); font-weight: 900; color: #000; text-align: left; line-height: 1.02; }
+    .hero-name { font-size: clamp(1.8rem, 6vw, 7rem); font-weight: 900; color: #000; text-align: left; line-height: 1.02; transition: font-size 0.55s cubic-bezier(.4, 0, .2, 1); }
     /* two-beat: points show first, then the breakdown appears BELOW it
        (points stays fully visible the whole time). */
     .hero-stats { display: flex; flex-direction: column; align-items: flex-start; gap: clamp(0.3rem, 1.4vh, 1rem); }
@@ -123,6 +123,13 @@
     .hero-points .lbl { font-size: clamp(0.9rem, 2.8vw, 3rem); font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: #000; }
     .hero-break { opacity: 0; transform: translateY(14px); transition: opacity 0.45s ease, transform 0.45s ease; }
     .hero.beat2 .hero-break { opacity: 1; transform: none; }
+    /* First 3s of the spotlight: only the shield + a super-large team name;
+       the place and score are hidden, then the name shrinks and they fade in. */
+    .hero-place { transition: opacity 0.5s ease; }
+    .hero-stats { transition: opacity 0.5s ease; }
+    .hero.solo .hero-place { opacity: 0; }
+    .hero.solo .hero-stats { opacity: 0; }
+    .hero.solo .hero-name { font-size: clamp(3rem, 9vw, 11rem); }
     .hero-break .medals { display: flex; gap: clamp(0.7rem, 3vw, 3rem); font-size: clamp(1.4rem, 5vw, 5rem); font-weight: 900; color: #000; }
     .hero-break .bonus { margin-top: 0.3rem; font-size: clamp(1.1rem, 3.2vw, 3rem); font-weight: 800; color: #000; }
 
@@ -497,14 +504,20 @@
       }).join('');
     }
 
+    var introBlastIv = null;
     function onDataReady() {
       loadingEl.style.display = 'none';
       screenEl.hidden = false;
       buildIntro();
-      // A little celebratory sparkle on the intro.
+      // Celebratory emoji blast on the title screen — an opening burst, then a
+      // fresh blast every 10s for as long as the intro is up.
       var mix = ['t0', 't1', 't2', 't3', 't4', 't5'].map(teamEmoji);
-      setTimeout(function () { cannon(mix, 2, 10 * dpr); }, 700);
-      showHint('Press → or tap to start the reveal');
+      setTimeout(function () { cannon(mix, 6, 11 * dpr); }, 700);
+      if (introBlastIv) clearInterval(introBlastIv);
+      introBlastIv = setInterval(function () {
+        if (phase !== 'intro') { clearInterval(introBlastIv); introBlastIv = null; return; }
+        cannon(mix, 6, 11 * dpr);
+      }, 10000);
     }
 
     var hintTimer = null;
@@ -516,7 +529,7 @@
     var order = [];        // reveal order: lowest place first (6th → 1st)
     var bigIndex = -1;     // index in `order` currently shown big, or -1
     var dockedCount = 0;   // number of groups already docked into the board
-    var autoTimer = null, beatTimer = null;
+    var autoTimer = null, beatTimer = null, soloTimer = null;
 
     function medalStr(s) {
       return '🥇 ' + s.gold + '   🥈 ' + s.silver + '   🥉 ' + s.bronze;
@@ -530,7 +543,7 @@
       return (s.bonus > 0 ? '+' : '') + s.bonus + ' pts' + (bits.length ? ' (' + bits.join(', ') + ')' : '');
     }
 
-    function clearTimers() { clearTimeout(autoTimer); clearTimeout(beatTimer); }
+    function clearTimers() { clearTimeout(autoTimer); clearTimeout(beatTimer); clearTimeout(soloTimer); }
 
     function showBig(orderIdx) {
       clearTimers();
@@ -559,6 +572,8 @@
       heroWrap.innerHTML = html;
       var hero = heroWrap.querySelector('.hero');
       hero.classList.add('enter');
+      // First 3s: only the shield + a super-large team name (place/score hidden).
+      hero.classList.add('solo');
       // Drop the board off-screen so the team spotlight is the only thing shown.
       boardEl.classList.add('dropped');
 
@@ -568,8 +583,10 @@
       streamEmojis = emojis;
       sfxReveal();
 
-      // beat 2: slide points out, medals + bonus in.
-      beatTimer = setTimeout(function () { hero.classList.add('beat2'); sfxBreak(); }, 1700);
+      // At 3s: shrink the name and let the place + score appear.
+      soloTimer = setTimeout(function () { hero.classList.remove('solo'); sfxBreak(); }, 3000);
+      // A beat later, slide the medal/bonus breakdown in.
+      beatTimer = setTimeout(function () { hero.classList.add('beat2'); }, 4500);
       // Hold the solo spotlight for 8s, then shrink the team into the table
       // (presenter can skip with →). If this was the last place, waiting it
       // out rolls into the finale too.
@@ -623,6 +640,7 @@
     function beginReveal() {
       if (phase !== 'intro') return;
       phase = 'reveal';
+      if (introBlastIv) { clearInterval(introBlastIv); introBlastIv = null; }
       // Freeze the standings at the moment the reveal starts.
       order = (liveGroups || []).slice().reverse(); // lowest place first
       introEl.classList.add('hide');
