@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-22T02:39:18Z';
+const CODE_UPDATED_AT = '2026-07-22T02:53:52Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1415,8 +1415,20 @@ function initSync() {
       // devices kept their old results and re-pushed them later. Teams
       // stay guarded — a snapshot without a roster is malformed.
       if (remote.teams) state.teams = remote.teams;
+      // Pictionary prompt words are never synced (see pushState) — the incoming
+      // snapshot carries only each game's mode. Stash this device's own words so
+      // the ref's list survives adopting a remote update, then re-attach them to
+      // any setup the snapshot still has (a remotely-reset mode drops them too).
+      const localPicWords = {};
+      Object.keys(state.picSetup || {}).forEach((gid) => {
+        const s = state.picSetup[gid];
+        if (s && s.words && s.words.length) localPicWords[gid] = s.words;
+      });
       ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta'].forEach((k) => {
         state[k] = remote[k] !== undefined ? remote[k] : {};
+      });
+      Object.keys(localPicWords).forEach((gid) => {
+        if (state.picSetup[gid]) state.picSetup[gid].words = localPicWords[gid];
       });
       // Realtime Database silently drops empty arrays/nulls on write, so a
       // freshly-started bracket or Pictionary round can come back missing
@@ -1480,10 +1492,26 @@ function schedulePush() {
   pushTimer = setTimeout(() => { pushTimer = null; pushState(); }, 400); // coalesce rapid edits
 }
 
+// The synced form of picSetup: each game's MODE (source) travels so ref
+// devices agree on labeling, but the actual Pictionary prompt words never
+// leave the device that typed them — they're a surprise and must not be
+// broadcast over the shared database. (The built-in list and viewer display
+// are handled separately; this keeps custom 'own' words off the wire.)
+function picSetupForSync(picSetup) {
+  if (!picSetup || typeof picSetup !== 'object') return picSetup;
+  const out = {};
+  Object.keys(picSetup).forEach((gid) => {
+    const s = picSetup[gid];
+    out[gid] = (s && typeof s === 'object') ? { source: s.source } : s;
+  });
+  return out;
+}
+
 function pushState() {
   if (!fbRef || applyingRemote || !remoteReady) return;
   const payload = {};
   SYNC_KEYS.forEach((k) => { payload[k] = state[k] === undefined ? null : state[k]; });
+  payload.picSetup = picSetupForSync(state.picSetup); // words stay device-local
   dataEditPending = false; // current state (incl. any edit) is going to the server
   // JSON round-trip strips any `undefined` (which Realtime DB rejects).
   fbRef.set(JSON.parse(JSON.stringify(payload))).catch((e) => console.warn('sync push failed', e));
