@@ -10,33 +10,21 @@
   <style>
     * { box-sizing: border-box; }
     :root {
-      --bg-1: #ff8a3d;
-      --bg-2: #ff4d8d;
-      --bg-3: #7b5bff;
-      --ink: #12061f;
-      --gold: #ffd34d;
-      --card: rgba(255,255,255,0.14);
-      --card-line: rgba(255,255,255,0.35);
+      --gold: #b8860b;
+      --card: #ffffff;
+      --card-line: #111111;
       --sans: 'Baloo 2', 'Fredoka', 'Nunito', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
     }
     html, body {
       margin: 0;
       height: 100%;
       overflow: hidden;
-      color: #fff;
+      color: #000;
       font-family: var(--sans);
-      background: var(--ink);
+      background: #fff;
       -webkit-user-select: none; user-select: none;
     }
-    body {
-      height: 100dvh;
-      background:
-        radial-gradient(1200px 800px at 15% -10%, rgba(255,255,255,0.18), transparent 60%),
-        linear-gradient(135deg, var(--bg-1) 0%, var(--bg-2) 48%, var(--bg-3) 100%);
-      background-size: 200% 200%;
-      animation: bgshift 18s ease-in-out infinite;
-    }
-    @keyframes bgshift { 0%,100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+    body { height: 100dvh; background: #fff; }
 
     /* ── Confetti canvas ─────────────────────────────────── */
     #confetti { position: fixed; inset: 0; z-index: 1; pointer-events: none; }
@@ -50,18 +38,17 @@
     }
     .topbar a, .topbar button { pointer-events: auto; }
     .chip {
-      appearance: none; border: 1px solid rgba(255,255,255,0.4);
-      background: rgba(0,0,0,0.18); color: #fff; font: inherit;
-      font-size: 0.85rem; font-weight: 700; padding: 0.4rem 0.8rem;
+      appearance: none; border: 2px solid #111;
+      background: #fff; color: #000; font: inherit;
+      font-size: 0.9rem; font-weight: 800; padding: 0.4rem 0.9rem;
       border-radius: 999px; text-decoration: none; cursor: pointer;
-      backdrop-filter: blur(6px);
     }
-    .chip:hover { background: rgba(0,0,0,0.3); }
+    .chip:hover { background: #f0f0f0; }
     .chip.spacer { margin-left: auto; }
     .hint {
       position: fixed; left: 0; right: 0; bottom: 0.7rem; z-index: 40;
-      text-align: center; font-size: 0.9rem; font-weight: 700;
-      color: rgba(255,255,255,0.85); text-shadow: 0 1px 4px rgba(0,0,0,0.35);
+      text-align: center; font-size: 1rem; font-weight: 800;
+      color: #000;
       pointer-events: none; transition: opacity 0.3s;
     }
 
@@ -72,7 +59,7 @@
     #loading {
       position: fixed; inset: 0; z-index: 30; display: flex;
       align-items: center; justify-content: center; flex-direction: column; gap: 1rem;
-      font-size: 1.4rem; font-weight: 800; text-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      font-size: 1.4rem; font-weight: 800; color: #000;
     }
     .spin { font-size: 3rem; animation: spin 1.1s linear infinite; display: inline-block; }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -85,19 +72,18 @@
     }
     #intro.hide { opacity: 0; transform: scale(1.08); pointer-events: none; transition: opacity 0.5s, transform 0.5s; }
     .intro-kicker { font-size: clamp(1rem, 3vw, 1.6rem); font-weight: 800; letter-spacing: 2px;
-      text-transform: uppercase; opacity: 0; animation: popIn 0.6s 0.1s forwards; }
+      color: #000; text-transform: uppercase; opacity: 0; animation: popIn 0.6s 0.1s forwards; }
     .intro-title {
-      margin: 0; line-height: 0.95; font-weight: 900;
+      margin: 0; line-height: 0.95; font-weight: 900; color: #000;
       font-size: clamp(2.6rem, 12vw, 9rem); letter-spacing: -1px;
-      text-shadow: 0 6px 0 rgba(0,0,0,0.18), 0 14px 40px rgba(0,0,0,0.35);
     }
     .intro-title .word { display: inline-block; white-space: nowrap; }
     .intro-title .word span { display: inline-block; opacity: 0; transform: translateY(40px) rotate(-6deg);
       animation: dropBounce 0.7s forwards; }
     .intro-shields { display: flex; gap: clamp(0.4rem, 2vw, 1.4rem); flex-wrap: wrap; justify-content: center; margin-top: 0.4rem; }
     .intro-shields img { width: clamp(46px, 9vw, 104px); height: auto; opacity: 0;
-      filter: drop-shadow(0 8px 14px rgba(0,0,0,0.35)); animation: floatIn 0.8s forwards, bob 3s ease-in-out infinite; }
-    .intro-go { margin-top: 0.6rem; font-size: clamp(1rem, 3.2vw, 1.7rem); font-weight: 800;
+      filter: drop-shadow(0 6px 12px rgba(0,0,0,0.22)); animation: floatIn 0.8s forwards, bob 3s ease-in-out infinite; }
+    .intro-go { margin-top: 0.6rem; font-size: clamp(1rem, 3.2vw, 1.7rem); font-weight: 800; color: #000;
       opacity: 0; animation: popIn 0.5s 1.4s forwards, pulse 1.6s 1.6s ease-in-out infinite; }
     @keyframes dropBounce { 0% { opacity: 0; transform: translateY(-60px) rotate(-8deg); } 60% { opacity: 1; transform: translateY(10px) rotate(2deg); } 100% { opacity: 1; transform: translateY(0) rotate(0); } }
     @keyframes floatIn { from { opacity: 0; transform: translateY(30px) scale(0.6); } to { opacity: 1; transform: translateY(0) scale(1); } }
@@ -117,30 +103,28 @@
     @keyframes heroIn { from { transform: scale(0.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
     .hero-place {
       font-size: clamp(1.6rem, 6vw, 4rem); font-weight: 900; letter-spacing: 1px;
-      text-transform: uppercase; text-shadow: 0 4px 0 rgba(0,0,0,0.18), 0 10px 30px rgba(0,0,0,0.35);
+      color: #000; text-transform: uppercase;
     }
     .hero-place .tie { font-size: 0.5em; vertical-align: middle; margin-left: 0.5rem;
-      background: rgba(0,0,0,0.25); padding: 0.15em 0.6em; border-radius: 999px; }
-    .hero-entries { display: flex; gap: clamp(1rem, 4vw, 4rem); align-items: stretch; justify-content: center; flex-wrap: wrap; }
-    .hero-entry { display: flex; flex-direction: column; align-items: center; gap: clamp(0.3rem, 1vh, 0.8rem); }
-    .hero-shield { width: clamp(140px, 26vh, 340px); height: auto; filter: drop-shadow(0 14px 26px rgba(0,0,0,0.4)); animation: bob 3.4s ease-in-out infinite; }
-    .hero-emoji { font-size: clamp(2rem, 7vh, 4.5rem); line-height: 1; margin-top: -0.4em; }
-    .hero-name { font-size: clamp(1.4rem, 5vw, 3.4rem); font-weight: 900; text-align: center;
-      text-shadow: 0 3px 0 rgba(0,0,0,0.18), 0 8px 24px rgba(0,0,0,0.3); }
-    /* two-beat flip: points then breakdown */
-    .hero-stats { position: relative; height: clamp(3.4rem, 11vh, 7rem); width: min(92vw, 640px); }
-    .hero-points, .hero-break {
-      position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
-      transition: transform 0.5s cubic-bezier(.3,.7,.3,1), opacity 0.45s;
-    }
-    .hero-points .num { font-size: clamp(3rem, 13vh, 8rem); font-weight: 900; line-height: 0.9;
-      color: var(--gold); text-shadow: 0 4px 0 rgba(0,0,0,0.2), 0 12px 34px rgba(0,0,0,0.4); }
-    .hero-points .lbl { font-size: clamp(0.9rem, 3vw, 1.6rem); font-weight: 800; letter-spacing: 3px; text-transform: uppercase; }
-    .hero-break { transform: translateY(28px); opacity: 0; }
-    .hero-break .medals { display: flex; gap: clamp(0.7rem, 3vw, 2rem); font-size: clamp(1.3rem, 5vw, 3rem); font-weight: 900; }
-    .hero-break .bonus { margin-top: 0.3rem; font-size: clamp(1rem, 3.2vw, 1.7rem); font-weight: 800; color: var(--gold); }
-    .hero.beat2 .hero-points { transform: translateY(-30px); opacity: 0; }
-    .hero.beat2 .hero-break { transform: translateY(0); opacity: 1; }
+      background: #111; color: #fff; padding: 0.15em 0.6em; border-radius: 999px; }
+    .hero-entries { display: flex; gap: clamp(1.4rem, 5vw, 4rem); align-items: center; justify-content: center; flex-wrap: wrap; }
+    /* Shield large on the LEFT, bold text on the RIGHT. */
+    .hero-entry { display: flex; flex-direction: row; align-items: center; gap: clamp(1rem, 3.5vw, 3rem); text-align: left; }
+    .hero-shield { width: clamp(170px, 42vh, 480px); height: auto; flex: none;
+      filter: drop-shadow(0 12px 22px rgba(0,0,0,0.28)); animation: bob 3.4s ease-in-out infinite; }
+    .hero-info { display: flex; flex-direction: column; align-items: flex-start; gap: clamp(0.3rem, 1.4vh, 1.1rem); min-width: 0; }
+    .hero-emoji { font-size: 0.9em; line-height: 1; }
+    .hero-name { font-size: clamp(1.8rem, 6vw, 5rem); font-weight: 900; color: #000; text-align: left; line-height: 1.02; }
+    /* two-beat: points show first, then the breakdown appears BELOW it
+       (points stays fully visible the whole time). */
+    .hero-stats { display: flex; flex-direction: column; align-items: flex-start; gap: clamp(0.3rem, 1.4vh, 1rem); }
+    .hero-points { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
+    .hero-points .num { font-size: clamp(3rem, 14vh, 9rem); font-weight: 900; line-height: 0.85; color: #000; }
+    .hero-points .lbl { font-size: clamp(0.9rem, 2.8vw, 1.8rem); font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: #000; }
+    .hero-break { opacity: 0; transform: translateY(14px); transition: opacity 0.45s ease, transform 0.45s ease; }
+    .hero.beat2 .hero-break { opacity: 1; transform: none; }
+    .hero-break .medals { display: flex; gap: clamp(0.7rem, 3vw, 2.2rem); font-size: clamp(1.4rem, 5vw, 3.2rem); font-weight: 900; color: #000; }
+    .hero-break .bonus { margin-top: 0.3rem; font-size: clamp(1.1rem, 3.2vw, 2rem); font-weight: 800; color: #000; }
 
     /* ── Standings board (grows) ─────────────────────────── */
     #board {
@@ -149,44 +133,45 @@
       display: flex; flex-direction: column; gap: clamp(0.3rem, 0.9vh, 0.7rem);
       transition: all 0.4s;
     }
-    #board.final { flex: 1; justify-content: center; padding-top: 4.5rem; }
+    #board.final { flex: 1; justify-content: center; padding-top: 1rem; }
     .row {
-      display: grid; grid-template-columns: clamp(2.6rem,7vw,4.2rem) 1fr auto;
-      align-items: center; gap: clamp(0.5rem, 2vw, 1.4rem);
-      background: var(--card); border: 1px solid var(--card-line);
-      border-radius: 16px; padding: clamp(0.4rem, 1.3vh, 0.9rem) clamp(0.7rem, 2vw, 1.3rem);
-      backdrop-filter: blur(4px);
+      display: grid; grid-template-columns: clamp(3rem,7vw,5rem) 1fr auto;
+      align-items: center; gap: clamp(0.6rem, 2vw, 1.6rem);
+      background: #fff; border: 2px solid #111; color: #000;
+      border-radius: 16px; padding: clamp(0.5rem, 1.5vh, 1.05rem) clamp(0.8rem, 2vw, 1.5rem);
       animation: rowPop 0.45s cubic-bezier(.2,.9,.3,1.35);
     }
     @keyframes rowPop { from { opacity: 0; transform: translateY(-24px) scale(0.9); } to { opacity: 1; transform: none; } }
-    .row.p1 { background: linear-gradient(100deg, rgba(255,211,77,0.4), rgba(255,255,255,0.12)); border-color: var(--gold); box-shadow: 0 8px 30px rgba(255,211,77,0.3); }
-    .row.p2 { background: linear-gradient(100deg, rgba(226,232,240,0.35), rgba(255,255,255,0.1)); }
-    .row.p3 { background: linear-gradient(100deg, rgba(205,127,50,0.35), rgba(255,255,255,0.1)); }
-    .row .rank { font-size: clamp(1.2rem, 3.4vw, 2.2rem); font-weight: 900; text-align: center; }
-    .row .who { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
-    .row .who .em { font-size: clamp(1.3rem, 3.6vw, 2.2rem); }
-    .row .who .nm { font-size: clamp(1rem, 3vw, 1.9rem); font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .row .score { display: flex; align-items: center; gap: clamp(0.4rem, 1.6vw, 1.1rem); }
-    .row .pts { font-size: clamp(1.3rem, 4vw, 2.4rem); font-weight: 900; color: var(--gold); }
-    .row .pts small { font-size: 0.45em; font-weight: 800; color: rgba(255,255,255,0.8); margin-left: 0.15em; }
-    .row .med { font-size: clamp(0.8rem, 2.4vw, 1.3rem); font-weight: 800; white-space: nowrap; opacity: 0.95; }
+    .row.p1 { background: #fff4cc; border-color: #b8860b; }
+    .row.p2 { background: #edeef1; border-color: #7d8894; }
+    .row.p3 { background: #f6e3d0; border-color: #a9682f; }
+    .row .rank { font-size: clamp(1.5rem, 3.6vw, 3rem); font-weight: 900; text-align: center; color: #000; }
+    .row .who { display: flex; align-items: center; gap: 0.7rem; min-width: 0; }
+    .row .who .em { font-size: clamp(1.7rem, 4vw, 3rem); }
+    .row .who .nm { font-size: clamp(1.3rem, 3.4vw, 2.7rem); font-weight: 900; color: #000; line-height: 1.05; }
+    .row .score { display: flex; align-items: center; gap: clamp(0.5rem, 1.8vw, 1.3rem); }
+    .row .pts { font-size: clamp(1.7rem, 4.4vw, 3.4rem); font-weight: 900; color: #000; }
+    .row .pts small { font-size: 0.42em; font-weight: 800; color: #333; margin-left: 0.15em; }
+    .row .med { font-size: clamp(1.05rem, 2.7vw, 1.9rem); font-weight: 800; color: #000; white-space: nowrap; }
 
     /* ── Champion finale banner ──────────────────────────── */
     #finale {
       position: fixed; inset: 0; z-index: 35; display: none;
-      flex-direction: column; align-items: center; justify-content: flex-start;
-      padding-top: clamp(1.2rem, 4vh, 3rem); pointer-events: none;
+      flex-direction: column; align-items: center; justify-content: center;
+      gap: clamp(0.3rem, 1.4vh, 1rem); padding: clamp(1rem, 4vh, 3rem); pointer-events: none;
     }
     #finale.show { display: flex; }
     .champ {
-      text-align: center; animation: champIn 0.8s cubic-bezier(.2,.9,.3,1.4);
-      text-shadow: 0 3px 14px rgba(0,0,0,0.5);
+      text-align: center; animation: champIn 0.8s cubic-bezier(.2,.9,.3,1.4); color: #000;
+      display: flex; flex-direction: column; align-items: center; gap: clamp(0.3rem, 1.3vh, 0.9rem);
     }
-    .champ .crown { font-size: clamp(2.2rem, 8vh, 5rem); animation: bob 2.4s ease-in-out infinite; }
-    .champ .lead { font-size: clamp(0.9rem, 3vw, 1.7rem); font-weight: 900; letter-spacing: 3px; text-transform: uppercase; }
-    .champ .name { font-size: clamp(1.8rem, 7vw, 4.4rem); font-weight: 900; line-height: 1.02;
-      text-shadow: 0 5px 0 rgba(0,0,0,0.25), 0 14px 40px rgba(0,0,0,0.5); }
-    .champ .pts { font-size: clamp(1.2rem, 4.4vw, 2.6rem); font-weight: 900; color: var(--gold); }
+    .champ .crown { font-size: clamp(2.4rem, 9vh, 6rem); animation: bob 2.4s ease-in-out infinite; }
+    .champ .lead { font-size: clamp(1rem, 3.4vw, 2rem); font-weight: 900; letter-spacing: 4px; text-transform: uppercase; color: #000; }
+    .champ-shields { display: flex; gap: clamp(1rem, 3vw, 2.5rem); justify-content: center; flex-wrap: wrap; }
+    .champ-shields img { width: clamp(150px, 33vh, 400px); height: auto;
+      filter: drop-shadow(0 12px 22px rgba(0,0,0,0.28)); animation: bob 3s ease-in-out infinite; }
+    .champ .name { font-size: clamp(2rem, 8vw, 6rem); font-weight: 900; line-height: 1.02; color: #000; }
+    .champ .pts { font-size: clamp(1.4rem, 5vw, 3.2rem); font-weight: 900; color: #000; }
     @keyframes champIn { from { opacity: 0; transform: scale(0.5) translateY(-40px); } to { opacity: 1; transform: none; } }
 
     .fade-out { opacity: 0 !important; transition: opacity 0.35s; }
@@ -564,12 +549,13 @@
         var shield = TEAM_SHIELD[id];
         html += '<div class="hero-entry">';
         html += shield ? '<img class="hero-shield" src="' + shield + '" alt="">' : '';
-        html += '<div class="hero-emoji">' + teamEmoji(id) + '</div>';
-        html += '<div class="hero-name">' + esc(en.team.name) + '</div>';
-        html += '<div class="hero-stats">';
-        html += '  <div class="hero-points"><span class="num">' + s.points + '</span><span class="lbl">points</span></div>';
-        html += '  <div class="hero-break"><div class="medals">' + medalStr(s) + '</div>' +
+        html += '<div class="hero-info">';
+        html += '  <div class="hero-name"><span class="hero-emoji">' + teamEmoji(id) + '</span> ' + esc(en.team.name) + '</div>';
+        html += '  <div class="hero-stats">';
+        html += '    <div class="hero-points"><span class="num">' + s.points + '</span><span class="lbl">points</span></div>';
+        html += '    <div class="hero-break"><div class="medals">' + medalStr(s) + '</div>' +
                 (bonusStr(s) ? '<div class="bonus">' + esc(bonusStr(s)) + '</div>' : '') + '</div>';
+        html += '  </div>';
         html += '</div>';
         html += '</div>';
       });
@@ -663,6 +649,7 @@
         // Re-enter the reveal at 1st place to review the countdown backwards.
         phase = 'reveal';
         boardEl.classList.remove('final');
+        boardEl.style.display = '';
         heroWrap.style.display = '';
         finaleEl.classList.remove('show');
         if (finaleIv) { clearInterval(finaleIv); finaleIv = null; }
@@ -693,17 +680,19 @@
       renderBoardRows();
       var champGroup = order[order.length - 1]; // first place
       if (isFridayEastern() && champGroup) {
-        // Keep the hero area (empty) so the board stays pinned to the bottom;
-        // the champion banner fills the cleared top space above it.
+        // Friday: go all out — a full-screen champion celebration (the table
+        // was already walked through on the way up), no table behind it.
         heroWrap.innerHTML = '';
-        heroWrap.style.display = '';
+        heroWrap.style.display = 'none';
+        boardEl.style.display = 'none';
         boardEl.classList.remove('final');
         runFinale(champGroup);
-        showHint('🎉 Champions! Press ← to review', true);
+        showHint('🎉 Champions! Press ← to review the standings', true);
       } else {
         // Quiet end: center the full standings table on screen.
         heroWrap.innerHTML = '';
         heroWrap.style.display = 'none';
+        boardEl.style.display = '';
         boardEl.classList.add('final');
         showHint('Final standings  ·  Press ← to review');
       }
@@ -714,9 +703,14 @@
       var names = group.entries.map(function (en) { return esc(en.team.name); }).join(' & ');
       var pts = group.entries[0].stats.points;
       var emojis = group.entries.map(function (en) { return teamEmoji(en.team.id); });
+      var shields = group.entries.map(function (en) {
+        var sh = TEAM_SHIELD[en.team.id];
+        return sh ? '<img src="' + sh + '" alt="">' : '';
+      }).join('');
       document.getElementById('champ').innerHTML =
         '<div class="crown">👑</div>' +
         '<div class="lead">Camp Champions</div>' +
+        (shields ? '<div class="champ-shields">' + shields + '</div>' : '') +
         '<div class="name">' + emojis.join(' ') + ' ' + names + '</div>' +
         '<div class="pts">' + pts + ' points</div>';
       finaleEl.classList.add('show');
