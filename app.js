@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-22T14:41:39Z';
+const CODE_UPDATED_AT = '2026-07-22T14:53:38Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1503,6 +1503,13 @@ let dataEditPending = false;
 // cached edit has actually uploaded. This is what stops scores being typed /
 // saved offline from getting reverted by a stale reconnect snapshot.
 let pendingWrites = 0;
+// The synced state as we last knew it on the server — the baseline the next
+// push diffs against so it writes ONLY the items this device changed (per-path
+// update), instead of overwriting the whole tree and clobbering edits another
+// device made to other items. null means "resync the whole tree next push"
+// (before the first push, or to recover after a failed one). Updated on every
+// adopt (in the value handler) and every push.
+let lastSyncedTree = null;
 
 function syncEnabled() {
   return !!fbRef;
@@ -1583,6 +1590,9 @@ function initSync() {
       // its empty fields. Heal everything the instant remote data lands,
       // before any render sees it.
       normalizeSyncedState();
+      // We now match the server, so this snapshot becomes the diff baseline —
+      // otherwise the next push would re-send data we just received.
+      lastSyncedTree = syncedSnapshot();
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
       applyingRemote = false;
       if (appStarted && syncSignature() !== beforeSig) {
@@ -1648,21 +1658,72 @@ function picSetupForSync(picSetup) {
   return out;
 }
 
+// Maps written per-child (one path per game/team/bonus) so concurrent edits to
+// DIFFERENT items on different devices never overwrite each other. teams/meta
+// are small singletons written whole.
+const SYNC_ITEM_MAPS = ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live'];
+const SYNC_SINGLETONS = ['teams', 'meta'];
+
+// The synced portion of state as it should exist on the server: a deep copy
+// with Pictionary words stripped (never synced). Serves as both the push
+// source and the diff baseline, so both sides compare like-for-like.
+function syncedSnapshot() {
+  const snap = {};
+  SYNC_KEYS.forEach((k) => { snap[k] = state[k] === undefined ? null : state[k]; });
+  snap.picSetup = picSetupForSync(state.picSetup);
+  return JSON.parse(JSON.stringify(snap)); // also strips any `undefined` RTDB rejects
+}
+
+// Flat RTDB multi-location update (path -> value, or null to delete) covering
+// exactly what changed between two synced snapshots. Item maps diff per child;
+// singletons diff whole.
+function computeSyncUpdates(prev, cur) {
+  const up = {};
+  SYNC_ITEM_MAPS.forEach((k) => {
+    const p = (prev && prev[k]) || {};
+    const c = (cur && cur[k]) || {};
+    Object.keys(c).forEach((id) => {
+      if (JSON.stringify(c[id]) !== JSON.stringify(p[id])) up[k + '/' + id] = c[id];
+    });
+    Object.keys(p).forEach((id) => {
+      if (!(id in c)) up[k + '/' + id] = null; // item deleted (cleared result, removed bonus, …)
+    });
+  });
+  SYNC_SINGLETONS.forEach((k) => {
+    const pv = prev ? prev[k] : undefined;
+    const cv = cur ? cur[k] : undefined;
+    if (JSON.stringify(cv) !== JSON.stringify(pv)) up[k] = (cv === undefined ? null : cv);
+  });
+  return up;
+}
+
 function pushState() {
   if (!fbRef || applyingRemote || !remoteReady) return;
-  const payload = {};
-  SYNC_KEYS.forEach((k) => { payload[k] = state[k] === undefined ? null : state[k]; });
-  payload.picSetup = picSetupForSync(state.picSetup); // words stay device-local
+  const cur = syncedSnapshot();
+  const prevBaseline = lastSyncedTree;
+  // First push (or recovering from a failed one): write every top-level key so
+  // the server is brought fully in step. Afterwards only changed items go up.
+  const updates = prevBaseline
+    ? computeSyncUpdates(prevBaseline, cur)
+    : SYNC_KEYS.reduce((u, k) => { u[k] = cur[k]; return u; }, {});
+  // Adopt `cur` as the new baseline optimistically; restore it on failure so
+  // the same changes are re-diffed (and re-sent per-path) next time rather than
+  // stranded.
+  lastSyncedTree = cur;
   dataEditPending = false; // current state (incl. any edit) is going to the server
-  // Track the write until the server confirms it. Offline, this promise stays
+  if (!Object.keys(updates).length) return; // nothing actually changed
+  // Track the write until the server confirms it. Offline, the promise stays
   // pending (the SDK queues the write and flushes on reconnect), so
   // pendingWrites stays > 0 and the merge won't adopt the stale reconnect
-  // snapshot until our cached edit has uploaded. Settle on both success/failure
+  // snapshot until our cached edit has uploaded. Settle on success AND failure
   // so a rejected write can't wedge sync closed.
   pendingWrites++;
   const settle = () => { pendingWrites = Math.max(0, pendingWrites - 1); };
-  // JSON round-trip strips any `undefined` (which Realtime DB rejects).
-  fbRef.set(JSON.parse(JSON.stringify(payload))).then(settle, (e) => { console.warn('sync push failed', e); settle(); });
+  fbRef.update(updates).then(settle, (e) => {
+    console.warn('sync push failed', e);
+    lastSyncedTree = prevBaseline; // re-send these changes (still per-path) next push
+    settle();
+  });
 }
 
 // Cheap content signature of the synced state, used to skip re-rendering on
