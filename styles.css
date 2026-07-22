@@ -163,12 +163,12 @@ html.view-only .card-desc {
 
 .role-btn {
   display: inline-block;
-  margin: 0.6rem auto 0;
+  margin: 0;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 999px;
-  padding: 0.35rem 0.85rem;
-  font-size: 0.8rem;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.85rem;
   font-weight: 600;
   font-family: inherit;
   color: var(--color-text);
@@ -286,7 +286,7 @@ html.view-only .role-btn {
   padding: 2rem 1.25rem 1.25rem;
 }
 
-.theme-toggle {
+.settings-btn {
   position: absolute;
   top: 1rem;
   right: 1rem;
@@ -295,9 +295,14 @@ html.view-only .role-btn {
   border-radius: 50%;
   width: 2.75rem;
   height: 2.75rem;
-  font-size: 1.1rem;
+  font-size: 1.2rem;
   cursor: pointer;
   box-shadow: var(--shadow-card);
+  transition: transform 0.2s ease;
+}
+
+.settings-btn:hover {
+  transform: rotate(30deg);
 }
 
 .app-logo {
@@ -2634,10 +2639,6 @@ body.no-scroll {
 /* ============================================================
    TIMERS, STOPWATCH & COUNTERS
    ============================================================ */
-.sound-toggle {
-  right: auto;
-  left: 1rem;
-}
 
 .tool-box {
   border: 1.5px solid var(--color-border);
@@ -3454,39 +3455,146 @@ body.no-scroll {
 }
 
 /* ============================================================
-   STALLING EASTER EGG — subtle corner dot (→ stalling.html)
+   SETTINGS SHEET (gear overlay) — appearance, sound, score access,
+   and the "Stalling with Patrick" presenter link
    ============================================================ */
-/* Deliberately easy to miss: a tiny, faint dot pinned to the bottom
-   corner. Sits above content but well below overlays. Grows a touch
-   and gains a little glow when hovered/focused so it's still reachable
-   by anyone who goes looking (or tabs to it). */
-.stalling-egg {
+/* Reuses the schedule sheet's overlay/backdrop/slide machinery
+   (.settings-overlay mirrors .schedule-overlay) so the two bottom
+   sheets feel identical. */
+.settings-overlay {
   position: fixed;
-  right: max(0.5rem, env(safe-area-inset-right));
-  bottom: max(0.5rem, env(safe-area-inset-bottom));
-  z-index: 500;
-  width: 22px;
-  height: 22px;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.settings-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(16, 24, 40, 0.55);
+  backdrop-filter: blur(2px);
+  animation: sched-fade 0.2s ease;
+}
+
+.settings-sheet {
+  position: relative;
+  width: 100%;
+  max-width: 640px;
+  max-height: 90vh;
+  max-height: 90dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  box-shadow: var(--shadow-sheet);
+  animation: sched-slide 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  overflow: hidden;
+}
+
+.settings-overlay.closing .settings-sheet {
+  animation: sched-slide-out 0.2s ease forwards;
+}
+.settings-overlay.closing .settings-backdrop {
+  animation: sched-fade-out 0.2s ease forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-backdrop,
+  .settings-sheet,
+  .settings-overlay.closing .settings-sheet,
+  .settings-overlay.closing .settings-backdrop { animation: none; }
+}
+
+.settings-header {
+  flex: 0 0 auto;
+  padding: 0.5rem 1rem 0.75rem;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.settings-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settings-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+.settings-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 1rem 1rem calc(1.5rem + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.settings-row,
+.settings-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem;
+}
+
+.settings-row-label {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.settings-row-emoji {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+/* The theme + sound toggles: compact round icon buttons on the right. */
+.settings-toggle {
+  flex: 0 0 auto;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  width: 2.75rem;
+  height: 2.75rem;
+  font-size: 1.2rem;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 12px;
-  line-height: 1;
-  color: var(--color-text-muted);
+  transition: background 0.15s ease;
+}
+
+.settings-toggle:hover {
+  background: var(--color-border);
+}
+
+/* The presenter link is a full tappable row. */
+.settings-link {
   text-decoration: none;
-  border-radius: 50%;
-  opacity: 0.12;
-  transition: opacity 0.25s ease, transform 0.25s ease, box-shadow 0.25s ease;
-  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
 }
-.stalling-egg:hover,
-.stalling-egg:focus-visible {
-  opacity: 0.85;
-  transform: scale(1.25);
-  box-shadow: 0 0 0 4px rgba(51, 85, 255, 0.12);
+
+.settings-link:hover {
+  border-color: var(--color-primary);
 }
-@media (hover: none) {
-  /* On touch devices there's no hover to reveal it, so keep it a hair
-     more findable without shouting. */
-  .stalling-egg { opacity: 0.2; }
+
+.settings-link-chevron {
+  font-size: 1.3rem;
+  color: var(--color-text-muted);
+  line-height: 1;
 }

@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-21T23:44:42Z';
+const CODE_UPDATED_AT = '2026-07-22T02:39:18Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1176,6 +1176,62 @@ function wireSchedule() {
       else { sheet.style.transform = ''; } // spring back
     });
   }
+}
+
+// ── Settings sheet (gear overlay) ────────────────────────────────
+// A bottom sheet holding appearance, sound, and score-entry access —
+// controls that used to sit loose in the header — plus the "Stalling
+// with Patrick" presenter link (formerly a hidden corner dot). Mirrors
+// the schedule sheet's open/close/inert/Escape behavior.
+function settingsOverlayEl() {
+  return document.getElementById('settings-overlay');
+}
+
+function openSettings() {
+  const overlay = settingsOverlayEl();
+  if (!overlay) return;
+  overlay.classList.remove('closing');
+  overlay.hidden = false;
+  document.body.classList.add('no-scroll');
+  const app = document.getElementById('app');
+  if (app) app.inert = true;
+  requestAnimationFrame(() => {
+    const closeBtn = document.getElementById('settings-close');
+    if (closeBtn) closeBtn.focus({ preventScroll: true });
+  });
+}
+
+function closeSettings() {
+  const overlay = settingsOverlayEl();
+  if (!overlay) return;
+  const finish = () => {
+    overlay.hidden = true;
+    overlay.classList.remove('closing');
+    document.body.classList.remove('no-scroll');
+    const app = document.getElementById('app');
+    if (app) app.inert = false;
+    const btn = document.getElementById('settings-btn');
+    if (btn) btn.focus({ preventScroll: true });
+  };
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce) { finish(); return; }
+  overlay.classList.add('closing');
+  setTimeout(finish, 200);
+}
+
+function wireSettings() {
+  const btn = document.getElementById('settings-btn');
+  if (btn) btn.addEventListener('click', openSettings);
+  const closeBtn = document.getElementById('settings-close');
+  if (closeBtn) closeBtn.addEventListener('click', closeSettings);
+  const overlay = settingsOverlayEl();
+  if (overlay) {
+    const backdrop = overlay.querySelector('.settings-backdrop');
+    if (backdrop) backdrop.addEventListener('click', closeSettings);
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && overlay && !overlay.hidden) closeSettings();
+  });
 }
 
 // Formats an ISO timestamp as camp time, e.g. "Jul 19, 8:47pm ET" —
@@ -5249,7 +5305,12 @@ function init() {
     });
   }
 
-  document.getElementById('role-btn').addEventListener('click', showLockScreen);
+  // The role button now lives in the settings sheet — close the sheet first
+  // so the lock screen isn't left sitting behind the open overlay.
+  document.getElementById('role-btn').addEventListener('click', () => {
+    closeSettings();
+    showLockScreen();
+  });
   updateRoleButton();
 
   document.getElementById('notify-toggle-btn').addEventListener('click', toggleNotify);
@@ -5257,6 +5318,7 @@ function init() {
   wireTeamPicker();
 
   wireSchedule();
+  wireSettings();
 
   initSync();
 
