@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-22T03:03:29Z';
+const CODE_UPDATED_AT = '2026-07-22T03:05:00Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -49,7 +49,7 @@ const ROLE_KEY = 'campScoreboardRole';
 // on their next load — used to kick out sessions unlocked with a retired PIN.
 // The same two literals live in index.html's pre-paint guard; keep them in sync.
 const EDIT_PIN_EPOCH_KEY = 'campScoreboardEditEpoch';
-const EDIT_PIN_EPOCH = '2026';
+const EDIT_PIN_EPOCH = 'r1'; // opaque marker — deliberately NOT the PIN, so no code leaks into source
 
 function currentRole() {
   try { return localStorage.getItem(ROLE_KEY) || 'view'; } catch (e) { return 'view'; }
