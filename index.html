@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=90">
+  <link rel="stylesheet" href="styles.css?v=91">
 
   <script>
     // Decide lock state before the page paints so we never flash the app,
@@ -224,11 +224,35 @@
           <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🔑</span> Score entry</span>
           <button id="role-btn" class="role-btn"></button>
         </div>
+        <!-- Editors only (hidden for view-only via CSS): opens the point-change log. -->
+        <button id="history-row" class="settings-link" type="button">
+          <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🕘</span> Change history</span>
+          <span class="settings-link-chevron" aria-hidden="true">›</span>
+        </button>
         <a class="settings-link" href="stalling.html">
           <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🎙️</span> Stalling with Patrick</span>
           <span class="settings-link-chevron" aria-hidden="true">›</span>
         </a>
       </div>
+    </div>
+  </div>
+
+  <!-- ── CHANGE HISTORY (editor-only point-change log) ─────────────
+       Reuses the settings sheet's overlay/sheet CSS. Opened from the
+       Change-history row in Settings; contents fetched from the separate
+       campScoreboard/changelog Firebase path. -->
+  <div id="history-overlay" class="settings-overlay" hidden>
+    <div class="settings-backdrop" id="history-backdrop"></div>
+    <div class="settings-sheet" role="dialog" aria-modal="true" aria-label="Change history">
+      <div class="settings-header">
+        <div class="schedule-grabber"></div>
+        <div class="settings-title-row">
+          <h2 class="settings-title">🕘 Change history</h2>
+          <button id="history-close" class="schedule-close" aria-label="Close change history">✕</button>
+        </div>
+        <p class="muted history-sub">Every point change, newest first — team, amount, and what caused it.</p>
+      </div>
+      <div class="settings-body" id="history-body"></div>
     </div>
   </div>
 
@@ -249,7 +273,7 @@
        falls back to local-only mode automatically. -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=90"></script>
-  <script src="app.js?v=90"></script>
+  <script src="firebase-config.js?v=91"></script>
+  <script src="app.js?v=91"></script>
 </body>
 </html>

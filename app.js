@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-22T03:05:00Z';
+const CODE_UPDATED_AT = '2026-07-22T03:27:34Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1244,6 +1244,111 @@ function wireSettings() {
   }
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && overlay && !overlay.hidden) closeSettings();
+  });
+}
+
+// ── Change-history sheet (editor-only) ───────────────────────────
+// Opened from the Settings sheet; reuses the same overlay/sheet CSS. Manages
+// its own open/close state (it does NOT call closeSettings, whose delayed
+// finish would clear `inert` out from under this sheet) — it hands off from
+// Settings by hiding it instantly, then restores the app on close.
+function historyOverlayEl() {
+  return document.getElementById('history-overlay');
+}
+
+function openHistory() {
+  const s = settingsOverlayEl();
+  if (s) { s.hidden = true; s.classList.remove('closing'); } // instant hand-off from Settings
+  const overlay = historyOverlayEl();
+  if (!overlay) return;
+  overlay.classList.remove('closing');
+  overlay.hidden = false;
+  document.body.classList.add('no-scroll');
+  const app = document.getElementById('app');
+  if (app) app.inert = true;
+  renderHistory();
+  requestAnimationFrame(() => {
+    const closeBtn = document.getElementById('history-close');
+    if (closeBtn) closeBtn.focus({ preventScroll: true });
+  });
+}
+
+function closeHistory() {
+  const overlay = historyOverlayEl();
+  if (!overlay) return;
+  const finish = () => {
+    overlay.hidden = true;
+    overlay.classList.remove('closing');
+    document.body.classList.remove('no-scroll');
+    const app = document.getElementById('app');
+    if (app) app.inert = false;
+    const btn = document.getElementById('settings-btn');
+    if (btn) btn.focus({ preventScroll: true });
+  };
+  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  if (reduce) { finish(); return; }
+  overlay.classList.add('closing');
+  setTimeout(finish, 200);
+}
+
+function renderHistory() {
+  const body = document.getElementById('history-body');
+  if (!body) return;
+  if (!fbRef) {
+    body.innerHTML = '<p class="muted">Live sync is off on this device, so there\'s no shared change history to show.</p>';
+    return;
+  }
+  body.innerHTML = '<p class="muted">Loading…</p>';
+  firebase.database().ref('campScoreboard/changelog').limitToLast(500).once('value')
+    .then((snap) => {
+      const val = snap.val() || {};
+      const rows = Object.keys(val).map((k) => val[k]).filter(Boolean);
+      rows.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+      body.innerHTML = rows.length
+        ? renderHistoryRows(rows)
+        : '<p class="muted">No point changes recorded yet.</p>';
+    })
+    .catch(() => {
+      body.innerHTML = '<p class="muted">Couldn\'t load the history (offline?). Close and reopen to try again.</p>';
+    });
+}
+
+function renderHistoryRows(rows) {
+  let html = '';
+  let lastDay = null;
+  rows.forEach((r) => {
+    const stamp = formatEasternStamp(r.at) || '';
+    const comma = stamp.indexOf(',');
+    const day = comma > -1 ? stamp.slice(0, comma) : stamp;
+    const time = comma > -1 ? stamp.slice(comma + 2) : '';
+    if (day !== lastDay) { html += `<div class="cl-day">${esc(day || '—')}</div>`; lastDay = day; }
+    const delta = r.delta > 0 ? `+${r.delta}` : `${r.delta}`;
+    const cls = r.delta > 0 ? 'cl-pos' : 'cl-neg';
+    const who = r.by ? ` · ${esc(String(r.by))}` : '';
+    const emoji = r.teamId ? teamEmoji(r.teamId) : '';
+    html += `
+      <div class="cl-entry">
+        <div class="cl-entry-top">
+          <span class="cl-team">${emoji ? emoji + ' ' : ''}${esc(String(r.team || r.teamId || '?'))}</span>
+          <span class="cl-delta ${cls}">${esc(delta)} pts</span>
+        </div>
+        <div class="cl-entry-sub">${esc(String(r.reason || 'Points updated'))} · ${esc(String(r.before))}→${esc(String(r.after))}</div>
+        <div class="cl-entry-meta">${esc(time)}${who}</div>
+      </div>`;
+  });
+  return html;
+}
+
+function wireHistory() {
+  const row = document.getElementById('history-row');
+  if (row) row.addEventListener('click', openHistory);
+  const closeBtn = document.getElementById('history-close');
+  if (closeBtn) closeBtn.addEventListener('click', closeHistory);
+  const backdrop = document.getElementById('history-backdrop');
+  if (backdrop) backdrop.addEventListener('click', closeHistory);
+  document.addEventListener('keydown', (e) => {
+    const overlay = historyOverlayEl();
+    if (e.key === 'Escape' && overlay && !overlay.hidden) closeHistory();
   });
 }
 
@@ -2789,7 +2894,8 @@ function renderStandings() {
   // Pulse rows whose points changed because of a remote sync (invisible
   // otherwise). Skip the very first render and local edits (those already
   // get confetti / direct feedback).
-  const pulseFromRemote = remoteJustApplied && lastPointsByTeam !== null;
+  const remoteOrigin = remoteJustApplied; // capture before reset — drives change-history logging
+  const pulseFromRemote = remoteOrigin && lastPointsByTeam !== null;
   remoteJustApplied = false;
   const changedTeams = []; // {team, delta, total} — for the notify option
 
@@ -2828,6 +2934,96 @@ function renderStandings() {
   ranked.forEach((team) => { lastPointsByTeam[team.id] = counts[team.id].points; });
   renderFollowCard(ranked, counts);
   if (changedTeams.length) notifyPointChanges(changedTeams);
+  // Append any local point-total changes to the change-history log. Best-effort:
+  // wrapped so a logging failure can never break the standings render.
+  try { recordPointHistory(counts, remoteOrigin); } catch (e) { /* never break rendering */ }
+}
+
+// ── Change history (append-only log at a SEPARATE Firebase path) ──────────────
+// A timestamped record of every point-total change, written to
+// campScoreboard/changelog — NOT campScoreboard/state, so it never touches the
+// synced scoreboard and can't interfere with the merge/push logic. Only the
+// editor device that originates a change logs it (remote merges are skipped —
+// the originating device already logged), so there are no duplicates. Writes
+// are append-only (push()), so there's no read-modify-write to clobber. Every
+// path guards on fbRef and is wrapped in try/catch, so with sync off or on an
+// error this is a silent no-op.
+let clPrevSnap = null; // last-seen { points, results, bonuses } for diffing
+
+function snapshotForLog(counts) {
+  const points = {};
+  (state.teams || []).forEach((t) => { points[t.id] = counts[t.id] ? counts[t.id].points : 0; });
+  const results = {};
+  Object.keys(state.results || {}).forEach((gid) => {
+    const r = state.results[gid];
+    if (r) results[gid] = r.savedAt || '1';
+  });
+  const bonuses = {};
+  Object.keys(state.bonuses || {}).forEach((id) => {
+    const b = state.bonuses[id];
+    if (b) bonuses[id] = { category: b.category, label: b.label, points: b.points };
+  });
+  return { points, results, bonuses };
+}
+
+function bonusCauseLabel(b) {
+  if (!b) return 'Bonus';
+  if (b.label) return b.label;
+  if (b.category === 'verse') return 'Memory verse';
+  if (b.category === 'cleanup') return 'Meal cleanup';
+  return 'Bonus';
+}
+
+// Human-readable causes for what changed between two snapshots.
+function describeCauses(prev, snap) {
+  const causes = [];
+  Object.keys(snap.results).forEach((gid) => {
+    if (prev.results[gid] !== snap.results[gid]) {
+      const g = gameById(gid);
+      causes.push((g ? g.name : gid) + ' — result saved');
+    }
+  });
+  Object.keys(prev.results).forEach((gid) => {
+    if (!(gid in snap.results)) {
+      const g = gameById(gid);
+      causes.push((g ? g.name : gid) + ' — result cleared');
+    }
+  });
+  Object.keys(snap.bonuses).forEach((id) => {
+    if (!(id in prev.bonuses)) causes.push(bonusCauseLabel(snap.bonuses[id]) + ' — added');
+  });
+  Object.keys(prev.bonuses).forEach((id) => {
+    if (!(id in snap.bonuses)) causes.push(bonusCauseLabel(prev.bonuses[id]) + ' — removed');
+  });
+  return causes;
+}
+
+function recordPointHistory(counts, isRemote) {
+  const snap = snapshotForLog(counts);
+  const prev = clPrevSnap;
+  clPrevSnap = snap;        // always advance the baseline
+  if (!prev) return;        // first render is the baseline — never logged
+  if (isRemote) return;     // remote merge: the originating device already logged
+  if (!canEdit()) return;   // only editors change points (defensive)
+  if (!fbRef) return;       // sync off — nowhere to log
+
+  const changed = [];
+  Object.keys(snap.points).forEach((tid) => {
+    const before = prev.points[tid];
+    const after = snap.points[tid];
+    if (before !== undefined && before !== after) changed.push({ tid, before, after });
+  });
+  if (!changed.length) return;
+
+  const causes = describeCauses(prev, snap);
+  const reason = causes.length ? causes.join('; ') : 'Points updated';
+  const at = new Date().toISOString();
+  const by = state.identity || null;
+  const logRef = firebase.database().ref('campScoreboard/changelog');
+  changed.forEach(({ tid, before, after }) => {
+    logRef.push({ at, teamId: tid, team: teamName(tid), delta: after - before, before, after, reason, by })
+      .catch(() => { /* offline / rules — the log entry is best-effort */ });
+  });
 }
 
 // "Your team" summary card — rank, points, and next matchup if one's queued.
@@ -5360,6 +5556,7 @@ function init() {
 
   wireSchedule();
   wireSettings();
+  wireHistory();
 
   initSync();
 

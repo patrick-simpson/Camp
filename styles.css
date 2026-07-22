@@ -3598,3 +3598,71 @@ body.no-scroll {
   color: var(--color-text-muted);
   line-height: 1;
 }
+
+/* The Change-history row is a <button> styled like the link rows. */
+button.settings-link {
+  width: 100%;
+  font-family: inherit;
+  font-size: 1rem;
+  color: var(--color-text);
+  text-align: left;
+}
+
+/* Editors only — hidden for view-only devices, like the other edit tools. */
+html.view-only #history-row {
+  display: none;
+}
+
+/* ── Change-history sheet contents ── */
+.history-sub {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+}
+
+.cl-day {
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  margin: 0.4rem 0 -0.1rem;
+}
+
+.cl-entry {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.6rem 0.8rem;
+}
+
+.cl-entry-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.cl-team {
+  font-weight: 700;
+}
+
+.cl-delta {
+  font-weight: 800;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.cl-pos { color: var(--color-primary); }
+.cl-neg { color: var(--color-danger); }
+
+.cl-entry-sub {
+  font-size: 0.85rem;
+  color: var(--color-text);
+  margin-top: 0.2rem;
+}
+
+.cl-entry-meta {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  margin-top: 0.2rem;
+}
