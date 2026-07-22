@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-22T10:28:12Z';
+const CODE_UPDATED_AT = '2026-07-22T10:46:00Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -88,12 +88,12 @@ const TEAM_EMOJI = {
 // The ?v= suffix cache-busts the image itself (bump it when a crest file is
 // re-exported, since the <img> URL is otherwise cached indefinitely).
 const TEAM_SHIELD = {
-  t0: 'images/team-shields/ferocious-foxes.webp?v=2',
-  t1: 'images/team-shields/turkey-dinner.webp?v=2',
-  t2: 'images/team-shields/methodic-mediocre-maples.webp?v=2',
-  t3: 'images/team-shields/particularly-perilous-pumpkins.webp?v=2',
-  t4: 'images/team-shields/patriotic-pilgrims.webp?v=4',
-  t5: 'images/team-shields/runaway-john-deeres.webp?v=2',
+  t0: 'images/team-shields/ferocious-foxes.webp?v=5',
+  t1: 'images/team-shields/turkey-dinner.webp?v=5',
+  t2: 'images/team-shields/methodic-mediocre-maples.webp?v=5',
+  t3: 'images/team-shields/particularly-perilous-pumpkins.webp?v=5',
+  t4: 'images/team-shields/patriotic-pilgrims.webp?v=5',
+  t5: 'images/team-shields/runaway-john-deeres.webp?v=5',
 };
 // Per-team accent color, tuned to each team's shield/emoji. Drives the "Your
 // team" card's tint, border, and rank pill via the --team-accent CSS custom
