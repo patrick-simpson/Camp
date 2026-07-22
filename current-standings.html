@@ -190,7 +190,6 @@
   <div id="screen" hidden>
     <!-- Intro -->
     <div id="intro">
-      <p class="intro-kicker">🏕️ Camp Scoreboard presents</p>
       <h1 class="intro-title" id="intro-title"></h1>
       <div class="intro-shields" id="intro-shields"></div>
       <p class="intro-go">Press → or tap to begin ▶</p>
@@ -205,8 +204,6 @@
 
   <!-- Finale -->
   <div id="finale"><div class="champ" id="champ"></div></div>
-
-  <p class="hint" id="hint" style="opacity:0"></p>
 
   <!-- Firebase (optional live sync — same feed as the main app) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
@@ -508,12 +505,8 @@
     }
 
     var hintTimer = null;
-    function showHint(text, persist) {
-      hintEl.textContent = text;
-      hintEl.style.opacity = '1';
-      clearTimeout(hintTimer);
-      if (!persist) hintTimer = setTimeout(function () { hintEl.style.opacity = '0'; }, 3200);
-    }
+    // On-screen instruction hints removed by request — no-op.
+    function showHint() {}
 
     // ── Reveal state machine ───────────────────────────────────────
     var phase = 'intro';   // 'intro' | 'reveal' | 'done'
