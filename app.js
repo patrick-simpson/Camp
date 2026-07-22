@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-22T12:09:32Z';
+const CODE_UPDATED_AT = '2026-07-22T14:41:39Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1496,6 +1496,13 @@ let dirtySinceLoad = false;
 // snapshot, so view-only saves (day tab, theme, notify, follow-team) never
 // block an incoming update or its notification.
 let dataEditPending = false;
+// Count of local writes handed to the server (fbRef.set) that it hasn't
+// confirmed committed yet. While offline, a queued set()'s promise stays
+// pending, so this stays > 0 — and the merge uses it to refuse to adopt the
+// server's PREVIOUS value (the snapshot that re-fires on reconnect) until our
+// cached edit has actually uploaded. This is what stops scores being typed /
+// saved offline from getting reverted by a stale reconnect snapshot.
+let pendingWrites = 0;
 
 function syncEnabled() {
   return !!fbRef;
@@ -1528,16 +1535,21 @@ function initSync() {
           return;
         }
       }
-      // A local DATA edit is queued but hasn't reached the server yet (e.g. a
-      // bracket winner tapped in the last 400ms). Adopting this snapshot now
-      // would overwrite it on screen, and the queued push would then persist
-      // the reverted state — the bug where tapping a winner right after the
-      // page loads "does nothing." Keep local; the pending push carries our
-      // edit up, and its echo re-syncs everyone. Gated on dataEditPending (not
-      // the raw pushTimer) so view-only saves — day tab, theme, notify toggle,
-      // follow-team — never make us skip an incoming update or its
-      // notification. The first snapshot is handled by dirtySinceLoad above.
-      if (!firstSnapshot && dataEditPending) return;
+      // Never let a snapshot overwrite an edit in progress. Defer adopting it
+      // while EITHER:
+      //   • the editor is mid-entry — a score/name input is focused, or a data
+      //     edit is typed/queued but not yet pushed (editorMidEntry), or
+      //   • we have a local write the server hasn't confirmed yet
+      //     (pendingWrites > 0) — e.g. scores entered offline, still queued.
+      // Without this, a reconnect re-fires the server's PREVIOUS value and the
+      // merge below replaces state.drafts/results with it, reverting the scores
+      // being typed (and a later Save then persists the reverted values —
+      // teams lose points). Deferring is safe: our own write echoes back once
+      // it commits, and any genuinely newer remote change re-fires a snapshot
+      // the moment we're idle again. View-only saves (day tab, theme, notify,
+      // follow-team) don't trip editorMidEntry, so they never block updates.
+      // The first snapshot is handled by dirtySinceLoad above.
+      if (!firstSnapshot && (editorMidEntry() || pendingWrites > 0)) return;
       applyingRemote = true;
       // Signature of the synced slice before applying this snapshot. RTDB fires
       // a local `value` event for our own set(), so most snapshots are pure
@@ -1600,16 +1612,9 @@ function initSync() {
     // Flush a pending debounced push before the page is hidden/suspended. iOS
     // suspends setTimeout when the phone locks, so a result saved right before
     // locking would otherwise strand its 400ms push and never reach the server.
-    const flushPush = () => {
-      if (pushTimer) {
-        clearTimeout(pushTimer);
-        pushTimer = null;
-        pushState();
-      }
-    };
-    window.addEventListener('pagehide', flushPush);
+    window.addEventListener('pagehide', flushPendingPush);
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden) flushPush();
+      if (document.hidden) flushPendingPush();
     });
     updateSyncIndicator();
   } catch (e) {
@@ -1649,8 +1654,15 @@ function pushState() {
   SYNC_KEYS.forEach((k) => { payload[k] = state[k] === undefined ? null : state[k]; });
   payload.picSetup = picSetupForSync(state.picSetup); // words stay device-local
   dataEditPending = false; // current state (incl. any edit) is going to the server
+  // Track the write until the server confirms it. Offline, this promise stays
+  // pending (the SDK queues the write and flushes on reconnect), so
+  // pendingWrites stays > 0 and the merge won't adopt the stale reconnect
+  // snapshot until our cached edit has uploaded. Settle on both success/failure
+  // so a rejected write can't wedge sync closed.
+  pendingWrites++;
+  const settle = () => { pendingWrites = Math.max(0, pendingWrites - 1); };
   // JSON round-trip strips any `undefined` (which Realtime DB rejects).
-  fbRef.set(JSON.parse(JSON.stringify(payload))).catch((e) => console.warn('sync push failed', e));
+  fbRef.set(JSON.parse(JSON.stringify(payload))).then(settle, (e) => { console.warn('sync push failed', e); settle(); });
 }
 
 // Cheap content signature of the synced state, used to skip re-rendering on
@@ -4381,6 +4393,9 @@ function renderTally(container, g) {
       checkHighScore(g, draft, input.dataset.teamId, leaderBefore);
       leaderBefore = leaderOf(g, draft);
     });
+    // Push the moment the field loses focus, so the value lands on the server
+    // right away rather than waiting out the debounce.
+    input.addEventListener('blur', flushPendingPush);
   });
 
   container.querySelectorAll('.counter-btn').forEach((btn) => {
@@ -5435,8 +5450,15 @@ const UPDATE_POLL_MS = 2 * 60 * 1000;
 
 function editorMidEntry() {
   const ae = document.activeElement;
-  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable)) return true;
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' || ae.isContentEditable)) return true;
   return dataEditPending || pushTimer != null; // a real edit is typed/queued but not yet synced
+}
+
+// Send any debounced push right now (e.g. when a score field loses focus, or
+// the page is being hidden) so an entered value reaches the server promptly
+// instead of waiting out the coalescing timer.
+function flushPendingPush() {
+  if (pushTimer) { clearTimeout(pushTimer); pushTimer = null; pushState(); }
 }
 
 // The app.js build number this page loaded with, read off its own <script> tag.
