@@ -2316,6 +2316,24 @@ body.no-scroll {
   color: var(--color-text-muted);
 }
 
+.verse-video-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin-top: 0.7rem;
+  padding: 0.4rem 0.8rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+  color: var(--color-primary);
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.verse-video-link:hover {
+  background: color-mix(in srgb, var(--color-primary) 20%, var(--color-surface));
+}
+
 .verse-entry {
   margin-bottom: 1rem;
 }

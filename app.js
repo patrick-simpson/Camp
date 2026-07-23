@@ -14,9 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T13:47:15Z';
+const CODE_UPDATED_AT = '2026-07-23T13:51:07Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 120;
+const APP_VERSION = 121;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -3403,7 +3403,7 @@ const MEMORY_VERSES = {
   1: { text: 'For by grace you have been saved through faith. And this is not your own doing; it is the gift of God, not a result of works, so that no one may boast.', ref: 'Ephesians 2:8–9 ESV' },
   2: { text: 'We were buried therefore with him by baptism into death, in order that, just as Christ was raised from the dead by the glory of the Father, we too might walk in newness of life.', ref: 'Romans 6:4 ESV' },
   3: { text: 'There is therefore now no condemnation for those who are in Christ Jesus.', ref: 'Romans 8:1 ESV' },
-  4: { text: 'And I will give you a new heart, and a new spirit I will put within you. And I will remove the heart of stone from your flesh and give you a heart of flesh. And I will put my Spirit within you, and cause you to walk in my statutes and be careful to obey my rules.', ref: 'Ezekiel 36:26–27 ESV' },
+  4: { text: 'And I will give you a new heart, and a new spirit I will put within you. And I will remove the heart of stone from your flesh and give you a heart of flesh. And I will put my Spirit within you, and cause you to walk in my statutes and be careful to obey my rules.', ref: 'Ezekiel 36:26–27 ESV', video: 'https://youtu.be/yqA3NHjwY0I?is=-sOrEqnoEM3MmJwc' },
   5: { text: 'If we live by the Spirit, let us also keep in step with the Spirit.', ref: 'Galatians 5:25 ESV' },
 };
 
@@ -3445,11 +3445,15 @@ function renderMemoryVerse() {
   const dayChips = `<div class="verse-day-row">${[1, 2, 3, 4, 5].map((dow) =>
     `<jelly-chip class="verse-day-chip" selectable size="small" ${dow === verseDay ? 'selected' : ''} data-verse-day="${dow}">${DAY_NAMES[dow].slice(0, 3)}${dow === todayDow ? '<span class="today-dot" title="Today"></span>' : ''}</jelly-chip>`).join('')}</div>`;
 
+  const verseVideo = verse.video
+    ? `<a class="verse-video-link" href="${esc(verse.video)}" target="_blank" rel="noopener noreferrer">▶️ Watch the video</a>`
+    : '';
   const verseBox = `
     <div class="verse-day-card">
       <span class="verse-day-name">${esc(DAY_NAMES[verseDay])}</span>
       <p class="verse-day-text">“${esc(verse.text)}”</p>
       <p class="verse-day-ref">${esc(verse.ref)}</p>
+      ${verseVideo}
     </div>`;
 
   // One row per team: the day's verse points, shown exactly once. Editors
