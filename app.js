@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-22T18:06:10Z';
+const CODE_UPDATED_AT = '2026-07-23T08:52:07Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1686,7 +1686,7 @@ function picSetupForSync(picSetup) {
 // Maps written per-child (one path per game/team/bonus) so concurrent edits to
 // DIFFERENT items on different devices never overwrite each other. teams/meta
 // are small singletons written whole.
-const SYNC_ITEM_MAPS = ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live'];
+const SYNC_ITEM_MAPS = ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'brownie'];
 const SYNC_SINGLETONS = ['teams', 'meta'];
 
 // The synced portion of state as it should exist on the server: a deep copy
@@ -3597,7 +3597,11 @@ function bindBrownieEntry(wrap) {
       if (!state.brownie) state.brownie = {};
       state.brownie[teamId] = (Number(state.brownie[teamId]) || 0) + 1;
       brownieGivenThisLoad = true;
-      touchData();
+      // Deliberately NOT touchData(): a brownie point is just-for-fun, not
+      // real scoreboard activity, so it shouldn't bump the footer's "Data
+      // last updated" — and not arming the offline-defense path keeps a
+      // stale viewer's brownie click from ever pushing stale state over
+      // newer remote scores. It still syncs via the normal save→push.
       saveState();
       renderAll();
     });
