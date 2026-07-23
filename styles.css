@@ -406,7 +406,6 @@ html.view-only .role-btn {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
-  margin-bottom: 0.85rem;
 }
 .live-home-card {
   width: 100%;
@@ -511,7 +510,6 @@ html.view-only .role-btn {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
-  margin-bottom: 0.85rem;
 }
 .you-strip .notify-btn {
   width: 100%;
@@ -718,7 +716,6 @@ html.view-only .role-btn {
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-card);
   padding: 0.85rem 1rem;
-  margin-bottom: 1rem;
 }
 
 .now-eyebrow {
@@ -3296,7 +3293,6 @@ body.no-scroll {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  margin: 0 0 0.75rem;
 }
 .whats-new-banner {
   position: relative;
