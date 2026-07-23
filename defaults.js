@@ -289,6 +289,7 @@ function defaultConfig() {
       {
         id: 'waiter-water-chain', name: 'Waiter Water Chain', emoji: '💧', dayId: 'd4', session: 'Morning',
         location: 'Bathroom Lawn', format: 'tournament',
+        timer: { label: 'Game clock', presets: [600] },
         headline: 'Pass the tray of water cups down the human chain until the bucket overflows.',
         rules: [
           { h: 'Setup', items: [
