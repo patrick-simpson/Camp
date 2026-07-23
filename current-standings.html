@@ -144,6 +144,48 @@
     .hero-break .medals { display: flex; gap: clamp(0.7rem, 3vw, 3rem); font-size: clamp(1.4rem, 5vw, 5rem); font-weight: 900; color: #000; }
     .hero-break .bonus { margin-top: 0.3rem; font-size: clamp(1.1rem, 3.2vw, 3rem); font-weight: 800; color: #000; }
 
+    /* ── Tied place: two (or more) teams share the spotlight ─────────
+       The single-team layout (huge shield left, text right) doesn't fit
+       twice on a 1080p screen — the second entry wrapped below and the
+       shields clipped against the fixed-height stage (html overflow is
+       hidden). Ties compact each entry into a centered column (shield
+       above name/score) and forbid wrapping, so they sit side by side. */
+    .hero.tied .hero-entries { flex-wrap: nowrap; align-items: flex-start; gap: clamp(1.2rem, 6vw, 7rem); }
+    .hero.tied .hero-entry { flex-direction: column; text-align: center; gap: clamp(0.5rem, 1.6vh, 1.2rem); min-width: 0; }
+    .hero.tied .hero-shield { width: clamp(140px, 30vh, 360px); }
+    .hero.tied .hero-info { align-items: center; }
+    .hero.tied .hero-name { font-size: clamp(1.4rem, 3.4vw, 4rem); text-align: center; }
+    .hero.tied.solo .hero-name { font-size: clamp(1.8rem, 4.6vw, 5.5rem); }
+    .hero.tied .hero-stats { align-items: center; }
+    .hero.tied .hero-points { justify-content: center; }
+    .hero.tied .hero-points .num { font-size: clamp(2.2rem, 9vh, 7rem); }
+    .hero.tied .hero-break .medals { justify-content: center; font-size: clamp(1rem, 2.6vw, 2.6rem); }
+    .hero.tied .hero-break .bonus { text-align: center; font-size: clamp(0.9rem, 2vw, 2rem); }
+
+    /* ── Tie fight 🥊: during the solo spotlight the two shields wind up,
+       charge, and CLASH in the middle (twice), with a 💥 burst at each
+       contact (fired from showBig). Transforms ride the .hero-entry
+       wrapper so the shield's own bob animation keeps running under it. */
+    .hero.fight .hero-entry:first-child { animation: clashL 1.5s ease-in-out 2; }
+    .hero.fight .hero-entry:last-child { animation: clashR 1.5s ease-in-out 2; }
+    @keyframes clashL {
+      0%   { transform: translateX(0) rotate(0); }
+      32%  { transform: translateX(-5vw) rotate(-7deg); }
+      52%  { transform: translateX(9vw) rotate(9deg); }
+      68%  { transform: translateX(1.5vw) rotate(-3deg); }
+      100% { transform: translateX(0) rotate(0); }
+    }
+    @keyframes clashR {
+      0%   { transform: translateX(0) rotate(0); }
+      32%  { transform: translateX(5vw) rotate(7deg); }
+      52%  { transform: translateX(-9vw) rotate(-9deg); }
+      68%  { transform: translateX(-1.5vw) rotate(3deg); }
+      100% { transform: translateX(0) rotate(0); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .hero.fight .hero-entry:first-child, .hero.fight .hero-entry:last-child { animation: none; }
+    }
+
     /* ── Standings board (grows) ─────────────────────────── */
     #board {
       position: fixed; left: 0; right: 0; bottom: 0; z-index: 22; margin: 0 auto; width: min(96vw, 1600px);
@@ -240,7 +282,7 @@
     // silently never took effect until someone thought to hit refresh (this
     // bit the double-points fix on 2026-07-23). Bump this stamp on every
     // edit to this file; see checkForUpdate/startUpdatePolling below.
-    var TV_BUILD = '2026-07-24T00:20:00Z';
+    var TV_BUILD = '2026-07-24T00:55:00Z';
 
     // ── Constants mirrored from app.js (keep in sync) ──────────────
     var STORAGE_KEY = 'campScoreboardV2';
@@ -390,6 +432,18 @@
     function launch(emoji, x, y, vx, vy, size) {
       parts.push({ e: emoji, x: x, y: y, vx: vx, vy: vy, size: size,
         rot: Math.random() * Math.PI * 2, vr: (Math.random() - 0.5) * 0.3 });
+    }
+    // Impact burst at mid-stage for the tie fight — 💥 and sparks radiating
+    // from where the two shields collide.
+    function clashBurst() {
+      var W = cvs.width, H = cvs.height;
+      var mix = ['💥', '⚔️', '✨'];
+      for (var i = 0; i < 14; i++) {
+        var a = Math.random() * Math.PI * 2;
+        var sp = (4 + Math.random() * 7) * dpr;
+        launch(mix[i % mix.length], W / 2, H * 0.42, Math.cos(a) * sp, Math.sin(a) * sp - 4 * dpr, (30 + Math.random() * 40) * dpr);
+      }
+      sfxBreak();
     }
     // Fire from both bottom corners toward the upper-middle.
     function cannon(emojis, count, power) {
@@ -627,8 +681,24 @@
       heroWrap.innerHTML = html;
       var hero = heroWrap.querySelector('.hero');
       hero.classList.add('enter');
+      // Ties get the compact side-by-side layout (see .hero.tied CSS).
+      if (tie) hero.classList.add('tied');
       // First 3s: only the shield + a super-large team name (place/score hidden).
       hero.classList.add('solo');
+      // Two-way tie: the shields FIGHT for the spot during the solo
+      // spotlight — two charge-and-clash cycles with a 💥 burst at each
+      // contact (52% of each 1.5s cycle). Skipped for 3-way ties (no clean
+      // head-to-head geometry) and for reduced-motion viewers.
+      var reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (tie && group.entries.length === 2 && !reduceMotion) {
+        hero.classList.add('fight');
+        [780, 2280].forEach(function (t) {
+          setTimeout(function () {
+            if (hero.isConnected && hero.classList.contains('fight')) clashBurst();
+          }, t);
+        });
+        setTimeout(function () { if (hero.isConnected) hero.classList.remove('fight'); }, 3050);
+      }
       // Drop the board off-screen so the team spotlight is the only thing shown.
       boardEl.classList.add('dropped');
 
