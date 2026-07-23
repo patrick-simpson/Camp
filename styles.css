@@ -4525,6 +4525,49 @@ select.form-input {
   margin-top: 0.7rem;
 }
 
+/* All-teams-at-once big board (Counselor Hide and Seek and other liveRankings
+   games) — a ranked list instead of the 2-team .board-cols layout, sized to
+   read across a field, not just a courtside phone. */
+.board-tally-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  text-align: left;
+  margin-top: 0.5rem;
+}
+
+.board-tally-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--team-accent, var(--color-primary)) 7%, var(--color-surface));
+}
+
+.board-tally-rank {
+  min-width: 1.9rem;
+  text-align: center;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+}
+
+.board-tally-team {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  overflow-wrap: break-word;
+}
+
+.board-tally-score {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--team-accent, var(--color-primary));
+}
+
+.board-tally-row.board-tally-podium { font-weight: 800; }
+
 /* Spectator mode: the board owns the screen. */
 .big-board.viewer {
   min-height: 55vh;
@@ -4537,6 +4580,9 @@ select.form-input {
 .big-board.viewer .board-name { font-size: 1rem; }
 .big-board.viewer .board-score { font-size: clamp(4rem, 24vw, 7rem); }
 .big-board.viewer .board-clock { font-size: clamp(3rem, 16vw, 5rem); }
+.big-board.viewer .board-tally-rank { font-size: clamp(1.2rem, 4.5vw, 1.7rem); }
+.big-board.viewer .board-tally-team { font-size: clamp(1.05rem, 3.8vw, 1.4rem); }
+.big-board.viewer .board-tally-score { font-size: clamp(1.6rem, 7vw, 2.6rem); }
 
 /* Goal joy: the number pops and team-emoji confetti sails up. */
 .score-pop {

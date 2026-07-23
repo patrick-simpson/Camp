@@ -14,9 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T16:35:59Z';
+const CODE_UPDATED_AT = '2026-07-23T16:45:36Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 127;
+const APP_VERSION = 128;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1121,6 +1121,18 @@ function migrateState(s) {
       hs.counterStepLabels = { 5: 'counselor' };
     }
     c.version = 3;
+    changed = true;
+  }
+  if ((c.version || 1) < 4) {
+    // Counselor Hide and Seek: all teams play at once (no bracket), so give it
+    // the same all-teams liveRankings treatment as Inflatable Bowling/Cider
+    // Survivor — it now shows up in "Live Now" (home screen, big board when
+    // nothing else is live) with every team's running score, updating in real
+    // time as the ref taps points, plus its game clock. Previously it had no
+    // live-now presence at all while a game was in progress.
+    const hs2 = c.games.find((g) => g.id === 'counselor-hide-seek');
+    if (hs2) hs2.liveRankings = true;
+    c.version = 4;
     changed = true;
   }
   if (!s.ui) { s.ui = { day: null, gameId: null }; changed = true; }
@@ -3829,15 +3841,17 @@ function liveHomeGames() {
   });
 }
 
-// The live-tracked game whose Big Board should take over the top of the
-// home screen: in progress, has a current matchup, and the user isn't
-// already watching it in the game view (no double board).
+// The game whose Big Board should take over the top of the home screen: a
+// live-tracked matchup in progress (preferred), or — if none — an
+// all-teams-at-once liveRankings tally game being scored. Either way the user
+// mustn't already be watching it in the game view (no double board).
 function homeBoardGame() {
-  const g = liveHomeGames().find((x) => {
+  const games = liveHomeGames();
+  const g = games.find((x) => {
     if (!x.liveTracker) return false;
     const b = state.brackets && state.brackets[x.id];
     return b && currentMatchupOf(x, normalizeBracket(b));
-  });
+  }) || games.find((x) => x.liveRankings);
   if (!g || state.ui.gameId === g.id) return null;
   return g;
 }
@@ -3857,10 +3871,16 @@ function renderLiveHome() {
   let boardHTML = '';
   const bg = homeBoardGame();
   if (bg) {
-    const pair = currentMatchupOf(bg, normalizeBracket(state.brackets[bg.id]));
+    let boardBody;
+    if (bg.liveTracker) {
+      const pair = currentMatchupOf(bg, normalizeBracket(state.brackets[bg.id]));
+      boardBody = liveTrackerHTML(bg, pair[0], pair[1], true);
+    } else {
+      boardBody = tallyBoardHTML(bg);
+    }
     boardHTML = `<div class="home-board" data-game-id="${esc(bg.id)}" role="button" tabindex="0" aria-label="Open ${esc(bg.name)}">
       <p class="home-board-title">${esc(bg.emoji)} ${esc(bg.name)} <span class="home-board-open">tap to open ›</span></p>
-      ${liveTrackerHTML(bg, pair[0], pair[1], true)}
+      ${boardBody}
     </div>`;
     games = games.filter((x) => x.id !== bg.id);
   }
@@ -3945,6 +3965,39 @@ function liveHomeTallyCard(g) {
   </button>`;
 }
 
+// Big-board treatment for an all-teams-at-once tally game (Counselor Hide and
+// Seek and any other liveRankings game), used when it's promoted to the top
+// of the home screen: every team's running score shown large, ranked live,
+// plus the game clock when the game has one (same idea as liveBoardHTML for
+// head-to-head games, just shaped for N teams instead of 2). The game's OWN
+// page uses the smaller renderLiveTallyWatch instead — its clock already
+// comes from #clock-area, so this board's clock would just duplicate it there.
+function tallyBoardHTML(g) {
+  const ranked = tallyRankLive(g);
+  const complete = ranked.length >= state.teams.length;
+  const medals = ['🥇', '🥈', '🥉'];
+  const clock = g.timer ? getClock(g) : null;
+  const remaining = clock ? clockRemaining(clock) : 0;
+  const rows = ranked.length ? ranked.map((e, i) => `
+    <div class="board-tally-row${i < 3 ? ' board-tally-podium' : ''}" style="--team-accent: ${TEAM_ACCENT[e.id] || 'var(--color-primary)'}">
+      <span class="board-tally-rank">${complete && i < 3 ? medals[i] : (i + 1) + '.'}</span>
+      <span class="board-tally-team">${teamEmoji(e.id)} ${esc(teamName(e.id))}</span>
+      <span class="board-tally-score">${esc(formatScore(g, e.v))}</span>
+    </div>`).join('') : '<p class="muted">Scoring under way…</p>';
+  const clockHTML = clock ? `
+    <div class="board-clock-wrap">
+      <span class="board-clock ${remaining === 0 ? 'board-clock-zero' : ''}" data-game-clock data-game-id="${esc(g.id)}" data-prev="${remaining}">${fmtBoardClock(remaining)}</span>
+    </div>` : '';
+  return `<div class="big-board viewer" data-board-game="${esc(g.id)}">
+    <div class="board-head">
+      <span class="live-home-badge">🔴 LIVE</span>
+      <span class="board-period">${g.lowerWins ? 'Fastest so far' : 'Team totals'} · ${ranked.length}/${state.teams.length} in</span>
+    </div>
+    ${clockHTML}
+    <div class="board-tally-rows">${rows}</div>
+  </div>`;
+}
+
 // The matchup a bracket is currently waiting on a winner for — used by the
 // read-only live-watch view so spectators see who's playing right now.
 function currentMatchupOf(g, b) {
@@ -3975,6 +4028,10 @@ function nextMatchupOf(g, b) {
 // Read-only live view for spectators (no score PIN): the current matchup,
 // its live inning/tally (synced from the ref's device), and completed
 // matches. Re-rendered by renderAll whenever a synced update lands.
+// Note: no clock here — for the game's OWN page, #clock-area (renderGameView)
+// already shows the standalone game clock above this view; a second one here
+// would just duplicate it. tallyBoardHTML's clock is for the home-screen
+// promoted board only, a separate spot with no clock of its own.
 function renderLiveTallyWatch(container, g) {
   const ranked = tallyRankLive(g);
   if (!ranked.length) {
