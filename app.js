@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T08:52:07Z';
+const CODE_UPDATED_AT = '2026-07-23T09:04:16Z';
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -387,6 +387,22 @@ const GAMES = [
         'Every ball collected = 1 point.',
         'The 3 teams with the most balls take gold, silver, and bronze.',
       ] },
+    ],
+  },
+  {
+    id: 'color-run-cleanup', name: 'Color Run: Cleanup Edition', emoji: '🏃', day: 3, session: 'Evening',
+    location: 'Campground-wide', format: 'placement',
+    headline: 'Run the color course and clean up as you go — top 3 teams medal.',
+    rules: [
+      { h: 'Winning', items: ['The top 3 teams take gold, silver, and bronze.'] },
+    ],
+  },
+  {
+    id: 'pumpkin-painting', name: 'Pumpkin Painting', emoji: '🎃', day: 3, session: 'Evening',
+    location: 'Chapel Lawn', format: 'placement',
+    headline: 'Each team paints a pumpkin — judged live, top 3 take medals.',
+    rules: [
+      { h: 'Winning', items: ['The top 3 painted pumpkins take gold, silver, and bronze.'] },
     ],
   },
   {
