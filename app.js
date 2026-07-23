@@ -14,9 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T10:59:58Z';
+const CODE_UPDATED_AT = '2026-07-23T11:11:13Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 107;
+const APP_VERSION = 108;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -2002,11 +2002,44 @@ function renderToolsIfCurrent(gid) {
 
 function renderTools(wrap, g) {
   let html = '';
-  if (g.timer) html += countdownHTML(g);
+  // Live-tracked matches carry their clock ON the Big Board (synced, next to
+  // the score) — the separate top-of-page countdown would duplicate it a
+  // full screen away from where the ref is scoring.
+  const timerHere = g.timer && !g.liveTracker;
+  if (timerHere) html += countdownHTML(g);
   if (g.prompts) html += picRoundHTML(g);
   wrap.innerHTML = html;
-  if (g.timer) bindCountdown(wrap, g);
+  if (timerHere) bindCountdown(wrap, g);
   if (g.prompts) bindPicRound(wrap, g);
+}
+
+// ── Big Board clock ticker ───────────────────────────────────────
+// Updates every visible board clock from the synced clock state. Runs on a
+// cheap global interval (see init) so spectators' clocks tick without any
+// network traffic; the editor's device sounds the alarm at zero.
+function tickBoardClocks() {
+  const els = document.querySelectorAll('[data-board-clock]');
+  if (!els.length) return;
+  els.forEach((el) => {
+    const g = gameById(el.dataset.gameId);
+    if (!g) return;
+    const l = getLiveMatch(g, el.dataset.a, el.dataset.b);
+    if (!l.clock) return;
+    const rem = clockRemaining(l.clock);
+    const prev = Number(el.dataset.prev) || 0;
+    el.dataset.prev = rem;
+    el.textContent = fmtBoardClock(rem);
+    el.classList.toggle('board-clock-zero', rem === 0);
+    if (l.clock.running && rem === 0 && prev > 0) {
+      // Just hit zero. Editors get the buzzer and stop the synced clock so
+      // every device settles on 0:00; viewers only see the pulse.
+      if (canEdit()) {
+        playAlarm();
+        setMatchClock(g, el.dataset.a, el.dataset.b, (c) => { c.running = false; c.remaining = 0; });
+        renderAll();
+      }
+    }
+  });
 }
 
 // ── Countdown ──
@@ -4099,17 +4132,9 @@ function renderLiveWatch(container, g) {
       </div>
       <p class="live-watch-inning">First to exactly ${target}</p>`;
   } else if (g.liveTracker) {
-    const l = getLiveMatch(g, pair[0], pair[1]);
-    const maxInn = g.liveTracker.innings || 3;
-    const periodLabel = g.liveTracker.periodLabel || 'Inning';
-    scoreHTML = `
-      <div class="live-watch-score">
-        <div class="lw-team">${teamEmoji(pair[0])}<span class="lw-name">${esc(teamName(pair[0]))}</span></div>
-        <div class="lw-nums"><span class="lw-num">${l.hr[pair[0]] || 0}</span><span class="lw-dash">–</span><span class="lw-num">${l.hr[pair[1]] || 0}</span></div>
-        <div class="lw-team">${teamEmoji(pair[1])}<span class="lw-name">${esc(teamName(pair[1]))}</span></div>
-      </div>
-      <p class="live-watch-inning">${esc(periodLabel)} ${l.inning} of ${maxInn}${g.liveTracker.outs ? ` · ${outsLabel(l.outs)}` : ''}</p>
-      ${g.liveTracker.outs ? `<p class="live-watch-kicking">${teamEmoji(kickingTeamId(l, pair[0], pair[1]))} ${esc(teamName(kickingTeamId(l, pair[0], pair[1])))} ${esc(g.liveTracker.sideLabel || 'up')}</p>` : ''}`;
+    // Spectators get the full Big Board — giant scores, the live clock, and
+    // the goal celebrations — display-only and sized to own the screen.
+    scoreHTML = liveTrackerHTML(g, pair[0], pair[1], true);
   } else {
     scoreHTML = `<div class="live-watch-matchup">${teamEmoji(pair[0])} ${esc(teamName(pair[0]))} <span class="lw-vs">vs</span> ${teamEmoji(pair[1])} ${esc(teamName(pair[1]))}</div>`;
   }
@@ -4121,12 +4146,17 @@ function renderLiveWatch(container, g) {
 
   container.innerHTML = `
     <div class="live-watch">
-      <p class="live-watch-label">🔴 Live now · ${phaseLabel}</p>
+      ${g.liveTracker ? '' : `<p class="live-watch-label">🔴 Live now · ${phaseLabel}</p>`}
       ${scoreHTML}
       ${onDeckHTML}
       <p class="muted live-watch-note">Updates automatically as the ref scores — no refresh needed.</p>
       ${doneHTML}
     </div>`;
+
+  const boardEl = container.querySelector('.big-board');
+  if (boardEl && g.liveTracker) {
+    boardDiffCelebrate(boardEl, g, getLiveMatch(g, pair[0], pair[1]), pair);
+  }
 }
 
 function renderResult(container, g, result) {
@@ -4553,16 +4583,42 @@ function getLiveMatch(g, aId, bId) {
   const key = [aId, bId].join('|');
   const l = state.live && state.live[g.id];
   if (l && l.key === key) {
-    return { key, inning: Number(l.inning) || 1, outs: Number(l.outs) || 0, half: l.half === 1 ? 1 : 0, hr: Object.assign({}, l.hr) };
+    return { key, inning: Number(l.inning) || 1, outs: Number(l.outs) || 0, half: l.half === 1 ? 1 : 0, hr: Object.assign({}, l.hr), clock: l.clock || null };
   }
-  return { key, inning: 1, outs: 0, half: 0, hr: {} };
+  return { key, inning: 1, outs: 0, half: 0, hr: {}, clock: null };
 }
 
 function setLiveMatch(g, l) {
   if (!state.live) state.live = {};
-  state.live[g.id] = { key: l.key, inning: Number(l.inning) || 1, outs: Number(l.outs) || 0, half: l.half === 1 ? 1 : 0, hr: l.hr || {} };
+  state.live[g.id] = { key: l.key, inning: Number(l.inning) || 1, outs: Number(l.outs) || 0, half: l.half === 1 ? 1 : 0, hr: l.hr || {}, clock: l.clock || null };
   touchData();
   saveState();
+}
+
+// ── Synced match clock ───────────────────────────────────────────
+// The half/game clock lives INSIDE the live match state so every device
+// (refs and spectators alike) sees it tick. Only the endAt timestamp and
+// running flag sync — each device computes the remaining time locally, so
+// nothing writes to the network while the clock runs.
+//   clock = { running, endAt (epoch ms), remaining (ms, when paused), duration (ms) }
+
+function clockRemaining(clock) {
+  if (!clock) return 0;
+  if (clock.running) return Math.max(0, (Number(clock.endAt) || 0) - Date.now());
+  return Math.max(0, Number(clock.remaining) || 0);
+}
+
+function defaultClock(g) {
+  const secs = (g.timer && g.timer.presets && g.timer.presets[0]) || 600;
+  return { running: false, endAt: 0, remaining: secs * 1000, duration: secs * 1000 };
+}
+
+function setMatchClock(g, aId, bId, mutate) {
+  const l = getLiveMatch(g, aId, bId);
+  const clock = l.clock || defaultClock(g);
+  mutate(clock);
+  l.clock = clock;
+  setLiveMatch(g, l);
 }
 
 // ── Ladder Ball match (per-round cancellation, first to exactly 21) ──
@@ -4618,58 +4674,126 @@ function clearLiveMatch(g) {
   }
 }
 
-function liveTrackerHTML(g, aId, bId) {
+// ── The Big Board ────────────────────────────────────────────────
+// One joyful scoreboard for live-tracked matches: giant scores, the match
+// clock right beneath them (synced — spectators see it tick), and a burst
+// of team-emoji confetti when a goal goes up. Editors get steppers and
+// clock controls on the same card; viewers get the same board, display
+// only, sized to fill over half the screen.
+
+// Last rendered scores per game+matchup, so a score that went UP —
+// whether tapped here or arriving over sync — triggers the celebration.
+let lastBoardScores = {};
+
+function fmtBoardClock(ms) {
+  const s = Math.ceil(ms / 1000);
+  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+function boardCelebrate(colEl, emoji) {
+  if (!colEl) return;
+  const val = colEl.querySelector('.board-score');
+  if (val) {
+    val.classList.remove('score-pop');
+    void val.offsetWidth; // restart the animation
+    val.classList.add('score-pop');
+  }
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  for (let i = 0; i < 7; i++) {
+    const p = document.createElement('span');
+    p.className = 'board-burst';
+    p.textContent = i % 3 === 2 ? '🎉' : emoji;
+    p.style.setProperty('--bx', (Math.random() * 160 - 80).toFixed(0) + 'px');
+    p.style.setProperty('--bd', (0.9 + Math.random() * 0.5).toFixed(2) + 's');
+    p.style.setProperty('--br', (Math.random() * 60 - 30).toFixed(0) + 'deg');
+    p.style.left = (35 + Math.random() * 30) + '%';
+    colEl.appendChild(p);
+    setTimeout(() => p.remove(), 1600);
+  }
+}
+
+// Compare current scores to the last render and celebrate any increase.
+function boardDiffCelebrate(boardEl, g, l, pair) {
+  const memoKey = g.id + '|' + l.key;
+  const prev = lastBoardScores[memoKey] || {};
+  pair.forEach((id) => {
+    const now = Number(l.hr[id]) || 0;
+    if (prev[id] !== undefined && now > prev[id]) {
+      boardCelebrate(boardEl.querySelector(`[data-board-col="${id}"]`), teamEmoji(id));
+    }
+  });
+  lastBoardScores = { [memoKey]: { [pair[0]]: Number(l.hr[pair[0]]) || 0, [pair[1]]: Number(l.hr[pair[1]]) || 0 } };
+}
+
+function liveTrackerHTML(g, aId, bId, viewer) {
   if (!g.liveTracker) return '';
   const maxInn = g.liveTracker.innings || 3;
   const maxOuts = g.liveTracker.outs == null ? 3 : g.liveTracker.outs;
   const sideLabel = g.liveTracker.sideLabel || 'up';
-  const unit = g.liveTracker.unit || 'Points';
+  const periodLabel = g.liveTracker.periodLabel || 'Inning';
   const l = getLiveMatch(g, aId, bId);
-  const kickId = kickingTeamId(l, aId, bId);
-  const kickingRow = maxOuts ? `
-    <div class="live-row live-kicking-row">
-      <span class="live-label">${esc(sideLabel.charAt(0).toUpperCase() + sideLabel.slice(1))}</span>
-      <div class="live-kicking-ctrl">
-        <span class="live-kicking-team" id="live-kicking-team">${teamEmoji(kickId)} ${esc(teamName(kickId))}</span>
-        <button class="live-btn live-switch-btn" data-live="half-toggle" aria-label="Switch ${esc(sideLabel)} team">⇄</button>
-      </div>
-    </div>` : '';
-  const outsRow = maxOuts ? `
-    <div class="live-row live-inning-row live-outs-row">
-      <span class="live-label">Outs</span>
-      <div class="live-stepper">
-        <button class="live-btn" data-live="out-down" aria-label="Remove an out">−</button>
-        <span class="live-outs-pips" id="live-outs-pips" aria-label="${outsLabel(l.outs)}">${outsPips(l.outs, maxOuts)}</span>
-        <button class="live-btn" data-live="out-up" aria-label="Add an out">+</button>
-      </div>
-    </div>` : '';
-  const row = (id) => `
-    <div class="live-hr-row">
-      <span class="live-hr-team">${teamEmoji(id)} ${esc(teamName(id))}</span>
-      <div class="live-stepper">
+  const clock = g.timer ? (l.clock || defaultClock(g)) : null;
+  const remaining = clock ? clockRemaining(clock) : 0;
+
+  const col = (id) => `
+    <div class="board-col" data-board-col="${esc(id)}" style="--team-accent: ${TEAM_ACCENT[id] || 'var(--color-primary)'}">
+      <span class="board-emoji">${teamEmoji(id)}</span>
+      <span class="board-name">${esc(teamName(id))}</span>
+      <span class="board-score" data-hr-team="${esc(id)}">${l.hr[id] || 0}</span>
+      ${viewer ? '' : `<div class="board-stepper">
         <button class="live-btn" data-live="hr-down" data-team="${esc(id)}" aria-label="Subtract from ${esc(teamName(id))}">−</button>
-        <span class="live-val" data-hr-team="${esc(id)}">${l.hr[id] || 0}</span>
-        <button class="live-btn" data-live="hr-up" data-team="${esc(id)}" aria-label="Add to ${esc(teamName(id))}">+</button>
-      </div>
+        <button class="live-btn board-plus" data-live="hr-up" data-team="${esc(id)}" aria-label="Add to ${esc(teamName(id))}">+</button>
+      </div>`}
     </div>`;
-  return `<div class="live-tracker">
-    <div class="live-row live-inning-row">
-      <span class="live-label">${esc(g.liveTracker.periodLabel || 'Inning')}</span>
-      <div class="live-stepper">
-        <button class="live-btn" data-live="inning-down" aria-label="Previous ${esc((g.liveTracker.periodLabel || 'inning').toLowerCase())}">−</button>
-        <span class="live-val" id="live-inning-val">${l.inning}</span>
-        <span class="live-of">of ${maxInn}</span>
-        <button class="live-btn" data-live="inning-up" aria-label="Next inning">+</button>
-      </div>
+
+  const periodRow = viewer
+    ? `<span class="board-period">${esc(periodLabel)} <span id="live-inning-val">${l.inning}</span> of ${maxInn}</span>`
+    : `<span class="board-period">
+        <button class="live-btn" data-live="inning-down" aria-label="Previous ${esc(periodLabel.toLowerCase())}">−</button>
+        ${esc(periodLabel)} <span id="live-inning-val">${l.inning}</span> of ${maxInn}
+        <button class="live-btn" data-live="inning-up" aria-label="Next ${esc(periodLabel.toLowerCase())}">+</button>
+      </span>`;
+
+  const clockHTML = clock ? `
+    <div class="board-clock-wrap">
+      <span class="board-clock ${remaining === 0 ? 'board-clock-zero' : ''}" data-board-clock data-game-id="${esc(g.id)}" data-a="${esc(aId)}" data-b="${esc(bId)}" data-prev="${remaining}">${fmtBoardClock(remaining)}</span>
+      ${viewer ? '' : `
+        ${!clock.running && (g.timer.presets || []).length > 1 ? `<div class="preset-row">${g.timer.presets.map((p) =>
+          `<button class="preset-chip ${clock.duration === p * 1000 ? 'selected' : ''}" data-clock="preset" data-secs="${p}">${fmtBoardClock(p * 1000)}</button>`).join('')}</div>` : ''}
+        <div class="board-clock-btns">
+          ${clock.running
+            ? `<button class="timer-main-btn" data-clock="pause">⏸ Pause</button>`
+            : `<button class="timer-main-btn" data-clock="start">▶ ${remaining === clock.duration ? 'Start' : remaining === 0 ? 'Restart' : 'Resume'}</button>`}
+          ${remaining !== clock.duration ? `<button class="timer-side-btn" data-clock="reset">↺ Reset</button>` : ''}
+        </div>`}
+    </div>` : '';
+
+  const kickingRow = maxOuts ? `
+    <div class="board-subrow">
+      <span class="live-label">${esc(sideLabel.charAt(0).toUpperCase() + sideLabel.slice(1))}</span>
+      <span class="live-kicking-team" id="live-kicking-team">${teamEmoji(kickingTeamId(l, aId, bId))} ${esc(teamName(kickingTeamId(l, aId, bId)))}</span>
+      ${viewer ? '' : `<button class="live-btn live-switch-btn" data-live="half-toggle" aria-label="Switch ${esc(sideLabel)} team">⇄</button>`}
     </div>
+    <div class="board-subrow">
+      <span class="live-label">Outs</span>
+      ${viewer ? '' : `<button class="live-btn" data-live="out-down" aria-label="Remove an out">−</button>`}
+      <span class="live-outs-pips" id="live-outs-pips" aria-label="${outsLabel(l.outs)}">${outsPips(l.outs, maxOuts)}</span>
+      ${viewer ? '' : `<button class="live-btn" data-live="out-up" aria-label="Add an out">+</button>`}
+    </div>` : '';
+
+  return `<div class="big-board ${viewer ? 'viewer' : ''}" data-board-game="${esc(g.id)}">
+    <div class="board-head">
+      <span class="live-home-badge">🔴 LIVE</span>
+      ${periodRow}
+    </div>
+    <div class="board-cols">
+      ${col(aId)}
+      <span class="board-dash">–</span>
+      ${col(bId)}
+    </div>
+    ${clockHTML}
     ${kickingRow}
-    ${outsRow}
-    <div class="live-row live-hr-block">
-      <span class="live-label">${esc(unit)}</span>
-      ${row(aId)}
-      ${row(bId)}
-    </div>
-    <button class="live-reset link-btn" data-live="reset">Reset tally</button>
+    ${viewer ? '' : '<button class="live-reset link-btn" data-live="reset">Reset tally</button>'}
   </div>`;
 }
 
@@ -4677,6 +4801,39 @@ function bindLiveTracker(container, g, aId, bId) {
   if (!g.liveTracker) return;
   const maxInn = g.liveTracker.innings || 3;
   const maxOuts = g.liveTracker.outs == null ? 3 : g.liveTracker.outs;
+
+  // Celebrate any score increase that arrived since the last render (a
+  // remote ref's goal, or a full re-render after a local one).
+  const boardEl = container.querySelector('.big-board');
+  if (boardEl) boardDiffCelebrate(boardEl, g, getLiveMatch(g, aId, bId), [aId, bId]);
+
+  // Clock controls re-render the whole view (their buttons change shape);
+  // the running display itself ticks via the global board-clock interval.
+  container.querySelectorAll('[data-clock]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const act = btn.dataset.clock;
+      setMatchClock(g, aId, bId, (c) => {
+        if (act === 'start') {
+          if (clockRemaining(c) === 0) c.remaining = c.duration; // restart from full
+          c.endAt = Date.now() + clockRemaining(c);
+          c.running = true;
+        } else if (act === 'pause') {
+          c.remaining = clockRemaining(c);
+          c.running = false;
+        } else if (act === 'reset') {
+          cutAllSound();
+          c.running = false;
+          c.remaining = c.duration;
+        } else if (act === 'preset') {
+          c.duration = (Number(btn.dataset.secs) || 600) * 1000;
+          c.remaining = c.duration;
+          c.running = false;
+        }
+      });
+      renderAll();
+    });
+  });
+
   const refresh = () => {
     const l = getLiveMatch(g, aId, bId);
     const iv = container.querySelector('#live-inning-val');
@@ -4688,6 +4845,8 @@ function bindLiveTracker(container, g, aId, bId) {
     container.querySelectorAll('[data-hr-team]').forEach((el) => {
       el.textContent = l.hr[el.dataset.hrTeam] || 0;
     });
+    const memoKey = g.id + '|' + l.key;
+    lastBoardScores = { [memoKey]: { [aId]: Number(l.hr[aId]) || 0, [bId]: Number(l.hr[bId]) || 0 } };
   };
   container.querySelectorAll('[data-live]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -4722,6 +4881,9 @@ function bindLiveTracker(container, g, aId, bId) {
       else if (act === 'reset') { l.inning = 1; l.outs = 0; l.half = 0; l.hr = {}; }
       setLiveMatch(g, l);
       refresh();
+      if (act === 'hr-up') {
+        boardCelebrate(container.querySelector(`[data-board-col="${team}"]`), teamEmoji(team));
+      }
     });
   });
 }
@@ -5535,6 +5697,10 @@ function init() {
   // Keep the "happening now" banner (and any open schedule sheet) current
   // without any taps — and expire "what's new" banners once they hit two hours.
   setInterval(() => { renderNowBanner(); refreshOpenSchedule(); renderWhatsNew(); renderMyElectives(); }, 30 * 1000);
+
+  // Tick every visible Big Board clock (no-ops instantly when none is on
+  // screen, so the interval is effectively free the rest of the week).
+  setInterval(tickBoardClocks, 500);
 }
 
 function updateRoleButton() {
