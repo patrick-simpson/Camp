@@ -213,7 +213,7 @@ function gameRowHTML(g, games, dayIds) {
       <button type="button" class="game-row-main" data-game-id="${esc(g.id)}">
         <span class="game-emoji">${esc(g.emoji || '')}</span>
         <span class="game-row-name">${esc(g.name)}</span>
-        <span class="format-badge ${esc(badge.cls)}">${esc(badge.label)}</span>
+        <jelly-badge class="format-badge" variant="${esc(badge.variant || 'platinum')}" size="small">${esc(badge.label)}</jelly-badge>
         ${hasResult ? '<span class="result-dot" title="Has a saved result">●</span>' : ''}
       </button>
     </div>

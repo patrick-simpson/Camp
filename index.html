@@ -19,8 +19,8 @@
   <!-- Jelly UI web components (vendored, see vendor/jelly.js header). Module
        scripts are deferred by spec, so this never blocks first paint and the
        classic scripts at the end of <body> always execute before it. -->
-  <script type="module" src="vendor/jelly.js?v=110"></script>
-  <link rel="stylesheet" href="styles.css?v=110">
+  <script type="module" src="vendor/jelly.js?v=111"></script>
+  <link rel="stylesheet" href="styles.css?v=111">
 
   <script>
     // Decide lock state before the page paints so we never flash the app,
@@ -285,15 +285,18 @@
   </div>
 
   <!-- ── TOASTS (point-change / matchup alerts) ──────────────────── -->
+  <!-- Jelly toast rail (bottom). The legacy container below stays as the
+       showToast() fallback for when the module hasn't loaded. -->
+  <jelly-toaster position="bottom"></jelly-toaster>
   <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="false"></div>
 
   <!-- Firebase SDK (optional cloud sync). If these fail to load, the app
        falls back to local-only mode automatically. -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=110"></script>
-  <script src="defaults.js?v=110"></script>
-  <script src="app.js?v=110"></script>
-  <script src="settings.js?v=110"></script>
+  <script src="firebase-config.js?v=111"></script>
+  <script src="defaults.js?v=111"></script>
+  <script src="app.js?v=111"></script>
+  <script src="settings.js?v=111"></script>
 </body>
 </html>

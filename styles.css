@@ -717,19 +717,12 @@ html.view-only .role-btn {
   color: var(--color-text-muted);
 }
 
+/* Format pills are jelly-badge hosts now — the pill chrome (fill, radius,
+   typography) is drawn by the component; the class only carries layout. */
 .format-badge {
-  font-size: 0.7rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  padding: 0.25rem 0.5rem;
-  border-radius: 999px;
   white-space: nowrap;
+  flex-shrink: 0;
 }
-
-.badge-bracket { background: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface)); color: var(--color-primary); }
-.badge-tally { background: var(--color-gold-bg); color: var(--color-gold); }
-.badge-podium { background: var(--color-bronze-bg); color: var(--color-bronze); }
 
 .game-headline {
   margin: 0.55rem 0 0;
@@ -904,19 +897,14 @@ html.view-only .role-btn {
   white-space: nowrap;
 }
 
-/* Elapsed-time progress bar for the current block. */
-.now-progress {
+/* Elapsed-time progress bar for the current block (jelly-progress host —
+   the track/fill are drawn by the component; decorative, hidden pre-upgrade). */
+jelly-progress.now-progress {
+  display: block;
   margin-top: 0.6rem;
-  height: 4px;
-  border-radius: 2px;
-  background: var(--color-border);
-  overflow: hidden;
 }
-.now-progress-fill {
-  height: 100%;
-  border-radius: 2px;
-  background: var(--color-primary);
-  transition: width 0.5s linear;
+jelly-progress.now-progress:not(:defined) {
+  display: none;
 }
 
 /* Slim one-line banner shown during competition blocks. */
@@ -3423,6 +3411,21 @@ body.no-scroll {
   font-weight: 700;
   cursor: pointer;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+
+/* Jelly variant of the update banner (jelly-alert host — the alert draws its
+   own rounded box; the host only carries placement). */
+.update-banner-alert {
+  position: fixed;
+  left: 50%;
+  bottom: 1rem;
+  transform: translateX(-50%);
+  z-index: 60;
+  width: min(480px, calc(100% - 2rem));
+  cursor: pointer;
+}
+.update-banner-alert jelly-button {
+  margin-top: 0.5rem;
 }
 
 /* ============================================================
