@@ -14,9 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T19:05:51Z';
+const CODE_UPDATED_AT = '2026-07-23T20:35:38Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 130;
+const APP_VERSION = 131;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -361,6 +361,20 @@ function teamOfCounselor(name) {
   return Object.keys(TEAM_COUNSELORS).find((id) => TEAM_COUNSELORS[id].includes(name)) || null;
 }
 
+// Where the stored identity is during one elective slot of any day:
+// { station, emoji, onBreak }, or null when there's nothing to say (no
+// identity, no electives that day, or the identity isn't on that day's
+// sheet — counselors and parents). Used by the schedule sheet's "You" chip.
+function myStationFor(dow, slot) {
+  const name = state.identity;
+  if (!name) return null;
+  const stations = ((ELECTIVES[dow] || [])[slot]) || [];
+  const found = stations.find(([, kids]) => (kids || []).includes(name));
+  if (found) return { station: found[0], emoji: STATION_EMOJI[found[0]] || '🌟', onBreak: false };
+  if (electiveDayRoster(dow).has(name)) return { station: 'Break', emoji: '☕', onBreak: true };
+  return null;
+}
+
 // Today's three elective slots for the stored identity (state.identity), as
 // [{ slot, time, station, emoji, onBreak }], or null when there's nothing to
 // show — no identity set, a weekend / no-elective day, or the identity isn't on
@@ -442,10 +456,12 @@ function processWeather(json) {
   return { dates, byTime, at: Date.now() };
 }
 
-// Paint badges in-place once weather lands (schedule sheet + my-electives card).
+// Paint badges in-place once weather lands (schedule sheet + my-electives
+// card + the banner's rain hint).
 function repaintWeather() {
   renderMyElectives();
   refreshOpenSchedule();
+  renderNowBanner();
 }
 
 function loadWeatherCache() {
@@ -498,6 +514,26 @@ function electiveWxHtml(dow, slot) {
   const info = WEATHER_CODES[w.code] || { emoji: '🌡️', label: 'Forecast' };
   const rain = (w.precip != null && w.precip >= WEATHER_RAIN_MIN) ? ` · ${w.precip}%` : '';
   return `<span class="wx-badge" title="${esc(info.label)} · forecast">${info.emoji} ${Math.round(w.temp)}°${rain}</span>`;
+}
+
+// Rain warning for the Happening Now banner: the first hour within the next
+// three (starting from the current hour, camp time) whose precipitation
+// probability crosses WEATHER_RAIN_MIN. '' when dry, no forecast, or the
+// rainy hour would fall past midnight (camp's asleep — nobody needs it).
+function upcomingRainHint() {
+  if (!weatherData) return '';
+  const now = campNow();
+  const today = weatherData.dates[0];
+  if (today !== campDateStr()) return '';
+  const startHour = Math.floor(now.minutes / 60);
+  for (let h = startHour; h <= startHour + 3 && h <= 23; h++) {
+    const w = weatherData.byTime[`${today}T${String(h).padStart(2, '0')}:00`];
+    if (w && w.precip != null && w.precip >= WEATHER_RAIN_MIN) {
+      const when = h === startHour ? 'this hour' : `near ${((h + 11) % 12) + 1}${h < 12 ? 'am' : 'pm'}`;
+      return `<div class="now-wx">🌧️ ${w.precip}% chance of rain ${when}</div>`;
+    }
+  }
+  return '';
 }
 
 // ── Meal menu ────────────────────────────────────────────────────
@@ -621,6 +657,7 @@ function nowBannerHtml(dow, minutes) {
     `<div class="now-main"><span class="now-emoji">${emoji}</span><div class="now-body">
       <div class="now-label">${esc(label)}${time ? ` <span class="now-time">${time}</span>` : ''}${mealCleanupNote(dow, label)}</div>
       ${next ? `<div class="now-next">Up next: ${next.emoji} ${esc(next.label)} at ${schedClock(next.start, true)}${mealCleanupNote(dow, next.label)}</div>` : ''}
+      ${upcomingRainHint()}
     </div></div>` + progressBar(progress);
 
   // Early morning, before the first block of the day.
@@ -637,7 +674,7 @@ function nowBannerHtml(dow, minutes) {
   // banner to a slim, tappable one-liner rather than hiding it entirely, so the
   // schedule sheet stays reachable.
   if (found.type === 'games') {
-    return `<div class="now-slim"><span class="now-slim-label">🏅 Team competitions</span><span class="now-open-hint">📅 Full schedule ›</span></div>`;
+    return `<div class="now-slim"><span class="now-slim-label">🏅 Team competitions</span><span class="now-open-hint">📅 Full schedule ›</span></div>` + upcomingRainHint();
   }
 
   const b = decorateMealBlock(dow, found);
@@ -793,6 +830,10 @@ function renderScheduleBody() {
       }
     } else if (raw.type === 'elective') {
       labelBadge = electiveWxHtml(dow, raw.slot);
+      // Pin the viewer's own station at the top of the block so they don't
+      // have to scan every roster for their name.
+      const mine = myStationFor(dow, raw.slot);
+      if (mine) labelBadge += `<span class="sched-you-chip">⭐ You: ${mine.emoji} ${esc(mine.station)}</span>`;
       const me = state.identity;
       const kidText = (kids) => kids.map((k) => k === me ? `<span class="sched-you">⭐ ${esc(k)}</span>` : esc(k)).join(' · ');
       const stations = (ELECTIVES[dow] || [])[raw.slot] || [];
@@ -822,7 +863,72 @@ function renderScheduleBody() {
   wrap.innerHTML = `
     <h3 class="sched-day-title">${day.full} <span class="sched-day-tag">· ${esc(day.tag)}</span></h3>
     <div class="sched-timeline">${rows || '<p class="muted">Nothing scheduled.</p>'}</div>
+    ${blocks.some((b) => !b.noTime) ? `<div class="sched-ics-row"><jelly-button id="sched-ics-btn" class="secondary-btn" variant="platinum" size="small">📆 Add ${day.full} to calendar</jelly-button></div>` : ''}
   `;
+  const icsBtn = document.getElementById('sched-ics-btn');
+  if (icsBtn) {
+    icsBtn.addEventListener('click', () => {
+      const blob = new Blob([buildDayIcs(dow)], { type: 'text/calendar' });
+      downloadBlob(blob, 'camp-' + day.short.toLowerCase() + '.ics');
+    });
+  }
+}
+
+// ── "Add to calendar" (.ics) export of one schedule day ──────────
+// Times go out as TZID=America/New_York wall-clock (with a standard US
+// eastern VTIMEZONE), so the event is right no matter what timezone the
+// parent's phone is in — same convention as everything else camp-time.
+function icsEscape(s) {
+  return String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+}
+
+// 'YYYYMMDD' in camp time for the given day-of-week of the current camp week.
+function campDateForDow(dow) {
+  const [y, m, d] = campDateStr().split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + (dow - campNow().dow)));
+  return dt.toISOString().slice(0, 10).replace(/-/g, '');
+}
+
+function buildDayIcs(dow) {
+  const date = campDateForDow(dow);
+  const stamp = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15) + 'Z';
+  const fmt = (mins) => {
+    const mm = Math.min(mins, hm(23, 59)); // paranoia: keep a stray midnight end in-day
+    return `${date}T${String(Math.floor(mm / 60)).padStart(2, '0')}${String(mm % 60).padStart(2, '0')}00`;
+  };
+  const events = (DAY_SCHEDULE[dow] || []).filter((b) => !b.noTime).map((raw) => {
+    const b = decorateMealBlock(dow, raw);
+    let desc = '';
+    if (raw.type === 'games') {
+      // Name the actual games in the event body, like the schedule sheet does.
+      const session = raw.start < 720 ? 'Morning' : 'Evening';
+      const dowDayIds = state.config.days.filter((d) => d.dow === dow).map((d) => d.id);
+      const games = state.config.games.filter((g) => dowDayIds.includes(g.dayId) && g.session === session);
+      if (games.length) desc = games.map((g) => `${g.emoji} ${g.name}`).join(', ');
+    }
+    return [
+      'BEGIN:VEVENT',
+      `UID:campday-${dow}-${raw.start}@camp.patricksimpson.info`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART;TZID=America/New_York:${fmt(raw.start)}`,
+      `DTEND;TZID=America/New_York:${fmt(raw.end)}`,
+      `SUMMARY:${icsEscape(b.emoji + ' ' + b.label)}`,
+      desc ? `DESCRIPTION:${icsEscape(desc)}` : '',
+    ].filter(Boolean).concat('END:VEVENT').join('\r\n');
+  });
+  const vtimezone = [
+    'BEGIN:VTIMEZONE', 'TZID:America/New_York',
+    'BEGIN:DAYLIGHT', 'TZOFFSETFROM:-0500', 'TZOFFSETTO:-0400', 'TZNAME:EDT',
+    'DTSTART:19700308T020000', 'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU', 'END:DAYLIGHT',
+    'BEGIN:STANDARD', 'TZOFFSETFROM:-0400', 'TZOFFSETTO:-0500', 'TZNAME:EST',
+    'DTSTART:19701101T020000', 'RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU', 'END:STANDARD',
+    'END:VTIMEZONE',
+  ].join('\r\n');
+  return [
+    'BEGIN:VCALENDAR', 'VERSION:2.0',
+    'PRODID:-//Camp Scoreboard//camp.patricksimpson.info//EN', 'CALSCALE:GREGORIAN',
+    vtimezone, events.join('\r\n'), 'END:VCALENDAR',
+  ].join('\r\n') + '\r\n';
 }
 
 function wireSchedule() {
@@ -1052,6 +1158,7 @@ function makeFreshState() {
     picSetup: {},  // gameId -> { source: 'pregenerated'|'own'|'numbered', words: [] } (Pictionary item source)
     live: {},      // gameId -> { key, inning, hr } live match tally (synced so everyone can watch)
     clocks: {},    // gameId -> { running, endAt, remaining, duration } synced game clock
+    announcements: {}, // annId -> { id, text, at, by } broadcast messages (cleared by a week reset)
     ui: { day: null, gameId: null }, // day is filled in by migrateState (needs config)
     theme: null,
   };
@@ -1150,6 +1257,7 @@ if (!state.meta) state.meta = {};
 if (!state.bonuses) state.bonuses = {}; // extra/bonus points ledger
 if (!state.live) state.live = {}; // live match tallies (synced; see liveTracker)
 if (!state.clocks) state.clocks = {}; // per-game synced clocks (see getClock/setClock)
+if (!state.announcements) state.announcements = {}; // broadcast messages (see renderAnnouncements)
 if (state.theme === undefined) state.theme = null; // pre-theme saves: follow the device
 if (state.notify === undefined) state.notify = false; // device-local, not synced (see SYNC_KEYS)
 // state.followTeam stays `undefined` until the picker is answered (a team id,
@@ -1202,7 +1310,7 @@ function touchData() {
 // and the SDK loaded, scores sync across every device in real time.
 // Otherwise the app runs exactly as before, local-only.
 
-const SYNC_KEYS = ['teams', 'results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta', 'clocks'];
+const SYNC_KEYS = ['teams', 'results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta', 'clocks', 'announcements'];
 let fbRef = null;
 // Per-tab id for the "who's here" presence chip — minted once per page load
 // (not persisted) so each open tab counts, and cleans up, independently.
@@ -1342,6 +1450,9 @@ function initSync() {
       // devices kept their old results and re-pushed them later. Teams
       // stay guarded — a snapshot without a roster is malformed.
       if (remote.teams) state.teams = remote.teams;
+      // Announcements as they stood before this snapshot — anything the merge
+      // adds beyond these is news worth a toast (see notifyNewAnnouncements).
+      const annBefore = state.announcements || {};
       // Pictionary prompt words are never synced (see pushState) — the incoming
       // snapshot carries only each game's mode. Stash this device's own words so
       // the ref's list survives adopting a remote update, then re-attach them to
@@ -1351,7 +1462,7 @@ function initSync() {
         const s = state.picSetup[gid];
         if (s && s.words && s.words.length) localPicWords[gid] = s.words;
       });
-      ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta', 'clocks'].forEach((k) => {
+      ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta', 'clocks', 'announcements'].forEach((k) => {
         state[k] = remote[k] !== undefined ? remote[k] : {};
       });
       Object.keys(localPicWords).forEach((gid) => {
@@ -1372,6 +1483,7 @@ function initSync() {
         const matchupChanges = detectMatchupChanges();
         renderAll();
         notifyMatchupChanges(matchupChanges);
+        notifyNewAnnouncements(annBefore);
       }
     }, (err) => {
       // A cancelled read (e.g. security rules) is terminal — drop to local-only
@@ -1464,7 +1576,7 @@ function picSetupForSync(picSetup) {
 // Maps written per-child (one path per game/team/bonus) so concurrent edits to
 // DIFFERENT items on different devices never overwrite each other. teams/meta
 // are small singletons written whole.
-const SYNC_ITEM_MAPS = ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'clocks'];
+const SYNC_ITEM_MAPS = ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'clocks', 'announcements'];
 // `live` is NOT here — it's diffed one level deeper (per match field) in
 // computeSyncUpdates so concurrent refs don't clobber each other's fields.
 const SYNC_SINGLETONS = ['teams', 'meta'];
@@ -2691,6 +2803,27 @@ function rankTeamsByPoints(counts) {
 let lastPointsByTeam = null; // for the remote-change pulse
 let remoteJustApplied = false;
 
+// ── Rank-change arrows (vs the start of the camp day) ─────────────
+// Each device snapshots the standings order the first time it renders on a
+// new camp date, then shows ↑n/↓n per row against that baseline. Deliberately
+// device-local (NOT synced): every phone keeps its own morning baseline.
+const DAY_RANK_KEY = 'campScoreboardDayRanks';
+
+function startOfDayRanks(ranked) {
+  const today = campDateStr();
+  let snap = null;
+  try {
+    snap = JSON.parse(localStorage.getItem(DAY_RANK_KEY) || 'null');
+  } catch (e) { /* corrupt — re-snapshot below */ }
+  if (!snap || snap.date !== today || !snap.ranks) {
+    const ranks = {};
+    ranked.forEach((t, i) => { ranks[t.id] = i + 1; });
+    snap = { date: today, ranks };
+    try { localStorage.setItem(DAY_RANK_KEY, JSON.stringify(snap)); } catch (e) { /* fine */ }
+  }
+  return snap.ranks;
+}
+
 function renderStandings() {
   const tbody = document.getElementById('standings-tbody');
   const counts = medalCounts();
@@ -2702,10 +2835,17 @@ function renderStandings() {
   const pulseFromRemote = remoteOrigin && lastPointsByTeam !== null;
   remoteJustApplied = false;
   const changedTeams = []; // {team, delta, total} — for the notify option
+  const dayRanks = startOfDayRanks(ranked);
 
   tbody.innerHTML = '';
   ranked.forEach((team, i) => {
     const s = counts[team.id];
+    // Movement since this device's start-of-day baseline. Zero-point tables
+    // stay arrow-free (same gate as the podium tint).
+    const moved = s.points > 0 && dayRanks[team.id] ? dayRanks[team.id] - (i + 1) : 0;
+    const rankDelta = moved
+      ? `<span class="rank-delta ${moved > 0 ? 'up' : 'down'}" title="${moved > 0 ? 'Up' : 'Down'} ${Math.abs(moved)} since this morning">${moved > 0 ? '↑' : '↓'}${Math.abs(moved)}</span>`
+      : '';
     const tr = document.createElement('tr');
     // Podium tint for the top 3 — but only once real points exist, so
     // Monday's all-zero table stays neutral.
@@ -2720,7 +2860,7 @@ function renderStandings() {
     // show a leading + only for positive tallies (deductions keep their −).
     const extraCell = (n) => `<td class="extra-col">${n ? (n > 0 ? '+' + n : n) : '<span class="zero">0</span>'}</td>`;
     tr.innerHTML = `
-      <td class="rank-col">${i + 1}</td>
+      <td class="rank-col">${i + 1}${rankDelta}</td>
       <td class="team-cell">
         <div class="team-name-line"><span class="team-emoji">${teamEmoji(team.id)}</span> <span class="team-name-text">${esc(team.name)}</span>${team.id === state.followTeam ? ' <span class="following-star" title="You\'re following this team">⭐</span>' : ''}</div>
         ${team.counselor ? `<div class="team-counselor-text">${esc(team.counselor)}</div>` : ''}
@@ -2736,11 +2876,42 @@ function renderStandings() {
   });
   lastPointsByTeam = {};
   ranked.forEach((team) => { lastPointsByTeam[team.id] = counts[team.id].points; });
+  renderCatchupHint(ranked, counts);
   renderFollowCard(ranked, counts);
   if (changedTeams.length) notifyPointChanges(changedTeams);
   // Append any local point-total changes to the change-history log. Best-effort:
   // wrapped so a logging failure can never break the standings render.
   try { recordPointHistory(counts, remoteOrigin); } catch (e) { /* never break rendering */ }
+}
+
+// One-line rally cry under the standings table: how far a chasing team is
+// from first place, in gold-medal terms. Focuses on the viewer's followed
+// team when it's trailing; otherwise the 2nd-place team. Hidden until real
+// points exist so Monday's all-zero table stays neutral.
+function renderCatchupHint(ranked, counts) {
+  const el = document.getElementById('catchup-hint');
+  if (!el) return;
+  const leader = ranked[0];
+  if (!leader || ranked.length < 2 || counts[leader.id].points <= 0) {
+    el.hidden = true;
+    el.innerHTML = '';
+    return;
+  }
+  let chaser = null;
+  if (state.followTeam && state.followTeam !== leader.id) {
+    chaser = ranked.find((t) => t.id === state.followTeam);
+  }
+  if (!chaser) chaser = ranked[1];
+  const gap = counts[leader.id].points - counts[chaser.id].points;
+  const pair = `${teamEmoji(chaser.id)} <strong>${esc(chaser.name)}</strong>`;
+  const leaderBit = `${teamEmoji(leader.id)} ${esc(leader.name)}`;
+  if (gap <= 0) {
+    el.innerHTML = `🤝 ${pair} is tied on points with ${leaderBit} — next medal breaks it!`;
+  } else {
+    const golds = Math.ceil(gap / MEDAL_POINTS.gold);
+    el.innerHTML = `🥇 ${pair} needs ${golds} gold${golds === 1 ? '' : 's'} (${gap} pt${gap === 1 ? '' : 's'}) to catch ${leaderBit}.`;
+  }
+  el.hidden = false;
 }
 
 // ── Change history (append-only log at a SEPARATE Firebase path) ──────────────
@@ -3649,6 +3820,11 @@ function renderGameList() {
       html += `<button id="empty-day-builder-btn" class="link-btn">🛠️ Set up games in Settings</button>`;
     }
   }
+  // Editors get a one-tap way to slot in an unplanned game (rainy-day pivot,
+  // spontaneous rematch) without digging through the week builder.
+  const quickGameBtn = canEdit() && dayGames.length
+    ? `<button id="quick-game-btn" class="link-btn quick-game-btn">⚡ Quick game — add a one-off to ${day ? esc(day.name) : 'this day'}</button>`
+    : '';
 
   sessions.forEach((session) => {
     const games = dayGames.filter((g) => g.session === session);
@@ -3674,7 +3850,7 @@ function renderGameList() {
     });
   });
 
-  wrap.innerHTML = html;
+  wrap.innerHTML = html + quickGameBtn;
   wrap.querySelectorAll('.game-card').forEach((card) => {
     card.addEventListener('click', () => {
       state.ui.gameId = card.dataset.gameId;
@@ -3686,6 +3862,8 @@ function renderGameList() {
 
   const builderBtn = document.getElementById('empty-day-builder-btn');
   if (builderBtn) builderBtn.addEventListener('click', () => openBuilder('games'));
+  const quickBtn = document.getElementById('quick-game-btn');
+  if (quickBtn) quickBtn.addEventListener('click', () => startQuickGame());
 }
 
 // ── Game view ────────────────────────────────────────────────────
@@ -4431,6 +4609,7 @@ function normalizeSyncedState() {
   if (!state.live) state.live = {}; // RTDB prunes an empty live map to nothing
   Object.values(state.live).forEach(normalizeLiveMatch);
   if (!state.clocks) state.clocks = {}; // RTDB prunes an empty clocks map to nothing
+  if (!state.announcements) state.announcements = {}; // RTDB prunes an empty map to nothing
   // Migrate rosters saved before names/counselors were set: swap generic
   // "Team N" names and placeholder counselors for the real roster values.
   // Anything hand-edited (not matching a known placeholder) is left alone.
@@ -5532,6 +5711,120 @@ function renderWhatsNew() {
   });
 }
 
+// ── Broadcast announcements (📣) ─────────────────────────────────
+// Editor-posted messages that sync to every phone (state.announcements —
+// see SYNC_KEYS) and pin at the top of the page until each viewer dismisses
+// them. Dismissal is per-device (like the what's-new banners); deleting is
+// editor-only and removes the announcement for everyone.
+const ANNOUNCE_DISMISS_KEY = 'campScoreboardDismissedAnnouncements';
+let announceComposerOpen = false;
+
+function dismissedAnnouncements() {
+  try { return JSON.parse(localStorage.getItem(ANNOUNCE_DISMISS_KEY) || '[]') || []; } catch (e) { return []; }
+}
+
+function dismissAnnouncement(id) {
+  const d = dismissedAnnouncements();
+  if (d.includes(id)) return;
+  d.push(id);
+  try { localStorage.setItem(ANNOUNCE_DISMISS_KEY, JSON.stringify(d)); } catch (e) { /* fine */ }
+}
+
+// Newest first; entries partially pruned by RTDB render-guarded like bonuses.
+function activeAnnouncements() {
+  const dismissed = dismissedAnnouncements();
+  return Object.values(state.announcements || {})
+    .filter((a) => a && a.id && a.text && !dismissed.includes(a.id))
+    .sort((x, y) => String(y.at || '').localeCompare(String(x.at || '')));
+}
+
+function renderAnnouncements() {
+  const wrap = document.getElementById('announcements');
+  if (!wrap) return;
+  const active = activeAnnouncements();
+  const editor = canEdit();
+  if (!active.length && !editor) { wrap.hidden = true; wrap.innerHTML = ''; return; }
+
+  const banners = active.map((a) => `
+    <div class="announce-banner" role="status">
+      <button class="announce-dismiss" data-ann-id="${esc(a.id)}" aria-label="Dismiss this announcement on this phone">✕</button>
+      <span class="announce-badge">📣 Announcement</span>
+      <span class="announce-text">${esc(a.text)}</span>
+      <span class="announce-meta">${esc(formatEasternStamp(a.at) || '')}${a.by ? ` · ${esc(a.by)}` : ''}${editor ? ` · <button class="announce-delete link-btn" data-ann-id="${esc(a.id)}">Remove for everyone</button>` : ''}</span>
+    </div>`).join('');
+
+  // Editors get a composer, collapsed behind a one-line link so the top of
+  // the page stays quiet.
+  const composer = !editor ? '' : announceComposerOpen ? `
+    <form id="announce-form" class="announce-form">
+      <input id="announce-input" class="announce-input" type="text" maxlength="200"
+        placeholder="Announce to every phone…" autocomplete="off" aria-label="Announcement text">
+      <jelly-button id="announce-post-btn" size="small" class="primary-btn">📣 Post</jelly-button>
+    </form>` : `<button id="announce-open-btn" class="link-btn announce-open-btn">📣 Post an announcement</button>`;
+
+  wrap.hidden = false;
+  wrap.innerHTML = banners + composer;
+
+  wrap.querySelectorAll('.announce-dismiss').forEach((btn) => {
+    btn.addEventListener('click', () => { dismissAnnouncement(btn.dataset.annId); renderAnnouncements(); });
+  });
+  wrap.querySelectorAll('.announce-delete').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      if (!canEdit()) return;
+      const a = (state.announcements || {})[btn.dataset.annId];
+      if (!a) return;
+      if (!confirm(`Remove this announcement from every phone?\n\n"${a.text}"`)) return;
+      delete state.announcements[btn.dataset.annId];
+      touchData();
+      saveState();
+      renderAnnouncements();
+    });
+  });
+  const openBtn = document.getElementById('announce-open-btn');
+  if (openBtn) openBtn.addEventListener('click', () => {
+    announceComposerOpen = true;
+    renderAnnouncements();
+    const input = document.getElementById('announce-input');
+    if (input) input.focus();
+  });
+  const form = document.getElementById('announce-form');
+  if (form) form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    postAnnouncement();
+  });
+  const postBtn = document.getElementById('announce-post-btn');
+  if (postBtn) postBtn.addEventListener('click', postAnnouncement);
+}
+
+function postAnnouncement() {
+  if (!canEdit()) return;
+  const input = document.getElementById('announce-input');
+  const text = input ? input.value.trim() : '';
+  if (!text) return;
+  const id = newBonusId();
+  state.announcements[id] = { id, text, at: new Date().toISOString(), by: state.identity || '' };
+  announceComposerOpen = false;
+  touchData();
+  saveState();
+  renderAnnouncements();
+  showToast('📣 Posted to every phone', { mine: true });
+}
+
+// Toast (and, with notifications on, a lock-screen notification) for
+// announcements that arrived in a remote snapshot. prevMap is the
+// announcements map as it stood BEFORE the merge, so echoes of this
+// device's own post never re-notify.
+function notifyNewAnnouncements(prevMap) {
+  const dismissed = dismissedAnnouncements();
+  Object.keys(state.announcements || {}).forEach((id) => {
+    if (prevMap && id in prevMap) return;
+    const a = state.announcements[id];
+    if (!a || !a.text || dismissed.includes(id)) return;
+    showToast('📣 ' + a.text);
+    if (state.notify) maybeNativeNotification('📣 Camp announcement', a.text, 'camp-announcement-' + id);
+  });
+}
+
 // ── Auto-reload on new deploy ────────────────────────────────────
 // Each client polls the deployed index.html (same-origin, no-store) and compares
 // its app.js?v= number to the one THIS page is running. When the deploy is
@@ -5681,6 +5974,7 @@ function renderAll() {
   const builderView = document.getElementById('settings-view');
   if (builderView) builderView.hidden = !inBuilder;
   renderWhatsNew();
+  renderAnnouncements();
   renderNowBanner();
   renderLiveHome();
   renderDayTabs();

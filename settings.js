@@ -20,6 +20,7 @@ let gameDraft = null;
 let gameDraftFor = null; // which editGameId gameDraft was built for
 let gameDraftSnapshot = '';
 let extrasOpen = false;
+let quickGamePrefill = null; // one-shot defaults for the next new-game draft
 
 // True while the game editor holds unsaved edits. app.js's editorMidEntry()
 // checks this so the update-poll auto-reload and remote merges never wipe a
@@ -254,7 +255,7 @@ function wireGameRows(card) {
 function newGameShape() {
   const days = state.config.days || [];
   const dayId = days.some((d) => d.id === state.ui.day) ? state.ui.day : (days[0] ? days[0].id : null);
-  return {
+  const shape = {
     id: null,
     name: '',
     emoji: '',
@@ -265,6 +266,27 @@ function newGameShape() {
     headline: '',
     rules: [],
   };
+  if (quickGamePrefill) {
+    Object.assign(shape, quickGamePrefill);
+    quickGamePrefill = null;
+  }
+  return shape;
+}
+
+// One-tap "quick game" (scoreboard ⚡ button): jump straight into the game
+// editor with a fresh draft prefilled for right now — the day being viewed
+// (newGameShape already uses state.ui.day), the current session by camp
+// clock, and the podium-pick format (fastest to score). From there it's the
+// normal editor flow: name it, save, score it.
+function startQuickGame() {
+  if (!canEdit()) return;
+  const sess = campNow().minutes >= 720 ? 'Evening' : 'Morning';
+  quickGamePrefill = { format: 'placement' };
+  if ((state.config.sessions || []).includes(sess)) quickGamePrefill.session = sess;
+  gameDraft = null;
+  gameDraftFor = null; // force a fresh draft even if an older 'new' draft exists
+  state.ui.editGameId = 'new';
+  openBuilder('games');
 }
 
 // Converts a saved game into the editor's "text mode" shape, where
@@ -958,6 +980,7 @@ function backupJSON() {
     picSetup: state.picSetup,
     bonuses: state.bonuses,
     live: state.live,
+    announcements: state.announcements,
   };
   return JSON.stringify(payload, null, 2);
 }

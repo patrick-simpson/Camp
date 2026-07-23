@@ -813,6 +813,12 @@ html.view-only .role-btn {
   font-size: 0.85rem;
 }
 
+.now-wx {
+  margin-top: 0.15rem;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
 .now-stations {
   margin-top: 0.75rem;
   display: grid;
@@ -1429,6 +1435,11 @@ body.no-scroll {
   text-decoration: underline;
 }
 
+.quick-game-btn {
+  display: block;
+  margin: 0.9rem auto 0;
+}
+
 .danger-link {
   color: var(--color-danger);
 }
@@ -1446,6 +1457,12 @@ body.no-scroll {
    ============================================================ */
 .standings-hint {
   margin-top: 0;
+}
+
+.catchup-hint {
+  margin: 0.6rem 0 0;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
 }
 
 .sync-status {
@@ -1526,6 +1543,18 @@ body.no-scroll {
   text-align: center !important;
   color: var(--color-text-muted);
 }
+
+/* Movement since the device's start-of-day baseline, stacked under the rank
+   number. Colors follow the podium tints' token pairs so both themes work. */
+.rank-delta {
+  display: block;
+  font-size: 0.6rem;
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: 0.02em;
+}
+.rank-delta.up { color: var(--color-primary); }
+.rank-delta.down { color: var(--color-danger); }
 
 .medal-col {
   width: 2.25rem;
@@ -1822,6 +1851,25 @@ body.no-scroll {
 .sched-you {
   color: var(--color-primary-dark);
   font-weight: 800;
+}
+
+.sched-ics-row {
+  margin-top: 1rem;
+  text-align: center;
+}
+
+/* The viewer's own station, pinned next to an elective block's label. */
+.sched-you-chip {
+  display: inline-block;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid var(--color-primary);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface));
+  color: var(--color-primary-dark);
+  font-size: 0.72rem;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 /* "+N bonus" note under a team's total. */
@@ -3360,6 +3408,89 @@ body.no-scroll {
   border-radius: var(--radius-md);
 }
 .whats-new-dismiss:active { background: color-mix(in srgb, var(--color-text-muted) 20%, transparent); }
+
+/* ============================================================
+   ANNOUNCEMENTS (📣 editor broadcasts, pinned until dismissed)
+   ============================================================ */
+.announcements {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.announce-banner {
+  position: relative;
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  padding: 0.6rem 2.2rem 0.7rem 0.8rem; /* room for the dismiss button at right */
+}
+.announce-badge {
+  display: inline-block;
+  margin-bottom: 0.35rem;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+  border-radius: 999px;
+  padding: 0.14rem 0.5rem;
+}
+.announce-text {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--color-text);
+  line-height: 1.35;
+}
+.announce-meta {
+  display: block;
+  margin-top: 0.25rem;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
+}
+.announce-meta .announce-delete {
+  font-size: 0.72rem;
+  color: var(--color-danger);
+}
+.announce-dismiss {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 1.1rem;
+  font-weight: 800;
+  line-height: 1;
+  padding: 0.1rem 0.35rem;
+  cursor: pointer;
+  font-family: inherit;
+  border-radius: var(--radius-md);
+}
+.announce-dismiss:active { background: color-mix(in srgb, var(--color-text-muted) 20%, transparent); }
+.announce-open-btn {
+  align-self: flex-start;
+  font-size: 0.78rem;
+  text-decoration: none;
+  color: var(--color-text-muted);
+}
+.announce-form {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.announce-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 0.9rem;
+}
 
 /* New-version tap-to-refresh bar (auto-reload on deploy) */
 .update-banner {

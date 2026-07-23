@@ -19,8 +19,8 @@
   <!-- Jelly UI web components (vendored, see vendor/jelly.js header). Module
        scripts are deferred by spec, so this never blocks first paint and the
        classic scripts at the end of <body> always execute before it. -->
-  <script type="module" src="vendor/jelly.js?v=130"></script>
-  <link rel="stylesheet" href="styles.css?v=130">
+  <script type="module" src="vendor/jelly.js?v=131"></script>
+  <link rel="stylesheet" href="styles.css?v=131">
 
   <script>
     // Decide lock state before the page paints so we never flash the app,
@@ -81,6 +81,9 @@
       <!-- ── WHAT'S NEW (queued banners; roll in one every 15 min, 7am–9pm) —
            kept at the very top of the page so notices are the first thing seen. -->
       <section id="whats-new" class="whats-new" hidden></section>
+
+      <!-- ── ANNOUNCEMENTS (📣 editor broadcasts; pinned until dismissed) ── -->
+      <section id="announcements" class="announcements" hidden></section>
 
       <!-- ── YOUR TEAM + NOTIFY (right under the role line) ── -->
       <section class="you-strip">
@@ -147,6 +150,7 @@
             <tbody id="standings-tbody"></tbody>
           </table>
         </div>
+        <p id="catchup-hint" class="catchup-hint" hidden></p>
       </details>
 
       <!-- ── MEMORY VERSE ───────────────────────────────── -->
@@ -267,9 +271,9 @@
        falls back to local-only mode automatically. -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=130"></script>
-  <script src="defaults.js?v=130"></script>
-  <script src="app.js?v=130"></script>
-  <script src="settings.js?v=130"></script>
+  <script src="firebase-config.js?v=131"></script>
+  <script src="defaults.js?v=131"></script>
+  <script src="app.js?v=131"></script>
+  <script src="settings.js?v=131"></script>
 </body>
 </html>
