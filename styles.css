@@ -303,24 +303,15 @@ html.view-only .card-desc {
   font-size: 0.92rem;
 }
 
+/* The role button is a jelly-button host — it draws its own pill; the class
+   only carries the view-only tint via Jelly's fill/label hooks. */
 .role-btn {
-  display: inline-block;
   margin: 0;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  padding: 0.4rem 0.9rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  font-family: inherit;
-  color: var(--color-text);
-  cursor: pointer;
-  box-shadow: var(--shadow-card);
 }
 
 html.view-only .role-btn {
-  border-color: var(--color-bronze);
-  color: var(--color-bronze);
+  --jelly-fill: var(--color-bronze-bg);
+  --jelly-label: var(--color-bronze);
 }
 
 .lock-box {
@@ -625,11 +616,11 @@ html.view-only .role-btn {
    DAY TABS
    ============================================================ */
 .day-tabs {
-  display: grid;
-  /* One equal column per day — days are editable, so the count varies. */
-  grid-auto-flow: column;
-  grid-auto-columns: 1fr;
-  gap: 0.4rem;
+  /* Now hosts a single jelly-segmented control (one segment per day). */
+  display: block;
+}
+.day-tabs jelly-segmented {
+  width: 100%;
 }
 
 .day-tab {
@@ -3705,6 +3696,15 @@ body.no-scroll {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   padding: 0.85rem 1rem;
+}
+
+/* The Appearance row hosts a three-segment control — let it wrap under the
+   label on narrow phones instead of squeezing the segments. */
+.settings-row-theme {
+  flex-wrap: wrap;
+}
+.settings-row-theme jelly-segmented {
+  flex: 1 1 100%;
 }
 
 .settings-row-label {

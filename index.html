@@ -19,8 +19,8 @@
   <!-- Jelly UI web components (vendored, see vendor/jelly.js header). Module
        scripts are deferred by spec, so this never blocks first paint and the
        classic scripts at the end of <body> always execute before it. -->
-  <script type="module" src="vendor/jelly.js?v=113"></script>
-  <link rel="stylesheet" href="styles.css?v=113">
+  <script type="module" src="vendor/jelly.js?v=114"></script>
+  <link rel="stylesheet" href="styles.css?v=114">
 
   <script>
     // Decide lock state before the page paints so we never flash the app,
@@ -86,7 +86,7 @@
       <section class="you-strip">
         <div id="follow-team-card" class="follow-team-card" hidden></div>
         <div id="my-electives-card" class="my-electives-card" hidden></div>
-        <button id="notify-toggle-btn" class="secondary-btn notify-btn" aria-pressed="false">🔕 Notify me</button>
+        <jelly-button id="notify-toggle-btn" class="notify-btn" size="small" variant="platinum" block aria-pressed="false">🔕 Notify me</jelly-button>
       </section>
 
       <!-- ── HAPPENING NOW (live schedule banner) ───────── -->
@@ -217,17 +217,21 @@
   <jelly-drawer id="settings-overlay" side="bottom" label="Settings">
     <h2 class="settings-title">⚙️ Settings</h2>
     <div class="settings-body">
-      <div class="settings-row">
+      <div class="settings-row settings-row-theme">
         <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🌗</span> Appearance</span>
-        <button id="theme-toggle" class="settings-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">🌙</button>
+        <jelly-segmented id="theme-toggle" size="small" label="Appearance" value="auto">
+          <jelly-segment value="light">☀️ Light</jelly-segment>
+          <jelly-segment value="auto">Auto</jelly-segment>
+          <jelly-segment value="dark">🌙 Dark</jelly-segment>
+        </jelly-segmented>
       </div>
       <div class="settings-row">
         <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🔔</span> Sound</span>
-        <button id="sound-toggle" class="settings-toggle" aria-label="Toggle sounds" title="Toggle sounds">🔊</button>
+        <jelly-switch id="sound-toggle" label="Sounds"></jelly-switch>
       </div>
       <div class="settings-row">
         <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🔑</span> Score entry</span>
-        <button id="role-btn" class="role-btn"></button>
+        <jelly-button id="role-btn" class="role-btn" size="small" variant="platinum"></jelly-button>
       </div>
       <!-- Editors only (hidden for view-only via CSS): the week builder. -->
       <button id="builder-row" class="settings-link" type="button">
@@ -273,9 +277,9 @@
        falls back to local-only mode automatically. -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=113"></script>
-  <script src="defaults.js?v=113"></script>
-  <script src="app.js?v=113"></script>
-  <script src="settings.js?v=113"></script>
+  <script src="firebase-config.js?v=114"></script>
+  <script src="defaults.js?v=114"></script>
+  <script src="app.js?v=114"></script>
+  <script src="settings.js?v=114"></script>
 </body>
 </html>

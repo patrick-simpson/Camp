@@ -14,9 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T11:39:02Z';
+const CODE_UPDATED_AT = '2026-07-23T12:18:36Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 113;
+const APP_VERSION = 114;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -3722,20 +3722,20 @@ function renderDayTabs() {
   const todayDow = campNow().dow; // camp time, not device time
   if (!days.some((d) => d.id === state.ui.day)) state.ui.day = defaultDay(state.config);
 
-  nav.innerHTML = days.map((d) => {
-    const isToday = d.dow === todayDow;
-    return `<button class="day-tab ${state.ui.day === d.id ? 'active' : ''}" data-day="${esc(d.id)}" aria-pressed="${state.ui.day === d.id}">
-      ${esc(d.name.slice(0, 3))}${isToday ? '<span class="today-dot" title="Today"></span>' : ''}
-    </button>`;
-  }).join('');
+  // One segmented control, a segment per day. Segments render text only, so
+  // "today" is a text dot appended to the label rather than a styled span.
+  nav.innerHTML = `<jelly-segmented class="day-tabs-seg" size="small" label="Day of the week" value="${esc(state.ui.day)}">` +
+    days.map((d) => `<jelly-segment value="${esc(d.id)}">${esc(d.name.slice(0, 3))}${d.dow === todayDow ? ' •' : ''}</jelly-segment>`).join('') +
+    '</jelly-segmented>';
 
-  nav.querySelectorAll('.day-tab').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.ui.day = btn.dataset.day;
-      state.ui.gameId = null;
-      saveState();
-      renderAll();
-    });
+  const seg = nav.querySelector('jelly-segmented');
+  if (seg) seg.addEventListener('change', (e) => {
+    const value = (e.detail && e.detail.value) || seg.getAttribute('value');
+    if (!value) return;
+    state.ui.day = value;
+    state.ui.gameId = null;
+    saveState();
+    renderAll();
   });
 
   const note = document.getElementById('day-note');
@@ -5328,8 +5328,10 @@ function applyTheme() {
     document.documentElement.removeAttribute('data-jelly-mode');
   }
   window.dispatchEvent(new CustomEvent('jelly-theme-change'));
+  // Reflect the choice into the Appearance segmented control (attribute
+  // set — never fires its change event, so no feedback loop).
   const toggle = document.getElementById('theme-toggle');
-  if (toggle) toggle.textContent = dark ? '☀️' : '🌙';
+  if (toggle) toggle.setAttribute('value', state.theme === 'dark' ? 'dark' : state.theme === 'light' ? 'light' : 'auto');
   // The app can override the OS theme, so keep the browser chrome color in step.
   // A no-media meta appended last wins over the pre-paint media metas.
   let meta = document.getElementById('dynamic-theme-color');
@@ -5345,14 +5347,18 @@ function applyTheme() {
   meta.content = dark ? '#181b1d' : '#ffffff';
 }
 
-function toggleTheme() {
-  state.theme = document.body.classList.contains('dark-theme') ? 'light' : 'dark';
+// Called from the Appearance segmented control: 'light' | 'auto' | 'dark'.
+// 'auto' maps to null so applyTheme falls back to the OS preference —
+// restoring an option the old two-state toggle couldn't express.
+function setTheme(choice) {
+  state.theme = choice === 'dark' ? 'dark' : choice === 'light' ? 'light' : null;
   saveState();
   applyTheme();
 }
 
 function applySoundIcon() {
-  document.getElementById('sound-toggle').textContent = soundOn() ? '🔊' : '🔇';
+  const el = document.getElementById('sound-toggle');
+  if (el) el.toggleAttribute('checked', soundOn());
 }
 
 function toggleSound() {
@@ -5698,8 +5704,10 @@ function refreshOpenSchedule() {
 function init() {
   applyTheme();
   applySoundIcon();
-  document.getElementById('theme-toggle').addEventListener('click', toggleTheme);
-  document.getElementById('sound-toggle').addEventListener('click', toggleSound);
+  document.getElementById('theme-toggle').addEventListener('change', (e) => {
+    setTheme((e.detail && e.detail.value) || e.target.getAttribute('value'));
+  });
+  document.getElementById('sound-toggle').addEventListener('change', toggleSound);
 
   const copyBtn = document.getElementById('copy-standings-btn');
   copyBtn.addEventListener('click', () => copyTextToClipboard(standingsSummaryText(), copyBtn));
