@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T11:31:05Z';
+const CODE_UPDATED_AT = '2026-07-23T11:37:32Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
 const APP_VERSION = 108;
 
@@ -864,50 +864,34 @@ function settingsOverlayEl() {
   return document.getElementById('settings-overlay');
 }
 
+// The settings sheet is a jelly-drawer: backdrop, ✕, Escape, focus restore,
+// scroll lock, and background inerting are all handled by the component.
+// open/close toggle the attribute (works pre-upgrade too — the change is
+// buffered and applied when the element registers).
 function openSettings() {
   const overlay = settingsOverlayEl();
   if (!overlay) return;
-  overlay.classList.remove('closing');
-  overlay.hidden = false;
-  document.body.classList.add('no-scroll');
-  const app = document.getElementById('app');
-  if (app) app.inert = true;
-  requestAnimationFrame(() => {
-    const closeBtn = document.getElementById('settings-close');
-    if (closeBtn) closeBtn.focus({ preventScroll: true });
-  });
+  overlay.setAttribute('open', '');
 }
 
 function closeSettings() {
   const overlay = settingsOverlayEl();
   if (!overlay) return;
-  const finish = () => {
-    overlay.hidden = true;
-    overlay.classList.remove('closing');
-    document.body.classList.remove('no-scroll');
-    const app = document.getElementById('app');
-    if (app) app.inert = false;
-    const btn = document.getElementById('settings-btn');
-    if (btn) btn.focus({ preventScroll: true });
-  };
-  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (reduce) { finish(); return; }
-  overlay.classList.add('closing');
-  setTimeout(finish, 200);
+  overlay.removeAttribute('open');
 }
 
 function wireSettings() {
   const btn = document.getElementById('settings-btn');
   if (btn) btn.addEventListener('click', openSettings);
-  const closeBtn = document.getElementById('settings-close');
-  if (closeBtn) closeBtn.addEventListener('click', closeSettings);
-  const overlay = settingsOverlayEl();
-  if (overlay) {
-    const backdrop = overlay.querySelector('.settings-backdrop');
-    if (backdrop) backdrop.addEventListener('click', closeSettings);
-  }
+  // Degraded-mode escape hatch: if the Jelly module never loaded, the sheets
+  // render via the :not(:defined)[open] fallback CSS and have no ✕/backdrop —
+  // let Escape close them. (When the component IS registered it owns Escape.)
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && overlay && !overlay.hidden) closeSettings();
+    if (e.key !== 'Escape' || customElements.get('jelly-drawer')) return;
+    ['settings-overlay', 'history-overlay', 'team-picker-overlay'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el && el.hasAttribute('open')) el.removeAttribute('open');
+    });
   });
 }
 
@@ -922,37 +906,26 @@ function historyOverlayEl() {
 
 function openHistory() {
   const s = settingsOverlayEl();
-  if (s) { s.hidden = true; s.classList.remove('closing'); } // instant hand-off from Settings
   const overlay = historyOverlayEl();
   if (!overlay) return;
-  overlay.classList.remove('closing');
-  overlay.hidden = false;
-  document.body.classList.add('no-scroll');
-  const app = document.getElementById('app');
-  if (app) app.inert = true;
   renderHistory();
-  requestAnimationFrame(() => {
-    const closeBtn = document.getElementById('history-close');
-    if (closeBtn) closeBtn.focus({ preventScroll: true });
-  });
+  const openNow = () => overlay.setAttribute('open', '');
+  // Hand off from the Settings drawer: let its teardown finish first so the
+  // two drawers' scroll-lock/inert bookkeeping never overlaps. Its 'close'
+  // event fires synchronously on a programmatic close, so there's no gap.
+  if (s && s.hasAttribute('open') && customElements.get('jelly-drawer')) {
+    s.addEventListener('close', openNow, { once: true });
+    s.removeAttribute('open');
+  } else {
+    if (s) s.removeAttribute('open');
+    openNow();
+  }
 }
 
 function closeHistory() {
   const overlay = historyOverlayEl();
   if (!overlay) return;
-  const finish = () => {
-    overlay.hidden = true;
-    overlay.classList.remove('closing');
-    document.body.classList.remove('no-scroll');
-    const app = document.getElementById('app');
-    if (app) app.inert = false;
-    const btn = document.getElementById('settings-btn');
-    if (btn) btn.focus({ preventScroll: true });
-  };
-  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (reduce) { finish(); return; }
-  overlay.classList.add('closing');
-  setTimeout(finish, 200);
+  overlay.removeAttribute('open');
 }
 
 function renderHistory() {
@@ -1006,14 +979,7 @@ function renderHistoryRows(rows) {
 function wireHistory() {
   const row = document.getElementById('history-row');
   if (row) row.addEventListener('click', openHistory);
-  const closeBtn = document.getElementById('history-close');
-  if (closeBtn) closeBtn.addEventListener('click', closeHistory);
-  const backdrop = document.getElementById('history-backdrop');
-  if (backdrop) backdrop.addEventListener('click', closeHistory);
-  document.addEventListener('keydown', (e) => {
-    const overlay = historyOverlayEl();
-    if (e.key === 'Escape' && overlay && !overlay.hidden) closeHistory();
-  });
+  // Backdrop, ✕, and Escape are the drawer's own; no extra wiring needed.
 }
 
 // Formats an ISO timestamp as camp time, e.g. "Jul 19, 8:47pm ET" —
@@ -3093,23 +3059,20 @@ function openIdentityPicker() {
   showPickerOverlay();
 }
 
+// The picker is a jelly-dialog: backdrop click, ✕, and Escape dismiss it
+// without choosing. Pre-answer that just means "ask again next launch"
+// (maybeShowTeamPicker re-opens it until the team question is answered).
 function showPickerOverlay() {
   const overlay = teamPickerOverlayEl();
   if (!overlay) return;
   renderPickerStep();
-  overlay.hidden = false;
-  document.body.classList.add('no-scroll');
-  const app = document.getElementById('app');
-  if (app) app.inert = true;
+  overlay.setAttribute('open', '');
 }
 
 function closeTeamPicker() {
   const overlay = teamPickerOverlayEl();
   if (!overlay) return;
-  overlay.hidden = true;
-  document.body.classList.remove('no-scroll');
-  const app = document.getElementById('app');
-  if (app) app.inert = false;
+  overlay.removeAttribute('open');
 }
 
 function renderPickerStep() {
@@ -3149,7 +3112,7 @@ function renderTeamPickerOptions() {
       if (!id) {                       // neutral — no team, so no identity step
         state.identity = null;
         saveState();
-        closePickerAndRender(null);
+        closePickerAndRender();
         return;
       }
       if (turnedOnNotify) {
@@ -3176,30 +3139,25 @@ function renderIdentityOptions() {
     btn.addEventListener('click', () => {
       state.identity = btn.dataset.counselor || null;
       saveState();
-      closePickerAndRender(pickerNotifyToast);
+      closePickerAndRender();
     });
   });
 }
 
-function closePickerAndRender(toast) {
-  closeTeamPicker();
+function closePickerAndRender() {
+  closeTeamPicker(); // the dialog's close event shows any pending notify toast
   renderAll();
-  if (toast) showToast(toast);
-  pickerNotifyToast = null;
 }
 
 function wireTeamPicker() {
   const overlay = teamPickerOverlayEl();
   if (!overlay) return;
-  const backdrop = overlay.querySelector('.team-picker-backdrop');
-  // Only lets the user dismiss without choosing if they've already answered
-  // the team question once (skip-by-accident shouldn't leave followTeam
-  // unanswered). At the identity step followTeam is already set, so a dismiss
-  // there just leaves identity as-is — effectively "skip".
-  const dismiss = () => { if (state.followTeam !== undefined) closeTeamPicker(); };
-  if (backdrop) backdrop.addEventListener('click', dismiss);
-  document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !overlay.hidden) dismiss();
+  // The dialog's own backdrop/✕/Escape can dismiss without choosing. At the
+  // identity step that's effectively "skip"; pre-answer it means "ask again
+  // next launch" (maybeShowTeamPicker re-opens until answered). A pending
+  // "following…" toast still shows so the choice that WAS made is confirmed.
+  overlay.addEventListener('close', () => {
+    if (pickerNotifyToast) { showToast(pickerNotifyToast); pickerNotifyToast = null; }
   });
 }
 

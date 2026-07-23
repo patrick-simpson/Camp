@@ -19,8 +19,8 @@
   <!-- Jelly UI web components (vendored, see vendor/jelly.js header). Module
        scripts are deferred by spec, so this never blocks first paint and the
        classic scripts at the end of <body> always execute before it. -->
-  <script type="module" src="vendor/jelly.js?v=111"></script>
-  <link rel="stylesheet" href="styles.css?v=111">
+  <script type="module" src="vendor/jelly.js?v=112"></script>
+  <link rel="stylesheet" href="styles.css?v=112">
 
   <script>
     // Decide lock state before the page paints so we never flash the app,
@@ -214,75 +214,54 @@
        Consolidates the controls that used to sit loose in the header:
        appearance, sound, and score-entry access — plus the presenter
        "Stalling with Patrick" page, which used to be a hidden corner dot. -->
-  <div id="settings-overlay" class="settings-overlay" hidden>
-    <div class="settings-backdrop"></div>
-    <div class="settings-sheet" role="dialog" aria-modal="true" aria-label="Settings">
-      <div class="settings-header">
-        <div class="schedule-grabber"></div>
-        <div class="settings-title-row">
-          <h2 class="settings-title">⚙️ Settings</h2>
-          <button id="settings-close" class="schedule-close" aria-label="Close settings">✕</button>
-        </div>
+  <jelly-drawer id="settings-overlay" side="bottom" label="Settings">
+    <h2 class="settings-title">⚙️ Settings</h2>
+    <div class="settings-body">
+      <div class="settings-row">
+        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🌗</span> Appearance</span>
+        <button id="theme-toggle" class="settings-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">🌙</button>
       </div>
-      <div class="settings-body">
-        <div class="settings-row">
-          <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🌗</span> Appearance</span>
-          <button id="theme-toggle" class="settings-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">🌙</button>
-        </div>
-        <div class="settings-row">
-          <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🔔</span> Sound</span>
-          <button id="sound-toggle" class="settings-toggle" aria-label="Toggle sounds" title="Toggle sounds">🔊</button>
-        </div>
-        <div class="settings-row">
-          <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🔑</span> Score entry</span>
-          <button id="role-btn" class="role-btn"></button>
-        </div>
-        <!-- Editors only (hidden for view-only via CSS): the week builder. -->
-        <button id="builder-row" class="settings-link" type="button">
-          <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🛠️</span> Set up the week</span>
-          <span class="settings-link-chevron" aria-hidden="true">›</span>
-        </button>
-        <!-- Editors only (hidden for view-only via CSS): opens the point-change log. -->
-        <button id="history-row" class="settings-link" type="button">
-          <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🕘</span> Change history</span>
-          <span class="settings-link-chevron" aria-hidden="true">›</span>
-        </button>
-        <a class="settings-link" href="stalling.html">
-          <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🎙️</span> Stalling with Patrick</span>
-          <span class="settings-link-chevron" aria-hidden="true">›</span>
-        </a>
+      <div class="settings-row">
+        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🔔</span> Sound</span>
+        <button id="sound-toggle" class="settings-toggle" aria-label="Toggle sounds" title="Toggle sounds">🔊</button>
       </div>
+      <div class="settings-row">
+        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🔑</span> Score entry</span>
+        <button id="role-btn" class="role-btn"></button>
+      </div>
+      <!-- Editors only (hidden for view-only via CSS): the week builder. -->
+      <button id="builder-row" class="settings-link" type="button">
+        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🛠️</span> Set up the week</span>
+        <span class="settings-link-chevron" aria-hidden="true">›</span>
+      </button>
+      <!-- Editors only (hidden for view-only via CSS): opens the point-change log. -->
+      <button id="history-row" class="settings-link" type="button">
+        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🕘</span> Change history</span>
+        <span class="settings-link-chevron" aria-hidden="true">›</span>
+      </button>
+      <a class="settings-link" href="stalling.html">
+        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🎙️</span> Stalling with Patrick</span>
+        <span class="settings-link-chevron" aria-hidden="true">›</span>
+      </a>
     </div>
-  </div>
+  </jelly-drawer>
 
   <!-- ── CHANGE HISTORY (editor-only point-change log) ─────────────
        Reuses the settings sheet's overlay/sheet CSS. Opened from the
        Change-history row in Settings; contents fetched from the separate
        campScoreboard/changelog Firebase path. -->
-  <div id="history-overlay" class="settings-overlay" hidden>
-    <div class="settings-backdrop" id="history-backdrop"></div>
-    <div class="settings-sheet" role="dialog" aria-modal="true" aria-label="Change history">
-      <div class="settings-header">
-        <div class="schedule-grabber"></div>
-        <div class="settings-title-row">
-          <h2 class="settings-title">🕘 Change history</h2>
-          <button id="history-close" class="schedule-close" aria-label="Close change history">✕</button>
-        </div>
-        <p class="muted history-sub">Every point change, newest first — team, amount, and what caused it.</p>
-      </div>
-      <div class="settings-body" id="history-body"></div>
-    </div>
-  </div>
+  <jelly-drawer id="history-overlay" side="bottom" label="Change history">
+    <h2 class="settings-title">🕘 Change history</h2>
+    <p class="muted history-sub">Every point change, newest first — team, amount, and what caused it.</p>
+    <div class="settings-body" id="history-body"></div>
+  </jelly-drawer>
 
   <!-- ── TEAM PICKER (who are you rooting for?) ─────────────────── -->
-  <div id="team-picker-overlay" class="team-picker-overlay" hidden>
-    <div class="team-picker-backdrop"></div>
-    <div class="team-picker-card" role="dialog" aria-modal="true" aria-label="Pick a team to follow">
-      <h2 class="team-picker-title">👋 Which team are you rooting for?</h2>
-      <p class="muted team-picker-hint">You'll get a heads-up here when they score or get called up next.</p>
-      <div id="team-picker-options" class="team-picker-options"></div>
-    </div>
-  </div>
+  <jelly-dialog id="team-picker-overlay" label="Pick a team to follow">
+    <h2 class="team-picker-title">👋 Which team are you rooting for?</h2>
+    <p class="muted team-picker-hint">You'll get a heads-up here when they score or get called up next.</p>
+    <div id="team-picker-options" class="team-picker-options"></div>
+  </jelly-dialog>
 
   <!-- ── TOASTS (point-change / matchup alerts) ──────────────────── -->
   <!-- Jelly toast rail (bottom). The legacy container below stays as the
@@ -294,9 +273,9 @@
        falls back to local-only mode automatically. -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=111"></script>
-  <script src="defaults.js?v=111"></script>
-  <script src="app.js?v=111"></script>
-  <script src="settings.js?v=111"></script>
+  <script src="firebase-config.js?v=112"></script>
+  <script src="defaults.js?v=112"></script>
+  <script src="app.js?v=112"></script>
+  <script src="settings.js?v=112"></script>
 </body>
 </html>

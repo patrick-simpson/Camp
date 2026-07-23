@@ -122,6 +122,32 @@ body.dark-theme {
   visibility: hidden;
 }
 
+/* Degraded-mode sheets: if the module never loads, an [open] drawer/dialog
+   still shows as a plain readable sheet (settings must stay reachable —
+   theme, role, and the week builder all live in there). An Escape fallback
+   in app.js closes these when the component can't. */
+jelly-drawer:not(:defined),
+jelly-dialog:not(:defined) {
+  display: none;
+}
+jelly-drawer:not(:defined)[open],
+jelly-dialog:not(:defined)[open] {
+  display: block;
+  visibility: visible;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 82dvh;
+  overflow: auto;
+  background: var(--color-surface);
+  color: var(--color-text);
+  z-index: 10001;
+  padding: 22px;
+  border-radius: 24px 24px 0 0;
+  box-shadow: var(--shadow-sheet);
+}
+
 /* Keyboard focus ring for every interactive control (mouse/touch unaffected). */
 :is(button, [role="button"], select, input, a):focus-visible {
   outline: 2px solid var(--color-primary);
