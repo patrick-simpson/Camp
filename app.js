@@ -14,9 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T10:50:56Z';
+const CODE_UPDATED_AT = '2026-07-23T10:55:06Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 105;
+const APP_VERSION = 106;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -3538,7 +3538,6 @@ function findNextCleanupFor(teamId) {
 
 // Which day's rota the card is showing + the entry draft (not synced).
 let cleanupDay = null;
-let cleanupMeal = 'Breakfast'; // which meal the editor is recording (device-local)
 
 // day -> { teamId -> total cleanup points } from the 'cleanup' ledger entries.
 function cleanupPointsByDay() {
@@ -3590,51 +3589,48 @@ function renderMealCleanup() {
     </div>`;
   }).join('')}</div>`;
 
-  // Per-team ledger (same pattern as Memory Verse): editors pick the meal,
-  // then tap each team's points 0–5 (0 clears). Viewers see one row per team
-  // with the day's total — no duplicate chips + timestamped list.
+  // The rota IS the interface: one block per meal showing the assigned team,
+  // and (for editors) the 0–3 point buttons right on it — no separate meal
+  // chips or repeated team list. Viewers see the same rota with +N badges.
   const editing = canEdit();
-  const dayTotals = cleanupPointsByDay()[cleanupDay] || {};
-  const mealEarned = {};
-  Object.values(state.bonuses || {}).forEach((b) => {
-    if (b && b.category === 'cleanup' && (Number(b.day) || 0) === cleanupDay && (b.meal || 'Breakfast') === cleanupMeal) {
-      mealEarned[b.teamId] = (mealEarned[b.teamId] || 0) + (Number(b.points) || 0);
-    }
-  });
+  const earnedFor = (meal) => {
+    const out = {};
+    Object.values(state.bonuses || {}).forEach((b) => {
+      if (b && b.category === 'cleanup' && (Number(b.day) || 0) === cleanupDay && (b.meal || 'Breakfast') === meal) {
+        out[b.teamId] = (out[b.teamId] || 0) + (Number(b.points) || 0);
+      }
+    });
+    return out;
+  };
 
   let entryHTML = '';
   if (editing) {
-    const assignedIds = cleanupAssigned(cleanupDay, cleanupMeal);
-    const assigned = assignedIds ? (Array.isArray(assignedIds) ? assignedIds : [assignedIds]) : [];
-    const mealChips = `<div class="bonus-meal-row">${MEAL_CLEANUP_MEALS.map((m) =>
-      `<button class="bonus-meal-chip ${cleanupMeal === m ? 'selected' : ''}" data-cleanup-meal="${m}" aria-pressed="${cleanupMeal === m}">${MEAL_ICONS[m]} ${esc(m)}</button>`).join('')}</div>`;
-    const hint = assigned.length
-      ? `<p class="bonus-entry-hint muted">On the rota for ${esc(DAY_NAMES[cleanupDay])} ${esc(cleanupMeal.toLowerCase())} — tap their points, 0 to 3 (0 clears):</p>`
-      : `<p class="bonus-entry-hint muted">No team on the rota for ${esc(DAY_NAMES[cleanupDay])} ${esc(cleanupMeal.toLowerCase())} — tap points for whoever did it:</p>`;
-    // Only the rota's team(s) are scoreable for this meal — plus any team
-    // that already has points recorded for it (so a mis-tap can be cleared).
-    // If the rota slot is TBA, fall back to everyone.
-    let scoreable = state.teams.filter((t) => assigned.includes(t.id) || mealEarned[t.id]);
-    if (!scoreable.length) scoreable = state.teams;
-    entryHTML = mealChips + hint + `<div class="pts-grid">${scoreable.map((t) => {
-      const pts = mealEarned[t.id] || 0;
-      return `<div class="pts-row">
-        <span class="pts-row-team">${teamEmoji(t.id)} ${esc(t.name)}${pts > 3 ? ` <span class="pts-row-total">+${pts}</span>` : ''}</span>
-        <div class="pts-btn-row" data-team-id="${t.id}" role="group" aria-label="${esc(t.name)} ${esc(cleanupMeal)} cleanup points">
-          ${[0, 1, 2, 3].map((n) =>
-            `<button class="pts-btn ${pts === n ? 'selected' : ''}" data-pts="${n}" aria-pressed="${pts === n}">${n}</button>`).join('')}
-        </div>
+    entryHTML = MEAL_CLEANUP_MEALS.map((meal) => {
+      const assignedIds = cleanupAssigned(cleanupDay, meal);
+      const assigned = assignedIds ? (Array.isArray(assignedIds) ? assignedIds : [assignedIds]) : [];
+      const earned = earnedFor(meal);
+      // Rota team(s) first; then any team that somehow has points for this
+      // meal without being on the rota (rota edits, old data) so it stays
+      // clearable rather than invisible.
+      const rows = assigned.concat(state.teams.map((t) => t.id).filter((id) => earned[id] && !assigned.includes(id)));
+      const body = rows.length
+        ? rows.map((id) => {
+            const pts = earned[id] || 0;
+            return `<div class="pts-row">
+              <span class="pts-row-team">${teamEmoji(id)} ${esc(teamName(id))}${assigned.includes(id) ? '' : ' <span class="pts-row-total">not on rota</span>'}${pts > 3 ? ` <span class="pts-row-total">+${pts}</span>` : ''}</span>
+              <div class="pts-btn-row" data-team-id="${esc(id)}" data-meal="${esc(meal)}" role="group" aria-label="${esc(teamName(id))} ${esc(meal)} cleanup points">
+                ${[0, 1, 2, 3].map((n) =>
+                  `<button class="pts-btn ${pts === n ? 'selected' : ''}" data-pts="${n}" aria-pressed="${pts === n}">${n}</button>`).join('')}
+              </div>
+            </div>`;
+          }).join('')
+        : '<p class="muted bonus-empty">No team on the rota yet.</p>';
+      return `<div class="cleanup-meal-block">
+        <span class="cleanup-meal-name">${MEAL_ICONS[meal]} ${esc(meal)}</span>
+        ${body}
       </div>`;
-    }).join('')}</div>`;
+    }).join('');
   }
-
-  const earnedTeams = state.teams.filter((t) => dayTotals[t.id]);
-  const viewerHTML = !editing
-    ? (earnedTeams.length
-      ? `<div class="pts-grid">${earnedTeams.sort((a, b) => dayTotals[b.id] - dayTotals[a.id]).map((t) =>
-          `<div class="pts-row"><span class="pts-row-team">${teamEmoji(t.id)} ${esc(t.name)} <span class="pts-row-total">+${dayTotals[t.id]}</span></span></div>`).join('')}</div>`
-      : `<p class="muted bonus-empty">No cleanup points recorded for ${esc(DAY_NAMES[cleanupDay])} yet.</p>`)
-    : '';
 
   // Legacy cleanup entries with no day (from the old Bonus card) — surface them
   // so their points aren't invisible even though they still count in totals.
@@ -3656,7 +3652,8 @@ function renderMealCleanup() {
       }).join('')}</ul>`
     : '';
 
-  wrap.innerHTML = dayChips + rotaHTML + entryHTML + viewerHTML + legacyHTML;
+  // Editors get the interactive rota (entryHTML); viewers the read-only one.
+  wrap.innerHTML = dayChips + (editing ? entryHTML : rotaHTML) + legacyHTML;
 
   wrap.querySelectorAll('.verse-day-chip').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -3664,16 +3661,10 @@ function renderMealCleanup() {
       renderMealCleanup();
     });
   });
-  wrap.querySelectorAll('.bonus-meal-chip').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      cleanupMeal = btn.dataset.cleanupMeal;
-      renderMealCleanup();
-    });
-  });
   wrap.querySelectorAll('.pts-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const teamId = btn.closest('.pts-btn-row').dataset.teamId;
-      setCleanupPoints(teamId, cleanupDay, cleanupMeal, parseInt(btn.dataset.pts, 10));
+      const row = btn.closest('.pts-btn-row');
+      setCleanupPoints(row.dataset.teamId, cleanupDay, row.dataset.meal, parseInt(btn.dataset.pts, 10));
     });
   });
   wrap.querySelectorAll('.bonus-remove-btn').forEach((btn) => {

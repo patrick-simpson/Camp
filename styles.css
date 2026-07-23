@@ -4177,3 +4177,18 @@ select.form-input {
 .team-builder-fields .team-counselor-input {
   font-size: 14px;
 }
+
+/* Interactive cleanup rota: one block per meal, points inline. */
+.cleanup-meal-block {
+  padding: 0.6rem 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.cleanup-meal-block:last-of-type {
+  border-bottom: none;
+}
+
+.cleanup-meal-block .cleanup-meal-name {
+  display: block;
+  margin-bottom: 0.35rem;
+}
