@@ -14,9 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T10:43:55Z';
+const CODE_UPDATED_AT = '2026-07-23T10:50:56Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 104;
+const APP_VERSION = 105;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -3609,15 +3609,19 @@ function renderMealCleanup() {
     const mealChips = `<div class="bonus-meal-row">${MEAL_CLEANUP_MEALS.map((m) =>
       `<button class="bonus-meal-chip ${cleanupMeal === m ? 'selected' : ''}" data-cleanup-meal="${m}" aria-pressed="${cleanupMeal === m}">${MEAL_ICONS[m]} ${esc(m)}</button>`).join('')}</div>`;
     const hint = assigned.length
-      ? `<p class="bonus-entry-hint muted">On the rota for ${esc(DAY_NAMES[cleanupDay])} ${esc(cleanupMeal.toLowerCase())}: ${assigned.map((id) => `${teamEmoji(id)} ${esc(teamName(id))}`).join(' + ')} — tap their points (0 clears):</p>`
+      ? `<p class="bonus-entry-hint muted">On the rota for ${esc(DAY_NAMES[cleanupDay])} ${esc(cleanupMeal.toLowerCase())} — tap their points, 0 to 3 (0 clears):</p>`
       : `<p class="bonus-entry-hint muted">No team on the rota for ${esc(DAY_NAMES[cleanupDay])} ${esc(cleanupMeal.toLowerCase())} — tap points for whoever did it:</p>`;
-    entryHTML = mealChips + hint + `<div class="pts-grid">${state.teams.map((t) => {
+    // Only the rota's team(s) are scoreable for this meal — plus any team
+    // that already has points recorded for it (so a mis-tap can be cleared).
+    // If the rota slot is TBA, fall back to everyone.
+    let scoreable = state.teams.filter((t) => assigned.includes(t.id) || mealEarned[t.id]);
+    if (!scoreable.length) scoreable = state.teams;
+    entryHTML = mealChips + hint + `<div class="pts-grid">${scoreable.map((t) => {
       const pts = mealEarned[t.id] || 0;
-      const onRota = assigned.includes(t.id);
       return `<div class="pts-row">
-        <span class="pts-row-team">${teamEmoji(t.id)} ${esc(t.name)}${onRota ? ' <span class="pts-row-total">🧽 on rota</span>' : ''}${pts > 5 ? ` <span class="pts-row-total">+${pts}</span>` : ''}</span>
+        <span class="pts-row-team">${teamEmoji(t.id)} ${esc(t.name)}${pts > 3 ? ` <span class="pts-row-total">+${pts}</span>` : ''}</span>
         <div class="pts-btn-row" data-team-id="${t.id}" role="group" aria-label="${esc(t.name)} ${esc(cleanupMeal)} cleanup points">
-          ${[0, 1, 2, 3, 4, 5].map((n) =>
+          ${[0, 1, 2, 3].map((n) =>
             `<button class="pts-btn ${pts === n ? 'selected' : ''}" data-pts="${n}" aria-pressed="${pts === n}">${n}</button>`).join('')}
         </div>
       </div>`;
