@@ -43,7 +43,9 @@ function renderSettings() {
     <h2>Set up the week</h2>
     ${updatedLine}
     <nav class="settings-tabs">
-      ${SETTINGS_TABS.map((t) => `<button class="day-tab ${tab === t.key ? 'active' : ''}" data-tab="${t.key}">${esc(t.label)}</button>`).join('')}
+      <jelly-segmented size="small" label="Builder section" value="${esc(tab)}">
+        ${SETTINGS_TABS.map((t) => `<jelly-segment value="${t.key}">${esc(t.label)}</jelly-segment>`).join('')}
+      </jelly-segmented>
     </nav>
     <div class="card settings-card" id="settings-card"></div>
   `;
@@ -55,13 +57,11 @@ function renderSettings() {
     renderAll();
   });
 
-  view.querySelectorAll('.settings-tabs .day-tab').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      state.ui.settingsTab = btn.dataset.tab;
-      state.ui.editGameId = null;
-      saveState();
-      renderAll();
-    });
+  view.querySelector('.settings-tabs jelly-segmented').addEventListener('change', (e) => {
+    state.ui.settingsTab = (e.detail && e.detail.value) || e.target.getAttribute('value');
+    state.ui.editGameId = null;
+    saveState();
+    renderAll();
   });
 
   const card = document.getElementById('settings-card');
@@ -188,7 +188,7 @@ function renderGamesTab(card) {
   }
 
   card.innerHTML = `
-    <button type="button" class="primary-btn" id="new-game-btn">+ New game</button>
+    <jelly-button class="primary-btn" id="new-game-btn">+ New game</jelly-button>
     ${groupsHTML}
   `;
 
@@ -208,8 +208,8 @@ function gameRowHTML(g, games, dayIds) {
   const hasResult = !!state.results[g.id];
   return `
     <div class="builder-row game-row">
-      <button type="button" class="reorder-btn" data-game-id="${esc(g.id)}" data-dir="-1" ${idx <= 0 ? 'disabled' : ''}>↑</button>
-      <button type="button" class="reorder-btn" data-game-id="${esc(g.id)}" data-dir="1" ${idx >= group.length - 1 ? 'disabled' : ''}>↓</button>
+      <jelly-icon-button class="reorder-btn" label="Move up" data-game-id="${esc(g.id)}" data-dir="-1" ${idx <= 0 ? 'disabled' : ''}>↑</jelly-icon-button>
+      <jelly-icon-button class="reorder-btn" label="Move down" data-game-id="${esc(g.id)}" data-dir="1" ${idx >= group.length - 1 ? 'disabled' : ''}>↓</jelly-icon-button>
       <button type="button" class="game-row-main" data-game-id="${esc(g.id)}">
         <span class="game-emoji">${esc(g.emoji || '')}</span>
         <span class="game-row-name">${esc(g.name)}</span>
@@ -311,28 +311,28 @@ function renderGameEditor(card) {
 
     <div class="form-field">
       <label class="form-label">Name*</label>
-      <input class="form-input" id="gd-name" type="text" value="${esc(draft.name)}" placeholder="Game name">
+      <jelly-input class="form-input" id="gd-name" type="text" value="${esc(draft.name)}" placeholder="Game name"></jelly-input>
     </div>
     <div class="form-row">
       <div class="form-field">
         <label class="form-label">Emoji</label>
-        <input class="form-input" id="gd-emoji" type="text" value="${esc(draft.emoji)}" placeholder="🏕️">
+        <jelly-input class="form-input" id="gd-emoji" type="text" value="${esc(draft.emoji)}" placeholder="🏕️"></jelly-input>
       </div>
       <div class="form-field">
         <label class="form-label">Location</label>
-        <input class="form-input" id="gd-location" type="text" value="${esc(draft.location)}" placeholder="Location">
+        <jelly-input class="form-input" id="gd-location" type="text" value="${esc(draft.location)}" placeholder="Location"></jelly-input>
       </div>
     </div>
     <div class="form-field">
       <label class="form-label">Tagline</label>
-      <input class="form-input" id="gd-headline" type="text" value="${esc(draft.headline)}" placeholder="One line about the game">
+      <jelly-input class="form-input" id="gd-headline" type="text" value="${esc(draft.headline)}" placeholder="One line about the game"></jelly-input>
     </div>
 
     <div class="form-field">
       <label class="form-label">Day</label>
-      <select class="form-input" id="gd-day">
-        ${(state.config.days || []).map((d) => `<option value="${esc(d.id)}" ${draft.dayId === d.id ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}
-      </select>
+      <jelly-select class="form-input" id="gd-day" value="${esc(draft.dayId || '')}" label="Day">
+        ${(state.config.days || []).map((d) => `<jelly-option value="${esc(d.id)}">${esc(d.name)}</jelly-option>`).join('')}
+      </jelly-select>
     </div>
     <div class="form-field">
       <label class="form-label">Session</label>
@@ -363,13 +363,13 @@ function renderGameEditor(card) {
 
     <p class="entry-error" id="gd-error" hidden></p>
     <div class="editor-actions">
-      <button type="button" class="primary-btn" id="gd-save-btn">Save game</button>
+      <jelly-button class="primary-btn" id="gd-save-btn">Save game</jelly-button>
       <button type="button" class="link-btn" id="gd-cancel-btn">Cancel</button>
     </div>
 
     ${!isNew ? `
       <div class="editor-footer">
-        <button type="button" class="secondary-btn" id="gd-duplicate-btn">Duplicate game</button>
+        <jelly-button class="secondary-btn" variant="platinum" id="gd-duplicate-btn">Duplicate game</jelly-button>
         <button type="button" class="link-btn danger-link" id="gd-delete-btn">Delete game</button>
       </div>
     ` : ''}
@@ -389,13 +389,13 @@ function tallyFieldsHTML(draft) {
   return `
     <div class="form-field">
       <label class="form-label">Unit</label>
-      <input class="form-input" id="gd-unit" type="text" value="${esc(draft.unit || '')}" placeholder="points, balls collected, laps…">
+      <jelly-input class="form-input" id="gd-unit" type="text" value="${esc(draft.unit || '')}" placeholder="points, balls collected, laps…"></jelly-input>
     </div>
-    <label class="checkbox-field"><input type="checkbox" id="gd-lowerwins" ${draft.lowerWins ? 'checked' : ''}> Lowest score wins</label>
-    <label class="checkbox-field"><input type="checkbox" id="gd-timeinput" ${draft.timeInput ? 'checked' : ''}> Scores are times (m:ss)</label>
+    <jelly-checkbox class="checkbox-field" id="gd-lowerwins" size="small" ${draft.lowerWins ? 'checked' : ''}>Lowest score wins</jelly-checkbox>
+    <jelly-checkbox class="checkbox-field" id="gd-timeinput" size="small" ${draft.timeInput ? 'checked' : ''}>Scores are times (m:ss)</jelly-checkbox>
     <div class="form-field">
       <label class="form-label">Counter buttons</label>
-      <input class="form-input" id="gd-countersteps" type="text" value="${esc(draft.counterSteps || '')}" placeholder="1, 5">
+      <jelly-input class="form-input" id="gd-countersteps" type="text" value="${esc(draft.counterSteps || '')}" placeholder="1, 5"></jelly-input>
       <p class="field-help muted">Quick +N buttons for tallying. Comma-separated, like 1, 5. Leave blank to type scores.</p>
     </div>
   `;
@@ -404,22 +404,22 @@ function tallyFieldsHTML(draft) {
 function extrasHTML(draft) {
   const hasTimer = !!draft.timer;
   return `
-    <label class="checkbox-field"><input type="checkbox" id="gd-timer-on" ${hasTimer ? 'checked' : ''}> Countdown timer</label>
+    <jelly-checkbox class="checkbox-field" id="gd-timer-on" size="small" ${hasTimer ? 'checked' : ''}>Countdown timer</jelly-checkbox>
     ${hasTimer ? `
       <div class="form-field">
         <label class="form-label">Label</label>
-        <input class="form-input" id="gd-timer-label" type="text" value="${esc(draft.timer.label || '')}">
+        <jelly-input class="form-input" id="gd-timer-label" type="text" value="${esc(draft.timer.label || '')}"></jelly-input>
       </div>
       <div class="form-field">
         <label class="form-label">Presets (minutes, comma-separated)</label>
-        <input class="form-input" id="gd-timer-presets" type="text" value="${esc(draft.timer.presets || '')}" placeholder="10, 8, 5">
+        <jelly-input class="form-input" id="gd-timer-presets" type="text" value="${esc(draft.timer.presets || '')}" placeholder="10, 8, 5"></jelly-input>
       </div>
     ` : ''}
     <div class="form-field">
       <label class="form-label">Drawing prompts (one per line — adds the photo/stopwatch drawing round)</label>
-      <textarea class="form-textarea" id="gd-prompts" rows="4" placeholder="Pumpkin&#10;Scarecrow">${esc(draft.prompts || '')}</textarea>
+      <jelly-textarea class="form-textarea" id="gd-prompts" rows="4" placeholder="Pumpkin&#10;Scarecrow" value="${esc(draft.prompts || '')}"></jelly-textarea>
     </div>
-    <label class="checkbox-field"><input type="checkbox" id="gd-double" ${draft.messtival ? 'checked' : ''}> 🎉 Messtival game (medals count DOUBLE points in the standings)</label>
+    <jelly-checkbox class="checkbox-field" id="gd-double" size="small" ${draft.messtival ? 'checked' : ''}>🎉 Messtival game (medals count DOUBLE points in the standings)</jelly-checkbox>
   `;
 }
 
@@ -428,11 +428,11 @@ function rulesEditorHTML(draft) {
   return draft.rules.map((sec, i) => `
     <div class="rules-section-editor">
       <div class="builder-row">
-        <button type="button" class="reorder-btn" data-idx="${i}" data-dir="-1" ${i === 0 ? 'disabled' : ''}>↑</button>
-        <button type="button" class="reorder-btn" data-idx="${i}" data-dir="1" ${i === draft.rules.length - 1 ? 'disabled' : ''}>↓</button>
-        <input class="form-input rules-h-input" data-idx="${i}" type="text" value="${esc(sec.h)}" placeholder="Section heading">
+        <jelly-icon-button class="reorder-btn" label="Move up" data-idx="${i}" data-dir="-1" ${i === 0 ? 'disabled' : ''}>↑</jelly-icon-button>
+        <jelly-icon-button class="reorder-btn" label="Move down" data-idx="${i}" data-dir="1" ${i === draft.rules.length - 1 ? 'disabled' : ''}>↓</jelly-icon-button>
+        <jelly-input class="form-input rules-h-input" data-idx="${i}" type="text" value="${esc(sec.h)}" placeholder="Section heading"></jelly-input>
       </div>
-      <textarea class="form-textarea rules-items-input" data-idx="${i}" rows="3" placeholder="One bullet per line">${esc(sec.items)}</textarea>
+      <jelly-textarea class="form-textarea rules-items-input" data-idx="${i}" rows="3" placeholder="One bullet per line" value="${esc(sec.items)}"></jelly-textarea>
       <button type="button" class="link-btn danger-link rules-remove-btn" data-idx="${i}">Remove section</button>
     </div>
   `).join('');
@@ -699,7 +699,7 @@ function renderDaysTab(card) {
   card.innerHTML = `
     <h3>Days (${days.length})</h3>
     ${days.length ? days.map((day, i) => dayRowHTML(day, i, days.length)).join('') : '<p class="muted">No days yet — add your first day.</p>'}
-    <button type="button" class="secondary-btn" id="add-day-btn">+ Add day</button>
+    <jelly-button class="secondary-btn" variant="platinum" id="add-day-btn">+ Add day</jelly-button>
   `;
   wireDaysTab(card);
 }
@@ -709,27 +709,27 @@ function dayRowHTML(day, i, total) {
   return `
     <div class="rules-section-editor">
       <div class="builder-row">
-        <button type="button" class="reorder-btn" data-day-id="${esc(day.id)}" data-dir="-1" ${i === 0 ? 'disabled' : ''}>↑</button>
-        <button type="button" class="reorder-btn" data-day-id="${esc(day.id)}" data-dir="1" ${i === total - 1 ? 'disabled' : ''}>↓</button>
+        <jelly-icon-button class="reorder-btn" label="Move up" data-day-id="${esc(day.id)}" data-dir="-1" ${i === 0 ? 'disabled' : ''}>↑</jelly-icon-button>
+        <jelly-icon-button class="reorder-btn" label="Move down" data-day-id="${esc(day.id)}" data-dir="1" ${i === total - 1 ? 'disabled' : ''}>↓</jelly-icon-button>
         <span class="day-index-label">Day ${i + 1}</span>
       </div>
       <div class="form-row">
         <div class="form-field">
           <label class="form-label">Name</label>
-          <input class="form-input day-name-input" data-day-id="${esc(day.id)}" type="text" value="${esc(day.name)}">
+          <jelly-input class="form-input day-name-input" data-day-id="${esc(day.id)}" type="text" value="${esc(day.name)}"></jelly-input>
         </div>
         <div class="form-field">
           <label class="form-label">Day of week</label>
-          <select class="form-input day-dow-input" data-day-id="${esc(day.id)}">
-            <option value="">— none —</option>
+          <jelly-select class="form-input day-dow-input" data-day-id="${esc(day.id)}" label="Day of week" placeholder="— none —" value="${day.dow == null ? '' : day.dow}">
+            <jelly-option value="">— none —</jelly-option>
             ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((n, dow) =>
-              `<option value="${dow}" ${day.dow === dow ? 'selected' : ''}>${n}</option>`).join('')}
-          </select>
+              `<jelly-option value="${dow}">${n}</jelly-option>`).join('')}
+          </jelly-select>
         </div>
       </div>
       <div class="form-field">
         <label class="form-label">Note</label>
-        <textarea class="form-textarea day-note-input" data-day-id="${esc(day.id)}" rows="2" placeholder="e.g. 🎉 Messtival — double points! (shows as a banner)">${esc(day.note || '')}</textarea>
+        <jelly-textarea class="form-textarea day-note-input" data-day-id="${esc(day.id)}" rows="2" placeholder="e.g. 🎉 Messtival — double points! (shows as a banner)" value="${esc(day.note || '')}"></jelly-textarea>
       </div>
       <button type="button" class="link-btn danger-link day-delete-btn" data-day-id="${esc(day.id)}">Delete day</button>
       ${blockingGames.length ? `<p class="entry-error day-delete-error" data-day-id="${esc(day.id)}" hidden>${esc(day.name)} still has ${blockingGames.length} game${blockingGames.length === 1 ? '' : 's'}. Move or delete them first (Games tab).</p>` : ''}
@@ -827,7 +827,7 @@ function renderTeamsTab(card) {
   card.innerHTML = `
     <h3>Teams (${teams.length})</h3>
     ${teams.length ? teams.map((t, i) => teamRowHTML(t, i, teams.length)).join('') : '<p class="muted">No teams yet. Add at least two to run games.</p>'}
-    <button type="button" class="secondary-btn" id="add-team-btn">+ Add team</button>
+    <jelly-button class="secondary-btn" variant="platinum" id="add-team-btn">+ Add team</jelly-button>
     ${warn}
   `;
   wireTeamsTab(card);
@@ -837,13 +837,13 @@ function teamRowHTML(team, i, total) {
   const disableDelete = total <= 2;
   return `
     <div class="builder-row team-builder-row">
-      <button type="button" class="reorder-btn" data-team-id="${esc(team.id)}" data-dir="-1" ${i === 0 ? 'disabled' : ''}>↑</button>
-      <button type="button" class="reorder-btn" data-team-id="${esc(team.id)}" data-dir="1" ${i === total - 1 ? 'disabled' : ''}>↓</button>
+      <jelly-icon-button class="reorder-btn" label="Move up" data-team-id="${esc(team.id)}" data-dir="-1" ${i === 0 ? 'disabled' : ''}>↑</jelly-icon-button>
+      <jelly-icon-button class="reorder-btn" label="Move down" data-team-id="${esc(team.id)}" data-dir="1" ${i === total - 1 ? 'disabled' : ''}>↓</jelly-icon-button>
       <span class="team-builder-fields">
-        <input class="form-input team-name-input" data-team-id="${esc(team.id)}" type="text" value="${esc(team.name)}" aria-label="Team name">
-        <input class="form-input team-counselor-input" data-team-id="${esc(team.id)}" type="text" value="${esc(team.counselor || '')}" placeholder="Counselor(s)" aria-label="Counselors">
+        <jelly-input class="form-input team-name-input" data-team-id="${esc(team.id)}" type="text" value="${esc(team.name)}" label="Team name"></jelly-input>
+        <jelly-input class="form-input team-counselor-input" data-team-id="${esc(team.id)}" type="text" value="${esc(team.counselor || '')}" placeholder="Counselor(s)" label="Counselors"></jelly-input>
       </span>
-      <button type="button" class="row-delete-btn" data-team-id="${esc(team.id)}" ${disableDelete ? 'disabled title="Keep at least 2 teams"' : ''}>✕</button>
+      <jelly-icon-button class="row-delete-btn" variant="rose" label="Delete team" data-team-id="${esc(team.id)}" ${disableDelete ? 'disabled title="Keep at least 2 teams"' : ''}>✕</jelly-icon-button>
     </div>
   `;
 }
@@ -969,15 +969,15 @@ function renderDataTab(card) {
     <div class="data-block">
       <h3>Back up</h3>
       <p class="muted">Your whole setup — teams, days, games, and saved scores.</p>
-      <button type="button" class="secondary-btn" id="copy-backup-btn">📋 Copy backup</button>
-      <button type="button" class="secondary-btn" id="download-backup-btn">⬇ Download backup</button>
+      <jelly-button class="secondary-btn" variant="platinum" id="copy-backup-btn">📋 Copy backup</jelly-button>
+      <jelly-button class="secondary-btn" variant="platinum" id="download-backup-btn">⬇ Download backup</jelly-button>
     </div>
     <div class="data-block">
       <h3>Restore</h3>
-      <textarea class="form-textarea" id="restore-textarea" rows="4" placeholder="Paste a backup here…"></textarea>
-      <button type="button" class="secondary-btn" id="import-text-btn">Import from text</button>
+      <jelly-textarea class="form-textarea" id="restore-textarea" rows="4" placeholder="Paste a backup here…"></jelly-textarea>
+      <jelly-button class="secondary-btn" variant="platinum" id="import-text-btn">Import from text</jelly-button>
       <input type="file" id="restore-file-input" accept="application/json,.json" hidden>
-      <button type="button" class="secondary-btn" id="import-file-btn">📂 Import from file</button>
+      <jelly-button class="secondary-btn" variant="platinum" id="import-file-btn">📂 Import from file</jelly-button>
       <p class="entry-error" id="restore-error" hidden></p>
     </div>
     <div class="danger-zone">

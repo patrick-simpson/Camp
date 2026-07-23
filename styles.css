@@ -3493,6 +3493,37 @@ jelly-button.copy-matchup-btn {
   --jelly-button-font-size: 0.9rem;
 }
 
+/* Week-builder controls on Jelly hosts: strip the legacy field/button chrome
+   (the components draw their own) and keep only sizing/layout. */
+jelly-input.form-input,
+jelly-textarea.form-textarea,
+jelly-select.form-input {
+  width: 100%;
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  display: block;
+}
+jelly-select.form-input {
+  height: 48px;
+}
+jelly-icon-button.reorder-btn,
+jelly-icon-button.row-delete-btn {
+  flex: none;
+  width: auto;
+  height: auto;
+  background: none;
+  border: none;
+  border-radius: 0;
+  transition: none;
+  --jelly-icon-button-size: 2.75rem;
+}
+jelly-checkbox.checkbox-field {
+  display: inline-flex;
+  margin: 0.6rem 0;
+}
+
 /* Jelly variant of the update banner (jelly-alert host — the alert draws its
    own rounded box; the host only carries placement). */
 .update-banner-alert {
