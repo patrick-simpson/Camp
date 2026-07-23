@@ -14,9 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T15:10:11Z';
+const CODE_UPDATED_AT = '2026-07-23T15:47:50Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 125;
+const APP_VERSION = 126;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -591,8 +591,8 @@ function campNow() {
   }
 }
 
-// Named schedClock/schedRange (not fmtClock) — the stopwatch below has
-// its own fmtClock(ms) and function declarations share one namespace.
+// Named schedClock/schedRange (not fmtClock) — fmtBoardClock/fmtWatch below
+// have their own formatters and function declarations share one namespace.
 function schedClock(mins, withSuffix) {
   const h = Math.floor(mins / 60) % 24;
   const mm = mins % 60;
@@ -1887,52 +1887,18 @@ function celebrate(goldTeamId) {
 }
 
 // ── Timers & stopwatches ─────────────────────────────────────────
-// Kept in memory so they keep running while you browse other games.
+// Stopwatch state is kept in memory so it keeps running while you browse
+// other games. The countdown clock is synced (see getClock/setClock) instead
+// of living here — see the "Per-game synced clock" section.
 
-const liveTimers = {};  // gameId -> countdown state
 const liveWatches = {}; // gameId -> stopwatch state
 let tickHandle = null;
 
-// Countdowns are DEVICE-LOCAL (never synced) — each phone runs its own clock.
-// Persist so a mid-round reload or an iOS timer-suspend on lock doesn't lose
-// the running countdown; on return we recompute from the wall-clock endAt.
-const TIMER_KEY = 'campScoreboardTimers';
-
-function saveTimers() {
-  try {
-    const out = {};
-    Object.entries(liveTimers).forEach(([gid, t]) => {
-      out[gid] = { endAt: t.endAt || 0, duration: t.duration, remaining: t.remaining, round: t.round, running: t.running, alarming: t.alarming };
-    });
-    localStorage.setItem(TIMER_KEY, JSON.stringify(out));
-  } catch (e) { /* device-local convenience only */ }
-}
-
-function rehydrateTimers() {
-  let saved;
-  try { saved = JSON.parse(localStorage.getItem(TIMER_KEY) || '{}'); } catch (e) { saved = {}; }
-  const now = Date.now();
-  Object.entries(saved).forEach(([gid, t]) => {
-    if (!t || typeof t.duration !== 'number') return;
-    if (t.running && t.endAt) {
-      const remaining = Math.max(0, t.endAt - now);
-      if (remaining === 0) {
-        // Expired while the app was closed/backgrounded — surface it.
-        liveTimers[gid] = { ...t, running: false, remaining: 0, alarming: true };
-      } else {
-        liveTimers[gid] = { ...t, remaining };
-      }
-    } else {
-      liveTimers[gid] = { ...t };
-    }
-  });
-  if (Object.values(liveTimers).some((t) => t.running)) { ensureTicking(); requestWakeLock(); }
-}
-
-// Keep the screen awake while a countdown runs (guarded — not on all browsers).
+// Keep the screen awake while a countdown or stopwatch runs (guarded — not on
+// all browsers).
 let wakeLockSentinel = null;
 function anyTimerRunning() {
-  return Object.values(liveTimers).some((t) => t.running)
+  return Object.values(liveWatches).some((w) => w.running)
     || Object.values(state.clocks || {}).some((c) => c && c.running);
 }
 async function requestWakeLock() {
@@ -1947,27 +1913,6 @@ function releaseWakeLock() {
   if (wakeLockSentinel) { try { wakeLockSentinel.release(); } catch (e) { /* ignore */ } wakeLockSentinel = null; }
 }
 
-// When the phone comes back to the foreground: fire alarms for any countdown
-// that expired while we were away, resume ticking, and re-acquire the wake lock
-// (the browser drops it when the page is hidden).
-function onTimersVisible() {
-  if (document.hidden) return;
-  const now = Date.now();
-  let changed = false;
-  Object.entries(liveTimers).forEach(([gid, t]) => {
-    if (t.running && t.endAt && t.endAt <= now && !t.alarming) {
-      t.running = false;
-      t.remaining = 0;
-      t.alarming = true;
-      changed = true;
-      playAlarm();
-      renderToolsIfCurrent(gid);
-    }
-  });
-  if (changed) saveTimers();
-  if (anyTimerRunning()) { ensureTicking(); requestWakeLock(); }
-}
-
 function ensureTicking() {
   if (!tickHandle) tickHandle = setInterval(tick, 100);
 }
@@ -1975,23 +1920,6 @@ function ensureTicking() {
 function tick() {
   const now = Date.now();
   let anyRunning = false;
-  Object.entries(liveTimers).forEach(([gid, t]) => {
-    if (!t.running) return;
-    anyRunning = true;
-    const remaining = Math.max(0, t.endAt - now);
-    t.remaining = remaining;
-    if (remaining === 0) {
-      t.running = false;
-      t.alarming = true;
-      saveTimers();
-      if (!anyTimerRunning()) releaseWakeLock();
-      playAlarm();
-      renderToolsIfCurrent(gid);
-    } else {
-      const el = document.getElementById('cd-display-' + gid);
-      if (el) el.textContent = fmtClock(remaining);
-    }
-  });
   Object.entries(liveWatches).forEach(([gid, w]) => {
     if (!w.running) return;
     anyRunning = true;
@@ -2007,22 +1935,10 @@ function tick() {
   }
 }
 
-function fmtClock(ms) {
-  const s = Math.ceil(ms / 1000);
-  return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
-}
-
 function fmtWatch(ms) {
   const ds = Math.floor(ms / 100);
   const s = Math.floor(ds / 10);
   return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') + '.' + (ds % 10);
-}
-
-function renderToolsIfCurrent(gid) {
-  if (state.ui.gameId !== gid) return;
-  const wrap = document.getElementById('tools-area');
-  const g = gameById(gid);
-  if (wrap && g) renderTools(wrap, g);
 }
 
 function renderTools(wrap, g) {
@@ -2071,96 +1987,6 @@ function tickBoardClocks() {
     }
   });
 }
-
-// ── Countdown ──
-
-function countdownHTML(g) {
-  let t = liveTimers[g.id];
-  if (!t) {
-    const dur = g.timer.presets[0] * 1000;
-    t = liveTimers[g.id] = { duration: dur, remaining: dur, running: false, alarming: false, round: 1 };
-  }
-  const roundLabel = g.timer.rounds ? `<div class="round-label">Round ${t.round} of ${g.timer.rounds}</div>` : '';
-  const presets = g.timer.presets.length > 1
-    ? `<div class="preset-row">${g.timer.presets.map((p) =>
-        `<button class="preset-chip ${t.duration === p * 1000 ? 'selected' : ''}" data-preset="${p}" ${t.running ? 'disabled' : ''}>${fmtClock(p * 1000)}</button>`).join('')}</div>`
-    : '';
-
-  let mainBtn;
-  if (t.alarming) {
-    mainBtn = `<jelly-button class="timer-main-btn alarm-btn" variant="rose" block data-action="silence">🔕 Silence</jelly-button>`;
-  } else if (t.running) {
-    mainBtn = `<jelly-button class="timer-main-btn" block data-action="pause">⏸ Pause</jelly-button>`;
-  } else if (t.remaining === 0) {
-    mainBtn = g.timer.rounds && t.round < g.timer.rounds
-      ? `<jelly-button class="timer-main-btn" block data-action="next-round">Next round →</jelly-button>`
-      : `<jelly-button class="timer-main-btn" block data-action="reset">↺ Reset</jelly-button>`;
-  } else if (t.remaining < t.duration) {
-    mainBtn = `<jelly-button class="timer-main-btn" block data-action="start">▶ Resume</jelly-button>`;
-  } else {
-    mainBtn = `<jelly-button class="timer-main-btn" block data-action="start">▶ Start</jelly-button>`;
-  }
-
-  return `<div class="tool-box ${t.alarming ? 'alarming' : ''}" data-tool="countdown">
-    <div class="tool-label">⏱️ ${esc(g.timer.label)}</div>
-    ${roundLabel}
-    <div class="big-clock" id="cd-display-${g.id}">${fmtClock(t.remaining)}</div>
-    ${presets}
-    <div class="timer-btn-row">
-      ${mainBtn}
-      ${!t.alarming && t.remaining !== t.duration ? `<jelly-button class="timer-side-btn" variant="platinum" data-action="reset">↺ Reset</jelly-button>` : ''}
-    </div>
-  </div>`;
-}
-
-function bindCountdown(wrap, g) {
-  const box = wrap.querySelector('[data-tool="countdown"]');
-  if (!box) return;
-  const t = liveTimers[g.id];
-
-  box.querySelectorAll('.preset-chip').forEach((chip) => {
-    chip.addEventListener('click', () => {
-      t.duration = parseInt(chip.dataset.preset, 10) * 1000;
-      t.remaining = t.duration;
-      saveTimers();
-      renderTools(wrap, g);
-    });
-  });
-
-  box.querySelectorAll('[data-action]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const a = btn.dataset.action;
-      if (a === 'start') {
-        getAudio(); // unlock audio while we have a user gesture
-        t.endAt = Date.now() + t.remaining;
-        t.running = true;
-        ensureTicking();
-        requestWakeLock();
-      } else if (a === 'pause') {
-        t.running = false;
-        t.remaining = Math.max(0, t.endAt - Date.now());
-      } else if (a === 'silence') {
-        cutAllSound();
-        t.alarming = false;
-      } else if (a === 'reset') {
-        cutAllSound();
-        t.alarming = false;
-        t.running = false;
-        t.remaining = t.duration;
-      } else if (a === 'next-round') {
-        cutAllSound();
-        t.alarming = false;
-        t.running = false;
-        t.round += 1;
-        t.remaining = t.duration;
-      }
-      if (!anyTimerRunning()) releaseWakeLock();
-      saveTimers();
-      renderTools(wrap, g);
-    });
-  });
-}
-
 
 // ── Photo storage (IndexedDB — photos are too big for localStorage) ──
 
@@ -4639,24 +4465,17 @@ function getLiveMatch(g, aId, bId) {
   const key = [aId, bId].join('|');
   const l = state.live && state.live[g.id];
   if (l && l.key === key) {
-    return { key, inning: Number(l.inning) || 1, outs: Number(l.outs) || 0, half: l.half === 1 ? 1 : 0, hr: Object.assign({}, l.hr), clock: l.clock || null };
+    return { key, inning: Number(l.inning) || 1, outs: Number(l.outs) || 0, half: l.half === 1 ? 1 : 0, hr: Object.assign({}, l.hr) };
   }
-  return { key, inning: 1, outs: 0, half: 0, hr: {}, clock: null };
+  return { key, inning: 1, outs: 0, half: 0, hr: {} };
 }
 
 function setLiveMatch(g, l) {
   if (!state.live) state.live = {};
-  state.live[g.id] = { key: l.key, inning: Number(l.inning) || 1, outs: Number(l.outs) || 0, half: l.half === 1 ? 1 : 0, hr: l.hr || {}, clock: l.clock || null };
+  state.live[g.id] = { key: l.key, inning: Number(l.inning) || 1, outs: Number(l.outs) || 0, half: l.half === 1 ? 1 : 0, hr: l.hr || {} };
   touchData();
   saveState();
 }
-
-// ── Synced match clock ───────────────────────────────────────────
-// The half/game clock lives INSIDE the live match state so every device
-// (refs and spectators alike) sees it tick. Only the endAt timestamp and
-// running flag sync — each device computes the remaining time locally, so
-// nothing writes to the network while the clock runs.
-//   clock = { running, endAt (epoch ms), remaining (ms, when paused), duration (ms) }
 
 function clockRemaining(clock) {
   if (!clock) return 0;
@@ -4666,15 +4485,7 @@ function clockRemaining(clock) {
 
 function defaultClock(g) {
   const secs = (g.timer && g.timer.presets && g.timer.presets[0]) || 600;
-  return { running: false, endAt: 0, remaining: secs * 1000, duration: secs * 1000 };
-}
-
-function setMatchClock(g, aId, bId, mutate) {
-  const l = getLiveMatch(g, aId, bId);
-  const clock = l.clock || defaultClock(g);
-  mutate(clock);
-  l.clock = clock;
-  setLiveMatch(g, l);
+  return { running: false, endAt: 0, remaining: secs * 1000, duration: secs * 1000, round: 1 };
 }
 
 // ── Per-game synced clock ────────────────────────────────────────
@@ -4692,6 +4503,7 @@ function getClock(g) {
       endAt: Number(c.endAt) || 0,
       remaining: Number(c.remaining) || 0,
       duration: Number(c.duration) || 0,
+      round: Number(c.round) || 1,
     };
   }
   return defaultClock(g);
@@ -4727,6 +4539,11 @@ function applyClockAction(g, act, secs) {
       c.duration = (Number(secs) || 600) * 1000;
       c.remaining = c.duration;
       c.running = false;
+    } else if (act === 'next-round') {
+      cutAllSound();
+      c.running = false;
+      c.round = (Number(c.round) || 1) + 1;
+      c.remaining = c.duration;
     }
   });
   if (act === 'start') requestWakeLock();
@@ -4741,20 +4558,29 @@ function clockBlockHTML(g) {
   const clock = getClock(g);
   const remaining = clockRemaining(clock);
   const viewer = !canEdit();
+  const onLastRound = !g.timer.rounds || clock.round >= g.timer.rounds;
+  const roundLabel = g.timer.rounds ? `<div class="round-label">Round ${clock.round} of ${g.timer.rounds}</div>` : '';
   const presets = (!viewer && !clock.running && (g.timer.presets || []).length > 1)
     ? `<div class="preset-row">${g.timer.presets.map((p) =>
         `<button class="preset-chip ${clock.duration === p * 1000 ? 'selected' : ''}" data-clock="preset" data-secs="${p}">${fmtBoardClock(p * 1000)}</button>`).join('')}</div>`
     : '';
+  let mainBtn;
+  if (clock.running) {
+    mainBtn = '<button class="timer-main-btn" data-clock="pause">⏸ Pause</button>';
+  } else if (remaining === 0 && !onLastRound) {
+    mainBtn = '<button class="timer-main-btn" data-clock="next-round">Next round →</button>';
+  } else {
+    mainBtn = `<button class="timer-main-btn" data-clock="start">▶ ${remaining === clock.duration ? 'Start' : remaining === 0 ? 'Restart' : 'Resume'}</button>`;
+  }
   const controls = viewer ? '' : `
     ${presets}
     <div class="board-clock-btns">
-      ${clock.running
-        ? '<button class="timer-main-btn" data-clock="pause">⏸ Pause</button>'
-        : `<button class="timer-main-btn" data-clock="start">▶ ${remaining === clock.duration ? 'Start' : remaining === 0 ? 'Restart' : 'Resume'}</button>`}
+      ${mainBtn}
       ${remaining !== clock.duration ? '<button class="timer-side-btn" data-clock="reset">↺ Reset</button>' : ''}
     </div>`;
   return `<div class="tool-box game-clock-box ${remaining === 0 ? 'alarming' : ''}" data-tool="game-clock">
     <div class="tool-label">⏱️ ${esc(g.timer.label || 'Game clock')}</div>
+    ${roundLabel}
     <div class="big-clock board-clock ${remaining === 0 ? 'board-clock-zero' : ''}" data-game-clock data-game-id="${esc(g.id)}" data-prev="${remaining}">${fmtBoardClock(remaining)}</div>
     ${controls}
   </div>`;
@@ -5909,9 +5735,6 @@ function init() {
 
   initSync();
   renderPresence();
-
-  rehydrateTimers();
-  document.addEventListener('visibilitychange', onTimersVisible);
 
   startIdleCollapse();
   startUpdatePolling();
