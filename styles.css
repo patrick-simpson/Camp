@@ -80,6 +80,18 @@ body.dark-theme {
   display: none !important;
 }
 
+/* Jelly UI upgrade guard: hide not-yet-registered jelly controls so they never
+   flash unstyled before vendor/jelly.js (a deferred module) registers them.
+   jelly-theme is exempted — it's a display:contents wrapper whose children
+   (the whole app) must stay visible during that window. */
+:not(:defined) {
+  visibility: hidden;
+}
+jelly-theme:not(:defined) {
+  visibility: visible;
+  display: contents;
+}
+
 /* Keyboard focus ring for every interactive control (mouse/touch unaffected). */
 :is(button, [role="button"], select, input, a):focus-visible {
   outline: 2px solid var(--color-primary);

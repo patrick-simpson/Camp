@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T11:11:13Z';
+const CODE_UPDATED_AT = '2026-07-23T11:18:22Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
 const APP_VERSION = 108;
 
