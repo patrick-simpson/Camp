@@ -1,14 +1,10 @@
 // ── Built-in default week ───────────────────────────────────────
-// This file holds the built-in default week: the default team names, the
-// day catalog, and the full game catalog. `defaultConfig()` is called by
-// app.js to seed `state.config` on first run and whenever the user chooses
-// "Restore defaults" — it always returns a brand-new object (and a fresh
-// deep copy of every day/game inside it) so callers never share references
-// with a previous config. After that point, live data lives in state, not
-// here — editing this file only changes what a fresh/restored week starts
-// with, not any trip that has already been configured.
-
-const DEFAULT_TEAM_NAMES = ['Team 1', 'Team 2', 'Team 3', 'Team 4', 'Team 5', 'Team 6'];
+// This file holds the built-in default week — the day list and the full
+// game catalog. `defaultConfig()` is called by app.js to seed
+// `state.config` on first run and whenever the user chooses "Restore
+// defaults". After that point, live data lives in state, not here —
+// editing this file only changes what a fresh/restored week starts with,
+// not any trip that has already been configured.
 
 function defaultConfig() {
   return {
@@ -20,7 +16,7 @@ function defaultConfig() {
       { id: 'd2', name: 'Tuesday', dow: 2, note: '' },
       { id: 'd3', name: 'Wednesday', dow: 3, note: '' },
       { id: 'd4', name: 'Thursday', dow: 4, note: '' },
-      { id: 'd5', name: 'Friday', dow: 5, note: '🎉 Messtival day — all games are worth DOUBLE points on the big scoreboard! (Track that on paper.)\nNo evening competition Friday — it\'s Team Skits night. 🎭' },
+      { id: 'd5', name: 'Friday', dow: 5, note: '' },
     ],
     games: [
       {
@@ -39,6 +35,16 @@ function defaultConfig() {
       {
         id: 'kangaroo-kickball', name: 'Kangaroo Kickball', emoji: '🦘', dayId: 'd1', session: 'Morning',
         location: 'Chapel Lawn', format: 'tournament',
+        // Fixed Round 1 order set by the game leaders (by team id): Foxes vs
+        // Pumpkins, then Turkey vs Pilgrims, then Maples vs John Deeres. When a
+        // tournament game has this, Round 1 walks these matchups in order instead
+        // of asking you to pick two teams each time.
+        roundOneMatchups: [['t0', 't3'], ['t1', 't4'], ['t2', 't5']],
+        // Live scorekeeping aid shown on each matchup (synced so everyone can
+        // watch): innings, the kicking team, outs (3 per side — the first team
+        // kicks, 3 outs, the second team kicks, 3 outs, then the next inning),
+        // and home runs per team.
+        liveTracker: { unit: 'Home runs', innings: 3, outs: 3, sideLabel: 'kicking' },
         headline: 'Kickball, but everyone is three-legged with a partner.',
         rules: [
           { h: 'How to play', items: [
@@ -97,6 +103,11 @@ function defaultConfig() {
       {
         id: 'ladder-ball', name: 'Ladder Ball', emoji: '🪜', dayId: 'd2', session: 'Morning',
         location: 'Basketball Court', format: 'tournament',
+        // Per-round cancellation scorer (see ladderMatchHTML): each round both
+        // teams' rung points are entered, the higher cancels the lower, and the
+        // winner banks the difference — first to EXACTLY 21 (overshoot holds).
+        // Synced live via state.live so spectators watch each total climb.
+        ladderScoring: { top: 3, mid: 2, bottom: 1, target: 21 },
         headline: 'Toss bolas onto the ladder — first to exactly 21.',
         rules: [
           { h: 'Setup', items: [
@@ -139,6 +150,42 @@ function defaultConfig() {
         ],
       },
       {
+        id: 'counselor-musical-chairs', name: 'Counselor Musical Chairs', emoji: '🪑', dayId: 'd2', session: 'Evening',
+        location: 'Chapel Lawn', format: 'placement',
+        headline: 'The counselors play musical chairs — last ones seated win their team the medals.',
+        rules: [
+          { h: 'Setup', items: [
+            "Each team's counselor(s) play on the team's behalf.",
+            'Chairs in a circle — one FEWER chair than counselors playing.',
+            'Prep: Jen has the music/speaker. Use the orange tab chairs.',
+          ] },
+          { h: 'How to play', items: [
+            'Music plays → counselors walk around the chairs.',
+            'Music stops → grab a seat.',
+            'The counselor left standing is out, and a chair comes out each round.',
+          ] },
+          { h: 'Winning', items: ['The last 3 teams with a counselor still seated take gold, silver, and bronze.'] },
+        ],
+      },
+      {
+        id: 'gross-food-eating', name: 'Gross Food Eating Competition', emoji: '🤢', dayId: 'd2', session: 'Evening',
+        location: 'Dining Hall', format: 'placement',
+        headline: 'Choke down the gross-food gauntlet — first teams to clear their plates medal.',
+        rules: [
+          { h: 'Setup', items: [
+            'ALL teams play, same number of eaters per team.',
+            'Each team gets an identical plate of gross foods to get through.',
+            'Opposing counselors judge — a plate only counts when it is truly finished.',
+          ] },
+          { h: 'How to play', items: [
+            'On "GO", the team works through every item on the plate.',
+            'No spitting it back out — it has to go down and stay down.',
+            'Water is allowed, but the clock keeps running.',
+          ] },
+          { h: 'Winning', items: ['The first 3 teams to finish their whole plate take gold, silver, and bronze.'] },
+        ],
+      },
+      {
         id: 'axe-throwing', name: 'Axe Throwing', emoji: '🪓', dayId: 'd3', session: 'Morning',
         location: 'Basketball Court', format: 'tally', unit: 'points', counterSteps: [1, 5],
         headline: 'Every player throws; the team totals decide the medals.',
@@ -153,7 +200,7 @@ function defaultConfig() {
       },
       {
         id: 'inflatable-bowling', name: 'Inflatable Bowling', emoji: '🎳', dayId: 'd3', session: 'Morning',
-        location: 'Slip and Slide', format: 'tally', unit: 'points', counterSteps: [1, 10],
+        location: 'Slip and Slide', format: 'tally', unit: 'points', counterSteps: [1, 10], liveRankings: true,
         headline: 'Four rolls each — pins are 1, strikes are 10.',
         rules: [
           { h: 'Setup', items: [
@@ -170,7 +217,7 @@ function defaultConfig() {
       },
       {
         id: 'pumpkin-pictionary', name: 'Pumpkin Pictionary', emoji: '🎃', dayId: 'd3', session: 'Morning',
-        location: 'Chapel Lawn', format: 'tally', unit: 'total time', lowerWins: true, timeInput: true,
+        location: 'Chapel Lawn', format: 'tally', unit: 'total time', lowerWins: true, timeInput: true, liveRankings: true,
         prompts: ['Pumpkin', 'Scarecrow', 'Ear of Corn', 'Falling Leaf', 'Apple Pie', 'Hay Bale', 'Turkey', 'Acorn', 'Sunflower', 'Tractor'],
         headline: 'Draw with your nose in pumpkin puree — fastest total time wins.',
         rules: [
@@ -204,9 +251,29 @@ function defaultConfig() {
         ],
       },
       {
+        id: 'color-run-cleanup', name: 'Color Run: Cleanup Edition', emoji: '🏃', dayId: 'd3', session: 'Evening',
+        location: 'Campground-wide', format: 'placement',
+        headline: 'Run the color course and clean up as you go — top 3 teams medal.',
+        rules: [
+          { h: 'Winning', items: ['The top 3 teams take gold, silver, and bronze.'] },
+        ],
+      },
+      {
+        id: 'pumpkin-painting', name: 'Pumpkin Painting', emoji: '🎃', dayId: 'd3', session: 'Evening',
+        location: 'Chapel Lawn', format: 'placement',
+        headline: 'Each team paints a pumpkin — judged live, top 3 take medals.',
+        rules: [
+          { h: 'Winning', items: ['The top 3 painted pumpkins take gold, silver, and bronze.'] },
+        ],
+      },
+      {
         id: 'jeb-ball', name: 'Jeb Ball', emoji: '🧎', dayId: 'd4', session: 'Morning',
         location: 'Chapel Lawn', format: 'tournament',
         timer: { label: 'Half clock', presets: [600, 480, 300] },
+        // Live per-team goal counter, synced for spectators. outs:0 suppresses the
+        // outs/kicking rows in liveTrackerHTML, leaving just a goal stepper per team
+        // and a half stepper (periodLabel renames "Inning" → "Half").
+        liveTracker: { unit: 'Goals', innings: 2, outs: 0, periodLabel: 'Half' },
         headline: 'Soccer on your knees, batting the ball with your hands. MUST WEAR PANTS.',
         rules: [
           { h: 'Wear pants!', items: ['Everyone plays on their knees all game — long pants required.'] },
@@ -265,7 +332,7 @@ function defaultConfig() {
       },
       {
         id: 'bushel-bustle', name: 'Bushel Bustle', emoji: '🌽', dayId: 'd5', session: 'Morning',
-        location: 'Chapel Lawn', format: 'placement', pointsMultiplier: 2,
+        location: 'Chapel Lawn', format: 'placement', messtival: true,
         headline: 'Shuck 20 ears of corn clean enough to eat.',
         rules: [
           { h: 'How to play', items: [
@@ -278,7 +345,7 @@ function defaultConfig() {
       },
       {
         id: 'pumpkin-patch-plunder', name: 'Pumpkin Patch Plunder', emoji: '🍬', dayId: 'd5', session: 'Morning',
-        location: 'Chapel Lawn', format: 'tally', unit: 'candy corn', pointsMultiplier: 2,
+        location: 'Chapel Lawn', format: 'tally', unit: 'candy corn', messtival: true,
         counterSteps: [1], timer: { label: 'Round timer', presets: [60], rounds: 6 },
         headline: 'Fish candy corn out of pumpkin puree — with your mouth.',
         rules: [
@@ -292,7 +359,7 @@ function defaultConfig() {
       },
       {
         id: 'bob-drop-roll', name: 'Bob, Drop, and Roll', emoji: '🍎', dayId: 'd5', session: 'Morning',
-        location: 'Chapel Lawn', format: 'placement', pointsMultiplier: 2,
+        location: 'Chapel Lawn', format: 'placement', messtival: true,
         headline: 'Bob an apple, sprint it across the field, barrel roll home.',
         rules: [
           { h: 'How to play', items: [
@@ -306,7 +373,7 @@ function defaultConfig() {
       },
       {
         id: 'cider-survivor', name: 'Cider Survivor', emoji: '🥤', dayId: 'd5', session: 'Morning',
-        location: 'Chapel Lawn', format: 'placement', pointsMultiplier: 2,
+        location: 'Chapel Lawn', format: 'placement', messtival: true,
         headline: 'Relay chug — six cups of cider, six flavors, sit when done.',
         rules: [
           { h: 'How to play', items: [
@@ -315,6 +382,19 @@ function defaultConfig() {
             'When YOUR cup is done: SIT DOWN.',
           ] },
           { h: 'Winning', items: ['First 3 teams with all 6 cups finished and the whole team seated take gold, silver, and bronze.'] },
+        ],
+      },
+      {
+        id: 'team-skits', name: 'Team Skits', emoji: '🎭', dayId: 'd5', session: 'Evening',
+        location: 'Tabernacle', format: 'placement',
+        headline: 'Each team performs their skit — judged live, top 3 take medals.',
+        rules: [
+          { h: 'How it works', items: [
+            'Each team performs the skit they prepared during the week.',
+            'Everyone on the team takes part somehow.',
+            'Judges score each skit right after it finishes.',
+          ] },
+          { h: 'Winning', items: ['The top 3 skits take gold, silver, and bronze — counted in the week standings like every other game.'] },
         ],
       },
     ],

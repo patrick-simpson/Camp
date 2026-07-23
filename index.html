@@ -2,17 +2,36 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Camp Scoreboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>Camp</title>
+  <meta name="description" content="Live camp game scoring — standings, schedule, and team medals, synced across every device.">
+  <meta name="theme-color" content="#f4f6f9" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#10141c" media="(prefers-color-scheme: dark)">
+  <meta property="og:title" content="Camp">
+  <meta property="og:description" content="Live camp game scoring — standings, schedule, and team medals.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8F%85%3C/text%3E%3C/svg%3E">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png?v=57">
+  <link rel="manifest" href="manifest.json?v=57">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=13">
+  <link rel="stylesheet" href="styles.css?v=102">
+
   <script>
     // Decide lock state before the page paints so we never flash the app,
     // and never show a blank page: exactly one of #app / #lock-screen shows.
     (function () {
       try {
+        // One-time revocation: an editor session unlocked with a retired PIN
+        // (any 'edit' role from before the current epoch) is logged out and
+        // must re-enter the current editor PIN. View sessions are untouched.
+        // Keep these literals in sync with app.js (EDIT_PIN_EPOCH_KEY / EDIT_PIN_EPOCH).
+        if (localStorage.getItem('campScoreboardRole') === 'edit' &&
+            localStorage.getItem('campScoreboardEditEpoch') !== 'r1') {
+          localStorage.removeItem('campScoreboardUnlocked');
+          localStorage.removeItem('campScoreboardRole');
+        }
         if (localStorage.getItem('campScoreboardUnlocked') !== '1') {
           document.documentElement.classList.add('locked');
         }
@@ -25,15 +44,15 @@
   <!-- ── PIN LOCK SCREEN ─────────────────────────────────── -->
   <div id="lock-screen" class="lock-screen">
     <div class="lock-box">
-      <div class="lock-logo"><span>🏅</span> Camp Scoreboard</div>
+      <div class="lock-logo"><span>🏅</span> Camp</div>
       <p class="lock-prompt">Enter PIN to continue</p>
-      <div class="pin-dots" id="pin-dots">
+      <div class="pin-dots" id="pin-dots" aria-hidden="true">
         <span class="pin-dot"></span>
         <span class="pin-dot"></span>
         <span class="pin-dot"></span>
         <span class="pin-dot"></span>
       </div>
-      <p class="lock-error" id="lock-error" hidden>Wrong PIN — try again</p>
+      <p class="lock-error" id="lock-error" role="alert" hidden>Wrong PIN — try again</p>
       <div class="keypad" id="keypad">
         <button class="key" data-key="1">1</button>
         <button class="key" data-key="2">2</button>
@@ -46,7 +65,7 @@
         <button class="key" data-key="9">9</button>
         <button class="key key-blank" disabled></button>
         <button class="key" data-key="0">0</button>
-        <button class="key key-del" data-key="del">⌫</button>
+        <button class="key key-del" data-key="del" aria-label="Delete digit">⌫</button>
       </div>
     </div>
   </div>
@@ -54,66 +73,229 @@
   <div id="app">
 
     <header class="app-header">
-      <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">🌙</button>
-      <button id="sound-toggle" class="theme-toggle sound-toggle" aria-label="Toggle sounds" title="Toggle sounds">🔊</button>
-      <div class="app-logo"><span>🏅</span> Camp Scoreboard</div>
-      <button id="settings-btn" class="theme-toggle settings-toggle" aria-label="Set up teams, days &amp; games" title="Set up teams, days &amp; games">⚙️</button>
-      <button id="role-btn" class="role-btn"></button>
+      <div class="app-logo"><span>🏅</span> Camp</div>
+      <span id="presence-chip" class="presence-chip" hidden></span>
+      <button id="settings-btn" class="settings-btn" aria-label="Settings" title="Settings">⚙️</button>
     </header>
 
     <main class="main-wrap">
 
-      <!-- ── DAY TABS ───────────────────────────────────── -->
-      <nav id="day-tabs" class="day-tabs" aria-label="Day of the week"></nav>
-      <p id="day-note" class="day-note" hidden></p>
+      <!-- ── WHAT'S NEW (queued banners; roll in one every 15 min, 7am–9pm) —
+           kept at the very top of the page so notices are the first thing seen. -->
+      <section id="whats-new" class="whats-new" hidden></section>
 
-      <!-- ── GAME LIST (home) ───────────────────────────── -->
-      <section id="game-list"></section>
+      <!-- ── YOUR TEAM + NOTIFY (right under the role line) ── -->
+      <section class="you-strip">
+        <div id="follow-team-card" class="follow-team-card" hidden></div>
+        <div id="my-electives-card" class="my-electives-card" hidden></div>
+        <button id="notify-toggle-btn" class="secondary-btn notify-btn" aria-pressed="false">🔕 Notify me</button>
+      </section>
 
-      <!-- ── GAME VIEW (detail) ─────────────────────────── -->
+      <!-- ── HAPPENING NOW (live schedule banner) ───────── -->
+      <section id="now-banner" class="now-banner" hidden></section>
+
+      <!-- ── LIVE NOW (a game in progress — surfaced + highlighted) ── -->
+      <section id="live-home" class="live-home" hidden></section>
+
+      <!-- ── COMPETITIONS (day tabs + game list, collapsible) ── -->
+      <details class="card competitions-card collapsible-card" data-card="competitions">
+        <summary class="card-header-row">
+          <h2>Competitions</h2>
+          <span class="card-chevron" aria-hidden="true">›</span>
+        </summary>
+        <!-- ── DAY TABS ───────────────────────────────── -->
+        <nav id="day-tabs" class="day-tabs" aria-label="Day of the week"></nav>
+        <p id="day-note" class="day-note" hidden></p>
+        <!-- ── GAME LIST ──────────────────────────────── -->
+        <section id="game-list"></section>
+      </details>
+
+      <!-- ── GAME VIEW (detail; outside the card so it shows even when
+           Competitions is collapsed, e.g. opened from a Live-now card) ── -->
       <section id="game-view" class="card game-view" hidden></section>
 
-      <!-- ── SETTINGS (editor-only week builder) ────────── -->
+      <!-- ── WEEK BUILDER (editor-only; opened from Settings → Set up the
+           week; body.builder-open hides every sibling section while it's up) ── -->
       <section id="settings-view" class="settings-view" hidden></section>
 
       <!-- ── WEEK STANDINGS ─────────────────────────────── -->
-      <section id="standings-card" class="card standings-card">
-        <div class="card-header-row">
-          <h2>Week Medal Count</h2>
-          <button id="reset-week-btn" class="link-btn danger-link">New week (reset)</button>
-        </div>
+      <details class="card standings-card collapsible-card" data-card="standings">
+        <summary class="card-header-row">
+          <h2>Cumulative Totals</h2>
+          <span class="summary-right">
+            <span class="card-chevron" aria-hidden="true">›</span>
+          </span>
+        </summary>
         <p class="muted standings-hint">Only counts games saved in this app — your paper scoreboard is the official one.</p>
-        <p id="sync-status" class="sync-status"></p>
+        <p id="sync-status" class="sync-status" aria-live="polite"></p>
         <div class="standings-actions">
-          <button id="copy-standings-btn" class="secondary-btn">📋 Copy scores &amp; medals</button>
+          <button id="copy-standings-btn" class="secondary-btn">📋 Copy scores &amp; points</button>
           <button id="share-standings-btn" class="secondary-btn" hidden>📤 Share</button>
         </div>
         <div class="table-scroll">
           <table id="standings-table" class="standings-table">
             <thead>
               <tr>
-                <th class="rank-col">#</th>
+                <th class="rank-col" aria-label="Rank">#</th>
                 <th>Team</th>
-                <th class="medal-col">🥇</th>
-                <th class="medal-col">🥈</th>
-                <th class="medal-col">🥉</th>
+                <th class="points-col">Pts</th>
+                <th class="medal-col"><span role="img" aria-label="Gold medals">🥇</span></th>
+                <th class="medal-col"><span role="img" aria-label="Silver medals">🥈</span></th>
+                <th class="medal-col"><span role="img" aria-label="Bronze medals">🥉</span></th>
+                <th class="extra-col"><span role="img" aria-label="Bible memorization points">📖</span></th>
+                <th class="extra-col"><span role="img" aria-label="Meal cleanup points">🧽</span></th>
               </tr>
             </thead>
             <tbody id="standings-tbody"></tbody>
           </table>
         </div>
-      </section>
+      </details>
+
+      <!-- ── MEMORY VERSE ───────────────────────────────── -->
+      <details class="card verse-card collapsible-card" data-card="verse">
+        <summary class="card-header-row">
+          <h2>Memory Verse</h2>
+          <span class="card-chevron" aria-hidden="true">›</span>
+        </summary>
+        <p class="muted card-desc">Each day's memory verse — pick a day to read it, and record points for teams that recite it. Verse points count toward each team's total above.</p>
+        <div id="verse-body"></div>
+      </details>
+
+      <!-- ── MEAL CLEANUP ───────────────────────────────── -->
+      <details class="card cleanup-card collapsible-card" data-card="cleanup">
+        <summary class="card-header-row">
+          <h2>Meal Cleanup</h2>
+          <span class="card-chevron" aria-hidden="true">›</span>
+        </summary>
+        <p class="muted card-desc">Each meal a team is on cleanup — pick a day to see the rota and award points. Cleanup points count toward each team's total above.</p>
+        <div id="cleanup-body"></div>
+      </details>
+
+      <!-- ── BONUS POINTS ───────────────────────────────── -->
+      <details class="card bonus-card collapsible-card" data-card="bonus">
+        <summary class="card-header-row">
+          <h2>Bonus Points</h2>
+          <span class="card-chevron" aria-hidden="true">›</span>
+        </summary>
+        <p class="muted card-desc">Extra one-off points for other tasks — added to each team's total above.</p>
+        <div id="bonus-body"></div>
+      </details>
+
+      <!-- ── BROWNIE POINTS ─────────────────────────────── -->
+      <details class="card brownie-card collapsible-card" data-card="brownie">
+        <summary class="card-header-row">
+          <h2>Brownie Points</h2>
+          <span class="card-chevron" aria-hidden="true">›</span>
+        </summary>
+        <p class="muted card-desc">Just for fun — doesn't count toward any team's total above.</p>
+        <div id="brownie-body"></div>
+      </details>
 
     </main>
+
+    <footer id="app-footer" class="app-footer"></footer>
   </div>
+
+  <!-- ── FULL WEEK SCHEDULE (bottom sheet, opened from Happening Now) ── -->
+  <div id="schedule-overlay" class="schedule-overlay" hidden>
+    <div class="schedule-backdrop"></div>
+    <div class="schedule-sheet" role="dialog" aria-modal="true" aria-label="Full week schedule">
+      <div class="schedule-header">
+        <div class="schedule-grabber"></div>
+        <div class="schedule-title-row">
+          <h2 class="schedule-title">📅 Camp Schedule</h2>
+          <button id="schedule-close" class="schedule-close" aria-label="Close schedule">✕</button>
+        </div>
+        <nav id="schedule-days" class="schedule-days" aria-label="Pick a day"></nav>
+      </div>
+      <div id="schedule-body" class="schedule-body"></div>
+    </div>
+  </div>
+
+  <!-- ── SETTINGS (gear overlay) ─────────────────────────────────
+       Consolidates the controls that used to sit loose in the header:
+       appearance, sound, and score-entry access — plus the presenter
+       "Stalling with Patrick" page, which used to be a hidden corner dot. -->
+  <div id="settings-overlay" class="settings-overlay" hidden>
+    <div class="settings-backdrop"></div>
+    <div class="settings-sheet" role="dialog" aria-modal="true" aria-label="Settings">
+      <div class="settings-header">
+        <div class="schedule-grabber"></div>
+        <div class="settings-title-row">
+          <h2 class="settings-title">⚙️ Settings</h2>
+          <button id="settings-close" class="schedule-close" aria-label="Close settings">✕</button>
+        </div>
+      </div>
+      <div class="settings-body">
+        <div class="settings-row">
+          <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🌗</span> Appearance</span>
+          <button id="theme-toggle" class="settings-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">🌙</button>
+        </div>
+        <div class="settings-row">
+          <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🔔</span> Sound</span>
+          <button id="sound-toggle" class="settings-toggle" aria-label="Toggle sounds" title="Toggle sounds">🔊</button>
+        </div>
+        <div class="settings-row">
+          <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🔑</span> Score entry</span>
+          <button id="role-btn" class="role-btn"></button>
+        </div>
+        <!-- Editors only (hidden for view-only via CSS): the week builder. -->
+        <button id="builder-row" class="settings-link" type="button">
+          <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🛠️</span> Set up the week</span>
+          <span class="settings-link-chevron" aria-hidden="true">›</span>
+        </button>
+        <!-- Editors only (hidden for view-only via CSS): opens the point-change log. -->
+        <button id="history-row" class="settings-link" type="button">
+          <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🕘</span> Change history</span>
+          <span class="settings-link-chevron" aria-hidden="true">›</span>
+        </button>
+        <a class="settings-link" href="stalling.html">
+          <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🎙️</span> Stalling with Patrick</span>
+          <span class="settings-link-chevron" aria-hidden="true">›</span>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── CHANGE HISTORY (editor-only point-change log) ─────────────
+       Reuses the settings sheet's overlay/sheet CSS. Opened from the
+       Change-history row in Settings; contents fetched from the separate
+       campScoreboard/changelog Firebase path. -->
+  <div id="history-overlay" class="settings-overlay" hidden>
+    <div class="settings-backdrop" id="history-backdrop"></div>
+    <div class="settings-sheet" role="dialog" aria-modal="true" aria-label="Change history">
+      <div class="settings-header">
+        <div class="schedule-grabber"></div>
+        <div class="settings-title-row">
+          <h2 class="settings-title">🕘 Change history</h2>
+          <button id="history-close" class="schedule-close" aria-label="Close change history">✕</button>
+        </div>
+        <p class="muted history-sub">Every point change, newest first — team, amount, and what caused it.</p>
+      </div>
+      <div class="settings-body" id="history-body"></div>
+    </div>
+  </div>
+
+  <!-- ── TEAM PICKER (who are you rooting for?) ─────────────────── -->
+  <div id="team-picker-overlay" class="team-picker-overlay" hidden>
+    <div class="team-picker-backdrop"></div>
+    <div class="team-picker-card" role="dialog" aria-modal="true" aria-label="Pick a team to follow">
+      <h2 class="team-picker-title">👋 Which team are you rooting for?</h2>
+      <p class="muted team-picker-hint">You'll get a heads-up here when they score or get called up next.</p>
+      <div id="team-picker-options" class="team-picker-options"></div>
+    </div>
+  </div>
+
+  <!-- ── TOASTS (point-change / matchup alerts) ──────────────────── -->
+  <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="false"></div>
 
   <!-- Firebase SDK (optional cloud sync). If these fail to load, the app
        falls back to local-only mode automatically. -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=13"></script>
-  <script src="defaults.js?v=13"></script>
-  <script src="app.js?v=13"></script>
-  <script src="settings.js?v=13"></script>
+  <script src="firebase-config.js?v=102"></script>
+  <script src="defaults.js?v=102"></script>
+  <script src="app.js?v=102"></script>
+  <script src="settings.js?v=102"></script>
 </body>
 </html>

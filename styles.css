@@ -2,26 +2,32 @@
    CUSTOM PROPERTIES
    ============================================================ */
 :root {
+  color-scheme: light;
   --color-bg: #f4f6f9;
   --color-surface: #ffffff;
   --color-border: #e2e6ec;
   --color-text: #1a2233;
-  --color-text-muted: #6b7280;
+  --color-text-muted: #5b6472;
   --color-primary: #3355ff;
   --color-primary-dark: #2540c7;
   --color-danger: #d63b3b;
-  --color-gold: #b8860b;
+  --color-gold: #96690a;
   --color-gold-bg: #fff6dd;
   --color-silver: #6b7280;
   --color-silver-bg: #f1f3f6;
   --color-bronze: #a15c2a;
   --color-bronze-bg: #fbe9de;
   --shadow-card: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
+  --shadow-card-hover: 0 4px 14px rgba(16, 24, 40, 0.12), 0 2px 4px rgba(16, 24, 40, 0.06);
+  --shadow-sheet: 0 -8px 40px rgba(16, 24, 40, 0.25);
+  --color-primary-hover: #2540c7; /* darkens on hover; white text stays readable */
   --radius-lg: 16px;
   --radius-md: 10px;
+  --radius-xl: 20px;
 }
 
 body.dark-theme {
+  color-scheme: dark;
   --color-bg: #10141c;
   --color-surface: #1a2030;
   --color-border: #2b3145;
@@ -37,15 +43,32 @@ body.dark-theme {
   --color-bronze: #e2a374;
   --color-bronze-bg: #3a2618;
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-card-hover: 0 4px 16px rgba(0, 0, 0, 0.5);
+  --shadow-sheet: 0 -8px 40px rgba(0, 0, 0, 0.6);
+  --color-primary-hover: #4a63d6; /* darker than --color-primary so white text holds up */
 }
 
 @media (prefers-color-scheme: dark) {
   body:not(.light-theme):not(.dark-theme) {
+    color-scheme: dark;
     --color-bg: #10141c;
     --color-surface: #1a2030;
     --color-border: #2b3145;
     --color-text: #eef1f8;
     --color-text-muted: #9aa3b8;
+    --color-primary: #6b85ff;
+    --color-primary-dark: #8ea0ff;
+    --color-danger: #ff6b6b;
+    --color-gold: #e8c15a;
+    --color-gold-bg: #3a3116;
+    --color-silver: #c3c9d6;
+    --color-silver-bg: #262c3d;
+    --color-bronze: #e2a374;
+    --color-bronze-bg: #3a2618;
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
+    --shadow-card-hover: 0 4px 16px rgba(0, 0, 0, 0.5);
+    --shadow-sheet: 0 -8px 40px rgba(0, 0, 0, 0.6);
+    --color-primary-hover: #4a63d6;
   }
 }
 
@@ -55,6 +78,12 @@ body.dark-theme {
 
 [hidden] {
   display: none !important;
+}
+
+/* Keyboard focus ring for every interactive control (mouse/touch unaffected). */
+:is(button, [role="button"], select, input, a):focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
 }
 
 body {
@@ -69,6 +98,22 @@ body {
   max-width: 640px;
   margin: 0 auto;
   padding-bottom: 3rem;
+}
+
+/* ============================================================
+   FOOTER
+   ============================================================ */
+.app-footer {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 0.5rem 1rem 1.5rem;
+  text-align: center;
+}
+
+.footer-line {
+  margin: 0.2rem 0;
+  font-size: 0.72rem;
+  color: var(--color-text-muted);
 }
 
 /* ============================================================
@@ -96,8 +141,14 @@ html.locked #app {
   display: none;
 }
 
-/* View-only role: hide the destructive/edit-only controls entirely. */
-html.view-only #reset-week-btn {
+/* View-only role: de-clutter — spectators don't need the share/copy tools
+   (Notify stays) or the counselor-oriented helper text. */
+html.view-only #copy-standings-btn,
+html.view-only #share-standings-btn {
+  display: none;
+}
+html.view-only .standings-hint,
+html.view-only .card-desc {
   display: none;
 }
 
@@ -112,12 +163,12 @@ html.view-only #reset-week-btn {
 
 .role-btn {
   display: inline-block;
-  margin: 0.6rem auto 0;
+  margin: 0;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 999px;
-  padding: 0.35rem 0.85rem;
-  font-size: 0.8rem;
+  padding: 0.4rem 0.9rem;
+  font-size: 0.85rem;
   font-weight: 600;
   font-family: inherit;
   color: var(--color-text);
@@ -235,17 +286,39 @@ html.view-only .role-btn {
   padding: 2rem 1.25rem 1.25rem;
 }
 
-.theme-toggle {
+.settings-btn {
   position: absolute;
   top: 1rem;
   right: 1rem;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 50%;
-  width: 2.25rem;
-  height: 2.25rem;
-  font-size: 1.1rem;
+  width: 2.75rem;
+  height: 2.75rem;
+  font-size: 1.2rem;
   cursor: pointer;
+  box-shadow: var(--shadow-card);
+  transition: transform 0.2s ease;
+}
+
+.settings-btn:hover {
+  transform: rotate(30deg);
+}
+
+.presence-chip {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.4rem 0.7rem;
+  border-radius: 999px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
   box-shadow: var(--shadow-card);
 }
 
@@ -284,7 +357,8 @@ html.view-only .role-btn {
 
 .card h2 {
   margin: 0 0 0.75rem;
-  font-size: 1.05rem;
+  font-size: 1.15rem;
+  font-weight: 800;
 }
 
 .card-header-row {
@@ -296,6 +370,160 @@ html.view-only .role-btn {
 
 .card-header-row h2 {
   margin: 0;
+}
+
+/* Collapsible cards (Memory Verse, Bonus Points): a <details> styled as a
+   card. Collapsed by default for viewers, expanded for editors (set in JS). */
+.collapsible-card > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.collapsible-card > summary::-webkit-details-marker {
+  display: none;
+}
+.collapsible-card:not([open]) > summary {
+  margin-bottom: 0;
+}
+.card-chevron {
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--color-text-muted);
+  transition: transform 0.2s ease;
+}
+.collapsible-card[open] .card-chevron {
+  transform: rotate(90deg);
+}
+
+.summary-right {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+/* "Live now" home-screen card — a game in progress, surfaced + highlighted. */
+.live-home {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.live-home-card {
+  width: 100%;
+  text-align: left;
+  font-family: inherit;
+  color: var(--color-text);
+  background: var(--color-gold-bg);
+  border: 2px solid var(--color-danger);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 0.85rem 1rem;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  animation: live-pulse 2s ease-in-out infinite;
+}
+@keyframes live-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-danger) 45%, transparent); }
+  70%, 100% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--color-danger) 0%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-home-card { animation: none; }
+}
+.live-home-top {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.live-home-badge {
+  flex: 0 0 auto;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: #fff;
+  background: var(--color-danger);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+}
+.live-home-game {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+.live-home-score {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.live-home-score .lh-team {
+  flex: 1;
+  min-width: 0;
+  font-weight: 700;
+  font-size: 0.95rem;
+  overflow-wrap: break-word;
+}
+.live-home-score .lh-team:last-child {
+  text-align: right;
+}
+.live-home-score .lh-nums {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-size: 1.6rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
+}
+.live-home-score .lh-dash {
+  font-size: 1rem;
+  color: var(--color-text-muted);
+}
+.live-home-sub {
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+.live-home-matchup {
+  font-size: 1rem;
+  font-weight: 700;
+}
+.live-home-matchup .lh-vs {
+  color: var(--color-text-muted);
+  font-weight: 400;
+  margin: 0 0.2rem;
+}
+.live-home-ondeck {
+  display: block;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  border-top: 1px dashed var(--color-border);
+  padding-top: 0.4rem;
+  margin-top: 0.1rem;
+}
+
+/* "Your team + Notify" strip — always visible so viewers keep the watch
+   essentials even with Cumulative Totals collapsed. */
+.you-strip {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.you-strip .notify-btn {
+  width: 100%;
+}
+.you-strip:empty {
+  display: none;
+}
+
+/* On-deck line in the spectator game-view live-watch */
+.live-watch-ondeck {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-text);
 }
 
 .muted {
@@ -481,6 +709,575 @@ html.view-only .role-btn {
 }
 
 /* ============================================================
+   HAPPENING NOW BANNER
+   ============================================================ */
+.now-banner {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 0.85rem 1rem;
+}
+
+.now-eyebrow {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--color-primary);
+  margin-bottom: 0.4rem;
+}
+
+.now-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+}
+
+.now-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.now-emoji {
+  font-size: 1.7rem;
+  line-height: 1.15;
+}
+
+.now-label {
+  font-weight: 700;
+  font-size: 1.05rem;
+  line-height: 1.3;
+}
+
+.now-time {
+  color: var(--color-text-muted);
+  font-weight: 600;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.now-next {
+  margin-top: 0.15rem;
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+}
+
+.now-stations {
+  margin-top: 0.75rem;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.now-station {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  flex-wrap: wrap;
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
+  padding: 0.45rem 0.6rem;
+}
+
+.now-station-name {
+  font-weight: 700;
+  font-size: 0.88rem;
+  flex: 0 0 auto;
+}
+
+.now-kids {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.kid-chip {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.12rem 0.6rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+/* ── Happening Now: tappable affordance ── */
+.now-banner {
+  cursor: pointer;
+  transition: box-shadow 0.15s ease, transform 0.1s ease, border-color 0.15s ease;
+}
+
+.now-banner:hover {
+  border-left-color: var(--color-primary-dark);
+  box-shadow: var(--shadow-card-hover);
+}
+
+.now-banner:active {
+  transform: scale(0.992);
+}
+
+.now-banner:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+.now-eyebrow-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.now-eyebrow-row .now-eyebrow {
+  margin-bottom: 0;
+}
+
+.now-open-hint {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+
+/* Elapsed-time progress bar for the current block. */
+.now-progress {
+  margin-top: 0.6rem;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--color-border);
+  overflow: hidden;
+}
+.now-progress-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--color-primary);
+  transition: width 0.5s linear;
+}
+
+/* Slim one-line banner shown during competition blocks. */
+.now-slim {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.now-slim-label {
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+/* ============================================================
+   FULL WEEK SCHEDULE (bottom sheet)
+   ============================================================ */
+body.no-scroll {
+  overflow: hidden;
+}
+
+.schedule-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.schedule-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(16, 24, 40, 0.55);
+  backdrop-filter: blur(2px);
+  animation: sched-fade 0.2s ease;
+}
+
+.schedule-sheet {
+  position: relative;
+  width: 100%;
+  max-width: 640px;
+  max-height: 90vh;
+  max-height: 90dvh; /* iOS URL bar eats vh; dvh accounts for it */
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  box-shadow: var(--shadow-sheet);
+  animation: sched-slide 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  overflow: hidden;
+  touch-action: pan-y;
+}
+
+.schedule-overlay.closing .schedule-sheet {
+  animation: sched-slide-out 0.2s ease forwards;
+}
+.schedule-overlay.closing .schedule-backdrop {
+  animation: sched-fade-out 0.2s ease forwards;
+}
+
+@keyframes sched-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes sched-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes sched-slide {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+
+@keyframes sched-slide-out {
+  from { transform: translateY(0); }
+  to { transform: translateY(100%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .schedule-backdrop,
+  .schedule-sheet,
+  .schedule-overlay.closing .schedule-sheet,
+  .schedule-overlay.closing .schedule-backdrop { animation: none; }
+}
+
+/* ============================================================
+   TEAM PICKER (which team to follow)
+   ============================================================ */
+.team-picker-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1150;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+}
+
+.team-picker-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(16, 24, 40, 0.55);
+  backdrop-filter: blur(2px);
+}
+
+.team-picker-card {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  max-height: 85dvh;
+  overflow-y: auto;
+  background: var(--color-surface);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sheet);
+  padding: 1.5rem;
+  animation: team-picker-pop 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes team-picker-pop {
+  from { transform: scale(0.94); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .team-picker-card { animation: none; }
+}
+
+.team-picker-title {
+  margin: 0 0 0.4rem;
+  font-size: 1.2rem;
+}
+
+.team-picker-hint {
+  margin: 0 0 1rem;
+}
+
+.team-picker-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.team-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: 1rem;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.team-picker-option.selected {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
+}
+
+.team-picker-neutral {
+  margin-top: 0.4rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+.schedule-header {
+  flex: 0 0 auto;
+  padding: 0.5rem 1rem 0.75rem;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.schedule-grabber {
+  width: 2.5rem;
+  height: 0.3rem;
+  border-radius: 999px;
+  background: var(--color-border);
+  margin: 0.25rem auto 0.75rem;
+}
+
+.schedule-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.schedule-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+.schedule-close {
+  border: none;
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 50%;
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.schedule-close:hover {
+  background: var(--color-border);
+  color: var(--color-text);
+}
+
+.schedule-days {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 0.3rem;
+}
+
+.sched-day-chip {
+  position: relative;
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.2rem;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sched-day-chip.active {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
+}
+
+.schedule-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 1rem 1rem calc(2rem + env(safe-area-inset-bottom));
+}
+
+.sched-day-title {
+  margin: 0 0 1rem;
+  font-size: 1.05rem;
+  font-weight: 800;
+}
+
+.sched-day-tag {
+  color: var(--color-text-muted);
+  font-weight: 600;
+  font-size: 0.85rem;
+}
+
+.sched-timeline {
+  position: relative;
+}
+
+.sched-block {
+  display: grid;
+  grid-template-columns: 1.25rem 1fr;
+  gap: 0.65rem;
+}
+
+.sched-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.sched-dot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  background: var(--color-border);
+  margin-top: 0.9rem;
+  flex: 0 0 auto;
+  z-index: 1;
+}
+
+/* Connecting line between dots. */
+.sched-rail::after {
+  content: '';
+  flex: 1 1 auto;
+  width: 2px;
+  background: var(--color-border);
+  margin-top: -0.1rem;
+}
+
+.sched-block:last-child .sched-rail::after {
+  display: none;
+}
+
+.sched-card {
+  padding: 0.6rem 0.8rem 0.75rem;
+  margin-bottom: 0.6rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  min-width: 0;
+}
+
+.sched-time {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  letter-spacing: 0.01em;
+}
+
+.sched-now-pill {
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.08rem 0.45rem;
+  border-radius: 999px;
+}
+
+.sched-label {
+  margin-top: 0.2rem;
+  font-size: 0.98rem;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.sched-emoji {
+  font-size: 1.05rem;
+}
+
+/* Current block: highlighted card + filled primary dot. */
+.sched-block.now .sched-card {
+  border-color: var(--color-primary);
+  border-left-width: 4px;
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface));
+  box-shadow: var(--shadow-card);
+}
+
+.sched-block.now .sched-dot {
+  background: var(--color-primary);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--color-primary) 22%, transparent);
+}
+
+/* Past blocks: dimmed so the eye lands on what's next. */
+.sched-block.past .sched-card {
+  opacity: 0.55;
+}
+
+.sched-block.past .sched-dot {
+  background: color-mix(in srgb, var(--color-primary) 40%, var(--color-border));
+}
+
+/* Meal blocks get a warm accent. */
+.sched-block.meal .sched-card {
+  background: color-mix(in srgb, var(--color-gold) 8%, var(--color-surface));
+  border-color: color-mix(in srgb, var(--color-gold) 30%, var(--color-border));
+}
+
+.sched-block.meal.now .sched-card {
+  border-color: var(--color-primary);
+}
+
+/* Competition games listed inside a games block. */
+.sched-games {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.5rem;
+}
+
+.sched-game-chip {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.18rem 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.sched-game-chip.played {
+  background: var(--color-gold-bg);
+  border-color: color-mix(in srgb, var(--color-gold) 45%, var(--color-border));
+  color: var(--color-gold);
+}
+
+/* Electives listed inside an elective block. */
+.sched-stations {
+  margin-top: 0.5rem;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.sched-station {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.15rem 0.5rem;
+  font-size: 0.82rem;
+}
+
+.sched-station-name {
+  font-weight: 700;
+  flex: 0 0 auto;
+}
+
+.sched-station-kids {
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+/* ============================================================
    GAME VIEW
    ============================================================ */
 .back-btn {
@@ -558,7 +1355,7 @@ html.view-only .role-btn {
 }
 
 .primary-btn:hover {
-  background: var(--color-primary-dark);
+  background: var(--color-primary-hover);
 }
 
 .secondary-btn {
@@ -612,6 +1409,7 @@ html.view-only .role-btn {
 
 .standings-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.6rem;
   margin-bottom: 0.85rem;
 }
@@ -619,6 +1417,13 @@ html.view-only .role-btn {
 .standings-actions .secondary-btn {
   font-size: 0.88rem;
   padding: 0.6rem 0.5rem;
+  flex: 1 1 auto;
+  min-width: 6rem;
+}
+
+#notify-toggle-btn.active {
+  background: color-mix(in srgb, var(--color-primary) 14%, var(--color-surface));
+  color: var(--color-primary);
 }
 
 .copy-matchup-btn {
@@ -676,22 +1481,360 @@ html.view-only .role-btn {
   font-variant-numeric: tabular-nums;
 }
 
-.team-name-input {
-  width: 100%;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--color-text);
-  font-size: 0.95rem;
-  font-family: inherit;
-  padding: 0.3rem 0.4rem;
-  border-radius: 6px;
+.points-col {
+  width: 2.75rem;
+  text-align: center !important;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
 }
 
-.team-name-input:hover,
-.team-name-input:focus {
-  border-color: var(--color-border);
+/* Point-source columns: Bible memorization (📖) and meal cleanup (🧽). */
+.extra-col {
+  width: 2.4rem;
+  text-align: center !important;
+  font-variant-numeric: tabular-nums;
+}
+.extra-col .zero {
+  opacity: 0.35;
+}
+
+/* Podium tint for the top 3 (only applied when points > 0). */
+.podium-row td {
+  border-bottom-color: transparent;
+}
+.podium-row .rank-col {
+  font-weight: 800;
+}
+.podium-1 {
+  background: var(--color-gold-bg);
+  box-shadow: inset 3px 0 0 var(--color-gold);
+}
+.podium-1 .rank-col { color: var(--color-gold); }
+.podium-2 {
+  background: var(--color-silver-bg);
+  box-shadow: inset 3px 0 0 var(--color-silver);
+}
+.podium-2 .rank-col { color: var(--color-silver); }
+.podium-3 {
+  background: var(--color-bronze-bg);
+  box-shadow: inset 3px 0 0 var(--color-bronze);
+}
+.podium-3 .rank-col { color: var(--color-bronze); }
+
+/* Followed-team row — a distinct visual channel (outline) from the podium
+   tint (box-shadow) so the two combine cleanly when they overlap. */
+.following-row {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+.following-star {
+  font-size: 0.85em;
+}
+
+/* Dim zeroed medal counts so earned medals stand out. */
+.medal-col .zero {
+  opacity: 0.35;
+}
+
+/* Brief flash when a row's points change from a remote sync. */
+@keyframes points-pulse {
+  0% { background: color-mix(in srgb, var(--color-primary) 22%, transparent); }
+  100% { background: transparent; }
+}
+.points-pulse td {
+  animation: points-pulse 0.6s ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .points-pulse td { animation: none; }
+}
+
+/* "Your team" summary card. Each team sets --team-accent (renderFollowCard);
+   it falls back to the app primary so the neutral / no-shield states still work. */
+.follow-team-card {
+  margin-bottom: 0.85rem;
+  padding: 0.75rem 0.9rem;
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--team-accent, var(--color-primary)) 8%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--team-accent, var(--color-primary)) 25%, var(--color-border));
+}
+
+.follow-team-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.follow-team-emoji {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.follow-team-headings {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.follow-team-name {
+  font-weight: 700;
+  line-height: 1.15;
+}
+
+/* Rank + points sit under the name. */
+.follow-team-stats {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.5rem;
+  margin-top: 0.3rem;
+}
+
+/* Rank pill in the team accent, darkened just enough that white text stays
+   legible for every team color in both light and dark themes. */
+.follow-rank-pill {
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #fff;
+  background: color-mix(in srgb, var(--team-accent, var(--color-primary)) 84%, #000);
+  padding: 0.16rem 0.55rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.follow-points {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.follow-change-btn {
+  margin-left: auto;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+/* Crest card: the large shield alone on the left, all text on the right, over
+   a soft left-to-right wash in the team's accent with an accent border. */
+.follow-team-card.has-shield {
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+  padding: 0.9rem 1rem;
+  overflow: hidden;
+  border-radius: var(--radius-lg);
+  border: 1px solid color-mix(in srgb, var(--team-accent, var(--color-primary)) 40%, var(--color-border));
+  background:
+    radial-gradient(120% 135% at 0% 50%,
+      color-mix(in srgb, var(--team-accent, var(--color-primary)) 22%, var(--color-surface)),
+      color-mix(in srgb, var(--team-accent, var(--color-primary)) 6%, var(--color-surface)) 66%);
+}
+
+/* The shield is the only thing on the left; the text body fills the rest. */
+.follow-team-crest {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.follow-team-shield {
+  display: block;
+  height: 132px;
+  width: auto;
+  object-fit: contain;
+  filter: drop-shadow(0 5px 10px rgba(0, 0, 0, 0.30));
+}
+
+.follow-team-card.has-shield .follow-team-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Team name is the hero. */
+.follow-team-card.has-shield .follow-team-name {
+  font-size: 1.3rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+/* Stacked detail rows (up-next, next cleanup, your name). */
+.follow-next-line,
+.follow-you-line {
+  margin: 0.4rem 0 0;
+  font-size: 0.85rem;
+  line-height: 1.3;
+  color: var(--color-text);
+}
+
+.follow-neutral-line {
+  margin: 0;
+}
+
+.follow-you-line {
+  font-weight: 600;
+}
+.follow-you-empty {
+  font-weight: 500;
+  color: var(--color-text-muted);
+}
+
+/* "My electives today" card — glanceable time · emoji · station rows, sitting
+   under the follow card in the top .you-strip. */
+.my-electives-card {
+  margin-bottom: 0.85rem;
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--color-primary) 22%, var(--color-border));
+}
+.my-el-head {
+  margin-bottom: 0.5rem;
+}
+.my-el-title {
+  font-weight: 800;
+  font-size: 0.9rem;
+  letter-spacing: 0.01em;
+}
+.my-el-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.my-el-row {
+  display: grid;
+  grid-template-columns: 4.4rem 1.5rem 1fr auto;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.55rem;
+  border-radius: var(--radius-md);
   background: var(--color-bg);
-  outline: none;
+}
+.my-el-wx { justify-self: end; }
+.my-el-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+}
+.my-el-emoji {
+  font-size: 1.05rem;
+  text-align: center;
+  line-height: 1;
+}
+.my-el-station {
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+.my-el-row.is-break {
+  opacity: 0.72;
+}
+.my-el-row.is-break .my-el-station {
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+/* Forecast badge next to a future elective (schedule sheet + my-electives). */
+.wx-badge {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+.sched-label .wx-badge {
+  margin-left: 0.4rem;
+}
+
+/* "You" highlight — shared by the Happening-Now chips and the schedule sheet.
+   All tints ride --color-primary via color-mix, so dark theme adapts for free. */
+.kid-chip-you {
+  background: color-mix(in srgb, var(--color-primary) 18%, var(--color-surface));
+  border-color: var(--color-primary);
+  color: var(--color-primary-dark);
+  font-weight: 800;
+}
+.now-station-you,
+.sched-station-you {
+  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-bg));
+  border-radius: var(--radius-md);
+  box-shadow: inset 0 0 0 1.5px color-mix(in srgb, var(--color-primary) 45%, transparent);
+}
+/* Base .sched-station has no padding — give the highlighted row room so the
+   ring doesn't hug the text. */
+.sched-station-you {
+  padding: 0.35rem 0.5rem;
+}
+.sched-station-you .sched-station-name {
+  color: var(--color-primary-dark);
+}
+.sched-you {
+  color: var(--color-primary-dark);
+  font-weight: 800;
+}
+
+/* "+N bonus" note under a team's total. */
+.bonus-hint {
+  display: block;
+  margin-top: 0.1rem;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: var(--color-primary);
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.medal-points {
+  margin-left: auto;
+  font-size: 0.85rem;
+  font-weight: 600;
+  opacity: 0.85;
+  white-space: nowrap;
+}
+
+/* Static team identity (names are fixed for the week). */
+.team-cell {
+  padding: 0.4rem 0.4rem;
+}
+
+.team-name-line {
+  display: flex;
+  align-items: baseline;
+  gap: 0.35rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.team-emoji {
+  font-size: 1.1rem;
+  flex: 0 0 auto;
+}
+
+.team-name-text {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+
+.team-counselor-text {
+  margin-top: 0.1rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  line-height: 1.3;
+  overflow-wrap: break-word;
+}
+
+.chip-sub {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--color-text-muted);
+  line-height: 1.3;
+}
+
+.call-next-counselors {
+  margin: -0.5rem 0 0.85rem;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
 }
 
 /* ============================================================
@@ -759,6 +1902,534 @@ html.view-only .role-btn {
   color: var(--color-primary);
 }
 
+/* ============================================================
+   BONUS POINTS CARD
+   ============================================================ */
+.bonus-entry {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.bonus-cat-row,
+.bonus-meal-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.bonus-meal-row {
+  margin-top: 0.5rem;
+}
+
+.bonus-cat-chip,
+.bonus-meal-chip {
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s ease;
+}
+
+.bonus-meal-chip {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.8rem;
+}
+
+.bonus-cat-chip.selected,
+.bonus-meal-chip.selected {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+  color: var(--color-primary);
+}
+
+.bonus-custom-input,
+.bonus-points-input {
+  border: 1.5px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 0.95rem;
+  border-radius: var(--radius-md);
+  padding: 0.6rem 0.7rem;
+}
+
+.bonus-custom-input {
+  width: 100%;
+  margin-top: 0.5rem;
+}
+
+.bonus-custom-input:focus,
+.bonus-points-input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
+
+.bonus-entry-hint {
+  margin: 0.75rem 0 0.4rem;
+  font-size: 0.8rem;
+}
+
+.bonus-team-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.bonus-team-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.45rem 0.7rem;
+  font-size: 0.85rem;
+  border-radius: 999px;
+}
+
+.chip-emoji {
+  font-size: 1rem;
+}
+
+.bonus-add-row {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+
+.bonus-points-input {
+  width: 6rem;
+  flex: 0 0 auto;
+}
+
+.bonus-add-row .primary-btn {
+  width: auto;
+  flex: 1;
+}
+
+.bonus-sign-btn {
+  flex: 0 0 auto;
+  width: 2.75rem;
+  font-size: 1.4rem;
+  font-weight: 800;
+  line-height: 1;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-primary);
+  cursor: pointer;
+}
+
+.bonus-sign-btn.neg {
+  color: var(--color-danger);
+  border-color: var(--color-danger);
+  background: var(--color-gold-bg);
+  background: color-mix(in srgb, var(--color-danger) 12%, var(--color-surface));
+}
+
+.bonus-subtotals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.85rem;
+}
+
+.bonus-subtotal-chip {
+  background: var(--color-gold-bg);
+  color: var(--color-gold);
+  border-radius: 999px;
+  padding: 0.25rem 0.7rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+/* ============================================================
+   BROWNIE POINTS CARD
+   ============================================================ */
+.brownie-team-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.brownie-team-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  background: var(--color-bg);
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.65rem 0.85rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-text);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s ease;
+}
+
+.brownie-team-btn:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
+}
+
+.brownie-team-btn:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.brownie-team-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.brownie-count {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text-muted);
+  font-weight: 700;
+}
+
+.bonus-ledger {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.bonus-item {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.55rem 0.7rem;
+}
+
+.bonus-item-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.bonus-item-team {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 700;
+  overflow-wrap: break-word;
+}
+
+.bonus-item-label {
+  display: block;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+  overflow-wrap: break-word;
+}
+
+.bonus-item-pts {
+  flex: 0 0 auto;
+  font-size: 1rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
+}
+
+.bonus-item-pts.neg {
+  color: var(--color-danger);
+}
+
+.bonus-remove-btn {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+  cursor: pointer;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.bonus-remove-btn:hover {
+  background: color-mix(in srgb, var(--color-danger) 15%, transparent);
+  color: var(--color-danger);
+}
+
+.bonus-empty {
+  margin: 0.5rem 0 0;
+}
+
+/* ============================================================
+   MEMORY VERSE CARD
+   (reuses .bonus-team-chips, .bonus-add-row, .bonus-subtotals,
+    .bonus-ledger, .bonus-item, .bonus-entry-hint)
+   ============================================================ */
+.verse-theme {
+  background: var(--color-gold-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.85rem;
+  margin-bottom: 0.85rem;
+}
+
+.verse-theme-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-gold);
+  margin-bottom: 0.35rem;
+}
+
+.verse-theme-text {
+  margin: 0 0 0.3rem;
+  font-size: 0.9rem;
+  font-style: italic;
+  line-height: 1.45;
+  color: var(--color-text);
+}
+
+.verse-theme-ref {
+  margin: 0;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.verse-day-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.75rem;
+}
+
+.verse-day-chip {
+  position: relative;
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-border);
+  border-radius: 999px;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text);
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s ease;
+}
+
+.verse-day-chip.selected {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+  color: var(--color-primary);
+}
+
+.verse-day-chip .today-dot {
+  margin-left: 0.35rem;
+}
+
+.verse-day-card {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  padding: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+.verse-day-name {
+  display: block;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-primary);
+  margin-bottom: 0.4rem;
+}
+
+.verse-day-text {
+  margin: 0 0 0.4rem;
+  font-size: 1rem;
+  line-height: 1.5;
+  color: var(--color-text);
+}
+
+.verse-day-ref {
+  margin: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.verse-entry {
+  margin-bottom: 1rem;
+}
+
+/* ============================================================
+   MEAL CLEANUP CARD  (reuses .verse-day-*, .bonus-* classes)
+   ============================================================ */
+.cleanup-rota {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.25rem 0 1rem;
+}
+.cleanup-meal-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.55rem 0.7rem;
+}
+.cleanup-meal-name {
+  flex: 0 0 auto;
+  font-weight: 700;
+  font-size: 0.9rem;
+  min-width: 6.2rem;
+}
+.cleanup-meal-team {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  overflow-wrap: break-word;
+}
+.cleanup-tba {
+  color: var(--color-text-muted);
+  font-weight: 600;
+  font-style: italic;
+}
+.cleanup-meal-pts {
+  flex: 0 0 auto;
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--color-gold);
+  font-variant-numeric: tabular-nums;
+}
+
+/* "Break" pseudo-station (kids not in an elective slot) — muted vs stations. */
+.now-break .now-station-name,
+.sched-break .sched-station-name {
+  color: var(--color-text-muted);
+  font-style: italic;
+}
+
+/* "🧽 <team>" cleanup note shown next to a meal wherever it's mentioned. */
+.meal-cleanup-note {
+  display: inline-block;
+  white-space: nowrap;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  margin-left: 0.35rem;
+}
+
+/* Fixed Round 1 matchup order (e.g. Kangaroo Kickball) */
+.matchup-order {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.85rem;
+  margin: 0.5rem 0 0.75rem;
+}
+
+.matchup-order-label {
+  margin: 0 0 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.matchup-order-list {
+  list-style: none;
+  counter-reset: mo;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.matchup-order-item {
+  counter-increment: mo;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.55rem 0.7rem 0.55rem 2.2rem;
+  position: relative;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  font-size: 0.9rem;
+}
+
+.matchup-order-item::before {
+  content: counter(mo);
+  position: absolute;
+  left: 0.7rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 0.8rem;
+  font-weight: 800;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.matchup-order-item.mo-current {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+}
+
+.matchup-order-item.mo-done {
+  opacity: 0.72;
+}
+
+.mo-teams {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  overflow-wrap: break-word;
+}
+
+.mo-vs {
+  font-weight: 400;
+  color: var(--color-text-muted);
+  margin: 0 0.15rem;
+  font-size: 0.82rem;
+}
+
+.mo-now {
+  flex: 0 0 auto;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: var(--color-primary);
+  background: var(--color-surface);
+  border: 1.5px solid var(--color-primary);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+}
+
+.mo-result {
+  flex: 0 0 auto;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--color-gold);
+}
+
 .matchup-callout {
   background: var(--color-gold-bg);
   border-radius: var(--radius-md);
@@ -767,6 +2438,239 @@ html.view-only .role-btn {
   text-align: center;
 }
 
+/* Live match scorekeeper (innings + per-team tally) */
+.live-tracker {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.85rem;
+  margin: 0 0 0.75rem;
+}
+
+.live-row {
+  padding: 0.4rem 0;
+}
+.live-row + .live-row {
+  border-top: 1px solid var(--color-border);
+}
+
+.live-label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  margin-bottom: 0.35rem;
+}
+
+.live-inning-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.live-inning-row .live-label {
+  margin-bottom: 0;
+}
+
+.live-hr-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.3rem 0;
+}
+
+.live-hr-team {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  font-size: 0.92rem;
+  overflow-wrap: break-word;
+}
+
+.live-stepper {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+}
+
+.live-btn {
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-primary);
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1;
+  cursor: pointer;
+  font-family: inherit;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+.live-btn:active {
+  background: color-mix(in srgb, var(--color-primary) 15%, var(--color-surface));
+}
+
+.live-val {
+  min-width: 1.6rem;
+  text-align: center;
+  font-size: 1.3rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+}
+
+.live-of {
+  font-size: 0.8rem;
+  color: var(--color-text-muted);
+  margin-left: -0.2rem;
+}
+
+.live-outs-pips {
+  min-width: 3.2rem;
+  text-align: center;
+  font-size: 1.15rem;
+  letter-spacing: 0.15rem;
+  color: var(--color-danger);
+  line-height: 1;
+}
+
+.live-kicking-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.live-kicking-ctrl {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+.live-kicking-team {
+  font-weight: 700;
+  font-size: 0.95rem;
+  text-align: right;
+  overflow-wrap: break-word;
+}
+.live-switch-btn {
+  font-size: 1.1rem;
+  color: var(--color-text-muted);
+}
+
+.live-watch-kicking {
+  margin: 0.25rem 0 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.live-reset {
+  display: block;
+  margin: 0.5rem auto 0;
+  font-size: 0.8rem;
+}
+
+/* Read-only spectator view of a live match */
+.live-watch {
+  background: var(--color-gold-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 1rem;
+  text-align: center;
+}
+
+.live-watch-label {
+  margin: 0 0 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+}
+
+.live-watch-score {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.live-watch-score .lw-team {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  font-size: 1.6rem;
+  line-height: 1;
+}
+.lw-name {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-text);
+  overflow-wrap: break-word;
+}
+
+.lw-nums {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+.lw-num {
+  font-size: 2.4rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-primary);
+}
+.lw-dash {
+  font-size: 1.4rem;
+  color: var(--color-text-muted);
+}
+
+.live-watch-inning {
+  margin: 0.6rem 0 0;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.live-watch-matchup {
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+.live-watch-matchup .lw-vs {
+  color: var(--color-text-muted);
+  font-weight: 400;
+  margin: 0 0.25rem;
+}
+
+.live-watch-note {
+  margin: 0.6rem 0 0;
+  font-size: 0.78rem;
+}
+
+.live-watch-done {
+  margin-top: 0.85rem;
+  text-align: left;
+  border-top: 1px solid var(--color-border);
+  padding-top: 0.6rem;
+}
+.live-watch-done p { margin: 0 0 0.3rem; font-size: 0.78rem; }
+.live-watch-done ul { margin: 0; padding-left: 1.1rem; font-size: 0.85rem; }
+.live-watch-done li { margin: 0.15rem 0; }
+
 .call-next-label {
   margin: 0 0 0.25rem;
   font-size: 0.8rem;
@@ -774,6 +2678,22 @@ html.view-only .role-btn {
   letter-spacing: 0.04em;
   color: var(--color-text-muted);
   font-weight: 700;
+}
+
+.matchup-mascots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  margin: 0.25rem 0 0.5rem;
+  line-height: 1;
+}
+.matchup-mascot {
+  font-size: 2.75rem;
+}
+.matchup-vs-emoji {
+  font-size: 1.4rem;
+  opacity: 0.85;
 }
 
 .call-next-teams {
@@ -815,10 +2735,6 @@ html.view-only .role-btn {
 /* ============================================================
    TIMERS, STOPWATCH & COUNTERS
    ============================================================ */
-.sound-toggle {
-  right: auto;
-  left: 1rem;
-}
 
 .tool-box {
   border: 1.5px solid var(--color-border);
@@ -1015,10 +2931,9 @@ html.view-only .role-btn {
 
 .counter-btn-sub {
   font-size: 0.65rem;
-  font-weight: 600;
+  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  opacity: 0.75;
 }
 
 .score-input-row.with-counter {
@@ -1261,6 +3176,9 @@ html.view-only .role-btn {
 }
 
 .medal-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
   padding: 0.75rem 1rem;
   border-radius: var(--radius-md);
   font-size: 1.05rem;
@@ -1288,6 +3206,61 @@ html.view-only .role-btn {
 }
 
 /* ============================================================
+   TOASTS (point-change / matchup alerts)
+   ============================================================ */
+.toast-container {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(1rem + env(safe-area-inset-bottom));
+  z-index: 2200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 1rem;
+  pointer-events: none;
+}
+
+.toast {
+  max-width: 420px;
+  width: 100%;
+  background: var(--color-surface);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-card-hover);
+  padding: 0.7rem 0.9rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  animation: toast-in 0.22s ease;
+}
+
+.toast-mine {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+}
+
+.toast-out {
+  animation: toast-out 0.25s ease forwards;
+}
+
+@keyframes toast-in {
+  from { transform: translateY(12px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes toast-out {
+  from { transform: translateY(0); opacity: 1; }
+  to { transform: translateY(12px); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast,
+  .toast-out { animation: none; }
+}
+
+/* ============================================================
    RESPONSIVE
    ============================================================ */
 @media (max-width: 420px) {
@@ -1298,22 +3271,478 @@ html.view-only .role-btn {
   .score-input-row input {
     width: 5.5rem;
   }
+
+  /* Keep the shield large and on the left on phones too — just trim the
+     shield and name a touch so the text column isn't cramped. */
+  .follow-team-card.has-shield {
+    gap: 0.85rem;
+    padding: 0.8rem 0.85rem;
+  }
+
+  .follow-team-card.has-shield .follow-team-shield {
+    height: 112px;
+  }
+
+  .follow-team-card.has-shield .follow-team-name {
+    font-size: 1.15rem;
+  }
+}
+
+/* ============================================================
+   WHAT'S NEW BANNERS (auto-expire 2h after each change)
+   ============================================================ */
+.whats-new {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.whats-new-banner {
+  position: relative;
+  background: var(--color-gold-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.6rem 2.2rem 0.7rem 0.8rem; /* room for the dismiss button at right */
+}
+.whats-new-badge {
+  display: inline-block;
+  margin-bottom: 0.35rem;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+  border-radius: 999px;
+  padding: 0.14rem 0.5rem;
+}
+.whats-new-text {
+  display: block;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--color-text);
+  line-height: 1.35;
+}
+.whats-new-dismiss {
+  position: absolute;
+  top: 0.4rem;
+  right: 0.4rem;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 1.1rem;
+  font-weight: 800;
+  line-height: 1;
+  padding: 0.1rem 0.35rem;
+  cursor: pointer;
+  font-family: inherit;
+  border-radius: var(--radius-md);
+}
+.whats-new-dismiss:active { background: color-mix(in srgb, var(--color-text-muted) 20%, transparent); }
+
+/* New-version tap-to-refresh bar (auto-reload on deploy) */
+.update-banner {
+  position: fixed;
+  left: 50%;
+  bottom: 1rem;
+  transform: translateX(-50%);
+  z-index: 60;
+  max-width: calc(100% - 2rem);
+  border: none;
+  border-radius: 999px;
+  padding: 0.7rem 1.2rem;
+  background: var(--color-primary);
+  color: #fff;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+
+/* ============================================================
+   LADDER BALL LIVE SCORER
+   ============================================================ */
+.ladder-tracker {
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.85rem;
+  margin: 0 0 0.75rem;
+  text-align: center;
+}
+.ladder-target {
+  margin: 0 0 0.7rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+.ladder-teams {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0.6rem;
+  margin-bottom: 0.75rem;
+}
+.ladder-team {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.6rem 0.5rem;
+  background: var(--color-surface);
+}
+.ladder-team-head { margin-bottom: 0.3rem; }
+.ladder-team-name {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-text);
+  overflow-wrap: break-word;
+}
+.ladder-total {
+  display: block;
+  font-size: 2.4rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+  color: var(--color-primary);
+}
+.ladder-round-line {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  margin-bottom: 0.45rem;
+}
+.ladder-round-val { font-weight: 800; color: var(--color-text); }
+.ladder-rungs {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.35rem;
+}
+.ladder-rung {
+  width: auto;
+  height: auto;
+  border-radius: 999px;
+  padding: 0.4rem 0.65rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+.ladder-clear { font-size: 1.1rem; color: var(--color-text-muted); }
+.ladder-score-round { margin: 0.25rem auto 0; }
+.ladder-undo { display: block; margin: 0.5rem auto 0; font-size: 0.8rem; }
+.ladder-won {
+  margin: 0.7rem 0 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--color-text);
+}
+/* Once a team hits 21, spotlight the "won" button that advances the bracket. */
+.winner-btn.winner-ready {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 18%, var(--color-surface));
+  color: var(--color-primary);
+  font-weight: 800;
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 35%, transparent);
+}
+/* Bye screen: the suggested (lowest-points) winner */
+.team-chip.suggested-chip {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+}
+
+/* ============================================================
+   PICTIONARY ITEM-SOURCE CHOOSER + CUSTOM WORDS
+   ============================================================ */
+.pic-setup { text-align: center; padding: 0.5rem 0; }
+.pic-setup-q { font-weight: 700; margin: 0 0 0.6rem; }
+.pic-setup-opts { display: flex; flex-direction: column; gap: 0.5rem; }
+.pic-setup-hint { margin-top: 0.6rem; }
+.pic-mode-strip {
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+  margin-bottom: 0.5rem;
+}
+.pic-mode-strip strong { color: var(--color-text); }
+.pic-words-editor {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.5rem 0.7rem;
+  margin-bottom: 0.7rem;
+}
+.pic-words-editor > summary { font-weight: 700; cursor: pointer; }
+.pic-words-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+  margin-top: 0.6rem;
+}
+.pic-word-row { display: flex; align-items: center; gap: 0.35rem; }
+.pic-word-num { color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+.pic-word-row input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 8px);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 0.9rem;
+}
+
+/* ============================================================
+   LIVE TALLY LEADERBOARD (viewer board for Bowling / Pictionary)
+   ============================================================ */
+.live-watch-board { text-align: left; }
+.live-watch-board .live-watch-label { text-align: center; }
+.live-watch-board-sub {
+  text-align: center;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+  margin: 0 0 0.6rem;
+}
+.lw-rank-list { list-style: none; margin: 0; padding: 0; }
+.lw-rank-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.2rem;
+}
+.lw-rank-row + .lw-rank-row { border-top: 1px solid var(--color-border); }
+.lw-rank-row.lw-podium { font-weight: 700; }
+.lw-rank { min-width: 1.6rem; text-align: center; font-variant-numeric: tabular-nums; }
+.lw-rank-team { flex: 1; min-width: 0; overflow-wrap: break-word; }
+.lw-rank-score { font-variant-numeric: tabular-nums; font-weight: 700; }
+.live-watch-suggest {
+  margin: 0.7rem 0 0;
+  padding-top: 0.6rem;
+  border-top: 1px dashed var(--color-border);
+  font-weight: 700;
+  text-align: center;
+}
+
+/* ============================================================
+   SETTINGS SHEET (gear overlay) — appearance, sound, score access,
+   and the "Stalling with Patrick" presenter link
+   ============================================================ */
+/* Reuses the schedule sheet's overlay/backdrop/slide machinery
+   (.settings-overlay mirrors .schedule-overlay) so the two bottom
+   sheets feel identical. */
+.settings-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.settings-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(16, 24, 40, 0.55);
+  backdrop-filter: blur(2px);
+  animation: sched-fade 0.2s ease;
+}
+
+.settings-sheet {
+  position: relative;
+  width: 100%;
+  max-width: 640px;
+  max-height: 90vh;
+  max-height: 90dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg);
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  box-shadow: var(--shadow-sheet);
+  animation: sched-slide 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  overflow: hidden;
+}
+
+.settings-overlay.closing .settings-sheet {
+  animation: sched-slide-out 0.2s ease forwards;
+}
+.settings-overlay.closing .settings-backdrop {
+  animation: sched-fade-out 0.2s ease forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-backdrop,
+  .settings-sheet,
+  .settings-overlay.closing .settings-sheet,
+  .settings-overlay.closing .settings-backdrop { animation: none; }
+}
+
+.settings-header {
+  flex: 0 0 auto;
+  padding: 0.5rem 1rem 0.75rem;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.settings-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settings-title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 800;
+}
+
+.settings-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  padding: 1rem 1rem calc(1.5rem + env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.settings-row,
+.settings-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem;
+}
+
+.settings-row-label {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  font-size: 0.98rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.settings-row-emoji {
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+/* The theme + sound toggles: compact round icon buttons on the right. */
+.settings-toggle {
+  flex: 0 0 auto;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+  border-radius: 50%;
+  width: 2.75rem;
+  height: 2.75rem;
+  font-size: 1.2rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+}
+
+.settings-toggle:hover {
+  background: var(--color-border);
+}
+
+/* The presenter link is a full tappable row. */
+.settings-link {
+  text-decoration: none;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.settings-link:hover {
+  border-color: var(--color-primary);
+}
+
+.settings-link-chevron {
+  font-size: 1.3rem;
+  color: var(--color-text-muted);
+  line-height: 1;
+}
+
+/* The Change-history row is a <button> styled like the link rows. */
+button.settings-link {
+  width: 100%;
+  font-family: inherit;
+  font-size: 1rem;
+  color: var(--color-text);
+  text-align: left;
+}
+
+/* Editors only — hidden for view-only devices, like the other edit tools. */
+html.view-only #history-row {
+  display: none;
+}
+
+/* ── Change-history sheet contents ── */
+.history-sub {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+}
+
+.cl-day {
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-muted);
+  margin: 0.4rem 0 -0.1rem;
+}
+
+.cl-entry {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.6rem 0.8rem;
+}
+
+.cl-entry-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.cl-team {
+  font-weight: 700;
+}
+
+.cl-delta {
+  font-weight: 800;
+  font-size: 0.9rem;
+  white-space: nowrap;
+}
+
+.cl-pos { color: var(--color-primary); }
+.cl-neg { color: var(--color-danger); }
+
+.cl-entry-sub {
+  font-size: 0.85rem;
+  color: var(--color-text);
+  margin-top: 0.2rem;
+}
+
+.cl-entry-meta {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  margin-top: 0.2rem;
 }
 
 /* ============================================================
    SETTINGS / BUILDER
    ============================================================ */
 
-/* The settings entry point shares .theme-toggle in HTML; only its
-   view-only visibility rule lives here. */
-/* Gear stacks below the theme toggle (both share .theme-toggle's absolute
-   positioning; side by side they'd crowd the centered logo on phones). */
-.settings-toggle {
-  top: 3.6rem;
-  right: 1rem;
+/* The builder opens full-page: hide everything else in main-wrap (and the
+   footer) while it's up, so the collapsible cards don't render beneath it. */
+body.builder-open .main-wrap > :not(#settings-view),
+body.builder-open #app-footer {
+  display: none;
 }
 
-html.view-only .settings-toggle {
+html.view-only #builder-row {
   display: none;
 }
 
@@ -1712,4 +4141,17 @@ select.form-input {
   font-weight: 700;
   font-size: 0.9rem;
   margin-bottom: 0.25rem;
+}
+
+/* Team builder rows carry two stacked inputs (name + counselor). */
+.team-builder-fields {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.team-builder-fields .team-counselor-input {
+  font-size: 14px;
 }

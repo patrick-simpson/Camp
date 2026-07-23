@@ -257,7 +257,6 @@ function newGameShape() {
     format: null,
     headline: '',
     rules: [],
-    pointsMultiplier: 1,
   };
 }
 
@@ -413,7 +412,7 @@ function extrasHTML(draft) {
       <label class="form-label">Drawing prompts (one per line — adds the photo/stopwatch drawing round)</label>
       <textarea class="form-textarea" id="gd-prompts" rows="4" placeholder="Pumpkin&#10;Scarecrow">${esc(draft.prompts || '')}</textarea>
     </div>
-    <label class="checkbox-field"><input type="checkbox" id="gd-double" ${draft.pointsMultiplier === 2 ? 'checked' : ''}> 🎉 Double points game (counts 2× on the paper scoreboard)</label>
+    <label class="checkbox-field"><input type="checkbox" id="gd-double" ${draft.messtival ? 'checked' : ''}> 🎉 Messtival game (medals count DOUBLE points in the standings)</label>
   `;
 }
 
@@ -484,7 +483,10 @@ function wireGameEditor(card) {
   if (timerPresetsInput) timerPresetsInput.addEventListener('input', (e) => { draft.timer.presets = e.target.value; });
 
   document.getElementById('gd-prompts').addEventListener('input', (e) => { draft.prompts = e.target.value; });
-  document.getElementById('gd-double').addEventListener('change', (e) => { draft.pointsMultiplier = e.target.checked ? 2 : 1; });
+  document.getElementById('gd-double').addEventListener('change', (e) => {
+    if (e.target.checked) draft.messtival = true;
+    else delete draft.messtival;
+  });
 
   card.querySelectorAll('.rules-h-input').forEach((input) => {
     input.addEventListener('input', (e) => { draft.rules[parseInt(e.target.dataset.idx, 10)].h = e.target.value; });
@@ -531,6 +533,13 @@ function leaveGameEditor() {
 function validateGameDraft(draft) {
   if (!draft.name || !draft.name.trim()) return 'Give the game a name.';
   if (!draft.format) return 'Pick a format.';
+  // The drawing-round machinery (picRounds, photo keys, picSetup words) is
+  // keyed by team only, not by game — two prompt games would share and
+  // corrupt each other's rounds. Hard limit: one drawing game per week.
+  if (String(draft.prompts || '').trim()) {
+    const other = state.config.games.find((g) => g.id !== draft.id && Array.isArray(g.prompts) && g.prompts.length);
+    if (other) return 'Only one game can have drawing prompts — remove them from "' + other.name + '" first.';
+  }
   if (draft.format === 'tally' && draft.counterSteps && draft.counterSteps.trim()) {
     const tokens = draft.counterSteps.split(',').map((t) => t.trim());
     const bad = tokens.some((t) => !t || isNaN(parseFloat(t)) || parseFloat(t) <= 0);
@@ -587,8 +596,7 @@ function saveGameDraft() {
     else delete out.prompts;
   }
 
-  if (out.pointsMultiplier === 2) out.pointsMultiplier = 2;
-  else delete out.pointsMultiplier;
+  if (!out.messtival) delete out.messtival;
 
   out.rules = (out.rules || [])
     .map((sec) => ({ h: (sec.h || '').trim(), items: splitLines(sec.items) }))
@@ -621,10 +629,17 @@ function saveGameDraft() {
 }
 
 function duplicateGame() {
+  // Duplicates the SAVED game — warn if the open editor has unsaved edits,
+  // otherwise they'd silently be left out of the copy.
+  if (JSON.stringify(gameDraft) !== gameDraftSnapshot &&
+      !confirm('You have unsaved edits — the duplicate is made from the last saved version. Continue?')) {
+    return;
+  }
   const original = gameById(gameDraft.id);
   if (!original) return;
   const copy = JSON.parse(JSON.stringify(original));
   copy.name = copy.name + ' (copy)';
+  delete copy.prompts; // only one drawing-prompts game is supported per week
   const taken = new Set([...(state.config.games || []).map((g) => g.id), ...Object.keys(state.results || {})]);
   copy.id = makeId(copy.name, taken);
   const idx = state.config.games.findIndex((g) => g.id === original.id);
@@ -659,6 +674,8 @@ function deleteGame(gameId) {
   delete state.results[gameId];
   delete state.brackets[gameId];
   delete state.drafts[gameId];
+  if (state.picSetup) delete state.picSetup[gameId];
+  if (state.live) delete state.live[gameId];
   if (state.ui.gameId === gameId) state.ui.gameId = null;
   state.ui.editGameId = null;
   gameDraft = null;
@@ -792,10 +809,13 @@ function renderTeamsTab(card) {
 function teamRowHTML(team, i, total) {
   const disableDelete = total <= 2;
   return `
-    <div class="builder-row">
+    <div class="builder-row team-builder-row">
       <button type="button" class="reorder-btn" data-team-id="${esc(team.id)}" data-dir="-1" ${i === 0 ? 'disabled' : ''}>↑</button>
       <button type="button" class="reorder-btn" data-team-id="${esc(team.id)}" data-dir="1" ${i === total - 1 ? 'disabled' : ''}>↓</button>
-      <input class="form-input team-name-input" data-team-id="${esc(team.id)}" type="text" value="${esc(team.name)}">
+      <span class="team-builder-fields">
+        <input class="form-input team-name-input" data-team-id="${esc(team.id)}" type="text" value="${esc(team.name)}" aria-label="Team name">
+        <input class="form-input team-counselor-input" data-team-id="${esc(team.id)}" type="text" value="${esc(team.counselor || '')}" placeholder="Counselor(s)" aria-label="Counselors">
+      </span>
       <button type="button" class="row-delete-btn" data-team-id="${esc(team.id)}" ${disableDelete ? 'disabled title="Keep at least 2 teams"' : ''}>✕</button>
     </div>
   `;
@@ -823,6 +843,16 @@ function wireTeamsTab(card) {
     });
   });
 
+  card.querySelectorAll('.team-counselor-input').forEach((input) => {
+    input.addEventListener('change', () => {
+      const team = state.teams.find((t) => t.id === input.dataset.teamId);
+      if (!team) return;
+      team.counselor = input.value.trim();
+      saveState();
+      renderAll();
+    });
+  });
+
   card.querySelectorAll('.row-delete-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       if (btn.disabled) return;
@@ -833,7 +863,7 @@ function wireTeamsTab(card) {
   const addBtn = document.getElementById('add-team-btn');
   if (addBtn) {
     addBtn.addEventListener('click', () => {
-      state.teams.push({ id: 't-' + Date.now().toString(36), name: 'Team ' + (state.teams.length + 1) });
+      state.teams.push({ id: 't-' + Date.now().toString(36), name: 'Team ' + (state.teams.length + 1), counselor: '' });
       saveState();
       renderAll();
     });
@@ -848,6 +878,11 @@ function deleteTeam(teamId) {
   if (refs.medalCount > 0) {
     const plural = refs.medalCount === 1 ? '' : 's';
     alert('"' + team.name + '" has ' + refs.medalCount + ' medal' + plural + ' in saved results (' + refs.resultGames.join(', ') + '). Rename the team instead, or clear those results first.');
+    return;
+  }
+  const bonusCount = Object.values(state.bonuses || {}).filter((b) => b && b.teamId === teamId).length;
+  if (bonusCount > 0) {
+    alert('"' + team.name + '" has ' + bonusCount + ' bonus point entr' + (bonusCount === 1 ? 'y' : 'ies') + ' (verse/cleanup/bonus). Rename the team instead, or remove those points first.');
     return;
   }
 
@@ -879,6 +914,7 @@ function removeTeamEverywhere(teamId) {
     }
   });
   if (state.picRounds) delete state.picRounds[teamId];
+  if (state.brownie) delete state.brownie[teamId];
 }
 
 // ── Data tab ──────────────────────────────────────────────────────
@@ -893,6 +929,10 @@ function backupJSON() {
     brackets: state.brackets,
     drafts: state.drafts,
     picRounds: state.picRounds,
+    picSetup: state.picSetup,
+    bonuses: state.bonuses,
+    brownie: state.brownie,
+    live: state.live,
   };
   return JSON.stringify(payload, null, 2);
 }
@@ -977,13 +1017,31 @@ function tryImport(text) {
 
   state.config = config;
   migrateState(state);
-  ['teams', 'results', 'brackets', 'drafts', 'picRounds'].forEach((key) => {
-    if (parsed[key] !== undefined) state[key] = parsed[key];
+  // Only accept correctly-typed sections — a hand-edited backup with e.g.
+  // "results": null would crash every render after it had already synced.
+  if (Array.isArray(parsed.teams) && parsed.teams.length) state.teams = parsed.teams;
+  ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'brownie', 'live'].forEach((key) => {
+    const v = parsed[key];
+    if (v && typeof v === 'object' && !Array.isArray(v)) state[key] = v;
   });
+  pruneOrphanedGameData();
 
   saveConfig();
   saveState();
   renderAll();
+}
+
+// Drop results/brackets/drafts for game ids that no longer exist in the
+// config — otherwise their medals keep counting in standings forever with
+// no UI left to clear them.
+function pruneOrphanedGameData() {
+  const ids = new Set((state.config.games || []).map((g) => g.id));
+  ['results', 'brackets', 'drafts', 'picSetup', 'live'].forEach((key) => {
+    Object.keys(state[key] || {}).forEach((gid) => {
+      if (!ids.has(gid)) delete state[key][gid];
+    });
+  });
+  if (state.ui.gameId && !ids.has(state.ui.gameId)) state.ui.gameId = null;
 }
 
 function restoreDefaults() {
@@ -994,6 +1052,7 @@ function restoreDefaults() {
   if (!state.config.days.some((d) => d.id === state.ui.day)) {
     state.ui.day = state.config.days[0] ? state.config.days[0].id : null;
   }
+  pruneOrphanedGameData(); // custom games' results would otherwise haunt the standings
   saveConfig();
   saveState();
   renderAll();

@@ -1,0 +1,13 @@
+{
+  "name": "Camp",
+  "short_name": "Camp",
+  "description": "Live camp game scoring — standings, schedule, and team medals.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f4f6f9",
+  "theme_color": "#3355ff",
+  "icons": [
+    { "src": "apple-touch-icon.png", "sizes": "180x180", "type": "image/png", "purpose": "any" }
+  ]
+}
