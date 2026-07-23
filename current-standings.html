@@ -240,7 +240,7 @@
     // silently never took effect until someone thought to hit refresh (this
     // bit the double-points fix on 2026-07-23). Bump this stamp on every
     // edit to this file; see checkForUpdate/startUpdatePolling below.
-    var TV_BUILD = '2026-07-23T23:45:00Z';
+    var TV_BUILD = '2026-07-24T00:20:00Z';
 
     // ── Constants mirrored from app.js (keep in sync) ──────────────
     var STORAGE_KEY = 'campScoreboardV2';
@@ -258,9 +258,16 @@
       t4: 'images/team-shields/patriotic-pilgrims.webp?v=5',
       t5: 'images/team-shields/runaway-john-deeres.webp?v=5'
     };
-    // messtival:true games in app.js — worth DOUBLE points (Friday, plus
-    // Thursday evening per Patrick's call 2026-07-23). Keep in sync.
+    // Double-points games. The REAL source of truth is the live synced week
+    // config (campScoreboard/config — each game's `messtival` flag), exactly
+    // what the main scoreboard reads; a hardcoded list can't know about games
+    // added or edited in the week builder (that's how lauras-drinking-game
+    // was paid single here while the main site doubled it, 2026-07-23).
+    // `doubledGameIds` is filled from the live config (or the localStorage
+    // fallback state's embedded config); this static list is only the
+    // last-resort default when neither is available (e.g. ?demo).
     var MESSTIVAL_GAME_IDS = ['bushel-bustle', 'pumpkin-patch-plunder', 'bob-drop-roll', 'cider-survivor', 'counselor-hide-seek', 'team-skits'];
+    var doubledGameIds = null;
     // Thu 5pm ET → Fri midnight ET: verse + custom bonuses count double
     // (meal cleanup exempt). Mirrors app.js bonusCountsDouble — keep in sync.
     var DOUBLE_BONUS_START = Date.parse('2026-07-23T21:00:00Z');
@@ -319,10 +326,11 @@
       teams.forEach(function (t) {
         counts[t.id] = { gold: 0, silver: 0, bronze: 0, medalPts: 0, verse: 0, meals: 0, custom: 0, bonus: 0, points: 0 };
       });
+      var doubled = doubledGameIds || MESSTIVAL_GAME_IDS;
       Object.keys(results).forEach(function (id) {
         var r = results[id];
         if (!r || !r.medals) return;
-        var mult = MESSTIVAL_GAME_IDS.indexOf(id) >= 0 ? 2 : 1;
+        var mult = doubled.indexOf(id) >= 0 ? 2 : 1;
         var m = r.medals;
         if (counts[m.gold]) { counts[m.gold].gold += 1; counts[m.gold].medalPts += MEDAL_POINTS.gold * mult; }
         if (counts[m.silver]) { counts[m.silver].silver += 1; counts[m.silver].medalPts += MEDAL_POINTS.silver * mult; }
@@ -472,9 +480,24 @@
       try { var raw = localStorage.getItem(STORAGE_KEY); return raw ? JSON.parse(raw) : null; }
       catch (e) { return null; }
     }
+    var lastRawState = null; // last ingested state — recomputed when the config lands
     function ingest(state) {
+      lastRawState = state;
+      // The localStorage fallback state embeds the week config; the remote
+      // state node doesn't (config is a sibling ref, handled in startData).
+      if (state && state.config && state.config.games) updateDoubledFrom(state.config.games);
       liveGroups = groupPlaces(computeStandings(state));
       if (!haveData) { haveData = true; onDataReady(); }
+    }
+    // Derive the double-points set from a live games catalog (array, or the
+    // object RTDB can round-trip an array into).
+    function updateDoubledFrom(games) {
+      var arr = Array.isArray(games)
+        ? games
+        : Object.keys(games || {}).sort().map(function (k) { return games[k]; });
+      var ids = [];
+      arr.forEach(function (g) { if (g && g.messtival && g.id) ids.push(g.id); });
+      doubledGameIds = ids;
     }
 
     function startData() {
@@ -484,6 +507,17 @@
       if (cfg && cfg.apiKey && cfg.databaseURL && typeof firebase !== 'undefined') {
         try {
           firebase.initializeApp(cfg);
+          // Week config first (sibling ref): it carries each game's
+          // double-points flag, the same source the main scoreboard uses.
+          // If it lands (or changes) after the state did, recompute so the
+          // totals here can never disagree with the main site's.
+          firebase.database().ref('campScoreboard/config').on('value', function (snap) {
+            var remoteCfg = snap.val();
+            if (remoteCfg && remoteCfg.games) {
+              updateDoubledFrom(remoteCfg.games);
+              if (lastRawState) ingest(lastRawState);
+            }
+          });
           firebase.database().ref('campScoreboard/state').on('value', function (snap) {
             var remote = snap.val();
             if (remote) { gotRemote = true; ingest(remote); }
