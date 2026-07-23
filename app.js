@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T12:18:36Z';
+const CODE_UPDATED_AT = '2026-07-23T12:25:08Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
 const APP_VERSION = 114;
 
@@ -523,6 +523,11 @@ const MEALS = {
     breakfast: { dish: 'Egg Bake and Muffins', emoji: '🍳' },
     lunch: { dish: 'Hot Dogs', emoji: '🌭' },
     supper: { dish: 'Mystery Meat', emoji: '🍖' },
+  },
+  4: {
+    breakfast: { dish: 'French Toast', emoji: '🍞' },
+    lunch: { dish: 'Sandwiches', emoji: '🥪' },
+    supper: { dish: 'Pizza', emoji: '🍕' },
   },
 };
 
