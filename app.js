@@ -14,9 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T11:31:05Z';
+const CODE_UPDATED_AT = '2026-07-23T11:34:18Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 108;
+const APP_VERSION = 112;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -665,6 +665,13 @@ function nowBannerHtml(dow, minutes) {
 function renderNowBanner() {
   const el = document.getElementById('now-banner');
   if (!el) return;
+  // While a live match's Big Board owns the top of the home screen, the
+  // schedule banner yields — the game IS what's happening now.
+  if (typeof homeBoardGame === 'function' && homeBoardGame()) {
+    el.hidden = true;
+    el.innerHTML = '';
+    return;
+  }
   const { dow, minutes } = campNow();
   const html = nowBannerHtml(dow, minutes);
   el.hidden = !html;
@@ -2037,6 +2044,13 @@ function tickBoardClocks() {
     el.dataset.prev = rem;
     el.textContent = fmtBoardClock(rem);
     el.classList.toggle('board-clock-zero', rem === 0);
+    // Anticipation: amber pulse inside the last minute, heartbeat + board
+    // glow inside the last ten seconds (only while actually running).
+    const running = !!l.clock.running;
+    el.classList.toggle('clock-final-min', running && rem > 10000 && rem <= 60000);
+    el.classList.toggle('clock-final-ten', running && rem > 0 && rem <= 10000);
+    const board = el.closest('.big-board');
+    if (board) board.classList.toggle('board-final-ten', running && rem > 0 && rem <= 10000);
     if (l.clock.running && rem === 0 && prev > 0) {
       // Just hit zero. Editors get the buzzer and stop the synced clock so
       // every device settles on 0:00; viewers only see the pulse.
@@ -3961,17 +3975,43 @@ function liveHomeGames() {
   });
 }
 
+// The live-tracked game whose Big Board should take over the top of the
+// home screen: in progress, has a current matchup, and the user isn't
+// already watching it in the game view (no double board).
+function homeBoardGame() {
+  const g = liveHomeGames().find((x) => {
+    if (!x.liveTracker) return false;
+    const b = state.brackets && state.brackets[x.id];
+    return b && currentMatchupOf(x, normalizeBracket(b));
+  });
+  if (!g || state.ui.gameId === g.id) return null;
+  return g;
+}
+
 // Renders the highlighted "Live now" card(s) at the top of the home screen so
 // spectators (and refs) see the current matchup + live score without opening
 // the game. Hidden entirely when nothing is live. Kept current by renderAll,
-// which fires on every synced update.
+// which fires on every synced update. When a live-tracked match is running,
+// the FULL Big Board takes this slot (and the Happening-now banner yields).
 function renderLiveHome() {
   const wrap = document.getElementById('live-home');
   if (!wrap) return;
-  const games = liveHomeGames();
+  let games = liveHomeGames();
   if (!games.length) { wrap.hidden = true; wrap.innerHTML = ''; return; }
   wrap.hidden = false;
-  wrap.innerHTML = games.map((g) => {
+
+  let boardHTML = '';
+  const bg = homeBoardGame();
+  if (bg) {
+    const pair = currentMatchupOf(bg, normalizeBracket(state.brackets[bg.id]));
+    boardHTML = `<div class="home-board" data-game-id="${esc(bg.id)}" role="button" tabindex="0" aria-label="Open ${esc(bg.name)}">
+      <p class="home-board-title">${esc(bg.emoji)} ${esc(bg.name)} <span class="home-board-open">tap to open ›</span></p>
+      ${liveTrackerHTML(bg, pair[0], pair[1], true)}
+    </div>`;
+    games = games.filter((x) => x.id !== bg.id);
+  }
+
+  wrap.innerHTML = boardHTML + games.map((g) => {
     if (!(state.brackets && state.brackets[g.id])) return liveHomeTallyCard(g); // tally live board
     const b = normalizeBracket(state.brackets[g.id]);
     const phaseLabel = { round1: 'Round 1', bye: 'Bye', semifinal: 'Championship game', championship: 'Final', summary: 'Results' }[b.phase] || '';
@@ -4011,18 +4051,28 @@ function renderLiveHome() {
     </button>`;
   }).join('');
 
+  const openGame = (gid) => {
+    const g = gameById(gid);
+    if (!g) return;
+    state.ui.gameId = g.id;
+    state.ui.day = g.dayId;
+    saveState();
+    renderAll();
+    const gv = document.getElementById('game-view');
+    if (gv) gv.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
   wrap.querySelectorAll('.live-home-card').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const g = gameById(btn.dataset.gameId);
-      if (!g) return;
-      state.ui.gameId = g.id;
-      state.ui.day = g.dayId;
-      saveState();
-      renderAll();
-      const gv = document.getElementById('game-view');
-      if (gv) gv.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
+    btn.addEventListener('click', () => openGame(btn.dataset.gameId));
   });
+  const hb = wrap.querySelector('.home-board');
+  if (hb) {
+    hb.addEventListener('click', () => openGame(hb.dataset.gameId));
+    hb.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') openGame(hb.dataset.gameId); });
+    const g = gameById(hb.dataset.gameId);
+    const b = g && state.brackets[g.id] && normalizeBracket(state.brackets[g.id]);
+    const pair = b && currentMatchupOf(g, b);
+    if (pair) boardDiffCelebrate(hb.querySelector('.big-board'), g, getLiveMatch(g, pair[0], pair[1]), pair);
+  }
 }
 
 // Compact "Live now" card for a tally game being scored (Inflatable Bowling,
@@ -4697,25 +4747,41 @@ function fmtBoardClock(ms) {
   return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
 }
 
-function boardCelebrate(colEl, emoji) {
-  if (!colEl) return;
-  const val = colEl.querySelector('.board-score');
+// GOAL! Pop the scoring team's number and fire the emoji cannons: two
+// volleys from the board's bottom corners arcing up and across, mixing the
+// team's mascot with party emoji.
+function boardCelebrate(boardEl, teamId) {
+  if (!boardEl) return;
+  const col = boardEl.querySelector(`[data-board-col="${teamId}"]`);
+  const val = col && col.querySelector('.board-score');
   if (val) {
     val.classList.remove('score-pop');
     void val.offsetWidth; // restart the animation
     val.classList.add('score-pop');
   }
   if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  for (let i = 0; i < 7; i++) {
+  const mascot = teamEmoji(teamId);
+  const extras = ['🎉', '🎊', '✨', '⭐'];
+  const H = boardEl.getBoundingClientRect().height || 300;
+  for (let i = 0; i < 24; i++) {
+    const fromLeft = i % 2 === 0;
     const p = document.createElement('span');
-    p.className = 'board-burst';
-    p.textContent = i % 3 === 2 ? '🎉' : emoji;
-    p.style.setProperty('--bx', (Math.random() * 160 - 80).toFixed(0) + 'px');
-    p.style.setProperty('--bd', (0.9 + Math.random() * 0.5).toFixed(2) + 's');
-    p.style.setProperty('--br', (Math.random() * 60 - 30).toFixed(0) + 'deg');
-    p.style.left = (35 + Math.random() * 30) + '%';
-    colEl.appendChild(p);
-    setTimeout(() => p.remove(), 1600);
+    p.className = 'board-cannon';
+    p.textContent = i % 3 === 0 ? extras[(i / 3 | 0) % extras.length] : mascot;
+    // Launch angle 50°–85° from the corner, aimed inward; distance scales
+    // with the board so the spray fills tall spectator boards too.
+    const angle = (50 + Math.random() * 35) * Math.PI / 180;
+    const dist = H * (0.55 + Math.random() * 0.55);
+    const dx = Math.cos(angle) * dist * (fromLeft ? 1 : -1);
+    const dy = -Math.sin(angle) * dist;
+    p.style.setProperty('--tx', dx.toFixed(0) + 'px');
+    p.style.setProperty('--ty', dy.toFixed(0) + 'px');
+    p.style.setProperty('--br', (Math.random() * 480 - 240).toFixed(0) + 'deg');
+    p.style.setProperty('--bd', (1.0 + Math.random() * 0.6).toFixed(2) + 's');
+    p.style.animationDelay = (Math.random() * 0.18).toFixed(2) + 's';
+    p.style[fromLeft ? 'left' : 'right'] = '4px';
+    boardEl.appendChild(p);
+    setTimeout(() => p.remove(), 2100);
   }
 }
 
@@ -4726,7 +4792,7 @@ function boardDiffCelebrate(boardEl, g, l, pair) {
   pair.forEach((id) => {
     const now = Number(l.hr[id]) || 0;
     if (prev[id] !== undefined && now > prev[id]) {
-      boardCelebrate(boardEl.querySelector(`[data-board-col="${id}"]`), teamEmoji(id));
+      boardCelebrate(boardEl, id);
     }
   });
   lastBoardScores = { [memoKey]: { [pair[0]]: Number(l.hr[pair[0]]) || 0, [pair[1]]: Number(l.hr[pair[1]]) || 0 } };
@@ -4889,7 +4955,7 @@ function bindLiveTracker(container, g, aId, bId) {
       setLiveMatch(g, l);
       refresh();
       if (act === 'hr-up') {
-        boardCelebrate(container.querySelector(`[data-board-col="${team}"]`), teamEmoji(team));
+        boardCelebrate(container.querySelector('.big-board'), team);
       }
     });
   });
