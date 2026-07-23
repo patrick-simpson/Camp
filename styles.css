@@ -252,12 +252,6 @@ body {
   transform: scale(0.96);
 }
 
-.pts-btn.selected {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
-}
-
 /* ============================================================
    PIN LOCK SCREEN
    ============================================================ */
@@ -621,25 +615,6 @@ html.view-only .role-btn {
 }
 .day-tabs jelly-segmented {
   width: 100%;
-}
-
-.day-tab {
-  position: relative;
-  background: var(--color-surface);
-  border: 1.5px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 0.6rem 0.25rem;
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: var(--color-text-muted);
-  cursor: pointer;
-  transition: all 0.15s ease;
-}
-
-.day-tab.active {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
 }
 
 .today-dot {
@@ -3646,13 +3621,17 @@ jelly-icon-button.bonus-remove-btn {
   font-weight: 700;
   color: var(--color-text);
 }
-/* Once a team hits 21, spotlight the "won" button that advances the bracket. */
-.winner-btn.winner-ready {
-  border-color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 18%, var(--color-surface));
-  color: var(--color-primary);
-  font-weight: 800;
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 35%, transparent);
+/* Once a team hits 21, spotlight the "won" button that advances the bracket.
+   .winner-btn is a jelly-button whose pill is painted on its shadow canvas, so
+   host background/border/box-shadow never show. Recolor through Jelly's
+   fill/label hooks instead (overriding the azure variant — a light-DOM rule at
+   equal-or-higher specificity wins), and lift the whole element: transform and
+   drop-shadow both follow the painted pill, so the glow stays pill-shaped. */
+jelly-button.winner-btn.winner-ready {
+  --jelly-fill: var(--color-primary);
+  --jelly-label: var(--jelly-color-foreground-on-accent, #fff);
+  transform: scale(1.03);
+  filter: drop-shadow(0 3px 10px color-mix(in srgb, var(--color-primary) 45%, transparent));
 }
 /* Bye screen: the suggested (lowest-points) winner */
 .team-chip.suggested-chip {

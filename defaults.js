@@ -308,7 +308,7 @@ function defaultConfig() {
       {
         id: 'counselor-hide-seek', name: 'Counselor Hide and Seek', emoji: '🔔', dayId: 'd4', session: 'Evening',
         location: 'Campground-wide', format: 'tally', unit: 'points',
-        counterSteps: [5, 10], counterStepLabels: { 5: 'counselor', 10: 'staff' }, counterAllowNegative: true,
+        counterSteps: [5, 1], counterStepLabels: { 5: 'counselor' }, counterAllowNegative: true,
         timer: { label: 'Game clock (ring the bell at the alarm!)', presets: [900, 600, 1200] },
         headline: 'Hunt down hidden staff and march them to the bell for points.',
         rules: [

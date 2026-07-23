@@ -14,9 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T12:46:21Z';
+const CODE_UPDATED_AT = '2026-07-23T13:32:35Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 118;
+const APP_VERSION = 119;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -2571,7 +2571,7 @@ async function exportTeamPhotos(g, teamId, btn) {
   const status = document.getElementById('pic-export-status');
   const say = (msg) => { if (status) status.textContent = msg; };
 
-  btn.disabled = true;
+  btn.setAttribute('disabled', '');
   try {
     const files = [];
     for (let i = 0; i < round.laps.length; i++) {
@@ -2599,7 +2599,7 @@ async function exportTeamPhotos(g, teamId, btn) {
     console.error(e);
     say('Export hit a snag — try again.');
   } finally {
-    btn.disabled = false;
+    btn.removeAttribute('disabled');
   }
 }
 
@@ -2610,8 +2610,8 @@ function copyTextToClipboard(text, btn) {
     if (!btn) return;
     const orig = btn.textContent;
     btn.textContent = '✓ Copied!';
-    btn.disabled = true;
-    setTimeout(() => { btn.textContent = orig; btn.disabled = false; }, 1500);
+    btn.setAttribute('disabled', '');
+    setTimeout(() => { btn.textContent = orig; btn.removeAttribute('disabled'); }, 1500);
   };
   if (navigator.clipboard && navigator.clipboard.writeText) {
     navigator.clipboard.writeText(text).then(done).catch(() => legacyCopy(text, done));
