@@ -3524,6 +3524,39 @@ jelly-checkbox.checkbox-field {
   margin: 0.6rem 0;
 }
 
+/* Selectable chips (bonus meal/category/team, verse & cleanup day pickers,
+   schedule day row, verse/cleanup point rows) are jelly-chip hosts — strip
+   the legacy pill chrome; keep position for the slotted today-dot. */
+jelly-chip.bonus-meal-chip,
+jelly-chip.bonus-cat-chip,
+jelly-chip.bonus-team-chip,
+jelly-chip.verse-day-chip,
+jelly-chip.sched-day-chip,
+jelly-chip.pts-btn {
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  min-height: 0;
+  position: relative;
+  color: inherit;
+}
+jelly-chip.pts-btn {
+  flex: 1;
+}
+jelly-icon-button.bonus-sign-btn,
+jelly-icon-button.bonus-remove-btn {
+  background: none;
+  border: none;
+  width: auto;
+  height: auto;
+  padding: 0;
+}
+jelly-icon-button.bonus-remove-btn {
+  --jelly-icon-button-size: 2rem;
+  --jelly-icon-button-icon-size: 0.9rem;
+}
+
 /* Jelly variant of the update banner (jelly-alert host — the alert draws its
    own rounded box; the host only carries placement). */
 .update-banner-alert {

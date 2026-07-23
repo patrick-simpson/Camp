@@ -14,9 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T12:37:11Z';
+const CODE_UPDATED_AT = '2026-07-23T12:46:21Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 117;
+const APP_VERSION = 118;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -752,9 +752,9 @@ function renderScheduleDays() {
   if (!wrap) return;
   const todayDow = campNow().dow;
   wrap.innerHTML = SCHED_DAYS.map((d) => `
-    <button class="sched-day-chip ${d.dow === scheduleDay ? 'active' : ''}" data-dow="${d.dow}" aria-pressed="${d.dow === scheduleDay}">
+    <jelly-chip class="sched-day-chip" selectable size="small" ${d.dow === scheduleDay ? 'selected' : ''} data-dow="${d.dow}">
       ${d.short}${d.dow === todayDow ? '<span class="today-dot" title="Today"></span>' : ''}
-    </button>`).join('');
+    </jelly-chip>`).join('');
   wrap.querySelectorAll('.sched-day-chip').forEach((btn) => {
     btn.addEventListener('click', () => {
       scheduleDay = parseInt(btn.dataset.dow, 10);
@@ -3216,14 +3216,14 @@ function renderBonuses() {
   if (canEdit()) {
     const mealRow = d.category === 'cleanup'
       ? `<div class="bonus-meal-row">${['Breakfast', 'Lunch', 'Supper'].map((m) =>
-          `<button class="bonus-meal-chip ${d.meal === m ? 'selected' : ''}" data-meal="${m}" aria-pressed="${d.meal === m}">${esc(m)}</button>`).join('')}</div>`
+          `<jelly-chip class="bonus-meal-chip" selectable size="small" ${d.meal === m ? 'selected' : ''} data-meal="${m}">${esc(m)}</jelly-chip>`).join('')}</div>`
       : '';
     const customRow = d.category === 'custom'
       ? `<input type="text" id="bonus-custom" class="bonus-custom-input" placeholder="What for?" value="${esc(d.custom)}" maxlength="40" />`
       : '';
     // Only show the category chooser if there's more than one category.
     const catRow = BONUS_ENTRY_CATEGORIES.length > 1
-      ? `<div class="bonus-cat-row">${BONUS_ENTRY_CATEGORIES.map((key) => { const c = BONUS_CATEGORIES[key]; return `<button class="bonus-cat-chip ${d.category === key ? 'selected' : ''}" data-cat="${key}" aria-pressed="${d.category === key}">${c.icon} ${esc(c.label)}</button>`; }).join('')}</div>`
+      ? `<div class="bonus-cat-row">${BONUS_ENTRY_CATEGORIES.map((key) => { const c = BONUS_CATEGORIES[key]; return `<jelly-chip class="bonus-cat-chip" selectable size="small" ${d.category === key ? 'selected' : ''} data-cat="${key}">${c.icon} ${esc(c.label)}</jelly-chip>`; }).join('')}</div>`
       : '';
     entryHTML = `
       <div class="bonus-entry">
@@ -3233,12 +3233,12 @@ function renderBonuses() {
         <p class="bonus-entry-hint muted">Pick the team(s) that earned it:</p>
         <div class="bonus-team-chips">
           ${state.teams.map((t) =>
-            `<button class="team-chip bonus-team-chip ${d.teams.includes(t.id) ? 'selected' : ''}" data-team-id="${t.id}" aria-pressed="${d.teams.includes(t.id)}"><span class="chip-emoji">${teamEmoji(t.id)}</span> ${esc(t.name)}</button>`).join('')}
+            `<jelly-chip class="bonus-team-chip" selectable ${d.teams.includes(t.id) ? 'selected' : ''} data-team-id="${t.id}"><span class="chip-emoji">${teamEmoji(t.id)}</span> ${esc(t.name)}</jelly-chip>`).join('')}
         </div>
         <div class="bonus-add-row">
-          <button id="bonus-sign" type="button" class="bonus-sign-btn ${d.sign < 0 ? 'neg' : ''}" aria-label="${d.sign < 0 ? 'Subtracting points — tap to add' : 'Adding points — tap to subtract'}">${d.sign < 0 ? '−' : '+'}</button>
+          <jelly-icon-button id="bonus-sign" class="bonus-sign-btn ${d.sign < 0 ? 'neg' : ''}" ${d.sign < 0 ? 'variant="rose"' : ''} label="${d.sign < 0 ? 'Subtracting points — tap to add' : 'Adding points — tap to subtract'}">${d.sign < 0 ? '−' : '+'}</jelly-icon-button>
           <input type="number" id="bonus-points" class="bonus-points-input" inputmode="numeric" placeholder="Points" value="${esc(d.points)}" />
-          <button id="bonus-add-btn" class="primary-btn">${d.sign < 0 ? 'Subtract points' : 'Add points'}</button>
+          <jelly-button id="bonus-add-btn" class="primary-btn" block>${d.sign < 0 ? 'Subtract points' : 'Add points'}</jelly-button>
         </div>
         <p id="bonus-error" class="entry-error" role="alert" hidden></p>
       </div>`;
@@ -3272,7 +3272,7 @@ function renderBonuses() {
             <span class="bonus-item-label">${cat.icon} ${esc(b.label || 'Bonus')}${when ? ` · ${esc(when)}` : ''}</span>
           </span>
           <span class="bonus-item-pts ${pts < 0 ? 'neg' : ''}">${pts > 0 ? '+' : ''}${esc(String(pts))}</span>
-          ${canEdit() ? `<button class="bonus-remove-btn" data-bonus-id="${esc(id)}" aria-label="Remove this bonus">✕</button>` : ''}
+          ${canEdit() ? `<jelly-icon-button class="bonus-remove-btn" variant="rose" label="Remove this bonus" data-bonus-id="${esc(id)}">✕</jelly-icon-button>` : ''}
         </li>`;
       }).join('')}</ul>`
     : `<p class="muted bonus-empty">No bonus points yet.</p>`;
@@ -3443,7 +3443,7 @@ function renderMemoryVerse() {
     </div>`;
 
   const dayChips = `<div class="verse-day-row">${[1, 2, 3, 4, 5].map((dow) =>
-    `<button class="verse-day-chip ${dow === verseDay ? 'selected' : ''}" data-verse-day="${dow}" aria-pressed="${dow === verseDay}">${DAY_NAMES[dow].slice(0, 3)}${dow === todayDow ? '<span class="today-dot" title="Today"></span>' : ''}</button>`).join('')}</div>`;
+    `<jelly-chip class="verse-day-chip" selectable size="small" ${dow === verseDay ? 'selected' : ''} data-verse-day="${dow}">${DAY_NAMES[dow].slice(0, 3)}${dow === todayDow ? '<span class="today-dot" title="Today"></span>' : ''}</jelly-chip>`).join('')}</div>`;
 
   const verseBox = `
     <div class="verse-day-card">
@@ -3465,7 +3465,7 @@ function renderMemoryVerse() {
     const btns = editing
       ? `<div class="pts-btn-row" data-team-id="${t.id}" role="group" aria-label="${esc(t.name)} verse points">
           ${[0, 1, 2, 3, 4, 5].map((n) =>
-            `<button class="pts-btn ${pts === n ? 'selected' : ''}" data-pts="${n}" aria-pressed="${pts === n}">${n}</button>`).join('')}
+            `<jelly-chip class="pts-btn" selectable shape="square" ${pts === n ? 'selected' : ''} data-pts="${n}">${n}</jelly-chip>`).join('')}
         </div>`
       : '';
     return `<div class="pts-row">
@@ -3590,7 +3590,7 @@ function renderMealCleanup() {
   const todayDow = campNow().dow;
 
   const dayChips = `<div class="verse-day-row">${[1, 2, 3, 4, 5].map((dow) =>
-    `<button class="verse-day-chip ${dow === cleanupDay ? 'selected' : ''}" data-cleanup-day="${dow}" aria-pressed="${dow === cleanupDay}">${DAY_NAMES[dow].slice(0, 3)}${dow === todayDow ? '<span class="today-dot" title="Today"></span>' : ''}</button>`).join('')}</div>`;
+    `<jelly-chip class="verse-day-chip" selectable size="small" ${dow === cleanupDay ? 'selected' : ''} data-cleanup-day="${dow}">${DAY_NAMES[dow].slice(0, 3)}${dow === todayDow ? '<span class="today-dot" title="Today"></span>' : ''}</jelly-chip>`).join('')}</div>`;
 
   const rotaHTML = `<div class="cleanup-rota">${MEAL_CLEANUP_MEALS.map((meal) => {
     const teamIds = cleanupAssigned(cleanupDay, meal);
@@ -3637,7 +3637,7 @@ function renderMealCleanup() {
               <span class="pts-row-team">${teamEmoji(id)} ${esc(teamName(id))}${assigned.includes(id) ? '' : ' <span class="pts-row-total">not on rota</span>'}${pts > 3 ? ` <span class="pts-row-total">+${pts}</span>` : ''}</span>
               <div class="pts-btn-row" data-team-id="${esc(id)}" data-meal="${esc(meal)}" role="group" aria-label="${esc(teamName(id))} ${esc(meal)} cleanup points">
                 ${[0, 1, 2, 3].map((n) =>
-                  `<button class="pts-btn ${pts === n ? 'selected' : ''}" data-pts="${n}" aria-pressed="${pts === n}">${n}</button>`).join('')}
+                  `<jelly-chip class="pts-btn" selectable shape="square" ${pts === n ? 'selected' : ''} data-pts="${n}">${n}</jelly-chip>`).join('')}
               </div>
             </div>`;
           }).join('')
@@ -3664,7 +3664,7 @@ function renderMealCleanup() {
             <span class="bonus-item-label">🧽 ${esc(b.label || 'Cleanup')}</span>
           </span>
           <span class="bonus-item-pts">+${esc(String(pts))}</span>
-          ${canEdit() ? `<button class="bonus-remove-btn" data-bonus-id="${esc(id)}" aria-label="Remove this cleanup point">✕</button>` : ''}
+          ${canEdit() ? `<jelly-icon-button class="bonus-remove-btn" variant="rose" label="Remove this cleanup point" data-bonus-id="${esc(id)}">✕</jelly-icon-button>` : ''}
         </li>`;
       }).join('')}</ul>`
     : '';
