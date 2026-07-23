@@ -14,9 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T23:14:27Z';
+const CODE_UPDATED_AT = '2026-07-23T23:19:20Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 134;
+const APP_VERSION = 135;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -4331,12 +4331,16 @@ function renderResult(container, g, result) {
       .map(([id, v]) => `<li>${esc(teamName(id))}: ${formatScore(g, v)}</li>`).join('');
     extra = `<p class="muted">Scores (${esc(g.unit || 'points')}):</p><ul class="score-recap">${rows}</ul>`;
   }
+  // Match medalCounts()'s weighting — a messtival-flagged game (Friday, or
+  // Thursday evening/Friday under the double-points window) pays double, and
+  // this recap must show the same numbers the standings actually award.
+  const mult = g.messtival ? 2 : 1;
   container.innerHTML = `
     <h3>Final results</h3>
     <div class="medal-summary">
-      <div class="medal-row gold-row">🥇 <strong>${esc(teamName(result.medals.gold))}</strong> <span class="medal-points">+${MEDAL_POINTS.gold} pts</span></div>
-      <div class="medal-row silver-row">🥈 <strong>${esc(teamName(result.medals.silver))}</strong> <span class="medal-points">+${MEDAL_POINTS.silver} pts</span></div>
-      <div class="medal-row bronze-row">🥉 <strong>${esc(teamName(result.medals.bronze))}</strong> <span class="medal-points">+${MEDAL_POINTS.bronze} pts</span></div>
+      <div class="medal-row gold-row">🥇 <strong>${esc(teamName(result.medals.gold))}</strong> <span class="medal-points">+${MEDAL_POINTS.gold * mult} pts</span></div>
+      <div class="medal-row silver-row">🥈 <strong>${esc(teamName(result.medals.silver))}</strong> <span class="medal-points">+${MEDAL_POINTS.silver * mult} pts</span></div>
+      <div class="medal-row bronze-row">🥉 <strong>${esc(teamName(result.medals.bronze))}</strong> <span class="medal-points">+${MEDAL_POINTS.bronze * mult} pts</span></div>
     </div>
     ${extra}
     ${canEdit() ? '<button id="clear-result-btn" class="link-btn danger-link">Clear result &amp; re-enter</button>' : ''}
@@ -5531,9 +5535,10 @@ function renderBracketSemifinal(body, g, b) {
 }
 
 function renderBracketChampionship(body, g, b) {
+  const mult = g.messtival ? 2 : 1; // match medalCounts()'s weighting
   body.innerHTML = `
     <h3>Final</h3>
-    <p class="bronze-note">🥉 <strong>${esc(teamName(b.semifinal.loser))}</strong> takes the bronze medal (+${MEDAL_POINTS.bronze} pts).</p>
+    <p class="bronze-note">🥉 <strong>${esc(teamName(b.semifinal.loser))}</strong> takes the bronze medal (+${MEDAL_POINTS.bronze * mult} pts).</p>
     ${matchupCalloutHTML(b.championship.a, b.championship.b)}
     ${matchTrackerHTML(g, b.championship.a, b.championship.b)}
   `;
@@ -5560,13 +5565,14 @@ function renderBracketSummary(body, g, b) {
   const silverId = b.championship.loser;
   const bronzeId = b.semifinal.loser;
   const eliminated = b.matches.map((m) => m.loser);
+  const mult = g.messtival ? 2 : 1; // match medalCounts()'s weighting
 
   body.innerHTML = `
     <h3>Game results</h3>
     <div class="medal-summary">
-      <div class="medal-row gold-row">🥇 ${teamEmoji(goldId)} <strong>${esc(teamName(goldId))}</strong> <span class="medal-points">+${MEDAL_POINTS.gold} pts</span></div>
-      <div class="medal-row silver-row">🥈 ${teamEmoji(silverId)} <strong>${esc(teamName(silverId))}</strong> <span class="medal-points">+${MEDAL_POINTS.silver} pts</span></div>
-      <div class="medal-row bronze-row">🥉 ${teamEmoji(bronzeId)} <strong>${esc(teamName(bronzeId))}</strong> <span class="medal-points">+${MEDAL_POINTS.bronze} pts</span></div>
+      <div class="medal-row gold-row">🥇 ${teamEmoji(goldId)} <strong>${esc(teamName(goldId))}</strong> <span class="medal-points">+${MEDAL_POINTS.gold * mult} pts</span></div>
+      <div class="medal-row silver-row">🥈 ${teamEmoji(silverId)} <strong>${esc(teamName(silverId))}</strong> <span class="medal-points">+${MEDAL_POINTS.silver * mult} pts</span></div>
+      <div class="medal-row bronze-row">🥉 ${teamEmoji(bronzeId)} <strong>${esc(teamName(bronzeId))}</strong> <span class="medal-points">+${MEDAL_POINTS.bronze * mult} pts</span></div>
     </div>
     <p class="muted">Eliminated in Round 1: ${eliminated.map((id) => esc(teamName(id))).join(', ')}</p>
     <jelly-button id="save-bracket-btn" class="primary-btn" block>Save Result</jelly-button>
