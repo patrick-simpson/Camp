@@ -203,6 +203,7 @@
 
   <div class="topbar">
     <a class="chip" href="stalling.html">← Back</a>
+    <button id="update-chip" class="chip spacer" hidden>🔄 Updated — refresh</button>
   </div>
 
   <div id="loading"><span class="spin">🎪</span><span>Loading standings…</span></div>
@@ -232,6 +233,14 @@
   <script>
   (function () {
     'use strict';
+
+    // This page has no build-step and is typically opened once and left up
+    // on a TV for the whole reveal — unlike index.html it never polled for
+    // its own updates, so a scoring-logic fix deployed after the tab opened
+    // silently never took effect until someone thought to hit refresh (this
+    // bit the double-points fix on 2026-07-23). Bump this stamp on every
+    // edit to this file; see checkForUpdate/startUpdatePolling below.
+    var TV_BUILD = '2026-07-23T23:45:00Z';
 
     // ── Constants mirrored from app.js (keep in sync) ──────────────
     var STORAGE_KEY = 'campScoreboardV2';
@@ -769,6 +778,43 @@
       if (e.target.closest('.topbar')) return;
       ensureAudio(); advance();
     });
+
+    // ── Self-update check ────────────────────────────────────────────
+    // No fetch/service-worker interception, same network-only pattern the
+    // main scoreboard uses (see app.js checkForUpdate). A code fix (like
+    // tonight's double-points one) is invisible to an already-open tab
+    // otherwise. Auto-reload is free ONLY on the 'intro' screen (nothing to
+    // lose — the presenter hasn't pressed start yet); once a reveal is under
+    // way or finished, force-reloading would wipe the presenter's manual
+    // click-through progress, so we surface a small tappable chip instead
+    // and let a human pick the moment.
+    var updateSeen = false;
+    function checkForUpdate() {
+      if (updateSeen) return;
+      fetch('current-standings.html?_=' + Date.now(), { cache: 'no-store' })
+        .then(function (res) { return res.ok ? res.text() : null; })
+        .then(function (html) {
+          if (!html) return;
+          var m = html.match(/var TV_BUILD = '([^']+)'/);
+          if (m && m[1] !== TV_BUILD) {
+            updateSeen = true;
+            if (phase === 'intro') { reloadNow(); return; }
+            var chip = document.getElementById('update-chip');
+            if (chip) chip.hidden = false;
+          }
+        })
+        .catch(function () { /* offline / blocked — try again next tick */ });
+    }
+    function reloadNow() {
+      var u = new URL(location.href);
+      u.searchParams.set('r', String(Date.now()));
+      location.replace(u.toString());
+    }
+    var updateChipEl = document.getElementById('update-chip');
+    if (updateChipEl) updateChipEl.addEventListener('click', reloadNow);
+    setInterval(checkForUpdate, 90000);
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) checkForUpdate(); });
+    checkForUpdate();
 
     // ── Go ─────────────────────────────────────────────────────────
     startData();
