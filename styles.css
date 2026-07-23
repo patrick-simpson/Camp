@@ -1,16 +1,26 @@
 /* ============================================================
    CUSTOM PROPERTIES
    ============================================================ */
+/* App tokens are re-sourced from Jelly UI's document-level tokens
+   (vendor/jelly.js injects --jelly-color-* on :root inside @layer jelly, and
+   flips them via html[data-jelly-mode] / prefers-color-scheme — applyTheme()
+   in app.js keeps that attribute in step with the app's theme choice).
+   Every remapped value keeps its pre-Jelly literal as the var() fallback so
+   the page still paints correctly BEFORE the deferred module evaluates (the
+   lock screen renders pre-paint) and stays usable if the module ever fails
+   to load. Medals, card shadows, radii, and primary-dark/hover have no Jelly
+   equivalent and remain hand-tuned. color-scheme for the light default comes
+   from Jelly's own :root rules — don't redeclare it here unlayered, or it
+   would beat Jelly's layered dark switch. */
 :root {
-  color-scheme: light;
-  --color-bg: #f4f6f9;
-  --color-surface: #ffffff;
-  --color-border: #e2e6ec;
-  --color-text: #1a2233;
-  --color-text-muted: #5b6472;
-  --color-primary: #3355ff;
+  --color-bg: var(--jelly-color-background-default, #f4f6f9);
+  --color-surface: var(--jelly-color-background-surface, #ffffff);
+  --color-border: var(--jelly-color-border-default, #e2e6ec);
+  --color-text: var(--jelly-color-foreground-default, #1a2233);
+  --color-text-muted: var(--jelly-color-foreground-muted, #5b6472);
+  --color-primary: var(--jelly-color-background-accent, #3355ff);
   --color-primary-dark: #2540c7;
-  --color-danger: #d63b3b;
+  --color-danger: var(--jelly-color-background-rose, #d63b3b);
   --color-gold: #96690a;
   --color-gold-bg: #fff6dd;
   --color-silver: #6b7280;
@@ -19,23 +29,26 @@
   --color-bronze-bg: #fbe9de;
   --shadow-card: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
   --shadow-card-hover: 0 4px 14px rgba(16, 24, 40, 0.12), 0 2px 4px rgba(16, 24, 40, 0.06);
-  --shadow-sheet: 0 -8px 40px rgba(16, 24, 40, 0.25);
+  --shadow-sheet: var(--jelly-shadow-overlay, 0 -8px 40px rgba(16, 24, 40, 0.25));
   --color-primary-hover: #2540c7; /* darkens on hover; white text stays readable */
   --radius-lg: 16px;
   --radius-md: 10px;
   --radius-xl: 20px;
 }
 
+/* Dark values for everything Jelly doesn't govern, plus dark *fallbacks* for
+   the remapped tokens (used only pre-module / if the module fails — after it
+   loads, the var() resolves and the fallback is ignored). */
 body.dark-theme {
   color-scheme: dark;
-  --color-bg: #10141c;
-  --color-surface: #1a2030;
-  --color-border: #2b3145;
-  --color-text: #eef1f8;
-  --color-text-muted: #9aa3b8;
-  --color-primary: #6b85ff;
+  --color-bg: var(--jelly-color-background-default, #10141c);
+  --color-surface: var(--jelly-color-background-surface, #1a2030);
+  --color-border: var(--jelly-color-border-default, #2b3145);
+  --color-text: var(--jelly-color-foreground-default, #eef1f8);
+  --color-text-muted: var(--jelly-color-foreground-muted, #9aa3b8);
+  --color-primary: var(--jelly-color-background-accent, #6b85ff);
   --color-primary-dark: #8ea0ff;
-  --color-danger: #ff6b6b;
+  --color-danger: var(--jelly-color-background-rose, #ff6b6b);
   --color-gold: #e8c15a;
   --color-gold-bg: #3a3116;
   --color-silver: #c3c9d6;
@@ -44,21 +57,21 @@ body.dark-theme {
   --color-bronze-bg: #3a2618;
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
   --shadow-card-hover: 0 4px 16px rgba(0, 0, 0, 0.5);
-  --shadow-sheet: 0 -8px 40px rgba(0, 0, 0, 0.6);
+  --shadow-sheet: var(--jelly-shadow-overlay, 0 -8px 40px rgba(0, 0, 0, 0.6));
   --color-primary-hover: #4a63d6; /* darker than --color-primary so white text holds up */
 }
 
 @media (prefers-color-scheme: dark) {
   body:not(.light-theme):not(.dark-theme) {
     color-scheme: dark;
-    --color-bg: #10141c;
-    --color-surface: #1a2030;
-    --color-border: #2b3145;
-    --color-text: #eef1f8;
-    --color-text-muted: #9aa3b8;
-    --color-primary: #6b85ff;
+    --color-bg: var(--jelly-color-background-default, #10141c);
+    --color-surface: var(--jelly-color-background-surface, #1a2030);
+    --color-border: var(--jelly-color-border-default, #2b3145);
+    --color-text: var(--jelly-color-foreground-default, #eef1f8);
+    --color-text-muted: var(--jelly-color-foreground-muted, #9aa3b8);
+    --color-primary: var(--jelly-color-background-accent, #6b85ff);
     --color-primary-dark: #8ea0ff;
-    --color-danger: #ff6b6b;
+    --color-danger: var(--jelly-color-background-rose, #ff6b6b);
     --color-gold: #e8c15a;
     --color-gold-bg: #3a3116;
     --color-silver: #c3c9d6;
@@ -67,8 +80,29 @@ body.dark-theme {
     --color-bronze-bg: #3a2618;
     --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
     --shadow-card-hover: 0 4px 16px rgba(0, 0, 0, 0.5);
-    --shadow-sheet: 0 -8px 40px rgba(0, 0, 0, 0.6);
+    --shadow-sheet: var(--jelly-shadow-overlay, 0 -8px 40px rgba(0, 0, 0, 0.6));
     --color-primary-hover: #4a63d6;
+  }
+}
+
+/* Camp overrides of Jelly's own tokens (unlayered, so they beat the module's
+   @layer jelly defaults): keep the camp-blue accent both modes, and render
+   Jelly components in Inter to match the rest of the app. Mirrors the same
+   explicit-attribute + media-fallback structure Jelly's stylesheet uses. */
+:root {
+  --jelly-color-background-accent: #3355ff;
+  --jelly-color-foreground-on-accent: #ffffff;
+  --jelly-font-display: 'Inter', system-ui, -apple-system, sans-serif;
+  --jelly-font-text: 'Inter', system-ui, -apple-system, sans-serif;
+}
+:root[data-jelly-mode="dark"] {
+  --jelly-color-background-accent: #6b85ff;
+  --jelly-color-foreground-on-accent: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-jelly-mode="light"]) {
+    --jelly-color-background-accent: #6b85ff;
+    --jelly-color-foreground-on-accent: #ffffff;
   }
 }
 
@@ -82,14 +116,10 @@ body.dark-theme {
 
 /* Jelly UI upgrade guard: hide not-yet-registered jelly controls so they never
    flash unstyled before vendor/jelly.js (a deferred module) registers them.
-   jelly-theme is exempted — it's a display:contents wrapper whose children
-   (the whole app) must stay visible during that window. */
+   Individual jelly elements get visible degraded fallbacks alongside their
+   introduction (so a failed module load degrades, not disappears). */
 :not(:defined) {
   visibility: hidden;
-}
-jelly-theme:not(:defined) {
-  visibility: visible;
-  display: contents;
 }
 
 /* Keyboard focus ring for every interactive control (mouse/touch unaffected). */

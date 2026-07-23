@@ -14,7 +14,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T11:18:22Z';
+const CODE_UPDATED_AT = '2026-07-23T11:24:36Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
 const APP_VERSION = 108;
 
@@ -5286,6 +5286,17 @@ function applyTheme() {
   const dark = state.theme === 'dark' || (state.theme === null && prefersDark);
   document.body.classList.toggle('dark-theme', dark);
   document.body.classList.toggle('light-theme', !dark && state.theme === 'light');
+  // Drive Jelly UI's document-level tokens the same way: an explicit choice
+  // maps 1:1 onto data-jelly-mode; auto removes the attribute so Jelly's own
+  // prefers-color-scheme fallback tracks live OS flips (mirroring the app's
+  // @media token block). Canvas-painted Jelly components repaint on the
+  // jelly-theme-change event.
+  if (state.theme === 'dark' || state.theme === 'light') {
+    document.documentElement.setAttribute('data-jelly-mode', state.theme);
+  } else {
+    document.documentElement.removeAttribute('data-jelly-mode');
+  }
+  window.dispatchEvent(new CustomEvent('jelly-theme-change'));
   const toggle = document.getElementById('theme-toggle');
   if (toggle) toggle.textContent = dark ? '☀️' : '🌙';
   // The app can override the OS theme, so keep the browser chrome color in step.
@@ -5297,7 +5308,10 @@ function applyTheme() {
     meta.id = 'dynamic-theme-color';
     document.head.appendChild(meta);
   }
-  meta.content = dark ? '#10141c' : '#f4f6f9';
+  // Explicit hexes matching Jelly's background-default (body has a 0.2s
+  // background transition, so reading getComputedStyle here would capture
+  // the mid-transition color — keep these in sync with the palette).
+  meta.content = dark ? '#181b1d' : '#ffffff';
 }
 
 function toggleTheme() {
