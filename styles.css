@@ -2094,54 +2094,6 @@ body.no-scroll {
   font-weight: 600;
 }
 
-/* ============================================================
-   BROWNIE POINTS CARD
-   ============================================================ */
-.brownie-team-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.brownie-team-btn {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  width: 100%;
-  background: var(--color-bg);
-  border: 1.5px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 0.65rem 0.85rem;
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--color-text);
-  cursor: pointer;
-  font-family: inherit;
-  transition: all 0.15s ease;
-}
-
-.brownie-team-btn:hover:not(:disabled) {
-  border-color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
-}
-
-.brownie-team-btn:disabled {
-  cursor: default;
-  opacity: 0.55;
-}
-
-.brownie-team-name {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-}
-
-.brownie-count {
-  font-variant-numeric: tabular-nums;
-  color: var(--color-text-muted);
-  font-weight: 700;
-}
-
 .bonus-ledger {
   list-style: none;
   margin: 0;

@@ -14,9 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T16:45:36Z';
+const CODE_UPDATED_AT = '2026-07-23T19:01:41Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 128;
+const APP_VERSION = 129;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1049,7 +1049,6 @@ function makeFreshState() {
     brackets: {},  // gameId -> in-progress tournament
     drafts: {},    // gameId -> in-progress tally/placement entry
     bonuses: {},   // bonusId -> { teamId, category, label, points, at }
-    brownie: {},   // teamId -> brownie point count — just for fun, not scoring
     picSetup: {},  // gameId -> { source: 'pregenerated'|'own'|'numbered', words: [] } (Pictionary item source)
     live: {},      // gameId -> { key, inning, hr } live match tally (synced so everyone can watch)
     clocks: {},    // gameId -> { running, endAt, remaining, duration } synced game clock
@@ -1149,7 +1148,6 @@ if (!state.teams || !state.results) state = makeFreshState();
 if (!state.ui) state.ui = { day: null, gameId: null };
 if (!state.meta) state.meta = {};
 if (!state.bonuses) state.bonuses = {}; // extra/bonus points ledger
-if (!state.brownie) state.brownie = {}; // brownie point tallies (just for fun)
 if (!state.live) state.live = {}; // live match tallies (synced; see liveTracker)
 if (!state.clocks) state.clocks = {}; // per-game synced clocks (see getClock/setClock)
 if (state.theme === undefined) state.theme = null; // pre-theme saves: follow the device
@@ -1204,7 +1202,7 @@ function touchData() {
 // and the SDK loaded, scores sync across every device in real time.
 // Otherwise the app runs exactly as before, local-only.
 
-const SYNC_KEYS = ['teams', 'results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta', 'brownie', 'clocks'];
+const SYNC_KEYS = ['teams', 'results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta', 'clocks'];
 let fbRef = null;
 // Per-tab id for the "who's here" presence chip — minted once per page load
 // (not persisted) so each open tab counts, and cleans up, independently.
@@ -1353,7 +1351,7 @@ function initSync() {
         const s = state.picSetup[gid];
         if (s && s.words && s.words.length) localPicWords[gid] = s.words;
       });
-      ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta', 'brownie', 'clocks'].forEach((k) => {
+      ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta', 'clocks'].forEach((k) => {
         state[k] = remote[k] !== undefined ? remote[k] : {};
       });
       Object.keys(localPicWords).forEach((gid) => {
@@ -1466,7 +1464,7 @@ function picSetupForSync(picSetup) {
 // Maps written per-child (one path per game/team/bonus) so concurrent edits to
 // DIFFERENT items on different devices never overwrite each other. teams/meta
 // are small singletons written whole.
-const SYNC_ITEM_MAPS = ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'brownie', 'clocks'];
+const SYNC_ITEM_MAPS = ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'clocks'];
 // `live` is NOT here — it's diffed one level deeper (per match field) in
 // computeSyncUpdates so concurrent refs don't clobber each other's fields.
 const SYNC_SINGLETONS = ['teams', 'meta'];
@@ -3237,47 +3235,6 @@ function bindBonusEntry(wrap) {
   });
 }
 
-// ── Brownie Points ───────────────────────────────────────────────
-// A just-for-fun tally, deliberately unrelated to any game or the
-// standings above. Anyone — viewer or editor — can hand one out, but only
-// once per page load: this flag lives only in memory, so a refresh quietly
-// resets it. Intentionally not disclosed in the UI.
-let brownieGivenThisLoad = false;
-
-function renderBrownie() {
-  const wrap = document.getElementById('brownie-body');
-  if (!wrap) return;
-  const usedUp = brownieGivenThisLoad;
-  const rowsHTML = state.teams.map((t) => {
-    const count = Number((state.brownie || {})[t.id]) || 0;
-    return `<button class="brownie-team-btn" data-team-id="${t.id}" ${usedUp ? 'disabled' : ''}>
-      <span class="brownie-team-name"><span class="chip-emoji">${teamEmoji(t.id)}</span> ${esc(t.name)}</span>
-      <span class="brownie-count">🍪 ${count}</span>
-    </button>`;
-  }).join('');
-  wrap.innerHTML = `<div class="brownie-team-list">${rowsHTML}</div>`;
-  bindBrownieEntry(wrap);
-}
-
-function bindBrownieEntry(wrap) {
-  wrap.querySelectorAll('.brownie-team-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      if (brownieGivenThisLoad) return;
-      const teamId = btn.dataset.teamId;
-      if (!state.brownie) state.brownie = {};
-      state.brownie[teamId] = (Number(state.brownie[teamId]) || 0) + 1;
-      brownieGivenThisLoad = true;
-      // Deliberately NOT touchData(): a brownie point is just-for-fun, not
-      // real scoreboard activity, so it shouldn't bump the footer's "Data
-      // last updated" — and not arming the offline-defense path keeps a
-      // stale viewer's brownie click from ever pushing stale state over
-      // newer remote scores. It still syncs via the normal save→push.
-      saveState();
-      renderAll();
-    });
-  });
-}
-
 // ── Memory verses ────────────────────────────────────────────────
 // The week's theme verse + one memory verse per camp day (Mon–Fri),
 // transcribed from the printed "Harvest of the Heart" sheet. Counselors
@@ -4440,7 +4397,6 @@ function normalizeSyncedState() {
   Object.values(state.picRounds || {}).forEach(normalizePicRound);
   Object.values(state.drafts || {}).forEach(normalizeDraft);
   if (!state.bonuses) state.bonuses = {}; // RTDB prunes an empty ledger to nothing
-  if (!state.brownie) state.brownie = {}; // RTDB prunes an empty tally map to nothing
   if (!state.picSetup) state.picSetup = {}; // RTDB prunes an empty map to nothing
   // RTDB can round-trip a sparse `words` array back as an object — re-array it.
   Object.values(state.picSetup).forEach((s) => {
@@ -5717,7 +5673,6 @@ function renderAll() {
   renderMemoryVerse();
   renderMealCleanup();
   renderBonuses();
-  renderBrownie();
   renderFooter();
   refreshOpenSchedule();
   if (inBuilder && typeof renderSettings === 'function') renderSettings();

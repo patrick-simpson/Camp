@@ -941,7 +941,6 @@ function removeTeamEverywhere(teamId) {
     }
   });
   if (state.picRounds) delete state.picRounds[teamId];
-  if (state.brownie) delete state.brownie[teamId];
 }
 
 // ── Data tab ──────────────────────────────────────────────────────
@@ -958,7 +957,6 @@ function backupJSON() {
     picRounds: state.picRounds,
     picSetup: state.picSetup,
     bonuses: state.bonuses,
-    brownie: state.brownie,
     live: state.live,
   };
   return JSON.stringify(payload, null, 2);
@@ -1047,7 +1045,7 @@ function tryImport(text) {
   // Only accept correctly-typed sections — a hand-edited backup with e.g.
   // "results": null would crash every render after it had already synced.
   if (Array.isArray(parsed.teams) && parsed.teams.length) state.teams = parsed.teams;
-  ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'brownie', 'live'].forEach((key) => {
+  ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live'].forEach((key) => {
     const v = parsed[key];
     if (v && typeof v === 'object' && !Array.isArray(v)) state[key] = v;
   });
