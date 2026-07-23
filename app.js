@@ -14,9 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T19:01:41Z';
+const CODE_UPDATED_AT = '2026-07-23T19:05:51Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 129;
+const APP_VERSION = 130;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -4163,6 +4163,7 @@ function renderTally(container, g) {
         </div>
       `).join('')}
     </div>
+    ${g.liveRankings ? '<button id="reset-scores-btn" class="link-btn danger-link reset-scores-btn">↺ Reset all scores</button>' : ''}
     <div id="tally-medals"></div>
     <p id="entry-error" class="entry-error" role="alert" hidden></p>
     <jelly-button id="save-result-btn" class="primary-btn" block>Save Result</jelly-button>
@@ -4208,6 +4209,23 @@ function renderTally(container, g) {
   });
 
   updateTallyMedals(g);
+
+  // Live-ranking games (Counselor Hide and Seek, etc.) accumulate points by
+  // tapping counters. Discarding the whole in-progress draft both zeroes every
+  // team AND removes the game from the "LIVE" home board — a team scored to 0
+  // still counts as live (tallyRankLive keeps 0s), so clearing the draft is the
+  // only way to un-start a game begun prematurely. Deleting the key (rather than
+  // emptying it) de-lists it on every synced device too. A saved result is
+  // untouched — that's the separate "Clear result" control on the result view.
+  const resetBtn = document.getElementById('reset-scores-btn');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      if (!confirm('Reset ' + g.name + ' back to zero and take it off the live board?')) return;
+      delete state.drafts[g.id];
+      saveState();
+      renderAll();
+    });
+  }
 
   document.getElementById('save-result-btn').addEventListener('click', () => {
     const picks = readMedalPicks(document.getElementById('tally-medals'));

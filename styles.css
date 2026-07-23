@@ -1433,6 +1433,14 @@ body.no-scroll {
   color: var(--color-danger);
 }
 
+/* Standalone reset control under the live-ranking score grid (e.g. Counselor
+   Hide and Seek): its own centered line, set apart from the counters above. */
+.reset-scores-btn {
+  display: block;
+  margin: 0.9rem auto 0.2rem;
+  font-size: 0.85rem;
+}
+
 /* ============================================================
    STANDINGS TABLE
    ============================================================ */
