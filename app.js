@@ -14,9 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T15:47:50Z';
+const CODE_UPDATED_AT = '2026-07-23T16:35:59Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 126;
+const APP_VERSION = 127;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1107,6 +1107,20 @@ function migrateState(s) {
     const ww = c.games.find((g) => g.id === 'waiter-water-chain');
     if (ww && !ww.timer) ww.timer = { label: 'Game clock', presets: [600] };
     c.version = 2;
+    changed = true;
+  }
+  if ((c.version || 1) < 3) {
+    // Counselor Hide and Seek: score buttons are +5 (counselor) / +1, with a
+    // single −1 button (was +5/+10, then briefly +5/+1 with a −5 button — a
+    // defaults.js-only edit made before this migration system existed, so it
+    // likely never reached the synced config either). Force the final shape
+    // directly rather than special-casing the intermediate state.
+    const hs = c.games.find((g) => g.id === 'counselor-hide-seek');
+    if (hs) {
+      hs.counterSteps = [1, 5];
+      hs.counterStepLabels = { 5: 'counselor' };
+    }
+    c.version = 3;
     changed = true;
   }
   if (!s.ui) { s.ui = { day: null, gameId: null }; changed = true; }
