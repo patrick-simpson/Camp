@@ -14,9 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T15:01:29Z';
+const CODE_UPDATED_AT = '2026-07-23T15:10:11Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 124;
+const APP_VERSION = 125;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1440,7 +1440,9 @@ function picSetupForSync(picSetup) {
 // Maps written per-child (one path per game/team/bonus) so concurrent edits to
 // DIFFERENT items on different devices never overwrite each other. teams/meta
 // are small singletons written whole.
-const SYNC_ITEM_MAPS = ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'brownie', 'clocks'];
+const SYNC_ITEM_MAPS = ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'brownie', 'clocks'];
+// `live` is NOT here — it's diffed one level deeper (per match field) in
+// computeSyncUpdates so concurrent refs don't clobber each other's fields.
 const SYNC_SINGLETONS = ['teams', 'meta'];
 
 // The synced portion of state as it should exist on the server: a deep copy
@@ -1468,6 +1470,28 @@ function computeSyncUpdates(prev, cur) {
       if (!(id in c)) up[k + '/' + id] = null; // item deleted (cleared result, removed bonus, …)
     });
   });
+  // `live` is diffed one level deeper — per match FIELD — so two refs editing
+  // the SAME match don't clobber each other: one bumping a team's score writes
+  // only live/{gid}/hr, leaving another ref's live/{gid}/inning (the half)
+  // untouched. Previously the whole match object was written on every action,
+  // so a score tap re-sent that device's stale inning/half and reverted it. A
+  // brand-new pairing (different key) or a mode switch replaces the whole node.
+  {
+    const p = (prev && prev.live) || {};
+    const c = (cur && cur.live) || {};
+    Object.keys(c).forEach((gid) => {
+      const cm = c[gid], pm = p[gid];
+      if (JSON.stringify(cm) === JSON.stringify(pm)) return;
+      if (!pm || pm.key !== cm.key || pm.mode !== cm.mode) { up['live/' + gid] = cm; return; }
+      Object.keys(cm).forEach((f) => {
+        if (JSON.stringify(cm[f]) !== JSON.stringify(pm[f])) up['live/' + gid + '/' + f] = cm[f];
+      });
+      Object.keys(pm).forEach((f) => {
+        if (!(f in cm)) up['live/' + gid + '/' + f] = null;
+      });
+    });
+    Object.keys(p).forEach((gid) => { if (!(gid in c)) up['live/' + gid] = null; });
+  }
   SYNC_SINGLETONS.forEach((k) => {
     const pv = prev ? prev[k] : undefined;
     const cv = cur ? cur[k] : undefined;
