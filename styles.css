@@ -3480,10 +3480,19 @@ body.no-scroll {
   gap: 0.5rem;
   align-items: center;
 }
+/* Un-do the global full-width primary-btn treatment inside the composer row
+   (same trick as .bonus-add-row) — the input's flex:1 takes the rest. */
+.announce-form jelly-button.primary-btn {
+  width: auto;
+  flex: 0 0 auto;
+  --jelly-button-height: 40px;
+  --jelly-button-padding-inline: 14px;
+  --jelly-button-font-size: 0.9rem;
+}
 .announce-input {
   flex: 1;
   min-width: 0;
-  padding: 0.5rem 0.7rem;
+  padding: 0.55rem 0.7rem;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface);
