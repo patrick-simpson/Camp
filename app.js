@@ -14,9 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T23:19:20Z';
+const CODE_UPDATED_AT = '2026-07-23T23:30:20Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 135;
+const APP_VERSION = 136;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -3545,21 +3545,33 @@ function renderMemoryVerse() {
   // One row per team: the day's verse points, shown exactly once. Editors
   // set a team's points by tapping 0–5 directly (0 clears); no separate
   // pick-teams-then-type flow, no duplicate summary chips + ledger.
+  //
+  // The stored/tapped scale always stays 0–5 raw (setVersePoints, the
+  // selected-chip check, and data-pts below all use the raw number) —
+  // bonusCountsDouble() is what actually doubles it in the standings, keyed
+  // off the entry's timestamp. During the double-points window we only
+  // relabel what's ON SCREEN to the effective (already-doubled) value, so a
+  // counselor sees "10" for a perfect recitation instead of a "5" that
+  // quietly becomes 10 elsewhere. inDoubleBonusWindow() checks real "now",
+  // matching setVersePoints's `at: new Date()` stamp exactly.
   const earned = versePointsByDay()[verseDay] || {};
   const editing = canEdit();
+  const doubleWindow = inDoubleBonusWindow();
+  const displayMult = doubleWindow ? 2 : 1;
   const hint = editing
-    ? `<p class="bonus-entry-hint muted">Tap a team's points for ${esc(DAY_NAMES[verseDay])}'s verse — 0 clears them.</p>`
+    ? `<p class="bonus-entry-hint muted">Tap a team's points for ${esc(DAY_NAMES[verseDay])}'s verse — 0 clears them.${doubleWindow ? ' Numbers shown already include tonight/Friday’s double points.' : ''}</p>`
     : '';
   const rowsHTML = `<div class="pts-grid">${state.teams.map((t) => {
-    const pts = earned[t.id] || 0;
+    const pts = earned[t.id] || 0; // raw stored value (0–5)
+    const displayPts = pts * displayMult; // what it's actually worth in the standings right now
     const btns = editing
       ? `<div class="pts-btn-row" data-team-id="${t.id}" role="group" aria-label="${esc(t.name)} verse points">
           ${[0, 1, 2, 3, 4, 5].map((n) =>
-            `<jelly-chip class="pts-btn" selectable shape="square" ${pts === n ? 'selected' : ''} data-pts="${n}">${n}</jelly-chip>`).join('')}
+            `<jelly-chip class="pts-btn" selectable shape="square" ${pts === n ? 'selected' : ''} data-pts="${n}">${n * displayMult}</jelly-chip>`).join('')}
         </div>`
       : '';
     return `<div class="pts-row">
-      <span class="pts-row-team">${teamEmoji(t.id)} ${esc(t.name)}${pts > 5 ? ` <span class="pts-row-total">+${pts}</span>` : (!editing && pts > 0 ? ` <span class="pts-row-total">+${pts}</span>` : '')}</span>
+      <span class="pts-row-team">${teamEmoji(t.id)} ${esc(t.name)}${displayPts > 5 ? ` <span class="pts-row-total">+${displayPts}</span>` : (!editing && displayPts > 0 ? ` <span class="pts-row-total">+${displayPts}</span>` : '')}</span>
       ${btns}
     </div>`;
   }).join('')}</div>`;
