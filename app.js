@@ -14,9 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T14:51:05Z';
+const CODE_UPDATED_AT = '2026-07-23T15:01:29Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 123;
+const APP_VERSION = 124;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -4167,24 +4167,9 @@ function renderLiveWatch(container, g) {
     return;
   }
 
-  let scoreHTML;
-  if (g.ladderScoring) {
-    const l = getLadderMatch(g, pair[0], pair[1]);
-    const target = g.ladderScoring.target || 21;
-    scoreHTML = `
-      <div class="live-watch-score">
-        <div class="lw-team">${teamEmoji(pair[0])}<span class="lw-name">${esc(teamName(pair[0]))}</span></div>
-        <div class="lw-nums"><span class="lw-num">${l.a}</span><span class="lw-dash">–</span><span class="lw-num">${l.b}</span></div>
-        <div class="lw-team">${teamEmoji(pair[1])}<span class="lw-name">${esc(teamName(pair[1]))}</span></div>
-      </div>
-      <p class="live-watch-inning">First to exactly ${target}</p>`;
-  } else if (g.liveTracker) {
-    // Spectators get the full Big Board — giant scores, the live clock, and
-    // the goal celebrations — display-only and sized to own the screen.
-    scoreHTML = liveTrackerHTML(g, pair[0], pair[1], true);
-  } else {
-    scoreHTML = `<div class="live-watch-matchup">${teamEmoji(pair[0])} ${esc(teamName(pair[0]))} <span class="lw-vs">vs</span> ${teamEmoji(pair[1])} ${esc(teamName(pair[1]))}</div>`;
-  }
+  // Every live game gets the same big-board treatment now — giant scores, the
+  // live clock, and (for goal games) the celebrations — sized to own the screen.
+  const scoreHTML = liveBoardHTML(g, pair[0], pair[1]);
 
   const nxt = nextMatchupOf(g, b);
   const onDeckHTML = nxt
@@ -4946,6 +4931,47 @@ function liveTrackerHTML(g, aId, bId, viewer) {
     ${clockHTML}
     ${kickingRow}
     ${viewer ? '' : '<button class="live-reset link-btn" data-live="reset">Reset tally</button>'}
+  </div>`;
+}
+
+// Unified spectator scoresheet — every live game (goal tracker, ladder ball,
+// or a plain bracket matchup) shows the SAME big board: giant team scores, the
+// live clock when the game has one, and a context sub-line. Display-only (no
+// controls). Goal-tracker games delegate to liveTrackerHTML for their
+// period/outs extras; the others build the board here.
+function liveBoardHTML(g, aId, bId) {
+  if (g.liveTracker) return liveTrackerHTML(g, aId, bId, true);
+  const clock = g.timer ? getClock(g) : null;
+  const remaining = clock ? clockRemaining(clock) : 0;
+  let aScore = null, bScore = null, sub = '';
+  if (g.ladderScoring) {
+    const l = getLadderMatch(g, aId, bId);
+    aScore = l.a; bScore = l.b;
+    const target = g.ladderScoring.target || 21;
+    const w = ladderWinnerId(g, l, aId, bId);
+    sub = w ? `🏆 ${teamEmoji(w)} ${esc(teamName(w))} reached ${target}!` : `First to exactly ${target}`;
+  }
+  const col = (id, score) => `
+    <div class="board-col" style="--team-accent: ${TEAM_ACCENT[id] || 'var(--color-primary)'}">
+      <span class="board-emoji">${teamEmoji(id)}</span>
+      <span class="board-name">${esc(teamName(id))}</span>
+      ${score != null ? `<span class="board-score">${score}</span>` : ''}
+    </div>`;
+  const clockHTML = clock ? `
+    <div class="board-clock-wrap">
+      <span class="board-clock ${remaining === 0 ? 'board-clock-zero' : ''}" data-game-clock data-game-id="${esc(g.id)}" data-prev="${remaining}">${fmtBoardClock(remaining)}</span>
+    </div>` : '';
+  return `<div class="big-board viewer" data-board-game="${esc(g.id)}">
+    <div class="board-head">
+      <span class="live-home-badge">🔴 LIVE</span>
+      ${sub ? `<span class="board-period">${sub}</span>` : ''}
+    </div>
+    <div class="board-cols">
+      ${col(aId, aScore)}
+      <span class="board-dash">–</span>
+      ${col(bId, bScore)}
+    </div>
+    ${clockHTML}
   </div>`;
 }
 
