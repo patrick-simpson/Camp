@@ -14,9 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T10:32:41Z';
+const CODE_UPDATED_AT = '2026-07-23T10:43:55Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 103;
+const APP_VERSION = 104;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1030,9 +1030,9 @@ function formatEasternStamp(iso) {
   return `${get('month')} ${get('day')}, ${get('hour')}:${get('minute')}${(get('dayPeriod') || '').toLowerCase()} ET`;
 }
 
-// One line, three facts: who's here now, when data last changed, and what
-// build this is. The presence count lives here (not the header) and
-// renderPresence just re-renders the footer when it changes.
+// One line: who's here now, when data last changed, what build this is,
+// and the Settings link (the header is gone — this is the gear now). The
+// presence count lives here and renderPresence just re-renders the footer.
 function renderFooter() {
   const el = document.getElementById('app-footer');
   if (!el) return;
@@ -1043,7 +1043,12 @@ function renderFooter() {
   }
   bits.push(`📋 Data: ${dataStamp ? esc(dataStamp) : 'no scores yet'}`);
   bits.push(`<span title="Code last updated: ${esc(formatEasternStamp(CODE_UPDATED_AT) || 'unknown')}">🛠️ v${APP_VERSION}</span>`);
+  bits.push(`<button id="settings-btn" class="footer-link" aria-label="Settings">⚙️ Settings</button>`);
   el.innerHTML = `<p class="footer-line">${bits.join(' · ')}</p>`;
+  // The line is rebuilt on every render, so rebind here (wireSettings runs
+  // once at init, before the first footer render).
+  const btn = document.getElementById('settings-btn');
+  if (btn) btn.addEventListener('click', openSettings);
 }
 
 // ── State ────────────────────────────────────────────────────────
@@ -3387,9 +3392,8 @@ const MEMORY_VERSES = {
 
 // Which day's verse the card is showing, and the point-entry draft. Both
 // live outside state so they aren't synced or persisted (verseDay defaults
-// to today each load; the draft resets after each add).
+// to today each load).
 let verseDay = null;
-let verseDraft = { teams: [], points: '' };
 
 // dow -> { teamId -> total verse points } from the 'verse' ledger entries.
 function versePointsByDay() {
@@ -3411,7 +3415,6 @@ function renderMemoryVerse() {
     const dow = campNow().dow;
     verseDay = (dow >= 1 && dow <= 5) ? dow : 1;
   }
-  const d = verseDraft;
   const verse = MEMORY_VERSES[verseDay];
   const todayDow = campNow().dow;
 
@@ -3432,102 +3435,62 @@ function renderMemoryVerse() {
       <p class="verse-day-ref">${esc(verse.ref)}</p>
     </div>`;
 
-  let entryHTML = '';
-  if (canEdit()) {
-    entryHTML = `
-      <div class="verse-entry">
-        <p class="bonus-entry-hint muted">Record ${esc(DAY_NAMES[verseDay])}'s verse — pick the team(s) that recited it:</p>
-        <div class="bonus-team-chips">
-          ${state.teams.map((t) =>
-            `<button class="team-chip verse-team-chip ${d.teams.includes(t.id) ? 'selected' : ''}" data-team-id="${t.id}" aria-pressed="${d.teams.includes(t.id)}"><span class="chip-emoji">${teamEmoji(t.id)}</span> ${esc(t.name)}</button>`).join('')}
-        </div>
-        <div class="bonus-add-row">
-          <input type="number" id="verse-points" class="bonus-points-input" inputmode="numeric" placeholder="Points" value="${esc(d.points)}" />
-          <button id="verse-add-btn" class="primary-btn">Add points</button>
-        </div>
-        <p id="verse-error" class="entry-error" role="alert" hidden></p>
-      </div>`;
-  }
-
-  const byDay = versePointsByDay();
-  const earned = byDay[verseDay] || {};
-  const earnedTeams = state.teams.filter((t) => earned[t.id]).sort((a, b) => earned[b.id] - earned[a.id]);
-  const subtotalsHTML = earnedTeams.length
-    ? `<div class="bonus-subtotals">${earnedTeams.map((t) =>
-        `<span class="bonus-subtotal-chip">${teamEmoji(t.id)} ${esc(t.name)} <strong>+${earned[t.id]}</strong></span>`).join('')}</div>`
+  // One row per team: the day's verse points, shown exactly once. Editors
+  // set a team's points by tapping 0–5 directly (0 clears); no separate
+  // pick-teams-then-type flow, no duplicate summary chips + ledger.
+  const earned = versePointsByDay()[verseDay] || {};
+  const editing = canEdit();
+  const hint = editing
+    ? `<p class="bonus-entry-hint muted">Tap a team's points for ${esc(DAY_NAMES[verseDay])}'s verse — 0 clears them.</p>`
+    : '';
+  const rowsHTML = `<div class="pts-grid">${state.teams.map((t) => {
+    const pts = earned[t.id] || 0;
+    const btns = editing
+      ? `<div class="pts-btn-row" data-team-id="${t.id}" role="group" aria-label="${esc(t.name)} verse points">
+          ${[0, 1, 2, 3, 4, 5].map((n) =>
+            `<button class="pts-btn ${pts === n ? 'selected' : ''}" data-pts="${n}" aria-pressed="${pts === n}">${n}</button>`).join('')}
+        </div>`
+      : '';
+    return `<div class="pts-row">
+      <span class="pts-row-team">${teamEmoji(t.id)} ${esc(t.name)}${pts > 5 ? ` <span class="pts-row-total">+${pts}</span>` : (!editing && pts > 0 ? ` <span class="pts-row-total">+${pts}</span>` : '')}</span>
+      ${btns}
+    </div>`;
+  }).join('')}</div>`;
+  const anyEarned = state.teams.some((t) => earned[t.id]);
+  const emptyHTML = (!editing && !anyEarned)
+    ? `<p class="muted bonus-empty">No verse points recorded for ${esc(DAY_NAMES[verseDay])} yet.</p>`
     : '';
 
-  const dayEntries = Object.entries(state.bonuses || {})
-    .filter(([, b]) => b.category === 'verse' && (Number(b.day) || 0) === verseDay)
-    .sort((a, b) => (b[1].at || '').localeCompare(a[1].at || ''));
-  const ledgerHTML = dayEntries.length
-    ? `<ul class="bonus-ledger">${dayEntries.map(([id, b]) => {
-        const when = formatEasternStamp(b.at);
-        const pts = Number(b.points) || 0;
-        return `<li class="bonus-item">
-          <span class="bonus-item-main">
-            <span class="bonus-item-team">${teamEmoji(b.teamId)} ${esc(teamName(b.teamId))}</span>
-            <span class="bonus-item-label">📖 ${esc(DAY_NAMES[verseDay])} verse${when ? ` · ${esc(when)}` : ''}</span>
-          </span>
-          <span class="bonus-item-pts">+${esc(String(pts))}</span>
-          ${canEdit() ? `<button class="bonus-remove-btn" data-bonus-id="${esc(id)}" aria-label="Remove this verse point">✕</button>` : ''}
-        </li>`;
-      }).join('')}</ul>`
-    : `<p class="muted bonus-empty">No verse points recorded for ${esc(DAY_NAMES[verseDay])} yet.</p>`;
-
-  wrap.innerHTML = themeHTML + dayChips + verseBox + entryHTML + subtotalsHTML + ledgerHTML;
+  wrap.innerHTML = themeHTML + dayChips + verseBox + hint + (editing || anyEarned ? rowsHTML : '') + emptyHTML;
 
   wrap.querySelectorAll('.verse-day-chip').forEach((btn) => {
     btn.addEventListener('click', () => { verseDay = parseInt(btn.dataset.verseDay, 10); renderMemoryVerse(); });
   });
-  if (canEdit()) bindVerseEntry(wrap);
-  wrap.querySelectorAll('.bonus-remove-btn').forEach((btn) => {
+  wrap.querySelectorAll('.pts-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const id = btn.dataset.bonusId;
-      const b = state.bonuses[id];
-      if (!b) return;
-      const pts = Number(b.points) || 0;
-      if (!confirm(`Remove +${pts} verse point${pts === 1 ? '' : 's'} for ${teamName(b.teamId)}?`)) return;
-      delete state.bonuses[id];
-      touchData();
-      saveState();
-      renderAll();
+      const teamId = btn.closest('.pts-btn-row').dataset.teamId;
+      setVersePoints(teamId, verseDay, parseInt(btn.dataset.pts, 10));
     });
   });
 }
 
-function bindVerseEntry(wrap) {
-  const d = verseDraft;
-  wrap.querySelectorAll('.verse-team-chip').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const id = btn.dataset.teamId;
-      const i = d.teams.indexOf(id);
-      if (i > -1) d.teams.splice(i, 1); else d.teams.push(id);
-      renderMemoryVerse();
-    });
+// Sets a team's verse points for a day to exactly `pts` — replaces any
+// existing entries for that (team, day) so the ledger holds one truth.
+function setVersePoints(teamId, dow, pts) {
+  Object.entries(state.bonuses || {}).forEach(([id, b]) => {
+    if (b && b.category === 'verse' && b.teamId === teamId && (Number(b.day) || 0) === dow) {
+      delete state.bonuses[id];
+    }
   });
-  const ptsInput = wrap.querySelector('#verse-points');
-  if (ptsInput) ptsInput.addEventListener('input', () => { d.points = ptsInput.value; });
-
-  const addBtn = wrap.querySelector('#verse-add-btn');
-  if (addBtn) addBtn.addEventListener('click', () => {
-    const errEl = wrap.querySelector('#verse-error');
-    const showErr = (msg) => { errEl.textContent = msg; errEl.hidden = false; };
-    const pts = Number(d.points);
-    if (!d.teams.length) return showErr('Pick at least one team.');
-    if (d.points === '' || isNaN(pts) || pts === 0) return showErr('Enter a point value.');
-    if (!Number.isInteger(pts) || pts < 1 || pts > 100) return showErr('Points must be a whole number from 1 to 100.');
-    const label = `${DAY_NAMES[verseDay]} memory verse`;
-    const at = new Date().toISOString();
-    d.teams.forEach((teamId) => {
-      state.bonuses[newBonusId()] = { teamId, category: 'verse', label, points: pts, at, day: verseDay };
-    });
-    d.teams = [];
-    d.points = '';
-    touchData();
-    saveState();
-    renderAll();
-  });
+  if (pts > 0) {
+    state.bonuses[newBonusId()] = {
+      teamId, category: 'verse', label: `${DAY_NAMES[dow]} memory verse`,
+      points: pts, at: new Date().toISOString(), day: dow,
+    };
+  }
+  touchData();
+  saveState();
+  renderAll();
 }
 
 // ── Meal cleanup ─────────────────────────────────────────────────
@@ -3575,7 +3538,7 @@ function findNextCleanupFor(teamId) {
 
 // Which day's rota the card is showing + the entry draft (not synced).
 let cleanupDay = null;
-let cleanupDraft = { meal: 'Breakfast', teams: [], points: '' };
+let cleanupMeal = 'Breakfast'; // which meal the editor is recording (device-local)
 
 // day -> { teamId -> total cleanup points } from the 'cleanup' ledger entries.
 function cleanupPointsByDay() {
@@ -3603,14 +3566,11 @@ function cleanupMealPoints(day, meal) {
 function renderMealCleanup() {
   const wrap = document.getElementById('cleanup-body');
   if (!wrap) return;
-  // Default to today (Mon–Fri, else Monday) and pre-target that meal's team.
+  // Default to today (Mon–Fri, else Monday).
   if (cleanupDay == null) {
     const dow = campNow().dow;
     cleanupDay = (dow >= 1 && dow <= 5) ? dow : 1;
-    const first = cleanupAssigned(cleanupDay, cleanupDraft.meal);
-    cleanupDraft.teams = first ? (Array.isArray(first) ? first : [first]) : [];
   }
-  const d = cleanupDraft;
   const todayDow = campNow().dow;
 
   const dayChips = `<div class="verse-day-row">${[1, 2, 3, 4, 5].map((dow) =>
@@ -3630,60 +3590,47 @@ function renderMealCleanup() {
     </div>`;
   }).join('')}</div>`;
 
+  // Per-team ledger (same pattern as Memory Verse): editors pick the meal,
+  // then tap each team's points 0–5 (0 clears). Viewers see one row per team
+  // with the day's total — no duplicate chips + timestamped list.
+  const editing = canEdit();
+  const dayTotals = cleanupPointsByDay()[cleanupDay] || {};
+  const mealEarned = {};
+  Object.values(state.bonuses || {}).forEach((b) => {
+    if (b && b.category === 'cleanup' && (Number(b.day) || 0) === cleanupDay && (b.meal || 'Breakfast') === cleanupMeal) {
+      mealEarned[b.teamId] = (mealEarned[b.teamId] || 0) + (Number(b.points) || 0);
+    }
+  });
+
   let entryHTML = '';
-  if (canEdit()) {
-    const assignedIds = cleanupAssigned(cleanupDay, d.meal);
+  if (editing) {
+    const assignedIds = cleanupAssigned(cleanupDay, cleanupMeal);
+    const assigned = assignedIds ? (Array.isArray(assignedIds) ? assignedIds : [assignedIds]) : [];
     const mealChips = `<div class="bonus-meal-row">${MEAL_CLEANUP_MEALS.map((m) =>
-      `<button class="bonus-meal-chip ${d.meal === m ? 'selected' : ''}" data-cleanup-meal="${m}" aria-pressed="${d.meal === m}">${esc(m)}</button>`).join('')}</div>`;
-    const assignedLine = assignedIds
-      ? (() => {
-          const teams = Array.isArray(assignedIds) ? assignedIds : [assignedIds];
-          const teamStr = teams.map(id => `${teamEmoji(id)} ${esc(teamName(id))}`).join(' + ');
-          return `<p class="bonus-entry-hint muted">On the rota for ${esc(DAY_NAMES[cleanupDay])} ${esc(d.meal.toLowerCase())}: ${teamStr}</p>`;
-        })()
-      : `<p class="bonus-entry-hint muted">No team assigned for ${esc(DAY_NAMES[cleanupDay])} ${esc(d.meal.toLowerCase())} yet — pick who did it:</p>`;
-    entryHTML = `
-      <div class="verse-entry">
-        ${mealChips}
-        ${assignedLine}
-        <div class="bonus-team-chips">
-          ${state.teams.map((t) =>
-            `<button class="team-chip cleanup-team-chip ${d.teams.includes(t.id) ? 'selected' : ''}" data-team-id="${t.id}" aria-pressed="${d.teams.includes(t.id)}"><span class="chip-emoji">${teamEmoji(t.id)}</span> ${esc(t.name)}</button>`).join('')}
+      `<button class="bonus-meal-chip ${cleanupMeal === m ? 'selected' : ''}" data-cleanup-meal="${m}" aria-pressed="${cleanupMeal === m}">${MEAL_ICONS[m]} ${esc(m)}</button>`).join('')}</div>`;
+    const hint = assigned.length
+      ? `<p class="bonus-entry-hint muted">On the rota for ${esc(DAY_NAMES[cleanupDay])} ${esc(cleanupMeal.toLowerCase())}: ${assigned.map((id) => `${teamEmoji(id)} ${esc(teamName(id))}`).join(' + ')} — tap their points (0 clears):</p>`
+      : `<p class="bonus-entry-hint muted">No team on the rota for ${esc(DAY_NAMES[cleanupDay])} ${esc(cleanupMeal.toLowerCase())} — tap points for whoever did it:</p>`;
+    entryHTML = mealChips + hint + `<div class="pts-grid">${state.teams.map((t) => {
+      const pts = mealEarned[t.id] || 0;
+      const onRota = assigned.includes(t.id);
+      return `<div class="pts-row">
+        <span class="pts-row-team">${teamEmoji(t.id)} ${esc(t.name)}${onRota ? ' <span class="pts-row-total">🧽 on rota</span>' : ''}${pts > 5 ? ` <span class="pts-row-total">+${pts}</span>` : ''}</span>
+        <div class="pts-btn-row" data-team-id="${t.id}" role="group" aria-label="${esc(t.name)} ${esc(cleanupMeal)} cleanup points">
+          ${[0, 1, 2, 3, 4, 5].map((n) =>
+            `<button class="pts-btn ${pts === n ? 'selected' : ''}" data-pts="${n}" aria-pressed="${pts === n}">${n}</button>`).join('')}
         </div>
-        <div class="bonus-add-row">
-          <input type="number" id="cleanup-points" class="bonus-points-input" inputmode="numeric" placeholder="Points" value="${esc(d.points)}" />
-          <button id="cleanup-add-btn" class="primary-btn">Add points</button>
-        </div>
-        <p id="cleanup-error" class="entry-error" role="alert" hidden></p>
       </div>`;
+    }).join('')}</div>`;
   }
 
-  const byDay = cleanupPointsByDay();
-  const earned = byDay[cleanupDay] || {};
-  const earnedTeams = state.teams.filter((t) => earned[t.id]).sort((a, b) => earned[b.id] - earned[a.id]);
-  const subtotalsHTML = earnedTeams.length
-    ? `<div class="bonus-subtotals">${earnedTeams.map((t) =>
-        `<span class="bonus-subtotal-chip">${teamEmoji(t.id)} ${esc(t.name)} <strong>+${earned[t.id]}</strong></span>`).join('')}</div>`
+  const earnedTeams = state.teams.filter((t) => dayTotals[t.id]);
+  const viewerHTML = !editing
+    ? (earnedTeams.length
+      ? `<div class="pts-grid">${earnedTeams.sort((a, b) => dayTotals[b.id] - dayTotals[a.id]).map((t) =>
+          `<div class="pts-row"><span class="pts-row-team">${teamEmoji(t.id)} ${esc(t.name)} <span class="pts-row-total">+${dayTotals[t.id]}</span></span></div>`).join('')}</div>`
+      : `<p class="muted bonus-empty">No cleanup points recorded for ${esc(DAY_NAMES[cleanupDay])} yet.</p>`)
     : '';
-
-  const dayEntries = Object.entries(state.bonuses || {})
-    .filter(([, b]) => b.category === 'cleanup' && (Number(b.day) || 0) === cleanupDay)
-    .sort((a, b) => (b[1].at || '').localeCompare(a[1].at || ''));
-  const ledgerHTML = dayEntries.length
-    ? `<ul class="bonus-ledger">${dayEntries.map(([id, b]) => {
-        const when = formatEasternStamp(b.at);
-        const pts = Number(b.points) || 0;
-        const meal = b.meal || 'Cleanup';
-        return `<li class="bonus-item">
-          <span class="bonus-item-main">
-            <span class="bonus-item-team">${teamEmoji(b.teamId)} ${esc(teamName(b.teamId))}</span>
-            <span class="bonus-item-label">🧽 ${esc(meal)} cleanup${when ? ` · ${esc(when)}` : ''}</span>
-          </span>
-          <span class="bonus-item-pts">+${esc(String(pts))}</span>
-          ${canEdit() ? `<button class="bonus-remove-btn" data-bonus-id="${esc(id)}" aria-label="Remove this cleanup point">✕</button>` : ''}
-        </li>`;
-      }).join('')}</ul>`
-    : `<p class="muted bonus-empty">No cleanup points recorded for ${esc(DAY_NAMES[cleanupDay])} yet.</p>`;
 
   // Legacy cleanup entries with no day (from the old Bonus card) — surface them
   // so their points aren't invisible even though they still count in totals.
@@ -3705,17 +3652,26 @@ function renderMealCleanup() {
       }).join('')}</ul>`
     : '';
 
-  wrap.innerHTML = dayChips + rotaHTML + entryHTML + subtotalsHTML + ledgerHTML + legacyHTML;
+  wrap.innerHTML = dayChips + rotaHTML + entryHTML + viewerHTML + legacyHTML;
 
   wrap.querySelectorAll('.verse-day-chip').forEach((btn) => {
     btn.addEventListener('click', () => {
       cleanupDay = parseInt(btn.dataset.cleanupDay, 10);
-      const a = cleanupAssigned(cleanupDay, d.meal);
-      d.teams = a ? (Array.isArray(a) ? a : [a]) : [];
       renderMealCleanup();
     });
   });
-  if (canEdit()) bindCleanupEntry(wrap);
+  wrap.querySelectorAll('.bonus-meal-chip').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      cleanupMeal = btn.dataset.cleanupMeal;
+      renderMealCleanup();
+    });
+  });
+  wrap.querySelectorAll('.pts-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const teamId = btn.closest('.pts-btn-row').dataset.teamId;
+      setCleanupPoints(teamId, cleanupDay, cleanupMeal, parseInt(btn.dataset.pts, 10));
+    });
+  });
   wrap.querySelectorAll('.bonus-remove-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       const id = btn.dataset.bonusId;
@@ -3731,46 +3687,24 @@ function renderMealCleanup() {
   });
 }
 
-function bindCleanupEntry(wrap) {
-  const d = cleanupDraft;
-  wrap.querySelectorAll('.bonus-meal-chip').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      d.meal = btn.dataset.cleanupMeal;
-      const a = cleanupAssigned(cleanupDay, d.meal);
-      d.teams = a ? (Array.isArray(a) ? a : [a]) : []; // pre-target the rota's team for this meal
-      renderMealCleanup();
-    });
+// Sets a team's cleanup points for a day+meal to exactly `pts` — replaces
+// any existing entries for that (team, day, meal).
+function setCleanupPoints(teamId, dow, meal, pts) {
+  Object.entries(state.bonuses || {}).forEach(([id, b]) => {
+    if (b && b.category === 'cleanup' && b.teamId === teamId &&
+        (Number(b.day) || 0) === dow && (b.meal || 'Breakfast') === meal) {
+      delete state.bonuses[id];
+    }
   });
-  wrap.querySelectorAll('.cleanup-team-chip').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const id = btn.dataset.teamId;
-      const i = d.teams.indexOf(id);
-      if (i > -1) d.teams.splice(i, 1); else d.teams.push(id);
-      renderMealCleanup();
-    });
-  });
-  const ptsInput = wrap.querySelector('#cleanup-points');
-  if (ptsInput) ptsInput.addEventListener('input', () => { d.points = ptsInput.value; });
-
-  const addBtn = wrap.querySelector('#cleanup-add-btn');
-  if (addBtn) addBtn.addEventListener('click', () => {
-    const errEl = wrap.querySelector('#cleanup-error');
-    const showErr = (msg) => { errEl.textContent = msg; errEl.hidden = false; };
-    const pts = Number(d.points);
-    if (!d.teams.length) return showErr('Pick at least one team.');
-    if (d.points === '' || isNaN(pts) || pts === 0) return showErr('Enter a point value.');
-    if (!Number.isInteger(pts) || pts < 1 || pts > 100) return showErr('Points must be a whole number from 1 to 100.');
-    const label = `${DAY_NAMES[cleanupDay]} ${d.meal} cleanup`;
-    const at = new Date().toISOString();
-    const meal = d.meal;
-    d.teams.forEach((teamId) => {
-      state.bonuses[newBonusId()] = { teamId, category: 'cleanup', label, points: pts, at, day: cleanupDay, meal };
-    });
-    d.points = '';
-    touchData();
-    saveState();
-    renderAll();
-  });
+  if (pts > 0) {
+    state.bonuses[newBonusId()] = {
+      teamId, category: 'cleanup', label: `${DAY_NAMES[dow]} ${meal} cleanup`,
+      points: pts, at: new Date().toISOString(), day: dow, meal,
+    };
+  }
+  touchData();
+  saveState();
+  renderAll();
 }
 
 // ── Day tabs + game list ─────────────────────────────────────────
