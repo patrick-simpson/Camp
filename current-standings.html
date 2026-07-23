@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-jelly-mode="light">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -7,8 +7,19 @@
   <meta name="description" content="Live camp standings — the big reveal.">
   <meta name="theme-color" content="#ff4d8d">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8F%86%3C/text%3E%3C/svg%3E">
+  <!-- Jelly UI web components (vendored — same module the scoreboard uses).
+       This page is a self-contained reveal piece; Jelly supplies the design
+       tokens (accent re-pointed at the page gold) so any control added here
+       matches the rest of the site. -->
+  <script type="module" src="vendor/jelly.js?v=118"></script>
   <style>
     * { box-sizing: border-box; }
+    :root {
+      --jelly-color-background-accent: #b8860b;
+      --jelly-color-foreground-on-accent: #ffffff;
+      --jelly-font-display: 'Baloo 2', 'Fredoka', 'Nunito', system-ui, sans-serif;
+      --jelly-font-text: 'Baloo 2', 'Fredoka', 'Nunito', system-ui, sans-serif;
+    }
     :root {
       --gold: #b8860b;
       --card: #ffffff;

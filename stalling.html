@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-jelly-mode="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -7,8 +7,34 @@
   <meta name="description" content="A little something.">
   <meta name="theme-color" content="#07090f">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%8E%99%EF%B8%8F%3C/text%3E%3C/svg%3E">
+  <!-- Jelly UI web components (vendored — same module the scoreboard uses). -->
+  <script type="module" src="vendor/jelly.js?v=118"></script>
   <style>
     * { box-sizing: border-box; }
+    /* Jelly integration: the page is a fixed dark stage — pin Jelly's dark
+       mode (html[data-jelly-mode] below) and re-point its accent at the
+       stage gold + its fonts at the page stack, so the jelly controls in
+       the topbar/replay read as part of the set. Duplicated from styles.css
+       conventions by design: standalone pages don't load the app stylesheet
+       (the no-build-step tax). */
+    :root {
+      --jelly-color-background-accent: #d9b25f;
+      --jelly-color-foreground-on-accent: #07090f;
+      --jelly-font-display: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      --jelly-font-text: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    }
+    /* Jelly host cleanups: the .chip class also styles plain links — only
+       strip its pill chrome from jelly-button hosts (they draw their own). */
+    jelly-button.chip {
+      background: none;
+      border: none;
+      padding: 0;
+      backdrop-filter: none;
+      --jelly-button-min-width: 0;
+      --jelly-button-height: 34px;
+      --jelly-button-font-size: 0.85rem;
+    }
+    jelly-button.chip.spacer { margin-left: auto; }
     :root {
       --gold: #d9b25f;
       --gold-lt: #f4e6c1;
@@ -46,7 +72,7 @@
       background: linear-gradient(to bottom, rgba(0,0,0,0.45), rgba(0,0,0,0));
       pointer-events: none;
     }
-    .topbar a, .topbar button { pointer-events: auto; }
+    .topbar a, .topbar button, .topbar jelly-button { pointer-events: auto; }
     .chip {
       appearance: none;
       border: 1px solid rgba(255,255,255,0.18);
@@ -558,7 +584,7 @@
 
   <div class="topbar">
     <a class="chip" href="index.html">← Back to Camp</a>
-    <button class="chip spacer" id="mute-btn" aria-pressed="false" title="Toggle sound">🔊 Sound</button>
+    <jelly-button class="chip spacer" id="mute-btn" variant="platinum" aria-pressed="false" title="Toggle sound">🔊 Sound</jelly-button>
   </div>
 
   <!-- ── CHOOSER ─────────────────────────────────────────── -->
@@ -626,7 +652,7 @@
     </figure>
   </div>
 
-  <button class="chip replay" id="replay-btn">↻ Replay</button>
+  <jelly-button class="chip replay" id="replay-btn">↻ Replay</jelly-button>
 
   <script>
   (function () {
