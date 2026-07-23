@@ -14,9 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T13:51:07Z';
+const CODE_UPDATED_AT = '2026-07-23T13:56:29Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 121;
+const APP_VERSION = 122;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1097,6 +1097,17 @@ function migrateState(s) {
       if (!Array.isArray(sec.items)) { sec.items = []; changed = true; }
     });
   });
+  // One-shot catalog upgrades. The stored/synced config (campScoreboard/config)
+  // overrides defaults.js on every device, so editing a game's defaults there
+  // never reaches an existing week — these back-fills do, then push themselves
+  // up via applyRemoteConfig/saveConfig. Guarded by c.version so a later manual
+  // edit (e.g. removing the timer) isn't undone on the next load.
+  if ((c.version || 1) < 2) {
+    const ww = c.games.find((g) => g.id === 'waiter-water-chain');
+    if (ww && !ww.timer) ww.timer = { label: 'Game clock', presets: [600] };
+    c.version = 2;
+    changed = true;
+  }
   if (!s.ui) { s.ui = { day: null, gameId: null }; changed = true; }
   if (typeof s.ui.day === 'number') { s.ui.day = 'd' + s.ui.day; changed = true; }
   if (!s.ui.day || !c.days.some((d) => d.id === s.ui.day)) {

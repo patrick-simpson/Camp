@@ -8,7 +8,7 @@
 
 function defaultConfig() {
   return {
-    version: 1,
+    version: 2,
     updatedAt: new Date().toISOString(),
     sessions: ['Morning', 'Evening'],
     days: [
