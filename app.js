@@ -14,9 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T11:23:11Z';
+const CODE_UPDATED_AT = '2026-07-23T11:34:18Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 110;
+const APP_VERSION = 112;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -611,7 +611,7 @@ function nowBannerHtml(dow, minutes) {
   // progress is the elapsed fraction of the current timed block (0–1), or null
   // to omit the bar (untimed blocks, or before the day's first block).
   const progressBar = (progress) => progress == null ? '' :
-    `<div class="now-progress" aria-hidden="true"><div class="now-progress-fill" style="width:${Math.round(Math.max(0, Math.min(1, progress)) * 100)}%"></div></div>`;
+    `<jelly-progress class="now-progress" size="small" value="${Math.round(Math.max(0, Math.min(1, progress)) * 100)}" max="100" aria-hidden="true"></jelly-progress>`;
   const main = (emoji, label, time, next, progress) => eyebrow +
     `<div class="now-main"><span class="now-emoji">${emoji}</span><div class="now-body">
       <div class="now-label">${esc(label)}${time ? ` <span class="now-time">${time}</span>` : ''}${mealCleanupNote(dow, label)}</div>
@@ -1735,9 +1735,16 @@ function notifyOn() {
 }
 
 function showToast(message, opts) {
+  const mine = !!(opts && opts.mine);
+  // Jelly toaster (the <jelly-toaster position="bottom"> rail in index.html).
+  // Falls back to the legacy #toast-container pill if the module hasn't
+  // loaded/failed — toasts carry sync errors and must always surface.
+  if (window.jellyToast) {
+    window.jellyToast(message, { tone: mine ? 'success' : 'info', duration: mine ? 5500 : 4000 });
+    return;
+  }
   const container = document.getElementById('toast-container');
   if (!container) return;
-  const mine = !!(opts && opts.mine);
   const el = document.createElement('div');
   el.className = 'toast' + (mine ? ' toast-mine' : '');
   el.textContent = message;
@@ -3790,9 +3797,9 @@ function renderDayTabs() {
 }
 
 const FORMAT_BADGES = {
-  tournament: { label: 'Bracket', cls: 'badge-bracket' },
-  tally: { label: 'Score entry', cls: 'badge-tally' },
-  placement: { label: 'Podium pick', cls: 'badge-podium' },
+  tournament: { label: 'Bracket', cls: 'badge-bracket', variant: 'azure' },
+  tally: { label: 'Score entry', cls: 'badge-tally', variant: 'amber' },
+  placement: { label: 'Podium pick', cls: 'badge-podium', variant: 'platinum' },
 };
 
 function gameStatus(g) {
@@ -3844,7 +3851,7 @@ function renderGameList() {
             <span class="game-name">${esc(g.name)}</span>
             <span class="game-loc">📍 ${esc(g.location)}</span>
           </div>
-          <span class="format-badge ${esc(badge.cls)}">${esc(badge.label)}</span>
+          <jelly-badge class="format-badge" variant="${esc(badge.variant || 'platinum')}" size="small">${esc(badge.label)}</jelly-badge>
         </div>
         <p class="game-headline">${esc(g.headline)}</p>
         ${res ? `<div class="game-result-line">🥇 ${esc(teamName(res.medals.gold))} · 🥈 ${esc(teamName(res.medals.silver))} · 🥉 ${esc(teamName(res.medals.bronze))}</div>`
@@ -3890,7 +3897,7 @@ function renderGameView() {
       <span class="game-emoji-lg">${esc(g.emoji)}</span>
       <div>
         <h2>${esc(g.name)}</h2>
-        <p class="muted">📍 ${esc(g.location)} · ${esc(g.session)} · <span class="format-badge ${esc(badge.cls)}">${esc(badge.label)}</span></p>
+        <p class="muted">📍 ${esc(g.location)} · ${esc(g.session)} · <jelly-badge class="format-badge" variant="${esc(badge.variant || 'platinum')}" size="small">${esc(badge.label)}</jelly-badge></p>
       </div>
     </div>
     ${g.messtival ? '<p class="messtival-tag">🎉 Messtival — double points, counted double here too!</p>' : ''}
@@ -5352,6 +5359,17 @@ function applyTheme() {
   const dark = state.theme === 'dark' || (state.theme === null && prefersDark);
   document.body.classList.toggle('dark-theme', dark);
   document.body.classList.toggle('light-theme', !dark && state.theme === 'light');
+  // Drive Jelly UI's document-level tokens the same way: an explicit choice
+  // maps 1:1 onto data-jelly-mode; auto removes the attribute so Jelly's own
+  // prefers-color-scheme fallback tracks live OS flips (mirroring the app's
+  // @media token block). Canvas-painted Jelly components repaint on the
+  // jelly-theme-change event.
+  if (state.theme === 'dark' || state.theme === 'light') {
+    document.documentElement.setAttribute('data-jelly-mode', state.theme);
+  } else {
+    document.documentElement.removeAttribute('data-jelly-mode');
+  }
+  window.dispatchEvent(new CustomEvent('jelly-theme-change'));
   const toggle = document.getElementById('theme-toggle');
   if (toggle) toggle.textContent = dark ? '☀️' : '🌙';
   // The app can override the OS theme, so keep the browser chrome color in step.
@@ -5363,7 +5381,10 @@ function applyTheme() {
     meta.id = 'dynamic-theme-color';
     document.head.appendChild(meta);
   }
-  meta.content = dark ? '#10141c' : '#f4f6f9';
+  // Explicit hexes matching Jelly's background-default (body has a 0.2s
+  // background transition, so reading getComputedStyle here would capture
+  // the mid-transition color — keep these in sync with the palette).
+  meta.content = dark ? '#181b1d' : '#ffffff';
 }
 
 function toggleTheme() {
@@ -5597,6 +5618,24 @@ function doReload() {
 
 function showUpdateBanner() {
   if (document.getElementById('update-banner')) return;
+  // Jelly path: an info alert with a Refresh button (whole banner stays
+  // tappable, like the old pill). This is auto-reload safety UI, so it must
+  // never depend on the module having loaded — legacy pill as fallback.
+  if (customElements.get('jelly-alert') && customElements.get('jelly-button')) {
+    const bar = document.createElement('jelly-alert');
+    bar.id = 'update-banner';
+    bar.className = 'update-banner-alert';
+    bar.setAttribute('tone', 'info');
+    const text = document.createElement('span');
+    text.textContent = 'New version available — ';
+    const btn = document.createElement('jelly-button');
+    btn.setAttribute('size', 'small');
+    btn.textContent = 'Refresh';
+    bar.append(text, btn);
+    bar.addEventListener('click', doReload);
+    document.body.appendChild(bar);
+    return;
+  }
   const bar = document.createElement('button');
   bar.id = 'update-banner';
   bar.className = 'update-banner';
