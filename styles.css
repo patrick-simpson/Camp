@@ -97,7 +97,9 @@ body {
 #app {
   max-width: 640px;
   margin: 0 auto;
-  padding-bottom: 3rem;
+  /* The footer carries its own bottom padding — anything more here just
+     adds dead scroll below the last line. */
+  padding-bottom: 0;
 }
 
 /* ============================================================
@@ -106,12 +108,12 @@ body {
 .app-footer {
   max-width: 640px;
   margin: 0 auto;
-  padding: 0.5rem 1rem 1.5rem;
+  padding: 15px 1rem 0.75rem;
   text-align: center;
 }
 
 .footer-line {
-  margin: 0.2rem 0;
+  margin: 0;
   font-size: 0.72rem;
   color: var(--color-text-muted);
 }
@@ -283,13 +285,16 @@ html.view-only .role-btn {
 .app-header {
   position: relative;
   text-align: center;
-  padding: 2rem 1.25rem 1.25rem;
+  /* Side padding keeps the centered title clear of the gear button. */
+  padding: 1.25rem 4rem;
 }
 
 .settings-btn {
   position: absolute;
-  top: 1rem;
+  top: 50%;
   right: 1rem;
+  /* Vertically centered on the title line so the two never misalign. */
+  transform: translateY(-50%);
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: 50%;
@@ -302,24 +307,7 @@ html.view-only .role-btn {
 }
 
 .settings-btn:hover {
-  transform: rotate(30deg);
-}
-
-.presence-chip {
-  position: absolute;
-  top: 1rem;
-  left: 1rem;
-  display: inline-flex;
-  align-items: center;
-  padding: 0.4rem 0.7rem;
-  border-radius: 999px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-muted);
-  font-size: 0.8rem;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  box-shadow: var(--shadow-card);
+  transform: translateY(-50%) rotate(30deg);
 }
 
 .app-logo {
@@ -344,7 +332,9 @@ html.view-only .role-btn {
   padding: 0 1rem;
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  /* 15px between every section (hidden sections don't create gaps), so the
+     Happening-now banner sits 15px under the your-team strip too. */
+  gap: 15px;
 }
 
 .card {

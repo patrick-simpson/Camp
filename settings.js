@@ -21,6 +21,13 @@ let gameDraftFor = null; // which editGameId gameDraft was built for
 let gameDraftSnapshot = '';
 let extrasOpen = false;
 
+// True while the game editor holds unsaved edits. app.js's editorMidEntry()
+// checks this so the update-poll auto-reload and remote merges never wipe a
+// half-built game.
+function builderDirty() {
+  return !!gameDraft && JSON.stringify(gameDraft) !== gameDraftSnapshot;
+}
+
 // ── Entry point ───────────────────────────────────────────────────
 
 function renderSettings() {
@@ -706,9 +713,19 @@ function dayRowHTML(day, i, total) {
         <button type="button" class="reorder-btn" data-day-id="${esc(day.id)}" data-dir="1" ${i === total - 1 ? 'disabled' : ''}>↓</button>
         <span class="day-index-label">Day ${i + 1}</span>
       </div>
-      <div class="form-field">
-        <label class="form-label">Name</label>
-        <input class="form-input day-name-input" data-day-id="${esc(day.id)}" type="text" value="${esc(day.name)}">
+      <div class="form-row">
+        <div class="form-field">
+          <label class="form-label">Name</label>
+          <input class="form-input day-name-input" data-day-id="${esc(day.id)}" type="text" value="${esc(day.name)}">
+        </div>
+        <div class="form-field">
+          <label class="form-label">Day of week</label>
+          <select class="form-input day-dow-input" data-day-id="${esc(day.id)}">
+            <option value="">— none —</option>
+            ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].map((n, dow) =>
+              `<option value="${dow}" ${day.dow === dow ? 'selected' : ''}>${n}</option>`).join('')}
+          </select>
+        </div>
       </div>
       <div class="form-field">
         <label class="form-label">Note</label>
@@ -738,6 +755,16 @@ function wireDaysTab(card) {
       const val = input.value.trim();
       if (val) day.name = val;
       else input.value = day.name;
+      saveConfig();
+      renderAll();
+    });
+  });
+
+  card.querySelectorAll('.day-dow-input').forEach((sel) => {
+    sel.addEventListener('change', () => {
+      const day = dayById(sel.dataset.dayId);
+      if (!day) return;
+      day.dow = sel.value === '' ? null : parseInt(sel.value, 10);
       saveConfig();
       renderAll();
     });

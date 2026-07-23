@@ -14,7 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T09:06:47Z';
+const CODE_UPDATED_AT = '2026-07-23T10:32:41Z';
+// Shown in the footer; bump together with the ?v= cache-busters in index.html.
+const APP_VERSION = 103;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1028,14 +1030,20 @@ function formatEasternStamp(iso) {
   return `${get('month')} ${get('day')}, ${get('hour')}:${get('minute')}${(get('dayPeriod') || '').toLowerCase()} ET`;
 }
 
+// One line, three facts: who's here now, when data last changed, and what
+// build this is. The presence count lives here (not the header) and
+// renderPresence just re-renders the footer when it changes.
 function renderFooter() {
   const el = document.getElementById('app-footer');
   if (!el) return;
   const dataStamp = formatEasternStamp(state.meta && state.meta.lastDataChangeAt);
-  el.innerHTML = `
-    <p class="footer-line">🛠️ Code last updated: ${esc(formatEasternStamp(CODE_UPDATED_AT) || 'unknown')}</p>
-    <p class="footer-line">📋 Data last updated: ${dataStamp ? esc(dataStamp) : 'No scores entered yet'}</p>
-  `;
+  const bits = [];
+  if (syncEnabled() && presenceCount > 0) {
+    bits.push(`<span title="${presenceCount} device${presenceCount === 1 ? '' : 's'} here now">👥 ${presenceCount} here</span>`);
+  }
+  bits.push(`📋 Data: ${dataStamp ? esc(dataStamp) : 'no scores yet'}`);
+  bits.push(`<span title="Code last updated: ${esc(formatEasternStamp(CODE_UPDATED_AT) || 'unknown')}">🛠️ v${APP_VERSION}</span>`);
+  el.innerHTML = `<p class="footer-line">${bits.join(' · ')}</p>`;
 }
 
 // ── State ────────────────────────────────────────────────────────
@@ -1248,7 +1256,9 @@ function saveConfig() {
 function schedulePushConfig() {
   if (!fbConfigRef) return;
   clearTimeout(pushConfigTimer);
-  pushConfigTimer = setTimeout(pushConfig, 400);
+  // Null the handle when it fires (mirrors schedulePush) — its non-null-ness
+  // means "a config edit is queued but unsent", which defers remote applies.
+  pushConfigTimer = setTimeout(() => { pushConfigTimer = null; pushConfig(); }, 400);
 }
 
 function pushConfig() {
@@ -1587,15 +1597,7 @@ function updateSyncIndicator() {
 }
 
 function renderPresence() {
-  const el = document.getElementById('presence-chip');
-  if (!el) return;
-  if (!syncEnabled() || presenceCount < 1) {
-    el.hidden = true;
-    return;
-  }
-  el.hidden = false;
-  el.textContent = `👥 ${presenceCount}`;
-  el.title = `${presenceCount} device${presenceCount === 1 ? '' : 's'} here now`;
+  renderFooter(); // the live "who's here" count renders inside the footer line
 }
 
 function teamEmoji(id) {
@@ -3866,7 +3868,7 @@ function renderGameList() {
             <span class="game-name">${esc(g.name)}</span>
             <span class="game-loc">📍 ${esc(g.location)}</span>
           </div>
-          <span class="format-badge ${badge.cls}">${badge.label}</span>
+          <span class="format-badge ${esc(badge.cls)}">${esc(badge.label)}</span>
         </div>
         <p class="game-headline">${esc(g.headline)}</p>
         ${res ? `<div class="game-result-line">🥇 ${esc(teamName(res.medals.gold))} · 🥈 ${esc(teamName(res.medals.silver))} · 🥉 ${esc(teamName(res.medals.bronze))}</div>`
@@ -3912,7 +3914,7 @@ function renderGameView() {
       <span class="game-emoji-lg">${esc(g.emoji)}</span>
       <div>
         <h2>${esc(g.name)}</h2>
-        <p class="muted">📍 ${esc(g.location)} · ${esc(g.session)} · <span class="format-badge ${badge.cls}">${badge.label}</span></p>
+        <p class="muted">📍 ${esc(g.location)} · ${esc(g.session)} · <span class="format-badge ${esc(badge.cls)}">${esc(badge.label)}</span></p>
       </div>
     </div>
     ${g.messtival ? '<p class="messtival-tag">🎉 Messtival — double points, counted double here too!</p>' : ''}
@@ -5382,7 +5384,10 @@ const UPDATE_POLL_MS = 2 * 60 * 1000;
 function editorMidEntry() {
   const ae = document.activeElement;
   if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' || ae.isContentEditable)) return true;
-  return dataEditPending || pushTimer != null; // a real edit is typed/queued but not yet synced
+  // A half-built game in the week builder is unsaved in-memory work — the
+  // update-poll auto-reload and remote merges must not wipe it.
+  if (typeof builderDirty === 'function' && builderDirty()) return true;
+  return dataEditPending || pushTimer != null || pushConfigTimer != null; // a real edit is typed/queued but not yet synced
 }
 
 // Send any debounced push right now (e.g. when a score field loses focus, or
