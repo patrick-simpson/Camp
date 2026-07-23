@@ -14,9 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T13:56:29Z';
+const CODE_UPDATED_AT = '2026-07-23T14:51:05Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 122;
+const APP_VERSION = 123;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1052,6 +1052,7 @@ function makeFreshState() {
     brownie: {},   // teamId -> brownie point count — just for fun, not scoring
     picSetup: {},  // gameId -> { source: 'pregenerated'|'own'|'numbered', words: [] } (Pictionary item source)
     live: {},      // gameId -> { key, inning, hr } live match tally (synced so everyone can watch)
+    clocks: {},    // gameId -> { running, endAt, remaining, duration } synced game clock
     ui: { day: null, gameId: null }, // day is filled in by migrateState (needs config)
     theme: null,
   };
@@ -1124,6 +1125,7 @@ if (!state.meta) state.meta = {};
 if (!state.bonuses) state.bonuses = {}; // extra/bonus points ledger
 if (!state.brownie) state.brownie = {}; // brownie point tallies (just for fun)
 if (!state.live) state.live = {}; // live match tallies (synced; see liveTracker)
+if (!state.clocks) state.clocks = {}; // per-game synced clocks (see getClock/setClock)
 if (state.theme === undefined) state.theme = null; // pre-theme saves: follow the device
 if (state.notify === undefined) state.notify = false; // device-local, not synced (see SYNC_KEYS)
 // state.followTeam stays `undefined` until the picker is answered (a team id,
@@ -1176,7 +1178,7 @@ function touchData() {
 // and the SDK loaded, scores sync across every device in real time.
 // Otherwise the app runs exactly as before, local-only.
 
-const SYNC_KEYS = ['teams', 'results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta', 'brownie'];
+const SYNC_KEYS = ['teams', 'results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta', 'brownie', 'clocks'];
 let fbRef = null;
 // Per-tab id for the "who's here" presence chip — minted once per page load
 // (not persisted) so each open tab counts, and cleans up, independently.
@@ -1325,7 +1327,7 @@ function initSync() {
         const s = state.picSetup[gid];
         if (s && s.words && s.words.length) localPicWords[gid] = s.words;
       });
-      ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta', 'brownie'].forEach((k) => {
+      ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta', 'brownie', 'clocks'].forEach((k) => {
         state[k] = remote[k] !== undefined ? remote[k] : {};
       });
       Object.keys(localPicWords).forEach((gid) => {
@@ -1438,7 +1440,7 @@ function picSetupForSync(picSetup) {
 // Maps written per-child (one path per game/team/bonus) so concurrent edits to
 // DIFFERENT items on different devices never overwrite each other. teams/meta
 // are small singletons written whole.
-const SYNC_ITEM_MAPS = ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'brownie'];
+const SYNC_ITEM_MAPS = ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'brownie', 'clocks'];
 const SYNC_SINGLETONS = ['teams', 'meta'];
 
 // The synced portion of state as it should exist on the server: a deep copy
@@ -1905,7 +1907,10 @@ function rehydrateTimers() {
 
 // Keep the screen awake while a countdown runs (guarded — not on all browsers).
 let wakeLockSentinel = null;
-function anyTimerRunning() { return Object.values(liveTimers).some((t) => t.running); }
+function anyTimerRunning() {
+  return Object.values(liveTimers).some((t) => t.running)
+    || Object.values(state.clocks || {}).some((c) => c && c.running);
+}
 async function requestWakeLock() {
   try {
     if ('wakeLock' in navigator && !wakeLockSentinel && anyTimerRunning()) {
@@ -1997,48 +2002,46 @@ function renderToolsIfCurrent(gid) {
 }
 
 function renderTools(wrap, g) {
+  // The game clock now renders separately (everyone-facing) in #clock-area via
+  // clockBlockHTML / the live tracker's Big Board — see renderGameView. Tools
+  // is left for the Pictionary round runner (editor-only prompt/photo flow).
   let html = '';
-  // Live-tracked matches carry their clock ON the Big Board (synced, next to
-  // the score) — the separate top-of-page countdown would duplicate it a
-  // full screen away from where the ref is scoring.
-  const timerHere = g.timer && !g.liveTracker;
-  if (timerHere) html += countdownHTML(g);
   if (g.prompts) html += picRoundHTML(g);
   wrap.innerHTML = html;
-  if (timerHere) bindCountdown(wrap, g);
   if (g.prompts) bindPicRound(wrap, g);
 }
 
-// ── Big Board clock ticker ───────────────────────────────────────
-// Updates every visible board clock from the synced clock state. Runs on a
-// cheap global interval (see init) so spectators' clocks tick without any
-// network traffic; the editor's device sounds the alarm at zero.
+// ── Game clock ticker ────────────────────────────────────────────
+// Updates every visible clock (the standalone game-clock box AND the Big
+// Board's clock — both carry [data-game-clock]) from the per-game synced
+// clock. Runs on a cheap global interval (see init) so every device — refs
+// and spectators — ticks in lockstep without any network traffic while it
+// runs; the editor's device sounds the alarm and stops the clock at zero.
 function tickBoardClocks() {
-  const els = document.querySelectorAll('[data-board-clock]');
+  const els = document.querySelectorAll('[data-game-clock]');
   if (!els.length) return;
   els.forEach((el) => {
     const g = gameById(el.dataset.gameId);
-    if (!g) return;
-    const l = getLiveMatch(g, el.dataset.a, el.dataset.b);
-    if (!l.clock) return;
-    const rem = clockRemaining(l.clock);
+    if (!g || !g.timer) return;
+    const clock = getClock(g);
+    const rem = clockRemaining(clock);
     const prev = Number(el.dataset.prev) || 0;
     el.dataset.prev = rem;
     el.textContent = fmtBoardClock(rem);
     el.classList.toggle('board-clock-zero', rem === 0);
     // Anticipation: amber pulse inside the last minute, heartbeat + board
     // glow inside the last ten seconds (only while actually running).
-    const running = !!l.clock.running;
+    const running = !!clock.running;
     el.classList.toggle('clock-final-min', running && rem > 10000 && rem <= 60000);
     el.classList.toggle('clock-final-ten', running && rem > 0 && rem <= 10000);
     const board = el.closest('.big-board');
     if (board) board.classList.toggle('board-final-ten', running && rem > 0 && rem <= 10000);
-    if (l.clock.running && rem === 0 && prev > 0) {
+    if (running && rem === 0 && prev > 0) {
       // Just hit zero. Editors get the buzzer and stop the synced clock so
       // every device settles on 0:00; viewers only see the pulse.
       if (canEdit()) {
         playAlarm();
-        setMatchClock(g, el.dataset.a, el.dataset.b, (c) => { c.running = false; c.remaining = 0; });
+        setClock(g, (c) => { c.running = false; c.remaining = 0; });
         renderAll();
       }
     }
@@ -3886,6 +3889,7 @@ function renderGameView() {
         <ul>${(sec.items || []).map((it) => `<li>${esc(it)}</li>`).join('')}</ul>
       `).join('')}
     </details>` : ''}
+    <div id="clock-area"></div>
     <div id="tools-area"></div>
     <div id="entry-area"></div>
   `;
@@ -3896,6 +3900,14 @@ function renderGameView() {
     saveState();
     renderAll();
   });
+
+  // Standalone game clock — everyone sees it tick live; only editors get the
+  // controls (clockBlockHTML handles that). Live-tracker games show their clock
+  // on the Big Board instead, so they're excluded here to avoid a double clock.
+  if (g.timer && !g.liveTracker && !state.results[g.id]) {
+    const ca = document.getElementById('clock-area');
+    if (ca) { ca.innerHTML = clockBlockHTML(g); bindClock(ca, g); }
+  }
 
   // Pictionary keeps its tools visible after the result is saved so
   // photos can still be exported; other tools hide once the game is done.
@@ -4538,6 +4550,7 @@ function normalizeSyncedState() {
   });
   if (!state.live) state.live = {}; // RTDB prunes an empty live map to nothing
   Object.values(state.live).forEach(normalizeLiveMatch);
+  if (!state.clocks) state.clocks = {}; // RTDB prunes an empty clocks map to nothing
   // Migrate rosters saved before names/counselors were set: swap generic
   // "Team N" names and placeholder counselors for the real roster values.
   // Anything hand-edited (not matching a known placeholder) is left alone.
@@ -4653,6 +4666,95 @@ function setMatchClock(g, aId, bId, mutate) {
   mutate(clock);
   l.clock = clock;
   setLiveMatch(g, l);
+}
+
+// ── Per-game synced clock ────────────────────────────────────────
+// One clock per game, stored in the synced `clocks` map (SYNC_KEYS) — so every
+// device (refs and spectators) sees the same countdown and it survives bracket
+// matchup changes (keyed by game, not by pairing, unlike the old match clock).
+// Only endAt + running sync; each device computes remaining locally, so a
+// running clock writes nothing to the network. Used by the standalone
+// game-clock box AND, for live-tracker games, the Big Board clock.
+function getClock(g) {
+  const c = state.clocks && state.clocks[g.id];
+  if (c && typeof c.duration === 'number') {
+    return {
+      running: !!c.running,
+      endAt: Number(c.endAt) || 0,
+      remaining: Number(c.remaining) || 0,
+      duration: Number(c.duration) || 0,
+    };
+  }
+  return defaultClock(g);
+}
+
+function setClock(g, mutate) {
+  if (!state.clocks) state.clocks = {};
+  const clock = getClock(g);
+  mutate(clock);
+  state.clocks[g.id] = clock;
+  touchData();
+  saveState();
+}
+
+// Apply a clock control action (start / pause / reset / preset) and re-render.
+// Shared by the standalone game clock and the Big Board clock so both behave
+// identically.
+function applyClockAction(g, act, secs) {
+  if (act === 'start') getAudio(); // unlock audio while we have the user gesture
+  setClock(g, (c) => {
+    if (act === 'start') {
+      if (clockRemaining(c) === 0) c.remaining = c.duration; // restart from full
+      c.endAt = Date.now() + clockRemaining(c);
+      c.running = true;
+    } else if (act === 'pause') {
+      c.remaining = clockRemaining(c);
+      c.running = false;
+    } else if (act === 'reset') {
+      cutAllSound();
+      c.running = false;
+      c.remaining = c.duration;
+    } else if (act === 'preset') {
+      c.duration = (Number(secs) || 600) * 1000;
+      c.remaining = c.duration;
+      c.running = false;
+    }
+  });
+  if (act === 'start') requestWakeLock();
+  else if (!anyTimerRunning()) releaseWakeLock();
+  renderAll();
+}
+
+// Standalone game clock for games WITHOUT a live tracker (the tracker games
+// show their clock on the Big Board instead). Everyone sees it tick; only
+// editors get the Start/Pause/Reset controls and preset chips.
+function clockBlockHTML(g) {
+  const clock = getClock(g);
+  const remaining = clockRemaining(clock);
+  const viewer = !canEdit();
+  const presets = (!viewer && !clock.running && (g.timer.presets || []).length > 1)
+    ? `<div class="preset-row">${g.timer.presets.map((p) =>
+        `<button class="preset-chip ${clock.duration === p * 1000 ? 'selected' : ''}" data-clock="preset" data-secs="${p}">${fmtBoardClock(p * 1000)}</button>`).join('')}</div>`
+    : '';
+  const controls = viewer ? '' : `
+    ${presets}
+    <div class="board-clock-btns">
+      ${clock.running
+        ? '<button class="timer-main-btn" data-clock="pause">⏸ Pause</button>'
+        : `<button class="timer-main-btn" data-clock="start">▶ ${remaining === clock.duration ? 'Start' : remaining === 0 ? 'Restart' : 'Resume'}</button>`}
+      ${remaining !== clock.duration ? '<button class="timer-side-btn" data-clock="reset">↺ Reset</button>' : ''}
+    </div>`;
+  return `<div class="tool-box game-clock-box ${remaining === 0 ? 'alarming' : ''}" data-tool="game-clock">
+    <div class="tool-label">⏱️ ${esc(g.timer.label || 'Game clock')}</div>
+    <div class="big-clock board-clock ${remaining === 0 ? 'board-clock-zero' : ''}" data-game-clock data-game-id="${esc(g.id)}" data-prev="${remaining}">${fmtBoardClock(remaining)}</div>
+    ${controls}
+  </div>`;
+}
+
+function bindClock(container, g) {
+  container.querySelectorAll('[data-tool="game-clock"] [data-clock]').forEach((btn) => {
+    btn.addEventListener('click', () => applyClockAction(g, btn.dataset.clock, btn.dataset.secs));
+  });
 }
 
 // ── Ladder Ball match (per-round cancellation, first to exactly 21) ──
@@ -4782,7 +4884,7 @@ function liveTrackerHTML(g, aId, bId, viewer) {
   const sideLabel = g.liveTracker.sideLabel || 'up';
   const periodLabel = g.liveTracker.periodLabel || 'Inning';
   const l = getLiveMatch(g, aId, bId);
-  const clock = g.timer ? (l.clock || defaultClock(g)) : null;
+  const clock = g.timer ? getClock(g) : null;
   const remaining = clock ? clockRemaining(clock) : 0;
 
   const col = (id) => `
@@ -4806,7 +4908,7 @@ function liveTrackerHTML(g, aId, bId, viewer) {
 
   const clockHTML = clock ? `
     <div class="board-clock-wrap">
-      <span class="board-clock ${remaining === 0 ? 'board-clock-zero' : ''}" data-board-clock data-game-id="${esc(g.id)}" data-a="${esc(aId)}" data-b="${esc(bId)}" data-prev="${remaining}">${fmtBoardClock(remaining)}</span>
+      <span class="board-clock ${remaining === 0 ? 'board-clock-zero' : ''}" data-game-clock data-game-id="${esc(g.id)}" data-prev="${remaining}">${fmtBoardClock(remaining)}</span>
       ${viewer ? '' : `
         ${!clock.running && (g.timer.presets || []).length > 1 ? `<div class="preset-row">${g.timer.presets.map((p) =>
           `<button class="preset-chip ${clock.duration === p * 1000 ? 'selected' : ''}" data-clock="preset" data-secs="${p}">${fmtBoardClock(p * 1000)}</button>`).join('')}</div>` : ''}
@@ -4860,28 +4962,7 @@ function bindLiveTracker(container, g, aId, bId) {
   // Clock controls re-render the whole view (their buttons change shape);
   // the running display itself ticks via the global board-clock interval.
   container.querySelectorAll('[data-clock]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const act = btn.dataset.clock;
-      setMatchClock(g, aId, bId, (c) => {
-        if (act === 'start') {
-          if (clockRemaining(c) === 0) c.remaining = c.duration; // restart from full
-          c.endAt = Date.now() + clockRemaining(c);
-          c.running = true;
-        } else if (act === 'pause') {
-          c.remaining = clockRemaining(c);
-          c.running = false;
-        } else if (act === 'reset') {
-          cutAllSound();
-          c.running = false;
-          c.remaining = c.duration;
-        } else if (act === 'preset') {
-          c.duration = (Number(btn.dataset.secs) || 600) * 1000;
-          c.remaining = c.duration;
-          c.running = false;
-        }
-      });
-      renderAll();
-    });
+    btn.addEventListener('click', () => applyClockAction(g, btn.dataset.clock, btn.dataset.secs));
   });
 
   const refresh = () => {
