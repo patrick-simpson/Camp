@@ -3218,16 +3218,14 @@ body.no-scroll {
 .medal-slot-silver { background: var(--color-silver-bg); color: var(--color-silver); }
 .medal-slot-bronze { background: var(--color-bronze-bg); color: var(--color-bronze); }
 
-.medal-slot select {
+/* Medal picks are jelly-select hosts (fixed 240px by default — let the row
+   size them instead). */
+.medal-slot jelly-select {
   flex: 1;
   max-width: 60%;
-  border: 1.5px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font-size: 0.95rem;
-  font-family: inherit;
-  padding: 0.45rem 0.5rem;
-  border-radius: var(--radius-md);
+  width: auto;
+  height: 46px;
+  --jelly-select-font-size: 0.95rem;
 }
 
 .entry-error {
@@ -3428,6 +3426,71 @@ body.no-scroll {
   font-weight: 700;
   cursor: pointer;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+}
+
+/* ============================================================
+   JELLY BUTTON HOST OVERRIDES
+   Legacy button classes now ride on jelly-button hosts purely as JS hooks
+   and layout carriers. The component draws its own pill, so the old chrome
+   (background, border, padding, radius, font, color) must not hit the host
+   — keep only each spot's flex/width layout, and use Jelly's per-component
+   vars to preserve the old tap-target sizes.
+   ============================================================ */
+jelly-button.primary-btn,
+jelly-button.secondary-btn,
+jelly-button.counter-btn,
+jelly-button.timer-main-btn,
+jelly-button.timer-side-btn,
+jelly-button.winner-btn,
+jelly-button.copy-matchup-btn {
+  background: none;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  box-shadow: none;
+  min-height: 0;
+  color: inherit;
+  transition: none;
+  --jelly-button-min-width: 0;
+}
+jelly-button.primary-btn {
+  width: 100%;
+  --jelly-button-height: 52px;
+}
+jelly-button.secondary-btn {
+  flex: 1;
+  --jelly-button-height: 44px;
+  --jelly-button-font-size: 0.95rem;
+}
+jelly-button.counter-btn {
+  flex: 1;
+  display: block;
+  --jelly-button-height: 52px;
+  --jelly-button-font-size: 1.05rem;
+  --jelly-button-padding-inline: 8px;
+}
+jelly-button.counter-btn .counter-btn-sub {
+  display: block;
+  font-size: 0.62rem;
+  font-weight: 600;
+  opacity: 0.75;
+}
+jelly-button.timer-main-btn {
+  flex: 1;
+  --jelly-button-height: 60px;
+  --jelly-button-font-size: 1.1rem;
+}
+jelly-button.timer-side-btn {
+  --jelly-button-height: 60px;
+}
+jelly-button.winner-btn {
+  flex: 1;
+  --jelly-button-height: 48px;
+}
+jelly-button.copy-matchup-btn {
+  width: 100%;
+  --jelly-button-height: 44px;
+  --jelly-button-font-size: 0.9rem;
 }
 
 /* Jelly variant of the update banner (jelly-alert host — the alert draws its

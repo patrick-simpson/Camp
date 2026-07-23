@@ -19,8 +19,8 @@
   <!-- Jelly UI web components (vendored, see vendor/jelly.js header). Module
        scripts are deferred by spec, so this never blocks first paint and the
        classic scripts at the end of <body> always execute before it. -->
-  <script type="module" src="vendor/jelly.js?v=114"></script>
-  <link rel="stylesheet" href="styles.css?v=114">
+  <script type="module" src="vendor/jelly.js?v=115"></script>
+  <link rel="stylesheet" href="styles.css?v=115">
 
   <script>
     // Decide lock state before the page paints so we never flash the app,
@@ -127,8 +127,8 @@
         <p class="muted standings-hint">Only counts games saved in this app — your paper scoreboard is the official one.</p>
         <p id="sync-status" class="sync-status" aria-live="polite"></p>
         <div class="standings-actions">
-          <button id="copy-standings-btn" class="secondary-btn">📋 Copy scores &amp; points</button>
-          <button id="share-standings-btn" class="secondary-btn" hidden>📤 Share</button>
+          <jelly-button id="copy-standings-btn" class="secondary-btn" variant="platinum">📋 Copy scores &amp; points</jelly-button>
+          <jelly-button id="share-standings-btn" class="secondary-btn" variant="platinum" hidden>📤 Share</jelly-button>
         </div>
         <div class="table-scroll">
           <table id="standings-table" class="standings-table">
@@ -277,9 +277,9 @@
        falls back to local-only mode automatically. -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=114"></script>
-  <script src="defaults.js?v=114"></script>
-  <script src="app.js?v=114"></script>
-  <script src="settings.js?v=114"></script>
+  <script src="firebase-config.js?v=115"></script>
+  <script src="defaults.js?v=115"></script>
+  <script src="app.js?v=115"></script>
+  <script src="settings.js?v=115"></script>
 </body>
 </html>

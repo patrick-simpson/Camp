@@ -14,9 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T12:18:36Z';
+const CODE_UPDATED_AT = '2026-07-23T12:28:08Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 114;
+const APP_VERSION = 115;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -2045,17 +2045,17 @@ function countdownHTML(g) {
 
   let mainBtn;
   if (t.alarming) {
-    mainBtn = `<button class="timer-main-btn alarm-btn" data-action="silence">🔕 Silence</button>`;
+    mainBtn = `<jelly-button class="timer-main-btn alarm-btn" variant="rose" block data-action="silence">🔕 Silence</jelly-button>`;
   } else if (t.running) {
-    mainBtn = `<button class="timer-main-btn" data-action="pause">⏸ Pause</button>`;
+    mainBtn = `<jelly-button class="timer-main-btn" block data-action="pause">⏸ Pause</jelly-button>`;
   } else if (t.remaining === 0) {
     mainBtn = g.timer.rounds && t.round < g.timer.rounds
-      ? `<button class="timer-main-btn" data-action="next-round">Next round →</button>`
-      : `<button class="timer-main-btn" data-action="reset">↺ Reset</button>`;
+      ? `<jelly-button class="timer-main-btn" block data-action="next-round">Next round →</jelly-button>`
+      : `<jelly-button class="timer-main-btn" block data-action="reset">↺ Reset</jelly-button>`;
   } else if (t.remaining < t.duration) {
-    mainBtn = `<button class="timer-main-btn" data-action="start">▶ Resume</button>`;
+    mainBtn = `<jelly-button class="timer-main-btn" block data-action="start">▶ Resume</jelly-button>`;
   } else {
-    mainBtn = `<button class="timer-main-btn" data-action="start">▶ Start</button>`;
+    mainBtn = `<jelly-button class="timer-main-btn" block data-action="start">▶ Start</jelly-button>`;
   }
 
   return `<div class="tool-box ${t.alarming ? 'alarming' : ''}" data-tool="countdown">
@@ -2065,7 +2065,7 @@ function countdownHTML(g) {
     ${presets}
     <div class="timer-btn-row">
       ${mainBtn}
-      ${!t.alarming && t.remaining !== t.duration ? `<button class="timer-side-btn" data-action="reset">↺ Reset</button>` : ''}
+      ${!t.alarming && t.remaining !== t.duration ? `<jelly-button class="timer-side-btn" variant="platinum" data-action="reset">↺ Reset</jelly-button>` : ''}
     </div>
   </div>`;
 }
@@ -2245,9 +2245,9 @@ function picRoundHTML(g) {
       <div class="pic-setup">
         <p class="pic-setup-q">How should the ${g.prompts.length} drawing items be shown to the ref?</p>
         <div class="pic-setup-opts">
-          <button class="secondary-btn" data-pic-source="pregenerated">🎃 Use the built-in list</button>
-          <button class="secondary-btn" data-pic-source="own">✏️ Enter our own</button>
-          <button class="secondary-btn" data-pic-source="numbered">🔢 Just numbered items</button>
+          <jelly-button class="secondary-btn" variant="platinum" block data-pic-source="pregenerated">🎃 Use the built-in list</jelly-button>
+          <jelly-button class="secondary-btn" variant="platinum" block data-pic-source="own">✏️ Enter our own</jelly-button>
+          <jelly-button class="secondary-btn" variant="platinum" block data-pic-source="numbered">🔢 Just numbered items</jelly-button>
         </div>
         <p class="muted pic-setup-hint">Viewers never see the words either way — only the live times. This locks once a team has started.</p>
       </div>
@@ -2289,15 +2289,15 @@ function picRoundHTML(g) {
         <div class="sw-total-line">Team total: <strong id="sw-total-${g.id}">${fmtWatch(w.lapsTotal + (w.running ? Date.now() - w.startAt : 0))}</strong></div>
         <div class="timer-btn-row">
           ${w.running
-            ? `<button class="timer-main-btn stop-lap-btn" data-action="stop-lap">⏹ Guessed it! Stop clock</button>`
-            : `<button class="timer-main-btn" data-action="start-lap">▶ Nose down — start</button>`}
+            ? `<jelly-button class="timer-main-btn stop-lap-btn" variant="amber" block data-action="stop-lap">⏹ Guessed it! Stop clock</jelly-button>`
+            : `<jelly-button class="timer-main-btn" block data-action="start-lap">▶ Nose down — start</jelly-button>`}
         </div>`;
     } else {
       const photoCount = round.laps.filter((l) => l.photo).length;
       panel = `
         <div class="pic-done-banner">🎉 Round complete — total <strong>${fmtWatch(round.laps.reduce((a, l) => a + l.ms, 0))}</strong>. Score filled in below.</div>
         <div class="timer-btn-row">
-          <button class="timer-main-btn" data-action="export-photos">⬇ Export ${photoCount} captioned photo${photoCount === 1 ? '' : 's'}</button>
+          <jelly-button class="timer-main-btn" variant="platinum" block data-action="export-photos">⬇ Export ${photoCount} captioned photo${photoCount === 1 ? '' : 's'}</jelly-button>
         </div>
         <p class="muted pic-export-hint" id="pic-export-status">Each photo gets a harvest banner with the team, the prompt, and their time. Photos live on the phone that took them.</p>`;
     }
@@ -2644,10 +2644,10 @@ function matchupCalloutHTML(aId, bId) {
     <p class="call-next-teams">${esc(teamName(aId))} <span class="vs">vs</span> ${esc(teamName(bId))}</p>
     ${counselors.length === 2 ? `<p class="call-next-counselors">Counselors: ${esc(counselors[0])} &amp; ${esc(counselors[1])}</p>` : ''}
     <div class="winner-btn-row">
-      <button class="secondary-btn winner-btn" data-winner="${aId}">${esc(teamName(aId))} won</button>
-      <button class="secondary-btn winner-btn" data-winner="${bId}">${esc(teamName(bId))} won</button>
+      <jelly-button class="winner-btn" variant="azure" block data-winner="${aId}">${esc(teamName(aId))} won</jelly-button>
+      <jelly-button class="winner-btn" variant="azure" block data-winner="${bId}">${esc(teamName(bId))} won</jelly-button>
     </div>
-    <button class="copy-matchup-btn">📋 Copy matchup for text</button>
+    <jelly-button class="copy-matchup-btn" variant="platinum" block>📋 Copy matchup for text</jelly-button>
   </div>`;
 }
 
@@ -4213,22 +4213,21 @@ function medalPickerHTML(picks, game) {
   ];
   return `<div class="medal-picker">
     ${slots.map((s) => `
-      <label class="medal-slot medal-slot-${s.key}">
+      <div class="medal-slot medal-slot-${s.key}">
         <span>${s.label}</span>
-        <select data-medal="${s.key}">
-          <option value="">— pick team —</option>
+        <jelly-select data-medal="${s.key}" placeholder="— pick team —" ${picks[s.key] ? `value="${esc(picks[s.key])}"` : ''} label="${s.key} medal team">
           ${state.teams.map((t) =>
-            `<option value="${t.id}" ${picks[s.key] === t.id ? 'selected' : ''}>${teamEmoji(t.id)} ${esc(t.name)}</option>`
+            `<jelly-option value="${t.id}">${teamEmoji(t.id)} ${esc(t.name)}</jelly-option>`
           ).join('')}
-        </select>
-      </label>
+        </jelly-select>
+      </div>
     `).join('')}
   </div>`;
 }
 
 function readMedalPicks(container) {
   const picks = {};
-  container.querySelectorAll('select[data-medal]').forEach((sel) => {
+  container.querySelectorAll('[data-medal]').forEach((sel) => {
     picks[sel.dataset.medal] = sel.value || null;
   });
   return picks;
@@ -4260,10 +4259,10 @@ function renderTally(container, g) {
               data-team-id="${t.id}" value="${esc(draft.scores[t.id] || '')}" />
           </div>
           ${steps ? `<div class="counter-btn-row" data-team-id="${t.id}">
-            <button class="counter-btn minus" data-delta="${-steps[0]}">−${steps[0]}</button>
+            <jelly-button class="counter-btn minus" shape="square" variant="platinum" block data-delta="${-steps[0]}">−${steps[0]}</jelly-button>
             ${steps.map((s) => {
               const lbl = g.counterStepLabels && g.counterStepLabels[s] ? `<span class="counter-btn-sub">${esc(g.counterStepLabels[s])}</span>` : '';
-              return `<button class="counter-btn plus" data-delta="${s}">+${s}${lbl}</button>`;
+              return `<jelly-button class="counter-btn plus" shape="square" block data-delta="${s}">+${s}${lbl}</jelly-button>`;
             }).join('')}
           </div>` : ''}
         </div>
@@ -4271,7 +4270,7 @@ function renderTally(container, g) {
     </div>
     <div id="tally-medals"></div>
     <p id="entry-error" class="entry-error" role="alert" hidden></p>
-    <button id="save-result-btn" class="primary-btn">Save Result</button>
+    <jelly-button id="save-result-btn" class="primary-btn" block>Save Result</jelly-button>
   `;
 
   container.querySelectorAll('.score-input-row input').forEach((input) => {
@@ -4383,7 +4382,7 @@ function updateTallyMedals(g) {
     ${medalPickerHTML(picks, g)}
   `;
 
-  wrap.querySelectorAll('select[data-medal]').forEach((sel) => {
+  wrap.querySelectorAll('[data-medal]').forEach((sel) => {
     sel.addEventListener('change', () => {
       draft.medals[sel.dataset.medal] = sel.value || null;
       saveState();
@@ -4402,10 +4401,10 @@ function renderPlacement(container, g) {
     <p class="muted">No score-keeping needed — just record who placed.</p>
     <div id="placement-medals">${medalPickerHTML(draft.medals, g)}</div>
     <p id="entry-error" class="entry-error" role="alert" hidden></p>
-    <button id="save-result-btn" class="primary-btn">Save Result</button>
+    <jelly-button id="save-result-btn" class="primary-btn" block>Save Result</jelly-button>
   `;
 
-  container.querySelectorAll('select[data-medal]').forEach((sel) => {
+  container.querySelectorAll('[data-medal]').forEach((sel) => {
     sel.addEventListener('change', () => {
       draft.medals[sel.dataset.medal] = sel.value || null;
       saveState();
@@ -4548,7 +4547,7 @@ function renderTournament(container, g) {
     container.innerHTML = `
       <h3>Run the bracket</h3>
       <p class="muted">Three first-round matches, then the medal round. The bye goes to the Round&nbsp;1 winner with the fewest points this week — the app suggests who, using the live standings.</p>
-      <button id="start-bracket-btn" class="primary-btn">Start Bracket</button>
+      <jelly-button id="start-bracket-btn" class="primary-btn" block>Start Bracket</jelly-button>
     `;
     document.getElementById('start-bracket-btn').addEventListener('click', () => {
       state.brackets[g.id] = freshBracket();
@@ -4953,7 +4952,7 @@ function ladderMatchHTML(g, aId, bId) {
       ${teamBlock(aId, 'a', l.a, l.ra)}
       ${teamBlock(bId, 'b', l.b, l.rb)}
     </div>
-    <button class="primary-btn ladder-score-round" data-ladder="score-round"${winner ? ' disabled' : ''}>Score this round</button>
+    <jelly-button class="primary-btn ladder-score-round" block data-ladder="score-round"${winner ? ' disabled' : ''}>Score this round</jelly-button>
     ${l.log.length ? '<button class="link-btn ladder-undo" data-ladder="undo-round">Undo last round</button>' : ''}
     ${wonBanner}
   </div>`;
@@ -5293,7 +5292,7 @@ function renderBracketSummary(body, g, b) {
       <div class="medal-row bronze-row">🥉 ${teamEmoji(bronzeId)} <strong>${esc(teamName(bronzeId))}</strong> <span class="medal-points">+${MEDAL_POINTS.bronze} pts</span></div>
     </div>
     <p class="muted">Eliminated in Round 1: ${eliminated.map((id) => esc(teamName(id))).join(', ')}</p>
-    <button id="save-bracket-btn" class="primary-btn">Save Result</button>
+    <jelly-button id="save-bracket-btn" class="primary-btn" block>Save Result</jelly-button>
   `;
 
   document.getElementById('save-bracket-btn').addEventListener('click', () => {
@@ -5525,7 +5524,11 @@ const UPDATE_POLL_MS = 2 * 60 * 1000;
 
 function editorMidEntry() {
   const ae = document.activeElement;
-  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' || ae.isContentEditable)) return true;
+  // Jelly form controls surface as the focused element's HOST (JELLY-INPUT,
+  // JELLY-TEXTAREA, JELLY-SELECT, …) — a focused one is mid-entry exactly
+  // like a native field; missing this would let a deploy's auto-reload eat
+  // a score being typed.
+  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' || ae.tagName.startsWith('JELLY-') || ae.isContentEditable)) return true;
   // A half-built game in the week builder is unsaved in-memory work — the
   // update-poll auto-reload and remote merges must not wipe it.
   if (typeof builderDirty === 'function' && builderDirty()) return true;
