@@ -162,7 +162,9 @@ body {
 
 .pts-btn-row {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  /* One equal column per button — verse uses 0-5, cleanup 0-3. */
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   gap: 0.35rem;
 }
 
