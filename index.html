@@ -16,7 +16,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=101">
+  <link rel="stylesheet" href="styles.css?v=103">
 
   <script>
     // Decide lock state before the page paints so we never flash the app,
@@ -73,8 +73,7 @@
   <div id="app">
 
     <header class="app-header">
-      <div class="app-logo"><span>🏅</span> Camp</div>
-      <span id="presence-chip" class="presence-chip" hidden></span>
+      <div class="app-logo">Camp</div>
       <button id="settings-btn" class="settings-btn" aria-label="Settings" title="Settings">⚙️</button>
     </header>
 
@@ -113,6 +112,10 @@
       <!-- ── GAME VIEW (detail; outside the card so it shows even when
            Competitions is collapsed, e.g. opened from a Live-now card) ── -->
       <section id="game-view" class="card game-view" hidden></section>
+
+      <!-- ── WEEK BUILDER (editor-only; opened from Settings → Set up the
+           week; body.builder-open hides every sibling section while it's up) ── -->
+      <section id="settings-view" class="settings-view" hidden></section>
 
       <!-- ── WEEK STANDINGS ─────────────────────────────── -->
       <details class="card standings-card collapsible-card" data-card="standings">
@@ -235,6 +238,11 @@
           <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🔑</span> Score entry</span>
           <button id="role-btn" class="role-btn"></button>
         </div>
+        <!-- Editors only (hidden for view-only via CSS): the week builder. -->
+        <button id="builder-row" class="settings-link" type="button">
+          <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🛠️</span> Set up the week</span>
+          <span class="settings-link-chevron" aria-hidden="true">›</span>
+        </button>
         <!-- Editors only (hidden for view-only via CSS): opens the point-change log. -->
         <button id="history-row" class="settings-link" type="button">
           <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🕘</span> Change history</span>
@@ -284,7 +292,9 @@
        falls back to local-only mode automatically. -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=101"></script>
-  <script src="app.js?v=101"></script>
+  <script src="firebase-config.js?v=103"></script>
+  <script src="defaults.js?v=103"></script>
+  <script src="app.js?v=103"></script>
+  <script src="settings.js?v=103"></script>
 </body>
 </html>

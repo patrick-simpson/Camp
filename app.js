@@ -14,7 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T09:06:47Z';
+const CODE_UPDATED_AT = '2026-07-23T10:32:41Z';
+// Shown in the footer; bump together with the ?v= cache-busters in index.html.
+const APP_VERSION = 103;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -156,387 +158,12 @@ const DAY_NAMES = { 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5:
 const MEDAL_POINTS = { gold: 7, silver: 5, bronze: 3 };
 
 // ── Game catalog ────────────────────────────────────────────────
-
-const GAMES = [
-  {
-    id: 'shields', name: 'Shields', emoji: '🛡️', day: 1, session: 'Morning',
-    location: 'Dining Hall', format: 'placement',
-    headline: 'Every team designs a shield — judged at Monday evening service.',
-    rules: [
-      { h: 'Must include', items: ['Team name', 'Team crest', 'The year', "Everyone's signature"] },
-      { h: 'How it works', items: [
-        'Everyone on the team participates somehow — design, tracing, or coloring.',
-        'Shields must be finished and ready to judge at the START of Monday evening service.',
-      ] },
-      { h: 'Winning', items: ['Top 3 shields take gold, silver, and bronze.'] },
-    ],
-  },
-  {
-    id: 'kangaroo-kickball', name: 'Kangaroo Kickball', emoji: '🦘', day: 1, session: 'Morning',
-    location: 'Chapel Lawn', format: 'tournament',
-    // Fixed Round 1 order set by the game leaders (by team id): Foxes vs
-    // Pumpkins, then Turkey vs Pilgrims, then Maples vs John Deeres. When a
-    // tournament game has this, Round 1 walks these matchups in order instead
-    // of asking you to pick two teams each time.
-    roundOneMatchups: [['t0', 't3'], ['t1', 't4'], ['t2', 't5']],
-    // Live scorekeeping aid shown on each matchup (synced so everyone can
-    // watch): innings, the kicking team, outs (3 per side — the first team
-    // kicks, 3 outs, the second team kicks, 3 outs, then the next inning),
-    // and home runs per team.
-    liveTracker: { unit: 'Home runs', innings: 3, outs: 3, sideLabel: 'kicking' },
-    headline: 'Kickball, but everyone is three-legged with a partner.',
-    rules: [
-      { h: 'How to play', items: [
-        'Two teams at a time — one kicks, one fields.',
-        'The pitcher rolls the ball to home plate; the kicker kicks into fair territory and runs the bases.',
-        '3 outs per side, 3 innings. Most runs wins the match.',
-      ] },
-      { h: 'Ways to get out', items: [
-        'Ball caught in the air before it touches the ground.',
-        'A fielder touches the base with the ball before the runner gets there.',
-        'A fielder tags the runner while holding the ball (no throwing at runners!).',
-      ] },
-      { h: 'The twist', items: [
-        'Everyone plays 3-legged-race style with a partner.',
-        'The KICKER must always be 3-legged — that part is not optional.',
-        "If pairing everyone leaves positions short, use your judgment on who's partnered in the field.",
-      ] },
-    ],
-  },
-  {
-    id: 'human-battleship', name: 'Human Battleship', emoji: '🚢', day: 1, session: 'Evening',
-    location: 'Basketball Court', format: 'placement',
-    headline: 'Wet sponges over the barrier — last 3 teams standing medal.',
-    rules: [
-      { h: 'Setup', items: [
-        'ALL teams play at once — same number of players per team.',
-        'Barrier down the middle of the court; each team splits evenly across both sides.',
-        'Players sit scattered around their side.',
-      ] },
-      { h: 'How to play', items: [
-        'Sides take turns launching water-filled sponges over the barrier (rotate sides and teams).',
-        'Hit by a sponge? You are "hit and sunk" — you must lay down.',
-      ] },
-      { h: 'Winning', items: ['The last 3 teams with players still up take gold, silver, and bronze.'] },
-    ],
-  },
-  {
-    id: 'musical-chairs', name: 'Musical Chairs Everywhere', emoji: '🎵', day: 2, session: 'Morning',
-    location: 'Chapel Lawn', format: 'tournament',
-    headline: 'Field-wide musical chairs, team vs team.',
-    rules: [
-      { h: 'Setup', items: [
-        'Two teams at a time, same number of players each.',
-        'Chairs scattered all over the field — one FEWER chair than total players.',
-        'Prep: Jen has the music/speaker. Use the orange tab chairs.',
-      ] },
-      { h: 'How to play', items: [
-        'Music plays → everyone walks around among the chairs.',
-        'Music stops → find a chair and sit.',
-        'The camper left standing is out.',
-        'In medal rounds, start pulling extra chairs each round if time is running long.',
-      ] },
-      { h: 'Winning', items: ['Last team with a player seated wins the match.'] },
-    ],
-  },
-  {
-    id: 'ladder-ball', name: 'Ladder Ball', emoji: '🪜', day: 2, session: 'Morning',
-    location: 'Basketball Court', format: 'tournament',
-    // Per-round cancellation scorer (see ladderMatchHTML): each round both
-    // teams' rung points are entered, the higher cancels the lower, and the
-    // winner banks the difference — first to EXACTLY 21 (overshoot holds).
-    // Synced live via state.live so spectators watch each total climb.
-    ladderScoring: { top: 3, mid: 2, bottom: 1, target: 21 },
-    headline: 'Toss bolas onto the ladder — first to exactly 21.',
-    rules: [
-      { h: 'Setup', items: [
-        '1 ladder ball set, 6 bolas (3 per team by color).',
-        'Ladders about 15 feet apart — closer if kids are struggling.',
-        'Split each team in half; half at each ladder.',
-      ] },
-      { h: 'Scoring', items: [
-        'Top rung: 3 points · Middle: 2 · Bottom: 1.',
-        'A bola only counts if it is still hanging at the end of the round.',
-        'Cancellation scoring: round points cancel out — if Team A scores 5 and Team B scores 2, Team A earns 3.',
-      ] },
-      { h: 'How to play', items: [
-        'Teams alternate turns; each team throws all 3 bolas, underhand.',
-        'Score the round after both teams have thrown.',
-      ] },
-      { h: 'Winning', items: [
-        'First team to reach EXACTLY 21 wins.',
-        'Go over 21? You stay at your previous score until you land exactly on 21.',
-      ] },
-    ],
-  },
-  {
-    id: 'scatterball', name: 'Scatterball', emoji: '🎯', day: 2, session: 'Evening',
-    location: 'Chapel Lawn', format: 'placement',
-    headline: 'Free-for-all dodgeball — last 3 teams standing medal.',
-    rules: [
-      { h: 'How to play', items: [
-        'ALL teams at once, spread out over the field; 4 scatterballs in the middle.',
-        'On "GO", everyone races for the balls.',
-        'With a ball: up to 3 giant steps plus a pivot — otherwise you cannot move.',
-        'Throw at opposing players, aiming BELOW the shoulders.',
-      ] },
-      { h: 'Getting out (and staying in it)', items: [
-        'Hit? Sit down where you are — but you can still catch, throw, and roll from your seat.',
-        'Your throw gets caught out of the air? YOU are out.',
-        'Your throw hits above the shoulders? YOU are out.',
-      ] },
-      { h: 'Winning', items: ['Last 3 teams with players standing take gold, silver, and bronze.'] },
-    ],
-  },
-  {
-    id: 'counselor-musical-chairs', name: 'Counselor Musical Chairs', emoji: '🪑', day: 2, session: 'Evening',
-    location: 'Chapel Lawn', format: 'placement',
-    headline: 'The counselors play musical chairs — last ones seated win their team the medals.',
-    rules: [
-      { h: 'Setup', items: [
-        "Each team's counselor(s) play on the team's behalf.",
-        'Chairs in a circle — one FEWER chair than counselors playing.',
-        'Prep: Jen has the music/speaker. Use the orange tab chairs.',
-      ] },
-      { h: 'How to play', items: [
-        'Music plays → counselors walk around the chairs.',
-        'Music stops → grab a seat.',
-        'The counselor left standing is out, and a chair comes out each round.',
-      ] },
-      { h: 'Winning', items: ['The last 3 teams with a counselor still seated take gold, silver, and bronze.'] },
-    ],
-  },
-  {
-    id: 'gross-food-eating', name: 'Gross Food Eating Competition', emoji: '🤢', day: 2, session: 'Evening',
-    location: 'Dining Hall', format: 'placement',
-    headline: 'Choke down the gross-food gauntlet — first teams to clear their plates medal.',
-    rules: [
-      { h: 'Setup', items: [
-        'ALL teams play, same number of eaters per team.',
-        'Each team gets an identical plate of gross foods to get through.',
-        'Opposing counselors judge — a plate only counts when it is truly finished.',
-      ] },
-      { h: 'How to play', items: [
-        'On "GO", the team works through every item on the plate.',
-        'No spitting it back out — it has to go down and stay down.',
-        'Water is allowed, but the clock keeps running.',
-      ] },
-      { h: 'Winning', items: ['The first 3 teams to finish their whole plate take gold, silver, and bronze.'] },
-    ],
-  },
-  {
-    id: 'axe-throwing', name: 'Axe Throwing', emoji: '🪓', day: 3, session: 'Morning',
-    location: 'Basketball Court', format: 'tally', unit: 'points', counterSteps: [1, 5],
-    headline: 'Every player throws; the team totals decide the medals.',
-    rules: [
-      { h: 'How to play', items: [
-        'One team plays at a time, same number of players per team.',
-        'Each player gets 3 turns, with 4 throws per turn.',
-        'Tally every turn into one grand team total.',
-      ] },
-      { h: 'Winning', items: ['The 3 highest team totals take gold, silver, and bronze.'] },
-    ],
-  },
-  {
-    id: 'inflatable-bowling', name: 'Inflatable Bowling', emoji: '🎳', day: 3, session: 'Morning',
-    location: 'Slip and Slide', format: 'tally', unit: 'points', counterSteps: [1, 10], liveRankings: true,
-    headline: 'Four rolls each — pins are 1, strikes are 10.',
-    rules: [
-      { h: 'Setup', items: [
-        'One team at a time, same number of players per team.',
-        'Set the pins a fair distance from the ball — your call, keep it consistent.',
-      ] },
-      { h: 'How to play', items: [
-        'Each player gets 4 rolls at the pins.',
-        'Each pin knocked down = 1 point. A strike = 10 points.',
-        'Add up everything for a single team total.',
-      ] },
-      { h: 'Winning', items: ['The 3 highest team scores take gold, silver, and bronze.'] },
-    ],
-  },
-  {
-    id: 'pumpkin-pictionary', name: 'Pumpkin Pictionary', emoji: '🎃', day: 3, session: 'Morning',
-    location: 'Chapel Lawn', format: 'tally', unit: 'total time', lowerWins: true, timeInput: true, liveRankings: true,
-    prompts: ['Pumpkin', 'Scarecrow', 'Ear of Corn', 'Falling Leaf', 'Apple Pie', 'Hay Bale', 'Turkey', 'Acorn', 'Sunflower', 'Tractor'],
-    headline: 'Draw with your nose in pumpkin puree — fastest total time wins.',
-    rules: [
-      { h: 'Prep', items: ['The 10 drawing prompts are built in below — pick a team and run their round right from this page, snapping a photo of each masterpiece as you go.'] },
-      { h: 'How to play', items: [
-        'One team plays at a time; each team draws 10 items.',
-        'The drawer dips their NOSE in pumpkin puree and draws with it on the board.',
-        'New drawer every item — everyone must play.',
-        'Clock starts when nose touches paper, stops when the team guesses the word.',
-        'Add the 10 lap times into one team time.',
-      ] },
-      { h: 'Winning', items: ['The 3 FASTEST team times take gold, silver, and bronze.'] },
-      { h: 'Entering times here', items: ['Type times as minutes:seconds (like 4:35) or plain seconds (like 275).'] },
-    ],
-  },
-  {
-    id: 'color-call-chaos', name: 'Color Call Chaos', emoji: '🌈', day: 3, session: 'Evening',
-    location: 'Chapel Lawn', format: 'tally', unit: 'balls collected', counterSteps: [1],
-    headline: 'Hungry-hungry-hippos with color calls — every ball is a point.',
-    rules: [
-      { h: 'How to play', items: [
-        'ALL teams play, same number of players per team.',
-        'Multicolored balls scattered across the field.',
-        'Leader calls a color → everyone races to collect ONLY that color, one ball at a time, back to the team bucket.',
-        'New color every round; keep going until every ball is collected.',
-      ] },
-      { h: 'Winning', items: [
-        'Every ball collected = 1 point.',
-        'The 3 teams with the most balls take gold, silver, and bronze.',
-      ] },
-    ],
-  },
-  {
-    id: 'color-run-cleanup', name: 'Color Run: Cleanup Edition', emoji: '🏃', day: 3, session: 'Evening',
-    location: 'Campground-wide', format: 'placement',
-    headline: 'Run the color course and clean up as you go — top 3 teams medal.',
-    rules: [
-      { h: 'Winning', items: ['The top 3 teams take gold, silver, and bronze.'] },
-    ],
-  },
-  {
-    id: 'pumpkin-painting', name: 'Pumpkin Painting', emoji: '🎃', day: 3, session: 'Evening',
-    location: 'Chapel Lawn', format: 'placement',
-    headline: 'Each team paints a pumpkin — judged live, top 3 take medals.',
-    rules: [
-      { h: 'Winning', items: ['The top 3 painted pumpkins take gold, silver, and bronze.'] },
-    ],
-  },
-  {
-    id: 'jeb-ball', name: 'Jeb Ball', emoji: '🧎', day: 4, session: 'Morning',
-    location: 'Chapel Lawn', format: 'tournament',
-    timer: { label: 'Half clock', presets: [600, 480, 300] },
-    // Live per-team goal counter, synced for spectators. outs:0 suppresses the
-    // outs/kicking rows in liveTrackerHTML, leaving just a goal stepper per team
-    // and a half stepper (periodLabel renames "Inning" → "Half").
-    liveTracker: { unit: 'Goals', innings: 2, outs: 0, periodLabel: 'Half' },
-    headline: 'Soccer on your knees, batting the ball with your hands. MUST WEAR PANTS.',
-    rules: [
-      { h: 'Wear pants!', items: ['Everyone plays on their knees all game — long pants required.'] },
-      { h: 'How to play', items: [
-        'Two teams, same number of players; a net on either side of the field.',
-        'Like soccer, but on your knees, batting the ball along with your hands.',
-        'Score by getting the ball past the opposing goaltender — who is ALSO on their knees.',
-        'Two 10-minute halves. Shorten if needed, just keep it consistent between matches.',
-      ] },
-      { h: 'Winning', items: ['Most goals wins the match.'] },
-    ],
-  },
-  {
-    id: 'waiter-water-chain', name: 'Waiter Water Chain', emoji: '💧', day: 4, session: 'Morning',
-    location: 'Bathroom Lawn', format: 'tournament',
-    headline: 'Pass the tray of water cups down the human chain until the bucket overflows.',
-    rules: [
-      { h: 'Setup', items: [
-        'Two teams, same number of players.',
-        'Full bucket on the start line, empty bucket on the finish line, one tray of cups per team.',
-        'Each team lies down in a horizontal line, side by side.',
-      ] },
-      { h: 'How to play', items: [
-        'Pass the tray of FULL water cups down the line toward the finish bucket.',
-        'After you pass the tray, jump up and lie back down at the END of the line to keep the chain moving.',
-        'One player (or a counselor) stands at each end to fill cups and dump them.',
-        'Repeat until the finish bucket is full to overflowing.',
-      ] },
-      { h: 'Winning', items: ['First team to overflow their finish bucket wins — opposing counselors judge in real time.'] },
-    ],
-  },
-  {
-    id: 'counselor-hide-seek', name: 'Counselor Hide and Seek', emoji: '🔔', day: 4, session: 'Evening',
-    location: 'Campground-wide', format: 'tally', unit: 'points',
-    counterSteps: [5, 10], counterStepLabels: { 5: 'counselor', 10: 'staff' }, counterAllowNegative: true,
-    timer: { label: 'Game clock (ring the bell at the alarm!)', presets: [900, 600, 1200] },
-    headline: 'Hunt down hidden staff and march them to the bell for points.',
-    rules: [
-      { h: 'Setup', items: [
-        '1–2 counselors from each team hide (at least 1 counselor stays with the team).',
-        'Ancillary staff may hide too.',
-        'Boundaries: waterfront and within the road — NO ballfield, NO girls/boys cabin areas.',
-      ] },
-      { h: 'Scoring', items: [
-        'Counselor found = 5 points.',
-        'Ancillary staff found = 10 points.',
-        'Some staff are worth NEGATIVE points — campers never know who is worth what.',
-      ] },
-      { h: 'How to play', items: [
-        'Find a hider, bring them to the bell, then head out for the next one.',
-        'Teams must stay together the whole time.',
-        'Points are tallied as the game goes; it ends when the bell rings.',
-      ] },
-      { h: 'Winning', items: ['The 3 teams with the most points take gold, silver, and bronze.'] },
-    ],
-  },
-  {
-    id: 'bushel-bustle', name: 'Bushel Bustle', emoji: '🌽', day: 5, session: 'Morning',
-    location: 'Chapel Lawn', format: 'placement', messtival: true,
-    headline: 'Shuck 20 ears of corn clean enough to eat.',
-    rules: [
-      { h: 'How to play', items: [
-        'ALL teams play, same number of players per team.',
-        'Each team gets 20 ears of corn and an empty kettle.',
-        'Together, shuck every ear until it is clean enough to eat — opposing counselors judge in real time.',
-      ] },
-      { h: 'Winning', items: ['First 3 teams with all 20 ears shucked clean take gold, silver, and bronze.'] },
-    ],
-  },
-  {
-    id: 'pumpkin-patch-plunder', name: 'Pumpkin Patch Plunder', emoji: '🍬', day: 5, session: 'Morning',
-    location: 'Chapel Lawn', format: 'tally', unit: 'candy corn', messtival: true,
-    counterSteps: [1], timer: { label: 'Round timer', presets: [60], rounds: 6 },
-    headline: 'Fish candy corn out of pumpkin puree — with your mouth.',
-    rules: [
-      { h: 'How to play', items: [
-        'ALL teams play, 6 players per team.',
-        'Each player gets a pie plate of pumpkin puree with candy corn hidden inside.',
-        '6 rounds, 1 minute each: mouths only, fish out candy corn and drop it in the empty bowl.',
-      ] },
-      { h: 'Winning', items: ['The 3 teams with the most candy corn after 6 rounds take gold, silver, and bronze.'] },
-    ],
-  },
-  {
-    id: 'bob-drop-roll', name: 'Bob, Drop, and Roll', emoji: '🍎', day: 5, session: 'Morning',
-    location: 'Chapel Lawn', format: 'placement', messtival: true,
-    headline: 'Bob an apple, sprint it across the field, barrel roll home.',
-    rules: [
-      { h: 'How to play', items: [
-        'ALL teams play, 6 players per team, relay style.',
-        'Each player: bob for your apple, then run it — apple in mouth — across the field and drop it in the bucket.',
-        'Drop the apple anywhere else? Run it back, dunk it back in the water, start your leg over.',
-        'After the bucket drop, barrel roll back to the start line and tag the next teammate.',
-      ] },
-      { h: 'Winning', items: ['First 3 teams to get all 6 players through take gold, silver, and bronze.'] },
-    ],
-  },
-  {
-    id: 'cider-survivor', name: 'Cider Survivor', emoji: '🥤', day: 5, session: 'Morning',
-    location: 'Chapel Lawn', format: 'placement', messtival: true,
-    headline: 'Relay chug — six cups of cider, six flavors, sit when done.',
-    rules: [
-      { h: 'How to play', items: [
-        'ALL teams play at once, 6 players per team, each with a cup of cider (6 flavors!).',
-        'First player drinks as fast as they can, then tags the next in line.',
-        'When YOUR cup is done: SIT DOWN.',
-      ] },
-      { h: 'Winning', items: ['First 3 teams with all 6 cups finished and the whole team seated take gold, silver, and bronze.'] },
-    ],
-  },
-  {
-    id: 'team-skits', name: 'Team Skits', emoji: '🎭', day: 5, session: 'Evening',
-    location: 'Tabernacle', format: 'placement',
-    headline: 'Each team performs their skit — judged live, top 3 take medals.',
-    rules: [
-      { h: 'How it works', items: [
-        'Each team performs the skit they prepared during the week.',
-        'Everyone on the team takes part somehow.',
-        'Judges score each skit right after it finishes.',
-      ] },
-      { h: 'Winning', items: ['The top 3 skits take gold, silver, and bronze — counted in the week standings like every other game.'] },
-    ],
-  },
-];
+// The week's games and days now live in editable, synced state
+// (state.config) — built out by editors in Settings → Set up the week.
+// The built-in defaults are in defaults.js (defaultConfig()); the
+// builder UI is in settings.js. DAY_NAMES above stays: the memory-verse,
+// meal-cleanup, and daily-schedule features are keyed by real day of
+// week, independent of the editable competition days.
 
 // ── Live daily schedule ("Happening now" banner) ─────────────────
 // The full week from the printed Junior Camp packet, so the top of the
@@ -1144,10 +771,13 @@ function renderScheduleBody() {
     let labelBadge = ''; // forecast badge next to the label (future electives only)
     if (raw.type === 'games') {
       const session = raw.start < 720 ? 'Morning' : 'Evening';
-      const games = GAMES.filter((g) => g.day === dow && g.session === session);
+      // Competition days are editable; map this block's real day-of-week to
+      // whichever configured day(s) carry that dow.
+      const dowDayIds = state.config.days.filter((d) => d.dow === dow).map((d) => d.id);
+      const games = state.config.games.filter((g) => dowDayIds.includes(g.dayId) && g.session === session);
       if (games.length) {
         extra = `<div class="sched-games">${games.map((g) =>
-          `<span class="sched-game-chip ${state.results[g.id] ? 'played' : ''}">${g.emoji} ${esc(g.name)}${state.results[g.id] ? ' ✓' : ''}</span>`).join('')}</div>`;
+          `<span class="sched-game-chip ${state.results[g.id] ? 'played' : ''}">${esc(g.emoji)} ${esc(g.name)}${state.results[g.id] ? ' ✓' : ''}</span>`).join('')}</div>`;
       }
     } else if (raw.type === 'elective') {
       labelBadge = electiveWxHtml(dow, raw.slot);
@@ -1400,14 +1030,20 @@ function formatEasternStamp(iso) {
   return `${get('month')} ${get('day')}, ${get('hour')}:${get('minute')}${(get('dayPeriod') || '').toLowerCase()} ET`;
 }
 
+// One line, three facts: who's here now, when data last changed, and what
+// build this is. The presence count lives here (not the header) and
+// renderPresence just re-renders the footer when it changes.
 function renderFooter() {
   const el = document.getElementById('app-footer');
   if (!el) return;
   const dataStamp = formatEasternStamp(state.meta && state.meta.lastDataChangeAt);
-  el.innerHTML = `
-    <p class="footer-line">🛠️ Code last updated: ${esc(formatEasternStamp(CODE_UPDATED_AT) || 'unknown')}</p>
-    <p class="footer-line">📋 Data last updated: ${dataStamp ? esc(dataStamp) : 'No scores entered yet'}</p>
-  `;
+  const bits = [];
+  if (syncEnabled() && presenceCount > 0) {
+    bits.push(`<span title="${presenceCount} device${presenceCount === 1 ? '' : 's'} here now">👥 ${presenceCount} here</span>`);
+  }
+  bits.push(`📋 Data: ${dataStamp ? esc(dataStamp) : 'no scores yet'}`);
+  bits.push(`<span title="Code last updated: ${esc(formatEasternStamp(CODE_UPDATED_AT) || 'unknown')}">🛠️ v${APP_VERSION}</span>`);
+  el.innerHTML = `<p class="footer-line">${bits.join(' · ')}</p>`;
 }
 
 // ── State ────────────────────────────────────────────────────────
@@ -1424,6 +1060,7 @@ function loadState() {
 
 function makeFreshState() {
   return {
+    config: defaultConfig(), // editable days/games catalog (Settings → Set up the week)
     teams: DEFAULT_TEAM_NAMES.map((name, i) => ({ id: 't' + i, name, counselor: DEFAULT_COUNSELORS[i] })),
     results: {},   // gameId -> { medals: {gold, silver, bronze}, scores?, savedAt }
     brackets: {},  // gameId -> in-progress tournament
@@ -1432,19 +1069,63 @@ function makeFreshState() {
     brownie: {},   // teamId -> brownie point count — just for fun, not scoring
     picSetup: {},  // gameId -> { source: 'pregenerated'|'own'|'numbered', words: [] } (Pictionary item source)
     live: {},      // gameId -> { key, inning, hr } live match tally (synced so everyone can watch)
-    ui: { day: defaultDay(), gameId: null },
+    ui: { day: null, gameId: null }, // day is filled in by migrateState (needs config)
     theme: null,
   };
 }
 
-function defaultDay() {
-  const d = campNow().dow; // camp time (America/New_York), 0 Sun .. 6 Sat
-  return d >= 1 && d <= 5 ? d : 1;
+// The selected day is a config day id ('d1'...). Prefer the config day whose
+// dow matches today in camp time; otherwise the first configured day.
+function defaultDay(config) {
+  const days = (config && config.days) || [];
+  const todayDow = campNow().dow; // camp time (America/New_York), 0 Sun .. 6 Sat
+  const today = days.find((d) => d.dow === todayDow);
+  if (today) return today.id;
+  return days.length ? days[0].id : null;
+}
+
+// Upgrades older-shaped state (or an imported backup) in place so the rest
+// of the app only ever sees the current shape. Game ids never change here —
+// saved results/brackets/picSetup stay keyed correctly. Also heals RTDB's
+// empty-array pruning on config (games, days, rules), mirroring what
+// normalizeSyncedState() does for the score state.
+function migrateState(s) {
+  let changed = false;
+  if (!s.config || typeof s.config !== 'object') {
+    s.config = defaultConfig();
+    changed = true;
+  }
+  const c = s.config;
+  if (!c.version) { c.version = 1; changed = true; }
+  if (!Array.isArray(c.games)) { c.games = []; changed = true; }
+  if (!Array.isArray(c.days)) { c.days = []; changed = true; }
+  if (!Array.isArray(c.sessions) || !c.sessions.length) {
+    c.sessions = ['Morning', 'Evening'];
+    changed = true;
+  }
+  c.games.forEach((g) => {
+    if (g.day !== undefined) {
+      if (!g.dayId) g.dayId = 'd' + g.day;
+      delete g.day;
+      changed = true;
+    }
+    if (!Array.isArray(g.rules)) { g.rules = []; changed = true; }
+    g.rules.forEach((sec) => {
+      if (!Array.isArray(sec.items)) { sec.items = []; changed = true; }
+    });
+  });
+  if (!s.ui) { s.ui = { day: null, gameId: null }; changed = true; }
+  if (typeof s.ui.day === 'number') { s.ui.day = 'd' + s.ui.day; changed = true; }
+  if (!s.ui.day || !c.days.some((d) => d.id === s.ui.day)) {
+    s.ui.day = defaultDay(c);
+    changed = true;
+  }
+  return changed;
 }
 
 let state = loadState() || makeFreshState();
 if (!state.teams || !state.results) state = makeFreshState();
-if (!state.ui) state.ui = { day: defaultDay(), gameId: null };
+if (!state.ui) state.ui = { day: null, gameId: null };
 if (!state.meta) state.meta = {};
 if (!state.bonuses) state.bonuses = {}; // extra/bonus points ledger
 if (!state.brownie) state.brownie = {}; // brownie point tallies (just for fun)
@@ -1458,6 +1139,11 @@ if (state.notify === undefined) state.notify = false; // device-local, not synce
 // can proactively prompt on next launch), `null` = asked and skipped ("just
 // cheering"), or a name string. JSON.stringify drops undefined, so "never
 // asked" round-trips through localStorage naturally — same as followTeam.
+if (migrateState(state)) {
+  // Persist the upgraded shape right away (saveState() isn't safe yet —
+  // the sync globals below haven't been initialized at this point).
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
+}
 normalizeSyncedState();
 
 function counselorName(id) {
@@ -1532,9 +1218,53 @@ let pendingWrites = 0;
 // (before the first push, or to recover after a failed one). Updated on every
 // adopt (in the value handler) and every push.
 let lastSyncedTree = null;
+// The editable week config (days/games catalog) syncs on its own sibling ref
+// (campScoreboard/config) — deliberately OUTSIDE campScoreboard/state so older
+// cached clients, and the state node's own key-list bookkeeping (SYNC_KEYS /
+// SYNC_ITEM_MAPS / the merge's replace list), never have to know about it.
+// Whole-object last-write-wins: with one or two editors that's acceptable, and
+// builder inputs commit on change/blur so the write window stays small.
+let fbConfigRef = null;
+let pushConfigTimer = null;
+let applyingRemoteConfig = false;
+// A remote config that arrived while the builder had a focused input — applied
+// on focusout instead of mid-typing (see the flush wiring in init()).
+let pendingRemoteConfig = null;
 
 function syncEnabled() {
   return !!fbRef;
+}
+
+function applyRemoteConfig(remote) {
+  const beforeJson = JSON.stringify(state.config);
+  applyingRemoteConfig = true;
+  state.config = remote;
+  const upgraded = migrateState(state);
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
+  applyingRemoteConfig = false;
+  if (upgraded) schedulePushConfig();
+  if (appStarted && JSON.stringify(state.config) !== beforeJson) renderAll();
+}
+
+// Settings code calls this after mutating state.config.
+function saveConfig() {
+  state.config.updatedAt = new Date().toISOString();
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
+  if (!applyingRemoteConfig) schedulePushConfig();
+}
+
+function schedulePushConfig() {
+  if (!fbConfigRef) return;
+  clearTimeout(pushConfigTimer);
+  // Null the handle when it fires (mirrors schedulePush) — its non-null-ness
+  // means "a config edit is queued but unsent", which defers remote applies.
+  pushConfigTimer = setTimeout(() => { pushConfigTimer = null; pushConfig(); }, 400);
+}
+
+function pushConfig() {
+  if (!fbConfigRef || applyingRemoteConfig) return;
+  // JSON round-trip strips any `undefined` (which Realtime DB rejects).
+  fbConfigRef.set(JSON.parse(JSON.stringify(state.config))).catch((e) => console.warn('config push failed', e));
 }
 
 function initSync() {
@@ -1657,6 +1387,18 @@ function initSync() {
         renderPresence();
       });
     } catch (e) { /* ignore — chip just stays hidden */ }
+    // Week-config catalog listener (sibling ref — see the fbConfigRef comment).
+    fbConfigRef = firebase.database().ref('campScoreboard/config');
+    fbConfigRef.on('value', (snap) => {
+      const remote = snap.val();
+      if (!remote) { pushConfig(); return; } // first upgraded client seeds the catalog
+      if (editorMidEntry()) { pendingRemoteConfig = remote; return; } // applied on focusout
+      pendingRemoteConfig = null;
+      applyRemoteConfig(remote);
+    }, (err) => {
+      console.warn('Firebase config read failed, staying local', err);
+      fbConfigRef = null;
+    });
     // (Auto-reload is handled by startUpdatePolling — a same-origin poll of the
     // deployed index.html — so it works on a single device and doesn't depend on
     // Firebase or another client announcing the build.)
@@ -1808,7 +1550,7 @@ function detectMatchupChanges() {
   const prev = lastBracketSlots;
   const next = {};
   const changes = [];
-  GAMES.forEach((g) => {
+  state.config.games.forEach((g) => {
     if (g.format !== 'tournament') return;
     const ups = upcomingMatchups(g);
     next[g.id] = ups;
@@ -1826,7 +1568,7 @@ function detectMatchupChanges() {
 // deck) — used by the "Your team" summary card's "Up next" line.
 function findNextMatchupFor(teamId) {
   if (!teamId) return null;
-  for (const g of GAMES) {
+  for (const g of state.config.games) {
     if (g.format !== 'tournament' || state.results[g.id]) continue;
     for (const s of upcomingMatchups(g)) {
       if (s.aId === teamId || s.bId === teamId) {
@@ -1855,15 +1597,7 @@ function updateSyncIndicator() {
 }
 
 function renderPresence() {
-  const el = document.getElementById('presence-chip');
-  if (!el) return;
-  if (!syncEnabled() || presenceCount < 1) {
-    el.hidden = true;
-    return;
-  }
-  el.hidden = false;
-  el.textContent = `👥 ${presenceCount}`;
-  el.title = `${presenceCount} device${presenceCount === 1 ? '' : 's'} here now`;
+  renderFooter(); // the live "who's here" count renders inside the footer line
 }
 
 function teamEmoji(id) {
@@ -1891,7 +1625,11 @@ function esc(str) {
 }
 
 function gameById(id) {
-  return GAMES.find((g) => g.id === id);
+  return state.config.games.find((g) => g.id === id);
+}
+
+function dayById(id) {
+  return state.config.days.find((d) => d.id === id);
 }
 
 // ── Sound effects (Web Audio — no files needed) ──────────────────
@@ -2910,7 +2648,7 @@ function standingsSummaryText() {
     lines.push(`${i + 1}) ${teamEmoji(t.id)} ${t.name} · ${s.points} pts (${parts.join(' ')})`);
   });
 
-  const played = GAMES.filter((g) => state.results[g.id]);
+  const played = state.config.games.filter((g) => state.results[g.id]);
   if (played.length) {
     lines.push('');
     lines.push('Medals so far:');
@@ -2993,13 +2731,17 @@ function medalCounts() {
   const counts = {};
   const extra = bonusBreakdown();
   state.teams.forEach((t) => (counts[t.id] = { gold: 0, silver: 0, bronze: 0, medalPts: 0, verse: 0, meals: 0, custom: 0, bonus: 0, points: 0 }));
-  // Iterate entries so we can weight points per game: Messtival games
-  // (Friday) are worth DOUBLE on the scoreboard. Medal *counts* stay raw;
-  // only the point value doubles.
+  // Iterate entries so we can weight points per game: Messtival games are
+  // worth DOUBLE on the scoreboard. Medal *counts* stay raw; only the point
+  // value doubles. Results for games no longer in the (editable) catalog are
+  // skipped — deleting a game removes its result, but an import/restore can
+  // still leave an orphan behind, and a phantom medal with no game to clear
+  // it from would corrupt the standings forever.
   Object.entries(state.results).forEach(([id, r]) => {
     if (!r || !r.medals) return;
     const g = gameById(id);
-    const mult = g && g.messtival ? 2 : 1;
+    if (!g) return;
+    const mult = g.messtival ? 2 : 1;
     if (counts[r.medals.gold]) { counts[r.medals.gold].gold += 1; counts[r.medals.gold].medalPts += MEDAL_POINTS.gold * mult; }
     if (counts[r.medals.silver]) { counts[r.medals.silver].silver += 1; counts[r.medals.silver].medalPts += MEDAL_POINTS.silver * mult; }
     if (counts[r.medals.bronze]) { counts[r.medals.bronze].bronze += 1; counts[r.medals.bronze].medalPts += MEDAL_POINTS.bronze * mult; }
@@ -4035,17 +3777,20 @@ function bindCleanupEntry(wrap) {
 
 function renderDayTabs() {
   const nav = document.getElementById('day-tabs');
+  const days = state.config.days;
   const todayDow = campNow().dow; // camp time, not device time
-  nav.innerHTML = [1, 2, 3, 4, 5].map((d) => {
-    const isToday = d === todayDow;
-    return `<button class="day-tab ${state.ui.day === d ? 'active' : ''}" data-day="${d}" aria-pressed="${state.ui.day === d}">
-      ${DAY_NAMES[d].slice(0, 3)}${isToday ? '<span class="today-dot" title="Today"></span>' : ''}
+  if (!days.some((d) => d.id === state.ui.day)) state.ui.day = defaultDay(state.config);
+
+  nav.innerHTML = days.map((d) => {
+    const isToday = d.dow === todayDow;
+    return `<button class="day-tab ${state.ui.day === d.id ? 'active' : ''}" data-day="${esc(d.id)}" aria-pressed="${state.ui.day === d.id}">
+      ${esc(d.name.slice(0, 3))}${isToday ? '<span class="today-dot" title="Today"></span>' : ''}
     </button>`;
   }).join('');
 
   nav.querySelectorAll('.day-tab').forEach((btn) => {
     btn.addEventListener('click', () => {
-      state.ui.day = parseInt(btn.dataset.day, 10);
+      state.ui.day = btn.dataset.day;
       state.ui.gameId = null;
       saveState();
       renderAll();
@@ -4053,12 +3798,16 @@ function renderDayTabs() {
   });
 
   const note = document.getElementById('day-note');
-  if (todayDow === 0 || todayDow === 6) {
+  const selected = dayById(state.ui.day);
+  const todayDay = days.find((d) => d.dow === todayDow);
+  if (!selected) {
+    note.hidden = true;
+  } else if (!todayDay) {
     note.hidden = false;
-    note.textContent = 'No games today — showing ' + DAY_NAMES[state.ui.day] + "'s lineup.";
-  } else if (todayDow !== state.ui.day) {
+    note.textContent = 'No games today — showing ' + selected.name + "'s lineup.";
+  } else if (todayDay.id !== state.ui.day) {
     note.hidden = false;
-    note.textContent = 'Heads up: today is ' + DAY_NAMES[todayDow] + ' — you are viewing ' + DAY_NAMES[state.ui.day] + '.';
+    note.textContent = 'Heads up: today is ' + todayDay.name + ' — you are viewing ' + selected.name + '.';
   } else {
     note.hidden = true;
   }
@@ -4080,32 +3829,46 @@ function gameStatus(g) {
 
 function renderGameList() {
   const wrap = document.getElementById('game-list');
-  const day = state.ui.day;
-  const dayGames = GAMES.filter((g) => g.day === day);
-  const sessions = ['Morning', 'Evening'];
+  const day = dayById(state.ui.day);
+  const dayGames = state.config.games.filter((g) => g.dayId === state.ui.day);
+  const knownSessions = state.config.sessions;
+  // Defensive: still show games whose session isn't in the configured list.
+  const sessions = knownSessions.concat(
+    [...new Set(dayGames.map((g) => g.session))].filter((s) => !knownSessions.includes(s))
+  );
 
   let html = '';
   const isMesstival = dayGames.some((g) => g.messtival);
   if (isMesstival) {
     html += `<div class="messtival-banner">🎉 Messtival day — all games are worth DOUBLE points, counted double right here in the standings!</div>`;
   }
+  if (day && day.note) {
+    html += day.note.split('\n').map((l) => l.trim()).filter(Boolean)
+      .map((l) => `<div class="messtival-banner">${esc(l)}</div>`).join('');
+  }
+  if (!dayGames.length) {
+    html += `<p class="muted session-empty">No games scheduled${day ? ' for ' + esc(day.name) : ''} yet.</p>`;
+    if (canEdit()) {
+      html += `<button id="empty-day-builder-btn" class="link-btn">🛠️ Set up games in Settings</button>`;
+    }
+  }
 
   sessions.forEach((session) => {
     const games = dayGames.filter((g) => g.session === session);
     if (!games.length) return;
-    html += `<h2 class="session-heading">${session}</h2>`;
+    html += `<h2 class="session-heading">${esc(session)}</h2>`;
     games.forEach((g) => {
       const status = gameStatus(g);
-      const badge = FORMAT_BADGES[g.format];
+      const badge = FORMAT_BADGES[g.format] || { label: g.format || '?', cls: '' };
       const res = state.results[g.id];
-      html += `<button class="game-card ${status}" data-game-id="${g.id}">
+      html += `<button class="game-card ${status}" data-game-id="${esc(g.id)}">
         <div class="game-card-top">
-          <span class="game-emoji">${g.emoji}</span>
+          <span class="game-emoji">${esc(g.emoji)}</span>
           <div class="game-card-titles">
             <span class="game-name">${esc(g.name)}</span>
             <span class="game-loc">📍 ${esc(g.location)}</span>
           </div>
-          <span class="format-badge ${badge.cls}">${badge.label}</span>
+          <span class="format-badge ${esc(badge.cls)}">${esc(badge.label)}</span>
         </div>
         <p class="game-headline">${esc(g.headline)}</p>
         ${res ? `<div class="game-result-line">🥇 ${esc(teamName(res.medals.gold))} · 🥈 ${esc(teamName(res.medals.silver))} · 🥉 ${esc(teamName(res.medals.bronze))}</div>`
@@ -4123,6 +3886,9 @@ function renderGameList() {
       document.getElementById('game-view').scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
+
+  const builderBtn = document.getElementById('empty-day-builder-btn');
+  if (builderBtn) builderBtn.addEventListener('click', () => openBuilder('games'));
 }
 
 // ── Game view ────────────────────────────────────────────────────
@@ -4140,24 +3906,25 @@ function renderGameView() {
   view.hidden = false;
   list.hidden = true;
 
-  const badge = FORMAT_BADGES[g.format];
+  const badge = FORMAT_BADGES[g.format] || { label: g.format || '?', cls: '' };
+  const backDay = dayById(g.dayId);
   let html = `
-    <button id="back-btn" class="link-btn back-btn">← ${DAY_NAMES[g.day]} games</button>
+    <button id="back-btn" class="link-btn back-btn">← ${esc(backDay ? backDay.name : 'All')} games</button>
     <div class="game-view-header">
-      <span class="game-emoji-lg">${g.emoji}</span>
+      <span class="game-emoji-lg">${esc(g.emoji)}</span>
       <div>
         <h2>${esc(g.name)}</h2>
-        <p class="muted">📍 ${esc(g.location)} · ${g.session} · <span class="format-badge ${badge.cls}">${badge.label}</span></p>
+        <p class="muted">📍 ${esc(g.location)} · ${esc(g.session)} · <span class="format-badge ${esc(badge.cls)}">${esc(badge.label)}</span></p>
       </div>
     </div>
     ${g.messtival ? '<p class="messtival-tag">🎉 Messtival — double points, counted double here too!</p>' : ''}
-    <details class="rules-details">
+    ${(g.rules || []).length ? `<details class="rules-details">
       <summary>How to play</summary>
       ${g.rules.map((sec) => `
         <h4>${esc(sec.h)}</h4>
-        <ul>${sec.items.map((it) => `<li>${esc(it)}</li>`).join('')}</ul>
+        <ul>${(sec.items || []).map((it) => `<li>${esc(it)}</li>`).join('')}</ul>
       `).join('')}
-    </details>
+    </details>` : ''}
     <div id="tools-area"></div>
     <div id="entry-area"></div>
   `;
@@ -4218,7 +3985,7 @@ function tallyInProgress(g) {
 }
 
 function liveHomeGames() {
-  return GAMES.filter((g) => {
+  return state.config.games.filter((g) => {
     const b = state.brackets && state.brackets[g.id];
     if (b && normalizeBracket(b).phase !== 'summary') return true;
     return tallyInProgress(g);
@@ -4269,7 +4036,7 @@ function renderLiveHome() {
       ? `<span class="live-home-ondeck">⏭️ Up next: ${teamEmoji(nxt[0])} ${esc(teamName(nxt[0]))} vs ${teamEmoji(nxt[1])} ${esc(teamName(nxt[1]))}</span>`
       : '';
     return `<button class="live-home-card" data-game-id="${esc(g.id)}">
-      <span class="live-home-top"><span class="live-home-badge">🔴 LIVE</span><span class="live-home-game">${g.emoji} ${esc(g.name)} · ${phaseLabel}</span></span>
+      <span class="live-home-top"><span class="live-home-badge">🔴 LIVE</span><span class="live-home-game">${esc(g.emoji)} ${esc(g.name)} · ${phaseLabel}</span></span>
       ${scoreHTML}
       ${onDeckHTML}
     </button>`;
@@ -4280,7 +4047,7 @@ function renderLiveHome() {
       const g = gameById(btn.dataset.gameId);
       if (!g) return;
       state.ui.gameId = g.id;
-      state.ui.day = g.day;
+      state.ui.day = g.dayId;
       saveState();
       renderAll();
       const gv = document.getElementById('game-view');
@@ -4299,7 +4066,7 @@ function liveHomeTallyCard(g) {
     ? `<span class="live-home-score"><span class="lh-team">${teamEmoji(top.id)} ${esc(teamName(top.id))}</span><span class="lh-nums">${esc(formatScore(g, top.v))}</span></span>`
     : '<span class="live-home-sub">Scoring under way…</span>';
   return `<button class="live-home-card" data-game-id="${esc(g.id)}">
-    <span class="live-home-top"><span class="live-home-badge">🔴 LIVE</span><span class="live-home-game">${g.emoji} ${esc(g.name)}</span></span>
+    <span class="live-home-top"><span class="live-home-badge">🔴 LIVE</span><span class="live-home-game">${esc(g.emoji)} ${esc(g.name)}</span></span>
     ${scoreLine}
     <span class="live-home-sub">${g.lowerWins ? 'Fastest so far' : 'Leader'} · ${ranked.length}/${state.teams.length} teams in${complete ? ' · 🏅 medals ready' : ''}</span>
   </button>`;
@@ -4794,6 +4561,16 @@ function normalizeSyncedState() {
 
 function renderTournament(container, g) {
   if (!state.brackets[g.id]) {
+    // The bracket wizard's phases (3 first-round matches → bye → semifinal →
+    // championship) assume exactly 6 teams; with any other count it saves
+    // corrupt results. Block starting rather than corrupting.
+    if (state.teams.length !== 6) {
+      container.innerHTML = `
+        <h3>Run the bracket</h3>
+        <p class="tie-note">⚠️ The bracket wizard needs exactly 6 teams — you have ${state.teams.length}. Adjust the roster in Settings → Set up the week, or switch this game to another format.</p>
+      `;
+      return;
+    }
     container.innerHTML = `
       <h3>Run the bracket</h3>
       <p class="muted">Three first-round matches, then the medal round. The bye goes to the Round&nbsp;1 winner with the fewest points this week — the app suggests who, using the live standings.</p>
@@ -5607,7 +5384,10 @@ const UPDATE_POLL_MS = 2 * 60 * 1000;
 function editorMidEntry() {
   const ae = document.activeElement;
   if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' || ae.isContentEditable)) return true;
-  return dataEditPending || pushTimer != null; // a real edit is typed/queued but not yet synced
+  // A half-built game in the week builder is unsaved in-memory work — the
+  // update-poll auto-reload and remote merges must not wipe it.
+  if (typeof builderDirty === 'function' && builderDirty()) return true;
+  return dataEditPending || pushTimer != null || pushConfigTimer != null; // a real edit is typed/queued but not yet synced
 }
 
 // Send any debounced push right now (e.g. when a score field loses focus, or
@@ -5708,6 +5488,13 @@ function startIdleCollapse() {
 // ── Init ─────────────────────────────────────────────────────────
 
 function renderAll() {
+  // Builder visibility is derived from state every render — settings.js
+  // navigates by mutating state.ui.view, not by calling open/close helpers.
+  if (state.ui.view === 'settings' && !canEdit()) state.ui.view = 'home';
+  const inBuilder = builderOpen();
+  document.body.classList.toggle('builder-open', inBuilder);
+  const builderView = document.getElementById('settings-view');
+  if (builderView) builderView.hidden = !inBuilder;
   renderWhatsNew();
   renderNowBanner();
   renderLiveHome();
@@ -5722,6 +5509,28 @@ function renderAll() {
   renderBrownie();
   renderFooter();
   refreshOpenSchedule();
+  if (inBuilder && typeof renderSettings === 'function') renderSettings();
+}
+
+// ── Week builder (Settings → Set up the week) ────────────────────
+// A full-page editor-only view over the main page: body.builder-open hides
+// every other main-wrap section via CSS. settings.js renders the content
+// (renderSettings) and signals "back" by setting state.ui.view = 'home'
+// before its own renderAll() — visibility is re-derived above either way.
+
+function builderOpen() {
+  return state.ui.view === 'settings';
+}
+
+function openBuilder(tab) {
+  if (!canEdit()) return;
+  closeSettings(); // hand off from the settings sheet
+  state.ui.view = 'settings';
+  if (tab) state.ui.settingsTab = tab;
+  if (!state.ui.settingsTab) state.ui.settingsTab = 'games';
+  saveState();
+  renderAll();
+  window.scrollTo({ top: 0 });
 }
 
 // Keep an open schedule sheet in step with time and synced results — its
@@ -5763,6 +5572,24 @@ function init() {
   wireSchedule();
   wireSettings();
   wireHistory();
+
+  // Week builder entry point (Settings sheet → Set up the week).
+  const builderRow = document.getElementById('builder-row');
+  if (builderRow) builderRow.addEventListener('click', () => openBuilder());
+  // A remote config held back while a builder input was focused (see the
+  // fbConfigRef listener) is applied once focus leaves the form.
+  const builderView = document.getElementById('settings-view');
+  if (builderView) {
+    builderView.addEventListener('focusout', () => {
+      setTimeout(() => {
+        if (pendingRemoteConfig && !editorMidEntry()) {
+          const rc = pendingRemoteConfig;
+          pendingRemoteConfig = null;
+          applyRemoteConfig(rc);
+        }
+      }, 0);
+    });
+  }
 
   initSync();
   renderPresence();
