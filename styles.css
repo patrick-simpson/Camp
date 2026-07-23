@@ -2200,6 +2200,15 @@ body.no-scroll {
   color: var(--color-danger);
 }
 
+/* Double-points window marker on a ledger entry (see bonusCountsDouble). */
+.bonus-x2 {
+  margin-left: 0.25rem;
+  font-size: 0.62rem;
+  font-weight: 800;
+  color: var(--color-gold);
+  vertical-align: super;
+}
+
 .bonus-remove-btn {
   flex: 0 0 auto;
   border: none;

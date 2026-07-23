@@ -308,7 +308,7 @@ function defaultConfig() {
       },
       {
         id: 'counselor-hide-seek', name: 'Counselor Hide and Seek', emoji: '🔔', dayId: 'd4', session: 'Evening',
-        location: 'Campground-wide', format: 'tally', unit: 'points',
+        location: 'Campground-wide', format: 'tally', unit: 'points', messtival: true,
         counterSteps: [1, 5], counterStepLabels: { 5: 'counselor' }, counterAllowNegative: true, liveRankings: true,
         timer: { label: 'Game clock (ring the bell at the alarm!)', presets: [900, 600, 1200] },
         headline: 'Hunt down hidden staff and march them to the bell for points.',
@@ -387,7 +387,7 @@ function defaultConfig() {
       },
       {
         id: 'team-skits', name: 'Team Skits', emoji: '🎭', dayId: 'd5', session: 'Evening',
-        location: 'Tabernacle', format: 'placement',
+        location: 'Tabernacle', format: 'placement', messtival: true,
         headline: 'Each team performs their skit — judged live, top 3 take medals.',
         rules: [
           { h: 'How it works', items: [

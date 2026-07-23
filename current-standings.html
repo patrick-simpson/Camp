@@ -249,8 +249,18 @@
       t4: 'images/team-shields/patriotic-pilgrims.webp?v=5',
       t5: 'images/team-shields/runaway-john-deeres.webp?v=5'
     };
-    // messtival:true games in app.js — worth DOUBLE points (Friday). Keep in sync.
-    var MESSTIVAL_GAME_IDS = ['bushel-bustle', 'pumpkin-patch-plunder', 'bob-drop-roll', 'cider-survivor'];
+    // messtival:true games in app.js — worth DOUBLE points (Friday, plus
+    // Thursday evening per Patrick's call 2026-07-23). Keep in sync.
+    var MESSTIVAL_GAME_IDS = ['bushel-bustle', 'pumpkin-patch-plunder', 'bob-drop-roll', 'cider-survivor', 'counselor-hide-seek', 'team-skits'];
+    // Thu 5pm ET → Fri midnight ET: verse + custom bonuses count double
+    // (meal cleanup exempt). Mirrors app.js bonusCountsDouble — keep in sync.
+    var DOUBLE_BONUS_START = Date.parse('2026-07-23T21:00:00Z');
+    var DOUBLE_BONUS_END = Date.parse('2026-07-26T04:00:00Z');
+    function bonusCountsDouble(b) {
+      if (!b || b.category === 'cleanup') return false;
+      var t = Date.parse(b.at || '');
+      return t >= DOUBLE_BONUS_START && t < DOUBLE_BONUS_END;
+    }
 
     var params = new URLSearchParams(location.search);
     var DEMO = params.has('demo');
@@ -315,7 +325,7 @@
         var p = Number(b.points);
         if (isNaN(p)) return;
         var bucket = b.category === 'verse' ? 'verse' : b.category === 'cleanup' ? 'meals' : 'custom';
-        counts[b.teamId][bucket] += p;
+        counts[b.teamId][bucket] += p * (bonusCountsDouble(b) ? 2 : 1);
       });
       teams.forEach(function (t) {
         var c = counts[t.id];

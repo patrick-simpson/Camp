@@ -283,6 +283,9 @@ function startQuickGame() {
   const sess = campNow().minutes >= 720 ? 'Evening' : 'Morning';
   quickGamePrefill = { format: 'placement' };
   if ((state.config.sessions || []).includes(sess)) quickGamePrefill.session = sess;
+  // Inside the Thu-evening/Friday double-points window, a game added on the
+  // spot should count double by default (untickable in the editor's extras).
+  if (typeof inDoubleBonusWindow === 'function' && inDoubleBonusWindow()) quickGamePrefill.messtival = true;
   gameDraft = null;
   gameDraftFor = null; // force a fresh draft even if an older 'new' draft exists
   state.ui.editGameId = 'new';

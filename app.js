@@ -14,9 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T21:10:33Z';
+const CODE_UPDATED_AT = '2026-07-23T23:14:27Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 133;
+const APP_VERSION = 134;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -156,6 +156,29 @@ const DAY_NAMES = { 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5:
 // Everything is points based: each medal is worth a fixed number of
 // points, and the week standings rank teams by total points.
 const MEDAL_POINTS = { gold: 7, silver: 5, bronze: 3 };
+
+// ── Double-points window (Patrick's call, Thu evening 2026-07-23) ──
+// Everything from Thursday 5pm ET through the end of Friday counts DOUBLE,
+// except meal cleanup. Games are handled by their `messtival` flag (see the
+// config v5 migration); this window doubles the OTHER point sources — verse
+// recitals and custom bonuses — by entry timestamp, at computation time, so
+// it's retroactive and needs no ledger edits. Mirrored in
+// current-standings.html's computeStandings — keep in sync.
+const DOUBLE_BONUS_START = Date.parse('2026-07-23T21:00:00Z'); // Thu 5:00pm ET
+const DOUBLE_BONUS_END = Date.parse('2026-07-26T04:00:00Z');   // Fri midnight ET
+
+function bonusCountsDouble(b) {
+  if (!b || b.category === 'cleanup') return false;
+  const t = Date.parse(b.at || '');
+  return t >= DOUBLE_BONUS_START && t < DOUBLE_BONUS_END;
+}
+
+// True while "now" is inside the double-points window (drives the notices
+// on the verse/bonus cards).
+function inDoubleBonusWindow() {
+  const now = Date.now();
+  return now >= DOUBLE_BONUS_START && now < DOUBLE_BONUS_END;
+}
 
 // ── Game catalog ────────────────────────────────────────────────
 // The week's games and days now live in editable, synced state
@@ -1239,6 +1262,28 @@ function migrateState(s) {
     const hs2 = c.games.find((g) => g.id === 'counselor-hide-seek');
     if (hs2) hs2.liveRankings = true;
     c.version = 4;
+    changed = true;
+  }
+  if ((c.version || 1) < 5) {
+    // Patrick's call, Thursday evening 2026-07-23: everything tonight and all
+    // of Friday counts DOUBLE (meal cleanup excluded — that's handled in
+    // bonusCountsDouble, not here). Flag Thursday-evening games and every
+    // Friday game. Because medalCounts() weights at computation time, this
+    // retroactively doubles already-saved results (Counselor Hide and Seek).
+    // Friday's morning games were already flagged; this catches Team Skits
+    // and any games added/moved since.
+    const doubleDayIds = { evening: [], all: [] };
+    (c.days || []).forEach((d) => {
+      if (d.dow === 4) doubleDayIds.evening.push(d.id);
+      if (d.dow === 5) doubleDayIds.all.push(d.id);
+    });
+    c.games.forEach((g) => {
+      if (doubleDayIds.all.includes(g.dayId) ||
+          (doubleDayIds.evening.includes(g.dayId) && g.session === 'Evening')) {
+        g.messtival = true;
+      }
+    });
+    c.version = 5;
     changed = true;
   }
   if (!s.ui) { s.ui = { day: null, gameId: null }; changed = true; }
@@ -2769,7 +2814,10 @@ function bonusBreakdown() {
     const bucket = b.category === 'verse' ? 'verse'
       : b.category === 'cleanup' ? 'meals'
       : 'custom';
-    totals[b.teamId][bucket] += p;
+    // Thu-evening/Friday double-points window (cleanup exempt) — see
+    // bonusCountsDouble. The ledger keeps the raw value; the ×2 chip in
+    // renderBonuses explains the difference.
+    totals[b.teamId][bucket] += p * (bonusCountsDouble(b) ? 2 : 1);
   });
   return totals;
 }
@@ -3347,13 +3395,16 @@ function renderBonuses() {
             <span class="bonus-item-team">${teamEmoji(b.teamId)} ${esc(teamName(b.teamId))}</span>
             <span class="bonus-item-label">${cat.icon} ${esc(b.label || 'Bonus')}${when ? ` · ${esc(when)}` : ''}</span>
           </span>
-          <span class="bonus-item-pts ${pts < 0 ? 'neg' : ''}">${pts > 0 ? '+' : ''}${esc(String(pts))}</span>
+          <span class="bonus-item-pts ${pts < 0 ? 'neg' : ''}">${pts > 0 ? '+' : ''}${esc(String(pts))}${bonusCountsDouble(b) ? `<span class="bonus-x2" title="Double-points window — counts as ${pts * 2} in the standings">×2</span>` : ''}</span>
           ${canEdit() ? `<jelly-icon-button class="bonus-remove-btn" variant="rose" label="Remove this bonus" data-bonus-id="${esc(id)}">✕</jelly-icon-button>` : ''}
         </li>`;
       }).join('')}</ul>`
     : `<p class="muted bonus-empty">No bonus points yet.</p>`;
 
-  wrap.innerHTML = entryHTML + subtotalsHTML + ledgerHTML;
+  const doubleNote = inDoubleBonusWindow()
+    ? `<div class="messtival-banner">⚡ Double points tonight &amp; Friday — bonus points count double in the standings (meal cleanup stays normal)!</div>`
+    : '';
+  wrap.innerHTML = doubleNote + entryHTML + subtotalsHTML + ledgerHTML;
 
   if (canEdit()) bindBonusEntry(wrap);
   wrap.querySelectorAll('.bonus-remove-btn').forEach((btn) => {
@@ -3517,7 +3568,10 @@ function renderMemoryVerse() {
     ? `<p class="muted bonus-empty">No verse points recorded for ${esc(DAY_NAMES[verseDay])} yet.</p>`
     : '';
 
-  wrap.innerHTML = themeHTML + dayChips + verseBox + hint + (editing || anyEarned ? rowsHTML : '') + emptyHTML;
+  const doubleNote = inDoubleBonusWindow()
+    ? `<div class="messtival-banner">⚡ Double points tonight &amp; Friday — verse points count double in the standings!</div>`
+    : '';
+  wrap.innerHTML = doubleNote + themeHTML + dayChips + verseBox + hint + (editing || anyEarned ? rowsHTML : '') + emptyHTML;
 
   wrap.querySelectorAll('.verse-day-chip').forEach((btn) => {
     btn.addEventListener('click', () => { verseDay = parseInt(btn.dataset.verseDay, 10); renderMemoryVerse(); });
@@ -3823,9 +3877,14 @@ function renderGameList() {
   );
 
   let html = '';
-  const isMesstival = dayGames.some((g) => g.messtival);
-  if (isMesstival) {
-    html += `<div class="messtival-banner">🎉 Messtival day — all games are worth DOUBLE points, counted double right here in the standings!</div>`;
+  // Double-points banner — day-agnostic (the flag started as Messtival-only
+  // but Thursday evening + all Friday are doubled too). Name the games when
+  // only some of the day is doubled.
+  const doubledGames = dayGames.filter((g) => g.messtival);
+  if (doubledGames.length === dayGames.length && dayGames.length) {
+    html += `<div class="messtival-banner">🎉 Double points day — every game counts double right here in the standings!</div>`;
+  } else if (doubledGames.length) {
+    html += `<div class="messtival-banner">⚡ Double points: ${doubledGames.map((g) => `${esc(g.emoji)} ${esc(g.name)}`).join(', ')} — counted double in the standings!</div>`;
   }
   if (day && day.note) {
     html += day.note.split('\n').map((l) => l.trim()).filter(Boolean)
@@ -3909,7 +3968,7 @@ function renderGameView() {
         <p class="muted">📍 ${esc(g.location)} · ${esc(g.session)} · <jelly-badge class="format-badge" variant="${esc(badge.variant || 'platinum')}" size="small">${esc(badge.label)}</jelly-badge></p>
       </div>
     </div>
-    ${g.messtival ? '<p class="messtival-tag">🎉 Messtival — double points, counted double here too!</p>' : ''}
+    ${g.messtival ? '<p class="messtival-tag">🎉 Double points — counted double in the standings!</p>' : ''}
     ${(g.rules || []).length ? `<details class="rules-details">
       <summary>How to play</summary>
       ${g.rules.map((sec) => `
