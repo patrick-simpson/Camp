@@ -14,9 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T21:03:08Z';
+const CODE_UPDATED_AT = '2026-07-23T21:10:33Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 132;
+const APP_VERSION = 133;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1868,11 +1868,15 @@ function playMineChime() {
 }
 
 // ── In-app toasts + subscribe-to-notifications ───────────────────
-// No service worker / push infra: this only fires while the tab is open on
-// a device, but needs neither billing nor a server deploy. "Mine" alerts
-// (about the followed team) get a fuller toast + OS Notification (only
-// when the tab isn't focused, so it isn't a redundant second alert) and a
-// brighter chime; everyone else's events still show, just quieter.
+// No push infra: alerts only fire while the tab is alive on a device, but
+// need neither billing nor a server deploy. OS notifications go through the
+// notification-only service worker (sw.js — no fetch handler, see its
+// header) because Android Chrome and installed-PWA iOS refuse the plain
+// Notification constructor. "Mine" alerts (about the followed team) get a
+// fuller toast + OS Notification (only when the tab isn't focused, so it
+// isn't a redundant second alert) and a brighter chime; everyone else's
+// events still show, just quieter. Announcements notify every subscribed
+// phone regardless of team.
 
 function notifyOn() {
   return !!state.notify;
@@ -1902,9 +1906,22 @@ function showToast(message, opts) {
 
 function maybeNativeNotification(title, body, tag) {
   if (!window.Notification || Notification.permission !== 'granted' || !document.hidden) return;
+  const opts = { body, icon: 'apple-touch-icon.png', badge: 'apple-touch-icon.png', tag };
+  // Phones need the service-worker path: Chrome on Android throws on the
+  // `new Notification()` constructor, and iOS (installed PWA) only shows
+  // notifications through a registration. Desktop falls through to the
+  // constructor if the sw.js registration isn't there for some reason.
+  const viaConstructor = () => { try { new Notification(title, opts); } catch (e) { /* toast already showed */ } };
   try {
-    new Notification(title, { body, icon: 'apple-touch-icon.png', tag });
-  } catch (e) { /* unsupported in this context — the toast already showed */ }
+    if (navigator.serviceWorker && navigator.serviceWorker.getRegistration) {
+      navigator.serviceWorker.getRegistration().then((reg) => {
+        if (reg && reg.showNotification) reg.showNotification(title, opts);
+        else viaConstructor();
+      }).catch(viaConstructor);
+      return;
+    }
+    viaConstructor();
+  } catch (e) { /* no notification support at all — the toast already showed */ }
 }
 
 // Turn notifications on (idempotent). Must be called from a user gesture so
@@ -1921,7 +1938,7 @@ function enableNotify() {
 function toggleNotify() {
   if (!state.notify) {
     enableNotify();
-    showToast("🔔 You'll get an alert here whenever a team's points change or is called up next — as long as this tab stays open.");
+    showToast("🔔 You'll get an alert whenever a team's points change, a team is called up next, or an announcement is posted — as long as this tab stays open.");
   } else {
     state.notify = false;
     updateNotifyButton();
@@ -5816,13 +5833,21 @@ function postAnnouncement() {
 // device's own post never re-notify.
 function notifyNewAnnouncements(prevMap) {
   const dismissed = dismissedAnnouncements();
+  let anyNew = false;
   Object.keys(state.announcements || {}).forEach((id) => {
     if (prevMap && id in prevMap) return;
     const a = state.announcements[id];
     if (!a || !a.text || dismissed.includes(id)) return;
+    anyNew = true;
     showToast('📣 ' + a.text);
     if (state.notify) maybeNativeNotification('📣 Camp announcement', a.text, 'camp-announcement-' + id);
   });
+  // Subscribed phones also get the audible/tactile ping — an announcement is
+  // for everyone, so it uses the brighter "mine" chime.
+  if (anyNew && state.notify) {
+    playMineChime();
+    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+  }
 }
 
 // ── Auto-reload on new deploy ────────────────────────────────────
@@ -6077,6 +6102,12 @@ function init() {
   startIdleCollapse();
   startUpdatePolling();
   startWeatherUpdates();
+  // Notification-only service worker (no fetch handler — see sw.js header).
+  // Needed so OS notifications work on phones: Android Chrome and installed
+  // iOS PWAs only show them via a registration, never the bare constructor.
+  if ('serviceWorker' in navigator) {
+    try { navigator.serviceWorker.register('sw.js').catch(() => { /* fine — toasts still work */ }); } catch (e) { /* ignore */ }
+  }
 
   renderAll();
 
