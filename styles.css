@@ -531,7 +531,7 @@ html.view-only .role-btn {
 .you-strip {
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 15px; /* match the 15px rhythm used between every other section */
 }
 .you-strip .notify-btn {
   width: 100%;
@@ -1573,7 +1573,9 @@ body.no-scroll {
 /* "Your team" summary card. Each team sets --team-accent (renderFollowCard);
    it falls back to the app primary so the neutral / no-shield states still work. */
 .follow-team-card {
-  margin-bottom: 0.85rem;
+  /* Spacing to the next element comes from .you-strip's flex gap, not a
+     margin here — a margin-bottom on top of that gap is what made this
+     card sit further from Happening Now than every other 15px section gap. */
   padding: 0.75rem 0.9rem;
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--team-accent, var(--color-primary)) 8%, var(--color-surface));
@@ -1702,7 +1704,7 @@ body.no-scroll {
 /* "My electives today" card — glanceable time · emoji · station rows, sitting
    under the follow card in the top .you-strip. */
 .my-electives-card {
-  margin-bottom: 0.85rem;
+  /* See .follow-team-card — spacing comes from .you-strip's flex gap. */
   padding: 0.7rem 0.85rem;
   border-radius: var(--radius-md);
   background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface));
