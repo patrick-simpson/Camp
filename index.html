@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=12">
+  <link rel="stylesheet" href="styles.css?v=13">
   <script>
     // Decide lock state before the page paints so we never flash the app,
     // and never show a blank page: exactly one of #app / #lock-screen shows.
@@ -57,6 +57,7 @@
       <button id="theme-toggle" class="theme-toggle" aria-label="Toggle dark mode" title="Toggle dark mode">🌙</button>
       <button id="sound-toggle" class="theme-toggle sound-toggle" aria-label="Toggle sounds" title="Toggle sounds">🔊</button>
       <div class="app-logo"><span>🏅</span> Camp Scoreboard</div>
+      <button id="settings-btn" class="theme-toggle settings-toggle" aria-label="Set up teams, days &amp; games" title="Set up teams, days &amp; games">⚙️</button>
       <button id="role-btn" class="role-btn"></button>
     </header>
 
@@ -72,8 +73,11 @@
       <!-- ── GAME VIEW (detail) ─────────────────────────── -->
       <section id="game-view" class="card game-view" hidden></section>
 
+      <!-- ── SETTINGS (editor-only week builder) ────────── -->
+      <section id="settings-view" class="settings-view" hidden></section>
+
       <!-- ── WEEK STANDINGS ─────────────────────────────── -->
-      <section class="card standings-card">
+      <section id="standings-card" class="card standings-card">
         <div class="card-header-row">
           <h2>Week Medal Count</h2>
           <button id="reset-week-btn" class="link-btn danger-link">New week (reset)</button>
@@ -107,7 +111,9 @@
        falls back to local-only mode automatically. -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=12"></script>
-  <script src="app.js?v=12"></script>
+  <script src="firebase-config.js?v=13"></script>
+  <script src="defaults.js?v=13"></script>
+  <script src="app.js?v=13"></script>
+  <script src="settings.js?v=13"></script>
 </body>
 </html>
