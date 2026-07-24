@@ -443,6 +443,13 @@ function tallyFieldsHTML(draft) {
 // while the match runs. 1 period + 0 outs = a plain running score;
 // Kangaroo Kickball uses 3 innings + 3 outs for the full kickball flow.
 function tournamentFieldsHTML(draft) {
+  // Ladder Ball carries its own bespoke round scorer (ladderScoring), which
+  // takes precedence over the generic tracker — offering the toggle here
+  // would silently do nothing, so explain instead.
+  if (draft.ladderScoring) {
+    return '<p class="field-help muted">🔴 This game uses its own Ladder Ball round scorer (cancellation scoring, first to exactly ' +
+      esc(draft.ladderScoring.target || 21) + ') — spectators already get a live board for each match.</p>';
+  }
   const t = draft.liveTracker;
   return `
     <jelly-checkbox class="checkbox-field" id="gd-tracker-on" size="small" ${t ? 'checked' : ''}>🔴 Live match scoreboard — score steppers spectators watch live (like Jeb Ball)</jelly-checkbox>
@@ -563,7 +570,9 @@ function wireGameEditor(card) {
   }
 
   if (draft.format === 'tournament') {
-    document.getElementById('gd-tracker-on').addEventListener('change', (e) => {
+    // Absent for ladderScoring games (they get an explanatory note instead).
+    const trackerOn = document.getElementById('gd-tracker-on');
+    if (trackerOn) trackerOn.addEventListener('change', (e) => {
       if (e.target.checked) {
         draft.liveTracker = draft.liveTracker || { unit: 'Points', periodLabel: 'Round', innings: '1', outs: '0' };
       } else {
@@ -892,6 +901,12 @@ function wireDaysTab(card) {
     });
   });
 
+  // Text/dow commits deliberately do NOT renderAll: change fires on blur —
+  // usually because the user tapped the NEXT field — and a re-render here
+  // replaces the whole card's DOM, destroying the field mid-tap (focus and
+  // keyboard vanish; every second tap "doesn't work"). The input already
+  // shows the committed value, and everything else that renders these
+  // values is hidden behind the builder until the next renderAll anyway.
   card.querySelectorAll('.day-name-input').forEach((input) => {
     input.addEventListener('change', () => {
       const day = dayById(input.dataset.dayId);
@@ -900,7 +915,6 @@ function wireDaysTab(card) {
       if (val) day.name = val;
       else input.value = day.name;
       saveConfig();
-      renderAll();
     });
   });
 
@@ -910,7 +924,6 @@ function wireDaysTab(card) {
       if (!day) return;
       day.dow = sel.value === '' ? null : parseInt(sel.value, 10);
       saveConfig();
-      renderAll();
     });
   });
 
@@ -920,7 +933,6 @@ function wireDaysTab(card) {
       if (!day) return;
       day.note = ta.value;
       saveConfig();
-      renderAll();
     });
   });
 
@@ -1002,6 +1014,9 @@ function wireTeamsTab(card) {
     });
   });
 
+  // No renderAll on text commits — same focus-steal reasoning as the Days
+  // tab (see wireDaysTab): a blur-triggered rebuild eats the tap that
+  // caused the blur.
   card.querySelectorAll('.team-name-input').forEach((input) => {
     input.addEventListener('change', () => {
       const team = state.teams.find((t) => t.id === input.dataset.teamId);
@@ -1010,7 +1025,6 @@ function wireTeamsTab(card) {
       if (val) team.name = val;
       else input.value = team.name;
       saveState();
-      renderAll();
     });
   });
 
@@ -1020,7 +1034,6 @@ function wireTeamsTab(card) {
       if (!team) return;
       team.counselor = input.value.trim();
       saveState();
-      renderAll();
     });
   });
 

@@ -5409,7 +5409,11 @@ class Oi extends HTMLElement {
       return;
     }
     this.hasAttribute("open") && (this.closing = !0, ht(this.dialog, () => {
-      this.closing && (this.closing = !1, this.removeAttribute("open"));
+      // Local patch (2026-07-24): if the open attribute was removed externally
+      // (host app removeAttribute) while this exit animation ran, afterClose
+      // was skipped under the closing flag — finish it now, or the page stays
+      // inert + scroll-locked forever and the 'close' event never fires.
+      this.closing && (this.closing = !1, this.hasAttribute("open") ? this.removeAttribute("open") : this.afterClose());
     }));
   }
 }
@@ -5533,7 +5537,9 @@ class Ni extends HTMLElement {
       ],
       { duration: 300, easing: "cubic-bezier(.4,0,.7,.25)" }
     ), r = () => {
-      this.closing && (this.closing = !1, this.removeAttribute("open"));
+      // Local patch (2026-07-24): same external-removeAttribute race as
+      // jelly-dialog — finish the skipped afterClose so teardown always runs.
+      this.closing && (this.closing = !1, this.hasAttribute("open") ? this.removeAttribute("open") : this.afterClose());
     };
     s.onfinish = r, s.oncancel = r;
   }

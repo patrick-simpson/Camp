@@ -4177,6 +4177,15 @@ select.form-input {
   gap: 0.35rem;
 }
 
+/* The horizontal .builder-row's `flex: 1` on .form-input also matches these
+   nested inputs — inside this vertical stack a 0% flex-basis collapses a
+   Jelly host to 0px tall (its shadow content is absolutely positioned, so
+   there's no intrinsic min-height to save it). Pin an explicit height. */
+.team-builder-fields .form-input {
+  flex: none;
+  height: 48px;
+}
+
 .team-builder-fields .team-counselor-input {
   font-size: 14px;
 }
