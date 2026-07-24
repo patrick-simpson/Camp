@@ -31,6 +31,16 @@ function builderDirty() {
 
 // ── Entry point ───────────────────────────────────────────────────
 
+// Fill one builder section's card. Exposed so the tab-change handler can
+// refresh a single panel without re-rendering the whole view.
+function renderSettingsSection(key, card) {
+  if (key === 'games' && state.ui.editGameId) renderGameEditor(card);
+  else if (key === 'days') renderDaysTab(card);
+  else if (key === 'teams') renderTeamsTab(card);
+  else if (key === 'data') renderDataTab(card);
+  else renderGamesTab(card);
+}
+
 function renderSettings() {
   const view = document.getElementById('settings-view');
   if (!view) return;
@@ -39,16 +49,20 @@ function renderSettings() {
     ? `<p class="muted">Last edited ${esc(new Date(state.config.updatedAt).toLocaleString())}</p>`
     : '';
 
+  // A jelly-tabs with all four sections as pre-rendered panels: switching is
+  // handled by the component (pill spring + panel fade), no renderAll
+  // round-trip. jelly-tabs derives its tab bar from the panels at connect,
+  // so this render always writes a fresh element.
   view.innerHTML = `
     <button class="link-btn back-btn" id="settings-back-btn">← Back to scoreboard</button>
     <h2>Set up the week</h2>
     ${updatedLine}
-    <nav class="settings-tabs">
-      <jelly-segmented size="small" label="Builder section" value="${esc(tab)}">
-        ${SETTINGS_TABS.map((t) => `<jelly-segment value="${t.key}">${esc(t.label)}</jelly-segment>`).join('')}
-      </jelly-segmented>
-    </nav>
-    <div class="card settings-card" id="settings-card"></div>
+    <jelly-tabs class="settings-tabs" size="small" value="${esc(tab)}">
+      ${SETTINGS_TABS.map((t) =>
+        `<jelly-tab-panel value="${t.key}" label="${esc(t.label)}"${t.key === tab ? ' active' : ''}>
+          <div class="card settings-card" data-settings-card="${t.key}"></div>
+        </jelly-tab-panel>`).join('')}
+    </jelly-tabs>
   `;
 
   document.getElementById('settings-back-btn').addEventListener('click', () => {
@@ -58,25 +72,26 @@ function renderSettings() {
     renderAll();
   });
 
-  view.querySelector('.settings-tabs jelly-segmented').addEventListener('change', (e) => {
-    state.ui.settingsTab = (e.detail && e.detail.value) || e.target.getAttribute('value');
-    state.ui.editGameId = null;
+  view.querySelector('jelly-tabs.settings-tabs').addEventListener('change', (e) => {
+    const key = e.detail && e.detail.value;
+    if (!key || key === state.ui.settingsTab) return;
+    state.ui.settingsTab = key;
+    // Leaving the game editor mid-edit discards the draft (same semantics as
+    // before) — refresh just the games panel back to its list; the component
+    // has already swapped the visible panel, so no renderAll.
+    if (state.ui.editGameId) {
+      state.ui.editGameId = null;
+      gameDraft = null;
+      gameDraftFor = null;
+      const gamesCard = view.querySelector('[data-settings-card="games"]');
+      if (gamesCard) renderSettingsSection('games', gamesCard);
+    }
     saveState();
-    renderAll();
   });
 
-  const card = document.getElementById('settings-card');
-  if (tab === 'games' && state.ui.editGameId) {
-    renderGameEditor(card);
-  } else if (tab === 'days') {
-    renderDaysTab(card);
-  } else if (tab === 'teams') {
-    renderTeamsTab(card);
-  } else if (tab === 'data') {
-    renderDataTab(card);
-  } else {
-    renderGamesTab(card);
-  }
+  SETTINGS_TABS.forEach((t) => {
+    renderSettingsSection(t.key, view.querySelector(`[data-settings-card="${t.key}"]`));
+  });
 }
 
 // ── Small shared helpers ──────────────────────────────────────────

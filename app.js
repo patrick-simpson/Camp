@@ -15,9 +15,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-24T19:33:00Z';
+const CODE_UPDATED_AT = '2026-07-24T21:01:34Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 156;
+const APP_VERSION = 157;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1090,7 +1090,12 @@ function renderHistory() {
     body.innerHTML = '<p class="muted">Live sync is off on this device, so there\'s no shared change history to show.</p>';
     return;
   }
-  body.innerHTML = '<p class="muted">Loading…</p>';
+  // Skeleton rows while the changelog fetch is in flight — varied widths so
+  // the placeholder reads as a list of entries, not a repeated bar.
+  body.innerHTML = '<div class="history-skeleton" aria-label="Loading change history">' +
+    [92, 68, 84, 58, 76, 88].map((w) =>
+      `<jelly-skeleton shape="line" style="width: ${w}%"></jelly-skeleton>`).join('') +
+    '</div>';
   firebase.database().ref('campScoreboard/changelog').limitToLast(500).once('value')
     .then((snap) => {
       const val = snap.val() || {};
@@ -1464,6 +1469,7 @@ function initSync() {
   try {
     firebase.initializeApp(cfg);
     fbRef = firebase.database().ref('campScoreboard/state');
+    updateSyncIndicator(); // sync is on but unconfirmed — show "Connecting…"
     fbRef.on('value', (snap) => {
       const remote = snap.val();
       const firstSnapshot = !remoteReady;
@@ -1558,6 +1564,7 @@ function initSync() {
     // a permanent "Synced".
     firebase.database().ref('.info/connected').on('value', (s) => {
       fbConnected = !!s.val();
+      fbConnKnown = true; // first real answer — retire the "Connecting…" spinner
       updateSyncIndicator();
       // Re-register presence on every (re)connect — onDisconnect handlers
       // don't survive a dropped socket, so a reconnect after wifi drops or
@@ -1796,12 +1803,18 @@ function findNextMatchupFor(teamId) {
 }
 
 let fbConnected = false; // live RTDB connection state (.info/connected)
+let fbConnKnown = false; // first .info/connected callback received
 
 function updateSyncIndicator() {
   const el = document.getElementById('sync-status');
   if (!el) return;
   if (!syncEnabled()) {
     el.textContent = '📱 This device only';
+    el.classList.remove('synced');
+  } else if (!fbConnKnown) {
+    // Startup gap before Firebase reports the connection state either way —
+    // previously blank; a small jelly spinner reads as "working on it".
+    el.innerHTML = '<jelly-spinner type="dots" size="small" label="Connecting"></jelly-spinner> Connecting…';
     el.classList.remove('synced');
   } else if (fbConnected) {
     el.textContent = '☁️ Synced';
@@ -3840,43 +3853,49 @@ function setCleanupPoints(teamId, dow, meal, pts) {
 
 // ── Day tabs + game list ─────────────────────────────────────────
 
+// The day nav is a jelly-tabs: one jelly-tab-panel per configured day, each
+// pre-rendered with that day's full lineup. Switching days is handled
+// entirely by the component (panel fade, pill spring) — the change handler
+// only records state.ui.day, no renderAll round-trip. jelly-tabs builds its
+// tab bar once at connect from the panels present, so this render always
+// writes a fresh element (day set edits in the builder are picked up on the
+// next render).
 function renderDayTabs() {
   const nav = document.getElementById('day-tabs');
+  if (!nav) return;
   const days = state.config.days;
   const todayDow = campNow().dow; // camp time, not device time
   if (!days.some((d) => d.id === state.ui.day)) state.ui.day = defaultDay(state.config);
+  const todayDay = days.find((d) => d.dow === todayDow);
 
-  // One segmented control, a segment per day. Segments render text only, so
-  // "today" is a text dot appended to the label rather than a styled span.
-  nav.innerHTML = `<jelly-segmented class="day-tabs-seg" size="small" label="Day of the week" value="${esc(state.ui.day)}">` +
-    days.map((d) => `<jelly-segment value="${esc(d.id)}">${esc(d.name.slice(0, 3))}${d.dow === todayDow ? ' •' : ''}</jelly-segment>`).join('') +
-    '</jelly-segmented>';
+  nav.innerHTML = `<jelly-tabs class="day-tabs" size="small" value="${esc(state.ui.day)}">` +
+    days.map((d) =>
+      `<jelly-tab-panel value="${esc(d.id)}" label="${esc(d.name.slice(0, 3))}${d.dow === todayDow ? ' •' : ''}"${d.id === state.ui.day ? ' active' : ''}>
+        ${dayNoteHTML(d, todayDay)}
+        <div class="day-panel-body">${dayGamesHTML(d)}</div>
+      </jelly-tab-panel>`).join('') +
+    '</jelly-tabs>';
 
-  const seg = nav.querySelector('jelly-segmented');
-  if (seg) seg.addEventListener('change', (e) => {
-    const value = (e.detail && e.detail.value) || seg.getAttribute('value');
-    if (!value) return;
+  const tabs = nav.querySelector('jelly-tabs');
+  tabs.addEventListener('change', (e) => {
+    const value = e.detail && e.detail.value;
+    if (!value || value === state.ui.day) return;
     state.ui.day = value;
-    state.ui.gameId = null;
+    // Leave any open game view — the panels themselves are already rendered,
+    // so no renderAll: the component's own panel transition is the animation.
+    if (state.ui.gameId) { state.ui.gameId = null; renderGameView(); }
     saveState();
-    renderAll();
-    joyStagger(document.getElementById('game-list'));
   });
 
-  const note = document.getElementById('day-note');
-  const selected = dayById(state.ui.day);
-  const todayDay = days.find((d) => d.dow === todayDow);
-  if (!selected) {
-    note.hidden = true;
-  } else if (!todayDay) {
-    note.hidden = false;
-    note.textContent = 'No games today — showing ' + selected.name + "'s lineup.";
-  } else if (todayDay.id !== state.ui.day) {
-    note.hidden = false;
-    note.textContent = 'Heads up: today is ' + todayDay.name + ' — you are viewing ' + selected.name + '.';
-  } else {
-    note.hidden = true;
-  }
+  wireDayPanels(nav);
+}
+
+// The "you're not looking at today" note, now rendered per panel.
+function dayNoteHTML(day, todayDay) {
+  let text = null;
+  if (!todayDay) text = 'No games today — showing ' + day.name + "'s lineup.";
+  else if (todayDay.id !== day.id) text = 'Heads up: today is ' + todayDay.name + ' — you are viewing ' + day.name + '.';
+  return text ? `<p class="day-note">${esc(text)}</p>` : '';
 }
 
 const FORMAT_BADGES = {
@@ -3893,10 +3912,9 @@ function gameStatus(g) {
   return 'ready';
 }
 
-function renderGameList() {
-  const wrap = document.getElementById('game-list');
-  const day = dayById(state.ui.day);
-  const dayGames = state.config.games.filter((g) => g.dayId === state.ui.day);
+// One day's full lineup, rendered into its jelly-tab-panel by renderDayTabs.
+function dayGamesHTML(day) {
+  const dayGames = state.config.games.filter((g) => g.dayId === day.id);
   const knownSessions = state.config.sessions;
   // Defensive: still show games whose session isn't in the configured list.
   const sessions = knownSessions.concat(
@@ -3913,21 +3931,16 @@ function renderGameList() {
   } else if (doubledGames.length) {
     html += `<div class="messtival-banner">⚡ Double points: ${doubledGames.map((g) => `${esc(g.emoji)} ${esc(g.name)}`).join(', ')} — counted double in the standings!</div>`;
   }
-  if (day && day.note) {
+  if (day.note) {
     html += day.note.split('\n').map((l) => l.trim()).filter(Boolean)
       .map((l) => `<div class="messtival-banner">${esc(l)}</div>`).join('');
   }
   if (!dayGames.length) {
-    html += `<p class="muted session-empty">No games scheduled${day ? ' for ' + esc(day.name) : ''} yet.</p>`;
+    html += `<p class="muted session-empty">No games scheduled for ${esc(day.name)} yet.</p>`;
     if (canEdit()) {
-      html += `<button id="empty-day-builder-btn" class="link-btn">🛠️ Set up games in Settings</button>`;
+      html += `<button class="link-btn empty-day-builder-btn">🛠️ Set up games in Settings</button>`;
     }
   }
-  // Editors get a one-tap way to slot in an unplanned game (rainy-day pivot,
-  // spontaneous rematch) without digging through the week builder.
-  const quickGameBtn = canEdit() && dayGames.length
-    ? `<button id="quick-game-btn" class="link-btn quick-game-btn">⚡ Quick game — add a one-off to ${day ? esc(day.name) : 'this day'}</button>`
-    : '';
 
   sessions.forEach((session) => {
     const games = dayGames.filter((g) => g.session === session);
@@ -3953,8 +3966,18 @@ function renderGameList() {
     });
   });
 
-  wrap.innerHTML = html + quickGameBtn;
-  wrap.querySelectorAll('.game-card').forEach((card) => {
+  // Editors get a one-tap way to slot in an unplanned game (rainy-day pivot,
+  // spontaneous rematch) without digging through the week builder.
+  if (canEdit() && dayGames.length) {
+    html += `<button class="link-btn quick-game-btn">⚡ Quick game — add a one-off to ${esc(day.name)}</button>`;
+  }
+  return html;
+}
+
+// Wire every panel's game cards + editor shortcuts (classes, not ids — the
+// same controls now exist once per day panel).
+function wireDayPanels(nav) {
+  nav.querySelectorAll('.game-card').forEach((card) => {
     card.addEventListener('click', () => {
       state.ui.gameId = card.dataset.gameId;
       saveState();
@@ -3963,27 +3986,48 @@ function renderGameList() {
       document.getElementById('game-view').scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
-
-  const builderBtn = document.getElementById('empty-day-builder-btn');
-  if (builderBtn) builderBtn.addEventListener('click', () => openBuilder('games'));
-  const quickBtn = document.getElementById('quick-game-btn');
-  if (quickBtn) quickBtn.addEventListener('click', () => startQuickGame());
+  nav.querySelectorAll('.empty-day-builder-btn').forEach((btn) =>
+    btn.addEventListener('click', () => openBuilder('games')));
+  nav.querySelectorAll('.quick-game-btn').forEach((btn) =>
+    btn.addEventListener('click', () => startQuickGame()));
 }
 
 // ── Game view ────────────────────────────────────────────────────
 
+// The game id rendered on the previous pass — lets renderGameView act only
+// on open/close TRANSITIONS (folding the accordion) instead of every render.
+let lastGameViewId = null;
+
 function renderGameView() {
   const view = document.getElementById('game-view');
-  const list = document.getElementById('game-list');
+  const dayNav = document.getElementById('day-tabs'); // tabs + per-day panels
   const g = state.ui.gameId ? gameById(state.ui.gameId) : null;
+
+  // Focus handoff: entering a game folds the home accordion shut (the game
+  // card is the whole screen); leaving it re-opens Competitions so you land
+  // back on the list you came from. Only on the transition — a re-render
+  // while a game is open must not fight a panel someone peeked into.
+  if (!!g !== !!lastGameViewId || (g && g.id !== lastGameViewId)) {
+    const comp = document.querySelector('.competitions-card');
+    if (g) {
+      document.querySelectorAll('.collapsible-card[open]').forEach((d) => {
+        if (typeof d.toggle === 'function') d.toggle(false);
+        else d.removeAttribute('open');
+      });
+    } else if (comp) {
+      if (typeof comp.toggle === 'function') comp.toggle(true);
+      else comp.setAttribute('open', '');
+    }
+  }
+  lastGameViewId = g ? g.id : null;
 
   if (!g) {
     view.hidden = true;
-    list.hidden = false;
+    if (dayNav) dayNav.hidden = false;
     return;
   }
   view.hidden = false;
-  list.hidden = true;
+  if (dayNav) dayNav.hidden = true;
 
   const badge = FORMAT_BADGES[g.format] || { label: g.format || '?', cls: '' };
   const backDay = dayById(g.dayId);
@@ -4014,7 +4058,7 @@ function renderGameView() {
     state.ui.gameId = null;
     saveState();
     renderAll();
-    joyStagger(document.getElementById('game-list'));
+    joyStagger(document.querySelector('#day-tabs jelly-tab-panel[active] .day-panel-body'));
   });
 
   // Standalone game clock — everyone sees it tick live; only editors get the
@@ -6137,9 +6181,12 @@ const IDLE_COLLAPSE_MS = 5 * 60 * 1000;
 
 function collapseCardsForIdle() {
   if (editorMidEntry()) { resetIdleTimer(); return; } // don't yank a card mid-entry
+  // jelly-collapsible animates its own collapse (and skips it under reduced
+  // motion). toggle(false) when upgraded so the accordion hears the change;
+  // plain attribute removal as the pre-upgrade fallback.
   document.querySelectorAll('.collapsible-card[open]').forEach((d) => {
-    if (JOY_REDUCED.matches || typeof d.animate !== 'function' || cardAnimating(d)) { d.open = false; return; }
-    collapseCardAnimated(d); // same glide as a manual collapse (joy layer)
+    if (typeof d.toggle === 'function') d.toggle(false);
+    else d.removeAttribute('open');
   });
 }
 
@@ -6170,8 +6217,7 @@ function renderAll() {
   renderAnnouncements();
   renderNowBanner();
   renderLiveHome();
-  renderDayTabs();
-  renderGameList();
+  renderDayTabs(); // includes every day panel's game list
   renderGameView();
   renderStandings();
   renderMyElectives();
@@ -6407,66 +6453,23 @@ document.addEventListener('pointercancel', () => {
   document.querySelectorAll('.joy-pressed').forEach((el) => el.classList.remove('joy-pressed'));
 }, { passive: true });
 
-// Sparkle on every real button push (not on text fields).
+// Sparkle on every real button push (not on text fields). Card headers are
+// jelly-collapsible shadow buttons — the host is the click target out here,
+// so it's included for the sparkle (but deliberately NOT in JOY_TAPPABLE:
+// press-scaling a whole card looks heavy-handed).
 document.addEventListener('click', (e) => {
-  const t = e.target.closest && e.target.closest(JOY_TAPPABLE);
+  const t = e.target.closest && e.target.closest(JOY_TAPPABLE + ', jelly-collapsible');
   if (!t) return;
   joyBurst(e.clientX, e.clientY, false);
 }, { passive: true });
 
-// ── Animated panel expand/collapse ───────────────────────────────
-// Native <details> snaps between states; run the card's height between its
-// summary-only and fully-expanded sizes instead. The existing [open] child
-// rise-in plays on top of the expand. A collapsing card stays [open] while
-// it shrinks so its content remains visible under the clip until the end —
-// .joy-closing suppresses the rise-in replay and flips the chevron back
-// right away. Reduced motion (or no WAAPI) keeps the native snap.
-
-function cardAnimating(d) {
-  return d.classList.contains('joy-animating') || d.classList.contains('joy-closing');
-}
-
-function expandCardAnimated(d) {
-  const startH = d.offsetHeight;
-  d.open = true;
-  const endH = d.offsetHeight;
-  if (startH === endH) return;
-  d.classList.add('joy-animating');
-  const a = d.animate(
-    [{ height: startH + 'px' }, { height: endH + 'px' }],
-    { duration: 380, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
-  );
-  a.onfinish = a.oncancel = () => d.classList.remove('joy-animating');
-}
-
-function collapseCardAnimated(d) {
-  const startH = d.offsetHeight;
-  d.classList.add('joy-closing');
-  d.open = false;              // measure the destination…
-  const endH = d.offsetHeight;
-  d.open = true;               // …then reopen before paint so content shows while shrinking
-  const a = d.animate(
-    [{ height: startH + 'px' }, { height: endH + 'px' }],
-    { duration: 300, easing: 'cubic-bezier(0.4, 0, 0.6, 1)' }
-  );
-  a.onfinish = a.oncancel = () => { d.open = false; d.classList.remove('joy-closing'); };
-}
-
-document.querySelectorAll('.collapsible-card').forEach((d) => {
-  const s = d.querySelector(':scope > summary');
-  if (!s) return;
-  s.addEventListener('click', (e) => {
-    if (JOY_REDUCED.matches || typeof d.animate !== 'function') return; // native snap
-    e.preventDefault();
-    if (cardAnimating(d)) return; // settle first; a re-tap lands in ~a third of a second
-    if (d.open) collapseCardAnimated(d);
-    else expandCardAnimated(d);
-  });
-});
+// Panel expand/collapse animation now lives inside jelly-collapsible itself
+// (springy grid-rows height, bouncy chevron, content pop) — the joy layer
+// only adds the tap sparkle on the header (see the click listener above,
+// which includes jelly-collapsible in its sparkle targets).
 
 // ── PIN lock gate ────────────────────────────────────────────────
 
-let pinEntry = '';
 let appStarted = false;
 
 function isUnlocked() {
@@ -6481,9 +6484,12 @@ function applyRoleClass() {
 // home screen for everyone, editors included. Manual expands aren't remembered
 // across reloads, and the idle timer re-collapses everything after a few
 // minutes of no interaction.
+// Attribute-only on purpose: setting the .open PROPERTY before the jelly
+// module upgrades the element would plant an own property that shadows the
+// class accessor forever (the classic pre-upgrade gotcha).
 function applyCardDefaults() {
   document.querySelectorAll('.collapsible-card').forEach((d) => {
-    d.open = false;
+    d.removeAttribute('open');
   });
 }
 
@@ -6499,11 +6505,6 @@ function startApp() {
     renderAll();
   }
   maybeShowTeamPicker();
-}
-
-function renderPinDots() {
-  const dots = document.querySelectorAll('#pin-dots .pin-dot');
-  dots.forEach((d, i) => d.classList.toggle('filled', i < pinEntry.length));
 }
 
 // SHA-256 → lowercase hex, via the Web Crypto API (available in any secure
@@ -6525,71 +6526,75 @@ async function pinRole(pin) {
   return null;
 }
 
-async function handlePinKey(key) {
+// PIN entry lives in the #pin-otp jelly-otp: its `complete` event delivers
+// the four digits the moment the last box fills (fired only for real typing/
+// paste, never for programmatic .value writes — so clearing it after a wrong
+// PIN can't re-trigger validation).
+async function handlePinComplete(entered) {
   const errEl = document.getElementById('lock-error');
   errEl.hidden = true;
-  if (key === 'del') {
-    pinEntry = pinEntry.slice(0, -1);
-    renderPinDots();
-    return;
-  }
-  if (pinEntry.length >= 4) return;
-  pinEntry += key;
-  renderPinDots();
-
-  if (pinEntry.length === 4) {
-    const entered = pinEntry;
-    const role = await pinRole(entered);
-    if (pinEntry !== entered) return; // field changed while the hash resolved
-    if (role) {
-      try {
-        localStorage.setItem(UNLOCK_KEY, '1');
-        localStorage.setItem(ROLE_KEY, role);
-        // Mark this device as past the current editor epoch so it isn't kicked
-        // by the one-time old-PIN revocation on the next load.
-        if (role === 'edit') localStorage.setItem(EDIT_PIN_EPOCH_KEY, EDIT_PIN_EPOCH);
-      } catch (e) { /* fine, just won't remember */ }
-      pinEntry = '';
-      setTimeout(startApp, 150);
-    } else {
-      const box = document.querySelector('.lock-box');
-      box.classList.add('shake');
-      errEl.hidden = false;
-      setTimeout(() => {
-        pinEntry = '';
-        renderPinDots();
-        box.classList.remove('shake');
-      }, 500);
-    }
+  const otp = document.getElementById('pin-otp');
+  const role = await pinRole(entered);
+  if (otp.value !== entered) return; // boxes changed while the hash resolved
+  if (role) {
+    try {
+      localStorage.setItem(UNLOCK_KEY, '1');
+      localStorage.setItem(ROLE_KEY, role);
+      // Mark this device as past the current editor epoch so it isn't kicked
+      // by the one-time old-PIN revocation on the next load.
+      if (role === 'edit') localStorage.setItem(EDIT_PIN_EPOCH_KEY, EDIT_PIN_EPOCH);
+    } catch (e) { /* fine, just won't remember */ }
+    otp.value = '';
+    setTimeout(startApp, 150);
+  } else {
+    const box = document.querySelector('.lock-box');
+    box.classList.add('shake');
+    errEl.hidden = false;
+    setTimeout(() => {
+      otp.value = '';
+      box.classList.remove('shake');
+      otp.focus();
+    }, 500);
   }
 }
 
 let lockWired = false;
 
-function wireLockKeypad() {
+function wireLockOtp() {
   if (lockWired) return;
   lockWired = true;
-  document.getElementById('keypad').addEventListener('click', (e) => {
-    const btn = e.target.closest('.key');
-    if (btn && btn.dataset.key) handlePinKey(btn.dataset.key);
+  const otp = document.getElementById('pin-otp');
+  if (!otp) return;
+  otp.addEventListener('complete', (e) => {
+    if (e.detail && e.detail.value) handlePinComplete(e.detail.value);
   });
-  document.addEventListener('keydown', (e) => {
-    if (!document.documentElement.classList.contains('locked')) return;
-    if (e.key >= '0' && e.key <= '9') handlePinKey(e.key);
-    else if (e.key === 'Backspace') handlePinKey('del');
+  // Typing hides a stale wrong-PIN error right away.
+  otp.addEventListener('input', () => {
+    document.getElementById('lock-error').hidden = true;
   });
 }
 
 function showLockScreen() {
-  pinEntry = '';
-  renderPinDots();
+  const otp = document.getElementById('pin-otp');
+  // Guard the .value write behind the upgrade — pre-upgrade it would plant a
+  // shadowing own property (same gotcha as applyCardDefaults). The boxes
+  // start empty anyway; this only matters for re-locks from Settings.
+  if (otp && customElements.get('jelly-otp')) otp.value = '';
   document.getElementById('lock-error').hidden = true;
   document.documentElement.classList.add('locked');
+  // Land focus in the first box once the component exists (desktop keyboards
+  // can type immediately; phones focus on tap).
+  customElements.whenDefined('jelly-otp').then(() => {
+    if (document.documentElement.classList.contains('locked')) {
+      const el = document.getElementById('pin-otp');
+      if (el) el.focus();
+    }
+  });
 }
 
 function boot() {
   applyTheme(); // the lock screen is the first thing everyone sees — theme it too
-  wireLockKeypad();
+  wireLockOtp();
   if (isUnlocked()) {
     startApp();
   } else {

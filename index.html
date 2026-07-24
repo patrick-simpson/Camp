@@ -19,8 +19,8 @@
   <!-- Jelly UI web components (vendored, see vendor/jelly.js header). Module
        scripts are deferred by spec, so this never blocks first paint and the
        classic scripts at the end of <body> always execute before it. -->
-  <script type="module" src="vendor/jelly.js?v=156"></script>
-  <link rel="stylesheet" href="styles.css?v=156">
+  <script type="module" src="vendor/jelly.js?v=157"></script>
+  <link rel="stylesheet" href="styles.css?v=157">
 
   <script>
     // Decide lock state before the page paints so we never flash the app,
@@ -45,32 +45,16 @@
 </head>
 <body>
 
-  <!-- ── PIN LOCK SCREEN ─────────────────────────────────── -->
+  <!-- ── PIN LOCK SCREEN ─────────────────────────────────────────
+       PIN entry is a jelly-otp (4 numeric boxes, system keypad via
+       inputmode=numeric). app.js listens for its `complete` event and
+       validates; a wrong PIN shakes .lock-box and clears the boxes. -->
   <div id="lock-screen" class="lock-screen">
     <div class="lock-box">
       <div class="lock-logo"><span>🏅</span> Camp</div>
       <p class="lock-prompt">Enter PIN to continue</p>
-      <div class="pin-dots" id="pin-dots" aria-hidden="true">
-        <span class="pin-dot"></span>
-        <span class="pin-dot"></span>
-        <span class="pin-dot"></span>
-        <span class="pin-dot"></span>
-      </div>
+      <jelly-otp id="pin-otp" length="4" label="PIN" size="large"></jelly-otp>
       <p class="lock-error" id="lock-error" role="alert" hidden>Wrong PIN — try again</p>
-      <div class="keypad" id="keypad">
-        <button class="key" data-key="1">1</button>
-        <button class="key" data-key="2">2</button>
-        <button class="key" data-key="3">3</button>
-        <button class="key" data-key="4">4</button>
-        <button class="key" data-key="5">5</button>
-        <button class="key" data-key="6">6</button>
-        <button class="key" data-key="7">7</button>
-        <button class="key" data-key="8">8</button>
-        <button class="key" data-key="9">9</button>
-        <button class="key key-blank" disabled></button>
-        <button class="key" data-key="0">0</button>
-        <button class="key key-del" data-key="del" aria-label="Delete digit">⌫</button>
-      </div>
     </div>
   </div>
 
@@ -98,90 +82,80 @@
       <!-- ── LIVE NOW (a game in progress — surfaced + highlighted) ── -->
       <section id="live-home" class="live-home" hidden></section>
 
-      <!-- ── COMPETITIONS (day tabs + game list, collapsible) ── -->
-      <details class="card competitions-card collapsible-card" data-card="competitions">
-        <summary class="card-header-row">
-          <h2>Competitions</h2>
-          <span class="card-chevron" aria-hidden="true">›</span>
-        </summary>
-        <!-- ── DAY TABS ───────────────────────────────── -->
-        <nav id="day-tabs" class="day-tabs" aria-label="Day of the week"></nav>
-        <p id="day-note" class="day-note" hidden></p>
-        <!-- ── GAME LIST ──────────────────────────────── -->
-        <section id="game-list"></section>
-      </details>
+      <!-- ── HOME PANELS ────────────────────────────────────
+           The five expandable cards are jelly-collapsible elements inside a
+           single-open jelly-accordion (opening one closes the others). Each
+           keeps .card for its chrome and .collapsible-card as the JS hook
+           (applyCardDefaults / collapseCardsForIdle). Render functions fill
+           the same inner containers as before. -->
+      <jelly-accordion class="home-accordion" single>
 
-      <!-- ── GAME VIEW (detail; outside the card so it shows even when
+        <!-- ── COMPETITIONS (day tabs + per-day game lists) ── -->
+        <jelly-collapsible class="card competitions-card collapsible-card" data-card="competitions">
+          <h2 slot="header">Competitions</h2>
+          <!-- jelly-tabs with one panel per day; renderDayTabs fills it. -->
+          <div id="day-tabs"></div>
+        </jelly-collapsible>
+
+        <!-- ── WEEK STANDINGS ─────────────────────────────── -->
+        <jelly-collapsible class="card standings-card collapsible-card" data-card="standings">
+          <h2 slot="header">Current Standings</h2>
+          <p class="muted standings-hint">Only counts games saved in this app — your paper scoreboard is the official one.</p>
+          <p id="sync-status" class="sync-status" aria-live="polite"></p>
+          <div class="standings-actions">
+            <jelly-button id="copy-standings-btn" class="secondary-btn" variant="platinum">📋 Copy scores &amp; points</jelly-button>
+            <jelly-button id="share-standings-btn" class="secondary-btn" variant="platinum" hidden>📤 Share</jelly-button>
+          </div>
+          <div class="table-scroll">
+            <table id="standings-table" class="standings-table">
+              <thead>
+                <tr>
+                  <th class="rank-col" aria-label="Rank">#</th>
+                  <th>Team</th>
+                  <th class="points-col">Pts</th>
+                  <th class="medal-col"><span role="img" aria-label="Gold medals">🥇</span></th>
+                  <th class="medal-col"><span role="img" aria-label="Silver medals">🥈</span></th>
+                  <th class="medal-col"><span role="img" aria-label="Bronze medals">🥉</span></th>
+                  <th class="extra-col"><span role="img" aria-label="Bible memorization points">📖</span></th>
+                  <th class="extra-col"><span role="img" aria-label="Meal cleanup points">🧽</span></th>
+                </tr>
+              </thead>
+              <tbody id="standings-tbody"></tbody>
+            </table>
+          </div>
+          <p id="catchup-hint" class="catchup-hint" hidden></p>
+        </jelly-collapsible>
+
+        <!-- ── MEMORY VERSE ───────────────────────────────── -->
+        <jelly-collapsible class="card verse-card collapsible-card" data-card="verse">
+          <h2 slot="header">Memory Verse</h2>
+          <p class="muted card-desc">Each day's memory verse — pick a day to read it, and record points for teams that recite it. Verse points count toward each team's total above.</p>
+          <div id="verse-body"></div>
+        </jelly-collapsible>
+
+        <!-- ── MEAL CLEANUP ───────────────────────────────── -->
+        <jelly-collapsible class="card cleanup-card collapsible-card" data-card="cleanup">
+          <h2 slot="header">Meal Cleanup</h2>
+          <p class="muted card-desc">Each meal a team is on cleanup — pick a day to see the rota and award points. Cleanup points count toward each team's total above.</p>
+          <div id="cleanup-body"></div>
+        </jelly-collapsible>
+
+        <!-- ── BONUS POINTS ───────────────────────────────── -->
+        <jelly-collapsible class="card bonus-card collapsible-card" data-card="bonus">
+          <h2 slot="header">Bonus Points</h2>
+          <p class="muted card-desc">Extra one-off points for other tasks — added to each team's total above.</p>
+          <div id="bonus-body"></div>
+        </jelly-collapsible>
+
+      </jelly-accordion>
+
+      <!-- ── GAME VIEW (detail; outside the accordion so it shows even when
            Competitions is collapsed, e.g. opened from a Live-now card) ── -->
       <section id="game-view" class="card game-view" hidden></section>
 
       <!-- ── WEEK BUILDER (editor-only; opened from Settings → Set up the
            week; body.builder-open hides every sibling section while it's up) ── -->
       <section id="settings-view" class="settings-view" hidden></section>
-
-      <!-- ── WEEK STANDINGS ─────────────────────────────── -->
-      <details class="card standings-card collapsible-card" data-card="standings">
-        <summary class="card-header-row">
-          <h2>Current Standings</h2>
-          <span class="summary-right">
-            <span class="card-chevron" aria-hidden="true">›</span>
-          </span>
-        </summary>
-        <p class="muted standings-hint">Only counts games saved in this app — your paper scoreboard is the official one.</p>
-        <p id="sync-status" class="sync-status" aria-live="polite"></p>
-        <div class="standings-actions">
-          <jelly-button id="copy-standings-btn" class="secondary-btn" variant="platinum">📋 Copy scores &amp; points</jelly-button>
-          <jelly-button id="share-standings-btn" class="secondary-btn" variant="platinum" hidden>📤 Share</jelly-button>
-        </div>
-        <div class="table-scroll">
-          <table id="standings-table" class="standings-table">
-            <thead>
-              <tr>
-                <th class="rank-col" aria-label="Rank">#</th>
-                <th>Team</th>
-                <th class="points-col">Pts</th>
-                <th class="medal-col"><span role="img" aria-label="Gold medals">🥇</span></th>
-                <th class="medal-col"><span role="img" aria-label="Silver medals">🥈</span></th>
-                <th class="medal-col"><span role="img" aria-label="Bronze medals">🥉</span></th>
-                <th class="extra-col"><span role="img" aria-label="Bible memorization points">📖</span></th>
-                <th class="extra-col"><span role="img" aria-label="Meal cleanup points">🧽</span></th>
-              </tr>
-            </thead>
-            <tbody id="standings-tbody"></tbody>
-          </table>
-        </div>
-        <p id="catchup-hint" class="catchup-hint" hidden></p>
-      </details>
-
-      <!-- ── MEMORY VERSE ───────────────────────────────── -->
-      <details class="card verse-card collapsible-card" data-card="verse">
-        <summary class="card-header-row">
-          <h2>Memory Verse</h2>
-          <span class="card-chevron" aria-hidden="true">›</span>
-        </summary>
-        <p class="muted card-desc">Each day's memory verse — pick a day to read it, and record points for teams that recite it. Verse points count toward each team's total above.</p>
-        <div id="verse-body"></div>
-      </details>
-
-      <!-- ── MEAL CLEANUP ───────────────────────────────── -->
-      <details class="card cleanup-card collapsible-card" data-card="cleanup">
-        <summary class="card-header-row">
-          <h2>Meal Cleanup</h2>
-          <span class="card-chevron" aria-hidden="true">›</span>
-        </summary>
-        <p class="muted card-desc">Each meal a team is on cleanup — pick a day to see the rota and award points. Cleanup points count toward each team's total above.</p>
-        <div id="cleanup-body"></div>
-      </details>
-
-      <!-- ── BONUS POINTS ───────────────────────────────── -->
-      <details class="card bonus-card collapsible-card" data-card="bonus">
-        <summary class="card-header-row">
-          <h2>Bonus Points</h2>
-          <span class="card-chevron" aria-hidden="true">›</span>
-        </summary>
-        <p class="muted card-desc">Extra one-off points for other tasks — added to each team's total above.</p>
-        <div id="bonus-body"></div>
-      </details>
 
     </main>
 
@@ -271,9 +245,9 @@
        falls back to local-only mode automatically. -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=156"></script>
-  <script src="defaults.js?v=156"></script>
-  <script src="app.js?v=156"></script>
-  <script src="settings.js?v=156"></script>
+  <script src="firebase-config.js?v=157"></script>
+  <script src="defaults.js?v=157"></script>
+  <script src="app.js?v=157"></script>
+  <script src="settings.js?v=157"></script>
 </body>
 </html>

@@ -371,24 +371,12 @@ html.view-only .role-btn {
   margin: 0 0 1.5rem;
 }
 
-.pin-dots {
-  display: flex;
-  justify-content: center;
-  gap: 1rem;
+/* PIN entry is a jelly-otp (4 boxes, numeric keyboard). Reserve its box
+   height pre-upgrade so the lock screen doesn't jump when it registers. */
+#pin-otp {
+  display: inline-block;
   margin-bottom: 1rem;
-}
-
-.pin-dot {
-  width: 1rem;
-  height: 1rem;
-  border-radius: 50%;
-  border: 2px solid var(--color-text-muted);
-  transition: background 0.1s ease, border-color 0.1s ease;
-}
-
-.pin-dot.filled {
-  background: var(--color-primary);
-  border-color: var(--color-primary);
+  min-height: 64px;
 }
 
 .lock-error {
@@ -399,41 +387,8 @@ html.view-only .role-btn {
   min-height: 1.1rem;
 }
 
-.keypad {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.75rem;
-  margin-top: 0.5rem;
-}
-
-.key {
-  aspect-ratio: 1;
-  border: 1.5px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text);
-  border-radius: 50%;
-  font-size: 1.6rem;
-  font-weight: 600;
-  font-family: inherit;
-  cursor: pointer;
-  transition: transform 0.05s ease, background 0.1s ease;
-}
-
-.key:active {
-  transform: scale(0.94);
-  background: var(--color-bg);
-}
-
-.key-blank {
-  border: none;
-  background: transparent;
-  cursor: default;
-}
-
-.key-del {
-  font-size: 1.3rem;
-  border-color: transparent;
-}
+/* (The old on-screen keypad is gone — jelly-otp brings the system numeric
+   keyboard via inputmode=numeric on its boxes.) */
 
 /* ============================================================
    HEADER
@@ -467,44 +422,54 @@ html.view-only .role-btn {
   font-weight: 800;
 }
 
-.card-header-row {
+/* ── Home panels: jelly-collapsible cards in a single-open accordion ──
+   Each panel keeps .card for its chrome; the component supplies the header
+   button, springy expand/collapse, and the rotating chevron. The card's own
+   padding moves onto the component's padding vars so the header button is a
+   full-width, full-height tap target (its hover/press tint runs edge to
+   edge). */
+.home-accordion {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 0.5rem;
+  flex-direction: column;
+  gap: 15px; /* match .main-wrap's section gap */
 }
 
-.card-header-row h2 {
+jelly-collapsible.card {
+  padding: 0;
+  --jelly-collapsible-padding-inline: 1.25rem;
+  --jelly-collapsible-padding-block: 1rem;
+  --jelly-collapsible-radius: var(--radius-lg);
+  --jelly-collapsible-chevron: 18px;
+  /* Body text matches what the old cards inherited from <body>. */
+  --jelly-collapsible-body-font: 1rem;
+  /* Wide content (the standings table) must not propagate its min-content
+     width up through the component's shadow grid and stretch the page —
+     pin the card's inline size so .table-scroll scrolls internally. */
+  contain: inline-size;
+}
+
+/* The slotted heading sits inside the component's header button. */
+jelly-collapsible.card h2[slot="header"] {
   margin: 0;
 }
 
-/* Collapsible cards (Memory Verse, Bonus Points): a <details> styled as a
-   card. Collapsed by default for viewers, expanded for editors (set in JS). */
-.collapsible-card > summary {
-  cursor: pointer;
-  list-style: none;
+/* Pre-upgrade (deferred module not yet run): show just the headers so the
+   page reads as the usual stack of closed cards — no content flash, no
+   blank screen. The global :not(:defined){visibility:hidden} rule is
+   overridden because these have a meaningful degraded look. */
+jelly-accordion:not(:defined) {
+  visibility: visible;
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
 }
-.collapsible-card > summary::-webkit-details-marker {
+jelly-collapsible:not(:defined) {
+  visibility: visible;
+  display: block;
+  padding: 1rem 1.25rem; /* stand in for the header button's padding */
+}
+jelly-collapsible:not(:defined) > :not([slot="header"]) {
   display: none;
-}
-.collapsible-card:not([open]) > summary {
-  margin-bottom: 0;
-}
-.card-chevron {
-  font-size: 1.5rem;
-  font-weight: 800;
-  line-height: 1;
-  color: var(--color-text-muted);
-  transition: transform 0.2s ease;
-}
-.collapsible-card[open] .card-chevron {
-  transform: rotate(90deg);
-}
-
-.summary-right {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.75rem;
 }
 
 /* "Live now" home-screen card — a game in progress, surfaced + highlighted. */
@@ -640,12 +605,26 @@ html.view-only .role-btn {
 /* ============================================================
    DAY TABS
    ============================================================ */
-.day-tabs {
-  /* Now hosts a single jelly-segmented control (one segment per day). */
+/* The day nav is a jelly-tabs (one pre-rendered panel per day); its tab bar
+   is a jelly-segmented exposed via ::part(tabs) — stretch it full width. */
+jelly-tabs.day-tabs {
   display: block;
 }
-.day-tabs jelly-segmented {
+jelly-tabs.day-tabs::part(tabs) {
   width: 100%;
+}
+
+/* Pre-upgrade: panels are plain light DOM — show only the active day's, and
+   give panels a block box (unknown elements default to inline). */
+jelly-tab-panel {
+  display: block;
+}
+jelly-tabs:not(:defined) {
+  visibility: visible;
+  display: block;
+}
+jelly-tabs:not(:defined) > jelly-tab-panel:not([active]) {
+  display: none;
 }
 
 .today-dot {
@@ -680,7 +659,7 @@ html.view-only .role-btn {
   margin: 0.25rem 0 0;
 }
 
-#game-list {
+.day-panel-body {
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -1456,6 +1435,12 @@ body.no-scroll {
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--color-text-muted);
+}
+
+/* The startup "Connecting…" dots spinner rides inline with the label. */
+.sync-status jelly-spinner {
+  vertical-align: middle;
+  margin-right: 0.25rem;
 }
 
 .sync-status.synced {
@@ -3745,6 +3730,14 @@ html.view-only #history-row {
   font-size: 0.85rem;
 }
 
+/* Skeleton rows while the changelog fetch is in flight. */
+.history-skeleton {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+}
+
 .cl-day {
   font-size: 0.75rem;
   font-weight: 800;
@@ -3821,11 +3814,12 @@ html.view-only #builder-row {
   margin-top: 0;
 }
 
-/* 4-column clone of .day-tabs for the settings sub-navigation. */
-.settings-tabs {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 0.4rem;
+/* Builder section nav: a jelly-tabs — stretch its bar to full width. */
+jelly-tabs.settings-tabs {
+  display: block;
+}
+jelly-tabs.settings-tabs::part(tabs) {
+  width: 100%;
 }
 
 .builder-row {
@@ -4526,31 +4520,16 @@ select.form-input {
     100% { transform: scale(1); }
   }
 
-  /* Card contents rise in when a collapsible card opens. */
-  details.collapsible-card[open] > *:not(summary) {
+  /* Card contents rise in when a home panel opens — layered on top of
+     jelly-collapsible's own springy height animation. The heading is the
+     header slot (child 1), so content children start at nth-child(2). */
+  jelly-collapsible.collapsible-card[open] > *:not([slot="header"]) {
     animation: joy-rise 0.38s cubic-bezier(0.22, 1, 0.36, 1) backwards;
   }
-  details.collapsible-card[open] > *:nth-child(3) { animation-delay: 0.04s; }
-  details.collapsible-card[open] > *:nth-child(4) { animation-delay: 0.08s; }
-  details.collapsible-card[open] > *:nth-child(5) { animation-delay: 0.12s; }
-  details.collapsible-card[open] > *:nth-child(n+6) { animation-delay: 0.16s; }
-
-  /* Animated expand/collapse (expandCardAnimated / collapseCardAnimated in
-     the joy layer): while the height runs, clip the revealing/vanishing
-     content to the card. A collapsing card stays [open] as it shrinks so
-     its content remains visible under the clip — .joy-closing suppresses
-     the [open] rise-in from replaying and flips the chevron back at the
-     start of the collapse instead of the end. */
-  .collapsible-card.joy-animating,
-  .collapsible-card.joy-closing {
-    overflow: hidden;
-  }
-  details.collapsible-card.joy-closing[open] > *:not(summary) {
-    animation: none;
-  }
-  .collapsible-card.joy-closing .card-chevron {
-    transform: none;
-  }
+  jelly-collapsible.collapsible-card[open] > *:nth-child(3) { animation-delay: 0.04s; }
+  jelly-collapsible.collapsible-card[open] > *:nth-child(4) { animation-delay: 0.08s; }
+  jelly-collapsible.collapsible-card[open] > *:nth-child(5) { animation-delay: 0.12s; }
+  jelly-collapsible.collapsible-card[open] > *:nth-child(n+6) { animation-delay: 0.16s; }
 
   /* Staggered list entry — applied transiently by joyStagger() after a
      day switch or view change re-render. */
@@ -4574,8 +4553,13 @@ select.form-input {
     from { opacity: 0; transform: translateY(14px) scale(0.985); }
     to { opacity: 1; transform: none; }
   }
+  /* Vertical on purpose: an X-axis slide pokes past the right edge of the
+     page mid-animation, and the scrollIntoView that accompanies opening a
+     game view chases that overhang — leaving the document horizontally
+     scrolled a few px with no visible scrollbar to recover it (overflow-x
+     is hidden). A Y-axis slide can't shift the horizontal scroll. */
   @keyframes joy-slide {
-    from { opacity: 0; transform: translateX(26px); }
+    from { opacity: 0; transform: translateY(22px); }
     to { opacity: 1; transform: none; }
   }
 }
