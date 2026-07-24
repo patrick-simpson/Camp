@@ -5664,12 +5664,10 @@ function applyTheme() {
     meta.id = 'dynamic-theme-color';
     document.head.appendChild(meta);
   }
-  // Explicit hexes matching the --color-bg token fallbacks in styles.css —
-  // nothing defines --jelly-color-background-default, so those fallbacks ARE
-  // the page background. (body has a 0.2s background transition, so reading
-  // getComputedStyle here would capture the mid-transition color — keep
-  // these in sync with the styles.css :root / dark token blocks.)
-  meta.content = dark ? '#10141c' : '#f4f6f9';
+  // Explicit hexes matching Jelly's background-default (body has a 0.2s
+  // background transition, so reading getComputedStyle here would capture
+  // the mid-transition color — keep these in sync with the palette).
+  meta.content = dark ? '#181b1d' : '#ffffff';
 }
 
 // Called from the Appearance segmented control: 'light' | 'auto' | 'dark'.
