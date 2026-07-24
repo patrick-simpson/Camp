@@ -14,9 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-23T23:45:40Z';
+const CODE_UPDATED_AT = '2026-07-24T00:21:22Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 137;
+const APP_VERSION = 138;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -285,7 +285,18 @@ const DAY_SCHEDULE = {
     return [morningMeetingBlock(2)].concat(weekdayDaytime()).concat(evening);
   })(),
   3: [morningMeetingBlock(3)].concat(weekdayDaytime()).concat(weekdayEvening('Sofie')),
-  4: [morningMeetingBlock(4)].concat(weekdayDaytime()).concat(weekdayEvening('Jovi')),
+  4: (function () {
+    // Tonight only: Boys cabin movie night (9:15–10pm), same slot/overlap
+    // treatment as Tuesday's (see that block's comment) — intentionally
+    // overlaps "Prepare for bed" and "Cabin devotional", placed ahead of
+    // them so it wins the "Happening Now" banner for the whole window while
+    // both still show in the full schedule sheet.
+    const evening = weekdayEvening('Jovi');
+    const idx = evening.findIndex((b) => b.start === hm(21, 15));
+    const movie = { start: hm(21, 15), end: hm(22, 0), label: 'Boys cabin movie night', emoji: '🎬', type: 'activity' };
+    evening.splice(idx === -1 ? evening.length : idx, 0, movie);
+    return [morningMeetingBlock(4)].concat(weekdayDaytime()).concat(evening);
+  })(),
   5: [morningMeetingBlock(5)].concat(weekdayDaytime()).concat([ // Friday evening — Team Skits night, later lights out
     { start: hm(17, 30), end: hm(18, 0), label: 'Team huddle', emoji: '📣', type: 'activity' },
     { start: hm(18, 0), end: hm(19, 0), label: 'Final preparations for skits', emoji: '🎭', type: 'activity' },
