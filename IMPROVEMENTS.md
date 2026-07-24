@@ -20,7 +20,10 @@ are approximate (the file shifts) — search for the quoted identifiers.
 - **Test before deploying**: headless Chromium + Playwright is available
   (`NODE_PATH=$(npm root -g)`, launch `chromium` from the global playwright).
   Serve with `python3 -m http.server`. Seed `localStorage`
-  (`campScoreboardUnlocked=1`, `campScoreboardRole=edit`, `campScoreboardV2`).
+  (`campScoreboardUnlocked=1`, `campScoreboardRole=edit`, `campScoreboardV2`)
+  — AND `campScoreboardEditEpoch` set to the current `EDIT_PIN_EPOCH` from
+  app.js (currently `r1`), or index.html's pre-paint epoch check will silently
+  wipe the unlocked/role keys on the next load and re-lock the page.
   Use the `?now=<dow>-<hhmm>` URL override for schedule states. Firebase is
   unreachable from the sandbox — `ERR_CONNECTION_RESET` console errors are
   expected, not failures. Screenshot light + dark at 360–414px widths.
