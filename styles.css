@@ -21,6 +21,10 @@
   --color-primary: var(--jelly-color-background-accent, #3355ff);
   --color-primary-dark: #2540c7;
   --color-danger: var(--jelly-color-background-rose, #d63b3b);
+  /* Text on primary/danger fills. White passes AA on the deep light-theme
+     accents; the dark theme's lighter accents need dark text instead. */
+  --color-on-primary: #ffffff;
+  --color-on-danger: #ffffff;
   --color-gold: #96690a;
   --color-gold-bg: #fff6dd;
   --color-silver: #6b7280;
@@ -58,7 +62,10 @@ body.dark-theme {
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
   --shadow-card-hover: 0 4px 16px rgba(0, 0, 0, 0.5);
   --shadow-sheet: var(--jelly-shadow-overlay, 0 -8px 40px rgba(0, 0, 0, 0.6));
-  --color-primary-hover: #4a63d6; /* darker than --color-primary so white text holds up */
+  --color-primary-hover: #8ea0ff; /* lightens on hover — on-primary text is dark here */
+  /* White on #6b85ff is ~3.3:1 (fails AA); dark text is ~5.3:1. */
+  --color-on-primary: #181b1d;
+  --color-on-danger: #181b1d;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -81,7 +88,9 @@ body.dark-theme {
     --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
     --shadow-card-hover: 0 4px 16px rgba(0, 0, 0, 0.5);
     --shadow-sheet: var(--jelly-shadow-overlay, 0 -8px 40px rgba(0, 0, 0, 0.6));
-    --color-primary-hover: #4a63d6;
+    --color-primary-hover: #8ea0ff;
+    --color-on-primary: #181b1d;
+    --color-on-danger: #181b1d;
   }
 }
 
@@ -97,12 +106,12 @@ body.dark-theme {
 }
 :root[data-jelly-mode="dark"] {
   --jelly-color-background-accent: #6b85ff;
-  --jelly-color-foreground-on-accent: #ffffff;
+  --jelly-color-foreground-on-accent: #181b1d; /* white on #6b85ff fails AA */
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-jelly-mode="light"]) {
     --jelly-color-background-accent: #6b85ff;
-    --jelly-color-foreground-on-accent: #ffffff;
+    --jelly-color-foreground-on-accent: #181b1d;
   }
 }
 
@@ -515,7 +524,7 @@ html.view-only .role-btn {
   font-size: 0.66rem;
   font-weight: 800;
   letter-spacing: 0.05em;
-  color: #fff;
+  color: var(--color-on-danger);
   background: var(--color-danger);
   border-radius: 999px;
   padding: 0.15rem 0.5rem;
@@ -1222,7 +1231,7 @@ body.no-scroll {
 
 .sched-now-pill {
   background: var(--color-primary);
-  color: #fff;
+  color: var(--color-on-primary);
   font-size: 0.68rem;
   font-weight: 800;
   text-transform: uppercase;
@@ -1388,7 +1397,7 @@ body.no-scroll {
 .primary-btn {
   width: 100%;
   background: var(--color-primary);
-  color: #fff;
+  color: var(--color-on-primary);
   border: none;
   border-radius: var(--radius-md);
   padding: 0.85rem 1rem;
@@ -1955,7 +1964,7 @@ body.no-scroll {
 
 .wizard-step.active {
   background: var(--color-primary);
-  color: #fff;
+  color: var(--color-on-primary);
 }
 
 .wizard-step.done {
@@ -2878,7 +2887,7 @@ body.no-scroll {
   flex: 1;
   min-height: 3.75rem;
   background: var(--color-primary);
-  color: #fff;
+  color: var(--color-on-primary);
   border: none;
   border-radius: var(--radius-md);
   font-size: 1.2rem;
@@ -3503,7 +3512,7 @@ body.no-scroll {
   border-radius: 999px;
   padding: 0.7rem 1.2rem;
   background: var(--color-primary);
-  color: #fff;
+  color: var(--color-on-primary);
   font-family: inherit;
   font-size: 0.9rem;
   font-weight: 700;
