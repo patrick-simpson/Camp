@@ -14,9 +14,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // drives the "Code last updated" line in the footer. There's no build
 // step here to stamp this automatically, so it's a manual step alongside
 // the ?v=N cache-bust bump in index.html.
-const CODE_UPDATED_AT = '2026-07-24T01:19:34Z';
+const CODE_UPDATED_AT = '2026-07-24T01:29:48Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 140;
+const APP_VERSION = 141;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -297,29 +297,24 @@ const DAY_SCHEDULE = {
     evening.splice(idx === -1 ? evening.length : idx, 0, movie);
     return [morningMeetingBlock(4)].concat(weekdayDaytime()).concat(evening);
   })(),
-  5: (function () {
-    // Boys cabin pillow fight, pushed back the same ~45min Friday's whole
-    // evening already runs late for Team Skits: 10:00–10:45pm, not the
-    // literal 9:15 clock time. That lines it up with "Prepare for bed" +
-    // "Cabin devotional" (same overlap trick as Tue/Thu's movie night —
-    // spliced in ahead of them so it wins the Happening Now banner for the
-    // whole window) and 15min into "Lights out", since Friday's prepare/
-    // devotional pair is only 30min, 15 short of the pillow fight's 45.
-    const evening = [
-      { start: hm(17, 30), end: hm(18, 0), label: 'Team huddle', emoji: '📣', type: 'activity' },
-      { start: hm(18, 0), end: hm(19, 0), label: 'Final preparations for skits', emoji: '🎭', type: 'activity' },
-      { start: hm(19, 0), end: hm(20, 0), label: 'Team Skits', emoji: '🎭', type: 'activity' },
-      { start: hm(20, 0), end: hm(21, 0), label: 'Evening service', emoji: '⛪', type: 'activity' },
-      { start: hm(21, 0), end: hm(22, 0), label: 'Snack and campfire — Ella', emoji: '🔥', type: 'activity' },
-      { start: hm(22, 0), end: hm(22, 15), label: 'Prepare for bed', emoji: '🪥', type: 'activity' },
-      { start: hm(22, 15), end: hm(22, 30), label: 'Cabin devotional', emoji: '🙏', type: 'activity' },
-      { start: hm(22, 30), end: hm(24, 0), label: 'Lights out', emoji: '🛏️', type: 'activity', noTime: true },
-    ];
-    const idx = evening.findIndex((b) => b.start === hm(22, 0));
-    const pillowFight = { start: hm(22, 0), end: hm(22, 45), label: 'Boys cabin pillow fight', emoji: '🛏️', type: 'activity' };
-    evening.splice(idx === -1 ? evening.length : idx, 0, pillowFight);
-    return [morningMeetingBlock(5)].concat(weekdayDaytime()).concat(evening);
-  })(),
+  5: [morningMeetingBlock(5)].concat(weekdayDaytime()).concat([
+    { start: hm(17, 30), end: hm(18, 0), label: 'Team huddle', emoji: '📣', type: 'activity' },
+    { start: hm(18, 0), end: hm(19, 0), label: 'Final preparations for skits', emoji: '🎭', type: 'activity' },
+    { start: hm(19, 0), end: hm(20, 0), label: 'Team Skits', emoji: '🎭', type: 'activity' },
+    { start: hm(20, 0), end: hm(21, 0), label: 'Evening service', emoji: '⛪', type: 'activity' },
+    { start: hm(21, 0), end: hm(22, 0), label: 'Snack and campfire — Ella', emoji: '🔥', type: 'activity' },
+    { start: hm(22, 0), end: hm(22, 15), label: 'Prepare for bed', emoji: '🪥', type: 'activity' },
+    { start: hm(22, 15), end: hm(22, 30), label: 'Cabin devotional', emoji: '🙏', type: 'activity' },
+    // Lights out at 10:30, a 15min Boys cabin pillow fight breaks out at
+    // 10:45–11pm, then lights out resumes for the night. A clean sequential
+    // split (not an overlap trick like Tue/Thu's movie) — the pillow fight
+    // sits entirely after prepare-for-bed/devotional, mid-way through what
+    // would otherwise be one long lights-out block, so there's no ambiguity
+    // for "Happening now"/"Up next" to resolve.
+    { start: hm(22, 30), end: hm(22, 45), label: 'Lights out', emoji: '🛏️', type: 'activity' },
+    { start: hm(22, 45), end: hm(23, 0), label: 'Boys cabin pillow fight', emoji: '🛏️', type: 'activity' },
+    { start: hm(23, 0), end: hm(24, 0), label: 'Lights out', emoji: '🛏️', type: 'activity', noTime: true },
+  ]),
   6: [ // Saturday — send-off morning
     morningMeetingBlock(6), // rising bell + shower folded into this 7:30 block
     { start: hm(8, 0), end: hm(8, 30), label: 'Breakfast', emoji: '🍳', type: 'activity' },
