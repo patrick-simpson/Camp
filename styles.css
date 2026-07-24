@@ -1003,45 +1003,6 @@ body.no-scroll {
 /* ============================================================
    TEAM PICKER (which team to follow)
    ============================================================ */
-.team-picker-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1150;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1.25rem;
-}
-
-.team-picker-backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(16, 24, 40, 0.55);
-  backdrop-filter: blur(2px);
-}
-
-.team-picker-card {
-  position: relative;
-  width: 100%;
-  max-width: 420px;
-  max-height: 85dvh;
-  overflow-y: auto;
-  background: var(--color-surface);
-  border-radius: var(--radius-xl);
-  box-shadow: var(--shadow-sheet);
-  padding: 1.5rem;
-  animation: team-picker-pop 0.22s cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-@keyframes team-picker-pop {
-  from { transform: scale(0.94); opacity: 0; }
-  to { transform: scale(1); opacity: 1; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .team-picker-card { animation: none; }
-}
-
 .team-picker-title {
   margin: 0 0 0.4rem;
   font-size: 1.2rem;
@@ -2341,10 +2302,6 @@ body.no-scroll {
   background: color-mix(in srgb, var(--color-primary) 20%, var(--color-surface));
 }
 
-.verse-entry {
-  margin-bottom: 1rem;
-}
-
 /* ============================================================
    MEAL CLEANUP CARD  (reuses .verse-day-*, .bonus-* classes)
    ============================================================ */
@@ -2509,22 +2466,7 @@ body.no-scroll {
   text-align: center;
 }
 
-/* Live match scorekeeper (innings + per-team tally) */
-.live-tracker {
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 0.85rem;
-  margin: 0 0 0.75rem;
-}
-
-.live-row {
-  padding: 0.4rem 0;
-}
-.live-row + .live-row {
-  border-top: 1px solid var(--color-border);
-}
-
+/* Live match scorekeeper (Big Board sub-rows) */
 .live-label {
   display: block;
   font-size: 0.72rem;
@@ -2533,39 +2475,6 @@ body.no-scroll {
   letter-spacing: 0.04em;
   color: var(--color-text-muted);
   margin-bottom: 0.35rem;
-}
-
-.live-inning-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-.live-inning-row .live-label {
-  margin-bottom: 0;
-}
-
-.live-hr-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  padding: 0.3rem 0;
-}
-
-.live-hr-team {
-  flex: 1;
-  min-width: 0;
-  font-weight: 600;
-  font-size: 0.92rem;
-  overflow-wrap: break-word;
-}
-
-.live-stepper {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex: 0 0 auto;
 }
 
 .live-btn {
@@ -2591,21 +2500,6 @@ body.no-scroll {
   background: color-mix(in srgb, var(--color-primary) 15%, var(--color-surface));
 }
 
-.live-val {
-  min-width: 1.6rem;
-  text-align: center;
-  font-size: 1.3rem;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  color: var(--color-text);
-}
-
-.live-of {
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
-  margin-left: -0.2rem;
-}
-
 .live-outs-pips {
   min-width: 3.2rem;
   text-align: center;
@@ -2615,18 +2509,6 @@ body.no-scroll {
   line-height: 1;
 }
 
-.live-kicking-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-.live-kicking-ctrl {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  min-width: 0;
-}
 .live-kicking-team {
   font-weight: 700;
   font-size: 0.95rem;
@@ -2636,13 +2518,6 @@ body.no-scroll {
 .live-switch-btn {
   font-size: 1.1rem;
   color: var(--color-text-muted);
-}
-
-.live-watch-kicking {
-  margin: 0.25rem 0 0;
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: var(--color-text);
 }
 
 .live-reset {
@@ -2667,64 +2542,6 @@ body.no-scroll {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--color-text-muted);
-}
-
-.live-watch-score {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-
-.live-watch-score .lw-team {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 0.15rem;
-  font-size: 1.6rem;
-  line-height: 1;
-}
-.lw-name {
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: var(--color-text);
-  overflow-wrap: break-word;
-}
-
-.lw-nums {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: baseline;
-  gap: 0.4rem;
-}
-.lw-num {
-  font-size: 2.4rem;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  color: var(--color-primary);
-}
-.lw-dash {
-  font-size: 1.4rem;
-  color: var(--color-text-muted);
-}
-
-.live-watch-inning {
-  margin: 0.6rem 0 0;
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: var(--color-text);
-}
-
-.live-watch-matchup {
-  font-size: 1.05rem;
-  font-weight: 700;
-}
-.live-watch-matchup .lw-vs {
-  color: var(--color-text-muted);
-  font-weight: 400;
-  margin: 0 0.25rem;
 }
 
 .live-watch-note {
@@ -2896,10 +2713,6 @@ body.no-scroll {
   cursor: pointer;
 }
 
-.timer-main-btn.alarm-btn {
-  background: var(--color-danger);
-}
-
 .timer-main-btn.stop-lap-btn {
   background: var(--color-danger);
 }
@@ -2928,36 +2741,11 @@ body.no-scroll {
   font-variant-numeric: tabular-nums;
 }
 
-.sw-laps {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.4rem;
-  margin-top: 0.75rem;
-}
-
 .sw-actions {
   display: flex;
   justify-content: center;
   gap: 1.25rem;
   margin-top: 0.6rem;
-}
-
-.sw-save-row {
-  display: flex;
-  gap: 0.6rem;
-  margin-top: 0.75rem;
-}
-
-.sw-save-row select {
-  flex: 1;
-  border: 1.5px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font-size: 0.95rem;
-  font-family: inherit;
-  padding: 0.45rem 0.5rem;
-  border-radius: var(--radius-md);
 }
 
 .counter-btn-row {
@@ -3831,68 +3619,6 @@ jelly-button.winner-btn.winner-ready {
    SETTINGS SHEET (gear overlay) — appearance, sound, score access,
    and the "Stalling with Patrick" presenter link
    ============================================================ */
-/* Reuses the schedule sheet's overlay/backdrop/slide machinery
-   (.settings-overlay mirrors .schedule-overlay) so the two bottom
-   sheets feel identical. */
-.settings-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 1100;
-  display: flex;
-  align-items: flex-end;
-  justify-content: center;
-}
-
-.settings-backdrop {
-  position: absolute;
-  inset: 0;
-  background: rgba(16, 24, 40, 0.55);
-  backdrop-filter: blur(2px);
-  animation: sched-fade 0.2s ease;
-}
-
-.settings-sheet {
-  position: relative;
-  width: 100%;
-  max-width: 640px;
-  max-height: 90vh;
-  max-height: 90dvh;
-  display: flex;
-  flex-direction: column;
-  background: var(--color-bg);
-  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
-  box-shadow: var(--shadow-sheet);
-  animation: sched-slide 0.28s cubic-bezier(0.22, 1, 0.36, 1);
-  overflow: hidden;
-}
-
-.settings-overlay.closing .settings-sheet {
-  animation: sched-slide-out 0.2s ease forwards;
-}
-.settings-overlay.closing .settings-backdrop {
-  animation: sched-fade-out 0.2s ease forwards;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .settings-backdrop,
-  .settings-sheet,
-  .settings-overlay.closing .settings-sheet,
-  .settings-overlay.closing .settings-backdrop { animation: none; }
-}
-
-.settings-header {
-  flex: 0 0 auto;
-  padding: 0.5rem 1rem 0.75rem;
-  background: var(--color-surface);
-  border-bottom: 1px solid var(--color-border);
-}
-
-.settings-title-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
 .settings-title {
   margin: 0;
   font-size: 1.15rem;
@@ -3942,26 +3668,6 @@ jelly-button.winner-btn.winner-ready {
 .settings-row-emoji {
   font-size: 1.15rem;
   line-height: 1;
-}
-
-/* The theme + sound toggles: compact round icon buttons on the right. */
-.settings-toggle {
-  flex: 0 0 auto;
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: 50%;
-  width: 2.75rem;
-  height: 2.75rem;
-  font-size: 1.2rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.15s ease;
-}
-
-.settings-toggle:hover {
-  background: var(--color-border);
 }
 
 /* The presenter link is a full tappable row. */
@@ -4101,13 +3807,17 @@ html.view-only #builder-row {
   min-width: 0;
 }
 
+/* Two-line grid row: name on top, badge underneath — a one-line flex row
+   forces mid-word breaks in game names on a 390px screen. */
 .game-row-main {
   flex: 1;
   min-width: 0;
   min-height: 2.75rem;
-  display: flex;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  column-gap: 0.5rem;
+  row-gap: 0.2rem;
   align-items: center;
-  gap: 0.5rem;
   border: none;
   border-radius: var(--radius-md);
   background: transparent;
@@ -4123,15 +3833,6 @@ html.view-only #builder-row {
 .game-row-main:hover,
 .game-row-main:active {
   background: var(--color-bg);
-}
-
-/* Two-line row: name on top, badge underneath — a one-line flex row
-   forces mid-word breaks in game names on a 390px screen. */
-.game-row-main {
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  column-gap: 0.5rem;
-  row-gap: 0.2rem;
 }
 
 .game-row-main .game-emoji {
@@ -4342,18 +4043,6 @@ select.form-input {
   margin: 0.75rem 0;
 }
 
-.rules-section-head {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
-}
-
-.rules-section-head .form-input {
-  flex: 1;
-  min-width: 0;
-}
-
 /* ── Notes ── */
 .warn-note {
   font-size: 0.85rem;
@@ -4362,15 +4051,6 @@ select.form-input {
   background: var(--color-bronze-bg);
   border-radius: var(--radius-md);
   padding: 0.5rem 0.7rem;
-}
-
-.settings-empty {
-  background: var(--color-bg);
-  border: 1px dashed var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 0.9rem 1rem;
-  color: var(--color-text-muted);
-  font-size: 0.92rem;
 }
 
 /* ── Danger zone ── */

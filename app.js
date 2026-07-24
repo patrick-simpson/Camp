@@ -397,12 +397,6 @@ function electiveBreakKids(dow, slot) {
   return [...electiveDayRoster(dow)].filter((k) => !assigned.has(k)).sort();
 }
 
-// The team id (t0..t5) a stored identity belongs to, or null if unknown.
-function teamOfCounselor(name) {
-  if (!name) return null;
-  return Object.keys(TEAM_COUNSELORS).find((id) => TEAM_COUNSELORS[id].includes(name)) || null;
-}
-
 // Where the stored identity is during one elective slot of any day:
 // { station, emoji, onBreak }, or null when there's nothing to say (no
 // identity, no electives that day, or the identity isn't on that day's
@@ -1080,12 +1074,6 @@ function openHistory() {
     if (s) s.removeAttribute('open');
     openNow();
   }
-}
-
-function closeHistory() {
-  const overlay = historyOverlayEl();
-  if (!overlay) return;
-  overlay.removeAttribute('open');
 }
 
 function renderHistory() {
@@ -1941,10 +1929,6 @@ function playMineChime() {
 // isn't a redundant second alert) and a brighter chime; everyone else's
 // events still show, just quieter. Announcements notify every subscribed
 // phone regardless of team.
-
-function notifyOn() {
-  return !!state.notify;
-}
 
 function showToast(message, opts) {
   const mine = !!(opts && opts.mine);
@@ -3689,18 +3673,6 @@ function findNextCleanupFor(teamId) {
 
 // Which day's rota the card is showing + the entry draft (not synced).
 let cleanupDay = null;
-
-// day -> { teamId -> total cleanup points } from the 'cleanup' ledger entries.
-function cleanupPointsByDay() {
-  const map = {};
-  Object.values(state.bonuses || {}).forEach((b) => {
-    if (b.category !== 'cleanup') return;
-    const day = Number(b.day) || 0;
-    if (!map[day]) map[day] = {};
-    map[day][b.teamId] = (map[day][b.teamId] || 0) + (Number(b.points) || 0);
-  });
-  return map;
-}
 
 // Total cleanup points recorded for one day + meal.
 function cleanupMealPoints(day, meal) {
