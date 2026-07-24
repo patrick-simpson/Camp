@@ -15,9 +15,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-24T02:42:39Z';
+const CODE_UPDATED_AT = '2026-07-24T10:17:21Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 145;
+const APP_VERSION = 146;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1190,7 +1190,7 @@ function makeFreshState() {
     picSetup: {},  // gameId -> { source: 'pregenerated'|'own'|'numbered', words: [] } (Pictionary item source)
     live: {},      // gameId -> { key, inning, hr } live match tally (synced so everyone can watch)
     clocks: {},    // gameId -> { running, endAt, remaining, duration } synced game clock
-    announcements: {}, // annId -> { id, text, at, by } broadcast messages (cleared by a week reset)
+    announcements: {}, // annId -> { id, text, at, by, ttlMs } broadcast messages; expire ttlMs after `at` (1h default)
     ui: { day: null, gameId: null }, // day is filled in by migrateState (needs config)
     theme: null,
   };
@@ -5820,11 +5820,55 @@ function renderWhatsNew() {
 
 // ── Broadcast announcements (📣) ─────────────────────────────────
 // Editor-posted messages that sync to every phone (state.announcements —
-// see SYNC_KEYS) and pin at the top of the page until each viewer dismisses
-// them. Dismissal is per-device (like the what's-new banners); deleting is
-// editor-only and removes the announcement for everyone.
+// see SYNC_KEYS) and pin at the top of the page until they expire or each
+// viewer dismisses them. Dismissal is per-device (like the what's-new
+// banners); deleting is editor-only and removes the announcement for
+// everyone. Every announcement expires on its own: the composer picks a
+// duration (1 hour by default), stamped as `ttlMs` on the entry; expired
+// entries stop rendering everywhere immediately and editor devices prune
+// them from synced state (per-child null pushes) as housekeeping.
 const ANNOUNCE_DISMISS_KEY = 'campScoreboardDismissedAnnouncements';
+const ANNOUNCE_DEFAULT_TTL_MS = 60 * 60 * 1000; // 1 hour
+const ANNOUNCE_TTL_CHOICES = [
+  { ms: 60 * 60 * 1000, label: '1 hour' },
+  { ms: 3 * 60 * 60 * 1000, label: '3 hours' },
+  { ms: 24 * 60 * 60 * 1000, label: 'All day' },
+];
+// Announcements posted before this deploy predate expiry support — treat
+// them all as already expired (the one-time "delete everything currently
+// up" cleanup, 2026-07-24).
+const ANNOUNCE_PURGE_BEFORE = Date.parse('2026-07-24T10:13:24Z');
 let announceComposerOpen = false;
+let announceTtlChoice = ANNOUNCE_DEFAULT_TTL_MS; // composer draft, not synced
+
+// When an announcement stops showing, as epoch ms. Unparseable `at` or a
+// pre-expiry-era post → 0 (already expired). Missing/invalid ttlMs (old
+// entries, RTDB-pruned fields) falls back to the 1-hour default.
+function announcementExpiresAt(a) {
+  const posted = Date.parse((a && a.at) || '');
+  if (!Number.isFinite(posted)) return 0;
+  if (posted < ANNOUNCE_PURGE_BEFORE) return 0;
+  return posted + (Number(a.ttlMs) > 0 ? Number(a.ttlMs) : ANNOUNCE_DEFAULT_TTL_MS);
+}
+
+function announcementExpired(a) {
+  return Date.now() >= announcementExpiresAt(a);
+}
+
+// Editor-side housekeeping: drop expired entries from synced state so the
+// database doesn't accumulate dead announcements. Not touchData() — pruning
+// isn't scoreboard activity (see "Footer timestamps" in CLAUDE.md).
+function pruneExpiredAnnouncements() {
+  if (!canEdit()) return;
+  let pruned = false;
+  Object.entries(state.announcements || {}).forEach(([id, a]) => {
+    if (!a || announcementExpired(a)) {
+      delete state.announcements[id];
+      pruned = true;
+    }
+  });
+  if (pruned) saveState();
+}
 
 function dismissedAnnouncements() {
   try { return JSON.parse(localStorage.getItem(ANNOUNCE_DISMISS_KEY) || '[]') || []; } catch (e) { return []; }
@@ -5838,10 +5882,12 @@ function dismissAnnouncement(id) {
 }
 
 // Newest first; entries partially pruned by RTDB render-guarded like bonuses.
+// Expired announcements never show, on any device, even before the editor
+// prune has deleted them from synced state.
 function activeAnnouncements() {
   const dismissed = dismissedAnnouncements();
   return Object.values(state.announcements || {})
-    .filter((a) => a && a.id && a.text && !dismissed.includes(a.id))
+    .filter((a) => a && a.id && a.text && !dismissed.includes(a.id) && !announcementExpired(a))
     .sort((x, y) => String(y.at || '').localeCompare(String(x.at || '')));
 }
 
@@ -5861,13 +5907,19 @@ function renderAnnouncements() {
     </div>`).join('');
 
   // Editors get a composer, collapsed behind a one-line link so the top of
-  // the page stays quiet.
+  // the page stays quiet. The duration chips pick how long the announcement
+  // stays up (stamped as ttlMs at post time; 1 hour is the default).
+  const ttlChips = `<div class="announce-ttl-row" role="group" aria-label="How long the announcement stays up">
+      <span class="announce-ttl-label">⏳ Disappears after</span>
+      ${ANNOUNCE_TTL_CHOICES.map((c) =>
+        `<jelly-chip class="announce-ttl-chip" selectable size="small" ${c.ms === announceTtlChoice ? 'selected' : ''} data-ttl-ms="${c.ms}">${esc(c.label)}</jelly-chip>`).join('')}
+    </div>`;
   const composer = !editor ? '' : announceComposerOpen ? `
     <form id="announce-form" class="announce-form">
       <input id="announce-input" class="announce-input" type="text" maxlength="200"
         placeholder="Announce to every phone…" autocomplete="off" aria-label="Announcement text">
       <jelly-button id="announce-post-btn" size="small" class="primary-btn">📣 Post</jelly-button>
-    </form>` : `<button id="announce-open-btn" class="link-btn announce-open-btn">📣 Post an announcement</button>`;
+    </form>${ttlChips}` : `<button id="announce-open-btn" class="link-btn announce-open-btn">📣 Post an announcement</button>`;
 
   wrap.hidden = false;
   wrap.innerHTML = banners + composer;
@@ -5887,9 +5939,20 @@ function renderAnnouncements() {
       renderAnnouncements();
     });
   });
+  // Duration chips flip in place (no re-render — that would wipe the text
+  // being typed in the input beside them).
+  wrap.querySelectorAll('.announce-ttl-chip').forEach((chip) => {
+    chip.addEventListener('click', () => {
+      announceTtlChoice = parseInt(chip.dataset.ttlMs, 10) || ANNOUNCE_DEFAULT_TTL_MS;
+      wrap.querySelectorAll('.announce-ttl-chip').forEach((c) => {
+        if (c === chip) c.setAttribute('selected', ''); else c.removeAttribute('selected');
+      });
+    });
+  });
   const openBtn = document.getElementById('announce-open-btn');
   if (openBtn) openBtn.addEventListener('click', () => {
     announceComposerOpen = true;
+    announceTtlChoice = ANNOUNCE_DEFAULT_TTL_MS; // fresh composer, fresh default
     renderAnnouncements();
     const input = document.getElementById('announce-input');
     if (input) input.focus();
@@ -5909,8 +5972,9 @@ function postAnnouncement() {
   const text = input ? input.value.trim() : '';
   if (!text) return;
   const id = newBonusId();
-  state.announcements[id] = { id, text, at: new Date().toISOString(), by: state.identity || '' };
+  state.announcements[id] = { id, text, at: new Date().toISOString(), by: state.identity || '', ttlMs: announceTtlChoice };
   announceComposerOpen = false;
+  announceTtlChoice = ANNOUNCE_DEFAULT_TTL_MS;
   touchData();
   saveState();
   renderAnnouncements();
@@ -5928,6 +5992,7 @@ function notifyNewAnnouncements(prevMap) {
     if (prevMap && id in prevMap) return;
     const a = state.announcements[id];
     if (!a || !a.text || dismissed.includes(id)) return;
+    if (announcementExpired(a)) return; // a stale entry syncing in late shouldn't ping
     anyNew = true;
     showToast('📣 ' + a.text);
     if (state.notify) maybeNativeNotification('📣 Camp announcement', a.text, 'camp-announcement-' + id);
@@ -6089,6 +6154,7 @@ function renderAll() {
   const builderView = document.getElementById('settings-view');
   if (builderView) builderView.hidden = !inBuilder;
   renderWhatsNew();
+  pruneExpiredAnnouncements();
   renderAnnouncements();
   renderNowBanner();
   renderLiveHome();
@@ -6203,7 +6269,7 @@ function init() {
 
   // Keep the "happening now" banner (and any open schedule sheet) current
   // without any taps — and expire "what's new" banners once they hit two hours.
-  setInterval(() => { renderNowBanner(); refreshOpenSchedule(); renderWhatsNew(); renderMyElectives(); }, 30 * 1000);
+  setInterval(() => { renderNowBanner(); refreshOpenSchedule(); renderWhatsNew(); renderMyElectives(); pruneExpiredAnnouncements(); renderAnnouncements(); }, 30 * 1000);
 
   // Tick every visible Big Board clock (no-ops instantly when none is on
   // screen, so the interval is effectively free the rest of the week).

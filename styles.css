@@ -3287,6 +3287,19 @@ body.no-scroll {
   font: inherit;
   font-size: 0.9rem;
 }
+/* How-long-it-stays-up chips under the composer input. */
+.announce-ttl-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.4rem;
+}
+.announce-ttl-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
 
 /* New-version tap-to-refresh bar (auto-reload on deploy) */
 .update-banner {
