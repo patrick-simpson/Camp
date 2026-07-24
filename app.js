@@ -2992,8 +2992,11 @@ function renderCatchupHint(ranked, counts) {
   if (gap <= 0) {
     el.innerHTML = `🤝 ${pair} is tied on points with ${leaderBit} — next medal breaks it!`;
   } else {
-    const golds = Math.ceil(gap / MEDAL_POINTS.gold);
-    el.innerHTML = `🥇 ${pair} needs ${golds} gold${golds === 1 ? '' : 's'} (${gap} pt${gap === 1 ? '' : 's'}) to catch ${leaderBit}.`;
+    // During the double-points window every remaining game is a doubled
+    // (messtival) game, so a gold won now is worth 2× — count with that.
+    const doubled = inDoubleBonusWindow();
+    const golds = Math.ceil(gap / (MEDAL_POINTS.gold * (doubled ? 2 : 1)));
+    el.innerHTML = `🥇 ${pair} needs ${golds}${doubled ? ' double-points' : ''} gold${golds === 1 ? '' : 's'} (${gap} pt${gap === 1 ? '' : 's'}) to catch ${leaderBit}.`;
   }
   el.hidden = false;
 }
@@ -5661,10 +5664,12 @@ function applyTheme() {
     meta.id = 'dynamic-theme-color';
     document.head.appendChild(meta);
   }
-  // Explicit hexes matching Jelly's background-default (body has a 0.2s
-  // background transition, so reading getComputedStyle here would capture
-  // the mid-transition color — keep these in sync with the palette).
-  meta.content = dark ? '#181b1d' : '#ffffff';
+  // Explicit hexes matching the --color-bg token fallbacks in styles.css —
+  // nothing defines --jelly-color-background-default, so those fallbacks ARE
+  // the page background. (body has a 0.2s background transition, so reading
+  // getComputedStyle here would capture the mid-transition color — keep
+  // these in sync with the styles.css :root / dark token blocks.)
+  meta.content = dark ? '#10141c' : '#f4f6f9';
 }
 
 // Called from the Appearance segmented control: 'light' | 'auto' | 'dark'.
