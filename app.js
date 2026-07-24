@@ -15,9 +15,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-24T19:04:53Z';
+const CODE_UPDATED_AT = '2026-07-24T19:33:00Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 155;
+const APP_VERSION = 156;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -6137,7 +6137,10 @@ const IDLE_COLLAPSE_MS = 5 * 60 * 1000;
 
 function collapseCardsForIdle() {
   if (editorMidEntry()) { resetIdleTimer(); return; } // don't yank a card mid-entry
-  document.querySelectorAll('.collapsible-card[open]').forEach((d) => { d.open = false; });
+  document.querySelectorAll('.collapsible-card[open]').forEach((d) => {
+    if (JOY_REDUCED.matches || typeof d.animate !== 'function' || cardAnimating(d)) { d.open = false; return; }
+    collapseCardAnimated(d); // same glide as a manual collapse (joy layer)
+  });
 }
 
 function resetIdleTimer() {
@@ -6410,6 +6413,56 @@ document.addEventListener('click', (e) => {
   if (!t) return;
   joyBurst(e.clientX, e.clientY, false);
 }, { passive: true });
+
+// ── Animated panel expand/collapse ───────────────────────────────
+// Native <details> snaps between states; run the card's height between its
+// summary-only and fully-expanded sizes instead. The existing [open] child
+// rise-in plays on top of the expand. A collapsing card stays [open] while
+// it shrinks so its content remains visible under the clip until the end —
+// .joy-closing suppresses the rise-in replay and flips the chevron back
+// right away. Reduced motion (or no WAAPI) keeps the native snap.
+
+function cardAnimating(d) {
+  return d.classList.contains('joy-animating') || d.classList.contains('joy-closing');
+}
+
+function expandCardAnimated(d) {
+  const startH = d.offsetHeight;
+  d.open = true;
+  const endH = d.offsetHeight;
+  if (startH === endH) return;
+  d.classList.add('joy-animating');
+  const a = d.animate(
+    [{ height: startH + 'px' }, { height: endH + 'px' }],
+    { duration: 380, easing: 'cubic-bezier(0.22, 1, 0.36, 1)' }
+  );
+  a.onfinish = a.oncancel = () => d.classList.remove('joy-animating');
+}
+
+function collapseCardAnimated(d) {
+  const startH = d.offsetHeight;
+  d.classList.add('joy-closing');
+  d.open = false;              // measure the destination…
+  const endH = d.offsetHeight;
+  d.open = true;               // …then reopen before paint so content shows while shrinking
+  const a = d.animate(
+    [{ height: startH + 'px' }, { height: endH + 'px' }],
+    { duration: 300, easing: 'cubic-bezier(0.4, 0, 0.6, 1)' }
+  );
+  a.onfinish = a.oncancel = () => { d.open = false; d.classList.remove('joy-closing'); };
+}
+
+document.querySelectorAll('.collapsible-card').forEach((d) => {
+  const s = d.querySelector(':scope > summary');
+  if (!s) return;
+  s.addEventListener('click', (e) => {
+    if (JOY_REDUCED.matches || typeof d.animate !== 'function') return; // native snap
+    e.preventDefault();
+    if (cardAnimating(d)) return; // settle first; a re-tap lands in ~a third of a second
+    if (d.open) collapseCardAnimated(d);
+    else expandCardAnimated(d);
+  });
+});
 
 // ── PIN lock gate ────────────────────────────────────────────────
 

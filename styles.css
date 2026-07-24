@@ -4535,6 +4535,23 @@ select.form-input {
   details.collapsible-card[open] > *:nth-child(5) { animation-delay: 0.12s; }
   details.collapsible-card[open] > *:nth-child(n+6) { animation-delay: 0.16s; }
 
+  /* Animated expand/collapse (expandCardAnimated / collapseCardAnimated in
+     the joy layer): while the height runs, clip the revealing/vanishing
+     content to the card. A collapsing card stays [open] as it shrinks so
+     its content remains visible under the clip — .joy-closing suppresses
+     the [open] rise-in from replaying and flips the chevron back at the
+     start of the collapse instead of the end. */
+  .collapsible-card.joy-animating,
+  .collapsible-card.joy-closing {
+    overflow: hidden;
+  }
+  details.collapsible-card.joy-closing[open] > *:not(summary) {
+    animation: none;
+  }
+  .collapsible-card.joy-closing .card-chevron {
+    transform: none;
+  }
+
   /* Staggered list entry — applied transiently by joyStagger() after a
      day switch or view change re-render. */
   .joy-stagger > * {
