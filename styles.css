@@ -163,6 +163,17 @@ jelly-dialog:not(:defined)[open] {
   outline-offset: 2px;
 }
 
+/* Kill the mobile browser's built-in tap flash — a translucent blue
+   rectangle painted over the element's whole hit box the moment a finger
+   goes down, squared-off regardless of border-radius. Every tappable
+   element here has its own pressed feedback (:active transforms/background,
+   Jelly squish), and the Jelly components already suppress this inside
+   their shadow roots — this covers the app's plain light-DOM controls. */
+:is(button, [role="button"], a, summary, label, input, select, textarea),
+.schedule-backdrop {
+  -webkit-tap-highlight-color: transparent;
+}
+
 html {
   /* Jelly UI's buttons/chips/etc. deliberately paint their animated "squish"
      canvas ~48px larger than their own box on every side (room for the
