@@ -637,7 +637,7 @@ html.view-only .role-btn {
 }
 
 .day-note {
-  margin: -0.5rem 0 0;
+  margin: 0.3rem 0 0;
   font-size: 0.85rem;
   color: var(--color-text-muted);
   text-align: center;
