@@ -2353,10 +2353,13 @@ body.no-scroll {
   font-style: italic;
 }
 
-/* "🧽 <team>" cleanup note shown next to a meal wherever it's mentioned. */
+/* "🧽 <team>" cleanup note shown next to a meal wherever it's mentioned.
+   No nowrap: a dual-team Friday cleanup pair ("Team A + Team B") plus a
+   longer dish name can together be wider than the banner, and a forced
+   single unbreakable chunk would rather overflow than wrap — let it wrap
+   like ordinary text instead. */
 .meal-cleanup-note {
-  display: inline-block;
-  white-space: nowrap;
+  display: inline;
   font-size: 0.8rem;
   font-weight: 600;
   color: var(--color-text-muted);
