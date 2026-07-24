@@ -352,7 +352,7 @@
     // Thu 5pm ET → Fri midnight ET: verse + custom bonuses count double
     // (meal cleanup exempt). Mirrors app.js bonusCountsDouble — keep in sync.
     var DOUBLE_BONUS_START = Date.parse('2026-07-23T21:00:00Z');
-    var DOUBLE_BONUS_END = Date.parse('2026-07-26T04:00:00Z');
+    var DOUBLE_BONUS_END = Date.parse('2026-07-25T04:00:00Z'); // Fri midnight ET (00:00 Sat, ET)
     function bonusCountsDouble(b) {
       if (!b || b.category === 'cleanup') return false;
       var t = Date.parse(b.at || '');

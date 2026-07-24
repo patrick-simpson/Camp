@@ -165,7 +165,7 @@ const MEDAL_POINTS = { gold: 7, silver: 5, bronze: 3 };
 // it's retroactive and needs no ledger edits. Mirrored in
 // current-standings.html's computeStandings — keep in sync.
 const DOUBLE_BONUS_START = Date.parse('2026-07-23T21:00:00Z'); // Thu 5:00pm ET
-const DOUBLE_BONUS_END = Date.parse('2026-07-26T04:00:00Z');   // Fri midnight ET
+const DOUBLE_BONUS_END = Date.parse('2026-07-25T04:00:00Z');   // Fri midnight ET (00:00 Sat, ET)
 
 function bonusCountsDouble(b) {
   if (!b || b.category === 'cleanup') return false;
