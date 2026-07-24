@@ -163,12 +163,23 @@ jelly-dialog:not(:defined)[open] {
   outline-offset: 2px;
 }
 
+html {
+  /* Jelly UI's buttons/chips/etc. deliberately paint their animated "squish"
+     canvas ~48px larger than their own box on every side (room for the
+     bulge/wobble) — by design, not a bug (see vendor/jelly.js's PAD
+     constant). Nothing needs that bleed to be scrollable; clip it here so a
+     control sitting near the right edge can't turn the whole page
+     horizontally scrollable. */
+  overflow-x: hidden;
+}
+
 body {
   margin: 0;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   background: var(--color-bg);
   color: var(--color-text);
   transition: background 0.2s ease, color 0.2s ease;
+  overflow-x: hidden;
 }
 
 #app {
