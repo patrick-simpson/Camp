@@ -158,6 +158,38 @@ don't regress these):
   absence IS the empty state). Only `teams` is guarded. Treating missing
   as keep-local made "New week (reset)" silently fail to propagate.
 
+## `defaults.js` edits don't reach an already-running week
+
+`defaultConfig()` in `defaults.js` only seeds a **brand-new** device/state —
+`makeFreshState()` on first-ever load, or `migrateState()` if `state.config`
+is entirely missing. Once a week has been set up (Settings → Set up the
+week), the live days/games catalog lives in its own Firebase node,
+`campScoreboard/config` — a *sibling* ref to `campScoreboard/state`, kept
+separate deliberately (see the `fbConfigRef` comment in `app.js`) so older
+cached clients never need to know about it. Every device with the app open
+holds a live `.on('value')` listener on it (`applyRemoteConfig`), so edits
+to that node propagate instantly, no reload needed.
+
+**This means: editing a game's data in `defaults.js` and deploying it does
+NOT change anything for a camp week that's already in progress.** It only
+changes what a device with zero prior state would seed. A mid-week request
+like "change game X's rounds/rules/etc." needs the live config patched
+directly, in addition to (not instead of) fixing `defaults.js` so future
+fresh setups match:
+```
+# Read the current games array to find the target game's array index:
+curl -s "https://<project>-default-rtdb.firebaseio.com/campScoreboard/config/games.json"
+# Replace just that index with the corrected object (PUT, not PATCH —
+# the whole game object at that path):
+curl -s -X PUT "https://<project>-default-rtdb.firebaseio.com/campScoreboard/config/games/<i>.json" -d @corrected-game.json
+```
+Always re-fetch afterward to confirm the write stuck. This bit us once
+already: a rounds-count change was committed to `defaults.js` and "verified
+live" by curling the raw `defaults.js` file — which only proves the static
+asset changed, not that the running week's synced config did. Curling the
+Firebase REST endpoint (as above) is the only way to confirm a game-data
+change actually reached devices mid-week.
+
 ## Footer timestamps
 
 - **"Code last updated"** — `CODE_UPDATED_AT` constant in `app.js`,

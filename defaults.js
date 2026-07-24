@@ -346,7 +346,7 @@ function defaultConfig() {
       },
       {
         id: 'pumpkin-patch-plunder', name: 'Pumpkin Patch Plunder', emoji: '🍬', dayId: 'd5', session: 'Morning',
-        location: 'Chapel Lawn', format: 'tally', unit: 'candy corn', messtival: true,
+        location: 'Chapel Lawn', format: 'tally', unit: 'candy corn', messtival: true, liveRankings: true,
         counterSteps: [1], timer: { label: 'Round timer', presets: [60], rounds: 4 },
         headline: 'Fish candy corn out of pumpkin puree — with your mouth.',
         rules: [
