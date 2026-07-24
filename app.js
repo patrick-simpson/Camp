@@ -15,9 +15,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-24T02:36:01Z';
+const CODE_UPDATED_AT = '2026-07-24T02:42:39Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 144;
+const APP_VERSION = 145;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -835,6 +835,7 @@ function renderScheduleDays() {
       renderSchedule();
       const body = document.getElementById('schedule-body');
       if (body) body.scrollTop = 0;
+      joyStagger(body);
     });
   });
 }
@@ -1356,6 +1357,7 @@ function touchData() {
   if (!state.meta) state.meta = {};
   state.meta.lastDataChangeAt = new Date().toISOString();
   dataEditPending = true; // real edit queued — guard it until it's pushed
+  joyCelebrate(); // every real data save gets a little celebration
 }
 
 // ── Cloud sync (Firebase Realtime Database) ──────────────────────
@@ -3600,7 +3602,11 @@ function renderMemoryVerse() {
   wrap.innerHTML = doubleNote + themeHTML + dayChips + verseBox + hint + (editing || anyEarned ? rowsHTML : '') + emptyHTML;
 
   wrap.querySelectorAll('.verse-day-chip').forEach((btn) => {
-    btn.addEventListener('click', () => { verseDay = parseInt(btn.dataset.verseDay, 10); renderMemoryVerse(); });
+    btn.addEventListener('click', () => {
+      verseDay = parseInt(btn.dataset.verseDay, 10);
+      renderMemoryVerse();
+      joyStagger(document.querySelector('#verse-body .pts-grid'));
+    });
   });
   wrap.querySelectorAll('.pts-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -3783,6 +3789,7 @@ function renderMealCleanup() {
     btn.addEventListener('click', () => {
       cleanupDay = parseInt(btn.dataset.cleanupDay, 10);
       renderMealCleanup();
+      joyStagger(document.querySelector('#cleanup-body .cleanup-rota, #cleanup-body .pts-grid'));
     });
   });
   wrap.querySelectorAll('.pts-btn').forEach((btn) => {
@@ -3848,6 +3855,7 @@ function renderDayTabs() {
     state.ui.gameId = null;
     saveState();
     renderAll();
+    joyStagger(document.getElementById('game-list'));
   });
 
   const note = document.getElementById('day-note');
@@ -3946,6 +3954,7 @@ function renderGameList() {
       state.ui.gameId = card.dataset.gameId;
       saveState();
       renderAll();
+      joySlideIn(document.getElementById('game-view'));
       document.getElementById('game-view').scrollIntoView({ behavior: 'smooth', block: 'start' });
     });
   });
@@ -4000,6 +4009,7 @@ function renderGameView() {
     state.ui.gameId = null;
     saveState();
     renderAll();
+    joyStagger(document.getElementById('game-list'));
   });
 
   // Standalone game clock — everyone sees it tick live; only editors get the
@@ -4158,6 +4168,7 @@ function renderLiveHome() {
     saveState();
     renderAll();
     const gv = document.getElementById('game-view');
+    joySlideIn(gv);
     if (gv) gv.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
   wrap.querySelectorAll('.live-home-card').forEach((btn) => {
@@ -6210,6 +6221,120 @@ function updateRoleButton() {
     btn.title = 'View-only. Tap and enter the score PIN to edit.';
   }
 }
+
+// ── Joy layer ────────────────────────────────────────────────────
+// Playful, decorative-only animation glue: springy press feedback on every
+// tappable control, a little sparkle burst at the tap point, staggered
+// rise-ins when a view re-renders from a tap, and a bigger celebration
+// whenever real scoreboard data is saved (hooked from touchData). All of it
+// is transform/opacity only, capped, throttled, and fully disabled under
+// prefers-reduced-motion — the app works identically with this section gone.
+const JOY_REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
+const JOY_TAPPABLE = 'button, a, summary, jelly-button, jelly-chip, jelly-segment, jelly-icon-button';
+const JOY_COLORS = ['var(--color-primary)', 'var(--color-gold)', '#ff6b9d', 'var(--color-bronze)', '#4cc9a4'];
+let joyLastTap = { x: null, y: null };
+let joyLastBurstAt = 0;
+
+function joyLayerEl() {
+  let el = document.getElementById('joy-layer');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'joy-layer';
+    document.body.appendChild(el);
+  }
+  return el;
+}
+
+// A burst of sparkles at (x, y). Small for ordinary taps; big (more
+// particles, some emoji, longer flight) for save/celebrate moments.
+function joyBurst(x, y, big) {
+  if (JOY_REDUCED.matches) return;
+  if (x == null || y == null) { x = innerWidth / 2; y = innerHeight / 2; }
+  const now = Date.now();
+  if (!big && now - joyLastBurstAt < 90) return; // throttle rapid taps
+  joyLastBurstAt = now;
+  const layer = joyLayerEl();
+  if (layer.childElementCount > 70) return; // hard cap, keeps the DOM tiny
+  const n = big ? 16 : 6;
+  for (let i = 0; i < n; i++) {
+    const p = document.createElement('span');
+    if (big && Math.random() < 0.35) {
+      p.className = 'joy-p';
+      p.textContent = ['✨', '⭐', '🎉', '💫'][Math.floor(Math.random() * 4)];
+    } else {
+      p.className = 'joy-p dot';
+      p.style.setProperty('--c', JOY_COLORS[i % JOY_COLORS.length]);
+    }
+    const ang = Math.random() * Math.PI * 2;
+    const dist = (big ? 55 : 26) + Math.random() * (big ? 85 : 26);
+    p.style.setProperty('--x', x + 'px');
+    p.style.setProperty('--y', y + 'px');
+    p.style.setProperty('--dx', Math.cos(ang) * dist + 'px');
+    p.style.setProperty('--dy', Math.sin(ang) * dist + (big ? 30 : 10) + 'px'); // slight fall
+    p.style.setProperty('--t', ((big ? 0.75 : 0.5) + Math.random() * 0.3).toFixed(2) + 's');
+    p.style.setProperty('--r', Math.round(Math.random() * 360 - 180) + 'deg');
+    p.addEventListener('animationend', () => p.remove());
+    layer.appendChild(p);
+  }
+}
+
+// Re-run a container's children through the staggered rise-in. Called right
+// after a tap-triggered re-render (day switch, back to list, verse day…) —
+// never from sync/background renders, so remote updates stay calm.
+function joyStagger(el) {
+  if (!el || JOY_REDUCED.matches) return;
+  el.classList.remove('joy-stagger');
+  void el.offsetWidth; // restart the animation
+  el.classList.add('joy-stagger');
+  setTimeout(() => el.classList.remove('joy-stagger'), 900);
+}
+
+// Slide a view into place (game detail opening).
+function joySlideIn(el) {
+  if (!el || JOY_REDUCED.matches) return;
+  el.classList.remove('joy-slide-in');
+  void el.offsetWidth;
+  el.classList.add('joy-slide-in');
+  setTimeout(() => el.classList.remove('joy-slide-in'), 500);
+}
+
+// The big one: called from touchData(), so every action that records real
+// scoreboard data (a result saved, points awarded, a bracket win…) throws a
+// proper little celebration from wherever the editor's finger last was.
+let joyLastCelebrateAt = 0;
+function joyCelebrate() {
+  const now = Date.now();
+  if (now - joyLastCelebrateAt < 800) return;
+  joyLastCelebrateAt = now;
+  joyBurst(joyLastTap.x, joyLastTap.y, true);
+}
+
+// Delegated press feedback: scale down on touch, spring back on release.
+document.addEventListener('pointerdown', (e) => {
+  joyLastTap = { x: e.clientX, y: e.clientY };
+  if (JOY_REDUCED.matches) return;
+  const t = e.target.closest && e.target.closest(JOY_TAPPABLE);
+  if (t) t.classList.add('joy-pressed');
+}, { passive: true });
+
+document.addEventListener('pointerup', () => {
+  document.querySelectorAll('.joy-pressed').forEach((el) => {
+    el.classList.remove('joy-pressed');
+    el.classList.add('joy-pop');
+    setTimeout(() => el.classList.remove('joy-pop'), 460);
+  });
+}, { passive: true });
+
+document.addEventListener('pointercancel', () => {
+  document.querySelectorAll('.joy-pressed').forEach((el) => el.classList.remove('joy-pressed'));
+}, { passive: true });
+
+// Sparkle on every real button push (not on text fields).
+document.addEventListener('click', (e) => {
+  const t = e.target.closest && e.target.closest(JOY_TAPPABLE);
+  if (!t) return;
+  joyBurst(e.clientX, e.clientY, false);
+}, { passive: true });
 
 // ── PIN lock gate ────────────────────────────────────────────────
 
