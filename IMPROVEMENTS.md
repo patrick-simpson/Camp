@@ -7,11 +7,12 @@ are approximate (the file shifts) — search for the quoted identifiers.
 
 ## Ground rules (read first)
 
-- **It is camp week. The site is live and in use.** `main` is the deploy branch,
-  but GitHub Pages currently still serves `claude/festive-bohr-Wt6Np` — push every
-  change to BOTH (plus the working branch), then verify against
-  https://camp.patricksimpson.info per CLAUDE.md. Bump all three `?v=N` strings in
-  `index.html` and `CODE_UPDATED_AT` in `app.js` on every deploy; `node --check app.js`.
+- **It is camp week. The site is live and in use.** `main` is the deploy branch
+  (the old `claude/festive-bohr-Wt6Np` branch is dead — do NOT push to it); push
+  to `main`, then verify against https://camp.patricksimpson.info per CLAUDE.md.
+  Bump all SIX `?v=N` strings in `index.html` (styles.css, vendor/jelly.js,
+  firebase-config.js, defaults.js, app.js, settings.js) plus `APP_VERSION` and
+  `CODE_UPDATED_AT` in `app.js` on every deploy; `node --check` changed JS.
 - **Never regress the sync invariants** (CLAUDE.md): push gated on `remoteReady`;
   missing snapshot key = empty (only `teams` guarded); `normalizeSyncedState()`
   heals RTDB-pruned empties. Any new synced field follows the `bonuses` pattern
@@ -256,29 +257,32 @@ hype screen: two large mascots facing off across the "vs".
 
 ## P3 — Stretch (decision-gated, only if the week's needs are met)
 
-- **Offline/PWA**: manifest + a *careful* network-first service worker for the
-  three assets. Risk: a bad SW can pin stale code and fight the `?v=` scheme —
-  if attempted, use network-first with cache fallback ONLY, version the cache
-  with the `?v` number, and add a kill-switch (`self.registration.unregister()`
-  path). Do not attempt mid-week without Patrick's go-ahead.
+- **Offline/PWA**: a manifest now exists, and `sw.js` shipped as a
+  notification-only service worker (deliberately NO fetch handler, so it can't
+  pin stale code; kill-switch documented in the file). Adding *caching* to it
+  remains decision-gated: network-first with cache fallback ONLY, version the
+  cache with the `?v` number. Do not attempt mid-week without Patrick's
+  go-ahead.
 - Meal-cleanup rota display: Patrick will supply which team cleans which
   meal/day; surface it in the schedule sheet meal blocks + a line in the bonus
   card. (Awarding already works via the cleanup category.)
 
 ## Open questions for Patrick (collect answers before the relevant item)
-1. Messtival: double points in the app on Friday, or fix the copy? (P1 #7)
+1. ~~Messtival: double points in the app on Friday, or fix the copy?~~
+   ANSWERED (2026-07-23): double points shipped — messtival game flags plus a
+   Thu-5pm-to-Fri-midnight window for verse/custom bonuses (cleanup exempt).
 2. During competition blocks: slim banner (recommended) or header 📅 button? (P2 #16)
 3. "Dinner" vs "Supper" wording for cleanup bonuses. (P2 #21)
 4. Elective-list name spellings differ from the roster (Lilly/Lily, Sofi/Sofie/
    Sofia) — intentional or normalize?
 
 ## Verification playbook (recap)
-1. `node --check app.js` after every edit.
+1. `node --check` every changed JS file after every edit.
 2. Playwright locally: seed storage, use `?now=`, exercise the changed flow
    end-to-end, screenshot light+dark at 390px, check `pageerror` is empty and
    `#app` has zero horizontal overflow.
 3. Sync-shape tests: simulate merges with keys missing (RTDB prune) — nothing
    throws, empties heal.
-4. Bump `?v=` ×3 + `CODE_UPDATED_AT`, commit, push to the working branch,
-   `main`, AND `claude/festive-bohr-Wt6Np`, then curl the live site until the
-   new `?v=` and a change-specific string appear.
+4. Bump `?v=` ×6 + `APP_VERSION` + `CODE_UPDATED_AT`, commit, push to `main`
+   (the deploy branch — festive-bohr is dead), then curl the live site until
+   the new `?v=` and a change-specific string appear.

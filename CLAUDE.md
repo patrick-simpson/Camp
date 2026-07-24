@@ -5,12 +5,27 @@
 A static, vanilla JS/HTML/CSS web app (no build step, no framework, no
 `package.json`) that runs camp game scoring for a week-long kids' camp.
 Deployed via GitHub Pages at **camp.patricksimpson.info**. Every game and
-schedule detail is hardcoded into `app.js` — there's no backend beyond an
-optional Firebase Realtime Database used purely for cross-device sync.
+schedule detail is hardcoded data — there's no backend beyond an optional
+Firebase Realtime Database used purely for cross-device sync.
 
-Files: `index.html` (page shell), `app.js` (all logic + game/schedule
-data, ~2800 lines), `styles.css`, `firebase-config.js` (sync config),
-`CNAME` (custom domain).
+Files:
+- `index.html` — page shell
+- `app.js` — main logic + the week schedule (`DAY_SCHEDULE`), ~6400 lines
+- `defaults.js` — the built-in default week: day list + full game catalog
+  (`defaultConfig()`); live config then lives in synced state
+- `settings.js` — the settings sheet + week-builder UI
+- `styles.css` — all styling (design tokens at the top, light + dark)
+- `firebase-config.js` — sync config
+- `vendor/jelly.js` — vendored Jelly UI web components (chips, buttons,
+  drawers, dialogs); it injects `--jelly-*` design tokens on :root at
+  runtime, which the app's `--color-*` tokens re-source
+- `sw.js` — notification-only service worker (deliberately NO fetch
+  handler, so it can never serve stale code; kill-switch documented inside)
+- `current-standings.html` — self-contained TV/presenter standings page
+  (duplicates a few constants from app.js — marked "keep in sync")
+- `stalling.html` — self-contained presenter gag page
+- `manifest.json`, `apple-touch-icon.png` — PWA/home-screen identity
+- `images/` — team shields + stalling photos; `CNAME` — custom domain
 
 **There is a reviewed, prioritized improvement backlog in `IMPROVEMENTS.md`**
 (written 2026-07-20 after a full-project audit). If asked to improve, polish,
@@ -37,16 +52,25 @@ If the live site doesn't reflect your push, GitHub Pages' source branch may
 not actually be `main` (Settings → Pages → Build and deployment → Branch)
 — check that before assuming the deploy failed for some other reason.
 
-**Every time `app.js`, `index.html`, or `styles.css` changes:**
-1. Bump the `?v=N` cache-busting query string for every changed asset in
-   `index.html` (there are three: `styles.css`, `firebase-config.js`,
-   `app.js` — keep them in sync, all bumped together).
+**Every time any code asset changes:**
+1. Bump the `?v=N` cache-busting query string in `index.html` — there are
+   SIX on the same number: `styles.css`, `vendor/jelly.js`,
+   `firebase-config.js`, `defaults.js`, `app.js`, `settings.js` — keep
+   them in sync, all bumped together. Also bump `APP_VERSION` in `app.js`
+   to the same number (it drives the auto-reload version check).
+   `current-standings.html` and `stalling.html` load `vendor/jelly.js`
+   (and current-standings loads `firebase-config.js`) with the same `?v=`
+   scheme — bump those references too. (`manifest.json` and
+   `apple-touch-icon.png` have their own `?v=`, only bumped when those
+   files actually change.)
 2. Update `CODE_UPDATED_AT` near the top of `app.js` to the current UTC
    time (`date -u +%Y-%m-%dT%H:%M:%SZ`) — this drives the "Code last
    updated" line in the page footer. There's no build pipeline to stamp
    this automatically, so it's a manual step, easy to forget.
-3. `node --check app.js` before committing — cheap syntax safety net for a
-   single 2000+ line file with no test suite.
+   `current-standings.html` has its own `TV_BUILD` stamp — bump it when
+   that file changes.
+3. `node --check` every changed JS file before committing — cheap syntax
+   safety net for a codebase with no test suite.
 4. **Do NOT add "What's new" banner entries.** The banners are discontinued
    (owner's call, 2026-07-21): the `CHANGES` array at the top of `app.js` is
    kept EMPTY and must stay that way — do not append entries for user-visible

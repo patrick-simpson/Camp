@@ -10,10 +10,11 @@
 const STORAGE_KEY = 'campScoreboardV2';
 
 // Bump this to the current UTC timestamp (`date -u +%Y-%m-%dT%H:%M:%SZ`)
-// every time app.js/index.html/styles.css changes and gets deployed — it
-// drives the "Code last updated" line in the footer. There's no build
-// step here to stamp this automatically, so it's a manual step alongside
-// the ?v=N cache-bust bump in index.html.
+// every time a code asset (app.js, settings.js, defaults.js, styles.css,
+// index.html) changes and gets deployed — it drives the "Code last
+// updated" line in the footer. There's no build step here to stamp this
+// automatically, so it's a manual step alongside the ?v=N cache-bust
+// bump in index.html (six assets share the number — see CLAUDE.md).
 const CODE_UPDATED_AT = '2026-07-24T01:29:48Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
 const APP_VERSION = 141;
