@@ -347,15 +347,15 @@ function defaultConfig() {
       {
         id: 'pumpkin-patch-plunder', name: 'Pumpkin Patch Plunder', emoji: '🍬', dayId: 'd5', session: 'Morning',
         location: 'Chapel Lawn', format: 'tally', unit: 'candy corn', messtival: true,
-        counterSteps: [1], timer: { label: 'Round timer', presets: [60], rounds: 6 },
+        counterSteps: [1], timer: { label: 'Round timer', presets: [60], rounds: 4 },
         headline: 'Fish candy corn out of pumpkin puree — with your mouth.',
         rules: [
           { h: 'How to play', items: [
             'ALL teams play, 6 players per team.',
             'Each player gets a pie plate of pumpkin puree with candy corn hidden inside.',
-            '6 rounds, 1 minute each: mouths only, fish out candy corn and drop it in the empty bowl.',
+            '4 rounds, 1 minute each: mouths only, fish out candy corn and drop it in the empty bowl.',
           ] },
-          { h: 'Winning', items: ['The 3 teams with the most candy corn after 6 rounds take gold, silver, and bronze.'] },
+          { h: 'Winning', items: ['The 3 teams with the most candy corn after 4 rounds take gold, silver, and bronze.'] },
         ],
       },
       {
