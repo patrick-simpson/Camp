@@ -40,6 +40,39 @@
     /* ── Confetti canvas ─────────────────────────────────── */
     #confetti { position: fixed; inset: 0; z-index: 1; pointer-events: none; }
 
+    /* ── Corner cannons (the 🎉 the confetti visibly fires from) ──
+       Hidden at rest; .show pops them in with a spring, .fire-anim kicks a
+       recoil per shot, and showCornerCannons() removes .show shortly after
+       the last burst so they take a bow and leave. z-index sits UNDER the
+       canvas so particles fly out over the cone's mouth. */
+    .corner-cannon {
+      position: fixed; bottom: -0.15em; z-index: 0; font-size: clamp(3.5rem, 12vh, 8rem);
+      line-height: 1; pointer-events: none; opacity: 0; transform: scale(0.2) translateY(0.4em);
+      transform-origin: 50% 85%;
+      transition: opacity 0.22s ease, transform 0.3s cubic-bezier(.2, .9, .3, 1.5);
+    }
+    .corner-cannon.left { left: max(0.5rem, env(safe-area-inset-left)); }
+    .corner-cannon.right { right: max(0.5rem, env(safe-area-inset-right)); }
+    /* The party popper sprays up-LEFT in the common emoji fonts (Noto,
+       Segoe, Apple) — so the right corner gets it as-is (aiming at center)
+       and the LEFT one is mirrored. Mirroring lives on the inner span so
+       the outer kick transforms don't fight it. */
+    .corner-cannon span { display: inline-block; }
+    .corner-cannon.left span { transform: scaleX(-1); }
+    .corner-cannon.show { opacity: 1; transform: scale(1) translateY(0); }
+    .corner-cannon.fire-anim { animation: cannonKick 0.4s ease; }
+    .corner-cannon.right.fire-anim { animation-name: cannonKickR; }
+    @keyframes cannonKick {
+      0%   { transform: scale(1); }
+      28%  { transform: scale(1.28) rotate(-16deg) translate(0.06em, 0.12em); }
+      100% { transform: scale(1); }
+    }
+    @keyframes cannonKickR {
+      0%   { transform: scale(1); }
+      28%  { transform: scale(1.28) rotate(16deg) translate(-0.06em, 0.12em); }
+      100% { transform: scale(1); }
+    }
+
     /* ── Top bar ─────────────────────────────────────────── */
     .topbar {
       position: fixed; top: 0; left: 0; right: 0; z-index: 40;
@@ -243,6 +276,12 @@
 <body>
   <canvas id="confetti"></canvas>
 
+  <!-- Corner confetti cannons — pop in for real bursts, kick as they fire,
+       then vanish. The right one is mirrored (inner span) so both aim at
+       center screen, matching where the particles actually launch from. -->
+  <div id="cannon-l" class="corner-cannon left" aria-hidden="true"><span>🎉</span></div>
+  <div id="cannon-r" class="corner-cannon right" aria-hidden="true"><span>🎉</span></div>
+
   <div class="topbar">
     <a class="chip" href="stalling.html">← Back</a>
     <button id="update-chip" class="chip spacer" hidden>🔄 Updated — refresh</button>
@@ -282,7 +321,7 @@
     // silently never took effect until someone thought to hit refresh (this
     // bit the double-points fix on 2026-07-23). Bump this stamp on every
     // edit to this file; see checkForUpdate/startUpdatePolling below.
-    var TV_BUILD = '2026-07-24T00:55:00Z';
+    var TV_BUILD = '2026-07-24T01:25:00Z';
 
     // ── Constants mirrored from app.js (keep in sync) ──────────────
     var STORAGE_KEY = 'campScoreboardV2';
@@ -445,21 +484,57 @@
       }
       sfxBreak();
     }
-    // Fire from both bottom corners toward the upper-middle.
+    // ── Visible corner cannons (the 🎉 the bursts fire out of) ──────
+    var cannonEls = [document.getElementById('cannon-l'), document.getElementById('cannon-r')];
+    var cannonHideTimer = null;
+    // Pops the cannons in (if hidden), kicks their recoil, and schedules
+    // them to slip away after the last shot. Returns the delay the caller
+    // should wait before actually launching particles: when the cannons had
+    // to pop in first, the shot holds ~230ms so "appear joyfully, THEN fire"
+    // reads in the right order; if they're already up, fire instantly.
+    function showCornerCannons() {
+      var wasHidden = !cannonEls[0].classList.contains('show');
+      cannonEls.forEach(function (el) {
+        el.classList.add('show');
+        el.classList.remove('fire-anim');
+        void el.offsetWidth; // restart the recoil animation
+        if (!wasHidden) el.classList.add('fire-anim');
+      });
+      if (wasHidden) {
+        // Kick only once they're visible, in sync with the delayed shot.
+        setTimeout(function () {
+          cannonEls.forEach(function (el) { el.classList.add('fire-anim'); });
+        }, 230);
+      }
+      clearTimeout(cannonHideTimer);
+      cannonHideTimer = setTimeout(function () {
+        cannonEls.forEach(function (el) { el.classList.remove('show', 'fire-anim'); });
+      }, 1500);
+      return wasHidden ? 230 : 0;
+    }
+
+    // Fire from both bottom corners toward the upper-middle. Real bursts
+    // (count > 1) summon the visible corner cannons; the per-220ms hero
+    // stream (count 1) stays cannon-less so they remain a moment, not
+    // permanent furniture.
     function cannon(emojis, count, power) {
       if (!emojis || !emojis.length) return;
-      var W = cvs.width, H = cvs.height;
-      for (var side = 0; side < 2; side++) {
-        var baseX = side === 0 ? W * 0.04 : W * 0.96;
-        for (var i = 0; i < count; i++) {
-          var e = emojis[i % emojis.length];
-          var toCenter = side === 0 ? 1 : -1;
-          var vx = toCenter * (0.6 + Math.random() * 0.9) * power;
-          var vy = -(1.4 + Math.random() * 0.9) * power;
-          var size = (34 + Math.random() * 44) * dpr;
-          launch(e, baseX, H * 0.99, vx, vy, size);
+      var delay = count > 1 ? showCornerCannons() : 0;
+      var fire = function () {
+        var W = cvs.width, H = cvs.height;
+        for (var side = 0; side < 2; side++) {
+          var baseX = side === 0 ? W * 0.04 : W * 0.96;
+          for (var i = 0; i < count; i++) {
+            var e = emojis[i % emojis.length];
+            var toCenter = side === 0 ? 1 : -1;
+            var vx = toCenter * (0.6 + Math.random() * 0.9) * power;
+            var vy = -(1.4 + Math.random() * 0.9) * power;
+            var size = (34 + Math.random() * 44) * dpr;
+            launch(e, baseX, H * 0.99, vx, vy, size);
+          }
         }
-      }
+      };
+      if (delay) setTimeout(fire, delay); else fire();
     }
     function tick() {
       ctx.clearRect(0, 0, cvs.width, cvs.height);
