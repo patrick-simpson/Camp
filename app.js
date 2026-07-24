@@ -15,9 +15,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-24T10:17:21Z';
+const CODE_UPDATED_AT = '2026-07-24T11:09:04Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 146;
+const APP_VERSION = 147;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -601,6 +601,9 @@ const MEALS = {
     breakfast: { dish: 'French Toast', emoji: '🍞' },
     lunch: { dish: 'Sandwiches', emoji: '🥪' },
     supper: { dish: 'Pizza', emoji: '🍕' },
+  },
+  5: {
+    lunch: { dish: 'Leftovers', emoji: '♻️' },
   },
 };
 
