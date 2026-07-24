@@ -1143,12 +1143,6 @@ body.no-scroll {
   transition: all 0.15s ease;
 }
 
-.sched-day-chip.active {
-  border-color: var(--color-primary);
-  color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
-}
-
 .schedule-body {
   flex: 1 1 auto;
   overflow-y: auto;
@@ -2045,13 +2039,6 @@ body.no-scroll {
   font-size: 0.8rem;
 }
 
-.bonus-cat-chip.selected,
-.bonus-meal-chip.selected {
-  border-color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
-  color: var(--color-primary);
-}
-
 .bonus-custom-input,
 .bonus-points-input {
   border: 1.5px solid var(--color-border);
@@ -2288,12 +2275,6 @@ body.no-scroll {
   cursor: pointer;
   font-family: inherit;
   transition: all 0.15s ease;
-}
-
-.verse-day-chip.selected {
-  border-color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
-  color: var(--color-primary);
 }
 
 .verse-day-chip .today-dot {
