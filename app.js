@@ -3517,14 +3517,20 @@ const MEMORY_VERSES = {
 // to today each load).
 let verseDay = null;
 
-// dow -> { teamId -> total verse points } from the 'verse' ledger entries.
+// dow -> { raw: { teamId -> stored points }, effective: { teamId -> what the
+// standings count } } from the 'verse' ledger entries. `effective` weights
+// each entry by its own timestamp via bonusCountsDouble() — the same rule
+// medalCounts() applies — so a pre-window entry stays single even when the
+// double-points window is active right now.
 function versePointsByDay() {
   const map = {};
   Object.values(state.bonuses || {}).forEach((b) => {
     if (b.category !== 'verse') return;
     const day = Number(b.day) || 0;
-    if (!map[day]) map[day] = {};
-    map[day][b.teamId] = (map[day][b.teamId] || 0) + (Number(b.points) || 0);
+    if (!map[day]) map[day] = { raw: {}, effective: {} };
+    const pts = Number(b.points) || 0;
+    map[day].raw[b.teamId] = (map[day].raw[b.teamId] || 0) + pts;
+    map[day].effective[b.teamId] = (map[day].effective[b.teamId] || 0) + pts * (bonusCountsDouble(b) ? 2 : 1);
   });
   return map;
 }
@@ -3568,21 +3574,22 @@ function renderMemoryVerse() {
   // The stored/tapped scale always stays 0–5 raw (setVersePoints, the
   // selected-chip check, and data-pts below all use the raw number) —
   // bonusCountsDouble() is what actually doubles it in the standings, keyed
-  // off the entry's timestamp. During the double-points window we only
-  // relabel what's ON SCREEN to the effective (already-doubled) value, so a
-  // counselor sees "10" for a perfect recitation instead of a "5" that
-  // quietly becomes 10 elsewhere. inDoubleBonusWindow() checks real "now",
-  // matching setVersePoints's `at: new Date()` stamp exactly.
-  const earned = versePointsByDay()[verseDay] || {};
+  // off each entry's own timestamp. On screen: tap-button labels show what a
+  // tap made RIGHT NOW is worth (new entries are stamped "now", so during
+  // the window a perfect recitation reads "10", not a "5" that quietly
+  // becomes 10 elsewhere), while each team's shown total is the per-entry
+  // effective value — a Monday entry viewed on Friday stays single, exactly
+  // as the standings count it.
+  const earned = versePointsByDay()[verseDay] || { raw: {}, effective: {} };
   const editing = canEdit();
   const doubleWindow = inDoubleBonusWindow();
   const displayMult = doubleWindow ? 2 : 1;
   const hint = editing
-    ? `<p class="bonus-entry-hint muted">Tap a team's points for ${esc(DAY_NAMES[verseDay])}'s verse — 0 clears them.${doubleWindow ? ' Numbers shown already include tonight/Friday’s double points.' : ''}</p>`
+    ? `<p class="bonus-entry-hint muted">Tap a team's points for ${esc(DAY_NAMES[verseDay])}'s verse — 0 clears them.${doubleWindow ? ' Double points are on — the tap values already show the doubled worth.' : ''}</p>`
     : '';
   const rowsHTML = `<div class="pts-grid">${state.teams.map((t) => {
-    const pts = earned[t.id] || 0; // raw stored value (0–5)
-    const displayPts = pts * displayMult; // what it's actually worth in the standings right now
+    const pts = earned.raw[t.id] || 0; // raw stored value (0–5)
+    const displayPts = earned.effective[t.id] || 0; // what it's actually worth in the standings
     const btns = editing
       ? `<div class="pts-btn-row" data-team-id="${t.id}" role="group" aria-label="${esc(t.name)} verse points">
           ${[0, 1, 2, 3, 4, 5].map((n) =>
@@ -3594,7 +3601,7 @@ function renderMemoryVerse() {
       ${btns}
     </div>`;
   }).join('')}</div>`;
-  const anyEarned = state.teams.some((t) => earned[t.id]);
+  const anyEarned = state.teams.some((t) => earned.raw[t.id]);
   const emptyHTML = (!editing && !anyEarned)
     ? `<p class="muted bonus-empty">No verse points recorded for ${esc(DAY_NAMES[verseDay])} yet.</p>`
     : '';
