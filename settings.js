@@ -299,7 +299,16 @@ function toEditableDraft(game) {
   const d = JSON.parse(JSON.stringify(game));
   d.counterSteps = Array.isArray(d.counterSteps) ? d.counterSteps.join(', ') : (d.counterSteps || '');
   if (d.timer) {
-    d.timer = Object.assign({}, d.timer, { presets: (d.timer.presets || []).map((s) => s / 60).join(', ') });
+    d.timer = Object.assign({}, d.timer, {
+      presets: (d.timer.presets || []).map((s) => s / 60).join(', '),
+      rounds: d.timer.rounds == null ? '' : String(d.timer.rounds),
+    });
+  }
+  if (d.liveTracker) {
+    d.liveTracker = Object.assign({}, d.liveTracker, {
+      innings: d.liveTracker.innings == null ? '' : String(d.liveTracker.innings),
+      outs: d.liveTracker.outs == null ? '' : String(d.liveTracker.outs),
+    });
   }
   d.prompts = Array.isArray(d.prompts) ? d.prompts.join('\n') : (d.prompts || '');
   d.rules = (d.rules || []).map((sec) => ({
@@ -376,6 +385,7 @@ function renderGameEditor(card) {
     </div>
 
     ${draft.format === 'tally' ? tallyFieldsHTML(draft) : ''}
+    ${draft.format === 'tournament' ? tournamentFieldsHTML(draft) : ''}
 
     <details class="rules-details" id="gd-extras" ${extrasOpen ? 'open' : ''}>
       <summary>Tools &amp; extras</summary>
@@ -423,6 +433,42 @@ function tallyFieldsHTML(draft) {
       <jelly-input class="form-input" id="gd-countersteps" type="text" value="${esc(draft.counterSteps || '')}" placeholder="1, 5"></jelly-input>
       <p class="field-help muted">Quick +N buttons for tallying. Comma-separated, like 1, 5. Leave blank to type scores.</p>
     </div>
+    <jelly-checkbox class="checkbox-field" id="gd-allownegative" size="small" ${draft.counterAllowNegative ? 'checked' : ''}>Totals can go negative</jelly-checkbox>
+    <jelly-checkbox class="checkbox-field" id="gd-liverankings" size="small" ${draft.liveRankings ? 'checked' : ''}>🔴 Live leaderboard — spectators watch the totals climb while you score</jelly-checkbox>
+  `;
+}
+
+// Tournament-only: the live per-match scoreboard (what Jeb Ball uses) — a
+// synced score stepper per team, promoted to the home screen's Big Board
+// while the match runs. 1 period + 0 outs = a plain running score;
+// Kangaroo Kickball uses 3 innings + 3 outs for the full kickball flow.
+function tournamentFieldsHTML(draft) {
+  const t = draft.liveTracker;
+  return `
+    <jelly-checkbox class="checkbox-field" id="gd-tracker-on" size="small" ${t ? 'checked' : ''}>🔴 Live match scoreboard — score steppers spectators watch live (like Jeb Ball)</jelly-checkbox>
+    ${t ? `
+      <div class="form-row">
+        <div class="form-field">
+          <label class="form-label">What's counted</label>
+          <jelly-input class="form-input" id="gd-tracker-unit" type="text" value="${esc(t.unit || '')}" placeholder="Goals, runs, points…"></jelly-input>
+        </div>
+        <div class="form-field">
+          <label class="form-label">Period name</label>
+          <jelly-input class="form-input" id="gd-tracker-periodlabel" type="text" value="${esc(t.periodLabel || '')}" placeholder="Half, Inning, Round"></jelly-input>
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-field">
+          <label class="form-label">Periods</label>
+          <jelly-input class="form-input" id="gd-tracker-innings" type="text" value="${esc(t.innings || '')}" placeholder="1"></jelly-input>
+        </div>
+        <div class="form-field">
+          <label class="form-label">Outs per side (0 = none)</label>
+          <jelly-input class="form-input" id="gd-tracker-outs" type="text" value="${esc(t.outs == null ? '' : t.outs)}" placeholder="0"></jelly-input>
+        </div>
+      </div>
+      <p class="field-help muted">1 period and 0 outs gives a plain running score. Outs above 0 adds the kickball-style outs &amp; kicking-team rows.</p>
+    ` : ''}
   `;
 }
 
@@ -438,6 +484,11 @@ function extrasHTML(draft) {
       <div class="form-field">
         <label class="form-label">Presets (minutes, comma-separated)</label>
         <jelly-input class="form-input" id="gd-timer-presets" type="text" value="${esc(draft.timer.presets || '')}" placeholder="10, 8, 5"></jelly-input>
+      </div>
+      <div class="form-field">
+        <label class="form-label">Rounds</label>
+        <jelly-input class="form-input" id="gd-timer-rounds" type="text" value="${esc(draft.timer.rounds || '')}" placeholder="e.g. 4"></jelly-input>
+        <p class="field-help muted">Optional. Shows "Round X of N" on the clock with a Next-round button between rounds. Blank = a plain one-shot timer.</p>
       </div>
     ` : ''}
     <div class="form-field">
@@ -486,6 +537,12 @@ function wireGameEditor(card) {
   card.querySelectorAll('.format-card').forEach((btn) => {
     btn.addEventListener('click', () => {
       draft.format = btn.dataset.format;
+      // Live scoring is the house default (owner's call, 2026-07-24): a game
+      // picking up a scoreable format comes with its live surface switched on.
+      if (draft.format === 'tally' && draft.liveRankings === undefined) draft.liveRankings = true;
+      if (draft.format === 'tournament' && draft.liveTracker === undefined) {
+        draft.liveTracker = { unit: 'Points', periodLabel: 'Round', innings: '1', outs: '0' };
+      }
       renderGameEditor(card);
     });
   });
@@ -495,6 +552,33 @@ function wireGameEditor(card) {
     document.getElementById('gd-lowerwins').addEventListener('change', (e) => { draft.lowerWins = e.target.checked; });
     document.getElementById('gd-timeinput').addEventListener('change', (e) => { draft.timeInput = e.target.checked; });
     document.getElementById('gd-countersteps').addEventListener('input', (e) => { draft.counterSteps = e.target.value; });
+    document.getElementById('gd-allownegative').addEventListener('change', (e) => {
+      if (e.target.checked) draft.counterAllowNegative = true;
+      else delete draft.counterAllowNegative;
+    });
+    document.getElementById('gd-liverankings').addEventListener('change', (e) => {
+      if (e.target.checked) draft.liveRankings = true;
+      else delete draft.liveRankings;
+    });
+  }
+
+  if (draft.format === 'tournament') {
+    document.getElementById('gd-tracker-on').addEventListener('change', (e) => {
+      if (e.target.checked) {
+        draft.liveTracker = draft.liveTracker || { unit: 'Points', periodLabel: 'Round', innings: '1', outs: '0' };
+      } else {
+        delete draft.liveTracker;
+      }
+      renderGameEditor(card);
+    });
+    const trackerUnit = document.getElementById('gd-tracker-unit');
+    if (trackerUnit) trackerUnit.addEventListener('input', (e) => { draft.liveTracker.unit = e.target.value; });
+    const trackerPeriod = document.getElementById('gd-tracker-periodlabel');
+    if (trackerPeriod) trackerPeriod.addEventListener('input', (e) => { draft.liveTracker.periodLabel = e.target.value; });
+    const trackerInnings = document.getElementById('gd-tracker-innings');
+    if (trackerInnings) trackerInnings.addEventListener('input', (e) => { draft.liveTracker.innings = e.target.value; });
+    const trackerOuts = document.getElementById('gd-tracker-outs');
+    if (trackerOuts) trackerOuts.addEventListener('input', (e) => { draft.liveTracker.outs = e.target.value; });
   }
 
   const extrasDetails = document.getElementById('gd-extras');
@@ -513,6 +597,8 @@ function wireGameEditor(card) {
   if (timerLabelInput) timerLabelInput.addEventListener('input', (e) => { draft.timer.label = e.target.value; });
   const timerPresetsInput = document.getElementById('gd-timer-presets');
   if (timerPresetsInput) timerPresetsInput.addEventListener('input', (e) => { draft.timer.presets = e.target.value; });
+  const timerRoundsInput = document.getElementById('gd-timer-rounds');
+  if (timerRoundsInput) timerRoundsInput.addEventListener('input', (e) => { draft.timer.rounds = e.target.value; });
 
   document.getElementById('gd-prompts').addEventListener('input', (e) => { draft.prompts = e.target.value; });
   document.getElementById('gd-double').addEventListener('change', (e) => {
@@ -581,6 +667,20 @@ function validateGameDraft(draft) {
     const tokens = String(draft.timer.presets || '').split(',').map((t) => t.trim()).filter(Boolean);
     const bad = !tokens.length || tokens.some((t) => isNaN(parseFloat(t)) || parseFloat(t) <= 0);
     if (bad) return 'Timer presets must be numbers of minutes, like 5, 3.';
+    const rounds = String(draft.timer.rounds || '').trim();
+    if (rounds && (!/^\d+$/.test(rounds) || parseInt(rounds, 10) < 1)) {
+      return 'Timer rounds must be a whole number like 4, or blank for no rounds.';
+    }
+  }
+  if (draft.format === 'tournament' && draft.liveTracker) {
+    const innings = String(draft.liveTracker.innings == null ? '' : draft.liveTracker.innings).trim();
+    if (innings && (!/^\d+$/.test(innings) || parseInt(innings, 10) < 1)) {
+      return 'Scoreboard periods must be a whole number, like 1 or 2.';
+    }
+    const outs = String(draft.liveTracker.outs == null ? '' : draft.liveTracker.outs).trim();
+    if (outs && !/^\d+$/.test(outs)) {
+      return 'Outs per side must be 0 or a whole number.';
+    }
   }
   return null;
 }
@@ -613,6 +713,22 @@ function saveGameDraft() {
     delete out.counterAllowNegative;
     delete out.lowerWins;
     delete out.timeInput;
+    delete out.liveRankings;
+  }
+
+  if (out.format === 'tournament' && out.liveTracker) {
+    // Parse the text-mode tracker back to numbers; unknown keys the editor
+    // doesn't expose (e.g. Kickball's sideLabel) ride along untouched.
+    const t = out.liveTracker;
+    t.unit = (t.unit || '').trim() || 'Points';
+    t.periodLabel = (t.periodLabel || '').trim() || 'Round';
+    t.innings = Math.max(1, parseInt(String(t.innings).trim(), 10) || 1);
+    t.outs = Math.max(0, parseInt(String(t.outs).trim(), 10) || 0);
+  }
+  if (out.format !== 'tournament') {
+    delete out.liveTracker;
+    delete out.ladderScoring;
+    delete out.roundOneMatchups;
   }
 
   if (out.timer) {
@@ -620,6 +736,9 @@ function saveGameDraft() {
       .map((t) => Math.round(parseFloat(t) * 60));
     out.timer.presets = presets;
     out.timer.label = (out.timer.label || '').trim();
+    const rounds = parseInt(String(out.timer.rounds || '').trim(), 10);
+    if (rounds > 1) out.timer.rounds = rounds;
+    else delete out.timer.rounds;
   }
 
   if (typeof out.prompts === 'string') {

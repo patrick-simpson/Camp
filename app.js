@@ -15,9 +15,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-24T15:32:43Z';
+const CODE_UPDATED_AT = '2026-07-24T16:51:55Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 152;
+const APP_VERSION = 153;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -4148,7 +4148,7 @@ function renderLiveHome() {
         <span class="lh-nums">${l.hr[pair[0]] || 0}<span class="lh-dash">–</span>${l.hr[pair[1]] || 0}</span>
         <span class="lh-team">${teamEmoji(pair[1])} ${esc(teamName(pair[1]))}</span>
       </span>
-      <span class="live-home-sub">${esc(periodLabel)} ${l.inning} of ${g.liveTracker.innings || 3}${g.liveTracker.outs ? ` · ${outsLabel(l.outs)} · ${teamEmoji(kickingTeamId(l, pair[0], pair[1]))} ${esc(teamName(kickingTeamId(l, pair[0], pair[1])))} ${esc(g.liveTracker.sideLabel || 'up')}` : ''}</span>`;
+      <span class="live-home-sub">${(g.liveTracker.innings || 3) > 1 ? `${esc(periodLabel)} ${l.inning} of ${g.liveTracker.innings || 3}` : esc(g.liveTracker.unit || 'Live score')}${g.liveTracker.outs ? ` · ${outsLabel(l.outs)} · ${teamEmoji(kickingTeamId(l, pair[0], pair[1]))} ${esc(teamName(kickingTeamId(l, pair[0], pair[1])))} ${esc(g.liveTracker.sideLabel || 'up')}` : ''}</span>`;
     } else if (pair) {
       scoreHTML = `<span class="live-home-matchup">${teamEmoji(pair[0])} ${esc(teamName(pair[0]))} <span class="lh-vs">vs</span> ${teamEmoji(pair[1])} ${esc(teamName(pair[1]))}</span>`;
     } else {
@@ -5067,13 +5067,17 @@ function liveTrackerHTML(g, aId, bId, viewer) {
       </div>`}
     </div>`;
 
-  const periodRow = viewer
-    ? `<span class="board-period">${esc(periodLabel)} <span id="live-inning-val">${l.inning}</span> of ${maxInn}</span>`
-    : `<span class="board-period">
-        <button class="live-btn" data-live="inning-down" aria-label="Previous ${esc(periodLabel.toLowerCase())}">−</button>
-        ${esc(periodLabel)} <span id="live-inning-val">${l.inning}</span> of ${maxInn}
-        <button class="live-btn" data-live="inning-up" aria-label="Next ${esc(periodLabel.toLowerCase())}">+</button>
-      </span>`;
+  // A single-period tracker is just a running score — label the numbers with
+  // the game's unit instead of a pointless "Round 1 of 1" stepper.
+  const periodRow = maxInn <= 1
+    ? `<span class="board-period">${esc(g.liveTracker.unit || 'Live score')}</span>`
+    : viewer
+      ? `<span class="board-period">${esc(periodLabel)} <span id="live-inning-val">${l.inning}</span> of ${maxInn}</span>`
+      : `<span class="board-period">
+          <button class="live-btn" data-live="inning-down" aria-label="Previous ${esc(periodLabel.toLowerCase())}">−</button>
+          ${esc(periodLabel)} <span id="live-inning-val">${l.inning}</span> of ${maxInn}
+          <button class="live-btn" data-live="inning-up" aria-label="Next ${esc(periodLabel.toLowerCase())}">+</button>
+        </span>`;
 
   const clockHTML = clock ? `
     <div class="board-clock-wrap">

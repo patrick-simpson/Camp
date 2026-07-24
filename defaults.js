@@ -84,6 +84,10 @@ function defaultConfig() {
       {
         id: 'musical-chairs', name: 'Musical Chairs Everywhere', emoji: '🎵', dayId: 'd2', session: 'Morning',
         location: 'Chapel Lawn', format: 'tournament',
+        // Generic live scoreboard (single period, no outs — see Jeb Ball): the
+        // ref taps a team's + as each of their campers goes out, so spectators
+        // can watch who's bleeding players.
+        liveTracker: { unit: 'Players out', innings: 1, outs: 0, periodLabel: 'Round' },
         headline: 'Field-wide musical chairs, team vs team.',
         rules: [
           { h: 'Setup', items: [
@@ -187,7 +191,7 @@ function defaultConfig() {
       },
       {
         id: 'axe-throwing', name: 'Axe Throwing', emoji: '🪓', dayId: 'd3', session: 'Morning',
-        location: 'Basketball Court', format: 'tally', unit: 'points', counterSteps: [1, 5],
+        location: 'Basketball Court', format: 'tally', unit: 'points', counterSteps: [1, 5], liveRankings: true,
         headline: 'Every player throws; the team totals decide the medals.',
         rules: [
           { h: 'How to play', items: [
@@ -235,7 +239,7 @@ function defaultConfig() {
       },
       {
         id: 'color-call-chaos', name: 'Color Call Chaos', emoji: '🌈', dayId: 'd3', session: 'Evening',
-        location: 'Chapel Lawn', format: 'tally', unit: 'balls collected', counterSteps: [1],
+        location: 'Chapel Lawn', format: 'tally', unit: 'balls collected', counterSteps: [1], liveRankings: true,
         headline: 'Hungry-hungry-hippos with color calls — every ball is a point.',
         rules: [
           { h: 'How to play', items: [
@@ -290,6 +294,9 @@ function defaultConfig() {
         id: 'waiter-water-chain', name: 'Waiter Water Chain', emoji: '💧', dayId: 'd4', session: 'Morning',
         location: 'Bathroom Lawn', format: 'tournament',
         timer: { label: 'Game clock', presets: [600] },
+        // Generic live scoreboard (single period, no outs — see Jeb Ball):
+        // tap + as each team's cups get dumped in their finish bucket.
+        liveTracker: { unit: 'Cups emptied', innings: 1, outs: 0, periodLabel: 'Round' },
         headline: 'Pass the tray of water cups down the human chain until the bucket overflows.',
         rules: [
           { h: 'Setup', items: [
