@@ -206,6 +206,29 @@ Both timestamps render in camp time (`America/New_York`, formatted via
 `formatEasternStamp`), matching the "Happening Now" schedule banner's
 convention — never device-local time.
 
+## Hiding home panels from viewers
+
+Each of the five home cards carries an editor-only "🙈 Hide from viewers"
+`jelly-switch` (`.hide-card-toggle[data-hide-card="<key>"]`, in a
+`.card-visibility-row` that CSS hides for `html.view-only`). Flipping one adds
+that card's key to **`state.meta.hiddenCards`** — synced, so it applies on
+every device — and view-only devices then don't render the card at all.
+Editors always see every card, including the switch that governs it.
+
+- Keys are the cards' `data-card` values, listed in `HIDEABLE_CARDS` (app.js).
+- All of it is applied centrally by `applyCardVisibility()`, called at the
+  TOP of `renderAll` — before `renderGameView`, because hiding Competitions
+  also has to close a viewer's open game detail (otherwise the hidden card's
+  content stays readable).
+- Hiding force-closes the card for viewers, so a later un-hide doesn't pop it
+  out already expanded (matches the closed-by-default rule).
+- These are deliberately NOT `touchData()` moments — a display preference is
+  not scoreboard activity, so they don't bump "Data last updated".
+- RTDB prunes `hiddenCards` away entirely once it's empty (all cards shown);
+  `normalizeSyncedState` heals it back to `{}`, and readers must tolerate it
+  being missing. A legacy `state.meta.standingsHidden` boolean from the
+  standings-only first version is still honored on read.
+
 ## History / why these rules exist
 
 - A bracket-format bug (blank screen after "Start Bracket") was fixed and

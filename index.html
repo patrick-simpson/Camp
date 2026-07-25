@@ -19,8 +19,8 @@
   <!-- Jelly UI web components (vendored, see vendor/jelly.js header). Module
        scripts are deferred by spec, so this never blocks first paint and the
        classic scripts at the end of <body> always execute before it. -->
-  <script type="module" src="vendor/jelly.js?v=159"></script>
-  <link rel="stylesheet" href="styles.css?v=159">
+  <script type="module" src="vendor/jelly.js?v=160"></script>
+  <link rel="stylesheet" href="styles.css?v=160">
 
   <script>
     // Decide lock state before the page paints so we never flash the app,
@@ -90,9 +90,18 @@
            the same inner containers as before. -->
       <jelly-accordion class="home-accordion" single>
 
+        <!-- Every card carries an editor-only "Hide from viewers" switch
+             (.card-visibility-row, hidden for view-only via CSS). The switch's
+             data-hide-card names which card it governs; state.meta.hiddenCards
+             is synced, so hiding takes effect on every device. -->
+
         <!-- ── COMPETITIONS (day tabs + per-day game lists) ── -->
         <jelly-collapsible class="card competitions-card collapsible-card" data-card="competitions">
           <h2 slot="header">Competitions</h2>
+          <div class="settings-row card-visibility-row">
+            <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🙈</span> Hide from viewers</span>
+            <jelly-switch class="hide-card-toggle" data-hide-card="competitions" label="Hide Competitions from viewers"></jelly-switch>
+          </div>
           <!-- jelly-tabs with one panel per day; renderDayTabs fills it. -->
           <div id="day-tabs"></div>
         </jelly-collapsible>
@@ -100,12 +109,9 @@
         <!-- ── WEEK STANDINGS ─────────────────────────────── -->
         <jelly-collapsible class="card standings-card collapsible-card" data-card="standings">
           <h2 slot="header">Current Standings</h2>
-          <!-- Editor-only: hides the whole card (this one) from view-only
-               devices — e.g. for suspense before an awards reveal. Synced via
-               state.meta.standingsHidden so it takes effect everywhere. -->
-          <div class="settings-row standings-visibility-row">
+          <div class="settings-row card-visibility-row">
             <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🙈</span> Hide from viewers</span>
-            <jelly-switch id="hide-standings-toggle" label="Hide standings from viewers"></jelly-switch>
+            <jelly-switch class="hide-card-toggle" data-hide-card="standings" label="Hide Current Standings from viewers"></jelly-switch>
           </div>
           <p class="muted standings-hint">Only counts games saved in this app — your paper scoreboard is the official one.</p>
           <p id="sync-status" class="sync-status" aria-live="polite"></p>
@@ -136,6 +142,10 @@
         <!-- ── MEMORY VERSE ───────────────────────────────── -->
         <jelly-collapsible class="card verse-card collapsible-card" data-card="verse">
           <h2 slot="header">Memory Verse</h2>
+          <div class="settings-row card-visibility-row">
+            <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🙈</span> Hide from viewers</span>
+            <jelly-switch class="hide-card-toggle" data-hide-card="verse" label="Hide Memory Verse from viewers"></jelly-switch>
+          </div>
           <p class="muted card-desc">Each day's memory verse — pick a day to read it, and record points for teams that recite it. Verse points count toward each team's total above.</p>
           <div id="verse-body"></div>
         </jelly-collapsible>
@@ -143,6 +153,10 @@
         <!-- ── MEAL CLEANUP ───────────────────────────────── -->
         <jelly-collapsible class="card cleanup-card collapsible-card" data-card="cleanup">
           <h2 slot="header">Meal Cleanup</h2>
+          <div class="settings-row card-visibility-row">
+            <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🙈</span> Hide from viewers</span>
+            <jelly-switch class="hide-card-toggle" data-hide-card="cleanup" label="Hide Meal Cleanup from viewers"></jelly-switch>
+          </div>
           <p class="muted card-desc">Each meal a team is on cleanup — pick a day to see the rota and award points. Cleanup points count toward each team's total above.</p>
           <div id="cleanup-body"></div>
         </jelly-collapsible>
@@ -150,6 +164,10 @@
         <!-- ── BONUS POINTS ───────────────────────────────── -->
         <jelly-collapsible class="card bonus-card collapsible-card" data-card="bonus">
           <h2 slot="header">Bonus Points</h2>
+          <div class="settings-row card-visibility-row">
+            <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🙈</span> Hide from viewers</span>
+            <jelly-switch class="hide-card-toggle" data-hide-card="bonus" label="Hide Bonus Points from viewers"></jelly-switch>
+          </div>
           <p class="muted card-desc">Extra one-off points for other tasks — added to each team's total above.</p>
           <div id="bonus-body"></div>
         </jelly-collapsible>
@@ -252,9 +270,9 @@
        falls back to local-only mode automatically. -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=159"></script>
-  <script src="defaults.js?v=159"></script>
-  <script src="app.js?v=159"></script>
-  <script src="settings.js?v=159"></script>
+  <script src="firebase-config.js?v=160"></script>
+  <script src="defaults.js?v=160"></script>
+  <script src="app.js?v=160"></script>
+  <script src="settings.js?v=160"></script>
 </body>
 </html>

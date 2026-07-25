@@ -15,9 +15,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-25T00:37:34Z';
+const CODE_UPDATED_AT = '2026-07-25T00:57:31Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 159;
+const APP_VERSION = 160;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1392,20 +1392,68 @@ function touchData() {
   joyCelebrate(); // every real data save gets a little celebration
 }
 
-// Editor-only display setting (state.meta, synced): true hides the whole
-// Current Standings card from view-only devices — e.g. suspense before an
-// awards reveal. Editors always see the card regardless, with the toggle
-// that controls it. Not a touchData() moment — it's a display preference,
-// not scoreboard activity, so it doesn't bump "Data last updated".
-function standingsHiddenFromViewers() {
-  return !!(state.meta && state.meta.standingsHidden);
+// ── Per-card "hide from viewers" (editor-only, synced) ───────────
+// state.meta.hiddenCards is a { cardKey: true } map — a card listed there is
+// hidden on view-only devices (e.g. suspense before an awards reveal).
+// Editors always see every card, each with the switch that governs it. These
+// are NOT touchData() moments: a display preference isn't scoreboard
+// activity, so they don't bump "Data last updated".
+//
+// Keys match the data-card attributes in index.html (and the switches'
+// data-hide-card). Only cards with a switch can be hidden.
+const HIDEABLE_CARDS = ['competitions', 'standings', 'verse', 'cleanup', 'bonus'];
+
+function cardHiddenFromViewers(card) {
+  const m = state.meta || {};
+  if (m.hiddenCards && m.hiddenCards[card]) return true;
+  // Legacy single-purpose flag from the standings-only version of this
+  // feature. Still honored so a device running the older build that pushes
+  // the old shape can't silently un-hide the table mid-camp.
+  if (card === 'standings' && m.standingsHidden) return true;
+  return false;
 }
 
-function toggleStandingsHidden() {
+function toggleCardHidden(card) {
+  if (!HIDEABLE_CARDS.includes(card)) return;
   if (!state.meta) state.meta = {};
-  state.meta.standingsHidden = !standingsHiddenFromViewers();
+  const wasHidden = cardHiddenFromViewers(card);
+  if (!state.meta.hiddenCards) state.meta.hiddenCards = {};
+  if (wasHidden) {
+    delete state.meta.hiddenCards[card];
+    if (card === 'standings') delete state.meta.standingsHidden; // retire the legacy flag
+  } else {
+    state.meta.hiddenCards[card] = true;
+  }
   saveState();
   renderAll();
+}
+
+// Applies every card's hidden state and syncs the switches. Runs from
+// renderAll (before renderGameView, which depends on the competitions
+// result). Hiding force-closes the card for viewers so a later un-hide
+// doesn't surface it already open — matching the closed-by-default rule.
+function applyCardVisibility() {
+  const editor = canEdit();
+  HIDEABLE_CARDS.forEach((key) => {
+    const hidden = cardHiddenFromViewers(key);
+    const card = document.querySelector(`.collapsible-card[data-card="${key}"]`);
+    if (card) {
+      const hideForMe = hidden && !editor;
+      card.hidden = hideForMe;
+      if (hideForMe && card.hasAttribute('open')) {
+        if (typeof card.toggle === 'function') card.toggle(false);
+        else card.removeAttribute('open');
+      }
+    }
+    const sw = document.querySelector(`.hide-card-toggle[data-hide-card="${key}"]`);
+    if (sw) sw.toggleAttribute('checked', hidden);
+  });
+  // A viewer must not keep reading a game detail out of a hidden Competitions
+  // card. Cleared here (not saved) so the renderGameView later in this same
+  // pass closes the view.
+  if (!editor && cardHiddenFromViewers('competitions') && state.ui.gameId) {
+    state.ui.gameId = null;
+  }
 }
 
 // ── Cloud sync (Firebase Realtime Database) ──────────────────────
@@ -2952,22 +3000,8 @@ function startOfDayRanks(ranked) {
 }
 
 function renderStandings() {
-  // Editor-only "Hide from viewers" toggle: view-only devices lose the whole
-  // card; editors always keep it (with the toggle that controls it). Force
-  // it closed for viewers when hiding, so a later un-hide doesn't surface it
-  // already open — matches every other card's "always starts closed" rule.
-  const card = document.querySelector('.standings-card');
-  if (card) {
-    const hideForMe = standingsHiddenFromViewers() && !canEdit();
-    card.hidden = hideForMe;
-    if (hideForMe && card.open) {
-      if (typeof card.toggle === 'function') card.toggle(false);
-      else card.removeAttribute('open');
-    }
-  }
-  const hideToggle = document.getElementById('hide-standings-toggle');
-  if (hideToggle) hideToggle.toggleAttribute('checked', standingsHiddenFromViewers());
-
+  // (Card visibility + the hide switches are handled centrally by
+  // applyCardVisibility, called at the top of renderAll.)
   const tbody = document.getElementById('standings-tbody');
   const counts = medalCounts();
   const ranked = rankTeamsByPoints(counts);
@@ -4068,7 +4102,10 @@ function renderGameView() {
         if (typeof d.toggle === 'function') d.toggle(false);
         else d.removeAttribute('open');
       });
-    } else if (comp) {
+    } else if (comp && !comp.hidden) {
+      // Skipped when Competitions is hidden from this viewer — otherwise it
+      // would sit open behind the scenes and pop out already-expanded if the
+      // editor un-hid it later.
       if (typeof comp.toggle === 'function') comp.toggle(true);
       else comp.setAttribute('open', '');
     }
@@ -4818,6 +4855,10 @@ function normalizeSyncedState() {
   Object.values(state.live).forEach(normalizeLiveMatch);
   if (!state.clocks) state.clocks = {}; // RTDB prunes an empty clocks map to nothing
   if (!state.announcements) state.announcements = {}; // RTDB prunes an empty map to nothing
+  if (!state.meta) state.meta = {}; // RTDB prunes an all-defaults meta to nothing
+  // Un-hiding every card empties hiddenCards, which RTDB then prunes away —
+  // heal it so the switches and applyCardVisibility always read a real map.
+  if (!state.meta.hiddenCards || typeof state.meta.hiddenCards !== 'object') state.meta.hiddenCards = {};
   // Migrate rosters saved before names/counselors were set: swap generic
   // "Team N" names and placeholder counselors for the real roster values.
   // Anything hand-edited (not matching a known placeholder) is left alone.
@@ -6266,6 +6307,7 @@ function renderAll() {
   document.body.classList.toggle('builder-open', inBuilder);
   const builderView = document.getElementById('settings-view');
   if (builderView) builderView.hidden = !inBuilder;
+  applyCardVisibility(); // before renderGameView — may close a hidden card's game
   renderWhatsNew();
   pruneExpiredAnnouncements();
   renderAnnouncements();
@@ -6319,8 +6361,12 @@ function init() {
     setTheme((e.detail && e.detail.value) || e.target.getAttribute('value'));
   });
   document.getElementById('sound-toggle').addEventListener('change', toggleSound);
-  const hideStandingsToggle = document.getElementById('hide-standings-toggle');
-  if (hideStandingsToggle) hideStandingsToggle.addEventListener('change', toggleStandingsHidden);
+  // One "Hide from viewers" switch per card (editor-only; hidden by CSS for
+  // view-only). The switches are static markup, so wiring them once here is
+  // enough — applyCardVisibility keeps their checked state in step.
+  document.querySelectorAll('.hide-card-toggle[data-hide-card]').forEach((sw) => {
+    sw.addEventListener('change', () => toggleCardHidden(sw.dataset.hideCard));
+  });
 
   const copyBtn = document.getElementById('copy-standings-btn');
   copyBtn.addEventListener('click', () => copyTextToClipboard(standingsSummaryText(), copyBtn));
