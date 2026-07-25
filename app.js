@@ -15,7 +15,7 @@ const STORAGE_KEY = 'campScoreboardV2';
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-25T03:55:20Z';
+const CODE_UPDATED_AT = '2026-07-25T12:00:44Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
 const APP_VERSION = 161;
 
@@ -666,6 +666,118 @@ function mealCleanupNote(dow, label) {
   const teams = Array.isArray(teamIds) ? teamIds : [teamIds];
   const who = teams.map(id => `${teamEmoji(id)} ${esc(teamName(id))}`).join(' + ');
   return ` <span class="meal-cleanup-note">🧽 ${who}</span>`;
+}
+
+// ── Cleanup call (big, top-of-page, time-boxed) ──────────────────
+// Send-off morning: every team has one area to clean between breakfast and
+// the 9:30 Tabernacle send-off (see DAY_SCHEDULE[6]). This is the one notice
+// of the week that has to be impossible to miss, so it renders as a large
+// card ABOVE everything else rather than as six separate announcements —
+// which pushed the rest of the page off a phone screen and buried the very
+// line each camper needed.
+//
+// It shows only inside its own window (`dow` + `until`) and then disappears
+// on its own — no dismiss button, no synced flag, nothing to clean up after.
+// It runs past send-off on purpose: the last stage is counselors' work after
+// the campers have left, and it's no use if it vanishes at 9:30.
+//
+// To change the assignments, edit `zones`: `teamId` is the stable slot
+// (t0..t5, see TEAM_EMOJI), `place` is where they go, and the optional `note`
+// is the small print under it. Order is the order it's read out. `steps` is
+// the running order everything else follows.
+const CLEANUP_CALL = {
+  dow: 6,            // Saturday, send-off morning
+  until: hm(12, 0),  // stays up through the after-departure jobs, then goes
+  window: '8:30–9:30am',
+  zones: [
+    { teamId: 't3', place: 'Chapel Lawn' },
+    { teamId: 't1', place: 'Waterfront' },
+    { teamId: 't0', place: 'Linger' },
+    { teamId: 't5', place: 'Snack Shack' },
+    { teamId: 't2', place: 'Dining Hall', note: 'breakfast cleanup' },
+    { teamId: 't4', place: 'Tabernacle' },
+  ],
+  steps: [
+    {
+      when: 'First — cabins, before anyone packs',
+      emoji: '🛏️',
+      items: [
+        'Sweep the cabin floors.',
+        'Clear out all the trash before bags and bedding go anywhere.',
+      ],
+    },
+    {
+      when: 'In every area',
+      emoji: '🗑️',
+      items: [
+        'Everything goes in the trash — empty every bin, then put a fresh bag in.',
+        'Lost and found goes to the tables at the Snack Shack.',
+      ],
+    },
+    {
+      when: 'Once the campers have gone',
+      emoji: '🚿',
+      items: [
+        'Clean the shower houses.',
+        'Walk the cabins one last time — nothing left behind.',
+      ],
+    },
+  ],
+};
+
+// True while the cleanup call should be on screen.
+function cleanupCallActive(dow, minutes) {
+  return dow === CLEANUP_CALL.dow && minutes < CLEANUP_CALL.until;
+}
+
+// One team's assignment, or null if they aren't on the list.
+function cleanupZoneFor(teamId) {
+  return CLEANUP_CALL.zones.find((z) => z.teamId === teamId) || null;
+}
+
+function cleanupCallHtml(dow, minutes) {
+  if (!cleanupCallActive(dow, minutes)) return null;
+  // Skip any slot whose team no longer exists (roster edited / week reset).
+  const zones = CLEANUP_CALL.zones.filter((z) => state.teams.some((t) => t.id === z.teamId));
+  if (!zones.length) return null;
+
+  const mine = state.followTeam ? cleanupZoneFor(state.followTeam) : null;
+  // Viewers following a team get their own line spelled out first — it's the
+  // only row most people actually need.
+  const yours = mine ? `<div class="cleanup-yours">
+      <span class="cleanup-yours-label">Your team</span>
+      <span class="cleanup-yours-place">${teamEmoji(mine.teamId)} ${esc(teamName(mine.teamId))} → <strong>${esc(mine.place)}</strong></span>
+    </div>` : '';
+
+  const rows = zones.map((z) => `
+    <li class="cleanup-row${z.teamId === state.followTeam ? ' cleanup-row-you' : ''}">
+      <span class="cleanup-team"><span class="cleanup-emoji" aria-hidden="true">${teamEmoji(z.teamId)}</span> ${esc(teamName(z.teamId))}</span>
+      <span class="cleanup-place">${esc(z.place)}${z.note ? `<span class="cleanup-note">${esc(z.note)}</span>` : ''}</span>
+    </li>`).join('');
+
+  const steps = CLEANUP_CALL.steps.map((s) => `
+    <div class="cleanup-step">
+      <div class="cleanup-step-when"><span aria-hidden="true">${s.emoji}</span> ${esc(s.when)}</div>
+      <ul class="cleanup-step-items">${s.items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>
+    </div>`).join('');
+
+  return `<div class="cleanup-card">
+    <div class="cleanup-eyebrow">🧹 Campground cleanup · ${esc(CLEANUP_CALL.window)}</div>
+    <h2 class="cleanup-title">Where your team cleans</h2>
+    <p class="cleanup-sub">Head straight there after breakfast. Finish up by 9:30, then meet in the Tabernacle for send-off.</p>
+    ${yours}
+    <ul class="cleanup-list">${rows}</ul>
+    ${steps}
+  </div>`;
+}
+
+function renderCleanupCall() {
+  const el = document.getElementById('cleanup-call');
+  if (!el) return;
+  const { dow, minutes } = campNow();
+  const html = cleanupCallHtml(dow, minutes);
+  el.hidden = !html;
+  el.innerHTML = html || '';
 }
 
 // Current day-of-week + minutes-since-midnight, in camp time.
@@ -6411,6 +6523,7 @@ function renderAll() {
   const builderView = document.getElementById('settings-view');
   if (builderView) builderView.hidden = !inBuilder;
   applyCardVisibility(); // before renderGameView — may close a hidden card's game
+  renderCleanupCall();
   renderWhatsNew();
   pruneExpiredAnnouncements();
   renderAnnouncements();
@@ -6532,7 +6645,7 @@ function init() {
 
   // Keep the "happening now" banner (and any open schedule sheet) current
   // without any taps — and expire "what's new" banners once they hit two hours.
-  setInterval(() => { renderNowBanner(); refreshOpenSchedule(); renderWhatsNew(); renderMyElectives(); pruneExpiredAnnouncements(); renderAnnouncements(); }, 30 * 1000);
+  setInterval(() => { renderNowBanner(); refreshOpenSchedule(); renderCleanupCall(); renderWhatsNew(); renderMyElectives(); pruneExpiredAnnouncements(); renderAnnouncements(); }, 30 * 1000);
 
   // Tick every visible Big Board clock (no-ops instantly when none is on
   // screen, so the interval is effectively free the rest of the week).

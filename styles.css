@@ -3229,6 +3229,161 @@ body.no-scroll {
 .whats-new-dismiss:active { background: color-mix(in srgb, var(--color-text-muted) 20%, transparent); }
 
 /* ============================================================
+   CLEANUP CALL (send-off morning: who cleans where)
+   ------------------------------------------------------------
+   Deliberately the loudest thing on the page — it sits above every
+   other section and is meant to be readable at arm's length, on a
+   phone, outdoors, by a camper who is not looking for it. Sized in
+   rem off the same tokens as everything else so it scales with the
+   user's text size; no fixed heights, so a renamed (longer) team
+   name wraps instead of clipping.
+   ============================================================ */
+.cleanup-call {
+  margin-bottom: 0.9rem;
+}
+.cleanup-card {
+  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
+  border: 2px solid var(--color-primary);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: 1rem 1rem 0.9rem;
+}
+.cleanup-eyebrow {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-on-primary);
+  background: var(--color-primary);
+  border-radius: 999px;
+  padding: 0.22rem 0.6rem;
+}
+.cleanup-title {
+  margin: 0.55rem 0 0.2rem;
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1.15;
+  color: var(--color-text);
+}
+.cleanup-sub {
+  margin: 0 0 0.85rem;
+  font-size: 0.88rem;
+  line-height: 1.4;
+  color: var(--color-text-muted);
+}
+/* The viewer's own team, called out above the full list. */
+.cleanup-yours {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  margin-bottom: 0.8rem;
+  padding: 0.6rem 0.75rem;
+  background: var(--color-primary);
+  border-radius: var(--radius-md);
+}
+.cleanup-yours-label {
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-on-primary);
+  opacity: 0.85;
+}
+.cleanup-yours-place {
+  font-size: 1.05rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--color-on-primary);
+}
+.cleanup-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.cleanup-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.5rem 0.65rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+.cleanup-row-you {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+}
+.cleanup-team {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--color-text);
+  min-width: 0; /* let a long team name wrap rather than push the place off */
+}
+.cleanup-emoji {
+  font-size: 1.15rem;
+}
+.cleanup-place {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  flex: 0 0 auto;
+  text-align: right;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: var(--color-primary);
+}
+.cleanup-note {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+/* The running order below the zone list: what to do, in the order it happens. */
+.cleanup-step {
+  margin-top: 0.85rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
+}
+.cleanup-step-when {
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-primary);
+  margin-bottom: 0.35rem;
+}
+.cleanup-step-items {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.cleanup-step-items li {
+  position: relative;
+  padding-left: 1.1rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--color-text);
+}
+.cleanup-step-items li::before {
+  content: '';
+  position: absolute;
+  left: 0.15rem;
+  top: 0.52em;
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 50%;
+  background: var(--color-primary);
+}
+
+/* ============================================================
    ANNOUNCEMENTS (📣 editor broadcasts, pinned until dismissed)
    ============================================================ */
 .announcements {
