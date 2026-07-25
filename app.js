@@ -15,9 +15,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-25T00:57:31Z';
+const CODE_UPDATED_AT = '2026-07-25T03:55:20Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 160;
+const APP_VERSION = 161;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1510,6 +1510,24 @@ let applyingRemoteConfig = false;
 // on focusout instead of mid-typing (see the flush wiring in init()).
 let pendingRemoteConfig = null;
 
+// ── Shared clock reference ───────────────────────────────────────
+// The synced game clock stores an absolute `endAt` and every device counts down
+// to it locally (see getClock/clockRemaining) — which silently assumed every
+// phone agreed on the current time. They don't: a handset whose clock is a
+// couple of minutes off showed a countdown that far wrong on the Big Board, and
+// a second EDITOR device with a fast clock would hit zero early, sound the
+// buzzer, and stop the synced clock for everyone.
+//
+// RTDB publishes the difference between the server's clock and this device's at
+// `.info/serverTimeOffset`, so serverNow() is the same instant on every device
+// that has ever connected. With sync off (or before the first connect) the
+// offset is 0 and this is exactly Date.now() — identical to the old behavior.
+let serverTimeOffset = 0;
+
+function serverNow() {
+  return Date.now() + serverTimeOffset;
+}
+
 function syncEnabled() {
   return !!fbRef;
 }
@@ -1546,6 +1564,151 @@ function pushConfig() {
   fbConfigRef.set(JSON.parse(JSON.stringify(state.config))).catch((e) => console.warn('config push failed', e));
 }
 
+// ── Adopting a remote snapshot ───────────────────────────────────
+// Split out of the fbRef listener so the merge is one named, testable unit
+// (tests/sync.test.js drives it directly) and so a snapshot we had to defer
+// can be picked up again later.
+
+// True when it's safe to replace local synced state with the server's copy.
+// Adopting is UNSAFE while either:
+//   • the editor is mid-entry — a score/name input is focused, or a data edit
+//     is typed/queued but not yet pushed (editorMidEntry), or
+//   • we have a local write the server hasn't confirmed yet (pendingWrites > 0)
+//     — e.g. scores entered offline and still queued.
+// Without this guard a reconnect re-fires the server's PREVIOUS value and the
+// merge replaces state.drafts/results with it, reverting the scores being typed
+// (a later Save then persists the reverted values and teams lose points).
+// View-only saves (day tab, theme, notify, follow-team) don't trip
+// editorMidEntry, so they never block an incoming update.
+function canAdoptRemote() {
+  return !editorMidEntry() && pendingWrites === 0;
+}
+
+// Set when a snapshot arrived that we couldn't safely adopt. RTDB only fires
+// `value` again when the server data CHANGES, so a deferred snapshot used to be
+// dropped outright: a phone left sitting with a score input focused could stay
+// silently stale for the rest of a game. Instead of stashing the (possibly
+// superseded) payload, we remember that we owe ourselves a read and re-fetch
+// the current value once this device goes idle — so what lands is always the
+// server's latest, never a stale replay.
+let remoteRefetchPending = false;
+let idleRetryTimer = null;
+
+// Arm (or keep) the once-a-second idle check that drains whatever we deferred.
+// The week-config listener arms it too: its pendingRemoteConfig stash was only
+// ever flushed by a focusout inside the builder, so a config edit that arrived
+// while a *scoreboard* input was focused sat unapplied indefinitely.
+function armIdleRetry() {
+  if (!idleRetryTimer) idleRetryTimer = setInterval(idleRetryTick, 1000);
+}
+
+function deferRemoteSnapshot() {
+  remoteRefetchPending = true;
+  armIdleRetry();
+}
+
+function clearDeferredSnapshot() {
+  remoteRefetchPending = false;
+}
+
+function idleRetryTick() {
+  if (!remoteRefetchPending && !pendingRemoteConfig) {
+    clearInterval(idleRetryTimer);
+    idleRetryTimer = null;
+    return;
+  }
+  if (!canAdoptRemote()) return; // still mid-entry / mid-push — check again next tick
+  if (pendingRemoteConfig) {
+    const rc = pendingRemoteConfig;
+    pendingRemoteConfig = null;
+    applyRemoteConfig(rc);
+  }
+  if (remoteRefetchPending && fbRef) {
+    clearDeferredSnapshot();
+    fbRef.once('value')
+      .then((snap) => handleRemoteSnapshot(snap.val()))
+      .catch(() => { /* offline — the live listener will fire again on reconnect */ });
+  } else {
+    clearDeferredSnapshot();
+  }
+}
+
+// Entry point for every snapshot, live or re-fetched.
+function handleRemoteSnapshot(remote) {
+  const firstSnapshot = !remoteReady;
+  remoteReady = true; // server truth received — pushes may flow now
+  if (!remote) { pushState(); return; } // seed an empty database
+  // Defend offline-entered work: if this is the very first snapshot and we
+  // saved something locally before it arrived, and our data is strictly
+  // newer than the server's, push local instead of adopting remote — which
+  // would otherwise wipe a result entered on dead wifi. Timestamps use the
+  // synced meta.lastDataChangeAt (touchData) so only real data edits win.
+  if (firstSnapshot && dirtySinceLoad) {
+    const localAt = state.meta && state.meta.lastDataChangeAt;
+    const remoteAt = remote.meta && remote.meta.lastDataChangeAt;
+    if (localAt && (!remoteAt || localAt > remoteAt)) {
+      pushState();
+      return;
+    }
+  }
+  // The first snapshot is handled by dirtySinceLoad above; any later one waits
+  // for this device to be idle (see canAdoptRemote / deferRemoteSnapshot).
+  if (!firstSnapshot && !canAdoptRemote()) { deferRemoteSnapshot(); return; }
+  applyRemoteState(remote);
+}
+
+function applyRemoteState(remote) {
+  clearDeferredSnapshot(); // this snapshot supersedes any read we still owed
+  applyingRemote = true;
+  // Signature of the synced slice before applying this snapshot. RTDB fires
+  // a local `value` event for our own set(), so most snapshots are pure
+  // echoes — re-rendering on those blurs the tally/bonus inputs and
+  // dismisses the iOS keyboard mid-entry. Skip renderAll when nothing
+  // actually changed (below).
+  const beforeSig = syncSignature();
+  // The snapshot is the entire synced tree, so a key missing from it
+  // means "empty" — RTDB prunes empty objects on write. Treating
+  // missing as keep-local made "New week (reset)" un-syncable: other
+  // devices kept their old results and re-pushed them later. Teams
+  // stay guarded — a snapshot without a roster is malformed.
+  if (remote.teams) state.teams = remote.teams;
+  // Announcements as they stood before this snapshot — anything the merge
+  // adds beyond these is news worth a toast (see notifyNewAnnouncements).
+  const annBefore = state.announcements || {};
+  // Pictionary prompt words are never synced (see pushState) — the incoming
+  // snapshot carries only each game's mode. Stash this device's own words so
+  // the ref's list survives adopting a remote update, then re-attach them to
+  // any setup the snapshot still has (a remotely-reset mode drops them too).
+  const localPicWords = {};
+  Object.keys(state.picSetup || {}).forEach((gid) => {
+    const s = state.picSetup[gid];
+    if (s && s.words && s.words.length) localPicWords[gid] = s.words;
+  });
+  ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta', 'clocks', 'announcements'].forEach((k) => {
+    state[k] = remote[k] !== undefined ? remote[k] : {};
+  });
+  Object.keys(localPicWords).forEach((gid) => {
+    if (state.picSetup[gid]) state.picSetup[gid].words = localPicWords[gid];
+  });
+  // Realtime Database silently drops empty arrays/nulls on write, so a
+  // freshly-started bracket or Pictionary round can come back missing
+  // its empty fields. Heal everything the instant remote data lands,
+  // before any render sees it.
+  normalizeSyncedState();
+  // We now match the server, so this snapshot becomes the diff baseline —
+  // otherwise the next push would re-send data we just received.
+  lastSyncedTree = syncedSnapshot();
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
+  applyingRemote = false;
+  if (appStarted && syncSignature() !== beforeSig) {
+    remoteJustApplied = true; // let renderStandings pulse rows that changed
+    const matchupChanges = detectMatchupChanges();
+    renderAll();
+    notifyMatchupChanges(matchupChanges);
+    notifyNewAnnouncements(annBefore);
+  }
+}
+
 function initSync() {
   const cfg = window.FIREBASE_CONFIG;
   if (!cfg || !cfg.apiKey || typeof firebase === 'undefined') {
@@ -1557,86 +1720,7 @@ function initSync() {
     fbRef = firebase.database().ref('campScoreboard/state');
     updateSyncIndicator(); // sync is on but unconfirmed — show "Connecting…"
     fbRef.on('value', (snap) => {
-      const remote = snap.val();
-      const firstSnapshot = !remoteReady;
-      remoteReady = true; // server truth received — pushes may flow now
-      if (!remote) { pushState(); return; } // seed an empty database
-      // Defend offline-entered work: if this is the very first snapshot and we
-      // saved something locally before it arrived, and our data is strictly
-      // newer than the server's, push local instead of adopting remote — which
-      // would otherwise wipe a result entered on dead wifi. Timestamps use the
-      // synced meta.lastDataChangeAt (touchData) so only real data edits win.
-      if (firstSnapshot && dirtySinceLoad) {
-        const localAt = state.meta && state.meta.lastDataChangeAt;
-        const remoteAt = remote.meta && remote.meta.lastDataChangeAt;
-        if (localAt && (!remoteAt || localAt > remoteAt)) {
-          pushState();
-          return;
-        }
-      }
-      // Never let a snapshot overwrite an edit in progress. Defer adopting it
-      // while EITHER:
-      //   • the editor is mid-entry — a score/name input is focused, or a data
-      //     edit is typed/queued but not yet pushed (editorMidEntry), or
-      //   • we have a local write the server hasn't confirmed yet
-      //     (pendingWrites > 0) — e.g. scores entered offline, still queued.
-      // Without this, a reconnect re-fires the server's PREVIOUS value and the
-      // merge below replaces state.drafts/results with it, reverting the scores
-      // being typed (and a later Save then persists the reverted values —
-      // teams lose points). Deferring is safe: our own write echoes back once
-      // it commits, and any genuinely newer remote change re-fires a snapshot
-      // the moment we're idle again. View-only saves (day tab, theme, notify,
-      // follow-team) don't trip editorMidEntry, so they never block updates.
-      // The first snapshot is handled by dirtySinceLoad above.
-      if (!firstSnapshot && (editorMidEntry() || pendingWrites > 0)) return;
-      applyingRemote = true;
-      // Signature of the synced slice before applying this snapshot. RTDB fires
-      // a local `value` event for our own set(), so most snapshots are pure
-      // echoes — re-rendering on those blurs the tally/bonus inputs and
-      // dismisses the iOS keyboard mid-entry. Skip renderAll when nothing
-      // actually changed (below).
-      const beforeSig = syncSignature();
-      // The snapshot is the entire synced tree, so a key missing from it
-      // means "empty" — RTDB prunes empty objects on write. Treating
-      // missing as keep-local made "New week (reset)" un-syncable: other
-      // devices kept their old results and re-pushed them later. Teams
-      // stay guarded — a snapshot without a roster is malformed.
-      if (remote.teams) state.teams = remote.teams;
-      // Announcements as they stood before this snapshot — anything the merge
-      // adds beyond these is news worth a toast (see notifyNewAnnouncements).
-      const annBefore = state.announcements || {};
-      // Pictionary prompt words are never synced (see pushState) — the incoming
-      // snapshot carries only each game's mode. Stash this device's own words so
-      // the ref's list survives adopting a remote update, then re-attach them to
-      // any setup the snapshot still has (a remotely-reset mode drops them too).
-      const localPicWords = {};
-      Object.keys(state.picSetup || {}).forEach((gid) => {
-        const s = state.picSetup[gid];
-        if (s && s.words && s.words.length) localPicWords[gid] = s.words;
-      });
-      ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta', 'clocks', 'announcements'].forEach((k) => {
-        state[k] = remote[k] !== undefined ? remote[k] : {};
-      });
-      Object.keys(localPicWords).forEach((gid) => {
-        if (state.picSetup[gid]) state.picSetup[gid].words = localPicWords[gid];
-      });
-      // Realtime Database silently drops empty arrays/nulls on write, so a
-      // freshly-started bracket or Pictionary round can come back missing
-      // its empty fields. Heal everything the instant remote data lands,
-      // before any render sees it.
-      normalizeSyncedState();
-      // We now match the server, so this snapshot becomes the diff baseline —
-      // otherwise the next push would re-send data we just received.
-      lastSyncedTree = syncedSnapshot();
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
-      applyingRemote = false;
-      if (appStarted && syncSignature() !== beforeSig) {
-        remoteJustApplied = true; // let renderStandings pulse rows that changed
-        const matchupChanges = detectMatchupChanges();
-        renderAll();
-        notifyMatchupChanges(matchupChanges);
-        notifyNewAnnouncements(annBefore);
-      }
+      handleRemoteSnapshot(snap.val());
     }, (err) => {
       // A cancelled read (e.g. security rules) is terminal — drop to local-only
       // and tell the truth in the indicator rather than claiming "Synced".
@@ -1645,6 +1729,17 @@ function initSync() {
       fbConnected = false;
       updateSyncIndicator();
     });
+    // Shared clock reference for the synced game clocks (see serverNow). Fires
+    // once shortly after connect and again whenever the estimate is refined.
+    firebase.database().ref('.info/serverTimeOffset').on('value', (s) => {
+      const off = Number(s.val());
+      if (!Number.isFinite(off)) return;
+      const changed = Math.abs(off - serverTimeOffset) > 500;
+      serverTimeOffset = off;
+      // A big correction means every visible countdown was wrong — repaint now
+      // rather than waiting for the next 500ms tick to creep it into place.
+      if (changed && appStarted) tickBoardClocks();
+    }, () => { /* rules/offline — stay on device time */ });
     // Honest connection state: RTDB's .info/connected flips as wifi comes and
     // goes, so the indicator can say "Offline — will sync when back" instead of
     // a permanent "Synced".
@@ -1677,7 +1772,9 @@ function initSync() {
     fbConfigRef.on('value', (snap) => {
       const remote = snap.val();
       if (!remote) { pushConfig(); return; } // first upgraded client seeds the catalog
-      if (editorMidEntry()) { pendingRemoteConfig = remote; return; } // applied on focusout
+      // Held back mid-entry — applied by the builder's focusout flush, or by the
+      // idle retry tick if focus never returns to the builder.
+      if (editorMidEntry()) { pendingRemoteConfig = remote; armIdleRetry(); return; }
       pendingRemoteConfig = null;
       applyRemoteConfig(remote);
     }, (err) => {
@@ -4952,7 +5049,9 @@ function setLiveMatch(g, l) {
 
 function clockRemaining(clock) {
   if (!clock) return 0;
-  if (clock.running) return Math.max(0, (Number(clock.endAt) || 0) - Date.now());
+  // serverNow(), not Date.now() — endAt was written against the server's clock
+  // by whichever device started the timer (see the serverNow comment).
+  if (clock.running) return Math.max(0, (Number(clock.endAt) || 0) - serverNow());
   return Math.max(0, Number(clock.remaining) || 0);
 }
 
@@ -4999,7 +5098,7 @@ function applyClockAction(g, act, secs) {
   setClock(g, (c) => {
     if (act === 'start') {
       if (clockRemaining(c) === 0) c.remaining = c.duration; // restart from full
-      c.endAt = Date.now() + clockRemaining(c);
+      c.endAt = serverNow() + clockRemaining(c); // absolute, on the shared clock
       c.running = true;
     } else if (act === 'pause') {
       c.remaining = clockRemaining(c);
@@ -6180,9 +6279,13 @@ function editorMidEntry() {
 
 // Send any debounced push right now (e.g. when a score field loses focus, or
 // the page is being hidden) so an entered value reaches the server promptly
-// instead of waiting out the coalescing timer.
+// instead of waiting out the coalescing timer. Covers the week-config push too:
+// iOS suspends setTimeout the moment the phone locks, so a game edited in the
+// builder right before locking would otherwise strand its 400ms push and never
+// reach the other devices.
 function flushPendingPush() {
   if (pushTimer) { clearTimeout(pushTimer); pushTimer = null; pushState(); }
+  if (pushConfigTimer) { clearTimeout(pushConfigTimer); pushConfigTimer = null; pushConfig(); }
 }
 
 // The app.js build number this page loaded with, read off its own <script> tag.
