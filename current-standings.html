@@ -321,7 +321,7 @@
     // silently never took effect until someone thought to hit refresh (this
     // bit the double-points fix on 2026-07-23). Bump this stamp on every
     // edit to this file; see checkForUpdate/startUpdatePolling below.
-    var TV_BUILD = '2026-07-25T00:14:32Z';
+    var TV_BUILD = '2026-07-25T00:22:06Z';
 
     // ── Constants mirrored from app.js (keep in sync) ──────────────
     var STORAGE_KEY = 'campScoreboardV2';
@@ -851,6 +851,14 @@
 
     function advance() {
       if (phase === 'intro') { beginReveal(); return; }
+      if (phase === 'done') {
+        // Friday lands here with only the champion celebration showing —
+        // one more advance reveals the full standings table behind it.
+        // Harmless no-op if the table is already showing (non-Friday, or a
+        // second tap after Friday's transition).
+        showFinalStandingsTable();
+        return;
+      }
       if (phase !== 'reveal') return;
       if (bigIndex >= 0) {
         var wasLast = bigIndex === order.length - 1;
@@ -900,22 +908,35 @@
       boardEl.classList.remove('dropped');
       var champGroup = order[order.length - 1]; // first place
       if (isFridayEastern() && champGroup) {
-        // Friday: go all out — a full-screen champion celebration (the table
-        // was already walked through on the way up), no table behind it.
+        // Friday: go all out — a full-screen champion celebration first (the
+        // table was already walked through on the way up). The full final
+        // standings table still follows on the next advance (tap / → /
+        // Enter) — showFinalStandingsTable(), same table the quiet branch
+        // below shows immediately.
         heroWrap.innerHTML = '';
         heroWrap.style.display = 'none';
         boardEl.style.display = 'none';
         boardEl.classList.remove('final');
         runFinale(champGroup);
-        showHint('🎉 Champions! Press ← to review the standings', true);
+        showHint('🎉 Champions! Press → for the full standings  ·  ← to review');
       } else {
-        // Quiet end: center the full standings table on screen.
-        heroWrap.innerHTML = '';
-        heroWrap.style.display = 'none';
-        boardEl.style.display = '';
-        boardEl.classList.add('final');
-        showHint('Final standings  ·  Press ← to review');
+        // Quiet end: center the full standings table on screen right away.
+        showFinalStandingsTable();
       }
+    }
+
+    // The centered full-standings screen — shown immediately on a non-Friday
+    // finish(), and reachable on Friday via advance() after the champion
+    // celebration has had its moment. Idempotent: safe to call again (e.g. a
+    // stray extra tap) with no visible change.
+    function showFinalStandingsTable() {
+      if (finaleIv) { clearInterval(finaleIv); finaleIv = null; }
+      finaleEl.classList.remove('show');
+      heroWrap.innerHTML = '';
+      heroWrap.style.display = 'none';
+      boardEl.style.display = '';
+      boardEl.classList.add('final');
+      showHint('Final standings  ·  Press ← to review');
     }
 
     var finaleIv = null;
