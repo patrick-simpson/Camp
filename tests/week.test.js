@@ -168,46 +168,30 @@ test('every memory verse day is a real camp day', () => {
   });
 });
 
-// ── Cleanup call (send-off morning) ──────────────────────────────
+// ── Notice board (the big top-of-page card) ──────────────────────
 
-test('the cleanup call covers every team exactly once', () => {
-  const ids = makeFreshState().teams.map((t) => t.id);
-  const assigned = CLEANUP_CALL.zones.map((z) => z.teamId);
-  assigned.forEach((id) => assert.ok(ids.includes(id), `cleanup zone names unknown team "${id}"`));
-  assert.equal(new Set(assigned).size, assigned.length, 'a team is listed twice');
-  ids.forEach((id) => assert.ok(assigned.includes(id), `no cleanup area for team "${id}" — somebody has nowhere to go`));
-  CLEANUP_CALL.zones.forEach((z) => assert.ok(z.place, `team ${z.teamId} has no place`));
-});
-
-test('the cleanup call shows only in its own window', () => {
-  assert.ok(cleanupCallActive(6, hm(7, 48)), 'Saturday morning: showing');
-  assert.ok(cleanupCallActive(6, hm(9, 29)), 'still showing right up to send-off');
-  assert.ok(cleanupCallActive(6, hm(10, 30)),
-    'and after it — the last stage is counselors\' work once the campers have left');
-  assert.notOk(cleanupCallActive(6, hm(12, 0)), 'gone by midday');
-  assert.notOk(cleanupCallActive(6, hm(14, 0)), 'gone for the rest of Saturday');
-  [0, 1, 2, 3, 4, 5].forEach((dow) => {
-    assert.notOk(cleanupCallActive(dow, hm(8, 0)), `must not show on dow ${dow}`);
-  });
-});
-
-test('the cleanup call spells out the running order, not just the zones', () => {
+test('a database that has never had a notice gets the example as a DRAFT', () => {
   freshState();
-  const html = cleanupCallHtml(6, hm(7, 48));
-  assert.ok(CLEANUP_CALL.steps.length, 'there should be steps to show');
-  CLEANUP_CALL.steps.forEach((s) => {
-    assert.ok(s.when && s.items.length, `step "${s.when}" is empty`);
-    assert.ok(html.includes(esc(s.when)), `step "${s.when}" is missing from the card`);
-    s.items.forEach((i) => assert.ok(html.includes(esc(i)), `"${i}" is missing from the card`));
-  });
-  assert.ok(html.includes(esc(CLEANUP_CALL.signoff)), 'the sign-off line is missing');
+  delete state.notice;
+  normalizeSyncedState();
+  assert.equal(state.notice.status, 'draft', 'seeding must never post a card by itself');
+  assert.equal(noticeCardHtml(false), null, 'and nothing renders');
+  assert.ok(state.notice.zones.length && state.notice.steps.length, 'the example has content to edit');
 });
 
-test('the cleanup order sends campers to their area before the cabins', () => {
+test('the seeded example covers every team exactly once', () => {
+  const ids = makeFreshState().teams.map((t) => t.id);
+  const assigned = defaultNotice().zones.map((z) => z.teamId);
+  assigned.forEach((id) => assert.ok(ids.includes(id), `zone names unknown team "${id}"`));
+  assert.equal(new Set(assigned).size, assigned.length, 'a team is listed twice');
+  ids.forEach((id) => assert.ok(assigned.includes(id), `no area for team "${id}" — somebody has nowhere to go`));
+  defaultNotice().zones.forEach((z) => assert.ok(z.place, `team ${z.teamId} has no place`));
+});
+
+test('the example sends campers to their area before the cabins', () => {
   // Campers are NOT to go up to the cabins after breakfast — they go straight
-  // to their team's area, and only head up once the Tabernacle is set. Getting
-  // this order backwards on the card sends everyone to the wrong place.
-  const order = CLEANUP_CALL.steps.map((s) => s.when.toLowerCase());
+  // to their team's area, and only head up once the Tabernacle is set.
+  const order = defaultNotice().steps.map((s) => s.when.toLowerCase());
   const area = order.findIndex((w) => w.includes('after breakfast'));
   const cabins = order.findIndex((w) => w.startsWith('cabins'));
   const gone = order.findIndex((w) => w.includes('campers have gone'));
@@ -216,46 +200,124 @@ test('the cleanup order sends campers to their area before the cabins', () => {
   assert.ok(cabins < gone, 'the cabins are packed before the after-departure jobs');
 });
 
-test('the cleanup call renders every assignment, and nothing outside the window', () => {
+// Posting is editor-only (see setNoticeStatus), so these run as an editor.
+localStorage.setItem('campScoreboardRole', 'edit');
+
+test('a draft renders nowhere, a posted notice renders everything', () => {
   freshState();
-  const html = cleanupCallHtml(6, hm(7, 48));
-  assert.ok(html, 'expected markup on Saturday morning');
-  CLEANUP_CALL.zones.forEach((z) => {
-    assert.ok(html.includes(esc(z.place)), `${z.place} is missing from the card`);
-    assert.ok(html.includes(esc(teamName(z.teamId))), `${teamName(z.teamId)} is missing from the card`);
+  const n = noticeBoard();
+  assert.equal(n.status, 'draft');
+  assert.equal(noticeCardHtml(false), null, 'draft: invisible');
+  assert.ok(noticeCardHtml(true), 'but the builder can still preview it');
+
+  setNoticeStatus('posted');
+  const html = noticeCardHtml(false);
+  assert.ok(html, 'posted: visible');
+  assert.ok(html.includes(esc(n.title)));
+  assert.ok(html.includes(esc(n.signoff)));
+  n.zones.forEach((z) => assert.ok(html.includes(esc(z.place)), `${z.place} missing`));
+  n.steps.forEach((st) => {
+    assert.ok(html.includes(esc(st.when)), `step "${st.when}" missing`);
+    st.items.forEach((i) => assert.ok(html.includes(esc(i)), `"${i}" missing`));
   });
-  assert.equal(cleanupCallHtml(3, hm(8, 0)), null, 'no markup midweek');
 });
 
-test('the cleanup call calls out the team you follow', () => {
+test('an empty posted notice stays hidden rather than showing a bare box', () => {
   freshState();
-  state.followTeam = CLEANUP_CALL.zones[0].teamId;
-  assert.ok(cleanupCallHtml(6, hm(7, 48)).includes('cleanup-yours'), 'your own line is spelled out');
-  assert.ok(cleanupCallHtml(6, hm(7, 48)).includes('cleanup-row-you'), 'and your row is marked');
+  state.notice = { status: 'posted', eyebrow: '', title: '', sub: '', signoff: '', zones: [], steps: [] };
+  assert.equal(noticeCardHtml(false), null);
+});
+
+test('only editors can post or take down a notice', () => {
+  freshState();
+  localStorage.setItem('campScoreboardRole', 'view');
+  setNoticeStatus('posted');
+  assert.equal(noticeBoard().status, 'draft', 'a viewer must not be able to post to every phone');
+  localStorage.setItem('campScoreboardRole', 'edit');
+  setNoticeStatus('posted');
+  assert.equal(noticeBoard().status, 'posted');
+  setNoticeStatus('nonsense');
+  assert.equal(noticeBoard().status, 'posted', 'an unknown status is ignored');
+});
+
+test('a posted notice calls out the team you follow', () => {
+  freshState();
+  setNoticeStatus('posted');
+  state.followTeam = noticeBoard().zones[0].teamId;
+  assert.ok(noticeCardHtml(false).includes('notice-yours'), 'your own line is spelled out');
+  assert.ok(noticeCardHtml(false).includes('notice-row-you'), 'and your row is marked');
 
   state.followTeam = null;
-  const neutral = cleanupCallHtml(6, hm(7, 48));
-  assert.notOk(neutral.includes('cleanup-yours'), 'nothing personal for a neutral viewer');
-  assert.notOk(neutral.includes('cleanup-row-you'));
+  const neutral = noticeCardHtml(false);
+  assert.notOk(neutral.includes('notice-yours'), 'nothing personal for a neutral viewer');
+  assert.notOk(neutral.includes('notice-row-you'));
 });
 
-test('the cleanup call survives a roster that no longer matches', () => {
+test('a notice survives a roster that no longer matches', () => {
   freshState();
-  state.teams = [{ id: CLEANUP_CALL.zones[0].teamId, name: 'Only Team Left' }];
-  const html = cleanupCallHtml(6, hm(7, 48));
+  setNoticeStatus('posted');
+  state.teams = [{ id: noticeBoard().zones[0].teamId, name: 'Only Team Left' }];
+  const html = noticeCardHtml(false);
   assert.ok(html.includes('Only Team Left'), 'the team that still exists is listed');
-  assert.equal((html.match(/cleanup-row/g) || []).length, 1, 'deleted teams are skipped, not rendered blank');
-
-  state.teams = [];
-  assert.equal(cleanupCallHtml(6, hm(7, 48)), null, 'no roster at all → no card');
+  assert.equal((html.match(/notice-row/g) || []).length, 1, 'deleted teams are skipped, not rendered blank');
 });
 
-test('a renamed team is named correctly on the cleanup card', () => {
+test('a team with no place set is left off the list', () => {
   freshState();
-  const zone = CLEANUP_CALL.zones[0];
-  state.teams.find((t) => t.id === zone.teamId).name = 'The <Renamed> Crew';
-  const html = cleanupCallHtml(6, hm(7, 48));
+  setNoticeStatus('posted');
+  const n = noticeBoard();
+  n.zones.forEach((z, i) => { if (i > 0) z.place = ''; });
+  assert.equal((noticeCardHtml(false).match(/notice-row/g) || []).length, 1);
+});
+
+test('a renamed team is named correctly, and everything is escaped', () => {
+  freshState();
+  setNoticeStatus('posted');
+  const n = noticeBoard();
+  state.teams.find((t) => t.id === n.zones[0].teamId).name = 'The <Renamed> Crew';
+  n.title = '<script>alert(1)</script>';
+  const html = noticeCardHtml(false);
   assert.ok(html.includes('The &lt;Renamed&gt; Crew'), 'live name, HTML-escaped');
+  assert.notOk(html.includes('<script>'), 'nothing an editor types can inject markup');
+});
+
+test('normalizeNotice heals every shape a sync round-trip can produce', () => {
+  freshState();
+  // RTDB prunes the empty strings and arrays right out of the object.
+  state.notice = { status: 'posted' };
+  normalizeSyncedState();
+  const n = state.notice;
+  assert.deepEqual(n.zones, []);
+  assert.deepEqual(n.steps, []);
+  ['eyebrow', 'title', 'sub', 'signoff'].forEach((k) => assert.equal(n[k], ''));
+  assert.doesNotThrow(() => noticeCardHtml(true), 'and it still renders');
+
+  // Junk / half-shaped rows are dropped or coerced rather than trusted.
+  state.notice = {
+    status: 'posted',
+    zones: [null, { teamId: 't0' }, 'nope'],
+    steps: [{ when: 'Do things' }, null],
+  };
+  normalizeSyncedState();
+  assert.equal(state.notice.zones.length, 1);
+  assert.equal(state.notice.zones[0].place, '');
+  assert.equal(state.notice.steps.length, 1);
+  assert.deepEqual(state.notice.steps[0].items, []);
+
+  state.notice = { status: 'wat' };
+  normalizeSyncedState();
+  assert.equal(state.notice.status, 'draft', 'an unknown status falls back to invisible');
+});
+
+test('the notice travels with the rest of synced state', () => {
+  freshState();
+  assert.ok(SYNC_KEYS.includes('notice'), 'it has to reach the other phones');
+  assert.ok(SYNC_SINGLETONS.includes('notice'), 'and is written whole, not per-child');
+  const up = computeSyncUpdates(
+    { notice: { status: 'draft' } },
+    { notice: { status: 'posted' } },
+  );
+  assert.deepEqual(Object.keys(up), ['notice']);
 });
 
 // ── Announcements expire on their own ────────────────────────────

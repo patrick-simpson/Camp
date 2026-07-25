@@ -4,7 +4,8 @@
 // saveConfig(), saveState(), renderAll(), canEdit(), esc(), gameById(),
 // dayById(), teamName(), medalCounts(), copyTextToClipboard(),
 // downloadBlob(), FORMAT_BADGES, defaultConfig(), migrateState(),
-// normalizeSyncedState().
+// normalizeSyncedState(), noticeBoard(), noticeCardHtml(), defaultNotice(),
+// teamEmoji(), teamName().
 //
 // The game editor stages every edit in a local draft (gameDraft) and
 // only writes to state.config on Save — nothing else in the app can
@@ -14,6 +15,7 @@ const SETTINGS_TABS = [
   { key: 'games', label: 'Games' },
   { key: 'days', label: 'Days' },
   { key: 'teams', label: 'Teams' },
+  { key: 'notice', label: 'Notice' },
   { key: 'data', label: 'Data' },
 ];
 
@@ -38,6 +40,7 @@ function renderSettingsSection(key, card) {
   if (key === 'games' && state.ui.editGameId) renderGameEditor(card);
   else if (key === 'days') renderDaysTab(card);
   else if (key === 'teams') renderTeamsTab(card);
+  else if (key === 'notice') renderNoticeTab(card);
   else if (key === 'data') renderDataTab(card);
   else renderGamesTab(card);
 }
@@ -1114,6 +1117,272 @@ function removeTeamEverywhere(teamId) {
     }
   });
   if (state.picRounds) delete state.picRounds[teamId];
+}
+
+// ── Notice tab ────────────────────────────────────────────────────
+// Composes the big top-of-page notice board (state.notice — see the notice
+// board block in app.js). Form hooks are prefixed `nb-` so they can never
+// collide with the card's own `notice-` classes: the live preview below
+// renders the real card, so both sets of markup sit inside this one tab. Everything here edits the live synced object; the
+// only thing that decides whether anyone else sees it is Draft vs Posted.
+//
+// Field commits deliberately do NOT renderAll — `change` fires on blur,
+// usually because the user tapped the NEXT field, and re-rendering would
+// destroy that field mid-tap (same reasoning as the Days tab). The preview
+// is refreshed on its own instead.
+
+function renderNoticeTab(card) {
+  const n = noticeBoard();
+  const posted = n.status === 'posted';
+  const unassigned = (state.teams || []).filter((t) => !n.zones.some((z) => z.teamId === t.id));
+
+  card.innerHTML = `
+    <div class="notice-status-row ${posted ? 'is-posted' : 'is-draft'}">
+      <div>
+        <div class="notice-status-label">${posted ? '🟢 Posted to every phone' : '📝 Draft — nobody can see it'}</div>
+        <p class="muted notice-status-hint">${posted
+          ? 'This card is at the top of the page on every device. Put it back to draft to take it down.'
+          : 'Edit as long as you like. Nothing shows until you post it.'}</p>
+      </div>
+      <jelly-button class="secondary-btn" variant="${posted ? 'platinum' : 'primary'}" id="notice-post-btn">
+        ${posted ? 'Take it down' : 'Post it'}
+      </jelly-button>
+    </div>
+
+    <div class="data-block">
+      <h3>Wording</h3>
+      <div class="form-field">
+        <label class="form-label">Small label (top line)</label>
+        <jelly-input class="form-input nb-field" data-nb-field="eyebrow" type="text" value="${esc(n.eyebrow)}" placeholder="🧹 Campground cleanup · 8:30–9:30am"></jelly-input>
+      </div>
+      <div class="form-field">
+        <label class="form-label">Heading</label>
+        <jelly-input class="form-input nb-field" data-nb-field="title" type="text" value="${esc(n.title)}" placeholder="Where your team cleans"></jelly-input>
+      </div>
+      <div class="form-field">
+        <label class="form-label">Intro line</label>
+        <jelly-textarea class="form-textarea nb-field" data-nb-field="sub" rows="2" placeholder="One or two sentences under the heading." value="${esc(n.sub)}"></jelly-textarea>
+      </div>
+      <div class="form-field">
+        <label class="form-label">Closing line</label>
+        <jelly-input class="form-input nb-field" data-nb-field="signoff" type="text" value="${esc(n.signoff)}" placeholder="Let's leave these grounds better than we found them!"></jelly-input>
+      </div>
+    </div>
+
+    <div class="data-block">
+      <h3>Team assignments (${n.zones.length})</h3>
+      <p class="muted">Optional. Anyone following a team sees their own line called out at the top of the card.</p>
+      ${n.zones.length
+        ? n.zones.map((z, i) => noticeZoneRowHTML(z, i, n.zones.length)).join('')
+        : '<p class="muted">No teams listed — the card just shows the wording and steps below.</p>'}
+      ${unassigned.length ? `
+        <div class="form-field">
+          <label class="form-label">Add a team</label>
+          <jelly-select class="form-input" id="notice-add-zone" label="Add a team" placeholder="— pick a team —" value="">
+            <jelly-option value="">— pick a team —</jelly-option>
+            ${unassigned.map((t) => `<jelly-option value="${esc(t.id)}">${esc(t.name)}</jelly-option>`).join('')}
+          </jelly-select>
+        </div>` : ''}
+    </div>
+
+    <div class="data-block">
+      <h3>Steps (${n.steps.length})</h3>
+      <p class="muted">Each step is a heading and a bulleted list — one bullet per line.</p>
+      ${n.steps.map((st, i) => noticeStepRowHTML(st, i, n.steps.length)).join('')}
+      <jelly-button class="secondary-btn" variant="platinum" id="notice-add-step">+ Add step</jelly-button>
+    </div>
+
+    <div class="data-block">
+      <h3>Preview</h3>
+      <p class="muted">Exactly how it looks at the top of the page${posted ? '' : ' once posted'}.</p>
+      <div class="notice-preview" id="notice-preview">${noticeCardHtml(true)}</div>
+    </div>
+
+    <div class="danger-zone">
+      <h3>Start over</h3>
+      <button type="button" class="link-btn danger-link" id="notice-reset-btn">Reset to the cleanup example</button>
+      <button type="button" class="link-btn danger-link" id="notice-clear-btn">Clear it out</button>
+    </div>
+  `;
+  wireNoticeTab(card);
+}
+
+function noticeZoneRowHTML(z, i, total) {
+  const name = state.teams.some((t) => t.id === z.teamId)
+    ? `${teamEmoji(z.teamId)} ${esc(teamName(z.teamId))}`
+    : `<span class="muted">Unknown team (${esc(z.teamId)})</span>`;
+  return `
+    <div class="rules-section-editor">
+      <div class="builder-row">
+        <jelly-icon-button class="nb-zone-move" label="Move up" data-idx="${i}" data-dir="-1" ${i === 0 ? 'disabled' : ''}>↑</jelly-icon-button>
+        <jelly-icon-button class="nb-zone-move" label="Move down" data-idx="${i}" data-dir="1" ${i === total - 1 ? 'disabled' : ''}>↓</jelly-icon-button>
+        <span class="day-index-label">${name}</span>
+      </div>
+      <div class="form-row">
+        <div class="form-field">
+          <label class="form-label">Where they go</label>
+          <jelly-input class="form-input nb-zone-place" data-idx="${i}" type="text" value="${esc(z.place)}" placeholder="Chapel Lawn"></jelly-input>
+        </div>
+        <div class="form-field">
+          <label class="form-label">Small print</label>
+          <jelly-input class="form-input nb-zone-note" data-idx="${i}" type="text" value="${esc(z.note)}" placeholder="optional"></jelly-input>
+        </div>
+      </div>
+      <button type="button" class="link-btn danger-link nb-zone-remove" data-idx="${i}">Remove</button>
+    </div>
+  `;
+}
+
+function noticeStepRowHTML(st, i, total) {
+  return `
+    <div class="rules-section-editor">
+      <div class="builder-row">
+        <jelly-icon-button class="nb-step-move" label="Move up" data-idx="${i}" data-dir="-1" ${i === 0 ? 'disabled' : ''}>↑</jelly-icon-button>
+        <jelly-icon-button class="nb-step-move" label="Move down" data-idx="${i}" data-dir="1" ${i === total - 1 ? 'disabled' : ''}>↓</jelly-icon-button>
+        <span class="day-index-label">Step ${i + 1}</span>
+      </div>
+      <div class="form-row">
+        <div class="form-field notice-emoji-field">
+          <label class="form-label">Emoji</label>
+          <jelly-input class="form-input nb-step-emoji" data-idx="${i}" type="text" value="${esc(st.emoji)}" placeholder="🧹"></jelly-input>
+        </div>
+        <div class="form-field">
+          <label class="form-label">Heading</label>
+          <jelly-input class="form-input nb-step-when" data-idx="${i}" type="text" value="${esc(st.when)}" placeholder="Straight after breakfast"></jelly-input>
+        </div>
+      </div>
+      <div class="form-field">
+        <label class="form-label">Bullets (one per line)</label>
+        <jelly-textarea class="form-textarea nb-step-items" data-idx="${i}" rows="3" placeholder="One instruction per line." value="${esc(st.items.join('\n'))}"></jelly-textarea>
+      </div>
+      <button type="button" class="link-btn danger-link nb-step-remove" data-idx="${i}">Remove step</button>
+    </div>
+  `;
+}
+
+// Save + refresh the preview, without re-rendering the form under the user's
+// finger. `full` re-renders the whole tab (needed when rows are added/removed
+// or reordered, since their indexes change).
+function noticeCommit(full) {
+  saveState();
+  if (full) {
+    renderAll();
+    return;
+  }
+  const prev = document.getElementById('notice-preview');
+  if (prev) prev.innerHTML = noticeCardHtml(true);
+  // Keep the posted card on the scoreboard page in step as it's edited.
+  if (typeof renderNoticeBoard === 'function') renderNoticeBoard();
+}
+
+function wireNoticeTab(card) {
+  const n = noticeBoard();
+
+  card.querySelectorAll('.nb-field').forEach((el) => {
+    el.addEventListener('change', () => {
+      const field = el.dataset.nbField;
+      if (!['eyebrow', 'title', 'sub', 'signoff'].includes(field)) return;
+      n[field] = el.value;
+      noticeCommit(false);
+    });
+  });
+
+  card.querySelectorAll('.nb-zone-place').forEach((el) => {
+    el.addEventListener('change', () => {
+      const z = n.zones[+el.dataset.idx];
+      if (z) { z.place = el.value.trim(); noticeCommit(false); }
+    });
+  });
+  card.querySelectorAll('.nb-zone-note').forEach((el) => {
+    el.addEventListener('change', () => {
+      const z = n.zones[+el.dataset.idx];
+      if (z) { z.note = el.value.trim(); noticeCommit(false); }
+    });
+  });
+  card.querySelectorAll('.nb-zone-move').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      moveItem(n.zones, +btn.dataset.idx, parseInt(btn.dataset.dir, 10));
+      noticeCommit(true);
+    });
+  });
+  card.querySelectorAll('.nb-zone-remove').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      n.zones.splice(+btn.dataset.idx, 1);
+      noticeCommit(true);
+    });
+  });
+  const addZone = document.getElementById('notice-add-zone');
+  if (addZone) {
+    addZone.addEventListener('change', () => {
+      if (!addZone.value) return;
+      n.zones.push({ teamId: addZone.value, place: '', note: '' });
+      noticeCommit(true);
+    });
+  }
+
+  card.querySelectorAll('.nb-step-emoji').forEach((el) => {
+    el.addEventListener('change', () => {
+      const st = n.steps[+el.dataset.idx];
+      if (st) { st.emoji = el.value.trim(); noticeCommit(false); }
+    });
+  });
+  card.querySelectorAll('.nb-step-when').forEach((el) => {
+    el.addEventListener('change', () => {
+      const st = n.steps[+el.dataset.idx];
+      if (st) { st.when = el.value.trim(); noticeCommit(false); }
+    });
+  });
+  card.querySelectorAll('.nb-step-items').forEach((el) => {
+    el.addEventListener('change', () => {
+      const st = n.steps[+el.dataset.idx];
+      if (st) { st.items = splitLines(el.value); noticeCommit(false); }
+    });
+  });
+  card.querySelectorAll('.nb-step-move').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      moveItem(n.steps, +btn.dataset.idx, parseInt(btn.dataset.dir, 10));
+      noticeCommit(true);
+    });
+  });
+  card.querySelectorAll('.nb-step-remove').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      n.steps.splice(+btn.dataset.idx, 1);
+      noticeCommit(true);
+    });
+  });
+  const addStep = document.getElementById('notice-add-step');
+  if (addStep) {
+    addStep.addEventListener('click', () => {
+      n.steps.push({ emoji: '', when: '', items: [] });
+      noticeCommit(true);
+    });
+  }
+
+  const postBtn = document.getElementById('notice-post-btn');
+  if (postBtn) {
+    postBtn.addEventListener('click', () => {
+      const posting = n.status !== 'posted';
+      if (posting && !confirm('Post this to every phone right now?')) return;
+      setNoticeStatus(posting ? 'posted' : 'draft');
+    });
+  }
+
+  const resetBtn = document.getElementById('notice-reset-btn');
+  if (resetBtn) {
+    resetBtn.addEventListener('click', () => {
+      if (!confirm('Replace this notice with the send-off cleanup example? It goes back to draft.')) return;
+      state.notice = defaultNotice();
+      noticeCommit(true);
+    });
+  }
+  const clearBtn = document.getElementById('notice-clear-btn');
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      if (!confirm('Clear the whole notice and start from an empty one? It goes back to draft.')) return;
+      state.notice = { status: 'draft', eyebrow: '', title: '', sub: '', signoff: '', zones: [], steps: [] };
+      noticeCommit(true);
+    });
+  }
 }
 
 // ── Data tab ──────────────────────────────────────────────────────

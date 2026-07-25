@@ -156,7 +156,9 @@ What's covered, and why each file exists:
 - `week.test.js` — structural checks on the hand-edited data: `DAY_SCHEDULE`
   block ordering/durations, `nowBannerHtml` fuzzed over every minute of every
   day, `defaultConfig()` integrity (unique game ids, real dayIds/sessions/
-  formats), the meal-cleanup rota's team ids, announcement expiry, `.ics` export.
+  formats), the meal-cleanup rota's team ids, announcement expiry, `.ics`
+  export, and the notice board (draft stays invisible, posting is editor-only,
+  every shape RTDB can prune is healed).
 - `backup.test.js` — restore-from-backup, including that an imported tree gets
   normalized and orphan-pruned before it can render or sync.
 
@@ -263,6 +265,45 @@ change actually reached devices mid-week.
 Both timestamps render in camp time (`America/New_York`, formatted via
 `formatEasternStamp`), matching the "Happening Now" schedule banner's
 convention — never device-local time.
+
+## The notice board (one big, unmissable message)
+
+`state.notice` — synced (in `SYNC_KEYS`, and a `SYNC_SINGLETON`: it's one
+composed card, always written whole). Renders into `#notice-board`, the FIRST
+section on the page, deliberately larger and louder than an announcement.
+
+Built for send-off-morning cleanup, where six separate announcements filled a
+whole phone screen and buried the one line each camper needed. Reach for it
+when a single message has structure (per-team assignments, a running order)
+and everyone must see it; reach for an announcement when it's one line that
+should expire on its own.
+
+- **Composed in the week builder**, Settings → Set up the week → **Notice**
+  (`renderNoticeTab` in settings.js), not typed into a single box: heading,
+  intro, per-team assignments, numbered steps with bullets, closing line —
+  plus a live preview that renders the real card.
+- **Draft or posted, no timer.** `status: 'draft'` means nobody but the editor
+  sees it (keep editing indefinitely); `'posted'` puts it on every device until
+  someone puts it back to draft. `setNoticeStatus()` is the only way to flip
+  it and is editor-gated. There is no auto-expiry by design — the previous
+  hardcoded version timed out on a clock, which is wrong for something you
+  want up "until the job's done".
+- An **empty** posted notice stays hidden rather than rendering a bare box.
+- **Anyone following a team** gets their own assignment called out in a strip
+  above the list, with their row marked.
+- `defaultNotice()` is the seeded example (the Saturday cleanup plan). A
+  database that has never had a notice gets it as a **draft** — seeding must
+  never post a card by itself.
+- `normalizeNotice()` heals what RTDB prunes (empty strings, empty `zones` /
+  `steps`, junk rows) and is called from `normalizeSyncedState()`, so it runs
+  after every remote merge. Same rule as everything else synced — see the RTDB
+  gotcha above.
+- Builder form hooks are prefixed **`nb-`** so they can't collide with the
+  card's own `notice-` classes: the preview renders the real card, so both
+  sets of markup live in the same tab. (They did collide once — card list CSS
+  landed on the form's textareas.)
+- Editor-typed text is escaped on render; nothing typed into the builder can
+  inject markup.
 
 ## Hiding home panels from viewers
 

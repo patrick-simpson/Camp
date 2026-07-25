@@ -15,9 +15,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-25T12:15:23Z';
+const CODE_UPDATED_AT = '2026-07-25T14:23:28Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 162;
+const APP_VERSION = 163;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -668,133 +668,171 @@ function mealCleanupNote(dow, label) {
   return ` <span class="meal-cleanup-note">🧽 ${who}</span>`;
 }
 
-// ── Cleanup call (big, top-of-page, time-boxed) ──────────────────
-// Send-off morning: every team has one area to clean between breakfast and
-// the 9:30 Tabernacle send-off (see DAY_SCHEDULE[6]). This is the one notice
-// of the week that has to be impossible to miss, so it renders as a large
-// card ABOVE everything else rather than as six separate announcements —
-// which pushed the rest of the page off a phone screen and buried the very
-// line each camper needed.
+// ── Notice board (big, top-of-page, editor-composed) ─────────────
+// One large card pinned above every other section, for the message that has
+// to be impossible to miss. Built for send-off-morning cleanup: six separate
+// announcements filled the whole phone screen and buried the one line each
+// camper actually needed.
 //
-// It shows only inside its own window (`dow` + `until`) and then disappears
-// on its own — no dismiss button, no synced flag, nothing to clean up after.
-// It runs past send-off on purpose: the last stage is counselors' work after
-// the campers have left, and it's no use if it vanishes at 9:30.
+// Unlike an announcement, it isn't typed in a single box and it doesn't
+// expire on a timer. It's composed in the week builder (Settings → Set up
+// the week → Notice) and lives in synced state, so every device shows the
+// same thing, and it is either a DRAFT (nobody sees it; keep editing as long
+// as you like) or POSTED (on every device until you put it back to draft).
 //
-// To change the assignments, edit `zones`: `teamId` is the stable slot
-// (t0..t5, see TEAM_EMOJI), `place` is where they go, and the optional `note`
-// is the small print under it. Order is the order it's read out. `steps` is
-// the running order everything else follows.
-const CLEANUP_CALL = {
-  dow: 6,            // Saturday, send-off morning
-  until: hm(12, 0),  // stays up through the after-departure jobs, then goes
-  window: '8:30–9:30am',
-  zones: [
-    { teamId: 't3', place: 'Chapel Lawn' },
-    { teamId: 't1', place: 'Waterfront' },
-    { teamId: 't0', place: 'Linger a While' },
-    { teamId: 't5', place: 'Snack Shack' },
-    { teamId: 't2', place: 'Dining Hall', note: 'breakfast cleanup' },
-    { teamId: 't4', place: 'Tabernacle' },
-  ],
-  steps: [
-    {
-      when: 'Straight after breakfast',
-      emoji: '🚶',
-      items: [
-        'Campers go straight to their team\'s area above — nobody goes up to the cabins yet.',
-      ],
-    },
-    {
-      when: 'In your area',
-      emoji: '🗑️',
-      items: [
+// Shape — state.notice, synced (see SYNC_KEYS):
+//   { status: 'draft' | 'posted',
+//     eyebrow, title, sub, signoff,          // all optional strings
+//     zones: [{ teamId, place, note }],      // per-team assignments, in order
+//     steps: [{ emoji, when, items: [] }] }  // the running order
+const NOTICE_STATUSES = ['draft', 'posted'];
+
+// The starting content: the Saturday send-off cleanup plan this was built
+// for, seeded as a DRAFT. Kept as a worked example rather than a blank form —
+// editing one is far easier than composing from nothing, and it's the exact
+// thing most likely to be needed again next year.
+function defaultNotice() {
+  return {
+    status: 'draft',
+    eyebrow: '🧹 Campground cleanup · 8:30–9:30am',
+    title: 'Where your team cleans',
+    sub: "Straight from breakfast to your team's area — no going up to the cabins yet. "
+       + 'Finish by 9:30, then meet in the Tabernacle for send-off.',
+    zones: [
+      { teamId: 't3', place: 'Chapel Lawn', note: '' },
+      { teamId: 't1', place: 'Waterfront', note: '' },
+      { teamId: 't0', place: 'Linger a While', note: '' },
+      { teamId: 't5', place: 'Snack Shack', note: '' },
+      { teamId: 't2', place: 'Dining Hall', note: 'breakfast cleanup' },
+      { teamId: 't4', place: 'Tabernacle', note: '' },
+    ],
+    steps: [
+      { emoji: '🚶', when: 'Straight after breakfast', items: [
+        "Campers go straight to their team's area above — nobody goes up to the cabins yet.",
+      ] },
+      { emoji: '🗑️', when: 'In your area', items: [
         'All the trash goes — empty the cans and put a fresh bag in.',
         'Put away the games and anything else we used this week.',
         'Lost and found goes to the tables at the Snack Shack.',
-      ],
-    },
-    {
-      when: 'When your area is done',
-      emoji: '⛪',
-      items: [
+      ] },
+      { emoji: '⛪', when: 'When your area is done', items: [
         'Head to the Tabernacle and help finish up there.',
-      ],
-    },
-    {
-      when: 'Cabins — once the Tabernacle is set',
-      emoji: '🛏️',
-      items: [
+      ] },
+      { emoji: '🛏️', when: 'Cabins — once the Tabernacle is set', items: [
         'Now campers can go up to pack.',
         'Sweep the floors and clear out the trash before anything gets packed.',
-      ],
-    },
-    {
-      when: 'Once the campers have gone',
-      emoji: '🚿',
-      items: [
+      ] },
+      { emoji: '🚿', when: 'Once the campers have gone', items: [
         'Clean the shower houses.',
         'Walk the cabins one last time — nothing left behind.',
-      ],
-    },
-  ],
-  signoff: "Let's leave these grounds looking better than we found them!",
-};
-
-// True while the cleanup call should be on screen.
-function cleanupCallActive(dow, minutes) {
-  return dow === CLEANUP_CALL.dow && minutes < CLEANUP_CALL.until;
+      ] },
+    ],
+    signoff: "Let's leave these grounds looking better than we found them!",
+  };
 }
 
-// One team's assignment, or null if they aren't on the list.
-function cleanupZoneFor(teamId) {
-  return CLEANUP_CALL.zones.find((z) => z.teamId === teamId) || null;
+// Coerce state.notice into a shape every reader can trust. Realtime Database
+// prunes empty arrays/strings on write, so a posted notice with no zones (or
+// no steps) comes back missing them entirely — see the RTDB note in CLAUDE.md.
+// A notice with no `status` at all has never existed on this database, so it
+// gets seeded with the worked example above.
+function normalizeNotice() {
+  let n = state.notice;
+  if (!n || typeof n !== 'object' || Array.isArray(n) || !n.status) {
+    n = defaultNotice();
+  }
+  if (!NOTICE_STATUSES.includes(n.status)) n.status = 'draft';
+  ['eyebrow', 'title', 'sub', 'signoff'].forEach((k) => {
+    n[k] = typeof n[k] === 'string' ? n[k] : '';
+  });
+  n.zones = (Array.isArray(n.zones) ? n.zones : [])
+    .filter((z) => z && typeof z === 'object')
+    .map((z) => ({ teamId: String(z.teamId || ''), place: String(z.place || ''), note: String(z.note || '') }));
+  n.steps = (Array.isArray(n.steps) ? n.steps : [])
+    .filter((s) => s && typeof s === 'object')
+    .map((s) => ({
+      emoji: String(s.emoji || ''),
+      when: String(s.when || ''),
+      items: (Array.isArray(s.items) ? s.items : []).map((i) => String(i)).filter(Boolean),
+    }));
+  state.notice = n;
+  return n;
 }
 
-function cleanupCallHtml(dow, minutes) {
-  if (!cleanupCallActive(dow, minutes)) return null;
+function noticeBoard() {
+  return normalizeNotice();
+}
+
+// Posted AND actually saying something — an empty posted notice would render
+// as a bare box, so it stays hidden until it has content.
+function noticePosted() {
+  const n = noticeBoard();
+  if (n.status !== 'posted') return false;
+  return !!(n.title || n.sub || n.signoff || n.zones.length || n.steps.length);
+}
+
+// One team's assignment on the current notice, or null.
+function noticeZoneFor(teamId) {
+  return noticeBoard().zones.find((z) => z.teamId === teamId) || null;
+}
+
+// `preview` renders the card regardless of status, for the builder's preview.
+function noticeCardHtml(preview) {
+  const n = noticeBoard();
+  if (!preview && !noticePosted()) return null;
+
   // Skip any slot whose team no longer exists (roster edited / week reset).
-  const zones = CLEANUP_CALL.zones.filter((z) => state.teams.some((t) => t.id === z.teamId));
-  if (!zones.length) return null;
+  const zones = n.zones.filter((z) => z.place && state.teams.some((t) => t.id === z.teamId));
 
-  const mine = state.followTeam ? cleanupZoneFor(state.followTeam) : null;
+  const mine = state.followTeam ? zones.find((z) => z.teamId === state.followTeam) : null;
   // Viewers following a team get their own line spelled out first — it's the
   // only row most people actually need.
-  const yours = mine ? `<div class="cleanup-yours">
-      <span class="cleanup-yours-label">Your team</span>
-      <span class="cleanup-yours-place">${teamEmoji(mine.teamId)} ${esc(teamName(mine.teamId))} → <strong>${esc(mine.place)}</strong></span>
+  const yours = mine ? `<div class="notice-yours">
+      <span class="notice-yours-label">Your team</span>
+      <span class="notice-yours-place">${teamEmoji(mine.teamId)} ${esc(teamName(mine.teamId))} → <strong>${esc(mine.place)}</strong></span>
     </div>` : '';
 
   const rows = zones.map((z) => `
-    <li class="cleanup-row${z.teamId === state.followTeam ? ' cleanup-row-you' : ''}">
-      <span class="cleanup-team"><span class="cleanup-emoji" aria-hidden="true">${teamEmoji(z.teamId)}</span> ${esc(teamName(z.teamId))}</span>
-      <span class="cleanup-place">${esc(z.place)}${z.note ? `<span class="cleanup-note">${esc(z.note)}</span>` : ''}</span>
+    <li class="notice-row${z.teamId === state.followTeam ? ' notice-row-you' : ''}">
+      <span class="notice-team"><span class="notice-emoji" aria-hidden="true">${teamEmoji(z.teamId)}</span> ${esc(teamName(z.teamId))}</span>
+      <span class="notice-place">${esc(z.place)}${z.note ? `<span class="notice-note">${esc(z.note)}</span>` : ''}</span>
     </li>`).join('');
 
-  const steps = CLEANUP_CALL.steps.map((s) => `
-    <div class="cleanup-step">
-      <div class="cleanup-step-when"><span aria-hidden="true">${s.emoji}</span> ${esc(s.when)}</div>
-      <ul class="cleanup-step-items">${s.items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>
+  const steps = n.steps.filter((s) => s.when || s.items.length).map((s) => `
+    <div class="notice-step">
+      <div class="notice-step-when">${s.emoji ? `<span aria-hidden="true">${esc(s.emoji)}</span> ` : ''}${esc(s.when)}</div>
+      <ul class="notice-step-items">${s.items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>
     </div>`).join('');
 
-  return `<div class="cleanup-card">
-    <div class="cleanup-eyebrow">🧹 Campground cleanup · ${esc(CLEANUP_CALL.window)}</div>
-    <h2 class="cleanup-title">Where your team cleans</h2>
-    <p class="cleanup-sub">Straight from breakfast to your team's area — no going up to the cabins yet. Finish by 9:30, then meet in the Tabernacle for send-off.</p>
+  return `<div class="notice-card">
+    ${n.eyebrow ? `<div class="notice-eyebrow">${esc(n.eyebrow)}</div>` : ''}
+    ${n.title ? `<h2 class="notice-title">${esc(n.title)}</h2>` : ''}
+    ${n.sub ? `<p class="notice-sub">${esc(n.sub)}</p>` : ''}
     ${yours}
-    <ul class="cleanup-list">${rows}</ul>
+    ${rows ? `<ul class="notice-list">${rows}</ul>` : ''}
     ${steps}
-    <p class="cleanup-signoff">${esc(CLEANUP_CALL.signoff)}</p>
+    ${n.signoff ? `<p class="notice-signoff">${esc(n.signoff)}</p>` : ''}
   </div>`;
 }
 
-function renderCleanupCall() {
-  const el = document.getElementById('cleanup-call');
+function renderNoticeBoard() {
+  const el = document.getElementById('notice-board');
   if (!el) return;
-  const { dow, minutes } = campNow();
-  const html = cleanupCallHtml(dow, minutes);
+  const html = noticeCardHtml(false);
   el.hidden = !html;
   el.innerHTML = html || '';
+}
+
+// Post / un-post from the builder. Editors only — it shows on every device.
+function setNoticeStatus(status) {
+  if (!canEdit() || !NOTICE_STATUSES.includes(status)) return;
+  noticeBoard().status = status;
+  // Posting/taking down is a real broadcast, same as an announcement, so it
+  // stamps "Data last updated". Drafting edits deliberately don't — they're
+  // invisible to everyone else until posted.
+  touchData();
+  saveState();
+  renderAll();
 }
 
 // Current day-of-week + minutes-since-midnight, in camp time.
@@ -1473,6 +1511,8 @@ if (!state.bonuses) state.bonuses = {}; // extra/bonus points ledger
 if (!state.live) state.live = {}; // live match tallies (synced; see liveTracker)
 if (!state.clocks) state.clocks = {}; // per-game synced clocks (see getClock/setClock)
 if (!state.announcements) state.announcements = {}; // broadcast messages (see renderAnnouncements)
+// state.notice is the big top-of-page notice board (see defaultNotice); it's
+// seeded to the example DRAFT by normalizeNotice, so nothing shows until posted.
 if (state.theme === undefined) state.theme = null; // pre-theme saves: follow the device
 if (state.notify === undefined) state.notify = false; // device-local, not synced (see SYNC_KEYS)
 // state.followTeam stays `undefined` until the picker is answered (a team id,
@@ -1590,7 +1630,7 @@ function applyCardVisibility() {
 // and the SDK loaded, scores sync across every device in real time.
 // Otherwise the app runs exactly as before, local-only.
 
-const SYNC_KEYS = ['teams', 'results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta', 'clocks', 'announcements'];
+const SYNC_KEYS = ['teams', 'results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta', 'clocks', 'announcements', 'notice'];
 let fbRef = null;
 // Per-tab id for the "who's here" presence chip — minted once per page load
 // (not persisted) so each open tab counts, and cleans up, independently.
@@ -1813,7 +1853,7 @@ function applyRemoteState(remote) {
     const s = state.picSetup[gid];
     if (s && s.words && s.words.length) localPicWords[gid] = s.words;
   });
-  ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta', 'clocks', 'announcements'].forEach((k) => {
+  ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta', 'clocks', 'announcements', 'notice'].forEach((k) => {
     state[k] = remote[k] !== undefined ? remote[k] : {};
   });
   Object.keys(localPicWords).forEach((gid) => {
@@ -1958,7 +1998,8 @@ function picSetupForSync(picSetup) {
 const SYNC_ITEM_MAPS = ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'clocks', 'announcements'];
 // `live` is NOT here — it's diffed one level deeper (per match field) in
 // computeSyncUpdates so concurrent refs don't clobber each other's fields.
-const SYNC_SINGLETONS = ['teams', 'meta'];
+// `notice` is a singleton too — one composed card, always written whole.
+const SYNC_SINGLETONS = ['teams', 'meta', 'notice'];
 
 // The synced portion of state as it should exist on the server: a deep copy
 // with Pictionary words stripped (never synced). Serves as both the push
@@ -5081,6 +5122,10 @@ function normalizeSyncedState() {
   Object.values(state.live).forEach(normalizeLiveMatch);
   if (!state.clocks) state.clocks = {}; // RTDB prunes an empty clocks map to nothing
   if (!state.announcements) state.announcements = {}; // RTDB prunes an empty map to nothing
+  // The notice board: RTDB prunes its empty arrays/strings, and an absent
+  // notice means this database has never had one — normalizeNotice seeds the
+  // example draft in that case (never a posted card).
+  normalizeNotice();
   if (!state.meta) state.meta = {}; // RTDB prunes an all-defaults meta to nothing
   // Un-hiding every card empties hiddenCards, which RTDB then prunes away —
   // heal it so the switches and applyCardVisibility always read a real map.
@@ -6540,7 +6585,7 @@ function renderAll() {
   const builderView = document.getElementById('settings-view');
   if (builderView) builderView.hidden = !inBuilder;
   applyCardVisibility(); // before renderGameView — may close a hidden card's game
-  renderCleanupCall();
+  renderNoticeBoard();
   renderWhatsNew();
   pruneExpiredAnnouncements();
   renderAnnouncements();
@@ -6662,7 +6707,7 @@ function init() {
 
   // Keep the "happening now" banner (and any open schedule sheet) current
   // without any taps — and expire "what's new" banners once they hit two hours.
-  setInterval(() => { renderNowBanner(); refreshOpenSchedule(); renderCleanupCall(); renderWhatsNew(); renderMyElectives(); pruneExpiredAnnouncements(); renderAnnouncements(); }, 30 * 1000);
+  setInterval(() => { renderNowBanner(); refreshOpenSchedule(); renderNoticeBoard(); renderWhatsNew(); renderMyElectives(); pruneExpiredAnnouncements(); renderAnnouncements(); }, 30 * 1000);
 
   // Tick every visible Big Board clock (no-ops instantly when none is on
   // screen, so the interval is effectively free the rest of the week).

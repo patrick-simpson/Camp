@@ -19,8 +19,8 @@
   <!-- Jelly UI web components (vendored, see vendor/jelly.js header). Module
        scripts are deferred by spec, so this never blocks first paint and the
        classic scripts at the end of <body> always execute before it. -->
-  <script type="module" src="vendor/jelly.js?v=162"></script>
-  <link rel="stylesheet" href="styles.css?v=162">
+  <script type="module" src="vendor/jelly.js?v=163"></script>
+  <link rel="stylesheet" href="styles.css?v=163">
 
   <script>
     // Decide lock state before the page paints so we never flash the app,
@@ -62,12 +62,14 @@
 
     <main class="main-wrap">
 
-      <!-- ── CLEANUP CALL (send-off morning: who cleans where) ──────────
-           Deliberately the FIRST thing on the page and larger than an
-           announcement — it replaces the six separate notices this used to
-           take. Time-boxed in app.js (CLEANUP_CALL) and hidden the rest of
-           the week, so there's nothing to dismiss or tidy up. -->
-      <section id="cleanup-call" class="cleanup-call" hidden></section>
+      <!-- ── NOTICE BOARD (the one big, unmissable message) ─────────────
+           Deliberately the FIRST thing on the page and much larger than an
+           announcement — one of these replaces the six separate notices that
+           send-off cleanup used to take. Composed in the week builder
+           (Settings → Set up the week → Notice) and stored in synced state as
+           either a draft or a posted card; nothing renders here until it's
+           posted. See the notice board comment block in app.js. -->
+      <section id="notice-board" class="notice-board" hidden></section>
 
       <!-- ── WHAT'S NEW (queued banners; roll in one every 15 min, 7am–9pm) —
            kept at the very top of the page so notices are the first thing seen. -->
@@ -277,9 +279,9 @@
        falls back to local-only mode automatically. -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=162"></script>
-  <script src="defaults.js?v=162"></script>
-  <script src="app.js?v=162"></script>
-  <script src="settings.js?v=162"></script>
+  <script src="firebase-config.js?v=163"></script>
+  <script src="defaults.js?v=163"></script>
+  <script src="app.js?v=163"></script>
+  <script src="settings.js?v=163"></script>
 </body>
 </html>
