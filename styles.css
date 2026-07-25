@@ -3372,6 +3372,16 @@ body.no-scroll {
   line-height: 1.35;
   color: var(--color-text);
 }
+.cleanup-signoff {
+  margin: 0.9rem 0 0;
+  padding-top: 0.7rem;
+  border-top: 1px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: center;
+  color: var(--color-primary);
+}
 .cleanup-step-items li::before {
   content: '';
   position: absolute;

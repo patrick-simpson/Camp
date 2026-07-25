@@ -15,9 +15,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-25T12:00:44Z';
+const CODE_UPDATED_AT = '2026-07-25T12:15:23Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 161;
+const APP_VERSION = 162;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -692,26 +692,41 @@ const CLEANUP_CALL = {
   zones: [
     { teamId: 't3', place: 'Chapel Lawn' },
     { teamId: 't1', place: 'Waterfront' },
-    { teamId: 't0', place: 'Linger' },
+    { teamId: 't0', place: 'Linger a While' },
     { teamId: 't5', place: 'Snack Shack' },
     { teamId: 't2', place: 'Dining Hall', note: 'breakfast cleanup' },
     { teamId: 't4', place: 'Tabernacle' },
   ],
   steps: [
     {
-      when: 'First — cabins, before anyone packs',
-      emoji: '🛏️',
+      when: 'Straight after breakfast',
+      emoji: '🚶',
       items: [
-        'Sweep the cabin floors.',
-        'Clear out all the trash before bags and bedding go anywhere.',
+        'Campers go straight to their team\'s area above — nobody goes up to the cabins yet.',
       ],
     },
     {
-      when: 'In every area',
+      when: 'In your area',
       emoji: '🗑️',
       items: [
-        'Everything goes in the trash — empty every bin, then put a fresh bag in.',
+        'All the trash goes — empty the cans and put a fresh bag in.',
+        'Put away the games and anything else we used this week.',
         'Lost and found goes to the tables at the Snack Shack.',
+      ],
+    },
+    {
+      when: 'When your area is done',
+      emoji: '⛪',
+      items: [
+        'Head to the Tabernacle and help finish up there.',
+      ],
+    },
+    {
+      when: 'Cabins — once the Tabernacle is set',
+      emoji: '🛏️',
+      items: [
+        'Now campers can go up to pack.',
+        'Sweep the floors and clear out the trash before anything gets packed.',
       ],
     },
     {
@@ -723,6 +738,7 @@ const CLEANUP_CALL = {
       ],
     },
   ],
+  signoff: "Let's leave these grounds looking better than we found them!",
 };
 
 // True while the cleanup call should be on screen.
@@ -764,10 +780,11 @@ function cleanupCallHtml(dow, minutes) {
   return `<div class="cleanup-card">
     <div class="cleanup-eyebrow">🧹 Campground cleanup · ${esc(CLEANUP_CALL.window)}</div>
     <h2 class="cleanup-title">Where your team cleans</h2>
-    <p class="cleanup-sub">Head straight there after breakfast. Finish up by 9:30, then meet in the Tabernacle for send-off.</p>
+    <p class="cleanup-sub">Straight from breakfast to your team's area — no going up to the cabins yet. Finish by 9:30, then meet in the Tabernacle for send-off.</p>
     ${yours}
     <ul class="cleanup-list">${rows}</ul>
     ${steps}
+    <p class="cleanup-signoff">${esc(CLEANUP_CALL.signoff)}</p>
   </div>`;
 }
 

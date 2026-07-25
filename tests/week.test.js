@@ -200,6 +200,20 @@ test('the cleanup call spells out the running order, not just the zones', () => 
     assert.ok(html.includes(esc(s.when)), `step "${s.when}" is missing from the card`);
     s.items.forEach((i) => assert.ok(html.includes(esc(i)), `"${i}" is missing from the card`));
   });
+  assert.ok(html.includes(esc(CLEANUP_CALL.signoff)), 'the sign-off line is missing');
+});
+
+test('the cleanup order sends campers to their area before the cabins', () => {
+  // Campers are NOT to go up to the cabins after breakfast — they go straight
+  // to their team's area, and only head up once the Tabernacle is set. Getting
+  // this order backwards on the card sends everyone to the wrong place.
+  const order = CLEANUP_CALL.steps.map((s) => s.when.toLowerCase());
+  const area = order.findIndex((w) => w.includes('after breakfast'));
+  const cabins = order.findIndex((w) => w.startsWith('cabins'));
+  const gone = order.findIndex((w) => w.includes('campers have gone'));
+  assert.ok(area >= 0 && cabins >= 0 && gone >= 0, 'expected all three stages');
+  assert.ok(area < cabins, 'team areas come before the cabins');
+  assert.ok(cabins < gone, 'the cabins are packed before the after-departure jobs');
 });
 
 test('the cleanup call renders every assignment, and nothing outside the window', () => {
