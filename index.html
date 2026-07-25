@@ -19,8 +19,8 @@
   <!-- Jelly UI web components (vendored, see vendor/jelly.js header). Module
        scripts are deferred by spec, so this never blocks first paint and the
        classic scripts at the end of <body> always execute before it. -->
-  <script type="module" src="vendor/jelly.js?v=164"></script>
-  <link rel="stylesheet" href="styles.css?v=164">
+  <script type="module" src="vendor/jelly.js?v=165"></script>
+  <link rel="stylesheet" href="styles.css?v=165">
 
   <script>
     // Decide lock state before the page paints so we never flash the app,
@@ -69,7 +69,20 @@
       <div id="auth-signin" hidden>
         <p class="lock-prompt">Staff sign-in</p>
         <jelly-button id="google-signin-btn" size="large" variant="primary" block>Continue with Google</jelly-button>
-        <div id="email-link-slot"></div>
+        <!-- Everything else is tucked behind one "Alternative sign in"
+             disclosure. The optional modules (auth-phone.js, auth-email-link.js)
+             mount into these slots; each shows its free-plan daily cap. -->
+        <details class="alt-signin">
+          <summary class="alt-signin-summary">Alternative sign in</summary>
+          <div class="alt-signin-body">
+            <p class="alt-signin-note">These have small daily limits on the free plan — please use Google if you can.</p>
+            <div id="alt-phone-slot"></div>
+            <div id="alt-email-slot"></div>
+          </div>
+        </details>
+        <!-- Invisible reCAPTCHA target for phone sign-in (Firebase's abuse
+             guard). Empty and unseen unless a challenge is needed. -->
+        <div id="recaptcha-container"></div>
       </div>
 
       <div id="auth-denied" hidden>
@@ -320,12 +333,14 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=164"></script>
-  <script src="defaults.js?v=164"></script>
-  <script src="app.js?v=164"></script>
-  <script src="settings.js?v=164"></script>
-  <!-- Optional email-link sign-in. Delete this one tag to remove the
-       feature (app.js only ever touches it through window.CampEmailLink). -->
-  <script src="auth-email-link.js?v=164"></script>
+  <script src="firebase-config.js?v=165"></script>
+  <script src="defaults.js?v=165"></script>
+  <script src="app.js?v=165"></script>
+  <script src="settings.js?v=165"></script>
+  <!-- Optional alternative sign-in methods. Delete a tag to remove that
+       method (app.js only touches them through window.CampPhone /
+       window.CampEmailLink); the Google button always remains. -->
+  <script src="auth-phone.js?v=165"></script>
+  <script src="auth-email-link.js?v=165"></script>
 </body>
 </html>

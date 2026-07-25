@@ -18,9 +18,46 @@ test('emailKey lowercases, trims, and replaces EVERY dot', () => {
   assert.equal(emailKey(null), '');
 });
 
-test('emailFromKey round-trips a key back to the address for display', () => {
-  assert.equal(emailFromKey('patrick,simpson,fx@gmail,com'), 'patrick.simpson.fx@gmail.com');
-  assert.equal(emailFromKey(emailKey('Some.Name@Example.Org')), 'some.name@example.org');
+test('identityFromKey round-trips a key back to something displayable', () => {
+  assert.equal(identityFromKey('patrick,simpson,fx@gmail,com'), 'patrick.simpson.fx@gmail.com');
+  assert.equal(identityFromKey(identityKey({ email: 'Some.Name@Example.Org' })), 'some.name@example.org');
+  assert.equal(identityFromKey('+15551234567'), '+15551234567', 'a phone key shows as-is');
+});
+
+// ── Phone identity — the E.164 contract shared with the rules ─────
+
+test('phoneKey normalizes typed numbers to the E.164 Firebase reports', () => {
+  // Firebase reports auth.token.phone_number as E.164 (+1555…); a number an
+  // editor types into the member list has to normalize to the exact same thing
+  // or that person is silently locked out.
+  assert.equal(phoneKey('555-123-4567'), '+15551234567', 'bare US 10-digit → +1');
+  assert.equal(phoneKey('(555) 123-4567'), '+15551234567', 'punctuation stripped');
+  assert.equal(phoneKey('15551234567'), '+15551234567', 'leading 1 → +1');
+  assert.equal(phoneKey('+1 555 123 4567'), '+15551234567', 'already +1, spaces gone');
+  assert.equal(phoneKey('+15551234567'), '+15551234567', 'idempotent on what Firebase reports');
+  assert.equal(phoneKey('+44 20 7946 0958'), '+442079460958', 'a full international number is kept');
+  assert.equal(phoneKey('123'), '', 'too short → empty (rejected)');
+  assert.equal(phoneKey(''), '', 'empty → empty');
+});
+
+test('identityKey picks email first, then phone', () => {
+  assert.equal(identityKey({ email: 'A.B@X.com' }), 'a,b@x,com');
+  assert.equal(identityKey({ phoneNumber: '+15551234567' }), '+15551234567');
+  assert.equal(identityKey({ email: 'a@b.co', phoneNumber: '+15551234567' }), 'a@b,co', 'email wins when both present');
+  assert.equal(identityKey({}), '', 'neither → empty (denied)');
+  assert.equal(identityKey(null), '');
+});
+
+test('identityLabel is the human-readable email or phone', () => {
+  assert.equal(identityLabel({ email: 'a@b.co' }), 'a@b.co');
+  assert.equal(identityLabel({ phoneNumber: '+15551234567' }), '+15551234567');
+  assert.equal(identityLabel(null), '');
+});
+
+test('a phone member and an email member both round-trip key → display', () => {
+  // What the Members UI relies on to show a stored key back to an editor.
+  assert.equal(identityFromKey(phoneKey('555-123-4567')), '+15551234567');
+  assert.equal(identityFromKey(emailKey('Coach.Mike@example.com')), 'coach.mike@example.com');
 });
 
 // ── canEdit: the one function every editor-only surface asks ──────
@@ -47,6 +84,15 @@ test('memberRecord builds exactly what the rules validate', () => {
   assert.equal(r.name, 'Pat', 'name is trimmed');
   assert.ok(typeof r.addedBy === 'string' && r.addedBy.length, 'addedBy is always a string');
   assert.ok(!isNaN(Date.parse(r.addedAt)), 'addedAt is a parseable timestamp');
+});
+
+test('memberRecord addedBy is the signed-in identity (email or phone)', () => {
+  authUser = { email: 'director@example.com' };
+  assert.equal(memberRecord('viewer').addedBy, 'director@example.com');
+  authUser = { phoneNumber: '+15551234567' };
+  assert.equal(memberRecord('viewer').addedBy, '+15551234567');
+  authUser = null;
+  assert.equal(memberRecord('viewer').addedBy, 'unknown');
 });
 
 test('memberRecord omits an empty name instead of writing null', () => {

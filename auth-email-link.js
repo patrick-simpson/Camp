@@ -83,17 +83,21 @@
 
   // Render the "email me a link" mini-form into the sign-in panel's slot.
   // Re-rendering on every mount is fine — the panel only shows signed-out.
+  // Rendered inside the shared "Alternative sign in" disclosure (see the sign-in
+  // screen in index.html and showAuthScreen in app.js), so no <details> of its
+  // own — just the titled method block with its free-plan cap line.
   function mount(slotEl) {
     if (!slotEl) return;
     slotEl.innerHTML = `
-      <details class="email-link-details">
-        <summary class="email-link-summary">No Google account? Sign in with an email link</summary>
-        <div class="email-link-form">
+      <div class="alt-method">
+        <div class="alt-method-title">✉️ Email me a sign-in link</div>
+        <p class="alt-method-cap">Free plan: up to 5 email links a day for the whole camp.</p>
+        <div class="alt-method-form">
           <jelly-input class="form-input" id="email-link-address" type="email" placeholder="name@example.com" label="Email"></jelly-input>
-          <jelly-button id="email-link-send" class="secondary-btn" variant="platinum" block>📬 Email me a sign-in link</jelly-button>
+          <jelly-button id="email-link-send" class="secondary-btn" variant="platinum" block>📬 Email me a link</jelly-button>
           <p class="muted email-link-status" id="email-link-status" hidden></p>
         </div>
-      </details>`;
+      </div>`;
     const sendBtn = slotEl.querySelector('#email-link-send');
     const statusEl = slotEl.querySelector('#email-link-status');
     sendBtn.addEventListener('click', () => {

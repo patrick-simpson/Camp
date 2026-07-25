@@ -16,8 +16,11 @@ Files:
 - `settings.js` — the settings sheet + week-builder UI
 - `styles.css` — all styling (design tokens at the top, light + dark)
 - `firebase-config.js` — sync config (also used by Firebase Auth sign-in)
-- `auth-email-link.js` — optional passwordless-email sign-in (loaded via a
-  guarded `window.CampEmailLink`; delete the one script tag to remove it)
+- `auth-email-link.js` / `auth-phone.js` — optional alternative sign-in
+  methods (emailed link; phone number + texted code). Each loads via a guarded
+  global (`window.CampEmailLink` / `window.CampPhone`) and mounts into the
+  "Alternative sign in" disclosure; delete one script tag to drop that method.
+  Google is the primary button and always remains.
 - `vendor/jelly.js` — vendored Jelly UI web components (chips, buttons,
   drawers, dialogs); it injects `--jelly-*` design tokens on :root at
   runtime, which the app's `--color-*` tokens re-source
@@ -58,9 +61,10 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
 
 **Every time any code asset changes:**
 1. Bump the `?v=N` cache-busting query string in `index.html` — there are
-   SEVEN on the same number: `styles.css`, `vendor/jelly.js`,
+   EIGHT on the same number: `styles.css`, `vendor/jelly.js`,
    `firebase-config.js`, `defaults.js`, `app.js`, `settings.js`,
-   `auth-email-link.js` — keep them in sync, all bumped together. Also bump
+   `auth-phone.js`, `auth-email-link.js` — keep them in sync, all bumped
+   together. Also bump
    `APP_VERSION` in `app.js` to the same number (it drives the auto-reload
    version check). `current-standings.html` and `stalling.html` load
    `vendor/jelly.js` (and current-standings loads `firebase-config.js`) with
@@ -182,21 +186,36 @@ internet (verified: an unauthenticated `curl` returned everything). Access is
 now enforced by **Firebase Authentication + Realtime Database security
 rules**; the client code only shapes the UI.
 
-- **Everyone signs in** — Google (`signInWithPopup`, never redirect — redirect
-  needs cross-site storage Safari/Firefox block off the authDomain) or an
-  emailed link (`auth-email-link.js`, optional, free-plan-capped at 5
-  sends/day — the send flow says so on quota errors). No public access.
+- **Everyone signs in** — Google is the primary button (`signInWithPopup`,
+  never redirect — redirect needs cross-site storage Safari/Firefox block off
+  the authDomain). Two optional backups live behind an "Alternative sign in"
+  disclosure: an emailed link (`auth-email-link.js`) and a phone number +
+  texted code (`auth-phone.js`). Both are free-plan capped (email ~5/day,
+  phone ~10/day, project-wide) — each shows its cap up front and turns the
+  quota error into a "use Google" message; there is deliberately no live
+  "X remaining" counter (Firebase exposes none, and faking one would need a
+  public counter poked into the locked DB). No public access.
 - **Two roles, from the member record only** (never from anything on the
   device): `viewer` (counselors — read-only; deliberately can't touch their
   own team's points) and `editor` (directors/game leaders — edit scores AND
   manage the member list). `canEdit()` still gates ~28 call sites; its backing
   store swapped from localStorage to `memberRole`, set by `setMemberRole()`.
 - **THE INVARIANT**: no database ref attaches until sign-in resolves AND the
-  self-read of `campScoreboard/members/<emailKey>` confirms approval.
+  self-read of `campScoreboard/members/<identityKey>` confirms approval.
   `startSync()` (the only sanctioned entry to `initSync()`) is called *only*
   from `onMemberSnapshot`'s approved branch. Reason: the state listener's
   error callback treats a cancelled read as terminal (the SDK won't re-arm
   it), so an early attach under locked rules would kill sync for the session.
+- **Identity is email OR phone.** `identityKey(user)` = `emailKey(user.email)`
+  for Google/email accounts, else the phone number (E.164) for phone accounts;
+  `identityLabel()` is the human form, `identityFromKey()` turns a stored key
+  back to something displayable. The security rules gate on the same OR (see
+  the ruleset in the plan / the runbook): `members/<emailKey>` for a verified
+  email, `members/<phone_number>` for a phone account (phone accounts are
+  inherently verified). A member key is an email (`contains('@')`) or a phone
+  (`beginsWith('+')`); the Members UI auto-detects which from the typed value,
+  and `phoneKey()` normalizes a typed number to the E.164 Firebase reports
+  (US +1 default) so a hand-added phone member isn't silently locked out.
 - **`emailKey(email)`** = `email.trim().toLowerCase().replaceAll('.', ',')`.
   RTDB forbids `.` in keys; the members list is keyed by this. It MUST mirror
   the rules' `.replace('.', ',')`, which in the rules language replaces ALL

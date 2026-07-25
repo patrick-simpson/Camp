@@ -15,9 +15,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-25T17:01:58Z';
+const CODE_UPDATED_AT = '2026-07-25T19:38:26Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 164;
+const APP_VERSION = 165;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -84,14 +84,60 @@ function canEdit() {
   return memberRole === 'editor';
 }
 
-// The member list is keyed by email, but Realtime Database forbids '.' in
-// keys — so keys are the lowercased email with EVERY dot turned into a comma.
-// This must mirror the security rules' `.replace('.', ',')`, which in the
-// rules language replaces ALL occurrences — hence replaceAll here, never JS
-// .replace (which would only catch the first dot and silently lock out
-// anyone with a multi-dot address, like the owner's own).
+// The member list is keyed by a person's SIGN-IN IDENTITY: their email (for
+// Google / email-link) or their phone number (for phone sign-in). Two shapes:
+//
+//  - emailKey: lowercased email with EVERY dot turned into a comma. RTDB
+//    forbids '.' in keys, and this must mirror the security rules'
+//    `.replace('.', ',')`, which in the rules language replaces ALL
+//    occurrences — hence replaceAll here, never JS .replace (which would only
+//    catch the first dot and silently lock out any multi-dot address, the
+//    owner's own included).
+//  - phoneKey: the E.164 number (e.g. +15551234567). Phone numbers have no
+//    dots to escape, and '+' is a legal RTDB key char, so the number IS the
+//    key. This must match what Firebase reports as auth.token.phone_number,
+//    which is always E.164 — so we normalize typed input the same way.
 function emailKey(email) {
   return String(email || '').trim().toLowerCase().replaceAll('.', ',');
+}
+
+// Normalize a phone number to E.164 (+<countrycode><digits>) so a number an
+// editor TYPES into the member list matches the one Firebase reports when that
+// person signs in. Defaults to US (+1) when no country code is given — this is
+// a US camp. Returns '' if there aren't enough digits to be a real number.
+function phoneKey(input) {
+  const s = String(input || '').trim();
+  if (!s) return '';
+  const hadPlus = s[0] === '+';
+  const digits = s.replace(/\D/g, '');
+  if (digits.length < 7) return ''; // too short to be a real phone number
+  if (hadPlus) return '+' + digits;                 // they typed a full +… number
+  if (digits.length === 10) return '+1' + digits;   // bare US 10-digit
+  if (digits.length === 11 && digits[0] === '1') return '+' + digits; // US with the 1
+  return '+' + digits;                               // best effort: assume it's complete
+}
+
+// The member-list key for a signed-in user — email first, else phone.
+function identityKey(user) {
+  if (!user) return '';
+  if (user.email) return emailKey(user.email);
+  if (user.phoneNumber) return phoneKey(user.phoneNumber);
+  return '';
+}
+
+// The human-readable identity for a signed-in user (for the account row, the
+// not-approved screen, changelog attribution).
+function identityLabel(user) {
+  if (!user) return '';
+  return user.email || user.phoneNumber || '';
+}
+
+// A stored member key back to something displayable: a phone key (+…) shows
+// as-is; an email key turns its commas back into dots (lossless — real emails
+// never contain commas).
+function identityFromKey(key) {
+  const k = String(key || '');
+  return k[0] === '+' ? k : k.replaceAll(',', '.');
 }
 
 // Shape of one campScoreboard/members entry. `name` is omitted (not null)
@@ -99,7 +145,7 @@ function emailKey(email) {
 function memberRecord(role, name) {
   const rec = {
     role: role === 'editor' ? 'editor' : 'viewer',
-    addedBy: (authUser && authUser.email) || 'unknown',
+    addedBy: identityLabel(authUser) || 'unknown',
     addedAt: new Date().toISOString(),
   };
   if (name && String(name).trim()) rec.name = String(name).trim();
@@ -1373,12 +1419,6 @@ function openMembers() {
   }
 }
 
-// The stored key is the escaped email; commas can't appear in a real address,
-// so turning them back into dots is lossless for display.
-function emailFromKey(key) {
-  return String(key || '').replaceAll(',', '.');
-}
-
 function renderMembers() {
   const body = document.getElementById('members-body');
   if (!body) return;
@@ -1397,20 +1437,21 @@ function renderMembers() {
 }
 
 function renderMemberList(body, members) {
-  const myKey = authUser ? emailKey(authUser.email) : '';
+  const myKey = identityKey(authUser);
   const keys = Object.keys(members).sort((a, b) => {
-    const an = (members[a] && members[a].name) || emailFromKey(a);
-    const bn = (members[b] && members[b].name) || emailFromKey(b);
+    const an = (members[a] && members[a].name) || identityFromKey(a);
+    const bn = (members[b] && members[b].name) || identityFromKey(b);
     return an.localeCompare(bn);
   });
   const rows = keys.map((key) => {
     const m = members[key] || {};
     const self = key === myKey;
     const role = m.role === 'editor' ? 'editor' : 'viewer';
+    const isPhone = String(key)[0] === '+';
     return `<div class="member-row" data-member-key="${esc(key)}">
       <div class="member-id">
-        <span class="member-name">${esc(m.name || emailFromKey(key))}${self ? ' <span class="member-you">(you)</span>' : ''}</span>
-        ${m.name ? `<span class="member-email">${esc(emailFromKey(key))}</span>` : ''}
+        <span class="member-name">${esc(m.name || identityFromKey(key))}${self ? ' <span class="member-you">(you)</span>' : ''}</span>
+        ${m.name ? `<span class="member-email">${isPhone ? '📱 ' : ''}${esc(identityFromKey(key))}</span>` : ''}
       </div>
       <div class="member-controls">
         <jelly-segmented class="member-role" size="small" label="Role" value="${role}" ${self ? 'disabled' : ''}>
@@ -1429,8 +1470,9 @@ function renderMemberList(body, members) {
     <div class="member-add">
       <h3>Add someone</h3>
       <div class="form-field">
-        <label class="form-label">Email (the account they'll sign in with)</label>
-        <jelly-input class="form-input" id="member-add-email" type="email" placeholder="name@example.com"></jelly-input>
+        <label class="form-label">Email or phone number</label>
+        <jelly-input class="form-input" id="member-add-id" type="text" placeholder="name@example.com or 555-123-4567"></jelly-input>
+        <p class="muted member-add-hint">Use the email they sign in with — or a phone number if they'll use phone sign-in.</p>
       </div>
       <div class="form-row">
         <div class="form-field">
@@ -1462,7 +1504,7 @@ function bindMemberList(body, myKey) {
         const role = e.detail && e.detail.value;
         if (self || !role || (role !== 'viewer' && role !== 'editor')) return;
         firebase.database().ref('campScoreboard/members/' + key + '/role').set(role)
-          .then(() => showToast(`${emailFromKey(key)} is now a ${role}`, { mine: true }))
+          .then(() => showToast(`${identityFromKey(key)} is now a ${role}`, { mine: true }))
           .catch(() => { showToast('Change refused — are you still an editor?'); renderMembers(); });
       });
     }
@@ -1471,7 +1513,7 @@ function bindMemberList(body, myKey) {
       rm.addEventListener('click', () => {
         if (self) return;
         const who = row.querySelector('.member-name');
-        if (!confirm(`Remove ${who ? who.textContent : emailFromKey(key)}? They lose access the moment this saves.`)) return;
+        if (!confirm(`Remove ${who ? who.textContent : identityFromKey(key)}? They lose access the moment this saves.`)) return;
         firebase.database().ref('campScoreboard/members/' + key).remove()
           .then(() => { showToast('Removed', { mine: true }); renderMembers(); })
           .catch(() => showToast('Remove refused — are you still an editor?'));
@@ -1483,18 +1525,32 @@ function bindMemberList(body, myKey) {
   if (addBtn) {
     addBtn.addEventListener('click', () => {
       const errEl = document.getElementById('member-add-error');
-      const email = (document.getElementById('member-add-email').value || '').trim();
+      const raw = (document.getElementById('member-add-id').value || '').trim();
       const name = (document.getElementById('member-add-name').value || '').trim();
       const roleSeg = document.getElementById('member-add-role');
       const role = (roleSeg && roleSeg.value) === 'editor' ? 'editor' : 'viewer';
-      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-        errEl.textContent = 'That doesn\'t look like an email address.';
-        errEl.hidden = false;
-        return;
+      // Auto-detect: anything with an @ is an email; otherwise a phone number.
+      let key, shownId;
+      if (raw.includes('@')) {
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
+          errEl.textContent = 'That doesn\'t look like an email address.';
+          errEl.hidden = false;
+          return;
+        }
+        key = emailKey(raw);
+        shownId = raw;
+      } else {
+        key = phoneKey(raw);
+        if (!key) {
+          errEl.textContent = 'That doesn\'t look like a phone number. Include the area code (e.g. 555-123-4567).';
+          errEl.hidden = false;
+          return;
+        }
+        shownId = key; // the normalized +E.164 we're about to store — so they can eyeball it
       }
       errEl.hidden = true;
-      firebase.database().ref('campScoreboard/members/' + emailKey(email)).set(memberRecord(role, name))
-        .then(() => { showToast(email + ' can now sign in', { mine: true }); renderMembers(); })
+      firebase.database().ref('campScoreboard/members/' + key).set(memberRecord(role, name))
+        .then(() => { showToast(shownId + ' can now sign in', { mine: true }); renderMembers(); })
         .catch(() => {
           errEl.textContent = 'Add refused — are you still an editor?';
           errEl.hidden = false;
@@ -3655,7 +3711,7 @@ function recordPointHistory(counts, isRemote) {
   const causes = describeCauses(prev, snap);
   const reason = causes.length ? causes.join('; ') : 'Points updated';
   const at = new Date().toISOString();
-  const by = state.identity || memberName || (authUser && authUser.email) || null;
+  const by = state.identity || memberName || identityLabel(authUser) || null;
   const logRef = firebase.database().ref('campScoreboard/changelog');
   changed.forEach(({ tid, before, after }) => {
     logRef.push({ at, teamId: tid, team: teamName(tid), delta: after - before, before, after, reason, by })
@@ -6934,8 +6990,8 @@ function init() {
 function updateAccountRow() {
   const label = document.getElementById('account-label');
   if (!label) return;
-  const email = authUser && authUser.email ? authUser.email : '';
-  label.textContent = (canEdit() ? '✏️ Editor' : '👀 Viewer') + (email ? ' — ' + email : '');
+  const who = identityLabel(authUser); // email or phone number
+  label.textContent = (canEdit() ? '✏️ Editor' : '👀 Viewer') + (who ? ' — ' + who : '');
 }
 
 // ── Joy layer ────────────────────────────────────────────────────
@@ -7114,10 +7170,12 @@ function showAuthScreen(mode, opts) {
   }
   const who = document.getElementById('auth-denied-email');
   if (who && opts && opts.email) who.textContent = opts.email;
-  // The email-link mini-form mounts lazily into its slot (module optional —
-  // see auth-email-link.js; deleting that script tag removes the feature).
-  if (mode === 'signin' && window.CampEmailLink) {
-    window.CampEmailLink.mount(document.getElementById('email-link-slot'));
+  // The alternative sign-in methods mount lazily into their slots inside the
+  // "Alternative sign in" disclosure. Both are optional modules (delete the
+  // matching <script> tag to remove one); the Google button always remains.
+  if (mode === 'signin') {
+    if (window.CampPhone) window.CampPhone.mount(document.getElementById('alt-phone-slot'));
+    if (window.CampEmailLink) window.CampEmailLink.mount(document.getElementById('alt-email-slot'));
   }
 }
 
@@ -7196,7 +7254,8 @@ let memberRef = null; // this account's own campScoreboard/members entry
 
 function handleAuthUser(user) {
   if (memberRef) { try { memberRef.off(); } catch (e) { /* ignore */ } memberRef = null; }
-  if (!user || !user.email) {
+  const key = identityKey(user); // email or phone; '' if neither
+  if (!user || !key) {
     authUser = null;
     clearAuthHint();
     if (appStarted) authTornDown = true; // recovery from here is a reload (see onMemberSnapshot)
@@ -7204,12 +7263,13 @@ function handleAuthUser(user) {
     return;
   }
   authUser = user;
-  // The approval check: the self-read of this account's member record. Under
-  // the locked rules a non-member's read is CANCELLED (not null) — both land
-  // on the not-approved screen. Kept attached for live changes: a removal
-  // cancels this listener (kick), a role change fires a fresh snapshot.
+  // The approval check: the self-read of this account's member record (keyed
+  // by email or phone). Under the locked rules a non-member's read is
+  // CANCELLED (not null) — both land on the not-approved screen. Kept attached
+  // for live changes: a removal cancels this listener (kick), a role change
+  // fires a fresh snapshot.
   if (!appStarted) showAuthScreen('checking');
-  memberRef = firebase.database().ref('campScoreboard/members/' + emailKey(user.email));
+  memberRef = firebase.database().ref('campScoreboard/members/' + key);
   memberRef.on('value', onMemberSnapshot, onMemberReadError);
 }
 
@@ -7235,12 +7295,12 @@ function onMemberReadError() {
 }
 
 function denyMember() {
-  const email = (authUser && authUser.email) || '';
+  const who = identityLabel(authUser); // email or phone number
   setMemberRole(null);
   clearAuthHint();
   // A device that isn't approved shouldn't keep camp data around either.
   clearLocalData();
-  showAuthScreen('denied', { email });
+  showAuthScreen('denied', { email: who });
 }
 
 // ── Pre-paint hint ───────────────────────────────────────────────
