@@ -242,6 +242,12 @@ rules**; the client code only shapes the UI.
   (`clearLocalData`: STORAGE_KEY, day ranks, dismissed banners, the hint, the
   parked email) plus IndexedDB photos (`clearPhotos`), then reloads. Theme is
   NOT preserved — the boot guards discard partial state, so it resets to Auto.
+- **Rules are PUBLISHED and enforced** (2026-07-25). Verified after the flip:
+  unauthenticated reads of state/config/members/changelog/roster/contacts, a
+  write probe, and a self-escalation attempt all return `Permission denied`.
+  The owner key `patricksimpson,fx@gmail,com` is seeded editor and immutable
+  from clients — the console Data tab is the only way to change it, and the
+  permanent break-glass path.
 - **Rules live in the Firebase console**, not this repo (there's no deploy
   pipeline for them). The current ruleset + a click-by-click console runbook
   are in the plan that shipped this change; the shape is: per-child gates

@@ -49,20 +49,30 @@ replaced with what is actually still open, so nobody re-does finished work.
 
 ## Open work
 
-### 1. Real sign-in + locked database — DONE (2026-07-25), pending the console flip
-The PIN gate is replaced with Firebase Authentication (Google + optional
-email-link) and a member allowlist at `campScoreboard/members`; `canEdit()`
-now reflects a server-checked role. The **code** shipped; the **enforcement**
-(Firebase console: enable providers, seed the first editor, publish the
-security rules) is a manual runbook Patrick works through — until the rules are
-published the database is still open, so this isn't fully closed until then.
-See the "Auth, members & roles" section in CLAUDE.md and the shipped plan for
-the ruleset + click-by-click console steps. Residual notes: data exposed before
-the flip must be assumed already-seen (the lock protects data going forward,
-which is why the PII paths are gated before any PII is added); Safari's ~7-day
-storage purge signs people out (one tap to fix); iOS-PWA popups can be flaky
-(email-link is the fallback). Follow-ups: build the roster/contacts PII features
-on the pre-gated paths; consider Blaze for email-link volume; App Check as
+### 1. Real sign-in + locked database — ✅ COMPLETE (2026-07-25)
+The PIN gate is gone. Access is Firebase Authentication + Realtime Database
+security rules, and the rules are **published and verified**: every
+unauthenticated read (state, config, members, changelog, roster, contacts),
+a write probe, and a self-escalation attempt all return `Permission denied`
+(they returned live data that morning). Sign-in is Google (primary) plus
+phone and email-link behind "Alternative sign in"; the member allowlist lives
+at `campScoreboard/members`, keyed by email OR phone, and `canEdit()` reflects
+a server-checked role. Owner `patricksimpson,fx@gmail,com` is seeded as editor
+and hardcoded immutable in the rules (the lockout anchor — only the console's
+Data tab can change it). Adding a member surfaces a copy-and-send invite.
+See CLAUDE.md → "Auth, members & roles" for the model and the published
+ruleset's shape.
+
+Standing notes: data exposed before the flip must be assumed already-seen —
+the lock protects data **going forward**, which is why `roster`/`contacts`
+were gated before any PII exists. Safari's ~7-day storage purge signs people
+out (one tap to fix). iOS-PWA popups can be flaky → phone/email-link are the
+fallbacks. Free-plan caps stand: ~5 email links and ~10 texts per day
+project-wide (each method states its cap in the UI and reports "limit
+reached" accurately; there is deliberately no live remaining-count, since
+Firebase exposes none and faking one would need a public counter in the
+locked DB). Follow-ups: build the roster/contacts PII features on the
+pre-gated paths; Blaze only if the email/SMS caps start to bite; App Check as
 optional later hardening.
 
 ### 2. Service-worker caching for real offline use — decision-gated
