@@ -15,9 +15,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-24T21:01:34Z';
+const CODE_UPDATED_AT = '2026-07-25T00:14:32Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 157;
+const APP_VERSION = 158;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1368,6 +1368,22 @@ function touchData() {
   state.meta.lastDataChangeAt = new Date().toISOString();
   dataEditPending = true; // real edit queued — guard it until it's pushed
   joyCelebrate(); // every real data save gets a little celebration
+}
+
+// Editor-only display setting (state.meta, synced): true hides the whole
+// Current Standings card from view-only devices — e.g. suspense before an
+// awards reveal. Editors always see the card regardless, with the toggle
+// that controls it. Not a touchData() moment — it's a display preference,
+// not scoreboard activity, so it doesn't bump "Data last updated".
+function standingsHiddenFromViewers() {
+  return !!(state.meta && state.meta.standingsHidden);
+}
+
+function toggleStandingsHidden() {
+  if (!state.meta) state.meta = {};
+  state.meta.standingsHidden = !standingsHiddenFromViewers();
+  saveState();
+  renderAll();
 }
 
 // ── Cloud sync (Firebase Realtime Database) ──────────────────────
@@ -2914,6 +2930,22 @@ function startOfDayRanks(ranked) {
 }
 
 function renderStandings() {
+  // Editor-only "Hide from viewers" toggle: view-only devices lose the whole
+  // card; editors always keep it (with the toggle that controls it). Force
+  // it closed for viewers when hiding, so a later un-hide doesn't surface it
+  // already open — matches every other card's "always starts closed" rule.
+  const card = document.querySelector('.standings-card');
+  if (card) {
+    const hideForMe = standingsHiddenFromViewers() && !canEdit();
+    card.hidden = hideForMe;
+    if (hideForMe && card.open) {
+      if (typeof card.toggle === 'function') card.toggle(false);
+      else card.removeAttribute('open');
+    }
+  }
+  const hideToggle = document.getElementById('hide-standings-toggle');
+  if (hideToggle) hideToggle.toggleAttribute('checked', standingsHiddenFromViewers());
+
   const tbody = document.getElementById('standings-tbody');
   const counts = medalCounts();
   const ranked = rankTeamsByPoints(counts);
@@ -6265,6 +6297,8 @@ function init() {
     setTheme((e.detail && e.detail.value) || e.target.getAttribute('value'));
   });
   document.getElementById('sound-toggle').addEventListener('change', toggleSound);
+  const hideStandingsToggle = document.getElementById('hide-standings-toggle');
+  if (hideStandingsToggle) hideStandingsToggle.addEventListener('change', toggleStandingsHidden);
 
   const copyBtn = document.getElementById('copy-standings-btn');
   copyBtn.addEventListener('click', () => copyTextToClipboard(standingsSummaryText(), copyBtn));

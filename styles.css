@@ -318,6 +318,20 @@ html.view-only .standings-hint,
 html.view-only .card-desc {
   display: none;
 }
+html.view-only .standings-visibility-row {
+  display: none;
+}
+
+/* Editor-only row (Hide from viewers) sits above the standings-hint, inside
+   the jelly-collapsible's body. .settings-row's background is --color-surface
+   (same as the card it's normally used against the drawer's --color-bg) — on
+   the standings card, that's the SAME surface, so the row would blend in;
+   swap to --color-bg here for the contrast .rules-section-editor uses for
+   the same "content box inside a card" situation. */
+.standings-visibility-row {
+  background: var(--color-bg);
+  margin-bottom: 0.5rem;
+}
 
 .view-only-note {
   background: var(--color-bg);

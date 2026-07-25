@@ -19,8 +19,8 @@
   <!-- Jelly UI web components (vendored, see vendor/jelly.js header). Module
        scripts are deferred by spec, so this never blocks first paint and the
        classic scripts at the end of <body> always execute before it. -->
-  <script type="module" src="vendor/jelly.js?v=157"></script>
-  <link rel="stylesheet" href="styles.css?v=157">
+  <script type="module" src="vendor/jelly.js?v=158"></script>
+  <link rel="stylesheet" href="styles.css?v=158">
 
   <script>
     // Decide lock state before the page paints so we never flash the app,
@@ -100,6 +100,13 @@
         <!-- ── WEEK STANDINGS ─────────────────────────────── -->
         <jelly-collapsible class="card standings-card collapsible-card" data-card="standings">
           <h2 slot="header">Current Standings</h2>
+          <!-- Editor-only: hides the whole card (this one) from view-only
+               devices — e.g. for suspense before an awards reveal. Synced via
+               state.meta.standingsHidden so it takes effect everywhere. -->
+          <div class="settings-row standings-visibility-row">
+            <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🙈</span> Hide from viewers</span>
+            <jelly-switch id="hide-standings-toggle" label="Hide standings from viewers"></jelly-switch>
+          </div>
           <p class="muted standings-hint">Only counts games saved in this app — your paper scoreboard is the official one.</p>
           <p id="sync-status" class="sync-status" aria-live="polite"></p>
           <div class="standings-actions">
@@ -245,9 +252,9 @@
        falls back to local-only mode automatically. -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=157"></script>
-  <script src="defaults.js?v=157"></script>
-  <script src="app.js?v=157"></script>
-  <script src="settings.js?v=157"></script>
+  <script src="firebase-config.js?v=158"></script>
+  <script src="defaults.js?v=158"></script>
+  <script src="app.js?v=158"></script>
+  <script src="settings.js?v=158"></script>
 </body>
 </html>
