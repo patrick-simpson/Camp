@@ -21,6 +21,8 @@ Files:
   runtime, which the app's `--color-*` tokens re-source
 - `sw.js` — notification-only service worker (deliberately NO fetch
   handler, so it can never serve stale code; kill-switch documented inside)
+- `tests/` — `node tests/run.js`, no dependencies, never served to the
+  browser (see "Tests" below)
 - `current-standings.html` — self-contained TV/presenter standings page
   (duplicates a few constants from app.js — marked "keep in sync")
 - `stalling.html` — self-contained presenter gag page
@@ -69,8 +71,8 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
    this automatically, so it's a manual step, easy to forget.
    `current-standings.html` has its own `TV_BUILD` stamp — bump it when
    that file changes.
-3. `node --check` every changed JS file before committing — cheap syntax
-   safety net for a codebase with no test suite.
+3. Run `node tests/run.js`, then `node --check` every changed JS file,
+   before committing (see "Tests" below).
 4. **Do NOT add "What's new" banner entries.** The banners are discontinued
    (owner's call, 2026-07-21): the `CHANGES` array at the top of `app.js` is
    kept EMPTY and must stay that way — do not append entries for user-visible
@@ -127,6 +129,42 @@ fetches the fresh `index.html` instead of a cached copy and can't loop.
 (A phone only starts polling once it's running a build that has this code,
 so it auto-reloads from the *next* deploy after it loads this one.)
 
+## Tests
+
+`node tests/run.js` (optionally with a filename filter: `node tests/run.js
+sync`). Zero dependencies, no network, ~1 second. **Run it before every
+commit**, alongside `node --check`.
+
+`tests/harness.js` loads the real `defaults.js` + `app.js` + `settings.js` into
+a Node `vm` context behind a small DOM stub, so the tests exercise the exact
+code the site ships — there's no build step and no second copy of the logic to
+drift. Each `*.test.js` file gets its own freshly-loaded context, so one file's
+mutations of `state` can't leak into another's. Because top-level `let`/`const`
+in a vm script land in the context's global lexical scope, test files reference
+`state`, `medalCounts`, `SYNC_KEYS`, … directly, exactly as app.js does.
+
+Nothing in `tests/` is referenced by `index.html`, so adding to it cannot
+change what a browser loads.
+
+What's covered, and why each file exists:
+- `scoring.test.js` — score parse/format edges, `esc()`, `medalCounts()`
+  (including double points and orphaned results), bonus buckets, tie-breaks.
+- `sync.test.js` — **every invariant in the section below**, plus the deferred-
+  snapshot and per-path-diff behavior. A failure here is a regression, not a
+  test bug.
+- `clock.test.js` — the synced countdown, including clock-skew between devices.
+- `week.test.js` — structural checks on the hand-edited data: `DAY_SCHEDULE`
+  block ordering/durations, `nowBannerHtml` fuzzed over every minute of every
+  day, `defaultConfig()` integrity (unique game ids, real dayIds/sessions/
+  formats), the meal-cleanup rota's team ids, announcement expiry, `.ics` export.
+- `backup.test.js` — restore-from-backup, including that an imported tree gets
+  normalized and orphan-pruned before it can render or sync.
+
+The stub is deliberately minimal, and DOM lookups return a memoized stub element
+rather than null (closer to the real page, where a render function's container
+always exists). Tests assert on state and return values, never on markup —
+anything needing real layout belongs in the Playwright pass.
+
 ## Firebase Realtime Database gotcha (already bit us once)
 
 Realtime Database **silently drops empty arrays, empty objects, and
@@ -145,8 +183,8 @@ pattern for any new synced, potentially-empty data shape — don't assume
 "it was an empty array when I wrote it, so it'll still be one when I read
 it back."
 
-Two more sync invariants (both fixed after live testing exposed them —
-don't regress these):
+More sync invariants (each fixed after it bit us — don't regress these;
+`tests/sync.test.js` pins all of them):
 - **Never push before the first pull.** `pushState()` is gated on
   `remoteReady`, which flips true only when the first server snapshot
   arrives. Without it, a device on slow wifi that saves anything before
@@ -157,6 +195,26 @@ don't regress these):
   with `{}` when absent from the snapshot (RTDB prunes empty objects, so
   absence IS the empty state). Only `teams` is guarded. Treating missing
   as keep-local made "New week (reset)" silently fail to propagate.
+- **A snapshot you can't safely adopt must be re-fetched, not dropped.**
+  `canAdoptRemote()` refuses to overwrite local state while the editor is
+  mid-entry (`editorMidEntry()`) or a local write is unconfirmed
+  (`pendingWrites > 0`) — that's what stops a reconnect's stale replay from
+  reverting scores being typed. But RTDB only fires `value` again when the
+  server data *changes*, so a snapshot turned away this way is gone: a phone
+  sitting with a score field focused could stay silently stale for the rest
+  of a game. `deferRemoteSnapshot()` therefore records that a read is owed and
+  an idle tick re-reads (`fbRef.once`) once the device is quiet. Re-reading,
+  not replaying a stashed payload, is deliberate — the payload may already be
+  superseded. The same tick also drains `pendingRemoteConfig`, which used to
+  be flushed only by a focusout inside the week builder.
+- **The synced game clock runs on server time, not device time.**
+  `state.clocks[gid].endAt` is absolute and every device counts down to it, so
+  the devices have to agree on "now". `serverNow()` = `Date.now()` +
+  `.info/serverTimeOffset`, and `clockRemaining()`/`applyClockAction()` both
+  use it. With sync off the offset is 0 and it's exactly `Date.now()`. Before
+  this, a handset a few minutes off showed a countdown that far wrong on the
+  Big Board — and a second *editor* device would hit zero early, buzz, and
+  stop the synced clock for everyone.
 
 ## `defaults.js` edits don't reach an already-running week
 

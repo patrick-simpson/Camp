@@ -3,7 +3,8 @@
 // or state directly except through the globals app.js provides:
 // saveConfig(), saveState(), renderAll(), canEdit(), esc(), gameById(),
 // dayById(), teamName(), medalCounts(), copyTextToClipboard(),
-// downloadBlob(), FORMAT_BADGES, defaultConfig(), migrateState().
+// downloadBlob(), FORMAT_BADGES, defaultConfig(), migrateState(),
+// normalizeSyncedState().
 //
 // The game editor stages every edit in a local draft (gameDraft) and
 // only writes to state.config on Save — nothing else in the app can
@@ -1222,6 +1223,12 @@ function tryImport(text) {
     const v = parsed[key];
     if (v && typeof v === 'object' && !Array.isArray(v)) state[key] = v;
   });
+  // A backup is untrusted input with exactly the shape problem CLAUDE.md warns
+  // about: anything that round-tripped through Realtime Database has had its
+  // empty arrays/objects pruned away, so an imported bracket can arrive with no
+  // `matches` and blank-screen renderTournament — on every device, since the
+  // import syncs. Heal it before anything renders or pushes.
+  normalizeSyncedState();
   pruneOrphanedGameData();
 
   saveConfig();

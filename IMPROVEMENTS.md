@@ -1,315 +1,141 @@
 # Improvement plan — Camp Scoreboard
 
-Written 2026-07-20 after a full-project review (all of `app.js`, `index.html`,
-`styles.css`). This is an ordered, implementation-ready backlog for the next
-Claude session. Every claim below was verified against the code; line numbers
-are approximate (the file shifts) — search for the quoted identifiers.
+Re-audited **2026-07-25**, after camp week finished (the week ran Mon 20 – Fri 24
+July 2026). The original version of this file was written 2026-07-20 mid-camp;
+essentially all of it — the P0 data-safety items, the P1 correctness bugs, and
+the P2 graphics/UX/accessibility list — has since shipped. That backlog has been
+replaced with what is actually still open, so nobody re-does finished work.
 
 ## Ground rules (read first)
 
-- **It is camp week. The site is live and in use.** `main` is the deploy branch
-  (the old `claude/festive-bohr-Wt6Np` branch is dead — do NOT push to it); push
-  to `main`, then verify against https://camp.patricksimpson.info per CLAUDE.md.
-  Bump all SIX `?v=N` strings in `index.html` (styles.css, vendor/jelly.js,
-  firebase-config.js, defaults.js, app.js, settings.js) plus `APP_VERSION` and
-  `CODE_UPDATED_AT` in `app.js` on every deploy; `node --check` changed JS.
-- **Never regress the sync invariants** (CLAUDE.md): push gated on `remoteReady`;
-  missing snapshot key = empty (only `teams` guarded); `normalizeSyncedState()`
-  heals RTDB-pruned empties. Any new synced field follows the `bonuses` pattern
-  (SYNC_KEYS + merge array + normalize + resetWeek).
-- **Test before deploying**: headless Chromium + Playwright is available
-  (`NODE_PATH=$(npm root -g)`, launch `chromium` from the global playwright).
-  Serve with `python3 -m http.server`. Seed `localStorage`
-  (`campScoreboardUnlocked=1`, `campScoreboardRole=edit`, `campScoreboardV2`)
-  — AND `campScoreboardEditEpoch` set to the current `EDIT_PIN_EPOCH` from
-  app.js (currently `r1`), or index.html's pre-paint epoch check will silently
-  wipe the unlocked/role keys on the next load and re-lock the page.
-  Use the `?now=<dow>-<hhmm>` URL override for schedule states. Firebase is
-  unreachable from the sandbox — `ERR_CONNECTION_RESET` console errors are
-  expected, not failures. Screenshot light + dark at 360–414px widths.
-- Work items are ordered. **P0 before anything else** — those protect this week's
-  data. Ship small commits; deploy + verify each.
+- **`main` is the deploy branch.** GitHub Pages serves camp.patricksimpson.info
+  from it; a push to `main` *is* the deploy. Verify against the live URL
+  afterwards (see CLAUDE.md) — don't assume.
+- **Camp week is over**, so the "an undeployed fix is the same as no fix"
+  urgency has lifted. That's the one thing that has genuinely changed about how
+  to work here: bigger, riskier changes (the ones marked decision-gated below)
+  are now reasonable to attempt, because there's no live scoring to break.
+- On every deploy: bump all SIX `?v=N` strings in `index.html` (styles.css,
+  vendor/jelly.js, firebase-config.js, defaults.js, app.js, settings.js) plus
+  the same `?v=` refs in `current-standings.html` / `stalling.html`, plus
+  `APP_VERSION` and `CODE_UPDATED_AT` in `app.js` (and `TV_BUILD` if
+  current-standings.html changed).
+- **Run the tests**: `node tests/run.js`. Then `node --check` every changed JS
+  file. Then the Playwright pass for anything visual (below).
+- **Never regress the sync invariants** (CLAUDE.md → "Firebase Realtime Database
+  gotcha"). `tests/sync.test.js` pins all of them; if a change makes those tests
+  fail, the change is wrong, not the tests.
 
-## P0 — Data safety (do these first, they are small)
+## Verification playbook
 
-### 1. Offline-entered results can be silently destroyed by the first sync snapshot
-`pushState()` early-returns until `remoteReady` (first snapshot), and nothing
-re-queues the push afterward. So: page loads on dead wifi → scorer saves a result
-→ push no-ops → wifi returns → first snapshot **replaces** `state.results` with
-the server copy → the result vanishes. Also: `schedulePush` is a 400ms
-`setTimeout` with no flush — locking the phone right after "Save Result" strands
-the push (iOS suspends timers).
-Fix, in `initSync`/`pushState` area of `app.js`:
-- Add a `pagehide` + `visibilitychange`(hidden) listener that, when a `pushTimer`
-  is pending, clears it and calls `pushState()` synchronously.
-- Track a module-level `dirtySinceLoad = true` in `saveState()` when
-  `!remoteReady`. In the first-snapshot merge, if `dirtySinceLoad` and local
-  `state.meta.lastDataChangeAt` is strictly newer than
-  `remote.meta.lastDataChangeAt`, **push local instead of adopting remote**
-  (set `remoteReady = true` first so the push flows). Otherwise merge as today.
-Verify: Playwright — stub `window.FIREBASE_CONFIG = {}` off/on; simulate by
-calling the merge logic directly (pattern in scratchpad smoke tests); confirm a
-locally-saved result survives a first snapshot that lacks it when local meta is
-newer, and is replaced when older (current behavior).
+1. `node tests/run.js` — 80+ assertions over the real app.js/defaults.js/
+   settings.js. Fast, no deps, no network. Add cases alongside any change to
+   scoring, sync, the clock, the schedule data, or backup/restore.
+2. `node --check` every changed JS file.
+3. Playwright for anything visual: headless Chromium is available
+   (`NODE_PATH=$(npm root -g)`, launch `chromium` from the global playwright),
+   serve with `python3 -m http.server`. Seed `localStorage` with
+   `campScoreboardUnlocked=1`, `campScoreboardRole=edit`, and
+   `campScoreboardEditEpoch` = the current `EDIT_PIN_EPOCH` from app.js
+   (currently `r2`) — without the epoch, index.html's pre-paint guard wipes the
+   unlock keys and re-locks the page. Use `?now=<dow>-<hhmm>` to pin a schedule
+   state. Firebase is unreachable from the sandbox; `ERR_CONNECTION_RESET`
+   console noise is expected. Screenshot light + dark at 360–414px, and assert
+   `#app` has no horizontal overflow.
+4. Sync-shape checks: simulate merges with keys missing (RTDB prune) — nothing
+   throws, empties heal. `tests/sync.test.js` covers this; extend it rather than
+   testing by hand.
 
-### 2. `saveState()` throws unguarded in private mode / on quota
-`localStorage.setItem(STORAGE_KEY, ...)` is bare while every other storage access
-is try/caught. One failure makes every Save button appear dead.
-Fix: wrap in try/catch, still call `schedulePush()` on failure (cloud + memory
-still work). One-liner.
+## Open work
 
-### 3. Bonus ✕ remove has no confirm — the only destructive action without one
-`renderBonuses` remove handler: `delete state.bonuses[...]` on a single tap of a
-small right-edge target, and the deletion syncs everywhere. Every comparable
-action (`clear-result`, `resetWeek`, `reset-round`, `cancel bracket`) confirms.
-Fix: `if (!confirm(...))` naming the team, label, and points.
+### 1. Make the edit PIN actually secret — needs Firebase Auth (the big one)
+This is the only item left with real substance, and camp being over is exactly
+the window for it.
 
-## P1 — Correctness bugs
+Where it stands: the PIN check is PBKDF2-HMAC-SHA256 at 1.2M iterations over a
+fresh random salt, so one guess costs ~0.5–2s instead of microseconds. (The
+earlier single-SHA-256 scheme was swept end-to-end — both PINs recovered — in
+**47ms** on a laptop.) That raises the floor but cannot close the hole:
+verification happens in the browser, so every visitor receives the salt, the
+iteration count, and both target hashes, and a 4-digit PIN is only 10,000
+candidates. A GPU still sweeps that in well under a minute.
 
-### 4. Device-timezone leaks (3 places disagree with camp time)
-`campNow()` (America/New_York) is authoritative, but:
-- `defaultDay()` — `new Date().getDay()`
-- `renderDayTabs()` — `const todayDow = new Date().getDay()` (today-dot AND the
-  "Heads up: today is…" note below the tabs)
-- `standingsSummaryText()` — `new Date().toLocaleDateString([], ...)` header
-A West-Coast parent late evening sees the wrong "today" tab while the schedule
-sheet (which uses `campNow().dow`) disagrees on the same screen.
-Fix: use `campNow().dow` in the first two; format the summary date with
-`Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday:'short', month:'short', day:'numeric' })`.
+Worse, and unfixed: **RTDB is world-writable to anyone who reads
+`firebase-config.js`.** The PIN gates the UI, not the database.
 
-### 5. Open schedule sheet goes stale
-The 30s interval calls only `renderNowBanner()`; `renderAll()` never touches the
-sheet. Leave the sheet open across a block boundary → the NOW pill and dimming
-are wrong; a game result syncing in doesn't update the ✓ chips.
-Fix: in the interval callback and at the end of `renderAll()`:
-`if (!scheduleOverlayEl().hidden) renderScheduleBody();`
+The fix for both is to stop checking the secret on the client:
+- Firebase Auth — anonymous sign-in plus a custom claim, or a plain
+  email/password account per counselor.
+- RTDB security rules that allow writes only to authed editors, and (optionally)
+  reads only to authed devices at all.
+- Then the credential never ships inside the app, and a hostile client can't
+  write scores even if it fakes the UI.
 
-### 6. Every sync snapshot (including the echo of your own push) rebuilds the UI and kills input focus
-RTDB fires a local `value` event for your own `set()`. Typing in the tally /
-bonus-points / custom-label inputs → `saveState` → push at 400ms → echo snapshot
-→ `renderAll()` → focus lost, iOS keyboard dismisses. Other devices' pushes do it
-at any moment.
-Fix in the snapshot handler: before `renderAll()`, compare the incoming synced
-slice with current state (`JSON.stringify` of the SYNC_KEYS subset is fine at
-this scale) and skip the render when identical. Belt-and-braces: skip rebuilding
-when `document.activeElement` is a text input inside `#entry-area`/`#bonus-body`
-and values are equal.
-Verify: Playwright — focus the bonus points input, call the merge with identical
-data, assert focus retained.
+Needs Firebase console changes and a migration path for already-unlocked
+devices. Was explicitly deferred out of camp week; it is now unblocked.
 
-### 7. Messtival double points — **DECISION NEEDED FROM PATRICK**
-Friday's games carry `messtival: true` and the banner says "worth DOUBLE points
-on the big scoreboard! (Track that on paper.)" — but `medalCounts()` applies flat
-`MEDAL_POINTS`. Since the app is now fully points-based, Friday's app standings
-will diverge from the paper scoreboard.
-Ask Patrick: should messtival medals count double in the app?
-- If yes: in `medalCounts()`, iterate `Object.entries(state.results)` and weight
-  by `gameById(id).messtival ? 2 : 1`; update the banner copy ("counted double
-  here too"); add `×2` note on Friday game cards.
-- If no: change the banner/messtival tag copy so the app doesn't promise doubling.
+### 2. Service-worker caching for real offline use — decision-gated
+`sw.js` ships deliberately WITHOUT a fetch handler so it can never serve stale
+code (kill-switch documented in the file); it exists only so OS notifications
+work. Adding caching would make the app usable on the dead patches of camp wifi,
+but it's the single easiest way to pin every phone to an old build.
 
-### 8. Negative bonus points can't be typed on iPhone
-`#bonus-points` is `type="number" inputmode="numeric"` — the iOS numeric pad has
-no minus key, yet negatives are supported downstream (`.neg` styling). Also no
-integer/bounds validation (`2.5`, `1e6` flow through).
-Fix: add a +/− toggle button beside the field (default +); validate
-`Number.isInteger(pts) && Math.abs(pts) <= 100`.
+If Patrick wants it: network-first with cache fallback **only**, cache keyed to
+the `?v=` number, old caches deleted on activate. Never cache-first. Test the
+upgrade path (old SW → new SW → new assets) before it goes anywhere near a
+phone, and keep the kill-switch working.
 
-### 9. Countdown alarms don't fire while the phone is locked; timers lost on reload
-`liveTimers`/`liveWatches` are in-memory; `tick()` is a suspended `setInterval`
-when backgrounded, so `playAlarm()` only fires after wake. Reload mid-countdown
-resets the clock (completed Pictionary laps are safe — synced; verified).
-Fix (keep it device-local — do NOT sync):
-- Persist `{endAt, duration, round, running, alarming}` per game to
-  `localStorage` on start/pause/reset; rehydrate in `countdownHTML`.
-- On `visibilitychange` → visible, if any timer's `endAt <= now` and not yet
-  alarmed, fire `playAlarm()` immediately.
-- While a timer runs, request `navigator.wakeLock.request('screen')` (guarded,
-  re-request on visibilitychange); release on stop.
+### 3. Copy/consistency nits
+- Bonus meal chip says "Dinner"; the schedule and `MEALS` keys say "Supper".
+  Pick one (the schedule's wording is "Supper").
+- Elective-list name spellings differ from the roster (Lilly/Lily,
+  Sofi/Sofie/Sofia). Ask Patrick whether that's intentional before normalizing —
+  they may be different kids.
 
-### 10. Time formatting edges
-`formatScore` can emit "1:60" (rounding carries `s` to 60 — e.g. 119.97s);
-`parseScoreInput` accepts negative times like `-1:30`.
-Fix: after rounding, `if (s >= 60) { m += 1; s -= 60; }`; reject negatives.
+### 4. Change-history readability (small)
+Verse and cleanup point edits are stored as delete-then-add in the bonus ledger,
+so `describeCauses` logs "Monday memory verse — removed; Monday memory verse —
+added" where a human would write "changed 3 → 5". Collapse a removed/added pair
+that shares a label into one "changed" line.
 
-## P2 — Graphics & UX (the fun part)
+### 5. Post-camp: what should the site show now?
+Unasked and unanswered, but worth raising rather than guessing: the app is now a
+finished week's scoreboard. Options range from "leave it exactly as it is" (a
+permanent record — the current behavior, and a perfectly good answer) to a
+frozen final-standings view, to archiving the week so next year starts clean.
+The backup/restore in Settings → Data already covers keeping the week's data
+safely, so nothing is at risk while this stays undecided.
 
-### 11. `<head>` identity: favicon, theme-color, description, apple-touch-icon
-There is none of it. Add (no build step required):
-- SVG emoji favicon data-URI (🏅).
-- `<meta name="theme-color">` twice with `media` for light (`#f4f6f9`) and dark
-  (`#10141c`) — AND update it from `applyTheme()` since the app can override the
-  OS theme.
-- `<meta name="description">` + `og:title`/`og:description`.
-- `apple-touch-icon.png` — generate a real 180×180 PNG (🏅 on `#3355ff` rounded
-  square; Python/PIL or canvas in Playwright, commit the file). iOS ignores SVG.
-- Optional: tiny `manifest.json` (`display: standalone`, name, icons) so
-  "Add to Home Screen" feels like an app. (Full offline service worker is P3.)
+## Shipped since the original audit (do not redo)
 
-### 12. Dark mode is broken on the PIN lock screen + incomplete pre-paint fallback
-The `@media (prefers-color-scheme: dark)` fallback overrides only 5 tokens;
-`body.dark-theme` overrides 16. And `applyTheme()` only runs from `init()`, which
-`boot()` skips while locked — so the lock screen (first thing everyone sees)
-renders OS-dark users a half-dark theme: light-blue primary dots, cream gold
-chips, wrong shadows. Fix:
-- Copy the remaining token overrides (primary/primary-dark/primary-hover/danger/
-  gold/silver/bronze pairs/shadows) into the `@media` fallback block.
-- Add `color-scheme: light`/`dark` to the token sets so native `<select>`/input
-  chrome matches (medal picker in dark mode currently gets light UA chrome).
-- Call `applyTheme()` (or a minimal class-set based on saved `state.theme`) from
-  `boot()` before `showLockScreen()`.
+Kept as a short ledger so a future session doesn't re-derive these from the
+original backlog's numbering.
 
-### 13. Podium-tint the top-3 standings rows
-Rank 1 currently looks like rank 6. In `renderStandings`:
-`tr.className = i < 3 && s.points > 0 ? 'podium-row podium-' + (i + 1) : ''`
-(the `points > 0` gate keeps Monday's all-zero table neutral). CSS with existing
-tokens: row background `var(--color-gold-bg)` (+silver/bronze), rank cell colored
-+ 800 weight, inset 3px left accent. Also wrap zero medal counts in a
-`.zero { opacity: .35 }` span so earned medals pop. Both themes come free via
-tokens. Screenshot both.
-
-### 14. Confetti on result save 🎉
-Three "it's official" moments end in a silent re-render: tally save handler,
-placement save handler, `save-bracket-btn` in `renderBracketSummary` (plus a
-smaller burst on the championship winner tap). Add `celebrate(goldTeamId)`:
-~40-line dependency-free canvas overlay (`position:fixed; inset:0;
-pointer-events:none; z-index:2000`), ~80 particles, gravity, 1.5s, then remove.
-Use token colors AND `fillText(teamEmoji(goldTeamId))` for some particles —
-the winning mascot raining down will land with kids. Guard:
-`if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;`
-Pairs with the existing `playHighScore()` chime.
-
-### 15. Progress bar in the Happening Now banner
-`nowBannerHtml` has `b.start`/`b.end`/`minutes`; banner already re-renders every
-30s. Append a 4px `.now-progress` track+fill (tokens: border bg, primary fill)
-showing elapsed fraction of the current block. Skip for `noTime` blocks and the
-pre-first-block states. "How long until lunch" as a filling bar.
-
-### 16. Schedule reachable during competitions
-`nowBannerHtml` returns `null` for `type === 'games'` blocks, and the banner is
-the only way into the schedule sheet — so it's unreachable exactly during
-10:00–11:45 and 18:00–18:45. CLAUDE.md documents the hidden banner as deliberate
-(scoreboard is the main event), so keep the banner minimal: during games blocks
-render a slim single-line variant — `🏅 Team competitions · 📅 Full schedule ›`
-— no "Up next", no stations, still tappable. (Alternative if Patrick prefers the
-banner fully hidden: a small 📅 button in the header that always opens the sheet.)
-
-### 17. Bottom-sheet polish
-- `max-height: 90vh` → add `90dvh` override (iOS URL bar eats the header).
-- `.schedule-body` bottom padding → `calc(2rem + env(safe-area-inset-bottom))`;
-  add `viewport-fit=cover` to the viewport meta.
-- Exit animation: opening animates, closing blinks out — add a 0.2s
-  translate-down class before setting `hidden`.
-- Swipe-to-dismiss: the grabber implies it. Touch handlers on
-  `.schedule-header` ONLY (never the scrollable body): track `touchstart/move`
-  translateY, dismiss if `dy > 90`, else spring back. Reset transform in
-  `closeSchedule()`.
-- `.sched-day-chip` uses transparent borders on `--color-bg` while `.day-tab`
-  uses visible borders on `--color-surface` — align the two day-switchers.
-
-### 18. Outdoor readability (counselors in full sun)
-- `--color-gold #b8860b` on `--color-gold-bg #fff6dd` ≈ 3.0:1 — fails at the tiny
-  sizes it's used (format badges 0.7rem, game result line, bonus subtotal chips,
-  played chips). Darken light-theme `--color-gold` to ~`#96690a` (check dark
-  theme's `#e8c15a` separately — it's fine).
-- `.bonus-hint` is 0.6rem — smallest text in the app carrying real info; raise to
-  0.7rem.
-- `.counter-btn-sub` drops opacity on colored text — remove the opacity, use a
-  lighter weight.
-- Consider muted token `#6b7280` → `#5b6472` (light theme) — free contrast.
-
-### 19. More team-emoji moments (cheap, high-delight)
-The mascots exist but are missing from: medal picker `<option>`s
-(`${teamEmoji(t.id)} ${esc(t.name)}`), tally score rows, live `rank-pill`s,
-bracket summary medal rows, and — the big one — `matchupCalloutHTML`, the bracket
-hype screen: two large mascots facing off across the "vs".
-
-### 20. Accessibility pass (all small)
-- `<th>` 🥇🥈🥉 → wrap `<span role="img" aria-label="Gold medals">` etc.; `#` th
-  gets `aria-label="Rank"`.
-- `role="alert"` on `#entry-error`, `#bonus-error`, `#lock-error`;
-  `aria-live="polite"` on `#sync-status`.
-- `aria-pressed` on day tabs, sched-day chips, bonus category/meal/team chips.
-- Sheet: set `document.getElementById('app').inert = true/false` on open/close
-  (focus already moves in and restores — verified).
-- Keypad: `aria-label="Delete digit"` on ⌫; `aria-hidden` on the dots row.
-- Global `:is(button,[role=button],select,input):focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }`
-  (only `.now-banner` styles focus today).
-
-### 21. Small fixes & cleanups
-- `esc()`: add `'` → `&#39;` and `>` → `&gt;` (currently safe — all attrs are
-  double-quoted, verified — but it's one refactor from an XSS via team names
-  containing `'`).
-- `renderBonuses` render-guards for partially-synced entries:
-  `esc(b.label || 'Bonus')`, `Number(b.points) || 0` (currently renders
-  "undefined" if a field is pruned; doesn't throw — verified).
-- Bonus meal chip "Dinner" vs schedule's "Supper" — align (ask Patrick which; the
-  schedule and MEALS keys say Supper).
-- Delete the unreachable generic stopwatch (`stopwatchHTML`/`bindStopwatch`,
-  ~75 lines — no game defines `g.stopwatch`; the Pictionary runner has its own).
-- Sync indicator honesty: subscribe `firebase.database().ref('.info/connected')`
-  → drive `#sync-status` ("☁️ Synced" / "⚠️ Offline — will sync when back"); in
-  the listener's cancel/error callback set `fbRef = null` + update indicator.
-  (Currently says "Synced across devices" forever, even offline. Compounds P0#1.)
-- Optional: flash a standings row (0.6s background pulse) when its points change
-  from a remote sync — remote updates are invisible today.
-- Pictionary photo flags are synced but blobs are per-device — other phones see
-  "Retake"/"Export N" for photos they don't have; export politely no-ops
-  (verified). Cosmetic: caption the export hint "photos live on the phone that
-  took them".
-
-## P3 — Stretch (decision-gated, only if the week's needs are met)
-
-- **Offline/PWA**: a manifest now exists, and `sw.js` shipped as a
-  notification-only service worker (deliberately NO fetch handler, so it can't
-  pin stale code; kill-switch documented in the file). Adding *caching* to it
-  remains decision-gated: network-first with cache fallback ONLY, version the
-  cache with the `?v` number. Do not attempt mid-week without Patrick's
-  go-ahead.
-- Meal-cleanup rota display: Patrick will supply which team cleans which
-  meal/day; surface it in the schedule sheet meal blocks + a line in the bonus
-  card. (Awarding already works via the cleanup category.)
-
-## Deferred: make the edit PIN actually secret (needs Firebase Auth)
-
-Hardened 2026-07-25 as far as a static site allows: the PIN check is now
-PBKDF2-HMAC-SHA256 at 1.2M iterations over a fresh random salt, so one guess
-costs ~0.5-2s instead of microseconds. (The prior single-SHA-256 scheme was
-swept end-to-end — both PINs recovered — in **47ms** on a laptop.)
-
-This raises the floor but cannot close the hole: verification happens in the
-browser, so every device gets the salt, iteration count, and target hashes,
-and a 4-digit PIN is only 10,000 candidates. A GPU still sweeps that in well
-under a minute. Treat the edit PIN as a "keeps honest people honest" door.
-
-The only real fix is to stop checking the secret on the client:
-- Firebase Auth (anonymous sign-in + a custom claim, or a plain
-  email/password account per counselor), with RTDB security rules that allow
-  writes only for authed editors. The PIN — or better, a real credential —
-  never ships to the device, and rules stop a hostile client from writing
-  scores even if it fakes the UI.
-- This also fixes a related gap the PIN never covered: RTDB is currently
-  world-writable to anyone who reads `firebase-config.js`, so the PIN only
-  gates *the UI*, not the database. Auth + rules is the fix for both.
-- Requires Firebase console changes and a migration for already-unlocked
-  devices — do NOT attempt mid-camp week.
-
-## Open questions for Patrick (collect answers before the relevant item)
-1. ~~Messtival: double points in the app on Friday, or fix the copy?~~
-   ANSWERED (2026-07-23): double points shipped — messtival game flags plus a
-   Thu-5pm-to-Fri-midnight window for verse/custom bonuses (cleanup exempt).
-2. During competition blocks: slim banner (recommended) or header 📅 button? (P2 #16)
-3. "Dinner" vs "Supper" wording for cleanup bonuses. (P2 #21)
-4. Elective-list name spellings differ from the roster (Lilly/Lily, Sofi/Sofie/
-   Sofia) — intentional or normalize?
-
-## Verification playbook (recap)
-1. `node --check` every changed JS file after every edit.
-2. Playwright locally: seed storage, use `?now=`, exercise the changed flow
-   end-to-end, screenshot light+dark at 390px, check `pageerror` is empty and
-   `#app` has zero horizontal overflow.
-3. Sync-shape tests: simulate merges with keys missing (RTDB prune) — nothing
-   throws, empties heal.
-4. Bump `?v=` ×6 + `APP_VERSION` + `CODE_UPDATED_AT`, commit, push to `main`
-   (the deploy branch — festive-bohr is dead), then curl the live site until
-   the new `?v=` and a change-specific string appear.
+- **Data safety**: offline-entered results defended against the first sync
+  snapshot (`dirtySinceLoad`); `pagehide`/`visibilitychange` push flush;
+  `saveState()` guarded against private-mode/quota throws; confirm on bonus
+  removal; per-path (per-item, and per-field for `live`) sync writes so two refs
+  don't clobber each other; `pendingWrites` guard against stale reconnect
+  snapshots.
+- **Correctness**: camp-time (`campNow()`) everywhere — day tabs, default day,
+  standings summary; open schedule sheet refreshes; renders skipped on snapshot
+  echoes so inputs keep focus; Messtival/Thu-evening double points (games and
+  bonuses, cleanup exempt); `formatScore` can't emit "1:60"; negative times
+  rejected; timers persist and hold a wake lock.
+- **Graphics/UX**: full `<head>` identity (favicon, theme-color per scheme,
+  description, og tags, apple-touch-icon, manifest); dark mode fixed on the lock
+  screen and completed pre-paint; podium-tinted top three; confetti on save;
+  progress bar in the Happening Now banner; slim banner during competition
+  blocks; bottom-sheet polish (dvh, safe-area, exit animation, swipe-to-dismiss);
+  outdoor-readable contrast; team emoji throughout; full accessibility pass
+  (aria labels/roles/pressed, `inert` on the sheet, global focus-visible).
+- **Later additions**: announcements with auto-expiry, live "Big Board" for
+  every live game, per-team verse and cleanup ledgers, change history, week
+  builder (teams/days/games) with backup + restore, rank-change arrows,
+  catch-up hint, weather/rain hints, `.ics` day export, per-card "hide from
+  viewers", Jelly UI migration, joy layer, presence chip.
+- **2026-07-25 (this pass)**: deferred remote snapshots are re-fetched when the
+  device goes idle instead of dropped; the synced game clock runs on RTDB server
+  time (`.info/serverTimeOffset`) so a wrong phone clock can't misreport or
+  early-buzz a countdown; `flushPendingPush()` covers the week-config push;
+  restore-from-backup normalizes the imported tree; `tests/` added.
