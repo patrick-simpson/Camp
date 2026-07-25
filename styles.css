@@ -3650,6 +3650,13 @@ body.no-scroll {
   white-space: nowrap;
 }
 /* ── Camp picker / switcher (dual-camp accounts) ──────────────── */
+.settings-row-camp {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
 /* The options reuse .team-picker-option; only the sub-line is new. */
 .camp-picker-option {
   display: flex;

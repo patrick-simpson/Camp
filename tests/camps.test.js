@@ -186,9 +186,35 @@ test('clearLocalData wipes BOTH camps and the camp-selection keys', () => {
   localStorage.setItem('campScoreboardDayRanks:senior', '{}');
   localStorage.setItem(CAMPS_HINT_KEY, '{"junior":"editor"}');
   localStorage.setItem(ACTIVE_CAMP_KEY, 'senior');
+  localStorage.setItem(CAMP_ASKED_KEY, '1');
   clearLocalData();
   ['campScoreboardV2', 'campScoreboardV2:senior', 'campScoreboardDayRanks:senior',
-   CAMPS_HINT_KEY, ACTIVE_CAMP_KEY].forEach((k) => {
+   CAMPS_HINT_KEY, ACTIVE_CAMP_KEY, CAMP_ASKED_KEY].forEach((k) => {
     assert.equal(localStorage.getItem(k), null, `${k} must be cleared`);
   });
+});
+
+test('the camp question is asked once, then the last choice is remembered', () => {
+  // "Remember my last choice" (owner's revised call): the picker fires only
+  // on the FIRST discovery of a second camp; after that the active-camp key
+  // is the memory and switching lives in Settings.
+  localStorage.removeItem(CAMP_ASKED_KEY);
+  writeCampsHint('junior', 'editor');
+  writeCampsHint('senior', 'viewer');
+
+  campPickerAsked = false;
+  maybeShowCampPicker();
+  assert.equal(localStorage.getItem(CAMP_ASKED_KEY), '1', 'the one-time ask is recorded');
+
+  campPickerAsked = false; // a later page load
+  const overlay = document.getElementById('camp-picker-overlay');
+  overlay.removeAttribute('open');
+  let opened = false;
+  overlay.setAttribute = (name) => { if (name === 'open') opened = true; };
+  maybeShowCampPicker();
+  assert.notOk(opened, 'already answered once — never auto-asks again');
+
+  localStorage.removeItem(CAMP_ASKED_KEY);
+  localStorage.removeItem(CAMPS_HINT_KEY);
+  campPickerAsked = false;
 });

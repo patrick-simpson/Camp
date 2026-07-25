@@ -15,9 +15,9 @@ const STORAGE_KEY = lsKey('campScoreboardV2'); // per-camp; junior stays the bar
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-25T21:57:32Z';
+const CODE_UPDATED_AT = '2026-07-25T22:37:15Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 168;
+const APP_VERSION = 169;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1514,11 +1514,17 @@ function wireMembers() {
   if (row) row.addEventListener('click', openMembers);
 }
 
-// The mid-session way to change camps (Settings row). Hidden unless this
-// account is on both camps' lists — see updateAccountRow.
+// The mid-session way to change camps: a Junior/Senior segmented control in
+// Settings. Hidden unless this account is on both camps' lists — see
+// updateAccountRow. Picking the other camp is the usual set-key-and-reload.
 function wireCampSwitcher() {
-  const row = document.getElementById('camp-row');
-  if (row) row.addEventListener('click', () => { openCampPicker(); });
+  const seg = document.getElementById('camp-switch');
+  if (seg) {
+    seg.addEventListener('change', (e) => {
+      const id = e.detail && e.detail.value;
+      if (id && id !== CAMP.id) switchCamp(id);
+    });
+  }
   // However the camp picker closes (choice, backdrop, Escape), the deferred
   // team question gets its turn back.
   const overlay = document.getElementById('camp-picker-overlay');
@@ -7057,12 +7063,17 @@ function updateAccountRow() {
   const who = identityLabel(authUser); // email or phone number
   const camp = hasBothCamps() ? ' · ' + CAMP.label : '';
   label.textContent = (canEdit() ? '✏️ Editor' : '👀 Viewer') + (who ? ' — ' + who : '') + camp;
-  // The switch-camp row only exists for accounts on both camps' lists.
+  // The camp switcher only exists for accounts on both camps' lists. The
+  // control just reflects the active camp — the page reloads on change, so
+  // it never has to track anything.
   const row = document.getElementById('camp-row');
   if (row) {
     row.hidden = !hasBothCamps();
-    const lbl = document.getElementById('camp-row-label');
-    if (lbl) lbl.textContent = 'Switch camp — you\u2019re in ' + CAMP.label;
+    const seg = document.getElementById('camp-switch');
+    if (seg) {
+      seg.setAttribute('value', CAMP.id);
+      try { seg.value = CAMP.id; } catch (e) { /* attribute is enough */ }
+    }
   }
 }
 
@@ -7446,7 +7457,7 @@ function authHintRole() {
 // only: the rules never consult it, and a forged entry buys an empty shell.
 const CAMPS_HINT_KEY = 'campScoreboardCampsHint';
 const CAMP_SWITCH_TRIED_KEY = 'campSwitchTried'; // sessionStorage loop guard
-const CAMP_CHOSE_KEY = 'campScoreboardJustChose'; // the switch reload already answered the question
+const CAMP_ASKED_KEY = 'campScoreboardCampAsked'; // the one-time "which camp?" ask already happened
 
 let otherCampRole = null;   // 'viewer' | 'editor' | null — this account, other camp
 let otherCampProbed = false;
@@ -7485,9 +7496,6 @@ function switchCamp(campId) {
     if (role === 'editor' || role === 'viewer') localStorage.setItem(AUTH_HINT_KEY, role);
     else localStorage.removeItem(AUTH_HINT_KEY);
   } catch (e) { /* fine */ }
-  // The reload this triggers IS the answer to "which camp?" — don't ask
-  // again the moment it lands. (Session-scoped: the next real launch asks.)
-  try { sessionStorage.setItem(CAMP_CHOSE_KEY, '1'); } catch (e) { /* fine */ }
   location.reload();
 }
 
@@ -7515,18 +7523,18 @@ function probeOtherCamp() {
   } catch (e) { record(null); }
 }
 
-// Patrick's call: an account with BOTH camps gets asked which one, every
-// launch — no remembered default. Single-camp accounts never see this.
+// An account with BOTH camps gets asked which one ONCE — the first time
+// this device discovers the second camp — and the answer is remembered
+// (the active-camp key). After that the app opens straight into the camp
+// you used last; switching lives in Settings (the Camp switcher) and the
+// footer camp chip. Single-camp accounts never see any of this.
+// (Owner's revised call, 2026-07-25 — this replaced ask-every-launch.)
 function maybeShowCampPicker() {
   if (campPickerAsked || !hasBothCamps()) return;
   campPickerAsked = true;
-  // A switch reload already answered the question — consume the marker and
-  // skip this one ask. Every genuinely new launch still asks.
   try {
-    if (sessionStorage.getItem(CAMP_CHOSE_KEY) === '1') {
-      sessionStorage.removeItem(CAMP_CHOSE_KEY);
-      return;
-    }
+    if (localStorage.getItem(CAMP_ASKED_KEY) === '1') return; // already answered once
+    localStorage.setItem(CAMP_ASKED_KEY, '1');
   } catch (e) { /* fine */ }
   openCampPicker();
 }
@@ -7573,7 +7581,7 @@ function clearLocalData() {
       try { localStorage.removeItem(b + CAMPS[cid].storageSuffix); } catch (e) { /* ignore */ }
     });
   });
-  [AUTH_HINT_KEY, EMAIL_SIGNIN_KEY, CAMPS_HINT_KEY, ACTIVE_CAMP_KEY].forEach((k) => {
+  [AUTH_HINT_KEY, EMAIL_SIGNIN_KEY, CAMPS_HINT_KEY, ACTIVE_CAMP_KEY, CAMP_ASKED_KEY].forEach((k) => {
     try { localStorage.removeItem(k); } catch (e) { /* ignore */ }
   });
 }

@@ -211,12 +211,14 @@ default, so pre-camps devices behave identically).
 - **Switching camps is ALWAYS set-key-then-reload** (`switchCamp()`), never
   re-pointing refs in place — the listener lifecycle is one-shot (a
   cancelled read is terminal). Dual-camp accounts get the camp picker
-  **every launch** (owner's explicit choice; `maybeShowCampPicker`), except
-  the reload a switch itself causes (`campScoreboardJustChose`,
-  session-scoped). The camp question outranks the team picker — the team
-  question is held while the camp dialog is open and re-asked on its close.
-  Mid-session switching: the Settings "Switch camp" row + the footer camp
-  chip (both only when `campScoreboardCampsHint` shows both camps).
+  **once** — the first time the device discovers both camps
+  (`campScoreboardCampAsked`) — and the choice is then remembered (the
+  active-camp key IS the memory). Owner's revised call, 2026-07-25;
+  ask-every-launch was the original behavior. The camp question outranks
+  the team picker — the team question is held while the camp dialog is open
+  and re-asked on its close. Mid-session switching: the Settings **Camp
+  segmented switcher** (`#camp-switch`) + the footer camp chip (both only
+  when `campScoreboardCampsHint` shows both camps).
 - **Denied in the active camp → probe the other one** (`denyMember`): a
   senior-only counselor whose first sign-in lands on the junior default
   gets auto-bounced to senior (one-shot per tab via
