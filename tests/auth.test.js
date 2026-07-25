@@ -110,6 +110,21 @@ test('memberRecord never writes a role outside viewer/editor', () => {
   assert.equal(memberRecord(undefined).role, 'viewer');
 });
 
+// ── The copy-and-send invite ──────────────────────────────────────
+
+test('inviteText tailors the message to how they sign in and what they can do', () => {
+  const emailEditor = inviteText(emailKey('coach@example.com'), 'editor');
+  assert.ok(emailEditor.includes('coach@example.com'), 'names the email');
+  assert.ok(/Continue with Google/.test(emailEditor), 'points an email member at Google');
+  assert.ok(/enter scores/.test(emailEditor), 'an editor is told they can enter scores');
+
+  const phoneViewer = inviteText(phoneKey('555-123-4567'), 'viewer');
+  assert.ok(phoneViewer.includes('+15551234567'), 'names the normalized phone number');
+  assert.ok(/phone number/.test(phoneViewer), 'points a phone member at phone sign-in');
+  assert.ok(/see all the scores/.test(phoneViewer), 'a viewer is told they can watch');
+  assert.notOk(/Continue with Google/.test(phoneViewer), 'no Google line for a phone member');
+});
+
 // ── The pre-paint hint ─────────────────────────────────────────────
 
 test('the auth hint only ever reads back as a real role', () => {

@@ -15,9 +15,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-25T19:38:26Z';
+const CODE_UPDATED_AT = '2026-07-25T20:11:37Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 165;
+const APP_VERSION = 166;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1403,8 +1403,31 @@ function membersOverlayEl() {
   return document.getElementById('members-overlay');
 }
 
+// After adding someone, the app hands the editor a ready-to-send invite to
+// paste into their own text/email (the app is a static site and can't send
+// mail itself). Set on a successful add, shown at the top of the list until
+// dismissed or the next add. Cleared when the drawer is (re)opened so a stale
+// invite from earlier doesn't linger.
+let lastInvite = null;
+
+// Build the copy-and-send invite for a newly added member. Tailored to how
+// they'll sign in (email vs phone) and what their role lets them do.
+function inviteText(key, role) {
+  const isPhone = String(key)[0] === '+';
+  const shown = identityFromKey(key);
+  const where = location.origin || 'https://camp.patricksimpson.info';
+  const can = role === 'editor'
+    ? 'You’ll be able to enter scores and help run the games.'
+    : 'You’ll be able to see all the scores, schedule, and standings.';
+  const how = isPhone
+    ? `Open ${where} on your phone, tap “Alternative sign in” → “Sign in with a phone number”, and enter ${shown}. You’ll get a texted code to finish.`
+    : `Open ${where} on your phone and tap “Continue with Google”, then choose your ${shown} account. (No Google account? Tap “Alternative sign in” → “Email me a sign-in link”.)`;
+  return `You’re on the Camp scoreboard app! 🏅\n\n${how}\n\n${can}`;
+}
+
 function openMembers() {
   if (!canEdit()) return;
+  lastInvite = null;
   const s = settingsOverlayEl();
   const overlay = membersOverlayEl();
   if (!overlay) return;
@@ -1464,8 +1487,20 @@ function renderMemberList(body, members) {
     </div>`;
   }).join('');
 
+  const inviteBanner = lastInvite ? `
+    <div class="member-invite">
+      <div class="member-invite-head">
+        <span class="member-invite-title">✅ Added — send them this</span>
+        <button type="button" class="member-invite-dismiss" aria-label="Dismiss">✕</button>
+      </div>
+      <p class="muted member-invite-note">The app can't email people itself, so copy this and send it however you like (text, email, group chat).</p>
+      <textarea class="member-invite-text" id="member-invite-text" rows="6" readonly>${esc(lastInvite)}</textarea>
+      <jelly-button class="secondary-btn" variant="primary" id="member-invite-copy" block>📋 Copy invite</jelly-button>
+    </div>` : '';
+
   body.innerHTML = `
     <p class="muted members-sub">Everyone here can open the app. Viewers can look; editors can change scores and manage this list. Anyone not on the list gets nothing — the database itself refuses them.</p>
+    ${inviteBanner}
     <div class="member-list">${rows || '<p class="muted">Nobody yet.</p>'}</div>
     <div class="member-add">
       <h3>Add someone</h3>
@@ -1550,12 +1585,28 @@ function bindMemberList(body, myKey) {
       }
       errEl.hidden = true;
       firebase.database().ref('campScoreboard/members/' + key).set(memberRecord(role, name))
-        .then(() => { showToast(shownId + ' can now sign in', { mine: true }); renderMembers(); })
+        .then(() => {
+          showToast(shownId + ' can now sign in', { mine: true });
+          lastInvite = inviteText(key, role); // surfaced at the top of the list to copy + send
+          renderMembers();
+        })
         .catch(() => {
           errEl.textContent = 'Add refused — are you still an editor?';
           errEl.hidden = false;
         });
     });
+  }
+
+  // Invite banner: copy the ready-made message, or dismiss it.
+  const inviteCopy = document.getElementById('member-invite-copy');
+  if (inviteCopy) {
+    inviteCopy.addEventListener('click', () => {
+      copyTextToClipboard(lastInvite || '', inviteCopy);
+    });
+  }
+  const inviteDismiss = body.querySelector('.member-invite-dismiss');
+  if (inviteDismiss) {
+    inviteDismiss.addEventListener('click', () => { lastInvite = null; renderMembers(); });
   }
 }
 
