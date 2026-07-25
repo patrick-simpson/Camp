@@ -343,13 +343,8 @@ html.view-only .card-visibility-row {
 
 /* The role button is a jelly-button host — it draws its own pill; the class
    only carries the view-only tint via Jelly's fill/label hooks. */
-.role-btn {
-  margin: 0;
-}
-
-html.view-only .role-btn {
-  --jelly-fill: var(--color-bronze-bg);
-  --jelly-label: var(--color-bronze);
+.settings-row-account #account-label {
+  overflow-wrap: anywhere; /* long emails wrap instead of pushing Sign out off */
 }
 
 .lock-box {
@@ -381,24 +376,50 @@ html.view-only .role-btn {
 .lock-prompt {
   color: var(--color-text-muted);
   font-size: 0.95rem;
-  margin: 0 0 1.5rem;
-  /* Reserve the line so swapping in the "Checking…" spinner can't nudge the
-     PIN boxes down mid-entry. */
+  margin: 0 0 1.25rem;
   min-height: 1.4em;
 }
 
-/* The "Checking…" spinner shown while the PIN is being stretched. */
 .lock-prompt jelly-spinner {
   vertical-align: middle;
   margin-right: 0.3rem;
 }
 
-/* PIN entry is a jelly-otp (4 boxes, numeric keyboard). Reserve its box
-   height pre-upgrade so the lock screen doesn't jump when it registers. */
-#pin-otp {
-  display: inline-block;
-  margin-bottom: 1rem;
-  min-height: 64px;
+/* Sign-in panels (showAuthScreen swaps which one shows). */
+#auth-signin jelly-button,
+#auth-denied jelly-button {
+  margin-bottom: 0.6rem;
+}
+.auth-denied-note {
+  color: var(--color-text-muted);
+  font-size: 0.9rem;
+  line-height: 1.4;
+  margin: 0 0 1rem;
+}
+/* The optional email-link mini-form (auth-email-link.js). */
+.email-link-details {
+  margin-top: 0.75rem;
+  text-align: left;
+}
+.email-link-summary {
+  color: var(--color-text-muted);
+  font-size: 0.85rem;
+  text-align: center;
+  cursor: pointer;
+  text-decoration: underline;
+  list-style: none;
+}
+.email-link-summary::-webkit-details-marker { display: none; }
+.email-link-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+.email-link-status {
+  margin: 0;
+  text-align: center;
+  font-weight: 600;
 }
 
 .lock-error {
@@ -408,9 +429,6 @@ html.view-only .role-btn {
   margin: 0 0 1rem;
   min-height: 1.1rem;
 }
-
-/* (The old on-screen keypad is gone — jelly-otp brings the system numeric
-   keyboard via inputmode=numeric on its boxes.) */
 
 /* ============================================================
    HEADER
@@ -3432,6 +3450,60 @@ body.no-scroll {
   flex: 0 0 5.5rem;
 }
 
+/* ── Members drawer (Settings → Who can sign in) ────────────── */
+.members-sub {
+  margin: 0 0 0.9rem;
+  font-size: 0.85rem;
+}
+.member-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1.1rem;
+}
+.member-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+.member-id {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.member-name {
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+.member-you {
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+.member-email {
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+  overflow-wrap: anywhere;
+}
+.member-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.member-self-note {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.78rem;
+}
+.member-add h3 {
+  margin: 0 0 0.6rem;
+}
+
 /* ============================================================
    ANNOUNCEMENTS (📣 editor broadcasts, pinned until dismissed)
    ============================================================ */
@@ -4020,6 +4092,11 @@ html.view-only #history-row {
    footer) while it's up, so the collapsible cards don't render beneath it. */
 body.builder-open .main-wrap > :not(#settings-view),
 body.builder-open #app-footer {
+  display: none;
+}
+
+/* Managing the sign-in list is editor work. */
+html.view-only #members-row {
   display: none;
 }
 

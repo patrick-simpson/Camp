@@ -19,42 +19,67 @@
   <!-- Jelly UI web components (vendored, see vendor/jelly.js header). Module
        scripts are deferred by spec, so this never blocks first paint and the
        classic scripts at the end of <body> always execute before it. -->
-  <script type="module" src="vendor/jelly.js?v=163"></script>
-  <link rel="stylesheet" href="styles.css?v=163">
+  <script type="module" src="vendor/jelly.js?v=164"></script>
+  <link rel="stylesheet" href="styles.css?v=164">
 
   <script>
     // Decide lock state before the page paints so we never flash the app,
     // and never show a blank page: exactly one of #app / #lock-screen shows.
+    // Sign-in itself resolves asynchronously (Firebase persists sessions in
+    // IndexedDB), so this guard runs on the cached hint from the LAST
+    // confirmed sign-in: an approved device paints the app immediately from
+    // local state while auth re-confirms in the background; anyone else gets
+    // the lock screen with no flash. The hint is convenience only — the
+    // database rules never consult it, so forging it shows an empty shell.
+    // Keep the key literal in sync with AUTH_HINT_KEY in app.js.
     (function () {
       try {
-        // One-time revocation: an editor session unlocked with a retired PIN
-        // (any 'edit' role from before the current epoch) is logged out and
-        // must re-enter the current editor PIN. View sessions are untouched.
-        // Keep these literals in sync with app.js (EDIT_PIN_EPOCH_KEY / EDIT_PIN_EPOCH).
-        if (localStorage.getItem('campScoreboardRole') === 'edit' &&
-            localStorage.getItem('campScoreboardEditEpoch') !== 'r2') {
-          localStorage.removeItem('campScoreboardUnlocked');
-          localStorage.removeItem('campScoreboardRole');
-        }
-        if (localStorage.getItem('campScoreboardUnlocked') !== '1') {
+        // One-time cleanup of the retired PIN gate's keys (pre-2026-07-25).
+        localStorage.removeItem('campScoreboardUnlocked');
+        localStorage.removeItem('campScoreboardRole');
+        localStorage.removeItem('campScoreboardEditEpoch');
+        var hint = localStorage.getItem('campScoreboardAuthHint');
+        if (hint !== 'viewer' && hint !== 'editor') {
           document.documentElement.classList.add('locked');
         }
-      } catch (e) { /* if storage is blocked, app just shows */ }
+      } catch (e) {
+        // Storage blocked: show the lock screen — sign-in will still work,
+        // it just can't be remembered.
+        document.documentElement.classList.add('locked');
+      }
     })();
   </script>
 </head>
 <body>
 
-  <!-- ── PIN LOCK SCREEN ─────────────────────────────────────────
-       PIN entry is a jelly-otp (4 numeric boxes, system keypad via
-       inputmode=numeric). app.js listens for its `complete` event and
-       validates; a wrong PIN shakes .lock-box and clears the boxes. -->
+  <!-- ── SIGN-IN SCREEN ──────────────────────────────────────────
+       Three panels inside one shell; showAuthScreen() in app.js decides
+       which shows: checking (auth resolving), signin (Google button +
+       optional email-link form), denied (signed in but not on the member
+       list). The html.locked class controls visibility, same as the old
+       PIN screen. -->
   <div id="lock-screen" class="lock-screen">
     <div class="lock-box">
       <div class="lock-logo"><span>🏅</span> Camp</div>
-      <p class="lock-prompt">Enter PIN to continue</p>
-      <jelly-otp id="pin-otp" length="4" label="PIN" size="large"></jelly-otp>
-      <p class="lock-error" id="lock-error" role="alert" hidden>Wrong PIN — try again</p>
+
+      <div id="auth-checking">
+        <p class="lock-prompt"><jelly-spinner type="dots" size="small" label="Checking sign-in"></jelly-spinner> Checking sign-in…</p>
+      </div>
+
+      <div id="auth-signin" hidden>
+        <p class="lock-prompt">Staff sign-in</p>
+        <jelly-button id="google-signin-btn" size="large" variant="primary" block>Continue with Google</jelly-button>
+        <div id="email-link-slot"></div>
+      </div>
+
+      <div id="auth-denied" hidden>
+        <p class="lock-prompt">Signed in as <strong id="auth-denied-email"></strong></p>
+        <p class="auth-denied-note">This account isn't on the camp list yet — ask a director to add you, then try again.</p>
+        <jelly-button id="auth-retry-btn" size="small" variant="platinum" block>↻ I've been added — try again</jelly-button>
+        <jelly-button id="auth-switch-btn" size="small" variant="platinum" block>Use a different account</jelly-button>
+      </div>
+
+      <p class="lock-error" id="lock-error" role="alert" hidden></p>
     </div>
   </div>
 
@@ -231,13 +256,20 @@
         <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🔔</span> Sound</span>
         <jelly-switch id="sound-toggle" label="Sounds"></jelly-switch>
       </div>
-      <div class="settings-row">
-        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🔑</span> Score entry</span>
-        <jelly-button id="role-btn" class="role-btn" size="small" variant="platinum"></jelly-button>
+      <!-- Who's signed in on this device + the way out. Signing out also
+           clears the camp data cached locally (see signOutAndClear). -->
+      <div class="settings-row settings-row-account">
+        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🔑</span> <span id="account-label"></span></span>
+        <jelly-button id="signout-btn" size="small" variant="platinum">Sign out</jelly-button>
       </div>
       <!-- Editors only (hidden for view-only via CSS): the week builder. -->
       <button id="builder-row" class="settings-link" type="button">
         <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🛠️</span> Set up the week</span>
+        <span class="settings-link-chevron" aria-hidden="true">›</span>
+      </button>
+      <!-- Editors only: manage who can sign in (the database allowlist). -->
+      <button id="members-row" class="settings-link" type="button">
+        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">👥</span> Who can sign in</span>
         <span class="settings-link-chevron" aria-hidden="true">›</span>
       </button>
       <!-- Editors only (hidden for view-only via CSS): opens the point-change log. -->
@@ -262,6 +294,14 @@
     <div class="settings-body" id="history-body"></div>
   </jelly-drawer>
 
+  <!-- ── MEMBERS (editor-only: who can sign in, and as what) ───────
+       The database allowlist the security rules check on every request.
+       Rendered by renderMembers() in app.js. -->
+  <jelly-drawer id="members-overlay" side="bottom" label="Who can sign in">
+    <h2 class="settings-title">👥 Who can sign in</h2>
+    <div class="settings-body" id="members-body"></div>
+  </jelly-drawer>
+
   <!-- ── TEAM PICKER (who are you rooting for?) ─────────────────── -->
   <jelly-dialog id="team-picker-overlay" label="Pick a team to follow">
     <h2 class="team-picker-title">👋 Which team are you rooting for?</h2>
@@ -275,13 +315,17 @@
   <jelly-toaster position="bottom"></jelly-toaster>
   <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="false"></div>
 
-  <!-- Firebase SDK (optional cloud sync). If these fail to load, the app
-       falls back to local-only mode automatically. -->
+  <!-- Firebase SDK: auth (sign-in) + database (cloud sync). If these fail
+       to load, the app falls back to local-only, view-only mode. -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=163"></script>
-  <script src="defaults.js?v=163"></script>
-  <script src="app.js?v=163"></script>
-  <script src="settings.js?v=163"></script>
+  <script src="firebase-config.js?v=164"></script>
+  <script src="defaults.js?v=164"></script>
+  <script src="app.js?v=164"></script>
+  <script src="settings.js?v=164"></script>
+  <!-- Optional email-link sign-in. Delete this one tag to remove the
+       feature (app.js only ever touches it through window.CampEmailLink). -->
+  <script src="auth-email-link.js?v=164"></script>
 </body>
 </html>

@@ -200,8 +200,10 @@ test('the example sends campers to their area before the cabins', () => {
   assert.ok(cabins < gone, 'the cabins are packed before the after-departure jobs');
 });
 
-// Posting is editor-only (see setNoticeStatus), so these run as an editor.
-localStorage.setItem('campScoreboardRole', 'edit');
+// Posting is editor-only (see setNoticeStatus), so these run as an editor —
+// via the auth test seam, not localStorage (roles come from the member
+// record now, never from the device).
+setMemberRole('editor');
 
 test('a draft renders nowhere, a posted notice renders everything', () => {
   freshState();
@@ -230,10 +232,10 @@ test('an empty posted notice stays hidden rather than showing a bare box', () =>
 
 test('only editors can post or take down a notice', () => {
   freshState();
-  localStorage.setItem('campScoreboardRole', 'view');
+  setMemberRole('viewer');
   setNoticeStatus('posted');
   assert.equal(noticeBoard().status, 'draft', 'a viewer must not be able to post to every phone');
-  localStorage.setItem('campScoreboardRole', 'edit');
+  setMemberRole('editor');
   setNoticeStatus('posted');
   assert.equal(noticeBoard().status, 'posted');
   setNoticeStatus('nonsense');

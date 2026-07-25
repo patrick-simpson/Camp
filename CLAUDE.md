@@ -15,7 +15,9 @@ Files:
   (`defaultConfig()`); live config then lives in synced state
 - `settings.js` — the settings sheet + week-builder UI
 - `styles.css` — all styling (design tokens at the top, light + dark)
-- `firebase-config.js` — sync config
+- `firebase-config.js` — sync config (also used by Firebase Auth sign-in)
+- `auth-email-link.js` — optional passwordless-email sign-in (loaded via a
+  guarded `window.CampEmailLink`; delete the one script tag to remove it)
 - `vendor/jelly.js` — vendored Jelly UI web components (chips, buttons,
   drawers, dialogs); it injects `--jelly-*` design tokens on :root at
   runtime, which the app's `--color-*` tokens re-source
@@ -56,14 +58,15 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
 
 **Every time any code asset changes:**
 1. Bump the `?v=N` cache-busting query string in `index.html` — there are
-   SIX on the same number: `styles.css`, `vendor/jelly.js`,
-   `firebase-config.js`, `defaults.js`, `app.js`, `settings.js` — keep
-   them in sync, all bumped together. Also bump `APP_VERSION` in `app.js`
-   to the same number (it drives the auto-reload version check).
-   `current-standings.html` and `stalling.html` load `vendor/jelly.js`
-   (and current-standings loads `firebase-config.js`) with the same `?v=`
-   scheme — bump those references too. (`manifest.json` and
-   `apple-touch-icon.png` have their own `?v=`, only bumped when those
+   SEVEN on the same number: `styles.css`, `vendor/jelly.js`,
+   `firebase-config.js`, `defaults.js`, `app.js`, `settings.js`,
+   `auth-email-link.js` — keep them in sync, all bumped together. Also bump
+   `APP_VERSION` in `app.js` to the same number (it drives the auto-reload
+   version check). `current-standings.html` and `stalling.html` load
+   `vendor/jelly.js` (and current-standings loads `firebase-config.js`) with
+   the same `?v=` scheme — bump those references too. (The Firebase SDK
+   `<script>` tags are pinned to the SDK version, not `?v=`; `manifest.json`
+   and `apple-touch-icon.png` have their own `?v=`, only bumped when those
    files actually change.)
 2. Update `CODE_UPDATED_AT` near the top of `app.js` to the current UTC
    time (`date -u +%Y-%m-%dT%H:%M:%SZ`) — this drives the "Code last
@@ -161,11 +164,78 @@ What's covered, and why each file exists:
   every shape RTDB can prune is healed).
 - `backup.test.js` — restore-from-backup, including that an imported tree gets
   normalized and orphan-pruned before it can render or sync.
+- `auth.test.js` — the `emailKey` contract (multi-dot/case/trim — the
+  regression that would lock people out under the rules), the `canEdit` truth
+  table via `setMemberRole`, the `memberRecord` shape, `clearLocalData`'s
+  wipe list, and that no PIN machinery survives.
 
 The stub is deliberately minimal, and DOM lookups return a memoized stub element
 rather than null (closer to the real page, where a render function's container
 always exists). Tests assert on state and return values, never on markup —
 anything needing real layout belongs in the Playwright pass.
+
+## Auth, members & roles (the security boundary)
+
+**Sign-in is real now (2026-07-25).** The old 4-digit PIN gate is gone — it
+only ever locked the *page*, while the database answered anyone on the
+internet (verified: an unauthenticated `curl` returned everything). Access is
+now enforced by **Firebase Authentication + Realtime Database security
+rules**; the client code only shapes the UI.
+
+- **Everyone signs in** — Google (`signInWithPopup`, never redirect — redirect
+  needs cross-site storage Safari/Firefox block off the authDomain) or an
+  emailed link (`auth-email-link.js`, optional, free-plan-capped at 5
+  sends/day — the send flow says so on quota errors). No public access.
+- **Two roles, from the member record only** (never from anything on the
+  device): `viewer` (counselors — read-only; deliberately can't touch their
+  own team's points) and `editor` (directors/game leaders — edit scores AND
+  manage the member list). `canEdit()` still gates ~28 call sites; its backing
+  store swapped from localStorage to `memberRole`, set by `setMemberRole()`.
+- **THE INVARIANT**: no database ref attaches until sign-in resolves AND the
+  self-read of `campScoreboard/members/<emailKey>` confirms approval.
+  `startSync()` (the only sanctioned entry to `initSync()`) is called *only*
+  from `onMemberSnapshot`'s approved branch. Reason: the state listener's
+  error callback treats a cancelled read as terminal (the SDK won't re-arm
+  it), so an early attach under locked rules would kill sync for the session.
+- **`emailKey(email)`** = `email.trim().toLowerCase().replaceAll('.', ',')`.
+  RTDB forbids `.` in keys; the members list is keyed by this. It MUST mirror
+  the rules' `.replace('.', ',')`, which in the rules language replaces ALL
+  dots — so the client uses `replaceAll`, never JS `.replace` (which would
+  only catch the first dot and lock out any multi-dot address, the owner's
+  included). `current-standings.html` duplicates this — keep in sync.
+- **Member record**: `{ role, name?, addedBy, addedAt }` (`memberRecord()`;
+  `name` omitted, not null, when empty). Built at `campScoreboard/members`,
+  editor-managed via Settings → **Who can sign in** (`renderMembers`). Your
+  own row is disabled (another editor must change your access); the owner key
+  is additionally immutable in the rules (the lockout anchor).
+- **Live revocation**: the member self-read stays an `.on('value')` — a
+  removal cancels it (→ not-approved kick + `clearLocalData()`), a role change
+  fires a fresh snapshot (→ `setMemberRole` re-renders in place).
+- **Pre-paint hint**: `campScoreboardAuthHint` (`'viewer'|'editor'`) caches
+  the last confirmed role so a returning approved device paints instantly from
+  local state while auth re-confirms; index.html's guard reads the same key.
+  Convenience only — a forged hint shows an empty shell (rules refuse all
+  data). Same literal lives in the index.html pre-paint guard.
+- **One-shot lifecycle**: voluntary sign-out and re-sign-in-after-teardown
+  both end in `location.reload()` — no listener re-attachment machinery, since
+  the terminal-fbRef design can't be safely restarted in place.
+- **Sign-out** (`signOutAndClear`) wipes the camp data cached on the device
+  (`clearLocalData`: STORAGE_KEY, day ranks, dismissed banners, the hint, the
+  parked email) plus IndexedDB photos (`clearPhotos`), then reloads. Theme is
+  NOT preserved — the boot guards discard partial state, so it resets to Auto.
+- **Rules live in the Firebase console**, not this repo (there's no deploy
+  pipeline for them). The current ruleset + a click-by-click console runbook
+  are in the plan that shipped this change; the shape is: per-child gates
+  (rules cascade — nothing granted at the `campScoreboard` root), reads need
+  membership, writes need `role === 'editor'`, `email_verified` required,
+  changelog append-only + editor-read, presence per-child member-writable,
+  `roster`/`contacts` pre-gated for future PII, owner key immutable.
+- **The test seam**: `setMemberRole('editor'|'viewer'|null)` sets the role
+  with no Firebase — that's how `tests/*.test.js` drive editor-only paths
+  (never by writing a localStorage role, which no longer exists).
+- Playwright: seed `localStorage.campScoreboardAuthHint = 'editor'` to paint
+  the app without a real sign-in; the popup itself can't run headless against
+  Google, so the live sign-in check happens against the deployed site.
 
 ## Firebase Realtime Database gotcha (already bit us once)
 
@@ -257,7 +327,7 @@ change actually reached devices mid-week.
 - **"Data last updated"** — `state.meta.lastDataChangeAt`, stamped by
   `touchData()` at points that represent real scoreboard activity (a game
   result saved, a bracket match recorded, a team renamed). Deliberately
-  NOT stamped by view-only actions (switching day tabs, dark mode, PIN
+  NOT stamped by view-only actions (switching day tabs, dark mode, sign-in
   unlock) so it reflects actual camp activity, not page traffic. Synced
   across devices like the rest of state. If you add a new way to record
   real data, call `touchData()` there too.

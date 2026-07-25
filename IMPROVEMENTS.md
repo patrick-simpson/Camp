@@ -34,45 +34,36 @@ replaced with what is actually still open, so nobody re-does finished work.
 2. `node --check` every changed JS file.
 3. Playwright for anything visual: headless Chromium is available
    (`NODE_PATH=$(npm root -g)`, launch `chromium` from the global playwright),
-   serve with `python3 -m http.server`. Seed `localStorage` with
-   `campScoreboardUnlocked=1`, `campScoreboardRole=edit`, and
-   `campScoreboardEditEpoch` = the current `EDIT_PIN_EPOCH` from app.js
-   (currently `r2`) — without the epoch, index.html's pre-paint guard wipes the
-   unlock keys and re-locks the page. Use `?now=<dow>-<hhmm>` to pin a schedule
-   state. Firebase is unreachable from the sandbox; `ERR_CONNECTION_RESET`
-   console noise is expected. Screenshot light + dark at 360–414px, and assert
-   `#app` has no horizontal overflow.
+   serve with `python3 -m http.server`. Seed `localStorage.campScoreboardAuthHint
+   = 'editor'` to paint the app without a real sign-in (the pre-paint guard
+   reads that key). To exercise the auth state machine itself, inject a scripted
+   `window.firebase` stub before load and drive `onAuthStateChanged` / the
+   member-record listener by hand (see the auth-ui harness used when this
+   shipped). The Google popup can't run headless — the live sign-in check
+   happens against the deployed site. Use `?now=<dow>-<hhmm>` to pin a schedule
+   state. Screenshot light + dark at 360–414px, and assert `#app` has no
+   horizontal overflow.
 4. Sync-shape checks: simulate merges with keys missing (RTDB prune) — nothing
    throws, empties heal. `tests/sync.test.js` covers this; extend it rather than
    testing by hand.
 
 ## Open work
 
-### 1. Make the edit PIN actually secret — needs Firebase Auth (the big one)
-This is the only item left with real substance, and camp being over is exactly
-the window for it.
-
-Where it stands: the PIN check is PBKDF2-HMAC-SHA256 at 1.2M iterations over a
-fresh random salt, so one guess costs ~0.5–2s instead of microseconds. (The
-earlier single-SHA-256 scheme was swept end-to-end — both PINs recovered — in
-**47ms** on a laptop.) That raises the floor but cannot close the hole:
-verification happens in the browser, so every visitor receives the salt, the
-iteration count, and both target hashes, and a 4-digit PIN is only 10,000
-candidates. A GPU still sweeps that in well under a minute.
-
-Worse, and unfixed: **RTDB is world-writable to anyone who reads
-`firebase-config.js`.** The PIN gates the UI, not the database.
-
-The fix for both is to stop checking the secret on the client:
-- Firebase Auth — anonymous sign-in plus a custom claim, or a plain
-  email/password account per counselor.
-- RTDB security rules that allow writes only to authed editors, and (optionally)
-  reads only to authed devices at all.
-- Then the credential never ships inside the app, and a hostile client can't
-  write scores even if it fakes the UI.
-
-Needs Firebase console changes and a migration path for already-unlocked
-devices. Was explicitly deferred out of camp week; it is now unblocked.
+### 1. Real sign-in + locked database — DONE (2026-07-25), pending the console flip
+The PIN gate is replaced with Firebase Authentication (Google + optional
+email-link) and a member allowlist at `campScoreboard/members`; `canEdit()`
+now reflects a server-checked role. The **code** shipped; the **enforcement**
+(Firebase console: enable providers, seed the first editor, publish the
+security rules) is a manual runbook Patrick works through — until the rules are
+published the database is still open, so this isn't fully closed until then.
+See the "Auth, members & roles" section in CLAUDE.md and the shipped plan for
+the ruleset + click-by-click console steps. Residual notes: data exposed before
+the flip must be assumed already-seen (the lock protects data going forward,
+which is why the PII paths are gated before any PII is added); Safari's ~7-day
+storage purge signs people out (one tap to fix); iOS-PWA popups can be flaky
+(email-link is the fallback). Follow-ups: build the roster/contacts PII features
+on the pre-gated paths; consider Blaze for email-link volume; App Check as
+optional later hardening.
 
 ### 2. Service-worker caching for real offline use — decision-gated
 `sw.js` ships deliberately WITHOUT a fetch handler so it can never serve stale

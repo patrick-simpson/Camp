@@ -1,0 +1,108 @@
+// The auth gate's pure parts: the email→key contract the security rules
+// depend on, the role plumbing behind canEdit(), the member-record shape,
+// and what signing out wipes off a device. The Firebase flows themselves
+// (popup, member listener) are exercised against the real site — these pin
+// the pieces a typo could silently break.
+
+// ── emailKey: the contract shared with the security rules ─────────
+
+test('emailKey lowercases, trims, and replaces EVERY dot', () => {
+  // The rules compute the same key with .replace('.', ','), which in the
+  // RTDB rules language replaces ALL occurrences. JS .replace would only
+  // catch the first dot — and silently lock out any multi-dot address,
+  // including the owner's own. This is THE regression to catch.
+  assert.equal(emailKey('  Patrick.Simpson.FX@Gmail.COM '), 'patrick,simpson,fx@gmail,com');
+  assert.equal(emailKey('a.b.c.d@e.f.co'), 'a,b,c,d@e,f,co');
+  assert.equal(emailKey('nodots@example'), 'nodots@example');
+  assert.equal(emailKey(''), '');
+  assert.equal(emailKey(null), '');
+});
+
+test('emailFromKey round-trips a key back to the address for display', () => {
+  assert.equal(emailFromKey('patrick,simpson,fx@gmail,com'), 'patrick.simpson.fx@gmail.com');
+  assert.equal(emailFromKey(emailKey('Some.Name@Example.Org')), 'some.name@example.org');
+});
+
+// ── canEdit: the one function every editor-only surface asks ──────
+
+test('canEdit answers only to a confirmed editor role', () => {
+  setMemberRole(null);
+  assert.notOk(canEdit(), 'unresolved → view-only');
+  setMemberRole('viewer');
+  assert.notOk(canEdit(), 'viewer → view-only');
+  setMemberRole('editor');
+  assert.ok(canEdit(), 'editor → can edit');
+  setMemberRole('garbage');
+  assert.notOk(canEdit(), 'an unknown role is never an editor');
+  setMemberRole('edit'); // the OLD role string — must not grant anything
+  assert.notOk(canEdit(), 'the retired PIN-era role string grants nothing');
+  setMemberRole('editor');
+});
+
+// ── memberRecord: what the Members UI writes ──────────────────────
+
+test('memberRecord builds exactly what the rules validate', () => {
+  const r = memberRecord('editor', ' Pat ');
+  assert.equal(r.role, 'editor');
+  assert.equal(r.name, 'Pat', 'name is trimmed');
+  assert.ok(typeof r.addedBy === 'string' && r.addedBy.length, 'addedBy is always a string');
+  assert.ok(!isNaN(Date.parse(r.addedAt)), 'addedAt is a parseable timestamp');
+});
+
+test('memberRecord omits an empty name instead of writing null', () => {
+  // The rules validate name as a string when present; RTDB rejects null
+  // fields inside a set(). Absent is the only safe spelling of "no name".
+  assert.notOk('name' in memberRecord('viewer', ''), 'empty string → omitted');
+  assert.notOk('name' in memberRecord('viewer', '   '), 'whitespace → omitted');
+  assert.notOk('name' in memberRecord('viewer', null), 'null → omitted');
+});
+
+test('memberRecord never writes a role outside viewer/editor', () => {
+  assert.equal(memberRecord('editor').role, 'editor');
+  assert.equal(memberRecord('viewer').role, 'viewer');
+  assert.equal(memberRecord('admin').role, 'viewer', 'unknown roles collapse to viewer');
+  assert.equal(memberRecord(undefined).role, 'viewer');
+});
+
+// ── The pre-paint hint ─────────────────────────────────────────────
+
+test('the auth hint only ever reads back as a real role', () => {
+  setAuthHint('editor');
+  assert.equal(authHintRole(), 'editor');
+  setAuthHint('viewer');
+  assert.equal(authHintRole(), 'viewer');
+  localStorage.setItem(AUTH_HINT_KEY, '1'); // a forged/legacy value
+  assert.equal(authHintRole(), null, 'junk in the hint never becomes a role');
+  clearAuthHint();
+  assert.equal(authHintRole(), null);
+});
+
+// ── Sign-out: what leaves the device ──────────────────────────────
+
+test('clearLocalData wipes the camp data a signed-out device must not keep', () => {
+  const store = __localStorageStore;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify({ teams: [], results: {} }));
+  localStorage.setItem(DAY_RANK_KEY, '{"date":"x","ranks":{}}');
+  localStorage.setItem(CHANGE_DISMISS_KEY, '[]');
+  localStorage.setItem(ANNOUNCE_DISMISS_KEY, '[]');
+  localStorage.setItem(AUTH_HINT_KEY, 'editor');
+  localStorage.setItem(EMAIL_SIGNIN_KEY, 'someone@example.com');
+  localStorage.setItem('campWeatherCache', '{}'); // public data — may stay
+
+  clearLocalData();
+
+  [STORAGE_KEY, DAY_RANK_KEY, CHANGE_DISMISS_KEY, ANNOUNCE_DISMISS_KEY,
+   AUTH_HINT_KEY, EMAIL_SIGNIN_KEY].forEach((k) => {
+    assert.equal(localStorage.getItem(k), null, `${k} must be cleared`);
+  });
+  assert.ok(store.has('campWeatherCache'), 'the forecast is not personal — it may stay');
+});
+
+// ── The retired PIN gate must actually be gone ─────────────────────
+
+test('no PIN machinery survives in the shipped code', () => {
+  ['PIN_KDF_ITERATIONS', 'VIEW_PIN_HASH', 'EDIT_PIN_HASH', 'derivePinHash',
+   'pinRole', 'handlePinComplete', 'isUnlocked', 'currentRole'].forEach((name) => {
+    assert.equal(typeof globalThis[name], 'undefined', `${name} should be deleted`);
+  });
+});

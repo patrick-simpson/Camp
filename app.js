@@ -15,9 +15,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-25T14:23:28Z';
+const CODE_UPDATED_AT = '2026-07-25T17:01:58Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 163;
+const APP_VERSION = 164;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -33,55 +33,77 @@ const APP_VERSION = 163;
 // dormant but harmless.
 const CHANGES = [];
 
-// ── PIN gate ─────────────────────────────────────────────────────
-// Two tiers: the view PIN can look but not touch; the edit PIN can enter
-// scores. PINs are never in this source — only PBKDF2-derived hashes.
+// ── Sign-in & roles (Firebase Authentication) ────────────────────
+// The old 4-digit PIN gate is gone (2026-07-25). It only ever locked the
+// PAGE — the database itself answered to anyone on the internet, which was
+// verified live before this change. Access is now real: everyone signs in
+// (Google, or an emailed link), and the database's own security rules only
+// answer to emails listed at campScoreboard/members. The client code below
+// shapes the UI; the RULES are the security boundary — nothing here can
+// grant data access that the server doesn't independently verify.
 //
-// READ THIS BEFORE TRUSTING IT (2026-07-25 hardening):
-// This is a static site with no server, so verification necessarily runs in
-// the browser — which means every visitor receives the salt, the iteration
-// count, and the target hashes. A 4-digit PIN is only 10,000 candidates, so
-// the code CANNOT be made unrecoverable here; it can only be made expensive.
-// The previous scheme was a single SHA-256, and a plain laptop swept the
-// whole keyspace and recovered both PINs in 47 MILLISECONDS.
+// Roles, decided by the member record (never by anything on the device):
+//   'viewer' — counselors. Can watch everything, can change nothing.
+//              (Deliberate: counselors must not bump their own team's points.)
+//   'editor' — directors / game leaders. Edit scores AND manage the member
+//              list (Settings → Who can sign in).
 //
-// So each guess is now deliberately slow: PBKDF2-HMAC-SHA256 at 1.2 million
-// iterations (2x OWASP's current password recommendation) over a fresh
-// 32-byte random salt. One guess costs ~0.5s on a laptop, ~1-2s on a phone.
-// That turns a full sweep into hours of CPU time instead of milliseconds,
-// which stops opportunistic snooping — a camper poking at view-source, or
-// pasting the hash into an online cracker, gets nowhere. It does NOT stop a
-// determined attacker with a GPU, who could still sweep 10,000 candidates in
-// well under a minute. Treat the edit PIN as "keeps honest people honest",
-// never as a secret that protects anything valuable.
+// THE ONE INVARIANT (see also CLAUDE.md → "Auth, members & roles"):
+// no database ref may attach until sign-in resolves AND the self-read of
+// campScoreboard/members/<emailKey> confirms approval — the state listener's
+// error callback treats a cancelled read as terminal (see initSync), so an
+// early attach under locked rules would kill sync for the whole session.
+// startSync() is therefore called only from the approved branch below.
 //
-// The only way to make the PIN genuinely unrecoverable is to stop checking it
-// on the client — i.e. Firebase Auth (or any server-side check), so the
-// secret never ships to the device. That's a real architecture change and is
-// noted in IMPROVEMENTS.md rather than done mid-camp.
-//
-// To change a PIN: derive PBKDF2-HMAC-SHA256(pin, PIN_SALT_HEX bytes,
-// PIN_KDF_ITERATIONS, 32 bytes) and paste the hex below. Generate a NEW random
-// salt whenever you change a PIN, and re-derive both hashes (they share the
-// salt so a legitimate unlock costs one derivation, not two).
-const PIN_KDF_ITERATIONS = 1200000;
-const PIN_SALT_HEX = '53f27ca87f84abfee1513517344f185dae7f01e54bd42aec5b52fa8c592447d5';
-const VIEW_PIN_HASH = 'f2a3a677a71ce4694823415f2a8096dc6a260762f13b62fae1d9a3aeecc4ca9c';
-const EDIT_PIN_HASH = '2e16a3e67526a4e7c6a1e870f0d54002e1be030deeb03907ef79726768c38372';
-const UNLOCK_KEY = 'campScoreboardUnlocked';
-const ROLE_KEY = 'campScoreboardRole';
-// Bump EDIT_PIN_EPOCH to force every editor to re-enter the current edit PIN
-// on their next load — used to kick out sessions unlocked with a retired PIN.
-// The same two literals live in index.html's pre-paint guard; keep them in sync.
-const EDIT_PIN_EPOCH_KEY = 'campScoreboardEditEpoch';
-const EDIT_PIN_EPOCH = 'r2'; // opaque marker — deliberately NOT the PIN, so no code leaks into source
+// AUTH_HINT_KEY caches the last confirmed role so a returning, approved
+// device paints the app instantly from local state (exactly the pre-auth
+// behavior) while sign-in re-confirms in the background. It is convenience
+// only: forging it shows an empty shell — the rules still refuse all data.
+const AUTH_HINT_KEY = 'campScoreboardAuthHint'; // 'viewer' | 'editor' (same literal in index.html's pre-paint guard)
+const EMAIL_SIGNIN_KEY = 'campScoreboardEmailForSignIn'; // email-link flow parks the address here
 
-function currentRole() {
-  try { return localStorage.getItem(ROLE_KEY) || 'view'; } catch (e) { return 'view'; }
+let authUser = null;       // firebase.auth() user, once signed in
+let memberRole = null;     // 'viewer' | 'editor' | null (not resolved / not approved)
+let memberName = null;     // display name from the member record, if set
+let authTornDown = false;  // sign-in was lost mid-session; recovery is a reload
+
+// The single write-path for the role — and the test seam: tests call this
+// directly instead of faking a Firebase sign-in (see tests/auth.test.js).
+function setMemberRole(role) {
+  const next = role === 'editor' || role === 'viewer' ? role : null;
+  const changed = memberRole !== next;
+  memberRole = next;
+  if (appStarted && changed) {
+    applyRoleClass();
+    updateAccountRow();
+    renderAll();
+  }
 }
 
 function canEdit() {
-  return currentRole() === 'edit';
+  return memberRole === 'editor';
+}
+
+// The member list is keyed by email, but Realtime Database forbids '.' in
+// keys — so keys are the lowercased email with EVERY dot turned into a comma.
+// This must mirror the security rules' `.replace('.', ',')`, which in the
+// rules language replaces ALL occurrences — hence replaceAll here, never JS
+// .replace (which would only catch the first dot and silently lock out
+// anyone with a multi-dot address, like the owner's own).
+function emailKey(email) {
+  return String(email || '').trim().toLowerCase().replaceAll('.', ',');
+}
+
+// Shape of one campScoreboard/members entry. `name` is omitted (not null)
+// when empty — RTDB drops nulls, and the rules validate name as a string.
+function memberRecord(role, name) {
+  const rec = {
+    role: role === 'editor' ? 'editor' : 'viewer',
+    addedBy: (authUser && authUser.email) || 'unknown',
+    addedAt: new Date().toISOString(),
+  };
+  if (name && String(name).trim()) rec.name = String(name).trim();
+  return rec;
 }
 
 // Team names from the printed roster, paired to their counselor group
@@ -1325,6 +1347,167 @@ function renderHistoryRows(rows) {
   return html;
 }
 
+// ── Members (Settings → Who can sign in) ─────────────────────────
+// Editor-only management of campScoreboard/members — the allowlist the
+// security rules check on every read and write. Same drawer pattern as the
+// change history. All writes here are themselves rule-checked server-side
+// (editors only), so a failure toast means the rules said no, not a bug.
+
+function membersOverlayEl() {
+  return document.getElementById('members-overlay');
+}
+
+function openMembers() {
+  if (!canEdit()) return;
+  const s = settingsOverlayEl();
+  const overlay = membersOverlayEl();
+  if (!overlay) return;
+  renderMembers();
+  const openNow = () => overlay.setAttribute('open', '');
+  if (s && s.hasAttribute('open') && customElements.get('jelly-drawer')) {
+    s.addEventListener('close', openNow, { once: true });
+    s.removeAttribute('open');
+  } else {
+    if (s) s.removeAttribute('open');
+    openNow();
+  }
+}
+
+// The stored key is the escaped email; commas can't appear in a real address,
+// so turning them back into dots is lossless for display.
+function emailFromKey(key) {
+  return String(key || '').replaceAll(',', '.');
+}
+
+function renderMembers() {
+  const body = document.getElementById('members-body');
+  if (!body) return;
+  if (!fbRef) {
+    body.innerHTML = '<p class="muted">Live sync is off on this device, so the member list isn\'t reachable.</p>';
+    return;
+  }
+  body.innerHTML = '<div class="history-skeleton">' +
+    [90, 70, 80].map((w) => `<div class="skeleton-row" style="width:${w}%"><jelly-skeleton style="height:2.6rem"></jelly-skeleton></div>`).join('') +
+    '</div>';
+  firebase.database().ref('campScoreboard/members').once('value')
+    .then((snap) => renderMemberList(body, snap.val() || {}))
+    .catch(() => {
+      body.innerHTML = '<p class="muted">Couldn\'t load the member list — check the connection and try again.</p>';
+    });
+}
+
+function renderMemberList(body, members) {
+  const myKey = authUser ? emailKey(authUser.email) : '';
+  const keys = Object.keys(members).sort((a, b) => {
+    const an = (members[a] && members[a].name) || emailFromKey(a);
+    const bn = (members[b] && members[b].name) || emailFromKey(b);
+    return an.localeCompare(bn);
+  });
+  const rows = keys.map((key) => {
+    const m = members[key] || {};
+    const self = key === myKey;
+    const role = m.role === 'editor' ? 'editor' : 'viewer';
+    return `<div class="member-row" data-member-key="${esc(key)}">
+      <div class="member-id">
+        <span class="member-name">${esc(m.name || emailFromKey(key))}${self ? ' <span class="member-you">(you)</span>' : ''}</span>
+        ${m.name ? `<span class="member-email">${esc(emailFromKey(key))}</span>` : ''}
+      </div>
+      <div class="member-controls">
+        <jelly-segmented class="member-role" size="small" label="Role" value="${role}" ${self ? 'disabled' : ''}>
+          <jelly-segment value="viewer">👀 Viewer</jelly-segment>
+          <jelly-segment value="editor">✏️ Editor</jelly-segment>
+        </jelly-segmented>
+        <button type="button" class="link-btn danger-link member-remove" ${self ? 'disabled' : ''}>Remove</button>
+      </div>
+      ${self ? '<p class="muted member-self-note">That\'s you — another editor has to change or remove your access.</p>' : ''}
+    </div>`;
+  }).join('');
+
+  body.innerHTML = `
+    <p class="muted members-sub">Everyone here can open the app. Viewers can look; editors can change scores and manage this list. Anyone not on the list gets nothing — the database itself refuses them.</p>
+    <div class="member-list">${rows || '<p class="muted">Nobody yet.</p>'}</div>
+    <div class="member-add">
+      <h3>Add someone</h3>
+      <div class="form-field">
+        <label class="form-label">Email (the account they'll sign in with)</label>
+        <jelly-input class="form-input" id="member-add-email" type="email" placeholder="name@example.com"></jelly-input>
+      </div>
+      <div class="form-row">
+        <div class="form-field">
+          <label class="form-label">Name (optional)</label>
+          <jelly-input class="form-input" id="member-add-name" type="text" placeholder="First name"></jelly-input>
+        </div>
+        <div class="form-field">
+          <label class="form-label">Role</label>
+          <jelly-segmented id="member-add-role" size="small" label="Role" value="viewer">
+            <jelly-segment value="viewer">👀 Viewer</jelly-segment>
+            <jelly-segment value="editor">✏️ Editor</jelly-segment>
+          </jelly-segmented>
+        </div>
+      </div>
+      <jelly-button id="member-add-btn" class="secondary-btn" variant="primary">+ Add member</jelly-button>
+      <p class="entry-error" id="member-add-error" hidden></p>
+    </div>`;
+
+  bindMemberList(body, myKey);
+}
+
+function bindMemberList(body, myKey) {
+  body.querySelectorAll('.member-row').forEach((row) => {
+    const key = row.dataset.memberKey;
+    const self = key === myKey;
+    const seg = row.querySelector('.member-role');
+    if (seg) {
+      seg.addEventListener('change', (e) => {
+        const role = e.detail && e.detail.value;
+        if (self || !role || (role !== 'viewer' && role !== 'editor')) return;
+        firebase.database().ref('campScoreboard/members/' + key + '/role').set(role)
+          .then(() => showToast(`${emailFromKey(key)} is now a ${role}`, { mine: true }))
+          .catch(() => { showToast('Change refused — are you still an editor?'); renderMembers(); });
+      });
+    }
+    const rm = row.querySelector('.member-remove');
+    if (rm) {
+      rm.addEventListener('click', () => {
+        if (self) return;
+        const who = row.querySelector('.member-name');
+        if (!confirm(`Remove ${who ? who.textContent : emailFromKey(key)}? They lose access the moment this saves.`)) return;
+        firebase.database().ref('campScoreboard/members/' + key).remove()
+          .then(() => { showToast('Removed', { mine: true }); renderMembers(); })
+          .catch(() => showToast('Remove refused — are you still an editor?'));
+      });
+    }
+  });
+
+  const addBtn = document.getElementById('member-add-btn');
+  if (addBtn) {
+    addBtn.addEventListener('click', () => {
+      const errEl = document.getElementById('member-add-error');
+      const email = (document.getElementById('member-add-email').value || '').trim();
+      const name = (document.getElementById('member-add-name').value || '').trim();
+      const roleSeg = document.getElementById('member-add-role');
+      const role = (roleSeg && roleSeg.value) === 'editor' ? 'editor' : 'viewer';
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        errEl.textContent = 'That doesn\'t look like an email address.';
+        errEl.hidden = false;
+        return;
+      }
+      errEl.hidden = true;
+      firebase.database().ref('campScoreboard/members/' + emailKey(email)).set(memberRecord(role, name))
+        .then(() => { showToast(email + ' can now sign in', { mine: true }); renderMembers(); })
+        .catch(() => {
+          errEl.textContent = 'Add refused — are you still an editor?';
+          errEl.hidden = false;
+        });
+    });
+  }
+}
+
+function wireMembers() {
+  const row = document.getElementById('members-row');
+  if (row) row.addEventListener('click', openMembers);
+}
+
 function wireHistory() {
   const row = document.getElementById('history-row');
   if (row) row.addEventListener('click', openHistory);
@@ -1760,6 +1943,7 @@ function canAdoptRemote() {
 // superseded) payload, we remember that we owe ourselves a read and re-fetch
 // the current value once this device goes idle — so what lands is always the
 // server's latest, never a stale replay.
+let syncDenied = false; // a live listener was cancelled by the rules (access revoked)
 let remoteRefetchPending = false;
 let idleRetryTimer = null;
 
@@ -1878,6 +2062,18 @@ function applyRemoteState(remote) {
   }
 }
 
+// One-shot wrapper around initSync — THE only sanctioned way in. Called from
+// onMemberSnapshot's approved branch, never earlier: under the locked rules a
+// listener attached before approval is cancelled, and a cancelled read is
+// terminal (see the fbRef error callback below).
+let syncStarted = false;
+
+function startSync() {
+  if (syncStarted) return;
+  syncStarted = true;
+  initSync();
+}
+
 function initSync() {
   const cfg = window.FIREBASE_CONFIG;
   if (!cfg || !cfg.apiKey || typeof firebase === 'undefined') {
@@ -1885,17 +2081,21 @@ function initSync() {
     return; // local-only mode
   }
   try {
-    firebase.initializeApp(cfg);
+    // (firebase.initializeApp happens in startAuth() — auth needs the app
+    // object before the database does.)
     fbRef = firebase.database().ref('campScoreboard/state');
     updateSyncIndicator(); // sync is on but unconfirmed — show "Connecting…"
     fbRef.on('value', (snap) => {
       handleRemoteSnapshot(snap.val());
     }, (err) => {
-      // A cancelled read (e.g. security rules) is terminal — drop to local-only
-      // and tell the truth in the indicator rather than claiming "Synced".
+      // A cancelled read is terminal — the SDK won't re-arm it. Since refs
+      // only ever attach AFTER membership was confirmed, landing here means
+      // access was revoked mid-session (the member listener delivers the
+      // actual kick); tell the truth in the indicator either way.
       console.warn('Firebase read failed, staying local', err);
       fbRef = null;
       fbConnected = false;
+      syncDenied = true;
       updateSyncIndicator();
     });
     // Shared clock reference for the synced game clocks (see serverNow). Fires
@@ -1923,7 +2123,9 @@ function initSync() {
         try {
           const presenceRef = firebase.database().ref('campScoreboard/presence/' + presenceId);
           presenceRef.onDisconnect().remove();
-          presenceRef.set({ role: currentRole(), at: firebase.database.ServerValue.TIMESTAMP });
+          // Minimal shape on purpose: presence is writable by every member
+          // (keys are per-tab UUIDs), so nothing forgeable-looking goes in.
+          presenceRef.set({ role: memberRole || 'viewer', at: firebase.database.ServerValue.TIMESTAMP });
         } catch (e) { /* rules may deny this — presence chip just stays hidden */ }
       }
     });
@@ -1949,6 +2151,8 @@ function initSync() {
     }, (err) => {
       console.warn('Firebase config read failed, staying local', err);
       fbConfigRef = null;
+      syncDenied = true;
+      updateSyncIndicator();
     });
     // (Auto-reload is handled by startUpdatePolling — a same-origin poll of the
     // deployed index.html — so it works on a single device and doesn't depend on
@@ -2161,7 +2365,18 @@ let fbConnKnown = false; // first .info/connected callback received
 function updateSyncIndicator() {
   const el = document.getElementById('sync-status');
   if (!el) return;
-  if (!syncEnabled()) {
+  if (syncDenied) {
+    // A live listener was cancelled by the security rules — this device's
+    // access changed mid-session. The member listener handles the kick; this
+    // just keeps the indicator honest until it lands.
+    el.textContent = '🔒 Sync blocked — your access changed';
+    el.classList.remove('synced');
+  } else if (!syncEnabled() && !syncStarted && window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey && typeof firebase !== 'undefined' && firebase.auth) {
+    // Sync exists but hasn't been allowed to attach yet — sign-in and the
+    // membership check are still resolving in the background.
+    el.innerHTML = '<jelly-spinner type="dots" size="small" label="Connecting"></jelly-spinner> Connecting…';
+    el.classList.remove('synced');
+  } else if (!syncEnabled()) {
     el.textContent = '📱 This device only';
     el.classList.remove('synced');
   } else if (!fbConnKnown) {
@@ -3440,7 +3655,7 @@ function recordPointHistory(counts, isRemote) {
   const causes = describeCauses(prev, snap);
   const reason = causes.length ? causes.join('; ') : 'Points updated';
   const at = new Date().toISOString();
-  const by = state.identity || null;
+  const by = state.identity || memberName || (authUser && authUser.email) || null;
   const logRef = firebase.database().ref('campScoreboard/changelog');
   changed.forEach(({ tid, before, after }) => {
     logRef.push({ at, teamId: tid, team: teamName(tid), delta: after - before, before, after, reason, by })
@@ -6656,13 +6871,11 @@ function init() {
     });
   }
 
-  // The role button now lives in the settings sheet — close the sheet first
-  // so the lock screen isn't left sitting behind the open overlay.
-  document.getElementById('role-btn').addEventListener('click', () => {
-    closeSettings();
-    showLockScreen();
-  });
-  updateRoleButton();
+  // Account row (settings sheet): shows who's signed in; the button signs out.
+  const signoutBtn = document.getElementById('signout-btn');
+  if (signoutBtn) signoutBtn.addEventListener('click', signOutAndClear);
+  updateAccountRow();
+  wireMembers();
 
   document.getElementById('notify-toggle-btn').addEventListener('click', toggleNotify);
   updateNotifyButton();
@@ -6690,7 +6903,11 @@ function init() {
     });
   }
 
-  initSync();
+  // (Sync is NOT started here — startSync() runs from the approved branch
+  // of the member listener, the only place allowed to attach database refs.
+  // Until then the indicator honestly reads "Connecting…", or "This device
+  // only" when there's no Firebase at all.)
+  updateSyncIndicator();
   renderPresence();
 
   startIdleCollapse();
@@ -6714,16 +6931,11 @@ function init() {
   setInterval(tickBoardClocks, 500);
 }
 
-function updateRoleButton() {
-  const btn = document.getElementById('role-btn');
-  if (!btn) return;
-  if (canEdit()) {
-    btn.textContent = '✏️ Editing';
-    btn.title = 'You can enter scores. Tap to lock or switch to view-only.';
-  } else {
-    btn.textContent = '🔒 View only';
-    btn.title = 'View-only. Tap and enter the score PIN to edit.';
-  }
+function updateAccountRow() {
+  const label = document.getElementById('account-label');
+  if (!label) return;
+  const email = authUser && authUser.email ? authUser.email : '';
+  label.textContent = (canEdit() ? '✏️ Editor' : '👀 Viewer') + (email ? ' — ' + email : '');
 }
 
 // ── Joy layer ────────────────────────────────────────────────────
@@ -6848,13 +7060,13 @@ document.addEventListener('click', (e) => {
 // only adds the tap sparkle on the header (see the click listener above,
 // which includes jelly-collapsible in its sparkle targets).
 
-// ── PIN lock gate ────────────────────────────────────────────────
+// ── Auth gate ────────────────────────────────────────────────────
+// See the "Sign-in & roles" block at the top of this file for the model.
+// The flow: boot() → startAuth() → onAuthStateChanged → member self-read →
+// approved → startApp() (+ startSync()). Every screen along the way renders
+// inside the #lock-screen shell via html.locked.
 
 let appStarted = false;
-
-function isUnlocked() {
-  try { return localStorage.getItem(UNLOCK_KEY) === '1'; } catch (e) { return false; }
-}
 
 function applyRoleClass() {
   document.documentElement.classList.toggle('view-only', !canEdit());
@@ -6881,137 +7093,217 @@ function startApp() {
     appStarted = true;
     init();
   } else {
-    updateRoleButton();
+    updateAccountRow();
     renderAll();
   }
   maybeShowTeamPicker();
 }
 
-// Hex string → bytes, for the stored salt.
-function hexToBytes(hex) {
-  const out = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
-  return out;
-}
-
-// Stretch a PIN into a 256-bit key with PBKDF2-HMAC-SHA256 (Web Crypto, so
-// it's native code, not JS) → lowercase hex. Deliberately slow: the whole
-// point is that ONE guess costs real time, so sweeping all 10,000 four-digit
-// candidates is expensive rather than instant (see the PIN gate notes up top).
-// Both PINs share the salt, so a legitimate unlock is a single derivation.
-async function derivePinHash(pin) {
-  const key = await crypto.subtle.importKey(
-    'raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveBits']
-  );
-  const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', salt: hexToBytes(PIN_SALT_HEX), iterations: PIN_KDF_ITERATIONS, hash: 'SHA-256' },
-    key, 256
-  );
-  return Array.from(new Uint8Array(bits)).map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-// Resolve a typed PIN to its role. Returns 'edit', 'view', or null (no match /
-// crypto unavailable). Takes ~0.5-2s by design — callers show a pending state.
-async function pinRole(pin) {
-  try {
-    const h = await derivePinHash(pin);
-    if (h === EDIT_PIN_HASH) return 'edit';
-    if (h === VIEW_PIN_HASH) return 'view';
-  } catch (e) { /* crypto.subtle missing (insecure context) — treat as no match */ }
-  return null;
-}
-
-// PIN entry lives in the #pin-otp jelly-otp: its `complete` event delivers
-// the four digits the moment the last box fills (fired only for real typing/
-// paste, never for programmatic .value writes — so clearing it after a wrong
-// PIN can't re-trigger validation).
-// Deliberately-slow key stretching means the check takes ~0.5-2s, which
-// without feedback reads as "the app ignored me". Swap the prompt for a
-// spinner and freeze the boxes while it runs.
-function setPinChecking(on) {
-  const prompt = document.querySelector('.lock-prompt');
-  const otp = document.getElementById('pin-otp');
-  if (prompt) {
-    prompt.innerHTML = on
-      ? '<jelly-spinner type="dots" size="small" label="Checking PIN"></jelly-spinner> Checking…'
-      : 'Enter PIN to continue';
-  }
-  if (otp && customElements.get('jelly-otp')) otp.toggleAttribute('disabled', on);
-}
-
-async function handlePinComplete(entered) {
-  const errEl = document.getElementById('lock-error');
-  errEl.hidden = true;
-  const otp = document.getElementById('pin-otp');
-  setPinChecking(true);
-  const role = await pinRole(entered);
-  setPinChecking(false); // re-enable BEFORE any focus() below
-  if (otp.value !== entered) return; // boxes changed while the hash resolved
-  if (role) {
-    try {
-      localStorage.setItem(UNLOCK_KEY, '1');
-      localStorage.setItem(ROLE_KEY, role);
-      // Mark this device as past the current editor epoch so it isn't kicked
-      // by the one-time old-PIN revocation on the next load.
-      if (role === 'edit') localStorage.setItem(EDIT_PIN_EPOCH_KEY, EDIT_PIN_EPOCH);
-    } catch (e) { /* fine, just won't remember */ }
-    otp.value = '';
-    setTimeout(startApp, 150);
-  } else {
-    const box = document.querySelector('.lock-box');
-    box.classList.add('shake');
-    errEl.hidden = false;
-    setTimeout(() => {
-      otp.value = '';
-      box.classList.remove('shake');
-      otp.focus();
-    }, 500);
-  }
-}
-
-let lockWired = false;
-
-function wireLockOtp() {
-  if (lockWired) return;
-  lockWired = true;
-  const otp = document.getElementById('pin-otp');
-  if (!otp) return;
-  otp.addEventListener('complete', (e) => {
-    if (e.detail && e.detail.value) handlePinComplete(e.detail.value);
-  });
-  // Typing hides a stale wrong-PIN error right away.
-  otp.addEventListener('input', () => {
-    document.getElementById('lock-error').hidden = true;
-  });
-}
-
-function showLockScreen() {
-  const otp = document.getElementById('pin-otp');
-  // Guard the .value write behind the upgrade — pre-upgrade it would plant a
-  // shadowing own property (same gotcha as applyCardDefaults). The boxes
-  // start empty anyway; this only matters for re-locks from Settings.
-  if (otp && customElements.get('jelly-otp')) otp.value = '';
-  document.getElementById('lock-error').hidden = true;
-  setPinChecking(false); // clear any stale "Checking…" from a previous session
+// Show one of the lock-screen panels: 'checking' | 'signin' | 'denied'.
+// opts: { error, email }
+function showAuthScreen(mode, opts) {
   document.documentElement.classList.add('locked');
-  // Land focus in the first box once the component exists (desktop keyboards
-  // can type immediately; phones focus on tap).
-  customElements.whenDefined('jelly-otp').then(() => {
-    if (document.documentElement.classList.contains('locked')) {
-      const el = document.getElementById('pin-otp');
-      if (el) el.focus();
-    }
+  ['auth-checking', 'auth-signin', 'auth-denied'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.hidden = id !== 'auth-' + (mode === 'signin' ? 'signin' : mode);
   });
+  const errEl = document.getElementById('lock-error');
+  if (errEl) {
+    errEl.textContent = (opts && opts.error) || '';
+    errEl.hidden = !(opts && opts.error);
+  }
+  const who = document.getElementById('auth-denied-email');
+  if (who && opts && opts.email) who.textContent = opts.email;
+  // The email-link mini-form mounts lazily into its slot (module optional —
+  // see auth-email-link.js; deleting that script tag removes the feature).
+  if (mode === 'signin' && window.CampEmailLink) {
+    window.CampEmailLink.mount(document.getElementById('email-link-slot'));
+  }
+}
+
+function hideLockError() {
+  const errEl = document.getElementById('lock-error');
+  if (errEl) errEl.hidden = true;
+}
+
+// Human messages for the sign-in errors people actually hit.
+function showSignInError(err) {
+  const code = (err && err.code) || '';
+  if (code === 'auth/popup-closed-by-user' || code === 'auth/cancelled-popup-request') return; // they changed their mind
+  let msg;
+  if (code === 'auth/popup-blocked') {
+    msg = 'Your browser blocked the sign-in window — allow pop-ups for this site and try again.';
+  } else if (code === 'auth/network-request-failed') {
+    msg = 'You look offline — signing in needs an internet connection.';
+  } else if (code === 'auth/unauthorized-domain') {
+    msg = 'This copy of the site isn\'t authorized for sign-in (unauthorized domain).';
+  } else {
+    msg = 'Sign-in didn\'t work (' + (code || 'unknown error') + '). Try again.';
+  }
+  showAuthScreen('signin', { error: msg });
+}
+
+function wireAuthScreen() {
+  const googleBtn = document.getElementById('google-signin-btn');
+  if (googleBtn) {
+    googleBtn.addEventListener('click', () => {
+      hideLockError();
+      // signInWithPopup must be called synchronously inside the click handler
+      // — any await first and Safari/iOS drops the user gesture and blocks
+      // the popup. Never signInWithRedirect: it needs cross-site storage that
+      // Safari/Firefox block for sites not hosted on the authDomain.
+      try {
+        firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(showSignInError);
+      } catch (e) {
+        showSignInError(e);
+      }
+    });
+  }
+  const switchBtn = document.getElementById('auth-switch-btn');
+  if (switchBtn) {
+    switchBtn.addEventListener('click', () => {
+      try { firebase.auth().signOut().catch(() => {}); } catch (e) { /* ignore */ }
+      // onAuthStateChanged(null) takes over and shows the sign-in panel.
+    });
+  }
+  const retryBtn = document.getElementById('auth-retry-btn');
+  if (retryBtn) retryBtn.addEventListener('click', () => location.reload());
+}
+
+// Entry point, from boot(). Initializes Firebase (the auth SDK needs the app
+// before the database does) and subscribes to sign-in state.
+function startAuth() {
+  const cfg = window.FIREBASE_CONFIG;
+  if (!cfg || !cfg.apiKey || typeof firebase === 'undefined' || !firebase.auth) {
+    // No Firebase at all (local dev with the CDN blocked, or the SDK failed
+    // to load). There is nothing to sign in TO — run local-only, view-only.
+    startApp();
+    return;
+  }
+  try {
+    if (!firebase.apps.length) firebase.initializeApp(cfg);
+  } catch (e) {
+    showAuthScreen('signin', { error: 'Sign-in couldn\'t start — reload to try again.' });
+    return;
+  }
+  // Returning from an emailed sign-in link? Complete it before (well,
+  // alongside) the state subscription — success lands in handleAuthUser.
+  if (window.CampEmailLink) window.CampEmailLink.completeSignInIfLink();
+  firebase.auth().onAuthStateChanged(handleAuthUser);
+}
+
+let memberRef = null; // this account's own campScoreboard/members entry
+
+function handleAuthUser(user) {
+  if (memberRef) { try { memberRef.off(); } catch (e) { /* ignore */ } memberRef = null; }
+  if (!user || !user.email) {
+    authUser = null;
+    clearAuthHint();
+    if (appStarted) authTornDown = true; // recovery from here is a reload (see onMemberSnapshot)
+    showAuthScreen('signin');
+    return;
+  }
+  authUser = user;
+  // The approval check: the self-read of this account's member record. Under
+  // the locked rules a non-member's read is CANCELLED (not null) — both land
+  // on the not-approved screen. Kept attached for live changes: a removal
+  // cancels this listener (kick), a role change fires a fresh snapshot.
+  if (!appStarted) showAuthScreen('checking');
+  memberRef = firebase.database().ref('campScoreboard/members/' + emailKey(user.email));
+  memberRef.on('value', onMemberSnapshot, onMemberReadError);
+}
+
+function onMemberSnapshot(snap) {
+  const rec = snap.val();
+  if (!rec || !rec.role) { denyMember(); return; }
+  memberName = rec.name || null;
+  setMemberRole(rec.role);
+  setAuthHint(memberRole);
+  if (authTornDown) {
+    // Sign-in was lost and re-established mid-session. The database listeners
+    // from before are permanently dead (a cancelled read is terminal — see
+    // initSync), so the honest recovery is a clean reload.
+    location.reload();
+    return;
+  }
+  startApp();
+  startSync(); // attach the database listeners — only ever from here
+}
+
+function onMemberReadError() {
+  denyMember(); // read refused by rules: signed in, but not on the list
+}
+
+function denyMember() {
+  const email = (authUser && authUser.email) || '';
+  setMemberRole(null);
+  clearAuthHint();
+  // A device that isn't approved shouldn't keep camp data around either.
+  clearLocalData();
+  showAuthScreen('denied', { email });
+}
+
+// ── Pre-paint hint ───────────────────────────────────────────────
+// Approved devices cache their last confirmed role so the NEXT load paints
+// the app instantly from local state while sign-in re-confirms in the
+// background (index.html's pre-paint guard reads the same key). Purely a
+// convenience — the security rules never consult it.
+function setAuthHint(role) {
+  try { localStorage.setItem(AUTH_HINT_KEY, role); } catch (e) { /* fine */ }
+}
+
+function clearAuthHint() {
+  try { localStorage.removeItem(AUTH_HINT_KEY); } catch (e) { /* fine */ }
+}
+
+function authHintRole() {
+  try {
+    const h = localStorage.getItem(AUTH_HINT_KEY);
+    return h === 'editor' || h === 'viewer' ? h : null;
+  } catch (e) { return null; }
+}
+
+// ── Sign out ─────────────────────────────────────────────────────
+// Signing out also clears the camp data cached on this device — the whole
+// synced state lives in localStorage (and Pictionary photos in IndexedDB),
+// and once PII rides along in it, a signed-out device must not keep a copy.
+// The theme preference resets to Auto (the boot guards discard partial
+// state, so there is deliberately no carry-over mechanism).
+function clearLocalData() {
+  [STORAGE_KEY, DAY_RANK_KEY, CHANGE_DISMISS_KEY, ANNOUNCE_DISMISS_KEY,
+   AUTH_HINT_KEY, EMAIL_SIGNIN_KEY].forEach((k) => {
+    try { localStorage.removeItem(k); } catch (e) { /* ignore */ }
+  });
+}
+
+function signOutAndClear() {
+  if (!confirm('Sign out? Camp data stored on this device will be cleared.')) return;
+  clearLocalData();
+  try { clearPhotos().catch(() => {}); } catch (e) { /* ignore */ }
+  const done = () => location.reload(); // full teardown: timers, listeners, in-memory state
+  try {
+    firebase.auth().signOut().then(done, done);
+  } catch (e) {
+    done();
+  }
 }
 
 function boot() {
   applyTheme(); // the lock screen is the first thing everyone sees — theme it too
-  wireLockOtp();
-  if (isUnlocked()) {
+  wireAuthScreen();
+  // A device that was approved last time paints the app immediately from
+  // local state (exactly the pre-auth behavior) with its cached role, while
+  // startAuth() re-confirms in the background — and intervenes only if the
+  // server disagrees. A forged hint buys an empty shell: the rules refuse
+  // every read, and denyMember() locks the screen again.
+  const hinted = authHintRole();
+  if (hinted) {
+    setMemberRole(hinted);
     startApp();
   } else {
-    showLockScreen();
+    showAuthScreen('checking');
   }
+  startAuth();
 }
 
 document.addEventListener('DOMContentLoaded', boot);

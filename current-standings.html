@@ -11,7 +11,7 @@
        This page is a self-contained reveal piece; Jelly supplies the design
        tokens (accent re-pointed at the page gold) so any control added here
        matches the rest of the site. -->
-  <script type="module" src="vendor/jelly.js?v=163"></script>
+  <script type="module" src="vendor/jelly.js?v=164"></script>
   <style>
     * { box-sizing: border-box; }
     :root {
@@ -307,10 +307,29 @@
   <!-- Finale -->
   <div id="finale"><div class="champ" id="champ"></div></div>
 
-  <!-- Firebase (optional live sync — same feed as the main app) -->
+  <!-- Sign-in overlay: the database only answers approved members, so the
+       TV signs in once too (see the sign-in gate in the script below). -->
+  <div id="auth-overlay" style="display:none; position:fixed; inset:0; z-index:99; background:rgba(6,8,12,0.96); color:#fff; align-items:center; justify-content:center; text-align:center; font-family:inherit;">
+    <div style="max-width:520px; padding:2rem;">
+      <div style="font-size:2.2rem; font-weight:800; margin-bottom:0.75rem;">🏅 Camp — Current Standings</div>
+      <div id="auth-ov-checking" style="display:none; font-size:1.2rem; opacity:0.85;">Checking sign-in…</div>
+      <div id="auth-ov-signin" style="display:none;">
+        <p style="font-size:1.1rem; opacity:0.85; margin:0 0 1.25rem;">Staff sign-in — use any approved account.</p>
+        <button id="auth-ov-btn" type="button" style="font: inherit; font-size:1.15rem; font-weight:700; padding:0.8rem 1.6rem; border-radius:12px; border:none; background:#3355ff; color:#fff; cursor:pointer;">Continue with Google</button>
+      </div>
+      <div id="auth-ov-denied" style="display:none;">
+        <p style="font-size:1.1rem; margin:0 0 0.5rem;">Signed in as <strong id="auth-ov-email"></strong></p>
+        <p style="opacity:0.8; margin:0;">This account isn't on the camp list — ask a director to add it, then reload.</p>
+      </div>
+      <p id="auth-ov-error" style="color:#ff8a8a; min-height:1.2em; margin-top:1rem;"></p>
+    </div>
+  </div>
+
+  <!-- Firebase (sign-in + live sync — same feed as the main app) -->
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=163"></script>
+  <script src="firebase-config.js?v=164"></script>
   <script>
   (function () {
     'use strict';
@@ -321,7 +340,7 @@
     // silently never took effect until someone thought to hit refresh (this
     // bit the double-points fix on 2026-07-23). Bump this stamp on every
     // edit to this file; see checkForUpdate/startUpdatePolling below.
-    var TV_BUILD = '2026-07-25T03:55:20Z';
+    var TV_BUILD = '2026-07-25T17:01:58Z';
 
     // ── Constants mirrored from app.js (keep in sync) ──────────────
     var STORAGE_KEY = 'campScoreboardV2';
@@ -629,37 +648,91 @@
       doubledGameIds = ids;
     }
 
-    function startData() {
-      if (DEMO) { ingest(demoState()); return; }
-      var cfg = window.FIREBASE_CONFIG;
+    // ── Sign-in gate ───────────────────────────────────────────────
+    // The database only answers approved, signed-in members (see the rules
+    // notes in CLAUDE.md), so this page signs in too: sign in ONCE on the
+    // TV/presenter machine with any approved account and it works like
+    // before. The old behavior — silently falling back to fake demo data
+    // when the database didn't answer — is gone for the non-?demo path; a
+    // signed-out TV now says so on screen instead of showing wrong numbers.
+    // (Safari note: ~7 days without a visit purges site storage, signing
+    // the TV out. The overlay reappearing with a button IS the design.)
+    function setAuthOverlay(mode, email) {
+      var el = document.getElementById('auth-overlay');
+      if (!el) return;
+      el.style.display = mode === 'hidden' ? 'none' : 'flex';
+      document.getElementById('auth-ov-checking').style.display = mode === 'checking' ? 'block' : 'none';
+      document.getElementById('auth-ov-signin').style.display = mode === 'signin' ? 'block' : 'none';
+      document.getElementById('auth-ov-denied').style.display = mode === 'denied' ? 'block' : 'none';
+      if (email) document.getElementById('auth-ov-email').textContent = email;
+    }
+
+    function attachData() {
+      // Week config first (sibling ref): it carries each game's
+      // double-points flag, the same source the main scoreboard uses.
+      // If it lands (or changes) after the state did, recompute so the
+      // totals here can never disagree with the main site's.
       var gotRemote = false;
-      if (cfg && cfg.apiKey && cfg.databaseURL && typeof firebase !== 'undefined') {
-        try {
-          firebase.initializeApp(cfg);
-          // Week config first (sibling ref): it carries each game's
-          // double-points flag, the same source the main scoreboard uses.
-          // If it lands (or changes) after the state did, recompute so the
-          // totals here can never disagree with the main site's.
-          firebase.database().ref('campScoreboard/config').on('value', function (snap) {
-            var remoteCfg = snap.val();
-            if (remoteCfg && remoteCfg.games) {
-              updateDoubledFrom(remoteCfg.games);
-              if (lastRawState) ingest(lastRawState);
-            }
-          });
-          firebase.database().ref('campScoreboard/state').on('value', function (snap) {
-            var remote = snap.val();
-            if (remote) { gotRemote = true; ingest(remote); }
-          });
-        } catch (e) { /* fall through to local */ }
-      }
-      // Fallback: if no remote arrives quickly, use local snapshot.
+      firebase.database().ref('campScoreboard/config').on('value', function (snap) {
+        var remoteCfg = snap.val();
+        if (remoteCfg && remoteCfg.games) {
+          updateDoubledFrom(remoteCfg.games);
+          if (lastRawState) ingest(lastRawState);
+        }
+      });
+      firebase.database().ref('campScoreboard/state').on('value', function (snap) {
+        var remote = snap.val();
+        if (remote) { gotRemote = true; ingest(remote); }
+      });
+      // Offline resilience for an APPROVED machine only: if the network is
+      // down, fall back to this device's cached snapshot (never demo data).
       setTimeout(function () {
         if (!gotRemote && !haveData) {
           var local = readLocal();
-          ingest(local || demoState());
+          if (local) ingest(local);
         }
       }, 3500);
+    }
+
+    function startData() {
+      if (DEMO) { ingest(demoState()); return; }
+      var cfg = window.FIREBASE_CONFIG;
+      if (!cfg || !cfg.apiKey || !cfg.databaseURL || typeof firebase === 'undefined' || !firebase.auth) {
+        // No Firebase — the best this page can do is the local snapshot.
+        var local = readLocal();
+        if (local) ingest(local);
+        return;
+      }
+      try { if (!firebase.apps.length) firebase.initializeApp(cfg); } catch (e) { return; }
+      setAuthOverlay('checking');
+      var btn = document.getElementById('auth-ov-btn');
+      if (btn) {
+        btn.addEventListener('click', function () {
+          // Synchronously in the click handler — an await first and the
+          // browser blocks the popup.
+          firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(function (err) {
+            var msgEl = document.getElementById('auth-ov-error');
+            if (msgEl) msgEl.textContent = 'Sign-in didn\'t work (' + ((err && err.code) || 'error') + ') — try again.';
+          });
+        });
+      }
+      var started = false;
+      firebase.auth().onAuthStateChanged(function (user) {
+        if (!user || !user.email) { setAuthOverlay('signin'); return; }
+        setAuthOverlay('checking');
+        // Approval check: the self-read of this account's member record.
+        // (Key = lowercased email, ALL dots → commas — same contract as
+        // app.js's emailKey; keep in sync.)
+        var key = String(user.email).trim().toLowerCase().replaceAll('.', ',');
+        firebase.database().ref('campScoreboard/members/' + key).once('value')
+          .then(function (snap) {
+            var rec = snap.val();
+            if (!rec || !rec.role) { setAuthOverlay('denied', user.email); return; }
+            setAuthOverlay('hidden');
+            if (!started) { started = true; attachData(); }
+          })
+          .catch(function () { setAuthOverlay('denied', user.email); });
+      });
     }
 
     // ── UI: intro ──────────────────────────────────────────────────
