@@ -240,12 +240,18 @@ default, so pre-camps devices behave identically).
   profile (the runner seeds the camp key before scripts load —
   `makeContext({camp:'senior'})`). `week.senior.test.js` re-runs the
   structural checks + the every-minute banner fuzz as senior.
-- **Rules**: `seniorScoreboard/*` needs its own copy of the ruleset (the
-  junior block with the members-lookup path swapped) — until that's pasted
-  in the console, everything senior is simply denied (deny-by-default), so
-  the code can ship first. The senior owner record must be seeded via the
-  console Data tab BEFORE the rules paste. `current-standings.html` is
-  junior-only until it grows a `?camp=` switch (planned).
+- **Rules are PUBLISHED for both camps** (2026-07-25, verified): one
+  combined ruleset — the junior block unchanged plus a `seniorScoreboard`
+  copy with only the members-lookup path swapped. All fifteen
+  unauthenticated probes (six read paths per camp, write probes, a
+  member-injection attempt) return `Permission denied`. The senior owner
+  record `seniorScoreboard/members/patricksimpson,fx@gmail,com` is seeded
+  editor via the console Data tab and is rules-immutable, same as junior's.
+  (First seeding attempt landed NESTED INSIDE campScoreboard — the console's
+  per-row + is easy to hit one level down; the fix was delete + re-add via a
+  direct path URL. Check indentation when console-seeding.)
+  `current-standings.html` is junior-only until it grows a `?camp=` switch
+  (planned).
 
 ## Auth, members & roles (the security boundary)
 

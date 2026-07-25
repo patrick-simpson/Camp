@@ -100,13 +100,13 @@ either camp's member list or both; dual-camp accounts pick a camp every
 launch; a senior-only sign-in auto-bounces from the junior default. See
 CLAUDE.md → "Two camps, one app".
 
-**Still open (Phase B — console work with Patrick):** seed
-`seniorScoreboard/members/patricksimpson,fx@gmail,com` as editor via the
-console Data tab, THEN paste the combined ruleset (junior block unchanged +
-senior copy with the members path swapped); verify junior still locked and
-working first. **Phase C:** flag artwork + real accents, real Sun/Sat senior
-schedule, 4-team bracket (2 semis → 3rd-place match → final), senior
-meals/verses/cleanup rota data, TV page `?camp=senior`.
+**Phase B ✅ DONE (2026-07-25):** senior owner seeded via the console Data
+tab and the combined ruleset published — junior verified still locked and
+working, senior locked to outsiders, Patrick confirmed the camp picker and
+senior scoreboard work on his device. **Phase C (open):** flag artwork +
+real accents, real Sun/Sat senior schedule, 4-team bracket (2 semis →
+3rd-place match → final), senior meals/verses/cleanup rota data, TV page
+`?camp=senior`, cross-camp chips in the Members drawer.
 
 ### 2. Service-worker caching for real offline use — decision-gated
 `sw.js` ships deliberately WITHOUT a fetch handler so it can never serve stale
