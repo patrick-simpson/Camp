@@ -15,9 +15,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-25T20:11:37Z';
+const CODE_UPDATED_AT = '2026-07-25T21:03:17Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 166;
+const APP_VERSION = 167;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -65,7 +65,13 @@ const EMAIL_SIGNIN_KEY = 'campScoreboardEmailForSignIn'; // email-link flow park
 let authUser = null;       // firebase.auth() user, once signed in
 let memberRole = null;     // 'viewer' | 'editor' | null (not resolved / not approved)
 let memberName = null;     // display name from the member record, if set
+let memberTeamId = null;   // 't0'…'t5' — the team this person is ON, if assigned
 let authTornDown = false;  // sign-in was lost mid-session; recovery is a reload
+
+// The whole member list, kept live once sync attaches (members can read the
+// list — it's the staff directory). Null until it first loads; readers must
+// fall back to the hand-typed counselor text until then.
+let memberDirectory = null;
 
 // The single write-path for the role — and the test seam: tests call this
 // directly instead of faking a Firebase sign-in (see tests/auth.test.js).
@@ -80,8 +86,55 @@ function setMemberRole(role) {
   }
 }
 
+// The other half of the test seam: which team this account belongs to. Set
+// from the member record; drives both the auto-followed team and the
+// own-team scoring guard below.
+function setMemberTeam(teamId) {
+  const next = isTeamId(teamId) ? teamId : null;
+  const changed = memberTeamId !== next;
+  memberTeamId = next;
+  if (appStarted && changed) {
+    adoptMemberTeam();
+    renderAll();
+  }
+}
+
+function isTeamId(id) {
+  return typeof id === 'string' && /^t\d+$/.test(id);
+}
+
 function canEdit() {
   return memberRole === 'editor';
+}
+
+// ── The own-team guard ────────────────────────────────────────────
+// Staff assigned to a team (their member record's teamId) are editors
+// everywhere EXCEPT the specific rounds their own team is playing or
+// earning in: they can run the rest of the game normally — call up other
+// matchups, record other teams' scores, finalize the result — but the one
+// round with their own team in it is read-only for them, and another editor
+// records it.
+//
+// Deliberately ONE function, so both loosening and tightening this are a
+// one-line change: `return canEdit()` opens everything up; adding
+// `if (memberTeamId) return false` closes every game to assigned staff.
+// It is a fairness affordance, not a security boundary — the database rules
+// gate on `role` alone and cannot see which round a write belongs to.
+function canScoreRound(...teamIds) {
+  if (!canEdit()) return false;
+  if (!memberTeamId) return true; // nobody assigned a team is guarded
+  return !teamIds.some((id) => id === memberTeamId);
+}
+
+// True when the guard above is what's blocking this round (as opposed to
+// simply not being an editor) — the cue to explain rather than hide.
+function blockedByOwnTeam(...teamIds) {
+  return canEdit() && !canScoreRound(...teamIds);
+}
+
+// The standard explanation, shown wherever the guard takes controls away.
+function ownTeamNoteHTML(what) {
+  return `<p class="own-team-note">🛡️ You're on ${teamEmoji(memberTeamId)} <strong>${esc(teamName(memberTeamId))}</strong>, so ${esc(what)} is read-only for you. Another editor records it.</p>`;
 }
 
 // The member list is keyed by a person's SIGN-IN IDENTITY: their email (for
@@ -140,16 +193,44 @@ function identityFromKey(key) {
   return k[0] === '+' ? k : k.replaceAll(',', '.');
 }
 
-// Shape of one campScoreboard/members entry. `name` is omitted (not null)
-// when empty — RTDB drops nulls, and the rules validate name as a string.
-function memberRecord(role, name) {
+// A member row for someone who has no sign-in yet — a counselor we know by
+// name and team, whose email or phone gets filled in later. The key must be
+// something `identityKey()` can NEVER produce, or a stranger could inherit
+// the row: no '@' (email keys always have one) and no leading '+' (phone
+// keys always do). The random tail keeps two people with the same name apart.
+function pendingKey(name) {
+  const slug = String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '').slice(0, 24) || 'staff';
+  return 'pending-' + slug + '-' + Math.random().toString(36).slice(2, 7);
+}
+
+function isPendingKey(key) {
+  return String(key || '').startsWith('pending-');
+}
+
+// Shape of one campScoreboard/members entry. `name` and `teamId` are omitted
+// (not null) when empty — RTDB drops nulls, and the rules validate each as a
+// string when present.
+function memberRecord(role, name, teamId) {
   const rec = {
     role: role === 'editor' ? 'editor' : 'viewer',
     addedBy: identityLabel(authUser) || 'unknown',
     addedAt: new Date().toISOString(),
   };
   if (name && String(name).trim()) rec.name = String(name).trim();
+  if (isTeamId(teamId)) rec.teamId = teamId;
   return rec;
+}
+
+// Everyone in the member directory who is assigned to a team, by display
+// name (falling back to their sign-in identity when they have no name yet).
+// Empty until the directory loads — callers fall back to team.counselor.
+function teamStaffNames(teamId) {
+  if (!memberDirectory || !isTeamId(teamId)) return [];
+  return Object.keys(memberDirectory)
+    .filter((k) => memberDirectory[k] && memberDirectory[k].teamId === teamId)
+    .map((k) => String(memberDirectory[k].name || identityFromKey(k)))
+    .sort((a, b) => a.localeCompare(b));
 }
 
 // Team names from the printed roster, paired to their counselor group
@@ -1459,6 +1540,44 @@ function renderMembers() {
     });
 }
 
+// This week's counselors, per team — the seed list behind "Add this week's
+// counselors" in the Members drawer. They start as PENDING members (a name
+// and a team, no sign-in yet); an editor fills in each person's email or
+// phone later with "Add sign-in", which is what actually lets them in.
+// Spellings follow the standings' counselor text, which is what camp prints.
+const SEED_COUNSELORS = [
+  ['t0', ['Alysa', 'Cam', 'Sam']],
+  ['t1', ['Bria', 'Lydia', 'Zac']],
+  ['t2', ['Jovi', 'Brody', 'Josh']],
+  ['t3', ['Sofia', 'William']],
+  ['t4', ['Abby', 'TJ', 'Ella']],
+  ['t5', ['Lily', 'Jacob']],
+];
+
+// Which seed counselors aren't in the member list yet, matched by name
+// (case-insensitively) so pressing the button twice doesn't duplicate anyone —
+// including someone who has since been given a real email or phone.
+function missingSeedCounselors(members) {
+  const have = new Set(Object.keys(members || {})
+    .map((k) => String((members[k] && members[k].name) || '').trim().toLowerCase())
+    .filter(Boolean));
+  const out = [];
+  SEED_COUNSELORS.forEach(([teamId, names]) => {
+    names.forEach((name) => {
+      if (!have.has(name.toLowerCase())) out.push({ name, teamId });
+    });
+  });
+  return out;
+}
+
+// The team <select> shown on every member row and in the add form.
+function memberTeamSelectHTML(cls, teamId, label) {
+  return `<jelly-select class="${cls}" placeholder="— no team —" ${isTeamId(teamId) ? `value="${esc(teamId)}"` : ''} label="${esc(label)}" size="small">
+    <jelly-option value="">— no team —</jelly-option>
+    ${state.teams.map((t) => `<jelly-option value="${t.id}">${teamEmoji(t.id)} ${esc(t.name)}</jelly-option>`).join('')}
+  </jelly-select>`;
+}
+
 function renderMemberList(body, members) {
   const myKey = identityKey(authUser);
   const keys = Object.keys(members).sort((a, b) => {
@@ -1470,17 +1589,24 @@ function renderMemberList(body, members) {
     const m = members[key] || {};
     const self = key === myKey;
     const role = m.role === 'editor' ? 'editor' : 'viewer';
+    const pending = isPendingKey(key);
     const isPhone = String(key)[0] === '+';
-    return `<div class="member-row" data-member-key="${esc(key)}">
+    // A pending row has no sign-in identity to show — just the name, plus the
+    // action that turns it into a real account.
+    const idLine = pending
+      ? `<span class="member-email member-pending">⏳ No sign-in yet — <button type="button" class="link-btn member-add-signin">add email or phone</button></span>`
+      : (m.name ? `<span class="member-email">${isPhone ? '📱 ' : ''}${esc(identityFromKey(key))}</span>` : '');
+    return `<div class="member-row${pending ? ' member-row-pending' : ''}" data-member-key="${esc(key)}">
       <div class="member-id">
         <span class="member-name">${esc(m.name || identityFromKey(key))}${self ? ' <span class="member-you">(you)</span>' : ''}</span>
-        ${m.name ? `<span class="member-email">${isPhone ? '📱 ' : ''}${esc(identityFromKey(key))}</span>` : ''}
+        ${idLine}
       </div>
       <div class="member-controls">
         <jelly-segmented class="member-role" size="small" label="Role" value="${role}" ${self ? 'disabled' : ''}>
           <jelly-segment value="viewer">👀 Viewer</jelly-segment>
           <jelly-segment value="editor">✏️ Editor</jelly-segment>
         </jelly-segmented>
+        ${memberTeamSelectHTML('member-team', m.teamId, (m.name || identityFromKey(key)) + ' team')}
         <button type="button" class="link-btn danger-link member-remove" ${self ? 'disabled' : ''}>Remove</button>
       </div>
       ${self ? '<p class="muted member-self-note">That\'s you — another editor has to change or remove your access.</p>' : ''}
@@ -1498,20 +1624,29 @@ function renderMemberList(body, members) {
       <jelly-button class="secondary-btn" variant="primary" id="member-invite-copy" block>📋 Copy invite</jelly-button>
     </div>` : '';
 
+  const missing = missingSeedCounselors(members);
+  const seedBlock = missing.length ? `
+    <div class="member-seed">
+      <p class="muted">Not everyone's on the list yet. Add this week's ${missing.length} missing counselor${missing.length === 1 ? '' : 's'} by name and team — they'll sit here as “no sign-in yet” until you add each person's email or phone.</p>
+      <jelly-button id="member-seed-btn" class="secondary-btn" variant="platinum" block>👥 Add this week's counselors</jelly-button>
+    </div>` : '';
+
   body.innerHTML = `
     <p class="muted members-sub">Everyone here can open the app. Viewers can look; editors can change scores and manage this list. Anyone not on the list gets nothing — the database itself refuses them.</p>
+    <p class="muted members-sub">Giving someone a <strong>team</strong> does two things: the app opens on that team for them, and — if they're an editor — it keeps them out of scoring the rounds their own team is in.</p>
     ${inviteBanner}
     <div class="member-list">${rows || '<p class="muted">Nobody yet.</p>'}</div>
+    ${seedBlock}
     <div class="member-add">
       <h3>Add someone</h3>
       <div class="form-field">
         <label class="form-label">Email or phone number</label>
         <jelly-input class="form-input" id="member-add-id" type="text" placeholder="name@example.com or 555-123-4567"></jelly-input>
-        <p class="muted member-add-hint">Use the email they sign in with — or a phone number if they'll use phone sign-in.</p>
+        <p class="muted member-add-hint">Use the email they sign in with — or a phone number if they'll use phone sign-in. Leave it blank to add someone by name now and fill this in later.</p>
       </div>
       <div class="form-row">
         <div class="form-field">
-          <label class="form-label">Name (optional)</label>
+          <label class="form-label">Name</label>
           <jelly-input class="form-input" id="member-add-name" type="text" placeholder="First name"></jelly-input>
         </div>
         <div class="form-field">
@@ -1522,27 +1657,81 @@ function renderMemberList(body, members) {
           </jelly-segmented>
         </div>
       </div>
+      <div class="form-field">
+        <label class="form-label">Team (optional)</label>
+        ${memberTeamSelectHTML('member-add-team', null, 'Team for the new member')}
+      </div>
       <jelly-button id="member-add-btn" class="secondary-btn" variant="primary">+ Add member</jelly-button>
       <p class="entry-error" id="member-add-error" hidden></p>
     </div>`;
 
-  bindMemberList(body, myKey);
+  bindMemberList(body, myKey, members);
 }
 
-function bindMemberList(body, myKey) {
+// Move a pending row (name + team, no sign-in) onto its real email/phone key.
+// RTDB keys are immutable, so this is a create-then-delete: write the new key
+// first, and only remove the placeholder once that lands — a failure part-way
+// leaves the pending row intact rather than losing the person.
+function convertPendingMember(key, rec) {
+  const raw = (prompt('Email address or phone number for ' + (rec.name || 'this person') + ':', '') || '').trim();
+  if (!raw) return;
+  let newKey;
+  if (raw.includes('@')) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) { showToast("That doesn't look like an email address."); return; }
+    newKey = emailKey(raw);
+  } else {
+    newKey = phoneKey(raw);
+    if (!newKey) { showToast("That doesn't look like a phone number — include the area code."); return; }
+  }
+  const role = rec.role === 'editor' ? 'editor' : 'viewer';
+  const next = memberRecord(role, rec.name, rec.teamId);
+  firebase.database().ref('campScoreboard/members/' + newKey).set(next)
+    .then(() => firebase.database().ref('campScoreboard/members/' + key).remove())
+    .then(() => {
+      lastInvite = inviteText(newKey, role); // they can sign in now — hand over the invite
+      showToast(identityFromKey(newKey) + ' can now sign in', { mine: true });
+      renderMembers();
+    })
+    .catch(() => showToast('Change refused — are you still an editor?'));
+}
+
+function bindMemberList(body, myKey, members) {
   body.querySelectorAll('.member-row').forEach((row) => {
     const key = row.dataset.memberKey;
     const self = key === myKey;
+    const rec = (members && members[key]) || {};
     const seg = row.querySelector('.member-role');
     if (seg) {
       seg.addEventListener('change', (e) => {
         const role = e.detail && e.detail.value;
         if (self || !role || (role !== 'viewer' && role !== 'editor')) return;
         firebase.database().ref('campScoreboard/members/' + key + '/role').set(role)
-          .then(() => showToast(`${identityFromKey(key)} is now a ${role}`, { mine: true }))
+          .then(() => showToast(`${rec.name || identityFromKey(key)} is now a ${role}`, { mine: true }))
           .catch(() => { showToast('Change refused — are you still an editor?'); renderMembers(); });
       });
     }
+    // Team: a child write, so the parent .validate doesn't re-run. Clearing it
+    // is a remove() — RTDB has no "present but empty" for a string.
+    const teamSel = row.querySelector('.member-team');
+    if (teamSel) {
+      teamSel.addEventListener('change', () => {
+        const teamId = teamSel.value || '';
+        const ref = firebase.database().ref('campScoreboard/members/' + key + '/teamId');
+        const done = () => {
+          showToast(isTeamId(teamId)
+            ? `${rec.name || identityFromKey(key)} is with ${teamName(teamId)}`
+            : `${rec.name || identityFromKey(key)} has no team`, { mine: true });
+          renderMembers();
+        };
+        (isTeamId(teamId) ? ref.set(teamId) : ref.remove())
+          .then(done)
+          // A refusal here usually means the database rules predate team
+          // assignments and still reject an unknown `teamId` field.
+          .catch(() => { showToast("Couldn't save the team — the database rules may need updating."); renderMembers(); });
+      });
+    }
+    const convert = row.querySelector('.member-add-signin');
+    if (convert) convert.addEventListener('click', () => convertPendingMember(key, rec));
     const rm = row.querySelector('.member-remove');
     if (rm) {
       rm.addEventListener('click', () => {
@@ -1556,6 +1745,23 @@ function bindMemberList(body, myKey) {
     }
   });
 
+  // One write for the whole seed list — a multi-path update, so it either all
+  // lands or none of it does.
+  const seedBtn = document.getElementById('member-seed-btn');
+  if (seedBtn) {
+    seedBtn.addEventListener('click', () => {
+      const missing = missingSeedCounselors(members);
+      if (!missing.length) { renderMembers(); return; }
+      const patch = {};
+      missing.forEach((c) => { patch[pendingKey(c.name)] = memberRecord('viewer', c.name, c.teamId); });
+      firebase.database().ref('campScoreboard/members').update(patch)
+        .then(() => { showToast(`Added ${missing.length} counselor${missing.length === 1 ? '' : 's'}`, { mine: true }); renderMembers(); })
+        // Same caveat as the team select: pre-team rules reject both the
+        // `teamId` field and the `pending-…` keys these rows use.
+        .catch(() => showToast("Couldn't add them — the database rules may need updating."));
+    });
+  }
+
   const addBtn = document.getElementById('member-add-btn');
   if (addBtn) {
     addBtn.addEventListener('click', () => {
@@ -1563,10 +1769,22 @@ function bindMemberList(body, myKey) {
       const raw = (document.getElementById('member-add-id').value || '').trim();
       const name = (document.getElementById('member-add-name').value || '').trim();
       const roleSeg = document.getElementById('member-add-role');
+      const teamSel = document.getElementById('member-add-team') || body.querySelector('.member-add-team');
+      const teamId = (teamSel && teamSel.value) || '';
       const role = (roleSeg && roleSeg.value) === 'editor' ? 'editor' : 'viewer';
-      // Auto-detect: anything with an @ is an email; otherwise a phone number.
-      let key, shownId;
-      if (raw.includes('@')) {
+      // Auto-detect: anything with an @ is an email; a blank field means
+      // "by name for now" (a pending row); otherwise a phone number.
+      let key, shownId, pending = false;
+      if (!raw) {
+        if (!name) {
+          errEl.textContent = 'Give at least a name — or an email/phone to let them sign in.';
+          errEl.hidden = false;
+          return;
+        }
+        key = pendingKey(name);
+        shownId = name;
+        pending = true;
+      } else if (raw.includes('@')) {
         if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) {
           errEl.textContent = 'That doesn\'t look like an email address.';
           errEl.hidden = false;
@@ -1584,10 +1802,11 @@ function bindMemberList(body, myKey) {
         shownId = key; // the normalized +E.164 we're about to store — so they can eyeball it
       }
       errEl.hidden = true;
-      firebase.database().ref('campScoreboard/members/' + key).set(memberRecord(role, name))
+      firebase.database().ref('campScoreboard/members/' + key).set(memberRecord(role, name, teamId))
         .then(() => {
-          showToast(shownId + ' can now sign in', { mine: true });
-          lastInvite = inviteText(key, role); // surfaced at the top of the list to copy + send
+          showToast(pending ? shownId + ' added — no sign-in yet' : shownId + ' can now sign in', { mine: true });
+          // A pending row can't sign in yet, so there's nothing to invite them to.
+          lastInvite = pending ? null : inviteText(key, role);
           renderMembers();
         })
         .catch(() => {
@@ -1819,7 +2038,14 @@ if (migrateState(state)) {
 }
 normalizeSyncedState();
 
+// Who's with this team, everywhere the app names a team's counselors. The
+// member directory is the live truth once anyone is assigned to a team in
+// Settings → Who can sign in; the hand-typed team.counselor text is the
+// fallback for teams nobody has been assigned to yet (and for the moment
+// before the directory loads).
 function counselorName(id) {
+  const staff = teamStaffNames(id);
+  if (staff.length) return staff.join(', ');
   const t = state.teams.find((t) => t.id === id);
   return t && t.counselor ? t.counselor : '';
 }
@@ -2261,6 +2487,17 @@ function initSync() {
       syncDenied = true;
       updateSyncIndicator();
     });
+    // Staff directory: who's on the camp list and which team each is with.
+    // Members may read the whole list (it's the staff roster), and this is
+    // what makes the real counselor names show on each team everywhere. Only
+    // attached here — i.e. after membership was confirmed — like every other
+    // ref. A denial just leaves the hand-typed counselor text in place.
+    try {
+      firebase.database().ref('campScoreboard/members').on('value', (snap) => {
+        memberDirectory = snap.val() || {};
+        if (appStarted) renderAll();
+      }, () => { memberDirectory = null; });
+    } catch (e) { /* ignore — counselor text falls back to state.teams */ }
     // (Auto-reload is handled by startUpdatePolling — a same-origin poll of the
     // deployed index.html — so it works on a single device and doesn't depend on
     // Firebase or another client announcing the build.)
@@ -3409,10 +3646,10 @@ function matchupCalloutHTML(aId, bId) {
     </div>
     <p class="call-next-teams">${esc(teamName(aId))} <span class="vs">vs</span> ${esc(teamName(bId))}</p>
     ${counselors.length === 2 ? `<p class="call-next-counselors">Counselors: ${esc(counselors[0])} &amp; ${esc(counselors[1])}</p>` : ''}
-    <div class="winner-btn-row">
+    ${blockedByOwnTeam(aId, bId) ? '' : `<div class="winner-btn-row">
       <jelly-button class="winner-btn" variant="azure" block data-winner="${aId}">${esc(teamName(aId))} won</jelly-button>
       <jelly-button class="winner-btn" variant="azure" block data-winner="${bId}">${esc(teamName(bId))} won</jelly-button>
-    </div>
+    </div>`}
     <jelly-button class="copy-matchup-btn" variant="platinum" block>📋 Copy matchup for text</jelly-button>
   </div>`;
 }
@@ -3629,7 +3866,7 @@ function renderStandings() {
       <td class="rank-col">${i + 1}${rankDelta}</td>
       <td class="team-cell">
         <div class="team-name-line"><span class="team-emoji">${teamEmoji(team.id)}</span> <span class="team-name-text">${esc(team.name)}</span>${team.id === state.followTeam ? ' <span class="following-star" title="You\'re following this team">⭐</span>' : ''}</div>
-        ${team.counselor ? `<div class="team-counselor-text">${esc(team.counselor)}</div>` : ''}
+        ${counselorName(team.id) ? `<div class="team-counselor-text">${esc(counselorName(team.id))}</div>` : ''}
       </td>
       <td class="points-col">${s.points}${s.custom ? `<span class="bonus-hint">${s.custom > 0 ? '+' : ''}${s.custom} bonus</span>` : ''}</td>
       ${medalCell(s.gold)}
@@ -3825,7 +4062,7 @@ function renderFollowCard() {
           <div class="follow-team-name">${esc(team.name)}</div>
           ${statsLine}
         </div>
-        <button id="change-team-link" class="link-btn follow-change-btn">Change</button>
+        ${memberTeamId ? '<span class="follow-your-team" title="Set by your account">Your team</span>' : '<button id="change-team-link" class="link-btn follow-change-btn">Change</button>'}
       </div>
       ${nextLine}
       ${cleanupLine}
@@ -3883,7 +4120,39 @@ function teamPickerOverlayEl() {
   return document.getElementById('team-picker-overlay');
 }
 
+// Staff whose account says which team they're on don't get asked — the app
+// already knows, so it just follows that team (and uses their member name as
+// their identity, for the electives view). Returns true when it answered the
+// question, so the picker stays shut.
+//
+// This overrides a hand-picked choice on purpose: the account is the truth,
+// and a counselor who tapped a different team during camp week shouldn't
+// keep seeing someone else's team as "yours". Un-assign them in Settings →
+// Who can sign in and the picker comes back.
+function adoptMemberTeam() {
+  if (!memberTeamId) return false;
+  let changed = false;
+  if (state.followTeam !== memberTeamId) { state.followTeam = memberTeamId; changed = true; }
+  const known = memberName && TEAM_COUNSELORS[memberTeamId] &&
+    TEAM_COUNSELORS[memberTeamId].includes(memberName) ? memberName : null;
+  // Only adopt a name the electives data actually knows; otherwise leave the
+  // identity answered-as-skipped rather than looking up nothing forever.
+  const wanted = known || null;
+  if (state.identity === undefined || (known && state.identity !== known)) {
+    state.identity = wanted;
+    changed = true;
+  }
+  if (changed) saveState();
+  // A device painting from the cached hint runs maybeShowTeamPicker() before
+  // the member record has arrived, so the picker may already be up by the
+  // time we learn their team — take it back down. (Only the team step: an
+  // identity picker they opened themselves is theirs to close.)
+  if (pickerStep === 'team') closeTeamPicker();
+  return true;
+}
+
 function maybeShowTeamPicker() {
+  if (adoptMemberTeam()) return; // their account already says which team they're on
   if (state.followTeam === undefined) { openTeamPicker(); return; }
   // Already following a real team but never answered "which one are you?"
   // (a fresh install skips this; existing followers get just the name step).
@@ -3976,7 +4245,11 @@ function renderTeamPickerOptions() {
 function renderIdentityOptions() {
   const wrap = document.getElementById('team-picker-options');
   if (!wrap) return;
-  const names = TEAM_COUNSELORS[pickerTeamId] || [];
+  // The member directory is the live roster once counselors are assigned to
+  // teams; TEAM_COUNSELORS (which the electives data is keyed to) is the
+  // fallback for a team nobody's been assigned to yet.
+  const staff = teamStaffNames(pickerTeamId);
+  const names = staff.length ? staff : (TEAM_COUNSELORS[pickerTeamId] || []);
   wrap.innerHTML = names.map((n) =>
     `<button class="team-picker-option ${state.identity === n ? 'selected' : ''}" data-counselor="${esc(n)}">
       <span class="chip-emoji">${teamEmoji(pickerTeamId)}</span> ${esc(n)}
@@ -4060,8 +4333,12 @@ function renderBonuses() {
         ${customRow}
         <p class="bonus-entry-hint muted">Pick the team(s) that earned it:</p>
         <div class="bonus-team-chips">
-          ${state.teams.map((t) =>
-            `<jelly-chip class="bonus-team-chip" selectable ${d.teams.includes(t.id) ? 'selected' : ''} data-team-id="${t.id}"><span class="chip-emoji">${teamEmoji(t.id)}</span> ${esc(t.name)}</jelly-chip>`).join('')}
+          ${state.teams.map((t) => {
+            // The own-team guard: an assigned editor can award anyone but
+            // their own team (see canScoreRound).
+            const locked = blockedByOwnTeam(t.id);
+            return `<jelly-chip class="bonus-team-chip" selectable ${d.teams.includes(t.id) ? 'selected' : ''} ${locked ? 'disabled' : ''} data-team-id="${t.id}" ${locked ? 'title="Your own team — another editor awards these"' : ''}><span class="chip-emoji">${teamEmoji(t.id)}</span> ${esc(t.name)}${locked ? ' 🛡️' : ''}</jelly-chip>`;
+          }).join('')}
         </div>
         <div class="bonus-add-row">
           <jelly-icon-button id="bonus-sign" class="bonus-sign-btn ${d.sign < 0 ? 'neg' : ''}" ${d.sign < 0 ? 'variant="rose"' : ''} label="${d.sign < 0 ? 'Subtracting points — tap to add' : 'Adding points — tap to subtract'}">${d.sign < 0 ? '−' : '+'}</jelly-icon-button>
@@ -4140,6 +4417,7 @@ function bindBonusEntry(wrap) {
   wrap.querySelectorAll('.bonus-team-chip').forEach((btn) => {
     btn.addEventListener('click', () => {
       const id = btn.dataset.teamId;
+      if (!canScoreRound(id)) return; // own-team guard (the chip is disabled too)
       const i = d.teams.indexOf(id);
       if (i > -1) d.teams.splice(i, 1); else d.teams.push(id);
       renderBonuses();
@@ -4275,15 +4553,16 @@ function renderMemoryVerse() {
   const rowsHTML = `<div class="pts-grid">${state.teams.map((t) => {
     const pts = earned.raw[t.id] || 0; // raw stored value (0–5)
     const displayPts = earned.effective[t.id] || 0; // what it's actually worth in the standings
-    const btns = editing
+    // The own-team guard: a team's own verse points are that team's "round".
+    const btns = editing && canScoreRound(t.id)
       ? `<div class="pts-btn-row" data-team-id="${t.id}" role="group" aria-label="${esc(t.name)} verse points">
           ${[0, 1, 2, 3, 4, 5].map((n) =>
             `<jelly-chip class="pts-btn" selectable shape="square" ${pts === n ? 'selected' : ''} data-pts="${n}">${n * displayMult}</jelly-chip>`).join('')}
         </div>`
       : '';
     return `<div class="pts-row">
-      <span class="pts-row-team">${teamEmoji(t.id)} ${esc(t.name)}${displayPts > 5 ? ` <span class="pts-row-total">+${displayPts}</span>` : (!editing && displayPts > 0 ? ` <span class="pts-row-total">+${displayPts}</span>` : '')}</span>
-      ${btns}
+      <span class="pts-row-team">${teamEmoji(t.id)} ${esc(t.name)}${displayPts > 5 ? ` <span class="pts-row-total">+${displayPts}</span>` : ((!editing || !canScoreRound(t.id)) && displayPts > 0 ? ` <span class="pts-row-total">+${displayPts}</span>` : '')}</span>
+      ${btns}${editing && blockedByOwnTeam(t.id) ? '<span class="pts-row-locked">🛡️ your team</span>' : ''}
     </div>`;
   }).join('')}</div>`;
   const anyEarned = state.teams.some((t) => earned.raw[t.id]);
@@ -4314,6 +4593,7 @@ function renderMemoryVerse() {
 // Sets a team's verse points for a day to exactly `pts` — replaces any
 // existing entries for that (team, day) so the ledger holds one truth.
 function setVersePoints(teamId, dow, pts) {
+  if (!canScoreRound(teamId)) return; // own-team guard
   Object.entries(state.bonuses || {}).forEach(([id, b]) => {
     if (b && b.category === 'verse' && b.teamId === teamId && (Number(b.day) || 0) === dow) {
       delete state.bonuses[id];
@@ -4441,12 +4721,14 @@ function renderMealCleanup() {
       const body = rows.length
         ? rows.map((id) => {
             const pts = earned[id] || 0;
+            // The own-team guard: a team's own cleanup score is its round.
+            const locked = blockedByOwnTeam(id);
             return `<div class="pts-row">
-              <span class="pts-row-team">${teamEmoji(id)} ${esc(teamName(id))}${assigned.includes(id) ? '' : ' <span class="pts-row-total">not on rota</span>'}${pts > 3 ? ` <span class="pts-row-total">+${pts}</span>` : ''}</span>
-              <div class="pts-btn-row" data-team-id="${esc(id)}" data-meal="${esc(meal)}" role="group" aria-label="${esc(teamName(id))} ${esc(meal)} cleanup points">
+              <span class="pts-row-team">${teamEmoji(id)} ${esc(teamName(id))}${assigned.includes(id) ? '' : ' <span class="pts-row-total">not on rota</span>'}${pts > 3 || locked ? ` <span class="pts-row-total">+${pts}</span>` : ''}</span>
+              ${locked ? '<span class="pts-row-locked">🛡️ your team</span>' : `<div class="pts-btn-row" data-team-id="${esc(id)}" data-meal="${esc(meal)}" role="group" aria-label="${esc(teamName(id))} ${esc(meal)} cleanup points">
                 ${[0, 1, 2, 3].map((n) =>
                   `<jelly-chip class="pts-btn" selectable shape="square" ${pts === n ? 'selected' : ''} data-pts="${n}">${n}</jelly-chip>`).join('')}
-              </div>
+              </div>`}
             </div>`;
           }).join('')
         : '<p class="muted bonus-empty">No team on the rota yet.</p>';
@@ -4511,6 +4793,7 @@ function renderMealCleanup() {
 // Sets a team's cleanup points for a day+meal to exactly `pts` — replaces
 // any existing entries for that (team, day, meal).
 function setCleanupPoints(teamId, dow, meal, pts) {
+  if (!canScoreRound(teamId)) return; // own-team guard
   Object.entries(state.bonuses || {}).forEach(([id, b]) => {
     if (b && b.category === 'cleanup' && b.teamId === teamId &&
         (Number(b.day) || 0) === dow && (b.meal || 'Breakfast') === meal) {
@@ -5155,17 +5438,25 @@ function renderTally(container, g) {
   const draft = normalizeDraft(state.drafts[g.id]);
   const steps = g.counterSteps;
 
+  // The own-team guard: a tally game's "round" is each team's own score, so
+  // an editor assigned to a team gets everyone else's row and a locked one
+  // for their own (see canScoreRound). They still finalize the result.
+  const blockedTeam = state.teams.find((t) => blockedByOwnTeam(t.id));
+
   container.innerHTML = `
     <h3>Enter team scores <span class="unit-tag">(${esc(g.unit || 'points')}${g.lowerWins ? ' — lowest wins' : ''})</span></h3>
+    ${blockedTeam ? ownTeamNoteHTML('your own team\u2019s score') : ''}
     <div class="score-input-grid">
-      ${state.teams.map((t) => `
-        <div class="score-input-row ${steps ? 'with-counter' : ''}">
+      ${state.teams.map((t) => {
+        const locked = blockedByOwnTeam(t.id);
+        return `
+        <div class="score-input-row ${steps && !locked ? 'with-counter' : ''}${locked ? ' score-row-locked' : ''}">
           <div class="score-row-top">
-            <span class="score-team"><span class="chip-emoji">${teamEmoji(t.id)}</span> ${esc(t.name)}<span class="chip-sub">${esc(t.counselor || '')}</span></span>
+            <span class="score-team"><span class="chip-emoji">${teamEmoji(t.id)}</span> ${esc(t.name)}<span class="chip-sub">${locked ? 'your team — another editor scores this' : esc(counselorName(t.id))}</span></span>
             <input type="text" inputmode="${g.timeInput ? 'numeric' : 'decimal'}" placeholder="${g.timeInput ? 'm:ss' : '0'}"
-              data-team-id="${t.id}" value="${esc(draft.scores[t.id] || '')}" />
+              data-team-id="${t.id}" value="${esc(draft.scores[t.id] || '')}" ${locked ? 'readonly disabled' : ''} />
           </div>
-          ${steps ? `<div class="counter-btn-row" data-team-id="${t.id}">
+          ${steps && !locked ? `<div class="counter-btn-row" data-team-id="${t.id}">
             <jelly-button class="counter-btn minus" shape="square" variant="platinum" block data-delta="${-steps[0]}">−${steps[0]}</jelly-button>
             ${steps.map((s) => {
               const lbl = g.counterStepLabels && g.counterStepLabels[s] ? `<span class="counter-btn-sub">${esc(g.counterStepLabels[s])}</span>` : '';
@@ -5173,7 +5464,8 @@ function renderTally(container, g) {
             }).join('')}
           </div>` : ''}
         </div>
-      `).join('')}
+      `;
+      }).join('')}
     </div>
     ${g.liveRankings ? '<button id="reset-scores-btn" class="link-btn danger-link reset-scores-btn">↺ Reset all scores</button>' : ''}
     <div id="tally-medals"></div>
@@ -6070,11 +6362,27 @@ function bindLadderMatch(container, g, aId, bId) {
 // A tournament match shows either the Ladder Ball round scorer or the generic
 // live tally, depending on the game. One dispatch point keeps the bracket
 // render functions identical across games.
+// The read-only stand-in an own-team-guarded editor sees where the live
+// tracker would be: the same big board every spectator gets, so they can
+// still follow their own team's match — they just can't touch the score.
+function liveMatchWatchHTML(g, aId, bId) {
+  return `<div class="live-watch">
+    ${liveBoardHTML(g, aId, bId)}
+    <p class="muted live-watch-note">Updates automatically as another editor scores — no refresh needed.</p>
+  </div>`;
+}
+
 function matchTrackerHTML(g, aId, bId) {
+  // The own-team guard: an editor on one of these two teams doesn't score
+  // THIS match (see canScoreRound) — they still run the rest of the game.
+  if (blockedByOwnTeam(aId, bId)) {
+    return ownTeamNoteHTML('this match') + liveMatchWatchHTML(g, aId, bId);
+  }
   return g.ladderScoring ? ladderMatchHTML(g, aId, bId) : liveTrackerHTML(g, aId, bId);
 }
 
 function bindMatchTracker(container, g, aId, bId) {
+  if (blockedByOwnTeam(aId, bId)) return; // nothing interactive was rendered
   if (g.ladderScoring) bindLadderMatch(container, g, aId, bId);
   else bindLiveTracker(container, g, aId, bId);
 }
@@ -7329,6 +7637,7 @@ function onMemberSnapshot(snap) {
   if (!rec || !rec.role) { denyMember(); return; }
   memberName = rec.name || null;
   setMemberRole(rec.role);
+  setMemberTeam(rec.teamId); // which team they're ON (auto-follow + own-team guard)
   setAuthHint(memberRole);
   if (authTornDown) {
     // Sign-in was lost and re-established mid-session. The database listeners
@@ -7348,6 +7657,8 @@ function onMemberReadError() {
 function denyMember() {
   const who = identityLabel(authUser); // email or phone number
   setMemberRole(null);
+  setMemberTeam(null);
+  memberDirectory = null;
   clearAuthHint();
   // A device that isn't approved shouldn't keep camp data around either.
   clearLocalData();

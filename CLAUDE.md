@@ -222,8 +222,8 @@ rules**; the client code only shapes the UI.
   dots — so the client uses `replaceAll`, never JS `.replace` (which would
   only catch the first dot and lock out any multi-dot address, the owner's
   included). `current-standings.html` duplicates this — keep in sync.
-- **Member record**: `{ role, name?, addedBy, addedAt }` (`memberRecord()`;
-  `name` omitted, not null, when empty). Built at `campScoreboard/members`,
+- **Member record**: `{ role, name?, teamId?, addedBy, addedAt }`
+  (`memberRecord()`; `name`/`teamId` omitted, not null, when empty). Built at `campScoreboard/members`,
   editor-managed via Settings → **Who can sign in** (`renderMembers`). Your
   own row is disabled (another editor must change your access); the owner key
   is additionally immutable in the rules (the lockout anchor).
@@ -255,12 +255,80 @@ rules**; the client code only shapes the UI.
   membership, writes need `role === 'editor'`, `email_verified` required,
   changelog append-only + editor-read, presence per-child member-writable,
   `roster`/`contacts` pre-gated for future PII, owner key immutable.
-- **The test seam**: `setMemberRole('editor'|'viewer'|null)` sets the role
-  with no Firebase — that's how `tests/*.test.js` drive editor-only paths
-  (never by writing a localStorage role, which no longer exists).
+- **The test seam**: `setMemberRole('editor'|'viewer'|null)` sets the role and
+  `setMemberTeam('t2'|null)` the team, both with no Firebase — that's how
+  `tests/*.test.js` drive editor-only and own-team paths (never by writing a
+  localStorage role, which no longer exists).
 - Playwright: seed `localStorage.campScoreboardAuthHint = 'editor'` to paint
   the app without a real sign-in; the popup itself can't run headless against
   Google, so the live sign-in check happens against the deployed site.
+
+## Counselors ↔ teams ↔ accounts
+
+A member record can carry a **`teamId`** (`'t0'`…`'t5'`) — the team that
+person is ON. It's set per-row in Settings → **Who can sign in**, and it does
+three things.
+
+**1. The app opens on their team.** `adoptMemberTeam()` (called from
+`maybeShowTeamPicker()` and again whenever the member snapshot changes)
+points `state.followTeam` at their team and takes the picker back down if a
+hint-painted device already opened it. It **overrides a hand-picked team** on
+purpose — the account is the truth. Their follow card says "YOUR TEAM" where
+the Change button would be. Their member `name` also becomes `state.identity`,
+but only when `TEAM_COUNSELORS` actually lists that name — the electives data
+is keyed to those spellings, so adopting an unknown name would just look up
+nothing forever.
+
+**2. Real counselor names, everywhere.** A live `.on('value')` on
+`campScoreboard/members` (attached in `initSync`, i.e. only after approval
+like every other ref) fills **`memberDirectory`**. `counselorName(id)` returns
+the directory's assigned staff for that team, joined and sorted, and falls
+back to the hand-typed `team.counselor` text for teams nobody's assigned to
+yet — so the two sources coexist mid-transition. Everything downstream
+(standings, tally rows, matchup callouts, `matchupText`, the identity picker)
+goes through `counselorName`, so there's one place to change.
+
+**3. The own-team guard.** `canScoreRound(...teamIds)` is the ONE function
+that decides it: an editor with a `teamId` can score every round except the
+ones their own team is in. `blockedByOwnTeam()` distinguishes "guarded" from
+"just a viewer", and `ownTeamNoteHTML()` is the shared explanation. Loosening
+or tightening this is a one-line change inside `canScoreRound`. Where it
+bites:
+- **Bracket matches** — `matchupCalloutHTML` drops the winner buttons and
+  `matchTrackerHTML` swaps the live tracker for a read-only board. Both
+  round-1 flavors (free pick and fixed `roundOneMatchups`), the semifinal and
+  the final all route through those two, so it's covered in one place. Calling
+  up teams, copying the matchup text, and the bye pick stay available.
+- **Tally scores** — their own team's input is `readonly disabled` and its
+  counter buttons are gone; everyone else's row works normally, and they still
+  save the result.
+- **Verse / cleanup / bonus points** — their own team's row loses its point
+  buttons (the total still shows), and `setVersePoints`/`setCleanupPoints`
+  refuse the write defensively even if something else calls them.
+- **Placement games are NOT guarded** — a podium pick is one atomic act with
+  no per-round unit to withhold. Left open deliberately.
+
+It is a **fairness affordance, not a security boundary**: the database rules
+gate on `role` alone and cannot tell which round a write belongs to. Someone
+determined could bypass it from a console. That's fine — it's there so nobody
+is put in the position of scoring their own team.
+
+**Pending members** are people we know by name and team who have no sign-in
+yet. Their key is `pending-<slug>-<rand>` — deliberately something
+`identityKey()` can never produce (no `@`, no leading `+`), so a stranger can
+never inherit the row. They show as "⏳ No sign-in yet" with an **add email or
+phone** action; `convertPendingMember()` writes the real key FIRST and only
+then removes the placeholder (RTDB keys are immutable, so this is
+create-then-delete — a failure part-way keeps the person). A pending row gets
+no invite text, because there's nothing to sign in to yet.
+
+**`SEED_COUNSELORS`** is this week's printed roster, behind the drawer's
+"👥 Add this week's counselors" button. `missingSeedCounselors()` matches on
+**name, case-insensitively**, so it's idempotent — including for someone who
+has since been given a real email. The button writes all the missing rows in
+one multi-path `update()` and disappears once nobody's missing. It exists
+because the database is locked now: seeding has to happen from a signed-in
+editor's device, not a `curl`.
 
 ## Firebase Realtime Database gotcha (already bit us once)
 

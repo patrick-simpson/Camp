@@ -3528,7 +3528,8 @@ body.no-scroll {
 .member-controls {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
 }
 .member-self-note {
   flex-basis: 100%;
@@ -3589,6 +3590,73 @@ body.no-scroll {
   padding: 0.55rem 0.65rem;
   resize: vertical;
   margin-bottom: 0.6rem;
+}
+
+/* Members with no sign-in yet — a name + team an editor fills in later. */
+.member-row-pending {
+  border-style: dashed;
+}
+.member-pending {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.25rem;
+}
+.member-pending .link-btn {
+  font-size: 0.78rem;
+}
+/* Role + Remove share a line; the team picker gets its own full-width one —
+   three controls never fit across a phone-width drawer. */
+.member-controls .member-team {
+  flex: 1 1 100%;
+  min-width: 0;
+}
+/* "Add this week's counselors" — the one-tap seed of the printed roster. */
+.member-seed {
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 0.75rem;
+  margin-bottom: 1.1rem;
+}
+.member-seed .muted {
+  margin: 0 0 0.6rem;
+  font-size: 0.82rem;
+}
+
+/* ============================================================
+   OWN-TEAM GUARD (assigned staff don't score their own rounds)
+   ============================================================ */
+.own-team-note {
+  margin: 0 0 0.75rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-primary);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface));
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+.score-row-locked {
+  opacity: 0.72;
+}
+.score-row-locked input {
+  background: var(--color-surface-alt, var(--color-surface));
+  cursor: not-allowed;
+}
+.pts-row-locked {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  white-space: nowrap;
+}
+/* The follow card's "Change" slot when the account decides the team. */
+.follow-your-team {
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+  white-space: nowrap;
 }
 
 /* ============================================================

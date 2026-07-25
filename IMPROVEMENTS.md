@@ -75,6 +75,22 @@ locked DB). Follow-ups: build the roster/contacts PII features on the
 pre-gated paths; Blaze only if the email/SMS caps start to bite; App Check as
 optional later hardening.
 
+### 1b. Counselors on teams — ✅ COMPLETE (2026-07-25)
+A member record can carry a `teamId`, set per-row in Settings → Who can sign
+in. That auto-opens the app on their team (no picker), makes the real
+counselor names show on every team (a live `campScoreboard/members` listener
+feeds `counselorName()`, with the hand-typed text as the fallback), and keeps
+an assigned editor out of scoring the rounds their own team is in
+(`canScoreRound` — brackets, tally rows, verse/cleanup/bonus rows; placement
+games are deliberately not guarded). Counselors with no sign-in yet live as
+`pending-…` rows (name + team, "add email or phone" later), seeded one-tap
+from the printed roster. See CLAUDE.md → "Counselors ↔ teams ↔ accounts".
+
+**Rules dependency**: the members rules need `teamId` allowed and
+`pending-…` keys accepted, or both the team select and the seed button are
+refused (the UI says so). Paste the updated ruleset in the console if that
+hasn't happened yet.
+
 ### 2. Service-worker caching for real offline use — decision-gated
 `sw.js` ships deliberately WITHOUT a fetch handler so it can never serve stale
 code (kill-switch documented in the file); it exists only so OS notifications
