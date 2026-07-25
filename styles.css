@@ -383,6 +383,15 @@ html.view-only .role-btn {
   color: var(--color-text-muted);
   font-size: 0.95rem;
   margin: 0 0 1.5rem;
+  /* Reserve the line so swapping in the "Checking…" spinner can't nudge the
+     PIN boxes down mid-entry. */
+  min-height: 1.4em;
+}
+
+/* The "Checking…" spinner shown while the PIN is being stretched. */
+.lock-prompt jelly-spinner {
+  vertical-align: middle;
+  margin-right: 0.3rem;
 }
 
 /* PIN entry is a jelly-otp (4 boxes, numeric keyboard). Reserve its box

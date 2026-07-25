@@ -15,9 +15,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-25T00:14:32Z';
+const CODE_UPDATED_AT = '2026-07-25T00:37:34Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 158;
+const APP_VERSION = 159;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -33,26 +33,48 @@ const APP_VERSION = 158;
 // dormant but harmless.
 const CHANGES = [];
 
-// Light PIN gate — keeps casual visitors out of a public page. Not real
-// security (the code is viewable), just a "you need the number" door.
+// ── PIN gate ─────────────────────────────────────────────────────
 // Two tiers: the view PIN can look but not touch; the edit PIN can enter
-// scores. The PINs are NEVER stored here as plaintext — only salted SHA-256
-// hashes, so reading the page source never reveals the codes. (This is a
-// static site with no server, so the check runs in the browser; a 4-digit
-// code can still be brute-forced from a hash by someone determined. The hash
-// defeats casual view-source snooping and rainbow-table lookups — it is not a
-// guarantee against a motivated attacker.) To change a PIN, hash
-// PIN_SALT + newpin with SHA-256 and paste the hex below.
-const PIN_SALT = 'camp-scoreboard::pin::v1::';
-const VIEW_PIN_HASH = 'a67ed87a9e977e4d169ef173bc360a0f9c3484b644b506c7265877e92afd30ea';
-const EDIT_PIN_HASH = '387feebde8ade150608242b3d3e75d023a23f5342c71578c438e5bde3952b178';
+// scores. PINs are never in this source — only PBKDF2-derived hashes.
+//
+// READ THIS BEFORE TRUSTING IT (2026-07-25 hardening):
+// This is a static site with no server, so verification necessarily runs in
+// the browser — which means every visitor receives the salt, the iteration
+// count, and the target hashes. A 4-digit PIN is only 10,000 candidates, so
+// the code CANNOT be made unrecoverable here; it can only be made expensive.
+// The previous scheme was a single SHA-256, and a plain laptop swept the
+// whole keyspace and recovered both PINs in 47 MILLISECONDS.
+//
+// So each guess is now deliberately slow: PBKDF2-HMAC-SHA256 at 1.2 million
+// iterations (2x OWASP's current password recommendation) over a fresh
+// 32-byte random salt. One guess costs ~0.5s on a laptop, ~1-2s on a phone.
+// That turns a full sweep into hours of CPU time instead of milliseconds,
+// which stops opportunistic snooping — a camper poking at view-source, or
+// pasting the hash into an online cracker, gets nowhere. It does NOT stop a
+// determined attacker with a GPU, who could still sweep 10,000 candidates in
+// well under a minute. Treat the edit PIN as "keeps honest people honest",
+// never as a secret that protects anything valuable.
+//
+// The only way to make the PIN genuinely unrecoverable is to stop checking it
+// on the client — i.e. Firebase Auth (or any server-side check), so the
+// secret never ships to the device. That's a real architecture change and is
+// noted in IMPROVEMENTS.md rather than done mid-camp.
+//
+// To change a PIN: derive PBKDF2-HMAC-SHA256(pin, PIN_SALT_HEX bytes,
+// PIN_KDF_ITERATIONS, 32 bytes) and paste the hex below. Generate a NEW random
+// salt whenever you change a PIN, and re-derive both hashes (they share the
+// salt so a legitimate unlock costs one derivation, not two).
+const PIN_KDF_ITERATIONS = 1200000;
+const PIN_SALT_HEX = '53f27ca87f84abfee1513517344f185dae7f01e54bd42aec5b52fa8c592447d5';
+const VIEW_PIN_HASH = 'f2a3a677a71ce4694823415f2a8096dc6a260762f13b62fae1d9a3aeecc4ca9c';
+const EDIT_PIN_HASH = '2e16a3e67526a4e7c6a1e870f0d54002e1be030deeb03907ef79726768c38372';
 const UNLOCK_KEY = 'campScoreboardUnlocked';
 const ROLE_KEY = 'campScoreboardRole';
 // Bump EDIT_PIN_EPOCH to force every editor to re-enter the current edit PIN
 // on their next load — used to kick out sessions unlocked with a retired PIN.
 // The same two literals live in index.html's pre-paint guard; keep them in sync.
 const EDIT_PIN_EPOCH_KEY = 'campScoreboardEditEpoch';
-const EDIT_PIN_EPOCH = 'r1'; // opaque marker — deliberately NOT the PIN, so no code leaks into source
+const EDIT_PIN_EPOCH = 'r2'; // opaque marker — deliberately NOT the PIN, so no code leaks into source
 
 function currentRole() {
   try { return localStorage.getItem(ROLE_KEY) || 'view'; } catch (e) { return 'view'; }
@@ -6541,19 +6563,34 @@ function startApp() {
   maybeShowTeamPicker();
 }
 
-// SHA-256 → lowercase hex, via the Web Crypto API (available in any secure
-// context — HTTPS, which the live site always is, and localhost).
-async function sha256Hex(str) {
-  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(str));
-  return Array.from(new Uint8Array(buf)).map((b) => b.toString(16).padStart(2, '0')).join('');
+// Hex string → bytes, for the stored salt.
+function hexToBytes(hex) {
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(i * 2, 2), 16);
+  return out;
 }
 
-// Resolve a typed PIN to its role by comparing the salted hash — the plaintext
-// PIN is never in the source. Returns 'edit', 'view', or null (no match /
-// crypto unavailable).
+// Stretch a PIN into a 256-bit key with PBKDF2-HMAC-SHA256 (Web Crypto, so
+// it's native code, not JS) → lowercase hex. Deliberately slow: the whole
+// point is that ONE guess costs real time, so sweeping all 10,000 four-digit
+// candidates is expensive rather than instant (see the PIN gate notes up top).
+// Both PINs share the salt, so a legitimate unlock is a single derivation.
+async function derivePinHash(pin) {
+  const key = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveBits']
+  );
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: hexToBytes(PIN_SALT_HEX), iterations: PIN_KDF_ITERATIONS, hash: 'SHA-256' },
+    key, 256
+  );
+  return Array.from(new Uint8Array(bits)).map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+// Resolve a typed PIN to its role. Returns 'edit', 'view', or null (no match /
+// crypto unavailable). Takes ~0.5-2s by design — callers show a pending state.
 async function pinRole(pin) {
   try {
-    const h = await sha256Hex(PIN_SALT + pin);
+    const h = await derivePinHash(pin);
     if (h === EDIT_PIN_HASH) return 'edit';
     if (h === VIEW_PIN_HASH) return 'view';
   } catch (e) { /* crypto.subtle missing (insecure context) — treat as no match */ }
@@ -6564,11 +6601,27 @@ async function pinRole(pin) {
 // the four digits the moment the last box fills (fired only for real typing/
 // paste, never for programmatic .value writes — so clearing it after a wrong
 // PIN can't re-trigger validation).
+// Deliberately-slow key stretching means the check takes ~0.5-2s, which
+// without feedback reads as "the app ignored me". Swap the prompt for a
+// spinner and freeze the boxes while it runs.
+function setPinChecking(on) {
+  const prompt = document.querySelector('.lock-prompt');
+  const otp = document.getElementById('pin-otp');
+  if (prompt) {
+    prompt.innerHTML = on
+      ? '<jelly-spinner type="dots" size="small" label="Checking PIN"></jelly-spinner> Checking…'
+      : 'Enter PIN to continue';
+  }
+  if (otp && customElements.get('jelly-otp')) otp.toggleAttribute('disabled', on);
+}
+
 async function handlePinComplete(entered) {
   const errEl = document.getElementById('lock-error');
   errEl.hidden = true;
   const otp = document.getElementById('pin-otp');
+  setPinChecking(true);
   const role = await pinRole(entered);
+  setPinChecking(false); // re-enable BEFORE any focus() below
   if (otp.value !== entered) return; // boxes changed while the hash resolved
   if (role) {
     try {
@@ -6615,6 +6668,7 @@ function showLockScreen() {
   // start empty anyway; this only matters for re-locks from Settings.
   if (otp && customElements.get('jelly-otp')) otp.value = '';
   document.getElementById('lock-error').hidden = true;
+  setPinChecking(false); // clear any stale "Checking…" from a previous session
   document.documentElement.classList.add('locked');
   // Land focus in the first box once the component exists (desktop keyboards
   // can type immediately; phones focus on tap).

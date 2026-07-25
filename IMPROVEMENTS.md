@@ -270,6 +270,30 @@ hype screen: two large mascots facing off across the "vs".
   meal/day; surface it in the schedule sheet meal blocks + a line in the bonus
   card. (Awarding already works via the cleanup category.)
 
+## Deferred: make the edit PIN actually secret (needs Firebase Auth)
+
+Hardened 2026-07-25 as far as a static site allows: the PIN check is now
+PBKDF2-HMAC-SHA256 at 1.2M iterations over a fresh random salt, so one guess
+costs ~0.5-2s instead of microseconds. (The prior single-SHA-256 scheme was
+swept end-to-end — both PINs recovered — in **47ms** on a laptop.)
+
+This raises the floor but cannot close the hole: verification happens in the
+browser, so every device gets the salt, iteration count, and target hashes,
+and a 4-digit PIN is only 10,000 candidates. A GPU still sweeps that in well
+under a minute. Treat the edit PIN as a "keeps honest people honest" door.
+
+The only real fix is to stop checking the secret on the client:
+- Firebase Auth (anonymous sign-in + a custom claim, or a plain
+  email/password account per counselor), with RTDB security rules that allow
+  writes only for authed editors. The PIN — or better, a real credential —
+  never ships to the device, and rules stop a hostile client from writing
+  scores even if it fakes the UI.
+- This also fixes a related gap the PIN never covered: RTDB is currently
+  world-writable to anyone who reads `firebase-config.js`, so the PIN only
+  gates *the UI*, not the database. Auth + rules is the fix for both.
+- Requires Firebase console changes and a migration for already-unlocked
+  devices — do NOT attempt mid-camp week.
+
 ## Open questions for Patrick (collect answers before the relevant item)
 1. ~~Messtival: double points in the app on Friday, or fix the copy?~~
    ANSWERED (2026-07-23): double points shipped — messtival game flags plus a
