@@ -335,3 +335,98 @@ test('an account with a team answers the picker for you', () => {
   state.followTeam = null;
   state.identity = null;
 });
+
+// ── Camp switching on denial (the senior-only counselor's first sign-in) ──
+
+// A tiny firebase stub: enough for denyMember()'s other-camp probe. The
+// harness deliberately ships no firebase, so each test installs what it needs.
+function stubFirebaseProbe(recordsByPath) {
+  globalThis.firebase = {
+    apps: [{}],
+    database: () => ({
+      ref: (path) => ({
+        once: () => (path in recordsByPath
+          ? Promise.resolve({ val: () => recordsByPath[path] })
+          : Promise.reject(new Error('permission denied'))),
+      }),
+    }),
+  };
+}
+
+test('denied here but approved at the other camp → auto-switch, exactly once', async () => {
+  sessionStorage.removeItem(CAMP_SWITCH_TRIED_KEY);
+  localStorage.removeItem(ACTIVE_CAMP_KEY);
+  const before = __reloads;
+  authUser = { email: 'senior.only@example.com' };
+  stubFirebaseProbe({ 'seniorScoreboard/members/senior,only@example,com': { role: 'viewer', name: 'Sam' } });
+
+  denyMember();
+  await Promise.resolve().then(() => {}).then(() => {}); // let the probe's microtasks drain
+
+  assert.equal(localStorage.getItem(ACTIVE_CAMP_KEY), 'senior', 'the device flipped to the camp that knows them');
+  assert.equal(__reloads, before + 1, 'the switch is a reload');
+  assert.equal(sessionStorage.getItem(CAMP_SWITCH_TRIED_KEY), '1', 'the one-shot guard is armed');
+  assert.deepEqual(readCampsHint(), { senior: 'viewer' }, 'the hint remembers where they belong');
+
+  // Denied AGAIN after the bounce (revoked there too, or a race): the guard
+  // must stop a reload loop and land on the plain denial screen.
+  stubFirebaseProbe({});
+  denyMember();
+  await Promise.resolve().then(() => {}).then(() => {});
+  assert.equal(__reloads, before + 1, 'no second bounce — the loop guard held');
+
+  delete globalThis.firebase;
+  sessionStorage.removeItem(CAMP_SWITCH_TRIED_KEY);
+  localStorage.removeItem(ACTIVE_CAMP_KEY);
+  localStorage.removeItem(CAMPS_HINT_KEY);
+  authUser = null;
+  setMemberRole('editor'); // restore what earlier tests in this file expect
+});
+
+test('denied at BOTH camps → the denial screen, no reload', async () => {
+  sessionStorage.removeItem(CAMP_SWITCH_TRIED_KEY);
+  const before = __reloads;
+  authUser = { email: 'stranger@example.com' };
+  stubFirebaseProbe({}); // every probe refused
+
+  denyMember();
+  await Promise.resolve().then(() => {}).then(() => {});
+
+  assert.equal(__reloads, before, 'no bounce anywhere');
+  assert.equal(localStorage.getItem(ACTIVE_CAMP_KEY), null, 'still junior');
+  assert.notOk(canEdit(), 'denyMemberFinal cleared the role');
+
+  delete globalThis.firebase;
+  authUser = null;
+  setMemberRole('editor');
+});
+
+test('the other-camp probe records the second camp and its role', async () => {
+  localStorage.removeItem(CAMPS_HINT_KEY);
+  otherCampProbed = false;
+  authUser = { email: 'both@example.com' };
+  stubFirebaseProbe({ 'seniorScoreboard/members/both@example,com': { role: 'editor' } });
+
+  probeOtherCamp();
+  await Promise.resolve().then(() => {}).then(() => {});
+
+  assert.equal(otherCampRole, 'editor');
+  assert.deepEqual(readCampsHint().senior, 'editor');
+  assert.notOk(hasBothCamps(), 'only once THIS camp also writes its hint');
+  setAuthHint('editor'); // what onMemberSnapshot does for the active camp
+  assert.ok(hasBothCamps(), 'now the picker has something to ask about');
+
+  // Probe is one-shot per load: a second call never re-reads.
+  stubFirebaseProbe({}); // would record null if it ran
+  probeOtherCamp();
+  await Promise.resolve().then(() => {}).then(() => {});
+  assert.equal(readCampsHint().senior, 'editor', 'unchanged — the probe did not re-run');
+
+  delete globalThis.firebase;
+  otherCampProbed = false;
+  otherCampRole = null;
+  authUser = null;
+  localStorage.removeItem(CAMPS_HINT_KEY);
+  localStorage.removeItem(AUTH_HINT_KEY);
+  setMemberRole('editor');
+});

@@ -7,7 +7,7 @@
 //  - tally: every team posts a score; top 3 auto-earn medals.
 //  - placement: no numbers, you just pick who took gold/silver/bronze.
 
-const STORAGE_KEY = 'campScoreboardV2';
+const STORAGE_KEY = lsKey('campScoreboardV2'); // per-camp; junior stays the bare literal (suffix '')
 
 // Bump this to the current UTC timestamp (`date -u +%Y-%m-%dT%H:%M:%SZ`)
 // every time a code asset (app.js, settings.js, defaults.js, styles.css,
@@ -15,9 +15,9 @@ const STORAGE_KEY = 'campScoreboardV2';
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-25T21:03:17Z';
+const CODE_UPDATED_AT = '2026-07-25T21:57:32Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 167;
+const APP_VERSION = 168;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -233,95 +233,21 @@ function teamStaffNames(teamId) {
     .sort((a, b) => a.localeCompare(b));
 }
 
-// Team names from the printed roster, paired to their counselor group
-// by position (t0..t5). The names are fixed for the week, so the
-// standings show them as static text (with the emoji below) rather than
-// editable fields.
-const DEFAULT_TEAM_NAMES = [
-  'Ferocious Foxes',                // Alyssa, Cam, Sam
-  'Turkey Dinner',                  // Bria, Lydia, Zac
-  'Methodic Mediocre Maples',       // Jovi, Brody, Josh
-  'Particularly Perilous Pumpkins', // Sofie, William
-  'Patriotic Pilgrims',             // Abby, TJ, Ella
-  'Runaway John Deersz',            // Lily, Jacob (deliberate spelling)
-];
-// One emoji mascot per team slot (by id, which is stable at t0..t5), so a
-// long name can be represented compactly wherever space is tight.
-const TEAM_EMOJI = {
-  t0: '🦊', // Ferocious Foxes
-  t1: '🦃', // Turkey Dinner
-  t2: '🍁', // Methodic Mediocre Maples
-  t3: '🎃', // Particularly Perilous Pumpkins
-  t4: '🦅', // Patriotic Pilgrims
-  t5: '🚜', // Runaway John Deersz
-};
-// Camper-drawn team shield artwork (cropped, transparent WebP crests under
-// images/team-shields/), keyed by team slot id. Shown as a hero crest on the
-// "Your team" card once a viewer picks a team. Missing here === no crest,
-// just the emoji (see images/team-shields/README.md for provenance notes).
-// The ?v= suffix cache-busts the image itself (bump it when a crest file is
-// re-exported, since the <img> URL is otherwise cached indefinitely).
-const TEAM_SHIELD = {
-  t0: 'images/team-shields/ferocious-foxes.webp?v=5',
-  t1: 'images/team-shields/turkey-dinner.webp?v=5',
-  t2: 'images/team-shields/methodic-mediocre-maples.webp?v=5',
-  t3: 'images/team-shields/particularly-perilous-pumpkins.webp?v=5',
-  t4: 'images/team-shields/patriotic-pilgrims.webp?v=5',
-  t5: 'images/team-shields/runaway-john-deeres.webp?v=5',
-};
-// Per-team accent color, tuned to each team's shield/emoji. Drives the "Your
-// team" card's tint, border, and rank pill via the --team-accent CSS custom
-// property (see renderFollowCard / .follow-team-card). Only one team's card
-// shows at a time, so these never sit side by side.
-const TEAM_ACCENT = {
-  t0: '#e2672b', // Ferocious Foxes — fox orange
-  t1: '#9c6420', // Turkey Dinner — roast brown
-  t2: '#c23b22', // Methodic Mediocre Maples — maple red
-  t3: '#e07d10', // Particularly Perilous Pumpkins — pumpkin orange
-  t4: '#345b96', // Patriotic Pilgrims — pilgrim navy
-  t5: '#3a7d34', // Runaway John Deersz — Deere green
-};
+// Team identity — names, emoji, crests (junior shields / senior flags),
+// accent colors — all per-camp data, moved verbatim into camps.js.
+// The constant names stay so nothing downstream changes.
+const DEFAULT_TEAM_NAMES = CAMP.defaultTeamNames;
+const TEAM_EMOJI = CAMP.teamEmoji;
+const TEAM_SHIELD = CAMP.teamCrest;
+const TEAM_ACCENT = CAMP.teamAccent;
 function teamAccent(id) { return TEAM_ACCENT[id] || null; }
-// Short-form team names for tight spaces (e.g. the morning meeting banner) —
-// same slots as TEAM_EMOJI, independent of whatever a team gets renamed to.
-const TEAM_ABBREV = {
-  t0: 'Foxes',
-  t1: 'Turkey',
-  t2: 'Maples',
-  t3: 'Pumpkins',
-  t4: 'Pilgrims',
-  t5: 'John Deersz',
-};
-// Game-leader team groups (see DEFAULT_COUNSELORS' (A)/(B) tags below):
-// Stephen runs the A teams, Patrick runs the B teams.
-const TEAM_GROUP_A = ['t1', 't2', 't5'];
-const TEAM_GROUP_B = ['t0', 't3', 't4'];
-// Older auto-assigned names to migrate off, per team index — the generic
-// "Team N" seeds plus any earlier name we've since corrected (e.g. the
-// "Portidatory" misread), so devices already carrying one update to the
-// name above. Hand-edited names (not in these lists) are left untouched.
-const OLD_PLACEHOLDER_TEAM_NAMES = [
-  ['Team 1'],
-  ['Team 2'],
-  ['Team 3'],
-  ['Team 4', 'Portidatory Perilous Pumpkins'],
-  ['Team 5'],
-  ['Team 6', "Runaway John Deere's"],
-];
-// Counselor groups per team, from the printed camp sheet. The (A)/(B)
-// tag is the game-leader assignment: Stephen runs the A teams,
-// Patrick runs the B teams. Editable per-team in the standings table.
-const DEFAULT_COUNSELORS = [
-  'Alysa/Cam/Sam (B)',
-  'Bria/Lydia/Zac (A)',
-  'Jovi/Brody/Josh (A)',
-  'Sofie/William (B)',
-  'Abby/TJ/Ella (B)',
-  'Lily/Jacob (A)',
-];
-// Earlier deploys seeded these placeholder names; any saved roster still
-// carrying one gets migrated to the real counselor list above.
-const OLD_PLACEHOLDER_COUNSELORS = ['Sarah', 'Mike', 'Emily', 'Josh', 'Rachel', 'Dave'];
+// Short-form team names for tight spaces — per-camp (camps.js).
+const TEAM_ABBREV = CAMP.teamAbbrev;
+// Name/counselor migration lists for older saved rosters — per-camp;
+// empty for senior, so senior teams are never auto-renamed.
+const OLD_PLACEHOLDER_TEAM_NAMES = CAMP.oldPlaceholderTeamNames;
+const DEFAULT_COUNSELORS = CAMP.defaultCounselors;
+const OLD_PLACEHOLDER_COUNSELORS = CAMP.oldPlaceholderCounselors;
 
 const DAY_NAMES = { 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday' };
 
@@ -370,186 +296,19 @@ function inDoubleBonusWindow() {
 
 const CAMP_TZ = 'America/New_York';
 
-function hm(h, m) { return h * 60 + (m || 0); }
+// The full printed week, per camp (camps.js): every block of every day,
+// minutes-since-midnight in camp time. (hm() also lives in camps.js now.)
+const DAY_SCHEDULE = CAMP.daySchedule;
 
-// Shared Monday–Friday daytime rhythm (identical on the paper schedule).
-// Rising bell & shower now shares its 7:30–8:00 slot with the morning meeting,
-// so it's folded into morningMeetingBlock rather than living here.
-function weekdayDaytime() {
-  return [
-    { start: hm(8, 0), end: hm(8, 30), label: 'Breakfast', emoji: '🍳', type: 'activity' },
-    { start: hm(8, 30), end: hm(9, 0), label: 'Cabin time & clean up', emoji: '🧹', type: 'activity' },
-    { start: hm(9, 0), end: hm(9, 45), label: 'Bible study', emoji: '📖', type: 'activity' },
-    { start: hm(9, 45), end: hm(10, 0), label: 'Prepare for competitions / team huddle', emoji: '📣', type: 'activity' },
-    { start: hm(10, 0), end: hm(11, 45), label: 'Team competitions', emoji: '🏅', type: 'games' },
-    { start: hm(11, 45), end: hm(12, 0), label: 'Prepare for lunch', emoji: '🧼', type: 'activity' },
-    { start: hm(12, 0), end: hm(12, 30), label: 'Lunch', emoji: '🥪', type: 'activity' },
-    { start: hm(12, 30), end: hm(13, 0), label: 'Team time', emoji: '🤝', type: 'activity' },
-    { start: hm(13, 0), end: hm(13, 15), label: 'Prepare for Elective 1', emoji: '🎒', type: 'activity' },
-    { start: hm(13, 15), end: hm(14, 0), label: 'Elective 1', emoji: '🌟', type: 'elective', slot: 0 },
-    { start: hm(14, 0), end: hm(14, 45), label: 'Snack Shack break', emoji: '🍫', type: 'activity' },
-    { start: hm(14, 45), end: hm(15, 0), label: 'Prepare for Elective 2', emoji: '🎒', type: 'activity' },
-    { start: hm(15, 0), end: hm(15, 45), label: 'Elective 2', emoji: '🌟', type: 'elective', slot: 1 },
-    { start: hm(15, 45), end: hm(16, 0), label: 'Prepare for Elective 3', emoji: '🎒', type: 'activity' },
-    { start: hm(16, 0), end: hm(16, 45), label: 'Elective 3', emoji: '🌟', type: 'elective', slot: 2 },
-    { start: hm(16, 45), end: hm(17, 0), label: 'Prepare for supper', emoji: '🧼', type: 'activity' },
-    { start: hm(17, 0), end: hm(17, 30), label: 'Supper', emoji: '🍽️', type: 'activity' },
-  ];
-}
-
-// Mon–Thu evenings are identical apart from who leads the campfire.
-function weekdayEvening(campfireLeader) {
-  return [
-    { start: hm(17, 30), end: hm(18, 0), label: 'Prepare for competitions / team huddle', emoji: '📣', type: 'activity' },
-    { start: hm(18, 0), end: hm(18, 45), label: 'Evening competition', emoji: '🏅', type: 'games' },
-    { start: hm(18, 45), end: hm(19, 0), label: 'Prepare for evening service', emoji: '⛪', type: 'activity' },
-    { start: hm(19, 0), end: hm(20, 0), label: 'Evening service', emoji: '⛪', type: 'activity' },
-    { start: hm(20, 0), end: hm(21, 15), label: 'Snack and campfire — ' + campfireLeader, emoji: '🔥', type: 'activity' },
-    { start: hm(21, 15), end: hm(21, 30), label: 'Prepare for bed', emoji: '🪥', type: 'activity' },
-    { start: hm(21, 30), end: hm(22, 0), label: 'Cabin devotional', emoji: '🙏', type: 'activity' },
-    { start: hm(22, 0), end: hm(24, 0), label: 'Lights out', emoji: '🛏️', type: 'activity', noTime: true },
-  ];
-}
-
-// e.g. ['t1','t2','t5'] -> "🦃 Turkey, 🍁 Maples & 🚜 John Deeres"
-function joinTeamAbbrevs(ids) {
-  const items = ids.map((id) => TEAM_EMOJI[id] + ' ' + TEAM_ABBREV[id]);
-  if (items.length < 2) return items.join('');
-  return items.slice(0, -1).join(', ') + ' & ' + items[items.length - 1];
-}
-
-// The 7:30–8:00 start to every camp day: rising bell, shower, and the morning
-// meeting at Laura's cottage (that day's team group — A: Mon/Wed/Fri, B:
-// Tue/Thu/Sat) all happen together in this one block.
-function morningMeetingBlock(dow) {
-  const isATeamDay = dow === 1 || dow === 3 || dow === 5;
-  const group = isATeamDay ? TEAM_GROUP_A : TEAM_GROUP_B;
-  return {
-    start: hm(7, 30), end: hm(8, 0),
-    label: "Rising bell, shower & morning meeting (Laura's cottage) — " + joinTeamAbbrevs(group),
-    emoji: '⏰', type: 'activity',
-  };
-}
-
-const DAY_SCHEDULE = {
-  0: [ // Sunday — arrival day
-    { start: hm(14, 0), end: hm(16, 0), label: 'Registration', emoji: '📝', type: 'activity' },
-    { start: hm(16, 0), end: hm(17, 0), label: 'Welcome to camp / get-to-know-you', emoji: '👋', type: 'activity' },
-    { start: hm(17, 0), end: hm(17, 30), label: 'Supper', emoji: '🍽️', type: 'activity' },
-    { start: hm(17, 30), end: hm(18, 45), label: 'Team assignments (Chapel Lawn)', emoji: '🎽', type: 'activity' },
-    { start: hm(18, 45), end: hm(19, 0), label: 'Prepare for worship service', emoji: '⛪', type: 'activity' },
-    { start: hm(19, 0), end: hm(20, 0), label: 'Worship service', emoji: '⛪', type: 'activity' },
-    { start: hm(20, 0), end: hm(21, 15), label: 'Snack and campfire — Jenn, Laura, Erica & Patrick', emoji: '🔥', type: 'activity' },
-    { start: hm(21, 15), end: hm(22, 0), label: 'Cabin devotional', emoji: '🙏', type: 'activity' },
-    { start: hm(22, 0), end: hm(24, 0), label: 'Lights out', emoji: '🛏️', type: 'activity', noTime: true },
-  ],
-  1: [morningMeetingBlock(1)].concat(weekdayDaytime()).concat(weekdayEvening('TJ')),
-  2: (function () {
-    // Tonight only: Boys cabin movie night (9:15–10pm), slotted in just before
-    // the normal wind-down. It intentionally overlaps "Prepare for bed" and
-    // "Cabin devotional" — added on request, overlap and all. Placing it ahead
-    // of those two in the array lets it win the "Happening Now" banner for the
-    // whole 9:15–10 window while both still appear in the full schedule sheet.
-    const evening = weekdayEvening('Cam');
-    const idx = evening.findIndex((b) => b.start === hm(21, 15));
-    const movie = { start: hm(21, 15), end: hm(22, 0), label: 'Boys cabin movie night', emoji: '🎬', type: 'activity' };
-    evening.splice(idx === -1 ? evening.length : idx, 0, movie);
-    return [morningMeetingBlock(2)].concat(weekdayDaytime()).concat(evening);
-  })(),
-  3: [morningMeetingBlock(3)].concat(weekdayDaytime()).concat(weekdayEvening('Sofie')),
-  4: (function () {
-    // Tonight only: Boys cabin movie night (9:15–10pm), same slot/overlap
-    // treatment as Tuesday's (see that block's comment) — intentionally
-    // overlaps "Prepare for bed" and "Cabin devotional", placed ahead of
-    // them so it wins the "Happening Now" banner for the whole window while
-    // both still show in the full schedule sheet.
-    const evening = weekdayEvening('Jovi');
-    const idx = evening.findIndex((b) => b.start === hm(21, 15));
-    const movie = { start: hm(21, 15), end: hm(22, 0), label: 'Boys cabin movie night', emoji: '🎬', type: 'activity' };
-    evening.splice(idx === -1 ? evening.length : idx, 0, movie);
-    return [morningMeetingBlock(4)].concat(weekdayDaytime()).concat(evening);
-  })(),
-  5: [morningMeetingBlock(5)].concat(weekdayDaytime()).concat([
-    { start: hm(17, 30), end: hm(18, 0), label: 'Team huddle', emoji: '📣', type: 'activity' },
-    { start: hm(18, 0), end: hm(19, 0), label: 'Final preparations for skits', emoji: '🎭', type: 'activity' },
-    { start: hm(19, 0), end: hm(20, 0), label: 'Team Skits', emoji: '🎭', type: 'activity' },
-    { start: hm(20, 0), end: hm(21, 0), label: 'Evening service', emoji: '⛪', type: 'activity' },
-    { start: hm(21, 0), end: hm(22, 0), label: 'Snack and campfire — Ella', emoji: '🔥', type: 'activity' },
-    { start: hm(22, 0), end: hm(22, 15), label: 'Prepare for bed', emoji: '🪥', type: 'activity' },
-    { start: hm(22, 15), end: hm(22, 30), label: 'Cabin devotional', emoji: '🙏', type: 'activity' },
-    // Lights out at 10:30, a 15min Boys cabin pillow fight breaks out at
-    // 10:45–11pm, then lights out resumes for the night. A clean sequential
-    // split (not an overlap trick like Tue/Thu's movie) — the pillow fight
-    // sits entirely after prepare-for-bed/devotional, mid-way through what
-    // would otherwise be one long lights-out block, so there's no ambiguity
-    // for "Happening now"/"Up next" to resolve.
-    { start: hm(22, 30), end: hm(22, 45), label: 'Lights out', emoji: '🛏️', type: 'activity' },
-    { start: hm(22, 45), end: hm(23, 0), label: 'Boys cabin pillow fight', emoji: '🛏️', type: 'activity' },
-    { start: hm(23, 0), end: hm(24, 0), label: 'Lights out', emoji: '🛏️', type: 'activity', noTime: true },
-  ]),
-  6: [ // Saturday — send-off morning
-    morningMeetingBlock(6), // rising bell + shower folded into this 7:30 block
-    { start: hm(8, 0), end: hm(8, 30), label: 'Breakfast', emoji: '🍳', type: 'activity' },
-    { start: hm(8, 30), end: hm(9, 30), label: 'Cabin time & campground cleanup', emoji: '🧹', type: 'activity' },
-    { start: hm(9, 30), end: hm(10, 0), label: 'Meet in Tabernacle for send-off', emoji: '👋', type: 'activity' },
-    { start: hm(10, 0), end: hm(24, 0), label: "Camp's over — see you next year!", emoji: '👋', type: 'activity', noTime: true },
-  ],
-};
-
-// Who's at which elective station, straight from the handwritten packet.
-// Keyed by day (1 Mon .. 5 Fri), one entry per elective slot (1, 2, 3).
-const STATION_EMOJI = {
-  'Swimming': '🏊', 'Nerf War': '🎯', 'Crafts with Eileen': '🎨',
-  'Lawn Games': '🥏', 'Board Games': '🎲', 'Whiffle Ball': '⚾',
-  'Slime with Joann': '🧪', 'Laser Tag': '⚡', 'Slip and Slide': '💦',
-  'Slime with Kimberly': '🧪',
-};
-
-const ELECTIVES = {
-  1: [
-    [['Swimming', ['Bria', 'Abby']], ['Nerf War', ['Zac', 'Cam']], ['Crafts with Eileen', ['William', 'Jovi']], ['Lawn Games', ['TJ', 'Patrick', 'Sam']], ['Board Games', ['Brody', 'Lydia']]],
-    [['Swimming', ['Alysa', 'Brody']], ['Crafts with Eileen', ['Bria', 'Lilly']], ['Whiffle Ball', ['TJ', 'Cam']], ['Board Games', ['Jovi', 'Josh', 'Patrick']], ['Slime with Joann', ['Sofie', 'Abby']], ['Laser Tag', ['Zac', 'William']]],
-    [['Swimming', ['Sam', 'TJ', 'Lilly']], ['Slime with Joann', ['Lydia', 'Alysa']], ['Crafts with Eileen', ['Ella', 'Stephen']], ['Lawn Games', ['Josh', 'Sofie']], ['Board Games', ['Patrick']], ['Slip and Slide', ['Zac', 'Jacob']]],
-  ],
-  2: [
-    [['Swimming', ['Ella', 'Lydia']], ['Nerf War', ['William', 'Zac']], ['Crafts with Eileen', ['Alysa', 'Josh']], ['Lawn Games', ['Brody', 'Cam']], ['Board Games', ['Bria', 'Jovi']]],
-    [['Swimming', ['Sam', 'Sofie']], ['Crafts with Eileen', ['Lilly', 'Abby']], ['Whiffle Ball', ['Jacob']], ['Board Games', ['Ella', 'Stephen']], ['Laser Tag', ['Zac', 'Patrick']], ['Slime with Kimberly', ['TJ']]],
-    [['Swimming', ['William', 'Alysa', 'Lilly']], ['Crafts with Eileen', ['Sofie', 'Lydia']], ['Lawn Games', ['Josh', 'Stephen', 'Cam']], ['Board Games', ['Patrick', 'TJ']], ['Slip and Slide', ['Zac', 'Sam', 'Bria']], ['Slime with Kimberly', ['Abby']]],
-  ],
-  3: [
-    [['Swimming', ['Abby', 'Lilly']], ['Nerf War', ['Zac', 'Brody', 'TJ']], ['Crafts with Eileen', ['William', 'Sam']], ['Lawn Games', ['Sofie', 'Bria']], ['Board Games', ['Cam', 'Jovi']]],
-    [['Swimming', ['Ella', 'Bria']], ['Crafts with Eileen', ['Lydia', 'Jovi']], ['Whiffle Ball', ['Sofie', 'TJ']], ['Board Games', ['Patrick', 'Josh', 'Sam']], ['Slime with Joann', ['Brody', 'Stephen']], ['Laser Tag', ['Zac', 'Jacob']]],
-    [['Swimming', ['William', 'Cam']], ['Slime with Joann', ['Alysa', 'Ella']], ['Crafts with Eileen', ['Lilly', 'Josh']], ['Lawn Games', ['Patrick', 'Stephen']], ['Board Games', ['TJ', 'Abby']], ['Slip and Slide', ['Zac', 'Lydia', 'Jacob']]],
-  ],
-  4: [
-    [['Swimming', ['Jovi', 'Bria', 'Cam']], ['Nerf War', ['William', 'Zac', 'Lilly']], ['Crafts with Eileen', ['Brody', 'Ella']], ['Lawn Games', ['Patrick', 'Jacob']], ['Board Games', ['Stephen', 'Alysa']]],
-    [['Swimming', ['Lilly', 'TJ']], ['Crafts with Eileen', ['Abby', 'Jovi']], ['Whiffle Ball', ['Cam', 'Sam', 'Bria']], ['Board Games', ['Patrick', 'Stephen']], ['Slime with Joann', ['Lydia', 'Sofie', 'William']], ['Laser Tag', ['Zac', 'Brody']]],
-    [['Swimming', ['Alysa', 'Abby', 'Josh']], ['Slime with Joann', ['Ella', 'Bria']], ['Crafts with Eileen', ['Lydia']], ['Lawn Games', ['Brody', 'Sam']], ['Board Games', ['Sofie', 'TJ']], ['Slip and Slide', ['Zac', 'Stephen']]],
-  ],
-  5: [
-    [['Swimming', ['Brody', 'Ella', 'TJ']], ['Nerf War', ['Zac', 'Cam', 'Sam']], ['Crafts with Eileen', ['Patrick', 'Alysa', 'William']], ['Lawn Games', ['Bria', 'Abby']], ['Board Games', ['Lydia', 'Jovi']]],
-    [['Swimming', ['Sam', 'Ella']], ['Crafts with Eileen', ['Lilly', 'Jacob']], ['Whiffle Ball', ['Jovi', 'Cam', 'TJ']], ['Board Games', ['Josh', 'Patrick']], ['Slime with Joann', ['Brody', 'Stephen']], ['Laser Tag', ['Zac', 'Bria']]],
-    [['Swimming', ['Cam', 'TJ', 'Lilly']], ['Slime with Joann', ['Abby', 'Sofie']], ['Crafts with Eileen', ['Lydia']], ['Lawn Games', ['Josh', 'Sam']], ['Board Games', ['Stephen']], ['Slip and Slide', ['Zac', 'Alysa']]],
-  ],
-};
-
-// Device-identity → team. Keyed to the ELECTIVES spellings above ("Lilly",
-// not the standings' "Lily") so a stored identity can look up its own elective
-// assignments directly. Patrick and Stephen appear in ELECTIVES as game-leaders
-// with no team — they're intentionally excluded and never offered as an
-// identity choice. Not editable and not synced (device-local, like state.notify).
-const TEAM_COUNSELORS = {
-  t0: ['Alysa', 'Cam', 'Sam'],   // 🦊 Ferocious Foxes
-  t1: ['Bria', 'Lydia', 'Zac'],  // 🦃 Turkey Dinner
-  t2: ['Jovi', 'Brody', 'Josh'], // 🍁 Methodic Mediocre Maples
-  t3: ['Sofie', 'William'],      // 🎃 Particularly Perilous Pumpkins
-  t4: ['Abby', 'TJ', 'Ella'],    // 🦅 Patriotic Pilgrims
-  t5: ['Lilly', 'Jacob'],        // 🚜 Runaway John Deere's
-};
-
-// Minutes-since-midnight each elective slot starts (Elective 1 / 2 / 3),
-// matching the weekday DAY_SCHEDULE blocks (1:15pm / 3:00pm / 4:00pm).
-const ELECTIVE_SLOT_MIN = [hm(13, 15), hm(15, 0), hm(16, 0)];
+// Electives — junior-only (CAMP.features.electives). The active profile
+// supplies who's at which station (junior: the handwritten packet;
+// senior: empty — no electives at senior camp, so these all no-op).
+const STATION_EMOJI = CAMP.stationEmoji;
+const ELECTIVES = CAMP.electives;
+// Device-identity → team, keyed to the ELECTIVES spellings (junior).
+// Empty for senior — identities come from member records instead.
+const TEAM_COUNSELORS = CAMP.teamCounselors;
+const ELECTIVE_SLOT_MIN = CAMP.electiveSlotMin;
 
 // The full set of kids at camp on a given day = everyone assigned to any
 // station across that day's elective slots. A kid missing from a particular
@@ -745,40 +504,12 @@ function upcomingRainHint() {
 }
 
 // ── Meal menu ────────────────────────────────────────────────────
-// What the kitchen is serving, filled in as camp announces each meal.
-// Keyed by day-of-week (0 Sun .. 6 Sat), then by meal block name in
-// lowercase ('breakfast' / 'lunch' / 'supper'). When a meal is listed
-// here, the Happening Now banner names the dish during that block and
-// in the "Up next" line leading into it. Unknown meals just show the
-// plain block label, so this is always safe to leave sparse.
-const MEALS = {
-  0: { supper: { dish: "Shepherd's Pie", emoji: '🥧' } },
-  1: {
-    breakfast: { dish: 'Eggs and Bacon', emoji: '🥓' },
-    lunch: { dish: 'Wraps', emoji: '🌯' },
-    supper: { dish: 'Mac and Cheese', emoji: '🧀' },
-  },
-  2: {
-    breakfast: { dish: 'Pancakes and Sausage', emoji: '🥞' },
-    lunch: { dish: 'Tacos', emoji: '🌮' },
-    supper: { dish: 'Chicken Nuggets and Smiley Fries', emoji: '🍗' },
-  },
-  3: {
-    breakfast: { dish: 'Egg Bake and Muffins', emoji: '🍳' },
-    lunch: { dish: 'Hot Dogs', emoji: '🌭' },
-    supper: { dish: 'Mystery Meat', emoji: '🍖' },
-  },
-  4: {
-    breakfast: { dish: 'French Toast', emoji: '🍞' },
-    lunch: { dish: 'Sandwiches', emoji: '🥪' },
-    supper: { dish: 'Pizza', emoji: '🍕' },
-  },
-  5: {
-    breakfast: { dish: 'Scrambled Eggs and English Muffins', emoji: '🍳' },
-    lunch: { dish: 'Leftovers', emoji: '♻️' },
-    supper: { dish: 'Cheesy Chicken and Rice', emoji: '🍗' },
-  },
-};
+// What the kitchen is serving — per-camp data (camps.js), keyed by
+// day-of-week (0 Sun .. 6 Sat) then lowercase meal block name. When a
+// meal is listed, the Happening Now banner names the dish during that
+// block. Unknown meals just show the plain block label, so an empty or
+// sparse menu (senior, for now) is always safe.
+const MEALS = CAMP.meals;
 
 function mealInfo(dow, block) {
   const meals = MEALS[dow];
@@ -836,48 +567,11 @@ function mealCleanupNote(dow, label) {
 //     steps: [{ emoji, when, items: [] }] }  // the running order
 const NOTICE_STATUSES = ['draft', 'posted'];
 
-// The starting content: the Saturday send-off cleanup plan this was built
-// for, seeded as a DRAFT. Kept as a worked example rather than a blank form —
-// editing one is far easier than composing from nothing, and it's the exact
-// thing most likely to be needed again next year.
+// The starting content — per-camp (camps.js): junior seeds its Saturday
+// send-off cleanup plan (the worked example this feature was built for),
+// senior a TBA skeleton. Always a DRAFT — seeding must never post a card.
 function defaultNotice() {
-  return {
-    status: 'draft',
-    eyebrow: '🧹 Campground cleanup · 8:30–9:30am',
-    title: 'Where your team cleans',
-    sub: "Straight from breakfast to your team's area — no going up to the cabins yet. "
-       + 'Finish by 9:30, then meet in the Tabernacle for send-off.',
-    zones: [
-      { teamId: 't3', place: 'Chapel Lawn', note: '' },
-      { teamId: 't1', place: 'Waterfront', note: '' },
-      { teamId: 't0', place: 'Linger a While', note: '' },
-      { teamId: 't5', place: 'Snack Shack', note: '' },
-      { teamId: 't2', place: 'Dining Hall', note: 'breakfast cleanup' },
-      { teamId: 't4', place: 'Tabernacle', note: '' },
-    ],
-    steps: [
-      { emoji: '🚶', when: 'Straight after breakfast', items: [
-        "Campers go straight to their team's area above — nobody goes up to the cabins yet.",
-      ] },
-      { emoji: '🗑️', when: 'In your area', items: [
-        'All the trash goes — empty the cans and put a fresh bag in.',
-        'Put away the games and anything else we used this week.',
-        'Lost and found goes to the tables at the Snack Shack.',
-      ] },
-      { emoji: '⛪', when: 'When your area is done', items: [
-        'Head to the Tabernacle and help finish up there.',
-      ] },
-      { emoji: '🛏️', when: 'Cabins — once the Tabernacle is set', items: [
-        'Now campers can go up to pack.',
-        'Sweep the floors and clear out the trash before anything gets packed.',
-      ] },
-      { emoji: '🚿', when: 'Once the campers have gone', items: [
-        'Clean the shower houses.',
-        'Walk the cabins one last time — nothing left behind.',
-      ] },
-    ],
-    signoff: "Let's leave these grounds looking better than we found them!",
-  };
+  return CAMP.defaultNotice();
 }
 
 // Coerce state.notice into a shape every reader can trust. Realtime Database
@@ -1054,7 +748,9 @@ function nowBannerHtml(dow, minutes) {
   // banner to a slim, tappable one-liner rather than hiding it entirely, so the
   // schedule sheet stays reachable.
   if (found.type === 'games') {
-    return `<div class="now-slim"><span class="now-slim-label">🏅 Team competitions</span><span class="now-open-hint">📅 Full schedule ›</span></div>` + upcomingRainHint();
+    // Named after the actual block — junior's say "Team competitions" /
+    // "Evening competition", senior's include the Legacy Game by name.
+    return `<div class="now-slim"><span class="now-slim-label">${esc(found.emoji)} ${esc(found.label)}</span><span class="now-open-hint">📅 Full schedule ›</span></div>` + upcomingRainHint();
   }
 
   const b = decorateMealBlock(dow, found);
@@ -1106,15 +802,7 @@ function renderNowBanner() {
 // showing their dish, electives showing who's at each station, and
 // competition blocks listing that day's actual games.
 
-const SCHED_DAYS = [
-  { dow: 0, short: 'Sun', full: 'Sunday', tag: 'Arrival day' },
-  { dow: 1, short: 'Mon', full: 'Monday', tag: 'Competition day 1' },
-  { dow: 2, short: 'Tue', full: 'Tuesday', tag: 'Competition day 2' },
-  { dow: 3, short: 'Wed', full: 'Wednesday', tag: 'Competition day 3' },
-  { dow: 4, short: 'Thu', full: 'Thursday', tag: 'Competition day 4' },
-  { dow: 5, short: 'Fri', full: 'Friday', tag: 'Messtival & Team Skits' },
-  { dow: 6, short: 'Sat', full: 'Saturday', tag: 'Send-off' },
-];
+const SCHED_DAYS = CAMP.schedDays; // per-camp day list + tags (camps.js)
 
 let scheduleDay = null; // day shown while the sheet is open (not persisted)
 
@@ -1434,7 +1122,7 @@ function renderHistory() {
     [92, 68, 84, 58, 76, 88].map((w) =>
       `<jelly-skeleton shape="line" style="width: ${w}%"></jelly-skeleton>`).join('') +
     '</div>';
-  firebase.database().ref('campScoreboard/changelog').limitToLast(500).once('value')
+  firebase.database().ref(dbPath('changelog')).limitToLast(500).once('value')
     .then((snap) => {
       const val = snap.val() || {};
       const rows = Object.keys(val).map((k) => val[k]).filter(Boolean);
@@ -1533,26 +1221,18 @@ function renderMembers() {
   body.innerHTML = '<div class="history-skeleton">' +
     [90, 70, 80].map((w) => `<div class="skeleton-row" style="width:${w}%"><jelly-skeleton style="height:2.6rem"></jelly-skeleton></div>`).join('') +
     '</div>';
-  firebase.database().ref('campScoreboard/members').once('value')
+  firebase.database().ref(dbPath('members')).once('value')
     .then((snap) => renderMemberList(body, snap.val() || {}))
     .catch(() => {
       body.innerHTML = '<p class="muted">Couldn\'t load the member list — check the connection and try again.</p>';
     });
 }
 
-// This week's counselors, per team — the seed list behind "Add this week's
-// counselors" in the Members drawer. They start as PENDING members (a name
-// and a team, no sign-in yet); an editor fills in each person's email or
-// phone later with "Add sign-in", which is what actually lets them in.
-// Spellings follow the standings' counselor text, which is what camp prints.
-const SEED_COUNSELORS = [
-  ['t0', ['Alysa', 'Cam', 'Sam']],
-  ['t1', ['Bria', 'Lydia', 'Zac']],
-  ['t2', ['Jovi', 'Brody', 'Josh']],
-  ['t3', ['Sofia', 'William']],
-  ['t4', ['Abby', 'TJ', 'Ella']],
-  ['t5', ['Lily', 'Jacob']],
-];
+// This week's printed counselor roster, per team — per-camp data
+// (camps.js); the seed list behind "Add this week's counselors" in the
+// Members drawer. They start as PENDING members (a name and a team, no
+// sign-in yet). An empty list (senior, for now) hides the button.
+const SEED_COUNSELORS = CAMP.seedCounselors;
 
 // Which seed counselors aren't in the member list yet, matched by name
 // (case-insensitively) so pressing the button twice doesn't duplicate anyone —
@@ -1685,8 +1365,8 @@ function convertPendingMember(key, rec) {
   }
   const role = rec.role === 'editor' ? 'editor' : 'viewer';
   const next = memberRecord(role, rec.name, rec.teamId);
-  firebase.database().ref('campScoreboard/members/' + newKey).set(next)
-    .then(() => firebase.database().ref('campScoreboard/members/' + key).remove())
+  firebase.database().ref(dbPath('members/' + newKey)).set(next)
+    .then(() => firebase.database().ref(dbPath('members/' + key)).remove())
     .then(() => {
       lastInvite = inviteText(newKey, role); // they can sign in now — hand over the invite
       showToast(identityFromKey(newKey) + ' can now sign in', { mine: true });
@@ -1705,7 +1385,7 @@ function bindMemberList(body, myKey, members) {
       seg.addEventListener('change', (e) => {
         const role = e.detail && e.detail.value;
         if (self || !role || (role !== 'viewer' && role !== 'editor')) return;
-        firebase.database().ref('campScoreboard/members/' + key + '/role').set(role)
+        firebase.database().ref(dbPath('members/' + key + '/role')).set(role)
           .then(() => showToast(`${rec.name || identityFromKey(key)} is now a ${role}`, { mine: true }))
           .catch(() => { showToast('Change refused — are you still an editor?'); renderMembers(); });
       });
@@ -1716,7 +1396,7 @@ function bindMemberList(body, myKey, members) {
     if (teamSel) {
       teamSel.addEventListener('change', () => {
         const teamId = teamSel.value || '';
-        const ref = firebase.database().ref('campScoreboard/members/' + key + '/teamId');
+        const ref = firebase.database().ref(dbPath('members/' + key + '/teamId'));
         const done = () => {
           showToast(isTeamId(teamId)
             ? `${rec.name || identityFromKey(key)} is with ${teamName(teamId)}`
@@ -1738,7 +1418,7 @@ function bindMemberList(body, myKey, members) {
         if (self) return;
         const who = row.querySelector('.member-name');
         if (!confirm(`Remove ${who ? who.textContent : identityFromKey(key)}? They lose access the moment this saves.`)) return;
-        firebase.database().ref('campScoreboard/members/' + key).remove()
+        firebase.database().ref(dbPath('members/' + key)).remove()
           .then(() => { showToast('Removed', { mine: true }); renderMembers(); })
           .catch(() => showToast('Remove refused — are you still an editor?'));
       });
@@ -1754,7 +1434,7 @@ function bindMemberList(body, myKey, members) {
       if (!missing.length) { renderMembers(); return; }
       const patch = {};
       missing.forEach((c) => { patch[pendingKey(c.name)] = memberRecord('viewer', c.name, c.teamId); });
-      firebase.database().ref('campScoreboard/members').update(patch)
+      firebase.database().ref(dbPath('members')).update(patch)
         .then(() => { showToast(`Added ${missing.length} counselor${missing.length === 1 ? '' : 's'}`, { mine: true }); renderMembers(); })
         // Same caveat as the team select: pre-team rules reject both the
         // `teamId` field and the `pending-…` keys these rows use.
@@ -1802,7 +1482,7 @@ function bindMemberList(body, myKey, members) {
         shownId = key; // the normalized +E.164 we're about to store — so they can eyeball it
       }
       errEl.hidden = true;
-      firebase.database().ref('campScoreboard/members/' + key).set(memberRecord(role, name, teamId))
+      firebase.database().ref(dbPath('members/' + key)).set(memberRecord(role, name, teamId))
         .then(() => {
           showToast(pending ? shownId + ' added — no sign-in yet' : shownId + ' can now sign in', { mine: true });
           // A pending row can't sign in yet, so there's nothing to invite them to.
@@ -1832,6 +1512,17 @@ function bindMemberList(body, myKey, members) {
 function wireMembers() {
   const row = document.getElementById('members-row');
   if (row) row.addEventListener('click', openMembers);
+}
+
+// The mid-session way to change camps (Settings row). Hidden unless this
+// account is on both camps' lists — see updateAccountRow.
+function wireCampSwitcher() {
+  const row = document.getElementById('camp-row');
+  if (row) row.addEventListener('click', () => { openCampPicker(); });
+  // However the camp picker closes (choice, backdrop, Escape), the deferred
+  // team question gets its turn back.
+  const overlay = document.getElementById('camp-picker-overlay');
+  if (overlay) overlay.addEventListener('close', () => { maybeShowTeamPicker(); });
 }
 
 function wireHistory() {
@@ -1865,6 +1556,13 @@ function renderFooter() {
   if (syncEnabled() && presenceCount > 0) {
     bits.push(`<span title="${presenceCount} device${presenceCount === 1 ? '' : 's'} here now">👥 ${presenceCount} here</span>`);
   }
+  // Which camp this page is: always shown on senior (so the two apps are
+  // never confused), and tappable to switch when the account has both.
+  if (hasBothCamps()) {
+    bits.push(`<button id="footer-camp-chip" class="footer-link" aria-label="Switch camp">${CAMP.id === 'senior' ? '🚩' : '🛡️'} ${esc(CAMP.label)} ⇄</button>`);
+  } else if (CAMP.id === 'senior') {
+    bits.push(`<span>🚩 ${esc(CAMP.label)}</span>`);
+  }
   bits.push(`📋 Data: ${dataStamp ? esc(dataStamp) : 'no scores yet'}`);
   bits.push(`<span title="Code last updated: ${esc(formatEasternStamp(CODE_UPDATED_AT) || 'unknown')}">🛠️ v${APP_VERSION}</span>`);
   bits.push(`<button id="settings-btn" class="footer-link" aria-label="Settings">⚙️ Settings</button>`);
@@ -1873,6 +1571,8 @@ function renderFooter() {
   // once at init, before the first footer render).
   const btn = document.getElementById('settings-btn');
   if (btn) btn.addEventListener('click', openSettings);
+  const campChip = document.getElementById('footer-camp-chip');
+  if (campChip) campChip.addEventListener('click', () => { openCampPicker(); });
 }
 
 // ── State ────────────────────────────────────────────────────────
@@ -1889,7 +1589,7 @@ function loadState() {
 
 function makeFreshState() {
   return {
-    config: defaultConfig(), // editable days/games catalog (Settings → Set up the week)
+    config: CAMP.defaultConfig(), // editable days/games catalog (Settings → Set up the week)
     teams: DEFAULT_TEAM_NAMES.map((name, i) => ({ id: 't' + i, name, counselor: DEFAULT_COUNSELORS[i] })),
     results: {},   // gameId -> { medals: {gold, silver, bronze}, scores?, savedAt }
     brackets: {},  // gameId -> in-progress tournament
@@ -1922,7 +1622,7 @@ function defaultDay(config) {
 function migrateState(s) {
   let changed = false;
   if (!s.config || typeof s.config !== 'object') {
-    s.config = defaultConfig();
+    s.config = CAMP.defaultConfig();
     changed = true;
   }
   const c = s.config;
@@ -2416,7 +2116,7 @@ function initSync() {
   try {
     // (firebase.initializeApp happens in startAuth() — auth needs the app
     // object before the database does.)
-    fbRef = firebase.database().ref('campScoreboard/state');
+    fbRef = firebase.database().ref(dbPath('state'));
     updateSyncIndicator(); // sync is on but unconfirmed — show "Connecting…"
     fbRef.on('value', (snap) => {
       handleRemoteSnapshot(snap.val());
@@ -2454,7 +2154,7 @@ function initSync() {
       // the phone waking up needs a fresh one each time.
       if (fbConnected) {
         try {
-          const presenceRef = firebase.database().ref('campScoreboard/presence/' + presenceId);
+          const presenceRef = firebase.database().ref(dbPath('presence/' + presenceId));
           presenceRef.onDisconnect().remove();
           // Minimal shape on purpose: presence is writable by every member
           // (keys are per-tab UUIDs), so nothing forgeable-looking goes in.
@@ -2466,13 +2166,13 @@ function initSync() {
     // it's registered exactly once — putting it there would re-subscribe on
     // every reconnect and stack up duplicate listeners.
     try {
-      firebase.database().ref('campScoreboard/presence').on('value', (snap) => {
+      firebase.database().ref(dbPath('presence')).on('value', (snap) => {
         presenceCount = snap.numChildren();
         renderPresence();
       });
     } catch (e) { /* ignore — chip just stays hidden */ }
     // Week-config catalog listener (sibling ref — see the fbConfigRef comment).
-    fbConfigRef = firebase.database().ref('campScoreboard/config');
+    fbConfigRef = firebase.database().ref(dbPath('config'));
     fbConfigRef.on('value', (snap) => {
       const remote = snap.val();
       if (!remote) { pushConfig(); return; } // first upgraded client seeds the catalog
@@ -2493,7 +2193,7 @@ function initSync() {
     // attached here — i.e. after membership was confirmed — like every other
     // ref. A denial just leaves the hand-typed counselor text in place.
     try {
-      firebase.database().ref('campScoreboard/members').on('value', (snap) => {
+      firebase.database().ref(dbPath('members')).on('value', (snap) => {
         memberDirectory = snap.val() || {};
         if (appStarted) renderAll();
       }, () => { memberDirectory = null; });
@@ -3129,7 +2829,7 @@ let photoDBPromise = null;
 function photoDB() {
   if (!photoDBPromise) {
     photoDBPromise = new Promise((resolve, reject) => {
-      const req = indexedDB.open('campScoreboardPhotos', 1);
+      const req = indexedDB.open(lsKey('campScoreboardPhotos'), 1); // per-camp photo store
       req.onupgradeneeded = () => req.result.createObjectStore('photos');
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -3808,7 +3508,7 @@ let remoteJustApplied = false;
 // Each device snapshots the standings order the first time it renders on a
 // new camp date, then shows ↑n/↓n per row against that baseline. Deliberately
 // device-local (NOT synced): every phone keeps its own morning baseline.
-const DAY_RANK_KEY = 'campScoreboardDayRanks';
+const DAY_RANK_KEY = lsKey('campScoreboardDayRanks');
 
 function startOfDayRanks(ranked) {
   const today = campDateStr();
@@ -4000,7 +3700,7 @@ function recordPointHistory(counts, isRemote) {
   const reason = causes.length ? causes.join('; ') : 'Points updated';
   const at = new Date().toISOString();
   const by = state.identity || memberName || identityLabel(authUser) || null;
-  const logRef = firebase.database().ref('campScoreboard/changelog');
+  const logRef = firebase.database().ref(dbPath('changelog'));
   changed.forEach(({ tid, before, after }) => {
     logRef.push({ at, teamId: tid, team: teamName(tid), delta: after - before, before, after, reason, by })
       .catch(() => { /* offline / rules — the log entry is best-effort */ });
@@ -4036,7 +3736,10 @@ function renderFollowCard() {
     ? `<p class="follow-next-line">🧽 Next meal cleanup:<br>${esc(DAY_NAMES[nextCleanup.day])} ${esc(nextCleanup.meal)}</p>`
     : '';
   const you = state.identity;
-  const youLine = you
+  // The "who are you" line exists to surface YOUR electives — camps without
+  // electives (senior) have nothing to show, so the line disappears.
+  const youLine = !CAMP.features.electives ? ''
+    : you
     ? `<p class="follow-you-line">${esc(you)} <button id="change-identity-link" class="link-btn">Change</button></p>`
     : `<p class="follow-you-line follow-you-empty"><button id="set-identity-link" class="link-btn">🙋 Tell us who you are</button> to see your electives</p>`;
   const shield = teamShield(team.id);
@@ -4152,11 +3855,17 @@ function adoptMemberTeam() {
 }
 
 function maybeShowTeamPicker() {
+  // The "which camp?" question outranks "which team?" — while the camp
+  // picker is up, hold this one (its close event re-runs us; see
+  // wireCampSwitcher).
+  const cp = document.getElementById('camp-picker-overlay');
+  if (cp && cp.hasAttribute && cp.hasAttribute('open')) return;
   if (adoptMemberTeam()) return; // their account already says which team they're on
   if (state.followTeam === undefined) { openTeamPicker(); return; }
   // Already following a real team but never answered "which one are you?"
   // (a fresh install skips this; existing followers get just the name step).
-  if (state.followTeam && state.identity === undefined) openIdentityPicker();
+  // The question only exists where electives do.
+  if (CAMP.features.electives && state.followTeam && state.identity === undefined) openIdentityPicker();
 }
 
 function openTeamPicker() {
@@ -4168,6 +3877,7 @@ function openTeamPicker() {
 // Jump straight to the identity step (from the follow card, or the launch
 // migration). Only meaningful when a real team is being followed.
 function openIdentityPicker() {
+  if (!CAMP.features.electives) return; // no electives → no "which one are you?"
   if (!state.followTeam) return;
   pickerStep = 'identity';
   pickerTeamId = state.followTeam;
@@ -4233,6 +3943,14 @@ function renderTeamPickerOptions() {
       }
       if (turnedOnNotify) {
         pickerNotifyToast = `🔔 Following ${teamEmoji(id)} ${teamName(id)} — you'll get alerts here when they score or are up next.`;
+      }
+      // The identity step exists to show YOUR electives — a camp without
+      // electives (senior) has nothing to ask, so the picker just closes.
+      if (!CAMP.features.electives) {
+        state.identity = null;
+        saveState();
+        closePickerAndRender();
+        return;
       }
       // Advance to the identity step (don't close yet).
       pickerTeamId = id;
@@ -4457,23 +4175,13 @@ function bindBonusEntry(wrap) {
 }
 
 // ── Memory verses ────────────────────────────────────────────────
-// The week's theme verse + one memory verse per camp day (Mon–Fri),
-// transcribed from the printed "Harvest of the Heart" sheet. Counselors
-// read the day's verse here and award points to teams that recite it;
-// those points are stored in the bonus ledger under the 'verse' category,
-// tagged with the day, so they still flow into the week standings.
-const MEMORY_VERSE_THEME = {
-  title: 'Harvest of the Heart',
-  text: 'I have been crucified with Christ. It is no longer I who live, but Christ who lives in me. And the life I now live in the flesh I live by faith in the Son of God, who loved me and gave himself for me.',
-  ref: 'Galatians 2:20 ESV',
-};
-const MEMORY_VERSES = {
-  1: { text: 'For by grace you have been saved through faith. And this is not your own doing; it is the gift of God, not a result of works, so that no one may boast.', ref: 'Ephesians 2:8–9 ESV' },
-  2: { text: 'We were buried therefore with him by baptism into death, in order that, just as Christ was raised from the dead by the glory of the Father, we too might walk in newness of life.', ref: 'Romans 6:4 ESV' },
-  3: { text: 'There is therefore now no condemnation for those who are in Christ Jesus.', ref: 'Romans 8:1 ESV' },
-  4: { text: 'And I will give you a new heart, and a new spirit I will put within you. And I will remove the heart of stone from your flesh and give you a heart of flesh. And I will put my Spirit within you, and cause you to walk in my statutes and be careful to obey my rules.', ref: 'Ezekiel 36:26–27 ESV', video: 'https://youtu.be/yqA3NHjwY0I?is=-sOrEqnoEM3MmJwc' },
-  5: { text: 'If we live by the Spirit, let us also keep in step with the Spirit.', ref: 'Galatians 5:25 ESV', video: 'https://youtu.be/u3I2IjLt32M?is=O4fSEQJXtrJUCiXn' },
-};
+// The week's theme verse + one memory verse per camp day (Mon–Fri) —
+// per-camp data (camps.js): junior's printed "Harvest of the Heart"
+// sheet, senior's placeholders until its sheet exists. Counselors read
+// the day's verse here and award points to teams that recite it; the
+// points live in the bonus ledger under the 'verse' category.
+const MEMORY_VERSE_THEME = CAMP.memoryVerseTheme;
+const MEMORY_VERSES = CAMP.memoryVerses;
 
 // Which day's verse the card is showing, and the point-entry draft. Both
 // live outside state so they aren't synced or persisted (verseDay defaults
@@ -4617,13 +4325,9 @@ function setVersePoints(teamId, dow, pts) {
 // standings — same pattern as Memory Verse. A missing meal key = TBA.
 const MEAL_CLEANUP_MEALS = ['Breakfast', 'Lunch', 'Supper'];
 const MEAL_ICONS = { Breakfast: '🍳', Lunch: '🥪', Supper: '🍲' };
-const MEAL_CLEANUP_SCHEDULE = {
-  1: { Breakfast: 't5', Lunch: 't4', Supper: 't0' }, // Mon: John Deere's / Pilgrims / Foxes
-  2: { Breakfast: 't2', Lunch: 't3', Supper: 't1' }, // Tue: Maples / Pumpkins / Turkey
-  3: { Breakfast: 't0', Lunch: 't5', Supper: 't4' }, // Wed: Foxes / John Deere's / Pilgrims
-  4: { Breakfast: 't1', Lunch: 't2', Supper: 't3' }, // Thu: Turkey / Maples / Pumpkins
-  5: { Breakfast: ['t3', 't4'], Lunch: ['t0', 't1'], Supper: ['t2', 't5'] }, // Fri: (Pumpkin+Pilgrim) / (Foxes+Turkey) / (Maple+John Deere's)
-};
+// The rota itself is per-camp data (camps.js) — junior's printed 6-team
+// rota, senior's still-empty one (every meal TBA until filled in).
+const MEAL_CLEANUP_SCHEDULE = CAMP.mealCleanupSchedule;
 
 // The team assigned to a given day + meal, or null (TBA).
 function cleanupAssigned(day, meal) {
@@ -4631,7 +4335,7 @@ function cleanupAssigned(day, meal) {
   return (d && d[meal]) || null;
 }
 
-// Start time of each meal (same across Mon–Fri, per weekdayDaytime above) —
+// Start time of each meal (same across Mon–Fri, per the junior weekday schedule) —
 // lets findNextCleanupFor skip a meal that's already started today.
 const MEAL_START_MINUTES = { Breakfast: hm(8, 0), Lunch: hm(12, 0), Supper: hm(17, 0) };
 
@@ -6732,7 +6436,7 @@ function toggleSound() {
 // it shipped, then expires on its own. Dismissals are per-device (localStorage)
 // and per-change id, so clearing one banner doesn't clear the others.
 const CHANGE_TTL_MS = 2 * 60 * 60 * 1000; // advertise a change for two hours
-const CHANGE_DISMISS_KEY = 'campScoreboardDismissedChanges';
+const CHANGE_DISMISS_KEY = lsKey('campScoreboardDismissedChanges');
 
 function dismissedChanges() {
   try { return JSON.parse(localStorage.getItem(CHANGE_DISMISS_KEY) || '[]') || []; }
@@ -6878,7 +6582,7 @@ function renderWhatsNew() {
 // duration (1 hour by default), stamped as `ttlMs` on the entry; expired
 // entries stop rendering everywhere immediately and editor devices prune
 // them from synced state (per-child null pushes) as housekeeping.
-const ANNOUNCE_DISMISS_KEY = 'campScoreboardDismissedAnnouncements';
+const ANNOUNCE_DISMISS_KEY = lsKey('campScoreboardDismissedAnnouncements');
 const ANNOUNCE_DEFAULT_TTL_MS = 60 * 60 * 1000; // 1 hour
 const ANNOUNCE_TTL_CHOICES = [
   { ms: 60 * 60 * 1000, label: '1 hour' },
@@ -7291,6 +6995,7 @@ function init() {
   if (signoutBtn) signoutBtn.addEventListener('click', signOutAndClear);
   updateAccountRow();
   wireMembers();
+  wireCampSwitcher();
 
   document.getElementById('notify-toggle-btn').addEventListener('click', toggleNotify);
   updateNotifyButton();
@@ -7350,7 +7055,15 @@ function updateAccountRow() {
   const label = document.getElementById('account-label');
   if (!label) return;
   const who = identityLabel(authUser); // email or phone number
-  label.textContent = (canEdit() ? '✏️ Editor' : '👀 Viewer') + (who ? ' — ' + who : '');
+  const camp = hasBothCamps() ? ' · ' + CAMP.label : '';
+  label.textContent = (canEdit() ? '✏️ Editor' : '👀 Viewer') + (who ? ' — ' + who : '') + camp;
+  // The switch-camp row only exists for accounts on both camps' lists.
+  const row = document.getElementById('camp-row');
+  if (row) {
+    row.hidden = !hasBothCamps();
+    const lbl = document.getElementById('camp-row-label');
+    if (lbl) lbl.textContent = 'Switch camp — you\u2019re in ' + CAMP.label;
+  }
 }
 
 // ── Joy layer ────────────────────────────────────────────────────
@@ -7502,6 +7215,7 @@ function applyCardDefaults() {
 
 function startApp() {
   document.documentElement.classList.remove('locked');
+  document.documentElement.classList.toggle('camp-senior', CAMP.id === 'senior');
   applyRoleClass();
   applyCardDefaults();
   if (!appStarted) {
@@ -7628,7 +7342,7 @@ function handleAuthUser(user) {
   // for live changes: a removal cancels this listener (kick), a role change
   // fires a fresh snapshot.
   if (!appStarted) showAuthScreen('checking');
-  memberRef = firebase.database().ref('campScoreboard/members/' + key);
+  memberRef = firebase.database().ref(dbPath('members/' + key));
   memberRef.on('value', onMemberSnapshot, onMemberReadError);
 }
 
@@ -7648,6 +7362,8 @@ function onMemberSnapshot(snap) {
   }
   startApp();
   startSync(); // attach the database listeners — only ever from here
+  probeOtherCamp(); // one-shot: is this account on the OTHER camp's list too?
+  maybeShowCampPicker(); // dual-camp accounts choose a camp every launch
 }
 
 function onMemberReadError() {
@@ -7655,6 +7371,38 @@ function onMemberReadError() {
 }
 
 function denyMember() {
+  // Not on THIS camp's list — but maybe on the other one. The default camp
+  // is junior, so a senior-only counselor's first sign-in lands here; probe
+  // the other camp once and switch over instead of turning them away. The
+  // sessionStorage flag makes the bounce one-shot (denied in BOTH camps
+  // must end at the denial screen, never a reload loop).
+  const key = identityKey(authUser);
+  let tried = false;
+  try { tried = sessionStorage.getItem(CAMP_SWITCH_TRIED_KEY) === '1'; } catch (e) { /* fine */ }
+  const canProbe = key && !tried && typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length;
+  if (canProbe) {
+    const other = CAMPS[otherCampId()];
+    try {
+      firebase.database().ref(other.dbRoot + '/members/' + key).once('value')
+        .then((snap) => {
+          const rec = snap.val();
+          if (rec && (rec.role === 'editor' || rec.role === 'viewer')) {
+            try { sessionStorage.setItem(CAMP_SWITCH_TRIED_KEY, '1'); } catch (e) { /* fine */ }
+            writeCampsHint(other.id, rec.role);
+            writeCampsHint(CAMP.id, null);
+            switchCamp(other.id);
+          } else {
+            denyMemberFinal();
+          }
+        })
+        .catch(denyMemberFinal);
+      return;
+    } catch (e) { /* fall through */ }
+  }
+  denyMemberFinal();
+}
+
+function denyMemberFinal() {
   const who = identityLabel(authUser); // email or phone number
   setMemberRole(null);
   setMemberTeam(null);
@@ -7672,6 +7420,7 @@ function denyMember() {
 // convenience — the security rules never consult it.
 function setAuthHint(role) {
   try { localStorage.setItem(AUTH_HINT_KEY, role); } catch (e) { /* fine */ }
+  writeCampsHint(CAMP.id, role); // the per-camp ledger behind the camp picker
 }
 
 function clearAuthHint() {
@@ -7685,6 +7434,128 @@ function authHintRole() {
   } catch (e) { return null; }
 }
 
+// ── The other camp ───────────────────────────────────────────────
+// One account can be on the junior list, the senior list, or both — each
+// camp keeps its own members node (campScoreboard/members vs
+// seniorScoreboard/members). This device only ever ATTACHES listeners for
+// the active camp; the other camp gets a single one-shot once() probe (a
+// failed once() is harmless — it's the .on() self-read whose cancellation
+// is terminal). CAMPS_HINT_KEY caches what the probes learned —
+// {junior: 'editor', senior: 'viewer'} — so the camp picker and switcher
+// can paint instantly on later loads. Like the auth hint, it's convenience
+// only: the rules never consult it, and a forged entry buys an empty shell.
+const CAMPS_HINT_KEY = 'campScoreboardCampsHint';
+const CAMP_SWITCH_TRIED_KEY = 'campSwitchTried'; // sessionStorage loop guard
+const CAMP_CHOSE_KEY = 'campScoreboardJustChose'; // the switch reload already answered the question
+
+let otherCampRole = null;   // 'viewer' | 'editor' | null — this account, other camp
+let otherCampProbed = false;
+let campPickerAsked = false; // the every-launch ask happens once per page load
+
+function readCampsHint() {
+  try {
+    const h = JSON.parse(localStorage.getItem(CAMPS_HINT_KEY) || '{}');
+    return (h && typeof h === 'object' && !Array.isArray(h)) ? h : {};
+  } catch (e) { return {}; }
+}
+
+function writeCampsHint(campId, role) {
+  const h = readCampsHint();
+  if (role === 'editor' || role === 'viewer') h[campId] = role;
+  else delete h[campId];
+  try { localStorage.setItem(CAMPS_HINT_KEY, JSON.stringify(h)); } catch (e) { /* fine */ }
+}
+
+// True when this account is (as far as the hints know) on BOTH camps' lists.
+function hasBothCamps() {
+  const h = readCampsHint();
+  return !!(h.junior && h.senior);
+}
+
+// Set-key-and-reload — the ONLY way to change camps. The listener lifecycle
+// is one-shot by design (a cancelled read is terminal; there is no teardown
+// path), so a running page never re-points its refs in place.
+function switchCamp(campId) {
+  if (!CAMPS[campId] || campId === CAMP.id) return;
+  try { localStorage.setItem(ACTIVE_CAMP_KEY, campId); } catch (e) { return; }
+  // Hand the destination camp's cached role to the pre-paint guard so the
+  // next load paints with the right chrome immediately.
+  const role = readCampsHint()[campId];
+  try {
+    if (role === 'editor' || role === 'viewer') localStorage.setItem(AUTH_HINT_KEY, role);
+    else localStorage.removeItem(AUTH_HINT_KEY);
+  } catch (e) { /* fine */ }
+  // The reload this triggers IS the answer to "which camp?" — don't ask
+  // again the moment it lands. (Session-scoped: the next real launch asks.)
+  try { sessionStorage.setItem(CAMP_CHOSE_KEY, '1'); } catch (e) { /* fine */ }
+  location.reload();
+}
+
+// One-shot probe of the other camp's member record, fired after this camp
+// approves. Fills otherCampRole + the camps hint, then surfaces the
+// dual-camp UI (picker on launch, switcher row) if it just became relevant.
+function probeOtherCamp() {
+  if (otherCampProbed) return;
+  otherCampProbed = true;
+  const key = identityKey(authUser);
+  if (!key || typeof firebase === 'undefined' || !firebase.apps || !firebase.apps.length) return;
+  const other = CAMPS[otherCampId()];
+  const record = (rec) => {
+    otherCampRole = rec && (rec.role === 'editor' || rec.role === 'viewer') ? rec.role : null;
+    writeCampsHint(other.id, otherCampRole);
+    if (appStarted) {
+      updateAccountRow();
+      maybeShowCampPicker();
+    }
+  };
+  try {
+    firebase.database().ref(other.dbRoot + '/members/' + key).once('value')
+      .then((snap) => record(snap.val()))
+      .catch(() => record(null)); // rules refused the read — not on that list
+  } catch (e) { record(null); }
+}
+
+// Patrick's call: an account with BOTH camps gets asked which one, every
+// launch — no remembered default. Single-camp accounts never see this.
+function maybeShowCampPicker() {
+  if (campPickerAsked || !hasBothCamps()) return;
+  campPickerAsked = true;
+  // A switch reload already answered the question — consume the marker and
+  // skip this one ask. Every genuinely new launch still asks.
+  try {
+    if (sessionStorage.getItem(CAMP_CHOSE_KEY) === '1') {
+      sessionStorage.removeItem(CAMP_CHOSE_KEY);
+      return;
+    }
+  } catch (e) { /* fine */ }
+  openCampPicker();
+}
+
+function openCampPicker() {
+  const overlay = document.getElementById('camp-picker-overlay');
+  const wrap = document.getElementById('camp-picker-options');
+  if (!overlay || !wrap) return;
+  closeTeamPicker(); // one dialog at a time — the camp question comes first
+  const h = readCampsHint();
+  wrap.innerHTML = ['junior', 'senior'].map((cid) => {
+    const c = CAMPS[cid];
+    const here = cid === CAMP.id;
+    const role = h[cid] === 'editor' ? '✏️ Editor' : '👀 Viewer';
+    return `<button class="team-picker-option camp-picker-option ${here ? 'selected' : ''}" data-camp-id="${cid}">
+      <span class="chip-emoji">${cid === 'senior' ? '🚩' : '🛡️'}</span> ${esc(c.label)}
+      <span class="chip-sub">${role}${here ? ' · you\u2019re here now' : ''}</span>
+    </button>`;
+  }).join('');
+  wrap.querySelectorAll('.camp-picker-option').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const cid = btn.dataset.campId;
+      if (cid === CAMP.id) { overlay.removeAttribute('open'); return; } // staying put
+      switchCamp(cid);
+    });
+  });
+  overlay.setAttribute('open', '');
+}
+
 // ── Sign out ─────────────────────────────────────────────────────
 // Signing out also clears the camp data cached on this device — the whole
 // synced state lives in localStorage (and Pictionary photos in IndexedDB),
@@ -7692,8 +7563,17 @@ function authHintRole() {
 // The theme preference resets to Auto (the boot guards discard partial
 // state, so there is deliberately no carry-over mechanism).
 function clearLocalData() {
-  [STORAGE_KEY, DAY_RANK_KEY, CHANGE_DISMISS_KEY, ANNOUNCE_DISMISS_KEY,
-   AUTH_HINT_KEY, EMAIL_SIGNIN_KEY].forEach((k) => {
+  // Both camps' caches go — sign-out is account-level, and a signed-out
+  // device must not keep either camp's data. (The bare base names are the
+  // junior keys; the suffixed ones are senior's.)
+  const bases = ['campScoreboardV2', 'campScoreboardDayRanks',
+    'campScoreboardDismissedChanges', 'campScoreboardDismissedAnnouncements'];
+  Object.keys(CAMPS).forEach((cid) => {
+    bases.forEach((b) => {
+      try { localStorage.removeItem(b + CAMPS[cid].storageSuffix); } catch (e) { /* ignore */ }
+    });
+  });
+  [AUTH_HINT_KEY, EMAIL_SIGNIN_KEY, CAMPS_HINT_KEY, ACTIVE_CAMP_KEY].forEach((k) => {
     try { localStorage.removeItem(k); } catch (e) { /* ignore */ }
   });
 }
@@ -7702,6 +7582,9 @@ function signOutAndClear() {
   if (!confirm('Sign out? Camp data stored on this device will be cleared.')) return;
   clearLocalData();
   try { clearPhotos().catch(() => {}); } catch (e) { /* ignore */ }
+  // The active camp's photo store is cleared above; delete the other
+  // camp's database wholesale (it isn't open, so deleteDatabase is safe).
+  try { indexedDB.deleteDatabase('campScoreboardPhotos' + CAMPS[otherCampId()].storageSuffix); } catch (e) { /* ignore */ }
   const done = () => location.reload(); // full teardown: timers, listeners, in-memory state
   try {
     firebase.auth().signOut().then(done, done);
@@ -7712,16 +7595,27 @@ function signOutAndClear() {
 
 function boot() {
   applyTheme(); // the lock screen is the first thing everyone sees — theme it too
+  // Name the page after the active camp so a phone with both camps open in
+  // two tabs can tell them apart. Junior keeps the plain "Camp" it always had.
+  if (CAMP.id === 'senior') {
+    document.title = 'Camp · Senior';
+    const logo = document.querySelector('.lock-logo');
+    if (logo) logo.innerHTML = '<span>🚩</span> Camp · Senior';
+  }
   wireAuthScreen();
   // A device that was approved last time paints the app immediately from
   // local state (exactly the pre-auth behavior) with its cached role, while
   // startAuth() re-confirms in the background — and intervenes only if the
   // server disagrees. A forged hint buys an empty shell: the rules refuse
   // every read, and denyMember() locks the screen again.
-  const hinted = authHintRole();
+  // Prefer the per-camp ledger (a dual-role account paints with the RIGHT
+  // role for this camp); fall back to the single-value hint.
+  const campsHint = readCampsHint()[CAMP.id];
+  const hinted = (campsHint === 'editor' || campsHint === 'viewer') ? campsHint : authHintRole();
   if (hinted) {
     setMemberRole(hinted);
     startApp();
+    maybeShowCampPicker(); // dual-camp devices choose a camp every launch
   } else {
     showAuthScreen('checking');
   }

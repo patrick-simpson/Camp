@@ -3649,6 +3649,20 @@ body.no-scroll {
   color: var(--color-text-muted);
   white-space: nowrap;
 }
+/* ── Camp picker / switcher (dual-camp accounts) ──────────────── */
+/* The options reuse .team-picker-option; only the sub-line is new. */
+.camp-picker-option {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+}
+.camp-picker-option .chip-sub {
+  flex-basis: 100%;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
 /* The follow card's "Change" slot when the account decides the team. */
 .follow-your-team {
   font-size: 0.75rem;

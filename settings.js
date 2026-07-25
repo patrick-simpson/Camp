@@ -997,7 +997,7 @@ function deleteDay(dayId) {
 function renderTeamsTab(card) {
   const teams = state.teams || [];
   const warn = teams.length !== 6
-    ? `<p class="warn-note">⚠️ The bracket wizard is designed for 6 teams — you have ${teams.length}. Bracket games may need improvising.</p>`
+    ? `<p class="warn-note">⚠️ The bracket wizard is designed for 6 teams — you have ${teams.length}${CAMP.teamCount !== 6 ? ` (this camp normally runs ${CAMP.teamCount})` : ''}. Bracket games may need improvising.</p>`
     : '';
   card.innerHTML = `
     <h3>Teams (${teams.length})</h3>
@@ -1519,10 +1519,10 @@ function pruneOrphanedGameData() {
 }
 
 function restoreDefaults() {
-  const def = defaultConfig();
-  if (!confirm('Put back the original ' + def.games.length + ' games and 5 days? Your custom games and days are thrown away. Team names and saved results are kept.')) return;
+  const def = CAMP.defaultConfig();
+  if (!confirm('Put back the original ' + def.games.length + ' games and ' + def.days.length + ' days? Your custom games and days are thrown away. Team names and saved results are kept.')) return;
 
-  state.config = defaultConfig();
+  state.config = CAMP.defaultConfig();
   if (!state.config.days.some((d) => d.id === state.ui.day)) {
     state.ui.day = state.config.days[0] ? state.config.days[0].id : null;
   }

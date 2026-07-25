@@ -1,0 +1,2165 @@
+{
+ "DAY_SCHEDULE": {
+  "0": [
+   {
+    "start": 840,
+    "end": 960,
+    "label": "Registration",
+    "emoji": "📝",
+    "type": "activity"
+   },
+   {
+    "start": 960,
+    "end": 1020,
+    "label": "Welcome to camp / get-to-know-you",
+    "emoji": "👋",
+    "type": "activity"
+   },
+   {
+    "start": 1020,
+    "end": 1050,
+    "label": "Supper",
+    "emoji": "🍽️",
+    "type": "activity"
+   },
+   {
+    "start": 1050,
+    "end": 1125,
+    "label": "Team assignments (Chapel Lawn)",
+    "emoji": "🎽",
+    "type": "activity"
+   },
+   {
+    "start": 1125,
+    "end": 1140,
+    "label": "Prepare for worship service",
+    "emoji": "⛪",
+    "type": "activity"
+   },
+   {
+    "start": 1140,
+    "end": 1200,
+    "label": "Worship service",
+    "emoji": "⛪",
+    "type": "activity"
+   },
+   {
+    "start": 1200,
+    "end": 1275,
+    "label": "Snack and campfire — Jenn, Laura, Erica & Patrick",
+    "emoji": "🔥",
+    "type": "activity"
+   },
+   {
+    "start": 1275,
+    "end": 1320,
+    "label": "Cabin devotional",
+    "emoji": "🙏",
+    "type": "activity"
+   },
+   {
+    "start": 1320,
+    "end": 1440,
+    "label": "Lights out",
+    "emoji": "🛏️",
+    "type": "activity",
+    "noTime": true
+   }
+  ],
+  "1": [
+   {
+    "start": 450,
+    "end": 480,
+    "label": "Rising bell, shower & morning meeting (Laura's cottage) — 🦃 Turkey, 🍁 Maples & 🚜 John Deersz",
+    "emoji": "⏰",
+    "type": "activity"
+   },
+   {
+    "start": 480,
+    "end": 510,
+    "label": "Breakfast",
+    "emoji": "🍳",
+    "type": "activity"
+   },
+   {
+    "start": 510,
+    "end": 540,
+    "label": "Cabin time & clean up",
+    "emoji": "🧹",
+    "type": "activity"
+   },
+   {
+    "start": 540,
+    "end": 585,
+    "label": "Bible study",
+    "emoji": "📖",
+    "type": "activity"
+   },
+   {
+    "start": 585,
+    "end": 600,
+    "label": "Prepare for competitions / team huddle",
+    "emoji": "📣",
+    "type": "activity"
+   },
+   {
+    "start": 600,
+    "end": 705,
+    "label": "Team competitions",
+    "emoji": "🏅",
+    "type": "games"
+   },
+   {
+    "start": 705,
+    "end": 720,
+    "label": "Prepare for lunch",
+    "emoji": "🧼",
+    "type": "activity"
+   },
+   {
+    "start": 720,
+    "end": 750,
+    "label": "Lunch",
+    "emoji": "🥪",
+    "type": "activity"
+   },
+   {
+    "start": 750,
+    "end": 780,
+    "label": "Team time",
+    "emoji": "🤝",
+    "type": "activity"
+   },
+   {
+    "start": 780,
+    "end": 795,
+    "label": "Prepare for Elective 1",
+    "emoji": "🎒",
+    "type": "activity"
+   },
+   {
+    "start": 795,
+    "end": 840,
+    "label": "Elective 1",
+    "emoji": "🌟",
+    "type": "elective",
+    "slot": 0
+   },
+   {
+    "start": 840,
+    "end": 885,
+    "label": "Snack Shack break",
+    "emoji": "🍫",
+    "type": "activity"
+   },
+   {
+    "start": 885,
+    "end": 900,
+    "label": "Prepare for Elective 2",
+    "emoji": "🎒",
+    "type": "activity"
+   },
+   {
+    "start": 900,
+    "end": 945,
+    "label": "Elective 2",
+    "emoji": "🌟",
+    "type": "elective",
+    "slot": 1
+   },
+   {
+    "start": 945,
+    "end": 960,
+    "label": "Prepare for Elective 3",
+    "emoji": "🎒",
+    "type": "activity"
+   },
+   {
+    "start": 960,
+    "end": 1005,
+    "label": "Elective 3",
+    "emoji": "🌟",
+    "type": "elective",
+    "slot": 2
+   },
+   {
+    "start": 1005,
+    "end": 1020,
+    "label": "Prepare for supper",
+    "emoji": "🧼",
+    "type": "activity"
+   },
+   {
+    "start": 1020,
+    "end": 1050,
+    "label": "Supper",
+    "emoji": "🍽️",
+    "type": "activity"
+   },
+   {
+    "start": 1050,
+    "end": 1080,
+    "label": "Prepare for competitions / team huddle",
+    "emoji": "📣",
+    "type": "activity"
+   },
+   {
+    "start": 1080,
+    "end": 1125,
+    "label": "Evening competition",
+    "emoji": "🏅",
+    "type": "games"
+   },
+   {
+    "start": 1125,
+    "end": 1140,
+    "label": "Prepare for evening service",
+    "emoji": "⛪",
+    "type": "activity"
+   },
+   {
+    "start": 1140,
+    "end": 1200,
+    "label": "Evening service",
+    "emoji": "⛪",
+    "type": "activity"
+   },
+   {
+    "start": 1200,
+    "end": 1275,
+    "label": "Snack and campfire — TJ",
+    "emoji": "🔥",
+    "type": "activity"
+   },
+   {
+    "start": 1275,
+    "end": 1290,
+    "label": "Prepare for bed",
+    "emoji": "🪥",
+    "type": "activity"
+   },
+   {
+    "start": 1290,
+    "end": 1320,
+    "label": "Cabin devotional",
+    "emoji": "🙏",
+    "type": "activity"
+   },
+   {
+    "start": 1320,
+    "end": 1440,
+    "label": "Lights out",
+    "emoji": "🛏️",
+    "type": "activity",
+    "noTime": true
+   }
+  ],
+  "2": [
+   {
+    "start": 450,
+    "end": 480,
+    "label": "Rising bell, shower & morning meeting (Laura's cottage) — 🦊 Foxes, 🎃 Pumpkins & 🦅 Pilgrims",
+    "emoji": "⏰",
+    "type": "activity"
+   },
+   {
+    "start": 480,
+    "end": 510,
+    "label": "Breakfast",
+    "emoji": "🍳",
+    "type": "activity"
+   },
+   {
+    "start": 510,
+    "end": 540,
+    "label": "Cabin time & clean up",
+    "emoji": "🧹",
+    "type": "activity"
+   },
+   {
+    "start": 540,
+    "end": 585,
+    "label": "Bible study",
+    "emoji": "📖",
+    "type": "activity"
+   },
+   {
+    "start": 585,
+    "end": 600,
+    "label": "Prepare for competitions / team huddle",
+    "emoji": "📣",
+    "type": "activity"
+   },
+   {
+    "start": 600,
+    "end": 705,
+    "label": "Team competitions",
+    "emoji": "🏅",
+    "type": "games"
+   },
+   {
+    "start": 705,
+    "end": 720,
+    "label": "Prepare for lunch",
+    "emoji": "🧼",
+    "type": "activity"
+   },
+   {
+    "start": 720,
+    "end": 750,
+    "label": "Lunch",
+    "emoji": "🥪",
+    "type": "activity"
+   },
+   {
+    "start": 750,
+    "end": 780,
+    "label": "Team time",
+    "emoji": "🤝",
+    "type": "activity"
+   },
+   {
+    "start": 780,
+    "end": 795,
+    "label": "Prepare for Elective 1",
+    "emoji": "🎒",
+    "type": "activity"
+   },
+   {
+    "start": 795,
+    "end": 840,
+    "label": "Elective 1",
+    "emoji": "🌟",
+    "type": "elective",
+    "slot": 0
+   },
+   {
+    "start": 840,
+    "end": 885,
+    "label": "Snack Shack break",
+    "emoji": "🍫",
+    "type": "activity"
+   },
+   {
+    "start": 885,
+    "end": 900,
+    "label": "Prepare for Elective 2",
+    "emoji": "🎒",
+    "type": "activity"
+   },
+   {
+    "start": 900,
+    "end": 945,
+    "label": "Elective 2",
+    "emoji": "🌟",
+    "type": "elective",
+    "slot": 1
+   },
+   {
+    "start": 945,
+    "end": 960,
+    "label": "Prepare for Elective 3",
+    "emoji": "🎒",
+    "type": "activity"
+   },
+   {
+    "start": 960,
+    "end": 1005,
+    "label": "Elective 3",
+    "emoji": "🌟",
+    "type": "elective",
+    "slot": 2
+   },
+   {
+    "start": 1005,
+    "end": 1020,
+    "label": "Prepare for supper",
+    "emoji": "🧼",
+    "type": "activity"
+   },
+   {
+    "start": 1020,
+    "end": 1050,
+    "label": "Supper",
+    "emoji": "🍽️",
+    "type": "activity"
+   },
+   {
+    "start": 1050,
+    "end": 1080,
+    "label": "Prepare for competitions / team huddle",
+    "emoji": "📣",
+    "type": "activity"
+   },
+   {
+    "start": 1080,
+    "end": 1125,
+    "label": "Evening competition",
+    "emoji": "🏅",
+    "type": "games"
+   },
+   {
+    "start": 1125,
+    "end": 1140,
+    "label": "Prepare for evening service",
+    "emoji": "⛪",
+    "type": "activity"
+   },
+   {
+    "start": 1140,
+    "end": 1200,
+    "label": "Evening service",
+    "emoji": "⛪",
+    "type": "activity"
+   },
+   {
+    "start": 1200,
+    "end": 1275,
+    "label": "Snack and campfire — Cam",
+    "emoji": "🔥",
+    "type": "activity"
+   },
+   {
+    "start": 1275,
+    "end": 1320,
+    "label": "Boys cabin movie night",
+    "emoji": "🎬",
+    "type": "activity"
+   },
+   {
+    "start": 1275,
+    "end": 1290,
+    "label": "Prepare for bed",
+    "emoji": "🪥",
+    "type": "activity"
+   },
+   {
+    "start": 1290,
+    "end": 1320,
+    "label": "Cabin devotional",
+    "emoji": "🙏",
+    "type": "activity"
+   },
+   {
+    "start": 1320,
+    "end": 1440,
+    "label": "Lights out",
+    "emoji": "🛏️",
+    "type": "activity",
+    "noTime": true
+   }
+  ],
+  "3": [
+   {
+    "start": 450,
+    "end": 480,
+    "label": "Rising bell, shower & morning meeting (Laura's cottage) — 🦃 Turkey, 🍁 Maples & 🚜 John Deersz",
+    "emoji": "⏰",
+    "type": "activity"
+   },
+   {
+    "start": 480,
+    "end": 510,
+    "label": "Breakfast",
+    "emoji": "🍳",
+    "type": "activity"
+   },
+   {
+    "start": 510,
+    "end": 540,
+    "label": "Cabin time & clean up",
+    "emoji": "🧹",
+    "type": "activity"
+   },
+   {
+    "start": 540,
+    "end": 585,
+    "label": "Bible study",
+    "emoji": "📖",
+    "type": "activity"
+   },
+   {
+    "start": 585,
+    "end": 600,
+    "label": "Prepare for competitions / team huddle",
+    "emoji": "📣",
+    "type": "activity"
+   },
+   {
+    "start": 600,
+    "end": 705,
+    "label": "Team competitions",
+    "emoji": "🏅",
+    "type": "games"
+   },
+   {
+    "start": 705,
+    "end": 720,
+    "label": "Prepare for lunch",
+    "emoji": "🧼",
+    "type": "activity"
+   },
+   {
+    "start": 720,
+    "end": 750,
+    "label": "Lunch",
+    "emoji": "🥪",
+    "type": "activity"
+   },
+   {
+    "start": 750,
+    "end": 780,
+    "label": "Team time",
+    "emoji": "🤝",
+    "type": "activity"
+   },
+   {
+    "start": 780,
+    "end": 795,
+    "label": "Prepare for Elective 1",
+    "emoji": "🎒",
+    "type": "activity"
+   },
+   {
+    "start": 795,
+    "end": 840,
+    "label": "Elective 1",
+    "emoji": "🌟",
+    "type": "elective",
+    "slot": 0
+   },
+   {
+    "start": 840,
+    "end": 885,
+    "label": "Snack Shack break",
+    "emoji": "🍫",
+    "type": "activity"
+   },
+   {
+    "start": 885,
+    "end": 900,
+    "label": "Prepare for Elective 2",
+    "emoji": "🎒",
+    "type": "activity"
+   },
+   {
+    "start": 900,
+    "end": 945,
+    "label": "Elective 2",
+    "emoji": "🌟",
+    "type": "elective",
+    "slot": 1
+   },
+   {
+    "start": 945,
+    "end": 960,
+    "label": "Prepare for Elective 3",
+    "emoji": "🎒",
+    "type": "activity"
+   },
+   {
+    "start": 960,
+    "end": 1005,
+    "label": "Elective 3",
+    "emoji": "🌟",
+    "type": "elective",
+    "slot": 2
+   },
+   {
+    "start": 1005,
+    "end": 1020,
+    "label": "Prepare for supper",
+    "emoji": "🧼",
+    "type": "activity"
+   },
+   {
+    "start": 1020,
+    "end": 1050,
+    "label": "Supper",
+    "emoji": "🍽️",
+    "type": "activity"
+   },
+   {
+    "start": 1050,
+    "end": 1080,
+    "label": "Prepare for competitions / team huddle",
+    "emoji": "📣",
+    "type": "activity"
+   },
+   {
+    "start": 1080,
+    "end": 1125,
+    "label": "Evening competition",
+    "emoji": "🏅",
+    "type": "games"
+   },
+   {
+    "start": 1125,
+    "end": 1140,
+    "label": "Prepare for evening service",
+    "emoji": "⛪",
+    "type": "activity"
+   },
+   {
+    "start": 1140,
+    "end": 1200,
+    "label": "Evening service",
+    "emoji": "⛪",
+    "type": "activity"
+   },
+   {
+    "start": 1200,
+    "end": 1275,
+    "label": "Snack and campfire — Sofie",
+    "emoji": "🔥",
+    "type": "activity"
+   },
+   {
+    "start": 1275,
+    "end": 1290,
+    "label": "Prepare for bed",
+    "emoji": "🪥",
+    "type": "activity"
+   },
+   {
+    "start": 1290,
+    "end": 1320,
+    "label": "Cabin devotional",
+    "emoji": "🙏",
+    "type": "activity"
+   },
+   {
+    "start": 1320,
+    "end": 1440,
+    "label": "Lights out",
+    "emoji": "🛏️",
+    "type": "activity",
+    "noTime": true
+   }
+  ],
+  "4": [
+   {
+    "start": 450,
+    "end": 480,
+    "label": "Rising bell, shower & morning meeting (Laura's cottage) — 🦊 Foxes, 🎃 Pumpkins & 🦅 Pilgrims",
+    "emoji": "⏰",
+    "type": "activity"
+   },
+   {
+    "start": 480,
+    "end": 510,
+    "label": "Breakfast",
+    "emoji": "🍳",
+    "type": "activity"
+   },
+   {
+    "start": 510,
+    "end": 540,
+    "label": "Cabin time & clean up",
+    "emoji": "🧹",
+    "type": "activity"
+   },
+   {
+    "start": 540,
+    "end": 585,
+    "label": "Bible study",
+    "emoji": "📖",
+    "type": "activity"
+   },
+   {
+    "start": 585,
+    "end": 600,
+    "label": "Prepare for competitions / team huddle",
+    "emoji": "📣",
+    "type": "activity"
+   },
+   {
+    "start": 600,
+    "end": 705,
+    "label": "Team competitions",
+    "emoji": "🏅",
+    "type": "games"
+   },
+   {
+    "start": 705,
+    "end": 720,
+    "label": "Prepare for lunch",
+    "emoji": "🧼",
+    "type": "activity"
+   },
+   {
+    "start": 720,
+    "end": 750,
+    "label": "Lunch",
+    "emoji": "🥪",
+    "type": "activity"
+   },
+   {
+    "start": 750,
+    "end": 780,
+    "label": "Team time",
+    "emoji": "🤝",
+    "type": "activity"
+   },
+   {
+    "start": 780,
+    "end": 795,
+    "label": "Prepare for Elective 1",
+    "emoji": "🎒",
+    "type": "activity"
+   },
+   {
+    "start": 795,
+    "end": 840,
+    "label": "Elective 1",
+    "emoji": "🌟",
+    "type": "elective",
+    "slot": 0
+   },
+   {
+    "start": 840,
+    "end": 885,
+    "label": "Snack Shack break",
+    "emoji": "🍫",
+    "type": "activity"
+   },
+   {
+    "start": 885,
+    "end": 900,
+    "label": "Prepare for Elective 2",
+    "emoji": "🎒",
+    "type": "activity"
+   },
+   {
+    "start": 900,
+    "end": 945,
+    "label": "Elective 2",
+    "emoji": "🌟",
+    "type": "elective",
+    "slot": 1
+   },
+   {
+    "start": 945,
+    "end": 960,
+    "label": "Prepare for Elective 3",
+    "emoji": "🎒",
+    "type": "activity"
+   },
+   {
+    "start": 960,
+    "end": 1005,
+    "label": "Elective 3",
+    "emoji": "🌟",
+    "type": "elective",
+    "slot": 2
+   },
+   {
+    "start": 1005,
+    "end": 1020,
+    "label": "Prepare for supper",
+    "emoji": "🧼",
+    "type": "activity"
+   },
+   {
+    "start": 1020,
+    "end": 1050,
+    "label": "Supper",
+    "emoji": "🍽️",
+    "type": "activity"
+   },
+   {
+    "start": 1050,
+    "end": 1080,
+    "label": "Prepare for competitions / team huddle",
+    "emoji": "📣",
+    "type": "activity"
+   },
+   {
+    "start": 1080,
+    "end": 1125,
+    "label": "Evening competition",
+    "emoji": "🏅",
+    "type": "games"
+   },
+   {
+    "start": 1125,
+    "end": 1140,
+    "label": "Prepare for evening service",
+    "emoji": "⛪",
+    "type": "activity"
+   },
+   {
+    "start": 1140,
+    "end": 1200,
+    "label": "Evening service",
+    "emoji": "⛪",
+    "type": "activity"
+   },
+   {
+    "start": 1200,
+    "end": 1275,
+    "label": "Snack and campfire — Jovi",
+    "emoji": "🔥",
+    "type": "activity"
+   },
+   {
+    "start": 1275,
+    "end": 1320,
+    "label": "Boys cabin movie night",
+    "emoji": "🎬",
+    "type": "activity"
+   },
+   {
+    "start": 1275,
+    "end": 1290,
+    "label": "Prepare for bed",
+    "emoji": "🪥",
+    "type": "activity"
+   },
+   {
+    "start": 1290,
+    "end": 1320,
+    "label": "Cabin devotional",
+    "emoji": "🙏",
+    "type": "activity"
+   },
+   {
+    "start": 1320,
+    "end": 1440,
+    "label": "Lights out",
+    "emoji": "🛏️",
+    "type": "activity",
+    "noTime": true
+   }
+  ],
+  "5": [
+   {
+    "start": 450,
+    "end": 480,
+    "label": "Rising bell, shower & morning meeting (Laura's cottage) — 🦃 Turkey, 🍁 Maples & 🚜 John Deersz",
+    "emoji": "⏰",
+    "type": "activity"
+   },
+   {
+    "start": 480,
+    "end": 510,
+    "label": "Breakfast",
+    "emoji": "🍳",
+    "type": "activity"
+   },
+   {
+    "start": 510,
+    "end": 540,
+    "label": "Cabin time & clean up",
+    "emoji": "🧹",
+    "type": "activity"
+   },
+   {
+    "start": 540,
+    "end": 585,
+    "label": "Bible study",
+    "emoji": "📖",
+    "type": "activity"
+   },
+   {
+    "start": 585,
+    "end": 600,
+    "label": "Prepare for competitions / team huddle",
+    "emoji": "📣",
+    "type": "activity"
+   },
+   {
+    "start": 600,
+    "end": 705,
+    "label": "Team competitions",
+    "emoji": "🏅",
+    "type": "games"
+   },
+   {
+    "start": 705,
+    "end": 720,
+    "label": "Prepare for lunch",
+    "emoji": "🧼",
+    "type": "activity"
+   },
+   {
+    "start": 720,
+    "end": 750,
+    "label": "Lunch",
+    "emoji": "🥪",
+    "type": "activity"
+   },
+   {
+    "start": 750,
+    "end": 780,
+    "label": "Team time",
+    "emoji": "🤝",
+    "type": "activity"
+   },
+   {
+    "start": 780,
+    "end": 795,
+    "label": "Prepare for Elective 1",
+    "emoji": "🎒",
+    "type": "activity"
+   },
+   {
+    "start": 795,
+    "end": 840,
+    "label": "Elective 1",
+    "emoji": "🌟",
+    "type": "elective",
+    "slot": 0
+   },
+   {
+    "start": 840,
+    "end": 885,
+    "label": "Snack Shack break",
+    "emoji": "🍫",
+    "type": "activity"
+   },
+   {
+    "start": 885,
+    "end": 900,
+    "label": "Prepare for Elective 2",
+    "emoji": "🎒",
+    "type": "activity"
+   },
+   {
+    "start": 900,
+    "end": 945,
+    "label": "Elective 2",
+    "emoji": "🌟",
+    "type": "elective",
+    "slot": 1
+   },
+   {
+    "start": 945,
+    "end": 960,
+    "label": "Prepare for Elective 3",
+    "emoji": "🎒",
+    "type": "activity"
+   },
+   {
+    "start": 960,
+    "end": 1005,
+    "label": "Elective 3",
+    "emoji": "🌟",
+    "type": "elective",
+    "slot": 2
+   },
+   {
+    "start": 1005,
+    "end": 1020,
+    "label": "Prepare for supper",
+    "emoji": "🧼",
+    "type": "activity"
+   },
+   {
+    "start": 1020,
+    "end": 1050,
+    "label": "Supper",
+    "emoji": "🍽️",
+    "type": "activity"
+   },
+   {
+    "start": 1050,
+    "end": 1080,
+    "label": "Team huddle",
+    "emoji": "📣",
+    "type": "activity"
+   },
+   {
+    "start": 1080,
+    "end": 1140,
+    "label": "Final preparations for skits",
+    "emoji": "🎭",
+    "type": "activity"
+   },
+   {
+    "start": 1140,
+    "end": 1200,
+    "label": "Team Skits",
+    "emoji": "🎭",
+    "type": "activity"
+   },
+   {
+    "start": 1200,
+    "end": 1260,
+    "label": "Evening service",
+    "emoji": "⛪",
+    "type": "activity"
+   },
+   {
+    "start": 1260,
+    "end": 1320,
+    "label": "Snack and campfire — Ella",
+    "emoji": "🔥",
+    "type": "activity"
+   },
+   {
+    "start": 1320,
+    "end": 1335,
+    "label": "Prepare for bed",
+    "emoji": "🪥",
+    "type": "activity"
+   },
+   {
+    "start": 1335,
+    "end": 1350,
+    "label": "Cabin devotional",
+    "emoji": "🙏",
+    "type": "activity"
+   },
+   {
+    "start": 1350,
+    "end": 1365,
+    "label": "Lights out",
+    "emoji": "🛏️",
+    "type": "activity"
+   },
+   {
+    "start": 1365,
+    "end": 1380,
+    "label": "Boys cabin pillow fight",
+    "emoji": "🛏️",
+    "type": "activity"
+   },
+   {
+    "start": 1380,
+    "end": 1440,
+    "label": "Lights out",
+    "emoji": "🛏️",
+    "type": "activity",
+    "noTime": true
+   }
+  ],
+  "6": [
+   {
+    "start": 450,
+    "end": 480,
+    "label": "Rising bell, shower & morning meeting (Laura's cottage) — 🦊 Foxes, 🎃 Pumpkins & 🦅 Pilgrims",
+    "emoji": "⏰",
+    "type": "activity"
+   },
+   {
+    "start": 480,
+    "end": 510,
+    "label": "Breakfast",
+    "emoji": "🍳",
+    "type": "activity"
+   },
+   {
+    "start": 510,
+    "end": 570,
+    "label": "Cabin time & campground cleanup",
+    "emoji": "🧹",
+    "type": "activity"
+   },
+   {
+    "start": 570,
+    "end": 600,
+    "label": "Meet in Tabernacle for send-off",
+    "emoji": "👋",
+    "type": "activity"
+   },
+   {
+    "start": 600,
+    "end": 1440,
+    "label": "Camp's over — see you next year!",
+    "emoji": "👋",
+    "type": "activity",
+    "noTime": true
+   }
+  ]
+ },
+ "SCHED_DAYS": [
+  {
+   "dow": 0,
+   "short": "Sun",
+   "full": "Sunday",
+   "tag": "Arrival day"
+  },
+  {
+   "dow": 1,
+   "short": "Mon",
+   "full": "Monday",
+   "tag": "Competition day 1"
+  },
+  {
+   "dow": 2,
+   "short": "Tue",
+   "full": "Tuesday",
+   "tag": "Competition day 2"
+  },
+  {
+   "dow": 3,
+   "short": "Wed",
+   "full": "Wednesday",
+   "tag": "Competition day 3"
+  },
+  {
+   "dow": 4,
+   "short": "Thu",
+   "full": "Thursday",
+   "tag": "Competition day 4"
+  },
+  {
+   "dow": 5,
+   "short": "Fri",
+   "full": "Friday",
+   "tag": "Messtival & Team Skits"
+  },
+  {
+   "dow": 6,
+   "short": "Sat",
+   "full": "Saturday",
+   "tag": "Send-off"
+  }
+ ],
+ "TEAM_EMOJI": {
+  "t0": "🦊",
+  "t1": "🦃",
+  "t2": "🍁",
+  "t3": "🎃",
+  "t4": "🦅",
+  "t5": "🚜"
+ },
+ "TEAM_SHIELD": {
+  "t0": "images/team-shields/ferocious-foxes.webp?v=5",
+  "t1": "images/team-shields/turkey-dinner.webp?v=5",
+  "t2": "images/team-shields/methodic-mediocre-maples.webp?v=5",
+  "t3": "images/team-shields/particularly-perilous-pumpkins.webp?v=5",
+  "t4": "images/team-shields/patriotic-pilgrims.webp?v=5",
+  "t5": "images/team-shields/runaway-john-deeres.webp?v=5"
+ },
+ "TEAM_ACCENT": {
+  "t0": "#e2672b",
+  "t1": "#9c6420",
+  "t2": "#c23b22",
+  "t3": "#e07d10",
+  "t4": "#345b96",
+  "t5": "#3a7d34"
+ },
+ "TEAM_ABBREV": {
+  "t0": "Foxes",
+  "t1": "Turkey",
+  "t2": "Maples",
+  "t3": "Pumpkins",
+  "t4": "Pilgrims",
+  "t5": "John Deersz"
+ },
+ "DEFAULT_TEAM_NAMES": [
+  "Ferocious Foxes",
+  "Turkey Dinner",
+  "Methodic Mediocre Maples",
+  "Particularly Perilous Pumpkins",
+  "Patriotic Pilgrims",
+  "Runaway John Deersz"
+ ],
+ "DEFAULT_COUNSELORS": [
+  "Alysa/Cam/Sam (B)",
+  "Bria/Lydia/Zac (A)",
+  "Jovi/Brody/Josh (A)",
+  "Sofie/William (B)",
+  "Abby/TJ/Ella (B)",
+  "Lily/Jacob (A)"
+ ],
+ "OLD_PLACEHOLDER_TEAM_NAMES": [
+  [
+   "Team 1"
+  ],
+  [
+   "Team 2"
+  ],
+  [
+   "Team 3"
+  ],
+  [
+   "Team 4",
+   "Portidatory Perilous Pumpkins"
+  ],
+  [
+   "Team 5"
+  ],
+  [
+   "Team 6",
+   "Runaway John Deere's"
+  ]
+ ],
+ "OLD_PLACEHOLDER_COUNSELORS": [
+  "Sarah",
+  "Mike",
+  "Emily",
+  "Josh",
+  "Rachel",
+  "Dave"
+ ],
+ "TEAM_COUNSELORS": {
+  "t0": [
+   "Alysa",
+   "Cam",
+   "Sam"
+  ],
+  "t1": [
+   "Bria",
+   "Lydia",
+   "Zac"
+  ],
+  "t2": [
+   "Jovi",
+   "Brody",
+   "Josh"
+  ],
+  "t3": [
+   "Sofie",
+   "William"
+  ],
+  "t4": [
+   "Abby",
+   "TJ",
+   "Ella"
+  ],
+  "t5": [
+   "Lilly",
+   "Jacob"
+  ]
+ },
+ "SEED_COUNSELORS": [
+  [
+   "t0",
+   [
+    "Alysa",
+    "Cam",
+    "Sam"
+   ]
+  ],
+  [
+   "t1",
+   [
+    "Bria",
+    "Lydia",
+    "Zac"
+   ]
+  ],
+  [
+   "t2",
+   [
+    "Jovi",
+    "Brody",
+    "Josh"
+   ]
+  ],
+  [
+   "t3",
+   [
+    "Sofia",
+    "William"
+   ]
+  ],
+  [
+   "t4",
+   [
+    "Abby",
+    "TJ",
+    "Ella"
+   ]
+  ],
+  [
+   "t5",
+   [
+    "Lily",
+    "Jacob"
+   ]
+  ]
+ ],
+ "ELECTIVES": {
+  "1": [
+   [
+    [
+     "Swimming",
+     [
+      "Bria",
+      "Abby"
+     ]
+    ],
+    [
+     "Nerf War",
+     [
+      "Zac",
+      "Cam"
+     ]
+    ],
+    [
+     "Crafts with Eileen",
+     [
+      "William",
+      "Jovi"
+     ]
+    ],
+    [
+     "Lawn Games",
+     [
+      "TJ",
+      "Patrick",
+      "Sam"
+     ]
+    ],
+    [
+     "Board Games",
+     [
+      "Brody",
+      "Lydia"
+     ]
+    ]
+   ],
+   [
+    [
+     "Swimming",
+     [
+      "Alysa",
+      "Brody"
+     ]
+    ],
+    [
+     "Crafts with Eileen",
+     [
+      "Bria",
+      "Lilly"
+     ]
+    ],
+    [
+     "Whiffle Ball",
+     [
+      "TJ",
+      "Cam"
+     ]
+    ],
+    [
+     "Board Games",
+     [
+      "Jovi",
+      "Josh",
+      "Patrick"
+     ]
+    ],
+    [
+     "Slime with Joann",
+     [
+      "Sofie",
+      "Abby"
+     ]
+    ],
+    [
+     "Laser Tag",
+     [
+      "Zac",
+      "William"
+     ]
+    ]
+   ],
+   [
+    [
+     "Swimming",
+     [
+      "Sam",
+      "TJ",
+      "Lilly"
+     ]
+    ],
+    [
+     "Slime with Joann",
+     [
+      "Lydia",
+      "Alysa"
+     ]
+    ],
+    [
+     "Crafts with Eileen",
+     [
+      "Ella",
+      "Stephen"
+     ]
+    ],
+    [
+     "Lawn Games",
+     [
+      "Josh",
+      "Sofie"
+     ]
+    ],
+    [
+     "Board Games",
+     [
+      "Patrick"
+     ]
+    ],
+    [
+     "Slip and Slide",
+     [
+      "Zac",
+      "Jacob"
+     ]
+    ]
+   ]
+  ],
+  "2": [
+   [
+    [
+     "Swimming",
+     [
+      "Ella",
+      "Lydia"
+     ]
+    ],
+    [
+     "Nerf War",
+     [
+      "William",
+      "Zac"
+     ]
+    ],
+    [
+     "Crafts with Eileen",
+     [
+      "Alysa",
+      "Josh"
+     ]
+    ],
+    [
+     "Lawn Games",
+     [
+      "Brody",
+      "Cam"
+     ]
+    ],
+    [
+     "Board Games",
+     [
+      "Bria",
+      "Jovi"
+     ]
+    ]
+   ],
+   [
+    [
+     "Swimming",
+     [
+      "Sam",
+      "Sofie"
+     ]
+    ],
+    [
+     "Crafts with Eileen",
+     [
+      "Lilly",
+      "Abby"
+     ]
+    ],
+    [
+     "Whiffle Ball",
+     [
+      "Jacob"
+     ]
+    ],
+    [
+     "Board Games",
+     [
+      "Ella",
+      "Stephen"
+     ]
+    ],
+    [
+     "Laser Tag",
+     [
+      "Zac",
+      "Patrick"
+     ]
+    ],
+    [
+     "Slime with Kimberly",
+     [
+      "TJ"
+     ]
+    ]
+   ],
+   [
+    [
+     "Swimming",
+     [
+      "William",
+      "Alysa",
+      "Lilly"
+     ]
+    ],
+    [
+     "Crafts with Eileen",
+     [
+      "Sofie",
+      "Lydia"
+     ]
+    ],
+    [
+     "Lawn Games",
+     [
+      "Josh",
+      "Stephen",
+      "Cam"
+     ]
+    ],
+    [
+     "Board Games",
+     [
+      "Patrick",
+      "TJ"
+     ]
+    ],
+    [
+     "Slip and Slide",
+     [
+      "Zac",
+      "Sam",
+      "Bria"
+     ]
+    ],
+    [
+     "Slime with Kimberly",
+     [
+      "Abby"
+     ]
+    ]
+   ]
+  ],
+  "3": [
+   [
+    [
+     "Swimming",
+     [
+      "Abby",
+      "Lilly"
+     ]
+    ],
+    [
+     "Nerf War",
+     [
+      "Zac",
+      "Brody",
+      "TJ"
+     ]
+    ],
+    [
+     "Crafts with Eileen",
+     [
+      "William",
+      "Sam"
+     ]
+    ],
+    [
+     "Lawn Games",
+     [
+      "Sofie",
+      "Bria"
+     ]
+    ],
+    [
+     "Board Games",
+     [
+      "Cam",
+      "Jovi"
+     ]
+    ]
+   ],
+   [
+    [
+     "Swimming",
+     [
+      "Ella",
+      "Bria"
+     ]
+    ],
+    [
+     "Crafts with Eileen",
+     [
+      "Lydia",
+      "Jovi"
+     ]
+    ],
+    [
+     "Whiffle Ball",
+     [
+      "Sofie",
+      "TJ"
+     ]
+    ],
+    [
+     "Board Games",
+     [
+      "Patrick",
+      "Josh",
+      "Sam"
+     ]
+    ],
+    [
+     "Slime with Joann",
+     [
+      "Brody",
+      "Stephen"
+     ]
+    ],
+    [
+     "Laser Tag",
+     [
+      "Zac",
+      "Jacob"
+     ]
+    ]
+   ],
+   [
+    [
+     "Swimming",
+     [
+      "William",
+      "Cam"
+     ]
+    ],
+    [
+     "Slime with Joann",
+     [
+      "Alysa",
+      "Ella"
+     ]
+    ],
+    [
+     "Crafts with Eileen",
+     [
+      "Lilly",
+      "Josh"
+     ]
+    ],
+    [
+     "Lawn Games",
+     [
+      "Patrick",
+      "Stephen"
+     ]
+    ],
+    [
+     "Board Games",
+     [
+      "TJ",
+      "Abby"
+     ]
+    ],
+    [
+     "Slip and Slide",
+     [
+      "Zac",
+      "Lydia",
+      "Jacob"
+     ]
+    ]
+   ]
+  ],
+  "4": [
+   [
+    [
+     "Swimming",
+     [
+      "Jovi",
+      "Bria",
+      "Cam"
+     ]
+    ],
+    [
+     "Nerf War",
+     [
+      "William",
+      "Zac",
+      "Lilly"
+     ]
+    ],
+    [
+     "Crafts with Eileen",
+     [
+      "Brody",
+      "Ella"
+     ]
+    ],
+    [
+     "Lawn Games",
+     [
+      "Patrick",
+      "Jacob"
+     ]
+    ],
+    [
+     "Board Games",
+     [
+      "Stephen",
+      "Alysa"
+     ]
+    ]
+   ],
+   [
+    [
+     "Swimming",
+     [
+      "Lilly",
+      "TJ"
+     ]
+    ],
+    [
+     "Crafts with Eileen",
+     [
+      "Abby",
+      "Jovi"
+     ]
+    ],
+    [
+     "Whiffle Ball",
+     [
+      "Cam",
+      "Sam",
+      "Bria"
+     ]
+    ],
+    [
+     "Board Games",
+     [
+      "Patrick",
+      "Stephen"
+     ]
+    ],
+    [
+     "Slime with Joann",
+     [
+      "Lydia",
+      "Sofie",
+      "William"
+     ]
+    ],
+    [
+     "Laser Tag",
+     [
+      "Zac",
+      "Brody"
+     ]
+    ]
+   ],
+   [
+    [
+     "Swimming",
+     [
+      "Alysa",
+      "Abby",
+      "Josh"
+     ]
+    ],
+    [
+     "Slime with Joann",
+     [
+      "Ella",
+      "Bria"
+     ]
+    ],
+    [
+     "Crafts with Eileen",
+     [
+      "Lydia"
+     ]
+    ],
+    [
+     "Lawn Games",
+     [
+      "Brody",
+      "Sam"
+     ]
+    ],
+    [
+     "Board Games",
+     [
+      "Sofie",
+      "TJ"
+     ]
+    ],
+    [
+     "Slip and Slide",
+     [
+      "Zac",
+      "Stephen"
+     ]
+    ]
+   ]
+  ],
+  "5": [
+   [
+    [
+     "Swimming",
+     [
+      "Brody",
+      "Ella",
+      "TJ"
+     ]
+    ],
+    [
+     "Nerf War",
+     [
+      "Zac",
+      "Cam",
+      "Sam"
+     ]
+    ],
+    [
+     "Crafts with Eileen",
+     [
+      "Patrick",
+      "Alysa",
+      "William"
+     ]
+    ],
+    [
+     "Lawn Games",
+     [
+      "Bria",
+      "Abby"
+     ]
+    ],
+    [
+     "Board Games",
+     [
+      "Lydia",
+      "Jovi"
+     ]
+    ]
+   ],
+   [
+    [
+     "Swimming",
+     [
+      "Sam",
+      "Ella"
+     ]
+    ],
+    [
+     "Crafts with Eileen",
+     [
+      "Lilly",
+      "Jacob"
+     ]
+    ],
+    [
+     "Whiffle Ball",
+     [
+      "Jovi",
+      "Cam",
+      "TJ"
+     ]
+    ],
+    [
+     "Board Games",
+     [
+      "Josh",
+      "Patrick"
+     ]
+    ],
+    [
+     "Slime with Joann",
+     [
+      "Brody",
+      "Stephen"
+     ]
+    ],
+    [
+     "Laser Tag",
+     [
+      "Zac",
+      "Bria"
+     ]
+    ]
+   ],
+   [
+    [
+     "Swimming",
+     [
+      "Cam",
+      "TJ",
+      "Lilly"
+     ]
+    ],
+    [
+     "Slime with Joann",
+     [
+      "Abby",
+      "Sofie"
+     ]
+    ],
+    [
+     "Crafts with Eileen",
+     [
+      "Lydia"
+     ]
+    ],
+    [
+     "Lawn Games",
+     [
+      "Josh",
+      "Sam"
+     ]
+    ],
+    [
+     "Board Games",
+     [
+      "Stephen"
+     ]
+    ],
+    [
+     "Slip and Slide",
+     [
+      "Zac",
+      "Alysa"
+     ]
+    ]
+   ]
+  ]
+ },
+ "STATION_EMOJI": {
+  "Swimming": "🏊",
+  "Nerf War": "🎯",
+  "Crafts with Eileen": "🎨",
+  "Lawn Games": "🥏",
+  "Board Games": "🎲",
+  "Whiffle Ball": "⚾",
+  "Slime with Joann": "🧪",
+  "Laser Tag": "⚡",
+  "Slip and Slide": "💦",
+  "Slime with Kimberly": "🧪"
+ },
+ "ELECTIVE_SLOT_MIN": [
+  795,
+  900,
+  960
+ ],
+ "MEALS": {
+  "0": {
+   "supper": {
+    "dish": "Shepherd's Pie",
+    "emoji": "🥧"
+   }
+  },
+  "1": {
+   "breakfast": {
+    "dish": "Eggs and Bacon",
+    "emoji": "🥓"
+   },
+   "lunch": {
+    "dish": "Wraps",
+    "emoji": "🌯"
+   },
+   "supper": {
+    "dish": "Mac and Cheese",
+    "emoji": "🧀"
+   }
+  },
+  "2": {
+   "breakfast": {
+    "dish": "Pancakes and Sausage",
+    "emoji": "🥞"
+   },
+   "lunch": {
+    "dish": "Tacos",
+    "emoji": "🌮"
+   },
+   "supper": {
+    "dish": "Chicken Nuggets and Smiley Fries",
+    "emoji": "🍗"
+   }
+  },
+  "3": {
+   "breakfast": {
+    "dish": "Egg Bake and Muffins",
+    "emoji": "🍳"
+   },
+   "lunch": {
+    "dish": "Hot Dogs",
+    "emoji": "🌭"
+   },
+   "supper": {
+    "dish": "Mystery Meat",
+    "emoji": "🍖"
+   }
+  },
+  "4": {
+   "breakfast": {
+    "dish": "French Toast",
+    "emoji": "🍞"
+   },
+   "lunch": {
+    "dish": "Sandwiches",
+    "emoji": "🥪"
+   },
+   "supper": {
+    "dish": "Pizza",
+    "emoji": "🍕"
+   }
+  },
+  "5": {
+   "breakfast": {
+    "dish": "Scrambled Eggs and English Muffins",
+    "emoji": "🍳"
+   },
+   "lunch": {
+    "dish": "Leftovers",
+    "emoji": "♻️"
+   },
+   "supper": {
+    "dish": "Cheesy Chicken and Rice",
+    "emoji": "🍗"
+   }
+  }
+ },
+ "MEAL_CLEANUP_SCHEDULE": {
+  "1": {
+   "Breakfast": "t5",
+   "Lunch": "t4",
+   "Supper": "t0"
+  },
+  "2": {
+   "Breakfast": "t2",
+   "Lunch": "t3",
+   "Supper": "t1"
+  },
+  "3": {
+   "Breakfast": "t0",
+   "Lunch": "t5",
+   "Supper": "t4"
+  },
+  "4": {
+   "Breakfast": "t1",
+   "Lunch": "t2",
+   "Supper": "t3"
+  },
+  "5": {
+   "Breakfast": [
+    "t3",
+    "t4"
+   ],
+   "Lunch": [
+    "t0",
+    "t1"
+   ],
+   "Supper": [
+    "t2",
+    "t5"
+   ]
+  }
+ },
+ "MEMORY_VERSE_THEME": {
+  "title": "Harvest of the Heart",
+  "text": "I have been crucified with Christ. It is no longer I who live, but Christ who lives in me. And the life I now live in the flesh I live by faith in the Son of God, who loved me and gave himself for me.",
+  "ref": "Galatians 2:20 ESV"
+ },
+ "MEMORY_VERSES": {
+  "1": {
+   "text": "For by grace you have been saved through faith. And this is not your own doing; it is the gift of God, not a result of works, so that no one may boast.",
+   "ref": "Ephesians 2:8–9 ESV"
+  },
+  "2": {
+   "text": "We were buried therefore with him by baptism into death, in order that, just as Christ was raised from the dead by the glory of the Father, we too might walk in newness of life.",
+   "ref": "Romans 6:4 ESV"
+  },
+  "3": {
+   "text": "There is therefore now no condemnation for those who are in Christ Jesus.",
+   "ref": "Romans 8:1 ESV"
+  },
+  "4": {
+   "text": "And I will give you a new heart, and a new spirit I will put within you. And I will remove the heart of stone from your flesh and give you a heart of flesh. And I will put my Spirit within you, and cause you to walk in my statutes and be careful to obey my rules.",
+   "ref": "Ezekiel 36:26–27 ESV",
+   "video": "https://youtu.be/yqA3NHjwY0I?is=-sOrEqnoEM3MmJwc"
+  },
+  "5": {
+   "text": "If we live by the Spirit, let us also keep in step with the Spirit.",
+   "ref": "Galatians 5:25 ESV",
+   "video": "https://youtu.be/u3I2IjLt32M?is=O4fSEQJXtrJUCiXn"
+  }
+ },
+ "defaultNotice": {
+  "status": "draft",
+  "eyebrow": "🧹 Campground cleanup · 8:30–9:30am",
+  "title": "Where your team cleans",
+  "sub": "Straight from breakfast to your team's area — no going up to the cabins yet. Finish by 9:30, then meet in the Tabernacle for send-off.",
+  "zones": [
+   {
+    "teamId": "t3",
+    "place": "Chapel Lawn",
+    "note": ""
+   },
+   {
+    "teamId": "t1",
+    "place": "Waterfront",
+    "note": ""
+   },
+   {
+    "teamId": "t0",
+    "place": "Linger a While",
+    "note": ""
+   },
+   {
+    "teamId": "t5",
+    "place": "Snack Shack",
+    "note": ""
+   },
+   {
+    "teamId": "t2",
+    "place": "Dining Hall",
+    "note": "breakfast cleanup"
+   },
+   {
+    "teamId": "t4",
+    "place": "Tabernacle",
+    "note": ""
+   }
+  ],
+  "steps": [
+   {
+    "emoji": "🚶",
+    "when": "Straight after breakfast",
+    "items": [
+     "Campers go straight to their team's area above — nobody goes up to the cabins yet."
+    ]
+   },
+   {
+    "emoji": "🗑️",
+    "when": "In your area",
+    "items": [
+     "All the trash goes — empty the cans and put a fresh bag in.",
+     "Put away the games and anything else we used this week.",
+     "Lost and found goes to the tables at the Snack Shack."
+    ]
+   },
+   {
+    "emoji": "⛪",
+    "when": "When your area is done",
+    "items": [
+     "Head to the Tabernacle and help finish up there."
+    ]
+   },
+   {
+    "emoji": "🛏️",
+    "when": "Cabins — once the Tabernacle is set",
+    "items": [
+     "Now campers can go up to pack.",
+     "Sweep the floors and clear out the trash before anything gets packed."
+    ]
+   },
+   {
+    "emoji": "🚿",
+    "when": "Once the campers have gone",
+    "items": [
+     "Clean the shower houses.",
+     "Walk the cabins one last time — nothing left behind."
+    ]
+   }
+  ],
+  "signoff": "Let's leave these grounds looking better than we found them!"
+ }
+}

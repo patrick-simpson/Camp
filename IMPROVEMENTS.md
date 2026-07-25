@@ -91,6 +91,23 @@ from the printed roster. See CLAUDE.md → "Counselors ↔ teams ↔ accounts".
 refused (the UI says so). Paste the updated ruleset in the console if that
 hasn't happened yet.
 
+### 1c. Senior camp (second camp in the same app) — Phase A SHIPPED (2026-07-25)
+The app now carries two camp profiles (`camps.js`): junior (unchanged,
+byte-identical paths/keys — pinned by tests) and senior (4 teams with flags,
+the published sample-day schedule, no electives, 5 seeded scored games per
+day incl. Legacy Game / Hot Seat / Let's Make a Deal). Accounts can be on
+either camp's member list or both; dual-camp accounts pick a camp every
+launch; a senior-only sign-in auto-bounces from the junior default. See
+CLAUDE.md → "Two camps, one app".
+
+**Still open (Phase B — console work with Patrick):** seed
+`seniorScoreboard/members/patricksimpson,fx@gmail,com` as editor via the
+console Data tab, THEN paste the combined ruleset (junior block unchanged +
+senior copy with the members path swapped); verify junior still locked and
+working first. **Phase C:** flag artwork + real accents, real Sun/Sat senior
+schedule, 4-team bracket (2 semis → 3rd-place match → final), senior
+meals/verses/cleanup rota data, TV page `?camp=senior`.
+
 ### 2. Service-worker caching for real offline use — decision-gated
 `sw.js` ships deliberately WITHOUT a fetch handler so it can never serve stale
 code (kill-switch documented in the file); it exists only so OS notifications

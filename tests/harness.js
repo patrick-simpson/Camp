@@ -20,7 +20,7 @@ const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..');
 // Load order mirrors the <script> tags at the bottom of index.html.
-const APP_FILES = ['defaults.js', 'app.js', 'settings.js'];
+const APP_FILES = ['defaults.js', 'camps.js', 'app.js', 'settings.js'];
 
 const noop = () => {};
 
@@ -50,8 +50,12 @@ function stubEl() {
   return el;
 }
 
-function makeContext() {
+function makeContext(opts) {
   const store = new Map();
+  // Camp selection happens at script-load time (camps.js reads localStorage
+  // before app.js runs), so a senior-context test seeds the key up front:
+  // makeContext({ camp: 'senior' }).
+  if (opts && opts.camp === 'senior') store.set('campScoreboardActiveCamp', 'senior');
   // Lookups return a memoized stub rather than null: the render functions are
   // written against a page where their container always exists, so handing back
   // an element (the same one each time, like the real DOM) lets tests call the
@@ -92,11 +96,26 @@ function makeContext() {
       key: (i) => [...store.keys()][i],
       get length() { return store.size; },
     },
-    location: { search: '', href: 'http://localhost/index.html', pathname: '/index.html', origin: 'http://localhost' },
+    location: {
+      search: '', href: 'http://localhost/index.html', pathname: '/index.html', origin: 'http://localhost',
+      // switchCamp / signOutAndClear end in a reload; tests count them.
+      reload: () => { sandbox.__reloads = (sandbox.__reloads || 0) + 1; },
+    },
     navigator: { userAgent: 'node', share: undefined, onLine: true },
     matchMedia: () => ({ matches: false, addEventListener: noop, addListener: noop, removeEventListener: noop }),
     innerWidth: 390, innerHeight: 844, devicePixelRatio: 2, scrollY: 0, scrollX: 0,
     crypto: require('crypto').webcrypto,
+    // Per-tab storage (the camp-switch loop guard lives here).
+    sessionStorage: (() => {
+      const ss = new Map();
+      return {
+        getItem: (k) => (ss.has(k) ? ss.get(k) : null),
+        setItem: (k, v) => ss.set(k, String(v)),
+        removeItem: (k) => ss.delete(k),
+        clear: () => ss.clear(),
+      };
+    })(),
+    indexedDB: { open: () => ({}), deleteDatabase: noop },
     setTimeout, clearTimeout,
     // Timers that would otherwise keep the process alive forever (the 30s
     // render loop, the 500ms clock ticker, the sync idle retry) are inert here;
@@ -117,6 +136,7 @@ function makeContext() {
     // Deliberately absent, so the app takes its no-sync / no-audio / no-notify
     // branches unless a test stubs them: firebase, AudioContext, Notification.
     __localStorageStore: store,
+    __reloads: 0,
   };
   sandbox.window = sandbox;
   sandbox.self = sandbox;

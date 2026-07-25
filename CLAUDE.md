@@ -13,6 +13,10 @@ Files:
 - `app.js` — main logic + the week schedule (`DAY_SCHEDULE`), ~6400 lines
 - `defaults.js` — the built-in default week: day list + full game catalog
   (`defaultConfig()`); live config then lives in synced state
+- `camps.js` — the TWO CAMP PROFILES (see "Two camps, one app" below):
+  junior + senior, each with its Firebase root, storage namespace, team
+  branding, printed daily schedule, and seed data. Loads between defaults.js
+  and app.js; app.js reads everything through the active `CAMP`
 - `settings.js` — the settings sheet + week-builder UI
 - `styles.css` — all styling (design tokens at the top, light + dark)
 - `firebase-config.js` — sync config (also used by Firebase Auth sign-in)
@@ -61,8 +65,8 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
 
 **Every time any code asset changes:**
 1. Bump the `?v=N` cache-busting query string in `index.html` — there are
-   EIGHT on the same number: `styles.css`, `vendor/jelly.js`,
-   `firebase-config.js`, `defaults.js`, `app.js`, `settings.js`,
+   NINE on the same number: `styles.css`, `vendor/jelly.js`,
+   `firebase-config.js`, `defaults.js`, `camps.js`, `app.js`, `settings.js`,
    `auth-phone.js`, `auth-email-link.js` — keep them in sync, all bumped
    together. Also bump
    `APP_VERSION` in `app.js` to the same number (it drives the auto-reload
@@ -177,6 +181,71 @@ The stub is deliberately minimal, and DOM lookups return a memoized stub element
 rather than null (closer to the real page, where a render function's container
 always exists). Tests assert on state and return values, never on markup —
 anything needing real layout belongs in the Playwright pass.
+
+## Two camps, one app (junior + senior)
+
+Since 2026-07-25 this codebase serves TWO camps: **junior** (the original)
+and **senior** (ages 13–18; 4 teams with flags, no electives, different
+daily schedule). Everything per-camp lives in a profile in `camps.js` —
+`CAMPS.junior` / `CAMPS.senior` — and `CAMP` is the active one, chosen
+per-device by `localStorage.campScoreboardActiveCamp` (junior is the
+default, so pre-camps devices behave identically).
+
+- **Junior is byte-identical to the single-camp app.** Its `dbRoot` is the
+  original `campScoreboard` literal and its `storageSuffix` is `''`, so
+  every Firebase path and localStorage key is exactly what it always was —
+  `tests/camps.test.js` pins this, plus a deep-equal of the whole junior
+  week data against `tests/fixtures-junior-week.json` (dumped before the
+  move). Senior lives under the SIBLING root `seniorScoreboard/*` with
+  `':senior'`-suffixed storage keys and its own members list.
+- **Every Firebase path goes through `dbPath(sub)`** and every per-camp
+  storage key through `lsKey(base)` (both in camps.js). Never write a
+  `'campScoreboard/…'` literal again.
+- **Membership is per-camp**: `campScoreboard/members` and
+  `seniorScoreboard/members` are separate lists; being on both = access to
+  both, and roles can differ per camp. The active camp's member self-read
+  is the ONLY `.on()` attach; the other camp gets a one-shot `once()` probe
+  after approval (a refused `once()` is harmless), recorded in
+  `localStorage.campScoreboardCampsHint` (`{junior:'editor',
+  senior:'viewer'}`).
+- **Switching camps is ALWAYS set-key-then-reload** (`switchCamp()`), never
+  re-pointing refs in place — the listener lifecycle is one-shot (a
+  cancelled read is terminal). Dual-camp accounts get the camp picker
+  **every launch** (owner's explicit choice; `maybeShowCampPicker`), except
+  the reload a switch itself causes (`campScoreboardJustChose`,
+  session-scoped). The camp question outranks the team picker — the team
+  question is held while the camp dialog is open and re-asked on its close.
+  Mid-session switching: the Settings "Switch camp" row + the footer camp
+  chip (both only when `campScoreboardCampsHint` shows both camps).
+- **Denied in the active camp → probe the other one** (`denyMember`): a
+  senior-only counselor whose first sign-in lands on the junior default
+  gets auto-bounced to senior (one-shot per tab via
+  `sessionStorage.campSwitchTried`, so denied-in-both can never loop).
+- **Feature flags**: `CAMP.features.electives` is the only one — senior
+  turns the electives card, the identity ("which one are you?") picker
+  step, and the follow-card identity line off. Verse, cleanup, and the
+  meals menu stay ON for senior with placeholder/empty data (empty rota
+  ⇒ TBA; empty meals ⇒ plain labels; placeholder verses).
+- **Senior seed data is placeholders**: Red/Blue/Green/Gold teams (t0..t3 —
+  same id scheme, disambiguated by root+namespace), the published sample
+  day as the Mon–Fri schedule, and 5 seeded placement games per day (two
+  Team Competitions, Legacy Game, Hot Seat, Let's Make a Deal — all scored,
+  owner's call). `seniorDefaultConfig()` uses `version: 5` ON PURPOSE: the
+  junior one-shot migrations in `migrateState` are gated on `version < 5`
+  and must never fire against senior data.
+- **The 6-team bracket wizard refuses senior's 4 teams** (existing
+  `renderTournament` guard) — a 4-team bracket (2 semis → 3rd-place match →
+  final) is planned; until then senior uses placement/tally formats.
+- **Tests**: a file named `*.senior.test.js` runs against the senior
+  profile (the runner seeds the camp key before scripts load —
+  `makeContext({camp:'senior'})`). `week.senior.test.js` re-runs the
+  structural checks + the every-minute banner fuzz as senior.
+- **Rules**: `seniorScoreboard/*` needs its own copy of the ruleset (the
+  junior block with the members-lookup path swapped) — until that's pasted
+  in the console, everything senior is simply denied (deny-by-default), so
+  the code can ship first. The senior owner record must be seeded via the
+  console Data tab BEFORE the rules paste. `current-standings.html` is
+  junior-only until it grows a `?camp=` switch (planned).
 
 ## Auth, members & roles (the security boundary)
 

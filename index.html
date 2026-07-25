@@ -19,8 +19,8 @@
   <!-- Jelly UI web components (vendored, see vendor/jelly.js header). Module
        scripts are deferred by spec, so this never blocks first paint and the
        classic scripts at the end of <body> always execute before it. -->
-  <script type="module" src="vendor/jelly.js?v=167"></script>
-  <link rel="stylesheet" href="styles.css?v=167">
+  <script type="module" src="vendor/jelly.js?v=168"></script>
+  <link rel="stylesheet" href="styles.css?v=168">
 
   <script>
     // Decide lock state before the page paints so we never flash the app,
@@ -275,6 +275,12 @@
         <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🔑</span> <span id="account-label"></span></span>
         <jelly-button id="signout-btn" size="small" variant="platinum">Sign out</jelly-button>
       </div>
+      <!-- Accounts on BOTH camps' lists get a switcher (hidden otherwise —
+           see updateAccountRow). Switching is set-key-then-reload. -->
+      <button id="camp-row" class="settings-link" type="button" hidden>
+        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">⛺</span> <span id="camp-row-label">Switch camp</span></span>
+        <span class="settings-link-chevron" aria-hidden="true">›</span>
+      </button>
       <!-- Editors only (hidden for view-only via CSS): the week builder. -->
       <button id="builder-row" class="settings-link" type="button">
         <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🛠️</span> Set up the week</span>
@@ -322,6 +328,16 @@
     <div id="team-picker-options" class="team-picker-options"></div>
   </jelly-dialog>
 
+  <!-- ── CAMP PICKER (accounts with junior AND senior access) ─────── -->
+  <!-- Shown once per launch for dual-camp accounts (Patrick's call: ask
+       every time, no remembered default). Picking the other camp reloads
+       into it; dismissing stays put. Rendered by openCampPicker (app.js). -->
+  <jelly-dialog id="camp-picker-overlay" label="Pick a camp">
+    <h2 class="team-picker-title">⛺ Which camp are you here for?</h2>
+    <p class="muted team-picker-hint">Your account works at both camps. Each keeps its own teams, games, and scores.</p>
+    <div id="camp-picker-options" class="team-picker-options"></div>
+  </jelly-dialog>
+
   <!-- ── TOASTS (point-change / matchup alerts) ──────────────────── -->
   <!-- Jelly toast rail (bottom). The legacy container below stays as the
        showToast() fallback for when the module hasn't loaded. -->
@@ -333,14 +349,18 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=167"></script>
-  <script src="defaults.js?v=167"></script>
-  <script src="app.js?v=167"></script>
-  <script src="settings.js?v=167"></script>
+  <script src="firebase-config.js?v=168"></script>
+  <script src="defaults.js?v=168"></script>
+  <!-- Camp profiles: which camp this device runs (junior default), its
+       Firebase root, storage namespace, schedule, and seed data. Must load
+       between defaults.js (junior's game catalog) and app.js (the consumer). -->
+  <script src="camps.js?v=168"></script>
+  <script src="app.js?v=168"></script>
+  <script src="settings.js?v=168"></script>
   <!-- Optional alternative sign-in methods. Delete a tag to remove that
        method (app.js only touches them through window.CampPhone /
        window.CampEmailLink); the Google button always remains. -->
-  <script src="auth-phone.js?v=167"></script>
-  <script src="auth-email-link.js?v=167"></script>
+  <script src="auth-phone.js?v=168"></script>
+  <script src="auth-email-link.js?v=168"></script>
 </body>
 </html>
