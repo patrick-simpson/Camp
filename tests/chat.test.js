@@ -161,9 +161,14 @@ test('signing out wipes the chat seen map along with everything else', () => {
 // ── The alert routing (no firebase needed — pure decisions) ────────
 
 test('chatPreviewOf shows text or the photo placeholder', () => {
+  memberDirectory = { 'p@x,com': { role: 'viewer', name: 'Pat' } };
+  memberDirectoryLoaded = true;
   assert.equal(chatPreviewOf({ name: 'Pat', text: 'hello', byKey: 'p@x,com' }), 'Pat: hello');
   assert.equal(chatPreviewOf({ name: 'Pat', text: '', byKey: 'p@x,com' }), 'Pat: 📷 Photo');
+  memberDirectory = { 'p@x,com': { role: 'viewer' } };
   assert.ok(chatPreviewOf({ name: '', text: 'hi', byKey: 'p@x,com' }).includes('p@x.com'), 'no name → identity');
+  memberDirectory = null;
+  memberDirectoryLoaded = false;
 });
 
 test('chat is not gated on canEdit — viewers can open it', () => {
@@ -285,6 +290,7 @@ test('a spoofed name on a message loses to the directory record', () => {
     'mallory@x,com': { role: 'viewer', name: 'Mallory' },
     'patricksimpson,fx@gmail,com': { role: 'editor', name: 'Patrick' },
   };
+  memberDirectoryLoaded = true;
   const spoof = normalizeChatMsg('s1', {
     at: 1000, byKey: 'mallory@x,com', name: 'Patrick', text: 'everyone to the lake now',
   });
@@ -297,6 +303,7 @@ test('a spoofed name on a message loses to the directory record', () => {
 
 test('a current member with no name on file shows as their identity, not a claim', () => {
   memberDirectory = { 'nameless@x,com': { role: 'viewer' } };
+  memberDirectoryLoaded = true;
   const msg = normalizeChatMsg('s2', { at: 1000, byKey: 'nameless@x,com', name: 'Patrick', text: 'hi' });
   assert.equal(chatAuthorName(msg), identityFromKey('nameless@x,com'));
   memberDirectory = null;
@@ -304,14 +311,102 @@ test('a current member with no name on file shows as their identity, not a claim
 
 test('a departed member keeps the name stored on their old messages', () => {
   memberDirectory = { 'still,here@x,com': { role: 'viewer', name: 'Here' } };
+  memberDirectoryLoaded = true;
   const old = normalizeChatMsg('s3', { at: 1000, byKey: 'gone@x,com', name: 'Jordan', text: 'bye' });
   assert.equal(chatAuthorName(old), 'Jordan', 'history stays readable instead of printing a raw email');
   memberDirectory = null;
+  memberDirectoryLoaded = false;
 });
 
-test('with no directory at all, the stored name is the fallback, then the key', () => {
+// The departed-member fallback is the one route left back to the claimed name,
+// so it must not be usable to impersonate somebody still on the list.
+test('a departed member cannot inherit the name of a current member', () => {
+  memberDirectory = { 'patricksimpson,fx@gmail,com': { role: 'editor', name: 'Patrick' } };
+  memberDirectoryLoaded = true;
+  const planted = normalizeChatMsg('s6', { at: 1, byKey: 'gone@x,com', name: 'patrick', text: 'trust me' });
+  assert.equal(chatAuthorName(planted), identityFromKey('gone@x,com'),
+    'a name still in use never activates retroactively, case-insensitively');
   memberDirectory = null;
-  assert.equal(chatAuthorName(normalizeChatMsg('s4', { at: 1, byKey: 'a@x,com', name: 'Amy', text: 'x' })), 'Amy');
+  memberDirectoryLoaded = false;
+});
+
+// Fail CLOSED: with no directory we cannot tell a real name from a claimed
+// one, so we show the identity the rules validated instead of trusting either.
+test('a directory that never loaded falls back to the validated identity, not the claim', () => {
+  memberDirectory = null;
+  memberDirectoryLoaded = false;
+  assert.equal(chatAuthorName(normalizeChatMsg('s4', { at: 1, byKey: 'a@x,com', name: 'Amy', text: 'x' })),
+    identityFromKey('a@x,com'), 'a read error must not restore spoofing app-wide');
   assert.equal(chatAuthorName(normalizeChatMsg('s5', { at: 1, byKey: 'a@x,com', text: 'x' })), identityFromKey('a@x,com'));
   assert.equal(chatAuthorName(null), 'Someone');
+});
+
+test('inherited Object properties are not member records', () => {
+  memberDirectory = { 'patricksimpson,fx@gmail,com': { role: 'editor', name: 'Patrick' } };
+  memberDirectoryLoaded = true;
+  ['constructor', '__proto__', 'toString', 'hasOwnProperty'].forEach((k) => {
+    const msg = normalizeChatMsg('p1', { at: 1, byKey: k, name: 'Patrick', text: 'x' });
+    assert.ok(chatAuthorName(msg) !== 'Patrick', k + ' must not read as a member');
+  });
+  memberDirectory = null;
+  memberDirectoryLoaded = false;
+});
+
+// An <img src> is the one place a database string becomes an outbound request.
+test('only inline data: images render — an external URL is dropped', () => {
+  const beacon = normalizeChatMsg('b1', {
+    at: 1, byKey: 'm@x,com', name: 'M', thumb: 'https://attacker.example/beacon.gif', photoId: 'abc123',
+  });
+  assert.equal(beacon.thumb, '', 'an off-scheme thumb never survives normalization');
+  assert.notOk(chatBubbleHTML('photos', beacon).includes('attacker.example'), 'and never reaches the DOM');
+  ['javascript:alert(1)', 'data:text/html,<script>x</script>', '//attacker.example/x.gif', 'DATA:image/jpeg;base64,x'].forEach((bad) => {
+    assert.equal(normalizeChatMsg('b', { at: 1, byKey: 'm@x,com', thumb: bad, text: 'x' }).thumb.startsWith('data:image/'), false, bad);
+  });
+  const ok = 'data:image/jpeg;base64,/9j/4AAQ';
+  assert.equal(normalizeChatMsg('b2', { at: 1, byKey: 'm@x,com', thumb: ok }).thumb, ok, 'real thumbnails still render');
+});
+
+// photoId is concatenated into a database path.
+test('a photoId that could reshape a database path is dropped', () => {
+  ['../members', 'a/b', 'a.b', 'a#b', 'a$b', 'a[b', 'x'.repeat(65), ''].forEach((bad) => {
+    assert.equal(normalizeChatMsg('p', { at: 1, byKey: 'm@x,com', text: 'x', photoId: bad }).photoId, '', JSON.stringify(bad));
+  });
+  assert.equal(normalizeChatMsg('p', { at: 1, byKey: 'm@x,com', text: 'x', photoId: '-Nx_9aB3' }).photoId, '-Nx_9aB3',
+    'real push ids still work');
+});
+
+// ── Timestamps: the app-freeze guard ───────────────────────────────
+// chatAnnouncementBanners does `new Date(at).toISOString()`, which THROWS
+// RangeError past the Date range — and it runs inside renderAnnouncements →
+// renderAll. One announcements message with a wild `at` would take the whole
+// app down on every device, with no working UI left to delete it from.
+
+test('an out-of-range timestamp is clamped, not passed to Date', () => {
+  [1e308, Number.MAX_VALUE, 8.64e15 + 1, Infinity].forEach((bad) => {
+    const m = normalizeChatMsg('t1', { at: bad, byKey: 'm@x,com', text: 'boom' });
+    assert.ok(Number.isFinite(m.at), `${bad} → finite`);
+    let threw = false;
+    try { new Date(m.at).toISOString(); } catch (e) { threw = true; }
+    assert.notOk(threw, `${bad} must survive the ISO conversion that renderAll performs`);
+  });
+  [NaN, -1, 'soon', null, undefined, {}].forEach((junk) => {
+    assert.equal(normalizeChatMsg('t2', { at: junk, byKey: 'm@x,com', text: 'x' }).at, 0, JSON.stringify(junk));
+  });
+});
+
+test('renderAll survives a poisoned announcement instead of dying', () => {
+  chatMsgs.announcements = [normalizeChatMsg('poison', {
+    at: 1e308, byKey: 'm@x,com', name: 'M', text: 'freeze the app',
+  })];
+  let threw = null;
+  try { chatAnnouncementBanners(); } catch (e) { threw = e; }
+  assert.equal(threw, null, 'the banner builder must not throw — renderAll has no catch');
+  chatMsgs.announcements = [];
+});
+
+test('a far-future timestamp cannot pin itself to the banner strip forever', () => {
+  const future = serverNow() + 365 * 24 * 60 * 60 * 1000;
+  const m = normalizeChatMsg('f1', { at: future, byKey: 'm@x,com', text: 'sticky' });
+  assert.ok(m.at <= serverNow() + 6 * 60 * 1000,
+    'clamped to about now, so it ages out of the 15-minute window like everything else');
 });

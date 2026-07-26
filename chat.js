@@ -33,6 +33,12 @@ const CHAT_PHOTO_MAX = 400000;  // chars of full-size photo data URL (~300KB)
 const CHAT_SEEN_KEY = 'campScoreboardChatSeen'; // per-camp via lsKey()
 const CHAT_SUBS_KEY = 'campScoreboardChatSubs'; // per-camp via lsKey(); {ch: bool}
 const CHAT_BANNER_MS = 15 * 60 * 1000; // announcements-channel messages ride the top banner this long
+// Smallest gap between two sends from this device. Stops a double-tap posting
+// twice and stops a stuck key flooding a channel. NOT a security control — it
+// lives on the client, so it bounds accidents, not a determined member (see
+// the rules-side rate limit noted in CLAUDE.md).
+const CHAT_MIN_SEND_MS = 700;
+let chatLastSendAt = 0;
 
 let chatMsgs = {};        // channelId -> [{id, at, byKey, name, text, thumb, photoId}] sorted by at
 let chatReady = {};       // channelId -> true once the initial backlog has fully arrived
@@ -55,13 +61,44 @@ function normalizeChatMsg(id, raw) {
   const r = raw && typeof raw === 'object' ? raw : {};
   return {
     id: String(id || ''),
-    at: Number(r.at) || 0,
+    at: chatSafeAt(r.at),
     byKey: typeof r.byKey === 'string' ? r.byKey : '',
     name: typeof r.name === 'string' ? r.name : '',
     text: typeof r.text === 'string' ? r.text : '',
-    thumb: typeof r.thumb === 'string' ? r.thumb : '',
-    photoId: typeof r.photoId === 'string' ? r.photoId : '',
+    thumb: chatSafeImageSrc(r.thumb),
+    photoId: chatSafePhotoId(r.photoId),
   };
+}
+
+// A message timestamp, clamped to something a Date can hold and a camp can
+// believe. This is load-bearing: chatAnnouncementBanners does
+// `new Date(at).toISOString()`, which THROWS RangeError past year 275760, and
+// it runs inside renderAnnouncements → renderAll. One announcements message
+// carrying a wild `at` would therefore take the whole app down on every
+// device, with no way to delete it from a UI that can no longer render. The
+// rules cap the type but not the range, so the clamp lives here too.
+// Clamping the future also stops such a message pinning itself to the banner
+// strip and the unread badge forever.
+function chatSafeAt(v) {
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  const now = (typeof serverNow === 'function' ? serverNow() : Date.now());
+  return Math.min(n, now + 5 * 60 * 1000); // small allowance for clock skew
+}
+
+// An image field only ever renders if it's an inline data: image. Our sender
+// only produces those and the rules validate the prefix, but this is the
+// choke point that matters: an off-scheme URL in an <img src> would silently
+// report every viewer's IP, User-Agent and read-time to whoever wrote it. Two
+// independent layers, because the rules aren't versioned in this repo.
+function chatSafeImageSrc(val) {
+  return (typeof val === 'string' && /^data:image\/(jpeg|png|gif|webp);base64,/i.test(val)) ? val : '';
+}
+
+// photoId is concatenated into a database path. Push ids are [A-Za-z0-9_-];
+// anything else could reshape the path or throw on RTDB's illegal key chars.
+function chatSafePhotoId(val) {
+  return (typeof val === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(val)) ? val : '';
 }
 
 // ── Sync (called from initSync, after membership confirmed) ───────
@@ -124,6 +161,13 @@ function onChatMsgRemoved(ch, snap) {
 }
 
 // ── Sending ───────────────────────────────────────────────────────
+function chatSendAllowed() {
+  const now = Date.now(); // device clock is right for a device-local gap
+  if (now - chatLastSendAt < CHAT_MIN_SEND_MS) return false;
+  chatLastSendAt = now;
+  return true;
+}
+
 function chatDisplayName() {
   return memberName || state.identity || identityLabel(authUser) || 'Someone';
 }
@@ -146,11 +190,42 @@ function onMemberDirectoryChanged() {
   if (chatOpenNow()) renderChatView(true);
 }
 
+function chatDirectoryRecord(key) {
+  // hasOwnProperty, not a bare lookup: a byKey of 'constructor' or '__proto__'
+  // would otherwise return an inherited object and read as a real member.
+  if (!memberDirectoryLoaded || !memberDirectory || !key) return null;
+  if (!Object.prototype.hasOwnProperty.call(memberDirectory, key)) return null;
+  const rec = memberDirectory[key];
+  return rec && typeof rec === 'object' ? rec : null;
+}
+
+// Is this name already taken by someone still on the list? Guards the one
+// remaining route back to the claimed name (below).
+function chatNameIsInDirectory(name) {
+  const want = String(name).trim().toLowerCase();
+  if (!want || !memberDirectory) return false;
+  return Object.keys(memberDirectory).some((k) => {
+    const rec = memberDirectory[k];
+    return rec && typeof rec.name === 'string' && rec.name.trim().toLowerCase() === want;
+  });
+}
+
 function chatAuthorName(msg) {
   if (!msg) return 'Someone';
-  const rec = (memberDirectory && msg.byKey) ? memberDirectory[msg.byKey] : null;
-  if (rec) return (typeof rec.name === 'string' && rec.name.trim()) || identityFromKey(msg.byKey) || 'Someone';
-  return msg.name || identityFromKey(msg.byKey) || 'Someone';
+  const key = msg.byKey || '';
+  const rec = chatDirectoryRecord(key);
+  if (rec) return (typeof rec.name === 'string' && rec.name.trim()) || identityFromKey(key) || 'Someone';
+  // No directory at all (still loading, or the read failed): fail CLOSED.
+  // Trusting `name` here would restore spoofing for the whole session, so
+  // show the identity the rules DID validate instead.
+  if (!memberDirectoryLoaded || !memberDirectory) return identityFromKey(key) || 'Someone';
+  // Directory loaded, key absent ⇒ this person has LEFT the member list. Their
+  // stored name keeps history readable instead of printing a raw email — but
+  // only if it isn't the name of someone still here, which would let a member
+  // plant messages as "Patrick" now and have them go live once they're removed.
+  const claim = String(msg.name || '').trim();
+  if (claim && !chatNameIsInDirectory(claim)) return claim;
+  return identityFromKey(key) || 'Someone';
 }
 
 function sendChatMessage(ch) {
@@ -159,6 +234,7 @@ function sendChatMessage(ch) {
   if (!text) return;
   const myKey = identityKey(authUser);
   if (!myKey || typeof firebase === 'undefined') { showToast("Couldn't send — you're not signed in."); return; }
+  if (!chatSendAllowed()) return; // a double-tap shouldn't post twice
   const msg = {
     at: firebase.database.ServerValue.TIMESTAMP,
     byKey: myKey,
@@ -178,6 +254,7 @@ function sendChatMessage(ch) {
 function sendChatPhoto(ch, file) {
   const myKey = identityKey(authUser);
   if (!file || !myKey || typeof firebase === 'undefined') return;
+  if (!chatSendAllowed()) return;
   const btn = document.getElementById('chat-photo-btn');
   if (btn) btn.setAttribute('disabled', '');
   makeChatImages(file)
@@ -248,11 +325,23 @@ function clearChatChannel(ch) {
   if (!confirm(`Clear ALL messages in ${c ? c.label : ch}? This is for cleaning up after camp.`)) return;
   if (!confirm('Really clear the whole channel for everyone? This cannot be undone.')) return;
   firebase.database().ref(dbPath('chat/' + ch)).remove()
-    .then(() => firebase.database().ref(dbPath('chatPhotos')).orderByChild('ch').equalTo(ch).once('value'))
-    .then((snap) => {
-      const updates = {};
-      Object.keys(snap.val() || {}).forEach((id) => { updates[id] = null; });
-      if (Object.keys(updates).length) return firebase.database().ref(dbPath('chatPhotos')).update(updates);
+    // Collect the photo keys a page at a time. An RTDB query returns whole
+    // child nodes, and each of these carries a ~300KB image — clearing a busy
+    // Photo Dump in one query would download tens of megabytes just to read
+    // the keys off it. shallow() isn't available in the JS SDK, so page
+    // instead: 200 keys per round trip until a page comes back short.
+    .then(() => {
+      const removeBatch = () => firebase.database().ref(dbPath('chatPhotos'))
+        .orderByChild('ch').equalTo(ch).limitToFirst(200).once('value')
+        .then((snap) => {
+          const updates = {};
+          let n = 0;
+          snap.forEach((child) => { updates[child.key] = null; n++; });
+          if (!n) return null;
+          return firebase.database().ref(dbPath('chatPhotos')).update(updates)
+            .then(() => (n === 200 ? removeBatch() : null)); // a short page is the last one
+        });
+      return removeBatch();
     })
     .then(() => { chatMsgs[ch] = []; showToast('Channel cleared', { mine: true }); renderChatView(true); renderChatCard(); })
     .catch(() => showToast("Couldn't clear the channel — are you still an editor?"));
@@ -779,7 +868,7 @@ function appendChatBubble(ch, msg) {
 // ── Photo lightbox (tap a thumbnail → fetch the full image once) ──
 function openChatLightbox(photoId) {
   const box = document.getElementById('chat-lightbox');
-  if (!box || !photoId) return;
+  if (!box || !chatSafePhotoId(photoId)) return; // never build a path from an unvetted id
   box.innerHTML = '<div class="chat-lightbox-spinner">📷 Loading…</div>';
   box.hidden = false;
   const close = () => { box.hidden = true; box.innerHTML = ''; document.removeEventListener('keydown', onKey); };
@@ -790,8 +879,9 @@ function openChatLightbox(photoId) {
     .then((snap) => {
       const rec = snap.val();
       if (box.hidden) return; // closed while loading
-      if (rec && typeof rec.data === 'string') {
-        box.innerHTML = `<img class="chat-lightbox-img" src="${esc(rec.data)}" alt="Full-size photo">`;
+      const src = chatSafeImageSrc(rec && rec.data); // same data:-only guard as the thumbs
+      if (src) {
+        box.innerHTML = `<img class="chat-lightbox-img" src="${esc(src)}" alt="Full-size photo">`;
       } else {
         box.innerHTML = '<div class="chat-lightbox-spinner">This photo is gone.</div>';
       }

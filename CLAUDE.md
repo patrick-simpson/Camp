@@ -87,6 +87,16 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
    that file changes.
 3. Run `node tests/run.js`, then `node --check` every changed JS file,
    before committing (see "Tests" below).
+   **If you touched `database.rules.json`, it is not live until it is pasted
+   into the Firebase console** — the tests only check the file.
+   **If you bump the Firebase SDK version**, the three `<script>` tags in
+   `index.html` and `current-standings.html` carry `integrity="sha384-…"`
+   hashes pinned to `10.12.0`. New version ⇒ recompute them, or the SDK is
+   blocked and the app dies at "Checking sign-in…":
+   `curl -s <url> | openssl dgst -sha384 -binary | openssl base64 -A`.
+   **If you add an external host** (a new API, a font, an image CDN), add it
+   to the `Content-Security-Policy` meta tag in `index.html` too, or the
+   browser silently blocks the request.
 4. **Do NOT add "What's new" banner entries.** The banners are discontinued
    (owner's call, 2026-07-21): the `CHANGES` array at the top of `app.js` is
    kept EMPTY and must stay that way — do not append entries for user-visible
@@ -309,6 +319,28 @@ so nobody can post as someone else).
   on rename, so app.js's members listener calls `onMemberDirectoryChanged()`
   to rebuild the bubbles. The stored `name` is deliberately still written —
   it's the departed-member fallback, not the display source.
+  `chatAuthorName` fails CLOSED: `memberDirectoryLoaded` (app.js) distinguishes
+  "no directory yet / read failed" from "loaded", and with no directory it
+  shows the rules-validated identity rather than the claim — otherwise a read
+  error would restore spoofing app-wide. The departed-member fallback also
+  refuses a name that belongs to somebody still on the list, so a member can't
+  plant messages as "Patrick" now and have them activate once they're removed.
+- **Three fields are laundered on the way in** (`normalizeChatMsg`), because
+  the rules are not versioned with the code and a regression there must not
+  reach the DOM:
+  - `chatSafeImageSrc` — `thumb` and the lightbox's `chatPhotos.data` render
+    ONLY if they are inline `data:image/…` URLs. An `<img src>` is the one
+    place a database string becomes an outbound request, so an external URL
+    here is a tracking beacon that fires for every viewer of a channel.
+  - `chatSafeAt` — clamps the timestamp. **This one is load-bearing**:
+    `chatAnnouncementBanners` calls `new Date(at).toISOString()`, which THROWS
+    on an out-of-range number, and it runs inside `renderAnnouncements` →
+    `renderAll`. One announcements message with a wild `at` would take the
+    whole app down on every device, with no working UI left to delete it from.
+    Clamping the future also stops such a message pinning itself to the banner
+    strip and the unread badge forever.
+  - `chatSafePhotoId` — push-id charset only; the id is concatenated into a
+    database path.
 - **Photos are split**: a ~320px thumbnail rides in the message; the
   ~1280px full image lives in `chatPhotos` and is fetched by `once()` only
   when tapped (lightbox). This is the bandwidth design — every page load
@@ -428,13 +460,37 @@ rules**; the client code only shapes the UI.
   The owner key `patricksimpson,fx@gmail,com` is seeded editor and immutable
   from clients — the console Data tab is the only way to change it, and the
   permanent break-glass path.
-- **Rules live in the Firebase console**, not this repo (there's no deploy
-  pipeline for them). The current ruleset + a click-by-click console runbook
-  are in the plan that shipped this change; the shape is: per-child gates
-  (rules cascade — nothing granted at the `campScoreboard` root), reads need
-  membership, writes need `role === 'editor'`, `email_verified` required,
-  changelog append-only + editor-read, presence per-child member-writable,
-  `roster`/`contacts` pre-gated for future PII, owner key immutable.
+- **The rules live in `database.rules.json` at the repo root** (added
+  2026-07-26). The **console is still what enforces them** — there is no deploy
+  pipeline — but the repo file is the reviewed, diffable source of truth.
+  **Any console paste MUST be mirrored into that file in the same commit, and
+  vice versa**, or the two silently drift. `tests/rules.test.js` pins the
+  invariants (deny-all root, no cross-camp member lookups, `email_verified`
+  everywhere, the `emailKey` transform matching the client, owner-key
+  immutability in both roots, chat `byKey` bound to the sender, the four
+  channel ids matching `CHAT_CHANNELS`, image fields pinned to `data:` URLs,
+  `$other: false` on every named-child record, bounded timestamps). Those tests
+  prove the FILE is coherent — they cannot see the console, so after every
+  paste re-run the unauthenticated probes in the runbook.
+  The shape is: per-child gates (rules cascade — nothing granted at the
+  `campScoreboard` root), reads need membership, writes need
+  `role === 'editor'`, `email_verified` required, changelog append-only +
+  editor-read, presence per-child member-writable, `roster`/`contacts`
+  pre-gated for future PII, owner key immutable.
+- **Known gap, deliberately not closed: no server-side rate limit.** Any
+  member can write unlimited chat messages, photos and presence rows; the rules
+  cap each write's SIZE but not the NUMBER. A member who wanted to could burn
+  the free tier. Closing it needs a per-writer `lastPost` node written in the
+  same multi-path `update()` as the message, plus a rules clause reading it —
+  a coordinated client+rules change with real lockout risk on a hand-pasted
+  ruleset. The interim is `CHAT_MIN_SEND_MS` in chat.js, which bounds accidents
+  (double-taps, stuck keys) and nothing else. Members are a few dozen known,
+  named, removable people; removal + 🧹 clear-channel is the actual remedy.
+- **Also deliberate: every member can read the whole `members` list** — names,
+  emails, phone numbers, roles, in both camps. `counselorName`, the mention
+  targets and the Members drawer all need it. Splitting it (a member-readable
+  `directory` of `{name, teamId}` beside an editor-only `members`) is the fix
+  if that ever stops being acceptable.
 - **The test seam**: `setMemberRole('editor'|'viewer'|null)` sets the role and
   `setMemberTeam('t2'|null)` the team, both with no Firebase — that's how
   `tests/*.test.js` drive editor-only and own-team paths (never by writing a

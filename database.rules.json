@@ -1,0 +1,298 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+    "campScoreboard": {
+      "state": {
+        ".read": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).exists()))",
+        ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor'))"
+      },
+      "config": {
+        ".read": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).exists()))",
+        ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor'))"
+      },
+      "changelog": {
+        ".read": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor'))",
+        "$entryId": {
+          ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor')) && !data.exists() && newData.exists()",
+          ".validate": "newData.hasChildren(['at', 'teamId', 'team', 'delta', 'before', 'after', 'reason']) && newData.child('at').isString() && newData.child('delta').isNumber() && newData.child('before').isNumber() && newData.child('after').isNumber()",
+          "at": {
+            ".validate": "newData.isString() && newData.val().length <= 40"
+          },
+          "teamId": {
+            ".validate": "newData.isString() && newData.val().length <= 20"
+          },
+          "team": {
+            ".validate": "newData.isString() && newData.val().length <= 60"
+          },
+          "delta": {
+            ".validate": "newData.isNumber()"
+          },
+          "before": {
+            ".validate": "newData.isNumber()"
+          },
+          "after": {
+            ".validate": "newData.isNumber()"
+          },
+          "reason": {
+            ".validate": "newData.isString() && newData.val().length <= 500"
+          },
+          "by": {
+            ".validate": "newData.isString() && newData.val().length <= 80"
+          },
+          "byKey": {
+            ".validate": "newData.isString() && newData.val().length <= 200"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      },
+      "presence": {
+        ".read": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).exists()))",
+        "$deviceId": {
+          ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).exists()))",
+          ".validate": "newData.hasChildren(['role', 'at']) && (newData.child('role').val() == 'viewer' || newData.child('role').val() == 'editor') && newData.child('at').isNumber()",
+          "$other": {
+            ".validate": false
+          }
+        }
+      },
+      "members": {
+        ".read": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).exists()))",
+        "$memberKey": {
+          ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor')) && $memberKey != 'patricksimpson,fx@gmail,com'",
+          ".validate": "($memberKey.contains('@') || $memberKey.beginsWith('+') || $memberKey.beginsWith('pending-')) && newData.hasChildren(['role', 'addedBy', 'addedAt'])",
+          "role": {
+            ".validate": "newData.val() == 'viewer' || newData.val() == 'editor'"
+          },
+          "name": {
+            ".validate": "newData.isString()"
+          },
+          "teamId": {
+            ".validate": "newData.isString()"
+          },
+          "addedBy": {
+            ".validate": "newData.isString()"
+          },
+          "addedAt": {
+            ".validate": "newData.isString() || newData.isNumber()"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      },
+      "chat": {
+        ".read": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).exists()))",
+        "$channel": {
+          ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor')) && !newData.exists()",
+          "$msgId": {
+            ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).exists())) && ($channel === 'announcements' || $channel === 'general' || $channel === 'memes' || $channel === 'photos') && ((!data.exists() && newData.exists() && ((auth.token.email != null && auth.token.email_verified == true && newData.child('byKey').val() === auth.token.email.toLowerCase().replace('.', ',')) || (auth.token.phone_number != null && newData.child('byKey').val() === auth.token.phone_number))) || (data.exists() && !newData.exists() && (((auth.token.email != null && auth.token.email_verified == true && data.child('byKey').val() === auth.token.email.toLowerCase().replace('.', ',')) || (auth.token.phone_number != null && data.child('byKey').val() === auth.token.phone_number)) || auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor')))))",
+            ".validate": "newData.child('at').isNumber() && newData.child('at').val() <= now + 60000 && newData.child('at').val() > now - 300000 && newData.child('byKey').isString() && newData.child('name').isString() && newData.child('name').val().length <= 60 && (newData.child('text').exists() || newData.child('thumb').exists())",
+            "at": {
+              ".validate": "newData.isNumber() && newData.val() <= now + 60000 && newData.val() > now - 300000"
+            },
+            "byKey": {
+              ".validate": "newData.isString()"
+            },
+            "name": {
+              ".validate": "newData.isString()"
+            },
+            "text": {
+              ".validate": "newData.isString() && newData.val().length <= 2000"
+            },
+            "thumb": {
+              ".validate": "newData.isString() && newData.val().length <= 24000 && newData.val().beginsWith('data:image/jpeg;base64,')"
+            },
+            "photoId": {
+              ".validate": "newData.isString() && newData.val().length <= 64"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        }
+      },
+      "chatPhotos": {
+        ".read": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).exists()))",
+        ".indexOn": [
+          "ch"
+        ],
+        "$photoId": {
+          ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).exists())) && ((!data.exists() && newData.exists() && ((auth.token.email != null && auth.token.email_verified == true && newData.child('byKey').val() === auth.token.email.toLowerCase().replace('.', ',')) || (auth.token.phone_number != null && newData.child('byKey').val() === auth.token.phone_number))) || (data.exists() && !newData.exists() && (((auth.token.email != null && auth.token.email_verified == true && data.child('byKey').val() === auth.token.email.toLowerCase().replace('.', ',')) || (auth.token.phone_number != null && data.child('byKey').val() === auth.token.phone_number)) || auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor')))))",
+          ".validate": "newData.child('at').isNumber() && newData.child('byKey').isString() && newData.child('ch').isString() && (newData.child('ch').val() === 'announcements' || newData.child('ch').val() === 'general' || newData.child('ch').val() === 'memes' || newData.child('ch').val() === 'photos') && newData.child('data').isString() && newData.child('data').val().length <= 400000 && newData.child('data').val().beginsWith('data:image/jpeg;base64,')",
+          "at": {
+            ".validate": "newData.isNumber() && newData.val() <= now + 60000 && newData.val() > now - 300000"
+          },
+          "byKey": {
+            ".validate": "newData.isString()"
+          },
+          "ch": {
+            ".validate": "newData.isString() && (newData.val() === 'announcements' || newData.val() === 'general' || newData.val() === 'memes' || newData.val() === 'photos')"
+          },
+          "data": {
+            ".validate": "newData.isString()"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      },
+      "roster": {
+        ".read": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).exists()))",
+        ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor'))"
+      },
+      "contacts": {
+        ".read": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).exists()))",
+        ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor'))"
+      }
+    },
+    "seniorScoreboard": {
+      "state": {
+        ".read": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).exists()))",
+        ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor'))"
+      },
+      "config": {
+        ".read": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).exists()))",
+        ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor'))"
+      },
+      "changelog": {
+        ".read": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor'))",
+        "$entryId": {
+          ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor')) && !data.exists() && newData.exists()",
+          ".validate": "newData.hasChildren(['at', 'teamId', 'team', 'delta', 'before', 'after', 'reason']) && newData.child('at').isString() && newData.child('delta').isNumber() && newData.child('before').isNumber() && newData.child('after').isNumber()",
+          "at": {
+            ".validate": "newData.isString() && newData.val().length <= 40"
+          },
+          "teamId": {
+            ".validate": "newData.isString() && newData.val().length <= 20"
+          },
+          "team": {
+            ".validate": "newData.isString() && newData.val().length <= 60"
+          },
+          "delta": {
+            ".validate": "newData.isNumber()"
+          },
+          "before": {
+            ".validate": "newData.isNumber()"
+          },
+          "after": {
+            ".validate": "newData.isNumber()"
+          },
+          "reason": {
+            ".validate": "newData.isString() && newData.val().length <= 500"
+          },
+          "by": {
+            ".validate": "newData.isString() && newData.val().length <= 80"
+          },
+          "byKey": {
+            ".validate": "newData.isString() && newData.val().length <= 200"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      },
+      "presence": {
+        ".read": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).exists()))",
+        "$deviceId": {
+          ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).exists()))",
+          ".validate": "newData.hasChildren(['role', 'at']) && (newData.child('role').val() == 'viewer' || newData.child('role').val() == 'editor') && newData.child('at').isNumber()",
+          "$other": {
+            ".validate": false
+          }
+        }
+      },
+      "members": {
+        ".read": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).exists()))",
+        "$memberKey": {
+          ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor')) && $memberKey != 'patricksimpson,fx@gmail,com'",
+          ".validate": "($memberKey.contains('@') || $memberKey.beginsWith('+') || $memberKey.beginsWith('pending-')) && newData.hasChildren(['role', 'addedBy', 'addedAt'])",
+          "role": {
+            ".validate": "newData.val() == 'viewer' || newData.val() == 'editor'"
+          },
+          "name": {
+            ".validate": "newData.isString()"
+          },
+          "teamId": {
+            ".validate": "newData.isString()"
+          },
+          "addedBy": {
+            ".validate": "newData.isString()"
+          },
+          "addedAt": {
+            ".validate": "newData.isString() || newData.isNumber()"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      },
+      "chat": {
+        ".read": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).exists()))",
+        "$channel": {
+          ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor')) && !newData.exists()",
+          "$msgId": {
+            ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).exists())) && ($channel === 'announcements' || $channel === 'general' || $channel === 'memes' || $channel === 'photos') && ((!data.exists() && newData.exists() && ((auth.token.email != null && auth.token.email_verified == true && newData.child('byKey').val() === auth.token.email.toLowerCase().replace('.', ',')) || (auth.token.phone_number != null && newData.child('byKey').val() === auth.token.phone_number))) || (data.exists() && !newData.exists() && (((auth.token.email != null && auth.token.email_verified == true && data.child('byKey').val() === auth.token.email.toLowerCase().replace('.', ',')) || (auth.token.phone_number != null && data.child('byKey').val() === auth.token.phone_number)) || auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor')))))",
+            ".validate": "newData.child('at').isNumber() && newData.child('at').val() <= now + 60000 && newData.child('at').val() > now - 300000 && newData.child('byKey').isString() && newData.child('name').isString() && newData.child('name').val().length <= 60 && (newData.child('text').exists() || newData.child('thumb').exists())",
+            "at": {
+              ".validate": "newData.isNumber() && newData.val() <= now + 60000 && newData.val() > now - 300000"
+            },
+            "byKey": {
+              ".validate": "newData.isString()"
+            },
+            "name": {
+              ".validate": "newData.isString()"
+            },
+            "text": {
+              ".validate": "newData.isString() && newData.val().length <= 2000"
+            },
+            "thumb": {
+              ".validate": "newData.isString() && newData.val().length <= 24000 && newData.val().beginsWith('data:image/jpeg;base64,')"
+            },
+            "photoId": {
+              ".validate": "newData.isString() && newData.val().length <= 64"
+            },
+            "$other": {
+              ".validate": false
+            }
+          }
+        }
+      },
+      "chatPhotos": {
+        ".read": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).exists()))",
+        ".indexOn": [
+          "ch"
+        ],
+        "$photoId": {
+          ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).exists())) && ((!data.exists() && newData.exists() && ((auth.token.email != null && auth.token.email_verified == true && newData.child('byKey').val() === auth.token.email.toLowerCase().replace('.', ',')) || (auth.token.phone_number != null && newData.child('byKey').val() === auth.token.phone_number))) || (data.exists() && !newData.exists() && (((auth.token.email != null && auth.token.email_verified == true && data.child('byKey').val() === auth.token.email.toLowerCase().replace('.', ',')) || (auth.token.phone_number != null && data.child('byKey').val() === auth.token.phone_number)) || auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor')))))",
+          ".validate": "newData.child('at').isNumber() && newData.child('byKey').isString() && newData.child('ch').isString() && (newData.child('ch').val() === 'announcements' || newData.child('ch').val() === 'general' || newData.child('ch').val() === 'memes' || newData.child('ch').val() === 'photos') && newData.child('data').isString() && newData.child('data').val().length <= 400000 && newData.child('data').val().beginsWith('data:image/jpeg;base64,')",
+          "at": {
+            ".validate": "newData.isNumber() && newData.val() <= now + 60000 && newData.val() > now - 300000"
+          },
+          "byKey": {
+            ".validate": "newData.isString()"
+          },
+          "ch": {
+            ".validate": "newData.isString() && (newData.val() === 'announcements' || newData.val() === 'general' || newData.val() === 'memes' || newData.val() === 'photos')"
+          },
+          "data": {
+            ".validate": "newData.isString()"
+          },
+          "$other": {
+            ".validate": false
+          }
+        }
+      },
+      "roster": {
+        ".read": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).exists()))",
+        ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor'))"
+      },
+      "contacts": {
+        ".read": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).exists()))",
+        ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor'))"
+      }
+    }
+  }
+}

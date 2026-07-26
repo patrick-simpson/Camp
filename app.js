@@ -15,9 +15,9 @@ const STORAGE_KEY = lsKey('campScoreboardV2'); // per-camp; junior stays the bar
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-26T12:04:54Z';
+const CODE_UPDATED_AT = '2026-07-26T13:36:33Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 175;
+const APP_VERSION = 176;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -72,6 +72,11 @@ let authTornDown = false;  // sign-in was lost mid-session; recovery is a reload
 // list — it's the staff directory). Null until it first loads; readers must
 // fall back to the hand-typed counselor text until then.
 let memberDirectory = null;
+// Whether a directory snapshot has ever actually ARRIVED. `memberDirectory`
+// alone can't tell "not loaded yet / read failed" from "loaded and empty", and
+// chat's author-name resolution has to fail CLOSED: with no directory it shows
+// the rules-validated identity rather than the name the sender's device typed.
+let memberDirectoryLoaded = false;
 
 // The single write-path for the role — and the test seam: tests call this
 // directly instead of faking a Firebase sign-in (see tests/auth.test.js).
@@ -204,8 +209,24 @@ function pendingKey(name) {
   return 'pending-' + slug + '-' + Math.random().toString(36).slice(2, 7);
 }
 
+// A member key is about to be concatenated into a database path, so it has to
+// be a legal RTDB key first. `.`/`#`/`$`/`[`/`]`/`/` are illegal there and make
+// ref() THROW — which, from the members drawer, surfaces as a button that does
+// nothing. The email regex upstream allows `#` and `$` in the local part, and
+// emailKey() only rewrites dots, so this is the check that actually holds.
+function isValidMemberKey(key) {
+  const k = String(key || '');
+  if (!k || k.length > 200 || /[.#$[\]/\x00-\x1f\x7f]/.test(k)) return false;
+  return k.includes('@') || k.startsWith('+') || isPendingKey(k);
+}
+
 function isPendingKey(key) {
-  return String(key || '').startsWith('pending-');
+  // Exclusive, not a bare prefix: match only what pendingKey() can actually
+  // emit. A real identity is an email or a phone, so someone whose address
+  // begins "pending-" (pending-team@…) would otherwise be rendered as a
+  // placeholder row and offered the convert-to-real-key flow.
+  const k = String(key || '');
+  return k.startsWith('pending-') && !k.includes('@') && !k.startsWith('+');
 }
 
 // Shape of one campScoreboard/members entry. `name` and `teamId` are omitted
@@ -416,7 +437,11 @@ function processWeather(json) {
   const byTime = {};
   const dates = [];
   h.time.forEach((t, i) => {
-    byTime[t] = { temp: h.temperature_2m[i], code: h.weather_code[i], precip: h.precipitation_probability[i] };
+    // Coerce: these come from a third-party API and reach the DOM. They are
+    // only safe today because every render site compares them numerically —
+    // one future refactor that prints one directly would turn open-meteo into
+    // an injection path. Numbers in, numbers out.
+    byTime[t] = { temp: Number(h.temperature_2m[i]), code: Number(h.weather_code[i]), precip: Number(h.precipitation_probability[i]) };
     const d = t.slice(0, 10);
     if (dates[dates.length - 1] !== d) dates.push(d);
   });
@@ -948,7 +973,9 @@ function renderScheduleBody() {
 // eastern VTIMEZONE), so the event is right no matter what timezone the
 // parent's phone is in — same convention as everything else camp-time.
 function icsEscape(s) {
-  return String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n');
+  // CR as well as LF (RFC 5545 §3.3.11): a lone \r left raw would end the
+  // property line early and let typed text forge a calendar field.
+  return String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r\n|\r|\n/g, '\\n');
 }
 
 // 'YYYYMMDD' in camp time for the given day-of-week of the current camp week.
@@ -1269,7 +1296,7 @@ function missingSeedCounselors(members) {
 function memberTeamSelectHTML(cls, teamId, label) {
   return `<jelly-select class="${cls}" placeholder="— no team —" ${isTeamId(teamId) ? `value="${esc(teamId)}"` : ''} label="${esc(label)}" size="small">
     <jelly-option value="">— no team —</jelly-option>
-    ${state.teams.map((t) => `<jelly-option value="${t.id}">${teamEmoji(t.id)} ${esc(t.name)}</jelly-option>`).join('')}
+    ${state.teams.map((t) => `<jelly-option value="${esc(t.id)}">${teamEmoji(t.id)} ${esc(t.name)}</jelly-option>`).join('')}
   </jelly-select>`;
 }
 
@@ -1343,7 +1370,7 @@ function renderMemberList(body, lists) {
           : '';
         return `<div class="member-access-row">
           ${label}
-          <jelly-segmented class="member-access" size="small" label="${esc(CAMPS[cid].label)} access" value="${value}" data-camp-id="${cid}" ${disabled ? 'disabled' : ''}>
+          <jelly-segmented class="member-access" size="small" label="${esc(CAMPS[cid].label)} access" value="${value}" data-camp-id="${esc(cid)}" ${disabled ? 'disabled' : ''}>
             <jelly-segment value="none">None</jelly-segment>
             <jelly-segment value="viewer">Viewer</jelly-segment>
             <jelly-segment value="editor">Editor</jelly-segment>
@@ -1459,6 +1486,7 @@ function convertPendingMember(key, rec) {
     newKey = phoneKey(raw);
     if (!newKey) { showToast("That doesn't look like a phone number — include the area code."); return; }
   }
+  if (!isValidMemberKey(newKey)) { showToast("That address has a character the database can't use as a key."); return; }
   const role = rec.role === 'editor' ? 'editor' : 'viewer';
   const next = memberRecord(role, rec.name, rec.teamId);
   firebase.database().ref(dbPath('members/' + newKey)).set(next)
@@ -1620,6 +1648,11 @@ function bindMemberList(body, myKey, lists) {
           return;
         }
         shownId = key; // the normalized +E.164 we're about to store — so they can eyeball it
+      }
+      if (!isValidMemberKey(key)) {
+        errEl.textContent = 'That address has a character the database can\'t use as a key. Try another.';
+        errEl.hidden = false;
+        return;
       }
       errEl.hidden = true;
       const writes = [firebase.database().ref(dbPath('members/' + key)).set(memberRecord(role, name, teamId))];
@@ -2349,11 +2382,12 @@ function initSync() {
     try {
       firebase.database().ref(dbPath('members')).on('value', (snap) => {
         memberDirectory = snap.val() || {};
+        memberDirectoryLoaded = true;
         if (appStarted) renderAll();
         // Chat shows author names FROM this directory (a message's own `name`
         // is client-supplied), so its bubbles need rebuilding when it lands.
         if (typeof onMemberDirectoryChanged === 'function') onMemberDirectoryChanged();
-      }, () => { memberDirectory = null; });
+      }, () => { memberDirectory = null; memberDirectoryLoaded = false; });
     } catch (e) { /* ignore — counselor text falls back to state.teams */ }
     // Camp Chat listeners (chat.js — the tenth script; typeof-guarded so a
     // build without it still runs). Chat attaches HERE, i.e. only after
@@ -2487,11 +2521,21 @@ function pushState() {
   // so a rejected write can't wedge sync closed.
   pendingWrites++;
   const settle = () => { pendingWrites = Math.max(0, pendingWrites - 1); };
-  fbRef.update(updates).then(settle, (e) => {
-    console.warn('sync push failed', e);
-    lastSyncedTree = prevBaseline; // re-send these changes (still per-path) next push
+  // update() can throw SYNCHRONOUSLY (an illegal key in the payload, say, from
+  // a hand-edited backup). Without this catch the counter would stay raised
+  // forever, and canAdoptRemote() would refuse every future snapshot — the
+  // device would sit there looking connected while silently never syncing again.
+  try {
+    fbRef.update(updates).then(settle, (e) => {
+      console.warn('sync push failed', e);
+      lastSyncedTree = prevBaseline; // re-send these changes (still per-path) next push
+      settle();
+    });
+  } catch (e) {
+    console.warn('sync push threw', e);
+    lastSyncedTree = prevBaseline;
     settle();
-  });
+  }
 }
 
 // Cheap content signature of the synced state, used to skip re-rendering on
@@ -3135,7 +3179,7 @@ function picRoundHTML(g) {
   const chips = `<div class="pic-team-chips">${state.teams.map((t) => {
     const r = picRounds()[t.id];
     const status = r && r.done ? ' ✓' : r && r.laps.length ? ` ${r.laps.length}/10` : '';
-    return `<button class="team-chip pic-team-chip ${teamId === t.id ? 'selected' : ''}" data-team-id="${t.id}" ${w.running ? 'disabled' : ''}>${esc(t.name)}${status}<span class="chip-sub">${esc(counselorName(t.id))}</span></button>`;
+    return `<button class="team-chip pic-team-chip ${teamId === t.id ? 'selected' : ''}" data-team-id="${esc(t.id)}" ${w.running ? 'disabled' : ''}>${esc(t.name)}${status}<span class="chip-sub">${esc(counselorName(t.id))}</span></button>`;
   }).join('')}</div>`;
 
   let panel = '';
@@ -3149,7 +3193,7 @@ function picRoundHTML(g) {
           <div class="pic-prompt-label">Item ${n + 1} of ${g.prompts.length}</div>
           ${hasWord ? `<div class="pic-prompt-word">${esc(prompt)}</div>` : ''}
         </div>
-        <div class="big-clock" id="sw-display-${g.id}">${fmtWatch(w.running ? Date.now() - w.startAt : 0)}</div>
+        <div class="big-clock" id="sw-display-${esc(g.id)}">${fmtWatch(w.running ? Date.now() - w.startAt : 0)}</div>
         <div class="sw-total-line">Team total: <strong id="sw-total-${g.id}">${fmtWatch(w.lapsTotal + (w.running ? Date.now() - w.startAt : 0))}</strong></div>
         <div class="timer-btn-row">
           ${w.running
@@ -3860,10 +3904,16 @@ function recordPointHistory(counts, isRemote) {
   const causes = describeCauses(prev, snap);
   const reason = causes.length ? causes.join('; ') : 'Points updated';
   const at = new Date().toISOString();
-  const by = state.identity || memberName || identityLabel(authUser) || null;
+  // Attribution comes from the ACCOUNT, never from state.identity — that's the
+  // device-local "which one are you?" pick from the electives card, which any
+  // counselor can set to any name in Settings. This is the accountability log;
+  // it has to say who was signed in. memberName is the editor-maintained
+  // member record, identityLabel the auth token — both server-side truths.
+  const by = memberName || identityLabel(authUser) || null;
+  const byKey = identityKey(authUser) || null; // pinnable to auth identity in the rules
   const logRef = firebase.database().ref(dbPath('changelog'));
   changed.forEach(({ tid, before, after }) => {
-    logRef.push({ at, teamId: tid, team: teamName(tid), delta: after - before, before, after, reason, by })
+    logRef.push({ at, teamId: tid, team: teamName(tid), delta: after - before, before, after, reason, by, byKey })
       .catch(() => { /* offline / rules — the log entry is best-effort */ });
   });
 }
@@ -4080,7 +4130,7 @@ function renderTeamPickerOptions() {
   const wrap = document.getElementById('team-picker-options');
   if (!wrap) return;
   wrap.innerHTML = state.teams.map((t) =>
-    `<button class="team-picker-option ${state.followTeam === t.id ? 'selected' : ''}" data-team-id="${t.id}">
+    `<button class="team-picker-option ${state.followTeam === t.id ? 'selected' : ''}" data-team-id="${esc(t.id)}">
       <span class="chip-emoji">${teamEmoji(t.id)}</span> ${esc(t.name)}
     </button>`
   ).join('') + `<button class="team-picker-option team-picker-neutral ${state.followTeam === null ? 'selected' : ''}" data-team-id="">🙅 Neutral / no team</button>`;
@@ -4216,7 +4266,7 @@ function renderBonuses() {
             // The own-team guard: an assigned editor can award anyone but
             // their own team (see canScoreRound).
             const locked = blockedByOwnTeam(t.id);
-            return `<jelly-chip class="bonus-team-chip" selectable ${d.teams.includes(t.id) ? 'selected' : ''} ${locked ? 'disabled' : ''} data-team-id="${t.id}" ${locked ? 'title="Your own team — another editor awards these"' : ''}><span class="chip-emoji">${teamEmoji(t.id)}</span> ${esc(t.name)}${locked ? ' 🛡️' : ''}</jelly-chip>`;
+            return `<jelly-chip class="bonus-team-chip" selectable ${d.teams.includes(t.id) ? 'selected' : ''} ${locked ? 'disabled' : ''} data-team-id="${esc(t.id)}" ${locked ? 'title="Your own team — another editor awards these"' : ''}><span class="chip-emoji">${teamEmoji(t.id)}</span> ${esc(t.name)}${locked ? ' 🛡️' : ''}</jelly-chip>`;
           }).join('')}
         </div>
         <div class="bonus-add-row">
@@ -4424,7 +4474,7 @@ function renderMemoryVerse() {
     const displayPts = earned.effective[t.id] || 0; // what it's actually worth in the standings
     // The own-team guard: a team's own verse points are that team's "round".
     const btns = editing && canScoreRound(t.id)
-      ? `<div class="pts-btn-row" data-team-id="${t.id}" role="group" aria-label="${esc(t.name)} verse points">
+      ? `<div class="pts-btn-row" data-team-id="${esc(t.id)}" role="group" aria-label="${esc(t.name)} verse points">
           ${[0, 1, 2, 3, 4, 5].map((n) =>
             `<jelly-chip class="pts-btn" selectable shape="square" ${pts === n ? 'selected' : ''} data-pts="${n}">${n * displayMult}</jelly-chip>`).join('')}
         </div>`
@@ -5272,7 +5322,7 @@ function medalPickerHTML(picks, game) {
         <span>${s.label}</span>
         <jelly-select data-medal="${s.key}" placeholder="— pick team —" ${picks[s.key] ? `value="${esc(picks[s.key])}"` : ''} label="${s.key} medal team">
           ${state.teams.map((t) =>
-            `<jelly-option value="${t.id}">${teamEmoji(t.id)} ${esc(t.name)}</jelly-option>`
+            `<jelly-option value="${esc(t.id)}">${teamEmoji(t.id)} ${esc(t.name)}</jelly-option>`
           ).join('')}
         </jelly-select>
       </div>
@@ -5319,9 +5369,9 @@ function renderTally(container, g) {
           <div class="score-row-top">
             <span class="score-team"><span class="chip-emoji">${teamEmoji(t.id)}</span> ${esc(t.name)}<span class="chip-sub">${locked ? 'your team — another editor scores this' : esc(counselorName(t.id))}</span></span>
             <input type="text" inputmode="${g.timeInput ? 'numeric' : 'decimal'}" placeholder="${g.timeInput ? 'm:ss' : '0'}"
-              data-team-id="${t.id}" value="${esc(draft.scores[t.id] || '')}" ${locked ? 'readonly disabled' : ''} />
+              data-team-id="${esc(t.id)}" value="${esc(draft.scores[t.id] || '')}" ${locked ? 'readonly disabled' : ''} />
           </div>
-          ${steps && !locked ? `<div class="counter-btn-row" data-team-id="${t.id}">
+          ${steps && !locked ? `<div class="counter-btn-row" data-team-id="${esc(t.id)}">
             <jelly-button class="counter-btn minus" shape="square" variant="platinum" block data-delta="${-steps[0]}">−${steps[0]}</jelly-button>
             ${steps.map((s) => {
               const lbl = g.counterStepLabels && g.counterStepLabels[s] ? `<span class="counter-btn-sub">${esc(g.counterStepLabels[s])}</span>` : '';
@@ -6143,9 +6193,9 @@ function ladderMatchHTML(g, aId, bId) {
       </div>
       <div class="ladder-round-line">This round: <span class="ladder-round-val" data-ladder-round="${side}">${raw}</span></div>
       <div class="ladder-rungs">
-        <button class="live-btn ladder-rung" data-ladder="rung" data-side="${side}" data-pts="${sc.top}">Top +${sc.top}</button>
-        <button class="live-btn ladder-rung" data-ladder="rung" data-side="${side}" data-pts="${sc.mid}">Mid +${sc.mid}</button>
-        <button class="live-btn ladder-rung" data-ladder="rung" data-side="${side}" data-pts="${sc.bottom}">Bot +${sc.bottom}</button>
+        <button class="live-btn ladder-rung" data-ladder="rung" data-side="${side}" data-pts="${Number(sc.top) || 0}">Top +${sc.top}</button>
+        <button class="live-btn ladder-rung" data-ladder="rung" data-side="${side}" data-pts="${Number(sc.mid) || 0}">Mid +${sc.mid}</button>
+        <button class="live-btn ladder-rung" data-ladder="rung" data-side="${side}" data-pts="${Number(sc.bottom) || 0}">Bot +${sc.bottom}</button>
         <button class="live-btn ladder-clear" data-ladder="round-clear" data-side="${side}" aria-label="Clear this round for ${esc(teamName(id))}">↺</button>
       </div>
     </div>`;
@@ -6943,7 +6993,12 @@ function editorMidEntry() {
   // JELLY-TEXTAREA, JELLY-SELECT, …) — a focused one is mid-entry exactly
   // like a native field; missing this would let a deploy's auto-reload eat
   // a score being typed.
-  if (ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' || ae.tagName.startsWith('JELLY-') || ae.isContentEditable)) return true;
+  // ...but the chat composer is NOT score entry. Counting it would defer every
+  // incoming scoreboard update for as long as anyone sits with the message box
+  // focused, which during a game is exactly when people are chatting.
+  const inChatComposer = ae && ae.closest && ae.closest('#chat-view');
+  if (!inChatComposer &&
+      ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' || ae.tagName.startsWith('JELLY-') || ae.isContentEditable)) return true;
   // A half-built game in the week builder is unsaved in-memory work — the
   // update-poll auto-reload and remote merges must not wipe it.
   if (typeof builderDirty === 'function' && builderDirty()) return true;
@@ -7524,8 +7579,17 @@ function handleAuthUser(user) {
   // for live changes: a removal cancels this listener (kick), a role change
   // fires a fresh snapshot.
   if (!appStarted) showAuthScreen('checking');
-  memberRef = firebase.database().ref(dbPath('members/' + key));
-  memberRef.on('value', onMemberSnapshot, onMemberReadError);
+  // ref() THROWS on an illegal key. Unhandled here, that would abort sign-in
+  // with a blank "Checking sign-in…" and no explanation — so treat it as what
+  // it is: an identity that can't be on the list.
+  if (!isValidMemberKey(key)) { denyMemberFinal(); return; }
+  try {
+    memberRef = firebase.database().ref(dbPath('members/' + key));
+    memberRef.on('value', onMemberSnapshot, onMemberReadError);
+  } catch (e) {
+    console.warn('member ref failed', e);
+    denyMemberFinal();
+  }
 }
 
 function onMemberSnapshot(snap) {
@@ -7589,9 +7653,20 @@ function denyMemberFinal() {
   setMemberRole(null);
   setMemberTeam(null);
   memberDirectory = null;
+  memberDirectoryLoaded = false;
   clearAuthHint();
   // A device that isn't approved shouldn't keep camp data around either.
   clearLocalData();
+  try { clearPhotos().catch(() => {}); } catch (e) { /* ignore */ }
+  // If sync had already started, this is a REVOCATION mid-session, and every
+  // other terminal auth transition in this file reloads (signOutAndClear, the
+  // re-sign-in-after-teardown path). Hiding the app behind a CSS class would
+  // leave the whole scoreboard and the chat backlog sitting live in the DOM,
+  // one devtools inspection away, on a device we just cut off. Reload instead.
+  // Guarded on syncStarted so a never-approved account, which reaches here on
+  // its FIRST sign-in, still gets the denied screen rather than a reload loop
+  // (the hint is cleared above, so the reloaded page paints locked).
+  if (syncStarted) { location.reload(); return; }
   showAuthScreen('denied', { email: who });
 }
 
@@ -7659,7 +7734,16 @@ function hasBothCamps() {
 // path), so a running page never re-points its refs in place.
 function switchCamp(campId) {
   if (!CAMPS[campId] || campId === CAMP.id) return;
-  try { localStorage.setItem(ACTIVE_CAMP_KEY, campId); } catch (e) { return; }
+  // Storage blocked (private mode, or a locked-down browser): the whole switch
+  // is set-key-then-reload, so without the key the reload would land back on
+  // the same camp. Say so instead of silently doing nothing — a senior-only
+  // counselor bounced here would otherwise sit on "Checking sign-in…" forever.
+  try {
+    localStorage.setItem(ACTIVE_CAMP_KEY, campId);
+  } catch (e) {
+    showToast("This browser is blocking site storage, so the camp can't be remembered. Turn off private browsing and try again.");
+    return;
+  }
   // Hand the destination camp's cached role to the pre-paint guard so the
   // next load paints with the right chrome immediately.
   const role = readCampsHint()[campId];
@@ -7720,7 +7804,7 @@ function openCampPicker() {
     const c = CAMPS[cid];
     const here = cid === CAMP.id;
     const role = h[cid] === 'editor' ? '✏️ Editor' : '👀 Viewer';
-    return `<button class="team-picker-option camp-picker-option ${here ? 'selected' : ''}" data-camp-id="${cid}">
+    return `<button class="team-picker-option camp-picker-option ${here ? 'selected' : ''}" data-camp-id="${esc(cid)}">
       <span class="chip-emoji">${cid === 'senior' ? '🚩' : '🛡️'}</span> ${esc(c.label)}
       <span class="chip-sub">${role}${here ? ' · you\u2019re here now' : ''}</span>
     </button>`;
