@@ -106,7 +106,9 @@ working, senior locked to outsiders, Patrick confirmed the camp picker and
 senior scoreboard work on his device. **Phase C (open):** flag artwork +
 real accents, real Sun/Sat senior schedule, 4-team bracket (2 semis →
 3rd-place match → final), senior meals/verses/cleanup rota data, TV page
-`?camp=senior`, cross-camp chips in the Members drawer.
+`?camp=senior`. (Cross-camp member management shipped 2026-07-26: the
+Members drawer is one unified list with per-camp None/Viewer/Editor
+switches.)
 
 ### 2. Service-worker caching for real offline use — decision-gated
 `sw.js` ships deliberately WITHOUT a fetch handler so it can never serve stale

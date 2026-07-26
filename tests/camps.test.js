@@ -218,3 +218,53 @@ test('the camp question is asked once, then the last choice is remembered', () =
   localStorage.removeItem(CAMPS_HINT_KEY);
   campPickerAsked = false;
 });
+
+// ── The unified Members drawer (one row per person, both camps) ───
+
+test('mergeMemberLists folds both camps into one row per person', () => {
+  const rows = mergeMemberLists({
+    junior: {
+      'pat@x,com': { role: 'editor', name: 'Pat' },
+      'jr,only@x,com': { role: 'viewer', name: 'Junior Only' },
+      'pending-brody-ab12': { role: 'viewer', name: 'Brody' },
+    },
+    senior: {
+      'pat@x,com': { role: 'viewer', name: 'Pat' },
+      'sr,only@x,com': { role: 'editor' }, // no name — shows the identity
+    },
+  });
+  assert.equal(rows.length, 4, 'Pat appears once, not twice');
+  const pat = rows.find((r) => r.key === 'pat@x,com');
+  assert.equal(pat.camps.junior.role, 'editor', 'roles stay independent per camp');
+  assert.equal(pat.camps.senior.role, 'viewer');
+  const jr = rows.find((r) => r.key === 'jr,only@x,com');
+  assert.equal(jr.camps.senior, null, 'no senior record → null, renders as None');
+  const names = rows.map((r) => (r.camps.junior && r.camps.junior.name) || (r.camps.senior && r.camps.senior.name) || identityFromKey(r.key));
+  assert.deepEqual(names, [...names].sort((a, b) => a.localeCompare(b)), 'sorted by display name');
+});
+
+test('mergeMemberLists tolerates a missing camp list (single-camp view)', () => {
+  const rows = mergeMemberLists({ junior: { 'a@x,com': { role: 'viewer' } }, senior: null });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].camps.senior, null);
+  assert.deepEqual(mergeMemberLists({ junior: null, senior: null }), [], 'nothing → empty');
+});
+
+test('campMembersPath writes to the right root for each camp', () => {
+  assert.equal(campMembersPath('junior', 'a@x,com'), 'campScoreboard/members/a@x,com');
+  assert.equal(campMembersPath('senior', 'a@x,com'), 'seniorScoreboard/members/a@x,com');
+});
+
+test('campRoleOf knows this camp live and the other camp from the probe/hint', () => {
+  setMemberRole('editor');
+  assert.equal(campRoleOf('junior'), 'editor', 'active camp = live role');
+  otherCampRole = null;
+  localStorage.removeItem(CAMPS_HINT_KEY);
+  assert.equal(campRoleOf('senior'), null, 'unknown until probed');
+  writeCampsHint('senior', 'viewer');
+  assert.equal(campRoleOf('senior'), 'viewer', 'falls back to the cached hint');
+  otherCampRole = 'editor';
+  assert.equal(campRoleOf('senior'), 'editor', 'the live probe result wins');
+  otherCampRole = null;
+  localStorage.removeItem(CAMPS_HINT_KEY);
+});

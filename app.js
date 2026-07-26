@@ -15,9 +15,9 @@ const STORAGE_KEY = lsKey('campScoreboardV2'); // per-camp; junior stays the bar
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-25T22:37:15Z';
+const CODE_UPDATED_AT = '2026-07-26T00:08:49Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 169;
+const APP_VERSION = 170;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1221,8 +1221,23 @@ function renderMembers() {
   body.innerHTML = '<div class="history-skeleton">' +
     [90, 70, 80].map((w) => `<div class="skeleton-row" style="width:${w}%"><jelly-skeleton style="height:2.6rem"></jelly-skeleton></div>`).join('') +
     '</div>';
-  firebase.database().ref(dbPath('members')).once('value')
-    .then((snap) => renderMemberList(body, snap.val() || {}))
+  // Both camps' lists load side by side. The other camp's read succeeds for
+  // anyone who is a member THERE (the list is that camp's staff directory);
+  // a refused read simply means "manage this camp only" — the drawer then
+  // looks exactly like the single-camp version.
+  const other = CAMPS[otherCampId()];
+  Promise.all([
+    firebase.database().ref(dbPath('members')).once('value').then((s) => s.val() || {}),
+    firebase.database().ref(other.dbRoot + '/members').once('value')
+      .then((s) => s.val() || {})
+      .catch(() => null),
+  ])
+    .then(([active, others]) => {
+      const lists = {};
+      lists[CAMP.id] = active;
+      lists[other.id] = others; // null ⇒ single-camp view
+      renderMemberList(body, lists);
+    })
     .catch(() => {
       body.innerHTML = '<p class="muted">Couldn\'t load the member list — check the connection and try again.</p>';
     });
@@ -1258,36 +1273,99 @@ function memberTeamSelectHTML(cls, teamId, label) {
   </jelly-select>`;
 }
 
-function renderMemberList(body, members) {
-  const myKey = identityKey(authUser);
-  const keys = Object.keys(members).sort((a, b) => {
-    const an = (members[a] && members[a].name) || identityFromKey(a);
-    const bn = (members[b] && members[b].name) || identityFromKey(b);
-    return an.localeCompare(bn);
+// This account's role at a given camp — the active camp's is live state,
+// the other camp's comes from the one-shot probe (or its cached hint).
+function campRoleOf(campId) {
+  if (campId === CAMP.id) return memberRole;
+  if (otherCampRole) return otherCampRole;
+  const h = readCampsHint()[campId];
+  return h === 'editor' || h === 'viewer' ? h : null;
+}
+
+// One person per row, however many camps they're on: fold the per-camp
+// member lists into { key, camps: { junior: rec|null, senior: rec|null } },
+// sorted by display name. Pure — pinned by tests/camps.test.js.
+function mergeMemberLists(lists) {
+  const rows = new Map();
+  Object.keys(CAMPS).forEach((cid) => {
+    Object.keys(lists[cid] || {}).forEach((key) => {
+      if (!rows.has(key)) rows.set(key, { key, camps: { junior: null, senior: null } });
+      rows.get(key).camps[cid] = lists[cid][key];
+    });
   });
-  const rows = keys.map((key) => {
-    const m = members[key] || {};
+  const nameOf = (r) => String((r.camps.junior && r.camps.junior.name) ||
+    (r.camps.senior && r.camps.senior.name) || identityFromKey(r.key));
+  return [...rows.values()].sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
+}
+
+// The path to one camp's record for a key — the ONLY place a cross-camp
+// members write is spelled out.
+function campMembersPath(campId, key) {
+  return CAMPS[campId].dbRoot + '/members/' + key;
+}
+
+function renderMemberList(body, lists) {
+  const myKey = identityKey(authUser);
+  const crossCamp = !!lists[otherCampId()]; // other list readable ⇒ show both columns
+  const campIds = crossCamp ? ['junior', 'senior'] : [CAMP.id];
+  const merged = mergeMemberLists(crossCamp ? lists : { [CAMP.id]: lists[CAMP.id] });
+
+  const rows = merged.map(({ key, camps }) => {
+    const activeRec = camps[CAMP.id];
+    const anyRec = activeRec || camps[otherCampId()] || {};
     const self = key === myKey;
-    const role = m.role === 'editor' ? 'editor' : 'viewer';
     const pending = isPendingKey(key);
     const isPhone = String(key)[0] === '+';
-    // A pending row has no sign-in identity to show — just the name, plus the
-    // action that turns it into a real account.
+    const displayName = anyRec.name || identityFromKey(key);
     const idLine = pending
       ? `<span class="member-email member-pending">⏳ No sign-in yet — <button type="button" class="link-btn member-add-signin">add email or phone</button></span>`
-      : (m.name ? `<span class="member-email">${isPhone ? '📱 ' : ''}${esc(identityFromKey(key))}</span>` : '');
-    return `<div class="member-row${pending ? ' member-row-pending' : ''}" data-member-key="${esc(key)}">
-      <div class="member-id">
-        <span class="member-name">${esc(m.name || identityFromKey(key))}${self ? ' <span class="member-you">(you)</span>' : ''}</span>
-        ${idLine}
-      </div>
-      <div class="member-controls">
-        <jelly-segmented class="member-role" size="small" label="Role" value="${role}" ${self ? 'disabled' : ''}>
+      : (anyRec.name ? `<span class="member-email">${isPhone ? '📱 ' : ''}${esc(identityFromKey(key))}</span>` : '');
+
+    // Per-camp access. Pending rows live in ONE camp only (their key means
+    // nothing to the other camp until a real sign-in exists), so they keep
+    // the simple single-camp role control.
+    let accessHTML;
+    if (pending) {
+      accessHTML = `<jelly-segmented class="member-role" size="small" label="Role" value="${anyRec.role === 'editor' ? 'editor' : 'viewer'}" ${self ? 'disabled' : ''}>
           <jelly-segment value="viewer">👀 Viewer</jelly-segment>
           <jelly-segment value="editor">✏️ Editor</jelly-segment>
         </jelly-segmented>
-        ${memberTeamSelectHTML('member-team', m.teamId, (m.name || identityFromKey(key)) + ' team')}
-        <button type="button" class="link-btn danger-link member-remove" ${self ? 'disabled' : ''}>Remove</button>
+        <button type="button" class="link-btn danger-link member-remove">Remove</button>`;
+    } else {
+      accessHTML = campIds.map((cid) => {
+        const rec = camps[cid];
+        const value = rec ? (rec.role === 'editor' ? 'editor' : 'viewer') : 'none';
+        // You can only change a camp you're an editor OF; your own access is
+        // always someone else's job to change.
+        const disabled = self || campRoleOf(cid) !== 'editor';
+        const label = crossCamp
+          ? `<span class="member-access-camp">${cid === 'senior' ? '🚩 Senior' : '🛡️ Junior'}</span>`
+          : '';
+        return `<div class="member-access-row">
+          ${label}
+          <jelly-segmented class="member-access" size="small" label="${esc(CAMPS[cid].label)} access" value="${value}" data-camp-id="${cid}" ${disabled ? 'disabled' : ''}>
+            <jelly-segment value="none">None</jelly-segment>
+            <jelly-segment value="viewer">Viewer</jelly-segment>
+            <jelly-segment value="editor">Editor</jelly-segment>
+          </jelly-segmented>
+        </div>`;
+      }).join('');
+    }
+
+    // The team lives on the ACTIVE camp's record (each camp has its own
+    // teams) — set the other camp's team from inside that camp.
+    const teamHTML = !pending && activeRec
+      ? memberTeamSelectHTML('member-team', activeRec.teamId, displayName + ' team')
+      : '';
+
+    return `<div class="member-row${pending ? ' member-row-pending' : ''}" data-member-key="${esc(key)}">
+      <div class="member-id">
+        <span class="member-name">${esc(displayName)}${self ? ' <span class="member-you">(you)</span>' : ''}</span>
+        ${idLine}
+      </div>
+      <div class="member-controls">
+        ${accessHTML}
+        ${teamHTML}
       </div>
       ${self ? '<p class="muted member-self-note">That\'s you — another editor has to change or remove your access.</p>' : ''}
     </div>`;
@@ -1304,16 +1382,33 @@ function renderMemberList(body, members) {
       <jelly-button class="secondary-btn" variant="primary" id="member-invite-copy" block>📋 Copy invite</jelly-button>
     </div>` : '';
 
-  const missing = missingSeedCounselors(members);
+  const missing = missingSeedCounselors(lists[CAMP.id]);
   const seedBlock = missing.length ? `
     <div class="member-seed">
       <p class="muted">Not everyone's on the list yet. Add this week's ${missing.length} missing counselor${missing.length === 1 ? '' : 's'} by name and team — they'll sit here as “no sign-in yet” until you add each person's email or phone.</p>
       <jelly-button id="member-seed-btn" class="secondary-btn" variant="platinum" block>👥 Add this week's counselors</jelly-button>
     </div>` : '';
 
+  // The add form can grant the other camp too — but only when this editor
+  // can actually write there.
+  const canAddBoth = crossCamp && campRoleOf(otherCampId()) === 'editor';
+  const addCampsHTML = canAddBoth ? `
+        <div class="form-field">
+          <label class="form-label">Camps</label>
+          <jelly-segmented id="member-add-camps" size="small" label="Camps" value="active">
+            <jelly-segment value="active">${CAMP.id === 'senior' ? '🚩' : '🛡️'} ${esc(CAMP.label.replace(' Camp', ''))} only</jelly-segment>
+            <jelly-segment value="both">⛺ Both camps</jelly-segment>
+          </jelly-segmented>
+        </div>` : '';
+
+  const crossSub = crossCamp
+    ? `<p class="muted members-sub">Each person has a switch per camp: <strong>None</strong> (can't open that camp at all), <strong>Viewer</strong>, or <strong>Editor</strong>. Someone on both camps picks between them in the app.</p>`
+    : '';
+
   body.innerHTML = `
     <p class="muted members-sub">Everyone here can open the app. Viewers can look; editors can change scores and manage this list. Anyone not on the list gets nothing — the database itself refuses them.</p>
-    <p class="muted members-sub">Giving someone a <strong>team</strong> does two things: the app opens on that team for them, and — if they're an editor — it keeps them out of scoring the rounds their own team is in.</p>
+    ${crossSub}
+    <p class="muted members-sub">Giving someone a <strong>team</strong> does two things: the app opens on that team for them, and — if they're an editor — it keeps them out of scoring the rounds their own team is in. Teams are per-camp; this drawer sets their ${esc(CAMP.label)} team.</p>
     ${inviteBanner}
     <div class="member-list">${rows || '<p class="muted">Nobody yet.</p>'}</div>
     ${seedBlock}
@@ -1337,6 +1432,7 @@ function renderMemberList(body, members) {
           </jelly-segmented>
         </div>
       </div>
+      ${addCampsHTML}
       <div class="form-field">
         <label class="form-label">Team (optional)</label>
         ${memberTeamSelectHTML('member-add-team', null, 'Team for the new member')}
@@ -1345,7 +1441,7 @@ function renderMemberList(body, members) {
       <p class="entry-error" id="member-add-error" hidden></p>
     </div>`;
 
-  bindMemberList(body, myKey, members);
+  bindMemberList(body, myKey, lists);
 }
 
 // Move a pending row (name + team, no sign-in) onto its real email/phone key.
@@ -1375,21 +1471,63 @@ function convertPendingMember(key, rec) {
     .catch(() => showToast('Change refused — are you still an editor?'));
 }
 
-function bindMemberList(body, myKey, members) {
+function bindMemberList(body, myKey, lists) {
+  const activeMembers = lists[CAMP.id] || {};
   body.querySelectorAll('.member-row').forEach((row) => {
     const key = row.dataset.memberKey;
     const self = key === myKey;
-    const rec = (members && members[key]) || {};
-    const seg = row.querySelector('.member-role');
-    if (seg) {
-      seg.addEventListener('change', (e) => {
+    const camps = {
+      junior: (lists.junior && lists.junior[key]) || null,
+      senior: (lists.senior && lists.senior[key]) || null,
+    };
+    const rec = camps[CAMP.id] || camps[otherCampId()] || {};
+    const who = rec.name || identityFromKey(key);
+
+    // Pending rows keep the simple single-camp role control.
+    const roleSeg = row.querySelector('.member-role');
+    if (roleSeg) {
+      roleSeg.addEventListener('change', (e) => {
         const role = e.detail && e.detail.value;
         if (self || !role || (role !== 'viewer' && role !== 'editor')) return;
         firebase.database().ref(dbPath('members/' + key + '/role')).set(role)
-          .then(() => showToast(`${rec.name || identityFromKey(key)} is now a ${role}`, { mine: true }))
+          .then(() => showToast(`${who} is now a ${role}`, { mine: true }))
           .catch(() => { showToast('Change refused — are you still an editor?'); renderMembers(); });
       });
     }
+
+    // The per-camp access switches. None ⇒ remove that camp's record (with a
+    // confirm); Viewer/Editor on an existing record ⇒ role child write;
+    // Viewer/Editor where there is no record ⇒ grant (write a fresh record,
+    // carrying the name over from their other-camp record).
+    row.querySelectorAll('.member-access').forEach((seg) => {
+      seg.addEventListener('change', (e) => {
+        const value = e.detail && e.detail.value;
+        const cid = seg.dataset.campId;
+        if (self || !cid || !CAMPS[cid] || !value) return;
+        const existing = camps[cid];
+        const label = CAMPS[cid].label;
+        const fail = () => { showToast(`Change refused — are you still an editor at ${label}?`); renderMembers(); };
+        if (value === 'none') {
+          if (!existing) return; // nothing to remove
+          if (!confirm(`Remove ${who} from ${label}? They lose access to it the moment this saves.`)) { renderMembers(); return; }
+          firebase.database().ref(campMembersPath(cid, key)).remove()
+            .then(() => { showToast(`${who} removed from ${label}`, { mine: true }); renderMembers(); })
+            .catch(fail);
+        } else if (value === 'viewer' || value === 'editor') {
+          if (existing) {
+            firebase.database().ref(campMembersPath(cid, key) + '/role').set(value)
+              .then(() => { showToast(`${who} is now a ${value} at ${label}`, { mine: true }); renderMembers(); })
+              .catch(fail);
+          } else {
+            // teamId deliberately not carried over — teams differ per camp.
+            firebase.database().ref(campMembersPath(cid, key)).set(memberRecord(value, rec.name))
+              .then(() => { showToast(`${who} can now sign in to ${label}`, { mine: true }); renderMembers(); })
+              .catch(fail);
+          }
+        }
+      });
+    });
+
     // Team: a child write, so the parent .validate doesn't re-run. Clearing it
     // is a remove() — RTDB has no "present but empty" for a string.
     const teamSel = row.querySelector('.member-team');
@@ -1398,9 +1536,7 @@ function bindMemberList(body, myKey, members) {
         const teamId = teamSel.value || '';
         const ref = firebase.database().ref(dbPath('members/' + key + '/teamId'));
         const done = () => {
-          showToast(isTeamId(teamId)
-            ? `${rec.name || identityFromKey(key)} is with ${teamName(teamId)}`
-            : `${rec.name || identityFromKey(key)} has no team`, { mine: true });
+          showToast(isTeamId(teamId) ? `${who} is with ${teamName(teamId)}` : `${who} has no team`, { mine: true });
           renderMembers();
         };
         (isTeamId(teamId) ? ref.set(teamId) : ref.remove())
@@ -1410,14 +1546,16 @@ function bindMemberList(body, myKey, members) {
           .catch(() => { showToast("Couldn't save the team — the database rules may need updating."); renderMembers(); });
       });
     }
+
     const convert = row.querySelector('.member-add-signin');
-    if (convert) convert.addEventListener('click', () => convertPendingMember(key, rec));
+    if (convert) convert.addEventListener('click', () => convertPendingMember(key, camps[CAMP.id] || rec));
+
+    // Pending rows only (real rows retire via the per-camp None switch).
     const rm = row.querySelector('.member-remove');
     if (rm) {
       rm.addEventListener('click', () => {
         if (self) return;
-        const who = row.querySelector('.member-name');
-        if (!confirm(`Remove ${who ? who.textContent : identityFromKey(key)}? They lose access the moment this saves.`)) return;
+        if (!confirm(`Remove ${who}? They lose access the moment this saves.`)) return;
         firebase.database().ref(dbPath('members/' + key)).remove()
           .then(() => { showToast('Removed', { mine: true }); renderMembers(); })
           .catch(() => showToast('Remove refused — are you still an editor?'));
@@ -1430,7 +1568,7 @@ function bindMemberList(body, myKey, members) {
   const seedBtn = document.getElementById('member-seed-btn');
   if (seedBtn) {
     seedBtn.addEventListener('click', () => {
-      const missing = missingSeedCounselors(members);
+      const missing = missingSeedCounselors(activeMembers);
       if (!missing.length) { renderMembers(); return; }
       const patch = {};
       missing.forEach((c) => { patch[pendingKey(c.name)] = memberRecord('viewer', c.name, c.teamId); });
@@ -1450,8 +1588,10 @@ function bindMemberList(body, myKey, members) {
       const name = (document.getElementById('member-add-name').value || '').trim();
       const roleSeg = document.getElementById('member-add-role');
       const teamSel = document.getElementById('member-add-team') || body.querySelector('.member-add-team');
+      const campsSeg = document.getElementById('member-add-camps');
       const teamId = (teamSel && teamSel.value) || '';
       const role = (roleSeg && roleSeg.value) === 'editor' ? 'editor' : 'viewer';
+      const bothCamps = !!(campsSeg && campsSeg.value === 'both');
       // Auto-detect: anything with an @ is an email; a blank field means
       // "by name for now" (a pending row); otherwise a phone number.
       let key, shownId, pending = false;
@@ -1482,7 +1622,14 @@ function bindMemberList(body, myKey, members) {
         shownId = key; // the normalized +E.164 we're about to store — so they can eyeball it
       }
       errEl.hidden = true;
-      firebase.database().ref(dbPath('members/' + key)).set(memberRecord(role, name, teamId))
+      const writes = [firebase.database().ref(dbPath('members/' + key)).set(memberRecord(role, name, teamId))];
+      // "Both camps" also writes the other camp's record (no team — teams
+      // are per-camp). A pending row stays single-camp: its random key means
+      // nothing to the other camp's list.
+      if (bothCamps && !pending) {
+        writes.push(firebase.database().ref(campMembersPath(otherCampId(), key)).set(memberRecord(role, name)));
+      }
+      Promise.all(writes)
         .then(() => {
           showToast(pending ? shownId + ' added — no sign-in yet' : shownId + ' can now sign in', { mine: true });
           // A pending row can't sign in yet, so there's nothing to invite them to.
@@ -1508,6 +1655,7 @@ function bindMemberList(body, myKey, members) {
     inviteDismiss.addEventListener('click', () => { lastInvite = null; renderMembers(); });
   }
 }
+
 
 function wireMembers() {
   const row = document.getElementById('members-row');

@@ -208,6 +208,21 @@ default, so pre-camps devices behave identically).
   after approval (a refused `once()` is harmless), recorded in
   `localStorage.campScoreboardCampsHint` (`{junior:'editor',
   senior:'viewer'}`).
+- **The Members drawer manages BOTH camps in one list** (`renderMembers`
+  loads both lists via `once()`; `mergeMemberLists` folds them to one row
+  per person). Each row carries a per-camp None/Viewer/Editor switch:
+  None removes that camp's record (confirmed), Viewer/Editor writes the
+  role, and setting a role where no record exists GRANTS access (a fresh
+  `memberRecord`, name carried over, `teamId` deliberately not — teams are
+  per-camp; the team select on the row edits the ACTIVE camp's record
+  only). A switch is disabled for your own row and for camps where you're
+  not an editor (`campRoleOf`); cross-camp writes go through
+  `campMembersPath(campId, key)` — the only cross-camp write path. The add
+  form gains a "This camp only / Both camps" choice when you're an editor
+  in both. Pending rows stay single-camp (their random key means nothing
+  to the other list) and keep the simple Viewer/Editor + Remove controls.
+  If the other camp's list can't be read (not a member there), the drawer
+  falls back to exactly the single-camp UI.
 - **Switching camps is ALWAYS set-key-then-reload** (`switchCamp()`), never
   re-pointing refs in place — the listener lifecycle is one-shot (a
   cancelled read is terminal). Dual-camp accounts get the camp picker

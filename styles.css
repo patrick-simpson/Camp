@@ -3605,11 +3605,32 @@ body.no-scroll {
 .member-pending .link-btn {
   font-size: 0.78rem;
 }
-/* Role + Remove share a line; the team picker gets its own full-width one —
-   three controls never fit across a phone-width drawer. */
+/* Each control gets its own full-width line — a phone-width drawer can't
+   fit two side by side. */
 .member-controls .member-team {
   flex: 1 1 100%;
   min-width: 0;
+}
+/* Per-camp access line: "🛡️ Junior  [None|Viewer|Editor]" — the control
+   may wrap under its label on narrow phones rather than overflow. */
+.member-access-row {
+  flex-basis: 100%;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.5rem;
+}
+.member-access-camp {
+  flex: 0 0 4.2rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.member-access-row .member-access {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
 }
 /* "Add this week's counselors" — the one-tap seed of the printed roster. */
 .member-seed {
