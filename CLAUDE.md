@@ -18,6 +18,9 @@ Files:
   branding, printed daily schedule, and seed data. Loads between defaults.js
   and app.js; app.js reads everything through the active `CAMP`
 - `settings.js` — the settings sheet + week-builder UI
+- `chat.js` — Camp Chat (see "Camp chat" below): four channels, automatic
+  mention alerts, compressed in-database photos. Self-contained layer,
+  loaded last; every hook in app.js is typeof-guarded
 - `styles.css` — all styling (design tokens at the top, light + dark)
 - `firebase-config.js` — sync config (also used by Firebase Auth sign-in)
 - `auth-email-link.js` / `auth-phone.js` — optional alternative sign-in
@@ -65,10 +68,10 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
 
 **Every time any code asset changes:**
 1. Bump the `?v=N` cache-busting query string in `index.html` — there are
-   NINE on the same number: `styles.css`, `vendor/jelly.js`,
+   TEN on the same number: `styles.css`, `vendor/jelly.js`,
    `firebase-config.js`, `defaults.js`, `camps.js`, `app.js`, `settings.js`,
-   `auth-phone.js`, `auth-email-link.js` — keep them in sync, all bumped
-   together. Also bump
+   `chat.js`, `auth-phone.js`, `auth-email-link.js` — keep them in sync,
+   all bumped together. Also bump
    `APP_VERSION` in `app.js` to the same number (it drives the auto-reload
    version check). `current-standings.html` and `stalling.html` load
    `vendor/jelly.js` (and current-standings loads `firebase-config.js`) with
@@ -269,6 +272,68 @@ default, so pre-camps devices behave identically).
   direct path URL. Check indentation when console-seeding.)
   `current-standings.html` is junior-only until it grows a `?camp=` switch
   (planned).
+
+## Camp chat (chat.js)
+
+Four fixed channels — ids `announcements` / `general` / `memes` / `photos`
+(`CHAT_CHANNELS` in camps.js; the IDS are a contract with the security
+rules, labels/emoji are free to change). Every signed-in member can post,
+viewers included — chat is deliberately NOT `canEdit()`-gated (the first
+member-writable content path; author identity is validated by the rules,
+so nobody can post as someone else).
+
+- **Data lives BESIDE state, never in it**: `<dbRoot>/chat/<ch>/<msgId>`
+  (push ids) and `<dbRoot>/chatPhotos/<photoId>` — sibling nodes, own
+  listeners (`initChatSync`, called from `initSync` post-approval),
+  in-memory only. Nothing chat-related touches `SYNC_KEYS`, the
+  localStorage snapshot, or the diff push. A chat listener error sets
+  `chatDenied` and degrades CHAT ONLY — it must never touch
+  `fbRef`/`syncDenied` (the terminal-read invariant is the state
+  listener's).
+- **Message**: `{at: ServerValue.TIMESTAMP, byKey (rules-validated ==
+  auth identity), name ≤60, text? ≤2000, thumb? ≤24k-char JPEG data URL,
+  photoId?}`. No edits by design (rules allow create and delete only);
+  authors delete their own, editors delete anything and can 🧹 clear a
+  whole channel (double-confirm; also deletes the channel's photos via
+  `orderByChild('ch')`).
+- **Photos are split**: a ~320px thumbnail rides in the message; the
+  ~1280px full image lives in `chatPhotos` and is fetched by `once()` only
+  when tapped (lightbox). This is the bandwidth design — every page load
+  re-downloads each channel's `limitToLast(CHAT_WINDOW = 50)` window, so
+  inline full photos would burn the free 10GB/month. `CHAT_WINDOW` is THE
+  tuning knob.
+- **Backlog vs live**: after attaching `child_added`, a `once('value')`
+  resolves AFTER the initial backlog — that flips `chatReady[ch]`. Backlog
+  counts toward unread but never toasts; only post-ready messages run
+  `notifyChatMessage` (own messages skipped; `announcements` → everyone
+  gets toast + OS notification + chime + vibrate, clone of
+  `notifyNewAnnouncements`; else automatic mention scan → mine → toast +
+  OS notification; else badge only).
+- **Mentions are AUTOMATIC** (no @ syntax): `chatMentionTargets()` = every
+  member-directory name (+ first names), `TEAM_COUNSELORS`, team names,
+  `TEAM_ABBREV`; `mentionScan` is word-boundary, case-insensitive,
+  longest-match-wins (pure — tests/chat.test.js). "Mine" = my
+  `memberName`/`state.identity`/identity key/`memberTeamId`/
+  `state.followTeam`. Rendering walks the RAW string and escapes each
+  segment (`renderChatText`) — never regex over escaped HTML.
+- **Unread**: per-camp seen map `lsKey('campScoreboardChatSeen')`
+  (`{ch: lastSeenMs}`, wiped by `clearLocalData`); unread = other
+  people's messages after lastSeen. Badges on the home card + channel
+  tabs; seen marked while the channel is open and the tab visible.
+- **UI**: home card `#chat-card` (`data-card="chat"`, in `HIDEABLE_CARDS`
+  — hide-from-viewers is the editors' kill switch and force-closes a
+  viewer's open chat) → full-screen `#chat-view` via `body.chat-open`
+  (builder-style takeover; `state.ui.chatOpen`/`chatChannel`,
+  device-local). The view rebuilds ONLY on open/channel-switch
+  (`chatViewBuiltFor`) — live messages append incrementally so the
+  composer never loses typed text to a re-render.
+- **Rules**: `chat` + `chatPhotos` blocks per camp root (member-read,
+  member-create-with-own-byKey, author-or-editor delete, editor
+  channel-clear, string caps, `$other: false`). Until pasted, chat shows
+  "isn't available yet" and everything else works — code can deploy first.
+- **Honest limit** (owner accepted): no push server, so alerts fire only
+  on devices with the tab open (backgrounded OK, closed no); unread badges
+  catch everyone else up on next open.
 
 ## Auth, members & roles (the security boundary)
 

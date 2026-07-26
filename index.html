@@ -19,8 +19,8 @@
   <!-- Jelly UI web components (vendored, see vendor/jelly.js header). Module
        scripts are deferred by spec, so this never blocks first paint and the
        classic scripts at the end of <body> always execute before it. -->
-  <script type="module" src="vendor/jelly.js?v=170"></script>
-  <link rel="stylesheet" href="styles.css?v=170">
+  <script type="module" src="vendor/jelly.js?v=171"></script>
+  <link rel="stylesheet" href="styles.css?v=171">
 
   <script>
     // Decide lock state before the page paints so we never flash the app,
@@ -129,6 +129,22 @@
       <!-- ── LIVE NOW (a game in progress — surfaced + highlighted) ── -->
       <section id="live-home" class="live-home" hidden></section>
 
+      <!-- ── CAMP CHAT (chat.js) — the home card. Static markup so the
+           hide-from-viewers switch wires like every other card's; chat.js
+           fills the preview + badge, and tapping opens the full-screen
+           #chat-view takeover below. -->
+      <section id="chat-card" class="card chat-card" data-card="chat" hidden>
+        <button type="button" id="chat-card-main" class="chat-card-main">
+          <span class="chat-card-title">💬 Camp Chat <span id="chat-card-badge" class="chat-badge" hidden></span></span>
+          <span class="chat-card-preview" id="chat-card-preview">Loading…</span>
+          <span class="settings-link-chevron" aria-hidden="true">›</span>
+        </button>
+        <div class="settings-row card-visibility-row">
+          <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🙈</span> Hide from viewers</span>
+          <jelly-switch class="hide-card-toggle" data-hide-card="chat" label="Hide Camp Chat from viewers"></jelly-switch>
+        </div>
+      </section>
+
       <!-- ── HOME PANELS ────────────────────────────────────
            The five expandable cards are jelly-collapsible elements inside a
            single-open jelly-accordion (opening one closes the others). Each
@@ -228,6 +244,10 @@
       <!-- ── WEEK BUILDER (editor-only; opened from Settings → Set up the
            week; body.builder-open hides every sibling section while it's up) ── -->
       <section id="settings-view" class="settings-view" hidden></section>
+
+      <!-- Full-screen Camp Chat (chat.js renders the content; body.chat-open
+           hides every sibling section, same trick as the week builder). -->
+      <section id="chat-view" class="chat-view" hidden></section>
 
     </main>
 
@@ -335,6 +355,10 @@
   <!-- Shown ONCE, the first time a device discovers it has both camps; the
        choice is then remembered (Settings has the switcher). Also opened by
        the footer camp chip. Rendered by openCampPicker (app.js). -->
+  <!-- Camp Chat photo lightbox (chat.js) — tap a thumbnail, fetch the
+       full-size image once, tap anywhere/Escape to close. -->
+  <div id="chat-lightbox" class="chat-lightbox" hidden></div>
+
   <jelly-dialog id="camp-picker-overlay" label="Pick a camp">
     <h2 class="team-picker-title">⛺ Which camp are you here for?</h2>
     <p class="muted team-picker-hint">Your account works at both camps — each keeps its own teams, games, and scores. We'll remember your choice; switch anytime in Settings.</p>
@@ -352,18 +376,21 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=170"></script>
-  <script src="defaults.js?v=170"></script>
+  <script src="firebase-config.js?v=171"></script>
+  <script src="defaults.js?v=171"></script>
   <!-- Camp profiles: which camp this device runs (junior default), its
        Firebase root, storage namespace, schedule, and seed data. Must load
        between defaults.js (junior's game catalog) and app.js (the consumer). -->
-  <script src="camps.js?v=170"></script>
-  <script src="app.js?v=170"></script>
-  <script src="settings.js?v=170"></script>
+  <script src="camps.js?v=171"></script>
+  <script src="app.js?v=171"></script>
+  <script src="settings.js?v=171"></script>
+  <!-- Camp Chat (channels, mentions, photos) — self-contained layer; delete
+       this tag and the app runs exactly as before (all hooks typeof-guard). -->
+  <script src="chat.js?v=171"></script>
   <!-- Optional alternative sign-in methods. Delete a tag to remove that
        method (app.js only touches them through window.CampPhone /
        window.CampEmailLink); the Google button always remains. -->
-  <script src="auth-phone.js?v=170"></script>
-  <script src="auth-email-link.js?v=170"></script>
+  <script src="auth-phone.js?v=171"></script>
+  <script src="auth-email-link.js?v=171"></script>
 </body>
 </html>

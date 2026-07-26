@@ -1,0 +1,689 @@
+// ── Camp Chat ─────────────────────────────────────────────────────
+// Four channels (camps.js CHAT_CHANNELS), every signed-in member can post
+// (viewers included — chat is deliberately NOT canEdit()-gated), photos
+// compressed client-side and stored in the database, automatic mention
+// alerts for counselor names and team names.
+//
+// Chat is a SELF-CONTAINED layer beside the scoreboard: messages live at
+// <dbRoot>/chat/<channelId>/<msgId> and full-size photos at
+// <dbRoot>/chatPhotos/<photoId> — sibling nodes to state/config/members,
+// NEVER inside synced state (a chat's volume would bloat every device's
+// localStorage snapshot and the per-path diff push). In-memory only here.
+//
+// The one invariant borrowed from the sync layer: chat listeners attach
+// only AFTER membership is confirmed (initChatSync is called from
+// initSync), and a chat listener error degrades CHAT ONLY — it must never
+// touch fbRef/syncDenied; the terminal-read rule belongs to the state
+// listener alone. Until the security rules grow the chat blocks, every
+// read here is refused and the card just says chat isn't available yet.
+//
+// Loaded after app.js/settings.js: classic scripts share the global
+// lexical scope, so this file reads app.js helpers (esc, showToast,
+// maybeNativeNotification, loadImage, canvasToJpeg, serverNow, dbPath…)
+// directly, and app.js calls back in through typeof-guarded hooks.
+
+// Messages kept per channel on every device. THE bandwidth knob: each page
+// load re-downloads this window per channel (thumbs included), so raising
+// it raises every device's data use — see CLAUDE.md before touching.
+const CHAT_WINDOW = 50;
+
+const CHAT_TEXT_MAX = 2000;     // chars of message text
+const CHAT_THUMB_MAX = 24000;   // chars of inline thumbnail data URL (~18KB)
+const CHAT_PHOTO_MAX = 400000;  // chars of full-size photo data URL (~300KB)
+const CHAT_SEEN_KEY = 'campScoreboardChatSeen'; // per-camp via lsKey()
+
+let chatMsgs = {};        // channelId -> [{id, at, byKey, name, text, thumb, photoId}] sorted by at
+let chatReady = {};       // channelId -> true once the initial backlog has fully arrived
+let chatDenied = false;   // rules refused chat (not pasted yet, or revoked)
+let chatSyncStarted = false;
+let chatViewBuiltFor = null; // which channel the full view DOM was last built for
+
+function chatChannels() {
+  return (typeof CAMP !== 'undefined' && CAMP.chatChannels) || [];
+}
+
+function chatChannelById(id) {
+  return chatChannels().find((c) => c.id === id) || null;
+}
+
+// ── Message shape ─────────────────────────────────────────────────
+// Heals everything RTDB pruning or a partial write can produce (the
+// empty-fields gotcha — see CLAUDE.md): every field comes back typed.
+function normalizeChatMsg(id, raw) {
+  const r = raw && typeof raw === 'object' ? raw : {};
+  return {
+    id: String(id || ''),
+    at: Number(r.at) || 0,
+    byKey: typeof r.byKey === 'string' ? r.byKey : '',
+    name: typeof r.name === 'string' ? r.name : '',
+    text: typeof r.text === 'string' ? r.text : '',
+    thumb: typeof r.thumb === 'string' ? r.thumb : '',
+    photoId: typeof r.photoId === 'string' ? r.photoId : '',
+  };
+}
+
+// ── Sync (called from initSync, after membership confirmed) ───────
+function initChatSync() {
+  if (chatSyncStarted || !chatChannels().length) return;
+  chatSyncStarted = true;
+  chatChannels().forEach((c) => {
+    const ch = c.id;
+    chatMsgs[ch] = chatMsgs[ch] || [];
+    try {
+      const ref = firebase.database().ref(dbPath('chat/' + ch)).limitToLast(CHAT_WINDOW);
+      ref.on('child_added', (snap) => onChatMsgAdded(ch, snap), () => {
+        // Rules refused (not pasted yet / access changed): chat-only degrade.
+        chatDenied = true;
+        renderChatCard();
+        if (chatOpenNow()) renderChatView(true);
+      });
+      ref.on('child_removed', (snap) => onChatMsgRemoved(ch, snap));
+      // RTDB fires the whole initial backlog as child_added BEFORE this
+      // once() resolves — the clean boundary between "history" (counts as
+      // unread, never toasts) and "live" (runs the alert path).
+      ref.once('value').then(() => {
+        chatReady[ch] = true;
+        renderChatCard();
+        if (chatOpenNow() && state.ui.chatChannel === ch) renderChatView(true);
+      }).catch(() => { /* the child_added error handler already spoke */ });
+    } catch (e) { /* no firebase — card shows the sync-off note */ }
+  });
+}
+
+function onChatMsgAdded(ch, snap) {
+  const msg = normalizeChatMsg(snap.key, snap.val());
+  const list = chatMsgs[ch] = chatMsgs[ch] || [];
+  if (list.some((m) => m.id === msg.id)) return; // replay echo — already have it
+  list.push(msg);
+  list.sort((a, b) => a.at - b.at || (a.id < b.id ? -1 : 1));
+  // The window slides: once past CHAT_WINDOW the oldest fell off the query,
+  // keep memory bounded the same way.
+  if (list.length > CHAT_WINDOW) list.splice(0, list.length - CHAT_WINDOW);
+  if (chatReady[ch]) {
+    notifyChatMessage(ch, msg);
+    if (chatViewingChannel() === ch) {
+      markChannelSeen(ch);
+      appendChatBubble(ch, msg);
+    }
+  }
+  renderChatCard();
+}
+
+function onChatMsgRemoved(ch, snap) {
+  const list = chatMsgs[ch] = chatMsgs[ch] || [];
+  const i = list.findIndex((m) => m.id === snap.key);
+  if (i > -1) list.splice(i, 1);
+  renderChatCard();
+  if (chatViewingChannel() === ch) renderChatView(true);
+}
+
+// ── Sending ───────────────────────────────────────────────────────
+function chatDisplayName() {
+  return memberName || state.identity || identityLabel(authUser) || 'Someone';
+}
+
+function sendChatMessage(ch) {
+  const input = document.getElementById('chat-input');
+  const text = ((input && input.value) || '').trim().slice(0, CHAT_TEXT_MAX);
+  if (!text) return;
+  const myKey = identityKey(authUser);
+  if (!myKey || typeof firebase === 'undefined') { showToast("Couldn't send — you're not signed in."); return; }
+  const msg = {
+    at: firebase.database.ServerValue.TIMESTAMP,
+    byKey: myKey,
+    name: String(chatDisplayName()).slice(0, 60),
+    text,
+  };
+  if (input) input.value = '';
+  firebase.database().ref(dbPath('chat/' + ch)).push(msg)
+    .catch(() => {
+      if (input && !input.value) input.value = text; // give the words back
+      showToast("Couldn't send — check your connection and try again.");
+    });
+}
+
+// Photo first, message second: a half-failure leaves an orphaned photo
+// (harmless, invisible) rather than a message pointing at nothing.
+function sendChatPhoto(ch, file) {
+  const myKey = identityKey(authUser);
+  if (!file || !myKey || typeof firebase === 'undefined') return;
+  const btn = document.getElementById('chat-photo-btn');
+  if (btn) btn.setAttribute('disabled', '');
+  makeChatImages(file)
+    .then(({ full, thumb }) => {
+      const photoRef = firebase.database().ref(dbPath('chatPhotos')).push();
+      return photoRef.set({ byKey: myKey, at: firebase.database.ServerValue.TIMESTAMP, ch, data: full })
+        .then(() => firebase.database().ref(dbPath('chat/' + ch)).push({
+          at: firebase.database.ServerValue.TIMESTAMP,
+          byKey: myKey,
+          name: String(chatDisplayName()).slice(0, 60),
+          thumb,
+          photoId: photoRef.key,
+        }));
+    })
+    .catch(() => showToast("Couldn't send the photo — try a different one, or check your connection."))
+    .then(() => { if (btn) btn.removeAttribute('disabled'); });
+}
+
+function chatBlobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result || ''));
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
+}
+
+// Draw the image at (max maxDim px, never upscaled) and step the JPEG
+// quality down until the data URL fits the cap — the rules enforce the
+// same cap server-side, so an oversized write would be refused anyway.
+function shrinkToDataUrl(img, maxDim, cap, startQuality) {
+  const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(img.width * scale));
+  canvas.height = Math.max(1, Math.round(img.height * scale));
+  canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+  const tryQuality = (q) => canvasToJpeg(canvas, q)
+    .then(chatBlobToDataUrl)
+    .then((url) => {
+      if (url.length <= cap || q <= 0.25) return url;
+      return tryQuality(q - 0.15);
+    });
+  return tryQuality(startQuality);
+}
+
+function makeChatImages(file) {
+  return loadImage(file).then((img) => Promise.all([
+    shrinkToDataUrl(img, 1280, CHAT_PHOTO_MAX, 0.7),
+    shrinkToDataUrl(img, 320, CHAT_THUMB_MAX, 0.6),
+  ]).then(([full, thumb]) => ({ full, thumb })));
+}
+
+function deleteChatMessage(ch, msg) {
+  if (!confirm('Delete this message for everyone?')) return;
+  firebase.database().ref(dbPath('chat/' + ch + '/' + msg.id)).remove()
+    .then(() => {
+      // Best-effort: the photo is invisible without its message anyway.
+      if (msg.photoId) firebase.database().ref(dbPath('chatPhotos/' + msg.photoId)).remove().catch(() => {});
+    })
+    .catch(() => showToast("Couldn't delete — only your own messages (editors can delete any)."));
+}
+
+// Editor housekeeping: empties a channel AND its photos (the storage that
+// actually costs space). Double confirm — this is for after camp week.
+function clearChatChannel(ch) {
+  if (!canEdit()) return;
+  const c = chatChannelById(ch);
+  if (!confirm(`Clear ALL messages in ${c ? c.label : ch}? This is for cleaning up after camp.`)) return;
+  if (!confirm('Really clear the whole channel for everyone? This cannot be undone.')) return;
+  firebase.database().ref(dbPath('chat/' + ch)).remove()
+    .then(() => firebase.database().ref(dbPath('chatPhotos')).orderByChild('ch').equalTo(ch).once('value'))
+    .then((snap) => {
+      const updates = {};
+      Object.keys(snap.val() || {}).forEach((id) => { updates[id] = null; });
+      if (Object.keys(updates).length) return firebase.database().ref(dbPath('chatPhotos')).update(updates);
+    })
+    .then(() => { chatMsgs[ch] = []; showToast('Channel cleared', { mine: true }); renderChatView(true); renderChatCard(); })
+    .catch(() => showToast("Couldn't clear the channel — are you still an editor?"));
+}
+
+// ── Mentions ──────────────────────────────────────────────────────
+// AUTOMATIC: no @ syntax. The dictionary is every name the app knows —
+// member names (and their first names), the printed counselor lists, team
+// names and short names — and matching is word-boundary, case-insensitive,
+// longest-match-wins. Pure functions below take the dictionary as an
+// argument so the tests can drive them without any globals.
+
+function chatMentionTargets() {
+  const targets = [];
+  const seen = new Set();
+  const add = (label, kind, extra) => {
+    const clean = String(label || '').trim();
+    if (clean.length < 3) return; // "TJ" is 2 chars — see the abbrev add below
+    const dedupeKey = kind + ':' + clean.toLowerCase();
+    if (seen.has(dedupeKey)) return;
+    seen.add(dedupeKey);
+    targets.push(Object.assign({ label: clean, lower: clean.toLowerCase(), kind }, extra || {}));
+  };
+  // People: the live directory first (real names), then the printed lists.
+  Object.keys(memberDirectory || {}).forEach((key) => {
+    const rec = memberDirectory[key] || {};
+    if (!rec.name) return;
+    add(rec.name, 'person', { key });
+    add(String(rec.name).trim().split(/\s+/)[0], 'person', { key }); // first name
+  });
+  Object.keys(TEAM_COUNSELORS || {}).forEach((tid) => {
+    (TEAM_COUNSELORS[tid] || []).forEach((n) => add(n, 'person', {}));
+  });
+  // Short person names (TJ, Zac) matter more than the 3-char floor — allow
+  // 2-char names from the known lists only (never from free text).
+  Object.keys(memberDirectory || {}).forEach((key) => {
+    const rec = memberDirectory[key] || {};
+    const first = String(rec.name || '').trim().split(/\s+/)[0];
+    if (first.length === 2) {
+      const dk = 'person:' + first.toLowerCase();
+      if (!seen.has(dk)) { seen.add(dk); targets.push({ label: first, lower: first.toLowerCase(), kind: 'person', key }); }
+    }
+  });
+  Object.keys(TEAM_COUNSELORS || {}).forEach((tid) => {
+    (TEAM_COUNSELORS[tid] || []).forEach((n) => {
+      if (String(n).trim().length === 2) {
+        const dk = 'person:' + String(n).trim().toLowerCase();
+        if (!seen.has(dk)) { seen.add(dk); targets.push({ label: String(n).trim(), lower: String(n).trim().toLowerCase(), kind: 'person' }); }
+      }
+    });
+  });
+  // Teams: full names + short names.
+  (state.teams || []).forEach((t) => add(t.name, 'team', { teamId: t.id }));
+  Object.keys(TEAM_ABBREV || {}).forEach((tid) => add(TEAM_ABBREV[tid], 'team', { teamId: tid }));
+  return targets;
+}
+
+function chatIsWordChar(c) {
+  return !!c && /[a-z0-9]/i.test(c);
+}
+
+// All non-overlapping mention hits in `text`: word-boundary, case-
+// insensitive, longer labels beat shorter ones at the same spot (so
+// "Patriotic Pilgrims" wins over a member named "Pat").
+function mentionScan(text, targets) {
+  const raw = String(text || '');
+  const lower = raw.toLowerCase();
+  if (!raw || !targets || !targets.length) return [];
+  const candidates = [];
+  targets.forEach((t) => {
+    let from = 0;
+    while (from <= lower.length - t.lower.length) {
+      const i = lower.indexOf(t.lower, from);
+      if (i === -1) break;
+      const before = raw[i - 1];
+      const after = raw[i + t.lower.length];
+      if (!chatIsWordChar(before) && !chatIsWordChar(after)) {
+        candidates.push({ start: i, end: i + t.lower.length, label: t.label, kind: t.kind, key: t.key || null, teamId: t.teamId || null });
+      }
+      from = i + 1;
+    }
+  });
+  // Longest first, then earliest — then keep whatever doesn't overlap.
+  candidates.sort((a, b) => (b.end - b.start) - (a.end - a.start) || a.start - b.start);
+  const kept = [];
+  candidates.forEach((c) => {
+    if (!kept.some((k) => c.start < k.end && k.start < c.end)) kept.push(c);
+  });
+  return kept.sort((a, b) => a.start - b.start);
+}
+
+// Does any hit point at THIS device's person or team?
+function mentionIsMine(hits) {
+  const myKey = identityKey(authUser);
+  const myNames = [memberName, state.identity].filter(Boolean).map((n) => String(n).toLowerCase());
+  const myFirsts = myNames.map((n) => n.split(/\s+/)[0]);
+  return (hits || []).some((h) => {
+    if (h.kind === 'person') {
+      if (h.key && myKey && h.key === myKey) return true;
+      const l = h.label.toLowerCase();
+      return myNames.includes(l) || myFirsts.includes(l);
+    }
+    return h.teamId && (h.teamId === memberTeamId || h.teamId === state.followTeam);
+  });
+}
+
+// Escaped HTML with mention spans. Walks the RAW string segment by
+// segment, escaping each piece separately — never regex over escaped HTML.
+function renderChatText(text, hits) {
+  const raw = String(text || '');
+  if (!hits || !hits.length) return esc(raw);
+  let html = '';
+  let pos = 0;
+  hits.forEach((h) => {
+    html += esc(raw.slice(pos, h.start));
+    const mine = mentionIsMine([h]);
+    html += `<span class="chat-mention${mine ? ' chat-mention-you' : ''}">${esc(raw.slice(h.start, h.end))}</span>`;
+    pos = h.end;
+  });
+  html += esc(raw.slice(pos));
+  return html;
+}
+
+// ── Unread tracking (per device, per camp via lsKey) ──────────────
+function readChatSeen() {
+  try {
+    const v = JSON.parse(localStorage.getItem(lsKey(CHAT_SEEN_KEY)) || '{}');
+    return (v && typeof v === 'object' && !Array.isArray(v)) ? v : {};
+  } catch (e) { return {}; }
+}
+
+function markChannelSeen(ch) {
+  const seen = readChatSeen();
+  seen[ch] = serverNow();
+  try { localStorage.setItem(lsKey(CHAT_SEEN_KEY), JSON.stringify(seen)); } catch (e) { /* fine */ }
+  renderChatCard();
+  renderChatBadges();
+}
+
+// Pure: how many of `list` arrived after `lastSeen` from someone else.
+function countUnread(list, lastSeen, myKey) {
+  return (list || []).filter((m) => m.at > (lastSeen || 0) && m.byKey !== myKey).length;
+}
+
+function unreadCount(ch) {
+  return countUnread(chatMsgs[ch], readChatSeen()[ch], identityKey(authUser));
+}
+
+function unreadTotal() {
+  return chatChannels().reduce((n, c) => n + unreadCount(c.id), 0);
+}
+
+// ── Alerts (post-backlog messages only) ───────────────────────────
+function chatViewingChannel() {
+  return (chatOpenNow() && !document.hidden) ? state.ui.chatChannel : null;
+}
+
+function chatPreviewOf(msg) {
+  const name = msg.name || identityFromKey(msg.byKey) || 'Someone';
+  const what = msg.text ? msg.text.slice(0, 90) : '📷 Photo';
+  return `${name}: ${what}`;
+}
+
+function notifyChatMessage(ch, msg) {
+  const myKey = identityKey(authUser);
+  if (msg.byKey && myKey && msg.byKey === myKey) return; // my own echo
+  const viewing = chatViewingChannel() === ch;
+  const preview = chatPreviewOf(msg);
+  if (ch === 'announcements') {
+    // An announcement is for everyone — same treatment as the announcement
+    // banner alerts (toast + OS notification + bright chime + buzz).
+    if (!viewing) showToast('📣 ' + preview);
+    if (state.notify) {
+      maybeNativeNotification('📣 Camp Chat announcement', preview, 'camp-chat-ann-' + msg.id);
+      playMineChime();
+      if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+    }
+    return;
+  }
+  const hits = mentionScan(msg.text, chatMentionTargets());
+  if (mentionIsMine(hits)) {
+    if (!viewing) showToast(`💬 ${msg.name || 'Someone'} mentioned you: ${(msg.text || '').slice(0, 80)}`, { mine: true });
+    if (state.notify) maybeNativeNotification('💬 You were mentioned in Camp Chat', preview, 'camp-chat-men-' + msg.id);
+  }
+  // Everything else: the unread badge (renderChatCard, from the caller).
+}
+
+// ── Open / close (device-local, like state.ui.day) ────────────────
+function chatOpenNow() {
+  return !!(state.ui && state.ui.chatOpen);
+}
+
+function chatHiddenFromMe() {
+  return !canEdit() && typeof cardHiddenFromViewers === 'function' && cardHiddenFromViewers('chat');
+}
+
+function openChat(ch) {
+  if (!chatChannels().length || chatHiddenFromMe()) return;
+  state.ui.chatOpen = true;
+  state.ui.chatChannel = chatChannelById(ch) ? ch : (state.ui.chatChannel || 'general');
+  if (state.ui.view === 'settings') state.ui.view = 'home'; // one takeover at a time
+  saveState();
+  chatViewBuiltFor = null; // force a fresh build
+  renderAll();
+  markChannelSeen(state.ui.chatChannel);
+}
+
+function closeChat() {
+  state.ui.chatOpen = false;
+  saveState();
+  chatViewBuiltFor = null;
+  renderAll();
+}
+
+// ── Rendering ─────────────────────────────────────────────────────
+function chatRelativeTime(atMs) {
+  if (!atMs) return '';
+  const mins = Math.max(0, Math.round((serverNow() - atMs) / 60000));
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + 'm ago';
+  if (mins < 60 * 24) return Math.round(mins / 60) + 'h ago';
+  return formatEasternStamp(new Date(atMs).toISOString()) || '';
+}
+
+// The home card: latest message + unread badge (static markup lives in
+// index.html so the hide-from-viewers switch wires up like every card's).
+function renderChatCard() {
+  const card = document.getElementById('chat-card');
+  if (!card) return;
+  if (!chatChannels().length) { card.hidden = true; return; }
+  // applyCardVisibility owns `hidden` for hide-from-viewers; only reveal here.
+  if (!chatHiddenFromMe()) card.hidden = false;
+  const preview = document.getElementById('chat-card-preview');
+  const badge = document.getElementById('chat-card-badge');
+  if (badge) {
+    const n = unreadTotal();
+    badge.hidden = n === 0;
+    badge.textContent = n > 99 ? '99+' : String(n);
+  }
+  if (!preview) return;
+  if (chatDenied) {
+    preview.textContent = "Chat isn't available yet — the database rules need updating.";
+    return;
+  }
+  if (!syncEnabled()) {
+    preview.textContent = 'Chat needs live sync, which is off on this device.';
+    return;
+  }
+  let latest = null;
+  chatChannels().forEach((c) => {
+    (chatMsgs[c.id] || []).forEach((m) => { if (!latest || m.at > latest.at) latest = m; });
+  });
+  const ready = chatChannels().some((c) => chatReady[c.id]);
+  preview.textContent = latest
+    ? `${chatPreviewOf(latest)} · ${chatRelativeTime(latest.at)}`
+    : (ready ? 'No messages yet — start the conversation!' : 'Loading…');
+}
+
+function renderChatBadges() {
+  chatChannels().forEach((c) => {
+    const b = document.querySelector(`.chat-tab-badge[data-ch="${c.id}"]`);
+    if (b) {
+      const n = unreadCount(c.id);
+      b.hidden = n === 0;
+      b.textContent = n > 99 ? '99+' : String(n);
+    }
+  });
+}
+
+function chatDayStamp(atMs) {
+  if (!atMs) return '';
+  const parts = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'long', month: 'short', day: 'numeric' })
+    .format(new Date(atMs));
+  return parts;
+}
+
+function chatTimeStamp(atMs) {
+  if (!atMs) return '';
+  return new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: 'numeric', minute: '2-digit', hour12: true })
+    .format(new Date(atMs)).toLowerCase();
+}
+
+function chatBubbleHTML(ch, msg) {
+  const myKey = identityKey(authUser);
+  const mine = !!(myKey && msg.byKey === myKey);
+  const canDelete = mine || canEdit();
+  const hits = mentionScan(msg.text, chatMentionTargets());
+  const textHTML = msg.text ? `<p class="chat-bubble-text">${renderChatText(msg.text, hits)}</p>` : '';
+  const thumbHTML = msg.thumb
+    ? `<button type="button" class="chat-thumb-btn" data-photo-id="${esc(msg.photoId)}" aria-label="Open photo">
+        <img class="chat-thumb" src="${esc(msg.thumb)}" alt="Photo from ${esc(msg.name)}" loading="lazy" decoding="async"></button>`
+    : '';
+  return `<div class="chat-bubble${mine ? ' chat-bubble-mine' : ''}" data-msg-id="${esc(msg.id)}">
+    <div class="chat-bubble-head">
+      <span class="chat-bubble-name">${esc(msg.name || identityFromKey(msg.byKey) || 'Someone')}</span>
+      <span class="chat-bubble-time">${esc(chatTimeStamp(msg.at))}</span>
+      ${canDelete ? `<button type="button" class="chat-delete-btn" aria-label="Delete message">✕</button>` : ''}
+    </div>
+    ${thumbHTML}
+    ${textHTML}
+  </div>`;
+}
+
+function chatListHTML(ch) {
+  if (chatDenied) return `<p class="muted chat-note">Chat isn't available yet — the database rules need updating (ask Patrick).</p>`;
+  if (!syncEnabled()) return `<p class="muted chat-note">Chat needs live sync, which is off on this device.</p>`;
+  if (!chatReady[ch]) {
+    return '<div class="history-skeleton">' +
+      [80, 60, 75].map((w) => `<div class="skeleton-row" style="width:${w}%"><jelly-skeleton style="height:3rem"></jelly-skeleton></div>`).join('') +
+      '</div>';
+  }
+  const list = chatMsgs[ch] || [];
+  if (!list.length) return `<p class="muted chat-note">No messages here yet — say hi! 👋</p>`;
+  let html = '';
+  let lastDay = '';
+  list.forEach((m) => {
+    const day = chatDayStamp(m.at);
+    if (day && day !== lastDay) {
+      html += `<div class="chat-day-sep"><span>${esc(day)}</span></div>`;
+      lastDay = day;
+    }
+    html += chatBubbleHTML(ch, m);
+  });
+  return html;
+}
+
+// Full rebuild only on open/channel-switch/structural change — a rebuild
+// mid-typing would eat the composer text, and renderAll runs on every
+// synced update. Live messages append incrementally (appendChatBubble).
+function renderChatView(force) {
+  const view = document.getElementById('chat-view');
+  if (!view) return;
+  const ch = state.ui.chatChannel || 'general';
+  if (!force && chatViewBuiltFor === ch) { renderChatBadges(); return; }
+  chatViewBuiltFor = ch;
+  const c = chatChannelById(ch) || chatChannels()[0] || { id: ch, label: ch, emoji: '💬' };
+
+  const tabs = chatChannels().map((t) => `
+    <button type="button" class="chat-tab${t.id === ch ? ' chat-tab-active' : ''}" data-ch="${t.id}">
+      <span class="chat-tab-emoji">${t.emoji}</span> ${esc(t.short)}
+      <span class="chat-tab-badge" data-ch="${t.id}" hidden></span>
+    </button>`).join('');
+
+  view.innerHTML = `
+    <div class="chat-head">
+      <button id="chat-back-btn" class="link-btn back-btn">← Camp</button>
+      <h2 class="chat-title">${c.emoji} ${esc(c.label)}</h2>
+      ${canEdit() ? '<button id="chat-clear-btn" class="link-btn danger-link chat-clear-btn" title="Clear this channel">🧹</button>' : ''}
+    </div>
+    <div class="chat-tabs">${tabs}</div>
+    <div id="chat-list" class="chat-list">${chatListHTML(ch)}</div>
+    <div class="chat-composer">
+      <input type="file" id="chat-photo-input" accept="image/*" hidden>
+      <button type="button" id="chat-photo-btn" class="chat-photo-btn" aria-label="Send a photo">📷</button>
+      <input type="text" id="chat-input" class="chat-text-input" placeholder="Message ${esc(c.short)}…" maxlength="${CHAT_TEXT_MAX}" autocomplete="off">
+      <button type="button" id="chat-send-btn" class="chat-send-btn" aria-label="Send">➤</button>
+    </div>`;
+
+  renderChatBadges();
+  wireChatView(ch);
+  chatScrollToBottom();
+}
+
+function wireChatView(ch) {
+  const view = document.getElementById('chat-view');
+  const back = document.getElementById('chat-back-btn');
+  if (back) back.addEventListener('click', closeChat);
+  view.querySelectorAll('.chat-tab').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      state.ui.chatChannel = btn.dataset.ch;
+      saveState();
+      renderChatView(true);
+      markChannelSeen(btn.dataset.ch);
+    });
+  });
+  const send = document.getElementById('chat-send-btn');
+  if (send) send.addEventListener('click', () => sendChatMessage(ch));
+  const input = document.getElementById('chat-input');
+  if (input) input.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChatMessage(ch); });
+  const photoBtn = document.getElementById('chat-photo-btn');
+  const photoInput = document.getElementById('chat-photo-input');
+  if (photoBtn && photoInput) {
+    photoBtn.addEventListener('click', () => photoInput.click());
+    photoInput.addEventListener('change', () => {
+      if (photoInput.files && photoInput.files[0]) sendChatPhoto(ch, photoInput.files[0]);
+      photoInput.value = '';
+    });
+  }
+  const clearBtn = document.getElementById('chat-clear-btn');
+  if (clearBtn) clearBtn.addEventListener('click', () => clearChatChannel(ch));
+  wireChatBubbles(view, ch);
+}
+
+function wireChatBubbles(scope, ch) {
+  scope.querySelectorAll('.chat-delete-btn').forEach((btn) => {
+    if (btn.__wired) return;
+    btn.__wired = true;
+    btn.addEventListener('click', () => {
+      const el = btn.closest('.chat-bubble');
+      const msg = (chatMsgs[ch] || []).find((m) => m.id === (el && el.dataset.msgId));
+      if (msg) deleteChatMessage(ch, msg);
+    });
+  });
+  scope.querySelectorAll('.chat-thumb-btn').forEach((btn) => {
+    if (btn.__wired) return;
+    btn.__wired = true;
+    btn.addEventListener('click', () => openChatLightbox(btn.dataset.photoId));
+  });
+}
+
+function chatScrollToBottom() {
+  const list = document.getElementById('chat-list');
+  if (list) list.scrollTop = list.scrollHeight;
+}
+
+function appendChatBubble(ch, msg) {
+  const list = document.getElementById('chat-list');
+  if (!list || chatViewBuiltFor !== ch) return;
+  // The first message replaces the "say hi" placeholder rather than
+  // stacking under it.
+  const note = list.querySelector('.chat-note');
+  if (note) note.remove();
+  const nearBottom = list.scrollHeight - list.scrollTop - list.clientHeight < 80;
+  const prev = (chatMsgs[ch] || []).filter((m) => m.id !== msg.id).pop();
+  const day = chatDayStamp(msg.at);
+  if (!prev || chatDayStamp(prev.at) !== day) {
+    list.insertAdjacentHTML('beforeend', `<div class="chat-day-sep"><span>${esc(day)}</span></div>`);
+  }
+  list.insertAdjacentHTML('beforeend', chatBubbleHTML(ch, msg));
+  wireChatBubbles(list, ch);
+  if (nearBottom) chatScrollToBottom();
+}
+
+// ── Photo lightbox (tap a thumbnail → fetch the full image once) ──
+function openChatLightbox(photoId) {
+  const box = document.getElementById('chat-lightbox');
+  if (!box || !photoId) return;
+  box.innerHTML = '<div class="chat-lightbox-spinner">📷 Loading…</div>';
+  box.hidden = false;
+  const close = () => { box.hidden = true; box.innerHTML = ''; document.removeEventListener('keydown', onKey); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  box.onclick = close;
+  document.addEventListener('keydown', onKey);
+  firebase.database().ref(dbPath('chatPhotos/' + photoId)).once('value')
+    .then((snap) => {
+      const rec = snap.val();
+      if (box.hidden) return; // closed while loading
+      if (rec && typeof rec.data === 'string') {
+        box.innerHTML = `<img class="chat-lightbox-img" src="${esc(rec.data)}" alt="Full-size photo">`;
+      } else {
+        box.innerHTML = '<div class="chat-lightbox-spinner">This photo is gone.</div>';
+      }
+    })
+    .catch(() => { if (!box.hidden) box.innerHTML = '<div class="chat-lightbox-spinner">Couldn\'t load the photo.</div>'; });
+}
+
+// ── Wiring (called once from init() via typeof guard) ─────────────
+function wireChat() {
+  const main = document.getElementById('chat-card-main');
+  if (main) main.addEventListener('click', () => openChat(state.ui.chatChannel || 'general'));
+  // Coming back to the tab while a channel is open counts as reading it.
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && chatOpenNow()) markChannelSeen(state.ui.chatChannel);
+  });
+}

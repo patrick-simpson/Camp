@@ -20,7 +20,7 @@ const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..');
 // Load order mirrors the <script> tags at the bottom of index.html.
-const APP_FILES = ['defaults.js', 'camps.js', 'app.js', 'settings.js'];
+const APP_FILES = ['defaults.js', 'camps.js', 'app.js', 'settings.js', 'chat.js'];
 
 const noop = () => {};
 

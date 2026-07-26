@@ -22,6 +22,19 @@ function hm(h, m) { return h * 60 + (m || 0); }
 
 const CAMPS = {};
 
+// ── Camp chat channels ───────────────────────────────────────────
+// Shared by both camps (each camp still gets its OWN chat data — messages
+// live under <dbRoot>/chat/<channelId>). The ids are a CONTRACT with the
+// security rules, which whitelist exactly these four — adding a channel
+// means a rules re-paste, so change labels/emoji freely but treat ids as
+// fixed.
+const CHAT_CHANNELS = [
+  { id: 'announcements', label: 'Announcements & Important Info', short: 'Announcements', emoji: '📣' },
+  { id: 'general', label: 'General Chatter', short: 'General', emoji: '💬' },
+  { id: 'memes', label: 'Memes', short: 'Memes', emoji: '😂' },
+  { id: 'photos', label: 'Photo Dump', short: 'Photos', emoji: '📸' },
+];
+
 // ════════════════════════════════════════════════════════════════════
 // JUNIOR CAMP — the original. Every block below moved VERBATIM from
 // app.js (2026-07-25); the data is the printed junior-camp week.
@@ -455,6 +468,7 @@ CAMPS.junior = {
   memoryVerseTheme: MEMORY_VERSE_THEME,
   memoryVerses: MEMORY_VERSES,
   defaultNotice: defaultNotice,
+  chatChannels: CHAT_CHANNELS,
   defaultConfig: defaultConfig,   // defaults.js — loaded before this file
   features: { electives: true },
 };
@@ -639,6 +653,7 @@ CAMPS.senior = {
   memoryVerseTheme: MEMORY_VERSE_THEME,
   memoryVerses: MEMORY_VERSES,
   defaultNotice: seniorDefaultNotice,
+  chatChannels: CHAT_CHANNELS,
   defaultConfig: seniorDefaultConfig,
   features: { electives: false },   // no electives at senior camp; verse/cleanup/meals stay on
 };

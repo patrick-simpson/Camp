@@ -15,9 +15,9 @@ const STORAGE_KEY = lsKey('campScoreboardV2'); // per-camp; junior stays the bar
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-26T00:08:49Z';
+const CODE_UPDATED_AT = '2026-07-26T03:21:30Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 170;
+const APP_VERSION = 171;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1940,7 +1940,7 @@ function touchData() {
 //
 // Keys match the data-card attributes in index.html (and the switches'
 // data-hide-card). Only cards with a switch can be hidden.
-const HIDEABLE_CARDS = ['competitions', 'standings', 'verse', 'cleanup', 'bonus'];
+const HIDEABLE_CARDS = ['competitions', 'standings', 'verse', 'cleanup', 'bonus', 'chat'];
 
 function cardHiddenFromViewers(card) {
   const m = state.meta || {};
@@ -1975,7 +1975,7 @@ function applyCardVisibility() {
   const editor = canEdit();
   HIDEABLE_CARDS.forEach((key) => {
     const hidden = cardHiddenFromViewers(key);
-    const card = document.querySelector(`.collapsible-card[data-card="${key}"]`);
+    const card = document.querySelector(`[data-card="${key}"]`);
     if (card) {
       const hideForMe = hidden && !editor;
       card.hidden = hideForMe;
@@ -2352,6 +2352,10 @@ function initSync() {
         if (appStarted) renderAll();
       }, () => { memberDirectory = null; });
     } catch (e) { /* ignore — counselor text falls back to state.teams */ }
+    // Camp Chat listeners (chat.js — the tenth script; typeof-guarded so a
+    // build without it still runs). Chat attaches HERE, i.e. only after
+    // membership confirmed, and its own error handlers degrade chat only.
+    if (typeof initChatSync === 'function') initChatSync();
     // (Auto-reload is handled by startUpdatePolling — a same-origin poll of the
     // deployed index.html — so it works on a single device and doesn't depend on
     // Firebase or another client announcing the build.)
@@ -2773,7 +2777,7 @@ function enableNotify() {
 function toggleNotify() {
   if (!state.notify) {
     enableNotify();
-    showToast("🔔 You'll get an alert whenever a team's points change, a team is called up next, or an announcement is posted — as long as this tab stays open.");
+    showToast("🔔 You'll get an alert whenever a team's points change, a team is called up next, an announcement is posted, or someone mentions you or your team in Camp Chat — as long as this tab stays open.");
   } else {
     state.notify = false;
     updateNotifyButton();
@@ -7072,6 +7076,15 @@ function renderAll() {
   document.body.classList.toggle('builder-open', inBuilder);
   const builderView = document.getElementById('settings-view');
   if (builderView) builderView.hidden = !inBuilder;
+  // Chat takeover, same pattern as the builder: derived from state.ui every
+  // render, one takeover at a time, and force-closed for a viewer whose
+  // editors hid the chat card (mirrors the hidden-Competitions rule below).
+  const inChat = !!state.ui.chatOpen && !inBuilder &&
+    !(!canEdit() && cardHiddenFromViewers('chat'));
+  if (state.ui.chatOpen && !inChat) state.ui.chatOpen = false;
+  document.body.classList.toggle('chat-open', inChat);
+  const chatView = document.getElementById('chat-view');
+  if (chatView) chatView.hidden = !inChat;
   applyCardVisibility(); // before renderGameView — may close a hidden card's game
   renderNoticeBoard();
   renderWhatsNew();
@@ -7089,6 +7102,8 @@ function renderAll() {
   renderFooter();
   refreshOpenSchedule();
   if (inBuilder && typeof renderSettings === 'function') renderSettings();
+  if (typeof renderChatCard === 'function') renderChatCard();
+  if (inChat && typeof renderChatView === 'function') renderChatView();
 }
 
 // ── Week builder (Settings → Set up the week) ────────────────────
@@ -7150,6 +7165,7 @@ function init() {
   updateAccountRow();
   wireMembers();
   wireCampSwitcher();
+  if (typeof wireChat === 'function') wireChat();
 
   document.getElementById('notify-toggle-btn').addEventListener('click', toggleNotify);
   updateNotifyButton();
@@ -7198,7 +7214,7 @@ function init() {
 
   // Keep the "happening now" banner (and any open schedule sheet) current
   // without any taps — and expire "what's new" banners once they hit two hours.
-  setInterval(() => { renderNowBanner(); refreshOpenSchedule(); renderNoticeBoard(); renderWhatsNew(); renderMyElectives(); pruneExpiredAnnouncements(); renderAnnouncements(); }, 30 * 1000);
+  setInterval(() => { renderNowBanner(); refreshOpenSchedule(); renderNoticeBoard(); renderWhatsNew(); renderMyElectives(); pruneExpiredAnnouncements(); renderAnnouncements(); if (typeof renderChatCard === 'function') renderChatCard(); }, 30 * 1000);
 
   // Tick every visible Big Board clock (no-ops instantly when none is on
   // screen, so the interval is effectively free the rest of the week).
@@ -7723,7 +7739,8 @@ function clearLocalData() {
   // device must not keep either camp's data. (The bare base names are the
   // junior keys; the suffixed ones are senior's.)
   const bases = ['campScoreboardV2', 'campScoreboardDayRanks',
-    'campScoreboardDismissedChanges', 'campScoreboardDismissedAnnouncements'];
+    'campScoreboardDismissedChanges', 'campScoreboardDismissedAnnouncements',
+    'campScoreboardChatSeen'];
   Object.keys(CAMPS).forEach((cid) => {
     bases.forEach((b) => {
       try { localStorage.removeItem(b + CAMPS[cid].storageSuffix); } catch (e) { /* ignore */ }
