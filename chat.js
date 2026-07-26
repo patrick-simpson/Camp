@@ -163,7 +163,15 @@ function onChatMsgRemoved(ch, snap) {
 // ── Sending ───────────────────────────────────────────────────────
 function chatSendAllowed() {
   const now = Date.now(); // device clock is right for a device-local gap
-  if (now - chatLastSendAt < CHAT_MIN_SEND_MS) return false;
+  if (now - chatLastSendAt < CHAT_MIN_SEND_MS) {
+    // Never a silent no-op — a swallowed tap reads as a dead send button.
+    showToast('One moment — sending a little too fast.');
+    return false;
+  }
+  // Stamped again on the write ACK (chatAtomicSend). The server measures from
+  // the PREVIOUS write's server timestamp, this measures from the client's own
+  // clock: a slow photo compress could otherwise make the device think the gap
+  // had elapsed when the server saw less, and the send would be refused.
   chatLastSendAt = now;
   return true;
 }
@@ -187,10 +195,11 @@ function chatDisplayName() {
 // paste, and once the paste lands the retry simply stops happening.
 function chatAtomicSend(updates, rateKey) {
   const rootRef = () => firebase.database().ref(CAMP.dbRoot);
-  return rootRef().update(updates).catch((err) => {
+  const stamp = () => { chatLastSendAt = Date.now(); };
+  return rootRef().update(updates).then(stamp).catch((err) => {
     const withoutStamp = {};
     Object.keys(updates).forEach((k) => { if (k !== rateKey) withoutStamp[k] = updates[k]; });
-    return rootRef().update(withoutStamp).catch(() => { throw err; });
+    return rootRef().update(withoutStamp).then(stamp).catch(() => { throw err; });
   });
 }
 
@@ -364,14 +373,14 @@ function clearChatChannel(ch) {
     // instead: 200 keys per round trip until a page comes back short.
     .then(() => {
       const removeBatch = () => firebase.database().ref(dbPath('chatPhotos'))
-        .orderByChild('ch').equalTo(ch).limitToFirst(200).once('value')
+        .orderByChild('ch').equalTo(ch).limitToFirst(25).once('value')
         .then((snap) => {
           const updates = {};
           let n = 0;
           snap.forEach((child) => { updates[child.key] = null; n++; });
           if (!n) return null;
           return firebase.database().ref(dbPath('chatPhotos')).update(updates)
-            .then(() => (n === 200 ? removeBatch() : null)); // a short page is the last one
+            .then(() => (n === 25 ? removeBatch() : null)); // a short page is the last one
         });
       return removeBatch();
     })

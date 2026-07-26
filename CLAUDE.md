@@ -458,7 +458,7 @@ rules**; the client code only shapes the UI.
   parked email) plus IndexedDB photos (`clearPhotos`), then reloads. Theme is
   NOT preserved — the boot guards discard partial state, so it resets to Auto.
 - **Rules are PUBLISHED and enforced** (2026-07-25). Verified after the flip:
-  unauthenticated reads of state/config/members/changelog/roster/contacts, a
+  unauthenticated reads of state/config/members/changelog, a
   write probe, and a self-escalation attempt all return `Permission denied`.
   The owner key `patricksimpson,fx@gmail,com` is seeded editor and immutable
   from clients — the console Data tab is the only way to change it, and the
@@ -479,7 +479,42 @@ rules**; the client code only shapes the UI.
   `campScoreboard` root), reads need membership, writes need
   `role === 'editor'`, `email_verified` required, changelog append-only +
   editor-read, presence per-child member-writable, `roster`/`contacts`
-  pre-gated for future PII, owner key immutable.
+  owner key immutable. (`roster`/`contacts` used to be pre-gated here; removed
+  2026-07-26 — member-readable with no validation and no feature behind them.
+  Don't re-add a path before its feature, and when a camper roster is real it
+  wants EDITOR-only read, not member read.)
+- **Presence is keyed by member** (`presence/<memberKey>/<deviceId>`, changed
+  2026-07-26). It used to be a flat caller-chosen UUID, which meant any member
+  could overwrite or delete any OTHER member's row and mint unlimited rows; the
+  rules now pin the subtree to the writer's own identity. The record is `{at}`
+  and nothing else — it used to carry a self-declared `role` that NOTHING ever
+  read (`presenceCount` is just a child count) and that a viewer could set to
+  `editor`. `presenceDeviceCount()` deliberately IGNORES rows in the old flat
+  shape: no client can delete one under the new rules, so counting them would
+  double-count forever. Clear the `presence` node from the console once, right
+  after pasting, to retire the stragglers.
+- **Changelog attribution is pinned** (2026-07-26). `byKey` must equal the
+  writer's authenticated identity, same expression chat uses, and the history
+  drawer renders it through `historyAuthorName()` → `chatAuthorName()` rather
+  than printing the free-text `by`. Pinning without the reader change would
+  have been cosmetic: a forger would just keep writing `by: 'Patrick'`.
+  `at` is deliberately still a client ISO string — `changelogTime()` normalizes
+  both shapes for sorting, so a server-set numeric field can be added later
+  without a migration, but converting it now would have meant a rules-first
+  deploy on the one node whose failure mode is a silently-empty audit log.
+- **`state` accepts exactly `SYNC_KEYS`, each of which must be a branch**
+  (2026-07-26), and `config`'s five keys are type-pinned. Rules can't measure
+  subtree size, so this targets the actual vector: a multi-megabyte STRING
+  dropped at `state/results`, which would land in every device's localStorage.
+  `configForSync()` strips unknown keys before every config push, so a stray
+  from an imported backup can't bounce the whole `set()`. Known hole, accepted:
+  `state/<unknown>/<child>` still passes, because `$other` is an ancestor of
+  that path and RTDB never evaluates ancestor `.validate`. Closing it means
+  moving `.write` onto each of the twelve children — all-or-nothing, and not
+  worth it against a threat model of a few known directors.
+- **`config` is deliberately NOT sealed with `$other: false`** — that needs a
+  live read of the node first to confirm it holds exactly the five keys, and
+  the rules make that unreadable from outside. Add it after checking.
 - **Rate limit (added 2026-07-26).** Every chat send is ONE atomic multi-path
   `update()` at the camp root carrying the content plus a
   `chatRate/<myKey>` stamp (`chatAtomicSend` in chat.js). The rules refuse a

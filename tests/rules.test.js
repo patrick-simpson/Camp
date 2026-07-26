@@ -246,3 +246,55 @@ test('the client throttle sits above the server floor, so real people never hit 
   assert.ok(CHAT_MIN_SEND_MS > floor,
     `client gap ${CHAT_MIN_SEND_MS}ms must exceed the ${floor}ms the rules enforce`);
 });
+
+test('changelog attribution is pinned to the writer, like chat', () => {
+  // The one node whose whole purpose is accountability was accepting any `by`
+  // and any `byKey`. historyAuthorName() renders byKey through the directory,
+  // so this pin is what makes the displayed name mean something.
+  ROOTS.forEach((root) => {
+    const w = RULES[root].changelog.$entryId['.write'];
+    assert.ok(w.includes("newData.child('byKey').val() === auth.token.email"),
+      `${root}: an entry must carry the writer's own identity`);
+  });
+});
+
+test('presence is bound to its owner and carries no self-declared role', () => {
+  ROOTS.forEach((root) => {
+    const p = RULES[root].presence;
+    assert.ok(p.$memberKey, `${root}: presence is keyed by member, not by a caller-chosen id`);
+    assert.ok(p.$memberKey['.write'].includes('$memberKey === auth.token.email'),
+      `${root}: only I may write my own presence subtree`);
+    const dev = p.$memberKey.$deviceId;
+    assert.equal(dev.$other['.validate'], false, `${root}: no extra fields on a presence row`);
+    assert.equal(dev.role, undefined,
+      `${root}: role is gone — nothing read it, and a viewer could declare 'editor'`);
+    assert.ok(dev.at['.validate'].includes('=== now'), `${root}: the stamp is the server's`);
+  });
+});
+
+test('state accepts exactly the synced keys, and each must be a branch', () => {
+  // A fat write lands in every device's localStorage snapshot. Rules can't
+  // measure subtree size, but they can refuse a scalar where a tree belongs,
+  // which is the actual vector (a multi-megabyte string at state/results).
+  ROOTS.forEach((root) => {
+    const st = RULES[root].state;
+    SYNC_KEYS.forEach((k) => {
+      assert.ok(st[k], `${root}/state/${k} is named in the rules`);
+      assert.ok(st[k]['.validate'].includes('!newData.isString()'), `${root}/state/${k} must be a branch`);
+    });
+    assert.equal(st.$other['.validate'], false, `${root}/state refuses unknown keys`);
+    const named = Object.keys(st).filter((k) => !k.startsWith('.') && k !== '$other').sort();
+    assert.deepEqual(named, SYNC_KEYS.slice().sort(),
+      `${root}/state's allowed keys must be exactly SYNC_KEYS — a mismatch silently drops a write`);
+  });
+});
+
+test('config type-pins match the keys the client actually pushes', () => {
+  ROOTS.forEach((root) => {
+    const cf = RULES[root].config;
+    CONFIG_KEYS.forEach((k) => assert.ok(cf[k], `${root}/config/${k} is pinned`));
+    assert.ok(cf.version['.validate'].includes('isNumber'), `${root}: version is a number`);
+    // NOT sealed with $other yet — that needs a live read of the node first.
+    assert.equal(cf.$other, undefined, `${root}/config is deliberately not sealed until audited`);
+  });
+});

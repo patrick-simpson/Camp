@@ -15,9 +15,9 @@ const STORAGE_KEY = lsKey('campScoreboardV2'); // per-camp; junior stays the bar
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-26T20:21:10Z';
+const CODE_UPDATED_AT = '2026-07-26T20:28:51Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 179;
+const APP_VERSION = 180;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1178,6 +1178,18 @@ function changelogTime(row) {
   return Number.isNaN(ms) ? 0 : ms;
 }
 
+// Who to name on a changelog row. `by` is a plain string the writing device
+// chose; `byKey` is pinned by the rules to that device's authenticated
+// identity, so it is the only trustworthy field here. Resolve it through the
+// member directory exactly as chat does — which also inherits chat's
+// fail-closed behaviour when the directory hasn't loaded, and its refusal to
+// let a departed member's stored name impersonate somebody still on the list.
+// typeof-guarded because chat.js is an optional layer loaded after this file.
+function historyAuthorName(row) {
+  if (typeof chatAuthorName === 'function') return chatAuthorName({ byKey: row.byKey, name: row.by });
+  return row.by || identityFromKey(row.byKey || '') || 'Someone';
+}
+
 function renderHistoryRows(rows) {
   let html = '';
   let lastDay = null;
@@ -1189,7 +1201,7 @@ function renderHistoryRows(rows) {
     if (day !== lastDay) { html += `<div class="cl-day">${esc(day || '—')}</div>`; lastDay = day; }
     const delta = r.delta > 0 ? `+${r.delta}` : `${r.delta}`;
     const cls = r.delta > 0 ? 'cl-pos' : 'cl-neg';
-    const who = r.by ? ` · ${esc(String(r.by))}` : '';
+    const who = (r.byKey || r.by) ? ` · ${esc(String(historyAuthorName(r)))}` : '';
     const emoji = r.teamId ? teamEmoji(r.teamId) : '';
     html += `
       <div class="cl-entry">
@@ -2051,9 +2063,51 @@ function applyCardVisibility() {
 const SYNC_KEYS = ['teams', 'results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta', 'clocks', 'announcements', 'notice'];
 let fbRef = null;
 // Per-tab id for the "who's here" presence chip — minted once per page load
-// (not persisted) so each open tab counts, and cleans up, independently.
+// (not persisted) so each open tab counts, and cleans up, independently. It is
+// the SECOND path segment: presence/<memberKey>/<deviceId>. It used to be a
+// flat, caller-chosen key, which meant any member could overwrite or delete any
+// OTHER member's presence row and mint unlimited rows; nesting under the member
+// key lets the rules pin the whole subtree to the writer's own identity.
 const presenceId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : newBonusId();
 let presenceCount = 0;
+
+// Claim this tab's presence row and arrange for it to vanish when the socket
+// drops. Called on every (re)connect, because onDisconnect handlers don't
+// survive a dropped socket. Entirely best-effort — a rules refusal arrives as a
+// promise REJECTION rather than a throw, so each call needs its own .catch or
+// it surfaces as an unhandled rejection. Nothing but the footer chip reads this.
+function registerPresence() {
+  if (!fbConnected || typeof firebase === 'undefined') return;
+  const myKey = identityKey(authUser);
+  if (!myKey) return;
+  try {
+    const pRef = firebase.database().ref(dbPath('presence/' + myKey + '/' + presenceId));
+    pRef.onDisconnect().remove().catch(() => {});
+    // `at` is the only field. The row used to also carry `role`, which nothing
+    // ever read and which the writer simply declared — a viewer could write
+    // 'editor'. RTDB can't store an empty object, so one field has to stay.
+    pRef.set({ at: firebase.database.ServerValue.TIMESTAMP }).catch(() => {});
+  } catch (e) { /* chip stays hidden */ }
+}
+
+// How many devices are here, counting the nested shape only. Rows in the old
+// flat shape (presence/<uuid> = {role, at}) are IGNORED rather than counted:
+// under the member-keyed rules NO client can delete one — not even the tab that
+// wrote it — so counting them would permanently double-count every device that
+// reloads into this build. Briefly under-reporting heals itself; over-reporting
+// would not. (Clearing the presence node from the console once, right after the
+// rules paste, retires the last of them.)
+function presenceDeviceCount(tree) {
+  if (!tree || typeof tree !== 'object') return 0;
+  let n = 0;
+  Object.keys(tree).forEach((memberKey) => {
+    const devices = tree[memberKey];
+    if (!devices || typeof devices !== 'object') return;
+    if (typeof devices.at === 'number') return; // legacy flat row — skip
+    Object.keys(devices).forEach((d) => { if (devices[d] && typeof devices[d] === 'object') n += 1; });
+  });
+  return n;
+}
 let applyingRemote = false;
 let pushTimer = null;
 // No pushes until the first server snapshot has landed. Without this, a
@@ -2145,10 +2199,28 @@ function schedulePushConfig() {
   pushConfigTimer = setTimeout(() => { pushConfigTimer = null; pushConfig(); }, 400);
 }
 
+// The exact top-level keys the config node may carry. A config push is a whole
+// node set(), so once the rules seal this node with "$other": false, ONE
+// unrecognised key would bounce the entire write — and pushConfig's only
+// failure handling is a console.warn, so the week builder would just silently
+// stop syncing. Strays are plausible: tryImport (settings.js) assigns
+// state.config wholesale from a pasted backup, and applyRemoteConfig adopts
+// whatever the node already holds. Strip on the way out instead. Because this
+// is a set() and not an update(), that also prunes any stray already in the
+// live node on the first config edit after this ships.
+// Keep in sync with defaultConfig() (defaults.js) and seniorDefaultConfig().
+const CONFIG_KEYS = ['version', 'updatedAt', 'sessions', 'days', 'games'];
+
+function configForSync(config) {
+  const out = {};
+  CONFIG_KEYS.forEach((k) => { if (config && config[k] !== undefined) out[k] = config[k]; });
+  return out;
+}
+
 function pushConfig() {
   if (!fbConfigRef || applyingRemoteConfig) return;
   // JSON round-trip strips any `undefined` (which Realtime DB rejects).
-  fbConfigRef.set(JSON.parse(JSON.stringify(state.config))).catch((e) => console.warn('config push failed', e));
+  fbConfigRef.set(JSON.parse(JSON.stringify(configForSync(state.config)))).catch((e) => console.warn('config push failed', e));
 }
 
 // ── Adopting a remote snapshot ───────────────────────────────────
@@ -2354,24 +2426,16 @@ function initSync() {
       // Re-register presence on every (re)connect — onDisconnect handlers
       // don't survive a dropped socket, so a reconnect after wifi drops or
       // the phone waking up needs a fresh one each time.
-      if (fbConnected) {
-        try {
-          const presenceRef = firebase.database().ref(dbPath('presence/' + presenceId));
-          presenceRef.onDisconnect().remove();
-          // Minimal shape on purpose: presence is writable by every member
-          // (keys are per-tab UUIDs), so nothing forgeable-looking goes in.
-          presenceRef.set({ role: memberRole || 'viewer', at: firebase.database.ServerValue.TIMESTAMP });
-        } catch (e) { /* rules may deny this — presence chip just stays hidden */ }
-      }
+      if (fbConnected) registerPresence();
     });
     // Count listener lives here (not inside the connected handler above) so
     // it's registered exactly once — putting it there would re-subscribe on
     // every reconnect and stack up duplicate listeners.
     try {
       firebase.database().ref(dbPath('presence')).on('value', (snap) => {
-        presenceCount = snap.numChildren();
+        presenceCount = presenceDeviceCount(snap.val());
         renderPresence();
-      });
+      }, () => { /* denied: the chip stays hidden. Never touch fbRef/syncDenied. */ });
     } catch (e) { /* ignore — chip just stays hidden */ }
     // Week-config catalog listener (sibling ref — see the fbConfigRef comment).
     fbConfigRef = firebase.database().ref(dbPath('config'));
@@ -3925,7 +3989,10 @@ function recordPointHistory(counts, isRemote) {
   // it has to say who was signed in. memberName is the editor-maintained
   // member record, identityLabel the auth token — both server-side truths.
   const by = memberName || identityLabel(authUser) || null;
-  const byKey = identityKey(authUser) || null; // pinnable to auth identity in the rules
+  // The rules pin this to the writer's authenticated identity, so a write
+  // without it is refused outright — bail rather than fire a doomed push.
+  const byKey = identityKey(authUser);
+  if (!byKey) return;
   const logRef = firebase.database().ref(dbPath('changelog'));
   changed.forEach(({ tid, before, after }) => {
     logRef.push({ at, teamId: tid, team: teamName(tid), delta: after - before, before, after, reason, by, byKey })
