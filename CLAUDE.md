@@ -474,7 +474,16 @@ rules**; the client code only shapes the UI.
   channel ids matching `CHAT_CHANNELS`, image fields pinned to `data:` URLs,
   `$other: false` on every named-child record, bounded timestamps). Those tests
   prove the FILE is coherent — they cannot see the console, so after every
-  paste re-run the unauthenticated probes in the runbook.
+  publish re-run the unauthenticated probes in the runbook.
+  **Published and verified 2026-07-26**: the live ruleset is byte-identical to
+  this file (read back and compared). Publishing no longer has to be a console
+  paste — the rules REST endpoint takes a PUT with an OAuth token:
+  `PUT https://camp-89cea-default-rtdb.firebaseio.com/.settings/rules.json`.
+  From Google Cloud Shell, where gcloud is already signed in, that is two lines:
+  `curl -s -o rules.json https://camp.patricksimpson.info/database.rules.json`
+  then `curl -X PUT -H "Authorization: Bearer $(gcloud auth print-access-token)"
+  --data-binary @rules.json "<that URL>"`. Back the live rules up first with the
+  same URL and a GET.
   The shape is: per-child gates (rules cascade — nothing granted at the
   `campScoreboard` root), reads need membership, writes need
   `role === 'editor'`, `email_verified` required, changelog append-only +
