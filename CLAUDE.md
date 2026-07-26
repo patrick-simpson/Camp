@@ -10,6 +10,9 @@ Firebase Realtime Database used purely for cross-device sync.
 
 Files:
 - `index.html` — page shell
+- `boot-guard.js` — the pre-paint lock guard. Its own file ONLY so the CSP can
+  refuse inline scripts entirely; must stay a classic (non-module, non-defer)
+  `<script>` in `<head>` or the app flashes before it locks
 - `app.js` — main logic + the week schedule (`DAY_SCHEDULE`), ~6400 lines
 - `defaults.js` — the built-in default week: day list + full game catalog
   (`defaultConfig()`); live config then lives in synced state
@@ -68,7 +71,7 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
 
 **Every time any code asset changes:**
 1. Bump the `?v=N` cache-busting query string in `index.html` — there are
-   TEN on the same number: `styles.css`, `vendor/jelly.js`,
+   ELEVEN on the same number: `boot-guard.js`, `styles.css`, `vendor/jelly.js`,
    `firebase-config.js`, `defaults.js`, `camps.js`, `app.js`, `settings.js`,
    `chat.js`, `auth-phone.js`, `auth-email-link.js` — keep them in sync,
    all bumped together. Also bump
