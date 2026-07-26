@@ -193,3 +193,85 @@ test('hide-from-viewers is the chat kill switch', () => {
 test('the chat card key is hideable like every other card', () => {
   assert.ok(HIDEABLE_CARDS.includes('chat'));
 });
+
+// ── Channel subscriptions (every-message alerts, device-local) ─────
+
+test('announcements is subscribed by default; everything else is opt-in', () => {
+  localStorage.removeItem(lsKey('campScoreboardChatSubs'));
+  assert.ok(chatSubscribed('announcements'), 'auto-subscribed (owner\'s call)');
+  assert.notOk(chatSubscribed('general'));
+  assert.notOk(chatSubscribed('memes'));
+  assert.notOk(chatSubscribed('photos'));
+});
+
+test('toggling a subscription sticks, and announcements can be muted', () => {
+  localStorage.removeItem(lsKey('campScoreboardChatSubs'));
+  toggleChatSub('memes');
+  assert.ok(chatSubscribed('memes'), 'subscribed');
+  toggleChatSub('memes');
+  assert.notOk(chatSubscribed('memes'), 'muted again');
+  toggleChatSub('announcements');
+  assert.notOk(chatSubscribed('announcements'), 'the default-on channel can still be muted');
+  localStorage.removeItem(lsKey('campScoreboardChatSubs'));
+});
+
+test('corrupt subscription data reads as the defaults', () => {
+  localStorage.setItem(lsKey('campScoreboardChatSubs'), 'not json');
+  assert.ok(chatSubscribed('announcements'));
+  assert.notOk(chatSubscribed('general'));
+  localStorage.removeItem(lsKey('campScoreboardChatSubs'));
+});
+
+test('signing out wipes subscriptions too', () => {
+  localStorage.setItem('campScoreboardChatSubs', '{"memes":true}');
+  localStorage.setItem('campScoreboardChatSubs:senior', '{"general":true}');
+  clearLocalData();
+  assert.equal(localStorage.getItem('campScoreboardChatSubs'), null);
+  assert.equal(localStorage.getItem('campScoreboardChatSubs:senior'), null);
+});
+
+// ── The 15-minute announcements banner strip ───────────────────────
+
+test('recent announcements-channel messages ride the banner strip, then age out', () => {
+  const now = serverNow();
+  chatMsgs.announcements = [
+    normalizeChatMsg('fresh', { at: now - 60 * 1000, byKey: 'jovi@x,com', name: 'Jovi', text: 'Lunch moved to noon' }),
+    normalizeChatMsg('stale', { at: now - 20 * 60 * 1000, byKey: 'jovi@x,com', name: 'Jovi', text: 'Old news' }),
+    normalizeChatMsg('photo', { at: now - 2 * 60 * 1000, byKey: 'jovi@x,com', name: 'Jovi', thumb: 'data:image/jpeg;base64,x', photoId: 'p' }),
+  ];
+  const banners = chatAnnouncementBanners();
+  const ids = banners.map((b) => b.id);
+  assert.ok(ids.includes('fresh'), 'a minute-old message shows');
+  assert.notOk(ids.includes('stale'), '20 minutes old has aged out (15-minute window)');
+  assert.ok(ids.includes('photo'), 'photo messages show too');
+  const photoBanner = banners.find((b) => b.id === 'photo');
+  assert.ok(photoBanner.text.includes('📷'), 'with a pointer into chat');
+  banners.forEach((b) => {
+    assert.ok(b.fromChat, 'marked as chat-sourced (no remove-for-everyone button)');
+    assert.ok(!isNaN(Date.parse(b.at)), 'ISO timestamp for the shared banner renderer');
+  });
+  chatMsgs.announcements = [];
+});
+
+test('a dismissed banner stays dismissed — same set as regular announcements', () => {
+  const now = serverNow();
+  chatMsgs.announcements = [normalizeChatMsg('d1', { at: now, byKey: 'j@x,com', name: 'J', text: 'hello' })];
+  dismissAnnouncement('d1');
+  assert.deepEqual(chatAnnouncementBanners(), []);
+  chatMsgs.announcements = [];
+  localStorage.removeItem(ANNOUNCE_DISMISS_KEY);
+});
+
+// ── Links in messages ──────────────────────────────────────────────
+
+test('http links become tappable, everything else stays escaped', () => {
+  const html = renderChatText('schedule at https://camp.patricksimpson.info/x?a=1&b=2 <b>now</b>', []);
+  assert.ok(html.includes('<a class="chat-link"'), 'link rendered');
+  assert.ok(html.includes('target="_blank"') && html.includes('rel="noopener noreferrer"'), 'safe link attrs');
+  assert.ok(html.includes('a=1&amp;b=2'), 'URL ampersands escaped in both attr and label');
+  assert.notOk(html.includes('<b>'), 'markup around it still escaped');
+  assert.equal(renderChatText('no links here', []), 'no links here');
+  const withMention = renderChatText('jovi see https://example.com/x', mentionScan('jovi see https://example.com/x', [
+    { label: 'Jovi', lower: 'jovi', kind: 'person', key: 'j@x,com' }]));
+  assert.ok(withMention.includes('chat-mention') && withMention.includes('chat-link'), 'mentions and links compose');
+});

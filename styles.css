@@ -4371,6 +4371,24 @@ body.chat-open #app-footer {
   white-space: nowrap;
 }
 .chat-clear-btn { font-size: 1rem; }
+.chat-sub-btn {
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  width: 2.2rem;
+  height: 2.2rem;
+  font-size: 1rem;
+  cursor: pointer;
+}
+.chat-sub-on {
+  border-color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+}
+.chat-link {
+  color: var(--color-primary);
+  text-decoration: underline;
+  overflow-wrap: anywhere;
+}
 .chat-tabs {
   display: flex;
   gap: 0.35rem;

@@ -305,10 +305,20 @@ so nobody can post as someone else).
 - **Backlog vs live**: after attaching `child_added`, a `once('value')`
   resolves AFTER the initial backlog — that flips `chatReady[ch]`. Backlog
   counts toward unread but never toasts; only post-ready messages run
-  `notifyChatMessage` (own messages skipped; `announcements` → everyone
-  gets toast + OS notification + chime + vibrate, clone of
-  `notifyNewAnnouncements`; else automatic mention scan → mine → toast +
-  OS notification; else badge only).
+  `notifyChatMessage` (own messages skipped; `announcements` while
+  subscribed → everyone gets toast + OS notification + chime + vibrate,
+  clone of `notifyNewAnnouncements`; else mention-of-me → louder alert;
+  else SUBSCRIBED channel → normal alert; else badge only).
+- **Channel subscriptions** (`lsKey('campScoreboardChatSubs')`, wiped on
+  sign-out): a subscribed channel alerts on EVERY message. Announcements
+  is subscribed BY DEFAULT (owner's call) and can be muted; everything
+  else is opt-in via the 🔔/🔕 bell in the chat header (`toggleChatSub`).
+- **The banner strip**: a message posted in the Announcements channel also
+  rides the top-of-app announcements area for 15 minutes
+  (`chatAnnouncementBanners`, merged in by `renderAnnouncements`,
+  dismissible through the same dismissed set; `CHAT_BANNER_MS`). Chat-
+  sourced banners carry no "remove for everyone" (delete the message in
+  chat instead).
 - **Mentions are AUTOMATIC** (no @ syntax): `chatMentionTargets()` = every
   member-directory name (+ first names), `TEAM_COUNSELORS`, team names,
   `TEAM_ABBREV`; `mentionScan` is word-boundary, case-insensitive,

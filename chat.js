@@ -31,6 +31,8 @@ const CHAT_TEXT_MAX = 2000;     // chars of message text
 const CHAT_THUMB_MAX = 24000;   // chars of inline thumbnail data URL (~18KB)
 const CHAT_PHOTO_MAX = 400000;  // chars of full-size photo data URL (~300KB)
 const CHAT_SEEN_KEY = 'campScoreboardChatSeen'; // per-camp via lsKey()
+const CHAT_SUBS_KEY = 'campScoreboardChatSubs'; // per-camp via lsKey(); {ch: bool}
+const CHAT_BANNER_MS = 15 * 60 * 1000; // announcements-channel messages ride the top banner this long
 
 let chatMsgs = {};        // channelId -> [{id, at, byKey, name, text, thumb, photoId}] sorted by at
 let chatReady = {};       // channelId -> true once the initial backlog has fully arrived
@@ -106,6 +108,9 @@ function onChatMsgAdded(ch, snap) {
       appendChatBubble(ch, msg);
     }
   }
+  // Announcements-channel messages also ride the top banner strip for 15
+  // minutes (renderAnnouncements merges chatAnnouncementBanners in).
+  if (ch === 'announcements' && typeof renderAnnouncements === 'function') renderAnnouncements();
   renderChatCard();
 }
 
@@ -114,6 +119,7 @@ function onChatMsgRemoved(ch, snap) {
   const i = list.findIndex((m) => m.id === snap.key);
   if (i > -1) list.splice(i, 1);
   renderChatCard();
+  if (ch === 'announcements' && typeof renderAnnouncements === 'function') renderAnnouncements();
   if (chatViewingChannel() === ch) renderChatView(true);
 }
 
@@ -328,20 +334,31 @@ function mentionIsMine(hits) {
   });
 }
 
-// Escaped HTML with mention spans. Walks the RAW string segment by
-// segment, escaping each piece separately — never regex over escaped HTML.
+// A plain text segment → escaped HTML with http(s) links made tappable.
+// Splits on the RAW string, escapes each piece separately (URL included —
+// it lands in both the attribute and the label already escaped).
+function chatLinkifySegment(raw) {
+  const parts = String(raw).split(/(https?:\/\/[^\s<>"']+)/g);
+  return parts.map((p, i) => (i % 2
+    ? `<a class="chat-link" href="${esc(p)}" target="_blank" rel="noopener noreferrer">${esc(p)}</a>`
+    : esc(p))).join('');
+}
+
+// Escaped HTML with mention spans + tappable links. Walks the RAW string
+// segment by segment, escaping each piece separately — never regex over
+// escaped HTML.
 function renderChatText(text, hits) {
   const raw = String(text || '');
-  if (!hits || !hits.length) return esc(raw);
+  if (!hits || !hits.length) return chatLinkifySegment(raw);
   let html = '';
   let pos = 0;
   hits.forEach((h) => {
-    html += esc(raw.slice(pos, h.start));
+    html += chatLinkifySegment(raw.slice(pos, h.start));
     const mine = mentionIsMine([h]);
     html += `<span class="chat-mention${mine ? ' chat-mention-you' : ''}">${esc(raw.slice(h.start, h.end))}</span>`;
     pos = h.end;
   });
-  html += esc(raw.slice(pos));
+  html += chatLinkifySegment(raw.slice(pos));
   return html;
 }
 
@@ -374,6 +391,53 @@ function unreadTotal() {
   return chatChannels().reduce((n, c) => n + unreadCount(c.id), 0);
 }
 
+// ── Channel subscriptions (device-local, per camp) ────────────────
+// Subscribing to a channel means EVERY new message there alerts you, not
+// just mentions. Announcements is subscribed by default — the owner's
+// call — and any channel can be toggled from the bell in the chat header.
+function readChatSubs() {
+  try {
+    const v = JSON.parse(localStorage.getItem(lsKey(CHAT_SUBS_KEY)) || '{}');
+    return (v && typeof v === 'object' && !Array.isArray(v)) ? v : {};
+  } catch (e) { return {}; }
+}
+
+function chatSubscribed(ch) {
+  const subs = readChatSubs();
+  return ch in subs ? !!subs[ch] : ch === 'announcements'; // default: announcements only
+}
+
+function toggleChatSub(ch) {
+  const subs = readChatSubs();
+  subs[ch] = !chatSubscribed(ch);
+  try { localStorage.setItem(lsKey(CHAT_SUBS_KEY), JSON.stringify(subs)); } catch (e) { /* fine */ }
+  const c = chatChannelById(ch);
+  showToast(subs[ch]
+    ? `🔔 You'll get an alert for every message in ${c ? c.short : ch}.`
+    : `🔕 ${c ? c.short : ch} muted — you'll still get an alert when someone mentions you.`,
+    { mine: subs[ch] });
+  renderChatView(true);
+}
+
+// ── The announcements banner strip ────────────────────────────────
+// A message posted in the Announcements channel also rides the top-of-app
+// banner area (like a regular 📣 announcement) for 15 minutes, dismissible
+// per device through the same dismissed set. renderAnnouncements (app.js)
+// merges these in; the 30s interval ages them out.
+function chatAnnouncementBanners() {
+  const cutoff = serverNow() - CHAT_BANNER_MS;
+  const dismissed = dismissedAnnouncements();
+  return (chatMsgs.announcements || [])
+    .filter((m) => m.at > cutoff && !dismissed.includes(m.id))
+    .map((m) => ({
+      id: m.id,
+      text: m.text || '📷 Photo (open Camp Chat to see it)',
+      at: new Date(m.at).toISOString(),
+      by: m.name || identityFromKey(m.byKey),
+      fromChat: true, // renderAnnouncements: no "remove for everyone" (delete it in chat)
+    }));
+}
+
 // ── Alerts (post-backlog messages only) ───────────────────────────
 function chatViewingChannel() {
   return (chatOpenNow() && !document.hidden) ? state.ui.chatChannel : null;
@@ -390,9 +454,11 @@ function notifyChatMessage(ch, msg) {
   if (msg.byKey && myKey && msg.byKey === myKey) return; // my own echo
   const viewing = chatViewingChannel() === ch;
   const preview = chatPreviewOf(msg);
-  if (ch === 'announcements') {
-    // An announcement is for everyone — same treatment as the announcement
-    // banner alerts (toast + OS notification + bright chime + buzz).
+  const c = chatChannelById(ch);
+  if (ch === 'announcements' && chatSubscribed(ch)) {
+    // An announcement is for everyone (subscribed by default) — same
+    // treatment as the announcement banner alerts (toast + OS notification
+    // + bright chime + buzz).
     if (!viewing) showToast('📣 ' + preview);
     if (state.notify) {
       maybeNativeNotification('📣 Camp Chat announcement', preview, 'camp-chat-ann-' + msg.id);
@@ -401,10 +467,24 @@ function notifyChatMessage(ch, msg) {
     }
     return;
   }
+  // A subscribed channel alerts on every message; everything else only
+  // when your name or team comes up. Mentions win the louder styling.
   const hits = mentionScan(msg.text, chatMentionTargets());
-  if (mentionIsMine(hits)) {
+  const mentioned = mentionIsMine(hits);
+  if (mentioned) {
     if (!viewing) showToast(`💬 ${msg.name || 'Someone'} mentioned you: ${(msg.text || '').slice(0, 80)}`, { mine: true });
-    if (state.notify) maybeNativeNotification('💬 You were mentioned in Camp Chat', preview, 'camp-chat-men-' + msg.id);
+    if (state.notify) {
+      maybeNativeNotification('💬 You were mentioned in Camp Chat', preview, 'camp-chat-men-' + msg.id);
+      if (navigator.vibrate) navigator.vibrate(150);
+    }
+    return;
+  }
+  if (chatSubscribed(ch)) {
+    if (!viewing) showToast(`${c ? c.emoji : '💬'} ${preview}`);
+    if (state.notify) {
+      maybeNativeNotification(`${c ? c.emoji + ' ' : ''}Camp Chat · ${c ? c.short : ch}`, preview, 'camp-chat-sub-' + msg.id);
+      if (navigator.vibrate) navigator.vibrate(150);
+    }
   }
   // Everything else: the unread badge (renderChatCard, from the caller).
 }
@@ -471,13 +551,23 @@ function renderChatCard() {
     return;
   }
   let latest = null;
+  let latestCh = null;
   chatChannels().forEach((c) => {
-    (chatMsgs[c.id] || []).forEach((m) => { if (!latest || m.at > latest.at) latest = m; });
+    (chatMsgs[c.id] || []).forEach((m) => { if (!latest || m.at > latest.at) { latest = m; latestCh = c; } });
   });
   const ready = chatChannels().some((c) => chatReady[c.id]);
   preview.textContent = latest
-    ? `${chatPreviewOf(latest)} · ${chatRelativeTime(latest.at)}`
+    ? `${latestCh ? latestCh.emoji + ' ' : ''}${chatPreviewOf(latest)} · ${chatRelativeTime(latest.at)}`
     : (ready ? 'No messages yet — start the conversation!' : 'Loading…');
+  // Home-screen icon badge (installed PWAs on platforms that support it) —
+  // best-effort and silent everywhere else.
+  try {
+    if (navigator.setAppBadge) {
+      const n = unreadTotal();
+      if (n) navigator.setAppBadge(n);
+      else if (navigator.clearAppBadge) navigator.clearAppBadge();
+    }
+  } catch (e) { /* fine */ }
 }
 
 function renderChatBadges() {
@@ -565,10 +655,14 @@ function renderChatView(force) {
       <span class="chat-tab-badge" data-ch="${t.id}" hidden></span>
     </button>`).join('');
 
+  const subbed = chatSubscribed(ch);
   view.innerHTML = `
     <div class="chat-head">
       <button id="chat-back-btn" class="link-btn back-btn">← Camp</button>
       <h2 class="chat-title">${c.emoji} ${esc(c.label)}</h2>
+      <button id="chat-sub-btn" class="chat-sub-btn${subbed ? ' chat-sub-on' : ''}"
+        title="${subbed ? 'Subscribed — every message here alerts you' : 'Muted — only mentions alert you'}"
+        aria-label="${subbed ? 'Unsubscribe from this channel' : 'Subscribe to this channel'}">${subbed ? '🔔' : '🔕'}</button>
       ${canEdit() ? '<button id="chat-clear-btn" class="link-btn danger-link chat-clear-btn" title="Clear this channel">🧹</button>' : ''}
     </div>
     <div class="chat-tabs">${tabs}</div>
@@ -612,6 +706,8 @@ function wireChatView(ch) {
   }
   const clearBtn = document.getElementById('chat-clear-btn');
   if (clearBtn) clearBtn.addEventListener('click', () => clearChatChannel(ch));
+  const subBtn = document.getElementById('chat-sub-btn');
+  if (subBtn) subBtn.addEventListener('click', () => toggleChatSub(ch));
   wireChatBubbles(view, ch);
 }
 

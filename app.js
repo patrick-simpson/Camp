@@ -15,9 +15,9 @@ const STORAGE_KEY = lsKey('campScoreboardV2'); // per-camp; junior stays the bar
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-26T03:21:30Z';
+const CODE_UPDATED_AT = '2026-07-26T03:31:32Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 171;
+const APP_VERSION = 172;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -6807,16 +6807,20 @@ function activeAnnouncements() {
 function renderAnnouncements() {
   const wrap = document.getElementById('announcements');
   if (!wrap) return;
-  const active = activeAnnouncements();
+  // Chat's Announcements channel rides this same strip for 15 minutes per
+  // message (chat.js provides them pre-filtered; same dismissed set).
+  const fromChat = (typeof chatAnnouncementBanners === 'function') ? chatAnnouncementBanners() : [];
+  const active = activeAnnouncements().concat(fromChat)
+    .sort((a, b) => String(b.at).localeCompare(String(a.at)));
   const editor = canEdit();
   if (!active.length && !editor) { wrap.hidden = true; wrap.innerHTML = ''; return; }
 
   const banners = active.map((a) => `
     <div class="announce-banner" role="status">
       <button class="announce-dismiss" data-ann-id="${esc(a.id)}" aria-label="Dismiss this announcement on this phone">✕</button>
-      <span class="announce-badge">📣 Announcement</span>
+      <span class="announce-badge">📣 ${a.fromChat ? 'Camp Chat' : 'Announcement'}</span>
       <span class="announce-text">${esc(a.text)}</span>
-      <span class="announce-meta">${esc(formatEasternStamp(a.at) || '')}${a.by ? ` · ${esc(a.by)}` : ''}${editor ? ` · <button class="announce-delete link-btn" data-ann-id="${esc(a.id)}">Remove for everyone</button>` : ''}</span>
+      <span class="announce-meta">${esc(formatEasternStamp(a.at) || '')}${a.by ? ` · ${esc(a.by)}` : ''}${editor && !a.fromChat ? ` · <button class="announce-delete link-btn" data-ann-id="${esc(a.id)}">Remove for everyone</button>` : ''}</span>
     </div>`).join('');
 
   // Editors get a composer, collapsed behind a one-line link so the top of
@@ -7740,7 +7744,7 @@ function clearLocalData() {
   // junior keys; the suffixed ones are senior's.)
   const bases = ['campScoreboardV2', 'campScoreboardDayRanks',
     'campScoreboardDismissedChanges', 'campScoreboardDismissedAnnouncements',
-    'campScoreboardChatSeen'];
+    'campScoreboardChatSeen', 'campScoreboardChatSubs'];
   Object.keys(CAMPS).forEach((cid) => {
     bases.forEach((b) => {
       try { localStorage.removeItem(b + CAMPS[cid].storageSuffix); } catch (e) { /* ignore */ }
