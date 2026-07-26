@@ -15,9 +15,9 @@ const STORAGE_KEY = lsKey('campScoreboardV2'); // per-camp; junior stays the bar
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-26T03:45:02Z';
+const CODE_UPDATED_AT = '2026-07-26T12:04:54Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 174;
+const APP_VERSION = 175;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -2350,6 +2350,9 @@ function initSync() {
       firebase.database().ref(dbPath('members')).on('value', (snap) => {
         memberDirectory = snap.val() || {};
         if (appStarted) renderAll();
+        // Chat shows author names FROM this directory (a message's own `name`
+        // is client-supplied), so its bubbles need rebuilding when it lands.
+        if (typeof onMemberDirectoryChanged === 'function') onMemberDirectoryChanged();
       }, () => { memberDirectory = null; });
     } catch (e) { /* ignore — counselor text falls back to state.teams */ }
     // Camp Chat listeners (chat.js — the tenth script; typeof-guarded so a

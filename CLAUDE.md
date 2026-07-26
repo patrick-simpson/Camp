@@ -296,6 +296,19 @@ so nobody can post as someone else).
   authors delete their own, editors delete anything and can 🧹 clear a
   whole channel (double-confirm; also deletes the channel's photos via
   `orderByChild('ch')`).
+- **`byKey` is the only trustworthy field on a message.** The rules validate
+  it against the sender's authenticated identity; `name` is just a string the
+  sender's device wrote and is length-capped only, so a signed-in member could
+  post under someone else's name. **Never render `msg.name` directly** — every
+  display path goes through `chatAuthorName(msg)`, which resolves `byKey`
+  against `memberDirectory` (editor-maintained, so it's the source of truth).
+  A current member with no `name` on file renders as their email/phone rather
+  than their claim; the stored `name` survives ONLY as the fallback for a key
+  that has left the directory, so a departed counselor's history reads as
+  their name instead of a raw email. The directory arrives async and changes
+  on rename, so app.js's members listener calls `onMemberDirectoryChanged()`
+  to rebuild the bubbles. The stored `name` is deliberately still written —
+  it's the departed-member fallback, not the display source.
 - **Photos are split**: a ~320px thumbnail rides in the message; the
   ~1280px full image lives in `chatPhotos` and is fetched by `once()` only
   when tapped (lightbox). This is the bandwidth design — every page load

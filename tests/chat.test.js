@@ -275,3 +275,43 @@ test('http links become tappable, everything else stays escaped', () => {
     { label: 'Jovi', lower: 'jovi', kind: 'person', key: 'j@x,com' }]));
   assert.ok(withMention.includes('chat-mention') && withMention.includes('chat-link'), 'mentions and links compose');
 });
+
+// ── Author names come from the directory, not the message ──────────
+// A message's `name` is whatever the sender's device wrote; only `byKey` is
+// rules-validated. So the directory is the source of truth for display.
+
+test('a spoofed name on a message loses to the directory record', () => {
+  memberDirectory = {
+    'mallory@x,com': { role: 'viewer', name: 'Mallory' },
+    'patricksimpson,fx@gmail,com': { role: 'editor', name: 'Patrick' },
+  };
+  const spoof = normalizeChatMsg('s1', {
+    at: 1000, byKey: 'mallory@x,com', name: 'Patrick', text: 'everyone to the lake now',
+  });
+  assert.equal(chatAuthorName(spoof), 'Mallory', 'renders as who actually sent it');
+  assert.ok(chatBubbleHTML('general', spoof).includes('Mallory'), 'the bubble shows the real name');
+  assert.notOk(chatBubbleHTML('general', spoof).includes('>Patrick<'), 'and never the claimed one');
+  assert.equal(chatPreviewOf(spoof), 'Mallory: everyone to the lake now', 'card preview too');
+  memberDirectory = null;
+});
+
+test('a current member with no name on file shows as their identity, not a claim', () => {
+  memberDirectory = { 'nameless@x,com': { role: 'viewer' } };
+  const msg = normalizeChatMsg('s2', { at: 1000, byKey: 'nameless@x,com', name: 'Patrick', text: 'hi' });
+  assert.equal(chatAuthorName(msg), identityFromKey('nameless@x,com'));
+  memberDirectory = null;
+});
+
+test('a departed member keeps the name stored on their old messages', () => {
+  memberDirectory = { 'still,here@x,com': { role: 'viewer', name: 'Here' } };
+  const old = normalizeChatMsg('s3', { at: 1000, byKey: 'gone@x,com', name: 'Jordan', text: 'bye' });
+  assert.equal(chatAuthorName(old), 'Jordan', 'history stays readable instead of printing a raw email');
+  memberDirectory = null;
+});
+
+test('with no directory at all, the stored name is the fallback, then the key', () => {
+  memberDirectory = null;
+  assert.equal(chatAuthorName(normalizeChatMsg('s4', { at: 1, byKey: 'a@x,com', name: 'Amy', text: 'x' })), 'Amy');
+  assert.equal(chatAuthorName(normalizeChatMsg('s5', { at: 1, byKey: 'a@x,com', text: 'x' })), identityFromKey('a@x,com'));
+  assert.equal(chatAuthorName(null), 'Someone');
+});

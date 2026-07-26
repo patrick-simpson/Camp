@@ -128,6 +128,31 @@ function chatDisplayName() {
   return memberName || state.identity || identityLabel(authUser) || 'Someone';
 }
 
+// Who a message is FROM, for display. `byKey` is the only trustworthy field on
+// a message — the rules validate it against the sender's authenticated
+// identity — while `name` is just a string that sender's device chose, so any
+// signed-in member could otherwise post under someone else's name. So the
+// member directory wins: it's editor-maintained and keyed by that same byKey.
+// A current member with no name on file shows as their email/phone rather than
+// whatever they claimed (which also nudges an editor into filling the name in).
+// The stored name survives only as the fallback for someone since REMOVED from
+// the list — they can no longer post, and the alternative would be printing a
+// departed counselor's raw email into camp chat history.
+// The directory lands asynchronously (and changes when an editor renames
+// someone), so bubbles built before it arrives are showing fallbacks. app.js
+// calls this from the members listener to rebuild them with the real names.
+function onMemberDirectoryChanged() {
+  renderChatCard();
+  if (chatOpenNow()) renderChatView(true);
+}
+
+function chatAuthorName(msg) {
+  if (!msg) return 'Someone';
+  const rec = (memberDirectory && msg.byKey) ? memberDirectory[msg.byKey] : null;
+  if (rec) return (typeof rec.name === 'string' && rec.name.trim()) || identityFromKey(msg.byKey) || 'Someone';
+  return msg.name || identityFromKey(msg.byKey) || 'Someone';
+}
+
 function sendChatMessage(ch) {
   const input = document.getElementById('chat-input');
   const text = ((input && input.value) || '').trim().slice(0, CHAT_TEXT_MAX);
@@ -433,7 +458,7 @@ function chatAnnouncementBanners() {
       id: m.id,
       text: m.text || '📷 Photo (open Chat to see it)',
       at: new Date(m.at).toISOString(),
-      by: m.name || identityFromKey(m.byKey),
+      by: chatAuthorName(m),
       fromChat: true, // renderAnnouncements: no "remove for everyone" (delete it in chat)
     }));
 }
@@ -444,7 +469,7 @@ function chatViewingChannel() {
 }
 
 function chatPreviewOf(msg) {
-  const name = msg.name || identityFromKey(msg.byKey) || 'Someone';
+  const name = chatAuthorName(msg);
   const what = msg.text ? msg.text.slice(0, 90) : '📷 Photo';
   return `${name}: ${what}`;
 }
@@ -472,7 +497,7 @@ function notifyChatMessage(ch, msg) {
   const hits = mentionScan(msg.text, chatMentionTargets());
   const mentioned = mentionIsMine(hits);
   if (mentioned) {
-    if (!viewing) showToast(`💬 ${msg.name || 'Someone'} mentioned you: ${(msg.text || '').slice(0, 80)}`, { mine: true });
+    if (!viewing) showToast(`💬 ${chatAuthorName(msg)} mentioned you: ${(msg.text || '').slice(0, 80)}`, { mine: true });
     if (state.notify) {
       maybeNativeNotification('💬 You were mentioned in Chat', preview, 'camp-chat-men-' + msg.id);
       if (navigator.vibrate) navigator.vibrate(150);
@@ -602,11 +627,11 @@ function chatBubbleHTML(ch, msg) {
   const textHTML = msg.text ? `<p class="chat-bubble-text">${renderChatText(msg.text, hits)}</p>` : '';
   const thumbHTML = msg.thumb
     ? `<button type="button" class="chat-thumb-btn" data-photo-id="${esc(msg.photoId)}" aria-label="Open photo">
-        <img class="chat-thumb" src="${esc(msg.thumb)}" alt="Photo from ${esc(msg.name)}" loading="lazy" decoding="async"></button>`
+        <img class="chat-thumb" src="${esc(msg.thumb)}" alt="Photo from ${esc(chatAuthorName(msg))}" loading="lazy" decoding="async"></button>`
     : '';
   return `<div class="chat-bubble${mine ? ' chat-bubble-mine' : ''}" data-msg-id="${esc(msg.id)}">
     <div class="chat-bubble-head">
-      <span class="chat-bubble-name">${esc(msg.name || identityFromKey(msg.byKey) || 'Someone')}</span>
+      <span class="chat-bubble-name">${esc(chatAuthorName(msg))}</span>
       <span class="chat-bubble-time">${esc(chatTimeStamp(msg.at))}</span>
       ${canDelete ? `<button type="button" class="chat-delete-btn" aria-label="Delete message">✕</button>` : ''}
     </div>
