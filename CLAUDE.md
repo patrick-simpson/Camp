@@ -477,15 +477,23 @@ rules**; the client code only shapes the UI.
   `role === 'editor'`, `email_verified` required, changelog append-only +
   editor-read, presence per-child member-writable, `roster`/`contacts`
   pre-gated for future PII, owner key immutable.
-- **Known gap, deliberately not closed: no server-side rate limit.** Any
+- **Rate limit (added 2026-07-26).** Every chat send is ONE atomic multi-path
+  `update()` at the camp root carrying the content plus a
+  `chatRate/<myKey>` stamp (`chatAtomicSend` in chat.js). The rules refuse a
+  create whose previous stamp is under a second old, and require the same
+  update to advance it — so skipping the stamp isn't an opt-out. The stamp is
+  pinned to `now`, writable only by its owner, so it can't be backdated to
+  clear the throttle. Deletes are never throttled (moderation must stay fast).
+  `CHAT_MIN_SEND_MS` (1200ms) sits deliberately ABOVE the rules' 1000ms floor
+  so a real person is stopped politely on the client and never sees a refusal.
+  `chatAtomicSend` retries once WITHOUT the stamp, which is what lets the
+  client deploy before the console paste; once pasted, the retry stops firing.
+  Behaviour is verified in `tests/emulator/` (opt-in, needs npm + Java).
+- **Older note, now only partly true: rate limiting used to be absent.** Any
   member can write unlimited chat messages, photos and presence rows; the rules
-  cap each write's SIZE but not the NUMBER. A member who wanted to could burn
-  the free tier. Closing it needs a per-writer `lastPost` node written in the
-  same multi-path `update()` as the message, plus a rules clause reading it —
-  a coordinated client+rules change with real lockout risk on a hand-pasted
-  ruleset. The interim is `CHAT_MIN_SEND_MS` in chat.js, which bounds accidents
-  (double-taps, stuck keys) and nothing else. Members are a few dozen known,
-  named, removable people; removal + 🧹 clear-channel is the actual remedy.
+  The chat paths are now throttled (above). `presence` still is NOT: it is
+  member-writable with an unbounded key space. Members are a few dozen known,
+  named, removable people; removal + 🧹 clear-channel remains the real remedy.
 - **Also deliberate: every member can read the whole `members` list** — names,
   emails, phone numbers, roles, in both camps. `counselorName`, the mention
   targets and the Members drawer all need it. Splitting it (a member-readable

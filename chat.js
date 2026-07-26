@@ -33,11 +33,11 @@ const CHAT_PHOTO_MAX = 400000;  // chars of full-size photo data URL (~300KB)
 const CHAT_SEEN_KEY = 'campScoreboardChatSeen'; // per-camp via lsKey()
 const CHAT_SUBS_KEY = 'campScoreboardChatSubs'; // per-camp via lsKey(); {ch: bool}
 const CHAT_BANNER_MS = 15 * 60 * 1000; // announcements-channel messages ride the top banner this long
-// Smallest gap between two sends from this device. Stops a double-tap posting
-// twice and stops a stuck key flooding a channel. NOT a security control — it
-// lives on the client, so it bounds accidents, not a determined member (see
-// the rules-side rate limit noted in CLAUDE.md).
-const CHAT_MIN_SEND_MS = 700;
+// Smallest gap between two sends from this device. Deliberately a little
+// LONGER than the 1000ms floor the security rules enforce, so a real person
+// typing fast is stopped politely here and never has a message refused by the
+// server. The rules are the actual control; this is the courtesy layer.
+const CHAT_MIN_SEND_MS = 1200;
 let chatLastSendAt = 0;
 
 let chatMsgs = {};        // channelId -> [{id, at, byKey, name, text, thumb, photoId}] sorted by at
@@ -172,6 +172,28 @@ function chatDisplayName() {
   return memberName || state.identity || identityLabel(authUser) || 'Someone';
 }
 
+// Every send is ONE atomic multi-path update at the camp root, carrying the
+// content plus a `chatRate/<myKey>` stamp. The rules require that stamp to
+// advance and refuse a create whose previous stamp is under a second old —
+// which is what actually caps a flood, since a client-side gap is just a
+// variable an attacker can skip. Atomic also means a photo and its message
+// land together or not at all, which the old photo-then-message pair couldn't
+// promise.
+//
+// The fallback exists because the ruleset is pasted into the console BY HAND,
+// so the code and the rules are never in step for long. Under rules that don't
+// know about chatRate yet, the stamp is refused and the whole update fails —
+// so we retry once without it. That makes this deploy safe to ship BEFORE the
+// paste, and once the paste lands the retry simply stops happening.
+function chatAtomicSend(updates, rateKey) {
+  const rootRef = () => firebase.database().ref(CAMP.dbRoot);
+  return rootRef().update(updates).catch((err) => {
+    const withoutStamp = {};
+    Object.keys(updates).forEach((k) => { if (k !== rateKey) withoutStamp[k] = updates[k]; });
+    return rootRef().update(withoutStamp).catch(() => { throw err; });
+  });
+}
+
 // Who a message is FROM, for display. `byKey` is the only trustworthy field on
 // a message — the rules validate it against the sender's authenticated
 // identity — while `name` is just a string that sender's device chose, so any
@@ -242,7 +264,9 @@ function sendChatMessage(ch) {
     text,
   };
   if (input) input.value = '';
-  firebase.database().ref(dbPath('chat/' + ch)).push(msg)
+  const id = firebase.database().ref(dbPath('chat/' + ch)).push().key;
+  const rateKey = 'chatRate/' + myKey;
+  chatAtomicSend({ ['chat/' + ch + '/' + id]: msg, [rateKey]: firebase.database.ServerValue.TIMESTAMP }, rateKey)
     .catch(() => {
       if (input && !input.value) input.value = text; // give the words back
       showToast("Couldn't send — check your connection and try again.");
@@ -259,15 +283,23 @@ function sendChatPhoto(ch, file) {
   if (btn) btn.setAttribute('disabled', '');
   makeChatImages(file)
     .then(({ full, thumb }) => {
-      const photoRef = firebase.database().ref(dbPath('chatPhotos')).push();
-      return photoRef.set({ byKey: myKey, at: firebase.database.ServerValue.TIMESTAMP, ch, data: full })
-        .then(() => firebase.database().ref(dbPath('chat/' + ch)).push({
+      const photoId = firebase.database().ref(dbPath('chatPhotos')).push().key;
+      const msgId = firebase.database().ref(dbPath('chat/' + ch)).push().key;
+      const rateKey = 'chatRate/' + myKey;
+      // One update: the full image, the message that points at it, and the
+      // rate stamp. Either all three land or none do, so there is no window
+      // where a message references a photo that isn't there.
+      return chatAtomicSend({
+        ['chatPhotos/' + photoId]: { byKey: myKey, at: firebase.database.ServerValue.TIMESTAMP, ch, data: full },
+        ['chat/' + ch + '/' + msgId]: {
           at: firebase.database.ServerValue.TIMESTAMP,
           byKey: myKey,
           name: String(chatDisplayName()).slice(0, 60),
           thumb,
-          photoId: photoRef.key,
-        }));
+          photoId,
+        },
+        [rateKey]: firebase.database.ServerValue.TIMESTAMP,
+      }, rateKey);
     })
     .catch(() => showToast("Couldn't send the photo — try a different one, or check your connection."))
     .then(() => { if (btn) btn.removeAttribute('disabled'); });

@@ -35,7 +35,7 @@ test('nothing is granted at the database root — no cascading read or write', (
 });
 
 test('both camps exist and expose exactly the same set of gated paths', () => {
-  const expected = ['changelog', 'chat', 'chatPhotos', 'config', 'contacts', 'members', 'presence', 'roster', 'state'];
+  const expected = ['changelog', 'chat', 'chatPhotos', 'chatRate', 'config', 'contacts', 'members', 'presence', 'roster', 'state'];
   ROOTS.forEach((r) => {
     assert.deepEqual(Object.keys(RULES[r]).filter((k) => !k.startsWith('.')).sort(), expected,
       `${r} covers every path the client touches — an ungated path is an open door`);
@@ -207,4 +207,38 @@ test('changelog entries are sealed and capped like every other record', () => {
       assert.ok(e[f]['.validate'].includes('isNumber'), `${root}: ${f} is a number`);
     });
   });
+});
+
+test('the rate limit is bound to the writer and to the server clock', () => {
+  // The only thing a member may write to their own rate node is `now`. If they
+  // could backdate it they could clear their own throttle; if they could write
+  // someone else's they could throttle that person out of chat.
+  ROOTS.forEach((root) => {
+    const w = RULES[root].chatRate.$memberKey['.write'];
+    assert.ok(w.includes('newData.val() === now'), `${root}: the stamp must be the server's clock`);
+    assert.ok(w.includes('$memberKey === auth.token.email') || w.includes('$memberKey ==='),
+      `${root}: a member may only stamp their OWN row`);
+  });
+});
+
+test('creating chat content requires advancing the rate stamp; deleting does not', () => {
+  ROOTS.forEach((root) => {
+    [RULES[root].chat.$channel.$msgId, RULES[root].chatPhotos.$photoId].forEach((node) => {
+      const w = node['.write'];
+      assert.ok(w.includes("child('chatRate')"), `${root}: create consults the rate node`);
+      assert.ok(w.includes('<= now - 1000'), `${root}: and enforces a floor between writes`);
+      assert.ok(w.includes("newData.parent()"),
+        `${root}: and requires the SAME atomic update to advance it — otherwise a caller just never stamps`);
+      // The delete branch must stay clean, or moderation would be throttled.
+      const del = w.slice(w.indexOf('data.exists() && !newData.exists()'));
+      assert.notOk(del.includes('chatRate'), `${root}: deletes are never rate-limited`);
+    });
+  });
+});
+
+test('the client throttle sits above the server floor, so real people never hit the wall', () => {
+  const floor = Number((RULES.campScoreboard.chat.$channel.$msgId['.write'].match(/<= now - (\d+)/) || [])[1]);
+  assert.ok(floor > 0, 'a floor is set');
+  assert.ok(CHAT_MIN_SEND_MS > floor,
+    `client gap ${CHAT_MIN_SEND_MS}ms must exceed the ${floor}ms the rules enforce`);
 });
