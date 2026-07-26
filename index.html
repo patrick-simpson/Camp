@@ -15,15 +15,23 @@
        that leaves little for an injection to reach anyway.
        connect-src: *.firebaseio.com is a wildcard because Realtime Database's
        long-poll fallback connects to per-session subdomains. Adding a host to
-       the app means adding it here, or the request is blocked. -->
+       the app means adding it here, or the request is blocked.
+       DO NOT REMOVE apis.google.com or www.google.com from script-src/frame-src.
+       They are not decoration: signInWithPopup pulls apis.google.com/js/api.js
+       to build its auth iframe, and phone sign-in pulls reCAPTCHA from
+       www.google.com. Blocking them breaks sign-in for anyone who isn't
+       ALREADY signed in — which is invisible in testing, because a persisted
+       session never re-runs the popup. (Shipped broken in v176, fixed in v178.)
+       img-src is deliberately NOT widened for reCAPTCHA: its images load inside
+       Google's own iframe, governed by that frame's policy, not ours. -->
   <meta http-equiv="Content-Security-Policy" content="
     default-src 'self';
-    script-src 'self' 'unsafe-inline' https://www.gstatic.com;
+    script-src 'self' 'unsafe-inline' https://www.gstatic.com https://apis.google.com https://www.google.com;
     style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
     font-src 'self' data: https://fonts.gstatic.com;
     img-src 'self' data: blob:;
     connect-src 'self' https://*.firebaseio.com wss://*.firebaseio.com https://*.googleapis.com https://api.open-meteo.com;
-    frame-src https://camp-89cea.firebaseapp.com https://accounts.google.com;
+    frame-src https://camp-89cea.firebaseapp.com https://accounts.google.com https://apis.google.com https://www.google.com;
     object-src 'none';
     base-uri 'self';
     form-action 'none'">
@@ -46,8 +54,8 @@
   <!-- Jelly UI web components (vendored, see vendor/jelly.js header). Module
        scripts are deferred by spec, so this never blocks first paint and the
        classic scripts at the end of <body> always execute before it. -->
-  <script type="module" src="vendor/jelly.js?v=177"></script>
-  <link rel="stylesheet" href="styles.css?v=177">
+  <script type="module" src="vendor/jelly.js?v=178"></script>
+  <link rel="stylesheet" href="styles.css?v=178">
 
   <script>
     // Decide lock state before the page paints so we never flash the app,
@@ -421,21 +429,21 @@
           integrity="sha384-EkqK+ezBWJuvO3hfrSx2iVqr3YQbhmnzn8kPhOpBZ+0GMVU5oGSgptwIu8D84HjE" crossorigin="anonymous"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"
           integrity="sha384-1/m+A1jVWbD3yiK3/vtFvm1+LjK1WLpSoDY+Kaxppwn/yP9BVSgdHTNQVOjrzUO5" crossorigin="anonymous"></script>
-  <script src="firebase-config.js?v=177"></script>
-  <script src="defaults.js?v=177"></script>
+  <script src="firebase-config.js?v=178"></script>
+  <script src="defaults.js?v=178"></script>
   <!-- Camp profiles: which camp this device runs (junior default), its
        Firebase root, storage namespace, schedule, and seed data. Must load
        between defaults.js (junior's game catalog) and app.js (the consumer). -->
-  <script src="camps.js?v=177"></script>
-  <script src="app.js?v=177"></script>
-  <script src="settings.js?v=177"></script>
+  <script src="camps.js?v=178"></script>
+  <script src="app.js?v=178"></script>
+  <script src="settings.js?v=178"></script>
   <!-- Camp Chat (channels, mentions, photos) — self-contained layer; delete
        this tag and the app runs exactly as before (all hooks typeof-guard). -->
-  <script src="chat.js?v=177"></script>
+  <script src="chat.js?v=178"></script>
   <!-- Optional alternative sign-in methods. Delete a tag to remove that
        method (app.js only touches them through window.CampPhone /
        window.CampEmailLink); the Google button always remains. -->
-  <script src="auth-phone.js?v=177"></script>
-  <script src="auth-email-link.js?v=177"></script>
+  <script src="auth-phone.js?v=178"></script>
+  <script src="auth-email-link.js?v=178"></script>
 </body>
 </html>

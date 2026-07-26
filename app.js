@@ -15,9 +15,9 @@ const STORAGE_KEY = lsKey('campScoreboardV2'); // per-camp; junior stays the bar
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-26T19:23:35Z';
+const CODE_UPDATED_AT = '2026-07-26T20:03:51Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 177;
+const APP_VERSION = 178;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -1153,7 +1153,12 @@ function renderHistory() {
     .then((snap) => {
       const val = snap.val() || {};
       const rows = Object.keys(val).map((k) => val[k]).filter(Boolean);
-      rows.sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+      // Sort on a NUMBER, not the raw field. Entries written before 2026-07-26
+      // carry an ISO string; newer ones carry a server-set number, and the two
+      // will coexist in this node forever. A string compare across both would
+      // silently interleave them wrongly (every number sorts before "2…"), so
+      // normalize first. formatEasternStamp already accepts either shape.
+      rows.sort((a, b) => changelogTime(b) - changelogTime(a));
       body.innerHTML = rows.length
         ? renderHistoryRows(rows)
         : '<p class="muted">No point changes recorded yet.</p>';
@@ -1161,6 +1166,16 @@ function renderHistory() {
     .catch(() => {
       body.innerHTML = '<p class="muted">Couldn\'t load the history (offline?). Close and reopen to try again.</p>';
     });
+}
+
+// A changelog entry's time in milliseconds, whichever shape it was stored in.
+// 0 for junk, which sorts it to the bottom rather than throwing off everything
+// around it.
+function changelogTime(row) {
+  const at = row && row.at;
+  if (typeof at === 'number') return Number.isFinite(at) ? at : 0;
+  const ms = Date.parse(String(at || ''));
+  return Number.isNaN(ms) ? 0 : ms;
 }
 
 function renderHistoryRows(rows) {

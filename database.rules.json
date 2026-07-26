@@ -139,14 +139,6 @@
           }
         }
       },
-      "roster": {
-        ".read": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).exists()))",
-        ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor'))"
-      },
-      "contacts": {
-        ".read": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).exists()))",
-        ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor'))"
-      },
       "chatRate": {
         ".read": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).exists()))",
         "$memberKey": {
@@ -290,14 +282,6 @@
             ".validate": false
           }
         }
-      },
-      "roster": {
-        ".read": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).exists()))",
-        ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor'))"
-      },
-      "contacts": {
-        ".read": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).exists()))",
-        ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor'))"
       },
       "chatRate": {
         ".read": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).exists()) || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).exists()))",

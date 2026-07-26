@@ -35,7 +35,7 @@ test('nothing is granted at the database root — no cascading read or write', (
 });
 
 test('both camps exist and expose exactly the same set of gated paths', () => {
-  const expected = ['changelog', 'chat', 'chatPhotos', 'chatRate', 'config', 'contacts', 'members', 'presence', 'roster', 'state'];
+  const expected = ['changelog', 'chat', 'chatPhotos', 'chatRate', 'config', 'members', 'presence', 'state'];
   ROOTS.forEach((r) => {
     assert.deepEqual(Object.keys(RULES[r]).filter((k) => !k.startsWith('.')).sort(), expected,
       `${r} covers every path the client touches — an ungated path is an open door`);
@@ -155,12 +155,16 @@ test('every object with named children also closes the door on unnamed ones', ()
   });
 });
 
-test('the future PII paths are gated before anything is ever written to them', () => {
+test('the unused PII paths do not exist at all', () => {
+  // `roster` and `contacts` were pre-gated for a camper/parent-details feature
+  // that was never built, and were readable by ANY member with no validation.
+  // Dead permissive rules are the ones that get forgotten and then quietly
+  // filled in — and this would be minors' PII. Deleted, so the deny-all root
+  // covers them. When the feature is actually built, write rules FOR it then:
+  // editor-only read, not member-read.
   ROOTS.forEach((root) => {
     ['roster', 'contacts'].forEach((p) => {
-      const b = RULES[root][p];
-      assert.ok(b && typeof b['.read'] === 'string' && b['.read'].includes('members'),
-        `${root}/${p} is member-gated in advance — camper data must never land on an open path`);
+      assert.equal(RULES[root][p], undefined, `${root}/${p} must not have a rules block until it has a feature`);
     });
   });
 });
