@@ -19,8 +19,8 @@
   <!-- Jelly UI web components (vendored, see vendor/jelly.js header). Module
        scripts are deferred by spec, so this never blocks first paint and the
        classic scripts at the end of <body> always execute before it. -->
-  <script type="module" src="vendor/jelly.js?v=173"></script>
-  <link rel="stylesheet" href="styles.css?v=173">
+  <script type="module" src="vendor/jelly.js?v=174"></script>
+  <link rel="stylesheet" href="styles.css?v=174">
 
   <script>
     // Decide lock state before the page paints so we never flash the app,
@@ -135,13 +135,13 @@
            #chat-view takeover below. -->
       <section id="chat-card" class="card chat-card" data-card="chat" hidden>
         <button type="button" id="chat-card-main" class="chat-card-main">
-          <span class="chat-card-title">💬 Camp Chat <span id="chat-card-badge" class="chat-badge" hidden></span></span>
+          <span class="chat-card-title">💬 Chat <span id="chat-card-badge" class="chat-badge" hidden></span></span>
           <span class="chat-card-preview" id="chat-card-preview">Loading…</span>
           <span class="settings-link-chevron" aria-hidden="true">›</span>
         </button>
         <div class="settings-row card-visibility-row">
           <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🙈</span> Hide from viewers</span>
-          <jelly-switch class="hide-card-toggle" data-hide-card="chat" label="Hide Camp Chat from viewers"></jelly-switch>
+          <jelly-switch class="hide-card-toggle" data-hide-card="chat" label="Hide Chat from viewers"></jelly-switch>
         </div>
       </section>
 
@@ -202,17 +202,6 @@
           <p id="catchup-hint" class="catchup-hint" hidden></p>
         </jelly-collapsible>
 
-        <!-- ── MEMORY VERSE ───────────────────────────────── -->
-        <jelly-collapsible class="card verse-card collapsible-card" data-card="verse">
-          <h2 slot="header">Memory Verse</h2>
-          <div class="settings-row card-visibility-row">
-            <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🙈</span> Hide from viewers</span>
-            <jelly-switch class="hide-card-toggle" data-hide-card="verse" label="Hide Memory Verse from viewers"></jelly-switch>
-          </div>
-          <p class="muted card-desc">Each day's memory verse — pick a day to read it, and record points for teams that recite it. Verse points count toward each team's total above.</p>
-          <div id="verse-body"></div>
-        </jelly-collapsible>
-
         <!-- ── MEAL CLEANUP ───────────────────────────────── -->
         <jelly-collapsible class="card cleanup-card collapsible-card" data-card="cleanup">
           <h2 slot="header">Meal Cleanup</h2>
@@ -224,12 +213,23 @@
           <div id="cleanup-body"></div>
         </jelly-collapsible>
 
-        <!-- ── BONUS POINTS ───────────────────────────────── -->
-        <jelly-collapsible class="card bonus-card collapsible-card" data-card="bonus">
-          <h2 slot="header">Bonus Points</h2>
+        <!-- ── MEMORY VERSE ───────────────────────────────── -->
+        <jelly-collapsible class="card verse-card collapsible-card" data-card="verse">
+          <h2 slot="header">Memory Verse</h2>
           <div class="settings-row card-visibility-row">
             <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🙈</span> Hide from viewers</span>
-            <jelly-switch class="hide-card-toggle" data-hide-card="bonus" label="Hide Bonus Points from viewers"></jelly-switch>
+            <jelly-switch class="hide-card-toggle" data-hide-card="verse" label="Hide Memory Verse from viewers"></jelly-switch>
+          </div>
+          <p class="muted card-desc">Each day's memory verse — pick a day to read it, and record points for teams that recite it. Verse points count toward each team's total above.</p>
+          <div id="verse-body"></div>
+        </jelly-collapsible>
+
+        <!-- ── BONUS POINTS ───────────────────────────────── -->
+        <jelly-collapsible class="card bonus-card collapsible-card" data-card="bonus">
+          <h2 slot="header">Quick Points</h2>
+          <div class="settings-row card-visibility-row">
+            <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🙈</span> Hide from viewers</span>
+            <jelly-switch class="hide-card-toggle" data-hide-card="bonus" label="Hide Quick Points from viewers"></jelly-switch>
           </div>
           <p class="muted card-desc">Extra one-off points for other tasks — added to each team's total above.</p>
           <div id="bonus-body"></div>
@@ -277,6 +277,16 @@
   <jelly-drawer id="settings-overlay" side="bottom" label="Settings">
     <h2 class="settings-title">⚙️ Settings</h2>
     <div class="settings-body">
+      <!-- The account row stays first — it's who-you-are, not a menu entry.
+           Everything below it is ALPHABETICAL (owner's call, 2026-07-26):
+           Appearance · Camp · Change history · Set up the week · Sound ·
+           Stalling with Patrick · Who can sign in. Keep it that way when
+           adding rows. Signing out also clears the camp data cached locally
+           (see signOutAndClear). -->
+      <div class="settings-row settings-row-account">
+        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🔑</span> <span id="account-label"></span></span>
+        <jelly-button id="signout-btn" size="small" variant="platinum">Sign out</jelly-button>
+      </div>
       <div class="settings-row settings-row-theme">
         <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🌗</span> Appearance</span>
         <jelly-segmented id="theme-toggle" size="small" label="Appearance" value="auto">
@@ -284,16 +294,6 @@
           <jelly-segment value="auto">Auto</jelly-segment>
           <jelly-segment value="dark">🌙 Dark</jelly-segment>
         </jelly-segmented>
-      </div>
-      <div class="settings-row">
-        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🔔</span> Sound</span>
-        <jelly-switch id="sound-toggle" label="Sounds"></jelly-switch>
-      </div>
-      <!-- Who's signed in on this device + the way out. Signing out also
-           clears the camp data cached locally (see signOutAndClear). -->
-      <div class="settings-row settings-row-account">
-        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🔑</span> <span id="account-label"></span></span>
-        <jelly-button id="signout-btn" size="small" variant="platinum">Sign out</jelly-button>
       </div>
       <!-- Accounts on BOTH camps' lists get this switcher (hidden otherwise —
            see updateAccountRow). Picking the other camp reloads into it. -->
@@ -304,25 +304,29 @@
           <jelly-segment value="senior">🚩 Senior</jelly-segment>
         </jelly-segmented>
       </div>
-      <!-- Editors only (hidden for view-only via CSS): the week builder. -->
-      <button id="builder-row" class="settings-link" type="button">
-        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🛠️</span> Set up the week</span>
-        <span class="settings-link-chevron" aria-hidden="true">›</span>
-      </button>
-      <!-- Editors only: manage who can sign in (the database allowlist). -->
-      <button id="members-row" class="settings-link" type="button">
-        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">👥</span> Who can sign in</span>
-        <span class="settings-link-chevron" aria-hidden="true">›</span>
-      </button>
       <!-- Editors only (hidden for view-only via CSS): opens the point-change log. -->
       <button id="history-row" class="settings-link" type="button">
         <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🕘</span> Change history</span>
         <span class="settings-link-chevron" aria-hidden="true">›</span>
       </button>
+      <!-- Editors only (hidden for view-only via CSS): the week builder. -->
+      <button id="builder-row" class="settings-link" type="button">
+        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🛠️</span> Set up the week</span>
+        <span class="settings-link-chevron" aria-hidden="true">›</span>
+      </button>
+      <div class="settings-row">
+        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🔔</span> Sound</span>
+        <jelly-switch id="sound-toggle" label="Sounds"></jelly-switch>
+      </div>
       <a class="settings-link" href="stalling.html">
         <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🎙️</span> Stalling with Patrick</span>
         <span class="settings-link-chevron" aria-hidden="true">›</span>
       </a>
+      <!-- Editors only: manage who can sign in (the database allowlist). -->
+      <button id="members-row" class="settings-link" type="button">
+        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">👥</span> Who can sign in</span>
+        <span class="settings-link-chevron" aria-hidden="true">›</span>
+      </button>
     </div>
   </jelly-drawer>
 
@@ -376,21 +380,21 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=173"></script>
-  <script src="defaults.js?v=173"></script>
+  <script src="firebase-config.js?v=174"></script>
+  <script src="defaults.js?v=174"></script>
   <!-- Camp profiles: which camp this device runs (junior default), its
        Firebase root, storage namespace, schedule, and seed data. Must load
        between defaults.js (junior's game catalog) and app.js (the consumer). -->
-  <script src="camps.js?v=173"></script>
-  <script src="app.js?v=173"></script>
-  <script src="settings.js?v=173"></script>
+  <script src="camps.js?v=174"></script>
+  <script src="app.js?v=174"></script>
+  <script src="settings.js?v=174"></script>
   <!-- Camp Chat (channels, mentions, photos) — self-contained layer; delete
        this tag and the app runs exactly as before (all hooks typeof-guard). -->
-  <script src="chat.js?v=173"></script>
+  <script src="chat.js?v=174"></script>
   <!-- Optional alternative sign-in methods. Delete a tag to remove that
        method (app.js only touches them through window.CampPhone /
        window.CampEmailLink); the Google button always remains. -->
-  <script src="auth-phone.js?v=173"></script>
-  <script src="auth-email-link.js?v=173"></script>
+  <script src="auth-phone.js?v=174"></script>
+  <script src="auth-email-link.js?v=174"></script>
 </body>
 </html>

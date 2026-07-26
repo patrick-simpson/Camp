@@ -15,9 +15,9 @@ const STORAGE_KEY = lsKey('campScoreboardV2'); // per-camp; junior stays the bar
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-26T03:40:31Z';
+const CODE_UPDATED_AT = '2026-07-26T03:45:02Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 173;
+const APP_VERSION = 174;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -2777,7 +2777,7 @@ function enableNotify() {
 function toggleNotify() {
   if (!state.notify) {
     enableNotify();
-    showToast("🔔 You'll get an alert whenever a team's points change, a team is called up next, an announcement is posted, or someone mentions you or your team in Camp Chat — as long as this tab stays open.");
+    showToast("🔔 You'll get an alert whenever a team's points change, a team is called up next, an announcement is posted, or someone mentions you or your team in Chat — as long as this tab stays open.");
   } else {
     state.notify = false;
     updateNotifyButton();
@@ -6818,7 +6818,7 @@ function renderAnnouncements() {
   const banners = active.map((a) => `
     <div class="announce-banner" role="status">
       <button class="announce-dismiss" data-ann-id="${esc(a.id)}" aria-label="Dismiss this announcement on this phone">✕</button>
-      <span class="announce-badge">📣 ${a.fromChat ? 'Camp Chat' : 'Announcement'}</span>
+      <span class="announce-badge">📣 ${a.fromChat ? 'Chat' : 'Announcement'}</span>
       <span class="announce-text">${esc(a.text)}</span>
       <span class="announce-meta">${esc(formatEasternStamp(a.at) || '')}${a.by ? ` · ${esc(a.by)}` : ''}${editor && !a.fromChat ? ` · <button class="announce-delete link-btn" data-ann-id="${esc(a.id)}">Remove for everyone</button>` : ''}</span>
     </div>`).join('');

@@ -431,7 +431,7 @@ function chatAnnouncementBanners() {
     .filter((m) => m.at > cutoff && !dismissed.includes(m.id))
     .map((m) => ({
       id: m.id,
-      text: m.text || '📷 Photo (open Camp Chat to see it)',
+      text: m.text || '📷 Photo (open Chat to see it)',
       at: new Date(m.at).toISOString(),
       by: m.name || identityFromKey(m.byKey),
       fromChat: true, // renderAnnouncements: no "remove for everyone" (delete it in chat)
@@ -461,7 +461,7 @@ function notifyChatMessage(ch, msg) {
     // + bright chime + buzz).
     if (!viewing) showToast('📣 ' + preview);
     if (state.notify) {
-      maybeNativeNotification('📣 Camp Chat announcement', preview, 'camp-chat-ann-' + msg.id);
+      maybeNativeNotification('📣 Chat announcement', preview, 'camp-chat-ann-' + msg.id);
       playMineChime();
       if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
     }
@@ -474,7 +474,7 @@ function notifyChatMessage(ch, msg) {
   if (mentioned) {
     if (!viewing) showToast(`💬 ${msg.name || 'Someone'} mentioned you: ${(msg.text || '').slice(0, 80)}`, { mine: true });
     if (state.notify) {
-      maybeNativeNotification('💬 You were mentioned in Camp Chat', preview, 'camp-chat-men-' + msg.id);
+      maybeNativeNotification('💬 You were mentioned in Chat', preview, 'camp-chat-men-' + msg.id);
       if (navigator.vibrate) navigator.vibrate(150);
     }
     return;
@@ -482,7 +482,7 @@ function notifyChatMessage(ch, msg) {
   if (chatSubscribed(ch)) {
     if (!viewing) showToast(`${c ? c.emoji : '💬'} ${preview}`);
     if (state.notify) {
-      maybeNativeNotification(`${c ? c.emoji + ' ' : ''}Camp Chat · ${c ? c.short : ch}`, preview, 'camp-chat-sub-' + msg.id);
+      maybeNativeNotification(`${c ? c.emoji + ' ' : ''}Chat · ${c ? c.short : ch}`, preview, 'camp-chat-sub-' + msg.id);
       if (navigator.vibrate) navigator.vibrate(150);
     }
   }
