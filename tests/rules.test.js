@@ -294,7 +294,10 @@ test('config type-pins match the keys the client actually pushes', () => {
     const cf = RULES[root].config;
     CONFIG_KEYS.forEach((k) => assert.ok(cf[k], `${root}/config/${k} is pinned`));
     assert.ok(cf.version['.validate'].includes('isNumber'), `${root}: version is a number`);
-    // NOT sealed with $other yet — that needs a live read of the node first.
-    assert.equal(cf.$other, undefined, `${root}/config is deliberately not sealed until audited`);
+    // Sealed 2026-07-26 after reading the live node: exactly the five keys.
+    // Safe even if a stray ever appears, because pushConfig is a whole-node
+    // set() of configForSync() output — the write never carries an unknown key,
+    // and being a set() it prunes any stray already there.
+    assert.equal(cf.$other['.validate'], false, `${root}/config refuses unknown keys`);
   });
 });

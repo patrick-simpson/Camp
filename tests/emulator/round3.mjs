@@ -49,6 +49,10 @@ await t('a real config set still lands', () =>
   assertSucceeds(set(ref(as(E), 'campScoreboard/config'), {
     version: 5, updatedAt: new Date().toISOString(), sessions: {}, days: [{ id: 'd1' }], games: [{ id: 'g1' }],
   })));
+await t('a config with an UNKNOWN key is refused (sealed)', () =>
+  assertFails(set(ref(as(E), 'campScoreboard/config'), {
+    version: 5, updatedAt: 'x', sessions: {}, days: [], games: [], stray: 1,
+  })));
 await t('a config with a scalar where a branch belongs is refused', () =>
   assertFails(set(ref(as(E), 'campScoreboard/config'), {
     version: 5, updatedAt: 'x', sessions: {}, days: 'not-a-list', games: [],

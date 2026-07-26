@@ -512,9 +512,11 @@ rules**; the client code only shapes the UI.
   that path and RTDB never evaluates ancestor `.validate`. Closing it means
   moving `.write` onto each of the twelve children — all-or-nothing, and not
   worth it against a threat model of a few known directors.
-- **`config` is deliberately NOT sealed with `$other: false`** — that needs a
-  live read of the node first to confirm it holds exactly the five keys, and
-  the rules make that unreadable from outside. Add it after checking.
+- **`config` IS sealed** (`$other: false`, 2026-07-26 — the live node was read
+  and holds exactly the five keys). Safe even if a stray ever appears, because
+  `pushConfig` is a whole-node `set()` of `configForSync()` output: the write
+  never carries an unknown key, and being a `set()` it prunes any stray already
+  in the node.
 - **Rate limit (added 2026-07-26).** Every chat send is ONE atomic multi-path
   `update()` at the camp root carrying the content plus a
   `chatRate/<myKey>` stamp (`chatAtomicSend` in chat.js). The rules refuse a
