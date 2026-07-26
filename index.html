@@ -19,8 +19,8 @@
   <!-- Jelly UI web components (vendored, see vendor/jelly.js header). Module
        scripts are deferred by spec, so this never blocks first paint and the
        classic scripts at the end of <body> always execute before it. -->
-  <script type="module" src="vendor/jelly.js?v=172"></script>
-  <link rel="stylesheet" href="styles.css?v=172">
+  <script type="module" src="vendor/jelly.js?v=173"></script>
+  <link rel="stylesheet" href="styles.css?v=173">
 
   <script>
     // Decide lock state before the page paints so we never flash the app,
@@ -376,21 +376,21 @@
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
-  <script src="firebase-config.js?v=172"></script>
-  <script src="defaults.js?v=172"></script>
+  <script src="firebase-config.js?v=173"></script>
+  <script src="defaults.js?v=173"></script>
   <!-- Camp profiles: which camp this device runs (junior default), its
        Firebase root, storage namespace, schedule, and seed data. Must load
        between defaults.js (junior's game catalog) and app.js (the consumer). -->
-  <script src="camps.js?v=172"></script>
-  <script src="app.js?v=172"></script>
-  <script src="settings.js?v=172"></script>
+  <script src="camps.js?v=173"></script>
+  <script src="app.js?v=173"></script>
+  <script src="settings.js?v=173"></script>
   <!-- Camp Chat (channels, mentions, photos) — self-contained layer; delete
        this tag and the app runs exactly as before (all hooks typeof-guard). -->
-  <script src="chat.js?v=172"></script>
+  <script src="chat.js?v=173"></script>
   <!-- Optional alternative sign-in methods. Delete a tag to remove that
        method (app.js only touches them through window.CampPhone /
        window.CampEmailLink); the Google button always remains. -->
-  <script src="auth-phone.js?v=172"></script>
-  <script src="auth-email-link.js?v=172"></script>
+  <script src="auth-phone.js?v=173"></script>
+  <script src="auth-email-link.js?v=173"></script>
 </body>
 </html>

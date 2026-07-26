@@ -15,9 +15,9 @@ const STORAGE_KEY = lsKey('campScoreboardV2'); // per-camp; junior stays the bar
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-07-26T03:31:32Z';
+const CODE_UPDATED_AT = '2026-07-26T03:40:31Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 172;
+const APP_VERSION = 173;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -4857,7 +4857,7 @@ function renderGameView() {
   const badge = FORMAT_BADGES[g.format] || { label: g.format || '?', cls: '' };
   const backDay = dayById(g.dayId);
   let html = `
-    <button id="back-btn" class="link-btn back-btn">← ${esc(backDay ? backDay.name : 'All')} games</button>
+    <button id="back-btn" class="back-pill back-btn"><span class="back-pill-arrow" aria-hidden="true">←</span> ${esc(backDay ? backDay.name : 'All')} games</button>
     <div class="game-view-header">
       <span class="game-emoji-lg">${esc(g.emoji)}</span>
       <div>

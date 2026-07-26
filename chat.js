@@ -658,7 +658,7 @@ function renderChatView(force) {
   const subbed = chatSubscribed(ch);
   view.innerHTML = `
     <div class="chat-head">
-      <button id="chat-back-btn" class="link-btn back-btn">← Camp</button>
+      <button id="chat-back-btn" class="back-pill"><span class="back-pill-arrow" aria-hidden="true">←</span> Camp</button>
       <h2 class="chat-title">${c.emoji} ${esc(c.label)}</h2>
       <button id="chat-sub-btn" class="chat-sub-btn${subbed ? ' chat-sub-on' : ''}"
         title="${subbed ? 'Subscribed — every message here alerts you' : 'Muted — only mentions alert you'}"
