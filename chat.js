@@ -818,7 +818,7 @@ function renderChatView(force) {
       <button id="chat-sub-btn" class="chat-sub-btn${subbed ? ' chat-sub-on' : ''}"
         title="${subbed ? 'Subscribed — every message here alerts you' : 'Muted — only mentions alert you'}"
         aria-label="${subbed ? 'Unsubscribe from this channel' : 'Subscribe to this channel'}">${subbed ? '🔔' : '🔕'}</button>
-      ${canEdit() ? '<button id="chat-clear-btn" class="link-btn danger-link chat-clear-btn" title="Clear this channel">🧹</button>' : ''}
+      ${canEdit() ? '<button id="chat-clear-btn" class="link-btn danger-link chat-clear-btn" title="Clear this channel" aria-label="Clear this channel">🧹</button>' : ''}
     </div>
     <div class="chat-tabs">${tabs}</div>
     <div id="chat-list" class="chat-list">${chatListHTML(ch)}</div>
