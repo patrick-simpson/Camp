@@ -1,0 +1,3 @@
+## 2026-10-15 - Add textarea to global :focus-visible rules
+**Learning:** Found that `textarea` elements were missing from the global `:is(button, [role="button"], select, input, a):focus-visible` CSS rule in this app. While `.form-textarea:focus` was styled, keyboard users tabbing into raw `textarea` inputs (or `jelly-textarea` shadow roots) wouldn't get the standard visible focus ring that buttons and other inputs receive.
+**Action:** Always check that multi-line inputs (`textarea`) are included in global focus-ring selectors alongside standard single-line `input`s and `button`s.

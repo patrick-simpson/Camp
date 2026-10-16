@@ -158,7 +158,7 @@ jelly-dialog:not(:defined)[open] {
 }
 
 /* Keyboard focus ring for every interactive control (mouse/touch unaffected). */
-:is(button, [role="button"], select, input, a):focus-visible {
+:is(button, [role="button"], select, input, textarea, a):focus-visible {
   outline: 2px solid var(--color-primary);
   outline-offset: 2px;
 }
