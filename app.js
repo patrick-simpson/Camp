@@ -6034,6 +6034,8 @@ function boardCelebrate(boardEl, teamId) {
   const mascot = teamEmoji(teamId);
   const extras = ['🎉', '🎊', '✨', '⭐'];
   const H = boardEl.getBoundingClientRect().height || 300;
+  const fragment = document.createDocumentFragment();
+  const toRemove = [];
   for (let i = 0; i < 24; i++) {
     const fromLeft = i % 2 === 0;
     const p = document.createElement('span');
@@ -6051,9 +6053,11 @@ function boardCelebrate(boardEl, teamId) {
     p.style.setProperty('--bd', (1.0 + Math.random() * 0.6).toFixed(2) + 's');
     p.style.animationDelay = (Math.random() * 0.18).toFixed(2) + 's';
     p.style[fromLeft ? 'left' : 'right'] = '4px';
-    boardEl.appendChild(p);
-    setTimeout(() => p.remove(), 2100);
+    fragment.appendChild(p);
+    toRemove.push(p);
   }
+  boardEl.appendChild(fragment);
+  setTimeout(() => toRemove.forEach(p => p.remove()), 2100);
 }
 
 // Compare current scores to the last render and celebrate any increase.
@@ -7969,3 +7973,24 @@ function boot() {
 }
 
 document.addEventListener('DOMContentLoaded', boot);
+
+function renderScheduleSparkles() {
+  const container = document.getElementById('sched-sparkles');
+  if (!container) return;
+  container.innerHTML = '';
+  // Only some days get sparkles, randomly chosen for demo
+  const hash = Math.abs(hashCode(state.campId || 'camp'));
+  if (hash % 3 === 0) return;
+
+  const fragment = document.createDocumentFragment();
+  for (let i = 0; i < 24; i++) {
+    const fromLeft = i % 2 === 0;
+    const p = document.createElement('div');
+    p.className = 'sparkle';
+    p.style.top = (Math.random() * 100) + '%';
+    p.style.left = (Math.random() * 100) + '%';
+    p.style.animationDelay = (Math.random() * 2) + 's';
+    fragment.appendChild(p);
+  }
+  container.appendChild(fragment);
+}
