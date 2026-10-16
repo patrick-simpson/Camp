@@ -1960,7 +1960,7 @@ normalizeSyncedState();
 function counselorName(id) {
   const staff = teamStaffNames(id);
   if (staff.length) return staff.join(', ');
-  const t = state.teams.find((t) => t.id === id);
+  const t = _getTeamMap().get(id);
   return t && t.counselor ? t.counselor : '';
 }
 
@@ -2735,8 +2735,30 @@ function teamShield(id) {
   return TEAM_SHIELD[id] || null;
 }
 
+// Memoized team lookup for render hot paths
+const _teamMapCache = new Map();
+let _teamMapCacheRef = null;
+let _teamMapLength = -1;
+
+function _getTeamMap() {
+  // state.teams is sometimes mutated in place by settings.js (push/splice)
+  // so we check both reference and length to invalidate the cache.
+  if (_teamMapCacheRef === state.teams && _teamMapLength === state.teams.length) return _teamMapCache;
+  _teamMapCache.clear();
+  if (state.teams) {
+    for (let i = 0; i < state.teams.length; i++) {
+      _teamMapCache.set(state.teams[i].id, state.teams[i]);
+    }
+    _teamMapLength = state.teams.length;
+  } else {
+    _teamMapLength = -1;
+  }
+  _teamMapCacheRef = state.teams;
+  return _teamMapCache;
+}
+
 function teamName(id) {
-  const t = state.teams.find((t) => t.id === id);
+  const t = _getTeamMap().get(id);
   return t ? t.name : '???';
 }
 
