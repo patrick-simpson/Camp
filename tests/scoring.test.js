@@ -44,6 +44,16 @@ test('esc closes every HTML injection vector used in attributes', () => {
   assert.equal(esc(null), 'null', 'non-strings are coerced, never thrown on');
 });
 
+test('safeUrl enforces http/https schemes and drops others', () => {
+  assert.equal(safeUrl('https://example.com'), 'https://example.com');
+  assert.equal(safeUrl('http://example.com'), 'http://example.com');
+  assert.equal(safeUrl('javascript:alert(1)'), '', 'javascript: scheme is dropped');
+  assert.equal(safeUrl('data:text/html,<script>alert(1)</script>'), '', 'data: scheme is dropped');
+  assert.equal(safeUrl('   https://padded.com  '), 'https://padded.com', 'trims whitespace');
+  assert.equal(safeUrl(null), '');
+  assert.equal(safeUrl(''), '');
+});
+
 // ── Standings ────────────────────────────────────────────────────
 
 function setupTeams() {

@@ -2749,6 +2749,14 @@ function esc(str) {
     .replace(/'/g, '&#39;');
 }
 
+// 🛡️ Sentinel: Defense-in-depth URL scheme validation
+function safeUrl(url) {
+  if (!url) return '';
+  const s = String(url).trim();
+  if (/^https?:\/\//i.test(s)) return s;
+  return '';
+}
+
 function gameById(id) {
   return state.config.games.find((g) => g.id === id);
 }
@@ -4521,7 +4529,7 @@ function renderMemoryVerse() {
     `<jelly-chip class="verse-day-chip" selectable size="small" ${dow === verseDay ? 'selected' : ''} data-verse-day="${dow}">${DAY_NAMES[dow].slice(0, 3)}${dow === todayDow ? '<span class="today-dot" title="Today"></span>' : ''}</jelly-chip>`).join('')}</div>`;
 
   const verseVideo = verse.video
-    ? `<a class="verse-video-link" href="${esc(verse.video)}" target="_blank" rel="noopener noreferrer">▶️ Watch the video</a>`
+    ? `<a class="verse-video-link" href="${esc(safeUrl(verse.video))}" target="_blank" rel="noopener noreferrer">▶️ Watch the video</a>`
     : '';
   const verseBox = `
     <div class="verse-day-card">
