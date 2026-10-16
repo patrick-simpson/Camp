@@ -361,3 +361,60 @@ test('ics text escaping protects the separators', () => {
   assert.equal(icsEscape('a\nb'), 'a\\nb');
   assert.equal(icsEscape('a\\b'), 'a\\\\b');
 });
+
+test('decorateMealBlock leaves block untouched if no meal matches', () => {
+  const block = { label: 'NonExistentMeal', emoji: '🍱' };
+  const result = decorateMealBlock(1, block);
+  assert.equal(result.label, block.label);
+  assert.equal(result.emoji, block.emoji);
+});
+
+test('decorateMealBlock decorates block if meal matches', () => {
+  const block = { label: 'Supper', emoji: '🍱', start: 100 };
+  const originalMeals = JSON.parse(JSON.stringify(MEALS));
+  MEALS[1] = { 'supper': { dish: 'Spaghetti', emoji: '🍝' } };
+
+  try {
+    const result = decorateMealBlock(1, block);
+
+    assert.equal(result.label, 'Supper — Spaghetti');
+    assert.equal(result.emoji, '🍝');
+    assert.equal(result.start, 100);
+  } finally {
+    // Restore MEALS
+    Object.keys(MEALS).forEach(k => delete MEALS[k]);
+    Object.assign(MEALS, originalMeals);
+  }
+});
+
+test('decorateMealBlock does not mutate original block', () => {
+  const block = { label: 'Supper', emoji: '🍱', start: 100 };
+  const blockCopy = JSON.stringify(block);
+
+  const originalMeals = JSON.parse(JSON.stringify(MEALS));
+  MEALS[1] = { 'supper': { dish: 'Spaghetti', emoji: '🍝' } };
+
+  try {
+    const result = decorateMealBlock(1, block);
+    assert.equal(JSON.stringify(block), blockCopy);
+  } finally {
+    Object.keys(MEALS).forEach(k => delete MEALS[k]);
+    Object.assign(MEALS, originalMeals);
+  }
+});
+
+test('decorateMealBlock falls back to block emoji if meal has no emoji', () => {
+  const block = { label: 'Supper', emoji: '🍱', start: 100 };
+
+  const originalMeals = JSON.parse(JSON.stringify(MEALS));
+  MEALS[1] = { 'supper': { dish: 'Spaghetti' } };
+
+  try {
+    const result = decorateMealBlock(1, block);
+    assert.equal(result.label, 'Supper — Spaghetti');
+    assert.equal(result.emoji, '🍱');
+  } finally {
+    Object.keys(MEALS).forEach(k => delete MEALS[k]);
+    Object.assign(MEALS, originalMeals);
+  }
+});
