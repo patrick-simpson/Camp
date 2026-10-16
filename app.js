@@ -2735,8 +2735,23 @@ function teamShield(id) {
   return TEAM_SHIELD[id] || null;
 }
 
+const _teamByIdMap = new Map();
+let _teamByIdMapState = null;
+function teamById(id) {
+  if (_teamByIdMapState !== state.teams) {
+    _teamByIdMap.clear();
+    if (state.teams) {
+      for (const t of state.teams) {
+        _teamByIdMap.set(t.id, t);
+      }
+    }
+    _teamByIdMapState = state.teams;
+  }
+  return _teamByIdMap.get(id);
+}
+
 function teamName(id) {
-  const t = state.teams.find((t) => t.id === id);
+  const t = teamById(id);
   return t ? t.name : '???';
 }
 
@@ -2749,8 +2764,19 @@ function esc(str) {
     .replace(/'/g, '&#39;');
 }
 
+const _gameByIdMap = new Map();
+let _gameByIdMapConfig = null;
 function gameById(id) {
-  return state.config.games.find((g) => g.id === id);
+  if (_gameByIdMapConfig !== state.config) {
+    _gameByIdMap.clear();
+    if (state.config && state.config.games) {
+      for (const g of state.config.games) {
+        _gameByIdMap.set(g.id, g);
+      }
+    }
+    _gameByIdMapConfig = state.config;
+  }
+  return _gameByIdMap.get(id);
 }
 
 function dayById(id) {

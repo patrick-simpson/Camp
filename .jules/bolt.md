@@ -1,0 +1,3 @@
+## 2026-07-26 - O(N) to O(1) Data Lookups
+**Learning:** Frequent `.find()` operations on configuration arrays (like games and teams) during render cycles can become a performance bottleneck, especially in applications that re-render frequently (e.g., via `setInterval` loops or global state changes). The `state.config.games` and `state.teams` arrays are small but iterated over heavily.
+**Action:** When performing data lookups inside hot paths or render loops, memoize arrays into Maps, caching the Map based on the reference of the underlying state object to ensure fast O(1) lookups and automatic cache invalidation when state updates.
