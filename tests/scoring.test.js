@@ -136,3 +136,20 @@ test('rankTeamsByPoints breaks point ties by medal quality', () => {
   assert.deepEqual(rankTeamsByPoints(counts).map((t) => t.id), ['t2', 't1', 't0'],
     'more points first; on a tie the team with the gold outranks the one with two silvers');
 });
+
+test('bonusCountsDouble correctly identifies the double-points window boundaries', () => {
+  // DOUBLE_BONUS_START = '2026-07-23T21:00:00Z'
+  // DOUBLE_BONUS_END   = '2026-07-25T04:00:00Z'
+
+  assert.equal(bonusCountsDouble(null), false, 'falsy record');
+  assert.equal(bonusCountsDouble({ category: 'cleanup', at: '2026-07-24T12:00:00Z' }), false, 'cleanup is exempt');
+
+  assert.equal(bonusCountsDouble({ at: '2026-07-23T20:59:59Z' }), false, 'before window');
+  assert.equal(bonusCountsDouble({ at: '2026-07-23T21:00:00Z' }), true, 'exact start');
+  assert.equal(bonusCountsDouble({ at: '2026-07-24T12:00:00Z' }), true, 'inside window');
+  assert.equal(bonusCountsDouble({ at: '2026-07-25T04:00:00Z' }), false, 'exact end (exclusive)');
+  assert.equal(bonusCountsDouble({ at: '2026-07-25T04:00:01Z' }), false, 'after window');
+
+  assert.equal(bonusCountsDouble({ at: '' }), false, 'empty timestamp');
+  assert.equal(bonusCountsDouble({}), false, 'missing timestamp');
+});
