@@ -6,7 +6,7 @@
 //  below, live sync turns on for every device.
 // ─────────────────────────────────────────────────────────────
 window.FIREBASE_CONFIG = {
-  apiKey: "AIzaSyDLR7a8azixBrSLA07iTTJ8VEaz7O9N5l8",
+  apiKey: "YOUR_API_KEY",
   authDomain: "camp-89cea.firebaseapp.com",
   databaseURL: "https://camp-89cea-default-rtdb.firebaseio.com",
   projectId: "camp-89cea",
