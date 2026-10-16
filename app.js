@@ -3746,6 +3746,14 @@ function medalCounts() {
   const counts = {};
   const extra = bonusBreakdown();
   state.teams.forEach((t) => (counts[t.id] = { gold: 0, silver: 0, bronze: 0, medalPts: 0, verse: 0, meals: 0, custom: 0, bonus: 0, points: 0 }));
+
+  // ⚡ Bolt: Use a hash map for O(1) game lookups instead of O(N) array searches inside the loop.
+  // This turns an O(R * G) loop into O(R + G), significantly speeding up the 10x calls per renderAll.
+  const gamesMap = {};
+  if (state.config && state.config.games) {
+    state.config.games.forEach((g) => { gamesMap[g.id] = g; });
+  }
+
   // Iterate entries so we can weight points per game: Messtival games are
   // worth DOUBLE on the scoreboard. Medal *counts* stay raw; only the point
   // value doubles. Results for games no longer in the (editable) catalog are
@@ -3754,7 +3762,7 @@ function medalCounts() {
   // it from would corrupt the standings forever.
   Object.entries(state.results).forEach(([id, r]) => {
     if (!r || !r.medals) return;
-    const g = gameById(id);
+    const g = gamesMap[id];
     if (!g) return;
     const mult = g.messtival ? 2 : 1;
     if (counts[r.medals.gold]) { counts[r.medals.gold].gold += 1; counts[r.medals.gold].medalPts += MEDAL_POINTS.gold * mult; }
