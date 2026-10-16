@@ -139,7 +139,7 @@ function blockedByOwnTeam(...teamIds) {
 
 // The standard explanation, shown wherever the guard takes controls away.
 function ownTeamNoteHTML(what) {
-  return `<p class="own-team-note">🛡️ You're on ${teamEmoji(memberTeamId)} <strong>${esc(teamName(memberTeamId))}</strong>, so ${esc(what)} is read-only for you. Another editor records it.</p>`;
+  return `<p class="own-team-note">🛡️ You're on ${teamEmoji(memberTeamId)} <strong>${esc(teamName(memberTeamId))}</strong>, so ${esc(what || '')} is read-only for you. Another editor records it.</p>`;
 }
 
 // The member list is keyed by a person's SIGN-IN IDENTITY: their email (for
