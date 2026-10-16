@@ -2726,7 +2726,7 @@ function renderPresence() {
 }
 
 function teamEmoji(id) {
-  return TEAM_EMOJI[id] || '🏳️';
+  return esc(TEAM_EMOJI[id] || '🏳️');
 }
 
 // Path to a team's shield crest image, or null if we don't have one for that

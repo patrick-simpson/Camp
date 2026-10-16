@@ -402,7 +402,7 @@
         return wd === 'Fri';
       } catch (e) { return new Date().getDay() === 5; }
     }
-    function teamEmoji(id) { return TEAM_EMOJI[id] || '🏕️'; }
+    function teamEmoji(id) { return esc(TEAM_EMOJI[id] || '🏕️'); }
 
     // Coerce a synced teams value (array, or RTDB object) into an array of
     // {id, name}. RTDB can prune/normalize; fall back to the default roster.
