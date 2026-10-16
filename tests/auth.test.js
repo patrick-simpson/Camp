@@ -430,3 +430,29 @@ test('the other-camp probe records the second camp and its role', async () => {
   localStorage.removeItem(AUTH_HINT_KEY);
   setMemberRole('editor');
 });
+
+test('ownTeamNoteHTML handles missing or malformed inputs gracefully', () => {
+  setMemberRole('editor');
+  setMemberTeam('t0');
+
+  // Normal case
+  const htmlRound = ownTeamNoteHTML('this round');
+  assert.ok(htmlRound.includes('this round'), 'includes the valid parameter');
+  assert.ok(htmlRound.includes('Ferocious Foxes'), 'includes the team name');
+
+  // Missing or undefined
+  assert.doesNotThrow(() => ownTeamNoteHTML(), 'does not throw on missing argument');
+  const htmlEmpty = ownTeamNoteHTML();
+  assert.notOk(htmlEmpty.includes('undefined'), 'does not render undefined string literal');
+  assert.notOk(htmlEmpty.includes('null'), 'does not render null string literal');
+  assert.ok(htmlEmpty.includes('is read-only for you'), 'renders the rest of the message correctly');
+
+  assert.doesNotThrow(() => ownTeamNoteHTML(null), 'does not throw on null');
+  const htmlNull = ownTeamNoteHTML(null);
+  assert.notOk(htmlNull.includes('null'), 'does not render null string literal');
+
+  // XSS attempt (esc function should handle it)
+  const xss = '<script>alert(1)</script>';
+  assert.notOk(ownTeamNoteHTML(xss).includes(xss), 'escapes HTML');
+  assert.ok(ownTeamNoteHTML(xss).includes('&lt;script&gt;'), 'escapes HTML properly');
+});
