@@ -3746,6 +3746,16 @@ function medalCounts() {
   const counts = {};
   const extra = bonusBreakdown();
   state.teams.forEach((t) => (counts[t.id] = { gold: 0, silver: 0, bronze: 0, medalPts: 0, verse: 0, meals: 0, custom: 0, bonus: 0, points: 0 }));
+
+  // Create an O(N) lookup map for games to avoid an O(N^2) Array.find inside the loop.
+  // Because state.config.games mutates in place during sync/renderAll, creating this
+  // map locally avoids stale global cache invalidation issues.
+  const gamesMap = {};
+  const gamesArr = state.config.games || [];
+  for (let i = 0; i < gamesArr.length; i++) {
+    gamesMap[gamesArr[i].id] = gamesArr[i];
+  }
+
   // Iterate entries so we can weight points per game: Messtival games are
   // worth DOUBLE on the scoreboard. Medal *counts* stay raw; only the point
   // value doubles. Results for games no longer in the (editable) catalog are
@@ -3754,7 +3764,7 @@ function medalCounts() {
   // it from would corrupt the standings forever.
   Object.entries(state.results).forEach(([id, r]) => {
     if (!r || !r.medals) return;
-    const g = gameById(id);
+    const g = gamesMap[id];
     if (!g) return;
     const mult = g.messtival ? 2 : 1;
     if (counts[r.medals.gold]) { counts[r.medals.gold].gold += 1; counts[r.medals.gold].medalPts += MEDAL_POINTS.gold * mult; }
@@ -3767,8 +3777,8 @@ function medalCounts() {
     c.verse = e.verse;
     c.meals = e.meals;
     c.custom = e.custom;
-    c.bonus = e.verse + e.meals + e.custom; // all extras, for the grand total
-    c.points = c.medalPts + c.bonus; // grand total drives the leaderboard
+    c.bonus = c.verse + c.meals + c.custom;
+    c.points = c.medalPts + c.bonus;
   });
   return counts;
 }

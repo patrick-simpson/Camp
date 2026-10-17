@@ -1,0 +1,3 @@
+## 2026-07-26 - O(N²) array search inside hot loop optimization
+**Learning:** In the `medalCounts()` function, `Array.prototype.find()` on the `state.config.games` array was invoked inside a loop iterating over all game results, creating an O(N²) performance bottleneck. Caching the games mapped by their IDs in a global cache wasn't safe because `state.config.games` and `state.teams` are mutated in-place by the synchronous `renderAll()` loop, and verifying cache validity would be complex.
+**Action:** An inline O(N) lookup hash map is populated at the beginning of `medalCounts()` and queried during the loop instead. This replaces O(N²) behavior with a local O(N) map, which achieves significant performance optimization while ensuring data consistency in the hot path.
