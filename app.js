@@ -334,11 +334,14 @@ const ELECTIVE_SLOT_MIN = CAMP.electiveSlotMin;
 // The full set of kids at camp on a given day = everyone assigned to any
 // station across that day's elective slots. A kid missing from a particular
 // slot is on break for it (see electiveBreakKids).
+const _electiveRosterCache = {};
 function electiveDayRoster(dow) {
+  if (_electiveRosterCache[dow]) return _electiveRosterCache[dow];
   const set = new Set();
   (ELECTIVES[dow] || []).forEach((slot) => {
     (slot || []).forEach(([, kids]) => (kids || []).forEach((k) => set.add(k)));
   });
+  _electiveRosterCache[dow] = set;
   return set;
 }
 
