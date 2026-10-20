@@ -4967,10 +4967,14 @@ function renderGameView() {
   if (!!g !== !!lastGameViewId || (g && g.id !== lastGameViewId)) {
     const comp = document.querySelector('.competitions-card');
     if (g) {
-      document.querySelectorAll('.collapsible-card[open]').forEach((d) => {
-        if (typeof d.toggle === 'function') d.toggle(false);
-        else d.removeAttribute('open');
-      });
+      const collapsibles = document.getElementsByClassName('collapsible-card');
+      for (let i = 0; i < collapsibles.length; i++) {
+        const d = collapsibles[i];
+        if (d.hasAttribute('open')) {
+          if (typeof d.toggle === 'function') d.toggle(false);
+          else d.removeAttribute('open');
+        }
+      }
     } else if (comp && !comp.hidden) {
       // Skipped when Competitions is hidden from this viewer — otherwise it
       // would sit open behind the scenes and pop out already-expanded if the
@@ -7192,10 +7196,14 @@ function collapseCardsForIdle() {
   // jelly-collapsible animates its own collapse (and skips it under reduced
   // motion). toggle(false) when upgraded so the accordion hears the change;
   // plain attribute removal as the pre-upgrade fallback.
-  document.querySelectorAll('.collapsible-card[open]').forEach((d) => {
-    if (typeof d.toggle === 'function') d.toggle(false);
-    else d.removeAttribute('open');
-  });
+  const collapsibles = document.getElementsByClassName('collapsible-card');
+  for (let i = 0; i < collapsibles.length; i++) {
+    const d = collapsibles[i];
+    if (d.hasAttribute('open')) {
+      if (typeof d.toggle === 'function') d.toggle(false);
+      else d.removeAttribute('open');
+    }
+  }
 }
 
 function resetIdleTimer() {
