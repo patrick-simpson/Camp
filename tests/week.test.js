@@ -135,6 +135,19 @@ test('defaultDay picks today when the week covers it', () => {
 
 // ── Rotas that reference team ids ────────────────────────────────
 
+test('mealInfo returns correct dictionary objects', () => {
+  // Test valid lookups and case insensitivity
+  assert.deepEqual(mealInfo(1, { label: 'Supper' }), { dish: 'Mac and Cheese', emoji: '🧀' });
+  assert.deepEqual(mealInfo(1, { label: 'supper' }), { dish: 'Mac and Cheese', emoji: '🧀' });
+  assert.deepEqual(mealInfo(1, { label: 'SUPPER' }), { dish: 'Mac and Cheese', emoji: '🧀' });
+
+  // Missing or unknown block/label/dow
+  assert.equal(mealInfo(99, { label: 'Breakfast' }), null, 'unknown dow returns null');
+  assert.equal(mealInfo(1, null), null, 'null block returns null');
+  assert.equal(mealInfo(1, {}), null, 'block missing label returns null');
+  assert.equal(mealInfo(1, { label: 'Midnight Snack' }), null, 'unknown label returns null');
+});
+
 test('the meal-cleanup rota only names real teams', () => {
   const ids = new Set(makeFreshState().teams.map((t) => t.id));
   Object.entries(MEAL_CLEANUP_SCHEDULE).forEach(([day, meals]) => {
