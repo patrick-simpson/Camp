@@ -241,6 +241,31 @@ test('two people with the same name get distinct pending keys', () => {
   assert.notOk(pendingKey('Sam') === pendingKey('Sam'), 'the random tail keeps them apart');
 });
 
+test('isValidMemberKey accepts valid keys and rejects malformed/illegal ones', () => {
+  // Valid cases
+  ['a@example,com', '+15551234567', pendingKey('Sam')].forEach((k) => {
+    assert.ok(isValidMemberKey(k), `${k} should be valid`);
+  });
+
+  // Falsy or purely illegal values
+  [null, undefined, ''].forEach((k) => {
+    assert.notOk(isValidMemberKey(k), `falsy value ${k} should be invalid`);
+  });
+
+  // Too long
+  assert.notOk(isValidMemberKey('a'.repeat(200) + '@a,com'), 'key over 200 chars should be invalid');
+
+  // Illegal RTDB chars
+  ['.', '#', '$', '[', ']', '/', '\x00', '\x1f', '\x7f'].forEach((char) => {
+    assert.notOk(isValidMemberKey(`bad${char}key@test,com`), `key with illegal char '${char}' should be invalid`);
+  });
+
+  // Legal chars but missing required shapes (no @, +, or pending- prefix)
+  ['just-a-string', '15551234567', 'sam'].forEach((k) => {
+    assert.notOk(isValidMemberKey(k), `key without correct format ${k} should be invalid`);
+  });
+});
+
 // ── The one-tap counselor seed ────────────────────────────────────
 
 test('the seed list covers every team with real names', () => {
