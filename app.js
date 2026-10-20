@@ -6816,7 +6816,8 @@ function changeReleases() {
   const list = (typeof CHANGES !== 'undefined' ? CHANGES : []);
   const releases = [];
   let prev = null;
-  for (let i = 0; i < list.length; i++) {
+  const len = list.length;
+  for (let i = 0; i < len; i++) {
     const shipped = Date.parse(list[i] && list[i].at);
     let r = nextAwakeSlot(isNaN(shipped) ? Date.now() : shipped);
     if (prev != null) {
