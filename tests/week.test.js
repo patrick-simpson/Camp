@@ -361,3 +361,14 @@ test('ics text escaping protects the separators', () => {
   assert.equal(icsEscape('a\nb'), 'a\\nb');
   assert.equal(icsEscape('a\\b'), 'a\\\\b');
 });
+
+test('blockMealName cleans up labels', () => {
+  assert.equal(blockMealName('Breakfast'), 'Breakfast');
+  assert.equal(blockMealName('Lunch — Wraps'), 'Lunch');
+  assert.equal(blockMealName("Supper — Shepherd's Pie"), 'Supper');
+  assert.equal(blockMealName('Morning Chapel'), null);
+  assert.equal(blockMealName('Tuck'), null);
+  assert.equal(blockMealName(null), null);
+  assert.equal(blockMealName(''), null);
+  assert.equal(blockMealName('Breakfast - No em dash'), null); // The split is specifically ' — '
+});
