@@ -736,17 +736,21 @@ function renderChatBadges() {
   });
 }
 
+// Performance: cached Intl.DateTimeFormat to avoid expensive repeated instantiation.
+let _fmtChatDayStamp = null;
 function chatDayStamp(atMs) {
   if (!atMs) return '';
-  const parts = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'long', month: 'short', day: 'numeric' })
-    .format(new Date(atMs));
+  if (!_fmtChatDayStamp) _fmtChatDayStamp = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'long', month: 'short', day: 'numeric' });
+  const parts = _fmtChatDayStamp.format(new Date(atMs));
   return parts;
 }
 
+// Performance: cached Intl.DateTimeFormat to avoid expensive repeated instantiation.
+let _fmtChatTimeStamp = null;
 function chatTimeStamp(atMs) {
   if (!atMs) return '';
-  return new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: 'numeric', minute: '2-digit', hour12: true })
-    .format(new Date(atMs)).toLowerCase();
+  if (!_fmtChatTimeStamp) _fmtChatTimeStamp = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: 'numeric', minute: '2-digit', hour12: true });
+  return _fmtChatTimeStamp.format(new Date(atMs)).toLowerCase();
 }
 
 function chatBubbleHTML(ch, msg) {
