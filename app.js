@@ -423,13 +423,17 @@ let weatherData = null;
 
 // Today's date in camp time as 'YYYY-MM-DD' (en-CA renders ISO order), used to
 // tell whether a cached forecast is still keyed to the right "today".
-function campDateStr() {
-  try {
-    return new Intl.DateTimeFormat('en-CA', {
-      timeZone: CAMP_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
-    }).format(new Date());
-  } catch (e) { return ''; }
-}
+const campDateStr = (function() {
+  let formatter = null;
+  return function() {
+    try {
+      if (!formatter) formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: CAMP_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+      });
+      return formatter.format(new Date());
+    } catch (e) { return ''; }
+  };
+})();
 
 function processWeather(json) {
   const h = json && json.hourly;
@@ -706,25 +710,29 @@ function setNoticeStatus(status) {
 // Current day-of-week + minutes-since-midnight, in camp time.
 // Debug/preview override: add ?now=<dow>-<hhmm> to the page URL,
 // e.g. ?now=1-1330 previews Monday 1:30pm.
-function campNow() {
-  const m = /[?&]now=(\d)-(\d{3,4})(?:&|$)/.exec(location.search);
-  if (m) {
-    const t = m[2].padStart(4, '0');
-    return { dow: +m[1], minutes: +t.slice(0, 2) * 60 + +t.slice(2) };
-  }
-  try {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: CAMP_TZ, weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false,
-    }).formatToParts(new Date());
-    const get = (type) => (parts.find((p) => p.type === type) || {}).value;
-    const dowMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
-    const hour = parseInt(get('hour'), 10) % 24; // hour12:false renders midnight as "24"
-    return { dow: dowMap[get('weekday')], minutes: hour * 60 + parseInt(get('minute'), 10) };
-  } catch (e) {
-    const d = new Date(); // worst case: device time
-    return { dow: d.getDay(), minutes: d.getHours() * 60 + d.getMinutes() };
-  }
-}
+const campNow = (function() {
+  let formatter = null;
+  return function() {
+    const m = /[?&]now=(\d)-(\d{3,4})(?:&|$)/.exec(location.search);
+    if (m) {
+      const t = m[2].padStart(4, '0');
+      return { dow: +m[1], minutes: +t.slice(0, 2) * 60 + +t.slice(2) };
+    }
+    try {
+      if (!formatter) formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: CAMP_TZ, weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false,
+      });
+      const parts = formatter.formatToParts(new Date());
+      const get = (type) => (parts.find((p) => p.type === type) || {}).value;
+      const dowMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+      const hour = parseInt(get('hour'), 10) % 24; // hour12:false renders midnight as "24"
+      return { dow: dowMap[get('weekday')], minutes: hour * 60 + parseInt(get('minute'), 10) };
+    } catch (e) {
+      const d = new Date(); // worst case: device time
+      return { dow: d.getDay(), minutes: d.getHours() * 60 + d.getMinutes() };
+    }
+  };
+})();
 
 // Named schedClock/schedRange (not fmtClock) — fmtBoardClock/fmtWatch below
 // have their own formatters and function declarations share one namespace.
@@ -1748,16 +1756,20 @@ function wireHistory() {
 // Formats an ISO timestamp as camp time, e.g. "Jul 19, 8:47pm ET" —
 // same convention as the schedule banner, so the footer always reads in
 // camp time regardless of which timezone a visiting parent's phone is in.
-function formatEasternStamp(iso) {
-  if (!iso) return null;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return null;
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: CAMP_TZ, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
-  }).formatToParts(d);
-  const get = (type) => (parts.find((p) => p.type === type) || {}).value;
-  return `${get('month')} ${get('day')}, ${get('hour')}:${get('minute')}${(get('dayPeriod') || '').toLowerCase()} ET`;
-}
+const formatEasternStamp = (function() {
+  let formatter = null;
+  return function(iso) {
+    if (!iso) return null;
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return null;
+    if (!formatter) formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: CAMP_TZ, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
+    });
+    const parts = formatter.formatToParts(d);
+    const get = (type) => (parts.find((p) => p.type === type) || {}).value;
+    return `${get('month')} ${get('day')}, ${get('hour')}:${get('minute')}${(get('dayPeriod') || '').toLowerCase()} ET`;
+  };
+})();
 
 // One line: who's here now, when data last changed, what build this is,
 // and the Settings link (the header is gone — this is the gear now). The
@@ -3643,16 +3655,19 @@ function bindMatchupCopy(body, g, stage, aId, bId) {
   if (btn) btn.addEventListener('click', () => copyTextToClipboard(matchupText(g, stage, aId, bId), btn));
 }
 
-function standingsSummaryText() {
-  const counts = medalCounts();
-  const ranked = rankTeamsByPoints(counts);
+const standingsSummaryText = (function() {
+  let formatter = null;
+  return function() {
+    const counts = medalCounts();
+    const ranked = rankTeamsByPoints(counts);
 
-  const campDate = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short', month: 'short', day: 'numeric' }).format(new Date());
-  const lines = ['🏅 Camp — ' + campDate];
-  lines.push('');
-  lines.push(`Standings (🥇 ${MEDAL_POINTS.gold} · 🥈 ${MEDAL_POINTS.silver} · 🥉 ${MEDAL_POINTS.bronze} pts):`);
-  ranked.forEach((t, i) => {
-    const s = counts[t.id];
+    if (!formatter) formatter = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short', month: 'short', day: 'numeric' });
+    const campDate = formatter.format(new Date());
+    const lines = ['🏅 Camp — ' + campDate];
+    lines.push('');
+    lines.push(`Standings (🥇 ${MEDAL_POINTS.gold} · 🥈 ${MEDAL_POINTS.silver} · 🥉 ${MEDAL_POINTS.bronze} pts):`);
+    ranked.forEach((t, i) => {
+      const s = counts[t.id];
     const parts = [`🥇${s.gold} 🥈${s.silver} 🥉${s.bronze}`];
     if (s.verse) parts.push(`📖${s.verse > 0 ? '+' : ''}${s.verse}`);
     if (s.meals) parts.push(`🧽${s.meals > 0 ? '+' : ''}${s.meals}`);
@@ -3661,19 +3676,20 @@ function standingsSummaryText() {
   });
 
   const played = state.config.games.filter((g) => state.results[g.id]);
-  if (played.length) {
-    lines.push('');
-    lines.push('Medals so far:');
-    played.forEach((g) => {
-      const m = state.results[g.id].medals;
-      lines.push(`• ${g.name} — 🥇 ${teamName(m.gold)}, 🥈 ${teamName(m.silver)}, 🥉 ${teamName(m.bronze)}`);
-    });
-  } else {
-    lines.push('');
-    lines.push('No games saved yet.');
-  }
-  return lines.join('\n');
-}
+    if (played.length) {
+      lines.push('');
+      lines.push('Medals so far:');
+      played.forEach((g) => {
+        const m = state.results[g.id].medals;
+        lines.push(`• ${g.name} — 🥇 ${teamName(m.gold)}, 🥈 ${teamName(m.silver)}, 🥉 ${teamName(m.bronze)}`);
+      });
+    } else {
+      lines.push('');
+      lines.push('No games saved yet.');
+    }
+    return lines.join('\n');
+  };
+})();
 
 // ── High-score chime ──
 
@@ -6752,10 +6768,14 @@ function dismissChange(id) {
 const QUIET_START_HOUR = 21; // 9pm — pause the timer
 const QUIET_END_HOUR = 7;    // 7am — resume the timer (first notice rolls in at 7am)
 
-function campHour(ms) {
-  const h = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: '2-digit', hour12: false }).format(new Date(ms));
-  return parseInt(h, 10) % 24; // some engines format midnight as "24"
-}
+const campHour = (function() {
+  let formatter = null;
+  return function(ms) {
+    if (!formatter) formatter = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: '2-digit', hour12: false });
+    const h = formatter.format(new Date(ms));
+    return parseInt(h, 10) % 24; // some engines format midnight as "24"
+  };
+})();
 
 function isAwakeHours(ms) {
   const h = campHour(ms);
