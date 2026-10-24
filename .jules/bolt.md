@@ -1,0 +1,3 @@
+## 2024-05-24 - Intl.DateTimeFormat caching safety
+**Learning:** This codebase uses `Intl.DateTimeFormat` with specific timezone configurations, and wraps them in `try...catch` blocks to gracefully fall back on browsers lacking proper `Intl` implementation. Hoisting the instantiation directly to the module level breaks this fallback logic because unsupported environments will throw a `RangeError` during the initial script load, bringing down the whole application.
+**Action:** Always wrap cached `Intl.DateTimeFormat` initializations within `try...catch` blocks using lazy instantiation (e.g., `fmt = fmt || new Intl.DateTimeFormat(...)`) so that exceptions are caught correctly and fallback behavior is preserved.
