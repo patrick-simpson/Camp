@@ -736,17 +736,35 @@ function renderChatBadges() {
   });
 }
 
+let cachedChatDayFmt;
 function chatDayStamp(atMs) {
   if (!atMs) return '';
-  const parts = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'long', month: 'short', day: 'numeric' })
-    .format(new Date(atMs));
-  return parts;
+  try {
+    cachedChatDayFmt = cachedChatDayFmt || new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'long', month: 'short', day: 'numeric' });
+    return cachedChatDayFmt.format(new Date(atMs));
+  } catch (e) {
+    const d = new Date(atMs);
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${days[d.getDay()]}, ${months[d.getMonth()]} ${d.getDate()}`;
+  }
 }
 
+let cachedChatTimeFmt;
 function chatTimeStamp(atMs) {
   if (!atMs) return '';
-  return new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: 'numeric', minute: '2-digit', hour12: true })
-    .format(new Date(atMs)).toLowerCase();
+  try {
+    cachedChatTimeFmt = cachedChatTimeFmt || new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: 'numeric', minute: '2-digit', hour12: true });
+    return cachedChatTimeFmt.format(new Date(atMs)).toLowerCase();
+  } catch (e) {
+    const d = new Date(atMs);
+    let h = d.getHours();
+    const ampm = h >= 12 ? 'pm' : 'am';
+    h = h % 12;
+    h = h ? h : 12;
+    const m = String(d.getMinutes()).padStart(2, '0');
+    return `${h}:${m} ${ampm}`;
+  }
 }
 
 function chatBubbleHTML(ch, msg) {
