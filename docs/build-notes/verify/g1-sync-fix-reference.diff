@@ -1,0 +1,178 @@
+--- /tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/app.merge.js	2026-10-26 22:20:37.108810667 +0000
++++ /tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/verify/fx/app.js	2026-10-26 22:16:58.001318727 +0000
+@@ -2138,6 +2138,9 @@
+ // (before the first push, or to recover after a failed one). Updated on every
+ // adopt (in the value handler) and every push.
+ let lastSyncedTree = null;
++// The synced tree exactly as it was when this page loaded (the cached copy) — the
++// baseline for 'what did THIS device change before the first snapshot arrived'.
++let bootSyncedTree = null;
+ // The editable week config (days/games catalog) syncs on its own sibling ref
+ // (campScoreboard/config) — deliberately OUTSIDE campScoreboard/state so older
+ // cached clients, and the state node's own key-list bookkeeping (SYNC_KEYS /
+@@ -2175,15 +2178,29 @@
+ 
+ function applyRemoteConfig(remote) {
+   const beforeJson = JSON.stringify(state.config);
++  const v0 = remote && remote.version;
+   applyingRemoteConfig = true;
+   state.config = remote;
+   const upgraded = migrateState(state);
+   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
+   applyingRemoteConfig = false;
+-  if (upgraded) schedulePushConfig();
++  if (upgraded && canEdit() && state.config.version !== v0) schedulePushConfig();
+   if (appStarted && JSON.stringify(state.config) !== beforeJson) renderAll();
+ }
+ 
++// Builder commits call this BEFORE touching state.config: a remote config that was held back
++// while the builder was dirty/focused is adopted now (silently), so the edit is spliced into the
++// newest catalog instead of a stale copy that would then be pushed whole over the server.
++function rebaseOnPendingConfig() {
++  if (!pendingRemoteConfig) return;
++  const rc = pendingRemoteConfig;
++  pendingRemoteConfig = null;
++  applyingRemoteConfig = true;
++  state.config = rc;
++  migrateState(state);
++  applyingRemoteConfig = false;
++}
++
+ // Settings code calls this after mutating state.config.
+ function saveConfig() {
+   state.config.updatedAt = new Date().toISOString();
+@@ -2307,9 +2324,18 @@
+     const localAt = state.meta && state.meta.lastDataChangeAt;
+     const remoteAt = remote.meta && remote.meta.lastDataChangeAt;
+     if (localAt && (!remoteAt || localAt > remoteAt)) {
+-      pushState();
+-      return;
++      // Diff against the tree as it was at load, NOT null: that sends only what this
++      // device changed, per path, instead of the whole tree over the server's newer data.
++      const mine = bootSyncedTree ? computeSyncUpdates(bootSyncedTree, syncedSnapshot()) : null;
++      if (mine && Object.keys(mine).length) {
++        lastSyncedTree = bootSyncedTree;
++        pushState();
++        return;
++      }
++      if (!bootSyncedTree) { pushState(); return; }
++      // nothing of ours to defend: fall through and adopt the server copy
+     }
++    dataEditPending = false; // the first snapshot reconciles any pre-sync edit
+   }
+   // The first snapshot is handled by dirtySinceLoad above; any later one waits
+   // for this device to be idle (see canAdoptRemote / deferRemoteSnapshot).
+@@ -2326,6 +2352,8 @@
+   // dismisses the iOS keyboard mid-entry. Skip renderAll when nothing
+   // actually changed (below).
+   const beforeSig = syncSignature();
++  const prevRefs = {};
++  SYNC_KEYS.forEach((k) => { prevRefs[k] = state[k]; });
+   // The snapshot is the entire synced tree, so a key missing from it
+   // means "empty" — RTDB prunes empty objects on write. Treating
+   // missing as keep-local made "New week (reset)" un-syncable: other
+@@ -2355,6 +2383,8 @@
+   // its empty fields. Heal everything the instant remote data lands,
+   // before any render sees it.
+   normalizeSyncedState();
++  // Pure echo: keep the live objects so open views' closures stay attached.
++  if (syncSignature() === beforeSig) SYNC_KEYS.forEach((k) => { state[k] = prevRefs[k]; });
+   // We now match the server, so this snapshot becomes the diff baseline —
+   // otherwise the next push would re-send data we just received.
+   lastSyncedTree = syncedSnapshot();
+@@ -2520,11 +2550,11 @@
+ // Maps written per-child (one path per game/team/bonus) so concurrent edits to
+ // DIFFERENT items on different devices never overwrite each other. teams/meta
+ // are small singletons written whole.
+-const SYNC_ITEM_MAPS = ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'clocks', 'announcements'];
++const SYNC_ITEM_MAPS = ['results', 'brackets', 'picRounds', 'picSetup', 'bonuses', 'clocks', 'announcements'];
+ // `live` is NOT here — it's diffed one level deeper (per match field) in
+ // computeSyncUpdates so concurrent refs don't clobber each other's fields.
+ // `notice` is a singleton too — one composed card, always written whole.
+-const SYNC_SINGLETONS = ['teams', 'meta', 'notice'];
++const SYNC_SINGLETONS = ['teams', 'notice'];
+ 
+ // The synced portion of state as it should exist on the server: a deep copy
+ // with Pictionary words stripped (never synced). Serves as both the push
+@@ -2573,6 +2603,40 @@
+     });
+     Object.keys(p).forEach((gid) => { if (!(gid in c)) up['live/' + gid] = null; });
+   }
++  // drafts: diffed per scores/medals LEAF so two editors on one tally game don't wipe each other.
++  {
++    const p = (prev && prev.drafts) || {};
++    const c = (cur && cur.drafts) || {};
++    Object.keys(c).forEach((gid) => {
++      const cd = c[gid], pd = p[gid];
++      if (JSON.stringify(cd) === JSON.stringify(pd)) return;
++      if (!cd || typeof cd !== 'object') { up['drafts/' + gid] = cd === undefined ? null : cd; return; }
++      const pdo = (pd && typeof pd === 'object') ? pd : {};
++      ['scores', 'medals'].forEach((f) => {
++        const cf = (cd[f] && typeof cd[f] === 'object') ? cd[f] : {};
++        const pf = (pdo[f] && typeof pdo[f] === 'object') ? pdo[f] : {};
++        Object.keys(cf).forEach((k) => { if (JSON.stringify(cf[k]) !== JSON.stringify(pf[k])) up['drafts/' + gid + '/' + f + '/' + k] = cf[k]; });
++        Object.keys(pf).forEach((k) => { if (!(k in cf)) up['drafts/' + gid + '/' + f + '/' + k] = null; });
++      });
++    });
++    Object.keys(p).forEach((gid) => { if (!(gid in c)) up['drafts/' + gid] = null; });
++  }
++  // meta: per field, hiddenCards per card, so a score save (lastDataChangeAt) never reverts another editor's hide.
++  {
++    const p = (prev && prev.meta && typeof prev.meta === 'object') ? prev.meta : {};
++    const c = (cur && cur.meta && typeof cur.meta === 'object') ? cur.meta : {};
++    Object.keys(c).forEach((f) => {
++      if (f === 'hiddenCards' && c[f] && typeof c[f] === 'object') {
++        const ph = (p.hiddenCards && typeof p.hiddenCards === 'object') ? p.hiddenCards : {};
++        Object.keys(c[f]).forEach((card) => { if (JSON.stringify(c[f][card]) !== JSON.stringify(ph[card])) up['meta/hiddenCards/' + card] = c[f][card]; });
++        Object.keys(ph).forEach((card) => { if (!(card in c[f])) up['meta/hiddenCards/' + card] = null; });
++      } else if (JSON.stringify(c[f]) !== JSON.stringify(p[f])) up['meta/' + f] = c[f];
++    });
++    Object.keys(p).forEach((f) => {
++      if (f === 'hiddenCards' && !(f in c) && p[f] && typeof p[f] === 'object') Object.keys(p[f]).forEach((card) => { up['meta/hiddenCards/' + card] = null; });
++      else if (!(f in c)) up['meta/' + f] = null;
++    });
++  }
+   SYNC_SINGLETONS.forEach((k) => {
+     const pv = prev ? prev[k] : undefined;
+     const cv = cur ? cur[k] : undefined;
+@@ -2626,6 +2690,7 @@
+ function syncSignature() {
+   return JSON.stringify(SYNC_KEYS.map((k) => state[k]));
+ }
++bootSyncedTree = syncedSnapshot();
+ 
+ // A matchup "slot" — a stable key for one pairing, so a genuinely NEW matchup
+ // can be told apart from an undo/clear across syncs.
+@@ -4598,13 +4663,14 @@
+ // existing entries for that (team, day) so the ledger holds one truth.
+ function setVersePoints(teamId, dow, pts) {
+   if (!canScoreRound(teamId)) return; // own-team guard
++  const fixedId = 'verse-' + teamId + '-' + dow;
+   Object.entries(state.bonuses || {}).forEach(([id, b]) => {
+     if (b && b.category === 'verse' && b.teamId === teamId && (Number(b.day) || 0) === dow) {
+       delete state.bonuses[id];
+     }
+   });
+   if (pts > 0) {
+-    state.bonuses[newBonusId()] = {
++    state.bonuses[fixedId] = {
+       teamId, category: 'verse', label: `${DAY_NAMES[dow]} memory verse`,
+       points: pts, at: new Date().toISOString(), day: dow,
+     };
+@@ -4794,6 +4860,7 @@
+ // any existing entries for that (team, day, meal).
+ function setCleanupPoints(teamId, dow, meal, pts) {
+   if (!canScoreRound(teamId)) return; // own-team guard
++  const fixedId = 'cleanup-' + teamId + '-' + dow + '-' + meal;
+   Object.entries(state.bonuses || {}).forEach(([id, b]) => {
+     if (b && b.category === 'cleanup' && b.teamId === teamId &&
+         (Number(b.day) || 0) === dow && (b.meal || 'Breakfast') === meal) {
+@@ -4801,7 +4868,7 @@
+     }
+   });
+   if (pts > 0) {
+-    state.bonuses[newBonusId()] = {
++    state.bonuses[fixedId] = {
+       teamId, category: 'cleanup', label: `${DAY_NAMES[dow]} ${meal} cleanup`,
+       points: pts, at: new Date().toISOString(), day: dow, meal,
+     };
