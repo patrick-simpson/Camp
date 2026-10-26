@@ -214,3 +214,45 @@ test('recordPointHistory pushes entries that satisfy the rules (reason ≤ 500, 
   state.results = {};
   state.teams[0].name = teamName0;
 });
+
+// ── counterAllowNegative (Counselor Hide and Seek's −1) ───────────
+
+test('parseScoreInput allows a negative only for games that opt in', () => {
+  const allow = { counterAllowNegative: true };
+  assert.equal(parseScoreInput(allow, '-1'), -1);
+  assert.equal(parseScoreInput(allow, '-5'), -5);
+  assert.equal(parseScoreInput(allow, '0'), 0);
+  assert.equal(parseScoreInput(allow, 'abc'), null, 'junk is still junk');
+  assert.equal(parseScoreInput(plain, '-1'), null, 'an ordinary game still rejects negatives');
+  assert.equal(parseScoreInput(timed, '-1:30'), null, 'and a time is never negative');
+});
+
+test('a negative Hide-and-Seek score ranks last and reaches the medal auto-fill', () => {
+  freshState();
+  const g = gameById('counselor-hide-seek');
+  assert.ok(g && g.counterAllowNegative, 'precondition: the real game opts in');
+  state.drafts[g.id] = { scores: { t0: '-1', t1: '3', t2: '0' }, medals: {} };
+
+  const live = tallyRankLive(g).map((e) => e.id);
+  assert.deepEqual(live, ['t1', 't2', 't0'], 'the −1 team stays on the live board, below 0');
+  const ranked = autoRank(g, state.drafts[g.id]).map((e) => e.id);
+  assert.deepEqual(ranked, ['t1', 't2', 't0'], 'and is part of the medal auto-fill');
+  delete state.drafts[g.id];
+});
+
+// ── A leftover bracket must not keep a non-tournament game "live" ──
+
+test('liveHomeGames only treats a bracket as live for a tournament game', () => {
+  freshState();
+  const g = state.config.games.find((x) => x.format === 'tournament');
+  state.brackets[g.id] = freshBracket();
+  assert.ok(liveHomeGames().some((x) => x.id === g.id), 'a started tournament is live');
+
+  // The director switches the game to tally; its bracket stays behind in state.
+  const original = g.format;
+  g.format = 'tally';
+  assert.notOk(liveHomeGames().some((x) => x.id === g.id), 'the stale bracket no longer pins it to Live now');
+  assert.equal(homeBoardGame(), null, 'nor takes over the home Big Board');
+  g.format = original;
+  delete state.brackets[g.id];
+});

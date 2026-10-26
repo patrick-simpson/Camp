@@ -3827,7 +3827,11 @@ function parseScoreInput(game, raw) {
     return mm * 60 + ss;
   }
   const v = parseFloat(str);
-  if (isNaN(v) || v < 0) return null; // scores/times are never negative
+  // Scores/times are never negative — except a counter game that opts in
+  // (Counselor Hide and Seek's −1). Rejecting there made the counter read −1
+  // back as 0, left the team off the live board and the medal auto-fill, and
+  // dropped the score from the saved result.
+  if (isNaN(v) || (v < 0 && !game.counterAllowNegative)) return null;
   return v;
 }
 
@@ -5257,7 +5261,11 @@ function tallyInProgress(g) {
 function liveHomeGames() {
   return state.config.games.filter((g) => {
     const b = state.brackets && state.brackets[g.id];
-    if (b && normalizeBracket(b).phase !== 'summary') return true;
+    // A bracket only means "live" for a tournament game. Changing a started
+    // game to another format leaves its bracket behind in state.brackets, and
+    // counting it here pinned the game to "Live now" on every device for good
+    // (no screen offers Cancel bracket for a non-tournament game).
+    if (b && g.format === 'tournament' && normalizeBracket(b).phase !== 'summary') return true;
     return tallyInProgress(g);
   });
 }
