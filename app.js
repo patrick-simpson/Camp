@@ -1498,11 +1498,56 @@ function renderMemberList(body, lists) {
   bindMemberList(body, myKey, lists);
 }
 
+// Create a member record ONLY where none exists. A plain set() replaces
+// whatever is already at the key — and the add form defaults to Viewer / no
+// team / no name, so re-adding someone already on the list silently demoted
+// them and wiped their team and name (and they'd see it happen mid-game, as
+// their member listener flipped them view-only). The drawer's own lists catch
+// the stale-by-seconds case up front; the transaction catches the race where
+// another editor wrote the key since this drawer loaded. Resolves true when
+// the record was written, false when the key was already taken.
+function createMemberIfAbsent(ref, rec) {
+  return ref.transaction((cur) => (cur === null ? rec : undefined))
+    .then((res) => !!(res && res.committed));
+}
+
+// What an "Add someone" submit may write, given the member lists the drawer
+// loaded. Pure — pinned by tests/auth.test.js. Returns { error } or
+// { camps: [campId, …] }: only the camps where the key is ABSENT, so "Both
+// camps" on someone already in one grants the other without touching the
+// first. Your own key is refused outright (the drawer already disables your
+// own row — "another editor has to change your access" — and these paths must
+// not be a way around that).
+function planMemberAdd({ key, pending, bothCamps, myKey, lists }) {
+  if (!pending && key === myKey) {
+    return { error: "That's your own account — another editor has to change your access." };
+  }
+  const here = CAMP.id;
+  const there = otherCampId();
+  const camps = [];
+  if (!(lists[here] || {})[key]) camps.push(here);
+  if (bothCamps && !pending && !(lists[there] || {})[key]) camps.push(there);
+  if (!camps.length) {
+    return { error: 'Already on the list — change their access on their row below.' };
+  }
+  return { camps };
+}
+
+// Why a pending row can't be pointed at this new key ('' when it can): it is
+// the editor's own account, or somebody is already listed under it.
+function memberConvertRefusal(newKey, myKey, lists) {
+  if (newKey === myKey) return "That's your own account — another editor has to change your access.";
+  if ((lists[CAMP.id] || {})[newKey]) return 'Already on the list — change their access on their row instead.';
+  return '';
+}
+
 // Move a pending row (name + team, no sign-in) onto its real email/phone key.
 // RTDB keys are immutable, so this is a create-then-delete: write the new key
 // first, and only remove the placeholder once that lands — a failure part-way
-// leaves the pending row intact rather than losing the person.
-function convertPendingMember(key, rec) {
+// leaves the pending row intact rather than losing the person. The create is
+// absent-only (createMemberIfAbsent): pointing a seed-roster row at someone
+// who is already listed would otherwise overwrite their live record.
+function convertPendingMember(key, rec, lists) {
   const raw = (prompt('Email address or phone number for ' + (rec.name || 'this person') + ':', '') || '').trim();
   if (!raw) return;
   let newKey;
@@ -1514,14 +1559,18 @@ function convertPendingMember(key, rec) {
     if (!newKey) { showToast("That doesn't look like a phone number — include the area code."); return; }
   }
   if (!isValidMemberKey(newKey)) { showToast("That address has a character the database can't use as a key."); return; }
+  const refusal = memberConvertRefusal(newKey, identityKey(authUser), lists || {});
+  if (refusal) { showToast(refusal); return; }
   const role = rec.role === 'editor' ? 'editor' : 'viewer';
   const next = memberRecord(role, rec.name, rec.teamId);
-  firebase.database().ref(dbPath('members/' + newKey)).set(next)
-    .then(() => firebase.database().ref(dbPath('members/' + key)).remove())
-    .then(() => {
-      lastInvite = inviteText(newKey, role); // they can sign in now — hand over the invite
-      showToast(identityFromKey(newKey) + ' can now sign in', { mine: true });
-      renderMembers();
+  createMemberIfAbsent(firebase.database().ref(dbPath('members/' + newKey)), next)
+    .then((created) => {
+      if (!created) { showToast('Already on the list — change their access on their row instead.'); return null; }
+      return firebase.database().ref(dbPath('members/' + key)).remove().then(() => {
+        lastInvite = inviteText(newKey, role); // they can sign in now — hand over the invite
+        showToast(identityFromKey(newKey) + ' can now sign in', { mine: true });
+        renderMembers();
+      });
     })
     .catch(() => showToast('Change refused — are you still an editor?'));
 }
@@ -1603,7 +1652,7 @@ function bindMemberList(body, myKey, lists) {
     }
 
     const convert = row.querySelector('.member-add-signin');
-    if (convert) convert.addEventListener('click', () => convertPendingMember(key, camps[CAMP.id] || rec));
+    if (convert) convert.addEventListener('click', () => convertPendingMember(key, camps[CAMP.id] || rec, lists));
 
     // Pending rows only (real rows retire via the per-camp None switch).
     const rm = row.querySelector('.member-remove');
@@ -1681,16 +1730,30 @@ function bindMemberList(body, myKey, lists) {
         errEl.hidden = false;
         return;
       }
+      // Only ever CREATE: someone already on the list keeps their role, name
+      // and team (see planMemberAdd / createMemberIfAbsent).
+      const plan = planMemberAdd({ key, pending, bothCamps, myKey, lists });
+      if (plan.error) {
+        errEl.textContent = plan.error;
+        errEl.hidden = false;
+        return;
+      }
       errEl.hidden = true;
-      const writes = [firebase.database().ref(dbPath('members/' + key)).set(memberRecord(role, name, teamId))];
       // "Both camps" also writes the other camp's record (no team — teams
       // are per-camp). A pending row stays single-camp: its random key means
       // nothing to the other camp's list.
-      if (bothCamps && !pending) {
-        writes.push(firebase.database().ref(campMembersPath(otherCampId(), key)).set(memberRecord(role, name)));
-      }
+      const writes = plan.camps.map((cid) => createMemberIfAbsent(
+        firebase.database().ref(campMembersPath(cid, key)),
+        cid === CAMP.id ? memberRecord(role, name, teamId) : memberRecord(role, name)));
       Promise.all(writes)
-        .then(() => {
+        .then((created) => {
+          if (!created.some(Boolean)) {
+            // Another editor added them since this drawer loaded.
+            errEl.textContent = 'Already on the list — change their access on their row below.';
+            errEl.hidden = false;
+            renderMembers();
+            return;
+          }
           showToast(pending ? shownId + ' added — no sign-in yet' : shownId + ' can now sign in', { mine: true });
           // A pending row can't sign in yet, so there's nothing to invite them to.
           lastInvite = pending ? null : inviteText(key, role);
@@ -7688,6 +7751,14 @@ function handleAuthUser(user) {
 function onMemberSnapshot(snap) {
   const rec = snap.val();
   if (!rec || !rec.role) { denyMember(); return; }
+  // Approved HERE, so the one-shot camp bounce (denyMember) has done its job:
+  // re-arm it. Left set, a senior-only counselor who later signs out (or is
+  // revoked and re-added) lands back on the junior default with the guard
+  // still tripped, and is turned away without the senior probe ever running —
+  // for the rest of the tab/PWA session. NOT cleared in clearLocalData:
+  // denyMemberFinal calls that, and clearing there would let denied-in-both
+  // loop. Approval is the only point that proves the bounce landed.
+  try { sessionStorage.removeItem(CAMP_SWITCH_TRIED_KEY); } catch (e) { /* fine */ }
   memberName = rec.name || null;
   setMemberRole(rec.role);
   setMemberTeam(rec.teamId); // which team they're ON (auto-follow + own-team guard)
@@ -7957,6 +8028,9 @@ function signOutAndClear() {
 
 function finishSignOut() {
   clearLocalData();
+  // Sign-out is a fresh start: the next account on this tab may be a
+  // senior-only counselor who needs the camp bounce (see onMemberSnapshot).
+  try { sessionStorage.removeItem(CAMP_SWITCH_TRIED_KEY); } catch (e) { /* fine */ }
   try { clearPhotos().catch(() => {}); } catch (e) { /* ignore */ }
   // The active camp's photo store is cleared above; delete the other
   // camp's database wholesale (it isn't open, so deleteDatabase is safe).

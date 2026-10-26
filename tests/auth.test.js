@@ -383,6 +383,65 @@ test('denied here but approved at the other camp → auto-switch, exactly once',
   setMemberRole('editor'); // restore what earlier tests in this file expect
 });
 
+test('the camp-bounce guard is re-armed by approval and by sign-out', async () => {
+  // A senior-only counselor is bounced once (guard armed, reload into senior).
+  // Approval there must clear the guard — otherwise a later sign-out lands on
+  // junior with the guard still set and the counselor is turned away without
+  // the senior probe ever running ("lock-out until the PWA is killed").
+  sessionStorage.removeItem(CAMP_SWITCH_TRIED_KEY);
+  localStorage.removeItem(ACTIVE_CAMP_KEY);
+  authUser = { email: 'senior.only@example.com' };
+  const seniorPath = 'seniorScoreboard/members/senior,only@example,com';
+  stubFirebaseProbe({ [seniorPath]: { role: 'viewer', name: 'Sam' } });
+  const tick = () => Promise.resolve().then(() => {}).then(() => {});
+
+  const before = __reloads;
+  denyMember();
+  await tick();
+  assert.equal(__reloads, before + 1, 'first sign-in bounces');
+  assert.equal(sessionStorage.getItem(CAMP_SWITCH_TRIED_KEY), '1');
+
+  // Landed in senior, approved: the guard has done its job. (The app-start
+  // steps need a real DOM; stub them — only the guard is under test.)
+  const real = { startApp, startSync, probeOtherCamp, maybeShowCampPicker };
+  startApp = startSync = probeOtherCamp = maybeShowCampPicker = () => {};
+  onMemberSnapshot({ val: () => ({ role: 'viewer', name: 'Sam' }) });
+  Object.assign(globalThis, real);
+  assert.equal(sessionStorage.getItem(CAMP_SWITCH_TRIED_KEY), null, 'approval clears the one-shot guard');
+
+  // A DENIED snapshot must not clear it — that is the loop guard for
+  // denied-in-both (it is also why clearLocalData must not touch it).
+  sessionStorage.setItem(CAMP_SWITCH_TRIED_KEY, '1');
+  stubFirebaseProbe({});
+  onMemberSnapshot({ val: () => null });
+  await tick();
+  assert.equal(sessionStorage.getItem(CAMP_SWITCH_TRIED_KEY), '1', 'a denial keeps the guard armed');
+
+  // Sign out → fresh start → the next senior-only sign-in bounces again.
+  localStorage.removeItem(ACTIVE_CAMP_KEY);
+  authUser = { email: 'senior.only@example.com' };
+  stubFirebaseProbe({ [seniorPath]: { role: 'viewer', name: 'Sam' } });
+  globalThis.firebase.auth = () => ({ signOut: () => Promise.resolve() });
+  finishSignOut();
+  await tick();
+  assert.equal(sessionStorage.getItem(CAMP_SWITCH_TRIED_KEY), null, 'sign-out clears the guard');
+
+  authUser = { email: 'senior.only@example.com' };
+  stubFirebaseProbe({ [seniorPath]: { role: 'viewer', name: 'Sam' } });
+  const mid = __reloads;
+  denyMember();
+  await tick();
+  assert.equal(localStorage.getItem(ACTIVE_CAMP_KEY), 'senior', 'the second sign-in is bounced to senior');
+  assert.ok(__reloads > mid, 'and reloads into it');
+
+  delete globalThis.firebase;
+  sessionStorage.removeItem(CAMP_SWITCH_TRIED_KEY);
+  localStorage.removeItem(ACTIVE_CAMP_KEY);
+  localStorage.removeItem(CAMPS_HINT_KEY);
+  authUser = null;
+  setMemberRole('editor');
+});
+
 test('denied at BOTH camps → the denial screen, no reload', async () => {
   sessionStorage.removeItem(CAMP_SWITCH_TRIED_KEY);
   const before = __reloads;
@@ -429,4 +488,187 @@ test('the other-camp probe records the second camp and its role', async () => {
   localStorage.removeItem(CAMPS_HINT_KEY);
   localStorage.removeItem(AUTH_HINT_KEY);
   setMemberRole('editor');
+});
+
+// ── The members drawer only ever CREATES (never overwrites) ───────
+
+// A fake member database. transaction() follows RTDB's contract: the updater
+// sees the current value (null when absent) and returning undefined aborts.
+// set() records an unconditional overwrite, which is what these paths must
+// never do to an existing record.
+function fakeMemberDb(initial) {
+  const data = Object.assign({}, initial);
+  const sets = [];
+  globalThis.firebase = {
+    apps: [{}],
+    database: () => ({
+      ref: (path) => ({
+        set: (v) => { sets.push(path); data[path] = v; return Promise.resolve(); },
+        remove: () => { delete data[path]; return Promise.resolve(); },
+        transaction: (fn) => {
+          const next = fn(path in data ? data[path] : null);
+          if (next === undefined) return Promise.resolve({ committed: false });
+          data[path] = next;
+          return Promise.resolve({ committed: true });
+        },
+      }),
+    }),
+  };
+  return { data, sets };
+}
+
+// Drive bindMemberList's "Add someone" button the way the drawer does: fill
+// the form stubs, capture the click handler, fire it, and report what showed.
+async function submitMemberAdd(form, lists) {
+  const el = (id) => document.getElementById(id);
+  el('member-add-id').value = form.id;
+  el('member-add-name').value = form.name || '';
+  el('member-add-role').value = form.role || 'viewer';
+  el('member-add-camps').value = form.camps || 'active';
+  el('member-add-team').value = form.team || '';
+  const err = el('member-add-error');
+  err.hidden = true; err.textContent = '';
+  let handler = null;
+  el('member-add-btn').addEventListener = (type, fn) => { if (type === 'click') handler = fn; };
+  const toasts = [];
+  const realToast = showToast;
+  showToast = (m) => { toasts.push(m); };
+  const body = document.createElement('div');
+  bindMemberList(body, identityKey(authUser), lists);
+  handler();
+  await new Promise((r) => setTimeout(r, 0));
+  showToast = realToast;
+  return { error: err.hidden ? '' : err.textContent, toasts };
+}
+
+test('planMemberAdd writes only the camps where the key is absent', () => {
+  const here = CAMP.id, there = otherCampId();
+  const lists = { [here]: { 'sam@example,com': { role: 'editor' } }, [there]: {} };
+  const base = { pending: false, bothCamps: false, myKey: 'me@example,com', lists };
+
+  assert.deepEqual(planMemberAdd({ ...base, key: 'new@example,com' }), { camps: [here] });
+  assert.deepEqual(planMemberAdd({ ...base, key: 'new@example,com', bothCamps: true }), { camps: [here, there] });
+  assert.ok(planMemberAdd({ ...base, key: 'sam@example,com' }).error, 'already on the list → refused');
+  assert.deepEqual(planMemberAdd({ ...base, key: 'sam@example,com', bothCamps: true }), { camps: [there] },
+    '"both camps" on someone already here grants only the other camp');
+  assert.ok(planMemberAdd({ ...base, key: 'me@example,com' }).error, 'your own key is refused');
+  assert.deepEqual(planMemberAdd({ ...base, key: 'pending-sam-abc12', pending: true, bothCamps: true }),
+    { camps: [here] }, 'a pending row stays single-camp');
+});
+
+test('re-adding someone already on the list changes nothing (no demotion, name/team kept)', async () => {
+  setMemberRole('editor');
+  authUser = { email: 'dir@example.com' };
+  const sam = { role: 'editor', name: 'Sam', teamId: 't2', addedBy: 'x', addedAt: 'y' };
+  const db = fakeMemberDb({ [campMembersPath(CAMP.id, 'sam@example,com')]: sam });
+  const lists = { [CAMP.id]: { 'sam@example,com': sam }, [otherCampId()]: null };
+
+  // The form defaults — Viewer, no name, no team — would have replaced Sam's
+  // record with a bare viewer one.
+  const out = await submitMemberAdd({ id: 'Sam@Example.com' }, lists);
+
+  assert.ok(out.error.includes('Already on the list'), 'the editor is told why: ' + out.error);
+  assert.equal(db.sets.length, 0, 'nothing was overwritten');
+  assert.deepEqual(db.data[campMembersPath(CAMP.id, 'sam@example,com')], sam, 'Sam is exactly as he was');
+
+  // The race the drawer's own lists can't see: another editor added Sam since
+  // this drawer loaded, so lists says "absent" but the database says otherwise.
+  const stale = { [CAMP.id]: {}, [otherCampId()]: null };
+  const raced = await submitMemberAdd({ id: 'sam@example.com' }, stale);
+  assert.ok(raced.error.includes('Already on the list'), 'the transaction aborts on an existing key');
+  assert.deepEqual(db.data[campMembersPath(CAMP.id, 'sam@example,com')], sam, 'still untouched');
+
+  delete globalThis.firebase;
+  authUser = null;
+});
+
+test('adding a new person still works, and "both camps" grants only the missing camp', async () => {
+  setMemberRole('editor');
+  authUser = { email: 'dir@example.com' };
+  const here = CAMP.id, there = otherCampId();
+  const db = fakeMemberDb({});
+  setMemberRole('editor');
+  const lists = { [here]: {}, [there]: {} };
+
+  const added = await submitMemberAdd({ id: 'New.Kid@example.com', name: 'Kid', role: 'editor', team: 't1' }, lists);
+  assert.equal(added.error, '');
+  const rec = db.data[campMembersPath(here, 'new,kid@example,com')];
+  assert.equal(rec.role, 'editor');
+  assert.equal(rec.name, 'Kid');
+  assert.equal(rec.teamId, 't1');
+  assert.equal(db.data[campMembersPath(there, 'new,kid@example,com')], undefined, 'this camp only');
+
+  // Already here, absent there: "Both camps" must leave the existing record alone.
+  const sam = { role: 'editor', name: 'Sam', teamId: 't2', addedBy: 'x', addedAt: 'y' };
+  db.data[campMembersPath(here, 'sam@example,com')] = sam;
+  const granted = await submitMemberAdd({ id: 'sam@example.com', camps: 'both' },
+    { [here]: { 'sam@example,com': sam }, [there]: {} });
+  assert.equal(granted.error, '');
+  assert.deepEqual(db.data[campMembersPath(here, 'sam@example,com')], sam, 'the existing camp is untouched');
+  assert.equal(db.data[campMembersPath(there, 'sam@example,com')].role, 'viewer', 'the missing camp is granted');
+
+  delete globalThis.firebase;
+  authUser = null;
+});
+
+test('an editor cannot add (demote) their own account from the add form', async () => {
+  setMemberRole('editor');
+  authUser = { email: 'Dir@Example.com' };
+  const db = fakeMemberDb({});
+  const out = await submitMemberAdd({ id: 'dir@example.com' }, { [CAMP.id]: {}, [otherCampId()]: null });
+  assert.ok(out.error.includes('your own account'), out.error);
+  assert.equal(Object.keys(db.data).length, 0, 'nothing written');
+  delete globalThis.firebase;
+  authUser = null;
+});
+
+test('converting a pending row refuses an existing member or yourself, and never overwrites', async () => {
+  setMemberRole('editor');
+  authUser = { email: 'dir@example.com' };
+  const sam = { role: 'editor', name: 'Sam', teamId: 't2', addedBy: 'x', addedAt: 'y' };
+  const pendingRec = { role: 'viewer', name: 'Sammy', teamId: 't0', addedBy: 'x', addedAt: 'y' };
+  const db = fakeMemberDb({
+    [campMembersPath(CAMP.id, 'sam@example,com')]: sam,
+    [campMembersPath(CAMP.id, 'pending-sammy-abc12')]: pendingRec,
+  });
+  const lists = { [CAMP.id]: { 'sam@example,com': sam, 'pending-sammy-abc12': pendingRec } };
+  const toasts = [];
+  const realToast = showToast, realPrompt = prompt;
+  showToast = (m) => { toasts.push(m); };
+  const tick = () => new Promise((r) => setTimeout(r, 0));
+
+  // Pointed at somebody already listed (list says so).
+  prompt = () => 'sam@example.com';
+  convertPendingMember('pending-sammy-abc12', pendingRec, lists);
+  await tick();
+  assert.ok(toasts.pop().includes('Already on the list'));
+  assert.deepEqual(db.data[campMembersPath(CAMP.id, 'sam@example,com')], sam, 'Sam untouched');
+  assert.ok(db.data[campMembersPath(CAMP.id, 'pending-sammy-abc12')], 'the pending row is kept');
+
+  // Their own account.
+  prompt = () => 'DIR@example.com';
+  convertPendingMember('pending-sammy-abc12', pendingRec, lists);
+  await tick();
+  assert.ok(toasts.pop().includes('your own account'));
+
+  // The race: the list is stale, the database already has Sam → transaction aborts,
+  // and the pending row must NOT be removed.
+  prompt = () => 'sam@example.com';
+  convertPendingMember('pending-sammy-abc12', pendingRec, { [CAMP.id]: {} });
+  await tick();
+  assert.ok(toasts.pop().includes('Already on the list'));
+  assert.deepEqual(db.data[campMembersPath(CAMP.id, 'sam@example,com')], sam, 'still untouched');
+  assert.ok(db.data[campMembersPath(CAMP.id, 'pending-sammy-abc12')], 'pending row survives the aborted create');
+
+  // The happy path still converts: new key written, placeholder removed.
+  prompt = () => 'sammy@example.com';
+  convertPendingMember('pending-sammy-abc12', pendingRec, lists);
+  await tick();
+  const made = db.data[campMembersPath(CAMP.id, 'sammy@example,com')];
+  assert.ok(made && made.name === 'Sammy' && made.teamId === 't0', 'converted record carries name and team');
+  assert.equal(db.data[campMembersPath(CAMP.id, 'pending-sammy-abc12')], undefined, 'placeholder removed');
+
+  showToast = realToast; prompt = realPrompt;
+  delete globalThis.firebase;
+  authUser = null;
 });
