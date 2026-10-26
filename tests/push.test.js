@@ -436,6 +436,69 @@ test('pushAudienceLabel names every audience the composer offers', () => {
   assert.equal(pushAudienceLabel('t9'), 'One team', 'a team that no longer exists still reads sensibly');
 });
 
+// ── The drawer's layout contract (found in a design QA pass) ─────
+
+test('pushBlocksSummary: the collapsed block list says what is picked', () => {
+  const catalog = [{ key: 'a' }, { key: 'b' }, { key: 'c' }];
+  assert.equal(pushBlocksSummary({ blocksAll: false, blocks: {} }, catalog), 'None picked yet');
+  assert.equal(pushBlocksSummary({ blocksAll: false, blocks: { a: true, c: true } }, catalog), '2 picked');
+  assert.equal(pushBlocksSummary({ blocksAll: false, blocks: { gone: true } }, catalog), 'None picked yet',
+    'a key that has left the schedule is not a pick');
+  assert.equal(pushBlocksSummary({ blocksAll: true, blocks: {} }, catalog), 'All blocks covered');
+});
+
+test("the composer's audience menu names teams plainly; the Recent lines keep \"counselors\"", () => {
+  freshState();
+  const html = pushComposerHTML();
+  const options = [...html.matchAll(/<jelly-option [^>]*>([^<]*)<\/jelly-option>/g)].map((m) => m[1]);
+  assert.ok(options.length >= 3 && options[0] === 'Everyone' && options[1] === 'Directors only', 'everyone, directors, then the teams');
+  assert.notOk(options.some((o) => /counselors/.test(o)), 'no suffix: it only crowded the menu');
+  assert.ok(pushAudienceLabel('t1').endsWith('counselors'), 'where there is room (the Recent list) it still says who gets it');
+  assert.notOk(/pa-heading">[^<]*(📢|🗓️)/.test(html), 'section headings carry no decorative emoji');
+});
+
+test("a director's drawer leads with Send an alert and Camp week; a viewer's is just their prefs", () => {
+  freshState();
+  const real = { st: pushStatus, cfg: pushConfigured, ready: pushSyncReady };
+  const hadFirebase = typeof firebase !== 'undefined';
+  pushStatus = () => 'on';
+  pushConfigured = () => true;
+  pushSyncReady = true;
+  if (!hadFirebase) globalThis.firebase = {};
+  const body = () => String(document.getElementById('alerts-body').innerHTML);
+  const heads = () => [...body().matchAll(/<h3 class="pa-heading">([^<]*)<\/h3>/g)].map((m) => m[1]);
+  try {
+    setMemberRole('editor');
+    renderPushDrawer();
+    assert.deepEqual(heads(), ['Send an alert', 'Camp week', 'What buzzes this phone'],
+      'the composer used to start ~5 screens down, under the whole prefs list');
+    assert.ok(/<details class="pa-list pa-disclosure" id="pa-blocks-details">/.test(body()),
+      'the ~40-row block list is a COLLAPSED disclosure (no open attribute)');
+    assert.ok(/id="pa-blocks-count">None picked yet</.test(body()), 'whose summary says what is picked');
+    setMemberRole('viewer');
+    renderPushDrawer();
+    assert.deepEqual(heads(), ['What buzzes this phone'], 'a viewer has no composer or week');
+  } finally {
+    setMemberRole(null);
+    pushStatus = real.st;
+    pushConfigured = real.cfg;
+    pushSyncReady = real.ready;
+    if (!hadFirebase) delete globalThis.firebase;
+  }
+});
+
+test('the drawer stylesheet keeps its menu unclipped and its danger text readable in dark', () => {
+  const CSS = readFixture('../styles.css');
+  const list = /\n\.pa-list \{([^}]*)\}/.exec(CSS);
+  assert.ok(list, 'the .pa-list rule exists');
+  assert.notOk(/overflow:\s*hidden/.test(list[1]),
+    "overflow:hidden on the list clipped the composer's Send-to menu to two of its eight options");
+  assert.equal((CSS.match(/--color-danger-text:/g) || []).length, 3, 'defined for light and in BOTH dark blocks');
+  assert.equal((CSS.match(/--color-danger-text:\s*#ff8a8a/g) || []).length, 2, 'a lighter red in each dark block (#dc2626 is ~3.3:1 as text on the dark surface)');
+  assert.ok(/\.pa-device-remove \{[^}]*color:\s*var\(--color-danger-text\)/.test(CSS), 'and Remove uses it');
+  assert.ok(/\.pa-off-link,\s*\.pa-device-remove \{[^}]*min-height:\s*44px/.test(CSS), 'the quiet links keep a 44px hit area');
+});
+
 // ── sw.js: payload → notification ────────────────────────────────
 // Loaded the way a service worker runs it: no window, no document — just a
 // stub `self` that records which events the file listens for.
