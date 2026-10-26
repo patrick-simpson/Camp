@@ -165,10 +165,16 @@ to the one the page is running (`myAppVersion`). A higher deployed number
 calls `onNewVersion`. This is **deploy-driven and works on a single
 device** — no Firebase or peer announcement involved — which is why the
 `?v=` bump on every deploy is what actually triggers it (bump all three
-assets together, as always). Viewers reload almost immediately; an editor
-mid-score-entry (`editorMidEntry`: a focused input, or a queued/in-flight
-data push) gets a dismissible "tap to refresh" bar (`#update-banner`) and
-auto-reloads only once it's safe — so a score being typed is never lost.
+assets together, as always). Every device gets a dismissible "tap to
+refresh" bar (`#update-banner`) and auto-reloads only once `reloadBlocked()`
+says it's safe (rechecked inside the final 1.2 s, retried every 12 s):
+for EVERY role, no unconfirmed write (`pendingWrites > 0` — the SDK's
+offline queue is in memory only, so a reload would lose it), no running
+Pictionary lap (`liveWatches`), and no chat message being typed into a
+focused composer or still sending (`chatComposerBusy`); for editors, also
+not mid-entry (`editorMidEntry`: a focused score field, or a queued data
+push). A synced game clock deliberately does NOT block it (its `endAt` is in
+the database and survives a reload).
 The reload uses `doReload` (adds a throwaway `?r=` cache-buster) so it
 fetches the fresh `index.html` instead of a cached copy and can't loop.
 (A phone only starts polling once it's running a build that has this code,
@@ -461,6 +467,10 @@ ignores the "director alerts" opt-out). Design spec:
 - **iOS**: the permission request must be the first await in the tap
   handler; subscribing needs a tap too, so a phone that lost its
   subscription gets a "tap to reconnect" prompt instead of a silent retry.
+- **Push endpoints are allowlisted** (rules + Worker): a device record's
+  endpoint must be on google.com/googleapis.com, Apple, Mozilla or Windows
+  push hosts — otherwise any member could make the sender POST to arbitrary
+  URLs. A new browser with a different push host would need adding in both.
 - **Going live needs three things** (until then `PUSH_SERVICE_URL` in push.js
   is blank and the feature is dormant — the drawer says so): (1) the owner
   deploys the Worker (README); (2) set `PUSH_SERVICE_URL` to its exact URL AND
@@ -621,8 +631,13 @@ rules**; the client code only shapes the UI.
   clear the throttle. Deletes are never throttled (moderation must stay fast).
   `CHAT_MIN_SEND_MS` (1200ms) sits deliberately ABOVE the rules' 1000ms floor
   so a real person is stopped politely on the client and never sees a refusal.
-  `chatAtomicSend` retries once WITHOUT the stamp, which is what lets the
-  client deploy before the console paste; once pasted, the retry stops firing.
+  `chatAtomicSend` SERIALIZES sends: each starts a full `CHAT_MIN_SEND_MS`
+  after the previous one was acknowledged (the rules measure the floor from
+  the previous write's server time, so a caption typed during a photo upload,
+  or an offline burst replayed on reconnect, used to be refused — words and
+  all; reproduced against the emulator 2026-10-26). A refused send retries
+  once with the stamp (same push id ⇒ no duplicate); the stamp-less attempt
+  survives only as a last resort for a ruleset that predates chatRate.
   Behaviour is verified in `tests/emulator/` (opt-in, needs npm + Java).
 - **Older note, now only partly true: rate limiting used to be absent.** Any
   member can write unlimited chat messages, photos and presence rows; the rules
@@ -734,6 +749,34 @@ More sync invariants (each fixed after it bit us — don't regress these;
   arrives. Without it, a device on slow wifi that saves anything before
   its first sync queues a `set()` of stale local state that wipes
   everyone's newer scores on connect.
+- **The first snapshot is a three-way merge, per path** (2026-10-26). The
+  cached state carries `state._syncBase`: the tree the server last CONFIRMED
+  (advanced only on adopt and on an acknowledged push — never
+  optimistically — and stored in the same localStorage write as the scores so
+  the pair can't disagree). On the first snapshot after load,
+  `firstSnapshotMerge` re-applies every path this phone changed since that
+  baseline that nobody else touched, and pushes exactly those; the same path
+  changed on both sides keeps the server's value (toast). This is what makes
+  a score saved in a dead zone survive a force-quit, an iOS eviction or a
+  reload. It replaced "newest `lastDataChangeAt` takes the whole tree", which
+  either dropped the offline score or pushed this phone's whole stale tree
+  over everyone's newer results (`lastSyncedTree` was null on that path).
+  `_syncBase` is never synced and never in a backup.
+- **An identical snapshot keeps the live objects.** `applyRemoteState`
+  restores the previous `state[k]` references when the signature didn't
+  change — open tally/bracket/notice views close over those objects, and an
+  idle re-fetch of our own write used to detach them so every later tap was
+  silently not saved.
+- **Concurrent editors don't clobber each other:** tally `drafts` are diffed
+  per score/medal leaf (a NEW draft too), `meta` per field and `hiddenCards`
+  per card (`teams` and `notice` are still written whole). Verse/cleanup
+  points use deterministic ids (`verse-<team>-<dow>`,
+  `cleanup-<team>-<dow>-<meal>`) so two devices write one slot, not two.
+- **`editorMidEntry` is an allowlist**: native INPUT/TEXTAREA/SELECT,
+  contentEditable, and only `JELLY-(INPUT|TEXTAREA|SELECT|OTP)`. Every Jelly
+  component delegates focus, so the old `startsWith('JELLY-')` counted a
+  tapped card header or button as typing and froze live updates on
+  Android/desktop Chrome until focus moved.
 - **A snapshot key that's missing means "empty", not "keep mine".** The
   remote merge replaces `results`/`brackets`/`drafts`/`picRounds`/`meta`
   with `{}` when absent from the snapshot (RTDB prunes empty objects, so
