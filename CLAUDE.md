@@ -23,7 +23,14 @@ Files:
 - `settings.js` — the settings sheet + week-builder UI
 - `chat.js` — Camp Chat (see "Camp chat" below): four channels, automatic
   mention alerts, compressed in-database photos. Self-contained layer,
-  loaded last; every hook in app.js is typeof-guarded
+  loaded after settings.js; every hook in app.js is typeof-guarded
+- `push.js` — Phone alerts (see "Phone alerts" below): subscribes the phone
+  to Web Push, the 📲 Phone alerts drawer, the director alert composer, and
+  publishing the week's schedule for reminders. Self-contained layer loaded
+  after chat.js; every hook in app.js/chat.js is typeof-guarded
+- `push-worker/` — the alert SENDER: a Cloudflare Worker (free plan) that is
+  NOT served to browsers as code — the owner pastes `worker.js` into the
+  Cloudflare dashboard. `README.md` there is the plain-English setup guide
 - `styles.css` — all styling (design tokens at the top, light + dark)
 - `firebase-config.js` — sync config (also used by Firebase Auth sign-in)
 - `auth-email-link.js` / `auth-phone.js` — optional alternative sign-in
@@ -34,10 +41,13 @@ Files:
 - `vendor/jelly.js` — vendored Jelly UI web components (chips, buttons,
   drawers, dialogs); it injects `--jelly-*` design tokens on :root at
   runtime, which the app's `--color-*` tokens re-source
-- `sw.js` — notification-only service worker (deliberately NO fetch
-  handler, so it can never serve stale code; kill-switch documented inside)
+- `sw.js` — notification + push service worker (deliberately NO fetch
+  handler, so it can never serve stale code; kill-switch documented inside).
+  Registered as `sw.js?v=<PUSH_SW_VERSION>&push=<worker url>` by push.js
 - `tests/` — `node tests/run.js`, no dependencies, never served to the
-  browser (see "Tests" below)
+  browser (see "Tests" below). `tests/emulator/` (rules in the RTDB
+  emulator) and `tests/push-e2e/` (the alert sender in real workerd) are
+  opt-in suites that need npm + Java
 - `current-standings.html` — self-contained TV/presenter standings page
   (duplicates a few constants from app.js — marked "keep in sync")
 - `stalling.html` — self-contained presenter gag page
@@ -71,9 +81,9 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
 
 **Every time any code asset changes:**
 1. Bump the `?v=N` cache-busting query string in `index.html` — there are
-   ELEVEN on the same number: `boot-guard.js`, `styles.css`, `vendor/jelly.js`,
+   TWELVE on the same number: `boot-guard.js`, `styles.css`, `vendor/jelly.js`,
    `firebase-config.js`, `defaults.js`, `camps.js`, `app.js`, `settings.js`,
-   `chat.js`, `auth-phone.js`, `auth-email-link.js` — keep them in sync,
+   `chat.js`, `push.js`, `auth-phone.js`, `auth-email-link.js` — keep them in sync,
    all bumped together. Also bump
    `APP_VERSION` in `app.js` to the same number (it drives the auto-reload
    version check). `current-standings.html` and `stalling.html` load
@@ -392,6 +402,74 @@ so nobody can post as someone else).
 - **Honest limit** (owner accepted): no push server, so alerts fire only
   on devices with the tab open (backgrounded OK, closed no); unread badges
   catch everyone else up on next open.
+
+## Phone alerts (push.js + push-worker/) — added 2026-10-26
+
+Real notifications that reach a phone with Camp CLOSED (the in-app toasts and
+`maybeNativeNotification` only work while the tab is alive). Owner's
+requirements, all confirmed: staff only (signed-in members), no app stores
+(the site installed to the Home Screen — iPhones need that, iOS 16.4+), and
+**$0 with no credit card**. What can buzz a closed phone: Announcements
+(default on), a mention of you or your team, every message in a belled
+channel, any schedule block you pick (5/10/15 min early), and director
+alerts (Everyone / a team / directors only, with an Urgent switch that
+ignores the "director alerts" opt-out). Design spec:
+`docs/build-notes/push-alerts-spec.md`.
+
+- **Why a Cloudflare Worker**: sending Web Push needs a server holding the
+  VAPID private key. Firebase Cloud Functions need the Blaze (card) plan, so
+  the sender is a free-plan Cloudflare Worker (`push-worker/worker.js`, pasted
+  into the dashboard — setup guide `push-worker/README.md`). It talks to RTDB
+  as ADMIN through a service-account key stored as the Worker secret
+  `FIREBASE_SERVICE_ACCOUNT`, and verifies callers' Firebase ID tokens itself.
+  It never trusts what the page says about a message: `/notify` gets
+  `{ch, msgId}`, reads the message, and only the AUTHOR may trigger it.
+- **Free-plan limits drive the shape**: 50 subrequests and 10 ms CPU per
+  invocation. Web Push encryption costs real CPU per phone, so one invocation
+  sends at most `PUSH_BATCH` (20); the rest become `pushServer/outbox` batches
+  that the posting page drains at once (`POST /drain`, fire-and-forget) and the
+  every-minute cron drains as the backstop. Claims are ETag-conditional
+  deletes, so a batch is sent at most once. Don't raise `PUSH_BATCH` casually.
+- **Data**: per camp root — `push/<memberKey>/<deviceId>` (one record per
+  person+device: endpoint, keys, prefs; owner-only read/write in the rules;
+  removed members can still delete their own), `pushSchedule` (the week's
+  blocks + `weekStart`, editor-written — the schedule is JS in camps.js and
+  the Worker can't run JS, so editor devices publish it as data and
+  re-publish automatically when the code's schedule changes), `pushAlerts`
+  (director-alert audit log, Worker-written, editor-read). Worker-private
+  state lives in top-level `pushServer/` (VAPID keys — generated by the
+  Worker on first use and NEVER regenerated, cron cursor, dedupe markers,
+  rate stamps, outbox); the root deny-all keeps every client out of it.
+- **Schedule reminders only run during camp week**: an editor sets "Starts on
+  (a Sunday)" in the drawer; outside [that Sunday − 1 day, +8 days] the cron
+  reads one tiny value and writes nothing.
+- **Same invariant as chat**: nothing touches the database until membership is
+  approved (`initPush()` is called from the approved sync path). Push failures
+  never block or fail a chat send.
+- **sw.js must show a notification for EVERY push** (iOS revokes push
+  permission otherwise) and still has NO fetch handler. Notification tags are
+  shared with the page (`chat-<msgId>`, `alert-<id>`, `block-<id>-<date>`) so
+  an open app's own notification and the push collapse into one.
+- **iOS**: the permission request must be the first await in the tap
+  handler; subscribing needs a tap too, so a phone that lost its
+  subscription gets a "tap to reconnect" prompt instead of a silent retry.
+- **Going live needs three things** (until then `PUSH_SERVICE_URL` in push.js
+  is blank and the feature is dormant — the drawer says so): (1) the owner
+  deploys the Worker (README); (2) set `PUSH_SERVICE_URL` to its exact URL AND
+  add that origin to `connect-src` in index.html's CSP (otherwise the browser
+  silently blocks it — the drawer's sender line will say "blocked"); (3)
+  publish `database.rules.json` (push/pushSchedule/pushAlerts blocks).
+- **Tests**: `tests/push.test.js` (+ `.senior`) pin the client helpers and
+  sw.js's payload mapping; `tests/push-worker.test.js` loads the Worker module
+  and checks encryption against an independent node:crypto decryption, VAPID,
+  ID-token verification, recipient selection, cron window math, batching and
+  the subrequest cap. `tests/push-e2e/` (opt-in) runs the real Worker in
+  workerd against the RTDB emulator with ~30 mock phones — run it after any
+  worker.js change.
+- **Honest limits** (owner accepted): iPhones must use the Home Screen app;
+  iOS Focus modes can still silence alerts (web push can't be "time
+  sensitive"); a phone that is off gets queued alerts when it comes back,
+  within each alert's TTL.
 
 ## Auth, members & roles (the security boundary)
 
