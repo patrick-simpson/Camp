@@ -471,6 +471,16 @@ ignores the "director alerts" opt-out). Design spec:
   endpoint must be on google.com/googleapis.com, Apple, Mozilla or Windows
   push hosts — otherwise any member could make the sender POST to arbitrary
   URLs. A new browser with a different push host would need adding in both.
+- **The sender trusts nothing a member wrote** (hardened 2026-10-26): it
+  honours at most the 4 newest devices per member (cron maintenance deletes
+  the surplus and ex-members' records), re-derives chat mentions from the
+  stored message text + member names (a request can't "mention" everyone),
+  gives every push POST an 8 s timeout with `redirect:'manual'` and never
+  reads more than 300 bytes of a refusal (one hung endpoint can't wedge a
+  send or the cron), throttles the unauthenticated `/resubscribe` scan to
+  once a minute (it reads both camps' push trees — an unthrottled loop could
+  burn the Spark plan's download quota), and keeps push-service error text
+  off its public status page.
 - **Going live needs three things** (until then `PUSH_SERVICE_URL` in push.js
   is blank and the feature is dormant — the drawer says so): (1) the owner
   deploys the Worker (README); (2) set `PUSH_SERVICE_URL` to its exact URL AND
