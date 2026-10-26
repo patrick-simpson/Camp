@@ -276,10 +276,19 @@ function sendChatMessage(ch) {
   const id = firebase.database().ref(dbPath('chat/' + ch)).push().key;
   const rateKey = 'chatRate/' + myKey;
   chatAtomicSend({ ['chat/' + ch + '/' + id]: msg, [rateKey]: firebase.database.ServerValue.TIMESTAMP }, rateKey)
-    .catch(() => {
+    .then(() => chatNotifyPhones(ch, id, text), () => {
       if (input && !input.value) input.value = text; // give the words back
       showToast("Couldn't send — check your connection and try again.");
     });
+}
+
+// Once a message has landed, ask the phone-alert sender to buzz whoever
+// should hear about it (push.js; optional, so typeof-guarded). Fire and
+// forget — a push problem must never look like a failed send.
+function chatNotifyPhones(ch, msgId, text) {
+  try {
+    if (typeof pushNotifyChat === 'function') pushNotifyChat(ch, msgId, text || '');
+  } catch (e) { console.warn('[chat] phone alert request failed', e); }
 }
 
 // Photo first, message second: a half-failure leaves an orphaned photo
@@ -308,7 +317,7 @@ function sendChatPhoto(ch, file) {
           photoId,
         },
         [rateKey]: firebase.database.ServerValue.TIMESTAMP,
-      }, rateKey);
+      }, rateKey).then(() => chatNotifyPhones(ch, msgId, ''));
     })
     .catch(() => showToast("Couldn't send the photo — try a different one, or check your connection."))
     .then(() => { if (btn) btn.removeAttribute('disabled'); });
@@ -562,15 +571,26 @@ function chatSubscribed(ch) {
   return ch in subs ? !!subs[ch] : ch === 'announcements'; // default: announcements only
 }
 
-function toggleChatSub(ch) {
+// The one writer of the subscription map. Phone alerts (push.js) use these
+// same subscriptions for "every message in this channel", so a change here —
+// from the 🔔 bell or from the Phone alerts drawer — also rewrites this
+// phone's push record (pushPrefsChanged, typeof-guarded: push.js is optional).
+function setChatSub(ch, on) {
+  if (!chatChannelById(ch)) return;
   const subs = readChatSubs();
-  subs[ch] = !chatSubscribed(ch);
+  subs[ch] = !!on;
   try { localStorage.setItem(lsKey(CHAT_SUBS_KEY), JSON.stringify(subs)); } catch (e) { /* fine */ }
+  if (typeof pushPrefsChanged === 'function') pushPrefsChanged();
+}
+
+function toggleChatSub(ch) {
+  const on = !chatSubscribed(ch);
+  setChatSub(ch, on);
   const c = chatChannelById(ch);
-  showToast(subs[ch]
+  showToast(on
     ? `🔔 You'll get an alert for every message in ${c ? c.short : ch}.`
     : `🔕 ${c ? c.short : ch} muted — you'll still get an alert when someone mentions you.`,
-    { mine: subs[ch] });
+    { mine: on });
   renderChatView(true);
 }
 
@@ -610,13 +630,16 @@ function notifyChatMessage(ch, msg) {
   const viewing = chatViewingChannel() === ch;
   const preview = chatPreviewOf(msg);
   const c = chatChannelById(ch);
+  // Every OS notification below is tagged 'chat-<msgId>' — the SAME tag the
+  // phone-alert push for this message carries (push.js / sw.js), so a phone
+  // with Camp open in the background plus a push shows ONE notification.
   if (ch === 'announcements' && chatSubscribed(ch)) {
     // An announcement is for everyone (subscribed by default) — same
     // treatment as the announcement banner alerts (toast + OS notification
     // + bright chime + buzz).
     if (!viewing) showToast('📣 ' + preview);
     if (state.notify) {
-      maybeNativeNotification('📣 Chat announcement', preview, 'camp-chat-ann-' + msg.id);
+      maybeNativeNotification('📣 Chat announcement', preview, 'chat-' + msg.id);
       playMineChime();
       if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
     }
@@ -629,7 +652,7 @@ function notifyChatMessage(ch, msg) {
   if (mentioned) {
     if (!viewing) showToast(`💬 ${chatAuthorName(msg)} mentioned you: ${(msg.text || '').slice(0, 80)}`, { mine: true });
     if (state.notify) {
-      maybeNativeNotification('💬 You were mentioned in Chat', preview, 'camp-chat-men-' + msg.id);
+      maybeNativeNotification('💬 You were mentioned in Chat', preview, 'chat-' + msg.id);
       if (navigator.vibrate) navigator.vibrate(150);
     }
     return;
@@ -637,7 +660,7 @@ function notifyChatMessage(ch, msg) {
   if (chatSubscribed(ch)) {
     if (!viewing) showToast(`${c ? c.emoji : '💬'} ${preview}`);
     if (state.notify) {
-      maybeNativeNotification(`${c ? c.emoji + ' ' : ''}Chat · ${c ? c.short : ch}`, preview, 'camp-chat-sub-' + msg.id);
+      maybeNativeNotification(`${c ? c.emoji + ' ' : ''}Chat · ${c ? c.short : ch}`, preview, 'chat-' + msg.id);
       if (navigator.vibrate) navigator.vibrate(150);
     }
   }

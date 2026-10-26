@@ -3695,6 +3695,257 @@ body.no-scroll {
 }
 
 /* ============================================================
+   PHONE ALERTS DRAWER (Settings → 📲 Phone alerts; push.js)
+   One status card, then grouped lists in the iOS-settings idiom: a single
+   bordered box per group with hairline dividers between rows. With ~35
+   subscribable schedule blocks, separate boxes per row (like the Settings
+   sheet's) would be a wall of borders; one box per group stays calm.
+   ============================================================ */
+/* Jelly controls paint a canvas a few px wider than their host (the press
+   "bulge"). In a drawer body that scrolls vertically, that bleed becomes a
+   sideways wobble on a phone; nothing here is meant to scroll sideways. */
+#alerts-body {
+  overflow-x: hidden;
+}
+.pa-card {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.9rem 1rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+/* "Stopped working" is the one state that asks for action — a side rule in
+   the accent, the same device as the own-team note. */
+.pa-status-reconnect {
+  border-left: 4px solid var(--color-gold);
+}
+.pa-lead {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 700;
+  line-height: 1.35;
+  color: var(--color-text);
+}
+.pa-note {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+}
+.pa-steps {
+  margin: 0;
+  padding-left: 1.3rem;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--color-text);
+}
+.pa-steps li + li {
+  margin-top: 0.3rem;
+}
+/* The drawer's full-width actions at the app's usual 48px, not the stock
+   62px — and with room for "Turn on phone alerts" on one line at 360px. */
+.pa-card jelly-button[block],
+#pa-send {
+  --jelly-button-height: 48px;
+  --jelly-button-padding-inline: 14px;
+}
+.pa-card jelly-button[block] {
+  margin-top: 0.25rem;
+}
+.pa-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem 1rem;
+}
+.pa-off-link {
+  align-self: flex-start;
+  font-size: 0.82rem;
+}
+.pa-actions .pa-off-link {
+  align-self: center;
+}
+.pa-off-link:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.pa-devices:empty {
+  display: none;
+}
+.pa-device {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  font-size: 0.88rem;
+  color: var(--color-text);
+}
+
+.pa-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+.pa-heading {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 800;
+  color: var(--color-text);
+}
+/* Group labels — same small-caps voice as the change history's day rule. */
+.pa-group {
+  margin: 0.4rem 0 -0.15rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+}
+.pa-foot {
+  margin: -0.1rem 0 0;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--color-text-muted);
+}
+
+.pa-list {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.pa-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  min-height: 3rem;
+  padding: 0.55rem 0.85rem;
+}
+.pa-row + .pa-row {
+  border-top: 1px solid var(--color-border);
+}
+.pa-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+.pa-row-label {
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+.pa-row-hint {
+  font-size: 0.78rem;
+  line-height: 1.35;
+  color: var(--color-text-muted);
+}
+.pa-row jelly-switch {
+  flex: 0 0 auto;
+  /* No slotted label here (the row text is the label), so drop the gap the
+     component keeps for one — it was dead space at the row's edge. */
+  --jelly-switch-gap: 0px;
+}
+/* "Every schedule block" is on — each block reads as covered, not chosen. */
+.pa-row-off .pa-row-text {
+  opacity: 0.55;
+}
+.pa-when {
+  white-space: nowrap;
+}
+/* The 5/10/15 control sits under its label at full width — the same
+   arrangement as Settings → Appearance — rather than squeezing beside it. */
+.pa-row-lead {
+  flex-wrap: wrap;
+  padding-bottom: 0.7rem;
+}
+.pa-row-lead jelly-segmented {
+  flex: 1 1 100%;
+}
+.pa-row-audience jelly-select {
+  flex: 0 1 13rem;
+  width: auto;
+  min-width: 0;
+  max-width: 62%;
+}
+
+.pa-count {
+  margin: -0.2rem 0 0;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  color: var(--color-text-muted);
+}
+.pa-result {
+  margin: 0;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+.pa-recent {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.pa-alert {
+  padding: 0.6rem 0.8rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+.pa-alert-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+.pa-urgent-tag {
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-on-danger);
+  background: var(--color-danger);
+}
+.pa-alert-body {
+  margin: 0.25rem 0 0;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  color: var(--color-text);
+  overflow-wrap: anywhere;
+}
+.pa-alert-by {
+  margin: 0.15rem 0 0;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+.pa-week-field {
+  margin: 0;
+}
+.pa-week-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.pa-week-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 2.75rem;
+}
+
+/* ============================================================
    OWN-TEAM GUARD (assigned staff don't score their own rounds)
    ============================================================ */
 .own-team-note {

@@ -1102,7 +1102,7 @@ function wireSettings() {
   // let Escape close them. (When the component IS registered it owns Escape.)
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || customElements.get('jelly-drawer')) return;
-    ['settings-overlay', 'history-overlay', 'team-picker-overlay'].forEach((id) => {
+    ['settings-overlay', 'history-overlay', 'team-picker-overlay', 'members-overlay', 'alerts-overlay'].forEach((id) => {
       const el = document.getElementById(id);
       if (el && el.hasAttribute('open')) el.removeAttribute('open');
     });
@@ -2472,6 +2472,9 @@ function initSync() {
     // build without it still runs). Chat attaches HERE, i.e. only after
     // membership confirmed, and its own error handlers degrade chat only.
     if (typeof initChatSync === 'function') initChatSync();
+    // Phone alerts (push.js — optional layer, same typeof guard). Same
+    // invariant: it touches the database only from here on, post-approval.
+    if (typeof initPush === 'function') initPush();
     // (Auto-reload is handled by startUpdatePolling — a same-origin poll of the
     // deployed index.html — so it works on a single device and doesn't depend on
     // Firebase or another client announcing the build.)
@@ -7310,6 +7313,7 @@ function init() {
   wireMembers();
   wireCampSwitcher();
   if (typeof wireChat === 'function') wireChat();
+  if (typeof wirePush === 'function') wirePush();
 
   document.getElementById('notify-toggle-btn').addEventListener('click', toggleNotify);
   updateNotifyButton();
@@ -7349,9 +7353,16 @@ function init() {
   startWeatherUpdates();
   // Notification-only service worker (no fetch handler — see sw.js header).
   // Needed so OS notifications work on phones: Android Chrome and installed
-  // iOS PWAs only show them via a registration, never the bare constructor.
+  // iOS PWAs only show them via a registration, never the bare constructor —
+  // and it's where phone alerts (push.js) arrive. push.js registers it under
+  // a versioned URL (sw.js?v=N, updateViaCache:'none'); without push.js the
+  // plain registration below is exactly what this always did.
   if ('serviceWorker' in navigator) {
-    try { navigator.serviceWorker.register('sw.js').catch(() => { /* fine — toasts still work */ }); } catch (e) { /* ignore */ }
+    if (typeof pushRegisterServiceWorker === 'function') {
+      pushRegisterServiceWorker();
+    } else {
+      try { navigator.serviceWorker.register('sw.js').catch(() => { /* fine — toasts still work */ }); } catch (e) { /* ignore */ }
+    }
   }
 
   renderAll();
@@ -7911,9 +7922,13 @@ function clearLocalData() {
   // Both camps' caches go — sign-out is account-level, and a signed-out
   // device must not keep either camp's data. (The bare base names are the
   // junior keys; the suffixed ones are senior's.)
+  // (Phone alerts: the per-camp on-flag and prefs go too. The browser-wide
+  // device id and the sender's public key stay — neither is camp data — and
+  // the device's database records are deleted by pushSignOut beforehand.)
   const bases = ['campScoreboardV2', 'campScoreboardDayRanks',
     'campScoreboardDismissedChanges', 'campScoreboardDismissedAnnouncements',
-    'campScoreboardChatSeen', 'campScoreboardChatSubs'];
+    'campScoreboardChatSeen', 'campScoreboardChatSubs',
+    'campScoreboardPushOn', 'campScoreboardPushPrefs'];
   Object.keys(CAMPS).forEach((cid) => {
     bases.forEach((b) => {
       try { localStorage.removeItem(b + CAMPS[cid].storageSuffix); } catch (e) { /* ignore */ }
@@ -7924,8 +7939,23 @@ function clearLocalData() {
   });
 }
 
+let signingOut = false;
+
 function signOutAndClear() {
+  if (signingOut) return;
   if (!confirm('Sign out? Camp data stored on this device will be cleared.')) return;
+  signingOut = true;
+  // Phone alerts first, while still signed in: this device's push records
+  // can only be deleted by their owner, so after signOut() the rules refuse.
+  // pushSignOut is bounded (3s) and never rejects — a dead connection delays
+  // sign-out a moment, it can't block it. Without push.js this is a no-op.
+  const pushDone = typeof pushSignOut === 'function'
+    ? Promise.resolve().then(pushSignOut).catch(() => {})
+    : Promise.resolve();
+  pushDone.then(finishSignOut);
+}
+
+function finishSignOut() {
   clearLocalData();
   try { clearPhotos().catch(() => {}); } catch (e) { /* ignore */ }
   // The active camp's photo store is cleared above; delete the other
