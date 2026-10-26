@@ -1,0 +1,28 @@
+# Only needed if you deploy from a terminal with Wrangler (Cloudflare's
+# command-line tool). The dashboard route in README.md does NOT use this file.
+#
+#   cd push-worker
+#   npx wrangler deploy
+#   npx wrangler secret put FIREBASE_SERVICE_ACCOUNT < path/to/downloaded-key.json
+#
+# NEVER put the service-account key in this file — it is a secret and this
+# file is committed to the repo. Wrangler's `secret put` stores it encrypted
+# on Cloudflare instead.
+
+name = "camp-alerts"
+main = "worker.js"
+compatibility_date = "2024-09-23"
+workers_dev = true
+
+# The every-minute timer: schedule alerts ("Supper in 10 min") and the retry
+# backstop. The free plan allows five of these per account; this uses one.
+[triggers]
+crons = ["* * * * *"]
+
+# Every setting has a built-in default in worker.js; uncomment only to change one.
+# [vars]
+# FIREBASE_DB_URL = "https://camp-89cea-default-rtdb.firebaseio.com"
+# FIREBASE_PROJECT_ID = "camp-89cea"
+# ALLOWED_ORIGINS = "https://camp.patricksimpson.info"
+# VAPID_SUBJECT = "https://camp.patricksimpson.info"
+# PUSH_BATCH = "20"
