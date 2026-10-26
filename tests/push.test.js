@@ -360,6 +360,11 @@ test('with no sender configured, the feature is fully dormant', async () => {
   assert.doesNotThrow(() => pushPrefsChanged());
   assert.ok(pushSwUrl().startsWith('sw.js?v=') && !pushSwUrl().includes('push='), 'no sender ⇒ no push= in the worker URL');
   assert.doesNotThrow(() => renderPushDrawer(), 'the drawer renders its dormant card without a DOM to speak of');
+  // renderPushDrawer swallows its own errors into a "hit a snag" card, so
+  // not-throwing proves nothing — check what it actually drew.
+  const html = String(document.getElementById('alerts-body').innerHTML || '');
+  assert.notOk(/hit a snag/i.test(html), 'the dormant card rendered without tripping its error fallback');
+  assert.ok(/coming soon|aren.t connected|not connected/i.test(html), 'and it says the feature is not on yet');
 });
 
 test('pushSignOut never rejects and clears the on-flag for both camps', async () => {
@@ -435,17 +440,19 @@ test('pushAudienceLabel names every audience the composer offers', () => {
 // Loaded the way a service worker runs it: no window, no document — just a
 // stub `self` that records which events the file listens for.
 
-function loadServiceWorker() {
+function loadServiceWorker(regUrl) {
   const listeners = {};
   const stubSelf = {
-    location: { href: 'https://camp.example/sw.js?v=2&push=https%3A%2F%2Fcamp-alerts.example.workers.dev' },
+    location: { href: regUrl || 'https://camp.example/sw.js?v=2&push=https%3A%2F%2Fcamp-alerts.example.workers.dev' },
     addEventListener: (type, fn) => { (listeners[type] = listeners[type] || []).push(fn); },
     skipWaiting: () => {},
     clients: { claim: () => Promise.resolve(), matchAll: () => Promise.resolve([]) },
     registration: {},
   };
-  const exports = new Function('self', readFixture('../sw.js') +
-    '\nreturn { campNotificationFromPayload, campPushServiceUrl };')(stubSelf);
+  // Hand the worker a real URL implementation (the vm sandbox has none), so
+  // campPushServiceUrl's https-only logic is actually exercised.
+  const exports = new Function('self', 'URL', readFixture('../sw.js') +
+    '\nreturn { campNotificationFromPayload, campPushServiceUrl };')(stubSelf, nodeRequire('url').URL);
   return { exports, listeners };
 }
 
@@ -506,6 +513,11 @@ test('campNotificationFromPayload: missing or garbage still shows SOMETHING', ()
 });
 
 test('sw.js reads the sender URL from its own registration URL, https only', () => {
-  const { campPushServiceUrl } = loadServiceWorker().exports;
-  assert.equal(campPushServiceUrl(), '', 'the test harness has no URL API — it fails closed');
+  const at = (push) => loadServiceWorker('https://camp.example/sw.js?v=2' + (push === undefined ? '' : '&push=' + encodeURIComponent(push))).exports.campPushServiceUrl();
+  assert.equal(at('https://camp-alerts.example.workers.dev'), 'https://camp-alerts.example.workers.dev');
+  assert.equal(at('https://camp-alerts.example.workers.dev/'), 'https://camp-alerts.example.workers.dev', 'trailing slash stripped');
+  assert.equal(at('http://evil.example'), '', 'plain http to a real host is refused');
+  assert.equal(at('http://localhost:8787'), 'http://localhost:8787', 'local wrangler dev is allowed');
+  assert.equal(at('javascript:alert(1)'), '');
+  assert.equal(at(undefined), '', 'no push= ⇒ no sender');
 });

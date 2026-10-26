@@ -570,10 +570,11 @@ function pushIdToken() {
 
 // POST JSON to the Worker; resolves with its JSON body, rejects with an Error
 // carrying serverError/serverMessage when it said no.
-async function pushPost(path, body, withAuth) {
+async function pushPost(path, body, withAuth, extra) {
   const headers = { 'Content-Type': 'application/json' };
   if (withAuth) headers.Authorization = 'Bearer ' + await pushIdToken();
-  const res = await pushFetch(pushServiceBase() + path, { method: 'POST', headers, body: JSON.stringify(body) }, 20000);
+  const res = await pushFetch(pushServiceBase() + path,
+    Object.assign({ method: 'POST', headers, body: JSON.stringify(body) }, extra || {}), 20000);
   let data = null;
   try { data = await res.json(); } catch (e) { /* non-JSON — handled below */ }
   if (!res.ok || !data || data.ok === false) {
@@ -1036,11 +1037,33 @@ function pushNotifyChat(ch, msgId, text) {
   if (typeof msgId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(msgId)) return Promise.resolve(null);
   let targets = { keys: [], teams: [] };
   try { targets = pushMentionTargets(text); } catch (e) { /* send without mentions */ }
-  return pushPost('/notify', {
-    camp: CAMP.id, kind: 'chat', ch, msgId, mentionKeys: targets.keys, mentionTeams: targets.teams,
-  }, true)
+  const body = { camp: CAMP.id, kind: 'chat', ch, msgId, mentionKeys: targets.keys, mentionTeams: targets.teams };
+  // Nothing else re-sends a chat alert (the cron only drains batches and does
+  // schedule blocks), so a blip here would silently cost every closed phone
+  // the message. Retry what can heal — network, timeout, 429, 5xx — twice,
+  // backing off; the Worker dedupes by msgId, so a retry can't double-buzz.
+  // keepalive lets the request finish if the phone is backgrounded right
+  // after Send (bodies here are tiny, far under keepalive's 64 KB cap).
+  const retryable = (e) => {
+    const code = String((e && e.pushCode) || '');
+    return code === 'network' || code === 'timeout' || code === 'http-429' || /^http-5\d\d$/.test(code);
+  };
+  const attempt = (n) => pushPost('/notify', body, true, { keepalive: true })
+    .catch((e) => {
+      if (n >= 2 || !retryable(e)) throw e;
+      return new Promise((resolve) => setTimeout(resolve, n === 0 ? 2000 : 6000)).then(() => attempt(n + 1));
+    });
+  return attempt(0)
     .then((res) => { pushDrainBatches(res && res.batches); return res; })
-    .catch((e) => { console.warn('[push] chat notify failed', e); return null; });
+    .catch((e) => {
+      console.warn('[push] chat notify failed', e);
+      // An announcement is the one message people count on getting. Say so —
+      // quietly — rather than let the poster believe every phone buzzed.
+      if (ch === 'announcements' && typeof showToast === 'function') {
+        showToast('📣 Posted — but phone alerts may not have gone out. It\'s on everyone\'s screen when they open Camp.');
+      }
+      return null;
+    });
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -1473,6 +1496,12 @@ function renderPushHealth() {
   }
   const h = pushHealth;
   if (!h.configured) { el.textContent = "Sender: ❌ running, but not connected to Firebase — see push-worker/README.md."; return; }
+  // Connected but unable to sign pushes: nobody can turn alerts on and nothing
+  // gets sent, so this must not read as green just because the timer ticks.
+  if (h.vapid === false || h.ok === false) {
+    el.textContent = "Sender: ❌ running, but its signing key has a problem — open the sender's web address to see its status page.";
+    return;
+  }
   const now = Number(h.time) || Date.now();
   const last = Number(h.cronLastRun) || 0;
   if (!last) { el.textContent = "Sender: ⚠️ online, but its schedule timer has never run — add the cron trigger."; return; }
