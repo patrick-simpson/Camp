@@ -1,0 +1,605 @@
+From 9024a4b1ee5e73515203d5560ed76132b1615447 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 26 Oct 2026 22:24:03 +0000
+Subject: [PATCH] Sync merge safety: per-path first-snapshot defence, attached
+ echoes, per-leaf drafts, per-field meta
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Fixes verified by the 2026-10-26 reliability audit (RESULTS-G1/G2):
+- sync#1 (critical): the first snapshot's 'defend offline work' branch pushed
+  the WHOLE local tree over newer server data; it now diffs against the tree
+  as loaded and sends only this device's own paths.
+- sync#3/scoring#1: an identical idle re-fetch replaced every synced object,
+  detaching open tally/bracket/notice views so later taps were silently lost;
+  identical echoes now keep the live objects.
+- sync#4: tally drafts diffed per score leaf (two scorers no longer wipe
+  each other); sync#6: meta per field, hiddenCards per card.
+- sync#7: adopting the first snapshot clears dataEditPending.
+- sync#8: healing RTDB pruning no longer re-pushes the whole config.
+- scoring#4: verse/cleanup points use deterministic ids (no 3+5=8).
+- sync#2: only real Jelly form controls count as typing — a focused card
+  header no longer freezes live updates on Android/desktop Chrome.
+- sync#5/time#3/time#6: the deploy auto-reload waits for unconfirmed
+  writes, a running Pictionary lap, and a chat message in progress.
+- auth#3: camp switch / sign-out ask before discarding an unconfirmed score.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01FmwrSqURuVRaeeP3mUmmwi
+---
+ app.js                   | 133 ++++++++++++++++++++---
+ chat.js                  |  26 ++++-
+ tests/sync-merge.test.js | 221 +++++++++++++++++++++++++++++++++++++++
+ tests/sync.test.js       |   2 +-
+ 4 files changed, 363 insertions(+), 19 deletions(-)
+ create mode 100644 tests/sync-merge.test.js
+
+diff --git a/app.js b/app.js
+index 747c297..30d5c94 100644
+--- a/app.js
++++ b/app.js
+@@ -2201,6 +2201,9 @@ let pendingWrites = 0;
+ // (before the first push, or to recover after a failed one). Updated on every
+ // adopt (in the value handler) and every push.
+ let lastSyncedTree = null;
++// The synced tree exactly as it was when this page loaded (the cached copy) — the
++// baseline for 'what did THIS device change before the first snapshot arrived'.
++let bootSyncedTree = null;
+ // The editable week config (days/games catalog) syncs on its own sibling ref
+ // (campScoreboard/config) — deliberately OUTSIDE campScoreboard/state so older
+ // cached clients, and the state node's own key-list bookkeeping (SYNC_KEYS /
+@@ -2238,12 +2241,13 @@ function syncEnabled() {
+ 
+ function applyRemoteConfig(remote) {
+   const beforeJson = JSON.stringify(state.config);
++  const v0 = remote && remote.version;
+   applyingRemoteConfig = true;
+   state.config = remote;
+   const upgraded = migrateState(state);
+   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
+   applyingRemoteConfig = false;
+-  if (upgraded) schedulePushConfig();
++  if (upgraded && canEdit() && state.config.version !== v0) schedulePushConfig();
+   if (appStarted && JSON.stringify(state.config) !== beforeJson) renderAll();
+ }
+ 
+@@ -2370,9 +2374,18 @@ function handleRemoteSnapshot(remote) {
+     const localAt = state.meta && state.meta.lastDataChangeAt;
+     const remoteAt = remote.meta && remote.meta.lastDataChangeAt;
+     if (localAt && (!remoteAt || localAt > remoteAt)) {
+-      pushState();
+-      return;
++      // Diff against the tree as it was at load, NOT null: that sends only what this
++      // device changed, per path, instead of the whole tree over the server's newer data.
++      const mine = bootSyncedTree ? computeSyncUpdates(bootSyncedTree, syncedSnapshot()) : null;
++      if (mine && Object.keys(mine).length) {
++        lastSyncedTree = bootSyncedTree;
++        pushState();
++        return;
++      }
++      if (!bootSyncedTree) { pushState(); return; }
++      // nothing of ours to defend: fall through and adopt the server copy
+     }
++    dataEditPending = false; // the first snapshot reconciles any pre-sync edit
+   }
+   // The first snapshot is handled by dirtySinceLoad above; any later one waits
+   // for this device to be idle (see canAdoptRemote / deferRemoteSnapshot).
+@@ -2389,6 +2402,8 @@ function applyRemoteState(remote) {
+   // dismisses the iOS keyboard mid-entry. Skip renderAll when nothing
+   // actually changed (below).
+   const beforeSig = syncSignature();
++  const prevRefs = {};
++  SYNC_KEYS.forEach((k) => { prevRefs[k] = state[k]; });
+   // The snapshot is the entire synced tree, so a key missing from it
+   // means "empty" — RTDB prunes empty objects on write. Treating
+   // missing as keep-local made "New week (reset)" un-syncable: other
+@@ -2418,6 +2433,8 @@ function applyRemoteState(remote) {
+   // its empty fields. Heal everything the instant remote data lands,
+   // before any render sees it.
+   normalizeSyncedState();
++  // Pure echo: keep the live objects so open views' closures stay attached.
++  if (syncSignature() === beforeSig) SYNC_KEYS.forEach((k) => { state[k] = prevRefs[k]; });
+   // We now match the server, so this snapshot becomes the diff baseline —
+   // otherwise the next push would re-send data we just received.
+   lastSyncedTree = syncedSnapshot();
+@@ -2583,11 +2600,11 @@ function picSetupForSync(picSetup) {
+ // Maps written per-child (one path per game/team/bonus) so concurrent edits to
+ // DIFFERENT items on different devices never overwrite each other. teams/meta
+ // are small singletons written whole.
+-const SYNC_ITEM_MAPS = ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'clocks', 'announcements'];
++const SYNC_ITEM_MAPS = ['results', 'brackets', 'picRounds', 'picSetup', 'bonuses', 'clocks', 'announcements'];
+ // `live` is NOT here — it's diffed one level deeper (per match field) in
+ // computeSyncUpdates so concurrent refs don't clobber each other's fields.
+ // `notice` is a singleton too — one composed card, always written whole.
+-const SYNC_SINGLETONS = ['teams', 'meta', 'notice'];
++const SYNC_SINGLETONS = ['teams', 'notice'];
+ 
+ // The synced portion of state as it should exist on the server: a deep copy
+ // with Pictionary words stripped (never synced). Serves as both the push
+@@ -2636,6 +2653,40 @@ function computeSyncUpdates(prev, cur) {
+     });
+     Object.keys(p).forEach((gid) => { if (!(gid in c)) up['live/' + gid] = null; });
+   }
++  // drafts: diffed per scores/medals LEAF so two editors on one tally game don't wipe each other.
++  {
++    const p = (prev && prev.drafts) || {};
++    const c = (cur && cur.drafts) || {};
++    Object.keys(c).forEach((gid) => {
++      const cd = c[gid], pd = p[gid];
++      if (JSON.stringify(cd) === JSON.stringify(pd)) return;
++      if (!cd || typeof cd !== 'object') { up['drafts/' + gid] = cd === undefined ? null : cd; return; }
++      const pdo = (pd && typeof pd === 'object') ? pd : {};
++      ['scores', 'medals'].forEach((f) => {
++        const cf = (cd[f] && typeof cd[f] === 'object') ? cd[f] : {};
++        const pf = (pdo[f] && typeof pdo[f] === 'object') ? pdo[f] : {};
++        Object.keys(cf).forEach((k) => { if (JSON.stringify(cf[k]) !== JSON.stringify(pf[k])) up['drafts/' + gid + '/' + f + '/' + k] = cf[k]; });
++        Object.keys(pf).forEach((k) => { if (!(k in cf)) up['drafts/' + gid + '/' + f + '/' + k] = null; });
++      });
++    });
++    Object.keys(p).forEach((gid) => { if (!(gid in c)) up['drafts/' + gid] = null; });
++  }
++  // meta: per field, hiddenCards per card, so a score save (lastDataChangeAt) never reverts another editor's hide.
++  {
++    const p = (prev && prev.meta && typeof prev.meta === 'object') ? prev.meta : {};
++    const c = (cur && cur.meta && typeof cur.meta === 'object') ? cur.meta : {};
++    Object.keys(c).forEach((f) => {
++      if (f === 'hiddenCards' && c[f] && typeof c[f] === 'object') {
++        const ph = (p.hiddenCards && typeof p.hiddenCards === 'object') ? p.hiddenCards : {};
++        Object.keys(c[f]).forEach((card) => { if (JSON.stringify(c[f][card]) !== JSON.stringify(ph[card])) up['meta/hiddenCards/' + card] = c[f][card]; });
++        Object.keys(ph).forEach((card) => { if (!(card in c[f])) up['meta/hiddenCards/' + card] = null; });
++      } else if (JSON.stringify(c[f]) !== JSON.stringify(p[f])) up['meta/' + f] = c[f];
++    });
++    Object.keys(p).forEach((f) => {
++      if (f === 'hiddenCards' && !(f in c) && p[f] && typeof p[f] === 'object') Object.keys(p[f]).forEach((card) => { up['meta/hiddenCards/' + card] = null; });
++      else if (!(f in c)) up['meta/' + f] = null;
++    });
++  }
+   SYNC_SINGLETONS.forEach((k) => {
+     const pv = prev ? prev[k] : undefined;
+     const cv = cur ? cur[k] : undefined;
+@@ -2689,6 +2740,7 @@ function pushState() {
+ function syncSignature() {
+   return JSON.stringify(SYNC_KEYS.map((k) => state[k]));
+ }
++bootSyncedTree = syncedSnapshot();
+ 
+ // A matchup "slot" — a stable key for one pairing, so a genuinely NEW matchup
+ // can be told apart from an undo/clear across syncs.
+@@ -4707,13 +4759,14 @@ function renderMemoryVerse() {
+ // existing entries for that (team, day) so the ledger holds one truth.
+ function setVersePoints(teamId, dow, pts) {
+   if (!canScoreRound(teamId)) return; // own-team guard
++  const fixedId = 'verse-' + teamId + '-' + dow;
+   Object.entries(state.bonuses || {}).forEach(([id, b]) => {
+     if (b && b.category === 'verse' && b.teamId === teamId && (Number(b.day) || 0) === dow) {
+       delete state.bonuses[id];
+     }
+   });
+   if (pts > 0) {
+-    state.bonuses[newBonusId()] = {
++    state.bonuses[fixedId] = {
+       teamId, category: 'verse', label: `${DAY_NAMES[dow]} memory verse`,
+       points: pts, at: new Date().toISOString(), day: dow,
+     };
+@@ -4903,6 +4956,7 @@ function renderMealCleanup() {
+ // any existing entries for that (team, day, meal).
+ function setCleanupPoints(teamId, dow, meal, pts) {
+   if (!canScoreRound(teamId)) return; // own-team guard
++  const fixedId = 'cleanup-' + teamId + '-' + dow + '-' + meal;
+   Object.entries(state.bonuses || {}).forEach(([id, b]) => {
+     if (b && b.category === 'cleanup' && b.teamId === teamId &&
+         (Number(b.day) || 0) === dow && (b.meal || 'Breakfast') === meal) {
+@@ -4910,7 +4964,7 @@ function setCleanupPoints(teamId, dow, meal, pts) {
+     }
+   });
+   if (pts > 0) {
+-    state.bonuses[newBonusId()] = {
++    state.bonuses[fixedId] = {
+       teamId, category: 'cleanup', label: `${DAY_NAMES[dow]} ${meal} cleanup`,
+       points: pts, at: new Date().toISOString(), day: dow, meal,
+     };
+@@ -7184,15 +7238,20 @@ const UPDATE_POLL_MS = 2 * 60 * 1000;
+ function editorMidEntry() {
+   const ae = document.activeElement;
+   // Jelly form controls surface as the focused element's HOST (JELLY-INPUT,
+-  // JELLY-TEXTAREA, JELLY-SELECT, …) — a focused one is mid-entry exactly
+-  // like a native field; missing this would let a deploy's auto-reload eat
+-  // a score being typed.
+-  // ...but the chat composer is NOT score entry. Counting it would defer every
++  // JELLY-TEXTAREA, JELLY-SELECT, JELLY-OTP) — a focused one is mid-entry
++  // exactly like a native field; missing this would let a deploy's auto-reload
++  // eat a score being typed.
++  // It is an ALLOWLIST on purpose. Every Jelly component delegates focus, so
++  // on Android/desktop Chrome a plain tap on a card header (jelly-collapsible),
++  // a jelly-button or a chip leaves THAT host focused — and the old
++  // `startsWith('JELLY-')` test counted it as typing, which froze live updates
++  // on that phone until something else took focus (verified 2026-10-26).
++  // ...and the chat composer is NOT score entry. Counting it would defer every
+   // incoming scoreboard update for as long as anyone sits with the message box
+   // focused, which during a game is exactly when people are chatting.
+   const inChatComposer = ae && ae.closest && ae.closest('#chat-view');
+-  if (!inChatComposer &&
+-      ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' || ae.tagName.startsWith('JELLY-') || ae.isContentEditable)) return true;
++  if (!inChatComposer && ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' ||
++      /^JELLY-(INPUT|TEXTAREA|SELECT|OTP)$/.test(ae.tagName || '') || ae.isContentEditable)) return true;
+   // A half-built game in the week builder is unsaved in-memory work — the
+   // update-poll auto-reload and remote merges must not wipe it.
+   if (typeof builderDirty === 'function' && builderDirty()) return true;
+@@ -7280,9 +7339,27 @@ function showUpdateBanner() {
+   document.body.appendChild(bar);
+ }
+ 
++// Work that only exists on THIS page and would vanish in a reload. The RTDB
++// web SDK keeps its offline write queue in memory only, so a reload while a
++// saved score is still unconfirmed (pendingWrites > 0 — e.g. the deploy poll
++// won the race with a reconnect) loses it outright, and the next load's first
++// snapshot then overwrites the cached copy. Same for a running Pictionary lap
++// (in-memory stopwatch) and a chat message being typed or still uploading —
++// those block the reload for EVERY role, not just editors. A synced game clock
++// deliberately does NOT block: its endAt is in the database and survives a
++// reload, and holding every editor's hotfix for a whole game would be worse.
++function reloadBlocked() {
++  if (pendingWrites > 0) return true;
++  if (canEdit() && editorMidEntry()) return true;
++  if (Object.values(liveWatches || {}).some((w) => w && w.running)) return true;
++  if (typeof chatComposerBusy === 'function' && chatComposerBusy()) return true;
++  return false;
++}
++
+ function reloadWhenSafe() {
+-  if (!canEdit() || !editorMidEntry()) { setTimeout(doReload, 1200); return; }
+-  setTimeout(reloadWhenSafe, 12000); // editor is mid-entry — check back shortly
++  if (reloadBlocked()) { setTimeout(reloadWhenSafe, 12000); return; } // check back shortly
++  // Re-check at the last moment: a score saved in these 1.2 s must not be lost either.
++  setTimeout(() => (reloadBlocked() ? reloadWhenSafe() : doReload()), 1200);
+ }
+ 
+ function onNewVersion() {
+@@ -8019,8 +8096,28 @@ function hasBothCamps() {
+ // Set-key-and-reload — the ONLY way to change camps. The listener lifecycle
+ // is one-shot by design (a cancelled read is terminal; there is no teardown
+ // path), so a running page never re-points its refs in place.
++// A saved-but-unconfirmed edit on this page — what a deliberate reload
++// (camp switch, sign-out) would silently throw away, since the SDK's offline
++// queue lives only in memory. Deliberately NOT editorMidEntry(): on Chrome the
++// control that was just tapped (the Camp segmented control, the Sign out
++// button) is itself a focused Jelly host, so that would always say yes.
++function hasUnsyncedWork() {
++  return pendingWrites > 0 || dataEditPending || pushTimer != null || pushConfigTimer != null ||
++    (typeof builderDirty === 'function' && builderDirty());
++}
++
+ function switchCamp(campId) {
+   if (!CAMPS[campId] || campId === CAMP.id) return;
++  // Send anything still sitting in the debounce first; only then ask whether
++  // something is genuinely unconfirmed. A confirm, not a hard block: an
++  // offline director must never be wedged on the wrong camp.
++  flushPendingPush();
++  if (hasUnsyncedWork() &&
++      !confirm("A score you saved hasn't reached the server yet. Switching camps now can lose it. Switch anyway?")) {
++    const seg = document.getElementById('camp-switch');
++    if (seg) { seg.setAttribute('value', CAMP.id); seg.value = CAMP.id; } // it already moved — put it back
++    return;
++  }
+   // Storage blocked (private mode, or a locked-down browser): the whole switch
+   // is set-key-then-reload, so without the key the reload would land back on
+   // the same camp. Say so instead of silently doing nothing — a senior-only
+@@ -8137,7 +8234,11 @@ let signingOut = false;
+ 
+ function signOutAndClear() {
+   if (signingOut) return;
+-  if (!confirm('Sign out? Camp data stored on this device will be cleared.')) return;
++  flushPendingPush();
++  const msg = hasUnsyncedWork()
++    ? "A score you saved hasn't reached the server yet — signing out now will lose it. Sign out anyway?"
++    : 'Sign out? Camp data stored on this device will be cleared.';
++  if (!confirm(msg)) return;
+   signingOut = true;
+   // Phone alerts first, while still signed in: this device's push records
+   // can only be deleted by their owner, so after signOut() the rules refuse.
+diff --git a/chat.js b/chat.js
+index 816775b..249472b 100644
+--- a/chat.js
++++ b/chat.js
+@@ -39,6 +39,12 @@ const CHAT_BANNER_MS = 15 * 60 * 1000; // announcements-channel messages ride th
+ // server. The rules are the actual control; this is the courtesy layer.
+ const CHAT_MIN_SEND_MS = 1200;
+ let chatLastSendAt = 0;
++// Sends handed to Firebase (or still compressing a photo) that haven't settled.
++// The deploy auto-reload waits on this (chatComposerBusy, via app.js's
++// reloadBlocked): the SDK's write queue lives in memory, and the composer is
++// cleared the moment a message is sent, so a reload mid-send would lose it
++// with nowhere to give the words back.
++let chatSendsInFlight = 0;
+ 
+ let chatMsgs = {};        // channelId -> [{id, at, byKey, name, text, thumb, photoId}] sorted by at
+ let chatReady = {};       // channelId -> true once the initial backlog has fully arrived
+@@ -275,11 +281,23 @@ function sendChatMessage(ch) {
+   if (input) input.value = '';
+   const id = firebase.database().ref(dbPath('chat/' + ch)).push().key;
+   const rateKey = 'chatRate/' + myKey;
++  chatSendsInFlight += 1;
+   chatAtomicSend({ ['chat/' + ch + '/' + id]: msg, [rateKey]: firebase.database.ServerValue.TIMESTAMP }, rateKey)
+     .then(() => chatNotifyPhones(ch, id, text), () => {
+       if (input && !input.value) input.value = text; // give the words back
+       showToast("Couldn't send — check your connection and try again.");
+-    });
++    })
++    .then(() => { chatSendsInFlight = Math.max(0, chatSendsInFlight - 1); });
++}
++
++// True while a reload would cost someone their words: a message is being
++// typed (focused, non-empty composer) or a send hasn't settled yet. Only a
++// FOCUSED composer counts, so a stray character left behind can't hold a
++// phone on an old build forever. Called (typeof-guarded) from app.js.
++function chatComposerBusy() {
++  const input = document.getElementById('chat-input');
++  const typing = !!(input && document.activeElement === input && String(input.value || '').trim());
++  return typing || chatSendsInFlight > 0;
+ }
+ 
+ // Once a message has landed, ask the phone-alert sender to buzz whoever
+@@ -299,6 +317,7 @@ function sendChatPhoto(ch, file) {
+   if (!chatSendAllowed()) return;
+   const btn = document.getElementById('chat-photo-btn');
+   if (btn) btn.setAttribute('disabled', '');
++  chatSendsInFlight += 1;
+   makeChatImages(file)
+     .then(({ full, thumb }) => {
+       const photoId = firebase.database().ref(dbPath('chatPhotos')).push().key;
+@@ -320,7 +339,10 @@ function sendChatPhoto(ch, file) {
+       }, rateKey).then(() => chatNotifyPhones(ch, msgId, ''));
+     })
+     .catch(() => showToast("Couldn't send the photo — try a different one, or check your connection."))
+-    .then(() => { if (btn) btn.removeAttribute('disabled'); });
++    .then(() => {
++      chatSendsInFlight = Math.max(0, chatSendsInFlight - 1);
++      if (btn) btn.removeAttribute('disabled');
++    });
+ }
+ 
+ function chatBlobToDataUrl(blob) {
+diff --git a/tests/sync-merge.test.js b/tests/sync-merge.test.js
+new file mode 100644
+index 0000000..d5db89d
+--- /dev/null
++++ b/tests/sync-merge.test.js
+@@ -0,0 +1,221 @@
++// Merge-safety regressions found by the 2026-10-26 reliability audit. Each was
++// reproduced against the real app.js before it was fixed (see
++// docs/build-notes/verify/RESULTS-G1.md and RESULTS-G2.md). Like
++// sync.test.js, a failure here is a regression, not a test bug.
++
++function fakeRef(serverValue) {
++  const ref = {
++    writes: [],
++    serverValue: serverValue || null,
++    update(updates) { ref.writes.push(updates); return Promise.resolve(); },
++    set(value) { ref.writes.push({ __whole: value }); return Promise.resolve(); },
++    once() { return Promise.resolve({ val: () => ref.serverValue }); },
++  };
++  return ref;
++}
++
++function useFakeRef() {
++  const ref = fakeRef();
++  fbRef = ref;
++  remoteReady = true;
++  lastSyncedTree = null;
++  pendingWrites = 0;
++  dataEditPending = false;
++  pushTimer = null;
++  pushConfigTimer = null;
++  document.activeElement = null;
++  return ref;
++}
++
++const clone = (v) => JSON.parse(JSON.stringify(v));
++
++// ── sync#1: the first snapshot must not push the whole stale tree ──
++
++test('first snapshot: defending offline work sends ONLY this device\'s edits', () => {
++  freshState();
++  state.results = { a: { medals: { gold: 't0' } }, b: { medals: { gold: 't1' } } };
++  state.meta.lastDataChangeAt = '2026-07-24T09:00:00Z';
++  bootSyncedTree = syncedSnapshot();              // what this phone had cached at load
++  const ref = useFakeRef();
++  remoteReady = false;
++  dirtySinceLoad = true;
++  // Offline, before the first snapshot: one verse score.
++  state.bonuses = { mine: { teamId: 't2', category: 'verse', points: 3, day: 1 } };
++  state.meta.lastDataChangeAt = '2026-07-24T12:00:00Z';
++
++  // Meanwhile other devices saved results d, e and a bonus x (older stamp than ours).
++  const server = clone(syncedSnapshot());
++  server.results = { a: server.results.a, b: server.results.b, d: { medals: { gold: 't3' } }, e: { medals: { gold: 't4' } } };
++  server.bonuses = { x: { teamId: 't5', category: 'bonus', points: 2 } };
++  server.meta = { lastDataChangeAt: '2026-07-24T11:00:00Z' };
++  handleRemoteSnapshot(server);
++
++  assert.equal(ref.writes.length, 1, 'our offline work is defended (pushed)');
++  const keys = Object.keys(ref.writes[0]).sort();
++  assert.deepEqual(keys, ['bonuses/mine', 'meta/lastDataChangeAt'],
++    'only our own paths — never results/bonuses as a whole, which would erase d, e and x');
++});
++
++// ── sync#7: adopting the first snapshot clears the pending-edit flag ──
++
++test('first snapshot: when the server wins, the device does not stay stuck "mid-edit"', () => {
++  freshState();
++  bootSyncedTree = syncedSnapshot();
++  useFakeRef();
++  remoteReady = false;
++  dirtySinceLoad = true;
++  dataEditPending = true;                         // a pre-sync touchData
++  state.meta.lastDataChangeAt = '2026-07-24T10:00:00Z';
++  handleRemoteSnapshot({ teams: state.teams, meta: { lastDataChangeAt: '2026-07-24T11:00:00Z' } });
++  assert.equal(dataEditPending, false, 'otherwise canAdoptRemote() stays false until the next save');
++  assert.ok(canAdoptRemote(), 'later snapshots are adopted again');
++});
++
++// ── sync#3: an identical echo must not detach open views ──
++
++test('an identical snapshot keeps the live objects, so open tally/bracket views stay attached', () => {
++  freshState();
++  useFakeRef();
++  state.drafts = { g: { scores: { t0: '1' }, medals: {} } };
++  normalizeSyncedState();
++  const draftRef = state.drafts.g;
++  const resultsRef = state.results;
++  applyRemoteState(clone(syncedSnapshot()));      // the idle re-fetch of our own write
++  assert.ok(state.drafts.g === draftRef, 'a render-time closure over the draft must still be the real one');
++  assert.ok(state.results === resultsRef);
++  // …and a genuine change is still adopted.
++  const changed = clone(syncedSnapshot());
++  changed.drafts.g.scores.t0 = '2';
++  applyRemoteState(changed);
++  assert.equal(state.drafts.g.scores.t0, '2');
++});
++
++// ── sync#4: drafts are diffed per leaf ──
++
++test('a tally draft is diffed per score, so two scorers keep both entries', () => {
++  freshState();
++  const prev = { drafts: { g: { scores: { t0: '5', t1: '3' }, medals: {} } } };
++  const cur = { drafts: { g: { scores: { t0: '5', t1: '4' }, medals: {} } } };
++  assert.deepEqual(Object.keys(computeSyncUpdates(prev, cur)), ['drafts/g/scores/t1']);
++});
++
++test('a NEW draft is written per leaf too (the other scorer may have one already)', () => {
++  freshState();
++  const up = computeSyncUpdates({ drafts: {} }, { drafts: { g: { scores: { t0: '12' }, medals: {} } } });
++  assert.deepEqual(Object.keys(up), ['drafts/g/scores/t0'],
++    'writing drafts/g whole here is exactly how editor B wiped editor A');
++});
++
++test('a cleared score and a deleted draft are explicit nulls', () => {
++  freshState();
++  const up1 = computeSyncUpdates({ drafts: { g: { scores: { t0: '1', t1: '2' }, medals: {} } } },
++    { drafts: { g: { scores: { t0: '1' }, medals: {} } } });
++  assert.deepEqual(up1, { 'drafts/g/scores/t1': null });
++  const up2 = computeSyncUpdates({ drafts: { g: { scores: { t0: '1' }, medals: {} } } }, { drafts: {} });
++  assert.deepEqual(up2, { 'drafts/g': null });
++});
++
++// ── sync#6: meta is diffed per field / per card ──
++
++test('a score save sends only meta/lastDataChangeAt — never another editor\'s card hides', () => {
++  freshState();
++  const prev = { meta: { lastDataChangeAt: 'a', hiddenCards: { standings: true } } };
++  const cur = { meta: { lastDataChangeAt: 'b', hiddenCards: {} } };   // this device never saw the hide
++  const up = computeSyncUpdates(prev, { meta: { lastDataChangeAt: 'b', hiddenCards: { standings: true } } });
++  assert.deepEqual(Object.keys(up), ['meta/lastDataChangeAt']);
++  // Hiding/unhiding is per card.
++  assert.deepEqual(computeSyncUpdates(prev, cur), { 'meta/lastDataChangeAt': 'b', 'meta/hiddenCards/standings': null });
++  assert.deepEqual(Object.keys(computeSyncUpdates({ meta: { hiddenCards: {} } }, { meta: { hiddenCards: { chat: true } } })),
++    ['meta/hiddenCards/chat']);
++});
++
++// ── sync#8: healing RTDB pruning is not a reason to re-push the config ──
++
++test('a remote config that only lost empty fields to RTDB is not pushed back by every editor', () => {
++  freshState();
++  setMemberRole('editor');
++  const savedRef = fbConfigRef;
++  fbConfigRef = { set: () => Promise.resolve() };
++  pushConfigTimer = null;
++  try {
++    const remote = clone(state.config);
++    remote.games = remote.games.map((g) => { const c = Object.assign({}, g); delete c.rules; return c; }); // pruned []
++    applyRemoteConfig(remote);
++    assert.equal(pushConfigTimer, null, 'no whole-config set() from every open editor device');
++  } finally {
++    clearTimeout(pushConfigTimer); pushConfigTimer = null;
++    fbConfigRef = savedRef;
++    setMemberRole(null);
++  }
++});
++
++// ── scoring#4: verse/cleanup points have one deterministic slot ──
++
++test('two devices setting the same team\'s verse points write the SAME slot', () => {
++  freshState();
++  setMemberRole('editor');
++  try {
++    setVersePoints('t2', 1, 3);
++    const first = Object.keys(state.bonuses);
++    setVersePoints('t2', 1, 5);
++    assert.deepEqual(Object.keys(state.bonuses), first, 'same id, so a second device overwrites instead of adding');
++    assert.equal(state.bonuses[first[0]].points, 5);
++    assert.equal(medalCounts().t2.verse, 5);
++    setCleanupPoints('t1', 2, 'Supper', 2);
++    assert.ok(Object.keys(state.bonuses).includes('cleanup-t1-2-Supper'));
++  } finally { setMemberRole(null); }
++});
++
++// ── sync#2: only real form controls count as "typing" ──
++
++test('a focused card header or button does NOT freeze live updates', () => {
++  freshState();
++  useFakeRef();
++  const el = (tagName) => ({ tagName, closest: () => null, isContentEditable: false });
++  document.activeElement = el('JELLY-COLLAPSIBLE');
++  assert.ok(canAdoptRemote(), 'tapping a card header on Android left it focused and froze sync');
++  document.activeElement = el('JELLY-BUTTON');
++  assert.ok(canAdoptRemote());
++  document.activeElement = el('JELLY-INPUT');
++  assert.notOk(canAdoptRemote(), 'a focused Jelly text field IS mid-entry');
++  document.activeElement = el('JELLY-TEXTAREA');
++  assert.notOk(canAdoptRemote());
++  document.activeElement = null;
++});
++
++// ── sync#5 / time#3 / time#6: what a deploy reload must wait for ──
++
++test('the deploy auto-reload waits for unconfirmed writes, a running lap and a message in progress', () => {
++  freshState();
++  useFakeRef();
++  assert.notOk(reloadBlocked(), 'idle viewer: reload away');
++  pendingWrites = 1;
++  assert.ok(reloadBlocked(), 'the SDK queue is in memory — a reload loses the score');
++  pendingWrites = 0;
++  liveWatches.pic = { running: true, startAt: Date.now() - 40000 };
++  assert.ok(reloadBlocked(), 'a running Pictionary lap lives only in this page');
++  delete liveWatches.pic;
++  chatSendsInFlight = 1;
++  assert.ok(reloadBlocked(), 'a chat message still sending');
++  chatSendsInFlight = 0;
++  assert.notOk(reloadBlocked());
++});
++
++// ── auth#3: camp switch asks before throwing away an unconfirmed score ──
++
++test('switching camps with an unconfirmed score asks first, and "no" keeps you here', () => {
++  freshState();
++  useFakeRef();
++  pendingWrites = 1;
++  const before = sandboxReloads();
++  const realConfirm = confirm;
++  confirm = () => false;
++  try {
++    switchCamp('senior');
++    assert.equal(sandboxReloads(), before, 'declined ⇒ no reload');
++    assert.notOk(localStorage.getItem('campScoreboardActiveCamp') === 'senior', 'and the camp key is untouched');
++  } finally { confirm = realConfirm; pendingWrites = 0; }
++  assert.notOk(hasUnsyncedWork());
++});
++
++function sandboxReloads() { return globalThis.__reloads || 0; }
+diff --git a/tests/sync.test.js b/tests/sync.test.js
+index cc6653f..94131a5 100644
+--- a/tests/sync.test.js
++++ b/tests/sync.test.js
+@@ -324,7 +324,7 @@ test('a new pairing or mode switch replaces the whole live node', () => {
+     'a fresh matchup must not inherit the old one leftover fields');
+ });
+ 
+-test('teams and meta are written whole', () => {
++test('teams are written whole (meta is per field — see sync-merge.test.js)', () => {
+   freshState();
+   const up = computeSyncUpdates({ teams: [{ id: 't0', name: 'A' }] }, { teams: [{ id: 't0', name: 'B' }] });
+   assert.deepEqual(Object.keys(up), ['teams']);
+-- 
+2.43.0
+
