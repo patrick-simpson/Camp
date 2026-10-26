@@ -217,7 +217,7 @@
             ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && $memberKey === auth.token.email.toLowerCase().replace('.', ',')) || (auth.token.phone_number != null && $memberKey === auth.token.phone_number)) && !newData.exists()",
             ".validate": "$deviceId.matches(/^[A-Za-z0-9_-]{8,64}$/) && newData.hasChildren(['endpoint', 'p256dh', 'auth', 'at', 'prefs'])",
             "endpoint": {
-              ".validate": "newData.isString() && newData.val().beginsWith('https://') && newData.val().length <= 1024"
+              ".validate": "newData.isString() && newData.val().length <= 1024 && newData.val().matches(/^https:\\/\\/([a-z0-9-]+\\.)*(google\\.com|googleapis\\.com|push\\.services\\.mozilla\\.com|push\\.apple\\.com|notify\\.windows\\.com)\\//)"
             },
             "p256dh": {
               ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{80,100}$/)"
@@ -540,7 +540,7 @@
             ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && $memberKey === auth.token.email.toLowerCase().replace('.', ',')) || (auth.token.phone_number != null && $memberKey === auth.token.phone_number)) && !newData.exists()",
             ".validate": "$deviceId.matches(/^[A-Za-z0-9_-]{8,64}$/) && newData.hasChildren(['endpoint', 'p256dh', 'auth', 'at', 'prefs'])",
             "endpoint": {
-              ".validate": "newData.isString() && newData.val().beginsWith('https://') && newData.val().length <= 1024"
+              ".validate": "newData.isString() && newData.val().length <= 1024 && newData.val().matches(/^https:\\/\\/([a-z0-9-]+\\.)*(google\\.com|googleapis\\.com|push\\.services\\.mozilla\\.com|push\\.apple\\.com|notify\\.windows\\.com)\\//)"
             },
             "p256dh": {
               ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{80,100}$/)"

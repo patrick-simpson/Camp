@@ -373,7 +373,7 @@ test('every push record field is pinned to the shape the client writes', () => {
   ROOTS.forEach((root) => {
     const dev = RULES[root].push.$memberKey.$deviceId;
     assert.ok(dev['.validate'].includes('$deviceId.matches(/^[A-Za-z0-9_-]{8,64}$/)'), `${root}: device ids are url-safe and bounded`);
-    assert.ok(dev.endpoint['.validate'].includes("beginsWith('https://')"), `${root}: endpoints are https only`);
+    assert.ok(dev.endpoint['.validate'].includes('matches(/^https:'), `${root}: endpoints are https only (and a known push host — see below)`);
     assert.ok(/length <= 1024/.test(dev.endpoint['.validate']), `${root}: and bounded`);
     assert.ok(dev.at['.validate'].includes('=== now'), `${root}: the stamp is the server's`);
     assert.ok(dev.team['.validate'].includes('/^t[0-9]$/'), `${root}: team is a team id`);
@@ -438,5 +438,20 @@ test('the phone-alert blocks are identical in both camps, modulo the root name',
   ['push', 'pushSchedule', 'pushAlerts'].forEach((p) => {
     const junior = JSON.stringify(RULES.campScoreboard[p]).replaceAll("'campScoreboard'", "'seniorScoreboard'");
     assert.equal(junior, JSON.stringify(RULES.seniorScoreboard[p]), `${p} differs between camps beyond the root name`);
+  });
+});
+
+test('a push endpoint must be a real push service (no relaying through the sender)', () => {
+  // Without this a member could store https://anything as their "phone" and
+  // have the alert sender POST to it on every message. The Worker enforces
+  // the same host list; this is the first line. Behaviour verified in the
+  // RTDB emulator (2026-10-26): fcm.googleapis.com, *.google.com, Apple,
+  // Mozilla and Windows accepted; look-alike hosts and plain http refused.
+  ROOTS.forEach((root) => {
+    const v = RULES[root].push.$memberKey.$deviceId.endpoint['.validate'];
+    ['google', 'googleapis', 'push\\.services\\.mozilla', 'push\\.apple', 'notify\\.windows'].forEach((h) => {
+      assert.ok(v.includes(h), `${root} endpoint allowlist names ${h}`);
+    });
+    assert.ok(v.includes('matches(/^https:'), `${root} endpoint must be anchored and https`);
   });
 });
