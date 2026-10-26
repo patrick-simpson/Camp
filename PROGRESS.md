@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Mon Oct 26, 5:30 PM ET** (update this line every time the file changes)
+Last updated: **Mon Oct 26, 6:15 PM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -64,14 +64,14 @@ Owner-confirmed requirements (interview complete, owner said "Yes, that's it"):
 |---|---|
 | Interview + design | ✅ done |
 | Spec written | ✅ `docs/build-notes/push-alerts-spec.md` |
-| Reliability hunt (8 read-only finders + 2 Sonnet skeptics per finding) | ⏳ running (workflow `wf_bc507e54-a46`) |
-| Worker sender build (`push-worker/`) | ⏳ running in worktree (workflow `wf_d55cf8b5-1b4`, agent 1) |
-| App side build (`push.js`, `sw.js`, rules, drawer UI) | ⏳ running in worktree (same workflow, agent 2) |
-| Merge both halves into the branch | ⬜ |
-| Add rotating camp jokes to the test alert (Worker `test` payload) | ⬜ |
-| E2E: real workerd (wrangler dev) + RTDB emulator + mock push service | ⬜ |
+| Reliability hunt: 8 finders done → 50 findings (~38 unique). Workflow stopped (only 2 verifiers at a time on this 4-CPU box); re-verifying with 7 parallel Sonnet agents, batches in scratchpad `verify-G1…G7-*.json` (copy of all findings: `docs/build-notes/reliability-findings.json`) | ⏳ verifying |
+| Worker sender build (`push-worker/`) | ✅ merged (commit b00e20b) |
+| App side build (`push.js`, `sw.js`, rules, drawer UI) | ✅ merged (commit fbc2647) |
+| Merge both halves into the branch | ✅ 312 tests green |
+| Add rotating camp jokes to the test alert (Worker `test` payload) | ✅ |
+| E2E: real workerd (wrangler dev) + RTDB emulator + mock push service | ✅ all green — saved as `tests/push-e2e/` (opt-in, README inside); FCM accepted real pushes (201) |
 | Apply confirmed reliability fixes | ⬜ |
-| Independent review pass (Sonnet reviewers, Opus final) | ⬜ |
+| Independent review pass (Sonnet reviewers, Opus final) | ⏳ 2 Sonnet reviewers running (app side + Worker) |
 | Version bump (all `?v=` + APP_VERSION + CODE_UPDATED_AT), docs (CLAUDE.md section) | ⬜ |
 | Push to `main`, verify live (curl checks in CLAUDE.md) | ⬜ |
 | Owner sets up the Cloudflare Worker (guide in `push-worker/README.md`) | ⬜ owner |
