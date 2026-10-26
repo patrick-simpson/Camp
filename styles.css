@@ -127,8 +127,37 @@ body.dark-theme {
    flash unstyled before vendor/jelly.js (a deferred module) registers them.
    Individual jelly elements get visible degraded fallbacks alongside their
    introduction (so a failed module load degrades, not disappears). */
-:not(:defined) {
+/* The hide is time-limited: boot-guard.js adds html.jelly-failed when the module
+   never defines its elements (network failure, or a browser that can't parse it
+   — iOS/iPadOS before 16.4 lack class static blocks). Without that escape hatch
+   every jelly-button, including "Continue with Google", stayed invisible and
+   unclickable forever. MUST stay wrapped in :where(): it keeps this rule at its
+   original (0,1,0) specificity, so the per-element pre-upgrade fallbacks below
+   (jelly-collapsible, jelly-tabs, jelly-drawer[open], …) still beat it. The
+   plain `html:not(.jelly-failed) :not(:defined)` form is (0,2,1) and would
+   quietly out-rank them all. */
+:where(html:not(.jelly-failed)) :not(:defined) {
   visibility: hidden;
+}
+
+/* Failed-module fallbacks (only reachable under html.jelly-failed, when nothing
+   upgrades): a bordered tap target so sign-in is possible, and card bodies shown
+   rather than display:none'd. app.js's click listeners attach to the plain
+   elements, so Google sign-in works once the button is visible. */
+html.jelly-failed jelly-button:not(:defined) {
+  display: inline-block;
+  padding: 0.7em 1.2em;
+  border: 1px solid currentColor;
+  border-radius: 12px;
+  cursor: pointer;
+  text-align: center;
+}
+html.jelly-failed jelly-button[block]:not(:defined) {
+  display: block;
+  width: 100%;
+}
+html.jelly-failed jelly-collapsible:not(:defined) > :not([slot="header"]) {
+  display: block;
 }
 
 /* Degraded-mode sheets: if the module never loads, an [open] drawer/dialog

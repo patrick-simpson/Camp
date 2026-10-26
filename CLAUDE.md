@@ -12,7 +12,12 @@ Files:
 - `index.html` — page shell
 - `boot-guard.js` — the pre-paint lock guard. Its own file ONLY so the CSP can
   refuse inline scripts entirely; must stay a classic (non-module, non-defer)
-  `<script>` in `<head>` or the app flashes before it locks
+  `<script>` in `<head>` or the app flashes before it locks. A second IIFE
+  in it adds `html.jelly-failed` when `vendor/jelly.js` never defines its
+  elements (request error, parse error — iOS < 16.4 can't parse it — or a 4 s
+  backstop), which lifts styles.css's hide of undefined custom elements
+  (`:where(html:not(.jelly-failed)) :not(:defined)` — the `:where()` is
+  load-bearing) so the Google sign-in button stays usable
 - `app.js` — main logic + the week schedule (`DAY_SCHEDULE`), ~6400 lines
 - `defaults.js` — the built-in default week: day list + full game catalog
   (`defaultConfig()`); live config then lives in synced state

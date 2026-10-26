@@ -48,3 +48,38 @@
     document.documentElement.classList.add('locked');
   }
 })();
+
+// Second, independent guard (its own IIFE so the framing/lock logic above can
+// never be affected by it): notice when vendor/jelly.js did not come up, and
+// say so with html.jelly-failed. styles.css hides every not-yet-defined custom
+// element to avoid a flash of unstyled controls while the deferred module
+// loads; if the module NEVER loads, that hide would be permanent — including
+// the Google sign-in button. Two ways it never loads: the request fails (flaky
+// camp wifi, most likely right after a deploy when every phone reloads at once)
+// or it can't be parsed (it uses class static blocks, which need iOS/iPadOS
+// 16.4+, so iPhone 6s/7/SE1 and iPad Air 2/mini 4 are permanently affected).
+// The class is withdrawn if the elements do appear after all (a slow fetch).
+(function () {
+  var root = document.documentElement;
+  function defined() {
+    return !!(window.customElements && window.customElements.get('jelly-button'));
+  }
+  // Every signal re-checks the one fact that matters, so a late runtime error
+  // thrown from inside a module that DID load can't trip it.
+  function check() { if (!defined()) root.classList.add('jelly-failed'); }
+  try {
+    // The module tag precedes this script in <head> and its fetch cannot have
+    // finished yet, so both listeners attach in time.
+    var tag = document.querySelector('script[src*="vendor/jelly.js"]');
+    if (tag) tag.addEventListener('error', check);          // network failure
+    window.addEventListener('error', function (e) {          // parse/evaluation failure
+      if (/jelly\.js/.test((e && e.filename) || '')) check();
+    });
+    setTimeout(check, 4000);                                  // backstop: nothing signalled
+    if (window.customElements && window.customElements.whenDefined) {
+      window.customElements.whenDefined('jelly-button').then(function () {
+        root.classList.remove('jelly-failed');
+      });
+    }
+  } catch (e) { /* a guard that can't run must never break the page */ }
+})();
