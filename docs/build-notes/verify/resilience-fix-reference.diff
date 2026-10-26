@@ -1,0 +1,153 @@
+--- app.head.js	2026-10-26 22:16:51.800797274 +0000
++++ fix/app.js	2026-10-26 22:14:04.749087263 +0000
+@@ -2702,6 +2702,9 @@
+     // just keeps the indicator honest until it lands.
+     el.textContent = '🔒 Sync blocked — your access changed';
+     el.classList.remove('synced');
++  } else if (sdkLoadFailed) {
++    el.textContent = '\u26a0\ufe0f Couldn\u2019t connect \u2014 read-only copy';
++    el.classList.remove('synced');
+   } else if (!syncEnabled() && !syncStarted && window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey && typeof firebase !== 'undefined' && firebase.auth) {
+     // Sync exists but hasn't been allowed to attach yet — sign-in and the
+     // membership check are still resolving in the background.
+@@ -3115,23 +3118,52 @@
+ 
+ function photoDB() {
+   if (!photoDBPromise) {
+-    photoDBPromise = new Promise((resolve, reject) => {
+-      const req = indexedDB.open(lsKey('campScoreboardPhotos'), 1); // per-camp photo store
++    const p = new Promise((resolve, reject) => {
++      let req;
++      try { req = indexedDB.open(lsKey('campScoreboardPhotos'), 1); } catch (e) { reject(e); return; } // per-camp photo store
+       req.onupgradeneeded = () => req.result.createObjectStore('photos');
+-      req.onsuccess = () => resolve(req.result);
++      req.onsuccess = () => {
++        const db = req.result;
++        // The browser can close a connection under us (iOS WebKit's "Connection
++        // to Indexed Database server lost", storage eviction, another tab's
++        // upgrade/delete). Forget it so the next operation reopens.
++        const forget = () => {
++          try { db.close(); } catch (e) { /* already closed */ }
++          if (photoDBPromise === p) photoDBPromise = null;
++        };
++        db.onclose = forget;
++        db.onversionchange = forget;
++        resolve(db);
++      };
+       req.onerror = () => reject(req.error);
+     });
++    photoDBPromise = p;
++    // Never cache a failed open — the next call should try again.
++    p.catch(() => { if (photoDBPromise === p) photoDBPromise = null; });
+   }
+   return photoDBPromise;
+ }
+ 
+-function idbOp(mode, fn) {
++// Resolves only once the transaction has COMMITTED (a request's onsuccess just
++// means it was accepted — a quota/disk failure can still abort the transaction
++// afterwards). A failure drops the cached connection and retries once on a
++// fresh one, which is what rescues a dead connection invisibly.
++function idbOp(mode, fn, retried) {
+   return photoDB().then((db) => new Promise((resolve, reject) => {
+-    const tx = db.transaction('photos', mode);
++    const tx = db.transaction('photos', mode); // throws on a dead connection → rejects
+     const req = fn(tx.objectStore('photos'));
+-    req.onsuccess = () => resolve(req.result);
++    let result;
++    req.onsuccess = () => { result = req.result; };
+     req.onerror = () => reject(req.error);
+-  }));
++    tx.oncomplete = () => resolve(result);
++    tx.onabort = () => reject(tx.error || req.error || new Error('photo transaction aborted'));
++  })).catch((e) => {
++    const old = photoDBPromise;
++    photoDBPromise = null;
++    if (old) old.then((db) => { try { db.close(); } catch (e2) { /* ignore */ } }, () => {});
++    if (retried) throw e;
++    return idbOp(mode, fn, true);
++  });
+ }
+ 
+ const putPhoto = (key, blob) => idbOp('readwrite', (s) => s.put(blob, key));
+@@ -7633,14 +7665,34 @@
+ 
+ // Entry point, from boot(). Initializes Firebase (the auth SDK needs the app
+ // before the database does) and subscribes to sign-in state.
++// True only when all three Firebase SDK scripts (app + auth + database) loaded.
++// They're separate cross-origin requests; on flaky wifi one can fail while the
++// same-origin page loads fine.
++function firebaseSdkReady() {
++  return typeof firebase !== 'undefined' && !!firebase.auth && !!firebase.database;
++}
++
++let sdkLoadFailed = false;
++
++// Entry point, from boot(). Initializes Firebase (the auth SDK needs the app
++// before the database does) and subscribes to sign-in state.
+ function startAuth() {
+   const cfg = window.FIREBASE_CONFIG;
+-  if (!cfg || !cfg.apiKey || typeof firebase === 'undefined' || !firebase.auth) {
+-    // No Firebase at all (local dev with the CDN blocked, or the SDK failed
+-    // to load). There is nothing to sign in TO — run local-only, view-only.
++  if (!cfg || !cfg.apiKey) {
++    // No Firebase config at all (local dev). There is nothing to sign in TO —
++    // run local-only.
+     startApp();
+     return;
+   }
++  if (!firebaseSdkReady()) {
++    // Production config but the SDK didn't load: a connectivity failure, NOT
++    // "local dev". Never paint an editable app that can't sync, and never fall
++    // through to handleAuthUser (a missing firebase.database used to surface
++    // there as "not on the camp list" and wipe the local data).
++    onSdkLoadFailed();
++    return;
++  }
++  try { sessionStorage.removeItem('campSdkRetries'); } catch (e) { /* fine */ }
+   try {
+     if (!firebase.apps.length) firebase.initializeApp(cfg);
+   } catch (e) {
+@@ -7653,6 +7705,42 @@
+   firebase.auth().onAuthStateChanged(handleAuthUser);
+ }
+ 
++function onSdkLoadFailed() {
++  sdkLoadFailed = true;
++  if (appStarted) {
++    // A hint-painted returning device: keep the cached copy readable, but it
++    // can't be confirmed OR synced, so it must not be editable. (The hint
++    // itself is left alone — the next load with the SDK paints as before.)
++    setMemberRole('viewer');
++  } else {
++    showAuthScreen('signin', { error: 'Couldn\u2019t reach the sign-in service \u2014 check your connection and reload.' });
++  }
++  updateSyncIndicator();
++  showSdkDownBanner();
++  // One bounded retry when connectivity returns or the phone wakes.
++  let tries = 0;
++  try { tries = Number(sessionStorage.getItem('campSdkRetries')) || 0; } catch (e) { /* fine */ }
++  if (tries >= 3) return;
++  const go = () => {
++    if (navigator.onLine === false) return;
++    try { sessionStorage.setItem('campSdkRetries', String(tries + 1)); } catch (e) { /* fine */ }
++    doReload();
++  };
++  window.addEventListener('online', go, { once: true });
++  document.addEventListener('visibilitychange', () => { if (!document.hidden) go(); }, { once: true });
++}
++
++function showSdkDownBanner() {
++  if (document.getElementById('sdk-banner')) return;
++  const bar = document.createElement('button');
++  bar.id = 'sdk-banner';
++  bar.className = 'update-banner';
++  bar.type = 'button';
++  bar.textContent = 'Couldn\u2019t connect \u2014 read-only copy. Tap to reload';
++  bar.addEventListener('click', doReload);
++  document.body.appendChild(bar);
++}
++
+ let memberRef = null; // this account's own campScoreboard/members entry
+ 
+ function handleAuthUser(user) {
