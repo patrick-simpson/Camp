@@ -19,6 +19,10 @@
        connect-src: *.firebaseio.com is a wildcard because Realtime Database's
        long-poll fallback connects to per-session subdomains. Adding a host to
        the app means adding it here, or the request is blocked.
+       PHONE ALERTS: when PUSH_SERVICE_URL in push.js is filled in, its exact
+       origin (https://camp-alerts.<account>.workers.dev) must be added to
+       connect-src — NOT a *.workers.dev wildcard, which would let the page
+       talk to anyone's Worker. Until then push.js makes no requests at all.
        DO NOT REMOVE apis.google.com or www.google.com from script-src/frame-src.
        They are not decoration: signInWithPopup pulls apis.google.com/js/api.js
        to build its auth iframe, and phone sign-in pulls reCAPTCHA from
@@ -294,10 +298,10 @@
     <div class="settings-body">
       <!-- The account row stays first — it's who-you-are, not a menu entry.
            Everything below it is ALPHABETICAL (owner's call, 2026-07-26):
-           Appearance · Camp · Change history · Set up the week · Sound ·
-           Stalling with Patrick · Who can sign in. Keep it that way when
-           adding rows. Signing out also clears the camp data cached locally
-           (see signOutAndClear). -->
+           Appearance · Camp · Change history · Phone alerts · Set up the
+           week · Sound · Stalling with Patrick · Who can sign in. Keep it
+           that way when adding rows. Signing out also clears the camp data
+           cached locally (see signOutAndClear). -->
       <div class="settings-row settings-row-account">
         <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🔑</span> <span id="account-label"></span></span>
         <jelly-button id="signout-btn" size="small" variant="platinum">Sign out</jelly-button>
@@ -322,6 +326,11 @@
       <!-- Editors only (hidden for view-only via CSS): opens the point-change log. -->
       <button id="history-row" class="settings-link" type="button">
         <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🕘</span> Change history</span>
+        <span class="settings-link-chevron" aria-hidden="true">›</span>
+      </button>
+      <!-- Everyone (viewers too): notifications that reach a CLOSED app. -->
+      <button id="alerts-row" class="settings-link" type="button">
+        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">📲</span> Phone alerts</span>
         <span class="settings-link-chevron" aria-hidden="true">›</span>
       </button>
       <!-- Editors only (hidden for view-only via CSS): the week builder. -->
@@ -361,6 +370,14 @@
   <jelly-drawer id="members-overlay" side="bottom" label="Who can sign in">
     <h2 class="settings-title">👥 Who can sign in</h2>
     <div class="settings-body" id="members-body"></div>
+  </jelly-drawer>
+
+  <!-- ── PHONE ALERTS (everyone: turn on Web Push for this phone and pick
+       what buzzes it; editors also send alerts and set the camp week) ───
+       Rendered by renderPushDrawer() in push.js. -->
+  <jelly-drawer id="alerts-overlay" side="bottom" label="Phone alerts">
+    <h2 class="settings-title">📲 Phone alerts</h2>
+    <div class="settings-body" id="alerts-body"></div>
   </jelly-drawer>
 
   <!-- ── TEAM PICKER (who are you rooting for?) ─────────────────── -->
@@ -409,6 +426,10 @@
   <!-- Camp Chat (channels, mentions, photos) — self-contained layer; delete
        this tag and the app runs exactly as before (all hooks typeof-guard). -->
   <script src="chat.js?v=181"></script>
+  <!-- Phone alerts (Web Push: the drawer, subscribing, the hooks chat and
+       sign-out call) — same optional-layer contract as chat.js: delete this
+       tag and the app runs exactly as before. -->
+  <script src="push.js?v=181"></script>
   <!-- Optional alternative sign-in methods. Delete a tag to remove that
        method (app.js only touches them through window.CampPhone /
        window.CampEmailLink); the Google button always remains. -->

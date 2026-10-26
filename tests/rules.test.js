@@ -35,7 +35,8 @@ test('nothing is granted at the database root — no cascading read or write', (
 });
 
 test('both camps exist and expose exactly the same set of gated paths', () => {
-  const expected = ['changelog', 'chat', 'chatPhotos', 'chatRate', 'config', 'members', 'presence', 'state'];
+  const expected = ['changelog', 'chat', 'chatPhotos', 'chatRate', 'config', 'members', 'presence',
+    'push', 'pushAlerts', 'pushSchedule', 'state'];
   ROOTS.forEach((r) => {
     assert.deepEqual(Object.keys(RULES[r]).filter((k) => !k.startsWith('.')).sort(), expected,
       `${r} covers every path the client touches — an ungated path is an open door`);
@@ -144,6 +145,11 @@ test('every object with named children also closes the door on unnamed ones', ()
     ['chat', '$channel', '$msgId'],
     ['chatPhotos', '$photoId'],
     ['members', '$memberKey'],
+    ['push', '$memberKey', '$deviceId'],
+    ['push', '$memberKey', '$deviceId', 'prefs'],
+    ['push', '$memberKey', '$deviceId', 'prefs', 'ch'],
+    ['pushSchedule'],
+    ['pushSchedule', 'blocks', '$blockId'],
   ];
   ROOTS.forEach((root) => {
     shouldSeal.forEach((p) => {
@@ -299,5 +305,125 @@ test('config type-pins match the keys the client actually pushes', () => {
     // set() of configForSync() output — the write never carries an unknown key,
     // and being a set() it prunes any stray already there.
     assert.equal(cf.$other['.validate'], false, `${root}/config refuses unknown keys`);
+  });
+});
+
+// ── Phone alerts (Web Push) ────────────────────────────────────────
+// Three nodes per camp: push/<memberKey>/<deviceId> (one record per person per
+// phone — its endpoint, encryption keys and what it wants to hear about),
+// pushSchedule (the week, published by an editor's device because the sender
+// can't run camps.js), and pushAlerts (the sender's log of director alerts).
+// The sender itself is a Cloudflare Worker with admin credentials, which the
+// rules don't govern — so every rule here is about what a SIGNED-IN CLIENT
+// may do.
+
+test('a push record is readable and writable only by its owner', () => {
+  // An endpoint plus its keys is enough to send that phone notifications
+  // without the sender, so nobody else — editors included — may read them.
+  ROOTS.forEach((root) => {
+    const push = RULES[root].push;
+    assert.equal(push['.read'], undefined, `${root}: nothing is readable at push/ itself`);
+    assert.equal(push['.write'], undefined, `${root}: nothing is writable at push/ itself`);
+    const mk = push.$memberKey;
+    assert.ok(mk['.read'].includes('$memberKey === auth.token.email') && mk['.read'].includes('$memberKey === auth.token.phone_number'),
+      `${root}: read is bound to the caller's own key (email or phone)`);
+    assert.ok(/members/.test(mk['.read']), `${root}: and to being a member`);
+    assert.ok(mk['.write'].includes('$memberKey === auth.token.email') && mk['.write'].includes('$memberKey === auth.token.phone_number'),
+      `${root}: write is bound to the caller's own key`);
+  });
+});
+
+test("a removed member can still delete their own push record, but can't create one", () => {
+  // Sign-out deletes this phone's records while still signed in; someone just
+  // removed from the list must be able to do the same (their phone should stop
+  // buzzing), while creating needs current membership.
+  ROOTS.forEach((root) => {
+    const w = RULES[root].push.$memberKey['.write'];
+    const i = w.indexOf('!newData.exists() ||');
+    assert.ok(i > -1, `${root}: deletion has its own branch`);
+    assert.notOk(w.slice(0, i).includes('members'), `${root}: the delete branch doesn't require membership`);
+    assert.ok(w.slice(i).includes(`child('${root}').child('members')`), `${root}: but writing data does`);
+    assert.ok(w.slice(0, i).includes('$memberKey ==='), `${root}: and either way it's only your OWN key`);
+    // A rule's newData is the node AT the rule, so the branch above only
+    // covers deleting the whole subtree. Deleting ONE phone while another
+    // remains needs its own grant at the device level (verified against the
+    // emulator — without it, that delete required membership).
+    const dw = RULES[root].push.$memberKey.$deviceId['.write'];
+    assert.ok(dw && dw.endsWith('&& !newData.exists()'), `${root}: a single device record is owner-deletable`);
+    assert.ok(dw.includes('$memberKey === auth.token.email') && dw.includes('$memberKey === auth.token.phone_number'),
+      `${root}: and only by its owner`);
+    assert.notOk(dw.includes('members'), `${root}: membership not required to delete`);
+  });
+});
+
+test('every push record field is pinned to the shape the client writes', () => {
+  ROOTS.forEach((root) => {
+    const dev = RULES[root].push.$memberKey.$deviceId;
+    assert.ok(dev['.validate'].includes('$deviceId.matches(/^[A-Za-z0-9_-]{8,64}$/)'), `${root}: device ids are url-safe and bounded`);
+    assert.ok(dev.endpoint['.validate'].includes("beginsWith('https://')"), `${root}: endpoints are https only`);
+    assert.ok(/length <= 1024/.test(dev.endpoint['.validate']), `${root}: and bounded`);
+    assert.ok(dev.at['.validate'].includes('=== now'), `${root}: the stamp is the server's`);
+    assert.ok(dev.team['.validate'].includes('/^t[0-9]$/'), `${root}: team is a team id`);
+    assert.ok(/length <= 40/.test(dev.label['.validate']), `${root}: device label is capped`);
+    const prefs = dev.prefs;
+    assert.ok(prefs.lead['.validate'].includes('=== 5') && prefs.lead['.validate'].includes('=== 10') && prefs.lead['.validate'].includes('=== 15'),
+      `${root}: lead is one of 5/10/15`);
+    assert.ok(prefs.blocks.$key['.validate'].includes('newData.val() === true'), `${root}: block subscriptions are true-only`);
+    // The channel switches name exactly the chat channels — same contract as
+    // the chat rules, so adding a channel means a rules re-paste here too.
+    const ch = Object.keys(prefs.ch).filter((k) => !k.startsWith('.') && k !== '$other').sort();
+    assert.deepEqual(ch, chatChannels().map((c) => c.id).sort(), `${root}: prefs.ch names exactly the chat channels`);
+  });
+});
+
+test('every object in the push nodes closes the door on unnamed children', () => {
+  // A generic sweep rather than a list, so a field added later can't forget it.
+  const sweep = (node, path, out) => {
+    if (!node || typeof node !== 'object') return out;
+    const named = Object.keys(node).filter((k) => !k.startsWith('.') && !k.startsWith('$'));
+    if (named.length) out.push({ path, sealed: !!(node.$other && node.$other['.validate'] === false) });
+    Object.keys(node).filter((k) => !k.startsWith('.')).forEach((k) => sweep(node[k], path + '/' + k, out));
+    return out;
+  };
+  ROOTS.forEach((root) => {
+    ['push', 'pushSchedule'].forEach((p) => {
+      const found = sweep(RULES[root][p], root + '/' + p, []);
+      assert.ok(found.length > 0, `${root}/${p} has records to check`);
+      found.forEach(({ path, sealed }) => assert.ok(sealed, `${path} must reject unknown children`));
+    });
+  });
+});
+
+test('pushAlerts is written by the sender only; editors read it', () => {
+  ROOTS.forEach((root) => {
+    const a = RULES[root].pushAlerts;
+    assert.equal(a['.write'], false, `${root}: no client may write the alert log — the Worker does, with admin`);
+    assert.ok(/role'?\)?\.val\(\) == 'editor'/.test(a['.read']), `${root}: the log is editor-read`);
+    assert.notOk(walk(a, [], []).some((r) => r.rule === '.write' && r.expr !== false),
+      `${root}: nothing under pushAlerts re-opens a write`);
+  });
+});
+
+test('pushSchedule: members read it, only editors publish it, every field pinned', () => {
+  ROOTS.forEach((root) => {
+    const s = RULES[root].pushSchedule;
+    assert.ok(/members/.test(s['.read']) && /email_verified/.test(s['.read']), `${root}: member read`);
+    assert.ok(/role'?\)?\.val\(\) == 'editor'/.test(s['.write']), `${root}: editor-only write`);
+    assert.ok(s.weekStart['.validate'].includes('matches(/^20[0-9]{2}-[0-1][0-9]-[0-3][0-9]$/)'), `${root}: weekStart is a date`);
+    assert.ok(s.at['.validate'].includes('=== now'), `${root}: stamped by the server`);
+    const b = s.blocks.$blockId;
+    assert.ok(b['.validate'].includes('$blockId.matches(/^[a-z0-9-]{1,40}$/)'), `${root}: block ids are path-safe`);
+    assert.ok(b.dow['.validate'].includes('<= 6') && b.start['.validate'].includes('<= 1439'), `${root}: dow/start are in range`);
+    assert.ok(b.key['.validate'].includes('/^[a-z0-9-]{1,48}$/'), `${root}: keys match the subscription key format`);
+  });
+});
+
+test('the phone-alert blocks are identical in both camps, modulo the root name', () => {
+  // Same discipline as every other block: senior is junior with only the
+  // members-lookup root swapped. A hand-edit to one camp would silently
+  // diverge the two.
+  ['push', 'pushSchedule', 'pushAlerts'].forEach((p) => {
+    const junior = JSON.stringify(RULES.campScoreboard[p]).replaceAll("'campScoreboard'", "'seniorScoreboard'");
+    assert.equal(junior, JSON.stringify(RULES.seniorScoreboard[p]), `${p} differs between camps beyond the root name`);
   });
 });
