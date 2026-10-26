@@ -2755,6 +2755,10 @@ function findNextMatchupFor(teamId) {
 
 let fbConnected = false; // live RTDB connection state (.info/connected)
 let fbConnKnown = false; // first .info/connected callback received
+// The Firebase SDK scripts (or the member read) failed on a device that has a
+// production config — a connectivity failure, not "local dev". Declared up here
+// because updateSyncIndicator reads it; set by onSdkLoadFailed (auth gate).
+let sdkLoadFailed = false;
 
 function updateSyncIndicator() {
   const el = document.getElementById('sync-status');
@@ -2764,6 +2768,9 @@ function updateSyncIndicator() {
     // access changed mid-session. The member listener handles the kick; this
     // just keeps the indicator honest until it lands.
     el.textContent = '🔒 Sync blocked — your access changed';
+    el.classList.remove('synced');
+  } else if (sdkLoadFailed) {
+    el.textContent = '⚠️ Couldn’t connect — read-only copy';
     el.classList.remove('synced');
   } else if (!syncEnabled() && !syncStarted && window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey && typeof firebase !== 'undefined' && firebase.auth) {
     // Sync exists but hasn't been allowed to attach yet — sign-in and the
@@ -3175,26 +3182,65 @@ function tickBoardClocks() {
 // ── Photo storage (IndexedDB — photos are too big for localStorage) ──
 
 let photoDBPromise = null;
+let photoDBConn = null; // the open connection photoDBPromise resolved to
+
+// Forget a connection — and close it — but only if it is still THE cached one:
+// a concurrent operation may already have reopened a fresh connection, and
+// that one must survive.
+function dropPhotoDB(db) {
+  try { db.close(); } catch (e) { /* already closed */ }
+  if (photoDBConn === db) { photoDBConn = null; photoDBPromise = null; }
+}
 
 function photoDB() {
   if (!photoDBPromise) {
-    photoDBPromise = new Promise((resolve, reject) => {
-      const req = indexedDB.open(lsKey('campScoreboardPhotos'), 1); // per-camp photo store
+    const p = new Promise((resolve, reject) => {
+      let req;
+      try { req = indexedDB.open(lsKey('campScoreboardPhotos'), 1); } catch (e) { reject(e); return; } // per-camp photo store
       req.onupgradeneeded = () => req.result.createObjectStore('photos');
-      req.onsuccess = () => resolve(req.result);
+      req.onsuccess = () => {
+        const db = req.result;
+        photoDBConn = db;
+        // The browser can close a connection under us (iOS WebKit's
+        // "Connection to Indexed Database server lost", storage eviction,
+        // another tab's upgrade/delete). Forget it so the next operation
+        // reopens instead of failing against a dead handle for the rest of
+        // the session.
+        db.onclose = () => dropPhotoDB(db);
+        db.onversionchange = () => dropPhotoDB(db);
+        resolve(db);
+      };
       req.onerror = () => reject(req.error);
     });
+    photoDBPromise = p;
+    // Never cache a failed open — the next call should try again.
+    p.catch(() => { if (photoDBPromise === p) photoDBPromise = null; });
   }
   return photoDBPromise;
 }
 
-function idbOp(mode, fn) {
+// Resolves only once the transaction has COMMITTED. A request's onsuccess just
+// means it was accepted — a quota or disk failure can still abort the
+// transaction afterwards, and a photo reported "saved" that never landed is
+// worse than an error. Any failure drops the connection it used and retries
+// ONCE on a fresh one, which is what rescues a dead connection invisibly (the
+// ops are idempotent: put/get/delete/clear).
+function idbOp(mode, fn, retried) {
+  let used = null;
   return photoDB().then((db) => new Promise((resolve, reject) => {
-    const tx = db.transaction('photos', mode);
+    used = db;
+    const tx = db.transaction('photos', mode); // throws on a dead connection → rejects
     const req = fn(tx.objectStore('photos'));
-    req.onsuccess = () => resolve(req.result);
+    let result;
+    req.onsuccess = () => { result = req.result; };
     req.onerror = () => reject(req.error);
-  }));
+    tx.oncomplete = () => resolve(result);
+    tx.onabort = () => reject(tx.error || req.error || new Error('photo transaction aborted'));
+  })).catch((e) => {
+    if (used) dropPhotoDB(used);
+    if (retried) throw e;
+    return idbOp(mode, fn, true);
+  });
 }
 
 const putPhoto = (key, blob) => idbOp('readwrite', (s) => s.put(blob, key));
@@ -7671,6 +7717,9 @@ function wireAuthScreen() {
   const googleBtn = document.getElementById('google-signin-btn');
   if (googleBtn) {
     googleBtn.addEventListener('click', () => {
+      // No SDK to sign in WITH (see onSdkLoadFailed): the useful thing a tap
+      // can do is try loading it again.
+      if (sdkLoadFailed) { doReload(); return; }
       hideLockError();
       // signInWithPopup must be called synchronously inside the click handler
       // — any await first and Safari/iOS drops the user gesture and blocks
@@ -7694,16 +7743,36 @@ function wireAuthScreen() {
   if (retryBtn) retryBtn.addEventListener('click', () => location.reload());
 }
 
+// True only when all three Firebase SDK scripts (app + auth + database)
+// loaded. They are separate cross-origin requests (index.html, SRI-pinned), so
+// on flaky camp wifi one can fail — or be refused for a wrong hash — while the
+// same-origin page loads fine.
+function firebaseSdkReady() {
+  return typeof firebase !== 'undefined' && !!firebase.auth && !!firebase.database;
+}
+
+const SDK_RETRIES_KEY = 'campSdkRetries'; // sessionStorage: auto-reloads spent on a missing SDK
+const SDK_MAX_RETRIES = 3;
+
 // Entry point, from boot(). Initializes Firebase (the auth SDK needs the app
 // before the database does) and subscribes to sign-in state.
 function startAuth() {
   const cfg = window.FIREBASE_CONFIG;
-  if (!cfg || !cfg.apiKey || typeof firebase === 'undefined' || !firebase.auth) {
-    // No Firebase at all (local dev with the CDN blocked, or the SDK failed
-    // to load). There is nothing to sign in TO — run local-only, view-only.
+  if (!cfg || !cfg.apiKey) {
+    // No Firebase config at all (local dev). There is nothing to sign in TO —
+    // run local-only.
     startApp();
     return;
   }
+  if (!firebaseSdkReady()) {
+    // A production config but the SDK didn't load: a connectivity failure, NOT
+    // "local dev". Never paint an editable app that can never sync, and never
+    // fall through to handleAuthUser — a missing firebase.database used to
+    // surface there as "not on the camp list" and wipe the local data.
+    onSdkLoadFailed();
+    return;
+  }
+  try { sessionStorage.removeItem(SDK_RETRIES_KEY); } catch (e) { /* fine */ }
   try {
     if (!firebase.apps.length) firebase.initializeApp(cfg);
   } catch (e) {
@@ -7714,6 +7783,55 @@ function startAuth() {
   // alongside) the state subscription — success lands in handleAuthUser.
   if (window.CampEmailLink) window.CampEmailLink.completeSignInIfLink();
   firebase.auth().onAuthStateChanged(handleAuthUser);
+}
+
+// The sign-in/sync layer can't run (SDK scripts missing, or the member read
+// couldn't even be attempted). Whatever this device is showing can be neither
+// confirmed nor synced, so it must not be EDITABLE: a hint-painted returning
+// editor is downgraded to viewer for this session — the hint and the cached
+// camp data are deliberately left alone, so the next load that gets the SDK
+// paints exactly as before and nothing entered offline is thrown away. A
+// device with nothing painted gets the sign-in screen with the reason. Either
+// way the way out is visible (the tap-to-reload bar) and a couple of
+// reloads are tried by themselves when connectivity returns.
+function onSdkLoadFailed(msg) {
+  sdkLoadFailed = true;
+  if (appStarted) {
+    setMemberRole('viewer');
+  } else {
+    showAuthScreen('signin', { error: msg || 'Couldn\u2019t reach the sign-in service \u2014 check your connection and reload.' });
+  }
+  updateSyncIndicator();
+  showSdkDownBanner();
+  // Bounded: SDK_MAX_RETRIES reloads per tab session (reset once the SDK loads,
+  // see startAuth), each fired when the network is back or the phone wakes.
+  let tries = 0;
+  try { tries = Number(sessionStorage.getItem(SDK_RETRIES_KEY)) || 0; } catch (e) { /* fine */ }
+  if (tries >= SDK_MAX_RETRIES) return;
+  let fired = false;
+  const go = () => {
+    if (fired || navigator.onLine === false) return;
+    fired = true;
+    try { sessionStorage.setItem(SDK_RETRIES_KEY, String(tries + 1)); } catch (e) { /* fine */ }
+    doReload();
+  };
+  window.addEventListener('online', go);
+  // Not { once: true }: going HIDDEN is also a visibilitychange, and would
+  // spend the listener before the phone ever woke up again.
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) go(); });
+}
+
+function showSdkDownBanner() {
+  if (document.getElementById('sdk-banner')) return;
+  // A plain button on purpose: this is recovery UI for a page whose scripts
+  // are failing, so it can't lean on the jelly module having loaded.
+  const bar = document.createElement('button');
+  bar.id = 'sdk-banner';
+  bar.className = 'update-banner';
+  bar.type = 'button';
+  bar.textContent = 'Couldn\u2019t connect \u2014 read-only copy. Tap to reload';
+  bar.addEventListener('click', doReload);
+  document.body.appendChild(bar);
 }
 
 let memberRef = null; // this account's own campScoreboard/members entry
@@ -7743,8 +7861,13 @@ function handleAuthUser(user) {
     memberRef = firebase.database().ref(dbPath('members/' + key));
     memberRef.on('value', onMemberSnapshot, onMemberReadError);
   } catch (e) {
+    // An exception here is infrastructure (a half-loaded SDK, blocked storage),
+    // NOT "this account isn't on the list" — the illegal-key case this catch
+    // used to stand in for is isValidMemberKey's job above. denyMemberFinal
+    // would wipe the cached camp data (offline-entered scores included) and tell
+    // an approved director they have been removed. Show a reloadable error.
     console.warn('member ref failed', e);
-    denyMemberFinal();
+    onSdkLoadFailed('Couldn\u2019t reach the camp database \u2014 check your connection and reload.');
   }
 }
 

@@ -105,7 +105,10 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
    **If you bump the Firebase SDK version**, the three `<script>` tags in
    `index.html` and `current-standings.html` carry `integrity="sha384-…"`
    hashes pinned to `10.12.0`. New version ⇒ recompute them, or the SDK is
-   blocked and the app dies at "Checking sign-in…":
+   blocked and nobody can sign in or sync (`firebaseSdkReady()` fails →
+   `onSdkLoadFailed`: a "Couldn't reach the sign-in service" screen, or a
+   read-only copy with a tap-to-reload bar on a returning device — it keeps
+   the hint and cache, never wipes, and retries a few times on its own):
    `curl -s <url> | openssl dgst -sha384 -binary | openssl base64 -A`.
    **If you add an external host** (a new API, a font, an image CDN), add it
    to the `Content-Security-Policy` meta tag in `index.html` too, or the
