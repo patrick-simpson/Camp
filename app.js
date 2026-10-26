@@ -7114,7 +7114,7 @@ function renderAnnouncements() {
   const active = activeAnnouncements().concat(fromChat)
     .sort((a, b) => String(b.at).localeCompare(String(a.at)));
   const editor = canEdit();
-  if (!active.length && !editor) { wrap.hidden = true; wrap.innerHTML = ''; return; }
+  if (!active.length && !editor) { wrap.hidden = true; wrap.innerHTML = ''; wrap.__lastHtml = ''; return; }
 
   const banners = active.map((a) => `
     <div class="announce-banner" role="status">
@@ -7139,8 +7139,24 @@ function renderAnnouncements() {
       <jelly-button id="announce-post-btn" size="small" class="primary-btn">📣 Post</jelly-button>
     </form>${ttlChips}` : `<button id="announce-open-btn" class="link-btn announce-open-btn">📣 Post an announcement</button>`;
 
+  // This runs every 30 s (and for each Announcements-channel chat message):
+  // rebuilding identical markup would wipe whatever an editor is typing in
+  // the composer and drop the keyboard. Same markup ⇒ leave the live nodes
+  // (and their listeners) alone; a real change ⇒ rebuild, carrying the
+  // half-typed text across.
+  const html = banners + composer;
+  if (wrap.__lastHtml === html && !wrap.hidden) return;
+  const oldInput = document.getElementById('announce-input');
+  const draft = oldInput ? oldInput.value : '';
+  const hadFocus = !!(oldInput && document.activeElement === oldInput);
   wrap.hidden = false;
-  wrap.innerHTML = banners + composer;
+  wrap.innerHTML = html;
+  wrap.__lastHtml = html;
+  const newInput = document.getElementById('announce-input');
+  if (newInput && draft) {
+    newInput.value = draft;
+    if (hadFocus) newInput.focus();
+  }
 
   wrap.querySelectorAll('.announce-dismiss').forEach((btn) => {
     btn.addEventListener('click', () => { dismissAnnouncement(btn.dataset.annId); renderAnnouncements(); });

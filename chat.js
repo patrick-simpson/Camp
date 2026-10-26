@@ -45,6 +45,9 @@ let chatLastSendAt = 0;
 // cleared the moment a message is sent, so a reload mid-send would lose it
 // with nowhere to give the words back.
 let chatSendsInFlight = 0;
+let chatPhotosInFlight = 0;         // keeps 📷 disabled across a view rebuild
+let chatSendTail = Promise.resolve(); // sends go out one after another (chatAtomicSend)
+let chatLastAckAt = 0;                // device time the previous send was acknowledged
 
 let chatMsgs = {};        // channelId -> [{id, at, byKey, name, text, thumb, photoId}] sorted by at
 let chatReady = {};       // channelId -> true once the initial backlog has fully arrived
@@ -144,26 +147,55 @@ function onChatMsgAdded(ch, snap) {
   // The window slides: once past CHAT_WINDOW the oldest fell off the query,
   // keep memory bounded the same way.
   if (list.length > CHAT_WINDOW) list.splice(0, list.length - CHAT_WINDOW);
-  if (chatReady[ch]) {
+  // A live message that sorts FIRST isn't new: it's the window back-filling
+  // (a delete or a refused send in a full channel pulls the 51st-newest
+  // message back in as child_added). Announcing it would re-alert an old
+  // message and append it at the bottom out of order. A genuinely new
+  // message never sorts before everything already in the window.
+  const backfill = !!chatReady[ch] && list.length > 1 && list[0].id === msg.id;
+  // Drawn whenever its channel is the one built on screen — even with the tab
+  // in the background, or it would be missing on return (and already marked
+  // read). Only marking it seen needs the person to actually be looking.
+  const shownHere = chatOpenNow() && chatViewBuiltFor === ch;
+  if (chatReady[ch] && !backfill) {
     notifyChatMessage(ch, msg);
-    if (chatViewingChannel() === ch) {
-      markChannelSeen(ch);
-      appendChatBubble(ch, msg);
-    }
+    if (shownHere) appendChatBubble(ch, msg);
+    if (chatViewingChannel() === ch) markChannelSeen(ch);
+  } else if (backfill && shownHere) {
+    renderChatView(true); // lands at the top; the composer is carried across
   }
   // Announcements-channel messages also ride the top banner strip for 15
   // minutes (renderAnnouncements merges chatAnnouncementBanners in).
   if (ch === 'announcements' && typeof renderAnnouncements === 'function') renderAnnouncements();
   renderChatCard();
+  renderChatBadges();
 }
 
 function onChatMsgRemoved(ch, snap) {
   const list = chatMsgs[ch] = chatMsgs[ch] || [];
   const i = list.findIndex((m) => m.id === snap.key);
   if (i > -1) list.splice(i, 1);
+  // Remove just that bubble. In a full channel EVERY new message first
+  // removes the oldest (the limitToLast window slides), and a full rebuild
+  // here wiped the half-typed message and dropped the keyboard each time.
+  if (chatOpenNow() && chatViewBuiltFor === ch) removeChatBubble(snap.key);
   renderChatCard();
+  renderChatBadges();
   if (ch === 'announcements' && typeof renderAnnouncements === 'function') renderAnnouncements();
-  if (chatViewingChannel() === ch) renderChatView(true);
+}
+
+function removeChatBubble(id) {
+  const listEl = document.getElementById('chat-list');
+  if (!listEl) return;
+  const bubble = Array.from(listEl.children || []).find((el) =>
+    el.classList && el.classList.contains('chat-bubble') && el.dataset && el.dataset.msgId === id);
+  if (!bubble) return;
+  const before = bubble.previousElementSibling;
+  const after = bubble.nextElementSibling;
+  bubble.remove();
+  // A day separator with no messages left under it goes too.
+  if (before && before.classList.contains('chat-day-sep') && (!after || after.classList.contains('chat-day-sep'))) before.remove();
+  if (!listEl.querySelector('.chat-bubble')) renderChatView(true); // emptied ⇒ show the "say hi" note
 }
 
 // ── Sending ───────────────────────────────────────────────────────
@@ -201,12 +233,27 @@ function chatDisplayName() {
 // paste, and once the paste lands the retry simply stops happening.
 function chatAtomicSend(updates, rateKey) {
   const rootRef = () => firebase.database().ref(CAMP.dbRoot);
-  const stamp = () => { chatLastSendAt = Date.now(); };
-  return rootRef().update(updates).then(stamp).catch((err) => {
-    const withoutStamp = {};
-    Object.keys(updates).forEach((k) => { if (k !== rateKey) withoutStamp[k] = updates[k]; });
-    return rootRef().update(withoutStamp).then(stamp).catch(() => { throw err; });
-  });
+  const stamp = () => { chatLastAckAt = chatLastSendAt = Date.now(); };
+  const wait = (ms) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
+  const withoutStamp = {};
+  Object.keys(updates).forEach((k) => { if (k !== rateKey) withoutStamp[k] = updates[k]; });
+  // ONE send at a time, each starting a full CHAT_MIN_SEND_MS after the
+  // previous one was acknowledged. The rules measure the 1 s floor from the
+  // previous write's SERVER time, so a caption typed while a photo is still
+  // uploading — or three messages queued while offline and replayed on
+  // reconnect — used to arrive back to back and be refused, words and all
+  // (reproduced against the emulator, 2026-10-26). Retry once after a beat
+  // with the stamp (same push id, so never a duplicate); the stamp-less
+  // attempt is only a last resort for a ruleset that predates chatRate.
+  const go = () => wait(chatLastAckAt + CHAT_MIN_SEND_MS - Date.now())
+    .then(() => rootRef().update(updates)).then(stamp)
+    .catch((err) => wait(CHAT_MIN_SEND_MS)
+      .then(() => rootRef().update(updates)).then(stamp)
+      .catch(() => rootRef().update(withoutStamp).then(stamp))
+      .catch(() => { throw err; }));
+  const p = chatSendTail.then(go, go);
+  chatSendTail = p.catch(() => {});
+  return p;
 }
 
 // Who a message is FROM, for display. `byKey` is the only trustworthy field on
@@ -281,10 +328,15 @@ function sendChatMessage(ch) {
   if (input) input.value = '';
   const id = firebase.database().ref(dbPath('chat/' + ch)).push().key;
   const rateKey = 'chatRate/' + myKey;
+  if (chatSendsInFlight > 0) showToast('⏳ Sending right after the previous one…');
   chatSendsInFlight += 1;
   chatAtomicSend({ ['chat/' + ch + '/' + id]: msg, [rateKey]: firebase.database.ServerValue.TIMESTAMP }, rateKey)
     .then(() => chatNotifyPhones(ch, id, text), () => {
-      if (input && !input.value) input.value = text; // give the words back
+      // Look the composer up NOW: a refusal arrives after the optimistic
+      // message was removed again, which may have rebuilt the view — the
+      // element captured at send time could be detached by then.
+      const box = document.getElementById('chat-input');
+      if (box && state.ui.chatChannel === ch && !box.value) box.value = text; // give the words back
       showToast("Couldn't send — check your connection and try again.");
     })
     .then(() => { chatSendsInFlight = Math.max(0, chatSendsInFlight - 1); });
@@ -318,6 +370,7 @@ function sendChatPhoto(ch, file) {
   const btn = document.getElementById('chat-photo-btn');
   if (btn) btn.setAttribute('disabled', '');
   chatSendsInFlight += 1;
+  chatPhotosInFlight += 1;
   makeChatImages(file)
     .then(({ full, thumb }) => {
       const photoId = firebase.database().ref(dbPath('chatPhotos')).push().key;
@@ -341,7 +394,10 @@ function sendChatPhoto(ch, file) {
     .catch(() => showToast("Couldn't send the photo — try a different one, or check your connection."))
     .then(() => {
       chatSendsInFlight = Math.max(0, chatSendsInFlight - 1);
-      if (btn) btn.removeAttribute('disabled');
+      chatPhotosInFlight = Math.max(0, chatPhotosInFlight - 1);
+      // The view may have been rebuilt meanwhile — re-enable the CURRENT button.
+      const now = document.getElementById('chat-photo-btn');
+      if (now && !chatPhotosInFlight) now.removeAttribute('disabled');
     });
 }
 
@@ -558,7 +614,14 @@ function readChatSeen() {
 
 function markChannelSeen(ch) {
   const seen = readChatSeen();
-  seen[ch] = serverNow();
+  // serverNow() can run a little BEHIND a message's server stamp (the offset
+  // misses the handshake's one-way latency), which would leave the message
+  // being read counted as unread. Never mark less than the newest message on
+  // screen — capped just past now, so a skewed future `at` can't pre-mark
+  // the next minute of messages as seen.
+  const shown = chatMsgs[ch] || [];
+  const newest = shown.length ? Math.min(shown[shown.length - 1].at || 0, serverNow() + 5000) : 0;
+  seen[ch] = Math.max(serverNow(), newest);
   try { localStorage.setItem(lsKey(CHAT_SEEN_KEY), JSON.stringify(seen)); } catch (e) { /* fine */ }
   renderChatCard();
   renderChatBadges();
@@ -846,6 +909,19 @@ function renderChatView(force) {
   if (!view) return;
   const ch = state.ui.chatChannel || 'general';
   if (!force && chatViewBuiltFor === ch) { renderChatBadges(); return; }
+  // A forced rebuild of the SAME channel (directory arrived, a back-fill, the
+  // view emptied) must not cost the person their half-typed message, their
+  // keyboard, or their place in the history. Switching channels starts clean.
+  const sameCh = chatViewBuiltFor === ch;
+  const oldInput = sameCh ? document.getElementById('chat-input') : null;
+  const oldList = sameCh ? document.getElementById('chat-list') : null;
+  const carry = oldInput ? {
+    value: oldInput.value || '',
+    focused: document.activeElement === oldInput,
+    start: oldInput.selectionStart, end: oldInput.selectionEnd,
+  } : null;
+  const keepScroll = oldList && (oldList.scrollHeight - oldList.scrollTop - oldList.clientHeight >= 80)
+    ? oldList.scrollTop : null;
   chatViewBuiltFor = ch;
   const c = chatChannelById(ch) || chatChannels()[0] || { id: ch, label: ch, emoji: '💬' };
 
@@ -876,7 +952,19 @@ function renderChatView(force) {
 
   renderChatBadges();
   wireChatView(ch);
-  chatScrollToBottom();
+  const input = document.getElementById('chat-input');
+  if (input && carry) {
+    if (carry.value) input.value = carry.value;
+    if (carry.focused) {
+      input.focus();
+      try { if (carry.start != null) input.setSelectionRange(carry.start, carry.end); } catch (e) { /* fine */ }
+    }
+  }
+  const photoBtn = document.getElementById('chat-photo-btn');
+  if (photoBtn && chatPhotosInFlight) photoBtn.setAttribute('disabled', '');
+  const listEl = document.getElementById('chat-list');
+  if (listEl && keepScroll != null) listEl.scrollTop = keepScroll;
+  else chatScrollToBottom();
 }
 
 function wireChatView(ch) {
