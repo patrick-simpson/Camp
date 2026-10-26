@@ -136,3 +136,81 @@ test('rankTeamsByPoints breaks point ties by medal quality', () => {
   assert.deepEqual(rankTeamsByPoints(counts).map((t) => t.id), ['t2', 't1', 't0'],
     'more points first; on a tie the team with the gold outranks the one with two silvers');
 });
+
+// ── Changelog entries must fit the database rules ─────────────────
+// The rules cap reason at 500, team at 60, by at 80. A refused push is
+// swallowed, so an over-long reason = a silently missing audit entry (a backup
+// restore with 15+ scored games used to produce exactly that).
+
+test('changelogReason: short lists pass through untouched', () => {
+  assert.equal(changelogReason([]), 'Points updated');
+  assert.equal(changelogReason(['Shields — result saved']), 'Shields — result saved');
+  assert.equal(changelogReason(['A — result saved', 'B — result saved']), 'A — result saved; B — result saved');
+});
+
+test('changelogReason: a bulk change is clamped under the rules cap and counts what it left out', () => {
+  const causes = [];
+  for (let i = 0; i < 40; i++) causes.push('Game number ' + i + ' — result saved');
+  const full = causes.join('; ');
+  assert.ok(utf8Len(full) > 500, 'precondition: the unclamped reason would be refused');
+
+  const out = changelogReason(causes);
+  assert.ok(utf8Len(out) <= 500, 'fits the rules cap in bytes: ' + utf8Len(out));
+  assert.ok(out.length <= 500);
+  const m = out.match(/; … \+(\d+) more$/);
+  assert.ok(m, 'ends with a "+N more" tail: ' + out.slice(-30));
+  const shown = out.slice(0, out.length - m[0].length).split('; ').length;
+  assert.equal(shown + Number(m[1]), causes.length, 'every cause is either shown or counted');
+  assert.ok(out.startsWith(causes[0]), 'whole causes are kept from the front');
+});
+
+test('changelogReason: one absurdly long cause is cut rather than refused', () => {
+  const out = changelogReason(['X'.repeat(2000) + ' — result saved', 'B — result saved']);
+  assert.ok(utf8Len(out) <= 500, 'length ' + utf8Len(out));
+  assert.ok(out.endsWith('; … +1 more'));
+});
+
+test('clampText never exceeds the byte budget or splits a character', () => {
+  assert.equal(clampText('short', 60), 'short');
+  const emoji = '🦊'.repeat(50); // 4 bytes each
+  const out = clampText(emoji, 60);
+  assert.ok(utf8Len(out) <= 60, 'bytes ' + utf8Len(out));
+  assert.ok(out.endsWith('…'));
+  assert.equal(out.replace(/🦊/g, '').replace('…', ''), '', 'only whole characters remain');
+});
+
+test('recordPointHistory pushes entries that satisfy the rules (reason ≤ 500, team ≤ 60, by ≤ 80)', () => {
+  setMemberRole('editor');
+  authUser = { email: 'Ed.Itor@example.com' };
+  memberName = 'N'.repeat(200);
+  const teamName0 = state.teams[0].name;
+  state.teams[0].name = 'T'.repeat(100);
+  const pushed = [];
+  globalThis.firebase = { database: () => ({ ref: () => ({ push: (v) => { pushed.push(v); return Promise.resolve(); } }) }) };
+  fbRef = {};
+
+  // A restore-style bulk change: every game gets a result at once.
+  state.results = {};
+  clPrevSnap = snapshotForLog(medalCounts()); // baseline: nothing scored
+  state.config.games.slice(0, 20).forEach((g) => {
+    state.results[g.id] = { medals: { gold: 't0', silver: 't1', bronze: 't2' }, savedAt: '2026-07-20T12:00:00Z' };
+  });
+  recordPointHistory(medalCounts(), false);
+
+  assert.ok(pushed.length >= 3, 'an entry per changed team: ' + pushed.length);
+  pushed.forEach((e) => {
+    assert.ok(utf8Len(e.reason) <= 500, 'reason ' + utf8Len(e.reason));
+    assert.ok(utf8Len(e.team) <= 60, 'team ' + utf8Len(e.team));
+    assert.ok(utf8Len(e.by) <= 80, 'by ' + utf8Len(e.by));
+    assert.ok(e.reason.includes('more'), 'the clamp says how many it left out');
+    assert.equal(e.byKey, 'ed,itor@example,com');
+  });
+
+  fbRef = null;
+  delete globalThis.firebase;
+  memberName = null;
+  authUser = null;
+  clPrevSnap = null;
+  state.results = {};
+  state.teams[0].name = teamName0;
+});

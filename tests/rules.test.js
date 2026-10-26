@@ -219,6 +219,19 @@ test('changelog entries are sealed and capped like every other record', () => {
   });
 });
 
+test('the client clamps changelog strings to the caps the rules enforce', () => {
+  // A refused changelog push is swallowed, so a client value over the cap is a
+  // silently missing audit entry — keep recordPointHistory's clamps (reason via
+  // CHANGELOG_REASON_MAX, team 60, by 80) in lockstep with the rules.
+  const cap = (e, f) => Number(/length <= (\d+)/.exec(e[f]['.validate'])[1]);
+  ROOTS.forEach((root) => {
+    const e = RULES[root].changelog.$entryId;
+    assert.equal(cap(e, 'reason'), CHANGELOG_REASON_MAX, `${root}: reason cap`);
+    assert.equal(cap(e, 'team'), 60, `${root}: team cap`);
+    assert.equal(cap(e, 'by'), 80, `${root}: by cap`);
+  });
+});
+
 test('the rate limit is bound to the writer and to the server clock', () => {
   // The only thing a member may write to their own rate node is `now`. If they
   // could backdate it they could clear their own throttle; if they could write

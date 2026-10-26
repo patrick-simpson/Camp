@@ -2244,7 +2244,18 @@ function applyRemoteConfig(remote) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
   applyingRemoteConfig = false;
   if (upgraded) schedulePushConfig();
-  if (appStarted && JSON.stringify(state.config) !== beforeJson) renderAll();
+  if (appStarted && JSON.stringify(state.config) !== beforeJson) {
+    // A config change can move points (double-points flag, a deleted game with
+    // a result, a restore). It arrived from ELSEWHERE, so renderStandings must
+    // treat the totals shift as remote — exactly as applyRemoteState does —
+    // and advance its baseline without logging. Left unset, every online
+    // editor's device wrote its own "Points updated" changelog entries for an
+    // edit somebody else made, blaming them in the audit log (the rules accept
+    // those writes because byKey really is the writer). The editor who made the
+    // change already logged it from their own render.
+    remoteJustApplied = true;
+    renderAll();
+  }
 }
 
 // Settings code calls this after mutating state.config.
@@ -4075,6 +4086,61 @@ function describeCauses(prev, snap) {
   return causes;
 }
 
+// The changelog rules cap `reason` at 500, `team` at 60 and `by` at 80, and a
+// refused push is swallowed by the .catch below — so an over-long value is not
+// an error, it is a silently MISSING audit entry. A backup restore (one entry per
+// scored game, easily 15+) is exactly the bulk change that blew the reason cap,
+// leaving the week's biggest points event with no trace in the history drawer.
+// Lengths are measured in UTF-8 bytes to stay safely under the rules however
+// they count: every cause carries a 3-byte em dash.
+const CHANGELOG_REASON_MAX = 500;
+
+function utf8Len(str) {
+  let n = 0;
+  for (const ch of String(str)) {
+    const c = ch.codePointAt(0);
+    n += c < 0x80 ? 1 : c < 0x800 ? 2 : c < 0x10000 ? 3 : 4;
+  }
+  return n;
+}
+
+// Truncate to at most `max` UTF-8 bytes (never splitting a character), ending
+// in an ellipsis when anything was cut.
+function clampText(str, max) {
+  const s = String(str);
+  if (utf8Len(s) <= max) return s;
+  let out = '';
+  let n = 0;
+  for (const ch of s) {
+    const l = utf8Len(ch);
+    if (n + l > max - 3) break; // leave room for the 3-byte ellipsis
+    out += ch;
+    n += l;
+  }
+  return out + '…';
+}
+
+// The changelog `reason` for a list of causes: all of them when they fit,
+// otherwise as many whole causes as leave room for "; … +N more".
+function changelogReason(causes) {
+  if (!causes.length) return 'Points updated';
+  const full = causes.join('; ');
+  if (utf8Len(full) <= CHANGELOG_REASON_MAX) return full;
+  const kept = [];
+  let len = 0;
+  for (let i = 0; i < causes.length; i++) {
+    const tail = '; … +' + (causes.length - i - 1) + ' more';
+    const add = (kept.length ? 2 : 0) + utf8Len(causes[i]);
+    if (len + add + utf8Len(tail) > CHANGELOG_REASON_MAX) break;
+    kept.push(causes[i]);
+    len += add;
+  }
+  // Not even the first cause fits (an absurdly long game name): cut that one.
+  if (!kept.length) kept.push(clampText(causes[0], CHANGELOG_REASON_MAX - 40));
+  const more = causes.length - kept.length;
+  return kept.join('; ') + (more > 0 ? '; … +' + more + ' more' : '');
+}
+
 function recordPointHistory(counts, isRemote) {
   const snap = snapshotForLog(counts);
   const prev = clPrevSnap;
@@ -4092,22 +4158,21 @@ function recordPointHistory(counts, isRemote) {
   });
   if (!changed.length) return;
 
-  const causes = describeCauses(prev, snap);
-  const reason = causes.length ? causes.join('; ') : 'Points updated';
+  const reason = changelogReason(describeCauses(prev, snap));
   const at = new Date().toISOString();
   // Attribution comes from the ACCOUNT, never from state.identity — that's the
   // device-local "which one are you?" pick from the electives card, which any
   // counselor can set to any name in Settings. This is the accountability log;
   // it has to say who was signed in. memberName is the editor-maintained
   // member record, identityLabel the auth token — both server-side truths.
-  const by = memberName || identityLabel(authUser) || null;
+  const by = clampText(memberName || identityLabel(authUser) || '', 80) || null;
   // The rules pin this to the writer's authenticated identity, so a write
   // without it is refused outright — bail rather than fire a doomed push.
   const byKey = identityKey(authUser);
   if (!byKey) return;
   const logRef = firebase.database().ref(dbPath('changelog'));
   changed.forEach(({ tid, before, after }) => {
-    logRef.push({ at, teamId: tid, team: teamName(tid), delta: after - before, before, after, reason, by, byKey })
+    logRef.push({ at, teamId: tid, team: clampText(teamName(tid), 60), delta: after - before, before, after, reason, by, byKey })
       .catch(() => { /* offline / rules — the log entry is best-effort */ });
   });
 }
