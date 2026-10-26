@@ -21,6 +21,10 @@
   --color-primary: var(--jelly-color-background-accent, #3355ff);
   --color-primary-dark: #2540c7;
   --color-danger: var(--jelly-color-background-rose, #d63b3b);
+  /* Danger as TEXT on a surface (a "Remove" link). The fill colour above is
+     tuned to carry white text, so as text on the dark surfaces it falls to
+     ~3.3:1; the dark blocks below swap in a lighter red. */
+  --color-danger-text: var(--color-danger);
   /* Text on primary/danger fills. White passes AA on the deep light-theme
      accents; the dark theme's lighter accents need dark text instead. */
   --color-on-primary: #ffffff;
@@ -53,6 +57,7 @@ body.dark-theme {
   --color-primary: var(--jelly-color-background-accent, #6b85ff);
   --color-primary-dark: #8ea0ff;
   --color-danger: var(--jelly-color-background-rose, #ff6b6b);
+  --color-danger-text: #ff8a8a; /* ~7:1 on the dark surface */
   --color-gold: #e8c15a;
   --color-gold-bg: #3a3116;
   --color-silver: #c3c9d6;
@@ -79,6 +84,7 @@ body.dark-theme {
     --color-primary: var(--jelly-color-background-accent, #6b85ff);
     --color-primary-dark: #8ea0ff;
     --color-danger: var(--jelly-color-background-rose, #ff6b6b);
+    --color-danger-text: #ff8a8a;
     --color-gold: #e8c15a;
     --color-gold-bg: #3a3116;
     --color-silver: #c3c9d6;
@@ -156,9 +162,12 @@ html.jelly-failed jelly-button[block]:not(:defined) {
   display: block;
   width: 100%;
 }
-html.jelly-failed jelly-collapsible:not(:defined) > :not([slot="header"]) {
-  display: block;
-}
+/* (Card bodies need no rule here: under html.jelly-failed the pre-upgrade
+   `display: none` further down simply stops applying, so the bodies fall back
+   to ordinary blocks. A `display: block` override here used to do that job, but
+   at (0,3,2) it also out-ranked every rule that hides a body child on purpose —
+   `html.view-only .card-visibility-row`, `.card-desc`, `.standings-hint` — and a
+   viewer on a failed load saw the editors' controls.) */
 
 /* Degraded-mode sheets: if the module never loads, an [open] drawer/dialog
    still shows as a plain readable sheet (settings must stay reachable —
@@ -572,7 +581,11 @@ jelly-collapsible:not(:defined) {
   display: block;
   padding: 1rem 1.25rem; /* stand in for the header button's padding */
 }
-jelly-collapsible:not(:defined) > :not([slot="header"]) {
+/* Gated on :where(html:not(.jelly-failed)) — zero added specificity, so this is
+   the same (0,2,1) as before and a normal load is unchanged — so that when the
+   module never comes up the bodies show (see the failed-module fallbacks above)
+   without a higher-specificity override that would trample the view-only hides. */
+:where(html:not(.jelly-failed)) jelly-collapsible:not(:defined) > :not([slot="header"]) {
   display: none;
 }
 
@@ -3780,6 +3793,12 @@ body.no-scroll {
   --jelly-button-height: 48px;
   --jelly-button-padding-inline: 14px;
 }
+/* The two compact buttons (Send me a test, Save week) are Jelly "small" — 42px,
+   a hair under the 44px touch minimum. */
+#pa-test,
+#pa-week-save {
+  --jelly-button-height: 44px;
+}
 .pa-card jelly-button[block] {
   margin-top: 0.25rem;
 }
@@ -3788,14 +3807,29 @@ body.no-scroll {
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 0.5rem 1rem;
+  /* No row gap: the 44px link below the test button already carries ~15px of
+     air above its text. */
+  gap: 0 1rem;
+}
+/* The quiet text links are 15px tall as plain links; give each a 44px-tall hit
+   area (the text stays centered in it) without changing how it looks. The
+   side padding is pulled back out with margin so the text still lines up with
+   the edge it hangs from. */
+.pa-off-link,
+.pa-device-remove {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  padding-inline: 0.25rem;
 }
 .pa-off-link {
   align-self: flex-start;
+  margin-inline-start: -0.25rem;
   font-size: 0.82rem;
 }
 .pa-actions .pa-off-link {
   align-self: center;
+  margin-inline-end: -0.25rem;
 }
 .pa-off-link:disabled {
   opacity: 0.5;
@@ -3804,20 +3838,38 @@ body.no-scroll {
 .pa-devices:empty {
   display: none;
 }
+.pa-devices .pa-group {
+  margin: 0.6rem 0 0.3rem;
+}
 .pa-device {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
   font-size: 0.88rem;
   color: var(--color-text);
+}
+/* A device label is whatever the phone called itself — keep it to one line. */
+.pa-device-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pa-device-remove {
+  flex: 0 0 auto;
+  margin-inline-end: -0.25rem;
+  /* The danger fill is tuned to carry white text; as text on a dark surface it
+     is ~3.3:1. --color-danger-text is the lighter red for exactly that. */
+  color: var(--color-danger-text);
 }
 
 .pa-section {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
-  margin-top: 0.75rem;
+  margin-top: 1.1rem;
 }
 .pa-heading {
   margin: 0;
@@ -3825,14 +3877,20 @@ body.no-scroll {
   font-weight: 800;
   color: var(--color-text);
 }
-/* Group labels — same small-caps voice as the change history's day rule. */
-.pa-group {
+/* Group labels — same small-caps voice as the change history's day rule. The
+   Camp-week date field's label speaks the same way, so the form doesn't read as
+   a different component from the lists around it. */
+.pa-group,
+.pa-week-field .pa-week-label {
   margin: 0.4rem 0 -0.15rem;
   font-size: 0.72rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--color-text-muted);
+}
+.pa-week-field .pa-week-label {
+  margin: 0 0 0.35rem;
 }
 .pa-foot {
   margin: -0.1rem 0 0;
@@ -3841,11 +3899,14 @@ body.no-scroll {
   color: var(--color-text-muted);
 }
 
+/* overflow stays VISIBLE: the rows have no background of their own to clip to
+   the rounded corners, and `hidden` cut the composer's "Send to" menu (a Jelly
+   popup that hangs below its trigger) down to its first two options. Sideways
+   bleed is already contained by #alerts-body above. */
 .pa-list {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  overflow: hidden;
 }
 .pa-row {
   display: flex;
@@ -3882,27 +3943,81 @@ body.no-scroll {
      component keeps for one — it was dead space at the row's edge. */
   --jelly-switch-gap: 0px;
 }
-/* "Every schedule block" is on — each block reads as covered, not chosen. */
-.pa-row-off .pa-row-text {
-  opacity: 0.55;
+/* "Every schedule block" is on — each block reads as covered, not chosen. Only
+   the label dims: dimming the muted time line as well drops it under 3.5:1. */
+.pa-row-off .pa-row-label {
+  opacity: 0.75;
 }
 .pa-when {
   white-space: nowrap;
 }
-/* The 5/10/15 control sits under its label at full width — the same
-   arrangement as Settings → Appearance — rather than squeezing beside it. */
-.pa-row-lead {
+/* A row with a switch is tappable end to end (push.js wires the click); the
+   thumb sliding is the feedback, so no tap flash over the rounded corners. */
+.pa-row-tap {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.pa-row-off.pa-row-tap {
+  cursor: default;
+}
+/* The 5/10/15 control and the audience menu sit under their label at full
+   width — the same arrangement as Settings → Appearance — rather than
+   squeezing beside it. (The menu is the longer of the two; beside its label it
+   was ~190px of truncated team names.) */
+.pa-row-lead,
+.pa-row-audience {
   flex-wrap: wrap;
+  row-gap: 0.4rem;
   padding-bottom: 0.7rem;
 }
 .pa-row-lead jelly-segmented {
   flex: 1 1 100%;
 }
 .pa-row-audience jelly-select {
-  flex: 0 1 13rem;
-  width: auto;
+  flex: 1 1 100%;
+  width: 100%;
+  max-width: none;
   min-width: 0;
-  max-width: 62%;
+}
+
+/* "Choose schedule blocks" — a ~40-row list folded behind one row of the same
+   idiom as the rest, with the count of what's picked where a hint would go.
+   Native <details>, like the sign-in screen's "Alternative sign in". */
+.pa-disclosure > summary {
+  list-style: none;
+  cursor: pointer;
+  border-radius: calc(var(--radius-md) - 1px);
+  -webkit-tap-highlight-color: transparent;
+}
+.pa-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.pa-disclosure > summary:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -2px;
+}
+.pa-disclosure[open] > summary {
+  border-bottom: 1px solid var(--color-border);
+  border-radius: calc(var(--radius-md) - 1px) calc(var(--radius-md) - 1px) 0 0;
+}
+.pa-row-summary::after {
+  content: '';
+  flex: 0 0 auto;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin: -0.2rem 0.2rem 0 0;
+  border-right: 2px solid var(--color-text-muted);
+  border-bottom: 2px solid var(--color-text-muted);
+  transform: rotate(45deg);
+}
+.pa-disclosure[open] .pa-row-summary::after {
+  margin-top: 0.2rem;
+  transform: rotate(-135deg);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .pa-row-summary::after {
+    transition: transform 0.2s ease;
+  }
 }
 
 .pa-count {
@@ -3944,7 +4059,10 @@ body.no-scroll {
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--color-on-danger);
+  /* White, not --color-on-danger: that token flips to dark text in the dark
+     theme (for the lighter fills elsewhere), which leaves this tag at 3.6:1 on
+     its #dc2626 fill. White is 4.8:1 on it in both themes. */
+  color: #fff;
   background: var(--color-danger);
 }
 .pa-alert-body {

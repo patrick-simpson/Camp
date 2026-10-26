@@ -69,6 +69,7 @@ let pushReconnectToastShown = false;
 let pushAlertDraft = { text: '', audience: 'all', urgent: false };
 let pushAlertResult = '';      // the "Sent to 17 phones" line under the composer
 let pushSending = false;
+let pushBlocksOpen = false;    // the "Choose schedule blocks" disclosure — survives a re-render, not a re-open
 // Server-side things the drawer shows; undefined = not loaded yet.
 let pushWeekStart;             // R/pushSchedule/weekStart (string | null)
 let pushHealth;                // GET /health result (object | null = unreachable)
@@ -1225,6 +1226,7 @@ function openPushDrawer() {
   const overlay = pushDrawerEl();
   if (!overlay) return;
   pushAlertResult = '';
+  pushBlocksOpen = false;
   renderPushDrawer();
   pushRefreshServerBits();
   const openNow = () => overlay.setAttribute('open', '');
@@ -1347,6 +1349,14 @@ function pushStatusHTML(st) {
   }
 }
 
+// "3 picked" / "All blocks covered" / "None picked yet" — the collapsed
+// disclosure's one-line answer to "what am I subscribed to?".
+function pushBlocksSummary(prefs, catalog) {
+  if (prefs.blocksAll) return 'All blocks covered';
+  const n = catalog.filter((b) => prefs.blocks[b.key]).length;
+  return n ? `${n} picked` : 'None picked yet';
+}
+
 function pushPrefsHTML() {
   const prefs = pushCurrentPrefs();
   const channels = (CAMP.chatChannels || []);
@@ -1388,7 +1398,12 @@ function pushPrefsHTML() {
       ${pushRowHTML('Every schedule block', '', pushSwitchHTML('data-pa-pref="blocksAll"', prefs.blocksAll, false, 'Every schedule block'))}
     </div>
     <p class="pa-foot" id="pa-week-note" hidden></p>
-    <div class="pa-list pa-blocks">${blockRows}</div>
+    <details class="pa-list pa-disclosure" id="pa-blocks-details"${pushBlocksOpen ? ' open' : ''}>
+      <summary><span class="pa-row pa-row-summary">
+        <span class="pa-row-text"><span class="pa-row-label">Choose schedule blocks</span><span class="pa-row-hint" id="pa-blocks-count">${esc(pushBlocksSummary(prefs, catalog))}</span></span>
+      </span></summary>
+      <div class="pa-blocks">${blockRows}</div>
+    </details>
   </section>`;
 }
 
@@ -1396,10 +1411,10 @@ function pushComposerHTML() {
   const d = pushAlertDraft;
   const teams = ((typeof state !== 'undefined' && state.teams) || []).filter((t) => PUSH_TEAM_RE.test(t.id));
   const audiences = [['all', 'Everyone'], ['editors', 'Directors only']]
-    .concat(teams.map((t) => [t.id, `${teamEmoji(t.id)} ${t.name} counselors`]));
+    .concat(teams.map((t) => [t.id, `${teamEmoji(t.id)} ${t.name}`]));
   if (!audiences.some((a) => a[0] === d.audience)) d.audience = 'all';
   return `<section class="pa-section">
-    <h3 class="pa-heading">📢 Send an alert</h3>
+    <h3 class="pa-heading">Send an alert</h3>
     <p class="pa-note">Goes to phones with alerts on, even with Camp closed.</p>
     <jelly-textarea id="pa-alert-text" class="form-textarea pa-alert-text" rows="3" label="Alert message"
       placeholder="e.g. Everyone to the Tabernacle at 7 — bring a flashlight" value="${esc(d.text)}"></jelly-textarea>
@@ -1411,7 +1426,7 @@ function pushComposerHTML() {
           ${audiences.map(([v, l]) => `<jelly-option value="${esc(v)}">${esc(l)}</jelly-option>`).join('')}
         </jelly-select>
       </div>
-      ${pushRowHTML('🚨 Urgent', 'Rings through even on phones that muted director alerts',
+      ${pushRowHTML('Urgent', 'Rings through even on phones that muted director alerts',
         pushSwitchHTML('id="pa-urgent"', d.urgent, false, 'Urgent'))}
     </div>
     <jelly-button id="pa-send" variant="${d.urgent ? 'rose' : 'primary'}" block ${pushSending ? 'disabled' : ''}>${d.urgent ? '🚨 Send urgent alert' : 'Send alert'}</jelly-button>
@@ -1423,9 +1438,9 @@ function pushComposerHTML() {
 
 function pushWeekHTML() {
   return `<section class="pa-section">
-    <h3 class="pa-heading">🗓️ Camp week</h3>
+    <h3 class="pa-heading">Camp week</h3>
     <div class="form-field pa-week-field">
-      <label class="form-label" for="pa-week-input">Starts on (a Sunday)</label>
+      <label class="form-label pa-week-label" for="pa-week-input">Starts on (a Sunday)</label>
       <div class="pa-week-row">
         <input type="date" id="pa-week-input" class="form-input pa-week-input" value="${esc(pushWeekStart || '')}">
         <jelly-button id="pa-week-save" size="small" variant="primary">Save</jelly-button>
@@ -1445,8 +1460,8 @@ function renderPushDrawer() {
     const live = pushConfigured() && pushSyncReady && typeof firebase !== 'undefined';
     body.innerHTML = `
       <div class="pa-card pa-status pa-status-${esc(st)}">${pushStatusHTML(st)}</div>
-      ${st === 'on' ? pushPrefsHTML() : ''}
-      ${editor && live ? pushComposerHTML() + pushWeekHTML() : ''}`;
+      ${editor && live ? pushComposerHTML() + pushWeekHTML() : ''}
+      ${st === 'on' ? pushPrefsHTML() : ''}`;
     wirePushDrawer(body);
     renderPushWeekStatus();
     renderPushHealth();
@@ -1570,7 +1585,7 @@ function renderPushDevices() {
   if (!others.length) { el.innerHTML = ''; return; }
   el.innerHTML = `<p class="pa-group">Also getting your alerts</p>` + others.map((id) => `
     <div class="pa-device">
-      <span>${esc(String(pushDevices[id].label || 'Another device').slice(0, 40))}</span>
+      <span class="pa-device-name" title="${esc(String(pushDevices[id].label || 'Another device').slice(0, 60))}">${esc(String(pushDevices[id].label || 'Another device').slice(0, 60))}</span>
       <button type="button" class="link-btn danger-link pa-device-remove" data-device="${esc(id)}">Remove</button>
     </div>`).join('');
   el.querySelectorAll('.pa-device-remove').forEach((btn) => {
@@ -1607,13 +1622,33 @@ function wirePushDrawer(body) {
         const blocks = Object.assign({}, normalizePushPrefs(pushReadStoredPrefs()).blocks);
         if (checked) blocks[sw.dataset.key] = true; else delete blocks[sw.dataset.key];
         pushStorePrefs({ blocks });
+        pushUpdateBlocksCount(body);
       } else if (kind === 'mention' || kind === 'director' || kind === 'blocksAll') {
         pushStorePrefs({ [kind]: checked });
-        if (kind === 'blocksAll') pushSyncBlockRows(body, checked);
+        if (kind === 'blocksAll') { pushSyncBlockRows(body, checked); pushUpdateBlocksCount(body); }
       }
       pushPrefsChanged();
     });
   });
+
+  // The whole row is the tap target, not just the 50x33 switch: a tap on the
+  // label (or the empty space between) flips it. A tap on the switch itself
+  // is left to the switch — it already toggles, and a second flip from the row
+  // would cancel it out. Only once the element has upgraded (setChecked is
+  // Jelly's own toggle, which also fires the change event the handler above
+  // listens for); a disabled switch (every block covered) stays put.
+  body.querySelectorAll('.pa-row').forEach((row) => {
+    const sw = row.querySelector('jelly-switch');
+    if (!sw) return;
+    row.classList.add('pa-row-tap');
+    row.addEventListener('click', (e) => {
+      if (e.target.closest && e.target.closest('jelly-switch')) return;
+      if (sw.hasAttribute('disabled') || typeof sw.setChecked !== 'function') return;
+      sw.setChecked(!sw.checked, true);
+    });
+  });
+  const blocks = body.querySelector('#pa-blocks-details');
+  if (blocks) blocks.addEventListener('toggle', () => { pushBlocksOpen = blocks.open; });
   on('pa-lead', 'change', (e) => {
     const lead = Number((e.detail && e.detail.value) || (e.target && e.target.value));
     if (!PUSH_LEADS.includes(lead)) return;
@@ -1658,6 +1693,12 @@ function wirePushDrawer(body) {
     const input = document.getElementById('pa-week-input');
     pushSaveWeekStart(input ? input.value : '');
   });
+}
+
+// Keeps the disclosure's "3 picked" in step with the switches inside it.
+function pushUpdateBlocksCount(body) {
+  const el = body.querySelector('#pa-blocks-count');
+  if (el) el.textContent = pushBlocksSummary(normalizePushPrefs(pushReadStoredPrefs()), pushBlockCatalog(DAY_SCHEDULE));
 }
 
 // "Every schedule block" on ⇒ each block row shows on and can't be changed

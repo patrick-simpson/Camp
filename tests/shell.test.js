@@ -22,7 +22,16 @@ test('the not-yet-defined hide is time-limited and keeps its original specificit
 test('a failed module still leaves a usable sign-in button and readable cards', () => {
   assert.ok(/html\.jelly-failed jelly-button:not\(:defined\)\s*\{[^}]*display:\s*inline-block/.test(CSS));
   assert.ok(/html\.jelly-failed jelly-button\[block\]:not\(:defined\)\s*\{[^}]*display:\s*block/.test(CSS));
-  assert.ok(/html\.jelly-failed jelly-collapsible:not\(:defined\) > :not\(\[slot="header"\]\)\s*\{[^}]*display:\s*block/.test(CSS));
+  // Card bodies stay readable on a failed load by the pre-upgrade `display: none`
+  // simply not applying — NOT by a `display: block` override. That override sat
+  // at (0,3,2) and out-ranked `html.view-only .card-visibility-row` / `.card-desc`
+  // / `.standings-hint`, so a viewer on a failed load saw the editors' controls.
+  assert.ok(CSS.includes(':where(html:not(.jelly-failed)) jelly-collapsible:not(:defined) > :not([slot="header"]) {'),
+    'the body hide is gated on :where(html:not(.jelly-failed)), at its original specificity');
+  assert.notOk(/^html\.jelly-failed jelly-collapsible:not\(:defined\) > :not\(\[slot="header"\]\)/m.test(CSS),
+    'and no high-specificity display:block override remains to trample the view-only hides');
+  assert.notOk(/^jelly-collapsible:not\(:defined\) > :not\(\[slot="header"\]\)\s*\{/m.test(CSS),
+    'and no un-gated hide, which would blank every card body on a failed load');
 });
 
 test('boot-guard.js detects a module that never came up, in its own IIFE', () => {
