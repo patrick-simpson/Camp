@@ -2224,6 +2224,7 @@ function readConfirmedTree() {
 function writeConfirmedTree(tree, persistNow) {
   confirmedTree = tree;
   state._syncBase = tree;
+  state._syncBaseAt = Date.now(); // when the server last confirmed anything to this phone
   if (persistNow) {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* the previous consistent pair stays */ }
   }
@@ -2405,7 +2406,22 @@ function idleRetryTick() {
 function handleRemoteSnapshot(remote) {
   const firstSnapshot = !remoteReady;
   remoteReady = true; // server truth received — pushes may flow now
-  if (!remote) { pushState(); return; } // seed an empty database
+  if (!remote) {
+    // An EMPTY state node. If this phone has never seen this database, seed
+    // it (the original behaviour). But if the server once confirmed data to
+    // this phone, somebody cleared it on purpose (a fresh session started
+    // from the console): adopting the empty server and pushing back only this
+    // phone's own unconfirmed edits keeps an old cache from resurrecting last
+    // week's results for everyone. The roster is guarded locally (a missing
+    // `teams` never wipes it), so it's put back explicitly.
+    if (firstSnapshot && bootHadConfirmedBase) {
+      if (!firstSnapshotMerge({})) applyRemoteState({});
+      lastSyncedTree = Object.assign({}, lastSyncedTree, { teams: null });
+      pushState();
+      return;
+    }
+    pushState(); return; // seed an empty database
+  }
   // The first snapshot after load is a THREE-WAY merge, so nothing entered on
   // dead camp wifi is silently lost (owner's requirement: offline edits must
   // stick and catch up later):
@@ -2461,37 +2477,85 @@ function applySyncPaths(tree, updates) {
   return out;
 }
 
+// RTDB-canonical form for COMPARISON only: what the server would hand back —
+// null/empty objects/empty arrays pruned, keys sorted. Both the normalized
+// local trees and the raw snapshot pass through it, so healing (bracket nulls,
+// empty laps/hr) and key order never read as "somebody else changed this".
+function syncCanon(v) {
+  if (v === null || v === undefined) return undefined;
+  if (Array.isArray(v)) {
+    const a = v.map(syncCanon);
+    while (a.length && a[a.length - 1] === undefined) a.pop();
+    return a.length ? a.map((x) => (x === undefined ? null : x)) : undefined;
+  }
+  if (typeof v === 'object') {
+    const o = {};
+    Object.keys(v).sort().forEach((k) => { const c = syncCanon(v[k]); if (c !== undefined) o[k] = c; });
+    return Object.keys(o).length ? o : undefined;
+  }
+  return v;
+}
+function syncCanonTree(t) {
+  const out = {};
+  SYNC_KEYS.forEach((k) => { const c = syncCanon(t && t[k]); out[k] = c === undefined ? null : c; });
+  return out;
+}
+
 // Returns true when it handled the snapshot (adopted + pushed our edits).
 function firstSnapshotMerge(remote) {
-  const local = syncedSnapshot();
-  const mine = computeSyncUpdates(bootSyncedTree, local);
+  // Read before anything below adopts a snapshot (which re-stamps it).
+  const baseAt = Number(state._syncBaseAt) || 0;
+  const base = syncCanonTree(bootSyncedTree);
+  const local = syncCanonTree(syncedSnapshot());
+  const mine = computeSyncUpdates(base, local);
   const minePaths = Object.keys(mine);
   if (!minePaths.length) return false; // nothing of ours outstanding — plain adopt
-  const serverTree = {};
-  SYNC_KEYS.forEach((k) => { serverTree[k] = remote[k] === undefined ? null : remote[k]; });
-  const theirs = computeSyncUpdates(bootSyncedTree, JSON.parse(JSON.stringify(serverTree)));
+  const serverTree = syncCanonTree(remote);
+  const theirs = computeSyncUpdates(base, serverTree);
   const theirPaths = Object.keys(theirs);
   const keep = {};
   const conflicts = [];
+  const canonAt = (t, p) => { const v = syncCanon(syncValueAt(t, p)); return v === undefined ? null : v; };
   minePaths.forEach((p) => {
-    // "Data last updated" is a stamp, not a datum: the later one simply wins.
     if (p === 'meta/lastDataChangeAt') {
       const srv = syncValueAt(serverTree, p);
       if (!srv || String(mine[p]) > String(srv)) keep[p] = mine[p];
       return;
     }
-    // Already on the server (we pushed it, then got killed before the ack was
-    // recorded) — nothing to do and nothing to report.
-    if (JSON.stringify(syncValueAt(serverTree, p) === undefined ? null : syncValueAt(serverTree, p)) === JSON.stringify(mine[p])) return;
+    if (JSON.stringify(canonAt(serverTree, p)) === JSON.stringify(syncCanon(mine[p]) === undefined ? null : syncCanon(mine[p]))) return;
     if (theirPaths.some((q) => syncPathsOverlap(p, q))) { conflicts.push(p); return; }
     keep[p] = mine[p];
   });
-  dataEditPending = false;             // this merge reconciles every pre-sync edit
-  applyRemoteState(remote);            // the server's truth first…
-  const serverNorm = lastSyncedTree;   // (normalized, as adopted)
+  // Device-local Pictionary words: the adopt below only re-attaches them to a
+  // setup the SERVER already has, so a setup made offline would lose them.
+  const words = {};
+  Object.keys(state.picSetup || {}).forEach((gid) => {
+    const s = state.picSetup[gid];
+    if (s && Array.isArray(s.words) && s.words.length) words[gid] = s.words.slice();
+  });
+  dataEditPending = false;
+  applyRemoteState(remote);
+  const serverNorm = lastSyncedTree;
+  // Work that waited a long time (more than a day and a half since the
+  // server last confirmed anything) might belong to a week that has since
+  // been reset — ask before sending it rather than slipping old results
+  // into a new session.
+  const realKeep = Object.keys(keep).filter((p) => p !== 'meta/lastDataChangeAt');
+  if (realKeep.length && baseAt && Date.now() - baseAt > 36 * 60 * 60 * 1000) {
+    const when = formatEasternStamp(new Date(baseAt).toISOString()) || 'a while ago';
+    if (!confirm(`This phone has ${realKeep.length} change${realKeep.length === 1 ? '' : 's'} saved since ${when} that never reached the server. Send ${realKeep.length === 1 ? 'it' : 'them'} now?`)) {
+      Object.keys(keep).forEach((p) => { delete keep[p]; });
+    }
+  }
   if (Object.keys(keep).length) {
-    applyRemoteState(applySyncPaths(serverNorm, keep)); // …then our surviving edits on top
-    lastSyncedTree = serverNorm;       // so the push below is exactly `keep`
+    // asLocalEdit: these ARE this account's edits (made offline, never
+    // logged — recordPointHistory had no database then), so the standings
+    // render logs them to the change history instead of treating them as
+    // someone else's remote update.
+    applyRemoteState(applySyncPaths(serverNorm, keep), serverNorm, { asLocalEdit: true }); // base stays the SERVER's tree
+    Object.keys(words).forEach((gid) => { if (state.picSetup[gid]) state.picSetup[gid].words = words[gid]; });
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
+    lastSyncedTree = serverNorm;
     pushState();
   }
   if (conflicts.length) {
@@ -2500,7 +2564,7 @@ function firstSnapshotMerge(remote) {
   return true;
 }
 
-function applyRemoteState(remote) {
+function applyRemoteState(remote, confirmedBase, opts) {
   clearDeferredSnapshot(); // this snapshot supersedes any read we still owed
   applyingRemote = true;
   // Signature of the synced slice before applying this snapshot. RTDB fires
@@ -2545,11 +2609,11 @@ function applyRemoteState(remote) {
   // We now match the server, so this snapshot becomes the diff baseline —
   // otherwise the next push would re-send data we just received.
   lastSyncedTree = syncedSnapshot();
-  writeConfirmedTree(lastSyncedTree);
+  writeConfirmedTree(confirmedBase || lastSyncedTree);
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
   applyingRemote = false;
   if (appStarted && syncSignature() !== beforeSig) {
-    remoteJustApplied = true; // let renderStandings pulse rows that changed
+    remoteJustApplied = !(opts && opts.asLocalEdit); // let renderStandings pulse rows that changed
     const matchupChanges = detectMatchupChanges();
     renderAll();
     notifyMatchupChanges(matchupChanges);
@@ -2853,6 +2917,10 @@ function pushState() {
 function syncSignature() {
   return JSON.stringify(SYNC_KEYS.map((k) => state[k]));
 }
+// Did this phone's cache come with a server-confirmed baseline? (Decides
+// seed-vs-respect-the-wipe for an empty state node, and whether a first
+// snapshot can trust old unconfirmed work.)
+let bootHadConfirmedBase = !!readConfirmedTree(); // let, not const: tests simulate a reload
 bootSyncedTree = readConfirmedTree() || syncedSnapshot();
 
 // A matchup "slot" — a stable key for one pairing, so a genuinely NEW matchup
@@ -3371,7 +3439,7 @@ const CLOCK_ALARM_FRESH_MS = 5000;
 // and the first tick after the snapshot settles it.
 function settleExpiredClocks() {
   if (!canEdit()) return false;
-  const mayWrite = !fbRef || remoteReady;
+  const mayWrite = fbRef ? remoteReady : !(window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey);
   let changed = false;
   Object.keys(state.clocks || {}).forEach((gid) => {
     const c = state.clocks[gid];
@@ -8396,6 +8464,19 @@ function hasUnsyncedWork() {
     (typeof builderDirty === 'function' && builderDirty());
 }
 
+// Work saved on this phone that the server never confirmed — including
+// work from an EARLIER session (killed before it uploaded), which no
+// in-memory flag knows about. Only sign-out needs this: it wipes the cache,
+// the one copy of that work. (A camp switch keeps per-camp storage.)
+function hasUnconfirmedLocalWork() {
+  try {
+    const base = confirmedTree || bootSyncedTree;
+    if (!base) return false;
+    return Object.keys(computeSyncUpdates(syncCanonTree(base), syncCanonTree(syncedSnapshot())))
+      .some((p) => p !== 'meta/lastDataChangeAt');
+  } catch (e) { return false; }
+}
+
 function switchCamp(campId) {
   if (!CAMPS[campId] || campId === CAMP.id) return;
   // Send anything still sitting in the debounce first; only then ask whether
@@ -8525,7 +8606,7 @@ let signingOut = false;
 function signOutAndClear() {
   if (signingOut) return;
   flushPendingPush();
-  const msg = hasUnsyncedWork()
+  const msg = (hasUnsyncedWork() || hasUnconfirmedLocalWork())
     ? "A score you saved hasn't reached the server yet — signing out now will lose it. Sign out anyway?"
     : 'Sign out? Camp data stored on this device will be cleared.';
   if (!confirm(msg)) return;

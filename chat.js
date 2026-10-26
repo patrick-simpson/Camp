@@ -233,7 +233,11 @@ function chatDisplayName() {
 // paste, and once the paste lands the retry simply stops happening.
 function chatAtomicSend(updates, rateKey) {
   const rootRef = () => firebase.database().ref(CAMP.dbRoot);
-  const stamp = () => { chatLastAckAt = chatLastSendAt = Date.now(); };
+  // Spacing runs on a MONOTONIC clock: a phone whose wall clock gets
+  // corrected backwards mid-session would otherwise stall every later send
+  // by the size of the jump. Clamped to [0, CHAT_MIN_SEND_MS] either way.
+  const mono = () => (typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now());
+  const stamp = () => { chatLastAckAt = mono(); chatLastSendAt = Date.now(); };
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, Math.max(0, ms)));
   const withoutStamp = {};
   Object.keys(updates).forEach((k) => { if (k !== rateKey) withoutStamp[k] = updates[k]; });
@@ -245,7 +249,7 @@ function chatAtomicSend(updates, rateKey) {
   // (reproduced against the emulator, 2026-10-26). Retry once after a beat
   // with the stamp (same push id, so never a duplicate); the stamp-less
   // attempt is only a last resort for a ruleset that predates chatRate.
-  const go = () => wait(chatLastAckAt + CHAT_MIN_SEND_MS - Date.now())
+  const go = () => wait(Math.min(CHAT_MIN_SEND_MS, chatLastAckAt ? chatLastAckAt + CHAT_MIN_SEND_MS - mono() : 0))
     .then(() => rootRef().update(updates)).then(stamp)
     .catch((err) => wait(CHAT_MIN_SEND_MS)
       .then(() => rootRef().update(updates)).then(stamp)
