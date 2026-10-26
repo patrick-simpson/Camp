@@ -1,0 +1,11 @@
+# Worker (push-worker/worker.js) review — Sonnet reviewer, ~6:55 PM ET Mon
+Integrator decisions in **bold**.
+
+1. HIGH — unlimited device records per member; every flow parses the whole push tree (CPU limit; cron starvation; fan-out to junk). **Fix in Worker: cap to the 4 newest devices (by `at`) per member in eachDevice; cronMaintenance deletes extras. (Rules can't count children; slot ids deferred.)**
+2. HIGH — push POST has no timeout and reads the full body: one hung endpoint wedges /notify and the cron. **Fix: AbortSignal.timeout(8000) ⇒ transient; never read 2xx bodies (cancel); read ≤ 300 bytes on errors; redirect:'manual' ⇒ 3xx permanent; Promise.allSettled-style so bookkeeping always runs.**
+3. HIGH — unauthenticated /resubscribe downloads both camps' push trees per call ⇒ egress abuse could exhaust Firebase's free 10 GB/month. **Fix: endpoint-host allowlist first, then a global rate slot (one scan per 60 s) else return updated:0.**
+4. MED — mentionKeys/mentionTeams trusted from the request ⇒ any member can "mention" everyone. **Fix: re-derive server-side: keep a key only if that member's full or first name occurs (word boundary, case-insensitive) in msg.text; keep a team only if its name or a ≥4-letter word of its name occurs (teams from <root>/state/teams, read only when mentions were sent); cap 10 people / 3 teams.**
+5. MED — endpoint host unrestricted + redirects followed (relay; uncounted hops); response detail printed on the public status page. **Fix: allowlist push hosts by suffix (google.com, googleapis.com, push.services.mozilla.com, push.apple.com, notify.windows.com; loopback only in local test mode); redirect:'manual'; never print response detail on the public page.**
+6. LOW — dedupe marker claimed before delivery; a failure loses the alert for good. **Fix: release the marker if nothing was sent/queued.**
+7. LOW — Google refusing the key ⇒ every DB call re-signs + re-POSTs. **Fix: remember the ConfigError for the invocation (+ 60 s isolate negative cache).**
+8. LOW — test-only overrides could arm with FIREBASE_DB_URL='ftp://localhost'. **Fix: compute `local` on the FINAL db URL (http: + loopback host) and never when it falls back to production.**
