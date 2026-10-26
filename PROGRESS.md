@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Mon Oct 26, 6:10 PM ET** (update this line every time the file changes)
+Last updated: **Mon Oct 26, ~7:20 PM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -112,29 +112,39 @@ send_later into this session). ETAs above shift by however long the pause lasts.
   (builder worktrees must never be committed).
 
 ## Next steps (resume here)
-In flight when the owner's usage ran low (6:10 PM ET) — background agents die
-if the session stops, so re-run whichever never reported:
-- 7 Sonnet adversarial verifiers, one per batch file in
-  `docs/build-notes/verify/verify-G1…G7-*.json` (G7 = only resilience#2 and #5;
-  the other G7 items duplicate G2/G3). Verify against the CURRENT tree (findings
-  cite commit 08c72b7 line numbers). Output per item: real?, severity, fix,
-  fix_risk, defer_to_rebuild.
-- 2 Sonnet code reviews: app side (`git show fbc2647`: push.js, sw.js, hooks,
-  rules — especially the client↔Worker CONTRACT: request/response fields,
-  prefs defaults, payload fields, tags) and `push-worker/worker.js`
-  (security: ID tokens, SSRF via member-written endpoints, admin token never
-  sent to non-Firebase hosts, /drain & /resubscribe abuse, subrequest cap).
+State at ~7:20 PM ET Mon:
+- ALL verification + both code reviews are DONE. Verdicts + decisions:
+  `docs/build-notes/verify/RESULTS*.md`, `REVIEW-worker.md`.
+- **Opus fixes DONE** in worktree branch `opus-sync-fixes`
+  (`.claude/worktrees/opus-sync`, 3 commits: sync merge safety G1/G2, chat G3,
+  alerts app-side hardening + rules endpoint allowlist). Backup of all three
+  as a patch on this branch: `docs/build-notes/verify/opus-sync-fixes.patch`
+  (`git am` it if the worktree is gone).
+- **Sonnet fixer A** (G4/G5/G6/G7 rows in RESULTS.md, RESULTS-G7.md) works
+  directly in the MAIN tree on this branch, committing per fix. If it died
+  mid-way: check `git status` / RESULTS.md status column, finish the rest.
+- **Sonnet fixer B** hardens push-worker/worker.js per REVIEW-worker.md in
+  its own worktree (branch `worktree-agent-…`). If lost, re-run from
+  REVIEW-worker.md (self-contained).
 Then:
-1. Apply confirmed reliability fixes (skip ones marked defer_to_rebuild — they
-   belong to Project 2's per-field-merge setup rebuild; list them in this file).
-   Group app.js sync fixes carefully; `tests/sync.test.js` invariants must hold.
-   Add a test per fix.
-2. Fix confirmed review findings on the alert code; re-run `tests/push-e2e`.
-3. Version bump (TWELVE `?v=` in index.html + current-standings/stalling refs,
-   APP_VERSION, CODE_UPDATED_AT), `node tests/run.js`, `node --check`, merge
-   the branch into `main`, push, verify live with curl (CLAUDE.md).
-4. Tell the owner (plain English): what shipped, the 15-minute Cloudflare
-   setup (`push-worker/README.md`), that we need the Worker URL to finish
-   (`PUSH_SERVICE_URL` + CSP), and the rules publish. Report model-use savings.
-5. Then Project 2: write a spec from the requirements above, review it, build
-   in stages, updating this file after each.
+1. Merge `opus-sync-fixes` + fixer B's branch into this branch; resolve
+   conflicts (app.js applyRemoteConfig: fixer A added `remoteJustApplied =
+   true` (rules#2), Opus added the version gate (sync#8) — keep both).
+   `node tests/run.js` green; `node --check` all JS.
+2. Re-run `tests/push-e2e` (README inside) against the merged worker.js.
+3. Docs: CLAUDE.md — auto-reload now waits for unconfirmed writes / laps /
+   chat sends (all roles); editorMidEntry is an allowlist; sync invariants
+   list: first-snapshot per-path defence, identity-preserving echoes, per-leaf
+   drafts, per-field meta; chatAtomicSend serializes (no more "retries
+   without the stamp" as the main path); SDK-hash failure no longer "dies at
+   Checking sign-in…"; push endpoint host allowlist.
+4. Version bump (TWELVE `?v=` + current-standings/stalling refs + APP_VERSION
+   + CODE_UPDATED_AT; TV_BUILD if the TV page changed), merge to `main`,
+   push, verify live (curl per CLAUDE.md).
+5. Owner summary (plain English) + what they must do: Cloudflare setup
+   (push-worker/README.md), send us the Worker URL (then set PUSH_SERVICE_URL
+   + CSP connect-src), publish database.rules.json (Cloud Shell PUT per
+   CLAUDE.md). Report model-use savings.
+6. Then Project 2 (setup rebuild) — spec first. Deferred audit items to fold
+   in: scoring#3 (config per-field merge), scoring#6 saveGameDraft half,
+   rules#5 (owner row), pages#3/#5/#6 (TV page per camp).
