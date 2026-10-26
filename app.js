@@ -7713,6 +7713,16 @@ function showSignInError(err) {
   showAuthScreen('signin', { error: msg });
 }
 
+// Always offer Google's account chooser. A shared office machine or a
+// counselor's personal profile is usually already signed into some OTHER
+// Google account, and without select_account the popup silently re-picks it —
+// so "Use a different account" would just sign the same wrong one back in.
+function googleProvider() {
+  const provider = new firebase.auth.GoogleAuthProvider();
+  provider.setCustomParameters({ prompt: 'select_account' });
+  return provider;
+}
+
 function wireAuthScreen() {
   const googleBtn = document.getElementById('google-signin-btn');
   if (googleBtn) {
@@ -7726,7 +7736,7 @@ function wireAuthScreen() {
       // the popup. Never signInWithRedirect: it needs cross-site storage that
       // Safari/Firefox block for sites not hosted on the authDomain.
       try {
-        firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(showSignInError);
+        firebase.auth().signInWithPopup(googleProvider()).catch(showSignInError);
       } catch (e) {
         showSignInError(e);
       }

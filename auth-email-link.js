@@ -88,6 +88,20 @@
   // own — just the titled method block with its free-plan cap line.
   function mount(slotEl) {
     if (!slotEl) return;
+    // The installed iOS Home Screen app can never finish this flow: tapping a
+    // link in Mail always opens SAFARI, which has its own storage, so the app
+    // sits on the sign-in screen while the link signs in a tab nobody is
+    // looking at — and every attempt burns one of the five daily emails the
+    // whole camp shares. Say so up front instead of offering the form.
+    // (navigator.standalone is iOS-only; Android links hand off to the app.)
+    if (navigator.standalone === true) {
+      slotEl.innerHTML = `
+      <div class="alt-method">
+        <div class="alt-method-title">✉️ Email me a sign-in link</div>
+        <p class="alt-method-cap">Email links open in Safari, not this Home Screen app — use Google or phone sign-in here.</p>
+      </div>`;
+      return;
+    }
     slotEl.innerHTML = `
       <div class="alt-method">
         <div class="alt-method-title">✉️ Email me a sign-in link</div>
@@ -114,7 +128,9 @@
         handleCodeInApp: true,
       }).then(() => {
         try { localStorage.setItem(EMAIL_SIGNIN_KEY, email); } catch (e) { /* ignore */ }
-        statusEl.textContent = '📬 Sent! Open the email on THIS device and tap the link.';
+        // Don't promise it signs in THIS tab: the link may open in another
+        // browser, which then asks for the address (see completeSignInIfLink).
+        statusEl.textContent = '📬 Sent! Open the email and tap the link. If it opens in another browser and asks, type this email address again to finish.';
         statusEl.hidden = false;
       }).catch((err) => {
         sendBtn.removeAttribute('disabled');

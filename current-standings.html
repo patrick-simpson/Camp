@@ -319,7 +319,8 @@
       </div>
       <div id="auth-ov-denied" style="display:none;">
         <p style="font-size:1.1rem; margin:0 0 0.5rem;">Signed in as <strong id="auth-ov-email"></strong></p>
-        <p style="opacity:0.8; margin:0;">This account isn't on the camp list — ask a director to add it, then reload.</p>
+        <p style="opacity:0.8; margin:0 0 1.25rem;">This account isn't on the camp list — ask a director to add it, then reload.</p>
+        <button id="auth-ov-switch" type="button" style="font: inherit; font-size:1.05rem; font-weight:700; padding:0.7rem 1.4rem; border-radius:12px; border:1px solid rgba(255,255,255,0.45); background:transparent; color:#fff; cursor:pointer;">Use a different account</button>
       </div>
       <p id="auth-ov-error" style="color:#ff8a8a; min-height:1.2em; margin-top:1rem;"></p>
     </div>
@@ -343,7 +344,7 @@
     // silently never took effect until someone thought to hit refresh (this
     // bit the double-points fix on 2026-07-23). Bump this stamp on every
     // edit to this file; see checkForUpdate/startUpdatePolling below.
-    var TV_BUILD = '2026-07-26T20:46:57Z';
+    var TV_BUILD = '2026-10-26T22:22:40Z';
 
     // ── Constants mirrored from app.js (keep in sync) ──────────────
     var STORAGE_KEY = 'campScoreboardV2';
@@ -713,10 +714,24 @@
         btn.addEventListener('click', function () {
           // Synchronously in the click handler — an await first and the
           // browser blocks the popup.
-          firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider()).catch(function (err) {
+          // select_account: always show Google's chooser. A presenter laptop
+          // is often already signed into some other (non-camp) Google account,
+          // which would otherwise be re-picked silently every time.
+          var provider = new firebase.auth.GoogleAuthProvider();
+          provider.setCustomParameters({ prompt: 'select_account' });
+          firebase.auth().signInWithPopup(provider).catch(function (err) {
             var msgEl = document.getElementById('auth-ov-error');
             if (msgEl) msgEl.textContent = 'Sign-in didn\'t work (' + ((err && err.code) || 'error') + ') — try again.';
           });
+        });
+      }
+      // The way out of the denied state: Firebase persists the session, so a
+      // reload would re-check (and re-deny) the same wrong account forever.
+      // Signing out makes onAuthStateChanged(null) bring the sign-in panel back.
+      var switchBtn = document.getElementById('auth-ov-switch');
+      if (switchBtn) {
+        switchBtn.addEventListener('click', function () {
+          try { firebase.auth().signOut().catch(function () {}); } catch (e) { /* ignore */ }
         });
       }
       var started = false;
@@ -915,6 +930,10 @@
 
     function beginReveal() {
       if (phase !== 'intro') return;
+      // Nothing to reveal yet (signed out / still loading): stay on the intro.
+      // Starting anyway froze order = [] and threw in showBig, leaving a blank
+      // stage even after the data arrived.
+      if (!liveGroups || !liveGroups.length) return;
       phase = 'reveal';
       if (introBlastIv) { clearInterval(introBlastIv); introBlastIv = null; }
       // Freeze the standings at the moment the reveal starts.
@@ -1043,15 +1062,21 @@
 
     // ── Input ──────────────────────────────────────────────────────
     document.addEventListener('keydown', function (e) {
+      // No data yet, or the sign-in overlay is up: leave the key alone (before
+      // preventDefault, so Space/Enter still activates the focused sign-in
+      // button instead of being swallowed and starting an empty reveal).
+      if (!haveData || document.getElementById('auth-overlay').style.display !== 'none') return;
       if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'Enter' || e.key === 'PageDown') {
         e.preventDefault(); ensureAudio(); advance();
       } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
         e.preventDefault(); ensureAudio(); back();
       }
     });
-    // Tap / click anywhere (except the top-bar controls) advances.
+    // Tap / click anywhere (except the top-bar controls) advances. Not before
+    // there is data, and never from inside the sign-in overlay — a click on
+    // "Continue with Google" bubbles here and used to start the reveal.
     document.addEventListener('click', function (e) {
-      if (e.target.closest('.topbar')) return;
+      if (!haveData || e.target.closest('.topbar, #auth-overlay')) return;
       ensureAudio(); advance();
     });
 

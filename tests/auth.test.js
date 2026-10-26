@@ -672,3 +672,25 @@ test('converting a pending row refuses an existing member or yourself, and never
   delete globalThis.firebase;
   authUser = null;
 });
+
+// ── Google sign-in always shows the account chooser ───────────────
+
+test('the Google button asks for the account chooser (so "use a different account" can work)', () => {
+  let click = null;
+  document.getElementById('google-signin-btn').addEventListener = (type, fn) => { if (type === 'click') click = fn; };
+  sdkLoadFailed = false;
+  wireAuthScreen();
+  assert.ok(click, 'the button is wired');
+
+  let provider = null;
+  class FakeProvider { setCustomParameters(p) { this.params = p; } }
+  globalThis.firebase = {
+    apps: [{}],
+    auth: Object.assign(() => ({ signInWithPopup: (p) => { provider = p; return Promise.resolve(); } }),
+      { GoogleAuthProvider: FakeProvider }),
+  };
+  click();
+  assert.ok(provider instanceof FakeProvider, 'a Google provider was used');
+  assert.deepEqual(provider.params, { prompt: 'select_account' });
+  delete globalThis.firebase;
+});
