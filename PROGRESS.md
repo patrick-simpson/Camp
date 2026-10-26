@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Mon Oct 26, ~7:20 PM ET** (update this line every time the file changes)
+Last updated: **Mon Oct 26, 7:30 PM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -112,39 +112,37 @@ send_later into this session). ETAs above shift by however long the pause lasts.
   (builder worktrees must never be committed).
 
 ## Next steps (resume here)
-State at ~7:20 PM ET Mon:
-- ALL verification + both code reviews are DONE. Verdicts + decisions:
-  `docs/build-notes/verify/RESULTS*.md`, `REVIEW-worker.md`.
-- **Opus fixes DONE** in worktree branch `opus-sync-fixes`
-  (`.claude/worktrees/opus-sync`, 3 commits: sync merge safety G1/G2, chat G3,
-  alerts app-side hardening + rules endpoint allowlist). Backup of all three
-  as a patch on this branch: `docs/build-notes/verify/opus-sync-fixes.patch`
-  (`git am` it if the worktree is gone).
-- **Sonnet fixer A** (G4/G5/G6/G7 rows in RESULTS.md, RESULTS-G7.md) works
-  directly in the MAIN tree on this branch, committing per fix. If it died
-  mid-way: check `git status` / RESULTS.md status column, finish the rest.
-- **Sonnet fixer B** hardens push-worker/worker.js per REVIEW-worker.md in
-  its own worktree (branch `worktree-agent-…`). If lost, re-run from
-  REVIEW-worker.md (self-contained).
-Then:
-1. Merge `opus-sync-fixes` + fixer B's branch into this branch; resolve
-   conflicts (app.js applyRemoteConfig: fixer A added `remoteJustApplied =
-   true` (rules#2), Opus added the version gate (sync#8) — keep both).
-   `node tests/run.js` green; `node --check` all JS.
-2. Re-run `tests/push-e2e` (README inside) against the merged worker.js.
-3. Docs: CLAUDE.md — auto-reload now waits for unconfirmed writes / laps /
-   chat sends (all roles); editorMidEntry is an allowlist; sync invariants
-   list: first-snapshot per-path defence, identity-preserving echoes, per-leaf
-   drafts, per-field meta; chatAtomicSend serializes (no more "retries
-   without the stamp" as the main path); SDK-hash failure no longer "dies at
-   Checking sign-in…"; push endpoint host allowlist.
-4. Version bump (TWELVE `?v=` + current-standings/stalling refs + APP_VERSION
-   + CODE_UPDATED_AT; TV_BUILD if the TV page changed), merge to `main`,
-   push, verify live (curl per CLAUDE.md).
-5. Owner summary (plain English) + what they must do: Cloudflare setup
-   (push-worker/README.md), send us the Worker URL (then set PUSH_SERVICE_URL
-   + CSP connect-src), publish database.rules.json (Cloud Shell PUT per
-   CLAUDE.md). Report model-use savings.
-6. Then Project 2 (setup rebuild) — spec first. Deferred audit items to fold
-   in: scoring#3 (config per-field merge), scoring#6 saveGameDraft half,
-   rules#5 (owner row), pages#3/#5/#6 (TV page per camp).
+**Project 1 SHIPPED to `main` at 7:26 PM ET Mon (v182, commit 9adcf24).**
+Everything is merged: phone alerts (dormant until the Worker exists), all
+verified reliability fixes, the Worker hardening, the sync-review fixes and the
+drawer design fixes — 431 tests green, real-browser smoke test clean.
+A Haiku agent was verifying the live site at the time of writing; if unsure,
+re-run the curl checks in CLAUDE.md (expect `?v=182`, `firstSnapshotMerge` in
+app.js, push.js with blank PUSH_SERVICE_URL, sw.js without a fetch handler).
+
+Still waiting on the OWNER (tell them again if they haven't done it):
+1. Set up the Cloudflare Worker — `push-worker/README.md` (≈15 min) — and send
+   us its URL. Then: set `PUSH_SERVICE_URL` in push.js, add that exact origin to
+   `connect-src` in index.html's CSP, bump ?v=, deploy, verify.
+2. Publish `database.rules.json` (Cloud Shell PUT per CLAUDE.md; back up the
+   live rules first). Until then, turning alerts on says the rules aren't
+   switched on yet; everything else works.
+3. After both: on a phone, Settings → Phone alerts → Turn on → Send me a test.
+
+Deferred to Project 2 (fold in there): scoring#3 (config per-field merge),
+scoring#6 saveGameDraft half, rules#5 (owner row), pages#3/#5/#6 (TV page per
+camp), two-tab unconfirmed-edit limit (REVIEW-sync #10), other `.danger-link`
+dark-mode contrast (visual QA note), senior "Red" team short-name mention gap.
+
+**Project 2 (setup UX rebuild, junior + senior) — NEXT.** Requirements are in
+"The two projects" above (owner-confirmed). Start by writing a spec like the
+push one (docs/build-notes/), get it adversarially reviewed, then build in
+stages with tests + Playwright after each, updating this file after each
+stage. Big pieces: schedule data model (move camps.js schedules/meals/verses/
+cleanup/electives into synced, per-field-merged config with seeding from
+today's data), new-year wizard (copy last year → archive → clear scores),
+checklist hub, teams (palette color + emoji + optional photo), counselors
+(roster / trickle-in / request-access → one team list), camper first names
+(editor-only rules!), games attached to schedule blocks + 4-team bracket,
+presence tags, Undo + restore points, mid-week schedule change ⇒ push alert,
+TV page both camps, full-week calendar export.
