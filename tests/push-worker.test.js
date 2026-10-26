@@ -165,6 +165,9 @@ function makeNet(data) {
   const net = {
     now: NOW, dbToken: 'tok-1', calls: 0, jwksFetches: 0, tokenMints: 0, assertions: [],
     jwksKeys: [ID_JWK], pushes: [], pushStatus: {}, subs: {},
+    // url → (url, init) => Response | Promise<Response>: takes over one push
+    // endpoint completely (hang, redirect, stream) where a status code won't do.
+    pushResponse: {},
   };
   net.db = makeDb(data || {}, net);
   net.fetch = async (url, init) => {
@@ -185,10 +188,12 @@ function makeNet(data) {
       net.jwksFetches++;
       return new Response(JSON.stringify({ keys: net.jwksKeys }), { status: 200, headers: { 'Cache-Control': 'public, max-age=3600' } });
     }
-    // Anything else is a push service.
-    net.pushes.push({ url, host: u.host, headers: h, body: Buffer.from(init.body) });
+    // Anything else is a push service. `redirect` and `signal` are recorded so
+    // tests can see how the Worker asked for the request, not just that it came.
+    net.pushes.push({ url, host: u.host, headers: h, body: Buffer.from(init.body), redirect: init.redirect, signal: init.signal });
+    if (net.pushResponse[url]) return net.pushResponse[url](url, init);
     const st = net.pushStatus[url];
-    const status = typeof st === 'function' ? await st(url) : (st || 201);
+    const status = typeof st === 'function' ? await st(url, init) : (st || 201);
     return new Response(status === 201 ? null : '{"reason":"BadJwtToken"}', { status });
   };
   return net;
@@ -249,7 +254,7 @@ function world(opts) {
   w.deps = () => {
     const counter = { n: 0 };
     w.perCall.push(counter);
-    return { fetch: (u, i) => { counter.n++; return net.fetch(u, i); }, now: () => net.now, cache };
+    return { fetch: (u, i) => { counter.n++; return net.fetch(u, i); }, now: () => net.now, cache, pushTimeoutMs: w.pushTimeoutMs };
   };
   w.addDevice = (camp, key, id, devOpts) => {
     const rec = device(net, Object.assign({ id }, devOpts || {}));
@@ -1143,6 +1148,9 @@ test('/resubscribe swaps the endpoint in both camps and keeps every preference',
   assert.ok(w.net.db.get(`campScoreboard/push/${CARL}/carl-phone-1/endpoint`) !== fresh.endpoint, 'other phones untouched');
   r = await w.request('POST', '/resubscribe', { oldEndpoint: rec.endpoint, endpoint: 'http://insecure', p256dh: fresh.p256dh, auth: fresh.auth });
   assert.equal(r.status, 400);
+  // (A scan is limited to one a minute now — wait it out so this really is a
+  // scan that finds nobody, not a throttled call that happens to say 0.)
+  w.net.now += 61000;
   r = await w.request('POST', '/resubscribe', { oldEndpoint: 'https://nobody', endpoint: fresh.endpoint, p256dh: fresh.p256dh, auth: fresh.auth });
   assert.deepEqual(r.json, { ok: true, updated: 0 });
 });
@@ -1321,4 +1329,685 @@ test('cron keeps its heartbeat even when Firebase is failing', async () => {
   assert.ok(c.used <= 45);
   assert.equal(w.net.db.get('pushServer/cron/junior/lastRun'), NOW);
   assert.equal(w.net.db.get('pushServer/cron/junior/upTo'), null, 'the window does not move on a failed pass');
+});
+
+// ── Hardening: the worker review (docs/build-notes/verify/REVIEW-worker.md) ──
+// One group per item; each test names its number. These run the same fake
+// internet as everything above, with its new hooks for push services that hang,
+// redirect or stream.
+
+// A phone registered at a chosen time (device() always stamps NOW).
+function addDeviceAt(w, camp, key, id, at, opts) {
+  const rec = w.addDevice(camp, key, id, opts);
+  w.net.db.set(`${camp}/push/${key}/${id}/at`, at);
+  return rec;
+}
+
+// Expected log noise (a deliberate failure) stays out of the test output, and
+// is handed back so a test can assert on it.
+async function quietly(fn) {
+  const logged = [];
+  const real = { error: MAIN.console.error, warn: MAIN.console.warn };
+  MAIN.console.error = (...a) => logged.push(a.join(' '));
+  MAIN.console.warn = (...a) => logged.push(a.join(' '));
+  try { return { result: await fn(), logged }; } finally { MAIN.console.error = real.error; MAIN.console.warn = real.warn; }
+}
+
+const kindsByUrl = (w) => {
+  const o = {};
+  for (const p of w.net.pushes) if (w.net.subs[p.url]) o[p.url] = decrypt(w.net, p).payload.kind;
+  return o;
+};
+const ep = (id) => `https://fcm.googleapis.com/fcm/send/${id}`;
+
+// ── #1: at most the four newest phones per person ───────────────────────
+
+test('review #1: a person’s phones are capped at the four newest USABLE ones, in chat, alerts and tests', async () => {
+  const W = await load();
+  const w = world();
+  // Six phones for Bob, oldest first by name suffix; plus a junk record that is
+  // the NEWEST of all but points off the push services, so it must not count.
+  for (let i = 0; i < 6; i++) addDeviceAt(w, 'campScoreboard', BOB, `bob-phone-${i}`, NOW - 1000 * (10 - i), { prefs: { ch: { general: true } } });
+  addDeviceAt(w, 'campScoreboard', BOB, 'bob-junk-001', NOW - 1, { endpoint: 'https://evil.example/x', prefs: { ch: { general: true } } });
+  addDeviceAt(w, 'campScoreboard', CARL, 'carl-phone-1', NOW - 5000, { prefs: { ch: { general: true } } });
+
+  const order = W.memberDevices(BOB, w.net.db.get(`campScoreboard/push/${BOB}`), W.readConfig({})).map((d) => d.target.d);
+  assert.deepEqual(order, ['bob-phone-5', 'bob-phone-4', 'bob-phone-3', 'bob-phone-2', 'bob-phone-1', 'bob-phone-0'], 'newest first; junk not listed');
+
+  w.net.db.set('campScoreboard/chat/general/m1', { at: NOW, byKey: ALICE, text: 'hello' });
+  let r = await w.notify('alice@camp.org', { camp: 'junior', kind: 'chat', ch: 'general', msgId: 'm1' });
+  assert.equal(r.json.sent, 5, 'Carl’s one phone + Bob’s four');
+  const bobs = w.net.pushes.filter((p) => p.url.includes('bob-')).map((p) => p.url.split('/').pop()).sort();
+  assert.deepEqual(bobs, ['bob-phone-2', 'bob-phone-3', 'bob-phone-4', 'bob-phone-5'], 'the four newest, and never the junk record');
+
+  // A director alert to everyone obeys the same cap...
+  w.net.pushes = [];
+  w.net.now += 10001;
+  r = await w.notify('alice@camp.org', { camp: 'junior', kind: 'alert', text: 'Hi all', audience: 'all' });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(w.net.pushes.filter((p) => p.url.includes('bob-')).length, 4);
+  // ...and so does "send me a test" (otherwise a way to fan out to junk, 5 s at a time).
+  w.net.pushes = [];
+  r = await w.notify('bob.smith@camp.org', { camp: 'junior', kind: 'test' });
+  assert.equal(r.json.sent, 4);
+  assert.ok(w.net.pushes.every((p) => !p.url.endsWith('bob-phone-0') && !p.url.endsWith('bob-phone-1')));
+});
+
+test('review #1: the hourly tidy-up deletes a person’s surplus phones — and nothing else about them', async () => {
+  await load();
+  const w = world();
+  const t = Date.UTC(2027, 6, 20, 15, 17, 0); // :17 — maintenance minute
+  w.net.now = t;
+  for (let i = 0; i < 6; i++) addDeviceAt(w, 'campScoreboard', BOB, `bob-phone-${i}`, t - 1000 * (10 - i), {});
+  addDeviceAt(w, 'campScoreboard', BOB, 'bob-junk-001', t - 1, { endpoint: 'https://evil.example/x' });
+  w.addDevice('campScoreboard', CARL, 'carl-phone-1', {});
+  await w.cron();
+  const left = Object.keys(w.net.db.get(`campScoreboard/push/${BOB}`)).sort();
+  assert.deepEqual(left, ['bob-junk-001', 'bob-phone-2', 'bob-phone-3', 'bob-phone-4', 'bob-phone-5'],
+    'the two oldest real phones go; the four newest stay; a record that is merely not usable is left alone, not deleted');
+  assert.ok(w.net.db.get(`campScoreboard/push/${CARL}/carl-phone-1`), 'other people untouched');
+  assert.ok(w.maxCalls() <= 45);
+});
+
+test('review #1: one tidy-up pass removes at most 200 records, and the next hour carries on', async () => {
+  await load();
+  const w = world();
+  const t = Date.UTC(2027, 6, 20, 15, 17, 0);
+  w.net.now = t;
+  const flood = {};
+  for (let i = 0; i < 210; i++) {
+    const id = `flood-${String(i).padStart(4, '0')}`;
+    const rec = device(w.net, { id });
+    rec.at = t - 100000 + i;
+    flood[id] = rec;
+  }
+  w.net.db.set(`campScoreboard/push/${BOB}`, flood);
+  await w.cron();
+  assert.equal(Object.keys(w.net.db.get(`campScoreboard/push/${BOB}`)).length, 10, '210 − 200');
+  w.net.now = t + 60 * 60000;
+  await w.cron();
+  assert.deepEqual(Object.keys(w.net.db.get(`campScoreboard/push/${BOB}`)).sort(), ['flood-0206', 'flood-0207', 'flood-0208', 'flood-0209'], 'the four newest survive');
+});
+
+// ── #2: hung, redirecting and chatty push services ──────────────────────
+
+test('review #2: the push timeout is 8 s in production (shortened by tests only)', async () => {
+  const W = await load();
+  assert.equal(W.makeInvocation({}, { fetch: async () => new Response(''), now: () => NOW, cache: W.newCache() }).pushTimeoutMs, 8000);
+});
+
+test('review #2: a push service that never answers is cut off — /notify still finishes, the retry is queued, dead phones are still removed', async () => {
+  await load();
+  const w = world();
+  w.pushTimeoutMs = 60;
+  const hung = w.addDevice('campScoreboard', BOB, 'bob-phone-1', { prefs: { ch: { general: true } } });
+  const dead = w.addDevice('campScoreboard', CARL, 'carl-phone-1', { prefs: { ch: { general: true } } });
+  w.net.db.set('campScoreboard/members/dee@camp,org', { role: 'viewer', name: 'Dee', addedBy: 'x', addedAt: 1 });
+  w.addDevice('campScoreboard', 'dee@camp,org', 'dee-phone-1', { prefs: { ch: { general: true } } });
+  w.net.pushStatus[dead.endpoint] = 410;
+  // Accepts the connection, then says nothing — until the caller's signal fires.
+  // (A ref'd interval keeps Node's event loop alive: AbortSignal.timeout's own
+  // timer is unref'd, and a pending promise alone doesn't hold a process open.)
+  w.net.pushResponse[hung.endpoint] = (url, init) => new Promise((resolve, reject) => {
+    const keep = MAIN.setInterval(() => {}, 20);
+    init.signal.addEventListener('abort', () => { MAIN.clearInterval(keep); reject(init.signal.reason); });
+  });
+  w.net.db.set('campScoreboard/chat/general/m1', { at: NOW, byKey: ALICE, text: 'x' });
+  const started = Date.now();
+  // A watchdog so a regression (no timeout) FAILS this test instead of hanging the whole run.
+  let dog;
+  const watchdog = new Promise((resolve, reject) => { dog = MAIN.setTimeout(() => reject(new Error('the hung push service wedged /notify')), 5000); });
+  const r = await Promise.race([w.notify('alice@camp.org', { camp: 'junior', kind: 'chat', ch: 'general', msgId: 'm1' }), watchdog]);
+  MAIN.clearTimeout(dog);
+  assert.ok(Date.now() - started < 3000, 'did not wait for the hung endpoint');
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.json.sent, 1, 'Dee got hers');
+  assert.equal(r.json.queued, 1, 'the timed-out phone is re-queued as a transient failure');
+  assert.equal(r.json.removed, 1, 'the dead phone is STILL cleaned up');
+  assert.equal(w.net.db.get(`campScoreboard/push/${CARL}/carl-phone-1`), null);
+  const [id] = Object.keys(w.net.db.get('pushServer/outbox'));
+  assert.equal(w.net.db.get(`pushServer/outbox/${id}/attempts`), 1);
+  const sent = w.net.pushes.find((p) => p.url === hung.endpoint);
+  assert.ok(sent.signal, 'every push POST carries a timeout signal');
+  assert.ok(w.maxCalls() <= 45);
+});
+
+test('review #2: a redirect is never followed and is a permanent failure (no retry)', async () => {
+  const W = await load();
+  for (const st of [301, 302, 307, 308]) assert.equal(W.classifyPushStatus(st), 'permanent', String(st));
+  const w = world();
+  const bob = w.addDevice('campScoreboard', BOB, 'bob-phone-1', { prefs: { ch: { general: true } } });
+  w.net.pushResponse[bob.endpoint] = () => new Response(null, { status: 302, headers: { Location: 'https://evil.example/steal' } });
+  w.net.db.set('campScoreboard/chat/general/m1', { at: NOW, byKey: ALICE, text: 'x' });
+  const r = await w.notify('alice@camp.org', { camp: 'junior', kind: 'chat', ch: 'general', msgId: 'm1' });
+  assert.equal(r.json.sent, 0);
+  assert.equal(r.json.failed, 1);
+  assert.equal(r.json.queued, 0, 'permanent, not retried');
+  assert.deepEqual(r.json.errors, [{ status: 302, host: 'fcm.googleapis.com' }]);
+  assert.equal(w.net.db.get('pushServer/outbox'), null);
+  assert.equal(w.net.pushes.length, 1, 'one POST, to the endpoint on file; the Location was not chased');
+  assert.equal(w.net.pushes[0].redirect, 'manual', 'asked the platform not to follow redirects');
+});
+
+// A response whose body is a counted stream: `pulls` chunks were asked for,
+// `cancelled` says whether the reader let go. Finite, so a regression that
+// reads it all fails an assertion instead of hanging the suite.
+function countedBody(firstChunk, status) {
+  const o = { pulls: 0, cancelled: false };
+  const enc = (s) => Buffer.from(s.padEnd(100, '.'));
+  o.body = new MAIN.ReadableStream({
+    pull(c) { o.pulls++; if (o.pulls > 2000) c.close(); else c.enqueue(enc(o.pulls === 1 ? firstChunk : 'x')); },
+    cancel() { o.cancelled = true; },
+  });
+  o.response = () => new Response(o.body, { status });
+  return o;
+}
+
+test('review #2: a success body is never read; a refusal is read for ~300 bytes at most; its text never reaches the public page', async () => {
+  await load();
+  const w = world();
+  const okPhone = w.addDevice('campScoreboard', BOB, 'bob-phone-1', { prefs: { ch: { general: true } } });
+  const badPhone = w.addDevice('campScoreboard', CARL, 'carl-phone-1', { endpoint: 'https://web.push.apple.com/QSECRET', prefs: { ch: { general: true } } });
+  const good = countedBody('hello from a push service', 201);
+  const refusal = countedBody('SECRET-PUSH-DETAIL <script>alert(1)</script>', 403);
+  w.net.pushResponse[okPhone.endpoint] = good.response;
+  w.net.pushResponse[badPhone.endpoint] = refusal.response;
+  w.net.db.set('campScoreboard/chat/general/m1', { at: NOW, byKey: ALICE, text: 'x' });
+  const r = await w.notify('alice@camp.org', { camp: 'junior', kind: 'chat', ch: 'general', msgId: 'm1' });
+  assert.equal(r.json.sent, 1);
+  assert.equal(r.json.failed, 1);
+  assert.ok(good.pulls <= 1, `success body read ${good.pulls} chunks`);
+  assert.ok(good.cancelled, 'and released');
+  assert.ok(refusal.pulls >= 1 && refusal.pulls <= 6, `refusal body read ${refusal.pulls} chunks of 100 bytes`);
+  assert.ok(refusal.cancelled, 'then released');
+  const le = w.net.db.get('pushServer/lastError');
+  assert.equal(le.status, 403);
+  assert.ok(le.reason.includes('SECRET-PUSH-DETAIL') && le.reason.length <= 160, 'kept privately, for the database console');
+  const page = await w.request('GET', '/');
+  assert.ok(page.text.includes('web.push.apple.com refused a notification (HTTP 403)'), 'status and host are shown');
+  assert.ok(!page.text.includes('SECRET-PUSH-DETAIL') && !page.text.includes('script&gt;alert') && !page.text.includes('<script>'), 'what the push service said is NOT');
+});
+
+// ── #3: /resubscribe ────────────────────────────────────────────────────
+
+test('review #3: /resubscribe refuses a non-push host before any work, then scans the phone lists at most once a minute', async () => {
+  await load();
+  const w = world();
+  const a = w.addDevice('campScoreboard', BOB, 'bob-phone-1', {});
+  const c = w.addDevice('campScoreboard', CARL, 'carl-phone-1', {});
+  const f1 = device(w.net, { id: 'bob-new' });
+  const f2 = device(w.net, { id: 'carl-new' });
+  const post = (old, f, endpoint) => w.request('POST', '/resubscribe', { oldEndpoint: old, endpoint: endpoint || f.endpoint, p256dh: f.p256dh, auth: f.auth }, { Origin: SITE });
+  const scans = () => w.net.db.log.filter((l) => l.method === 'GET' && /^(campScoreboard|seniorScoreboard)\/push$/.test(l.path)).length;
+
+  // A new endpoint off the push services: refused outright — no database
+  // read, no slot spent — so a probe can't use the route as an open relay, and
+  // cannot use up the minute's one scan for a legitimate phone either.
+  const callsBefore = w.net.calls;
+  let r = await post(a.endpoint, f1, 'https://evil.example/x');
+  assert.equal(r.status, 400);
+  assert.equal(r.json.error, 'bad-subscription');
+  r = await post(a.endpoint, f1, 'https://127.0.0.1:8443/p/x');
+  assert.equal(r.status, 400, 'loopback is not a push service outside test-local mode');
+  assert.equal(w.net.calls, callsBefore, 'nothing was touched');
+
+  w.net.db.log = [];
+  r = await post(a.endpoint, f1);
+  assert.deepEqual(r.json, { ok: true, updated: 1 });
+  assert.equal(scans(), 2, 'one scan: each camp’s list read once');
+
+  // Everything after, for the rest of the minute, is a quiet no-op that never
+  // downloads a list — even for a genuine phone with a genuine old endpoint.
+  w.net.db.log = [];
+  for (let i = 0; i < 4; i++) {
+    r = await post(c.endpoint, f2);
+    assert.deepEqual(r.json, { ok: true, updated: 0 });
+  }
+  assert.equal(scans(), 0, 'throttled: no phone list downloaded');
+  assert.equal(w.net.db.get(`campScoreboard/push/${CARL}/carl-phone-1/endpoint`), c.endpoint, 'and nothing was changed');
+  w.net.now += 59999;
+  assert.deepEqual((await post(c.endpoint, f2)).json, { ok: true, updated: 0 }, 'still inside the minute');
+  w.net.now += 1;
+  w.net.db.log = [];
+  r = await post(c.endpoint, f2);
+  assert.deepEqual(r.json, { ok: true, updated: 1 }, 'the next minute’s scan goes through');
+  assert.equal(w.net.db.get(`campScoreboard/push/${CARL}/carl-phone-1/endpoint`), f2.endpoint);
+  assert.equal(scans(), 2);
+  // The stamp is one number, not a growing list.
+  assert.equal(typeof w.net.db.get('pushServer/rate/resubscribe'), 'number');
+});
+
+// ── #4: mentions are re-derived from the message ────────────────────────
+
+const TEAM_LIST = [
+  { id: 't0', name: 'Ferocious Foxes' }, { id: 't1', name: 'Turkey Dinner' }, { id: 't2', name: 'Methodic Mediocre Maples' },
+  { id: 't3', name: 'Particularly Perilous Pumpkins' }, { id: 't4', name: 'Patriotic Pilgrims' },
+];
+const DEE = 'dee@camp,org';
+
+// Bob (t2), Carl (t3), Dee (t4) — each with one phone that wants ONLY mentions
+// (the default: announcements on, general off), so a push to them in #general
+// is by definition a mention.
+function mentionWorld() {
+  const w = world();
+  w.net.db.set('campScoreboard/members/' + DEE, { role: 'viewer', name: 'Dee', teamId: 't4', addedBy: 'x', addedAt: 1 });
+  w.net.db.set('campScoreboard/state/teams', TEAM_LIST);
+  w.addDevice('campScoreboard', BOB, 'bob-phone-1', {});
+  w.addDevice('campScoreboard', CARL, 'carl-phone-1', {});
+  w.addDevice('campScoreboard', DEE, 'dee-phone-1', {});
+  return w;
+}
+const teamReads = (w) => w.net.db.log.filter((l) => l.method === 'GET' && l.path === 'campScoreboard/state/teams').length;
+let mentionMsg = 0;
+async function sayIn(w, text, claims) {
+  const msgId = 'mm' + (++mentionMsg);
+  w.net.db.set('campScoreboard/chat/general/' + msgId, { at: NOW, byKey: ALICE, text });
+  w.net.pushes = [];
+  w.net.db.log = [];
+  const r = await w.notify('alice@camp.org', Object.assign({ camp: 'junior', kind: 'chat', ch: 'general', msgId }, claims));
+  assert.equal(r.status, 200, r.text);
+  return r;
+}
+
+test('review #4: forged mentionKeys / mentionTeams are dropped; genuine name and team mentions are kept', async () => {
+  await load();
+  const w = mentionWorld();
+  // Everyone "mentioned" by a request whose message names nobody.
+  let r = await sayIn(w, 'lunch is at noon', { mentionKeys: [BOB, CARL, DEE], mentionTeams: ['t1', 't2', 't3', 't4'] });
+  assert.equal(r.json.sent, 0, 'nobody buzzed');
+  assert.equal(w.net.pushes.length, 0);
+  assert.equal(teamReads(w), 1, 'teams were claimed, so the list was read — once');
+
+  // A real mention of Bob by name and of the Maples by team; Carl, the
+  // Pumpkins and Dee are claimed too but not in the text.
+  r = await sayIn(w, 'Hey bob — Maples, come to the dock', { mentionKeys: [BOB, CARL], mentionTeams: ['t2', 't3'] });
+  assert.equal(r.json.sent, 1);
+  assert.deepEqual(kindsByUrl(w), { [ep('bob-phone-1')]: 'mention' });
+
+  // A team named only by a word of its name (≥ 4 letters), no people claimed.
+  r = await sayIn(w, 'Pilgrims, line up!', { mentionKeys: [], mentionTeams: ['t4', 't2'] });
+  assert.deepEqual(kindsByUrl(w), { [ep('dee-phone-1')]: 'mention' }, 'Dee is on the Pilgrims; Bob’s Maples were not named');
+
+  // The member's first name is enough, and a claimed-but-unnamed member is dropped.
+  r = await sayIn(w, 'ask Dee about it', { mentionKeys: [DEE, BOB] });
+  assert.deepEqual(kindsByUrl(w), { [ep('dee-phone-1')]: 'mention' });
+});
+
+test('review #4: the team list is read only when a request actually claims a team mention', async () => {
+  await load();
+  const w = mentionWorld();
+  await sayIn(w, 'hi Bob', { mentionKeys: [BOB], mentionTeams: [] });
+  assert.equal(teamReads(w), 0, 'people claimed, no team claimed: no read');
+  await sayIn(w, 'hi Bob', {});
+  assert.equal(teamReads(w), 0, 'nothing claimed: no read');
+  await sayIn(w, 'hi Bob', { mentionTeams: ['not-a-team', 't99', 7] });
+  assert.equal(teamReads(w), 0, 'junk claims are not claims');
+  await sayIn(w, 'hi Bob', { mentionTeams: ['t2', 't2', 't2'] });
+  assert.equal(teamReads(w), 1, 'a claimed team costs exactly one read, however it is repeated');
+  assert.ok(w.maxCalls() <= 45);
+});
+
+test('review #4: at most 10 people and 3 teams per message', async () => {
+  await load();
+  const w = world();
+  const members = baseMembers();
+  const claim = [];
+  let text = '';
+  for (let i = 0; i < 12; i++) {
+    members[`kid${i}@camp,org`] = { role: 'viewer', name: `Kid${i}`, addedBy: 'x', addedAt: 1 };
+    claim.push(`kid${i}@camp,org`);
+    text += `Kid${i}, `;
+  }
+  for (let i = 0; i < 5; i++) members[`zork${i}@camp,org`] = { role: 'viewer', name: `Zork${i}`, teamId: `t${i}`, addedBy: 'x', addedAt: 1 };
+  w.net.db.set('campScoreboard/members', members);
+  w.net.db.set('campScoreboard/state/teams', TEAM_LIST);
+  for (let i = 0; i < 12; i++) w.addDevice('campScoreboard', `kid${i}@camp,org`, `kid-phone-${i}`, {});
+  for (let i = 0; i < 5; i++) w.addDevice('campScoreboard', `zork${i}@camp,org`, `zork-phone-${i}`, {});
+
+  await sayIn(w, text.trim(), { mentionKeys: claim });
+  const people = Object.keys(kindsByUrl(w)).map((u) => u.split('/').pop()).sort();
+  assert.deepEqual(people, Array.from({ length: 10 }, (_, i) => `kid-phone-${i}`).sort(), 'the first ten claimed, in order');
+
+  await sayIn(w, 'Foxes Turkey Maples Pumpkins Pilgrims all together', { mentionTeams: ['t0', 't1', 't2', 't3', 't4'] });
+  const teams = Object.keys(kindsByUrl(w)).map((u) => u.split('/').pop()).sort();
+  assert.deepEqual(teams, ['zork-phone-0', 'zork-phone-1', 'zork-phone-2'], 'the first three teams claimed');
+});
+
+test('review #4: names with regex metacharacters, accents, emoji — whole words only, case-insensitive, nothing interpreted', async () => {
+  const W = await load();
+  const ace = 'Dr. A.J. (Ace) [Q]+*?';
+  assert.ok(W.memberNamedIn(ace, 'ping dr. a.j. (ace) [q]+*? please'), 'full name, every metacharacter literal, case-insensitive');
+  assert.notOk(W.memberNamedIn('A.B', 'AxB is here'), '. is a dot, not "any character"');
+  assert.ok(W.memberNamedIn('A.B', 'a.b is here'));
+  assert.notOk(W.memberNamedIn('(a|b)', 'a'), 'alternation is not alternation');
+  assert.notOk(W.memberNamedIn('Sam*', 'Samuel and Sammy'), '* is not a quantifier');
+  assert.notOk(W.memberNamedIn('[abc]', 'a b c'), 'a class is not a class');
+  assert.ok(W.memberNamedIn('José García', 'hola JOSÉ!'), 'accents: first name, any case');
+  assert.ok(W.memberNamedIn('José García', 'hola josé garcía'), 'and the full name');
+  assert.notOk(W.memberNamedIn('José García', 'hola Josep'), 'but not a longer word');
+  assert.ok(W.memberNamedIn('🎸 Rocker', 'yo 🎸 rocker 🎸'), 'emoji in a name');
+  assert.notOk(W.memberNamedIn('🎸 Rocker', 'yo rocker'), 'its first "name" is one emoji — too short to count');
+  assert.ok(W.memberNamedIn('Mary  Jo', 'Mary Jo!'), 'spacing in the name is flexible');
+  assert.ok(W.memberNamedIn('Bob Smith', 'bob\nsmith'));
+  // The boundary is "not touching an ASCII letter or digit" — chat.js's own rule.
+  assert.ok(W.memberNamedIn('Bob', 'bob.'));
+  assert.ok(W.memberNamedIn('Bob', '(bob)'));
+  assert.ok(W.memberNamedIn('Bob', "Bob's"));
+  assert.notOk(W.memberNamedIn('Bob', 'Bobby'));
+  assert.notOk(W.memberNamedIn('Bob', 'bob2'));
+  assert.notOk(W.memberNamedIn('Bob', 'Hubob'));
+  assert.notOk(W.memberNamedIn('Q', 'Q is here'), 'a one-character name matches nothing');
+  assert.notOk(W.memberNamedIn('', 'anything'));
+  assert.notOk(W.memberNamedIn(undefined, 'anything'));
+  assert.notOk(W.memberNamedIn({ evil: true }, 'anything'));
+  assert.notOk(W.mentionedAsWord('x'.repeat(5000), 'a'.repeat(300)), 'a long name against long text is just a miss');
+  // Teams: the whole name, or one word of it that is 4+ letters.
+  const maples = 'Methodic Mediocre Maples';
+  assert.ok(W.teamNamedIn(maples, 'we love MAPLES!'));
+  assert.ok(W.teamNamedIn(maples, 'Methodic Mediocre Maples rule'));
+  assert.ok(W.teamNamedIn(maples, 'mediocre'));
+  assert.notOk(W.teamNamedIn(maples, 'maple syrup'), 'Maple is not Maples');
+  assert.notOk(W.teamNamedIn('Red Fox', 'red'), '"Red" is under 4 letters');
+  assert.ok(W.teamNamedIn('Red Fox', 'the red fox!'), 'but the whole name still counts');
+  assert.ok(W.teamNamedIn('Runaway John Deersz', 'go john deersz'), 'a multi-word name as written');
+  assert.ok(W.teamNamedIn('The 49ers', 'go 49ers'), 'digits count toward a word');
+  assert.notOk(W.teamNamedIn('', 'x'));
+  // The senior camp's teams are "Red Team", "Blue Team"…: the filler word
+  // "team" must not vouch for a team claim, or any message saying "team" would.
+  assert.notOk(W.teamNamedIn('Red Team', 'team competitions at 3'), '"team" alone names nobody');
+  assert.notOk(W.teamNamedIn('Gold Team', 'which team won?'));
+  assert.ok(W.teamNamedIn('Red Team', 'Red Team, line up'), 'the whole name does');
+  assert.ok(W.teamNamedIn('Blue Team', 'go blue!'), 'and so does its distinctive word');
+  assert.ok(W.teamNamedIn('Gold Team', 'GOLD wins'));
+});
+
+test('review #4: odd names end to end — only the genuinely named are buzzed', async () => {
+  await load();
+  const w = world();
+  const odd = {
+    'ace@camp,org': 'Dr. A.J. (Ace) [Q]+*?', 'jose@camp,org': 'José García', 'rock@camp,org': '🎸 Rocker',
+    'dot@camp,org': 'A.B', 'q@camp,org': 'Q',
+  };
+  const members = baseMembers();
+  for (const k of Object.keys(odd)) members[k] = { role: 'viewer', name: odd[k], addedBy: 'x', addedAt: 1 };
+  w.net.db.set('campScoreboard/members', members);
+  Object.keys(odd).concat([BOB]).forEach((k, i) => w.addDevice('campScoreboard', k, `odd-phone-${i}`, {}));
+  await sayIn(w, 'ping dr. a.j. (ace) [q]+*? and JOSÉ, plus 🎸 rocker, axb, q', { mentionKeys: Object.keys(odd).concat([BOB]) });
+  const got = Object.keys(kindsByUrl(w)).map((u) => u.split('/').pop()).sort();
+  assert.deepEqual(got, ['odd-phone-0', 'odd-phone-1', 'odd-phone-2'], 'ace, josé and the rocker; not A.B ("axb"), not "Q", not Bob');
+});
+
+test('review #4: if the team list can’t be read, team claims are dropped but the message still goes to everyone else', async () => {
+  await load();
+  const w = mentionWorld();
+  w.addDevice('campScoreboard', CARL, 'carl-chan-01', { prefs: { ch: { general: true } } });
+  const orig = w.net.db.fetch;
+  w.net.db.fetch = async (url, init, h) => (String(url).includes('/state/teams.json') ? new Response('{"error":"x"}', { status: 500 }) : orig(url, init, h));
+  const { result: r, logged } = await quietly(() => sayIn(w, 'Maples! and Pumpkins!', { mentionKeys: [], mentionTeams: ['t2', 't3'] }));
+  assert.equal(r.json.sent, 1, 'only Carl’s every-message subscription');
+  assert.deepEqual(kindsByUrl(w), { [ep('carl-chan-01')]: 'channel' });
+  assert.ok(logged.some((l) => l.includes('team mentions dropped')));
+});
+
+// ── #5: test-local mode and the push-host allowlist ─────────────────────
+
+test('review #5: only real push services — suffix match on a dot boundary; loopback only in test-local mode', async () => {
+  const W = await load();
+  const prod = W.readConfig({});
+  const local = W.readConfig({ FIREBASE_DB_URL: 'http://127.0.0.1:9000/?ns=camp-test' });
+  assert.equal(prod.local, false);
+  assert.equal(local.local, true);
+  assert.deepEqual(W.PUSH_HOST_SUFFIXES, ['google.com', 'googleapis.com', 'push.services.mozilla.com', 'push.apple.com', 'notify.windows.com']);
+  const ok = (cfg, u) => W.pushHostAllowed(cfg, new URL(u));
+  for (const u of [
+    'https://fcm.googleapis.com/fcm/send/x', 'https://android.googleapis.com/gcm/send/x', 'https://jmt17.google.com/gcm/send/x',
+    'https://google.com/x', 'https://updates.push.services.mozilla.com/wpush/v2/x', 'https://web.push.apple.com/x',
+    'https://wns2-par02p.notify.windows.com/w/?token=x', 'https://FCM.GoogleAPIs.com/x', 'https://fcm.googleapis.com:443/x',
+  ]) assert.ok(ok(prod, u), u);
+  for (const u of [
+    'https://evilgoogle.com/x', 'https://google.com.evil.example/x', 'https://fcm.googleapis.com.evil.example/x',
+    'https://notgoogleapis.com/x', 'https://fcm.googleapis.com@evil.example/x', 'https://user:pw@fcm.googleapis.com/x',
+    'http://fcm.googleapis.com/x', 'https://push.services.mozilla.com.evil.example/x', 'https://mozilla.com/x',
+    'https://apple.com/x', 'https://windows.com/x', 'https://127.0.0.1/x', 'https://localhost:8443/x', 'https://[::1]/x',
+    'https://169.254.169.254/x', 'https://camp.patricksimpson.info/x',
+  ]) assert.notOk(ok(prod, u), u);
+  assert.ok(ok(local, 'https://127.0.0.1:8443/p/dev1'), 'the e2e bench’s mock push service');
+  assert.ok(ok(local, 'https://localhost:8443/p/dev1'));
+  assert.notOk(ok(local, 'https://evil.example/x'), 'test-local mode opens loopback and nothing else');
+  assert.notOk(ok(local, 'https://10.0.0.5/x'));
+  assert.notOk(W.pushHostAllowed(prod, null));
+  // The same rule decides whether a device record is a usable subscription.
+  const rec = (e) => ({ endpoint: e, p256dh: 'B' + 'a'.repeat(86), auth: 'c'.repeat(22) });
+  assert.ok(W.deviceTarget(BOB, 'bob-phone-1', rec(ep('x')), prod));
+  assert.equal(W.deviceTarget(BOB, 'bob-phone-1', rec('https://evil.example/x'), prod), null);
+  assert.equal(W.deviceTarget(BOB, 'bob-phone-1', rec('https://127.0.0.1:8443/p/x'), prod), null);
+  assert.ok(W.deviceTarget(BOB, 'bob-phone-1', rec('https://127.0.0.1:8443/p/x'), local));
+  assert.ok(W.deviceTarget(BOB, 'bob-phone-1', rec(ep('x'))), 'no config at all: the strictest reading (real services only)');
+  assert.equal(W.deviceTarget(BOB, 'bob-phone-1', rec('https://127.0.0.1:8443/p/x')), null);
+});
+
+test('review #5: a record pointing off the push services is skipped in chat, alerts, tests and drains — nothing is ever POSTed there', async () => {
+  await load();
+  const w = world({ env: { PUSH_BATCH: '1' } });
+  w.addDevice('campScoreboard', BOB, 'bob-phone-1', { prefs: { ch: { general: true } } });
+  w.addDevice('campScoreboard', BOB, 'bob-evil-01', { endpoint: 'https://evil.example/collect', prefs: { ch: { general: true } } });
+  w.addDevice('campScoreboard', CARL, 'carl-evil-1', { endpoint: 'https://127.0.0.1:8443/p/carl', prefs: { ch: { general: true } } });
+  w.addDevice('campScoreboard', CARL, 'carl-phone-1', { prefs: { ch: { general: true } } });
+  w.net.db.set('campScoreboard/chat/general/m1', { at: NOW, byKey: ALICE, text: 'x' });
+  let r = await w.notify('alice@camp.org', { camp: 'junior', kind: 'chat', ch: 'general', msgId: 'm1' });
+  assert.equal(r.json.sent + r.json.queued, 2, 'two usable phones, not four');
+  for (const id of r.json.batches) await w.request('POST', '/drain', { batch: id });
+  w.net.now += 10001;
+  r = await w.notify('alice@camp.org', { camp: 'junior', kind: 'alert', text: 'Hi', audience: 'all' });
+  for (const id of r.json.batches) await w.request('POST', '/drain', { batch: id });
+  w.net.now += 5001;
+  r = await w.notify('bob.smith@camp.org', { camp: 'junior', kind: 'test' });
+  assert.equal(r.json.sent, 1, 'a test goes to the one usable phone');
+  assert.ok(w.net.pushes.length >= 4);
+  assert.ok(w.net.pushes.every((p) => p.host === 'fcm.googleapis.com'), [...new Set(w.net.pushes.map((p) => p.host))].join(','));
+
+  // A record edited to point somewhere else AFTER its batch was queued.
+  const w2 = world({ env: { PUSH_BATCH: '1' } });
+  crowd(w2, 2);
+  w2.net.db.set('campScoreboard/chat/announcements/m1', { at: NOW, byKey: ALICE, text: 'x' });
+  r = await w2.notify('alice@camp.org', { camp: 'junior', kind: 'chat', ch: 'announcements', msgId: 'm1' });
+  const id = r.json.batches[0];
+  const t = w2.net.db.get('pushServer/outbox/' + id).targets[0];
+  w2.net.db.set(`campScoreboard/push/${t.k}/${t.d}/endpoint`, 'https://evil.example/swapped');
+  const before = w2.net.pushes.length;
+  const d = await w2.request('POST', '/drain', { batch: id });
+  assert.equal(d.json.sent, 0);
+  assert.equal(w2.net.pushes.length, before, 'the queued batch did not follow the edited record');
+});
+
+test('review #5: with test-local mode on, loopback push endpoints work (the e2e bench) and nothing else new does', async () => {
+  await load();
+  const w = world({ env: { FIREBASE_DB_URL: 'http://127.0.0.1:9000/?ns=camp-test' } });
+  // Point the fake DB at the local-mode host the config now expects.
+  const orig = w.net.fetch;
+  w.net.fetch = async (url, init) => {
+    const u = new URL(url);
+    if (u.host === '127.0.0.1:9000') return w.net.db.fetch(url.replace('http://127.0.0.1:9000', 'https://' + DB_HOST), init, lowerHeaders(init && init.headers));
+    return orig(url, init);
+  };
+  w.addDevice('campScoreboard', BOB, 'bob-local-01', { endpoint: 'https://127.0.0.1:8443/p/bob-local-01', prefs: { ch: { general: true } } });
+  w.addDevice('campScoreboard', CARL, 'carl-evil-1', { endpoint: 'https://evil.example/x', prefs: { ch: { general: true } } });
+  w.net.db.set('campScoreboard/chat/general/m1', { at: NOW, byKey: ALICE, text: 'x' });
+  const r = await w.notify('alice@camp.org', { camp: 'junior', kind: 'chat', ch: 'general', msgId: 'm1' });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.json.sent, 1);
+  assert.deepEqual(w.net.pushes.map((p) => p.host), ['127.0.0.1:8443']);
+});
+
+// ── #6: the dedupe marker ───────────────────────────────────────────────
+
+const markerOf = (w, id) => w.net.db.get(`pushServer/sent/junior/c-${id}`);
+
+test('review #6: a failure before anything was sent or queued gives the dedupe marker back, so the alert can be retried', async () => {
+  await load();
+  // (a) The sender key in Firebase is damaged: deliverJobs throws before any send.
+  let w = world();
+  w.addDevice('campScoreboard', BOB, 'bob-phone-1', { prefs: { ch: { general: true } } });
+  w.net.db.set('campScoreboard/chat/general/m1', { at: NOW, byKey: ALICE, text: 'x' });
+  w.net.db.set('pushServer/vapid', { publicKey: 'junk', privateJwk: {} });
+  let { result: r } = await quietly(() => w.notify('alice@camp.org', { camp: 'junior', kind: 'chat', ch: 'general', msgId: 'm1' }));
+  assert.equal(r.status, 503);
+  assert.equal(r.json.error, 'not-configured');
+  assert.equal(markerOf(w, 'm1'), null, 'marker released');
+  w.net.db.set('pushServer/vapid', null); // the owner fixes it
+  r = await w.notify('alice@camp.org', { camp: 'junior', kind: 'chat', ch: 'general', msgId: 'm1' });
+  assert.equal(r.json.sent, 1, 'the retry goes out — it is not "duplicate"');
+  assert.ok(markerOf(w, 'm1') != null, 'and now it is marked');
+  assert.equal((await w.notify('alice@camp.org', { camp: 'junior', kind: 'chat', ch: 'general', msgId: 'm1' })).json.duplicate, true);
+
+  // (b) The phone list can't be read.
+  w = world();
+  w.addDevice('campScoreboard', BOB, 'bob-phone-1', { prefs: { ch: { general: true } } });
+  w.net.db.set('campScoreboard/chat/general/m1', { at: NOW, byKey: ALICE, text: 'x' });
+  const orig = w.net.db.fetch;
+  w.net.db.fetch = async (url, init, h) => (String(url).includes('/campScoreboard/push.json') ? new Response('{"error":"x"}', { status: 500 }) : orig(url, init, h));
+  ({ result: r } = await quietly(() => w.notify('alice@camp.org', { camp: 'junior', kind: 'chat', ch: 'general', msgId: 'm1' })));
+  assert.equal(r.status, 502);
+  assert.equal(markerOf(w, 'm1'), null);
+  w.net.db.fetch = orig;
+  assert.equal((await w.notify('alice@camp.org', { camp: 'junior', kind: 'chat', ch: 'general', msgId: 'm1' })).json.sent, 1);
+
+  // (c) Everybody refused it outright: nothing sent, nothing queued.
+  w = world();
+  const bob = w.addDevice('campScoreboard', BOB, 'bob-phone-1', { prefs: { ch: { general: true } } });
+  w.net.db.set('campScoreboard/chat/general/m1', { at: NOW, byKey: ALICE, text: 'x' });
+  w.net.pushStatus[bob.endpoint] = 403;
+  r = await w.notify('alice@camp.org', { camp: 'junior', kind: 'chat', ch: 'general', msgId: 'm1' });
+  assert.equal(r.json.sent + r.json.queued, 0);
+  assert.equal(r.json.failed, 1);
+  assert.equal(markerOf(w, 'm1'), null);
+  w.net.pushStatus[bob.endpoint] = 201;
+  assert.equal((await w.notify('alice@camp.org', { camp: 'junior', kind: 'chat', ch: 'general', msgId: 'm1' })).json.sent, 1);
+});
+
+test('review #6: the marker stays once ANYTHING went out or was queued — and for a message nobody needed to hear', async () => {
+  await load();
+  // Partly delivered: one phone fine, one refusing → keep the marker (no double buzz).
+  let w = world();
+  w.addDevice('campScoreboard', BOB, 'bob-phone-1', { prefs: { ch: { general: true } } });
+  const carl = w.addDevice('campScoreboard', CARL, 'carl-phone-1', { prefs: { ch: { general: true } } });
+  w.net.pushStatus[carl.endpoint] = 403;
+  w.net.db.set('campScoreboard/chat/general/m1', { at: NOW, byKey: ALICE, text: 'x' });
+  let r = await w.notify('alice@camp.org', { camp: 'junior', kind: 'chat', ch: 'general', msgId: 'm1' });
+  assert.equal(r.json.sent, 1);
+  assert.ok(markerOf(w, 'm1') != null);
+  // Only transient trouble, retry queued → keep it.
+  w = world();
+  const flaky = w.addDevice('campScoreboard', BOB, 'bob-phone-1', { prefs: { ch: { general: true } } });
+  w.net.pushStatus[flaky.endpoint] = 503;
+  w.net.db.set('campScoreboard/chat/general/m1', { at: NOW, byKey: ALICE, text: 'x' });
+  r = await w.notify('alice@camp.org', { camp: 'junior', kind: 'chat', ch: 'general', msgId: 'm1' });
+  assert.equal(r.json.queued, 1);
+  assert.ok(markerOf(w, 'm1') != null, 'queued for retry: the marker stands guard against a double send');
+  // Nobody to tell: not a failure, and not worth a subrequest to undo.
+  w = world();
+  w.net.db.set('campScoreboard/chat/general/m1', { at: NOW, byKey: ALICE, text: 'x' });
+  w.net.db.log = [];
+  r = await w.notify('alice@camp.org', { camp: 'junior', kind: 'chat', ch: 'general', msgId: 'm1' });
+  assert.equal(r.json.sent, 0);
+  assert.ok(markerOf(w, 'm1') != null);
+  assert.ok(!w.net.db.log.some((l) => l.method === 'DELETE' && l.path.includes('/sent/')), 'no pointless release');
+  assert.equal((await w.notify('alice@camp.org', { camp: 'junior', kind: 'chat', ch: 'general', msgId: 'm1' })).json.duplicate, true);
+});
+
+// ── #7: a refused service-account key ───────────────────────────────────
+
+test('review #7: Google refusing the key costs ONE mint attempt per invocation, and one a minute per isolate', async () => {
+  const W = await load();
+  const w = world();
+  w.net.refuseKey = true;
+  const { result: c1 } = await quietly(() => w.cron());
+  // The cron makes five-plus database calls (outbox, both camps, heartbeat);
+  // each used to sign a fresh JWT and POST it to Google again.
+  assert.equal(w.net.assertions.length, 1, 'one attempt, not one per call');
+  assert.ok(c1.used <= 2, `the whole run spent ${c1.used} subrequests`);
+
+  // A different invocation in the same isolate, moments later: no new attempt,
+  // and the answer is still the honest "Google refused the key".
+  const page = await w.request('GET', '/');
+  assert.equal(w.net.assertions.length, 1, 'remembered for the isolate');
+  assert.ok(page.text.includes('Google refused the key (Invalid JWT Signature.)'), 'the status page still tells the truth');
+  assert.equal((await w.request('GET', '/health')).json.error, 'not-configured');
+  assert.equal(w.net.assertions.length, 1);
+
+  // A minute on, it asks again (the key may have been re-enabled)...
+  w.net.now += 60001;
+  await w.request('GET', '/health');
+  assert.equal(w.net.assertions.length, 2);
+  // ...and the moment it works, the memory is cleared.
+  w.net.refuseKey = false;
+  w.net.now += 60001;
+  const ok = await w.request('GET', '/health');
+  assert.equal(ok.json.ok, true);
+  w.net.refuseKey = true;
+  w.cache.oauth = null;
+  const n = w.net.assertions.length;
+  await w.request('GET', '/health');
+  assert.equal(w.net.assertions.length, n + 1, 'a fresh failure is not served from an old success’s leftovers');
+
+  // A NEW key (different id) is tried at once, not blocked by the old one's refusal.
+  const env2 = { FIREBASE_SERVICE_ACCOUNT: JSON.stringify(Object.assign({}, SA_JSON, { private_key_id: 'sa-key-2' })) };
+  w.net.refuseKey = false;
+  const ictx = W.makeInvocation(env2, w.deps());
+  assert.equal(await W.adminToken(ictx), 'tok-1');
+  // Within ONE invocation the failure is remembered too, even with no cache shared.
+  w.net.refuseKey = true;
+  const before = w.net.assertions.length;
+  const solo = W.makeInvocation({ FIREBASE_SERVICE_ACCOUNT: JSON.stringify(Object.assign({}, SA_JSON, { private_key_id: 'sa-key-3' })) }, { fetch: w.net.fetch, now: () => w.net.now, cache: W.newCache() });
+  await rejects(W.adminToken(solo), (e) => assert.equal(e.reason, 'google-refused'));
+  await rejects(W.adminToken(solo), (e) => assert.equal(e.reason, 'google-refused'));
+  await rejects(W.adminToken(solo), (e) => assert.equal(e.why, 'Invalid JWT Signature.'));
+  assert.equal(w.net.assertions.length, before + 1);
+});
+
+test('review #7: a transient Google failure is still retried by the next caller (only a wrong key sticks)', async () => {
+  const W = await load();
+  const net = makeNet();
+  let n = 0;
+  const flaky = async (url, init) => {
+    if (url === TOKEN_URI) { n++; if (n === 1) return new Response('{}', { status: 503 }); }
+    return net.fetch(url, init);
+  };
+  const ictx = W.makeInvocation({ FIREBASE_SERVICE_ACCOUNT: JSON.stringify(SA_JSON) }, { fetch: flaky, now: () => NOW, cache: W.newCache() });
+  await rejects(W.adminToken(ictx), (e) => assert.equal(e.code, 'unavailable'));
+  assert.equal(await W.adminToken(ictx), 'tok-1', 'the second caller got a token');
+  assert.equal(n, 2);
+});
+
+// ── #8: test-local mode is decided on the database actually used ────────
+
+test('review #8: a bad database URL can never arm the test overrides, even one that merely says "localhost"', async () => {
+  const W = await load();
+  const overrides = { DB_ADMIN_TOKEN: 'owner', JWKS_URL: 'http://127.0.0.1:9099/keys' };
+  const PROD = 'https://camp-89cea-default-rtdb.firebaseio.com';
+  for (const bad of ['ftp://localhost', 'ftp://127.0.0.1:9000/', 'file://localhost/etc/passwd', 'ws://localhost:9000', 'ssh://localhost', 'javascript:alert(1)', 'localhost:9000', 'http://localhost.evil.example', 'http://evil.example/?x=localhost', 'http://127.0.0.1.evil.example', 'not a url', '']) {
+    const c = W.readConfig(Object.assign({ FIREBASE_DB_URL: bad }, overrides));
+    assert.equal(c.dbBase, PROD, `${bad} falls back to production`);
+    assert.equal(c.local, false, `${bad}: not local`);
+    assert.equal(c.adminToken, '', `${bad}: admin override NOT honored`);
+    assert.ok(c.jwksUrl.startsWith('https://www.googleapis.com/'), `${bad}: JWKS override NOT honored`);
+  }
+  // https to "localhost" is not the plain-http emulator either.
+  const secure = W.readConfig(Object.assign({ FIREBASE_DB_URL: 'https://localhost:9000' }, overrides));
+  assert.equal(secure.local, false);
+  assert.equal(secure.adminToken, '');
+  // What IS local: plain http to a loopback host.
+  for (const good of ['http://127.0.0.1:9000/?ns=camp-test', 'http://localhost:9000']) {
+    const c = W.readConfig(Object.assign({ FIREBASE_DB_URL: good }, overrides));
+    assert.equal(c.local, true, good);
+    assert.equal(c.adminToken, 'owner');
+    assert.equal(c.jwksUrl, 'http://127.0.0.1:9099/keys');
+  }
+  // Whole-path proof: with FIREBASE_DB_URL='ftp://localhost' the Worker still
+  // gets its admin token from GOOGLE — 'owner' is never sent to production.
+  const net = makeNet();
+  const ictx = W.makeInvocation(Object.assign({ FIREBASE_DB_URL: 'ftp://localhost', FIREBASE_SERVICE_ACCOUNT: JSON.stringify(SA_JSON) }, overrides),
+    { fetch: net.fetch, now: () => NOW, cache: W.newCache() });
+  assert.equal(await W.adminToken(ictx), 'tok-1');
+  assert.equal(net.tokenMints, 1);
 });
