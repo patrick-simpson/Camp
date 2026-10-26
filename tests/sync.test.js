@@ -258,9 +258,12 @@ test('first snapshot: newer local work is pushed, not overwritten', () => {
   assert.equal(ref.writes.length, 1, 'and gets pushed up');
 });
 
-test('first snapshot: older local work yields to the server', () => {
+test('first snapshot: offline work on a DIFFERENT item is kept alongside the server\'s newer work', () => {
+  // Policy since 2026-10-26 (owner: offline edits must stick): a three-way
+  // merge per path, not "newest timestamp takes the whole tree".
   freshState();
-  useFakeRef();
+  bootSyncedTree = syncedSnapshot();
+  const ref = useFakeRef();
   remoteReady = false;
   dirtySinceLoad = true;
   state.results = { mine: { medals: { gold: 't0' } } };
@@ -268,7 +271,21 @@ test('first snapshot: older local work yields to the server', () => {
 
   handleRemoteSnapshot({ teams: state.teams, results: { theirs: { medals: { gold: 't1' } } }, meta: { lastDataChangeAt: '2026-07-24T11:00:00Z' } });
 
-  assert.deepEqual(Object.keys(state.results), ['theirs'], 'the server is newer, so it wins');
+  assert.deepEqual(Object.keys(state.results).sort(), ['mine', 'theirs'], 'both survive');
+  assert.deepEqual(Object.keys(ref.writes[0] || {}), ['results/mine'], 'and only ours goes up');
+});
+
+test('first snapshot: the SAME item changed on both sides keeps the server\'s version', () => {
+  freshState();
+  state.results = { g: { medals: { gold: 't0' } } };
+  bootSyncedTree = syncedSnapshot();                       // both sides started from gold=t0
+  const ref = useFakeRef();
+  remoteReady = false;
+  dirtySinceLoad = true;
+  state.results = { g: { medals: { gold: 't2' } } };      // offline here
+  handleRemoteSnapshot({ teams: state.teams, results: { g: { medals: { gold: 't5' } } }, meta: {} }); // and there
+  assert.equal(state.results.g.medals.gold, 't5', 'a conflicting offline edit yields to the server');
+  assert.equal(ref.writes.length, 0, 'and is not pushed over it');
 });
 
 test('an empty database gets seeded rather than adopted', () => {

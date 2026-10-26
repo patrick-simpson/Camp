@@ -219,3 +219,52 @@ test('switching camps with an unconfirmed score asks first, and "no" keeps you h
 });
 
 function sandboxReloads() { return globalThis.__reloads || 0; }
+
+// ── sync#5(b): unconfirmed offline work survives a force-quit / reload ──
+
+test('the server-confirmed baseline is persisted on adopt and advanced only when a push is acknowledged', async () => {
+  freshState();
+  const ref = useFakeRef();
+  applyRemoteState(clone(syncedSnapshot()));
+  const cached = () => JSON.parse(localStorage.getItem(STORAGE_KEY))._syncBase;
+  assert.ok(cached(), 'adopting a snapshot records what the server holds — in the SAME write as the scores');
+  state.results = Object.assign({}, state.results, { g9: { medals: { gold: 't1' } } });
+  saveState();
+  pushState();
+  assert.notOk(cached().results && cached().results.g9, 'not before the server confirms it');
+  await Promise.resolve(); await Promise.resolve();
+  assert.equal(cached().results.g9.medals.gold, 't1', 'and yes once it has');
+  assert.equal(ref.writes.length, 1);
+  assert.notOk(SYNC_KEYS.includes('_syncBase'), 'never synced');
+  assert.notOk('_syncBase' in JSON.parse(backupJSON()), 'never in a backup');
+});
+
+test('a score saved offline in an EARLIER session is pushed on the next launch, not overwritten', () => {
+  freshState();
+  bootSyncedTree = syncedSnapshot();                 // the persisted, server-confirmed baseline
+  state.results = Object.assign({}, state.results, { offline: { medals: { gold: 't3' } } }); // cached, never uploaded
+  const ref = useFakeRef();
+  remoteReady = false;
+  dirtySinceLoad = false;                            // a NEW page load — nothing edited this session
+  const server = clone(bootSyncedTree);
+  server.results = Object.assign({}, server.results, { newer: { medals: { gold: 't4' } } });
+  handleRemoteSnapshot(server);
+  assert.ok(state.results.offline && state.results.newer, 'both the offline score and the newer server score are here');
+  assert.deepEqual(Object.keys(ref.writes[0] || {}), ['results/offline'], 'only the unconfirmed score goes up');
+});
+
+test('a write that reached the server before the app was killed is not pushed twice or reported as a conflict', () => {
+  freshState();
+  bootSyncedTree = syncedSnapshot();
+  state.results = Object.assign({}, state.results, { g: { medals: { gold: 't1' } } });
+  const ref = useFakeRef();
+  remoteReady = false;
+  const server = clone(syncedSnapshot());            // the server already has g (ack was never recorded)
+  let toasts = 0;
+  const realToast = showToast;
+  showToast = () => { toasts += 1; };
+  try { handleRemoteSnapshot(server); } finally { showToast = realToast; }
+  assert.equal(ref.writes.length, 0);
+  assert.equal(toasts, 0);
+});
+

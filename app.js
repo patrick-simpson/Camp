@@ -2204,6 +2204,31 @@ let lastSyncedTree = null;
 // The synced tree exactly as it was when this page loaded (the cached copy) — the
 // baseline for 'what did THIS device change before the first snapshot arrived'.
 let bootSyncedTree = null;
+// The synced tree the SERVER is known to hold — advanced only by events the
+// server confirmed (adopting a snapshot; a push's update() resolving), never
+// optimistically. It rides INSIDE the cached state (state._syncBase), because
+// the SDK's offline write queue lives in memory only: after a force-quit, an
+// iOS eviction or a reload, this is the only way to tell "saved on this phone
+// but never uploaded" apart from "the server has it" — and storing it in the
+// SAME localStorage write as the scores means the pair can never disagree (a
+// failed write, e.g. quota, leaves the previous consistent pair, so a stale
+// cache can never masquerade as a deletion). Not synced (not in SYNC_KEYS)
+// and not in backups (backupJSON lists its keys). See firstSnapshotMerge.
+let confirmedTree = null;
+
+function readConfirmedTree() {
+  const v = state && state._syncBase;
+  return v && typeof v === 'object' && !Array.isArray(v) ? JSON.parse(JSON.stringify(v)) : null;
+}
+
+function writeConfirmedTree(tree, persistNow) {
+  confirmedTree = tree;
+  state._syncBase = tree;
+  if (persistNow) {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* the previous consistent pair stays */ }
+  }
+}
+
 // The editable week config (days/games catalog) syncs on its own sibling ref
 // (campScoreboard/config) — deliberately OUTSIDE campScoreboard/state so older
 // cached clients, and the state node's own key-list bookkeeping (SYNC_KEYS /
@@ -2381,32 +2406,98 @@ function handleRemoteSnapshot(remote) {
   const firstSnapshot = !remoteReady;
   remoteReady = true; // server truth received — pushes may flow now
   if (!remote) { pushState(); return; } // seed an empty database
-  // Defend offline-entered work: if this is the very first snapshot and we
-  // saved something locally before it arrived, and our data is strictly
-  // newer than the server's, push local instead of adopting remote — which
-  // would otherwise wipe a result entered on dead wifi. Timestamps use the
-  // synced meta.lastDataChangeAt (touchData) so only real data edits win.
-  if (firstSnapshot && dirtySinceLoad) {
-    const localAt = state.meta && state.meta.lastDataChangeAt;
-    const remoteAt = remote.meta && remote.meta.lastDataChangeAt;
-    if (localAt && (!remoteAt || localAt > remoteAt)) {
-      // Diff against the tree as it was at load, NOT null: that sends only what this
-      // device changed, per path, instead of the whole tree over the server's newer data.
-      const mine = bootSyncedTree ? computeSyncUpdates(bootSyncedTree, syncedSnapshot()) : null;
-      if (mine && Object.keys(mine).length) {
-        lastSyncedTree = bootSyncedTree;
-        pushState();
-        return;
-      }
-      if (!bootSyncedTree) { pushState(); return; }
-      // nothing of ours to defend: fall through and adopt the server copy
-    }
-    dataEditPending = false; // the first snapshot reconciles any pre-sync edit
-  }
-  // The first snapshot is handled by dirtySinceLoad above; any later one waits
-  // for this device to be idle (see canAdoptRemote / deferRemoteSnapshot).
+  // The first snapshot after load is a THREE-WAY merge, so nothing entered on
+  // dead camp wifi is silently lost (owner's requirement: offline edits must
+  // stick and catch up later):
+  //   base   = the tree the server last CONFIRMED to this phone (persisted —
+  //            see confirmedTree — so it survives a force-quit, an iOS
+  //            eviction or a deploy reload, not just this page load)
+  //   mine   = what this phone changed since base (still unconfirmed)
+  //   theirs = what everyone else changed on the server since base
+  // Adopt the server, then re-apply every one of MY paths that nobody else
+  // touched, and push just those. The same path changed on both sides goes to
+  // the server's value (and the person is told). This replaced a coarse
+  // "newest timestamp wins the whole tree" rule that either dropped an offline
+  // score or — worse — pushed this phone's whole stale tree over everyone's
+  // newer results (both verified 2026-10-26).
+  if (firstSnapshot && bootSyncedTree && firstSnapshotMerge(remote)) return;
+  if (firstSnapshot) dataEditPending = false; // the first snapshot reconciles any pre-sync edit
+  // Any later snapshot waits for this device to be idle (see canAdoptRemote /
+  // deferRemoteSnapshot).
   if (!firstSnapshot && !canAdoptRemote()) { deferRemoteSnapshot(); return; }
   applyRemoteState(remote);
+}
+
+// Does path `a` overlap path `b` (equal, or one contains the other)?
+function syncPathsOverlap(a, b) {
+  return a === b || a.startsWith(b + '/') || b.startsWith(a + '/');
+}
+
+// Value at a slash path inside a plain tree (undefined if absent).
+function syncValueAt(tree, path) {
+  let node = tree;
+  for (const part of path.split('/')) {
+    if (!node || typeof node !== 'object') return undefined;
+    node = node[part];
+  }
+  return node;
+}
+
+// A copy of `tree` with RTDB-style path updates applied (null deletes).
+function applySyncPaths(tree, updates) {
+  const out = JSON.parse(JSON.stringify(tree || {}));
+  Object.keys(updates).forEach((path) => {
+    const parts = path.split('/');
+    let node = out;
+    for (let i = 0; i < parts.length - 1; i++) {
+      if (!node[parts[i]] || typeof node[parts[i]] !== 'object') node[parts[i]] = {};
+      node = node[parts[i]];
+    }
+    const last = parts[parts.length - 1];
+    const v = updates[path];
+    if (v === null || v === undefined) delete node[last];
+    else node[last] = JSON.parse(JSON.stringify(v));
+  });
+  return out;
+}
+
+// Returns true when it handled the snapshot (adopted + pushed our edits).
+function firstSnapshotMerge(remote) {
+  const local = syncedSnapshot();
+  const mine = computeSyncUpdates(bootSyncedTree, local);
+  const minePaths = Object.keys(mine);
+  if (!minePaths.length) return false; // nothing of ours outstanding — plain adopt
+  const serverTree = {};
+  SYNC_KEYS.forEach((k) => { serverTree[k] = remote[k] === undefined ? null : remote[k]; });
+  const theirs = computeSyncUpdates(bootSyncedTree, JSON.parse(JSON.stringify(serverTree)));
+  const theirPaths = Object.keys(theirs);
+  const keep = {};
+  const conflicts = [];
+  minePaths.forEach((p) => {
+    // "Data last updated" is a stamp, not a datum: the later one simply wins.
+    if (p === 'meta/lastDataChangeAt') {
+      const srv = syncValueAt(serverTree, p);
+      if (!srv || String(mine[p]) > String(srv)) keep[p] = mine[p];
+      return;
+    }
+    // Already on the server (we pushed it, then got killed before the ack was
+    // recorded) — nothing to do and nothing to report.
+    if (JSON.stringify(syncValueAt(serverTree, p) === undefined ? null : syncValueAt(serverTree, p)) === JSON.stringify(mine[p])) return;
+    if (theirPaths.some((q) => syncPathsOverlap(p, q))) { conflicts.push(p); return; }
+    keep[p] = mine[p];
+  });
+  dataEditPending = false;             // this merge reconciles every pre-sync edit
+  applyRemoteState(remote);            // the server's truth first…
+  const serverNorm = lastSyncedTree;   // (normalized, as adopted)
+  if (Object.keys(keep).length) {
+    applyRemoteState(applySyncPaths(serverNorm, keep)); // …then our surviving edits on top
+    lastSyncedTree = serverNorm;       // so the push below is exactly `keep`
+    pushState();
+  }
+  if (conflicts.length) {
+    showToast('⚠️ Something you changed while offline was also changed by someone else — kept their version.');
+  }
+  return true;
 }
 
 function applyRemoteState(remote) {
@@ -2454,6 +2545,7 @@ function applyRemoteState(remote) {
   // We now match the server, so this snapshot becomes the diff baseline —
   // otherwise the next push would re-send data we just received.
   lastSyncedTree = syncedSnapshot();
+  writeConfirmedTree(lastSyncedTree);
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
   applyingRemote = false;
   if (appStarted && syncSignature() !== beforeSig) {
@@ -2738,7 +2830,12 @@ function pushState() {
   // forever, and canAdoptRemote() would refuse every future snapshot — the
   // device would sit there looking connected while silently never syncing again.
   try {
-    fbRef.update(updates).then(settle, (e) => {
+    fbRef.update(updates).then(() => {
+      // The server now holds these paths: advance the persisted baseline by
+      // exactly them (acks arrive in write order, so this composes).
+      writeConfirmedTree(applySyncPaths(confirmedTree || prevBaseline || {}, updates), true);
+      settle();
+    }, (e) => {
       console.warn('sync push failed', e);
       lastSyncedTree = prevBaseline; // re-send these changes (still per-path) next push
       settle();
@@ -2756,7 +2853,7 @@ function pushState() {
 function syncSignature() {
   return JSON.stringify(SYNC_KEYS.map((k) => state[k]));
 }
-bootSyncedTree = syncedSnapshot();
+bootSyncedTree = readConfirmedTree() || syncedSnapshot();
 
 // A matchup "slot" — a stable key for one pairing, so a genuinely NEW matchup
 // can be told apart from an undo/clear across syncs.
