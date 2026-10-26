@@ -59,10 +59,21 @@ const CHANNELS = {
 };
 
 // The test notification's wording, in one place so it's easy to change. One
-// line is picked at random per test; add more lines for variety.
+// line is picked at random per test — rotating camp jokes, the owner's pick
+// (2026-10-26). Add or swap lines freely; keep each under ~120 characters so
+// it fits a lock-screen preview without being cut off.
 const TEST_TITLE = '✅ Phone alerts are working';
 const TEST_BODIES = [
-  'This phone will buzz like this for camp alerts.',
+  '🐿️ The camp squirrels have inspected this phone and approve.',
+  "🔥 This is only a test. The s'mores supply is fine.",
+  '🕊️ Message delivered. The carrier pigeons may finally rest.',
+  '🦟 Good news: this alert got through. Bad news: so did the mosquitoes.',
+  '🛶 Ahoy! Your phone is officially on the camp buzz list.',
+  "🍫 Test complete. Nobody touched the counselors' secret snack stash. Probably.",
+  '🔦 Flashlight check, bug spray check, phone alerts check.',
+  '🎒 This phone has been sorted into Team Gets-The-Alerts.',
+  '🌲 A tree fell in the forest, and this time you heard it.',
+  '🏕️ Testing, testing… is this thing on? It is! Carry on.',
 ];
 
 const DEFAULTS = {

@@ -1,0 +1,2 @@
+{ "name": "camp-push-e2e", "private": true, "type": "module",
+  "devDependencies": { "wrangler": "^4.0.0", "firebase-tools": "^13.0.0" } }

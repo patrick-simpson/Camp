@@ -25,7 +25,7 @@ const b64u = (buf) => Buffer.from(buf).toString('base64url');
 
 export function makeIdp() {
   const { publicKey, privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 });
-  const kid = 'test-kid-1';
+  const kid = 'test-kid-' + crypto.randomBytes(4).toString('hex');
   const jwk = publicKey.export({ format: 'jwk' });
   const jwks = { keys: [{ ...jwk, kid, alg: 'RS256', use: 'sig' }] };
   function mint(claims) {

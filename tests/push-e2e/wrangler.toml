@@ -1,0 +1,13 @@
+# E2E-only config: runs ../../push-worker/worker.js in real workerd against the
+# local RTDB emulator. The DB_ADMIN_TOKEN / JWKS_URL overrides are honored by the
+# Worker ONLY when the database URL is on this machine (see workerConfig()).
+name = "camp-alerts-e2e"
+main = "../../push-worker/worker.js"
+compatibility_date = "2024-09-23"
+[triggers]
+crons = ["* * * * *"]
+[vars]
+FIREBASE_DB_URL = "http://127.0.0.1:9000/?ns=camp-89cea-default-rtdb"
+DB_ADMIN_TOKEN = "owner"
+JWKS_URL = "http://127.0.0.1:8790/jwks"
+ALLOWED_ORIGINS = "http://localhost:8080"
