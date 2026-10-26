@@ -1,0 +1,86 @@
+[
+ {
+  "id": "sync#2",
+  "sub": "sync",
+  "n": 2,
+  "title": "Any focused Jelly component (home-card header, jelly-button, chip) counts as 'mid-entry' and freezes all live updates, including for viewers on Android Chrome",
+  "severity": "high",
+  "file": "app.js",
+  "line": 7083,
+  "scenario": "A counselor (viewer) on an Android phone taps the 'Current Standings' card header to expand it. That focuses the jelly-collapsible's shadow <button>, so document.activeElement becomes the JELLY-COLLAPSIBLE host. Because of delegatesFocus, tapping anywhere inside the open card keeps that focus, and so does scrolling. editorMidEntry() matches ae.tagName.startsWith('JELLY-') (7083) and returns true. canAdoptRemote() is then false (2243), and it never checks canEdit(). Every later snapshot goes through deferRemoteSnapshot (2316), and idleRetryTick (2279) skips it every second for as long as the header stays focused. The standings and live board stay stale with no indication until the user happens to tap outside every card. Editors hit the same thing after tapping any jelly-button, such as a tally counter. collapseCardsForIdle also never collapses the card.",
+  "evidence": "Ran /tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/focus.js, which uses Playwright Chromium with a Pixel 7 profile and the real index.html served read-only, a viewer auth hint and the Firebase CDN blocked. Before the tap the result was {active:BODY, midEntry:false}. After tapping the Standings header it was {active:JELLY-COLLAPSIBLE, midEntry:true, canAdopt:false}. The same held after scrolling, after waiting 5s, and after tapping inside the open card body. Only tapping the page margin cleared it. While the header was focused, an in-page handleRemoteSnapshot carrying a new result returned {adopted:false, remoteRefetchPending:true}. tally.js also showed that tapping a counter leaves activeElement = JELLY-BUTTON.",
+  "fix": "Count only text-entry Jelly hosts in editorMidEntry: replace ae.tagName.startsWith('JELLY-') with /^JELLY-(INPUT|TEXTAREA|SELECT|OTP)$/.test(ae.tagName). Optionally, let viewers always adopt: canAdoptRemote() returns pendingWrites === 0 && (!canEdit() || !editorMidEntry()). That mirrors reloadWhenSafe, but the sync.test.js deferral tests would then need setMemberRole('editor'). Ship this together with the tally-closure fix below, because removing the button-focus deferral exposes that bug on every platform."
+ },
+ {
+  "id": "time#1",
+  "sub": "time",
+  "n": 1,
+  "title": "Any focused Jelly element (card header, button, chip, switch, dialog) counts as score entry, so on Chrome/Android a tap on a home card freezes sync indefinitely, for viewers as well as editors",
+  "severity": "high",
+  "file": "app.js",
+  "line": 7083,
+  "scenario": "A counselor on an Android phone, or a director on a Chrome laptop, taps the Current Standings header to expand it and leaves the screen showing the standings. Chromium focuses the native <button> inside jelly-collapsible's shadow root, which uses delegatesFocus (vendor/jelly.js, class ki). document.activeElement therefore becomes the JELLY-COLLAPSIBLE host. editorMidEntry() (app.js:7072-7088) returns true for any tagName starting with 'JELLY-' (app.js:7083) and has no canEdit() gate. canAdoptRemote() (app.js:2242-2244) then returns false. Every later snapshot goes to deferRemoteSnapshot() (handleRemoteSnapshot, app.js:2315). idleRetryTick (app.js:2274-2294) re-checks once a second but stays blocked while focus sits on the card. The standings stay frozen until the user happens to tap a non-focusable spot outside every card. The same focus also blocks idle auto-collapse (collapseCardsForIdle, app.js:7193). For editors it also holds off the deploy auto-reload forever (reloadWhenSafe, app.js:7172). jelly-button, jelly-chip, jelly-switch, jelly-segmented, jelly-tabs and an open jelly-dialog or jelly-drawer all behave the same way. iOS Safari does not focus buttons on tap, which is probably why this has not shown up in testing.",
+  "evidence": "(1) Ran Playwright Chromium with Pixel 5 touch emulation against the real index.html, served read-only on localhost with Firebase hosts blocked and the auth hint set to 'viewer'. Before the tap: activeElement=BODY, editorMidEntry=false, canAdoptRemote=true. After one touchscreen tap on the .standings-card header: activeElement=JELLY-COLLAPSIBLE, editorMidEntry=true, canAdoptRemote=false. I then fed handleRemoteSnapshot() a snapshot carrying a new result. 3 seconds later the result was still not adopted (remoteRefetchPending=true, focus still on JELLY-COLLAPSIBLE). (2) A minimal page with vendored jelly.js showed the same for a tap on slotted card-body text, jelly-button, jelly-chip and jelly-switch. (3) In the vm harness, a viewer (canEdit()=false) with activeElement {tagName:'JELLY-COLLAPSIBLE'} gave editorMidEntry=true and canAdoptRemote=false. The remote result was not adopted and stayed owed across idleRetryTick() calls. No test pins the JELLY- prefix behavior (grep tests: no 'JELLY').",
+  "fix": "In editorMidEntry, replace `ae.tagName.startsWith('JELLY-')` with an allowlist of Jelly hosts that really hold typed input, e.g. `const JELLY_TEXT_ENTRY = ['JELLY-INPUT','JELLY-TEXTAREA','JELLY-SELECT','JELLY-OTP'];` and use `JELLY_TEXT_ENTRY.includes(ae.tagName)`. Buttons, chips, switches, segmented controls, collapsibles, tabs, dialogs and drawers commit on click and are not mid-entry. Add sync.test.js cases: activeElement {tagName:'JELLY-COLLAPSIBLE'} gives canAdoptRemote()===true, and {tagName:'JELLY-INPUT'} gives false."
+ },
+ {
+  "id": "sync#5",
+  "sub": "sync",
+  "n": 5,
+  "title": "A result saved offline is silently erased if the page reloads before the SDK uploads it (iOS PWA eviction, or deploy auto-reload)",
+  "severity": "high",
+  "file": "app.js",
+  "line": 7172,
+  "scenario": "A ref saves a result where the RTDB socket is down. pushState hands the update to the SDK, which queues it in memory only, so pendingWrites is 1. The state is in localStorage. The page then reloads before the socket recovers. iOS can evict the backgrounded home-screen app, for example while the camera is open for Pictionary photos. Or onNewVersion \u2192 reloadWhenSafe (7171-7172) reloads, because editorMidEntry() ignores pendingWrites (7087) and so treats a device with an unconfirmed write as safe. On the next load the result is still in the cache, but nothing is saved before the first snapshot, so dirtySinceLoad stays false. handleRemoteSnapshot goes straight to applyRemoteState (2317), which replaces results with the server copy and overwrites localStorage. The result is gone from every device and nothing tells the ref.",
+  "evidence": "Ran /tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/demo5.js (real app.js via harness). The fake fbRef.update never settles, and the reload is simulated by re-running loadState/migrateState/normalizeSyncedState and resetting the sync globals. Output: {queuedWrites:1, editorMidEntry:false, inCacheAfterReload:true, afterFirstSnapshot:false, inLocalStorage:false, pushes:0}.",
+  "fix": "Use the same persisted server-confirmed baseline as the first finding: lsKey('campScoreboardSyncBase'), written on adopt and on update() resolve. A reloaded page can then compute what it never uploaded (computeSyncUpdates(base, local)), re-apply it over the first snapshot and push it per path. Also make reloadWhenSafe wait while pendingWrites > 0 (if (!canEdit() || (!editorMidEntry() && pendingWrites === 0))) so the auto-reload never throws away the SDK's queue."
+ },
+ {
+  "id": "time#2",
+  "sub": "time",
+  "n": 2,
+  "title": "Deploy auto-reload discards a result whose write the server has not confirmed yet (pendingWrites > 0), and the next page silently overwrites it with the server copy",
+  "severity": "high",
+  "file": "app.js",
+  "line": 7172,
+  "scenario": "1. An editor saves a result where camp wifi is weak, or saves just before locking the phone. flushPendingPush/pushState (app.js:2585-2627) hands the update to the RTDB SDK. It sets dataEditPending=false (app.js:2594) and pendingWrites=1 (app.js:2601). The write is only queued in the SDK's in-memory queue because the socket is half-open or reconnecting. 2. Connectivity comes back. The 2-minute poll, or the visibilitychange check on unlock (app.js:7123-7126), fetches index.html over a fresh HTTP connection before RTDB has reconnected and re-authenticated to flush its queue. If a deploy shipped meanwhile, onNewVersion runs reloadWhenSafe (app.js:7171-7174). 3. editorMidEntry() ignores pendingWrites (app.js:7087), so doReload fires 1.2 s later. The SDK's queued write dies with the page, because RTDB on the web has no persistence across reloads. 4. The reloaded page has the result in localStorage. But the boot path normally makes no saveState before the first snapshot, so dirtySinceLoad stays false. handleRemoteSnapshot therefore adopts the server tree, which lacks the result, and applyRemoteState writes that back over localStorage (app.js:2361). The result is gone from every device with no error. The owner deploys often during camp (v181), which makes the trigger likely.",
+  "evidence": "vm harness, two contexts loading the real app files. Context A (editor): fbRef = {update: () => new Promise(() => {})}, which stands for a socket that never acks. Recorded state.results[firstGame], then touchData(), saveState(), flushPendingPush(). Output: pendingWrites=1, dataEditPending=false, pushTimer=null, editorMidEntry()=false, so the reloadWhenSafe gate `!canEdit()||!editorMidEntry()` is true. Context B stood in for the reloaded page: I copied A's STORAGE_KEY into its localStorage and ran state=loadState(). Output: 'reloaded page has the result locally: true, dirtySinceLoad: false'. After handleRemoteSnapshot(serverTreeWithoutResult): 'result still present: false, in localStorage: no'.",
+  "fix": "Gate the reload on unconfirmed writes, the same rule canAdoptRemote already uses. Add a helper `function reloadBlocked(){ return pendingWrites > 0 || (canEdit() && editorMidEntry()); }` and rewrite reloadWhenSafe as `if (reloadBlocked()) { setTimeout(reloadWhenSafe, 12000); return; } setTimeout(() => reloadBlocked() ? reloadWhenSafe() : doReload(), 1200);`. The check repeats inside the 1.2 s delay so an edit made in that gap is also protected. The update banner stays up, so a person can still tap to refresh."
+ },
+ {
+  "id": "time#3",
+  "sub": "time",
+  "n": 3,
+  "title": "Deploy auto-reload fires in the middle of timing: it wipes a running Pictionary lap and leaves the ref's phone unable to sound the zero buzzer",
+  "severity": "medium",
+  "file": "app.js",
+  "line": 7172,
+  "scenario": "Pictionary: the ref taps 'Nose down \u2014 start'. The lap lives only in memory: liveWatches[g.id].running and startAt (app.js:3012, 3370-3374). After the tap, renderTools rebuilds the buttons, so nothing stays focused. On iOS a tapped button never takes focus anyway. A deploy-triggered onNewVersion then runs reloadWhenSafe (app.js:7171-7174). editorMidEntry() is false, so the page reloads 1.2 s later. The lap time in progress is lost and the ref sees 'start' again with no elapsed time; the code admits the in-memory copy 'dies on reload' (app.js:3221). Synced game clock: the editor's phone is the only device that buzzes and stops the clock (tickBoardClocks, app.js:3097-3104). After an auto-reload, no user gesture has unlocked audio. playAlarm calls getAudio (app.js:2765-2775), which creates a new AudioContext that stays suspended on iOS and under Chrome's autoplay policy, and navigator.vibrate is blocked before user activation. The wake lock is also gone, because it is only requested from the Start tap (app.js:5906). Result: a silent 0:00, or the phone sleeps and misses zero entirely.",
+  "evidence": "vm harness, editor role, with liveWatches.pic={running:true,startAt:now-40s} and state.clocks.gx running with 4 minutes left. Output: editorMidEntry()=false and the reloadWhenSafe gate is true, so the reload proceeds. Code read: start-lap keeps time only in liveWatches (app.js:3370-3374); requestWakeLock is only called from applyClockAction 'start' (app.js:5906); getAudio is only unlocked from gestures (app.js:2895, 3371, 5495, 5882).",
+  "fix": "Add `function timingLive(){ return Object.values(liveWatches).some((w) => w && w.running) || Object.values(state.clocks || {}).some((c) => c && c.running && (Number(c.endAt) || 0) > serverNow()); }` and include `(canEdit() && timingLive())` in the reload gate (reloadBlocked above). The endAt > serverNow() test matters: a clock left 'running' at 0:00 (see the zero-detection finding) must not hold off reload forever. The tap-to-refresh banner still shows, so the ref can reload between rounds."
+ },
+ {
+  "id": "time#6",
+  "sub": "time",
+  "n": 6,
+  "title": "Deploy auto-reload throws away a chat message being typed (and an in-flight photo send) for every role",
+  "severity": "low",
+  "file": "app.js",
+  "line": 7081,
+  "scenario": "Chat is open to every member, viewers included. A counselor (viewer) is halfway through typing an announcement-channel message in #chat-input (chat.js:828). A deploy is detected and reloadWhenSafe runs (app.js:7171-7174). For viewers the gate is `!canEdit()`, so the page reloads in 1.2 s whatever they are doing. For editors, editorMidEntry deliberately skips the chat composer (inChatComposer, app.js:7081-7083), so they reload too. The composer text exists only in the DOM input (sendChatMessage reads input.value, chat.js:262-275). It is lost, along with a photo still being compressed or uploaded by sendChatPhoto. Excluding the composer from editorMidEntry was right for sync deferral. It was never meant to opt chat drafts out of reload protection, and viewers had no inputs when 'viewers reload immediately' was decided.",
+  "evidence": "vm harness: activeElement = {tagName:'INPUT', closest: s => s==='#chat-view' ? {} : null}. Output: editorMidEntry()=false. With setMemberRole('viewer') the reload gate `!canEdit()` is true unconditionally. grep shows no chat draft persistence in chat.js.",
+  "fix": "Leave editorMidEntry alone so the sync behavior is unchanged. In the reload gate only, add `const ci = document.getElementById('chat-input'); if (ci && ci.value.trim()) return true;`, plus a flag set while sendChatPhoto or chatAtomicSend is pending, for all roles. The banner stays up, and the reload happens once the message is sent or cleared."
+ },
+ {
+  "id": "auth#3",
+  "sub": "auth",
+  "n": 3,
+  "title": "switchCamp and signOutAndClear reload with unconfirmed (offline-queued) score writes, which are then lost",
+  "severity": "medium",
+  "file": "app.js",
+  "line": 7817,
+  "scenario": "Example: a director who edits both camps saves a result on flaky camp wifi. The indicator reads 'Offline \u2014 will sync when back', pushState has called fbRef.update(), and pendingWrites is 1. The write is queued only in the RTDB SDK's memory, because the web SDK has no disk persistence. The director then switches camps (camp picker 7898, the Settings segmented control at 1731, or the footer chip).\n- switchCamp (7817-7837) checks nothing and calls location.reload(), so the queued write dies.\n- The result does survive in the junior STORAGE_KEY. But when they return, dirtySinceLoad is false (it is in-memory and reset per load), so the first snapshot runs applyRemoteState and replaces it with the server copy (handleRemoteSnapshot 2297-2319). The score is silently gone.\n- signOutAndClear (7927) is worse: clearLocalData wipes STORAGE_KEY, the only durable copy, before reloading. Its confirm text ('Camp data stored on this device will be cleared') never mentions unsynced scores.\nreloadWhenSafe (auto-reload on deploy) has the same gap, because editorMidEntry() (7072) counts dataEditPending and pushTimer but not pendingWrites. That race is realistic when a phone is refocused: checkForUpdate's HTTP fetch succeeds before the RTDB socket has reconnected and flushed.",
+  "evidence": "/tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/demo4.js: with touchData(); saveState(); pendingWrites = 1, it prints 'editorMidEntry= false' and 'switchCamp reloaded with an unacked write: true'.\n/tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/demo5c.js: a cached result with a newer lastDataChangeAt, followed by handleRemoteSnapshot(older remote) with dirtySinceLoad=false (a fresh load), prints 'result survived first snapshot? false'.",
+  "fix": "Add `function hasUnsyncedWork() { return editorMidEntry() || pendingWrites > 0; }`.\n- In the user-initiated switch handlers (camp picker click at 7898 and the Settings segmented control at 1731) and at the top of signOutAndClear: when hasUnsyncedWork() is true, either block with a toast ('A score you saved hasn't reached the server yet \u2014 wait for \u2601\ufe0f Synced, then switch') or require an explicit confirm naming the loss.\n- Leave denyMember's auto-bounce unguarded, since a not-yet-approved device has no pushes.\n- Use hasUnsyncedWork() in reloadWhenSafe (7171) in place of editorMidEntry()."
+ }
+]

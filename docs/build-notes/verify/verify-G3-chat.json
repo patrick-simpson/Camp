@@ -1,0 +1,110 @@
+[
+ {
+  "id": "chat#1",
+  "sub": "chat",
+  "n": 1,
+  "title": "A send made while the previous one is still uploading is refused by the server rate rule, and the typed text is lost",
+  "severity": "high",
+  "file": "chat.js",
+  "line": 164,
+  "scenario": "A counselor on camp wifi picks a photo (sendChatPhoto, chat.js:287). chatSendAllowed (chat.js:164-177) sets chatLastSendAt to the time of the TAP. Compressing and uploading the ~420K-char update takes several seconds. About 2 seconds later they type a caption and tap Send. The 1200ms gap is measured from the tap, and nothing tracks a send that is still in flight (chatLastSendAt is only stamped again on ACK, chat.js:198), so the caption update is issued. RTDB sends both writes in order on one socket, so the server commits the caption a few milliseconds after the photo. The published rule requires the previous chatRate stamp to be at least 1000ms older than `now`, so the caption is refused. chatAtomicSend (chat.js:199-203) then retries WITHOUT the stamp, which the published rules always refuse too (it is dead code since the paste, and for a photo it uploads ~400KB a second time). Each refusal undoes the optimistic local write and fires child_removed. onChatMsgRemoved (chat.js:160) then rebuilds the view with renderChatView(true), which replaces #chat-input via innerHTML (chat.js:814). Finally sendChatMessage's catch (chat.js:279-281) puts the text back into the `input` element it captured at chat.js:263, which is now detached. The caption is gone, and the toast wrongly blames the connection. If the caption commits first, the PHOTO is the one refused instead ('try a different one'). The same thing happens with two texts on jittery wifi, or with two messages queued while offline and flushed together on reconnect.",
+  "evidence": "Read chat.js:164-204 and 262-315, plus the rules in database.rules.json (chat/$channel/$msgId .write needs chatRate <= now - 1000, and the stamp in the same update must === now). tests/emulator/rate.mjs pins 'a second message one millisecond later is REFUSED', and tests/emulator/fallback.mjs shows that under the current rules fallback-send=false. I ran a probe with a fake RTDB whose update() never resolves (scratchpad/chatprobe.js, case D): after sendChatMessage, then 1.3s, then sendChatMessage again, there were 2 root updates in flight before the first was ACKed, and both carried the chatRate stamp.",
+  "fix": "Serialize sends in chatAtomicSend. Keep a module-level promise chain, and do not issue the next update until the previous one has settled AND Date.now() >= its ACK time + CHAT_MIN_SEND_MS (an ACK arrives after the commit, so this guarantees at least 1000ms of server time). Replace the retry-without-stamp with one delayed retry WITH the stamp (setTimeout of about 1100ms, same push ids, so it cannot duplicate). In sendChatMessage's catch, look up document.getElementById('chat-input') at failure time instead of using the captured element, or keep the pending text in a variable that the rebuild restores (see the composer-preservation fix)."
+ },
+ {
+  "id": "rules#1",
+  "sub": "rules",
+  "n": 1,
+  "title": "Chat rate limit refuses messages queued offline or sent while a photo is still uploading; the text is lost",
+  "severity": "high",
+  "file": "chat.js",
+  "line": 196,
+  "scenario": "Camp wifi drops. A director in the Announcements channel sends 'Lunch moved to 12:30', then 'Bring water bottles' 1.3s later, then 'Swim is cancelled'. The client throttle passes each time because chatSendAllowed (chat.js:164-177) measures 1200ms from the moment of each TAP, and it only re-stamps when the server acknowledges a send (chat.js:198). chatAtomicSend (chat.js:196-204) then hands every update to the SDK straight away, without waiting for the previous one to be acknowledged. The SDK queues all three. RTDB's local events show each message as sent. On reconnect the SDK replays the three updates back to back, a few milliseconds apart. The rules accept a create only when chatRate/<me> is at least 1000ms older than the server's `now` at commit (database.rules.json:154 for chat, :186 for chatPhotos, and the same at :361 and :393 for senior). So message #1 commits and #2 and #3 are refused. The retry without the stamp (chat.js:202) is also refused, because the published rules require the stamp. The two messages vanish from the list (child_removed on revert). The catch at chat.js:279-282 puts text back only into an EMPTY input, so at most one refused message is recovered and the rest are lost. The toast blames 'your connection'. The same thing happens online: a photo update (up to about 400KB) is still uploading when a caption is sent 1.2s or more after the photo tap. The caption is queued behind the photo on the socket and evaluated milliseconds after the photo's stamp, so it is refused. A caption sent while makeChatImages is still compressing goes first instead, and then the photo is refused with 'try a different one'. The test at tests/rules.test.js:243 ('the client throttle sits above the server floor, so real people never hit the wall') compares only the two constants. That assumption is wrong: the server measures from commit time and the client measures from tap time.",
+  "evidence": "Ran /tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/chatq.js. It loads the real files via tests/harness.js with a firebase stub whose update() never resolves (offline). Three sendChatMessage('announcements') calls 1.3s apart gave three separate root updates at +1ms, +1304ms and +2604ms, each carrying chat/announcements/<id> and chatRate/counselor@example,com. No client toast or throttle stopped them. The server half is already proven by tests/emulator/rate.mjs ('a second message one millisecond later is REFUSED'). The rules expression at database.rules.json:154 requires `chatRate.val() <= now - 1000` and `newData...chatRate === now`, so the retry without the stamp cannot pass either.",
+  "fix": "Serialize sends in chatAtomicSend. Keep a module-level promise tail (`let chatSendTail = Promise.resolve(); let chatLastAckAt = 0;`). Each call does `const go = () => wait(Math.max(0, chatLastAckAt + CHAT_MIN_SEND_MS - Date.now())).then(<existing update + retry>)` and `const p = chatSendTail.then(go, go); chatSendTail = p.catch(() => {}); return p;`. stamp() sets `chatLastAckAt = chatLastSendAt = Date.now()`. With this, an update reaches the SDK only after the previous one is acknowledged plus the gap. An offline burst then replays paced on reconnect, and a caption waits for its photo. Keep chatSendAllowed as the double-tap guard. Replace the constant-only test with a harness test: with a never-resolving update(), a second send must not call update() until the first settles. Optionally drop the no-stamp retry now that the rules are published; it only doubles a doomed round trip."
+ },
+ {
+  "id": "chat#2",
+  "sub": "chat",
+  "n": 2,
+  "title": "Once a channel holds 50 messages, every new message fully rebuilds the open chat view, wiping the draft, dismissing the keyboard and yanking the scroll",
+  "severity": "high",
+  "file": "chat.js",
+  "line": 160,
+  "scenario": "The listener is limitToLast(CHAT_WINDOW = 50) (chat.js:112). Firebase documents that a limited query fires child_removed for the item that drops out of the window each time a new child enters it. From day 1 or 2 of camp, General has 50 or more messages, so every new message (anyone's, including your own optimistic send) first fires child_removed for the oldest one. onChatMsgRemoved (chat.js:154-161) responds with `if (chatViewingChannel() === ch) renderChatView(true)`. That is a full innerHTML replacement of the view (chat.js:814), including #chat-input: a half-typed message is erased, focus leaves the replaced input so the phone keyboard closes after every send, chatScrollToBottom (chat.js:834) pulls someone reading history back to the bottom, and a photo button disabled mid-upload is re-enabled. This breaks the documented rule that 'live messages append incrementally so the composer never loses typed text to a re-render'. Real deletes, onMemberDirectoryChanged (chat.js:219-222, triggered from app.js:2468) and the chatReady flip (chat.js:126) go through the same forced rebuild.",
+  "evidence": "I ran a probe (scratchpad/chatprobe.js, case B): seeded 50 messages into chatMsgs.general with the view open on general, then fired child_removed for the oldest followed by child_added for the new message. Result: 1 forced renderChatView(true) for a single incoming message. renderChatView(true) always rewrites view.innerHTML, including the composer markup (chat.js:814-830).",
+  "fix": "In onChatMsgRemoved, remove only that bubble instead of rebuilding: document.querySelector('#chat-list .chat-bubble[data-msg-id=\"' + CSS.escape(snap.key) + '\"]') and .remove() it, plus the preceding .chat-day-sep if that separator no longer has a bubble after it. Also make renderChatView(true) preserve the composer: before the innerHTML write, read #chat-input's value, its selectionStart and whether it is document.activeElement, then restore all three afterward. That way the remaining forced rebuilds (directory change, ready flip, subscription toggle) cannot eat a draft or close the keyboard."
+ },
+ {
+  "id": "chat#3",
+  "sub": "chat",
+  "n": 3,
+  "title": "Messages that arrive while the open chat's tab is in the background are never drawn, and are then marked read",
+  "severity": "high",
+  "file": "chat.js",
+  "line": 143,
+  "scenario": "A director has the General channel open in a desktop tab and switches to another tab, or an Android counselor switches to Messages or the Camera for 30s. Background tabs keep the RTDB socket alive, so child_added still fires. onChatMsgAdded only appends when `chatViewingChannel() === ch` (chat.js:143), and chatViewingChannel returns null whenever document.hidden (chat.js:597-599), so the message goes into chatMsgs but not into the DOM. The user may even tap the 'You were mentioned' OS notification that notifyChatMessage raised. When they come back, wireChat's visibilitychange handler (chat.js:938-940) calls markChannelSeen, which clears the unread badge. Nothing rebuilds the view: renderAll -> renderChatView() returns early because chatViewBuiltFor === ch (chat.js:803). The new messages stay missing from the open channel, with no badge pointing at them, until the user switches channels or reopens chat. In quieter channels such as Announcements, Memes and Photos that can last indefinitely.",
+  "evidence": "I ran a probe (scratchpad/chatprobe.js, case A): chat open on general with chatViewBuiltFor='general', document.hidden=true, then fired child_added 'm1'. Then document.hidden=false, ran the visibilitychange body and renderAll(). Output: appended to open view = false | forced rebuilds = 0 | unread now = 0 | in chatMsgs = true.",
+  "fix": "In onChatMsgAdded (and onChatMsgRemoved), decouple DOM updates from visibility. Update the DOM whenever `chatOpenNow() && chatViewBuiltFor === ch` (appendChatBubble already checks chatViewBuiltFor), and gate only markChannelSeen on chatViewingChannel() === ch. The visibilitychange handler can then mark the channel seen knowing the DOM is current."
+ },
+ {
+  "id": "chat#4",
+  "sub": "chat",
+  "n": 4,
+  "title": "A deleted or refused message pulls an OLD message back into the window; it is announced as new (toast, chime, OS notification) and drawn at the bottom out of order",
+  "severity": "medium",
+  "file": "chat.js",
+  "line": 141,
+  "scenario": "Firebase documents that a limitToLast query fires child_added for items that ENTER the window. Once a channel holds more than 50 messages, an author deleting a typo or an editor moderating (deleteChatMessage, chat.js:351) lets the 51st-newest message re-enter the window on every device. A send refused by the rules (see the rate finding) also reverts locally and re-admits the evicted oldest message. Because chatReady[ch] is already true, onChatMsgAdded (chat.js:141-147) treats it as live. notifyChatMessage runs, and in Announcements (subscribed by default for everyone) that means a toast, a playMineChime, a vibration and, for hidden tabs, an OS notification for a message that may be days old. In other channels, anyone named in the old text gets a 'You were mentioned' alert. Where the channel is open, appendChatBubble (chat.js:891-907) inserts it 'beforeend', so it shows as the newest bubble even though chatMsgs sorts it to index 0. A burst after an iOS resume (one alert and chime per message that came in while suspended) has the same root cause: there is no staleness check, unlike notifyNewAnnouncements's announcementExpired guard (app.js:7045).",
+  "evidence": "I ran a probe (scratchpad/chatprobe2.js): 50 announcements stamped 6h ago, chat closed, state.notify=true. Then child_removed of the newest, followed by child_added of an older message (at = 6h ago). Output: toasts: [\"\ud83d\udce3 O: Breakfast moved to 8:30 (Monday)\"] | chimes: 1. In chatprobe.js case C with the channel open, appendChatBubble was called for that message while its sorted index in chatMsgs was 0.",
+  "fix": "In onChatMsgAdded, after the sort, alert and append incrementally only when the message is the newest in the list (list[list.length-1].id === msg.id) and msg.at >= serverNow() - a small staleness bound such as 10 minutes. Otherwise (a backfill or replay), skip notifyChatMessage, and if the channel is open, insert the bubble at its sorted position or do the draft-preserving rebuild."
+ },
+ {
+  "id": "rules#3",
+  "sub": "rules",
+  "n": 3,
+  "title": "A refused send or any delete in a full channel slides an old message back in and re-fires its alert",
+  "severity": "medium",
+  "file": "chat.js",
+  "line": 141,
+  "scenario": "Each channel listens with limitToLast(CHAT_WINDOW = 50) (chat.js:112). Once chatReady[ch] is true, onChatMsgAdded treats EVERY child_added as live (chat.js:141-147): it runs notifyChatMessage and appends the bubble at the bottom. In a channel with more than 50 messages, two things send the 51st-newest message back into the window as child_added. One is a rules-refused send (finding 1): the optimistic local add evicted the oldest message, and the revert restores it. The other is any message deletion by an author or editor (chat.js:353, :368). For Announcements, which is subscribed by default, every device then gets a toast plus OS notification, chime and vibrate for an announcement that may be hours old. A mention message re-fires the 'you were mentioned' alert. With the chat open, appendChatBubble puts the old message at the bottom as if it had just been posted, which is out of order.",
+  "evidence": "Ran /tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/slide.js against the real chat.js. It loads a ready backlog of 50 announcements, then sends child_removed(newest) and child_added(a0, six hours old), which is the RTDB window slide after a delete or revert. Result: toasts fired: ['\ud83d\udce3 dir@x.com: Breakfast at 7:30 (from this morning)'].",
+  "fix": "Track `chatNewestAt[ch]`, the highest `at` adopted so far, updated in onChatMsgAdded. A child_added whose msg.at is at or below that value is a window back-fill. Insert it in sorted order, skip notifyChatMessage, and call renderChatView(true) instead of appendChatBubble. Only a message newer than chatNewestAt alerts and appends."
+ },
+ {
+  "id": "chat#5",
+  "sub": "chat",
+  "n": 5,
+  "title": "renderAnnouncements rebuilds the editor's open announcement composer, erasing the half-typed text (every 30s, and on each Announcements-channel chat message)",
+  "severity": "medium",
+  "file": "app.js",
+  "line": 6977,
+  "scenario": "An editor taps '\ud83d\udce3 Post an announcement' and starts typing. renderAnnouncements always does `wrap.innerHTML = banners + composer` (app.js:6977), and the composer markup is a fresh, empty <input id=\"announce-input\">. It is called unconditionally by the 30-second tick (app.js:7361), by every chat message in the Announcements channel (chat.js:150, which includes up to 50 calls during the startup backlog and every window slide or delete via chat.js:159), and by renderAll from the members listener (app.js:2464). So within 30 seconds the text being typed disappears and the phone keyboard closes. The comment at app.js:6992 shows the authors knew a re-render wipes the input, but only the TTL chips avoid it. editorMidEntry protects remote snapshots, not these callers.",
+  "evidence": "Read app.js:6942-7020. The composer template has no value binding and nothing saves or restores #announce-input. The setInterval at app.js:7361 calls renderAnnouncements() with no guard. chat.js:150 and :159 call renderAnnouncements() on every announcements-channel add or remove.",
+  "fix": "In renderAnnouncements, when announceComposerOpen is true, capture document.getElementById('announce-input')'s value, its selectionStart and whether it is focused before the innerHTML write, then restore them after wiring. Alternatively, keep a module-level announceDraft updated on 'input' and render it as the value. In chat.js, call renderAnnouncements only when chatAnnouncementBanners() actually changes (for example compare a joined id list), so the 50-message backlog does not re-render the strip 50 times."
+ },
+ {
+  "id": "pages#4",
+  "sub": "pages",
+  "n": 4,
+  "title": "Announcement composer: the 30-second tick rebuilds it and erases the text an editor is typing",
+  "severity": "medium",
+  "file": "app.js",
+  "line": 6977,
+  "scenario": "An editor taps \"\ud83d\udce3 Post an announcement\" and starts typing in #announce-input. The 30s setInterval at app.js:7361 calls `renderAnnouncements()` unconditionally. renderAnnouncements rebuilds the whole strip with `wrap.innerHTML = banners + composer` (:6977), which recreates an empty <input id=announce-input>. The typed text is lost, focus drops and the phone keyboard closes.\n\nTyping a sentence on a phone takes 10-40 s, so most announcements cross a tick. The code already knows a re-render wipes the input: the comment at ~:6990 says the TTL chips flip in place for exactly that reason. editorMidEntry() protects remote merges but not this timer. This is outside the shell subsystem, but it is solid and cheap to fix.",
+  "evidence": "Harness simulation (scratchpad announce.js): with setMemberRole('editor') and announceComposerOpen=true, I seeded the input with typed text, then ran the interval body `pruneExpiredAnnouncements(); renderAnnouncements();`. The output showed the composer HTML rebuilt with no value (\"composer rebuilt (typed text gone): true\"). renderAnnouncements has no activeElement or draft guard.",
+  "fix": "In renderAnnouncements, before rebuilding:\n- read `const prev = document.getElementById('announce-input'); const draft = prev ? prev.value : ''; const hadFocus = prev && document.activeElement === prev;`\n- after the innerHTML assignment, restore the value, and if hadFocus, focus the input and put the caret at the end.\n\nAlternatively, render banners and composer into two child containers and rebuild the composer only when announceComposerOpen changes."
+ },
+ {
+  "id": "chat#6",
+  "sub": "chat",
+  "n": 6,
+  "title": "Unread badges go stale: channel-tab badges ignore new messages, and a message you are looking at can count as unread",
+  "severity": "low",
+  "file": "chat.js",
+  "line": 530,
+  "scenario": "(1) With General open, a message lands in Photos. onChatMsgAdded calls renderChatCard (chat.js:151) but never renderChatBadges, and the 30s tick only calls renderChatCard (app.js:7361). The Photos tab badge stays hidden until some unrelated renderAll. (2) markChannelSeen stamps seen = serverNow() (chat.js:530). RTDB's serverTimeOffset is measured at the handshake and underestimates server time by that one-way delay. Message `at` is the server commit time. When the handshake delay exceeds the delay of this message's delivery (common on jittery camp wifi), seen ends up below msg.at, so a message just drawn in the open channel still counts as unread. The home card then shows '1' after the user closes chat having read everything.",
+  "evidence": "I ran a probe (scratchpad/chatprobe3.js) with serverTimeOffset = -120 and a message at = now-40 arriving while general was open: unreadCount('general') = 1. A message arriving in photos while general was open: unread = 1, renderChatBadges calls = 0.",
+  "fix": "Call renderChatBadges() at the end of onChatMsgAdded and onChatMsgRemoved. In markChannelSeen, use seen[ch] = Math.max(serverNow(), the latest `at` in chatMsgs[ch], or 0) so a message already displayed can never be newer than the seen stamp."
+ }
+]

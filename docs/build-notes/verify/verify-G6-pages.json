@@ -1,0 +1,74 @@
+[
+ {
+  "id": "pages#1",
+  "sub": "pages",
+  "n": 1,
+  "title": "If vendor/jelly.js fails to load or parse, the whole app goes invisible, including the sign-in buttons (always fails on iOS/iPadOS before 16.4)",
+  "severity": "high",
+  "file": "styles.css",
+  "line": 130,
+  "scenario": "styles.css:130 sets `:not(:defined) { visibility: hidden; }` for every custom element. Only drawer, dialog, accordion, collapsible-header, tabs and progress get a degraded fallback (styles.css:138-157, 535-547, 697-701, 989). jelly-button and jelly-input get none. Every sign-in control is one of those two: index.html:86 (#google-signin-btn), :106-107 (retry/switch), auth-email-link.js:96-97 and auth-phone.js:85-90.\n\nPath A, which always happens: vendor/jelly.js uses ES2022 class static initialization blocks. One sits in the base class L at vendor/jelly.js:872, and jelly-button extends L at :1362. There are 11 in total, plus unconditional `this.attachInternals()` calls at :1541, 1888 and others. Safari and iOS WebKit only support these from 16.4. On iPhone 6s/7/SE1 (capped at iOS 15.8), iPad Air 2 / mini 4 (iPadOS 15.8), or any device not updated past 16.3, the module throws a SyntaxError at parse time and no jelly-* element is ever defined. app.js and the other classic scripts use nothing newer than replaceAll (checked by grep), so the page itself runs. A signed-out user sees \"Staff sign-in\" with no button: an element with visibility:hidden cannot be clicked. The email and phone forms are invisible too. A returning approved device paints the app, but every card's content is hidden permanently by styles.css:546 (`jelly-collapsible:not(:defined) > :not([slot=header]) {display:none}`), so it shows only card headers.\n\nPath B, flaky camp wifi on any device: the 312KB module fetch fails. That happens most often right after a deploy, when every phone auto-reloads at once and re-fetches the new ?v= URL. Module fetches are never retried, so the result is the same as Path A until a manual reload, and an installed home-screen app has no reload button.\n\nIt also makes the wait worse: boot runs on DOMContentLoaded (app.js:7971), and the spec makes DOMContentLoaded wait for a non-async module script. So a slow jelly.js fetch also holds back auth and sync start, despite the comment at index.html:57-59.",
+  "evidence": "Ran `grep -nE \"static \\{\" vendor/jelly.js`: 11 hits starting at 872. `grep -n attachInternals vendor/jelly.js`: 10 unconditional calls. `grep -n \"not(:defined)\" styles.css` shows no jelly-button or jelly-input fallback. Scanned app.js, settings.js, chat.js, camps.js, defaults.js and auth-*.js for post-Safari-15 syntax: only replaceAll (Safari 13.1+). index.html:60 loads the module, and the sign-in markup at :86, :106 and :107 uses only jelly-button. The test suite cannot see this because its DOM stub never evaluates CSS or the module.",
+  "fix": "Make the global hide time-limited instead of permanent.\n\n(1) In styles.css, change line 130 to `html:not(.jelly-failed) :not(:defined) { visibility: hidden; }`. Add degraded rules under `html.jelly-failed`:\n- `jelly-button:not(:defined) { display:inline-block; padding:.7em 1.2em; border:1px solid currentColor; border-radius:12px; cursor:pointer; text-align:center }` (use display:block for `[block]`)\n- `jelly-collapsible:not(:defined) > :not([slot=header]) { display:block }`\n\n(2) In boot-guard.js, which is classic and runs after the module tag is parsed:\n- attach an 'error' listener to `document.querySelector('script[src*=\"vendor/jelly.js\"]')` to catch a network failure\n- add a `window.addEventListener('error', e => /jelly\\.js/.test(e.filename || '') && \u2026)` handler to catch the parse error\n- add a ~4s `setTimeout` fallback that checks `customElements.get('jelly-button')`\n- each of these adds `jelly-failed` to documentElement\n\nAn undefined jelly-button still receives the click listeners app.js attaches, so Google sign-in works once the button is visible.\n\n(3) Optionally, so iOS 15 gets the real UI: mechanically rewrite jelly.js's 11 `static { this.X = v; }` blocks to `static X = v;` (static fields work from Safari 14.1), and change `this.attachInternals()` to `this.attachInternals?.()`. Re-test on an iOS 15 device."
+ },
+ {
+  "id": "pages#2",
+  "sub": "pages",
+  "n": 2,
+  "title": "TV page: clicking \"Continue with Google\" (or pressing Space/Enter on it) starts the reveal with no data, and the TV stays blank until someone reloads",
+  "severity": "medium",
+  "file": "current-standings.html",
+  "line": 1053,
+  "scenario": "A signed-out TV shows #auth-overlay. The click on #auth-ov-btn opens the popup (:711-718), then bubbles to the document click handler at :1053. That handler only ignores `.topbar` and calls advance(). With phase 'intro', beginReveal() (:916) sets `phase='reveal'`, freezes `order = (liveGroups || []).slice().reverse()` (:921) to [] because no data has loaded yet, hides the intro, and calls showBig(0). That throws at :811-812 (`order[0].entries`) with bigIndex already set to 0.\n\nAfter the popup succeeds, the data loads and onDataReady shows the screen, but the intro is gone and `order` stays []. The presenter's taps then go: TypeError, then finish(), then an empty final table. The TV shows a blank white stage at showtime.\n\nThe update auto-reload cannot fix it because it only reloads in phase 'intro' (:1077). Keyboard sign-in is broken outright: the keydown handler at :1045 calls preventDefault on Space/Enter, so the focused button never activates, and it runs the same advance().\n\nThis is the designed path for every TV sign-in: first setup, and again after Safari's 7-day storage purge, which the comment at :654-656 expects.",
+  "evidence": "Loaded the real inline script from current-standings.html into a Node vm with a DOM stub and a firebase stub (scratchpad tvclick2.js). Steps: auth callback(null), then a document click, then auth callback(user), then a state snapshot, then 4 presenter taps. Output: \"sign-in click \u2192 advance() threw: Cannot read properties of undefined (reading 'entries')\" / \"data ready; loading hidden: true | intro hidden: true\" / tap 1 threw the same / taps 2-4 ok with hero=\"\" and board=\"\".",
+  "fix": "Ignore input until there is data to reveal, and keep the state machine untouched on a bad start.\n- Click handler: `if (!haveData || e.target.closest('.topbar, #auth-overlay')) return;`\n- Keydown handler: `if (!haveData || document.getElementById('auth-overlay').style.display !== 'none') return;` before preventDefault.\n- beginReveal(): guard `if (!liveGroups || !liveGroups.length) return;` before setting `phase = 'reveal'`."
+ },
+ {
+  "id": "pages#3",
+  "sub": "pages",
+  "n": 3,
+  "title": "TV page: data listeners have no cancel callback and are never re-attached, so after an auth change the TV silently shows frozen standings",
+  "severity": "medium",
+  "file": "current-standings.html",
+  "line": 735,
+  "scenario": "attachData() attaches `.on('value')` to campScoreboard/config (:679) and campScoreboard/state (:686) with no cancel callback. It runs once, guarded by `started` (:735).\n\nThe presenter laptop typically also has the main app open, because the TV is reached via Settings \u2192 Stalling \u2192 Current Standings. Suppose someone signs out or switches account in the main app tab (signOutAndClear). Firebase Auth syncs the null user to the TV tab, and the TV's onAuthStateChanged shows the sign-in overlay (:724). RTDB re-evaluates rules under the new null auth and revokes both listens. Without a cancel callback this is only a console warning, and the SDK never re-arms a revoked listen (CLAUDE.md's 'terminal read' invariant).\n\nThe presenter signs back in. The members once() approves and hides the overlay (:734), but `started` is already true, so nothing re-attaches. The TV looks healthy but never updates again, and the reveal shows whatever standings existed at sign-out.\n\nAny other revocation lands in the same silent state. The main app avoids this by reloading after teardown, a one-shot lifecycle the TV never adopted.",
+  "evidence": "Read current-standings.html:671-739. Both `.on()` calls take only a success callback. `started` is never reset. No `location.reload()` happens on an auth transition. Compare app.js, whose sign-out and re-sign-in paths both end in location.reload(), as documented in CLAUDE.md under 'One-shot lifecycle'.",
+  "fix": "Use the main app's one-shot lifecycle:\n- In onAuthStateChanged, `if (!user || !user.email) { if (started) { location.reload(); return; } setAuthOverlay('signin'); return; }`.\n- Pass a cancel callback to both `.on()` calls in attachData, e.g. `function () { setAuthOverlay('denied', ...); setTimeout(reloadNow, 5000); }` so a revoked listen is visible and recovers.\n\nThis cannot loop: a reload that is still denied stops at the once() check and never attaches."
+ },
+ {
+  "id": "pages#5",
+  "sub": "pages",
+  "n": 5,
+  "title": "TV standings count orphaned results that the main app ignores, so the reveal can show different totals and order",
+  "severity": "low",
+  "file": "current-standings.html",
+  "line": 436,
+  "scenario": "app.js medalCounts() skips any result whose game id is no longer in the live config (`const g = gameById(id); if (!g) return;`, app.js:3757-3758). CLAUDE.md lists this as a scoring invariant, and scoring.test.js pins it.\n\ncomputeStandings in current-standings.html (:430-441) counts every `state.results` entry, using the config only for the \u00d72 flag.\n\nAn orphan reaches the live state through the two-editors race: editor A deletes game X in the week builder (settings.js:853 deletes results[X], then a config push and a state push), while editor B, not yet holding A's config, saves X's podium. B's per-path diff writes state/results/X back. Nothing prunes it remotely, because pruneOrphanedGameData only runs on import and restore. The phones then rank without X, and the TV reveal ranks with it.",
+  "evidence": "Loaded app.js via tests/harness.js and the TV's computeStandings from the real HTML into a separate vm (scratchpad tvparity.js). I used the same remote state: 2 real results plus 1 orphan. Output: TV `t0=12 t1=12 t2=10 t3=8 t4=3 t5=0` vs APP `t0=12 t1=12 t2=3 t3=3 t4=0 t5=0`. The 3rd/4th/5th places differ.",
+  "fix": "In updateDoubledFrom, also record `liveGameIds = new Set(arr.map(g => g && g.id).filter(Boolean))`. In computeStandings's results loop, add `if (liveGameIds && !liveGameIds.has(id)) return;`, mirroring medalCounts. Recompute when the config lands; that already happens at :681-683."
+ },
+ {
+  "id": "pages#6",
+  "sub": "pages",
+  "n": 6,
+  "title": "TV page treats phone-number accounts as signed out and only mirrors emailKey, not identityKey",
+  "severity": "low",
+  "file": "current-standings.html",
+  "line": 724,
+  "scenario": "Members can be keyed by phone (app.js identityKey, :179-184, CLAUDE.md 'Identity is email OR phone'). The TV's onAuthStateChanged returns early with the sign-in overlay when `!user.email` (:724), and builds its key with the email transform only (:729).\n\nAn approved phone-only director whose browser session is a phone account opens the TV. Firebase auth state is shared per origin with the main app. The TV says \"Staff sign-in\", and the only way forward is a Google sign-in. That replaces the origin's session in the main app tab too. The emailKey copy itself does match app.js (trim, lowercase, replaceAll).",
+  "evidence": "Compared current-standings.html:724-731 with app.js:158-184. The email transform is identical; the phone branch is missing.",
+  "fix": "Mirror identityKey. If user.email exists, use the existing email key. Otherwise, if user.phoneNumber exists, use it as the key (Firebase already reports it in E.164). Only show 'signin' when neither exists."
+ },
+ {
+  "id": "pages#7",
+  "sub": "pages",
+  "n": 7,
+  "title": "sw.js notificationclick focuses whichever same-origin window was used last, often the TV or stalling tab instead of the scoreboard",
+  "severity": "low",
+  "file": "sw.js",
+  "line": 28,
+  "scenario": "maybeNativeNotification (app.js:2872) only notifies when the scoreboard tab is hidden, which means another window is in front. On the presenter laptop that is typically current-standings.html or stalling.html. Both are inside the SW scope './' (manifest.json scope, register('sw.js') at app.js:7354).\n\nOn click, `wins.find((w) => 'focus' in w)` picks the first WindowClient. Every WindowClient has focus, and matchAll lists the most recently focused first, so it picks the TV tab that is already in front. Nothing visible happens and the scoreboard never comes forward.\n\nThis matters more once the planned push handler lands in sw.js (PROGRESS.md).",
+  "evidence": "Read sw.js:24-32 and app.js:2872-2890. The TV and stalling pages live in the same directory, so the registration controls them too.",
+  "fix": "Prefer the app window: `const isApp = (w) => { const p = new URL(w.url).pathname; return p.endsWith('/') || p.endsWith('/index.html'); }; const win = wins.find(isApp);`. Then `return win ? win.focus() : self.clients.openWindow('./');`."
+ }
+]

@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Mon Oct 26, 6:15 PM ET** (update this line every time the file changes)
+Last updated: **Mon Oct 26, 6:10 PM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -72,12 +72,16 @@ Owner-confirmed requirements (interview complete, owner said "Yes, that's it"):
 | E2E: real workerd (wrangler dev) + RTDB emulator + mock push service | ✅ all green — saved as `tests/push-e2e/` (opt-in, README inside); FCM accepted real pushes (201) |
 | Apply confirmed reliability fixes | ⬜ |
 | Independent review pass (Sonnet reviewers, Opus final) | ⏳ 2 Sonnet reviewers running (app side + Worker) |
-| Version bump (all `?v=` + APP_VERSION + CODE_UPDATED_AT), docs (CLAUDE.md section) | ⬜ |
+| Docs: CLAUDE.md "Phone alerts" section + file list + TWELVE `?v=` assets | ✅ |
+| Version bump (all `?v=` + APP_VERSION + CODE_UPDATED_AT) | ⬜ |
 | Push to `main`, verify live (curl checks in CLAUDE.md) | ⬜ |
 | Owner sets up the Cloudflare Worker (guide in `push-worker/README.md`) | ⬜ owner |
 | Set `PUSH_SERVICE_URL` in `push.js` + add the Worker host to the CSP `connect-src` in `index.html`; publish rules (Cloud Shell PUT per CLAUDE.md) | ⬜ needs owner's Worker URL |
 
 ETA (said to owner at 5:28 PM ET): Project 1 live ~9:15 PM ET Mon; Project 2 ~6 PM ET Tue (could slip).
+**Owner warned at 6:09 PM ET they're about to run out of usage.** A self-wake is
+scheduled for **9:50 PM ET Mon** (trigger `trig_01EaQMRZwnHyXMZjAvkVmBFX`, a
+send_later into this session). ETAs above shift by however long the pause lasts.
 
 ---
 
@@ -92,27 +96,45 @@ ETA (said to owner at 5:28 PM ET): Project 1 live ~9:15 PM ET Mon; Project 2 ~6 
   without a compat flag — that's why fan-out is client-assisted + cron.
 - Apple requires `aes128gcm` + VAPID; must always show a notification for
   every push (silent pushes get the permission revoked).
-- Test bench (all in the session scratchpad — rebuild if lost; helper code is
-  saved at `docs/build-notes/e2e-lib.mjs`):
+- Test bench: saved in the repo as `tests/push-e2e/` (README inside has the
+  exact commands). Notes:
   - `npm i wrangler@4 web-push@3 firebase-tools@13` in a scratch dir.
   - RTDB emulator: `npx firebase emulators:start --only database --project camp-89cea`
     with the repo's `database.rules.json`. Rules are enforced on namespace
-    **`camp-89cea-default-rtdb`** (pass `?ns=…`; a tiny proxy on :9001 adds it).
+    **`camp-89cea-default-rtdb`** (the Worker's FIREBASE_DB_URL keeps `?ns=` on every request).
     Admin = header `Authorization: Bearer owner`.
   - Headless Chromium can NOT subscribe to push; **headful under `xvfb-run`
     CAN** (gets a real FCM endpoint). FCM accepted our VAPID push with 201, but
     delivery back to the browser doesn't arrive in this sandbox (blocked MCS
     port) — so correctness of encryption is proven by independent node:crypto
-    decryption (mock push service in `e2e-lib.mjs`), and VAPID by FCM's 201.
+    decryption (mock push service in `tests/push-e2e/lib.mjs`), and VAPID by FCM's 201.
 - Local-only git exclude: `.claude/worktrees/` is in `.git/info/exclude`
   (builder worktrees must never be committed).
 
 ## Next steps (resume here)
-1. When the build workflow reports, merge each worktree's commit into
-   `ccr-b0a70176-9ril2l` (branches `worktree-wf_d55cf8b5-1b4-1` / `-2`), run
-   `node tests/run.js`, commit, **push the branch**, update this file.
-   If the session died before the builders committed, their work is LOST —
-   re-run the build from the spec (it's self-contained).
-2. Then the rest of the Project 1 table, top to bottom.
-3. Then Project 2: write a spec (like the push one) from the requirements
-   above, get it reviewed, build in stages, updating this file after each.
+In flight when the owner's usage ran low (6:10 PM ET) — background agents die
+if the session stops, so re-run whichever never reported:
+- 7 Sonnet adversarial verifiers, one per batch file in
+  `docs/build-notes/verify/verify-G1…G7-*.json` (G7 = only resilience#2 and #5;
+  the other G7 items duplicate G2/G3). Verify against the CURRENT tree (findings
+  cite commit 08c72b7 line numbers). Output per item: real?, severity, fix,
+  fix_risk, defer_to_rebuild.
+- 2 Sonnet code reviews: app side (`git show fbc2647`: push.js, sw.js, hooks,
+  rules — especially the client↔Worker CONTRACT: request/response fields,
+  prefs defaults, payload fields, tags) and `push-worker/worker.js`
+  (security: ID tokens, SSRF via member-written endpoints, admin token never
+  sent to non-Firebase hosts, /drain & /resubscribe abuse, subrequest cap).
+Then:
+1. Apply confirmed reliability fixes (skip ones marked defer_to_rebuild — they
+   belong to Project 2's per-field-merge setup rebuild; list them in this file).
+   Group app.js sync fixes carefully; `tests/sync.test.js` invariants must hold.
+   Add a test per fix.
+2. Fix confirmed review findings on the alert code; re-run `tests/push-e2e`.
+3. Version bump (TWELVE `?v=` in index.html + current-standings/stalling refs,
+   APP_VERSION, CODE_UPDATED_AT), `node tests/run.js`, `node --check`, merge
+   the branch into `main`, push, verify live with curl (CLAUDE.md).
+4. Tell the owner (plain English): what shipped, the 15-minute Cloudflare
+   setup (`push-worker/README.md`), that we need the Worker URL to finish
+   (`PUSH_SERVICE_URL` + CSP), and the rules publish. Report model-use savings.
+5. Then Project 2: write a spec from the requirements above, review it, build
+   in stages, updating this file after each.

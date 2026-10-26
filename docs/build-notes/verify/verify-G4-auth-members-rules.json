@@ -1,0 +1,110 @@
+[
+ {
+  "id": "auth#1",
+  "sub": "auth",
+  "n": 1,
+  "title": "Camp-bounce loop guard (sessionStorage campSwitchTried) is never cleared, so a senior-only counselor who signs out and back in on the same tab or app is locked out",
+  "severity": "high",
+  "file": "app.js",
+  "line": 7708,
+  "scenario": "1) A senior-only counselor signs in for the first time. The device defaults to junior, the junior member read is refused, and denyMember (app.js:7701) probes senior. Approval sets sessionStorage campSwitchTried='1' (7718) and switchCamp(senior) reloads. Everything works.\n2) Later, in the same tab or the same iOS home-screen app session, they sign out. This can be a shared scoring iPad changing hands, switching Google accounts, or a director saying 'sign out and back in'. signOutAndClear (7927) calls clearLocalData (7910), which removes ACTIVE_CAMP_KEY, so the reload lands on junior. sessionStorage survives the reload, and nothing ever removes the flag (grep shows only the get at 7709 and the set at 7718).\n3) The same counselor, or the next senior-only counselor on that device, signs in. Junior refuses the read, denyMember sees tried==='1' and skips the senior probe, and denyMemberFinal shows 'This account isn't on the camp list yet'.\n4) 'I've been added \u2014 try again' calls location.reload(), and the flag is still set, so the denial repeats. 'Use a different account' fails the same way. The user stays locked out until the tab or PWA process is killed, which counselors won't know to do.\nThe revoke-then-re-add path hits the same wall: a revocation in senior (denyMemberFinal at 7741 \u2192 clearLocalData \u2192 reload) leaves them on junior with the flag set, so re-adding them never helps in that session.",
+  "evidence": "Ran /tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/demo1.js. It loads the real files through tests/harness.js makeContext and stubs firebase.database().ref().once() so the senior record approves.\nOutput:\n- 'after first bounce: reloads= 1 activeCamp= senior tried= 1'\n- 'after signOutAndClear: activeCamp= null (null => junior default) tried= 1'\n- 'second sign-in: bounced? false activeCamp= null role= null'\nThe approved senior account ends on the denial screen. The existing test 'denied here but approved at the other camp' (tests/auth.test.js:355) only checks that the guard stops a second bounce. It never checks that the guard is re-armed after a successful approval or a sign-out.",
+  "fix": "The guard only needs to last for the single bounce-reload.\n- In onMemberSnapshot's approved branch (after the `!rec || !rec.role` check at 7679, before startApp), add `try { sessionStorage.removeItem(CAMP_SWITCH_TRIED_KEY); } catch (e) {}`.\n- Add the same removal in signOutAndClear, since sign-out is a fresh start.\nThis still cannot loop: a bounce only reloads into a camp whose probe approved, and approval stops the reload there. Add a test: bounce, then signOutAndClear(), then denyMember() with the senior stub should switch again."
+ },
+ {
+  "id": "auth#2",
+  "sub": "auth",
+  "n": 2,
+  "title": "Members drawer writes set() onto keys that may already exist, silently overwriting a member's role, name and team (including self-demotion)",
+  "severity": "medium",
+  "file": "app.js",
+  "line": 1685,
+  "scenario": "Three write paths replace whatever record is already at the key, and none of them check:\n- The 'Add someone' handler does `ref(members/<key>).set(memberRecord(role, name, teamId))` (1685). The form defaults to Viewer, no team and a blank name.\n- 'Both camps' also does `set(memberRecord(role, name))` on the other camp (1690).\n- convertPendingMember does `set(next)` on the typed key (1519).\nThe drawer already holds both lists (`activeMembers`, `lists[otherCampId()]`) and never checks them. Realistic case: two directors onboarding staff on the first morning. Sam is already an editor on Team t2. Director B re-adds sam@\u2026 with the defaults. Sam's record becomes {role:'viewer'} with no name and no teamId.\n- His device's member listener fires, so onMemberSnapshot \u2192 setMemberRole('viewer') turns him view-only mid-game.\n- His team assignment (own-team guard, auto-follow) is gone.\n- Chat and history now show his email instead of his name.\n- The toast says 'can now sign in', so nobody notices.\n'Both camps' does the same to his existing senior record. convertPendingMember does it whenever a seed-roster pending row is pointed at someone already listed under a differently spelled name. If the editor types their own email (add form or convert), the write demotes themselves. In the convert case the follow-up remove() then fails with 'Change refused' even though the demotion landed. The UI deliberately disables your own row ('another editor has to change your access'), but these paths bypass that, and only another editor can undo it.",
+  "evidence": "Ran /tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/demo3.js. It calls the real renderMemberList with a live list containing 'sam@example,com': {role:'editor', name:'Sam', teamId:'t2'}, captures the add button's click handler and fires it with the form defaults and id 'Sam@example.com'.\nThe captured write is `['set','campScoreboard/members/sam@example,com',{role:'viewer',addedBy:'dir@example.com',addedAt:\u2026}]`, which drops Sam's name and team and demotes him. The rules (database.rules.json members/$memberKey .write) allow any editor to write any non-owner key, so the server accepts it.",
+  "fix": "In the add handler (around 1680):\n- Refuse when `activeMembers[key]` exists, with errEl 'Already on the list \u2014 change their role/team on their row'.\n- Refuse when `key === myKey`.\n- For 'Both camps', only push the other-camp write when `!(lists[otherCampId()] || {})[key]`, so access is granted only where none exists.\nIn convertPendingMember:\n- Pass `lists` in from bindMemberList and refuse when `lists[CAMP.id][newKey]` exists or `newKey === identityKey(authUser)`.\n- To close the two-editor race, write with `ref.transaction(cur => cur === null ? next : undefined)` and only remove the pending key when `committed` is true. Otherwise show 'Already on the list'."
+ },
+ {
+  "id": "auth#4",
+  "sub": "auth",
+  "n": 4,
+  "title": "Firebase SDK load failure is handled destructively: a missing database script is reported as 'not on the camp list' and wipes local data; a missing SDK leaves a hint-painted editor editing a session that can never sync",
+  "severity": "medium",
+  "file": "app.js",
+  "line": 7671,
+  "scenario": "The three gstatic SDK files are separate SRI-pinned <script> requests (index.html:394-399). On flaky camp wifi, any one can fail or be truncated, and SRI then blocks it.\n(a) app-compat and auth-compat load but database-compat does not. startAuth's guard (7627) only checks `firebase.auth`. onAuthStateChanged \u2192 handleAuthUser: isValidMemberKey passes, then `firebase.database()` throws TypeError. The catch (7671-7674) calls denyMemberFinal(), which:\n- runs clearLocalData(), removing both camps' cached state including any offline-entered results not yet synced, the hints, and the active camp;\n- clears the role;\n- shows an approved director 'This account isn't on the camp list yet \u2014 ask a director to add you'.\nThe illegal-key case this catch was written for is already handled two lines above by isValidMemberKey, so only infrastructure failures reach it now.\n(b) No SDK loads at all (`typeof firebase === 'undefined'`). boot() has already called setMemberRole(hint) and startApp() (7962-7963). startAuth's no-Firebase branch (7626-7631) just calls startApp(). Its comment says 'run local-only, view-only', but the role stays 'editor'. The editor can enter scores all session with nothing retrying the SDK. On the next good load those results are discarded by the first snapshot, as in the previous finding's demo.",
+  "evidence": "/tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/demo2.js: seeds cached state and the editor hint, stubs `firebase = {apps:[{}], auth:()=>({})}` with no database, then calls handleAuthUser({email:'director@example.com'}). Output: 'before: cached state bytes= 18920 hint= editor', then 'member ref failed TypeError: firebase.database is not a function' and 'after handleAuthUser: cached state= null hint= null role= null'.\n/tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/demo5b.js: setMemberRole('editor') plus startAuth() with no firebase prints 'typeof firebase= undefined | canEdit()= true | syncStarted= false | fbRef= null'. A touchData()/saveState() then succeeds locally.",
+  "fix": "1) In startAuth, add `|| typeof firebase.database !== 'function'` to the no-Firebase guard. In that branch, call setMemberRole(null) so the session really is view-only, and show a retry (for example, sync indicator text 'Couldn't load sync \u2014 tap to reload' wired to location.reload()).\n2) In handleAuthUser's catch, stop calling denyMemberFinal. Show a non-destructive error instead: showAuthScreen('signin', {error: \"Couldn't reach the camp database \u2014 check your connection and reload.\"}) when !appStarted. For a hint-painted app, leave it painted with that indicator. Never clearLocalData on an exception."
+ },
+ {
+  "id": "auth#5",
+  "sub": "auth",
+  "n": 5,
+  "title": "Email-link sign-in can never sign in the installed iOS home-screen app, and each attempt spends the shared 5-per-day email quota",
+  "severity": "low",
+  "file": "auth-email-link.js",
+  "line": 117,
+  "scenario": "manifest.json sets display:standalone, and staff install the app to the home screen (CLAUDE.md and sw.js refer to installed iOS PWAs). A counselor without Google opens the installed app, picks 'Alternative sign in \u2192 Email me a sign-in link', and is told '\ud83d\udcec Sent! Open the email on THIS device and tap the link.' On iOS, tapping a link in Mail always opens Safari, never the home-screen web app, and the two have separate storage. completeSignInIfLink therefore runs in Safari: it prompts for the email because EMAIL_SIGNIN_KEY was parked in the app's storage, then signs in Safari. The installed app stays on the sign-in screen. Each retry burns one of the project-wide 5 daily email links (the cap is noted in the file header), so a couple of retries can exhaust email sign-in for the whole camp that day.",
+  "evidence": "Read auth-email-link.js. mount() renders the email-link form unconditionally (99-122), and the success text at 117 promises it works on 'THIS device'. `grep -n 'standalone\\|display-mode'` across app.js, auth-email-link.js, auth-phone.js and index.html finds no standalone-mode detection; manifest.json:7 is \"display\": \"standalone\".",
+  "fix": "In auth-email-link.js mount(), detect the installed app with `navigator.standalone === true || matchMedia('(display-mode: standalone)').matches`. When it is installed, replace the form with a one-line note: 'Email links open in Safari, not this home-screen app \u2014 use phone sign-in or Google here.' At minimum, change the success text so it doesn't promise the link will sign in this app."
+ },
+ {
+  "id": "auth#6",
+  "sub": "auth",
+  "n": 6,
+  "title": "TV standings page has no way out of the denied state: a presenter machine signed into the wrong Google account is stuck",
+  "severity": "low",
+  "file": "current-standings.html",
+  "line": 320,
+  "scenario": "The presenter laptop is often an office or shared machine whose browser profile already has a non-camp Google account. Clicking 'Continue with Google' (the popup at 711-717) and picking that account leads to onAuthStateChanged \u2192 members once() refused \u2192 setAuthOverlay('denied') (733/737). The denied panel (320-323) has no button. Firebase persists the session, so 'reload' re-checks the same account and denies again. Signing out of Google in another tab does not sign out Firebase. The only escapes are clearing site data or adding that account to the members list. The main app's denied screen has 'Use a different account' (index.html auth-switch-btn); this page has nothing.",
+  "evidence": "Read current-standings.html:310-325 (the overlay markup: the denied block holds only text) and 654-739 (startData: no signOut call anywhere on the page).",
+  "fix": "Add a 'Use a different account' button to #auth-ov-denied that calls `firebase.auth().signOut()`. The existing onAuthStateChanged(null) branch already switches the overlay to 'signin'."
+ },
+ {
+  "id": "rules#4",
+  "sub": "rules",
+  "n": 4,
+  "title": "Changelog reason has no length cap, so the rules refuse every audit entry for a bulk change such as a backup restore",
+  "severity": "low",
+  "file": "app.js",
+  "line": 3984,
+  "scenario": "recordPointHistory builds `reason = causes.join('; ')` with no cap (app.js:3984) and pushes it (app.js:3998). The rules cap reason at 500 characters (database.rules.json:95, :302), plus team at 60 (:83) and by at 80 (:98). Settings \u2192 Restore from backup (settings.js tryImport) of a backup with 15 or more scored games produces one long string of 'Game \u2014 result saved' entries. Each team's changelog push is refused, and the `.catch(() => {})` at app.js:3999 swallows it. The single most consequential points event of the week leaves no trace in the history drawer. The full junior catalog joins to 744 characters and senior to 873, and 15 games is enough to pass 500.",
+  "evidence": "Ran /tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/restorelog.js: editor, stub firebase, baseline render, then the real tryImport() with a backup holding 16 scored games. Result: 6 changelog pushes, each with reason.length=542, so every one is REFUSED by the `length <= 500` rule. /tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/reason.js measured the full-catalog lengths.",
+  "fix": "In recordPointHistory, clamp to the rules the same way chat clamps name with `.slice(0, 60)`. Build the reason from causes until the next one would pass about 480 characters, then append `; \u2026 +N more`. Also `String(teamName(tid)).slice(0, 60)` and `by && String(by).slice(0, 80)`. Optionally add a rules.test.js check that the client caps match the rules caps."
+ },
+ {
+  "id": "rules#5",
+  "sub": "rules",
+  "n": 5,
+  "title": "Members drawer offers controls on the owner's row that the rules always refuse, so the owner can never have a team",
+  "severity": "low",
+  "file": "app.js",
+  "line": 1394,
+  "scenario": "The rules make the owner key immutable from every client: `$memberKey != 'patricksimpson,fx@gmail,com'` on members/$memberKey/.write (database.rules.json:127, :334). The client has no owner constant. renderMemberList disables the per-camp switches only for `self` or for camps where the viewer isn't an editor (app.js:1394). The team select is rendered for every non-pending row, the owner's own row included (app.js:1411-1413). If the owner picks a team on his own row, members/<owner>/teamId is set (app.js:1590-1600), refused, and the toast says 'the database rules may need updating'. So the owner can never be put on a team, and auto-follow and the own-team guard never apply to him. When any other editor flips the owner's None/Viewer/Editor switch in either camp or changes his team, the write is refused with 'are you still an editor?'. That is misleading and suggests the editor has lost access.",
+  "evidence": "Read database.rules.json:127/:334 and app.js:1379-1413 and 1586-1600. `grep patricksimpson app.js camps.js settings.js chat.js` finds no owner-key constant in the client, so nothing in the UI knows about the immutable row.",
+  "fix": "Add `const OWNER_MEMBER_KEY = 'patricksimpson,fx@gmail,com'` in app.js, pinned to the rules string by a rules.test.js assertion. In renderMemberList and bindMemberList, treat `key === OWNER_MEMBER_KEY` like `self`: disable the access switches, omit the team select, and show a 'Owner \u2014 managed in the Firebase console' note. If the owner does want a team, relax the rule instead to allow writes only to members/<owner>/teamId and name, and keep role immutable."
+ },
+ {
+  "id": "rules#2",
+  "sub": "rules",
+  "n": 2,
+  "title": "A remote week-config change makes every other editor device write changelog entries in its own name",
+  "severity": "medium",
+  "file": "app.js",
+  "line": 2184,
+  "scenario": "Points depend on config: medalCounts skips results for games no longer in the catalog and doubles messtival games (app.js:3755-3759). Editor A, in the week builder, toggles double points on a scored game, or deletes a game that has a result. Editor B's device receives the new config through the fbConfigRef listener, which calls applyRemoteConfig (app.js:2176-2185) and then renderAll(). It does not set remoteJustApplied. renderStandings (app.js:3821) therefore treats the point change as LOCAL and calls recordPointHistory(counts, false) (app.js:3871). That pushes a 'Points updated' changelog entry per affected team with byKey = B's own identity (app.js:3991-3998). The rules accept it, because byKey really is the writer. Every editor device that has the app open does the same thing. So does every editor who opens the app later: the first render uses the cached config as the baseline, and then the server config arrives. The audit log fills with duplicate entries blaming people who changed nothing. The rules-level attribution pin is defeated by the client writing on another person's behalf. The idle-retry path (idleRetryTick to applyRemoteConfig) has the same bug.",
+  "evidence": "Ran /tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/cfglog.js with the real files, editor role and a stub firebase. It saves a result for 'Shields', renders the baseline, then calls applyRemoteConfig() with that game's messtival flag flipped (simulating editor A's edit arriving). Result: 3 changelog pushes from device B, e.g. {team:'Ferocious Foxes', delta:7, reason:'Points updated', byKey:'editor,b@example,com'}.",
+  "fix": "In applyRemoteConfig, set `remoteJustApplied = true;` immediately before `renderAll()`. This is the same flag applyRemoteState uses at app.js:2364. recordPointHistory then advances its baseline without logging, because the device that made the config edit already logged it. As a side effect, the standings pulse and the point-change notifications now fire for remote-caused changes too, which is the correct behaviour."
+ },
+ {
+  "id": "scoring#5",
+  "sub": "scoring",
+  "n": 5,
+  "title": "When a config change made elsewhere changes the points, every editor who has the app open logs it in the change history under their own name",
+  "severity": "medium",
+  "file": "app.js",
+  "line": 2184,
+  "scenario": "Editor A ticks 'Double points' on a game that already has a result (or deletes a scored game, restores defaults, or imports a backup). On every other editor's device, applyRemoteConfig calls renderAll (app.js:2184) without setting remoteJustApplied. renderStandings then calls recordPointHistory(counts, false) (app.js:3871), and the `if (isRemote) return` guard (app.js:3971) doesn't apply. So each online editor's device writes changelog entries ('+7 Points updated') carrying its own byKey. The rules accept them because that editor really is the one writing. It also happens when an editor opens the app after such a change: the first config snapshot changes the totals compared with the cached baseline. The audit log ends up blaming the wrong people, and the entry is duplicated once per device.",
+  "evidence": "Ran history.js: a harness context signed in as editor 'Bob', shields result saved, renderStandings baseline, then applyRemoteConfig with shields.messtival = true. Bob's device pushed three changelog entries (t0 +7, t1 +5, t2 +3), each with by 'Bob' and byKey 'bob@example,com'.",
+  "fix": "In applyRemoteConfig, when `appStarted && JSON.stringify(state.config) !== beforeJson`, set `remoteJustApplied = true;` before calling renderAll(), the same way applyRemoteState does. The change is then treated as remote (pulse and notify, no log), and only the device that made the edit logs it, from its own saveConfig \u2192 renderAll."
+ }
+]

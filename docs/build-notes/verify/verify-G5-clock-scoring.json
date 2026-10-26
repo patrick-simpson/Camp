@@ -1,0 +1,50 @@
+[
+ {
+  "id": "time#4",
+  "sub": "time",
+  "n": 4,
+  "title": "Screen wake lock is never re-acquired after the app is hidden, so a brief app switch lets the ref's phone sleep through the countdown",
+  "severity": "medium",
+  "file": "app.js",
+  "line": 3022,
+  "scenario": "A ref starts a 10-minute game clock. applyClockAction calls requestWakeLock (app.js:5906). The ref switches to Messages or the camera for a few seconds. Browsers release a screen wake lock automatically when the document is hidden, and the 'release' listener nulls wakeLockSentinel (app.js:3026). Nothing calls requestWakeLock again: the only call site is the Start action, and none of the visibilitychange handlers (app.js:490, 2482, 7125, 7209) re-arm it. The screen then dims and locks on its normal 30-60 s timeout. iOS suspends the page's timers, so tickBoardClocks never sees the zero crossing on the one device that sounds the buzzer and stops the synced clock (app.js:3097-3104). Separately, when the clock auto-stops at zero (app.js:3101) no releaseWakeLock runs. The Pictionary stopwatch (start-lap, app.js:3370) never requests a wake lock at all, although anyTimerRunning() counts it.",
+  "evidence": "Code read: grep for requestWakeLock/releaseWakeLock finds only the definitions (app.js:3022, 3030) and the two calls in applyClockAction (app.js:5906-5907). Every visibilitychange listener in app.js and chat.js (app.js:490, 2482, 7125, 7209; chat.js:938) was checked: none re-requests the lock. The Screen Wake Lock spec releases sentinels when the document becomes hidden.",
+  "fix": "In init(), add `document.addEventListener('visibilitychange', () => { if (!document.hidden && timingLive()) requestWakeLock(); });`. Call requestWakeLock() from start-lap as well. After the auto-stop in tickBoardClocks, and after applyRemoteState, call `if (!timingLive()) releaseWakeLock();`. Make anyTimerRunning ignore expired clocks (the endAt > serverNow() test) so a stale clock cannot hold the lock."
+ },
+ {
+  "id": "time#5",
+  "sub": "time",
+  "n": 5,
+  "title": "Zero-crossing handling depends on what is on screen (data-prev): the buzzer can fire minutes late, or the clock is never stopped and stays 'running' at 0:00 for everyone",
+  "severity": "medium",
+  "file": "app.js",
+  "line": 3097,
+  "scenario": "tickBoardClocks only acts on [data-game-clock] elements that are in the DOM (app.js:3079-3080). It buzzes and stops the clock only when `running && rem === 0 && prev > 0`, where prev is the element's last painted value (app.js:3086, 3097). Three realistic failures follow. (a) The editor's phone locks or sleeps with 0:45 left (see the wake-lock finding). On unlock 20 minutes later, the first tick still sees prev=45000. It blasts 6.5 s of alarm plus vibration in the middle of whatever is happening now. (b) The ref starts game A's clock, then opens game B to enter scores. renderGameView replaces #game-view's innerHTML (app.js:5015), so game A's clock element is gone. At zero nothing buzzes and nothing stops the clock. (c) A render lands after zero but before the next tick, for example a reload or a remote snapshot, and repaints data-prev from remaining=0 (app.js:5941 and the Big Board variants). The crossing is never seen. In (b) and (c), state.clocks[gid] stays running:true at 0:00 on every device. Refs see a 'Pause' button instead of 'Next round', and anyTimerRunning() stays true, so releaseWakeLock never runs.",
+  "evidence": "vm harness, editor role, playAlarm stubbed to count calls, document.querySelectorAll stubbed. Case 1: clock ran out 20 min ago and the element has prev=45000. Output: alarms fired=1, clock stopped=true (late buzz). Case 2: element repainted with prev=0, tick run twice. Output: alarms=0, clock still running=true, anyTimerRunning=true. Case 3: no clock element on screen. Output: alarms=0, clock still running=true.",
+  "fix": "Drive the zero logic from state rather than the DOM. At the top of tickBoardClocks, before `if (!els.length) return`, for editors loop over state.clocks. For each gid whose game has a timer and whose clock is `running && Number(endAt) <= serverNow()`: call setClock(g, c => { c.running = false; c.remaining = 0; }), and call playAlarm() only if `serverNow() - endAt < 3000` and this gid+endAt has not already buzzed (a module-level Set). Call renderAll() once if anything changed. Keep the per-element loop for display classes only, and drop the data-prev crossing test."
+ },
+ {
+  "id": "scoring#6",
+  "sub": "scoring",
+  "n": 6,
+  "title": "Changing a started bracket game to another format leaves its bracket behind, and it shows as LIVE (or takes over the Big Board) on every home screen permanently",
+  "severity": "low",
+  "file": "settings.js",
+  "line": 787,
+  "scenario": "A ref taps Start Bracket on a 6-team tournament game, and then (rain, or a change of plan) a director switches the game to tally or placement in the builder. saveGameDraft only clears a saved result when the format changes (settings.js:787); state.brackets[gid] and the live tally stay. liveHomeGames (app.js:5083) counts any bracket not in 'summary' as live, without checking g.format or state.results. So every device keeps the game in 'Live now'. For tally, liveRankings defaults to on, and homeBoardGame puts it on the home Big Board ('Scoring under way\u2026') even after its result is saved. No screen offers 'Cancel bracket' for a non-tournament game, so the only in-app way out is deleting the game, which also deletes its result.",
+  "evidence": "node -e with the harness: freshBracket on musical-chairs, then the real saveGameDraft switching it to tally with liveRankings, then a saved result. Output: 'format now: tally', 'leftover bracket: true', 'liveHomeGames: [\"musical-chairs\"]', 'homeBoardGame (Big Board on every home screen): musical-chairs', 'gameStatus: done'.",
+  "fix": "In saveGameDraft, when formatChanged, also delete state.brackets[out.id] and state.drafts[out.id] and call clearLiveMatch(existing) (extend the confirm to say an in-progress bracket or score entry is discarded). In liveHomeGames, only count the bracket branch when `g.format === 'tournament' && !state.results[g.id]`."
+ },
+ {
+  "id": "scoring#7",
+  "sub": "scoring",
+  "n": 7,
+  "title": "counterAllowNegative (Counselor Hide and Seek) doesn't work: negative scores are treated as 0, left out of rankings and dropped when the result is saved",
+  "severity": "low",
+  "file": "app.js",
+  "line": 3707,
+  "scenario": "Counselor Hide and Seek is a double-points game configured with counterAllowNegative: true and a \u22121 button, and the builder exposes the option (gd-allownegative). The counter handler lets the score reach '-1' (app.js:5501), but it reads the current value back with parseScoreInput, which rejects any negative (app.js:3707) and falls back to 0 (app.js:5499). From \u22121, '\u22121' stays at \u22121 and '+1' jumps to 1 instead of 0. tallyRankLive/autoRank leave the team off the live board and the medal auto-fill, and the viewers' board never reaches 'n/n teams in \u00b7 medals ready'. Save Result also drops the negative score from result.scores.",
+  "evidence": "node -e with the harness on gameById('counselor-hide-seek'): the counter arithmetic gives 'tap -1 at -1 -> -1' and 'tap +1 at -1 -> 1', and with scores {t0:'-1', t1:'3', t2:'0'}, tallyRankLive and autoRank both return only t1 and t2.",
+  "fix": "Allow negatives in parseScoreInput when the game permits them: `if (isNaN(v) || (v < 0 && !game.counterAllowNegative)) return null;` (and the same check in the mm:ss branch). Keep the scoring.test 'never negative' assertion for ordinary games and add a case for a game with counterAllowNegative."
+ }
+]

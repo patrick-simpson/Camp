@@ -1,0 +1,122 @@
+[
+ {
+  "id": "sync#1",
+  "sub": "sync",
+  "n": 1,
+  "title": "First-snapshot 'defend offline work' branch pushes the WHOLE local tree, wiping every result/bonus other devices saved since this phone's cache",
+  "severity": "critical",
+  "file": "app.js",
+  "line": 2310,
+  "scenario": "A director's phone was last synced last night. In the morning they open the app; boot() paints immediately from the cached role (app.js:7961-7964, setMemberRole('editor') then startApp) while sign-in and the member read are still 'Connecting\u2026' on camp wifi. They record a memory-verse bonus or a podium. touchData() stamps meta.lastDataChangeAt = now, and saveState() sets dirtySinceLoad (1972). schedulePush does nothing because fbRef is still null (2494). Sync then starts and the first snapshot arrives. At handleRemoteSnapshot 2306-2310 localAt (now) is newer than remoteAt (another editor's save earlier this morning), so pushState() runs. lastSyncedTree is still null, so it builds updates from every SYNC_KEY in full (2589), and fbRef.update({results:{...},bonuses:{...},...}) replaces each top-level node outright. Every result, bonus, bracket, clock and announcement that other devices saved after this phone's cache date is deleted for everyone. The same branch fires with no real edit at all if a phone whose clock runs fast holds a cached stamp newer than the server's and makes any view-only save before the first snapshot.",
+  "evidence": "Ran /tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/demo1.js, which loads the real app.js through tests/harness.js. Local results were {a,b,c} with a newer stamp, and the server held results {a,b,d,e} and bonuses {x}. The single update written was keyed teams,results,brackets,drafts,picRounds,picSetup,bonuses,live,meta,clocks,announcements,notice, with results={a,b,c} and bonuses={}. Server-only d, e and x are erased. The existing test 'first snapshot: newer local work is pushed' only uses an empty remote, so it never sees this.",
+  "fix": "Never do a whole-tree write over a non-empty server. In handleRemoteSnapshot, take a snapshot of the synced tree right after boot (loadBaseline = syncedSnapshot() after normalizeSyncedState). Better still, persist the last server-confirmed baseline under lsKey('campScoreboardSyncBase'), written on adopt and on a successful push ack, and add it to clearLocalData. On the first snapshot, compute const unsynced = computeSyncUpdates(baseline, syncedSnapshot()), call applyRemoteState(remote) (which sets lastSyncedTree to the server copy), re-apply each path in unsynced onto state, then pushState(). That sends only the items this device actually changed, per path. With no baseline, adopt the remote copy instead of pushing the whole tree. Add a sync.test.js case with server-only items that must survive."
+ },
+ {
+  "id": "sync#3",
+  "sub": "sync",
+  "n": 3,
+  "title": "Tally counter taps stop syncing after the post-push re-read adopts an identical snapshot: the render-time `draft` closure is left pointing at a detached object",
+  "severity": "high",
+  "file": "app.js",
+  "line": 2348,
+  "scenario": "A ref scores a live-rankings tally game such as Counselor Hide and Seek with the +1/+5 counters. renderTally captures const draft = state.drafts[g.id] (5435), and the counter handler mutates that object and calls saveState() with no re-render (5490-5504). Each push raises RTDB's optimistic local echo while pendingWrites is 1, so the snapshot is deferred. After the ack, idleRetryTick re-reads (2288) and applyRemoteState swaps in brand-new objects from snap.val() (2348). The content is identical, so syncSignature() is unchanged and renderAll is skipped (2363), and the handlers keep their old draft. From then on every tap updates the on-screen number but not state, so saveState/pushState find nothing to send. The live board on every other device freezes. updateTallyMedals ranks the podium from the stale state.drafts (5565-5568), so Save Result (5532) can record medals from stale scores. Any re-render (another device's update, navigating away) drops the on-screen count back down and the taps are lost. On Android this only happens once focus leaves the jelly-button (a tap on blank space in #game-view). With the focus fix above it happens after every tap.",
+  "evidence": "Ran /tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/tally.js in real Chromium (Pixel 7) with the real DOM handlers and a fake fbRef. The fake raises the optimistic echo inside update(), acks after 150ms, and serves pruned, key-sorted reads to once(). Tapping +1 on t0 four times, with a blank tap and 2s gap each time, gave: tap2 {input:2,state:2,server:2}; tap3 {input:3,state:2,server:2}; tap4 {input:4,state:2,server:2}; then after renderAll {input:2}. The harness version (demo3.js) shows the same detachment: closure {t0:4,t1:1,t2:1} vs state/server {t0:1,t1:1}.",
+  "fix": "In applyRemoteState, keep object identity when nothing changed. Save const prevRefs = {} with SYNC_KEYS.forEach(k => prevRefs[k] = state[k]) before the replace loop. After normalizeSyncedState(), if syncSignature() === beforeSig, restore every key from prevRefs before setting lastSyncedTree. As defense in depth, have the tally and placement handlers re-resolve the draft at event time (state.drafts[g.id] || (state.drafts[g.id] = {scores:{}, medals:{}})) instead of using the captured const."
+ },
+ {
+  "id": "scoring#1",
+  "sub": "scoring",
+  "n": 1,
+  "title": "After the device re-fetches its own write while idle, open tally/bracket/notice views edit stale copies of the data, so later taps are silently not saved or synced and medals can be picked from stale scores",
+  "severity": "critical",
+  "file": "app.js",
+  "line": 2348,
+  "scenario": "A ref opens a counter tally game (Axe Throwing, Inflatable Bowling, Color Call Chaos, Hide and Seek, Pumpkin Patch Plunder). renderTally keeps a reference to `draft` = state.drafts[g.id] (app.js:5435), and the counter/input handlers write into that object (app.js:5499-5503). Tap 1 runs saveState, then pushState: pendingWrites goes up and RTDB fires its local `value` echo, so handleRemoteSnapshot defers it (deferRemoteSnapshot). About a second later idleRetryTick calls fbRef.once('value') (app.js:2288), and applyRemoteState swaps in fresh objects for every synced key (app.js:2348). The content is identical, so syncSignature() matches beforeSig and renderAll is skipped (app.js:2363). The open view's handlers still point at the old, detached draft. From then on every tap updates the input box but not state: saveState has nothing to send, viewers' live board and other devices never see it, and updateTallyMedals re-reads state.drafts, so the ranking pills stop moving. On Save Result (app.js:5527-5545) the scores come from the stale copy but the medal picks are auto-filled from the out-of-date state, so the wrong teams can get medals. Any later renderAll (another editor's change, or the clock reaching 0:00 at app.js:3101) puts the inputs back to the stale values and the taps are lost. In Chrome on Android a focused counter jelly-button holds off the re-fetch until the ref taps elsewhere; after that, every tap is lost and focus blocks any re-render. The same thing happens to brackets: `b` from app.js:5784 goes stale, so the first chip, winner or undo tap after each idle re-fetch does nothing, while touchData still shows the celebration. It also hits the notice builder: `n` from settings.js:1279 goes stale and field edits disappear before Post. This came in with the 2026-07-25 idle re-fetch, after camp week, so it has never run at a live camp.",
+  "evidence": "Ran detach.js in the scratchpad. It loads the real app through tests/harness.js, uses a fake RTDB that prunes and sorts keys and fires the local echo synchronously, calls the real renderTally counter handler, then runs flushPendingPush + idleRetryTick: 'tap 1: input shows 1 | state t1 = 1 | server t1 = 1', 'tap 2: input shows 2 | state t1 = 1 | server t1 = 1', ... 'tap 4: input shows 4 | state t1 = 1 | server t1 = 1', and renderAll was never called by the echo. bracket.js runs the real renderBracketRound1 chip handlers: after the first chip tap and an idle re-fetch, the second chip tap leaves selectedPair at [\"t0\"] even though renderAll ran.",
+  "fix": "In applyRemoteState, save the current objects before merging (`const prevRefs = SYNC_KEYS.map((k) => state[k]);`). After normalizeSyncedState and re-attaching the Pictionary words, if `syncSignature() === beforeSig`, put them back (`SYNC_KEYS.forEach((k, i) => { state[k] = prevRefs[i]; })`) before setting lastSyncedTree. The content is identical, so this changes nothing else, and any real change still goes through renderAll, which rebuilds the handlers. For extra safety, have the renderTally and bracket handlers look up `state.drafts[g.id]` / `state.brackets[g.id]` when the event fires instead of holding a reference. Add a sync.test case: keep a reference to state.drafts.g, apply an identical echo with applyRemoteState, and assert the reference is still state.drafts.g."
+ },
+ {
+  "id": "sync#4",
+  "sub": "sync",
+  "n": 4,
+  "title": "Whole-draft pushes erase another editor's tally entries; the own-team guard makes two editors on one draft the normal case",
+  "severity": "high",
+  "file": "app.js",
+  "line": 2545,
+  "scenario": "Editor A is assigned to team t2, so canScoreRound locks t2's row and 'another editor scores this' (5444-5452). Editor B enters t2's score, which pushes drafts/<gid>. A is typing t1's score at that moment, so B's snapshot is deferred (canAdoptRemote false). A's input handler calls saveState() (5480-5485), and computeSyncUpdates writes the whole item drafts/<gid> (2545) from A's copy, which has no t2. B's entry is wiped on the server, then disappears from B's screen when B adopts. When A taps Save Result, the podium is computed without t2's score. The same last-write-wins happens with no deferral when two refs tap counters for different teams within a push round-trip.",
+  "evidence": "Ran /tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/demo8.js (real app.js via harness, setMemberTeam('t2')). Output: canScoreT2:false, deferred:true, pushed:{\"drafts/counselor-hide-seek\":{\"scores\":{\"t0\":\"3\",\"t1\":\"4\"},\"medals\":{}}}. B's t2:'5' is overwritten.",
+  "fix": "Diff drafts one level deeper in computeSyncUpdates, the same way live is already diffed per field. Remove 'drafts' from SYNC_ITEM_MAPS. When a draft exists on both sides, emit drafts/<gid>/scores/<tid> and drafts/<gid>/medals/<medal> individually, with null for removed keys. Write drafts/<gid> whole only when the draft is new or deleted. The rules validate at state/drafts, so deeper paths are allowed. Add a test like the existing 'a live match is diffed per FIELD' case."
+ },
+ {
+  "id": "scoring#2",
+  "sub": "scoring",
+  "n": 2,
+  "title": "Tally drafts are written as one whole object per game, so two editors scoring the same game (the setup the own-team guard requires) wipe each other's team scores",
+  "severity": "high",
+  "file": "app.js",
+  "line": 2520,
+  "scenario": "Under the own-team guard (canScoreRound, app.js:128; renderTally locks the row at app.js:5446) an editor can't score their own team, so another editor has to, at the same time on the same tally game. 'drafts' is in SYNC_ITEM_MAPS (app.js:2520), so computeSyncUpdates sends the whole `drafts/<gid>` object whenever any team's score changes. Editor B starts typing team t0's score; the focused input makes canAdoptRemote() false, so B holds off on A's updates. Meanwhile editor A enters t1=7 and t2=4. When B leaves the field, flushPendingPush sends B's out-of-date draft `{scores:{t0:'12'}}` over the server copy. A's scores are gone on the server, and A's device takes B's version on its next idle re-fetch. This isn't a narrow race: holding off while focused guarantees B's push is stale. Chrome on Android makes it worse: editorMidEntry treats any focused `JELLY-*` element as mid-entry (app.js:7083), and a tapped counter jelly-button keeps focus, so a ref who keeps tapping counters holds off on other editors' updates the whole time and every push reverts them. The same whole-object write applies to `brackets/<gid>` when two editors hand a bracket back and forth.",
+  "evidence": "Ran twoeditors.js: two harness contexts sharing one fake RTDB. Output: 'server after A: {\"axe-throwing\":{\"scores\":{\"t1\":\"7\",\"t2\":\"4\"}}}', 'B has adopted A? {}', 'B pushed: {\"drafts/axe-throwing\":{\"scores\":{\"t0\":\"12\"},\"medals\":{}}}', 'server after B: {\"axe-throwing\":{\"scores\":{\"t0\":\"12\"}}}', 'A now shows: {\"t0\":\"12\"}'. The rules (database.rules.json state.drafts) only validate the drafts branch itself, so deeper per-team paths are allowed.",
+  "fix": "Take 'drafts' out of SYNC_ITEM_MAPS and diff it one level deeper in computeSyncUpdates, the way `live` already is. If a draft is new or deleted, write or null `drafts/<gid>` whole. Otherwise, for f in ['scores','medals'], write `drafts/<gid>/<f>/<key>` for each changed leaf and null for each removed one, with no overlapping paths. Add a sync.test case like 'a live match is diffed per FIELD': one changed team score must produce only `drafts/g/scores/t1`. Optionally narrow the editorMidEntry focus check to form-entry hosts (JELLY-INPUT, JELLY-TEXTAREA, JELLY-SELECT) instead of every `JELLY-` tag, so a focused counter button doesn't hold off updates."
+ },
+ {
+  "id": "sync#6",
+  "sub": "sync",
+  "n": 6,
+  "title": "`meta` is pushed whole on every data save, so one editor's score entry un-hides a card another editor just hid (and the reverse)",
+  "severity": "medium",
+  "file": "app.js",
+  "line": 2576,
+  "scenario": "Friday night the director hides Standings for the awards reveal (toggleCardHidden \u2192 meta.hiddenCards.standings = true). The game leader is typing the last game's scores on another phone, so that snapshot is deferred. When the leader taps Save Result, touchData() changes meta.lastDataChangeAt. meta is a SYNC_SINGLETON (2524), so computeSyncUpdates writes the leader's whole stale meta (2576), which has hiddenCards {}. That replaces state/meta on the server, and Standings reappears on every viewer's phone, spoiling the reveal. Since every touchData rewrites meta, any data save races any hide or unhide.",
+  "evidence": "Ran /tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/demo4.js (real app.js via harness). With the remote hide deferred (deferred:true), the save pushed paths ['results/final-game','meta'] with meta = {hiddenCards:{}, lastDataChangeAt:...}.",
+  "fix": "Take 'meta' out of SYNC_SINGLETONS and diff it per field in computeSyncUpdates: meta/lastDataChangeAt, meta/standingsHidden, and meta/hiddenCards/<card> as true or null for removed. Then a data save writes only meta/lastDataChangeAt and a hide toggle writes only its own card key. The state/meta rules validate at the meta node, so child paths pass."
+ },
+ {
+  "id": "sync#7",
+  "sub": "sync",
+  "n": 7,
+  "title": "An edit made before sync starts is dropped when the first snapshot wins, and dataEditPending stays true, so the device stops adopting updates",
+  "severity": "medium",
+  "file": "app.js",
+  "line": 2317,
+  "scenario": "An editor on a hint-painted device saves a bonus before sync attaches. touchData sets dataEditPending = true (1990). schedulePush returns early (2494), or pushState returns early on !remoteReady (2582), and the only reset is in pushState (2594). The first snapshot's stamp is newer than the local one, either because another editor saved in the meantime or because this phone's clock runs slow. So handleRemoteSnapshot adopts the remote copy (2317) and the local edit silently disappears. dataEditPending is never cleared, so editorMidEntry() (7087) stays true. Every later snapshot is deferred and the idle tick waits forever. The phone shows stale scores and also blocks its own deploy auto-reload until something happens to trigger another push.",
+  "evidence": "Ran /tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/demo7.js (real app.js via harness, fbRef null during the edit, then a first snapshot with a newer stamp). Output: afterFirst {bonusKept:false, dataEditPending:true, canAdoptRemote:false}, then a later snapshot gave {laterSnapshotAdopted:false, remoteRefetchPending:true}.",
+  "fix": "In handleRemoteSnapshot, on the firstSnapshot path that adopts, clear dataEditPending (and pushTimer if it's stale) before applyRemoteState, since that pending edit is being reconciled rather than pushed. The baseline-merge fix in the first finding then re-applies the edit and pushes it per path instead of dropping it."
+ },
+ {
+  "id": "sync#8",
+  "sub": "sync",
+  "n": 8,
+  "title": "applyRemoteConfig pushes the whole config back from every device whenever migrateState only healed RTDB pruning, which races with editors working in the builder",
+  "severity": "medium",
+  "file": "app.js",
+  "line": 2183,
+  "scenario": "Any game saved with no rules has rules: [] (newGameShape 286, saveGame's filter in settings.js), and RTDB prunes the empty array. Quick games commonly have no rules. On every config event on every device, migrateState heals g.rules = [] and returns true (1856), so applyRemoteConfig calls schedulePushConfig (2183). Every editor device then does a whole-node fbConfigRef.set() of its copy 400ms later; viewers attempt it and are refused. If editor B commits a second builder change (a reorder tap, the next blurred field) while those echoes are in flight, an echo of the earlier version can land after B's write and overwrite it. B's builder then reverts when it adopts that echo.",
+  "evidence": "Ran /tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/demo6.js (real app.js via harness, remote config containing a game with no rules key). Output: {echoQueued:true, echoSets:1, againQueued:true}. Every receipt of the same unchanged config queues another whole-config set().",
+  "fix": "Push only when a versioned one-shot migration actually ran. In applyRemoteConfig, record const v0 = remote && remote.version before migrateState. Replace line 2183 with if (upgraded && canEdit() && state.config.version !== v0) schedulePushConfig(). Healing pruned empties is local-only, and every device does it on read."
+ },
+ {
+  "id": "scoring#3",
+  "sub": "scoring",
+  "n": 3,
+  "title": "Week-builder saves send the whole config from a stale copy, wiping another editor's newer changes even when this device already has the newer version waiting",
+  "severity": "high",
+  "file": "app.js",
+  "line": 2223,
+  "scenario": "Editor B opens 'Axe Throwing' in the game editor and edits its headline or rules. builderDirty() makes editorMidEntry() true, so when editor A saves a new rain-day game, B's config listener stores A's version in pendingRemoteConfig (app.js:2447) instead of applying it. B taps Save: saveGameDraft (settings.js:716) splices B's game into B's stale state.config (settings.js:799), and saveConfig calls pushConfig, which overwrites the whole config node (app.js:2223). A's new game disappears from the server and from A's screen. B's own echo then replaces the stored version, so A's change is gone for good. Any result A already saved for that game becomes orphaned: medalCounts drops it from the standings, but current-standings.html:435 still counts it, so the TV and the app disagree. The same happens with the Days tab handlers (settings.js:912-966), duplicateGame and deleteGame (which can bring back a game another editor deleted). Separately, pushConfig has no first-pull gate like remoteReady: an edit made between attaching fbConfigRef and the first config snapshot (for example after the auto-reload reopens the builder from state.ui.view) sends the device's cached, possibly days-old catalog over the server.",
+  "evidence": "Ran config.js: two harness contexts using the real ensureGameDraft/saveGameDraft/applyRemoteConfig and the same stash-while-mid-entry logic as the fbConfigRef listener. Output: 'B builderDirty: true', 'server has Rain Relay after A saves: true', 'B stashed it (pendingRemoteConfig set): true', 'server has Rain Relay after B saves: false', 'A still has Rain Relay: false'.",
+  "fix": "Add a helper in app.js, `rebaseOnPendingConfig()`: if pendingRemoteConfig is set, set state.config to it, run migrateState (with applyingRemoteConfig true), and clear it. Call it at the top of every builder commit before anything changes: saveGameDraft, duplicateGame, deleteGame, and each Days-tab handler (they already look things up by id when the event fires). Because the game editor keeps its edits in gameDraft, applying the newer config first and then splicing in only the edited game is safe. In saveGameDraft, if `!isNew` and the game no longer exists after the rebase, show 'This game was deleted by another editor' instead of saving. Also gate pushConfig on a `configReady` flag that the first fbConfigRef snapshot sets (including the `!remote` seed branch), mirroring remoteReady."
+ },
+ {
+  "id": "scoring#4",
+  "sub": "scoring",
+  "n": 4,
+  "title": "Two editors setting the same team's verse or cleanup points both get counted (for example 3 + 5 = 8)",
+  "severity": "medium",
+  "file": "app.js",
+  "line": 4596,
+  "scenario": "setVersePoints (app.js:4596) and setCleanupPoints (app.js:4792) are meant to set a team's points for a day (and meal) to an exact value. Each one deletes the entries this device knows about and adds a new entry under a random newBonusId() (app.js:4604, 4801). Each bonus syncs under its own path, so two editors setting team t2's Monday verse at about the same time, or one editor whose device is holding off updates (still focused in a bonus or score input and then tapping a verse chip), each delete only what they've seen and each add their own entry. The server ends up with both, and t2's verse total in the standings and on the TV becomes the sum (3 + 5 = 8, above the 5-point chip maximum) until someone taps that row again.",
+  "evidence": "Ran verse.js: two harness contexts, A runs setVersePoints('t2',1,3) and B runs setVersePoints('t2',1,5), then B takes the server snapshot. Output: the server bonuses hold two Monday-verse entries for t2 (3 and 5), and `medalCounts().t2.verse` = 8.",
+  "fix": "Use fixed ids so the operation is idempotent: `const id = 'verse-' + teamId + '-' + dow` (cleanup: `'cleanup-' + teamId + '-' + dow + '-' + meal`). Delete any older entries for that team and day other than `id`, then set or delete `state.bonuses[id]`. Two devices then write the same path and end up with one value. If you want the change history to read 'changed 3 \u2192 5' (IMPROVEMENTS #4), make describeCauses report a points change on the same id as 'changed'."
+ }
+]
