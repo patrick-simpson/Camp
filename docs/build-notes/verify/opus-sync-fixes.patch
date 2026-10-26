@@ -1,7 +1,7 @@
 From 9024a4b1ee5e73515203d5560ed76132b1615447 Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Mon, 26 Oct 2026 22:24:03 +0000
-Subject: [PATCH 1/2] Sync merge safety: per-path first-snapshot defence,
+Subject: [PATCH 1/3] Sync merge safety: per-path first-snapshot defence,
  attached echoes, per-leaf drafts, per-field meta
 MIME-Version: 1.0
 Content-Type: text/plain; charset=UTF-8
@@ -607,7 +607,7 @@ index cc6653f..94131a5 100644
 From 689faa546af5c2072df14dfc1219447774ec052e Mon Sep 17 00:00:00 2001
 From: Claude <noreply@anthropic.com>
 Date: Mon, 26 Oct 2026 22:29:21 +0000
-Subject: [PATCH 2/2] Chat reliability: serialized sends, no rebuild on window
+Subject: [PATCH 2/3] Chat reliability: serialized sends, no rebuild on window
  slide, back-fill not re-announced
 
 Fixes verified by the 2026-10-26 audit (RESULTS-G3), reproduced with the real
@@ -1014,6 +1014,217 @@ index 0000000..5dce8db
 +    announceComposerOpen = false;
 +    setMemberRole(null);
 +  }
++});
+-- 
+2.43.0
+
+
+From 48176e733e4803fd909081c80c7a2bdc7afc3f0a Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 26 Oct 2026 22:31:43 +0000
+Subject: [PATCH 3/3] Alerts hardening (app side): retrying chat notify, honest
+ sender status, push-host allowlist in the rules
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+From the app-side review:
+- pushNotifyChat retries network/timeout/429/5xx twice (2 s, 6 s; the Worker
+  dedupes by msgId) with keepalive, and an Announcements poster is told if
+  phone alerts may not have gone out — nothing else re-sends a chat alert.
+- The director's sender line no longer shows green when the sender's
+  signing key is broken (/health vapid:false / ok:false).
+- database.rules.json: a push endpoint must be a real push service
+  (google.com/googleapis.com, Apple, Mozilla, Windows) — verified in the
+  RTDB emulator (5 real hosts accepted; look-alikes and plain http refused).
+- Two vacuous tests made real: sw.js's https-only sender URL check now runs
+  with a real URL API; the dormant drawer test checks what was drawn.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01FmwrSqURuVRaeeP3mUmmwi
+---
+ database.rules.json |  4 ++--
+ push.js             | 41 +++++++++++++++++++++++++++++++++++------
+ tests/push.test.js  | 24 ++++++++++++++++++------
+ tests/rules.test.js | 17 ++++++++++++++++-
+ 4 files changed, 71 insertions(+), 15 deletions(-)
+
+diff --git a/database.rules.json b/database.rules.json
+index eb0fbb5..ced5667 100644
+--- a/database.rules.json
++++ b/database.rules.json
+@@ -217,7 +217,7 @@
+             ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && $memberKey === auth.token.email.toLowerCase().replace('.', ',')) || (auth.token.phone_number != null && $memberKey === auth.token.phone_number)) && !newData.exists()",
+             ".validate": "$deviceId.matches(/^[A-Za-z0-9_-]{8,64}$/) && newData.hasChildren(['endpoint', 'p256dh', 'auth', 'at', 'prefs'])",
+             "endpoint": {
+-              ".validate": "newData.isString() && newData.val().beginsWith('https://') && newData.val().length <= 1024"
++              ".validate": "newData.isString() && newData.val().length <= 1024 && newData.val().matches(/^https:\\/\\/([a-z0-9-]+\\.)*(google\\.com|googleapis\\.com|push\\.services\\.mozilla\\.com|push\\.apple\\.com|notify\\.windows\\.com)\\//)"
+             },
+             "p256dh": {
+               ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{80,100}$/)"
+@@ -540,7 +540,7 @@
+             ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && $memberKey === auth.token.email.toLowerCase().replace('.', ',')) || (auth.token.phone_number != null && $memberKey === auth.token.phone_number)) && !newData.exists()",
+             ".validate": "$deviceId.matches(/^[A-Za-z0-9_-]{8,64}$/) && newData.hasChildren(['endpoint', 'p256dh', 'auth', 'at', 'prefs'])",
+             "endpoint": {
+-              ".validate": "newData.isString() && newData.val().beginsWith('https://') && newData.val().length <= 1024"
++              ".validate": "newData.isString() && newData.val().length <= 1024 && newData.val().matches(/^https:\\/\\/([a-z0-9-]+\\.)*(google\\.com|googleapis\\.com|push\\.services\\.mozilla\\.com|push\\.apple\\.com|notify\\.windows\\.com)\\//)"
+             },
+             "p256dh": {
+               ".validate": "newData.isString() && newData.val().matches(/^[A-Za-z0-9_-]{80,100}$/)"
+diff --git a/push.js b/push.js
+index e8cb627..5a3d5c3 100644
+--- a/push.js
++++ b/push.js
+@@ -570,10 +570,11 @@ function pushIdToken() {
+ 
+ // POST JSON to the Worker; resolves with its JSON body, rejects with an Error
+ // carrying serverError/serverMessage when it said no.
+-async function pushPost(path, body, withAuth) {
++async function pushPost(path, body, withAuth, extra) {
+   const headers = { 'Content-Type': 'application/json' };
+   if (withAuth) headers.Authorization = 'Bearer ' + await pushIdToken();
+-  const res = await pushFetch(pushServiceBase() + path, { method: 'POST', headers, body: JSON.stringify(body) }, 20000);
++  const res = await pushFetch(pushServiceBase() + path,
++    Object.assign({ method: 'POST', headers, body: JSON.stringify(body) }, extra || {}), 20000);
+   let data = null;
+   try { data = await res.json(); } catch (e) { /* non-JSON — handled below */ }
+   if (!res.ok || !data || data.ok === false) {
+@@ -1036,11 +1037,33 @@ function pushNotifyChat(ch, msgId, text) {
+   if (typeof msgId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(msgId)) return Promise.resolve(null);
+   let targets = { keys: [], teams: [] };
+   try { targets = pushMentionTargets(text); } catch (e) { /* send without mentions */ }
+-  return pushPost('/notify', {
+-    camp: CAMP.id, kind: 'chat', ch, msgId, mentionKeys: targets.keys, mentionTeams: targets.teams,
+-  }, true)
++  const body = { camp: CAMP.id, kind: 'chat', ch, msgId, mentionKeys: targets.keys, mentionTeams: targets.teams };
++  // Nothing else re-sends a chat alert (the cron only drains batches and does
++  // schedule blocks), so a blip here would silently cost every closed phone
++  // the message. Retry what can heal — network, timeout, 429, 5xx — twice,
++  // backing off; the Worker dedupes by msgId, so a retry can't double-buzz.
++  // keepalive lets the request finish if the phone is backgrounded right
++  // after Send (bodies here are tiny, far under keepalive's 64 KB cap).
++  const retryable = (e) => {
++    const code = String((e && e.pushCode) || '');
++    return code === 'network' || code === 'timeout' || code === 'http-429' || /^http-5\d\d$/.test(code);
++  };
++  const attempt = (n) => pushPost('/notify', body, true, { keepalive: true })
++    .catch((e) => {
++      if (n >= 2 || !retryable(e)) throw e;
++      return new Promise((resolve) => setTimeout(resolve, n === 0 ? 2000 : 6000)).then(() => attempt(n + 1));
++    });
++  return attempt(0)
+     .then((res) => { pushDrainBatches(res && res.batches); return res; })
+-    .catch((e) => { console.warn('[push] chat notify failed', e); return null; });
++    .catch((e) => {
++      console.warn('[push] chat notify failed', e);
++      // An announcement is the one message people count on getting. Say so —
++      // quietly — rather than let the poster believe every phone buzzed.
++      if (ch === 'announcements' && typeof showToast === 'function') {
++        showToast('📣 Posted — but phone alerts may not have gone out. It\'s on everyone\'s screen when they open Camp.');
++      }
++      return null;
++    });
+ }
+ 
+ // ════════════════════════════════════════════════════════════════════
+@@ -1473,6 +1496,12 @@ function renderPushHealth() {
+   }
+   const h = pushHealth;
+   if (!h.configured) { el.textContent = "Sender: ❌ running, but not connected to Firebase — see push-worker/README.md."; return; }
++  // Connected but unable to sign pushes: nobody can turn alerts on and nothing
++  // gets sent, so this must not read as green just because the timer ticks.
++  if (h.vapid === false || h.ok === false) {
++    el.textContent = "Sender: ❌ running, but its signing key has a problem — open the sender's web address to see its status page.";
++    return;
++  }
+   const now = Number(h.time) || Date.now();
+   const last = Number(h.cronLastRun) || 0;
+   if (!last) { el.textContent = "Sender: ⚠️ online, but its schedule timer has never run — add the cron trigger."; return; }
+diff --git a/tests/push.test.js b/tests/push.test.js
+index 9198330..9dc546f 100644
+--- a/tests/push.test.js
++++ b/tests/push.test.js
+@@ -360,6 +360,11 @@ test('with no sender configured, the feature is fully dormant', async () => {
+   assert.doesNotThrow(() => pushPrefsChanged());
+   assert.ok(pushSwUrl().startsWith('sw.js?v=') && !pushSwUrl().includes('push='), 'no sender ⇒ no push= in the worker URL');
+   assert.doesNotThrow(() => renderPushDrawer(), 'the drawer renders its dormant card without a DOM to speak of');
++  // renderPushDrawer swallows its own errors into a "hit a snag" card, so
++  // not-throwing proves nothing — check what it actually drew.
++  const html = String(document.getElementById('alerts-body').innerHTML || '');
++  assert.notOk(/hit a snag/i.test(html), 'the dormant card rendered without tripping its error fallback');
++  assert.ok(/coming soon|aren.t connected|not connected/i.test(html), 'and it says the feature is not on yet');
+ });
+ 
+ test('pushSignOut never rejects and clears the on-flag for both camps', async () => {
+@@ -435,17 +440,19 @@ test('pushAudienceLabel names every audience the composer offers', () => {
+ // Loaded the way a service worker runs it: no window, no document — just a
+ // stub `self` that records which events the file listens for.
+ 
+-function loadServiceWorker() {
++function loadServiceWorker(regUrl) {
+   const listeners = {};
+   const stubSelf = {
+-    location: { href: 'https://camp.example/sw.js?v=2&push=https%3A%2F%2Fcamp-alerts.example.workers.dev' },
++    location: { href: regUrl || 'https://camp.example/sw.js?v=2&push=https%3A%2F%2Fcamp-alerts.example.workers.dev' },
+     addEventListener: (type, fn) => { (listeners[type] = listeners[type] || []).push(fn); },
+     skipWaiting: () => {},
+     clients: { claim: () => Promise.resolve(), matchAll: () => Promise.resolve([]) },
+     registration: {},
+   };
+-  const exports = new Function('self', readFixture('../sw.js') +
+-    '\nreturn { campNotificationFromPayload, campPushServiceUrl };')(stubSelf);
++  // Hand the worker a real URL implementation (the vm sandbox has none), so
++  // campPushServiceUrl's https-only logic is actually exercised.
++  const exports = new Function('self', 'URL', readFixture('../sw.js') +
++    '\nreturn { campNotificationFromPayload, campPushServiceUrl };')(stubSelf, nodeRequire('url').URL);
+   return { exports, listeners };
+ }
+ 
+@@ -506,6 +513,11 @@ test('campNotificationFromPayload: missing or garbage still shows SOMETHING', ()
+ });
+ 
+ test('sw.js reads the sender URL from its own registration URL, https only', () => {
+-  const { campPushServiceUrl } = loadServiceWorker().exports;
+-  assert.equal(campPushServiceUrl(), '', 'the test harness has no URL API — it fails closed');
++  const at = (push) => loadServiceWorker('https://camp.example/sw.js?v=2' + (push === undefined ? '' : '&push=' + encodeURIComponent(push))).exports.campPushServiceUrl();
++  assert.equal(at('https://camp-alerts.example.workers.dev'), 'https://camp-alerts.example.workers.dev');
++  assert.equal(at('https://camp-alerts.example.workers.dev/'), 'https://camp-alerts.example.workers.dev', 'trailing slash stripped');
++  assert.equal(at('http://evil.example'), '', 'plain http to a real host is refused');
++  assert.equal(at('http://localhost:8787'), 'http://localhost:8787', 'local wrangler dev is allowed');
++  assert.equal(at('javascript:alert(1)'), '');
++  assert.equal(at(undefined), '', 'no push= ⇒ no sender');
+ });
+diff --git a/tests/rules.test.js b/tests/rules.test.js
+index cab4653..d9b5697 100644
+--- a/tests/rules.test.js
++++ b/tests/rules.test.js
+@@ -360,7 +360,7 @@ test('every push record field is pinned to the shape the client writes', () => {
+   ROOTS.forEach((root) => {
+     const dev = RULES[root].push.$memberKey.$deviceId;
+     assert.ok(dev['.validate'].includes('$deviceId.matches(/^[A-Za-z0-9_-]{8,64}$/)'), `${root}: device ids are url-safe and bounded`);
+-    assert.ok(dev.endpoint['.validate'].includes("beginsWith('https://')"), `${root}: endpoints are https only`);
++    assert.ok(dev.endpoint['.validate'].includes('matches(/^https:'), `${root}: endpoints are https only (and a known push host — see below)`);
+     assert.ok(/length <= 1024/.test(dev.endpoint['.validate']), `${root}: and bounded`);
+     assert.ok(dev.at['.validate'].includes('=== now'), `${root}: the stamp is the server's`);
+     assert.ok(dev.team['.validate'].includes('/^t[0-9]$/'), `${root}: team is a team id`);
+@@ -427,3 +427,18 @@ test('the phone-alert blocks are identical in both camps, modulo the root name',
+     assert.equal(junior, JSON.stringify(RULES.seniorScoreboard[p]), `${p} differs between camps beyond the root name`);
+   });
+ });
++
++test('a push endpoint must be a real push service (no relaying through the sender)', () => {
++  // Without this a member could store https://anything as their "phone" and
++  // have the alert sender POST to it on every message. The Worker enforces
++  // the same host list; this is the first line. Behaviour verified in the
++  // RTDB emulator (2026-10-26): fcm.googleapis.com, *.google.com, Apple,
++  // Mozilla and Windows accepted; look-alike hosts and plain http refused.
++  ROOTS.forEach((root) => {
++    const v = RULES[root].push.$memberKey.$deviceId.endpoint['.validate'];
++    ['google', 'googleapis', 'push\\.services\\.mozilla', 'push\\.apple', 'notify\\.windows'].forEach((h) => {
++      assert.ok(v.includes(h), `${root} endpoint allowlist names ${h}`);
++    });
++    assert.ok(v.includes('matches(/^https:'), `${root} endpoint must be anchored and https`);
++  });
 +});
 -- 
 2.43.0
