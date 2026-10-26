@@ -38,6 +38,13 @@ async function main() {
     sandbox.freshState = () => vm.runInContext('state = makeFreshState(); migrateState(state); normalizeSyncedState(); state', ctx);
     // Fixture files (e.g. the pre-move junior-week snapshot) live next to the tests.
     sandbox.readFixture = (name) => fs.readFileSync(path.join(__dirname, name), 'utf8');
+    // The phone-alert Worker (push-worker/worker.js) is an ES module that runs
+    // on Cloudflare, not a browser script, so its tests load it in Node's MAIN
+    // realm instead of this vm context, and use node:crypto to check its output
+    // independently. Do the crypto/typed-array work in the main realm and pass
+    // only plain strings/objects across.
+    sandbox.nodeRequire = require;
+    sandbox.importModule = (rel) => import(require('url').pathToFileURL(path.join(__dirname, rel)).href);
 
     try {
       vm.runInContext(fs.readFileSync(path.join(__dirname, file), 'utf8'), ctx, { filename: file });
