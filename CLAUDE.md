@@ -771,7 +771,18 @@ More sync invariants (each fixed after it bit us — don't regress these;
   reload. It replaced "newest `lastDataChangeAt` takes the whole tree", which
   either dropped the offline score or pushed this phone's whole stale tree
   over everyone's newer results (`lastSyncedTree` was null on that path).
-  `_syncBase` is never synced and never in a backup.
+  `_syncBase` is never synced and never in a backup. Comparisons run on
+  RTDB-CANONICAL forms (`syncCanon`: empties pruned, keys sorted) — the raw
+  snapshot is pruned and key-sorted while the cache is normalized, and
+  comparing them directly made every healed empty look like someone else's
+  edit (caught by review, 2026-10-26). The merged tree is applied with the
+  SERVER's tree as its confirmed base (it's not confirmed until the push
+  acks). Unconfirmed work older than 36 h since the last confirmation asks
+  before sending; an EMPTY state node on a phone that has a baseline is
+  treated as a deliberate wipe (adopt it, push back only our own edits +
+  the roster), not seeded. Known limit: two tabs of the SAME camp on one
+  device can overwrite each other's unconfirmed edits in the shared cache —
+  use one tab per camp.
 - **An identical snapshot keeps the live objects.** `applyRemoteState`
   restores the previous `state[k]` references when the signature didn't
   change — open tally/bracket/notice views close over those objects, and an
