@@ -27,3 +27,12 @@ what we did with it.
 | pages#5 | ✅ | low | TV counts orphaned results the app ignores. liveGameIds filter in computeStandings (null-guarded). | deferred → Project 2 |
 | pages#6 | ✅ | low | TV treats phone accounts as signed out; mirror identityKey. | deferred → Project 2 |
 | pages#7 | ❌ | — | Already fixed by the push merge (sw.js isApp filter). | n/a |
+
+## G5 — clocks / scoring (reported ~6:19 PM ET Mon)
+
+| id | real | sev | fix (short) | status |
+|---|---|---|---|---|
+| time#4 | ✅ | med | Wake lock never re-acquired after the app is hidden. Add `wakeLockWanted` flag (set on clock 'start' + Pictionary 'start-lap', cleared in releaseWakeLock); `rearmWakeLock()` on visibilitychange (only if wanted && anyTimerRunning()); anyTimerRunning counts a synced clock only when `running && endAt > serverNow()`; release after auto-stop and 'stop-lap' when nothing runs. NOT a plain re-request (would keep every viewer's screen on). Test with stubbed navigator.wakeLock. | todo |
+| time#5 | ✅ | med | Zero-crossing depends on data-prev → late/missed alarm, clock stuck running. Fix: `clockAlarmed` Set keyed `gid@endAt`; alarm+stop only if canEdit() && not alarmed && (!fbRef \|\| remoteReady) && serverNow()-endAt < 5000; `clockLive(c)` (= running && remaining > 0) for Pause/Resume buttons + anyTimerRunning. NEVER sweep state.clocks writing before first snapshot (breaks never-push-before-pull). Tests for late / prev=0 / no element / viewer / pre-snapshot. | todo (medium risk — careful) |
+| scoring#6 | ✅ | low | liveHomeGames: only treat a bracket as live if `g.format === 'tournament'`. The saveGameDraft cleanup half → Project 2. | one-liner todo; rest deferred |
+| scoring#7 | ✅ | low | parseScoreInput: `if (isNaN(v) \|\| (v < 0 && !game.counterAllowNegative)) return null;` + test. | todo |
