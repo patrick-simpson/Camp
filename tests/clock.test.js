@@ -137,3 +137,254 @@ test('fmtBoardClock formats the readings the Big Board shows', () => {
   assert.equal(fmtBoardClock(600 * 1000), '10:00');
   assert.equal(fmtBoardClock(65 * 1000), '1:05');
 });
+
+// ── Screen wake lock: re-armed on return, never held for viewers ──
+
+// A stand-in for navigator.wakeLock: counts requests and lets a test play the
+// browser dropping the lock when the page is hidden.
+function stubWakeLock() {
+  const lock = { requests: 0, sentinels: [] };
+  navigator.wakeLock = {
+    request: async () => {
+      lock.requests++;
+      const s = {
+        released: false,
+        listeners: [],
+        addEventListener(type, fn) { if (type === 'release') s.listeners.push(fn); },
+        release() { s.released = true; s.listeners.forEach((fn) => fn()); },
+      };
+      lock.sentinels.push(s);
+      return s;
+    },
+  };
+  lock.browserDrops = () => { // what the browser does when the document is hidden
+    const s = lock.sentinels[lock.sentinels.length - 1];
+    s.released = true;
+    s.listeners.forEach((fn) => fn());
+  };
+  return lock;
+}
+function resetWakeLock() {
+  releaseWakeLock();
+  delete navigator.wakeLock;
+  wakeLockPending = false;
+}
+const nextTick = () => new Promise((r) => setTimeout(r, 0));
+
+test('the wake lock is re-acquired when the app comes back after being hidden', async () => {
+  setup();
+  setMemberRole('editor');
+  const lock = stubWakeLock();
+  applyClockAction(game, 'start');
+  await nextTick();
+  assert.equal(lock.requests, 1, 'Start takes the lock');
+  assert.ok(wakeLockSentinel);
+
+  lock.browserDrops(); // ref switches to Messages for a few seconds
+  assert.equal(wakeLockSentinel, null, 'the browser let go');
+  rearmWakeLock(); // visibilitychange → visible
+  await nextTick();
+  assert.equal(lock.requests, 2, 'coming back re-arms it');
+  assert.ok(wakeLockSentinel, 'and the screen is held again');
+
+  rearmWakeLock(); // a second foreground event must not stack a second lock
+  await nextTick();
+  assert.equal(lock.requests, 2);
+  resetWakeLock();
+});
+
+test('a device that never started a timer never holds the screen (viewers stay asleep-able)', async () => {
+  setup();
+  setMemberRole('viewer');
+  const lock = stubWakeLock();
+  // A synced clock is running on someone else's phone.
+  state.clocks.g = { running: true, endAt: serverNow() + 60 * 1000, remaining: 0, duration: 600 * 1000, round: 1 };
+  assert.ok(anyTimerRunning(), 'precondition: a clock really is running');
+  rearmWakeLock();
+  await nextTick();
+  assert.equal(lock.requests, 0, 'a plain re-request would keep every viewer\'s screen on');
+  setMemberRole('editor');
+  resetWakeLock();
+});
+
+test('returning after the clock finished stands down instead of re-arming', async () => {
+  setup();
+  const lock = stubWakeLock();
+  applyClockAction(game, 'start');
+  await nextTick();
+  lock.browserDrops();
+  state.clocks.g.endAt = serverNow() - 1000; // it ran out while the app was hidden
+  rearmWakeLock();
+  await nextTick();
+  assert.equal(lock.requests, 1, 'no new lock for a finished clock');
+  assert.notOk(wakeLockWanted, 'and the intent is cleared');
+  resetWakeLock();
+});
+
+test('an expired-but-still-"running" clock no longer counts as a running timer', () => {
+  setup();
+  state.clocks.g = { running: true, endAt: serverNow() - 1000, remaining: 0, duration: 1000, round: 1 };
+  assert.notOk(anyTimerRunning(), 'a stale clock must not hold the wake lock');
+  assert.notOk(clockLive(state.clocks.g));
+  state.clocks.g.endAt = serverNow() + 5000;
+  assert.ok(clockLive(state.clocks.g));
+});
+
+test('the lock is released when the clock auto-stops at zero', async () => {
+  setup();
+  setMemberRole('editor');
+  const lock = stubWakeLock();
+  fbRef = null;
+  applyClockAction(game, 'start');
+  await nextTick();
+  assert.ok(wakeLockSentinel);
+  const sentinel = lock.sentinels[0];
+
+  state.clocks.g.endAt = serverNow() - 100; // the countdown just ran out
+  countAlarms(() => tickBoardClocks());
+  assert.notOk(state.clocks.g.running, 'settled');
+  assert.ok(sentinel.released, 'screen may sleep again');
+  assert.notOk(wakeLockWanted);
+  resetWakeLock();
+});
+
+test('a Pictionary lap holds the screen and lets go when the lap stops', async () => {
+  setup();
+  setMemberRole('editor');
+  const lock = stubWakeLock();
+  const g = { id: 'pic', name: 'Pictionary', prompts: ['Pumpkin', 'Scarecrow', 'Acorn'], timeInput: true };
+  state.config.games.push(g);
+  state.ui.picTeam = 't0';
+  const w = liveWatches[g.id] = { running: false, startAt: 0, lapsTotal: 0 };
+  const handlers = {};
+  const box = { querySelectorAll: (sel) => (sel === '[data-action]'
+    ? ['start-lap', 'stop-lap'].map((a) => ({ dataset: { action: a }, addEventListener: (t, fn) => { handlers[a] = fn; } }))
+    : []) };
+  const wrap = { innerHTML: '', querySelector: (sel) => (sel.includes('pic-round') ? box : null) };
+  bindPicRound(wrap, g);
+
+  handlers['start-lap']();
+  await nextTick();
+  assert.ok(w.running);
+  assert.equal(lock.requests, 1, 'a lap is a timer too');
+  assert.ok(wakeLockSentinel);
+
+  handlers['stop-lap']();
+  assert.notOk(w.running);
+  assert.ok(lock.sentinels[0].released, 'the screen may sleep once nothing is timing');
+  delete liveWatches[g.id];
+  state.ui.picTeam = null;
+  state.config.games.pop();
+  resetWakeLock();
+});
+
+// ── Zero handling comes from state, not from what is on screen ────
+
+function expiredClock(agoMs) {
+  state.clocks.g = { running: true, endAt: serverNow() - agoMs, remaining: 0, duration: 600 * 1000, round: 1 };
+}
+function countAlarms(fn) {
+  const real = playAlarm;
+  let n = 0;
+  playAlarm = () => { n++; };
+  try { fn(); } finally { playAlarm = real; }
+  return n;
+}
+
+test('a clock that ends while its game is not on screen is still stopped and buzzed', () => {
+  setup();
+  setMemberRole('editor');
+  fbRef = null;
+  expiredClock(800);
+  document.querySelectorAll = () => []; // no [data-game-clock] anywhere (the ref opened another game)
+  const alarms = countAlarms(() => tickBoardClocks());
+  assert.equal(alarms, 1, 'the buzzer sounds');
+  assert.notOk(state.clocks.g.running, 'and the clock is stopped for everyone');
+  assert.equal(state.clocks.g.remaining, 0);
+});
+
+test('a render that repainted the clock at 0 (data-prev=0) no longer hides the crossing', () => {
+  setup();
+  setMemberRole('editor');
+  fbRef = null;
+  expiredClock(1200);
+  const el = { dataset: { gameId: 'g', prev: '0' }, textContent: '', classList: { toggle() {}, add() {}, remove() {} }, closest: () => null };
+  document.querySelectorAll = () => [el];
+  const alarms = countAlarms(() => tickBoardClocks());
+  assert.equal(alarms, 1);
+  assert.notOk(state.clocks.g.running, 'the old code left it running at 0:00 forever');
+  assert.equal(el.textContent, '0:00', 'the display still updates');
+  document.querySelectorAll = () => [];
+});
+
+test('a long-expired clock is settled quietly — no 20-minute-late blast', () => {
+  setup();
+  setMemberRole('editor');
+  fbRef = null;
+  expiredClock(20 * 60 * 1000); // the phone slept through it
+  const alarms = countAlarms(() => tickBoardClocks());
+  assert.equal(alarms, 0, 'no alarm for a long-dead expiry');
+  assert.notOk(state.clocks.g.running, 'but the clock is still settled');
+});
+
+test('each expiry buzzes once; a restart arms a new one', () => {
+  setup();
+  setMemberRole('editor');
+  fbRef = null;
+  expiredClock(500);
+  const first = countAlarms(() => { tickBoardClocks(); tickBoardClocks(); tickBoardClocks(); });
+  assert.equal(first, 1, 'three ticks, one buzz');
+
+  // A remote snapshot re-asserts the same expired running clock: still no second buzz.
+  const endAt = state.clocks.g.endAt;
+  state.clocks.g = { running: true, endAt, remaining: 0, duration: 600 * 1000, round: 1 };
+  assert.equal(countAlarms(() => tickBoardClocks()), 0, 'same gid@endAt is remembered');
+
+  expiredClock(300); // a later run of the clock, new endAt
+  assert.equal(countAlarms(() => tickBoardClocks()), 1, 'a new expiry buzzes again');
+});
+
+test('viewers never buzz or write; they just see the clock', () => {
+  setup();
+  setMemberRole('viewer');
+  fbRef = null;
+  expiredClock(500);
+  const alarms = countAlarms(() => tickBoardClocks());
+  assert.equal(alarms, 0);
+  assert.ok(state.clocks.g.running, 'a viewer cannot settle a synced clock');
+  setMemberRole('editor');
+});
+
+test('nothing is written before the first server snapshot (never push before pull)', () => {
+  setup();
+  setMemberRole('editor');
+  fbRef = { };            // sync is on...
+  remoteReady = false;    // ...but no snapshot has landed yet
+  dirtySinceLoad = false;
+  expiredClock(500);
+  const alarms = countAlarms(() => tickBoardClocks());
+  assert.equal(alarms, 1, 'the buzzer is not a write, so an offline ref still gets it');
+  assert.ok(state.clocks.g.running, 'but state.clocks is untouched until the server has spoken');
+  assert.notOk(dirtySinceLoad, 'no write → the first merge is not forced down the "defend local work" path');
+  assert.notOk(anyTimerRunning(), 'meanwhile the expired clock reads as finished (no Pause, no wake lock)');
+
+  remoteReady = true; // the first snapshot lands
+  assert.equal(countAlarms(() => tickBoardClocks()), 0, 'no second buzz for the same expiry');
+  assert.notOk(state.clocks.g.running, 'now it is settled');
+  fbRef = null;
+});
+
+test('a stuck running-at-zero clock can be restarted, and shows Restart rather than Pause', () => {
+  setup();
+  setMemberRole('editor');
+  fbRef = null;
+  expiredClock(60 * 1000);
+  const html = clockBlockHTML(game);
+  assert.notOk(html.includes('data-clock="pause"'), 'no Pause button on a clock that is not counting');
+  assert.ok(html.includes('data-clock="start"') || html.includes('data-clock="next-round"'));
+
+  applyClockAction(game, 'start');
+  assert.ok(state.clocks.g.running);
+  assert.ok(Math.abs(clockRemaining(getClock(game)) - 600 * 1000) < 1500, 'restarts from full, not already expired');
+  resetWakeLock();
+});

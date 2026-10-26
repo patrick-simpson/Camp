@@ -3099,21 +3099,59 @@ let tickHandle = null;
 // Keep the screen awake while a countdown or stopwatch runs (guarded — not on
 // all browsers).
 let wakeLockSentinel = null;
+let wakeLockPending = false; // a request is in flight (don't stack a second one)
+// THIS device started a timer (clock Start / Pictionary lap) and so wants the
+// screen held. The browser drops a screen wake lock whenever the page is hidden
+// — a quick switch to Messages or the camera — and nothing used to take it
+// back, so the ref's phone then slept through the countdown. The flag lets
+// rearmWakeLock() restore it on return. It must stay per-device-intent: a plain
+// "re-request while any clock runs" would keep EVERY viewer's screen on for as
+// long as a synced game clock ticks anywhere.
+let wakeLockWanted = false;
+
+// A synced clock that is actually counting down. `running` alone isn't enough:
+// a clock whose zero was missed (everyone's phone asleep, a render that landed
+// after zero) stays running:true at 0:00 until an editor device settles it, and
+// must not hold the wake lock or show a Pause button meanwhile.
+function clockLive(c) {
+  return !!(c && c.running && clockRemaining(c) > 0);
+}
+
 function anyTimerRunning() {
   return Object.values(liveWatches).some((w) => w.running)
-    || Object.values(state.clocks || {}).some((c) => c && c.running);
+    || Object.values(state.clocks || {}).some(clockLive);
 }
-async function requestWakeLock() {
+
+async function acquireWakeLock() {
+  if (!('wakeLock' in navigator) || wakeLockSentinel || wakeLockPending || !anyTimerRunning()) return;
+  wakeLockPending = true;
   try {
-    if ('wakeLock' in navigator && !wakeLockSentinel && anyTimerRunning()) {
-      wakeLockSentinel = await navigator.wakeLock.request('screen');
-      wakeLockSentinel.addEventListener('release', () => { wakeLockSentinel = null; });
+    const sentinel = await navigator.wakeLock.request('screen');
+    if (!wakeLockWanted) { // released while the request was in flight
+      try { sentinel.release(); } catch (e) { /* ignore */ }
+      return;
     }
+    wakeLockSentinel = sentinel;
+    sentinel.addEventListener('release', () => { if (wakeLockSentinel === sentinel) wakeLockSentinel = null; });
   } catch (e) { /* user gesture / permission not available — ignore */ }
+  finally { wakeLockPending = false; }
+}
+function requestWakeLock() {
+  wakeLockWanted = true;
+  return acquireWakeLock();
 }
 function releaseWakeLock() {
+  wakeLockWanted = false;
   if (wakeLockSentinel) { try { wakeLockSentinel.release(); } catch (e) { /* ignore */ } wakeLockSentinel = null; }
 }
+// Back in the foreground: take the lock back only if this device wanted it and
+// something is still timing; if everything finished meanwhile, stand down.
+function rearmWakeLock() {
+  if (!wakeLockWanted) return;
+  if (anyTimerRunning()) acquireWakeLock();
+  else releaseWakeLock();
+}
+document.addEventListener('visibilitychange', () => { if (!document.hidden) rearmWakeLock(); });
 
 function ensureTicking() {
   if (!tickHandle) tickHandle = setInterval(tick, 100);
@@ -3154,12 +3192,64 @@ function renderTools(wrap, g) {
 }
 
 // ── Game clock ticker ────────────────────────────────────────────
+
+// Expiries this device has already handled, keyed 'gameId@endAt' (a restart
+// gets a new endAt, so it gets a new key).
+const clockAlarmed = new Set();
+// Only buzz for an expiry this fresh. A phone that slept through the end and
+// wakes 20 minutes later must still SETTLE the clock, but blasting a long-dead
+// alarm into whatever is happening now helps nobody.
+const CLOCK_ALARM_FRESH_MS = 5000;
+
+// Zero handling, driven by STATE rather than by what happens to be painted:
+// it used to fire only on seeing a clock element tick from >0 to 0, so a clock
+// that ended while its game wasn't on screen, while the phone slept, or across
+// a render that repainted it at 0 was never stopped — it sat "running" at 0:00
+// for everyone, with a Pause button and the wake lock held. Editors only (a
+// viewer can't write).
+//
+// The buzzer is not a state write, so it needs no snapshot (a ref working
+// offline still gets the alarm). The STOP is a write, and must never happen
+// before the first server snapshot: setClock mutates state, and a pre-snapshot
+// write marks the device dirty so the first merge pushes its whole stale tree
+// (the never-push-before-pull invariant). Until then the clock simply stays
+// expired-but-"running" locally — clockLive already renders it as finished —
+// and the first tick after the snapshot settles it.
+function settleExpiredClocks() {
+  if (!canEdit()) return false;
+  const mayWrite = !fbRef || remoteReady;
+  let changed = false;
+  Object.keys(state.clocks || {}).forEach((gid) => {
+    const c = state.clocks[gid];
+    if (!c || !c.running || clockRemaining(c) > 0) return;
+    const g = gameById(gid);
+    if (!g || !g.timer) return;
+    const endAt = Number(c.endAt) || 0;
+    const key = gid + '@' + endAt;
+    if (!clockAlarmed.has(key)) {
+      clockAlarmed.add(key);
+      if (serverNow() - endAt < CLOCK_ALARM_FRESH_MS) playAlarm();
+    }
+    if (!mayWrite) return;
+    // Every device settles on 0:00; viewers only see it.
+    setClock(g, (cl) => { cl.running = false; cl.remaining = 0; });
+    changed = true;
+  });
+  return changed;
+}
+
 // Updates every visible clock (the standalone game-clock box AND the Big
 // Board's clock — both carry [data-game-clock]) from the per-game synced
 // clock. Runs on a cheap global interval (see init) so every device — refs
 // and spectators — ticks in lockstep without any network traffic while it
-// runs; the editor's device sounds the alarm and stops the clock at zero.
+// runs; the editor's device sounds the alarm and stops the clock at zero
+// (settleExpiredClocks, from state — not from what is painted).
 function tickBoardClocks() {
+  const settled = settleExpiredClocks();
+  // Nothing left running — stopped just above, or paused/expired from another
+  // device: let the screen sleep again.
+  if (wakeLockWanted && !anyTimerRunning()) releaseWakeLock();
+  if (settled) renderAll();
   const els = document.querySelectorAll('[data-game-clock]');
   if (!els.length) return;
   els.forEach((el) => {
@@ -3167,8 +3257,6 @@ function tickBoardClocks() {
     if (!g || !g.timer) return;
     const clock = getClock(g);
     const rem = clockRemaining(clock);
-    const prev = Number(el.dataset.prev) || 0;
-    el.dataset.prev = rem;
     el.textContent = fmtBoardClock(rem);
     el.classList.toggle('board-clock-zero', rem === 0);
     // Anticipation: amber pulse inside the last minute, heartbeat + board
@@ -3178,15 +3266,6 @@ function tickBoardClocks() {
     el.classList.toggle('clock-final-ten', running && rem > 0 && rem <= 10000);
     const board = el.closest('.big-board');
     if (board) board.classList.toggle('board-final-ten', running && rem > 0 && rem <= 10000);
-    if (running && rem === 0 && prev > 0) {
-      // Just hit zero. Editors get the buzzer and stop the synced clock so
-      // every device settles on 0:00; viewers only see the pulse.
-      if (canEdit()) {
-        playAlarm();
-        setClock(g, (c) => { c.running = false; c.remaining = 0; });
-        renderAll();
-      }
-    }
   });
 }
 
@@ -3495,9 +3574,11 @@ function bindPicRound(wrap, g) {
         w.startAt = Date.now();
         w.running = true;
         ensureTicking();
+        requestWakeLock(); // a lap is a timer too — the screen must not sleep mid-lap
       } else if (a === 'stop-lap') {
         const ms = Date.now() - w.startAt;
         w.running = false;
+        if (!anyTimerRunning()) releaseWakeLock();
         round.laps.push({ ms, photo: false });
         w.lapsTotal = picLapsSum(round);
         touchData();
@@ -3533,6 +3614,7 @@ function bindPicRound(wrap, g) {
         round.done = false;
         w.lapsTotal = 0;
         w.running = false;
+        if (!anyTimerRunning()) releaseWakeLock();
         saveState();
       } else if (a === 'photo') {
         photoInput.dataset.teamId = teamId;
@@ -5416,7 +5498,7 @@ function tallyBoardHTML(g) {
     </div>`).join('') : '<p class="muted">Scoring under way…</p>';
   const clockHTML = clock ? `
     <div class="board-clock-wrap">
-      <span class="board-clock ${remaining === 0 ? 'board-clock-zero' : ''}" data-game-clock data-game-id="${esc(g.id)}" data-prev="${remaining}">${fmtBoardClock(remaining)}</span>
+      <span class="board-clock ${remaining === 0 ? 'board-clock-zero' : ''}" data-game-clock data-game-id="${esc(g.id)}">${fmtBoardClock(remaining)}</span>
     </div>` : '';
   return `<div class="big-board viewer" data-board-game="${esc(g.id)}">
     <div class="board-head">
@@ -6067,7 +6149,13 @@ function applyClockAction(g, act, secs) {
   if (act === 'start') getAudio(); // unlock audio while we have the user gesture
   setClock(g, (c) => {
     if (act === 'start') {
-      if (clockRemaining(c) === 0) c.remaining = c.duration; // restart from full
+      if (clockRemaining(c) === 0) {
+        // Restart from full. Also drop `running`: a clock stuck running at 0:00
+        // would otherwise still read its (past) endAt and restart already
+        // expired.
+        c.running = false;
+        c.remaining = c.duration;
+      }
       c.endAt = serverNow() + clockRemaining(c); // absolute, on the shared clock
       c.running = true;
     } else if (act === 'pause') {
@@ -6102,12 +6190,13 @@ function clockBlockHTML(g) {
   const viewer = !canEdit();
   const onLastRound = !g.timer.rounds || clock.round >= g.timer.rounds;
   const roundLabel = g.timer.rounds ? `<div class="round-label">Round ${clock.round} of ${g.timer.rounds}</div>` : '';
-  const presets = (!viewer && !clock.running && (g.timer.presets || []).length > 1)
+  const live = clockLive(clock); // not merely `running` — see clockLive
+  const presets = (!viewer && !live && (g.timer.presets || []).length > 1)
     ? `<div class="preset-row">${g.timer.presets.map((p) =>
         `<button class="preset-chip ${clock.duration === p * 1000 ? 'selected' : ''}" data-clock="preset" data-secs="${p}">${fmtBoardClock(p * 1000)}</button>`).join('')}</div>`
     : '';
   let mainBtn;
-  if (clock.running) {
+  if (live) {
     mainBtn = '<button class="timer-main-btn" data-clock="pause">⏸ Pause</button>';
   } else if (remaining === 0 && !onLastRound) {
     mainBtn = '<button class="timer-main-btn" data-clock="next-round">Next round →</button>';
@@ -6123,7 +6212,7 @@ function clockBlockHTML(g) {
   return `<div class="tool-box game-clock-box ${remaining === 0 ? 'alarming' : ''}" data-tool="game-clock">
     <div class="tool-label">⏱️ ${esc(g.timer.label || 'Game clock')}</div>
     ${roundLabel}
-    <div class="big-clock board-clock ${remaining === 0 ? 'board-clock-zero' : ''}" data-game-clock data-game-id="${esc(g.id)}" data-prev="${remaining}">${fmtBoardClock(remaining)}</div>
+    <div class="big-clock board-clock ${remaining === 0 ? 'board-clock-zero' : ''}" data-game-clock data-game-id="${esc(g.id)}">${fmtBoardClock(remaining)}</div>
     ${controls}
   </div>`;
 }
@@ -6289,12 +6378,12 @@ function liveTrackerHTML(g, aId, bId, viewer) {
 
   const clockHTML = clock ? `
     <div class="board-clock-wrap">
-      <span class="board-clock ${remaining === 0 ? 'board-clock-zero' : ''}" data-game-clock data-game-id="${esc(g.id)}" data-prev="${remaining}">${fmtBoardClock(remaining)}</span>
+      <span class="board-clock ${remaining === 0 ? 'board-clock-zero' : ''}" data-game-clock data-game-id="${esc(g.id)}">${fmtBoardClock(remaining)}</span>
       ${viewer ? '' : `
-        ${!clock.running && (g.timer.presets || []).length > 1 ? `<div class="preset-row">${g.timer.presets.map((p) =>
+        ${!clockLive(clock) && (g.timer.presets || []).length > 1 ? `<div class="preset-row">${g.timer.presets.map((p) =>
           `<button class="preset-chip ${clock.duration === p * 1000 ? 'selected' : ''}" data-clock="preset" data-secs="${p}">${fmtBoardClock(p * 1000)}</button>`).join('')}</div>` : ''}
         <div class="board-clock-btns">
-          ${clock.running
+          ${clockLive(clock)
             ? `<button class="timer-main-btn" data-clock="pause">⏸ Pause</button>`
             : `<button class="timer-main-btn" data-clock="start">▶ ${remaining === clock.duration ? 'Start' : remaining === 0 ? 'Restart' : 'Resume'}</button>`}
           ${remaining !== clock.duration ? `<button class="timer-side-btn" data-clock="reset">↺ Reset</button>` : ''}
@@ -6355,7 +6444,7 @@ function liveBoardHTML(g, aId, bId) {
     </div>`;
   const clockHTML = clock ? `
     <div class="board-clock-wrap">
-      <span class="board-clock ${remaining === 0 ? 'board-clock-zero' : ''}" data-game-clock data-game-id="${esc(g.id)}" data-prev="${remaining}">${fmtBoardClock(remaining)}</span>
+      <span class="board-clock ${remaining === 0 ? 'board-clock-zero' : ''}" data-game-clock data-game-id="${esc(g.id)}">${fmtBoardClock(remaining)}</span>
     </div>` : '';
   return `<div class="big-board viewer" data-board-game="${esc(g.id)}">
     <div class="board-head">
