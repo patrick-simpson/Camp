@@ -229,10 +229,12 @@ Find the line the status page shows, then do what the right-hand column says.
 | ❌ Something unexpected went wrong | A problem the page doesn't recognize | Reload in a minute; if it stays, send a screenshot of the page to the site maintainer. |
 | ❌ The schedule timer has never run | Step 5 is missing | Do **step 5**, wait two minutes, reload. |
 | ❌ Schedule timer last ran *N* minutes ago | The timer was removed or the Worker was disabled | Check **Trigger Events** still lists `* * * * *` (step 5). |
-| ⚠️ … web.push.apple.com refused a notification (HTTP 403 …) | Apple didn't accept the sender's signature | If you added a `VAPID_SUBJECT` setting, it must start with `https://` or `mailto:` — or remove it. Otherwise send a screenshot to the site maintainer. |
+| ⚠️ … web.push.apple.com refused a notification (HTTP 403) | Apple didn't accept the sender's signature | If you added a `VAPID_SUBJECT` setting, it must start with `https://` or `mailto:` — or remove it. Otherwise send a screenshot to the site maintainer. |
 | ⚠️ … refused a notification (HTTP 400 / 413) | One message couldn't be delivered | Usually a one-off. If it keeps appearing, send a screenshot to the site maintainer. |
 | Everything is ✅ but a phone gets nothing | The phone itself isn't set up | On an **iPhone**: it needs iOS 16.4 or newer, and the camp site must be opened from its **Home Screen icon** (Share ⬆️ → **Add to Home Screen**), with notifications allowed. On any phone: open **📲 Phone alerts** in the app and tap **Send me a test**. |
 | Alerts arrive, but some phones only get them a minute or two late on busy moments | Many phones at once — the sender works through them 20 at a time | Normal. Nothing to fix. |
+| One person's older phone stopped getting alerts after they set up several | Each person's **four most recently set-up** phones get alerts; older ones are tidied away within the hour | On that phone: **📲 Phone alerts** → turn them on again. |
+| Someone was mentioned in chat but their phone didn't say "mentioned you" | The sender only treats it as a mention if the message itself contains their name (or first name) or their team's name (or a distinctive word of it, like "Maples") | Nothing to fix — spell the name the way it appears in the Members list. |
 | Cloudflare's **Logs** mention "Exceeded CPU" | Runs are doing too much at once | Worker → Settings → Variables and Secrets → **+ Add** → Type **Text**, name `PUSH_BATCH`, value `10` → **Deploy**. |
 
 ---
@@ -252,8 +254,10 @@ Worker → **Settings** → **Variables and Secrets** → **+ Add** → Type **T
 
 **For developers only:** `DB_ADMIN_TOKEN` and `JWKS_URL` exist for testing
 against the Firebase emulator on your own computer. They are **ignored** unless
-`FIREBASE_DB_URL` points at `127.0.0.1` or `localhost`, so setting them on the
-real Worker does nothing.
+`FIREBASE_DB_URL` is a plain `http://` address on `127.0.0.1` or `localhost`
+(the check is made on the database address the Worker actually ends up using,
+so a malformed value can't switch them on), and setting them on the real
+Worker does nothing.
 
 ---
 
@@ -273,6 +277,26 @@ real Worker does nothing.
   45 per run (the plan allows 50), and each run sends at most `PUSH_BATCH`
   notifications; the rest go to `pushServer/outbox` and are sent by
   `POST /drain` (the app calls it right away) or by the timer.
+- **Abuse limits** (each exists because a signed-in member — or, for
+  `/resubscribe`, anyone — could otherwise burn the free plan's budget):
+  - A phone is only ever sent to if its address is on a real push service
+    (`google.com`, `googleapis.com`, `push.services.mozilla.com`,
+    `push.apple.com`, `notify.windows.com`; loopback only in the developer
+    test mode above). Anything else is skipped, never contacted. A new push
+    service would need adding to `PUSH_HOST_SUFFIXES` in `worker.js`.
+  - Redirects are never followed (a 3xx is a failed delivery), a push service
+    that doesn't answer is given up on after 8 seconds (treated as a temporary
+    failure and retried), and nothing a push service says is shown on the
+    status page.
+  - Only each person's **four newest phones** are alerted; the hourly tidy-up
+    deletes older ones (200 records at most per pass).
+  - `/resubscribe` (no sign-in) does one scan of the phone lists per minute for
+    the whole Worker; a phone that loses its turn repairs itself the next time
+    the app is opened.
+  - Who a chat message mentions is re-checked against the message's own text,
+    at most 10 people and 3 teams; whatever the page claimed is only a hint.
+  - If Google refuses the key, the Worker asks once per run (and not again for
+    a minute) instead of on every database call.
 - **Deploying from a terminal instead** (optional): `cd push-worker`,
   `npx wrangler deploy`, then
   `npx wrangler secret put FIREBASE_SERVICE_ACCOUNT < key.json`. See

@@ -43,7 +43,7 @@
 
 // Bump when the Worker changes, so /health and the status page say which copy
 // is pasted into Cloudflare.
-const VERSION = '2026-10-26.1';
+const VERSION = '2026-10-26.2';
 
 // Camp id → Firebase root. Hardcoded on purpose (camps.js is browser code the
 // Worker can't load); the two roots are a contract with database.rules.json.
@@ -112,6 +112,27 @@ const LEADS = [5, 10, 15];          // "how early" choices, minutes before a blo
 const SENT_KEEP_MS = 3 * DAY;       // chat dedupe markers
 const RATE_KEEP_MS = DAY;
 const LAST_ERROR_SHOW_MS = 3 * DAY; // how long the status page mentions a push-service refusal
+
+// ── Abuse limits (every one of these exists because a signed-in member — or,
+// for /resubscribe, anyone — could otherwise turn the Worker against the free
+// plan's 10 ms / 50-subrequest budget or Firebase's 10 GB/month egress) ──
+const MAX_DEVICES_PER_MEMBER = 4;   // a person's newest N phones are alerted; the rest are junk the hourly tidy-up deletes
+const MAINT_DELETE_CAP = 200;       // device records one hourly tidy-up removes (a flood is cleared over several hours)
+const PUSH_TIMEOUT_MS = 8000;       // one hung push service must not hold the whole invocation (or the cron) hostage
+const PUSH_ERROR_BYTES = 300;       // all we ever read of a push service's refusal text
+const RESUB_WINDOW_MS = MINUTE;     // /resubscribe is unauthenticated and scans both camps' phone lists: ONE scan a minute, globally
+const NEG_CACHE_MS = MINUTE;        // how long an isolate remembers that Google refused the service-account key
+const MAX_MENTION_KEYS = 10;        // people one chat message can buzz as "mentioned"
+const MAX_MENTION_TEAMS = 3;
+const MIN_MENTION_CHARS = 2;        // a one-letter "name" would match half the alphabet
+const MIN_TEAM_WORD_CHARS = 4;      // a team can be named by a long-enough word of its name ("Maples")
+// The only push services a subscription may point at. A device record's
+// endpoint is client-written (the rules check only `https://`), so without
+// this the Worker would POST — signed with our VAPID key — to any address a
+// member chose: a relay, and a probe of anything reachable from Cloudflare.
+// Suffix match on the hostname, on a dot boundary (evilgoogle.com is not
+// google.com). FCM (Chrome, Edge, Samsung, Brave…), Mozilla, Apple, Windows.
+const PUSH_HOST_SUFFIXES = ['google.com', 'googleapis.com', 'push.services.mozilla.com', 'push.apple.com', 'notify.windows.com'];
 
 const DEVICE_ID_RE = /^[A-Za-z0-9_-]{8,64}$/;
 const MSG_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -287,29 +308,53 @@ function normalizePrefs(raw) {
 // A device record → the five things a send needs, or null if it can't be a
 // real subscription (the rules validate these on write, but a record written
 // before a rules change — or by the Worker's own admin hand — gets no such
-// check, so nothing is trusted to be well-formed).
-function deviceTarget(memberKey, deviceId, rec) {
+// check, so nothing is trusted to be well-formed). `cfg` carries test-local
+// mode for the push-host allowlist; with none, only the real push services pass.
+function deviceTarget(memberKey, deviceId, rec, cfg) {
   if (!isObj(rec) || !DEVICE_ID_RE.test(deviceId)) return null;
   const e = rec.endpoint, p = rec.p256dh, a = rec.auth;
   if (typeof e !== 'string' || !e.startsWith('https://') || e.length > 1024) return null;
   if (typeof p !== 'string' || !P256DH_RE.test(p)) return null;
   if (typeof a !== 'string' || !AUTH_RE.test(a)) return null;
-  try { new URL(e); } catch (err) { return null; }
+  let u;
+  try { u = new URL(e); } catch (err) { return null; }
+  // A record pointing anywhere but a real push service is skipped, not
+  // deleted: it simply never becomes a send (see PUSH_HOST_SUFFIXES).
+  if (!pushHostAllowed(cfg, u)) return null;
   return { k: memberKey, d: deviceId, e, p, a };
+}
+
+// One member's usable phones, newest registration first. `at` is a server
+// timestamp the rules pin to `now` (and the Worker's own re-subscribe stamps
+// the same way), so a member can't claim to be newer than they are; a record
+// without one sorts last. Ties break on the device id so the order never
+// depends on how the database happened to list the keys.
+function memberDevices(memberKey, devices, cfg) {
+  const out = [];
+  if (!isObj(devices)) return out;
+  for (const deviceId of Object.keys(devices)) {
+    const rec = devices[deviceId];
+    const target = deviceTarget(memberKey, deviceId, rec, cfg);
+    if (target) out.push({ target, rec, at: Number.isFinite(rec.at) ? rec.at : 0 });
+  }
+  out.sort((x, y) => y.at - x.at || (x.target.d < y.target.d ? -1 : x.target.d > y.target.d ? 1 : 0));
+  return out;
 }
 
 // Every device of every CURRENT member. A removed counselor's leftover
 // records are skipped here, which is what makes removal take effect at once
-// (the hourly tidy-up deletes them later).
-function eachDevice(push, members, fn) {
+// (the hourly tidy-up deletes them later). At most MAX_DEVICES_PER_MEMBER per
+// person, newest first: the rules can't count children, so nothing else stops
+// one member writing thousands of records — which would otherwise be thousands
+// of sends per message (CPU, outbox, push-service goodwill). The cap is
+// applied to USABLE records, so junk a member adds can't push their own real
+// phones out of the four. A real person has one to three.
+function eachDevice(push, members, fn, cfg) {
   if (!isObj(push) || !isObj(members)) return;
   for (const memberKey of Object.keys(push)) {
     if (!hasOwn(members, memberKey) || !isObj(members[memberKey])) continue;
-    const devices = push[memberKey];
-    if (!isObj(devices)) continue;
-    for (const deviceId of Object.keys(devices)) {
-      const target = deviceTarget(memberKey, deviceId, devices[deviceId]);
-      if (target) fn(memberKey, members[memberKey], devices[deviceId], target);
+    for (const d of memberDevices(memberKey, push[memberKey], cfg).slice(0, MAX_DEVICES_PER_MEMBER)) {
+      fn(memberKey, members[memberKey], d.rec, d.target);
     }
   }
 }
@@ -322,7 +367,7 @@ const CHAT_RANK = { announcement: 3, mention: 2, channel: 1 };
 // the same browser can be left registered under two people (a shared phone
 // whose sign-out cleanup failed), and it should still buzz once — with the
 // most important reason.
-function chatRecipients({ ch, authorKey, members, push, mentionKeys, mentionTeams }) {
+function chatRecipients({ ch, authorKey, members, push, mentionKeys, mentionTeams, cfg }) {
   const keys = new Set(Array.isArray(mentionKeys) ? mentionKeys : []);
   const teams = new Set(Array.isArray(mentionTeams) ? mentionTeams : []);
   const best = new Map(); // endpoint -> { kind, target }
@@ -338,7 +383,7 @@ function chatRecipients({ ch, authorKey, members, push, mentionKeys, mentionTeam
     if (!kind) return;
     const had = best.get(target.e);
     if (!had || CHAT_RANK[kind] > CHAT_RANK[had.kind]) best.set(target.e, { kind, target });
-  });
+  }, cfg);
   const out = { announcement: [], mention: [], channel: [] };
   for (const { kind, target } of best.values()) out[kind].push(target);
   return out;
@@ -347,21 +392,21 @@ function chatRecipients({ ch, authorKey, members, push, mentionKeys, mentionTeam
 // Director alerts. The sender's own phones are INCLUDED (it confirms the alert
 // went out). Urgent ignores the "director alerts" switch — that switch exists
 // to mute chatter, not emergencies.
-function alertRecipients({ audience, urgent, members, push }) {
+function alertRecipients({ audience, urgent, members, push, cfg }) {
   const seen = new Map();
   eachDevice(push, members, (memberKey, member, rec, target) => {
     if (audience === 'editors' && member.role !== 'editor') return;
     if (TEAM_RE.test(audience) && member.teamId !== audience) return;
     if (!urgent && !normalizePrefs(rec.prefs).director) return;
     if (!seen.has(target.e)) seen.set(target.e, target);
-  });
+  }, cfg);
   return [...seen.values()];
 }
 
 // Schedule alerts: for each (block, lead) that's due, every device whose lead
 // is that lead and that wants that block. A device has exactly one lead, so it
 // can only ever match one of a block's three due moments.
-function blockRecipients({ due, members, push }) {
+function blockRecipients({ due, members, push, cfg }) {
   const groups = due.map(() => new Map());
   eachDevice(push, members, (memberKey, member, rec, target) => {
     const prefs = normalizePrefs(rec.prefs);
@@ -370,7 +415,7 @@ function blockRecipients({ due, members, push }) {
       if (!prefs.blocksAll && !prefs.blocks[item.block.key]) return;
       if (!groups[i].has(target.e)) groups[i].set(target.e, target);
     });
-  });
+  }, cfg);
   return groups.map((g) => [...g.values()]);
 }
 
@@ -623,13 +668,33 @@ function isLocalHost(host) {
   return host === '127.0.0.1' || host === 'localhost';
 }
 
+// May the Worker POST a push to this endpoint? `u` is a parsed URL. Loopback
+// is honored only in test-local mode (cfg.local — see readConfig), which is how
+// the end-to-end bench reaches its mock push service on https://127.0.0.1:8443;
+// on the real Worker no loopback address is ever a push service. Credentials in
+// the URL are refused too: fetch() rejects them anyway, which would only turn
+// into three pointless "transient" retries.
+function pushHostAllowed(cfg, u) {
+  if (!u || u.protocol !== 'https:' || u.username || u.password) return false;
+  const h = u.hostname;
+  if (cfg && cfg.local && isLocalHost(h)) return true;
+  return PUSH_HOST_SUFFIXES.some((s) => h === s || h.endsWith('.' + s));
+}
+
 function readConfig(env) {
   const e = env || {};
   let db;
   try { db = new URL(String(e.FIREBASE_DB_URL || DEFAULTS.FIREBASE_DB_URL).trim()); } catch (err) { db = new URL(DEFAULTS.FIREBASE_DB_URL); }
-  const local = isLocalHost(db.hostname);
   // Plain http is only ever right for the local emulator.
-  if (db.protocol !== 'https:' && !(local && db.protocol === 'http:')) db = new URL(DEFAULTS.FIREBASE_DB_URL);
+  if (db.protocol !== 'https:' && !(db.protocol === 'http:' && isLocalHost(db.hostname))) db = new URL(DEFAULTS.FIREBASE_DB_URL);
+  // Test-local mode is decided on the database we will ACTUALLY use, after the
+  // fallback above — never on what was typed. (It used to be decided before:
+  // FIREBASE_DB_URL='ftp://localhost' failed the protocol check and fell back
+  // to PRODUCTION, yet still armed the test overrides, so DB_ADMIN_TOKEN would
+  // have been sent to the real database as its bearer token and JWKS_URL could
+  // have swapped the keys sign-ins are checked against.) Local = plain http to a
+  // loopback host, and nothing else.
+  const local = db.protocol === 'http:' && isLocalHost(db.hostname);
   const subject = String(e.VAPID_SUBJECT || '').trim();
   const batch = Math.floor(Number(e.PUSH_BATCH));
   return {
@@ -660,7 +725,7 @@ function readConfig(env) {
 // Only plain values and CryptoKeys live here — a promise or Response made
 // while serving one request can't be safely awaited by another.
 function newCache() {
-  return { oauth: null, saKey: null, jwks: null, vapid: null, vapidJwt: new Map() };
+  return { oauth: null, oauthRefused: null, saKey: null, jwks: null, vapid: null, vapidJwt: new Map() };
 }
 const ISOLATE_CACHE = newCache();
 
@@ -675,7 +740,10 @@ function makeInvocation(env, deps) {
     used: 0,
     cap: SUBREQUEST_CAP,
     sendsLeft: cfg.pushBatch,
-    memo: { members: {}, memberKeys: {}, push: {} },
+    // How long one push POST may take before it is abandoned (a test hook;
+    // the real value is PUSH_TIMEOUT_MS).
+    pushTimeoutMs: Number.isFinite(d.pushTimeoutMs) ? d.pushTimeoutMs : PUSH_TIMEOUT_MS,
+    memo: { members: {}, memberKeys: {}, push: {}, teams: {} },
     // THE door every network call goes through. The count is taken at call
     // time, synchronously, so parallel sends can't race past the cap.
     fetch(url, init) {
@@ -733,10 +801,21 @@ async function signJwt(header, claims, key, algorithm) {
 
 async function adminToken(ictx) {
   if (ictx.cfg.adminToken) return ictx.cfg.adminToken;
+  // A key that is WRONG stays wrong for the rest of this invocation. Without
+  // this, every database call after a refusal signed a fresh JWT and POSTed it
+  // to Google again — one wasted subrequest (and an RSA signature out of the
+  // 10 ms of CPU) per call, until the budget was gone. Only ConfigErrors
+  // stick; a transient failure (Google having a bad moment, the budget) is
+  // retried by the next caller, as before.
+  if (ictx.tokenError) throw ictx.tokenError;
   if (!ictx.tokenPromise) {
-    ictx.tokenPromise = mintAdminToken(ictx);
-    // A failed mint must not stick: the next caller in this invocation retries.
-    ictx.tokenPromise.catch(() => { ictx.tokenPromise = null; });
+    ictx.tokenPromise = (async () => {
+      try { return await mintAdminToken(ictx); } catch (e) {
+        ictx.tokenPromise = null;
+        if (e instanceof ConfigError) ictx.tokenError = e;
+        throw e;
+      }
+    })();
   }
   return ictx.tokenPromise;
 }
@@ -746,6 +825,17 @@ async function mintAdminToken(ictx) {
   const now = ictx.now();
   const hit = ictx.cache.oauth;
   if (hit && hit.id === sa.id && hit.exp > now) return hit.token;
+  // Google refused this very key a moment ago: don't ask again every request
+  // (each ask is a subrequest, and /health, the cron and every /notify would
+  // all keep knocking). Keyed by the key's id, so pasting a new key is tried
+  // at once; a redeploy starts fresh isolates anyway. A minute, not longer,
+  // so re-enabling a disabled key in Google is noticed promptly.
+  const refused = ictx.cache.oauthRefused;
+  if (refused && refused.id === sa.id && refused.until > now) {
+    const err = new ConfigError('google-refused', refused.message);
+    err.why = refused.why;
+    throw err;
+  }
 
   let key = ictx.cache.saKey && ictx.cache.saKey.id === sa.id ? ictx.cache.saKey.key : null;
   if (!key) {
@@ -783,11 +873,13 @@ async function mintAdminToken(ictx) {
     }
     const err = new ConfigError('google-refused', `Google refused the service-account key (${why}).`);
     err.why = why;
+    ictx.cache.oauthRefused = { id: sa.id, until: now + NEG_CACHE_MS, message: err.message, why };
     throw err;
   }
   const life = Number(body.expires_in) > 600 ? Number(body.expires_in) : 3600;
   // Refresh five minutes early so a token never expires between our check and Firebase's.
   ictx.cache.oauth = { id: sa.id, token: body.access_token, exp: now + (life - 300) * 1000 };
+  ictx.cache.oauthRefused = null;
   return body.access_token;
 }
 
@@ -1126,7 +1218,44 @@ function classifyPushStatus(status) {
   if (status === 200 || status === 201 || status === 202) return 'ok';
   if (status === 404 || status === 410) return 'dead';         // the phone unsubscribed / reinstalled
   if (status === 429 || status >= 500) return 'transient';
-  return 'permanent';                                          // 400/401/403/413…: this message will never go
+  // 3xx: a push service never redirects a real delivery. We refuse to follow
+  // one (see sendOne), so it is a message that will never go — not a retry.
+  return 'permanent';                                          // 3xx, 400/401/403/413…
+}
+
+// Let go of a response body we don't need WITHOUT downloading it. An unread
+// body keeps its connection open, and Workers allow only six at a time — and a
+// hostile endpoint could stream forever. A success carries nothing we use.
+function discardBody(res) {
+  try { if (res && res.body) res.body.cancel().catch(() => {}); } catch (e) { /* already consumed */ }
+}
+
+// At most `max` bytes of a response, as text, then stop reading. Only a
+// push service's REFUSAL is read, and only so a maintainer can find out why
+// from the private pushServer/lastError node; it is never shown on the public
+// status page. A stream that stalls or is cut (the send's timeout covers the
+// body too) just yields what arrived — the status code is what matters.
+async function readSnippet(res, max) {
+  if (!res || !res.body) return '';
+  const reader = res.body.getReader();
+  const chunks = [];
+  let n = 0;
+  try {
+    while (n < max) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      n += value.byteLength;
+    }
+  } catch (e) { /* aborted or reset mid-body */ }
+  try { await reader.cancel(); } catch (e) { /* nothing left to cancel */ }
+  return utf8Decode(concatBytes(...chunks).subarray(0, max));
+}
+
+// AbortSignal.timeout exists in workerd; the guard only keeps a runtime
+// without it working (no timeout) rather than failing every single send.
+function timeoutSignal(ms) {
+  return typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(ms) : undefined;
 }
 
 // Cut jobs into outbox batches of ≤ size targets each. Ids start with the
@@ -1189,11 +1318,24 @@ async function sendOne(ictx, vapid, eph, it, now, plain) {
         Authorization: authorization,
       },
       body,
+      // Never follow a redirect: each hop would be a subrequest our counter
+      // never sees, and it would let an endpoint steer our signed POST
+      // somewhere the allowlist never approved. A 3xx comes back as itself and
+      // is classed permanent.
+      redirect: 'manual',
+      // A push service that accepts the connection and then says nothing would
+      // otherwise hold this send — and, because everything is awaited
+      // together, the whole /notify or cron run — until the platform kills it,
+      // skipping the retry queue and the dead-phone tidy-up with it. A timeout
+      // is just a transient failure: the retry path takes it from here.
+      signal: timeoutSignal(ictx.pushTimeoutMs),
     });
-    // Read (and so release) the body: an unread response holds its
-    // connection open, and Workers allow only six at a time.
-    const detail = (await res.text().catch(() => '')).slice(0, 300);
-    return { it, outcome: classifyPushStatus(res.status), status: res.status, host, detail };
+    const outcome = classifyPushStatus(res.status);
+    if (outcome !== 'permanent') {
+      discardBody(res);
+      return { it, outcome, status: res.status, host };
+    }
+    return { it, outcome, status: res.status, host, detail: await readSnippet(res, PUSH_ERROR_BYTES) };
   } catch (e) {
     return { it, outcome: 'transient', status: 0, host };
   }
@@ -1217,7 +1359,9 @@ async function removeDeadDevice(ictx, camp, t) {
 // those are counted — only for budget/config trouble before anything went.
 async function deliverJobs(ictx, camp, jobs, opts) {
   const keep = (opts && opts.keep) || 0;
-  const tally = newTally();
+  // A caller that must know how far we got if this throws (notifyChat, deciding
+  // whether its dedupe marker can be given back) passes its own tally in.
+  const tally = (opts && opts.tally) || newTally();
   const now = ictx.now();
 
   // Anything that has outlived its TTL isn't sent at all: "Supper in 10 min"
@@ -1263,7 +1407,12 @@ async function deliverJobs(ictx, camp, jobs, opts) {
   const plain = new Map();
   for (const job of jobs) plain.set(job, utf8(JSON.stringify(job.payload)));
   ictx.sendsLeft -= inline.length;
-  const outcomes = await Promise.all(inline.map((it) => sendOne(ictx, vapid, eph, it, now, plain.get(it.job))));
+  // allSettled, not all: whatever happens to any one send, the bookkeeping
+  // below (re-queue, dead-phone tidy-up, the refusal record) must still run.
+  // sendOne catches its own failures, so a rejection here would be a bug — and
+  // a bug in one phone's send must never cost the others their retry.
+  const settled = await Promise.allSettled(inline.map((it) => sendOne(ictx, vapid, eph, it, now, plain.get(it.job))));
+  const outcomes = settled.map((r, i) => (r.status === 'fulfilled' ? r.value : { it: inline[i], outcome: 'transient', status: 0, host: '' }));
 
   const dead = [], retry = [], refused = [];
   for (const o of outcomes) {
@@ -1302,6 +1451,8 @@ async function deliverJobs(ictx, camp, jobs, opts) {
 
   // A push service refusing outright (403 from Apple is nearly always a
   // VAPID problem) is recorded so the status page can say so in plain words.
+  // `reason` (the first ≤300 bytes of its answer) is kept for whoever opens the
+  // database console; the PUBLIC page shows only status and host.
   if (refused.length && ictx.left() - keep >= 1) {
     const r = refused[0];
     const reason = cleanText(r.detail || '').slice(0, 160);
@@ -1379,7 +1530,7 @@ async function drainBatch(ictx, id, keepAfter) {
     const seen = new Set();
     for (const t of batch.targets) {
       if (!keys.has(t.k) || !isObj(push[t.k])) continue;
-      const fresh = deviceTarget(t.k, t.d, push[t.k][t.d]);
+      const fresh = deviceTarget(t.k, t.d, push[t.k][t.d], ictx.cfg);
       if (fresh && !seen.has(fresh.e)) { seen.add(fresh.e); targets.push(fresh); }
     }
   }
@@ -1465,20 +1616,108 @@ function campFrom(body) {
 // One rate slot per sender per camp, shared by alerts and tests (each checks
 // its own window against it). Conditional, so two requests in the same
 // instant can't both get through.
-async function takeRateSlot(ictx, camp, key, windowMs, message) {
-  const path = `pushServer/rate/${camp}/${key}`;
+async function claimRateSlot(ictx, path, windowMs) {
   const now = ictx.now();
   const { value, etag } = await dbGetTagged(ictx, path);
   // A stamp from the future can only be a clock or data accident; ignore it
   // rather than lock the person out until then.
-  if (typeof value === 'number' && value <= now + MINUTE && now - value < windowMs) throw new HttpError(429, 'rate', message);
+  if (typeof value === 'number' && value <= now + MINUTE && now - value < windowMs) return false;
   const r = await dbPut(ictx, path, now, etag);
-  if (r.conflict) throw new HttpError(429, 'rate', message);
+  return !r.conflict;
+}
+
+async function takeRateSlot(ictx, camp, key, windowMs, message) {
+  if (!(await claimRateSlot(ictx, `pushServer/rate/${camp}/${key}`, windowMs))) throw new HttpError(429, 'rate', message);
 }
 
 function cleanKeys(list, max) {
   if (!Array.isArray(list)) return [];
-  return list.filter((k) => typeof k === 'string' && k.length > 0 && k.length <= 200 && !RTDB_KEY_BAD_RE.test(k)).slice(0, max);
+  return [...new Set(list.filter((k) => typeof k === 'string' && k.length > 0 && k.length <= 200 && !RTDB_KEY_BAD_RE.test(k)))].slice(0, max);
+}
+
+// ── Who a chat message really names ──────────────────────────────────────
+// The page says who a message mentions (it has the live name dictionary), but
+// the page is only a member's browser: anyone signed in could send
+// mentionKeys = every member and buzz the whole camp "X mentioned you". So the
+// request's lists are only CLAIMS, and a claim survives only if the message's
+// own text (read from the database, written by the author) backs it up. The
+// match is the one chat.js mentionScan makes in the bubble: case-insensitive,
+// and the name must not touch an ASCII letter or digit on either side.
+
+function reEscape(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
+
+// Does `needle` occur in `text` as a whole word/phrase? The needle is data
+// (a member's or team's name), so it is escaped, never interpreted: a name
+// like "A.J. (Ace) [Q]+" must match only itself. Runs of spaces in the needle
+// match any whitespace; the `u` flag makes emoji and accents ordinary
+// characters instead of surrogate halves.
+function mentionedAsWord(text, needle) {
+  const words = String(needle == null ? '' : needle).trim().split(/\s+/).filter(Boolean);
+  if (!words.length || Array.from(words.join(' ')).length < MIN_MENTION_CHARS) return false;
+  try {
+    return new RegExp('(?<![A-Za-z0-9])' + words.map(reEscape).join('\\s+') + '(?![A-Za-z0-9])', 'iu').test(text);
+  } catch (e) { return false; } // fail closed: no mention beats a wrong one
+}
+
+// A member is mentioned if their full name or their first name is. Names come
+// only from the editor-maintained member list (members/<key>/name).
+function memberNamedIn(name, text) {
+  const n = cleanText(name);
+  if (!n) return false;
+  const capped = Array.from(n).slice(0, 60).join(''); // memberName's own cap
+  return mentionedAsWord(text, capped) || mentionedAsWord(text, capped.split(' ')[0]);
+}
+
+// A team is mentioned if its whole name is, or any word of it that is long
+// enough to be distinctive ("Maples" for "Methodic Mediocre Maples"). The one
+// word that is never distinctive is "team" itself: the senior camp's teams are
+// "Red Team", "Blue Team"… and a message saying "team competitions at 3" would
+// otherwise vouch for any team claim at all, which is the very forgery this
+// check exists to stop. (The whole name, "Red Team", still counts.)
+function teamNamedIn(name, text) {
+  const n = cleanText(name);
+  if (!n) return false;
+  if (mentionedAsWord(text, n)) return true;
+  return n.split(/[^\p{L}\p{N}]+/u).some((w) => Array.from(w).length >= MIN_TEAM_WORD_CHARS
+    && w.toLowerCase() !== 'team' && mentionedAsWord(text, w));
+}
+
+// The camp's teams ({id, name}), read only when a request actually claimed a
+// team mention — most messages claim none, and every read is a subrequest
+// out of the 45. Teams live in the synced state (state/teams: an array, or an
+// object if RTDB turned it into one).
+async function campTeams(ictx, camp) {
+  if (!hasOwn(ictx.memo.teams, camp)) {
+    const v = await dbGet(ictx, `${CAMPS[camp]}/state/teams`);
+    const list = Array.isArray(v) ? v : isObj(v) ? Object.values(v) : [];
+    ictx.memo.teams[camp] = list.filter((t) => isObj(t) && typeof t.id === 'string' && TEAM_RE.test(t.id) && typeof t.name === 'string');
+  }
+  return ictx.memo.teams[camp];
+}
+
+async function verifiedMentions(ictx, camp, members, text, body) {
+  const claimedKeys = cleanKeys(body.mentionKeys, 30);
+  const claimedTeams = cleanKeys(body.mentionTeams, 10).filter((t) => TEAM_RE.test(t));
+  const out = { keys: [], teams: [] };
+  const msgText = typeof text === 'string' ? text : '';
+  if (!msgText) return out; // a photo-only message names nobody
+  for (const k of claimedKeys) {
+    if (out.keys.length >= MAX_MENTION_KEYS) break;
+    if (hasOwn(members, k) && isObj(members[k]) && memberNamedIn(members[k].name, msgText)) out.keys.push(k);
+  }
+  if (!claimedTeams.length) return out;
+  let teams = [];
+  try { teams = await campTeams(ictx, camp); } catch (e) {
+    // Without the team list no team claim can be checked, so none is honored —
+    // but the message itself still goes out to everyone else it concerns.
+    if (!(e instanceof BudgetError)) console.warn('camp-alerts: team list unreadable, team mentions dropped', e && e.message);
+  }
+  for (const id of claimedTeams) {
+    if (out.teams.length >= MAX_MENTION_TEAMS) break;
+    const team = teams.find((t) => t.id === id);
+    if (team && teamNamedIn(team.name, msgText)) out.teams.push(id);
+  }
+  return out;
 }
 
 // ── POST /notify ──────────────────────────────────────────────────────────
@@ -1497,22 +1736,57 @@ async function notifyChat(ictx, caller, camp, body) {
   // Dedupe markers are pruned after three days; this keeps an old message
   // from ever being re-announced once its marker is gone.
   if (typeof msg.at === 'number' && msg.at < now - STALE_CHAT_MS) return tallyBody(newTally(), { stale: true });
-  if (!(await claimMarker(ictx, `pushServer/sent/${camp}/c-${msgId}`, now))) return tallyBody(newTally(), { duplicate: true });
+  const markerPath = `pushServer/sent/${camp}/c-${msgId}`;
+  if (!(await claimMarker(ictx, markerPath, now))) return tallyBody(newTally(), { duplicate: true });
 
-  const push = await campPush(ictx, camp);
-  const groups = chatRecipients({
-    ch, authorKey: caller.key, members: caller.members, push,
-    mentionKeys: cleanKeys(body.mentionKeys, 30),
-    mentionTeams: cleanKeys(body.mentionTeams, 10).filter((t) => TEAM_RE.test(t)),
-  });
-  const name = memberName(caller.members, caller.key);
-  // Most important first, so if anything has to wait in the outbox it's the
-  // every-message channel alerts.
-  const jobs = ['announcement', 'mention', 'channel'].filter((kind) => groups[kind].length).map((kind) => ({
-    payload: chatPayload({ camp, kind, ch, msgId, msg, name, now }),
-    ttl: TTL_CHAT, urgency: kind === 'channel' ? 'normal' : 'high', created: now, attempts: 0, targets: groups[kind],
-  }));
-  return tallyBody(await deliverJobs(ictx, camp, jobs, { keep: 0 }));
+  // The marker is claimed BEFORE delivery (that is what makes two racing
+  // requests send once), so from here on a failure that happens before a single
+  // phone was sent to or queued would leave a marker standing guard over an
+  // alert that never went — every retry answered "duplicate", the alert lost
+  // for good. `tally` is shared with deliverJobs so we can tell how far it got.
+  const tally = newTally();
+  let wanted = 0;
+  try {
+    // Re-derived from the message itself, not trusted from the request.
+    const mentions = await verifiedMentions(ictx, camp, caller.members, msg.text, body);
+    const push = await campPush(ictx, camp);
+    const groups = chatRecipients({
+      ch, authorKey: caller.key, members: caller.members, push,
+      mentionKeys: mentions.keys, mentionTeams: mentions.teams, cfg: ictx.cfg,
+    });
+    const name = memberName(caller.members, caller.key);
+    // Most important first, so if anything has to wait in the outbox it's the
+    // every-message channel alerts.
+    const jobs = ['announcement', 'mention', 'channel'].filter((kind) => groups[kind].length).map((kind) => ({
+      payload: chatPayload({ camp, kind, ch, msgId, msg, name, now }),
+      ttl: TTL_CHAT, urgency: kind === 'channel' ? 'normal' : 'high', created: now, attempts: 0, targets: groups[kind],
+    }));
+    for (const j of jobs) wanted += j.targets.length;
+    // keep: 1 — the subrequest releaseMarker may need afterwards. Without it a
+    // send run that uses up the whole budget and then fails everywhere would
+    // find no call left to give the marker back with.
+    await deliverJobs(ictx, camp, jobs, { keep: 1, tally });
+  } catch (e) {
+    // deliverJobs throws only before its first send or queue write (a missing
+    // sender key, a database read, the budget); if anything DID get out, the
+    // marker must stay or those phones would be buzzed twice.
+    if (!tally.sent && !tally.queued) await releaseMarker(ictx, markerPath);
+    throw e;
+  }
+  // Somebody was meant to hear this and nobody was reached or lined up for a
+  // retry: give the marker back so the alert can be tried again. (No
+  // recipients at all is not a failure — there was nothing to deliver — and
+  // keeps its marker, which also saves a subrequest on every quiet message.)
+  if (wanted && !tally.sent && !tally.queued) await releaseMarker(ictx, markerPath);
+  return tallyBody(tally);
+}
+
+// Best effort: if even this fails (the budget is gone, the database is down)
+// the marker just stays, which is the old behaviour — never a new failure.
+async function releaseMarker(ictx, path) {
+  try { await dbDelete(ictx, path); } catch (e) {
+    if (!(e instanceof BudgetError)) console.warn('camp-alerts: could not release dedupe marker', e && e.message);
+  }
 }
 
 async function notifyAlert(ictx, caller, camp, body) {
@@ -1527,7 +1801,7 @@ async function notifyAlert(ictx, caller, camp, body) {
   await takeRateSlot(ictx, camp, caller.key, RATE_ALERT_MS, 'Please wait a few seconds before sending another alert.');
 
   const push = await campPush(ictx, camp);
-  const targets = alertRecipients({ audience, urgent, members: caller.members, push });
+  const targets = alertRecipients({ audience, urgent, members: caller.members, push, cfg: ictx.cfg });
   const now = ictx.now();
   const id = timeKey(now) + randomChars(12);
   const name = memberName(caller.members, caller.key);
@@ -1553,12 +1827,11 @@ async function notifyTest(ictx, caller, camp, body) {
   const mine = await dbGet(ictx, `${CAMPS[camp]}/push/${caller.key}`);
   const targets = [];
   const seen = new Set();
-  if (isObj(mine)) {
-    for (const d of Object.keys(mine)) {
-      if (want && d !== want) continue;
-      const t = deviceTarget(caller.key, d, mine[d]);
-      if (t && !seen.has(t.e)) { seen.add(t.e); targets.push(t); }
-    }
+  // The same cap as every other send: a test would otherwise be a way to make
+  // the Worker fan out to a thousand junk records, five seconds at a time.
+  for (const { target: t } of memberDevices(caller.key, mine, ictx.cfg).slice(0, MAX_DEVICES_PER_MEMBER)) {
+    if (want && t.d !== want) continue;
+    if (!seen.has(t.e)) { seen.add(t.e); targets.push(t); }
   }
   if (!targets.length) {
     throw new HttpError(404, 'no-device', want
@@ -1607,6 +1880,18 @@ async function routeResubscribe(ictx, request, body) {
       || typeof auth !== 'string' || !AUTH_RE.test(auth)) {
     throw new HttpError(400, 'bad-subscription', "That subscription isn't valid.");
   }
+  // The NEW endpoint is about to be stored as somebody's push address, so it
+  // must be a real push service. (The old one is only a lookup key.)
+  let next;
+  try { next = new URL(endpoint); } catch (e) { next = null; }
+  if (!pushHostAllowed(ictx.cfg, next)) throw new HttpError(400, 'bad-subscription', "That subscription isn't valid.");
+  // This route has no sign-in, and a scan downloads BOTH camps' whole phone
+  // lists — megabytes of Firebase egress per call against a free plan's
+  // 10 GB/month. So one scan a minute, for the whole Worker: anyone past that
+  // gets a quiet "nothing updated" without touching the lists. A real phone
+  // that loses its turn is repaired by the page the next time it is opened
+  // (sw.js ignores the answer; push.js self-heals).
+  if (!(await claimRateSlot(ictx, 'pushServer/rate/resubscribe', RESUB_WINDOW_MS))) return { ok: true, updated: 0 };
   let updated = 0;
   for (const camp of Object.keys(CAMPS)) {
     const push = await campPush(ictx, camp);
@@ -1726,7 +2011,10 @@ async function routeStatusPage(ictx, url) {
       const hint = (le.status === 403 || le.status === 401)
         ? (apple ? 'A 403 from Apple almost always means the sender key or VAPID_SUBJECT is wrong. If you changed VAPID_SUBJECT, it must start with https:// or mailto:.' : 'This usually means the sender key or VAPID_SUBJECT is wrong.')
         : 'If this keeps happening, send a screenshot of this page to whoever maintains the site.';
-      lines.push(['warn', `At ${formatEtDateTime(le.at)} Eastern, ${le.host || 'a push service'} refused a notification (HTTP ${le.status}${le.reason ? ': ' + le.reason : ''})`, hint]);
+      // Status and host only. What the push service SAID (le.reason) is text a
+      // stranger's server may have written; this page is public, so it stays in
+      // the database console and out of here.
+      lines.push(['warn', `At ${formatEtDateTime(le.at)} Eastern, ${le.host || 'a push service'} refused a notification (HTTP ${le.status})`, hint]);
     }
   }
   const icon = { ok: '✅', bad: '❌', warn: '⚠️' };
@@ -1863,7 +2151,7 @@ async function cronSchedule(ictx, camp, beat, total, reserve) {
   const due = dueBlocks(blocks, weekStart, win.from, win.to);
   if (due.length) {
     const [members, push] = await Promise.all([campMembers(ictx, camp), campPush(ictx, camp)]);
-    const groups = blockRecipients({ due, members, push });
+    const groups = blockRecipients({ due, members, push, cfg: ictx.cfg });
     const jobs = [];
     due.forEach((item, i) => {
       if (!groups[i].length) return;
@@ -1905,10 +2193,25 @@ async function cronMaintenance(ictx) {
     // acting on it would switch off everybody's alerts.
     const keys = await campMemberKeys(ictx, camp);
     if (!keys.size) continue;
-    const pushKeys = await dbGet(ictx, `${CAMPS[camp]}/push`, { shallow: 'true' });
+    // The whole phone list, not a shallow listing: finding a member's surplus
+    // devices (everything past their MAX_DEVICES_PER_MEMBER newest — the ones
+    // eachDevice already ignores) means looking inside each member. Once an
+    // hour, last in the run, so the extra egress is nothing next to a flood
+    // this exists to clear. One multi-path PATCH removes both kinds of leftover;
+    // MAINT_DELETE_CAP keeps one pass small, and the next hour carries on.
+    const push = await campPush(ictx, camp);
     const gone = {};
-    if (isObj(pushKeys)) for (const k of Object.keys(pushKeys)) if (!keys.has(k)) gone[k] = null;
-    if (Object.keys(gone).length) await dbPatch(ictx, `${CAMPS[camp]}/push`, gone);
+    let n = 0;
+    for (const k of Object.keys(push)) {
+      if (n >= MAINT_DELETE_CAP) break;
+      if (!keys.has(k)) { gone[k] = null; n++; continue; }
+      for (const d of memberDevices(k, push[k], ictx.cfg).slice(MAX_DEVICES_PER_MEMBER)) {
+        if (n >= MAINT_DELETE_CAP) break;
+        gone[`${k}/${d.target.d}`] = null;
+        n++;
+      }
+    }
+    if (n) await dbPatch(ictx, `${CAMPS[camp]}/push`, gone);
   }
   // Outbox entries whose id isn't one of ours can never be drained; drop them.
   if (ictx.left() < 2) return;
@@ -1970,6 +2273,8 @@ Object.defineProperty(handler, '_test', {
     makePayload, chatPayload, alertPayload, blockPayload, testPayload,
     verifyIdToken, adminToken, ensureVapid, vapidAuthorization, encryptPayload, ephemeralKey,
     deliverJobs, packBatches, drainBatch, classifyPushStatus, BudgetError, HttpError,
+    pushHostAllowed, memberDevices, mentionedAsWord, memberNamedIn, teamNamedIn, verifiedMentions,
+    MAX_DEVICES_PER_MEMBER, PUSH_HOST_SUFFIXES,
   },
 });
 
