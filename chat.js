@@ -39,6 +39,12 @@ const CHAT_BANNER_MS = 15 * 60 * 1000; // announcements-channel messages ride th
 // server. The rules are the actual control; this is the courtesy layer.
 const CHAT_MIN_SEND_MS = 1200;
 let chatLastSendAt = 0;
+// Sends handed to Firebase (or still compressing a photo) that haven't settled.
+// The deploy auto-reload waits on this (chatComposerBusy, via app.js's
+// reloadBlocked): the SDK's write queue lives in memory, and the composer is
+// cleared the moment a message is sent, so a reload mid-send would lose it
+// with nowhere to give the words back.
+let chatSendsInFlight = 0;
 
 let chatMsgs = {};        // channelId -> [{id, at, byKey, name, text, thumb, photoId}] sorted by at
 let chatReady = {};       // channelId -> true once the initial backlog has fully arrived
@@ -275,11 +281,23 @@ function sendChatMessage(ch) {
   if (input) input.value = '';
   const id = firebase.database().ref(dbPath('chat/' + ch)).push().key;
   const rateKey = 'chatRate/' + myKey;
+  chatSendsInFlight += 1;
   chatAtomicSend({ ['chat/' + ch + '/' + id]: msg, [rateKey]: firebase.database.ServerValue.TIMESTAMP }, rateKey)
     .then(() => chatNotifyPhones(ch, id, text), () => {
       if (input && !input.value) input.value = text; // give the words back
       showToast("Couldn't send — check your connection and try again.");
-    });
+    })
+    .then(() => { chatSendsInFlight = Math.max(0, chatSendsInFlight - 1); });
+}
+
+// True while a reload would cost someone their words: a message is being
+// typed (focused, non-empty composer) or a send hasn't settled yet. Only a
+// FOCUSED composer counts, so a stray character left behind can't hold a
+// phone on an old build forever. Called (typeof-guarded) from app.js.
+function chatComposerBusy() {
+  const input = document.getElementById('chat-input');
+  const typing = !!(input && document.activeElement === input && String(input.value || '').trim());
+  return typing || chatSendsInFlight > 0;
 }
 
 // Once a message has landed, ask the phone-alert sender to buzz whoever
@@ -299,6 +317,7 @@ function sendChatPhoto(ch, file) {
   if (!chatSendAllowed()) return;
   const btn = document.getElementById('chat-photo-btn');
   if (btn) btn.setAttribute('disabled', '');
+  chatSendsInFlight += 1;
   makeChatImages(file)
     .then(({ full, thumb }) => {
       const photoId = firebase.database().ref(dbPath('chatPhotos')).push().key;
@@ -320,7 +339,10 @@ function sendChatPhoto(ch, file) {
       }, rateKey).then(() => chatNotifyPhones(ch, msgId, ''));
     })
     .catch(() => showToast("Couldn't send the photo — try a different one, or check your connection."))
-    .then(() => { if (btn) btn.removeAttribute('disabled'); });
+    .then(() => {
+      chatSendsInFlight = Math.max(0, chatSendsInFlight - 1);
+      if (btn) btn.removeAttribute('disabled');
+    });
 }
 
 function chatBlobToDataUrl(blob) {

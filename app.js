@@ -2201,6 +2201,9 @@ let pendingWrites = 0;
 // (before the first push, or to recover after a failed one). Updated on every
 // adopt (in the value handler) and every push.
 let lastSyncedTree = null;
+// The synced tree exactly as it was when this page loaded (the cached copy) — the
+// baseline for 'what did THIS device change before the first snapshot arrived'.
+let bootSyncedTree = null;
 // The editable week config (days/games catalog) syncs on its own sibling ref
 // (campScoreboard/config) — deliberately OUTSIDE campScoreboard/state so older
 // cached clients, and the state node's own key-list bookkeeping (SYNC_KEYS /
@@ -2238,12 +2241,13 @@ function syncEnabled() {
 
 function applyRemoteConfig(remote) {
   const beforeJson = JSON.stringify(state.config);
+  const v0 = remote && remote.version;
   applyingRemoteConfig = true;
   state.config = remote;
   const upgraded = migrateState(state);
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
   applyingRemoteConfig = false;
-  if (upgraded) schedulePushConfig();
+  if (upgraded && canEdit() && state.config.version !== v0) schedulePushConfig();
   if (appStarted && JSON.stringify(state.config) !== beforeJson) renderAll();
 }
 
@@ -2370,9 +2374,18 @@ function handleRemoteSnapshot(remote) {
     const localAt = state.meta && state.meta.lastDataChangeAt;
     const remoteAt = remote.meta && remote.meta.lastDataChangeAt;
     if (localAt && (!remoteAt || localAt > remoteAt)) {
-      pushState();
-      return;
+      // Diff against the tree as it was at load, NOT null: that sends only what this
+      // device changed, per path, instead of the whole tree over the server's newer data.
+      const mine = bootSyncedTree ? computeSyncUpdates(bootSyncedTree, syncedSnapshot()) : null;
+      if (mine && Object.keys(mine).length) {
+        lastSyncedTree = bootSyncedTree;
+        pushState();
+        return;
+      }
+      if (!bootSyncedTree) { pushState(); return; }
+      // nothing of ours to defend: fall through and adopt the server copy
     }
+    dataEditPending = false; // the first snapshot reconciles any pre-sync edit
   }
   // The first snapshot is handled by dirtySinceLoad above; any later one waits
   // for this device to be idle (see canAdoptRemote / deferRemoteSnapshot).
@@ -2389,6 +2402,8 @@ function applyRemoteState(remote) {
   // dismisses the iOS keyboard mid-entry. Skip renderAll when nothing
   // actually changed (below).
   const beforeSig = syncSignature();
+  const prevRefs = {};
+  SYNC_KEYS.forEach((k) => { prevRefs[k] = state[k]; });
   // The snapshot is the entire synced tree, so a key missing from it
   // means "empty" — RTDB prunes empty objects on write. Treating
   // missing as keep-local made "New week (reset)" un-syncable: other
@@ -2418,6 +2433,8 @@ function applyRemoteState(remote) {
   // its empty fields. Heal everything the instant remote data lands,
   // before any render sees it.
   normalizeSyncedState();
+  // Pure echo: keep the live objects so open views' closures stay attached.
+  if (syncSignature() === beforeSig) SYNC_KEYS.forEach((k) => { state[k] = prevRefs[k]; });
   // We now match the server, so this snapshot becomes the diff baseline —
   // otherwise the next push would re-send data we just received.
   lastSyncedTree = syncedSnapshot();
@@ -2583,11 +2600,11 @@ function picSetupForSync(picSetup) {
 // Maps written per-child (one path per game/team/bonus) so concurrent edits to
 // DIFFERENT items on different devices never overwrite each other. teams/meta
 // are small singletons written whole.
-const SYNC_ITEM_MAPS = ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'clocks', 'announcements'];
+const SYNC_ITEM_MAPS = ['results', 'brackets', 'picRounds', 'picSetup', 'bonuses', 'clocks', 'announcements'];
 // `live` is NOT here — it's diffed one level deeper (per match field) in
 // computeSyncUpdates so concurrent refs don't clobber each other's fields.
 // `notice` is a singleton too — one composed card, always written whole.
-const SYNC_SINGLETONS = ['teams', 'meta', 'notice'];
+const SYNC_SINGLETONS = ['teams', 'notice'];
 
 // The synced portion of state as it should exist on the server: a deep copy
 // with Pictionary words stripped (never synced). Serves as both the push
@@ -2635,6 +2652,40 @@ function computeSyncUpdates(prev, cur) {
       });
     });
     Object.keys(p).forEach((gid) => { if (!(gid in c)) up['live/' + gid] = null; });
+  }
+  // drafts: diffed per scores/medals LEAF so two editors on one tally game don't wipe each other.
+  {
+    const p = (prev && prev.drafts) || {};
+    const c = (cur && cur.drafts) || {};
+    Object.keys(c).forEach((gid) => {
+      const cd = c[gid], pd = p[gid];
+      if (JSON.stringify(cd) === JSON.stringify(pd)) return;
+      if (!cd || typeof cd !== 'object') { up['drafts/' + gid] = cd === undefined ? null : cd; return; }
+      const pdo = (pd && typeof pd === 'object') ? pd : {};
+      ['scores', 'medals'].forEach((f) => {
+        const cf = (cd[f] && typeof cd[f] === 'object') ? cd[f] : {};
+        const pf = (pdo[f] && typeof pdo[f] === 'object') ? pdo[f] : {};
+        Object.keys(cf).forEach((k) => { if (JSON.stringify(cf[k]) !== JSON.stringify(pf[k])) up['drafts/' + gid + '/' + f + '/' + k] = cf[k]; });
+        Object.keys(pf).forEach((k) => { if (!(k in cf)) up['drafts/' + gid + '/' + f + '/' + k] = null; });
+      });
+    });
+    Object.keys(p).forEach((gid) => { if (!(gid in c)) up['drafts/' + gid] = null; });
+  }
+  // meta: per field, hiddenCards per card, so a score save (lastDataChangeAt) never reverts another editor's hide.
+  {
+    const p = (prev && prev.meta && typeof prev.meta === 'object') ? prev.meta : {};
+    const c = (cur && cur.meta && typeof cur.meta === 'object') ? cur.meta : {};
+    Object.keys(c).forEach((f) => {
+      if (f === 'hiddenCards' && c[f] && typeof c[f] === 'object') {
+        const ph = (p.hiddenCards && typeof p.hiddenCards === 'object') ? p.hiddenCards : {};
+        Object.keys(c[f]).forEach((card) => { if (JSON.stringify(c[f][card]) !== JSON.stringify(ph[card])) up['meta/hiddenCards/' + card] = c[f][card]; });
+        Object.keys(ph).forEach((card) => { if (!(card in c[f])) up['meta/hiddenCards/' + card] = null; });
+      } else if (JSON.stringify(c[f]) !== JSON.stringify(p[f])) up['meta/' + f] = c[f];
+    });
+    Object.keys(p).forEach((f) => {
+      if (f === 'hiddenCards' && !(f in c) && p[f] && typeof p[f] === 'object') Object.keys(p[f]).forEach((card) => { up['meta/hiddenCards/' + card] = null; });
+      else if (!(f in c)) up['meta/' + f] = null;
+    });
   }
   SYNC_SINGLETONS.forEach((k) => {
     const pv = prev ? prev[k] : undefined;
@@ -2689,6 +2740,7 @@ function pushState() {
 function syncSignature() {
   return JSON.stringify(SYNC_KEYS.map((k) => state[k]));
 }
+bootSyncedTree = syncedSnapshot();
 
 // A matchup "slot" — a stable key for one pairing, so a genuinely NEW matchup
 // can be told apart from an undo/clear across syncs.
@@ -4707,13 +4759,14 @@ function renderMemoryVerse() {
 // existing entries for that (team, day) so the ledger holds one truth.
 function setVersePoints(teamId, dow, pts) {
   if (!canScoreRound(teamId)) return; // own-team guard
+  const fixedId = 'verse-' + teamId + '-' + dow;
   Object.entries(state.bonuses || {}).forEach(([id, b]) => {
     if (b && b.category === 'verse' && b.teamId === teamId && (Number(b.day) || 0) === dow) {
       delete state.bonuses[id];
     }
   });
   if (pts > 0) {
-    state.bonuses[newBonusId()] = {
+    state.bonuses[fixedId] = {
       teamId, category: 'verse', label: `${DAY_NAMES[dow]} memory verse`,
       points: pts, at: new Date().toISOString(), day: dow,
     };
@@ -4903,6 +4956,7 @@ function renderMealCleanup() {
 // any existing entries for that (team, day, meal).
 function setCleanupPoints(teamId, dow, meal, pts) {
   if (!canScoreRound(teamId)) return; // own-team guard
+  const fixedId = 'cleanup-' + teamId + '-' + dow + '-' + meal;
   Object.entries(state.bonuses || {}).forEach(([id, b]) => {
     if (b && b.category === 'cleanup' && b.teamId === teamId &&
         (Number(b.day) || 0) === dow && (b.meal || 'Breakfast') === meal) {
@@ -4910,7 +4964,7 @@ function setCleanupPoints(teamId, dow, meal, pts) {
     }
   });
   if (pts > 0) {
-    state.bonuses[newBonusId()] = {
+    state.bonuses[fixedId] = {
       teamId, category: 'cleanup', label: `${DAY_NAMES[dow]} ${meal} cleanup`,
       points: pts, at: new Date().toISOString(), day: dow, meal,
     };
@@ -7184,15 +7238,20 @@ const UPDATE_POLL_MS = 2 * 60 * 1000;
 function editorMidEntry() {
   const ae = document.activeElement;
   // Jelly form controls surface as the focused element's HOST (JELLY-INPUT,
-  // JELLY-TEXTAREA, JELLY-SELECT, …) — a focused one is mid-entry exactly
-  // like a native field; missing this would let a deploy's auto-reload eat
-  // a score being typed.
-  // ...but the chat composer is NOT score entry. Counting it would defer every
+  // JELLY-TEXTAREA, JELLY-SELECT, JELLY-OTP) — a focused one is mid-entry
+  // exactly like a native field; missing this would let a deploy's auto-reload
+  // eat a score being typed.
+  // It is an ALLOWLIST on purpose. Every Jelly component delegates focus, so
+  // on Android/desktop Chrome a plain tap on a card header (jelly-collapsible),
+  // a jelly-button or a chip leaves THAT host focused — and the old
+  // `startsWith('JELLY-')` test counted it as typing, which froze live updates
+  // on that phone until something else took focus (verified 2026-10-26).
+  // ...and the chat composer is NOT score entry. Counting it would defer every
   // incoming scoreboard update for as long as anyone sits with the message box
   // focused, which during a game is exactly when people are chatting.
   const inChatComposer = ae && ae.closest && ae.closest('#chat-view');
-  if (!inChatComposer &&
-      ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' || ae.tagName.startsWith('JELLY-') || ae.isContentEditable)) return true;
+  if (!inChatComposer && ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' ||
+      /^JELLY-(INPUT|TEXTAREA|SELECT|OTP)$/.test(ae.tagName || '') || ae.isContentEditable)) return true;
   // A half-built game in the week builder is unsaved in-memory work — the
   // update-poll auto-reload and remote merges must not wipe it.
   if (typeof builderDirty === 'function' && builderDirty()) return true;
@@ -7280,9 +7339,27 @@ function showUpdateBanner() {
   document.body.appendChild(bar);
 }
 
+// Work that only exists on THIS page and would vanish in a reload. The RTDB
+// web SDK keeps its offline write queue in memory only, so a reload while a
+// saved score is still unconfirmed (pendingWrites > 0 — e.g. the deploy poll
+// won the race with a reconnect) loses it outright, and the next load's first
+// snapshot then overwrites the cached copy. Same for a running Pictionary lap
+// (in-memory stopwatch) and a chat message being typed or still uploading —
+// those block the reload for EVERY role, not just editors. A synced game clock
+// deliberately does NOT block: its endAt is in the database and survives a
+// reload, and holding every editor's hotfix for a whole game would be worse.
+function reloadBlocked() {
+  if (pendingWrites > 0) return true;
+  if (canEdit() && editorMidEntry()) return true;
+  if (Object.values(liveWatches || {}).some((w) => w && w.running)) return true;
+  if (typeof chatComposerBusy === 'function' && chatComposerBusy()) return true;
+  return false;
+}
+
 function reloadWhenSafe() {
-  if (!canEdit() || !editorMidEntry()) { setTimeout(doReload, 1200); return; }
-  setTimeout(reloadWhenSafe, 12000); // editor is mid-entry — check back shortly
+  if (reloadBlocked()) { setTimeout(reloadWhenSafe, 12000); return; } // check back shortly
+  // Re-check at the last moment: a score saved in these 1.2 s must not be lost either.
+  setTimeout(() => (reloadBlocked() ? reloadWhenSafe() : doReload()), 1200);
 }
 
 function onNewVersion() {
@@ -8019,8 +8096,28 @@ function hasBothCamps() {
 // Set-key-and-reload — the ONLY way to change camps. The listener lifecycle
 // is one-shot by design (a cancelled read is terminal; there is no teardown
 // path), so a running page never re-points its refs in place.
+// A saved-but-unconfirmed edit on this page — what a deliberate reload
+// (camp switch, sign-out) would silently throw away, since the SDK's offline
+// queue lives only in memory. Deliberately NOT editorMidEntry(): on Chrome the
+// control that was just tapped (the Camp segmented control, the Sign out
+// button) is itself a focused Jelly host, so that would always say yes.
+function hasUnsyncedWork() {
+  return pendingWrites > 0 || dataEditPending || pushTimer != null || pushConfigTimer != null ||
+    (typeof builderDirty === 'function' && builderDirty());
+}
+
 function switchCamp(campId) {
   if (!CAMPS[campId] || campId === CAMP.id) return;
+  // Send anything still sitting in the debounce first; only then ask whether
+  // something is genuinely unconfirmed. A confirm, not a hard block: an
+  // offline director must never be wedged on the wrong camp.
+  flushPendingPush();
+  if (hasUnsyncedWork() &&
+      !confirm("A score you saved hasn't reached the server yet. Switching camps now can lose it. Switch anyway?")) {
+    const seg = document.getElementById('camp-switch');
+    if (seg) { seg.setAttribute('value', CAMP.id); seg.value = CAMP.id; } // it already moved — put it back
+    return;
+  }
   // Storage blocked (private mode, or a locked-down browser): the whole switch
   // is set-key-then-reload, so without the key the reload would land back on
   // the same camp. Say so instead of silently doing nothing — a senior-only
@@ -8137,7 +8234,11 @@ let signingOut = false;
 
 function signOutAndClear() {
   if (signingOut) return;
-  if (!confirm('Sign out? Camp data stored on this device will be cleared.')) return;
+  flushPendingPush();
+  const msg = hasUnsyncedWork()
+    ? "A score you saved hasn't reached the server yet — signing out now will lose it. Sign out anyway?"
+    : 'Sign out? Camp data stored on this device will be cleared.';
+  if (!confirm(msg)) return;
   signingOut = true;
   // Phone alerts first, while still signed in: this device's push records
   // can only be deleted by their owner, so after signOut() the rules refuse.

@@ -324,7 +324,7 @@ test('a new pairing or mode switch replaces the whole live node', () => {
     'a fresh matchup must not inherit the old one leftover fields');
 });
 
-test('teams and meta are written whole', () => {
+test('teams are written whole (meta is per field — see sync-merge.test.js)', () => {
   freshState();
   const up = computeSyncUpdates({ teams: [{ id: 't0', name: 'A' }] }, { teams: [{ id: 't0', name: 'B' }] });
   assert.deepEqual(Object.keys(up), ['teams']);
