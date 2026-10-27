@@ -288,6 +288,12 @@ What's covered, and why each file exists:
   atomic flips) — each pins the state rules behind a glitch fix. Anything only
   visible in a browser (animation, layout) is source-checked or left to the
   Playwright pass.
+- `ics.test.js` (+ `.senior`, which evals the same file) — the "Add to calendar"
+  export: every line folded to 75 octets (`icsFold`, byte-counted, never inside
+  a UTF-8 sequence), UIDs `<camp>-<dow>-<block index>-<start>@…` so the two
+  camps' exports of one weekday can never overwrite each other and a re-import
+  updates in place, and `X-WR-CALNAME` = the camp's label. S5a will move the
+  UID onto camp + week + day + block id once the schedule is data.
 - `contrast.test.js` — danger red as TEXT. `--color-danger` is a fill tuned to
   carry white text; any rule that colours text red uses `--color-danger-text`
   (light `#b42318`, 6.57:1 on white; dark `#ff8a8a`). The test pins the token

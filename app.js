@@ -1075,6 +1075,28 @@ function icsEscape(s) {
   return String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r\n|\r|\n/g, '\\n');
 }
 
+// RFC 5545 §3.1: a content line over 75 OCTETS is folded — CRLF plus one space
+// — and the count is bytes, not characters. A fold must never land inside a
+// UTF-8 sequence, and every SUMMARY opens with a 4-byte emoji. Strict importers
+// (Outlook, Apple Calendar) drop or mangle the event when a long DESCRIPTION
+// (the morning's game list) is left on one line. Counted by hand because
+// TextEncoder isn't in every runtime this file loads in (the test vm).
+function icsFold(line) {
+  const out = [];
+  let cur = '';
+  let bytes = 0;
+  let limit = 75; // continuation lines open with a space that counts too: 74 more
+  for (const ch of String(line)) {
+    const cp = ch.codePointAt(0);
+    const n = cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
+    if (bytes + n > limit) { out.push(cur); cur = ''; bytes = 0; limit = 74; }
+    cur += ch;
+    bytes += n;
+  }
+  out.push(cur);
+  return out.join('\r\n ');
+}
+
 // 'YYYYMMDD' in camp time for the given day-of-week of the current camp week.
 function campDateForDow(dow) {
   const [y, m, d] = campDateStr().split('-').map(Number);
@@ -1089,7 +1111,8 @@ function buildDayIcs(dow) {
     const mm = Math.min(mins, hm(23, 59)); // paranoia: keep a stray midnight end in-day
     return `${date}T${String(Math.floor(mm / 60)).padStart(2, '0')}${String(mm % 60).padStart(2, '0')}00`;
   };
-  const events = (DAY_SCHEDULE[dow] || []).filter((b) => !b.noTime).map((raw) => {
+  const day = DAY_SCHEDULE[dow] || [];
+  const events = day.map((raw, i) => ({ raw, i })).filter(({ raw }) => !raw.noTime).map(({ raw, i }) => {
     const b = decorateMealBlock(dow, raw);
     let desc = '';
     if (raw.type === 'games') {
@@ -1099,15 +1122,19 @@ function buildDayIcs(dow) {
       const games = state.config.games.filter((g) => dowDayIds.includes(g.dayId) && g.session === session);
       if (games.length) desc = games.map((g) => `${g.emoji} ${g.name}`).join(', ');
     }
+    // UID = camp + day + the block's position in the day + its start. Before,
+    // the junior and senior exports of the same weekday shared UIDs
+    // (campday-<dow>-<start>), so importing both overwrote one with the other.
+    // The position keeps two blocks that start together apart.
     return [
       'BEGIN:VEVENT',
-      `UID:campday-${dow}-${raw.start}@camp.patricksimpson.info`,
+      `UID:${CAMP.id}-${dow}-${i}-${raw.start}@camp.patricksimpson.info`,
       `DTSTAMP:${stamp}`,
       `DTSTART;TZID=America/New_York:${fmt(raw.start)}`,
       `DTEND;TZID=America/New_York:${fmt(raw.end)}`,
       `SUMMARY:${icsEscape(b.emoji + ' ' + b.label)}`,
       desc ? `DESCRIPTION:${icsEscape(desc)}` : '',
-    ].filter(Boolean).concat('END:VEVENT').join('\r\n');
+    ].filter(Boolean).concat('END:VEVENT');
   });
   const vtimezone = [
     'BEGIN:VTIMEZONE', 'TZID:America/New_York',
@@ -1116,12 +1143,15 @@ function buildDayIcs(dow) {
     'BEGIN:STANDARD', 'TZOFFSETFROM:-0400', 'TZOFFSETTO:-0500', 'TZNAME:EST',
     'DTSTART:19701101T020000', 'RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU', 'END:STANDARD',
     'END:VTIMEZONE',
-  ].join('\r\n');
+  ];
+  // X-WR-CALNAME names the calendar an importer creates (Apple, Google), so
+  // each camp's days land together instead of in "Untitled".
   return [
     'BEGIN:VCALENDAR', 'VERSION:2.0',
     'PRODID:-//Camp Scoreboard//camp.patricksimpson.info//EN', 'CALSCALE:GREGORIAN',
-    vtimezone, events.join('\r\n'), 'END:VCALENDAR',
-  ].join('\r\n') + '\r\n';
+    'X-WR-CALNAME:' + icsEscape(CAMP.label),
+    ...vtimezone, ...[].concat(...events), 'END:VCALENDAR',
+  ].map(icsFold).join('\r\n') + '\r\n';
 }
 
 function wireSchedule() {
