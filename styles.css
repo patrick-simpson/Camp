@@ -3250,6 +3250,9 @@ jelly-chip.sched-day-chip .today-dot {
   color: var(--color-danger);
   font-size: 0.9rem;
   font-weight: 600;
+  /* scrollIntoView (the game editor's message sits under Save at the page's
+     foot) stops flush with the screen edge otherwise. */
+  scroll-margin-bottom: 1rem;
 }
 
 /* ============================================================
@@ -5365,6 +5368,28 @@ select.form-input {
   margin: 0;
 }
 
+/* Builder rows: labels share one grid row and inputs the next (subgrid), so
+   when one label wraps to two lines on a phone the paired inputs still start
+   level — a wrapped "Outs per side" put its input 16px below "Periods".
+   (Bottom-aligning the fields instead knocks the LABELS out of line wherever
+   the two controls differ in height: a jelly-select beside a jelly-input.)
+   Every builder .form-field in a row is exactly label + control. Without
+   subgrid support this falls back to the old top-aligned stacking. */
+#settings-view .form-row {
+  grid-template-rows: auto auto;
+  row-gap: 0;
+}
+
+#settings-view .form-row .form-field {
+  display: grid;
+  grid-row: span 2;
+  grid-template-rows: subgrid;
+}
+
+#settings-view .form-row .form-label {
+  align-self: end; /* a one-line label sits right above its input */
+}
+
 /* ── Segmented control (buttons reuse .team-chip) ── */
 .segmented {
   display: grid;
@@ -5441,6 +5466,17 @@ select.form-input {
   background: var(--color-bronze-bg);
   border-radius: var(--radius-md);
   padding: 0.5rem 0.7rem;
+}
+
+/* The reminder under the builder's tab bar that a game draft is still open on
+   the Games tab (settings.js, syncUnsavedNotes). Empty ⇒ zero height. */
+.settings-unsaved .warn-note {
+  margin: 0.6rem 0 0.75rem;
+}
+.settings-unsaved .link-btn {
+  color: inherit;
+  font: inherit;
+  font-weight: 800;
 }
 
 /* ── Danger zone ── */
@@ -5531,19 +5567,20 @@ select.form-input {
   margin-bottom: 0.25rem;
 }
 
-/* Team builder rows carry two stacked inputs (name + counselor). */
+/* Team builder rows: a control line (arrows, label, ✕) above two stacked,
+   full-width inputs (name + counselor) — beside the controls they were only
+   ~160px wide on a phone, clipping the names being edited. */
 .team-builder-fields {
-  flex: 1;
-  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  margin-top: 0.5rem;
 }
 
-/* The horizontal .builder-row's `flex: 1` on .form-input also matches these
-   nested inputs — inside this vertical stack a 0% flex-basis collapses a
-   Jelly host to 0px tall (its shadow content is absolutely positioned, so
-   there's no intrinsic min-height to save it). Pin an explicit height. */
+/* Inside this vertical stack a 0% flex-basis (like .builder-row's `flex: 1`
+   on .form-input) collapses a Jelly host to 0px tall — its shadow content is
+   absolutely positioned, so there's no intrinsic min-height to save it. Pin
+   an explicit height. */
 .team-builder-fields .form-input {
   flex: none;
   height: 48px;
@@ -5870,6 +5907,11 @@ select.form-input {
     transform: scale(0.93);
     transition: transform 0.09s ease;
   }
+  /* A press called off mid-gesture (the touch became a scroll) eases back
+     instead of snapping from 93% — see joyPressAbort in app.js. */
+  .joy-release {
+    transition: transform 0.14s ease;
+  }
   .joy-pop {
     animation: joy-pop 0.42s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
@@ -5878,17 +5920,30 @@ select.form-input {
     55% { transform: scale(1.05); }
     100% { transform: scale(1); }
   }
+  /* A tap quicker than the press delay never showed the 93% press, so its pop
+     starts from rest rather than snapping in. */
+  .joy-pop-quick {
+    animation: joy-pop-quick 0.42s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  @keyframes joy-pop-quick {
+    0% { transform: scale(1); }
+    55% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+  }
 
   /* Card contents rise in when a home panel opens — layered on top of
      jelly-collapsible's own springy height animation. The heading is the
-     header slot (child 1), so content children start at nth-child(2). */
-  jelly-collapsible.collapsible-card[open] > *:not([slot="header"]) {
+     header slot (child 1), so content children start at nth-child(2).
+     Only while .card-opening is on (added for ~0.7s by the toggle listener
+     in app.js): keyed to [open] alone, the rise replayed on every open card
+     whenever the builder or chat takeover un-hid the page. */
+  jelly-collapsible.collapsible-card.card-opening[open] > *:not([slot="header"]) {
     animation: joy-rise 0.38s cubic-bezier(0.22, 1, 0.36, 1) backwards;
   }
-  jelly-collapsible.collapsible-card[open] > *:nth-child(3) { animation-delay: 0.04s; }
-  jelly-collapsible.collapsible-card[open] > *:nth-child(4) { animation-delay: 0.08s; }
-  jelly-collapsible.collapsible-card[open] > *:nth-child(5) { animation-delay: 0.12s; }
-  jelly-collapsible.collapsible-card[open] > *:nth-child(n+6) { animation-delay: 0.16s; }
+  jelly-collapsible.collapsible-card.card-opening[open] > *:nth-child(3) { animation-delay: 0.04s; }
+  jelly-collapsible.collapsible-card.card-opening[open] > *:nth-child(4) { animation-delay: 0.08s; }
+  jelly-collapsible.collapsible-card.card-opening[open] > *:nth-child(5) { animation-delay: 0.12s; }
+  jelly-collapsible.collapsible-card.card-opening[open] > *:nth-child(n+6) { animation-delay: 0.16s; }
 
   /* Staggered list entry — applied transiently by joyStagger() after a
      day switch or view change re-render. */

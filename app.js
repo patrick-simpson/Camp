@@ -2430,7 +2430,11 @@ function syncEnabled() {
 }
 
 function applyRemoteConfig(remote) {
-  const beforeJson = JSON.stringify(state.config);
+  // Compared in RTDB-canonical form (syncCanon): the echo of this device's
+  // own edit comes back key-sorted with nulls dropped (a new day's dow: null),
+  // and a plain string compare read that as somebody else's change — a second
+  // full builder rebuild half a second after every Add day / new game.
+  const beforeJson = JSON.stringify(syncCanon(state.config));
   const v0 = remote && remote.version;
   applyingRemoteConfig = true;
   state.config = remote;
@@ -2443,7 +2447,7 @@ function applyRemoteConfig(remote) {
   // open editor device set() the whole catalog on every config event —
   // racing whoever was actually editing.
   if (upgraded && canEdit() && state.config.version !== v0) schedulePushConfig();
-  if (appStarted && JSON.stringify(state.config) !== beforeJson) {
+  if (appStarted && JSON.stringify(syncCanon(state.config)) !== beforeJson) {
     // A config change can move points (double-points flag, a deleted game with
     // a result, a restore). It arrived from ELSEWHERE, so renderStandings must
     // treat the totals shift as remote — exactly as applyRemoteState does —
@@ -8420,7 +8424,11 @@ function renderAll() {
   const setDownBoardCelebrations = holdBoardCelebrations(); // see there
   // Builder visibility is derived from state every render — settings.js
   // navigates by mutating state.ui.view, not by calling open/close helpers.
-  if (state.ui.view === 'settings' && !canEdit()) state.ui.view = 'home';
+  if (state.ui.view === 'settings' && !canEdit()) {
+    state.ui.view = 'home';
+    // Don't strand a half-edited game behind the closed builder.
+    if (typeof discardGameDraft === 'function') discardGameDraft();
+  }
   const inBuilder = builderOpen();
   document.body.classList.toggle('builder-open', inBuilder);
   const builderView = document.getElementById('settings-view');
@@ -8469,8 +8477,14 @@ function builderOpen() {
   return state.ui.view === 'settings';
 }
 
+// Where the scoreboard was scrolled when the builder opened. body.builder-open
+// display:none's the home cards, so the page collapses (and scrollY with it)
+// while the builder is up; settings.js's back button scrolls back here.
+let builderReturnY = 0;
+
 function openBuilder(tab) {
   if (!canEdit()) return;
+  builderReturnY = window.scrollY;
   closeSettings(); // hand off from the settings sheet
   state.ui.view = 'settings';
   if (tab) state.ui.settingsTab = tab;
@@ -8690,24 +8704,84 @@ function joyCelebrate() {
 }
 
 // Delegated press feedback: scale down on touch, spring back on release.
+// The press waits a beat (JOY_PRESS_DELAY_MS) and is called off if the finger
+// travels: a finger put down on a row to SCROLL the list used to shrink the
+// row to 93% and then snap it back when the scroll took over — a twitch on
+// nearly every touch-scroll. A quick tap that lifts before the delay still
+// gets the pop (joyPop, from rest), so taps still feel springy.
+const JOY_PRESS_DELAY_MS = 80;
+const JOY_PRESS_SLOP_PX = 8;
+let joyPress = null; // { el, x, y, timer } — the press in progress, if any
+
+// Called off mid-gesture (a scroll took over, or the finger slid away). Eases
+// back from the pressed scale if it was already showing, instead of snapping.
+function joyPressAbort() {
+  const p = joyPress;
+  joyPress = null;
+  if (!p) return;
+  clearTimeout(p.timer);
+  if (!p.el.classList.contains('joy-pressed')) return;
+  p.el.classList.remove('joy-pressed');
+  p.el.classList.add('joy-release');
+  setTimeout(() => p.el.classList.remove('joy-release'), 200);
+}
+
 document.addEventListener('pointerdown', (e) => {
   joyLastTap = { x: e.clientX, y: e.clientY };
+  joyPressAbort();
   if (JOY_REDUCED.matches) return;
   const t = e.target.closest && e.target.closest(JOY_TAPPABLE);
-  if (t) t.classList.add('joy-pressed');
+  if (!t) return;
+  const p = { el: t, x: e.clientX, y: e.clientY, timer: 0 };
+  p.timer = setTimeout(() => { if (joyPress === p) t.classList.add('joy-pressed'); }, JOY_PRESS_DELAY_MS);
+  joyPress = p;
 }, { passive: true });
 
+document.addEventListener('pointermove', (e) => {
+  if (joyPress && Math.hypot(e.clientX - joyPress.x, e.clientY - joyPress.y) > JOY_PRESS_SLOP_PX) joyPressAbort();
+}, { passive: true });
+
+// The pop after a release. `fromRest` = the press never painted (a quick tap,
+// lifted inside JOY_PRESS_DELAY_MS): popping from the pressed 93% would snap
+// the control in one frame — the same twitch the delay removed — so that pop
+// starts at rest (styles.css, joy-pop-quick).
+function joyPop(el, fromRest) {
+  const cls = fromRest ? 'joy-pop-quick' : 'joy-pop';
+  el.classList.add(cls);
+  setTimeout(() => el.classList.remove(cls), 460);
+}
+
 document.addEventListener('pointerup', () => {
+  const p = joyPress;
+  joyPress = null;
+  if (p) {
+    clearTimeout(p.timer);
+    if (!p.el.classList.contains('joy-pressed')) joyPop(p.el, true);
+  }
   document.querySelectorAll('.joy-pressed').forEach((el) => {
     el.classList.remove('joy-pressed');
-    el.classList.add('joy-pop');
-    setTimeout(() => el.classList.remove('joy-pop'), 460);
+    joyPop(el, false);
   });
 }, { passive: true });
 
 document.addEventListener('pointercancel', () => {
+  joyPressAbort();
   document.querySelectorAll('.joy-pressed').forEach((el) => el.classList.remove('joy-pressed'));
 }, { passive: true });
+
+// Card contents rise in when a home card OPENS (styles.css, .card-opening).
+// The class is transient on purpose: a CSS animation restarts whenever an
+// element goes from display:none back to shown, so an always-on rule replayed
+// the rise on every open card each time the builder or chat takeover closed.
+// Only the card's own toggle counts — a <details> inside it firing `toggle`
+// must not re-run the whole card.
+document.addEventListener('toggle', (e) => {
+  const c = e.target;
+  if (!c || !c.matches || !c.matches('jelly-collapsible.collapsible-card') || !c.hasAttribute('open')) return;
+  c.classList.add('card-opening');
+  clearTimeout(c.__openingTimer);
+  c.__openingTimer = setTimeout(() => c.classList.remove('card-opening'), 700);
+}, true);
 
 // Sparkle on every real button push (not on text fields). Card headers are
 // jelly-collapsible shadow buttons — the host is the click target out here,

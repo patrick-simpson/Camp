@@ -63,6 +63,7 @@ function makeContext(opts) {
   // needing a defensive null check it doesn't need in the browser.
   const byId = new Map();
   const bySelector = new Map();
+  const docListeners = {};
   const doc = {
     documentElement: stubEl(),
     body: stubEl(),
@@ -81,7 +82,10 @@ function makeContext(opts) {
     querySelectorAll: () => [],
     createElement: stubEl,
     createElementNS: stubEl,
-    addEventListener: noop,
+    // Recorded (never fired by the harness itself) so a test can reach the
+    // delegated handlers app.js registers on `document` at load — the joy-press
+    // pointer handlers, the card `toggle` listener — by type: __docListeners.
+    addEventListener: (type, fn) => { (docListeners[type] = docListeners[type] || []).push(fn); },
     removeEventListener: noop,
   };
 
@@ -136,6 +140,7 @@ function makeContext(opts) {
     // Deliberately absent, so the app takes its no-sync / no-audio / no-notify
     // branches unless a test stubs them: firebase, AudioContext, Notification.
     __localStorageStore: store,
+    __docListeners: docListeners,
     __reloads: 0,
   };
   sandbox.window = sandbox;

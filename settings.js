@@ -22,80 +22,219 @@ const SETTINGS_TABS = [
 let gameDraft = null;
 let gameDraftFor = null; // which editGameId gameDraft was built for
 let gameDraftSnapshot = '';
+let gameDraftSource = ''; // canonical JSON of the saved game the draft was built from
 let extrasOpen = false;
 let quickGamePrefill = null; // one-shot defaults for the next new-game draft
 
 // True while the game editor holds unsaved edits. app.js's editorMidEntry()
 // checks this so the update-poll auto-reload and remote merges never wipe a
-// half-built game.
+// half-built game. Only while the editor is actually open: a draft stranded
+// behind a closed builder used to keep editorMidEntry() true forever — that
+// phone silently stopped adopting other editors' scores and never reloaded.
 function builderDirty() {
-  return !!gameDraft && JSON.stringify(gameDraft) !== gameDraftSnapshot;
+  return state.ui.view === 'settings' && !!state.ui.editGameId &&
+    !!gameDraft && JSON.stringify(gameDraft) !== gameDraftSnapshot;
+}
+
+// Close the game editor and drop its draft. Also called by app.js's renderAll
+// when it force-closes the builder for a device that lost editor access.
+function discardGameDraft() {
+  state.ui.editGameId = null;
+  gameDraft = null;
+  gameDraftFor = null;
 }
 
 // ── Entry point ───────────────────────────────────────────────────
 
-// Fill one builder section's card. Exposed so the tab-change handler can
-// refresh a single panel without re-rendering the whole view.
+// Fill one builder section's card. Called for the ACTIVE card by renderSettings
+// and for the newly shown one by the tab-change handler; each tab writes its
+// markup through setHtmlIfChanged, so an unchanged card costs nothing.
+//
+// Rewriting a card briefly collapses the page while its new Jelly elements
+// upgrade (their connectedCallbacks force layout), and the browser clamps
+// scrollY to that momentary height — every reorder, add, or remote update
+// threw the builder back to the top. Put the offset back in the same task,
+// before anything paints. Opening a game from the list (or going back to the
+// list) is a new view, so that one starts at the top, as it always did.
 function renderSettingsSection(key, card) {
+  const y = window.scrollY;
+  const cardView = key === 'games' && state.ui.editGameId ? 'game:' + state.ui.editGameId : key;
+  const newView = card.__view !== undefined && card.__view !== cardView;
+  card.__view = cardView;
   if (key === 'games' && state.ui.editGameId) renderGameEditor(card);
   else if (key === 'days') renderDaysTab(card);
   else if (key === 'teams') renderTeamsTab(card);
   else if (key === 'notice') renderNoticeTab(card);
   else if (key === 'data') renderDataTab(card);
   else renderGamesTab(card);
+  if (newView) window.scrollTo(0, 0);
+  else if (window.scrollY !== y) window.scrollTo(0, y);
+}
+
+// A freshly created jelly-tabs places its pill under the FIRST tab (its
+// segments haven't upgraded when it first measures), then springs it across
+// to the real one — half a second of a wobbling pill over the wrong label.
+// Snap it home in the same task. Only for programmatic placement: a user's
+// own tap keeps the spring.
+function settleBuilderTabPill(tabs) {
+  const seg = tabs && tabs.shadowRoot && tabs.shadowRoot.querySelector('jelly-segmented');
+  if (!seg || typeof seg.pillTarget !== 'number') return;
+  seg.pillX = seg.pillTarget;
+  seg.pillXVelocity = 0;
+  if (typeof seg.requestFrame === 'function') seg.requestFrame();
 }
 
 function renderSettings() {
   const view = document.getElementById('settings-view');
   if (!view) return;
   const tab = state.ui.settingsTab || 'games';
-  const updatedLine = state.config.updatedAt
-    ? `<p class="muted">Last edited ${esc(new Date(state.config.updatedAt).toLocaleString())}</p>`
-    : '';
+  const updatedStamp = formatEasternStamp(state.config.updatedAt); // camp time, like the footer
+  const updatedLine = updatedStamp ? `<p class="muted">Last edited ${esc(updatedStamp)}</p>` : '';
 
-  // A jelly-tabs with all four sections as pre-rendered panels: switching is
-  // handled by the component (pill spring + panel fade), no renderAll
-  // round-trip. jelly-tabs derives its tab bar from the panels at connect,
-  // so this render always writes a fresh element.
-  view.innerHTML = `
-    <button class="link-btn back-btn" id="settings-back-btn">← Back to scoreboard</button>
-    <h2>Set up the week</h2>
-    ${updatedLine}
-    <jelly-tabs class="settings-tabs" size="small" value="${esc(tab)}">
-      ${SETTINGS_TABS.map((t) =>
-        `<jelly-tab-panel value="${t.key}" label="${esc(t.label)}"${t.key === tab ? ' active' : ''}>
-          <div class="card settings-card" data-settings-card="${t.key}"></div>
-        </jelly-tab-panel>`).join('')}
-    </jelly-tabs>
-  `;
+  // A jelly-tabs with one panel per section: switching is handled by the
+  // component (pill spring + panel fade), no renderAll round-trip. The shell
+  // is built ONCE and kept — re-creating it on every renderAll re-sprang the
+  // pill from the Games tab, cost a ~1 s freeze on a phone (all five cards
+  // rebuilt, four of them hidden) and threw the page back to the top. Only
+  // the active card is refreshed here; a hidden one is refreshed when its tab
+  // is shown (the change handler below).
+  let tabs = view.querySelector('jelly-tabs.settings-tabs');
+  if (!tabs) {
+    view.innerHTML = `
+      <button class="link-btn back-btn" id="settings-back-btn">← Back to scoreboard</button>
+      <h2>Set up the week</h2>
+      <div class="settings-updated"></div>
+      <jelly-tabs class="settings-tabs" size="small" value="${esc(tab)}">
+        ${SETTINGS_TABS.map((t) =>
+          `<jelly-tab-panel value="${t.key}" label="${esc(t.label)}"${t.key === tab ? ' active' : ''}>
+            ${t.key === 'games' ? '' : '<div class="settings-unsaved"></div>'}
+            <div class="card settings-card" data-settings-card="${t.key}"></div>
+          </jelly-tab-panel>`).join('')}
+      </jelly-tabs>
+    `;
+    tabs = view.querySelector('jelly-tabs.settings-tabs');
 
-  document.getElementById('settings-back-btn').addEventListener('click', () => {
-    state.ui.view = 'home';
-    state.ui.editGameId = null;
-    saveState();
-    renderAll();
-  });
+    document.getElementById('settings-back-btn').addEventListener('click', () => {
+      // Same guard as "← All games" and Cancel (leaveGameEditor) — the open
+      // editor may be on another tab, so name the game.
+      if (builderDirty()) {
+        const what = gameDraft.name && gameDraft.name.trim() ? '"' + gameDraft.name.trim() + '"' : 'this game';
+        if (!confirm('Discard your unsaved changes to ' + what + '?')) {
+          if (state.ui.settingsTab !== 'games') { state.ui.settingsTab = 'games'; saveState(); renderAll(); }
+          return;
+        }
+      }
+      discardGameDraft();
+      state.ui.view = 'home';
+      saveState();
+      renderAll();
+      // The home cards were display:none behind the builder, so the page had
+      // collapsed under it — put the scoreboard back where it was.
+      if (typeof builderReturnY === 'number') window.scrollTo(0, builderReturnY);
+    });
 
-  view.querySelector('jelly-tabs.settings-tabs').addEventListener('change', (e) => {
-    const key = e.detail && e.detail.value;
-    if (!key || key === state.ui.settingsTab) return;
-    state.ui.settingsTab = key;
-    // Leaving the game editor mid-edit discards the draft (same semantics as
-    // before) — refresh just the games panel back to its list; the component
-    // has already swapped the visible panel, so no renderAll.
-    if (state.ui.editGameId) {
-      state.ui.editGameId = null;
-      gameDraft = null;
-      gameDraftFor = null;
-      const gamesCard = view.querySelector('[data-settings-card="games"]');
-      if (gamesCard) renderSettingsSection('games', gamesCard);
-    }
-    saveState();
-  });
+    view.querySelectorAll('.settings-unsaved').forEach((note) => {
+      note.addEventListener('click', (e) => {
+        if (!e.target.closest || !e.target.closest('[data-act="unsaved-go"]')) return;
+        state.ui.settingsTab = 'games';
+        saveState();
+        renderAll(); // renderSettings moves the tabs and shows the open editor
+      });
+    });
 
+    tabs.addEventListener('change', (e) => {
+      const key = e.detail && e.detail.value;
+      if (!key || key === state.ui.settingsTab) return;
+      state.ui.settingsTab = key;
+      // An open game editor (and its unsaved draft) stays where it is — it's
+      // still there when Games is tapped again. This used to throw the draft
+      // away with no confirm, unlike "← All games" and Cancel. builderDirty()
+      // stays true meanwhile, so remote merges and auto-reload can't wipe it.
+      // The component has already swapped the visible panel; bring that card
+      // up to date before it paints (a no-op when nothing changed).
+      const card = view.querySelector(`[data-settings-card="${key}"]`);
+      if (card) renderSettingsSection(key, card);
+      syncUnsavedNotes(view);
+      saveState();
+    });
+    settleBuilderTabPill(tabs);
+  } else if (tabs.getAttribute('value') !== tab) {
+    // Programmatic (openBuilder with a tab): the change handler sees the key
+    // already recorded and returns, so the card is refreshed below.
+    tabs.setAttribute('value', tab);
+    settleBuilderTabPill(tabs);
+  }
+
+  setHtmlIfChanged(view.querySelector('.settings-updated'), updatedLine);
+  // Without the Jelly module (html.jelly-failed — iOS < 16.4 can't parse it)
+  // there is no tab bar to reveal a hidden card and every panel shows, so
+  // fill them all, as before.
+  const tabbed = typeof customElements !== 'undefined' && !!customElements.get('jelly-tabs');
   SETTINGS_TABS.forEach((t) => {
-    renderSettingsSection(t.key, view.querySelector(`[data-settings-card="${t.key}"]`));
+    if (tabbed && t.key !== tab) return;
+    const card = view.querySelector(`[data-settings-card="${t.key}"]`);
+    if (card) renderSettingsSection(t.key, card);
   });
+  syncUnsavedNotes(view);
+  if (tabbed) scheduleBuilderPrefill();
+}
+
+// A game draft with edits in it survives a trip to another tab (see the
+// change handler) — and while it does, this phone holds off remote merges and
+// the update auto-reload. Nothing else says an unsaved game is open, so every
+// other tab carries a one-line reminder with a way back. The note sits INSIDE
+// the panel, under the tab bar, so showing it never moves the bar itself.
+function syncUnsavedNotes(view) {
+  const dirty = builderDirty();
+  const name = dirty && gameDraft.name && gameDraft.name.trim();
+  const what = name ? '"' + name + '"' : 'a game';
+  view.querySelectorAll('.settings-unsaved').forEach((note) => {
+    setHtmlIfChanged(note, dirty
+      ? `<p class="warn-note">Unsaved changes to ${esc(what)} are waiting on the <button type="button" class="link-btn" data-act="unsaved-go">Games tab</button>.</p>`
+      : '');
+  });
+}
+
+// Hidden cards are built in idle time, one per slice, after the active card:
+// a card first built inside the tab-change handler stalled the main thread
+// (270-680 ms per tab on a 4x-throttled CPU) right as the pill spring began,
+// and building them all inside renderAll was the ~1.3 s freeze this replaced.
+// Only never-built cards are touched here — a built one is refreshed when its
+// tab is shown, as before — so a result snapshot still costs the active card
+// alone. (A card that was never filled has no __view; renderSettingsSection
+// sets it.)
+let builderPrefillTimer = 0;
+
+function nextUnbuiltBuilderCard(view) {
+  const active = state.ui.settingsTab || 'games';
+  for (const t of SETTINGS_TABS) {
+    if (t.key === active) continue;
+    const card = view.querySelector(`[data-settings-card="${t.key}"]`);
+    if (card && card.__view === undefined) return { key: t.key, card };
+  }
+  return null;
+}
+
+function scheduleBuilderPrefill() {
+  if (builderPrefillTimer) return;
+  const view = document.getElementById('settings-view');
+  if (!view || !nextUnbuiltBuilderCard(view)) return;
+  const run = () => { builderPrefillTimer = 0; prefillBuilderCard(); };
+  // Safari has no requestIdleCallback; a short timeout is the same idea.
+  builderPrefillTimer = typeof requestIdleCallback === 'function'
+    ? requestIdleCallback(run, { timeout: 2000 })
+    : setTimeout(run, 150);
+}
+
+function prefillBuilderCard() {
+  const view = document.getElementById('settings-view');
+  // Builder closed meanwhile (or never connected): stop; the next open's
+  // renderSettings starts it again.
+  if (!view || state.ui.view !== 'settings') return;
+  const next = nextUnbuiltBuilderCard(view);
+  if (!next) return;
+  renderSettingsSection(next.key, next.card);
+  scheduleBuilderPrefill();
 }
 
 // ── Small shared helpers ──────────────────────────────────────────
@@ -207,10 +346,22 @@ function renderGamesTab(card) {
     groupsHTML += unscheduled.map((g) => gameRowHTML(g, games, dayIds)).join('');
   }
 
-  card.innerHTML = `
+  const wrote = setHtmlIfChanged(card, `
     <jelly-button class="primary-btn" id="new-game-btn">+ New game</jelly-button>
     ${groupsHTML}
-  `;
+  `);
+  // The result dots are the only thing a score changes here, so they're
+  // patched in place instead of being part of the markup: rebuilding ~70
+  // Jelly controls froze a phone for most of a second every time anyone
+  // saved a score while this list was open. Re-stamp the DOM snapshot so the
+  // next setHtmlIfChanged knows the patch was ours.
+  let patched = false;
+  card.querySelectorAll('.result-dot[data-game-id]').forEach((dot) => {
+    const off = !state.results[dot.dataset.gameId];
+    if (dot.hidden !== off) { dot.hidden = off; patched = true; }
+  });
+  if (patched) card.__dom = card.innerHTML;
+  if (!wrote) return;
 
   document.getElementById('new-game-btn').addEventListener('click', () => {
     state.ui.editGameId = 'new';
@@ -225,7 +376,8 @@ function gameRowHTML(g, games, dayIds) {
   const group = games.filter((x) => gameGroupKey(x, dayIds) === gameGroupKey(g, dayIds));
   const idx = group.indexOf(g);
   const badge = FORMAT_BADGES[g.format] || { label: g.format || '?', cls: '' };
-  const hasResult = !!state.results[g.id];
+  // The dot is always in the markup, hidden; renderGamesTab shows it when the
+  // game has a saved result (patched in place — see there).
   return `
     <div class="builder-row game-row">
       <jelly-icon-button class="reorder-btn" label="Move up" data-game-id="${esc(g.id)}" data-dir="-1" ${idx <= 0 ? 'disabled' : ''}>↑</jelly-icon-button>
@@ -234,7 +386,7 @@ function gameRowHTML(g, games, dayIds) {
         <span class="game-emoji">${esc(g.emoji || '')}</span>
         <span class="game-row-name">${esc(g.name)}</span>
         <jelly-badge class="format-badge" variant="${esc(badge.variant || 'platinum')}" size="small">${esc(badge.label)}</jelly-badge>
-        ${hasResult ? '<span class="result-dot" title="Has a saved result">●</span>' : ''}
+        <span class="result-dot" data-game-id="${esc(g.id)}" title="Has a saved result" hidden>●</span>
       </button>
     </div>
   `;
@@ -337,17 +489,29 @@ function toEditableDraft(game) {
   return d;
 }
 
+// Canonical form (RTDB key order, nulls pruned) so a config echo that only
+// re-sorted keys doesn't read as somebody else's edit.
+function gameSourceKey(g) {
+  return g ? JSON.stringify(syncCanon(g)) : '';
+}
+
 function ensureGameDraft() {
   const editId = state.ui.editGameId;
-  if (gameDraftFor === editId && gameDraft) return;
-  gameDraftFor = editId;
-  extrasOpen = false;
-  if (editId === 'new') {
-    gameDraft = toEditableDraft(newGameShape());
+  if (gameDraftFor === editId && gameDraft) {
+    // A draft with edits in it (and any new-game draft) is the user's work —
+    // keep it. A CLEAN draft of a saved game is refreshed when another editor
+    // changes that game: it used to keep showing the old values, and the
+    // next Save silently wrote them back over the other editor's change.
+    if (editId === 'new' || JSON.stringify(gameDraft) !== gameDraftSnapshot) return;
+    const saved = gameById(editId);
+    if (!saved || gameSourceKey(saved) === gameDraftSource) return;
   } else {
-    const g = gameById(editId);
-    gameDraft = g ? toEditableDraft(g) : toEditableDraft(newGameShape());
+    extrasOpen = false; // a refresh keeps the user's own disclosure state
   }
+  gameDraftFor = editId;
+  const g = editId === 'new' ? null : gameById(editId);
+  gameDraft = toEditableDraft(g || newGameShape());
+  gameDraftSource = gameSourceKey(g);
   gameDraftSnapshot = JSON.stringify(gameDraft);
 }
 
@@ -357,7 +521,13 @@ function renderGameEditor(card) {
   const isNew = state.ui.editGameId === 'new';
   const hasSavedResult = !isNew && !!state.results[draft.id];
 
-  card.innerHTML = `
+  // wireGameEditor closes over the draft OBJECT, so a rebuilt draft (another
+  // game, or a clean one refreshed from a remote edit) must be re-wired even
+  // when its markup happens to match — or the inputs would edit the old copy.
+  // #gd-error sits BELOW Save on purpose: appearing above it pushed Save down
+  // under the finger that had just tapped it.
+  if (card.__draft !== draft) card.__html = null;
+  if (!setHtmlIfChanged(card, `
     <button type="button" class="link-btn back-btn" id="editor-back-btn">← All games</button>
     <h2>${isNew ? 'New game' : 'Edit game'}</h2>
     ${hasSavedResult ? '<p class="warn-note">This game has a saved result — changing its format will clear that result when you save.</p>' : ''}
@@ -415,11 +585,11 @@ function renderGameEditor(card) {
     <div id="gd-rules">${rulesEditorHTML(draft)}</div>
     <button type="button" class="link-btn" id="gd-add-rule">+ Add section</button>
 
-    <p class="entry-error" id="gd-error" hidden></p>
     <div class="editor-actions">
       <jelly-button class="primary-btn" id="gd-save-btn">Save game</jelly-button>
       <button type="button" class="link-btn" id="gd-cancel-btn">Cancel</button>
     </div>
+    <p class="entry-error" id="gd-error" hidden></p>
 
     ${!isNew ? `
       <div class="editor-footer">
@@ -427,7 +597,8 @@ function renderGameEditor(card) {
         <button type="button" class="link-btn danger-link" id="gd-delete-btn">Delete game</button>
       </div>
     ` : ''}
-  `;
+  `)) return;
+  card.__draft = draft;
 
   wireGameEditor(card);
 }
@@ -489,7 +660,7 @@ function tournamentFieldsHTML(draft) {
           <jelly-input class="form-input" id="gd-tracker-innings" type="text" value="${esc(t.innings || '')}" placeholder="1"></jelly-input>
         </div>
         <div class="form-field">
-          <label class="form-label">Outs per side (0 = none)</label>
+          <label class="form-label">Outs per side</label>
           <jelly-input class="form-input" id="gd-tracker-outs" type="text" value="${esc(t.outs == null ? '' : t.outs)}" placeholder="0"></jelly-input>
         </div>
       </div>
@@ -546,6 +717,19 @@ function wireGameEditor(card) {
 
   document.getElementById('editor-back-btn').addEventListener('click', leaveGameEditor);
   document.getElementById('gd-cancel-btn').addEventListener('click', leaveGameEditor);
+
+  // A validation message answers the LAST Save tap — the next edit clears it,
+  // instead of "Give the game a name." staying up beside a name. Delegated on
+  // the card (which outlives each re-render), so it's attached only once.
+  if (!card.__clearsGameError) {
+    card.__clearsGameError = true;
+    const clearError = () => {
+      const errEl = document.getElementById('gd-error');
+      if (errEl && !errEl.hidden) errEl.hidden = true;
+    };
+    card.addEventListener('input', clearError);
+    card.addEventListener('change', clearError);
+  }
 
   document.getElementById('gd-name').addEventListener('input', (e) => { draft.name = e.target.value; });
   document.getElementById('gd-emoji').addEventListener('input', (e) => { draft.emoji = e.target.value; });
@@ -669,9 +853,7 @@ function leaveGameEditor() {
   if (JSON.stringify(gameDraft) !== gameDraftSnapshot) {
     if (!confirm('Discard your changes to this game?')) return;
   }
-  state.ui.editGameId = null;
-  gameDraft = null;
-  gameDraftFor = null;
+  discardGameDraft();
   saveState();
   renderAll();
 }
@@ -720,6 +902,9 @@ function saveGameDraft() {
   if (err) {
     errEl.textContent = err;
     errEl.hidden = false;
+    // The message sits BELOW Save (so Save never moves under the finger), which
+    // on a new game is at the foot of the page — bring it into view.
+    if (typeof errEl.scrollIntoView === 'function') errEl.scrollIntoView({ block: 'nearest' });
     return;
   }
   errEl.hidden = true;
@@ -868,12 +1053,13 @@ function deleteGame(gameId) {
 
 function renderDaysTab(card) {
   const days = state.config.days || [];
-  card.innerHTML = `
+  // Unchanged ⇒ untouched (the wiring re-reads state at tap time, so the
+  // existing listeners stay correct).
+  if (setHtmlIfChanged(card, `
     <h3>Days (${days.length})</h3>
     ${days.length ? days.map((day, i) => dayRowHTML(day, i, days.length)).join('') : '<p class="muted">No days yet — add your first day.</p>'}
     <jelly-button class="secondary-btn" variant="platinum" id="add-day-btn">+ Add day</jelly-button>
-  `;
-  wireDaysTab(card);
+  `)) wireDaysTab(card);
 }
 
 function dayRowHTML(day, i, total) {
@@ -999,26 +1185,32 @@ function renderTeamsTab(card) {
   const warn = teams.length !== 6
     ? `<p class="warn-note">⚠️ The bracket wizard is designed for 6 teams — you have ${teams.length}${CAMP.teamCount !== 6 ? ` (this camp normally runs ${CAMP.teamCount})` : ''}. Bracket games may need improvising.</p>`
     : '';
-  card.innerHTML = `
+  // Unchanged ⇒ untouched (the wiring re-reads state.teams at tap time).
+  if (setHtmlIfChanged(card, `
     <h3>Teams (${teams.length})</h3>
     ${teams.length ? teams.map((t, i) => teamRowHTML(t, i, teams.length)).join('') : '<p class="muted">No teams yet. Add at least two to run games.</p>'}
     <jelly-button class="secondary-btn" variant="platinum" id="add-team-btn">+ Add team</jelly-button>
     ${warn}
-  `;
-  wireTeamsTab(card);
+  `)) wireTeamsTab(card);
 }
 
+// Controls on their own line above full-width inputs (same shape as a day
+// row): squeezed between the arrows and ✕ in one row, the name inputs were
+// ~160px on a phone and clipped most team names while they were being edited.
 function teamRowHTML(team, i, total) {
   const disableDelete = total <= 2;
   return `
-    <div class="builder-row team-builder-row">
-      <jelly-icon-button class="reorder-btn" label="Move up" data-team-id="${esc(team.id)}" data-dir="-1" ${i === 0 ? 'disabled' : ''}>↑</jelly-icon-button>
-      <jelly-icon-button class="reorder-btn" label="Move down" data-team-id="${esc(team.id)}" data-dir="1" ${i === total - 1 ? 'disabled' : ''}>↓</jelly-icon-button>
+    <div class="rules-section-editor team-builder-row">
+      <div class="builder-row">
+        <jelly-icon-button class="reorder-btn" label="Move up" data-team-id="${esc(team.id)}" data-dir="-1" ${i === 0 ? 'disabled' : ''}>↑</jelly-icon-button>
+        <jelly-icon-button class="reorder-btn" label="Move down" data-team-id="${esc(team.id)}" data-dir="1" ${i === total - 1 ? 'disabled' : ''}>↓</jelly-icon-button>
+        <span class="day-index-label">Team ${i + 1}</span>
+        <jelly-icon-button class="row-delete-btn" variant="rose" label="Delete team" data-team-id="${esc(team.id)}" ${disableDelete ? 'disabled title="Keep at least 2 teams"' : ''}>✕</jelly-icon-button>
+      </div>
       <span class="team-builder-fields">
         <jelly-input class="form-input team-name-input" data-team-id="${esc(team.id)}" type="text" value="${esc(team.name)}" label="Team name"></jelly-input>
         <jelly-input class="form-input team-counselor-input" data-team-id="${esc(team.id)}" type="text" value="${esc(team.counselor || '')}" placeholder="Counselor(s)" label="Counselors"></jelly-input>
       </span>
-      <jelly-icon-button class="row-delete-btn" variant="rose" label="Delete team" data-team-id="${esc(team.id)}" ${disableDelete ? 'disabled title="Keep at least 2 teams"' : ''}>✕</jelly-icon-button>
     </div>
   `;
 }
@@ -1136,7 +1328,9 @@ function renderNoticeTab(card) {
   const posted = n.status === 'posted';
   const unassigned = (state.teams || []).filter((t) => !n.zones.some((z) => z.teamId === t.id));
 
-  card.innerHTML = `
+  // Unchanged ⇒ untouched. Safe even when a remote snapshot has replaced
+  // state.notice: wireNoticeTab's handlers look the notice up when they fire.
+  if (!setHtmlIfChanged(card, `
     <div class="notice-status-row ${posted ? 'is-posted' : 'is-draft'}">
       <div>
         <div class="notice-status-label">${posted ? '🟢 Posted to every phone' : '📝 Draft — nobody can see it'}</div>
@@ -1203,7 +1397,7 @@ function renderNoticeTab(card) {
       <button type="button" class="link-btn danger-link" id="notice-reset-btn">Reset to the cleanup example</button>
       <button type="button" class="link-btn danger-link" id="notice-clear-btn">Clear it out</button>
     </div>
-  `;
+  `)) return;
   wireNoticeTab(card);
 }
 
@@ -1276,38 +1470,40 @@ function noticeCommit(full) {
 }
 
 function wireNoticeTab(card) {
-  const n = noticeBoard();
-
+  // Every handler reads the notice LIVE (noticeBoard()) rather than closing
+  // over the object: a remote snapshot replaces state.notice, and renderNoticeTab
+  // keeps an unchanged card (and these listeners) rather than rebuilding it, so
+  // a captured copy would be an orphan nobody ever saves.
   card.querySelectorAll('.nb-field').forEach((el) => {
     el.addEventListener('change', () => {
       const field = el.dataset.nbField;
       if (!['eyebrow', 'title', 'sub', 'signoff'].includes(field)) return;
-      n[field] = el.value;
+      noticeBoard()[field] = el.value;
       noticeCommit(false);
     });
   });
 
   card.querySelectorAll('.nb-zone-place').forEach((el) => {
     el.addEventListener('change', () => {
-      const z = n.zones[+el.dataset.idx];
+      const z = noticeBoard().zones[+el.dataset.idx];
       if (z) { z.place = el.value.trim(); noticeCommit(false); }
     });
   });
   card.querySelectorAll('.nb-zone-note').forEach((el) => {
     el.addEventListener('change', () => {
-      const z = n.zones[+el.dataset.idx];
+      const z = noticeBoard().zones[+el.dataset.idx];
       if (z) { z.note = el.value.trim(); noticeCommit(false); }
     });
   });
   card.querySelectorAll('.nb-zone-move').forEach((btn) => {
     btn.addEventListener('click', () => {
-      moveItem(n.zones, +btn.dataset.idx, parseInt(btn.dataset.dir, 10));
+      moveItem(noticeBoard().zones, +btn.dataset.idx, parseInt(btn.dataset.dir, 10));
       noticeCommit(true);
     });
   });
   card.querySelectorAll('.nb-zone-remove').forEach((btn) => {
     btn.addEventListener('click', () => {
-      n.zones.splice(+btn.dataset.idx, 1);
+      noticeBoard().zones.splice(+btn.dataset.idx, 1);
       noticeCommit(true);
     });
   });
@@ -1315,45 +1511,45 @@ function wireNoticeTab(card) {
   if (addZone) {
     addZone.addEventListener('change', () => {
       if (!addZone.value) return;
-      n.zones.push({ teamId: addZone.value, place: '', note: '' });
+      noticeBoard().zones.push({ teamId: addZone.value, place: '', note: '' });
       noticeCommit(true);
     });
   }
 
   card.querySelectorAll('.nb-step-emoji').forEach((el) => {
     el.addEventListener('change', () => {
-      const st = n.steps[+el.dataset.idx];
+      const st = noticeBoard().steps[+el.dataset.idx];
       if (st) { st.emoji = el.value.trim(); noticeCommit(false); }
     });
   });
   card.querySelectorAll('.nb-step-when').forEach((el) => {
     el.addEventListener('change', () => {
-      const st = n.steps[+el.dataset.idx];
+      const st = noticeBoard().steps[+el.dataset.idx];
       if (st) { st.when = el.value.trim(); noticeCommit(false); }
     });
   });
   card.querySelectorAll('.nb-step-items').forEach((el) => {
     el.addEventListener('change', () => {
-      const st = n.steps[+el.dataset.idx];
+      const st = noticeBoard().steps[+el.dataset.idx];
       if (st) { st.items = splitLines(el.value); noticeCommit(false); }
     });
   });
   card.querySelectorAll('.nb-step-move').forEach((btn) => {
     btn.addEventListener('click', () => {
-      moveItem(n.steps, +btn.dataset.idx, parseInt(btn.dataset.dir, 10));
+      moveItem(noticeBoard().steps, +btn.dataset.idx, parseInt(btn.dataset.dir, 10));
       noticeCommit(true);
     });
   });
   card.querySelectorAll('.nb-step-remove').forEach((btn) => {
     btn.addEventListener('click', () => {
-      n.steps.splice(+btn.dataset.idx, 1);
+      noticeBoard().steps.splice(+btn.dataset.idx, 1);
       noticeCommit(true);
     });
   });
   const addStep = document.getElementById('notice-add-step');
   if (addStep) {
     addStep.addEventListener('click', () => {
-      n.steps.push({ emoji: '', when: '', items: [] });
+      noticeBoard().steps.push({ emoji: '', when: '', items: [] });
       noticeCommit(true);
     });
   }
@@ -1361,7 +1557,7 @@ function wireNoticeTab(card) {
   const postBtn = document.getElementById('notice-post-btn');
   if (postBtn) {
     postBtn.addEventListener('click', () => {
-      const posting = n.status !== 'posted';
+      const posting = noticeBoard().status !== 'posted';
       if (posting && !confirm('Post this to every phone right now?')) return;
       setNoticeStatus(posting ? 'posted' : 'draft');
     });
@@ -1405,8 +1601,27 @@ function backupJSON() {
   return JSON.stringify(payload, null, 2);
 }
 
+// What's pasted into Restore, and the last import complaint, are kept here as
+// well as in the DOM: a rebuilt card used to come back empty, wiping a pasted
+// backup. They are put back AFTER a write rather than baked into the markup —
+// typing would then change the markup, and the next unrelated renderAll would
+// rebuild the card under the user's fingers (focus and keyboard gone).
+let restoreDraft = { text: '', error: '' };
+
+function showRestoreError(msg) {
+  restoreDraft.error = msg;
+  const errEl = document.getElementById('restore-error');
+  if (!errEl) return;
+  errEl.textContent = msg;
+  errEl.hidden = !msg;
+  // Our own patch, not a stray DOM change: re-stamp the card's snapshot so
+  // setHtmlIfChanged doesn't rebuild the card over it.
+  const card = errEl.closest && errEl.closest('.settings-card');
+  if (card) card.__dom = card.innerHTML;
+}
+
 function renderDataTab(card) {
-  card.innerHTML = `
+  if (!setHtmlIfChanged(card, `
     <div class="data-block">
       <h3>Back up</h3>
       <p class="muted">Your whole setup — teams, days, games, and saved scores.</p>
@@ -1426,7 +1641,10 @@ function renderDataTab(card) {
       <button type="button" class="link-btn danger-link" id="restore-defaults-btn">Restore default games &amp; days</button>
       <p class="muted">Week score reset lives on the scoreboard page.</p>
     </div>
-  `;
+  `)) return;
+  // A freshly written card is empty: put back the paste and the complaint.
+  if (restoreDraft.text) document.getElementById('restore-textarea').value = restoreDraft.text;
+  if (restoreDraft.error) showRestoreError(restoreDraft.error);
   wireDataTab(card);
 }
 
@@ -1439,8 +1657,13 @@ function wireDataTab(card) {
     downloadBlob(blob, 'camp-scoreboard-backup-' + new Date().toISOString().slice(0, 10) + '.json');
   });
 
+  const restoreText = document.getElementById('restore-textarea');
+  restoreText.addEventListener('input', () => {
+    restoreDraft.text = restoreText.value;
+    if (restoreDraft.error) showRestoreError(''); // the complaint was about the old text
+  });
   document.getElementById('import-text-btn').addEventListener('click', () => {
-    tryImport(document.getElementById('restore-textarea').value);
+    tryImport(restoreText.value);
   });
 
   const fileInput = document.getElementById('restore-file-input');
@@ -1457,13 +1680,11 @@ function wireDataTab(card) {
 }
 
 function tryImport(text) {
-  const errEl = document.getElementById('restore-error');
   let parsed;
   try {
     parsed = JSON.parse(text);
   } catch (e) {
-    errEl.textContent = "That doesn't look like a Camp Scoreboard backup. Copy it fresh and paste the whole thing.";
-    errEl.hidden = false;
+    showRestoreError("That doesn't look like a Camp Scoreboard backup. Copy it fresh and paste the whole thing.");
     return;
   }
 
@@ -1475,13 +1696,17 @@ function tryImport(text) {
   }
 
   if (!config) {
-    errEl.textContent = "That doesn't look like a Camp Scoreboard backup. Copy it fresh and paste the whole thing.";
-    errEl.hidden = false;
+    showRestoreError("That doesn't look like a Camp Scoreboard backup. Copy it fresh and paste the whole thing.");
     return;
   }
-  errEl.hidden = true;
+  showRestoreError('');
 
   if (!confirm("Replace this device's entire setup (teams, days, games) AND saved scores? This syncs to every device. Consider downloading a backup first.")) return;
+  // Imported — the box empties, as it always did. Cleared on the live field
+  // too: a card whose markup didn't change is no longer rebuilt.
+  restoreDraft.text = '';
+  const restoreText = document.getElementById('restore-textarea');
+  if (restoreText) restoreText.value = '';
 
   state.config = config;
   migrateState(state);
