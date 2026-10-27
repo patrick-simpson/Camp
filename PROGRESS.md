@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Tue Oct 27, 2:30 PM ET** (update this line every time the file changes)
+Last updated: **Tue Oct 27, 6:45 PM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -282,6 +282,10 @@ a "Decisions for the owner" list (ask ONE at a time, after the layout Qs).
     revealed until 8 AM; a new reveal replaces the previous one; any director
     can run the remote; the TV page with no reveal says "Waiting for the
     directors…".
+- **6:45 PM ET — container restarted mid-run; resumed** (task w5h3zd6cm,
+  same run id wf_333adf68-bea). Step 1 is LIVE as v185 (ceaf73e, Haiku live
+  check passed). Step 2 was built in the build worktree (3 commits, not yet
+  deployed); its review re-runs now, then Steps 2–4 continue.
 - **2:30 PM ET — BUILDING (phase A = BUILD-PLAN Steps 1–4).** Specs updated
   for the owner's answers (commit 63dec23; screen count dropped from the
   remote — owner OK). Step 0 (mockups in repo) already done. Build run script:
