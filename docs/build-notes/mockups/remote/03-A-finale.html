@@ -1,0 +1,100 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=390,initial-scale=1,viewport-fit=cover"><title>Remote A - finale</title><style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:390px;height:844px;overflow:hidden}
+body{position:relative;font-family:'Inter',system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;-webkit-font-smoothing:antialiased;font-feature-settings:'tnum' 1,'cv11' 1}
+.d{font-family:'Inter Display','Inter',system-ui,sans-serif;letter-spacing:-.022em}
+.sb{position:absolute;top:0;left:0;right:0;height:47px;z-index:30;display:flex;align-items:flex-start;justify-content:space-between;padding:15px 30px 0 38px;font-weight:700;font-size:16px;letter-spacing:-.01em}
+.sb .sy{display:flex;gap:6px;align-items:center;height:20px;margin-top:2px}
+.sb .tm{font-feature-settings:'tnum' 1}
+.notch{position:absolute;left:50%;top:0;width:158px;height:30px;margin-left:-79px;background:#000;border-radius:0 0 20px 20px}
+.hi{position:absolute;left:50%;bottom:8px;margin-left:-67px;width:134px;height:5px;border-radius:3px;z-index:30}
+img.sh{display:block;height:auto;filter:drop-shadow(0 3px 5px rgba(0,0,0,.28))}
+.md{display:inline-block;width:19px;height:19px;border-radius:50%;border:1.6px solid #121847;font-style:normal;font-size:11px;font-weight:900;line-height:16px;text-align:center;color:#121847;margin-right:5px;vertical-align:-4px}
+.md.g{background:#f2b632}.md.s{background:#c9d0da}.md.b{background:#cd8444}
+.meds{display:inline-flex;gap:11px;flex-wrap:nowrap;font-size:13px;font-weight:700;white-space:nowrap}
+.med{display:inline-flex;align-items:center}
+
+:root{--paper:#f6f0e4;--paper-2:#ebe3d1;--ink:#121847;--ink-2:#363d73;--ink-3:#6d7298;--blue:#3355ff;--blue-edge:#1c33b5;--blue-tint:#dfe5ff;--gold:#f7b928;--gold-edge:#96620a;--gold-tint:#fff1c7;--green:#1b8a4a;--live:#e0352b}
+body.A{background:var(--paper);color:var(--ink)}
+.hdr{height:109px;background:var(--blue);border-bottom:6px solid var(--blue-edge);padding:47px 16px 0;display:flex;align-items:center;gap:10px;color:#fff}
+.back{width:38px;height:38px;border-radius:50%;background:rgba(255,255,255,.2);display:grid;place-items:center;color:#fff;flex:none}
+.brand{display:flex;align-items:baseline;gap:7px;flex:1}
+.brand b{font-size:22px;font-weight:900;letter-spacing:.015em}
+.brand span{font-size:19px;font-weight:800;color:#ffd965;letter-spacing:-.01em}
+.pill{display:flex;align-items:center;gap:7px;background:#fff;color:var(--ink);font-size:14px;font-weight:800;border-radius:999px;padding:7px 13px 7px 11px;letter-spacing:-.005em}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--green);display:inline-block;flex:none}
+.dot.live{background:var(--live);box-shadow:0 0 0 3px rgba(224,53,43,.22)}
+.page{padding:12px 16px 0}
+.strip{background:var(--blue-tint);border-radius:16px;padding:11px 14px;font-size:14.5px;line-height:1.36;font-weight:600;color:var(--ink)}
+.strip b{font-weight:900}
+.card{background:#fff;border:3px solid var(--ink);border-radius:22px;box-shadow:0 6px 0 var(--ink)}
+.lbl{font-size:12px;font-weight:900;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-2)}
+.now{margin-top:14px;padding:13px 15px 15px}
+.now .top{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px}
+.livetag{display:flex;align-items:center;gap:6px;font-size:12px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;color:var(--live)}
+.now .body{display:flex;gap:14px;align-items:center}
+.now .tx{flex:1;min-width:0}
+.now .pl{font-size:38px;font-weight:900;line-height:1}
+.now .tn{font-size:19.5px;font-weight:800;margin-top:5px;line-height:1.12;letter-spacing:-.012em}
+.now .ln{display:flex;align-items:center;justify-content:space-between;margin-top:9px;gap:8px}
+.now .pts{font-size:30px;font-weight:900;line-height:1}
+.now .pts small{font-size:14px;font-weight:800;margin-left:3px;color:var(--ink-2)}
+.btn{display:flex;flex-direction:column;align-items:center;justify-content:center;border:3px solid var(--ink);border-radius:24px;font-weight:900;text-align:center}
+.btn small{font-size:14px;font-weight:700;letter-spacing:0;margin-top:3px}
+.btn.gold{background:var(--gold);border-color:var(--gold-edge);box-shadow:0 8px 0 var(--gold-edge);color:#1d1300}
+.btn.white{background:#fff;box-shadow:0 8px 0 var(--ink);color:var(--ink)}
+.btn.ink{background:var(--ink);border-color:var(--ink);box-shadow:0 8px 0 #060a2a;color:#fff}
+.btn.off{background:var(--paper-2);border-color:#b9b09b;box-shadow:0 8px 0 #b9b09b;color:#8b8573}
+.pair{display:grid;grid-template-columns:116px 1fr;gap:14px;margin-top:15px}
+.pair .btn{height:100px}
+.pair .btn .big{font-size:25px;line-height:1.05}
+.pair .btn.gold .big{font-size:40px}
+.trk{display:flex;gap:6px;margin-top:20px}
+.trk i{flex:1;height:34px;border-radius:10px;border:2.5px solid var(--ink);display:grid;place-items:center;font-style:normal;font-size:16px;font-weight:900}
+.trk i.done{background:var(--ink);color:#fff}
+.trk i.cur{background:var(--gold);border-color:var(--gold-edge);color:#1d1300;box-shadow:0 4px 0 var(--gold-edge)}
+.trk i.todo{border-style:dashed;border-color:var(--ink-3);color:var(--ink-3)}
+.trkcap{display:flex;justify-content:space-between;font-size:13px;font-weight:700;color:var(--ink-2);margin-top:7px}
+.priv{margin-top:16px;border:2.5px dashed var(--ink);border-radius:20px;padding:11px 13px 12px;background:repeating-linear-gradient(135deg,#fff6d9 0 9px,#ffeeb8 9px 18px)}
+.priv .top{display:flex;justify-content:space-between;align-items:center}
+.only{display:inline-flex;align-items:center;gap:6px;background:var(--ink);color:#fff;border-radius:999px;padding:4px 10px 4px 8px;font-size:12px;font-weight:800;letter-spacing:.01em}
+.priv .body{display:flex;align-items:center;gap:12px;margin-top:9px}
+.priv .nm{font-size:18.5px;font-weight:850;line-height:1.1;letter-spacing:-.012em}
+.priv .pl{font-size:13px;font-weight:800;color:var(--ink-2);text-transform:uppercase;letter-spacing:.08em;margin-bottom:2px}
+.priv .pp{font-size:24px;font-weight:900;margin-left:auto;text-align:right;line-height:1}
+.priv .pp small{display:block;font-size:12px;font-weight:800;color:var(--ink-2);margin-top:2px}
+.list{margin-top:15px;display:flex;align-items:center;justify-content:space-between;height:56px;padding:0 18px;font-size:19px;font-weight:900}
+.foot{position:absolute;left:0;right:0;bottom:48px;text-align:center;font-size:15px;font-weight:800;color:var(--ink-2);text-decoration:underline;text-underline-offset:3px;text-decoration-thickness:2px}
+</style></head>
+<body class="A"><div class="sb" style="color:#fff"><span class="tm">7:44</span><i class="notch"></i><span class="sy">
+<svg width="18" height="12" viewBox="0 0 18 12" fill="#fff"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg>
+<svg width="17" height="12" viewBox="0 0 17 12" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round"><path d="M1.5 4.2a10 10 0 0 1 14 0"/><path d="M4 7a6.4 6.4 0 0 1 9 0"/><circle cx="8.5" cy="10" r="1.2" fill="#fff" stroke="none"/></svg>
+<svg width="27" height="13" viewBox="0 0 27 13" fill="none"><rect x="0.7" y="0.7" width="22.6" height="11.6" rx="3.6" stroke="#fff" stroke-opacity=".5" stroke-width="1.4"/><rect x="2.4" y="2.4" width="19.2" height="8.2" rx="2.2" fill="#fff"/><path d="M25 4.4v4.2c.9-.3 1.6-1.2 1.6-2.1S25.900 4.700 25 4.400z" fill="#fff" fill-opacity=".55"/></svg></span></div>
+
+<header class="hdr"><span class="back"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5l-7 7 7 7"/></svg></span>
+<div class="brand d"><b>CAMP</b><span>Remote</span></div>
+<div class="pill"><i class="dot live"></i>Live</div></header>
+<main class="page">
+<div class="strip">Everything you press goes to every big screen (<b>2 online</b>) and to <b>11</b> counselor phones.</div>
+<section class="card now" style="background:var(--gold-tint);border-color:var(--ink);position:relative;overflow:hidden">
+  <i style="position:absolute;left:244px;top:152px;width:9px;height:14px;background:#e2672b;border-radius:2px;transform:rotate(22deg)"></i><i style="position:absolute;left:276px;top:170px;width:9px;height:14px;background:#3355ff;border-radius:2px;transform:rotate(-30deg)"></i><i style="position:absolute;left:306px;top:150px;width:9px;height:14px;background:#3a7d34;border-radius:2px;transform:rotate(50deg)"></i><i style="position:absolute;left:330px;top:172px;width:9px;height:14px;background:#c23b22;border-radius:2px;transform:rotate(12deg)"></i><i style="position:absolute;left:262px;top:184px;width:9px;height:14px;background:#f7b928;border-radius:2px;transform:rotate(-12deg)"></i><i style="position:absolute;left:339px;top:70px;width:9px;height:14px;background:#345b96;border-radius:2px;transform:rotate(35deg)"></i><i style="position:absolute;left:340px;top:104px;width:9px;height:14px;background:#e07d10;border-radius:2px;transform:rotate(-40deg)"></i><i style="position:absolute;left:6px;top:166px;width:9px;height:14px;background:#3355ff;border-radius:2px;transform:rotate(28deg)"></i><i style="position:absolute;left:28px;top:184px;width:9px;height:14px;background:#f7b928;border-radius:2px;transform:rotate(-35deg)"></i>
+  <div class="top"><span class="lbl" style="color:var(--ink)">On the screen now</span><span class="livetag"><i class="dot live"></i>Live</span></div>
+  <div class="body"><img class="sh " src="file:///home/user/Camp/images/team-shields/methodic-mediocre-maples.webp" style="width:92px" alt="">
+    <div class="tx"><div class="pl d" style="font-size:33px">1st place</div><div style="display:inline-block;margin-top:6px;background:var(--ink);color:#fff;border-radius:8px;padding:3px 9px;font-size:13px;font-weight:900;letter-spacing:.09em;text-transform:uppercase">Camp Champions</div>
+    <div class="tn" style="margin-top:7px">Methodic Mediocre Maples</div>
+    <div class="ln"><span class="pts d">30<small>pts</small></span></div></div></div>
+</section>
+<section class="priv" style="margin-top:14px;padding-bottom:11px">
+  <div class="top"><span class="lbl" style="color:var(--ink)">Up next</span><span class="only"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3l18 18"/><path d="M10.6 6.1A10.6 10.6 0 0 1 12 6c5.5 0 9 6 9 6a16.7 16.7 0 0 1-3.2 3.8M6.5 7.6C4 9.3 3 12 3 12s3.5 6 9 6a9.4 9.4 0 0 0 4-.9"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></svg>Only on this phone</span></div>
+  <div class="body" style="margin-top:6px;gap:10px"><div class="nm" style="font-size:18.5px">The full final table, all six places</div></div>
+</section>
+<div class="pair" style="margin-top:14px">
+  <div class="btn white"><span class="big d">‹ Back</span><small>To 2nd place</small></div>
+  <div class="btn gold"><span class="big d">Next ›</span><small>Show the final table</small></div>
+</div>
+<div class="trk"><i class="done">6</i><i class="done">5</i><i class="done">4</i><i class="done">3</i><i class="done">2</i><i class="cur">1</i></div>
+<div class="btn ink" style="height:92px;margin-top:24px;flex-direction:row;gap:14px;padding:0 20px;justify-content:space-between;text-align:left">
+  <span><span class="d" style="font-size:25px;display:block;line-height:1.05">End reveal</span><small style="display:block;margin-top:3px;font-size:13.5px;font-weight:600;line-height:1.25;color:#d5d9f5">Counselors keep the standings 5 more minutes, then they hide.</small></span>
+  <span class="d" style="flex:none;background:var(--gold);color:#1d1300;border-radius:14px;padding:7px 10px;font-size:21px;font-weight:900;line-height:1">5:00</span>
+</div>
+</main><i class="hi" style="background:#121847"></i></body></html>

@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Tue Oct 27, 6:40 AM ET** (update this line every time the file changes)
+Last updated: **Tue Oct 27, 7:05 AM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -236,6 +236,22 @@ a "Decisions for the owner" list (ask ONE at a time, after the layout Qs).
     counselor mirror + More/Director) into scratchpad/mockups/remote/.
   - Order from here: mockups → owner picks → run fix-sequential.js → merge,
     v184 → redesign spec (sequential, Sonnet-heavy) incl. the remote.
+- **REVEAL REMOTE — owner decisions (mockups saved in docs/build-notes/
+  mockups/remote/, generator _build.js):**
+  - Pick: **B's layout ("Stage remote": live mini copy of the TV on top, a
+    ladder of places filling in, one huge thumb-zone "Reveal 3rd place"
+    button, private "only on this phone" up-next preview) in A's LIGHT
+    colors** (light page, chunky physical buttons, camp blue header, gold
+    primary). Reachable from More → Director → "Run the reveal".
+  - ★ CHANGED RULE: after a place is revealed, counselors can see the FULL
+    revealed score grid until **8 AM camp time the next day** (replaces the
+    5-minute window). They see the grid frozen at the reveal, never live
+    points. Before/while a reveal runs: only places already revealed.
+  - Defaults I chose (tell owner): Back steps the TV back one place (places
+    already shown stay shown on phones); "End reveal early" keeps whatever was
+    revealed until 8 AM; a new reveal replaces the previous one; any director
+    can run the remote; the TV page with no reveal says "Waiting for the
+    directors…".
 
 **1:15 AM ET Tue — sweep DONE**: 95 confirmed glitches (8 high/24 med/63 low)
 + layout verdict "partly" with 13 ordered interview questions. Full result
