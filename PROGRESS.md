@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Mon Oct 26, 11:15 PM ET** (update this line every time the file changes)
+Last updated: **Tue Oct 27, 1:25 AM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -139,7 +139,19 @@ code mappers → 3 independent drafts (data-first / editor-first /
 migration-first) in docs/build-notes/p2-drafts/ → 3 judges → unified spec at
 docs/build-notes/setup-rebuild-spec.md → 3 adversarial reviews → revision with
 a "Decisions for the owner" list (ask ONE at a time, after the layout Qs).
-After it returns: fix confirmed glitches (one editor of app.js at a time),
+**1:15 AM ET Tue — sweep DONE**: 95 confirmed glitches (8 high/24 med/63 low)
++ layout verdict "partly" with 13 ordered interview questions. Full result
+saved: docs/build-notes/glitch-sweep-2026-10-27.json (`confirmed`, `surfaces`,
+`layout.synth.interviewQuestions`). Deferred: game-view-below-accordion (layout
+redesign), builder-layout-structure (Project 2).
+**1:20 AM ET — fix workflow `wf_de7fc0a9-b11` running** (script
+camp-glitch-fixes-wf_de7fc0a9-b11.js): 6 groups (games-live, home, overlays,
+builder, chat, boot-theme; files scratchpad/fix-groups/<g>.json), each fixer
+in its own git worktree (branch worktree-agent-*) → Sonnet reviewer → fix-up.
+NEXT: merge the 6 branches into main, node tests/run.js, bump v184, push,
+verify live. Layout interview: ask Q1 of the 13 (one at a time); then the
+Project 2 spec's owner decisions.
+(older:) After it returns: fix confirmed glitches (one editor of app.js at a time),
 tests + node --check, bump v184, push main, verify live; then present the
 layout assessment and ask interview Q1 (ONE question at a time).
 
