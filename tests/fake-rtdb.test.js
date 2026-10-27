@@ -25,6 +25,14 @@ test('keys read back sorted; arrays come back as arrays only when mostly dense',
   await db.ref('sparse').set(['a', null, null, null, null, 'b']);
   assert.notOk(Array.isArray(db.serverGet('sparse')), 'sparse: an object, like the real thing');
   assert.deepEqual(db.serverGet('sparse'), { 0: 'a', 5: 'b' });
+  // The boundary of the SDK's rule (maxKey < 2 * numKeys): a pruned slot 0 or 2
+  // still reads back as an ARRAY with null holes, not a map.
+  await db.ref('lone').set({ 1: 'x' });
+  assert.deepEqual(db.serverGet('lone'), [null, 'x'], 'maxKey 1 < 2 * 1 keys: an array');
+  await db.ref('gap').set({ 1: 'a', 3: 'b' });
+  assert.deepEqual(db.serverGet('gap'), [null, 'a', null, 'b'], 'maxKey 3 < 2 * 2 keys: an array');
+  await db.ref('edge').set({ 0: 'a', 4: 'b' });
+  assert.notOk(Array.isArray(db.serverGet('edge')), 'maxKey 4 is not < 2 * 2 keys: an object');
 });
 
 test('update() is multi-path, null deletes, and relative to the ref', async () => {

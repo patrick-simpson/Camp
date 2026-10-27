@@ -95,6 +95,43 @@ test('it never shows as a live game on the home screen or in the upcoming matchu
   assert.doesNotThrow(() => renderAll());
 });
 
+test('a foreign bracket that looks like a live round 1 is still not a live matchup', () => {
+  const g = setupGuard();
+  // phase + selectedPair would read as "Team A vs Team B on the court" if the
+  // guard in upcomingMatchups were missing (normalizeBracket leaves it as found).
+  state.brackets[g.id] = { kind: 'four', phase: 'round1', selectedPair: ['t0', 't1'] };
+  assert.deepEqual(upcomingMatchups(g), []);
+});
+
+test('an editor can clear an unreadable bracket (confirmed); a viewer gets no such control', () => {
+  const g = setupGuard();
+  setMemberRole('viewer');
+  const viewerEl = mountEl();
+  renderLiveWatch(viewerEl, g);
+  assert.notOk(/bracket-clear-btn/.test(viewerEl.innerHTML), 'viewers cannot clear it');
+
+  setMemberRole('editor');
+  const el = mountEl();
+  const clearBtn = { listeners: {}, addEventListener(t, fn) { this.listeners[t] = fn; } };
+  const reloadBtn = el.__btn;
+  el.querySelector = (sel) => (sel === '#bracket-reload-btn' ? reloadBtn : sel === '#bracket-clear-btn' ? clearBtn : null);
+  renderTournament(el, g);
+  assert.ok(/bracket-clear-btn/.test(el.innerHTML), 'editors get the control');
+  const realConfirm = confirm;
+  const realSave = saveState;
+  let saves = 0;
+  saveState = () => { saves += 1; };
+  try {
+    confirm = () => false;
+    clearBtn.listeners.click();
+    assert.ok(state.brackets[g.id], 'declining the confirm keeps it');
+    confirm = () => true;
+    clearBtn.listeners.click();
+    assert.equal(state.brackets[g.id], undefined, 'confirmed: the bracket is gone');
+    assert.equal(saves, 1, 'and the delete is saved (so it syncs)');
+  } finally { confirm = realConfirm; saveState = realSave; }
+});
+
 test('Reload now reloads (guarded like the update bar), and is not a state write', () => {
   const g = setupGuard();
   setMemberRole('editor');

@@ -35,6 +35,15 @@ function canonicalCounselorName(name) {
   return hit || name;
 }
 
+// The same merge applied to DISPLAY text, word by word: a team's hand-typed
+// counselor line ("<old name>/Cam/Sam (B)") and a member row's typed name are
+// stored in the database with the old spellings, and a display must not show them.
+// Display only — nothing is written, so it can never become somebody else's diff.
+function respellCounselorText(text) {
+  if (typeof text !== 'string') return text;
+  return text.replace(/[A-Za-z]+/g, (w) => COUNSELOR_NAME_ALIASES[w.toLowerCase()] || w);
+}
+
 const CAMPS = {};
 
 // ── Camp chat channels ───────────────────────────────────────────

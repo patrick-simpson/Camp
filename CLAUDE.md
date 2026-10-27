@@ -339,8 +339,15 @@ What's covered, and why each file exists:
   with no game to settle it). Add a new per-game synced map there.
   **Team counts are fixed** (6 junior, 4 senior — owner-confirmed): the classic
   Teams tab only renames, sets counselors and reorders. It has no Add / Delete
-  team; "Add team" minted `t-<timestamp>` ids that `isTeamId` and the rules
-  refuse (only `t0`…`t5` pass), so no code path may add or remove a team.
+  team; "Add team" minted `t-<timestamp>` ids, which fail `isTeamId`
+  (`/^t\d+$/`) and the push-device prefs rule (`^t[0-9]$`) — teams are
+  `t0`…`t(N-1)` — so no code path may add or remove a team. A restore can't
+  either: `tryImport` refuses (before its confirm, nothing replaced) a backup
+  whose non-empty `teams` isn't exactly `CAMP.teamCount` unique `isTeamId` ids —
+  the other camp's backup, or a hand-edited one. An absent/empty `teams` keeps
+  the camp's own. The Teams tab's bracket note is a calm line when the roster
+  matches the camp (senior's 4; `settings-teams.senior.test.js`) and the amber
+  warning only when it doesn't.
 - `auth.test.js` — the `emailKey` contract (multi-dot/case/trim — the
   regression that would lock people out under the rules), the `canEdit` truth
   table via `setMemberRole`, the `memberRecord` shape, `clearLocalData`'s
@@ -405,8 +412,12 @@ default, so pre-camps devices behave identically).
   `mentionIsMine` all compare through it, and `normalizeSyncedState` rewrites a
   stored identity once. Alert block keys are unaffected (`pushHeadLabel` cuts a
   label before any name). Member rows already in the database keep the name they
-  were typed with until a director renames them. Any NEW place that compares a
-  counselor's name must go through `canonicalCounselorName`.
+  were typed with until a director renames them — but they DISPLAY merged:
+  `counselorName()` (standings, tally rows, matchup callouts) runs its text
+  through `respellCounselorText()` (camps.js, word by word, display only, never
+  written), so a team's hand-typed counselor line in the database never shows
+  an old spelling. Any NEW place that compares a counselor's name must go
+  through `canonicalCounselorName`.
 - **Switching camps is ALWAYS set-key-then-reload** (`switchCamp()`), never
   re-pointing refs in place — the listener lifecycle is one-shot (a
   cancelled read is terminal). Dual-camp accounts get the camp picker
@@ -960,7 +971,13 @@ More sync invariants (each fixed after it bit us — don't regress these;
   config write now says "Couldn't save the week setup" instead of a console
   warn. Known cost: a director who opens the builder offline on a phone that has
   not yet heard from the server waits until it connects (the three-way merge
-  that lifts this is the config engine rebuild, not built yet).
+  that lifts this is the config engine rebuild, not built yet). A FIRST snapshot
+  that arrives while a field is focused is parked in `pendingRemoteConfig` with
+  `configFirstHeld` set: `configReady` is already true but `state.config` is
+  still the stale cache, so the builder stays read-only until
+  `flushPendingRemoteConfig()` (the one consumer — idle tick and builder
+  focusout) applies it and repaints. Later parked snapshots never set the flag,
+  so an open game editor is never swapped for "Loading".
 - **The first snapshot is a three-way merge, per path** (2026-10-26). The
   cached state carries `state._syncBase`: the tree the server last CONFIRMED
   (advanced only on adopt and on an acknowledged push — never
@@ -993,8 +1010,11 @@ More sync invariants (each fixed after it bit us — don't regress these;
   round1/pool/matches onto a newer build's bracket and the next push would write
   that over every device's copy. `renderTournament` and `renderLiveWatch` show
   "This bracket needs the newest version — pull down to reload" (with a Reload
-  now button, a plain reload, not a state write); the game stays out of Live now
-  and the upcoming matchups. The 4-team bracket is planned under its own node
+  now button, a plain reload, not a state write; an EDITOR also gets a confirmed
+  "Clear this bracket", the same delete as Cancel this bracket, because a
+  bracket that is plain garbage rather than a newer shape is otherwise
+  console-only to remove); the game stays out of Live now and the upcoming
+  matchups. The 4-team bracket is planned under its own node
   (`brackets4`); this is the belt-and-braces for a phone that predates it.
 - **The 2026 roster migration is legacy-week only.** `normalizeSyncedState` swaps
   generic "Team N" names and placeholder counselors for the 2026 roster on every

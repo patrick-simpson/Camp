@@ -530,6 +530,17 @@ test('the Teams tab has no Add team and no Delete team, and says the number is f
   assert.equal((card.innerHTML.match(/team-counselor-input/g) || []).length, state.teams.length);
 });
 
+test('the Teams tab warns only when the roster does not match the camp, and says so plainly', () => {
+  crudSetup();
+  const ok = teamsCard();
+  renderTeamsTab(ok);
+  assert.notOk(/warn-note/.test(ok.innerHTML), 'six teams at a six-team camp: nothing to warn about');
+  state.teams.pop();
+  const off = teamsCard();
+  renderTeamsTab(off);
+  assert.ok(/warn-note/.test(off.innerHTML) && /you have 5 teams|have 5 teams/.test(off.innerHTML) && /runs 6/.test(off.innerHTML), off.innerHTML);
+});
+
 test('nothing in the builder can mint or remove a team any more', () => {
   const src = readFixture('../settings.js');
   assert.ok(typeof deleteTeam === 'undefined' && typeof removeTeamEverywhere === 'undefined' && typeof teamRefs === 'undefined');

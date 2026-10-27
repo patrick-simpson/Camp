@@ -31,6 +31,9 @@ function gateTeardown() {
   configReady = false;
   syncDenied = false;
   pendingConfigWrites = 0;
+  configFirstHeld = false;
+  pendingRemoteConfig = null;
+  dataEditPending = false;
   clearTimeout(pushConfigTimer);
   pushConfigTimer = null;
   setMemberRole(null);
@@ -91,6 +94,9 @@ test('no builder edit is possible before the first snapshot', () => {
   gateSetup();
   try {
     withToasts((toasts) => {
+      // A day with no games, so deleteDay can only be refused by the gate itself
+      // (a day with games refuses on its own and would hide a missing guard).
+      state.config.days.push({ id: 'd-empty', name: 'Empty day', dow: 6, note: '' });
       const before = JSON.stringify({ c: state.config, r: state.results, b: state.brackets });
       const id = state.config.games[0].id;
       state.ui.editGameId = id;
@@ -99,13 +105,14 @@ test('no builder edit is possible before the first snapshot', () => {
       saveGameDraft();
       duplicateGame();
       deleteGame(id);
-      deleteDay(state.config.days[0].id);
+      deleteDay('d-empty');
       restoreDefaults();
       tryImport(JSON.stringify({ config: defaultConfig() }));
       state.ui.editGameId = null;
       startQuickGame();
       assert.equal(JSON.stringify({ c: state.config, r: state.results, b: state.brackets }), before, 'nothing changed');
       assert.equal(state.ui.editGameId, null, 'the ⚡ quick game did not open an editor');
+      assert.ok(state.config.days.some((d) => d.id === 'd-empty'), 'the empty day survived deleteDay');
       assert.ok(toasts.length >= 5 && toasts.every((t) => /still loading/.test(t)), toasts.join(' | '));
     });
   } finally { state.ui.editGameId = null; gameDraft = null; gameDraftFor = null; gateTeardown(); }
@@ -130,6 +137,52 @@ test('the first snapshot opens the gate, adopts the server catalog, and refreshe
     assert.equal(state.config.games.length, 3, 'the server\'s catalog was adopted');
     assert.ok(renders >= 1, 'the builder is repainted so the placeholder goes away');
   } finally { renderAll = real; appStarted = wasStarted; state.ui.view = 'home'; gateTeardown(); }
+});
+
+test('a FIRST snapshot parked mid-entry keeps the builder shut until it is applied', () => {
+  const db = gateSetup();
+  const real = renderAll;
+  renderAll = () => {};
+  const wasStarted = appStarted;
+  appStarted = true;
+  try {
+    const remote = JSON.parse(JSON.stringify(state.config));
+    remote.games = remote.games.slice(0, 3);
+    remote.updatedAt = '2026-12-01T00:00:00.000Z';
+    db.serverSet(CONFIG_PATH, remote);
+    dataEditPending = true; // a score edit is queued: the snapshot is held, like a focused field
+    db.deliverFirstSnapshots();
+    assert.equal(configReady, true);
+    assert.ok(pendingRemoteConfig, 'the snapshot is parked');
+    assert.notOk(state.config.games.length === 3, 'state.config is still the stale cached catalog');
+    assert.equal(configEditable(), false, 'a Save now would whole-set that stale catalog over the server\'s');
+    const card = builderCard();
+    renderSettingsSection('games', card);
+    assert.ok(card.innerHTML.includes('Loading the games list'));
+    dataEditPending = false;
+    flushPendingRemoteConfig();
+    assert.equal(state.config.games.length, 3, 'the parked snapshot is applied');
+    assert.equal(configEditable(), true);
+    assert.equal(pendingRemoteConfig, null);
+  } finally { renderAll = real; appStarted = wasStarted; gateTeardown(); }
+});
+
+test('a LATER snapshot parked mid-entry never shuts an open builder', () => {
+  const db = gateSetup();
+  const real = renderAll;
+  renderAll = () => {};
+  try {
+    db.serverSet(CONFIG_PATH, state.config);
+    db.deliverFirstSnapshots();
+    assert.equal(configEditable(), true);
+    dataEditPending = true;
+    const later = JSON.parse(JSON.stringify(state.config));
+    later.updatedAt = '2027-01-01T00:00:00.000Z';
+    later.games = later.games.slice(0, 2);
+    db.serverSet(CONFIG_PATH, later);
+    assert.ok(pendingRemoteConfig, 'held, as before');
+    assert.equal(configEditable(), true, 'an open game editor must not be swapped for "Loading"');
+  } finally { renderAll = real; gateTeardown(); }
 });
 
 test('an identical first snapshot still repaints the builder (applyRemoteConfig alone would not)', () => {

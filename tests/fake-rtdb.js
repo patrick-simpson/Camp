@@ -75,7 +75,8 @@ function fromStored(v) {
   keys.forEach((k) => { out[k] = fromStored(v[k]); });
   if (keys.length && keys.every((k) => /^(0|[1-9]\d*)$/.test(k))) {
     const max = Math.max(...keys.map(Number));
-    if (keys.length > (max + 1) / 2) {
+    // The SDK's exact rule (ChildrenNode.val): an array when maxKey < 2 * numKeys.
+    if (max < 2 * keys.length) {
       const arr = [];
       for (let i = 0; i <= max; i += 1) arr.push(out[i] === undefined ? null : out[i]);
       return arr;

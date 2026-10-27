@@ -173,3 +173,25 @@ test('the printed counselor list offers the merged names as mention targets', ()
   assert.ok(labels.includes('Alyssa') && labels.includes('Sofia') && labels.includes('Lily'));
   assert.notOk(labels.some((l) => OLD_SPELLINGS.test(l)));
 });
+
+test('counselorName respells stored text on display, without writing anything', () => {
+  freshState();
+  state.teams[1].counselor = 'Alysa/Cam/Sam (B)';
+  state.teams[2].counselor = 'Sofie/William (B) and lilly';
+  const before = JSON.stringify(state.teams);
+  assert.equal(counselorName(state.teams[1].id), 'Alyssa/Cam/Sam (B)');
+  assert.equal(counselorName(state.teams[2].id), 'Sofia/William (B) and Lily');
+  assert.equal(JSON.stringify(state.teams), before, 'display only: the stored text is untouched');
+  assert.equal(respellCounselorText('Lillian, Sofi, Alyssa'), 'Lillian, Sofi, Alyssa', 'whole words only');
+  assert.equal(respellCounselorText(null), null);
+});
+
+test('a directory name typed with an old spelling displays merged too', () => {
+  freshState();
+  const tid = state.teams[0].id;
+  const was = memberDirectory;
+  memberDirectory = { 'a@x,com': { name: 'Alysa', teamId: tid }, 'b@x,com': { name: 'Zed', teamId: tid } };
+  try {
+    assert.equal(counselorName(tid), 'Alyssa, Zed');
+  } finally { memberDirectory = was; }
+});

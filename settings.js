@@ -1188,9 +1188,14 @@ function deleteDay(dayId) {
 
 function renderTeamsTab(card) {
   const teams = state.teams || [];
-  const warn = teams.length !== 6
-    ? `<p class="warn-note">⚠️ The bracket wizard is designed for 6 teams — you have ${teams.length}${CAMP.teamCount !== 6 ? ` (this camp normally runs ${CAMP.teamCount})` : ''}. Bracket games may need improvising.</p>`
-    : '';
+  // Two different situations. A roster that matches the camp's fixed count but
+  // isn't 6 (senior's 4) is just how that camp runs — said calmly, never as a
+  // warning sitting under "the number of teams is fixed". A count that does NOT
+  // match the camp is the real problem and keeps the amber warning.
+  const warn = teams.length === 6 ? ''
+    : teams.length === CAMP.teamCount
+      ? `<p class="muted">Bracket games need 6 teams, so they can't run at ${esc(CAMP.label)} yet — a ${teams.length}-team bracket is planned. Placement and tally games work as they are.</p>`
+      : `<p class="warn-note">⚠️ You have ${teams.length} teams but ${esc(CAMP.label)} runs ${CAMP.teamCount}. The bracket wizard is designed for 6 teams, so bracket games may need improvising.</p>`;
   // Unchanged ⇒ untouched (the wiring re-reads state.teams at tap time).
   if (setHtmlIfChanged(card, `
     <h3>Teams (${teams.length})</h3>
@@ -1644,6 +1649,20 @@ function tryImport(text) {
   if (!config) {
     showRestoreError("That doesn't look like a Camp Scoreboard backup. Copy it fresh and paste the whole thing.");
     return;
+  }
+  // The Teams tab can no longer add or delete a team (S0j), so a restore must not
+  // be the back door that does: it would swap in the OTHER camp's roster (or a
+  // hand-edited / t-<timestamp> one) with no UI left to repair it, and every
+  // result keyed by team id would score the wrong teams. Refuse before the
+  // confirm. An absent or empty `teams` is still fine — the camp keeps its own.
+  if (Array.isArray(parsed.teams) && parsed.teams.length) {
+    const ids = parsed.teams.map((t) => t && t.id);
+    const wellFormed = ids.length === CAMP.teamCount && ids.every(isTeamId) && new Set(ids).size === ids.length;
+    if (!wellFormed) {
+      showRestoreError('That backup has ' + parsed.teams.length + ' teams, but ' + CAMP.label + ' runs ' + CAMP.teamCount +
+        '. It may be from the other camp, so nothing was changed.');
+      return;
+    }
   }
   showRestoreError('');
 

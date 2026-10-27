@@ -2275,9 +2275,11 @@ normalizeSyncedState();
 // before the directory loads).
 function counselorName(id) {
   const staff = teamStaffNames(id);
-  if (staff.length) return staff.join(', ');
+  // Respelled on the way out (respellCounselorText): the stored text — a team's
+  // typed counselor line, a member row's name — can still carry the old spellings.
+  if (staff.length) return respellCounselorText(staff.join(', '));
   const t = state.teams.find((t) => t.id === id);
-  return t && t.counselor ? t.counselor : '';
+  return t && t.counselor ? respellCounselorText(t.counselor) : '';
 }
 
 function saveState() {
@@ -2467,6 +2469,13 @@ function pendingWritesTotal() { return pendingWrites + pendingConfigWrites; }
 // for config yet, so an edit made before the first snapshot would be silently
 // replaced by it (applyRemoteConfig is whole-object last-write-wins).
 let configReady = false;
+// True while the FIRST config snapshot has arrived but is parked in
+// pendingRemoteConfig (a field was focused). configReady is already true then,
+// yet state.config is still the stale cached catalog, so a builder Save would
+// whole-set it over the server's. configEditable() stays false until the
+// parked snapshot is applied (flushPendingRemoteConfig). Later held snapshots
+// do NOT set it — an open game editor must never be swapped for "Loading".
+let configFirstHeld = false;
 // The synced state as we last knew it on the server — the baseline the next
 // push diffs against so it writes ONLY the items this device changed (per-path
 // update), instead of overwriting the whole tree and clobbering edits another
@@ -2617,9 +2626,11 @@ function attachConfigListener() {
       // Held back mid-entry — applied by the builder's focusout flush, or by the
       // idle retry tick if focus never returns to the builder.
       pendingRemoteConfig = remote;
+      if (firstConfig) configFirstHeld = true; // the builder stays read-only until it lands
       armIdleRetry();
     } else {
       pendingRemoteConfig = null;
+      configFirstHeld = false;
       applyRemoteConfig(remote);
     }
     // The builder was showing "Loading the games list…"; open it now, even
@@ -2643,9 +2654,24 @@ function attachConfigListener() {
 // writer of state.config. The three-way merge that lets this lift (S3) is not
 // built yet.
 function configEditable() {
-  if (configReady) return true;
+  if (configReady) return !configFirstHeld;
   if (!(window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey)) return true;
   return syncDenied || sdkLoadFailed;
+}
+
+// Apply a config snapshot that was parked while a field was focused. The one
+// place that consumes pendingRemoteConfig (the idle tick and the builder's
+// focusout both call it). If the parked snapshot was the FIRST one, the builder
+// was showing "Loading the games list…" and applyRemoteConfig repaints only on
+// a change, so repaint here to lift the placeholder.
+function flushPendingRemoteConfig() {
+  if (!pendingRemoteConfig) return;
+  const rc = pendingRemoteConfig;
+  const wasFirst = configFirstHeld;
+  pendingRemoteConfig = null;
+  configFirstHeld = false;
+  applyRemoteConfig(rc);
+  if (wasFirst && appStarted && state.ui.view === 'settings') renderAllWhenIdle();
 }
 
 function pushConfig() {
@@ -2772,11 +2798,7 @@ function idleRetryTick() {
   if (renderOwed && !fieldFocused()) { renderOwed = false; renderAll(); }
   if (!remoteRefetchPending && !pendingRemoteConfig) return;
   if (!canAdoptRemote()) return; // still mid-entry / mid-push — check again next tick
-  if (pendingRemoteConfig) {
-    const rc = pendingRemoteConfig;
-    pendingRemoteConfig = null;
-    applyRemoteConfig(rc);
-  }
+  flushPendingRemoteConfig();
   if (remoteRefetchPending && fbRef) {
     clearDeferredSnapshot();
     fbRef.once('value')
@@ -6483,7 +6505,7 @@ function renderLiveWatch(container, g) {
     return;
   }
   if (!bracketKnown(raw)) {
-    if (setLiveHtmlIfChanged(container, unknownBracketHtml(), [g])) wireUnknownBracketCard(container);
+    if (setLiveHtmlIfChanged(container, unknownBracketHtml(), [g])) wireUnknownBracketCard(container, g);
     return;
   }
   const b = normalizeBracket(raw);
@@ -6912,20 +6934,37 @@ function bracketKnown(b) {
 
 // The card shown in place of a bracket this build can't read — no controls
 // that write, no throw. The button is a plain reload, not a state write.
+//
+// Reloading only helps when the bracket really is from a newer build. A bracket
+// that is simply garbage (a hand-edited console value, a bad import) would
+// otherwise be console-only to remove, so an EDITOR also gets a confirmed
+// "Clear this bracket" (the same delete as Cancel this bracket).
 function unknownBracketHtml() {
   return `
     <h3>Run the bracket</h3>
     <p class="tie-note">⚠️ This bracket needs the newest version — pull down to reload. Nothing here can change it until you do. <button type="button" class="link-btn" id="bracket-reload-btn">Reload now</button></p>
+    ${canEdit() ? '<div class="wizard-footer"><button type="button" class="link-btn danger-link" id="bracket-clear-btn">Clear this bracket</button></div>' : ''}
   `;
 }
 
-function wireUnknownBracketCard(container) {
+function wireUnknownBracketCard(container, g) {
   const btn = container.querySelector('#bracket-reload-btn');
   if (!btn) return;
   btn.addEventListener('click', () => {
     if (reloadBlocked() && !confirm('You have something unfinished here (an unsent message, a score being typed, or a running timer). Reload anyway?')) return;
     doReload();
   });
+  const clear = container.querySelector('#bracket-clear-btn');
+  if (clear && g) {
+    clear.addEventListener('click', () => {
+      if (!canEdit()) return;
+      if (!confirm('Clear this bracket for everyone? Reload first if a newer version might be able to read it — clearing deletes it on every phone and cannot be undone.')) return;
+      delete state.brackets[g.id];
+      clearLiveMatch(g);
+      saveState();
+      renderAll();
+    });
+  }
 }
 
 function normalizeBracket(b) {
@@ -7045,7 +7084,7 @@ function renderTournament(container, g) {
   // A bracket from a newer build: show the reload card, write nothing, throw
   // nothing (see bracketKnown).
   if (state.brackets[g.id] && !bracketKnown(state.brackets[g.id])) {
-    if (setLiveHtmlIfChanged(container, unknownBracketHtml(), [g])) wireUnknownBracketCard(container);
+    if (setLiveHtmlIfChanged(container, unknownBracketHtml(), [g])) wireUnknownBracketCard(container, g);
     return;
   }
   if (!state.brackets[g.id]) {
@@ -8852,11 +8891,7 @@ function init() {
   if (builderView) {
     builderView.addEventListener('focusout', () => {
       setTimeout(() => {
-        if (pendingRemoteConfig && !editorMidEntry()) {
-          const rc = pendingRemoteConfig;
-          pendingRemoteConfig = null;
-          applyRemoteConfig(rc);
-        }
+        if (pendingRemoteConfig && !editorMidEntry()) flushPendingRemoteConfig();
       }, 0);
     });
   }

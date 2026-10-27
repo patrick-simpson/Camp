@@ -78,6 +78,29 @@ test('an import ignores wrongly-typed sections instead of adopting them', () => 
   assert.notOk(Array.isArray(state.bonuses));
 });
 
+test('a restore cannot change how many teams the camp has, or swap in unlisted ids', () => {
+  const gid = seed();
+  state.results[gid] = { medals: { gold: 't0', silver: 't1', bronze: 't2' } };
+  const teamsBefore = JSON.stringify(state.teams);
+  const base = { config: defaultConfig(), results: {} };
+  const bad = {
+    'the other camp\'s four teams': [{ id: 't0', name: 'A' }, { id: 't1', name: 'B' }, { id: 't2', name: 'C' }, { id: 't3', name: 'D' }],
+    'a seventh team': ['t0', 't1', 't2', 't3', 't4', 't5', 't6'].map((id) => ({ id, name: id })),
+    't-<timestamp> ids': ['t0', 't1', 't2', 't3', 't4', 't-1700000000000'].map((id) => ({ id, name: id })),
+    'a duplicated id': ['t0', 't1', 't2', 't3', 't4', 't4'].map((id) => ({ id, name: id })),
+    'rows with no id': [{ name: 'a' }, null, 1, 'x', {}, []],
+  };
+  Object.keys(bad).forEach((label) => {
+    tryImport(JSON.stringify(Object.assign({}, base, { teams: bad[label] })));
+    assert.equal(JSON.stringify(state.teams), teamsBefore, label + ': the roster is untouched');
+    assert.ok(gid in state.results, label + ': nothing else was replaced either (the restore was refused whole)');
+  });
+  // ...and a same-size roster with renamed teams still restores.
+  const renamed = state.teams.map((t, i) => ({ id: t.id, name: 'Renamed ' + i }));
+  tryImport(JSON.stringify(Object.assign({}, base, { teams: renamed })));
+  assert.equal(state.teams[0].name, 'Renamed 0');
+});
+
 test('an import drops results for games the imported catalog does not have', () => {
   seed();
   const config = defaultConfig();
