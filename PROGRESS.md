@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Mon Oct 26, 10:10 PM ET** (update this line every time the file changes)
+Last updated: **Mon Oct 26, 11:05 PM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -123,6 +123,18 @@ buried in a collapsed row; Happening Now is half the screen; six look-alike
 rows; viewer and editor share one layout though their jobs differ). Layout
 INTERVIEW in progress (one question at a time) — record answers here as they
 come. A home-layout redesign likely folds into Project 2.
+
+**11:00 PM ET — deep sweep running (ultracode on).** Workflow run
+`wf_68e0e1aa-cac` (script under ~/.claude/projects/-home-user-Camp/…/workflows/
+scripts/camp-glitch-sweep-and-layout-review-wf_68e0e1aa-cac.js): 6 Sonnet
+glitch finders (home-live, games, overlays, builder, chat, boot-theme-pages)
+each followed by a Sonnet adversarial verifier, plus a 4-lens layout panel
+(counselor, director, visual design, IA) → synthesis with an ORDERED owner
+interview. Reference screenshots: scratchpad/shots/*.png (shots.cjs). If the
+session died mid-run: resume with Workflow({scriptPath, resumeFromRunId}).
+After it returns: fix confirmed glitches (one editor of app.js at a time),
+tests + node --check, bump v184, push main, verify live; then present the
+layout assessment and ask interview Q1 (ONE question at a time).
 
 **Project 1 SHIPPED to `main` at 7:26 PM ET Mon (v182, commit 9adcf24).**
 Everything is merged: phone alerts (dormant until the Worker exists), all
