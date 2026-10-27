@@ -228,6 +228,37 @@ test('the update banner is lifted clear of the chat composer and reserves footer
   assert.ok(/classList\.add\('has-update-banner'\)/.test(src));
 });
 
+// The bottom strip is three groups' work meeting (home panels lifted the toaster
+// over the bar, overlays lifted the bar over the chat composer, chat lifted the
+// toaster over both). Pin the ORDER, not just each rule, so a later edit to one
+// offset can't quietly put a tap target under another.
+test('the bottom strip stacks: composer < update bar < SDK pill and toasts, in chat and at home', () => {
+  const css = readFixture('../styles.css');
+  const rem = (re) => {
+    const m = css.match(re);
+    assert.ok(m, 'rule present: ' + re);
+    return parseFloat(m[1]);
+  };
+  const barHome = rem(/\.update-banner-alert \{[^}]*bottom: ([\d.]+)rem/);
+  const barChat = rem(/body\.chat-open \.update-banner-alert,\s*body\.chat-open \.update-banner \{[^}]*bottom: calc\(([\d.]+)rem/);
+  const toastHome = rem(/body:has\(#update-banner\) jelly-toaster\[position="bottom"\] \{[^}]*bottom: calc\(([\d.]+)rem/);
+  const toastChat = rem(/body\.chat-open jelly-toaster\[position="bottom"\] \{[^}]*bottom: calc\(([\d.]+)rem/);
+  const toastChatBar = rem(/body\.chat-open:has\(#update-banner\) jelly-toaster\[position="bottom"\] \{[^}]*bottom: calc\(([\d.]+)rem/);
+  const pillHome = rem(/body:has\(#update-banner\) #sdk-banner \{[^}]*bottom: calc\(([\d.]+)rem/);
+  const pillChat = rem(/body\.chat-open:has\(#update-banner\) #sdk-banner \{[^}]*bottom: calc\(([\d.]+)rem/);
+  const composer = 58 / 16; // the sticky composer's height, in rem
+  assert.ok(barChat > composer, 'the lifted bar clears the composer');
+  assert.ok(toastChat > composer, 'toasts clear the composer with no bar up');
+  assert.ok(toastHome > barHome + 6, 'at home, toasts ride above the bar (its tallest wrap is ~102px)');
+  assert.ok(toastChatBar > barChat + 6, 'in chat, toasts ride above the LIFTED bar, not just the composer');
+  assert.ok(pillChat > barChat + 6, 'in chat the SDK pill stacks above the lifted bar');
+  assert.ok(pillHome > barHome, 'at home the SDK pill stacks above the bar');
+  // The id inside :has() is what makes the chat+bar rule win over the plain
+  // home one — both match in chat, so equal specificity would be source order.
+  assert.ok(css.indexOf('body.chat-open:has(#update-banner) jelly-toaster') > css.indexOf('body:has(#update-banner) jelly-toaster'),
+    'the chat+bar toaster rule comes after the home one');
+});
+
 // ── Members drawer ───────────────────────────────────────────────
 
 function fakeMembersBody(fields) {

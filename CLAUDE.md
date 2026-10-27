@@ -202,9 +202,11 @@ past an unsent message or a typed score. Bottom-strip layout (styles.css, one
 block next to `.update-banner-alert`): at home the bar sits at `bottom: 1rem`
 with the toaster lifted above it (8rem); in chat (`body.chat-open`) the bar is
 lifted to 5.5rem so it never covers the composer, and the toaster to 12rem to
-clear both (5rem when there is no bar). The toaster takes taps, so a toast
-over the composer swallowed Send and one over the bar swallowed Refresh —
-change the four offsets together. `showToast` keeps at most
+clear both (5rem when there is no bar); the SDK-down pill, when it shares
+the strip with the bar, stacks above it (6.5rem at home, 12rem in chat). The
+toaster takes taps, so a toast over the composer swallowed Send and one over
+the bar swallowed Refresh — change the offsets together (`overlays.test.js`
+pins their order). `showToast` keeps at most
 `TOAST_MAX_VISIBLE` (3) on screen, dismissing the oldest that isn't a "Your
 team…" toast.
 The reload uses `doReload` (adds a throwaway `?r=` cache-buster) so it

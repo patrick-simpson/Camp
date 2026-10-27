@@ -4599,6 +4599,12 @@ body.has-update-banner .app-footer {
 body:has(#update-banner) #sdk-banner {
   bottom: calc(6.5rem + env(safe-area-inset-bottom, 0px));
 }
+/* In chat the update bar is itself lifted (5.5rem, above), so a pill at 6.5rem
+   sat mostly behind it. Stack it above the lifted bar instead — same 12rem the
+   toaster uses, so one rule of thumb: nothing in the strip is ever hidden. */
+body.chat-open:has(#update-banner) #sdk-banner {
+  bottom: calc(12rem + env(safe-area-inset-bottom, 0px));
+}
 
 /* ============================================================
    LADDER BALL LIVE SCORER
