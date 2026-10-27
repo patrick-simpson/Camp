@@ -336,10 +336,32 @@ html.locked .lock-screen {
   inset: 0;
   z-index: 1000;
   display: flex;
-  align-items: center;
+  /* Top-anchored, not vertically centred. Centring re-centred the whole stack
+     whenever its height changed — the logo dropped in, then jumped ~80px when
+     "Checking sign-in" became the sign-in panel, and opening "Alternative sign
+     in" made everything leap ~235px out from under the finger. With a fixed
+     top offset only the bottom edge moves. */
+  align-items: flex-start;
   justify-content: center;
-  padding: 1.5rem;
+  padding: max(1.5rem, 14vh) 1.5rem 1.5rem;
+  /* The box can be taller than the screen (Alternative sign in open on a short
+     phone, landscape, an Android keyboard). A centred flex child that overflows
+     is clipped equally top AND bottom and, with no scroll container, those
+     controls were unreachable (#app is display:none, so the page can't scroll
+     either). Start at the top and let this scroll. */
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   background: var(--color-bg);
+}
+
+/* Wide screens (desktop, tablet landscape): the 14vh offset pushed the box past
+   an 800px-tall window and the open Alternative sign-in disclosure gained a
+   scrollbar for ~40px. Cap it there; phones keep the taller offset. */
+@media (min-width: 700px) {
+  html.locked .lock-screen {
+    padding-top: max(1.5rem, min(14vh, 4rem));
+  }
 }
 
 html.locked #app {
@@ -388,6 +410,7 @@ html.view-only .card-visibility-row {
 .lock-box {
   width: 100%;
   max-width: 320px;
+  margin: 0 auto;
   text-align: center;
 }
 
@@ -1072,6 +1095,11 @@ body.no-scroll {
   position: relative;
   width: 100%;
   max-width: 640px;
+  /* A fixed height, not content height: the sheet is bottom-aligned, so a
+     short day (Saturday; senior Sunday) used to shrink it and drop the header
+     and day chips out from under the finger that had just tapped one. */
+  height: 90vh;
+  height: 90dvh;
   max-height: 90vh;
   max-height: 90dvh; /* iOS URL bar eats vh; dvh accounts for it */
   display: flex;
@@ -1106,8 +1134,10 @@ body.no-scroll {
   to { transform: translateY(0); }
 }
 
+/* --drag is set by a swipe dismiss (closeSchedule(dy)) so the sheet keeps
+   sliding from where the finger let go instead of jumping back to rest. */
 @keyframes sched-slide-out {
-  from { transform: translateY(0); }
+  from { transform: translateY(var(--drag, 0px)); }
   to { transform: translateY(100%); }
 }
 
@@ -1214,8 +1244,27 @@ body.no-scroll {
 
 .schedule-days {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  /* minmax(0, 1fr), not 1fr: a bare 1fr floors each track at the chip's
+     min-content (13px of shadow padding either side of the label), so seven
+     chips overflowed the header on every phone under ~417px and Saturday was
+     clipped or unreachable. */
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 0.3rem;
+}
+
+/* The chip's own side padding is what pushed the row wide; drop it and centre
+   the label (text-align inherits into the chip's shadow tree). */
+jelly-chip.sched-day-chip {
+  text-align: center;
+}
+jelly-chip.sched-day-chip::part(main) {
+  padding-inline: 0;
+}
+/* On a ~43px pill the default dot position sits on the label's last letter;
+   hang it off the pill's top-right corner instead. */
+jelly-chip.sched-day-chip .today-dot {
+  top: -0.1rem;
+  right: -0.5rem;
 }
 
 .sched-day-chip {
@@ -4436,6 +4485,27 @@ jelly-icon-button.bonus-remove-btn {
 body:has(#update-banner) jelly-toaster[position="bottom"] {
   bottom: calc(8rem + env(safe-area-inset-bottom, 0px));
 }
+/* In chat the sticky composer lives in the same bottom strip (input, 📷, ➤ at
+   the very bottom of the screen). The banner persists exactly while a message
+   is being typed — the auto-reload is held for it — so at bottom:1rem it sat
+   on top of the box, and a tap meant for Send landed on the banner. Lift both
+   banner flavours (the SDK-down pill shares .update-banner) clear of it. */
+body.chat-open .update-banner-alert,
+body.chat-open .update-banner {
+  bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+}
+/* On the home page the fixed bar covered the Bonus card and the footer's
+   Settings link at full scroll (it stays up while a reload is held for an
+   editor mid-entry). Extra room at the foot of the page lets them scroll clear. */
+body.has-update-banner .app-footer {
+  padding-bottom: calc(6.5rem + env(safe-area-inset-bottom, 0px));
+}
+/* The SDK-down pill takes the same bottom slot; with a new-version bar up as
+   well it sat completely behind it. Stack the pill above. (:has() is
+   progressive — an older browser just keeps today's overlap.) */
+body:has(#update-banner) #sdk-banner {
+  bottom: calc(6.5rem + env(safe-area-inset-bottom, 0px));
+}
 
 /* ============================================================
    LADDER BALL LIVE SCORER
@@ -4690,6 +4760,17 @@ html.view-only #history-row {
 .history-sub {
   margin: 0.5rem 0 0;
   font-size: 0.85rem;
+}
+
+/* These two sheets auto-size to their content, and the skeleton is far shorter
+   than the loaded list — so when the fetch landed the sheet jumped ~360px
+   taller in one frame, top edge and all. Open them at the jelly drawer's own
+   max-height (82dvh) instead, so loading and loaded are the same size. (The
+   SHEET sizes, not the body inside it.) */
+#history-overlay::part(sheet),
+#members-overlay::part(sheet) {
+  min-height: 82vh;
+  min-height: 82dvh;
 }
 
 /* Skeleton rows while the changelog fetch is in flight. */

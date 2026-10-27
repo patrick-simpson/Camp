@@ -898,11 +898,20 @@ function openSchedule() {
   });
 }
 
-function closeSchedule() {
+// fromDy: how far (px) a swipe had already dragged the sheet down. The
+// slide-out keyframes start from there (via --drag) — clearing the inline
+// transform alone made the sheet snap back up to rest for a frame and THEN
+// slide down. closeSchedule is also a click listener, so its first argument
+// can be an Event: only a number counts.
+function closeSchedule(fromDy) {
   const overlay = scheduleOverlayEl();
   const sheet = overlay.querySelector('.schedule-sheet');
-  if (sheet) sheet.style.transform = ''; // clear any swipe offset
+  if (sheet) {
+    if (typeof fromDy === 'number' && fromDy > 0) sheet.style.setProperty('--drag', fromDy + 'px');
+    sheet.style.transform = ''; // clear any swipe offset
+  }
   const finish = () => {
+    if (sheet) sheet.style.removeProperty('--drag'); // a later close must not inherit a stale offset
     overlay.hidden = true;
     overlay.classList.remove('closing');
     document.body.classList.remove('no-scroll');
@@ -926,18 +935,39 @@ function renderScheduleDays() {
   const wrap = document.getElementById('schedule-days');
   if (!wrap) return;
   const todayDow = campNow().dow;
-  wrap.innerHTML = SCHED_DAYS.map((d) => `
-    <jelly-chip class="sched-day-chip" selectable size="small" ${d.dow === scheduleDay ? 'selected' : ''} data-dow="${d.dow}">
+  // The chips are built once and then only have their `selected` state moved.
+  // Rebuilding all seven on every tap destroyed the focused chip (keyboard and
+  // screen-reader users were dropped back on <body>) and replaced the one just
+  // tapped with a fresh, already-selected chip, so its own select animation
+  // never played. The markup deliberately carries no `selected`; it is applied
+  // below. It's rebuilt only when it changes (the today-dot moves at midnight).
+  const html = SCHED_DAYS.map((d) => `
+    <jelly-chip class="sched-day-chip" selectable size="small" data-dow="${d.dow}">
       ${d.short}${d.dow === todayDow ? '<span class="today-dot" title="Today"></span>' : ''}
     </jelly-chip>`).join('');
-  wrap.querySelectorAll('.sched-day-chip').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      scheduleDay = parseInt(btn.dataset.dow, 10);
-      renderSchedule();
-      const body = document.getElementById('schedule-body');
-      if (body) body.scrollTop = 0;
-      joyStagger(body);
+  if (wrap.__daysHtml !== html || !wrap.querySelector('.sched-day-chip')) {
+    wrap.innerHTML = html;
+    wrap.__daysHtml = html;
+    wrap.querySelectorAll('.sched-day-chip').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        scheduleDay = parseInt(btn.dataset.dow, 10);
+        syncScheduleDaySelection(); // a selectable chip toggles ITSELF on tap — re-assert the truth
+        renderScheduleBody();
+        const body = document.getElementById('schedule-body');
+        if (body) body.scrollTop = 0;
+        joyStagger(body);
+      });
     });
+  }
+  syncScheduleDaySelection();
+}
+
+// Mark the chip for the shown day, and only that one, in place.
+function syncScheduleDaySelection() {
+  const wrap = document.getElementById('schedule-days');
+  if (!wrap) return;
+  wrap.querySelectorAll('.sched-day-chip').forEach((c) => {
+    c.toggleAttribute('selected', parseInt(c.dataset.dow, 10) === scheduleDay);
   });
 }
 
@@ -999,11 +1029,18 @@ function renderScheduleBody() {
     </div>`;
   }).join('');
 
-  wrap.innerHTML = `
+  // This runs on every renderAll and every 30 s tick while the sheet is open,
+  // so an unchanged timeline must not be rewritten: that re-created the
+  // calendar button, dropped a text selection, and — inside the 900 ms
+  // .joy-stagger window after a day tap — replayed the rise-in from invisible.
+  // A block boundary ("Now" pill, past dimming) or a saved game result changes
+  // the markup, so those still land.
+  const html = `
     <h3 class="sched-day-title">${day.full} <span class="sched-day-tag">· ${esc(day.tag)}</span></h3>
     <div class="sched-timeline">${rows || '<p class="muted">Nothing scheduled.</p>'}</div>
     ${blocks.some((b) => !b.noTime) ? `<div class="sched-ics-row"><jelly-button id="sched-ics-btn" class="secondary-btn" variant="platinum" size="small">📆 Add ${day.full} to calendar</jelly-button></div>` : ''}
   `;
+  if (!setHtmlIfChanged(wrap, html)) return; // the live button already has its handler (same dow/day: the day title is in the markup)
   const icsBtn = document.getElementById('sched-ics-btn');
   if (icsBtn) {
     icsBtn.addEventListener('click', () => {
@@ -1104,13 +1141,23 @@ function wireSchedule() {
       dy = Math.max(0, e.touches[0].clientY - startY); // downward only
       sheet.style.transform = `translateY(${dy}px)`;
     }, { passive: true });
-    header.addEventListener('touchend', () => {
+    // Release: past the threshold, hand the drag offset to closeSchedule so
+    // the slide-out continues from where the finger let go; short of it,
+    // ease back (the sheet has no resting transition, so without one the
+    // spring-back snapped). touchstart sets transition:none, so this one
+    // can't leak into the next drag.
+    const release = () => {
       if (startY == null) return;
-      sheet.style.transition = '';
       startY = null;
-      if (dy > 90) { closeSchedule(); }
-      else { sheet.style.transform = ''; } // spring back
-    });
+      if (dy > 90) { sheet.style.transition = ''; closeSchedule(dy); return; }
+      sheet.style.transition = JOY_REDUCED.matches ? '' : 'transform 0.2s ease';
+      sheet.style.transform = '';
+    };
+    header.addEventListener('touchend', release);
+    // The OS can take the gesture away (incoming call, edge swipe, a gesture
+    // takeover): no touchend ever comes, which left the sheet stuck partly
+    // dragged. A cancelled drag is never a dismiss.
+    header.addEventListener('touchcancel', () => { dy = 0; release(); });
   }
 }
 
@@ -1416,7 +1463,51 @@ function campMembersPath(campId, key) {
   return CAMPS[campId].dbRoot + '/members/' + key;
 }
 
+// The "Add someone" form's typed state. renderMemberList rebuilds the whole
+// drawer body — form included — so anything half-typed there used to vanish
+// whenever a refresh landed (a removal, an invite dismiss, another add). Read
+// it before the rebuild and put it back after. Returns null when there is no
+// form yet (first fill).
+const MEMBER_ADD_FIELDS = [['id', '#member-add-id'], ['name', '#member-add-name'], ['role', '#member-add-role'],
+  ['camps', '#member-add-camps'], ['team', '.member-add-team']];
+
+function readMemberAddDraft(body) {
+  if (!body.querySelector('#member-add-id')) return null;
+  const draft = {};
+  MEMBER_ADD_FIELDS.forEach(([k, sel]) => {
+    const el = body.querySelector(sel);
+    draft[k] = el ? String(el.value || '') : '';
+  });
+  const err = body.querySelector('#member-add-error');
+  draft.error = err && !err.hidden ? err.textContent : '';
+  return draft;
+}
+
+function restoreMemberAddDraft(body, draft) {
+  if (!draft) return;
+  MEMBER_ADD_FIELDS.forEach(([k, sel]) => {
+    const el = body.querySelector(sel);
+    if (el && draft[k]) el.value = draft[k];
+  });
+  const err = body.querySelector('#member-add-error');
+  if (err && draft.error) { err.textContent = draft.error; err.hidden = false; }
+}
+
+// A successful add starts the form over (the rebuild that follows must not
+// carry the person just added back into it).
+function resetMemberAddForm(body) {
+  const set = (sel, v) => { const el = body.querySelector(sel); if (el) el.value = v; };
+  set('#member-add-id', '');
+  set('#member-add-name', '');
+  set('#member-add-role', 'viewer');
+  set('#member-add-camps', 'active');
+  set('.member-add-team', '');
+  const err = body.querySelector('#member-add-error');
+  if (err) err.hidden = true;
+}
+
 function renderMemberList(body, lists) {
+  const draft = readMemberAddDraft(body);
   const myKey = identityKey(authUser);
   const crossCamp = !!lists[otherCampId()]; // other list readable ⇒ show both columns
   const campIds = crossCamp ? ['junior', 'senior'] : [CAMP.id];
@@ -1554,6 +1645,7 @@ function renderMemberList(body, lists) {
     </div>`;
 
   bindMemberList(body, myKey, lists);
+  restoreMemberAddDraft(body, draft);
 }
 
 // Create a member record ONLY where none exists. A plain set() replaces
@@ -1651,8 +1743,14 @@ function bindMemberList(body, myKey, lists) {
       roleSeg.addEventListener('change', (e) => {
         const role = e.detail && e.detail.value;
         if (self || !role || (role !== 'viewer' && role !== 'editor')) return;
+        // A role/team change on an EXISTING record doesn't rebuild the drawer:
+        // the control already shows the new value, and re-creating every row's
+        // segmented + select froze the page for ~1 s at 40 members. The record
+        // this closure holds is patched instead, so a later action on the same
+        // row (convert, grant) reads current data. A refusal still re-renders,
+        // to put the control back.
         firebase.database().ref(dbPath('members/' + key + '/role')).set(role)
-          .then(() => showToast(`${who} is now a ${role}`, { mine: true }))
+          .then(() => { rec.role = role; showToast(`${who} is now a ${role}`, { mine: true }); })
           .catch(() => { showToast('Change refused — are you still an editor?'); renderMembers(); });
       });
     }
@@ -1678,7 +1776,7 @@ function bindMemberList(body, myKey, lists) {
         } else if (value === 'viewer' || value === 'editor') {
           if (existing) {
             firebase.database().ref(campMembersPath(cid, key) + '/role').set(value)
-              .then(() => { showToast(`${who} is now a ${value} at ${label}`, { mine: true }); renderMembers(); })
+              .then(() => { existing.role = value; showToast(`${who} is now a ${value} at ${label}`, { mine: true }); })
               .catch(fail);
           } else {
             // teamId deliberately not carried over — teams differ per camp.
@@ -1698,8 +1796,9 @@ function bindMemberList(body, myKey, lists) {
         const teamId = teamSel.value || '';
         const ref = firebase.database().ref(dbPath('members/' + key + '/teamId'));
         const done = () => {
+          const activeRec = camps[CAMP.id];
+          if (activeRec) { if (isTeamId(teamId)) activeRec.teamId = teamId; else delete activeRec.teamId; }
           showToast(isTeamId(teamId) ? `${who} is with ${teamName(teamId)}` : `${who} has no team`, { mine: true });
-          renderMembers();
         };
         (isTeamId(teamId) ? ref.set(teamId) : ref.remove())
           .then(done)
@@ -1815,6 +1914,7 @@ function bindMemberList(body, myKey, lists) {
           showToast(pending ? shownId + ' added — no sign-in yet' : shownId + ' can now sign in', { mine: true });
           // A pending row can't sign in yet, so there's nothing to invite them to.
           lastInvite = pending ? null : inviteText(key, role);
+          resetMemberAddForm(body); // done with it — the rebuild below must not carry it over
           renderMembers();
         })
         .catch(() => {
@@ -4878,14 +4978,29 @@ function openIdentityPicker() {
 function showPickerOverlay() {
   const overlay = teamPickerOverlayEl();
   if (!overlay) return;
+  holdPickerHeight(false); // a fresh open sizes to its own step
   renderPickerStep();
   overlay.setAttribute('open', '');
 }
 
+// Programmatic close — a hand-off (adoptMemberTeam, openCampPicker). The
+// attribute path skips the component's exit animation and the dialog is gone in
+// one frame, which is right when another overlay is taking over.
 function closeTeamPicker() {
   const overlay = teamPickerOverlayEl();
   if (!overlay) return;
   overlay.removeAttribute('open');
+}
+
+// A close the PERSON asked for (they picked, or chose to stay put) should play
+// the dialog's exit animation, as the ✕ and backdrop already do: `open = false`
+// goes through the component's animated close, removeAttribute('open') doesn't.
+// Before jelly has upgraded the element `.open` is only a plain property, so
+// fall back to the attribute then.
+function closeOverlayAnimated(overlay) {
+  if (!overlay || !overlay.hasAttribute('open')) return;
+  if (typeof customElements !== 'undefined' && customElements.get(overlay.localName)) overlay.open = false;
+  else overlay.removeAttribute('open');
 }
 
 function renderPickerStep() {
@@ -4942,8 +5057,20 @@ function renderTeamPickerOptions() {
       // Advance to the identity step (don't close yet).
       pickerTeamId = id;
       pickerStep = 'identity';
+      holdPickerHeight(true);
       renderPickerStep();
     });
+  });
+}
+
+// The identity step lists fewer options than the team step, and the dialog is
+// vertically centred, so swapping the content made it snap shorter (565 → 359px)
+// and re-centre in one frame. Keep the title, hint and option list as tall as
+// the team step left them; `false` lets go (a fresh open sizes to its own step).
+function holdPickerHeight(hold) {
+  ['.team-picker-title', '.team-picker-hint', '#team-picker-options'].forEach((sel) => {
+    const el = document.querySelector(sel);
+    if (el) el.style.minHeight = hold && el.offsetHeight ? el.offsetHeight + 'px' : '';
   });
 }
 
@@ -4970,7 +5097,7 @@ function renderIdentityOptions() {
 }
 
 function closePickerAndRender() {
-  closeTeamPicker(); // the dialog's close event shows any pending notify toast
+  closeOverlayAnimated(teamPickerOverlayEl()); // the dialog's close event shows any pending notify toast
   renderAll();
 }
 
@@ -8175,8 +8302,31 @@ function doReload() {
   }
 }
 
+// What tapping a refresh banner does. The auto-reload waits on reloadBlocked()
+// (an unsent chat message, a score being typed, an unconfirmed write, a running
+// lap), but the banner's own tap used to call doReload() straight past it — and
+// the banner sat right where the chat composer is. Ask before throwing that
+// work away; a quiet page just reloads.
+// Two details make the check real: a tap on the banner moves focus off the
+// composer (chatComposerBusy only counts a FOCUSED composer), so the state is
+// sampled at pointerdown, before focus moves; and mousedown is cancelled so
+// that backing out of the question leaves the composer focused — and the draft
+// still protected from the auto-reload — instead of quietly un-guarding it.
+function wireReloadBanner(bar) {
+  let heldAtPress = false;
+  bar.addEventListener('pointerdown', () => { heldAtPress = reloadBlocked(); });
+  bar.addEventListener('mousedown', (e) => e.preventDefault());
+  bar.addEventListener('click', () => {
+    const held = heldAtPress || reloadBlocked();
+    heldAtPress = false;
+    if (held && !confirm('You have something unfinished here (an unsent message, a score being typed, or a running timer). Refresh anyway?')) return;
+    doReload();
+  });
+}
+
 function showUpdateBanner() {
   if (document.getElementById('update-banner')) return;
+  document.body.classList.add('has-update-banner'); // reserves footer room so the fixed bar never hides the last card
   // Jelly path: an info alert with a Refresh button (whole banner stays
   // tappable, like the old pill). This is auto-reload safety UI, so it must
   // never depend on the module having loaded — legacy pill as fallback.
@@ -8191,7 +8341,7 @@ function showUpdateBanner() {
     btn.setAttribute('size', 'small');
     btn.textContent = 'Refresh';
     bar.append(text, btn);
-    bar.addEventListener('click', doReload);
+    wireReloadBanner(bar);
     document.body.appendChild(bar);
     return;
   }
@@ -8200,7 +8350,7 @@ function showUpdateBanner() {
   bar.className = 'update-banner';
   bar.type = 'button';
   bar.textContent = 'New version available — tap to refresh';
-  bar.addEventListener('click', doReload);
+  wireReloadBanner(bar);
   document.body.appendChild(bar);
 }
 
@@ -8632,9 +8782,19 @@ function showAuthScreen(mode, opts) {
   // The alternative sign-in methods mount lazily into their slots inside the
   // "Alternative sign in" disclosure. Both are optional modules (delete the
   // matching <script> tag to remove one); the Google button always remains.
+  // mount() replaces the slot's innerHTML, so an ERROR re-show (Google popup
+  // blocked, offline…) must not call it on a slot that already has its form —
+  // that wiped a half-typed number/email and reset a phone flow that was
+  // waiting on its texted code (spending another of the day's few texts). The
+  // plain 'signin' show still remounts: first paint, and after a sign-out /
+  // "use a different account", so a shared phone never greets the next person
+  // with the previous number or code step.
   if (mode === 'signin') {
-    if (window.CampPhone) window.CampPhone.mount(document.getElementById('alt-phone-slot'));
-    if (window.CampEmailLink) window.CampEmailLink.mount(document.getElementById('alt-email-slot'));
+    const keepForms = !!(opts && opts.error);
+    [['alt-phone-slot', window.CampPhone], ['alt-email-slot', window.CampEmailLink]].forEach(([id, mod]) => {
+      const slot = document.getElementById(id);
+      if (mod && slot && !(keepForms && slot.firstElementChild)) mod.mount(slot);
+    });
   }
 }
 
@@ -8780,6 +8940,7 @@ function onSdkLoadFailed(msg) {
 
 function showSdkDownBanner() {
   if (document.getElementById('sdk-banner')) return;
+  document.body.classList.add('has-update-banner');
   // A plain button on purpose: this is recovery UI for a page whose scripts
   // are failing, so it can't lean on the jelly module having loaded.
   const bar = document.createElement('button');
@@ -8787,7 +8948,7 @@ function showSdkDownBanner() {
   bar.className = 'update-banner';
   bar.type = 'button';
   bar.textContent = 'Couldn\u2019t connect \u2014 read-only copy. Tap to reload';
-  bar.addEventListener('click', doReload);
+  wireReloadBanner(bar);
   document.body.appendChild(bar);
 }
 
@@ -9089,7 +9250,7 @@ function openCampPicker() {
   wrap.querySelectorAll('.camp-picker-option').forEach((btn) => {
     btn.addEventListener('click', () => {
       const cid = btn.dataset.campId;
-      if (cid === CAMP.id) { overlay.removeAttribute('open'); return; } // staying put
+      if (cid === CAMP.id) { closeOverlayAnimated(overlay); return; } // staying put
       switchCamp(cid);
     });
   });
