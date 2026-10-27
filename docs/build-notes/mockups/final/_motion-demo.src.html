@@ -1,0 +1,903 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Jelly motion demo</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+ --paper:#f5efe2;--paper-2:#ebe2cf;--sheet:#fffdf8;--ink:#141a48;--ink-2:#373d72;--ink-3:#43497a;--link:#2234c4;--roof:#2c47ee;--roof-edge:#18299c;
+ --line:rgba(20,26,72,.13);--line-2:rgba(20,26,72,.26);--card-b:#141a48;--edge:#141a48;
+ --blue:#2c47ee;--blue-edge:#18299c;--blue-tint:#e1e6ff;
+ --gold:#f7b928;--gold-edge:#986409;--gold-tint:#fff0c2;--gold-ink:#1f1500;
+ --live:#8f1a13;--live-tint:#fde2de;--done:#0d542d;--done-tint:#d8efe0;
+ --mg:#f2b632;--ms:#c9d0da;--mb:#e0a36a;--hatch1:#fff5d6;--hatch2:#ffecb2;
+ /* motion tokens: CSS fallbacks that match the springs (jelly.js curves) */
+ --jm-press:cubic-bezier(.34,1.7,.5,1);--jm-enter:cubic-bezier(.16,.82,.28,1);--jm-standard:cubic-bezier(.4,0,.2,1);
+}
+html,body{height:100%}
+body{font-family:'Inter',-apple-system,system-ui,sans-serif;background:#1b1f3b;color:#f3f4ff;-webkit-font-smoothing:antialiased;font-feature-settings:'tnum' 1;overflow-x:hidden}
+.d{font-family:'Inter Display','Inter',system-ui,sans-serif;letter-spacing:-.022em}
+.stage{min-height:100%;display:flex;gap:28px;align-items:flex-start;justify-content:center;padding:20px 16px 40px;flex-wrap:wrap}
+.ctl{width:340px;max-width:100%;padding-top:6px}
+.ctl h1{font-size:26px;font-weight:850;letter-spacing:-.02em}
+.ctl p.lead{font-size:14.5px;line-height:1.45;color:#c5caf3;margin:6px 0 14px}
+.ctl h2{font-size:12.5px;font-weight:800;color:#a3aade;margin:16px 0 7px}
+.cb{display:flex;align-items:center;gap:10px;width:100%;min-height:46px;margin-bottom:8px;padding:0 14px;border-radius:12px;border:2px solid #0b0e26;background:#f5efe2;color:#141a48;font-family:inherit;font-size:15px;font-weight:800;line-height:1.2;text-align:left;box-shadow:0 4px 0 #0b0e26;cursor:pointer;touch-action:manipulation}
+.cb .n{width:24px;height:24px;border-radius:7px;background:#141a48;color:#fff;display:grid;place-items:center;font-size:13px;flex:none}
+.cb small{display:block;font-size:12.5px;font-weight:600;color:#373d72}
+.segc{display:flex;background:#2a2f55;border-radius:11px;padding:3px;gap:3px}
+.segc button{flex:1;height:38px;border:0;border-radius:9px;background:transparent;color:#c5caf3;font-family:inherit;font-size:14px;font-weight:750;cursor:pointer}
+.segc button.on{background:#f5efe2;color:#141a48;font-weight:850}
+.chk{display:flex;align-items:center;gap:9px;font-size:14px;font-weight:650;color:#dfe2ff;margin-top:9px;cursor:pointer}
+.chk input{width:20px;height:20px;accent-color:#f7b928}
+.readout{margin-top:10px;padding:10px 12px;border-radius:11px;background:#121633;font:600 13px/1.45 ui-monospace,Menlo,monospace;color:#c5caf3}
+.readout b{color:#f7b928}
+.legend{font-size:13px;line-height:1.5;color:#c5caf3}
+.legend code{font:700 12.5px ui-monospace,Menlo,monospace;color:#fff}
+
+/* phone */
+.phone-wrap{flex:none}
+.phone{width:390px;height:844px;border-radius:54px;background:var(--paper);color:var(--ink);position:relative;overflow:hidden;box-shadow:0 0 0 11px #05060f,0 0 0 13px #3a3f66,0 30px 60px rgba(0,0,0,.5);transform-origin:top center;isolation:isolate}
+.sb{position:absolute;top:0;left:0;right:0;height:47px;z-index:60;display:flex;justify-content:space-between;padding:15px 34px 0 42px;font-weight:700;font-size:16px;pointer-events:none}
+.island{position:absolute;left:50%;top:11px;width:124px;height:36px;margin-left:-62px;background:#000;border-radius:20px}
+.hi{position:absolute;left:50%;bottom:8px;margin-left:-67px;width:134px;height:5px;border-radius:3px;background:var(--ink);z-index:61;pointer-events:none}
+.ab{position:absolute;top:47px;left:0;right:0;height:56px;display:flex;align-items:center;gap:10px;padding:0 16px;z-index:5}
+.ab img{width:34px}
+.ab b{display:block;font-size:17px;font-weight:800}
+.ab span{display:block;font-size:13px;font-weight:600;color:var(--ink-2)}
+img.sh{display:block;height:auto;flex:none;filter:drop-shadow(0 1.5px 1.5px rgba(20,26,72,.28))}
+.views{position:absolute;top:103px;left:0;right:0;bottom:88px;overflow:hidden}
+.view{position:absolute;inset:0;padding:4px 16px 16px;overflow:auto;scrollbar-width:none}
+.view[hidden]{display:none}
+/* tab bar */
+.tb{position:absolute;left:0;right:0;bottom:0;height:88px;padding:6px 6px 34px;display:flex;background:var(--sheet);border-top:1px solid var(--line-2);z-index:30}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--ink-3);border:0;background:none;font:inherit;cursor:pointer;position:relative;z-index:1;touch-action:manipulation}
+.ti{position:relative;width:60px;height:30px;display:grid;place-items:center}
+.tab.on{color:var(--ink)}.tab.on .ti{color:var(--blue)}
+.tl{font-size:12.5px;font-weight:700;color:var(--ink-2)}.tab.on .tl{font-weight:800;color:var(--ink)}
+.blob{position:absolute;top:6px;left:0;width:60px;height:30px;border-radius:15px;background:var(--blue-tint);box-shadow:inset 0 0 0 1.5px var(--blue);z-index:0;will-change:transform}
+.badge{position:absolute;top:-4px;left:35px;min-width:19px;height:19px;padding:0 5px;border-radius:10px;background:var(--blue);color:#fff;font-size:11.5px;font-weight:800;display:grid;place-items:center;box-shadow:0 0 0 2px var(--sheet)}
+.ldot{position:absolute;top:0;left:38px;width:11px;height:11px;border-radius:50%;background:var(--live);box-shadow:0 0 0 2px var(--sheet)}
+/* now card */
+.now{background:var(--sheet);border:2px solid var(--card-b);border-radius:18px;box-shadow:0 4px 0 var(--edge);padding:12px 14px 4px;margin-top:6px}
+.now-k{display:flex;justify-content:space-between;font-size:13px;font-weight:700;color:var(--ink-2)}
+.now-k b{color:var(--ink)}
+.bar{height:3px;border-radius:2px;background:var(--line);margin:8px 0 10px;overflow:hidden}
+.bar i{display:block;height:100%;width:40%;background:var(--ink);border-radius:2px;transform-origin:left}
+.now h1{font-size:27px;font-weight:800;line-height:1.08}
+.gr{display:grid;grid-template-columns:26px 1fr auto;column-gap:10px;padding:11px 0;border-top:1px solid var(--line)}
+.gr:first-child{border-top:0}
+.nm{font-size:17px;font-weight:750;line-height:1.2}
+.ds{font-size:14px;font-weight:550;color:var(--ink-2);margin-top:2px}
+.st{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;position:relative}
+.st.done{background:var(--done);color:#fff}
+.st.live{background:var(--live-tint);box-shadow:inset 0 0 0 2px var(--live)}
+.st.live i{width:9px;height:9px;border-radius:50%;background:var(--live)}
+.st.todo{box-shadow:inset 0 0 0 2px var(--ink-3)}
+.tag{display:inline-block;font-size:12px;font-weight:800;border-radius:6px;padding:2px 6px;vertical-align:1px}
+.tag.live{color:var(--live);background:var(--live-tint)}
+.tag.done{color:var(--done);background:var(--done-tint)}
+.md{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;border:1.6px solid var(--ink);font-style:normal;font-size:13px;font-weight:900;color:#141a48;flex:none}
+.md.g{background:var(--mg)}.md.s{background:var(--ms)}.md.b{background:var(--mb)}
+.pod{grid-column:2/4;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin:8px 0 0 -6px}
+.mc{display:flex;flex-direction:column;gap:3px;padding:5px 6px 6px;border-radius:9px;min-width:0;transform-origin:50% 100%}
+.mc .tp{display:flex;align-items:center;gap:4px}
+.mc img{width:24px}
+.mc .n2{font-size:14px;font-weight:700;line-height:1.15;overflow:hidden;text-overflow:ellipsis}
+.mc.me{box-shadow:inset 0 0 0 2px #b54708}
+.lb{grid-column:1/4;display:grid;grid-template-columns:1fr 1fr;gap:0 12px;margin-top:9px;padding:3px 10px;background:var(--paper);border-radius:12px;overflow:hidden}
+.lr{display:flex;align-items:center;gap:5px;height:32px;font-size:14px;font-weight:650;white-space:nowrap}
+.lr .n{width:10px;font-size:12.5px;font-weight:800;color:var(--ink-3);text-align:right}
+.lr img{width:20px}
+.lr b{margin-left:auto;font-size:17px;font-weight:800;display:inline-block}
+.lr.me{outline:2px solid #b54708;outline-offset:-1px;border-radius:8px;padding:0 6px 0 4px;margin:0 -6px 0 -4px}
+.chev{color:var(--ink-2);align-self:center}
+.rowlink{display:flex;justify-content:space-between;align-items:center;min-height:52px;padding:0 2px;border-top:1px solid var(--line);font-size:16px;font-weight:700;cursor:pointer}
+.rowlink small{display:block;font-size:13.5px;font-weight:550;color:var(--ink-2)}
+.sec-h{font-size:13px;font-weight:750;color:var(--ink-2);padding:14px 2px 4px}
+/* reveal mirror */
+.livestrip{height:40px;border-radius:12px;background:var(--live);color:#fff;display:flex;align-items:center;gap:9px;padding:0 12px;font-size:15px;font-weight:800;margin-top:4px;transform-origin:50% 0}
+.livestrip i{width:10px;height:10px;border-radius:50%;background:#fff;box-shadow:0 0 0 4px rgba(255,255,255,.3)}
+.livestrip span{margin-left:auto;font-weight:650;font-size:13.5px}
+.rvh{display:flex;justify-content:space-between;align-items:baseline;margin-top:14px}
+.rvh h2{font-size:24px;font-weight:800}
+.rvh span{font-size:14px;font-weight:700;color:var(--ink-2)}
+.lad{margin-top:10px;background:var(--sheet);border:1.5px solid var(--line-2);border-radius:16px;overflow:hidden}
+.rv{position:relative;display:grid;grid-template-columns:44px 36px 1fr auto;gap:10px;align-items:center;min-height:62px;padding:8px 14px 8px 12px;border-top:1px solid var(--line);background:var(--sheet);transform-origin:50% 60%}
+.rv:first-child{border-top:0}
+.rv.still{display:flex;align-items:center;gap:10px;min-height:44px;background:var(--paper-2);color:var(--ink-2);font-size:15px;font-weight:700;padding-left:16px}
+.rv.still .lk{display:grid;place-items:center}
+.rv.look{grid-template-columns:44px 1fr;min-height:62px}
+.rv.look b{font-size:17px;font-weight:850}
+.rv.onscreen{box-shadow:inset 6px 0 0 var(--gold)}
+.yt{display:inline-block;font-size:12.5px;font-weight:850;color:var(--ink);box-shadow:inset 0 0 0 2px #b54708;padding:1px 7px;border-radius:6px;vertical-align:2px;margin-left:4px}
+.rv img{width:34px}
+.pl{font-size:27px;font-weight:850;line-height:1}
+.pl sup{font-size:13px;font-weight:800;vertical-align:11px}
+.rv .t b{display:block;font-size:16.5px;font-weight:800;line-height:1.15}
+.rv .t small{display:block;font-size:13px;font-weight:600;color:var(--ink-2);margin-top:2px}
+.pp{font-size:26px;font-weight:850;text-align:right;line-height:1;display:inline-block}
+.osn{display:inline-flex;margin:3px 0 2px;background:var(--gold);color:var(--gold-ink);font-size:12.5px;font-weight:850;padding:2px 8px;border-radius:6px;gap:6px;align-items:center;white-space:nowrap;box-shadow:inset 0 0 0 1.5px var(--gold-edge);z-index:2;will-change:transform}
+.osn i{width:7px;height:7px;border-radius:50%;background:var(--live)}
+.crown{position:absolute;left:14px;top:-18px;color:#f7b928;filter:drop-shadow(0 1px 0 #986409)}
+/* games + chat + more */
+.sr{display:grid;grid-template-columns:22px 28px 1fr auto;gap:9px;align-items:center;height:44px;border-top:1px solid var(--line);padding:0 2px}
+.sr:first-child{border-top:0}
+.sr .p{font-size:20px;font-weight:850}
+.sr img{width:28px}
+.grp{background:var(--sheet);border:1.5px solid var(--line-2);border-radius:16px;overflow:hidden;margin-top:8px}
+.li{display:flex;align-items:center;justify-content:space-between;min-height:54px;padding:0 14px;border-top:1px solid var(--line);font-size:16.5px;font-weight:750;cursor:pointer}
+.li:first-child{border-top:0}
+.runrev{display:flex;align-items:center;gap:12px;height:76px;padding:0 14px 0 12px;border-radius:18px;background:var(--gold);border:2.5px solid var(--gold-edge);box-shadow:0 5px 0 var(--gold-edge);color:var(--gold-ink);cursor:pointer;margin-top:6px}
+.runrev .ri{width:46px;height:46px;border-radius:13px;background:#141a48;color:#fff;display:grid;place-items:center}
+.runrev b{display:block;font-size:21px;font-weight:850}
+.runrev small{font-size:13.5px;font-weight:700}
+.bub{max-width:78%;padding:9px 12px;border-radius:16px;background:var(--sheet);border:1.5px solid var(--line-2);font-size:15.5px;font-weight:550;line-height:1.35;margin-top:8px}
+.bub.me{margin-left:auto;background:var(--blue);color:#fff;border-color:var(--blue)}
+.bub small{display:block;font-size:12px;font-weight:700;color:var(--ink-2);margin-bottom:2px}
+/* chunky buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;height:42px;padding:0 16px;border-radius:12px;border:2px solid var(--card-b);background:var(--sheet);box-shadow:0 3px 0 var(--edge);font-family:inherit;font-size:15px;font-weight:800;color:var(--ink);cursor:pointer;touch-action:manipulation}
+.btn.gold{background:var(--gold);border-color:var(--gold-edge);box-shadow:0 3px 0 var(--gold-edge);color:var(--gold-ink)}
+/* takeover: remote */
+.take{position:absolute;inset:0;background:var(--paper);z-index:40;will-change:transform}
+.take[hidden]{display:none}
+.roof{position:absolute;top:0;left:0;right:0;height:103px;background:var(--roof);border-bottom:5px solid var(--roof-edge);color:#fff}
+.roof .row{position:absolute;top:47px;left:0;right:0;height:52px;display:flex;align-items:center;gap:10px;padding:0 14px}
+.rback{height:44px;padding:0 12px 0 8px;border-radius:12px;background:rgba(255,255,255,.18);display:flex;align-items:center;gap:2px;font-family:inherit;font-size:16px;font-weight:750;color:#fff;border:0;cursor:pointer}
+.roof h1{font-size:19px;font-weight:800;flex:1}
+.chip{display:flex;align-items:center;gap:7px;background:#fff;color:#141a48;font-size:13.5px;font-weight:800;border-radius:10px;padding:7px 11px 7px 9px}
+.chip i{width:9px;height:9px;border-radius:50%;background:var(--live)}
+.rp{position:absolute;top:114px;left:16px;right:16px}
+.tvw{border:3px solid #141a48;border-radius:16px;box-shadow:0 5px 0 #141a48;overflow:hidden;background:#fdfaf2;height:204px;position:relative}
+.tvhero{position:absolute;inset:0}
+.tvs{display:flex;gap:10px;justify-content:space-between;font-size:14px;font-weight:700;color:var(--ink-2);margin:8px 2px 0}
+.ladh{display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:14px;font-weight:700;color:var(--ink-2)}
+.endb{height:44px;padding:0 14px;border-radius:12px;border:2px solid var(--card-b);background:var(--sheet);box-shadow:0 3px 0 var(--edge);display:flex;align-items:center;font-size:15px;font-weight:800;color:var(--ink)}
+.rl{margin-top:8px;background:var(--sheet);border:1.5px solid var(--line-2);border-radius:14px;overflow:hidden}
+.rr{position:relative;display:grid;grid-template-columns:40px 30px 1fr auto;gap:9px;align-items:center;min-height:44px;padding:0 14px 0 10px;border-top:1px solid var(--line);background:var(--sheet);user-select:none;-webkit-user-select:none}
+.rr:first-child{border-top:0}
+.rr .nm2{min-width:0}.rr .nm2 b{display:block}
+.osl{display:flex;gap:6px;align-items:center;font-size:13px;font-weight:800;color:var(--ink-2)}
+.osl i{width:8px;height:8px;border-radius:50%;background:var(--live)}
+.rr.os{min-height:58px;box-shadow:inset 6px 0 0 var(--gold)}
+.mask{display:flex;gap:10px;align-items:center}.mask b{display:block;font-size:15px;font-weight:850}.mask small{display:block;font-size:13px;font-weight:650;color:var(--ink-2)}
+.rr img{width:30px}
+.rr .pl{font-size:22px}.rr .pl sup{font-size:11px;vertical-align:9px}
+.rr b.n{font-size:15.5px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rr .p{font-size:21px;font-weight:850}
+.rr.hid{grid-template-columns:40px 1fr;background:var(--paper-2);color:var(--ink-2);font-size:15px;font-weight:700}
+.rr.hid .h{display:flex;gap:7px;align-items:center}
+.rr.nx{grid-template-columns:40px 1fr;min-height:54px;background:repeating-linear-gradient(135deg,var(--hatch1) 0 8px,var(--hatch2) 8px 16px);box-shadow:inset 0 0 0 2px var(--ink);cursor:pointer;touch-action:none}
+.rr.nx.peek{grid-template-columns:40px 30px 1fr auto}
+.dock{position:absolute;left:0;right:0;bottom:0;padding:12px 16px 40px;background:var(--paper);border-top:1px solid var(--line-2)}
+.drow{display:grid;grid-template-columns:106px 1fr;gap:24px}
+.big,.bk{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;height:92px;border-radius:22px;font-family:inherit;cursor:pointer;touch-action:manipulation;overflow:hidden;will-change:transform}
+.big{border:3px solid var(--gold-edge);background:var(--gold);box-shadow:0 7px 0 var(--gold-edge);color:var(--gold-ink)}
+.bk{border:2px solid var(--card-b);background:var(--sheet);box-shadow:0 4px 0 var(--edge);color:var(--ink);font-size:16px;font-weight:850;line-height:1.1;gap:1px}
+.bk small{font-size:12.5px;font-weight:700;color:var(--ink-2)}
+.bk.locked{opacity:.55}
+.big .lab{position:relative;display:flex;flex-direction:column;align-items:center;z-index:1}
+.big .k{font-size:15px;font-weight:800}
+.big .m{font-size:38px;font-weight:900;line-height:1.02;letter-spacing:-.03em}
+.big .fill{position:absolute;inset:0;background:var(--gold);transform-origin:left;transform:scaleX(1);z-index:0;box-shadow:inset -2px 0 0 var(--gold-edge)}
+.big.charging{background:#f2d27c}
+.big.charging .m{font-size:30px}   /* the label stays full ink: the wait is read, not guessed */
+/* sheet */
+.scrim{position:absolute;inset:0;background:rgba(10,12,40,.38);z-index:70}
+.scrim[hidden],.sheet[hidden]{display:none}
+.sheet{position:absolute;left:0;right:0;bottom:0;height:560px;background:var(--sheet);border-radius:24px 24px 0 0;z-index:71;padding:0 0 30px;box-shadow:0 -2px 0 var(--line-2);transform-origin:50% 100%;will-change:transform;display:flex;flex-direction:column}
+.sheet-h{padding:8px 16px 4px;touch-action:none;cursor:grab;flex:none}
+.sheet-b{flex:1;overflow:auto;padding:0 16px;touch-action:pan-y;overscroll-behavior:contain;scrollbar-width:none}
+.btn.sm2{height:44px;font-size:14px;padding:0 12px}
+.grab{width:44px;height:5px;border-radius:3px;background:var(--line-2);margin:4px auto 10px}
+.sheet h3{font-size:22px;font-weight:800}
+.st2{display:flex;justify-content:space-between;align-items:center;min-height:58px;border-top:1px solid var(--line);font-size:16px;font-weight:700}
+.st2 small{display:block;font-weight:600;color:var(--ink-2);font-size:14px}
+/* toast */
+.toasts{position:absolute;left:16px;right:16px;bottom:100px;z-index:65;display:flex;flex-direction:column;align-items:center;gap:8px;pointer-events:none}
+.toast{background:#141a48;color:#fff;border-radius:14px;padding:11px 16px;font-size:15px;font-weight:700;box-shadow:0 8px 24px rgba(10,12,40,.3);display:flex;gap:9px;align-items:center}
+.toast i{width:9px;height:9px;border-radius:50%;background:#62d890}
+/* the real jelly-toaster, themed with the app's tokens in ONE place (spec 8.10) */
+.phone{--jelly-color-background-surface:var(--sheet);--jelly-color-border-default:var(--line-2);--jelly-color-foreground-default:var(--ink);--jelly-color-foreground-muted:var(--ink-2);--jelly-color-background-accent:var(--roof);--jelly-color-foreground-on-accent:#fff;--jelly-color-background-azure:var(--roof);--jelly-color-background-mint:var(--done);--jelly-color-background-amber:var(--gold);--jelly-color-background-rose:var(--live);--jelly-font-display:'Inter',system-ui,sans-serif}
+.phone jelly-toaster[position="bottom"]{bottom:100px;inset-inline-end:16px;--jelly-toast-radius:14px;--jelly-toast-font-size:15px}
+.cmp{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.cmpbtn{height:52px;padding:0 16px;border-radius:14px;border:2px solid #0b0e26;background:#f7b928;box-shadow:0 4px 0 #986409;font-family:inherit;font-size:15px;font-weight:850;color:#1f1500;cursor:pointer;touch-action:manipulation}
+/* joy layer */
+.joy{position:absolute;inset:0;pointer-events:none;z-index:90;overflow:hidden}
+.spark{position:absolute;width:7px;height:7px;border-radius:2px}
+html.calm-motion .spark{display:none}
+@media (max-width:860px){.stage{flex-direction:column;align-items:center}.ctl{width:390px}}
+</style>
+</head>
+<body>
+<main class="stage">
+<div class="phone-wrap" id="pw"><div class="phone" id="phone">
+ <div class="sb"><span>10:42</span><i class="island"></i><span>●●● ▮</span></div>
+ <header class="ab"><img class="sh" src="__t0__" alt=""><div><b>Ferocious Foxes</b><span>Sam · Junior camp · Wednesday</span></div></header>
+ <div class="views">
+  <section class="view" id="v-now">
+   <div id="now-normal">
+    <div class="now">
+     <div class="now-k"><span><b>Now</b> · 10:00–11:45</span><span>63 min left</span></div>
+     <div class="bar"><i id="pbar"></i></div>
+     <h1 class="d">🏅 Team competitions</h1>
+     <div id="rows">
+      <div class="gr"><span class="st done">✓</span><div><div class="nm">Axe Throwing</div><div class="ds">Basketball Court · finished 10:31</div></div><span class="chev">›</span>
+       <div class="pod"><span class="mc"><span class="tp"><i class="md g">1</i><img class="sh" src="__t2__" alt=""></span><span class="n2">Maples</span></span><span class="mc me"><span class="tp"><i class="md s">2</i><img class="sh" src="__t0__" alt=""></span><span class="n2">Foxes</span></span><span class="mc"><span class="tp"><i class="md b">3</i><img class="sh" src="__t1__" alt=""></span><span class="n2">Turkey</span></span></div></div>
+      <div class="gr" id="bowl"></div>
+      <div class="gr" id="pict"><span class="st todo"></span><div><div class="nm">Pumpkin Pictionary</div><div class="ds">Chapel Lawn · <b>up next</b></div></div><span class="chev">›</span></div>
+     </div>
+    </div>
+    <div class="sec-h">Later today</div>
+    <div class="rowlink" id="open-sheet-row"><span>🎨 Elective 1 · you're at Crafts<small>1:15 · tap to see who's where</small></span><span class="chev">›</span></div>
+   </div>
+   <div id="now-reveal" hidden>
+    <div class="livestrip" id="livestrip"><i></i>Live on the big screen<span>Started 7:31 by Jenn</span></div>
+    <div class="rvh"><h2 class="d">Tonight's standings</h2><span id="rv-count">0 of 6 shown</span></div>
+    <div class="lad" id="lad"></div>
+   </div>
+  </section>
+  <section class="view" id="v-games" hidden>
+   <div class="sec-h" style="padding-top:2px">Live standings · only directors see this</div>
+   <div class="grp" style="padding:2px 12px" id="standings"></div>
+  </section>
+  <section class="view" id="v-chat" hidden>
+   <div class="sec-h" style="padding-top:2px">General</div>
+   <div class="bub"><small>Jenn</small>Water break at the Snack Shack after Axe Throwing.</div>
+   <div class="bub"><small>Patrick</small>Bowling round 2 is starting now 🎳</div>
+   <div class="bub me">On our way with the Foxes</div>
+  </section>
+  <section class="view" id="v-more" hidden>
+   <div class="sec-h" style="padding-top:2px">Director</div>
+   <div class="runrev" id="open-remote"><span class="ri">▣</span><span style="flex:1"><b class="d">Run the reveal</b><small>Ready · 2 big screens online</small></span>›</div>
+   <div class="grp"><div class="li" id="toast-row">Tell everyone<span>›</span></div><div class="li">Award points<span>›</span></div><div class="li">What counselors see<span>›</span></div></div>
+  </section>
+ </div>
+ <nav class="tb" id="tb">
+  <i class="blob" id="blob"></i>
+  <button class="tab on" data-tab="now"><span class="ti"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="8.6"/><path d="M12 7.2V12l3.4 2.1"/></svg><b class="ldot" id="nowdot" hidden></b></span><span class="tl">Now</span></button>
+  <button class="tab" data-tab="games"><span class="ti"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M7.5 4h9v5.2a4.5 4.5 0 0 1-9 0z"/><path d="M7.5 6H4.8a2.6 2.6 0 0 0 2.9 3.6M16.5 6h2.7a2.6 2.6 0 0 1-2.9 3.6"/><path d="M12 13.8V17M8.6 20.2h6.8M9.6 17h4.8"/></svg></span><span class="tl">Games</span></button>
+  <button class="tab" data-tab="chat"><span class="ti"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M4.5 6.2A2.7 2.7 0 0 1 7.2 3.5h9.6a2.7 2.7 0 0 1 2.7 2.7v7.1a2.7 2.7 0 0 1-2.7 2.7H11l-4.4 3.6V16h.6a2.7 2.7 0 0 1-2.7-2.7z"/></svg><b class="badge">3</b></span><span class="tl">Chat</span></button>
+  <button class="tab" data-tab="more"><span class="ti"><svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><circle cx="5.5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="18.5" cy="12" r="1.6"/></svg></span><span class="tl">More</span></button>
+ </nav>
+ <section class="take" id="remote" hidden>
+  <div class="roof"><div class="row"><button class="rback" id="remote-back">‹ More</button><h1 class="d">Reveal</h1><span class="chip"><i></i>Live · 2 screens</span></div></div>
+  <div class="rp">
+   <div class="tvw" id="tv"><div class="tvhero" id="tvhero"></div></div>
+   <div class="tvs"><span><b style="color:var(--ink)">2 screens</b> · 11 phones</span><span id="awake">Screen stays on</span></div>
+   <div class="ladh"><span><b style="color:var(--ink)">Places</b> · <span id="rm-count">0 of 6 shown</span></span><span class="endb">End reveal</span></div>
+   <div class="rl" id="rl"></div>
+  </div>
+  <div class="dock"><div class="drow"><button class="bk" id="rm-backbtn"><span id="bk-ico"></span><span>Back</span><small id="bk-sub">nothing before</small></button><button class="big" id="bigbtn"><span class="fill" id="fill"></span><span class="lab" id="biglab"><span class="k" id="bigk">Reveal</span><span class="m d">6th place</span></span></button></div></div>
+ </section>
+ <div class="scrim" id="scrim" hidden></div>
+ <section class="sheet" id="sheet" hidden>
+  <div class="sheet-h" id="sheet-h"><div class="grab"></div><h3 class="d">Who's where · Elective 1</h3>
+  <div style="font-size:14px;font-weight:600;color:var(--ink-2);margin:4px 0 6px">Drag this strip down to close · the list scrolls</div></div>
+  <div class="sheet-b" id="sheet-b"><div class="st2"><span>🏊 Swimming<small>Abby, Lilly</small></span><button class="btn sm2" data-msg="Abby">Message</button></div><div class="st2"><span>🎯 Nerf War<small>Zac, Brody, TJ</small></span><button class="btn sm2" data-msg="Zac">Message</button></div><div class="st2"><span>🎨 Crafts with Eileen<small>William, Sam</small></span><button class="btn sm2" data-msg="William">Message</button></div><div class="st2"><span>🥏 Lawn Games<small>Sofie, Bria</small></span><button class="btn sm2" data-msg="Sofie">Message</button></div><div class="st2"><span>🎲 Board Games<small>Cam, Jovi</small></span><button class="btn sm2" data-msg="Cam">Message</button></div><div class="st2"><span>🏹 Archery<small>Eli, Josh</small></span><button class="btn sm2" data-msg="Eli">Message</button></div><div class="st2"><span>🧩 Puzzles<small>Lily, Alyssa</small></span><button class="btn sm2" data-msg="Lily">Message</button></div><div class="st2"><span>🎣 Fishing<small>Patrick, Ben</small></span><button class="btn sm2" data-msg="Patrick">Message</button></div><div class="st2"><span>🏐 Volleyball<small>Sofia, Nora</small></span><button class="btn sm2" data-msg="Sofia">Message</button></div><div class="st2"><span>🎤 Karaoke<small>Ella, Jacob</small></span><button class="btn sm2" data-msg="Ella">Message</button></div><div class="st2"><span>Break<small>8 counselors</small></span></div></div>
+ </section>
+ <div class="toasts" id="toasts"></div>
+ <jelly-toaster position="bottom"></jelly-toaster>
+ <div class="joy" id="joy"></div>
+ <i class="hi"></i>
+</div></div>
+
+<aside class="ctl">
+ <h1 class="d">Jelly motion</h1>
+ <p class="lead">Tap the buttons, or use the phone itself (the tabs, the gold rows and the big button all work). Every movement comes from one set of springs, the same physics vendor/jelly.js uses.</p>
+ <button class="cb" data-act="tab"><span class="n">1</span><span>Switch tab<small>blob stretches as it travels, page settles in</small></span></button>
+ <button class="cb" data-act="game"><span class="n">2</span><span>Game goes Live → Done<small>status pops, medals drop and squash</small></span></button>
+ <button class="cb" data-act="reveal"><span class="n">3</span><span>Reveal a place (counselor phone)<small>row unwraps, "on screen" tag slides</small></span></button>
+ <button class="cb" data-act="remote"><span class="n">4</span><span>Remote: press the big button<small>dents, label swaps, the wait is on the button; tap again early to see the refusal</small></span></button>
+ <button class="cb" data-act="sheet"><span class="n">5</span><span>Open a sheet<small>drag the top strip down to throw it away; the list scrolls and its buttons work</small></span></button>
+ <button class="cb" data-act="toast"><span class="n">6</span><span>Show a toast<small>the real jelly-toaster in the app's colours</small></span></button>
+ <h2>Compare the press</h2>
+ <div class="cmp"><jelly-button>Jelly's own button</jelly-button><button class="cmpbtn">Our chunky button</button></div>
+ <p class="lead" style="margin:8px 0 0;font-size:13px">Press and hold each, then let go. Ours dents toward your finger and rings back on the same wobble the Jelly button uses.</p>
+ <h2>Calm motion</h2>
+ <div class="segc" id="calmseg"><button data-v="auto" class="on">Auto</button><button data-v="on">On</button><button data-v="off">Off</button></div>
+ <label class="chk"><input type="checkbox" id="fake-saver"> Pretend battery saver is on</label>
+ <label class="chk"><input type="checkbox" id="fake-reduce"> Pretend the phone asks for less motion</label>
+ <label class="chk"><input type="checkbox" id="slowmo"> Slow motion (×4) to study the springs</label>
+ <div class="readout" id="readout">calmMotion() → …</div>
+ <h2>The six springs</h2>
+ <div class="legend" id="legend"></div>
+ <h2>Reset</h2>
+ <button class="cb" data-act="reset"><span class="n">↺</span><span>Put everything back</span></button>
+</aside>
+</main>
+
+<script>
+(function () {
+'use strict';
+var SH = __SHIELDS__;
+var TEAMS = { t0: ['Ferocious Foxes', 'Foxes'], t1: ['Turkey Dinner', 'Turkey'], t2: ['Methodic Mediocre Maples', 'Maples'], t3: ['Particularly Perilous Pumpkins', 'Pumpkins'], t4: ['Patriotic Pilgrims', 'Pilgrims'], t5: ['Runaway John Deersz', 'John Deersz'] };
+var ME = 't0';
+var PLACES = [ // reveal order: 6th first
+  { p: 6, t: 't5', pts: 15, m: '1 gold · 1 silver · 1 bronze' }, { p: 5, t: 't4', pts: 18, m: '1 gold · 1 silver · 2 bronze' },
+  { p: 4, t: 't0', pts: 22, m: '2 gold · 1 silver · 1 bronze' }, { p: 3, t: 't3', pts: 23, m: '2 gold · 0 silver · 3 bronze' },
+  { p: 2, t: 't1', pts: 27, m: '3 gold · 0 silver · 2 bronze' }, { p: 1, t: 't2', pts: 30, m: '2 gold · 2 silver · 2 bronze' }];
+var ORD = function (n) { return n === 1 ? 'st' : n === 2 ? 'nd' : n === 3 ? 'rd' : 'th'; };
+var $ = function (id) { return document.getElementById(id); };
+var img = function (t, w) { return '<img class="sh" src="' + SH[t] + '" style="width:' + w + 'px" alt="">'; };
+
+var LOCK = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9.5" rx="2.4"/><path d="M8.3 11V8.2a3.7 3.7 0 0 1 7.4 0V11"/></svg>';
+var EYEOFF = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 3.5l17 17"/><path d="M10.4 6.1A9.6 9.6 0 0 1 12 6c5.3 0 8.5 6 8.5 6a15.6 15.6 0 0 1-3 3.7M6.6 7.6C4.4 9.1 3.5 12 3.5 12s3.2 6 8.5 6a8.6 8.6 0 0 0 3.8-.9"/><path d="M10 10a2.8 2.8 0 0 0 4 4"/></svg>';
+var REWIND = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M11.5 7 6 12l5.5 5M18 7l-5.5 5 5.5 5"/></svg>';
+
+/* ================= JellyMotion: one shared spring system =================
+   Same integrator as vendor/jelly.js E(): semi-implicit Euler, mass 1, ONE step per
+   frame at the frame's dt (jelly clamps dt to 33 ms). Presets are sampled at dt = 1/60 s,
+   exactly what a jelly component computes on a 60 Hz phone, so the feel matches.
+   One-shot motions are sampled into WAAPI keyframes (compositor-friendly, cancellable,
+   and they leave NO attribute residue in the DOM: no inline style, no class, no commitStyles).
+   A tiny rAF follower handles interruptible ones on nodes that are never re-rendered. */
+var PRESETS = {
+  press:  { k: 260, c: 17, use: 'number and check pops, label swaps' },
+  arrive: { k: 240, c: 16, use: 'panels, sheets, banners, strips arriving: overshoot + landing squash' },
+  snap:   { k: 310, c: 22, use: 'tab blob, the on-screen tag, day picker, switches' },
+  settle: { k: 300, c: 26, use: 'full-screen takeovers only (they must not bounce)' },
+  glide:  { k: 260, c: 32, use: 'things moving out of the way (keyed FLIP), progress' },
+  wobble: { k: 170, c: 9,  use: 'chunky-button release, medals landing, reveal rows, crown' }
+};
+var SLOW = 1, active = 0;
+var cache = {};
+function sample(name, v0) {
+  v0 = v0 || 0;
+  var key = name + '|' + v0;
+  if (cache[key]) return cache[key];
+  var k = PRESETS[name].k, c = PRESETS[name].c, x = 0, v = v0, dt = 1 / 60;
+  var xs = [0], vs = [v0];
+  for (var f = 1; f <= 200; f++) {
+    var a = (1 - x) * k - v * c; v += a * dt; x += v * dt;   // jelly.js E(): v first, then x
+    xs.push(x); vs.push(v);
+    if (f > 8 && Math.abs(1 - x) < 0.0015 && Math.abs(v) < 0.02) break;
+  }
+  xs[xs.length - 1] = 1; vs[vs.length - 1] = 0;
+  return (cache[key] = { xs: xs, vs: vs });
+}
+function peak(name) { var s = sample(name), m = 0; s.xs.forEach(function (x) { m = Math.max(m, x); }); return m - 1; }
+var running = new WeakMap();
+function track(anim) { active++; var done = function () { active = Math.max(0, active - 1); }; anim.addEventListener('finish', done); anim.addEventListener('cancel', done); return anim; }
+// play(el, preset, frame(x,v) -> keyframe, opts): x runs 0 -> 1 along the spring
+function play(el, name, frame, o) {
+  o = o || {};
+  var prev = running.get(el); if (prev && !o.layer) prev.cancel();
+  var anim;
+  if (isCalm()) {
+    if (o.calm === false) return null;            // purely decorative: skipped when calm
+    var cf = o.calm || [{ opacity: 0.4 }, { opacity: 1 }];
+    anim = el.animate(cf, { duration: (o.calmMs || 160) * SLOW, easing: 'cubic-bezier(.4,0,.2,1)', delay: (o.delay || 0) * SLOW * 0.5, fill: 'backwards' });
+  } else {
+    var s = sample(name, o.v0), n = s.xs.length - 1;
+    var kf = s.xs.map(function (x, i) { var f = frame(x, s.vs[i]); f.offset = i / n; return f; });
+    anim = el.animate(kf, { duration: (n / 60) * 1000 * SLOW, easing: 'linear', delay: (o.delay || 0) * SLOW, fill: 'backwards' });
+  }
+  if (!o.layer) running.set(el, anim);
+  return track(anim);
+}
+// exits go through the same system: short, accelerating out; calm = opacity only.
+// fill:'forwards' lives only until done() removes or hides the element, then the animation is cancelled.
+function playOut(el, frame, ms, done) {
+  var prev = running.get(el); if (prev) prev.cancel();
+  var kf = isCalm() ? [{ opacity: 1 }, { opacity: 0 }] : [frame(0), frame(1)];
+  var a = el.animate(kf, { duration: (isCalm() ? 140 : ms) * SLOW, easing: 'cubic-bezier(.4,0,1,1)', fill: 'forwards' });
+  track(a); a.onfinish = function () { if (done) done(); a.cancel(); };
+  return a;
+}
+// interruptible rAF spring (tab blob, sheet drag): follows a moving target; same integrator, frame dt
+function follower(name, x0, onFrame) {
+  var st = { x: x0, v: 0, target: x0, raf: 0 };
+  var last = 0;
+  function step(t) {
+    var dt = Math.min(0.033, (t - last) / 1000) / SLOW; last = t;
+    var k = PRESETS[name].k, c = PRESETS[name].c;
+    var a = (st.target - st.x) * k - st.v * c; st.v += a * dt; st.x += st.v * dt;
+    if (Math.abs(st.target - st.x) < 0.25 && Math.abs(st.v) < 4) { st.x = st.target; st.v = 0; onFrame(st.x, 0); st.raf = 0; active = Math.max(0, active - 1); return; }
+    onFrame(st.x, st.v); st.raf = requestAnimationFrame(step);
+  }
+  st.to = function (target, v) {
+    st.target = target; if (v !== undefined) st.v = v;
+    if (isCalm()) { if (st.raf) { cancelAnimationFrame(st.raf); st.raf = 0; active = Math.max(0, active - 1); } st.x = target; st.v = 0; onFrame(target, 0); return; }
+    if (!st.raf) { active++; last = performance.now(); st.raf = requestAnimationFrame(step); }
+  };
+  st.set = function (x) { st.x = x; st.v = 0; onFrame(x, 0); };
+  return st;
+}
+// keyed, identity-preserving update: children with the same data-key SURVIVE the render
+// (only their contents change), so a FLIP can move the real nodes. This is what the app's
+// string renderers do for the ladder, live boards and game rows (spec 9.4 / 13.3).
+function morph(box, html) {
+  var tpl = document.createElement('template'); tpl.innerHTML = html;
+  var old = {}; Array.prototype.forEach.call(box.children, function (c) { if (c.dataset.key) old[c.dataset.key] = c; });
+  var added = [], prev = null;
+  Array.prototype.slice.call(tpl.content.children).forEach(function (n) {
+    var k = n.dataset.key, cur = old[k];
+    if (cur) { delete old[k]; if (cur.className !== n.className) cur.className = n.className; if (cur.innerHTML !== n.innerHTML) cur.innerHTML = n.innerHTML; n = cur; }
+    else added.push(n);
+    var ref = prev ? prev.nextSibling : box.firstChild;
+    if (ref !== n) box.insertBefore(n, ref);
+    prev = n;
+  });
+  Object.keys(old).forEach(function (k) { old[k].remove(); });
+  return added;
+}
+// FLIP by key: measure every keyed child, morph, spring survivors back from where they were
+function flipKeyed(box, html, name) {
+  var before = {}; Array.prototype.forEach.call(box.children, function (c) { if (c.dataset.key) before[c.dataset.key] = c.getBoundingClientRect().top; });
+  var added = morph(box, html);
+  Array.prototype.forEach.call(box.children, function (c) {
+    var b = before[c.dataset.key]; if (b === undefined) return;
+    var dy = b - c.getBoundingClientRect().top; if (Math.abs(dy) < 1) return;
+    play(c, name || 'glide', function (x) { return { transform: 'translateY(' + dy * (1 - x) + 'px)' }; }, { calm: false, layer: true });
+  });
+  return added;
+}
+// FLIP for static siblings outside a mutated node (they are never re-created)
+function flip(els, mutate, name) {
+  var before = els.map(function (e) { return e.getBoundingClientRect().top; });
+  mutate();
+  els.forEach(function (e, i) {
+    if (!e.isConnected) return;
+    var dy = before[i] - e.getBoundingClientRect().top;
+    if (Math.abs(dy) < 1) return;
+    play(e, name || 'glide', function (x) { return { transform: 'translateY(' + (dy * (1 - x)) + 'px)' }; }, { calm: false, layer: true });
+  });
+}
+// never move rows under a finger: list reflows wait until no pointer is down and 400 ms have passed
+var downIds = new Set(), lastTouch = 0;
+function whenHandsOff(fn) {
+  (function check() { if (downIds.size > 0 || performance.now() - lastTouch < 400 * SLOW) { setTimeout(check, 120); return; } fn(); })();
+}
+
+/* ================= calm motion ================= */
+var calmPref = 'auto', fakeSaver = false, fakeReduce = false, fpsHz = null, battery = null, calmNow = false, calmWhy = '';
+var mq = window.matchMedia ? matchMedia('(prefers-reduced-motion: reduce)') : { matches: false };
+function computeCalm() {
+  if (fakeReduce || mq.matches) return [true, calmPref === 'off' ? "the phone's Reduce Motion is on, and it wins over Off" : 'the phone asks for less motion'];
+  if (calmPref === 'on') return [true, 'you switched it On'];
+  if (calmPref === 'off') return [false, 'you switched it Off (battery signals are ignored)'];
+  if (fakeSaver) return [true, 'battery saver (pretend)'];
+  if (fpsHz && fpsHz <= 36) return [true, 'frames are capped at ~' + fpsHz + ' Hz, so battery saver is probably on'];
+  if (battery && battery.level <= 0.2 && !battery.charging) return [true, 'battery is at ' + Math.round(battery.level * 100) + '% and not charging'];
+  return [false, 'nothing asks for calm'];
+}
+function isCalm() { return calmNow; }
+function applyCalm() {
+  var r = computeCalm(); calmNow = r[0]; calmWhy = r[1];
+  document.documentElement.classList.toggle('calm-motion', calmNow);
+  document.documentElement.setAttribute('data-jelly-motion', calmNow ? 'reduce' : 'no-preference');
+  window.dispatchEvent(new Event('jelly-motion-change'));
+  $('readout').innerHTML = 'calmMotion() → <b>' + calmNow + '</b><br>because ' + calmWhy +
+    '<br>frame rate sample: ' + (fpsHz ? fpsHz + ' Hz' : 'waiting for an idle moment') +
+    '<br>battery: ' + (battery ? Math.round(battery.level * 100) + '%' + (battery.charging ? ', charging' : '') : 'not reported by this browser');
+}
+// rAF frame-rate sampler: only while idle (no animation running), on load and on visibilitychange
+function sampleFps() {
+  if (document.hidden || active > 0) { setTimeout(sampleFps, 1500); return; }
+  var t = [], n = 0;
+  function f(ts) {
+    if (active > 0) { setTimeout(sampleFps, 1500); return; }   // an animation started: abandon this sample
+    t.push(ts);
+    if (++n < 24) { requestAnimationFrame(f); return; }
+    var d = []; for (var i = 1; i < t.length; i++) d.push(t[i] - t[i - 1]);
+    d.sort(function (a, b) { return a - b; });
+    var med = d[Math.floor(d.length / 2)];
+    fpsHz = Math.round(1000 / med); applyCalm();
+  }
+  requestAnimationFrame(f);
+}
+document.addEventListener('visibilitychange', function () { if (!document.hidden) setTimeout(sampleFps, 800); });
+if (navigator.getBattery) navigator.getBattery().then(function (b) { battery = b; applyCalm(); b.addEventListener('levelchange', applyCalm); b.addEventListener('chargingchange', applyCalm); }).catch(function () {});
+if (mq.addEventListener) mq.addEventListener('change', applyCalm);
+
+/* ================= joy layer (obeys calm) ================= */
+var joy = $('joy'), phone = $('phone');
+function localPoint(e) { var r = phone.getBoundingClientRect(), s = r.width / 390; return [(e.clientX - r.left) / s, (e.clientY - r.top) / s]; }
+function sparkle(x, y, n, colors) {
+  if (isCalm()) return;
+  for (var i = 0; i < n; i++) {
+    var s = document.createElement('i'); s.className = 'spark';
+    s.style.left = x + 'px'; s.style.top = y + 'px'; s.style.background = colors[i % colors.length];
+    joy.appendChild(s);
+    var a = Math.random() * Math.PI * 2, d = 26 + Math.random() * 30;
+    var an = s.animate([{ transform: 'translate(-50%,-50%) scale(1) rotate(0)', opacity: 1 }, { transform: 'translate(calc(-50% + ' + Math.cos(a) * d + 'px),calc(-50% + ' + Math.sin(a) * d + 'px)) scale(.2) rotate(' + (a * 90) + 'deg)', opacity: 0 }], { duration: 520 * SLOW, easing: 'cubic-bezier(.16,.82,.28,1)' });
+    an.onfinish = s.remove.bind(s);
+  }
+}
+function confetti(x, y) {
+  if (isCalm()) return;
+  var cols = ['#f7b928', '#2c47ee', '#cf2a1e', '#17763f', '#b54708', '#141a48'];
+  var parts = [];
+  for (var i = 0; i < 46; i++) {
+    var el = document.createElement('i'); el.className = 'spark'; el.style.width = '6px'; el.style.height = '10px'; el.style.background = cols[i % cols.length];
+    joy.appendChild(el);
+    var a = -Math.PI / 2 + (Math.random() - 0.5) * 1.9;
+    parts.push({ el: el, x: x, y: y, vx: Math.cos(a) * (180 + Math.random() * 260), vy: Math.sin(a) * (260 + Math.random() * 300), r: Math.random() * 360, vr: (Math.random() - 0.5) * 720 });
+  }
+  var t0 = performance.now(), last = t0; active++;
+  (function f(t) {
+    var dt = Math.min(0.034, (t - last) / 1000) / SLOW; last = t;
+    parts.forEach(function (p) { p.vy += 900 * dt; p.vx *= 0.985; p.x += p.vx * dt; p.y += p.vy * dt; p.r += p.vr * dt; p.el.style.transform = 'translate(' + p.x + 'px,' + p.y + 'px) rotate(' + p.r + 'deg)'; p.el.style.opacity = Math.max(0, 1 - (t - t0) / (1500 * SLOW)); });
+    if (t - t0 < 1500 * SLOW) requestAnimationFrame(f); else { parts.forEach(function (p) { p.el.remove(); }); active = Math.max(0, active - 1); }
+  })(t0);
+}
+function ringPulse(el) { // calm stand-in for confetti: one soft gold ring, no movement
+  el.animate([{ boxShadow: '0 0 0 0 rgba(247,185,40,.0)' }, { boxShadow: '0 0 0 6px rgba(247,185,40,.55)' }, { boxShadow: '0 0 0 0 rgba(247,185,40,0)' }], { duration: 700 * SLOW, easing: 'ease-out' });
+}
+
+/* ================= press squash on every chunky control =================
+   Down: the control dents toward the finger (origin at the touch point, a few degrees of
+   tilt toward it, squash ~12%). Up: the WOBBLE spring brings it back with a visible
+   stretch past rest (~30% rebound) - the dent-and-ring of a jelly-button, in CSS transforms.
+   All WAAPI: nothing is written to style/class, so a later setHtmlIfChanged never sees residue. */
+var PRESSABLE = '.btn,.big,.bk,.runrev,.rback,.tab,.pk2,.cmpbtn';
+var SPARKLE = '.big,.btn.gold,.pk2';              // sparkles only where a press MEANS something (score, reveal, award)
+var pressed = null, pressInfo = null;
+function deepOf(el) { return el.classList.contains('big') || el.classList.contains('bk') ? 6 : el.classList.contains('tab') ? 2 : 4; }
+document.addEventListener('pointerdown', function (e) {
+  if (e.target.closest && e.target.closest('#phone')) { downIds.add(e.pointerId); lastTouch = performance.now(); }
+  var el = e.target.closest(PRESSABLE); if (!el || el.disabled) return;
+  pressed = el;
+  var r = el.getBoundingClientRect(), ox = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), oy = Math.max(0, Math.min(1, (e.clientY - r.top) / r.height));
+  var tilt = (ox - 0.5) * (el.classList.contains('tab') ? 0 : 5);   // degrees toward the finger
+  pressInfo = { origin: (ox * 100).toFixed(0) + '% ' + (oy * 100).toFixed(0) + '%', tilt: tilt, deep: deepOf(el) };
+  if (isCalm()) { running.set(el, el.animate([{ opacity: 1 }, { opacity: 0.82 }], { duration: 60, fill: 'forwards' })); return; }
+  var p = pressInfo;
+  // the hold is the one place fill:'forwards' is allowed - release always cancels it
+  running.set(el, el.animate([{ transform: 'none', transformOrigin: p.origin }, { transform: 'translateY(' + p.deep + 'px) skewX(' + (-p.tilt * 0.6) + 'deg) scale(1.06,.88)', transformOrigin: p.origin }], { duration: 70 * SLOW, easing: 'ease-out', fill: 'forwards' }));
+});
+function release(e) {
+  if (e && downIds.has(e.pointerId)) { downIds.delete(e.pointerId); lastTouch = performance.now(); }
+  var el = pressed, p = pressInfo || { origin: '50% 50%', tilt: 0, deep: 4 }; pressed = null; pressInfo = null; if (!el) return;
+  play(el, 'wobble', function (x) { var q = 1 - x; return { transform: 'translateY(' + (p.deep * q) + 'px) skewX(' + (-p.tilt * 0.6 * q) + 'deg) scale(' + (1 + 0.06 * q) + ',' + (1 - 0.12 * q) + ')', transformOrigin: p.origin }; }, { calm: [{ opacity: 0.82 }, { opacity: 1 }], calmMs: 120 });
+  if (e && e.type === 'pointerup' && el.matches(SPARKLE)) { var pt = localPoint(e); sparkle(pt[0], pt[1], 6, ['#f7b928', '#2c47ee', '#cf2a1e']); }
+}
+document.addEventListener('pointerup', release);
+document.addEventListener('pointercancel', release);
+
+/* ================= 1. tabs ================= */
+var tabs = Array.prototype.slice.call(document.querySelectorAll('.tab'));
+var blobF = follower('snap', 0, function (x, v) {
+  var s = Math.min(0.5, Math.abs(v) / 1600);
+  $('blob').style.transform = 'translateX(' + x + 'px) scale(' + (1 + s) + ',' + (1 - s * 0.4) + ')';
+});
+function tabX(i) { var t = tabs[i], r = t.getBoundingClientRect(), pr = $('tb').getBoundingClientRect(), s = pr.width / 390; return (r.left - pr.left) / s + (r.width / s - 60) / 2; }
+var curTab = 'now';
+function showTab(name) {
+  if (name === curTab) return;
+  curTab = name;
+  tabs.forEach(function (t, i) {
+    var on = t.dataset.tab === name; t.classList.toggle('on', on);
+    if (on) { blobF.to(tabX(i)); play(t.querySelector('svg'), 'press', function (x) { return { transform: 'scale(' + (0.78 + 0.22 * x) + ')' }; }, { calm: false, layer: true }); }
+  });
+  ['now', 'games', 'chat', 'more'].forEach(function (n) { $('v-' + n).hidden = n !== name; });
+  var v = $('v-' + name);
+  play(v, 'arrive', function (x) { var q = 1 - Math.min(1, x), over = Math.max(0, x - 1); return { transform: 'translateY(' + (22 * q - over * 30) + 'px) scale(' + (1 - 0.02 * q + over * 0.12) + ',' + (1 - 0.06 * q - over * 0.3) + ')', transformOrigin: '50% 0', opacity: Math.min(1, 0.2 + x * 2) }; }, { calm: [{ opacity: 0 }, { opacity: 1 }], calmMs: 120 });
+}
+tabs.forEach(function (t) { t.addEventListener('click', function () { showTab(t.dataset.tab); }); });
+
+/* ================= 2. game Live -> Done ================= */
+var bowlDone = false;
+function bowlLive() {
+  $('bowl').innerHTML = '<span class="st live"><i></i></span><div><div class="nm">Inflatable Bowling <span class="tag live">Live</span></div><div class="ds">Slip and Slide · round 2 of 3</div></div><span class="chev">›</span>' +
+    '<div class="lb" id="lb">' + [['t3', 48], ['t0', 41], ['t2', 36], ['t1', 30], ['t4', 22], ['t5', 19]].map(function (r, i) {
+      return '<div class="lr ' + (r[0] === ME ? 'me' : '') + '"><span class="n">' + (i + 1) + '</span>' + img(r[0], 20) + '<span>' + TEAMS[r[0]][1] + '</span><b data-score="' + r[0] + '">' + r[1] + '</b></div>';
+    }).join('') + '</div>';
+}
+function bumpScore() { // a live score changing: the number rolls up and pops
+  if (bowlDone) return;
+  var b = document.querySelector('#lb b[data-score="t0"]'); if (!b) return;
+  b.textContent = (+b.textContent + 3);
+  play(b, 'press', function (x) { return { transform: 'translateY(' + (10 * (1 - x)) + 'px) scale(' + (1 + 0.12 * (1 - x)) + ')', opacity: Math.min(1, x * 3) }; }, { calm: [{ opacity: 0.3 }, { opacity: 1 }] });
+}
+function gameDone() {
+  if (bowlDone) { bowlDone = false; bowlLive(); toast('Game reset'); return; }
+  bowlDone = true;
+  var row = $('bowl'), st = row.querySelector('.st'), tag = row.querySelector('.tag');
+  var dot = st.querySelector('i');
+  play(dot, 'snap', function (x) { return { transform: 'scale(' + (1 - x) + ')' }; }, { calm: false });
+  var after = [$('pict'), $('open-sheet-row')];
+  setTimeout(function () { whenHandsOff(collapse); }, isCalm() ? 0 : 120 * SLOW);
+  function collapse() {
+    flip(after, function () {
+      st.className = 'st done'; st.innerHTML = '✓';
+      tag.className = 'tag done'; tag.textContent = 'Done';
+      row.querySelector('.ds').textContent = 'Slip and Slide · finished 10:44';
+      var lb = $('lb'); lb.remove();
+      var meds = document.createElement('div'); meds.className = 'pod';
+      meds.innerHTML = [['t3', 1, 'g'], ['t0', 2, 's'], ['t2', 3, 'b']].map(function (m) { return '<span class="mc ' + (m[0] === ME ? 'me' : '') + '"><span class="tp"><i class="md ' + m[2] + '">' + m[1] + '</i>' + img(m[0], 24) + '</span><span class="n2">' + TEAMS[m[0]][1] + '</span></span>'; }).join('');
+      row.appendChild(meds);
+    }, 'glide');
+    play(st, 'press', function (x) { return { transform: 'scale(' + (0.3 + 0.7 * x) + ') rotate(' + (-14 * (1 - x)) + 'deg)' }; }, { calm: [{ opacity: 0 }, { opacity: 1 }] });
+    play(tag, 'press', function (x) { return { transform: 'scale(' + (0.6 + 0.4 * x) + ')', opacity: Math.min(1, x * 2) }; }, { calm: [{ opacity: 0 }, { opacity: 1 }] });
+    // medals drop bronze, silver, gold: fall, squash on landing, settle
+    var chips = Array.prototype.slice.call(row.querySelectorAll('.mc')).reverse();
+    chips.forEach(function (c, i) {
+      play(c, 'wobble', function (x) {
+        var over = x - 1, y = Math.min(x, 1);
+        var sq = over > 0 ? Math.min(0.3, over * 1.6) : 0, st2 = over < 0 && y > 0.85 ? Math.min(0.1, -over * 0.8) : 0;
+        return { transform: 'translateY(' + (-22 * (1 - y) + (over < 0 && y > 0.85 ? over * 10 : 0)) + 'px) scale(' + (1 + sq * 0.6 - st2 * 0.5) + ',' + (1 - sq + st2) + ')', opacity: Math.min(1, x * 3) };
+      }, { delay: 140 + i * 120, calm: [{ opacity: 0 }, { opacity: 1 }] });
+    });
+    setTimeout(function () {
+      var gold = row.querySelector('.mc');
+      if (!gold) return;
+      if (isCalm()) { ringPulse(gold); return; }
+      var r = gold.getBoundingClientRect(), p = localPoint({ clientX: r.left + r.width / 2, clientY: r.top });
+      confetti(p[0], p[1]);
+    }, (140 + 2 * 120 + 260) * SLOW);
+  }
+}
+
+/* ================= 3. counselor reveal mirror =================
+   Keyed rows: a revealed place keeps its node, so neighbours glide (keyed FLIP) instead of jumping.
+   Phones lag the big screen (3 s live, 1.2 s here): the newest place first shows "Look at the big screen". */
+var shownN = 0, mirrorOn = false, lookUntil = 0;
+function rvRow(pl, onscreen) {
+  var me = pl.t === ME;
+  return '<div class="rv shown' + (onscreen ? ' onscreen' : '') + '" data-key="p-' + pl.p + '">' +
+    '<span class="pl d">' + pl.p + '<sup>' + ORD(pl.p) + '</sup></span>' + img(pl.t, 34) +
+    '<span class="t"><b>' + TEAMS[pl.t][0] + (me ? ' <span class="yt">Your team</span>' : '') + '</b>' + (onscreen ? '<span class="osn"><i></i>On the big screen now</span>' : '') + '<small>' + pl.m + '</small></span><span class="pp d">' + pl.pts + '</span></div>';
+}
+function ladderHtml() {
+  var looking = lookUntil > 0, h = '';
+  for (var i = 0; i < 6 - shownN; i++) h += '<div class="rv still" data-key="still-' + (5 - i) + '"><span class="lk">' + LOCK + '</span>Still to come</div>';
+  if (looking) { var pl = PLACES[shownN - 1]; h += '<div class="rv look onscreen" data-key="p-' + pl.p + '"><span class="pl d">' + pl.p + '<sup>' + ORD(pl.p) + '</sup></span><span class="t"><span class="osn"><i></i>On the big screen now</span><b>Look at the big screen</b></span></div>'; }
+  for (var j = (looking ? shownN - 2 : shownN - 1); j >= 0; j--) h += rvRow(PLACES[j], !looking && j === shownN - 1);
+  return h;
+}
+function enterMirror() {
+  mirrorOn = true; showTab('now');
+  $('now-normal').hidden = true; $('now-reveal').hidden = false; $('nowdot').hidden = false;
+  morph($('lad'), ladderHtml()); $('rv-count').textContent = shownN + ' of 6 shown';
+  // the red strip drops in and squashes on landing (arrive: ~12% overshoot, amplified into a squash)
+  play($('livestrip'), 'arrive', function (x) { var over = x - 1; return { transform: 'translateY(' + (-56 * (1 - Math.min(1, x))) + 'px) scale(' + (1 + Math.max(0, over) * 0.5) + ',' + (1 - Math.max(0, over) * 1.4) + ')', opacity: Math.min(1, x * 2.5) }; }, { calm: [{ opacity: 0 }, { opacity: 1 }] });
+  play($('lad'), 'arrive', function (x) { var over = Math.max(0, x - 1); return { transform: 'translateY(' + (24 * (1 - Math.min(1, x))) + 'px) scale(' + (1 + over * 0.3) + ',' + (1 - over * 0.6) + ')', opacity: Math.min(1, x * 2) }; }, { delay: 90, calm: [{ opacity: 0 }, { opacity: 1 }] });
+}
+function revealNext() {
+  if (!mirrorOn) { enterMirror(); return; }
+  if (shownN >= 6 || lookUntil) { if (shownN >= 6) toast('All six shown. Reset to run it again.'); return; }
+  var lad = $('lad');
+  shownN++; lookUntil = 1; $('rv-count').textContent = shownN + ' of 6 shown';
+  flipKeyed(lad, ladderHtml());                       // a "still to come" row leaves, the look row arrives
+  var look = lad.querySelector('.rv.look');
+  play(look, 'arrive', function (x) { var over = Math.max(0, x - 1); return { transform: 'scale(' + (1 + over * 0.4) + ',' + (Math.min(1, 0.5 + 0.5 * x) - over * 0.8) + ')', opacity: Math.min(1, x * 2) }; }, { calm: [{ opacity: 0 }, { opacity: 1 }] });
+  setTimeout(function () { whenHandsOff(land); }, 1200 * SLOW);
+  function land() {
+    var oldTag = lad.querySelector('.osn'), oldTop = oldTag ? oldTag.getBoundingClientRect().top : null;
+    lookUntil = 0;
+    flipKeyed(lad, ladderHtml());                     // the SAME node becomes the full row
+    var pl = PLACES[shownN - 1], row = lad.querySelector('[data-key="p-' + pl.p + '"]');
+    play(row, 'wobble', function (x) { var q = 1 - x; return { transform: 'scale(' + (1 + 0.05 * q) + ',' + (1 - 0.45 * q) + ')', opacity: Math.min(1, 0.3 + x * 2) }; }, { calm: [{ opacity: 0 }, { opacity: 1 }], calmMs: 200 });
+    var sh = row.querySelector('img');
+    play(sh, 'wobble', function (x) { var y = Math.min(x, 1), over = Math.max(0, x - 1); return { transform: 'translateY(' + (-26 * (1 - y)) + 'px) scale(' + (1 + over) + ',' + (1 - over * 1.4) + ')' }; }, { delay: 80, calm: false });
+    play(row.querySelector('.pp'), 'press', function (x) { return { transform: 'translateY(' + (16 * (1 - x)) + 'px) scale(' + (1 + 0.15 * (1 - x)) + ')', opacity: Math.min(1, x * 3) }; }, { delay: 200, calm: [{ opacity: 0 }, { opacity: 1 }] });
+    var tag = row.querySelector('.osn');
+    if (oldTop !== null && tag) { var dy = oldTop - tag.getBoundingClientRect().top; if (Math.abs(dy) > 1) play(tag, 'snap', function (x, v) { var s = Math.min(0.35, Math.abs(v) * 0.02); return { transform: 'translateY(' + dy * (1 - x) + 'px) scale(' + (1 - s * 0.3) + ',' + (1 + s) + ')' }; }, { calm: false }); }
+    if (pl.t === ME || pl.p === 1) {
+      setTimeout(function () {
+        var r = row.getBoundingClientRect(), p = localPoint({ clientX: r.left + r.width / 2, clientY: r.top + 10 });
+        if (pl.p === 1) { row.insertAdjacentHTML('beforeend', '<span class="crown"><svg width="30" height="24" viewBox="0 0 24 20" fill="#f7b928" stroke="#986409" stroke-width="1.6" stroke-linejoin="round"><path d="M2 6l5 5 5-8 5 8 5-5-2 12H4z"/></svg></span>'); play(row.querySelector('.crown'), 'wobble', function (x) { return { transform: 'translateY(' + (-30 * (1 - Math.min(1, x))) + 'px) rotate(' + (-20 * (1 - x)) + 'deg) scale(' + (0.4 + 0.6 * x) + ')' }; }, { calm: [{ opacity: 0 }, { opacity: 1 }] }); if (isCalm()) ringPulse(row); else confetti(p[0], p[1]); }
+        else if (isCalm()) ringPulse(row); else sparkle(p[0], p[1], 16, ['#b54708', '#f7b928', '#ffab5e']);
+      }, 260 * SLOW);
+    }
+  }
+}
+
+/* ================= 4. the remote =================
+   Keyed ladder (one grouped list); the private up-next row is MASKED until pressed and held;
+   the wait is written on the big button's face; Back is locked for the same TV beat;
+   a blocked tap shakes and says why; the screen is kept awake while the remote is open. */
+var rmShown = 0, rmCur = -1, charging = false, remoteOpen = false, chargeEnd = 0, peek = false, peekTimer = 0, wake = null;
+function rmRow(p) {
+  var idx = 6 - p, pl = PLACES[idx], sup = '<span class="pl d">' + p + '<sup>' + ORD(p) + '</sup></span>';
+  if (idx < rmShown) { var os = idx === rmCur; return '<div class="rr' + (os ? ' os' : '') + '" data-key="rp-' + p + '">' + sup + img(pl.t, 30) + '<span class="nm2"><b class="n">' + TEAMS[pl.t][0] + '</b>' + (os ? '<span class="osl"><i></i>On the big screen now</span>' : '') + '</span><span class="p d">' + pl.pts + '</span></div>'; }
+  if (idx === rmShown) return peek && !charging
+    ? '<div class="rr nx peek" data-key="rp-' + p + '">' + sup + img(pl.t, 30) + '<span class="nm2"><b class="n">' + TEAMS[pl.t][0] + '</b><span class="osl">Up next · only on this phone</span></span><span class="p d">' + pl.pts + '</span></div>'
+    : '<div class="rr nx" data-key="rp-' + p + '">' + sup + '<span class="mask">' + EYEOFF + '<span><b>Up next · only on this phone</b><small>Press and hold to peek</small></span></span></div>';
+  return '<div class="rr hid" data-key="rp-' + p + '">' + sup + '<span class="h">' + LOCK + 'Hidden until you reveal it</span></div>';
+}
+function rmRender() {
+  var h = ''; for (var p = 1; p <= 6; p++) h += rmRow(p);
+  var added = flipKeyed($('rl'), h);
+  $('rm-count').textContent = rmShown + ' of 6 shown';
+  var bk = $('rm-backbtn'); bk.classList.toggle('locked', charging);
+  $('bk-ico').innerHTML = charging ? LOCK : REWIND;
+  $('bk-sub').textContent = charging ? 'after the score' : rmCur > 0 ? 'show ' + PLACES[rmCur - 1].p + ORD(PLACES[rmCur - 1].p) + ' again' : 'nothing before';
+  return added;
+}
+function tvShow(idx) {
+  var hero = $('tvhero');
+  var html = idx < 0 ? '<div style="height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px"><div class="d" style="font-size:22px;font-weight:850">Waiting for the directors…</div><div style="display:flex;gap:9px">' + ['t0', 't1', 't2', 't3', 't4', 't5'].map(function (t) { return img(t, 38); }).join('') + '</div></div>'
+    : (function (pl) { return '<div style="position:absolute;left:16px;top:12px;font-size:14px;font-weight:800;color:#373d72">' + pl.p + ORD(pl.p) + ' place</div><div class="tvsh" style="position:absolute;left:16px;top:38px">' + img(pl.t, 108) + '</div><div style="position:absolute;left:146px;top:40px;right:10px"><div class="d tvn" style="font-size:26px;font-weight:850;line-height:1.04">' + TEAMS[pl.t][0] + '</div><div class="d tvp" style="font-size:42px;font-weight:900;margin-top:6px">' + pl.pts + ' <span style="font-size:15px">points</span></div><div class="tvm" style="font-size:13.5px;font-weight:700;margin-top:8px;color:#373d72">' + pl.m + '</div></div>'; })(PLACES[idx]);
+  var old = hero.cloneNode(true); old.removeAttribute('id'); old.style.pointerEvents = 'none'; $('tv').appendChild(old);
+  hero.innerHTML = html;
+  playOut(old, function (x) { return { opacity: 1 - x, transform: 'scale(' + (1 - 0.06 * x) + ')' }; }, 150, function () { old.remove(); });
+  // the TV beat, sped up for the demo: name first, then the score
+  var n = hero.querySelector('.tvn'), p = hero.querySelector('.tvp'), s = hero.querySelector('.tvsh');
+  if (n) play(n, 'arrive', function (x) { var q = 1 - x; return { transform: 'translateY(' + (12 * q) + 'px) scale(' + (1 - 0.06 * q) + ',' + (1 - 0.14 * q) + ')', opacity: Math.min(1, x * 2) }; }, { calm: [{ opacity: 0 }, { opacity: 1 }] });
+  if (s) play(s, 'wobble', function (x) { var y = Math.min(1, x), over = Math.max(0, x - 1); return { transform: 'translateY(' + (-30 * (1 - y)) + 'px) scale(' + (1 + over * 0.8) + ',' + (1 - over * 1.2) + ')', opacity: Math.min(1, x * 3) }; }, { delay: 60, calm: [{ opacity: 0 }, { opacity: 1 }] });
+  if (p) play(p, 'press', function (x) { return { transform: 'scale(' + (0.5 + 0.5 * x) + ')', opacity: Math.min(1, x * 3) }; }, { delay: 900, calm: [{ opacity: 0 }, { opacity: 1 }] });
+  if (!p) play(hero, 'arrive', function (x) { return { opacity: Math.min(1, x * 2), transform: 'scale(' + (0.94 + 0.06 * x) + ')' }; }, { calm: [{ opacity: 0 }, { opacity: 1 }] });
+}
+function bigLabel(k, m) {
+  var lab = $('biglab'), old = lab.cloneNode(true); old.removeAttribute('id'); old.style.position = 'absolute'; lab.parentNode.appendChild(old);
+  lab.innerHTML = '<span class="k" id="bigk">' + k + '</span><span class="m d">' + m + '</span>';
+  playOut(old, function (x) { return { transform: 'translateY(' + (-26 * x) + 'px)', opacity: 1 - x }; }, 130, function () { old.remove(); });
+  play(lab, 'press', function (x) { return { transform: 'translateY(' + (28 * (1 - x)) + 'px) scale(' + (1 - 0.1 * (1 - x)) + ')', opacity: Math.min(1, x * 2.5) }; }, { delay: 60, calm: [{ opacity: 0 }, { opacity: 1 }] });
+}
+function keepAwake() {
+  var el = $('awake');
+  if (!('wakeLock' in navigator)) { el.textContent = 'Keep this screen awake yourself'; return; }
+  navigator.wakeLock.request('screen').then(function (s) { wake = s; el.textContent = 'Screen stays on'; s.addEventListener('release', function () { if (remoteOpen && !document.hidden) el.textContent = 'Screen may sleep'; }); })
+    .catch(function () { el.textContent = 'Screen may sleep'; });
+}
+document.addEventListener('visibilitychange', function () { if (!document.hidden && remoteOpen) keepAwake(); });
+function openRemote() {
+  if (remoteOpen) return; remoteOpen = true;
+  var r = $('remote'); r.hidden = false; rmRender(); tvShow(rmCur); keepAwake();
+  play(r, 'settle', function (x) { return { transform: 'translateX(' + (100 * (1 - x)) + '%)' }; }, { calm: [{ opacity: 0 }, { opacity: 1 }] });
+}
+function closeRemote() {
+  if (!remoteOpen) return; remoteOpen = false;
+  if (wake) { try { wake.release(); } catch (e) {} wake = null; }
+  var r = $('remote');
+  playOut(r, function (x) { return { transform: 'translateX(' + (100 * x) + '%)' }; }, 220, function () { r.hidden = true; });
+}
+function shake(el) {   // a refused tap: one short wobble sideways, then rest (calm: a brief dim instead)
+  play(el, 'wobble', function (x) { return { transform: 'translateX(' + (9 * (1 - x) * Math.cos(x * 9)) + 'px)' }; }, { layer: true, calm: [{ opacity: 0.6 }, { opacity: 1 }], calmMs: 200 });
+}
+function secsLeft() { return Math.max(1, Math.ceil((chargeEnd - performance.now()) / (1000 * SLOW))); }
+function remoteNext() {
+  if (charging) { shake($('bigbtn')); toast('Wait ' + secsLeft() + ' s. The big screen is still showing ' + PLACES[rmCur].p + ORD(PLACES[rmCur].p) + ' place.', 'warning'); return; }
+  if (rmShown >= 6) { toast('Every place is shown. Reset to run it again.'); return; }
+  rmCur = rmShown; rmShown++; peek = false; charging = true;
+  rmRender(); tvShow(rmCur);
+  var row = $('rl').querySelector('.rr.os');
+  play(row, 'wobble', function (x) { var q = 1 - x; return { transform: 'scale(' + (1 + 0.04 * q) + ',' + (1 - 0.3 * q) + ')' }; }, { calm: false });
+  var nx = $('rl').querySelector('.rr.nx');
+  if (nx) play(nx, 'glide', function (x) { return { clipPath: 'inset(0 ' + (100 * (1 - x)) + '% 0 0)' }; }, { delay: 120, calm: [{ opacity: 0 }, { opacity: 1 }] });
+  var next = PLACES[rmShown];
+  // recharge until the big screen has shown the score (4.5 s live; 3 s here). The wait is ON the button.
+  var dur = 3000 * SLOW; chargeEnd = performance.now() + dur;
+  var big = $('bigbtn'); big.classList.add('charging');
+  bigLabel('Showing the name… ' + secsLeft(), next ? next.p + ORD(next.p) + ' place next' : 'Final table next');
+  var tick = setInterval(function () { var k = $('bigk'); if (!charging) { clearInterval(tick); return; } if (k) k.textContent = (performance.now() > chargeEnd - dur * 0.55 ? 'Showing the score… ' : 'Showing the name… ') + secsLeft(); }, 200);
+  var fill = $('fill');
+  var fa = fill.animate([{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }], { duration: dur, easing: 'linear' });   // a progress bar: allowed under calm
+  fa.onfinish = function () {
+    charging = false; clearInterval(tick); big.classList.remove('charging'); rmRender();
+    bigLabel(next ? 'Reveal' : 'Next', next ? next.p + ORD(next.p) + ' place' : 'Show the final table');
+    play(big, 'press', function (x) { return { transform: 'scale(' + (1 + 0.05 * Math.sin(x * Math.PI)) + ')' }; }, { calm: false });
+    if (navigator.vibrate) try { navigator.vibrate(8); } catch (e) {}   // Android only: iPhones get the label + pop, never a buzz
+  };
+}
+$('bigbtn').addEventListener('click', remoteNext);
+$('rm-backbtn').addEventListener('click', function () {
+  if (charging) { shake($('rm-backbtn')); toast('Back unlocks once the big screen has shown the score.', 'warning'); return; }
+  if (rmCur <= 0) { toast('Already at the first place'); return; }
+  var oldTop = $('rl').querySelector('.osl').getBoundingClientRect().top;
+  rmCur--; rmRender(); tvShow(rmCur);
+  var tag = $('rl').querySelector('.rr.os .osl'); var dy = oldTop - tag.getBoundingClientRect().top;
+  play(tag, 'snap', function (x, v) { var s = Math.min(0.35, Math.abs(v) * 0.02); return { transform: 'translateY(' + dy * (1 - x) + 'px) scale(' + (1 - s * 0.3) + ',' + (1 + s) + ')' }; }, { calm: false });
+});
+// press and hold the up-next row to peek (re-masks on release, after 3 s, and during the TV beat)
+$('rl').addEventListener('pointerdown', function (e) {
+  var row = e.target.closest('.rr.nx'); if (!row || charging) return;
+  peekTimer = setTimeout(function () { peek = true; rmRender(); setTimeout(endPeek, 3000 * SLOW); }, 350);
+});
+function endPeek() { clearTimeout(peekTimer); if (peek) { peek = false; rmRender(); } }
+['pointerup', 'pointercancel', 'pointerleave'].forEach(function (t) { $('rl').addEventListener(t, endPeek); });
+$('remote-back').addEventListener('click', closeRemote);
+$('open-remote').addEventListener('click', openRemote);
+
+/* ================= 5. sheet with drag-to-dismiss =================
+   The drag starts ONLY from the grab strip (handle + title), or from the list when it is
+   already scrolled to the top and the finger moves down. The list scrolls normally
+   (touch-action: pan-y) and buttons inside it get their taps: there is no pointer capture
+   on the sheet, only on the strip, which holds no buttons. */
+var sheet = $('sheet'), scrim = $('scrim'), sbody = $('sheet-b');
+var sheetY = follower('arrive', 600, function (y) { sheet.style.transform = 'translateY(' + Math.max(-30, y) + 'px)' + (y < 0 ? ' scaleY(' + (1 - y / 900) + ')' : ''); });
+function openSheet() {
+  sheet.hidden = false; scrim.hidden = false; sbody.scrollTop = 0;
+  scrim.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 200 * SLOW });
+  if (isCalm()) { sheetY.set(0); sheet.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 160 * SLOW }); return; }
+  sheetY.set(600); sheetY.to(0, -900);   // thrown up: overshoots, squashes against the top of its travel, settles
+}
+function closeSheet(v) {
+  var done = function () { sheet.hidden = true; scrim.hidden = true; };
+  playOut(scrim, function (x) { return { opacity: 1 - x }; }, 180, null);
+  if (isCalm()) { playOut(sheet, function (x) { return { opacity: 1 - x }; }, 140, done); return; }
+  sheetY.to(640, Math.max(600, v || 0));
+  setTimeout(done, 380 * SLOW);
+}
+var drag = null;
+function dragStart(y) { drag = { y0: y, t: performance.now(), last: y, v: 0 }; }
+function dragMove(y) {
+  var s = phone.getBoundingClientRect().width / 390, dy = (y - drag.y0) / s, now = performance.now();
+  drag.v = ((y - drag.last) / s) / Math.max(0.008, (now - drag.t) / 1000); drag.last = y; drag.t = now;
+  sheetY.set(dy < 0 ? dy * 0.25 : dy);
+}
+function dragEnd() { if (!drag) return; var y = sheetY.x, v = drag.v; drag = null; if (y > 140 || v > 900) closeSheet(v); else sheetY.to(0, v); }
+var strip = $('sheet-h');
+strip.addEventListener('pointerdown', function (e) { dragStart(e.clientY); strip.setPointerCapture(e.pointerId); });
+strip.addEventListener('pointermove', function (e) { if (drag) dragMove(e.clientY); });
+strip.addEventListener('pointerup', dragEnd); strip.addEventListener('pointercancel', dragEnd);
+// from the list: only at scrollTop 0 and only downward. Mouse via pointer events; touch via touchmove (passive:false)
+var pend = null;
+sbody.addEventListener('pointerdown', function (e) { if (e.pointerType === 'mouse' && e.button === 0) pend = { y: e.clientY }; });
+sbody.addEventListener('pointermove', function (e) {
+  if (!pend && !drag) return;
+  if (!drag && sbody.scrollTop <= 0 && e.clientY - pend.y > 10) dragStart(pend.y);
+  if (drag) dragMove(e.clientY);
+});
+document.addEventListener('pointerup', function () { pend = null; if (drag) dragEnd(); });
+var tstart = null;
+sbody.addEventListener('touchstart', function (e) { tstart = e.touches[0].clientY; }, { passive: true });
+sbody.addEventListener('touchmove', function (e) {
+  var y = e.touches[0].clientY;
+  if (!drag && sbody.scrollTop <= 0 && y - tstart > 10) dragStart(tstart);
+  if (drag) { e.preventDefault(); dragMove(y); }
+}, { passive: false });
+sbody.addEventListener('touchend', dragEnd);
+sbody.addEventListener('click', function (e) { var b = e.target.closest('[data-msg]'); if (b) toast('Opening a chat with ' + b.dataset.msg); });
+scrim.addEventListener('click', function () { closeSheet(0); });
+$('open-sheet-row').addEventListener('click', openSheet);
+
+/* ================= 6. toast: the REAL jelly-toaster (vendor/jelly.js, inlined), themed with the app's tokens ================= */
+function toast(text, tone) {
+  if (window.jellyToast) { try { window.jellyToast(text, { tone: tone || 'info', duration: 2600 }); return; } catch (e) { /* fall through */ } }
+  var t = document.createElement('div'); t.className = 'toast'; t.innerHTML = '<i></i>' + text; $('toasts').appendChild(t);
+  play(t, 'arrive', function (x) { var q = 1 - x, over = Math.max(0, x - 1); return { transform: 'translateY(' + (28 * q) + 'px) scale(' + (1 - 0.1 * q + over * 0.4) + ',' + (1 - 0.1 * q - over * 0.6) + ')', opacity: Math.min(1, x * 2.5) }; }, { calm: [{ opacity: 0 }, { opacity: 1 }] });
+  setTimeout(function () { playOut(t, function (x) { return { opacity: 1 - x, transform: 'scale(' + (1 - 0.06 * x) + ')' }; }, 150, function () { t.remove(); }); }, 2600 * SLOW);
+}
+$('toast-row').addEventListener('click', function () { toast('Sent · banner for 1 hour', 'success'); });
+
+/* ================= controls ================= */
+var order = ['now', 'games', 'chat', 'more'];
+function reset() {
+  shownN = 0; mirrorOn = false; $('now-normal').hidden = false; $('now-reveal').hidden = true; $('nowdot').hidden = true;
+  lookUntil = 0; bowlDone = false; bowlLive(); rmShown = 0; rmCur = -1; charging = false; peek = false; $('bigbtn').classList.remove('charging');
+  $('biglab').innerHTML = '<span class="k" id="bigk">Reveal</span><span class="m d">6th place</span>'; rmRender();
+  if (remoteOpen) closeRemote();
+  if (!sheet.hidden) closeSheet(0);
+  showTab('now');
+}
+document.querySelectorAll('.cb').forEach(function (b) {
+  b.addEventListener('click', function () {
+    var a = b.dataset.act;
+    if (a === 'tab') { if (remoteOpen) closeRemote(); showTab(order[(order.indexOf(curTab) + 1) % 4]); }
+    else if (a === 'game') { if (remoteOpen) closeRemote(); if (mirrorOn) { mirrorOn = false; $('now-normal').hidden = false; $('now-reveal').hidden = true; $('nowdot').hidden = true; } showTab('now'); setTimeout(gameDone, curTab === 'now' ? 0 : 0); }
+    else if (a === 'reveal') { if (remoteOpen) closeRemote(); revealNext(); }
+    else if (a === 'remote') { if (!remoteOpen) { showTab('more'); openRemote(); } else { var big = $('bigbtn'); pressed = big; big.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); setTimeout(function () { release({ type: 'synthetic', pointerId: 0 }); remoteNext(); }, 110 * SLOW); } }
+    else if (a === 'sheet') { if (remoteOpen) closeRemote(); if (mirrorOn) { mirrorOn = false; $('now-normal').hidden = false; $('now-reveal').hidden = true; } showTab('now'); openSheet(); }
+    else if (a === 'toast') toast('Saved · Pumpkins win gold');
+    else if (a === 'reset') reset();
+  });
+});
+document.querySelectorAll('#calmseg button').forEach(function (b) { b.addEventListener('click', function () { document.querySelectorAll('#calmseg button').forEach(function (x) { x.classList.toggle('on', x === b); }); calmPref = b.dataset.v; applyCalm(); }); });
+$('fake-saver').addEventListener('change', function (e) { fakeSaver = e.target.checked; applyCalm(); });
+$('fake-reduce').addEventListener('change', function (e) { fakeReduce = e.target.checked; applyCalm(); });
+$('slowmo').addEventListener('change', function (e) { SLOW = e.target.checked ? 4 : 1; });
+$('legend').innerHTML = Object.keys(PRESETS).map(function (k) { var p = PRESETS[k], z = (p.c / (2 * Math.sqrt(p.k))).toFixed(2); return '<div><code>' + k + '</code> k ' + p.k + ' · c ' + p.c + ' · ζ ' + z + ' · overshoot ' + Math.round(peak(k) * 1000) / 10 + '% at 60 Hz<br>' + p.use + '</div>'; }).join('<div style="height:6px"></div>');
+
+// fit the phone to the window
+function fit() {
+  var w = window.innerWidth, h = window.innerHeight, s = Math.min(1, (h - 40) / 844, (w - 32) / 390);
+  if (w < 860) s = Math.min(1, (w - 32) / 390);
+  phone.style.transform = 'scale(' + s + ')';
+  $('pw').style.width = 390 * s + 'px'; $('pw').style.height = 844 * s + 'px';
+}
+window.addEventListener('resize', fit); fit();
+bowlLive(); applyCalm();
+blobF.set(tabX(0));
+setInterval(bumpScore, 3200);
+setTimeout(sampleFps, 1200);
+setInterval(function () { if (!document.hidden) sampleFps(); }, 300000);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,172 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=390,initial-scale=1,viewport-fit=cover"><title>More · director</title><style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{width:100%;height:100%;overflow:hidden}
+:root{
+ --paper:#f5efe2;--paper-2:#ebe2cf;--sheet:#fffdf8;--ink:#141a48;--ink-2:#373d72;--ink-3:#43497a;
+ --line:rgba(20,26,72,.13);--line-2:rgba(20,26,72,.26);--card-b:#141a48;--edge:#141a48;
+ --blue:#2c47ee;--blue-edge:#18299c;--blue-tint:#e1e6ff;--on-blue:#fff;--link:#2234c4;
+ --roof:#2c47ee;--roof-edge:#18299c;--on-roof:#fff;
+ --gold:#f7b928;--gold-edge:#986409;--gold-tint:#fff0c2;--gold-ink:#1f1500;
+ --live:#8f1a13;--live-tint:#fde2de;--done:#0d542d;--done-tint:#d8efe0;
+ --mg:#f2b632;--ms:#c9d0da;--mb:#e0a36a;--pole:#3b3f58;--flag-line:#141a48;--hatch1:#fff5d6;--hatch2:#ffecb2;--tv-frame:#141a48;--tv-edge:#141a48}
+body.dark{
+ --paper:#0c1030;--paper-2:#151a45;--sheet:#161c4b;--ink:#f3f4ff;--ink-2:#c5caf3;--ink-3:#a3aade;
+ --line:rgba(255,255,255,.12);--line-2:rgba(255,255,255,.24);--card-b:rgba(255,255,255,.22);--edge:#04061a;
+ --blue:#9aabff;--blue-edge:#5a6ee6;--blue-tint:#262f74;--on-blue:#0c1030;--link:#aab8ff;
+ --gold-tint:#3b3213;--live:#ff8a7f;--live-tint:#33121a;--done:#62d890;--done-tint:#14392a;--pole:#c9cde8;--flag-line:#0c1030;--hatch1:#3a3214;--hatch2:#2e2810;--tv-frame:rgba(255,255,255,.5);--tv-edge:#04061a}
+body{position:relative;font-family:'Inter',-apple-system,system-ui,sans-serif;background:var(--paper);color:var(--ink);-webkit-font-smoothing:antialiased;font-feature-settings:'tnum' 1,'cv11' 1;letter-spacing:-.006em}
+*{--tc:var(--team)}
+body.dark *{--tc:var(--teamd,var(--team))}
+.d{font-family:'Inter Display','Inter',system-ui,sans-serif;letter-spacing:-.022em}
+.sb{position:absolute;top:0;left:0;right:0;height:47px;z-index:40;display:flex;justify-content:space-between;padding:15px 30px 0 40px;font-weight:700;font-size:16px}
+.sb .sy{display:flex;gap:6px;align-items:center;height:20px;margin-top:1px}
+.island{position:absolute;left:50%;top:11px;width:124px;height:36px;margin-left:-62px;background:#000;border-radius:20px}
+.hi{position:absolute;left:50%;bottom:8px;margin-left:-67px;width:134px;height:5px;border-radius:3px;background:var(--ink);z-index:41}
+img.sh{display:block;height:auto;flex:none;filter:drop-shadow(0 1.5px 1.5px rgba(20,26,72,.28))}
+body.dark img.sh{filter:drop-shadow(0 1.5px 2px rgba(0,0,0,.6))}
+svg.flag{display:block;flex:none}
+/* app bar */
+.ab{position:absolute;top:47px;left:0;right:0;height:56px;display:flex;align-items:center;gap:10px;padding:0 16px;z-index:5}
+.ab-t{display:flex;flex-direction:column;min-width:0;flex:1}
+.ab-t b{font-size:17px;font-weight:800;line-height:1.15;letter-spacing:-.015em}
+.ab-t span{font-size:13px;font-weight:600;color:var(--ink-2);line-height:1.3}
+.ab-r{display:flex;gap:8px;align-items:center}
+.campmark{width:34px;height:34px;border-radius:10px;background:var(--blue);color:#fff;display:grid;place-items:center;flex:none}
+body.dark .campmark{color:var(--paper)}
+.title-ab{font-size:28px;font-weight:800}
+/* page */
+.pg{position:absolute;top:103px;left:0;right:0;bottom:88px;padding:2px 16px 0;overflow:hidden}
+/* tab bar */
+.tb{position:absolute;left:0;right:0;bottom:0;height:88px;padding:6px 6px 34px;display:flex;background:var(--sheet);border-top:1px solid var(--line-2);z-index:30}
+.tab{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--ink-3);text-decoration:none}
+.ti{position:relative;width:60px;height:30px;display:grid;place-items:center}
+.ti svg{position:relative}
+.blob{position:absolute;inset:0;border-radius:15px;background:var(--blue-tint);box-shadow:inset 0 0 0 1.5px var(--blue)}
+.tab.on{color:var(--ink)}
+.tab.on .ti{color:var(--blue)}
+.tl{font-size:12.5px;font-weight:700;letter-spacing:0;color:var(--ink-2)}
+.tab.on .tl{color:var(--ink)}
+.tab.on .tl{font-weight:800}
+.badge{position:absolute;top:-4px;left:35px;min-width:19px;height:19px;padding:0 5px;border-radius:10px;background:var(--link);color:#fff;font-size:12px;font-weight:800;display:grid;place-items:center;box-shadow:0 0 0 2px var(--sheet);font-style:normal}
+.ldot,.mdot{position:absolute;top:0;left:38px;width:11px;height:11px;border-radius:50%;background:var(--live);box-shadow:0 0 0 2px var(--sheet)}
+.mdot{background:var(--gold);box-shadow:0 0 0 2px var(--sheet),inset 0 0 0 1.5px var(--gold-edge)}
+/* the one physical card: Now */
+.now{background:var(--sheet);border:2px solid var(--card-b);border-radius:18px;box-shadow:0 4px 0 var(--edge);padding:12px 14px 4px;margin-top:6px}
+.now-k{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;font-weight:700;color:var(--ink-2)}
+.now-k .left b{color:var(--ink)}
+.bar{height:3px;border-radius:2px;background:var(--line);margin:8px 0 10px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--ink);border-radius:2px}
+.now h1{font-size:27px;font-weight:800;line-height:1.08;display:flex;align-items:center;gap:9px}
+.now h1 .em{font-size:24px;font-family:system-ui}
+.now .sub{font-size:14px;font-weight:600;color:var(--ink-2);margin-top:3px}
+/* game rows */
+.rows{margin-top:8px}
+.gr{display:grid;grid-template-columns:26px 1fr auto;column-gap:10px;padding:11px 0;border-top:1px solid var(--line)}
+.gr:first-child{border-top:0}
+.gr .nm{font-size:17px;font-weight:750;line-height:1.2;letter-spacing:-.012em}
+.gr .ds{font-size:14px;font-weight:550;color:var(--ink-2);margin-top:2px;line-height:1.3}
+.gr .ds b{color:var(--ink);font-weight:700}
+.gr .rt{align-self:center;display:flex;align-items:center;gap:6px;color:var(--ink-2)}
+.gr .full{grid-column:2 / 4}
+.st{width:24px;height:24px;border-radius:50%;display:grid;place-items:center;margin-top:-1px}
+.st.done{background:var(--done);color:#fff}
+body.dark .st.done{color:var(--paper)}
+.st.live{background:var(--live-tint);box-shadow:inset 0 0 0 2px var(--live)}
+.st.live::after{content:'';width:9px;height:9px;border-radius:50%;background:var(--live)}
+.st.todo{box-shadow:inset 0 0 0 2px var(--ink-3)}
+.tag{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:800;border-radius:6px;padding:2px 6px;vertical-align:1px}
+.tag.live{color:var(--live);background:var(--live-tint)}
+.tag.done{color:var(--done);background:var(--done-tint)}
+.tag.next{color:var(--ink);background:var(--paper-2)}
+.tag.you{color:#fff;background:var(--tc,var(--ink))}
+body.dark .tag.you{color:var(--paper)}
+body.dark .badge,body.dark .chs span b{color:#0c1030}
+.md{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:50%;border:1.6px solid #141a48;font-style:normal;font-size:13px;font-weight:900;color:#141a48;flex:none}
+.md.g{background:var(--mg)}.md.s{background:var(--ms)}.md.b{background:var(--mb)}
+body.dark .md{border-color:#0c1030}
+/* medal winners: a 3-up podium strip. Never one nowrap line: names wrap to 2 lines, cells never overflow */
+.pod{grid-column:2 / 4;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;margin:8px 0 0 -6px}
+.pc{display:flex;flex-direction:column;gap:3px;padding:5px 6px 6px;border-radius:9px;min-width:0}
+.pc .tp{display:flex;align-items:center;gap:4px}
+.pc .n2{font-size:14px;font-weight:700;line-height:1.15;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.pc.me{box-shadow:inset 0 0 0 2px var(--tc)}
+.lb{grid-column:1 / 4 !important;display:grid;grid-template-columns:1fr 1fr;gap:0 12px;margin-top:9px;padding:3px 10px;background:var(--paper);border-radius:12px}
+.lr{display:flex;align-items:center;gap:5px;height:32px;font-size:14px;font-weight:650;white-space:nowrap}
+.lr .n{width:12px;font-size:13px;font-weight:800;color:var(--ink-2);text-align:right}
+.lr b{margin-left:auto;font-size:17px;font-weight:800}
+.lr.me{outline:2px solid var(--tc);outline-offset:-1px;border-radius:8px;padding:0 6px 0 4px;margin:0 -6px 0 -4px}
+/* buttons: chunky = pressable */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:44px;padding:0 16px;border-radius:12px;border:2px solid var(--card-b);background:var(--sheet);box-shadow:0 3px 0 var(--edge);font-size:15px;font-weight:800;color:var(--ink);white-space:nowrap}
+.btn.gold{background:var(--gold);border-color:var(--gold-edge);box-shadow:0 3px 0 var(--gold-edge);color:var(--gold-ink)}
+.btn.sm{height:44px;padding:0 14px;font-size:15px}
+.btn.wide{display:flex;width:100%}
+/* flat run-sheet sections */
+.sec{margin-top:16px}
+.sec-h{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;font-weight:750;color:var(--ink-2);padding:0 2px 5px}
+.sec-h a{color:var(--link);font-size:15px;font-weight:750;text-decoration:none;display:inline-flex;align-items:center;gap:2px;padding:13px 0 13px 16px;margin:-13px 0 -13px -16px}
+.rs{display:grid;grid-template-columns:62px 1fr auto;column-gap:8px;align-items:baseline;padding:9px 2px;border-top:1px solid var(--line)}
+.rs:first-of-type{border-top:0}
+.rs .tm{font-size:15px;font-weight:750}
+.rs .lb2{font-size:16px;font-weight:650;line-height:1.3}
+.rs .lb2 small{display:block;font-size:14px;font-weight:550;color:var(--ink-2);margin-top:1px}
+.rs .em{font-family:system-ui}
+/* message strip */
+.msg{display:grid;grid-template-columns:28px 1fr 30px;gap:8px;align-items:start;background:var(--blue-tint);border-radius:14px;padding:10px 10px 10px 12px;margin-top:4px}
+.msg .ic{width:28px;height:28px;border-radius:8px;background:var(--blue);color:#fff;display:grid;place-items:center}
+body.dark .msg .ic{color:var(--paper)}
+.msg p{font-size:15px;font-weight:650;line-height:1.32}
+.msg small{display:block;font-size:13px;font-weight:600;color:var(--ink-2);margin-top:2px}
+.msg .x{color:var(--ink-2);display:grid;place-items:center;width:44px;height:44px;margin:-8px -10px 0 -14px}
+/* list groups (More) */
+.grp{background:var(--sheet);border:1.5px solid var(--line-2);border-radius:16px;overflow:hidden}
+.li{display:grid;grid-template-columns:30px 1fr auto;gap:12px;align-items:center;min-height:56px;padding:8px 14px;border-top:1px solid var(--line)}
+.li:first-child{border-top:0}
+.li .ico{color:var(--ink-2);display:grid;place-items:center}
+.li b{display:block;font-size:16.5px;font-weight:750;letter-spacing:-.012em}
+.li small{display:block;font-size:13.5px;font-weight:550;color:var(--ink-2);margin-top:1px;line-height:1.3}
+.li .end{display:flex;align-items:center;gap:6px;color:var(--ink-3)}
+.pillc{font-size:12.5px;font-weight:800;border-radius:7px;padding:3px 7px;background:var(--gold-tint);color:var(--ink);box-shadow:inset 0 0 0 1.5px var(--gold-edge)}
+/* switches */
+.swr{display:flex;align-items:center;gap:8px;flex:none;min-height:44px}
+.swr em{font-style:normal;font-size:14px;font-weight:750;color:var(--ink-2)}
+.sw{width:52px;height:32px;border-radius:16px;background:var(--sheet);box-shadow:inset 0 0 0 2px var(--ink-3);position:relative;flex:none}
+.sw::after{content:'';position:absolute;top:5px;left:5px;width:22px;height:22px;border-radius:50%;background:var(--ink-3)}
+.sw.on{background:var(--done);box-shadow:none}
+.sw.on::after{left:25px;top:4px;width:24px;height:24px;background:#fff}
+.sw.off-locked{opacity:.55}
+/* segmented */
+.seg{display:flex;background:var(--paper-2);border-radius:12px;padding:2px;gap:2px}
+.seg span{flex:1;height:44px;border-radius:10px;display:grid;place-items:center;font-size:14.5px;font-weight:700;color:var(--ink-2)}
+.seg span.on{background:var(--sheet);color:var(--ink);box-shadow:0 0 0 1.5px var(--card-b),0 2px 0 var(--edge);font-weight:800}
+
+.runrev{display:grid;grid-template-columns:46px 1fr auto;gap:12px;align-items:center;height:76px;padding:0 14px 0 12px;border-radius:18px;background:var(--gold);border:2.5px solid var(--gold-edge);box-shadow:0 5px 0 var(--gold-edge);color:#1f1500}
+.ri{width:46px;height:46px;border-radius:13px;background:#141a48;color:#fff;display:grid;place-items:center}
+.rt2 b{display:block;font-size:21px;font-weight:850}
+.rt2 small{display:flex;align-items:center;gap:6px;font-size:14px;font-weight:700;margin-top:2px}
+.rt2 small i{width:9px;height:9px;border-radius:50%;background:#0d542d;box-shadow:0 0 0 2px rgba(255,255,255,.6)}
+.li{min-height:54px}
+</style></head>
+<body class=""><div class="sb" style="color:var(--ink)"><span class="tm">10:42</span><i class="island"></i><span class="sy"><svg width="18" height="12" viewBox="0 0 18 12" fill="currentColor"><rect x="0" y="8" width="3" height="4" rx="1"/><rect x="5" y="5.5" width="3" height="6.5" rx="1"/><rect x="10" y="3" width="3" height="9" rx="1"/><rect x="15" y="0" width="3" height="12" rx="1"/></svg><svg width="17" height="12" viewBox="0 0 17 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M1.5 4.2a10 10 0 0 1 14 0"/><path d="M4 7a6.4 6.4 0 0 1 9 0"/><circle cx="8.5" cy="10" r="1.2" fill="currentColor" stroke="none"/></svg><svg width="27" height="13" viewBox="0 0 27 13" fill="none"><rect x=".7" y=".7" width="22.6" height="11.6" rx="3.6" stroke="currentColor" stroke-opacity=".5" stroke-width="1.4"/><rect x="2.4" y="2.4" width="15" height="8.2" rx="2.2" fill="currentColor"/><path d="M25 4.4v4.2c.9-.3 1.6-1.2 1.6-2.1S25.9 4.7 25 4.4z" fill="currentColor" fill-opacity=".55"/></svg></span></div>
+<header class="ab"><b class="title-ab d">More</b><div class="ab-r" style="margin-left:auto"><span style="font-size:13px;font-weight:700;color:var(--ink-2)">Jenn · Director</span></div></header>
+<div class="pg">
+ <div class="sec-h" style="margin-top:2px"><span>Director</span><span style="display:inline-flex;gap:5px;align-items:center"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" ><path d="M3.5 3.5l17 17"/><path d="M10.4 6.1A9.6 9.6 0 0 1 12 6c5.3 0 8.5 6 8.5 6a15.6 15.6 0 0 1-3 3.7M6.6 7.6C4.4 9.1 3.5 12 3.5 12s3.2 6 8.5 6a8.6 8.6 0 0 0 3.8-.9"/><path d="M10 10a2.8 2.8 0 0 0 4 4"/></svg> Only directors see this</span></div>
+ <div class="runrev"><span class="ri"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" ><rect x="2.8" y="4.2" width="18.4" height="12.6" rx="2.4"/><path d="M8.4 20.4h7.2M12 16.8v3.6"/></svg></span><span class="rt2"><b class="d">Run the reveal</b><small><i></i>Ready · 2 big screens online</small></span><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" ><path d="m9.5 5.5 6.5 6.5-6.5 6.5"/></svg></div>
+ <div class="grp" style="margin-top:12px">
+  <div class="li"><span class="ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" ><path d="M3.8 10v4a1.6 1.6 0 0 0 1.6 1.6h1.8L16 20V4L7.2 8.4H5.4A1.6 1.6 0 0 0 3.8 10z"/><path d="M19.2 9.2a4 4 0 0 1 0 5.6"/></svg></span><span><b>Tell everyone</b><small>Banner, buzz phones or the big notice</small></span><span class="end"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" ><path d="m9.5 5.5 6.5 6.5-6.5 6.5"/></svg></span></div>
+  <div class="li"><span class="ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" ><path d="M12 4.2l2.4 4.9 5.4.8-3.9 3.8.9 5.4L12 16.6l-4.8 2.5.9-5.4-3.9-3.8 5.4-.8z"/></svg></span><span><b>Award points</b><small>Verse, cleanup and quick points</small></span><span class="end"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" ><path d="m9.5 5.5 6.5 6.5-6.5 6.5"/></svg></span></div>
+  <div class="li"><span class="ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" ><path d="M3.2 12S6.4 6 12 6s8.8 6 8.8 6-3.2 6-8.8 6-8.8-6-8.8-6z"/><circle cx="12" cy="12" r="2.7"/></svg></span><span><b>What counselors see</b><small>Sections on or off · preview</small></span><span class="end"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" ><path d="m9.5 5.5 6.5 6.5-6.5 6.5"/></svg></span></div>
+  <div class="li"><span class="ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" ><rect x="4" y="5.2" width="16" height="14.8" rx="2.4"/><path d="M4 9.8h16M8.6 3.4v3.6M15.4 3.4v3.6"/></svg></span><span><b>Set up the week</b><small>Schedule, games, teams</small></span><span class="end"><span class="pillc">1 asking to join</span><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" ><path d="m9.5 5.5 6.5 6.5-6.5 6.5"/></svg></span></div>
+  <div class="li"><span class="ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" ><path d="M4.4 12a7.6 7.6 0 1 0 2.2-5.4"/><path d="M4 4.4v3.8h3.8"/><path d="M12 8.2V12l2.6 1.6"/></svg></span><span><b>Change history</b><small>Who saved what, and when</small></span><span class="end"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" ><path d="m9.5 5.5 6.5 6.5-6.5 6.5"/></svg></span></div>
+ </div>
+ <div class="sec-h" style="margin-top:16px"><span>Camp</span></div>
+ <div class="grp">
+  <div class="li"><span class="ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" ><rect x="4" y="5.2" width="16" height="14.8" rx="2.4"/><path d="M4 9.8h16M8.6 3.4v3.6M15.4 3.4v3.6"/></svg></span><span><b>Full schedule</b></span><span class="end"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" ><path d="m9.5 5.5 6.5 6.5-6.5 6.5"/></svg></span></div>
+  <div class="li"><span class="ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" ><path d="M4.5 5.6c2.6-1 5.2-.8 7.5.8 2.3-1.6 4.9-1.8 7.5-.8v12.6c-2.6-1-5.2-.8-7.5.8-2.3-1.6-4.9-1.8-7.5-.8z"/><path d="M12 6.4v12.4"/></svg></span><span><b>Memory verse</b></span><span class="end"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" ><path d="m9.5 5.5 6.5 6.5-6.5 6.5"/></svg></span></div>
+  <div class="li"><span class="ico"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" ><path d="M14.5 4.2 11 11.4"/><path d="M8.2 10.6l5.2 2.4-1.6 6.6-7.6-3.6z"/><path d="M7.8 17.4l1.4-2.6"/></svg></span><span><b>Meal cleanup</b></span><span class="end"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" ><path d="m9.5 5.5 6.5 6.5-6.5 6.5"/></svg></span></div>
+ </div>
+</div>
+<nav class="tb" role="tablist"><a class="tab " role="tab" aria-selected="false">
+<span class="ti"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" ><circle cx="12" cy="12" r="8.6"/><path d="M12 7.2V12l3.4 2.1"/></svg></span><span class="tl">Now</span></a><a class="tab " role="tab" aria-selected="false">
+<span class="ti"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" ><path d="M7.5 4h9v5.2a4.5 4.5 0 0 1-9 0z"/><path d="M7.5 6H4.8a2.6 2.6 0 0 0 2.9 3.6M16.5 6h2.7a2.6 2.6 0 0 1-2.9 3.6"/><path d="M12 13.8V17M8.6 20.2h6.8M9.6 17h4.8"/></svg></span><span class="tl">Games</span></a><a class="tab " role="tab" aria-selected="false">
+<span class="ti"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" ><path d="M4.5 6.2A2.7 2.7 0 0 1 7.2 3.5h9.6a2.7 2.7 0 0 1 2.7 2.7v7.1a2.7 2.7 0 0 1-2.7 2.7H11l-4.4 3.6V16h.6a2.7 2.7 0 0 1-2.7-2.7z"/></svg><b class="badge">1</b></span><span class="tl">Chat</span></a><a class="tab on" role="tab" aria-selected="true">
+<span class="ti"><i class="blob"></i><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" ><circle cx="5.5" cy="12" r="1.3" fill="currentColor"/><circle cx="12" cy="12" r="1.3" fill="currentColor"/><circle cx="18.5" cy="12" r="1.3" fill="currentColor"/></svg></span><span class="tl">More</span></a></nav><i class="hi"></i></body></html>

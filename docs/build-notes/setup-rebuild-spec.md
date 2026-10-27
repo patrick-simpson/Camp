@@ -7,6 +7,17 @@ at the end). Written by the spec lead on 2026-10-27 against `main` @ `63005d9`
 anything this spec does not change. Line numbers are `file:line` at that commit. Review finding
 ids are cited inline as `sync-F#`, `sec-F#` and `ux-R#`.
 
+**Updated 2026-10-27 with the owner's answers.** All thirteen questions in §17.1 are answered and
+§17.1 is now the record (§1.4 lists what each answer changed). Four answers differ from the
+recommendations that had been applied: **both camps roll out together** (no senior-first trial);
+the **new-year setup and the edited-here / original-week switch are owner-only**, enforced in the
+database rules and in the app; senior's **arrival and send-off days keep their sample schedules**
+for now; and the **counselor spellings merge to Sofia, Lily and Alyssa** (`camps.js` and
+`tests/fixtures-junior-week.json`, stage S0k). The home-screen redesign now has its own spec,
+`app-shell-redesign-spec.md`, and the integrated build order for both projects is
+`BUILD-PLAN.md` (where the two disagree with this spec's calendar, `BUILD-PLAN.md` wins). The spec
+was written against v183; the app is now v184, so every `file:line` below is approximate.
+
 Sources: three competing drafts (`p2-drafts/draft-migration-first.md`,
 `draft-editor-first.md`, `draft-data-first.md`) and a three-judge panel. Two of three judges
 picked **migration-first** as the base; this spec starts there, takes the **editor-facing
@@ -24,6 +35,7 @@ its fix in §1.3.
   cleanup rota and electives. Nothing needs a code change or a Firebase console visit.
 - A **new-year wizard** in five short steps: pick the Sunday camp starts, choose what carries
   over from last year, save last year, clear the scoreboard, then finish from the checklist.
+  **Only the owner can run it**, in the app and in the database rules (§1.4).
 - **The schedule becomes editable.** You build one *typical day*; Monday to Friday use it.
   When you change something on a weekday the app asks **"Just Tuesday"** or **"Every day like
   Tuesday"** (and lists the days that will change). Sunday (arrival) and Saturday (send-off)
@@ -53,28 +65,35 @@ its fix in §1.3.
   points** (any director, any device) are taken before anything big, and last year is
   **archived and checked** before the new year clears the scores; the archive can't be deleted
   from the app, and **Undo the new-year setup** puts last year back exactly.
-- **Deploying never changes a running week.** Nothing switches over until a director presses
-  **Edit the week here** for that camp; **Use the original week again** switches back in one tap
-  and keeps every change, so pressing **Edit the week here** again brings them back.
-  Until then junior behaves exactly as it does today; right after, it still looks identical.
-- **Senior goes first** as a rehearsal. Junior switches off-season. The risky engine work is
-  done this winter, long before next summer.
+- **Deploying never changes a running week.** Nothing switches over until **the owner** presses
+  **Edit the week here** for that camp (owner-only, decision Q8); **Use the original week again**
+  switches back in one tap and keeps every change, so pressing **Edit the week here** again brings
+  them back. Until then junior behaves exactly as it does today (one deliberate exception: the
+  counselor names are spelled Sofia, Lily and Alyssa everywhere, decision Q21); right after, it still
+  looks identical.
+- **Both camps roll out together** (decision Q2). There is no senior-first trial run: the owner
+  presses **Edit the week here** for junior and senior in one sitting, off-season, with a restore
+  point per camp and the one-tap way back, after the seeded-fidelity tests and the emulator run
+  have passed for both. No camp week runs before June 2027 (decision Q1), so all the risky engine
+  work happens this winter and spring.
 
 **What you will do by hand**
 - **One** database-rules update (three copy-pastes in Cloud Shell from Appendix E: back up,
-  publish, check), plus two quick checks in a browser signed in as yourself and as a test
-  counselor.
+  publish, check), plus quick checks in a browser signed in as yourself, as another director and
+  as a test counselor. The same update also carries the standings-reveal blocks from the
+  redesign spec.
 - **One** Cloudflare Worker paste, when phone alerts go live.
-- Answer the questions in §17.1, one at a time, most important first. There are only the
-  questions only you can answer; everything else has a sensible default listed in §17.2 that you
-  can change any time. Every question has a recommended answer so building is never blocked.
+- **You press the two big switches yourself** (decision Q8): **Edit the week here** (once per
+  camp, both in one sitting) and the **new-year setup** (once per camp). No other director can.
+- §17.1 holds your thirteen answers (all given on 2026-10-27); nothing in this spec is waiting
+  on you. Everything else has a sensible default listed in §17.2 that you can change any time.
 
 ---------------------------------------------------------------------------------
 
 ## Contents
 
 0. Plain-English summary (above)
-1. How this spec was put together: base, grafts, resolved contradictions, panel flaws fixed
+1. How this spec was put together: base, grafts, resolved contradictions, panel flaws fixed, owner answers (§1.4)
 2. Goals, non-goals, acceptance moments
 3. Ground truth: verified facts the plan must survive
 4. Principles every stage obeys
@@ -90,7 +109,7 @@ its fix in §1.3.
 14. Deferred Project-1 items: where each lands
 15. Test plan, consolidated
 16. Risks
-17. Decisions for the owner (17.1 questions only the owner can answer; 17.2 defaults applied)
+17. Decisions for the owner (17.1 the owner's recorded answers; 17.2 defaults applied)
 - Appendix A: team colour palette (measured)
 - Appendix B: checklist status rules (`hubStatus`)
 - Appendix C: UI copy glossary
@@ -132,7 +151,7 @@ its fix in §1.3.
 | C16 | Undo of member/role changes | EF: undoable. DF: not undoable. | **Not undoable.** The screen says so. | Security-relevant writes keep their own confirms (judge 3). |
 | C17 | Camper names on devices | DF: cached with a persisted base. EF/MF: memory only. | **Memory only, online-only editing.** | Owner asked for rules-level privacy of minors' names. |
 | C18 | Team photo format | MF: JPEG painted on team colour. DF/EF: PNG or JPEG. | **PNG (if transparent) or JPEG**, ≤ 100,000 chars (target ≤ 70,000). | Transparent shields must work in dark mode. Cap lowered in review (sec-F10) for the download budget when a phone can't cache. |
-| C19 | Elective people keys | MF/DF: name slug. EF: member key, or `n-<slug>` for typed names. | **EF.** | Ends the Sofie/Sofia spelling join going forward. Seeds stay `n-<slug>` (deterministic). |
+| C19 | Elective people keys | MF/DF: name slug. EF: member key, or `n-<slug>` for typed names. | **EF.** | Ends name-spelling joins going forward (the three known pairs are merged once, in S0k, decision Q21). Seeds stay `n-<slug>` (deterministic). |
 | C20 | Day keys | MF/DF: `sun..sat`. EF: `d0..d6`. | **`sun..sat`.** | Readable in the console and in rules; never numeric (RTDB array coercion). |
 | C21 | Double points | DF: window not seeded. EF: relative to `weekStart`. MF: legacy epoch pinned to the constants. | **MF pin**, plus a relative window that applies only under a wizard-created epoch. | `bonusCountsDouble` is retroactive by timestamp (app.js:289-293). Setting next year's dates early must not re-score summer 2026. |
 | C22 | Epoch / archive ids | Various. | Epoch `w<YYYYMMDD>` of the new week's Sunday (legacy = absent). First archive id `rp-archive-pre-<YYYYMMDD>`. | Junior has no `weekStart` today. |
@@ -170,7 +189,7 @@ its fix in §1.3.
 | Strict `setup/games` rules (J2, J3) | C1 |
 | Derived mirrors and their write ownership (J2, J3) | Only one derived copy remains (`pushSchedule`): deterministic content, `rev` by transaction, author-triggered (§12.1) |
 | In-place 4-team bracket corrupted by old editors (J2, J3) | C4 |
-| Stage sizes; state-engine changes bundled (J2, J3) | One state-engine change per deploy; S0 is nine separate commits (§13) |
+| Stage sizes; state-engine changes bundled (J2, J3) | One state-engine change per deploy; S0 is eleven separate commits (§13) |
 | DF notice per-field diff could merge two halves (J2) | `notice` stays a whole-written singleton (§6.2) |
 | MF copy-vs-link semantics; cancel deletes the block (J2) | C2; cancel is an `off` patch (§11.6) |
 | Fences/rules on existing paths not backward compatible (J2, J3) | Every rule change is additive (§8.5 table) |
@@ -185,6 +204,48 @@ its fix in §1.3.
 | No combined PUT / pre-flight diff script (J3) | R1 + the hash-checked, pasted runbook with a discriminating live check (§8.6, Appendix E) |
 | Offline behaviour not explicit for photos, members, campers, wizard; "needs a connection" vs a refused write (J3) | §6.8 table; distinct UI states (§11.1 sync line) |
 
+### 1.4 Owner answers recorded 2026-10-27, and where each one landed
+
+All thirteen questions in §17.1 are answered (the table there is the record). Nine answers match
+the recommendations already built into this spec and change nothing but their status.
+**Four change the plan:**
+
+| Answer | What changed, and where |
+|---|---|
+| **Q2: both camps roll out together** | No senior-first trial run. The summary, §10.1 (A1 is per camp, pressed for both in one sitting), §13.1 (activation, calendar), S2–S5a/S8 "Verify live", K2 and K5 no longer lean on senior as the canary. The safety net is the seeded-fidelity tests for both camps, the emulator seeded-tree suites, a restore point per camp, and the one-tap way back. Live checks name both camps. |
+| **Q8: the new-year setup and the edited-here / original-week switch are owner-only** | App: the controls are shown only to the owner key; every other director reads the same sentence with the owner's name (§11.2, §11.3, Appendices B and C). Rules: new macros `OWNER` / `OWNERKEEP` (§8.1) on `setup/meta/on/*`, every `setup/meta/wizard` leaf, `setup/meta/{epoch,epochAt}` and `state/meta/{epoch,epochAt}` (§8.2, §8.3), and on creating `archive` / `pre-wizard` restore points. Restores never write the switches or the epoch (§7.2); **Undo the new-year setup** is owner-only (§7.3). New: moment M7 (§2.3), `owner-only.mjs` and `owner-only.test.js` (§8.8, §13.2), risk K23 (§16). |
+| **Q11: senior's Sunday and Saturday keep the sample days for now** | The seed still marks them `placeholder: true` (it is true), but the hub shows a quiet info line, never a ⚠️ (§10.2, Appendix B). Nothing nags until a director replaces them. |
+| **Q21: Sofie/Sofia, Lilly/Lily and Alysa/Alyssa merge to Sofia, Lily, Alyssa** | New stage **S0k** (§13.2): `camps.js` and `tests/fixtures-junior-week.json` change once, in one commit, before any id is derived from a name (S5a) and before phone alerts go live. "Junior is byte-identical" now means "apart from those three spellings" (P11, §3, §10.5). A small alias table keeps data already out there matching. The Electives "same person?" hint stays as a general helper; the three known pairs never need it (§11.13). |
+
+**What "owner-only" covers (Q8).** The owner is the one sign-in the rules already treat specially
+(`patricksimpson,fx@gmail,com`: immutable, and the permanent break-glass). No new role is added and
+the member record's shape is unchanged. The owner-only acts are **Edit the week here** (A1: any
+section, the first time or switching it back on), **Use the original week again**, the Advanced
+per-section switches and **Start this section again from the original**, **Start the new-year
+setup** (A3) and **Undo the new-year setup**. Everything else stays with every director: Camp week
+dates (outside a due new year), Schedule, rain plans, Games, Teams, People (including the asking
+switch and approvals), Campers, Meals, Memory verses, Cleanup rota, Electives, Notice board,
+restore points (creating one, and restoring with or without scores) and phone-alert publishing.
+
+**Honest limits** (same spirit as the own-team guard in CLAUDE.md):
+(a) Rules can't tell which feature wrote a deletion, so a director can still clear scores the way
+editors always could. What the rules pin is the *new year itself* (the epoch pair, the claim, the
+archive points) and the *switch* (`on`): the wizard can't commit without writing the epoch and A1
+can't commit without flipping `on`, and both are single atomic writes that refuse as a whole.
+(b) RTDB doesn't evaluate `.validate` on deletes, so a non-owner director with console-level access
+could delete an `on` flag, the claim or an epoch key. The app never does; deleting `on` has the same
+effect as **Use the original week again** (the owner presses Edit the week here again); and
+`owner-only.mjs` records what the emulator actually does rather than assuming it.
+(c) **Start this section again from the original** re-seeds with ordinary section writes, so its
+gate is the app only.
+(d) Ownership is an email identity: the owner signs in with Google (a phone sign-in is never the
+owner).
+
+**The redesign.** `app-shell-redesign-spec.md` (Now · Games · Chat · More, the standings reveal,
+jelly motion) is the second project. Where the two touch (the one rules publish, the TV page, the
+accessor seam, the More tab's Director section, the wizard's clear list, the `?v=` list) §8.6,
+§9.4, §11.1, §11.3 and `BUILD-PLAN.md` say how.
+
 ---------------------------------------------------------------------------------
 
 ## 2. Goals, non-goals, acceptance
@@ -193,8 +254,8 @@ its fix in §1.3.
 
 | # | Goal |
 |---|---|
-| G1 | All editors can set up a camp: laptop for the big setup, phone mid-week, several at once. No new role. |
-| G2 | A new-year wizard (copy last year → archive last year → clear scores) and a checklist hub with ✅/⚠️ per section. |
+| G1 | All editors can set up a camp: laptop for the big setup, phone mid-week, several at once. No new role. Two switches are the owner's alone: the new-year setup and the edited-here / original-week switch (§1.4). |
+| G2 | A new-year wizard (copy last year → archive last year → clear scores), run by the owner only, and a checklist hub with ✅/⚠️ per section. |
 | G3 | The week is always Sun–Sat; setup asks "which Sunday does camp start?", and that answer is the single source of truth for every date-dependent output. |
 | G4 | The schedule becomes editable synced data: one typical day used Mon–Fri, per-day one-offs ("just this day" vs "every day like it"); arrival and send-off are their own days. |
 | G5 | Teams: fixed counts (junior 6, senior 4); name, palette colour (light/dark safe), emoji, optional photo. |
@@ -206,11 +267,13 @@ its fix in §1.3.
 | G11 | A mid-week schedule change can alert that block's phone-alert subscribers. |
 | G12 | The TV standings page for both camps (`?camp=`) and a full-week `.ics`. |
 | G13 | The deferred Project-1 items (§14). |
-| G14 | Home-screen consumers read through stable accessors so the pending layout redesign can sit on top (§9.4). |
+| G14 | Home-screen consumers read through stable accessors so the app-shell redesign (`app-shell-redesign-spec.md`) sits on top (§9.4). |
 
 ### 2.2 Non-goals
-- The home-screen layout redesign (separate interview pending). This project only builds and
-  flags the seam (§9.4).
+- The home-screen / app-shell redesign. It now has its own spec, `app-shell-redesign-spec.md`
+  (Now · Games · Chat · More, the standings reveal, jelly motion; its own stages D0–D7). This
+  project only builds the seam it reads through (§9.4); the integrated order of both projects is
+  in `BUILD-PLAN.md`.
 - Firebase Storage, Cloud Functions, the Blaze plan, App Check, any build step.
 - A new role, or changing the viewer/editor model.
 - Changing team counts (6/4 stay fixed in code).
@@ -219,21 +282,23 @@ its fix in §1.3.
 - Re-keying Pictionary by game; a server-side audit log of every setup edit (per-section
   "last changed by" stamps, undo and restore points cover the need).
 - Date-aware Happening Now ("Camp starts Sunday…"), and naming games inside Happening Now:
-  both belong to the home redesign (decision Q19).
+  both belong to the redesign's Now tab (decision Q19; `app-shell-redesign-spec.md` §3).
 
-### 2.3 Acceptance: six moments (become the Playwright script for each stage that touches them)
+### 2.3 Acceptance: seven moments (become the Playwright script for each stage that touches them)
 
 | # | Moment | Device | Must be true |
 |---|---|---|---|
-| M1 | **The week before camp.** Jenn sets up 2027 junior on Sunday night. | Laptop, good Wi-Fi, maybe two tabs | The wizard takes her from last year to "ready" with no dead end; the checklist shows what's left; two panes on a wide screen; a second tab of the same camp opens read-only with **Use this tab instead**. |
+| M1 | **The week before camp.** Patrick (the owner) runs the new-year setup for 2027 junior on a Sunday night; Jenn then works down the checklist. | Laptop, good Wi-Fi, maybe two tabs | The wizard takes him from last year to "ready" with no dead end; the checklist shows what's left; two panes on a wide screen; a second tab of the same camp opens read-only with **Use this tab instead**; Jenn sees the same checklist and every editing screen. |
 | M2 | **Rainy Wednesday, 9:40.** Patrick in the dining-hall doorway; outdoor games start at 10:00. | Phone, one hand, spotty signal | From the home schedule sheet: **Change today's plan** → tap Team competitions → **Swap with…** → Elective 1 → **Swap their time slots** → tap Axe Throwing → **Move to…** → Thursday · Team competitions → Done → choose whether to alert. About ten taps, no keyboard. The tap count is measured by a Playwright script on junior Wednesday **before S5a is approved**; if it is over twelve, the panel changes, not the target. |
 | M3 | **Two directors at once.** Jenn fixes Tuesday's supper time on her laptop while Patrick adds a rain game on his phone. | Laptop + phone | Both changes land; each sees "Patrick is also here". If they touch the very same field, the later one sees an inline choice, never a silent overwrite. |
 | M4 | **Sunday registration.** A counselor not on the list signs in; a camper arrives late. | Counselor phone, director phone | A director has switched **Let people ask to join** on for registration. The counselor taps **Ask to join** and is told to find a director; the director's open app shows "Taylor is asking to join" at once; their page opens by itself once approved. The director adds the camper's first name in two taps (if the signal drops, the typed names wait on screen and send when it's back). Counselors can never read camper names (verified with a viewer token). |
 | M5 | **Senior Thursday.** The Legacy Game is a 4-team bracket. | Phone | Two semifinals, 3rd place, final; Undo at every step; two refs recording different winners for one match can never produce medals from an impossible bracket (the bracket stops and asks for a re-check instead). |
 | M6 | **Dead zone at the waterfront.** A director edits Friday's menu and the phone dies. | Phone | When it comes back the edit is still there and goes up on signal. If someone changed the same dish meanwhile, a toast says so and **See mine** offers **Use mine**. |
+| M7 | **A director who isn't the owner opens Set up the week.** (decision Q8) | Phone | They see the checklist and every editing screen. Where the owner would see **Edit the week here** or **Start the new-year setup**, they read the same sentence with the owner's name ("Patrick turns on editing."). The same acts attempted straight against the database are refused by the rules (emulator-proven). |
 
-Also checked per stage: every existing test passes, including `tests/camps.test.js` against the
-untouched `tests/fixtures-junior-week.json`; unauthenticated probes against every new node
+Also checked per stage: every existing test passes, including `tests/camps.test.js` against
+`tests/fixtures-junior-week.json` (changed once, on purpose, in S0k for the three counselor
+spellings, then untouched); unauthenticated probes against every new node
 return `Permission denied`; a signed-in **viewer** gets `Permission denied` on `campers`.
 
 ---------------------------------------------------------------------------------
@@ -257,7 +322,7 @@ return `Permission denied`; a signed-in **viewer** gets `Permission denied` on `
 | Worker `campTeams` reads `<root>/state/teams` (worker.js:1689); `teamNamedIn` accepts the full name or a word of ≥ 4 letters other than "team" (`MIN_TEAM_WORD_CHARS = 4`, worker.js:128, 1677). Senior names are "Red Team" etc. (camps.js:488). | "Red" can't be verified → fix via `short` in `state.teams` (§12.2, §14). |
 | Every `DAY_SCHEDULE` day in both camps is sorted by `start`; the only equal start is junior Tue/Thu movie night vs "Prepare for bed" at 21:15, where array order decides Happening Now (camps.js:206-230). | `ord` tie-break reproduces order exactly. |
 | The junior morning meeting label is `head + ' — ' + joinTeamAbbrevs(group)` with `TEAM_EMOJI[id] + ' ' + TEAM_ABBREV[id]` (camps.js:173-191). | The block `teams` set re-renders it exactly (C26). |
-| `tests/camps.test.js:35-51` deep-equals 20 junior constants to `tests/fixtures-junior-week.json`. | Constants stay as seed and fallback; never edited. |
+| `tests/camps.test.js:35-51` deep-equals 20 junior constants to `tests/fixtures-junior-week.json`. | Constants stay as seed and fallback. Edited once, in S0k, for the three counselor spellings (Q21): the fixture is regenerated in the same commit and its diff is only those spellings; never edited after. |
 | Light theme `--color-danger-text` = `var(--color-danger)` = `#d63b3b` (styles.css:23, 27) ≈ 4.26:1 on the page background; `.danger-link` uses `--color-danger` (styles.css:1576). | Contrast fix in S0. |
 | Senior config has sessions `Morning/Afternoon/Evening` (camps.js:586). | Session derivation must handle Afternoon. |
 
@@ -266,7 +331,7 @@ return `Permission denied`; a signed-in **viewer** gets `Permission denied` on `
 ## 4. Principles every stage obeys
 
 - **P1 Deploy is not activation.** A deploy changes behaviour only for bug fixes. New
-  behaviour waits for an explicit, per-camp, undoable editor action:
+  behaviour waits for an explicit, per-camp, undoable action by the owner:
 
   | Action | What directors see | Does | Undo |
   |---|---|---|---|
@@ -276,6 +341,9 @@ return `Permission denied`; a signed-in **viewer** gets `Permission denied` on `
 
   A1 and A3 refuse during a camp week unless the editor ticks "I know a camp week is running"
   (§10.6 defines this when no week date exists).
+  **A1, its undo, and A3 with its undo are owner-only (decision Q8).** The app shows these controls
+  only to the owner key (everyone else reads a sentence naming the owner), and the rules refuse the
+  writes that make them happen from anyone else (§1.4, §8.1 `OWNER`, §8.2, §8.3).
 - **P2 New data in new places.** No new top-level key in `config`. Existing shapes don't
   change. The complete list of additions to existing nodes: optional game fields
   (`blockId`, `ord`, `bracketSeed`); optional team fields (`short`, `emoji`, `color`, `photoV`);
@@ -292,12 +360,13 @@ return `Permission denied`; a signed-in **viewer** gets `Permission denied` on `
   the reason on the disabled control (photos, members, campers, restore, wizard, requests).
 - **P7 One state-engine change per deploy**, each with its own tests, off-season.
 - **P8 Camp-week freeze.** Stages marked *off-season* never deploy within ±2 days of a camp
-  week (dates: decision Q1). A1/A3 enforce it in the app.
+  week. Decision Q1: no camp week runs before June 2027, so every stage that ships before then is
+  off-season; the freeze starts when the dates are known. A1/A3 enforce it in the app.
 - **P9 Pin first.** A stage's commit adds tests pinning current behaviour before changing the
   code they guard (settings.js CRUD and the 6-team bracket have no tests today).
 - **P10 Resolve by id at commit time.** No builder handler closes over a synced object; it
   looks the object up by id/path when it commits (remote applies replace objects).
-- **P11 Junior byte-identical until A1, output-identical after** (§10.5).
+- **P11 Junior byte-identical until A1, output-identical after** (§10.5), except the three counselor spellings merged once in S0k (decision Q21).
 - **P12 Camper names never leave their editor-only node**: not in localStorage, `SYNC_KEYS`,
   backups, restore points, archives, the TV page, push payloads, chat mentions or undo
   persistence.
@@ -344,17 +413,18 @@ setup = {
     schema: 1,                                   // readers fall back + hub ⚠️ when schema > known
     on: { schedule: true, meals: true, verses: true, cleanup: true, electives: true },
                                                  // per-section switch (§5.3); absent = never turned on,
-                                                 // false = turned off (data kept) — both mean built-in copy
+                                                 // false = turned off (data kept) — both mean built-in copy.
+                                                 // Changed ONLY by the owner (Q8, §8.2)
     seeded: { at: <server ms>, byKey: 'jenn,x@gmail,com', from: 'camps.js@v196' },
     weekStart: '2027-07-18',                     // the Sunday; may exist before any section is on
     double: { fromDow: 4, fromMin: 1020, toDow: 6, toMin: 0 },
                                                  // bonus ×2 window RELATIVE to weekStart; used ONLY
                                                  // under a wizard-created epoch (§5.7.3)
     finaleDow: 5,                                // TV champion finale (absent ⇒ 5)
-    epoch: 'w20270718', epochAt: <server ms>,    // written only by the wizard commit, with state/meta
+    epoch: 'w20270718', epochAt: <server ms>,    // written only by the wizard commit (owner-only), with state/meta
     skip: { campers: true },                     // "Not using this year" (hub shows —, never ⚠️)
     edited: { schedule: { at: <server ms>, byKey: '…' }, … },   // added at PUSH time (§6.4.3)
-    wizard: { step: 3, byKey: '…', at: <server ms>, fromEpoch: 'legacy',   // never '' (sync-F19)
+    wizard: { step: 3, byKey: '…', at: <server ms>, fromEpoch: 'legacy',   // never '' (sync-F19); owner-only (Q8)
               archiveId: 'rp-archive-pre-20270601-k3f9',
               answers: '{"weekStart":"2027-07-18","double":{…},"carry":{…}}' },   // JSON string, ≤ 2,000
     joinOpen: true,                              // walk-ups may ask to join (§11.8); absent/false = closed
@@ -397,8 +467,8 @@ setup = {
   electives: {
     stations: { 'st-crafts-with-eileen': { name: 'Crafts with Eileen', emoji: '🎨' }, … },
     slots: { mon: { s0: { 'st-crafts-with-eileen': { ord: 10,
-               people: { 'alysa,x@gmail,com': { name: 'Alysa', ord: 10 },   // member key
-                         'n-lilly':            { name: 'Lilly', ord: 20 } } } },   // typed name
+               people: { 'alyssa,x@gmail,com': { name: 'Alyssa', ord: 10 },  // member key
+                         'n-lily':             { name: 'Lily', ord: 20 } } } },    // typed name
            s1: {…}, s2: {…} }, … },
   },
 }
@@ -431,6 +501,9 @@ setup = {
   kept. **Edit the week here** to bring them back".
 - `meta/on/<section>` is the only "present but empty" sentinel needed: it is a boolean and is
   never pruned, and its three states (absent / `false` / `true`) are all meaningful.
+- **Only the owner changes `meta/on/*`** (decision Q8): turning a section on or off, the first time
+  or again, is the owner's act, enforced in the rules (§8.2 `OWNERKEEP`) and shown only to the owner
+  in the app. Every other director edits whatever is on.
 
 ### 5.4 Block fields
 
@@ -549,7 +622,8 @@ validates under `$i` accept the legacy whole-array write, which carries none of 
 On the TV page the same sanitizers come from `camp-core.js` (P14).
 
 **5.7.2 Epoch.** `state/meta/epoch` (`w<YYYYMMDD>`) and `state/meta/epochAt` (server ms),
-written only by the wizard commit (same values as `setup/meta`). **Absent = the legacy epoch
+written only by the wizard commit (same values as `setup/meta`), which only the owner can run:
+the rules pin both fields to the owner (§8.3). **Absent = the legacy epoch
 `''`**, which is today's data. `meta` is diffed per field, so old builds carry it untouched.
 
 **5.7.3 Double points.** `doubleWindow()` returns:
@@ -945,8 +1019,8 @@ revert a colleague's dishes.
 | A makes Friday its own day, B saves "Just Friday" | "Give Friday its own schedule" writes `days/fri/typical: false`, the copied `dayBlocks/fri` **and** `patches/fri: null` in one update; B's patch write is refused because patch fields require `days/<dk>/typical === true` (§8.1 `PANCHOR`) and goes to quarantine with "Friday is now its own day — open it and make the change there". "Go back to the typical day" likewise clears `dayBlocks/<dk>` in the same update (sync-F16b). |
 | A finishes a rain plan she started 15 min ago; B changed one of those items meanwhile | Done compares each staged field's stored base with the current value; any field B changed is listed "Patrick moved *Lunch* to 12:15 since you started — [Keep his] [Use yours]" before anything is written (§11.6, sync-F4). |
 | A shuffles a day (one atomic batch), B edits one item on that day | Per-field merge; the hub overlap check flags any resulting overlap. |
-| Two editors press **Edit the week here** | One transaction on `setup` (§10.1; the rules accept the unchanged edit stamps and wizard claim it carries, sync-F1); the second sees "Jenn already turned this on" and writes nothing. |
-| Two editors start the wizard | Claim by transaction on `setup/meta/wizard`; the second sees "Jenn is setting up 2027 (step 3 of 5, 4 min ago) [Watch] [Take over]" (take over only after 15 min idle). |
+| The owner presses **Edit the week here** on two devices or tabs | One transaction on `setup` (§10.1; the rules accept the unchanged edit stamps and wizard claim it carries, sync-F1); the second press sees "You already turned this on" and writes nothing. No other director gets the button, and the rules refuse the same write from them (§8.2, Q8). |
+| The owner starts the wizard on two devices | Claim by transaction on `setup/meta/wizard`; the second device sees "You're setting up 2027 on another device (step 3 of 5, 4 min ago) [Watch] [Take over]" (take over only after 15 min idle). A non-owner director sees a read-only line, "Patrick is setting up 2027 (step 3 of 5)", and no claim button; the rules refuse their write (Q8). |
 | Two refs tap a bracket winner | On one device the handler re-reads the match and ignores a tap on a decided match ("Already recorded by Jenn"). Across devices (or a tap queued offline) the last ack wins for that match, the 60 s "changed right after you" toast tells the other ref, and if the change makes a later recorded match impossible the bracket goes to **re-check** and awards no medals until a ref resolves it (§5.7.4, sync-F9). |
 | Two editors add teams to the same cleanup meal | Per-team leaves: both stick. |
 
@@ -1118,7 +1192,7 @@ details"). The two are never shown with the same words.
 - **Body** (`restoreBody/<rid>`, ONE JSON string so RTDB can't prune or array-coerce it):
   ```js
   { app: 'campScoreboardV3', camp: 'junior', at, epoch, appVersion,
-    config, setup /* minus meta.edited, meta.wizard, meta.seeded, meta.epoch, meta.epochAt */,
+    config, setup /* minus meta.on, meta.edited, meta.wizard, meta.seeded, meta.epoch, meta.epochAt */,
     state: { teams, results, brackets, brackets4, drafts, picRounds,
              picSetup /* modes only, never words */, bonuses, live, clocks,
              announcements, notice, meta } }
@@ -1157,7 +1231,8 @@ details"). The two are never shown with the same words.
      the 2026 week").
   3. Show what would change, computed locally against current data ("Tuesday's schedule (4
      items) · 2 games · team names"), with section checkboxes: **Schedule & week**, **Games**,
-     **Teams**, **Notice**, and **Scores** (off by default; on → hold-to-confirm, §11.0).
+     **Teams**, **Notice**, and **Scores** (unticked unless the director ticks it, decision Q23;
+     on → hold-to-confirm, §11.0).
   4. Write a `pre-restore` point (online, required).
   5. Apply each chosen section **through its engine as a diff** (setup via one `commitSetup`
      with `undo:false`; config via one transaction; teams/notice/scores via `saveState()`
@@ -1168,16 +1243,21 @@ details"). The two are never shown with the same words.
      a clock; the preview lists them ("Kept because they have scores: Rain bowling · 🥇 Foxes").
      They can be removed only by also ticking **Scores**, which shows their points and needs the
      hold-to-confirm. `pruneOrphanedGameData` runs **only** when Scores is ticked.
-  6. **A restore never writes `meta/epoch`** (state or setup), `meta/edited`, `meta/wizard` or
-     `meta/seeded` — with one exception, **Undo the new-year setup** (§7.3), which exists to put
-     the archived epoch back.
+  6. **A restore never writes `meta/on`, `meta/epoch`** (state or setup), `meta/edited`,
+     `meta/wizard` or `meta/seeded`. `on`, `epoch` and `wizard` are owner-only (decision Q8), so a
+     director's restore would be refused if it tried. **A section whose `on` flag was off or absent
+     in the point is not offered** ("This point is from before this section was edited here. Going
+     back to the original week is the owner's switch."), because restoring its data while the
+     section is on would leave it empty. One exception, **Undo the new-year setup** (§7.3), which
+     exists to put the archived epoch back and is the owner's act.
 
 ### 7.3 The year archive
 
 The wizard's step 3 writes a **pinned restore point of kind `archive`** with id
 `rp-archive-<outgoing epoch>-<4 random>` (or `rp-archive-pre-<YYYYMMDD>-<4 random>` for the first
 wizard run, when the legacy epoch has no id), `label: '2026 week (junior)'` and `note: 'Ferocious
-Foxes won with 211 points'`. It is **verified by read-back** (`once()` of index and body; compare
+Foxes won with 211 points'`. Only the owner can create `archive` and `pre-wizard` points (§8.2), as
+only the owner runs the wizard. It is **verified by read-back** (`once()` of index and body; compare
 `bytes` length and `hash`) before the wizard can clear anything; the wizard also offers a JSON
 download of the same body. Campers and chat are not archived (decisions Q7 and Q16). The
 changelog is append-only and stays; the history drawer filters by epoch (§6.11). Archives are
@@ -1199,8 +1279,9 @@ editor-read only and **the rules refuse deleting them** (§8.2): removing one is
   against the new double-points window and the history filter would keep hiding last year. The
   newest archive point therefore offers, while no newer archive exists, a dedicated **Undo the
   new-year setup** (Restore points → Past years, and the hub ⋯ for 14 days after a wizard run).
-  It has the restore preconditions (§7.2 step 0), a `pre-restore` point and the hold-to-confirm,
-  and is **one atomic root update** that puts back: every archived state section including
+  It is **owner-only** (it writes the epoch back; other directors see Past years and Download, and
+  "Only Patrick can undo the new-year setup"). It has the restore preconditions (§7.2 step 0), a
+  `pre-restore` point and the hold-to-confirm, and is **one atomic root update** that puts back: every archived state section including
   scores; `state/meta/epoch` and `epochAt` to the archived values (**deleted** for the legacy
   epoch, which re-enables the 2026 constant pin); `setup` sections and
   `setup/meta/{epoch, epochAt, weekStart, double, finaleDow}` to the archived values (deleted
@@ -1251,6 +1332,15 @@ root name. `R` is the camp root literal.
   restore) may carry an existing stamp unchanged (sync-F1).
 - `SELFKEEP` = `newData.val() === data.val() || SELF(newData.val())` — the same for `byKey`
   fields: yours when written, someone else's only if it is carried unchanged.
+- `OWNER` = `SELF('patricksimpson,fx@gmail,com')` — the writer is the owner (decision Q8). The
+  literal is the one the members rule's owner-key immutability already uses, and `rules.test.js`
+  asserts it equals `OWNER_MEMBER_KEY` in both roots (§8.10). A phone sign-in never matches (the
+  literal isn't a phone number), so the owner signs in with Google.
+- `OWNERKEEP` = `newData.val() === data.val() || OWNER` — a value may be carried unchanged by anyone
+  (a whole-node write, a stale cache) but changed only by the owner. Like every macro it expands
+  inside parentheses, so `X && OWNERKEEP` means `X && (A || B)`. Every owner clause sits on a
+  **leaf**: the design doesn't depend on how rules compare whole branches, or on whether ancestor
+  `.validate` runs (§8.1 below).
 
 **Why the anchors matter.** CLAUDE.md records that RTDB does not evaluate an ancestor's `.validate`
 for a deeper write (the known `state/<unknown>/<child>` hole); a reviewer's emulator run
@@ -1269,7 +1359,10 @@ Changed in review: tolerant stamps (sync-F1), anchor pairs (sync-F5), the patch 
 (sync-F6/sec-F6), patches tied to typical days (sync-F16b), `fromEpoch`/`answers`/`joinOpen`
 (sync-F19, ux-R5, sec-F1), `BRANCH` on every container (sec-F9), campers' `ord` pair, the
 photo cap and charset (sec-F3/F10), the walk-up throttle and block list (sec-F1), protected
-restore points (sec-F2) and the editor-only `editorsHere` node (sec-F7).
+restore points (sec-F2) and the editor-only `editorsHere` node (sec-F7). **Changed 2026-10-27
+(owner answer Q8):** `OWNER` / `OWNERKEEP` clauses on `meta/on/*`, `meta/epoch`, `meta/epochAt`,
+every `meta/wizard` leaf and the `archive` / `pre-wizard` restore kinds; the matching `state/meta`
+pair is in §8.3.
 
 ```jsonc
 "setup": {
@@ -1279,8 +1372,8 @@ restore points (sec-F2) and the editor-only `editorsHere` node (sec-F7).
   "meta": {
     ".validate": "BRANCH",
     "schema":    { ".validate": "INT(1,99)" },
-    "on":        { ".validate": "BRANCH",
-                   "$s": { ".validate": "$s.matches(/^(schedule|meals|verses|cleanup|electives)$/) && newData.isBoolean()" } },
+    "on":        { ".validate": "BRANCH",                  // Q8: every value changes only by the owner
+                   "$s": { ".validate": "$s.matches(/^(schedule|meals|verses|cleanup|electives)$/) && newData.isBoolean() && OWNERKEEP" } },
     "seeded":    { ".validate": "newData.hasChildren(['at','byKey','from'])",
                    "at": { ".validate": "newData.isNumber() && newData.val() <= now" },
                    "byKey": { ".validate": "SELFKEEP" },
@@ -1292,8 +1385,8 @@ restore points (sec-F2) and the editor-only `editorsHere` node (sec-F7).
                    "toDow":   { ".validate": "INT(0,7)" }, "toMin":   { ".validate": "INT(0,1439)" },
                    "$other": { ".validate": false } },
     "finaleDow": { ".validate": "INT(0,6)" },
-    "epoch":     { ".validate": "newData.isString() && newData.val().matches(/^w20[0-9]{6}(-[2-9])?$/)" },
-    "epochAt":   { ".validate": "newData.isNumber() && newData.val() <= now" },
+    "epoch":     { ".validate": "newData.isString() && newData.val().matches(/^w20[0-9]{6}(-[2-9])?$/) && OWNERKEEP" },
+    "epochAt":   { ".validate": "newData.isNumber() && newData.val() <= now && OWNERKEEP" },
     "joinOpen":  { ".validate": "newData.isBoolean()" },
     "skip":      { ".validate": "BRANCH",
                    "$s": { ".validate": "$s.matches(/^(campers|meals|verses|cleanup|electives)$/) && newData.isBoolean()" } },
@@ -1303,12 +1396,13 @@ restore points (sec-F2) and the editor-only `editorsHere` node (sec-F7).
                            "byKey": { ".validate": "SELFKEEP" },
                            "$other": { ".validate": false } } },
     "wizard":    { ".validate": "newData.hasChildren(['step','byKey','at','fromEpoch'])",
-                   "step": { ".validate": "INT(1,5)" },
-                   "byKey": { ".validate": "SELFKEEP" },
-                   "at": { ".validate": "NOWKEEP" },
-                   "fromEpoch": { ".validate": "NESTR(40)" },          // 'legacy' for the legacy epoch, never ''
-                   "archiveId": { ".validate": "newData.isString() && newData.val().matches(/^rp-[a-z0-9-]{4,48}$/)" },
-                   "answers": { ".validate": "STR(2000)" },           // JSON string: the step-1/2 answers (ux-R5)
+                   // Q8: a claim is the owner's alone — every leaf requires OWNER whenever it is written
+                   "step": { ".validate": "INT(1,5) && OWNER" },
+                   "byKey": { ".validate": "SELFKEEP && OWNER" },
+                   "at": { ".validate": "NOWKEEP && OWNER" },
+                   "fromEpoch": { ".validate": "NESTR(40) && OWNER" },          // 'legacy' for the legacy epoch, never ''
+                   "archiveId": { ".validate": "newData.isString() && newData.val().matches(/^rp-[a-z0-9-]{4,48}$/) && OWNER" },
+                   "answers": { ".validate": "STR(2000) && OWNER" },           // JSON string: the step-1/2 answers (ux-R5)
                    "$other": { ".validate": false } },
     "$other": { ".validate": false }
   },
@@ -1448,7 +1542,7 @@ with the same `$tid` child; `"$other": false`. No `alertKey` in a patch.
     ".validate": "$rid.matches(/^rp-[a-z0-9-]{4,48}$/) && newData.hasChildren(['at','byKey','kind','label','bytes','hash'])",
     "at":     { ".validate": "newData.isNumber() && newData.val() === now" },
     "byKey":  { ".validate": "SELF(newData.val())" },
-    "kind":   { ".validate": "newData.isString() && newData.val().matches(/^(auto|manual|pre-seed|pre-delete|pre-import|pre-restore|pre-wizard|archive)$/)" },
+    "kind":   { ".validate": "newData.isString() && newData.val().matches(/^(auto|manual|pre-seed|pre-delete|pre-import|pre-restore|pre-wizard|archive)$/) && ((newData.val() !== 'archive' && newData.val() !== 'pre-wizard') || newData.val() === data.val() || OWNER)" },   // Q8
     "label":  { ".validate": "NESTR(120)" },
     "note":   { ".validate": "STR(200)" },
     "bytes":  { ".validate": "INT(0,900000)" },
@@ -1507,6 +1601,12 @@ with the same `$tid` child; `"$other": false`. No `alertKey` in a patch.
   "short":  { ".validate": "NESTR(20) && !newData.val().contains('<') && !newData.val().contains('>') && !newData.val().contains('&') && !newData.val().contains('\"')" },
   "color":  { ".validate": "newData.isString() && newData.val().matches(/^[a-z]{2,12}$/)" },
   "photoV": { ".validate": "newData.isNumber() && newData.val() >= 0" } } },
+// state/meta — the epoch pair is owner-only (decision Q8). No `$other:false` under `meta`: old
+// builds' `lastDataChangeAt`, `hiddenCards`… stay valid, and a legacy camp has no epoch key at all.
+// OWNERKEEP lets any whole-`meta` write carry an existing epoch unchanged:
+"meta": {
+  "epoch":   { ".validate": "newData.isString() && newData.val().matches(/^w20[0-9]{6}(-[2-9])?$/) && OWNERKEEP" },
+  "epochAt": { ".validate": "newData.isNumber() && newData.val() <= now && OWNERKEEP" } },
 // pushSchedule — two new OPTIONAL children:
 "rev": { ".validate": "newData.isNumber() && newData.val() >= 0" },
 "src": { ".validate": "newData.isString() && newData.val().matches(/^[0-9a-f]{8}$/)" },
@@ -1518,7 +1618,9 @@ with the same `$tid` child; `"$other": false`. No `alertKey` in a patch.
 `config` (no `mark` key, no fence), `members` (no `name` cap change), `presence` (C9),
 `changelog`, `chat*`, `chatRate`, `push`, `pushAlerts`, the root deny-all (which keeps
 `pushServer/schedSeen` Worker-only). The owner key stays rules-immutable (rules#5 is fixed in the
-client, §14).
+client, §14). It now also gates four acts (decision Q8: `meta/on`, the wizard claim, the epoch
+pair, and the `archive` / `pre-wizard` restore kinds) without adding a role: the member record's
+shape is untouched.
 
 ### 8.5 Backward compatibility, both directions
 
@@ -1531,7 +1633,10 @@ client, §14).
 ### 8.6 Publish plan
 
 - **R1 — one combined additive PUT**, after S2a has shipped (so a mis-ordered state write is
-  quarantined, not wedged) and before S4. Contents: everything in §8.2 and §8.3. Inert until code
+  quarantined, not wedged) and before S4. Contents: everything in §8.2 and §8.3 (the owner-only
+  clauses included) **and the reveal blocks of `app-shell-redesign-spec.md` §4.4** (`reveal`,
+  `revealFull`, `revealScreens`, `revealPractice`), so the owner pastes once (`BUILD-PLAN.md`
+  steps 10 and 11). Inert until code
   uses each node; the only node a non-member could write, `accessRequests`, stays **closed**
   until an editor sets `setup/meta/joinOpen` (sec-F1), so there is no stranger-writable surface
   in the months between R1 and S7. Gate: the emulator suites (§8.8) print SAFE for both
@@ -1540,7 +1645,7 @@ client, §14).
 - **Size check (sec-review note b).** The combined file roughly doubles (≈ 82 KB minified, ≈ 110
   KB as committed). Before R1, confirm the published RTDB rules size limit; a PUT over the limit
   is refused and leaves the old rules live (nothing breaks), and in that case R1 splits into R1a
-  (`state`/`teams` amendments, `setup`, restore points, `editorsHere`) and R1b (`campers`,
+  (`state`/`teams`/`meta` amendments, `setup`, restore points, `editorsHere`, the reveal blocks) and R1b (`campers`,
   `teamPhotos`, `accessRequests`, `accessBlocked`), each with the same runbook.
 - **Ancestor-validate probe** (§8.1) is run once before R1 and its result recorded in CLAUDE.md.
 - **Optional F1 fence — only with evidence and the owner's yes.** If the hub ever reports
@@ -1581,7 +1686,8 @@ Each runs the same scenario against `old.rules.json` (today's published file) an
   move and a lone `label` write into a deleted block (sync-F5); a patch write for a day whose
   `typical` is `false` is refused (sync-F16b); `meta/edited` requires server time and the
   writer's own key **when written**, and a whole-`setup` transaction carrying existing edit
-  stamps and a live wizard claim is **accepted** (stamp, then A1 for a second section; sync-F1);
+  stamps and a live wizard claim is **accepted** (run as the owner, who alone can press A1; stamp,
+  then A1 for a second section; sync-F1);
   a wizard claim with `fromEpoch: 'legacy'` accepted, with `''` refused; a scalar or a
   100,000-char string at `setup/typical`, `setup/meals`, a `$dk` level is refused (sec-F9);
   `$other` refusals.
@@ -1604,6 +1710,16 @@ Each runs the same scenario against `old.rules.json` (today's published file) an
   `short`, a quote-breakout `color` refused (sec-F3); `teamPhotos/data` with a `"` or a space in
   the body refused, a 100,000-char valid PNG data URL accepted.
 - `brackets4.mjs`: refused under old rules, accepted under new; a scalar refused.
+- `owner-only.mjs` (decision Q8). As the **owner**, all **accepted**: A1's whole-`setup` transaction
+  (carrying stamps and a live claim), `on/<s>` true then false, a wizard claim create and update,
+  `setup/meta/epoch` + `state/meta/epoch` + `epochAt` in one atomic root update (the wizard commit's
+  shape), an `archive` and a `pre-wizard` restore point. As a **non-owner editor**, each of those is
+  **refused** (A1 and the wizard commit refuse as a whole); an unchanged `on` / epoch carried in a
+  whole-node write is accepted; a `manual` point is accepted. As a viewer: refused as before. A
+  phone-signed-in owner key is not recognised. It also **records, not assumes**, what a non-owner
+  *delete* of `on/<s>`, an epoch key or the claim does (`.validate` isn't evaluated for deletes;
+  §1.4 limit b) and the result goes into CLAUDE.md.
+- The reveal suite `reveal.mjs` (`app-shell-redesign-spec.md` §4.4 list) runs in the same gate.
 
 ### 8.9 Probes after publishing
 
@@ -1620,7 +1736,12 @@ live site:
   `editorsHere/<own key>/<id>` → denied;
 - signed in as a **non-member test account**: a `set()` of its own `accessRequests` row →
   denied while asking is closed; reading `members`, `state`, `setup`, `campers`, `restoreIndex`
-  and another identity's request → denied.
+  and another identity's request → denied;
+- signed in as a **non-owner director** (a test editor; decision Q8): `once('value')` of
+  `setup/meta` ALLOWED as for the owner, and `set(false)` at `<root>/setup/meta/on/schedule`
+  **DENIED**. As the owner the same write is ALLOWED, so `.remove()` it at once: absent and `false`
+  both mean the original week, so the probe changes nothing a camp can see. Run it at R1, before
+  any section is on.
 The R1 checklist in CLAUDE.md records each line's result.
 
 ### 8.10 `tests/rules.test.js` (changed on purpose in the R1 commit)
@@ -1639,6 +1760,12 @@ The R1 checklist in CLAUDE.md records each line's result.
   `archive`/`pre-wizard`/pinned rows and `pinned` is write-once; `editorsHere` read and write are
   editor-only and key-pinned; `$other:false` on every new named record; `OWNER_MEMBER_KEY` equals
   the owner literal in both roots; `where` has no `/`; stamps use `NOWKEEP`/`SELFKEEP`.
+- New (decision Q8): the `OWNER` literal equals `OWNER_MEMBER_KEY` and the members-immutability
+  literal in both roots; `meta/on/$s`, `setup/meta/{epoch,epochAt}`, `state/meta/{epoch,epochAt}`
+  and every `meta/wizard` leaf contain `OWNER` or `OWNERKEEP`; the restore `kind` rule names
+  `archive` and `pre-wizard` together with `OWNER`; no owner clause sits on a branch node; the
+  reveal blocks (`app-shell-redesign-spec.md` §4.4) are present in both roots, identical modulo the
+  root name.
 
 ---------------------------------------------------------------------------------
 
@@ -1715,20 +1842,22 @@ Greps app.js, chat.js, push.js, settings.js, setup-ui.js for direct reads of `DA
 `setupTree` **outside the SEAM block** (plus the seed builder, which is allowed to read the
 constants), and fails with the line number.
 
-### 9.4 The home-screen seam (flag for the pending layout redesign)
+### 9.4 The home-screen seam (read by the app-shell redesign)
 
-The redesign must read **only** through the §9.2 table plus the existing game helpers
+The app-shell redesign (`app-shell-redesign-spec.md`; its §12 maps each region to these accessors) must read **only** through the §9.2 table plus the existing game helpers
 (`gameStatus`, `liveHomeGames`, `homeBoardGame`, `currentMatchupOf`, `nextMatchupOf`,
 `medalCounts`, `rankTeamsByPoints`). It may rely on: plain data, no throws on missing data,
 cheap memoized calls, identical behaviour whether a camp is on the built-in copy or shared
 setup. It must keep writing through `setHtmlIfChanged` on the `renderAll` path. **No renderer
 may read `setupTree`, `CAMP.*` week fields or the old constants directly** (`seam.test.js`
-enforces it). Deliberately left to the redesign: which cards exist and in what order, the
-Happening Now layout, date-awareness ("Camp starts Sunday…"), naming games inside Happening Now,
-and whether Competitions stays a day-tab card (`gamesForDay` returns blocks-with-games so a
-different grouping is possible). **This project keeps the Competitions card's visible grouping
-as it is today** (Morning / Afternoon / Evening, now derived from each game's block via
-`blockSession`), so nothing the redesign is about to decide is changed twice (ux-R17).
+enforces it). The redesign has now decided what this section used to leave open: which cards
+exist and in what order (Now · Games · Chat · More), the Happening Now layout, date-awareness
+("Camp starts Sunday…"), naming games in the Now card, and the Competitions card (replaced by the
+Games tab, grouped by block, `gamesForDay` returning blocks-with-games). **Until the Games tab
+ships, this project keeps the Competitions card's visible grouping as it is today** (Morning /
+Afternoon / Evening, now derived from each game's block via `blockSession`), so nothing the
+redesign decides is changed twice (ux-R17). In the integrated order (`BUILD-PLAN.md`) the Games
+tab (D4) ships before S6a, so S6a's home-card part is simply not built.
 
 **Small additions this project does make to home-adjacent surfaces** (each kept minimal, each
 behind its own function so the redesign can move or restyle it; ux-R17):
@@ -1741,13 +1870,19 @@ behind its own function so the redesign can move or restyle it; ux-R17):
 | "Taylor is asking to join" bar (editors, while the app is open) | the existing announcement strip pattern | `renderJoinRequestBar()` |
 | Games listed under the item they're attached to | home schedule sheet | `gamesForBlock()` |
 
+**Where the redesign puts these** (`app-shell-redesign-spec.md` §2.2, §2.4, §3.2): the schedule
+sheet stays a sheet, so **Change today's plan**, the week calendar entry and the attached games
+stay in it; `renderJoinBadge()` becomes the More tab's gold dot and the Set up the week row;
+`renderJoinRequestBar()` becomes the bar in Now's messages strip (directors only). Each keeps its
+function name, so only the host element moves.
+
 ---------------------------------------------------------------------------------
 
 ## 10. Seeding and migration from camps.js
 
-### 10.1 A1 "Edit the week here" (per camp, from the hub)
+### 10.1 A1 "Edit the week here" (owner only; per camp, from the hub)
 
-**Preconditions** (each unmet one is explained on the button): an editor; writer tab;
+**Preconditions** (each unmet one is explained on the button): **the owner** (decision Q8: the button is shown to nobody else, and the rules refuse the write from anyone else, §8.2); writer tab;
 `setupReady && !setupDenied`; online; not inside a camp week unless overridden (§10.6; the
 override's words are "Camp is running. Turning this on changes nothing anyone can see — it only
 lets directors edit here."); the sections being turned on are off.
@@ -1768,7 +1903,8 @@ lets directors edit here."); the sections being turned on are off.
    the whole node, those carried stamps are re-validated; the rules accept an unchanged stamp
    (`NOWKEEP`/`SELFKEEP`, §8.1), which is what lets A1 run after anyone has edited anything
    (sync-F1; emulator case "stamp, then A1 for a second section"). If nothing changes it returns
-   `undefined` (abort): a second presser sees "Jenn already turned this on" and writes nothing.
+   `undefined` (abort): a second press (the owner's other device) sees "You already turned this
+   on" and writes nothing.
    (`null` cur is legitimate here: the node really is empty; the SDK re-runs on a stale guess.)
 3. Team branding (S2b present): for each team with no `short`/`emoji`, write the constants via
    the state engine (per field). Rendering is unchanged; this puts short names into data for the
@@ -1781,11 +1917,13 @@ lets directors edit here."); the sections being turned on are off.
    the alert baseline (`/notify` `ids:['*']`, `alert:false`).
 6. The hub turns the corresponding rows live.
 
-**Undo:** **Use the original week again** (`meta/on/*: false`, instant on every device, data
-kept), or restore the `pre-seed` point. A console delete of `<root>/setup` returns the camp to the
+**Undo:** **Use the original week again** (also owner-only; `meta/on/*: false`, instant on every
+device, data kept). The `pre-seed` point covers what A1 wrote **outside** `setup` (Games' `blockId` /
+`ord` and Teams' `short` / `emoji`): a restore never flips the switch itself (§7.2 step 6). A console delete of `<root>/setup` returns the camp to the
 built-in copy with zero code change (accessors fall back).
 
-**Start this section again from the original** (hub ⋯ → Advanced, per section): a
+**Start this section again from the original** (owner only, gated in the app because the write is
+ordinary section data; hub ⋯ → Advanced, per section): a
 `pre-seed` restore point, then a confirm naming what is replaced ("Replaces this camp's edited
 schedule — 3 changed items, 2 one-offs — with the schedule that came with the app. Games keep
 their schedule items where the item still exists."), then one `commitSetup` writing the seeded
@@ -1819,8 +1957,9 @@ determinism test.
     director can tag it in the item sheet).
   - `alertKey = pushBlockKey(rendered label)` = today's key, for every block.
   - Senior's Sunday (2 blocks) and Saturday (4 blocks) are the stubs camps.js labels as
-    unconfirmed (camps.js:527-529); they are seeded with `placeholder: true` and the hub warns
-    until a director edits them (decision Q11).
+    unconfirmed (camps.js:527-529); they are seeded with `placeholder: true`. **Owner's answer
+    (Q11): keep the sample days for now**, so the hub shows a quiet info line, never a ⚠️, and a
+    director replaces them on the Schedule screen whenever the real days are known.
   - **Re-verified by the spec lead (2026-10-27)** with a throwaway script running exactly these
     rules, including the `teams` conversion, on the real camps.js: both camps round-trip all 7
     days exactly; every `alertKey` equals today's `pushBlockKey`; the longest published id is 39
@@ -1912,7 +2051,11 @@ unscheduled.
 - **After the first edit:** junior intentionally diverges; old builds still open show the
   built-in copy until they reload (the Devices list names them).
 - **History can't move:** the legacy-epoch pin (§5.7.3).
-- `tests/camps.test.js` and `tests/fixtures-junior-week.json` are **never changed**.
+- `tests/camps.test.js` is never changed. `tests/fixtures-junior-week.json` changes **once**, in
+  S0k, when the counselor spellings merge (Q21): that commit regenerates it and its diff is exactly
+  Alysa → Alyssa, Sofie → Sofia, Lilly → Lily; after that it is never edited again.
+  "Byte-identical" in this spec means "identical to the 2026 app, apart from those three
+  spellings".
 
 ### 10.6 The camp week date, and what happens before it exists
 
@@ -1987,16 +2130,18 @@ unscheduled.
 ### 11.1 Entry points and the frame around every screen
 
 **Entry points (editors only):**
-- Settings → **Set up the week** (the existing `#builder-row`, same name) → the hub.
+- **More → Director → Set up the week** once the redesign's shell ships
+  (`app-shell-redesign-spec.md` §7.5; the same `openBuilder` takeover). Until then Settings →
+  **Set up the week** (the existing `#builder-row`, same name) → the hub.
 - Home schedule sheet → **Change today's plan** → Schedule on today in rain-plan mode (§11.6).
   **Shown only when this camp's schedule is edited here** (`setupOn('schedule')`). Otherwise the
   sheet shows editors one line instead: "To change today's plan here, turn on editing in **Set up
   the week**" (linking to the hub's **Edit the week here**, whose camp-week override explains
   itself in plain words, §10.1). Never a button that leads to a refusal (ux-R18).
-- Home Competitions card on an empty day → **Add games** → Games on that day.
+- An empty day on the home Competitions card (the Games tab after the redesign) → **Add games** → Games on that day.
 - ⚡ quick game → the game sheet, attached to the block happening now or next on that day.
-- People asking to join (ux-R10): a count badge on the Settings gear; **and**, when a new request
-  arrives while the app is open, a toast plus a dismissible bar on the home screen ("🙋 Taylor
+- People asking to join (ux-R10): a count badge on the Settings gear (the More tab's dot and the Set up the week row after the shell ships); **and**, when a new request
+  arrives while the app is open, a toast plus a dismissible bar on the home screen (Now's messages strip after the shell ships; "🙋 Taylor
   Reed is asking to join · **See**") from the editor-only `accessRequests` query (§11.8). A
   director of both camps also gets a one-shot count of the other camp's requests at load ("1
   person is asking to join Senior camp").
@@ -2069,14 +2214,26 @@ Jenn is also here
   editor, **Use the original week again** ("Everyone sees the schedule that came with the app.
   Your changes are kept and come back when you edit here again."), Advanced: per-section switches
   and "Start this section again from the original" (the emergency valves).
+- **Who sees the buttons (decision Q8).** **Start the new-year setup**, **Edit the week here**,
+  **Undo the new-year setup**, **Use the original week again** and everything under Advanced
+  belong to the owner. Only the owner key sees those buttons; every other director reads the same
+  sentence with the owner's name and no button: "Getting ready for 2027? Patrick starts the
+  new-year setup." / "This camp is still using the original week. Patrick turns on editing." / on
+  a row that is off but holding edits, "Showing the original — your edits are kept. Patrick can
+  switch it back on." (`ownerName()` from the member directory; "the owner" until it loads.) The
+  rest of the hub works for every director as soon as a section is on.
 
 ### 11.3 The new-year wizard (A3)
 
 Five steps, one per screen, "2 of 5". Back is allowed until step 4 runs. **Claim:** starting
 takes `setup/meta/wizard` by `transaction()` (`{step, byKey, at: TIMESTAMP, fromEpoch, answers?,
 archiveId?}`, always written whole; `fromEpoch` is `'legacy'` for the legacy epoch, never `''`,
-sync-F19). A second editor sees "Jenn is setting up 2027 (step 3 of 5, 4 min ago) **[Watch]** ·
-**[Take over]**". **Preconditions:** writer tab; online; not during a camp week (enforced,
+sync-F19). **The wizard is owner-only (decision Q8):** its entry points are shown only to the
+owner key and the rules refuse every claim and commit write from anyone else (§8.2, §8.3), so the
+claim guards the owner against themselves: a second device or tab sees "You're setting up 2027 on
+another device (step 3 of 5, 4 min ago) **[Watch]** · **[Take over]**", and every other director
+sees a read-only line, "Patrick is setting up 2027 (step 3 of 5)". **Preconditions:** the owner's
+Google sign-in; writer tab; online; not during a camp week (enforced,
 override available); the Devices list warns (doesn't block) if another director device is on an
 older version. If the camp's schedule isn't edited here yet, the wizard's first action is A1 for
 the schedule (with its `pre-seed` point), so there is only one front door (ux-R4).
@@ -2084,8 +2241,8 @@ the schedule (with its `pre-seed` point), so there is only one front door (ux-R4
 **Answers survive a reload and a take-over (ux-R5).** Step 1 and 2 answers are kept in
 `lsKey('campWizardDraft')` on the driving device **and** in the claim's `answers` (a JSON string,
 ≤ 2,000 chars) on every step change and every changed answer (throttled to once per 10 s), so a
-reload resumes at the same step with the same answers and **Take over** inherits them ("Jenn
-chose: camp starts Sun Jul 18 · double points Thu 5 PM – end of Fri · keep schedule, clear
+reload resumes at the same step with the same answers and **Take over** inherits them ("You
+chose on your other device: camp starts Sun Jul 18 · double points Thu 5 PM – end of Fri · keep schedule, clear
 menus…" with **Use these** / **Start over**). The claim's `at` is refreshed by the same writes
 and by any tap on the wizard (at most once a minute), so **Take over** appears only when the
 driver has really been idle for 15 minutes. While the wizard is open and was touched in the last
@@ -2109,7 +2266,7 @@ this year?" (Yes / Change… / No double points). Writes only the draft and the 
 | Meal menus | Clear | |
 | Memory verses and theme | Clear | |
 | Elective stations / who's at each station | Keep / Clear | |
-| Counselors stay on their teams | No | "Everyone keeps their sign-in. You'll put them on teams again in one list." (owner row untouched) |
+| Counselors stay on their teams | No | "Everyone keeps their sign-in. You'll put them on teams again in one list." (owner row untouched; decision Q22 keeps the default at No) |
 | Campers | Always cleared | "Camper names are never kept between years." (decision Q7) |
 | Notice board | back to a draft | |
 
@@ -2141,6 +2298,10 @@ progress"). The only control is **[Hold to clear Junior Camp's scoreboard]**. On
    - games Reset (if chosen): `config: <configForSync(CAMP.defaultConfig())>` with `blockId`s
      re-derived against the carried-over schedule
    - `campers: null`
+   - `reveal`, `revealFull`, `revealScreens`, `revealPractice`: `null` (the redesign's
+     standings-reveal nodes, `app-shell-redesign-spec.md` §4.13; absent until its stage D5 ships,
+     so deleting them is harmless; the redesign names the first three, the practice node is
+     cleared too so a new year starts empty)
    - `accessRequests/<k>: null` for each open request (enumerated: editors can only delete rows)
    Any refused path refuses all: nothing is half-done. **Member rows are deliberately not in this
    update (sec-F4):** the rules validate a whole member record on any leaf write, so one
@@ -2395,7 +2556,7 @@ PEOPLE                                   Let people ask to join  [ On ]
   │   [Taylor · Foxes · Counselor · no sign-in yet]  [Tay · Foxes · …]  [None of these]
   │ [Let in ▾ Counselor · Foxes]  [Not now]  [⋯ Block]
   🦊 FEROCIOUS FOXES · 3 counselors · 11 campers
-    Alysa          ✅ signed in
+    Alyssa         ✅ signed in
     Sam            ⏳ no sign-in yet          [Add sign-in]
   NOT ON A TEAM
     Jenn           Director · ✅
@@ -2421,7 +2582,7 @@ PEOPLE                                   Let people ask to join  [ On ]
   a minute.
 - **+ Add people:** *Type a list* — "One person per line. Add a team after a comma if you know it:
   *Cam, Foxes*". Live preview resolves each line ("Cam → 🦊 Foxes", "Sam → no team matched, will
-  be Not on a team", "Alysa → already on the list: **put on Foxes**"); matching is
+  be Not on a team", "Alyssa → already on the list: **put on Foxes**"); matching is
   case-insensitive on team name or short name; an existing name is updated, not duplicated (the
   `missingSeedCounselors` rule, extended); **[Add 6 people]** writes pending rows
   (`pending-<slug>-<rand>`) in one multi-path update. Junior also offers "Last year's printed
@@ -2511,7 +2672,7 @@ For each competition day, three slot columns whose times come from that day's El
 Each slot lists **stations** (emoji + name, picked from the station list or created inline);
 each station lists **people** as chips picked from the People list (stored by member key), with
 "+ Someone not on the list" (stored as `n-<slug>`). A ⚠️ marks a name-only person whose name
-nearly matches a member ("Sofia → Sofie?") with **Link** (re-keys to the member). Helpers: **Same
+nearly matches a member ("Sophie → Sofia?") with **Link** (re-keys to the member; Sofia, Lily and Alyssa have one spelling each since S0k, decision Q21, so the three known pairs never need this). Helpers: **Same
 as Monday** (copies the slot setup), and a computed "On break: Lydia, Zac" line
 (`electiveBreakKids` logic; the UI says "On break"). A signed-in counselor's own electives match
 by member key first, then by name; `adoptMemberTeam`'s identity check uses `staffNames()`.
@@ -2850,11 +3011,12 @@ day-specific time move or skip today/tomorrow starts ticked.
 ### 13.1 Overview
 
 Every stage leaves a live camp working. "Off-season" stages never deploy within ±2 days of a
-camp week (P8). Today is 2026-10-27; junior ran in July.
+camp week (P8). Today is 2026-10-27; junior ran in July. No camp week runs before June 2027
+(Q1), so everything that ships before then is off-season.
 
 | Stage | Ships | Rules / owner step | Activates by | During a camp week? | Rollback |
 |---|---|---|---|---|---|
-| **S0** Safety fixes (9 commits) | B1; scoring#6 + clocks leak; rules#5; danger contrast; .ics UIDs; unknown-bracket-kind guard; legacy roster gate; config first-pull gate + accounting (builder read-only until the first config snapshot); test scaffolding; classic "Add team" removed | — | deploy (bug fixes) | yes | `git revert` each |
+| **S0** Safety fixes (11 commits) | B1; scoring#6 + clocks leak; rules#5; danger contrast; .ics UIDs; unknown-bracket-kind guard; legacy roster gate; config first-pull gate + accounting (builder read-only until the first config snapshot); test scaffolding; classic "Add team" removed; **counselor spelling merge (S0k, Q21)** | — | deploy (bug fixes) | yes | `git revert` each |
 | **T** TV for both camps | `camp-core.js` (incl. the shared sanitizers); TV `?camp=`, shared scripts, script moved out of the page + CSP, pages#3/#5/#6, reload cap | — | deploy | yes (TV only) | revert |
 | **S1** Accessor seam | §9 SEAM block; every consumer converted; `seam.test.js` | — | deploy (no-op refactor) | **off-season** | revert |
 | **S2a** `pushState` quarantine | §6.2 #1 | — | deploy | **off-season** | revert |
@@ -2864,12 +3026,12 @@ camp week (P8). Today is 2026-10-27; junior ran in July.
 | **S3** Config engine v2 + undo core | §6.3, §7.1 core | — | deploy | **off-season** | revert (`_cfgBase` fields ignored by old code) |
 | **R1** Rules | §8.2 + §8.3, one PUT | **Owner: Cloud Shell runbook** | publish | yes (inert) | PUT the backup |
 | **S4** Setup infrastructure (dark) | `setup-sync.js`, `setup-ui.js` shell + hub, restore points + Backups v3, `editorsHere` + "also here", sync line, undo pill, `askDialog` | — | deploy (hub + backups only) | yes | revert; nodes inert |
-| **S5a** Schedule as data | A1 (schedule section) + A2; Camp week; Schedule; rain plan with game moves; publisher `rev`/`src`; full-week .ics; push drawer week line | — | **A1 per camp** (senior first) | code yes; **A1 for junior off-season** | Use the original week again; `pre-seed` point; revert |
-| **S5b** Other sections | Meals, Verses, Cleanup, Electives screens + turn-on prompt | — | turn on per section | yes | section off switch; revert |
+| **S5a** Schedule as data | A1 (schedule section) + A2; Camp week; Schedule; rain plan with game moves; publisher `rev`/`src`; full-week .ics; push drawer week line | — | **A1 by the owner, both camps, one sitting** | code yes; **A1 off-season (no camp before June 2027)** | Use the original week again; `pre-seed` point; revert |
+| **S5b** Other sections | Meals, Verses, Cleanup, Electives screens + turn-on prompt | — | turn on per section (owner only, Q8) | yes | section off switch (owner only); revert |
 | **S6a** Games screen | games by schedule item; progressive game sheet; When picker; ⚡ quick game to the current block; Matchups options | — | deploy | yes | revert (`blockId` inert to old code) |
 | **S6b** 4-team bracket | `brackets4`; 4-team flow; 6-team helpers extracted behind pin-first tests | needs R1 | deploy | **off-season** (state key) | revert (old code ignores `brackets4`) |
 | **S7** Teams & People | Teams (palette, photos, short names), People (lists, Put people on teams, walk-ups behind the "Let people ask to join" switch, block list, owner row), Campers, chat mentions via `teamShort`/`staffNames` | needs R1 | deploy | yes | revert; nodes inert; switch asking off |
-| **S8** New-year wizard | §11.3; device-local reset; history filter; stranded download; hub complete; **Undo the new-year setup** | — | **A3** | **off-season only (enforced)** | **Undo the new-year setup** (§7.3: archived data **and** archived epoch, one atomic update) |
+| **S8** New-year wizard | §11.3; device-local reset; history filter; stranded download; hub complete; **Undo the new-year setup** | — | **A3 (owner only)** | **off-season only (enforced)** | **Undo the new-year setup** (§7.3: archived data **and** archived epoch, one atomic update) |
 | **S9** Alerts go further | ONE Worker release: `notifySchedule` + `short`-name mentions + `schedSeen` cleanup; client "Tell people" checkbox | **Owner: Worker paste** (with Project 1 go-live) | deploy | yes | re-paste the previous Worker; checkbox hides itself |
 | **S10** Tidy up | classic tabs removed; dead `pendingRemoteConfig` remnants; CLAUDE.md final pass; optional F1 fence only if §12.1 evidence appears | optional F1 PUT | — | yes | PUT the backup |
 
@@ -2878,13 +3040,16 @@ behind an accessor. S2/S3 harden the engines that everything builds on, one chan
 before anything new is built on top. R1 lands all rules at once after S2a (quarantine) and
 before the first code that uses them. S4 lands the plumbing and safety nets (restore points)
 **before** the first data-changing activation (A1 in S5a). S5–S7 are features behind activation
-or new screens. S8 depends on all of them. S9 depends on Project 1 go-live. **S6b may jump ahead
-right after R1** if senior needs brackets first (decision Q9).
+or new screens. S8 depends on all of them. S9 depends on Project 1 go-live. S6b keeps its
+slot: no camp runs before June, so senior doesn't need brackets early (decision Q9).
 
-**Suggested calendar** (adjusts to decision Q1): Nov–Dec 2026 S0, T, S1, S2a–d, S3; Jan 2027
-R1, S4, S5a; Feb S5b, S6a, S6b; Mar S7; Apr S8; then a **senior rehearsal** (A1, edits, a
-4-team bracket on a sandbox game, the wizard); May junior A1 + wizard; S9 whenever phone alerts
-go live (after S5a recommended, decision Q3).
+**Suggested calendar** (fixed by decisions Q1 and Q2: no camp week before June 2027, and both
+camps roll out together): Nov–Dec 2026 S0, T, S1, S2a–d, S3; Jan 2027 R1, S4, S5a; Feb S5b, S6a,
+S6b; Mar S7; Apr S8; then ONE **joint rehearsal of both camps** (A1 pressed for both in one
+sitting, edits, a 4-team bracket on a sandbox game, the wizard run once and undone with **Undo the
+new-year setup**); May the real new-year setup for both camps; S9 whenever phone alerts go live
+(after S5a recommended, decision Q3). **The integrated order with the redesign's stages
+(D0–D7) is `BUILD-PLAN.md`; where it differs from this calendar, it wins.**
 
 ### 13.2 Stage details
 
@@ -2925,8 +3090,33 @@ go live (after S5a recommended, decision Q3).
   (v183 `toEditableDraft` + `saveGameDraft` verbatim).
 - **S0j Fixed team counts:** the classic Teams tab loses **Add team** and **Delete team**
   (owner-confirmed fixed counts; removes the `t-<ts>` id bug).
+- **S0k Counselor spelling merge (decision Q21).** One commit, before anything derives an id from
+  a name (the seed's `n-<slug>` person ids, S5a) and before phone alerts go live (push is dormant
+  today, so nobody follows a block whose label names a person; `pushBlockKey` outputs for the
+  renamed labels are recorded in the test so the change is visible). `camps.js` only:
+  **Alysa → Alyssa, Sofie → Sofia, Lilly → Lily** in `ELECTIVES`, `TEAM_COUNSELORS` (its "keyed to
+  the ELECTIVES spellings … not the standings' Lily" comment goes, the caveat no longer exists),
+  the printed-roster seed behind `SEED_COUNSELORS`, the morning-meeting labels (`Alyssa/Cam/Sam
+  (B)`, `Sofia/William (B)`, `Lily/Jacob (A)`), the Wednesday evening block
+  (`weekdayEvening('Sofia')`) and the header comments. `tests/fixtures-junior-week.json` is
+  regenerated by a one-off script in the same commit; the review rule is that its `git diff`
+  shows **only** those three spellings. `tests/chat.test.js` (the printed-list label
+  `'Alysa'` → `'Alyssa'`) and the `tests/auth.test.js` sample names follow. A small alias table
+  `COUNSELOR_NAME_ALIASES = { alysa: 'Alyssa', sofie: 'Sofia', lilly: 'Lily' }` with one function
+  `canonicalCounselorName(n)` (camps.js) is used by `missingSeedCounselors`, the identity check in
+  `adoptMemberTeam` / `myStationFor`, and later the People matcher, so data already out there (a
+  member row named "Alysa", a phone whose stored `state.identity` is "Lilly") still matches;
+  `normalizeSyncedState` rewrites a stored identity through it once. Member rows already in the
+  database keep the name they were typed with until a director renames them in the Members list
+  (three rows at most; a director action, listed in `BUILD-PLAN.md`).
+  **Tests:** `spelling.test.js` (no old spelling anywhere in camps.js or the fixture; the alias
+  table both ways; `missingSeedCounselors` doesn't add a second "Sofia" next to a member named
+  "Sofie"; a stored identity "Lilly" still finds its electives). **Verify live:** junior's Now
+  banner and schedule sheet show "Sofia/William (B)" and "Lily/Jacob (A)"; a phone whose identity
+  was "Lilly" still sees its station.
 - **Verify live:** the CLAUDE.md `curl` checks; junior and senior as an editor look unchanged
-  (Playwright screenshots at fixed `?now=` vs v183); the owner row is read-only.
+  (Playwright screenshots at fixed `?now=` vs v184; on junior only the three spellings differ);
+  the owner row is read-only.
 
 #### T — TV page for both camps
 - **Ships:** `camp-core.js` (+ its `?v=` tag in index.html before app.js; app.js double-window
@@ -2957,7 +3147,8 @@ go live (after S5a recommended, decision Q3).
   read-only → reload; reload-ordering retry; API throws → fail open; viewers never lock).
 - **S2d** epoch check (§6.2 #3). Tests: `sync-epoch.test.js` (old-epoch unconfirmed work stranded,
   never pushed; download offered; legacy epoch untouched).
-- **Verify live (each):** two laptops on senior; airplane-mode edit → force reload → reconnect;
+- **Verify live (each):** two laptops, on each camp in turn (both are idle until June, Q2);
+  airplane-mode edit → force reload → reconnect;
   second tab read-only (S2c).
 
 #### S3 — Config engine v2 + undo core (off-season)
@@ -2973,17 +3164,18 @@ go live (after S5a recommended, decision Q3).
   reload → first-snapshot merge pushes it; prune/sort canon; epoch strand; accounting);
   `undo.test.js`; legacy-builder fixture keeps `blockId`/`ord`. **Changed on purpose:**
   `sync.test.js:355-372`, `sync-merge.test.js:132-147`.
-- **Verify live:** two laptops edit two fields of one senior game at once → both kept;
+- **Verify live:** two laptops edit two fields of one game at once, on each camp → both kept;
   airplane-mode game edit → reload → reconnect → kept.
 
 #### R1 — The one rules update (owner)
 - **Before:** emulator suites (§8.8) SAFE in both directions; seeded trees for both camps accepted
   (junior's team patches included); `rules.test.js` updated (§8.10); the ancestor-validate probe
-  (§8.1) and the rules size check (§8.6) done and recorded.
+  (§8.1) and the rules size check (§8.6) done and recorded; `owner-only.mjs` and the reveal suite
+  (§8.8) green. The release carries the owner-only clauses and the reveal blocks (§8.6).
 - **Do:** rules-only commit (its message states the file's `sha256`, first 8 characters) → push →
   owner pastes the Appendix E blocks: back up, publish (the script refuses a file whose hash
   doesn't match), read back → the unauthenticated probes **and the discriminating signed-in checks**
-  (§8.9) pass → mark done in CLAUDE.md. `accessRequests` stays closed (`joinOpen` absent).
+  (§8.9, including the non-owner-director check) pass → mark done in CLAUDE.md. `accessRequests` stays closed (`joinOpen` absent).
 - **Rollback:** PUT the backup saved in step 0 (every addition is inert).
 
 #### S4 — Setup infrastructure (dark)
@@ -2991,7 +3183,9 @@ go live (after S5a recommended, decision Q3).
   points read/write, publisher hash), `setup-ui.js` (hub shell with live rows for Teams, People
   counts, Restore points, Notice; Schedule row shows "Built-in schedule (editing comes next)"),
   Backups screen (§7.2, §7.4), `editorsHere` and "also here" (§6.7), `askDialog`, sync line,
-  undo pill, the single `persistSetup()` gate (§6.9). Both new files join index.html (**15 `?v=` assets**) and
+  undo pill, the single `persistSetup()` gate (§6.9), `isOwner()` / `ownerName()` and the
+  owner-only gating of A1, the wizard and the switches (decision Q8). Both new files join
+  index.html (**15 `?v=` assets** on this spec's own count, 17 in the integrated order) and
   `tests/harness.js` `APP_FILES` (`defaults, camps, camp-core, app, setup-sync, settings,
   setup-ui, chat, push`).
 - **Tests:** `setup-sync.test.js` (prune/heal; first merge incl. prune + key-order variants ported
@@ -3005,8 +3199,12 @@ go live (after S5a recommended, decision Q3).
   clock and never prunes**; preconditions re-read the server); `editors-here.test.js`
   (fail-closed names; viewers never write or listen; Devices list joins presence and
   `editorsHere` by device id, 10-minute age filter); `checklist.test.js` (pre-seed rows; one
-  front door per §11.2's order).
-- **Verify live:** probes; "Save a restore point now" on senior and see it listed; two editors in
+  front door per §11.2's order); `owner-only.test.js` (the helpers and the hub's owner-only
+  rendering contract: owner-only controls render only for the owner key; another director sees the
+  sentence with the owner's name; a non-owner call path returns a refusal before any write; the
+  owner's name falls back to "the owner". S5a, S5b and S8 extend it to A1, Turn on, the wizard and
+  Undo the new-year setup as those buttons arrive).
+- **Verify live:** probes; "Save a restore point now" on both camps and see it listed; two editors in
   the builder see each other.
 
 #### S5a — Schedule as data (A1 per camp; junior off-season)
@@ -3018,8 +3216,11 @@ go live (after S5a recommended, decision Q3).
   (attachment), Phone alerts.
 - **Approval gate:** the M2 tap-count script (§11.6) is run on junior Wednesday before this stage
   is approved; over 12 taps → change the panel first (ux-R1).
-- **Activation:** A1 on **senior first**; compare against the built-in output (§10.4 guarantees
-  it); junior off-season.
+- **Activation:** A1 by **the owner, for both camps in one sitting**, off-season (decisions Q1,
+  Q2, Q8); compare against the built-in output on each (§10.4 guarantees it). There is no
+  senior-first trial: the seeded-fidelity tests run for both camps, the emulator runs the seeded
+  trees for both camps (R1 gate), and the way back is **Use the original week again** plus the
+  `pre-seed` point per camp.
 - **Tests:** `seed.test.js` + `.senior` (all of §10.4); `schedule-edit.test.js` (Just Tuesday /
   Every day like Tuesday → exact paths; "Change Wednesday too"; reset; make own day keeps ids; overlap +
   `overlapOk`; Earlier/Later keeps durations; **Swap with… "time slots" and "keep lengths"
@@ -3030,21 +3231,26 @@ go live (after S5a recommended, decision Q3).
   each and clear the other mode's subtree**; delete item → games re-homed); `games-blocks.test.js` (oracle table; exact-once; dangling `blockId`; derived
   `dayId`/`session`; new tab created in the same transaction); `push.test.js` additions (keys
   identical post-seed; ids `<dk>-<bid>`; `rev` monotonic; `src` stable); `ics.test.js`; the
-  seeded-context re-run of `week`/`push`/`chat` tests.
-- **Verify live:** console shows `seniorScoreboard/setup/meta/on/schedule`; banner, sheet and .ics
+  seeded-context re-run of `week`/`push`/`chat` tests (and, in the integrated order, whichever
+  redesign tests exist by then; D3 and D4 add `now-model` and `games-tab` to the seeded run); A1 and the switches are owner-only
+  (`owner-only.test.js`).
+- **Verify live:** console shows `setup/meta/on/schedule` under both `campScoreboard` and
+  `seniorScoreboard`; banner, sheet and .ics
   match pre-A1; an edit on one phone appears on another within seconds; airplane-mode edit →
   reload → reconnect → kept; **Use the original week again** restores the built-in schedule.
 
 #### S5b — Meals, verses, cleanup, electives
 - **Ships:** §11.10–11.13; their accessors' shared branches; hub rows; "can now be edited here
-  too — **Turn on**" prompt for camps already on.
+  too — **Turn on**" prompt for camps already on (owner only; everyone else reads "Patrick turns
+  it on", Q8).
 - **Tests:** Fill-evenly function; elective member-key identity + name fallback; meal-tag
   decoration (a tagged senior "Supper and free time" shows its dish); verse video `https://` only.
 
 #### S6a — Games screen
 - **Ships:** §11.14; the home Competitions card reads through `gamesForDay` **but keeps today's
   visible Morning / Afternoon / Evening grouping** (derived from each game's block), so the
-  pending home redesign isn't pre-empted (ux-R17); `dayGamesHTML`, `gameStatus` header line via
+  home redesign isn't pre-empted (ux-R17; in the integrated order the Games tab, D4, ships first
+  and this part is not built, §9.4); `dayGamesHTML`, `gameStatus` header line via
   accessors; random-tail game ids and the wider `taken` set; `brackets4` cleared on delete/prune.
 - **Tests:** progressive sheet saves only changed fields; deleted-elsewhere; quick game attaches to
   the current block (senior afternoon); Matchups ↔ `bracketSeed`/`roundOneMatchups`; two devices
@@ -3123,8 +3329,15 @@ go live (after S5a recommended, decision Q3).
   epoch ⇒ `state/meta/epoch` deleted, 2026 bonuses doubled again, history unfiltered)**; a
   `newYearDue()` camp with a date already typed still offers the wizard first (ux-R4); a stale device with old-epoch results/config/setup edits
   gets none applied (stranded); device-local reset once per epoch, never for the legacy epoch; an
-  old build receiving the cleared state adopts empties (existing missing-key behaviour).
-- **Verify live:** the senior rehearsal end to end before junior.
+  old build receiving the cleared state adopts empties (existing missing-key behaviour); **a
+  non-owner editor's claim and commit are refused (rules, emulator) and the controls are absent
+  (app)**; Undo the new-year setup is owner-only; the clear update also carries the reveal nodes.
+- **Verify live:** the owner runs the wizard for **both camps in one sitting**, checks the hub, then
+  presses **Undo the new-year setup** and confirms everything came back (scores, epoch, history
+  filter, 2026 bonuses doubled again), then runs it again for real. That is the rehearsal, with a
+  guaranteed way back; there is no senior-first trial (Q2). Two precautions for the rehearsal run
+  only, because Undo restores the archive and epoch but **not** member teams or campers (§7.3):
+  tick "Counselors stay on their teams", and do it before anyone has typed real camper names.
 
 #### S9 — Schedule-change alerts and the Worker (with Project 1 go-live)
 - **Precondition:** Project 1 live (Worker deployed, `PUSH_SERVICE_URL` set, CSP updated, push
@@ -3148,7 +3361,9 @@ go live (after S5a recommended, decision Q3).
 ### 13.3 Housekeeping on every deploy (CLAUDE.md, updated)
 
 - Bump every `?v=` together (**12 today → 13 with `camp-core.js` in T → 15 with `setup-sync.js` and
-  `setup-ui.js` in S4**), `APP_VERSION` and `CODE_UPDATED_AT`; `TV_BUILD` when the TV page changes;
+  `setup-ui.js` in S4**, and 18 in all once the redesign's `jelly-motion.js`, `reveal-core.js` and
+  `reveal.js` join; `BUILD-PLAN.md` gives the count after each step), `APP_VERSION` and
+  `CODE_UPDATED_AT`; `TV_BUILD` when the TV page changes;
   the current-standings and stalling `?v=` references (now including `defaults.js`, `camps.js`,
   `camp-core.js` and, from T, `current-standings.js`; the TV page's own CSP meta is updated with
   index.html's whenever a host is added).
@@ -3158,7 +3373,7 @@ go live (after S5a recommended, decision Q3).
 - Rules: the repo file and the console change in the same commit (rules-only commit first).
 - The live `curl` checks before calling a stage deployed.
 - CLAUDE.md updated in the same commit. New sections: "Setup data (`setup` node)", "Config engine
-  v2", "Restore points & archive", "Edit-here switches (A1/A3) and the camp-week freeze",
+  v2", "Restore points & archive", "Edit-here switches (A1/A3), who may press them (owner-only, Q8) and the camp-week freeze",
   "Team branding fields", "4-team bracket (`brackets4`)", "Schedule-change alerts"; updates to the
   file list, the `?v=` list, the harness `APP_FILES`, the `editorsHere` node (presence itself is
   unchanged), the walk-up switch and block list, the protected restore points, the rules list,
@@ -3200,12 +3415,12 @@ existing `week`, `push` and `chat` test also runs on seeded data; `APP_FILES` gr
 
 | Stage | New test files |
 |---|---|
-| S0 | `settings-crud.test.js`, `config-gate.test.js`, `owner-row.test.js` (or a rules.test addition), `ics.test.js` (UID part) |
+| S0 | `settings-crud.test.js`, `config-gate.test.js`, `owner-row.test.js` (or a rules.test addition), `ics.test.js` (UID part), `spelling.test.js` (S0k) |
 | T | `tv.test.js`, `camp-core.test.js` |
 | S1 | `accessors.test.js`, `accessors.senior.test.js`, `seam.test.js` |
 | S2 | `sync-quarantine.test.js`, `teams-sync.test.js`, `tablock.test.js`, `sync-epoch.test.js` |
 | S3 | `config-sync.test.js`, `undo.test.js` |
-| S4 | `setup-sync.test.js`, `restore.test.js`, `editors-here.test.js`, `checklist.test.js` |
+| S4 | `setup-sync.test.js`, `restore.test.js`, `editors-here.test.js`, `checklist.test.js`, `owner-only.test.js` |
 | S5a | `seed.test.js`, `seed.senior.test.js`, `schedule-edit.test.js`, `games-blocks.test.js`, `ics.test.js` (week), push additions, seeded re-runs |
 | S5b | `sections.test.js` (fill-evenly, electives identity, meal tag, verse video) |
 | S6a | `games-screen.test.js` |
@@ -3224,16 +3439,16 @@ test over app.js, setup-ui.js, chat.js and current-standings.js for `innerHTML` 
 **Changed on purpose** (each named in its stage's commit message): `sync.test.js:344` (S2b),
 `sync.test.js:355-372` and `sync-merge.test.js:132-147` (S3), `week.senior.test.js:105-115`
 (S6b), `rules.test.js` gated list / `:128` / `:164` / `:294` (R1), `chat.test.js` team-word
-mention cases (S7, capitalised-team-word rule).
+mention cases (S7, capitalised-team-word rule), `tests/fixtures-junior-week.json` and the sample names in `chat.test.js` / `auth.test.js` (S0k, the three spellings).
 
-**Never changed:** `tests/camps.test.js`, `tests/fixtures-junior-week.json`.
+**Never changed:** `tests/camps.test.js`; `tests/fixtures-junior-week.json` after S0k.
 
-**Emulator** (opt-in, npm + Java): §8.8 suites, **a gate for R1**; re-run for any later rules
+**Emulator** (opt-in, npm + Java): §8.8 suites (including `owner-only.mjs` and the redesign's reveal suite), **a gate for R1**; re-run for any later rules
 change.
 
 **Playwright pass per stage that touches UI:** before/after screenshots at fixed `?now=` values
 (banner, schedule sheet, follow card, verse, cleanup, electives) for both camps; the hub at 390 px
-and laptop width; light and dark themes; the six moments (§2.3) as scripted flows.
+and laptop width; light and dark themes; the seven moments (§2.3) as scripted flows.
 
 **Manual live checks:** per stage in §13.2. The two-laptop concurrency check and the
 airplane-mode reload check are mandatory for S2b, S3 and S5a.
@@ -3245,14 +3460,14 @@ airplane-mode reload check are mandatory for S2b, S3 and S5a.
 | # | Risk (K = risk, to avoid confusion with the rules step R1) | Likelihood / impact | Mitigation |
 |---|---|---|---|
 | K1 | A client ships ahead of R1 and a refused write wedges score sync | low / high | S2a quarantine ships first; R1 before any code that needs it; every new listener degrades itself (§8.5) |
-| K2 | The setup engine diverges from the state engine's hard-won rules | med / high | A deliberate clone reusing the same pure helpers; every `sync-offline`/`sync-merge` scenario ported before S4 ships; the §6.12 table is a review checklist; senior switches first |
+| K2 | The setup engine diverges from the state engine's hard-won rules | med / high | A deliberate clone reusing the same pure helpers; every `sync-offline`/`sync-merge` scenario ported before S4 ships; the §6.12 table is a review checklist; both camps switch together after the seeded-fidelity tests and the emulator run (no senior-first trial, Q2) |
 | K3 | Config transaction subtleties (contention on a 17 KB node; an old build's `set()` mid-transaction) | med / med | `applyLocally:false`; abort on `null`; ops idempotent; fake-RTDB contention tests; the old-build window closes on reload |
 | K4 | A consumer missed in the accessor conversion keeps reading a constant and diverges after edits | med / low–med | §9.2 is an exhaustive list; `seam.test.js` fails on any direct read outside the SEAM block |
-| K5 | Junior regresses at A1 | low / high | seed identity + 10,080-minute banner fuzz in both camps; frozen id fixtures; A1 off-season; Use the original week again in one tap |
+| K5 | Junior regresses at A1 | low / high | seed identity + 10,080-minute banner fuzz in both camps; frozen id fixtures; A1 off-season; Use the original week again in one tap; a restore point per camp; the owner presses it for both camps in one sitting (Q2) |
 | K6 | Old builds keep whole-`set()`-ing config until they reload, clobbering S3 users' edits | low / med | off-season rollout; auto-reload; Devices list; (no fence needed) |
 | K7 | Camper names leak (cache, backup, restore, archive, TV, push, screenshot) | low / **high (minors' PII)** | editor-only rules at a dedicated node; memory only; excluded everywhere (P12); `setItem` scan test; rules test forbids any other `camper` node; screenshots are a human matter: the screen's privacy line says so |
 | K8 | Walk-up requests as a spam surface, or a way to burn the shared download quota (both camps share one database) | low / **high** if open (sec-F1) | closed unless a director switches asking on; verified identity; one ≤ 300 B row per identity per camp; a 60 s throttle that leaf writes and delete-and-recreate can't bypass (emulator-proven); a block list; refused once a member; editors delete; editors listen only to the newest 25 rows; no listener for requesters; stranger text always escaped |
-| K9 | The new-year commit half-applies, hits the wrong camp, or can't be undone | low / high | one atomic root update (year data only; member teams afterwards, per row) after a verified, freshness-checked archive; the archive is undeletable by rules; camp name on the hold button; the claim lock; off-season enforced; **Undo the new-year setup** restores data and epoch together |
+| K9 | The new-year commit half-applies, hits the wrong camp, or can't be undone | low / high | one atomic root update (year data only; member teams afterwards, per row) after a verified, freshness-checked archive; the archive is undeletable by rules; camp name on the hold button; owner-only in the app and in the rules (Q8); the claim lock; off-season enforced; **Undo the new-year setup** restores data and epoch together |
 | K10 | A stale phone brings last year's unsent scores into the new year | low / med | epoch check in all three engines (stranded, downloadable); old builds' 36 h confirm |
 | K11 | "Just Tuesday" vs "Every day like Tuesday" confuses a director | med / med | two equal buttons with the day list; tags on rows; Undo; restore points; an owner walkthrough before S5a ships |
 | K12 | Live remote edits fight focus in the builder | med / med | keyed row reconciler that never replaces the focused row; focused-field hold; render deferral |
@@ -3263,82 +3478,38 @@ airplane-mode reload check are mandatory for S2b, S3 and S5a.
 | K17 | Rolling back S5a code after junior has been edited shows the built-in schedule | low / med | prefer Use the original week again or fix-forward; restore points keep the edited data |
 | K18 | iOS storage eviction loses `setupBase`/`_cfgBase` | low / low | same as `_syncBase`: no base ⇒ plain adopt; unsent edits since the last open are lost (documented, same as scores) |
 | K19 | Rules typo in the large `setup` block refuses a legitimate write | med / med | emulator suites with seeded trees for both camps before R1; quarantine names the path; the runbook's read-back diff and discriminating check |
-| K20 | Scope: 17 deploys | med / med | each stage independently valuable and revertible; S0–S3 pay off even if later stages slip; features gated by activation |
+| K20 | Scope: 17 deploy stages here, 25 with the redesign's D0–D7 (`BUILD-PLAN.md`) | med / med | each stage independently valuable and revertible; S0–S3 pay off even if later stages slip; features gated by activation |
 | K21 | Database text becomes markup on a page without a CSP (the TV) | low / high | shared sanitizers in `camp-core.js` (P14); DOM-built images; TV CSP and no inline script; leaf rules on team fields; grep test (§15) |
 | K22 | The combined rules file exceeds the published size limit | low / low | size check before R1; an oversized PUT is refused and leaves the old rules live; split into R1a/R1b (§8.6) |
+| K23 | The owner is the only person who can start the new year or switch a camp's editing on (Q8) | low / med | Both are off-season acts (A1 once ever, the wizard once a year); nothing in a camp week needs them; the owner key is already the permanent console break-glass, and the console can write the same fields (CLAUDE.md records how); if the owner is unreachable the camp runs on whatever is already switched on. Another director can't be made owner from the app, by design |
 
 
 ---------------------------------------------------------------------------------
 
 ## 17. Decisions for the owner
 
-Reorganised in review (ux-R16). §17.1 holds only the questions **only you can answer**: your
-camp's dates, your people, your policies and your traditions. Ask them one at a time, most
-important first. Each has a recommended answer (**bold**), and the build follows it until you
-say otherwise. Everything else is in §17.2: a sensible default is already applied, written in
-the same plain words, and you can change any of them at any time by saying so. Each question
-keeps its reference tag (Q1…Q27) because the rest of this spec refers to them.
+All thirteen questions that only the owner could answer were answered on **2026-10-27**; §17.1
+is now the record. §17.2 lists the defaults that were applied without asking. Each question
+keeps its reference tag (Q1…Q27) because the rest of this spec refers to them, and §1.4 says
+what each answer changed.
 
-### 17.1 Questions only you can answer (one at a time, most important first)
+### 17.1 The owner's answers (2026-10-27)
 
-1. **(Q1) Will any camp week, junior or senior, run before June 2027?** *(This decides when the
-   risky work can be done.)*
-   - **No — nothing before June (we'll still want the 2027 dates when you have them)**
-   - Yes, junior
-   - Yes, senior
-   - Not sure yet
-2. **(Q2) Shall we try everything on senior camp first, as a full practice run, before junior
-   camp's directors see any of it?**
-   - **Yes, senior first**
-   - Both at the same time
-   - Junior first
-3. **(Q22) When a new camp year starts, should every counselor come off their team?** (Everyone
-   keeps their sign-in; you put them back on teams from one list in about a minute.)
-   - **Yes, take everyone off their team**
-   - No, keep last year's teams
-4. **(Q7) Camper first names: wiped at the start of every new year, and only ever shown to
-   directors on the Campers and People screens?**
-   - **Yes**
-   - Keep them from year to year
-   - Yes, and also let directors print a team sheet with them
-5. **(Q6) If someone who isn't on the list signs in, should they be able to tap "Ask to join" on
-   their own phone (only while a director has switched asking on, e.g. during registration)?**
-   - **Yes, and let them in as a Counselor unless the director picks Director**
-   - Yes, but the director always has to pick the role
-   - No, they tell a director their email as today
-6. **(Q8) Who may start the new-year setup, or switch a camp between "edited here" and "the
-   original week"?**
-   - **Any director**
-   - Only you
-7. **(Q23) When a director goes back to a restore point, may it bring back scores too?**
-   - **Only if they tick "Also restore scores" (unticked unless they choose it)**
-   - Never
-   - Always
-8. **(Q10) Which senior games should be played as a 4-team bracket?**
-   - **The Legacy Game each day**
-   - None for now (keep podium and scores)
-   - We'll tell you which
-9. **(Q12) In the 4-team bracket, is the 3rd-place match played before the final?**
-   - **Yes, 3rd place first, final last**
-   - No, the final first
-10. **(Q11) Senior's arrival day (Sunday) and send-off day (Saturday) only have sample schedules
-    today. How should the real ones get in?**
-    - **Directors type them in on the new Schedule screen (the checklist reminds them)**
-    - We'll send them to you to put in as the starting point
-    - Keep the sample day for now
-11. **(Q18) Double points next year: the same as 2026 (Thursday 5 PM until the end of Friday)?**
-    - **Yes, the same**
-    - Different (tell us when)
-    - No double points
-12. **(Q25) Which day should the TV page play the champion celebration?**
-    - **Friday**
-    - Saturday
-    - Another day (tell us)
-13. **(Q21) Are Sofie and Sofia, Lilly and Lily, and Alysa and Alyssa the same people?** (Last
-    year's electives list spells them both ways.)
-    - Yes, merge them
-    - No, they're different people
-    - **Not sure — directors link them on the Electives screen**
+| Tag | Question | Answer | Was it the recommendation? | Landed in |
+|---|---|---|---|---|
+| Q1 | Will any camp week, junior or senior, run before June 2027? | **No: nothing before June** (the 2027 dates are wanted when known) | yes | P8, §13.1 |
+| Q2 | Try everything on senior camp first, as a practice run, before junior? | **Both camps at the same time** | **no** (recommended: senior first) | summary, §1.4, §10.1, §13, K2, K5 |
+| Q22 | When a new camp year starts, does every counselor come off their team? | **Yes, take everyone off their team** (everyone keeps their sign-in) | yes | §11.3 step 2, §11.8 |
+| Q7 | Camper first names wiped every new year, and only ever shown to directors? | **Yes** | yes | §5.9, §7.3, §11.9, P12 |
+| Q6 | May someone who isn't on the list tap "Ask to join" (only while a director has switched asking on)? | **Yes, and let them in as a Counselor unless the director picks Director** | yes | §11.8, §11.18 |
+| Q8 | Who may start the new-year setup, or switch a camp between "edited here" and "the original week"? | **Only the owner** | **no** (recommended: any director) | §1.4, P1, §5.2–5.3, §6.6, §7.2–7.3, §8, §10.1, §11.2–11.3, S4/S5a/S8, K23, Appendices B–C |
+| Q23 | When a director goes back to a restore point, may it bring back scores too? | **Only if they tick "Also restore scores"** (unticked unless they choose it) | yes | §7.2 |
+| Q10 | Which senior games are played as a 4-team bracket? | **The Legacy Game each day** | yes | §11.14, §11.15, S6b |
+| Q12 | In the 4-team bracket, is the 3rd-place match played before the final? | **Yes: 3rd place first, final last** | yes | §5.7.4, §11.15 |
+| Q11 | Senior's arrival day (Sunday) and send-off day (Saturday) only have sample schedules. How should the real ones get in? | **Keep the sample days for now** | **no** (recommended: directors type them in, the checklist reminds them) | §10.2, Appendix B |
+| Q18 | Double points next year? | **The same as 2026: Thursday 5 PM until the end of Friday** | yes | §5.7.3, §10.6, §11.3 step 1 |
+| Q25 | Which day does the TV page play the champion celebration? | **Friday** | yes | §12.3, `finaleDow` |
+| Q21 | Are Sofie and Sofia, Lilly and Lily, and Alysa and Alyssa the same people? | **Yes, merge them: Sofia, Lily, Alyssa** | **no** (recommended: not sure, directors link them) | S0k, §3, §5.2, §10.5, §11.8, §11.13, Appendix D |
 
 ### 17.2 Defaults already applied (say if you want any of them different)
 
@@ -3350,8 +3521,9 @@ keeps its reference tag (Q1…Q27) because the rest of this spec refers to them.
 - **(Q5) When a director changes today's or tomorrow's schedule, a "Tell people" box appears.**
   It starts ticked only for a time change or a skipped item on a specific day, and unticked for
   renames and for changes to the typical day. *(Alternatives: always alert; never alert.)*
-- **(Q9) If senior needs brackets early, the 4-team bracket may ship right after the rules
-  update**, ahead of the setup screens. *(Alternative: keep the planned order.)*
+- **(Q9) The 4-team bracket ships in its planned slot (S6b)**, not early: no camp runs before
+  June 2027, so senior doesn't need it sooner. *(Alternative: ship it right after the rules
+  update, ahead of the setup screens.)*
 - **(Q13) Two teams may have the same colour; the checklist warns.** *(Alternative: never
   allowed.)*
 - **(Q14) Team colours come from a 12-colour palette that reads well in light and dark mode**;
@@ -3363,8 +3535,10 @@ keeps its reference tag (Q1…Q27) because the rest of this spec refers to them.
   include it.)*
 - **(Q17) An uploaded team photo replaces junior's built-in team shield.** *(Alternative: the
   built-in shields always win.)*
-- **(Q19) The home screen doesn't change with the dates or name games inside "Happening Now" in
-  this project** — both wait for the home-screen redesign. *(Alternative: add them now.)*
+- **(Q19) This project doesn't change the home screen for dates or name games inside "Happening
+  Now"** — both belong to the redesign's Now tab (`app-shell-redesign-spec.md` §3: "Camp starts
+  Sunday, …" before the camp week, and the block's games listed on the card). *(Alternative: add
+  them now.)*
 - **(Q20) A downloadable whole-week calendar file is enough**, with a note that it doesn't update
   itself. *(Alternative: a live calendar subscription, which needs extra work on the alert
   sender.)*
@@ -3414,10 +3588,14 @@ Returns `{mark: 'ok'|'warn'|'todo'|'skip'|'info', summary, problems: [string]}`:
 `meta.skip[section]`; `warn` if any problem; `todo` for an optional section with nothing in it;
 else `ok`. One unit test per problem sentence.
 
+**Owner-only fixes (Q8).** Wherever a row's fix is **Edit the week here**, **Start the new-year
+setup**, **Use the original week again** or **Undo the new-year setup**, only the owner sees the
+button; everyone else sees the same problem sentence with the owner's name in place of the button.
+
 | Section | Problems (each a plain sentence linking to its fix) | Summary when ok |
 |---|---|---|
 | Camp week | **`newYearDue()`** ("This camp still has 2026's scores — start the new-year setup", linking to the wizard, never to a bare date input; ux-R4); no `weekStart` on a camp with no scores ("Pick the Sunday camp starts"); not a Sunday | "Sun Jul 18 – Sat Jul 24" |
-| Schedule | not turned on ("Using the original schedule" + **Edit the week here**); turned off with edits kept ("Showing the original — your edits are kept"); (info) labels naming last year's staff after a wizard run ("4 items name people — review them"); typical day empty; a day used by camp has no items ("Saturday is empty"); a `placeholder` day ("Arrival and send-off days are placeholders"); an item with `end ≤ start`; an overlap not marked `overlapOk` ("2 items overlap on Tuesday at 9:15 PM"); a Breakfast/Lunch/Supper-looking label without the Meal tag; a broken item ("1 broken item on Tuesday — Fix / Remove"); rules not published | "Typical day · Mon–Fri · 3 one-offs" |
+| Schedule | not turned on ("Using the original schedule" + **Edit the week here** for the owner, "Patrick turns on editing" for everyone else); turned off with edits kept ("Showing the original — your edits are kept"); (info) labels naming last year's staff after a wizard run ("4 items name people — review them"); typical day empty; a day used by camp has no items ("Saturday is empty"); (info, never a warning, Q11) a `placeholder` day ("Arrival and send-off days still use the sample schedule"); an item with `end ≤ start`; an overlap not marked `overlapOk` ("2 items overlap on Tuesday at 9:15 PM"); a Breakfast/Lunch/Supper-looking label without the Meal tag; a broken item ("1 broken item on Tuesday — Fix / Remove"); rules not published | "Typical day · Mon–Fri · 3 one-offs" |
 | Games | games not on the schedule (list + picker); a dangling `blockId`; a late bracket tap after a result was saved (**Discard**); a 4-team bracket waiting for a re-check; a Games item on a competition day with no games; a tournament whose team count has no bracket kind; more than one drawing game; location "TBA" (senior seed) | "22 games on 10 items" |
 | Teams | wrong count or an id not `tN` ("Ask Patrick to repair team slots"); missing name / short name / emoji ("Foxes has no short name"); two teams share a colour ("Two teams are Blue"). **Info, not a warning:** a legacy colour that fails a theme ("Turkey Dinner's colour is hard to read in dark mode — **Pick colours for flagged teams**"; ux-R13) | "6 teams" |
 | People | requests waiting ("🙋 2 asking to join"); a team with no counselor **accounts** — typed fallback text doesn't count ("Foxes has no counselors yet — **Put people on teams**"; ux-R9); pending rows ("3 people have no sign-in yet", info after 7 days); a member row missing `role`/`addedBy`/`addedAt` ("Sam's sign-in record is incomplete"); (info) asking to join switched on for more than 7 days | "18 counselors · 4 directors" |
@@ -3454,22 +3632,23 @@ else `ok`. One unit test per problem sentence.
 | epoch | "this camp week" / "2027" |
 | `messtival` | "Double points" |
 | `meta.on.<section>` true / false | "edited here" / "the original (the copy that came with the app)" — never "shared setup" or "built-in copy" on screen (ux-R7) |
-| A1 / its undo / re-seed | **Edit the week here** / **Use the original week again** ("your changes are kept") / **Start this section again from the original** |
-| A3 | **Start the new-year setup** |
+| A1 / its undo / re-seed | **Edit the week here** / **Use the original week again** ("your changes are kept") / **Start this section again from the original** (all owner only) |
+| A3 | **Start the new-year setup** (owner only) |
 | quarantine | "couldn't be saved" |
 | `tabReadOnly` | "this tab is view-only" |
 | `editorsHere` | "Jenn is also here" |
+| an owner-only act, seen by another director | The same sentence with the owner's name and no button: "Patrick turns on editing." / "Patrick starts the new-year setup." (`ownerName()`; "the owner" until the directory loads) |
 
 ## Appendix D — Change list by file
 
 | File | Stages | Change |
 |---|---|---|
-| `app.js` | S0–S8 | `OWNER_MEMBER_KEY`; config first-pull gate and `pendingWritesTotal()`; legacy roster gate; unknown-bracket guard; SEAM accessor block; pure helpers `treeDiff`/`applyOpsSafe`/`fnv1a`; `pushState` quarantine; teams per field; Web Locks writer; epoch check; config engine v2 (replaces `pushConfig`/`applyRemoteConfig` internals; `configReady`, `pendingConfigWrites`, `_cfgBase`); undo core; `editorsHere` writes (editors only); one `persistState()` gate for the seven cache writes; quarantine ordering + persistence; `brackets4` key and 4-team flow (stored participants, `recheck`) + extracted 6-team helpers; random-tail game ids; `buildWeekIcs`; `clearLocalData` list gains the new keys; `idleRetryTick` setup branch |
+| `app.js` | S0–S8 | `OWNER_MEMBER_KEY`, `isOwner()` / `ownerName()` (S4); `canonicalCounselorName()` consumers in `missingSeedCounselors`, `adoptMemberTeam`, `myStationFor` (S0k); config first-pull gate and `pendingWritesTotal()`; legacy roster gate; unknown-bracket guard; SEAM accessor block; pure helpers `treeDiff`/`applyOpsSafe`/`fnv1a`; `pushState` quarantine; teams per field; Web Locks writer; epoch check; config engine v2 (replaces `pushConfig`/`applyRemoteConfig` internals; `configReady`, `pendingConfigWrites`, `_cfgBase`); undo core; `editorsHere` writes (editors only); one `persistState()` gate for the seven cache writes; quarantine ordering + persistence; `brackets4` key and 4-team flow (stored participants, `recheck`) + extracted 6-team helpers; random-tail game ids; `buildWeekIcs`; `clearLocalData` list gains the new keys; `idleRetryTick` setup branch |
 | `settings.js` | S0, S3, S6a | B1; scoring#6; clocks leak; no add/delete team; field-diff game saves and resolve-by-id handlers; Games screen by schedule item and "When" picker; classic tabs retired in S10 |
 | `camp-core.js` (new) | T | double-window constants and maths, `etWallToEpoch`, `liveGameIdSet`, `computeStandingsCore`, **the shared sanitizers** (`safeEmoji`, `safeShort`, `safeColorVars`, `safeCrestSrc`, `safeVideoUrl`) |
 | `setup-sync.js` (new) | S4+ | setup engine, `normalizeSetup`, `resolveDay`/`legacyBlock`/`renderLabel`, `buildSeed`, A1/A2, restore points, publisher hash, schedule-alert id tracking |
 | `setup-ui.js` (new) | S4+ | hub, wizard, Camp week, Schedule, rain plan, Teams, People (incl. Put people on teams, asking switch, block list), Campers, Meals, Verses, Cleanup, Electives, Backups; `askDialog`; hold-to-confirm; "also here" chips; sync line; undo pill |
-| `camps.js` | T, S7 | `CAMP_FORCE` one-liner in `activeCampId()`; `TEAM_PALETTE`; `gameBlockOverrides: {}` per profile. **No existing constant changes.** |
+| `camps.js` | S0k, T, S7 | `CAMP_FORCE` one-liner in `activeCampId()`; `TEAM_PALETTE`; `gameBlockOverrides: {}` per profile; `COUNSELOR_NAME_ALIASES` and `canonicalCounselorName()`. **No existing constant changes except the three counselor spellings (S0k, Q21).** |
 | `chat.js` | S1, S7 | mention dictionary via `teamShort`/`staffNames`; capitalised-team-word rule |
 | `push.js` | S1, S5a, S9 | `scheduleWeek()`; publisher from `planForDow` with `rev`/`src` (transaction); drawer week line read-only; `/notify` schedule calls and the offline intent |
 | `push-worker/worker.js` | S9 | `notifySchedule`; `schedSeen` cleanup; `teamNamedIn` accepts `short` under the capitalised-team-word rule |
@@ -3478,7 +3657,7 @@ else `ok`. One unit test per problem sentence.
 | `stalling.html` | T | camp-aware link; team-count copy |
 | `index.html` | T, S4, S7 | `camp-core.js`, `setup-sync.js`, `setup-ui.js` tags (15 `?v=` assets); denied-screen "Ask to join" markup |
 | `styles.css` | S0, S4, S7 | danger text token; builder layout, sheets, hub, dialogs; `--team-accent-l/-d` theme switch |
-| `database.rules.json` | R1 | §8.2, §8.3 |
+| `database.rules.json` | R1 | §8.2, §8.3 (owner-only clauses included) and the reveal blocks (`app-shell-redesign-spec.md` §4.4) |
 | (no new tool file) | R1 | the Appendix E blocks are pasted by the owner; nothing executable is fetched from the site (sec-F5) |
 | `tests/*` | every stage | §15 |
 | `CLAUDE.md` | every stage | §13.3 |
@@ -3536,7 +3715,10 @@ for (const r of ['campScoreboard', 'seniorScoreboard'])
 ```
 Signed in as **you** (an editor): all four lines `ALLOWED` — under the old rules they are all
 `DENIED`, so this is the proof R1 is live. Signed in as **a test counselor**: `setup/meta`
-`ALLOWED`, `campers` `DENIED`. Signed in as **a non-member test account**: all `DENIED`. Record
+`ALLOWED`, `campers` `DENIED`. Signed in as **another director (not the owner)**: the four reads
+`ALLOWED` as for you, and `db.ref('campScoreboard/setup/meta/on/schedule').set(false)` must come back
+`DENIED` (decision Q8; if you run it as yourself it is allowed, so `.remove()` it straight away).
+Signed in as **a non-member test account**: all `DENIED`. Record
 the results in CLAUDE.md's R1 checklist (§8.9).
 
 **Order within a stage:** (1) a rules-only commit (`database.rules.json`, `tests/rules.test.js`,
@@ -3611,3 +3793,19 @@ the proposed fix replaced by a different one (marked "modified", reason given).*
 | ux-R17 | Accept | The Competitions card keeps today's visible Morning/Afternoon/Evening grouping (now derived from blocks); the small home-adjacent additions are listed in the §9.4 seam table behind their own functions. §9.4, §11.17, §13.2 S6a. |
 | ux-R18 | Accept | "Change today's plan" appears only when the schedule is edited here; otherwise a one-line pointer to the hub; the camp-week override is worded plainly; "rain plans are fine" shows only when true. §10.1, §11.1, §11.2, §11.17. |
 | ux-R19 | Accept (modified) | Accepted: a team word (short name or a word of the name) counts as a mention only when capitalised, followed by "team"/"campers", or as the full team name — applied to the client and the Worker, which also ends today's lower-case "blue"/"gold" pings. Replaced: a separate team-mention mute — the existing **Mentions** switch already silences mention alerts, and a new pref would need a rules change to the sealed push prefs plus a Worker change. §13.2 S7/S9, §14, Appendix D. |
+
+---------------------------------------------------------------------------------
+
+## Change log
+
+- **2026-10-27: the owner's answers to §17.1 recorded** (all thirteen). Four changed the plan:
+  **both camps roll out together** (Q2), the **new-year setup and the edited-here / original-week
+  switch are owner-only, enforced in the rules and the app** (Q8), **senior's Sunday and Saturday
+  keep their sample days** (Q11), and the **counselor spellings merge to Sofia, Lily and Alyssa**
+  (Q21, new stage S0k). Nine matched the recommendations. §2.2 and §9.4 now point to
+  `app-shell-redesign-spec.md` for the home-screen redesign, and `BUILD-PLAN.md` is the integrated
+  order of both projects. Sections touched: summary, §1.4 (new), §2.1–2.3 (new moment M7), §3,
+  §4 (P1, P8, P11), §5.2, §5.3, §5.7.2, §6.6, §7.2, §7.3, §8.1–8.4, §8.6, §8.8–8.10, §9.4,
+  §10.1, §10.2, §10.5, §11.1–11.3, §11.8, §11.13, §13.1–13.3 (new stage S0k), §15, §16 (K2, K5,
+  K9, K20, new K23), §17, Appendices B, C, D and E. Not changed by this update: the sync, setup
+  and undo engines, the data model apart from the owner-only fields, and every other screen.

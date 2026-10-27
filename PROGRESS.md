@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Tue Oct 27, 10:10 AM ET** (update this line every time the file changes)
+Last updated: **Tue Oct 27, 12:55 PM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -282,6 +282,17 @@ a "Decisions for the owner" list (ask ONE at a time, after the layout Qs).
     revealed until 8 AM; a new reveal replaces the previous one; any director
     can run the remote; the TV page with no reveal says "Waiting for the
     directors…".
+- **12:49 PM ET — redesign spec run DONE.** docs/build-notes/
+  app-shell-redesign-spec.md (2,337 lines; 56 critic findings, 54 accepted
+  as written, 2 accepted with an owner-decision-preserving fix; Review log
+  at end), docs/build-notes/BUILD-PLAN.md (31 steps, Nov 2026 → May 2027,
+  owner actions listed), setup-rebuild-spec.md §17 updated with the 13
+  answers. Final mockups + motion-demo.html copied to docs/build-notes/
+  mockups/final/. Designer's 4 open questions: quick-points moment on Now
+  (rec: no), big screen needs a sign-in (rec: yes), practice runs made-up
+  points (rec: yes), bracket bye rule small leak (rec: keep). NEXT: show the
+  owner the mockups + demo, approval one question at a time, then build
+  step by step per BUILD-PLAN (one agent at a time).
 - **10:10 AM ET — redesign spec run `wf_b47e2dfe-4f9`** (script
   camp-redesign-spec-sequential-wf_b47e2dfe-4f9.js; strictly ONE agent at a
   time): Sonnet map:shell → Sonnet map:reveal → OPUS design:lead (spec at
