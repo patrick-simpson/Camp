@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Tue Oct 27, 7:05 AM ET** (update this line every time the file changes)
+Last updated: **Tue Oct 27, 7:25 AM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -192,8 +192,25 @@ a "Decisions for the owner" list (ask ONE at a time, after the layout Qs).
   - Q12 → **phones only** (no wide/TV layouts beyond the reveal + setup).
   - Q13 senior → **same layout, empty parts hidden** (flag colors + optional
     team photo).
-  LAYOUT INTERVIEW COMPLETE. Next: Project 2's 13 owner decisions, then a
-  layout-redesign spec (built on Project 2's accessor seam).
+  LAYOUT INTERVIEW COMPLETE.
+- PROJECT 2 OWNER DECISIONS (spec §17; ★ = differs from the spec's default):
+  1. No camp week before June 2027 (still want 2027 dates later).
+  2. ★ Rollout: BOTH camps at the same time (not senior-first).
+  3. New year: take every counselor off their team.
+  4. Camper first names: wiped each new year; directors only.
+  5. Walk-ups: "Ask to join" (only while a director switches asking on);
+     approved as Counselor unless the director picks Director.
+  6. ★ New-year setup + "edited here / original week" switch: ONLY THE OWNER
+     (patricksimpson.fx@gmail.com key), not any director.
+  7. Restore points: scores only if "Also restore scores" is ticked.
+  8. Senior 4-team bracket: the Legacy Game each day.
+  9. 3rd-place match BEFORE the final.
+  10. ★ Senior Sunday/Saturday: KEEP THE SAMPLE days for now.
+  11. Double points: same as 2026 (Thu 5 PM → end of Fri).
+  12. Champion celebration: Friday.
+  13. ★ Spellings: MERGE — Sofie→Sofia, Lilly→Lily, Alysa→Alyssa everywhere.
+  NEXT: fold these + the layout answers into one build plan (redesign spec on
+  top of the P2 seam), clickable mockups for owner approval, then build.
 
 **1:15 AM ET Tue — sweep DONE**: 95 confirmed glitches (8 high/24 med/63 low)
 + layout verdict "partly" with 13 ordered interview questions. Full result
