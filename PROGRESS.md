@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Tue Oct 27, 6:35 AM ET** (update this line every time the file changes)
+Last updated: **Tue Oct 27, 6:50 AM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -169,7 +169,19 @@ a "Decisions for the owner" list (ask ONE at a time, after the layout Qs).
     - Assumed (tell owner): the 5 minutes count from when 1st place is shown;
       hiding is in-app (medal winners are visible, so points can't be truly
       secret anyway).
-  - NEXT: Q3 navigation (one page vs tabs), then Q4…Q13 from the synth list.
+  - Q3 navigation → **bottom tabs**; tab set → **Now · Games · Chat · More**
+    (Now becomes the live reveal during one; directors find live standings
+    at the top of Games; More = schedule, verse, cleanup, quick points,
+    settings).
+  - Q4 → **same tabs for everyone + director tools**: Score buttons on game
+    rows for directors; a Director section at the top of More (tell everyone,
+    award points, what counselors see, set up the week).
+  - Q5 scorekeeping → **it varies** (Score on every row + "Next game →"
+    after saving; maybe remember "my game").
+  - Q6 games block → **this block's games + status** (Not started/Live/Done,
+    place; directors get Score; counselors see live score + medal winners).
+  - NEXT: Q7 electives, Q8 cleanup/verse/quick points, Q9 announcements,
+    Q10 emoji, Q11 motion, Q12 big screens, Q13 senior look.
 
 **1:15 AM ET Tue — sweep DONE**: 95 confirmed glitches (8 high/24 med/63 low)
 + layout verdict "partly" with 13 ordered interview questions. Full result
