@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Mon Oct 26, 11:05 PM ET** (update this line every time the file changes)
+Last updated: **Mon Oct 26, 11:15 PM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -17,7 +17,7 @@ It is committed to the working branch so it survives the container being reset.
 
 ## The two projects (in order)
 
-### Project 1 — Phone alerts (Web Push) + reliability hunt — IN PROGRESS
+### Project 1 — Phone alerts (Web Push) + reliability hunt — ✅ SHIPPED (v182; status table below is historical)
 Owner-approved design (from an interview, all confirmed):
 - Real notifications when the app is CLOSED, for counselors + directors only.
 - No app stores: the existing site installed to the Home Screen (iPhone needs
@@ -32,7 +32,7 @@ Owner-approved design (from an interview, all confirmed):
 - Full technical spec: [`docs/build-notes/push-alerts-spec.md`](docs/build-notes/push-alerts-spec.md).
 - Also requested: "reliability hunting across the project to make it rock solid".
 
-### Project 2 — Setup UX rebuild (junior + senior) — NOT STARTED (build after Project 1 ships)
+### Project 2 — Setup UX rebuild (junior + senior) — SPEC IN PROGRESS (workflow wf_65a1aad8-2c6, started 11:10 PM ET Mon)
 Owner-confirmed requirements (interview complete, owner said "Yes, that's it"):
 - Who: all editors (no new role); laptop for the big setup, phones mid-week,
   several editors at once.
@@ -132,6 +132,13 @@ each followed by a Sonnet adversarial verifier, plus a 4-lens layout panel
 (counselor, director, visual design, IA) → synthesis with an ORDERED owner
 interview. Reference screenshots: scratchpad/shots/*.png (shots.cjs). If the
 session died mid-run: resume with Workflow({scriptPath, resumeFromRunId}).
+**11:10 PM ET — Project 2 spec workflow running in parallel** (owner: "also
+resume your previous work"): run `wf_65a1aad8-2c6` (script
+camp-setup-rebuild-spec-wf_65a1aad8-2c6.js in the same scripts dir): 5 Sonnet
+code mappers → 3 independent drafts (data-first / editor-first /
+migration-first) in docs/build-notes/p2-drafts/ → 3 judges → unified spec at
+docs/build-notes/setup-rebuild-spec.md → 3 adversarial reviews → revision with
+a "Decisions for the owner" list (ask ONE at a time, after the layout Qs).
 After it returns: fix confirmed glitches (one editor of app.js at a time),
 tests + node --check, bump v184, push main, verify live; then present the
 layout assessment and ask interview Q1 (ONE question at a time).
