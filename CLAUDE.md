@@ -212,6 +212,14 @@ What's covered, and why each file exists:
   every shape RTDB can prune is healed).
 - `backup.test.js` — restore-from-backup, including that an imported tree gets
   normalized and orphan-pruned before it can render or sync.
+- `render-stability.test.js` — re-renders that change nothing don't touch the
+  DOM. `renderAll` runs on every remote snapshot and the 30 s tick, and a
+  re-created Jelly component repaints/animates from scratch (the "Happening
+  now" progress bar refilled from empty twice a minute; the team shield
+  blinked; chips twitched). Home panels write through `setHtmlIfChanged`,
+  the day tabs refresh their panels in place, and the progress bar is nudged
+  rather than rebuilt. New panels on the renderAll path should do the same;
+  never `transition: all` (it animated chips' line-height on every rebuild).
 - `auth.test.js` — the `emailKey` contract (multi-dot/case/trim — the
   regression that would lock people out under the rules), the `canEdit` truth
   table via `setMemberRole`, the `memberRecord` shape, `clearLocalData`'s

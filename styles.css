@@ -1150,7 +1150,7 @@ body.no-scroll {
   font-weight: 600;
   text-align: left;
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .team-picker-option.selected {
@@ -1228,7 +1228,7 @@ body.no-scroll {
   font-weight: 700;
   color: var(--color-text-muted);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .schedule-body {
@@ -2133,7 +2133,7 @@ body.no-scroll {
   color: var(--color-text);
   cursor: pointer;
   font-family: inherit;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .team-chip.selected {
@@ -2175,7 +2175,7 @@ body.no-scroll {
   color: var(--color-text);
   cursor: pointer;
   font-family: inherit;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .bonus-meal-chip {
@@ -2418,7 +2418,7 @@ body.no-scroll {
   color: var(--color-text);
   cursor: pointer;
   font-family: inherit;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .verse-day-chip .today-dot {
@@ -4681,6 +4681,16 @@ html.view-only #history-row {
   padding: 0.5rem 0;
 }
 
+/* Members list re-reading after an edit: the old list stays put, dimmed and
+   untappable, instead of collapsing to skeleton bars. The dim waits a beat so
+   a fast reload never visibly flickers. */
+#members-body { transition: opacity 0.12s ease; }
+#members-body.is-refreshing {
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity 0.2s ease 0.15s;
+}
+
 .cl-day {
   font-size: 0.75rem;
   font-weight: 800;
@@ -5281,7 +5291,7 @@ select.form-input {
   font-family: inherit;
   color: var(--color-text);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
 
 .format-card.selected {

@@ -15,9 +15,9 @@ const STORAGE_KEY = lsKey('campScoreboardV2'); // per-camp; junior stays the bar
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-10-26T23:24:43Z';
+const CODE_UPDATED_AT = '2026-10-27T02:04:43Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 182;
+const APP_VERSION = 183;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -818,7 +818,19 @@ function renderNowBanner() {
   const { dow, minutes } = campNow();
   const html = nowBannerHtml(dow, minutes);
   el.hidden = !html;
-  el.innerHTML = html || '';
+  // This runs every 30 s and on every renderAll. Rebuilding the markup
+  // re-creates the jelly-progress, which animates its fill from empty on
+  // connect — so the bar visibly "reloaded" twice a minute. When only the
+  // elapsed value moved, nudge the live element instead; it glides there.
+  const shape = (html || '').replace(/(<jelly-progress[^>]*?)value="\d+"/, '$1');
+  const bar = el.querySelector && el.querySelector('jelly-progress.now-progress');
+  if (html && bar && el.__nowShape === shape) {
+    const m = /<jelly-progress[^>]*?value="(\d+)"/.exec(html);
+    if (m && bar.getAttribute('value') !== m[1]) bar.setAttribute('value', m[1]);
+    return;
+  }
+  el.__nowShape = shape;
+  setHtmlIfChanged(el, html || '');
 }
 
 // ── Full week schedule sheet (tap the Happening Now banner) ──────
@@ -1272,9 +1284,18 @@ function renderMembers() {
     body.innerHTML = '<p class="muted">Live sync is off on this device, so the member list isn\'t reachable.</p>';
     return;
   }
-  body.innerHTML = '<div class="history-skeleton">' +
-    [90, 70, 80].map((w) => `<div class="skeleton-row" style="width:${w}%"><jelly-skeleton style="height:2.6rem"></jelly-skeleton></div>`).join('') +
-    '</div>';
+  // Loading bars only on the first fill. Every role/team/remove tap calls
+  // this again; swapping the list for skeleton bars each time made the drawer
+  // flash and jump back to the top, so a refresh keeps the current list up
+  // (dimmed) until the new one lands. The sequence number drops a slower,
+  // older load that resolves after a newer one.
+  const seq = renderMembers.seq = (renderMembers.seq || 0) + 1;
+  if (body.querySelector('.member-list')) body.classList.add('is-refreshing');
+  else {
+    body.innerHTML = '<div class="history-skeleton">' +
+      [90, 70, 80].map((w) => `<div class="skeleton-row" style="width:${w}%"><jelly-skeleton style="height:2.6rem"></jelly-skeleton></div>`).join('') +
+      '</div>';
+  }
   // Both camps' lists load side by side. The other camp's read succeeds for
   // anyone who is a member THERE (the list is that camp's staff directory);
   // a refused read simply means "manage this camp only" — the drawer then
@@ -1287,12 +1308,16 @@ function renderMembers() {
       .catch(() => null),
   ])
     .then(([active, others]) => {
+      if (seq !== renderMembers.seq) return;
+      body.classList.remove('is-refreshing');
       const lists = {};
       lists[CAMP.id] = active;
       lists[other.id] = others; // null ⇒ single-camp view
       renderMemberList(body, lists);
     })
     .catch(() => {
+      if (seq !== renderMembers.seq) return;
+      body.classList.remove('is-refreshing');
       body.innerHTML = '<p class="muted">Couldn\'t load the member list — check the connection and try again.</p>';
     });
 }
@@ -1843,9 +1868,9 @@ function renderFooter() {
   bits.push(`📋 Data: ${dataStamp ? esc(dataStamp) : 'no scores yet'}`);
   bits.push(`<span title="Code last updated: ${esc(formatEasternStamp(CODE_UPDATED_AT) || 'unknown')}">🛠️ v${APP_VERSION}</span>`);
   bits.push(`<button id="settings-btn" class="footer-link" aria-label="Settings">⚙️ Settings</button>`);
-  el.innerHTML = `<p class="footer-line">${bits.join(' · ')}</p>`;
-  // The line is rebuilt on every render, so rebind here (wireSettings runs
-  // once at init, before the first footer render).
+  if (!setHtmlIfChanged(el, `<p class="footer-line">${bits.join(' · ')}</p>`)) return;
+  // Fresh nodes need their listeners (wireSettings runs once at init,
+  // before the first footer render).
   const btn = document.getElementById('settings-btn');
   if (btn) btn.addEventListener('click', openSettings);
   const campChip = document.getElementById('footer-camp-chip');
@@ -3053,6 +3078,23 @@ function esc(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+// Write a panel's markup only when it would actually change. Every remote
+// snapshot and the 30-second tick run renderAll, and re-setting identical
+// innerHTML still throws the old nodes away: Jelly chips/buttons repaint
+// their canvases from scratch, images re-decode (a blank flash), and a
+// finger mid-press loses its button. Skips only when the markup is the same
+// as last time AND nobody has changed the DOM since (a chip that toggled
+// its own `selected`, an error line un-hidden) — then the panel is exactly
+// what a rebuild would produce. Returns true when it wrote, so callers wire
+// their listeners only onto fresh nodes.
+function setHtmlIfChanged(el, html) {
+  if (el.__html === html && el.__dom === el.innerHTML) return false;
+  el.innerHTML = html;
+  el.__html = html;
+  el.__dom = el.innerHTML;
+  return true;
 }
 
 function gameById(id) {
@@ -4494,7 +4536,7 @@ function renderFollowCard() {
     card.className = 'follow-team-card';
     card.style.removeProperty('--team-accent');
     card.hidden = false;
-    card.innerHTML = `<p class="muted follow-neutral-line">🏳️ Not following a team — <button id="pick-team-link" class="link-btn">pick one</button></p>`;
+    if (!setHtmlIfChanged(card, `<p class="muted follow-neutral-line">🏳️ Not following a team — <button id="pick-team-link" class="link-btn">pick one</button></p>`)) return;
     const link = document.getElementById('pick-team-link');
     if (link) link.addEventListener('click', openTeamPicker);
     return;
@@ -4534,7 +4576,12 @@ function renderFollowCard() {
   if (accent) card.style.setProperty('--team-accent', accent);
   else card.style.removeProperty('--team-accent');
   card.hidden = false;
-  card.innerHTML = `
+  // Skipping an unchanged rebuild matters most here: the shield is a lazy,
+  // async-decoded image, and a fresh <img> can paint blank for a frame — the
+  // crest blinked every time anyone saved a score. When the card DOES change
+  // (our points moved), the old crest node is put back, still decoded.
+  const oldCrest = card.querySelector('.follow-team-crest');
+  if (!setHtmlIfChanged(card, `
     ${crestHtml}
     <div class="follow-team-body">
       <div class="follow-team-head">
@@ -4549,7 +4596,9 @@ function renderFollowCard() {
       ${cleanupLine}
       ${youLine}
     </div>
-  `;
+  `)) return;
+  const newCrest = card.querySelector('.follow-team-crest');
+  if (oldCrest && newCrest && oldCrest.innerHTML === newCrest.innerHTML) newCrest.replaceWith(oldCrest);
   const changeBtn = document.getElementById('change-team-link');
   if (changeBtn) changeBtn.addEventListener('click', openTeamPicker);
   const idBtn = document.getElementById('change-identity-link') || document.getElementById('set-identity-link');
@@ -4881,7 +4930,7 @@ function renderBonuses() {
   const doubleNote = inDoubleBonusWindow()
     ? `<div class="messtival-banner">⚡ Double points tonight &amp; Friday — bonus points count double in the standings (meal cleanup stays normal)!</div>`
     : '';
-  wrap.innerHTML = doubleNote + entryHTML + subtotalsHTML + ledgerHTML;
+  if (!setHtmlIfChanged(wrap, doubleNote + entryHTML + subtotalsHTML + ledgerHTML)) return;
 
   if (canEdit()) bindBonusEntry(wrap);
   wrap.querySelectorAll('.bonus-remove-btn').forEach((btn) => {
@@ -5059,7 +5108,7 @@ function renderMemoryVerse() {
   const doubleNote = inDoubleBonusWindow()
     ? `<div class="messtival-banner">⚡ Double points tonight &amp; Friday — verse points count double in the standings!</div>`
     : '';
-  wrap.innerHTML = doubleNote + themeHTML + dayChips + verseBox + hint + (editing || anyEarned ? rowsHTML : '') + emptyHTML;
+  if (!setHtmlIfChanged(wrap, doubleNote + themeHTML + dayChips + verseBox + hint + (editing || anyEarned ? rowsHTML : '') + emptyHTML)) return;
 
   wrap.querySelectorAll('.verse-day-chip').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -5243,7 +5292,7 @@ function renderMealCleanup() {
     : '';
 
   // Editors get the interactive rota (entryHTML); viewers the read-only one.
-  wrap.innerHTML = dayChips + (editing ? entryHTML : rotaHTML) + legacyHTML;
+  if (!setHtmlIfChanged(wrap, dayChips + (editing ? entryHTML : rotaHTML) + legacyHTML)) return;
 
   wrap.querySelectorAll('.verse-day-chip').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -5301,9 +5350,9 @@ function setCleanupPoints(teamId, dow, meal, pts) {
 // pre-rendered with that day's full lineup. Switching days is handled
 // entirely by the component (panel fade, pill spring) — the change handler
 // only records state.ui.day, no renderAll round-trip. jelly-tabs builds its
-// tab bar once at connect from the panels present, so this render always
-// writes a fresh element (day set edits in the builder are picked up on the
-// next render).
+// tab bar once at connect from the panels present, so a change to the day
+// set or a tab label (builder edits, the "today" dot moving at midnight)
+// writes a fresh element; anything else updates the panels in place.
 function renderDayTabs() {
   const nav = document.getElementById('day-tabs');
   if (!nav) return;
@@ -5312,13 +5361,29 @@ function renderDayTabs() {
   if (!days.some((d) => d.id === state.ui.day)) state.ui.day = defaultDay(state.config);
   const todayDay = days.find((d) => d.dow === todayDow);
 
+  // Same day set and labels as the tab bar already on screen ⇒ refresh just
+  // the panels that changed, in place. A fresh <jelly-tabs> rebuilds its
+  // canvas tab bar, and this runs on every remote snapshot — the bar blinked
+  // each time anyone saved a score.
+  const label = (d) => d.name.slice(0, 3) + (d.dow === todayDow ? ' •' : '');
+  const inners = days.map((d) => `${dayNoteHTML(d, todayDay)}<div class="day-panel-body">${dayGamesHTML(d)}</div>`);
+  const shell = JSON.stringify(days.map((d) => [d.id, label(d)]));
+  const live = nav.querySelector('jelly-tabs');
+  const panels = live ? [...live.querySelectorAll('jelly-tab-panel')] : [];
+  if (live && nav.__tabsShell === shell && panels.length === days.length) {
+    panels.forEach((p, i) => { if (setHtmlIfChanged(p, inners[i])) wireDayPanels(p); });
+    if (live.getAttribute('value') !== state.ui.day) live.setAttribute('value', state.ui.day);
+    return;
+  }
+  nav.__tabsShell = shell;
+
   nav.innerHTML = `<jelly-tabs class="day-tabs" size="small" value="${esc(state.ui.day)}">` +
-    days.map((d) =>
-      `<jelly-tab-panel value="${esc(d.id)}" label="${esc(d.name.slice(0, 3))}${d.dow === todayDow ? ' •' : ''}"${d.id === state.ui.day ? ' active' : ''}>
-        ${dayNoteHTML(d, todayDay)}
-        <div class="day-panel-body">${dayGamesHTML(d)}</div>
-      </jelly-tab-panel>`).join('') +
+    days.map((d, i) =>
+      `<jelly-tab-panel value="${esc(d.id)}" label="${esc(label(d))}"${d.id === state.ui.day ? ' active' : ''}>${inners[i]}</jelly-tab-panel>`).join('') +
     '</jelly-tabs>';
+  // Stamp each panel the way setHtmlIfChanged would have, so the first
+  // in-place refresh can tell an unchanged panel from a changed one.
+  nav.querySelectorAll('jelly-tab-panel').forEach((p, i) => { p.__html = inners[i]; p.__dom = p.innerHTML; });
 
   const tabs = nav.querySelector('jelly-tabs');
   tabs.addEventListener('change', (e) => {
