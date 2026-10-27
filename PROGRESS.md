@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Tue Oct 27, 6:50 AM ET** (update this line every time the file changes)
+Last updated: **Tue Oct 27, 7:05 AM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -180,8 +180,20 @@ a "Decisions for the owner" list (ask ONE at a time, after the layout Qs).
     after saving; maybe remember "my game").
   - Q6 games block → **this block's games + status** (Not started/Live/Done,
     place; directors get Score; counselors see live score + medal winners).
-  - NEXT: Q7 electives, Q8 cleanup/verse/quick points, Q9 announcements,
-    Q10 emoji, Q11 motion, Q12 big screens, Q13 senior look.
+  - Q7 electives → **my station first** (now + next; "Who's where ›";
+    directors see the full list open).
+  - Q8 → **at their moment + in More** (after a meal: cleanup teams + award
+    buttons; Bible study: the verse; all three also under More).
+  - Q9 → **one "Tell everyone" button** (Director section: message + banner
+    duration / buzz phones (+urgent) / pin as the big notice).
+  - Q10 emoji → **teams, stations, schedule only** (plain words elsewhere).
+  - Q11 motion → **KEEP IT ALL** (sparkles on taps, confetti on saves) —
+    only stop misfires.
+  - Q12 → **phones only** (no wide/TV layouts beyond the reveal + setup).
+  - Q13 senior → **same layout, empty parts hidden** (flag colors + optional
+    team photo).
+  LAYOUT INTERVIEW COMPLETE. Next: Project 2's 13 owner decisions, then a
+  layout-redesign spec (built on Project 2's accessor seam).
 
 **1:15 AM ET Tue — sweep DONE**: 95 confirmed glitches (8 high/24 med/63 low)
 + layout verdict "partly" with 13 ordered interview questions. Full result
