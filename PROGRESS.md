@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Tue Oct 27, 1:40 PM ET** (update this line every time the file changes)
+Last updated: **Tue Oct 27, 2:30 PM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -282,6 +282,19 @@ a "Decisions for the owner" list (ask ONE at a time, after the layout Qs).
     revealed until 8 AM; a new reveal replaces the previous one; any director
     can run the remote; the TV page with no reveal says "Waiting for the
     directors…".
+- **2:30 PM ET — BUILDING (phase A = BUILD-PLAN Steps 1–4).** Specs updated
+  for the owner's answers (commit 63dec23; screen count dropped from the
+  remote — owner OK). Step 0 (mockups in repo) already done. Build run script:
+  docs/build-notes/build-phase-a.js (copy of scratchpad/build-phase-a.js),
+  worktree .claude/worktrees/build (branch "build", ff from origin/main each
+  step). Per step, strictly one agent at a time: Sonnet build → Sonnet review
+  → Sonnet fix-up → Sonnet deploy (version bump, push main, live verify) →
+  Haiku live check. Deployed steps show up on main as "Build step N: …
+  (vNNN)" commits — check `git log origin/main` to see where it got to. If
+  interrupted: re-run the Workflow with resumeFromRunId (or args {steps:[…]}
+  for the remaining steps). DON'T edit app code in the main checkout while
+  it runs (only PROGRESS/docs). After phase A: report to owner, then phase B
+  (Steps 5–10), stopping before ◆ Step 11 (owner publishes rules).
 - **~1:30 PM ET — OWNER APPROVED the redesign ("Yes, this is it").** Answers
   to the designer's questions: no quick-points moment on Now; ★ big-screen
   page PUBLIC (no TV sign-in; a public node with only revealed data);
