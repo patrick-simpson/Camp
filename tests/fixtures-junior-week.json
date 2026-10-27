@@ -610,7 +610,7 @@
    {
     "start": 1200,
     "end": 1275,
-    "label": "Snack and campfire — Sofie",
+    "label": "Snack and campfire — Sofia",
     "emoji": "🔥",
     "type": "activity"
    },
@@ -1158,10 +1158,10 @@
   "Runaway John Deersz"
  ],
  "DEFAULT_COUNSELORS": [
-  "Alysa/Cam/Sam (B)",
+  "Alyssa/Cam/Sam (B)",
   "Bria/Lydia/Zac (A)",
   "Jovi/Brody/Josh (A)",
-  "Sofie/William (B)",
+  "Sofia/William (B)",
   "Abby/TJ/Ella (B)",
   "Lily/Jacob (A)"
  ],
@@ -1197,7 +1197,7 @@
  ],
  "TEAM_COUNSELORS": {
   "t0": [
-   "Alysa",
+   "Alyssa",
    "Cam",
    "Sam"
   ],
@@ -1212,7 +1212,7 @@
    "Josh"
   ],
   "t3": [
-   "Sofie",
+   "Sofia",
    "William"
   ],
   "t4": [
@@ -1221,7 +1221,7 @@
    "Ella"
   ],
   "t5": [
-   "Lilly",
+   "Lily",
    "Jacob"
   ]
  },
@@ -1229,7 +1229,7 @@
   [
    "t0",
    [
-    "Alysa",
+    "Alyssa",
     "Cam",
     "Sam"
    ]
@@ -1317,7 +1317,7 @@
     [
      "Swimming",
      [
-      "Alysa",
+      "Alyssa",
       "Brody"
      ]
     ],
@@ -1325,7 +1325,7 @@
      "Crafts with Eileen",
      [
       "Bria",
-      "Lilly"
+      "Lily"
      ]
     ],
     [
@@ -1346,7 +1346,7 @@
     [
      "Slime with Joann",
      [
-      "Sofie",
+      "Sofia",
       "Abby"
      ]
     ],
@@ -1364,14 +1364,14 @@
      [
       "Sam",
       "TJ",
-      "Lilly"
+      "Lily"
      ]
     ],
     [
      "Slime with Joann",
      [
       "Lydia",
-      "Alysa"
+      "Alyssa"
      ]
     ],
     [
@@ -1385,7 +1385,7 @@
      "Lawn Games",
      [
       "Josh",
-      "Sofie"
+      "Sofia"
      ]
     ],
     [
@@ -1422,7 +1422,7 @@
     [
      "Crafts with Eileen",
      [
-      "Alysa",
+      "Alyssa",
       "Josh"
      ]
     ],
@@ -1446,13 +1446,13 @@
      "Swimming",
      [
       "Sam",
-      "Sofie"
+      "Sofia"
      ]
     ],
     [
      "Crafts with Eileen",
      [
-      "Lilly",
+      "Lily",
       "Abby"
      ]
     ],
@@ -1488,14 +1488,14 @@
      "Swimming",
      [
       "William",
-      "Alysa",
-      "Lilly"
+      "Alyssa",
+      "Lily"
      ]
     ],
     [
      "Crafts with Eileen",
      [
-      "Sofie",
+      "Sofia",
       "Lydia"
      ]
     ],
@@ -1536,7 +1536,7 @@
      "Swimming",
      [
       "Abby",
-      "Lilly"
+      "Lily"
      ]
     ],
     [
@@ -1557,7 +1557,7 @@
     [
      "Lawn Games",
      [
-      "Sofie",
+      "Sofia",
       "Bria"
      ]
     ],
@@ -1587,7 +1587,7 @@
     [
      "Whiffle Ball",
      [
-      "Sofie",
+      "Sofia",
       "TJ"
      ]
     ],
@@ -1625,14 +1625,14 @@
     [
      "Slime with Joann",
      [
-      "Alysa",
+      "Alyssa",
       "Ella"
      ]
     ],
     [
      "Crafts with Eileen",
      [
-      "Lilly",
+      "Lily",
       "Josh"
      ]
     ],
@@ -1675,7 +1675,7 @@
      [
       "William",
       "Zac",
-      "Lilly"
+      "Lily"
      ]
     ],
     [
@@ -1696,7 +1696,7 @@
      "Board Games",
      [
       "Stephen",
-      "Alysa"
+      "Alyssa"
      ]
     ]
    ],
@@ -1704,7 +1704,7 @@
     [
      "Swimming",
      [
-      "Lilly",
+      "Lily",
       "TJ"
      ]
     ],
@@ -1734,7 +1734,7 @@
      "Slime with Joann",
      [
       "Lydia",
-      "Sofie",
+      "Sofia",
       "William"
      ]
     ],
@@ -1750,7 +1750,7 @@
     [
      "Swimming",
      [
-      "Alysa",
+      "Alyssa",
       "Abby",
       "Josh"
      ]
@@ -1778,7 +1778,7 @@
     [
      "Board Games",
      [
-      "Sofie",
+      "Sofia",
       "TJ"
      ]
     ],
@@ -1813,7 +1813,7 @@
      "Crafts with Eileen",
      [
       "Patrick",
-      "Alysa",
+      "Alyssa",
       "William"
      ]
     ],
@@ -1843,7 +1843,7 @@
     [
      "Crafts with Eileen",
      [
-      "Lilly",
+      "Lily",
       "Jacob"
      ]
     ],
@@ -1883,14 +1883,14 @@
      [
       "Cam",
       "TJ",
-      "Lilly"
+      "Lily"
      ]
     ],
     [
      "Slime with Joann",
      [
       "Abby",
-      "Sofie"
+      "Sofia"
      ]
     ],
     [
@@ -1916,7 +1916,7 @@
      "Slip and Slide",
      [
       "Zac",
-      "Alysa"
+      "Alyssa"
      ]
     ]
    ]

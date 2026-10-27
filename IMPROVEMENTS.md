@@ -128,9 +128,9 @@ phone, and keep the kill-switch working.
 ### 3. Copy/consistency nits
 - Bonus meal chip says "Dinner"; the schedule and `MEALS` keys say "Supper".
   Pick one (the schedule's wording is "Supper").
-- Elective-list name spellings differ from the roster (Lilly/Lily,
-  Sofi/Sofie/Sofia). Ask Patrick whether that's intentional before normalizing —
-  they may be different kids.
+- ~~Elective-list name spellings differ from the roster (Lilly/Lily,
+  Sofi/Sofie/Sofia).~~ Resolved 2026-10: the owner merged them (Alyssa, Sofia,
+  Lily) — see `canonicalCounselorName` in camps.js.
 
 ### 4. Change-history readability (small)
 Verse and cleanup point edits are stored as delete-then-add in the bonus ledger,

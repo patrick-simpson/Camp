@@ -20,6 +20,21 @@
 // (meal times, ics export). Lives here because camps.js loads first.
 function hm(h, m) { return h * 60 + (m || 0); }
 
+// Three counselors' names were spelled two ways across the printed sheets
+// (Alysa/Alyssa, Sofie/Sofia, Lilly/Lily); the owner merged them to ONE spelling
+// each (2026-10, decision Q21): Alyssa, Sofia, Lily. Data already out there
+// still carries the old forms — a member row typed "Alysa", a phone whose stored
+// identity is "Lilly" — so every name comparison goes through this one function
+// and the old forms keep matching. Keyed by lower-cased old spelling; anything
+// not listed comes back unchanged.
+const COUNSELOR_NAME_ALIASES = { alysa: 'Alyssa', sofie: 'Sofia', lilly: 'Lily' };
+
+function canonicalCounselorName(name) {
+  if (typeof name !== 'string') return name;
+  const hit = COUNSELOR_NAME_ALIASES[name.trim().toLowerCase()];
+  return hit || name;
+}
+
 const CAMPS = {};
 
 // ── Camp chat channels ───────────────────────────────────────────
@@ -49,7 +64,7 @@ const DEFAULT_TEAM_NAMES = [
   'Ferocious Foxes',                // Alyssa, Cam, Sam
   'Turkey Dinner',                  // Bria, Lydia, Zac
   'Methodic Mediocre Maples',       // Jovi, Brody, Josh
-  'Particularly Perilous Pumpkins', // Sofie, William
+  'Particularly Perilous Pumpkins', // Sofia, William
   'Patriotic Pilgrims',             // Abby, TJ, Ella
   'Runaway John Deersz',            // Lily, Jacob (deliberate spelling)
 ];
@@ -120,10 +135,10 @@ const OLD_PLACEHOLDER_TEAM_NAMES = [
 // tag is the game-leader assignment: Stephen runs the A teams,
 // Patrick runs the B teams. Editable per-team in the standings table.
 const DEFAULT_COUNSELORS = [
-  'Alysa/Cam/Sam (B)',
+  'Alyssa/Cam/Sam (B)',
   'Bria/Lydia/Zac (A)',
   'Jovi/Brody/Josh (A)',
-  'Sofie/William (B)',
+  'Sofia/William (B)',
   'Abby/TJ/Ella (B)',
   'Lily/Jacob (A)',
 ];
@@ -215,7 +230,7 @@ const DAY_SCHEDULE = {
     evening.splice(idx === -1 ? evening.length : idx, 0, movie);
     return [morningMeetingBlock(2)].concat(weekdayDaytime()).concat(evening);
   })(),
-  3: [morningMeetingBlock(3)].concat(weekdayDaytime()).concat(weekdayEvening('Sofie')),
+  3: [morningMeetingBlock(3)].concat(weekdayDaytime()).concat(weekdayEvening('Sofia')),
   4: (function () {
     // Tonight only: Boys cabin movie night (9:15–10pm), same slot/overlap
     // treatment as Tuesday's (see that block's comment) — intentionally
@@ -267,43 +282,43 @@ const STATION_EMOJI = {
 const ELECTIVES = {
   1: [
     [['Swimming', ['Bria', 'Abby']], ['Nerf War', ['Zac', 'Cam']], ['Crafts with Eileen', ['William', 'Jovi']], ['Lawn Games', ['TJ', 'Patrick', 'Sam']], ['Board Games', ['Brody', 'Lydia']]],
-    [['Swimming', ['Alysa', 'Brody']], ['Crafts with Eileen', ['Bria', 'Lilly']], ['Whiffle Ball', ['TJ', 'Cam']], ['Board Games', ['Jovi', 'Josh', 'Patrick']], ['Slime with Joann', ['Sofie', 'Abby']], ['Laser Tag', ['Zac', 'William']]],
-    [['Swimming', ['Sam', 'TJ', 'Lilly']], ['Slime with Joann', ['Lydia', 'Alysa']], ['Crafts with Eileen', ['Ella', 'Stephen']], ['Lawn Games', ['Josh', 'Sofie']], ['Board Games', ['Patrick']], ['Slip and Slide', ['Zac', 'Jacob']]],
+    [['Swimming', ['Alyssa', 'Brody']], ['Crafts with Eileen', ['Bria', 'Lily']], ['Whiffle Ball', ['TJ', 'Cam']], ['Board Games', ['Jovi', 'Josh', 'Patrick']], ['Slime with Joann', ['Sofia', 'Abby']], ['Laser Tag', ['Zac', 'William']]],
+    [['Swimming', ['Sam', 'TJ', 'Lily']], ['Slime with Joann', ['Lydia', 'Alyssa']], ['Crafts with Eileen', ['Ella', 'Stephen']], ['Lawn Games', ['Josh', 'Sofia']], ['Board Games', ['Patrick']], ['Slip and Slide', ['Zac', 'Jacob']]],
   ],
   2: [
-    [['Swimming', ['Ella', 'Lydia']], ['Nerf War', ['William', 'Zac']], ['Crafts with Eileen', ['Alysa', 'Josh']], ['Lawn Games', ['Brody', 'Cam']], ['Board Games', ['Bria', 'Jovi']]],
-    [['Swimming', ['Sam', 'Sofie']], ['Crafts with Eileen', ['Lilly', 'Abby']], ['Whiffle Ball', ['Jacob']], ['Board Games', ['Ella', 'Stephen']], ['Laser Tag', ['Zac', 'Patrick']], ['Slime with Kimberly', ['TJ']]],
-    [['Swimming', ['William', 'Alysa', 'Lilly']], ['Crafts with Eileen', ['Sofie', 'Lydia']], ['Lawn Games', ['Josh', 'Stephen', 'Cam']], ['Board Games', ['Patrick', 'TJ']], ['Slip and Slide', ['Zac', 'Sam', 'Bria']], ['Slime with Kimberly', ['Abby']]],
+    [['Swimming', ['Ella', 'Lydia']], ['Nerf War', ['William', 'Zac']], ['Crafts with Eileen', ['Alyssa', 'Josh']], ['Lawn Games', ['Brody', 'Cam']], ['Board Games', ['Bria', 'Jovi']]],
+    [['Swimming', ['Sam', 'Sofia']], ['Crafts with Eileen', ['Lily', 'Abby']], ['Whiffle Ball', ['Jacob']], ['Board Games', ['Ella', 'Stephen']], ['Laser Tag', ['Zac', 'Patrick']], ['Slime with Kimberly', ['TJ']]],
+    [['Swimming', ['William', 'Alyssa', 'Lily']], ['Crafts with Eileen', ['Sofia', 'Lydia']], ['Lawn Games', ['Josh', 'Stephen', 'Cam']], ['Board Games', ['Patrick', 'TJ']], ['Slip and Slide', ['Zac', 'Sam', 'Bria']], ['Slime with Kimberly', ['Abby']]],
   ],
   3: [
-    [['Swimming', ['Abby', 'Lilly']], ['Nerf War', ['Zac', 'Brody', 'TJ']], ['Crafts with Eileen', ['William', 'Sam']], ['Lawn Games', ['Sofie', 'Bria']], ['Board Games', ['Cam', 'Jovi']]],
-    [['Swimming', ['Ella', 'Bria']], ['Crafts with Eileen', ['Lydia', 'Jovi']], ['Whiffle Ball', ['Sofie', 'TJ']], ['Board Games', ['Patrick', 'Josh', 'Sam']], ['Slime with Joann', ['Brody', 'Stephen']], ['Laser Tag', ['Zac', 'Jacob']]],
-    [['Swimming', ['William', 'Cam']], ['Slime with Joann', ['Alysa', 'Ella']], ['Crafts with Eileen', ['Lilly', 'Josh']], ['Lawn Games', ['Patrick', 'Stephen']], ['Board Games', ['TJ', 'Abby']], ['Slip and Slide', ['Zac', 'Lydia', 'Jacob']]],
+    [['Swimming', ['Abby', 'Lily']], ['Nerf War', ['Zac', 'Brody', 'TJ']], ['Crafts with Eileen', ['William', 'Sam']], ['Lawn Games', ['Sofia', 'Bria']], ['Board Games', ['Cam', 'Jovi']]],
+    [['Swimming', ['Ella', 'Bria']], ['Crafts with Eileen', ['Lydia', 'Jovi']], ['Whiffle Ball', ['Sofia', 'TJ']], ['Board Games', ['Patrick', 'Josh', 'Sam']], ['Slime with Joann', ['Brody', 'Stephen']], ['Laser Tag', ['Zac', 'Jacob']]],
+    [['Swimming', ['William', 'Cam']], ['Slime with Joann', ['Alyssa', 'Ella']], ['Crafts with Eileen', ['Lily', 'Josh']], ['Lawn Games', ['Patrick', 'Stephen']], ['Board Games', ['TJ', 'Abby']], ['Slip and Slide', ['Zac', 'Lydia', 'Jacob']]],
   ],
   4: [
-    [['Swimming', ['Jovi', 'Bria', 'Cam']], ['Nerf War', ['William', 'Zac', 'Lilly']], ['Crafts with Eileen', ['Brody', 'Ella']], ['Lawn Games', ['Patrick', 'Jacob']], ['Board Games', ['Stephen', 'Alysa']]],
-    [['Swimming', ['Lilly', 'TJ']], ['Crafts with Eileen', ['Abby', 'Jovi']], ['Whiffle Ball', ['Cam', 'Sam', 'Bria']], ['Board Games', ['Patrick', 'Stephen']], ['Slime with Joann', ['Lydia', 'Sofie', 'William']], ['Laser Tag', ['Zac', 'Brody']]],
-    [['Swimming', ['Alysa', 'Abby', 'Josh']], ['Slime with Joann', ['Ella', 'Bria']], ['Crafts with Eileen', ['Lydia']], ['Lawn Games', ['Brody', 'Sam']], ['Board Games', ['Sofie', 'TJ']], ['Slip and Slide', ['Zac', 'Stephen']]],
+    [['Swimming', ['Jovi', 'Bria', 'Cam']], ['Nerf War', ['William', 'Zac', 'Lily']], ['Crafts with Eileen', ['Brody', 'Ella']], ['Lawn Games', ['Patrick', 'Jacob']], ['Board Games', ['Stephen', 'Alyssa']]],
+    [['Swimming', ['Lily', 'TJ']], ['Crafts with Eileen', ['Abby', 'Jovi']], ['Whiffle Ball', ['Cam', 'Sam', 'Bria']], ['Board Games', ['Patrick', 'Stephen']], ['Slime with Joann', ['Lydia', 'Sofia', 'William']], ['Laser Tag', ['Zac', 'Brody']]],
+    [['Swimming', ['Alyssa', 'Abby', 'Josh']], ['Slime with Joann', ['Ella', 'Bria']], ['Crafts with Eileen', ['Lydia']], ['Lawn Games', ['Brody', 'Sam']], ['Board Games', ['Sofia', 'TJ']], ['Slip and Slide', ['Zac', 'Stephen']]],
   ],
   5: [
-    [['Swimming', ['Brody', 'Ella', 'TJ']], ['Nerf War', ['Zac', 'Cam', 'Sam']], ['Crafts with Eileen', ['Patrick', 'Alysa', 'William']], ['Lawn Games', ['Bria', 'Abby']], ['Board Games', ['Lydia', 'Jovi']]],
-    [['Swimming', ['Sam', 'Ella']], ['Crafts with Eileen', ['Lilly', 'Jacob']], ['Whiffle Ball', ['Jovi', 'Cam', 'TJ']], ['Board Games', ['Josh', 'Patrick']], ['Slime with Joann', ['Brody', 'Stephen']], ['Laser Tag', ['Zac', 'Bria']]],
-    [['Swimming', ['Cam', 'TJ', 'Lilly']], ['Slime with Joann', ['Abby', 'Sofie']], ['Crafts with Eileen', ['Lydia']], ['Lawn Games', ['Josh', 'Sam']], ['Board Games', ['Stephen']], ['Slip and Slide', ['Zac', 'Alysa']]],
+    [['Swimming', ['Brody', 'Ella', 'TJ']], ['Nerf War', ['Zac', 'Cam', 'Sam']], ['Crafts with Eileen', ['Patrick', 'Alyssa', 'William']], ['Lawn Games', ['Bria', 'Abby']], ['Board Games', ['Lydia', 'Jovi']]],
+    [['Swimming', ['Sam', 'Ella']], ['Crafts with Eileen', ['Lily', 'Jacob']], ['Whiffle Ball', ['Jovi', 'Cam', 'TJ']], ['Board Games', ['Josh', 'Patrick']], ['Slime with Joann', ['Brody', 'Stephen']], ['Laser Tag', ['Zac', 'Bria']]],
+    [['Swimming', ['Cam', 'TJ', 'Lily']], ['Slime with Joann', ['Abby', 'Sofia']], ['Crafts with Eileen', ['Lydia']], ['Lawn Games', ['Josh', 'Sam']], ['Board Games', ['Stephen']], ['Slip and Slide', ['Zac', 'Alyssa']]],
   ],
 };
 
-// Device-identity → team. Keyed to the ELECTIVES spellings above ("Lilly",
-// not the standings' "Lily") so a stored identity can look up its own elective
-// assignments directly. Patrick and Stephen appear in ELECTIVES as game-leaders
+// Device-identity → team, keyed to the ELECTIVES spellings above so a stored
+// identity can look up its own elective assignments directly. Patrick and
+// Stephen appear in ELECTIVES as game-leaders
 // with no team — they're intentionally excluded and never offered as an
 // identity choice. Not editable and not synced (device-local, like state.notify).
 const TEAM_COUNSELORS = {
-  t0: ['Alysa', 'Cam', 'Sam'],   // 🦊 Ferocious Foxes
+  t0: ['Alyssa', 'Cam', 'Sam'],  // 🦊 Ferocious Foxes
   t1: ['Bria', 'Lydia', 'Zac'],  // 🦃 Turkey Dinner
   t2: ['Jovi', 'Brody', 'Josh'], // 🍁 Methodic Mediocre Maples
-  t3: ['Sofie', 'William'],      // 🎃 Particularly Perilous Pumpkins
+  t3: ['Sofia', 'William'],      // 🎃 Particularly Perilous Pumpkins
   t4: ['Abby', 'TJ', 'Ella'],    // 🦅 Patriotic Pilgrims
-  t5: ['Lilly', 'Jacob'],        // 🚜 Runaway John Deere's
+  t5: ['Lily', 'Jacob'],         // 🚜 Runaway John Deere's
 };
 
 // Minutes-since-midnight each elective slot starts (Elective 1 / 2 / 3),
@@ -362,7 +377,7 @@ const SCHED_DAYS = [
 // phone later with "Add sign-in", which is what actually lets them in.
 // Spellings follow the standings' counselor text, which is what camp prints.
 const SEED_COUNSELORS = [
-  ['t0', ['Alysa', 'Cam', 'Sam']],
+  ['t0', ['Alyssa', 'Cam', 'Sam']],
   ['t1', ['Bria', 'Lydia', 'Zac']],
   ['t2', ['Jovi', 'Brody', 'Josh']],
   ['t3', ['Sofia', 'William']],

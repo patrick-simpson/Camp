@@ -369,7 +369,7 @@ function electiveBreakKids(dow, slot) {
 // identity, no electives that day, or the identity isn't on that day's
 // sheet — counselors and parents). Used by the schedule sheet's "You" chip.
 function myStationFor(dow, slot) {
-  const name = state.identity;
+  const name = canonicalCounselorName(state.identity);
   if (!name) return null;
   const stations = ((ELECTIVES[dow] || [])[slot]) || [];
   const found = stations.find(([, kids]) => (kids || []).includes(name));
@@ -383,7 +383,7 @@ function myStationFor(dow, slot) {
 // show — no identity set, a weekend / no-elective day, or the identity isn't on
 // today's elective sheet at all. Reused by renderMyElectives.
 function myElectivesToday() {
-  const name = state.identity;
+  const name = canonicalCounselorName(state.identity);
   if (!name) return null;
   const { dow } = campNow();
   const day = ELECTIVES[dow];
@@ -800,7 +800,7 @@ function nowBannerHtml(dow, minutes) {
   const time = b.noTime ? null : schedRange(b.start, b.end);
   const progress = b.noTime ? null : (minutes - b.start) / (b.end - b.start);
   if (b.type === 'elective') {
-    const me = state.identity;
+    const me = canonicalCounselorName(state.identity);
     const chip = (k) => `<span class="kid-chip${k === me ? ' kid-chip-you' : ''}">${esc(k)}${k === me ? ' ⭐' : ''}</span>`;
     const stations = (ELECTIVES[dow] || [])[b.slot] || [];
     let rows = stations.map(([station, kids]) =>
@@ -1018,7 +1018,7 @@ function renderScheduleBody() {
       // have to scan every roster for their name.
       const mine = myStationFor(dow, raw.slot);
       if (mine) labelBadge += `<span class="sched-you-chip">⭐ You: ${mine.emoji} ${esc(mine.station)}</span>`;
-      const me = state.identity;
+      const me = canonicalCounselorName(state.identity);
       const kidText = (kids) => kids.map((k) => k === me ? `<span class="sched-you">⭐ ${esc(k)}</span>` : esc(k)).join(' · ');
       const stations = (ELECTIVES[dow] || [])[raw.slot] || [];
       if (stations.length) {
@@ -1495,13 +1495,16 @@ const SEED_COUNSELORS = CAMP.seedCounselors;
 // (case-insensitively) so pressing the button twice doesn't duplicate anyone —
 // including someone who has since been given a real email or phone.
 function missingSeedCounselors(members) {
+  // Through canonicalCounselorName on both sides: a member row typed "Alysa"
+  // before the spelling merge still counts as Alyssa being on the list.
+  const key = (n) => String(canonicalCounselorName(String(n || '').trim())).toLowerCase();
   const have = new Set(Object.keys(members || {})
-    .map((k) => String((members[k] && members[k].name) || '').trim().toLowerCase())
+    .map((k) => key(members[k] && members[k].name))
     .filter(Boolean));
   const out = [];
   SEED_COUNSELORS.forEach(([teamId, names]) => {
     names.forEach((name) => {
-      if (!have.has(name.toLowerCase())) out.push({ name, teamId });
+      if (!have.has(key(name))) out.push({ name, teamId });
     });
   });
   return out;
@@ -4995,7 +4998,7 @@ function renderFollowCard() {
   const cleanupLine = nextCleanup
     ? `<p class="follow-next-line">🧽 Next meal cleanup:<br>${esc(DAY_NAMES[nextCleanup.day])} ${esc(nextCleanup.meal)}</p>`
     : '';
-  const you = state.identity;
+  const you = canonicalCounselorName(state.identity);
   // The "who are you" line exists to surface YOUR electives — camps without
   // electives (senior) have nothing to show, so the line disappears.
   const youLine = !CAMP.features.electives ? ''
@@ -5106,8 +5109,11 @@ function adoptMemberTeam() {
   if (!memberTeamId) return false;
   let changed = false;
   if (state.followTeam !== memberTeamId) { state.followTeam = memberTeamId; changed = true; }
-  const known = memberName && TEAM_COUNSELORS[memberTeamId] &&
-    TEAM_COUNSELORS[memberTeamId].includes(memberName) ? memberName : null;
+  // A member row typed with an old spelling ("Alysa") still adopts the one the
+  // electives data is keyed to ("Alyssa") — see canonicalCounselorName.
+  const canonName = memberName ? canonicalCounselorName(memberName) : '';
+  const known = canonName && TEAM_COUNSELORS[memberTeamId] &&
+    TEAM_COUNSELORS[memberTeamId].includes(canonName) ? canonName : null;
   // Only adopt a name the electives data actually knows; otherwise leave the
   // identity answered-as-skipped rather than looking up nothing forever.
   const wanted = known || null;
@@ -7010,6 +7016,13 @@ function normalizeSyncedState() {
   // it swapped back to a 2026 team name. Once a new-year epoch exists
   // (state.meta.epoch, stamped by the setup wizard) the roster is the
   // directors' own and is never "migrated". A no-op until that ships.
+  // A phone whose stored "which one are you?" answer is an old spelling
+  // ("Lilly") is moved onto the merged one ("Lily") so its electives still
+  // resolve. Device-local, so nothing here is synced; persisted by the next save.
+  if (typeof state.identity === 'string') {
+    const canon = canonicalCounselorName(state.identity);
+    if (canon !== state.identity) state.identity = canon;
+  }
   const legacyWeek = !state.meta.epoch;
   (state.teams || []).forEach((t, i) => {
     if (!legacyWeek) {

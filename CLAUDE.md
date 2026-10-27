@@ -302,6 +302,8 @@ What's covered, and why each file exists:
   `toEditableDraft` + `saveGameDraft` verbatim from v183 (never edited): the
   config-engine rebuild's field-diff save must produce the same game from the
   same draft (`settings-crud.test.js` runs both).
+- `spelling.test.js` — the three-name merge and the alias table (old spellings
+  only in the alias block of camps.js; old data still matches everywhere).
 - `ics.test.js` (+ `.senior`, which evals the same file) — the "Add to calendar"
   export: every line folded to 75 octets (`icsFold`, byte-counted, never inside
   a UTF-8 sequence), UIDs `<camp>-<dow>-<block index>-<start>@…` so the two
@@ -358,12 +360,14 @@ daily schedule). Everything per-camp lives in a profile in `camps.js` —
 per-device by `localStorage.campScoreboardActiveCamp` (junior is the
 default, so pre-camps devices behave identically).
 
-- **Junior is byte-identical to the single-camp app.** Its `dbRoot` is the
+- **Junior is byte-identical to the single-camp app** — apart from the three
+  counselor spellings merged once on purpose (below). Its `dbRoot` is the
   original `campScoreboard` literal and its `storageSuffix` is `''`, so
   every Firebase path and localStorage key is exactly what it always was —
   `tests/camps.test.js` pins this, plus a deep-equal of the whole junior
   week data against `tests/fixtures-junior-week.json` (dumped before the
-  move). Senior lives under the SIBLING root `seniorScoreboard/*` with
+  move; regenerated ONCE, for the spelling merge — its diff is only those three
+  spellings — and never edited since). Senior lives under the SIBLING root `seniorScoreboard/*` with
   `':senior'`-suffixed storage keys and its own members list.
 - **Every Firebase path goes through `dbPath(sub)`** and every per-camp
   storage key through `lsKey(base)` (both in camps.js). Never write a
@@ -390,6 +394,19 @@ default, so pre-camps devices behave identically).
   to the other list) and keep the simple Viewer/Editor + Remove controls.
   If the other camp's list can't be read (not a member there), the drawer
   falls back to exactly the single-camp UI.
+- **One spelling per counselor** (decision Q21, 2026-10): Alysa → **Alyssa**,
+  Sofie → **Sofia**, Lilly → **Lily**, merged once across `camps.js`
+  (`ELECTIVES`, `TEAM_COUNSELORS`, `SEED_COUNSELORS`, `DEFAULT_COUNSELORS`, the
+  Wednesday evening label). Data already out there — a member row typed
+  "Alysa", a phone whose stored `state.identity` is "Lilly" — keeps matching
+  through ONE function, `canonicalCounselorName()` (camps.js; table
+  `COUNSELOR_NAME_ALIASES`): `missingSeedCounselors`, `adoptMemberTeam`,
+  `myStationFor` / `myElectivesToday` / the schedule "You" markers, and chat's
+  `mentionIsMine` all compare through it, and `normalizeSyncedState` rewrites a
+  stored identity once. Alert block keys are unaffected (`pushHeadLabel` cuts a
+  label before any name). Member rows already in the database keep the name they
+  were typed with until a director renames them. Any NEW place that compares a
+  counselor's name must go through `canonicalCounselorName`.
 - **Switching camps is ALWAYS set-key-then-reload** (`switchCamp()`), never
   re-pointing refs in place — the listener lifecycle is one-shot (a
   cancelled read is terminal). Dual-camp accounts get the camp picker

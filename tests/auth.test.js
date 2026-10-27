@@ -227,7 +227,7 @@ test('a pending key can never collide with a real sign-in identity', () => {
   // If a pending key could equal an identityKey, whoever signed in with that
   // identity would inherit the placeholder row. Email keys always contain '@';
   // phone keys always start with '+'. A pending key must have neither.
-  ['Alysa', 'TJ', 'Mary-Kate O\'Brien', '  ', '', 'a@b.com', '+15551234567'].forEach((n) => {
+  ['Alyssa', 'TJ', 'Mary-Kate O\'Brien', '  ', '', 'a@b.com', '+15551234567'].forEach((n) => {
     const k = pendingKey(n);
     assert.ok(isPendingKey(k), `${k} is recognizable as pending`);
     assert.notOk(k.includes('@'), `${k} must not look like an email key`);
@@ -261,12 +261,12 @@ test('seeding is idempotent — matched by name, however they signed up', () => 
   // Someone already there as a pending row, and someone who has since been
   // given a real email — neither should be offered again.
   const members = {
-    'pending-alysa-ab12': { role: 'viewer', name: 'Alysa', teamId: 't0' },
+    'pending-alyssa-ab12': { role: 'viewer', name: 'Alyssa', teamId: 't0' },
     'cam@example,com': { role: 'viewer', name: 'cam', teamId: 't0' },
   };
   const left = missingSeedCounselors(members);
   assert.equal(left.length, all.length - 2, 'both are recognized');
-  assert.notOk(left.some((c) => c.name === 'Alysa'));
+  assert.notOk(left.some((c) => c.name === 'Alyssa'));
   assert.notOk(left.some((c) => c.name.toLowerCase() === 'cam'), 'name match is case-insensitive');
   assert.equal(missingSeedCounselors(null).length, all.length, 'a pruned/empty list is safe');
 });

@@ -40,6 +40,11 @@ test('a phone with a bracket, a foreign bracket, drafts and clocks cached boots 
   assert.equal(boot.get('state.brackets[Object.keys(state.brackets).find((k) => k !== "foreign")].phase'), 'semifinal');
 });
 
+test('a cached identity with an old spelling is rewritten at load', () => {
+  const boot = bootWith(cachedWeek());
+  assert.equal(boot.get('state.identity'), 'Lily');
+});
+
 test('a cached week on a new-year epoch loads and keeps its roster', () => {
   const json = cachedWeek((s) => {
     s.meta = Object.assign({}, s.meta, { epoch: 'e-2027' });

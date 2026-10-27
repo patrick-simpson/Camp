@@ -78,7 +78,7 @@ test('chatMentionTargets pulls from the directory, printed lists, teams, and abb
   assert.ok(labels.includes('Sarah Kim'), 'full member name');
   assert.ok(labels.includes('Sarah'), 'first name too — campers say "Sarah", not "Sarah Kim"');
   assert.ok(labels.includes('TJ'), 'two-letter names from the known lists still count');
-  assert.ok(labels.includes('Alysa'), 'printed counselor list (TEAM_COUNSELORS)');
+  assert.ok(labels.includes('Alyssa'), 'printed counselor list (TEAM_COUNSELORS)');
   assert.ok(labels.includes(state.teams[0].name), 'team names');
   assert.ok(labels.includes('Foxes'), 'team short names (TEAM_ABBREV)');
   memberDirectory = null;

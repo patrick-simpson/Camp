@@ -613,7 +613,12 @@ function mentionScan(text, targets) {
 // Does any hit point at THIS device's person or team?
 function mentionIsMine(hits) {
   const myKey = identityKey(authUser);
-  const myNames = [memberName, state.identity].filter(Boolean).map((n) => String(n).toLowerCase());
+  // Both the name as typed and its merged spelling: a member row still reading
+  // "Alysa" must catch a message that says "Alyssa" (see canonicalCounselorName).
+  const myNames = [];
+  [memberName, state.identity].filter(Boolean).forEach((n) => {
+    myNames.push(String(n).toLowerCase(), String(canonicalCounselorName(n)).toLowerCase());
+  });
   const myFirsts = myNames.map((n) => n.split(/\s+/)[0]);
   return (hits || []).some((h) => {
     if (h.kind === 'person') {
