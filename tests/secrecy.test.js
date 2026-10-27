@@ -390,7 +390,10 @@ test('rows 9 and 10: verse shows the verse and nothing else, cleanup shows the r
   assert.notOk(/cleanup-meal-pts|bonus-ledger|bonus-item|\+\d/.test(cleanup.innerHTML), 'no "+N" badge, no ledger');
   setMemberRole('editor');
   renderMemoryVerse(); renderMealCleanup();
-  assert.ok(/pts-btn/.test(verse.innerHTML) && /pts-btn/.test(cleanup.innerHTML), 'a director keeps the award buttons');
+  // Cleanup buttons sit on a rota team, so they only exist where the day has
+  // one — senior's rota is all TBA until it is filled in.
+  const rotaSet = ['Breakfast', 'Lunch', 'Supper'].some((m) => cleanupAssigned(cleanupDay, m));
+  assert.ok(/pts-btn/.test(verse.innerHTML) && (!rotaSet || /pts-btn/.test(cleanup.innerHTML)), 'a director keeps the award buttons');
 });
 
 test('rows 11 and 12: a finished game shows its winners without "+N pts", a live tally shows no suggested medals', () => {

@@ -37,7 +37,9 @@ async function main() {
     // this instead of hand-clearing every synced key.
     sandbox.freshState = () => vm.runInContext('state = makeFreshState(); migrateState(state); normalizeSyncedState(); state', ctx);
     // Fixture files (e.g. the pre-move junior-week snapshot) live next to the tests.
-    sandbox.readFixture = (name) => fs.readFileSync(path.join(__dirname, name), 'utf8');
+    // Normalize CRLF: a Windows checkout can carry CRLF, and the source-pin
+    // tests slice bodies on '\n}\n' — with CRLF they run to end of file.
+    sandbox.readFixture = (name) => fs.readFileSync(path.join(__dirname, name), 'utf8').replace(/\r\n/g, '\n');
     // The phone-alert Worker (push-worker/worker.js) is an ES module that runs
     // on Cloudflare, not a browser script, so its tests load it in Node's MAIN
     // realm instead of this vm context, and use node:crypto to check its output
