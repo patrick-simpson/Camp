@@ -6918,7 +6918,19 @@ function normalizeSyncedState() {
   // Migrate rosters saved before names/counselors were set: swap generic
   // "Team N" names and placeholder counselors for the real roster values.
   // Anything hand-edited (not matching a known placeholder) is left alone.
+  // LEGACY WEEK ONLY: this runs on every remote merge, and a director who has
+  // since named a team "Team 4" (or any old placeholder) on purpose would have
+  // it swapped back to a 2026 team name. Once a new-year epoch exists
+  // (state.meta.epoch, stamped by the setup wizard) the roster is the
+  // directors' own and is never "migrated". A no-op until that ships.
+  const legacyWeek = !state.meta.epoch;
   (state.teams || []).forEach((t, i) => {
+    if (!legacyWeek) {
+      // RTDB prunes an empty counselor string; read it back as '' (never as a
+      // 2026 name).
+      if (t.counselor === undefined) t.counselor = '';
+      return;
+    }
     const oldNames = OLD_PLACEHOLDER_TEAM_NAMES[i];
     if (oldNames && oldNames.indexOf(t.name) !== -1 && DEFAULT_TEAM_NAMES[i]) {
       t.name = DEFAULT_TEAM_NAMES[i];

@@ -294,6 +294,8 @@ What's covered, and why each file exists:
   camps' exports of one weekday can never overwrite each other and a re-import
   updates in place, and `X-WR-CALNAME` = the camp's label. S5a will move the
   UID onto camp + week + day + block id once the schedule is data.
+- `legacy-roster.test.js` — the 2026 roster migration runs only without a
+  `meta.epoch`.
 - `boot-cache.test.js` — loads the real scripts into a FRESH context over a
   populated cache (`makeContext({ storage: { campScoreboardV2: '…' } })`). A phone
   with a week already cached runs `normalizeSyncedState` / `migrateState` while
@@ -939,6 +941,12 @@ More sync invariants (each fixed after it bit us — don't regress these;
   now button, a plain reload, not a state write); the game stays out of Live now
   and the upcoming matchups. The 4-team bracket is planned under its own node
   (`brackets4`); this is the belt-and-braces for a phone that predates it.
+- **The 2026 roster migration is legacy-week only.** `normalizeSyncedState` swaps
+  generic "Team N" names and placeholder counselors for the 2026 roster on every
+  remote merge; it now runs only while `state.meta.epoch` is absent (the future
+  new-year wizard stamps one), so a later year's directors can name a team "Team
+  4" without it being swapped back. With an epoch, a pruned empty counselor
+  reads back as `''`. A no-op today (nothing sets an epoch yet).
 - **An identical snapshot keeps the live objects.** `applyRemoteState`
   restores the previous `state[k]` references when the signature didn't
   change — open tally/bracket/notice views close over those objects, and an

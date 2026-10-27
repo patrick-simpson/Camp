@@ -40,6 +40,15 @@ test('a phone with a bracket, a foreign bracket, drafts and clocks cached boots 
   assert.equal(boot.get('state.brackets[Object.keys(state.brackets).find((k) => k !== "foreign")].phase'), 'semifinal');
 });
 
+test('a cached week on a new-year epoch loads and keeps its roster', () => {
+  const json = cachedWeek((s) => {
+    s.meta = Object.assign({}, s.meta, { epoch: 'e-2027' });
+    s.teams[3].name = 'Team 4';
+  });
+  const boot = bootWith(json);
+  assert.equal(boot.get('state.teams[3].name'), 'Team 4', 'the legacy roster migration stays out of an epoch');
+});
+
 test('a cached state with every synced map missing still loads (RTDB-pruned shapes)', () => {
   const json = cachedWeek((s) => { ['brackets', 'drafts', 'clocks', 'live', 'picSetup', 'bonuses', 'announcements'].forEach((k) => { delete s[k]; }); });
   assert.doesNotThrow(() => bootWith(json));
