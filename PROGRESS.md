@@ -252,6 +252,12 @@ a "Decisions for the owner" list (ask ONE at a time, after the layout Qs).
     revealed until 8 AM; a new reveal replaces the previous one; any director
     can run the remote; the TV page with no reveal says "Waiting for the
     directors…".
+- **7:05 AM ET — sequential fix run `wf_c027577c-7ac`** (scratchpad/
+  fix-sequential.js, copy in docs/build-notes/): finish builder(-4) +
+  boot-theme(-6), then review→fix-up each of the 6 groups, ONE Sonnet agent
+  at a time (~13 agents, est. 4–7 h). If interrupted: re-run with
+  resumeFromRunId. After: squash-merge the 6 worktree branches → main, tests,
+  v184, push, verify live; then the redesign spec (sequential, Sonnet-first).
 
 **1:15 AM ET Tue — sweep DONE**: 95 confirmed glitches (8 high/24 med/63 low)
 + layout verdict "partly" with 13 ordered interview questions. Full result
