@@ -61,6 +61,11 @@ const CHANGES = [];
 // only: forging it shows an empty shell — the rules still refuse all data.
 const AUTH_HINT_KEY = 'campScoreboardAuthHint'; // 'viewer' | 'editor' (same literal in index.html's pre-paint guard)
 const EMAIL_SIGNIN_KEY = 'campScoreboardEmailForSignIn'; // email-link flow parks the address here
+// An EXPLICIT Light/Dark choice, mirrored out of state.theme by applyTheme() so
+// boot-guard.js can paint it pre-paint (same literal there). Auto = key absent.
+// Device-wide, not per camp: the guard runs before camps.js, and boot()'s
+// applyTheme corrects a camp whose own choice differs. Wiped by clearLocalData.
+const THEME_HINT_KEY = 'campScoreboardTheme'; // 'light' | 'dark'
 
 let authUser = null;       // firebase.auth() user, once signed in
 let memberRole = null;     // 'viewer' | 'editor' | null (not resolved / not approved)
@@ -1199,6 +1204,44 @@ function wireSettings() {
       if (el && el.hasAttribute('open')) el.removeAttribute('open');
     });
   });
+  // …but the phones that hit this path (iOS < 16.4 can't parse the module) have
+  // no Escape key. So: a tap anywhere OUTSIDE an open sheet closes it, and so
+  // does a tap on the "✕ Close" bar styles.css paints at its top (a pseudo-
+  // element, so the tap's target is the sheet itself, in its top strip).
+  // Capture phase + stopPropagation: the dismissing tap must not also press
+  // whatever sits behind the sheet. Checked at event time so a module that
+  // arrives late takes over cleanly; the tap that OPENS a sheet runs while none
+  // is open, so it is unaffected.
+  document.addEventListener('click', (e) => {
+    if (customElements.get('jelly-drawer')) return;
+    const open = [...document.querySelectorAll('jelly-drawer[open], jelly-dialog[open]')];
+    const close = failedModuleSheetsToClose(open, e.target, e.clientY);
+    if (!close.length) return;
+    close.forEach((el) => el.removeAttribute('open'));
+    e.preventDefault();
+    e.stopPropagation();
+  }, true);
+  // The Appearance control is a jelly-segmented, which is inert without the
+  // module — make its options tappable. Gated on the component being absent, or
+  // this would double-fire alongside its own change event.
+  document.addEventListener('click', (e) => {
+    if (customElements.get('jelly-segmented')) return;
+    const seg = e.target.closest && e.target.closest('#theme-toggle jelly-segment');
+    if (seg) setTheme(seg.getAttribute('value'));
+  });
+}
+
+// Which open sheets does a tap close while the Jelly module is absent? Elements
+// are duck-typed (contains / getBoundingClientRect) so the rule is unit-tested
+// without a browser. A tap outside every open sheet closes them all; a tap on
+// the "✕ Close" bar (the sheet's own top 52px — a pseudo-element, so the target
+// is the sheet itself) closes that sheet; a tap inside one's content closes
+// nothing. [] = leave the tap alone.
+function failedModuleSheetsToClose(open, target, clientY) {
+  const inside = open.find((el) => el.contains(target));
+  const onBar = !!inside && target === inside && clientY - inside.getBoundingClientRect().top <= 52;
+  if (inside && !onBar) return [];
+  return onBar ? [inside] : open;
 }
 
 // ── Change-history sheet (editor-only) ───────────────────────────
@@ -7772,11 +7815,44 @@ function renderBracketSummary(body, g, b) {
 
 // ── Theme ────────────────────────────────────────────────────────
 
+// Which look applyTheme() last put on screen ('dark' | 'light'); null until the
+// first call, so the initial paint never counts as a flip.
+let appliedLook = null;
+
+// A flip changes every surface and token in one style recalc, but anything with
+// its own colour transition (card/banner borders, chip and link colours) would
+// keep fading on its own timer behind them — a half-flipped page for ~150ms.
+// html.theme-switching (styles.css) turns transitions off for the flip frames.
+// Called BEFORE the classes change, so the same recalc that flips the tokens
+// starts no transitions; removed two frames on (the timeout covers a hidden
+// tab, where rAF is paused). Shadow-DOM Jelly parts aren't reached by it and
+// repaint through jelly-theme-change.
+function suspendThemeTransitions() {
+  const root = document.documentElement;
+  root.classList.add('theme-switching');
+  const done = () => root.classList.remove('theme-switching');
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => requestAnimationFrame(done));
+  setTimeout(done, 250);
+}
+
 function applyTheme() {
   const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
   const dark = state.theme === 'dark' || (state.theme === null && prefersDark);
-  document.body.classList.toggle('dark-theme', dark);
+  const look = dark ? 'dark' : 'light';
+  if (appliedLook !== null && appliedLook !== look) suspendThemeTransitions();
+  appliedLook = look;
+  // Only an EXPLICIT Dark sets the class. Auto is the @media block in
+  // styles.css, which follows the OS live: setting the class from prefersDark
+  // here froze the dark tokens in place when the OS later flipped to light (the
+  // podium rows kept their dark tints under now-dark text) — applyTheme only
+  // ran at boot and on a tap, never on an OS change.
+  document.body.classList.toggle('dark-theme', state.theme === 'dark');
   document.body.classList.toggle('light-theme', !dark && state.theme === 'light');
+  // Mirror an explicit choice where boot-guard.js can read it before paint.
+  try {
+    if (state.theme === 'dark' || state.theme === 'light') localStorage.setItem(THEME_HINT_KEY, state.theme);
+    else localStorage.removeItem(THEME_HINT_KEY);
+  } catch (e) { /* storage blocked: the guard just can't pre-paint it */ }
   // Drive Jelly UI's document-level tokens the same way: an explicit choice
   // maps 1:1 onto data-jelly-mode; auto removes the attribute so Jelly's own
   // prefers-color-scheme fallback tracks live OS flips (mirroring the app's
@@ -7801,10 +7877,23 @@ function applyTheme() {
     meta.id = 'dynamic-theme-color';
     document.head.appendChild(meta);
   }
-  // Explicit hexes matching Jelly's background-default (body has a 0.2s
-  // background transition, so reading getComputedStyle here would capture
-  // the mid-transition color — keep these in sync with the palette).
+  // Explicit hexes matching Jelly's background-default (keep these in sync with
+  // the palette — and with the --color-bg fallbacks in styles.css).
   meta.content = dark ? '#181b1d' : '#ffffff';
+}
+
+// Auto follows the OS. The page itself already does (the @media block), but the
+// no-media theme-color meta above beats the pre-paint media metas and is only
+// written here, so without this the status bar kept the old colour after a
+// dusk/dawn OS flip until the next reload. Only Auto cares — an explicit choice
+// ignores the OS.
+function watchOsColorScheme() {
+  try {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onFlip = () => { if (state.theme === null) applyTheme(); };
+    if (mq.addEventListener) mq.addEventListener('change', onFlip);
+    else if (mq.addListener) mq.addListener(onFlip); // Safari < 14
+  } catch (e) { /* no matchMedia: nothing to follow */ }
 }
 
 // Called from the Appearance segmented control: 'light' | 'auto' | 'dark'.
@@ -9355,7 +9444,7 @@ function clearLocalData() {
       try { localStorage.removeItem(b + CAMPS[cid].storageSuffix); } catch (e) { /* ignore */ }
     });
   });
-  [AUTH_HINT_KEY, EMAIL_SIGNIN_KEY, CAMPS_HINT_KEY, ACTIVE_CAMP_KEY, CAMP_ASKED_KEY].forEach((k) => {
+  [AUTH_HINT_KEY, EMAIL_SIGNIN_KEY, CAMPS_HINT_KEY, ACTIVE_CAMP_KEY, CAMP_ASKED_KEY, THEME_HINT_KEY].forEach((k) => {
     try { localStorage.removeItem(k); } catch (e) { /* ignore */ }
   });
 }
@@ -9399,6 +9488,7 @@ function finishSignOut() {
 
 function boot() {
   applyTheme(); // the lock screen is the first thing everyone sees — theme it too
+  watchOsColorScheme();
   // Name the page after the active camp so a phone with both camps open in
   // two tabs can tell them apart. Junior keeps the plain "Camp" it always had.
   if (CAMP.id === 'senior') {

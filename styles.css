@@ -8,12 +8,15 @@
    Every remapped value keeps its pre-Jelly literal as the var() fallback so
    the page still paints correctly BEFORE the deferred module evaluates (the
    lock screen renders pre-paint) and stays usable if the module ever fails
-   to load. Medals, card shadows, radii, and primary-dark/hover have no Jelly
-   equivalent and remain hand-tuned. color-scheme for the light default comes
+   to load. --color-bg's fallbacks are Jelly's own background-default values
+   (#ffffff / #181b1d), NOT a nicer gray: a different pre-module colour is a
+   visible background shift the moment Jelly's tokens land. Medals, card
+   shadows, radii, and primary-dark/hover have no Jelly equivalent and remain
+   hand-tuned. color-scheme for the light default comes
    from Jelly's own :root rules — don't redeclare it here unlayered, or it
    would beat Jelly's layered dark switch. */
 :root {
-  --color-bg: var(--jelly-color-background-default, #f4f6f9);
+  --color-bg: var(--jelly-color-background-default, #ffffff);
   --color-surface: var(--jelly-color-background-surface, #ffffff);
   --color-border: var(--jelly-color-border-default, #e2e6ec);
   --color-text: var(--jelly-color-foreground-default, #1a2233);
@@ -47,9 +50,15 @@
 /* Dark values for everything Jelly doesn't govern, plus dark *fallbacks* for
    the remapped tokens (used only pre-module / if the module fails — after it
    loads, the var() resolves and the fallback is ignored). */
-body.dark-theme {
+/* The :root[data-jelly-mode] form lets boot-guard.js paint an explicit choice
+   from the first frame (it sets the attribute pre-paint from the mirrored
+   campScoreboardTheme key); body.dark-theme is the same thing once applyTheme()
+   has run. Only an EXPLICIT Dark sets the class — Auto leaves it to the media
+   block below, so an OS flip never strands stale dark tokens. */
+body.dark-theme,
+:root[data-jelly-mode="dark"] body {
   color-scheme: dark;
-  --color-bg: var(--jelly-color-background-default, #10141c);
+  --color-bg: var(--jelly-color-background-default, #181b1d);
   --color-surface: var(--jelly-color-background-surface, #1a2030);
   --color-border: var(--jelly-color-border-default, #2b3145);
   --color-text: var(--jelly-color-foreground-default, #eef1f8);
@@ -74,9 +83,11 @@ body.dark-theme {
 }
 
 @media (prefers-color-scheme: dark) {
-  body:not(.light-theme):not(.dark-theme) {
+  /* :not([data-jelly-mode]) = Auto. An explicit Light (attribute set pre-paint
+     by boot-guard.js, before body.light-theme exists) must not paint dark first. */
+  :root:not([data-jelly-mode]) body:not(.light-theme):not(.dark-theme) {
     color-scheme: dark;
-    --color-bg: var(--jelly-color-background-default, #10141c);
+    --color-bg: var(--jelly-color-background-default, #181b1d);
     --color-surface: var(--jelly-color-background-surface, #1a2030);
     --color-border: var(--jelly-color-border-default, #2b3145);
     --color-text: var(--jelly-color-foreground-default, #eef1f8);
@@ -194,6 +205,47 @@ jelly-dialog:not(:defined)[open] {
   border-radius: 24px 24px 0 0;
   box-shadow: var(--shadow-sheet);
 }
+/* A visible way out: touch phones have no Escape key. wireSettings() in app.js
+   closes the sheet on a tap of this bar (or anywhere outside it) while the
+   module is absent. The bar is the sheet's own pseudo-element, so a tap on it
+   targets the sheet itself — that is how the handler tells it from content. */
+jelly-drawer:not(:defined)[open]::before,
+jelly-dialog:not(:defined)[open]::before {
+  content: '✕  Close';
+  display: block;
+  position: sticky;
+  top: -22px; /* sticky insets are measured from the sheet's CONTENT box, so cancel its 22px padding */
+  z-index: 1;
+  margin: -22px -22px 12px;
+  padding: 14px 22px;
+  text-align: right;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  border-radius: 24px 24px 0 0;
+}
+/* Appearance is a jelly-segmented; without the module it was inert text. Show
+   its three options as pills (the chosen one marked) — app.js's degraded-mode
+   click handler makes them work. Scoped to #theme-toggle: other segmented
+   controls (member roles, camp switch) stay inert rather than half-working. */
+html.jelly-failed #theme-toggle:not(:defined) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+html.jelly-failed #theme-toggle:not(:defined) > jelly-segment {
+  padding: 0.4em 0.85em;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+html.jelly-failed #theme-toggle[value="light"]:not(:defined) > jelly-segment[value="light"],
+html.jelly-failed #theme-toggle[value="auto"]:not(:defined) > jelly-segment[value="auto"],
+html.jelly-failed #theme-toggle[value="dark"]:not(:defined) > jelly-segment[value="dark"] {
+  border-color: var(--color-primary);
+  font-weight: 700;
+}
 
 /* Keyboard focus ring for every interactive control (mouse/touch unaffected). */
 :is(button, [role="button"], select, input, a):focus-visible {
@@ -227,8 +279,24 @@ body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   background: var(--color-bg);
   color: var(--color-text);
-  transition: background 0.2s ease, color 0.2s ease;
+  /* No colour transition here, on purpose. A theme flip changes every surface
+     and token in ONE style recalc, so a fading body background/colour left
+     inherited text mid-fade against cards that had already flipped (white on
+     white for ~100ms), and made the pre-module -> Jelly token landing a visible
+     fade. Never put one back. */
   overflow-x: hidden;
+}
+
+/* applyTheme() (app.js) adds this for two frames around a REAL light/dark flip,
+   so the flip is one atomic repaint: surfaces and tokens switch in a single
+   style recalc, but elements with their own colour transitions (card and banner
+   borders, chip text, settings-link borders) would otherwise keep fading behind
+   them. Added before the classes change, removed two frames later. */
+html.theme-switching,
+html.theme-switching *,
+html.theme-switching *::before,
+html.theme-switching *::after {
+  transition: none !important;
 }
 
 #app {
@@ -589,17 +657,22 @@ jelly-collapsible.card h2[slot="header"] {
   margin: 0;
 }
 
-/* Pre-upgrade (deferred module not yet run): show just the headers so the
-   page reads as the usual stack of closed cards — no content flash, no
-   blank screen. The global :not(:defined){visibility:hidden} rule is
-   overridden because these have a meaningful degraded look. */
-jelly-accordion:not(:defined) {
+/* Pre-upgrade header stack — ONLY when the module failed (html.jelly-failed),
+   so a failed load still reads as the usual stack of cards. On a NORMAL load
+   these stay under the global :not(:defined){visibility:hidden} above: the
+   module is what releases DOMContentLoaded, and boot() (which fills in the
+   follow card, Happening-now banner, chat card and day tabs ABOVE the
+   accordion) runs on that event — so painting the five bare headers early
+   showed a half-built page that then got shoved ~620px down (CLS 0.43) on every
+   open. Hidden, the accordion still holds its layout space and the first frame
+   is just the page background. */
+html.jelly-failed jelly-accordion:not(:defined) {
   visibility: visible;
   display: flex;
   flex-direction: column;
   gap: 15px;
 }
-jelly-collapsible:not(:defined) {
+html.jelly-failed jelly-collapsible:not(:defined) {
   visibility: visible;
   display: block;
   padding: 1rem 1.25rem; /* stand in for the header button's padding */
