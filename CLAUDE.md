@@ -66,7 +66,10 @@ Files:
   Google is the primary button and always remains.
 - `vendor/jelly.js` — vendored Jelly UI web components (chips, buttons,
   drawers, dialogs); it injects `--jelly-*` design tokens on :root at
-  runtime, which the app's `--color-*` tokens re-source
+  runtime, which the app's `--color-*` tokens re-source. It carries LOCAL
+  patches (grep `Local patch`: the external-removeAttribute close race, and
+  the drawer/dialog scrim fade — `jellyScrimFade`) that a re-vendor must
+  re-apply; `tests/overlays.test.js` runs the real helpers extracted from it
 - `sw.js` — notification + push service worker (deliberately NO fetch
   handler, so it can never serve stale code; kill-switch documented inside).
   Registered as `sw.js?v=<PUSH_SW_VERSION>&push=<worker url>` by push.js
