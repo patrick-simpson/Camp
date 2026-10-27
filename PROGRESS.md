@@ -211,6 +211,14 @@ a "Decisions for the owner" list (ask ONE at a time, after the layout Qs).
   13. ★ Spellings: MERGE — Sofie→Sofia, Lilly→Lily, Alysa→Alyssa everywhere.
   NEXT: fold these + the layout answers into one build plan (redesign spec on
   top of the P2 seam), clickable mockups for owner approval, then build.
+- **6:30 AM ET — design workflow `wf_a35b1828-746` running** (script
+  camp-app-shell-redesign-spec-wf_a35b1828-746.js): 2 Sonnet mappers → 3
+  designs (glance / director / buildable) each with spec + phone mockups
+  (scratchpad/mockups/<angle>/) → 3 judges → docs/build-notes/
+  app-shell-redesign-spec.md + final mockups (scratchpad/mockups/final/) →
+  3 reviews (secrecy, stability, sunlight) → revise + update P2 spec §17 with
+  the owner's answers + docs/build-notes/BUILD-PLAN.md. THEN: show the owner
+  the final mockups for approval (one question at a time) before building.
 
 **1:15 AM ET Tue — sweep DONE**: 95 confirmed glitches (8 high/24 med/63 low)
 + layout verdict "partly" with 13 ordered interview questions. Full result
