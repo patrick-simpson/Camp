@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Tue Oct 27, 6:25 AM ET** (update this line every time the file changes)
+Last updated: **Tue Oct 27, 6:40 AM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -219,6 +219,23 @@ a "Decisions for the owner" list (ask ONE at a time, after the layout Qs).
   3 reviews (secrecy, stability, sunlight) → revise + update P2 spec §17 with
   the owner's answers + docs/build-notes/BUILD-PLAN.md. THEN: show the owner
   the final mockups for approval (one question at a time) before building.
+- **6:35 AM ET — OWNER CHANGED THE PLAN:**
+  - NEW REQUIREMENT: directors run the reveal from their PHONE as a remote
+    control (like https://awana.kvbchurch.org/journey/remote/ — screenshots in
+    scratchpad/ref/), in sync with the big screen. Show the owner a couple of
+    MOCKUPS before implementing anything.
+  - Run ONE AGENT AT A TIME (slow is fine; avoid usage overage). Use Haiku and
+    Sonnet where possible.
+  - So: stopped the design workflow (wf_a35b1828-746, only mappers had run) and
+    the fix workflow. Worktree state: games-live(-1), home(-2), overlays(-3),
+    chat(-5) fixes committed; builder(-4) uncommitted partial; boot-theme(-6)
+    partial (commits + uncommitted). Sequential Sonnet script ready:
+    scratchpad/fix-sequential.js (finish builder + boot-theme, then
+    review→fix-up per group, strictly one agent at a time).
+  - One Sonnet agent is making the reveal-remote mockups (2 directions A/B +
+    counselor mirror + More/Director) into scratchpad/mockups/remote/.
+  - Order from here: mockups → owner picks → run fix-sequential.js → merge,
+    v184 → redesign spec (sequential, Sonnet-heavy) incl. the remote.
 
 **1:15 AM ET Tue — sweep DONE**: 95 confirmed glitches (8 high/24 med/63 low)
 + layout verdict "partly" with 13 ordered interview questions. Full result
