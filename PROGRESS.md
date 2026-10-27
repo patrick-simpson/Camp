@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Tue Oct 27, 9:20 AM ET** (update this line every time the file changes)
+Last updated: **Tue Oct 27, 10:05 AM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -282,6 +282,19 @@ a "Decisions for the owner" list (ask ONE at a time, after the layout Qs).
     revealed until 8 AM; a new reveal replaces the previous one; any director
     can run the remote; the TV page with no reveal says "Waiting for the
     directors…".
+- **10:00 AM ET — v184 LIVE** (commit 2fe3338; merge 594feaa of
+  integrate-v184 = 6 squashed fix groups + 3 integration commits). 560 tests.
+  Live check: all 12 assets ?v=184, Inter font loads (media print→all via
+  boot-guard), no page errors, sign-in visible, jelly not failed. Fix
+  worktrees removed (branches worktree-wf_de7fc0a9-b11-* and integrate-v184
+  kept locally). Not live-tested (needs a real sign-in): sync, Members drawer
+  two-camp list, push. Known small gap: at 320px with BOTH the SDK-down pill
+  and update bar at home, the pill overlaps the bar ~14px.
+  NEXT: redesign spec — sequential, design by OPUS (eye for improvement),
+  mapping/critique by Sonnet; jelly motion system + battery-saver calm
+  motion + reveal remote (B layout in A's light colors; grid visible to
+  counselors until 8 AM next day) + all layout answers; mockups + a live
+  motion demo for owner approval BEFORE building.
 - **9:14 AM ET — sequential fix run DONE** (results: docs/build-notes/
   glitch-fix-results-2026-10-27.json). All 6 groups fixed + reviewed + fixed
   up; worktree branches worktree-wf_de7fc0a9-b11-{1..6}. Known accepted
