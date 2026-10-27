@@ -49,6 +49,24 @@ Files:
   its way into markup or an image address. Nothing runs at load and it touches
   no DOM, storage or network (a test pins that), so the TV page can load it
   without app state
+- `reveal-core.js` — the standings reveal's PURE rules, loaded right after
+  camp-core.js (it needs `etParts` / `etWallToEpoch`): `groupPlaces` (equal
+  points share a place; inside a tie golds, silvers, bronzes, then name),
+  `untilFor` (a real reveal hides at 08:00 camp time the NEXT calendar day,
+  DST-safe; a practice after 2 h), `normalizeRevealCtl` / `normalizeRevealPub`
+  (what a snapshot hands back is whatever a director's device wrote, so every
+  reader goes through these: exactly this schema or null, unknown fields dropped,
+  names laundered and cut to 30), **`revealView(ctl, pub, serverNow, role, opts)`**
+  (the ONLY thing a viewer's screen reads about standings, and it FAILS CLOSED:
+  nothing for no / refused / too-new / other-year data or no clock; an expired
+  reveal is a closed view whose only content is the champion's NAME line; a
+  phone holds the newest place back 3 s after `ctl.sa`, never re-hiding one
+  already shown) and `tvFrame` (the big screen's frame as a pure function of
+  the node and the server clock). Time is always an ARGUMENT (a number or a
+  function read at call time), never read inside, so the 8 AM hide can't depend
+  on a cached value; a test pins the file pure. Nothing consumes it yet: the
+  node's writer and readers arrive with the reveal (redesign D5); Step 3 ships
+  the rules first so secrecy is built on them
 - `settings.js` — the settings sheet + week-builder UI. The builder's
   `jelly-tabs` shell is built ONCE and kept; `renderSettings` refreshes only
   the active card (through `setHtmlIfChanged`), hidden cards are filled one
@@ -129,9 +147,10 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
 
 **Every time any code asset changes:**
 1. Bump the `?v=N` cache-busting query string in `index.html` — there are
-   THIRTEEN on the same number: `boot-guard.js`, `styles.css`, `vendor/jelly.js`,
-   `firebase-config.js`, `defaults.js`, `camp-core.js`, `camps.js`, `app.js`,
-   `settings.js`, `chat.js`, `push.js`, `auth-phone.js`, `auth-email-link.js` —
+   FOURTEEN on the same number: `boot-guard.js`, `styles.css`, `vendor/jelly.js`,
+   `firebase-config.js`, `defaults.js`, `camp-core.js`, `reveal-core.js`,
+   `camps.js`, `app.js`, `settings.js`, `chat.js`, `push.js`, `auth-phone.js`,
+   `auth-email-link.js` —
    keep them in sync, all bumped together. Also bump
    `APP_VERSION` in `app.js` to the same number (it drives the auto-reload
    version check). `stalling.html` loads `vendor/jelly.js`, and

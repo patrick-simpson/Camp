@@ -424,6 +424,9 @@
        window, the sanitizers every database string passes through). No
        dependencies and nothing runs at load; it must come before app.js. -->
   <script src="camp-core.js?v=186"></script>
+  <!-- The standings reveal's pure rules (how a reveal is read, timed and hidden).
+       Needs camp-core.js; secrecy depends on it failing closed. -->
+  <script src="reveal-core.js?v=186"></script>
   <!-- Camp profiles: which camp this device runs (junior default), its
        Firebase root, storage namespace, schedule, and seed data. Must load
        between defaults.js (junior's game catalog) and app.js (the consumer). -->
