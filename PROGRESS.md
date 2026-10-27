@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Tue Oct 27, 7:15 AM ET** (update this line every time the file changes)
+Last updated: **Tue Oct 27, 7:20 AM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -28,6 +28,20 @@ It is committed to the working branch so it survives the container being reset.
   one shared jelly motion system (tokens/curves/helpers) and show the owner a
   live motion sample before building. After the v184 merge, sweep any NEW
   transitions the glitch fixers added (e.g. backdrop/dialog fades) onto it.
+- **BATTERY SAVER ⇒ REDUCED MOTION (owner, 2026-10-27; chose "auto-detect +
+  manual switch").** Browsers expose no battery-saver flag, so: one
+  `calmMotion()` source of truth = prefers-reduced-motion OR a detected
+  power-save signal OR the user's switch. Signals: (1) frame-rate sample —
+  iOS Low Power Mode and Chrome Energy Saver cap requestAnimationFrame at
+  ~30 Hz (sample briefly while idle + on visibilitychange; never during an
+  animation); (2) Android Chrome navigator.getBattery(): level ≤ 20% and not
+  charging (+ listen for changes); Safari has no Battery API. Settings →
+  Appearance gets "Calm motion: Auto / On / Off" (device-local). CSS hook:
+  html.calm-motion mirrors the reduced-motion rules; JS (joy layer, confetti,
+  Jelly springs via its own motion setting — jelly.js dispatches
+  'jelly-motion-change' and reads F() for reduced motion; check whether it
+  can be forced) must read calmMotion(). Belongs to the shared jelly motion
+  system in the Opus redesign; could ship earlier as its own small step.
 
 ---
 
