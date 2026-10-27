@@ -50,6 +50,7 @@ async function main() {
       vm.runInContext(fs.readFileSync(path.join(__dirname, file), 'utf8'), ctx, { filename: file });
     } catch (e) {
       failures.push({ file, name: '(loading test file)', err: e });
+      console.log(`\n${file}\n  \x1b[31m✗\x1b[0m (loading test file)\n      ${(e && e.message) || e}`);
       continue;
     }
 

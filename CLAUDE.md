@@ -288,6 +288,19 @@ What's covered, and why each file exists:
   atomic flips) — each pins the state rules behind a glitch fix. Anything only
   visible in a browser (animation, layout) is source-checked or left to the
   Playwright pass.
+- `fake-rtdb.js` (+ `fake-rtdb.test.js`) — an in-memory Realtime Database for
+  sync tests: `const { makeFakeRtdb } = nodeRequire('./fake-rtdb.js')`. It
+  reproduces what has bitten this app — pruning of nulls/empties, array↔map
+  round trips, sorted keys, `value` listeners (a refused read cancels one
+  terminally), multi-path `update`, `transaction` (null first run, contention
+  re-run, abort), `.info/connected`, an offline queue that replays in order,
+  injected per-path refusals, and `{ manualFirstSnapshot: true }` so a test
+  controls when the first pull lands. Drive the app's real `fbRef` /
+  `fbConfigRef` with `db.ref(...)` instead of a one-method stub.
+  `tests/fixtures/legacy-builder-v183.js` is the game editor's
+  `toEditableDraft` + `saveGameDraft` verbatim from v183 (never edited): the
+  config-engine rebuild's field-diff save must produce the same game from the
+  same draft (`settings-crud.test.js` runs both).
 - `ics.test.js` (+ `.senior`, which evals the same file) — the "Add to calendar"
   export: every line folded to 75 octets (`icsFold`, byte-counted, never inside
   a UTF-8 sequence), UIDs `<camp>-<dow>-<block index>-<start>@…` so the two

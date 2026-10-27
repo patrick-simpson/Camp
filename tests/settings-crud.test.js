@@ -458,3 +458,54 @@ test('day Move up/down reorders the days and writes the config', () => {
   assert.equal(state.config.days[1].id, d0.id);
   assert.ok(state.config.updatedAt >= before);
 });
+
+// ── The v183 editor, as a golden ─────────────────────────────────
+
+// tests/fixtures/legacy-builder-v183.js holds toEditableDraft + saveGameDraft
+// verbatim from v183. The config engine rebuild (S3) replaces whole-game saves
+// with field-diff saves; both must produce the SAME saved game from the SAME
+// draft. The legacy functions are evaluated in a function scope here so they
+// don't replace the live ones.
+const legacyV183 = nodeRequire('./fixtures/legacy-builder-v183.js');
+function loadLegacyEditor() {
+  eval(legacyV183.source);
+  return { toEditableDraft, saveGameDraft };
+}
+
+test('v183 and current saveGameDraft produce the same game from the same draft, for every default game', () => {
+  const ids = crudSetup().map((g) => g.id);
+  assert.ok(ids.length > 10, 'precondition: the whole default catalog');
+  ids.forEach((id) => {
+    // A no-op save (open the game, change nothing, Save) through each editor.
+    crudSetup();
+    state.ui.editGameId = id;
+    gameDraft = loadLegacyEditor().toEditableDraft(gameById(id));
+    gameDraftFor = id;
+    loadLegacyEditor().saveGameDraft();
+    const viaLegacy = JSON.stringify(state.config.games);
+
+    crudSetup();
+    openDraft(id);
+    saveGameDraft();
+    const viaCurrent = JSON.stringify(state.config.games);
+    assert.equal(viaCurrent, viaLegacy, id + ': the saved game differs between v183 and now');
+  });
+});
+
+test('v183 and current saveGameDraft agree on an edited and on a brand-new game', () => {
+  const draftEdits = (d) => Object.assign(d, {
+    name: '  Edited Name ', format: 'tally', unit: 'pts', counterSteps: '1, 5', emoji: '',
+    timer: { label: ' T ', presets: '5, 2.5', rounds: '2' },
+    rules: [{ h: ' A ', items: 'x\n\n y ' }, { h: '', items: '' }],
+  });
+  const run = (viaLegacy) => {
+    crudSetup();
+    state.config.games.forEach((g) => { delete g.prompts; });
+    state.ui.editGameId = 'new';
+    ensureGameDraft();
+    draftEdits(gameDraft);
+    if (viaLegacy) loadLegacyEditor().saveGameDraft(); else saveGameDraft();
+    return JSON.stringify(state.config.games[state.config.games.length - 1]);
+  };
+  assert.equal(run(false), run(true));
+});
