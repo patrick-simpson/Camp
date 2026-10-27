@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Tue Oct 27, 6:15 AM ET** (update this line every time the file changes)
+Last updated: **Tue Oct 27, 6:35 AM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -150,9 +150,26 @@ a "Decisions for the owner" list (ask ONE at a time, after the layout Qs).
   When done: SQUASH-merge each branch into main (fixer commit trailers name the
   wrong model — squash keeps them out of history), resolve conflicts, tests,
   v184, push, verify live.
-- LAYOUT INTERVIEW: Q1 answered → **"What's happening now"** (first screen
-  follows the camp day; short standings always right under it). Next: Q2
-  (standings visibility; rec "always, except a reveal stretch").
+- LAYOUT INTERVIEW answers so far:
+  - Q1 first screen → **"What's happening now"** (follows the camp day).
+  - Q2 standings (owner's own words): counselors see standings ONLY while the
+    directors reveal them on the big screen, and for 5 minutes after; then they
+    hide. Standings not yet revealed on the big screen must never show.
+    Follow-ups answered:
+    - Hide ALL points and places from counselors (team card place/points,
+      "+7" pop-ups, catch-up hint); game MEDAL WINNERS stay visible on finished
+      games (they watched it happen).
+    - During a reveal, phones KEEP PACE with the TV place by place (6th→1st);
+      unrevealed places show as "still to come".
+    - Directors (editors) see everything, always.
+    - Big-screen page: anyone may open it, but NO PEEKING — outside a reveal it
+      waits ("Waiting for the directors…"); during a director-run reveal it
+      mirrors. ⇒ the director's TV must publish reveal progress (frozen
+      standings + revealed count + start/finish times) to Firebase.
+    - Assumed (tell owner): the 5 minutes count from when 1st place is shown;
+      hiding is in-app (medal winners are visible, so points can't be truly
+      secret anyway).
+  - NEXT: Q3 navigation (one page vs tabs), then Q4…Q13 from the synth list.
 
 **1:15 AM ET Tue — sweep DONE**: 95 confirmed glitches (8 high/24 med/63 low)
 + layout verdict "partly" with 13 ordered interview questions. Full result
