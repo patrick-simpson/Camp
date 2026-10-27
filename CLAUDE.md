@@ -12,20 +12,41 @@ Files:
 - `index.html` — page shell
 - `boot-guard.js` — the pre-paint lock guard. Its own file ONLY so the CSP can
   refuse inline scripts entirely; must stay a classic (non-module, non-defer)
-  `<script>` in `<head>` or the app flashes before it locks. A second IIFE
-  in it adds `html.jelly-failed` when `vendor/jelly.js` never defines its
-  elements (request error, parse error — iOS < 16.4 can't parse it — or a 4 s
-  backstop), which lifts styles.css's hide of undefined custom elements
+  `<script>` in `<head>` or the app flashes before it locks. Besides the lock
+  it also paints, before the first frame, what the stored hints say: an
+  explicit Light/Dark choice (`campScoreboardTheme` → `data-jelly-mode`; Auto
+  leaves it unset) and `html.view-only` for a viewer-hinted device. A second
+  IIFE in it adds `html.jelly-failed` when `vendor/jelly.js` never defines its
+  elements, which lifts styles.css's hide of undefined custom elements
   (`:where(html:not(.jelly-failed)) :not(:defined)` — the `:where()` is
-  load-bearing) so the Google sign-in button stays usable
-- `app.js` — main logic + the week schedule (`DAY_SCHEDULE`), ~6400 lines
+  load-bearing) so the Google sign-in button stays usable. The verdict is
+  load-based, not a short timer: the module `<script>`'s `error` event, a
+  `jelly.js` parse/evaluation `error` (iOS < 16.4 can't parse it), and the
+  window `load` event (a module runs before `load`, so elements still
+  undefined then means it failed — it catches a browser that reports neither
+  error) — plus a 15 s backstop for a request that hangs. A 4 s timer used to
+  trip on a merely SLOW load and flash unstyled cards; `whenDefined` withdraws
+  the class if the elements do arrive. A third IIFE flips the Google Fonts
+  `<link id="gfonts">` from `media="print"` to `all` once loaded (a blocking
+  stylesheet left the page blank while fonts.googleapis.com was slow; an inline
+  `onload` is refused by the CSP)
+- `app.js` — main logic + the week schedule (`DAY_SCHEDULE`), ~9500 lines
 - `defaults.js` — the built-in default week: day list + full game catalog
   (`defaultConfig()`); live config then lives in synced state
 - `camps.js` — the TWO CAMP PROFILES (see "Two camps, one app" below):
   junior + senior, each with its Firebase root, storage namespace, team
   branding, printed daily schedule, and seed data. Loads between defaults.js
   and app.js; app.js reads everything through the active `CAMP`
-- `settings.js` — the settings sheet + week-builder UI
+- `settings.js` — the settings sheet + week-builder UI. The builder's
+  `jelly-tabs` shell is built ONCE and kept; `renderSettings` refreshes only
+  the active card (through `setHtmlIfChanged`), hidden cards are filled one
+  per idle slice after it (`prefillBuilderCard`) and refreshed when their tab
+  is shown, and the page scroll is put back after every refresh — so a remote
+  config echo no longer rebuilds five cards, re-springs the tab pill or throws
+  the page to the top. `builderDirty()` counts only an OPEN game editor with
+  edits (a stranded draft must not freeze sync or the auto-reload), Back and
+  tab switches never silently discard it, and a tab other than Games carries an
+  "Unsaved changes" reminder while one is open
 - `chat.js` — Camp Chat (see "Camp chat" below): four channels, automatic
   mention alerts, compressed in-database photos. Self-contained layer,
   loaded after settings.js; every hook in app.js is typeof-guarded
@@ -175,6 +196,17 @@ focused composer or still sending (`chatComposerBusy`); for editors, also
 not mid-entry (`editorMidEntry`: a focused score field, or a queued data
 push). A synced game clock deliberately does NOT block it (its `endAt` is in
 the database and survives a reload).
+The bar's own tap asks first (`wireReloadBanner`: `reloadBlocked()` sampled at
+pointerdown, since the tap itself blurs the composer) instead of reloading
+past an unsent message or a typed score. Bottom-strip layout (styles.css, one
+block next to `.update-banner-alert`): at home the bar sits at `bottom: 1rem`
+with the toaster lifted above it (8rem); in chat (`body.chat-open`) the bar is
+lifted to 5.5rem so it never covers the composer, and the toaster to 12rem to
+clear both (5rem when there is no bar). The toaster takes taps, so a toast
+over the composer swallowed Send and one over the bar swallowed Refresh —
+change the four offsets together. `showToast` keeps at most
+`TOAST_MAX_VISIBLE` (3) on screen, dismissing the oldest that isn't a "Your
+team…" toast.
 The reload uses `doReload` (adds a throwaway `?r=` cache-buster) so it
 fetches the fresh `index.html` instead of a cached copy and can't loop.
 (A phone only starts polling once it's running a build that has this code,
@@ -193,6 +225,10 @@ drift. Each `*.test.js` file gets its own freshly-loaded context, so one file's
 mutations of `state` can't leak into another's. Because top-level `let`/`const`
 in a vm script land in the context's global lexical scope, test files reference
 `state`, `medalCounts`, `SYNC_KEYS`, … directly, exactly as app.js does.
+`document.addEventListener` calls made at load are recorded (never fired by
+the harness itself) in `__docListeners[type]`, so a test can reach the
+delegated handlers — the joy-press pointer handlers, the card `toggle`
+listener, the failed-module tap-to-close — by event type.
 
 Nothing in `tests/` is referenced by `index.html`, so adding to it cannot
 change what a browser loads.
@@ -218,8 +254,35 @@ What's covered, and why each file exists:
   now" progress bar refilled from empty twice a minute; the team shield
   blinked; chips twitched). Home panels write through `setHtmlIfChanged`,
   the day tabs refresh their panels in place, and the progress bar is nudged
-  rather than rebuilt. New panels on the renderAll path should do the same;
-  never `transition: all` (it animated chips' line-height on every rebuild).
+  rather than rebuilt (the rain hint is patched in place — `splitNowBanner`
+  keeps it out of the bar's shape check). Panels that are SUPPOSED to change
+  under their own markup — anything holding a game clock (the 500 ms tick
+  rewrites its digits), a Big Board (goal cannons get appended), a score form
+  — use `setLiveHtmlIfChanged(el, html, holds)` instead: it compares markup
+  only (clock digits blanked) and rebuilds if any object in `holds` (the game,
+  a bracket) was replaced by a remote snapshot, so a kept form's listeners
+  never write into an orphan. The open game view is therefore updated in
+  place: the head (back pill, title, "How to play") is built once per game and
+  compared as a plain string, so an idle `renderAll` neither replays the pill's
+  slide-in nor slams the rules `<details>` shut, and the tally medal picks
+  are set in place. **By design a STARTED bracket and the live-tracker entries
+  still rebuild on every render** (their sub-views close over the bracket
+  object and build in several writes) — `renderTournament` clears the compare
+  key itself — so a Big Board's pulse phase restarts there. `renderAll` ends
+  with `paintBoardClocks()` (a rebuilt clock is born with its final-minute
+  classes) and `holdBoardCelebrations()` carries in-flight cannons/pops onto
+  the board that replaced theirs. New panels on the renderAll path should do
+  the same; never `transition: all` (it animated chips' line-height on every
+  rebuild).
+- `game-view.test.js` (the rules above: live-html skip, kept forms firing real
+  handlers after a state swap, celebrations only for scoring), `home.test.js`
+  (home panels, toast cap, announcement composer), `overlays.test.js` (schedule
+  sheet, update bar, members drawer, lock screen, scrim fade, pickers),
+  `builder.test.js` (week-builder shell, drafts, joy press), `chat-view.test.js`
+  (chat view lifecycle, drafts, Back), `theme.test.js` (pre-paint theme and
+  atomic flips) — each pins the state rules behind a glitch fix. Anything only
+  visible in a browser (animation, layout) is source-checked or left to the
+  Playwright pass.
 - `auth.test.js` — the `emailKey` contract (multi-dot/case/trim — the
   regression that would lock people out under the rules), the `canEdit` truth
   table via `setMemberRole`, the `memberRecord` shape, `clearLocalData`'s
@@ -414,9 +477,31 @@ so nobody can post as someone else).
   — hide-from-viewers is the editors' kill switch and force-closes a
   viewer's open chat) → full-screen `#chat-view` via `body.chat-open`
   (builder-style takeover; `state.ui.chatOpen`/`chatChannel`,
-  device-local). The view rebuilds ONLY on open/channel-switch
-  (`chatViewBuiltFor`) — live messages append incrementally so the
-  composer never loses typed text to a re-render.
+  device-local). The shell (header, tab strip, list, composer) is BUILT once
+  per open (`buildChatShell`, also when the viewer's role flips — the 🧹
+  button is the one role-dependent part); a channel switch, bell toggle or
+  directory update only PATCHES it in place (`updateChatShell`: active tab,
+  header, composer placeholder, the list through `setHtmlIfChanged`), and a
+  non-forced `renderChatView` is a no-op while `chatViewBuiltFor` already
+  matches — `renderAll` runs it on every snapshot. So the composer node
+  survives a channel switch (iOS won't re-focus a detached input: the keyboard
+  would drop) and live messages append incrementally. Half-typed text lives
+  in the in-memory `chatDrafts` (per channel, never localStorage, gone on
+  sign-out) and follows the person across channel switches and a
+  close/reopen. Every handler reads the channel at call time
+  (`chatCurrentChannel`), never closed over at build time. The header names
+  the open channel by its SHORT label; under 480px the tab strip shows
+  emoji only (label kept for screen readers) and the unread badge sits on
+  the tab's corner out of flow. "Sync is off" is only said when it is
+  definitive (`chatSyncOff`: no config, SDK failed, or a rules refusal);
+  otherwise the list reads "Loading…", and app.js's `onSdkLoadFailed` calls
+  the typeof-guarded `onChatSyncStateChanged` so it flips at once.
+  **Phone Back closes chat**: opening pushes one history entry
+  (`chatHistoryPush`, state `{campChat:1}`); `wireChat`'s `popstate` listener
+  closes the chat when it's popped; closing from the ← Camp pill pops it back
+  off (`chatHistoryPop`), and `renderChatCard` hands back a stale entry when
+  `renderAll` closed the chat itself. Chat only — settings and game detail
+  still have no history entry of their own.
 - **Rules**: `chat` + `chatPhotos` blocks per camp root (member-read,
   member-create-with-own-byKey, author-or-editor delete, editor
   channel-clear, string caps, `$other: false`). Until pasted, chat shows
@@ -563,14 +648,23 @@ rules**; the client code only shapes the UI.
   the last confirmed role so a returning approved device paints instantly from
   local state while auth re-confirms; index.html's guard reads the same key.
   Convenience only — a forged hint shows an empty shell (rules refuse all
-  data). Same literal lives in the index.html pre-paint guard.
+  data). Same literal lives in the index.html pre-paint guard. A second hint,
+  `campScoreboardTheme` (`'light'|'dark'`, an EXPLICIT choice only — Auto =
+  key absent), is mirrored out of `state.theme` by `applyTheme()` so
+  boot-guard.js can set `data-jelly-mode` before first paint; it is
+  device-wide, not per camp (the guard runs before camps.js), and `boot()`'s
+  `applyTheme` corrects a camp whose own choice differs. Auto sets no
+  `body.dark-theme` class — the `@media` block in styles.css follows the OS
+  live (`watchOsColorScheme` re-runs `applyTheme` so the `theme-color` meta
+  follows too).
 - **One-shot lifecycle**: voluntary sign-out and re-sign-in-after-teardown
   both end in `location.reload()` — no listener re-attachment machinery, since
   the terminal-fbRef design can't be safely restarted in place.
 - **Sign-out** (`signOutAndClear`) wipes the camp data cached on the device
   (`clearLocalData`: STORAGE_KEY, day ranks, dismissed banners, the hint, the
-  parked email) plus IndexedDB photos (`clearPhotos`), then reloads. Theme is
-  NOT preserved — the boot guards discard partial state, so it resets to Auto.
+  theme hint, the parked email) plus IndexedDB photos (`clearPhotos`), then
+  reloads. Theme is NOT preserved — the boot guards discard partial state, so
+  it resets to Auto.
 - **Rules are PUBLISHED and enforced** (2026-07-25). Verified after the flip:
   unauthenticated reads of state/config/members/changelog, a
   write probe, and a self-escalation attempt all return `Permission denied`.
@@ -801,11 +895,12 @@ More sync invariants (each fixed after it bit us — don't regress these;
   per card (`teams` and `notice` are still written whole). Verse/cleanup
   points use deterministic ids (`verse-<team>-<dow>`,
   `cleanup-<team>-<dow>-<meal>`) so two devices write one slot, not two.
-- **`editorMidEntry` is an allowlist**: native INPUT/TEXTAREA/SELECT,
-  contentEditable, and only `JELLY-(INPUT|TEXTAREA|SELECT|OTP)`. Every Jelly
-  component delegates focus, so the old `startsWith('JELLY-')` counted a
-  tapped card header or button as typing and froze live updates on
-  Android/desktop Chrome until focus moved.
+- **`editorMidEntry` is an allowlist** (its focus test is `fieldFocused()`):
+  native INPUT/TEXTAREA/SELECT, contentEditable, and only
+  `JELLY-(INPUT|TEXTAREA|SELECT|OTP)`; the chat composer is deliberately not
+  counted. Every Jelly component delegates focus, so the old
+  `startsWith('JELLY-')` counted a tapped card header or button as typing and
+  froze live updates on Android/desktop Chrome until focus moved.
 - **A snapshot key that's missing means "empty", not "keep mine".** The
   remote merge replaces `results`/`brackets`/`drafts`/`picRounds`/`meta`
   with `{}` when absent from the snapshot (RTDB prunes empty objects, so
@@ -821,8 +916,12 @@ More sync invariants (each fixed after it bit us — don't regress these;
   of a game. `deferRemoteSnapshot()` therefore records that a read is owed and
   an idle tick re-reads (`fbRef.once`) once the device is quiet. Re-reading,
   not replaying a stashed payload, is deliberate — the payload may already be
-  superseded. The same tick also drains `pendingRemoteConfig`, which used to
-  be flushed only by a focusout inside the week builder.
+  superseded. The same tick also drains `pendingRemoteConfig` (which used to
+  be flushed only by a focusout inside the week builder) and pays off an owed
+  render: a BACKGROUND event — a game clock settling at 0:00, the staff list
+  changing — calls `renderAllWhenIdle()` rather than `renderAll()`, so it
+  can't rebuild a focused field under an editor's thumb (keyboard dropped, an
+  open select gone); `fieldFocused()` defers it to the next quiet tick.
 - **The synced game clock runs on server time, not device time.**
   `state.clocks[gid].endAt` is absolute and every device counts down to it, so
   the devices have to agree on "now". `serverNow()` = `Date.now()` +
