@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Tue Oct 27, 7:10 AM ET** (update this line every time the file changes)
+Last updated: **Tue Oct 27, 7:15 AM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -17,6 +17,17 @@ It is committed to the working branch so it survives the container being reset.
   **Any actual DESIGN work (layouts, visual design, mockups, the redesign
   spec's design decisions) must be done by OPUS, "with an eye for
   improvement"** — i.e. don't just transcribe the mockups; push them further.
+- **MOTION RULE (owner, 2026-10-27): "All changes and animations in page
+  should be jelly inspired."** Every state change (a panel appearing, a tab
+  switch, a score/place updating, the reveal ladder filling, sheets opening,
+  toasts, banners) should move like the Jelly UI components: springy,
+  squishy, physical (overshoot + settle, squash on press), consistent with
+  vendor/jelly.js's springs — not plain fades/slides. Still honour
+  prefers-reduced-motion, still never re-animate when nothing changed
+  (render-stability), and keep the joy layer. The Opus redesign must define
+  one shared jelly motion system (tokens/curves/helpers) and show the owner a
+  live motion sample before building. After the v184 merge, sweep any NEW
+  transitions the glitch fixers added (e.g. backdrop/dialog fades) onto it.
 
 ---
 
