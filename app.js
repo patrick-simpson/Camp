@@ -203,6 +203,16 @@ function identityFromKey(key) {
   return k[0] === '+' ? k : k.replaceAll(',', '.');
 }
 
+// The owner's member key, the lockout anchor. The security rules refuse EVERY
+// write to this key in both camps' member lists (`$memberKey != '…'`), so the
+// Members drawer must not offer controls that can only fail: its row shows
+// "Owner · managed in the Firebase console" and nothing else, for the owner
+// themselves and for every other editor. The same literal is in
+// database.rules.json (tests/owner-row.test.js pins that they agree). Any bulk
+// member write must skip this key and be per-row and best-effort, never folded
+// into a larger atomic update — one refused row would take the rest with it.
+const OWNER_MEMBER_KEY = 'patricksimpson,fx@gmail,com';
+
 // A member row for someone who has no sign-in yet — a counselor we know by
 // name and team, whose email or phone gets filled in later. The key must be
 // something `identityKey()` can NEVER produce, or a stranger could inherit
@@ -1560,6 +1570,7 @@ function renderMemberList(body, lists) {
     const activeRec = camps[CAMP.id];
     const anyRec = activeRec || camps[otherCampId()] || {};
     const self = key === myKey;
+    const owner = key === OWNER_MEMBER_KEY; // the rules refuse every write to this row
     const pending = isPendingKey(key);
     const isPhone = String(key)[0] === '+';
     const displayName = anyRec.name || identityFromKey(key);
@@ -1571,7 +1582,9 @@ function renderMemberList(body, lists) {
     // nothing to the other camp until a real sign-in exists), so they keep
     // the simple single-camp role control.
     let accessHTML;
-    if (pending) {
+    if (owner) {
+      accessHTML = ''; // no switches: nothing the app writes here would be accepted
+    } else if (pending) {
       accessHTML = `<jelly-segmented class="member-role" size="small" label="Role" value="${anyRec.role === 'editor' ? 'editor' : 'viewer'}" ${self ? 'disabled' : ''}>
           <jelly-segment value="viewer">👀 Viewer</jelly-segment>
           <jelly-segment value="editor">✏️ Editor</jelly-segment>
@@ -1600,7 +1613,7 @@ function renderMemberList(body, lists) {
 
     // The team lives on the ACTIVE camp's record (each camp has its own
     // teams) — set the other camp's team from inside that camp.
-    const teamHTML = !pending && activeRec
+    const teamHTML = !owner && !pending && activeRec
       ? memberTeamSelectHTML('member-team', activeRec.teamId, displayName + ' team')
       : '';
 
@@ -1609,11 +1622,12 @@ function renderMemberList(body, lists) {
         <span class="member-name">${esc(displayName)}${self ? ' <span class="member-you">(you)</span>' : ''}</span>
         ${idLine}
       </div>
-      <div class="member-controls">
+      ${owner ? '' : `<div class="member-controls">
         ${accessHTML}
         ${teamHTML}
-      </div>
-      ${self ? '<p class="muted member-self-note">That\'s you — another editor has to change or remove your access.</p>' : ''}
+      </div>`}
+      ${owner ? '<p class="muted member-self-note member-owner-note">👑 Owner · managed in the Firebase console</p>'
+        : self ? '<p class="muted member-self-note">That\'s you — another editor has to change or remove your access.</p>' : ''}
     </div>`;
   }).join('');
 
@@ -1712,6 +1726,9 @@ function createMemberIfAbsent(ref, rec) {
 // own row — "another editor has to change your access" — and these paths must
 // not be a way around that).
 function planMemberAdd({ key, pending, bothCamps, myKey, lists }) {
+  if (key === OWNER_MEMBER_KEY) {
+    return { error: 'That account is the owner — it is managed in the Firebase console.' };
+  }
   if (!pending && key === myKey) {
     return { error: "That's your own account — another editor has to change your access." };
   }
@@ -1729,6 +1746,7 @@ function planMemberAdd({ key, pending, bothCamps, myKey, lists }) {
 // Why a pending row can't be pointed at this new key ('' when it can): it is
 // the editor's own account, or somebody is already listed under it.
 function memberConvertRefusal(newKey, myKey, lists) {
+  if (newKey === OWNER_MEMBER_KEY) return 'That account is the owner — it is managed in the Firebase console.';
   if (newKey === myKey) return "That's your own account — another editor has to change your access.";
   if ((lists[CAMP.id] || {})[newKey]) return 'Already on the list — change their access on their row instead.';
   return '';
@@ -1772,6 +1790,7 @@ function bindMemberList(body, myKey, lists) {
   const activeMembers = lists[CAMP.id] || {};
   body.querySelectorAll('.member-row').forEach((row) => {
     const key = row.dataset.memberKey;
+    if (key === OWNER_MEMBER_KEY) return; // read-only row: no controls were rendered
     const self = key === myKey;
     const camps = {
       junior: (lists.junior && lists.junior[key]) || null,

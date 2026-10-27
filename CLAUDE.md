@@ -288,6 +288,8 @@ What's covered, and why each file exists:
   atomic flips) — each pins the state rules behind a glitch fix. Anything only
   visible in a browser (animation, layout) is source-checked or left to the
   Playwright pass.
+- `owner-row.test.js` — the owner's Members row is read-only, and the client
+  constant matches the rules literal in both camps.
 - `settings-crud.test.js` — the classic builder's create / edit / delete paths
   (`validateGameDraft`, `saveGameDraft`, `duplicateGame`, `deleteGame`,
   `deleteDay`, reorder, `pruneOrphanedGameData`). Everything the app keeps under
@@ -654,6 +656,15 @@ rules**; the client code only shapes the UI.
   editor-managed via Settings → **Who can sign in** (`renderMembers`). Your
   own row is disabled (another editor must change your access); the owner key
   is additionally immutable in the rules (the lockout anchor).
+- **The owner row is read-only** (`OWNER_MEMBER_KEY` in app.js, the same literal
+  as the rules' `$memberKey != '…'` in BOTH roots; `tests/owner-row.test.js`
+  pins they agree). Every client write to that key is refused, so the Members
+  drawer renders it with no access switches, no team select and no Remove — just
+  "👑 Owner · managed in the Firebase console" — for the owner and for every
+  other editor alike; the add form and the pending-convert flow refuse the key
+  before writing. Any bulk member write (the seed roster today; the new-year
+  wizard later) must skip that key and be per-row and best-effort, never folded
+  into a larger atomic update, so one refused row can't take unrelated work with it.
 - **Live revocation**: the member self-read stays an `.on('value')` — a
   removal cancels it (→ not-approved kick + `clearLocalData()`), a role change
   fires a fresh snapshot (→ `setMemberRole` re-renders in place).
