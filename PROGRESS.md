@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Tue Oct 27, 7:20 AM ET** (update this line every time the file changes)
+Last updated: **Tue Oct 27, 9:20 AM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -282,6 +282,17 @@ a "Decisions for the owner" list (ask ONE at a time, after the layout Qs).
     revealed until 8 AM; a new reveal replaces the previous one; any director
     can run the remote; the TV page with no reveal says "Waiting for the
     directors…".
+- **9:14 AM ET — sequential fix run DONE** (results: docs/build-notes/
+  glitch-fix-results-2026-10-27.json). All 6 groups fixed + reviewed + fixed
+  up; worktree branches worktree-wf_de7fc0a9-b11-{1..6}. Known accepted
+  leftovers: started brackets / live-tracker entries still rebuild per render
+  (their Big Board pulse phase restarts); now-banner bar still re-created on a
+  mid-meal team rename; iOS keyboard behaviour only verified in Chromium.
+  **9:20 AM ET — one Sonnet agent merging** them into branch integrate-v184
+  (worktree .claude/worktrees/integrate-v184), squash per group, CLAUDE.md
+  updated, browser smoke. THEN (me): review diff, bump v184 (12 ?v= + TV refs
+  + APP_VERSION + CODE_UPDATED_AT), merge to main, push, verify live; then
+  move new fades onto jelly motion later (redesign).
 - **7:05 AM ET — sequential fix run `wf_c027577c-7ac`** (scratchpad/
   fix-sequential.js, copy in docs/build-notes/): finish builder(-4) +
   boot-theme(-6), then review→fix-up each of the 6 groups, ONE Sonnet agent

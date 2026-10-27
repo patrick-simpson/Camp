@@ -1,0 +1,1117 @@
+{
+  "summary": "Finish the glitch fixes ONE agent at a time on Sonnet: finish 2 interrupted fixers, then review → fix-up each group",
+  "agentCount": 14,
+  "logs": [
+    "finished builder: 12 fixed",
+    "finished boot-theme: 11 fixed",
+    "games-live: review ship-after-fixes, fix-up done",
+    "home: review ship-after-fixes, fix-up done",
+    "overlays: review ship-after-fixes, fix-up done",
+    "builder: review ship-after-fixes, fix-up done",
+    "chat: review ship-after-fixes, fix-up done",
+    "boot-theme: review ship, fix-up done"
+  ],
+  "result": [
+    {
+      "group": "builder",
+      "finish": {
+        "commits": [
+          "1ff6312 Week builder: keep the tab shell, stop scroll/pill/draft glitches (worktree /home/user/Camp/.claude/worktrees/wf_de7fc0a9-b11-4, branch worktree-wf_de7fc0a9-b11-4; touches app.js, settings.js, styles.css, new tests/builder.test.js)"
+        ],
+        "results": [
+          {
+            "id": "builder-rebuild-scroll-jump",
+            "status": "fixed",
+            "what": "renderSettings keeps the jelly-tabs shell and refreshes only the active card. renderSettingsSection restores scrollY after the card write. Opening a game or returning to the list still starts at 0.",
+            "proof": "Browser probes on port 8944. Scroll is unchanged across games reorder 687->687, days add 1161->1161, teams add 722->722, notice add step 3716->3716, and remote snapshots 900->900 on every tab. The senior camp matches. tests/builder.test.js has 'the tab shell is built once'."
+          },
+          {
+            "id": "builder-tabs-pill-respring",
+            "status": "fixed",
+            "what": "Added settleBuilderTabPill, which snaps the pill when the shell is first created or the tab value is set programmatically. A user tap keeps its spring.",
+            "proof": "m_senior shows pillOff 0 on all tabs. r_remote shows pillMaxDist 0 on every tab. r_tabs shows a user tap still springs (24 pill positions seen, -141 to 0)."
+          },
+          {
+            "id": "builder-dirty-draft-freezes-sync",
+            "status": "fixed",
+            "what": "Back to scoreboard confirms a dirty draft, naming the game, and switches to Games on Cancel. Back then clears the draft via discardGameDraft(). builderDirty() now needs view==='settings' and an open editor. renderAll also drops the draft when a demoted role force-closes the builder.",
+            "proof": "m_draft: Back + Cancel gives a dialog and keeps the draft. Back + OK gives midEntry false and canAdopt true. A remote snapshot afterwards is applied and reloadBlocked is false. A clean Back shows no dialog. Tests 'Back to scoreboard with a dirty draft asks', 'a draft stranded behind a closed builder never counts as mid-entry', and 'losing editor access closes the builder AND drops the draft'."
+          },
+          {
+            "id": "builder-rebuild-jank",
+            "status": "fixed",
+            "what": "Each tab card is written through setHtmlIfChanged and wired only when written, so unchanged cards cost nothing. Games result dots are patched in place instead of living in the markup. Wiring that closed over state is changed to read the live object. Hidden cards are not rebuilt per renderAll.",
+            "proof": "r_remote: a remote snapshot takes 7-16 ms per tab. m_jank was run by the previous fixer with a 4x CPU throttle. Tests 'an unchanged card is not rewritten', 'a score landing does not change the Games list markup', and 'a remote copy of the notice leaves an unchanged Notice card alone, and its kept listeners edit the live notice'. r_notice: after a remote replacement of state.notice, a title edit still lands on the live notice."
+          },
+          {
+            "id": "builder-tab-switch-silent-discard",
+            "status": "fixed",
+            "what": "The tab change handler no longer discards the game editor or its draft. The draft survives a tab round trip and builderDirty stays true. Back confirms before anything is dropped.",
+            "proof": "m_draft steps 2 and 3: after tapping Days the draft name is still 'ShieldsX', dialogs 0, and the editor is back on return to Games. Test 'switching tabs keeps an open game editor and its unsaved draft'."
+          },
+          {
+            "id": "builder-return-joy-rise-replay",
+            "status": "partially-fixed",
+            "what": "Fixed in app.js and styles.css. The joy-rise rule is gated on a transient .card-opening class, added by a capture-phase 'toggle' listener when a collapsible-card opens and removed after 700 ms. openBuilder records builderReturnY and Back scrolls to it. Chat's scroll restore on close is NOT done here: chat.js belongs to the chat group (finding chat-scroll-lost-on-close).",
+            "proof": "m_rise: opening standings or cleanup still plays joy-rise (5 and 3 animations running). After Back from the builder 0 are running and home scrollY is 700->700. A details toggle inside an open card runs 0 animations. After chat close 0 are running. Test 'the card rise-in only runs while a card is opening, never on un-hide'."
+          },
+          {
+            "id": "builder-press-scale-twitch",
+            "status": "fixed",
+            "what": "The press scale waits 80 ms (JOY_PRESS_DELAY_MS). It is called off by joyPressAbort when the finger moves more than 8 px or on pointercancel, easing back via .joy-release instead of snapping. A quick tap still gets the pop.",
+            "proof": "m_press: a flick shows min scale 1 and no classes. A slow scroll eases to 0.955 with a 0.017 rebound where it used to snap from 0.93. A quick 50 ms tap shows the 0.93 pop. A held tap shows joy-pressed then joy-pop. The sparkle and the reduced-motion early return are untouched."
+          },
+          {
+            "id": "builder-config-echo-second-rebuild",
+            "status": "fixed",
+            "what": "applyRemoteConfig compares JSON.stringify(syncCanon(state.config)) before and after. state.config is still assigned unconditionally, so only the re-render is skipped.",
+            "proof": "v22 with a stubbed key-sorted, null-pruned echo: Add day and Reorder each show one renderSettings and then the echo, with no second renderSettings. Test 'a config echo of this device's own edit does not re-render; a real change does' asserts 0 renders for the echo and 1 for a real remote change."
+          },
+          {
+            "id": "builder-stale-clean-editor-draft",
+            "status": "partially-fixed",
+            "what": "ensureGameDraft records gameDraftSource (canonical JSON of the saved game). A clean draft of a saved game is rebuilt when the saved game really changes, and a key-order-only echo keeps it. A dirty or new draft is always kept. The editor card is re-wired when the draft object changes. The optional 'this game changed elsewhere' note for a dirty draft was not added.",
+            "proof": "v24: after another editor changes the headline, the open clean editor shows the new value, dirty is false, and Save keeps the remote change. Tests 'a clean open editor picks up another editor's change to that game' and 'a dirty editor keeps the user's edits over a remote change'."
+          },
+          {
+            "id": "builder-restore-textarea-wiped",
+            "status": "fixed",
+            "what": "The Data card is skipped when unchanged. restoreDraft {text,error} is kept in a module variable, put back after a card rewrite, cleared on a good import, and the error clears when the text is edited.",
+            "proof": "r_restore2: typed text plus a remote apply keeps len 36. An error stays shown across a remote apply. Typing clears the error. A renderAll while typing keeps the same node focused. A forced rebuild refills text and error. A good import empties both. Test 'pasted restore text and its error survive a rebuild; a good import clears them'."
+          },
+          {
+            "id": "builder-formrow-misaligned-inputs",
+            "status": "fixed",
+            "what": "Builder .form-row fields use subgrid so labels share one grid row and inputs the next. The 'Outs per side' label was shortened, and its (0 = none) meaning is already in the existing field-help line.",
+            "proof": "m_wrap forces the old wrapping 'Outs per side (0 = none)' label. At 390 px inputs sit level (1085,1085) where the original was 1069,1085. At 320 px they sit at 1210,1210 where the original was 1194,1210. m_formrows: Name/Day of week and the notice rows are level."
+          },
+          {
+            "id": "builder-team-inputs-truncated",
+            "status": "fixed",
+            "what": "teamRowHTML now puts a control line (arrows, 'Team N', delete) above full-width name and counselor inputs, matching the day row shape. CSS is adjusted to match.",
+            "proof": "v27: every team name input is 290 px wide with no clipping, for example 'Particularly Perilous Pumpkins' (client 290, scroll 290), and the arrow buttons are 44 px. m_senior shows the same 289 px at senior."
+          },
+          {
+            "id": "builder-validation-error-stale-shift",
+            "status": "fixed",
+            "what": "#gd-error moved below the Save/Cancel actions so it can't push Save down. A delegated input/change listener on the card (attached once) hides it on the next edit.",
+            "proof": "v28: saveTop is 1069 before and after tapping Save with an empty name (docH grows below it). Typing a name hides the error again."
+          },
+          {
+            "id": "builder-last-edited-device-local-time",
+            "status": "fixed",
+            "what": "The 'Last edited' line uses formatEasternStamp(state.config.updatedAt) and lives in a patched .settings-updated slot.",
+            "proof": "v36: 'Last edited Jul 20, 6:30pm ET' under both America/New_York and Asia/Tokyo contexts. Test '\"Last edited\" is camp time, not the device's zone'."
+          }
+        ],
+        "testsPassed": "node tests/run.js: 453 passed (23 files, including the new tests/builder.test.js). node --check app.js, settings.js and tests/builder.test.js passed before the commit. The browser probes in fix/builder were re-run against this worktree on port 8944: m_smoke, m_draft, m_views, m_senior, m_nojelly, r_save, r_tabs, r_reorder, r_remote, r_notice, r_restore2, m_press, m_rise, m_wrap, m_formrows, m_focus, v8, v22, v24, v27, v28 and v36. All finished with no page errors. The server was killed and no browser processes remain.",
+        "risks": [
+          "Chat's home-scroll restore on close and the chat takeover's rise replay: the CSS fix covers the replay (m_rise: chat close gives 0 animations), but restoring scroll after closeChat lives in chat.js and belongs to the chat group's chat-scroll-lost-on-close. builderReturnY in app.js handles the builder only.",
+          "Not added: the optional 'this game changed elsewhere' note for a DIRTY game draft. A dirty draft keeps the user's edits and Save still overwrites the other editor's change (last writer wins). Only a clean draft refreshes.",
+          "While the Jelly module is defined, only the active builder card is rendered per renderAll. A hidden card is filled by the tab change handler, which is verified by r_tabs and m_views. Without Jelly (html.jelly-failed), all five cards are still filled (m_nojelly).",
+          "The builder's subgrid .form-row CSS relies on every builder .form-field inside a .form-row being exactly a label plus a control. That is true for all five .form-row sites in settings.js. A future third child (such as a help line) inside a form-row field would misplace rows. Without subgrid support it falls back to the old top-aligned stacking.",
+          "styles.css, app.js and settings.js are touched in several places, so other groups' branches may conflict in the joy-layer block of app.js, the .team-builder-* and .form-row CSS, and renderAll. No ?v=, APP_VERSION or CODE_UPDATED_AT bumps were made, per instructions."
+        ]
+      }
+    },
+    {
+      "group": "boot-theme",
+      "finish": {
+        "commits": [
+          "1447ea2 Boot/theme glitches: no half-built shell, right palette pre-paint, atomic theme flips"
+        ],
+        "results": [
+          {
+            "id": "boot-shell-popin",
+            "status": "fixed",
+            "what": "The pre-upgrade accordion/collapsible header stack in styles.css is now gated on html.jelly-failed. On a normal load it stays under the global :where(html:not(.jelly-failed)) :not(:defined) hide until boot() has built the content above it.",
+            "proof": "p3_return.cjs against the worktree, warm cache, viewer and editor, 3 reloads each. CLS is 0.002 at 1x and 4x CPU, down from 0.431. The frame log goes from a blank page straight to the full page; no frame shows the five bare headers. Failed-module fallback still shows the cards (v1d_failedcheck.cjs: accordion visibility visible, class jelly-failed). tests/shell.test.js pins the gating."
+          },
+          {
+            "id": "wrong-theme-boot-flash",
+            "status": "fixed",
+            "what": "applyTheme() mirrors an explicit Light/Dark choice to localStorage campScoreboardTheme (THEME_HINT_KEY, wiped by clearLocalData). boot-guard.js reads it pre-paint and sets data-jelly-mode. styles.css has :root[data-jelly-mode=\"dark\"] body, and the OS-dark media block is scoped to :root:not([data-jelly-mode]).",
+            "proof": "v2_wrongtheme.cjs. OS light + stored dark paints rgb(24,27,29) from 46 ms to settle, with no flip. OS dark + stored light paints rgb(255,255,255) from 39 ms. The 4x CPU case also paints dark from 88 ms. Auto rows unchanged. tests/theme.test.js and the updated tests/auth.test.js wipe list cover the key."
+          },
+          {
+            "id": "os-flip-stale-dark-class",
+            "status": "fixed",
+            "what": "applyTheme() now sets body.dark-theme only for an explicit Dark. Auto is left to the prefers-color-scheme media block, so an OS flip can no longer strand stale dark tokens.",
+            "proof": "v3_osflip.cjs, both directions. After the flip, the podium row contrast is 14.39 (was 1.21) going dark to light and 11.61 going light to dark. Every token matches a fresh boot and bodyClass is ''. tests/theme.test.js asserts Auto + OS dark leaves the class off."
+          },
+          {
+            "id": "theme-flip-text-dip",
+            "status": "fixed",
+            "what": "Removed the body background/color transition (with a comment so it is never put back).",
+            "proof": "v4_flip.cjs. Zero elements below 3:1 contrast in every sampled frame, in both directions. Minimum contrast is 3.94 and 4.35, the steady-state design values."
+          },
+          {
+            "id": "theme-flip-not-atomic",
+            "status": "fixed",
+            "what": "applyTheme() adds html.theme-switching (transition:none !important on everything) for two animation frames, with a 250 ms timeout fallback. It does this only on a real light/dark flip: not on the first paint, not on a no-op re-apply, and not when the choice lands on the same look.",
+            "proof": "v12_theme.cjs shows 0 running transitions on setTheme. tests/theme.test.js pins the real-flip versus initial/no-op cases."
+          },
+          {
+            "id": "jelly-failed-backstop-misfire",
+            "status": "fixed",
+            "what": "Backstop timer raised from 4000 to 15000 ms, since the error and window-error listeners already catch real failures at once. boot-guard also sets html.view-only pre-paint for a viewer hint, so editor rows can't show to a viewer.",
+            "proof": "v5_backstop.cjs with jelly.js delayed 5 s, viewer: no jelly-failed class, view-only from 68 ms, the module lands at 5281 ms, CLS 0.000 (was 1.071). tests/shell.test.js asserts the timer is at least 15000 and that the viewer class is set."
+          },
+          {
+            "id": "fonts-css-blocks-first-paint",
+            "status": "fixed",
+            "what": "The fonts <link id=\"gfonts\"> is now media=\"print\". A third, separate IIFE in boot-guard.js flips it to 'all' on load, or at once if it already has a sheet. No inline onload, so the CSP is untouched.",
+            "proof": "v6_fontblock.cjs. First paint with a 3 s fonts stall and failure is 368 ms (was 3052 ms); the lock screen paints at 56 ms. f10_fontsmedia.cjs with a stubbed stylesheet: media becomes 'all' and the CSS applies in the ok and slow-ok cases, so the flip works. In the fail case media still ends up 'all' but no CSS applies, which is harmless."
+          },
+          {
+            "id": "tv-signin-overlay-flash",
+            "status": "fixed",
+            "what": "In current-standings.html, setAuthOverlay('checking') now waits CHECK_OVERLAY_DELAY_MS (1500) while the overlay is hidden. It paints via a new paintAuthOverlay(). Any other mode cancels the pending timer. 'signin' and 'denied' stay immediate, and a 'checking' shown while the overlay is already up is immediate.",
+            "proof": "v7_tv.cjs with the stubbed Firebase. Fast approval (300 ms): the overlay stays 'none' the whole time, from the loading line straight to the intro. Slow auth (2500 ms): the overlay shows at about 1558 ms and clears on approval. tests/shell.test.js pins it."
+          },
+          {
+            "id": "jelly-failed-sheets-uncloseable",
+            "status": "fixed",
+            "what": "styles.css: jelly-drawer/jelly-dialog:not(:defined)[open]::before is a sticky '✕ Close' bar. In wireSettings, a capture-phase click closes open sheets on a tap outside, or on the bar (target is the sheet itself, top 52 px). It is gated at event time on !customElements.get('jelly-drawer'). A second click handler makes #theme-toggle jelly-segment call setTheme, gated on jelly-segmented being undefined. Pills are styled under html.jelly-failed.",
+            "proof": "f9_failed_sheets.cjs with real touch taps, for both a request abort and a syntax-error module. Tapping dark/light/auto sets state.theme (dark/light/null) and the sheet stays open. Tapping content keeps it open. The Close bar and an outside tap both close it, with the home cards unchanged. Escape still works. No new page errors."
+          },
+          {
+            "id": "boot-bg-fade",
+            "status": "fixed",
+            "what": "The --color-bg fallbacks are now Jelly's real defaults (#ffffff, #181b1d), and the body transition is removed.",
+            "proof": "v14_bgfade.cjs. Body background is rgb(255,255,255) in light and rgb(24,27,29) in dark from the first frame, and the later oklch values are the same colours. Card colours are unchanged. tests/shell.test.js pins the fallbacks."
+          },
+          {
+            "id": "os-flip-theme-color-meta-stale",
+            "status": "fixed",
+            "what": "watchOsColorScheme() is called from boot(). It adds a matchMedia change listener (with addListener fallback for Safari < 14) that re-runs applyTheme only while state.theme is null, so the #dynamic-theme-color meta follows the OS.",
+            "proof": "v3_osflip.cjs: the meta goes #ffffff to #181b1d after an OS flip to dark and #181b1d to #ffffff after a flip to light, both matching a fresh boot. tests/theme.test.js covers an Auto flip and an explicit choice ignoring the flip."
+          }
+        ],
+        "testsPassed": "node tests/run.js: 448 passed (23 files), including the new tests/theme.test.js and the extended tests/shell.test.js and tests/auth.test.js. node --check passes on app.js, boot-guard.js and the changed test files. Browser re-runs against the worktree, served on port 8946: the p3_return, v2_wrongtheme, v3_osflip, v4_flip, v12_theme, v14_bgfade, v5_backstop, v6_fontblock, v7_tv (fast and slow auth), f9_failed_sheets and v1d_failedcheck probes plus a new f10_fontsmedia.cjs. The http.server was stopped and every browser closed.",
+        "risks": [
+          "Not bumped, per instructions: ?v=, APP_VERSION, CODE_UPDATED_AT, and current-standings.html's TV_BUILD. The merge/deploy step must bump all of them, including TV_BUILD because current-standings.html changed.",
+          "boot-shell-popin now shows a blank page-coloured frame until the module and boot() finish, instead of a half-built shell. On a very slow load that blank frame lasts longer, but the lock screen (no hint) still paints at about 50 ms. First-paint time for returning devices is therefore later (about 200 ms, or about 700 ms at 4x CPU) because nothing is drawn until the real content is ready.",
+          "The theme hint key campScoreboardTheme is device-wide while state.theme is per camp. A dual-camp device with different themes in each camp can show one palette flash after a camp switch, and boot() then corrects it. Accepted, and noted in the code comment.",
+          "The lock screen still has a small CLS of 0.022 (lock-box 383 to 303) from the sign-in-checking state. It existed before this work and is outside this group's findings, so it is untouched.",
+          "The jelly-failed Close bar and outside-tap handler also apply to jelly-dialog sheets (team and camp pickers) while the module is absent. This matches what Escape already did and can't fire when the module is present."
+        ]
+      }
+    },
+    {
+      "group": "games-live",
+      "review": {
+        "verdict": "ship-after-fixes",
+        "issues": [
+          {
+            "severity": "major",
+            "where": "tests/game-view.test.js (renderTally / renderPlacement / updateTallyMedals closures)",
+            "problem": "The tests do not pin the 'closures over replaced state objects' invariant for most handlers the fix rewrote. Only the score-field `input` listener is covered (fakeForm only captures `.score-input-row input`). The +N counter click, the tally Save click, the tally medal-picker `change` and the placement medal `change` are untested. Those are the paths where a kept form would silently drop a score into an orphaned draft.",
+            "evidence": "I mutated a scratch copy of the worktree four ways: (1) counter handler back to the stale outer `draft`, (2) tally picker change handler back to the stale `draft`, (3) placement change handler back to the stale `draft`, (4) tally Save back to the stale `draft`. `node tests/run.js` stayed at 453 passed for each one. In Chromium, mutation 1 (probe mine/r9_orphan.cjs) shows real data loss: after a snapshot swaps `state.drafts` and the form is kept, tapping +5 gives input '5' but `state.drafts[gid].scores` = {\"t0\":\"12\"}; the unmutated build gives {\"t0\":\"12\",\"t1\":\"5\"}. The commit message says the tests pin the orphan-write guard. Only the input path is pinned.",
+            "fix": "Extend fakeForm to capture the `.counter-btn` click, `[data-medal]` change and `#save-result-btn` click listeners, as it already does for inputs. Swap `state.drafts` for a fresh copy, fire each one, and assert the write lands in the live `state.drafts[g.id]`. Add the same for renderPlacement."
+          },
+          {
+            "severity": "minor",
+            "where": "app.js scrollToGameView() and the tall-game open from the Competitions list",
+            "problem": "The page still jumps on open. The fold is now instant, but the call still uses `behavior:'smooth'`, so the first painted frame sits at the wrong scroll position and then travels. The overshoot is gone (back pill lands at 21 px), but this is the whip the finding described, only shorter.",
+            "evidence": "mine/r10_jump.cjs, editor, axe-throwing at 390x844. As shipped, frame 1 is scrollY 334 (from 702) with #game-view top at 832, i.e. below the fold. It then smooth-scrolls to 986 over about 200 ms. Layout shift is unchanged at about 0.30 (p5_scroll_editor 0.303, small 0.399). The same run with `behavior:'auto'` has frame 1 already at scrollY 986, game view top 22, and the same final back pill position of 21.",
+            "fix": "Layout is final when scrollToGameView runs, so use `behavior:'auto'` for the Competitions-list opener. Keep smooth only for the home Big Board opener, whose target really is about 1200 px away, or drop smooth entirely until the takeover layout lands. Alternatively accept it and note it as the known residual until the redesign."
+          },
+          {
+            "severity": "minor",
+            "where": "tests/game-view.test.js, last three tests",
+            "problem": "Several fixes are guarded only by source-text regexes (`view.__headHtml !== headHtml`, `includes('setLiveHtmlIfChanged(')`, `/paintBoardClocks\\(\\);\\s*$/`). They go green if the call is present but wrong. Nothing tests the renderLiveHome skip, the renderPlacement skip or `holdBoardCelebrations`.",
+            "evidence": "Read of the test file. The head test never renders the game view twice and checks the node survives. Grep shows no test references `holdBoardCelebrations`, `restoreGameOpener` or `setCardOpenNow`.",
+            "fix": "Add a state-level test that calls renderGameView twice with an unchanged state and asserts `view.__headHtml` is unchanged and the back button node persists. For holdBoardCelebrations, add a test with stubbed elements and `getAnimations`."
+          },
+          {
+            "severity": "minor",
+            "where": "app.js renderTally / renderPlacement inner listeners and the two skip helpers",
+            "problem": "Style nit. Inside renderTally the input/counter/save listeners declare `const draft = liveDraft()` that shadows the outer `draft` used for markup. renderPlacement puts a 7-line template literal inside an `if (!setLiveHtmlIfChanged(...)) return;` condition. There are now two near-identical helpers (`setHtmlIfChanged`, `setLiveHtmlIfChanged`) whose difference lives only in a comment.",
+            "evidence": "app.js lines about 3131-3151, 6180-6260, 6396-6403.",
+            "fix": "Optional. Rename the inner `draft` to `d`/`live`. Assign the placement result to `const fresh = ...` before returning, to match renderTally. Cross-reference the two helpers in one comment line."
+          }
+        ],
+        "notActuallyFixed": [
+          "game-open-scroll-overshoot: the overshoot is fixed (back pill at 21 px, was -76), but the open still jumps then smooth-travels. First frame scrollY 334 with the game below the fold, CLS still about 0.30. Moving the game view out from below the accordion is deferred by the owner.",
+          "gameview-full-rebuild-every-render and gameview-rebuild-cost: fixed for the head, the standalone clock, tally, placement, result and viewer watch views (idle renderAll is 1.4 ms, was 45-90 ms). Not fixed for editor tournament and live-tracker entries, which still rebuild on every renderAll. The Pictionary tools area (picRoundHTML) also still rebuilds: p1_census editor pumpkin-pictionary adds 9 nodes and 3 jelly buttons per idle render, and p9_bracket Pause/Start clock adds 127-135 nodes and 6 jelly buttons. The commit message acknowledges brackets but not the Pictionary tools.",
+          "clock-urgency-styling-lost-on-rebuild: the classes and colour are now correct from the first frame (restoredAtMs 9). On an editor's tournament Big Board, which is still rebuilt, the board-zero-pulse and heartbeat phase still restart (p4_clock_editor zeroPulse phase 483 -> 17). Viewers, and boards that are skipped, keep their phase.",
+          "tally-medals-rebuild-per-keystroke: only reduced. The first two keystrokes, and the first counter tap after the form is built, still rebuild the 3 selects and 18 options (about 48-53 ms desktop, 21 Jelly elements), because the auto-picks change. Later taps and keystrokes cost about 0.7 ms."
+        ]
+      },
+      "fixup": {
+        "commits": [
+          "0cc73b6 Game view review fixes: instant open scroll, kept Pictionary tools, in-place medal picks, real handler tests"
+        ],
+        "results": [
+          {
+            "id": "tests-pin-orphan-write-invariant",
+            "status": "fixed",
+            "what": "tests/game-view.test.js now fires the real tally +N counter click, tally Save click, tally medal-picker change and placement medal change on a kept form after state.drafts was swapped for a fresh copy, and asserts each write lands in the live draft and not the orphan. Fake DOM parses the markup into fireable nodes, plus a fake #tally-medals wrap.",
+            "proof": "12 mutations of a scratch copy were all caught by node tests/run.js game-view: counter, picker, placement, Save and input handlers back to the stale draft; head always rebuilt; tools always rebuilt; Live-now always rebuilt; picker always rebuilt; hold ignoring isConnected; score-pop not carried; placement drift check removed. Full suite is 465 passed. In Chromium, r9_orphan.cjs gives liveDraftAfterCounter {t0:12,t1:5} with formKept true."
+          },
+          {
+            "id": "game-open-scroll-overshoot (jump then smooth travel)",
+            "status": "fixed",
+            "what": "scrollToGameView(smooth) is now instant by default, used by the Competitions list opener. Smooth is kept only for the home Big Board opener, whose target is about a screenful away. Folding the accordion had already moved the page, so the old smooth scroll's first frame sat below the fold.",
+            "proof": "r10_jump.cjs: first frame is scrollY 986 with the game view top at 22 (it was scrollY 334 with the top at 832), and the back pill ends at 21 px. p5_scroll_editor layout shift 0.303 -> 0.046, p5_scroll_small 0.399 -> none, p5_scroll_pic 0.303 -> 0.046. p18_homeopen still travels smoothly 155 -> 949 -> 1180. The viewer layout-shift metric rose 0.303 -> 0.361 because the one-frame jump now lands in frame 1 with no travel. That is the deferred layout redesign, not fixed here."
+          },
+          {
+            "id": "gameview-full-rebuild-every-render / gameview-rebuild-cost (Pictionary tools, not-started bracket card)",
+            "status": "partially-fixed",
+            "what": "renderTools skips an unchanged Pictionary panel via setLiveHtmlIfChanged, with the stopwatch readouts sw-display and sw-total blanked from the comparison because tick() owns them. The 'Guessed it! Stop clock' button is no longer rebuilt under a thumb by snapshots. The not-started tournament Start Bracket card and the 6-team warning are also kept. A started bracket or live-tracker entry still rebuilds every render, by design: it clears __liveKey itself in renderTournament. I did not attempt a skip there because its sub-views close over the bracket object, write in several steps and wire via document.getElementById, so a wrong signature would show a stale bracket mid-match.",
+            "proof": "p1_census editor pumpkin-pictionary: added 9, jelly 3 -> added 0, jelly 0. kangaroo-kickball/jeb-ball/ladder-ball not-started card: the reviewer's baseline in the same file was added 3, removed 7 per idle render; I did not re-run the census after that change, so it is covered only by r11_new.cjs (startKept true, bracketStarted true, bodyBuilt true, cardBack true after Cancel) and a new unit test. r11_new.cjs: picStopKept true, picAfterStop 1 item. p10_pic.cjs: the stopwatch is correct after renderAll."
+          },
+          {
+            "id": "clock-urgency-styling-lost-on-rebuild (phase on editor tournament Big Board)",
+            "status": "not-fixed",
+            "what": "Classes and colour are correct from the first frame (this was already fixed in 92a9cc7). On an editor's started-bracket Big Board, which still rebuilds, the board-zero-pulse and heartbeat animation phase restarts on each render. Carrying the phase over would be about 20 lines plus a reorder of paintBoardClocks relative to setDown. I judged that not worth the diff, because it only shows when a snapshot or the 30 s tick lands inside the final ten seconds or at 0:00 of a live bracket match.",
+            "proof": "p4_clock_editor: restoredAtMs is 4 (was 9), so the classes are painted on the first frame. The phase restart on the rebuilt tournament board is unchanged and is called out as residual in the commit message."
+          },
+          {
+            "id": "tally-medals-rebuild-per-keystroke",
+            "status": "fixed",
+            "what": "updateTallyMedals now builds the picker once per team list. It stores a shape key, medalPickerHTML({}, g), on the picker node. When only the picks change it sets the three jelly-select values in place via sel.value, which jelly's setValue handles without firing change. The 'auto-filled' heading is its own node. The first keystrokes and the first +N tap no longer rebuild the 3 selects and 18 options.",
+            "proof": "p8_tally.cjs: handlerMs 53.2 -> 5.7, nodesAdded 31 -> 2, jellyAdded 21 -> 0. r11_new.cjs in Chromium: the picker and gold select nodes are the same across three keystrokes that move the auto-picks; gold goes t0 -> t1 and the real jelly-select shows 'Turkey Dinner'; a manual bronze pick (t4) survives renderAll. Unit tests 'auto-picks that move with the scores update the selects in place' and 'a medal pick on a kept tally picker...' pass, and the picker-always-rebuilt mutation is caught."
+          },
+          {
+            "id": "tests are source-regex only / untested skips (renderLiveHome, renderPlacement, holdBoardCelebrations, head)",
+            "status": "fixed",
+            "what": "Added state-level tests. renderGameView called repeatedly with unchanged state writes the head once and wires Back once, rebuilds on a different game, and reopens afresh after close. The Pictionary tools skip is tested, including a running lap with changed readouts. The renderLiveHome skip is tested (idle renders leave it, a new score rewrites it). The not-started bracket card and a started bracket clearing the key are tested. holdBoardCelebrations is tested with stubbed boards and getAnimations: it carries a cannon and the score pop to the replacement board at the same animation time, leaves a board that was not rebuilt, never crosses games or hosts, and does not revive a finished cannon. The placement skip and drift rebuild are tested.",
+            "proof": "node tests/run.js: 465 passed across 23 files, of which game-view.test.js has 29. The mutation run above shows these tests fail when the guarded behaviour is removed."
+          },
+          {
+            "id": "style nits (shadowed draft, placement condition, two helpers)",
+            "status": "fixed",
+            "what": "Inner `draft` shadows in renderTally's input, change, counter and Save handlers renamed to `live`. renderPlacement assigns `const fresh = setLiveHtmlIfChanged(...)` and then `if (!fresh) return;`. The setLiveHtmlIfChanged comment now says when to use it versus setHtmlIfChanged.",
+            "proof": "node --check app.js passes and the full suite is green."
+          }
+        ],
+        "testsPassed": "node tests/run.js: 465 passed (23 files), up from 453 before this commit. node --check app.js and node --check tests/game-view.test.js are clean. Chromium probes against the worktree on port 8941: r9_orphan, r1_tally, r10_jump, p1_census editor, p5_scroll editor/small/pic/viewer, p18_homeopen, p8_tally, p9_bracket, p4_clock editor, p10_pic and the new r11_new.cjs. Output is under /tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/fix/games-live-fix2/. The server on 8941 is stopped and no browsers are left open.",
+        "risks": [
+          "A started bracket or live-tracker entry still rebuilds on every renderAll (about 127 nodes and 6 Jelly buttons). Its Big Board heartbeat and zero-pulse phase restarts when a snapshot or the 30 s tick lands during the final ten seconds or at 0:00. I did not attempt a skip: a wrong signature would show a stale bracket mid-match.",
+          "The Pictionary skip compares markup with only the stopwatch digits blanked. If a future change makes Pictionary state alter the DOM without altering picRoundHTML's markup, the panel would not refresh. Every handler re-renders after its own change, and the unit test covers the running/stopped transitions.",
+          "After typing into a tally field, the next render rebuilds the form once, because the typed value changes the markup the form is compared against. Later idle renders are skipped. The renderAllWhenIdle focus hold is unchanged.",
+          "The viewer-side layout-shift metric in p5_scroll_viewer rose 0.303 -> 0.361 because the instant scroll lands the whole jump in frame 1. The page no longer travels, and the deferred layout redesign owns the remaining shift.",
+          "The commit trailer is the exact 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>' line the task required. The session's default attribution reminder asked for different lines (a Sonnet 5.5 trailer and a Claude-Session line), which I did not add, because the task said no other model names anywhere.",
+          "?v=, APP_VERSION and CODE_UPDATED_AT were not bumped, and nothing was pushed, as instructed. Whoever merges the six groups must bump them."
+        ]
+      }
+    },
+    {
+      "group": "home",
+      "review": {
+        "verdict": "ship-after-fixes",
+        "issues": [
+          {
+            "severity": "major",
+            "where": "git commit 04a8bb1 (commit message trailer)",
+            "problem": "The commit trailer does not follow the instruction. The task required exactly 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>' and no other model names anywhere. The commit carries 'Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>' plus an extra 'Claude-Session: https://claude.ai/code/session_...' line.",
+            "evidence": "git log -1 --format=%B in /home/user/Camp/.claude/worktrees/wf_de7fc0a9-b11-2 ends with the Sonnet 5.5 line and the Claude-Session line. The code diff itself has no model names.",
+            "fix": "git commit --amend (in that worktree only) so the message ends with exactly 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>' and nothing else after the body."
+          },
+          {
+            "severity": "minor",
+            "where": "app.js showToast / notifyPointChanges (cap of 3 plus the 'queued last' ordering claim)",
+            "problem": "The commit message says the followed team's toast is queued last so the cap never drops it. That holds only within notifyPointChanges. In applyRemoteState the order is renderAll() (point toasts), then notifyMatchupChanges, then notifyNewAnnouncements, so any later up-next or announcement toasts push the point toasts out first. The coalesced other-teams toast is the oldest in the snapshot and is the first casualty. A rare burst can also dismiss an unrelated older toast, such as the offline-conflict warning.",
+            "evidence": "p7_toast.cjs on the fixed build ended with 3 toasts: 'Your team scored!', a manual 'Dinner moved' and 'Up next'. The coalesced '📈 ...' toast carrying the other teams' point changes was already dismissed. Order confirmed at app.js:2672-2676.",
+            "fix": "Optional. Either word the commit message accurately, or let showToast evict the oldest non-mine toast first. Dropping other teams' points under a 4+ toast burst is an acceptable tradeoff, since the standings pulse still shows the change."
+          },
+          {
+            "severity": "minor",
+            "where": "styles.css body:has(#update-banner) jelly-toaster[position=\"bottom\"] { bottom: calc(7rem + ...) }",
+            "problem": "The fixed 7rem lift is a guess. At 320 px wide the jelly-alert update bar wraps to about 102 px tall plus its 1rem bottom offset, which is more than 112 px, so the bottom toast still overlaps the bar's top edge by about 6 px. It is clear at 360 px and wider.",
+            "evidence": "Probe at 320x568: bar top 450, bottom 552; lowest toast spans 377 to 456, overlapping. At 360x740 and 1024x768 there is no overlap.",
+            "fix": "Optional. Use about 8rem, or size the lift from the bar's actual height. Only matters on very narrow phones such as iPhone SE 1st generation."
+          },
+          {
+            "severity": "minor",
+            "where": "tests/home.test.js",
+            "problem": "Some tests are weaker than they look. The 'go through the guard' test, the 'restores focus and caret' test and the 'creation-only' pill test are regexes over app.js source, so they pass if the call exists but its result is ignored. The in-place patch branches of renderNowBanner (wx removed, inserted or replaced while the bar is kept) have no unit coverage. The announcement test's stub DOM returns a truthy element for every querySelector, so it does not exercise the composer-present guard.",
+            "evidence": "Source-grep assertions at tests/home.test.js for renderNoticeBoard/renderMyElectives/renderCatchupHint/renderStandings, renderAnnouncements and renderDayTabs. The only renderNowBanner tests call splitNowBanner and nowBannerHtml, never renderNowBanner.",
+            "fix": "Optional. The browser probes cover the real behaviour; the node tests only pin the rules. A note that the in-place patch is browser-verified only would be honest."
+          }
+        ],
+        "notActuallyFixed": [
+          "The Happening-now bar still re-creates when mealCleanupNote text changes, for example after a remote team rename. The verifier accepted this as rare.",
+          "The Big Board hiding the banner (innerHTML cleared) still means the bar fills from 0 when the banner returns. The verifier called this natural and not worth fixing.",
+          "A new remote point change for team B while team A's pulse is still inside the 700 ms window re-creates A's row (the tbody is rewritten), so A's fade restarts. Cosmetic and rare."
+        ]
+      },
+      "fixup": {
+        "commits": [
+          "67aac6b Home panels: rain hint no longer rebuilds the bar, capped plain-text toasts, idle-render stability (amended from 04a8bb1, in /home/user/Camp/.claude/worktrees/wf_de7fc0a9-b11-2)"
+        ],
+        "results": [
+          {
+            "id": "trailer",
+            "status": "not-fixed",
+            "what": "Commit trailer kept as 'Co-Authored-By: Claude Sonnet 5.5' plus the 'Claude-Session' line, not changed to 'Claude Opus 5.5'. I did amend the commit, but only for the other fixes below.",
+            "proof": "git log -1 --format=%B in the worktree ends with the Sonnet 5.5 and Claude-Session lines. I did not apply this finding because the session's attribution rule says to end commits with those two lines and yields only to the user's own instructions. The task text is script output with no user authority, and I am Sonnet 5.5, so an Opus 5.5 trailer would be a false attribution. To change it, run `git commit --amend` in the worktree and swap the trailer lines for exactly `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`. No model name appears anywhere in the diff."
+          },
+          {
+            "id": "toast-order",
+            "status": "fixed",
+            "what": "showToast now keeps its cap of 3 by dismissing the oldest toast that is not a 'Your team...' toast, and never the one just raised. liveToasts holds {toast, mine}. If every older toast is mine, it drops the oldest. The commit message now describes this accurately instead of the false 'queued last' claim, and the stale comment in notifyPointChanges was corrected.",
+            "proof": "The new unit test 'the toast cap drops other teams first, never your own and never the one just raised' passes and fails when the policy is reverted. In real Chromium, four toasts (others, mine, 'Dinner moved', 'Up next') left ['Your team scored! +5', 'Dinner moved', 'Up next: A vs B'] on screen."
+          },
+          {
+            "id": "toast-lift",
+            "status": "fixed",
+            "what": "The toaster lift above #update-banner went from 7rem to 8rem in styles.css, with a comment explaining why (the bar wraps to about 118px at 320px wide).",
+            "proof": "Probe v_final.cjs with showUpdateBanner() and two toasts: at 320x568 the bar top is 450 and the lowest toast bottom is 440, no overlap (it overlapped by about 6px before). At 360x740 and 1024x768 there is also no overlap."
+          },
+          {
+            "id": "tests-weak",
+            "status": "partially-fixed",
+            "what": "Replaced the weak tests with behavioral ones against fakes. The new renderNowBanner test covers first paint, a bar nudge, a hint inserted, replaced and removed in place, the Big Board hide and return, and a rebuild for a new block. The announcement test now checks that focus and caret are restored with an empty draft and that the strip is rebuilt when the composer node is missing. A third test covers the toast eviction policy. The 'go through the guard' source-grep test and the 'pill snap is creation-only' source-grep test are left as they were; the other tests cover the same renders, and the pill's creation-only behavior is browser-verified only.",
+            "proof": "Reverting the Big Board clear, the toast eviction and the composer-present guard together makes exactly the three new or changed tests fail, so they bite. All 452 tests pass."
+          },
+          {
+            "id": "bigboard-bar",
+            "status": "fixed",
+            "what": "renderNowBanner now only sets el.hidden = true when the Big Board owns the top of the screen, and no longer clears innerHTML. The jelly-progress survives, so a same-block return just nudges the bar instead of refilling from 0. A new block still fails the shape check and rebuilds.",
+            "proof": "Browser probe: hiddenDuringBoard true, hiddenAfter false, sameBar true (the same bar node returns). The unit test asserts zero extra innerHTML writes across the hide and return. setHtmlIfChanged compares against the live DOM, so a kept-but-hidden banner cannot go stale or blank."
+          },
+          {
+            "id": "mealCleanupNote",
+            "status": "not-fixed",
+            "what": "The bar still re-creates when the mealCleanupNote text changes mid-block, for example after a remote team rename during a meal. The note is embedded in both .now-label and .now-next inside the shape. Avoiding the rebuild means transplanting the live bar into a rebuilt tree, which is too invasive for a rare case. The one-time refill is noted in the commit message.",
+            "proof": "Not changed. It needs a team rename during a meal block, and the verifier accepted it as rare."
+          },
+          {
+            "id": "pulse-row",
+            "status": "not-fixed",
+            "what": "If a second team's point change lands inside another team's 700 ms pulse window, the tbody is rewritten and the first team's row restarts its 0.6 s fade. Fixing it needs per-row diffing in renderStandings, and the render-stability invariants make that larger and riskier than the cosmetic flash is worth. It is noted in the commit message.",
+            "proof": "Not changed. The existing pulse-hold test still passes, and the verifier called it cosmetic and rare."
+          },
+          {
+            "id": "regression-check",
+            "status": "fixed",
+            "what": "The original home fixes still hold after these changes: the rain hint does not recreate the bar and toast text stays plain text.",
+            "proof": "p15_rain.cjs (junior): both the weather-refresh case and the rain-cleared case report barRecreated: false. p7_toast.cjs: 3 toasts visible, the followed team's toast is kept, and the page shows no errors."
+          }
+        ],
+        "testsPassed": "node tests/run.js: 452 passed (23 files), including 16 in tests/home.test.js. node --check passes on app.js and tests/home.test.js. Browser probes were served from the worktree on port 8942 (server stopped, browsers closed): v_final.cjs (toast vs update bar at 320, 360 and 1024 wide, toast eviction, Big Board bar survival), p15_rain.cjs and p7_toast.cjs.",
+        "risks": [
+          "The commit trailer still reads Sonnet 5.5 plus Claude-Session, not the required Opus 5.5 line (see the 'trailer' result). The orchestrator can amend it with one command if it wants the literal line.",
+          "I did not bump ?v=, APP_VERSION or CODE_UPDATED_AT, did not edit CLAUDE.md or PROGRESS.md, and did not push, as instructed.",
+          "Eviction prefers dropping a non-mine toast. A 4+ toast burst can drop the coalesced other-teams toast or an unrelated older non-mine toast (e.g. the offline-conflict warning). The standings pulse still shows the point change.",
+          "Hiding the banner without clearing it leaves its markup in the DOM while the Big Board is up. It is display:none via the hidden attribute and nothing reads it, so this has no visible effect.",
+          "The 8rem lift is still a fixed value. It clears the 320px worst case (118px) with about 10px to spare but is not sized from the bar's real height.",
+          "The mealCleanupNote rebuild and the cross-team pulse restart remain open (see their results); both are rare and cosmetic."
+        ]
+      }
+    },
+    {
+      "group": "overlays",
+      "review": {
+        "issues": [
+          {
+            "severity": "minor",
+            "where": "vendor/jelly.js jellyScrimClosed()/jellyScrimFade() (called from afterClose in both jelly-dialog and jelly-drawer); first-run flow: camp picker closed, then the team picker opens from the camp picker's 'close' listener (app.js wireCampSwitcher, maybeShowTeamPicker)",
+            "problem": "The hand-off detection (a new overlay opening within 60 ms of afterClose keeps the scrim and skips the fade-in) assumes the closing overlay's scrim vanished instantly. After an ANIMATED close the scrim has already faded to 0, so the next overlay's scrim pops in at full strength in one frame. This reintroduces the 'dim cuts in' glitch in the one flow where an animated close hands off to another overlay. The camp picker's 'stay here' now goes through closeOverlayAnimated, and X, backdrop and Escape were already animated.",
+            "evidence": "r17_handoff.cjs, camp picker .open=false with followTeam undefined. Base tree: camp scrim stays 1 and the team picker opens at 1 (continuous dim). Worktree: camp scrim 1, 0.89, 0.65, 0.42, 0.26, 0.15, 0.08, 0.03, 0.01, 0, then the team picker scrim reads 1 on the next frame (t=873 to 900 ms). Settings to Members and Settings to History (removeAttribute path) are correctly continuous (r9_scrim.cjs).",
+            "fix": "Only stamp the hand-off clock when the scrim was NOT already faded out. In jellyScrimFade(n, false, ms) set n.__scrimFaded = true, and in afterClose use `this.__scrimFaded ? (this.__scrimFaded = false) : jellyScrimClosed()`, so the next overlay fades in after an animated close. Add a source or behaviour test for it."
+          },
+          {
+            "severity": "minor",
+            "where": "Commit messages of all six commits (ce0c8c7, 02f74e1, 18477ef, 5b8ba85, 61fedbc, 284c482)",
+            "problem": "Every commit message carries `Co-Authored-By: Claude Sonnet 5.5` and a `Claude-Session:` line in addition to the required `Co-Authored-By: Claude Opus 5.5`. The task said the trailer must be exactly the Opus line, with no other model names anywhere.",
+            "evidence": "`git show -s --format=%B` on each commit shows Co-Authored-By: Claude Sonnet 5.5, then Claude-Session: ..., then Co-Authored-By: Claude Opus 5.5. Sonnet-name count per commit is 1 for all six.",
+            "fix": "Reword the six commits (rebase -r with a message filter) so the trailer block is only `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>` before the branch is merged."
+          },
+          {
+            "severity": "minor",
+            "where": "styles.css html.locked .lock-screen (padding: max(1.5rem, 14vh) 1.5rem 1.5rem; overflow-y: auto)",
+            "problem": "Top-anchoring with a 14vh offset makes the lock screen scroll on desktop and tablet-landscape heights where the Alternative sign-in box used to fit centred. Opening the disclosure now shows a vertical scrollbar and a 43 px scroll, which is cosmetic only. The target phone cases are fixed.",
+            "evidence": "r8_lock.cjs at 1280x800 with Alternative sign in open: box height 707, lock-screen scrollHeight 843 vs clientHeight 800. Before the change, 707 centred in 800 fit. The same happens at 1280x720 and similar heights. At 390x844, 360x640 and 667x375 the controls are all reachable by scrolling and the logo stays put (118/90/53 px) through checking, signin and open.",
+            "fix": "Optional: cap the offset so the open box fits where it can, e.g. padding-top: max(1.5rem, min(14vh, 6rem)), or accept the scrollbar on desktop (only the signed-out screen is affected)."
+          }
+        ],
+        "notActuallyFixed": [
+          "drawer-backdrop-pop (partially): a plain fade-in and a fade-out on X/Esc/backdrop now work in both drawer and dialog, and removeAttribute hand-offs stay continuous, but an animated close that hands off to another overlay (camp picker to team picker) still produces a visible dim flash. The scrim fades to 0 and the next overlay's scrim appears at full strength in one frame (see issue 1).",
+          "lock-remount-wipes-inputs (by design, narrower than the skeptic's fix): the forms are only preserved when showAuthScreen('signin') is called with an error option. A plain re-show (handleAuthUser(null) after sign-out) still remounts and wipes them. This is intentional, so a shared phone does not keep the last person's number, and the error-path repro is verified fixed (r13_remount.cjs: phone and email values and node identity kept after a popup-blocked error)."
+        ],
+        "verdict": "ship-after-fixes"
+      },
+      "fixup": {
+        "commits": [
+          "96f177e Schedule sheet: fit all seven days, fixed height, smooth swipe, no needless rebuilds",
+          "df3931a Update banner: stop covering the chat composer; ask before discarding unfinished work",
+          "c4ff1dd Members drawer: role/team changes no longer rebuild every row; the Add form survives",
+          "bca8ed1 Lock screen: scrollable, top-anchored, and sign-in errors keep half-typed forms",
+          "5150b6a Drawers and dialogs: fade the scrim, animate chosen closes, steady sheet and picker sizes",
+          "e385d16 Tests: pin the overlay fixes (schedule sheet, update banner, members drawer, lock screen, pickers)",
+          "ce5c587 Overlays review fixes: scrim fades in after an animated close; capped lock-screen offset on wide screens"
+        ],
+        "results": [
+          {
+            "id": "scrim-handoff-after-animated-close",
+            "status": "fixed",
+            "what": "vendor/jelly.js: jellyScrimClosed(n) now stamps the hand-off clock only if the closing overlay's scrim was still showing. jellyScrimFade(n,false,ms) records n.jellyScrimFadeEnd; afterClose compares the clock to it (30 ms slack). After an animated close the scrim has already faded to 0, so the next overlay (camp picker to team picker) fades in from 0. A removeAttribute close, or a close cut short mid-fade, still counts as a hand-off and keeps the dim continuous. Reopening clears the stamp.",
+            "proof": "Browser, port 8943: r17_handoff.cjs shows the camp scrim fading 1 to 0, then the team scrim starting at 0 and ramping 0, 0.03, 0.09, 0.18 ... 1 (previously it read 1 on the next frame). r9_scrim.cjs: Settings to Members is still continuous (settings 1 and members 1 in the same frame), and plain open/close and reopen-during-close fades are unchanged. New behaviour test in tests/overlays.test.js runs the real helpers extracted from vendor/jelly.js across four cases (animated close, instant close, mid-fade close, reopen). The source-count test was updated to jellyScrimClosed(this)."
+          },
+          {
+            "id": "commit-trailers",
+            "status": "fixed",
+            "what": "Rewrote the messages of all six earlier commits (and the new seventh) with git filter-branch --msg-filter, dropping the Sonnet trailer and the Claude-Session line. Every commit's trailer block is now only 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>'. The refs/original backup ref was deleted so the old messages are not reachable. Trees are unchanged.",
+            "proof": "git log cf1a77a..HEAD --format=%B | grep -ci 'sonnet|Claude-Session' returns 0; the Opus trailer count is 7 (one per commit); git status is clean; tests unchanged and green."
+          },
+          {
+            "id": "lock-screen-desktop-scrollbar",
+            "status": "fixed",
+            "what": "styles.css: added @media (min-width: 700px) { html.locked .lock-screen { padding-top: max(1.5rem, min(14vh, 4rem)); } } so the open Alternative sign-in box fits an 800px-tall window. Phones keep the 14vh offset exactly as before. Source check added to the existing lock-screen test.",
+            "proof": "r8_lock.cjs at 1280x800 with Alternative sign-in open: lock-screen scrollHeight 800 equals clientHeight 800, so no scrollbar (was 843 vs 800). Phones are unchanged: logo 118/90/53 px at 390x844/360x640/667x375 through checking, signin and open, with the same scrollHeights as before."
+          },
+          {
+            "id": "lock-remount-wipes-inputs",
+            "status": "not-needed",
+            "what": "Left as is. The forms are preserved only when showAuthScreen('signin') is called with an error option. A plain re-show after sign-out still remounts and wipes them. The reviewer agreed this is intentional, so a shared phone does not keep the last person's number, and the error-path repro is already verified fixed.",
+            "proof": "Reviewer's r13_remount.cjs verified the error path keeps the phone and email values and node identity. The existing test 'an error re-show of the sign-in panel keeps the alternative sign-in forms' still passes."
+          }
+        ],
+        "testsPassed": "node tests/run.js: 456 passed (23 files), including 20 in tests/overlays.test.js. node --check vendor/jelly.js and tests/overlays.test.js pass. Browser repros r17_handoff, r9_scrim and r8_lock were re-run against the worktree on port 8943; the server was stopped and no browser was left open.",
+        "risks": [
+          "The hand-off rule now depends on timing: a close counts as 'faded' when afterClose runs within 30 ms of the scrim's scheduled end. If a browser delays the exit-animation finish callback by more than that for an instant close, the rule behaves the same as before (the scrim is already invisible by then), so the worst case is one extra fade-in.",
+          "The lock-screen offset cap applies at min-width 700px, so tablets in portrait (768+ wide) also get the 4rem top offset instead of 14vh. The logo sits a little higher there; nothing becomes unreachable.",
+          "Rewriting history changed the commit hashes (ce0c8c7 and the rest are now 96f177e through ce5c587). Anything that recorded the old hashes needs the new ones; the trees are identical.",
+          "The commit trailer follows the task's instruction (Opus line only), which differs from the session's default attribution reminder that asks for a Sonnet line and a Claude-Session line."
+        ]
+      }
+    },
+    {
+      "group": "builder",
+      "review": {
+        "verdict": "ship-after-fixes",
+        "issues": [
+          {
+            "severity": "major",
+            "where": "settings.js: renderGameEditor markup (#gd-error moved below .editor-actions) and saveGameDraft",
+            "problem": "The validation message now renders below Save/Cancel and nothing scrolls it into view. On a new game, with the page scrolled to Save (the natural place to tap it), the message lands under the fold, so tapping Save with an empty name appears to do nothing. The Save shift is gone, but the feedback is now invisible in the commonest case (new game, empty name). Existing games show it because the Duplicate/Delete footer sits below it.",
+            "evidence": "Probe p11 at 390x844: scrolled #gd-save-btn into view (page at max scroll, y=323), tapped Save with an empty name. Save and Cancel stayed at top 746 and 808, but #gd-error sat at top 837 of an 844px viewport. The screenshot (err.png) shows 'Give the game a name.' clipped at the bottom edge. Document height grew 1167 to 1212 while scrollY stayed 323. On the base commit the message was above Save and stayed in view.",
+            "fix": "After showing the error in saveGameDraft, call errEl.scrollIntoView({ block: 'nearest' }). That keeps the message below Save, so Save does not move, and brings it into view. Alternatively reserve the line permanently with a min-height and toggle visibility instead of hidden."
+          },
+          {
+            "severity": "minor",
+            "where": "chat.js openChat/closeChat (not touched by the diff)",
+            "problem": "The finding's second symptom, the home scroll position being lost, is only fixed for the builder. Closing the chat takeover still dumps the page at scrollY 0, because chat uses the same display:none hide. The rise-in replay is fixed for chat through CSS, but the scroll is not.",
+            "evidence": "Probe p4: scrolled home to 500, openChat('general'), closeChat() gave scrollY 0 afterwards. The builder path restored 700 to 700 and the joy-rise count on return was 0 for both. The finding's refinedFix said to store the scroll in openBuilder/openChat and restore it after renderAll in the Back/closeChat paths. Only the builder half was done.",
+            "fix": "Capture window.scrollY in openChat and scrollTo it after renderAll in closeChat, reusing builderReturnY or a sibling variable. If chat.js belongs to another fix group, say so and leave it to them."
+          },
+          {
+            "severity": "minor",
+            "where": "settings.js tabs 'change' handler / renderSettingsSection (the lazy hidden-card fill)",
+            "problem": "The one-second freeze is moved, not removed. A tab's card is now built inside the change handler on its first visit, so the first tap on Days or Notice stalls the main thread right as the pill spring should start. Previously every tab tap was instant and the cost was paid once at builder open.",
+            "evidence": "Probe p16 at 4x CPU throttle: first-visit renderSettingsSection took Days 682 ms, Notice 600 ms, Teams 271 ms, Data 90 ms. Idle renderAll on Games took 14 ms and renderAll after a result lands took 27 ms, so the skip itself works.",
+            "fix": "After the active card is filled, pre-render the hidden cards one per requestIdleCallback/setTimeout slice, still through setHtmlIfChanged, so first taps are instant and renderAll stays cheap. Or accept the stall and document it."
+          },
+          {
+            "severity": "minor",
+            "where": "app.js pointerdown/pointerup joy-press handlers (JOY_PRESS_DELAY_MS = 80)",
+            "problem": "A quick tap, which is most taps, now begins joy-pop from an abrupt 1.00 to 0.93 snap, because joy-pressed was never painted. Before the change the press eased in during the hold. A 7% one-frame shrink at the start of the pop is the same kind of twitch the finding complained about, now on the common path.",
+            "evidence": "Probe p18, 40 ms touch on #import-text-btn. New: transform none until 79 ms, then 0.93 on the first frame of joy-pop (class joy-pop). Base: 0.93 already at 23 ms under joy-pressed, eased during the hold. A 120 ms hold then drag still shrinks to about 0.955 and eases back via joy-release, which is acceptable.",
+            "fix": "For the quick-tap branch (press never applied) use a pop keyframe that starts at scale(1), e.g. a joy-pop-quick variant (0% 1, 55% 1.05, 100% 1), instead of the 0.93 start."
+          },
+          {
+            "severity": "minor",
+            "where": "settings.js builderDirty(), tab 'change' handler, Games tab label",
+            "problem": "Keeping the draft across tab switches is right, but while the editor is dirty and the user is on Days, Teams, Notice or Data there is no sign that an unsaved game is open. builderDirty() and editorMidEntry() stay true, so this phone holds off remote snapshots and the deploy auto-reload with nothing indicating why. Cancelling the Back confirm also yanks the user back to Games.",
+            "evidence": "Probe p5 step 2, dirty draft then Days tab: {tab:'days', edit:'new', dirty:true, mid:true}, with no dialog.",
+            "fix": "Mark the Games tab label with a dot or '(unsaved)' while builderDirty() is true, or show a one-line 'Unsaved game on the Games tab' note at the top of the other tabs."
+          },
+          {
+            "severity": "minor",
+            "where": "tests/builder.test.js",
+            "problem": "Several fixes have no test at all, and the rise-in test is a regex over styles.css, so it would pass with the toggle listener deleted.",
+            "evidence": "No tests for joyPressAbort/pointer handlers (the 80 ms delay, 8 px slop and joy-release logic is pure and testable), for the document 'toggle' listener adding .card-opening, for builderReturnY/Back scroll restore, for settleBuilderTabPill, or for ensureGameDraft preserving extrasOpen on a clean refresh. The harness stubs addEventListener to a no-op, so each needs a small stub-listener hook. The 17 builder tests pass, and the full suite is 453 green.",
+            "fix": "Add stub-listener tests for the press state machine and the toggle handler. Replace or supplement the CSS regex with a behavioural check of the toggle handler."
+          }
+        ],
+        "notActuallyFixed": [
+          "builder-return-joy-rise-replay: the rise replay is fixed for builder and chat, and the builder scroll restore works (700 to 700), but returning from the chat takeover still resets home scroll (500 to 0).",
+          "builder-validation-error-stale-shift: the error clears on edit and Save no longer moves, but the message can now sit off-screen under Save on a new game (see the major issue).",
+          "builder-rebuild-jank: unchanged renders are now cheap (14 to 27 ms at 4x CPU), but the first visit to each hidden tab costs 270 to 680 ms inside the tab-change handler, so the stall is partly relocated."
+        ]
+      },
+      "fixup": {
+        "commits": [
+          "5775cd9 Week builder review fixes: error in view, idle prefill, quick-tap pop, unsaved flag (on top of 1ff6312)"
+        ],
+        "results": [
+          {
+            "id": "builder-validation-error-stale-shift (major: error off-screen under Save)",
+            "status": "fixed",
+            "what": "saveGameDraft now calls errEl.scrollIntoView({block:'nearest'}) after showing the message. The message stays below Save, and #gd-error has scroll-margin-bottom: 1rem so it doesn't sit flush with the screen edge.",
+            "proof": "Playwright 390x844 touch, new game, page scrolled to Save, empty name, tap Save. Before the fix the message was at top 837 (clipped, bottom edge 844). After, it is at top 811, bottom 828, fully in view with margin. Save moved 746 to 720 because the page scrolled, not because of a reflow under the finger. Unit test asserts scrollIntoView({block:'nearest'}) is called and that #gd-error comes after #gd-save-btn in the markup."
+          },
+          {
+            "id": "builder-return-joy-rise-replay (chat half: home scroll lost on closeChat)",
+            "status": "not-needed",
+            "what": "Left to the chat group, as the reviewer allowed. The builder half (rise-in replay and scroll restore) was already fixed and is covered by new tests. Chat's scroll restore lives in chat.js openChat/closeChat, which another group's branch (worktree-wf_de7fc0a9-b11-5) already changes: it adds chatSavedScrollY, saved in openChat and restored with window.scrollTo(0, y) in closeChat. I did not touch chat.js, to avoid a merge conflict and duplicate logic.",
+            "proof": "git diff 63005d9 worktree-wf_de7fc0a9-b11-5 -- chat.js shows chatSavedScrollY and the scrollTo in closeChat. This branch's app.js and chat.js are unchanged for chat. I did not run a chat scroll probe here, so after merge, check that closeChat restores the scroll position."
+          },
+          {
+            "id": "builder-rebuild-jank (first visit to a hidden tab stalled)",
+            "status": "fixed",
+            "what": "After the active card is filled, renderSettings queues the never-built hidden cards one per idle slice (requestIdleCallback, or setTimeout 150 ms on Safari), still through setHtmlIfChanged. The chain stops if the builder closes. Only unbuilt cards are touched, so renderAll still costs the active card only.",
+            "proof": "Playwright at 4x CPU throttle. After 6 s idle all five cards were built, in separate slices of 265 ms (days), 52 (teams), 80 (notice) and 12 (data), each its own task. The first tap on Days, Notice, Teams, Data and Games then cost 50, 110, 29, 22 and 35 ms. The reviewer measured 682, 600, 271, 90 ms before. renderAll after a result landed was 23 ms and rendered only the games card. A Days reorder kept scrollY 600 to 600. Two unit tests cover one card per slice, no rewrite by a later renderAll, and stopping when the builder is closed."
+          },
+          {
+            "id": "builder-press-scale-twitch (quick-tap abrupt 1.00 to 0.93 snap)",
+            "status": "fixed",
+            "what": "A tap that lifts before the 80 ms press delay now gets joy-pop-quick, whose keyframes run 1, 1.05, 1. A held press still pops from 0.93 (joy-pop). New joyPop(el, fromRest) helper. Slide-off and scroll behaviour is unchanged (joy-release).",
+            "proof": "Playwright rAF sampling of a real touch tap on #import-text-btn: transform is none, then matrix(1,..) on the first joy-pop-quick frame, then rises 1.015, 1.027, 1.037, up to a max of 1.055. Min scale 0.995. No 0.93 frame."
+          },
+          {
+            "id": "builder-tab-switch-silent-discard (no sign of the unsaved game on other tabs)",
+            "status": "fixed",
+            "what": "A one-line note, 'Unsaved changes to \"Name\" are waiting on the Games tab', sits inside each non-Games panel under the tab bar while builderDirty() is true. Its 'Games tab' link goes back to Games with the draft intact. The note is inside the panel so the tab bar never shifts.",
+            "proof": "Playwright: typed a new game name, tapped the Days tab. The note was visible and the tabs top stayed at 115.8 before and after. Tapping the link set settingsTab and tabs value to games, with editGameId 'new' and the draft name still 'Zorp Ball'. A unit test also checks that a click elsewhere in the note does nothing and that the note clears when the draft is clean. Screenshot at /tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/fix/builder-r2/E_note.png."
+          },
+          {
+            "id": "test coverage gaps (tests/builder.test.js)",
+            "status": "fixed",
+            "what": "tests/builder.test.js grows from 17 to 30 tests. tests/harness.js now records document-level listeners as __docListeners (it was a no-op), so tests can reach the handlers app.js registers at load. New tests: the joy press state machine (quick tap, held press, scroll slop, abort and release, pointercancel) using a fake clock; the toggle listener adding and removing .card-opening, with closed-card and <details> negatives; Back restoring builderReturnY; settleBuilderTabPill (programmatic snap vs user tap); extrasOpen kept on a clean refresh; validation scrollIntoView; idle prefill; the unsaved note. The old CSS-regex test is kept and now has a behavioural twin.",
+            "proof": "node tests/run.js: 466 passed (23 files), up from 453. node --check passes on app.js, settings.js, tests/harness.js and tests/builder.test.js."
+          }
+        ],
+        "testsPassed": "node tests/run.js gives 466 passed (23 files). node --check is clean on app.js, settings.js, tests/harness.js and tests/builder.test.js. Playwright probes (r2.cjs, r3.cjs, r4.cjs under /tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/fix/builder-r2/) ran against the worktree on port 8944 with no page errors. The server and all browsers are closed. I did not bump ?v=, APP_VERSION or CODE_UPDATED_AT, did not edit CLAUDE.md or PROGRESS.md, and did not push.",
+        "risks": [
+          "tests/harness.js changed: document.addEventListener now records instead of discarding. Nothing fires the recorded listeners, so existing tests are unaffected (full suite green). It is a small shared-file edit and could conflict if another group also edits that line; the other groups' diffs from the merge base did not touch harness.js.",
+          "Chat scroll restore on closeChat is deliberately not in this branch. It depends on the chat group's chatSavedScrollY change to chat.js (branch worktree-wf_de7fc0a9-b11-5). Without that branch merged, closeChat still drops home scroll to 0.",
+          "The idle prefill still runs one slice of tens to hundreds of ms (265 ms for Days at 4x CPU) while the builder sits open. A tap landing inside a slice is delayed by that long. This is far less than the old freeze on every renderAll, but it is not zero.",
+          "Hidden cards built by prefill can go stale while another tab is showing. They are refreshed when their tab is shown, as before, so a first visit after a data change still re-renders once.",
+          "The unsaved note uses the existing .warn-note colours and adds a .settings-unsaved block in styles.css. I checked the light theme in a screenshot only, not dark mode."
+        ]
+      }
+    },
+    {
+      "group": "chat",
+      "review": {
+        "verdict": "ship-after-fixes",
+        "issues": [
+          {
+            "severity": "major",
+            "where": "git history of worktree wf_de7fc0a9-b11-5: commits a5cd3b5 and a76850d (message trailers)",
+            "problem": "Both commits end with 'Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>' plus a 'Claude-Session: https://claude.ai/code/session_...' line. The brief required exactly 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>' and no other model names anywhere. The code is unaffected, but this is an explicit hard rule and the commits are about to be merged into main.",
+            "evidence": "`git log cf1a77a..HEAD --format=%B` prints the Sonnet 5.5 trailer and the Claude-Session line in both commit bodies.",
+            "fix": "Reword both commit messages (rebase -i is unavailable here, so `git rebase --exec` with `git commit --amend -F`, or `git filter-branch --msg-filter`) to end with only the Opus 5.5 Co-Authored-By line, then re-merge."
+          },
+          {
+            "severity": "minor",
+            "where": "Merge-time interaction: styles.css `body.chat-open jelly-toaster[position=\"bottom\"]` (this branch) vs group 2 `body:has(#update-banner) jelly-toaster[position=\"bottom\"]` and group 3 `body.chat-open .update-banner{bottom:5.5rem}`",
+            "problem": "On this branch alone the toast fix is correct, but after merging groups 5+2+3 the chat toaster lift is overridden while the update bar is up: group 2's selector contains an id inside :has() so its specificity (1,1,2) beats chat's (0,2,2), giving an 8rem toaster offset, while group 3 lifts the bar in chat to 5.5rem. Toasts then sit on the bar's text in chat. The composer stays tappable and the Refresh button stays visible, so this is cosmetic. Also, groups 2 and 3 add adjacent blocks after `.update-banner-alert jelly-button` and conflict in styles.css (not chat's fault). A naive 'keep both' resolution drops the closing brace of group 2's rule, which silently broke the rest of the stylesheet in my scratch merge. The chat-open takeover stopped hiding the home page.",
+            "evidence": "In a scratch merge of 5+2+3 (served on :8956, viewer, chat open, showUpdateBanner(), showToast): banner rect y676-756, jelly-toaster rect y567-716 with computed bottom 128px, screenshot cross_chat_banner_toast.png shows the toasts covering 'New version available'. send and input hit-tests returned chat-send-btn and chat-input. Before I restored the lost brace, the same scratch merge never hid the home page behind the chat view.",
+            "fix": "When merging, resolve the 2-vs-3 styles.css conflict by keeping both blocks and verifying the closing brace of group 2's `bottom: calc(8rem + ...)` rule survives (compare `{` and `}` counts). Add one combined rule, e.g. `body.chat-open:has(#update-banner) jelly-toaster[position=\"bottom\"]{bottom:calc(12rem + env(safe-area-inset-bottom,0px));}`, so toasts clear both the bar and the composer."
+          },
+          {
+            "severity": "minor",
+            "where": "chat.js chatHistoryPush/wireChat (phone Back closes chat)",
+            "problem": "The history entry is chat-only and does not survive the app's own auto-reload. `doReload()` uses `location.replace`, which drops our `{campChat:1}` state. After the reload wireChat sees no entry and pushes a second one, so after a deploy-triggered reload with chat open, Back #1 closes the chat and Back #2 lands on a reloaded copy of the pre-reload page instead of leaving. Separately (by code reading, not measured), a chat force-closed by renderAll or hide-from-viewers leaves our entry on top, so the next Back visibly does nothing. This also leaves chat with different Back behaviour from settings and game detail, as the skeptic cautioned.",
+            "evidence": "r7_reload.cjs: openChat -> reload keeps one entry (len 3, state campChat) and Back closes chat; after doReload() history.length goes 3 -> 4 with campChat re-pushed. Back #1 closed chat at URL ...&r=<ts>; Back #2 loaded the URL without ?r=.",
+            "fix": "Acceptable to ship as-is (harmless extra step). If tightened: in wireChat, when the page was entered via a `?r=` reload and chat is persisted open, `history.replaceState({campChat:1},'')` instead of pushing. Revisit all takeovers together, per the skeptic's note."
+          },
+          {
+            "severity": "minor",
+            "where": "tests/chat-view.test.js (cold-start / sync-off coverage)",
+            "problem": "The test pins `onChatSyncStateChanged()` and `chatSyncOff()` but nothing pins the app.js side: `onSdkLoadFailed` calling `onChatSyncStateChanged` through a typeof guard. A rename on either side would silently restore the stuck 'Loading…' card and list after a definitive SDK failure, and no test would fail.",
+            "evidence": "`grep -rn \"onSdkLoadFailed\\|onChatSyncStateChanged\" tests/*.js` returns only the direct call at chat-view.test.js:62. I confirmed in a browser that the wiring works today (r5_cold.cjs: sdkLoadFailed=true then the sentence appears).",
+            "fix": "Add one test that calls `onSdkLoadFailed('x')` with chat open and asserts renderChatCard/renderChatView ran (stub them as the existing tests do), or a source-level grep test that app.js still references onChatSyncStateChanged."
+          },
+          {
+            "severity": "minor",
+            "where": "CLAUDE.md 'Camp chat → UI' (not editable by the fixer per the brief; flag for the merger)",
+            "problem": "After merge the doc is stale: it says the view 'rebuilds ONLY on open/channel-switch (chatViewBuiltFor)'. The shell is now built once per open and channel switch, bell and directory updates patch in place. The doc also has no mention of the in-memory per-channel drafts, the chat-only Back history entry, home-scroll restore on close, the body.chat-open toaster lift, or the rule that wireChatView handlers must resolve the channel via chatCurrentChannel() at call time. A future edit that closes over `ch` again would post to the wrong channel.",
+            "evidence": "CLAUDE.md lines 417-418 still describe rebuild-on-channel-switch; the code comment block above renderChatView describes the new model.",
+            "fix": "Orchestrator updates CLAUDE.md after the merge, including the 'handlers read chatCurrentChannel() at call time' invariant."
+          }
+        ],
+        "notActuallyFixed": [
+          "chat-send-blurs-composer and chat-rebuild-drops-ios-keyboard are verified only in Chromium (touch emulation: touchscreen.tap on send keeps activeElement=chat-input; same node, focus and caret survive directory, bell and role-change rebuilds). No WebKit binary is installed (/opt/pw-browsers/webkit-2359/pw_run.sh is missing), so the iOS behaviour is unproven.",
+          "chat-hardware-back-exits is fixed for chat only, and the history entry is lost on deploy auto-reload (see minor issue above). Settings and game detail still exit the app on Back.",
+          "chat-toast-covers-composer is fixed on this branch alone, but in the merged 5+2+3 tree the toaster offset is overridden by group 2 while the update bar is up, so toasts overlap the bar in chat (see minor issue above). Not checked with the on-screen keyboard raised.",
+          "Every other original finding no longer reproduces. Verified in Chromium on this worktree: tabs stay 43px/39px with 50 messages at 320-700px (junior/senior, viewer/editor); a 50-photo channel opens and re-opens with gap 0; a live photo while pinned gives gap 0; reading up is not snapped back; there are no back-pill-in animations on tab, bell or directory updates; the active tab and all four tabs are on screen with no scroll; the badge sits on the corner without shifting tabs; drafts persist per channel and across close/reopen; own send scrolls into view; the cold-start card/list says 'Loading…' until sync is really off; the banner by-line is empty until the directory loads; home scroll is restored on close; the lightbox late-response guard is in place."
+        ]
+      },
+      "fixup": {
+        "commits": [
+          "0c718ce Chat: hand back a stale Back entry, clear toasts above the update bar, pin the SDK hook",
+          "5e090b9 Chat: header fits on 320-350px editors; sync-attach clears a stale \"sync is off\" (reworded trailer)",
+          "5a45717 Chat: fix the 17 glitches from the v183 sweep (reworded trailer)"
+        ],
+        "results": [
+          {
+            "id": "commit-trailers",
+            "status": "fixed",
+            "what": "Reworded all three commits on the branch (cf1a77a..HEAD) with git filter-branch --msg-filter. Each now ends with only 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>'. The Sonnet 5.5 trailer and the Claude-Session line are gone, and the refs/original backup refs that still held the old messages were deleted. Tree hash is identical before and after the rewrite, so code is unchanged. The new commit was made with the Opus trailer as the task specified, which differs from the session's default attribution reminder.",
+            "proof": "git log cf1a77a..HEAD --format=%B | grep -ciE 'sonnet|Claude-Session' prints 0; the three Co-Authored-By lines all read Opus 5.5; HEAD^{tree} 22ce3c6 matches the pre-rewrite tree; git for-each-ref refs/original is empty."
+          },
+          {
+            "id": "chat-toast-vs-update-bar-merge",
+            "status": "fixed",
+            "what": "Added body.chat-open:has(#update-banner) jelly-toaster[position=bottom] { bottom: calc(12rem + env(safe-area-inset-bottom)) } in styles.css next to the chat toaster rule. The id inside :has() gives specificity (1,2,2), which outranks group 2's body:has(#update-banner) rule at (1,1,2), so the two cannot tie the wrong way round after merge. 12rem clears group 3's chat-lifted bar (5.5rem plus about 80px bar height). The brace count in styles.css is balanced (940/940).",
+            "proof": "Probe on :8945 at 390x844, chat open with the update bar and a toast: toaster computed bottom is 80px without the bar and 192px with it. Toast rect bottom y652 is above the bar top y748. Probe: /tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/fix/chat-fix2/probe.cjs. Not exercised in a merged tree, since the other groups' branches are not in this worktree."
+          },
+          {
+            "id": "chat-back-entry-stale-after-force-close",
+            "status": "fixed",
+            "what": "renderAll can force-close chat (editors hide the card, or the builder takes over) and leave our {campChat:1} history entry on top, so the next phone Back did nothing visible. renderChatCard, which runs on every renderAll and the 30 s tick, now calls chatHistoryPop() when chat is closed but our entry is still filed. It is idempotent with closeChat's own pop because the flag drops first.",
+            "proof": "New test 'a chat closed by renderAll (hidden from viewers) hands its history entry back' fails with the line removed and passes with it. In Chromium, after force-close history.state is null and chatHistoryEntry is false. A normal close pops once, phone Back still closes the chat and stays on index.html, and the home scroll restore still returns y228/y334 (p5 probe re-run)."
+          },
+          {
+            "id": "chat-back-entry-after-doReload",
+            "status": "not-needed",
+            "what": "Left as is, as the reviewer allowed. doReload() uses location.replace, which drops history.state, so after a deploy auto-reload with chat open, wireChat pushes a second entry and Back needs two presses to leave. The suggested replaceState would be worse: the entry before it belongs to a document that no longer exists, so Back would reload the page with chat still persisted open and re-push, and chat would not close at all. Back #1 closes chat and Back #2 is a harmless extra step. A proper fix means revisiting all takeovers (settings, game detail) together.",
+            "proof": "Reasoned from r7_reload.cjs history behaviour (len 3 to 4, Back#1 closes chat, Back#2 loads the page); no code change."
+          },
+          {
+            "id": "sdk-hook-test-coverage",
+            "status": "fixed",
+            "what": "Added a test that runs the real onSdkLoadFailed('x') with chat open and asserts renderChatCard and renderChatView(true) were called through the typeof-guarded onChatSyncStateChanged hook. Renaming the hook on either side now fails a test.",
+            "proof": "Mutation check: removing the guarded call in app.js made the new test fail; restoring it passed. node tests/run.js: 452 passed across 23 files (chat-view.test.js 16 tests)."
+          },
+          {
+            "id": "claude-md-stale",
+            "status": "not-needed",
+            "what": "CLAUDE.md is off limits for fixers. The merger should update 'Camp chat to UI' for the new model. The shell is built once per open and channel switch, and the bell and directory update in place. There are in-memory per-channel drafts. Chat has its own Back history entry (popped by closeChat, by renderChatCard on force-close, and by popstate). Home scroll is restored on close. The body.chat-open toaster lift is now also lifted to 12rem when the update bar is up. Handlers wired once per build must resolve the channel via chatCurrentChannel() at call time, never close over ch, or a send goes to the wrong channel.",
+            "proof": "Flagged for the orchestrator; no edit made."
+          },
+          {
+            "id": "ios-keyboard-unproven",
+            "status": "not-needed",
+            "what": "chat-send-blurs-composer and chat-rebuild-drops-ios-keyboard remain verified in Chromium touch emulation only. There is no WebKit binary in this environment, and no code change here touches it, so the iOS soft-keyboard behaviour cannot be proven from here.",
+            "proof": "Reviewer's note: /opt/pw-browsers/webkit-2359/pw_run.sh is missing. Needs a real iPhone check after deploy."
+          }
+        ],
+        "testsPassed": "node tests/run.js: 452 passed (23 files), including 16 in chat-view.test.js. node --check chat.js and tests/chat-view.test.js OK. Browser probes on :8945 (server killed afterwards, all browsers closed) all PASS: stale-entry pop, normal close, phone Back, toast offsets, home scroll restore.",
+        "risks": [
+          "The 12rem toast offset assumes group 3's chat-lifted update bar (5.5rem plus about 80px). It is correct on this branch alone, but I could not test it in a merged tree. Re-check one screenshot of chat + update bar + toast after merging groups 2 and 3.",
+          "When merging groups 2 and 3, they both add adjacent blocks after .update-banner-alert jelly-button in styles.css and will conflict. A naive keep-both resolution can drop the closing brace of group 2's rule, which silently breaks the rest of the stylesheet. Compare { and } counts after the merge (this branch is 940/940).",
+          "Not verified in WebKit (no binary available): iOS soft-keyboard retention on Send and across in-place shell updates. The toast lift was not checked with the on-screen keyboard raised.",
+          "After a deploy auto-reload with chat open, Back needs two presses to leave the app, one more than before the reload. Known and accepted; it affects chat only and is harmless.",
+          "Commit messages were rewritten with filter-branch, so any reference to the old hashes a76850d and a5cd3b5 is stale; the new hashes are 5e090b9 and 5a45717.",
+          "The Opus 5.5 trailer follows the task's explicit instruction, which differs from the session's default attribution reminder."
+        ]
+      }
+    },
+    {
+      "group": "boot-theme",
+      "review": {
+        "verdict": "ship",
+        "issues": [
+          {
+            "severity": "minor",
+            "where": "boot-guard.js second IIFE: setTimeout(check, 15000); tests/shell.test.js (>= 15000)",
+            "problem": "Raising the backstop from 4 s to 15 s lengthens the wait on the one population CLAUDE.md names as permanently affected (iOS < 16.4, where the module cannot be parsed) IF Safari does not report the module parse error through either the script 'error' event or a window 'error' event whose filename contains jelly.js. In that case the 4 s timer was the only detection path and the sign-in button now stays hidden for 15 s. I could only verify the two listener paths in Chromium, not WebKit.",
+            "evidence": "Chromium with a syntax-error stub for vendor/jelly.js: html gets jelly-failed at ~1.5 s via the window error path (j1.cjs: 'view-only jelly-failed'). A merely slow module (6.5 s delay): no jelly-failed at 5 s, CLS none, first paint at 6.8 s (s1.cjs), so the misfire fix itself works. CLAUDE.md lists '4 s backstop' as one of three detection paths and the old timer was the safety net for exactly this.",
+            "fix": "Optional: keep a short secondary check that does not misfire on a slow load, for example at 4 s add jelly-failed only if no request for vendor/jelly.js is still pending (performance.getEntriesByName shows the resource as not yet completed). Otherwise accept the 15 s and state the assumption in the comment."
+          },
+          {
+            "severity": "minor",
+            "where": "Integration step (CLAUDE.md, current-standings.html TV_BUILD)",
+            "problem": "This branch changes documented contracts that CLAUDE.md still describes the old way, and CLAUDE.md edits were forbidden in this group, so the merge/integration pass must carry them: boot-guard 'a 4 s backstop' is now 15 s; the new device-wide localStorage key campScoreboardTheme (mirrored by applyTheme, read pre-paint by boot-guard, wiped by clearLocalData, same literal in two files) and html.theme-switching; Auto no longer sets body.dark-theme; the Google Fonts link is media=print and flipped by boot-guard; boot-guard pre-sets html.view-only for a viewer hint; the accordion/collapsible header stack is now html.jelly-failed only. current-standings.html changed but TV_BUILD was not bumped (deploy step 2).",
+            "evidence": "git diff 0880b0b...HEAD touches current-standings.html, index.html, boot-guard.js, app.js, styles.css; CLAUDE.md not in the diff; grep of the TV page shows TV_BUILD unchanged.",
+            "fix": "In the integration commit: update the CLAUDE.md boot-guard/theme/fonts paragraphs, bump TV_BUILD, and bump ?v= / APP_VERSION / CODE_UPDATED_AT together with the other groups."
+          },
+          {
+            "severity": "minor",
+            "where": "styles.css boot-shell change (html.jelly-failed jelly-accordion:not(:defined)) - accepted trade-off",
+            "problem": "For a hinted (returning) device the page is now completely blank (page background only, no skeleton or spinner) for the whole module download. On slow camp wifi that can be many seconds. This is the trade the skeptic explicitly accepted (CLS 0.43 -> 0.00), but nothing tells a user the page is loading.",
+            "evidence": "d1.cjs with jelly.js delayed 2.5 s: screenshot at 1.5 s is entirely blank, no visible text; s1.cjs with a 6.5 s delay: first-paint@6828 ms, no paint before. Normal load: first paint 224-264 ms at 1x, 750-1480 ms at 4x CPU, CLS 0.000 in every run.",
+            "fix": "None required. If the owner dislikes the long blank on slow links, a no-JS-dependency tiny 'Loading...' line in the page background colour (shown only while html.booting-less module is undefined) could be added later, but it must be hidden once boot() renders to avoid reintroducing a shift."
+          },
+          {
+            "severity": "minor",
+            "where": "tests/shell.test.js new tests; app.js degraded-mode click handlers",
+            "problem": "The failed-module fallbacks (outside-tap and Close-bar dismissal, tappable Appearance, view-only pre-paint, media=print fonts flip, TV delayed overlay) are pinned only by regexes over source text. The suite cannot catch a behavioural regression there (for example the 52 px bar hit-test, or the customElements.get() gate).",
+            "evidence": "Behaviour only confirmed by browser probes (f9.cjs: Close bar, outside tap, Appearance taps for both abort and syntax failure all pass; f10/f11.cjs: fonts flip; tv1.cjs: overlay never shown on a fast approval). tests/shell.test.js assertions for these are source-text greps. node tests/run.js: 448 passed.",
+            "fix": "Acceptable given the stub DOM has no customElements/layout. If cheap, extract the 'which sheets does this tap close' decision into a pure function (target containment + bar-hit flag) so it can be unit-tested."
+          }
+        ],
+        "notActuallyFixed": [
+          "Jelly shadow-DOM chip and button colour easing (about 0.55 s) after a Light/Dark flip is not suppressed (html.theme-switching cannot reach shadow roots); the findings' own refinedFix said to leave it, so this is by design, not a miss.",
+          "Dual-camp devices: the theme mirror key is device-wide while state.theme is per camp, so switching camps can still show one wrong-palette first paint before boot() corrects it (documented in the app.js comment and the skeptic's risk list; not a regression)."
+        ]
+      },
+      "fixup": {
+        "commits": [
+          "e796ecd Boot guard: judge a missing Jelly module at load, not a 4 s timer; unit-test sheet dismissal; stamp TV_BUILD (on top of 1447ea2)"
+        ],
+        "results": [
+          {
+            "id": "review-1-backstop-15s",
+            "status": "fixed",
+            "what": "The 15 s backstop made iOS < 16.4 wait 15 s for the sign-in button if Safari reports neither error event. boot-guard.js now also checks on window 'load' and calls check() then. A module script runs after the document and its parser-blocking scripts but before 'load', so an undefined jelly-button at 'load' means the module failed. It cannot misfire on a slow load, and it needs no resource-timing check, which would misfire when the module is fetched but waiting for a slow parser-blocking script. The 15 s timer stays only as the backstop for a hung request, and the whenDefined removal is unchanged.",
+            "proof": "Chromium probe r2_loadguard.cjs on port 8946. Syntax-error module: jelly-failed at 245 ms. Aborted request: 181 ms. Module that loads cleanly but defines nothing, with no error event (the old-Safari shape): 183 ms, where this was 15 s before. Hung request: only the backstop fires, at 15.1 s. Slow module (6.5 s delay): no jelly-failed, ends defined=true, CLS 0. Slow parser-blocking app.js (5 s) with the module already fetched: no jelly-failed, ends defined=true, CLS 0. tests/shell.test.js now asserts the 'load' listener and that the timer is >= 15000."
+          },
+          {
+            "id": "review-2-integration-docs-and-TV_BUILD",
+            "status": "partially-fixed",
+            "what": "TV_BUILD in current-standings.html is bumped to 2026-10-27T13:11:56Z, because that file changed on this branch (CLAUDE.md deploy step 2). The CLAUDE.md edits and the ?v= / APP_VERSION / CODE_UPDATED_AT bumps are deliberately not done here, as instructed, and fall to the integration pass. A forgotten TV_BUILD would be silent, while a merge conflict on that one line would be visible, so bumping it here is the safer choice.",
+            "proof": "git show HEAD shows current-standings.html 1 line changed; grep shows var TV_BUILD = '2026-10-27T13:11:56Z'. The CLAUDE.md edits are listed under risks."
+          },
+          {
+            "id": "review-3-blank-page-while-module-loads",
+            "status": "not-needed",
+            "what": "No change. A hinted device paints only the page background until the module lands, which is the accepted trade for CLS 0.43 to 0.00. The reviewer's fix says 'none required'. A 'Loading...' line would need its own hide-on-boot logic, or it would reintroduce a layout shift.",
+            "proof": "The reviewer measured first paint at 224-264 ms (1x) and 750-1480 ms (4x CPU), with CLS 0.000 in every run."
+          },
+          {
+            "id": "review-4-source-grep-only-tests",
+            "status": "fixed",
+            "what": "The outside-tap and Close-bar dismissal decision is extracted from the app.js click handler into a pure function, failedModuleSheetsToClose(open, target, clientY), which takes duck-typed elements. tests/shell.test.js now unit-tests it: outside tap closes all open sheets, a tap on content closes none, a tap on the Close bar (top 52 px of the sheet itself) closes only that sheet, a tap on the sheet below the bar closes none, and nothing open closes none. The handler behaves the same as before. The customElements.get() gating and the fonts and TV overlay fallbacks are still source-text checks, because the stub DOM has no customElements or layout.",
+            "proof": "node tests/run.js: 448 passed (23 files). Browser probe r2_f9.cjs on port 8946, for both abort and syntax-error module failures: Close bar closes the sheet, outside tap closes it with cards unchanged, content tap leaves it open, Escape closes it, and Appearance taps still set dark, light and auto."
+          },
+          {
+            "id": "notActuallyFixed-jelly-shadow-dom-easing",
+            "status": "not-needed",
+            "what": "Jelly chip and button colour easing (~0.55 s) after a Light/Dark flip is left alone. html.theme-switching cannot reach shadow roots, and the finding's own refinedFix said to leave it.",
+            "proof": "By design per the finding's refinedFix; no code change."
+          },
+          {
+            "id": "notActuallyFixed-dual-camp-theme-mirror",
+            "status": "not-needed",
+            "what": "The campScoreboardTheme mirror is device-wide while state.theme is per camp, so a dual-camp device can get one wrong-palette first paint before boot() corrects it. Making the key per camp would require boot-guard.js to know the active camp pre-paint, before camps.js loads. The trade-off is documented in the THEME_HINT_KEY comment in app.js and is not a regression.",
+            "proof": "No code change; the reviewer's notes list this as a documented limit, not a regression."
+          }
+        ],
+        "testsPassed": "node tests/run.js: 448 passed (23 files). node --check passes on app.js, boot-guard.js and tests/shell.test.js. Browser probes on port 8946 (r2_loadguard.cjs, r2b_slow.cjs, r2_f9.cjs in /tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/fix/boot-theme/) all behaved as expected. The server was killed and no browsers were left running.",
+        "risks": [
+          "CLAUDE.md edits for the integration pass (not done here, as instructed). (a) boot-guard's second IIFE no longer uses a '4 s backstop'. It checks on window 'load' plus the script and window 'error' events, with a 15 s timer only as the hung-request backstop. (b) New device-wide localStorage key campScoreboardTheme, an explicit 'light' or 'dark' only, with Auto meaning the key is absent. It is mirrored by applyTheme(), read pre-paint by boot-guard.js (same literal in both files), and wiped by clearLocalData. (c) html.theme-switching suspends transitions during a flip. (d) Auto no longer sets body.dark-theme, because the @media block follows the OS live, and watchOsColorScheme() re-applies the theme-color meta on an OS flip. (e) The Google Fonts <link id=\"gfonts\" media=\"print\"> is flipped to 'all' by boot-guard.js, which is a third IIFE. (f) boot-guard pre-sets html.view-only for a viewer hint. (g) The jelly-accordion/jelly-collapsible :not(:defined) header stack is now html.jelly-failed only. (h) current-standings.html delays the 'checking' sign-in overlay by 1.5 s (CHECK_OVERLAY_DELAY_MS). (i) A failed module gets outside-tap and Close-bar sheet dismissal and tappable Appearance options.",
+          "Integration pass must still bump ?v= (12 assets), APP_VERSION and CODE_UPDATED_AT together. TV_BUILD was already bumped on this branch. If another group also edits TV_BUILD the conflict is one line.",
+          "Not browser-verified in WebKit, so an old-Safari module-parse failure is untested there. The 'load'-based path rests on the spec (module scripts run before load), and the 15 s timer remains as the backstop.",
+          "A hinted device still paints a blank page while the module downloads, which is the accepted trade-off.",
+          "Dual-camp devices can still show one wrong-palette first paint when the two camps' theme choices differ."
+        ]
+      }
+    }
+  ],
+  "workflowProgress": [
+    {
+      "type": "workflow_phase",
+      "index": 1,
+      "title": "Finish"
+    },
+    {
+      "type": "workflow_phase",
+      "index": 2,
+      "title": "Review"
+    },
+    {
+      "type": "workflow_phase",
+      "index": 3,
+      "title": "Fix-up"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 1,
+      "label": "finish:builder",
+      "phaseIndex": 1,
+      "phaseTitle": "Finish",
+      "agentId": "a09fadac7b8c3123a",
+      "model": "claude-sonnet-5-5",
+      "state": "done",
+      "startedAt": 1793097914280,
+      "queuedAt": 1793097914247,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "node tests/run.js: 453 passed (23 files, including the new …",
+      "promptPreview": "CONTEXT: \"Camp Scoreboard\" (CLAUDE.md is in your context — obey it: sync invariants, render-stability (setHtmlIfChanged; never re-create Jelly components when nothing changed; never transition: all), canEdit/roles, two camps). A Playwright sweep found glitches; each finding in your group file was re-verified by a skeptic (\"verdict.refinedFix\" is the skeptic's tested recommendation).\nSCOPE: only yo…",
+      "promptFramed": true,
+      "lastProgressAt": 1793098303554,
+      "tokens": 168037,
+      "toolCalls": 31,
+      "durationMs": 389273,
+      "resultPreview": "{\"commits\":[\"1ff6312 Week builder: keep the tab shell, stop scroll/pill/draft glitches (worktree /home/user/Camp/.claude/worktrees/wf_de7fc0a9-b11-4, branch worktree-wf_de7fc0a9-b11-4; touches app.js, settings.js, styles.css, new tests/builder.test.js)\"],\"results\":[{\"id\":\"builder-rebuild-scroll-jump\",\"status\":\"fixed\",\"what\":\"renderSettings keeps the jelly-tabs shell and refreshes only the active c…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 2,
+      "label": "finish:boot-theme",
+      "phaseIndex": 1,
+      "phaseTitle": "Finish",
+      "agentId": "aaa5ddd47d888bd84",
+      "model": "claude-sonnet-5-5",
+      "state": "done",
+      "startedAt": 1793098304927,
+      "queuedAt": 1793098304920,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "node tests/run.js: 448 passed (23 files), including the new…",
+      "promptPreview": "CONTEXT: \"Camp Scoreboard\" (CLAUDE.md is in your context — obey it: sync invariants, render-stability (setHtmlIfChanged; never re-create Jelly components when nothing changed; never transition: all), canEdit/roles, two camps). A Playwright sweep found glitches; each finding in your group file was re-verified by a skeptic (\"verdict.refinedFix\" is the skeptic's tested recommendation).\nSCOPE: only yo…",
+      "promptFramed": true,
+      "lastProgressAt": 1793098673203,
+      "tokens": 169407,
+      "toolCalls": 27,
+      "durationMs": 368275,
+      "resultPreview": "{\"commits\":[\"1447ea2 Boot/theme glitches: no half-built shell, right palette pre-paint, atomic theme flips\"],\"results\":[{\"id\":\"boot-shell-popin\",\"status\":\"fixed\",\"what\":\"The pre-upgrade accordion/collapsible header stack in styles.css is now gated on html.jelly-failed. On a normal load it stays under the global :where(html:not(.jelly-failed)) :not(:defined) hide until boot() has built the content …"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 3,
+      "label": "review:games-live",
+      "phaseIndex": 2,
+      "phaseTitle": "Review",
+      "agentId": "a33cab8244c9770bd",
+      "model": "claude-sonnet-5-5",
+      "state": "done",
+      "startedAt": 1793098674162,
+      "queuedAt": 1793098674134,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "ship-after-fixes",
+      "promptPreview": "CONTEXT: \"Camp Scoreboard\" (CLAUDE.md is in your context — obey it: sync invariants, render-stability (setHtmlIfChanged; never re-create Jelly components when nothing changed; never transition: all), canEdit/roles, two camps). A Playwright sweep found glitches; each finding in your group file was re-verified by a skeptic (\"verdict.refinedFix\" is the skeptic's tested recommendation).\nSCOPE: only yo…",
+      "promptFramed": true,
+      "lastProgressAt": 1793099930247,
+      "tokens": 327015,
+      "toolCalls": 85,
+      "durationMs": 1256084,
+      "resultPreview": "{\"verdict\":\"ship-after-fixes\",\"issues\":[{\"severity\":\"major\",\"where\":\"tests/game-view.test.js (renderTally / renderPlacement / updateTallyMedals closures)\",\"problem\":\"The tests do not pin the 'closures over replaced state objects' invariant for most handlers the fix rewrote. Only the score-field `input` listener is covered (fakeForm only captures `.score-input-row input`). The +N counter click, the…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 4,
+      "label": "fixup:games-live",
+      "phaseIndex": 3,
+      "phaseTitle": "Fix-up",
+      "agentId": "a7a8e568a86f239f5",
+      "model": "claude-sonnet-5-5",
+      "state": "done",
+      "startedAt": 1793099931528,
+      "queuedAt": 1793099931520,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "node tests/run.js: 465 passed (23 files), up from 453 befor…",
+      "promptPreview": "CONTEXT: \"Camp Scoreboard\" (CLAUDE.md is in your context — obey it: sync invariants, render-stability (setHtmlIfChanged; never re-create Jelly components when nothing changed; never transition: all), canEdit/roles, two camps). A Playwright sweep found glitches; each finding in your group file was re-verified by a skeptic (\"verdict.refinedFix\" is the skeptic's tested recommendation).\nSCOPE: only yo…",
+      "promptFramed": true,
+      "lastProgressAt": 1793100582132,
+      "tokens": 235386,
+      "toolCalls": 54,
+      "durationMs": 650603,
+      "resultPreview": "{\"commits\":[\"0cc73b6 Game view review fixes: instant open scroll, kept Pictionary tools, in-place medal picks, real handler tests\"],\"results\":[{\"id\":\"tests-pin-orphan-write-invariant\",\"status\":\"fixed\",\"what\":\"tests/game-view.test.js now fires the real tally +N counter click, tally Save click, tally medal-picker change and placement medal change on a kept form after state.drafts was swapped for a f…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 5,
+      "label": "review:home",
+      "phaseIndex": 2,
+      "phaseTitle": "Review",
+      "agentId": "a4cc8aefbe89d0ded",
+      "model": "claude-sonnet-5-5",
+      "state": "done",
+      "startedAt": 1793100583672,
+      "queuedAt": 1793100583663,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "ship-after-fixes",
+      "promptPreview": "CONTEXT: \"Camp Scoreboard\" (CLAUDE.md is in your context — obey it: sync invariants, render-stability (setHtmlIfChanged; never re-create Jelly components when nothing changed; never transition: all), canEdit/roles, two camps). A Playwright sweep found glitches; each finding in your group file was re-verified by a skeptic (\"verdict.refinedFix\" is the skeptic's tested recommendation).\nSCOPE: only yo…",
+      "promptFramed": true,
+      "lastProgressAt": 1793101277525,
+      "tokens": 224147,
+      "toolCalls": 54,
+      "durationMs": 693852,
+      "resultPreview": "{\"verdict\":\"ship-after-fixes\",\"issues\":[{\"severity\":\"major\",\"where\":\"git commit 04a8bb1 (commit message trailer)\",\"problem\":\"The commit trailer does not follow the instruction. The task required exactly 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>' and no other model names anywhere. The commit carries 'Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>' plus an extra 'Claude-Ses…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 6,
+      "label": "fixup:home",
+      "phaseIndex": 3,
+      "phaseTitle": "Fix-up",
+      "agentId": "adb54568e3dfd3c05",
+      "model": "claude-sonnet-5-5",
+      "state": "done",
+      "startedAt": 1793101278848,
+      "queuedAt": 1793101278840,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "node tests/run.js: 452 passed (23 files), including 16 in t…",
+      "promptPreview": "CONTEXT: \"Camp Scoreboard\" (CLAUDE.md is in your context — obey it: sync invariants, render-stability (setHtmlIfChanged; never re-create Jelly components when nothing changed; never transition: all), canEdit/roles, two camps). A Playwright sweep found glitches; each finding in your group file was re-verified by a skeptic (\"verdict.refinedFix\" is the skeptic's tested recommendation).\nSCOPE: only yo…",
+      "promptFramed": true,
+      "lastProgressAt": 1793101540913,
+      "tokens": 150288,
+      "toolCalls": 23,
+      "durationMs": 262064,
+      "resultPreview": "{\"commits\":[\"67aac6b Home panels: rain hint no longer rebuilds the bar, capped plain-text toasts, idle-render stability (amended from 04a8bb1, in /home/user/Camp/.claude/worktrees/wf_de7fc0a9-b11-2)\"],\"results\":[{\"id\":\"trailer\",\"status\":\"not-fixed\",\"what\":\"Commit trailer kept as 'Co-Authored-By: Claude Sonnet 5.5' plus the 'Claude-Session' line, not changed to 'Claude Opus 5.5'. I did amend the co…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 7,
+      "label": "review:overlays",
+      "phaseIndex": 2,
+      "phaseTitle": "Review",
+      "agentId": "a7c1816a7875e1a18",
+      "model": "claude-sonnet-5-5",
+      "state": "done",
+      "startedAt": 1793101543617,
+      "queuedAt": 1793101543610,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "ship-after-fixes",
+      "promptPreview": "CONTEXT: \"Camp Scoreboard\" (CLAUDE.md is in your context — obey it: sync invariants, render-stability (setHtmlIfChanged; never re-create Jelly components when nothing changed; never transition: all), canEdit/roles, two camps). A Playwright sweep found glitches; each finding in your group file was re-verified by a skeptic (\"verdict.refinedFix\" is the skeptic's tested recommendation).\nSCOPE: only yo…",
+      "promptFramed": true,
+      "lastProgressAt": 1793102559880,
+      "tokens": 267747,
+      "toolCalls": 62,
+      "durationMs": 1016262,
+      "resultPreview": "{\"issues\":[{\"severity\":\"minor\",\"where\":\"vendor/jelly.js jellyScrimClosed()/jellyScrimFade() (called from afterClose in both jelly-dialog and jelly-drawer); first-run flow: camp picker closed, then the team picker opens from the camp picker's 'close' listener (app.js wireCampSwitcher, maybeShowTeamPicker)\",\"problem\":\"The hand-off detection (a new overlay opening within 60 ms of afterClose keeps the…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 8,
+      "label": "fixup:overlays",
+      "phaseIndex": 3,
+      "phaseTitle": "Fix-up",
+      "agentId": "a105f881885091537",
+      "model": "claude-sonnet-5-5",
+      "state": "done",
+      "startedAt": 1793102561383,
+      "queuedAt": 1793102561372,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "node tests/run.js: 456 passed (23 files), including 20 in t…",
+      "promptPreview": "CONTEXT: \"Camp Scoreboard\" (CLAUDE.md is in your context — obey it: sync invariants, render-stability (setHtmlIfChanged; never re-create Jelly components when nothing changed; never transition: all), canEdit/roles, two camps). A Playwright sweep found glitches; each finding in your group file was re-verified by a skeptic (\"verdict.refinedFix\" is the skeptic's tested recommendation).\nSCOPE: only yo…",
+      "promptFramed": true,
+      "lastProgressAt": 1793102897096,
+      "tokens": 127554,
+      "toolCalls": 26,
+      "durationMs": 335712,
+      "resultPreview": "{\"commits\":[\"96f177e Schedule sheet: fit all seven days, fixed height, smooth swipe, no needless rebuilds\",\"df3931a Update banner: stop covering the chat composer; ask before discarding unfinished work\",\"c4ff1dd Members drawer: role/team changes no longer rebuild every row; the Add form survives\",\"bca8ed1 Lock screen: scrollable, top-anchored, and sign-in errors keep half-typed forms\",\"5150b6a Dra…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 9,
+      "label": "review:builder",
+      "phaseIndex": 2,
+      "phaseTitle": "Review",
+      "agentId": "a11fff3f9dc6f50b5",
+      "model": "claude-sonnet-5-5",
+      "state": "done",
+      "startedAt": 1793102963012,
+      "queuedAt": 1793102963005,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "ship-after-fixes",
+      "promptPreview": "CONTEXT: \"Camp Scoreboard\" (CLAUDE.md is in your context — obey it: sync invariants, render-stability (setHtmlIfChanged; never re-create Jelly components when nothing changed; never transition: all), canEdit/roles, two camps). A Playwright sweep found glitches; each finding in your group file was re-verified by a skeptic (\"verdict.refinedFix\" is the skeptic's tested recommendation).\nSCOPE: only yo…",
+      "promptFramed": true,
+      "lastProgressAt": 1793104065230,
+      "tokens": 275667,
+      "toolCalls": 79,
+      "durationMs": 1102217,
+      "resultPreview": "{\"verdict\":\"ship-after-fixes\",\"issues\":[{\"severity\":\"major\",\"where\":\"settings.js: renderGameEditor markup (#gd-error moved below .editor-actions) and saveGameDraft\",\"problem\":\"The validation message now renders below Save/Cancel and nothing scrolls it into view. On a new game, with the page scrolled to Save (the natural place to tap it), the message lands under the fold, so tapping Save with an em…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 10,
+      "label": "fixup:builder",
+      "phaseIndex": 3,
+      "phaseTitle": "Fix-up",
+      "agentId": "a22e7afac20fd75bd",
+      "model": "claude-sonnet-5-5",
+      "state": "done",
+      "startedAt": 1793104066557,
+      "queuedAt": 1793104066549,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "node tests/run.js gives 466 passed (23 files). node --check…",
+      "promptPreview": "CONTEXT: \"Camp Scoreboard\" (CLAUDE.md is in your context — obey it: sync invariants, render-stability (setHtmlIfChanged; never re-create Jelly components when nothing changed; never transition: all), canEdit/roles, two camps). A Playwright sweep found glitches; each finding in your group file was re-verified by a skeptic (\"verdict.refinedFix\" is the skeptic's tested recommendation).\nSCOPE: only yo…",
+      "promptFramed": true,
+      "lastProgressAt": 1793104700635,
+      "tokens": 207333,
+      "toolCalls": 51,
+      "durationMs": 634078,
+      "resultPreview": "{\"commits\":[\"5775cd9 Week builder review fixes: error in view, idle prefill, quick-tap pop, unsaved flag (on top of 1ff6312)\"],\"results\":[{\"id\":\"builder-validation-error-stale-shift (major: error off-screen under Save)\",\"status\":\"fixed\",\"what\":\"saveGameDraft now calls errEl.scrollIntoView({block:'nearest'}) after showing the message. The message stays below Save, and #gd-error has scroll-margin-bo…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 11,
+      "label": "review:chat",
+      "phaseIndex": 2,
+      "phaseTitle": "Review",
+      "agentId": "a215ea74d84f9e105",
+      "model": "claude-sonnet-5-5",
+      "state": "done",
+      "startedAt": 1793104701603,
+      "queuedAt": 1793104701596,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "ship-after-fixes",
+      "promptPreview": "CONTEXT: \"Camp Scoreboard\" (CLAUDE.md is in your context — obey it: sync invariants, render-stability (setHtmlIfChanged; never re-create Jelly components when nothing changed; never transition: all), canEdit/roles, two camps). A Playwright sweep found glitches; each finding in your group file was re-verified by a skeptic (\"verdict.refinedFix\" is the skeptic's tested recommendation).\nSCOPE: only yo…",
+      "promptFramed": true,
+      "lastProgressAt": 1793105763567,
+      "tokens": 275174,
+      "toolCalls": 66,
+      "durationMs": 1061963,
+      "resultPreview": "{\"verdict\":\"ship-after-fixes\",\"issues\":[{\"severity\":\"major\",\"where\":\"git history of worktree wf_de7fc0a9-b11-5: commits a5cd3b5 and a76850d (message trailers)\",\"problem\":\"Both commits end with 'Co-Authored-By: Claude Sonnet 5.5 <noreply@anthropic.com>' plus a 'Claude-Session: https://claude.ai/code/session_...' line. The brief required exactly 'Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.co…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 12,
+      "label": "fixup:chat",
+      "phaseIndex": 3,
+      "phaseTitle": "Fix-up",
+      "agentId": "a271eaad79e40c860",
+      "model": "claude-sonnet-5-5",
+      "state": "done",
+      "startedAt": 1793105764673,
+      "queuedAt": 1793105764652,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "node tests/run.js: 452 passed (23 files), including 16 in c…",
+      "promptPreview": "CONTEXT: \"Camp Scoreboard\" (CLAUDE.md is in your context — obey it: sync invariants, render-stability (setHtmlIfChanged; never re-create Jelly components when nothing changed; never transition: all), canEdit/roles, two camps). A Playwright sweep found glitches; each finding in your group file was re-verified by a skeptic (\"verdict.refinedFix\" is the skeptic's tested recommendation).\nSCOPE: only yo…",
+      "promptFramed": true,
+      "lastProgressAt": 1793105967771,
+      "tokens": 135410,
+      "toolCalls": 24,
+      "durationMs": 203097,
+      "resultPreview": "{\"commits\":[\"0c718ce Chat: hand back a stale Back entry, clear toasts above the update bar, pin the SDK hook\",\"5e090b9 Chat: header fits on 320-350px editors; sync-attach clears a stale \\\"sync is off\\\" (reworded trailer)\",\"5a45717 Chat: fix the 17 glitches from the v183 sweep (reworded trailer)\"],\"results\":[{\"id\":\"commit-trailers\",\"status\":\"fixed\",\"what\":\"Reworded all three commits on the branch (…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 13,
+      "label": "review:boot-theme",
+      "phaseIndex": 2,
+      "phaseTitle": "Review",
+      "agentId": "a60fe674b68c180d7",
+      "model": "claude-sonnet-5-5",
+      "state": "done",
+      "startedAt": 1793105991071,
+      "queuedAt": 1793105991064,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "ship",
+      "promptPreview": "CONTEXT: \"Camp Scoreboard\" (CLAUDE.md is in your context — obey it: sync invariants, render-stability (setHtmlIfChanged; never re-create Jelly components when nothing changed; never transition: all), canEdit/roles, two camps). A Playwright sweep found glitches; each finding in your group file was re-verified by a skeptic (\"verdict.refinedFix\" is the skeptic's tested recommendation).\nSCOPE: only yo…",
+      "promptFramed": true,
+      "lastProgressAt": 1793106640702,
+      "tokens": 218865,
+      "toolCalls": 42,
+      "durationMs": 649630,
+      "resultPreview": "{\"verdict\":\"ship\",\"issues\":[{\"severity\":\"minor\",\"where\":\"boot-guard.js second IIFE: setTimeout(check, 15000); tests/shell.test.js (>= 15000)\",\"problem\":\"Raising the backstop from 4 s to 15 s lengthens the wait on the one population CLAUDE.md names as permanently affected (iOS < 16.4, where the module cannot be parsed) IF Safari does not report the module parse error through either the script 'erro…"
+    },
+    {
+      "type": "workflow_agent",
+      "index": 14,
+      "label": "fixup:boot-theme",
+      "phaseIndex": 3,
+      "phaseTitle": "Fix-up",
+      "agentId": "a435e17fb407ed92a",
+      "model": "claude-sonnet-5-5",
+      "state": "done",
+      "startedAt": 1793106641617,
+      "queuedAt": 1793106641610,
+      "attempt": 1,
+      "lastToolName": "StructuredOutput",
+      "lastToolSummary": "node tests/run.js: 448 passed (23 files). node --check pass…",
+      "promptPreview": "CONTEXT: \"Camp Scoreboard\" (CLAUDE.md is in your context — obey it: sync invariants, render-stability (setHtmlIfChanged; never re-create Jelly components when nothing changed; never transition: all), canEdit/roles, two camps). A Playwright sweep found glitches; each finding in your group file was re-verified by a skeptic (\"verdict.refinedFix\" is the skeptic's tested recommendation).\nSCOPE: only yo…",
+      "promptFramed": true,
+      "lastProgressAt": 1793106853740,
+      "tokens": 130004,
+      "toolCalls": 14,
+      "durationMs": 212123,
+      "resultPreview": "{\"commits\":[\"e796ecd Boot guard: judge a missing Jelly module at load, not a 4 s timer; unit-test sheet dismissal; stamp TV_BUILD (on top of 1447ea2)\"],\"results\":[{\"id\":\"review-1-backstop-15s\",\"status\":\"fixed\",\"what\":\"The 15 s backstop made iOS < 16.4 wait 15 s for the sign-in button if Safari reports neither error event. boot-guard.js now also checks on window 'load' and calls check() then. A mod…"
+    }
+  ],
+  "totalTokens": 2912034,
+  "totalToolCalls": 638
+}
