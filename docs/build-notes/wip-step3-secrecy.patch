@@ -1,0 +1,2515 @@
+From 465e47fefe6740bc262e76faa30faadb0160de44 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 27 Oct 2026 23:06:28 +0000
+Subject: [PATCH 1/2] Step 3a: reveal-core.js - the standings reveal's pure
+ rules
+
+groupPlaces, untilFor (08:00 camp time the next day, DST-safe; practice 2 h),
+normalizeRevealCtl/normalizeRevealPub (exactly the schema or null), revealView
+(fails closed; expired reveal keeps only the champion's name; phone lag of 3 s
+keyed off sa) and tvFrame. Pure (a test pins it), loaded after camp-core.js; added
+to index.html at the current ?v= (the deploy step bumps all together) and to the
+test harness. tests/reveal-core.test.js (+ .senior).
+
+Rollback: git revert (nothing consumes the file yet).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01FmwrSqURuVRaeeP3mUmmwi
+---
+ CLAUDE.md                        |  25 ++-
+ index.html                       |   3 +
+ reveal-core.js                   | 302 ++++++++++++++++++++++++++
+ tests/harness.js                 |   2 +-
+ tests/reveal-core.senior.test.js |  13 ++
+ tests/reveal-core.test.js        | 356 +++++++++++++++++++++++++++++++
+ 6 files changed, 697 insertions(+), 4 deletions(-)
+ create mode 100644 reveal-core.js
+ create mode 100644 tests/reveal-core.senior.test.js
+ create mode 100644 tests/reveal-core.test.js
+
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 0e6a466..9ffe5ef 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -49,6 +49,24 @@ Files:
+   its way into markup or an image address. Nothing runs at load and it touches
+   no DOM, storage or network (a test pins that), so the TV page can load it
+   without app state
++- `reveal-core.js` — the standings reveal's PURE rules, loaded right after
++  camp-core.js (it needs `etParts` / `etWallToEpoch`): `groupPlaces` (equal
++  points share a place; inside a tie golds, silvers, bronzes, then name),
++  `untilFor` (a real reveal hides at 08:00 camp time the NEXT calendar day,
++  DST-safe; a practice after 2 h), `normalizeRevealCtl` / `normalizeRevealPub`
++  (what a snapshot hands back is whatever a director's device wrote, so every
++  reader goes through these: exactly this schema or null, unknown fields dropped,
++  names laundered and cut to 30), **`revealView(ctl, pub, serverNow, role, opts)`**
++  (the ONLY thing a viewer's screen reads about standings, and it FAILS CLOSED:
++  nothing for no / refused / too-new / other-year data or no clock; an expired
++  reveal is a closed view whose only content is the champion's NAME line; a
++  phone holds the newest place back 3 s after `ctl.sa`, never re-hiding one
++  already shown) and `tvFrame` (the big screen's frame as a pure function of
++  the node and the server clock). Time is always an ARGUMENT (a number or a
++  function read at call time), never read inside, so the 8 AM hide can't depend
++  on a cached value; a test pins the file pure. Nothing consumes it yet: the
++  node's writer and readers arrive with the reveal (redesign D5); Step 3 ships
++  the rules first so secrecy is built on them
+ - `settings.js` — the settings sheet + week-builder UI. The builder's
+   `jelly-tabs` shell is built ONCE and kept; `renderSettings` refreshes only
+   the active card (through `setHtmlIfChanged`), hidden cards are filled one
+@@ -129,9 +147,10 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
+ 
+ **Every time any code asset changes:**
+ 1. Bump the `?v=N` cache-busting query string in `index.html` — there are
+-   THIRTEEN on the same number: `boot-guard.js`, `styles.css`, `vendor/jelly.js`,
+-   `firebase-config.js`, `defaults.js`, `camp-core.js`, `camps.js`, `app.js`,
+-   `settings.js`, `chat.js`, `push.js`, `auth-phone.js`, `auth-email-link.js` —
++   FOURTEEN on the same number: `boot-guard.js`, `styles.css`, `vendor/jelly.js`,
++   `firebase-config.js`, `defaults.js`, `camp-core.js`, `reveal-core.js`,
++   `camps.js`, `app.js`, `settings.js`, `chat.js`, `push.js`, `auth-phone.js`,
++   `auth-email-link.js` —
+    keep them in sync, all bumped together. Also bump
+    `APP_VERSION` in `app.js` to the same number (it drives the auto-reload
+    version check). `stalling.html` loads `vendor/jelly.js`, and
+diff --git a/index.html b/index.html
+index 52ad4f8..6d269c8 100644
+--- a/index.html
++++ b/index.html
+@@ -424,6 +424,9 @@
+        window, the sanitizers every database string passes through). No
+        dependencies and nothing runs at load; it must come before app.js. -->
+   <script src="camp-core.js?v=186"></script>
++  <!-- The standings reveal's pure rules (how a reveal is read, timed and hidden).
++       Needs camp-core.js; secrecy depends on it failing closed. -->
++  <script src="reveal-core.js?v=186"></script>
+   <!-- Camp profiles: which camp this device runs (junior default), its
+        Firebase root, storage namespace, schedule, and seed data. Must load
+        between defaults.js (junior's game catalog) and app.js (the consumer). -->
+diff --git a/reveal-core.js b/reveal-core.js
+new file mode 100644
+index 0000000..5db26df
+--- /dev/null
++++ b/reveal-core.js
+@@ -0,0 +1,302 @@
++// ── reveal-core.js — the standings reveal's pure rules ──────────────────
++// Everything about HOW a reveal is read, decided and timed, with no DOM, no
++// storage, no network and nothing read from app state, so the phone, the big
++// screen and the director's remote can all call the same code and a test can
++// run it in a bare vm. Nothing here runs at load; it needs camp-core.js
++// (etParts, etWallToEpoch) loaded first, and every name is deliberately
++// specific because classic scripts share one global scope.
++//
++// The shape it reads (redesign spec §4.3) lives in the database at
++// <root>/revealPublic/<mode>:  { ctl, pub }.
++//   ctl  one small record of where the reveal is (phase, which place is on the
++//        big screen, how many are published, when it started and when it hides)
++//   pub  the places published so far: pub.g0 = { place: 6, e: { t5: {…} } } …
++//        ONLY groups below ctl.shown ever exist there, so no unrevealed place is
++//        in the node at all.
++//
++// THE RULE EVERY FUNCTION HERE FOLLOWS: fail CLOSED. A missing, foreign-shaped,
++// too-new, expired or other-year reveal yields nothing to show, never a guess,
++// because what it would show is the standings, and counselors are not meant to
++// see those before the directors reveal them. Everything a database string can
++// become (names, colour keys) is laundered here once, so no screen has to.
++
++const REVEAL_SCHEMA = 1;                       // ctl.v this build can read
++const REVEAL_PHASES = ['intro', 'live', 'champion', 'table', 'ended'];
++const REVEAL_MAX_GROUPS = 6;                   // groups g0…g5 (six teams: the most a camp has)
++const REVEAL_NAME_MAX = 30;                    // a team's name as frozen into the public node
++const REVEAL_LOOK_MS = 3000;                   // phones lag the big screen by this, for a NEW place only
++const REVEAL_BEAT_SCORE_MS = 3000;             // big screen: name alone, then place + score
++const REVEAL_BEAT_BREAKDOWN_MS = 4500;         // … then the medal / bonus breakdown
++const REVEAL_BEAT_DOCK_MS = 8000;              // … then the team docks into the board
++const REVEAL_AUTO_END_SHORT_MS = 15 * 60 * 1000; // champion / table left idle this long counts as ended
++const REVEAL_AUTO_END_LONG_MS = 60 * 60 * 1000;  // intro / live left idle this long counts as ended
++const REVEAL_PRACTICE_MS = 2 * 60 * 60 * 1000;   // a practice runs for at most this (the rules cap it at 3 h)
++const REVEAL_UNTIL_MAX_MS = 33 * 60 * 60 * 1000; // no `until` can sit further than this past the start
++const REVEAL_ID_RE = /^r[a-z0-9]{6,12}-[a-z0-9]{4}$/;
++const REVEAL_GROUP_KEY_RE = /^g([0-5])$/;
++const REVEAL_TEAM_KEY_RE = /^t[0-5]$/;
++const REVEAL_COLOR_KEY_RE = /^[a-z]{2,12}$/;
++const REVEAL_EPOCH_RE = /^[A-Za-z0-9_-]{1,24}$/;
++
++function revealInt(v, lo, hi) {
++  return typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi ? v : null;
++}
++function revealMs(v) {
++  return typeof v === 'number' && Number.isFinite(v) && v > 0 && v < 1e14 ? v : null;
++}
++// A team's name as it rides in the public node: control characters become
++// spaces, runs of space collapse, the result is cut to REVEAL_NAME_MAX UTF-16
++// units (never mid-surrogate-pair) and trimmed. Plain text only: whoever puts it
++// in markup still esc()s it. '' when nothing usable is left.
++function revealCleanName(v) {
++  if (typeof v !== 'string') return '';
++  // eslint-disable-next-line no-control-regex
++  let s = v.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim();
++  if (s.length > REVEAL_NAME_MAX) {
++    s = s.slice(0, REVEAL_NAME_MAX);
++    if (/[\ud800-\udbff]$/.test(s)) s = s.slice(0, -1);
++    s = s.trim();
++  }
++  return s;
++}
++
++// ── Places ───────────────────────────────────────────────────────────
++// Ranked entries → groups. `entries` are rows already in RANK ORDER (best
++// first: the app's rankTeamsByPoints order), each { id, nm, p, g, s, b, … }:
++// p total points; g/s/b gold/silver/bronze counts. Equal POINTS share a place
++// (competition ranking: 1, 2, 2, 4), and inside a tie the entries are ordered by
++// golds, then silvers, then bronzes, then name, so a tie always reads the same
++// on every screen. Returns [{ place, entries }] best place first. Ported from the
++// TV page's own groupPlaces, which only ever saw points; this one owns the
++// tie-order rule so the phone, the remote and the TV cannot disagree.
++function groupPlaces(entries) {
++  const list = Array.isArray(entries) ? entries.filter((e) => e && typeof e === 'object') : [];
++  const groups = [];
++  let i = 0;
++  while (i < list.length) {
++    const pts = list[i].p;
++    const tie = [list[i]];
++    let j = i + 1;
++    while (j < list.length && list[j].p === pts) { tie.push(list[j]); j++; }
++    tie.sort(revealCompareEntries);
++    groups.push({ place: i + 1, entries: tie });
++    i = j;
++  }
++  return groups;
++}
++
++function revealCompareEntries(a, b) {
++  if ((b.g || 0) !== (a.g || 0)) return (b.g || 0) - (a.g || 0);
++  if ((b.s || 0) !== (a.s || 0)) return (b.s || 0) - (a.s || 0);
++  if ((b.b || 0) !== (a.b || 0)) return (b.b || 0) - (a.b || 0);
++  return String(a.nm || a.id || '').localeCompare(String(b.nm || b.id || ''));
++}
++
++// ── When a reveal hides ──────────────────────────────────────────────
++// A real reveal's grid stays on phones until 08:00 camp time the NEXT calendar
++// day after it started (a reveal begun after midnight still runs to 8 AM that
++// next day); a practice lives for two hours. Eastern wall time through
++// camp-core's DST-safe maths, so both clock changes land right. NaN for a
++// start that isn't a real time.
++function untilFor(startedAt, practice) {
++  const t = revealMs(Number(startedAt));
++  if (t === null) return NaN;
++  if (practice) return t + REVEAL_PRACTICE_MS;
++  const p = etParts(t);
++  const next = new Date(Date.UTC(p.year, p.month - 1, p.day + 1));
++  const two = (n) => (n < 10 ? '0' : '') + n;
++  const ymd = next.getUTCFullYear() + '-' + two(next.getUTCMonth() + 1) + '-' + two(next.getUTCDate());
++  return etWallToEpoch(ymd, 8 * 60);
++}
++
++// ── Normalisers ──────────────────────────────────────────────────────
++// What a snapshot hands back is whatever a director's device wrote (the rules
++// fix the shape, but they are not versioned with this code), so every consumer
++// reads the node only through these. Both return null for anything that is not
++// exactly this build's shape; neither throws; neither keeps a field it does not
++// know, so nothing extra a hostile or newer writer adds can reach a screen.
++function normalizeRevealCtl(raw) {
++  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
++  if (raw.v !== REVEAL_SCHEMA) return null;                // a newer schema is not guessed at
++  if (typeof raw.id !== 'string' || !REVEAL_ID_RE.test(raw.id)) return null;
++  if (REVEAL_PHASES.indexOf(raw.phase) < 0) return null;
++  const seq = revealInt(raw.seq, 0, 1000000);
++  const cur = revealInt(raw.cur, -1, REVEAL_MAX_GROUPS - 1);
++  const shown = revealInt(raw.shown, 0, REVEAL_MAX_GROUPS);
++  const teams = revealInt(raw.teams, 1, REVEAL_MAX_GROUPS);
++  const at = revealMs(raw.at);
++  const sa = revealMs(raw.sa);
++  const startedAt = revealMs(raw.startedAt);
++  const until = revealMs(raw.until);
++  if (seq === null || cur === null || shown === null || teams === null) return null;
++  if (at === null || sa === null || startedAt === null || until === null) return null;
++  if (cur >= shown) return null;                           // cur names a group that is published
++  if (until <= startedAt) return null;
++  const ctl = {
++    v: REVEAL_SCHEMA, id: raw.id, seq, phase: raw.phase, cur, shown, teams,
++    finale: raw.finale === true, at, sa, startedAt,
++    until: Math.min(until, startedAt + REVEAL_UNTIL_MAX_MS),
++  };
++  const ca = revealMs(raw.ca);
++  if (ca !== null) ctl.ca = ca;
++  const endedAt = revealMs(raw.endedAt);
++  if (endedAt !== null) ctl.endedAt = endedAt;
++  if (raw.endKind === 'done' || raw.endKind === 'early') ctl.endKind = raw.endKind;
++  if (typeof raw.epoch === 'string' && REVEAL_EPOCH_RE.test(raw.epoch)) ctl.epoch = raw.epoch;
++  return ctl;
++}
++
++// pub → [{ idx, place, entries:[{ id, nm, k, p, g, s, b, v, m, c }] }] sorted by
++// idx (the order places were revealed: lowest place first). A group or an entry
++// that is not exactly the shape is dropped, not repaired. Never null: no
++// usable group is simply [].
++function normalizeRevealPub(raw) {
++  const out = [];
++  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
++  Object.keys(raw).forEach((key) => {
++    const m = REVEAL_GROUP_KEY_RE.exec(key);
++    const grp = raw[key];
++    if (!m || !grp || typeof grp !== 'object') return;
++    const place = revealInt(grp.place, 1, REVEAL_MAX_GROUPS);
++    if (place === null || !grp.e || typeof grp.e !== 'object') return;
++    const entries = [];
++    Object.keys(grp.e).forEach((tid) => {
++      const e = grp.e[tid];
++      if (!REVEAL_TEAM_KEY_RE.test(tid) || !e || typeof e !== 'object') return;
++      const nm = revealCleanName(e.nm);
++      const p = revealInt(e.p, -99999, 99999);
++      const g = revealInt(e.g, 0, 99), s = revealInt(e.s, 0, 99), b = revealInt(e.b, 0, 99);
++      const v = revealInt(e.v, -99999, 99999), mm = revealInt(e.m, -99999, 99999), c = revealInt(e.c, -99999, 99999);
++      if (!nm || p === null || g === null || s === null || b === null || v === null || mm === null || c === null) return;
++      const row = { id: tid, nm, p, g, s, b, v, m: mm, c };
++      if (typeof e.k === 'string' && REVEAL_COLOR_KEY_RE.test(e.k)) row.k = e.k;
++      entries.push(row);
++    });
++    if (!entries.length) return;
++    entries.sort(revealCompareEntries);
++    out.push({ idx: Number(m[1]), place, entries });
++  });
++  out.sort((a, b) => a.idx - b.idx);
++  return out;
++}
++
++// ── Reading a reveal ─────────────────────────────────────────────────
++// A reveal whose last command is this old is treated as over (DISPLAY only; the
++// grid itself still follows `until`). "End the reveal" is the step most likely
++// to be forgotten, and a stuck "Live" would take over Now for the whole camp.
++function revealEffectivePhase(ctl, now) {
++  if (!ctl) return 'ended';
++  if (ctl.phase === 'ended') return 'ended';
++  const limit = ctl.phase === 'champion' || ctl.phase === 'table' ? REVEAL_AUTO_END_SHORT_MS : REVEAL_AUTO_END_LONG_MS;
++  return now - ctl.at > limit ? 'ended' : ctl.phase;
++}
++
++function revealNow(serverNow) {
++  const t = typeof serverNow === 'function' ? serverNow() : serverNow;
++  return typeof t === 'number' && Number.isFinite(t) ? t : null;
++}
++
++// The ONLY thing a viewer's screen reads about the standings. (ctl, pub) are the
++// raw node values for ONE child (a phone only ever passes `real`); `serverNow`
++// is a number or a function returning one, and is read HERE, at call time, so an
++// 8 AM hide can never depend on a cached value; `role` is 'viewer' | 'editor'
++// (phones: the newest place is held back for REVEAL_LOOK_MS after it is shown, so
++// the room hears it from the big screen first) or 'remote' | 'tv' (no lag: they
++// ARE the big screen). opts: { denied: true } when the listener was refused;
++// { epoch } to ignore a reveal from another camp year (omit it where the epoch
++// can't be known, the TV).
++//
++// Returns null — nothing — for no/denied/foreign/too-new/other-year data or no
++// usable clock. For an expired reveal it returns a CLOSED view (no rows, nothing
++// live) whose only content is `champion`, which outlives the 8 AM hide by
++// design (the whole camp saw the crowning; it carries a name and no number).
++// Otherwise:
++//   { live, phase, rawPhase, id, seq, startedAt, until, expired:false, finale,
++//     rows:[{ place, tie, entries }] best place first (revealed only),
++//     onScreen  the place the big screen is on, or null,
++//     looking   true while the newest place is held back (3 s),
++//     remaining teams not yet revealed (teams minus revealed entries, so a
++//               tie can't be inferred from a group count),
++//     champion  [{ id, name }] when a finale's 1st place has been shown, or null }
++function revealView(ctl, pub, serverNow, role, opts) {
++  const o = opts || {};
++  if (o.denied) return null;
++  const c = normalizeRevealCtl(ctl);
++  if (!c) return null;
++  if (o.epoch !== undefined && (c.epoch || '') !== (o.epoch || '')) return null;
++  const now = revealNow(serverNow);
++  if (now === null) return null;
++  const groups = normalizeRevealPub(pub).filter((g) => g.idx < c.shown);
++  const lag = (role === 'viewer' || role === 'editor') && c.shown > 0 && now < c.sa + REVEAL_LOOK_MS;
++  const visible = lag ? groups.filter((g) => g.idx !== c.shown - 1) : groups;
++  const rows = visible.map((g) => ({ place: g.place, tie: g.entries.length > 1, entries: g.entries }))
++    .sort((a, b) => a.place - b.place);
++  let champion = null;
++  if (c.finale) {
++    const first = rows.find((r) => r.place === 1);
++    if (first) champion = first.entries.map((e) => ({ id: e.id, name: e.nm }));
++  }
++  if (now >= c.until) {
++    return {
++      live: false, phase: 'ended', rawPhase: c.phase, id: c.id, seq: c.seq, startedAt: c.startedAt, until: c.until,
++      expired: true, finale: c.finale, rows: [], onScreen: null, looking: false, remaining: 0, champion,
++    };
++  }
++  const phase = revealEffectivePhase(c, now);
++  const revealed = rows.reduce((n, r) => n + r.entries.length, 0);
++  let onScreen = null;
++  if (!lag && (phase === 'live' || phase === 'champion')) {
++    const g = groups.find((x) => x.idx === c.cur) || (phase === 'champion' ? groups.find((x) => x.idx === c.shown - 1) : null);
++    if (g) onScreen = g.place;
++  }
++  return {
++    live: phase === 'intro' || phase === 'live' || phase === 'champion',
++    phase, rawPhase: c.phase, id: c.id, seq: c.seq, startedAt: c.startedAt, until: c.until, expired: false,
++    finale: c.finale, rows, onScreen, looking: lag, remaining: Math.max(0, c.teams - revealed), champion,
++  };
++}
++
++// ── What the big screen should be showing ────────────────────────────
++// A pure function of (ctl, pub, serverNow): { mode, heroIdx, beat, docked, seq,
++// elapsed, fresh, groups }. mode is waiting | intro | hero | board | champion |
++// table; heroIdx the group index in the spotlight (−1 when none); beat which
++// part of a place's moment this is ('name' alone for 3 s, 'score' with the place
++// and points, 'breakdown' from 4.5 s) or null; docked how many places are
++// already in the board; `fresh` true while the place is inside its first 3 s (the
++// only time a late joiner gets confetti); `groups` the revealed places in the
++// order they were revealed, ready to draw. Waiting means the same as a null
++// revealView: nothing to show, so nothing is shown. The big screen never lags
++// (it is the source) and never reads the epoch (it cannot).
++function tvFrame(ctl, pub, serverNow, opts) {
++  const waiting = { mode: 'waiting', heroIdx: -1, beat: null, docked: 0, seq: 0, elapsed: 0, fresh: false, groups: [] };
++  const o = opts || {};
++  if (o.denied) return waiting;
++  const c = normalizeRevealCtl(ctl);
++  const now = revealNow(serverNow);
++  if (!c || now === null) return waiting;
++  if (now >= c.until) return waiting;
++  const phase = revealEffectivePhase(c, now);
++  if (phase === 'ended') return waiting;
++  const groups = normalizeRevealPub(pub).filter((g) => g.idx < c.shown);
++  const elapsed = Math.max(0, now - c.at);
++  const frame = { mode: 'intro', heroIdx: -1, beat: null, docked: 0, seq: c.seq, elapsed, fresh: false, groups };
++  if (phase === 'intro') return frame;
++  if (phase === 'champion') { frame.mode = 'champion'; frame.docked = groups.length; frame.fresh = elapsed < REVEAL_BEAT_SCORE_MS; return frame; }
++  if (phase === 'table') { frame.mode = 'table'; frame.docked = groups.length; return frame; }
++  // live: one place's moment, measured from the command that put it on screen
++  if (c.cur < 0 || !groups.some((g) => g.idx === c.cur)) {
++    // Nothing published at `cur` (a half-written command): show the board as it stands.
++    frame.mode = 'board'; frame.docked = groups.length; return frame;
++  }
++  if (elapsed < REVEAL_BEAT_DOCK_MS) {
++    frame.mode = 'hero';
++    frame.heroIdx = c.cur;
++    frame.docked = c.cur;
++    frame.beat = elapsed < REVEAL_BEAT_SCORE_MS ? 'name' : elapsed < REVEAL_BEAT_BREAKDOWN_MS ? 'score' : 'breakdown';
++    frame.fresh = elapsed < REVEAL_BEAT_SCORE_MS;
++  } else {
++    frame.mode = 'board';
++    frame.docked = c.cur + 1;
++  }
++  return frame;
++}
+diff --git a/tests/harness.js b/tests/harness.js
+index af7dfdf..7669e83 100644
+--- a/tests/harness.js
++++ b/tests/harness.js
+@@ -20,7 +20,7 @@ const vm = require('vm');
+ 
+ const ROOT = path.join(__dirname, '..');
+ // Load order mirrors the <script> tags at the bottom of index.html.
+-const APP_FILES = ['defaults.js', 'camp-core.js', 'camps.js', 'app.js', 'settings.js', 'chat.js', 'push.js'];
++const APP_FILES = ['defaults.js', 'camp-core.js', 'reveal-core.js', 'camps.js', 'app.js', 'settings.js', 'chat.js', 'push.js'];
+ 
+ const noop = () => {};
+ 
+diff --git a/tests/reveal-core.senior.test.js b/tests/reveal-core.senior.test.js
+new file mode 100644
+index 0000000..f20670a
+--- /dev/null
++++ b/tests/reveal-core.senior.test.js
+@@ -0,0 +1,13 @@
++// reveal-core.js under the SENIOR profile: the same checks as reveal-core.test.js
++// (which this evals), sized to senior's four teams (g0…g3 groups), plus the one
++// thing that differs by design.
++eval(readFixture('reveal-core.test.js'));
++
++test('the senior camp has four teams, so a full reveal is four groups and the first button is 4th place', () => {
++  assert.equal(CAMP.id, 'senior');
++  assert.equal(CAMP.teamCount, 4);
++  const now = Date.parse('2027-06-23T23:31:00Z');
++  const v = revealView(mkCtl({ cur: 0, shown: 1, teams: 4 }), mkPub(1), now, 'tv');
++  assert.equal(v.rows[0].place, 4);
++  assert.equal(v.remaining, 3);
++});
+diff --git a/tests/reveal-core.test.js b/tests/reveal-core.test.js
+new file mode 100644
+index 0000000..7252d49
+--- /dev/null
++++ b/tests/reveal-core.test.js
+@@ -0,0 +1,356 @@
++// reveal-core.js — the standings reveal's pure rules (places, when a reveal
++// hides, the fail-closed reader, the big screen's frame). Runs under both camp
++// profiles (reveal-core.senior.test.js evals this file): nothing in it is junior
++// or senior specific, but a camp has four or six teams, so the full-reveal
++// helpers size themselves from CAMP.teamCount.
++
++const T0 = Date.parse('2027-06-23T23:30:00Z'); // a Wednesday evening, 7:30 PM EDT
++const N = CAMP.teamCount;
++
++// One revealed team row, in the public node's compact shape.
++function ent(id, p, extra) {
++  return Object.assign({ nm: 'Team ' + id, p, g: 0, s: 0, b: 0, v: 0, m: 0, c: 0 }, extra || {});
++}
++
++// A well-formed ctl; every field overridable.
++function mkCtl(o) {
++  return Object.assign({
++    v: 1, id: 'r1kz9fxq-4hd2', seq: 3, phase: 'live', cur: 1, shown: 2, teams: N, finale: false,
++    at: T0 + 10000, sa: T0 + 10000, ca: T0, startedAt: T0, until: untilFor(T0, false),
++  }, o || {});
++}
++
++// pub for the first `shown` places of a camp with N teams, worst place first
++// (g0 = last place), one team per group, points 10 × place-from-the-bottom.
++function mkPub(shown) {
++  const pub = {};
++  for (let i = 0; i < shown; i++) {
++    const tid = 't' + (N - 1 - i);
++    pub['g' + i] = { place: N - i, e: { [tid]: ent(tid, 10 * (N - i), { nm: 'Team ' + tid, g: 1 }) } };
++  }
++  return pub;
++}
++
++// ── Places ───────────────────────────────────────────────────────────
++
++test('groupPlaces: equal points share a place and the next place skips', () => {
++  const g = groupPlaces([ent('a', 30), ent('b', 20), ent('c', 20), ent('d', 5)]);
++  assert.deepEqual(g.map((x) => x.place), [1, 2, 4]);
++  assert.deepEqual(g.map((x) => x.entries.length), [1, 2, 1]);
++});
++
++test('groupPlaces: inside a tie, golds then silvers then bronzes then name', () => {
++  const g = groupPlaces([
++    ent('a', 20, { nm: 'Zed', g: 1 }), ent('b', 20, { nm: 'Amy', g: 2 }),
++    ent('c', 20, { nm: 'Bea', g: 1, s: 1 }), ent('d', 20, { nm: 'Abe', g: 1, s: 1 }),
++  ]);
++  assert.equal(g.length, 1);
++  assert.deepEqual(g[0].entries.map((e) => e.nm), ['Amy', 'Abe', 'Bea', 'Zed']);
++});
++
++test('groupPlaces: empty and junk input give no groups, not a throw', () => {
++  [null, undefined, 'x', 7, {}, [], [null, 3, 'x']].forEach((bad) => {
++    assert.deepEqual(groupPlaces(bad), [], JSON.stringify(bad));
++  });
++});
++
++// ── When a reveal hides ──────────────────────────────────────────────
++
++test('untilFor: 08:00 camp time the day after the start, DST-safe', () => {
++  // Wednesday 7:30 PM EDT → Thursday 8:00 AM EDT
++  assert.equal(untilFor(Date.parse('2027-06-23T23:30:00Z'), false), Date.parse('2027-06-24T12:00:00Z'));
++  // after midnight still runs to 8 AM the NEXT calendar day (Thursday 12:30 AM → Friday)
++  assert.equal(untilFor(Date.parse('2027-06-24T04:30:00Z'), false), Date.parse('2027-06-25T12:00:00Z'));
++  // spring forward: Saturday 2027-03-13 evening → Sunday 08:00 EDT (the clocks moved at 2 AM)
++  assert.equal(untilFor(Date.parse('2027-03-14T00:30:00Z'), false), Date.parse('2027-03-14T12:00:00Z'));
++  // fall back: Saturday 2027-11-06 evening → Sunday 08:00 EST
++  assert.equal(untilFor(Date.parse('2027-11-07T00:30:00Z'), false), Date.parse('2027-11-07T13:00:00Z'));
++});
++
++test('untilFor: a practice lasts two hours; nonsense is NaN', () => {
++  assert.equal(untilFor(T0, true), T0 + 2 * 3600 * 1000);
++  [0, -5, NaN, null, undefined, 'x', Infinity].forEach((bad) => assert.ok(Number.isNaN(untilFor(bad, false)), String(bad)));
++});
++
++// ── Normalisers ──────────────────────────────────────────────────────
++
++test('normalizeRevealCtl accepts a well-formed ctl and keeps only known fields', () => {
++  const c = normalizeRevealCtl(Object.assign(mkCtl(), { by: 'Patrick', startedBy: 'p@x', extra: { a: 1 } }));
++  assert.ok(c);
++  assert.deepEqual(Object.keys(c).sort(), ['at', 'ca', 'cur', 'finale', 'id', 'phase', 'sa', 'seq', 'shown', 'startedAt', 'teams', 'until', 'v'].sort());
++  assert.equal(c.finale, false);
++});
++
++test('normalizeRevealCtl refuses anything that is not exactly this schema', () => {
++  const bad = [
++    null, 'x', [], {},
++    mkCtl({ v: 2 }), mkCtl({ v: 0 }), mkCtl({ v: '1' }),
++    mkCtl({ id: 'nope' }), mkCtl({ id: 'R1KZ9FXQ-4HD2' }),
++    mkCtl({ phase: 'applause' }), mkCtl({ phase: undefined }),
++    mkCtl({ cur: 2, shown: 2 }), mkCtl({ cur: 7 }), mkCtl({ cur: -2 }), mkCtl({ cur: 1.5 }),
++    mkCtl({ shown: 9 }), mkCtl({ teams: 0 }), mkCtl({ teams: 7 }),
++    mkCtl({ at: 'now' }), mkCtl({ sa: NaN }), mkCtl({ startedAt: 0 }), mkCtl({ until: T0 - 1 }),
++    mkCtl({ seq: -1 }),
++  ];
++  bad.forEach((b, i) => assert.equal(normalizeRevealCtl(b), null, 'case ' + i + ' ' + JSON.stringify(b)));
++});
++
++test('normalizeRevealCtl clamps an until that sits implausibly far out', () => {
++  const c = normalizeRevealCtl(mkCtl({ until: T0 + 400 * 24 * 3600 * 1000 }));
++  assert.equal(c.until, T0 + 33 * 3600 * 1000);
++});
++
++test('normalizeRevealPub drops what is not exactly the shape and launders names', () => {
++  const pub = {
++    g0: { place: 3, e: { t2: ent('t2', 10, { nm: 'Pump\u0000kins\n  Patch', by: 'Patrick', k: 'gold' }) } },
++    g1: { place: 9, e: { t1: ent('t1', 5) } },                       // place out of range
++    g2: { place: 2, e: { t9: ent('t9', 5) } },                       // not a team id
++    g3: { place: 2, e: { t3: Object.assign(ent('t3', 5), { p: 'lots' }) } }, // bad number
++    g4: 'nope', g9: { place: 1, e: { t0: ent('t0', 1) } }, junk: { place: 1, e: {} },
++    g5: { place: 1, e: { t5: ent('t5', 1, { nm: '   ' }) } },        // nothing left of the name
++  };
++  const g = normalizeRevealPub(pub);
++  assert.equal(g.length, 1);
++  assert.equal(g[0].idx, 0);
++  assert.equal(g[0].entries[0].nm, 'Pump kins Patch');
++  assert.equal(g[0].entries[0].k, 'gold');
++  assert.deepEqual(Object.keys(g[0].entries[0]).sort(), ['b', 'c', 'g', 'id', 'k', 'm', 'nm', 'p', 's', 'v']);
++  assert.deepEqual(normalizeRevealPub(null), []);
++  assert.deepEqual(normalizeRevealPub([1, 2]), []);
++});
++
++test('a name is cut to 30 units without splitting an emoji, markup stays plain text', () => {
++  const long = 'A'.repeat(29) + '🦊🦊';
++  const g = normalizeRevealPub({ g0: { place: 1, e: { t0: ent('t0', 1, { nm: long }) } } });
++  const nm = g[0].entries[0].nm;
++  assert.ok(nm.length <= 30);
++  assert.ok(!/[\ud800-\udbff]$/.test(nm), 'no half an emoji');
++  const inert = normalizeRevealPub({ g0: { place: 1, e: { t0: ent('t0', 1, { nm: '<img src=x onerror=alert(1)>' }) } } });
++  assert.equal(inert[0].entries[0].nm, '<img src=x onerror=alert(1)>', 'kept as text for the caller to esc()');
++  const badKey = normalizeRevealPub({ g0: { place: 1, e: { t0: ent('t0', 1, { k: 'gold"onload="x' }) } } });
++  assert.equal(badKey[0].entries[0].k, undefined, 'a colour key that is not a plain word is dropped');
++});
++
++// ── revealView: fail closed ──────────────────────────────────────────
++
++test('revealView gives nothing for missing, denied, foreign, too-new or clockless input', () => {
++  const now = T0 + 20000;
++  assert.equal(revealView(null, null, now, 'viewer'), null);
++  assert.equal(revealView(undefined, mkPub(2), now, 'viewer'), null);
++  assert.equal(revealView(mkCtl(), mkPub(2), now, 'viewer', { denied: true }), null, 'listener refused');
++  assert.equal(revealView(mkCtl({ v: 2 }), mkPub(2), now, 'viewer'), null, 'a newer schema is not guessed at');
++  assert.equal(revealView(mkCtl({ epoch: 'w2027' }), mkPub(2), now, 'viewer', { epoch: 'w2028' }), null, 'another camp year');
++  assert.equal(revealView(mkCtl({ epoch: 'w2027' }), mkPub(2), now, 'viewer', { epoch: '' }), null, 'a legacy week against a new-year reveal');
++  assert.equal(revealView(mkCtl(), mkPub(2), null, 'viewer'), null, 'no usable clock');
++  assert.equal(revealView(mkCtl(), mkPub(2), NaN, 'viewer'), null);
++  assert.equal(revealView(mkCtl(), mkPub(2), () => undefined, 'viewer'), null);
++  assert.ok(revealView(mkCtl({ epoch: 'w2027' }), mkPub(2), now, 'viewer', { epoch: 'w2027' }), 'same year reads');
++  assert.ok(revealView(mkCtl({ epoch: 'w2027' }), mkPub(2), now, 'tv'), 'the TV cannot read the epoch, so it does not check it');
++  assert.ok(revealView(mkCtl(), mkPub(2), now, 'viewer', { epoch: '' }), 'legacy week, legacy reveal');
++});
++
++test('revealView reads serverNow at call time, not when the view was built', () => {
++  let clock = T0 + 20000;
++  const ctl = mkCtl();
++  assert.equal(revealView(ctl, mkPub(2), () => clock, 'viewer').expired, false);
++  clock = ctl.until; // the instant it hides
++  assert.equal(revealView(ctl, mkPub(2), () => clock, 'viewer').expired, true);
++});
++
++test('revealView: the grid is gone at 08:00 and an expired view carries no row', () => {
++  const ctl = mkCtl({ phase: 'ended', cur: 1, shown: 2 });
++  assert.equal(revealView(ctl, mkPub(2), ctl.until - 1, 'viewer').rows.length, 2, 'one ms before 8 AM it is still there');
++  const v = revealView(ctl, mkPub(2), ctl.until, 'viewer');
++  assert.equal(v.expired, true);
++  assert.equal(v.live, false);
++  assert.deepEqual(v.rows, []);
++  assert.equal(v.remaining, 0);
++  assert.equal(v.onScreen, null);
++  assert.equal(v.champion, null, 'not a finale: nothing outlives the hide');
++});
++
++test('the champion line outlives the hide, by name only, and never carries a number', () => {
++  const pub = {};
++  const ctl = mkCtl({ finale: true, phase: 'table', cur: N - 1, shown: N, at: T0 + 60000, sa: T0 + 60000 });
++  for (let i = 0; i < N; i++) {
++    const tid = 't' + i;
++    pub['g' + i] = { place: N - i, e: { [tid]: ent(tid, 100 + i, { nm: 'Team ' + tid, g: 3, s: 2, b: 1, v: 4, m: 5, c: 6 }) } };
++  }
++  const later = ctl.until + 1000;
++  const v = revealView(ctl, pub, later, 'viewer');
++  assert.equal(v.expired, true);
++  assert.deepEqual(v.champion, [{ id: 't' + (N - 1), name: 'Team t' + (N - 1) }]);
++  const json = JSON.stringify(v.champion);
++  ['"p"', '"g"', '"s"', '"b"', '"v"', '"m"', '"c"', '100', '10'].forEach((frag) => assert.ok(!json.includes(frag), 'champion leaks ' + frag));
++  // not a finale: no champion even with a first place shown
++  assert.equal(revealView(Object.assign({}, ctl, { finale: false }), pub, later, 'viewer').champion, null);
++  // a champion exists only once 1st place has been SHOWN
++  assert.equal(revealView(mkCtl({ finale: true, shown: 2, cur: 1 }), mkPub(2), T0 + 20000, 'tv').champion, null);
++});
++
++// ── revealView: what a phone may see ─────────────────────────────────
++
++test('revealView lists only published places, best first, ties as one row', () => {
++  const pub = {
++    g0: { place: 4, e: { t3: ent('t3', 5) } },
++    g1: { place: 2, e: { t1: ent('t1', 20, { nm: 'B' }), t2: ent('t2', 20, { nm: 'A', g: 1 }) } },
++  };
++  const v = revealView(mkCtl({ cur: 1, shown: 2, teams: N }), pub, T0 + 60000, 'tv');
++  assert.deepEqual(v.rows.map((r) => r.place), [2, 4]);
++  assert.equal(v.rows[0].tie, true);
++  assert.deepEqual(v.rows[0].entries.map((e) => e.nm), ['A', 'B']);
++  assert.equal(v.rows[1].tie, false);
++});
++
++test('revealView ignores a group beyond ctl.shown (a place that was never published)', () => {
++  const pub = mkPub(3); // g0, g1, g2 …
++  const v = revealView(mkCtl({ shown: 2, cur: 1 }), pub, T0 + 60000, 'tv');
++  assert.equal(v.rows.length, 2, 'g2 is not shown yet, so it is not drawn even though the node holds it');
++  assert.ok(!JSON.stringify(v).includes('Team t' + (N - 3)), 'its name appears nowhere');
++});
++
++test('remaining counts teams, never groups, so a tie cannot be inferred', () => {
++  const pub = { g0: { place: 5, e: { t4: ent('t4', 5), t5: ent('t5', 5) } } }; // a tie for 5th: one group, two teams
++  const v = revealView(mkCtl({ cur: 0, shown: 1, teams: 6 }), pub, T0 + 60000, 'tv');
++  assert.equal(v.rows.length, 1);
++  assert.equal(v.remaining, 4);
++});
++
++test('a phone holds the newest place back for 3 s after it is shown, and only that one', () => {
++  const ctl = mkCtl({ cur: 1, shown: 2, sa: T0 + 50000, at: T0 + 50000 });
++  const pub = mkPub(2);
++  const during = revealView(ctl, pub, ctl.sa + 1000, 'viewer');
++  assert.equal(during.looking, true);
++  assert.equal(during.rows.length, 1, 'the older place stays visible; only shown-1 is withheld');
++  assert.equal(during.onScreen, null, 'no row is lit while it is held back');
++  assert.equal(during.remaining, N - 1, 'the withheld place still counts as to come');
++  const edge = revealView(ctl, pub, ctl.sa + 2999, 'viewer');
++  assert.equal(edge.looking, true);
++  const after = revealView(ctl, pub, ctl.sa + 3000, 'viewer');
++  assert.equal(after.looking, false);
++  assert.equal(after.rows.length, 2);
++  assert.equal(after.onScreen, N - 1, 'the place the big screen is on');
++  // the big screen and the remote never lag
++  assert.equal(revealView(ctl, pub, ctl.sa + 1000, 'tv').rows.length, 2);
++  assert.equal(revealView(ctl, pub, ctl.sa + 1000, 'remote').rows.length, 2);
++  // a director's own phone is a phone: it lags like a counselor's
++  assert.equal(revealView(ctl, pub, ctl.sa + 1000, 'editor').rows.length, 1);
++});
++
++test('the lag keys off sa: Back, the table, End and a reload never re-hide a place already shown', () => {
++  const sa = T0 + 50000;
++  const pub = mkPub(3);
++  const later = sa + 20000; // well past the window for the newest place
++  [
++    mkCtl({ phase: 'live', cur: 1, shown: 3, sa, at: later - 1000 }),          // Back: cur drops, shown keeps
++    mkCtl({ phase: 'table', cur: 2, shown: 3, sa, at: later - 1000 }),          // the final table
++    mkCtl({ phase: 'ended', endKind: 'early', cur: 2, shown: 3, sa, at: later - 500, endedAt: later - 500 }), // End
++  ].forEach((ctl, i) => {
++    const v = revealView(ctl, pub, later, 'viewer');
++    assert.equal(v.rows.length, 3, 'case ' + i);
++    assert.equal(v.looking, false, 'case ' + i);
++  });
++  // a reload one second after Back, when sa is long past: nothing hides
++  assert.equal(revealView(mkCtl({ cur: 0, shown: 3, sa, at: later }), pub, later + 1000, 'viewer').rows.length, 3);
++});
++
++test('revealView: a reveal nobody ended counts as ended after 15 min (champion, table) or 60 min (intro, live)', () => {
++  const min = 60 * 1000;
++  const at = T0 + 5 * min;
++  const pub = mkPub(2);
++  const cases = [
++    ['live', 59, true], ['live', 61, false], ['intro', 59, true], ['intro', 61, false],
++    ['table', 14, true], ['table', 16, false], ['champion', 14, true], ['champion', 16, false],
++  ];
++  cases.forEach(([phase, minutes, running]) => {
++    const ctl = mkCtl({ phase, at, sa: at, cur: phase === 'intro' ? -1 : 1, shown: phase === 'intro' ? 0 : 2 });
++    const v = revealView(ctl, phase === 'intro' ? {} : pub, at + minutes * min, 'viewer');
++    assert.equal(v.phase, running ? phase : 'ended', phase + ' phase at +' + minutes + ' min');
++    // `live` is what takes Now over on a phone: intro, live and champion only. The
++    // final table is an ordinary section under the normal Now.
++    assert.equal(v.live, running && phase !== 'table', phase + ' live at +' + minutes + ' min');
++  });
++  // the grid itself still follows `until`, not the auto-end
++  const idle = revealView(mkCtl({ phase: 'live', at, sa: at }), pub, at + 90 * min, 'viewer');
++  assert.equal(idle.live, false);
++  assert.equal(idle.rows.length, 2, 'rows stay until 8 AM');
++});
++
++test('revealView reads no standings field outside rows (nothing else carries points)', () => {
++  const v = revealView(mkCtl(), mkPub(2), T0 + 60000, 'viewer');
++  const rest = Object.assign({}, v); delete rest.rows;
++  assert.ok(!/"[pgsbvmc]":/.test(JSON.stringify(rest)), 'a points-shaped key outside rows: ' + JSON.stringify(rest));
++});
++
++// ── tvFrame ──────────────────────────────────────────────────────────
++
++test('tvFrame is waiting for everything it should not show', () => {
++  const now = T0 + 20000;
++  const pub = mkPub(2);
++  const waiting = (f, why) => { assert.equal(f.mode, 'waiting', why); assert.deepEqual(f.groups, [], why + ' (no groups)'); };
++  waiting(tvFrame(null, null, now), 'no ctl');
++  waiting(tvFrame(mkCtl({ v: 2 }), pub, now), 'too new');
++  waiting(tvFrame(mkCtl(), pub, null), 'no server offset yet');
++  waiting(tvFrame(mkCtl({ phase: 'ended' }), pub, now), 'ended');
++  waiting(tvFrame(mkCtl(), pub, mkCtl().until), 'past until');
++  waiting(tvFrame(mkCtl({ phase: 'live', at: T0 }), pub, T0 + 61 * 60 * 1000), 'auto-ended');
++  waiting(tvFrame(mkCtl(), pub, now, { denied: true }), 'listener refused');
++});
++
++test('tvFrame: intro, then a place walks name, score, breakdown, then docks', () => {
++  const at = T0 + 100000;
++  const ctl = (o) => mkCtl(Object.assign({ phase: 'live', cur: 1, shown: 2, at, sa: at }, o || {}));
++  const pub = mkPub(2);
++  assert.equal(tvFrame(mkCtl({ phase: 'intro', cur: -1, shown: 0 }), {}, at).mode, 'intro');
++  const f0 = tvFrame(ctl(), pub, at + 500);
++  assert.deepEqual([f0.mode, f0.heroIdx, f0.beat, f0.docked, f0.fresh], ['hero', 1, 'name', 1, true]);
++  assert.equal(tvFrame(ctl(), pub, at + 2999).beat, 'name');
++  assert.equal(tvFrame(ctl(), pub, at + 3000).beat, 'score');
++  assert.equal(tvFrame(ctl(), pub, at + 4499).beat, 'score');
++  const f45 = tvFrame(ctl(), pub, at + 4500);
++  assert.deepEqual([f45.beat, f45.fresh], ['breakdown', false]);
++  assert.equal(tvFrame(ctl(), pub, at + 7999).mode, 'hero');
++  const docked = tvFrame(ctl(), pub, at + 8000);
++  assert.deepEqual([docked.mode, docked.heroIdx, docked.beat, docked.docked], ['board', -1, null, 2]);
++  assert.equal(docked.groups.length, 2);
++  assert.equal(tvFrame(ctl({ seq: 9 }), pub, at + 500).seq, 9, 'animations key off seq');
++});
++
++test('tvFrame: a late joiner gets the current frame with no confetti once the moment has passed', () => {
++  const at = T0 + 100000;
++  const f = tvFrame(mkCtl({ phase: 'live', cur: 1, shown: 2, at, sa: at }), mkPub(2), at + 6000);
++  assert.equal(f.mode, 'hero');
++  assert.equal(f.fresh, false);
++  assert.equal(f.elapsed, 6000);
++});
++
++test('tvFrame: champion and the final table show every published place', () => {
++  const at = T0 + 100000;
++  const pub = mkPub(3);
++  const champ = tvFrame(mkCtl({ phase: 'champion', finale: true, cur: 2, shown: 3, at, sa: at }), pub, at + 1000);
++  assert.deepEqual([champ.mode, champ.docked, champ.fresh], ['champion', 3, true]);
++  const table = tvFrame(mkCtl({ phase: 'table', cur: 2, shown: 3, at, sa: at }), pub, at + 1000);
++  assert.deepEqual([table.mode, table.docked], ['table', 3]);
++});
++
++test('tvFrame never shows a group beyond shown and falls back to the board for a half-written command', () => {
++  const at = T0 + 100000;
++  // cur=1 but only g0 is published (a write landed in pieces): no hero, the board as it stands
++  const f = tvFrame(mkCtl({ phase: 'live', cur: 1, shown: 2, at, sa: at }), mkPub(1), at + 500);
++  assert.equal(f.mode, 'board');
++  assert.equal(f.groups.length, 1);
++  const hostile = tvFrame(mkCtl({ phase: 'live', cur: 0, shown: 1, at, sa: at }), mkPub(3), at + 500);
++  assert.equal(hostile.groups.length, 1, 'g1 and g2 sit beyond shown');
++});
++
++// ── Purity ───────────────────────────────────────────────────────────
++
++test('reveal-core is pure: declarations only, no DOM, storage, network or clock of its own', () => {
++  const src = readFixture('../reveal-core.js');
++  const code = src.replace(/\/\/.*$/gm, '');
++  assert.notOk(/\b(document|window|localStorage|sessionStorage|firebase|fetch|XMLHttpRequest|navigator|location)\b/.test(code),
++    'no DOM, storage or network access in code');
++  assert.notOk(/\b(Date\.now|new Date\(\)|setTimeout|setInterval|Math\.random)\b/.test(code),
++    'time comes in as an argument, never read here (an 8 AM hide must not depend on a cached clock)');
++  assert.notOk(/^(?!\s*(\/\/|const |let |function |\}|\s))\S/m.test(src.replace(/\/\*[\s\S]*?\*\//g, '')), 'only top-level declarations and comments');
++});
+-- 
+2.43.0
+
+
+From f36c58f4aeffa2abe0f872719e058d258c6f3619 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 27 Oct 2026 23:22:29 +0000
+Subject: [PATCH 2/2] =?UTF-8?q?WIP=20Step=203=20(secrecy)=20=E2=80=94=20un?=
+ =?UTF-8?q?finished,=20not=20reviewed,=20not=20deployable?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01FmwrSqURuVRaeeP3mUmmwi
+---
+ app.js                       | 332 +++++++++++++++++----
+ current-standings.html       |  20 ++
+ current-standings.js         |  36 ++-
+ index.html                   |  23 +-
+ styles.css                   |  31 ++
+ tests/camp-core.test.js      |   1 +
+ tests/harness.js             |  84 +++++-
+ tests/home.test.js           |   2 +
+ tests/scoring.test.js        |   5 +
+ tests/secrecy.senior.test.js |   9 +
+ tests/secrecy.test.js        | 545 +++++++++++++++++++++++++++++++++++
+ tests/tv.test.js             |  70 ++++-
+ 12 files changed, 1072 insertions(+), 86 deletions(-)
+ create mode 100644 tests/secrecy.senior.test.js
+ create mode 100644 tests/secrecy.test.js
+
+diff --git a/app.js b/app.js
+index 3714f7c..ff6df5d 100644
+--- a/app.js
++++ b/app.js
+@@ -117,6 +117,39 @@ function canEdit() {
+   return memberRole === 'editor';
+ }
+ 
++// ── Standings secrecy ─────────────────────────────────────────────
++// The owner's rule (2026-10-27): counselors see NO points, places, gaps or
++// standings anywhere in the app except what a director has revealed. Only the
++// medal WINNERS of a finished game stay visible (they are read straight from
++// state.results and never go through a points reader). Directors see
++// everything, always.
++//
++// Enforced where points are PRODUCED, not just where they are drawn: every
++// points reader starts with pointsReadAllowed(), so a render path somebody adds
++// later (or forgets) that reaches a reader as a viewer gets zeros / an empty
++// list instead of the truth. Under test the guard THROWS for a viewer
++// (setStandingsGuardThrows), so a viewer render that reaches one fails loudly
++// instead of quietly showing zeros. Gating is in code paths, never CSS:
++// html.view-only leaves every node in the DOM.
++//
++// standingsVisible() is the ONE place that says who may see standings. Today
++// that is "a director" (role from the member record, so a role flip or a
++// hint-painted first frame is the same code); the director-only "Preview as a
++// counselor" switch (a later step) will join it here. A device whose role has
++// not resolved (null) is NOT a director: fail closed.
++let standingsGuardThrows = false; // test seam only, off in the browser
++function setStandingsGuardThrows(on) { standingsGuardThrows = !!on; }
++
++function standingsVisible() {
++  return canEdit();
++}
++
++function pointsReadAllowed(reader) {
++  if (standingsVisible()) return true;
++  if (standingsGuardThrows) throw new Error('standings read by a non-director: ' + reader);
++  return false;
++}
++
+ // ── The own-team guard ────────────────────────────────────────────
+ // Staff assigned to a team (their member record's teamId) are editors
+ // everywhere EXCEPT the specific rounds their own team is playing or
+@@ -300,6 +333,7 @@ const MEDAL_POINTS = { gold: 7, silver: 5, bronze: 3 };
+ // in camp-core.js (the TV page loads the same copy); this week is the legacy
+ // one, so it is pinned to DOUBLE_WINDOW_LEGACY.
+ function bonusCountsDouble(b) {
++  if (!pointsReadAllowed('bonusCountsDouble')) return false; // a points reader: see "Standings secrecy"
+   return bonusIsDouble(b, DOUBLE_WINDOW_LEGACY);
+ }
+ 
+@@ -1289,6 +1323,9 @@ function historyOverlayEl() {
+ }
+ 
+ function openHistory() {
++  // Every point change, newest first: directors' eyes only (see "Standings
++  // secrecy"). The row is hidden for viewers, and the rules refuse them the read.
++  if (!canEdit()) return;
+   const s = settingsOverlayEl();
+   const overlay = historyOverlayEl();
+   if (!overlay) return;
+@@ -2321,7 +2358,38 @@ function touchData(opts) {
+ // data-hide-card). Only cards with a switch can be hidden.
+ const HIDEABLE_CARDS = ['competitions', 'standings', 'verse', 'cleanup', 'bonus', 'chat'];
+ 
++// The two cards that ARE the standings (the table, and the quick-points ledger
++// that feeds it). They are hidden from every non-director in code whatever
++// meta.hiddenCards says, so there is nothing for a director to switch (the cards
++// carry a "Counselors can't see this" note instead of the switch) and no
++// un-hiding that could expose them. The keys are STILL written into
++// meta.hiddenCards (ensureSecrecySeed) for one reason only: a phone that has not
++// updated yet runs the old code, which honours that map and nothing else.
++const SECRET_CARDS = ['standings', 'bonus'];
++
++// Keeps the two secret cards' keys in meta.hiddenCards for builds that predate
++// SECRET_CARDS (see there): a not-yet-updated counselor phone hides the table
++// and the quick-points ledger from the map alone, and it re-reads the map on
++// every snapshot, so it is safe the moment a director build has seen the server.
++// Idempotent and cheap: it writes only when a key is missing, so an old
++// director build that un-hid a card is set right again by the next new one.
++// Directors only (a counselor's phone can't write the node), only once the
++// first snapshot has landed (a write before it would queue stale state), and
++// only with sync on. Deliberately NOT in normalizeSyncedState, which runs for
++// everyone and on every load.
++function ensureSecrecySeed() {
++  if (!canEdit() || !syncEnabled() || !remoteReady) return;
++  if (!state.meta) state.meta = {};
++  if (!state.meta.hiddenCards || typeof state.meta.hiddenCards !== 'object') state.meta.hiddenCards = {};
++  let changed = false;
++  SECRET_CARDS.forEach((k) => {
++    if (state.meta.hiddenCards[k] !== true) { state.meta.hiddenCards[k] = true; changed = true; }
++  });
++  if (changed) saveState();
++}
++
+ function cardHiddenFromViewers(card) {
++  if (SECRET_CARDS.includes(card)) return true;
+   const m = state.meta || {};
+   if (m.hiddenCards && m.hiddenCards[card]) return true;
+   // Legacy single-purpose flag from the standings-only version of this
+@@ -2332,7 +2400,7 @@ function cardHiddenFromViewers(card) {
+ }
+ 
+ function toggleCardHidden(card) {
+-  if (!HIDEABLE_CARDS.includes(card)) return;
++  if (!HIDEABLE_CARDS.includes(card) || SECRET_CARDS.includes(card)) return;
+   if (!state.meta) state.meta = {};
+   const wasHidden = cardHiddenFromViewers(card);
+   if (!state.meta.hiddenCards) state.meta.hiddenCards = {};
+@@ -3014,15 +3082,28 @@ function applyRemoteState(remote, confirmedBase, opts) {
+   writeConfirmedTree(confirmedBase || lastSyncedTree);
+   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
+   applyingRemote = false;
++  // The first snapshot of a page load is catch-up, never news (chat's backlog
++  // rule): a phone that was away, or one that never synced before, would
++  // otherwise be told about every result in the database at once. Our own
++  // offline edits re-applied by firstSnapshotMerge (asLocalEdit) aren't news
++  // either.
++  const resultChanges = resultAlertsArmed && !(opts && opts.asLocalEdit)
++    ? detectResultChanges(prevRefs.results, state.results) : [];
++  resultAlertsArmed = true;
+   if (appStarted && syncSignature() !== beforeSig) {
+     remoteJustApplied = !(opts && opts.asLocalEdit); // let renderStandings pulse rows that changed
+     const matchupChanges = detectMatchupChanges();
+     renderAll();
+     notifyMatchupChanges(matchupChanges);
++    notifyResultChanges(resultChanges);
+     notifyNewAnnouncements(annBefore);
+   }
++  ensureSecrecySeed(); // after the snapshot is in place, so the one-key write diffs against it
+ }
+ 
++// Set once the first snapshot of this page load has been applied (see above).
++let resultAlertsArmed = false;
++
+ // One-shot wrapper around initSync — THE only sanctioned way in. Called from
+ // onMemberSnapshot's approved branch, never earlier: under the locked rules a
+ // listener attached before approval is cancelled, and a cancelled read is
+@@ -3387,37 +3468,42 @@ let fbConnKnown = false; // first .info/connected callback received
+ let sdkLoadFailed = false;
+ 
+ function updateSyncIndicator() {
+-  const el = document.getElementById('sync-status');
+-  if (!el) return;
++  // Two copies of the line: the one in the Current Standings card (directors)
++  // and a footer one that only view-only devices show (styles.css), because the
++  // standings card is not rendered for them any more (see "Standings secrecy").
++  const els = ['sync-status', 'sync-status-footer'].map((id) => document.getElementById(id)).filter(Boolean);
++  if (!els.length) return;
++  const spinner = '<jelly-spinner type="dots" size="small" label="Connecting"></jelly-spinner> Connecting…';
++  let text = null; // plain text, or
++  let html = null; // the spinner markup
++  let synced = false;
+   if (syncDenied) {
+     // A live listener was cancelled by the security rules — this device's
+     // access changed mid-session. The member listener handles the kick; this
+     // just keeps the indicator honest until it lands.
+-    el.textContent = '🔒 Sync blocked — your access changed';
+-    el.classList.remove('synced');
++    text = '🔒 Sync blocked — your access changed';
+   } else if (sdkLoadFailed) {
+-    el.textContent = '⚠️ Couldn’t connect — read-only copy';
+-    el.classList.remove('synced');
++    text = '⚠️ Couldn’t connect — read-only copy';
+   } else if (!syncEnabled() && !syncStarted && window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey && typeof firebase !== 'undefined' && firebase.auth) {
+     // Sync exists but hasn't been allowed to attach yet — sign-in and the
+     // membership check are still resolving in the background.
+-    el.innerHTML = '<jelly-spinner type="dots" size="small" label="Connecting"></jelly-spinner> Connecting…';
+-    el.classList.remove('synced');
++    html = spinner;
+   } else if (!syncEnabled()) {
+-    el.textContent = '📱 This device only';
+-    el.classList.remove('synced');
++    text = '📱 This device only';
+   } else if (!fbConnKnown) {
+     // Startup gap before Firebase reports the connection state either way —
+     // previously blank; a small jelly spinner reads as "working on it".
+-    el.innerHTML = '<jelly-spinner type="dots" size="small" label="Connecting"></jelly-spinner> Connecting…';
+-    el.classList.remove('synced');
++    html = spinner;
+   } else if (fbConnected) {
+-    el.textContent = '☁️ Synced';
+-    el.classList.add('synced');
++    text = '☁️ Synced';
++    synced = true;
+   } else {
+-    el.textContent = '⚠️ Offline — will sync when back';
+-    el.classList.remove('synced');
++    text = '⚠️ Offline — will sync when back';
+   }
++  els.forEach((el) => {
++    if (html !== null) el.innerHTML = html; else el.textContent = text;
++    el.classList.toggle('synced', synced);
++  });
+ }
+ 
+ function renderPresence() {
+@@ -3669,7 +3755,11 @@ function enableNotify() {
+ function toggleNotify() {
+   if (!state.notify) {
+     enableNotify();
+-    showToast("🔔 You'll get an alert whenever a team's points change, a team is called up next, an announcement is posted, or someone mentions you or your team in Chat — as long as this tab stays open.");
++    // Directors still hear points move; a counselor hears results (who won a
++    // medal), which is all the standings secrecy lets them know.
++    showToast(standingsVisible()
++      ? "🔔 You'll get an alert whenever a team's points change, a team is called up next, an announcement is posted, or someone mentions you or your team in Chat — as long as this tab stays open."
++      : "🔔 You'll get an alert when a game finishes, a team is called up next, an announcement is posted, or someone mentions you or your team in Chat — as long as this tab stays open.");
+   } else {
+     state.notify = false;
+     updateNotifyButton();
+@@ -3691,7 +3781,10 @@ function updateNotifyButton() {
+ // showNotification takes a string) — never esc() it, or a team or game named
+ // with an apostrophe or ampersand shows a literal "&#39;" / "&amp;".
+ function notifyPointChanges(changes) {
+-  if (!state.notify || !changes.length) return;
++  // Directors only: a viewer's phone never hears a team's points move (see
++  // "Standings secrecy"). Viewers get notifyResultChanges instead, which says
++  // who won a medal and nothing about totals.
++  if (!standingsVisible() || !state.notify || !changes.length) return;
+   const mineChanges = [];
+   const others = [];
+   changes.forEach(({ team, delta, total }) => {
+@@ -3718,6 +3811,61 @@ function notifyPointChanges(changes) {
+   if (mineChanges.length) playMineChime(); else playAlertChime();
+ }
+ 
++// ── Result alerts (what a counselor hears instead of point changes) ──
++// A viewer is told WHO won a medal in a finished game, and nothing about totals,
++// places or gaps (see "Standings secrecy"). The change list comes from a diff
++// of the results the phone had against the ones the snapshot brought, made in
++// applyRemoteState itself: a baseline kept in a lazily-seeded module variable
++// (as detectMatchupChanges used to) would swallow the first live change after a
++// quiet boot. Medal winners are public by the owner's rule, so naming them here
++// leaks nothing.
++const MEDAL_KEYS = ['gold', 'silver', 'bronze'];
++
++// [{ game, medals }] for every result that is new or whose winners / save stamp
++// changed, in the week's game order. A cleared result is not news; a result
++// whose game is gone (an import can leave one) has nothing to name.
++function detectResultChanges(prev, next) {
++  const was = prev || {};
++  const now = next || {};
++  const out = [];
++  state.config.games.forEach((g) => {
++    const r = now[g.id];
++    if (!r || !r.medals) return;
++    const p = was[g.id];
++    const same = p && p.medals && p.savedAt === r.savedAt && MEDAL_KEYS.every((k) => p.medals[k] === r.medals[k]);
++    if (!same) out.push({ game: g, medals: r.medals });
++  });
++  return out;
++}
++
++// changes: [{ game, medals }]. Plain text, never esc()'d (toasts set textContent).
++// Directors are not sent here: they keep the point toasts (notifyPointChanges).
++function notifyResultChanges(changes) {
++  if (standingsVisible() || !state.notify || !changes.length) return;
++  const mine = [];
++  const others = [];
++  changes.forEach(({ game, medals }) => {
++    const place = state.followTeam ? MEDAL_KEYS.find((k) => medals[k] === state.followTeam) : null;
++    if (place) mine.push({ game, place });
++    else others.push({ game, medals });
++  });
++  // Quiet: a snapshot that finished several games shares ONE toast past two
++  // (showToast's visible-toast cap would otherwise push "your team" out).
++  if (others.length > 2) {
++    showToast('🏅 Results are in: ' + others.map(({ game }) => game.name).join(', '));
++  } else {
++    others.forEach(({ game, medals }) => {
++      showToast('🏅 ' + game.name + ': ' + MEDAL_KEYS.map((k) => teamName(medals[k]) + ' ' + k).join(', '));
++    });
++  }
++  mine.forEach(({ game, place }) => {
++    const msg = teamEmoji(state.followTeam) + ' ' + teamName(state.followTeam) + ' won ' + place + ' in ' + game.name + '!';
++    showToast('Your team won a medal! ' + msg, { mine: true });
++    maybeNativeNotification('🏅 Your team won a medal!', msg, 'camp-result-' + game.id);
++  });
++  if (mine.length) playMineChime(); else playAlertChime();
++}
++
+ // changes: [{ game, stage, aId, bId }]
+ function notifyMatchupChanges(changes) {
+   if (!state.notify || !changes.length) return;
+@@ -4564,21 +4712,26 @@ function bindMatchupCopy(body, g, stage, aId, bId) {
+ }
+ 
+ function standingsSummaryText() {
+-  const counts = medalCounts();
+-  const ranked = rankTeamsByPoints(counts);
+-
+   const campDate = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short', month: 'short', day: 'numeric' }).format(new Date());
+   const lines = ['🏅 Camp — ' + campDate];
+-  lines.push('');
+-  lines.push(`Standings (🥇 ${MEDAL_POINTS.gold} · 🥈 ${MEDAL_POINTS.silver} · 🥉 ${MEDAL_POINTS.bronze} pts):`);
+-  ranked.forEach((t, i) => {
+-    const s = counts[t.id];
+-    const parts = [`🥇${s.gold} 🥈${s.silver} 🥉${s.bronze}`];
+-    if (s.verse) parts.push(`📖${s.verse > 0 ? '+' : ''}${s.verse}`);
+-    if (s.meals) parts.push(`🧽${s.meals > 0 ? '+' : ''}${s.meals}`);
+-    if (s.custom) parts.push(`✨${s.custom > 0 ? '+' : ''}${s.custom}`);
+-    lines.push(`${i + 1}) ${teamEmoji(t.id)} ${t.name} · ${s.points} pts (${parts.join(' ')})`);
+-  });
++  // Points and places are directors' eyes only (see "Standings secrecy"): the
++  // table is built only for them, so a viewer who reaches Copy / Share — the
++  // card is hidden for them, but this is gated in code, not CSS — gets just the
++  // game winners below.
++  if (standingsVisible()) {
++    const counts = medalCounts();
++    const ranked = rankTeamsByPoints(counts);
++    lines.push('');
++    lines.push(`Standings (🥇 ${MEDAL_POINTS.gold} · 🥈 ${MEDAL_POINTS.silver} · 🥉 ${MEDAL_POINTS.bronze} pts):`);
++    ranked.forEach((t, i) => {
++      const s = counts[t.id];
++      const parts = [`🥇${s.gold} 🥈${s.silver} 🥉${s.bronze}`];
++      if (s.verse) parts.push(`📖${s.verse > 0 ? '+' : ''}${s.verse}`);
++      if (s.meals) parts.push(`🧽${s.meals > 0 ? '+' : ''}${s.meals}`);
++      if (s.custom) parts.push(`✨${s.custom > 0 ? '+' : ''}${s.custom}`);
++      lines.push(`${i + 1}) ${teamEmoji(t.id)} ${t.name} · ${s.points} pts (${parts.join(' ')})`);
++    });
++  }
+ 
+   const played = state.config.games.filter((g) => state.results[g.id]);
+   if (played.length) {
+@@ -4651,6 +4804,7 @@ function formatScore(game, val) {
+ function bonusBreakdown() {
+   const totals = {};
+   state.teams.forEach((t) => (totals[t.id] = { verse: 0, meals: 0, custom: 0 }));
++  if (!pointsReadAllowed('bonusBreakdown')) return totals; // a viewer gets zeros, never the ledger
+   Object.values(state.bonuses || {}).forEach((b) => {
+     if (!b || !totals[b.teamId]) return;
+     const p = Number(b.points);
+@@ -4668,8 +4822,11 @@ function bonusBreakdown() {
+ 
+ function medalCounts() {
+   const counts = {};
+-  const extra = bonusBreakdown();
+   state.teams.forEach((t) => (counts[t.id] = { gold: 0, silver: 0, bronze: 0, medalPts: 0, verse: 0, meals: 0, custom: 0, bonus: 0, points: 0 }));
++  // A viewer gets the all-zero table: the winners of each game are read from
++  // state.results directly (they stay visible), never from these totals.
++  if (!pointsReadAllowed('medalCounts')) return counts;
++  const extra = bonusBreakdown();
+   // Iterate entries so we can weight points per game: Messtival games are
+   // worth DOUBLE on the scoreboard. Medal *counts* stay raw; only the point
+   // value doubles. Results for games no longer in the (editable) catalog are
+@@ -4700,6 +4857,8 @@ function medalCounts() {
+ // Rank by total points; break point ties by finish quality (golds,
+ // then silvers, then bronzes).
+ function rankTeamsByPoints(counts) {
++  // A viewer gets the roster in its own fixed order, never an order that says who leads.
++  if (!pointsReadAllowed('rankTeamsByPoints')) return [...state.teams];
+   return [...state.teams].sort((a, b) => {
+     const sa = counts[a.id], sb = counts[b.id];
+     if (sb.points !== sa.points) return sb.points - sa.points;
+@@ -4739,6 +4898,22 @@ function renderStandings() {
+   // (Card visibility + the hide switches are handled centrally by
+   // applyCardVisibility, called at the top of renderAll.)
+   const tbody = document.getElementById('standings-tbody');
++  if (!standingsVisible()) {
++    // Not a director: nothing about points, places or gaps is computed or drawn
++    // (see "Standings secrecy"). The card is hidden for them by
++    // applyCardVisibility; this empties it too, so a demoted editor's next
++    // render drops every editor-only node instead of leaving the table in the
++    // DOM behind a hidden card. The next director render starts clean: no
++    // pulse baseline, no point-history baseline carried across the role flip.
++    setHtmlIfChanged(tbody, '');
++    const hint = document.getElementById('catchup-hint');
++    if (hint) { hint.hidden = true; setHtmlIfChanged(hint, ''); }
++    lastPointsByTeam = null;
++    clPrevSnap = null;
++    remoteJustApplied = false;
++    renderFollowCard();
++    return;
++  }
+   const counts = medalCounts();
+   const ranked = rankTeamsByPoints(counts);
+   // Pulse rows whose points changed because of a remote sync (invisible
+@@ -5003,10 +5178,6 @@ function renderFollowCard() {
+   }
+   const team = state.teams.find((t) => t.id === state.followTeam);
+   if (!team) { card.hidden = true; return; }
+-  const counts = medalCounts();
+-  const ranked = rankTeamsByPoints(counts);
+-  const rank = ranked.findIndex((t) => t.id === team.id) + 1;
+-  const s = counts[team.id];
+   const next = findNextMatchupFor(team.id);
+   const nextLine = next
+     ? `<p class="follow-next-line">⏭️ Up next: vs ${teamEmoji(next.opponentId)} ${esc(teamName(next.opponentId))} in ${esc(next.game.name)}</p>`
+@@ -5026,11 +5197,21 @@ function renderFollowCard() {
+   const crestHtml = shield
+     ? `<div class="follow-team-crest"><img class="follow-team-shield" src="${shield}" alt="${esc(team.name)} team shield" width="480" height="667" loading="lazy" decoding="async"></div>`
+     : '';
+-  const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '';
+-  const statsLine = `<div class="follow-team-stats">
++  // Rank and points are directors' eyes only (see "Standings secrecy"): a
++  // counselor's team card carries the team, its next matchup and cleanup, and
++  // no number at all. The readers are only reached when a director is looking.
++  let statsLine = '';
++  if (standingsVisible()) {
++    const counts = medalCounts();
++    const ranked = rankTeamsByPoints(counts);
++    const rank = ranked.findIndex((t) => t.id === team.id) + 1;
++    const s = counts[team.id];
++    const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '';
++    statsLine = `<div class="follow-team-stats">
+     <span class="follow-rank-pill">${medal ? medal + ' ' : ''}${ordinal(rank)} place</span>
+     <span class="follow-points">${s.points} pts</span>
+   </div>`;
++  }
+   const accent = teamAccent(team.id);
+   card.className = 'follow-team-card' + (shield ? ' has-shield' : '');
+   if (accent) card.style.setProperty('--team-accent', accent);
+@@ -5218,7 +5399,7 @@ function renderPickerStep() {
+     renderIdentityOptions();
+   } else {
+     if (title) title.textContent = '👋 Which team are you rooting for?';
+-    if (hint) hint.textContent = "You'll get a heads-up here when they score or get called up next.";
++    if (hint) hint.textContent = "You'll get alerts when your team plays and wins medals.";
+     renderTeamPickerOptions();
+   }
+ }
+@@ -5238,8 +5419,8 @@ function renderTeamPickerOptions() {
+       // Switching to a different team invalidates a prior identity — re-ask it.
+       if (id !== state.followTeam) state.identity = null;
+       state.followTeam = id;
+-      // Following a team opts you into its alerts — the picker promises a
+-      // "heads-up when they score or are up next," which only fires when
++      // Following a team opts you into its alerts — the picker promises alerts
++      // "when your team plays and wins medals," which only fire when
+       // notifications are on. (Neutral leaves the notify setting alone.)
+       if (id && !state.notify) enableNotify();
+       saveState();
+@@ -5250,7 +5431,7 @@ function renderTeamPickerOptions() {
+         return;
+       }
+       if (turnedOnNotify) {
+-        pickerNotifyToast = `🔔 Following ${teamEmoji(id)} ${teamName(id)} — you'll get alerts here when they score or are up next.`;
++        pickerNotifyToast = `🔔 Following ${teamEmoji(id)} ${teamName(id)} — you'll get alerts here when they play and win medals.`;
+       }
+       // The identity step exists to show YOUR electives — a camp without
+       // electives (senior) has nothing to ask, so the picker just closes.
+@@ -5349,6 +5530,11 @@ function newBonusId() {
+ function renderBonuses() {
+   const wrap = document.getElementById('bonus-body');
+   if (!wrap) return;
++  // Quick points — the entry form, the per-team subtotals and the ledger — are
++  // directors' eyes only (see "Standings secrecy"). The card is hidden for
++  // everyone else; this empties it too, so a demoted editor's next render drops
++  // the ledger from the DOM instead of leaving it behind a hidden card.
++  if (!standingsVisible()) { setHtmlIfChanged(wrap, ''); return; }
+   const d = bonusDraft;
+ 
+   let entryHTML = '';
+@@ -5515,6 +5701,7 @@ let verseDay = null;
+ // double-points window is active right now.
+ function versePointsByDay() {
+   const map = {};
++  if (!pointsReadAllowed('versePointsByDay')) return map;
+   Object.values(state.bonuses || {}).forEach((b) => {
+     if (b.category !== 'verse') return;
+     const day = Number(b.day) || 0;
+@@ -5526,9 +5713,20 @@ function versePointsByDay() {
+   return map;
+ }
+ 
++// Set a card's one-line description only when it changed (these run on every render).
++function setCardDesc(id, text) {
++  const el = document.getElementById(id);
++  if (el && el.textContent !== text) el.textContent = text;
++}
++
+ function renderMemoryVerse() {
+   const wrap = document.getElementById('verse-body');
+   if (!wrap) return;
++  // index.html ships the counselor wording (fail closed); directors get the one
++  // that talks about points.
++  setCardDesc('verse-desc', canEdit()
++    ? "Each day's memory verse — pick a day to read it, and record points for teams that recite it. Verse points count toward each team's total in Current Standings."
++    : "Each day's memory verse — pick a day to read it.");
+   // Default to today's verse (Mon–Fri); fall back to Monday on the weekend.
+   if (verseDay == null) {
+     const dow = campNow().dow;
+@@ -5571,8 +5769,11 @@ function renderMemoryVerse() {
+   // becomes 10 elsewhere), while each team's shown total is the per-entry
+   // effective value — a Monday entry viewed on Friday stays single, exactly
+   // as the standings count it.
+-  const earned = versePointsByDay()[verseDay] || { raw: {}, effective: {} };
++  // Counselors read the verse and nothing more: the per-team points (the rows
++  // and their "+N" totals) are directors' eyes only, so the ledger is not even
++  // read for anyone else.
+   const editing = canEdit();
++  const earned = (editing && versePointsByDay()[verseDay]) || { raw: {}, effective: {} };
+   const doubleWindow = inDoubleBonusWindow();
+   const displayMult = doubleWindow ? 2 : 1;
+   const hint = editing
+@@ -5593,15 +5794,11 @@ function renderMemoryVerse() {
+       ${btns}${editing && blockedByOwnTeam(t.id) ? '<span class="pts-row-locked">🛡️ your team</span>' : ''}
+     </div>`;
+   }).join('')}</div>`;
+-  const anyEarned = state.teams.some((t) => earned.raw[t.id]);
+-  const emptyHTML = (!editing && !anyEarned)
+-    ? `<p class="muted bonus-empty">No verse points recorded for ${esc(DAY_NAMES[verseDay])} yet.</p>`
+-    : '';
+ 
+   const doubleNote = inDoubleBonusWindow()
+     ? `<div class="messtival-banner">⚡ Double points tonight &amp; Friday — verse points count double in the standings!</div>`
+     : '';
+-  if (!setHtmlIfChanged(wrap, doubleNote + themeHTML + dayChips + verseBox + hint + (editing || anyEarned ? rowsHTML : '') + emptyHTML)) return;
++  if (!setHtmlIfChanged(wrap, doubleNote + themeHTML + dayChips + verseBox + hint + (editing ? rowsHTML : ''))) return;
+ 
+   wrap.querySelectorAll('.verse-day-chip').forEach((btn) => {
+     btn.addEventListener('click', () => {
+@@ -5684,6 +5881,7 @@ let cleanupDay = null;
+ // Total cleanup points recorded for one day + meal.
+ function cleanupMealPoints(day, meal) {
+   let sum = 0;
++  if (!pointsReadAllowed('cleanupMealPoints')) return sum;
+   Object.values(state.bonuses || {}).forEach((b) => {
+     if (b.category === 'cleanup' && (Number(b.day) || 0) === day && b.meal === meal) {
+       sum += Number(b.points) || 0;
+@@ -5695,6 +5893,9 @@ function cleanupMealPoints(day, meal) {
+ function renderMealCleanup() {
+   const wrap = document.getElementById('cleanup-body');
+   if (!wrap) return;
++  setCardDesc('cleanup-desc', canEdit()
++    ? "Each meal a team is on cleanup — pick a day to see the rota and award points. Cleanup points count toward each team's total in Current Standings."
++    : 'Each meal a team is on cleanup — pick a day to see the rota.');
+   // Default to today (Mon–Fri, else Monday).
+   if (cleanupDay == null) {
+     const dow = campNow().dow;
+@@ -5707,7 +5908,6 @@ function renderMealCleanup() {
+ 
+   const rotaHTML = `<div class="cleanup-rota">${MEAL_CLEANUP_MEALS.map((meal) => {
+     const teamIds = cleanupAssigned(cleanupDay, meal);
+-    const pts = cleanupMealPoints(cleanupDay, meal);
+     const teams = teamIds ? (Array.isArray(teamIds) ? teamIds : [teamIds]) : [];
+     const teamStr = teams.length > 0
+       ? teams.map(id => `${teamEmoji(id)} ${esc(teamName(id))}`).join(' + ')
+@@ -5715,13 +5915,13 @@ function renderMealCleanup() {
+     return `<div class="cleanup-meal-row">
+       <span class="cleanup-meal-name">${MEAL_ICONS[meal]} ${esc(meal)}</span>
+       <span class="cleanup-meal-team">${teamStr}</span>
+-      ${pts ? `<span class="cleanup-meal-pts">+${pts}</span>` : ''}
+     </div>`;
+   }).join('')}</div>`;
+ 
+   // The rota IS the interface: one block per meal showing the assigned team,
+   // and (for editors) the 0–3 point buttons right on it — no separate meal
+-  // chips or repeated team list. Viewers see the same rota with +N badges.
++  // chips or repeated team list. Viewers see the rota ONLY: no "+N" badges, no
++  // ledger (see "Standings secrecy").
+   const editing = canEdit();
+   const earnedFor = (meal) => {
+     const out = {};
+@@ -5766,7 +5966,7 @@ function renderMealCleanup() {
+ 
+   // Legacy cleanup entries with no day (from the old Bonus card) — surface them
+   // so their points aren't invisible even though they still count in totals.
+-  const legacy = Object.entries(state.bonuses || {})
++  const legacy = !editing ? [] : Object.entries(state.bonuses || {})
+     .filter(([, b]) => b.category === 'cleanup' && !(Number(b.day) >= 1 && Number(b.day) <= 5))
+     .sort((a, b) => (b[1].at || '').localeCompare(a[1].at || ''));
+   const legacyHTML = legacy.length
+@@ -6385,7 +6585,7 @@ function liveHomeTallyCard(g) {
+   return `<button class="live-home-card" data-game-id="${esc(g.id)}">
+     <span class="live-home-top"><span class="live-home-badge">🔴 LIVE</span><span class="live-home-game">${esc(g.emoji)} ${esc(g.name)}</span></span>
+     ${scoreLine}
+-    <span class="live-home-sub">${g.lowerWins ? 'Fastest so far' : 'Leader'} · ${ranked.length}/${state.teams.length} teams in${complete ? ' · 🏅 medals ready' : ''}</span>
++    <span class="live-home-sub">${g.lowerWins ? 'Fastest so far' : 'Leader'} · ${ranked.length}/${state.teams.length} teams in${complete && standingsVisible() ? ' · 🏅 medals ready' : ''}</span>
+   </button>`;
+ }
+ 
+@@ -6398,7 +6598,10 @@ function liveHomeTallyCard(g) {
+ // comes from #clock-area, so this board's clock would just duplicate it there.
+ function tallyBoardHTML(g) {
+   const ranked = tallyRankLive(g);
+-  const complete = ranked.length >= state.teams.length;
++  // Medal discs on the live order say who WON before a director has saved the
++  // result, so only directors get them; everyone else sees plain places in the
++  // game (the live scores themselves are public).
++  const complete = ranked.length >= state.teams.length && standingsVisible();
+   const medals = ['🥇', '🥈', '🥉'];
+   const clock = g.timer ? getClock(g) : null;
+   const remaining = clock ? clockRemaining(clock) : 0;
+@@ -6465,7 +6668,10 @@ function renderLiveTallyWatch(container, g) {
+     </div>`, [g]);
+     return;
+   }
+-  const complete = ranked.length >= state.teams.length;
++  // "Suggested: gold, silver, bronze" and medal discs on the live order showed
++  // the winners before a director saved the result: directors only (the live
++  // scores themselves stay public).
++  const complete = ranked.length >= state.teams.length && standingsVisible();
+   const medals = ['🥇', '🥈', '🥉'];
+   const rows = ranked.map((e, i) => `
+     <li class="lw-rank-row${i < 3 ? ' lw-podium' : ''}">
+@@ -6557,13 +6763,16 @@ function renderResult(container, g, result) {
+   // Thursday evening/Friday under the double-points window) pays double, and
+   // this recap must show the same numbers the standings actually award.
+   const mult = g.messtival ? 2 : 1;
++  // The winners are public; what each medal is worth in the standings is not
++  // (see "Standings secrecy"), so the "+7 pts" chips are directors' only.
++  const worth = (k) => (standingsVisible() ? ` <span class="medal-points">+${MEDAL_POINTS[k] * mult} pts</span>` : '');
+   // The listener below resolves state when tapped, so only the game is held.
+   const fresh = setLiveHtmlIfChanged(container, `
+     <h3>Final results</h3>
+     <div class="medal-summary">
+-      <div class="medal-row gold-row">🥇 <strong>${esc(teamName(result.medals.gold))}</strong> <span class="medal-points">+${MEDAL_POINTS.gold * mult} pts</span></div>
+-      <div class="medal-row silver-row">🥈 <strong>${esc(teamName(result.medals.silver))}</strong> <span class="medal-points">+${MEDAL_POINTS.silver * mult} pts</span></div>
+-      <div class="medal-row bronze-row">🥉 <strong>${esc(teamName(result.medals.bronze))}</strong> <span class="medal-points">+${MEDAL_POINTS.bronze * mult} pts</span></div>
++      <div class="medal-row gold-row">🥇 <strong>${esc(teamName(result.medals.gold))}</strong>${worth('gold')}</div>
++      <div class="medal-row silver-row">🥈 <strong>${esc(teamName(result.medals.silver))}</strong>${worth('silver')}</div>
++      <div class="medal-row bronze-row">🥉 <strong>${esc(teamName(result.medals.bronze))}</strong>${worth('bronze')}</div>
+     </div>
+     ${extra}
+     ${canEdit() ? '<button id="clear-result-btn" class="link-btn danger-link">Clear result &amp; re-enter</button>' : ''}
+@@ -9158,6 +9367,11 @@ function startApp() {
+   document.documentElement.classList.toggle('camp-senior', CAMP.id === 'senior');
+   applyRoleClass();
+   applyCardDefaults();
++  // Seed the "up next" baseline from what this phone already holds, so the
++  // first LIVE change after a quiet boot still alerts. detectMatchupChanges used
++  // to seed itself on its first call — which was the first snapshot's — and
++  // swallowed it.
++  if (lastBracketSlots === null) detectMatchupChanges();
+   if (!appStarted) {
+     appStarted = true;
+     init();
+diff --git a/current-standings.html b/current-standings.html
+index 6b0215d..ae991b6 100644
+--- a/current-standings.html
++++ b/current-standings.html
+@@ -132,6 +132,19 @@
+       align-items: center; justify-content: center; flex-direction: column; gap: 1rem;
+       font-size: 1.4rem; font-weight: 800; color: #000;
+     }
++    /* Waiting: what everyone who is not a director sees (and what a director sees
++       when there is nothing to show). Standings are secret until the directors
++       reveal them, so this page shows them to directors only — see the secrecy
++       note in current-standings.js. */
++    #waiting {
++      position: fixed; inset: 0; z-index: 30; display: flex;
++      align-items: center; justify-content: center; flex-direction: column; gap: 0.6rem;
++      padding: 2rem; text-align: center; color: #000;
++    }
++    #waiting[hidden] { display: none; }
++    #waiting .wait-mark { font-size: clamp(3rem, 10vw, 7rem); }
++    #waiting .wait-title { font-size: clamp(1.6rem, 5vw, 4rem); font-weight: 900; }
++    #waiting .wait-sub { font-size: clamp(1rem, 2.2vw, 1.6rem); font-weight: 700; opacity: 0.7; }
+     .spin { font-size: 3rem; animation: spin 1.1s linear infinite; display: inline-block; }
+     @keyframes spin { to { transform: rotate(360deg); } }
+ 
+@@ -324,6 +337,13 @@
+ 
+   <div id="loading"><span class="spin">🎪</span><span>Loading standings…</span></div>
+ 
++  <!-- Waiting: shown instead of standings to anyone who is not a director. -->
++  <div id="waiting" hidden>
++    <span class="wait-mark" aria-hidden="true">🏅</span>
++    <span class="wait-title">Waiting for the directors…</span>
++    <span class="wait-sub">The standings are a surprise until they reveal them.</span>
++  </div>
++
+   <div id="screen" hidden>
+     <!-- Intro -->
+     <div id="intro">
+diff --git a/current-standings.js b/current-standings.js
+index f4b16af..2f79616 100644
+--- a/current-standings.js
++++ b/current-standings.js
+@@ -322,6 +322,32 @@
+     try { var raw = localStorage.getItem(lsKey('campScoreboardV2')); return raw ? JSON.parse(raw) : null; }
+     catch (e) { return null; }
+   }
++
++  // ── Secrecy: live standings are for directors only ─────────────
++  // Counselors don't see points, places or gaps until the directors reveal them
++  // (redesign §4.12), and this page computes them live from `state`. So until
++  // the public reveal page replaces it (Step 23), it answers only a signed-in
++  // DIRECTOR with standings, and says "Waiting for the directors…" to everyone
++  // else — a counselor's account, a signed-out phone, a refused read — without
++  // reading `state` at all, so nothing is in memory to compute from. The
++  // cached-snapshot fallback is held to the same rule: it needs this device to
++  // have been a director's (the same hint the app paints from, convenience only:
++  // forging it only exposes a cache the device already holds), else it waits.
++  function cachedRoleIsEditor() {
++    try {
++      var camps = JSON.parse(localStorage.getItem('campScoreboardCampsHint') || '{}');
++      var mine = camps && typeof camps === 'object' ? camps[CAMP.id] : null;
++      if (mine === 'editor' || mine === 'viewer') return mine === 'editor';
++      return localStorage.getItem('campScoreboardAuthHint') === 'editor';
++    } catch (e) { return false; }
++  }
++  var waitingEl = document.getElementById('waiting');
++  function showWaiting() {
++    var ov = document.getElementById('auth-overlay');
++    if (ov) ov.style.display = 'none';
++    loadingEl.style.display = 'none';
++    if (waitingEl) waitingEl.hidden = false;
++  }
+   var lastRawState = null; // last ingested state — recomputed when the config lands
+   function ingest(state) {
+     lastRawState = state;
+@@ -404,9 +430,10 @@
+     if (DEMO) { ingest(demoState()); return; }
+     var cfg = window.FIREBASE_CONFIG;
+     if (!cfg || !cfg.apiKey || !cfg.databaseURL || typeof firebase === 'undefined' || !firebase.auth) {
+-      // No Firebase — the best this page can do is the local snapshot.
+-      var local = readLocal();
+-      if (local) ingest(local);
++      // No Firebase — the best this page can do is the local snapshot, and only
++      // on a device that was a director's (see the secrecy note above).
++      var local = cachedRoleIsEditor() ? readLocal() : null;
++      if (local) ingest(local); else showWaiting();
+       return;
+     }
+     try { if (!firebase.apps.length) firebase.initializeApp(cfg); } catch (e) { return; }
+@@ -450,6 +477,9 @@
+           var rec = snap.val();
+           if (!rec || !rec.role) { setAuthOverlay('denied', user.email); return; }
+           setAuthOverlay('hidden');
++          // A counselor's account is approved but may not see the standings:
++          // wait, and never attach the state listener (nothing to compute from).
++          if (rec.role !== 'editor') { showWaiting(); return; }
+           if (!started) { started = true; attachData(); }
+         })
+         .catch(function () { setAuthOverlay('denied', user.email); });
+diff --git a/index.html b/index.html
+index 6d269c8..fdff23b 100644
+--- a/index.html
++++ b/index.html
+@@ -194,10 +194,10 @@
+         <!-- ── WEEK STANDINGS ─────────────────────────────── -->
+         <jelly-collapsible class="card standings-card collapsible-card" data-card="standings">
+           <h2 slot="header">Current Standings</h2>
+-          <div class="settings-row card-visibility-row">
+-            <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🙈</span> Hide from viewers</span>
+-            <jelly-switch class="hide-card-toggle" data-hide-card="standings" label="Hide Current Standings from viewers"></jelly-switch>
+-          </div>
++          <!-- Counselors never see standings (the owner's rule), so there is no
++               "Hide from viewers" switch on this card or on Quick Points: they
++               are hidden from non-directors in code (SECRET_CARDS in app.js). -->
++          <p class="card-secret-note"><span aria-hidden="true">🔒</span> Counselors can't see this</p>
+           <p class="muted standings-hint">Only counts games saved in this app — your paper scoreboard is the official one.</p>
+           <p id="sync-status" class="sync-status" aria-live="polite"></p>
+           <div class="standings-actions">
+@@ -231,7 +231,7 @@
+             <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🙈</span> Hide from viewers</span>
+             <jelly-switch class="hide-card-toggle" data-hide-card="cleanup" label="Hide Meal Cleanup from viewers"></jelly-switch>
+           </div>
+-          <p class="muted card-desc">Each meal a team is on cleanup — pick a day to see the rota and award points. Cleanup points count toward each team's total above.</p>
++          <p id="cleanup-desc" class="muted card-desc">Each meal a team is on cleanup — pick a day to see the rota.</p>
+           <div id="cleanup-body"></div>
+         </jelly-collapsible>
+ 
+@@ -242,17 +242,14 @@
+             <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🙈</span> Hide from viewers</span>
+             <jelly-switch class="hide-card-toggle" data-hide-card="verse" label="Hide Memory Verse from viewers"></jelly-switch>
+           </div>
+-          <p class="muted card-desc">Each day's memory verse — pick a day to read it, and record points for teams that recite it. Verse points count toward each team's total above.</p>
++          <p id="verse-desc" class="muted card-desc">Each day's memory verse — pick a day to read it.</p>
+           <div id="verse-body"></div>
+         </jelly-collapsible>
+ 
+         <!-- ── BONUS POINTS ───────────────────────────────── -->
+         <jelly-collapsible class="card bonus-card collapsible-card" data-card="bonus">
+           <h2 slot="header">Quick Points</h2>
+-          <div class="settings-row card-visibility-row">
+-            <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🙈</span> Hide from viewers</span>
+-            <jelly-switch class="hide-card-toggle" data-hide-card="bonus" label="Hide Quick Points from viewers"></jelly-switch>
+-          </div>
++          <p class="card-secret-note"><span aria-hidden="true">🔒</span> Counselors can't see this</p>
+           <p class="muted card-desc">Extra one-off points for other tasks — added to each team's total above.</p>
+           <div id="bonus-body"></div>
+         </jelly-collapsible>
+@@ -273,6 +270,10 @@
+ 
+     </main>
+ 
++    <!-- The connection line, for view-only devices: the Current Standings card
++         that carries it for directors is not rendered for them. -->
++    <p id="sync-status-footer" class="sync-status sync-status-footer" aria-live="polite"></p>
++
+     <footer id="app-footer" class="app-footer"></footer>
+   </div>
+ 
+@@ -386,7 +387,7 @@
+   <!-- ── TEAM PICKER (who are you rooting for?) ─────────────────── -->
+   <jelly-dialog id="team-picker-overlay" label="Pick a team to follow">
+     <h2 class="team-picker-title">👋 Which team are you rooting for?</h2>
+-    <p class="muted team-picker-hint">You'll get a heads-up here when they score or get called up next.</p>
++    <p class="muted team-picker-hint">You'll get alerts when your team plays and wins medals.</p>
+     <div id="team-picker-options" class="team-picker-options"></div>
+   </jelly-dialog>
+ 
+diff --git a/styles.css b/styles.css
+index 0cda27a..f839744 100644
+--- a/styles.css
++++ b/styles.css
+@@ -454,6 +454,19 @@ html.view-only .card-visibility-row {
+   display: none;
+ }
+ 
++/* The two secret cards (Current Standings, Quick Points) are hidden from
++   non-directors in code, so a director sees this note in place of the old
++   "Hide from viewers" switch. */
++.card-secret-note {
++  margin: 0 0 0.5rem;
++  padding: 0.6rem 0.85rem;
++  border-radius: var(--radius-md, 0.75rem);
++  background: var(--color-bg);
++  font-size: 0.82rem;
++  font-weight: 600;
++  color: var(--color-text-muted);
++}
++
+ /* Editor-only "Hide from viewers" row, first child of each card's body.
+    .settings-row's background is --color-surface (it normally sits against the
+    settings drawer's --color-bg) — inside a card that's the SAME surface, so
+@@ -1740,6 +1753,24 @@ jelly-chip.sched-day-chip .today-dot {
+   color: var(--color-primary);
+ }
+ 
++/* The same line under the cards, for view-only devices: the Current Standings
++   card that carries it for directors is not rendered for them. The builder and
++   chat takeovers hide the footer, so they hide this too. */
++.sync-status-footer {
++  display: none;
++  max-width: 640px;
++  margin: 0.75rem auto 0;
++  padding: 0 1rem;
++  text-align: center;
++}
++html.view-only .sync-status-footer {
++  display: block;
++}
++body.builder-open .sync-status-footer,
++body.chat-open .sync-status-footer {
++  display: none;
++}
++
+ .standings-actions {
+   display: flex;
+   flex-wrap: wrap;
+diff --git a/tests/camp-core.test.js b/tests/camp-core.test.js
+index c9bbeb8..9b4bc6b 100644
+--- a/tests/camp-core.test.js
++++ b/tests/camp-core.test.js
+@@ -59,6 +59,7 @@ const LEGACY_END = ISO('2026-07-25T04:00:00Z');
+ const SEEDED_RELATIVE = { fromDow: 4, fromMin: 1020, toDow: 6, toMin: 0 };
+ 
+ test('legacy pin: the constants are exactly summer 2026 and the app reads them through camp-core', () => {
++  setMemberRole('editor'); // bonusCountsDouble is a points reader: directors only (standings secrecy)
+   assert.equal(DOUBLE_BONUS_START, LEGACY_START, 'Thu 5 PM ET');
+   assert.equal(DOUBLE_BONUS_END, LEGACY_END, 'Fri midnight ET (00:00 Sat)');
+   assert.equal(DOUBLE_WINDOW_LEGACY.start, LEGACY_START);
+diff --git a/tests/harness.js b/tests/harness.js
+index 7669e83..b0c51f2 100644
+--- a/tests/harness.js
++++ b/tests/harness.js
+@@ -28,20 +28,43 @@ const noop = () => {};
+ // incidentally (e.g. by saveState → renderAll paths) no-op instead of throwing.
+ // Tests assert on state and return values, never on rendered markup — anything
+ // that needs real layout belongs in the Playwright pass (see CLAUDE.md).
+-function stubEl() {
++//
++// THE SINK RECORDER. `rec` is the context's one recorder ({ on, log }). While
++// rec.on is true, every way text leaves the app through the DOM is appended to
++// rec.log as { kind, text }: an innerHTML or textContent assignment,
++// insertAdjacentHTML, and the attributes that carry human words (title,
++// aria-label, label, alt, placeholder…). The function-level sinks (toasts,
++// notifications, share, clipboard, chimes) are wrapped by installSinks (below).
++// The secrecy tests use it to prove that nothing a counselor can hear or read
++// carries points, places or gaps — a stub DOM that records nothing would let a
++// "+7 pts (now 23)" toast pass unseen. Off by default (`on` false), so every other
++// test pays one boolean check per write and logs nothing.
++const TEXT_ATTRS = new Set(['title', 'aria-label', 'label', 'alt', 'placeholder', 'aria-description', 'aria-valuetext']);
++
++function stubEl(rec) {
+   const kids = new Map();
++  const note = (kind, v) => { if (rec && rec.on && v !== '' && v != null) rec.log.push({ kind, text: String(v) }); };
++  let inner = '';
++  let text = '';
+   const el = {
+-    hidden: false, innerHTML: '', textContent: '', className: '', value: '', checked: false,
++    hidden: false, value: '', checked: false,
++    className: '',
+     dataset: {}, children: [], files: null, isContentEditable: false, tagName: 'DIV',
++    get innerHTML() { return inner; },
++    set innerHTML(v) { inner = v; note('innerHTML', v); },
++    get textContent() { return text; },
++    set textContent(v) { text = v; note('textContent', v); },
+     style: { setProperty: noop, removeProperty: noop, getPropertyValue: () => '' },
+     classList: { add: noop, remove: noop, toggle: noop, contains: () => false },
+     addEventListener: noop, removeEventListener: noop, dispatchEvent: noop,
+-    appendChild: noop, insertAdjacentHTML: noop, remove: noop, focus: noop, blur: noop, click: noop,
+-    setAttribute: noop, getAttribute: () => null, removeAttribute: noop,
++    appendChild: noop, remove: noop, replaceWith: noop, focus: noop, blur: noop, click: noop,
++    insertAdjacentHTML: (pos, html) => note('insertAdjacentHTML', html),
++    setAttribute: (name, v) => { if (TEXT_ATTRS.has(name)) note('attr:' + name, v); },
++    getAttribute: () => null, removeAttribute: noop,
+     hasAttribute: () => false, toggleAttribute: noop, closest: () => null,
+     // Same memoized-stub rule as document.querySelector (see makeContext).
+     querySelector: (sel) => {
+-      if (!kids.has(sel)) kids.set(sel, stubEl());
++      if (!kids.has(sel)) kids.set(sel, stubEl(rec));
+       return kids.get(sel);
+     },
+     querySelectorAll: () => [],
+@@ -51,6 +74,7 @@ function stubEl() {
+ }
+ 
+ function makeContext(opts) {
++  const rec = { on: false, log: [] }; // the sink recorder (see stubEl)
+   const store = new Map();
+   // Camp selection happens at script-load time (camps.js reads localStorage
+   // before app.js runs), so a senior-context test seeds the key up front:
+@@ -70,23 +94,23 @@ function makeContext(opts) {
+   const bySelector = new Map();
+   const docListeners = {};
+   const doc = {
+-    documentElement: stubEl(),
+-    body: stubEl(),
+-    head: stubEl(),
++    documentElement: stubEl(rec),
++    body: stubEl(rec),
++    head: stubEl(rec),
+     activeElement: null,
+     hidden: false,
+     visibilityState: 'visible',
+     getElementById: (id) => {
+-      if (!byId.has(id)) byId.set(id, stubEl());
++      if (!byId.has(id)) byId.set(id, stubEl(rec));
+       return byId.get(id);
+     },
+     querySelector: (sel) => {
+-      if (!bySelector.has(sel)) bySelector.set(sel, stubEl());
++      if (!bySelector.has(sel)) bySelector.set(sel, stubEl(rec));
+       return bySelector.get(sel);
+     },
+     querySelectorAll: () => [],
+-    createElement: stubEl,
+-    createElementNS: stubEl,
++    createElement: () => stubEl(rec),
++    createElementNS: () => stubEl(rec),
+     // Recorded (never fired by the harness itself) so a test can reach the
+     // delegated handlers app.js registers on `document` at load — the joy-press
+     // pointer handlers, the card `toggle` listener — by type: __docListeners.
+@@ -145,6 +169,14 @@ function makeContext(opts) {
+     // Deliberately absent, so the app takes its no-sync / no-audio / no-notify
+     // branches unless a test stubs them: firebase, AudioContext, Notification.
+     __localStorageStore: store,
++    __sinkRec: rec,
++    // What is in the page's top-level nodes RIGHT NOW (the sink log only sees
++    // writes, and a render that skips an unchanged node writes nothing, so markup
++    // left behind by an earlier render — say a demoted director's — would never
++    // show up there). { kind: 'innerHTML', text } entries, same shape as the log.
++    __domSweep: () => [...byId.values(), ...bySelector.values()]
++      .map((e) => ({ kind: 'innerHTML', text: String(e.innerHTML || '') + ' ' + String(e.textContent || '') }))
++      .filter((e) => e.text.trim()),
+     __docListeners: docListeners,
+     __reloads: 0,
+   };
+@@ -156,6 +188,34 @@ function makeContext(opts) {
+   APP_FILES.forEach((f) => {
+     vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
+   });
++
++  // The function-level half of the sink recorder: wraps the app's own ways of
++  // making noise (showToast, maybeNativeNotification, copyTextToClipboard, the
++  // chimes) and stands up recording versions of the browser's (Notification,
++  // navigator.share / clipboard, jellyToast). A test calls installSinks() once,
++  // then turns recording on around the scenario: __sinkRec.on = true. The
++  // wrapped app functions still run the original afterwards.
++  sandbox.installSinks = () => {
++    const wrapGlobal = (name, kind, textOf) => {
++      const orig = vm.runInContext(name, ctx);
++      sandbox['__sink_' + name] = function (...args) {
++        if (rec.on) rec.log.push({ kind, text: String(textOf(args)) });
++        return orig.apply(this, args);
++      };
++      vm.runInContext(`${name} = __sink_${name}`, ctx);
++    };
++    wrapGlobal('showToast', 'toast', (a) => a[0]);
++    wrapGlobal('maybeNativeNotification', 'notification', (a) => a[0] + ' ' + a[1]);
++    wrapGlobal('copyTextToClipboard', 'copy', (a) => a[0]);
++    ['playAlertChime', 'playMineChime', 'playHighScore', 'playAlarm'].forEach((n) => wrapGlobal(n, 'chime', () => n));
++    const NotificationStub = function (title, o) { if (rec.on) rec.log.push({ kind: 'Notification', text: title + ' ' + ((o && o.body) || '') }); };
++    NotificationStub.permission = 'granted';
++    NotificationStub.requestPermission = () => Promise.resolve('granted');
++    sandbox.Notification = NotificationStub;
++    sandbox.navigator.share = (d) => { if (rec.on) rec.log.push({ kind: 'share', text: String((d && (d.text || d.title)) || '') }); return Promise.resolve(); };
++    sandbox.navigator.clipboard = { writeText: (t) => { if (rec.on) rec.log.push({ kind: 'clipboard', text: String(t) }); return Promise.resolve(); } };
++    sandbox.jellyToast = (msg) => { if (rec.on) rec.log.push({ kind: 'jellyToast', text: String(msg) }); return null; };
++  };
+   return { ctx, sandbox };
+ }
+ 
+diff --git a/tests/home.test.js b/tests/home.test.js
+index fcd6422..d631b1f 100644
+--- a/tests/home.test.js
++++ b/tests/home.test.js
+@@ -209,6 +209,7 @@ test('My electives is not rewritten when nothing changed', () => {
+ 
+ function giveSomePoints() {
+   freshState();
++  setMemberRole('editor'); // the standings panels are directors' (standings secrecy); secrecy.test.js pins what a counselor sees
+   state.config.games.slice(0, 3).forEach((g, i) => {
+     state.results[g.id] = { medals: { gold: 't' + (i % 3), silver: 't' + ((i + 1) % 3), bronze: 't' + ((i + 2) % 3) }, savedAt: '2026-07-20T12:00:00Z' };
+   });
+@@ -307,6 +308,7 @@ test('the toast cap drops other teams first, never your own and never the one ju
+ 
+ test('point alerts share one toast, the followed team keeps its own, and nothing is HTML-escaped', () => {
+   freshState();
++  setMemberRole('editor'); // point alerts are directors' (standings secrecy)
+   const shown = [];
+   const natives = [];
+   const realToast = showToast;
+diff --git a/tests/scoring.test.js b/tests/scoring.test.js
+index 2e24c4f..e40a3aa 100644
+--- a/tests/scoring.test.js
++++ b/tests/scoring.test.js
+@@ -1,5 +1,10 @@
+ // Score entry/formatting and the standings maths — the numbers on the wall.
+ 
++// Points readers are directors' eyes only (standings secrecy, redesign §4.12):
++// every test here reads the standings as a director. The viewer side of the same
++// readers is pinned in secrecy.test.js.
++setMemberRole('editor');
++
+ const timed = { timeInput: true };
+ const plain = {};
+ 
+diff --git a/tests/secrecy.senior.test.js b/tests/secrecy.senior.test.js
+new file mode 100644
+index 0000000..35e6960
+--- /dev/null
++++ b/tests/secrecy.senior.test.js
+@@ -0,0 +1,9 @@
++// Standings secrecy under the SENIOR profile: the same checks as secrecy.test.js
++// (which this evals) — four teams, flags instead of shields, no electives — so a
++// leak that only senior's data shape could reach is caught too.
++eval(readFixture('secrecy.test.js'));
++
++test('the senior profile is the one under test', () => {
++  assert.equal(CAMP.id, 'senior');
++  assert.equal(state.teams.length, 4);
++});
+diff --git a/tests/secrecy.test.js b/tests/secrecy.test.js
+new file mode 100644
+index 0000000..1c5044e
+--- /dev/null
++++ b/tests/secrecy.test.js
+@@ -0,0 +1,545 @@
++// Standings secrecy (redesign §4.12, owner's rule 2026-10-27): a counselor sees
++// NO points, places or gaps anywhere in the app. Only the medal WINNERS of a
++// finished game stay visible; a director sees everything, always.
++//
++// Four wires hold the rule, and each is pinned here:
++//   1. a guard inside every points reader (standingsVisible / pointsReadAllowed),
++//      which THROWS for a viewer under test, so a render path that reaches one as
++//      a viewer fails loudly instead of quietly drawing zeros;
++//   2. every viewer surface gated in code, never CSS (html.view-only leaves the
++//      nodes in the DOM);
++//   3. the SINK RECORDER (tests/harness.js): the stub DOM records nothing by
++//      itself, so a viewer's "+7 pts (now 23)" toast used to be invisible to the
++//      suite. Every way text leaves the app (toasts, notifications, share,
++//      clipboard, innerHTML / textContent / attribute writes, chimes) is logged
++//      while a scenario runs, and each entry is matched against the leak patterns;
++//   4. a positive control: the SAME scenarios as a director DO hit the patterns,
++//      so a recorder that has stopped recording can't turn this file green.
++
++installSinks();
++const SINKS = __sinkRec;
++const hostDoc = document;
++
++// What a counselor must never read: points, a place, a signed delta, a gap.
++// (The spec's /[+−-]\d+/ is anchored to a word start: "10:00–11:45" and
++// "2026-07-20" are not deltas.)
++const LEAK_PATTERNS = [
++  [/\bpts?\b/i, 'points'],
++  [/(^|[\s(])[+−-]\d+/, 'a signed number'],
++  [/\b\d+(st|nd|rd|th)\b/i, 'an ordinal place'],
++  [/\b(trail|trails|trailing|behind|ahead)\b/i, 'a gap word'],
++];
++// Static page copy says "points" all over (game rules, "Double points day"):
++// that is the rule, not the standings. The bare word is only a leak in the sinks
++// that carry a dynamic sentence.
++const SENTENCE_SINKS = ['toast', 'jellyToast', 'notification', 'Notification', 'share', 'clipboard', 'copy'];
++const POINTS_WORD = /\bpoints?\b/i;
++
++// The words a person can read out of a sink entry: markup becomes its text plus
++// the attributes that carry words; everything else is already text.
++function readable(entry) {
++  if (entry.kind !== 'innerHTML' && entry.kind !== 'insertAdjacentHTML') return entry.text;
++  const attrs = [];
++  entry.text.replace(/\s(?:title|aria-label|alt|placeholder|label)="([^"]*)"/g, (m, v) => { attrs.push(v); return m; });
++  return entry.text.replace(/<[^>]+>/g, ' ').concat(' ', attrs.join(' '));
++}
++
++function leaksIn(entries) {
++  const out = [];
++  entries.forEach((e) => {
++    const text = readable(e);
++    LEAK_PATTERNS.forEach(([re, why]) => { if (re.test(text)) out.push(`${why} in ${e.kind}: ${text.replace(/\s+/g, ' ').trim().slice(0, 140)}`); });
++    if (SENTENCE_SINKS.includes(e.kind) && POINTS_WORD.test(text)) out.push(`the word points in ${e.kind}: ${text.slice(0, 140)}`);
++  });
++  return out;
++}
++
++function record(fn) {
++  SINKS.log.length = 0;
++  SINKS.on = true;
++  try { fn(); } finally { SINKS.on = false; }
++  return SINKS.log.slice();
++}
++
++const kinds = (entries, ...k) => entries.filter((e) => k.includes(e.kind));
++
++// A week with points everywhere a leak could come from: medals, verse, cleanup,
++// custom bonuses (one negative), a live tally, a started bracket.
++function seedWeek() {
++  freshState();
++  const games = state.config.games;
++  games.slice(0, 4).forEach((g, i) => {
++    state.results[g.id] = { medals: { gold: 't' + (i % 3), silver: 't' + ((i + 1) % 3), bronze: 't' + ((i + 2) % 3) }, savedAt: '2026-07-20T12:0' + i + ':00Z' };
++  });
++  state.bonuses = {
++    v1: { teamId: 't0', category: 'verse', label: 'Mon memory verse', points: 5, at: '2026-07-20T12:05:00Z', day: 1 },
++    c1: { teamId: 't1', category: 'cleanup', label: 'Mon Lunch cleanup', points: 3, at: '2026-07-20T12:06:00Z', day: 1, meal: 'Lunch' },
++    q1: { teamId: 't2', category: 'custom', label: 'Spirit', points: 4, at: '2026-07-20T12:07:00Z' },
++    q2: { teamId: 't3', category: 'custom', label: 'Penalty', points: -2, at: '2026-07-20T12:08:00Z' },
++  };
++  const live = games.find((g) => g.liveRankings && !state.results[g.id]);
++  if (live) {
++    const scores = {};
++    state.teams.forEach((t, i) => { scores[t.id] = String(10 + i * 3); });
++    state.drafts[live.id] = { scores, medals: {} };
++  }
++  const tour = games.find((g) => g.format === 'tournament' && !state.results[g.id]);
++  if (tour && CAMP.teamCount === 6) {
++    const b = freshBracket();
++    b.phase = 'round1';
++    b.selectedPair = ['t0', 't1'];
++    state.brackets[tour.id] = b;
++  }
++  state.followTeam = 't1';
++  state.notify = true;
++  appStarted = true;
++  fbRef = null;
++  resultAlertsArmed = true;
++  return { live, tour };
++}
++
++// Every synced key, as a snapshot would carry it, with `mutate` applied.
++function snapshotWith(mutate) {
++  const snap = JSON.parse(JSON.stringify(syncedSnapshot()));
++  if (mutate) mutate(snap);
++  return snap;
++}
++
++function asViewer(fn) {
++  setMemberRole('viewer');
++  setStandingsGuardThrows(true);
++  try { return fn(); } finally { setStandingsGuardThrows(false); }
++}
++
++function openGameAsViewer(gameId) {
++  state.ui.gameId = gameId;
++  state.ui.view = 'home';
++}
++
++// ── The guard ────────────────────────────────────────────────────────
++
++test('standingsVisible is true for a director only, and a role that has not resolved is not one', () => {
++  setMemberRole('editor');
++  assert.ok(standingsVisible());
++  setMemberRole('viewer');
++  assert.notOk(standingsVisible());
++  setMemberRole(null);
++  assert.notOk(standingsVisible(), 'fail closed: no role yet is not a director');
++});
++
++test('every points reader THROWS for a viewer under test and returns nothing in production', () => {
++  seedWeek();
++  setMemberRole('editor');
++  const realCounts = medalCounts();
++  const readers = {
++    medalCounts: () => medalCounts(),
++    rankTeamsByPoints: () => rankTeamsByPoints(realCounts),
++    bonusBreakdown: () => bonusBreakdown(),
++    versePointsByDay: () => versePointsByDay(),
++    cleanupMealPoints: () => cleanupMealPoints(1, 'Lunch'),
++    bonusCountsDouble: () => bonusCountsDouble({ category: 'custom', at: '2026-07-24T12:00:00Z' }),
++  };
++  Object.keys(readers).forEach((name) => {
++    setMemberRole('viewer');
++    setStandingsGuardThrows(true);
++    assert.throws(readers[name], name + ' must throw for a viewer under test');
++    setStandingsGuardThrows(false);
++    assert.doesNotThrow(readers[name], name + ' must not throw in production');
++    setMemberRole('editor');
++    assert.doesNotThrow(readers[name], name + ' is open to a director');
++  });
++});
++
++test('in production a viewer gets zeros and an empty list, never the truth', () => {
++  seedWeek();
++  setMemberRole('editor');
++  const real = medalCounts();
++  assert.ok(real.t0.points > 0, 'precondition: this week has points');
++  setMemberRole('viewer');
++  const counts = medalCounts();
++  state.teams.forEach((t) => {
++    assert.deepEqual(counts[t.id], { gold: 0, silver: 0, bronze: 0, medalPts: 0, verse: 0, meals: 0, custom: 0, bonus: 0, points: 0 }, t.id);
++  });
++  assert.deepEqual(rankTeamsByPoints(counts).map((t) => t.id), state.teams.map((t) => t.id), 'the roster in its own fixed order, not a standings order');
++  assert.deepEqual(bonusBreakdown()[state.teams[0].id], { verse: 0, meals: 0, custom: 0 });
++  assert.deepEqual(versePointsByDay(), {});
++  assert.equal(cleanupMealPoints(1, 'Lunch'), 0);
++  assert.equal(bonusCountsDouble({ category: 'custom', at: '2026-07-24T12:00:00Z' }), false);
++});
++
++test('a role that flips back to director reads the real numbers again', () => {
++  seedWeek();
++  setMemberRole('viewer');
++  assert.equal(medalCounts().t0.points, 0);
++  setMemberRole('editor');
++  assert.ok(medalCounts().t0.points > 0);
++});
++
++// ── The whole page as a counselor ────────────────────────────────────
++
++test('a full viewer renderAll with the guard throwing completes and leaks nothing to any sink or node', () => {
++  const { live, tour } = seedWeek();
++  setMemberRole('editor');
++  renderAll(); // a director's page first, so every node holds director markup: the flip must clear it
++  const out = record(() => asViewer(() => {
++    renderAll();
++    // every open game the viewer can reach, too
++    state.config.games.forEach((g) => { openGameAsViewer(g.id); renderAll(); });
++    if (live) { openGameAsViewer(live.id); renderAll(); }
++    if (tour && state.brackets[tour.id]) { openGameAsViewer(tour.id); renderAll(); }
++    state.ui.gameId = null;
++    renderAll();
++  }));
++  assert.ok(out.length > 20, 'the recorder is live: ' + out.length + ' sink writes seen');
++  assert.deepEqual(leaksIn(out), []);
++  // a render that skips an unchanged node writes nothing: look at what is IN the page too
++  assert.deepEqual(leaksIn(__domSweep()), [], 'markup left in a node after the flip');
++});
++
++test('POSITIVE CONTROL: the same render as a director does hit the patterns (the recorder is not blind)', () => {
++  seedWeek();
++  setMemberRole('editor');
++  renderAll();
++  const found = leaksIn(__domSweep());
++  assert.ok(found.length >= 3, 'a director\'s home carries points, places and the rest: ' + found.length);
++  assert.ok(found.some((f) => f.startsWith('points')), 'the follow card says pts');
++  assert.ok(found.some((f) => f.startsWith('an ordinal place')), 'and names a place');
++  assert.ok(found.some((f) => f.startsWith('a signed number')), 'the ledgers carry signed numbers');
++  // and the log half: a director\'s point toast lands in the sinks
++  const toast = record(() => notifyPointChanges([{ team: state.teams[0], delta: 7, total: 23 }]));
++  assert.ok(leaksIn(toast).length >= 1, 'a director\'s point toast is caught by the recorder');
++});
++
++test('a viewer\'s standings table and ledgers are emptied, not just hidden', () => {
++  seedWeek();
++  const tbody = document.getElementById('standings-tbody');
++  const bonus = document.getElementById('bonus-body');
++  setMemberRole('editor');
++  renderAll();
++  assert.ok(tbody.innerHTML.length > 100, 'precondition: a director\'s table has rows');
++  assert.ok(bonus.innerHTML.length > 50, 'and a ledger');
++  asViewer(() => renderAll()); // the role flip: a demoted editor's next render
++  assert.equal(tbody.innerHTML, '', 'the standings root is emptied');
++  assert.equal(bonus.innerHTML, '', 'the quick-points root is emptied');
++  assert.equal(document.getElementById('catchup-hint').innerHTML, '', 'and the catch-up sentence');
++  assert.equal(document.getElementById('catchup-hint').hidden, true);
++});
++
++test('role flip: a demoted director\'s next render drops every editor-only number, a promoted one gets them', () => {
++  seedWeek();
++  setMemberRole('editor');
++  renderAll();
++  const card = document.getElementById('follow-team-card');
++  assert.ok(/pts/.test(card.innerHTML) && /place/.test(card.innerHTML), 'a director\'s team card carries rank and points');
++  asViewer(() => renderAll());
++  assert.notOk(/pts|place|\d+(st|nd|rd|th)/i.test(card.innerHTML.replace(/<[^>]+>/g, ' ')), 'a counselor\'s carries neither: ' + card.innerHTML.replace(/\s+/g, ' ').slice(0, 200));
++  assert.ok(card.innerHTML.includes(teamName('t1')), 'but it is still the team card');
++  setMemberRole('editor');
++  assert.ok(/pts/.test(card.innerHTML), 'promoted again: the numbers come back');
++});
++
++test('the hide switches on the two secret cards are gone, and nothing un-hides them', () => {
++  seedWeek();
++  assert.deepEqual(SECRET_CARDS, ['standings', 'bonus']);
++  state.meta.hiddenCards = {};
++  SECRET_CARDS.forEach((k) => assert.ok(cardHiddenFromViewers(k), k + ' is hidden from non-directors whatever meta says'));
++  state.meta.hiddenCards = { standings: true };
++  toggleCardHidden('standings');
++  assert.deepEqual(state.meta.hiddenCards, { standings: true }, 'a director cannot toggle a secret card');
++  toggleCardHidden('bonus');
++  assert.notOk(state.meta.hiddenCards.bonus);
++  const html = readFixture('../index.html');
++  assert.notOk(/data-hide-card="standings"/.test(html) || /data-hide-card="bonus"/.test(html), 'no switch markup for them');
++  assert.ok((html.match(/Counselors can't see this/g) || []).length === 2, 'each carries the note instead');
++  // and a viewer's applyCardVisibility hides both cards
++  const cards = {};
++  const realQuery = document.querySelector;
++  document.querySelector = (sel) => { const m = /data-card="([a-z]+)"/.exec(sel); if (m) { cards[m[1]] = cards[m[1]] || { hidden: false, hasAttribute: () => false }; return cards[m[1]]; } return realQuery(sel); };
++  try {
++    setMemberRole('viewer');
++    applyCardVisibility();
++    assert.equal(cards.standings.hidden, true);
++    assert.equal(cards.bonus.hidden, true);
++    setMemberRole('editor');
++    applyCardVisibility();
++    assert.equal(cards.standings.hidden, false, 'a director always sees them');
++    assert.equal(cards.bonus.hidden, false);
++  } finally { document.querySelector = realQuery; }
++});
++
++// ── Each viewer surface (§4.12 rows) ─────────────────────────────────
++
++test('row 5: the follow card has no rank pill and no points for a counselor', () => {
++  seedWeek();
++  const card = document.getElementById('follow-team-card');
++  asViewer(() => renderFollowCard());
++  const text = card.innerHTML.replace(/<[^>]+>/g, ' ');
++  assert.ok(!/place|pts|follow-rank-pill|follow-points/.test(card.innerHTML), 'no rank markup at all');
++  assert.deepEqual(leaksIn([{ kind: 'innerHTML', text: card.innerHTML }]), [], text.trim());
++});
++
++test('row 6: a counselor hears no point change, a director still does', () => {
++  seedWeek();
++  const change = [{ team: state.teams[0], delta: 7, total: 23 }];
++  const viewer = record(() => asViewer(() => notifyPointChanges(change)));
++  assert.equal(viewer.length, 0, 'no toast, notification or chime for a viewer: ' + JSON.stringify(viewer));
++  setMemberRole('editor');
++  const director = record(() => notifyPointChanges(change));
++  assert.ok(kinds(director, 'toast').length === 1 && /\+7 pts/.test(director[0].text), 'a director keeps it: ' + JSON.stringify(director));
++});
++
++test('row 6: a bonus, a verse award or a cleanup award saved elsewhere makes a counselor\'s phone say nothing', () => {
++  seedWeek();
++  setMemberRole('viewer');
++  renderAll();
++  const scenarios = {
++    'a quick-points bonus': (s) => { s.bonuses.q9 = { teamId: 't0', category: 'custom', label: 'x', points: 6, at: '2026-07-20T13:00:00Z' }; },
++    'a verse award': (s) => { s.bonuses['verse-t3-2'] = { teamId: 't3', category: 'verse', label: 'x', points: 5, at: '2026-07-21T13:00:00Z', day: 2 }; },
++    'a cleanup award': (s) => { s.bonuses['cleanup-t4-2-Lunch'] = { teamId: 't4', category: 'cleanup', label: 'x', points: 3, at: '2026-07-21T13:00:00Z', day: 2, meal: 'Lunch' }; },
++    'a penalty': (s) => { s.bonuses.q8 = { teamId: 't2', category: 'custom', label: 'x', points: -3, at: '2026-07-21T13:00:00Z' }; },
++  };
++  hostDoc.hidden = true; // so an OS notification would be attempted too
++  Object.keys(scenarios).forEach((name) => {
++    const out = record(() => asViewer(() => applyRemoteState(snapshotWith(scenarios[name]))));
++    assert.deepEqual(kinds(out, 'toast', 'jellyToast', 'notification', 'Notification', 'chime', 'share', 'copy', 'clipboard'), [], name + ' must make no noise');
++    assert.deepEqual(leaksIn(out), [], name);
++  });
++  hostDoc.hidden = false;
++});
++
++test('row 6: a result saved elsewhere gives a counselor ONE alert that names the winners and no points', () => {
++  const { live } = seedWeek();
++  setMemberRole('viewer');
++  state.followTeam = 't5'; // not a medallist below
++  renderAll();
++  hostDoc.hidden = true;
++  const g = state.config.games.find((x) => !state.results[x.id] && x !== live) || state.config.games[10];
++  const out = record(() => asViewer(() => applyRemoteState(snapshotWith((s) => {
++    s.results[g.id] = { medals: { gold: 't0', silver: 't1', bronze: 't2' }, savedAt: '2026-07-20T14:00:00Z' };
++  }))));
++  hostDoc.hidden = false;
++  const toasts = kinds(out, 'toast');
++  assert.equal(toasts.length, 1, JSON.stringify(toasts));
++  assert.equal(toasts[0].text, `🏅 ${g.name}: ${teamName('t0')} gold, ${teamName('t1')} silver, ${teamName('t2')} bronze`);
++  assert.equal(kinds(out, 'chime').length, 1);
++  assert.equal(kinds(out, 'notification', 'Notification').length, 0, 'not your team: no OS notification');
++  assert.deepEqual(leaksIn(kinds(out, 'toast', 'notification', 'Notification', 'chime', 'jellyToast')), []);
++});
++
++test('row 6: when your own team wins a medal the alert says so by name, loudly, and still no points', () => {
++  seedWeek();
++  setMemberRole('viewer');
++  state.followTeam = 't1';
++  renderAll();
++  hostDoc.hidden = true;
++  const g = state.config.games.find((x) => !state.results[x.id]);
++  const out = record(() => asViewer(() => applyRemoteState(snapshotWith((s) => {
++    s.results[g.id] = { medals: { gold: 't0', silver: 't1', bronze: 't2' }, savedAt: '2026-07-20T14:00:00Z' };
++  }))));
++  hostDoc.hidden = false;
++  const toasts = kinds(out, 'toast');
++  assert.equal(toasts.length, 1, 'your team\'s medal replaces the generic line: ' + JSON.stringify(toasts));
++  assert.ok(toasts[0].text.includes(`${teamName('t1')} won silver in ${g.name}!`), toasts[0].text);
++  assert.equal(kinds(out, 'Notification').length, 1, 'and it reaches the OS');
++  assert.equal(kinds(out, 'chime').length, 1);
++  assert.deepEqual(leaksIn(kinds(out, 'toast', 'Notification', 'notification', 'chime')), []);
++});
++
++test('a cleared result is not news, and several results in one snapshot share one toast', () => {
++  const { live } = seedWeek();
++  setMemberRole('viewer');
++  state.followTeam = 't5';
++  renderAll();
++  const cleared = record(() => asViewer(() => applyRemoteState(snapshotWith((s) => { delete s.results[state.config.games[0].id]; }))));
++  assert.equal(kinds(cleared, 'toast', 'chime').length, 0, 'a cleared result says nothing');
++  const open = state.config.games.filter((g) => !state.results[g.id] && g !== live).slice(0, 4);
++  const many = record(() => asViewer(() => applyRemoteState(snapshotWith((s) => {
++    open.forEach((g, i) => { s.results[g.id] = { medals: { gold: 't0', silver: 't1', bronze: 't2' }, savedAt: '2026-07-20T15:0' + i + ':00Z' }; });
++  }))));
++  const toasts = kinds(many, 'toast');
++  assert.equal(toasts.length, 1, 'four games finished at once: one toast');
++  assert.deepEqual(leaksIn(toasts), []);
++});
++
++test('row 6: a director\'s phone is not sent result alerts (it keeps the point toasts)', () => {
++  seedWeek();
++  setMemberRole('editor');
++  const out = record(() => notifyResultChanges([{ game: state.config.games[0], medals: { gold: 't0', silver: 't1', bronze: 't2' } }]));
++  assert.equal(out.length, 0);
++});
++
++test('row 7: Copy and Share give a counselor only the game winners', () => {
++  seedWeek();
++  const viewer = asViewer(() => standingsSummaryText());
++  assert.ok(/Medals so far:/.test(viewer), 'the winners list stays');
++  assert.deepEqual(leaksIn([{ kind: 'copy', text: viewer }]).filter((l) => !/ordinal/.test(l)), [], viewer);
++  assert.notOk(/Standings|pts|\d\)/.test(viewer), 'no table: ' + viewer);
++  setMemberRole('editor');
++  const director = standingsSummaryText();
++  assert.ok(/Standings \(/.test(director) && /pts/.test(director), 'a director\'s copy is unchanged');
++});
++
++test('rows 9 and 10: verse shows the verse and nothing else, cleanup shows the rota and no points', () => {
++  seedWeek();
++  const verse = document.getElementById('verse-body');
++  const cleanup = document.getElementById('cleanup-body');
++  asViewer(() => { renderMemoryVerse(); renderMealCleanup(); });
++  assert.ok(/verse-day-card/.test(verse.innerHTML), 'the verse text is there');
++  assert.notOk(/pts-grid|pts-row|pts-btn|\+\d/.test(verse.innerHTML), 'no per-team rows or "+N": ' + verse.innerHTML.replace(/\s+/g, ' ').slice(0, 160));
++  assert.ok(/cleanup-meal-row/.test(cleanup.innerHTML), 'the rota is there');
++  assert.notOk(/cleanup-meal-pts|bonus-ledger|bonus-item|\+\d/.test(cleanup.innerHTML), 'no "+N" badge, no ledger');
++  setMemberRole('editor');
++  renderMemoryVerse(); renderMealCleanup();
++  assert.ok(/pts-btn/.test(verse.innerHTML) && /pts-btn/.test(cleanup.innerHTML), 'a director keeps the award buttons');
++});
++
++test('rows 11 and 12: a finished game shows its winners without "+N pts", a live tally shows no suggested medals', () => {
++  const { live } = seedWeek();
++  const entry = document.getElementById('entry-area');
++  const g = state.config.games.find((x) => state.results[x.id]);
++  asViewer(() => { openGameAsViewer(g.id); renderGameView(); });
++  assert.ok(entry.innerHTML.includes(teamName(state.results[g.id].medals.gold)), 'the gold winner is named');
++  assert.notOk(/medal-points|pts/.test(entry.innerHTML), 'but not what it is worth: ' + entry.innerHTML.replace(/\s+/g, ' ').slice(0, 200));
++  setMemberRole('editor');
++  openGameAsViewer(g.id); renderGameView();
++  assert.ok(/medal-points/.test(entry.innerHTML) && /\+\d+ pts/.test(entry.innerHTML), 'a director\'s result keeps the chips');
++  if (live) {
++    asViewer(() => { openGameAsViewer(live.id); renderGameView(); });
++    assert.ok(/lw-rank-list/.test(entry.innerHTML), 'the live scores are public');
++    assert.notOk(/live-watch-suggest|Suggested|🥇/.test(entry.innerHTML), 'but no suggested winners before a director saves');
++    const home = asViewer(() => liveHomeTallyCard(live) + tallyBoardHTML(live));
++    assert.notOk(/medals ready|🥇/.test(home), 'nor on the home cards');
++    setMemberRole('editor');
++    assert.ok(/medals ready/.test(liveHomeTallyCard(live)), 'a director still sees them');
++  }
++});
++
++test('row 16: the copy no longer promises point alerts to a counselor', () => {
++  seedWeek();
++  const shown = [];
++  const real = showToast;
++  showToast = (m) => shown.push(m);
++  try {
++    asViewer(() => { state.notify = false; toggleNotify(); });
++    assert.ok(/when a game finishes/.test(shown[0]) && !/points/.test(shown[0]), shown[0]);
++    state.notify = false;
++    shown.length = 0;
++    setMemberRole('editor');
++    toggleNotify();
++    assert.ok(/team's points change/.test(shown[0]), 'a director is still told about points');
++  } finally { showToast = real; }
++  const html = readFixture('../index.html');
++  assert.ok(html.includes("You'll get alerts when your team plays and wins medals."), 'the picker says it plainly');
++  assert.notOk(/when they score/.test(html + readFixture('../app.js')), 'no "when they score" anywhere');
++});
++
++test('the change history is a director\'s: a counselor cannot open it', () => {
++  seedWeek();
++  let opened = 0;
++  const realRender = renderHistory;
++  renderHistory = () => { opened++; };
++  try {
++    setMemberRole('viewer');
++    openHistory();
++    assert.equal(opened, 0);
++    setMemberRole('editor');
++    openHistory();
++    assert.equal(opened, 1);
++  } finally { renderHistory = realRender; }
++});
++
++test('the quick-points card for a counselor is empty even when called directly', () => {
++  seedWeek();
++  const wrap = document.getElementById('bonus-body');
++  setMemberRole('editor');
++  renderBonuses();
++  assert.ok(/bonus-ledger/.test(wrap.innerHTML));
++  asViewer(() => renderBonuses());
++  assert.equal(wrap.innerHTML, '');
++});
++
++// ── The first frame ──────────────────────────────────────────────────
++
++test('hint-paint: a counselor phone booting from a cached week with points paints no points on any sink', () => {
++  seedWeek();
++  setMemberRole('editor');
++  const cache = JSON.stringify(state);
++  assert.ok(medalCounts().t0.points > 0);
++  const vm = nodeRequire('vm');
++  const { makeContext } = nodeRequire('./harness.js');
++  const boot = makeContext({ storage: { [STORAGE_KEY]: cache, campScoreboardAuthHint: 'viewer', campScoreboardCampsHint: JSON.stringify({ junior: 'viewer' }) } });
++  boot.sandbox.installSinks();
++  const get = (expr) => vm.runInContext(expr, boot.ctx);
++  // applyTheme dispatches an event on window; the stub window has neither
++  get('globalThis.CustomEvent = function (type, init) { this.type = type; this.detail = init && init.detail; }; globalThis.dispatchEvent = function () { return true; }');
++  get('setStandingsGuardThrows(true)');
++  boot.sandbox.__sinkRec.on = true;
++  assert.doesNotThrow(() => get('boot()'), 'the first frame of a viewer never reaches a points reader');
++  boot.sandbox.__sinkRec.on = false;
++  assert.equal(get('canEdit()'), false, 'the hint painted a viewer');
++  assert.equal(get('appStarted'), true, 'and the app really painted');
++  assert.ok(boot.sandbox.__sinkRec.log.length > 20, 'with the recorder live');
++  assert.deepEqual(leaksIn(boot.sandbox.__sinkRec.log), []);
++  assert.deepEqual(leaksIn(boot.sandbox.__domSweep()), [], 'and none left in a node');
++});
++
++// ── The seeded keys for builds that predate this ─────────────────────
++
++function sealedSeedEnvironment() {
++  seedWeek();
++  fbRef = {}; // sync on
++  remoteReady = true;
++  state.meta.hiddenCards = {};
++  let saves = 0;
++  const realSave = saveState;
++  saveState = () => { saves++; };
++  return { saves: () => saves, restore: () => { saveState = realSave; fbRef = null; } };
++}
++
++test('a director build seeds hiddenCards.standings and .bonus so a not-yet-updated counselor phone hides them', () => {
++  const env = sealedSeedEnvironment();
++  try {
++    setMemberRole('editor');
++    ensureSecrecySeed();
++    assert.deepEqual(state.meta.hiddenCards, { standings: true, bonus: true });
++    assert.equal(env.saves(), 1);
++    ensureSecrecySeed();
++    assert.equal(env.saves(), 1, 'idempotent: nothing left to write');
++    // an old director build un-hides one: the next new build sets it right again
++    delete state.meta.hiddenCards.standings;
++    ensureSecrecySeed();
++    assert.deepEqual(state.meta.hiddenCards, { bonus: true, standings: true });
++    assert.equal(env.saves(), 2);
++    // other cards' choices are left alone
++    state.meta.hiddenCards.chat = true;
++    ensureSecrecySeed();
++    assert.equal(state.meta.hiddenCards.chat, true);
++  } finally { env.restore(); }
++});
++
++test('the seed is a director\'s write, after the first pull, with sync on: never a counselor\'s, never early', () => {
++  const env = sealedSeedEnvironment();
++  try {
++    setMemberRole('viewer');
++    ensureSecrecySeed();
++    assert.deepEqual(state.meta.hiddenCards, {}, 'a counselor\'s phone cannot write the node');
++    setMemberRole('editor');
++    remoteReady = false;
++    ensureSecrecySeed();
++    assert.deepEqual(state.meta.hiddenCards, {}, 'before the first snapshot a write would queue stale state');
++    remoteReady = true;
++    fbRef = null;
++    ensureSecrecySeed();
++    assert.deepEqual(state.meta.hiddenCards, {}, 'with sync off there is nobody to protect');
++    assert.equal(env.saves(), 0);
++  } finally { env.restore(); }
++});
++
++test('the seed is not part of normalizeSyncedState, which runs for everyone and on every load', () => {
++  freshState();
++  setMemberRole('editor');
++  fbRef = {}; remoteReady = true;
++  normalizeSyncedState();
++  fbRef = null;
++  assert.deepEqual(state.meta.hiddenCards, {}, 'healing a pruned map must not write the secrecy keys');
++});
+diff --git a/tests/tv.test.js b/tests/tv.test.js
+index 1efd73c..9ea9dd5 100644
+--- a/tests/tv.test.js
++++ b/tests/tv.test.js
+@@ -23,7 +23,9 @@ function loadTv(o) {
+   const bySel = new Map();
+   const listeners = {};
+   const timers = [];
+-  const store = new Map(Object.entries(o.storage || {}));
++  // A director's device unless a test says otherwise: the cached-snapshot fallback
++  // shows standings only on a device that was a director's (secrecy interim).
++  const store = new Map(Object.entries(Object.assign({ campScoreboardAuthHint: 'editor' }, o.storage || {})));
+   const replaced = [];
+ 
+   function el(tag, track) {
+@@ -73,6 +75,8 @@ function loadTv(o) {
+   }
+   byIdFn('auth-overlay').style.display = 'none'; // the page's own inline style hides it
+   byIdFn('update-chip').hidden = true;
++  byIdFn('waiting').hidden = true;  // the page's own `hidden` attributes
++  byIdFn('screen').hidden = true;
+ 
+   const document = {
+     title: '', hidden: false, body: el('body'), documentElement: el('html'),
+@@ -469,3 +473,67 @@ test('mid-reveal, a newer build only shows the update chip (reloading would wipe
+   assert.equal(tv.replaced.length, 0, 'no reload');
+   assert.equal(tv.byId('update-chip').hidden, false, 'the chip is offered instead');
+ });
++
++// ── Secrecy: live standings are for directors only (until the public page, Step 23) ──
++
++function fbWithRole(role, rec) {
++  const fb = {
++    apps: [], initializeApp() { fb.apps.push({}); },
++    auth: Object.assign(() => ({ onAuthStateChanged(cb) { rec.auth = cb; }, signInWithPopup: () => Promise.resolve(), signOut: () => Promise.resolve() }), { GoogleAuthProvider: function () { this.setCustomParameters = () => {}; } }),
++    database: () => ({ ref: (path) => ({
++      on(ev, cb) { rec.on.push(path); rec.cb[path] = cb; },
++      once() { rec.once.push(path); return Promise.resolve({ val: () => (role ? { role } : null) }); },
++    }) }),
++  };
++  return fb;
++}
++
++test('a counselor\'s account gets "Waiting for the directors…" and the page never reads state', async () => {
++  const rec = { on: [], once: [], cb: {}, auth: null };
++  const tv = loadTv({ firebase: fbWithRole('viewer', rec) });
++  rec.auth({ email: 'counselor@example.com' });
++  await new Promise((r) => setTimeout(r, 0));
++  assert.equal(tv.byId('waiting').hidden, false, 'the waiting screen is up');
++  assert.equal(tv.byId('loading').style.display, 'none');
++  assert.deepEqual(rec.on, [], 'no state or config listener was ever attached: nothing in memory to compute standings from');
++  tv.next(); // a stray key or tap must not start a reveal
++  assert.equal(tv.byId('screen').hidden === false, false, 'the reveal screen never came up');
++  assert.deepEqual(tv.introCrests(), [], 'no intro');
++  assert.ok(/Waiting for the directors…/.test(TV_HTML), 'the page ships the waiting words');
++});
++
++test('a director\'s account still gets the live standings', async () => {
++  const rec = { on: [], once: [], cb: {}, auth: null };
++  const tv = loadTv({ firebase: fbWithRole('editor', rec) });
++  rec.auth({ email: 'director@example.com' });
++  await new Promise((r) => setTimeout(r, 0));
++  assert.equal(tv.byId('waiting').hidden, true, 'nothing to wait for');
++  assert.deepEqual(rec.on.sort(), ['campScoreboard/config', 'campScoreboard/state']);
++});
++
++test('an account that is not on the list still gets the denied overlay, not the waiting screen', async () => {
++  const rec = { on: [], once: [], cb: {}, auth: null };
++  const tv = loadTv({ firebase: fbWithRole(null, rec) });
++  rec.auth({ email: 'stranger@example.com' });
++  await new Promise((r) => setTimeout(r, 0));
++  assert.equal(tv.byId('waiting').hidden, true);
++  assert.deepEqual(rec.on, []);
++});
++
++test('the cached-snapshot fallback shows standings only on a device that was a director\'s', () => {
++  const cache = { campScoreboardV2: JSON.stringify(stateWith(T6, { results: { x: { medals: { gold: 't0', silver: 't1', bronze: 't2' } } } })) };
++  const counselor = loadTv({ storage: Object.assign({ campScoreboardAuthHint: 'viewer' }, cache) });
++  assert.equal(counselor.byId('waiting').hidden, false, 'a counselor\'s phone with the SDK blocked waits');
++  assert.deepEqual(counselor.introCrests(), []);
++  const bare = loadTv({ storage: Object.assign({ campScoreboardAuthHint: '' }, cache) });
++  assert.equal(bare.byId('waiting').hidden, false, 'no hint at all fails closed');
++  // the per-camp ledger beats the single hint: a director of senior who is only a counselor on junior
++  const dual = loadTv({ storage: Object.assign({ campScoreboardAuthHint: 'editor', campScoreboardCampsHint: JSON.stringify({ junior: 'viewer', senior: 'editor' }) }, cache) });
++  assert.equal(dual.byId('waiting').hidden, false, 'junior: a counselor there, so it waits');
++  const senior = loadTv({ search: '?camp=senior', storage: { campScoreboardAuthHint: 'editor', campScoreboardCampsHint: JSON.stringify({ junior: 'viewer', senior: 'editor' }), 'campScoreboardV2:senior': JSON.stringify(stateWith(T4)) } });
++  assert.equal(senior.byId('waiting').hidden, true);
++  assert.equal(senior.introCrests().length, 4, 'senior: a director there, so it shows');
++  const director = loadTv({ storage: cache });
++  assert.equal(director.introCrests().length, 6, 'a director\'s device (hint editor) is unchanged');
++  assert.equal(loadTv({ search: '?demo', storage: { campScoreboardAuthHint: '' } }).introCrests().length, 6, 'the demo is fake data, open to all');
++});
+-- 
+2.43.0
+

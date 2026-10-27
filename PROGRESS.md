@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Tue Oct 27, 7:05 PM ET** (update this line every time the file changes)
+Last updated: **Tue Oct 27, 7:20 PM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -142,6 +142,17 @@ send_later into this session). ETAs above shift by however long the pause lasts.
   (builder worktrees must never be committed).
 
 ## Next steps (resume here)
+**7:20 PM ET Tue — HANDED OFF TO A LOCAL RUN (owner's laptop, parallel).**
+The cloud build was stopped on the owner's request. State: Steps 0–2 LIVE
+(v186). Step 3 (secrecy) is HALF DONE and NOT deployed: saved as
+`docs/build-notes/wip-step3-secrecy.patch` (commit 3a reveal-core.js + an
+uncommitted WIP of the rest; `node tests/run.js` → 1 failing). Apply with
+`git am docs/build-notes/wip-step3-secrecy.patch` on a branch from main and
+finish it. Remaining: BUILD-PLAN Steps 3–31 (◆ = owner: 11, 16, 20, 27, 31).
+Owner rules still apply (see top of file + CLAUDE.md): design work on Opus
+with an eye for improvement; all motion jelly-inspired; calm motion for
+reduce-motion / battery saver / switch; Eastern time; plain English.
+
 **v183 LIVE (10:06 PM ET Mon, commit 554fbe1)** — owner reported "progress bars
 keep reloading" + asked to look for other animation glitches. Fixed: home
 panels no longer rebuild when nothing changed (`setHtmlIfChanged`), the
