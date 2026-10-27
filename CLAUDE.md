@@ -288,6 +288,10 @@ What's covered, and why each file exists:
   atomic flips) — each pins the state rules behind a glitch fix. Anything only
   visible in a browser (animation, layout) is source-checked or left to the
   Playwright pass.
+- `contrast.test.js` — danger red as TEXT. `--color-danger` is a fill tuned to
+  carry white text; any rule that colours text red uses `--color-danger-text`
+  (light `#b42318`, 6.57:1 on white; dark `#ff8a8a`). The test pins the token
+  values' contrast and fails if a bare `color: var(--color-danger)` comes back.
 - `owner-row.test.js` — the owner's Members row is read-only, and the client
   constant matches the rules literal in both camps.
 - `settings-crud.test.js` — the classic builder's create / edit / delete paths

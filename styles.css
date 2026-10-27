@@ -24,10 +24,14 @@
   --color-primary: var(--jelly-color-background-accent, #3355ff);
   --color-primary-dark: #2540c7;
   --color-danger: var(--jelly-color-background-rose, #d63b3b);
-  /* Danger as TEXT on a surface (a "Remove" link). The fill colour above is
-     tuned to carry white text, so as text on the dark surfaces it falls to
-     ~3.3:1; the dark blocks below swap in a lighter red. */
-  --color-danger-text: var(--color-danger);
+  /* Danger as TEXT on a surface (a "Remove" link, an error line, a minus
+     counter). Never colour text with the fill above: it is tuned to carry
+     WHITE text, so as text it is only 4.26:1 on the light page grey (#f4f6f9)
+     and drifts with Jelly's rose. Light: a fixed #b42318 (6.57:1 on white,
+     6.07:1 on #f4f6f9); the dark blocks below swap in a lighter red (#ff8a8a,
+     7.16:1). tests/contrast.test.js pins the values and that no rule colours
+     text with the fill. */
+  --color-danger-text: #b42318;
   /* Text on primary/danger fills. White passes AA on the deep light-theme
      accents; the dark theme's lighter accents need dark text instead. */
   --color-on-primary: #ffffff;
@@ -587,7 +591,7 @@ html.view-only .card-visibility-row {
 #recaptcha-container { display: block; }
 
 .lock-error {
-  color: var(--color-danger);
+  color: var(--color-danger-text);
   font-size: 0.9rem;
   font-weight: 600;
   margin: 0 0 1rem;
@@ -1695,7 +1699,7 @@ jelly-chip.sched-day-chip .today-dot {
 }
 
 .danger-link {
-  color: var(--color-danger);
+  color: var(--color-danger-text);
 }
 
 /* Standalone reset control under the live-ranking score grid (e.g. Counselor
@@ -1814,7 +1818,7 @@ jelly-chip.sched-day-chip .today-dot {
   letter-spacing: 0.02em;
 }
 .rank-delta.up { color: var(--color-primary); }
-.rank-delta.down { color: var(--color-danger); }
+.rank-delta.down { color: var(--color-danger-text); }
 
 .medal-col {
   width: 2.25rem;
@@ -2381,7 +2385,7 @@ jelly-chip.sched-day-chip .today-dot {
 }
 
 .bonus-sign-btn.neg {
-  color: var(--color-danger);
+  color: var(--color-danger-text);
   border-color: var(--color-danger);
   background: var(--color-gold-bg);
   background: color-mix(in srgb, var(--color-danger) 12%, var(--color-surface));
@@ -2450,7 +2454,7 @@ jelly-chip.sched-day-chip .today-dot {
 }
 
 .bonus-item-pts.neg {
-  color: var(--color-danger);
+  color: var(--color-danger-text);
 }
 
 /* Double-points window marker on a ledger entry (see bonusCountsDouble). */
@@ -2477,7 +2481,7 @@ jelly-chip.sched-day-chip .today-dot {
 
 .bonus-remove-btn:hover {
   background: color-mix(in srgb, var(--color-danger) 15%, transparent);
-  color: var(--color-danger);
+  color: var(--color-danger-text);
 }
 
 .bonus-empty {
@@ -2804,7 +2808,7 @@ jelly-chip.sched-day-chip .today-dot {
   text-align: center;
   font-size: 1.15rem;
   letter-spacing: 0.15rem;
-  color: var(--color-danger);
+  color: var(--color-danger-text);
   line-height: 1;
 }
 
@@ -3087,7 +3091,7 @@ jelly-chip.sched-day-chip .today-dot {
 
 .counter-btn.minus {
   max-width: 5rem;
-  color: var(--color-danger);
+  color: var(--color-danger-text);
   border-color: color-mix(in srgb, var(--color-danger) 45%, var(--color-border));
 }
 
@@ -3320,7 +3324,7 @@ jelly-chip.sched-day-chip .today-dot {
 }
 
 .entry-error {
-  color: var(--color-danger);
+  color: var(--color-danger-text);
   font-size: 0.9rem;
   font-weight: 600;
   /* scrollIntoView (the game editor's message sits under Save at the page's
@@ -4320,7 +4324,7 @@ jelly-chip.sched-day-chip .today-dot {
 }
 .announce-meta .announce-delete {
   font-size: 0.72rem;
-  color: var(--color-danger);
+  color: var(--color-danger-text);
 }
 .announce-dismiss {
   position: absolute;
@@ -4924,7 +4928,7 @@ html.view-only #history-row {
 }
 
 .cl-pos { color: var(--color-primary); }
-.cl-neg { color: var(--color-danger); }
+.cl-neg { color: var(--color-danger-text); }
 
 .cl-entry-sub {
   font-size: 0.85rem;
@@ -5442,7 +5446,7 @@ jelly-tabs.settings-tabs::part(tabs) {
   border: 1.5px solid color-mix(in srgb, var(--color-danger) 45%, var(--color-border));
   border-radius: var(--radius-md);
   background: var(--color-surface);
-  color: var(--color-danger);
+  color: var(--color-danger-text);
   font-size: 1rem;
   font-family: inherit;
   cursor: pointer;
@@ -5636,7 +5640,7 @@ select.form-input {
   font-size: 0.85rem;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--color-danger);
+  color: var(--color-danger-text);
 }
 
 /* ── Editor footer ── */
@@ -5860,7 +5864,7 @@ select.form-input {
 }
 
 .board-clock-zero {
-  color: var(--color-danger);
+  color: var(--color-danger-text);
   animation: board-zero-pulse 1s ease infinite;
 }
 
@@ -5983,7 +5987,7 @@ select.form-input {
 }
 
 .board-clock.clock-final-ten {
-  color: var(--color-danger);
+  color: var(--color-danger-text);
   animation: clock-heartbeat 1s ease-in-out infinite;
 }
 
