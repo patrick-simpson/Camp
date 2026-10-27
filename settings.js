@@ -290,55 +290,6 @@ function splitLines(text) {
   return String(text || '').split('\n').map((s) => s.trim()).filter(Boolean);
 }
 
-function bracketRefsTeam(b, teamId) {
-  if (!b) return false;
-  const refs = []
-    .concat(b.pool || [])
-    .concat(b.selectedPair || [])
-    .concat((b.matches || []).reduce((a, m) => a.concat([m.a, m.b, m.winner, m.loser]), []))
-    .concat([b.byeTeamId])
-    .concat(b.semifinal ? [b.semifinal.a, b.semifinal.b, b.semifinal.winner, b.semifinal.loser] : [])
-    .concat(b.championship ? [b.championship.a, b.championship.b, b.championship.winner, b.championship.loser] : []);
-  return refs.includes(teamId);
-}
-
-function teamRefs(teamId) {
-  let medalCount = 0;
-  const resultGames = [];
-  Object.entries(state.results || {}).forEach(([gid, r]) => {
-    if (!r || !r.medals) return;
-    let hit = false;
-    ['gold', 'silver', 'bronze'].forEach((k) => {
-      if (r.medals[k] === teamId) { medalCount += 1; hit = true; }
-    });
-    if (hit) {
-      const g = gameById(gid);
-      resultGames.push(g ? g.name : gid);
-    }
-  });
-
-  const inProgressGames = [];
-  Object.entries(state.brackets || {}).forEach(([gid, b]) => {
-    if (bracketRefsTeam(b, teamId)) {
-      const g = gameById(gid);
-      inProgressGames.push(g ? g.name : gid);
-    }
-  });
-  Object.entries(state.drafts || {}).forEach(([gid, d]) => {
-    if (!d) return;
-    const inScores = d.scores && Object.prototype.hasOwnProperty.call(d.scores, teamId) && String(d.scores[teamId]).trim() !== '';
-    const inMedals = d.medals && Object.values(d.medals).includes(teamId);
-    if (inScores || inMedals) {
-      const g = gameById(gid);
-      const name = g ? g.name : gid;
-      if (!inProgressGames.includes(name)) inProgressGames.push(name);
-    }
-  });
-
-  const hasPicRound = !!(state.picRounds && state.picRounds[teamId]);
-  return { medalCount, resultGames, inProgressGames, hasPicRound };
-}
-
 // ── Games tab: list ───────────────────────────────────────────────
 
 function gameGroupKey(g, dayIds) {
@@ -1243,8 +1194,8 @@ function renderTeamsTab(card) {
   // Unchanged ⇒ untouched (the wiring re-reads state.teams at tap time).
   if (setHtmlIfChanged(card, `
     <h3>Teams (${teams.length})</h3>
-    ${teams.length ? teams.map((t, i) => teamRowHTML(t, i, teams.length)).join('') : '<p class="muted">No teams yet. Add at least two to run games.</p>'}
-    <jelly-button class="secondary-btn" variant="platinum" id="add-team-btn">+ Add team</jelly-button>
+    <p class="muted">${esc(CAMP.label)} runs ${CAMP.teamCount} teams — rename them, set their counselors, or change their order. The number of teams is fixed.</p>
+    ${teams.map((t, i) => teamRowHTML(t, i, teams.length)).join('')}
     ${warn}
   `)) wireTeamsTab(card);
 }
@@ -1253,14 +1204,12 @@ function renderTeamsTab(card) {
 // row): squeezed between the arrows and ✕ in one row, the name inputs were
 // ~160px on a phone and clipped most team names while they were being edited.
 function teamRowHTML(team, i, total) {
-  const disableDelete = total <= 2;
   return `
     <div class="rules-section-editor team-builder-row">
       <div class="builder-row">
         <jelly-icon-button class="reorder-btn" label="Move up" data-team-id="${esc(team.id)}" data-dir="-1" ${i === 0 ? 'disabled' : ''}>↑</jelly-icon-button>
         <jelly-icon-button class="reorder-btn" label="Move down" data-team-id="${esc(team.id)}" data-dir="1" ${i === total - 1 ? 'disabled' : ''}>↓</jelly-icon-button>
         <span class="day-index-label">Team ${i + 1}</span>
-        <jelly-icon-button class="row-delete-btn" variant="rose" label="Delete team" data-team-id="${esc(team.id)}" ${disableDelete ? 'disabled title="Keep at least 2 teams"' : ''}>✕</jelly-icon-button>
       </div>
       <span class="team-builder-fields">
         <jelly-input class="form-input team-name-input" data-team-id="${esc(team.id)}" type="text" value="${esc(team.name)}" label="Team name"></jelly-input>
@@ -1302,68 +1251,6 @@ function wireTeamsTab(card) {
       saveState();
     });
   });
-
-  card.querySelectorAll('.row-delete-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      if (btn.disabled) return;
-      deleteTeam(btn.dataset.teamId);
-    });
-  });
-
-  const addBtn = document.getElementById('add-team-btn');
-  if (addBtn) {
-    addBtn.addEventListener('click', () => {
-      state.teams.push({ id: 't-' + Date.now().toString(36), name: 'Team ' + (state.teams.length + 1), counselor: '' });
-      saveState();
-      renderAll();
-    });
-  }
-}
-
-function deleteTeam(teamId) {
-  const team = state.teams.find((t) => t.id === teamId);
-  if (!team) return;
-  const refs = teamRefs(teamId);
-
-  if (refs.medalCount > 0) {
-    const plural = refs.medalCount === 1 ? '' : 's';
-    alert('"' + team.name + '" has ' + refs.medalCount + ' medal' + plural + ' in saved results (' + refs.resultGames.join(', ') + '). Rename the team instead, or clear those results first.');
-    return;
-  }
-  const bonusCount = Object.values(state.bonuses || {}).filter((b) => b && b.teamId === teamId).length;
-  if (bonusCount > 0) {
-    alert('"' + team.name + '" has ' + bonusCount + ' bonus point entr' + (bonusCount === 1 ? 'y' : 'ies') + ' (verse/cleanup/bonus). Rename the team instead, or remove those points first.');
-    return;
-  }
-
-  const inProgressList = refs.inProgressGames.slice();
-  if (refs.hasPicRound) inProgressList.push('Pumpkin Pictionary round');
-
-  if (inProgressList.length) {
-    if (!confirm('Remove "' + team.name + '"? They\'re in the middle of: ' + inProgressList.join(', ') + '. That progress will be thrown away.')) return;
-  } else if (!confirm('Remove "' + team.name + '"? They\'ll disappear from every game and picker.')) {
-    return;
-  }
-
-  removeTeamEverywhere(teamId);
-  const idx = state.teams.findIndex((t) => t.id === teamId);
-  if (idx > -1) state.teams.splice(idx, 1);
-  saveState();
-  renderAll();
-}
-
-function removeTeamEverywhere(teamId) {
-  Object.keys(state.brackets || {}).forEach((gid) => {
-    if (bracketRefsTeam(state.brackets[gid], teamId)) delete state.brackets[gid];
-  });
-  Object.values(state.drafts || {}).forEach((d) => {
-    if (!d) return;
-    if (d.scores) delete d.scores[teamId];
-    if (d.medals) {
-      Object.keys(d.medals).forEach((k) => { if (d.medals[k] === teamId) delete d.medals[k]; });
-    }
-  });
-  if (state.picRounds) delete state.picRounds[teamId];
 }
 
 // ── Notice tab ────────────────────────────────────────────────────

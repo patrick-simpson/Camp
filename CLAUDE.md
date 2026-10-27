@@ -335,6 +335,10 @@ What's covered, and why each file exists:
   clears all of it after one confirm, `deleteGame` and the import / restore
   prune drop all of it (the clock used to be left behind — a "running" clock
   with no game to settle it). Add a new per-game synced map there.
+  **Team counts are fixed** (6 junior, 4 senior — owner-confirmed): the classic
+  Teams tab only renames, sets counselors and reorders. It has no Add / Delete
+  team; "Add team" minted `t-<timestamp>` ids that `isTeamId` and the rules
+  refuse (only `t0`…`t5` pass), so no code path may add or remove a team.
 - `auth.test.js` — the `emailKey` contract (multi-dot/case/trim — the
   regression that would lock people out under the rules), the `canEdit` truth
   table via `setMemberRole`, the `memberRecord` shape, `clearLocalData`'s

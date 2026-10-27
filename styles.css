@@ -4493,8 +4493,7 @@ jelly-select.form-input {
 jelly-select.form-input {
   height: 48px;
 }
-jelly-icon-button.reorder-btn,
-jelly-icon-button.row-delete-btn {
+jelly-icon-button.reorder-btn {
   flex: none;
   width: auto;
   height: auto;
@@ -5436,29 +5435,6 @@ jelly-tabs.settings-tabs::part(tabs) {
 }
 
 .reorder-btn:active:not(:disabled) {
-  transform: scale(0.96);
-}
-
-.row-delete-btn {
-  flex: none;
-  width: 2.75rem;
-  height: 2.75rem;
-  border: 1.5px solid color-mix(in srgb, var(--color-danger) 45%, var(--color-border));
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  color: var(--color-danger-text);
-  font-size: 1rem;
-  font-family: inherit;
-  cursor: pointer;
-  transition: transform 0.05s ease;
-}
-
-.row-delete-btn:disabled {
-  opacity: 0.35;
-  cursor: default;
-}
-
-.row-delete-btn:active:not(:disabled) {
   transform: scale(0.96);
 }
 

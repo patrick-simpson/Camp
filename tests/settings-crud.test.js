@@ -509,3 +509,61 @@ test('v183 and current saveGameDraft agree on an edited and on a brand-new game'
   };
   assert.equal(run(false), run(true));
 });
+
+// ── Teams: fixed counts (S0j) ────────────────────────────────────
+
+// The owner confirmed team counts are fixed per camp (6 junior, 4 senior). The
+// classic Teams tab used to offer "Add team", which minted `t-<timestamp>` ids
+// that isTeamId() and the security rules reject, plus "Delete team".
+function teamsCard() {
+  return { innerHTML: '', querySelectorAll: () => [], querySelector: () => null };
+}
+
+test('the Teams tab has no Add team and no Delete team, and says the number is fixed', () => {
+  crudSetup();
+  const card = teamsCard();
+  renderTeamsTab(card);
+  ['add-team-btn', 'Add team', 'row-delete-btn', 'Delete team'].forEach((bad) =>
+    assert.notOk(card.innerHTML.includes(bad), 'markup still has ' + bad));
+  assert.ok(card.innerHTML.includes('number of teams is fixed'));
+  assert.equal((card.innerHTML.match(/team-name-input/g) || []).length, state.teams.length, 'every team keeps its name field');
+  assert.equal((card.innerHTML.match(/team-counselor-input/g) || []).length, state.teams.length);
+});
+
+test('nothing in the builder can mint or remove a team any more', () => {
+  const src = readFixture('../settings.js');
+  assert.ok(typeof deleteTeam === 'undefined' && typeof removeTeamEverywhere === 'undefined' && typeof teamRefs === 'undefined');
+  assert.notOk(/'t-'\s*\+\s*Date\.now/.test(src), 'no t-<timestamp> team ids (isTeamId and the rules refuse them)');
+  assert.notOk(/state\.teams\.(push|splice)\(/.test(src), 'the builder never changes how many teams there are');
+});
+
+test('renaming, setting a counselor and reordering teams still work', () => {
+  crudSetup();
+  const ids = state.teams.map((t) => t.id);
+  const mk = (selector, entries) => {
+    const els = entries.map((e) => ({ dataset: e.dataset, value: e.value, listeners: {}, addEventListener(t, fn) { this.listeners[t] = fn; } }));
+    return { els, card: { querySelectorAll: (sel) => (sel === selector ? els : []), querySelector: () => null } };
+  };
+  // reorder: move the first team down
+  const re = mk('.reorder-btn[data-team-id]', [{ dataset: { teamId: ids[0], dir: '1' } }]);
+  wireTeamsTab(re.card);
+  re.els[0].listeners.click();
+  assert.deepEqual(state.teams.map((t) => t.id).slice(0, 2), [ids[1], ids[0]]);
+  // rename
+  const nm = mk('.team-name-input', [{ dataset: { teamId: ids[0] }, value: '  The Hawks ' }]);
+  wireTeamsTab(nm.card);
+  nm.els[0].listeners.change();
+  assert.equal(state.teams.find((t) => t.id === ids[0]).name, 'The Hawks');
+  // an emptied name is put back, never saved blank
+  const blank = mk('.team-name-input', [{ dataset: { teamId: ids[0] }, value: '   ' }]);
+  wireTeamsTab(blank.card);
+  blank.els[0].listeners.change();
+  assert.equal(state.teams.find((t) => t.id === ids[0]).name, 'The Hawks');
+  assert.equal(blank.els[0].value, 'The Hawks');
+  // counselor
+  const co = mk('.team-counselor-input', [{ dataset: { teamId: ids[0] }, value: ' Pat & Sam ' }]);
+  wireTeamsTab(co.card);
+  co.els[0].listeners.change();
+  assert.equal(state.teams.find((t) => t.id === ids[0]).counselor, 'Pat & Sam');
+  assert.equal(state.teams.length, ids.length, 'the count never changed');
+});
