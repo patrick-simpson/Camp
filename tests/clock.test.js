@@ -309,7 +309,9 @@ test('a render that repainted the clock at 0 (data-prev=0) no longer hides the c
   fbRef = null;
   expiredClock(1200);
   const el = { dataset: { gameId: 'g', prev: '0' }, textContent: '', classList: { toggle() {}, add() {}, remove() {} }, closest: () => null };
-  document.querySelectorAll = () => [el];
+  // Only the clock query finds it — the settle re-renders, and renderAll asks
+  // for other things (Big Boards) that a clock element isn't.
+  document.querySelectorAll = (sel) => (sel === '[data-game-clock]' ? [el] : []);
   const alarms = countAlarms(() => tickBoardClocks());
   assert.equal(alarms, 1);
   assert.notOk(state.clocks.g.running, 'the old code left it running at 0:00 forever');

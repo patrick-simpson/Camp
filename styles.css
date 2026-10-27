@@ -2810,8 +2810,12 @@ body.no-scroll {
   background: var(--color-bg);
 }
 
+/* A few seconds of flashing, then it settles on the red border. It used to
+   flash forever, until an editor pressed Reset — minutes, for everyone with
+   the game open. (Off entirely under reduced motion — see the block near the
+   board clocks.) */
 .tool-box.alarming {
-  animation: alarm-flash 0.5s ease-in-out infinite alternate;
+  animation: alarm-flash 0.5s ease-in-out 6 alternate;
   border-color: var(--color-danger);
 }
 
@@ -4308,6 +4312,12 @@ jelly-button.secondary-btn {
   --jelly-button-height: 44px;
   --jelly-button-font-size: 0.95rem;
 }
+/* The legacy `.counter-btn.plus` chrome (0,2,0) outranks the host reset above
+   (0,1,1) and painted a pale square behind every +N pill. */
+jelly-button.counter-btn.plus,
+jelly-button.counter-btn.minus {
+  background: none;
+}
 jelly-button.counter-btn {
   flex: 1;
   display: block;
@@ -5755,6 +5765,7 @@ select.form-input {
   .board-clock.clock-final-min,
   .board-clock.clock-final-ten { animation: none; }
   .big-board.board-final-ten { animation: none; }
+  .tool-box.alarming { animation: none; } /* the red border stays as the cue */
 }
 
 /* ============================================================
