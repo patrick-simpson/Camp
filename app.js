@@ -294,24 +294,19 @@ const MEDAL_POINTS = { gold: 7, silver: 5, bronze: 3 };
 // ── Double-points window (Patrick's call, Thu evening 2026-07-23) ──
 // Everything from Thursday 5pm ET through the end of Friday counts DOUBLE,
 // except meal cleanup. Games are handled by their `messtival` flag (see the
-// config v5 migration); this window doubles the OTHER point sources — verse
+// config v5 migration); the window doubles the OTHER point sources — verse
 // recitals and custom bonuses — by entry timestamp, at computation time, so
-// it's retroactive and needs no ledger edits. Mirrored in
-// current-standings.html's computeStandings — keep in sync.
-const DOUBLE_BONUS_START = Date.parse('2026-07-23T21:00:00Z'); // Thu 5:00pm ET
-const DOUBLE_BONUS_END = Date.parse('2026-07-25T04:00:00Z');   // Fri midnight ET (00:00 Sat, ET)
-
+// it's retroactive and needs no ledger edits. The constants and the maths live
+// in camp-core.js (the TV page loads the same copy); this week is the legacy
+// one, so it is pinned to DOUBLE_WINDOW_LEGACY.
 function bonusCountsDouble(b) {
-  if (!b || b.category === 'cleanup') return false;
-  const t = Date.parse(b.at || '');
-  return t >= DOUBLE_BONUS_START && t < DOUBLE_BONUS_END;
+  return bonusIsDouble(b, DOUBLE_WINDOW_LEGACY);
 }
 
 // True while "now" is inside the double-points window (drives the notices
 // on the verse/bonus cards).
 function inDoubleBonusWindow() {
-  const now = Date.now();
-  return now >= DOUBLE_BONUS_START && now < DOUBLE_BONUS_END;
+  return inDoubleWindow(DOUBLE_WINDOW_LEGACY, Date.now());
 }
 
 // ── Game catalog ────────────────────────────────────────────────

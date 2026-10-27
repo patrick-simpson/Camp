@@ -37,6 +37,18 @@ Files:
   junior + senior, each with its Firebase root, storage namespace, team
   branding, printed daily schedule, and seed data. Loads between defaults.js
   and app.js; app.js reads everything through the active `CAMP`
+- `camp-core.js` — PURE helpers the app and the TV page share, loaded between
+  defaults.js and camps.js: Eastern-time maths (`etWallToEpoch`, DST-safe;
+  `push-worker/worker.js` keeps its own pasted copy and `tests/camp-core.test.js`
+  fuzzes the two against each other), the double-points window
+  (`DOUBLE_BONUS_START/END`, `DOUBLE_WINDOW_LEGACY`, `doubleWindowFor`,
+  `bonusIsDouble`; app.js's `bonusCountsDouble`/`inDoubleBonusWindow` call into
+  it and a week with no epoch is pinned to the legacy window), `liveGameIdSet`,
+  and **the sanitizers** (`safeEmoji`, `safeShort`, `safeColorVars`,
+  `safeCrestSrc`, `safeVideoUrl`) that every database string passes through on
+  its way into markup or an image address. Nothing runs at load and it touches
+  no DOM, storage or network (a test pins that), so the TV page can load it
+  without app state
 - `settings.js` — the settings sheet + week-builder UI. The builder's
   `jelly-tabs` shell is built ONCE and kept; `renderSettings` refreshes only
   the active card (through `setHtmlIfChanged`), hidden cards are filled one
@@ -110,10 +122,10 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
 
 **Every time any code asset changes:**
 1. Bump the `?v=N` cache-busting query string in `index.html` — there are
-   TWELVE on the same number: `boot-guard.js`, `styles.css`, `vendor/jelly.js`,
-   `firebase-config.js`, `defaults.js`, `camps.js`, `app.js`, `settings.js`,
-   `chat.js`, `push.js`, `auth-phone.js`, `auth-email-link.js` — keep them in sync,
-   all bumped together. Also bump
+   THIRTEEN on the same number: `boot-guard.js`, `styles.css`, `vendor/jelly.js`,
+   `firebase-config.js`, `defaults.js`, `camp-core.js`, `camps.js`, `app.js`,
+   `settings.js`, `chat.js`, `push.js`, `auth-phone.js`, `auth-email-link.js` —
+   keep them in sync, all bumped together. Also bump
    `APP_VERSION` in `app.js` to the same number (it drives the auto-reload
    version check). `current-standings.html` and `stalling.html` load
    `vendor/jelly.js` (and current-standings loads `firebase-config.js`) with
@@ -242,6 +254,11 @@ change what a browser loads.
 What's covered, and why each file exists:
 - `scoring.test.js` — score parse/format edges, `esc()`, `medalCounts()`
   (including double points and orphaned results), bonus buckets, tie-breaks.
+- `camp-core.test.js` — `camp-core.js`: the legacy double-window pin (the
+  constants, and the seeded relative window resolving to them to the
+  millisecond), DST edges, parity with the alert sender's copy of the maths,
+  and every sanitizer's refusals (markup emoji, a quote-breakout data URL,
+  `javascript:` / external crest URLs).
 - `sync.test.js` — **every invariant in the section below**, plus the deferred-
   snapshot and per-path-diff behavior. A failure here is a regression, not a
   test bug.
