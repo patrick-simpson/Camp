@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Tue Oct 27, 7:05 AM ET** (update this line every time the file changes)
+Last updated: **Tue Oct 27, 7:10 AM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -12,6 +12,11 @@ It is committed to the working branch so it survives the container being reset.
 - Owner: Patrick (non-programmer; wants plain-English explanations, Eastern time
   only, percent-complete updates with ETAs, one question at a time, haiku/sonnet
   for simple work and opus only for hard parts, and to be told what that saved).
+- **MODEL RULES (owner, 2026-10-27):** ONE agent at a time (slow is fine; avoid
+  usage overage). Haiku/Sonnet for mapping, fixing, checking, reviewing.
+  **Any actual DESIGN work (layouts, visual design, mockups, the redesign
+  spec's design decisions) must be done by OPUS, "with an eye for
+  improvement"** — i.e. don't just transcribe the mockups; push them further.
 
 ---
 
