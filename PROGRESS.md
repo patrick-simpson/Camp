@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Tue Oct 27, 10:05 AM ET** (update this line every time the file changes)
+Last updated: **Tue Oct 27, 10:10 AM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -282,6 +282,16 @@ a "Decisions for the owner" list (ask ONE at a time, after the layout Qs).
     revealed until 8 AM; a new reveal replaces the previous one; any director
     can run the remote; the TV page with no reveal says "Waiting for the
     directors…".
+- **10:10 AM ET — redesign spec run `wf_b47e2dfe-4f9`** (script
+  camp-redesign-spec-sequential-wf_b47e2dfe-4f9.js; strictly ONE agent at a
+  time): Sonnet map:shell → Sonnet map:reveal → OPUS design:lead (spec at
+  docs/build-notes/app-shell-redesign-spec.md + mockups + interactive jelly
+  motion demo in scratchpad/mockups/final/) → 3 Sonnet critics → OPUS
+  design:revise → Sonnet plan:update (P2 spec §17 + docs/build-notes/
+  BUILD-PLAN.md). If interrupted: re-run with resumeFromRunId. THEN: copy the
+  mockups + demo into docs/build-notes/mockups/final/, show the owner, ask
+  approval one question at a time, then build per BUILD-PLAN (one agent at a
+  time; Sonnet builds, Opus for design-sensitive UI).
 - **10:00 AM ET — v184 LIVE** (commit 2fe3338; merge 594feaa of
   integrate-v184 = 6 squashed fix groups + 3 integration commits). 560 tests.
   Live check: all 12 assets ?v=184, Inter font loads (media print→all via
