@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Tue Oct 27, 1:25 AM ET** (update this line every time the file changes)
+Last updated: **Tue Oct 27, 6:15 AM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -139,6 +139,21 @@ code mappers → 3 independent drafts (data-first / editor-first /
 migration-first) in docs/build-notes/p2-drafts/ → 3 judges → unified spec at
 docs/build-notes/setup-rebuild-spec.md → 3 adversarial reviews → revision with
 a "Decisions for the owner" list (ask ONE at a time, after the layout Qs).
+**6:10 AM ET Tue — container restarted overnight; state recovered.**
+- Project 2 spec DONE: docs/build-notes/setup-rebuild-spec.md (3,613 lines; 48
+  review findings all accepted; stages S0,T,S1–S10,R1). 13 owner decisions
+  (Q1 "any camp week before June 2027?" first) — ask AFTER the layout questions.
+- Fix workflow hit the session limit: games-live/home/overlays/chat fixers
+  finished (worktrees .claude/worktrees/wf_de7fc0a9-b11-{1,2,3,5}, NOT yet
+  reviewed); builder fixer cut off mid-work (uncommitted in -4); boot-theme
+  never ran. Resumed as task wpddg2lwq (same run id; builder continues in -4).
+  When done: SQUASH-merge each branch into main (fixer commit trailers name the
+  wrong model — squash keeps them out of history), resolve conflicts, tests,
+  v184, push, verify live.
+- LAYOUT INTERVIEW: Q1 answered → **"What's happening now"** (first screen
+  follows the camp day; short standings always right under it). Next: Q2
+  (standings visibility; rec "always, except a reveal stretch").
+
 **1:15 AM ET Tue — sweep DONE**: 95 confirmed glitches (8 high/24 med/63 low)
 + layout verdict "partly" with 13 ordered interview questions. Full result
 saved: docs/build-notes/glitch-sweep-2026-10-27.json (`confirmed`, `surfaces`,
