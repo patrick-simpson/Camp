@@ -194,10 +194,10 @@
         <!-- ── WEEK STANDINGS ─────────────────────────────── -->
         <jelly-collapsible class="card standings-card collapsible-card" data-card="standings">
           <h2 slot="header">Current Standings</h2>
-          <div class="settings-row card-visibility-row">
-            <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🙈</span> Hide from viewers</span>
-            <jelly-switch class="hide-card-toggle" data-hide-card="standings" label="Hide Current Standings from viewers"></jelly-switch>
-          </div>
+          <!-- Counselors never see standings (the owner's rule), so there is no
+               "Hide from viewers" switch on this card or on Quick Points: they
+               are hidden from non-directors in code (SECRET_CARDS in app.js). -->
+          <p class="card-secret-note"><span aria-hidden="true">🔒</span> Counselors can't see this</p>
           <p class="muted standings-hint">Only counts games saved in this app — your paper scoreboard is the official one.</p>
           <p id="sync-status" class="sync-status" aria-live="polite"></p>
           <div class="standings-actions">
@@ -231,7 +231,7 @@
             <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🙈</span> Hide from viewers</span>
             <jelly-switch class="hide-card-toggle" data-hide-card="cleanup" label="Hide Meal Cleanup from viewers"></jelly-switch>
           </div>
-          <p class="muted card-desc">Each meal a team is on cleanup — pick a day to see the rota and award points. Cleanup points count toward each team's total above.</p>
+          <p id="cleanup-desc" class="muted card-desc">Each meal a team is on cleanup — pick a day to see the rota.</p>
           <div id="cleanup-body"></div>
         </jelly-collapsible>
 
@@ -242,17 +242,14 @@
             <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🙈</span> Hide from viewers</span>
             <jelly-switch class="hide-card-toggle" data-hide-card="verse" label="Hide Memory Verse from viewers"></jelly-switch>
           </div>
-          <p class="muted card-desc">Each day's memory verse — pick a day to read it, and record points for teams that recite it. Verse points count toward each team's total above.</p>
+          <p id="verse-desc" class="muted card-desc">Each day's memory verse — pick a day to read it.</p>
           <div id="verse-body"></div>
         </jelly-collapsible>
 
         <!-- ── BONUS POINTS ───────────────────────────────── -->
         <jelly-collapsible class="card bonus-card collapsible-card" data-card="bonus">
           <h2 slot="header">Quick Points</h2>
-          <div class="settings-row card-visibility-row">
-            <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🙈</span> Hide from viewers</span>
-            <jelly-switch class="hide-card-toggle" data-hide-card="bonus" label="Hide Quick Points from viewers"></jelly-switch>
-          </div>
+          <p class="card-secret-note"><span aria-hidden="true">🔒</span> Counselors can't see this</p>
           <p class="muted card-desc">Extra one-off points for other tasks — added to each team's total above.</p>
           <div id="bonus-body"></div>
         </jelly-collapsible>
@@ -272,6 +269,10 @@
       <section id="chat-view" class="chat-view" hidden></section>
 
     </main>
+
+    <!-- The connection line, for view-only devices: the Current Standings card
+         that carries it for directors is not rendered for them. -->
+    <p id="sync-status-footer" class="sync-status sync-status-footer" aria-live="polite"></p>
 
     <footer id="app-footer" class="app-footer"></footer>
   </div>
@@ -386,7 +387,7 @@
   <!-- ── TEAM PICKER (who are you rooting for?) ─────────────────── -->
   <jelly-dialog id="team-picker-overlay" label="Pick a team to follow">
     <h2 class="team-picker-title">👋 Which team are you rooting for?</h2>
-    <p class="muted team-picker-hint">You'll get a heads-up here when they score or get called up next.</p>
+    <p class="muted team-picker-hint">You'll get alerts when your team plays and wins medals.</p>
     <div id="team-picker-options" class="team-picker-options"></div>
   </jelly-dialog>
 

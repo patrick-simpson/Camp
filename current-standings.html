@@ -132,6 +132,19 @@
       align-items: center; justify-content: center; flex-direction: column; gap: 1rem;
       font-size: 1.4rem; font-weight: 800; color: #000;
     }
+    /* Waiting: what everyone who is not a director sees (and what a director sees
+       when there is nothing to show). Standings are secret until the directors
+       reveal them, so this page shows them to directors only — see the secrecy
+       note in current-standings.js. */
+    #waiting {
+      position: fixed; inset: 0; z-index: 30; display: flex;
+      align-items: center; justify-content: center; flex-direction: column; gap: 0.6rem;
+      padding: 2rem; text-align: center; color: #000;
+    }
+    #waiting[hidden] { display: none; }
+    #waiting .wait-mark { font-size: clamp(3rem, 10vw, 7rem); }
+    #waiting .wait-title { font-size: clamp(1.6rem, 5vw, 4rem); font-weight: 900; }
+    #waiting .wait-sub { font-size: clamp(1rem, 2.2vw, 1.6rem); font-weight: 700; opacity: 0.7; }
     .spin { font-size: 3rem; animation: spin 1.1s linear infinite; display: inline-block; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -323,6 +336,13 @@
   </div>
 
   <div id="loading"><span class="spin">🎪</span><span>Loading standings…</span></div>
+
+  <!-- Waiting: shown instead of standings to anyone who is not a director. -->
+  <div id="waiting" hidden>
+    <span class="wait-mark" aria-hidden="true">🏅</span>
+    <span class="wait-title">Waiting for the directors…</span>
+    <span class="wait-sub">The standings are a surprise until they reveal them.</span>
+  </div>
 
   <div id="screen" hidden>
     <!-- Intro -->

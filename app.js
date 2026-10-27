@@ -117,6 +117,39 @@ function canEdit() {
   return memberRole === 'editor';
 }
 
+// ── Standings secrecy ─────────────────────────────────────────────
+// The owner's rule (2026-10-27): counselors see NO points, places, gaps or
+// standings anywhere in the app except what a director has revealed. Only the
+// medal WINNERS of a finished game stay visible (they are read straight from
+// state.results and never go through a points reader). Directors see
+// everything, always.
+//
+// Enforced where points are PRODUCED, not just where they are drawn: every
+// points reader starts with pointsReadAllowed(), so a render path somebody adds
+// later (or forgets) that reaches a reader as a viewer gets zeros / an empty
+// list instead of the truth. Under test the guard THROWS for a viewer
+// (setStandingsGuardThrows), so a viewer render that reaches one fails loudly
+// instead of quietly showing zeros. Gating is in code paths, never CSS:
+// html.view-only leaves every node in the DOM.
+//
+// standingsVisible() is the ONE place that says who may see standings. Today
+// that is "a director" (role from the member record, so a role flip or a
+// hint-painted first frame is the same code); the director-only "Preview as a
+// counselor" switch (a later step) will join it here. A device whose role has
+// not resolved (null) is NOT a director: fail closed.
+let standingsGuardThrows = false; // test seam only, off in the browser
+function setStandingsGuardThrows(on) { standingsGuardThrows = !!on; }
+
+function standingsVisible() {
+  return canEdit();
+}
+
+function pointsReadAllowed(reader) {
+  if (standingsVisible()) return true;
+  if (standingsGuardThrows) throw new Error('standings read by a non-director: ' + reader);
+  return false;
+}
+
 // ── The own-team guard ────────────────────────────────────────────
 // Staff assigned to a team (their member record's teamId) are editors
 // everywhere EXCEPT the specific rounds their own team is playing or
@@ -300,6 +333,7 @@ const MEDAL_POINTS = { gold: 7, silver: 5, bronze: 3 };
 // in camp-core.js (the TV page loads the same copy); this week is the legacy
 // one, so it is pinned to DOUBLE_WINDOW_LEGACY.
 function bonusCountsDouble(b) {
+  if (!pointsReadAllowed('bonusCountsDouble')) return false; // a points reader: see "Standings secrecy"
   return bonusIsDouble(b, DOUBLE_WINDOW_LEGACY);
 }
 
@@ -1289,6 +1323,9 @@ function historyOverlayEl() {
 }
 
 function openHistory() {
+  // Every point change, newest first: directors' eyes only (see "Standings
+  // secrecy"). The row is hidden for viewers, and the rules refuse them the read.
+  if (!canEdit()) return;
   const s = settingsOverlayEl();
   const overlay = historyOverlayEl();
   if (!overlay) return;
@@ -2321,7 +2358,38 @@ function touchData(opts) {
 // data-hide-card). Only cards with a switch can be hidden.
 const HIDEABLE_CARDS = ['competitions', 'standings', 'verse', 'cleanup', 'bonus', 'chat'];
 
+// The two cards that ARE the standings (the table, and the quick-points ledger
+// that feeds it). They are hidden from every non-director in code whatever
+// meta.hiddenCards says, so there is nothing for a director to switch (the cards
+// carry a "Counselors can't see this" note instead of the switch) and no
+// un-hiding that could expose them. The keys are STILL written into
+// meta.hiddenCards (ensureSecrecySeed) for one reason only: a phone that has not
+// updated yet runs the old code, which honours that map and nothing else.
+const SECRET_CARDS = ['standings', 'bonus'];
+
+// Keeps the two secret cards' keys in meta.hiddenCards for builds that predate
+// SECRET_CARDS (see there): a not-yet-updated counselor phone hides the table
+// and the quick-points ledger from the map alone, and it re-reads the map on
+// every snapshot, so it is safe the moment a director build has seen the server.
+// Idempotent and cheap: it writes only when a key is missing, so an old
+// director build that un-hid a card is set right again by the next new one.
+// Directors only (a counselor's phone can't write the node), only once the
+// first snapshot has landed (a write before it would queue stale state), and
+// only with sync on. Deliberately NOT in normalizeSyncedState, which runs for
+// everyone and on every load.
+function ensureSecrecySeed() {
+  if (!canEdit() || !syncEnabled() || !remoteReady) return;
+  if (!state.meta) state.meta = {};
+  if (!state.meta.hiddenCards || typeof state.meta.hiddenCards !== 'object') state.meta.hiddenCards = {};
+  let changed = false;
+  SECRET_CARDS.forEach((k) => {
+    if (state.meta.hiddenCards[k] !== true) { state.meta.hiddenCards[k] = true; changed = true; }
+  });
+  if (changed) saveState();
+}
+
 function cardHiddenFromViewers(card) {
+  if (SECRET_CARDS.includes(card)) return true;
   const m = state.meta || {};
   if (m.hiddenCards && m.hiddenCards[card]) return true;
   // Legacy single-purpose flag from the standings-only version of this
@@ -2332,7 +2400,7 @@ function cardHiddenFromViewers(card) {
 }
 
 function toggleCardHidden(card) {
-  if (!HIDEABLE_CARDS.includes(card)) return;
+  if (!HIDEABLE_CARDS.includes(card) || SECRET_CARDS.includes(card)) return;
   if (!state.meta) state.meta = {};
   const wasHidden = cardHiddenFromViewers(card);
   if (!state.meta.hiddenCards) state.meta.hiddenCards = {};
@@ -3014,14 +3082,27 @@ function applyRemoteState(remote, confirmedBase, opts) {
   writeConfirmedTree(confirmedBase || lastSyncedTree);
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
   applyingRemote = false;
+  // The first snapshot of a page load is catch-up, never news (chat's backlog
+  // rule): a phone that was away, or one that never synced before, would
+  // otherwise be told about every result in the database at once. Our own
+  // offline edits re-applied by firstSnapshotMerge (asLocalEdit) aren't news
+  // either.
+  const resultChanges = resultAlertsArmed && !(opts && opts.asLocalEdit)
+    ? detectResultChanges(prevRefs.results, state.results) : [];
+  resultAlertsArmed = true;
   if (appStarted && syncSignature() !== beforeSig) {
     remoteJustApplied = !(opts && opts.asLocalEdit); // let renderStandings pulse rows that changed
     const matchupChanges = detectMatchupChanges();
     renderAll();
     notifyMatchupChanges(matchupChanges);
+    notifyResultChanges(resultChanges);
     notifyNewAnnouncements(annBefore);
   }
+  ensureSecrecySeed(); // after the snapshot is in place, so the one-key write diffs against it
 }
+
+// Set once the first snapshot of this page load has been applied (see above).
+let resultAlertsArmed = false;
 
 // One-shot wrapper around initSync — THE only sanctioned way in. Called from
 // onMemberSnapshot's approved branch, never earlier: under the locked rules a
@@ -3387,37 +3468,42 @@ let fbConnKnown = false; // first .info/connected callback received
 let sdkLoadFailed = false;
 
 function updateSyncIndicator() {
-  const el = document.getElementById('sync-status');
-  if (!el) return;
+  // Two copies of the line: the one in the Current Standings card (directors)
+  // and a footer one that only view-only devices show (styles.css), because the
+  // standings card is not rendered for them any more (see "Standings secrecy").
+  const els = ['sync-status', 'sync-status-footer'].map((id) => document.getElementById(id)).filter(Boolean);
+  if (!els.length) return;
+  const spinner = '<jelly-spinner type="dots" size="small" label="Connecting"></jelly-spinner> Connecting…';
+  let text = null; // plain text, or
+  let html = null; // the spinner markup
+  let synced = false;
   if (syncDenied) {
     // A live listener was cancelled by the security rules — this device's
     // access changed mid-session. The member listener handles the kick; this
     // just keeps the indicator honest until it lands.
-    el.textContent = '🔒 Sync blocked — your access changed';
-    el.classList.remove('synced');
+    text = '🔒 Sync blocked — your access changed';
   } else if (sdkLoadFailed) {
-    el.textContent = '⚠️ Couldn’t connect — read-only copy';
-    el.classList.remove('synced');
+    text = '⚠️ Couldn’t connect — read-only copy';
   } else if (!syncEnabled() && !syncStarted && window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey && typeof firebase !== 'undefined' && firebase.auth) {
     // Sync exists but hasn't been allowed to attach yet — sign-in and the
     // membership check are still resolving in the background.
-    el.innerHTML = '<jelly-spinner type="dots" size="small" label="Connecting"></jelly-spinner> Connecting…';
-    el.classList.remove('synced');
+    html = spinner;
   } else if (!syncEnabled()) {
-    el.textContent = '📱 This device only';
-    el.classList.remove('synced');
+    text = '📱 This device only';
   } else if (!fbConnKnown) {
     // Startup gap before Firebase reports the connection state either way —
     // previously blank; a small jelly spinner reads as "working on it".
-    el.innerHTML = '<jelly-spinner type="dots" size="small" label="Connecting"></jelly-spinner> Connecting…';
-    el.classList.remove('synced');
+    html = spinner;
   } else if (fbConnected) {
-    el.textContent = '☁️ Synced';
-    el.classList.add('synced');
+    text = '☁️ Synced';
+    synced = true;
   } else {
-    el.textContent = '⚠️ Offline — will sync when back';
-    el.classList.remove('synced');
+    text = '⚠️ Offline — will sync when back';
   }
+  els.forEach((el) => {
+    if (html !== null) el.innerHTML = html; else el.textContent = text;
+    el.classList.toggle('synced', synced);
+  });
 }
 
 function renderPresence() {
@@ -3669,7 +3755,11 @@ function enableNotify() {
 function toggleNotify() {
   if (!state.notify) {
     enableNotify();
-    showToast("🔔 You'll get an alert whenever a team's points change, a team is called up next, an announcement is posted, or someone mentions you or your team in Chat — as long as this tab stays open.");
+    // Directors still hear points move; a counselor hears results (who won a
+    // medal), which is all the standings secrecy lets them know.
+    showToast(standingsVisible()
+      ? "🔔 You'll get an alert whenever a team's points change, a team is called up next, an announcement is posted, or someone mentions you or your team in Chat — as long as this tab stays open."
+      : "🔔 You'll get an alert when a game finishes, a team is called up next, an announcement is posted, or someone mentions you or your team in Chat — as long as this tab stays open.");
   } else {
     state.notify = false;
     updateNotifyButton();
@@ -3691,7 +3781,10 @@ function updateNotifyButton() {
 // showNotification takes a string) — never esc() it, or a team or game named
 // with an apostrophe or ampersand shows a literal "&#39;" / "&amp;".
 function notifyPointChanges(changes) {
-  if (!state.notify || !changes.length) return;
+  // Directors only: a viewer's phone never hears a team's points move (see
+  // "Standings secrecy"). Viewers get notifyResultChanges instead, which says
+  // who won a medal and nothing about totals.
+  if (!standingsVisible() || !state.notify || !changes.length) return;
   const mineChanges = [];
   const others = [];
   changes.forEach(({ team, delta, total }) => {
@@ -3716,6 +3809,61 @@ function notifyPointChanges(changes) {
     maybeNativeNotification('🏅 Your team scored!', msg, 'camp-points-' + team.id);
   });
   if (mineChanges.length) playMineChime(); else playAlertChime();
+}
+
+// ── Result alerts (what a counselor hears instead of point changes) ──
+// A viewer is told WHO won a medal in a finished game, and nothing about totals,
+// places or gaps (see "Standings secrecy"). The change list comes from a diff
+// of the results the phone had against the ones the snapshot brought, made in
+// applyRemoteState itself: a baseline kept in a lazily-seeded module variable
+// (as detectMatchupChanges used to) would swallow the first live change after a
+// quiet boot. Medal winners are public by the owner's rule, so naming them here
+// leaks nothing.
+const MEDAL_KEYS = ['gold', 'silver', 'bronze'];
+
+// [{ game, medals }] for every result that is new or whose winners / save stamp
+// changed, in the week's game order. A cleared result is not news; a result
+// whose game is gone (an import can leave one) has nothing to name.
+function detectResultChanges(prev, next) {
+  const was = prev || {};
+  const now = next || {};
+  const out = [];
+  state.config.games.forEach((g) => {
+    const r = now[g.id];
+    if (!r || !r.medals) return;
+    const p = was[g.id];
+    const same = p && p.medals && p.savedAt === r.savedAt && MEDAL_KEYS.every((k) => p.medals[k] === r.medals[k]);
+    if (!same) out.push({ game: g, medals: r.medals });
+  });
+  return out;
+}
+
+// changes: [{ game, medals }]. Plain text, never esc()'d (toasts set textContent).
+// Directors are not sent here: they keep the point toasts (notifyPointChanges).
+function notifyResultChanges(changes) {
+  if (standingsVisible() || !state.notify || !changes.length) return;
+  const mine = [];
+  const others = [];
+  changes.forEach(({ game, medals }) => {
+    const place = state.followTeam ? MEDAL_KEYS.find((k) => medals[k] === state.followTeam) : null;
+    if (place) mine.push({ game, place });
+    else others.push({ game, medals });
+  });
+  // Quiet: a snapshot that finished several games shares ONE toast past two
+  // (showToast's visible-toast cap would otherwise push "your team" out).
+  if (others.length > 2) {
+    showToast('🏅 Results are in: ' + others.map(({ game }) => game.name).join(', '));
+  } else {
+    others.forEach(({ game, medals }) => {
+      showToast('🏅 ' + game.name + ': ' + MEDAL_KEYS.map((k) => teamName(medals[k]) + ' ' + k).join(', '));
+    });
+  }
+  mine.forEach(({ game, place }) => {
+    const msg = teamEmoji(state.followTeam) + ' ' + teamName(state.followTeam) + ' won ' + place + ' in ' + game.name + '!';
+    showToast('Your team won a medal! ' + msg, { mine: true });
+    maybeNativeNotification('🏅 Your team won a medal!', msg, 'camp-result-' + game.id);
+  });
+  if (mine.length) playMineChime(); else playAlertChime();
 }
 
 // changes: [{ game, stage, aId, bId }]
@@ -4564,21 +4712,26 @@ function bindMatchupCopy(body, g, stage, aId, bId) {
 }
 
 function standingsSummaryText() {
-  const counts = medalCounts();
-  const ranked = rankTeamsByPoints(counts);
-
   const campDate = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short', month: 'short', day: 'numeric' }).format(new Date());
   const lines = ['🏅 Camp — ' + campDate];
-  lines.push('');
-  lines.push(`Standings (🥇 ${MEDAL_POINTS.gold} · 🥈 ${MEDAL_POINTS.silver} · 🥉 ${MEDAL_POINTS.bronze} pts):`);
-  ranked.forEach((t, i) => {
-    const s = counts[t.id];
-    const parts = [`🥇${s.gold} 🥈${s.silver} 🥉${s.bronze}`];
-    if (s.verse) parts.push(`📖${s.verse > 0 ? '+' : ''}${s.verse}`);
-    if (s.meals) parts.push(`🧽${s.meals > 0 ? '+' : ''}${s.meals}`);
-    if (s.custom) parts.push(`✨${s.custom > 0 ? '+' : ''}${s.custom}`);
-    lines.push(`${i + 1}) ${teamEmoji(t.id)} ${t.name} · ${s.points} pts (${parts.join(' ')})`);
-  });
+  // Points and places are directors' eyes only (see "Standings secrecy"): the
+  // table is built only for them, so a viewer who reaches Copy / Share — the
+  // card is hidden for them, but this is gated in code, not CSS — gets just the
+  // game winners below.
+  if (standingsVisible()) {
+    const counts = medalCounts();
+    const ranked = rankTeamsByPoints(counts);
+    lines.push('');
+    lines.push(`Standings (🥇 ${MEDAL_POINTS.gold} · 🥈 ${MEDAL_POINTS.silver} · 🥉 ${MEDAL_POINTS.bronze} pts):`);
+    ranked.forEach((t, i) => {
+      const s = counts[t.id];
+      const parts = [`🥇${s.gold} 🥈${s.silver} 🥉${s.bronze}`];
+      if (s.verse) parts.push(`📖${s.verse > 0 ? '+' : ''}${s.verse}`);
+      if (s.meals) parts.push(`🧽${s.meals > 0 ? '+' : ''}${s.meals}`);
+      if (s.custom) parts.push(`✨${s.custom > 0 ? '+' : ''}${s.custom}`);
+      lines.push(`${i + 1}) ${teamEmoji(t.id)} ${t.name} · ${s.points} pts (${parts.join(' ')})`);
+    });
+  }
 
   const played = state.config.games.filter((g) => state.results[g.id]);
   if (played.length) {
@@ -4651,6 +4804,7 @@ function formatScore(game, val) {
 function bonusBreakdown() {
   const totals = {};
   state.teams.forEach((t) => (totals[t.id] = { verse: 0, meals: 0, custom: 0 }));
+  if (!pointsReadAllowed('bonusBreakdown')) return totals; // a viewer gets zeros, never the ledger
   Object.values(state.bonuses || {}).forEach((b) => {
     if (!b || !totals[b.teamId]) return;
     const p = Number(b.points);
@@ -4668,8 +4822,11 @@ function bonusBreakdown() {
 
 function medalCounts() {
   const counts = {};
-  const extra = bonusBreakdown();
   state.teams.forEach((t) => (counts[t.id] = { gold: 0, silver: 0, bronze: 0, medalPts: 0, verse: 0, meals: 0, custom: 0, bonus: 0, points: 0 }));
+  // A viewer gets the all-zero table: the winners of each game are read from
+  // state.results directly (they stay visible), never from these totals.
+  if (!pointsReadAllowed('medalCounts')) return counts;
+  const extra = bonusBreakdown();
   // Iterate entries so we can weight points per game: Messtival games are
   // worth DOUBLE on the scoreboard. Medal *counts* stay raw; only the point
   // value doubles. Results for games no longer in the (editable) catalog are
@@ -4700,6 +4857,8 @@ function medalCounts() {
 // Rank by total points; break point ties by finish quality (golds,
 // then silvers, then bronzes).
 function rankTeamsByPoints(counts) {
+  // A viewer gets the roster in its own fixed order, never an order that says who leads.
+  if (!pointsReadAllowed('rankTeamsByPoints')) return [...state.teams];
   return [...state.teams].sort((a, b) => {
     const sa = counts[a.id], sb = counts[b.id];
     if (sb.points !== sa.points) return sb.points - sa.points;
@@ -4739,6 +4898,22 @@ function renderStandings() {
   // (Card visibility + the hide switches are handled centrally by
   // applyCardVisibility, called at the top of renderAll.)
   const tbody = document.getElementById('standings-tbody');
+  if (!standingsVisible()) {
+    // Not a director: nothing about points, places or gaps is computed or drawn
+    // (see "Standings secrecy"). The card is hidden for them by
+    // applyCardVisibility; this empties it too, so a demoted editor's next
+    // render drops every editor-only node instead of leaving the table in the
+    // DOM behind a hidden card. The next director render starts clean: no
+    // pulse baseline, no point-history baseline carried across the role flip.
+    setHtmlIfChanged(tbody, '');
+    const hint = document.getElementById('catchup-hint');
+    if (hint) { hint.hidden = true; setHtmlIfChanged(hint, ''); }
+    lastPointsByTeam = null;
+    clPrevSnap = null;
+    remoteJustApplied = false;
+    renderFollowCard();
+    return;
+  }
   const counts = medalCounts();
   const ranked = rankTeamsByPoints(counts);
   // Pulse rows whose points changed because of a remote sync (invisible
@@ -5003,10 +5178,6 @@ function renderFollowCard() {
   }
   const team = state.teams.find((t) => t.id === state.followTeam);
   if (!team) { card.hidden = true; return; }
-  const counts = medalCounts();
-  const ranked = rankTeamsByPoints(counts);
-  const rank = ranked.findIndex((t) => t.id === team.id) + 1;
-  const s = counts[team.id];
   const next = findNextMatchupFor(team.id);
   const nextLine = next
     ? `<p class="follow-next-line">⏭️ Up next: vs ${teamEmoji(next.opponentId)} ${esc(teamName(next.opponentId))} in ${esc(next.game.name)}</p>`
@@ -5026,11 +5197,21 @@ function renderFollowCard() {
   const crestHtml = shield
     ? `<div class="follow-team-crest"><img class="follow-team-shield" src="${shield}" alt="${esc(team.name)} team shield" width="480" height="667" loading="lazy" decoding="async"></div>`
     : '';
-  const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '';
-  const statsLine = `<div class="follow-team-stats">
+  // Rank and points are directors' eyes only (see "Standings secrecy"): a
+  // counselor's team card carries the team, its next matchup and cleanup, and
+  // no number at all. The readers are only reached when a director is looking.
+  let statsLine = '';
+  if (standingsVisible()) {
+    const counts = medalCounts();
+    const ranked = rankTeamsByPoints(counts);
+    const rank = ranked.findIndex((t) => t.id === team.id) + 1;
+    const s = counts[team.id];
+    const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '';
+    statsLine = `<div class="follow-team-stats">
     <span class="follow-rank-pill">${medal ? medal + ' ' : ''}${ordinal(rank)} place</span>
     <span class="follow-points">${s.points} pts</span>
   </div>`;
+  }
   const accent = teamAccent(team.id);
   card.className = 'follow-team-card' + (shield ? ' has-shield' : '');
   if (accent) card.style.setProperty('--team-accent', accent);
@@ -5218,7 +5399,7 @@ function renderPickerStep() {
     renderIdentityOptions();
   } else {
     if (title) title.textContent = '👋 Which team are you rooting for?';
-    if (hint) hint.textContent = "You'll get a heads-up here when they score or get called up next.";
+    if (hint) hint.textContent = "You'll get alerts when your team plays and wins medals.";
     renderTeamPickerOptions();
   }
 }
@@ -5238,8 +5419,8 @@ function renderTeamPickerOptions() {
       // Switching to a different team invalidates a prior identity — re-ask it.
       if (id !== state.followTeam) state.identity = null;
       state.followTeam = id;
-      // Following a team opts you into its alerts — the picker promises a
-      // "heads-up when they score or are up next," which only fires when
+      // Following a team opts you into its alerts — the picker promises alerts
+      // "when your team plays and wins medals," which only fire when
       // notifications are on. (Neutral leaves the notify setting alone.)
       if (id && !state.notify) enableNotify();
       saveState();
@@ -5250,7 +5431,7 @@ function renderTeamPickerOptions() {
         return;
       }
       if (turnedOnNotify) {
-        pickerNotifyToast = `🔔 Following ${teamEmoji(id)} ${teamName(id)} — you'll get alerts here when they score or are up next.`;
+        pickerNotifyToast = `🔔 Following ${teamEmoji(id)} ${teamName(id)} — you'll get alerts here when they play and win medals.`;
       }
       // The identity step exists to show YOUR electives — a camp without
       // electives (senior) has nothing to ask, so the picker just closes.
@@ -5349,6 +5530,11 @@ function newBonusId() {
 function renderBonuses() {
   const wrap = document.getElementById('bonus-body');
   if (!wrap) return;
+  // Quick points — the entry form, the per-team subtotals and the ledger — are
+  // directors' eyes only (see "Standings secrecy"). The card is hidden for
+  // everyone else; this empties it too, so a demoted editor's next render drops
+  // the ledger from the DOM instead of leaving it behind a hidden card.
+  if (!standingsVisible()) { setHtmlIfChanged(wrap, ''); return; }
   const d = bonusDraft;
 
   let entryHTML = '';
@@ -5515,6 +5701,7 @@ let verseDay = null;
 // double-points window is active right now.
 function versePointsByDay() {
   const map = {};
+  if (!pointsReadAllowed('versePointsByDay')) return map;
   Object.values(state.bonuses || {}).forEach((b) => {
     if (b.category !== 'verse') return;
     const day = Number(b.day) || 0;
@@ -5526,9 +5713,20 @@ function versePointsByDay() {
   return map;
 }
 
+// Set a card's one-line description only when it changed (these run on every render).
+function setCardDesc(id, text) {
+  const el = document.getElementById(id);
+  if (el && el.textContent !== text) el.textContent = text;
+}
+
 function renderMemoryVerse() {
   const wrap = document.getElementById('verse-body');
   if (!wrap) return;
+  // index.html ships the counselor wording (fail closed); directors get the one
+  // that talks about points.
+  setCardDesc('verse-desc', canEdit()
+    ? "Each day's memory verse — pick a day to read it, and record points for teams that recite it. Verse points count toward each team's total in Current Standings."
+    : "Each day's memory verse — pick a day to read it.");
   // Default to today's verse (Mon–Fri); fall back to Monday on the weekend.
   if (verseDay == null) {
     const dow = campNow().dow;
@@ -5571,8 +5769,11 @@ function renderMemoryVerse() {
   // becomes 10 elsewhere), while each team's shown total is the per-entry
   // effective value — a Monday entry viewed on Friday stays single, exactly
   // as the standings count it.
-  const earned = versePointsByDay()[verseDay] || { raw: {}, effective: {} };
+  // Counselors read the verse and nothing more: the per-team points (the rows
+  // and their "+N" totals) are directors' eyes only, so the ledger is not even
+  // read for anyone else.
   const editing = canEdit();
+  const earned = (editing && versePointsByDay()[verseDay]) || { raw: {}, effective: {} };
   const doubleWindow = inDoubleBonusWindow();
   const displayMult = doubleWindow ? 2 : 1;
   const hint = editing
@@ -5593,15 +5794,11 @@ function renderMemoryVerse() {
       ${btns}${editing && blockedByOwnTeam(t.id) ? '<span class="pts-row-locked">🛡️ your team</span>' : ''}
     </div>`;
   }).join('')}</div>`;
-  const anyEarned = state.teams.some((t) => earned.raw[t.id]);
-  const emptyHTML = (!editing && !anyEarned)
-    ? `<p class="muted bonus-empty">No verse points recorded for ${esc(DAY_NAMES[verseDay])} yet.</p>`
-    : '';
 
   const doubleNote = inDoubleBonusWindow()
     ? `<div class="messtival-banner">⚡ Double points tonight &amp; Friday — verse points count double in the standings!</div>`
     : '';
-  if (!setHtmlIfChanged(wrap, doubleNote + themeHTML + dayChips + verseBox + hint + (editing || anyEarned ? rowsHTML : '') + emptyHTML)) return;
+  if (!setHtmlIfChanged(wrap, doubleNote + themeHTML + dayChips + verseBox + hint + (editing ? rowsHTML : ''))) return;
 
   wrap.querySelectorAll('.verse-day-chip').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -5684,6 +5881,7 @@ let cleanupDay = null;
 // Total cleanup points recorded for one day + meal.
 function cleanupMealPoints(day, meal) {
   let sum = 0;
+  if (!pointsReadAllowed('cleanupMealPoints')) return sum;
   Object.values(state.bonuses || {}).forEach((b) => {
     if (b.category === 'cleanup' && (Number(b.day) || 0) === day && b.meal === meal) {
       sum += Number(b.points) || 0;
@@ -5695,6 +5893,9 @@ function cleanupMealPoints(day, meal) {
 function renderMealCleanup() {
   const wrap = document.getElementById('cleanup-body');
   if (!wrap) return;
+  setCardDesc('cleanup-desc', canEdit()
+    ? "Each meal a team is on cleanup — pick a day to see the rota and award points. Cleanup points count toward each team's total in Current Standings."
+    : 'Each meal a team is on cleanup — pick a day to see the rota.');
   // Default to today (Mon–Fri, else Monday).
   if (cleanupDay == null) {
     const dow = campNow().dow;
@@ -5707,7 +5908,6 @@ function renderMealCleanup() {
 
   const rotaHTML = `<div class="cleanup-rota">${MEAL_CLEANUP_MEALS.map((meal) => {
     const teamIds = cleanupAssigned(cleanupDay, meal);
-    const pts = cleanupMealPoints(cleanupDay, meal);
     const teams = teamIds ? (Array.isArray(teamIds) ? teamIds : [teamIds]) : [];
     const teamStr = teams.length > 0
       ? teams.map(id => `${teamEmoji(id)} ${esc(teamName(id))}`).join(' + ')
@@ -5715,13 +5915,13 @@ function renderMealCleanup() {
     return `<div class="cleanup-meal-row">
       <span class="cleanup-meal-name">${MEAL_ICONS[meal]} ${esc(meal)}</span>
       <span class="cleanup-meal-team">${teamStr}</span>
-      ${pts ? `<span class="cleanup-meal-pts">+${pts}</span>` : ''}
     </div>`;
   }).join('')}</div>`;
 
   // The rota IS the interface: one block per meal showing the assigned team,
   // and (for editors) the 0–3 point buttons right on it — no separate meal
-  // chips or repeated team list. Viewers see the same rota with +N badges.
+  // chips or repeated team list. Viewers see the rota ONLY: no "+N" badges, no
+  // ledger (see "Standings secrecy").
   const editing = canEdit();
   const earnedFor = (meal) => {
     const out = {};
@@ -5766,7 +5966,7 @@ function renderMealCleanup() {
 
   // Legacy cleanup entries with no day (from the old Bonus card) — surface them
   // so their points aren't invisible even though they still count in totals.
-  const legacy = Object.entries(state.bonuses || {})
+  const legacy = !editing ? [] : Object.entries(state.bonuses || {})
     .filter(([, b]) => b.category === 'cleanup' && !(Number(b.day) >= 1 && Number(b.day) <= 5))
     .sort((a, b) => (b[1].at || '').localeCompare(a[1].at || ''));
   const legacyHTML = legacy.length
@@ -6385,7 +6585,7 @@ function liveHomeTallyCard(g) {
   return `<button class="live-home-card" data-game-id="${esc(g.id)}">
     <span class="live-home-top"><span class="live-home-badge">🔴 LIVE</span><span class="live-home-game">${esc(g.emoji)} ${esc(g.name)}</span></span>
     ${scoreLine}
-    <span class="live-home-sub">${g.lowerWins ? 'Fastest so far' : 'Leader'} · ${ranked.length}/${state.teams.length} teams in${complete ? ' · 🏅 medals ready' : ''}</span>
+    <span class="live-home-sub">${g.lowerWins ? 'Fastest so far' : 'Leader'} · ${ranked.length}/${state.teams.length} teams in${complete && standingsVisible() ? ' · 🏅 medals ready' : ''}</span>
   </button>`;
 }
 
@@ -6398,7 +6598,10 @@ function liveHomeTallyCard(g) {
 // comes from #clock-area, so this board's clock would just duplicate it there.
 function tallyBoardHTML(g) {
   const ranked = tallyRankLive(g);
-  const complete = ranked.length >= state.teams.length;
+  // Medal discs on the live order say who WON before a director has saved the
+  // result, so only directors get them; everyone else sees plain places in the
+  // game (the live scores themselves are public).
+  const complete = ranked.length >= state.teams.length && standingsVisible();
   const medals = ['🥇', '🥈', '🥉'];
   const clock = g.timer ? getClock(g) : null;
   const remaining = clock ? clockRemaining(clock) : 0;
@@ -6465,7 +6668,10 @@ function renderLiveTallyWatch(container, g) {
     </div>`, [g]);
     return;
   }
-  const complete = ranked.length >= state.teams.length;
+  // "Suggested: gold, silver, bronze" and medal discs on the live order showed
+  // the winners before a director saved the result: directors only (the live
+  // scores themselves stay public).
+  const complete = ranked.length >= state.teams.length && standingsVisible();
   const medals = ['🥇', '🥈', '🥉'];
   const rows = ranked.map((e, i) => `
     <li class="lw-rank-row${i < 3 ? ' lw-podium' : ''}">
@@ -6557,13 +6763,16 @@ function renderResult(container, g, result) {
   // Thursday evening/Friday under the double-points window) pays double, and
   // this recap must show the same numbers the standings actually award.
   const mult = g.messtival ? 2 : 1;
+  // The winners are public; what each medal is worth in the standings is not
+  // (see "Standings secrecy"), so the "+7 pts" chips are directors' only.
+  const worth = (k) => (standingsVisible() ? ` <span class="medal-points">+${MEDAL_POINTS[k] * mult} pts</span>` : '');
   // The listener below resolves state when tapped, so only the game is held.
   const fresh = setLiveHtmlIfChanged(container, `
     <h3>Final results</h3>
     <div class="medal-summary">
-      <div class="medal-row gold-row">🥇 <strong>${esc(teamName(result.medals.gold))}</strong> <span class="medal-points">+${MEDAL_POINTS.gold * mult} pts</span></div>
-      <div class="medal-row silver-row">🥈 <strong>${esc(teamName(result.medals.silver))}</strong> <span class="medal-points">+${MEDAL_POINTS.silver * mult} pts</span></div>
-      <div class="medal-row bronze-row">🥉 <strong>${esc(teamName(result.medals.bronze))}</strong> <span class="medal-points">+${MEDAL_POINTS.bronze * mult} pts</span></div>
+      <div class="medal-row gold-row">🥇 <strong>${esc(teamName(result.medals.gold))}</strong>${worth('gold')}</div>
+      <div class="medal-row silver-row">🥈 <strong>${esc(teamName(result.medals.silver))}</strong>${worth('silver')}</div>
+      <div class="medal-row bronze-row">🥉 <strong>${esc(teamName(result.medals.bronze))}</strong>${worth('bronze')}</div>
     </div>
     ${extra}
     ${canEdit() ? '<button id="clear-result-btn" class="link-btn danger-link">Clear result &amp; re-enter</button>' : ''}
@@ -9158,6 +9367,11 @@ function startApp() {
   document.documentElement.classList.toggle('camp-senior', CAMP.id === 'senior');
   applyRoleClass();
   applyCardDefaults();
+  // Seed the "up next" baseline from what this phone already holds, so the
+  // first LIVE change after a quiet boot still alerts. detectMatchupChanges used
+  // to seed itself on its first call — which was the first snapshot's — and
+  // swallowed it.
+  if (lastBracketSlots === null) detectMatchupChanges();
   if (!appStarted) {
     appStarted = true;
     init();

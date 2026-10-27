@@ -1,5 +1,10 @@
 // Score entry/formatting and the standings maths — the numbers on the wall.
 
+// Points readers are directors' eyes only (standings secrecy, redesign §4.12):
+// every test here reads the standings as a director. The viewer side of the same
+// readers is pinned in secrecy.test.js.
+setMemberRole('editor');
+
 const timed = { timeInput: true };
 const plain = {};
 

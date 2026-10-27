@@ -23,7 +23,9 @@ function loadTv(o) {
   const bySel = new Map();
   const listeners = {};
   const timers = [];
-  const store = new Map(Object.entries(o.storage || {}));
+  // A director's device unless a test says otherwise: the cached-snapshot fallback
+  // shows standings only on a device that was a director's (secrecy interim).
+  const store = new Map(Object.entries(Object.assign({ campScoreboardAuthHint: 'editor' }, o.storage || {})));
   const replaced = [];
 
   function el(tag, track) {
@@ -73,6 +75,8 @@ function loadTv(o) {
   }
   byIdFn('auth-overlay').style.display = 'none'; // the page's own inline style hides it
   byIdFn('update-chip').hidden = true;
+  byIdFn('waiting').hidden = true;  // the page's own `hidden` attributes
+  byIdFn('screen').hidden = true;
 
   const document = {
     title: '', hidden: false, body: el('body'), documentElement: el('html'),
@@ -468,4 +472,68 @@ test('mid-reveal, a newer build only shows the update chip (reloading would wipe
   await new Promise((r) => setTimeout(r, 0));
   assert.equal(tv.replaced.length, 0, 'no reload');
   assert.equal(tv.byId('update-chip').hidden, false, 'the chip is offered instead');
+});
+
+// ── Secrecy: live standings are for directors only (until the public page, Step 23) ──
+
+function fbWithRole(role, rec) {
+  const fb = {
+    apps: [], initializeApp() { fb.apps.push({}); },
+    auth: Object.assign(() => ({ onAuthStateChanged(cb) { rec.auth = cb; }, signInWithPopup: () => Promise.resolve(), signOut: () => Promise.resolve() }), { GoogleAuthProvider: function () { this.setCustomParameters = () => {}; } }),
+    database: () => ({ ref: (path) => ({
+      on(ev, cb) { rec.on.push(path); rec.cb[path] = cb; },
+      once() { rec.once.push(path); return Promise.resolve({ val: () => (role ? { role } : null) }); },
+    }) }),
+  };
+  return fb;
+}
+
+test('a counselor\'s account gets "Waiting for the directors…" and the page never reads state', async () => {
+  const rec = { on: [], once: [], cb: {}, auth: null };
+  const tv = loadTv({ firebase: fbWithRole('viewer', rec) });
+  rec.auth({ email: 'counselor@example.com' });
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(tv.byId('waiting').hidden, false, 'the waiting screen is up');
+  assert.equal(tv.byId('loading').style.display, 'none');
+  assert.deepEqual(rec.on, [], 'no state or config listener was ever attached: nothing in memory to compute standings from');
+  tv.next(); // a stray key or tap must not start a reveal
+  assert.equal(tv.byId('screen').hidden === false, false, 'the reveal screen never came up');
+  assert.deepEqual(tv.introCrests(), [], 'no intro');
+  assert.ok(/Waiting for the directors…/.test(TV_HTML), 'the page ships the waiting words');
+});
+
+test('a director\'s account still gets the live standings', async () => {
+  const rec = { on: [], once: [], cb: {}, auth: null };
+  const tv = loadTv({ firebase: fbWithRole('editor', rec) });
+  rec.auth({ email: 'director@example.com' });
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(tv.byId('waiting').hidden, true, 'nothing to wait for');
+  assert.deepEqual(rec.on.sort(), ['campScoreboard/config', 'campScoreboard/state']);
+});
+
+test('an account that is not on the list still gets the denied overlay, not the waiting screen', async () => {
+  const rec = { on: [], once: [], cb: {}, auth: null };
+  const tv = loadTv({ firebase: fbWithRole(null, rec) });
+  rec.auth({ email: 'stranger@example.com' });
+  await new Promise((r) => setTimeout(r, 0));
+  assert.equal(tv.byId('waiting').hidden, true);
+  assert.deepEqual(rec.on, []);
+});
+
+test('the cached-snapshot fallback shows standings only on a device that was a director\'s', () => {
+  const cache = { campScoreboardV2: JSON.stringify(stateWith(T6, { results: { x: { medals: { gold: 't0', silver: 't1', bronze: 't2' } } } })) };
+  const counselor = loadTv({ storage: Object.assign({ campScoreboardAuthHint: 'viewer' }, cache) });
+  assert.equal(counselor.byId('waiting').hidden, false, 'a counselor\'s phone with the SDK blocked waits');
+  assert.deepEqual(counselor.introCrests(), []);
+  const bare = loadTv({ storage: Object.assign({ campScoreboardAuthHint: '' }, cache) });
+  assert.equal(bare.byId('waiting').hidden, false, 'no hint at all fails closed');
+  // the per-camp ledger beats the single hint: a director of senior who is only a counselor on junior
+  const dual = loadTv({ storage: Object.assign({ campScoreboardAuthHint: 'editor', campScoreboardCampsHint: JSON.stringify({ junior: 'viewer', senior: 'editor' }) }, cache) });
+  assert.equal(dual.byId('waiting').hidden, false, 'junior: a counselor there, so it waits');
+  const senior = loadTv({ search: '?camp=senior', storage: { campScoreboardAuthHint: 'editor', campScoreboardCampsHint: JSON.stringify({ junior: 'viewer', senior: 'editor' }), 'campScoreboardV2:senior': JSON.stringify(stateWith(T4)) } });
+  assert.equal(senior.byId('waiting').hidden, true);
+  assert.equal(senior.introCrests().length, 4, 'senior: a director there, so it shows');
+  const director = loadTv({ storage: cache });
+  assert.equal(director.introCrests().length, 6, 'a director\'s device (hint editor) is unchanged');
+  assert.equal(loadTv({ search: '?demo', storage: { campScoreboardAuthHint: '' } }).introCrests().length, 6, 'the demo is fake data, open to all');
 });

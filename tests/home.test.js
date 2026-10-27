@@ -209,6 +209,7 @@ test('My electives is not rewritten when nothing changed', () => {
 
 function giveSomePoints() {
   freshState();
+  setMemberRole('editor'); // the standings panels are directors' (standings secrecy); secrecy.test.js pins what a counselor sees
   state.config.games.slice(0, 3).forEach((g, i) => {
     state.results[g.id] = { medals: { gold: 't' + (i % 3), silver: 't' + ((i + 1) % 3), bronze: 't' + ((i + 2) % 3) }, savedAt: '2026-07-20T12:00:00Z' };
   });
@@ -307,6 +308,7 @@ test('the toast cap drops other teams first, never your own and never the one ju
 
 test('point alerts share one toast, the followed team keeps its own, and nothing is HTML-escaped', () => {
   freshState();
+  setMemberRole('editor'); // point alerts are directors' (standings secrecy)
   const shown = [];
   const natives = [];
   const realToast = showToast;

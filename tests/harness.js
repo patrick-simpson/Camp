@@ -28,20 +28,43 @@ const noop = () => {};
 // incidentally (e.g. by saveState → renderAll paths) no-op instead of throwing.
 // Tests assert on state and return values, never on rendered markup — anything
 // that needs real layout belongs in the Playwright pass (see CLAUDE.md).
-function stubEl() {
+//
+// THE SINK RECORDER. `rec` is the context's one recorder ({ on, log }). While
+// rec.on is true, every way text leaves the app through the DOM is appended to
+// rec.log as { kind, text }: an innerHTML or textContent assignment,
+// insertAdjacentHTML, and the attributes that carry human words (title,
+// aria-label, label, alt, placeholder…). The function-level sinks (toasts,
+// notifications, share, clipboard, chimes) are wrapped by installSinks (below).
+// The secrecy tests use it to prove that nothing a counselor can hear or read
+// carries points, places or gaps — a stub DOM that records nothing would let a
+// "+7 pts (now 23)" toast pass unseen. Off by default (`on` false), so every other
+// test pays one boolean check per write and logs nothing.
+const TEXT_ATTRS = new Set(['title', 'aria-label', 'label', 'alt', 'placeholder', 'aria-description', 'aria-valuetext']);
+
+function stubEl(rec) {
   const kids = new Map();
+  const note = (kind, v) => { if (rec && rec.on && v !== '' && v != null) rec.log.push({ kind, text: String(v) }); };
+  let inner = '';
+  let text = '';
   const el = {
-    hidden: false, innerHTML: '', textContent: '', className: '', value: '', checked: false,
+    hidden: false, value: '', checked: false,
+    className: '',
     dataset: {}, children: [], files: null, isContentEditable: false, tagName: 'DIV',
+    get innerHTML() { return inner; },
+    set innerHTML(v) { inner = v; note('innerHTML', v); },
+    get textContent() { return text; },
+    set textContent(v) { text = v; note('textContent', v); },
     style: { setProperty: noop, removeProperty: noop, getPropertyValue: () => '' },
     classList: { add: noop, remove: noop, toggle: noop, contains: () => false },
     addEventListener: noop, removeEventListener: noop, dispatchEvent: noop,
-    appendChild: noop, insertAdjacentHTML: noop, remove: noop, focus: noop, blur: noop, click: noop,
-    setAttribute: noop, getAttribute: () => null, removeAttribute: noop,
+    appendChild: noop, remove: noop, replaceWith: noop, focus: noop, blur: noop, click: noop,
+    insertAdjacentHTML: (pos, html) => note('insertAdjacentHTML', html),
+    setAttribute: (name, v) => { if (TEXT_ATTRS.has(name)) note('attr:' + name, v); },
+    getAttribute: () => null, removeAttribute: noop,
     hasAttribute: () => false, toggleAttribute: noop, closest: () => null,
     // Same memoized-stub rule as document.querySelector (see makeContext).
     querySelector: (sel) => {
-      if (!kids.has(sel)) kids.set(sel, stubEl());
+      if (!kids.has(sel)) kids.set(sel, stubEl(rec));
       return kids.get(sel);
     },
     querySelectorAll: () => [],
@@ -51,6 +74,7 @@ function stubEl() {
 }
 
 function makeContext(opts) {
+  const rec = { on: false, log: [] }; // the sink recorder (see stubEl)
   const store = new Map();
   // Camp selection happens at script-load time (camps.js reads localStorage
   // before app.js runs), so a senior-context test seeds the key up front:
@@ -70,23 +94,23 @@ function makeContext(opts) {
   const bySelector = new Map();
   const docListeners = {};
   const doc = {
-    documentElement: stubEl(),
-    body: stubEl(),
-    head: stubEl(),
+    documentElement: stubEl(rec),
+    body: stubEl(rec),
+    head: stubEl(rec),
     activeElement: null,
     hidden: false,
     visibilityState: 'visible',
     getElementById: (id) => {
-      if (!byId.has(id)) byId.set(id, stubEl());
+      if (!byId.has(id)) byId.set(id, stubEl(rec));
       return byId.get(id);
     },
     querySelector: (sel) => {
-      if (!bySelector.has(sel)) bySelector.set(sel, stubEl());
+      if (!bySelector.has(sel)) bySelector.set(sel, stubEl(rec));
       return bySelector.get(sel);
     },
     querySelectorAll: () => [],
-    createElement: stubEl,
-    createElementNS: stubEl,
+    createElement: () => stubEl(rec),
+    createElementNS: () => stubEl(rec),
     // Recorded (never fired by the harness itself) so a test can reach the
     // delegated handlers app.js registers on `document` at load — the joy-press
     // pointer handlers, the card `toggle` listener — by type: __docListeners.
@@ -145,6 +169,14 @@ function makeContext(opts) {
     // Deliberately absent, so the app takes its no-sync / no-audio / no-notify
     // branches unless a test stubs them: firebase, AudioContext, Notification.
     __localStorageStore: store,
+    __sinkRec: rec,
+    // What is in the page's top-level nodes RIGHT NOW (the sink log only sees
+    // writes, and a render that skips an unchanged node writes nothing, so markup
+    // left behind by an earlier render — say a demoted director's — would never
+    // show up there). { kind: 'innerHTML', text } entries, same shape as the log.
+    __domSweep: () => [...byId.values(), ...bySelector.values()]
+      .map((e) => ({ kind: 'innerHTML', text: String(e.innerHTML || '') + ' ' + String(e.textContent || '') }))
+      .filter((e) => e.text.trim()),
     __docListeners: docListeners,
     __reloads: 0,
   };
@@ -156,6 +188,34 @@ function makeContext(opts) {
   APP_FILES.forEach((f) => {
     vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
   });
+
+  // The function-level half of the sink recorder: wraps the app's own ways of
+  // making noise (showToast, maybeNativeNotification, copyTextToClipboard, the
+  // chimes) and stands up recording versions of the browser's (Notification,
+  // navigator.share / clipboard, jellyToast). A test calls installSinks() once,
+  // then turns recording on around the scenario: __sinkRec.on = true. The
+  // wrapped app functions still run the original afterwards.
+  sandbox.installSinks = () => {
+    const wrapGlobal = (name, kind, textOf) => {
+      const orig = vm.runInContext(name, ctx);
+      sandbox['__sink_' + name] = function (...args) {
+        if (rec.on) rec.log.push({ kind, text: String(textOf(args)) });
+        return orig.apply(this, args);
+      };
+      vm.runInContext(`${name} = __sink_${name}`, ctx);
+    };
+    wrapGlobal('showToast', 'toast', (a) => a[0]);
+    wrapGlobal('maybeNativeNotification', 'notification', (a) => a[0] + ' ' + a[1]);
+    wrapGlobal('copyTextToClipboard', 'copy', (a) => a[0]);
+    ['playAlertChime', 'playMineChime', 'playHighScore', 'playAlarm'].forEach((n) => wrapGlobal(n, 'chime', () => n));
+    const NotificationStub = function (title, o) { if (rec.on) rec.log.push({ kind: 'Notification', text: title + ' ' + ((o && o.body) || '') }); };
+    NotificationStub.permission = 'granted';
+    NotificationStub.requestPermission = () => Promise.resolve('granted');
+    sandbox.Notification = NotificationStub;
+    sandbox.navigator.share = (d) => { if (rec.on) rec.log.push({ kind: 'share', text: String((d && (d.text || d.title)) || '') }); return Promise.resolve(); };
+    sandbox.navigator.clipboard = { writeText: (t) => { if (rec.on) rec.log.push({ kind: 'clipboard', text: String(t) }); return Promise.resolve(); } };
+    sandbox.jellyToast = (msg) => { if (rec.on) rec.log.push({ kind: 'jellyToast', text: String(msg) }); return null; };
+  };
   return { ctx, sandbox };
 }
 

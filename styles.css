@@ -454,6 +454,19 @@ html.view-only .card-visibility-row {
   display: none;
 }
 
+/* The two secret cards (Current Standings, Quick Points) are hidden from
+   non-directors in code, so a director sees this note in place of the old
+   "Hide from viewers" switch. */
+.card-secret-note {
+  margin: 0 0 0.5rem;
+  padding: 0.6rem 0.85rem;
+  border-radius: var(--radius-md, 0.75rem);
+  background: var(--color-bg);
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
 /* Editor-only "Hide from viewers" row, first child of each card's body.
    .settings-row's background is --color-surface (it normally sits against the
    settings drawer's --color-bg) — inside a card that's the SAME surface, so
@@ -1738,6 +1751,24 @@ jelly-chip.sched-day-chip .today-dot {
 
 .sync-status.synced {
   color: var(--color-primary);
+}
+
+/* The same line under the cards, for view-only devices: the Current Standings
+   card that carries it for directors is not rendered for them. The builder and
+   chat takeovers hide the footer, so they hide this too. */
+.sync-status-footer {
+  display: none;
+  max-width: 640px;
+  margin: 0.75rem auto 0;
+  padding: 0 1rem;
+  text-align: center;
+}
+html.view-only .sync-status-footer {
+  display: block;
+}
+body.builder-open .sync-status-footer,
+body.chat-open .sync-status-footer {
+  display: none;
 }
 
 .standings-actions {

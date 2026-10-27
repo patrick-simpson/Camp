@@ -59,6 +59,7 @@ const LEGACY_END = ISO('2026-07-25T04:00:00Z');
 const SEEDED_RELATIVE = { fromDow: 4, fromMin: 1020, toDow: 6, toMin: 0 };
 
 test('legacy pin: the constants are exactly summer 2026 and the app reads them through camp-core', () => {
+  setMemberRole('editor'); // bonusCountsDouble is a points reader: directors only (standings secrecy)
   assert.equal(DOUBLE_BONUS_START, LEGACY_START, 'Thu 5 PM ET');
   assert.equal(DOUBLE_BONUS_END, LEGACY_END, 'Fri midnight ET (00:00 Sat)');
   assert.equal(DOUBLE_WINDOW_LEGACY.start, LEGACY_START);

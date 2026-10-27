@@ -322,6 +322,32 @@
     try { var raw = localStorage.getItem(lsKey('campScoreboardV2')); return raw ? JSON.parse(raw) : null; }
     catch (e) { return null; }
   }
+
+  // ── Secrecy: live standings are for directors only ─────────────
+  // Counselors don't see points, places or gaps until the directors reveal them
+  // (redesign §4.12), and this page computes them live from `state`. So until
+  // the public reveal page replaces it (Step 23), it answers only a signed-in
+  // DIRECTOR with standings, and says "Waiting for the directors…" to everyone
+  // else — a counselor's account, a signed-out phone, a refused read — without
+  // reading `state` at all, so nothing is in memory to compute from. The
+  // cached-snapshot fallback is held to the same rule: it needs this device to
+  // have been a director's (the same hint the app paints from, convenience only:
+  // forging it only exposes a cache the device already holds), else it waits.
+  function cachedRoleIsEditor() {
+    try {
+      var camps = JSON.parse(localStorage.getItem('campScoreboardCampsHint') || '{}');
+      var mine = camps && typeof camps === 'object' ? camps[CAMP.id] : null;
+      if (mine === 'editor' || mine === 'viewer') return mine === 'editor';
+      return localStorage.getItem('campScoreboardAuthHint') === 'editor';
+    } catch (e) { return false; }
+  }
+  var waitingEl = document.getElementById('waiting');
+  function showWaiting() {
+    var ov = document.getElementById('auth-overlay');
+    if (ov) ov.style.display = 'none';
+    loadingEl.style.display = 'none';
+    if (waitingEl) waitingEl.hidden = false;
+  }
   var lastRawState = null; // last ingested state — recomputed when the config lands
   function ingest(state) {
     lastRawState = state;
@@ -404,9 +430,10 @@
     if (DEMO) { ingest(demoState()); return; }
     var cfg = window.FIREBASE_CONFIG;
     if (!cfg || !cfg.apiKey || !cfg.databaseURL || typeof firebase === 'undefined' || !firebase.auth) {
-      // No Firebase — the best this page can do is the local snapshot.
-      var local = readLocal();
-      if (local) ingest(local);
+      // No Firebase — the best this page can do is the local snapshot, and only
+      // on a device that was a director's (see the secrecy note above).
+      var local = cachedRoleIsEditor() ? readLocal() : null;
+      if (local) ingest(local); else showWaiting();
       return;
     }
     try { if (!firebase.apps.length) firebase.initializeApp(cfg); } catch (e) { return; }
@@ -450,6 +477,9 @@
           var rec = snap.val();
           if (!rec || !rec.role) { setAuthOverlay('denied', user.email); return; }
           setAuthOverlay('hidden');
+          // A counselor's account is approved but may not see the standings:
+          // wait, and never attach the state listener (nothing to compute from).
+          if (rec.role !== 'editor') { showWaiting(); return; }
           if (!started) { started = true; attachData(); }
         })
         .catch(function () { setAuthOverlay('denied', user.email); });
