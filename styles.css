@@ -5627,6 +5627,17 @@ select.form-input {
   font-weight: 800;
 }
 
+/* The Games / Days tabs before the first config snapshot (settings.js,
+   renderConfigLoading) — same inline dots-spinner treatment as .sync-status. */
+.config-loading {
+  margin: 0.5rem 0;
+  font-weight: 700;
+}
+.config-loading jelly-spinner {
+  vertical-align: middle;
+  margin-right: 0.25rem;
+}
+
 /* ── Danger zone ── */
 .danger-zone {
   border: 1px solid color-mix(in srgb, var(--color-danger) 35%, var(--color-border));

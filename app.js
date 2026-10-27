@@ -2450,6 +2450,20 @@ let dataEditPending = false;
 // cached edit has actually uploaded. This is what stops scores being typed /
 // saved offline from getting reverted by a stale reconnect snapshot.
 let pendingWrites = 0;
+// The same, for the week-config node (the builder's games/days catalog), which
+// has its own sibling ref and used to be invisible to every "is anything still
+// unsent?" guard: an auto-reload or a sign-out right after a builder save threw
+// the in-memory offline queue away. pendingWritesTotal() is what those guards
+// ask; canAdoptRemote() deliberately stays about `state` only — a config write
+// in flight doesn't make a SCORES snapshot unsafe to adopt.
+let pendingConfigWrites = 0;
+function pendingWritesTotal() { return pendingWrites + pendingConfigWrites; }
+// The config's first-pull gate, twin of `remoteReady`: false until the first
+// config snapshot arrives. Until then nothing is pushed (the null-seed aside)
+// and the games/days builder is read-only (configEditable) — there is no merge
+// for config yet, so an edit made before the first snapshot would be silently
+// replaced by it (applyRemoteConfig is whole-object last-write-wins).
+let configReady = false;
 // The synced state as we last knew it on the server — the baseline the next
 // push diffs against so it writes ONLY the items this device changed (per-path
 // update), instead of overwriting the whole tree and clobbering edits another
@@ -2586,10 +2600,96 @@ function configForSync(config) {
   return out;
 }
 
+// The week-config listener. Its own function so tests can attach it to a fake
+// database (tests/config-gate.test.js) without standing up the whole of initSync.
+function attachConfigListener() {
+  fbConfigRef.on('value', (snap) => {
+    const remote = snap.val();
+    const firstConfig = !configReady;
+    configReady = true; // the server has spoken: pushes may flow, the builder may open
+    if (!remote) {
+      // An empty node: this phone's catalog is the only one there is — seed it.
+      seedConfigIfAbsent();
+    } else if (editorMidEntry()) {
+      // Held back mid-entry — applied by the builder's focusout flush, or by the
+      // idle retry tick if focus never returns to the builder.
+      pendingRemoteConfig = remote;
+      armIdleRetry();
+    } else {
+      pendingRemoteConfig = null;
+      applyRemoteConfig(remote);
+    }
+    // The builder was showing "Loading the games list…"; open it now, even
+    // when the catalog came back identical (applyRemoteConfig renders only on
+    // a change). Held while a field is focused, like every background render.
+    if (firstConfig && appStarted && state.ui.view === 'settings') renderAllWhenIdle();
+  }, (err) => {
+    console.warn('Firebase config read failed, staying local', err);
+    fbConfigRef = null;
+    syncDenied = true;
+    updateSyncIndicator();
+  });
+}
+
+// May the games/days catalog be edited right now? Yes once the first config
+// snapshot has landed, and also whenever no snapshot is ever coming that could
+// replace an edit: sync isn't configured (local-only), the SDK never loaded
+// (read-only copy anyway), or the config read was refused (access revoked).
+// Otherwise the builder shows "Loading the games list…". Applies to the Games
+// and Days tabs and to the Data tab's import / restore-defaults, i.e. every
+// writer of state.config. The three-way merge that lets this lift (S3) is not
+// built yet.
+function configEditable() {
+  if (configReady) return true;
+  if (!(window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey)) return true;
+  return syncDenied || sdkLoadFailed;
+}
+
 function pushConfig() {
-  if (!fbConfigRef || applyingRemoteConfig) return;
-  // JSON round-trip strips any `undefined` (which Realtime DB rejects).
-  fbConfigRef.set(JSON.parse(JSON.stringify(configForSync(state.config)))).catch((e) => console.warn('config push failed', e));
+  // Not before the first config snapshot: until then this phone doesn't know
+  // what the server holds, and a whole-node set() would overwrite it.
+  if (!fbConfigRef || applyingRemoteConfig || !configReady) return;
+  pendingConfigWrites++;
+  const settle = () => { pendingConfigWrites = Math.max(0, pendingConfigWrites - 1); };
+  // set() can throw synchronously (an illegal key from a hand-edited backup);
+  // without the catch the counter would stay raised and block every reload.
+  try {
+    // JSON round-trip strips any `undefined` (which Realtime DB rejects).
+    fbConfigRef.set(JSON.parse(JSON.stringify(configForSync(state.config)))).then(settle, (e) => {
+      settle();
+      configPushFailed(e);
+    });
+  } catch (e) {
+    settle();
+    configPushFailed(e);
+  }
+}
+
+// The builder's save is the one write this app used to lose in silence (the
+// catch was a console.warn). Say so; the edit is still on this phone and goes up
+// with the next builder change.
+function configPushFailed(e) {
+  console.warn('config push failed', e);
+  if (typeof showToast === 'function') showToast("Couldn't save the week setup — check your connection and try again.");
+}
+
+// First upgraded client on an empty config node seeds the catalog — as a
+// transaction that only writes into a node that is really empty, so two phones
+// seeding at once (or one racing a director's first save) can't overwrite each
+// other. Never touches an existing node: returning undefined aborts.
+function seedConfigIfAbsent() {
+  if (!fbConfigRef) return;
+  pendingConfigWrites++;
+  const settle = () => { pendingConfigWrites = Math.max(0, pendingConfigWrites - 1); };
+  try {
+    fbConfigRef.transaction(
+      (cur) => (cur === null ? JSON.parse(JSON.stringify(configForSync(state.config))) : undefined),
+      null, false,
+    ).then(settle, (e) => { settle(); console.warn('config seed failed', e); });
+  } catch (e) {
+    settle();
+    console.warn('config seed threw', e);
+  }
 }
 
 // ── Adopting a remote snapshot ───────────────────────────────────
@@ -2973,20 +3073,7 @@ function initSync() {
     } catch (e) { /* ignore — chip just stays hidden */ }
     // Week-config catalog listener (sibling ref — see the fbConfigRef comment).
     fbConfigRef = firebase.database().ref(dbPath('config'));
-    fbConfigRef.on('value', (snap) => {
-      const remote = snap.val();
-      if (!remote) { pushConfig(); return; } // first upgraded client seeds the catalog
-      // Held back mid-entry — applied by the builder's focusout flush, or by the
-      // idle retry tick if focus never returns to the builder.
-      if (editorMidEntry()) { pendingRemoteConfig = remote; armIdleRetry(); return; }
-      pendingRemoteConfig = null;
-      applyRemoteConfig(remote);
-    }, (err) => {
-      console.warn('Firebase config read failed, staying local', err);
-      fbConfigRef = null;
-      syncDenied = true;
-      updateSyncIndicator();
-    });
+    attachConfigListener();
     // Staff directory: who's on the camp list and which team each is with.
     // Members may read the whole list (it's the staff roster), and this is
     // what makes the real counselor names show on each team everywhere. Only
@@ -8568,7 +8655,7 @@ function showUpdateBanner() {
 // deliberately does NOT block: its endAt is in the database and survives a
 // reload, and holding every editor's hotfix for a whole game would be worse.
 function reloadBlocked() {
-  if (pendingWrites > 0) return true;
+  if (pendingWritesTotal() > 0) return true;
   if (canEdit() && editorMidEntry()) return true;
   if (Object.values(liveWatches || {}).some((w) => w && w.running)) return true;
   if (typeof chatComposerBusy === 'function' && chatComposerBusy()) return true;
@@ -9419,7 +9506,7 @@ function hasBothCamps() {
 // control that was just tapped (the Camp segmented control, the Sign out
 // button) is itself a focused Jelly host, so that would always say yes.
 function hasUnsyncedWork() {
-  return pendingWrites > 0 || dataEditPending || pushTimer != null || pushConfigTimer != null ||
+  return pendingWritesTotal() > 0 || dataEditPending || pushTimer != null || pushConfigTimer != null ||
     (typeof builderDirty === 'function' && builderDirty());
 }
 
@@ -9428,6 +9515,7 @@ function hasUnsyncedWork() {
 // in-memory flag knows about. Only sign-out needs this: it wipes the cache,
 // the one copy of that work. (A camp switch keeps per-camp storage.)
 function hasUnconfirmedLocalWork() {
+  if (pendingConfigWrites > 0) return true; // a builder save the server hasn't acknowledged
   try {
     const base = confirmedTree || bootSyncedTree;
     if (!base) return false;

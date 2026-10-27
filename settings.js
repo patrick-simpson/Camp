@@ -58,10 +58,16 @@ function discardGameDraft() {
 // list) is a new view, so that one starts at the top, as it always did.
 function renderSettingsSection(key, card) {
   const y = window.scrollY;
-  const cardView = key === 'games' && state.ui.editGameId ? 'game:' + state.ui.editGameId : key;
+  // Before the first config snapshot the games/days catalog can't be edited
+  // (see configEditable): a placeholder card stands in for both tabs, and is
+  // replaced by the real one when the snapshot lands.
+  const loading = (key === 'games' || key === 'days') && !configEditable();
+  const cardView = loading ? 'loading:' + key
+    : key === 'games' && state.ui.editGameId ? 'game:' + state.ui.editGameId : key;
   const newView = card.__view !== undefined && card.__view !== cardView;
   card.__view = cardView;
-  if (key === 'games' && state.ui.editGameId) renderGameEditor(card);
+  if (loading) renderConfigLoading(card, key);
+  else if (key === 'games' && state.ui.editGameId) renderGameEditor(card);
   else if (key === 'days') renderDaysTab(card);
   else if (key === 'teams') renderTeamsTab(card);
   else if (key === 'notice') renderNoticeTab(card);
@@ -69,6 +75,27 @@ function renderSettingsSection(key, card) {
   else renderGamesTab(card);
   if (newView) window.scrollTo(0, 0);
   else if (window.scrollY !== y) window.scrollTo(0, y);
+}
+
+// The Games and Days tabs while the first config snapshot is still on its way.
+// A static card (setHtmlIfChanged leaves it be on every renderAll). Opening the
+// builder offline on a phone that has never heard from the server stays here
+// until it connects: an edit made now would be replaced by that first snapshot.
+function renderConfigLoading(card, key) {
+  setHtmlIfChanged(card, `
+    <h3>${key === 'days' ? 'Days' : 'Games'}</h3>
+    <p class="config-loading"><jelly-spinner type="dots" size="small" label="Loading"></jelly-spinner> Loading the games list…</p>
+    <p class="muted">Editing opens as soon as this phone has heard from the camp database — a change made before then would be replaced by what arrives a moment later.</p>
+  `);
+}
+
+// Guard for every writer of state.config (the editor's Save / Duplicate /
+// Delete, Delete day, Restore defaults, Import, the ⚡ quick game). The loading
+// card above hides their controls, so this only catches a stale handler.
+function configLocked() {
+  if (configEditable()) return false;
+  showToast('The games list is still loading — try again in a moment.');
+  return true;
 }
 
 // A freshly created jelly-tabs places its pill under the FIRST tab (its
@@ -450,7 +477,7 @@ function newGameShape() {
 // clock, and the podium-pick format (fastest to score). From there it's the
 // normal editor flow: name it, save, score it.
 function startQuickGame() {
-  if (!canEdit()) return;
+  if (!canEdit() || configLocked()) return;
   const sess = campNow().minutes >= 720 ? 'Evening' : 'Morning';
   quickGamePrefill = { format: 'placement' };
   if ((state.config.sessions || []).includes(sess)) quickGamePrefill.session = sess;
@@ -919,6 +946,7 @@ function clearGameRecords(gameId) {
 }
 
 function saveGameDraft() {
+  if (configLocked()) return;
   const draft = gameDraft;
   const errEl = document.getElementById('gd-error');
   const err = validateGameDraft(draft);
@@ -1021,6 +1049,7 @@ function saveGameDraft() {
 }
 
 function duplicateGame() {
+  if (configLocked()) return;
   // Duplicates the SAVED game — warn if the open editor has unsaved edits,
   // otherwise they'd silently be left out of the copy.
   if (JSON.stringify(gameDraft) !== gameDraftSnapshot &&
@@ -1045,6 +1074,7 @@ function duplicateGame() {
 }
 
 function deleteGame(gameId) {
+  if (configLocked()) return;
   const g = gameById(gameId);
   if (!g) return;
   const result = state.results[gameId];
@@ -1180,6 +1210,7 @@ function wireDaysTab(card) {
 }
 
 function deleteDay(dayId) {
+  if (configLocked()) return;
   const day = dayById(dayId);
   if (!day) return;
   const blockingGames = (state.config.games || []).filter((g) => g.dayId === dayId);
@@ -1704,6 +1735,10 @@ function wireDataTab(card) {
 }
 
 function tryImport(text) {
+  if (!configEditable()) {
+    showRestoreError('The games list is still loading — try again in a moment.');
+    return;
+  }
   let parsed;
   try {
     parsed = JSON.parse(text);
@@ -1768,6 +1803,7 @@ function pruneOrphanedGameData() {
 }
 
 function restoreDefaults() {
+  if (configLocked()) return;
   const def = CAMP.defaultConfig();
   if (!confirm('Put back the original ' + def.games.length + ' games and ' + def.days.length + ' days? Your custom games and days are thrown away. Team names and saved results are kept.')) return;
 

@@ -357,6 +357,7 @@ test('flushPendingPush sends both the score push AND the week-config push', () =
   const ref = useFakeRef();
   const configWrites = [];
   fbConfigRef = { set: (v) => { configWrites.push(v); return Promise.resolve(); } };
+  configReady = true; // the first config snapshot has landed (tests/config-gate.test.js covers before it)
 
   state.results = { g1: { medals: { gold: 't0' } } };
   schedulePush();

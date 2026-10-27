@@ -192,8 +192,9 @@ device** — no Firebase or peer announcement involved — which is why the
 assets together, as always). Every device gets a dismissible "tap to
 refresh" bar (`#update-banner`) and auto-reloads only once `reloadBlocked()`
 says it's safe (rechecked inside the final 1.2 s, retried every 12 s):
-for EVERY role, no unconfirmed write (`pendingWrites > 0` — the SDK's
-offline queue is in memory only, so a reload would lose it), no running
+for EVERY role, no unconfirmed write (`pendingWritesTotal() > 0`: scores AND the
+week-config node — the SDK's offline queue is in memory only, so a reload would
+lose it), no running
 Pictionary lap (`liveWatches`), and no chat message being typed into a
 focused composer or still sending (`chatComposerBusy`); for editors, also
 not mid-entry (`editorMidEntry`: a focused score field, or a queued data
@@ -318,6 +319,8 @@ What's covered, and why each file exists:
   Keep helpers that run at load free of later top-level `const`s.
 - `bracket-guard.test.js` — a foreign-shaped bracket renders the reload card, is
   never healed, pushed, or shown as live (see "A bracket this build can't read").
+- `config-gate.test.js` — the week-config first-pull gate above, driven
+  against `fake-rtdb.js` with the app's real `attachConfigListener`.
 - `contrast.test.js` — danger red as TEXT. `--color-danger` is a fill tuned to
   carry white text; any rule that colours text red uses `--color-danger-text`
   (light `#b42318`, 6.57:1 on white; dark `#ff8a8a`). The test pins the token
@@ -919,6 +922,24 @@ More sync invariants (each fixed after it bit us — don't regress these;
   arrives. Without it, a device on slow wifi that saves anything before
   its first sync queues a `set()` of stale local state that wipes
   everyone's newer scores on connect.
+- **The week config has its own first-pull gate** (`configReady`, twin of
+  `remoteReady`). `campScoreboard/config` is a whole-object last-write-wins node
+  with no merge yet, so a catalog edit made BEFORE its first snapshot would be
+  silently replaced by it (or push a stale catalog over everyone's). Until the
+  first config snapshot: `pushConfig` writes nothing, and the Games and Days
+  tabs (plus Import, Restore defaults and the ⚡ quick game — every writer of
+  `state.config`) are read-only behind "Loading the games list…"
+  (`configEditable()` / `renderConfigLoading`). It lifts at once when no
+  snapshot can ever come: sync not configured, SDK down, or the config read
+  refused. An empty node is seeded by a TRANSACTION that only writes into a
+  truly empty node (`seedConfigIfAbsent`), never a `set()`. Config writes are
+  counted (`pendingConfigWrites`); `pendingWritesTotal()` = scores + config
+  feeds `reloadBlocked`, `hasUnsyncedWork` and `hasUnconfirmedLocalWork`, while
+  `canAdoptRemote` deliberately stays about `state` alone. A refused or failed
+  config write now says "Couldn't save the week setup" instead of a console
+  warn. Known cost: a director who opens the builder offline on a phone that has
+  not yet heard from the server waits until it connects (the three-way merge
+  that lifts this is the config engine rebuild, not built yet).
 - **The first snapshot is a three-way merge, per path** (2026-10-26). The
   cached state carries `state._syncBase`: the tree the server last CONFIRMED
   (advanced only on adopt and on an acknowledged push — never
