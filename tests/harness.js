@@ -56,6 +56,11 @@ function makeContext(opts) {
   // before app.js runs), so a senior-context test seeds the key up front:
   // makeContext({ camp: 'senior' }).
   if (opts && opts.camp === 'senior') store.set('campScoreboardActiveCamp', 'senior');
+  // A phone that already has a week cached: localStorage entries present BEFORE
+  // the scripts load, which is when normalizeSyncedState/migrateState first run
+  // over them (top-level `const`s further down a file are not initialised yet).
+  // makeContext({ storage: { campScoreboardV2: '{...}' } }).
+  if (opts && opts.storage) Object.keys(opts.storage).forEach((k) => store.set(k, String(opts.storage[k])));
   // Lookups return a memoized stub rather than null: the render functions are
   // written against a page where their container always exists, so handing back
   // an element (the same one each time, like the real DOM) lets tests call the

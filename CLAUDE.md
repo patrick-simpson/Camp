@@ -294,6 +294,15 @@ What's covered, and why each file exists:
   camps' exports of one weekday can never overwrite each other and a re-import
   updates in place, and `X-WR-CALNAME` = the camp's label. S5a will move the
   UID onto camp + week + day + block id once the schedule is data.
+- `boot-cache.test.js` — loads the real scripts into a FRESH context over a
+  populated cache (`makeContext({ storage: { campScoreboardV2: '…' } })`). A phone
+  with a week already cached runs `normalizeSyncedState` / `migrateState` while
+  app.js is still evaluating, so a load-time helper that reads a top-level
+  `const` declared further down the file throws a TDZ error and the app boots
+  blank — invisible to every other test, which loads empty and seeds state later.
+  Keep helpers that run at load free of later top-level `const`s.
+- `bracket-guard.test.js` — a foreign-shaped bracket renders the reload card, is
+  never healed, pushed, or shown as live (see "A bracket this build can't read").
 - `contrast.test.js` — danger red as TEXT. `--color-danger` is a fill tuned to
   carry white text; any rule that colours text red uses `--color-danger-text`
   (light `#b42318`, 6.57:1 on white; dark `#ff8a8a`). The test pins the token
@@ -919,6 +928,17 @@ More sync invariants (each fixed after it bit us — don't regress these;
   the roster), not seeded. Known limit: two tabs of the SAME camp on one
   device can overwrite each other's unconfirmed edits in the shared cache —
   use one tab per camp.
+- **A bracket this build can't read is never healed or written.**
+  `bracketKnown()` (app.js) says a `brackets[gid]` is a six-team wizard bracket:
+  no `kind`, a phase it can place, and at least one six-team field (a truly empty
+  object is just an RTDB-pruned bare bracket and still heals). Anything else is
+  returned UNTOUCHED by `normalizeBracket` — healing would stamp
+  round1/pool/matches onto a newer build's bracket and the next push would write
+  that over every device's copy. `renderTournament` and `renderLiveWatch` show
+  "This bracket needs the newest version — pull down to reload" (with a Reload
+  now button, a plain reload, not a state write); the game stays out of Live now
+  and the upcoming matchups. The 4-team bracket is planned under its own node
+  (`brackets4`); this is the belt-and-braces for a phone that predates it.
 - **An identical snapshot keeps the live objects.** `applyRemoteState`
   restores the previous `state[k]` references when the signature didn't
   change — open tally/bracket/notice views close over those objects, and an

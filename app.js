@@ -3224,7 +3224,7 @@ function matchupSlot(aId, bId) {
 // longer sets selectedPair.
 function upcomingMatchups(g) {
   const raw = state.brackets && state.brackets[g.id];
-  if (!raw || g.format !== 'tournament') return [];
+  if (!raw || g.format !== 'tournament' || !bracketKnown(raw)) return [];
   const b = normalizeBracket(raw);
   const out = [];
   const cur = currentMatchupOf(g, b);
@@ -6137,7 +6137,7 @@ function liveHomeGames() {
     // game to another format leaves its bracket behind in state.brackets, and
     // counting it here pinned the game to "Live now" on every device for good
     // (no screen offers Cancel bracket for a non-tournament game).
-    if (b && g.format === 'tournament' && normalizeBracket(b).phase !== 'summary') return true;
+    if (b && g.format === 'tournament' && bracketKnown(b) && normalizeBracket(b).phase !== 'summary') return true;
     return tallyInProgress(g);
   });
 }
@@ -6387,6 +6387,10 @@ function renderLiveWatch(container, g) {
   const raw = state.brackets && state.brackets[g.id];
   if (!raw) {
     setLiveHtmlIfChanged(container, `<p class="view-only-note">👀 This game hasn't been scored yet. Scores show here as soon as a director enters them.</p>`, [g]);
+    return;
+  }
+  if (!bracketKnown(raw)) {
+    if (setLiveHtmlIfChanged(container, unknownBracketHtml(), [g])) wireUnknownBracketCard(container);
     return;
   }
   const b = normalizeBracket(raw);
@@ -6792,7 +6796,47 @@ function freshBracket() {
 // can come back missing matches/selectedPair/etc. This restores a safe,
 // well-formed shape in place, whatever the source (sync, storage, or a
 // bug) actually handed us.
+// The six-team wizard's phases, and the fields only it writes. A bracket this
+// build doesn't understand — a `kind` it has never heard of (the 4-team bracket
+// is meant to live under its own node, so this is belt and braces), a phase it
+// can't place, or keys with none of the six-team fields — must be left EXACTLY
+// as found: healing would stamp round1/pool/matches onto it and the next push
+// would write that over another version's bracket on every device. A truly
+// empty object is still just a bracket RTDB pruned bare, and heals as before.
+//
+// The two lists are LOCAL on purpose: normalizeSyncedState runs at script load
+// (a device with a bracket in its cache calls this before a top-level `const`
+// further down this file has been initialised — a TDZ crash at boot).
+function bracketKnown(b) {
+  const phases = ['round1', 'bye', 'semifinal', 'championship', 'summary'];
+  const fields = ['phase', 'pool', 'selectedPair', 'matches', 'byeTeamId', 'semifinal', 'championship'];
+  if (!b || typeof b !== 'object' || Array.isArray(b)) return false;
+  if (b.kind !== undefined) return false;
+  if (b.phase !== undefined && phases.indexOf(b.phase) < 0) return false;
+  const keys = Object.keys(b);
+  return !keys.length || keys.some((k) => fields.indexOf(k) >= 0);
+}
+
+// The card shown in place of a bracket this build can't read — no controls
+// that write, no throw. The button is a plain reload, not a state write.
+function unknownBracketHtml() {
+  return `
+    <h3>Run the bracket</h3>
+    <p class="tie-note">⚠️ This bracket needs the newest version — pull down to reload. Nothing here can change it until you do. <button type="button" class="link-btn" id="bracket-reload-btn">Reload now</button></p>
+  `;
+}
+
+function wireUnknownBracketCard(container) {
+  const btn = container.querySelector('#bracket-reload-btn');
+  if (!btn) return;
+  btn.addEventListener('click', () => {
+    if (reloadBlocked() && !confirm('You have something unfinished here (an unsent message, a score being typed, or a running timer). Reload anyway?')) return;
+    doReload();
+  });
+}
+
 function normalizeBracket(b) {
+  if (!bracketKnown(b)) return b; // see bracketKnown: never heal what we can't read
   if (!Array.isArray(b.pool)) b.pool = [];
   if (!Array.isArray(b.selectedPair)) b.selectedPair = [];
   if (!Array.isArray(b.matches)) b.matches = [];
@@ -6886,6 +6930,12 @@ function normalizeSyncedState() {
 }
 
 function renderTournament(container, g) {
+  // A bracket from a newer build: show the reload card, write nothing, throw
+  // nothing (see bracketKnown).
+  if (state.brackets[g.id] && !bracketKnown(state.brackets[g.id])) {
+    if (setLiveHtmlIfChanged(container, unknownBracketHtml(), [g])) wireUnknownBracketCard(container);
+    return;
+  }
   if (!state.brackets[g.id]) {
     // The bracket wizard's phases (3 first-round matches → bye → semifinal →
     // championship) assume exactly 6 teams; with any other count it saves
