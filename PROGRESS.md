@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Mon Oct 26, 7:30 PM ET** (update this line every time the file changes)
+Last updated: **Mon Oct 26, 10:10 PM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -112,6 +112,18 @@ send_later into this session). ETAs above shift by however long the pause lasts.
   (builder worktrees must never be committed).
 
 ## Next steps (resume here)
+**v183 LIVE (10:06 PM ET Mon, commit 554fbe1)** — owner reported "progress bars
+keep reloading" + asked to look for other animation glitches. Fixed: home
+panels no longer rebuild when nothing changed (`setHtmlIfChanged`), the
+now-banner bar is nudged in place, day tabs refresh panels in place, team
+shield kept, Members drawer no longer flashes to skeleton bars on each edit,
+no more `transition: all`. 436 tests. Owner ALSO asked "should the whole page
+layout be rethought — does it make sense?" → assessment given (scoreboard is
+buried in a collapsed row; Happening Now is half the screen; six look-alike
+rows; viewer and editor share one layout though their jobs differ). Layout
+INTERVIEW in progress (one question at a time) — record answers here as they
+come. A home-layout redesign likely folds into Project 2.
+
 **Project 1 SHIPPED to `main` at 7:26 PM ET Mon (v182, commit 9adcf24).**
 Everything is merged: phone alerts (dormant until the Worker exists), all
 verified reliability fixes, the Worker hardening, the sync-review fixes and the
