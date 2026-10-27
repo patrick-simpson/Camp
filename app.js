@@ -688,7 +688,10 @@ function renderNoticeBoard() {
   if (!el) return;
   const html = noticeCardHtml(false);
   el.hidden = !html;
-  el.innerHTML = html || '';
+  // Runs on every renderAll and the 30 s tick; an unconditional rewrite
+  // dropped whatever text a counselor had selected in the card. It holds
+  // plain nodes only (no listeners, no jelly parts), so skipping is safe.
+  setHtmlIfChanged(el, html || '');
 }
 
 // Post / un-post from the builder. Editors only — it shows on every device.
@@ -809,10 +812,12 @@ function renderNowBanner() {
   const el = document.getElementById('now-banner');
   if (!el) return;
   // While a live match's Big Board owns the top of the home screen, the
-  // schedule banner yields — the game IS what's happening now.
+  // schedule banner yields — the game IS what's happening now. Only hide it:
+  // clearing the markup destroyed the jelly-progress, so the bar refilled
+  // from empty when the banner came back. Kept, a same-block return just
+  // nudges the live bar (a new block fails the shape check and rebuilds).
   if (typeof homeBoardGame === 'function' && homeBoardGame()) {
     el.hidden = true;
-    el.innerHTML = '';
     return;
   }
   const { dow, minutes } = campNow();
@@ -822,15 +827,43 @@ function renderNowBanner() {
   // re-creates the jelly-progress, which animates its fill from empty on
   // connect — so the bar visibly "reloaded" twice a minute. When only the
   // elapsed value moved, nudge the live element instead; it glides there.
-  const shape = (html || '').replace(/(<jelly-progress[^>]*?)value="\d+"/, '$1');
+  // The rain hint changes on its own schedule (hour rollover, each weather
+  // refresh) and sits in the same markup, so it is patched in place too —
+  // otherwise every rain-hint change counted as a new "shape" and rebuilt
+  // the bar on rainy days.
+  const { shape, wx, value } = splitNowBanner(html);
   const bar = el.querySelector && el.querySelector('jelly-progress.now-progress');
   if (html && bar && el.__nowShape === shape) {
-    const m = /<jelly-progress[^>]*?value="(\d+)"/.exec(html);
-    if (m && bar.getAttribute('value') !== m[1]) bar.setAttribute('value', m[1]);
+    if (value != null && bar.getAttribute('value') !== value) bar.setAttribute('value', value);
+    const wxEl = el.querySelector('.now-wx');
+    if (!wx) {
+      if (wxEl) wxEl.remove();
+    } else if (!wxEl) {
+      // Last child of .now-body in every layout that carries a bar — the
+      // same place a full rebuild puts it.
+      (el.querySelector('.now-body') || el).insertAdjacentHTML('beforeend', wx);
+    } else if (wxEl.outerHTML !== wx) {
+      wxEl.outerHTML = wx;
+    }
     return;
   }
   el.__nowShape = shape;
   setHtmlIfChanged(el, html || '');
+}
+
+// The banner markup split into what decides whether the live nodes can stay
+// (`shape`: everything except the bar's elapsed value and the rain hint) and
+// the two things that are patched in place instead. Pure — see home.test.js.
+const NOW_WX_RE = /<div class="now-wx">[\s\S]*?<\/div>/;
+function splitNowBanner(html) {
+  const src = html || '';
+  const wx = NOW_WX_RE.exec(src);
+  const val = /<jelly-progress[^>]*?value="(\d+)"/.exec(src);
+  return {
+    shape: src.replace(NOW_WX_RE, '').replace(/(<jelly-progress[^>]*?)value="\d+"/, '$1'),
+    wx: wx ? wx[0] : '',
+    value: val ? val[1] : null,
+  };
 }
 
 // ── Full week schedule sheet (tap the Happening Now banner) ──────
@@ -3253,13 +3286,37 @@ function playMineChime() {
 // events still show, just quieter. Announcements notify every subscribed
 // phone regardless of team.
 
+// The rail has no cap of its own and its toasts take taps (pointer-events:auto),
+// so a burst — one snapshot moving several teams, a restore, a phone waking
+// after a long sleep — used to stack up and cover most of a phone screen.
+// Past this many, one is dismissed (its normal exit animation) to make room:
+// the oldest that isn't an "Your team…" toast, so a later up-next or
+// announcement toast pushes out other teams' points rather than your own.
+const TOAST_MAX_VISIBLE = 3;
+const liveToasts = []; // { toast, mine }
+
 function showToast(message, opts) {
   const mine = !!(opts && opts.mine);
   // Jelly toaster (the <jelly-toaster position="bottom"> rail in index.html).
   // Falls back to the legacy #toast-container pill if the module hasn't
   // loaded/failed — toasts carry sync errors and must always surface.
   if (window.jellyToast) {
-    window.jellyToast(message, { tone: mine ? 'success' : 'info', duration: mine ? 5500 : 4000 });
+    const toast = window.jellyToast(message, { tone: mine ? 'success' : 'info', duration: mine ? 5500 : 4000 });
+    if (toast) {
+      liveToasts.push({ toast, mine });
+      for (let i = liveToasts.length - 1; i >= 0; i--) if (!liveToasts[i].toast.isConnected) liveToasts.splice(i, 1);
+      while (liveToasts.length > TOAST_MAX_VISIBLE) {
+        // Never the toast just raised; prefer the oldest that isn't mine.
+        let at = liveToasts.slice(0, -1).findIndex((t) => !t.mine);
+        if (at < 0) at = 0;
+        // Dismiss through the ✕ — its handler stops propagation, so this
+        // synthetic click stays inside the toaster instead of bubbling to
+        // the document's delegated click handlers.
+        const old = liveToasts.splice(at, 1)[0].toast;
+        const close = old.querySelector && old.querySelector('.close');
+        (close || old).click();
+      }
+    }
     return;
   }
   const container = document.getElementById('toast-container');
@@ -3327,18 +3384,35 @@ function updateNotifyButton() {
 }
 
 // changes: [{ team, delta, total }]
+// Toast and notification text is PLAIN text (jellyToast sets textContent,
+// showNotification takes a string) — never esc() it, or a team or game named
+// with an apostrophe or ampersand shows a literal "&#39;" / "&amp;".
 function notifyPointChanges(changes) {
   if (!state.notify || !changes.length) return;
-  let anyMine = false;
+  const mineChanges = [];
+  const others = [];
   changes.forEach(({ team, delta, total }) => {
-    const mine = team.id === state.followTeam;
-    if (mine) anyMine = true;
     const sign = delta > 0 ? '+' : '';
-    const msg = `${teamEmoji(team.id)} ${esc(team.name)} ${sign}${delta} pts (now ${total})`;
-    showToast(mine ? "Your team scored! " + msg : msg, { mine });
-    if (mine) maybeNativeNotification('🏅 Your team scored!', msg, 'camp-points-' + team.id);
+    const msg = `${teamEmoji(team.id)} ${team.name} ${sign}${delta} pts (now ${total})`;
+    (team.id === state.followTeam ? mineChanges : others).push({ team, sign, delta, msg });
   });
-  if (anyMine) playMineChime(); else playAlertChime();
+  // One snapshot can move every team (a placement save, a restore, a new
+  // week), and a toast apiece used to fill the screen. Everyone else's changes
+  // share ONE toast; past three teams it uses their short names so it still
+  // wraps to a few lines on a small phone. (showToast's visible-toast cap
+  // evicts non-mine toasts first, so "Your team scored!" is never the one lost.)
+  if (others.length === 1) {
+    showToast(others[0].msg);
+  } else if (others.length > 1) {
+    const short = others.length > 3;
+    showToast('📈 ' + others.map(({ team, sign, delta }) =>
+      `${teamEmoji(team.id)} ${(short && TEAM_ABBREV[team.id]) || team.name} ${sign}${delta}`).join(' · '));
+  }
+  mineChanges.forEach(({ team, msg }) => {
+    showToast("Your team scored! " + msg, { mine: true });
+    maybeNativeNotification('🏅 Your team scored!', msg, 'camp-points-' + team.id);
+  });
+  if (mineChanges.length) playMineChime(); else playAlertChime();
 }
 
 // changes: [{ game, stage, aId, bId }]
@@ -3348,7 +3422,7 @@ function notifyMatchupChanges(changes) {
   changes.forEach(({ game, aId, bId }) => {
     const mine = aId === state.followTeam || bId === state.followTeam;
     if (mine) anyMine = true;
-    const msg = `${teamEmoji(aId)} ${esc(teamName(aId))} vs ${teamEmoji(bId)} ${esc(teamName(bId))} — ${esc(game.name)}`;
+    const msg = `${teamEmoji(aId)} ${teamName(aId)} vs ${teamEmoji(bId)} ${teamName(bId)} — ${game.name}`;
     showToast(mine ? "You're up next! " + msg : "Up next: " + msg, { mine });
     if (mine) maybeNativeNotification('🏅 Your team is up next!', msg, 'camp-matchup-' + game.id);
   });
@@ -4333,6 +4407,8 @@ function rankTeamsByPoints(counts) {
 }
 
 let lastPointsByTeam = null; // for the remote-change pulse
+const POINTS_PULSE_MS = 700; // styles.css .points-pulse runs 0.6 s; a little margin
+const pointsPulseUntil = {}; // team id → ms timestamp its pulse class stays in the markup
 let remoteJustApplied = false;
 
 // ── Rank-change arrows (vs the start of the camp day) ─────────────
@@ -4371,8 +4447,14 @@ function renderStandings() {
   const changedTeams = []; // {team, delta, total} — for the notify option
   const dayRanks = startOfDayRanks(ranked);
 
-  tbody.innerHTML = '';
-  ranked.forEach((team, i) => {
+  // Rows are built as one string and written through setHtmlIfChanged: this
+  // runs on every renderAll and the 30 s tick, and re-creating identical rows
+  // dropped any text selected in the table and cut a running points-pulse off
+  // mid-fade. The pulse class is held in the markup for POINTS_PULSE_MS after
+  // it starts (below), so a render inside that window is an identical string
+  // and leaves the animating rows alone.
+  const now = Date.now();
+  const rowsHtml = ranked.map((team, i) => {
     const s = counts[team.id];
     // Movement since this device's start-of-day baseline. Zero-point tables
     // stay arrow-free (same gate as the podium tint).
@@ -4380,20 +4462,21 @@ function renderStandings() {
     const rankDelta = moved
       ? `<span class="rank-delta ${moved > 0 ? 'up' : 'down'}" title="${moved > 0 ? 'Up' : 'Down'} ${Math.abs(moved)} since this morning">${moved > 0 ? '↑' : '↓'}${Math.abs(moved)}</span>`
       : '';
-    const tr = document.createElement('tr');
     // Podium tint for the top 3 — but only once real points exist, so
     // Monday's all-zero table stays neutral.
-    tr.className = i < 3 && s.points > 0 ? 'podium-row podium-' + (i + 1) : '';
-    if (team.id === state.followTeam) tr.className += ' following-row';
+    const cls = [];
+    if (i < 3 && s.points > 0) cls.push('podium-row', 'podium-' + (i + 1));
+    if (team.id === state.followTeam) cls.push('following-row');
     if (pulseFromRemote && lastPointsByTeam[team.id] !== undefined && lastPointsByTeam[team.id] !== s.points) {
-      tr.className += ' points-pulse';
+      pointsPulseUntil[team.id] = now + POINTS_PULSE_MS;
       changedTeams.push({ team, delta: s.points - lastPointsByTeam[team.id], total: s.points });
     }
+    if ((pointsPulseUntil[team.id] || 0) > now) cls.push('points-pulse');
     const medalCell = (n) => `<td class="medal-col">${n ? n : '<span class="zero">0</span>'}</td>`;
     // Signed cell for the point-source columns (verse / meals): dim a zero,
     // show a leading + only for positive tallies (deductions keep their −).
     const extraCell = (n) => `<td class="extra-col">${n ? (n > 0 ? '+' + n : n) : '<span class="zero">0</span>'}</td>`;
-    tr.innerHTML = `
+    return `<tr class="${cls.join(' ')}">
       <td class="rank-col">${i + 1}${rankDelta}</td>
       <td class="team-cell">
         <div class="team-name-line"><span class="team-emoji">${teamEmoji(team.id)}</span> <span class="team-name-text">${esc(team.name)}</span>${team.id === state.followTeam ? ' <span class="following-star" title="You\'re following this team">⭐</span>' : ''}</div>
@@ -4405,9 +4488,9 @@ function renderStandings() {
       ${medalCell(s.bronze)}
       ${extraCell(s.verse)}
       ${extraCell(s.meals)}
-    `;
-    tbody.appendChild(tr);
-  });
+    </tr>`;
+  }).join('');
+  setHtmlIfChanged(tbody, rowsHtml);
   lastPointsByTeam = {};
   ranked.forEach((team) => { lastPointsByTeam[team.id] = counts[team.id].points; });
   renderCatchupHint(ranked, counts);
@@ -4428,7 +4511,7 @@ function renderCatchupHint(ranked, counts) {
   const leader = ranked[0];
   if (!leader || ranked.length < 2 || counts[leader.id].points <= 0) {
     el.hidden = true;
-    el.innerHTML = '';
+    setHtmlIfChanged(el, '');
     return;
   }
   let chaser = null;
@@ -4440,13 +4523,13 @@ function renderCatchupHint(ranked, counts) {
   const pair = `${teamEmoji(chaser.id)} <strong>${esc(chaser.name)}</strong>`;
   const leaderBit = `${teamEmoji(leader.id)} ${esc(leader.name)}`;
   if (gap <= 0) {
-    el.innerHTML = `🤝 ${pair} is tied on points with ${leaderBit} — next medal breaks it!`;
+    setHtmlIfChanged(el, `🤝 ${pair} is tied on points with ${leaderBit} — next medal breaks it!`);
   } else {
     // During the double-points window every remaining game is a doubled
     // (messtival) game, so a gold won now is worth 2× — count with that.
     const doubled = inDoubleBonusWindow();
     const golds = Math.ceil(gap / (MEDAL_POINTS.gold * (doubled ? 2 : 1)));
-    el.innerHTML = `🥇 ${pair} needs ${golds}${doubled ? ' double-points' : ''} gold${golds === 1 ? '' : 's'} (${gap} pt${gap === 1 ? '' : 's'}) to catch ${leaderBit}.`;
+    setHtmlIfChanged(el, `🥇 ${pair} needs ${golds}${doubled ? ' double-points' : ''} gold${golds === 1 ? '' : 's'} (${gap} pt${gap === 1 ? '' : 's'}) to catch ${leaderBit}.`);
   }
   el.hidden = false;
 }
@@ -4687,9 +4770,12 @@ function renderMyElectives() {
   const card = document.getElementById('my-electives-card');
   if (!card) return;
   const rows = myElectivesToday();
-  if (!rows) { card.hidden = true; card.innerHTML = ''; return; }
+  if (!rows) { card.hidden = true; setHtmlIfChanged(card, ''); return; }
   card.hidden = false;
-  card.innerHTML = `
+  // Same rule as the other home panels: this runs on every renderAll and the
+  // 30 s tick, so identical markup must not be rewritten (it drops a text
+  // selection and repaints the card for nothing).
+  setHtmlIfChanged(card, `
     <div class="my-el-head"><span class="my-el-title">⭐ My electives today</span></div>
     <div class="my-el-rows">
       ${rows.map((r) => `
@@ -4699,7 +4785,7 @@ function renderMyElectives() {
           <span class="my-el-station">${r.onBreak ? 'Break' : esc(r.station)}</span>
           <span class="my-el-wx">${electiveWxHtml(campNow().dow, r.slot)}</span>
         </div>`).join('')}
-    </div>`;
+    </div>`);
 }
 
 function ordinal(n) {
@@ -5470,7 +5556,28 @@ function renderDayTabs() {
     saveState();
   });
 
+  settleDayTabPill(tabs);
   wireDayPanels(nav);
+}
+
+// A fresh <jelly-tabs> whose active day isn't the first one used to start its
+// blue pill over "Mon" and spring across to the real day: jelly-segmented
+// places the pill from its first sync(), which runs before its jelly-segment
+// children have upgraded (no values yet ⇒ index 0), and the corrected sync a
+// microtask later only moves the TARGET. Snap the pill onto the target once
+// the component has re-synced. Creation only — never in the change handler,
+// where the spring is the whole point.
+function settleDayTabPill(tabs) {
+  const seg = tabs && tabs.shadowRoot && tabs.shadowRoot.querySelector('jelly-segmented');
+  if (!seg) return;
+  const snap = () => {
+    if (seg.reflecting || !('pillTarget' in seg)) return;
+    seg.pillX = seg.pillTarget;
+    seg.pillXVelocity = 0;
+    if (seg.requestFrame) seg.requestFrame();
+  };
+  snap();
+  Promise.resolve().then(snap); // after the segmented's own mutation-observer re-sync
 }
 
 // The "you're not looking at today" note, now rendered per panel.
@@ -7815,7 +7922,7 @@ function renderAnnouncements() {
   const active = activeAnnouncements().concat(fromChat)
     .sort((a, b) => String(b.at).localeCompare(String(a.at)));
   const editor = canEdit();
-  if (!active.length && !editor) { wrap.hidden = true; wrap.innerHTML = ''; wrap.__lastHtml = ''; return; }
+  if (!active.length && !editor) { wrap.hidden = true; wrap.innerHTML = ''; wrap.__lastHtml = ''; wrap.__lastComposerKey = ''; return; }
 
   const banners = active.map((a) => `
     <div class="announce-banner" role="status">
@@ -7840,40 +7947,72 @@ function renderAnnouncements() {
       <jelly-button id="announce-post-btn" size="small" class="primary-btn">📣 Post</jelly-button>
     </form>${ttlChips}` : `<button id="announce-open-btn" class="link-btn announce-open-btn">📣 Post an announcement</button>`;
 
+  const wireBanners = () => {
+    wrap.querySelectorAll('.announce-dismiss').forEach((btn) => {
+      btn.addEventListener('click', () => { dismissAnnouncement(btn.dataset.annId); renderAnnouncements(); });
+    });
+    wrap.querySelectorAll('.announce-delete').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (!canEdit()) return;
+        const a = (state.announcements || {})[btn.dataset.annId];
+        if (!a) return;
+        if (!confirm(`Remove this announcement from every phone?\n\n"${a.text}"`)) return;
+        delete state.announcements[btn.dataset.annId];
+        touchData();
+        saveState();
+        renderAnnouncements();
+      });
+    });
+  };
+
   // This runs every 30 s (and for each Announcements-channel chat message):
   // rebuilding identical markup would wipe whatever an editor is typing in
   // the composer and drop the keyboard. Same markup ⇒ leave the live nodes
-  // (and their listeners) alone; a real change ⇒ rebuild, carrying the
-  // half-typed text across.
+  // (and their listeners) alone.
   const html = banners + composer;
   if (wrap.__lastHtml === html && !wrap.hidden) return;
+  // Only the banners changed (a remote announcement landed, one expired or
+  // was dismissed) ⇒ swap just those nodes and keep the composer's live
+  // <input>. Replacing it moved the caret to the end, dropped an IME
+  // composition, and on a phone dismissed the keyboard — a script-called
+  // focus() outside a tap doesn't bring that back. The composer is keyed by
+  // open/closed rather than its markup: the duration chips flip in place and
+  // so make that markup differ without the nodes being stale.
+  const composerKey = !composer ? '' : announceComposerOpen ? 'open' : 'closed';
+  if (composerKey && !wrap.hidden && wrap.__lastComposerKey === composerKey && wrap.querySelector('#announce-form, #announce-open-btn')) {
+    const bannersChanged = wrap.__lastBanners !== banners;
+    wrap.__lastHtml = html;
+    wrap.__lastBanners = banners;
+    if (!bannersChanged) return; // just the chips, already flipped in place
+    wrap.querySelectorAll('.announce-banner').forEach((n) => n.remove());
+    wrap.insertAdjacentHTML('afterbegin', banners);
+    wireBanners();
+    return;
+  }
+  // A real composer change (opened, closed, posted) or the first paint ⇒
+  // rebuild, carrying any half-typed text, focus and caret across.
   const oldInput = document.getElementById('announce-input');
   const draft = oldInput ? oldInput.value : '';
   const hadFocus = !!(oldInput && document.activeElement === oldInput);
+  const selStart = oldInput ? oldInput.selectionStart : null;
+  const selEnd = oldInput ? oldInput.selectionEnd : null;
   wrap.hidden = false;
   wrap.innerHTML = html;
   wrap.__lastHtml = html;
+  wrap.__lastBanners = banners;
+  wrap.__lastComposerKey = composerKey;
   const newInput = document.getElementById('announce-input');
-  if (newInput && draft) {
-    newInput.value = draft;
-    if (hadFocus) newInput.focus();
+  if (newInput) {
+    if (draft) newInput.value = draft;
+    if (hadFocus) {
+      // Focus whether or not there is a draft (an empty, focused box lost its
+      // keyboard too), without scrolling the page to it.
+      newInput.focus({ preventScroll: true });
+      try { newInput.setSelectionRange(selStart, selEnd); } catch (e) { /* not a text-selectable input */ }
+    }
   }
 
-  wrap.querySelectorAll('.announce-dismiss').forEach((btn) => {
-    btn.addEventListener('click', () => { dismissAnnouncement(btn.dataset.annId); renderAnnouncements(); });
-  });
-  wrap.querySelectorAll('.announce-delete').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      if (!canEdit()) return;
-      const a = (state.announcements || {})[btn.dataset.annId];
-      if (!a) return;
-      if (!confirm(`Remove this announcement from every phone?\n\n"${a.text}"`)) return;
-      delete state.announcements[btn.dataset.annId];
-      touchData();
-      saveState();
-      renderAnnouncements();
-    });
-  });
+  wireBanners();
   // Duration chips flip in place (no re-render — that would wipe the text
   // being typed in the input beside them).
   wrap.querySelectorAll('.announce-ttl-chip').forEach((chip) => {

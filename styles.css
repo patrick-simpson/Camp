@@ -4427,6 +4427,15 @@ jelly-icon-button.bonus-remove-btn {
 .update-banner-alert jelly-button {
   margin-top: 0.5rem;
 }
+/* The toaster (bottom-right, z-index 10002) and this bar share the bottom
+   edge, and the toasts take taps — so a toast landed right over the
+   "Refresh" button. While the bar is up the toaster rides above it (outer
+   styles beat the component's own :host rule). 8rem clears the bar even where
+   its text wraps tallest (~118px at 320px wide). A browser without :has()
+   keeps the old placement. */
+body:has(#update-banner) jelly-toaster[position="bottom"] {
+  bottom: calc(8rem + env(safe-area-inset-bottom, 0px));
+}
 
 /* ============================================================
    LADDER BALL LIVE SCORER
