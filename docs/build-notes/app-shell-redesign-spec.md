@@ -1,7 +1,8 @@
 # App shell redesign: Now · Games · Chat · More, the standings reveal, and jelly motion
 
 Spec, 2026-10-27 (revised the same day after three design reviews: see the Review log at the
-end). Builds on v184 (live). Phones only. Both camps.
+end; then revised again after the owner approved it and answered its four questions: §1.2 and the
+Change log at the end). Builds on v184 (live). Phones only. Both camps.
 
 Inputs: today's screenshots, the four-lens layout review (`glitch-sweep-2026-10-27.json` →
 `layout`), the owner-approved reveal remote mockups (`mockups/remote/`), the Project 2 setup
@@ -31,7 +32,8 @@ More**. Same tabs for everyone. The first screen, **Now**, follows the camp day 
 **The standings are secret now.** Counselors see no points, places or gaps anywhere in the app
 (no team place on their card, no "+7" pop-ups, no catch-up hint), only the medal winners of each
 finished game. Directors still see live standings at the top of their Games tab, marked
-"Counselors can't see this".
+"Counselors can't see this". Tapping a team there is how directors give quick points (two taps;
+there is no quick-points moment on Now).
 
 **The reveal.** A director opens **More → Run the reveal** on their phone. It works like a
 TV remote, in the light colours you picked: a live mini copy of the big screen at the top, a
@@ -43,9 +45,13 @@ phone's screen stays on while you run it. Every big screen and every counselor's
 pace place by place. Counselors' phones lag the big screen by three seconds, so the room hears
 it first. After a place is revealed, counselors can see the full revealed score grid (frozen,
 never live) until **8 AM the next morning**, then it hides again. Friday's reveal ends with the
-champion celebration. The big-screen page just says "Waiting for the directors…" until a
-director starts. Practice runs use made-up points, never buzz anyone, and never touch what
-counselors can see.
+champion celebration. **The big-screen page is public: it needs no sign-in.** Anyone with its
+address can open it. It reads one small public spot in the database that holds only what the
+directors have already revealed (never a place still to come, never counselor names, never live
+standings), and it says "Waiting for the directors…" until a director starts. **Practice runs
+play the real standings on the real big screen**, tagged "Practice", so anyone who opens the
+big-screen page during a practice can see the places it shows. A practice still never buzzes
+anyone, never reaches a counselor's phone and never touches what counselors can see.
 
 **One "Tell everyone".** Directors write one message and choose how it goes out: a banner at
 the top of the app (1 hour, 3 hours or all day), a buzz on phones (everyone, a team or
@@ -65,17 +71,18 @@ to reduce motion, Camp always stays calm.
 **How it gets built.** Eight stages (D0–D7), each one shippable on its own and tested, slotted
 between Project 2's stages from December to May, with a full rehearsal of both camps before
 June 2027. The reveal needs one database-rules update, which can go in the same Cloud Shell
-paste as Project 2's.
+paste as Project 2's. It adds one deliberately public, read-only spot per camp for the big
+screen; everything else stays members-only.
 
 **Where I went further than the brief** (details in §17): the answer is always the biggest text
 on screen; only one card per screen looks "physical" so the eye knows where to land; a blue
 header means "what you press goes to everyone"; the remote's big button recharges until the TV
 has finished showing a place, so a double-tap can't skip one; a pre-start check makes sure no
-score is missing from the freeze; practice runs with made-up points; a "Still to do today" list
+score is missing from the freeze; practice runs on the real big screen; a "Still to do today" list
 for directors; "Preview as a counselor"; three-tap podium scoring; and text that stays readable
 in direct sun (7:1 contrast for anything smaller than 16px).
 
-**Four questions only you can answer** are at the end (§18).
+**Your four questions are answered** (§1.2, §18) and built in.
 
 ---------------------------------------------------------------------------------
 
@@ -98,8 +105,9 @@ in direct sun (7:1 contrast for anything smaller than 16px).
 15. Test plan
 16. Risks
 17. Improvements beyond the brief
-18. Questions for the owner
-Appendix A. Mockups and the motion demo · Appendix B. Copy glossary · Review log
+18. Questions for the owner (answered)
+Appendix A. Mockups and the motion demo · Appendix B. Copy glossary · Review log · Change log
+(owner answers)
 
 ---------------------------------------------------------------------------------
 
@@ -133,7 +141,9 @@ accessors (§12) and only adds the reveal nodes to its rules publish.
 6. Games block on Now: this block's games with status, place, live score; medal winners on done
    rows; Score for directors.
 7. Electives: my station first, "Who's where ›"; directors see the full list.
-8. Cleanup / verse / quick points at their moment on Now and always under More.
+8. Cleanup and verse at their moment on Now and always under More. Quick points have no moment
+   on Now (owner answer below): two taps from the Games standings, and under More → Award points
+   for corrections.
 9. One Tell everyone composer.
 10. Emoji only for teams without a shield, elective stations and schedule blocks.
 11. Jelly motion everywhere, one shared system, joy layer kept, never re-animate on no change.
@@ -142,17 +152,36 @@ accessors (§12) and only adds the reveal nodes to its rules publish.
 
 **Owner answers to this spec's §17 questions (2026-10-27, after approving the mockups and the
 motion demo with "Yes, this is it") — these OVERRIDE anything below that disagrees:**
-- Quick points: NO extra moment on Now; two taps from the Games standings is enough.
+- Quick points: NO extra moment on Now; two taps from the Games standings is enough. (§3 offers
+  none; §5.2 is the everyday path and §7.3 the corrections.)
 - ★ The big-screen page is **PUBLIC** — no sign-in on the TV. It reads ONLY a public,
   anonymous-readable node that carries what has been revealed (places shown so far, then the
   frozen grid until 8 AM) and nothing else (no counselor names, no unrevealed places, no live
-  standings). Everything else stays member-only.
+  standings). Everything else stays member-only. (§4.3, §4.4, §4.11, §4.12)
 - ★ Practice runs use the **REAL standings** and play on the real big screen "much like the real
   thing", tagged "Practice". No pairing: the owner accepts that anyone who opens the public page
   during a practice can see it. Counselor phones still never mirror a practice, and a practice
-  still never buzzes phones and never replaces the real reveal's grid.
-- The bracket bye rule (fewest points this week among the Round 1 winners) stays, accepting the
-  small hint about who is behind.
+  still never buzzes phones and never replaces the real reveal's grid. (§4.3, §4.6)
+- The bracket bye rule (fewest points this week among the Round 1 winners; junior's 6-team
+  bracket) stays, accepting the small hint about who is behind. (§4.12 row 17)
+
+**What those answers force** (design decisions taken here, each explained where it is built; the
+owner can overrule any of them):
+- ONE public node per camp, `<root>/revealPublic/{real,practice}`: readable by anyone, written by
+  editors only. It replaces the member-read `reveal` and `revealPractice` nodes and carries only
+  revealed places, then the frozen grid until 8 AM. The private order stays in the editor-only
+  `revealFull/{real,practice}` (§4.3).
+- A page with no sign-in can't write, so the `revealScreens` heartbeat is gone: the remote no
+  longer says "2 screens online" and the pre-start check becomes a reminder row (§4.3, §4.6). It
+  also can't read `state/teams`, so team names ride in the node as each place is revealed, and P2
+  team photos never appear on the TV (§4.11).
+- No member keys in the public node: counselors see "Started 7:31", not "by Jenn"; directors
+  still see who started it, from the editor-only `revealFull` (§4.3, §4.9).
+- The node is deleted after 8 AM by the first director phone that sees it expired (the rules
+  refuse an earlier delete) and every reader ignores an expired node anyway (§4.5, §4.10). The
+  Saturday champion line is remembered on each phone, because the node is empty by then (§3.3).
+- A practice shows the real standings in public while it plays; the Practice switch says so in
+  plain words (§4.6).
 
 Project 2 decisions honoured here: no camp before June 2027; both camps roll out together;
 new-year setup and the "edited here / original week" switch are owner-only; double points as
@@ -260,7 +289,7 @@ scroll anchoring), so nothing under the reader's eyes moves (§13.6).
 | Standings card | Games tab, directors only. Viewers: reveal grid only |
 | Meal cleanup card | Now after meals; More → Meal cleanup; Director → Award points |
 | Memory verse card | Now at Bible study; More → Memory verse; Director → Award points |
-| Quick points card | Director → Award points (counselors only ever see quick points inside a revealed grid) |
+| Quick points card | Director → Games standings (tap a team: two taps) and Director → Award points for corrections; no moment on Now (owner answer). Counselors only ever see quick points inside a revealed grid |
 | Six "Hide from viewers" switches | Director → What counselors see (standings switch retired: secrecy is now the rule) |
 | `#game-view` (appended under the page) | game takeover |
 | Footer (presence, camp chip, data stamp, version, Settings) | More footer; camp chip becomes More → Camp; Settings rows are spread into More |
@@ -479,11 +508,14 @@ open".
 strip), your team's assignment first (the 2026 cleanup plan is exactly this). Otherwise the
 generic card. After "Camp's over" the tab shows a calm end card: "See you next year" and the
 week's champion, **by name and shield only**. The grid's 8 AM rule doesn't cover this line on
-purpose: `revealView` returns `champion: [teamId…]` (no points, no other places) from a
-**finale** reveal whose 1st-place group was shown, and keeps returning it until the camp week
-ends (P2 `campWeek().phase` after the week), while everything else in the view expires at
-8 AM. The champion was crowned in front of the whole camp; the numbers stay secret. A test pins
-that this path never reads `p/g/s/b/v/m/c`.
+purpose, but the public node is emptied at 8 AM (§4.10), so the line can't ride on it: when a
+phone sees a **finale** reveal whose 1st-place group was shown, it remembers
+`champion: [{id, name}]` (no points, no other places) in `lsKey('campScoreboardChampion')` and
+keeps returning it until the camp week ends (P2 `campWeek().phase` after the week), while
+everything else in the view expires at 8 AM. The champion was crowned in front of the whole
+camp; the numbers stay secret. A phone that was closed during the ceremony just shows "See
+you next year" without the champion line (accepted). A test pins that this path never reads
+`p/g/s/b/v/m/c`; the key joins `clearLocalData`'s wipe list.
 
 **Between blocks** (a gap with no block): the card shows "Up next in 12 min" as its title with
 the next block under it.
@@ -522,8 +554,8 @@ if a director missed the lunch moment, it's still one tap away.
 
 | Screen | Before a reveal | During | After (until 8 AM next day) |
 |---|---|---|---|
-| **Director remote** (More → Run the reveal) | ready state: mini TV "Waiting…", pre-start checks, Practice switch, Buzz switch, **Start the reveal** (mockup 06) | mini TV mirrors the big screen; ladder; masked private up-next; Back; huge Reveal button; End reveal (mockups 07, 07b, 07c) | "Last reveal ended 7:52 PM" + Start a new reveal (07c) |
-| **Big screen** (current-standings.html, any signed-in member) | "Waiting for the directors…" (mockup 11) | mirrors the reveal (or a practice run, tagged "Practice"): intro, each place's hero, the docked board, champion (Friday), final table | back to waiting the moment it ends |
+| **Director remote** (More → Run the reveal) | ready state: mini TV "Waiting…", pre-start checks, Practice switch (the REAL standings, tagged Practice), Buzz switch, **Start the reveal** (mockup 06) | mini TV mirrors the big screen; ladder; masked private up-next; Back; huge Reveal button; End reveal (mockups 07, 07b, 07c) | "Last reveal ended 7:52 PM" + Start a new reveal (07c) |
+| **Big screen** (current-standings.html, public: no sign-in) | "Waiting for the directors…" (mockup 11) | mirrors the reveal (or a practice run, tagged "Practice"): intro, each place's hero, the docked board, champion (Friday), final table | back to waiting the moment it ends |
 | **Counselor phone** | no standings anywhere | Now becomes the live mirror; other tabs show the red strip (mockup 05). At the final table both go: Now is the normal Now with the full grid under it | Now and Games show the frozen revealed grid until 8 AM (mockup 05b) |
 | **Director phone** (not running it) | live standings in Games | same mirror as counselors + "Open the remote" | live standings as always |
 
@@ -569,19 +601,20 @@ iPhones have no `navigator.vibrate` (vendor/jelly.js:120 guards it, no fallback)
 
 ### 4.3 Data: exact RTDB shape
 
-Four sibling nodes per camp root (`<root>` = `campScoreboard` | `seniorScoreboard`), beside
+Two sibling node families per camp root (`<root>` = `campScoreboard` | `seniorScoreboard`), beside
 `state`, `chat` and `push`, never inside `state` (which is sealed to `SYNC_KEYS`, diffed, cached
-and three-way merged):
+and three-way merged). Each has two children, `<mode>` = `real` | `practice`, so a rehearsal can
+never touch the real reveal:
 
 ```
-<root>/reveal                                  member-read, editor-write
+<root>/revealPublic/<mode>                     ★ ANYONE can read (no sign-in); editors write
   ctl:
     v          1                               schema version
     id         "r1kz9fxq-4hd2"                 /^r[a-z0-9]{6,12}-[a-z0-9]{4}$/, new per Start
     seq        7                               +1 per command (compare-and-set)
     phase      "intro"|"live"|"champion"|"table"|"ended"
     cur        2                               group on the big screen, −1 = intro
-    shown      3                               groups published to phones (never decreases)
+    shown      3                               groups published (never decreases)
     teams      6                               team count at the freeze ("N still to come")
     finale     false                           decided at Start: camp day == finaleDow()
     at         1793055360123                   server time of this command (TV animation anchor)
@@ -590,216 +623,285 @@ and three-way merged):
     ca         1793055059870                   the director's serverNow() at the Start tap;
                                                the rules refuse a Start whose ca is > 60 s old
     startedAt  1793055060123                   server time of Start
-    startedBy  "jenn,doe@gmail,com"            member key
-    by         "patricksimpson,fx@gmail,com"   member key of this command
-    until      1793098800000                   08:00 camp time the day after startedAt's camp date
+    until      1793098800000                   real: 08:00 camp time the day after startedAt's
+                                               camp date; practice: startedAt + 2 h (rules cap: 3 h)
     endedAt?   …                               set with phase "ended"
     endKind?   "done"|"early"
-    epoch?     "w20270621"                     P2 epoch; clients ignore a mismatch
+    epoch?     "w20270621"                     P2 epoch; phones ignore a mismatch (the TV can't read it)
   pub:
-    g0: { place: 6, e: { t5: { p:15, g:1, s:1, b:1, v:1, m:1, c:0 } } }
-    g1: { place: 5, e: { t4: { p:18, g:1, s:1, b:2, v:2, m:0, c:0 } } }
-    g2: { place: 4, e: { t0: { p:22, g:2, s:1, b:1, v:1, m:3, c:0 } } }
-    …                                          only groups < shown; a tie is one group with 2+ entries
+    g0: { place: 6, e: { t5: { nm:"Pumpkins", k:"gold", p:15, g:1, s:1, b:1, v:1, m:1, c:0 } } }
+    g1: { place: 5, e: { t4: { nm:"Maples", k:"red", p:18, g:1, s:1, b:2, v:2, m:0, c:0 } } }
+    g2: { place: 4, e: { t0: { nm:"Ferocious Foxes", p:22, g:2, s:1, b:1, v:1, m:3, c:0 } } }
+    …                                          only groups < shown; a tie is one group with 2+ entries;
+                                               nm = team name (1–30 chars), k = P2 colour key (optional)
 
-<root>/revealFull                              editor-read, editor-write
-  r          "r1kz9fxq-4hd2"                   must equal reveal/ctl/id
+<root>/revealFull/<mode>                       editor-read, editor-write (NEVER public)
+  r          "r1kz9fxq-4hd2"                   must equal revealPublic/<mode>/ctl/id
   n          6                                 number of groups (places) in this freeze
   frozenAt   1793055060123
   lastScoreAt 1793054940000                    newest touchData stamp at the freeze
+  startedBy  "jenn,doe@gmail,com"              member key: the ONLY place a director's identity is kept
   g: { g0: {…}, g1: {…}, … g5: {…} }           the complete frozen order, same group shape
-
-<root>/revealScreens/<memberKey>/<slot>        editor-read; each device writes only its own row
-  slot  "tv1"…"tv9" | "remote1"…"remote9"       fixed slots: at most 18 rows per member; the device
-                                                keeps its slot in localStorage, takes the first
-                                                free one when new
-  at    server now                              re-written on reconnect and every 60 s; onDisconnect().remove()
-  name? "Dining Hall TV"                         ≤ 40 chars, typed once on the TV page
-
-<root>/revealPractice                          member-read, editor-write
-  ctl   same shape as reveal/ctl                (its own id/seq/shown/sa; no `until`, no `ca` check)
-  pub   same shape as reveal/pub
-  full  { n, g: {…} }                           the made-up order: practice has nothing to hide,
-                                                so the remote's up-next reads it from here
 ```
 
-Why four nodes:
+Why this shape:
 
-- **`reveal` is everything a counselor phone or a TV may know**, in one listener, so one
-  multi-path update arrives as one snapshot.
-- **`revealFull` keeps unrevealed places out of counselors' memory and cache altogether.**
-  Secrecy is UI-only by the owner's choice, but this costs nothing and means the phones that
-  shouldn't know 1st place never receive it. It also gives every director's remote the same
-  private "up next" preview.
-- **`revealScreens`** gives the remote "2 screens online" (it counts `tv*` slots whose `at` is
-  under 3 minutes old, and lists them by name and account: "Dining Hall TV (Jenn)", so a counselor
-  with the TV page open on a phone shows up as exactly that, not as an anonymous screen); phones
-  online comes from the existing presence count.
-- **`revealPractice`** keeps rehearsals away from the real reveal. A practice Start can never
-  replace last night's reveal, so counselors keep their grid until 8 AM even if directors
-  rehearse at 7:30 in the morning. Counselor phones never attach to it; the TV page subscribes to
-  both nodes and shows a live real reveal in preference to a practice one.
-- Group *count* `n` is only in `revealFull`: putting it in `ctl` would tell counselors a tie
-  exists before it's revealed.
-- Names, emoji and crests are **not** frozen; every screen resolves them live from
-  `state/teams` (+ P2 team photos), so a rename mid-week shows correctly.
-- Sizes: ctl ≈ 330 B, a group ≈ 120 B, revealFull ≈ 1 KB. 40 listeners × ~12 commands ≈ 0.2 MB
-  per reveal. Spark-plan safe.
+- **`revealPublic` is the one public path in the database, and the only thing a big screen, a
+  counselor phone or a remote reads for the reveal.** One listener, so one multi-path update
+  arrives as one snapshot. It carries what has been revealed and nothing else: no unrevealed place
+  (a group can't even be written before its place is shown, §4.4), no member keys, no counselor
+  or director names (`ctl` has no `startedBy`/`by`, and the rules refuse unknown fields), no live
+  standings, no group count. Everything else in the database stays member-only.
+- **Why under each camp root, and not one top-level public node.** (a) Every path already goes
+  through `dbPath(sub)` and junior's existing paths stay byte-identical: this only adds a sibling.
+  (b) Writes use the camp's own `EDITOR(R)`, so no rule needs a cross-camp member lookup
+  (`rules.test.js` forbids them). (c) The two roots stay identical modulo the root name, and the
+  new-year wizard's atomic clear already lists camp-root paths. (d) The single anonymous-read
+  exception is one greppable line per root, which the rules test pins ("`revealPublic/.read` is the
+  only `true` read in either root"). A top-level `publicReveal/<camp>` would need a root-level
+  rule that looks at both camps' members.
+- **`<mode>` children, not two sibling nodes.** The rules are written once (`$mode`), the TV
+  reads both with one listener, and counselor phones attach to `revealPublic/real` only, so not
+  even a practice's bytes reach them. A practice Start writes `practice` and can never replace
+  the real reveal, so counselors keep their grid until 8 AM even if directors rehearse at 7:30 in
+  the morning.
+- **`revealFull` keeps unrevealed places out of the public node, out of counselors' memory and
+  cache, and out of any stranger's reach.** Counselors' secrecy is UI-only by the owner's choice,
+  but this costs nothing and means a phone (or a `curl`) that shouldn't know 1st place never
+  receives it. It also gives every director's remote the same private "up next" preview, **for a
+  practice too**: a practice uses the real standings, so its not-yet-shown places are as secret as
+  a real reveal's.
+- **There is no screens node any more.** The old `revealScreens` heartbeat (the remote's "2
+  screens online") needed the TV page to sign in and write. A public, read-only page can't, and an
+  anonymously writable path is the one thing this design refuses. The remote shows what it can
+  know (phones online from presence, the mini TV); the big screen itself says "Connected · this
+  screen is ready" for whoever is in the room, and the ready screen carries a plain reminder to
+  open it (§4.6).
+- Group *count* `n` is only in `revealFull`: putting it in `ctl` would tell everyone a tie exists
+  before it's revealed.
+- **Names are frozen into each place as it is revealed** (`nm`, `k`), because a page with no
+  sign-in can't read `state/teams`. They are the camp's own team names, public by the owner's
+  answer. The TV draws shields and flags from files shipped with the page, by team id; **P2 team
+  photos are never public** (member data, up to 100 000 characters each). Phones draw their own
+  `teamMark()` and may use their own short names, as everywhere in the app; `nm` is what the TV
+  and the fallback use.
+- **Public means tiny and bounded (Spark plan).** Outside a reveal the node doesn't exist (a read
+  answers `null`, a few bytes). From Start until 8 AM it holds a ctl of about 260 B plus about
+  130 B per revealed place: **about 1.0 KB for a full junior reveal, 0.8 KB for senior**. The
+  rules fix the shape (groups g0–g5, teams t0–t5, numbers in range, names ≤ 30 characters, no
+  other fields), so even a hostile director couldn't push one child past about 5 KB. A practice
+  adds a second child of the same size for as long as it lasts (End deletes it; it can't outlive
+  3 hours). Normal use is trivial: 40 phones and a few TVs download the node once plus about a
+  dozen small updates each, well under 10 KB per device per reveal. The read abuse to plan for is a
+  stranger polling the REST address in a loop (the database address is in the public repo): one read a
+  second costs about 1 KB × 45 000 s ≈ 45 MB per reveal night, and even ten reads a second, every
+  night of camp week, against both camps is about 4–5 GB of Spark's 10 GB a month. Reads can't
+  reach anything else: `.read` cascades down, never up, so `<root>.json`, `state`, `members` and
+  `revealFull` still answer `Permission denied`. **Connections are the one resource curiosity can
+  use up**: Spark allows 100 at once across the whole project (both camps, every phone, every TV
+  page), and a public page makes it easy for a few dozen curious teenagers to open one. A
+  connection needs no rule, so a script could always do this; the page only makes it likelier. So
+  the TV page holds its connection only while it is visible (`goOffline()` after 60 s hidden,
+  `goOnline()` on return: a TV never hides, a phone in a pocket does), the usual reveal evening
+  (about 40 phones and a few TVs) leaves plenty of headroom, and the Firebase console's
+  connections graph is worth a glance on the first real reveal night. **Kill switch** for reads: if
+  the usage graph ever shows polling, change `revealPublic/.read` from `true` to `MEMBER(R)` and
+  re-publish (one line, through the Appendix E runbook). Phones and remotes carry on; the big
+  screen shows "Waiting" until it is switched back. (Rules can't limit connections, so that switch
+  would not free one; if the cap were ever hit, the fix is to ask people to close the page.)
 
 ### 4.4 Rules (one publish, combined with P2's R1)
 
-Written with P2's macros (§8.1 there: `MEMBER(R)`, `EDITOR(R)`, `SELF(x)`, `SELFKEEP`,
-`NOWKEEP`, `INT(a,b)`, `STR(n)`); the real `database.rules.json` spells them out and
+Written with P2's macros (§8.1 there: `MEMBER(R)`, `EDITOR(R)`, `OWNER`, `SELF(x)`, `SELFKEEP`,
+`NOWKEEP`, `INT(a,b)`, `STR(n)`, `NESTR(n)`); the real `database.rules.json` spells them out and
 `tests/rules.test.js` re-expands and compares, junior and senior identical modulo the root name.
 
 ```jsonc
-"reveal": {
-  ".read": "MEMBER(R)",
-  ".write": "EDITOR(R)",
-  ".validate": "newData.hasChildren(['ctl'])",
-  "ctl": {
-    ".validate": "newData.hasChildren(['v','id','seq','phase','cur','shown','teams','finale','at','sa','ca','startedAt','startedBy','by','until'])
-      && newData.child('cur').val() < newData.child('shown').val()
-      && ( (data.exists() && newData.child('id').val() === data.child('id').val())
-           ? ( newData.child('seq').val() === data.child('seq').val() + 1
-               && data.child('phase').val() !== 'ended'
-               && newData.child('shown').val() >= data.child('shown').val()
-               && newData.child('shown').val() <= data.child('shown').val() + 1
-               && ( newData.child('shown').val() > data.child('shown').val()
-                      ? newData.child('sa').val() === now
-                      : newData.child('sa').val() === data.child('sa').val() )
-               && newData.child('ca').val() === data.child('ca').val()
-               && newData.child('startedAt').val() === data.child('startedAt').val()
-               && newData.child('until').val() === data.child('until').val()
-               && newData.child('finale').val() === data.child('finale').val() )
-           : ( newData.child('seq').val() === 1 && newData.child('shown').val() === 0
-               && newData.child('phase').val() === 'intro' && newData.child('startedAt').val() === now
-               && newData.child('sa').val() === now
-               && newData.child('ca').val() > now - 60000 && newData.child('ca').val() <= now + 60000 ) )",
-    "v":         { ".validate": "INT(1,9)" },
-    "id":        { ".validate": "newData.isString() && newData.val().matches(/^r[a-z0-9]{6,12}-[a-z0-9]{4}$/)" },
-    "seq":       { ".validate": "INT(1,9999)" },
-    "phase":     { ".validate": "newData.isString() && newData.val().matches(/^(intro|live|champion|table|ended)$/)" },
-    "cur":       { ".validate": "INT(-1,9)" },
-    "shown":     { ".validate": "INT(0,10)" },
-    "teams":     { ".validate": "INT(2,10)" },
-    "finale":    { ".validate": "newData.isBoolean()" },
-    "at":        { ".validate": "newData.isNumber() && newData.val() === now" },
-    "sa":        { ".validate": "newData.isNumber() && newData.val() <= now" },
-    "ca":        { ".validate": "newData.isNumber()" },
-    "startedAt": { ".validate": "NOWKEEP" },
-    "startedBy": { ".validate": "SELFKEEP" },
-    "by":        { ".validate": "SELF(newData.val())" },
-    "until":     { ".validate": "newData.isNumber() && (newData.val() === data.val() || (newData.val() > now && newData.val() <= now + 172800000))" },
-    "endedAt":   { ".validate": "NOWKEEP" },
-    "endKind":   { ".validate": "newData.isString() && newData.val().matches(/^(done|early)$/)" },
-    "epoch":     { ".validate": "STR(24)" },
-    "$other":    { ".validate": false }
-  },
-  "pub": {
-    "$g": {
-      ".validate": "$g.matches(/^g[0-9]$/) && newData.hasChildren(['place','e'])
-        && (!data.exists() || newData.parent().parent().child('ctl').child('id').val() !== data.parent().parent().child('ctl').child('id').val())
-        && ( ($g === 'g0' && SHOWN >= 1) || ($g === 'g1' && SHOWN >= 2) || ($g === 'g2' && SHOWN >= 3)
-          || ($g === 'g3' && SHOWN >= 4) || ($g === 'g4' && SHOWN >= 5) || ($g === 'g5' && SHOWN >= 6)
-          || ($g === 'g6' && SHOWN >= 7) || ($g === 'g7' && SHOWN >= 8) || ($g === 'g8' && SHOWN >= 9)
-          || ($g === 'g9' && SHOWN >= 10) )",
-        // SHOWN = newData.parent().parent().child('ctl').child('shown').val()  (spelled out in the file;
-        // rules have no parseInt, hence the enumeration). A group can only be published once its
-        // place has been shown, so even a buggy director client can't push 1st place to phones early.
-      "place": { ".validate": "INT(1,10)" },
-      "e": {
-        ".validate": "newData.hasChildren()",
-        "$tid": {
-          ".validate": "$tid.matches(/^t[0-9]$/) && newData.hasChildren(['p','g','s','b'])",
-          "p": { ".validate": "INT(-9999,99999)" },
-          "g": { ".validate": "INT(0,99)" }, "s": { ".validate": "INT(0,99)" }, "b": { ".validate": "INT(0,99)" },
-          "v": { ".validate": "INT(-9999,99999)" }, "m": { ".validate": "INT(-9999,99999)" }, "c": { ".validate": "INT(-9999,99999)" },
-          "$other": { ".validate": false }
-        }
-      },
-      "$other": { ".validate": false }
-    }
-  },
-  "$other": { ".validate": false }
+"revealPublic": {
+  ".read": true,        // ★ the ONE anonymous-readable path in either camp root. `.read` cascades down
+                        // only: <root>, state, members, revealFull … all still need membership
+  ".write": "EDITOR(R) && ( !data.child('real').exists() || newData.child('real').exists()
+               || data.child('real').child('ctl').child('until').val() <= now || OWNER )",
+        // An editor may start, drive, replace or end a reveal. DELETING the real reveal is allowed
+        // only once its `until` (08:00 next day) has passed on the SERVER's clock, so a wrong phone
+        // clock or a buggy client can't erase counselors' grid early; OWNER (the new-year wizard)
+        // may clear it at any time. Deleting `practice` is never restricted.
+  "$mode": {
+    ".validate": "$mode.matches(/^(real|practice)$/) && newData.hasChildren(['ctl'])",
+    "ctl": {
+      ".validate": "newData.hasChildren(['v','id','seq','phase','cur','shown','teams','finale','at','sa','ca','startedAt','until'])
+        && newData.child('cur').val() < newData.child('shown').val()
+        && ( (data.exists() && newData.child('id').val() === data.child('id').val())
+             ? ( newData.child('seq').val() === data.child('seq').val() + 1
+                 && data.child('phase').val() !== 'ended'
+                 && newData.child('shown').val() >= data.child('shown').val()
+                 && newData.child('shown').val() <= data.child('shown').val() + 1
+                 && ( newData.child('shown').val() > data.child('shown').val()
+                        ? newData.child('sa').val() === now
+                        : newData.child('sa').val() === data.child('sa').val() )
+                 && newData.child('ca').val() === data.child('ca').val()
+                 && newData.child('startedAt').val() === data.child('startedAt').val()
+                 && newData.child('until').val() === data.child('until').val()
+                 && newData.child('finale').val() === data.child('finale').val() )
+             : ( newData.child('seq').val() === 1 && newData.child('shown').val() === 0
+                 && newData.child('phase').val() === 'intro' && newData.child('startedAt').val() === now
+                 && newData.child('sa').val() === now
+                 && newData.child('ca').val() > now - 60000 && newData.child('ca').val() <= now + 60000 ) )",
+      "v":         { ".validate": "INT(1,9)" },
+      "id":        { ".validate": "newData.isString() && newData.val().matches(/^r[a-z0-9]{6,12}-[a-z0-9]{4}$/)" },
+      "seq":       { ".validate": "INT(1,9999)" },
+      "phase":     { ".validate": "newData.isString() && newData.val().matches(/^(intro|live|champion|table|ended)$/)" },
+      "cur":       { ".validate": "INT(-1,5)" },
+      "shown":     { ".validate": "INT(0,6)" },
+      "teams":     { ".validate": "INT(2,6)" },
+      "finale":    { ".validate": "newData.isBoolean()" },
+      "at":        { ".validate": "newData.isNumber() && newData.val() === now" },
+      "sa":        { ".validate": "newData.isNumber() && newData.val() <= now" },
+      "ca":        { ".validate": "newData.isNumber()" },
+      "startedAt": { ".validate": "NOWKEEP" },
+      "until":     { ".validate": "newData.isNumber() && (newData.val() === data.val() || (newData.val() > now && newData.val() <= now + ($mode === 'practice' ? 10800000 : 172800000)))" },
+      "endedAt":   { ".validate": "NOWKEEP" },
+      "endKind":   { ".validate": "newData.isString() && newData.val().matches(/^(done|early)$/)" },
+      "epoch":     { ".validate": "STR(24)" },
+      "$other":    { ".validate": false }          // no startedBy, no by, no member key of any kind
+    },
+    "pub": {
+      "$g": {
+        ".validate": "$g.matches(/^g[0-5]$/) && newData.hasChildren(['place','e'])
+          && (!data.exists() || newData.parent().parent().child('ctl').child('id').val() !== data.parent().parent().child('ctl').child('id').val())
+          && ( ($g === 'g0' && SHOWN >= 1) || ($g === 'g1' && SHOWN >= 2) || ($g === 'g2' && SHOWN >= 3)
+            || ($g === 'g3' && SHOWN >= 4) || ($g === 'g4' && SHOWN >= 5) || ($g === 'g5' && SHOWN >= 6) )",
+          // SHOWN = newData.parent().parent().child('ctl').child('shown').val()  (spelled out in the file;
+          // rules have no parseInt, hence the enumeration). A group can only be published once its
+          // place has been shown, so even a buggy director client can't put 1st place in the PUBLIC
+          // node early.
+        "place": { ".validate": "INT(1,6)" },
+        "e": {
+          ".validate": "newData.hasChildren()",
+          "$tid": {
+            ".validate": "$tid.matches(/^t[0-5]$/) && newData.hasChildren(['nm','p','g','s','b'])",
+            "nm": { ".validate": "NESTR(30)" },
+            "k":  { ".validate": "newData.isString() && newData.val().matches(/^[a-z]{2,12}$/)" },
+            "p": { ".validate": "INT(-9999,99999)" },
+            "g": { ".validate": "INT(0,99)" }, "s": { ".validate": "INT(0,99)" }, "b": { ".validate": "INT(0,99)" },
+            "v": { ".validate": "INT(-9999,99999)" }, "m": { ".validate": "INT(-9999,99999)" }, "c": { ".validate": "INT(-9999,99999)" },
+            "$other": { ".validate": false }
+          }
+        },
+        "$other": { ".validate": false }
+      }
+    },
+    "$other": { ".validate": false }
+  }
 },
 "revealFull": {
   ".read": "EDITOR(R)",
   ".write": "EDITOR(R)",
-  ".validate": "newData.hasChildren(['r','n','frozenAt','g']) && newData.child('r').val() === newData.parent().child('reveal').child('ctl').child('id').val()",
-  "r":           { ".validate": "newData.isString() && newData.val().matches(/^r[a-z0-9]{6,12}-[a-z0-9]{4}$/)" },
-  "n":           { ".validate": "INT(1,10)" },
-  "frozenAt":    { ".validate": "NOWKEEP" },
-  "lastScoreAt": { ".validate": "newData.isNumber() && newData.val() <= now" },
-  "g":           { "$g": { /* same group shape as reveal/pub/$g, without the id clause */ } },
-  "$other":      { ".validate": false }
-},
-"revealScreens": {
-  ".read": "EDITOR(R)",
-  "$memberKey": {
-    ".write": "SELF($memberKey) && (!newData.exists() || MEMBER(R))",
-    ".validate": "newData.hasChildren()",               // as presence: no strings or booleans here
-    "$slot": {
-      ".validate": "$slot.matches(/^(tv|remote)[1-9]$/) && newData.hasChildren(['at'])",
-      "at":   { ".validate": "newData.isNumber() && newData.val() === now" },
-      "name": { ".validate": "STR(40)" },
-      "$other": { ".validate": false }
-    }
+  "$mode": {
+    ".validate": "$mode.matches(/^(real|practice)$/) && newData.hasChildren(['r','n','frozenAt','startedBy','g'])
+      && newData.child('r').val() === newData.parent().parent().child('revealPublic').child($mode).child('ctl').child('id').val()",
+    "r":           { ".validate": "newData.isString() && newData.val().matches(/^r[a-z0-9]{6,12}-[a-z0-9]{4}$/)" },
+    "n":           { ".validate": "INT(1,6)" },
+    "frozenAt":    { ".validate": "NOWKEEP" },
+    "lastScoreAt": { ".validate": "newData.isNumber() && newData.val() <= now" },
+    "startedBy":   { ".validate": "SELFKEEP" },
+    "g":           { "$g": { /* same group shape as revealPublic/<mode>/pub/$g, without the id and SHOWN clauses */ } },
+    "$other":      { ".validate": false }
   }
-},
-"revealPractice": {
-  ".read": "MEMBER(R)",
-  ".write": "EDITOR(R)",
-  // ctl: the reveal/ctl block minus `until` and the `ca` window (same seq/shown/sa CAS);
-  // pub: the reveal/pub block; full: { n: INT(1,10), g: { $g: group } }; $other false.
 }
 ```
 
-What the rules guarantee: only directors can start or drive a reveal; two remotes pressing at
-once can't both succeed (`seq` must be exactly one more, `shown` can only grow by one); an
-ended reveal can't be revived (Start makes a new one); a published place can't be quietly
-rewritten inside the same reveal, and can't be published before its place is shown; a Start
-that sat in an offline queue for more than a minute can't land and wipe a live reveal; phones'
-lag anchor (`sa`) moves only when a new place is shown; counselors can never read `revealFull`
-or the screens list, and can't flood the screens list; nobody can write a stamp that isn't
-server time.
+There is no `revealScreens` block and no `revealPractice` block: the TV page can't write (it has no
+sign-in), and a practice is the `practice` child of the two blocks above.
 
-**Checked in the emulator during review** (probes in the session scratchpad,
-`critique/secrecy-stability/`): the `revealFull.r === reveal/ctl/id` cross-check inside one
-multi-path update holds; the `pub/$g` id clause refuses rewriting g0 inside the same reveal;
-the `sa` clause (grows only with `shown`) and the `ca` window (a Start replayed 150 s later is
-refused, a fresh one accepted) work; the group-vs-`shown` clause refuses publishing g5 while
-`shown` is 3 and still allows Next with g0/g1. They are written into `tests/emulator/reveal.mjs`
-(opt-in): Start as editor; Start as viewer refused; viewer reads `reveal` OK and `revealFull`
-refused; stale `seq` refused; `shown` +2 refused; command after `ended` refused; replace with a
-new id accepted; `at` ≠ now refused; Back/phase commands keep `sa`, Next refreshes it; stale
-`ca` Start refused; early group refused; screens row for another member refused; a string or
-boolean at `revealScreens/<me>` refused; a 19th slot refused; practice writes never touch
-`reveal`.
+What the rules guarantee: **anyone can read `revealPublic` and nothing else; nobody without a
+sign-in can write anything, anywhere**; only directors can start or drive a reveal; two remotes
+pressing at once can't both succeed (`seq` must be exactly one more, `shown` can only grow by
+one); an ended reveal can't be revived (Start makes a new one); a published place can't be quietly
+rewritten inside the same reveal, and can't be published before its place is shown, so **no
+unrevealed place can be in the public node even if a client is buggy**; the node has no field that
+is meant to hold a member key or a counselor name (`$other: false` everywhere; the only strings are
+`id`, `phase`, `endKind`, `epoch`, a team name ≤ 30 characters and a colour key); a Start that sat
+in an offline queue for more than a minute can't land and wipe a live reveal; phones' lag anchor
+(`sa`) moves only when a new place is shown; counselors can never read `revealFull` (the complete
+order); a real reveal can't be deleted before its 8 AM `until` (server clock) except by the owner's
+new-year wizard; a practice can't outlive 3 hours; nobody can write a stamp that isn't server
+time. What rules can't promise: that the numbers or names a director publishes are true, or that
+the node is deleted promptly after 8 AM (the app does that, §4.5; every reader ignores an expired
+node either way).
 
-Publish order: the rules go out in P2's R1 PUT (same runbook, Appendix E there), before any
-client that writes them. Until then the client is fail-closed (§4.12).
+**Emulator status, honestly.** In review, the earlier shape of these rules (a member-read `reveal`
+node, one level shallower) was run in the emulator (probes in the session scratchpad,
+`critique/secrecy-stability/`): the `revealFull.r === ctl/id` cross-check inside one multi-path
+update, the `pub/$g` id clause, the `sa` clause, the `ca` window and the group-vs-`shown` clause all
+behaved as written. The shape above adds a `$mode` level, an anonymous `.read`, the delete clause
+and tighter bounds, and **none of that has been run yet**: `tests/emulator/reveal.mjs` (opt-in,
+written in BUILD-PLAN Step 10) must prove every clause before the publish. Its cases:
+
+- *Anonymous:* GET `revealPublic` and `revealPublic/real/ctl` ALLOWED (`null` before any Start);
+  GET `revealFull`, `<root>`, `state`, `members`, `chat` DENIED; PUT / DELETE anywhere DENIED,
+  including `revealPublic/real` and `revealPublic/practice`; a signed-in counselor's write DENIED.
+- *Editor:* Start accepted; Start with a stale `ca` refused; stale `seq` refused; `shown` +2
+  refused; command after `ended` refused; replace with a new id accepted; `at` ≠ now refused;
+  Back/phase commands keep `sa`, Next refreshes it; a group published early (g5 while `shown` is 3)
+  refused; rewriting g0 inside the same reveal refused.
+- *Shape:* a `by`, `startedBy`, `name` or any unknown field in `ctl`, a group or an entry refused;
+  `t6`, `g6`, `place` 7, `teams` 7 refused; a string where a number is required refused; an entry
+  without `nm` refused; a 31-character `nm` refused; a real `until` more than 48 h out and a
+  practice `until` more than 3 h out refused.
+- *Delete:* an editor's delete of `real` before `until` refused (also as a whole-`revealPublic`
+  delete), after `until` accepted (the expired node is seeded with rules disabled); delete of
+  `practice` accepted any time; the owner's delete accepted any time.
+- *`revealFull`:* a counselor's read refused; `r` ≠ the ctl id refused; `startedBy` ≠ the writer's
+  key refused.
+- A practice write leaves `real` byte-identical.
+
+Publish order: the rules go out in P2's R1 PUT (same runbook, Appendix E there), before any client
+that writes them. That runbook's probe block gains the public path's checks: an unauthenticated
+read of `<root>/revealPublic` answers `null` (the one deliberate exception, and, because the old
+rules answer `Permission denied`, also an unauthenticated proof that R1 is live), a write is
+refused, and everything else still answers `Permission denied`. Until the rules are live the
+client is fail-closed (§4.12) and the TV page shows Waiting.
 
 ### 4.5 Writes
 
 All from a director's phone, through one module (`reveal.js`, loaded after push.js, every hook
-`typeof`-guarded like chat.js/push.js):
+`typeof`-guarded like chat.js/push.js). `<mode>` is `real`, or `practice` when the Practice switch
+is on; a practice writes only its own pair of nodes:
 
 - **Start**: compute the freeze (§4.6), then **one** root-level `update()`:
-  `{ 'reveal': { ctl: {v:1, id, seq:1, phase:'intro', cur:-1, shown:0, teams, finale, at:TS,
-  sa:TS, ca:serverNow(), startedAt:TS, startedBy:me, by:me, until, epoch}, pub: null },
-  'revealFull': {r:id, n, frozenAt:TS, lastScoreAt, g} }`. Writing `reveal` whole removes the
-  previous reveal's places, which is "a new reveal replaces the previous one". Start is
-  disabled while `pendingWrites > 0` or when `.info/connected` changed less than 10 s ago (a
-  socket that only looks alive), and the rules refuse a Start whose `ca` is over a minute old
-  (an offline-queued tap replayed later).
-- **Next / Back / End**: `update({ 'reveal/ctl': newCtl, 'reveal/pub/g<k>': group })`, the `pub`
-  path only when `shown` grows. `newCtl` is the whole ctl with `seq+1`, `at:TS`, `by:me`, and
-  `sa:TS` only when `shown` grows (otherwise the old `sa`).
-- **Practice** writes the same shapes to `revealPractice` (made-up `full` order included) and
-  never touches `reveal`, `revealFull` or push.
-- **On refusal** (`PERMISSION_DENIED`): re-read `reveal` once, then toast "Jenn already showed
-  4th place" (name from `ctl.by` through the member directory, never free text), and the remote
+  `{ 'revealPublic/<mode>': { ctl: {v:1, id, seq:1, phase:'intro', cur:-1, shown:0, teams, finale,
+  at:TS, sa:TS, ca:serverNow(), startedAt:TS, until, epoch}, pub: null },
+  'revealFull/<mode>': {r:id, n, frozenAt:TS, lastScoreAt, startedBy:me, g} }`. Writing
+  `revealPublic/real` whole removes the previous reveal's places, which is "a new reveal replaces
+  the previous one". Start is disabled while `pendingWrites > 0` or when `.info/connected` changed
+  less than 10 s ago (a socket that only looks alive), and the rules refuse a Start whose `ca` is
+  over a minute old (an offline-queued tap replayed later).
+- **Next / Back / End**: `update({ 'revealPublic/<mode>/ctl': newCtl,
+  'revealPublic/<mode>/pub/g<k>': group })`, the `pub` path only when `shown` grows. `newCtl` is
+  the whole ctl with `seq+1`, `at:TS`, and `sa:TS` only when `shown` grows (otherwise the old
+  `sa`). The group carries its `nm`/`k` from the freeze: exactly one place's worth goes public.
+  A **real** End never deletes: it sets phase `ended` and the grid stays until 8 AM.
+- **Practice** writes the same shapes with `<mode> = 'practice'`, from the same real freeze, and
+  never touches `revealPublic/real`, `revealFull/real` or push. Its `until` is Start + 2 hours
+  (the rules cap it at 3). **End practice** is the one command that deletes: `update({'revealPublic/practice': null,
+  'revealFull/practice': null})`, so a practice's real standings leave the public node the moment
+  the rehearsal ends.
+- **Retiring an expired reveal (the writer's half of the 8 AM rule).** On **editor** devices only,
+  `retireExpiredReveal()` runs beside `expireReveal()` (§4.10: the tick, `visibilitychange`,
+  `pageshow`, the offset handler) but sends at most once a minute, only while `remoteReady` and
+  `.info/connected`, and learns what exists from the `real` listener plus one `once('value')` of
+  `revealPublic` (about 1–2 KB) on opening, on waking and every 5 minutes while the page is
+  visible. If `real` has passed its `until`, or `practice` has passed its own (or was left in
+  phase `ended`), it sends `update({'revealPublic/real': null, 'revealFull/real': null})` (and the
+  practice pair likewise). The rules decide by SERVER time: a director phone whose clock runs
+  early is simply refused (swallowed, retried next minute), and one that runs late deletes a
+  little late. Two directors doing it at once both succeed (deleting nothing is allowed). If no
+  director opens Camp after 8 AM the node stays in the database until one does (or the next Start
+  replaces it): nothing in the app or on the TV shows it (§4.10, §4.11), and it holds only what the
+  whole camp already saw. Counselor phones never delete (not editors); they only ignore it.
+- **On refusal** (`PERMISSION_DENIED`): re-read `revealPublic/<mode>` once, then toast "Another
+  director already showed 4th place" (the public node carries no names, by design), and the remote
   follows the server's ctl.
 - **Every reveal consumer reads acknowledged state only.** The SDK echoes a write locally before
   the server answers and reverts it if the rules refuse it (the two-remotes race). On a
@@ -809,12 +911,11 @@ All from a director's phone, through one module (`reveal.js`, loaded after push.
   from the write's completion callback followed by a `once('value')` re-read. Counselor phones
   never write, so for them the listener snapshot is already confirmed. While a command is in
   flight the button shows its recharge state.
-- **`revealFull` and `revealScreens` are fetched, not listened to**: `once('value')` when the
-  remote opens, after each acknowledged command, and (screens only) every 20 s while the remote
-  is open. No long-lived editor-only listener exists, so the terminal-read rule (CLAUDE.md) can't
-  bite: a counselor promoted to director mid-camp gets the up-next preview the first time they
-  open the remote, with no reload. Nothing from `revealFull` is persisted; on demotion the
-  in-memory copy is dropped with the remote.
+- **`revealFull` is fetched, not listened to**: `once('value')` when the remote opens and after
+  each acknowledged command. No long-lived editor-only listener exists, so the terminal-read rule
+  (CLAUDE.md) can't bite: a counselor promoted to director mid-camp gets the up-next preview the
+  first time they open the remote, with no reload. Nothing from `revealFull` is persisted; on
+  demotion the in-memory copy is dropped with the remote.
 - **Offline / reconnecting**: the big button (and Back) turn into a dashed, grey face:
   "Reconnecting… 2 s" over "Your taps would not reach the big screens" when `.info/connected` is
   false (07c state 3). No queued commands.
@@ -836,7 +937,8 @@ Computed on the director's phone with the app's own code: `medalCounts()` →
 `rankTeamsByPoints()` → `groupPlaces()` (ported from current-standings.html:467-476 into
 `reveal-core.js`: equal **points** share a place; inside a tie, entries are ordered by
 gold/silver/bronze then name). Each entry carries the whole row (`p` total, `g/s/b` medals, `v`
-verse, `m` meals, `c` quick points), which is "the full revealed score grid".
+verse, `m` meals, `c` quick points) plus the team's name (`nm`, cut to 30 characters rather than
+refused) and colour key (`k`), which is "the full revealed score grid".
 
 **Start is gated**; the ready screen shows each check as a row (mockup 06):
 
@@ -845,18 +947,26 @@ verse, `m` meals, `c` quick points), which is "the full revealed score grid".
 | This phone is up to date | `fbConnected`, `remoteReady`, `pendingWrites === 0`, `!dataEditPending`, `!remoteRefetchPending`, not `editorMidEntry()` | Start disabled: "Waiting for this phone to catch up…" |
 | Every game today is scored | today's games via `gamesForDay` with no result | warning only: "Pumpkin Pictionary has no score yet. Start anyway?" |
 | Last score saved | newest `touchData` stamp + who | shown as text: "Last score saved 7:29 PM by Patrick" |
-| Big screens ready | `revealScreens` `tv*` slots seen in the last 3 minutes, listed by name and account | warning only: "No big screen is connected" |
+| The big screen is open | nothing: a public, read-only page can't report in (§4.3) | a reminder row, never a gate: "Open the big screen at camp.patricksimpson.info/current-standings.html (senior: add ?camp=senior). It should say Waiting for the directors…" |
 
 Scores saved after the freeze are not in tonight's reveal, by design. If live standings differ
 from the freeze while a reveal is still at `intro`, the remote offers "Scores changed since you
 started · Start again".
 
-**Practice run** (switch on the ready screen, off by default): the remote freezes **made-up
-points** (the real teams in a shuffled order with invented totals) into `revealPractice`, and the
-big screens show a small "Practice" tag. Counselor phones never listen to `revealPractice`, and a
-practice run can't replace the real reveal, so last night's grid stays on counselors' phones
-until 8 AM whatever directors rehearse. Directors can rehearse on the real TV the afternoon
-before without leaking anything.
+**Practice run** (switch on the ready screen, off by default): the remote runs the same freeze
+on the **REAL standings** and plays it on the big screen "much like the real thing", tagged
+"Practice", writing to the `practice` child of `revealPublic` / `revealFull` instead of `real`. There
+is no pairing and no PIN: the page is public, so **anyone who opens the big-screen page while a
+practice is playing can see the places it has shown**, and the owner accepts that. The switch says
+so in plain words ("Shows the real standings on the big screen. Anyone watching it can see them."),
+and while it is on the Start button reads "Start a practice". Counselor phones never listen to
+`practice` (they attach to `revealPublic/real` alone, so not even its bytes reach them), a practice
+can't replace the real reveal, so last night's grid stays on counselors' phones until 8 AM
+whatever directors rehearse, and a practice never buzzes. The places a practice has not shown yet
+stay in the editor-only `revealFull/practice`, so a practice stopped at 3rd place has made
+exactly 6th–3rd public and nothing more. End practice deletes both practice nodes at once (a
+forgotten one expires after at most 3 hours and is removed by the next director phone that opens
+Camp, §4.5).
 
 **Buzz all 38 counselors** (switch; the count is the counselors on the members list; phones
 with alerts off get nothing): Start also sends the existing director alert "The standings
@@ -868,7 +978,8 @@ Worker change.
 
 ### 4.7 Timing: one clock for every screen
 
-Every screen renders the reveal as a pure function of `(ctl, pub, teams, serverNow())`:
+Every screen renders the reveal as a pure function of `(ctl, pub, serverNow())` (team names and
+colours ride in `pub`, §4.3):
 
 - **The TV beat** (unchanged from today's page): for a new `cur`, name only for 0–3 s, place and
   score at 3 s, medal/bonus breakdown at 4.5 s, docks to the board at 8 s, measured from
@@ -879,7 +990,13 @@ Every screen renders the reveal as a pure function of `(ctl, pub, teams, serverN
   hears it first; the phone confirms it. `sa` moves only when `shown` grows, so Back, "Crown the
   champions", "Show the final table", End and a reload never hide a place that phones already
   showed (keying off `at`, which every command rewrites, would have hidden 1st place again at the
-  climax).
+  climax). The lag is theatre, not secrecy: the public node already holds the place the moment
+  the director taps (§4.3), and the big screen shows the name for 3 s before the score. A place is
+  secret only until it is shown.
+- **The big screen has no sign-in but has the server's clock**: `.info/serverTimeOffset` is
+  available to an anonymous connection, and until it arrives the TV paints nothing from the node
+  (fail closed), so a TV whose own clock is wrong can neither show a stale reveal nor hide a
+  live one.
 - **Late join or reload** (TV or phone): renders the current frame statically. No replay of
   earlier places, no confetti unless the current place is still inside its first 3 seconds.
 - **Auto-end**: any screen treats a reveal whose phase isn't `ended` as ended (display only) when
@@ -896,12 +1013,12 @@ from "Open the remote" on Now while a reveal is live. Mockups 06, 07 (and 07-dar
 phones) and 07c (every other state).
 
 - **Blue roof** (`--roof` camp blue in both themes, 5px darker bottom edge): "‹ More" (labelled
-  back, 44px high; the only left chevron on the screen), title "Reveal", status chip "● Live · 2
-  screens" / "2 screens" / "No screens".
+  back, 44px high; the only left chevron on the screen), title "Reveal", status chip "● Live" /
+  "Ready" / "Practice".
 - **Mini TV** (16:9: 352×198 inside a 3px frame with a 5px edge): the same renderer and frame
   function the TV page uses (`reveal-core.js` → `tvFrame()`), scaled, always in the TV's light
   colours (the TV is always light). Not an iframe (index.html's CSP has no `frame-src 'self'`
-  and the boot guard refuses framing). Under it, one line: "2 screens · 11 phones" and "Screen
+  and the boot guard refuses framing). Under it, one line: "11 phones have Camp open" and "Screen
   stays on" (§4.5). The beat status lives on the big button, not here.
 - **Ladder**: ONE grouped list with hairlines (1st at the top, filling from the bottom up), 44px
   rows, not a stack of bordered boxes. Hidden rows sit on the paper-2 well with a lock: "Hidden
@@ -921,31 +1038,40 @@ phones) and 07c (every other state).
   chevron: "‹ More" leaves the remote, the rewind glyph moves the TV. Labels per §4.2.
 - **Small phones** (viewport under 700pt tall: iPhone SE 375×667, Android 360×640): the mini
   TV collapses to a 150×84 thumbnail beside a two-line status ("4th place on the big screen",
-  "2 big screens · 11 phones"), the dock loses its home-indicator padding where there is none,
+  "11 phones"), the dock loses its home-indicator padding where there is none,
   and the whole six-row ladder fits above the dock (mockup 07b, shot at 375×667 and 360×640).
   With more than six groups the ladder scrolls inside its own box and keeps the on-screen and
   up-next rows in view after every command (`scrollIntoView({block:'nearest'})` on the
   confirmed state).
 - **Someone else is driving**: no ownership. A second director opening the remote sees "Started
-  by Jenn at 7:31" and the same controls; both work; the server serialises them. Start becomes
-  "Start a new reveal" with a confirm when a reveal is live or showing.
+  by Jenn at 7:31" (read from the editor-only `revealFull`) and the same controls; both work; the
+  server serialises them. Start becomes "Start a new reveal" with a confirm when a real reveal is
+  live or showing (a practice Start never asks: it replaces nothing real).
+- **Practice mode** (the switch on the ready screen, §4.6): the roof chip reads "Practice", the
+  mini TV wears the same "Practice" tag as the big screen, the Start button reads "Start a
+  practice", and End practice deletes the practice's public places at once.
 
 ### 4.9 Counselor phones: the mirror
 
-- One listener on `<root>/reveal` attached in `initSync` after approval (beside presence and
-  chat). Its error callback sets `revealDenied` and degrades the reveal only, never
-  `fbRef`/`syncDenied`. It is member-readable, so it never needs re-attaching on a role change.
+- One listener on `<root>/revealPublic/real` attached in `initSync` after approval (beside
+  presence and chat; the path needs no sign-in, but the rule "no ref attaches before approval" is
+  about every ref). Its error callback sets `revealDenied` and degrades the reveal only, never
+  `fbRef`/`syncDenied`. It is publicly readable, so it never needs re-attaching on a role change.
+  It listens to the `real` child only: a practice's bytes never reach a phone.
 - `{ctl, pub}` cached under `lsKey('campScoreboardRevealCache')` for instant paint and offline,
-  added to `clearLocalData`'s wipe list (auth.test.js pin updated).
+  added to `clearLocalData`'s wipe list together with `lsKey('campScoreboardChampion')` (§3.3;
+  auth.test.js pin updated).
 - **`revealView(ctl, pub, serverNow, role)`** (pure, in `reveal-core.js`) is the only thing any
-  viewer renderer reads. It returns `{live, phase, startedBy, rows:[{place, tie, entries:[…]}],
+  viewer renderer reads. It returns `{live, phase, startedAt, rows:[{place, tie, entries:[…]}],
   onScreen, looking (the 3 s window after `sa`), remaining (teams not yet shown, from ctl.teams
   minus revealed entries, never from group count), until, expired, champion}`. It returns
   nothing (champion aside, §3.3) for a missing/denied/epoch-mismatched/`v`-too-new/expired
   reveal: **fail closed**. `expired` is computed from `serverNow()` at **paint time** in every
-  renderer, never cached.
+  renderer, never cached. Phones only ever pass it the `real` child; the TV page calls it per child
+  (real first, then practice) with the epoch check off, because it can't read the epoch (the
+  wizard's delete and `until` cover that).
 - Now during a live reveal (phases intro, live, champion; mockup 05): red strip "● Live on the
-  big screen · Started 7:31 by Jenn", title "Tonight's standings · 3 of 6 shown", then the
+  big screen · Started 7:31", title "Tonight's standings · 3 of 6 shown", then the
   ladder as ONE grouped list with hairlines: **"Still to come"** rows on the paper-2 well (one per
   remaining team, no place numbers, so a tie can't be inferred), then revealed rows with the
   place, shield, full name, medal line in words ("2 gold · 1 silver · 1 bronze"), points. The
@@ -984,39 +1110,67 @@ phones) and 07c (every other state).
   instead of relying on dirty-tab marking, because a quiet 8:00 brings no snapshot and so no
   `renderAll` (applyRemoteState 2848 renders only when `syncSignature()` changed). And every
   renderer that can draw the grid computes `expired` itself at paint time (above), so even a
-  missed call can't show points after 8 AM. Never recomputed from `state`.
+  missed call can't show points after 8 AM. Never recomputed from `state`. Editors also run
+  `retireExpiredReveal()` (§4.5), which deletes the data itself; everyone else's copy just goes
+  empty.
 - `until` = `etWallToEpoch(nextDay(campDateStr(startedAt)), 8 * 60)` using the DST-safe helper
   ported from push-worker/worker.js:456-466 into `camp-core.js` (P2 plans the same file). A
   reveal started after midnight still runs to 8 AM the next calendar day.
 
 ### 4.11 The big screen (current-standings.html)
 
-Rewritten as a subscriber; it no longer computes standings (P2 Stage T's `computeStandingsCore`
-parity work is dropped; T's hardening stays and lands first: `?camp=`, CSP, script moved to
-`current-standings.js`, sanitised DOM via `camp-core.js`, null-safe crests, 3-reloads/hour cap,
-identityKey parity so phone-number accounts can sign in).
+Rewritten as a **public, read-only subscriber**: it no longer computes standings (P2 Stage T's
+`computeStandingsCore` parity work is dropped) and it no longer signs in. What stays from P2's T,
+landing first: `?camp=`, the page's own CSP, the script moved to `current-standings.js`,
+sanitised DOM via `camp-core.js`, null-safe crests. What is dropped, because the page has no
+sign-in left to harden: T's 3-reloads-an-hour cap, the denied overlay, phone-account `identityKey`
+parity and the `setup/meta` read.
 
-- **Who can open it**: any signed-in member of the camp (counselor or director), as today. It
-  shows nothing but "Waiting for the directors…" unless a director runs a reveal (mockup 11).
-- **Reads**: `reveal` and `revealPractice` (on; a live real reveal wins), `state/teams` (on; a
-  child read under state's member `.read`; no results, bonuses or config), team photos (P2),
-  `.info/serverTimeOffset`, `.info/connected`, the member self-read. **Writes**: its own
-  `revealScreens` slot (`tv1`…`tv9`, optional name typed once and kept in localStorage).
-- **Waiting** when: no ctl, phase `ended`, auto-ended, rules denied, listener error, schema too
-  new, or offline with nothing cached. The waiting screen: camp mark, "Waiting for the
-  directors…", the teams' shields (senior: flag marks) bobbing gently (still and static when
+- **Who can open it**: anyone with the address. No sign-in, no Firebase Auth SDK on the page (its
+  `<script>` tag and the sign-in overlay are deleted), no member check, no pairing code.
+  `current-standings.html?camp=senior` shows the senior camp; junior is the default. It shows
+  nothing but "Waiting for the directors…" unless a director runs a reveal (mockup 11), and then
+  only what has been revealed so far.
+- **Reads exactly three things**: `<root>/revealPublic` (one listener, both children; a live real
+  reveal wins over a practice), `.info/serverTimeOffset` and `.info/connected`. Nothing else: not
+  `state` (so no standings, results, teams or config), not `members`, not `setup`, not
+  `teamPhotos`. **Writes nothing**, so there is no TV heartbeat (§4.3). `tv.test.js` pins all of
+  it (no `firebase.auth`, no write call, no path but `revealPublic`, `goOffline` when hidden).
+- **Names and pictures** come from the node (`nm`, `k` per revealed place) and from files that ship
+  with the page: junior's shields in `images/` and senior's flag marks, chosen by team id from
+  camps.js. **P2 team photos never appear on the TV.**
+- **Waiting** when: no live `real` reveal and no live `practice`, phase `ended`, auto-ended,
+  `until` passed, schema too new, no server offset yet, or the listener was refused. The waiting
+  screen: camp mark, "Waiting for the directors…", the teams' built-in shields (no names, in their
+  fixed order, never standings order) bobbing gently (still and static when
   `prefers-reduced-motion` is set; the remote's mini TV uses the same renderer and follows the
   phone's `calmMotion()`), "Connected · this screen is ready", and one line telling directors
-  where the remote is.
+  where the remote is. A refused or failing listener adds a small "Can't reach the standings
+  feed" line (the SDK keeps retrying), so a rehearsal against rules that aren't published yet
+  doesn't sit on "Waiting" with no explanation.
 - **Mirroring**: `tvFrame()` → `{mode: waiting|intro|hero|board|champion|table, heroIdx, beat,
-  docked}`. Ties keep the shield "fight" for 2-way ties; 3-way ties show side by side. A
-  "Practice" tag in the corner when it is showing `revealPractice`. "Reconnecting…" chip when offline; jumps to
-  the current frame on return.
-- **No keyboard/click advancing** (the old 1087-1104 handlers are removed). If the signed-in
-  account is a director, arrow keys send the same commands as the remote (optional, D5b).
-- **Self-update** reloads only while waiting.
+  docked}`. Ties keep the shield "fight" for 2-way ties; 3-way ties show side by side. A "Practice"
+  tag in the corner when it is showing the `practice` child (a practice that has been idle past
+  the auto-end rule, §4.7, goes back to waiting like a real one). "Reconnecting…" chip when
+  offline; jumps to the current frame on return.
+- **No keyboard/click advancing** (the old 1087-1104 handlers are removed). The page has no
+  account, so it can't act as a remote either.
+- **Holds its connection only while visible**: `goOffline()` after 60 s with the tab hidden and
+  `goOnline()` on return (the page then repaints from the live node at once), so a phone left in
+  a pocket doesn't take one of Spark's 100 connections (§4.3). A TV never hides.
+- **Self-update** reloads only while waiting. The build stamp lives in `<meta name="tv-build">`.
 - Calm motion: the TV page loads `jelly-motion.js` and honours `prefers-reduced-motion` (no
   battery or switch on a TV; the TV has no More tab).
+- **Old pages during the rollout.** (1) A page from before the P2-T skeleton (v184 and earlier)
+  polls its own address and looks for the text `var TV_BUILD = '…'` in the HTML. Moving the
+  script out would hide that text, so every new build keeps the exact text in an HTML comment as
+  well, and an open TV still notices the new build (it reloads itself only on its intro screen,
+  otherwise it shows its update chip, as today). (2) A page from the interim builds (still signed
+  in, directors-only live view) keeps working until it reloads into this one; it never shows a
+  counselor anything. (3) This page against rules that aren't published yet: the read is refused,
+  so "Waiting" plus the small "Can't reach…" line, and nothing leaks. (4) Phones and TVs can be
+  updated in either order: a phone that doesn't know the node ignores it; a TV updated first
+  just waits. The rehearsal checklist still says "reload the TV once".
 
 ### 4.12 Secrecy: every leak path, closed
 
@@ -1031,16 +1185,18 @@ All gating is in code paths, never CSS (`html.view-only` leaves nodes in the DOM
 | 5 | Follow card rank pill + points (4873-4877) | removed; header identity has no numbers |
 | 6 | Point toasts / OS notifications / chimes (notifyPointChanges 3537) | editors only. Viewers get **result alerts**: "Inflatable Bowling: Pumpkins gold, Foxes silver, Maples bronze", "Foxes won silver in Inflatable Bowling!", from a diff of `prevRefs.results` against the new `results` **inside `applyRemoteState`** (not a lazily seeded module variable: v184's `detectMatchupChanges` seeds `lastBracketSlots` on its first call, 3193-3201, so the first live change after a quiet boot alerts nobody). The matchup baseline is seeded at `startApp()` from local state for the same reason |
 | 7 | Copy/Share standings (4410) | gated in JS by `canEdit()`; the "Medals so far" list stays allowed |
-| 8 | Quick points subtotals/ledger (renderBonuses) | Director → Award points only |
+| 8 | Quick points subtotals/ledger (renderBonuses) | directors only: tap a team in the Games standings, or Director → Award points; viewers never see them outside a revealed grid |
 | 9 | Verse "+N" per team | viewers: verse text only |
 | 10 | Cleanup "+pts" badges and ledger | viewers: rota only |
 | 11 | "+7 / +5 / +3 pts" chips on results (renderResult 6401, bracket summary 7794, bronze note 7762) | viewers: medal winners and game scores only; directors keep the chips |
 | 12 | "Suggested: gold/silver/bronze" in live watch (6321) | removed for viewers (it showed winners before a director saved) |
-| 13 | TV page live standings for any member | subscriber-only (§4.11) |
+| 13 | TV page live standings for any member | the TV page reads only the public `revealPublic` feed, with no sign-in and no path to `state` (§4.11). Until D5 the interim signed-in page shows live standings to directors only |
 | 14 | Hint-painted first frame from cached state (boot 9506-9516) | the viewer render path is the same code from the first frame; it reads only `revealView()` (cached reveal) and never `medalCounts()` |
 | 15 | Live role flip (setMemberRole 88-97) | a demoted editor's next `renderAll` drops every editor-only node (the Games standings root is emptied, not hidden) |
 | 16 | Team picker / notify copy promising point alerts (3516, 5062, ~5095) | rewritten: "You'll get alerts when your team plays and wins medals" |
-| 17 | Bracket bye (renderBracketBye 7687: "goes to the Round 1 winner with the fewest points this week") | the "fewest points" hint and suggestion stay editor-only (as today). Who HOLDS the bye is visible to everyone and lets a counselor infer which of three teams trails: a known game-rule leak, put to the owner (§18 Q4) |
+| 17 | Bracket bye (renderBracketBye 7687: "goes to the Round 1 winner with the fewest points this week") | **Owner-accepted (2026-10-27).** The rule stays exactly as it is, for junior's 6-team bracket (senior's 4-team bracket has no bye): the bye goes to the Round 1 winner with the fewest points this week. The "fewest points" reason and suggestion stay editor-only (as today). Who HOLDS the bye is visible to everyone and lets a counselor infer which of three teams trails: a known, accepted hint |
+| 18 | The public node (`revealPublic`, the big screen's feed) | by design only what has been revealed: the shape is enumerated and sealed (`$other: false`), a group can't be written before its place is shown (§4.4), there is no member-key field and no group count, and nothing from `revealFull` or `state` is copied in. That includes the frozen grid, which stays readable by address until 8 AM (owner's answer; it is what the whole camp saw on the screen). The rules can't check that a director's numbers or names are right |
+| 19 | Practice runs | owner-accepted: a practice plays the REAL standings and is public while it runs, so anyone with the page open sees the places it shows. It publishes only the places it has shown (the rest stays in the editor-only `revealFull/practice`), End deletes its public node at once, it can't outlive 3 h, phones never read it, it never buzzes |
 
 **One guard inside every points reader.** Secrecy is enforced where points are produced, not
 only where they are drawn: `standingsVisible()` (true for editors outside "Preview as a
@@ -1060,9 +1216,12 @@ recorder** in the harness that wraps every way text leaves the app (`showToast`,
 scenarios driven as a viewer (a result saved, a bonus, a verse award, a cleanup award, a result
 cleared, a role flip, a hint-painted first frame) asserting that no points, place or gap pattern
 (`/\bpts?\b/`, `/[+−-]\d+/`, ordinals outside the reveal roots, "trail", "behind", "ahead") reaches
-any sink.
+any sink; (4) a **public-node sweep**: a unit test feeds a known freeze through the command
+builders (a full reveal, a Back, an early End, a practice) and asserts that every key written to
+`revealPublic` is in the allowed set and that no member key, no director name and no id or name
+of a still-hidden team appears in any serialized write.
 
-**Old builds** ignore `reveal` and keep their old standings. The first new editor build seeds
+**Old builds** ignore `revealPublic` and keep their old standings. The first new editor build seeds
 `meta.hiddenCards.standings = true` and `meta.hiddenCards.bonus = true` once, so a not-yet-updated
 viewer phone at least hides the table and the ledger; the rest closes when it auto-updates (2
 minutes online). Ship D1 weeks before any reveal (there is no camp before June).
@@ -1071,28 +1230,33 @@ minutes online). Ship D1 weeks before any reveal (there is no camp before June).
 
 | Case | What happens |
 |---|---|
-| Two directors press Reveal at once | the first `update` wins; the second is refused atomically (its `pub` rides in the same update, so no place is skipped); the loser's remote re-reads and toasts who did it |
+| Two directors press Reveal at once | the first `update` wins; the second is refused atomically (its `pub` rides in the same update, so no place is skipped); the loser's remote re-reads and toasts that another director did |
 | Two directors press Start at once | both writes are whole-node; last writer wins; the other remote sees a new `ctl.id` and follows it |
 | A Start tapped on a silently dead socket, delivered minutes later | refused by the `ca` window (> 60 s old); the remote says "That Start didn't reach the server. Start again?" |
 | Director's phone loses signal mid-reveal | big button and Back show "Reconnecting…"; any other director can carry on; on return the remote follows the server |
 | Director's phone dims or locks between places | prevented by the wake lock while the reveal is live; if the OS refuses it, the status line says "Screen may sleep" and, on wake, the button reads "Reconnecting… 2 s" until `.info/connected` |
-| A counselor promoted to director mid-camp | the role flips in place; the remote fetches `revealFull`/`revealScreens` with `once()` when opened, so the up-next preview works without a reload |
-| TV drops Wi-Fi | "Reconnecting…" chip, then jumps to the current frame; the remote's screen count lags by the SDK disconnect timeout (~1 min) |
+| A counselor promoted to director mid-camp | the role flips in place; the remote fetches `revealFull` with `once()` when opened, so the up-next preview works without a reload |
+| TV drops Wi-Fi | "Reconnecting…" chip, then jumps to the current frame (the remote can't see this: a public page doesn't report in, §4.3) |
 | TV opened late / reloaded | static frame, no replay |
 | Back at the first place | Back disabled ("Already at 6th place") |
 | Back during champion/table | returns to champion or the 1st-place hero |
 | End reveal early at 4th | phones keep 6th–4th until 8 AM; grid shows "Not revealed" for the rest |
 | New reveal while a grid is showing | the old grid vanishes at once (new id, `pub` cleared) |
 | Reveal forgotten (never ended) | phones stop showing the mirror at the final table anyway; any screen treats it as ended 15 min after the last command in champion/table (60 min in intro/live); grid still until 8 AM |
-| Rules not yet published | Start refused → the remote shows "The reveal isn't switched on yet (the database rules need updating)" and never a button that leads to a refusal; phones fail closed |
+| Rules not yet published | Start refused → the remote shows "The reveal isn't switched on yet (the database rules need updating)" and never a button that leads to a refusal; phones fail closed; the TV shows Waiting and the small "Can't reach the standings feed" line |
 | Listener denied / errors | `revealDenied`; phones show no standings; the rest of the app is untouched |
-| A team renamed mid-reveal | names resolve live from `state/teams`; the frozen numbers don't change |
+| A team renamed mid-reveal | names are frozen into each place as it is revealed (`nm`): places already shown keep the old name, later ones carry the new; the frozen numbers don't change |
 | Ties | one group, several entries, one shared place ("2nd · tie"); counselors' "still to come" counts teams, so no hint before it's revealed |
 | Scores entered after Start | not in this reveal; the remote offers "Start again" while still at intro |
-| New camp year (P2 wizard / epoch) | the wizard's atomic update deletes `reveal`, `revealFull`, `revealScreens`; clients ignore a reveal whose `epoch` differs; excluded from backups, restore points and the archive |
+| New camp year (P2 wizard / epoch) | the wizard's atomic update deletes `revealPublic` and `revealFull` (both children; the owner clause lets it through before `until`); phones ignore a reveal whose `epoch` differs (the TV can't check it: the delete and `until` cover it); excluded from backups, restore points and the archive |
 | Senior | 4 teams, flag marks (or team photos) instead of shields, the same remote; the button starts at "Reveal 4th place" |
-| Practice run | lives in `revealPractice`; phones never see it; nobody is buzzed; the TV shows "Practice" |
+| Practice run | the REAL standings, in the `practice` child of `revealPublic` / `revealFull`; public while it plays (owner-accepted); phones never read it; nobody is buzzed; the TV shows "Practice"; End deletes it, 3 h at most |
 | Practice while last night's grid is still up (before 8 AM) | nothing happens to the grid: practice can't replace the real reveal |
+| A real Start while a practice is playing | the TV switches to the real reveal at once (real wins); the practice stays in its own child until its End or expiry |
+| Stale node after 8 AM (no director has opened Camp yet) | every reader ignores it (`expired` at paint, by the server clock); it holds only what the whole camp saw; the first director phone to open Camp deletes it (§4.5) |
+| A stranger opens the TV page or reads the node's address | sees at most the places already revealed, never an unrevealed place, a counselor name or live standings; polling is bounded (§4.3) and has a one-line kill switch; the page holds a connection only while visible |
+| A TV with a wrong clock | the TV waits for `.info/serverTimeOffset` before painting anything from the node (§4.7), so it can neither show a stale reveal nor hide a live one |
+| A TV page left open from before the rollout | see §4.11 (its legacy build stamp makes it reload; until then it is the signed-in interim page and shows no counselor anything) |
 
 ---------------------------------------------------------------------------------
 
@@ -1244,8 +1408,8 @@ is wrong (mockup 16). Grouped lists (one rounded sheet per group, hairline-divid
 rows, icon + title + one-line description + chevron), never a card per row.
 
 1. **Director** (editors only), with the tag "◌ Only directors see this":
-   - **Run the reveal**: the one gold, physical row on the page (ink TV icon tile, "Ready · 2 big
-     screens online" / "● Live · 3 of 6 shown" / "Rules not published yet"). Opens the remote.
+   - **Run the reveal**: the one gold, physical row on the page (ink TV icon tile, "Ready" /
+     "● Live · 3 of 6 shown" / "Rules not published yet"). Opens the remote.
    - Tell everyone · Award points · What counselors see · **Set up the week** (gold count pill
      "1 asking to join") · Change history · Who can sign in (until P2's People screen absorbs it).
    - Owner-only items (new-year setup, edited here / original week) live inside Set up the week
@@ -1483,7 +1647,7 @@ run" is visible in sunlight (the old OFF track was 1.7:1).
 
 Plain English, sentence case, verbs on buttons ("Score", "Reveal 3rd place", "Send to everyone",
 "Start again"), no "Submit/OK/Oops", no exclamation marks except the champion. Times as "10:00–
-11:45", "63 min left". Names over pronouns ("Jenn already showed 4th place"). Every refusal says
+11:45", "63 min left". Names over pronouns ("Taylor is asking to join"). Every refusal says
 what to do next. Glossary in Appendix B.
 
 ### 8.8 Generic-app habits this design refuses
@@ -1852,8 +2016,8 @@ SEAM block with the built-in fallbacks P2 specifies, so S1 later replaces bodies
 | Running over | — | `blockOverrun()` in `nowModel` + "Still on this" (`state.meta.overrun`) | `gamesForBlock`, `gameStatus` | — |
 | Quick points from standings | `renderBonuses` + `bindBonusEntry` | `openQuickPoints(teamId)` sheet | — | — |
 | Reveal mirror / grid | — | `renderRevealMirror()`, `renderRevealGrid()` | `revealView()` only | fail closed |
-| Remote | — | `reveal.js` (`confirmedReveal` store, `revealPractice` writer, wake lock) | `revealView`, `revealFull` (once), `tvFrame` | — |
-| TV page | current-standings.html inline script | `current-standings.js` (P2 T) + `reveal-core.js` | `revealView`, `tvFrame`, `camp-core.js` sanitisers | — |
+| Remote | — | `reveal.js` (`confirmedReveal` store, practice-mode writer, `retireExpiredReveal`, wake lock) | `revealView`, `revealFull` (once), `tvFrame` | — |
+| TV page | current-standings.html inline script | `current-standings.js` (P2 T; public, no Firebase Auth, reads `revealPublic` only) + `reveal-core.js` | `revealView`, `tvFrame`, `camp-core.js` sanitisers | — |
 | Chat tab | `renderChatCard` 889, `renderChatView` | same chat.js, re-hosted | `CHAT_CHANNELS`, `unreadTotal` | — |
 | More | settings drawer rows, `renderFooter` 2029 | `renderMore()` | `campWeek`, `hasBothCamps` | — |
 | Tell everyone | `postAnnouncement` 8263, push composer 1410/1716, `setNoticeStatus` 703 | `tell.js` section in app.js (or settings.js) | — | — |
@@ -1910,7 +2074,7 @@ glide.
 - **The 30-second tick** re-runs: `renderHeader`, `renderNow` (the whole time-driven model:
   block, running over, moment windows, Later today, reveal auto-end; the 3 s phone lag is a
   one-shot timer, not the tick), `refreshOpenSchedule`, `renderMessages` (announcement expiry),
-  Games' "up next" marker **and Games' grid root**, tab badges, and `expireReveal()`. Today's tick
+  Games' "up next" marker **and Games' grid root**, tab badges, `expireReveal()` and, on editors, `retireExpiredReveal()`. Today's tick
   list (8681) misses most of these.
 - **Waking up**: `visibilitychange` → visible and `pageshow` run the same time-driven set
   (including `expireReveal()`), because iOS restores a frozen page without firing the interval,
@@ -2036,13 +2200,13 @@ stage is "off-season". Suggested calendar interleaves with P2 (S0 → T → S1 �
 | Stage | Ships | Depends on | Tests added/changed | Rollback |
 |---|---|---|---|---|
 | **D0 Motion & calm** (Dec) | `jelly-motion.js` (six presets sampled at 1/60 s; `play`, `playOut`, `morph`, `flipKeyed`, `whenHandsOff`, `restamp`, the press dent); tokens in styles.css; `calmMotion()` + sampler + battery + OS (OS beats Off); Appearance switch (in today's Settings drawer for now); boot-guard pre-paint calm; `JOY_REDUCED` and the 3 raw reads replaced; 9 media blocks → `html.calm-motion`; `jelly-motion-change` dispatched; Jelly token mapping (§8.10) | — | `motion.test.js` (sampler matches jelly's one-step integrator at 1/60; presets' ζ and overshoot; **minimum visible deformation per §9.5 row**; `cssLinear` matches styles.css; calm truth table incl. OS-beats-Off; hysteresis; sampler never runs while busy; **no transform keyframes while calm**; **outerHTML/`__dom` unchanged after press, release, play, playOut, flipKeyed**), `shell.test.js` (no motion media queries; pre-paint calm), `auth.test.js` wipe list | revert |
-| **D1 Secrecy (fail closed)** (Dec) | `reveal-core.js` (`groupPlaces`, `revealView` incl. paint-time `expired` and the champion line, `tvFrame`, `untilFor`, normalisers); **`standingsVisible()` inside every points reader** (§4.12); every viewer path in §4.12 gated; result alerts from the `applyRemoteState` results diff, baselines seeded at `startApp()`; copy rewritten; seed `hiddenCards.standings/bonus` for old builds; TV page: editors-only live view, viewers get "Waiting" (interim until D5) | — | `secrecy.test.js` (viewer `renderAll` with the guard throwing; **sink recorder** over toasts, notifications, share/copy, insertAdjacentHTML, setAttribute, appendChild/textContent, chimes; remote-change scenarios as a viewer; hint-paint; role flip), `sync.test.js` (identical first snapshot then a result → exactly one viewer alert), `reveal-core.test.js` (+ `.senior`) | revert (seeded keys are harmless) |
+| **D1 Secrecy (fail closed)** (Dec) | `reveal-core.js` (`groupPlaces`, `revealView` incl. paint-time `expired` and the champion line, `tvFrame`, `untilFor`, normalisers); **`standingsVisible()` inside every points reader** (§4.12); every viewer path in §4.12 gated; result alerts from the `applyRemoteState` results diff, baselines seeded at `startApp()`; copy rewritten; seed `hiddenCards.standings/bonus` for old builds; TV page: editors-only live view, viewers get "Waiting" (the signed-in interim page, replaced in D5 by the public one) | — | `secrecy.test.js` (viewer `renderAll` with the guard throwing; **sink recorder** over toasts, notifications, share/copy, insertAdjacentHTML, setAttribute, appendChild/textContent, chimes; remote-change scenarios as a viewer; hint-paint; role flip), `sync.test.js` (identical first snapshot then a result → exactly one viewer alert), `reveal-core.test.js` (+ `.senior`) | revert (seeded keys are harmless) |
 | **D2 Shell** (Jan) | header (identity root + patched pill), tab bar (`tablist`), four roots split by volatility, sheets/takeovers model (sheet drag from the grab strip only), game takeover (labelled back), More tab absorbing the drawer (one Alerts row, Appearance inline, "Not you? Change"), Chat as a tab, sync pill, bottom stack, keyboard handling (`textEntryFocused`, tab bar only, Done on docks), scroll memory and scroll compensation for inserts, history/Back (replaceState rules), deep links, What counselors see (switches), `teamMark` keyed `<img>` with blob URLs, accordion and idle-collapse removed. Now hosts today's banner + live home unchanged inside the new frame. Home Screen metas; **real-iPhone check** (status bar, keyboard + composer, Back gestures, wake lock in a Home Screen app) | D0 | `tabs.test.js` (switching, dirty render, scroll memory, history incl. Next-replaces and cold deep links, deep links), updated pins in `shell`, `overlays`, `home`, `render-stability` (pill flip doesn't touch the shield; More's volatile lines don't rebuild the segmented controls), `game-view`, `chat`, `chat-view`, `sync`; Playwright: every target ≥ 44×44 at 360/390, 130% and 200% text | revert |
 | **D3 Now, block by block** (Feb) | `blockKind`, `nowModel`, all kind renderers (§3.3), running over + "Still on this", moments with director awards, Later today, Still to do, 30 s tick + wake-up list, messages cap, notice "Take down", podium strip | D2; P2 S1 (else SEAM-shaped fallbacks) | `now-model.test.js` + `.senior` (every minute of every day: no throw, a block or a defined empty state, correct kind, moment windows, personalisation, **a live game past the block end keeps the card, capped at 45 min / the next games block**); podium strip at 360 with the widest podium and a 20-character name (Playwright); render-stability for each kind; award writes keep own-team guard | revert |
 | **D4 Games** (Feb) | day picker, directors' standings (shared places, arrows labelled once, medal counts in words, gap, privacy tag, reveal link, **tap a team for quick points**), status model, Score + Next game (own-team wording, replaceState), **podium picker** in `renderPlacement`, live line per format | D2 | `games-tab.test.js` (status truth table incl. clocks; Next game order skipping own-team and its "another director" message; shared places = TV grouping; podium picker: picked teams disabled in later rows, re-tap clears, drafts per leaf), game-view pins | revert |
-| **D5 The reveal** (Mar) | rules (in P2's R1 PUT, owner runs it: `sa`, `ca`, pub-vs-shown, screens slots, `revealPractice`) → `reveal.js` remote (16:9 mini TV, small-phone layout, grouped ladder, masked up-next, locked Back, wait on the button face, refused-tap shake + toast, screen wake lock, `confirmedReveal` for every consumer, `once()` fetches), counselor mirror (ends at the final table), red strip, 8 AM grid with `expireReveal()`, champion line, Friday finale, practice in its own node, Buzz on start (never for practice); TV page subscriber rewrite (needs P2 T); `revealBusy` for any editor in `reloadBlocked` and the wake-lock gate | D1, D2, P2 T, rules published | `tests/emulator/reveal.mjs` (opt-in, §4.4 list), `rules.test.js` (both camps), `reveal.test.js` (command builders incl. `sa`; CAS refusal handling; confirmed-state rendering; **phone lag keys off `sa`: Back, table, End and a reload at +1 s leave rows unchanged**; auto-end 15/60 min; DST `until`; **fake clock across 07:59:59 → 08:00:01 for the active tab, an inactive Games tab and a wake-from-sleep resume**; practice never calls `pushSendAlert`; champion path reads no points), `tv.test.js` (frames, waiting, late join, real beats practice) | rules stay (inert); revert client |
+| **D5 The reveal** (Mar) | rules (in P2's R1 PUT, owner runs it: `revealPublic` with the one anonymous `.read` and `real`/`practice` children, `sa`, `ca`, pub-vs-shown, delete only after `until`; `revealFull`) → `reveal.js` remote (16:9 mini TV, small-phone layout, grouped ladder, masked up-next, locked Back, wait on the button face, refused-tap shake + toast, screen wake lock, `confirmedReveal` for every consumer, `once()` fetches), counselor mirror (ends at the final table), red strip, 8 AM grid with `expireReveal()`, champion line (remembered per phone), Friday finale, practice on the real standings in its own `practice` child (public while it plays, never buzzes, never replaces the real grid), `retireExpiredReveal()`, Buzz on start (never for practice); the public TV page (no sign-in, no Auth SDK, reads `revealPublic` only; needs P2 T's skeleton); `revealBusy` for any editor in `reloadBlocked` and the wake-lock gate | D1, D2, P2 T, rules published | `tests/emulator/reveal.mjs` (opt-in, §4.4 list), `rules.test.js` (both camps), `reveal.test.js` (command builders incl. `sa`; CAS refusal handling; confirmed-state rendering; **phone lag keys off `sa`: Back, table, End and a reload at +1 s leave rows unchanged**; auto-end 15/60 min; DST `until`; **fake clock across 07:59:59 → 08:00:01 for the active tab, an inactive Games tab and a wake-from-sleep resume**; practice never calls `pushSendAlert`; champion path reads no points; `retireExpiredReveal` only on editors; the public-node sweep: no hidden team, no member key in any write), `tv.test.js` (frames, waiting, late join, real beats practice; **no `firebase.auth`, no write, no path but `revealPublic`**; the legacy build-stamp comment) | rules stay (inert); revert client |
 | **D6 Director tools** (Apr) | Tell everyone (Showing now with Take down, quick alerts, Buzz off by default, Send label says it buzzes, notice replace/undo rules, Done above the keyboard), Award points, Preview as a counselor, Set up the week entry + join badge (P2) | D2; push live for Buzz (else disabled with reason) | `tell.test.js` (channel combos, partial failure, undo restores the previous notice only if unchanged, replace asks for any non-empty notice, draft survives re-render, reloadBlocked, quick alert presets tick Urgent), `award.test.js` (guards, deterministic ids) | revert |
-| **D7 Senior, polish, rehearsal** (May) | senior pass (flags with shapes, empty sections, 4-team bracket on Now), copy pass, CLAUDE.md (new nodes, TV no longer computes, `?v=` count, motion rules incl. no-residue), then a **joint rehearsal of both camps** on real phones and a real TV: a full games day on `?now=` including a block running over, a reveal with two remotes, a practice run before 8 AM with last night's grid still up, the director's phone left alone for a minute mid-reveal, calm on/off, Low Power Mode | all | Playwright pass of every mockup screen at 360/390, both themes, both camps, plus the contrast audit (7:1 under 16px) | — |
+| **D7 Senior, polish, rehearsal** (May) | senior pass (flags with shapes, empty sections, 4-team bracket on Now), copy pass, CLAUDE.md (new nodes, TV no longer computes, `?v=` count, motion rules incl. no-residue), then a **joint rehearsal of both camps** on real phones and a real TV: a full games day on `?now=` including a block running over, a reveal with two remotes (the big screen opened signed out, in a private window), a practice run before 8 AM with last night's grid still up, the director's phone left alone for a minute mid-reveal, calm on/off, Low Power Mode | all | Playwright pass of every mockup screen at 360/390, both themes, both camps, plus the contrast audit (7:1 under 16px) | — |
 
 ---------------------------------------------------------------------------------
 
@@ -2057,14 +2221,22 @@ Invariants pinned:
 - No viewer code path reaches a points reader (`standingsVisible()` throws under test) and no
   viewer **sink** (markup, toast, notification, share/copy, attribute, chime) carries
   points/places/gaps outside the reveal roots.
-- `revealView` fails closed for: no ctl, denied, epoch mismatch, `v` > 1, expired; it never reads
-  `revealPractice`; the champion line carries no numbers.
+- `revealView` fails closed for: no ctl, denied, epoch mismatch, `v` > 1, expired; phones only
+  ever pass it the `real` child (they attach to `revealPublic/real` alone); the champion line
+  carries no numbers.
 - Counselor "still to come" count = teams − revealed entries (never group count).
 - Phones withhold only group `shown − 1`, only until `sa + 3000`; Back, phase changes, End and a
   reload never re-hide a row.
 - The grid is gone at 08:00:01 on the active tab, an inactive tab and after a wake from sleep.
 - `until` = 08:00 camp time next day across both DST changes.
-- Practice never calls `pushSendAlert` and never writes `reveal`.
+- Practice never calls `pushSendAlert` and never writes `revealPublic/real` or `revealFull/real`;
+  End practice deletes its two nodes.
+- The public node never carries a member key, a counselor or director name, or a still-hidden
+  team's id, name or points (command-builder sweep over a full reveal, a Back, an early End and a
+  practice).
+- The TV page references no Auth, writes nothing and reads no path but `revealPublic` (and
+  `.info`).
+- `retireExpiredReveal` runs only on editors, at most once a minute, and never before `until`.
 - `nowModel` never throws for any minute of any day in either camp, with and without identity,
   for both roles.
 - Re-rendering unchanged state writes nothing and starts no motion (ledger); motion leaves no
@@ -2103,6 +2275,11 @@ sampler, the wake lock in a Home Screen app, keyboard + composer + Done.
 | The OS refuses the wake lock (older iOS in a Home Screen app, Low Power Mode) | the remote says "Screen may sleep" so the director knows; on wake the button shows "Reconnecting… 2 s" rather than a dead face; checked on a real iPhone in D5 |
 | Changing the podium entry (`renderPlacement`) touches scoring | it writes the same `drafts` leaves and the same save path; D4 ships it with the game-view pins and a two-director draft test |
 | Motion residue silently defeats render stability | WAAPI-only rule + the residue test in `motion.test.js` + `restamp` for the rare in-place change |
+| The public node is polled or abused (Spark download quota) | empty outside reveal evenings and about 1 KB during one; shape-sealed rules; the database address is already public and a connection needs no rule; a one-line kill switch (§4.3); the Firebase usage graph shows it |
+| Many curious people open the TV page and use up Spark's 100 simultaneous connections | the page holds its connection only while visible; a usual reveal evening is about 40 phones and a few TVs; check the console's connections graph on the first real reveal night; rules can't limit connections, so the only remedy is asking people to close the page |
+| A stale public node lingers after 8 AM | every reader ignores it by the server clock; the first director phone deletes it; the rules refuse an early delete, so a wrong clock can't erase it early; it holds only what the camp already saw |
+| The remote can't tell whether a big screen is on | the TV says "Connected · this screen is ready" in the room; the ready screen's reminder row; the mini TV shows what the TV shows; an anonymous heartbeat write was rejected as the one thing this design refuses |
+| Practice shows the real standings in front of campers | owner-accepted; the switch says so in words; only the places a practice has shown are public; End deletes them |
 
 ---------------------------------------------------------------------------------
 
@@ -2124,9 +2301,10 @@ sampler, the wake lock in a Home Screen app, keyboard + composer + Done.
 7. **The big button recharges** until the TV has shown the score, on top of the server's
    compare-and-set: a double tap can't skip a place, and the next action is always written on the
    button.
-8. **Pre-start checks** on the remote (phone in sync, games scored, screens ready, last score
-   and who saved it) so the freeze can't silently miss a score.
-9. **Practice runs with made-up points**, TV only, so directors can rehearse on the real screen.
+8. **Pre-start checks** on the remote (phone in sync, games scored, last score and who saved it,
+   a reminder to open the big screen) so the freeze can't silently miss a score.
+9. **Practice runs on the real big screen** (the real standings, tagged Practice), so directors
+   rehearse exactly what the room will see.
 10. **The full revealed grid without a table**: two-line rows with medal discs, no 8-column
     table, no horizontal scroll.
 11. **Directors' standings use the TV's shared places**, carry a "Counselors can't see this"
@@ -2154,7 +2332,8 @@ sampler, the wake lock in a Home Screen app, keyboard + composer + Done.
 25. **A remote that can't embarrass anyone**: the wait written on the button, Back locked for the
     same beat with its own rewind glyph, a refused tap that explains itself, the up-next preview
     masked until held, the screen kept awake, and every state drawn (07c).
-26. **Practice in its own node**: rehearsals can't wipe counselors' grid or buzz anyone.
+26. **Practice in its own node**: rehearsals can't wipe counselors' grid, reach their phones or
+    buzz anyone.
 27. **Rules that make the client's promises true**: no group published before its place,
     no stale Start, the phones' lag anchored to the moment a place was first shown.
 28. **Quick alerts** in Tell everyone (Come inside now, All to the Dining Hall, Stay where you
@@ -2167,23 +2346,30 @@ sampler, the wake lock in a Home Screen app, keyboard + composer + Done.
 
 ---------------------------------------------------------------------------------
 
-## 18. Questions for the owner
+## 18. Questions for the owner: all four answered (2026-10-27)
 
-1. **Quick points "at their moment": when do directors usually give quick points?** Cleanup and
-   the verse have a clear moment in the schedule; quick points don't. They are now two taps
-   from the Games standings (tap a team, tap +2), wherever you are. *(Recommended: that, plus
-   Director → Award points for corrections, with no extra moment on Now. Alternatives: a
-   "Quick points" row during cabin time after breakfast, or at the evening campfire.)*
-2. **Is it OK that the big screen still needs someone signed in?** Any counselor or director
-   account works. *(Recommended: yes. The alternative, a page anyone on the internet can open,
-   would make the revealed standings public data.)*
-3. **Practice runs: made-up points, or the real standings?** *(Recommended: made-up points, so
-   a rehearsal in the afternoon can't spoil the evening.)*
-4. **The bracket bye gives away who's behind.** The bye goes to "the Round 1 winner with the
-   fewest points this week", and everyone can see who got it, so a counselor can tell which of
-   three teams is trailing. *(Recommended: keep the rule and accept the small leak; the
-   "fewest points" reason stays director-only. Alternatives: a coin toss on the remote, or a
-   seed fixed at setup, so the bye says nothing about the standings.)*
+The owner approved the mockups and the motion demo ("Yes, this is it") and answered. The answers
+are fixed decisions (§1.2) and are built in:
+
+1. **Quick points "at their moment": when do directors usually give quick points?** *Answer: no
+   extra moment on Now.* Two taps from the Games standings (tap a team, tap +2), wherever a
+   director is; Director → Award points stays for corrections and minus points. §3 offers no
+   quick-points moment (checked); see §5.2 and §7.3.
+2. **Is it OK that the big screen still needs someone signed in?** *Answer: no, the page is
+   PUBLIC.* It reads one public, anonymous-readable node per camp and nothing else (no counselor
+   names, no unrevealed places, no live standings); everything else stays member-only. §4.3,
+   §4.4, §4.11, §4.12.
+3. **Practice runs: made-up points, or the real standings?** *Answer: the REAL standings*, played
+   on the real big screen "much like the real thing", tagged "Practice". No pairing: anyone who
+   opens the public page during a practice can see it (accepted). Counselor phones still never
+   mirror a practice, it never buzzes, and it never replaces the real reveal's grid. §4.3, §4.6.
+4. **The bracket bye gives away who's behind.** *Answer: keep the rule and accept the hint.* The
+   bye goes to the Round 1 winner with the fewest points this week (junior's 6-team bracket;
+   senior's 4-team bracket has no bye); the "fewest points" reason stays director-only; who holds
+   the bye is visible to everyone. §4.12 row 17.
+
+Nothing is waiting on the owner. What the answers force on the design (flagged, overrulable) is
+listed at the end of §1.2 and in the Change log at the end of this document.
 
 ---------------------------------------------------------------------------------
 
@@ -2226,6 +2412,17 @@ sunlight contrast rule over every frame (light and dark) and `_audit-targets.cjs
 44×44 rule; both report 0 failures on this set (the three "small targets" it lists in 05 are
 lock glyphs, not targets).
 
+**Mockup deltas after the owner's answers (2026-10-27).** The mockups above are not regenerated;
+the reveal step's Opus pass redraws exactly these elements: **05** (the red strip reads
+"Started 7:31", no "by Jenn"); **06** (the "2 screens" chip and the "2 big screens are ready ·
+Dining Hall TV (Jenn)…" check become the single reminder row "Open the big screen…"; the Practice
+row reads "Shows the real standings on the big screen. Anyone watching it can see them." instead
+of "Made-up points on the big screens only. Phones never see it…"; the chip says "Practice" when
+it is on); **07, 07b, 07c** (the "2 screens" status text becomes the phones count; the mini TV
+wears "Practice" in practice mode); **09** ("Ready · 2 big screens online" becomes "Ready");
+**11** (unchanged; the page simply has no sign-in overlay, which was never drawn). Everything
+else is as approved.
+
 ## Appendix B. Copy glossary
 
 | Say | Not |
@@ -2255,6 +2452,7 @@ lock glyphs, not targets).
 | Screen stays on · Screen may sleep | Wake lock active |
 | Offline · saved on this phone | Sync error |
 | Which counselor are you? | Tell us who you are |
+| Practice run · Shows the real standings on the big screen. Anyone watching it can see them. | Test run · Demo · Made-up points |
 
 ---------------------------------------------------------------------------------
 
@@ -2278,7 +2476,7 @@ clauses are written into `tests/emulator/reveal.mjs` so D5 re-proves them.
 
 | Id | Decision and where |
 |---|---|
-| U1, SS-16 | Accept. Practice moves to its own `revealPractice` node (can't replace the real reveal, can't wipe the 8 AM grid) and forces Buzz off ("Practice runs never buzz phones"; unit test that practice never calls `pushSendAlert`). The switch names its audience ("Buzz all 38 counselors"; the number is counselors on the list, which is what the client can know). §4.3, §4.6, §4.13, mockup 06 |
+| U1, SS-16 | Accept. Practice moves to its own `revealPractice` node (can't replace the real reveal, can't wipe the 8 AM grid) and forces Buzz off ("Practice runs never buzz phones"; unit test that practice never calls `pushSendAlert`). The switch names its audience ("Buzz all 38 counselors"; the number is counselors on the list, which is what the client can know). §4.3, §4.6, §4.13, mockup 06. **Superseded 2026-10-27 (owner answers):** practice is now the `practice` child of `revealPublic` / `revealFull` and plays the REAL standings, publicly readable while it runs; the guarantees (can't replace the real reveal or its 8 AM grid, never buzzes, phones never read it) stand, and the made-up points are gone |
 | U2, V12 | Accept in part. Back becomes a secondary outlined button with a rewind glyph, "show 5th again", 24px from Reveal, and is **locked for the TV beat**; "‹ More" is the only left chevron. **Rejected: moving Back out of the dock**: Back in the dock beside the big button is the owner-approved layout B. The two tags no longer collide (the up-next label is inside its row), and the charging label is full ink. §4.2, §4.8, mockups 07, 07c |
 | U3, SS-13 | Accept. Screen Wake Lock for any editor while a non-practice reveal is live (re-requested on visibilitychange; the acquire gate widened to `revealBusy()`), "Screen stays on / may sleep" under the mini TV, "Reconnecting… 2 s" on the button face, haptics treated as Android-only. `revealBusy()` covers any editor during a live reveal. §4.2, §4.5, §4.13 |
 | U4 | Accept. Buzz off by default; the Send button says "Send + buzz everyone"; three quick alerts pre-tick Buzz + Urgent (4 taps, no typing). §7.2, mockup 10 |
@@ -2294,7 +2492,7 @@ clauses are written into `tests/emulator/reveal.mjs` so D5 re-proves them.
 | U14 | Accept. Discs mean a place won, always; counts are words ("2 gold · 2 silver · 2 bronze") in the grid and the directors' standings; arrows labelled once ("since this morning"). §4.10, §5.2, mockups 05b, 08 |
 | U15 | Accept. Up-next masked by default, press and hold to peek, re-masked during each beat. §4.8, mockup 07, demo |
 | U16 | Accept. "Not Sam? Change" on the station card, "Not you? Change" in Your team. §3.3, mockups 03, 16 |
-| U17 | Accept in part. The two-tap path is "tap a team in the Games standings"; Award points stays for corrections. The "moment on Now" question stays with the owner (Q1), now with this path in the recommendation. §5.2 |
+| U17 | Accept in part. The two-tap path is "tap a team in the Games standings"; Award points stays for corrections. The "moment on Now" question stays with the owner (Q1), now with this path in the recommendation. §5.2. **Answered 2026-10-27: no moment on Now.** |
 | U18 | Accept. One "Alerts" row with a plain state line; one sheet with "When Camp is closed" and "While Camp is open". §7.1, mockup 16 |
 | U19, SS-17 | Accept. Legacy copy derived from the bracket ("Red plays in the final next · 3rd place match first"); the Saturday champion line is kept, by name only, from a finale reveal, outliving 8 AM until the week ends, with a test that it reads no points. §3.3, mockup 13 |
 | U20, V8 | Accept. Mini TV is true 16:9; under 700pt tall it collapses to a thumbnail row and the whole ladder fits above the dock; longer ladders auto-scroll. §4.8, mockup 07b at 375×667 and 360×640 |
@@ -2306,14 +2504,14 @@ clauses are written into `tests/emulator/reveal.mjs` so D5 re-proves them.
 | SS-04 | Accept. "Motion leaves no trace": WAAPI only, `follow` only on never-rewritten nodes, keyed FLIP (`morph` + `flipKeyed`), `restamp`, and a residue test. §9.1, §9.4, §9.8 |
 | SS-05 | Accept. `ctl.ca` within ±60 s of server time, Start only; Start disabled with pending writes or a just-changed connection. §4.3–4.5 |
 | SS-06 | Accept. A `pub` group can only be written once its place is shown (enumerated, rules have no parseInt). §4.4 |
-| SS-07 | Accept. `hasChildren()` at `$memberKey`; fixed slots `tv1-9 / remote1-9` (18 rows max per member); only fresh rows count, listed by name and account. §4.3, §4.4 |
+| SS-07 | Accept. `hasChildren()` at `$memberKey`; fixed slots `tv1-9 / remote1-9` (18 rows max per member); only fresh rows count, listed by name and account. §4.3, §4.4. **Superseded 2026-10-27:** `revealScreens` is gone (the public big screen can't write). |
 | SS-09 | Accept. Result alerts diff `prevRefs.results` inside `applyRemoteState`; matchup baseline seeded at `startApp()`; sync test. §4.12 row 6 |
 | SS-10 | Accept. Replacing asks for any non-empty notice (draft too); Undo restores the previous object only if the notice is still what was written. §7.2 |
 | SS-11 | Accept. One `confirmedReveal` store for every reveal consumer on a director's phone, motion ledger included. §4.5 |
-| SS-12 | Accept. `revealFull` / `revealScreens` fetched with `once()` (remote open, after each command, screens every 20 s); nothing persisted; promotion and demotion just work. §4.5 |
+| SS-12 | Accept. `revealFull` / `revealScreens` fetched with `once()` (remote open, after each command, screens every 20 s); nothing persisted; promotion and demotion just work. §4.5. **2026-10-27:** `revealScreens` is gone; `revealFull` is still fetched with `once()`. |
 | SS-14 | Accept. Roots split by volatility (header pill and More's state lines patched in place); `teamMark` emits a keyed `<img>` with a cached `blob:` URL instead of inline data URLs. §2.2, §8.4, §13.1 |
 | SS-15 | Accept. `textEntryFocused()` for `kb-open`, separate from `fieldFocused()`; scroll compensation for anything inserted above the reader. §13.6 |
-| SS-18 | Accept as an owner decision (§18 Q4), with a recommendation; the "fewest points" hint stays editor-only. §4.12 row 17 |
+| SS-18 | Accept as an owner decision (§18 Q4), with a recommendation; the "fewest points" hint stays editor-only. §4.12 row 17. **Answered 2026-10-27: accepted.** |
 | V1 | Accept. The 3-up podium strip everywhere winners appear; pinned at 360 with the widest podium and a 20-character name. §3.3, mockups 01, 01b, 08 |
 | V2 | Accept. New `arrive` spring (12.4% at 60 Hz) for every arrival; `settle` only for full-screen takeovers; minimum visible deformation asserted per row. §9.2, §9.5 |
 | V3 | Accept. Presets sampled at 1/60 (Jelly's step); the press dents toward the finger (origin + tilt, 12% squash) and rings back on `wobble`; a real `jelly-button` beside a chunky one in the demo. §9.1, §9.6 |
@@ -2336,8 +2534,9 @@ moving Back away from the big button (layout B) and renaming the calm switch.
 - Chat gets the plain "Chat" title header like Games and More (mockup 15).
 - The Next bar's back label always names where it goes ("‹ Back to Now"), matching the header.
 - The remote's status line moved from "beat" text to a single "2 screens · 11 phones · Screen
-  stays on" line; the beat lives on the button.
-- Screens are listed with their account ("Dining Hall TV (Jenn)") in the pre-start check.
+  stays on" line; the beat lives on the button. *(Now "11 phones · Screen stays on".)*
+- Screens are listed with their account ("Dining Hall TV (Jenn)") in the pre-start check. *(Superseded
+  2026-10-27: there is no screens list.)*
 - My own contrast audit caught three things the critics didn't: the "Your team" tag (white on
   fox orange, 5.4:1, now ink in a team-coloured outline), the bronze disc numeral (5.9:1, disc
   lightened to `#e0a36a`, 7.6:1) and the Live tag sitting exactly on 7.0 (now 7.4).
@@ -2345,7 +2544,61 @@ moving Back away from the big button (layout B) and renaming the calm switch.
   viewports, the full-page state sheet), `_build-demo.js` (inlines the real jelly.js), and
   `_test-demo.js` (behaviour checks).
 
-**Still open** (for the owner or the build, not for the spec): Q1–Q4 in §18; the wake lock and
-keyboard behaviour in an iPhone Home Screen app must be checked on a device (D2/D5); the
-critics' emulator results are re-proved by `tests/emulator/reveal.mjs` in D5.
+**Still open** (for the build, not for the spec; nothing is waiting on the owner now, Q1–Q4 are
+answered in §18): the wake lock and keyboard behaviour in an iPhone Home Screen app must be
+checked on a device (D2/D5); the critics' emulator results, and the whole of the rules in their
+new public-read shape (§4.4), are proved by `tests/emulator/reveal.mjs` before the publish
+(BUILD-PLAN Step 10).
 
+---------------------------------------------------------------------------------
+
+## Change log (owner answers, 2026-10-27)
+
+The owner approved the redesign ("Yes, this is it") and answered its four questions. Everything
+below moved to follow them; the answers themselves sit at the top of §1.2 and override anything
+that still disagrees.
+
+**1. The big-screen page is public (no sign-in).**
+- §4.3: the member-read `reveal`, `revealPractice` and `revealScreens` nodes are gone. One public,
+  anonymous-readable node per camp, `<root>/revealPublic/{real,practice}` (editor write), carries
+  only revealed places (team id, name, points, medal counts, the phase and indices that drive the
+  TV animation), then the frozen grid until 8 AM; the complete order stays in the editor-only
+  `revealFull/{real,practice}`. The public `ctl` loses `startedBy`/`by` (no member data); entries
+  gain `nm` and an optional colour key `k`. Why per-camp rather than top-level, and the Spark-plan
+  analysis (about 1 KB, empty outside reveal evenings, one-line kill switch), are written out.
+- §4.4: the rules block is rewritten: the one `.read: true`, a `$mode` level, bounds tightened to
+  g0–g5 / t0–t5 / numbers in range / names ≤ 30, `$other: false`, deletion of the real reveal only
+  after `until` (server clock) unless the owner's wizard does it. The emulator status is stated
+  honestly (the new shape is not yet run) and the `reveal.mjs` case list is rewritten.
+- §4.5: writes go to `revealPublic`/`revealFull`; new `retireExpiredReveal()` (editors delete the
+  expired node, readers ignore it anyway); End practice deletes the practice nodes.
+- §4.6: "big screens ready" becomes a reminder row (a public page can't report in). §4.7: the 3 s
+  lag is theatre, not secrecy; the TV waits for the server clock. §4.8: no screens count; a Practice
+  mode bullet. §4.9: phones listen to `revealPublic/real` only; "Started 7:31" without a name.
+  §4.10: retire. §4.11: rewritten (anyone can open it; reads three things, writes nothing; no
+  Auth SDK; shields from shipped files; the rollout of old cached pages). §4.12: rows 13, 17, 18,
+  19 and the public-node sweep test. §4.13: rows changed and added.
+- §3.3: the Saturday champion line is remembered on each phone (the node is empty after 8 AM).
+- §7.1, §12, §13.2, §14 (D1, D5, D7), §15, §16, §17, Appendix A (mockup deltas), Appendix B and
+  the Review log notes were brought in line.
+
+**2. Practice uses the real standings.** §4.3, §4.6, §4.13 and the summary: a practice freezes and
+plays the real standings on the real big screen, tagged "Practice", in the `practice` child of the
+two nodes; it is public while it plays (accepted); every "made-up points" statement and the made-up
+`full` order are gone; the guarantees stand (phones never read it, it never buzzes, it never
+replaces the real reveal's grid). The Practice switch now says what it shows.
+
+**3. Quick points: no extra moment on Now.** §1.2 item 8, §2.4, the summary and §18 Q1. §3 was
+checked and offers none; the everyday path is §5.2 (tap a team in the Games standings), the
+corrections path §7.3.
+
+**4. Bracket bye.** §4.12 row 17 states the rule plainly (junior's 6-team bracket; fewest points
+this week among the Round 1 winners; reason director-only) and lists the hint as owner-accepted;
+§18 Q4 answered.
+
+**Consequences the owner didn't ask for (each overrulable):** the remote no longer shows "2 screens
+online" or checks that a big screen is connected; the TV page holds its connection only while
+visible, because anyone can now open it and Spark allows 100 connections at once; counselors see "Started 7:31", not who started
+it; the TV never shows P2 team photos and shows names as frozen when each place was revealed; the
+Saturday champion line is kept per phone and a phone closed during the ceremony misses it; P2 T's
+sign-in hardening (reload cap, phone-account parity) is not built because the sign-in goes away.

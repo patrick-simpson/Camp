@@ -81,7 +81,7 @@ its fix in §1.3.
 - **One** database-rules update (three copy-pastes in Cloud Shell from Appendix E: back up,
   publish, check), plus quick checks in a browser signed in as yourself, as another director and
   as a test counselor. The same update also carries the standings-reveal blocks from the
-  redesign spec.
+  redesign spec, including the one deliberately public, read-only path the big screen reads.
 - **One** Cloudflare Worker paste, when phone alerts go live.
 - **You press the two big switches yourself** (decision Q8): **Edit the week here** (once per
   camp, both in one sitting) and the **new-year setup** (once per camp). No other director can.
@@ -299,7 +299,9 @@ accessor seam, the More tab's Director section, the wizard's clear list, the `?v
 Also checked per stage: every existing test passes, including `tests/camps.test.js` against
 `tests/fixtures-junior-week.json` (changed once, on purpose, in S0k for the three counselor
 spellings, then untouched); unauthenticated probes against every new node
-return `Permission denied`; a signed-in **viewer** gets `Permission denied` on `campers`.
+return `Permission denied` (the redesign's `revealPublic` is the one deliberate exception: an
+unauthenticated read answers `null`, a write is refused); a signed-in **viewer** gets
+`Permission denied` on `campers`.
 
 ---------------------------------------------------------------------------------
 
@@ -1634,8 +1636,9 @@ shape is untouched.
 
 - **R1 — one combined additive PUT**, after S2a has shipped (so a mis-ordered state write is
   quarantined, not wedged) and before S4. Contents: everything in §8.2 and §8.3 (the owner-only
-  clauses included) **and the reveal blocks of `app-shell-redesign-spec.md` §4.4** (`reveal`,
-  `revealFull`, `revealScreens`, `revealPractice`), so the owner pastes once (`BUILD-PLAN.md`
+  clauses included) **and the reveal blocks of `app-shell-redesign-spec.md` §4.4** (`revealPublic`,
+  the one deliberately public, read-only path, and `revealFull`; each has a `real` and a `practice`
+  child), so the owner pastes once (`BUILD-PLAN.md`
   steps 10 and 11). Inert until code
   uses each node; the only node a non-member could write, `accessRequests`, stays **closed**
   until an editor sets `setup/meta/joinOpen` (sec-F1), so there is no stranger-writable surface
@@ -1672,7 +1675,8 @@ first 8 characters with the ones the rules commit's message states, and nothing 
 a mismatch. The read-back compares the live rules with that verified file. Then the
 **discriminating checks** — ones only the new rules pass — are run from a browser console signed
 in as the owner (an editor) and as a test counselor (§8.9), because unauthenticated probes return
-`Permission denied` under the old and new rules alike.
+`Permission denied` under the old and new rules alike (the one exception is the public
+`revealPublic` read, which answers `null` only under the new rules, §8.9).
 
 ### 8.8 Emulator suites (opt-in, npm + Java; **a gate for R1**)
 
@@ -1719,7 +1723,8 @@ Each runs the same scenario against `old.rules.json` (today's published file) an
   phone-signed-in owner key is not recognised. It also **records, not assumes**, what a non-owner
   *delete* of `on/<s>`, an epoch key or the claim does (`.validate` isn't evaluated for deletes;
   §1.4 limit b) and the result goes into CLAUDE.md.
-- The reveal suite `reveal.mjs` (`app-shell-redesign-spec.md` §4.4 list) runs in the same gate.
+- The reveal suite `reveal.mjs` (`app-shell-redesign-spec.md` §4.4 list) runs in the same gate; it
+  includes the anonymous-read, shape and delete-only-after-`until` cases of the public path.
 
 ### 8.9 Probes after publishing
 
@@ -1727,6 +1732,12 @@ Each runs the same scenario against `old.rules.json` (today's published file) an
 they prove nothing broke, not that R1 is live): GET `setup`, `setup/meta`, `campers`,
 `campers/t0`, `teamPhotos`, `accessRequests`, `accessBlocked`, `editorsHere`, `restoreIndex`,
 `restoreBody`; PUT `accessRequests/x@y,com` and `setup/meta/on/schedule`.
+
+**The one deliberately public path** (`app-shell-redesign-spec.md` §4.4, decision of 2026-10-27):
+unauthenticated GET `<root>/revealPublic` answers `null` under the new rules and
+`Permission denied` under the old ones, so it is also an unauthenticated proof that R1 is live;
+unauthenticated PUT `<root>/revealPublic/real` and GET `<root>/revealFull` answer
+`Permission denied` under both.
 
 **Discriminating checks (only the new rules pass these; sec-F5)**, from a browser console on the
 live site:
@@ -1765,7 +1776,8 @@ The R1 checklist in CLAUDE.md records each line's result.
   and every `meta/wizard` leaf contain `OWNER` or `OWNERKEEP`; the restore `kind` rule names
   `archive` and `pre-wizard` together with `OWNER`; no owner clause sits on a branch node; the
   reveal blocks (`app-shell-redesign-spec.md` §4.4) are present in both roots, identical modulo the
-  root name.
+  root name; `revealPublic/.read` is the only `true` read in either root and no other path grants
+  anonymous read.
 
 ---------------------------------------------------------------------------------
 
@@ -2298,10 +2310,12 @@ progress"). The only control is **[Hold to clear Junior Camp's scoreboard]**. On
    - games Reset (if chosen): `config: <configForSync(CAMP.defaultConfig())>` with `blockId`s
      re-derived against the carried-over schedule
    - `campers: null`
-   - `reveal`, `revealFull`, `revealScreens`, `revealPractice`: `null` (the redesign's
-     standings-reveal nodes, `app-shell-redesign-spec.md` §4.13; absent until its stage D5 ships,
-     so deleting them is harmless; the redesign names the first three, the practice node is
-     cleared too so a new year starts empty)
+   - `revealPublic`, `revealFull`: `null` (the redesign's standings-reveal nodes with their `real`
+     and `practice` children, `app-shell-redesign-spec.md` §4.3 and §4.13; absent until its stage D5
+     ships, so deleting them is harmless; the owner clause in the `revealPublic` write rule lets the
+     delete through even before an unexpired reveal's `until`. The redesign's earlier names
+     `reveal`, `revealPractice` and `revealScreens` no longer exist and must not be listed: a path
+     with no rule is refused, and one refused path refuses the whole atomic update)
    - `accessRequests/<k>: null` for each open request (enumerated: editors can only delete rows)
    Any refused path refuses all: nothing is half-done. **Member rows are deliberately not in this
    update (sec-F4):** the rules validate a whole member record on any leaf write, so one
@@ -3700,10 +3714,16 @@ for r in campScoreboard seniorScoreboard; do
     printf '%s/%s: ' "$r" "$p"; curl -s "$DB/$r/$p.json"; echo; done
   printf '%s PUT accessRequests: ' "$r"; curl -s -X PUT -d '{"name":"x","at":1}' "$DB/$r/accessRequests/x@y,com.json"; echo
   printf '%s PUT setup: ' "$r"; curl -s -X PUT -d 'true' "$DB/$r/setup/meta/on/schedule.json"; echo
+  printf '%s revealFull: ' "$r"; curl -s "$DB/$r/revealFull.json"; echo
+  printf '%s PUT revealPublic: ' "$r"; curl -s -X PUT -d '{"ctl":{"v":1}}' "$DB/$r/revealPublic/real.json"; echo
+  printf '%s revealPublic (must say null): ' "$r"; curl -s "$DB/$r/revealPublic.json"; echo
 done
 ```
-Every probe line must say `Permission denied`. If the read-back differs or any probe answers
-anything else: restore with block 2 using the backup file in place of `rules.json`.
+Every probe line must say `Permission denied`, except the `revealPublic` read, which must say
+`null`: it is the one deliberately public path (the big screen's feed), and under the old rules it
+says `Permission denied`, so that line alone proves the new rules are live. If the read-back differs
+or any other probe answers anything else: restore with block 2 using the backup file in place of
+`rules.json`.
 
 **Block 4 — the discriminating check (browser, on camp.patricksimpson.info, console):**
 ```js
