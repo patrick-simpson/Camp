@@ -4497,6 +4497,23 @@ body.chat-open .update-banner-alert,
 body.chat-open .update-banner {
   bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
 }
+/* The bottom strip's stacking order, bottom to top (the toaster rule and
+   chat-lift rules around here are one design — change them together):
+     home:  update bar (1rem) < toasts (8rem)
+     chat:  composer (~58px) < update bar (5.5rem) < toasts (12rem)
+   The toast rail takes taps, so a toast over the composer swallowed Send and a
+   toast over the bar swallowed Refresh. Without the bar, chat's rail only has
+   to clear the composer (5rem). 12rem clears the lifted bar even at 320px wide,
+   where its text wraps tallest (~102px, so its top sits ~190px up). The id
+   inside :has() is deliberate: it outranks the plain `body:has(#update-banner)`
+   offset above, so the two can't tie in the other order. Outer-document rules
+   beat the component's own :host position. */
+body.chat-open jelly-toaster[position="bottom"] {
+  bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+}
+body.chat-open:has(#update-banner) jelly-toaster[position="bottom"] {
+  bottom: calc(12rem + env(safe-area-inset-bottom, 0px));
+}
 /* On the home page the fixed bar covered the Bonus card and the footer's
    Settings link at full scroll (it stays up while a reload is held for an
    editor mid-entry). Extra room at the foot of the page lets them scroll clear. */
@@ -4861,7 +4878,6 @@ body.chat-open .main-wrap > :not(#chat-view),
 body.chat-open #app-footer {
   display: none;
 }
-
 /* Home card: one big tap target + the editor-only hide switch below. */
 .chat-card {
   padding: 0.35rem 0.5rem;
@@ -4932,6 +4948,17 @@ body.chat-open #app-footer {
   white-space: nowrap;
 }
 .chat-clear-btn { font-size: 1rem; }
+/* "📣 Announcements" is ~161px at full size: clipped for editors (pill, bell
+   and broom beside it) at 360px. A touch smaller fits down to ~345px. */
+@media (max-width: 380px) {
+  .chat-title { font-size: 0.92rem; }
+}
+/* Editors on the smallest phones (320-350px) still lose "Announcements" to the
+   ellipsis: tighten the gaps and take the title down one more step. */
+@media (max-width: 350px) {
+  .chat-head { gap: 0.4rem; }
+  .chat-title { font-size: 0.8rem; }
+}
 .chat-sub-btn {
   border: 1px solid var(--color-border);
   border-radius: 999px;
@@ -4950,10 +4977,20 @@ body.chat-open #app-footer {
   text-decoration: underline;
   overflow-wrap: anywhere;
 }
+/* flex: 0 0 auto is load-bearing. The strip is an overflow-x:auto box, so its
+   automatic min-height is 0 and it would otherwise be a flex-shrink
+   participant: .chat-list's content-sized basis (every message) soaked up the
+   overflow and crushed the tabs to a 5px sliver in any busy channel. Only
+   .chat-list may flex. The padding is room for the unread badge, which sits
+   on the tab's corner (it would be clipped by this box's overflow otherwise);
+   the negative side margin hands that padding back so the tabs still line up
+   with the page gutter. */
 .chat-tabs {
   display: flex;
+  flex: 0 0 auto;
   gap: 0.35rem;
-  margin: 0.5rem 0;
+  margin: 0.1rem -0.25rem 0.4rem;
+  padding: 0.4rem 0.25rem 0.1rem;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
@@ -4980,7 +5017,13 @@ body.chat-open #app-footer {
   border-color: var(--color-primary);
   background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
 }
+/* On the tab's corner, out of flow: a badge that took room inside the pill
+   widened its tab by ~22px every time a message landed in another channel and
+   shoved the tabs to its right under the finger. */
 .chat-tab-badge {
+  position: absolute;
+  top: -0.4rem;
+  right: -0.2rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -4991,6 +5034,28 @@ body.chat-open #app-footer {
   background: var(--color-primary);
   color: #fff;
   font-size: 0.68rem;
+  line-height: 1;
+}
+/* The four pills with labels are ~447px wide: wider than any phone, so Photos
+   sat off-screen with no hint the strip scrolled. Under 480px they share the
+   row equally as emoji (the header names the open channel); the label stays
+   in the DOM, visually hidden, for screen readers. */
+@media (max-width: 480px) {
+  .chat-tab {
+    flex: 1 1 0;
+    min-width: 0;
+    justify-content: center;
+    padding: 0.4rem 0.2rem;
+  }
+  .chat-tab-emoji { font-size: 1.05rem; line-height: 1.2; }
+  .chat-tab-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
 }
 .chat-list {
   flex: 1 1 auto;

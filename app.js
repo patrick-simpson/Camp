@@ -8994,6 +8994,8 @@ function onSdkLoadFailed(msg) {
   }
   updateSyncIndicator();
   showSdkDownBanner();
+  // Chat's "Loading…" becomes its real "sync is off" note now that it's final.
+  if (typeof onChatSyncStateChanged === 'function') onChatSyncStateChanged();
   // Bounded: SDK_MAX_RETRIES reloads per tab session (reset once the SDK loads,
   // see startAuth), each fired when the network is back or the phone wakes.
   let tries = 0;

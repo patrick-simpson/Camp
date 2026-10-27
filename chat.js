@@ -54,6 +54,20 @@ let chatReady = {};       // channelId -> true once the initial backlog has full
 let chatDenied = false;   // rules refused chat (not pasted yet, or revoked)
 let chatSyncStarted = false;
 let chatViewBuiltFor = null; // which channel the full view DOM was last built for
+// Half-typed messages by channel, IN MEMORY ONLY (never localStorage: a draft
+// must not outlive a sign-out). The composer node now survives a channel switch
+// (updateChatShell), and this carries each channel's text across switches and
+// across closing the chat.
+let chatDrafts = {};
+// Push ids of messages THIS device just sent and that haven't settled. Lets
+// appendChatBubble bring my own message into view even when I'd scrolled up to
+// reply to something older — by id, not byKey, so the same account on a second
+// device doesn't get yanked to the bottom too.
+const chatOwnSendIds = new Set();
+let chatSavedScrollY = 0;     // home-page scroll to restore when chat closes
+let chatHistoryEntry = false; // a history entry of ours is on top (phone Back closes chat)
+let chatLightboxSeq = 0;      // which lightbox open is current (late responses check it)
+let chatLightboxOnKey = null; // the open lightbox's Escape handler
 
 function chatChannels() {
   return (typeof CAMP !== 'undefined' && CAMP.chatChannels) || [];
@@ -61,6 +75,26 @@ function chatChannels() {
 
 function chatChannelById(id) {
   return chatChannels().find((c) => c.id === id) || null;
+}
+
+// "Sync is off" has to mean off for good. fbRef is only assigned once sign-in
+// and the membership read finish, so on every cold start there's a stretch where
+// syncEnabled() is false just because sync hasn't STARTED — and saying "off" then
+// was false (and alarming: the whole message list read it on a reload with the
+// chat persisted open). Genuinely off = no Firebase config on this device, the
+// SDK never loaded, or the rules cancelled a listener; anything else is "loading".
+function chatSyncOff() {
+  if (syncEnabled()) return false;
+  const cfg = window.FIREBASE_CONFIG;
+  return !(cfg && cfg.apiKey) || !!sdkLoadFailed || !!syncDenied;
+}
+
+// app.js calls this (typeof-guarded) when the SDK definitively fails, so a
+// "Loading…" card/list becomes the real sentence instead of waiting for the
+// next 30 s tick (the open view isn't re-rendered by renderAll).
+function onChatSyncStateChanged() {
+  renderChatCard();
+  if (chatOpenNow()) renderChatView(true);
 }
 
 // ── Message shape ─────────────────────────────────────────────────
@@ -136,6 +170,12 @@ function initChatSync() {
       }).catch(() => { /* the child_added error handler already spoke */ });
     } catch (e) { /* no firebase — card shows the sync-off note */ }
   });
+  // The card or an open view may still be showing "sync is off" from before this
+  // point (the SDK failed, retried and recovered): swap it for the loading state
+  // now, not at the first backlog. A no-op when it already says Loading… —
+  // updateChatShell writes through setHtmlIfChanged.
+  renderChatCard();
+  if (chatOpenNow()) renderChatView(true);
 }
 
 function onChatMsgAdded(ch, snap) {
@@ -330,20 +370,23 @@ function sendChatMessage(ch) {
     text,
   };
   if (input) input.value = '';
+  chatSetDraft(ch, '');
   const id = firebase.database().ref(dbPath('chat/' + ch)).push().key;
   const rateKey = 'chatRate/' + myKey;
   if (chatSendsInFlight > 0) showToast('⏳ Sending right after the previous one…');
   chatSendsInFlight += 1;
+  chatOwnSendIds.add(id);
   chatAtomicSend({ ['chat/' + ch + '/' + id]: msg, [rateKey]: firebase.database.ServerValue.TIMESTAMP }, rateKey)
     .then(() => chatNotifyPhones(ch, id, text), () => {
       // Look the composer up NOW: a refusal arrives after the optimistic
       // message was removed again, which may have rebuilt the view — the
       // element captured at send time could be detached by then.
       const box = document.getElementById('chat-input');
-      if (box && state.ui.chatChannel === ch && !box.value) box.value = text; // give the words back
+      if (box && state.ui.chatChannel === ch && !box.value) { box.value = text; chatSetDraft(ch, text); } // give the words back
+      else if (!chatDrafts[ch]) chatSetDraft(ch, text); // they've moved on: the draft waits in that channel
       showToast("Couldn't send — check your connection and try again.");
     })
-    .then(() => { chatSendsInFlight = Math.max(0, chatSendsInFlight - 1); });
+    .then(() => { chatOwnSendIds.delete(id); chatSendsInFlight = Math.max(0, chatSendsInFlight - 1); });
 }
 
 // True while a reload would cost someone their words: a message is being
@@ -380,6 +423,8 @@ function sendChatPhoto(ch, file) {
       const photoId = firebase.database().ref(dbPath('chatPhotos')).push().key;
       const msgId = firebase.database().ref(dbPath('chat/' + ch)).push().key;
       const rateKey = 'chatRate/' + myKey;
+      chatOwnSendIds.add(msgId);
+      const settled = () => chatOwnSendIds.delete(msgId);
       // One update: the full image, the message that points at it, and the
       // rate stamp. Either all three land or none do, so there is no window
       // where a message references a photo that isn't there.
@@ -393,7 +438,7 @@ function sendChatPhoto(ch, file) {
           photoId,
         },
         [rateKey]: firebase.database.ServerValue.TIMESTAMP,
-      }, rateKey).then(() => chatNotifyPhones(ch, msgId, ''));
+      }, rateKey).then(() => { settled(); chatNotifyPhones(ch, msgId, ''); }, (err) => { settled(); throw err; });
     })
     .catch(() => showToast("Couldn't send the photo — try a different one, or check your connection."))
     .then(() => {
@@ -697,7 +742,11 @@ function chatAnnouncementBanners() {
       id: m.id,
       text: m.text || '📷 Photo (open Chat to see it)',
       at: new Date(m.at).toISOString(),
-      by: chatAuthorName(m),
+      // Until the member directory lands chatAuthorName fails closed to the
+      // sender's raw email — a banner that flashed it then flipped to a name.
+      // An empty by-line is simply omitted by renderAnnouncements, and the
+      // members listener's renderAll() fills the name in.
+      by: memberDirectoryLoaded ? chatAuthorName(m) : '',
       fromChat: true, // renderAnnouncements: no "remove for everyone" (delete it in chat)
     }));
 }
@@ -767,6 +816,15 @@ function chatHiddenFromMe() {
 
 function openChat(ch) {
   if (!chatChannels().length || chatHiddenFromMe()) return;
+  // The takeover hides the rest of the page, so the document collapses to the
+  // chat's height and the browser clamps scrollY to 0 — remember where the
+  // person was so closeChat can put them back at the Chat card.
+  if (!chatOpenNow()) chatSavedScrollY = (typeof window !== 'undefined' && window.scrollY) || 0;
+  chatParkDraft();
+  // Push the Back entry BEFORE the page collapses: the browser files the
+  // current scroll position with the entry it's leaving, and a Back (which
+  // restores that position) would otherwise restore the clamped 0.
+  chatHistoryPush();
   state.ui.chatOpen = true;
   state.ui.chatChannel = chatChannelById(ch) ? ch : (state.ui.chatChannel || 'general');
   if (state.ui.view === 'settings') state.ui.view = 'home'; // one takeover at a time
@@ -776,11 +834,44 @@ function openChat(ch) {
   markChannelSeen(state.ui.chatChannel);
 }
 
+// Whatever is in the composer is that channel's draft, kept for when the view
+// is rebuilt (closing and reopening chat, or a notification tap that jumps
+// channels) — the person's half-typed reply shouldn't die with the DOM.
+function chatParkDraft() {
+  const input = document.getElementById('chat-input');
+  if (chatViewBuiltFor && input) chatSetDraft(chatViewBuiltFor, input.value || '');
+}
+
 function closeChat() {
+  chatParkDraft();
   state.ui.chatOpen = false;
   saveState();
   chatViewBuiltFor = null;
   renderAll();
+  // Layout is synchronous after renderAll (the home panels write through
+  // setHtmlIfChanged, so their heights are intact), so this lands correctly.
+  if (chatSavedScrollY && typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
+    window.scrollTo(0, chatSavedScrollY); // positional form: no smooth-scroll CSS here, so it's instant
+  }
+  chatSavedScrollY = 0;
+  chatHistoryPop();
+}
+
+// ── Phone Back closes the chat ────────────────────────────────────
+// The takeover is in-page state with no history entry, so Android Back / an iOS
+// edge-swipe left Camp altogether instead of closing it. Opening pushes one
+// entry (same URL); the popstate listener (wireChat) closes the chat when it's
+// popped; closing from the ← Camp pill pops it back off so the stack never
+// grows. Chat only — settings and game detail still have no entry of their own.
+function chatHistoryPush() {
+  if (typeof history === 'undefined' || !history.pushState || chatHistoryEntry) return;
+  try { history.pushState({ campChat: 1 }, ''); chatHistoryEntry = true; } catch (e) { /* no history API: Back just leaves, as before */ }
+}
+
+function chatHistoryPop() {
+  if (!chatHistoryEntry) return;
+  chatHistoryEntry = false;
+  try { history.back(); } catch (e) { /* fine */ }
 }
 
 // ── Rendering ─────────────────────────────────────────────────────
@@ -796,6 +887,12 @@ function chatRelativeTime(atMs) {
 // The home card: latest message + unread badge (static markup lives in
 // index.html so the hide-from-viewers switch wires up like every card's).
 function renderChatCard() {
+  // renderAll can close the chat without us (editors hid the card, or the
+  // builder took over); our history entry would then sit on top and the next
+  // phone Back would visibly do nothing. Hand it back. Idempotent with
+  // closeChat's own pop (the flag drops first), and runs on every renderAll
+  // and the 30 s tick, so a stale entry never lingers.
+  if (!chatOpenNow() && chatHistoryEntry) chatHistoryPop();
   const card = document.getElementById('chat-card');
   if (!card) return;
   if (!chatChannels().length) { card.hidden = true; return; }
@@ -813,7 +910,7 @@ function renderChatCard() {
     preview.textContent = "Chat isn't available yet — the database rules need updating.";
     return;
   }
-  if (!syncEnabled()) {
+  if (chatSyncOff()) {
     preview.textContent = 'Chat needs live sync, which is off on this device.';
     return;
   }
@@ -884,7 +981,7 @@ function chatBubbleHTML(ch, msg) {
 
 function chatListHTML(ch) {
   if (chatDenied) return `<p class="muted chat-note">Chat isn't available yet — the database rules need updating (ask Patrick).</p>`;
-  if (!syncEnabled()) return `<p class="muted chat-note">Chat needs live sync, which is off on this device.</p>`;
+  if (chatSyncOff()) return `<p class="muted chat-note">Chat needs live sync, which is off on this device.</p>`;
   if (!chatReady[ch]) {
     return '<div class="history-skeleton">' +
       [80, 60, 75].map((w) => `<div class="skeleton-row" style="width:${w}%"><jelly-skeleton style="height:3rem"></jelly-skeleton></div>`).join('') +
@@ -905,18 +1002,121 @@ function chatListHTML(ch) {
   return html;
 }
 
-// Full rebuild only on open/channel-switch/structural change — a rebuild
-// mid-typing would eat the composer text, and renderAll runs on every
-// synced update. Live messages append incrementally (appendChatBubble).
+// The view is BUILT once per open (head, tabs, list, composer) and after that a
+// forced render only UPDATES it in place: the active tab, title, bell, the
+// composer placeholder and the list's contents. Rebuilding the whole shell on
+// every channel tap / bell toggle / directory update re-created the ← Camp pill
+// (replaying its slide-in), reset the tab strip's scroll, and detached the
+// focused composer — which iOS won't re-focus outside a tap, so the keyboard
+// dropped. renderAll runs on every synced update, so a non-forced call is a
+// no-op while the channel is already built; live messages append incrementally
+// (appendChatBubble).
 function renderChatView(force) {
   const view = document.getElementById('chat-view');
   if (!view) return;
-  const ch = state.ui.chatChannel || 'general';
+  const ch = chatCurrentChannel();
   if (!force && chatViewBuiltFor === ch) { renderChatBadges(); return; }
-  // A forced rebuild of the SAME channel (directory arrived, a back-fill, the
-  // view emptied) must not cost the person their half-typed message, their
-  // keyboard, or their place in the history. Switching channels starts clean.
-  const sameCh = chatViewBuiltFor === ch;
+  const c = chatChannelById(ch) || chatChannels()[0] || { id: ch, label: ch, short: ch, emoji: '💬' };
+  const prev = chatViewBuiltFor;
+  // The 🧹 button is the one shell part that depends on who's looking, so a
+  // role change rebuilds rather than patches.
+  const live = prev && view.dataset.chatShell === chatShellSig()
+    && document.getElementById('chat-list') && document.getElementById('chat-input');
+  if (live) updateChatShell(view, ch, c, prev);
+  else buildChatShell(view, ch, c, prev);
+}
+
+function chatShellSig() {
+  return canEdit() ? 'editor' : 'viewer';
+}
+
+// Read at call time by every handler wired once per build: the composer and
+// header outlive a channel switch now, so a handler closing over the build-time
+// channel would post to the wrong one.
+function chatCurrentChannel() {
+  return state.ui.chatChannel || 'general';
+}
+
+function chatSetDraft(ch, text) {
+  if (text) chatDrafts[ch] = text;
+  else delete chatDrafts[ch];
+}
+
+function chatBellAttrs(subbed) {
+  return {
+    icon: subbed ? '🔔' : '🔕',
+    title: subbed ? 'Subscribed — every message here alerts you' : 'Muted — only mentions alert you',
+    label: subbed ? 'Unsubscribe from this channel' : 'Subscribe to this channel',
+  };
+}
+
+// The header names the open channel by its SHORT label: the full "Announcements
+// & Important Info" was ellipsized at every phone width between the pill, the
+// bell and (for editors) the broom.
+function paintChatHeader(view, ch, c) {
+  const title = view.querySelector('.chat-title');
+  const text = `${c.emoji} ${c.short}`;
+  if (title && title.textContent !== text) title.textContent = text;
+  const bell = view.querySelector('#chat-sub-btn');
+  if (bell) {
+    const subbed = chatSubscribed(ch);
+    const a = chatBellAttrs(subbed);
+    bell.classList.toggle('chat-sub-on', subbed);
+    bell.title = a.title;
+    bell.setAttribute('aria-label', a.label);
+    if (bell.textContent !== a.icon) bell.textContent = a.icon;
+  }
+}
+
+// Centre the open channel's tab when the strip is scrollable and the tab is
+// clipped (by rects, not scrollIntoView, which would scroll the page too).
+function chatRevealActiveTab(view) {
+  const strip = view.querySelector('.chat-tabs');
+  const tab = strip && strip.querySelector('.chat-tab-active');
+  if (!strip || !tab || strip.scrollWidth <= strip.clientWidth) return;
+  const s = strip.getBoundingClientRect();
+  const t = tab.getBoundingClientRect();
+  if (t.left >= s.left && t.right <= s.right) return; // already fully in view
+  strip.scrollLeft += (t.left - s.left) - (s.width - t.width) / 2;
+}
+
+function updateChatShell(view, ch, c, prev) {
+  const list = document.getElementById('chat-list');
+  const input = document.getElementById('chat-input');
+  const sameCh = prev === ch;
+  // A same-channel refresh (directory arrived, a back-fill, the view emptied)
+  // keeps the person's place in the history; a channel switch lands on the
+  // newest message.
+  const keepScroll = sameCh && (list.scrollHeight - list.scrollTop - list.clientHeight >= 80)
+    ? list.scrollTop : null;
+  if (!sameCh) {
+    // The composer is shared by every channel: park this channel's draft and
+    // bring the target's back.
+    chatSetDraft(prev, input.value);
+    input.value = chatDrafts[ch] || '';
+  }
+  chatViewBuiltFor = ch;
+  paintChatHeader(view, ch, c);
+  view.querySelectorAll('.chat-tab').forEach((t) => t.classList.toggle('chat-tab-active', t.dataset.ch === ch));
+  input.placeholder = `Message ${c.short}…`;
+  // setHtmlIfChanged: a forced render that changes nothing (a members snapshot
+  // that didn't touch names) must not re-create the bubbles — every thumbnail
+  // would re-decode and blink.
+  const changed = setHtmlIfChanged(list, chatListHTML(ch));
+  if (changed) wireChatBubbles(list, ch);
+  renderChatBadges();
+  chatRevealActiveTab(view);
+  if (changed || !sameCh) {
+    if (keepScroll != null) list.scrollTop = keepScroll;
+    else chatScrollToBottom();
+  }
+}
+
+function buildChatShell(view, ch, c, prev) {
+  // Reached on open, and when the shell is gone or the viewer's role changed.
+  // A rebuild of the SAME channel must still not cost the person their
+  // keyboard, caret or place in the history.
+  const sameCh = prev === ch;
   const oldInput = sameCh ? document.getElementById('chat-input') : null;
   const oldList = sameCh ? document.getElementById('chat-list') : null;
   const carry = oldInput ? {
@@ -927,50 +1127,64 @@ function renderChatView(force) {
   const keepScroll = oldList && (oldList.scrollHeight - oldList.scrollTop - oldList.clientHeight >= 80)
     ? oldList.scrollTop : null;
   chatViewBuiltFor = ch;
-  const c = chatChannelById(ch) || chatChannels()[0] || { id: ch, label: ch, emoji: '💬' };
 
+  // The label is visually hidden under 480px (styles.css) but stays in the
+  // DOM so the tab keeps its accessible name.
   const tabs = chatChannels().map((t) => `
     <button type="button" class="chat-tab${t.id === ch ? ' chat-tab-active' : ''}" data-ch="${t.id}">
-      <span class="chat-tab-emoji">${t.emoji}</span> ${esc(t.short)}
+      <span class="chat-tab-emoji">${t.emoji}</span><span class="chat-tab-label">${esc(t.short)}</span>
       <span class="chat-tab-badge" data-ch="${t.id}" hidden></span>
     </button>`).join('');
 
   const subbed = chatSubscribed(ch);
+  const bell = chatBellAttrs(subbed);
+  const listHTML = chatListHTML(ch);
   view.innerHTML = `
     <div class="chat-head">
       <button id="chat-back-btn" class="back-pill"><span class="back-pill-arrow" aria-hidden="true">←</span> Camp</button>
-      <h2 class="chat-title">${c.emoji} ${esc(c.label)}</h2>
+      <h2 class="chat-title">${c.emoji} ${esc(c.short)}</h2>
       <button id="chat-sub-btn" class="chat-sub-btn${subbed ? ' chat-sub-on' : ''}"
-        title="${subbed ? 'Subscribed — every message here alerts you' : 'Muted — only mentions alert you'}"
-        aria-label="${subbed ? 'Unsubscribe from this channel' : 'Subscribe to this channel'}">${subbed ? '🔔' : '🔕'}</button>
+        title="${bell.title}"
+        aria-label="${bell.label}">${bell.icon}</button>
       ${canEdit() ? '<button id="chat-clear-btn" class="link-btn danger-link chat-clear-btn" title="Clear this channel">🧹</button>' : ''}
     </div>
     <div class="chat-tabs">${tabs}</div>
-    <div id="chat-list" class="chat-list">${chatListHTML(ch)}</div>
+    <div id="chat-list" class="chat-list">${listHTML}</div>
     <div class="chat-composer">
       <input type="file" id="chat-photo-input" accept="image/*" hidden>
       <button type="button" id="chat-photo-btn" class="chat-photo-btn" aria-label="Send a photo">📷</button>
       <input type="text" id="chat-input" class="chat-text-input" placeholder="Message ${esc(c.short)}…" maxlength="${CHAT_TEXT_MAX}" autocomplete="off">
       <button type="button" id="chat-send-btn" class="chat-send-btn" aria-label="Send">➤</button>
     </div>`;
+  view.dataset.chatShell = chatShellSig();
+  // Seed setHtmlIfChanged's cache so the first in-place update compares against
+  // what's actually on screen instead of rewriting it once.
+  const builtList = document.getElementById('chat-list');
+  if (builtList) { builtList.__html = listHTML; builtList.__dom = builtList.innerHTML; }
 
   renderChatBadges();
   wireChatView(ch);
   const input = document.getElementById('chat-input');
-  if (input && carry) {
-    if (carry.value) input.value = carry.value;
-    if (carry.focused) {
+  if (input) {
+    const text = carry ? carry.value : (chatDrafts[ch] || '');
+    if (text) input.value = text;
+    if (carry && carry.focused) {
       input.focus();
       try { if (carry.start != null) input.setSelectionRange(carry.start, carry.end); } catch (e) { /* fine */ }
     }
   }
   const photoBtn = document.getElementById('chat-photo-btn');
   if (photoBtn && chatPhotosInFlight) photoBtn.setAttribute('disabled', '');
+  chatRevealActiveTab(view);
   const listEl = document.getElementById('chat-list');
   if (listEl && keepScroll != null) listEl.scrollTop = keepScroll;
   else chatScrollToBottom();
 }
 
+// Wired ONCE per build, and the composer / header outlive a channel switch
+// (updateChatShell), so everything here resolves the channel at call time via
+// chatCurrentChannel(). Only the bubbles close over `ch`, and the list is
+// rewired whenever its channel changes.
 function wireChatView(ch) {
   const view = document.getElementById('chat-view');
   const back = document.getElementById('chat-back-btn');
@@ -984,22 +1198,33 @@ function wireChatView(ch) {
     });
   });
   const send = document.getElementById('chat-send-btn');
-  if (send) send.addEventListener('click', () => sendChatMessage(ch));
+  if (send) {
+    send.addEventListener('click', () => sendChatMessage(chatCurrentChannel()));
+    // Pressing the button must not steal focus from the input: on Android the
+    // keyboard dropped after every message and had to be re-opened with a tap.
+    // preventDefault on pointerdown/mousedown keeps focus where it was; the
+    // click still fires. (mousedown covers browsers without pointer events.)
+    send.addEventListener('pointerdown', (e) => e.preventDefault());
+    send.addEventListener('mousedown', (e) => e.preventDefault());
+  }
   const input = document.getElementById('chat-input');
-  if (input) input.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChatMessage(ch); });
+  if (input) {
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChatMessage(chatCurrentChannel()); });
+    input.addEventListener('input', () => chatSetDraft(chatCurrentChannel(), input.value));
+  }
   const photoBtn = document.getElementById('chat-photo-btn');
   const photoInput = document.getElementById('chat-photo-input');
   if (photoBtn && photoInput) {
     photoBtn.addEventListener('click', () => photoInput.click());
     photoInput.addEventListener('change', () => {
-      if (photoInput.files && photoInput.files[0]) sendChatPhoto(ch, photoInput.files[0]);
+      if (photoInput.files && photoInput.files[0]) sendChatPhoto(chatCurrentChannel(), photoInput.files[0]);
       photoInput.value = '';
     });
   }
   const clearBtn = document.getElementById('chat-clear-btn');
-  if (clearBtn) clearBtn.addEventListener('click', () => clearChatChannel(ch));
+  if (clearBtn) clearBtn.addEventListener('click', () => clearChatChannel(chatCurrentChannel()));
   const subBtn = document.getElementById('chat-sub-btn');
-  if (subBtn) subBtn.addEventListener('click', () => toggleChatSub(ch));
+  if (subBtn) subBtn.addEventListener('click', () => toggleChatSub(chatCurrentChannel()));
   wireChatBubbles(view, ch);
 }
 
@@ -1020,9 +1245,28 @@ function wireChatBubbles(scope, ch) {
   });
 }
 
+// Pin the list to its newest message. A thumbnail has no intrinsic size until
+// it decodes, so a pin made right after inserting one is stale a moment later:
+// the image grows and pushes the newest messages thousands of px below the fold
+// (a 50-photo channel opened ~2600px short). So each thumb still loading re-pins
+// when it lands — but only while the person hasn't scrolled since, or reading
+// up through a slow load would snap them back down.
 function chatScrollToBottom() {
   const list = document.getElementById('chat-list');
-  if (list) list.scrollTop = list.scrollHeight;
+  if (!list) return;
+  list.scrollTop = list.scrollHeight;
+  list.__chatPinned = true;
+  if (!list.__chatPinWired) {
+    list.__chatPinWired = true;
+    const unpin = () => { list.__chatPinned = false; };
+    ['touchstart', 'wheel', 'pointerdown'].forEach((ev) => list.addEventListener(ev, unpin, { passive: true }));
+  }
+  list.querySelectorAll('.chat-thumb').forEach((img) => {
+    if (img.complete) return;
+    const repin = () => { if (list.__chatPinned) list.scrollTop = list.scrollHeight; };
+    img.addEventListener('load', repin, { once: true });
+    img.addEventListener('error', repin, { once: true });
+  });
 }
 
 function appendChatBubble(ch, msg) {
@@ -1040,7 +1284,9 @@ function appendChatBubble(ch, msg) {
   }
   list.insertAdjacentHTML('beforeend', chatBubbleHTML(ch, msg));
   wireChatBubbles(list, ch);
-  if (nearBottom) chatScrollToBottom();
+  // My own message always scrolls into view — replying from higher up the
+  // history otherwise cleared the composer and showed nothing happening.
+  if (nearBottom || chatOwnSendIds.has(msg.id)) chatScrollToBottom();
 }
 
 // ── Photo lightbox (tap a thumbnail → fetch the full image once) ──
@@ -1049,14 +1295,21 @@ function openChatLightbox(photoId) {
   if (!box || !chatSafePhotoId(photoId)) return; // never build a path from an unvetted id
   box.innerHTML = '<div class="chat-lightbox-spinner">📷 Loading…</div>';
   box.hidden = false;
+  // The box is shared by every open, so a late response must check it's still
+  // the one being shown: tap A (slow), close, tap B — A's answer used to land
+  // on top of B. The previous open's Escape handler goes too (a reopen without
+  // a close would otherwise leave it listening).
+  const mine = ++chatLightboxSeq;
+  if (chatLightboxOnKey) document.removeEventListener('keydown', chatLightboxOnKey);
   const close = () => { box.hidden = true; box.innerHTML = ''; document.removeEventListener('keydown', onKey); };
   const onKey = (e) => { if (e.key === 'Escape') close(); };
+  chatLightboxOnKey = onKey;
   box.onclick = close;
   document.addEventListener('keydown', onKey);
   firebase.database().ref(dbPath('chatPhotos/' + photoId)).once('value')
     .then((snap) => {
       const rec = snap.val();
-      if (box.hidden) return; // closed while loading
+      if (box.hidden || mine !== chatLightboxSeq) return; // closed (or replaced) while loading
       const src = chatSafeImageSrc(rec && rec.data); // same data:-only guard as the thumbs
       if (src) {
         box.innerHTML = `<img class="chat-lightbox-img" src="${esc(src)}" alt="Full-size photo">`;
@@ -1064,7 +1317,7 @@ function openChatLightbox(photoId) {
         box.innerHTML = '<div class="chat-lightbox-spinner">This photo is gone.</div>';
       }
     })
-    .catch(() => { if (!box.hidden) box.innerHTML = '<div class="chat-lightbox-spinner">Couldn\'t load the photo.</div>'; });
+    .catch(() => { if (!box.hidden && mine === chatLightboxSeq) box.innerHTML = '<div class="chat-lightbox-spinner">Couldn\'t load the photo.</div>'; });
 }
 
 // ── Wiring (called once from init() via typeof guard) ─────────────
@@ -1075,4 +1328,16 @@ function wireChat() {
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && chatOpenNow()) markChannelSeen(state.ui.chatChannel);
   });
+  // Phone Back closes the chat (chatHistoryPush). Our entry carries
+  // {campChat:1}; popping to one without it while chat is open means Back.
+  if (typeof history !== 'undefined' && history.pushState) {
+    chatHistoryEntry = !!(history.state && history.state.campChat);
+    window.addEventListener('popstate', (e) => {
+      const mine = !!(e.state && e.state.campChat);
+      chatHistoryEntry = mine;
+      if (!mine && chatOpenNow()) closeChat();
+    });
+    // Reloaded with the chat persisted open: give Back something to pop.
+    if (chatOpenNow() && !chatHistoryEntry) chatHistoryPush();
+  }
 }
