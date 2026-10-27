@@ -8,12 +8,15 @@
    Every remapped value keeps its pre-Jelly literal as the var() fallback so
    the page still paints correctly BEFORE the deferred module evaluates (the
    lock screen renders pre-paint) and stays usable if the module ever fails
-   to load. Medals, card shadows, radii, and primary-dark/hover have no Jelly
-   equivalent and remain hand-tuned. color-scheme for the light default comes
+   to load. --color-bg's fallbacks are Jelly's own background-default values
+   (#ffffff / #181b1d), NOT a nicer gray: a different pre-module colour is a
+   visible background shift the moment Jelly's tokens land. Medals, card
+   shadows, radii, and primary-dark/hover have no Jelly equivalent and remain
+   hand-tuned. color-scheme for the light default comes
    from Jelly's own :root rules — don't redeclare it here unlayered, or it
    would beat Jelly's layered dark switch. */
 :root {
-  --color-bg: var(--jelly-color-background-default, #f4f6f9);
+  --color-bg: var(--jelly-color-background-default, #ffffff);
   --color-surface: var(--jelly-color-background-surface, #ffffff);
   --color-border: var(--jelly-color-border-default, #e2e6ec);
   --color-text: var(--jelly-color-foreground-default, #1a2233);
@@ -47,9 +50,15 @@
 /* Dark values for everything Jelly doesn't govern, plus dark *fallbacks* for
    the remapped tokens (used only pre-module / if the module fails — after it
    loads, the var() resolves and the fallback is ignored). */
-body.dark-theme {
+/* The :root[data-jelly-mode] form lets boot-guard.js paint an explicit choice
+   from the first frame (it sets the attribute pre-paint from the mirrored
+   campScoreboardTheme key); body.dark-theme is the same thing once applyTheme()
+   has run. Only an EXPLICIT Dark sets the class — Auto leaves it to the media
+   block below, so an OS flip never strands stale dark tokens. */
+body.dark-theme,
+:root[data-jelly-mode="dark"] body {
   color-scheme: dark;
-  --color-bg: var(--jelly-color-background-default, #10141c);
+  --color-bg: var(--jelly-color-background-default, #181b1d);
   --color-surface: var(--jelly-color-background-surface, #1a2030);
   --color-border: var(--jelly-color-border-default, #2b3145);
   --color-text: var(--jelly-color-foreground-default, #eef1f8);
@@ -74,9 +83,11 @@ body.dark-theme {
 }
 
 @media (prefers-color-scheme: dark) {
-  body:not(.light-theme):not(.dark-theme) {
+  /* :not([data-jelly-mode]) = Auto. An explicit Light (attribute set pre-paint
+     by boot-guard.js, before body.light-theme exists) must not paint dark first. */
+  :root:not([data-jelly-mode]) body:not(.light-theme):not(.dark-theme) {
     color-scheme: dark;
-    --color-bg: var(--jelly-color-background-default, #10141c);
+    --color-bg: var(--jelly-color-background-default, #181b1d);
     --color-surface: var(--jelly-color-background-surface, #1a2030);
     --color-border: var(--jelly-color-border-default, #2b3145);
     --color-text: var(--jelly-color-foreground-default, #eef1f8);
@@ -194,6 +205,47 @@ jelly-dialog:not(:defined)[open] {
   border-radius: 24px 24px 0 0;
   box-shadow: var(--shadow-sheet);
 }
+/* A visible way out: touch phones have no Escape key. wireSettings() in app.js
+   closes the sheet on a tap of this bar (or anywhere outside it) while the
+   module is absent. The bar is the sheet's own pseudo-element, so a tap on it
+   targets the sheet itself — that is how the handler tells it from content. */
+jelly-drawer:not(:defined)[open]::before,
+jelly-dialog:not(:defined)[open]::before {
+  content: '✕  Close';
+  display: block;
+  position: sticky;
+  top: -22px; /* sticky insets are measured from the sheet's CONTENT box, so cancel its 22px padding */
+  z-index: 1;
+  margin: -22px -22px 12px;
+  padding: 14px 22px;
+  text-align: right;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  border-radius: 24px 24px 0 0;
+}
+/* Appearance is a jelly-segmented; without the module it was inert text. Show
+   its three options as pills (the chosen one marked) — app.js's degraded-mode
+   click handler makes them work. Scoped to #theme-toggle: other segmented
+   controls (member roles, camp switch) stay inert rather than half-working. */
+html.jelly-failed #theme-toggle:not(:defined) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+html.jelly-failed #theme-toggle:not(:defined) > jelly-segment {
+  padding: 0.4em 0.85em;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  cursor: pointer;
+}
+html.jelly-failed #theme-toggle[value="light"]:not(:defined) > jelly-segment[value="light"],
+html.jelly-failed #theme-toggle[value="auto"]:not(:defined) > jelly-segment[value="auto"],
+html.jelly-failed #theme-toggle[value="dark"]:not(:defined) > jelly-segment[value="dark"] {
+  border-color: var(--color-primary);
+  font-weight: 700;
+}
 
 /* Keyboard focus ring for every interactive control (mouse/touch unaffected). */
 :is(button, [role="button"], select, input, a):focus-visible {
@@ -227,8 +279,24 @@ body {
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   background: var(--color-bg);
   color: var(--color-text);
-  transition: background 0.2s ease, color 0.2s ease;
+  /* No colour transition here, on purpose. A theme flip changes every surface
+     and token in ONE style recalc, so a fading body background/colour left
+     inherited text mid-fade against cards that had already flipped (white on
+     white for ~100ms), and made the pre-module -> Jelly token landing a visible
+     fade. Never put one back. */
   overflow-x: hidden;
+}
+
+/* applyTheme() (app.js) adds this for two frames around a REAL light/dark flip,
+   so the flip is one atomic repaint: surfaces and tokens switch in a single
+   style recalc, but elements with their own colour transitions (card and banner
+   borders, chip text, settings-link borders) would otherwise keep fading behind
+   them. Added before the classes change, removed two frames later. */
+html.theme-switching,
+html.theme-switching *,
+html.theme-switching *::before,
+html.theme-switching *::after {
+  transition: none !important;
 }
 
 #app {
@@ -336,10 +404,32 @@ html.locked .lock-screen {
   inset: 0;
   z-index: 1000;
   display: flex;
-  align-items: center;
+  /* Top-anchored, not vertically centred. Centring re-centred the whole stack
+     whenever its height changed — the logo dropped in, then jumped ~80px when
+     "Checking sign-in" became the sign-in panel, and opening "Alternative sign
+     in" made everything leap ~235px out from under the finger. With a fixed
+     top offset only the bottom edge moves. */
+  align-items: flex-start;
   justify-content: center;
-  padding: 1.5rem;
+  padding: max(1.5rem, 14vh) 1.5rem 1.5rem;
+  /* The box can be taller than the screen (Alternative sign in open on a short
+     phone, landscape, an Android keyboard). A centred flex child that overflows
+     is clipped equally top AND bottom and, with no scroll container, those
+     controls were unreachable (#app is display:none, so the page can't scroll
+     either). Start at the top and let this scroll. */
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   background: var(--color-bg);
+}
+
+/* Wide screens (desktop, tablet landscape): the 14vh offset pushed the box past
+   an 800px-tall window and the open Alternative sign-in disclosure gained a
+   scrollbar for ~40px. Cap it there; phones keep the taller offset. */
+@media (min-width: 700px) {
+  html.locked .lock-screen {
+    padding-top: max(1.5rem, min(14vh, 4rem));
+  }
 }
 
 html.locked #app {
@@ -388,6 +478,7 @@ html.view-only .card-visibility-row {
 .lock-box {
   width: 100%;
   max-width: 320px;
+  margin: 0 auto;
   text-align: center;
 }
 
@@ -566,17 +657,22 @@ jelly-collapsible.card h2[slot="header"] {
   margin: 0;
 }
 
-/* Pre-upgrade (deferred module not yet run): show just the headers so the
-   page reads as the usual stack of closed cards — no content flash, no
-   blank screen. The global :not(:defined){visibility:hidden} rule is
-   overridden because these have a meaningful degraded look. */
-jelly-accordion:not(:defined) {
+/* Pre-upgrade header stack — ONLY when the module failed (html.jelly-failed),
+   so a failed load still reads as the usual stack of cards. On a NORMAL load
+   these stay under the global :not(:defined){visibility:hidden} above: the
+   module is what releases DOMContentLoaded, and boot() (which fills in the
+   follow card, Happening-now banner, chat card and day tabs ABOVE the
+   accordion) runs on that event — so painting the five bare headers early
+   showed a half-built page that then got shoved ~620px down (CLS 0.43) on every
+   open. Hidden, the accordion still holds its layout space and the first frame
+   is just the page background. */
+html.jelly-failed jelly-accordion:not(:defined) {
   visibility: visible;
   display: flex;
   flex-direction: column;
   gap: 15px;
 }
-jelly-collapsible:not(:defined) {
+html.jelly-failed jelly-collapsible:not(:defined) {
   visibility: visible;
   display: block;
   padding: 1rem 1.25rem; /* stand in for the header button's padding */
@@ -1072,6 +1168,11 @@ body.no-scroll {
   position: relative;
   width: 100%;
   max-width: 640px;
+  /* A fixed height, not content height: the sheet is bottom-aligned, so a
+     short day (Saturday; senior Sunday) used to shrink it and drop the header
+     and day chips out from under the finger that had just tapped one. */
+  height: 90vh;
+  height: 90dvh;
   max-height: 90vh;
   max-height: 90dvh; /* iOS URL bar eats vh; dvh accounts for it */
   display: flex;
@@ -1106,8 +1207,10 @@ body.no-scroll {
   to { transform: translateY(0); }
 }
 
+/* --drag is set by a swipe dismiss (closeSchedule(dy)) so the sheet keeps
+   sliding from where the finger let go instead of jumping back to rest. */
 @keyframes sched-slide-out {
-  from { transform: translateY(0); }
+  from { transform: translateY(var(--drag, 0px)); }
   to { transform: translateY(100%); }
 }
 
@@ -1214,8 +1317,27 @@ body.no-scroll {
 
 .schedule-days {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  /* minmax(0, 1fr), not 1fr: a bare 1fr floors each track at the chip's
+     min-content (13px of shadow padding either side of the label), so seven
+     chips overflowed the header on every phone under ~417px and Saturday was
+     clipped or unreachable. */
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 0.3rem;
+}
+
+/* The chip's own side padding is what pushed the row wide; drop it and centre
+   the label (text-align inherits into the chip's shadow tree). */
+jelly-chip.sched-day-chip {
+  text-align: center;
+}
+jelly-chip.sched-day-chip::part(main) {
+  padding-inline: 0;
+}
+/* On a ~43px pill the default dot position sits on the label's last letter;
+   hang it off the pill's top-right corner instead. */
+jelly-chip.sched-day-chip .today-dot {
+  top: -0.1rem;
+  right: -0.5rem;
 }
 
 .sched-day-chip {
@@ -2810,8 +2932,12 @@ body.no-scroll {
   background: var(--color-bg);
 }
 
+/* A few seconds of flashing, then it settles on the red border. It used to
+   flash forever, until an editor pressed Reset — minutes, for everyone with
+   the game open. (Off entirely under reduced motion — see the block near the
+   board clocks.) */
 .tool-box.alarming {
-  animation: alarm-flash 0.5s ease-in-out infinite alternate;
+  animation: alarm-flash 0.5s ease-in-out 6 alternate;
   border-color: var(--color-danger);
 }
 
@@ -3197,6 +3323,9 @@ body.no-scroll {
   color: var(--color-danger);
   font-size: 0.9rem;
   font-weight: 600;
+  /* scrollIntoView (the game editor's message sits under Save at the page's
+     foot) stops flush with the screen edge otherwise. */
+  scroll-margin-bottom: 1rem;
 }
 
 /* ============================================================
@@ -4308,6 +4437,12 @@ jelly-button.secondary-btn {
   --jelly-button-height: 44px;
   --jelly-button-font-size: 0.95rem;
 }
+/* The legacy `.counter-btn.plus` chrome (0,2,0) outranks the host reset above
+   (0,1,1) and painted a pale square behind every +N pill. */
+jelly-button.counter-btn.plus,
+jelly-button.counter-btn.minus {
+  background: none;
+}
 jelly-button.counter-btn {
   flex: 1;
   display: block;
@@ -4416,6 +4551,59 @@ jelly-icon-button.bonus-remove-btn {
 }
 .update-banner-alert jelly-button {
   margin-top: 0.5rem;
+}
+/* The toaster (bottom-right, z-index 10002) and this bar share the bottom
+   edge, and the toasts take taps — so a toast landed right over the
+   "Refresh" button. While the bar is up the toaster rides above it (outer
+   styles beat the component's own :host rule). 8rem clears the bar even where
+   its text wraps tallest (~118px at 320px wide). A browser without :has()
+   keeps the old placement. */
+body:has(#update-banner) jelly-toaster[position="bottom"] {
+  bottom: calc(8rem + env(safe-area-inset-bottom, 0px));
+}
+/* In chat the sticky composer lives in the same bottom strip (input, 📷, ➤ at
+   the very bottom of the screen). The banner persists exactly while a message
+   is being typed — the auto-reload is held for it — so at bottom:1rem it sat
+   on top of the box, and a tap meant for Send landed on the banner. Lift both
+   banner flavours (the SDK-down pill shares .update-banner) clear of it. */
+body.chat-open .update-banner-alert,
+body.chat-open .update-banner {
+  bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+}
+/* The bottom strip's stacking order, bottom to top (the toaster rule and
+   chat-lift rules around here are one design — change them together):
+     home:  update bar (1rem) < toasts (8rem)
+     chat:  composer (~58px) < update bar (5.5rem) < toasts (12rem)
+   The toast rail takes taps, so a toast over the composer swallowed Send and a
+   toast over the bar swallowed Refresh. Without the bar, chat's rail only has
+   to clear the composer (5rem). 12rem clears the lifted bar even at 320px wide,
+   where its text wraps tallest (~102px, so its top sits ~190px up). The id
+   inside :has() is deliberate: it outranks the plain `body:has(#update-banner)`
+   offset above, so the two can't tie in the other order. Outer-document rules
+   beat the component's own :host position. */
+body.chat-open jelly-toaster[position="bottom"] {
+  bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+}
+body.chat-open:has(#update-banner) jelly-toaster[position="bottom"] {
+  bottom: calc(12rem + env(safe-area-inset-bottom, 0px));
+}
+/* On the home page the fixed bar covered the Bonus card and the footer's
+   Settings link at full scroll (it stays up while a reload is held for an
+   editor mid-entry). Extra room at the foot of the page lets them scroll clear. */
+body.has-update-banner .app-footer {
+  padding-bottom: calc(6.5rem + env(safe-area-inset-bottom, 0px));
+}
+/* The SDK-down pill takes the same bottom slot; with a new-version bar up as
+   well it sat completely behind it. Stack the pill above. (:has() is
+   progressive — an older browser just keeps today's overlap.) */
+body:has(#update-banner) #sdk-banner {
+  bottom: calc(6.5rem + env(safe-area-inset-bottom, 0px));
+}
+/* In chat the update bar is itself lifted (5.5rem, above), so a pill at 6.5rem
+   sat mostly behind it. Stack it above the lifted bar instead — same 12rem the
+   toaster uses, so one rule of thumb: nothing in the strip is ever hidden. */
+body.chat-open:has(#update-banner) #sdk-banner {
+  bottom: calc(12rem + env(safe-area-inset-bottom, 0px));
 }
 
 /* ============================================================
@@ -4673,6 +4861,17 @@ html.view-only #history-row {
   font-size: 0.85rem;
 }
 
+/* These two sheets auto-size to their content, and the skeleton is far shorter
+   than the loaded list — so when the fetch landed the sheet jumped ~360px
+   taller in one frame, top edge and all. Open them at the jelly drawer's own
+   max-height (82dvh) instead, so loading and loaded are the same size. (The
+   SHEET sizes, not the body inside it.) */
+#history-overlay::part(sheet),
+#members-overlay::part(sheet) {
+  min-height: 82vh;
+  min-height: 82dvh;
+}
+
 /* Skeleton rows while the changelog fetch is in flight. */
 .history-skeleton {
   display: flex;
@@ -4758,7 +4957,6 @@ body.chat-open .main-wrap > :not(#chat-view),
 body.chat-open #app-footer {
   display: none;
 }
-
 /* Home card: one big tap target + the editor-only hide switch below. */
 .chat-card {
   padding: 0.35rem 0.5rem;
@@ -4829,6 +5027,17 @@ body.chat-open #app-footer {
   white-space: nowrap;
 }
 .chat-clear-btn { font-size: 1rem; }
+/* "📣 Announcements" is ~161px at full size: clipped for editors (pill, bell
+   and broom beside it) at 360px. A touch smaller fits down to ~345px. */
+@media (max-width: 380px) {
+  .chat-title { font-size: 0.92rem; }
+}
+/* Editors on the smallest phones (320-350px) still lose "Announcements" to the
+   ellipsis: tighten the gaps and take the title down one more step. */
+@media (max-width: 350px) {
+  .chat-head { gap: 0.4rem; }
+  .chat-title { font-size: 0.8rem; }
+}
 .chat-sub-btn {
   border: 1px solid var(--color-border);
   border-radius: 999px;
@@ -4847,10 +5056,20 @@ body.chat-open #app-footer {
   text-decoration: underline;
   overflow-wrap: anywhere;
 }
+/* flex: 0 0 auto is load-bearing. The strip is an overflow-x:auto box, so its
+   automatic min-height is 0 and it would otherwise be a flex-shrink
+   participant: .chat-list's content-sized basis (every message) soaked up the
+   overflow and crushed the tabs to a 5px sliver in any busy channel. Only
+   .chat-list may flex. The padding is room for the unread badge, which sits
+   on the tab's corner (it would be clipped by this box's overflow otherwise);
+   the negative side margin hands that padding back so the tabs still line up
+   with the page gutter. */
 .chat-tabs {
   display: flex;
+  flex: 0 0 auto;
   gap: 0.35rem;
-  margin: 0.5rem 0;
+  margin: 0.1rem -0.25rem 0.4rem;
+  padding: 0.4rem 0.25rem 0.1rem;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: none;
@@ -4877,7 +5096,13 @@ body.chat-open #app-footer {
   border-color: var(--color-primary);
   background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
 }
+/* On the tab's corner, out of flow: a badge that took room inside the pill
+   widened its tab by ~22px every time a message landed in another channel and
+   shoved the tabs to its right under the finger. */
 .chat-tab-badge {
+  position: absolute;
+  top: -0.4rem;
+  right: -0.2rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -4888,6 +5113,28 @@ body.chat-open #app-footer {
   background: var(--color-primary);
   color: #fff;
   font-size: 0.68rem;
+  line-height: 1;
+}
+/* The four pills with labels are ~447px wide: wider than any phone, so Photos
+   sat off-screen with no hint the strip scrolled. Under 480px they share the
+   row equally as emoji (the header names the open channel); the label stays
+   in the DOM, visually hidden, for screen readers. */
+@media (max-width: 480px) {
+  .chat-tab {
+    flex: 1 1 0;
+    min-width: 0;
+    justify-content: center;
+    padding: 0.4rem 0.2rem;
+  }
+  .chat-tab-emoji { font-size: 1.05rem; line-height: 1.2; }
+  .chat-tab-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
 }
 .chat-list {
   flex: 1 1 auto;
@@ -5265,6 +5512,28 @@ select.form-input {
   margin: 0;
 }
 
+/* Builder rows: labels share one grid row and inputs the next (subgrid), so
+   when one label wraps to two lines on a phone the paired inputs still start
+   level — a wrapped "Outs per side" put its input 16px below "Periods".
+   (Bottom-aligning the fields instead knocks the LABELS out of line wherever
+   the two controls differ in height: a jelly-select beside a jelly-input.)
+   Every builder .form-field in a row is exactly label + control. Without
+   subgrid support this falls back to the old top-aligned stacking. */
+#settings-view .form-row {
+  grid-template-rows: auto auto;
+  row-gap: 0;
+}
+
+#settings-view .form-row .form-field {
+  display: grid;
+  grid-row: span 2;
+  grid-template-rows: subgrid;
+}
+
+#settings-view .form-row .form-label {
+  align-self: end; /* a one-line label sits right above its input */
+}
+
 /* ── Segmented control (buttons reuse .team-chip) ── */
 .segmented {
   display: grid;
@@ -5341,6 +5610,17 @@ select.form-input {
   background: var(--color-bronze-bg);
   border-radius: var(--radius-md);
   padding: 0.5rem 0.7rem;
+}
+
+/* The reminder under the builder's tab bar that a game draft is still open on
+   the Games tab (settings.js, syncUnsavedNotes). Empty ⇒ zero height. */
+.settings-unsaved .warn-note {
+  margin: 0.6rem 0 0.75rem;
+}
+.settings-unsaved .link-btn {
+  color: inherit;
+  font: inherit;
+  font-weight: 800;
 }
 
 /* ── Danger zone ── */
@@ -5431,19 +5711,20 @@ select.form-input {
   margin-bottom: 0.25rem;
 }
 
-/* Team builder rows carry two stacked inputs (name + counselor). */
+/* Team builder rows: a control line (arrows, label, ✕) above two stacked,
+   full-width inputs (name + counselor) — beside the controls they were only
+   ~160px wide on a phone, clipping the names being edited. */
 .team-builder-fields {
-  flex: 1;
-  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 0.35rem;
+  margin-top: 0.5rem;
 }
 
-/* The horizontal .builder-row's `flex: 1` on .form-input also matches these
-   nested inputs — inside this vertical stack a 0% flex-basis collapses a
-   Jelly host to 0px tall (its shadow content is absolutely positioned, so
-   there's no intrinsic min-height to save it). Pin an explicit height. */
+/* Inside this vertical stack a 0% flex-basis (like .builder-row's `flex: 1`
+   on .form-input) collapses a Jelly host to 0px tall — its shadow content is
+   absolutely positioned, so there's no intrinsic min-height to save it. Pin
+   an explicit height. */
 .team-builder-fields .form-input {
   flex: none;
   height: 48px;
@@ -5755,6 +6036,7 @@ select.form-input {
   .board-clock.clock-final-min,
   .board-clock.clock-final-ten { animation: none; }
   .big-board.board-final-ten { animation: none; }
+  .tool-box.alarming { animation: none; } /* the red border stays as the cue */
 }
 
 /* ============================================================
@@ -5769,6 +6051,11 @@ select.form-input {
     transform: scale(0.93);
     transition: transform 0.09s ease;
   }
+  /* A press called off mid-gesture (the touch became a scroll) eases back
+     instead of snapping from 93% — see joyPressAbort in app.js. */
+  .joy-release {
+    transition: transform 0.14s ease;
+  }
   .joy-pop {
     animation: joy-pop 0.42s cubic-bezier(0.34, 1.56, 0.64, 1);
   }
@@ -5777,17 +6064,30 @@ select.form-input {
     55% { transform: scale(1.05); }
     100% { transform: scale(1); }
   }
+  /* A tap quicker than the press delay never showed the 93% press, so its pop
+     starts from rest rather than snapping in. */
+  .joy-pop-quick {
+    animation: joy-pop-quick 0.42s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  @keyframes joy-pop-quick {
+    0% { transform: scale(1); }
+    55% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+  }
 
   /* Card contents rise in when a home panel opens — layered on top of
      jelly-collapsible's own springy height animation. The heading is the
-     header slot (child 1), so content children start at nth-child(2). */
-  jelly-collapsible.collapsible-card[open] > *:not([slot="header"]) {
+     header slot (child 1), so content children start at nth-child(2).
+     Only while .card-opening is on (added for ~0.7s by the toggle listener
+     in app.js): keyed to [open] alone, the rise replayed on every open card
+     whenever the builder or chat takeover un-hid the page. */
+  jelly-collapsible.collapsible-card.card-opening[open] > *:not([slot="header"]) {
     animation: joy-rise 0.38s cubic-bezier(0.22, 1, 0.36, 1) backwards;
   }
-  jelly-collapsible.collapsible-card[open] > *:nth-child(3) { animation-delay: 0.04s; }
-  jelly-collapsible.collapsible-card[open] > *:nth-child(4) { animation-delay: 0.08s; }
-  jelly-collapsible.collapsible-card[open] > *:nth-child(5) { animation-delay: 0.12s; }
-  jelly-collapsible.collapsible-card[open] > *:nth-child(n+6) { animation-delay: 0.16s; }
+  jelly-collapsible.collapsible-card.card-opening[open] > *:nth-child(3) { animation-delay: 0.04s; }
+  jelly-collapsible.collapsible-card.card-opening[open] > *:nth-child(4) { animation-delay: 0.08s; }
+  jelly-collapsible.collapsible-card.card-opening[open] > *:nth-child(5) { animation-delay: 0.12s; }
+  jelly-collapsible.collapsible-card.card-opening[open] > *:nth-child(n+6) { animation-delay: 0.16s; }
 
   /* Staggered list entry — applied transiently by joyStagger() after a
      day switch or view change re-render. */

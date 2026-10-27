@@ -148,12 +148,13 @@ test('clearLocalData wipes the camp data a signed-out device must not keep', () 
   localStorage.setItem(ANNOUNCE_DISMISS_KEY, '[]');
   localStorage.setItem(AUTH_HINT_KEY, 'editor');
   localStorage.setItem(EMAIL_SIGNIN_KEY, 'someone@example.com');
+  localStorage.setItem(THEME_HINT_KEY, 'dark'); // the pre-paint mirror of the theme choice
   localStorage.setItem('campWeatherCache', '{}'); // public data — may stay
 
   clearLocalData();
 
   [STORAGE_KEY, DAY_RANK_KEY, CHANGE_DISMISS_KEY, ANNOUNCE_DISMISS_KEY,
-   AUTH_HINT_KEY, EMAIL_SIGNIN_KEY].forEach((k) => {
+   AUTH_HINT_KEY, EMAIL_SIGNIN_KEY, THEME_HINT_KEY].forEach((k) => {
     assert.equal(localStorage.getItem(k), null, `${k} must be cleared`);
   });
   assert.ok(store.has('campWeatherCache'), 'the forecast is not personal — it may stay');

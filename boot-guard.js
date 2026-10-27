@@ -19,7 +19,8 @@
 // flash. The hint is convenience only — the database rules never consult it, so
 // forging it shows an empty shell.
 //
-// Keep the storage key literal in sync with AUTH_HINT_KEY in app.js.
+// Keep the storage key literals in sync with AUTH_HINT_KEY / THEME_HINT_KEY in
+// app.js.
 (function () {
   // Nothing legitimately embeds this app. Being framed means someone is trying
   // to get a signed-in editor to click something they can't see, so break out.
@@ -38,9 +39,24 @@
     localStorage.removeItem('campScoreboardUnlocked');
     localStorage.removeItem('campScoreboardRole');
     localStorage.removeItem('campScoreboardEditEpoch');
+    // An EXPLICIT Light/Dark choice (mirrored here by applyTheme() in app.js —
+    // the choice itself lives inside the big state JSON, which only loads with
+    // app.js). Setting data-jelly-mode now lets styles.css paint the right
+    // palette from the first frame; without it a user whose choice differs from
+    // the OS got the OS palette until boot(), then a flip. Auto leaves it unset.
+    var theme = localStorage.getItem('campScoreboardTheme');
+    if (theme === 'dark' || theme === 'light') {
+      document.documentElement.setAttribute('data-jelly-mode', theme);
+    }
     var hint = localStorage.getItem('campScoreboardAuthHint');
     if (hint !== 'viewer' && hint !== 'editor') {
       document.documentElement.classList.add('locked');
+    } else if (hint === 'viewer') {
+      // Same class applyRoleClass() sets once boot() runs. Pre-paint, so the
+      // editors' controls (the "Hide from viewers" rows) can't show to a viewer
+      // in the gap before boot() — which only matters if the Jelly module fails
+      // and the unstyled card bodies are visible.
+      document.documentElement.classList.add('view-only');
     }
   } catch (e) {
     // Storage blocked: show the lock screen — sign-in will still work, it just
@@ -75,11 +91,40 @@
     window.addEventListener('error', function (e) {          // parse/evaluation failure
       if (/jelly\.js/.test((e && e.filename) || '')) check();
     });
-    setTimeout(check, 4000);                                  // backstop: nothing signalled
+    // A module script runs after the document has parsed and every parser-
+    // blocking body script (the three Firebase SDKs, app.js, chat.js…) has
+    // loaded, but BEFORE 'load' fires — so by 'load' the module has had its
+    // chance, and elements still undefined means it failed, whether or not this
+    // browser reported either error above (old Safari). This replaced a 4 s
+    // timer that tripped on a merely SLOW load: card bodies and editor rows
+    // flashed unstyled, then re-collapsed when the module landed (CLS 1.07).
+    window.addEventListener('load', check);
+    // Last-resort backstop for a request that HANGS (no error, and no 'load'
+    // either, because the document can't finish). Generous for the same reason.
+    setTimeout(check, 15000);
     if (window.customElements && window.customElements.whenDefined) {
       window.customElements.whenDefined('jelly-button').then(function () {
         root.classList.remove('jelly-failed');
       });
     }
+  } catch (e) { /* a guard that can't run must never break the page */ }
+})();
+
+// Third, independent guard: switch the Google Fonts stylesheet on once it has
+// loaded. index.html ships it as media="print" — a print-only stylesheet is
+// fetched at low priority and NEVER blocks first paint, whereas a plain
+// stylesheet <link> does (display=swap only governs the font FILES). With
+// fonts.googleapis.com slow or filtered, the blocking form left the whole page
+// — lock screen included — blank until that request timed out. The usual
+// onload="this.media='all'" trick is an inline handler, which the CSP refuses,
+// so it is done here. If the stylesheet never arrives the page simply keeps
+// its system-ui fallback.
+(function () {
+  try {
+    var link = document.getElementById('gfonts');
+    if (!link) return;
+    var on = function () { link.media = 'all'; };
+    link.addEventListener('load', on);
+    if (link.sheet) on(); // it finished before this script ran
   } catch (e) { /* a guard that can't run must never break the page */ }
 })();

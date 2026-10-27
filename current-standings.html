@@ -344,7 +344,7 @@
     // silently never took effect until someone thought to hit refresh (this
     // bit the double-points fix on 2026-07-23). Bump this stamp on every
     // edit to this file; see checkForUpdate/startUpdatePolling below.
-    var TV_BUILD = '2026-10-26T22:22:40Z';
+    var TV_BUILD = '2026-10-27T13:11:56Z';
 
     // ── Constants mirrored from app.js (keep in sync) ──────────────
     var STORAGE_KEY = 'campScoreboardV2';
@@ -661,7 +661,30 @@
     // signed-out TV now says so on screen instead of showing wrong numbers.
     // (Safari note: ~7 days without a visit purges site storage, signing
     // the TV out. The overlay reappearing with a button IS the design.)
+    // 'checking' is the one state a healthy TV passes through on EVERY load
+    // (and every auto-reload after a TV_BUILD bump): the sign-in is restored
+    // and approved within a moment. Painting the near-black overlay for that
+    // moment was a white -> black -> white flash before the intro, so while
+    // nothing is covering the page 'checking' waits CHECK_OVERLAY_DELAY_MS and
+    // only shows if the check is genuinely slow or offline — the page's own
+    // "Loading standings…" line covers the wait until then. Any other mode
+    // cancels it, so an approval inside the delay never shows the overlay at
+    // all; 'signin' and 'denied' stay immediate. If the overlay is already up
+    // (a presenter who just tapped Continue with Google), 'checking' is shown
+    // straight away as feedback.
+    var CHECK_OVERLAY_DELAY_MS = 1500;
+    var checkTimer = null;
     function setAuthOverlay(mode, email) {
+      var el = document.getElementById('auth-overlay');
+      if (!el) return;
+      if (checkTimer) { clearTimeout(checkTimer); checkTimer = null; }
+      if (mode === 'checking' && el.style.display === 'none') {
+        checkTimer = setTimeout(function () { checkTimer = null; paintAuthOverlay('checking'); }, CHECK_OVERLAY_DELAY_MS);
+        return;
+      }
+      paintAuthOverlay(mode, email);
+    }
+    function paintAuthOverlay(mode, email) {
       var el = document.getElementById('auth-overlay');
       if (!el) return;
       el.style.display = mode === 'hidden' ? 'none' : 'flex';

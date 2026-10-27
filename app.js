@@ -61,6 +61,11 @@ const CHANGES = [];
 // only: forging it shows an empty shell — the rules still refuse all data.
 const AUTH_HINT_KEY = 'campScoreboardAuthHint'; // 'viewer' | 'editor' (same literal in index.html's pre-paint guard)
 const EMAIL_SIGNIN_KEY = 'campScoreboardEmailForSignIn'; // email-link flow parks the address here
+// An EXPLICIT Light/Dark choice, mirrored out of state.theme by applyTheme() so
+// boot-guard.js can paint it pre-paint (same literal there). Auto = key absent.
+// Device-wide, not per camp: the guard runs before camps.js, and boot()'s
+// applyTheme corrects a camp whose own choice differs. Wiped by clearLocalData.
+const THEME_HINT_KEY = 'campScoreboardTheme'; // 'light' | 'dark'
 
 let authUser = null;       // firebase.auth() user, once signed in
 let memberRole = null;     // 'viewer' | 'editor' | null (not resolved / not approved)
@@ -688,7 +693,10 @@ function renderNoticeBoard() {
   if (!el) return;
   const html = noticeCardHtml(false);
   el.hidden = !html;
-  el.innerHTML = html || '';
+  // Runs on every renderAll and the 30 s tick; an unconditional rewrite
+  // dropped whatever text a counselor had selected in the card. It holds
+  // plain nodes only (no listeners, no jelly parts), so skipping is safe.
+  setHtmlIfChanged(el, html || '');
 }
 
 // Post / un-post from the builder. Editors only — it shows on every device.
@@ -809,10 +817,12 @@ function renderNowBanner() {
   const el = document.getElementById('now-banner');
   if (!el) return;
   // While a live match's Big Board owns the top of the home screen, the
-  // schedule banner yields — the game IS what's happening now.
+  // schedule banner yields — the game IS what's happening now. Only hide it:
+  // clearing the markup destroyed the jelly-progress, so the bar refilled
+  // from empty when the banner came back. Kept, a same-block return just
+  // nudges the live bar (a new block fails the shape check and rebuilds).
   if (typeof homeBoardGame === 'function' && homeBoardGame()) {
     el.hidden = true;
-    el.innerHTML = '';
     return;
   }
   const { dow, minutes } = campNow();
@@ -822,15 +832,43 @@ function renderNowBanner() {
   // re-creates the jelly-progress, which animates its fill from empty on
   // connect — so the bar visibly "reloaded" twice a minute. When only the
   // elapsed value moved, nudge the live element instead; it glides there.
-  const shape = (html || '').replace(/(<jelly-progress[^>]*?)value="\d+"/, '$1');
+  // The rain hint changes on its own schedule (hour rollover, each weather
+  // refresh) and sits in the same markup, so it is patched in place too —
+  // otherwise every rain-hint change counted as a new "shape" and rebuilt
+  // the bar on rainy days.
+  const { shape, wx, value } = splitNowBanner(html);
   const bar = el.querySelector && el.querySelector('jelly-progress.now-progress');
   if (html && bar && el.__nowShape === shape) {
-    const m = /<jelly-progress[^>]*?value="(\d+)"/.exec(html);
-    if (m && bar.getAttribute('value') !== m[1]) bar.setAttribute('value', m[1]);
+    if (value != null && bar.getAttribute('value') !== value) bar.setAttribute('value', value);
+    const wxEl = el.querySelector('.now-wx');
+    if (!wx) {
+      if (wxEl) wxEl.remove();
+    } else if (!wxEl) {
+      // Last child of .now-body in every layout that carries a bar — the
+      // same place a full rebuild puts it.
+      (el.querySelector('.now-body') || el).insertAdjacentHTML('beforeend', wx);
+    } else if (wxEl.outerHTML !== wx) {
+      wxEl.outerHTML = wx;
+    }
     return;
   }
   el.__nowShape = shape;
   setHtmlIfChanged(el, html || '');
+}
+
+// The banner markup split into what decides whether the live nodes can stay
+// (`shape`: everything except the bar's elapsed value and the rain hint) and
+// the two things that are patched in place instead. Pure — see home.test.js.
+const NOW_WX_RE = /<div class="now-wx">[\s\S]*?<\/div>/;
+function splitNowBanner(html) {
+  const src = html || '';
+  const wx = NOW_WX_RE.exec(src);
+  const val = /<jelly-progress[^>]*?value="(\d+)"/.exec(src);
+  return {
+    shape: src.replace(NOW_WX_RE, '').replace(/(<jelly-progress[^>]*?)value="\d+"/, '$1'),
+    wx: wx ? wx[0] : '',
+    value: val ? val[1] : null,
+  };
 }
 
 // ── Full week schedule sheet (tap the Happening Now banner) ──────
@@ -865,11 +903,20 @@ function openSchedule() {
   });
 }
 
-function closeSchedule() {
+// fromDy: how far (px) a swipe had already dragged the sheet down. The
+// slide-out keyframes start from there (via --drag) — clearing the inline
+// transform alone made the sheet snap back up to rest for a frame and THEN
+// slide down. closeSchedule is also a click listener, so its first argument
+// can be an Event: only a number counts.
+function closeSchedule(fromDy) {
   const overlay = scheduleOverlayEl();
   const sheet = overlay.querySelector('.schedule-sheet');
-  if (sheet) sheet.style.transform = ''; // clear any swipe offset
+  if (sheet) {
+    if (typeof fromDy === 'number' && fromDy > 0) sheet.style.setProperty('--drag', fromDy + 'px');
+    sheet.style.transform = ''; // clear any swipe offset
+  }
   const finish = () => {
+    if (sheet) sheet.style.removeProperty('--drag'); // a later close must not inherit a stale offset
     overlay.hidden = true;
     overlay.classList.remove('closing');
     document.body.classList.remove('no-scroll');
@@ -893,18 +940,39 @@ function renderScheduleDays() {
   const wrap = document.getElementById('schedule-days');
   if (!wrap) return;
   const todayDow = campNow().dow;
-  wrap.innerHTML = SCHED_DAYS.map((d) => `
-    <jelly-chip class="sched-day-chip" selectable size="small" ${d.dow === scheduleDay ? 'selected' : ''} data-dow="${d.dow}">
+  // The chips are built once and then only have their `selected` state moved.
+  // Rebuilding all seven on every tap destroyed the focused chip (keyboard and
+  // screen-reader users were dropped back on <body>) and replaced the one just
+  // tapped with a fresh, already-selected chip, so its own select animation
+  // never played. The markup deliberately carries no `selected`; it is applied
+  // below. It's rebuilt only when it changes (the today-dot moves at midnight).
+  const html = SCHED_DAYS.map((d) => `
+    <jelly-chip class="sched-day-chip" selectable size="small" data-dow="${d.dow}">
       ${d.short}${d.dow === todayDow ? '<span class="today-dot" title="Today"></span>' : ''}
     </jelly-chip>`).join('');
-  wrap.querySelectorAll('.sched-day-chip').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      scheduleDay = parseInt(btn.dataset.dow, 10);
-      renderSchedule();
-      const body = document.getElementById('schedule-body');
-      if (body) body.scrollTop = 0;
-      joyStagger(body);
+  if (wrap.__daysHtml !== html || !wrap.querySelector('.sched-day-chip')) {
+    wrap.innerHTML = html;
+    wrap.__daysHtml = html;
+    wrap.querySelectorAll('.sched-day-chip').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        scheduleDay = parseInt(btn.dataset.dow, 10);
+        syncScheduleDaySelection(); // a selectable chip toggles ITSELF on tap — re-assert the truth
+        renderScheduleBody();
+        const body = document.getElementById('schedule-body');
+        if (body) body.scrollTop = 0;
+        joyStagger(body);
+      });
     });
+  }
+  syncScheduleDaySelection();
+}
+
+// Mark the chip for the shown day, and only that one, in place.
+function syncScheduleDaySelection() {
+  const wrap = document.getElementById('schedule-days');
+  if (!wrap) return;
+  wrap.querySelectorAll('.sched-day-chip').forEach((c) => {
+    c.toggleAttribute('selected', parseInt(c.dataset.dow, 10) === scheduleDay);
   });
 }
 
@@ -966,11 +1034,18 @@ function renderScheduleBody() {
     </div>`;
   }).join('');
 
-  wrap.innerHTML = `
+  // This runs on every renderAll and every 30 s tick while the sheet is open,
+  // so an unchanged timeline must not be rewritten: that re-created the
+  // calendar button, dropped a text selection, and — inside the 900 ms
+  // .joy-stagger window after a day tap — replayed the rise-in from invisible.
+  // A block boundary ("Now" pill, past dimming) or a saved game result changes
+  // the markup, so those still land.
+  const html = `
     <h3 class="sched-day-title">${day.full} <span class="sched-day-tag">· ${esc(day.tag)}</span></h3>
     <div class="sched-timeline">${rows || '<p class="muted">Nothing scheduled.</p>'}</div>
     ${blocks.some((b) => !b.noTime) ? `<div class="sched-ics-row"><jelly-button id="sched-ics-btn" class="secondary-btn" variant="platinum" size="small">📆 Add ${day.full} to calendar</jelly-button></div>` : ''}
   `;
+  if (!setHtmlIfChanged(wrap, html)) return; // the live button already has its handler (same dow/day: the day title is in the markup)
   const icsBtn = document.getElementById('sched-ics-btn');
   if (icsBtn) {
     icsBtn.addEventListener('click', () => {
@@ -1071,13 +1146,23 @@ function wireSchedule() {
       dy = Math.max(0, e.touches[0].clientY - startY); // downward only
       sheet.style.transform = `translateY(${dy}px)`;
     }, { passive: true });
-    header.addEventListener('touchend', () => {
+    // Release: past the threshold, hand the drag offset to closeSchedule so
+    // the slide-out continues from where the finger let go; short of it,
+    // ease back (the sheet has no resting transition, so without one the
+    // spring-back snapped). touchstart sets transition:none, so this one
+    // can't leak into the next drag.
+    const release = () => {
       if (startY == null) return;
-      sheet.style.transition = '';
       startY = null;
-      if (dy > 90) { closeSchedule(); }
-      else { sheet.style.transform = ''; } // spring back
-    });
+      if (dy > 90) { sheet.style.transition = ''; closeSchedule(dy); return; }
+      sheet.style.transition = JOY_REDUCED.matches ? '' : 'transform 0.2s ease';
+      sheet.style.transform = '';
+    };
+    header.addEventListener('touchend', release);
+    // The OS can take the gesture away (incoming call, edge swipe, a gesture
+    // takeover): no touchend ever comes, which left the sheet stuck partly
+    // dragged. A cancelled drag is never a dismiss.
+    header.addEventListener('touchcancel', () => { dy = 0; release(); });
   }
 }
 
@@ -1119,6 +1204,44 @@ function wireSettings() {
       if (el && el.hasAttribute('open')) el.removeAttribute('open');
     });
   });
+  // …but the phones that hit this path (iOS < 16.4 can't parse the module) have
+  // no Escape key. So: a tap anywhere OUTSIDE an open sheet closes it, and so
+  // does a tap on the "✕ Close" bar styles.css paints at its top (a pseudo-
+  // element, so the tap's target is the sheet itself, in its top strip).
+  // Capture phase + stopPropagation: the dismissing tap must not also press
+  // whatever sits behind the sheet. Checked at event time so a module that
+  // arrives late takes over cleanly; the tap that OPENS a sheet runs while none
+  // is open, so it is unaffected.
+  document.addEventListener('click', (e) => {
+    if (customElements.get('jelly-drawer')) return;
+    const open = [...document.querySelectorAll('jelly-drawer[open], jelly-dialog[open]')];
+    const close = failedModuleSheetsToClose(open, e.target, e.clientY);
+    if (!close.length) return;
+    close.forEach((el) => el.removeAttribute('open'));
+    e.preventDefault();
+    e.stopPropagation();
+  }, true);
+  // The Appearance control is a jelly-segmented, which is inert without the
+  // module — make its options tappable. Gated on the component being absent, or
+  // this would double-fire alongside its own change event.
+  document.addEventListener('click', (e) => {
+    if (customElements.get('jelly-segmented')) return;
+    const seg = e.target.closest && e.target.closest('#theme-toggle jelly-segment');
+    if (seg) setTheme(seg.getAttribute('value'));
+  });
+}
+
+// Which open sheets does a tap close while the Jelly module is absent? Elements
+// are duck-typed (contains / getBoundingClientRect) so the rule is unit-tested
+// without a browser. A tap outside every open sheet closes them all; a tap on
+// the "✕ Close" bar (the sheet's own top 52px — a pseudo-element, so the target
+// is the sheet itself) closes that sheet; a tap inside one's content closes
+// nothing. [] = leave the tap alone.
+function failedModuleSheetsToClose(open, target, clientY) {
+  const inside = open.find((el) => el.contains(target));
+  const onBar = !!inside && target === inside && clientY - inside.getBoundingClientRect().top <= 52;
+  if (inside && !onBar) return [];
+  return onBar ? [inside] : open;
 }
 
 // ── Change-history sheet (editor-only) ───────────────────────────
@@ -1383,7 +1506,51 @@ function campMembersPath(campId, key) {
   return CAMPS[campId].dbRoot + '/members/' + key;
 }
 
+// The "Add someone" form's typed state. renderMemberList rebuilds the whole
+// drawer body — form included — so anything half-typed there used to vanish
+// whenever a refresh landed (a removal, an invite dismiss, another add). Read
+// it before the rebuild and put it back after. Returns null when there is no
+// form yet (first fill).
+const MEMBER_ADD_FIELDS = [['id', '#member-add-id'], ['name', '#member-add-name'], ['role', '#member-add-role'],
+  ['camps', '#member-add-camps'], ['team', '.member-add-team']];
+
+function readMemberAddDraft(body) {
+  if (!body.querySelector('#member-add-id')) return null;
+  const draft = {};
+  MEMBER_ADD_FIELDS.forEach(([k, sel]) => {
+    const el = body.querySelector(sel);
+    draft[k] = el ? String(el.value || '') : '';
+  });
+  const err = body.querySelector('#member-add-error');
+  draft.error = err && !err.hidden ? err.textContent : '';
+  return draft;
+}
+
+function restoreMemberAddDraft(body, draft) {
+  if (!draft) return;
+  MEMBER_ADD_FIELDS.forEach(([k, sel]) => {
+    const el = body.querySelector(sel);
+    if (el && draft[k]) el.value = draft[k];
+  });
+  const err = body.querySelector('#member-add-error');
+  if (err && draft.error) { err.textContent = draft.error; err.hidden = false; }
+}
+
+// A successful add starts the form over (the rebuild that follows must not
+// carry the person just added back into it).
+function resetMemberAddForm(body) {
+  const set = (sel, v) => { const el = body.querySelector(sel); if (el) el.value = v; };
+  set('#member-add-id', '');
+  set('#member-add-name', '');
+  set('#member-add-role', 'viewer');
+  set('#member-add-camps', 'active');
+  set('.member-add-team', '');
+  const err = body.querySelector('#member-add-error');
+  if (err) err.hidden = true;
+}
+
 function renderMemberList(body, lists) {
+  const draft = readMemberAddDraft(body);
   const myKey = identityKey(authUser);
   const crossCamp = !!lists[otherCampId()]; // other list readable ⇒ show both columns
   const campIds = crossCamp ? ['junior', 'senior'] : [CAMP.id];
@@ -1521,6 +1688,7 @@ function renderMemberList(body, lists) {
     </div>`;
 
   bindMemberList(body, myKey, lists);
+  restoreMemberAddDraft(body, draft);
 }
 
 // Create a member record ONLY where none exists. A plain set() replaces
@@ -1618,8 +1786,14 @@ function bindMemberList(body, myKey, lists) {
       roleSeg.addEventListener('change', (e) => {
         const role = e.detail && e.detail.value;
         if (self || !role || (role !== 'viewer' && role !== 'editor')) return;
+        // A role/team change on an EXISTING record doesn't rebuild the drawer:
+        // the control already shows the new value, and re-creating every row's
+        // segmented + select froze the page for ~1 s at 40 members. The record
+        // this closure holds is patched instead, so a later action on the same
+        // row (convert, grant) reads current data. A refusal still re-renders,
+        // to put the control back.
         firebase.database().ref(dbPath('members/' + key + '/role')).set(role)
-          .then(() => showToast(`${who} is now a ${role}`, { mine: true }))
+          .then(() => { rec.role = role; showToast(`${who} is now a ${role}`, { mine: true }); })
           .catch(() => { showToast('Change refused — are you still an editor?'); renderMembers(); });
       });
     }
@@ -1645,7 +1819,7 @@ function bindMemberList(body, myKey, lists) {
         } else if (value === 'viewer' || value === 'editor') {
           if (existing) {
             firebase.database().ref(campMembersPath(cid, key) + '/role').set(value)
-              .then(() => { showToast(`${who} is now a ${value} at ${label}`, { mine: true }); renderMembers(); })
+              .then(() => { existing.role = value; showToast(`${who} is now a ${value} at ${label}`, { mine: true }); })
               .catch(fail);
           } else {
             // teamId deliberately not carried over — teams differ per camp.
@@ -1665,8 +1839,9 @@ function bindMemberList(body, myKey, lists) {
         const teamId = teamSel.value || '';
         const ref = firebase.database().ref(dbPath('members/' + key + '/teamId'));
         const done = () => {
+          const activeRec = camps[CAMP.id];
+          if (activeRec) { if (isTeamId(teamId)) activeRec.teamId = teamId; else delete activeRec.teamId; }
           showToast(isTeamId(teamId) ? `${who} is with ${teamName(teamId)}` : `${who} has no team`, { mine: true });
-          renderMembers();
         };
         (isTeamId(teamId) ? ref.set(teamId) : ref.remove())
           .then(done)
@@ -1782,6 +1957,7 @@ function bindMemberList(body, myKey, lists) {
           showToast(pending ? shownId + ' added — no sign-in yet' : shownId + ' can now sign in', { mine: true });
           // A pending row can't sign in yet, so there's nothing to invite them to.
           lastInvite = pending ? null : inviteText(key, role);
+          resetMemberAddForm(body); // done with it — the rebuild below must not carry it over
           renderMembers();
         })
         .catch(() => {
@@ -2072,11 +2248,17 @@ function saveState() {
 // result saved, a bracket match recorded, or a team renamed. Deliberately
 // NOT called for view-only actions (day tab, theme, PIN) so it reflects
 // actual camp activity, not just page traffic.
-function touchData() {
+// Synced writes that are NOT scoreboard activity still come through here, for
+// the dataEditPending guard: a clock Start/Pause/Reset (and the buzzer's own
+// settle) passes { stamp: false, celebrate: false }, and undo-style live-score
+// taps (goal −, inning, outs, Reset tally) pass { celebrate: false } — the
+// confetti used to fire on all of them, and on every editor's phone at 0:00.
+function touchData(opts) {
+  const o = opts || {};
   if (!state.meta) state.meta = {};
-  state.meta.lastDataChangeAt = new Date().toISOString();
+  if (o.stamp !== false) state.meta.lastDataChangeAt = new Date().toISOString();
   dataEditPending = true; // real edit queued — guard it until it's pushed
-  joyCelebrate(); // every real data save gets a little celebration
+  if (o.celebrate !== false) joyCelebrate(); // every real data save gets a little celebration
 }
 
 // ── Per-card "hide from viewers" (editor-only, synced) ───────────
@@ -2291,7 +2473,11 @@ function syncEnabled() {
 }
 
 function applyRemoteConfig(remote) {
-  const beforeJson = JSON.stringify(state.config);
+  // Compared in RTDB-canonical form (syncCanon): the echo of this device's
+  // own edit comes back key-sorted with nulls dropped (a new day's dow: null),
+  // and a plain string compare read that as somebody else's change — a second
+  // full builder rebuild half a second after every Add day / new game.
+  const beforeJson = JSON.stringify(syncCanon(state.config));
   const v0 = remote && remote.version;
   applyingRemoteConfig = true;
   state.config = remote;
@@ -2304,7 +2490,7 @@ function applyRemoteConfig(remote) {
   // open editor device set() the whole catalog on every config event —
   // racing whoever was actually editing.
   if (upgraded && canEdit() && state.config.version !== v0) schedulePushConfig();
-  if (appStarted && JSON.stringify(state.config) !== beforeJson) {
+  if (appStarted && JSON.stringify(syncCanon(state.config)) !== beforeJson) {
     // A config change can move points (double-points flag, a deleted game with
     // a result, a restore). It arrived from ELSEWHERE, so renderStandings must
     // treat the totals shift as remote — exactly as applyRemoteState does —
@@ -2405,12 +2591,34 @@ function clearDeferredSnapshot() {
   remoteRefetchPending = false;
 }
 
+// A re-render owed to a BACKGROUND event — a game clock settling at 0:00, the
+// staff list changing — that landed while someone was typing or had a
+// dropdown open. Those paths called renderAll outright, which rebuilt the
+// focused field under the editor's thumb: the keyboard dropped, an open
+// select vanished. Remote snapshots were already held back (canAdoptRemote);
+// these weren't. The idle tick pays the render off once focus leaves.
+let renderOwed = false;
+
+function renderAllWhenIdle() {
+  if (fieldFocused()) {
+    renderOwed = true;
+    armIdleRetry();
+    return;
+  }
+  renderOwed = false;
+  renderAll();
+}
+
 function idleRetryTick() {
-  if (!remoteRefetchPending && !pendingRemoteConfig) {
+  if (!remoteRefetchPending && !pendingRemoteConfig && !renderOwed) {
     clearInterval(idleRetryTimer);
     idleRetryTimer = null;
     return;
   }
+  // An owed render waits only for the field to let go — not for pushes to
+  // settle like the remote adopt below (with sync off they never do).
+  if (renderOwed && !fieldFocused()) { renderOwed = false; renderAll(); }
+  if (!remoteRefetchPending && !pendingRemoteConfig) return;
   if (!canAdoptRemote()) return; // still mid-entry / mid-push — check again next tick
   if (pendingRemoteConfig) {
     const rc = pendingRemoteConfig;
@@ -2737,9 +2945,13 @@ function initSync() {
     // ref. A denial just leaves the hand-typed counselor text in place.
     try {
       firebase.database().ref(dbPath('members')).on('value', (snap) => {
-        memberDirectory = snap.val() || {};
+        const next = snap.val() || {};
+        // A re-fire with the same list (a reconnect) changes nothing on screen.
+        const changed = !memberDirectoryLoaded || JSON.stringify(next) !== JSON.stringify(memberDirectory);
+        memberDirectory = next;
         memberDirectoryLoaded = true;
-        if (appStarted) renderAll();
+        // Held while a field is focused — see renderAllWhenIdle.
+        if (appStarted && changed) renderAllWhenIdle();
         // Chat shows author names FROM this directory (a message's own `name`
         // is client-supplied), so its bubbles need rebuilding when it lands.
         if (typeof onMemberDirectoryChanged === 'function') onMemberDirectoryChanged();
@@ -3097,6 +3309,32 @@ function setHtmlIfChanged(el, html) {
   return true;
 }
 
+// The same skip for panels that are SUPPOSED to change under their own
+// markup: anything holding a game clock (the 500 ms tick rewrites its digits
+// and urgency classes in place), a Big Board (goal cannons get appended to
+// it), a score form (inputs, a Jelly select reflecting its pick). There
+// setHtmlIfChanged's "has the DOM moved since?" check is always true, so it
+// would rebuild every time. This compares the markup alone, with clock digits
+// blanked out (they're the tick's job — see paintBoardClocks, and the
+// Pictionary stopwatch's two readouts in tick()). Use setHtmlIfChanged for a
+// panel nothing else touches; this one for anything ticking or interactive.
+// `holds` lists the objects the panel's listeners close over (the game, a
+// bracket): a remote snapshot swaps state objects for fresh copies, and a
+// skipped rebuild would leave the old handlers writing into orphans — scores
+// silently not saved. Any of them replaced means rebuild. Returns true when it
+// wrote, so callers wire listeners only onto fresh nodes.
+function setLiveHtmlIfChanged(el, html, holds) {
+  const key = html.replace(/(data-game-clock[^>]*>)[^<]*/g, '$1')
+    .replace(/(id="sw-(?:display|total)-[^"]*"[^>]*>)[^<]*/g, '$1');
+  const prev = el.__liveHolds;
+  if (el.__liveKey === key && prev && prev.length === holds.length &&
+      holds.every((h, i) => h === prev[i])) return false;
+  el.innerHTML = html;
+  el.__liveKey = key;
+  el.__liveHolds = holds;
+  return true;
+}
+
 function gameById(id) {
   return state.config.games.find((g) => g.id === id);
 }
@@ -3195,13 +3433,37 @@ function playMineChime() {
 // events still show, just quieter. Announcements notify every subscribed
 // phone regardless of team.
 
+// The rail has no cap of its own and its toasts take taps (pointer-events:auto),
+// so a burst — one snapshot moving several teams, a restore, a phone waking
+// after a long sleep — used to stack up and cover most of a phone screen.
+// Past this many, one is dismissed (its normal exit animation) to make room:
+// the oldest that isn't an "Your team…" toast, so a later up-next or
+// announcement toast pushes out other teams' points rather than your own.
+const TOAST_MAX_VISIBLE = 3;
+const liveToasts = []; // { toast, mine }
+
 function showToast(message, opts) {
   const mine = !!(opts && opts.mine);
   // Jelly toaster (the <jelly-toaster position="bottom"> rail in index.html).
   // Falls back to the legacy #toast-container pill if the module hasn't
   // loaded/failed — toasts carry sync errors and must always surface.
   if (window.jellyToast) {
-    window.jellyToast(message, { tone: mine ? 'success' : 'info', duration: mine ? 5500 : 4000 });
+    const toast = window.jellyToast(message, { tone: mine ? 'success' : 'info', duration: mine ? 5500 : 4000 });
+    if (toast) {
+      liveToasts.push({ toast, mine });
+      for (let i = liveToasts.length - 1; i >= 0; i--) if (!liveToasts[i].toast.isConnected) liveToasts.splice(i, 1);
+      while (liveToasts.length > TOAST_MAX_VISIBLE) {
+        // Never the toast just raised; prefer the oldest that isn't mine.
+        let at = liveToasts.slice(0, -1).findIndex((t) => !t.mine);
+        if (at < 0) at = 0;
+        // Dismiss through the ✕ — its handler stops propagation, so this
+        // synthetic click stays inside the toaster instead of bubbling to
+        // the document's delegated click handlers.
+        const old = liveToasts.splice(at, 1)[0].toast;
+        const close = old.querySelector && old.querySelector('.close');
+        (close || old).click();
+      }
+    }
     return;
   }
   const container = document.getElementById('toast-container');
@@ -3269,18 +3531,35 @@ function updateNotifyButton() {
 }
 
 // changes: [{ team, delta, total }]
+// Toast and notification text is PLAIN text (jellyToast sets textContent,
+// showNotification takes a string) — never esc() it, or a team or game named
+// with an apostrophe or ampersand shows a literal "&#39;" / "&amp;".
 function notifyPointChanges(changes) {
   if (!state.notify || !changes.length) return;
-  let anyMine = false;
+  const mineChanges = [];
+  const others = [];
   changes.forEach(({ team, delta, total }) => {
-    const mine = team.id === state.followTeam;
-    if (mine) anyMine = true;
     const sign = delta > 0 ? '+' : '';
-    const msg = `${teamEmoji(team.id)} ${esc(team.name)} ${sign}${delta} pts (now ${total})`;
-    showToast(mine ? "Your team scored! " + msg : msg, { mine });
-    if (mine) maybeNativeNotification('🏅 Your team scored!', msg, 'camp-points-' + team.id);
+    const msg = `${teamEmoji(team.id)} ${team.name} ${sign}${delta} pts (now ${total})`;
+    (team.id === state.followTeam ? mineChanges : others).push({ team, sign, delta, msg });
   });
-  if (anyMine) playMineChime(); else playAlertChime();
+  // One snapshot can move every team (a placement save, a restore, a new
+  // week), and a toast apiece used to fill the screen. Everyone else's changes
+  // share ONE toast; past three teams it uses their short names so it still
+  // wraps to a few lines on a small phone. (showToast's visible-toast cap
+  // evicts non-mine toasts first, so "Your team scored!" is never the one lost.)
+  if (others.length === 1) {
+    showToast(others[0].msg);
+  } else if (others.length > 1) {
+    const short = others.length > 3;
+    showToast('📈 ' + others.map(({ team, sign, delta }) =>
+      `${teamEmoji(team.id)} ${(short && TEAM_ABBREV[team.id]) || team.name} ${sign}${delta}`).join(' · '));
+  }
+  mineChanges.forEach(({ team, msg }) => {
+    showToast("Your team scored! " + msg, { mine: true });
+    maybeNativeNotification('🏅 Your team scored!', msg, 'camp-points-' + team.id);
+  });
+  if (mineChanges.length) playMineChime(); else playAlertChime();
 }
 
 // changes: [{ game, stage, aId, bId }]
@@ -3290,7 +3569,7 @@ function notifyMatchupChanges(changes) {
   changes.forEach(({ game, aId, bId }) => {
     const mine = aId === state.followTeam || bId === state.followTeam;
     if (mine) anyMine = true;
-    const msg = `${teamEmoji(aId)} ${esc(teamName(aId))} vs ${teamEmoji(bId)} ${esc(teamName(bId))} — ${esc(game.name)}`;
+    const msg = `${teamEmoji(aId)} ${teamName(aId)} vs ${teamEmoji(bId)} ${teamName(bId)} — ${game.name}`;
     showToast(mine ? "You're up next! " + msg : "Up next: " + msg, { mine });
     if (mine) maybeNativeNotification('🏅 Your team is up next!', msg, 'camp-matchup-' + game.id);
   });
@@ -3451,8 +3730,12 @@ function renderTools(wrap, g) {
   // is left for the Pictionary round runner (editor-only prompt/photo flow).
   let html = '';
   if (g.prompts) html += picRoundHTML(g);
-  wrap.innerHTML = html;
-  if (g.prompts) bindPicRound(wrap, g);
+  // Skipped when unchanged: while a lap runs, every snapshot or tick used to
+  // rebuild the "Guessed it! Stop clock" button — a press straddling it was
+  // lost — and the words editor's collapsed/open state reset. The handlers
+  // resolve everything (round, watch, setup) when they fire and re-render
+  // themselves after a change, so only the game is held.
+  if (setLiveHtmlIfChanged(wrap, html, [g]) && g.prompts) bindPicRound(wrap, g);
 }
 
 // ── Game clock ticker ────────────────────────────────────────────
@@ -3513,7 +3796,19 @@ function tickBoardClocks() {
   // Nothing left running — stopped just above, or paused/expired from another
   // device: let the screen sleep again.
   if (wakeLockWanted && !anyTimerRunning()) releaseWakeLock();
-  if (settled) renderAll();
+  // Not a bare renderAll: this fires on its own, and an editor typing a score
+  // when the clock hits zero lost the field (and the keyboard) to it.
+  if (settled) renderAllWhenIdle();
+  paintBoardClocks();
+}
+
+// Paint every visible clock's digits and urgency classes from state. The
+// classes exist only here — the markup builders emit just board-clock-zero —
+// so renderAll calls this too, as its last step: a board it rebuilt in the
+// final minute was otherwise born un-amber / un-red (no heartbeat, no glow)
+// for up to half a second, until the next tick. Not tickBoardClocks itself
+// from renderAll: that settles clocks (a write) and can call renderAll.
+function paintBoardClocks() {
   const els = document.querySelectorAll('[data-game-clock]');
   if (!els.length) return;
   els.forEach((el) => {
@@ -4259,6 +4554,8 @@ function rankTeamsByPoints(counts) {
 }
 
 let lastPointsByTeam = null; // for the remote-change pulse
+const POINTS_PULSE_MS = 700; // styles.css .points-pulse runs 0.6 s; a little margin
+const pointsPulseUntil = {}; // team id → ms timestamp its pulse class stays in the markup
 let remoteJustApplied = false;
 
 // ── Rank-change arrows (vs the start of the camp day) ─────────────
@@ -4297,8 +4594,14 @@ function renderStandings() {
   const changedTeams = []; // {team, delta, total} — for the notify option
   const dayRanks = startOfDayRanks(ranked);
 
-  tbody.innerHTML = '';
-  ranked.forEach((team, i) => {
+  // Rows are built as one string and written through setHtmlIfChanged: this
+  // runs on every renderAll and the 30 s tick, and re-creating identical rows
+  // dropped any text selected in the table and cut a running points-pulse off
+  // mid-fade. The pulse class is held in the markup for POINTS_PULSE_MS after
+  // it starts (below), so a render inside that window is an identical string
+  // and leaves the animating rows alone.
+  const now = Date.now();
+  const rowsHtml = ranked.map((team, i) => {
     const s = counts[team.id];
     // Movement since this device's start-of-day baseline. Zero-point tables
     // stay arrow-free (same gate as the podium tint).
@@ -4306,20 +4609,21 @@ function renderStandings() {
     const rankDelta = moved
       ? `<span class="rank-delta ${moved > 0 ? 'up' : 'down'}" title="${moved > 0 ? 'Up' : 'Down'} ${Math.abs(moved)} since this morning">${moved > 0 ? '↑' : '↓'}${Math.abs(moved)}</span>`
       : '';
-    const tr = document.createElement('tr');
     // Podium tint for the top 3 — but only once real points exist, so
     // Monday's all-zero table stays neutral.
-    tr.className = i < 3 && s.points > 0 ? 'podium-row podium-' + (i + 1) : '';
-    if (team.id === state.followTeam) tr.className += ' following-row';
+    const cls = [];
+    if (i < 3 && s.points > 0) cls.push('podium-row', 'podium-' + (i + 1));
+    if (team.id === state.followTeam) cls.push('following-row');
     if (pulseFromRemote && lastPointsByTeam[team.id] !== undefined && lastPointsByTeam[team.id] !== s.points) {
-      tr.className += ' points-pulse';
+      pointsPulseUntil[team.id] = now + POINTS_PULSE_MS;
       changedTeams.push({ team, delta: s.points - lastPointsByTeam[team.id], total: s.points });
     }
+    if ((pointsPulseUntil[team.id] || 0) > now) cls.push('points-pulse');
     const medalCell = (n) => `<td class="medal-col">${n ? n : '<span class="zero">0</span>'}</td>`;
     // Signed cell for the point-source columns (verse / meals): dim a zero,
     // show a leading + only for positive tallies (deductions keep their −).
     const extraCell = (n) => `<td class="extra-col">${n ? (n > 0 ? '+' + n : n) : '<span class="zero">0</span>'}</td>`;
-    tr.innerHTML = `
+    return `<tr class="${cls.join(' ')}">
       <td class="rank-col">${i + 1}${rankDelta}</td>
       <td class="team-cell">
         <div class="team-name-line"><span class="team-emoji">${teamEmoji(team.id)}</span> <span class="team-name-text">${esc(team.name)}</span>${team.id === state.followTeam ? ' <span class="following-star" title="You\'re following this team">⭐</span>' : ''}</div>
@@ -4331,9 +4635,9 @@ function renderStandings() {
       ${medalCell(s.bronze)}
       ${extraCell(s.verse)}
       ${extraCell(s.meals)}
-    `;
-    tbody.appendChild(tr);
-  });
+    </tr>`;
+  }).join('');
+  setHtmlIfChanged(tbody, rowsHtml);
   lastPointsByTeam = {};
   ranked.forEach((team) => { lastPointsByTeam[team.id] = counts[team.id].points; });
   renderCatchupHint(ranked, counts);
@@ -4354,7 +4658,7 @@ function renderCatchupHint(ranked, counts) {
   const leader = ranked[0];
   if (!leader || ranked.length < 2 || counts[leader.id].points <= 0) {
     el.hidden = true;
-    el.innerHTML = '';
+    setHtmlIfChanged(el, '');
     return;
   }
   let chaser = null;
@@ -4366,13 +4670,13 @@ function renderCatchupHint(ranked, counts) {
   const pair = `${teamEmoji(chaser.id)} <strong>${esc(chaser.name)}</strong>`;
   const leaderBit = `${teamEmoji(leader.id)} ${esc(leader.name)}`;
   if (gap <= 0) {
-    el.innerHTML = `🤝 ${pair} is tied on points with ${leaderBit} — next medal breaks it!`;
+    setHtmlIfChanged(el, `🤝 ${pair} is tied on points with ${leaderBit} — next medal breaks it!`);
   } else {
     // During the double-points window every remaining game is a doubled
     // (messtival) game, so a gold won now is worth 2× — count with that.
     const doubled = inDoubleBonusWindow();
     const golds = Math.ceil(gap / (MEDAL_POINTS.gold * (doubled ? 2 : 1)));
-    el.innerHTML = `🥇 ${pair} needs ${golds}${doubled ? ' double-points' : ''} gold${golds === 1 ? '' : 's'} (${gap} pt${gap === 1 ? '' : 's'}) to catch ${leaderBit}.`;
+    setHtmlIfChanged(el, `🥇 ${pair} needs ${golds}${doubled ? ' double-points' : ''} gold${golds === 1 ? '' : 's'} (${gap} pt${gap === 1 ? '' : 's'}) to catch ${leaderBit}.`);
   }
   el.hidden = false;
 }
@@ -4613,9 +4917,12 @@ function renderMyElectives() {
   const card = document.getElementById('my-electives-card');
   if (!card) return;
   const rows = myElectivesToday();
-  if (!rows) { card.hidden = true; card.innerHTML = ''; return; }
+  if (!rows) { card.hidden = true; setHtmlIfChanged(card, ''); return; }
   card.hidden = false;
-  card.innerHTML = `
+  // Same rule as the other home panels: this runs on every renderAll and the
+  // 30 s tick, so identical markup must not be rewritten (it drops a text
+  // selection and repaints the card for nothing).
+  setHtmlIfChanged(card, `
     <div class="my-el-head"><span class="my-el-title">⭐ My electives today</span></div>
     <div class="my-el-rows">
       ${rows.map((r) => `
@@ -4625,7 +4932,7 @@ function renderMyElectives() {
           <span class="my-el-station">${r.onBreak ? 'Break' : esc(r.station)}</span>
           <span class="my-el-wx">${electiveWxHtml(campNow().dow, r.slot)}</span>
         </div>`).join('')}
-    </div>`;
+    </div>`);
 }
 
 function ordinal(n) {
@@ -4718,14 +5025,29 @@ function openIdentityPicker() {
 function showPickerOverlay() {
   const overlay = teamPickerOverlayEl();
   if (!overlay) return;
+  holdPickerHeight(false); // a fresh open sizes to its own step
   renderPickerStep();
   overlay.setAttribute('open', '');
 }
 
+// Programmatic close — a hand-off (adoptMemberTeam, openCampPicker). The
+// attribute path skips the component's exit animation and the dialog is gone in
+// one frame, which is right when another overlay is taking over.
 function closeTeamPicker() {
   const overlay = teamPickerOverlayEl();
   if (!overlay) return;
   overlay.removeAttribute('open');
+}
+
+// A close the PERSON asked for (they picked, or chose to stay put) should play
+// the dialog's exit animation, as the ✕ and backdrop already do: `open = false`
+// goes through the component's animated close, removeAttribute('open') doesn't.
+// Before jelly has upgraded the element `.open` is only a plain property, so
+// fall back to the attribute then.
+function closeOverlayAnimated(overlay) {
+  if (!overlay || !overlay.hasAttribute('open')) return;
+  if (typeof customElements !== 'undefined' && customElements.get(overlay.localName)) overlay.open = false;
+  else overlay.removeAttribute('open');
 }
 
 function renderPickerStep() {
@@ -4782,8 +5104,20 @@ function renderTeamPickerOptions() {
       // Advance to the identity step (don't close yet).
       pickerTeamId = id;
       pickerStep = 'identity';
+      holdPickerHeight(true);
       renderPickerStep();
     });
+  });
+}
+
+// The identity step lists fewer options than the team step, and the dialog is
+// vertically centred, so swapping the content made it snap shorter (565 → 359px)
+// and re-centre in one frame. Keep the title, hint and option list as tall as
+// the team step left them; `false` lets go (a fresh open sizes to its own step).
+function holdPickerHeight(hold) {
+  ['.team-picker-title', '.team-picker-hint', '#team-picker-options'].forEach((sel) => {
+    const el = document.querySelector(sel);
+    if (el) el.style.minHeight = hold && el.offsetHeight ? el.offsetHeight + 'px' : '';
   });
 }
 
@@ -4810,7 +5144,7 @@ function renderIdentityOptions() {
 }
 
 function closePickerAndRender() {
-  closeTeamPicker(); // the dialog's close event shows any pending notify toast
+  closeOverlayAnimated(teamPickerOverlayEl()); // the dialog's close event shows any pending notify toast
   renderAll();
 }
 
@@ -5396,7 +5730,28 @@ function renderDayTabs() {
     saveState();
   });
 
+  settleDayTabPill(tabs);
   wireDayPanels(nav);
+}
+
+// A fresh <jelly-tabs> whose active day isn't the first one used to start its
+// blue pill over "Mon" and spring across to the real day: jelly-segmented
+// places the pill from its first sync(), which runs before its jelly-segment
+// children have upgraded (no values yet ⇒ index 0), and the corrected sync a
+// microtask later only moves the TARGET. Snap the pill onto the target once
+// the component has re-synced. Creation only — never in the change handler,
+// where the spring is the whole point.
+function settleDayTabPill(tabs) {
+  const seg = tabs && tabs.shadowRoot && tabs.shadowRoot.querySelector('jelly-segmented');
+  if (!seg) return;
+  const snap = () => {
+    if (seg.reflecting || !('pillTarget' in seg)) return;
+    seg.pillX = seg.pillTarget;
+    seg.pillXVelocity = 0;
+    if (seg.requestFrame) seg.requestFrame();
+  };
+  snap();
+  Promise.resolve().then(snap); // after the segmented's own mutation-observer re-sync
 }
 
 // The "you're not looking at today" note, now rendered per panel.
@@ -5488,11 +5843,11 @@ function dayGamesHTML(day) {
 function wireDayPanels(nav) {
   nav.querySelectorAll('.game-card').forEach((card) => {
     card.addEventListener('click', () => {
+      rememberGameOpener(card);
       state.ui.gameId = card.dataset.gameId;
       saveState();
       renderAll();
-      joySlideIn(document.getElementById('game-view'));
-      document.getElementById('game-view').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      scrollToGameView();
     });
   });
   nav.querySelectorAll('.empty-day-builder-btn').forEach((btn) =>
@@ -5507,6 +5862,83 @@ function wireDayPanels(nav) {
 // on open/close TRANSITIONS (folding the accordion) instead of every render.
 let lastGameViewId = null;
 
+// Where the open game was opened FROM: the tapped card's spot on screen, and
+// whether Competitions was open. Back used to drop the page to the top of home
+// (hiding the game view shrank the document), spring the list open under the
+// viewport and land mid-list with the tapped card off-screen — and it opened
+// Competitions even for someone who came from the home Big Board. Now Back
+// puts the page back exactly as it was (restoreGameOpener).
+let gameOpener = null;
+
+// The page position to come back to, plus where the opener's CONTAINER sat
+// (the Competitions card, or the home live strip) so Back can allow for
+// anything that appeared above it meanwhile. Not the tapped card itself: it is
+// mid-transform both times (pressed-in when tapped, rising in when the list
+// re-opens), and a measurement through a transform is off by its offset.
+function rememberGameOpener(el) {
+  const comp = document.querySelector('.competitions-card');
+  const anchorSel = el.closest('#live-home') ? '#live-home' : '.competitions-card';
+  const anchor = document.querySelector(anchorSel);
+  gameOpener = {
+    y: window.scrollY,
+    anchorSel,
+    anchorTop: anchor ? anchor.getBoundingClientRect().top + window.scrollY : null,
+    compOpen: !!(comp && comp.hasAttribute('open')),
+  };
+}
+
+// Called by Back right after its renderAll, in the same frame — the list was
+// re-opened without its spring (setCardOpenNow), so the layout is already
+// final and one instant scroll puts the page back where it was.
+function restoreGameOpener(gid) {
+  const o = gameOpener;
+  gameOpener = null;
+  if (o) {
+    const anchor = document.querySelector(o.anchorSel);
+    const shift = anchor && o.anchorTop != null && anchor.getClientRects().length
+      ? anchor.getBoundingClientRect().top + window.scrollY - o.anchorTop : 0;
+    window.scrollTo(0, o.y + shift);
+    return;
+  }
+  // No record (the page was reloaded with the game open): land on its card.
+  const card = gid && [...document.querySelectorAll('.game-card')]
+    .find((el) => el.dataset.gameId === gid && el.getClientRects().length);
+  if (card) card.scrollIntoView({ block: 'center' });
+}
+
+// Bring a just-opened game into view. Scrolled BEFORE the slide-in starts: a
+// target measured mid-slide is off by the slide's offset. The fold that
+// opening does is instant (setCardOpenNow), so the target isn't still moving.
+// Instant by default: folding the accordion already shrank the page and moved
+// the scroll position, so a smooth scroll's first painted frame sat at the
+// wrong place (the game below the fold) and then travelled. `smooth` is for
+// the home Big Board, whose game really is a screenful or two away.
+function scrollToGameView(smooth) {
+  const gv = document.getElementById('game-view');
+  if (!gv || gv.hidden) return;
+  gv.scrollIntoView({ behavior: smooth && !JOY_REDUCED.matches ? 'smooth' : 'auto', block: 'start' });
+  joySlideIn(gv);
+}
+
+// Flip a home card open or shut with no height animation. jelly-collapsible
+// springs its grid rows over ~0.36 s, and opening a game / Back both scroll
+// to an exact spot in that same moment: aimed at a layout still springing,
+// the open overshot (back pill above the screen) and Back whipped the page up
+// and down. The component's shadow root is open, so its transition is
+// switched off for this one flip — if Jelly's internals ever change, the
+// lookup finds nothing and the card simply animates as it used to.
+function setCardOpenNow(card, open) {
+  const sr = card.shadowRoot;
+  const parts = sr ? ['.wrap', '.content'].map((s) => sr.querySelector(s)).filter(Boolean) : [];
+  parts.forEach((el) => { el.style.transition = 'none'; });
+  if (typeof card.toggle === 'function') card.toggle(open);
+  else if (open) card.setAttribute('open', '');
+  else card.removeAttribute('open');
+  // Commit the new rows while the transition is off, then hand it back.
+  parts.forEach((el) => { void getComputedStyle(el).gridTemplateRows; });
+  parts.forEach((el) => { el.style.transition = ''; });
+}
+
 function renderGameView() {
   const view = document.getElementById('game-view');
   const dayNav = document.getElementById('day-tabs'); // tabs + per-day panels
@@ -5519,22 +5951,20 @@ function renderGameView() {
   if (!!g !== !!lastGameViewId || (g && g.id !== lastGameViewId)) {
     const comp = document.querySelector('.competitions-card');
     if (g) {
-      document.querySelectorAll('.collapsible-card[open]').forEach((d) => {
-        if (typeof d.toggle === 'function') d.toggle(false);
-        else d.removeAttribute('open');
-      });
-    } else if (comp && !comp.hidden) {
+      document.querySelectorAll('.collapsible-card[open]').forEach((d) => setCardOpenNow(d, false));
+    } else if (comp && !comp.hidden && (!gameOpener || gameOpener.compOpen)) {
       // Skipped when Competitions is hidden from this viewer — otherwise it
       // would sit open behind the scenes and pop out already-expanded if the
-      // editor un-hid it later.
-      if (typeof comp.toggle === 'function') comp.toggle(true);
-      else comp.setAttribute('open', '');
+      // editor un-hid it later — and when the game was opened from the home
+      // Big Board with Competitions shut (there's no list to go back to).
+      setCardOpenNow(comp, true);
     }
   }
   lastGameViewId = g ? g.id : null;
 
   if (!g) {
     view.hidden = true;
+    view.__headHtml = null; // the next open builds afresh (the back pill's entrance plays)
     if (dayNav) dayNav.hidden = false;
     return;
   }
@@ -5543,7 +5973,14 @@ function renderGameView() {
 
   const badge = FORMAT_BADGES[g.format] || { label: g.format || '?', cls: '' };
   const backDay = dayById(g.dayId);
-  let html = `
+  // The head (back pill, title, rules) is built once per game and then left
+  // alone. It used to be rewritten on every renderAll — every snapshot,
+  // every clock tap — which replayed the back pill's slide-in (a blink on
+  // every goal) and slammed "How to play" shut under someone reading it.
+  // Compared as a plain string, not via setHtmlIfChanged: opening the rules
+  // adds `open` to the <details>, which that would read as "DOM changed" and
+  // rebuild — shut.
+  const headHtml = `
     <button id="back-btn" class="back-pill back-btn"><span class="back-pill-arrow" aria-hidden="true">←</span> ${esc(backDay ? backDay.name : 'All')} games</button>
     <div class="game-view-header">
       <span class="game-emoji-lg">${esc(g.emoji)}</span>
@@ -5559,35 +5996,50 @@ function renderGameView() {
         <h4>${esc(sec.h)}</h4>
         <ul>${(sec.items || []).map((it) => `<li>${esc(it)}</li>`).join('')}</ul>
       `).join('')}
-    </details>` : ''}
+    </details>` : ''}`;
+  if (view.__headHtml !== headHtml || !view.querySelector('#entry-area')) {
+    view.innerHTML = `${headHtml}
     <div id="clock-area"></div>
     <div id="tools-area"></div>
     <div id="entry-area"></div>
   `;
-  view.innerHTML = html;
+    view.__headHtml = headHtml;
 
-  document.getElementById('back-btn').addEventListener('click', () => {
-    state.ui.gameId = null;
-    saveState();
-    renderAll();
-    joyStagger(document.querySelector('#day-tabs jelly-tab-panel[active] .day-panel-body'));
-  });
+    document.getElementById('back-btn').addEventListener('click', () => {
+      const gid = state.ui.gameId;
+      state.ui.gameId = null;
+      saveState();
+      renderAll();
+      // No joyStagger here any more: re-opening Competitions already rises its
+      // contents in, and a second rise inside the first read as sluggish.
+      restoreGameOpener(gid);
+    });
+  }
 
   // Standalone game clock — everyone sees it tick live; only editors get the
   // controls (clockBlockHTML handles that). Live-tracker games show their clock
   // on the Big Board instead, so they're excluded here to avoid a double clock.
+  // Rebuilt only when it changes, so the urgency classes, the zero alarm and
+  // the buttons under a thumb survive unrelated renders.
+  const ca = document.getElementById('clock-area');
   if (g.timer && !g.liveTracker && !state.results[g.id]) {
-    const ca = document.getElementById('clock-area');
-    if (ca) { ca.innerHTML = clockBlockHTML(g); bindClock(ca, g); }
+    if (setLiveHtmlIfChanged(ca, clockBlockHTML(g), [g])) bindClock(ca, g);
+  } else {
+    setLiveHtmlIfChanged(ca, '', []);
   }
 
   // Pictionary keeps its tools visible after the result is saved so
   // photos can still be exported; other tools hide once the game is done.
   // Viewers don't get the score-entry tools at all.
+  const tools = document.getElementById('tools-area');
   if (canEdit() && (g.timer || g.prompts) && (g.prompts || !state.results[g.id])) {
-    renderTools(document.getElementById('tools-area'), g);
+    renderTools(tools, g);
+  } else {
+    setLiveHtmlIfChanged(tools, '', []); // the area outlives a render, so clear what's gone
   }
 
+  // Each entry renderer skips an unchanged rebuild itself (setLiveHtmlIfChanged)
+  // — except a started bracket (see renderTournament), which still rebuilds.
   const entry = document.getElementById('entry-area');
   const result = state.results[g.id];
   if (result) {
@@ -5665,7 +6117,7 @@ function renderLiveHome() {
   const wrap = document.getElementById('live-home');
   if (!wrap) return;
   let games = liveHomeGames();
-  if (!games.length) { wrap.hidden = true; wrap.innerHTML = ''; return; }
+  if (!games.length) { wrap.hidden = true; setLiveHtmlIfChanged(wrap, '', []); return; }
   wrap.hidden = false;
 
   let boardHTML = '';
@@ -5685,7 +6137,7 @@ function renderLiveHome() {
     games = games.filter((x) => x.id !== bg.id);
   }
 
-  wrap.innerHTML = boardHTML + games.map((g) => {
+  const liveHtml = boardHTML + games.map((g) => {
     if (!(state.brackets && state.brackets[g.id])) return liveHomeTallyCard(g); // tally live board
     const b = normalizeBracket(state.brackets[g.id]);
     const phaseLabel = { round1: 'Round 1', bye: 'Bye', semifinal: 'Championship game', championship: 'Final', summary: 'Results' }[b.phase] || '';
@@ -5725,24 +6177,36 @@ function renderLiveHome() {
     </button>`;
   }).join('');
 
-  const openGame = (gid) => {
-    const g = gameById(gid);
-    if (!g) return;
-    state.ui.gameId = g.id;
-    state.ui.day = g.dayId;
-    saveState();
-    renderAll();
-    const gv = document.getElementById('game-view');
-    joySlideIn(gv);
-    if (gv) gv.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  };
-  wrap.querySelectorAll('.live-home-card').forEach((btn) => {
-    btn.addEventListener('click', () => openGame(btn.dataset.gameId));
-  });
+  // Rebuilt only when what it shows changed (clock digits aside — the tick
+  // owns those). It used to be rewritten on every renderAll: each LIVE card's
+  // pulse ring restarted mid-beat, goal cannons on the board were wiped
+  // mid-flight, the board's final-ten glow blinked off, and a mouse press that
+  // straddled a snapshot opened nothing (its button was replaced under it).
+  // Its listeners hold no state (openGame looks the game up by id), so they
+  // are wired only onto fresh nodes.
+  if (setLiveHtmlIfChanged(wrap, liveHtml, [])) {
+    const openGame = (el) => {
+      const g = gameById(el.dataset.gameId);
+      if (!g) return;
+      rememberGameOpener(el);
+      state.ui.gameId = g.id;
+      state.ui.day = g.dayId;
+      saveState();
+      renderAll();
+      scrollToGameView(true);
+    };
+    wrap.querySelectorAll('.live-home-card').forEach((btn) => {
+      btn.addEventListener('click', () => openGame(btn));
+    });
+    const board = wrap.querySelector('.home-board');
+    if (board) {
+      board.addEventListener('click', () => openGame(board));
+      board.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') openGame(board); });
+    }
+  }
+  // Every render, written or not: it diffs the score against the last one.
   const hb = wrap.querySelector('.home-board');
   if (hb) {
-    hb.addEventListener('click', () => openGame(hb.dataset.gameId));
-    hb.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') openGame(hb.dataset.gameId); });
     const g = gameById(hb.dataset.gameId);
     const b = g && state.brackets[g.id] && normalizeBracket(state.brackets[g.id]);
     const pair = b && currentMatchupOf(g, b);
@@ -5836,10 +6300,10 @@ function nextMatchupOf(g, b) {
 function renderLiveTallyWatch(container, g) {
   const ranked = tallyRankLive(g);
   if (!ranked.length) {
-    container.innerHTML = `<div class="live-watch">
+    setLiveHtmlIfChanged(container, `<div class="live-watch">
       <p class="live-watch-label">🔴 ${esc(g.name)}</p>
       <p class="muted">Live rankings will appear here as the ref enters scores — no refresh needed.</p>
-    </div>`;
+    </div>`, [g]);
     return;
   }
   const complete = ranked.length >= state.teams.length;
@@ -5850,16 +6314,20 @@ function renderLiveTallyWatch(container, g) {
       <span class="lw-rank-team">${teamEmoji(e.id)} ${esc(teamName(e.id))}</span>
       <span class="lw-rank-score">${esc(formatScore(g, e.v))}</span>
     </li>`).join('');
-  container.innerHTML = `<div class="live-watch live-watch-board">
+  setLiveHtmlIfChanged(container, `<div class="live-watch live-watch-board">
     <p class="live-watch-label">🔴 Live now · ${esc(g.name)}</p>
     <p class="live-watch-board-sub">${g.lowerWins ? 'Fastest total time' : 'Team totals'} · ${ranked.length}/${state.teams.length} teams in</p>
     <ol class="lw-rank-list">${rows}</ol>
     ${complete
       ? `<p class="live-watch-suggest">🏅 Suggested: 🥇 ${esc(teamName(ranked[0].id))} · 🥈 ${esc(teamName(ranked[1].id))} · 🥉 ${esc(teamName(ranked[2].id))}</p>`
       : '<p class="muted live-watch-note">Updates automatically as the ref scores — no refresh needed.</p>'}
-  </div>`;
+  </div>`, [g]);
 }
 
+// Every write here goes through setLiveHtmlIfChanged: a spectator's view used
+// to be rebuilt on every snapshot from anywhere, wiping goal cannons
+// mid-flight and dropping the clock's final-ten heartbeat. Nothing in it holds
+// state (no listeners), so the game is the only thing to compare.
 function renderLiveWatch(container, g) {
   // Tally games with live rankings (Inflatable Bowling, Pictionary) show a
   // read-only leaderboard rather than a bracket matchup.
@@ -5869,7 +6337,7 @@ function renderLiveWatch(container, g) {
   }
   const raw = state.brackets && state.brackets[g.id];
   if (!raw) {
-    container.innerHTML = `<p class="view-only-note">👀 View-only. This game hasn't been scored yet. Tap <strong>🔒 View only</strong> at the top and enter the score PIN to run it.</p>`;
+    setLiveHtmlIfChanged(container, `<p class="view-only-note">👀 This game hasn't been scored yet. Scores show here as soon as a director enters them.</p>`, [g]);
     return;
   }
   const b = normalizeBracket(raw);
@@ -5881,11 +6349,11 @@ function renderLiveWatch(container, g) {
   const doneHTML = done ? `<div class="live-watch-done"><p class="muted">Completed:</p><ul>${done}</ul></div>` : '';
 
   if (!pair) {
-    container.innerHTML = `<div class="live-watch">
+    setLiveHtmlIfChanged(container, `<div class="live-watch">
       <p class="live-watch-label">🔴 ${esc(g.name)} — ${phaseLabel} in progress</p>
       <p class="muted">Waiting for the next matchup…</p>
       ${doneHTML}
-    </div>`;
+    </div>`, [g]);
     return;
   }
 
@@ -5898,15 +6366,16 @@ function renderLiveWatch(container, g) {
     ? `<p class="live-watch-ondeck">⏭️ Up next: ${teamEmoji(nxt[0])} ${esc(teamName(nxt[0]))} vs ${teamEmoji(nxt[1])} ${esc(teamName(nxt[1]))}</p>`
     : '';
 
-  container.innerHTML = `
+  setLiveHtmlIfChanged(container, `
     <div class="live-watch">
       ${g.liveTracker ? '' : `<p class="live-watch-label">🔴 Live now · ${phaseLabel}</p>`}
       ${scoreHTML}
       ${onDeckHTML}
       <p class="muted live-watch-note">Updates automatically as the ref scores — no refresh needed.</p>
       ${doneHTML}
-    </div>`;
+    </div>`, [g]);
 
+  // Every render, written or not: it diffs the score against the last one.
   const boardEl = container.querySelector('.big-board');
   if (boardEl && g.liveTracker) {
     boardDiffCelebrate(boardEl, g, getLiveMatch(g, pair[0], pair[1]), pair);
@@ -5925,7 +6394,8 @@ function renderResult(container, g, result) {
   // Thursday evening/Friday under the double-points window) pays double, and
   // this recap must show the same numbers the standings actually award.
   const mult = g.messtival ? 2 : 1;
-  container.innerHTML = `
+  // The listener below resolves state when tapped, so only the game is held.
+  const fresh = setLiveHtmlIfChanged(container, `
     <h3>Final results</h3>
     <div class="medal-summary">
       <div class="medal-row gold-row">🥇 <strong>${esc(teamName(result.medals.gold))}</strong> <span class="medal-points">+${MEDAL_POINTS.gold * mult} pts</span></div>
@@ -5934,8 +6404,8 @@ function renderResult(container, g, result) {
     </div>
     ${extra}
     ${canEdit() ? '<button id="clear-result-btn" class="link-btn danger-link">Clear result &amp; re-enter</button>' : ''}
-  `;
-  if (!canEdit()) return;
+  `, [g]);
+  if (!fresh || !canEdit()) return;
   document.getElementById('clear-result-btn').addEventListener('click', () => {
     if (!confirm('Clear the saved result for ' + g.name + '? Its points come off the week standings.')) return;
     delete state.results[g.id];
@@ -5990,13 +6460,27 @@ function renderTally(container, g) {
   if (!state.drafts[g.id]) state.drafts[g.id] = { scores: {}, medals: {} };
   const draft = normalizeDraft(state.drafts[g.id]);
   const steps = g.counterSteps;
+  // The listeners below resolve the draft when they FIRE, not from `draft`:
+  // the form now outlives renders that don't change it, and a remote snapshot
+  // swaps state.drafts for a fresh copy — a handler still holding the old one
+  // would type into an orphan and the score would never be saved.
+  const liveDraft = () => normalizeDraft(state.drafts[g.id] || (state.drafts[g.id] = { scores: {}, medals: {} }));
 
   // The own-team guard: a tally game's "round" is each team's own score, so
   // an editor assigned to a team gets everyone else's row and a locked one
   // for their own (see canScoreRound). They still finalize the result.
   const blockedTeam = state.teams.find((t) => blockedByOwnTeam(t.id));
 
-  container.innerHTML = `
+  // Skipped when nothing in it changed: rebuilding re-created ~100 Jelly
+  // elements (50-130 ms, several times that on a phone) on every snapshot
+  // from anywhere while an editor had the game open. But a snapshot can put a
+  // score back to exactly what this form was built with — same markup, while
+  // the field still shows what was typed since — so it may only be kept when
+  // the fields on screen still match the draft.
+  const showsDraft = [...container.querySelectorAll('.score-input-row input')]
+    .every((input) => input.value === (draft.scores[input.dataset.teamId] || ''));
+  if (!showsDraft) container.__liveKey = null;
+  const fresh = setLiveHtmlIfChanged(container, `
     <h3>Enter team scores <span class="unit-tag">(${esc(g.unit || 'points')}${g.lowerWins ? ' — lowest wins' : ''})</span></h3>
     ${blockedTeam ? ownTeamNoteHTML('your own team\u2019s score') : ''}
     <div class="score-input-grid">
@@ -6024,22 +6508,30 @@ function renderTally(container, g) {
     <div id="tally-medals"></div>
     <p id="entry-error" class="entry-error" role="alert" hidden></p>
     <jelly-button id="save-result-btn" class="primary-btn" block>Save Result</jelly-button>
-  `;
+  `, [g]);
+  if (!fresh) {
+    // The picks aren't part of the form's markup (another editor may have
+    // changed one), so the medal block still refreshes — cheaply, see there.
+    updateTallyMedals(g);
+    return;
+  }
 
   container.querySelectorAll('.score-input-row input').forEach((input) => {
     let leaderBefore = null;
     input.addEventListener('focus', () => {
-      leaderBefore = leaderOf(g, draft);
+      leaderBefore = leaderOf(g, liveDraft());
     });
     input.addEventListener('input', () => {
-      draft.scores[input.dataset.teamId] = input.value;
-      draft.medals = {}; // re-auto-rank when scores change
+      const live = liveDraft();
+      live.scores[input.dataset.teamId] = input.value;
+      live.medals = {}; // re-auto-rank when scores change
       saveState();
       updateTallyMedals(g);
     });
     input.addEventListener('change', () => {
-      checkHighScore(g, draft, input.dataset.teamId, leaderBefore);
-      leaderBefore = leaderOf(g, draft);
+      const live = liveDraft();
+      checkHighScore(g, live, input.dataset.teamId, leaderBefore);
+      leaderBefore = leaderOf(g, live);
     });
     // Push the moment the field loses focus, so the value lands on the server
     // right away rather than waiting out the debounce.
@@ -6049,18 +6541,19 @@ function renderTally(container, g) {
   container.querySelectorAll('.counter-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       getAudio(); // unlock audio on a user gesture
+      const live = liveDraft();
       const teamId = btn.closest('.counter-btn-row').dataset.teamId;
       const delta = parseInt(btn.dataset.delta, 10);
-      const prevLeader = leaderOf(g, draft);
-      const current = parseScoreInput(g, draft.scores[teamId] || '') || 0;
+      const prevLeader = leaderOf(g, live);
+      const current = parseScoreInput(g, live.scores[teamId] || '') || 0;
       let next = current + delta;
       if (next < 0 && !g.counterAllowNegative) next = 0;
-      draft.scores[teamId] = String(next);
-      draft.medals = {};
+      live.scores[teamId] = String(next);
+      live.medals = {};
       const input = container.querySelector(`input[data-team-id="${teamId}"]`);
       if (input) input.value = String(next);
       saveState();
-      checkHighScore(g, draft, teamId, prevLeader);
+      checkHighScore(g, live, teamId, prevLeader);
       updateTallyMedals(g);
     });
   });
@@ -6093,9 +6586,10 @@ function renderTally(container, g) {
       errEl.hidden = false;
       return;
     }
+    const live = liveDraft();
     const scores = {};
     state.teams.forEach((t) => {
-      const v = parseScoreInput(g, draft.scores[t.id] || '');
+      const v = parseScoreInput(g, live.scores[t.id] || '');
       if (v !== null) scores[t.id] = v;
     });
     state.results[g.id] = { medals: picks, scores, savedAt: new Date().toISOString() };
@@ -6144,17 +6638,40 @@ function updateTallyMedals(g) {
     tieNote = '<p class="tie-note">⚠️ Tie for silver/bronze — adjust the medals below if needed.</p>';
   }
 
-  wrap.innerHTML = `
+  // Written in parts. The ranking pills carry the scores, so they change on
+  // every keystroke and +N tap. The pickers (3 Jelly selects, 18 options — the
+  // expensive part) are built once per team list; a changed pick just sets the
+  // selects' values in place, so not even the first keystrokes (where the
+  // auto-picks move) rebuild them — ~50 ms on desktop, several times that on
+  // a phone, and it closed a dropdown someone had open.
+  if (!wrap.querySelector('#tally-picker')) {
+    wrap.innerHTML = '<div id="tally-ranking"></div><div id="tally-heading"></div><div id="tally-picker"></div>';
+  }
+  setHtmlIfChanged(wrap.querySelector('#tally-ranking'), `
     ${ranked.length ? `<div class="live-ranking">${ranked.map((e, i) =>
       `<span class="rank-pill">${i + 1}. ${teamEmoji(e.id)} ${esc(teamName(e.id))} · ${formatScore(g, e.v)}</span>`).join('')}</div>` : ''}
-    ${tieNote}
-    <h3 class="medal-picker-heading">Medals ${ranked.length >= 3 ? '<span class="unit-tag">(auto-filled from scores)</span>' : ''}</h3>
-    ${medalPickerHTML(picks, g)}
-  `;
+    ${tieNote}`);
+  setHtmlIfChanged(wrap.querySelector('#tally-heading'),
+    `<h3 class="medal-picker-heading">Medals ${ranked.length >= 3 ? '<span class="unit-tag">(auto-filled from scores)</span>' : ''}</h3>`);
+  const picker = wrap.querySelector('#tally-picker');
+  const shape = medalPickerHTML({}, g); // everything but which team is picked
+  if (picker.__shape === shape && picker.querySelector('[data-medal]')) {
+    picker.querySelectorAll('[data-medal]').forEach((sel) => {
+      const want = picks[sel.dataset.medal] || '';
+      if ((sel.value || '') !== want) sel.value = want;
+    });
+    return;
+  }
+  picker.innerHTML = medalPickerHTML(picks, g);
+  picker.__shape = shape;
 
-  wrap.querySelectorAll('[data-medal]').forEach((sel) => {
+  picker.querySelectorAll('[data-medal]').forEach((sel) => {
     sel.addEventListener('change', () => {
-      draft.medals[sel.dataset.medal] = sel.value || null;
+      // Resolved when picked: the picker outlives renders now, and the draft
+      // it was built from may since have been replaced by a snapshot.
+      const d = state.drafts[g.id];
+      if (!d) return;
+      normalizeDraft(d).medals[sel.dataset.medal] = sel.value || null;
       saveState();
     });
   });
@@ -6166,17 +6683,25 @@ function renderPlacement(container, g) {
   if (!state.drafts[g.id]) state.drafts[g.id] = { medals: {} };
   const draft = normalizeDraft(state.drafts[g.id]);
 
-  container.innerHTML = `
+  // Same skip as renderTally (six Jelly selects rebuilt on every snapshot
+  // cost ~50 ms), with the same proviso — kept only while the selects on
+  // screen still show the draft — and listeners that resolve it when they fire.
+  const showsDraft = [...container.querySelectorAll('[data-medal]')]
+    .every((sel) => (sel.value || null) === (draft.medals[sel.dataset.medal] || null));
+  if (!showsDraft) container.__liveKey = null;
+  const fresh = setLiveHtmlIfChanged(container, `
     <h3>Podium</h3>
     <p class="muted">No score-keeping needed — just record who placed.</p>
     <div id="placement-medals">${medalPickerHTML(draft.medals, g)}</div>
     <p id="entry-error" class="entry-error" role="alert" hidden></p>
     <jelly-button id="save-result-btn" class="primary-btn" block>Save Result</jelly-button>
-  `;
+  `, [g]);
+  if (!fresh) return;
 
   container.querySelectorAll('[data-medal]').forEach((sel) => {
     sel.addEventListener('change', () => {
-      draft.medals[sel.dataset.medal] = sel.value || null;
+      const d = normalizeDraft(state.drafts[g.id] || (state.drafts[g.id] = { medals: {} }));
+      d.medals[sel.dataset.medal] = sel.value || null;
       saveState();
     });
   });
@@ -6316,27 +6841,36 @@ function renderTournament(container, g) {
     // The bracket wizard's phases (3 first-round matches → bye → semifinal →
     // championship) assume exactly 6 teams; with any other count it saves
     // corrupt results. Block starting rather than corrupting.
+    // Both cards are static, so an idle render leaves them be (the Start
+    // button used to be rebuilt on every snapshot). The listener holds only
+    // the game.
     if (state.teams.length !== 6) {
-      container.innerHTML = `
+      setLiveHtmlIfChanged(container, `
         <h3>Run the bracket</h3>
         <p class="tie-note">⚠️ The bracket wizard needs exactly 6 teams — you have ${state.teams.length}. Adjust the roster in Settings → Set up the week, or switch this game to another format.</p>
-      `;
+      `, [g]);
       return;
     }
-    container.innerHTML = `
+    if (setLiveHtmlIfChanged(container, `
       <h3>Run the bracket</h3>
       <p class="muted">Three first-round matches, then the medal round. The bye goes to the Round&nbsp;1 winner with the fewest points this week — the app suggests who, using the live standings.</p>
       <jelly-button id="start-bracket-btn" class="primary-btn" block>Start Bracket</jelly-button>
-    `;
-    document.getElementById('start-bracket-btn').addEventListener('click', () => {
-      state.brackets[g.id] = freshBracket();
-      clearLiveMatch(g); // a new bracket starts with a clean tally
-      saveState();
-      renderAll();
-    });
+    `, [g])) {
+      document.getElementById('start-bracket-btn').addEventListener('click', () => {
+        state.brackets[g.id] = freshBracket();
+        clearLiveMatch(g); // a new bracket starts with a clean tally
+        saveState();
+        renderAll();
+      });
+    }
     return;
   }
 
+  // A started bracket is rebuilt on every render — its sub-views close over the
+  // bracket object and build in several writes — so forget the key the static
+  // cards above (and the other entry forms) compare against: the markup it
+  // describes is about to be replaced under it.
+  container.__liveKey = null;
   const b = normalizeBracket(state.brackets[g.id]);
   let html = `<div class="bracket-steps">
     ${['round1', 'bye', 'semifinal', 'championship', 'summary'].map((p, i) => {
@@ -6381,10 +6915,11 @@ function getLiveMatch(g, aId, bId) {
   return { key, inning: 1, outs: 0, half: 0, hr: {} };
 }
 
-function setLiveMatch(g, l) {
+// opts.celebrate: only a goal going UP is worth confetti (see touchData).
+function setLiveMatch(g, l, opts) {
   if (!state.live) state.live = {};
   state.live[g.id] = { key: l.key, inning: Number(l.inning) || 1, outs: Number(l.outs) || 0, half: l.half === 1 ? 1 : 0, hr: l.hr || {} };
-  touchData();
+  touchData({ celebrate: !!(opts && opts.celebrate) });
   saveState();
 }
 
@@ -6427,7 +6962,9 @@ function setClock(g, mutate) {
   const clock = getClock(g);
   mutate(clock);
   state.clocks[g.id] = clock;
-  touchData();
+  // Running a clock isn't scoreboard data: no footer stamp, no confetti (this
+  // is also the buzzer's settle path). Still guarded until pushed.
+  touchData({ stamp: false, celebrate: false });
   saveState();
 }
 
@@ -6525,10 +7062,11 @@ function getLadderMatch(g, aId, bId) {
   return { key, mode: 'ladder', a: 0, b: 0, ra: 0, rb: 0, log: [] };
 }
 
-function setLadderMatch(g, l) {
+// opts.celebrate: rungs and a scored round are points; a clear or an undo isn't.
+function setLadderMatch(g, l, opts) {
   if (!state.live) state.live = {};
   state.live[g.id] = { key: l.key, mode: 'ladder', a: Number(l.a) || 0, b: Number(l.b) || 0, ra: Number(l.ra) || 0, rb: Number(l.rb) || 0, log: Array.isArray(l.log) ? l.log : [] };
-  touchData();
+  touchData({ celebrate: !!(opts && opts.celebrate) });
   saveState();
 }
 
@@ -6630,6 +7168,53 @@ function boardDiffCelebrate(boardEl, g, l, pair) {
     }
   });
   lastBoardScores = { [memoKey]: { [pair[0]]: Number(l.hr[pair[0]]) || 0, [pair[1]]: Number(l.hr[pair[1]]) || 0 } };
+}
+
+// The cannons and the score pop live INSIDE their .big-board (it clips them),
+// so a render that has to rebuild the board — the ref's own Pause tap a moment
+// after a goal, a real change from a snapshot — cut the celebration off
+// mid-flight. renderAll lifts whatever is still flying before it renders, and
+// afterwards sets it down at the same point in its animation on the board that
+// replaced it. A board the render left alone keeps its own. Returns the
+// set-down step.
+function holdBoardCelebrations() {
+  const held = [];
+  document.querySelectorAll('.big-board[data-board-game]').forEach((board) => {
+    const cannons = [...board.querySelectorAll('.board-cannon')]
+      .map((p) => ({ p, t: runningAnimTime(p) })).filter((x) => x.t != null);
+    const pops = [...board.querySelectorAll('[data-board-col] .score-pop')]
+      .map((el) => ({ team: el.closest('[data-board-col]').dataset.boardCol, t: runningAnimTime(el) }))
+      .filter((x) => x.t != null);
+    // Only onto a replacement in the SAME place: opening the game from the
+    // home board must not carry the home board's volley into the game view.
+    const host = board.closest('#live-home, #game-view');
+    if (host && (cannons.length || pops.length)) held.push({ board, host, gid: board.dataset.boardGame, cannons, pops });
+  });
+  return () => held.forEach(({ board, host, gid, cannons, pops }) => {
+    if (board.isConnected) return; // not rebuilt — nothing was cut
+    const next = [...host.querySelectorAll('.big-board[data-board-game]')].find((b) => b.dataset.boardGame === gid);
+    if (!next) return;
+    cannons.forEach(({ p, t }) => { next.appendChild(p); seekAnimations(p, t); });
+    pops.forEach(({ team, t }) => {
+      const col = [...next.querySelectorAll('[data-board-col]')].find((c) => c.dataset.boardCol === team);
+      const val = col && col.querySelector('.board-score');
+      if (!val || val.classList.contains('score-pop')) return; // a new goal is already popping it
+      val.classList.add('score-pop');
+      seekAnimations(val, t);
+    });
+  });
+}
+
+// Where an element's CSS animation has got to, or null if none is playing
+// (finished, or reduced motion turned it off) — only those are carried over.
+function runningAnimTime(el) {
+  const a = el.getAnimations ? el.getAnimations()[0] : null;
+  return a && a.playState === 'running' ? a.currentTime : null;
+}
+
+function seekAnimations(el, t) {
+  if (t == null || !el.getAnimations) return;
+  el.getAnimations().forEach((a) => { a.currentTime = t; });
 }
 
 function liveTrackerHTML(g, aId, bId, viewer) {
@@ -6810,7 +7395,7 @@ function bindLiveTracker(container, g, aId, bId) {
       else if (act === 'hr-up') l.hr[team] = (Number(l.hr[team]) || 0) + 1;
       else if (act === 'hr-down') l.hr[team] = Math.max(0, (Number(l.hr[team]) || 0) - 1);
       else if (act === 'reset') { l.inning = 1; l.outs = 0; l.half = 0; l.hr = {}; }
-      setLiveMatch(g, l);
+      setLiveMatch(g, l, { celebrate: act === 'hr-up' });
       refresh();
       if (act === 'hr-up') {
         boardCelebrate(container.querySelector('.big-board'), team);
@@ -6908,7 +7493,7 @@ function bindLadderMatch(container, g, aId, bId) {
           else l.b = Math.max(0, l.b - last.delta);
         }
       }
-      setLadderMatch(g, l);
+      setLadderMatch(g, l, { celebrate: act === 'rung' || act === 'score-round' });
       // A rung/clear tap only changes numbers — refresh in place to stay snappy
       // and keep scroll position. Scoring or undoing a round can flip the
       // won-banner / disabled state, so re-render the whole view for those.
@@ -7230,11 +7815,44 @@ function renderBracketSummary(body, g, b) {
 
 // ── Theme ────────────────────────────────────────────────────────
 
+// Which look applyTheme() last put on screen ('dark' | 'light'); null until the
+// first call, so the initial paint never counts as a flip.
+let appliedLook = null;
+
+// A flip changes every surface and token in one style recalc, but anything with
+// its own colour transition (card/banner borders, chip and link colours) would
+// keep fading on its own timer behind them — a half-flipped page for ~150ms.
+// html.theme-switching (styles.css) turns transitions off for the flip frames.
+// Called BEFORE the classes change, so the same recalc that flips the tokens
+// starts no transitions; removed two frames on (the timeout covers a hidden
+// tab, where rAF is paused). Shadow-DOM Jelly parts aren't reached by it and
+// repaint through jelly-theme-change.
+function suspendThemeTransitions() {
+  const root = document.documentElement;
+  root.classList.add('theme-switching');
+  const done = () => root.classList.remove('theme-switching');
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(() => requestAnimationFrame(done));
+  setTimeout(done, 250);
+}
+
 function applyTheme() {
   const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
   const dark = state.theme === 'dark' || (state.theme === null && prefersDark);
-  document.body.classList.toggle('dark-theme', dark);
+  const look = dark ? 'dark' : 'light';
+  if (appliedLook !== null && appliedLook !== look) suspendThemeTransitions();
+  appliedLook = look;
+  // Only an EXPLICIT Dark sets the class. Auto is the @media block in
+  // styles.css, which follows the OS live: setting the class from prefersDark
+  // here froze the dark tokens in place when the OS later flipped to light (the
+  // podium rows kept their dark tints under now-dark text) — applyTheme only
+  // ran at boot and on a tap, never on an OS change.
+  document.body.classList.toggle('dark-theme', state.theme === 'dark');
   document.body.classList.toggle('light-theme', !dark && state.theme === 'light');
+  // Mirror an explicit choice where boot-guard.js can read it before paint.
+  try {
+    if (state.theme === 'dark' || state.theme === 'light') localStorage.setItem(THEME_HINT_KEY, state.theme);
+    else localStorage.removeItem(THEME_HINT_KEY);
+  } catch (e) { /* storage blocked: the guard just can't pre-paint it */ }
   // Drive Jelly UI's document-level tokens the same way: an explicit choice
   // maps 1:1 onto data-jelly-mode; auto removes the attribute so Jelly's own
   // prefers-color-scheme fallback tracks live OS flips (mirroring the app's
@@ -7259,10 +7877,23 @@ function applyTheme() {
     meta.id = 'dynamic-theme-color';
     document.head.appendChild(meta);
   }
-  // Explicit hexes matching Jelly's background-default (body has a 0.2s
-  // background transition, so reading getComputedStyle here would capture
-  // the mid-transition color — keep these in sync with the palette).
+  // Explicit hexes matching Jelly's background-default (keep these in sync with
+  // the palette — and with the --color-bg fallbacks in styles.css).
   meta.content = dark ? '#181b1d' : '#ffffff';
+}
+
+// Auto follows the OS. The page itself already does (the @media block), but the
+// no-media theme-color meta above beats the pre-paint media metas and is only
+// written here, so without this the status bar kept the old colour after a
+// dusk/dawn OS flip until the next reload. Only Auto cares — an explicit choice
+// ignores the OS.
+function watchOsColorScheme() {
+  try {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const onFlip = () => { if (state.theme === null) applyTheme(); };
+    if (mq.addEventListener) mq.addEventListener('change', onFlip);
+    else if (mq.addListener) mq.addListener(onFlip); // Safari < 14
+  } catch (e) { /* no matchMedia: nothing to follow */ }
 }
 
 // Called from the Appearance segmented control: 'light' | 'auto' | 'dark'.
@@ -7511,7 +8142,7 @@ function renderAnnouncements() {
   const active = activeAnnouncements().concat(fromChat)
     .sort((a, b) => String(b.at).localeCompare(String(a.at)));
   const editor = canEdit();
-  if (!active.length && !editor) { wrap.hidden = true; wrap.innerHTML = ''; wrap.__lastHtml = ''; return; }
+  if (!active.length && !editor) { wrap.hidden = true; wrap.innerHTML = ''; wrap.__lastHtml = ''; wrap.__lastComposerKey = ''; return; }
 
   const banners = active.map((a) => `
     <div class="announce-banner" role="status">
@@ -7536,40 +8167,72 @@ function renderAnnouncements() {
       <jelly-button id="announce-post-btn" size="small" class="primary-btn">📣 Post</jelly-button>
     </form>${ttlChips}` : `<button id="announce-open-btn" class="link-btn announce-open-btn">📣 Post an announcement</button>`;
 
+  const wireBanners = () => {
+    wrap.querySelectorAll('.announce-dismiss').forEach((btn) => {
+      btn.addEventListener('click', () => { dismissAnnouncement(btn.dataset.annId); renderAnnouncements(); });
+    });
+    wrap.querySelectorAll('.announce-delete').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        if (!canEdit()) return;
+        const a = (state.announcements || {})[btn.dataset.annId];
+        if (!a) return;
+        if (!confirm(`Remove this announcement from every phone?\n\n"${a.text}"`)) return;
+        delete state.announcements[btn.dataset.annId];
+        touchData();
+        saveState();
+        renderAnnouncements();
+      });
+    });
+  };
+
   // This runs every 30 s (and for each Announcements-channel chat message):
   // rebuilding identical markup would wipe whatever an editor is typing in
   // the composer and drop the keyboard. Same markup ⇒ leave the live nodes
-  // (and their listeners) alone; a real change ⇒ rebuild, carrying the
-  // half-typed text across.
+  // (and their listeners) alone.
   const html = banners + composer;
   if (wrap.__lastHtml === html && !wrap.hidden) return;
+  // Only the banners changed (a remote announcement landed, one expired or
+  // was dismissed) ⇒ swap just those nodes and keep the composer's live
+  // <input>. Replacing it moved the caret to the end, dropped an IME
+  // composition, and on a phone dismissed the keyboard — a script-called
+  // focus() outside a tap doesn't bring that back. The composer is keyed by
+  // open/closed rather than its markup: the duration chips flip in place and
+  // so make that markup differ without the nodes being stale.
+  const composerKey = !composer ? '' : announceComposerOpen ? 'open' : 'closed';
+  if (composerKey && !wrap.hidden && wrap.__lastComposerKey === composerKey && wrap.querySelector('#announce-form, #announce-open-btn')) {
+    const bannersChanged = wrap.__lastBanners !== banners;
+    wrap.__lastHtml = html;
+    wrap.__lastBanners = banners;
+    if (!bannersChanged) return; // just the chips, already flipped in place
+    wrap.querySelectorAll('.announce-banner').forEach((n) => n.remove());
+    wrap.insertAdjacentHTML('afterbegin', banners);
+    wireBanners();
+    return;
+  }
+  // A real composer change (opened, closed, posted) or the first paint ⇒
+  // rebuild, carrying any half-typed text, focus and caret across.
   const oldInput = document.getElementById('announce-input');
   const draft = oldInput ? oldInput.value : '';
   const hadFocus = !!(oldInput && document.activeElement === oldInput);
+  const selStart = oldInput ? oldInput.selectionStart : null;
+  const selEnd = oldInput ? oldInput.selectionEnd : null;
   wrap.hidden = false;
   wrap.innerHTML = html;
   wrap.__lastHtml = html;
+  wrap.__lastBanners = banners;
+  wrap.__lastComposerKey = composerKey;
   const newInput = document.getElementById('announce-input');
-  if (newInput && draft) {
-    newInput.value = draft;
-    if (hadFocus) newInput.focus();
+  if (newInput) {
+    if (draft) newInput.value = draft;
+    if (hadFocus) {
+      // Focus whether or not there is a draft (an empty, focused box lost its
+      // keyboard too), without scrolling the page to it.
+      newInput.focus({ preventScroll: true });
+      try { newInput.setSelectionRange(selStart, selEnd); } catch (e) { /* not a text-selectable input */ }
+    }
   }
 
-  wrap.querySelectorAll('.announce-dismiss').forEach((btn) => {
-    btn.addEventListener('click', () => { dismissAnnouncement(btn.dataset.annId); renderAnnouncements(); });
-  });
-  wrap.querySelectorAll('.announce-delete').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      if (!canEdit()) return;
-      const a = (state.announcements || {})[btn.dataset.annId];
-      if (!a) return;
-      if (!confirm(`Remove this announcement from every phone?\n\n"${a.text}"`)) return;
-      delete state.announcements[btn.dataset.annId];
-      touchData();
-      saveState();
-      renderAnnouncements();
-    });
-  });
+  wireBanners();
   // Duration chips flip in place (no re-render — that would wipe the text
   // being typed in the input beside them).
   wrap.querySelectorAll('.announce-ttl-chip').forEach((chip) => {
@@ -7648,7 +8311,12 @@ function notifyNewAnnouncements(prevMap) {
 let newVersionSeen = false;
 const UPDATE_POLL_MS = 2 * 60 * 1000;
 
-function editorMidEntry() {
+// The focus half of editorMidEntry: is someone typing or choosing in a field
+// right now? Background re-renders (renderAllWhenIdle) wait on this alone —
+// the rest of editorMidEntry means "a write is queued", which a clock settling
+// at zero always sets itself, so gating on all of it would defer that render
+// every single time.
+function fieldFocused() {
   const ae = document.activeElement;
   // Jelly form controls surface as the focused element's HOST (JELLY-INPUT,
   // JELLY-TEXTAREA, JELLY-SELECT, JELLY-OTP) — a focused one is mid-entry
@@ -7663,8 +8331,12 @@ function editorMidEntry() {
   // incoming scoreboard update for as long as anyone sits with the message box
   // focused, which during a game is exactly when people are chatting.
   const inChatComposer = ae && ae.closest && ae.closest('#chat-view');
-  if (!inChatComposer && ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' ||
-      /^JELLY-(INPUT|TEXTAREA|SELECT|OTP)$/.test(ae.tagName || '') || ae.isContentEditable)) return true;
+  return !!(!inChatComposer && ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.tagName === 'SELECT' ||
+      /^JELLY-(INPUT|TEXTAREA|SELECT|OTP)$/.test(ae.tagName || '') || ae.isContentEditable));
+}
+
+function editorMidEntry() {
+  if (fieldFocused()) return true;
   // A half-built game in the week builder is unsaved in-memory work — the
   // update-poll auto-reload and remote merges must not wipe it.
   if (typeof builderDirty === 'function' && builderDirty()) return true;
@@ -7723,8 +8395,31 @@ function doReload() {
   }
 }
 
+// What tapping a refresh banner does. The auto-reload waits on reloadBlocked()
+// (an unsent chat message, a score being typed, an unconfirmed write, a running
+// lap), but the banner's own tap used to call doReload() straight past it — and
+// the banner sat right where the chat composer is. Ask before throwing that
+// work away; a quiet page just reloads.
+// Two details make the check real: a tap on the banner moves focus off the
+// composer (chatComposerBusy only counts a FOCUSED composer), so the state is
+// sampled at pointerdown, before focus moves; and mousedown is cancelled so
+// that backing out of the question leaves the composer focused — and the draft
+// still protected from the auto-reload — instead of quietly un-guarding it.
+function wireReloadBanner(bar) {
+  let heldAtPress = false;
+  bar.addEventListener('pointerdown', () => { heldAtPress = reloadBlocked(); });
+  bar.addEventListener('mousedown', (e) => e.preventDefault());
+  bar.addEventListener('click', () => {
+    const held = heldAtPress || reloadBlocked();
+    heldAtPress = false;
+    if (held && !confirm('You have something unfinished here (an unsent message, a score being typed, or a running timer). Refresh anyway?')) return;
+    doReload();
+  });
+}
+
 function showUpdateBanner() {
   if (document.getElementById('update-banner')) return;
+  document.body.classList.add('has-update-banner'); // reserves footer room so the fixed bar never hides the last card
   // Jelly path: an info alert with a Refresh button (whole banner stays
   // tappable, like the old pill). This is auto-reload safety UI, so it must
   // never depend on the module having loaded — legacy pill as fallback.
@@ -7739,7 +8434,7 @@ function showUpdateBanner() {
     btn.setAttribute('size', 'small');
     btn.textContent = 'Refresh';
     bar.append(text, btn);
-    bar.addEventListener('click', doReload);
+    wireReloadBanner(bar);
     document.body.appendChild(bar);
     return;
   }
@@ -7748,7 +8443,7 @@ function showUpdateBanner() {
   bar.className = 'update-banner';
   bar.type = 'button';
   bar.textContent = 'New version available — tap to refresh';
-  bar.addEventListener('click', doReload);
+  wireReloadBanner(bar);
   document.body.appendChild(bar);
 }
 
@@ -7815,9 +8510,14 @@ function startIdleCollapse() {
 // ── Init ─────────────────────────────────────────────────────────
 
 function renderAll() {
+  const setDownBoardCelebrations = holdBoardCelebrations(); // see there
   // Builder visibility is derived from state every render — settings.js
   // navigates by mutating state.ui.view, not by calling open/close helpers.
-  if (state.ui.view === 'settings' && !canEdit()) state.ui.view = 'home';
+  if (state.ui.view === 'settings' && !canEdit()) {
+    state.ui.view = 'home';
+    // Don't strand a half-edited game behind the closed builder.
+    if (typeof discardGameDraft === 'function') discardGameDraft();
+  }
   const inBuilder = builderOpen();
   document.body.classList.toggle('builder-open', inBuilder);
   const builderView = document.getElementById('settings-view');
@@ -7850,6 +8550,10 @@ function renderAll() {
   if (inBuilder && typeof renderSettings === 'function') renderSettings();
   if (typeof renderChatCard === 'function') renderChatCard();
   if (inChat && typeof renderChatView === 'function') renderChatView();
+  setDownBoardCelebrations();
+  // Last: a clock this pass rebuilt is born with its final-minute / final-ten
+  // classes instead of losing them until the next 500 ms tick.
+  paintBoardClocks();
 }
 
 // ── Week builder (Settings → Set up the week) ────────────────────
@@ -7862,8 +8566,14 @@ function builderOpen() {
   return state.ui.view === 'settings';
 }
 
+// Where the scoreboard was scrolled when the builder opened. body.builder-open
+// display:none's the home cards, so the page collapses (and scrollY with it)
+// while the builder is up; settings.js's back button scrolls back here.
+let builderReturnY = 0;
+
 function openBuilder(tab) {
   if (!canEdit()) return;
+  builderReturnY = window.scrollY;
   closeSettings(); // hand off from the settings sheet
   state.ui.view = 'settings';
   if (tab) state.ui.settingsTab = tab;
@@ -8083,24 +8793,84 @@ function joyCelebrate() {
 }
 
 // Delegated press feedback: scale down on touch, spring back on release.
+// The press waits a beat (JOY_PRESS_DELAY_MS) and is called off if the finger
+// travels: a finger put down on a row to SCROLL the list used to shrink the
+// row to 93% and then snap it back when the scroll took over — a twitch on
+// nearly every touch-scroll. A quick tap that lifts before the delay still
+// gets the pop (joyPop, from rest), so taps still feel springy.
+const JOY_PRESS_DELAY_MS = 80;
+const JOY_PRESS_SLOP_PX = 8;
+let joyPress = null; // { el, x, y, timer } — the press in progress, if any
+
+// Called off mid-gesture (a scroll took over, or the finger slid away). Eases
+// back from the pressed scale if it was already showing, instead of snapping.
+function joyPressAbort() {
+  const p = joyPress;
+  joyPress = null;
+  if (!p) return;
+  clearTimeout(p.timer);
+  if (!p.el.classList.contains('joy-pressed')) return;
+  p.el.classList.remove('joy-pressed');
+  p.el.classList.add('joy-release');
+  setTimeout(() => p.el.classList.remove('joy-release'), 200);
+}
+
 document.addEventListener('pointerdown', (e) => {
   joyLastTap = { x: e.clientX, y: e.clientY };
+  joyPressAbort();
   if (JOY_REDUCED.matches) return;
   const t = e.target.closest && e.target.closest(JOY_TAPPABLE);
-  if (t) t.classList.add('joy-pressed');
+  if (!t) return;
+  const p = { el: t, x: e.clientX, y: e.clientY, timer: 0 };
+  p.timer = setTimeout(() => { if (joyPress === p) t.classList.add('joy-pressed'); }, JOY_PRESS_DELAY_MS);
+  joyPress = p;
 }, { passive: true });
 
+document.addEventListener('pointermove', (e) => {
+  if (joyPress && Math.hypot(e.clientX - joyPress.x, e.clientY - joyPress.y) > JOY_PRESS_SLOP_PX) joyPressAbort();
+}, { passive: true });
+
+// The pop after a release. `fromRest` = the press never painted (a quick tap,
+// lifted inside JOY_PRESS_DELAY_MS): popping from the pressed 93% would snap
+// the control in one frame — the same twitch the delay removed — so that pop
+// starts at rest (styles.css, joy-pop-quick).
+function joyPop(el, fromRest) {
+  const cls = fromRest ? 'joy-pop-quick' : 'joy-pop';
+  el.classList.add(cls);
+  setTimeout(() => el.classList.remove(cls), 460);
+}
+
 document.addEventListener('pointerup', () => {
+  const p = joyPress;
+  joyPress = null;
+  if (p) {
+    clearTimeout(p.timer);
+    if (!p.el.classList.contains('joy-pressed')) joyPop(p.el, true);
+  }
   document.querySelectorAll('.joy-pressed').forEach((el) => {
     el.classList.remove('joy-pressed');
-    el.classList.add('joy-pop');
-    setTimeout(() => el.classList.remove('joy-pop'), 460);
+    joyPop(el, false);
   });
 }, { passive: true });
 
 document.addEventListener('pointercancel', () => {
+  joyPressAbort();
   document.querySelectorAll('.joy-pressed').forEach((el) => el.classList.remove('joy-pressed'));
 }, { passive: true });
+
+// Card contents rise in when a home card OPENS (styles.css, .card-opening).
+// The class is transient on purpose: a CSS animation restarts whenever an
+// element goes from display:none back to shown, so an always-on rule replayed
+// the rise on every open card each time the builder or chat takeover closed.
+// Only the card's own toggle counts — a <details> inside it firing `toggle`
+// must not re-run the whole card.
+document.addEventListener('toggle', (e) => {
+  const c = e.target;
+  if (!c || !c.matches || !c.matches('jelly-collapsible.collapsible-card') || !c.hasAttribute('open')) return;
+  c.classList.add('card-opening');
+  clearTimeout(c.__openingTimer);
+  c.__openingTimer = setTimeout(() => c.classList.remove('card-opening'), 700);
+}, true);
 
 // Sparkle on every real button push (not on text fields). Card headers are
 // jelly-collapsible shadow buttons — the host is the click target out here,
@@ -8175,9 +8945,19 @@ function showAuthScreen(mode, opts) {
   // The alternative sign-in methods mount lazily into their slots inside the
   // "Alternative sign in" disclosure. Both are optional modules (delete the
   // matching <script> tag to remove one); the Google button always remains.
+  // mount() replaces the slot's innerHTML, so an ERROR re-show (Google popup
+  // blocked, offline…) must not call it on a slot that already has its form —
+  // that wiped a half-typed number/email and reset a phone flow that was
+  // waiting on its texted code (spending another of the day's few texts). The
+  // plain 'signin' show still remounts: first paint, and after a sign-out /
+  // "use a different account", so a shared phone never greets the next person
+  // with the previous number or code step.
   if (mode === 'signin') {
-    if (window.CampPhone) window.CampPhone.mount(document.getElementById('alt-phone-slot'));
-    if (window.CampEmailLink) window.CampEmailLink.mount(document.getElementById('alt-email-slot'));
+    const keepForms = !!(opts && opts.error);
+    [['alt-phone-slot', window.CampPhone], ['alt-email-slot', window.CampEmailLink]].forEach(([id, mod]) => {
+      const slot = document.getElementById(id);
+      if (mod && slot && !(keepForms && slot.firstElementChild)) mod.mount(slot);
+    });
   }
 }
 
@@ -8303,6 +9083,8 @@ function onSdkLoadFailed(msg) {
   }
   updateSyncIndicator();
   showSdkDownBanner();
+  // Chat's "Loading…" becomes its real "sync is off" note now that it's final.
+  if (typeof onChatSyncStateChanged === 'function') onChatSyncStateChanged();
   // Bounded: SDK_MAX_RETRIES reloads per tab session (reset once the SDK loads,
   // see startAuth), each fired when the network is back or the phone wakes.
   let tries = 0;
@@ -8323,6 +9105,7 @@ function onSdkLoadFailed(msg) {
 
 function showSdkDownBanner() {
   if (document.getElementById('sdk-banner')) return;
+  document.body.classList.add('has-update-banner');
   // A plain button on purpose: this is recovery UI for a page whose scripts
   // are failing, so it can't lean on the jelly module having loaded.
   const bar = document.createElement('button');
@@ -8330,7 +9113,7 @@ function showSdkDownBanner() {
   bar.className = 'update-banner';
   bar.type = 'button';
   bar.textContent = 'Couldn\u2019t connect \u2014 read-only copy. Tap to reload';
-  bar.addEventListener('click', doReload);
+  wireReloadBanner(bar);
   document.body.appendChild(bar);
 }
 
@@ -8632,7 +9415,7 @@ function openCampPicker() {
   wrap.querySelectorAll('.camp-picker-option').forEach((btn) => {
     btn.addEventListener('click', () => {
       const cid = btn.dataset.campId;
-      if (cid === CAMP.id) { overlay.removeAttribute('open'); return; } // staying put
+      if (cid === CAMP.id) { closeOverlayAnimated(overlay); return; } // staying put
       switchCamp(cid);
     });
   });
@@ -8661,7 +9444,7 @@ function clearLocalData() {
       try { localStorage.removeItem(b + CAMPS[cid].storageSuffix); } catch (e) { /* ignore */ }
     });
   });
-  [AUTH_HINT_KEY, EMAIL_SIGNIN_KEY, CAMPS_HINT_KEY, ACTIVE_CAMP_KEY, CAMP_ASKED_KEY].forEach((k) => {
+  [AUTH_HINT_KEY, EMAIL_SIGNIN_KEY, CAMPS_HINT_KEY, ACTIVE_CAMP_KEY, CAMP_ASKED_KEY, THEME_HINT_KEY].forEach((k) => {
     try { localStorage.removeItem(k); } catch (e) { /* ignore */ }
   });
 }
@@ -8705,6 +9488,7 @@ function finishSignOut() {
 
 function boot() {
   applyTheme(); // the lock screen is the first thing everyone sees — theme it too
+  watchOsColorScheme();
   // Name the page after the active camp so a phone with both camps open in
   // two tabs can tell them apart. Junior keeps the plain "Camp" it always had.
   if (CAMP.id === 'senior') {

@@ -5317,6 +5317,42 @@ class qi extends HTMLElement {
 customElements.define("jelly-menu-item", $i);
 customElements.define("jelly-menu", qi);
 const Xi = ':host{position:fixed;inset:0;z-index:10001;display:none}:host([open]){display:block}.backdrop{position:absolute;inset:0;background:color-mix(in srgb,var(--jelly-color-foreground-default) 42%,transparent);-webkit-backdrop-filter:blur(1.5px);backdrop-filter:blur(1.5px);opacity:0;transition:opacity .34s ease}:host([open]) .backdrop{opacity:1}.wrap{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;box-sizing:border-box;padding:calc(24px + env(safe-area-inset-top,0px)) calc(24px + env(safe-area-inset-right,0px)) calc(24px + env(safe-area-inset-bottom,0px)) calc(24px + env(safe-area-inset-left,0px))}.dialog{position:relative;width:var(--jelly-dialog-width, min(460px, 100%));max-height:calc(100vh - 48px);max-height:calc(100dvh - 48px);overflow:auto;background:var(--jelly-color-background-surface);border-radius:var(--jelly-dialog-radius, 24px);padding:var(--jelly-dialog-padding, 26px);color:var(--jelly-color-foreground-default);font:400 15px/1.55 var(--jelly-font-text);box-shadow:var(--jelly-shadow-overlay);will-change:transform,opacity}.close{position:absolute;top:16px;inset-inline-end:16px;width:30px;height:30px;border:0;background:transparent;border-radius:50%;cursor:pointer;touch-action:manipulation;color:var(--jelly-color-foreground-muted);font-size:16px;transition:background-color .12s ease,color .12s ease}.close:hover{background:var(--jelly-color-background-neutral);color:var(--jelly-color-foreground-on-neutral)}@media(prefers-reduced-motion:reduce){:host-context(html:not([data-jelly-motion="no-preference"])) .close{transition:none}}:host-context([data-jelly-motion="reduce"]) .close{transition:none}.close:focus-visible{outline:2px solid var(--jelly-ring-color);outline-offset:1px}::slotted(:first-child){margin-top:0}@media(forced-colors:active){.dialog{border:1px solid CanvasText}.close:focus-visible{outline-color:Highlight}}';
+// Local patch (2026-10-27): the drawer/dialog scrim used to cut in and out.
+// The host flips display:none -> block and .backdrop opacity 0 -> 1 in ONE
+// style recalc, so its CSS transition never had a "before" value and the dim
+// popped in at full strength while the sheet slid in; on close the host is
+// hidden the instant the exit animation ends, so the dim vanished in a single
+// frame. Fade it with WAAPI beside the sheet instead. A hand-off (one overlay
+// closing and the next opening in the same task, e.g. Settings -> Members)
+// keeps the scrim continuous: no fade-in when an overlay closed a moment ago.
+// But only when the closing scrim was still showing: after an ANIMATED close it
+// has already faded to 0 (e.g. the camp picker handing off to the team picker),
+// so the next overlay must fade in from there, not pop in at full strength.
+let jellyScrimClosedAt = 0;
+function jellyScrimClosed(n) {
+  const now = typeof performance < "u" ? performance.now() : 0;
+  const faded = n && n.jellyScrimFadeEnd && now >= n.jellyScrimFadeEnd - 30;
+  if (n) n.jellyScrimFadeEnd = 0;
+  if (!faded)
+    jellyScrimClosedAt = now;
+}
+function jellyScrimFade(n, show, ms) {
+  const b = n.shadowRoot?.querySelector(".backdrop");
+  n.jellyScrimFadeEnd = 0;
+  if (!b || !b.animate)
+    return;
+  b.getAnimations?.().forEach((a) => a.cancel()); // incl. a previous close's held end state
+  if (F())
+    return;
+  if (show) {
+    if ((typeof performance < "u" ? performance.now() : 0) - jellyScrimClosedAt < 60)
+      return; // hand-off from another overlay: keep the dim as it is
+    b.animate([{ opacity: 0 }, { opacity: 1 }], { duration: ms, easing: "ease" });
+  } else {
+    n.jellyScrimFadeEnd = (typeof performance < "u" ? performance.now() : 0) + ms;
+    b.animate([{ opacity: 1 }, { opacity: 0 }], { duration: ms, easing: "ease", fill: "forwards" });
+  }
+}
 class Oi extends HTMLElement {
   constructor() {
     super(...arguments), this.built = !1, this.closing = !1, this.modalActive = !1, this.prevFocus = null, this.restorePortal = null, this.restoreInert = null, this.onDocumentKey = (t) => {
@@ -5373,7 +5409,7 @@ class Oi extends HTMLElement {
   }
   // Everything that happens when the open attribute arrives
   afterOpen() {
-    this.closing = !1, this.dialog.getAnimations?.().forEach((t) => t.cancel()), this.dialog.style.opacity = "", this.dialog.style.transform = "", this.prevFocus = document.activeElement, this.restorePortal = St(this), this.modalActive = !0, document.addEventListener("keydown", this.onDocumentKey), At(), this.restoreInert = Lt(this), this.syncLabel(), !F() && this.dialog.animate && this.dialog.animate(
+    this.closing = !1, jellyScrimFade(this, !0, 340), this.dialog.getAnimations?.().forEach((t) => t.cancel()), this.dialog.style.opacity = "", this.dialog.style.transform = "", this.prevFocus = document.activeElement, this.restorePortal = St(this), this.modalActive = !0, document.addEventListener("keydown", this.onDocumentKey), At(), this.restoreInert = Lt(this), this.syncLabel(), !F() && this.dialog.animate && this.dialog.animate(
       [
         { opacity: 0, transform: "translateY(12px) scale(0.97)" },
         { opacity: 1, offset: 0.55 },
@@ -5385,7 +5421,7 @@ class Oi extends HTMLElement {
   }
   // Everything that happens when the open attribute drops
   afterClose() {
-    this.closing || (this.teardownModal(), this.prevFocus?.focus?.(), g(this, "close"));
+    this.closing || (jellyScrimClosed(this), this.teardownModal(), this.prevFocus?.focus?.(), g(this, "close"));
   }
   // Release every page-level effect the open dialog holds (idempotent)
   teardownModal() {
@@ -5408,7 +5444,7 @@ class Oi extends HTMLElement {
       this.hasAttribute("open") || this.setAttribute("open", "");
       return;
     }
-    this.hasAttribute("open") && (this.closing = !0, ht(this.dialog, () => {
+    this.hasAttribute("open") && (this.closing = !0, jellyScrimFade(this, !1, 150), ht(this.dialog, () => {
       // Local patch (2026-07-24): if the open attribute was removed externally
       // (host app removeAttribute) while this exit animation ran, afterClose
       // was skipped under the closing flag — finish it now, or the page stays
@@ -5469,11 +5505,11 @@ class Ni extends HTMLElement {
   }
   // Everything that happens when the open attribute arrives
   afterOpen() {
-    this.closing = !1, this.sheet.getAnimations?.().forEach((t) => t.cancel()), this.sheet.style.opacity = "", this.sheet.style.transform = "", this.prevFocus = document.activeElement, this.restorePortal = St(this), this.modalActive = !0, document.addEventListener("keydown", this.onDocumentKey), At(), this.restoreInert = Lt(this), this.syncLabel(), this.slideIn(), requestAnimationFrame(() => this.sheet.focus()), g(this, "open");
+    this.closing = !1, jellyScrimFade(this, !0, 300), this.sheet.getAnimations?.().forEach((t) => t.cancel()), this.sheet.style.opacity = "", this.sheet.style.transform = "", this.prevFocus = document.activeElement, this.restorePortal = St(this), this.modalActive = !0, document.addEventListener("keydown", this.onDocumentKey), At(), this.restoreInert = Lt(this), this.syncLabel(), this.slideIn(), requestAnimationFrame(() => this.sheet.focus()), g(this, "open");
   }
   // Everything that happens when the open attribute drops
   afterClose() {
-    this.closing || (this.teardownModal(), this.prevFocus?.focus?.(), g(this, "close"));
+    this.closing || (jellyScrimClosed(this), this.teardownModal(), this.prevFocus?.focus?.(), g(this, "close"));
   }
   // Release every page-level effect the open drawer holds (idempotent)
   teardownModal() {
@@ -5529,7 +5565,7 @@ class Ni extends HTMLElement {
       return;
     }
     const i = this.frames();
-    this.closing = !0;
+    this.closing = !0, jellyScrimFade(this, !1, 300);
     const s = e.animate(
       [
         { transform: i.rest, opacity: 1 },
