@@ -382,7 +382,10 @@ and **senior** (ages 13–18; 4 teams with flags, no electives, different
 daily schedule). Everything per-camp lives in a profile in `camps.js` —
 `CAMPS.junior` / `CAMPS.senior` — and `CAMP` is the active one, chosen
 per-device by `localStorage.campScoreboardActiveCamp` (junior is the
-default, so pre-camps devices behave identically).
+default, so pre-camps devices behave identically). The one other input is
+`window.CAMP_FORCE`: `activeCampId()` honours it when it names a real camp,
+and only the TV page ever sets it (`tv-camp.js`, from `?camp=`) — the app never
+does, so an app device always chooses by its own key.
 
 - **Junior is byte-identical to the single-camp app** — apart from the three
   counselor spellings merged once on purpose (below). Its `dbRoot` is the

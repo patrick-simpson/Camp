@@ -692,6 +692,10 @@ CAMPS.senior = {
 const ACTIVE_CAMP_KEY = 'campScoreboardActiveCamp'; // 'junior' | 'senior'
 
 function activeCampId() {
+  // The TV page (current-standings.html) has no inline script, so a tiny file
+  // (tv-camp.js) sets window.CAMP_FORCE from ?camp= before this one loads. The
+  // app never sets it, so every device keeps choosing by its own key below.
+  if (typeof CAMP_FORCE === 'string' && Object.prototype.hasOwnProperty.call(CAMPS, CAMP_FORCE)) return CAMP_FORCE;
   try { return localStorage.getItem(ACTIVE_CAMP_KEY) === 'senior' ? 'senior' : 'junior'; }
   catch (e) { return 'junior'; }
 }

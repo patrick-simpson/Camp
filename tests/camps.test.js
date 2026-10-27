@@ -11,6 +11,22 @@ test('junior is the default and active camp', () => {
   assert.equal(CAMP.id, 'junior');
 });
 
+test('CAMP_FORCE (the TV page\'s hook) overrides the stored camp only for a real camp id', () => {
+  // The app never sets it; tv-camp.js does, from ?camp=. Read at call time.
+  try {
+    window.CAMP_FORCE = 'senior';
+    assert.equal(activeCampId(), 'senior', 'a forced camp beats the stored choice (junior here)');
+    window.CAMP_FORCE = 'junior';
+    assert.equal(activeCampId(), 'junior');
+    ['constructor', '__proto__', 'hasOwnProperty', 'SENIOR', '', 'both', 5, null, {}].forEach((bad) => {
+      window.CAMP_FORCE = bad;
+      assert.equal(activeCampId(), 'junior', 'not a camp: ' + String(bad));
+    });
+    delete window.CAMP_FORCE;
+    assert.equal(activeCampId(), 'junior', 'unset: the stored choice, then junior');
+  } finally { delete window.CAMP_FORCE; }
+});
+
 test('junior Firebase paths are the original literals', () => {
   // The published security rules gate these exact strings; a rename would
   // silently cut every existing device off from its data.
