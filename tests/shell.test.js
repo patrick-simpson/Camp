@@ -121,8 +121,8 @@ test('a failed module leaves sheets closable and Appearance tappable (touch phon
   assert.ok(/customElements\.get\('jelly-segmented'\)\) return;[\s\S]{0,160}#theme-toggle jelly-segment/.test(APP), 'the Appearance fallback is gated on the segmented control being undefined');
 });
 
-test('current-standings.html does not flash the sign-in overlay for a healthy, fast approval', () => {
-  const TV = readFixture('../current-standings.html');
+test('the TV page (current-standings.js) does not flash the sign-in overlay for a healthy, fast approval', () => {
+  const TV = readFixture('../current-standings.js'); // the page's script moved out of the HTML in Step 2
   assert.ok(/var CHECK_OVERLAY_DELAY_MS = \d{4}/.test(TV), "'checking' waits before it covers the page");
   assert.ok(/if \(checkTimer\) \{ clearTimeout\(checkTimer\)/.test(TV), 'any later mode cancels the pending overlay');
   assert.ok(/function paintAuthOverlay\(/.test(TV), "and 'signin' / 'denied' still paint immediately");

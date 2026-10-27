@@ -89,9 +89,16 @@ Files:
   browser (see "Tests" below). `tests/emulator/` (rules in the RTDB
   emulator) and `tests/push-e2e/` (the alert sender in real workerd) are
   opt-in suites that need npm + Java
-- `current-standings.html` — self-contained TV/presenter standings page
-  (duplicates a few constants from app.js — marked "keep in sync")
-- `stalling.html` — self-contained presenter gag page
+- `current-standings.html` + `current-standings.js` + `tv-camp.js` — the TV /
+  presenter standings page, for BOTH camps (see "The TV page" below). The page
+  is markup, CSS, its own CSP and the build stamp; its script lives in
+  `current-standings.js` (a page with a CSP refuses inline script); `tv-camp.js`
+  is a dozen lines that set `window.CAMP_FORCE` from `?camp=` before camps.js
+  runs. It loads `defaults.js` + `camp-core.js` + `camps.js` instead of carrying
+  copies, so only `MEDAL_POINTS` and the `emailKey` rule are still mirrored
+  ("keep in sync")
+- `stalling.html` — self-contained presenter gag page (loads no camp code; its
+  Current Standings card links to the TV page for the device's camp)
 - `manifest.json`, `apple-touch-icon.png` — PWA/home-screen identity
 - `images/` — team shields + stalling photos; `CNAME` — custom domain
 
@@ -127,9 +134,11 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
    `settings.js`, `chat.js`, `push.js`, `auth-phone.js`, `auth-email-link.js` —
    keep them in sync, all bumped together. Also bump
    `APP_VERSION` in `app.js` to the same number (it drives the auto-reload
-   version check). `current-standings.html` and `stalling.html` load
-   `vendor/jelly.js` (and current-standings loads `firebase-config.js`) with
-   the same `?v=` scheme — bump those references too. (The Firebase SDK
+   version check). `stalling.html` loads `vendor/jelly.js`, and
+   `current-standings.html` loads `vendor/jelly.js`, `firebase-config.js`,
+   `defaults.js`, `camp-core.js`, `tv-camp.js`, `camps.js` and
+   `current-standings.js`, with the same `?v=` scheme — bump those references
+   too. (The Firebase SDK
    `<script>` tags are pinned to the SDK version, not `?v=`; `manifest.json`
    and `apple-touch-icon.png` have their own `?v=`, only bumped when those
    files actually change.)
@@ -137,8 +146,10 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
    time (`date -u +%Y-%m-%dT%H:%M:%SZ`) — this drives the "Code last
    updated" line in the page footer. There's no build pipeline to stamp
    this automatically, so it's a manual step, easy to forget.
-   `current-standings.html` has its own `TV_BUILD` stamp — bump it when
-   that file changes.
+   `current-standings.html` has its own build stamp — bump it when that file
+   changes — and the stamp lives in TWO places that must carry the same value:
+   `<meta name="tv-build" content="…">` and the exact text `var TV_BUILD =
+   '…'` inside an HTML comment (see "The TV page"). Bump both, never one.
 3. Run `node tests/run.js`, then `node --check` every changed JS file,
    before committing (see "Tests" below).
    **If you touched `database.rules.json`, it is not live until it is pasted
@@ -254,6 +265,8 @@ change what a browser loads.
 What's covered, and why each file exists:
 - `scoring.test.js` — score parse/format edges, `esc()`, `medalCounts()`
   (including double points and orphaned results), bonus buckets, tie-breaks.
+- `tv.test.js` / `stalling.test.js` — the TV page for both camps and the link
+  into it (see "The TV page").
 - `camp-core.test.js` — `camp-core.js`: the legacy double-window pin (the
   constants, and the seeded relative window resolving to them to the
   millisecond), DST edges, parity with the alert sender's copy of the maths,
@@ -482,8 +495,7 @@ does, so an app device always chooses by its own key.
   (First seeding attempt landed NESTED INSIDE campScoreboard — the console's
   per-row + is easy to hit one level down; the fix was delete + re-add via a
   direct path URL. Check indentation when console-seeding.)
-  `current-standings.html` is junior-only until it grows a `?camp=` switch
-  (planned).
+  `current-standings.html` serves both camps through `?camp=` (below).
 
 ## Camp chat (chat.js)
 
@@ -739,7 +751,7 @@ rules**; the client code only shapes the UI.
   the rules' `.replace('.', ',')`, which in the rules language replaces ALL
   dots — so the client uses `replaceAll`, never JS `.replace` (which would
   only catch the first dot and lock out any multi-dot address, the owner's
-  included). `current-standings.html` duplicates this — keep in sync.
+  included). `current-standings.js` duplicates this — keep in sync.
 - **Member record**: `{ role, name?, teamId?, addedBy, addedAt }`
   (`memberRecord()`; `name`/`teamId` omitted, not null, when empty). Built at `campScoreboard/members`,
   editor-managed via Settings → **Who can sign in** (`renderMembers`). Your
@@ -1119,6 +1131,58 @@ live" by curling the raw `defaults.js` file — which only proves the static
 asset changed, not that the running week's synced config did. Curling the
 Firebase REST endpoint (as above) is the only way to confirm a game-data
 change actually reached devices mid-week.
+
+## The TV page (current-standings.html) — both camps
+
+The big-screen reveal. **An interim page**: it is still the SIGNED-IN page it
+always was (Google sign-in, then the camp's members check), and until the
+redesign replaces it with a public read-only subscriber (see
+`docs/build-notes/app-shell-redesign-spec.md` §4.11) it shows live standings to
+any signed-in member and is really for directors' testing.
+
+- **Camp choice**: `?camp=junior|senior` (case-insensitive), else the camp this
+  device's own app last used (`campScoreboardActiveCamp`, same origin), else
+  junior. `tv-camp.js` sets `window.CAMP_FORCE` before `camps.js` loads, and
+  `activeCampId()` honours it only when it names a real camp (the app never sets
+  it, so every app device is unchanged). Everything per-camp then comes from
+  `CAMP`: `dbRoot` (state, config and the approval check read THIS camp's
+  paths), `storageSuffix` (the offline cache key), team count, default names,
+  emoji and crests. The tab title names the camp.
+- **Nothing is copied from the app any more** except `MEDAL_POINTS` and the
+  `emailKey` rule: the double-points window (`DOUBLE_WINDOW_LEGACY`,
+  `bonusIsDouble`) and the orphan filter (`liveGameIdSet`: a result whose game
+  left the week is not counted once the config is known — before that every
+  result counts) come from `camp-core.js`; before the live config arrives the
+  camp's built-in catalog decides which games double.
+- **Rendered strings are laundered with the app's own code.** Team emoji go
+  through `safeEmoji` once, in `normalizeTeams` (a record's `emoji` field, when a
+  later build writes one; today only the slot's built-in mascot); names stay
+  `esc()`'d; crest images are built with `document.createElement('img')` and
+  `img.src = safeCrestSrc(…)` — never concatenated into markup. A team with no
+  crest that passes (senior has no flag artwork yet) gets an **emoji tile**
+  (`.crest-tile`), never an `<img src="undefined">`. Intro, hero, board and
+  champion loops run over the real team ids (four teams or six).
+- **The page has its own CSP** (a `<meta>`, mirroring index.html's: no inline
+  script, `script-src 'self'` plus the pinned Firebase SDK on gstatic, images
+  `'self' data:`). It loads no Google Fonts, so unlike index.html it has no
+  fonts host. **A new external host or an inline script breaks the page
+  silently** — add the host to this page's meta too, and put script in a file.
+- **The build stamp lives in two places**: `<meta name="tv-build">` (what the
+  page's own 90-second / refocus check reads, falling back to the comment) AND
+  the exact text `var TV_BUILD = '<stamp>'` in an HTML comment. A TV left open
+  on a v184-or-earlier page polls its own address and reads that text with a
+  regex to decide whether to reload; with the script moved out that text would
+  otherwise be gone and the stuck page would never learn about any later build.
+  Every TV build keeps both, equal. It reloads itself only on its intro screen;
+  mid-reveal it shows the update chip.
+- **Tests**: `tests/tv.test.js` loads the page's real scripts (in tag order)
+  into a vm behind a DOM that records every `innerHTML` and every created
+  element — camp selection, per-camp database paths, N-team loops, null-safe
+  crests, hostile emoji / name / crest rendering inert (an allowlist of tags and
+  attributes over everything the page wrote), the orphan filter and doubling,
+  the CSP meta and no inline script body, and the stamp in both places.
+  `tests/stalling.test.js` pins the standings card's `?camp=` link and its
+  team-count table against `camps.js`.
 
 ## Footer timestamps
 

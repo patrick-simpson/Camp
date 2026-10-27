@@ -674,10 +674,10 @@
         <h2>Stalling with Temu Patrick</h2>
         <p>The budget knockoff. Comic Sans. Buffering. Two-and-a-half stars. Ships in 3–6 weeks.</p>
       </button>
-      <a class="card card-standings" href="current-standings.html">
+      <a class="card card-standings" href="current-standings.html" data-tv-link>
         <div class="emoji">🏆🎉</div>
         <h2>Current Standings</h2>
-        <p>The big TV reveal — count 'em down from 6th, live scores, shields, and emoji confetti cannons.</p>
+        <p>The big TV reveal — count 'em down from <span id="tv-count">6th</span>, live scores, shields, and emoji confetti cannons.</p>
       </a>
     </div>
   </div>
@@ -734,6 +734,22 @@
   <script>
   (function () {
     'use strict';
+
+    // ── The standings card follows the camp ───────────────────────
+    // The TV page shows whichever camp it is told to (?camp=), so this card passes
+    // the camp this device is in: the same device-local key the app writes
+    // (camps.js ACTIVE_CAMP_KEY), junior when there is none. The "count 'em down
+    // from 6th" copy uses that camp's team count. TEAM_COUNTS mirrors camps.js
+    // teamCount (this page loads no camp code); tests/tv.test.js pins the match.
+    var TEAM_COUNTS = { junior: 6, senior: 4 };
+    (function () {
+      var camp = 'junior';
+      try { if (localStorage.getItem('campScoreboardActiveCamp') === 'senior') camp = 'senior'; } catch (e) {}
+      var link = document.querySelector('[data-tv-link]');
+      if (link) link.setAttribute('href', 'current-standings.html?camp=' + camp);
+      var count = document.getElementById('tv-count');
+      if (count) count.textContent = TEAM_COUNTS[camp] + 'th';
+    })();
 
     // ── Sound (Web Audio, synthesized — no asset files) ──────────
     var actx = null;
