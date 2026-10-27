@@ -140,6 +140,20 @@ accessors (§12) and only adds the reveal nodes to its rules publish.
 12. Calm motion: OS reduce-motion, detected battery saver, or a user switch (Auto / On / Off).
 13. Phones only. 14. Senior: same layout, empty sections hidden, flag colours (+ optional photo).
 
+**Owner answers to this spec's §17 questions (2026-10-27, after approving the mockups and the
+motion demo with "Yes, this is it") — these OVERRIDE anything below that disagrees:**
+- Quick points: NO extra moment on Now; two taps from the Games standings is enough.
+- ★ The big-screen page is **PUBLIC** — no sign-in on the TV. It reads ONLY a public,
+  anonymous-readable node that carries what has been revealed (places shown so far, then the
+  frozen grid until 8 AM) and nothing else (no counselor names, no unrevealed places, no live
+  standings). Everything else stays member-only.
+- ★ Practice runs use the **REAL standings** and play on the real big screen "much like the real
+  thing", tagged "Practice". No pairing: the owner accepts that anyone who opens the public page
+  during a practice can see it. Counselor phones still never mirror a practice, and a practice
+  still never buzzes phones and never replaces the real reveal's grid.
+- The bracket bye rule (fewest points this week among the Round 1 winners) stays, accepting the
+  small hint about who is behind.
+
 Project 2 decisions honoured here: no camp before June 2027; both camps roll out together;
 new-year setup and the "edited here / original week" switch are owner-only; double points as
 2026; champion celebration Friday; senior Legacy Game is a 4-team bracket with 3rd place before

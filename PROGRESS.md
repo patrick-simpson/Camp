@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Tue Oct 27, 12:55 PM ET** (update this line every time the file changes)
+Last updated: **Tue Oct 27, 1:40 PM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -282,6 +282,16 @@ a "Decisions for the owner" list (ask ONE at a time, after the layout Qs).
     revealed until 8 AM; a new reveal replaces the previous one; any director
     can run the remote; the TV page with no reveal says "Waiting for the
     directors…".
+- **~1:30 PM ET — OWNER APPROVED the redesign ("Yes, this is it").** Answers
+  to the designer's questions: no quick-points moment on Now; ★ big-screen
+  page PUBLIC (no TV sign-in; a public node with only revealed data);
+  ★ practice uses REAL standings on the real big screen, tagged Practice, no
+  pairing (owner accepts anyone opening the public page could see it; phones
+  never mirror practice; never buzzes); keep the bracket bye rule (junior
+  6-team bracket). Recorded at the top of the spec's §1.2. NEXT: one Sonnet
+  agent folds these into the spec's reveal sections + rules + BUILD-PLAN,
+  then build per BUILD-PLAN one agent at a time, deploying each step live,
+  pausing at owner-action steps (◆).
 - **12:49 PM ET — redesign spec run DONE.** docs/build-notes/
   app-shell-redesign-spec.md (2,337 lines; 56 critic findings, 54 accepted
   as written, 2 accepted with an owner-decision-preserving fix; Review log
