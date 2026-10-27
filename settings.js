@@ -895,6 +895,29 @@ function validateGameDraft(draft) {
   return null;
 }
 
+// Everything the app keeps under a GAME id, besides the game itself — one
+// list so a format change, a delete and an import prune can't drift apart.
+// (picRounds is keyed by team, not game.) `clocks` was missing from delete and
+// prune: a deleted game's synced clock lived on in the database, and a clock
+// left "running" with no game to settle it was never stopped.
+const GAME_RECORD_MAPS = [
+  { key: 'results', label: 'the saved result' },
+  { key: 'brackets', label: 'the bracket in progress' },
+  { key: 'drafts', label: 'the score entry in progress' },
+  { key: 'live', label: 'the live match' },
+  { key: 'clocks', label: 'the game clock' },
+  { key: 'picSetup', label: 'the drawing-words setup' },
+];
+
+// Labels of whatever is recorded for this game right now (empty ⇒ nothing).
+function gameRecordLabels(gameId) {
+  return GAME_RECORD_MAPS.filter((m) => state[m.key] && state[m.key][gameId]).map((m) => m.label);
+}
+
+function clearGameRecords(gameId) {
+  GAME_RECORD_MAPS.forEach((m) => { if (state[m.key]) delete state[m.key][gameId]; });
+}
+
 function saveGameDraft() {
   const draft = gameDraft;
   const errEl = document.getElementById('gd-error');
@@ -969,9 +992,14 @@ function saveGameDraft() {
   if (!isNew) {
     const existing = gameById(out.id);
     const formatChanged = existing && existing.format !== out.format;
-    if (formatChanged && state.results[out.id]) {
-      if (!confirm('"' + out.name + '" has a saved result under its old format. Saving clears that result so it can be re-run. Continue?')) return;
-      delete state.results[out.id];
+    // Result, bracket, score entry, live match, clock and drawing setup are all
+    // shaped by the old format — leaving any behind reads as garbage (or throws)
+    // under the new one. Name everything that goes, in one confirm.
+    const going = formatChanged ? gameRecordLabels(out.id) : [];
+    if (going.length) {
+      const list = going.length > 1 ? going.slice(0, -1).join(', ') + ' and ' + going[going.length - 1] : going[0];
+      if (!confirm('"' + out.name + '" has records under its old format. Saving clears ' + list + ' so the game can be re-run. Continue?')) return;
+      clearGameRecords(out.id);
     }
   }
 
@@ -1035,11 +1063,7 @@ function deleteGame(gameId) {
 
   const idx = state.config.games.findIndex((x) => x.id === gameId);
   if (idx > -1) state.config.games.splice(idx, 1);
-  delete state.results[gameId];
-  delete state.brackets[gameId];
-  delete state.drafts[gameId];
-  if (state.picSetup) delete state.picSetup[gameId];
-  if (state.live) delete state.live[gameId];
+  clearGameRecords(gameId);
   if (state.ui.gameId === gameId) state.ui.gameId = null;
   state.ui.editGameId = null;
   gameDraft = null;
@@ -1730,12 +1754,12 @@ function tryImport(text) {
   renderAll();
 }
 
-// Drop results/brackets/drafts for game ids that no longer exist in the
+// Drop results/brackets/drafts/clocks/… for game ids that no longer exist in the
 // config — otherwise their medals keep counting in standings forever with
 // no UI left to clear them.
 function pruneOrphanedGameData() {
   const ids = new Set((state.config.games || []).map((g) => g.id));
-  ['results', 'brackets', 'drafts', 'picSetup', 'live'].forEach((key) => {
+  GAME_RECORD_MAPS.map((m) => m.key).forEach((key) => {
     Object.keys(state[key] || {}).forEach((gid) => {
       if (!ids.has(gid)) delete state[key][gid];
     });

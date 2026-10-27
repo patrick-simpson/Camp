@@ -288,6 +288,14 @@ What's covered, and why each file exists:
   atomic flips) — each pins the state rules behind a glitch fix. Anything only
   visible in a browser (animation, layout) is source-checked or left to the
   Playwright pass.
+- `settings-crud.test.js` — the classic builder's create / edit / delete paths
+  (`validateGameDraft`, `saveGameDraft`, `duplicateGame`, `deleteGame`,
+  `deleteDay`, reorder, `pruneOrphanedGameData`). Everything the app keeps under
+  a game id is ONE list in settings.js, `GAME_RECORD_MAPS` (result, bracket,
+  score entry, live match, clock, drawing setup): a format change names and
+  clears all of it after one confirm, `deleteGame` and the import / restore
+  prune drop all of it (the clock used to be left behind — a "running" clock
+  with no game to settle it). Add a new per-game synced map there.
 - `auth.test.js` — the `emailKey` contract (multi-dot/case/trim — the
   regression that would lock people out under the rules), the `canEdit` truth
   table via `setMemberRole`, the `memberRecord` shape, `clearLocalData`'s
