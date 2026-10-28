@@ -67,10 +67,15 @@
     var s = ['th', 'st', 'nd', 'rd'], v = n % 100;
     return n + (s[(v - 20) % 10] || s[v] || s[0]);
   }
+  var _fmtIsFriday = null;
+  // Caching the Intl.DateTimeFormat instance to avoid slow repeated instantiations.
   function isFridayEastern() {
     if (FORCE_FINALE) return true;
     try {
-      var wd = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'America/New_York' }).format(new Date());
+      if (!_fmtIsFriday) {
+        _fmtIsFriday = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'America/New_York' });
+      }
+      var wd = _fmtIsFriday.format(new Date());
       return wd === 'Fri';
     } catch (e) { return new Date().getDay() === 5; }
   }
