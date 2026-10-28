@@ -161,9 +161,9 @@ live; next is **Step 4 (accessor seam)**, built on a branch from `main`.
   editor × light / dark, locally and LIVE: pages paint, no errors, no points
   text. Not checked: a real signed-in director's live standings (needs a real
   sign-in — owner).
-- **Owner action pending (30 seconds):** open the app once as a director so the
-  first new director build writes the `hiddenCards` seed that protects counselor
-  phones that have not updated yet.
+- ~~Owner action: open the app once as a director~~ — **DONE** (owner, Tue Oct 27
+  evening ET: "Tested as director. Worked fine"). The `hiddenCards` seed is
+  written by that first confirmed-director load.
 - Percent complete: Steps 0–3 of 0–31, about 13% by the plan's session sizes
   (~10 of ~79 sessions).
 
