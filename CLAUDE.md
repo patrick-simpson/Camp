@@ -15,7 +15,9 @@ Files:
   `<script>` in `<head>` or the app flashes before it locks. Besides the lock
   it also paints, before the first frame, what the stored hints say: an
   explicit Light/Dark choice (`campScoreboardTheme` → `data-jelly-mode`; Auto
-  leaves it unset) and `html.view-only` for a viewer-hinted device. A second
+  leaves it unset) and `html.view-only` for a viewer-hinted device (on a dual-role account the active
+  camp's entry in `campScoreboardCampsHint` decides it: the single
+  `campScoreboardAuthHint` keeps whichever camp was approved last). A second
   IIFE in it adds `html.jelly-failed` when `vendor/jelly.js` never defines its
   elements, which lifts styles.css's hide of undefined custom elements
   (`:where(html:not(.jelly-failed)) :not(:defined)` — the `:where()` is
@@ -64,9 +66,9 @@ Files:
   already shown) and `tvFrame` (the big screen's frame as a pure function of
   the node and the server clock). Time is always an ARGUMENT (a number or a
   function read at call time), never read inside, so the 8 AM hide can't depend
-  on a cached value; a test pins the file pure. Nothing consumes it yet: the
-  node's writer and readers arrive with the reveal (redesign D5); Step 3 ships
-  the rules first so secrecy is built on them
+  on a cached value; a test pins the file pure. The TV page loads it and takes
+  `groupPlaces` from it, so places and tie order match everywhere. The node's
+  writer and the phone's readers arrive with the reveal (redesign D5)
 - `settings.js` — the settings sheet + week-builder UI. The builder's
   `jelly-tabs` shell is built ONCE and kept; `renderSettings` refreshes only
   the active card (through `setHtmlIfChanged`), hidden cards are filled one
@@ -155,7 +157,7 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
    `APP_VERSION` in `app.js` to the same number (it drives the auto-reload
    version check). `stalling.html` loads `vendor/jelly.js`, and
    `current-standings.html` loads `vendor/jelly.js`, `firebase-config.js`,
-   `defaults.js`, `camp-core.js`, `tv-camp.js`, `camps.js` and
+   `defaults.js`, `camp-core.js`, `reveal-core.js`, `tv-camp.js`, `camps.js` and
    `current-standings.js`, with the same `?v=` scheme — bump those references
    too. (The Firebase SDK
    `<script>` tags are pinned to the SDK version, not `?v=`; `manifest.json`
@@ -279,12 +281,17 @@ delegated handlers — the joy-press pointer handlers, the card `toggle`
 listener, the failed-module tap-to-close — by event type.
 
 Nothing in `tests/` is referenced by `index.html`, so adding to it cannot
-change what a browser loads.
+change what a browser loads. Timers a context starts (the app's toast and
+reveal timers, the `requestAnimationFrame` shim) are tracked, and `run.js`
+calls `clearAllTimers()` after each file, so a leftover chain can't keep Node
+alive: the run exits as soon as the cases finish, about a second.
 
 What's covered, and why each file exists:
 - `scoring.test.js` — score parse/format edges, `esc()`, `medalCounts()`
   (including double points and orphaned results), bonus buckets, tie-breaks.
-- `tv.test.js` / `stalling.test.js` — the TV page for both camps and the link
+- `tv.test.js` / `stalling.test.js` — the TV page for both camps, its Waiting
+  screen for a counselor, the reload rules for a second account, a demotion and
+  a sign-out, the ledger-decided cache fallback, a tie's order, and the link
   into it (see "The TV page").
 - `camp-core.test.js` — `camp-core.js`: the legacy double-window pin (the
   constants, and the seeded relative window resolving to them to the
@@ -1157,7 +1164,16 @@ The big-screen reveal. **An interim page**: it is still the SIGNED-IN page it
 always was (Google sign-in, then the camp's members check), and until the
 redesign replaces it with a public read-only subscriber (see
 `docs/build-notes/app-shell-redesign-spec.md` §4.11) it shows live standings to
-any signed-in member and is really for directors' testing.
+a DIRECTOR only (Step 3). A counselor's account gets "Waiting for the
+directors…", and no state or config listener is ever attached for it. The
+approval read is a live `.on('value')` on that account's member record: a
+demotion, a removal or a second account reloads the page (`leavePage`), and a
+promotion attaches the listeners without a reload. `directorStandings` is the
+one switch that lets standings compute. A signed-out visitor sees the sign-in
+panel and a non-member the "isn't on the list" panel; neither reads `state`.
+Nothing here is CSS: `#screen[hidden]` is pinned because the author rule would
+otherwise beat the attribute. The page's places come from reveal-core's
+`groupPlaces`. (The TV keeps no copy of the rule.)
 
 - **Camp choice**: `?camp=junior|senior` (case-insensitive), else the camp this
   device's own app last used (`campScoreboardActiveCamp`, same origin), else

@@ -15,9 +15,9 @@ const STORAGE_KEY = lsKey('campScoreboardV2'); // per-camp; junior stays the bar
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-10-27T22:50:24Z';
+const CODE_UPDATED_AT = '2026-10-28T00:14:43Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 186;
+const APP_VERSION = 187;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -89,6 +89,9 @@ function setMemberRole(role) {
   const next = role === 'editor' || role === 'viewer' ? role : null;
   const changed = memberRole !== next;
   memberRole = next;
+  // A device promoted during a session seeds the old-build keys now, not at its
+  // next data change (ensureSecrecySeed still needs a synced first pull).
+  if (next === 'editor' && changed) ensureSecrecySeed();
   if (appStarted && changed) {
     applyRoleClass();
     updateAccountRow();
@@ -1322,6 +1325,15 @@ function historyOverlayEl() {
   return document.getElementById('history-overlay');
 }
 
+// A viewer must never keep the change history on screen: a director demoted
+// while the drawer is open has it shut and its rows cleared on the next render.
+function closeHistoryForViewer() {
+  const overlay = historyOverlayEl();
+  if (overlay && overlay.hasAttribute('open')) overlay.removeAttribute('open');
+  const body = document.getElementById('history-body');
+  if (body && body.innerHTML) body.innerHTML = '';
+}
+
 function openHistory() {
   // Every point change, newest first: directors' eyes only (see "Standings
   // secrecy"). The row is hidden for viewers, and the rules refuse them the read.
@@ -1448,7 +1460,7 @@ function inviteText(key, role) {
   const where = location.origin || 'https://camp.patricksimpson.info';
   const can = role === 'editor'
     ? 'You’ll be able to enter scores and help run the games.'
-    : 'You’ll be able to see all the scores, schedule, and standings.';
+    : 'You’ll be able to see the schedule, the games and the medal winners.';
   const how = isPhone
     ? `Open ${where} on your phone, tap “Alternative sign in” → “Sign in with a phone number”, and enter ${shown}. You’ll get a texted code to finish.`
     : `Open ${where} on your phone and tap “Continue with Google”, then choose your ${shown} account. (No Google account? Tap “Alternative sign in” → “Email me a sign-in link”.)`;
@@ -2890,6 +2902,10 @@ function handleRemoteSnapshot(remote) {
       pushState();
       return;
     }
+    // Arm the result-alert baseline on this first pull too: the local results
+    // are what the next live result is diffed against, so a quiet empty boot
+    // doesn't leave the first real result silent (only the second would alert).
+    resultAlertsArmed = true;
     pushState(); return; // seed an empty database
   }
   // The first snapshot after load is a THREE-WAY merge, so nothing entered on
@@ -4880,6 +4896,7 @@ let remoteJustApplied = false;
 const DAY_RANK_KEY = lsKey('campScoreboardDayRanks');
 
 function startOfDayRanks(ranked) {
+  if (!pointsReadAllowed('startOfDayRanks')) return {}; // a points reader: no baseline for a viewer
   const today = campDateStr();
   let snap = null;
   try {
@@ -4986,6 +5003,7 @@ function renderStandings() {
 function renderCatchupHint(ranked, counts) {
   const el = document.getElementById('catchup-hint');
   if (!el) return;
+  if (!pointsReadAllowed('renderCatchupHint')) { el.hidden = true; setHtmlIfChanged(el, ''); return; }
   const leader = ranked[0];
   if (!leader || ranked.length < 2 || counts[leader.id].points <= 0) {
     el.hidden = true;
@@ -5024,6 +5042,7 @@ function renderCatchupHint(ranked, counts) {
 let clPrevSnap = null; // last-seen { points, results, bonuses } for diffing
 
 function snapshotForLog(counts) {
+  if (!pointsReadAllowed('snapshotForLog')) return { points: {}, results: {}, bonuses: {} };
   const points = {};
   (state.teams || []).forEach((t) => { points[t.id] = counts[t.id] ? counts[t.id].points : 0; });
   const results = {};
@@ -5127,12 +5146,14 @@ function changelogReason(causes) {
 }
 
 function recordPointHistory(counts, isRemote) {
+  // Editors only, decided BEFORE any points are read (a viewer builds no
+  // snapshot and keeps no baseline). See "Standings secrecy".
+  if (!standingsVisible() || !canEdit()) { clPrevSnap = null; return; }
   const snap = snapshotForLog(counts);
   const prev = clPrevSnap;
   clPrevSnap = snap;        // always advance the baseline
   if (!prev) return;        // first render is the baseline — never logged
   if (isRemote) return;     // remote merge: the originating device already logged
-  if (!canEdit()) return;   // only editors change points (defensive)
   if (!fbRef) return;       // sync off — nowhere to log
 
   const changed = [];
@@ -5796,7 +5817,7 @@ function renderMemoryVerse() {
   }).join('')}</div>`;
 
   const doubleNote = inDoubleBonusWindow()
-    ? `<div class="messtival-banner">⚡ Double points tonight &amp; Friday — verse points count double in the standings!</div>`
+    ? `<div class="messtival-banner">⚡ Double points until the end of Friday</div>`
     : '';
   if (!setHtmlIfChanged(wrap, doubleNote + themeHTML + dayChips + verseBox + hint + (editing ? rowsHTML : ''))) return;
 
@@ -6150,9 +6171,9 @@ function dayGamesHTML(day) {
   // only some of the day is doubled.
   const doubledGames = dayGames.filter((g) => g.messtival);
   if (doubledGames.length === dayGames.length && dayGames.length) {
-    html += `<div class="messtival-banner">🎉 Double points day — every game counts double right here in the standings!</div>`;
+    html += `<div class="messtival-banner">🎉 Double points until the end of Friday</div>`;
   } else if (doubledGames.length) {
-    html += `<div class="messtival-banner">⚡ Double points: ${doubledGames.map((g) => `${esc(g.emoji)} ${esc(g.name)}`).join(', ')} — counted double in the standings!</div>`;
+    html += `<div class="messtival-banner">⚡ Double points until the end of Friday: ${doubledGames.map((g) => `${esc(g.emoji)} ${esc(g.name)}`).join(', ')}</div>`;
   }
   if (day.note) {
     html += day.note.split('\n').map((l) => l.trim()).filter(Boolean)
@@ -6348,7 +6369,7 @@ function renderGameView() {
         <p class="muted">📍 ${esc(g.location)} · ${esc(g.session)} · <jelly-badge class="format-badge" variant="${esc(badge.variant || 'platinum')}" size="small">${esc(badge.label)}</jelly-badge></p>
       </div>
     </div>
-    ${g.messtival ? '<p class="messtival-tag">🎉 Double points — counted double in the standings!</p>' : ''}
+    ${g.messtival ? '<p class="messtival-tag">🎉 Double points until the end of Friday</p>' : ''}
     ${(g.rules || []).length ? `<details class="rules-details">
       <summary>How to play</summary>
       ${g.rules.map((sec) => `
@@ -6751,6 +6772,13 @@ function renderLiveWatch(container, g) {
   }
 }
 
+// The "+7 pts" chip beside a medal. The winner stays visible to everyone; what
+// each medal is worth in the standings is points text, so only a director gets
+// the chip (every bracket and result chip goes through here).
+function medalWorthChip(points) {
+  return standingsVisible() ? ` <span class="medal-points">+${points} pts</span>` : '';
+}
+
 function renderResult(container, g, result) {
   let extra = '';
   if (result.scores) {
@@ -6765,7 +6793,7 @@ function renderResult(container, g, result) {
   const mult = g.messtival ? 2 : 1;
   // The winners are public; what each medal is worth in the standings is not
   // (see "Standings secrecy"), so the "+7 pts" chips are directors' only.
-  const worth = (k) => (standingsVisible() ? ` <span class="medal-points">+${MEDAL_POINTS[k] * mult} pts</span>` : '');
+  const worth = (k) => medalWorthChip(MEDAL_POINTS[k] * mult);
   // The listener below resolves state when tapped, so only the game is held.
   const fresh = setLiveHtmlIfChanged(container, `
     <h3>Final results</h3>
@@ -6791,10 +6819,12 @@ function renderResult(container, g, result) {
 
 function medalPickerHTML(picks, game) {
   const mult = game && game.messtival ? 2 : 1; // Messtival doubles the points
+  // The worth of each medal is points text: shown to directors only.
+  const worth = (n) => (standingsVisible() ? ` · ${n} pts` : '');
   const slots = [
-    { key: 'gold', label: `🥇 Gold · ${MEDAL_POINTS.gold * mult} pts` },
-    { key: 'silver', label: `🥈 Silver · ${MEDAL_POINTS.silver * mult} pts` },
-    { key: 'bronze', label: `🥉 Bronze · ${MEDAL_POINTS.bronze * mult} pts` },
+    { key: 'gold', label: `🥇 Gold${worth(MEDAL_POINTS.gold * mult)}` },
+    { key: 'silver', label: `🥈 Silver${worth(MEDAL_POINTS.silver * mult)}` },
+    { key: 'bronze', label: `🥉 Bronze${worth(MEDAL_POINTS.bronze * mult)}` },
   ];
   return `<div class="medal-picker">
     ${slots.map((s) => `
@@ -8213,7 +8243,7 @@ function renderBracketChampionship(body, g, b) {
   const mult = g.messtival ? 2 : 1; // match medalCounts()'s weighting
   body.innerHTML = `
     <h3>Final</h3>
-    <p class="bronze-note">🥉 <strong>${esc(teamName(b.semifinal.loser))}</strong> takes the bronze medal (+${MEDAL_POINTS.bronze * mult} pts).</p>
+    <p class="bronze-note">🥉 <strong>${esc(teamName(b.semifinal.loser))}</strong> takes the bronze medal${standingsVisible() ? ` (+${MEDAL_POINTS.bronze * mult} pts)` : ''}.</p>
     ${matchupCalloutHTML(b.championship.a, b.championship.b)}
     ${matchTrackerHTML(g, b.championship.a, b.championship.b)}
   `;
@@ -8245,9 +8275,9 @@ function renderBracketSummary(body, g, b) {
   body.innerHTML = `
     <h3>Game results</h3>
     <div class="medal-summary">
-      <div class="medal-row gold-row">🥇 ${teamEmoji(goldId)} <strong>${esc(teamName(goldId))}</strong> <span class="medal-points">+${MEDAL_POINTS.gold * mult} pts</span></div>
-      <div class="medal-row silver-row">🥈 ${teamEmoji(silverId)} <strong>${esc(teamName(silverId))}</strong> <span class="medal-points">+${MEDAL_POINTS.silver * mult} pts</span></div>
-      <div class="medal-row bronze-row">🥉 ${teamEmoji(bronzeId)} <strong>${esc(teamName(bronzeId))}</strong> <span class="medal-points">+${MEDAL_POINTS.bronze * mult} pts</span></div>
+      <div class="medal-row gold-row">🥇 ${teamEmoji(goldId)} <strong>${esc(teamName(goldId))}</strong>${medalWorthChip(MEDAL_POINTS.gold * mult)}</div>
+      <div class="medal-row silver-row">🥈 ${teamEmoji(silverId)} <strong>${esc(teamName(silverId))}</strong>${medalWorthChip(MEDAL_POINTS.silver * mult)}</div>
+      <div class="medal-row bronze-row">🥉 ${teamEmoji(bronzeId)} <strong>${esc(teamName(bronzeId))}</strong>${medalWorthChip(MEDAL_POINTS.bronze * mult)}</div>
     </div>
     <p class="muted">Eliminated in Round 1: ${eliminated.map((id) => esc(teamName(id))).join(', ')}</p>
     <jelly-button id="save-bracket-btn" class="primary-btn" block>Save Result</jelly-button>
@@ -8986,6 +9016,9 @@ function renderAll() {
   const chatView = document.getElementById('chat-view');
   if (chatView) chatView.hidden = !inChat;
   applyCardVisibility(); // before renderGameView — may close a hidden card's game
+  if (!canEdit()) closeHistoryForViewer(); // a demoted editor's open change history
+  const historyRow = document.getElementById('history-row');
+  if (historyRow) historyRow.hidden = !canEdit(); // editors' only in code too, not just in CSS (html.view-only)
   renderNoticeBoard();
   renderWhatsNew();
   pruneExpiredAnnouncements();

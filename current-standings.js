@@ -2,7 +2,7 @@
 // The big-screen reveal for both camps. It used to be one inline <script> in
 // current-standings.html; it is a file now because the page carries a CSP that
 // refuses inline script. Load order (see the page): firebase-config.js,
-// defaults.js, camp-core.js, tv-camp.js, camps.js, then this. It reads the
+// defaults.js, camp-core.js, reveal-core.js, tv-camp.js, camps.js, then this. It reads the
 // camp profile (`CAMP`, `dbPath`, `lsKey`) and the shared helpers (the
 // double-points window, `liveGameIdSet`, the sanitizers) as globals from those
 // files, and keeps everything of its own inside this one IIFE.
@@ -102,6 +102,7 @@
   // Replicates app.js medalCounts + bonusBreakdown + rankTeamsByPoints (until the
   // public big screen replaces this page, it only ever shows what the app would).
   function computeStandings(state) {
+    if (!directorStandings) return []; // secrecy: a counselor's page computes no points
     state = state || {};
     var teams = normalizeTeams(state.teams);
     var results = state.results || {};
@@ -148,16 +149,17 @@
     return ranked.map(function (t) { return { team: t, stats: counts[t.id] }; });
   }
 
-  // Group by equal total points (competition ranking → ties share a place).
-  function groupPlaces(ranked) {
-    var groups = [], i = 0;
-    while (i < ranked.length) {
-      var pts = ranked[i].stats.points, entries = [ranked[i]], j = i + 1;
-      while (j < ranked.length && ranked[j].stats.points === pts) { entries.push(ranked[j]); j++; }
-      groups.push({ place: i + 1, entries: entries });
-      i = j;
-    }
-    return groups;
+  // Places come from reveal-core.js, loaded before this page: the one rule the
+  // phone, the remote and this screen share. Equal points share a place, and a tie
+  // is ordered by golds, then silvers, then bronzes, then name. The rows go in rank
+  // order, as computeStandings returns them.
+  function placesOf(ranked) {
+    var rows = ranked.map(function (r) {
+      return { id: r.team.id, nm: r.team.name, p: r.stats.points, g: r.stats.gold, s: r.stats.silver, b: r.stats.bronze, row: r };
+    });
+    return groupPlaces(rows).map(function (gr) {
+      return { place: gr.place, entries: gr.entries.map(function (e) { return e.row; }) };
+    });
   }
 
   // ── Confetti (hand-rolled emoji cannons — no external lib) ──────
@@ -327,17 +329,29 @@
   // Counselors don't see points, places or gaps until the directors reveal them
   // (redesign §4.12), and this page computes them live from `state`. So until
   // the public reveal page replaces it (Step 23), it answers only a signed-in
-  // DIRECTOR with standings, and says "Waiting for the directors…" to everyone
-  // else — a counselor's account, a signed-out phone, a refused read — without
-  // reading `state` at all, so nothing is in memory to compute from. The
-  // cached-snapshot fallback is held to the same rule: it needs this device to
-  // have been a director's (the same hint the app paints from, convenience only:
-  // forging it only exposes a cache the device already holds), else it waits.
+  // DIRECTOR with standings, and says "Waiting for the directors…" to a
+  // counselor's account. None of that is CSS. It rests on three things:
+  //   1. `directorStandings` is set only by the paths that have proven a director
+  //      (the demo, a device whose cached role is editor, and an approved editor's
+  //      member record). ingest() and computeStandings() compute nothing without it.
+  //   2. A counselor's account never attaches the state or config listener, so
+  //      nothing is in memory to compute from.
+  //   3. The member record is read LIVE. A role change, a removal or a second
+  //      account reloads the page (leavePage), so no listener or reveal from the
+  //      previous state survives into the new one.
+  // A signed-out visitor is asked to sign in, and an account that is not on this
+  // camp's list gets the "isn't on the list" panel. Neither reads `state`, and
+  // neither shows a number.
+  var directorStandings = false; // the one switch that lets standings compute (see above)
+  var directorAttached = false;  // attachData ran: this page is reading a director's standings
+  var pageLeaving = false;       // a reload is under way: nothing more may paint
+  // The per-camp ledger decides for this camp alone: a camp with no entry in it is
+  // not a director's here, even when another camp's hint says editor. The single
+  // hint is only the fallback for a device that has no ledger at all.
   function cachedRoleIsEditor() {
     try {
-      var camps = JSON.parse(localStorage.getItem('campScoreboardCampsHint') || '{}');
-      var mine = camps && typeof camps === 'object' ? camps[CAMP.id] : null;
-      if (mine === 'editor' || mine === 'viewer') return mine === 'editor';
+      var ledger = JSON.parse(localStorage.getItem('campScoreboardCampsHint') || 'null');
+      if (ledger && typeof ledger === 'object') return ledger[CAMP.id] === 'editor';
       return localStorage.getItem('campScoreboardAuthHint') === 'editor';
     } catch (e) { return false; }
   }
@@ -346,16 +360,28 @@
     var ov = document.getElementById('auth-overlay');
     if (ov) ov.style.display = 'none';
     loadingEl.style.display = 'none';
+    // The reveal screen has its own `hidden` attribute, which the page's CSS
+    // overrides unless #screen[hidden] says otherwise. Hiding it here as well means
+    // a waiting page shows no intro frame whatever the stylesheet does.
+    if (screenEl) screenEl.hidden = true;
     if (waitingEl) waitingEl.hidden = false;
   }
   var lastRawState = null; // last ingested state — recomputed when the config lands
   function ingest(state) {
+    if (!directorStandings || pageLeaving) return; // not a director: nothing is computed
     lastRawState = state;
     // The localStorage fallback state embeds the week config; the remote
-    // state node doesn't (config is a sibling ref, handled in startData).
+    // state node doesn't (config is a sibling ref, handled in attachData).
     if (state && state.config && state.config.games) liveConfig = state.config;
-    liveGroups = groupPlaces(computeStandings(state));
+    liveGroups = placesOf(computeStandings(state));
     if (!haveData) { haveData = true; onDataReady(); }
+  }
+  // Reloads the page now, for a change of account or of role. The reload starts
+  // clean, and nothing still in flight may paint in the meantime.
+  function leavePage() {
+    if (pageLeaving) return;
+    pageLeaving = true;
+    reloadNow();
   }
   // ── Sign-in gate ───────────────────────────────────────────────
   // The database only answers approved, signed-in members (see the rules
@@ -399,7 +425,13 @@
     if (email) document.getElementById('auth-ov-email').textContent = email;
   }
 
+  // Attached once a director's approval is confirmed. Nothing else in this file
+  // attaches a listener to `state` or `config`.
   function attachData() {
+    directorAttached = true;
+    directorStandings = true;
+    if (waitingEl) waitingEl.hidden = true; // a promoted viewer's Waiting screen gives way
+    loadingEl.style.display = '';
     // Week config first (sibling ref): it carries each game's
     // double-points flag, the same source the main scoreboard uses.
     // If it lands (or changes) after the state did, recompute so the
@@ -426,14 +458,32 @@
     }, 3500);
   }
 
+  // The approval read. Only an editor's record leads to standings. Anything else
+  // ends on the Waiting or the denied panel, and a director who loses the role
+  // (demoted, removed, or refused) is reloaded into the right panel, so nothing of
+  // the old role stays attached.
+  function onApproval(rec, email, refused) {
+    if (pageLeaving) return;
+    var editor = !refused && !!rec && rec.role === 'editor';
+    if (directorAttached) {
+      if (!editor) leavePage();
+      return;
+    }
+    if (refused || !rec || !rec.role) { setAuthOverlay('denied', email); return; }
+    setAuthOverlay('hidden');
+    // A counselor's account is approved but may not see the standings: wait.
+    if (!editor) { showWaiting(); return; }
+    attachData();
+  }
+
   function startData() {
-    if (DEMO) { ingest(demoState()); return; }
+    if (DEMO) { directorStandings = true; ingest(demoState()); return; }
     var cfg = window.FIREBASE_CONFIG;
     if (!cfg || !cfg.apiKey || !cfg.databaseURL || typeof firebase === 'undefined' || !firebase.auth) {
       // No Firebase — the best this page can do is the local snapshot, and only
       // on a device that was a director's (see the secrecy note above).
       var local = cachedRoleIsEditor() ? readLocal() : null;
-      if (local) ingest(local); else showWaiting();
+      if (local) { directorStandings = true; ingest(local); } else showWaiting();
       return;
     }
     try { if (!firebase.apps.length) firebase.initializeApp(cfg); } catch (e) { return; }
@@ -454,35 +504,36 @@
         });
       });
     }
-    // The way out of the denied state: Firebase persists the session, so a
-    // reload would re-check (and re-deny) the same wrong account forever.
-    // Signing out makes onAuthStateChanged(null) bring the sign-in panel back.
+    // The way out of the denied state: signing out ends this page's account, and
+    // the auth change below reloads the page into the sign-in panel.
     var switchBtn = document.getElementById('auth-ov-switch');
     if (switchBtn) {
       switchBtn.addEventListener('click', function () {
         try { firebase.auth().signOut().catch(function () {}); } catch (e) { /* ignore */ }
       });
     }
-    var started = false;
+    // The one account this page runs for, set by the first signed-in account it sees.
+    var pageAccount = null;
     firebase.auth().onAuthStateChanged(function (user) {
+      // Key = lowercased email, ALL dots → commas: the same contract as app.js's
+      // emailKey (keep in sync). The camp's own members list: a director of one camp
+      // isn't automatically on the other's.
+      var who = user && user.email ? String(user.email).trim().toLowerCase().replaceAll('.', ',') : '';
+      // One account per page life. A sign-out, or another account, after this page
+      // has been running for an account reloads it, so nothing the old account
+      // attached or painted survives into the new one (or the sign-in panel).
+      if (pageAccount !== null && who !== pageAccount) { leavePage(); return; }
       if (!user || !user.email) { setAuthOverlay('signin'); return; }
+      if (pageAccount !== null) return; // the same account again: its member listener is already on
+      pageAccount = who;
       setAuthOverlay('checking');
-      // Approval check: the self-read of this account's member record.
-      // (Key = lowercased email, ALL dots → commas — same contract as
-      // app.js's emailKey; keep in sync.) The camp's own members list: a
-      // director of one camp isn't automatically on the other's.
-      var key = String(user.email).trim().toLowerCase().replaceAll('.', ',');
-      firebase.database().ref(dbPath('members/' + key)).once('value')
-        .then(function (snap) {
-          var rec = snap.val();
-          if (!rec || !rec.role) { setAuthOverlay('denied', user.email); return; }
-          setAuthOverlay('hidden');
-          // A counselor's account is approved but may not see the standings:
-          // wait, and never attach the state listener (nothing to compute from).
-          if (rec.role !== 'editor') { showWaiting(); return; }
-          if (!started) { started = true; attachData(); }
-        })
-        .catch(function () { setAuthOverlay('denied', user.email); });
+      // A LIVE read of this account's member record, not a one-shot: a role change
+      // or a removal takes effect at once (app.js's self-read works the same way).
+      firebase.database().ref(dbPath('members/' + who)).on('value', function (snap) {
+        onApproval(snap.val(), user.email, false);
+      }, function () {
+        onApproval(null, user.email, true);
+      });
     });
   }
 
@@ -680,7 +731,9 @@
   // Board holds docked groups; higher place on top (prepend as we go up).
   function renderBoardRows() {
     var rows = [];
-    for (var i = 0; i < dockedCount; i++) {
+    // order[] is lowest-place-first, so walk it from the docked top place down:
+    // 1st on top, and a tie keeps its reveal-core order from the top of the tie.
+    for (var i = dockedCount - 1; i >= 0; i--) {
       var group = order[i];
       group.entries.forEach(function (en) {
         var s = en.stats, id = en.team.id;
@@ -695,8 +748,7 @@
         );
       });
     }
-    // order[] is lowest-place-first; reverse so 1st ends on top.
-    boardEl.innerHTML = rows.reverse().join('');
+    boardEl.innerHTML = rows.join('');
   }
 
   function beginReveal() {
@@ -834,7 +886,7 @@
     // No data yet, or the sign-in overlay is up: leave the key alone (before
     // preventDefault, so Space/Enter still activates the focused sign-in
     // button instead of being swallowed and starting an empty reveal).
-    if (!haveData || document.getElementById('auth-overlay').style.display !== 'none') return;
+    if (pageLeaving || !haveData || document.getElementById('auth-overlay').style.display !== 'none') return;
     if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'Enter' || e.key === 'PageDown') {
       e.preventDefault(); ensureAudio(); advance();
     } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
@@ -845,7 +897,7 @@
   // there is data, and never from inside the sign-in overlay — a click on
   // "Continue with Google" bubbles here and used to start the reveal.
   document.addEventListener('click', function (e) {
-    if (!haveData || e.target.closest('.topbar, #auth-overlay')) return;
+    if (pageLeaving || !haveData || e.target.closest('.topbar, #auth-overlay')) return;
     ensureAudio(); advance();
   });
 

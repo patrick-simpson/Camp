@@ -121,7 +121,8 @@ test('inviteText tailors the message to how they sign in and what they can do', 
   const phoneViewer = inviteText(phoneKey('555-123-4567'), 'viewer');
   assert.ok(phoneViewer.includes('+15551234567'), 'names the normalized phone number');
   assert.ok(/phone number/.test(phoneViewer), 'points a phone member at phone sign-in');
-  assert.ok(/see all the scores/.test(phoneViewer), 'a viewer is told they can watch');
+  assert.ok(/see the schedule, the games and the medal winners/.test(phoneViewer), 'a viewer is told what they can see');
+  assert.notOk(/standings|scores/i.test(phoneViewer), 'a counselor is promised no standings and no scores (standings secrecy)');
   assert.notOk(/Continue with Google/.test(phoneViewer), 'no Google line for a phone member');
 });
 

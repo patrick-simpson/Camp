@@ -451,6 +451,63 @@ test('the change history is a director\'s: a counselor cannot open it', () => {
   } finally { renderHistory = realRender; }
 });
 
+test('a demoted director\'s change history is shut and its rows cleared on the next render', () => {
+  seedWeek();
+  setMemberRole('editor');
+  const overlay = document.getElementById('history-overlay');
+  const body = document.getElementById('history-body');
+  let open = true;
+  const closed = [];
+  overlay.hasAttribute = (n) => n === 'open' && open;
+  overlay.removeAttribute = (n) => { if (n === 'open') { open = false; closed.push(n); } };
+  body.innerHTML = '<div class="history-row">Foxes: +7 pts</div>';
+  asViewer(() => renderAll());
+  assert.deepEqual(closed, ['open'], 'the drawer is shut');
+  assert.equal(body.innerHTML, '', 'and its rows are gone');
+});
+
+test('the readers that had no guard of their own now start with one: a viewer reaching them throws under test', () => {
+  seedWeek();
+  asViewer(() => {
+    assert.throws(() => startOfDayRanks([{ id: 't0' }]), 'startOfDayRanks');
+    assert.throws(() => snapshotForLog({}), 'snapshotForLog');
+    assert.throws(() => renderCatchupHint([{ id: 't0' }, { id: 't1' }], {}), 'renderCatchupHint');
+    // recordPointHistory no longer reads points for a viewer at all: it returns before building a snapshot.
+    assert.doesNotThrow(() => recordPointHistory({}, false), 'recordPointHistory returns before any read');
+  });
+  setStandingsGuardThrows(false);
+  assert.deepEqual(snapshotForLog({}), { points: {}, results: {}, bonuses: {} }, 'in production a viewer gets an empty snapshot');
+  assert.deepEqual(startOfDayRanks([{ id: 't0' }]), {}, 'and no day baseline');
+  assert.equal(clPrevSnap, null, 'a viewer keeps no change baseline');
+});
+
+test('a director demoted with a live tally and a placement game open loses every entry control on the next render', () => {
+  seedWeek();
+  // A tally and a placement game with no result yet, so each is open for entry
+  // (senior's seeded placement games are all scored, so their results go first).
+  const tally = state.config.games.find((g) => g.liveRankings);
+  const placement = state.config.games.find((g) => g.format === 'placement');
+  [tally, placement].filter(Boolean).forEach((g) => { delete state.results[g.id]; });
+  const games = [tally, placement].filter(Boolean);
+  // Junior has a live tally and a placement game; senior has placement games only.
+  assert.ok(games.length >= 1, 'precondition: an open game to demote from');
+  assert.ok(placement, 'precondition: a placement game on this camp');
+  const ENTRY_CONTROL = /data-delta|data-medal|inputmode=/;
+  let seen = 0;
+  games.forEach((g) => {
+    setMemberRole('editor');
+    state.ui.gameId = g.id;
+    state.ui.view = 'home';
+    renderAll();
+    seen += __domSweep().filter((e) => ENTRY_CONTROL.test(e.text)).length;
+    asViewer(() => renderAll());
+    assert.deepEqual(__domSweep().filter((e) => ENTRY_CONTROL.test(e.text)).map((e) => e.text.slice(0, 100)), [],
+      'no entry control survives the demotion in ' + g.name);
+    state.ui.gameId = null;
+  });
+  assert.ok(seen > 0, 'precondition: a director\'s open games carry entry controls');
+});
+
 test('the quick-points card for a counselor is empty even when called directly', () => {
   seedWeek();
   const wrap = document.getElementById('bonus-body');
@@ -526,8 +583,8 @@ test('the seed is a director\'s write, after the first pull, with sync on: never
     setMemberRole('viewer');
     ensureSecrecySeed();
     assert.deepEqual(state.meta.hiddenCards, {}, 'a counselor\'s phone cannot write the node');
-    setMemberRole('editor');
     remoteReady = false;
+    setMemberRole('editor'); // a promotion before the first snapshot: the seed waits for it
     ensureSecrecySeed();
     assert.deepEqual(state.meta.hiddenCards, {}, 'before the first snapshot a write would queue stale state');
     remoteReady = true;
@@ -535,6 +592,17 @@ test('the seed is a director\'s write, after the first pull, with sync on: never
     ensureSecrecySeed();
     assert.deepEqual(state.meta.hiddenCards, {}, 'with sync off there is nobody to protect');
     assert.equal(env.saves(), 0);
+  } finally { env.restore(); }
+});
+
+test('a counselor promoted mid-session writes the seed at once, once the first pull has landed', () => {
+  const env = sealedSeedEnvironment();
+  try {
+    setMemberRole('viewer');
+    assert.deepEqual(state.meta.hiddenCards, {});
+    setMemberRole('editor');
+    assert.deepEqual(state.meta.hiddenCards, { standings: true, bonus: true }, 'the old-build keys are set by the promotion itself');
+    assert.equal(env.saves(), 1);
   } finally { env.restore(); }
 });
 

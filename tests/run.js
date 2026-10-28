@@ -12,7 +12,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
-const { makeContext, assert, AssertionError } = require('./harness');
+const { makeContext, clearAllTimers, assert, AssertionError } = require('./harness');
 
 const filter = process.argv[2] || '';
 const files = fs.readdirSync(__dirname)
@@ -68,6 +68,10 @@ async function main() {
         console.log(`      ${e instanceof AssertionError ? e.message : (e && e.stack) || e}`);
       }
     }
+    // The file is finished: cancel every timer its scenarios left running (the
+    // file's own context and any second one it built), or Node keeps the
+    // process alive after every case has passed.
+    clearAllTimers();
   }
 
   console.log('');

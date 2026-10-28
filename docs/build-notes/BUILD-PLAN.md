@@ -244,7 +244,8 @@ Each block: **Ships** (together, in one deploy unless said), **Needs**, **Tests*
 
 ### Step 3 · Secrecy, fail closed · redesign D1 · Nov · L (3) · Sonnet
 - **Ships:** `reveal-core.js` (`groupPlaces`, `revealView`, `tvFrame`, `untilFor`, normalisers;
-  `?v=` → 14); `standingsVisible()` inside every points reader and every viewer path in redesign
+  `?v=` → 187, not 14: the live value was 186 and 14 would move the cache-buster backwards; owner to
+  confirm); `standingsVisible()` inside every points reader and every viewer path in redesign
   §4.12; viewer result alerts from the results diff in `applyRemoteState`; rewritten copy; seeded
   `hiddenCards.standings` and `.bonus` for old builds; the TV shows live standings to directors only
   and "Waiting for the directors…" to everyone else (the signed-in interim page, replaced in Step
@@ -261,7 +262,11 @@ Each block: **Ships** (together, in one deploy unless said), **Needs**, **Tests*
   17: owner-accepted, 2026-10-27).
 - **Rollback:** revert (the seeded keys are harmless).
 - **Owner:** open the app once as a director after the deploy (30 seconds): the first new director
-  build writes the `hiddenCards` seed that protects not-yet-updated counselor phones.
+  build writes the `hiddenCards` seed that protects not-yet-updated counselor phones. Then reload or
+  close any open TV tab, especially on a counselor's device: a TV still on a pre-Step-3 build keeps
+  showing live standings to any signed-in member, and its self-update reloads only on the intro
+  screen, so a TV mid-reveal needs a manual reload (spec §4.11 "Old pages during the rollout").
+  The TV's own stamp moved to 2026-10-28T00:14:43Z, so a TV that reloads picks up this build.
 - **Note:** from here counselors have no standings surface until the reveal (Step 23). That is the
   owner's rule, and no camp is running.
 

@@ -298,6 +298,77 @@ test('an empty database gets seeded rather than adopted', () => {
   assert.deepEqual(Object.keys(state.results), ['g1']);
 });
 
+// ── Viewer result alerts (redesign §4.12 row 6, §15, D1) ──────────────
+// A counselor hears one alert per NEW result, from the results diff inside
+// applyRemoteState. The first pull is catch-up and never news, but it must still
+// arm the baseline, or the first real result after a quiet boot is silent.
+installSinks();
+
+function toastsWhile(fn) {
+  __sinkRec.log.length = 0;
+  __sinkRec.on = true;
+  try { fn(); } finally { __sinkRec.on = false; }
+  return __sinkRec.log.filter((e) => e.kind === 'toast');
+}
+
+function firstPullReset() {
+  remoteReady = false;
+  resultAlertsArmed = false; // a fresh page load
+  bootSyncedTree = null;
+  bootHadConfirmedBase = false;
+}
+
+test('row 6 + D1: an identical first snapshot, then one new result, gives a counselor exactly one alert', () => {
+  freshState();
+  state.notify = true; // the counselor's alerts toggle is on
+  setMemberRole('viewer');
+  appStarted = true;
+  useFakeRef();
+  firstPullReset();
+  const game = state.config.games[0];
+  handleRemoteSnapshot(JSON.parse(JSON.stringify(syncedSnapshot())));
+  assert.equal(resultAlertsArmed, true, 'the first pull arms the baseline');
+  const toasts = toastsWhile(() => {
+    const snap = JSON.parse(JSON.stringify(syncedSnapshot()));
+    snap.results[game.id] = { medals: { gold: 't0', silver: 't1', bronze: 't2' }, savedAt: '2026-07-20T14:00:00Z' };
+    handleRemoteSnapshot(snap);
+  });
+  assert.equal(toasts.length, 1, 'exactly one viewer alert: ' + JSON.stringify(toasts));
+  assert.equal(toasts[0].text, `🏅 ${game.name}: ${teamName('t0')} gold, ${teamName('t1')} silver, ${teamName('t2')} bronze`);
+});
+
+test('row 6: a quiet boot on an EMPTY database still alerts the first real result', () => {
+  freshState();
+  state.notify = true;
+  setMemberRole('viewer');
+  appStarted = true;
+  useFakeRef();
+  firstPullReset();
+  handleRemoteSnapshot(null); // the empty node: seeded, and that first pull arms the baseline
+  assert.equal(resultAlertsArmed, true, 'an empty first pull arms the baseline too');
+  pendingWrites = 0; // the server has confirmed the seed push (its promise settles asynchronously)
+  const game = state.config.games[0];
+  const toasts = toastsWhile(() => {
+    const snap = JSON.parse(JSON.stringify(syncedSnapshot()));
+    snap.results[game.id] = { medals: { gold: 't0', silver: 't1', bronze: 't2' }, savedAt: '2026-07-20T14:00:00Z' };
+    handleRemoteSnapshot(snap);
+  });
+  assert.equal(toasts.length, 1, 'the FIRST live result alerts, not only the second: ' + JSON.stringify(toasts));
+});
+
+test('D1: a director\'s first pull writes the hiddenCards seed in the push that brings the snapshot in', () => {
+  freshState();
+  const ref = useFakeRef();
+  firstPullReset(); // the first pull has not landed yet, so a promotion must not seed early
+  setMemberRole('editor');
+  appStarted = true;
+  handleRemoteSnapshot(JSON.parse(JSON.stringify(syncedSnapshot())));
+  flushPendingPush();
+  const written = Object.assign({}, ...ref.writes.filter((w) => !('__whole' in w)));
+  assert.equal(written['meta/hiddenCards/standings'], true, 'the standings key: ' + JSON.stringify(ref.writes));
+  assert.equal(written['meta/hiddenCards/bonus'], true, 'the bonus key');
+});
+
 test('nothing is pushed before the first snapshot lands', () => {
   freshState();
   const ref = useFakeRef();

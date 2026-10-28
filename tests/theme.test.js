@@ -119,3 +119,42 @@ test('a real flip suspends colour transitions; the first paint and a no-op re-ap
   applyTheme();
   assert.equal(root.added.length, 2, 'a choice that lands on the same look is not a flip');
 });
+
+// ── Pre-paint hints (boot-guard.js runs before first paint) ─────────────
+// boot-guard is loaded here on its own, against a stub document, so the classes
+// it paints before boot() can be read back. A dual-role account's single hint
+// holds whichever camp it was approved on last; the active camp's ledger entry
+// is the role this device actually runs as.
+function paintedByBootGuard(entries) {
+  const store = new Map(entries);
+  const classes = new Set();
+  const root = {
+    classList: { add: (c) => classes.add(c), remove: (c) => classes.delete(c), contains: (c) => classes.has(c) },
+    setAttribute() {}, removeAttribute() {}, getAttribute() { return null; },
+  };
+  const sb = {
+    console: { log() {}, warn() {}, error() {} },
+    localStorage: { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, String(v)), removeItem: (k) => store.delete(k) },
+    document: {
+      documentElement: root, head: { appendChild() {} }, getElementById: () => null, querySelector: () => null,
+      querySelectorAll: () => [], createElement: () => ({ setAttribute() {}, classList: { add() {} } }),
+      addEventListener() {}, readyState: 'loading',
+    },
+    addEventListener() {}, setTimeout: () => 0, clearTimeout() {},
+    customElements: { whenDefined: () => Promise.resolve(), get: () => undefined },
+  };
+  sb.window = sb; sb.self = sb; sb.top = sb;
+  const ctx = nodeRequire('vm').createContext(sb);
+  nodeRequire('vm').runInContext(readFixture('../boot-guard.js'), ctx, { filename: 'boot-guard.js' });
+  return [...classes];
+}
+
+test('pre-paint: a dual-role account paints the ACTIVE camp\'s role, not the last camp it was approved on', () => {
+  const both = JSON.stringify({ junior: 'viewer', senior: 'editor' });
+  assert.ok(paintedByBootGuard([['campScoreboardAuthHint', 'editor'], ['campScoreboardCampsHint', both]]).includes('view-only'),
+    'junior (the default camp) is a counselor there, whatever the single hint says');
+  assert.deepEqual(paintedByBootGuard([['campScoreboardAuthHint', 'viewer'], ['campScoreboardActiveCamp', 'senior'], ['campScoreboardCampsHint', both]]), [],
+    'senior: a director there, so no view-only class');
+  assert.deepEqual(paintedByBootGuard([]), ['locked'], 'no hint at all stays locked');
+  assert.deepEqual(paintedByBootGuard([['campScoreboardAuthHint', 'viewer']]), ['view-only'], 'a single-camp viewer is unchanged');
+});

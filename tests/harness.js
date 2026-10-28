@@ -24,6 +24,15 @@ const APP_FILES = ['defaults.js', 'camp-core.js', 'reveal-core.js', 'camps.js', 
 
 const noop = () => {};
 
+// Every context makeContext has built, so clearAllTimers() can cancel the
+// timers of any of them (a test may build a second context of its own, as the
+// hint-paint case does, and run.js only holds the first).
+const liveTimerClearers = new Set();
+function clearAllTimers() {
+  for (const clear of liveTimerClearers) clear();
+  liveTimerClearers.clear();
+}
+
 // Minimal stand-in for one DOM element: enough that render functions called
 // incidentally (e.g. by saveState → renderAll paths) no-op instead of throwing.
 // Tests assert on state and return values, never on rendered markup — anything
@@ -118,6 +127,23 @@ function makeContext(opts) {
     removeEventListener: noop,
   };
 
+  // Every timer the app starts inside this context, so __clearTimers can cancel
+  // the ones a file leaves behind (the handle is dropped when it fires).
+  const pendingTimers = new Set();
+  const realSetTimeout = setTimeout;
+  const realClearTimeout = clearTimeout;
+  const trackedSetTimeout = (fn, ms, ...args) => {
+    const handle = realSetTimeout(() => {
+      pendingTimers.delete(handle);
+      if (typeof fn === 'function') fn(...args);
+    }, ms);
+    pendingTimers.add(handle);
+    return handle;
+  };
+  const trackedClearTimeout = (handle) => {
+    pendingTimers.delete(handle);
+    realClearTimeout(handle);
+  };
   const sandbox = {
     console,
     document: doc,
@@ -149,13 +175,17 @@ function makeContext(opts) {
       };
     })(),
     indexedDB: { open: () => ({}), deleteDatabase: noop },
-    setTimeout, clearTimeout,
+    // Timers are tracked so the runner can cancel whatever a file left pending
+    // (see __clearTimers): a rAF-to-setTimeout chain or a toast timer that a
+    // scenario starts would otherwise keep Node's event loop alive after every
+    // case has passed, and the run would hang until killed.
+    setTimeout: trackedSetTimeout, clearTimeout: trackedClearTimeout,
     // Timers that would otherwise keep the process alive forever (the 30s
     // render loop, the 500ms clock ticker, the sync idle retry) are inert here;
     // tests drive those code paths by calling the tick functions directly.
     setInterval: () => 0,
     clearInterval: noop,
-    requestAnimationFrame: (cb) => setTimeout(cb, 0),
+    requestAnimationFrame: (cb) => trackedSetTimeout(cb, 0),
     cancelAnimationFrame: noop,
     fetch: () => Promise.reject(new Error('tests make no network calls')),
     // Destructive flows all gate on confirm(). Tests auto-accept so the code
@@ -179,7 +209,14 @@ function makeContext(opts) {
       .filter((e) => e.text.trim()),
     __docListeners: docListeners,
     __reloads: 0,
+    // Cancels every timer this context still has pending. run.js calls it when
+    // a file's cases are done, so a leftover chain can't hold the process open.
+    __clearTimers: () => {
+      for (const handle of pendingTimers) realClearTimeout(handle);
+      pendingTimers.clear();
+    },
   };
+  liveTimerClearers.add(sandbox.__clearTimers);
   sandbox.window = sandbox;
   sandbox.self = sandbox;
   sandbox.globalThis = sandbox;
@@ -249,4 +286,4 @@ const assert = {
   },
 };
 
-module.exports = { makeContext, assert, AssertionError };
+module.exports = { makeContext, clearAllTimers, assert, AssertionError };

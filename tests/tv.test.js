@@ -13,7 +13,7 @@ const tvVm = nodeRequire('vm');
 const MAIN_URL = tvVm.runInThisContext('URL');
 const MAIN_URL_PARAMS = tvVm.runInThisContext('URLSearchParams');
 
-const TV_SCRIPTS = ['defaults.js', 'camp-core.js', 'tv-camp.js', 'camps.js', 'current-standings.js'];
+const TV_SCRIPTS = ['defaults.js', 'camp-core.js', 'reveal-core.js', 'tv-camp.js', 'camps.js', 'current-standings.js'];
 const TV_HTML = readFixture('../current-standings.html');
 
 function loadTv(o) {
@@ -183,25 +183,18 @@ test('?camp= picks the camp, then the presenter\'s app choice, then junior', () 
   assert.equal(loadTv({ search: '?demo' }).run('document.title'), 'Current Standings — Junior Camp');
 });
 
-test('each camp reads only its own database root and members list', async () => {
+test('each camp reads only its own database root and members list', () => {
   for (const [camp, root] of [['junior', 'campScoreboard'], ['senior', 'seniorScoreboard']]) {
-    const rec = { on: [], once: [], cb: {}, auth: null };
-    const fb = {
-      apps: [], initializeApp() { fb.apps.push({}); },
-      auth: Object.assign(() => ({ onAuthStateChanged(cb) { rec.auth = cb; }, signInWithPopup: () => Promise.resolve(), signOut: () => Promise.resolve() }), { GoogleAuthProvider: function () { this.setCustomParameters = () => {}; } }),
-      database: () => ({ ref: (path) => ({
-        on(ev, cb) { rec.on.push(path); rec.cb[path] = cb; },
-        once() { rec.once.push(path); return Promise.resolve({ val: () => ({ role: 'editor' }) }); },
-      }) }),
-    };
-    const tv = loadTv({ search: '?camp=' + camp, firebase: fb });
+    const rec = freshRec();
+    const tv = loadTv({ search: '?camp=' + camp, firebase: tvFirebase(rec) });
     assert.equal(tv.camp(), camp);
+    const me = memberPath(root, 'Pat.Simpson@Gmail.com');
     rec.auth({ email: 'Pat.Simpson@Gmail.com' });
-    await new Promise((r) => setTimeout(r, 0));
-    assert.deepEqual(rec.once, [root + '/members/pat,simpson@gmail,com'], camp + ': the approval check is this camp\'s list, dots as commas');
-    assert.deepEqual(rec.on.sort(), [root + '/config', root + '/state'], camp + ': only its own config and state');
+    assert.deepEqual(rec.on, [me], camp + ': the approval read is this camp\'s list, dots as commas, and the only read before approval');
+    deliver(rec, me, { role: 'editor' });
+    assert.deepEqual(rec.on.slice().sort(), [me, root + '/config', root + '/state'].sort(), camp + ': an editor adds only its own config and state');
     // A remote snapshot renders (the intro comes up with the camp's own teams).
-    rec.cb[root + '/state']({ val: () => stateWith(camp === 'senior' ? T4 : T6) });
+    deliver(rec, root + '/state', stateWith(camp === 'senior' ? T4 : T6));
     assert.equal(tv.introCrests().length, camp === 'senior' ? 4 : 6);
   }
 });
@@ -476,48 +469,173 @@ test('mid-reveal, a newer build only shows the update chip (reloading would wipe
 
 // ── Secrecy: live standings are for directors only (until the public page, Step 23) ──
 
-function fbWithRole(role, rec) {
+// A fake Firebase for the page's sign-in. The approval read is a LIVE listener, so
+// each test delivers the values itself (deliver / refuse) and can script any order.
+function tvFirebase(rec) {
   const fb = {
     apps: [], initializeApp() { fb.apps.push({}); },
     auth: Object.assign(() => ({ onAuthStateChanged(cb) { rec.auth = cb; }, signInWithPopup: () => Promise.resolve(), signOut: () => Promise.resolve() }), { GoogleAuthProvider: function () { this.setCustomParameters = () => {}; } }),
     database: () => ({ ref: (path) => ({
-      on(ev, cb) { rec.on.push(path); rec.cb[path] = cb; },
-      once() { rec.once.push(path); return Promise.resolve({ val: () => (role ? { role } : null) }); },
+      on(ev, cb, failed) { rec.on.push(path); rec.cb[path] = cb; rec.failed[path] = failed; },
     }) }),
   };
   return fb;
 }
+function freshRec() { return { on: [], cb: {}, failed: {}, auth: null }; }
+// The page's own key for an account: lowercased, ALL dots as commas (app.js emailKey).
+function memberPath(root, email) { return root + '/members/' + email.trim().toLowerCase().replaceAll('.', ','); }
+function deliver(rec, path, val) { rec.cb[path]({ val: () => (val === undefined ? null : val) }); }
+function refuse(rec, path) { rec.failed[path](new Error('permission_denied')); }
+// A key press and a tap, as the page sees them.
+function tapAll(tv) {
+  tv.press('ArrowRight');
+  (tv.listeners.click || []).forEach((fn) => fn({ target: { closest: () => null } }));
+}
+// A reveal builds elements; a page that is not showing standings builds none.
+const createdCount = (tv) => tv.log.created.length;
 
-test('a counselor\'s account gets "Waiting for the directors…" and the page never reads state', async () => {
-  const rec = { on: [], once: [], cb: {}, auth: null };
-  const tv = loadTv({ firebase: fbWithRole('viewer', rec) });
+test('a counselor\'s account gets "Waiting for the directors…" and the page never reads state', () => {
+  const rec = freshRec();
+  const tv = loadTv({ firebase: tvFirebase(rec) });
+  const me = memberPath('campScoreboard', 'counselor@example.com');
   rec.auth({ email: 'counselor@example.com' });
-  await new Promise((r) => setTimeout(r, 0));
+  deliver(rec, me, { role: 'viewer' });
   assert.equal(tv.byId('waiting').hidden, false, 'the waiting screen is up');
   assert.equal(tv.byId('loading').style.display, 'none');
-  assert.deepEqual(rec.on, [], 'no state or config listener was ever attached: nothing in memory to compute standings from');
-  tv.next(); // a stray key or tap must not start a reveal
-  assert.equal(tv.byId('screen').hidden === false, false, 'the reveal screen never came up');
+  assert.deepEqual(rec.on, [me], 'only the approval read is attached: no state or config listener');
+  const before = createdCount(tv);
+  tapAll(tv);
+  assert.equal(createdCount(tv), before, 'a key or a tap builds no reveal');
   assert.deepEqual(tv.introCrests(), [], 'no intro');
   assert.ok(/Waiting for the directors…/.test(TV_HTML), 'the page ships the waiting words');
 });
 
-test('a director\'s account still gets the live standings', async () => {
-  const rec = { on: [], once: [], cb: {}, auth: null };
-  const tv = loadTv({ firebase: fbWithRole('editor', rec) });
+test('a director\'s account gets the live standings', () => {
+  const rec = freshRec();
+  const tv = loadTv({ firebase: tvFirebase(rec) });
+  const me = memberPath('campScoreboard', 'director@example.com');
   rec.auth({ email: 'director@example.com' });
-  await new Promise((r) => setTimeout(r, 0));
+  deliver(rec, me, { role: 'editor' });
+  assert.deepEqual(rec.on.slice().sort(), [me, 'campScoreboard/config', 'campScoreboard/state'].sort());
   assert.equal(tv.byId('waiting').hidden, true, 'nothing to wait for');
-  assert.deepEqual(rec.on.sort(), ['campScoreboard/config', 'campScoreboard/state']);
+  deliver(rec, 'campScoreboard/state', stateWith(T6));
+  assert.equal(tv.introCrests().length, 6);
 });
 
-test('an account that is not on the list still gets the denied overlay, not the waiting screen', async () => {
-  const rec = { on: [], once: [], cb: {}, auth: null };
-  const tv = loadTv({ firebase: fbWithRole(null, rec) });
-  rec.auth({ email: 'stranger@example.com' });
-  await new Promise((r) => setTimeout(r, 0));
+test('a counselor promoted while the page is open gets the standings without a reload', () => {
+  const rec = freshRec();
+  const tv = loadTv({ firebase: tvFirebase(rec) });
+  const me = memberPath('campScoreboard', 'pat@example.com');
+  rec.auth({ email: 'pat@example.com' });
+  deliver(rec, me, { role: 'viewer' });
+  assert.equal(tv.byId('waiting').hidden, false);
+  deliver(rec, me, { role: 'editor' });
+  assert.equal(tv.byId('waiting').hidden, true, 'the waiting screen gives way');
+  assert.ok(rec.on.includes('campScoreboard/state'), 'the state listener is attached now');
+  assert.equal(tv.replaced.length, 0, 'no reload needed');
+  deliver(rec, 'campScoreboard/state', stateWith(T6));
+  assert.equal(tv.introCrests().length, 6);
+});
+
+test('a director demoted while the page is open reloads into Waiting, and nothing stays on screen', () => {
+  const rec = freshRec();
+  const tv = loadTv({ firebase: tvFirebase(rec) });
+  const me = memberPath('campScoreboard', 'director@example.com');
+  rec.auth({ email: 'director@example.com' });
+  deliver(rec, me, { role: 'editor' });
+  deliver(rec, 'campScoreboard/state', stateWith(T6));
+  tv.next(); // intro -> the first reveal
+  assert.ok(createdCount(tv) > 0, 'the reveal is up');
+  deliver(rec, me, { role: 'viewer' });
+  assert.equal(tv.replaced.length, 1, 'the page reloads itself');
+  const before = createdCount(tv);
+  deliver(rec, 'campScoreboard/state', stateWith(T6)); // a late snapshot paints nothing
+  tapAll(tv);
+  assert.equal(createdCount(tv), before, 'and no key or tap builds anything');
+});
+
+test('a second account on the same page reloads it, and the first account\'s listeners do not survive', () => {
+  const rec = freshRec();
+  const tv = loadTv({ firebase: tvFirebase(rec) });
+  rec.auth({ email: 'director@example.com' });
+  deliver(rec, memberPath('campScoreboard', 'director@example.com'), { role: 'editor' });
+  deliver(rec, 'campScoreboard/state', stateWith(T6));
+  const attached = rec.on.length;
+  rec.auth({ email: 'counselor@example.com' });
+  assert.equal(tv.replaced.length, 1, 'a different account on the page reloads it');
+  assert.equal(rec.on.length, attached, 'and attaches nothing');
+  const before = createdCount(tv);
+  tapAll(tv);
+  assert.equal(createdCount(tv), before, 'the old reveal takes no more keys');
+
+  // Signing out is the same reload, into the sign-in panel.
+  const rec2 = freshRec();
+  const tv2 = loadTv({ firebase: tvFirebase(rec2) });
+  rec2.auth({ email: 'director@example.com' });
+  deliver(rec2, memberPath('campScoreboard', 'director@example.com'), { role: 'editor' });
+  deliver(rec2, 'campScoreboard/state', stateWith(T6));
+  rec2.auth(null);
+  assert.equal(tv2.replaced.length, 1, 'signing out reloads the page into the sign-in panel');
+});
+
+test('an approval read still in flight for the account the page has left attaches nothing', () => {
+  const rec = freshRec();
+  const tv = loadTv({ firebase: tvFirebase(rec) });
+  const me = memberPath('campScoreboard', 'director@example.com');
+  rec.auth({ email: 'director@example.com' }); // the read is in flight
+  rec.auth(null);                              // signed out before it answers
+  assert.equal(tv.replaced.length, 1);
+  deliver(rec, me, { role: 'editor' });
+  assert.deepEqual(rec.on, [me], 'no state or config listener for the stale editor');
   assert.equal(tv.byId('waiting').hidden, true);
-  assert.deepEqual(rec.on, []);
+});
+
+test('a refused approval read gets the denied panel, and a refusal mid-session reloads the page', () => {
+  const rec = freshRec();
+  const tv = loadTv({ firebase: tvFirebase(rec) });
+  const me = memberPath('campScoreboard', 'stranger@example.com');
+  rec.auth({ email: 'stranger@example.com' });
+  deliver(rec, me, null);
+  assert.equal(tv.byId('auth-ov-denied').style.display, 'block', 'not on the list: the denied panel');
+  assert.equal(tv.byId('waiting').hidden, true, 'and not the waiting screen');
+  assert.deepEqual(rec.on, [me]);
+
+  const rec2 = freshRec();
+  const tv2 = loadTv({ firebase: tvFirebase(rec2) });
+  const d = memberPath('campScoreboard', 'director@example.com');
+  rec2.auth({ email: 'director@example.com' });
+  deliver(rec2, d, { role: 'editor' });
+  refuse(rec2, d);
+  assert.equal(tv2.replaced.length, 1, 'a director whose read is refused mid-session is reloaded');
+});
+
+test('the TV page has no way to show a counselor standings, in code or in CSS', () => {
+  const TV = readFixture('../current-standings.js');
+  assert.ok(/#screen\[hidden\]\s*\{\s*display:\s*none/.test(TV_HTML), 'the reveal screen\'s hidden attribute beats the author rule');
+  assert.ok(/function computeStandings\(state\) \{\s*if \(!directorStandings\) return \[\];/.test(TV), 'standings are not computed without a director');
+  assert.notOk(/members\/[^\n]*\)\s*\.once\(/.test(TV), 'the approval read is live, not one-shot');
+  assert.notOk(/^\s*function groupPlaces\(/m.test(TV), 'the page keeps no copy of the places rule');
+  assert.ok(/groupPlaces\(rows\)/.test(TV), 'and calls reveal-core\'s groupPlaces');
+  assert.ok(/reveal-core\.js\?v=/.test(TV_HTML), 'reveal-core.js is loaded by the page');
+});
+
+test('the cached fallback: a camp missing from the per-camp ledger is not a director\'s on this device', () => {
+  const cache = { campScoreboardV2: JSON.stringify(stateWith(T6)) };
+  const junior = loadTv({ storage: Object.assign({ campScoreboardAuthHint: 'editor', campScoreboardCampsHint: JSON.stringify({ senior: 'editor' }) }, cache) });
+  assert.equal(junior.byId('waiting').hidden, false, 'junior has no ledger entry here: it waits, whatever the single hint says');
+  assert.deepEqual(junior.introCrests(), []);
+});
+
+test('a tie reads top to bottom in reveal-core order (golds, silvers, bronzes, then name), not in slot order', () => {
+  const names = ['Apple Team', 'Zebra Team', 'Methodic Mediocre Maples', 'Particularly Perilous Pumpkins', 'Patriotic Pilgrims', 'Runaway John Deersz'];
+  const teams = names.map((name, i) => ({ id: 't' + i, name }));
+  const tv = loadTv({ storage: { campScoreboardV2: JSON.stringify(stateWith(teams, { bonuses: {
+    a: { teamId: 't0', points: 5, category: 'custom' },
+    b: { teamId: 't1', points: 5, category: 'custom' },
+  } })) } });
+  tv.next();
+  tv.finishReveal();
+  assert.deepEqual(tv.rows().slice(0, 2).map((r) => r.name), ['Apple Team', 'Zebra Team'], 'the tie at first: name order');
 });
 
 test('the cached-snapshot fallback shows standings only on a device that was a director\'s', () => {

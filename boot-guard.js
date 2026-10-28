@@ -49,6 +49,16 @@
       document.documentElement.setAttribute('data-jelly-mode', theme);
     }
     var hint = localStorage.getItem('campScoreboardAuthHint');
+    // An account on both camps keeps one single hint, which holds whichever camp it
+    // was approved on last. The ledger entry for the ACTIVE camp is what this device
+    // runs as (boot() reads the same entry), so it decides the role when it has one.
+    // A device with no hint at all stays locked, exactly as before.
+    try {
+      var activeCamp = localStorage.getItem('campScoreboardActiveCamp') === 'senior' ? 'senior' : 'junior';
+      var ledger = JSON.parse(localStorage.getItem('campScoreboardCampsHint') || 'null');
+      var campRole = ledger && typeof ledger === 'object' ? ledger[activeCamp] : null;
+      if (hint && (campRole === 'viewer' || campRole === 'editor')) hint = campRole;
+    } catch (e) { /* the single hint stands */ }
     if (hint !== 'viewer' && hint !== 'editor') {
       document.documentElement.classList.add('locked');
     } else if (hint === 'viewer') {
