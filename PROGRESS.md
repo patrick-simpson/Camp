@@ -1,14 +1,16 @@
 # Build progress — read this first when resuming
 
-Last updated: **Tue Oct 27, 7:20 PM ET** (update this line every time the file changes)
+Last updated: **Tue Oct 27, 9:35 PM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
 should read this file top to bottom, then continue from **"Next steps"**.
 It is committed to the working branch so it survives the container being reset.
 
-- Working branch: **`ccr-b0a70176-9ril2l`** (push progress here; `main` is the
-  LIVE site — only finished, verified work goes to `main`, per CLAUDE.md).
+- Working branch: since the local handoff, each step is built on a short-lived
+  LOCAL branch (`build/step<N>-…`) and fast-forwarded into `main` once green and
+  checked (`main` is the LIVE site, per CLAUDE.md). The old cloud branch
+  `ccr-b0a70176-9ril2l` is retired.
 - Owner: Patrick (non-programmer; wants plain-English explanations, Eastern time
   only, percent-complete updates with ETAs, one question at a time, haiku/sonnet
   for simple work and opus only for hard parts, and to be told what that saved).
@@ -142,6 +144,29 @@ send_later into this session). ETAs above shift by however long the pause lasts.
   (builder worktrees must never be committed).
 
 ## Next steps (resume here)
+**9:35 PM ET Tue — STEP 3 LIVE (v188, commit 67cfaba).** Local run on the
+owner's Windows PC (`C:\Users\User\Documents\GitHub\Camp`). Steps 0–3 are now
+live; next is **Step 4 (accessor seam)**, built on a branch from `main`.
+- Setup done on this PC: GitHub CLI signed in (ADMIN on the repo), Node 24,
+  Python 3.14 (`python`, not `python3`), Playwright + Chromium in
+  `C:\Users\User\.camp-tools` (NODE_PATH set), a Task Scheduler entry that starts
+  `claude remote-control` at logon.
+- Windows checkouts are CRLF (`core.autocrlf=true`); `tests/run.js` normalizes
+  CRLF in `readFixture`, so the source-pin tests pass here too.
+- Step 3 work: applied the WIP patch, a workflow builder closed the review gaps
+  (a12a4f0), a container restart interrupted its fix pass; the fix pass was
+  finished by hand (provisional hint role, counselor live tally in roster
+  order, bye picker without points until confirmed) with three test
+  assertions corrected. 867 tests green. Browser check both camps × viewer /
+  editor × light / dark, locally and LIVE: pages paint, no errors, no points
+  text. Not checked: a real signed-in director's live standings (needs a real
+  sign-in — owner).
+- **Owner action pending (30 seconds):** open the app once as a director so the
+  first new director build writes the `hiddenCards` seed that protects counselor
+  phones that have not updated yet.
+- Percent complete: Steps 0–3 of 0–31, about 13% by the plan's session sizes
+  (~10 of ~79 sessions).
+
 **7:20 PM ET Tue — HANDED OFF TO A LOCAL RUN (owner's laptop, parallel).**
 The cloud build was stopped on the owner's request. State: Steps 0–2 LIVE
 (v186). Step 3 (secrecy) is HALF DONE and NOT deployed: saved as
