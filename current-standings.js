@@ -332,8 +332,10 @@
   // DIRECTOR with standings, and says "Waiting for the directors…" to a
   // counselor's account. None of that is CSS. It rests on three things:
   //   1. `directorStandings` is set only by the paths that have proven a director
-  //      (the demo, a device whose cached role is editor, and an approved editor's
-  //      member record). ingest() and computeStandings() compute nothing without it.
+  //      (the demo, and an approved editor's member record). ingest() and
+  //      computeStandings() compute nothing without it. A device-stored hint proves
+  //      nothing: a stale 'editor' hint on a counselor's phone with the sign-in
+  //      service unreachable waits, the same as a counselor (fail closed).
   //   2. A counselor's account never attaches the state or config listener, so
   //      nothing is in memory to compute from.
   //   3. The member record is read LIVE. A role change, a removal or a second
@@ -345,16 +347,6 @@
   var directorStandings = false; // the one switch that lets standings compute (see above)
   var directorAttached = false;  // attachData ran: this page is reading a director's standings
   var pageLeaving = false;       // a reload is under way: nothing more may paint
-  // The per-camp ledger decides for this camp alone: a camp with no entry in it is
-  // not a director's here, even when another camp's hint says editor. The single
-  // hint is only the fallback for a device that has no ledger at all.
-  function cachedRoleIsEditor() {
-    try {
-      var ledger = JSON.parse(localStorage.getItem('campScoreboardCampsHint') || 'null');
-      if (ledger && typeof ledger === 'object') return ledger[CAMP.id] === 'editor';
-      return localStorage.getItem('campScoreboardAuthHint') === 'editor';
-    } catch (e) { return false; }
-  }
   var waitingEl = document.getElementById('waiting');
   function showWaiting() {
     var ov = document.getElementById('auth-overlay');
@@ -480,10 +472,12 @@
     if (DEMO) { directorStandings = true; ingest(demoState()); return; }
     var cfg = window.FIREBASE_CONFIG;
     if (!cfg || !cfg.apiKey || !cfg.databaseURL || typeof firebase === 'undefined' || !firebase.auth) {
-      // No Firebase — the best this page can do is the local snapshot, and only
-      // on a device that was a director's (see the secrecy note above).
-      var local = cachedRoleIsEditor() ? readLocal() : null;
-      if (local) { directorStandings = true; ingest(local); } else showWaiting();
+      // No Firebase, so nothing can prove this account is a director. The cached
+      // snapshot is NOT a fallback here: the hint that would unlock it can be stale
+      // or hand-set, and the cache holds the results a counselor must not see. The
+      // page waits. (attachData's cached fallback still runs, but only after a
+      // director's approval has been read from the member record.)
+      showWaiting();
       return;
     }
     try { if (!firebase.apps.length) firebase.initializeApp(cfg); } catch (e) { return; }

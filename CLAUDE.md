@@ -799,7 +799,15 @@ rules**; the client code only shapes the UI.
   the last confirmed role so a returning approved device paints instantly from
   local state while auth re-confirms; index.html's guard reads the same key.
   Convenience only — a forged hint shows an empty shell (rules refuse all
-  data). Same literal lives in the index.html pre-paint guard. A second hint,
+  data). Same literal lives in the index.html pre-paint guard.
+  **A hinted role is PROVISIONAL** (Step 3): `boot()` calls
+  `setMemberRole(hint, { provisional: true })`, which paints the shell but leaves
+  `memberRoleConfirmed` false, so `standingsVisible()` (= `canEdit() &&
+  memberRoleConfirmed`) stays false until the member record answers. A stale
+  'editor' hint on a demoted director's phone therefore shows no standings from
+  the cached week, and writes no secrecy seed on a guess (`ensureSecrecySeed`
+  needs a confirmed director). Test seam: `setMemberRole(role)` with no opts is
+  confirmed. A second hint,
   `campScoreboardTheme` (`'light'|'dark'`, an EXPLICIT choice only — Auto =
   key absent), is mirrored out of `state.theme` by `applyTheme()` so
   boot-guard.js can set `data-jelly-mode` before first paint; it is

@@ -417,6 +417,93 @@ test('rows 11 and 12: a finished game shows its winners without "+N pts", a live
   }
 });
 
+// The live tally is the one place a counselor could still read who leads: the
+// game scores are public, the ORDER and the places are not (redesign §4.12 rows
+// 11-12, and the Step 3 live check: no places in game rows).
+// The week's tally game under test. The junior week has one; the senior week may
+// not, so one open game is made a tally for this test only (seedWeek starts fresh).
+// The scores are shuffled, so the live order differs from the roster whichever way
+// the game sorts (higher or lower wins).
+function liveTallyUnderTest() {
+  const { live } = seedWeek();
+  const g = live || state.config.games.find((x) => !state.results[x.id]);
+  if (!live) { g.liveRankings = true; state.drafts[g.id] = { scores: {}, medals: {} }; }
+  const shuffled = ['22', '5', '41', '13', '37', '29'];
+  state.teams.forEach((t, i) => { state.drafts[g.id].scores[t.id] = shuffled[i % shuffled.length]; });
+  return g;
+}
+
+test('the live tally: a counselor gets the teams in roster order with no numerals, no podium and no leader', () => {
+  const live = liveTallyUnderTest();
+  const rosterNames = state.teams.map((t) => teamName(t.id));
+  const at = (html) => rosterNames.map((n) => html.indexOf(n));
+  const ascending = (xs) => xs.every((x, i) => x >= 0 && (i === 0 || x > xs[i - 1]));
+  setMemberRole('editor');
+  const board = tallyBoardHTML(live);
+  assert.ok(/board-tally-podium/.test(board) && /board-tally-rank">\s*🥇/.test(board), 'positive control: a director sees the medals and the podium');
+  assert.notOk(ascending(at(board)), 'a director sees the live order, which is not the roster order here');
+  const viewer = asViewer(() => tallyBoardHTML(live));
+  assert.ok(ascending(at(viewer)), 'a counselor sees the roster order');
+  assert.ok(rosterNames.every((n) => viewer.includes(n)), 'every team is still on the board');
+  assert.notOk(/board-tally-podium/.test(viewer), 'no podium for a counselor');
+  assert.notOk(/board-tally-rank">\s*\d/.test(viewer), 'no numerals in the rank column');
+  const takeover = asViewer(() => { openGameAsViewer(live.id); renderGameView(); return document.getElementById('entry-area').innerHTML; });
+  assert.ok(/lw-rank-list/.test(takeover), 'the game takeover still shows the live scores');
+  assert.notOk(/lw-podium|lw-rank">\s*\d/.test(takeover), 'and no places, numerals or podium');
+  assert.deepEqual(leaksIn([{ kind: 'innerHTML', text: viewer }, { kind: 'innerHTML', text: takeover }]), []);
+  const card = asViewer(() => liveHomeTallyCard(live));
+  const n = state.teams.length; // 6 junior, 4 senior (this file also runs as senior)
+  assert.ok(/Scores so far/.test(card) && card.includes(`${n}/${n} teams in`), 'the home card counts the teams in');
+  assert.notOk(/Leader|Fastest|lh-nums|medals ready/.test(card), 'and names no leader: ' + card.replace(/\s+/g, ' ').slice(0, 160));
+  setMemberRole('editor');
+  assert.ok(/Leader/.test(liveHomeTallyCard(live)), 'a director still sees the leader');
+});
+
+// A device whose role came only from the hint (the member record has not answered)
+// is not a director for the numbers. It paints the director shell, and every reader
+// stays shut until the answer lands.
+test('a hint-painted director with no answer yet gets no standings anywhere, and the numbers when the answer lands', () => {
+  seedWeek();
+  const env = sealedSeedEnvironment();
+  try {
+    setMemberRole('editor', { provisional: true });
+    assert.equal(canEdit(), true, 'the hint still paints the director shell');
+    assert.equal(standingsVisible(), false, 'but it is not a confirmed director');
+    assert.equal(env.saves(), 0, 'and it writes nothing on a guess (no secrecy seed)');
+    setStandingsGuardThrows(true);
+    let log;
+    try {
+      log = record(() => renderAll());
+    } finally { setStandingsGuardThrows(false); }
+    assert.deepEqual(leaksIn(log), [], 'no sink carries a number');
+    assert.equal(document.getElementById('standings-tbody').innerHTML, '', 'no standings table');
+    setMemberRole('editor');
+    assert.equal(standingsVisible(), true, 'the answer confirms the director');
+    assert.ok(env.saves() > 0, 'and a confirmed director writes the seed');
+    renderAll();
+    assert.ok(/class="points-col">\d/.test(document.getElementById('standings-tbody').innerHTML), 'the table fills in');
+  } finally { env.restore(); }
+});
+
+test('a hint-painted director sees the bye picker with no points and no suggestion, and it reaches no points reader', () => {
+  seedWeek();
+  // Three Round 1 winners and a bye to judge: the picker's own inputs, whatever the camp.
+  const tour = state.config.games.find((x) => x.format === 'tournament') || state.config.games[0];
+  const b = freshBracket();
+  b.phase = 'bye';
+  b.matches = [0, 2, 4].map((i) => ({ a: 't' + i, b: 't' + (i + 1), winner: 't' + i, loser: 't' + (i + 1) }));
+  b.pool = [];
+  setMemberRole('editor', { provisional: true });
+  const body = document.getElementById('bracket-body');
+  setStandingsGuardThrows(true);
+  try { renderBracketBye(body, tour, b); } finally { setStandingsGuardThrows(false); }
+  assert.notOk(/chip-sub|suggested|\bpts?\b/.test(body.innerHTML), 'no numbers and no suggestion: ' + body.innerHTML.replace(/\s+/g, ' ').slice(0, 200));
+  assert.deepEqual(leaksIn([{ kind: 'innerHTML', text: body.innerHTML }]), []);
+  setMemberRole('editor');
+  renderBracketBye(body, tour, b);
+  assert.ok(/chip-sub/.test(body.innerHTML), 'a confirmed director sees the totals');
+});
+
 test('row 16: the copy no longer promises point alerts to a counselor', () => {
   seedWeek();
   const shown = [];
@@ -541,6 +628,30 @@ test('hint-paint: a counselor phone booting from a cached week with points paint
   assert.ok(boot.sandbox.__sinkRec.log.length > 20, 'with the recorder live');
   assert.deepEqual(leaksIn(boot.sandbox.__sinkRec.log), []);
   assert.deepEqual(leaksIn(boot.sandbox.__domSweep()), [], 'and none left in a node');
+});
+
+test('hint-paint, editor: a stale director hint on a phone whose database cannot answer paints no standings', () => {
+  seedWeek();
+  setMemberRole('editor');
+  const cache = JSON.stringify(state);
+  const vm = nodeRequire('vm');
+  const { makeContext } = nodeRequire('./harness.js');
+  const boot = makeContext({ storage: { [STORAGE_KEY]: cache, campScoreboardAuthHint: 'editor', campScoreboardCampsHint: JSON.stringify({ junior: 'editor' }) } });
+  boot.sandbox.installSinks();
+  const get = (expr) => vm.runInContext(expr, boot.ctx);
+  get('globalThis.CustomEvent = function (type, init) { this.type = type; this.detail = init && init.detail; }; globalThis.dispatchEvent = function () { return true; }');
+  get('setStandingsGuardThrows(true)');
+  boot.sandbox.__sinkRec.on = true;
+  assert.doesNotThrow(() => get('boot()'), 'the first frame of a hinted director reaches no points reader');
+  boot.sandbox.__sinkRec.on = false;
+  assert.equal(get('appStarted'), true, 'the app really painted');
+  assert.equal(get('canEdit()'), true, 'the hint painted the director shell');
+  assert.equal(get('standingsVisible()'), false, 'and no answer has come: no standings');
+  assert.deepEqual(leaksIn(boot.sandbox.__sinkRec.log), []);
+  assert.deepEqual(leaksIn(boot.sandbox.__domSweep()), [], 'and none left in a node');
+  // hiddenCards itself is healed to {} on every load (normalizeSyncedState); what
+  // must not appear is the secrecy SEED, which only a confirmed director writes.
+  assert.equal(get('JSON.stringify(["standings", "bonus"].filter((k) => state.meta && state.meta.hiddenCards && state.meta.hiddenCards[k]))'), '[]', 'nothing seeded on a guess');
 });
 
 // ── The seeded keys for builds that predate this ─────────────────────

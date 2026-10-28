@@ -23,8 +23,9 @@ function loadTv(o) {
   const bySel = new Map();
   const listeners = {};
   const timers = [];
-  // A director's device unless a test says otherwise: the cached-snapshot fallback
-  // shows standings only on a device that was a director's (secrecy interim).
+  // The hint a director's device would carry. It proves nothing on this page: standings
+  // come only from a signed-in director's approved reads (see directorTv), so a test
+  // that wants standings must sign in, and a test that only sets the hint waits.
   const store = new Map(Object.entries(Object.assign({ campScoreboardAuthHint: 'editor' }, o.storage || {})));
   const replaced = [];
 
@@ -199,10 +200,22 @@ test('each camp reads only its own database root and members list', () => {
   }
 });
 
-test('the local cache fallback reads this camp\'s namespaced key', () => {
-  const junior = loadTv({ storage: { campScoreboardV2: JSON.stringify(stateWith(T6)) } });
+test('the offline fallback reads this camp\'s namespaced key, and only after a director\'s approval is read', () => {
+  // The cache is a fallback for an APPROVED director whose state read never answers
+  // (offline): it paints nothing before the member record confirms the role.
+  const offline = (search, root, storage) => {
+    const rec = freshRec();
+    const tv = loadTv({ search, storage, firebase: tvFirebase(rec) });
+    rec.auth({ email: 'director@example.com' });
+    assert.equal(tv.introCrests().length, 0, 'no approval yet: nothing paints from the cache');
+    deliver(rec, memberPath(root, 'director@example.com'), { role: 'editor' });
+    // The state read never answers: the approved fallback runs after 3.5 s.
+    tv.timers.filter((t) => t.ms === 3500).forEach((t) => t.fn());
+    return tv;
+  };
+  const junior = offline('', 'campScoreboard', { campScoreboardV2: JSON.stringify(stateWith(T6)) });
   assert.equal(junior.introCrests().length, 6, 'junior: the bare key');
-  const senior = loadTv({ search: '?camp=senior', storage: { 'campScoreboardV2:senior': JSON.stringify(stateWith(T4)), campScoreboardV2: JSON.stringify(stateWith(T6)) } });
+  const senior = offline('?camp=senior', 'seniorScoreboard', { 'campScoreboardV2:senior': JSON.stringify(stateWith(T4)), campScoreboardV2: JSON.stringify(stateWith(T6)) });
   assert.equal(senior.introCrests().length, 4, 'senior: the ":senior" key, never junior\'s cache');
 });
 
@@ -244,7 +257,7 @@ test('the junior demo still plays a six-team reveal in its original order', () =
 });
 
 test('a team with no crest gets an emoji tile, never an <img> with no usable source', () => {
-  const tv = loadTv({
+  const tv = directorTv({
     storage: { campScoreboardV2: JSON.stringify(stateWith(T6)) },
     beforePage: "delete CAMP.teamCrest.t3; CAMP.teamCrest.t4 = undefined; CAMP.teamCrest.t5 = '';",
   });
@@ -264,7 +277,7 @@ test('a markup emoji in a team record falls back to the team\'s own mascot and n
   teams[0].emoji = '<img src=x onerror=alert(1)>';
   teams[1].emoji = '"><script>alert(1)</script>';
   teams[2].emoji = '🍂'; // a legitimate custom emoji still comes through
-  const tv = loadTv({ storage: { campScoreboardV2: JSON.stringify(stateWith(teams)) } });
+  const tv = directorTv({ storage: { campScoreboardV2: JSON.stringify(stateWith(teams)) } });
   tv.next(); tv.finishReveal();
   assertInertHtml(tv.log.html);
   const all = tv.log.html.join('\n');
@@ -278,7 +291,7 @@ test('a hostile team name is escaped text', () => {
   const teams = T6.map((t) => Object.assign({}, t));
   teams[3].name = '<img src=x onerror=alert(1)>';
   teams[4].name = '"><svg onload=alert(1)>';
-  const tv = loadTv({ storage: { campScoreboardV2: JSON.stringify(stateWith(teams)) } });
+  const tv = directorTv({ storage: { campScoreboardV2: JSON.stringify(stateWith(teams)) } });
   tv.next(); tv.finishReveal();
   assertInertHtml(tv.log.html);
   const all = tv.log.html.join('\n');
@@ -287,7 +300,7 @@ test('a hostile team name is escaped text', () => {
 });
 
 test('a quote-breakout or external crest address is refused: tile, not <img>', () => {
-  const tv = loadTv({
+  const tv = directorTv({
     storage: { campScoreboardV2: JSON.stringify(stateWith(T6)) },
     beforePage: `CAMP.teamCrest.t0 = 'data:image/png;base64,AAAA" onerror="alert(1)';
                  CAMP.teamCrest.t1 = 'javascript:alert(1)';
@@ -302,7 +315,7 @@ test('a quote-breakout or external crest address is refused: tile, not <img>', (
   assert.notOk(/onerror|evil|javascript:/.test(tv.log.html.join('\n')), 'and none of it in markup either');
   // The good case, for contrast: a whole inline PNG goes through img.src.
   const png = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
-  const ok = loadTv({ storage: { campScoreboardV2: JSON.stringify(stateWith(T6)) }, beforePage: `CAMP.teamCrest.t0 = ${JSON.stringify(png)}` });
+  const ok = directorTv({ storage: { campScoreboardV2: JSON.stringify(stateWith(T6)) }, beforePage: `CAMP.teamCrest.t0 = ${JSON.stringify(png)}` });
   assert.equal(ok.introCrests()[0].tagName, 'IMG');
   assert.equal(ok.introCrests()[0].src, png);
 });
@@ -312,7 +325,7 @@ test('the champion screen builds its crests the same safe way (a tile per team, 
   teams[0].emoji = '<img src=x onerror=alert(1)>';
   teams[0].name = '<b onmouseover=alert(1)>Reds</b>';
   const results = { a: { medals: { gold: 't0', silver: 't1', bronze: 't2' } } };
-  const tv = loadTv({ search: '?finale&camp=senior', storage: { 'campScoreboardV2:senior': JSON.stringify(stateWith(teams, { results })) } });
+  const tv = directorTv({ search: '?finale&camp=senior', storage: { 'campScoreboardV2:senior': JSON.stringify(stateWith(teams, { results })) } });
   // Stop AT the champion screen: one more press would move on to the final table.
   for (let i = 0; i < 12 && !tv.byId('finale').classList.contains('show'); i++) tv.next();
   assert.ok(tv.byId('finale').classList.contains('show'), 'the finale is up');
@@ -333,12 +346,12 @@ test('results for a game that is no longer in the week are not counted once the 
     g1: { medals: { gold: 't0', silver: 't1', bronze: 't2' } },
     gone: { medals: { gold: 't1', silver: 't2', bronze: 't0' } },
   };
-  const withConfig = loadTv({ storage: { campScoreboardV2: JSON.stringify(stateWith(T6, { results, config: { games } })) } });
+  const withConfig = directorTv({ storage: { campScoreboardV2: JSON.stringify(stateWith(T6, { results, config: { games } })) } });
   withConfig.next(); withConfig.finishReveal();
   const pts = (tv) => Object.fromEntries(tv.rows().map((r) => [r.name, r.pts]));
   assert.equal(pts(withConfig)['Ferocious Foxes'], 14, 'g1 is a messtival game: gold 7 x 2; the orphan\'s bronze is ignored');
   assert.equal(pts(withConfig)['Turkey Dinner'], 10, 'silver 5 x 2 and not the orphan\'s gold');
-  const noConfig = loadTv({ storage: { campScoreboardV2: JSON.stringify(stateWith(T6, { results })) } });
+  const noConfig = directorTv({ storage: { campScoreboardV2: JSON.stringify(stateWith(T6, { results })) } });
   noConfig.next(); noConfig.finishReveal();
   assert.equal(pts(noConfig)['Turkey Dinner'], 7 * 1 + 5 * 1, 'no config yet: nothing to judge by, every result counts (and the built-in catalog does not double the made-up ids)');
 });
@@ -351,7 +364,7 @@ test('verse and custom bonuses double inside the legacy window, meal cleanup nev
     c: { teamId: 't0', points: 3, category: 'cleanup', at: inside },
     d: { teamId: 't0', points: 2, category: 'verse', at: '2026-07-22T15:00:00Z' },
   };
-  const tv = loadTv({ storage: { campScoreboardV2: JSON.stringify(stateWith(T6, { bonuses })) } });
+  const tv = directorTv({ storage: { campScoreboardV2: JSON.stringify(stateWith(T6, { bonuses })) } });
   tv.next(); tv.finishReveal();
   assert.equal(tv.rows().find((r) => r.name === 'Ferocious Foxes').pts, 10 + 8 + 3 + 2);
 });
@@ -361,12 +374,12 @@ test('until the live config arrives the camp\'s built-in catalog decides which g
     'bushel-bustle': { medals: { gold: 't0', silver: 't1', bronze: 't2' } },  // a junior messtival game
     shields: { medals: { gold: 't3', silver: 't4', bronze: 't5' } },          // an ordinary one
   };
-  const jr = loadTv({ storage: { campScoreboardV2: JSON.stringify(stateWith(T6, { results })) } });
+  const jr = directorTv({ storage: { campScoreboardV2: JSON.stringify(stateWith(T6, { results })) } });
   jr.next(); jr.finishReveal();
   const pts = Object.fromEntries(jr.rows().map((r) => [r.name, r.pts]));
   assert.equal(pts['Ferocious Foxes'], 14, 'bushel-bustle gold is doubled');
   assert.equal(pts['Particularly Perilous Pumpkins'], 7, 'shields gold is not');
-  const sr = loadTv({ search: '?camp=senior', storage: { 'campScoreboardV2:senior': JSON.stringify(stateWith(T4, { results })) } });
+  const sr = directorTv({ search: '?camp=senior', storage: { 'campScoreboardV2:senior': JSON.stringify(stateWith(T4, { results })) } });
   sr.next(); sr.finishReveal();
   assert.equal(Object.fromEntries(sr.rows().map((r) => [r.name, r.pts]))['Red Team'], 7, 'senior has no messtival games');
 });
@@ -493,6 +506,22 @@ function tapAll(tv) {
 }
 // A reveal builds elements; a page that is not showing standings builds none.
 const createdCount = (tv) => tv.log.created.length;
+
+// A signed-in DIRECTOR on this page: the only way standings reach it now. The member
+// record confirms the role, then the state listener delivers the week (the cache the
+// test passes in, as the live node would). The page reads no hint for this.
+function directorTv(o) {
+  const rec = freshRec();
+  const senior = /camp=senior/i.test(o.search || '');
+  const root = senior ? 'seniorScoreboard' : 'campScoreboard';
+  const key = senior ? 'campScoreboardV2:senior' : 'campScoreboardV2';
+  const tv = loadTv(Object.assign({}, o, { firebase: tvFirebase(rec) }));
+  rec.auth({ email: 'director@example.com' });
+  deliver(rec, memberPath(root, 'director@example.com'), { role: 'editor' });
+  const raw = (o.storage || {})[key];
+  deliver(rec, root + '/state', raw ? JSON.parse(raw) : null);
+  return tv;
+}
 
 test('a counselor\'s account gets "Waiting for the directors…" and the page never reads state', () => {
   const rec = freshRec();
@@ -629,7 +658,7 @@ test('the cached fallback: a camp missing from the per-camp ledger is not a dire
 test('a tie reads top to bottom in reveal-core order (golds, silvers, bronzes, then name), not in slot order', () => {
   const names = ['Apple Team', 'Zebra Team', 'Methodic Mediocre Maples', 'Particularly Perilous Pumpkins', 'Patriotic Pilgrims', 'Runaway John Deersz'];
   const teams = names.map((name, i) => ({ id: 't' + i, name }));
-  const tv = loadTv({ storage: { campScoreboardV2: JSON.stringify(stateWith(teams, { bonuses: {
+  const tv = directorTv({ storage: { campScoreboardV2: JSON.stringify(stateWith(teams, { bonuses: {
     a: { teamId: 't0', points: 5, category: 'custom' },
     b: { teamId: 't1', points: 5, category: 'custom' },
   } })) } });
@@ -638,20 +667,26 @@ test('a tie reads top to bottom in reveal-core order (golds, silvers, bronzes, t
   assert.deepEqual(tv.rows().slice(0, 2).map((r) => r.name), ['Apple Team', 'Zebra Team'], 'the tie at first: name order');
 });
 
-test('the cached-snapshot fallback shows standings only on a device that was a director\'s', () => {
+test('with the sign-in service unreachable, nothing shows: a director hint and a cached week paint no standings', () => {
+  // Fail closed (the stale-hint finding): a hint is convenience, not proof, and the
+  // cached week it would unlock holds results a counselor must not see.
   const cache = { campScoreboardV2: JSON.stringify(stateWith(T6, { results: { x: { medals: { gold: 't0', silver: 't1', bronze: 't2' } } } })) };
+  const director = loadTv({ storage: Object.assign({ campScoreboardAuthHint: 'editor' }, cache) });
+  assert.equal(director.byId('waiting').hidden, false, 'a director\'s hint with the SDK blocked waits');
+  assert.deepEqual(director.introCrests(), [], 'and paints no week from the cache');
   const counselor = loadTv({ storage: Object.assign({ campScoreboardAuthHint: 'viewer' }, cache) });
   assert.equal(counselor.byId('waiting').hidden, false, 'a counselor\'s phone with the SDK blocked waits');
   assert.deepEqual(counselor.introCrests(), []);
   const bare = loadTv({ storage: Object.assign({ campScoreboardAuthHint: '' }, cache) });
   assert.equal(bare.byId('waiting').hidden, false, 'no hint at all fails closed');
-  // the per-camp ledger beats the single hint: a director of senior who is only a counselor on junior
-  const dual = loadTv({ storage: Object.assign({ campScoreboardAuthHint: 'editor', campScoreboardCampsHint: JSON.stringify({ junior: 'viewer', senior: 'editor' }) }, cache) });
-  assert.equal(dual.byId('waiting').hidden, false, 'junior: a counselor there, so it waits');
+  // The per-camp ledger is no proof on this page either.
+  const dual = loadTv({ storage: Object.assign({ campScoreboardAuthHint: 'editor', campScoreboardCampsHint: JSON.stringify({ junior: 'editor', senior: 'viewer' }) }, cache) });
+  assert.equal(dual.byId('waiting').hidden, false, 'a ledger that says director waits too');
+  assert.deepEqual(dual.introCrests(), []);
   const senior = loadTv({ search: '?camp=senior', storage: { campScoreboardAuthHint: 'editor', campScoreboardCampsHint: JSON.stringify({ junior: 'viewer', senior: 'editor' }), 'campScoreboardV2:senior': JSON.stringify(stateWith(T4)) } });
-  assert.equal(senior.byId('waiting').hidden, true);
-  assert.equal(senior.introCrests().length, 4, 'senior: a director there, so it shows');
-  const director = loadTv({ storage: cache });
-  assert.equal(director.introCrests().length, 6, 'a director\'s device (hint editor) is unchanged');
+  assert.equal(senior.byId('waiting').hidden, false, 'senior: a camp whose ledger says director waits too');
+  assert.deepEqual(senior.introCrests(), []);
   assert.equal(loadTv({ search: '?demo', storage: { campScoreboardAuthHint: '' } }).introCrests().length, 6, 'the demo is fake data, open to all');
+  // A signed-in director still gets the week, from the approved path (directorTv).
+  assert.equal(directorTv({ storage: cache }).introCrests().length, 6, 'a confirmed director gets the standings');
 });

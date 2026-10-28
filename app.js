@@ -15,9 +15,9 @@ const STORAGE_KEY = lsKey('campScoreboardV2'); // per-camp; junior stays the bar
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-10-28T00:14:43Z';
+const CODE_UPDATED_AT = '2026-10-28T01:30:15Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 187;
+const APP_VERSION = 188;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -69,6 +69,10 @@ const THEME_HINT_KEY = 'campScoreboardTheme'; // 'light' | 'dark'
 
 let authUser = null;       // firebase.auth() user, once signed in
 let memberRole = null;     // 'viewer' | 'editor' | null (not resolved / not approved)
+// True only once the member record itself has answered for this role. A role
+// painted from a device-stored hint (boot) is provisional: it can paint the
+// shell, but standingsVisible() waits for the answer (see setMemberRole).
+let memberRoleConfirmed = false;
 let memberName = null;     // display name from the member record, if set
 let memberTeamId = null;   // 't0'…'t5' — the team this person is ON, if assigned
 let authTornDown = false;  // sign-in was lost mid-session; recovery is a reload
@@ -85,13 +89,21 @@ let memberDirectoryLoaded = false;
 
 // The single write-path for the role — and the test seam: tests call this
 // directly instead of faking a Firebase sign-in (see tests/auth.test.js).
-function setMemberRole(role) {
+// `opts.provisional` marks a role painted from a device-stored hint (boot). A
+// hint is a convenience, not proof: it can be stale (a demoted director's phone)
+// or set by hand, and the cached week it would unlock holds results a counselor
+// must not see. So a provisional role paints the shell but does NOT make
+// standingsVisible() true; the member record's answer does (no opts = confirmed).
+function setMemberRole(role, opts) {
   const next = role === 'editor' || role === 'viewer' ? role : null;
-  const changed = memberRole !== next;
+  const confirmed = next !== null && !(opts && opts.provisional);
+  const changed = memberRole !== next || memberRoleConfirmed !== confirmed;
   memberRole = next;
+  memberRoleConfirmed = confirmed;
   // A device promoted during a session seeds the old-build keys now, not at its
-  // next data change (ensureSecrecySeed still needs a synced first pull).
-  if (next === 'editor' && changed) ensureSecrecySeed();
+  // next data change (ensureSecrecySeed still needs a synced first pull). Only a
+  // confirmed director seeds: a hint-painted device must not write on a guess.
+  if (next === 'editor' && confirmed && changed) ensureSecrecySeed();
   if (appStarted && changed) {
     applyRoleClass();
     updateAccountRow();
@@ -136,15 +148,17 @@ function canEdit() {
 // html.view-only leaves every node in the DOM.
 //
 // standingsVisible() is the ONE place that says who may see standings. Today
-// that is "a director" (role from the member record, so a role flip or a
-// hint-painted first frame is the same code); the director-only "Preview as a
-// counselor" switch (a later step) will join it here. A device whose role has
-// not resolved (null) is NOT a director: fail closed.
+// that is "a director whose role the MEMBER RECORD has confirmed": canEdit() is
+// not enough, because the first frame can paint a director from the device hint
+// before any answer arrives. A hint-painted (provisional) role, a role that has
+// not resolved (null), and an unreachable database are all NOT a director: fail
+// closed. The shell may still paint as a director; the numbers wait. The
+// director-only "Preview as a counselor" switch (a later step) will join it here.
 let standingsGuardThrows = false; // test seam only, off in the browser
 function setStandingsGuardThrows(on) { standingsGuardThrows = !!on; }
 
 function standingsVisible() {
-  return canEdit();
+  return canEdit() && memberRoleConfirmed;
 }
 
 function pointsReadAllowed(reader) {
@@ -2367,7 +2381,10 @@ function touchData(opts) {
 // activity, so they don't bump "Data last updated".
 //
 // Keys match the data-card attributes in index.html (and the switches'
-// data-hide-card). Only cards with a switch can be hidden.
+// data-hide-card). Four cards carry a switch (competitions, verse, cleanup,
+// chat). The other two, standings and bonus, are listed too so the one code
+// path handles every card, but they have no switch: they are SECRET_CARDS below,
+// hidden from every non-director whatever this map says.
 const HIDEABLE_CARDS = ['competitions', 'standings', 'verse', 'cleanup', 'bonus', 'chat'];
 
 // The two cards that ARE the standings (the table, and the quick-points ledger
@@ -2390,7 +2407,7 @@ const SECRET_CARDS = ['standings', 'bonus'];
 // only with sync on. Deliberately NOT in normalizeSyncedState, which runs for
 // everyone and on every load.
 function ensureSecrecySeed() {
-  if (!canEdit() || !syncEnabled() || !remoteReady) return;
+  if (!standingsVisible() || !syncEnabled() || !remoteReady) return;
   if (!state.meta) state.meta = {};
   if (!state.meta.hiddenCards || typeof state.meta.hiddenCards !== 'object') state.meta.hiddenCards = {};
   let changed = false;
@@ -2432,11 +2449,12 @@ function toggleCardHidden(card) {
 // doesn't surface it already open — matching the closed-by-default rule.
 function applyCardVisibility() {
   const editor = canEdit();
+  const seeStandings = standingsVisible(); // the secret cards follow the confirmed role
   HIDEABLE_CARDS.forEach((key) => {
     const hidden = cardHiddenFromViewers(key);
     const card = document.querySelector(`[data-card="${key}"]`);
     if (card) {
-      const hideForMe = hidden && !editor;
+      const hideForMe = hidden && !(SECRET_CARDS.includes(key) ? seeStandings : editor);
       card.hidden = hideForMe;
       if (hideForMe && card.hasAttribute('open')) {
         if (typeof card.toggle === 'function') card.toggle(false);
@@ -5743,9 +5761,12 @@ function setCardDesc(id, text) {
 function renderMemoryVerse() {
   const wrap = document.getElementById('verse-body');
   if (!wrap) return;
+  // The points grid is a CONFIRMED director's: a hint-painted device (no member
+  // answer yet) reads the verse like a counselor, so it reads no points either.
+  const editing = standingsVisible();
   // index.html ships the counselor wording (fail closed); directors get the one
   // that talks about points.
-  setCardDesc('verse-desc', canEdit()
+  setCardDesc('verse-desc', editing
     ? "Each day's memory verse — pick a day to read it, and record points for teams that recite it. Verse points count toward each team's total in Current Standings."
     : "Each day's memory verse — pick a day to read it.");
   // Default to today's verse (Mon–Fri); fall back to Monday on the weekend.
@@ -5793,7 +5814,6 @@ function renderMemoryVerse() {
   // Counselors read the verse and nothing more: the per-team points (the rows
   // and their "+N" totals) are directors' eyes only, so the ledger is not even
   // read for anyone else.
-  const editing = canEdit();
   const earned = (editing && versePointsByDay()[verseDay]) || { raw: {}, effective: {} };
   const doubleWindow = inDoubleBonusWindow();
   const displayMult = doubleWindow ? 2 : 1;
@@ -6452,7 +6472,10 @@ function tallyRankLive(g) {
       const v = parseScoreInput(g, raw);
       if (v !== null) entries.push({ id: t.id, v });
     });
-    entries.sort((a, b) => (g.lowerWins ? a.v - b.v : b.v - a.v));
+    // The live ORDER says who leads, so only a director gets it. A counselor gets
+    // the teams in roster order (entries are built in roster order above): the
+    // game scores are public, the places are not (redesign §4.12 rows 11-12).
+    if (standingsVisible()) entries.sort((a, b) => (g.lowerWins ? a.v - b.v : b.v - a.v));
   }
   return entries;
 }
@@ -6596,17 +6619,21 @@ function renderLiveHome() {
 
 // Compact "Live now" card for a tally game being scored (Inflatable Bowling,
 // Pictionary): the current leader + how many teams are in. Times/points only.
+// A counselor gets no leader: the first team in roster order is not the leader,
+// so the card says how many teams are in and nothing about who is ahead.
 function liveHomeTallyCard(g) {
   const ranked = tallyRankLive(g);
-  const top = ranked[0];
+  const seeOrder = standingsVisible();
+  const top = seeOrder ? ranked[0] : null;
   const complete = ranked.length >= state.teams.length;
   const scoreLine = top
     ? `<span class="live-home-score"><span class="lh-team">${teamEmoji(top.id)} ${esc(teamName(top.id))}</span><span class="lh-nums">${esc(formatScore(g, top.v))}</span></span>`
     : '<span class="live-home-sub">Scoring under way…</span>';
+  const label = !seeOrder ? 'Scores so far' : g.lowerWins ? 'Fastest so far' : 'Leader';
   return `<button class="live-home-card" data-game-id="${esc(g.id)}">
     <span class="live-home-top"><span class="live-home-badge">🔴 LIVE</span><span class="live-home-game">${esc(g.emoji)} ${esc(g.name)}</span></span>
     ${scoreLine}
-    <span class="live-home-sub">${g.lowerWins ? 'Fastest so far' : 'Leader'} · ${ranked.length}/${state.teams.length} teams in${complete && standingsVisible() ? ' · 🏅 medals ready' : ''}</span>
+    <span class="live-home-sub">${label} · ${ranked.length}/${state.teams.length} teams in${complete && seeOrder ? ' · 🏅 medals ready' : ''}</span>
   </button>`;
 }
 
@@ -6619,16 +6646,18 @@ function liveHomeTallyCard(g) {
 // comes from #clock-area, so this board's clock would just duplicate it there.
 function tallyBoardHTML(g) {
   const ranked = tallyRankLive(g);
-  // Medal discs on the live order say who WON before a director has saved the
-  // result, so only directors get them; everyone else sees plain places in the
-  // game (the live scores themselves are public).
-  const complete = ranked.length >= state.teams.length && standingsVisible();
+  // The order, the places and the podium are directors' eyes only. A counselor
+  // gets the teams in roster order with their game scores and no numerals, so
+  // nothing on the board says who leads. Medal discs on the live order say who
+  // WON before a director has saved the result, so they are directors' too.
+  const seeOrder = standingsVisible();
+  const complete = ranked.length >= state.teams.length && seeOrder;
   const medals = ['🥇', '🥈', '🥉'];
   const clock = g.timer ? getClock(g) : null;
   const remaining = clock ? clockRemaining(clock) : 0;
   const rows = ranked.length ? ranked.map((e, i) => `
-    <div class="board-tally-row${i < 3 ? ' board-tally-podium' : ''}" style="--team-accent: ${TEAM_ACCENT[e.id] || 'var(--color-primary)'}">
-      <span class="board-tally-rank">${complete && i < 3 ? medals[i] : (i + 1) + '.'}</span>
+    <div class="board-tally-row${seeOrder && i < 3 ? ' board-tally-podium' : ''}" style="--team-accent: ${TEAM_ACCENT[e.id] || 'var(--color-primary)'}">
+      <span class="board-tally-rank">${!seeOrder ? '' : complete && i < 3 ? medals[i] : (i + 1) + '.'}</span>
       <span class="board-tally-team">${teamEmoji(e.id)} ${esc(teamName(e.id))}</span>
       <span class="board-tally-score">${esc(formatScore(g, e.v))}</span>
     </div>`).join('') : '<p class="muted">Scoring under way…</p>';
@@ -6639,7 +6668,7 @@ function tallyBoardHTML(g) {
   return `<div class="big-board viewer" data-board-game="${esc(g.id)}">
     <div class="board-head">
       <span class="live-home-badge">🔴 LIVE</span>
-      <span class="board-period">${g.lowerWins ? 'Fastest so far' : 'Team totals'} · ${ranked.length}/${state.teams.length} in</span>
+      <span class="board-period">${!seeOrder ? 'Scores so far' : g.lowerWins ? 'Fastest so far' : 'Team totals'} · ${ranked.length}/${state.teams.length} in</span>
     </div>
     ${clockHTML}
     <div class="board-tally-rows">${rows}</div>
@@ -6689,14 +6718,16 @@ function renderLiveTallyWatch(container, g) {
     </div>`, [g]);
     return;
   }
-  // "Suggested: gold, silver, bronze" and medal discs on the live order showed
-  // the winners before a director saved the result: directors only (the live
-  // scores themselves stay public).
-  const complete = ranked.length >= state.teams.length && standingsVisible();
+  // The places, the podium and "Suggested: gold, silver, bronze" are directors'
+  // only: a counselor sees the roster in its fixed order with the live scores and
+  // no numerals (the scores themselves stay public). The suggested medals showed
+  // the winners before a director saved the result.
+  const seeOrder = standingsVisible();
+  const complete = ranked.length >= state.teams.length && seeOrder;
   const medals = ['🥇', '🥈', '🥉'];
   const rows = ranked.map((e, i) => `
-    <li class="lw-rank-row${i < 3 ? ' lw-podium' : ''}">
-      <span class="lw-rank">${complete && i < 3 ? medals[i] : (i + 1) + '.'}</span>
+    <li class="lw-rank-row${seeOrder && i < 3 ? ' lw-podium' : ''}">
+      <span class="lw-rank">${!seeOrder ? '' : complete && i < 3 ? medals[i] : (i + 1) + '.'}</span>
       <span class="lw-rank-team">${teamEmoji(e.id)} ${esc(teamName(e.id))}</span>
       <span class="lw-rank-score">${esc(formatScore(g, e.v))}</span>
     </li>`).join('');
@@ -8173,19 +8204,27 @@ function renderBracketBye(body, g, b) {
   // Suggest the winner with the fewest week points (the trailing team) using
   // the live standings. If two or more tie for the fewest, don't pick — let
   // the ref decide, but still show everyone's points.
-  const counts = medalCounts();
+  // Only a confirmed director has points to judge by: a hint-painted device
+  // (standingsVisible false) shows the picker with no numbers and no suggestion,
+  // never the zeros medalCounts() returns to it.
+  const seeTotals = standingsVisible();
+  const counts = seeTotals ? medalCounts() : {};
   const pointsOf = (id) => (counts[id] && counts[id].points) || 0;
   const lowest = winners.reduce((min, id) => Math.min(min, pointsOf(id)), Infinity);
   const lowCount = winners.filter((id) => pointsOf(id) === lowest).length;
-  const suggestedId = lowCount === 1 ? winners.find((id) => pointsOf(id) === lowest) : null;
+  const suggestedId = seeTotals && lowCount === 1 ? winners.find((id) => pointsOf(id) === lowest) : null;
+  const verdict = suggestedId
+    ? `The app suggests <strong>${esc(teamName(suggestedId))}</strong> — but you decide.`
+    : seeTotals ? 'These winners are tied for the fewest, so pick whoever you like.' : 'The points that decide it show once your sign-in is confirmed.';
   body.innerHTML = `
     <h3>Who gets the bye?</h3>
-    <p class="muted">The bye (skip straight to the Final) goes to whichever Round&nbsp;1 winner has the <strong>fewest points this week</strong>. ${suggestedId ? `The app suggests <strong>${esc(teamName(suggestedId))}</strong> — but you decide.` : 'These winners are tied for the fewest, so pick whoever you like.'}</p>
+    <p class="muted">The bye (skip straight to the Final) goes to whichever Round&nbsp;1 winner has the <strong>fewest points this week</strong>. ${verdict}</p>
     <div class="team-chip-grid">
       ${winners.map((id) => {
         const p = pointsOf(id);
         const sug = id === suggestedId;
-        return `<button class="team-chip tiebreak-chip ${sug ? 'suggested-chip' : ''}" data-team-id="${id}">${sug ? '⭐ ' : ''}${esc(teamName(id))}<span class="chip-sub">${p} pt${p === 1 ? '' : 's'} this week${sug ? ' · suggested' : ''}</span></button>`;
+        const sub = seeTotals ? `<span class="chip-sub">${p} pt${p === 1 ? '' : 's'} this week${sug ? ' · suggested' : ''}</span>` : '';
+        return `<button class="team-chip tiebreak-chip ${sug ? 'suggested-chip' : ''}" data-team-id="${id}">${sug ? '⭐ ' : ''}${esc(teamName(id))}${sub}</button>`;
       }).join('')}
     </div>
     <button id="undo-to-round1-btn" class="link-btn">← Back to Round 1</button>
@@ -9993,10 +10032,13 @@ function boot() {
   // every read, and denyMember() locks the screen again.
   // Prefer the per-camp ledger (a dual-role account paints with the RIGHT
   // role for this camp); fall back to the single-value hint.
+  // The hint is PROVISIONAL: it paints the shell, but no standings or points
+  // until the member record answers (setMemberRole). A stale 'editor' hint on a
+  // counselor's phone must not show the cached week while the answer is missing.
   const campsHint = readCampsHint()[CAMP.id];
   const hinted = (campsHint === 'editor' || campsHint === 'viewer') ? campsHint : authHintRole();
   if (hinted) {
-    setMemberRole(hinted);
+    setMemberRole(hinted, { provisional: true });
     startApp();
     maybeShowCampPicker(); // dual-camp devices choose a camp every launch
   } else {
