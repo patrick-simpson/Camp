@@ -484,11 +484,16 @@ let weatherData = null;
 
 // Today's date in camp time as 'YYYY-MM-DD' (en-CA renders ISO order), used to
 // tell whether a cached forecast is still keyed to the right "today".
+// Caching the Intl.DateTimeFormat instance to avoid slow repeated instantiations.
+let _fmtCampDateStr = null;
 function campDateStr() {
   try {
-    return new Intl.DateTimeFormat('en-CA', {
-      timeZone: CAMP_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
-    }).format(new Date());
+    if (!_fmtCampDateStr) {
+      _fmtCampDateStr = new Intl.DateTimeFormat('en-CA', {
+        timeZone: CAMP_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+      });
+    }
+    return _fmtCampDateStr.format(new Date());
   } catch (e) { return ''; }
 }
 
@@ -770,6 +775,8 @@ function setNoticeStatus(status) {
 // Current day-of-week + minutes-since-midnight, in camp time.
 // Debug/preview override: add ?now=<dow>-<hhmm> to the page URL,
 // e.g. ?now=1-1330 previews Monday 1:30pm.
+// Caching the Intl.DateTimeFormat instance to avoid slow repeated instantiations.
+let _fmtCampNow = null;
 function campNow() {
   const m = /[?&]now=(\d)-(\d{3,4})(?:&|$)/.exec(location.search);
   if (m) {
@@ -777,9 +784,12 @@ function campNow() {
     return { dow: +m[1], minutes: +t.slice(0, 2) * 60 + +t.slice(2) };
   }
   try {
-    const parts = new Intl.DateTimeFormat('en-US', {
-      timeZone: CAMP_TZ, weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false,
-    }).formatToParts(new Date());
+    if (!_fmtCampNow) {
+      _fmtCampNow = new Intl.DateTimeFormat('en-US', {
+        timeZone: CAMP_TZ, weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false,
+      });
+    }
+    const parts = _fmtCampNow.formatToParts(new Date());
     const get = (type) => (parts.find((p) => p.type === type) || {}).value;
     const dowMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
     const hour = parseInt(get('hour'), 10) % 24; // hour12:false renders midnight as "24"
@@ -2122,15 +2132,25 @@ function wireHistory() {
 // Formats an ISO timestamp as camp time, e.g. "Jul 19, 8:47pm ET" —
 // same convention as the schedule banner, so the footer always reads in
 // camp time regardless of which timezone a visiting parent's phone is in.
+// Caching the Intl.DateTimeFormat instance to avoid slow repeated instantiations.
+let _fmtEasternStamp = null;
 function formatEasternStamp(iso) {
   if (!iso) return null;
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: CAMP_TZ, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
-  }).formatToParts(d);
-  const get = (type) => (parts.find((p) => p.type === type) || {}).value;
-  return `${get('month')} ${get('day')}, ${get('hour')}:${get('minute')}${(get('dayPeriod') || '').toLowerCase()} ET`;
+  if (!_fmtEasternStamp) {
+    try {
+      _fmtEasternStamp = new Intl.DateTimeFormat('en-US', {
+        timeZone: CAMP_TZ, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true,
+      });
+    } catch (e) {}
+  }
+  if (_fmtEasternStamp) {
+    const parts = _fmtEasternStamp.formatToParts(d);
+    const get = (type) => (parts.find((p) => p.type === type) || {}).value;
+    return `${get('month')} ${get('day')}, ${get('hour')}:${get('minute')}${(get('dayPeriod') || '').toLowerCase()} ET`;
+  }
+  return null;
 }
 
 // One line: who's here now, when data last changed, what build this is,
@@ -4745,8 +4765,18 @@ function bindMatchupCopy(body, g, stage, aId, bId) {
   if (btn) btn.addEventListener('click', () => copyTextToClipboard(matchupText(g, stage, aId, bId), btn));
 }
 
+// Caching the Intl.DateTimeFormat instance to avoid slow repeated instantiations.
+let _fmtStandingsSummaryDate = null;
 function standingsSummaryText() {
-  const campDate = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short', month: 'short', day: 'numeric' }).format(new Date());
+  let campDate = '';
+  try {
+    if (!_fmtStandingsSummaryDate) {
+      _fmtStandingsSummaryDate = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short', month: 'short', day: 'numeric' });
+    }
+    campDate = _fmtStandingsSummaryDate.format(new Date());
+  } catch (e) {
+    campDate = new Date().toDateString();
+  }
   const lines = ['🏅 Camp — ' + campDate];
   // Points and places are directors' eyes only (see "Standings secrecy"): the
   // table is built only for them, so a viewer who reaches Copy / Share — the
@@ -8469,9 +8499,18 @@ function dismissChange(id) {
 const QUIET_START_HOUR = 21; // 9pm — pause the timer
 const QUIET_END_HOUR = 7;    // 7am — resume the timer (first notice rolls in at 7am)
 
+// Caching the Intl.DateTimeFormat instance to avoid slow repeated instantiations.
+let _fmtCampHour = null;
 function campHour(ms) {
-  const h = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: '2-digit', hour12: false }).format(new Date(ms));
-  return parseInt(h, 10) % 24; // some engines format midnight as "24"
+  try {
+    if (!_fmtCampHour) {
+      _fmtCampHour = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: '2-digit', hour12: false });
+    }
+    const h = _fmtCampHour.format(new Date(ms));
+    return parseInt(h, 10) % 24; // some engines format midnight as "24"
+  } catch (e) {
+    return new Date(ms).getHours();
+  }
 }
 
 function isAwakeHours(ms) {
