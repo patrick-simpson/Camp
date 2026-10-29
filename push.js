@@ -291,12 +291,20 @@ function isValidWeekStart(s) {
 }
 
 // "Jul 18–24" / "Jul 30 – Aug 5" for the week starting on that Sunday.
+let _pushMonthFormatter = null;
 function pushWeekLabel(weekStart) {
   if (!isValidWeekStart(weekStart)) return '';
   const [y, mo, d] = weekStart.split('-').map(Number);
   const start = new Date(Date.UTC(y, mo - 1, d));
   const end = new Date(Date.UTC(y, mo - 1, d + 6));
-  const mon = (dt) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short' }).format(dt);
+  const mon = (dt) => {
+    try {
+      if (!_pushMonthFormatter) {
+        _pushMonthFormatter = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short' });
+      }
+      return _pushMonthFormatter.format(dt);
+    } catch (e) { return dt.toDateString().split(' ')[1] || ''; }
+  };
   return mon(start) === mon(end)
     ? `${mon(start)} ${start.getUTCDate()}–${end.getUTCDate()}`
     : `${mon(start)} ${start.getUTCDate()} – ${mon(end)} ${end.getUTCDate()}`;
@@ -1537,12 +1545,15 @@ function pushLoadRecentAlerts() {
     .then(renderPushRecent);
 }
 
+let _pushAlertTimeFormatter = null;
 function pushAlertTime(at) {
   const n = Number(at);
   if (!Number.isFinite(n) || n <= 0) return '';
   try {
-    return new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short', hour: 'numeric', minute: '2-digit', hour12: true })
-      .format(new Date(Math.min(n, 8.64e15)));
+    if (!_pushAlertTimeFormatter) {
+      _pushAlertTimeFormatter = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
+    }
+    return _pushAlertTimeFormatter.format(new Date(Math.min(n, 8.64e15)));
   } catch (e) { return ''; }
 }
 
