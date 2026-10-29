@@ -1151,7 +1151,7 @@ function buildChatShell(view, ch, c, prev) {
       <button id="chat-sub-btn" class="chat-sub-btn${subbed ? ' chat-sub-on' : ''}"
         title="${bell.title}"
         aria-label="${bell.label}">${bell.icon}</button>
-      ${canEdit() ? '<button id="chat-clear-btn" class="link-btn danger-link chat-clear-btn" title="Clear this channel">🧹</button>' : ''}
+      ${canEdit() ? '<button id="chat-clear-btn" class="link-btn danger-link chat-clear-btn" title="Clear this channel" aria-label="Clear this channel">🧹</button>' : ''}
     </div>
     <div class="chat-tabs">${tabs}</div>
     <div id="chat-list" class="chat-list">${listHTML}</div>
