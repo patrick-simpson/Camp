@@ -8469,9 +8469,15 @@ function dismissChange(id) {
 const QUIET_START_HOUR = 21; // 9pm — pause the timer
 const QUIET_END_HOUR = 7;    // 7am — resume the timer (first notice rolls in at 7am)
 
+let _campHourFmt = null;
 function campHour(ms) {
-  const h = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: '2-digit', hour12: false }).format(new Date(ms));
-  return parseInt(h, 10) % 24; // some engines format midnight as "24"
+  try {
+    if (!_campHourFmt) _campHourFmt = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: '2-digit', hour12: false });
+    const h = _campHourFmt.format(new Date(ms));
+    return parseInt(h, 10) % 24; // some engines format midnight as "24"
+  } catch (e) {
+    return new Date(ms).getHours(); // fallback
+  }
 }
 
 function isAwakeHours(ms) {
