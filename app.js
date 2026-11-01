@@ -377,6 +377,12 @@ const MEALS = CAMP.meals;
 // The meal-cleanup rota itself is per-camp data (camps.js) — junior's printed
 // 6-team rota, senior's still-empty one (every meal TBA until filled in).
 const MEAL_CLEANUP_SCHEDULE = CAMP.mealCleanupSchedule;
+// The three meals the rota tracks, in order, and their icons. These live in the
+// block because legacyMealOf() reads MEAL_CLEANUP_MEALS: a top-level const
+// declared further down the file would be a TDZ error for any load-time caller
+// (normalizeSyncedState / migrateState run while this file is still evaluating).
+const MEAL_CLEANUP_MEALS = ['Breakfast', 'Lunch', 'Supper'];
+const MEAL_ICONS = { Breakfast: '🍳', Lunch: '🥪', Supper: '🍲' };
 // Start time of each meal (same across Mon–Fri, per the junior weekday schedule) —
 // lets findNextCleanupFor skip a meal that's already started today.
 const MEAL_START_MINUTES = { Breakfast: hm(8, 0), Lunch: hm(12, 0), Supper: hm(17, 0) };
@@ -432,7 +438,6 @@ function legacyMealOf(label) {
   const base = String(label || '').split(' — ')[0].trim();
   return MEAL_CLEANUP_MEALS.includes(base) ? base : null;
 }
-function blockMeal(b) { return legacyMealOf(b && b.label); }
 // The menu entry { dish, emoji } for a lowercase meal block name, or null.
 function mealFor(dow, meal) {
   const day = MEALS[dow];
@@ -452,7 +457,9 @@ function cleanupTeams(dow, meal) {
 // ── Alerts: the stable key a block is subscribed by, and its published id.
 // (pushBlockKey lives in push.js, which loads later and may be absent.)
 function blockKey(b) { return typeof pushBlockKey === 'function' ? pushBlockKey(b && b.label) : ''; }
-function blockPushId(b, dow, i) { return 'd' + dow + '-' + b.start + '-' + i; }
+// The start is read as a number, the same way the publisher validates it, so a
+// padded or string start can never yield an id the validation didn't accept.
+function blockPushId(b, dow, i) { return 'd' + dow + '-' + Number(b.start) + '-' + i; }
 
 // ── Memory verses
 function verseTheme() { return MEMORY_VERSE_THEME; }
@@ -465,14 +472,18 @@ function stationEmoji(name) { return STATION_EMOJI[name] || '🌟'; }
 function electiveSlotStart(slot, dow) { return ELECTIVE_SLOT_MIN[slot]; }
 
 // ── Double points
-// The window (camp-core.js doubleWindowFor shape) or null. This week is the
-// legacy one, so it is pinned to DOUBLE_WINDOW_LEGACY until a week sets its own.
+// The window, { start, end } epoch ms (camp-core.js doubleWindowFor shape).
+// This week is the legacy one, so it is pinned to DOUBLE_WINDOW_LEGACY until a
+// week sets its own; once it can, a week with no window will return null.
 function doubleWindow() { return DOUBLE_WINDOW_LEGACY; }
 
 // ── Teams
 function teamIds() { return (state.teams || NO_ITEMS).map((t) => t.id); }
 function teamEmoji(id) { return safeEmoji(TEAM_EMOJI[id], '🏳️'); }
 function teamShort(id) { return safeShort(TEAM_ABBREV[id], ''); }
+// Raw colour from camps.js, interpolated into style= by three board renderers:
+// safe only while it is a code constant. A week-data source must launder it
+// (camp-core.js safeColorVars) HERE before any database colour reaches it.
 function teamAccent(id) { return TEAM_ACCENT[id] || null; }
 // Path to a team's shield crest image, or null if we don't have one for that
 // slot — callers fall back to the emoji. Set it with src=, never concatenate.
@@ -5919,10 +5930,10 @@ function renderMemoryVerse() {
   // and their "+N" totals) are directors' eyes only, so the ledger is not even
   // read for anyone else.
   const earned = (editing && versePointsByDay()[verseDay]) || { raw: {}, effective: {} };
-  const doubleWindow = inDoubleBonusWindow();
-  const displayMult = doubleWindow ? 2 : 1;
+  const doubling = inDoubleBonusWindow();
+  const displayMult = doubling ? 2 : 1;
   const hint = editing
-    ? `<p class="bonus-entry-hint muted">Tap a team's points for ${esc(dayLabel(verseDay))}'s verse — 0 clears them.${doubleWindow ? ' Double points are on — the tap values already show the doubled worth.' : ''}</p>`
+    ? `<p class="bonus-entry-hint muted">Tap a team's points for ${esc(dayLabel(verseDay))}'s verse — 0 clears them.${doubling ? ' Double points are on — the tap values already show the doubled worth.' : ''}</p>`
     : '';
   const rowsHTML = `<div class="pts-grid">${state.teams.map((t) => {
     const pts = earned.raw[t.id] || 0; // raw stored value (0–5)
@@ -5986,8 +5997,6 @@ function setVersePoints(teamId, dow, pts) {
 // is fixed data (cleanupTeams(), SEAM block); points earned are stored in the bonus ledger under the
 // 'cleanup' category, tagged with day + meal, so they flow into the week
 // standings — same pattern as Memory Verse. A missing meal key = TBA.
-const MEAL_CLEANUP_MEALS = ['Breakfast', 'Lunch', 'Supper'];
-const MEAL_ICONS = { Breakfast: '🍳', Lunch: '🥪', Supper: '🍲' };
 
 // The soonest known meal-cleanup duty for `teamId` (today's remaining meals,
 // then the rest of the week) — used by the "Your team" summary card's

@@ -574,7 +574,10 @@ Four **separate** deploys (P7), in this order, each with its own tests and live 
 - **Ships:** P2 §11.7–11.9, §11.18: the palette and `teamAccentVars`, team photos, People (lists,
   **Put people on teams**, the asking switch, the block list, the owner row), Campers (directors
   only, never on a device), the denied screen's **Ask to join** (default role Counselor), chat
-  mentions from `teamShort` with the capitalised-team-word rule. The Members row in More becomes
+  mentions from `teamShort` with the capitalised-team-word rule. **Accessor-level colour sanitising:**
+  `teamAccent()` (Step 4's seam) returns the camps.js colour raw into three `style=` interpolations
+  today; before any team colour comes from the database it must launder through `safeColorVars`
+  (and `teamAccentVars` is the one place that does), tested with a hostile colour string. The Members row in More becomes
   People, and the join badge and request bar are wired to their new homes (§7 item 5). Before shipping: both camps' `state/teams` ids are read (an owner GET in
   Cloud Shell, 2 minutes); a one-off repair is built only if one isn't `tN`.
 - **Needs:** 11, 14.

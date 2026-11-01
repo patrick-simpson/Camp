@@ -14,10 +14,18 @@ const SEAM_FILES = ['app.js', 'chat.js', 'push.js', 'settings.js'];
 // The camps.js constants the SEAM block aliases (and the retired ones they replace).
 const SEAM_CONSTANTS = /\b(?:DAY_SCHEDULE|SCHED_DAYS|MEALS|ELECTIVES|STATION_EMOJI|ELECTIVE_SLOT_MIN|MEMORY_VERSE[A-Z_]*|MEAL_CLEANUP_SCHEDULE|MEAL_START_MINUTES|TEAM_(?:EMOJI|SHIELD|ACCENT|ABBREV|COUNSELORS)|DEFAULT_[A-Z_]+|OLD_PLACEHOLDER_[A-Z_]+|DAY_NAMES|DOUBLE_BONUS_[A-Z]+|DOUBLE_WINDOW_LEGACY)\b/;
 // The same data read straight off the camp profile.
-const SEAM_CAMP_FIELDS = /\bCAMP\.(?:daySchedule|schedDays|meals|electives|stationEmoji|electiveSlotMin|memoryVerseTheme|memoryVerses|mealCleanupSchedule|teamEmoji|teamCrest|teamAccent|teamAbbrev|teamCounselors|defaultTeamNames|defaultCounselors|oldPlaceholderTeamNames|oldPlaceholderCounselors)\b/;
-// The synced catalog, read directly — unless the line is a write to it.
-const SEAM_CATALOG = /\bstate\.config\.(?:days|games)\b/;
-const SEAM_CATALOG_WRITE = /\bstate\.config\.(?:days|games)(?:\.(?:push|splice|unshift|pop|shift|sort|reverse)\(|\[[^\]]*\]\s*=(?!=))|\bmoveItem\(state\.config\.(?:days|games)\b/;
+const SEAM_CAMP_FIELDS = /\bCAMP\??\.(?:daySchedule|schedDays|meals|electives|stationEmoji|electiveSlotMin|memoryVerseTheme|memoryVerses|mealCleanupSchedule|teamEmoji|teamCrest|teamAccent|teamAbbrev|teamCounselors|defaultTeamNames|defaultCounselors|oldPlaceholderTeamNames|oldPlaceholderCounselors)\b/;
+// The synced catalog, read directly — unless it is the builder's own write to it.
+const SEAM_CATALOG = /\bstate\.config\??\.(?:days|games)\b/;
+// Writes are cut out of the line BEFORE the read test, so a write sharing a line
+// with a read (`state.config.games.push(state.config.games.length)`) still trips it.
+const SEAM_CATALOG_WRITE = /\bstate\.config\.(?:days|games)(?:\.(?:push|splice|unshift|pop|shift|sort|reverse)\(|\[[^\]]*\]\s*=(?!=))|\bmoveItem\(state\.config\.(?:days|games)\b/g;
+// The shapes a property regex cannot see: a computed key (`state.config['days']`,
+// `CAMP['meals']`), an alias (`const cfg = state.config;`, `const { meals } = CAMP;`)
+// and a read split across lines (the line ends in `state.config` / `CAMP`, the
+// property starts the next). Passing the whole object as an argument
+// (`defaultDay(state.config)`, `config: state.config,`) is none of these.
+const SEAM_INDIRECT = /\b(?:state\.config|CAMP)\s*(?:\?\.)?\[|=\s*(?:state\.config|CAMP)\s*;?\s*$|(?:^|[^\w.])(?:state\.config|CAMP)\s*$/;
 const SEAM_SETUP_TREE = /\bsetupTree\b/;
 
 // Drop what isn't code: whole-line and trailing // comments, block comments.
@@ -33,7 +41,7 @@ function seamViolations(text) {
     const code = codeOf(raw);
     if (!code.trim()) return;
     const bad = SEAM_CONSTANTS.test(code) || SEAM_CAMP_FIELDS.test(code) || SEAM_SETUP_TREE.test(code)
-      || (SEAM_CATALOG.test(code) && !SEAM_CATALOG_WRITE.test(code));
+      || SEAM_INDIRECT.test(code) || SEAM_CATALOG.test(code.replace(SEAM_CATALOG_WRITE, ''));
     if (bad) hits.push((i + 1) + ': ' + raw.trim());
   });
   return hits;
@@ -59,13 +67,14 @@ test('the SEAM block exists once in app.js, whole, and holds every week constant
     'MEMORY_VERSE_THEME', 'MEMORY_VERSES', 'ELECTIVES', 'STATION_EMOJI', 'ELECTIVE_SLOT_MIN',
     'TEAM_COUNSELORS', 'TEAM_EMOJI', 'TEAM_SHIELD', 'TEAM_ACCENT', 'TEAM_ABBREV', 'DEFAULT_TEAM_NAMES',
     'DEFAULT_COUNSELORS', 'OLD_PLACEHOLDER_TEAM_NAMES', 'OLD_PLACEHOLDER_COUNSELORS',
+    'MEAL_CLEANUP_MEALS', 'MEAL_ICONS',
   ].forEach((name) => {
     assert.ok(new RegExp('^const ' + name + ' = ', 'm').test(block), name + ' is declared inside the block');
     assert.equal((src.match(new RegExp('^const ' + name + ' = ', 'gm')) || []).length, 1, name + ' is declared once');
   });
   [
     'scheduleForDow', 'scheduleWeek', 'weekDays', 'dayLabel', 'competitionDays', 'competitionDows', 'dayById',
-    'allGames', 'gameById', 'gamesForDayId', 'gamesForBlock', 'legacyMealOf', 'blockMeal', 'mealFor', 'mealStart',
+    'allGames', 'gameById', 'gamesForDayId', 'gamesForBlock', 'legacyMealOf', 'mealFor', 'mealStart',
     'cleanupOnRota', 'cleanupTeams', 'blockKey', 'blockPushId', 'verseTheme', 'verseFor', 'electivesFor',
     'stationEmoji', 'electiveSlotStart', 'doubleWindow', 'teamIds', 'teamEmoji', 'teamShort', 'teamAccent',
     'teamCrestSrc', 'teamRoster', 'staffNames', 'seedTeams', 'legacyRosterFor',
@@ -97,6 +106,19 @@ test('the scan itself catches what it should and lets the allowed shapes through
   assert.ok(flagged('return state.config.games[0];'));
   assert.ok(flagged('const base = setupTree.meta;'));
   assert.ok(flagged('t.name = DEFAULT_TEAM_NAMES[i];'));
+  // …including the shapes a property regex misses: destructuring, a computed key,
+  // an alias, an optional chain, a read split across lines, a write beside a read.
+  assert.ok(flagged('const { games } = state.config;'));
+  assert.ok(flagged("const d = state.config['days'];"));
+  assert.ok(flagged('const cfg = state.config;'));
+  assert.ok(flagged('  = state.config'), 'an alias whose declaration wrapped');
+  assert.ok(flagged('const g = state.config?.games;'));
+  assert.ok(flagged("const s = CAMP['daySchedule'];"));
+  assert.ok(flagged('const { meals } = CAMP;'));
+  assert.ok(flagged('const c = CAMP?.meals;'));
+  assert.ok(flagged('const profile = CAMP'));
+  assert.equal(seamViolations('const rows = state.config\n  .games\n  .filter(Boolean);').length, 1, 'a read split across lines');
+  assert.ok(flagged('state.config.games.push(state.config.games.length);'));
   // …accessor calls, comments and the builder's own writes are not.
   assert.ok(!flagged('const blocks = scheduleForDow(dow);'));
   assert.ok(!flagged('// the old DAY_SCHEDULE[dow] read'));
@@ -108,6 +130,11 @@ test('the scan itself catches what it should and lets the allowed shapes through
   assert.ok(!flagged('moveItem(state.config.days, idx, 1);'));
   assert.ok(!flagged('state.config = CAMP.defaultConfig();'));
   assert.ok(!flagged('const n = CAMP.teamCount;'));
+  assert.ok(!flagged('const sessions = state.config.sessions || [];'));
+  assert.ok(!flagged('    config: state.config,'));
+  assert.ok(!flagged('state.ui.day = defaultDay(state.config);'));
+  assert.ok(!flagged('state.config = remote;'));
+  assert.ok(!flagged("const c = (typeof CAMPS !== 'undefined' && CAMPS[campId]) || CAMP;"));
 });
 
 test('outsideTheSeam blanks the block and keeps every other line where it was', () => {

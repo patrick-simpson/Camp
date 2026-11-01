@@ -420,7 +420,8 @@ What's covered, and why each file exists:
   markup emoji, an external or quote-breakout crest, an over-long short name).
 - `seam.test.js` — greps `app.js` (minus the SEAM block), `chat.js`, `push.js`
   and `settings.js` for direct reads of the week constants, `CAMP.<week field>`,
-  `setupTree` and `state.config.days|games`, and fails with `file:line`. The
+  `setupTree` and `state.config.days|games` (including a computed key, an alias
+  or destructure, and a read split over lines), and fails with `file:line`. The
   builder's WRITES to the catalog (`.push`/`.splice`/`[i] =`/`moveItem`) are
   recognised by shape and allowed. It also tests its own scan, so it can't go
   quietly vacuous.
@@ -572,7 +573,7 @@ reuses) an accessor in the block.
   `allGames`, `gameById`, `gamesForDayId(dayId)`, `gamesForBlock(dow, block)` (the
   Morning-before-noon / Evening rule, matched to the weekday by each config day's
   `dow`; the built-in blocks carry no id, so it takes the block); meals and
-  cleanup — `legacyMealOf(label)`, `blockMeal`, `mealFor`, `mealStart`,
+  cleanup — `legacyMealOf(label)`, `mealFor`, `mealStart`,
   `cleanupOnRota(dow)` (is the day on the rota at all: untracked says nothing, a
   tracked day with no team reads "TBA"), `cleanupTeams(dow, meal)` (always an
   array, `[]` = TBA); alerts — `blockKey`, `blockPushId`; verses — `verseTheme`,
@@ -595,8 +596,26 @@ reuses) an accessor in the block.
 - **Pins that moved:** `cleanupAssigned` → `cleanupTeams` (`secrecy.test.js`,
   `week.senior.test.js`), `teamShield` → `teamCrestSrc` (`week.senior.test.js`).
 - **Load order:** the block sits before the state is built (`let state = …`), and
-  every accessor reads `state` only when called, so nothing at load can hit a
-  top-level `const` declared further down (`boot-cache.test.js`).
+  every accessor reads `state` only when called. Everything else an accessor
+  reads is declared INSIDE the block (the camps.js aliases, plus
+  `MEAL_CLEANUP_MEALS` / `MEAL_ICONS`, which `legacyMealOf` needs), so a
+  load-time caller (`normalizeSyncedState`, `migrateState`) can never hit a TDZ
+  error on a top-level `const` declared further down (`boot-cache.test.js`).
+  Keep it that way: a new constant an accessor reads goes in the block.
+- **Colours are not laundered yet.** `teamAccent()` still returns the camps.js
+  colour raw into `style=` at three board renderers — safe only while it is a
+  code constant. The step that lets a week source team colours from the
+  database must launder them at the accessor with `safeColorVars` (BUILD-PLAN
+  Step 25, the palette and `teamAccentVars` step).
+- **The guard's reach** (`tests/seam.test.js`): per-line regexes for the
+  constants, `CAMP.<field>` (also `CAMP?.`), `state.config.days|games` (also
+  `?.`), plus the indirect shapes — a computed key (`state.config['days']`,
+  `CAMP['meals']`), an alias or destructure (`const cfg = state.config;`,
+  `const { meals } = CAMP;`) and a read split over lines (a line that ends in
+  `state.config` / `CAMP`). The builder's writes are cut out of a line before
+  the read test. It is a tripwire for the shapes the code uses, not a parser —
+  a read hidden behind a helper that takes `state.config` as an argument is
+  not seen.
 
 ## Camp chat (chat.js)
 
@@ -680,8 +699,8 @@ so nobody can post as someone else).
   sourced banners carry no "remove for everyone" (delete the message in
   chat instead).
 - **Mentions are AUTOMATIC** (no @ syntax): `chatMentionTargets()` = every
-  member-directory name (+ first names), `TEAM_COUNSELORS`, team names,
-  `TEAM_ABBREV`; `mentionScan` is word-boundary, case-insensitive,
+  member-directory name (+ first names), the printed roster
+  (`staffNames()`), team names, short team names (`teamShort()`); `mentionScan` is word-boundary, case-insensitive,
   longest-match-wins (pure — tests/chat.test.js). "Mine" = my
   `memberName`/`state.identity`/identity key/`memberTeamId`/
   `state.followTeam`. Rendering walks the RAW string and escapes each
@@ -1015,7 +1034,7 @@ points `state.followTeam` at their team and takes the picker back down if a
 hint-painted device already opened it. It **overrides a hand-picked team** on
 purpose — the account is the truth. Their follow card says "YOUR TEAM" where
 the Change button would be. Their member `name` also becomes `state.identity`,
-but only when `TEAM_COUNSELORS` actually lists that name — the electives data
+but only when the team's printed roster (`teamRoster()`) actually lists that name — the electives data
 is keyed to those spellings, so adopting an unknown name would just look up
 nothing forever.
 

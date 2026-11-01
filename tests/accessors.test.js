@@ -53,8 +53,6 @@ test('a block is a meal when its head label is one, decorated or not', () => {
   assert.equal(legacyMealOf('  Breakfast '), 'Breakfast');
   assert.equal(legacyMealOf('Free time'), null);
   assert.equal(legacyMealOf(undefined), null);
-  assert.equal(blockMeal({ label: 'Lunch — Tacos' }), 'Lunch');
-  assert.equal(blockMeal(null), null);
 });
 
 test('cleanup accessors normalize the rota to arrays and tell TBA from not-on-the-rota', () => {
@@ -192,4 +190,10 @@ test('the alert publisher keys come from the accessors and match the old spellin
     assert.equal(blocks[id].key, blockKey(b));
     assert.equal(blockKey(b), pushBlockKey(b.label));
   }));
+  // A start that isn't a clean integer still builds the id the publisher validated.
+  assert.equal(blockPushId({ start: '480' }, 2, 3), 'd2-480-3');
+  assert.equal(blockPushId({ start: ' 480 ' }, 2, 3), 'd2-480-3');
+  const odd = pushScheduleBlocks({ 2: [{ start: '480', label: 'Breakfast', emoji: '🍳' }] });
+  assert.deepEqual(Object.keys(odd), ['d2-480-0'], 'a string start publishes under the validated id');
+  assert.equal(odd['d2-480-0'].start, 480);
 });
