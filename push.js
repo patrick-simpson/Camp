@@ -122,12 +122,12 @@ function pushScheduleBlocks(daySchedule) {
       if (!b || b.noTime) return;
       const start = Number(b.start);
       if (!Number.isInteger(start) || start < 0 || start >= 1440) return;
-      out[`d${dow}-${start}-${i}`] = {
+      out[blockPushId(b, dow, i)] = {
         dow,
         start,
         label: pushClip(String(b.label || '').trim(), 120) || 'Schedule block',
         emoji: pushClip(String(b.emoji || '').trim(), 16) || '🕒',
-        key: pushBlockKey(b.label),
+        key: blockKey(b),
       };
     });
   }
@@ -1076,7 +1076,7 @@ function pushPublishSchedule(weekStart) {
     weekStart,
     at: firebase.database.ServerValue.TIMESTAMP,
     by: identityKey(authUser),
-    blocks: pushScheduleBlocks(DAY_SCHEDULE),
+    blocks: pushScheduleBlocks(scheduleWeek()),
   }), 10000, 'save-timeout');
 }
 
@@ -1090,7 +1090,7 @@ async function pushMaybeRepublishSchedule() {
   pushWeekStart = cur && isValidWeekStart(cur.weekStart) ? cur.weekStart : null;
   renderPushWeekStatus();
   if (!pushWeekStart || !canEdit()) return;
-  if (pushStableJson(cur.blocks || {}) === pushStableJson(pushScheduleBlocks(DAY_SCHEDULE))) return;
+  if (pushStableJson(cur.blocks || {}) === pushStableJson(pushScheduleBlocks(scheduleWeek()))) return;
   await pushPublishSchedule(pushWeekStart);
 }
 
@@ -1370,7 +1370,7 @@ function pushPrefsHTML() {
     pushRowHTML('📢 Director alerts', '🚨 Urgent ones always come through',
       pushSwitchHTML('data-pa-pref="director"', prefs.director, false, 'Director alerts'));
 
-  const catalog = pushBlockCatalog(DAY_SCHEDULE);
+  const catalog = pushBlockCatalog(scheduleWeek());
   // Each "Mon–Fri 5:00 PM" piece stays on one line; the list breaks between
   // pieces, never inside a time.
   const whenHTML = (when) => when.split(' · ').map((seg) => `<span class="pa-when">${esc(seg)}</span>`).join(' · ');
@@ -1698,7 +1698,7 @@ function wirePushDrawer(body) {
 // Keeps the disclosure's "3 picked" in step with the switches inside it.
 function pushUpdateBlocksCount(body) {
   const el = body.querySelector('#pa-blocks-count');
-  if (el) el.textContent = pushBlocksSummary(normalizePushPrefs(pushReadStoredPrefs()), pushBlockCatalog(DAY_SCHEDULE));
+  if (el) el.textContent = pushBlocksSummary(normalizePushPrefs(pushReadStoredPrefs()), pushBlockCatalog(scheduleWeek()));
 }
 
 // "Every schedule block" on ⇒ each block row shows on and can't be changed

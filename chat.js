@@ -549,9 +549,7 @@ function chatMentionTargets() {
     add(rec.name, 'person', { key });
     add(String(rec.name).trim().split(/\s+/)[0], 'person', { key }); // first name
   });
-  Object.keys(TEAM_COUNSELORS || {}).forEach((tid) => {
-    (TEAM_COUNSELORS[tid] || []).forEach((n) => add(n, 'person', {}));
-  });
+  staffNames().forEach((n) => add(n, 'person', {}));
   // Short person names (TJ, Zac) matter more than the 3-char floor — allow
   // 2-char names from the known lists only (never from free text).
   Object.keys(memberDirectory || {}).forEach((key) => {
@@ -562,17 +560,15 @@ function chatMentionTargets() {
       if (!seen.has(dk)) { seen.add(dk); targets.push({ label: first, lower: first.toLowerCase(), kind: 'person', key }); }
     }
   });
-  Object.keys(TEAM_COUNSELORS || {}).forEach((tid) => {
-    (TEAM_COUNSELORS[tid] || []).forEach((n) => {
-      if (String(n).trim().length === 2) {
-        const dk = 'person:' + String(n).trim().toLowerCase();
-        if (!seen.has(dk)) { seen.add(dk); targets.push({ label: String(n).trim(), lower: String(n).trim().toLowerCase(), kind: 'person' }); }
-      }
-    });
+  staffNames().forEach((n) => {
+    if (String(n).trim().length === 2) {
+      const dk = 'person:' + String(n).trim().toLowerCase();
+      if (!seen.has(dk)) { seen.add(dk); targets.push({ label: String(n).trim(), lower: String(n).trim().toLowerCase(), kind: 'person' }); }
+    }
   });
   // Teams: full names + short names.
   (state.teams || []).forEach((t) => add(t.name, 'team', { teamId: t.id }));
-  Object.keys(TEAM_ABBREV || {}).forEach((tid) => add(TEAM_ABBREV[tid], 'team', { teamId: tid }));
+  teamIds().forEach((tid) => add(teamShort(tid), 'team', { teamId: tid }));
   return targets;
 }
 

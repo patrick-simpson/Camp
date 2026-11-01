@@ -297,8 +297,8 @@ function gameGroupKey(g, dayIds) {
 }
 
 function renderGamesTab(card) {
-  const games = state.config.games || [];
-  const days = state.config.days || [];
+  const games = allGames();
+  const days = competitionDays();
   const sessions = state.config.sessions || [];
   const dayIds = new Set(days.map((d) => d.id));
 
@@ -375,15 +375,15 @@ function wireGameRows(card) {
     btn.addEventListener('click', () => {
       const g = gameById(btn.dataset.gameId);
       if (!g) return;
-      const dayIds = new Set(state.config.days.map((d) => d.id));
-      const group = state.config.games.filter((x) => gameGroupKey(x, dayIds) === gameGroupKey(g, dayIds));
+      const dayIds = new Set(competitionDays().map((d) => d.id));
+      const group = allGames().filter((x) => gameGroupKey(x, dayIds) === gameGroupKey(g, dayIds));
       const posInGroup = group.indexOf(g);
       const neighbor = group[posInGroup + parseInt(btn.dataset.dir, 10)];
       if (!neighbor) return;
-      const iA = state.config.games.indexOf(g);
-      const iB = state.config.games.indexOf(neighbor);
-      const tmp = state.config.games[iA];
-      state.config.games[iA] = state.config.games[iB];
+      const iA = allGames().indexOf(g);
+      const iB = allGames().indexOf(neighbor);
+      const tmp = allGames()[iA];
+      state.config.games[iA] = allGames()[iB];
       state.config.games[iB] = tmp;
       saveConfig();
       renderAll();
@@ -402,7 +402,7 @@ function wireGameRows(card) {
 // ── Game editor ───────────────────────────────────────────────────
 
 function newGameShape() {
-  const days = state.config.days || [];
+  const days = competitionDays();
   const dayId = days.some((d) => d.id === state.ui.day) ? state.ui.day : (days[0] ? days[0].id : null);
   const shape = {
     id: null,
@@ -532,7 +532,7 @@ function renderGameEditor(card) {
     <div class="form-field">
       <label class="form-label">Day</label>
       <jelly-select class="form-input" id="gd-day" value="${esc(draft.dayId || '')}" label="Day">
-        ${(state.config.days || []).map((d) => `<jelly-option value="${esc(d.id)}">${esc(d.name)}</jelly-option>`).join('')}
+        ${competitionDays().map((d) => `<jelly-option value="${esc(d.id)}">${esc(d.name)}</jelly-option>`).join('')}
       </jelly-select>
     </div>
     <div class="form-field">
@@ -843,7 +843,7 @@ function validateGameDraft(draft) {
   // keyed by team only, not by game — two prompt games would share and
   // corrupt each other's rounds. Hard limit: one drawing game per week.
   if (String(draft.prompts || '').trim()) {
-    const other = state.config.games.find((g) => g.id !== draft.id && Array.isArray(g.prompts) && g.prompts.length);
+    const other = allGames().find((g) => g.id !== draft.id && Array.isArray(g.prompts) && g.prompts.length);
     if (other) return 'Only one game can have drawing prompts — remove them from "' + other.name + '" first.';
   }
   if (draft.format === 'tally' && draft.counterSteps && draft.counterSteps.trim()) {
@@ -983,11 +983,11 @@ function saveGameDraft() {
   }
 
   if (isNew) {
-    const taken = new Set([...(state.config.games || []).map((g) => g.id), ...Object.keys(state.results || {})]);
+    const taken = new Set([...allGames().map((g) => g.id), ...Object.keys(state.results || {})]);
     out.id = makeId(out.name, taken);
     state.config.games.push(out);
   } else {
-    const idx = state.config.games.findIndex((g) => g.id === out.id);
+    const idx = allGames().findIndex((g) => g.id === out.id);
     if (idx > -1) state.config.games.splice(idx, 1, out);
   }
 
@@ -1012,9 +1012,9 @@ function duplicateGame() {
   const copy = JSON.parse(JSON.stringify(original));
   copy.name = copy.name + ' (copy)';
   delete copy.prompts; // only one drawing-prompts game is supported per week
-  const taken = new Set([...(state.config.games || []).map((g) => g.id), ...Object.keys(state.results || {})]);
+  const taken = new Set([...allGames().map((g) => g.id), ...Object.keys(state.results || {})]);
   copy.id = makeId(copy.name, taken);
-  const idx = state.config.games.findIndex((g) => g.id === original.id);
+  const idx = allGames().findIndex((g) => g.id === original.id);
   state.config.games.splice(idx + 1, 0, copy);
   saveConfig();
   state.ui.editGameId = copy.id;
@@ -1042,7 +1042,7 @@ function deleteGame(gameId) {
 
   if (!confirm(msg)) return;
 
-  const idx = state.config.games.findIndex((x) => x.id === gameId);
+  const idx = allGames().findIndex((x) => x.id === gameId);
   if (idx > -1) state.config.games.splice(idx, 1);
   clearGameRecords(gameId);
   if (state.ui.gameId === gameId) state.ui.gameId = null;
@@ -1057,7 +1057,7 @@ function deleteGame(gameId) {
 // ── Days tab ──────────────────────────────────────────────────────
 
 function renderDaysTab(card) {
-  const days = state.config.days || [];
+  const days = competitionDays();
   // Unchanged ⇒ untouched (the wiring re-reads state at tap time, so the
   // existing listeners stay correct).
   if (setHtmlIfChanged(card, `
@@ -1068,7 +1068,7 @@ function renderDaysTab(card) {
 }
 
 function dayRowHTML(day, i, total) {
-  const blockingGames = (state.config.games || []).filter((g) => g.dayId === day.id);
+  const blockingGames = gamesForDayId(day.id);
   return `
     <div class="rules-section-editor">
       <div class="builder-row">
@@ -1103,9 +1103,8 @@ function dayRowHTML(day, i, total) {
 function wireDaysTab(card) {
   card.querySelectorAll('.reorder-btn[data-day-id]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const days = state.config.days;
-      const idx = days.findIndex((d) => d.id === btn.dataset.dayId);
-      moveItem(days, idx, parseInt(btn.dataset.dir, 10));
+      const idx = competitionDays().findIndex((d) => d.id === btn.dataset.dayId);
+      moveItem(state.config.days, idx, parseInt(btn.dataset.dir, 10));
       saveConfig();
       renderAll();
     });
@@ -1164,7 +1163,7 @@ function deleteDay(dayId) {
   if (configLocked()) return;
   const day = dayById(dayId);
   if (!day) return;
-  const blockingGames = (state.config.games || []).filter((g) => g.dayId === dayId);
+  const blockingGames = gamesForDayId(dayId);
   if (blockingGames.length) {
     // Blocked: reveal the inline error rendered (hidden) in this day's row.
     const errEl = document.querySelector(`.day-delete-error[data-day-id="${dayId}"]`);
@@ -1174,10 +1173,10 @@ function deleteDay(dayId) {
 
   if (!confirm('Delete "' + day.name + '"? It has no games.')) return;
 
-  const idx = state.config.days.findIndex((d) => d.id === dayId);
+  const idx = competitionDays().findIndex((d) => d.id === dayId);
   if (idx > -1) state.config.days.splice(idx, 1);
   if (state.ui.day === dayId) {
-    state.ui.day = state.config.days[0] ? state.config.days[0].id : null;
+    state.ui.day = competitionDays()[0] ? competitionDays()[0].id : null;
   }
   saveConfig();
   saveState();
@@ -1699,7 +1698,7 @@ function tryImport(text) {
 // config — otherwise their medals keep counting in standings forever with
 // no UI left to clear them.
 function pruneOrphanedGameData() {
-  const ids = new Set((state.config.games || []).map((g) => g.id));
+  const ids = new Set(allGames().map((g) => g.id));
   GAME_RECORD_MAPS.map((m) => m.key).forEach((key) => {
     Object.keys(state[key] || {}).forEach((gid) => {
       if (!ids.has(gid)) delete state[key][gid];
@@ -1714,8 +1713,8 @@ function restoreDefaults() {
   if (!confirm('Put back the original ' + def.games.length + ' games and ' + def.days.length + ' days? Your custom games and days are thrown away. Team names and saved results are kept.')) return;
 
   state.config = CAMP.defaultConfig();
-  if (!state.config.days.some((d) => d.id === state.ui.day)) {
-    state.ui.day = state.config.days[0] ? state.config.days[0].id : null;
+  if (!competitionDays().some((d) => d.id === state.ui.day)) {
+    state.ui.day = competitionDays()[0] ? competitionDays()[0].id : null;
   }
   pruneOrphanedGameData(); // custom games' results would otherwise haunt the standings
   saveConfig();
