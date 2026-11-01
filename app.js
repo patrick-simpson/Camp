@@ -15,9 +15,9 @@ const STORAGE_KEY = lsKey('campScoreboardV2'); // per-camp; junior stays the bar
 // updated" line in the footer. There's no build step here to stamp this
 // automatically, so it's a manual step alongside the ?v=N cache-bust
 // bump in index.html (six assets share the number — see CLAUDE.md).
-const CODE_UPDATED_AT = '2026-11-01T22:50:34Z';
+const CODE_UPDATED_AT = '2026-11-01T22:55:05Z';
 // Shown in the footer; bump together with the ?v= cache-busters in index.html.
-const APP_VERSION = 189;
+const APP_VERSION = 190;
 
 // "What's new" banners. Each entry advertises a user-visible change at the top
 // of the page for TWO HOURS after its `at` time, then auto-expires. Every time
@@ -3816,8 +3816,7 @@ const QUARANTINE_PART_WORDS = {
 function quarantineLabel(path) {
   const parts = path.split('/');
   const word = QUARANTINE_PART_WORDS[parts[0]] || parts[0];
-  const games = (state.config && state.config.games) || [];
-  const g = parts[1] ? games.find((x) => x.id === parts[1]) : null;
+  const g = parts[1] ? allGames().find((x) => x.id === parts[1]) : null;
   return g ? g.name + ' → ' + word : word.charAt(0).toUpperCase() + word.slice(1);
 }
 
