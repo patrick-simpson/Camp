@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Sun Nov 1, 5:55 PM ET** (update this line every time the file changes)
+Last updated: **Sun Nov 1, 5:59 PM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -144,7 +144,7 @@ send_later into this session). ETAs above shift by however long the pause lasts.
   (builder worktrees must never be committed).
 
 ## Next steps (resume here)
-- **Step 4 LIVE** (v190, commit PENDING_HASH, Sun Nov 1 5:55 PM ET) — the week's data (days, blocks, electives, verse, cleanup, meals, team colours) is now read through one set of accessors in app.js instead of the old constants, so the next steps can move that data into the synced setup without touching the screens; nothing looks or behaves differently on either camp; owner action: none.
+- **Step 4 LIVE** (v190, commit a4ed66e, Sun Nov 1 5:55 PM ET) — the week's data (days, blocks, electives, verse, cleanup, meals, team colours) is now read through one set of accessors in app.js instead of the old constants, so the next steps can move that data into the synced setup without touching the screens; nothing looks or behaves differently on either camp; owner action: none.
 - **Step 5 LIVE** (v189, commit 77506d4, Sun Nov 1 5:51 PM ET) — a score the database refuses no longer jams score saving for everyone's later entries: the refused one is set aside with a Retry / Discard bar at the top for editors while the rest keep saving; owner action: none.
 **5:35 PM ET Sun Nov 1 — BACK IN THE CLOUD SESSION ("Resume please").** The
 owner's PC run stopped after Step 3 (v188). Running BUILD-PLAN Steps 4–10 and
