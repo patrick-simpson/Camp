@@ -1753,6 +1753,81 @@ jelly-chip.sched-day-chip .today-dot {
   color: var(--color-primary);
 }
 
+/* The rules refused some of this device's edits (stateQuarantine): the line
+   names them and offers Retry / Discard. Danger-TEXT token, never the fill. */
+.sync-status.quarantined {
+  color: var(--color-danger-text);
+}
+.sync-status.quarantined em {
+  font-style: normal;
+  font-weight: 700;
+}
+/* The two actions wrap as a pair, never one stranded on a line of its own. */
+.sync-quarantine-actions {
+  white-space: nowrap;
+}
+/* Roomy enough to hit on a phone; the generic .link-btn is a bare text link. */
+.sync-quarantine-btn {
+  font: inherit;
+  font-weight: 700;
+  padding: 0.4rem 0.35rem;
+  margin-left: 0.25rem;
+}
+
+/* The same news as a bar pinned to the top of the page, for editors (app.js
+   updateSyncAlert): the card that holds the line above is closed by default, so
+   a refused score needs a surface a director cannot miss while scoring. FIXED,
+   not sticky — html and body both clip overflow-x, which makes body the
+   (never-scrolling) sticky container, so a sticky bar scrolled away with the
+   page (measured). One constant-height row (the names truncate, the full line
+   is in the Standings card) so the page can reserve exactly its height below:
+   it never hides the first card at scroll 0. Danger-TEXT token, never the fill.
+   No entrance motion — it appears, calmly, and is gone the moment it clears. */
+.sync-alert {
+  position: fixed;
+  top: calc(8px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 60;
+  box-sizing: border-box;
+  width: min(608px, calc(100% - 2rem));
+  height: 2.9rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0 0.6rem 0 0.9rem;
+  border: 1.5px solid var(--color-danger-text);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--color-danger-text);
+}
+.sync-alert[hidden] {
+  display: none;
+}
+.sync-alert-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sync-alert em {
+  font-style: normal;
+  font-weight: 600;
+}
+.sync-alert .sync-quarantine-actions {
+  flex: none;
+}
+/* Room for it above the first card (the reserve matches the bar: 8px + 2.9rem
+   + a breath). Not in the builder / chat takeovers, which hide the page's
+   contents (and the bar with them). */
+body.has-sync-alert:not(.builder-open):not(.chat-open) .main-wrap {
+  padding-top: calc(4.2rem + env(safe-area-inset-top, 0px));
+}
+
 /* The same line under the cards, for view-only devices: the Current Standings
    card that carries it for directors is not rendered for them. The builder and
    chat takeovers hide the footer, so they hide this too. */

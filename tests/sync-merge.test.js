@@ -192,6 +192,9 @@ test('the deploy auto-reload waits for unconfirmed writes, a running lap and a m
   pendingWrites = 1;
   assert.ok(reloadBlocked(), 'the SDK queue is in memory — a reload loses the score');
   pendingWrites = 0;
+  stateBisecting = true; // S2a: a refused batch being re-sent path by path
+  assert.ok(reloadBlocked(), 'a quarantine bisect in progress holds the reload');
+  stateBisecting = false;
   liveWatches.pic = { running: true, startAt: Date.now() - 40000 };
   assert.ok(reloadBlocked(), 'a running Pictionary lap lives only in this page');
   delete liveWatches.pic;

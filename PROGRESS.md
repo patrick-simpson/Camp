@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Sun Nov 1, 5:35 PM ET** (update this line every time the file changes)
+Last updated: **Sun Nov 1, 5:53 PM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -144,6 +144,7 @@ send_later into this session). ETAs above shift by however long the pause lasts.
   (builder worktrees must never be committed).
 
 ## Next steps (resume here)
+- **Step 5 LIVE** (v189, commit 77506d4, Sun Nov 1 5:51 PM ET) — a score the database refuses no longer jams score saving for everyone's later entries: the refused one is set aside with a Retry / Discard bar at the top for editors while the rest keep saving; owner action: none.
 **5:35 PM ET Sun Nov 1 — BACK IN THE CLOUD SESSION ("Resume please").** The
 owner's PC run stopped after Step 3 (v188). Running BUILD-PLAN Steps 4–10 and
 12 here as a Workflow (docs/build-notes/build-run2.js) in TWO parallel lanes —
@@ -151,7 +152,7 @@ owner's PC run stopped after Step 3 (v188). Running BUILD-PLAN Steps 4–10 and
 Sonnet review → Sonnet fix-up → deploy (serialized, one push at a time) →
 Haiku live check. Each deploy adds a "Step N LIVE" line right below this
 entry. It stops before ◆ Step 11 (the owner publishes the database rules).
-If interrupted: re-run the Workflow with resumeFromRunId; deployed steps are
+If interrupted: re-run the Workflow with resumeFromRunId wf_f7af6867-bb8 (script copy in docs/build-notes/build-run2.js); deployed steps are
 the "Build step N" commits on main.
 
 **9:35 PM ET Tue — STEP 3 LIVE (v188, commit 67cfaba).** Local run on the
