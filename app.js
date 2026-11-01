@@ -319,14 +319,30 @@ function teamStaffNames(teamId) {
     .sort((a, b) => a.localeCompare(b));
 }
 
-// Team identity — names, emoji, crests (junior shields / senior flags),
-// accent colors — all per-camp data, moved verbatim into camps.js.
-// The constant names stay so nothing downstream changes.
+// ── SEAM: week data accessors ─────────────────────────────────────
+// The ONLY code that reads the week's own data: the printed schedule, meals,
+// electives, memory verses, the cleanup rota, team branding and the game
+// catalog. Every renderer, the chat mention dictionary and the alert publisher
+// ask an accessor below instead of the camps.js constant, so where the data
+// comes from can change in ONE place (the setup rebuild adds a shared copy
+// that a director edits in the app; the accessors will pick it up). Rules of
+// the layer (setup-rebuild-spec §9.1), pinned by tests/seam.test.js and
+// tests/accessors.test.js:
+//   - While a section is off — today, always — an accessor returns the camps.js
+//     constant ITSELF (same object), so this layer is provably a no-op.
+//   - They return plain data, never markup, and never throw on missing data
+//     (a missing day is a shared frozen empty list, a missing verse an empty
+//     one). Never mutate what one returns.
+//   - Text from the database passes a camp-core.js sanitizer on its way out.
+// The per-camp constants moved here unchanged from their old spots in this
+// file (tests/camps.test.js still reads them by global name). Not yet
+// accessors, because nothing reads them yet: planForDow, campWeek,
+// finaleDow, teamAccentVars, hubStatus, campersFor.
+
 const DEFAULT_TEAM_NAMES = CAMP.defaultTeamNames;
 const TEAM_EMOJI = CAMP.teamEmoji;
 const TEAM_SHIELD = CAMP.teamCrest;
 const TEAM_ACCENT = CAMP.teamAccent;
-function teamAccent(id) { return TEAM_ACCENT[id] || null; }
 // Short-form team names for tight spaces — per-camp (camps.js).
 const TEAM_ABBREV = CAMP.teamAbbrev;
 // Name/counselor migration lists for older saved rosters — per-camp;
@@ -336,6 +352,149 @@ const DEFAULT_COUNSELORS = CAMP.defaultCounselors;
 const OLD_PLACEHOLDER_COUNSELORS = CAMP.oldPlaceholderCounselors;
 
 const DAY_NAMES = { 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday' };
+
+// The full printed week, per camp (camps.js): every block of every day,
+// minutes-since-midnight in camp time. (hm() also lives in camps.js now.)
+const DAY_SCHEDULE = CAMP.daySchedule;
+const SCHED_DAYS = CAMP.schedDays; // per-camp day list + tags (camps.js)
+
+// Electives — junior-only (CAMP.features.electives). The active profile
+// supplies who's at which station (junior: the handwritten packet;
+// senior: empty — no electives at senior camp, so these all no-op).
+const STATION_EMOJI = CAMP.stationEmoji;
+const ELECTIVES = CAMP.electives;
+// Device-identity → team, keyed to the ELECTIVES spellings (junior).
+// Empty for senior — identities come from member records instead.
+const TEAM_COUNSELORS = CAMP.teamCounselors;
+const ELECTIVE_SLOT_MIN = CAMP.electiveSlotMin;
+
+// What the kitchen is serving — per-camp data (camps.js), keyed by
+// day-of-week (0 Sun .. 6 Sat) then lowercase meal block name. When a
+// meal is listed, the Happening Now banner names the dish during that
+// block. Unknown meals just show the plain block label, so an empty or
+// sparse menu (senior, for now) is always safe.
+const MEALS = CAMP.meals;
+// The meal-cleanup rota itself is per-camp data (camps.js) — junior's printed
+// 6-team rota, senior's still-empty one (every meal TBA until filled in).
+const MEAL_CLEANUP_SCHEDULE = CAMP.mealCleanupSchedule;
+// Start time of each meal (same across Mon–Fri, per the junior weekday schedule) —
+// lets findNextCleanupFor skip a meal that's already started today.
+const MEAL_START_MINUTES = { Breakfast: hm(8, 0), Lunch: hm(12, 0), Supper: hm(17, 0) };
+
+// The week's theme verse + one memory verse per camp day (Mon–Fri) —
+// per-camp data (camps.js): junior's printed "Harvest of the Heart"
+// sheet, senior's placeholders until its sheet exists.
+const MEMORY_VERSE_THEME = CAMP.memoryVerseTheme;
+const MEMORY_VERSES = CAMP.memoryVerses;
+
+// The weekdays that carry competition, Mon–Fri: what the verse and cleanup
+// day chips and the cleanup lookahead loop over.
+const COMPETITION_DOWS = Object.freeze([1, 2, 3, 4, 5]);
+// One shared frozen empty list, so "nothing there" costs no allocation and
+// nobody can scribble on it; and the verse a missing day reads as.
+const NO_ITEMS = Object.freeze([]);
+const NO_VERSE = Object.freeze({ text: '', ref: '', video: null });
+
+// ── Schedule
+// One day's blocks, [{ start, end, label, emoji, type?, slot?, noTime? }].
+function scheduleForDow(dow) { return DAY_SCHEDULE[dow] || NO_ITEMS; }
+// The whole week, { 0..6: blocks }.
+function scheduleWeek() { return DAY_SCHEDULE; }
+// The schedule sheet's day list, indexed by weekday: [{ dow, short, full, tag }].
+function weekDays() { return SCHED_DAYS; }
+function dayLabel(dow) { return DAY_NAMES[dow] || ''; }
+// The weekdays that carry competition, and the editable competition days
+// (state.config.days — the authority for which days have games).
+function competitionDows() { return COMPETITION_DOWS; }
+function competitionDays() { return (state.config && state.config.days) || NO_ITEMS; }
+function dayById(id) { return competitionDays().find((d) => d.id === id); }
+
+// ── Games
+function allGames() { return (state.config && state.config.games) || NO_ITEMS; }
+function gameById(id) { return allGames().find((g) => g.id === id); }
+// Games listed under a competition-day id (config.days[].id), not a weekday.
+function gamesForDayId(dayId) { return allGames().filter((g) => g.dayId === dayId); }
+// Games under one schedule block of weekday `dow`. The built-in schedule's
+// blocks carry no id, so this is the long-standing rule: a games block holds
+// that weekday's Morning games if it starts before noon, else its Evening ones
+// (editable competition days are matched to the weekday by their dow).
+function gamesForBlock(dow, block) {
+  if (!block || block.type !== 'games') return NO_ITEMS;
+  const session = block.start < 720 ? 'Morning' : 'Evening';
+  const dayIds = competitionDays().filter((d) => d.dow === dow).map((d) => d.id);
+  return allGames().filter((g) => dayIds.includes(g.dayId) && g.session === session);
+}
+
+// ── Meals and cleanup
+// The meal a block represents (Breakfast/Lunch/Supper), or null. Handles
+// decorated labels like "Supper — Shepherd's Pie".
+function legacyMealOf(label) {
+  const base = String(label || '').split(' — ')[0].trim();
+  return MEAL_CLEANUP_MEALS.includes(base) ? base : null;
+}
+function blockMeal(b) { return legacyMealOf(b && b.label); }
+// The menu entry { dish, emoji } for a lowercase meal block name, or null.
+function mealFor(dow, meal) {
+  const day = MEALS[dow];
+  return (day && day[meal]) || null;
+}
+function mealStart(dow, meal) { return MEAL_START_MINUTES[meal]; }
+// Is this weekday on the cleanup rota at all? (A tracked day with an unassigned
+// meal reads "TBA"; an untracked day says nothing.)
+function cleanupOnRota(dow) { return !!MEAL_CLEANUP_SCHEDULE[dow]; }
+// Team ids on cleanup for a day + meal, always an array ([] = TBA).
+function cleanupTeams(dow, meal) {
+  const day = MEAL_CLEANUP_SCHEDULE[dow];
+  const assigned = day && day[meal];
+  return assigned ? (Array.isArray(assigned) ? assigned : [assigned]) : NO_ITEMS;
+}
+
+// ── Alerts: the stable key a block is subscribed by, and its published id.
+// (pushBlockKey lives in push.js, which loads later and may be absent.)
+function blockKey(b) { return typeof pushBlockKey === 'function' ? pushBlockKey(b && b.label) : ''; }
+function blockPushId(b, dow, i) { return 'd' + dow + '-' + b.start + '-' + i; }
+
+// ── Memory verses
+function verseTheme() { return MEMORY_VERSE_THEME; }
+function verseFor(dow) { return MEMORY_VERSES[dow] || NO_VERSE; }
+
+// ── Electives
+// A day's slots, [slot → [[stationName, [kid names]], …]]; [] on a day with none.
+function electivesFor(dow) { return ELECTIVES[dow] || NO_ITEMS; }
+function stationEmoji(name) { return STATION_EMOJI[name] || '🌟'; }
+function electiveSlotStart(slot, dow) { return ELECTIVE_SLOT_MIN[slot]; }
+
+// ── Double points
+// The window (camp-core.js doubleWindowFor shape) or null. This week is the
+// legacy one, so it is pinned to DOUBLE_WINDOW_LEGACY until a week sets its own.
+function doubleWindow() { return DOUBLE_WINDOW_LEGACY; }
+
+// ── Teams
+function teamIds() { return (state.teams || NO_ITEMS).map((t) => t.id); }
+function teamEmoji(id) { return safeEmoji(TEAM_EMOJI[id], '🏳️'); }
+function teamShort(id) { return safeShort(TEAM_ABBREV[id], ''); }
+function teamAccent(id) { return TEAM_ACCENT[id] || null; }
+// Path to a team's shield crest image, or null if we don't have one for that
+// slot — callers fall back to the emoji. Set it with src=, never concatenate.
+function teamCrestSrc(id) { return safeCrestSrc(TEAM_SHIELD[id]); }
+// The printed counselor names for one team (the names the electives data is
+// keyed to), and every team's, flat.
+function teamRoster(tid) { return TEAM_COUNSELORS[tid] || NO_ITEMS; }
+function staffNames() {
+  const out = [];
+  Object.keys(TEAM_COUNSELORS).forEach((tid) => teamRoster(tid).forEach((n) => out.push(n)));
+  return out;
+}
+// What a brand-new device seeds for the roster, and what an older saved roster
+// is migrated from (the 2026 week; see normalizeSyncedState).
+function seedTeams() { return DEFAULT_TEAM_NAMES.map((name, i) => ({ id: 't' + i, name, counselor: DEFAULT_COUNSELORS[i] })); }
+function legacyRosterFor(i) {
+  return {
+    oldNames: OLD_PLACEHOLDER_TEAM_NAMES[i], name: DEFAULT_TEAM_NAMES[i],
+    oldCounselor: OLD_PLACEHOLDER_COUNSELORS[i], counselor: DEFAULT_COUNSELORS[i],
+  };
+}
+// ── end SEAM ──────────────────────────────────────────────────────
 
 // Everything is points based: each medal is worth a fixed number of
 // points, and the week standings rank teams by total points.
@@ -351,20 +510,20 @@ const MEDAL_POINTS = { gold: 7, silver: 5, bronze: 3 };
 // one, so it is pinned to DOUBLE_WINDOW_LEGACY.
 function bonusCountsDouble(b) {
   if (!pointsReadAllowed('bonusCountsDouble')) return false; // a points reader: see "Standings secrecy"
-  return bonusIsDouble(b, DOUBLE_WINDOW_LEGACY);
+  return bonusIsDouble(b, doubleWindow());
 }
 
 // True while "now" is inside the double-points window (drives the notices
 // on the verse/bonus cards).
 function inDoubleBonusWindow() {
-  return inDoubleWindow(DOUBLE_WINDOW_LEGACY, Date.now());
+  return inDoubleWindow(doubleWindow(), Date.now());
 }
 
 // ── Game catalog ────────────────────────────────────────────────
 // The week's games and days now live in editable, synced state
 // (state.config) — built out by editors in Settings → Set up the week.
 // The built-in defaults are in defaults.js (defaultConfig()); the
-// builder UI is in settings.js. DAY_NAMES above stays: the memory-verse,
+// builder UI is in settings.js. dayLabel() (the SEAM block) stays: the memory-verse,
 // meal-cleanup, and daily-schedule features are keyed by real day of
 // week, independent of the editable competition days.
 
@@ -378,26 +537,12 @@ function inDoubleBonusWindow() {
 
 const CAMP_TZ = 'America/New_York';
 
-// The full printed week, per camp (camps.js): every block of every day,
-// minutes-since-midnight in camp time. (hm() also lives in camps.js now.)
-const DAY_SCHEDULE = CAMP.daySchedule;
-
-// Electives — junior-only (CAMP.features.electives). The active profile
-// supplies who's at which station (junior: the handwritten packet;
-// senior: empty — no electives at senior camp, so these all no-op).
-const STATION_EMOJI = CAMP.stationEmoji;
-const ELECTIVES = CAMP.electives;
-// Device-identity → team, keyed to the ELECTIVES spellings (junior).
-// Empty for senior — identities come from member records instead.
-const TEAM_COUNSELORS = CAMP.teamCounselors;
-const ELECTIVE_SLOT_MIN = CAMP.electiveSlotMin;
-
 // The full set of kids at camp on a given day = everyone assigned to any
 // station across that day's elective slots. A kid missing from a particular
 // slot is on break for it (see electiveBreakKids).
 function electiveDayRoster(dow) {
   const set = new Set();
-  (ELECTIVES[dow] || []).forEach((slot) => {
+  electivesFor(dow).forEach((slot) => {
     (slot || []).forEach(([, kids]) => (kids || []).forEach((k) => set.add(k)));
   });
   return set;
@@ -406,7 +551,7 @@ function electiveDayRoster(dow) {
 // Kids with no station in this elective slot — they're on "Break".
 function electiveBreakKids(dow, slot) {
   const assigned = new Set();
-  (((ELECTIVES[dow] || [])[slot]) || []).forEach(([, kids]) => (kids || []).forEach((k) => assigned.add(k)));
+  (electivesFor(dow)[slot] || []).forEach(([, kids]) => (kids || []).forEach((k) => assigned.add(k)));
   return [...electiveDayRoster(dow)].filter((k) => !assigned.has(k)).sort();
 }
 
@@ -417,9 +562,9 @@ function electiveBreakKids(dow, slot) {
 function myStationFor(dow, slot) {
   const name = canonicalCounselorName(state.identity);
   if (!name) return null;
-  const stations = ((ELECTIVES[dow] || [])[slot]) || [];
+  const stations = electivesFor(dow)[slot] || [];
   const found = stations.find(([, kids]) => (kids || []).includes(name));
-  if (found) return { station: found[0], emoji: STATION_EMOJI[found[0]] || '🌟', onBreak: false };
+  if (found) return { station: found[0], emoji: stationEmoji(found[0]), onBreak: false };
   if (electiveDayRoster(dow).has(name)) return { station: 'Break', emoji: '☕', onBreak: true };
   return null;
 }
@@ -432,8 +577,8 @@ function myElectivesToday() {
   const name = canonicalCounselorName(state.identity);
   if (!name) return null;
   const { dow } = campNow();
-  const day = ELECTIVES[dow];
-  if (!day) return null;                               // dow 0/6 — no electives
+  const day = electivesFor(dow);
+  if (!day.length) return null;                        // dow 0/6 — no electives
   if (!electiveDayRoster(dow).has(name)) return null;  // not on today's sheet
   return [0, 1, 2].map((slot) => {
     const stations = day[slot] || [];
@@ -441,9 +586,9 @@ function myElectivesToday() {
     const station = found ? found[0] : null;
     return {
       slot,
-      time: schedClock(ELECTIVE_SLOT_MIN[slot], true),
+      time: schedClock(electiveSlotStart(slot, dow), true),
       station,
-      emoji: station ? (STATION_EMOJI[station] || '🌟') : '☕',
+      emoji: station ? stationEmoji(station) : '☕',
       onBreak: !station,
     };
   });
@@ -559,9 +704,9 @@ function electiveWxHtml(dow, slot) {
   const now = campNow();
   const dayOffset = dow - now.dow;
   if (dayOffset < 0) return '';                                            // earlier this week
-  if (dayOffset === 0 && ELECTIVE_SLOT_MIN[slot] <= now.minutes) return ''; // today, already started
+  if (dayOffset === 0 && electiveSlotStart(slot, dow) <= now.minutes) return ''; // today, already started
   if (dayOffset >= weatherData.dates.length) return '';                    // past the 7-day window
-  const hour = Math.floor(ELECTIVE_SLOT_MIN[slot] / 60);
+  const hour = Math.floor(electiveSlotStart(slot, dow) / 60);
   const w = weatherData.byTime[`${weatherData.dates[dayOffset]}T${String(hour).padStart(2, '0')}:00`];
   if (!w || w.temp == null) return '';
   const info = WEATHER_CODES[w.code] || { emoji: '🌡️', label: 'Forecast' };
@@ -590,17 +735,10 @@ function upcomingRainHint() {
 }
 
 // ── Meal menu ────────────────────────────────────────────────────
-// What the kitchen is serving — per-camp data (camps.js), keyed by
-// day-of-week (0 Sun .. 6 Sat) then lowercase meal block name. When a
-// meal is listed, the Happening Now banner names the dish during that
-// block. Unknown meals just show the plain block label, so an empty or
-// sparse menu (senior, for now) is always safe.
-const MEALS = CAMP.meals;
-
+// What the kitchen is serving comes from mealFor() (the SEAM block).
 function mealInfo(dow, block) {
-  const meals = MEALS[dow];
-  if (!meals || !block) return null;
-  return meals[(block.label || '').toLowerCase()] || null;
+  if (!block) return null;
+  return mealFor(dow, (block.label || '').toLowerCase());
 }
 
 // Returns the block as-is, or a copy dressed up with tonight's dish —
@@ -614,22 +752,14 @@ function decorateMealBlock(dow, block) {
   });
 }
 
-// The meal a schedule block represents (Breakfast/Lunch/Supper), or null.
-// Handles decorated labels like "Supper — Shepherd's Pie".
-function blockMealName(label) {
-  const base = String(label || '').split(' — ')[0].trim();
-  return MEAL_CLEANUP_MEALS.includes(base) ? base : null;
-}
-
 // A "🧽 <team>" note naming who's on cleanup for the meal a block represents,
 // shown next to the meal wherever it appears. '' when the block isn't a meal or
 // the day isn't on the cleanup rota; "TBA" for a tracked day not yet assigned.
 function mealCleanupNote(dow, label) {
-  const meal = blockMealName(label);
-  if (!meal || !MEAL_CLEANUP_SCHEDULE[dow]) return '';
-  const teamIds = cleanupAssigned(dow, meal);
-  if (!teamIds) return ` <span class="meal-cleanup-note">🧽 TBA</span>`;
-  const teams = Array.isArray(teamIds) ? teamIds : [teamIds];
+  const meal = legacyMealOf(label);
+  if (!meal || !cleanupOnRota(dow)) return '';
+  const teams = cleanupTeams(dow, meal);
+  if (!teams.length) return ` <span class="meal-cleanup-note">🧽 TBA</span>`;
   const who = teams.map(id => `${teamEmoji(id)} ${esc(teamName(id))}`).join(' + ');
   return ` <span class="meal-cleanup-note">🧽 ${who}</span>`;
 }
@@ -805,7 +935,7 @@ function schedRange(start, end) {
 }
 
 function nowBannerHtml(dow, minutes) {
-  const blocks = DAY_SCHEDULE[dow] || [];
+  const blocks = scheduleForDow(dow);
   if (!blocks.length) return null;
 
   const eyebrow = `<div class="now-eyebrow-row">
@@ -848,9 +978,9 @@ function nowBannerHtml(dow, minutes) {
   if (b.type === 'elective') {
     const me = canonicalCounselorName(state.identity);
     const chip = (k) => `<span class="kid-chip${k === me ? ' kid-chip-you' : ''}">${esc(k)}${k === me ? ' ⭐' : ''}</span>`;
-    const stations = (ELECTIVES[dow] || [])[b.slot] || [];
+    const stations = electivesFor(dow)[b.slot] || [];
     let rows = stations.map(([station, kids]) =>
-      `<div class="now-station${kids.includes(me) ? ' now-station-you' : ''}"><span class="now-station-name">${STATION_EMOJI[station] || '🌟'} ${esc(station)}</span>
+      `<div class="now-station${kids.includes(me) ? ' now-station-you' : ''}"><span class="now-station-name">${stationEmoji(station)} ${esc(station)}</span>
         <span class="now-kids">${kids.map(chip).join('')}</span></div>`).join('');
     const breakKids = electiveBreakKids(dow, b.slot);
     if (breakKids.length) {
@@ -933,8 +1063,6 @@ function splitNowBanner(html) {
 // showing their dish, electives showing who's at each station, and
 // competition blocks listing that day's actual games.
 
-const SCHED_DAYS = CAMP.schedDays; // per-camp day list + tags (camps.js)
-
 let scheduleDay = null; // day shown while the sheet is open (not persisted)
 
 function scheduleOverlayEl() {
@@ -1002,7 +1130,7 @@ function renderScheduleDays() {
   // tapped with a fresh, already-selected chip, so its own select animation
   // never played. The markup deliberately carries no `selected`; it is applied
   // below. It's rebuilt only when it changes (the today-dot moves at midnight).
-  const html = SCHED_DAYS.map((d) => `
+  const html = weekDays().map((d) => `
     <jelly-chip class="sched-day-chip" selectable size="small" data-dow="${d.dow}">
       ${d.short}${d.dow === todayDow ? '<span class="today-dot" title="Today"></span>' : ''}
     </jelly-chip>`).join('');
@@ -1038,8 +1166,8 @@ function renderScheduleBody() {
   const dow = scheduleDay;
   const { dow: nowDow, minutes } = campNow();
   const isToday = dow === nowDow;
-  const day = SCHED_DAYS[dow] || SCHED_DAYS[0];
-  const blocks = DAY_SCHEDULE[dow] || [];
+  const day = weekDays()[dow] || weekDays()[0];
+  const blocks = scheduleForDow(dow);
 
   const rows = blocks.map((raw) => {
     const b = decorateMealBlock(dow, raw);
@@ -1049,11 +1177,9 @@ function renderScheduleBody() {
     let extra = '';
     let labelBadge = ''; // forecast badge next to the label (future electives only)
     if (raw.type === 'games') {
-      const session = raw.start < 720 ? 'Morning' : 'Evening';
-      // Competition days are editable; map this block's real day-of-week to
-      // whichever configured day(s) carry that dow.
-      const dowDayIds = state.config.days.filter((d) => d.dow === dow).map((d) => d.id);
-      const games = state.config.games.filter((g) => dowDayIds.includes(g.dayId) && g.session === session);
+      // Competition days are editable; gamesForBlock maps this block's real
+      // day-of-week to whichever configured day(s) carry that dow.
+      const games = gamesForBlock(dow, raw);
       if (games.length) {
         extra = `<div class="sched-games">${games.map((g) =>
           `<span class="sched-game-chip ${state.results[g.id] ? 'played' : ''}">${esc(g.emoji)} ${esc(g.name)}${state.results[g.id] ? ' ✓' : ''}</span>`).join('')}</div>`;
@@ -1066,10 +1192,10 @@ function renderScheduleBody() {
       if (mine) labelBadge += `<span class="sched-you-chip">⭐ You: ${mine.emoji} ${esc(mine.station)}</span>`;
       const me = canonicalCounselorName(state.identity);
       const kidText = (kids) => kids.map((k) => k === me ? `<span class="sched-you">⭐ ${esc(k)}</span>` : esc(k)).join(' · ');
-      const stations = (ELECTIVES[dow] || [])[raw.slot] || [];
+      const stations = electivesFor(dow)[raw.slot] || [];
       if (stations.length) {
         let stationRows = stations.map(([station, kids]) =>
-          `<div class="sched-station${kids.includes(me) ? ' sched-station-you' : ''}"><span class="sched-station-name">${STATION_EMOJI[station] || '🌟'} ${esc(station)}</span>
+          `<div class="sched-station${kids.includes(me) ? ' sched-station-you' : ''}"><span class="sched-station-name">${stationEmoji(station)} ${esc(station)}</span>
             <span class="sched-station-kids">${kidText(kids)}</span></div>`).join('');
         const breakKids = electiveBreakKids(dow, raw.slot);
         if (breakKids.length) {
@@ -1157,15 +1283,13 @@ function buildDayIcs(dow) {
     const mm = Math.min(mins, hm(23, 59)); // paranoia: keep a stray midnight end in-day
     return `${date}T${String(Math.floor(mm / 60)).padStart(2, '0')}${String(mm % 60).padStart(2, '0')}00`;
   };
-  const day = DAY_SCHEDULE[dow] || [];
+  const day = scheduleForDow(dow);
   const events = day.map((raw, i) => ({ raw, i })).filter(({ raw }) => !raw.noTime).map(({ raw, i }) => {
     const b = decorateMealBlock(dow, raw);
     let desc = '';
     if (raw.type === 'games') {
       // Name the actual games in the event body, like the schedule sheet does.
-      const session = raw.start < 720 ? 'Morning' : 'Evening';
-      const dowDayIds = state.config.days.filter((d) => d.dow === dow).map((d) => d.id);
-      const games = state.config.games.filter((g) => dowDayIds.includes(g.dayId) && g.session === session);
+      const games = gamesForBlock(dow, raw);
       if (games.length) desc = games.map((g) => `${g.emoji} ${g.name}`).join(', ');
     }
     // UID = camp + day + the block's position in the day + its start. Before,
@@ -2178,7 +2302,7 @@ function loadState() {
 function makeFreshState() {
   return {
     config: CAMP.defaultConfig(), // editable days/games catalog (Settings → Set up the week)
-    teams: DEFAULT_TEAM_NAMES.map((name, i) => ({ id: 't' + i, name, counselor: DEFAULT_COUNSELORS[i] })),
+    teams: seedTeams(),
     results: {},   // gameId -> { medals: {gold, silver, bronze}, scores?, savedAt }
     brackets: {},  // gameId -> in-progress tournament
     drafts: {},    // gameId -> in-progress tally/placement entry
@@ -3465,7 +3589,7 @@ function detectMatchupChanges() {
   const prev = lastBracketSlots;
   const next = {};
   const changes = [];
-  state.config.games.forEach((g) => {
+  allGames().forEach((g) => {
     if (g.format !== 'tournament') return;
     const ups = upcomingMatchups(g);
     next[g.id] = ups;
@@ -3483,7 +3607,7 @@ function detectMatchupChanges() {
 // deck) — used by the "Your team" summary card's "Up next" line.
 function findNextMatchupFor(teamId) {
   if (!teamId) return null;
-  for (const g of state.config.games) {
+  for (const g of allGames()) {
     if (g.format !== 'tournament' || state.results[g.id]) continue;
     for (const s of upcomingMatchups(g)) {
       if (s.aId === teamId || s.bId === teamId) {
@@ -3544,16 +3668,6 @@ function renderPresence() {
   renderFooter(); // the live "who's here" count renders inside the footer line
 }
 
-function teamEmoji(id) {
-  return TEAM_EMOJI[id] || '🏳️';
-}
-
-// Path to a team's shield crest image, or null if we don't have one for that
-// slot (see TEAM_SHIELD) — callers fall back to the emoji.
-function teamShield(id) {
-  return TEAM_SHIELD[id] || null;
-}
-
 function teamName(id) {
   const t = state.teams.find((t) => t.id === id);
   return t ? t.name : '???';
@@ -3609,14 +3723,6 @@ function setLiveHtmlIfChanged(el, html, holds) {
   el.__liveKey = key;
   el.__liveHolds = holds;
   return true;
-}
-
-function gameById(id) {
-  return state.config.games.find((g) => g.id === id);
-}
-
-function dayById(id) {
-  return state.config.days.find((d) => d.id === id);
 }
 
 // ── Sound effects (Web Audio — no files needed) ──────────────────
@@ -3836,7 +3942,7 @@ function notifyPointChanges(changes) {
   } else if (others.length > 1) {
     const short = others.length > 3;
     showToast('📈 ' + others.map(({ team, sign, delta }) =>
-      `${teamEmoji(team.id)} ${(short && TEAM_ABBREV[team.id]) || team.name} ${sign}${delta}`).join(' · '));
+      `${teamEmoji(team.id)} ${(short && teamShort(team.id)) || team.name} ${sign}${delta}`).join(' · '));
   }
   mineChanges.forEach(({ team, msg }) => {
     showToast("Your team scored! " + msg, { mine: true });
@@ -3862,7 +3968,7 @@ function detectResultChanges(prev, next) {
   const was = prev || {};
   const now = next || {};
   const out = [];
-  state.config.games.forEach((g) => {
+  allGames().forEach((g) => {
     const r = now[g.id];
     if (!r || !r.medals) return;
     const p = was[g.id];
@@ -4767,7 +4873,7 @@ function standingsSummaryText() {
     });
   }
 
-  const played = state.config.games.filter((g) => state.results[g.id]);
+  const played = allGames().filter((g) => state.results[g.id]);
   if (played.length) {
     lines.push('');
     lines.push('Medals so far:');
@@ -5223,7 +5329,7 @@ function renderFollowCard() {
     : '';
   const nextCleanup = findNextCleanupFor(team.id);
   const cleanupLine = nextCleanup
-    ? `<p class="follow-next-line">🧽 Next meal cleanup:<br>${esc(DAY_NAMES[nextCleanup.day])} ${esc(nextCleanup.meal)}</p>`
+    ? `<p class="follow-next-line">🧽 Next meal cleanup:<br>${esc(dayLabel(nextCleanup.day))} ${esc(nextCleanup.meal)}</p>`
     : '';
   const you = canonicalCounselorName(state.identity);
   // The "who are you" line exists to surface YOUR electives — camps without
@@ -5232,7 +5338,7 @@ function renderFollowCard() {
     : you
     ? `<p class="follow-you-line">${esc(you)} <button id="change-identity-link" class="link-btn">Change</button></p>`
     : `<p class="follow-you-line follow-you-empty"><button id="set-identity-link" class="link-btn">🙋 Tell us who you are</button> to see your electives</p>`;
-  const shield = teamShield(team.id);
+  const shield = teamCrestSrc(team.id);
   const crestHtml = shield
     ? `<div class="follow-team-crest"><img class="follow-team-shield" src="${shield}" alt="${esc(team.name)} team shield" width="480" height="667" loading="lazy" decoding="async"></div>`
     : '';
@@ -5349,8 +5455,7 @@ function adoptMemberTeam() {
   // A member row typed with an old spelling ("Alysa") still adopts the one the
   // electives data is keyed to ("Alyssa") — see canonicalCounselorName.
   const canonName = memberName ? canonicalCounselorName(memberName) : '';
-  const known = canonName && TEAM_COUNSELORS[memberTeamId] &&
-    TEAM_COUNSELORS[memberTeamId].includes(canonName) ? canonName : null;
+  const known = canonName && teamRoster(memberTeamId).includes(canonName) ? canonName : null;
   // Only adopt a name the electives data actually knows; otherwise leave the
   // identity answered-as-skipped rather than looking up nothing forever.
   const wanted = known || null;
@@ -5504,10 +5609,10 @@ function renderIdentityOptions() {
   const wrap = document.getElementById('team-picker-options');
   if (!wrap) return;
   // The member directory is the live roster once counselors are assigned to
-  // teams; TEAM_COUNSELORS (which the electives data is keyed to) is the
+  // teams; the printed roster, teamRoster() (which the electives data is keyed to), is the
   // fallback for a team nobody's been assigned to yet.
   const staff = teamStaffNames(pickerTeamId);
-  const names = staff.length ? staff : (TEAM_COUNSELORS[pickerTeamId] || []);
+  const names = staff.length ? staff : teamRoster(pickerTeamId);
   wrap.innerHTML = names.map((n) =>
     `<button class="team-picker-option ${state.identity === n ? 'selected' : ''}" data-counselor="${esc(n)}">
       <span class="chip-emoji">${teamEmoji(pickerTeamId)}</span> ${esc(n)}
@@ -5725,8 +5830,6 @@ function bindBonusEntry(wrap) {
 // sheet, senior's placeholders until its sheet exists. Counselors read
 // the day's verse here and award points to teams that recite it; the
 // points live in the bonus ledger under the 'verse' category.
-const MEMORY_VERSE_THEME = CAMP.memoryVerseTheme;
-const MEMORY_VERSES = CAMP.memoryVerses;
 
 // Which day's verse the card is showing, and the point-entry draft. Both
 // live outside state so they aren't synced or persisted (verseDay defaults
@@ -5772,27 +5875,28 @@ function renderMemoryVerse() {
   // Default to today's verse (Mon–Fri); fall back to Monday on the weekend.
   if (verseDay == null) {
     const dow = campNow().dow;
-    verseDay = (dow >= 1 && dow <= 5) ? dow : 1;
+    verseDay = competitionDows().includes(dow) ? dow : competitionDows()[0];
   }
-  const verse = MEMORY_VERSES[verseDay];
+  const verse = verseFor(verseDay);
+  const theme = verseTheme();
   const todayDow = campNow().dow;
 
   const themeHTML = `
     <div class="verse-theme">
-      <span class="verse-theme-label">📖 Theme Verse · ${esc(MEMORY_VERSE_THEME.title)}</span>
-      <p class="verse-theme-text">“${esc(MEMORY_VERSE_THEME.text)}”</p>
-      <p class="verse-theme-ref">${esc(MEMORY_VERSE_THEME.ref)}</p>
+      <span class="verse-theme-label">📖 Theme Verse · ${esc(theme.title)}</span>
+      <p class="verse-theme-text">“${esc(theme.text)}”</p>
+      <p class="verse-theme-ref">${esc(theme.ref)}</p>
     </div>`;
 
-  const dayChips = `<div class="verse-day-row">${[1, 2, 3, 4, 5].map((dow) =>
-    `<jelly-chip class="verse-day-chip" selectable size="small" ${dow === verseDay ? 'selected' : ''} data-verse-day="${dow}">${DAY_NAMES[dow].slice(0, 3)}${dow === todayDow ? '<span class="today-dot" title="Today"></span>' : ''}</jelly-chip>`).join('')}</div>`;
+  const dayChips = `<div class="verse-day-row">${competitionDows().map((dow) =>
+    `<jelly-chip class="verse-day-chip" selectable size="small" ${dow === verseDay ? 'selected' : ''} data-verse-day="${dow}">${dayLabel(dow).slice(0, 3)}${dow === todayDow ? '<span class="today-dot" title="Today"></span>' : ''}</jelly-chip>`).join('')}</div>`;
 
   const verseVideo = verse.video
     ? `<a class="verse-video-link" href="${esc(verse.video)}" target="_blank" rel="noopener noreferrer">▶️ Watch the video</a>`
     : '';
   const verseBox = `
     <div class="verse-day-card">
-      <span class="verse-day-name">${esc(DAY_NAMES[verseDay])}</span>
+      <span class="verse-day-name">${esc(dayLabel(verseDay))}</span>
       <p class="verse-day-text">“${esc(verse.text)}”</p>
       <p class="verse-day-ref">${esc(verse.ref)}</p>
       ${verseVideo}
@@ -5818,7 +5922,7 @@ function renderMemoryVerse() {
   const doubleWindow = inDoubleBonusWindow();
   const displayMult = doubleWindow ? 2 : 1;
   const hint = editing
-    ? `<p class="bonus-entry-hint muted">Tap a team's points for ${esc(DAY_NAMES[verseDay])}'s verse — 0 clears them.${doubleWindow ? ' Double points are on — the tap values already show the doubled worth.' : ''}</p>`
+    ? `<p class="bonus-entry-hint muted">Tap a team's points for ${esc(dayLabel(verseDay))}'s verse — 0 clears them.${doubleWindow ? ' Double points are on — the tap values already show the doubled worth.' : ''}</p>`
     : '';
   const rowsHTML = `<div class="pts-grid">${state.teams.map((t) => {
     const pts = earned.raw[t.id] || 0; // raw stored value (0–5)
@@ -5868,7 +5972,7 @@ function setVersePoints(teamId, dow, pts) {
   });
   if (pts > 0) {
     state.bonuses[fixedId] = {
-      teamId, category: 'verse', label: `${DAY_NAMES[dow]} memory verse`,
+      teamId, category: 'verse', label: `${dayLabel(dow)} memory verse`,
       points: pts, at: new Date().toISOString(), day: dow,
     };
   }
@@ -5879,24 +5983,11 @@ function setVersePoints(teamId, dow, pts) {
 
 // ── Meal cleanup ─────────────────────────────────────────────────
 // Each meal, a team is on cleanup. The rota (who cleans which meal each day)
-// is fixed data below; points earned are stored in the bonus ledger under the
+// is fixed data (cleanupTeams(), SEAM block); points earned are stored in the bonus ledger under the
 // 'cleanup' category, tagged with day + meal, so they flow into the week
 // standings — same pattern as Memory Verse. A missing meal key = TBA.
 const MEAL_CLEANUP_MEALS = ['Breakfast', 'Lunch', 'Supper'];
 const MEAL_ICONS = { Breakfast: '🍳', Lunch: '🥪', Supper: '🍲' };
-// The rota itself is per-camp data (camps.js) — junior's printed 6-team
-// rota, senior's still-empty one (every meal TBA until filled in).
-const MEAL_CLEANUP_SCHEDULE = CAMP.mealCleanupSchedule;
-
-// The team assigned to a given day + meal, or null (TBA).
-function cleanupAssigned(day, meal) {
-  const d = MEAL_CLEANUP_SCHEDULE[day];
-  return (d && d[meal]) || null;
-}
-
-// Start time of each meal (same across Mon–Fri, per the junior weekday schedule) —
-// lets findNextCleanupFor skip a meal that's already started today.
-const MEAL_START_MINUTES = { Breakfast: hm(8, 0), Lunch: hm(12, 0), Supper: hm(17, 0) };
 
 // The soonest known meal-cleanup duty for `teamId` (today's remaining meals,
 // then the rest of the week) — used by the "Your team" summary card's
@@ -5905,12 +5996,11 @@ const MEAL_START_MINUTES = { Breakfast: hm(8, 0), Lunch: hm(12, 0), Supper: hm(1
 function findNextCleanupFor(teamId) {
   if (!teamId) return null;
   const { dow: todayDow, minutes: nowMinutes } = campNow();
-  for (let day = Math.max(todayDow, 1); day <= 5; day++) {
+  for (const day of competitionDows()) {
+    if (day < todayDow) continue; // earlier this week (a weekend reads as past too)
     for (const meal of MEAL_CLEANUP_MEALS) {
-      if (day === todayDow && MEAL_START_MINUTES[meal] <= nowMinutes) continue;
-      const assigned = cleanupAssigned(day, meal);
-      const teams = assigned ? (Array.isArray(assigned) ? assigned : [assigned]) : [];
-      if (teams.includes(teamId)) return { day, meal };
+      if (day === todayDow && mealStart(day, meal) <= nowMinutes) continue;
+      if (cleanupTeams(day, meal).includes(teamId)) return { day, meal };
     }
   }
   return null;
@@ -5940,16 +6030,15 @@ function renderMealCleanup() {
   // Default to today (Mon–Fri, else Monday).
   if (cleanupDay == null) {
     const dow = campNow().dow;
-    cleanupDay = (dow >= 1 && dow <= 5) ? dow : 1;
+    cleanupDay = competitionDows().includes(dow) ? dow : competitionDows()[0];
   }
   const todayDow = campNow().dow;
 
-  const dayChips = `<div class="verse-day-row">${[1, 2, 3, 4, 5].map((dow) =>
-    `<jelly-chip class="verse-day-chip" selectable size="small" ${dow === cleanupDay ? 'selected' : ''} data-cleanup-day="${dow}">${DAY_NAMES[dow].slice(0, 3)}${dow === todayDow ? '<span class="today-dot" title="Today"></span>' : ''}</jelly-chip>`).join('')}</div>`;
+  const dayChips = `<div class="verse-day-row">${competitionDows().map((dow) =>
+    `<jelly-chip class="verse-day-chip" selectable size="small" ${dow === cleanupDay ? 'selected' : ''} data-cleanup-day="${dow}">${dayLabel(dow).slice(0, 3)}${dow === todayDow ? '<span class="today-dot" title="Today"></span>' : ''}</jelly-chip>`).join('')}</div>`;
 
   const rotaHTML = `<div class="cleanup-rota">${MEAL_CLEANUP_MEALS.map((meal) => {
-    const teamIds = cleanupAssigned(cleanupDay, meal);
-    const teams = teamIds ? (Array.isArray(teamIds) ? teamIds : [teamIds]) : [];
+    const teams = cleanupTeams(cleanupDay, meal);
     const teamStr = teams.length > 0
       ? teams.map(id => `${teamEmoji(id)} ${esc(teamName(id))}`).join(' + ')
       : '<span class="cleanup-tba">TBA</span>';
@@ -5977,13 +6066,12 @@ function renderMealCleanup() {
   let entryHTML = '';
   if (editing) {
     entryHTML = MEAL_CLEANUP_MEALS.map((meal) => {
-      const assignedIds = cleanupAssigned(cleanupDay, meal);
-      const assigned = assignedIds ? (Array.isArray(assignedIds) ? assignedIds : [assignedIds]) : [];
+      const assigned = cleanupTeams(cleanupDay, meal);
       const earned = earnedFor(meal);
       // Rota team(s) first; then any team that somehow has points for this
       // meal without being on the rota (rota edits, old data) so it stays
       // clearable rather than invisible.
-      const rows = assigned.concat(state.teams.map((t) => t.id).filter((id) => earned[id] && !assigned.includes(id)));
+      const rows = assigned.concat(teamIds().filter((id) => earned[id] && !assigned.includes(id)));
       const body = rows.length
         ? rows.map((id) => {
             const pts = earned[id] || 0;
@@ -6069,7 +6157,7 @@ function setCleanupPoints(teamId, dow, meal, pts) {
   });
   if (pts > 0) {
     state.bonuses[fixedId] = {
-      teamId, category: 'cleanup', label: `${DAY_NAMES[dow]} ${meal} cleanup`,
+      teamId, category: 'cleanup', label: `${dayLabel(dow)} ${meal} cleanup`,
       points: pts, at: new Date().toISOString(), day: dow, meal,
     };
   }
@@ -6090,7 +6178,7 @@ function setCleanupPoints(teamId, dow, meal, pts) {
 function renderDayTabs() {
   const nav = document.getElementById('day-tabs');
   if (!nav) return;
-  const days = state.config.days;
+  const days = competitionDays();
   const todayDow = campNow().dow; // camp time, not device time
   if (!days.some((d) => d.id === state.ui.day)) state.ui.day = defaultDay(state.config);
   const todayDay = days.find((d) => d.dow === todayDow);
@@ -6178,7 +6266,7 @@ function gameStatus(g) {
 
 // One day's full lineup, rendered into its jelly-tab-panel by renderDayTabs.
 function dayGamesHTML(day) {
-  const dayGames = state.config.games.filter((g) => g.dayId === day.id);
+  const dayGames = gamesForDayId(day.id);
   const knownSessions = state.config.sessions;
   // Defensive: still show games whose session isn't in the configured list.
   const sessions = knownSessions.concat(
@@ -6485,7 +6573,7 @@ function tallyInProgress(g) {
 }
 
 function liveHomeGames() {
-  return state.config.games.filter((g) => {
+  return allGames().filter((g) => {
     const b = state.brackets && state.brackets[g.id];
     // A bracket only means "live" for a tournament game. Changing a started
     // game to another format leaves its bracket behind in state.brackets, and
@@ -6656,7 +6744,7 @@ function tallyBoardHTML(g) {
   const clock = g.timer ? getClock(g) : null;
   const remaining = clock ? clockRemaining(clock) : 0;
   const rows = ranked.length ? ranked.map((e, i) => `
-    <div class="board-tally-row${seeOrder && i < 3 ? ' board-tally-podium' : ''}" style="--team-accent: ${TEAM_ACCENT[e.id] || 'var(--color-primary)'}">
+    <div class="board-tally-row${seeOrder && i < 3 ? ' board-tally-podium' : ''}" style="--team-accent: ${teamAccent(e.id) || 'var(--color-primary)'}">
       <span class="board-tally-rank">${!seeOrder ? '' : complete && i < 3 ? medals[i] : (i + 1) + '.'}</span>
       <span class="board-tally-team">${teamEmoji(e.id)} ${esc(teamName(e.id))}</span>
       <span class="board-tally-score">${esc(formatScore(g, e.v))}</span>
@@ -7162,7 +7250,7 @@ function renderPlacement(container, g) {
 function freshBracket() {
   return {
     phase: 'round1', // round1 -> bye -> semifinal -> championship -> summary
-    pool: state.teams.map((t) => t.id),
+    pool: teamIds(),
     selectedPair: [],
     matches: [],
     byeTeamId: null,
@@ -7335,12 +7423,12 @@ function normalizeSyncedState() {
       if (t.counselor === undefined) t.counselor = '';
       return;
     }
-    const oldNames = OLD_PLACEHOLDER_TEAM_NAMES[i];
-    if (oldNames && oldNames.indexOf(t.name) !== -1 && DEFAULT_TEAM_NAMES[i]) {
-      t.name = DEFAULT_TEAM_NAMES[i];
+    const legacy = legacyRosterFor(i);
+    if (legacy.oldNames && legacy.oldNames.indexOf(t.name) !== -1 && legacy.name) {
+      t.name = legacy.name;
     }
-    if (t.counselor === undefined || t.counselor === OLD_PLACEHOLDER_COUNSELORS[i]) {
-      t.counselor = DEFAULT_COUNSELORS[i] || '';
+    if (t.counselor === undefined || t.counselor === legacy.oldCounselor) {
+      t.counselor = legacy.counselor || '';
     }
   });
 }
@@ -7743,7 +7831,7 @@ function liveTrackerHTML(g, aId, bId, viewer) {
   const remaining = clock ? clockRemaining(clock) : 0;
 
   const col = (id) => `
-    <div class="board-col" data-board-col="${esc(id)}" style="--team-accent: ${TEAM_ACCENT[id] || 'var(--color-primary)'}">
+    <div class="board-col" data-board-col="${esc(id)}" style="--team-accent: ${teamAccent(id) || 'var(--color-primary)'}">
       <span class="board-emoji">${teamEmoji(id)}</span>
       <span class="board-name">${esc(teamName(id))}</span>
       <span class="board-score" data-hr-team="${esc(id)}">${l.hr[id] || 0}</span>
@@ -7826,7 +7914,7 @@ function liveBoardHTML(g, aId, bId) {
     sub = w ? `🏆 ${teamEmoji(w)} ${esc(teamName(w))} reached ${target}!` : `First to exactly ${target}`;
   }
   const col = (id, score) => `
-    <div class="board-col" style="--team-accent: ${TEAM_ACCENT[id] || 'var(--color-primary)'}">
+    <div class="board-col" style="--team-accent: ${teamAccent(id) || 'var(--color-primary)'}">
       <span class="board-emoji">${teamEmoji(id)}</span>
       <span class="board-name">${esc(teamName(id))}</span>
       ${score != null ? `<span class="board-score">${score}</span>` : ''}

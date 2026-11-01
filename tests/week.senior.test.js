@@ -83,7 +83,7 @@ test('electives are fully inert at senior camp', () => {
 });
 
 test('the meal-cleanup rota is all TBA until filled in', () => {
-  assert.equal(cleanupAssigned(1, 'Breakfast'), null);
+  assert.deepEqual(cleanupTeams(1, 'Breakfast'), []);
   assert.equal(findNextCleanupFor('t0'), null, 'no rota → no "next cleanup" line on the follow card');
 });
 
@@ -98,7 +98,7 @@ test('teamEmoji and accents cover the four senior teams (and only them)', () => 
     assert.ok(teamEmoji(id) !== '🏳️', `${id} has a real emoji`);
     assert.ok(teamAccent(id), `${id} has an accent color`);
   });
-  assert.equal(teamShield('t0'), null, 'no flag artwork yet — crest lookup is empty');
+  assert.equal(teamCrestSrc('t0'), null, 'no flag artwork yet — crest lookup is empty');
   assert.equal(teamEmoji('t5'), '🏳️', 'junior-only slots fall back safely');
 });
 

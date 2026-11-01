@@ -392,7 +392,7 @@ test('rows 9 and 10: verse shows the verse and nothing else, cleanup shows the r
   renderMemoryVerse(); renderMealCleanup();
   // Cleanup buttons sit on a rota team, so they only exist where the day has
   // one — senior's rota is all TBA until it is filled in.
-  const rotaSet = ['Breakfast', 'Lunch', 'Supper'].some((m) => cleanupAssigned(cleanupDay, m));
+  const rotaSet = ['Breakfast', 'Lunch', 'Supper'].some((m) => cleanupTeams(cleanupDay, m).length);
   assert.ok(/pts-btn/.test(verse.innerHTML) && (!rotaSet || /pts-btn/.test(cleanup.innerHTML)), 'a director keeps the award buttons');
 });
 
