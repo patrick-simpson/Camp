@@ -946,17 +946,31 @@ function renderChatBadges() {
   });
 }
 
+let _chatDayStampFmt = null;
 function chatDayStamp(atMs) {
   if (!atMs) return '';
-  const parts = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'long', month: 'short', day: 'numeric' })
-    .format(new Date(atMs));
-  return parts;
+  try {
+    if (!_chatDayStampFmt) _chatDayStampFmt = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'long', month: 'short', day: 'numeric' });
+    return _chatDayStampFmt.format(new Date(atMs));
+  } catch (e) {
+    return new Date(atMs).toDateString();
+  }
 }
 
+let _chatTimeStampFmt = null;
 function chatTimeStamp(atMs) {
   if (!atMs) return '';
-  return new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: 'numeric', minute: '2-digit', hour12: true })
-    .format(new Date(atMs)).toLowerCase();
+  try {
+    if (!_chatTimeStampFmt) _chatTimeStampFmt = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: 'numeric', minute: '2-digit', hour12: true });
+    return _chatTimeStampFmt.format(new Date(atMs)).toLowerCase();
+  } catch (e) {
+    const d = new Date(atMs);
+    let h = d.getHours();
+    const m = String(d.getMinutes()).padStart(2, '0');
+    const ap = h >= 12 ? 'pm' : 'am';
+    h = h % 12 || 12;
+    return `${h}:${m}${ap}`;
+  }
 }
 
 function chatBubbleHTML(ch, msg) {

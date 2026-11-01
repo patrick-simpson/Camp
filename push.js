@@ -1,3 +1,4 @@
+let _pushMonFmt = null;
 // ── Phone alerts (Web Push) ───────────────────────────────────────
 // Real notifications that reach a phone when Camp is CLOSED: new
 // Announcements, someone naming you or your team in chat, every message in a
@@ -296,7 +297,14 @@ function pushWeekLabel(weekStart) {
   const [y, mo, d] = weekStart.split('-').map(Number);
   const start = new Date(Date.UTC(y, mo - 1, d));
   const end = new Date(Date.UTC(y, mo - 1, d + 6));
-  const mon = (dt) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short' }).format(dt);
+  if (!_pushMonFmt) _pushMonFmt = new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short' });
+  const mon = (dt) => {
+    try {
+      return _pushMonFmt.format(dt);
+    } catch (e) {
+      return dt.toDateString().split(' ')[1] || '';
+    }
+  };
   return mon(start) === mon(end)
     ? `${mon(start)} ${start.getUTCDate()}–${end.getUTCDate()}`
     : `${mon(start)} ${start.getUTCDate()} – ${mon(end)} ${end.getUTCDate()}`;
@@ -1537,12 +1545,13 @@ function pushLoadRecentAlerts() {
     .then(renderPushRecent);
 }
 
+let _pushAlertTimeFmt = null;
 function pushAlertTime(at) {
   const n = Number(at);
   if (!Number.isFinite(n) || n <= 0) return '';
   try {
-    return new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short', hour: 'numeric', minute: '2-digit', hour12: true })
-      .format(new Date(Math.min(n, 8.64e15)));
+    if (!_pushAlertTimeFmt) _pushAlertTimeFmt = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
+    return _pushAlertTimeFmt.format(new Date(Math.min(n, 8.64e15)));
   } catch (e) { return ''; }
 }
 
