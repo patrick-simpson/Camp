@@ -157,6 +157,19 @@ test('presets overshoot exactly as the table says when sampled at 1/60 s', () =>
   });
 });
 
+test('the springs are the ones in motion-demo.html (the feel the owner approved), constant for constant', () => {
+  const demo = readFixture('../docs/build-notes/mockups/final/_motion-demo.src.html');
+  const block = /var PRESETS = \{([\s\S]*?)\n\};/.exec(demo);
+  assert.ok(block, 'the demo still has its PRESETS table');
+  const found = {};
+  for (const m of block[1].matchAll(/(\w+):\s*\{\s*k:\s*(\d+),\s*c:\s*(\d+)/g)) found[m[1]] = [+m[2], +m[3]];
+  const { JM } = makeEnv();
+  assert.deepEqual(Object.keys(found).sort(), Object.keys(JM.presets).sort());
+  Object.keys(found).forEach((n) => assert.deepEqual([JM.presets[n].k, JM.presets[n].c], found[n], n));
+  // and its sampler is the same loop: velocity first, 1/60 s, settle test
+  assert.ok(/v \+= a \* dt; x \+= v \* dt;/.test(demo) && /dt = 1 \/ 60/.test(demo), "the demo's integrator is still E() at 1/60");
+});
+
 test('sampling is jelly.js E() one step per 1/60 s, velocity first, and ends at rest', () => {
   const { JM } = makeEnv();
   const E = jellyE();
@@ -393,6 +406,12 @@ test('press dents toward the finger (≥ 10%), release rings past rest (≥ 3%),
   assert.ok(Math.max(...sy) >= 1.03, 'and stretches ≥ 3% past rest: ' + Math.max(...sy));
   assert.equal(sy[sy.length - 1], 1, 'ending exactly at rest');
   assert.equal(up.opts.duration, JM.durationMs('wobble'));
+  // a press called off (the touch became a scroll) eases back without ringing
+  JM.press(btn, { x: 190, y: 110 });
+  const soft = JM.release(btn, { soft: true });
+  assert.equal(soft.opts.duration, JM.durationMs('glide'), 'the no-overshoot glide, not the wobble');
+  const softY = soft.kf.map((f) => parseFloat(/scale\([\d.]+,([\d.]+)\)/.exec(f.transform)[1]));
+  assert.ok(Math.max(...softY) <= 1 + 1e-9, 'never past rest');
   // a full-width list row must not bulge past the gutter
   const row = env.el('button'); row.rect = () => ({ left: 16, top: 0, width: 358, height: 56 });
   const wide = JM.press(row, { x: 100, y: 20 }).kf[1].transform;
@@ -669,6 +688,100 @@ test('the six bezier tokens are the spec\'s, and no hand-written cubic-bezier is
   const used = [...new Set([...CSS.matchAll(/var\(--jm-([a-z]+(?:-ms)?)\)/g)].map((m) => m[1]))];
   used.forEach((u) => assert.ok(new RegExp('--jm-' + u + ':').test(CSS), 'var(--jm-' + u + ') is defined'));
   assert.ok(used.length > 0, 'and the tokens are actually used');
+});
+
+// ── The app side: one switch, read live (these run in the app's own context) ──
+
+test('no code path reads matchMedia for motion any more: JOY_REDUCED and the raw reads are gone', () => {
+  const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  ['../app.js', '../settings.js', '../chat.js', '../push.js'].forEach((f) => {
+    const src = strip(readFixture(f));
+    assert.notOk(/prefers-reduced-motion/.test(src), f + ' reads the OS setting itself');
+    assert.notOk(/JOY_REDUCED/.test(src), f + ' still has the load-time const');
+  });
+  // what is left of matchMedia in app.js is colour scheme (and nothing else)
+  const left = [...strip(readFixture('../app.js')).matchAll(/matchMedia\(['"]([^'"]+)['"]\)/g)].map((m) => m[1]);
+  assert.ok(left.length > 0 && left.every((q) => q.includes('prefers-color-scheme')), 'only colour scheme: ' + left.join(', '));
+  // the TV page has no switch and keeps honouring the OS setting itself (redesign §10.4)
+  assert.ok(/prefers-reduced-motion/.test(readFixture('../current-standings.js')));
+});
+
+test('the line under Calm motion says what is happening right now, in plain words', () => {
+  const line = calmReasonLine;
+  assert.ok(/asks for less motion.*Change it in your phone's Settings/.test(line('off', true, 'os')), 'Off on a phone that asks for calm: the phone wins, and it says where to change that');
+  assert.ok(/asks for less motion/.test(line('auto', true, 'os')));
+  assert.equal(line('on', true, 'switch-on'), 'Calm all the time, as you chose.');
+  assert.equal(line('auto', true, 'battery-saver'), 'Calm right now: your phone is saving battery.');
+  assert.equal(line('auto', true, 'battery-low'), 'Calm right now: your battery is low.');
+  assert.equal(line('off', false, 'switch-off'), 'Full motion, as you chose.');
+  assert.ok(/^Full motion right now\./.test(line('auto', false, null)));
+  const all = [['off', true, 'os'], ['auto', true, 'battery-saver'], ['auto', false, null], ['on', true, 'switch-on']].map((a) => line(...a)).join(' ');
+  assert.notOk(/\b(battery API|hysteresis|sampler|prefers-reduced)\b/i.test(all), 'no jargon for a camp counselor');
+});
+
+test('the Calm motion control writes the switch, repaints the row and survives Auto again', () => {
+  const dom = (id) => document.getElementById(id);
+  setCalmPref('on');
+  assert.ok(calmMotion()); assert.equal(JellyMotion.pref(), 'on');
+  assert.equal(localStorage.getItem('campScoreboardCalmMotion'), 'on');
+  assert.equal(dom('calm-reason').textContent, 'Calm all the time, as you chose.');
+  setCalmPref('off');
+  assert.notOk(calmMotion());
+  assert.equal(dom('calm-reason').textContent, 'Full motion, as you chose.');
+  setCalmPref('auto');
+  assert.equal(localStorage.getItem('campScoreboardCalmMotion'), null, 'Auto is the key being absent');
+  assert.ok(/^Full motion right now/.test(dom('calm-reason').textContent));
+  setCalmPref('nonsense');
+  assert.equal(JellyMotion.pref(), 'auto', 'junk is Auto');
+});
+
+test('while calm there are no sparkles and no confetti; a save is marked by one soft ring instead', () => {
+  const made = [];
+  const realCreate = document.createElement;
+  document.createElement = (tag) => { made.push(tag); return realCreate(tag); };
+  const rings = [];
+  const realRing = JellyMotion.ring;
+  JellyMotion.ring = (el) => { rings.push(el); return null; };
+  try {
+    setCalmPref('on');
+    joyBurst(10, 10, true);
+    celebrate('t0');
+    assert.deepEqual(made, [], 'not one particle or canvas is created while calm');
+    assert.equal(confettiRunning, 0);
+    joyLastCelebrateAt = 0;
+    joyLastTap = { x: 40, y: 60 };
+    joyCelebrate();
+    assert.deepEqual(made, ['span'], 'one ring node');
+    assert.equal(rings.length, 1, 'pulsed through JellyMotion.ring (WAAPI)');
+    joyLastCelebrateAt = 0;
+    setCalmPref('off');
+    made.length = 0; rings.length = 0;
+    joyBurst(10, 10, false);
+    assert.equal(made.length, 6, 'with calm off the small sparkle burst is back');
+    joyLastCelebrateAt = 0;
+    made.length = 0;
+    joyCelebrate();
+    assert.equal(made.length, 16, 'and the save is the big burst, not a ring');
+    assert.equal(rings.length, 0);
+  } finally {
+    document.createElement = realCreate; JellyMotion.ring = realRing; setCalmPref('auto');
+  }
+});
+
+test('the calm sampler waits for confetti, the joy layer, a running stopwatch and a clock in its final minute', () => {
+  assert.notOk(JellyMotion.busy(), 'a quiet page is not busy');
+  confettiRunning = 1;
+  assert.ok(JellyMotion.busy(), 'confetti in the air'); confettiRunning = 0;
+  liveWatches.t = { running: true };
+  assert.ok(JellyMotion.busy(), 'a Pictionary stopwatch on its 100 ms tick'); delete liveWatches.t;
+  const layer = document.getElementById('joy-layer');
+  layer.childElementCount = 3;
+  assert.ok(JellyMotion.busy(), 'sparkles still flying'); layer.childElementCount = 0;
+  const realAll = document.querySelectorAll;
+  document.querySelectorAll = (sel) => (/clock-final/.test(sel) ? [{}] : []);
+  assert.ok(JellyMotion.busy(), 'a board clock heartbeat');
+  document.querySelectorAll = realAll;
+  assert.notOk(JellyMotion.busy());
 });
 
 test('Jelly\'s token overrides live in ONE place at the top of styles.css, and the toaster\'s radius is set on the element', () => {

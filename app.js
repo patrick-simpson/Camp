@@ -1120,8 +1120,7 @@ function closeSchedule(fromDy) {
     const banner = document.getElementById('now-banner');
     if (banner && !banner.hidden) banner.focus({ preventScroll: true });
   };
-  const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  if (reduce) { finish(); return; }
+  if (calmMotion()) { finish(); return; }
   overlay.classList.add('closing'); // play the slide-down, then hide
   setTimeout(finish, 200);
 }
@@ -1376,7 +1375,7 @@ function wireSchedule() {
       if (startY == null) return;
       startY = null;
       if (dy > 90) { sheet.style.transition = ''; closeSchedule(dy); return; }
-      sheet.style.transition = JOY_REDUCED.matches ? '' : 'transform 0.2s ease';
+      sheet.style.transition = calmMotion() ? '' : 'transform 0.2s ease';
       sheet.style.transform = '';
     };
     header.addEventListener('touchend', release);
@@ -1449,6 +1448,8 @@ function wireSettings() {
     if (customElements.get('jelly-segmented')) return;
     const seg = e.target.closest && e.target.closest('#theme-toggle jelly-segment');
     if (seg) setTheme(seg.getAttribute('value'));
+    const calm = e.target.closest && e.target.closest('#calm-toggle jelly-segment');
+    if (calm) setCalmPref(calm.getAttribute('value'));
   });
 }
 
@@ -4469,9 +4470,12 @@ function notifyMatchupChanges(changes) {
 }
 
 // Dependency-free confetti burst on "it's official" moments. The winning
-// team's mascot rains down among token-colored bits. Respects reduced motion.
+// team's mascot rains down among token-colored bits. Off while calm (the calm
+// stand-in is joyCelebrate's gold ring).
+let confettiRunning = 0; // the calm-motion sampler waits while any confetti is in the air
 function celebrate(goldTeamId) {
-  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (calmMotion()) return;
+  confettiRunning++;
   const canvas = document.createElement('canvas');
   canvas.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:2000';
   const dpr = window.devicePixelRatio || 1;
@@ -4518,7 +4522,7 @@ function celebrate(goldTeamId) {
       ctx.restore();
     });
     if (t < DURATION) requestAnimationFrame(frame);
-    else canvas.remove();
+    else { canvas.remove(); confettiRunning = Math.max(0, confettiRunning - 1); }
   }
   requestAnimationFrame(frame);
 }
@@ -6850,7 +6854,7 @@ function restoreGameOpener(gid) {
 function scrollToGameView(smooth) {
   const gv = document.getElementById('game-view');
   if (!gv || gv.hidden) return;
-  gv.scrollIntoView({ behavior: smooth && !JOY_REDUCED.matches ? 'smooth' : 'auto', block: 'start' });
+  gv.scrollIntoView({ behavior: smooth && !calmMotion() ? 'smooth' : 'auto', block: 'start' });
   joySlideIn(gv);
 }
 
@@ -8180,7 +8184,7 @@ function boardCelebrate(boardEl, teamId) {
     void val.offsetWidth; // restart the animation
     val.classList.add('score-pop');
   }
-  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (calmMotion()) return;
   const mascot = teamEmoji(teamId);
   const extras = ['🎉', '🎊', '✨', '⭐'];
   const H = boardEl.getBoundingClientRect().height || 300;
@@ -8962,6 +8966,35 @@ function setTheme(choice) {
   applyTheme();
 }
 
+// ── Calm motion row (Settings → Calm motion: Auto · On · Off) ────
+// The switch and the verdict both live in jelly-motion.js (device-local, never
+// in synced state: a phone's battery is its own business). This is only the
+// row: the three-part control, and one line saying what is happening RIGHT NOW.
+function calmReasonLine(pref, calm, reason) {
+  if (reason === 'os') return "Your phone asks for less motion, so Camp stays calm. Change it in your phone's Settings.";
+  if (reason === 'switch-on') return 'Calm all the time, as you chose.';
+  if (reason === 'battery-saver') return 'Calm right now: your phone is saving battery.';
+  if (reason === 'battery-low') return 'Calm right now: your battery is low.';
+  if (pref === 'off') return 'Full motion, as you chose.';
+  return calm ? 'Calm right now.' : 'Full motion right now. Auto turns calm on by itself when your phone is saving battery.';
+}
+
+function renderCalmRow() {
+  const pref = JellyMotion.pref();
+  const seg = document.getElementById('calm-toggle');
+  // Attribute set — never fires the control's change event, so no feedback loop.
+  if (seg && seg.getAttribute('value') !== pref) seg.setAttribute('value', pref);
+  const line = document.getElementById('calm-reason');
+  const text = calmReasonLine(pref, calmMotion(), calmReason());
+  if (line && line.textContent !== text) line.textContent = text;
+}
+
+// Called from the Calm motion segmented control: 'auto' | 'on' | 'off'.
+function setCalmPref(choice) {
+  JellyMotion.setPref(choice);
+  renderCalmRow();
+}
+
 function applySoundIcon() {
   const el = document.getElementById('sound-toggle');
   if (el) el.toggleAttribute('checked', soundOn());
@@ -9660,6 +9693,13 @@ function init() {
   document.getElementById('theme-toggle').addEventListener('change', (e) => {
     setTheme((e.detail && e.detail.value) || e.target.getAttribute('value'));
   });
+  document.getElementById('calm-toggle').addEventListener('change', (e) => {
+    setCalmPref((e.detail && e.detail.value) || e.target.getAttribute('value'));
+  });
+  // The verdict can change without a tap (battery saver on, the phone's own
+  // setting flipped): keep the line under the control telling the truth.
+  window.addEventListener('jelly-motion-change', renderCalmRow);
+  renderCalmRow();
   document.getElementById('sound-toggle').addEventListener('change', toggleSound);
   // One "Hide from viewers" switch per card (editor-only; hidden by CSS for
   // view-only). The switches are static markup, so wiring them once here is
@@ -9770,10 +9810,27 @@ function updateAccountRow() {
 // tappable control, a little sparkle burst at the tap point, staggered
 // rise-ins when a view re-renders from a tap, and a bigger celebration
 // whenever real scoreboard data is saved (hooked from touchData). All of it
-// is transform/opacity only, capped, throttled, and fully disabled under
-// prefers-reduced-motion — the app works identically with this section gone.
-const JOY_REDUCED = matchMedia('(prefers-reduced-motion: reduce)');
+// is transform/opacity only, capped, throttled, and off while calm — the one
+// switch, calmMotion() (jelly-motion.js), read live at every use, so flipping
+// Calm motion or the phone entering battery saver takes effect on the next tap.
+// The app works identically with this section gone.
 const JOY_TAPPABLE = 'button, a, summary, jelly-button, jelly-chip, jelly-segment, jelly-icon-button';
+// What gets the press dent. The Jelly components keep their own canvas press
+// physics (a second, skewed dent on top of a jelly-button's own ring-back
+// fought it); plain controls get JellyMotion.press/release.
+const JOY_PRESSABLE = 'button, a, summary';
+
+// The calm-motion sampler measures the frame rate, so it waits for everything
+// the app knows is moving: confetti in the air, sparkles or a ring in the joy
+// layer, a running stopwatch (100 ms tick), a clock in its final minute (the
+// heartbeat). Evaluated lazily, never at load.
+JellyMotion.busySource(() => {
+  const layer = document.getElementById('joy-layer');
+  return confettiRunning > 0
+    || !!(layer && layer.childElementCount > 0)
+    || Object.values(liveWatches).some((w) => w && w.running)
+    || document.querySelectorAll('.clock-final-min, .clock-final-ten').length > 0;
+});
 const JOY_COLORS = ['var(--color-primary)', 'var(--color-gold)', '#ff6b9d', 'var(--color-bronze)', '#4cc9a4'];
 let joyLastTap = { x: null, y: null };
 let joyLastBurstAt = 0;
@@ -9791,7 +9848,7 @@ function joyLayerEl() {
 // A burst of sparkles at (x, y). Small for ordinary taps; big (more
 // particles, some emoji, longer flight) for save/celebrate moments.
 function joyBurst(x, y, big) {
-  if (JOY_REDUCED.matches) return;
+  if (calmMotion()) return;
   if (x == null || y == null) { x = innerWidth / 2; y = innerHeight / 2; }
   const now = Date.now();
   if (!big && now - joyLastBurstAt < 90) return; // throttle rapid taps
@@ -9825,7 +9882,7 @@ function joyBurst(x, y, big) {
 // after a tap-triggered re-render (day switch, back to list, verse day…) —
 // never from sync/background renders, so remote updates stay calm.
 function joyStagger(el) {
-  if (!el || JOY_REDUCED.matches) return;
+  if (!el || calmMotion()) return;
   el.classList.remove('joy-stagger');
   void el.offsetWidth; // restart the animation
   el.classList.add('joy-stagger');
@@ -9834,7 +9891,7 @@ function joyStagger(el) {
 
 // Slide a view into place (game detail opening).
 function joySlideIn(el) {
-  if (!el || JOY_REDUCED.matches) return;
+  if (!el || calmMotion()) return;
   el.classList.remove('joy-slide-in');
   void el.offsetWidth;
   el.classList.add('joy-slide-in');
@@ -9849,40 +9906,63 @@ function joyCelebrate() {
   const now = Date.now();
   if (now - joyLastCelebrateAt < 800) return;
   joyLastCelebrateAt = now;
-  joyBurst(joyLastTap.x, joyLastTap.y, true);
+  // Calm motion marks a save with one soft gold ring where the finger last was,
+  // instead of the burst (redesign §10.4).
+  if (calmMotion()) joyRing(joyLastTap.x, joyLastTap.y);
+  else joyBurst(joyLastTap.x, joyLastTap.y, true);
 }
 
-// Delegated press feedback: scale down on touch, spring back on release.
+// Calm motion's stand-in for confetti: a single gold ring pulse, no movement.
+// A transient node in #joy-layer (never inside a string-rendered root), removed
+// when its animation ends — or at once on a browser with no WAAPI.
+function joyRing(x, y) {
+  if (x == null || y == null) { x = innerWidth / 2; y = innerHeight / 2; }
+  const layer = joyLayerEl();
+  if (layer.childElementCount > 70) return;
+  const r = document.createElement('span');
+  r.className = 'joy-ring';
+  r.style.setProperty('--x', x + 'px');
+  r.style.setProperty('--y', y + 'px');
+  layer.appendChild(r);
+  const a = JellyMotion.ring(r);
+  if (a) a.addEventListener('finish', () => r.remove());
+  else r.remove();
+}
+
+// Delegated press feedback: the control dents toward the finger and, on release,
+// rings back past rest (JellyMotion.press / release — WAAPI only, so a press
+// leaves no class or style behind for setHtmlIfChanged to trip over; the old
+// joy-pressed / joy-pop classes retired with this).
 // The press waits a beat (JOY_PRESS_DELAY_MS) and is called off if the finger
 // travels: a finger put down on a row to SCROLL the list used to shrink the
-// row to 93% and then snap it back when the scroll took over — a twitch on
-// nearly every touch-scroll. A quick tap that lifts before the delay still
-// gets the pop (joyPop, from rest), so taps still feel springy.
+// row and then snap it back when the scroll took over — a twitch on nearly
+// every touch-scroll. A quick tap that lifts before the delay still gets the
+// pop (release with fromRest, which starts at rest), so taps still feel springy.
 const JOY_PRESS_DELAY_MS = 80;
 const JOY_PRESS_SLOP_PX = 8;
-let joyPress = null; // { el, x, y, timer } — the press in progress, if any
+let joyPress = null; // { el, x, y, timer, shown } — the press in progress, if any
 
 // Called off mid-gesture (a scroll took over, or the finger slid away). Eases
-// back from the pressed scale if it was already showing, instead of snapping.
+// back from the dent without ringing (soft), instead of snapping.
 function joyPressAbort() {
   const p = joyPress;
   joyPress = null;
   if (!p) return;
   clearTimeout(p.timer);
-  if (!p.el.classList.contains('joy-pressed')) return;
-  p.el.classList.remove('joy-pressed');
-  p.el.classList.add('joy-release');
-  setTimeout(() => p.el.classList.remove('joy-release'), 200);
+  if (p.shown) JellyMotion.release(p.el, { soft: true });
 }
 
 document.addEventListener('pointerdown', (e) => {
   joyLastTap = { x: e.clientX, y: e.clientY };
   joyPressAbort();
-  if (JOY_REDUCED.matches) return;
-  const t = e.target.closest && e.target.closest(JOY_TAPPABLE);
-  if (!t) return;
-  const p = { el: t, x: e.clientX, y: e.clientY, timer: 0 };
-  p.timer = setTimeout(() => { if (joyPress === p) t.classList.add('joy-pressed'); }, JOY_PRESS_DELAY_MS);
+  const t = e.target.closest && e.target.closest(JOY_PRESSABLE);
+  if (!t || t.disabled || t.getAttribute('aria-disabled') === 'true') return;
+  const p = { el: t, x: e.clientX, y: e.clientY, timer: 0, shown: false };
+  p.timer = setTimeout(() => {
+    if (joyPress !== p) return;
+    p.shown = true;
+    JellyMotion.press(t, { x: p.x, y: p.y });
+  }, JOY_PRESS_DELAY_MS);
   joyPress = p;
 }, { passive: true });
 
@@ -9890,33 +9970,16 @@ document.addEventListener('pointermove', (e) => {
   if (joyPress && Math.hypot(e.clientX - joyPress.x, e.clientY - joyPress.y) > JOY_PRESS_SLOP_PX) joyPressAbort();
 }, { passive: true });
 
-// The pop after a release. `fromRest` = the press never painted (a quick tap,
-// lifted inside JOY_PRESS_DELAY_MS): popping from the pressed 93% would snap
-// the control in one frame — the same twitch the delay removed — so that pop
-// starts at rest (styles.css, joy-pop-quick).
-function joyPop(el, fromRest) {
-  const cls = fromRest ? 'joy-pop-quick' : 'joy-pop';
-  el.classList.add(cls);
-  setTimeout(() => el.classList.remove(cls), 460);
-}
-
 document.addEventListener('pointerup', () => {
   const p = joyPress;
   joyPress = null;
-  if (p) {
-    clearTimeout(p.timer);
-    if (!p.el.classList.contains('joy-pressed')) joyPop(p.el, true);
-  }
-  document.querySelectorAll('.joy-pressed').forEach((el) => {
-    el.classList.remove('joy-pressed');
-    joyPop(el, false);
-  });
+  if (!p) return;
+  clearTimeout(p.timer);
+  // `shown` false = a tap quicker than the delay: pop from rest, never snap in.
+  JellyMotion.release(p.el, p.shown ? undefined : { fromRest: true });
 }, { passive: true });
 
-document.addEventListener('pointercancel', () => {
-  joyPressAbort();
-  document.querySelectorAll('.joy-pressed').forEach((el) => el.classList.remove('joy-pressed'));
-}, { passive: true });
+document.addEventListener('pointercancel', () => { joyPressAbort(); }, { passive: true });
 
 // Card contents rise in when a home card OPENS (styles.css, .card-opening).
 // The class is transient on purpose: a CSS animation restarts whenever an
@@ -10510,7 +10573,10 @@ function clearLocalData() {
       try { localStorage.removeItem(b + CAMPS[cid].storageSuffix); } catch (e) { /* ignore */ }
     });
   });
-  [AUTH_HINT_KEY, EMAIL_SIGNIN_KEY, CAMPS_HINT_KEY, ACTIVE_CAMP_KEY, CAMP_ASKED_KEY, THEME_HINT_KEY].forEach((k) => {
+  // The calm-motion switch and its last verdict (device-wide, like the theme
+  // keys) go with the rest: a signed-out device is a clean one.
+  [AUTH_HINT_KEY, EMAIL_SIGNIN_KEY, CAMPS_HINT_KEY, ACTIVE_CAMP_KEY, CAMP_ASKED_KEY, THEME_HINT_KEY,
+    JellyMotion.keys.pref, JellyMotion.keys.last].forEach((k) => {
     try { localStorage.removeItem(k); } catch (e) { /* ignore */ }
   });
 }

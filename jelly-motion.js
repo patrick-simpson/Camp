@@ -346,9 +346,11 @@
     running.set(el, a);
     return track(a);
   }
-  // release(el, {fromRest}): fromRest = the press never painted (a tap quicker
-  // than the caller's press delay). Popping from the pressed state would snap
-  // the control in one frame, so that pop starts at rest, dips partway, rings.
+  // release(el, {fromRest, soft}): fromRest = the press never painted (a tap
+  // quicker than the caller's press delay). Popping from the pressed state would
+  // snap the control in one frame, so that pop starts at rest, dips partway,
+  // rings. soft = a press called off (the touch became a scroll): ease back from
+  // the dent with the no-overshoot glide instead of ringing.
   function release(el, o) {
     if (!canAnimate(el) || !pressState) return null;
     var p = pressState.get(el) || { origin: '50% 50%', tilt: 0, deep: 4, amp: 1 };
@@ -362,7 +364,7 @@
       return track(ca);
     }
     if (!fromRest) {
-      return play(el, 'wobble', function (x) { return pressFrame(p, 1 - x); }, { calm: false });
+      return play(el, o && o.soft ? 'glide' : 'wobble', function (x) { return pressFrame(p, 1 - x); }, { calm: false });
     }
     var s = sample('wobble'), n = s.xs.length - 1, ramp = 50, total = ramp + Math.round(n * DT * 1000), cut = ramp / total;
     var kf = [Object.assign(pressFrame(p, 0), { offset: 0 }), Object.assign(pressFrame(p, 0.5), { offset: cut })];

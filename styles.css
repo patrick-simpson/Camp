@@ -4939,11 +4939,21 @@ jelly-button.winner-btn.winner-ready {
 
 /* The Appearance row hosts a three-segment control — let it wrap under the
    label on narrow phones instead of squeezing the segments. */
-.settings-row-theme {
+.settings-row-theme,
+.settings-row-calm {
   flex-wrap: wrap;
 }
-.settings-row-theme jelly-segmented {
+.settings-row-theme jelly-segmented,
+.settings-row-calm jelly-segmented {
   flex: 1 1 100%;
+}
+/* The calm row's "what is happening right now" line (renderCalmRow). */
+.settings-row-note {
+  flex: 1 1 100%;
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--color-text-muted);
 }
 
 .settings-row-label {
@@ -6170,35 +6180,9 @@ html.calm-motion .tool-box.alarming { animation: none; } /* the red border stays
    (jelly-motion.js decides it; boot-guard.js paints it before first paint).
    The @keyframes are top-level on purpose: they only run where a gated rule
    names them. */
-/* Springy press feedback on every tappable control (added/removed by
-   the delegated pointer handlers in app.js — see "Joy layer" there). */
-html:not(.calm-motion) .joy-pressed {
-  transform: scale(0.93);
-  transition: transform 0.09s ease;
-}
-/* A press called off mid-gesture (the touch became a scroll) eases back
-   instead of snapping from 93% — see joyPressAbort in app.js. */
-html:not(.calm-motion) .joy-release {
-  transition: transform 0.14s ease;
-}
-html:not(.calm-motion) .joy-pop {
-  animation: joy-pop 0.42s var(--jm-press);
-}
-@keyframes joy-pop {
-  0% { transform: scale(0.93); }
-  55% { transform: scale(1.05); }
-  100% { transform: scale(1); }
-}
-/* A tap quicker than the press delay never showed the 93% press, so its pop
-   starts from rest rather than snapping in. */
-html:not(.calm-motion) .joy-pop-quick {
-  animation: joy-pop-quick 0.42s var(--jm-press);
-}
-@keyframes joy-pop-quick {
-  0% { transform: scale(1); }
-  55% { transform: scale(1.05); }
-  100% { transform: scale(1); }
-}
+/* (The press feedback is not CSS any more: app.js's delegated pointer handlers
+   call JellyMotion.press / release, which are WAAPI only and leave nothing in
+   the DOM — the old .joy-pressed / .joy-pop classes lived here.) */
 
 /* Card contents rise in when a home panel opens — layered on top of
    jelly-collapsible's own springy height animation. The heading is the
@@ -6263,6 +6247,18 @@ html:not(.calm-motion) .joy-slide-in {
   line-height: 1;
   will-change: transform, opacity;
   animation: joy-fly var(--t, 0.6s) var(--jm-enter) forwards;
+}
+/* Calm motion's stand-in for the burst: one soft gold ring that pulses in
+   place (JellyMotion.ring animates its box-shadow; nothing moves). Spawned by
+   joyRing() only while calm. */
+.joy-ring {
+  position: absolute;
+  left: var(--x);
+  top: var(--y);
+  width: 28px;
+  height: 28px;
+  margin: -14px 0 0 -14px;
+  border-radius: 50%;
 }
 .joy-p.dot {
   width: 7px;

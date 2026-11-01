@@ -309,7 +309,7 @@
     <div class="settings-body">
       <!-- The account row stays first — it's who-you-are, not a menu entry.
            Everything below it is ALPHABETICAL (owner's call, 2026-07-26):
-           Appearance · Camp · Change history · Phone alerts · Set up the
+           Appearance · Calm motion · Camp · Change history · Phone alerts · Set up the
            week · Sound · Stalling with Patrick · Who can sign in. Keep it
            that way when adding rows. Signing out also clears the camp data
            cached locally (see signOutAndClear). -->
@@ -324,6 +324,18 @@
           <jelly-segment value="auto">Auto</jelly-segment>
           <jelly-segment value="dark">🌙 Dark</jelly-segment>
         </jelly-segmented>
+      </div>
+      <!-- Calm motion (redesign §10.3): device-local, the owner's labels. The line
+           under it says what is happening RIGHT NOW (renderCalmRow in app.js):
+           the OS "reduce motion" setting beats Off, and the line says so. -->
+      <div class="settings-row settings-row-calm">
+        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🍃</span> Calm motion</span>
+        <jelly-segmented id="calm-toggle" size="small" label="Calm motion" value="auto">
+          <jelly-segment value="auto">Auto</jelly-segment>
+          <jelly-segment value="on">On</jelly-segment>
+          <jelly-segment value="off">Off</jelly-segment>
+        </jelly-segmented>
+        <p class="settings-row-note" id="calm-reason" role="status"></p>
       </div>
       <!-- Accounts on BOTH camps' lists get this switcher (hidden otherwise —
            see updateAccountRow). Picking the other camp reloads into it. -->

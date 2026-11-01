@@ -326,6 +326,29 @@ Design: `docs/build-notes/app-shell-redesign-spec.md` §9–10; the reference fe
   or absent) for the pre-paint guard. The switch itself is
   `localStorage.campScoreboardCalmMotion` (`on` / `off`; Auto = key absent).
   Both are device-wide like the theme keys.
+- **The joy layer reads `calmMotion()` live** (it used to be a `matchMedia`
+  const read once at load, plus three raw reads, all gone; `tests/motion.test.js`
+  pins that no `prefers-reduced-motion` is left in app.js / settings.js /
+  chat.js / push.js; the TV page, which has no switch, keeps honouring the OS
+  setting itself). Tap sparkles, confetti and board cannons are off while calm;
+  a save is marked by one soft gold ring (`joyRing`, a transient node in
+  `#joy-layer` pulsed by `JellyMotion.ring`) instead of the burst. **The press
+  is `JellyMotion.press` / `release`** (a WAAPI dent toward the finger,
+  `app.js`'s delegated pointer handlers, same 80 ms delay / 8 px slop / quick-tap
+  pop from rest as before; a press called off eases back softly). The old
+  `.joy-pressed` / `.joy-pop` classes are gone: a class would be residue
+  (`class=""`) in a `setHtmlIfChanged` root. The dent is for plain
+  `button, a, summary` only (`JOY_PRESSABLE`): Jelly components keep their own
+  canvas press physics. A control wider than ~160 px (a full-width list row)
+  gets a proportionally gentler dent. `JellyMotion.busySource` is how the app
+  tells the calm sampler what is moving (confetti, joy-layer children, a running
+  stopwatch, a clock in its final minute).
+- **Settings → Calm motion: Auto · On · Off** (today's drawer; More absorbs it
+  in Step 13), between Appearance and Camp, with one plain-English line under
+  it saying what is happening right now (`renderCalmRow` / `calmReasonLine`;
+  "Your phone asks for less motion, so Camp stays calm…" when the OS wins over
+  Off). The line follows `jelly-motion-change`, so it stays true when battery
+  saver turns calm on by itself.
 - **styles.css answers to ONE class.** Every rule that animates is either under
   `html:not(.calm-motion)` or has an `html.calm-motion <same selector>` rule that
   switches it off; there is no `@media (prefers-reduced-motion)` anywhere (the
@@ -1008,9 +1031,10 @@ rules**; the client code only shapes the UI.
   the terminal-fbRef design can't be safely restarted in place.
 - **Sign-out** (`signOutAndClear`) wipes the camp data cached on the device
   (`clearLocalData`: STORAGE_KEY, day ranks, dismissed banners, the hint, the
-  theme hint, the parked email) plus IndexedDB photos (`clearPhotos`), then
-  reloads. Theme is NOT preserved — the boot guards discard partial state, so
-  it resets to Auto.
+  theme hint, the Calm motion switch and its last verdict
+  (`campScoreboardCalmMotion` / `campScoreboardCalmLast`), the parked email)
+  plus IndexedDB photos (`clearPhotos`), then reloads. Theme and Calm motion are
+  NOT preserved — the boot guards discard partial state, so they reset to Auto.
 - **Rules are PUBLISHED and enforced** (2026-07-25). Verified after the flip:
   unauthenticated reads of state/config/members/changelog, a
   write probe, and a self-escalation attempt all return `Permission denied`.

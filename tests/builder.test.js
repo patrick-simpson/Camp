@@ -369,48 +369,56 @@ function classEl(extra) {
     classes: set,
     classList: { add: (c) => set.add(c), remove: (c) => set.delete(c), contains: (c) => set.has(c) },
     closest() { return el; },
+    getAttribute: () => null,
   };
   return Object.assign(el, extra);
 }
 
-// Run the document-level listeners app.js registered at load, over elements.
+// Run the document-level listeners app.js registered at load, over elements,
+// with JellyMotion.press / release replaced by recorders (the harness has no
+// Element.animate, so the real ones are no-ops; what is pinned here is WHEN the
+// handlers call them and with what).
 function withJoyDom(fn) {
-  const els = [];
-  const realAll = document.querySelectorAll;
-  document.querySelectorAll = (sel) => (sel === '.joy-pressed' ? els.filter((e) => e.classes.has('joy-pressed')) : []);
+  const calls = [];
+  const real = { press: JellyMotion.press, release: JellyMotion.release };
+  JellyMotion.press = (el, pt) => { calls.push(['press', el, pt]); return null; };
+  JellyMotion.release = (el, o) => { calls.push(['release', el, o]); return null; };
   const fire = (type, ev) => (__docListeners[type] || []).forEach((h) => h(ev || {}));
-  const mk = () => { const e = classEl(); els.push(e); return e; };
-  try { return withFakeTimers((clock) => fn({ fire, mk, clock })); } finally { document.querySelectorAll = realAll; }
+  const mk = (extra) => classEl(extra);
+  try { return withFakeTimers((clock) => fn({ fire, mk, clock, calls })); } finally { Object.assign(JellyMotion, real); }
 }
 
-test('a quick tap pops from rest; the press never paints (no 93% snap)', () => {
-  withJoyDom(({ fire, mk, clock }) => {
+test('a quick tap pops from rest; the press never paints (no snap into the dent)', () => {
+  withJoyDom(({ fire, mk, clock, calls }) => {
     const btn = mk();
     fire('pointerdown', { target: btn, clientX: 10, clientY: 10 });
     clock.advance(40);
-    assert.notOk(btn.classes.has('joy-pressed'), 'not yet pressed inside the delay');
+    assert.equal(calls.length, 0, 'not yet pressed inside the delay');
     fire('pointerup');
-    assert.ok(btn.classes.has('joy-pop-quick'), 'pop starts at scale(1), not at the pressed 0.93');
-    assert.notOk(btn.classes.has('joy-pop') || btn.classes.has('joy-pressed'));
-    clock.advance(460);
-    assert.notOk(btn.classes.has('joy-pop-quick'), 'and clears itself');
+    assert.deepEqual(calls.map((c) => [c[0], c[2]]), [['release', { fromRest: true }]], 'the pop starts at rest, not at the dent');
+    assert.equal(btn.classes.size, 0, 'and no class is ever added: motion leaves no residue');
+    clock.advance(500);
+    assert.equal(calls.length, 1, 'the delay timer was cancelled by the lift');
   });
 });
 
-test('a held press shows after the delay and pops from the pressed scale on release', () => {
-  withJoyDom(({ fire, mk, clock }) => {
+test('a held press dents toward the finger after the delay and rings back on release', () => {
+  withJoyDom(({ fire, mk, clock, calls }) => {
     const btn = mk();
-    fire('pointerdown', { target: btn, clientX: 10, clientY: 10 });
+    fire('pointerdown', { target: btn, clientX: 14, clientY: 22 });
     clock.advance(JOY_PRESS_DELAY_MS + 1);
-    assert.ok(btn.classes.has('joy-pressed'));
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0][0], 'press'); assert.equal(calls[0][1], btn);
+    assert.deepEqual(calls[0][2], { x: 14, y: 22 }, 'the dent is anchored at the touch point');
     fire('pointerup');
-    assert.notOk(btn.classes.has('joy-pressed'));
-    assert.ok(btn.classes.has('joy-pop') && !btn.classes.has('joy-pop-quick'));
+    assert.deepEqual(calls.map((c) => c[0]), ['press', 'release']);
+    assert.equal(calls[1][2], undefined, 'a normal release: the wobble ring-back, not the quick pop');
+    assert.equal(btn.classes.size, 0);
   });
 });
 
-test('a touch that turns into a scroll never shrinks the row', () => {
-  withJoyDom(({ fire, mk, clock }) => {
+test('a touch that turns into a scroll never dents the row', () => {
+  withJoyDom(({ fire, mk, clock, calls }) => {
     const row = mk();
     fire('pointerdown', { target: row, clientX: 10, clientY: 100 });
     fire('pointermove', { clientX: 10, clientY: 100 + JOY_PRESS_SLOP_PX }); // within slop: still a press
@@ -418,27 +426,40 @@ test('a touch that turns into a scroll never shrinks the row', () => {
     fire('pointermove', { clientX: 10, clientY: 100 + JOY_PRESS_SLOP_PX + 4 });
     assert.equal(joyPress, null, 'travel past the slop calls it off');
     clock.advance(500);
-    assert.equal(row.classes.size, 0, 'the delay timer was cancelled — nothing ever painted');
+    assert.equal(calls.length, 0, 'the delay timer was cancelled — nothing ever painted');
     assert.equal(clock.pending(), 0);
   });
 });
 
-test('a press already showing eases back (joy-release) when the touch becomes a scroll or cancels', () => {
-  withJoyDom(({ fire, mk, clock }) => {
+test('a press already showing eases back SOFTLY (no ring) when the touch becomes a scroll, and a cancel leaves nothing', () => {
+  withJoyDom(({ fire, mk, clock, calls }) => {
     const row = mk();
     fire('pointerdown', { target: row, clientX: 10, clientY: 100 });
     clock.advance(JOY_PRESS_DELAY_MS + 1);
     fire('pointermove', { clientX: 10, clientY: 140 });
-    assert.notOk(row.classes.has('joy-pressed'));
-    assert.ok(row.classes.has('joy-release'), 'eased, not snapped');
-    clock.advance(200);
-    assert.notOk(row.classes.has('joy-release'));
+    assert.deepEqual(calls.map((c) => [c[0], c[2]]), [['press', { x: 10, y: 100 }], ['release', { soft: true }]], 'eased, not snapped, not rung');
 
+    calls.length = 0;
     const row2 = mk();
     fire('pointerdown', { target: row2, clientX: 10, clientY: 100 });
     fire('pointercancel');
     clock.advance(500);
-    assert.equal(row2.classes.size, 0, 'a cancelled touch leaves nothing behind');
+    assert.equal(calls.length, 0, 'a cancelled touch that never showed leaves nothing behind');
+    assert.equal(row2.classes.size, 0);
+  });
+});
+
+test('Jelly components keep their own press physics; disabled controls are not dented', () => {
+  assert.notOk(/jelly-/.test(JOY_PRESSABLE), "the dent is for plain controls: a second skewed dent fought jelly-button's own ring-back");
+  assert.ok(/jelly-button/.test(JOY_TAPPABLE), 'the tap sparkle still reaches them');
+  withJoyDom(({ fire, mk, clock, calls }) => {
+    const off = mk({ disabled: true });
+    fire('pointerdown', { target: off, clientX: 1, clientY: 1 });
+    const aria = mk({ getAttribute: (n) => (n === 'aria-disabled' ? 'true' : null) });
+    fire('pointerdown', { target: aria, clientX: 1, clientY: 1 });
+    clock.advance(500);
+    assert.equal(calls.length, 0);
+    assert.equal(joyPress, null);
   });
 });
 
@@ -467,9 +488,11 @@ test('a card only gets .card-opening when ITS toggle opens it, and only briefly'
   });
 });
 
-test('the quick-tap pop keyframes start at rest', () => {
-  const css = readFixture('../styles.css');
-  assert.ok(/@keyframes joy-pop-quick\s*\{\s*0%\s*\{\s*transform:\s*scale\(1\)/.test(css));
+test('the class-based press retired with the dent: no .joy-pressed / .joy-pop left in the stylesheet or the handlers', () => {
+  const css = readFixture('../styles.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  const app = readFixture('../app.js').replace(/\/\/.*$/gm, '');
+  assert.notOk(/joy-pressed|joy-pop|joy-release/.test(css), 'styles.css');
+  assert.notOk(/joy-pressed|joy-pop|joy-release|joyPop/.test(app), 'app.js');
 });
 
 test('Back to scoreboard puts the scoreboard back where it was scrolled', () => {
