@@ -3030,6 +3030,15 @@ function firstSnapshotMerge(remote) {
     if (theirPaths.some((q) => syncPathsOverlap(p, q))) { conflicts.push(p); return; }
     keep[p] = mine[p];
   });
+  // A parked path (stateQuarantine) that the server has since moved past is the
+  // server's now — re-sending it would put last week's refused score into a
+  // reset week. It counts as a conflict (the toast below is then true).
+  const superseded = dropSupersededQuarantine(serverTree, base);
+  superseded.forEach((p) => {
+    delete keep[p];
+    if (conflicts.indexOf(p) === -1) conflicts.push(p);
+  });
+  if (superseded.length) quarantineChanged(); // the loaded cache copy still names them
   // Device-local Pictionary words: the adopt below only re-attaches them to a
   // setup the SERVER already has, so a setup made offline would lose them.
   const words = {};
@@ -3039,7 +3048,11 @@ function firstSnapshotMerge(remote) {
   });
   dataEditPending = false;
   applyRemoteState(remote);
-  const serverNorm = lastSyncedTree;
+  // The CONFIRMED tree, never lastSyncedTree: with parked edits applyRemoteState
+  // lays them over the server's tree, so lastSyncedTree already holds them. Used
+  // as the base below, it made the diff find nothing to send and the parked path
+  // was silently un-parked by a reload (confirmedTree is the un-overlaid tree).
+  const serverNorm = JSON.parse(JSON.stringify(confirmedTree));
   // Work that waited a long time (more than a day and a half since the
   // server last confirmed anything) might belong to a week that has since
   // been reset — ask before sending it rather than slipping old results
@@ -3111,9 +3124,16 @@ function applyRemoteState(remote, confirmedBase, opts) {
   // Edits the rules refused (stateQuarantine) stay on top of the server's tree:
   // adopting it would silently wipe a score the director is still being told
   // about. The server's own tree is kept aside as the confirmed baseline.
+  // A parked path the server has moved past (someone else changed it, or deleted
+  // a record it lives in — "New week" clears every result at once) is the
+  // server's now, not laid over: see dropSupersededQuarantine. Not judged on the
+  // merge's second pass (confirmedBase set): its `remote` is the server tree with
+  // this phone's own edits laid in, and the real one was judged on the first.
   let serverTree = null;
+  let superseded = [];
   if (Object.keys(stateQuarantine).length) {
     serverTree = syncedSnapshot();
+    if (!confirmedBase) superseded = dropSupersededQuarantine(serverTree, confirmedTree || (bootHadConfirmedBase ? bootSyncedTree : null));
     Object.keys(stateQuarantine).forEach((p) => setStatePath(p, stateQuarantine[p]));
     normalizeSyncedState();
   }
@@ -3123,7 +3143,9 @@ function applyRemoteState(remote, confirmedBase, opts) {
   // otherwise the next push would re-send data we just received.
   lastSyncedTree = syncedSnapshot();
   writeConfirmedTree(confirmedBase || serverTree || lastSyncedTree);
-  pruneQuarantineAndRepaint(); // a parked path the server now agrees on is no longer parked
+  // a parked path the server now agrees on is no longer parked
+  if ((Object.keys(stateQuarantine).length && pruneQuarantine()) || superseded.length) quarantineChanged();
+  if (superseded.length) showToast('↩️ A change that couldn’t be saved was replaced by a newer one from another device.');
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
   applyingRemote = false;
   // The first snapshot of a page load is catch-up, never news (chat's backlog
@@ -3425,11 +3447,13 @@ function pushState() {
       pruneQuarantineAndRepaint(); // a Retry that got through clears its line
       settle();
     }, (e) => {
-      // ONLY a rules refusal is quarantined (S2a). One refused path refuses
-      // the whole atomic update, and re-diffing the same batch forever wedged
-      // every score behind it. Every other failure (a dropped connection, an
-      // SDK error) keeps the original handling below, unchanged.
-      if (e && e.code === 'PERMISSION_DENIED') { startStateBisect(updates, prevBaseline, settle); return; }
+      // ONLY a rules refusal is quarantined (S2a), and only for an editor — the
+      // person who typed the value and can Retry or Discard it. One refused path
+      // refuses the whole atomic update, and re-diffing the same batch forever
+      // wedged every score behind it. Every other failure (a dropped connection,
+      // an SDK error) and a view-only device's stray diff (nothing a counselor
+      // needs to be told about) keep the original quiet handling below.
+      if (e && e.code === 'PERMISSION_DENIED' && canEdit()) { startStateBisect(updates, prevBaseline, settle); return; }
       console.warn('sync push failed', e);
       lastSyncedTree = prevBaseline; // re-send these changes (still per-path) next push
       settle();
@@ -3462,13 +3486,24 @@ function pushState() {
 //     the diff finds it).
 //   • Persisted as state._quarantine in the same STORAGE_KEY write as the scores
 //     (not synced, not in backups), so a refused score and its explanation survive
-//     a reload. After a reload the first-snapshot merge re-sends the path, which
+//     a reload. After a reload the first-snapshot merge re-sends the path (its
+//     base is the CONFIRMED tree, which never holds a parked value), which
 //     self-heals once the rules accept it and re-parks it if they still refuse.
+//   • An editor sees it where they are looking: a bar pinned to the very top of
+//     the page (#sync-alert), not only the line inside the closed Current
+//     Standings card. Each parked path also gets ONE silent automatic retry a
+//     little later (a transient refusal — an auth blip — used to self-heal on
+//     the next push, so it should not need a human), then waits for Retry.
+//   • The server wins when it moved past a parked path (dropSupersededQuarantine);
+//     a view-only device never quarantines (pushState).
 const STATE_BISECT_SINGLES = 50; // up to this many paths are re-sent one by one; more are halved first
 let stateQuarantine = readQuarantine(); // path -> the value the rules refused (null = a delete)
 let stateBisecting = false;  // a refused batch is being re-sent
 let stateBisectQueue = [];   // refused batches waiting their turn
 let stateBisectHeld = false; // a pushState arrived mid-bisect (see pushState)
+const QUARANTINE_AUTO_RETRY_MS = 20000;
+let quarantineAutoRetried = {}; // path -> true once it has had its one automatic retry
+let quarantineRetryTimer = null;
 
 // Runs at load, so it may touch only `state` and SYNC_KEYS (boot-cache.test.js:
 // a later top-level const read from here is a TDZ crash and a blank app).
@@ -3504,6 +3539,14 @@ function stateValueIs(path, value) {
   return JSON.stringify(syncCanon(syncValueAt(syncedSnapshot(), path))) === JSON.stringify(syncCanon(value));
 }
 
+// A path leaves the parked set for good (saved, replaced, discarded): its
+// automatic-retry mark goes with it, so a LATER refusal of the same path is
+// announced and retried afresh rather than treated as already-seen.
+function unpark(p) {
+  delete stateQuarantine[p];
+  delete quarantineAutoRetried[p];
+}
+
 // Drop parked paths whose local value now equals what the server confirmed: the
 // retry got through, somebody else's snapshot replaced it, or Discard restored it.
 function pruneQuarantine() {
@@ -3511,11 +3554,35 @@ function pruneQuarantine() {
   let changed = false;
   Object.keys(stateQuarantine).forEach((p) => {
     if (JSON.stringify(syncCanon(syncValueAt(confirmedTree, p))) === JSON.stringify(syncCanon(syncValueAt(syncedSnapshot(), p)))) {
-      delete stateQuarantine[p];
+      unpark(p);
       changed = true;
     }
   });
   return changed;
+}
+
+// Parked paths the server has moved past since it last confirmed anything to
+// this phone (`prevTree`): somebody else changed the same value, or deleted a
+// record it lives in. Laying the parked value over THAT would keep last week's
+// refused result on top of a reset week until someone Discards it, so the
+// server's version wins — the rule the first-snapshot merge applies to any path
+// changed on both sides. Returns the paths it dropped; the caller persists and
+// says so. (Without a confirmed baseline there is nothing to compare: keep.)
+function dropSupersededQuarantine(serverTree, prevTree) {
+  const dropped = [];
+  if (!prevTree) return dropped;
+  const valueKey = (t, p) => { const v = syncCanon(syncValueAt(t, p)); return v === undefined ? 'null' : JSON.stringify(v); };
+  Object.keys(stateQuarantine).forEach((p) => {
+    const parts = p.split('/');
+    let moved = valueKey(serverTree, p) !== valueKey(prevTree, p);
+    // An ancestor that held something and is now gone (the record was removed).
+    for (let i = 1; !moved && i < parts.length; i++) {
+      const q = parts.slice(0, i).join('/');
+      moved = valueKey(prevTree, q) !== 'null' && valueKey(serverTree, q) === 'null';
+    }
+    if (moved) { unpark(p); dropped.push(p); }
+  });
+  return dropped;
 }
 
 function pruneQuarantineAndRepaint() {
@@ -3570,7 +3637,7 @@ async function bisectRefusedBatch(job) {
   };
   const park = (p) => {
     open.delete(p);
-    if (!(p in stateQuarantine)) parked++;
+    if (!(p in stateQuarantine)) parked++; // said once: a path already parked (a retry refused again) is not announced again
     stateQuarantine[p] = updates[p] === undefined ? null : updates[p];
     quarantineChanged();
   };
@@ -3601,7 +3668,8 @@ async function bisectRefusedBatch(job) {
     }
   }
   pruneQuarantineAndRepaint();
-  if (parked) showToast('⚠️ A change couldn’t be saved. Retry or Discard it from the sync line.');
+  if (parked) showToast('⚠️ A change couldn’t be saved. Retry or Discard it from the red bar at the top of the page.');
+  scheduleQuarantineAutoRetry();
 }
 
 // Words for the sync line: which game, and which part of it.
@@ -3618,17 +3686,29 @@ function quarantineLabel(path) {
   return g ? g.name + ' → ' + word : word.charAt(0).toUpperCase() + word.slice(1);
 }
 
-function quarantineLineHtml() {
+// What is parked, in words, escaped: "Kickball → result, Verse → bonus points +1 more".
+function quarantineNames() {
   const names = [];
-  const paths = Object.keys(stateQuarantine);
-  paths.forEach((p) => { const l = quarantineLabel(p); if (names.indexOf(l) === -1) names.push(l); });
-  const shown = names.slice(0, 2).map(esc).join(', ') + (names.length > 2 ? ` +${names.length - 2} more` : '');
-  const n = paths.length;
-  return `⚠️ ${n} change${n === 1 ? '' : 's'} couldn’t be saved: <em>${shown}</em> ` +
-    '<span class="sync-quarantine-actions">' +
+  Object.keys(stateQuarantine).forEach((p) => { const l = quarantineLabel(p); if (names.indexOf(l) === -1) names.push(l); });
+  return names.slice(0, 2).map(esc).join(', ') + (names.length > 2 ? ` +${names.length - 2} more` : '');
+}
+
+function quarantineActionsHtml() {
+  return '<span class="sync-quarantine-actions">' +
     '<button type="button" class="link-btn sync-quarantine-btn" data-sync-quarantine="retry">Retry</button> ' +
     '<button type="button" class="link-btn danger-link sync-quarantine-btn" data-sync-quarantine="discard">Discard</button>' +
     '</span>';
+}
+
+function quarantineLineHtml() {
+  const n = Object.keys(stateQuarantine).length;
+  return `⚠️ ${n} change${n === 1 ? '' : 's'} couldn’t be saved: <em>${quarantineNames()}</em> ` + quarantineActionsHtml();
+}
+
+// The top bar's copy of it: one short row (the names truncate to the width).
+function quarantineBarHtml() {
+  const n = Object.keys(stateQuarantine).length;
+  return `<span class="sync-alert-text">⚠️ ${n} change${n === 1 ? '' : 's'} unsaved: <em>${quarantineNames()}</em></span>` + quarantineActionsHtml();
 }
 
 // Retry: put every parked path back into the diff (baseline = what the server
@@ -3638,14 +3718,38 @@ function retryQuarantined() {
   const paths = Object.keys(stateQuarantine);
   if (!paths.length) return;
   if (!fbRef || !remoteReady) { showToast('Not connected yet. Try again in a moment.'); return; }
-  if (lastSyncedTree) {
-    const back = {};
-    paths.forEach((p) => { back[p] = confirmedTree ? stateBaselineAt(confirmedTree, p) : null; });
-    lastSyncedTree = applySyncPaths(lastSyncedTree, back);
-  }
+  rebaseQuarantined(paths);
   stateQuarantine = {};
+  quarantineAutoRetried = {};
   quarantineChanged();
   pushState(); // held until the running bisect ends, if one is
+}
+
+// Put `paths` back into the diff: their baseline becomes what the server holds.
+function rebaseQuarantined(paths) {
+  if (!lastSyncedTree) return;
+  const back = {};
+  paths.forEach((p) => { back[p] = confirmedTree ? stateBaselineAt(confirmedTree, p) : null; });
+  lastSyncedTree = applySyncPaths(lastSyncedTree, back);
+}
+
+// The one automatic Retry each parked path gets, QUARANTINE_AUTO_RETRY_MS after
+// it was parked. A transient refusal (an auth blip, a rules fix published a
+// moment later) used to heal on the very next push; parking made it need a
+// human, so give it one quiet chance first. The path stays parked meanwhile (the
+// bar doesn't flicker): an ack clears it through pruneQuarantine, a second
+// refusal just re-parks it without a new toast.
+function scheduleQuarantineAutoRetry() {
+  if (quarantineRetryTimer || !Object.keys(stateQuarantine).some((p) => !quarantineAutoRetried[p])) return;
+  quarantineRetryTimer = setTimeout(() => { quarantineRetryTimer = null; autoRetryQuarantined(); }, QUARANTINE_AUTO_RETRY_MS);
+}
+
+function autoRetryQuarantined() {
+  const fresh = Object.keys(stateQuarantine).filter((p) => !quarantineAutoRetried[p]);
+  if (!fresh.length || !fbRef || !remoteReady || !canEdit()) return;
+  fresh.forEach((p) => { quarantineAutoRetried[p] = true; });
+  rebaseQuarantined(fresh);
+  pushState();
 }
 
 // Write `value` (null = delete) at a synced path into live state, in place, and
@@ -3702,11 +3806,12 @@ function discardQuarantined() {
   if (lastSyncedTree) lastSyncedTree = applySyncPaths(lastSyncedTree, back);
   normalizeSyncedState();
   stateQuarantine = {};
+  quarantineAutoRetried = {};
   quarantineChanged();
   renderAll();
 }
 
-// One delegated listener per sync line (both copies); the buttons live inside
+// One delegated listener per sync line (all three copies); the buttons live inside
 // markup updateSyncIndicator rewrites, so they can't carry listeners of their own.
 function onSyncStatusClick(e) {
   const btn = e && e.target && e.target.closest ? e.target.closest('[data-sync-quarantine]') : null;
@@ -3715,7 +3820,7 @@ function onSyncStatusClick(e) {
 }
 
 function wireSyncStatus() {
-  ['sync-status', 'sync-status-footer'].forEach((id) => {
+  ['sync-status', 'sync-status-footer', 'sync-alert'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('click', onSyncStatusClick);
   });
@@ -3803,7 +3908,24 @@ let fbConnKnown = false; // first .info/connected callback received
 // because updateSyncIndicator reads it; set by onSdkLoadFailed (auth gate).
 let sdkLoadFailed = false;
 
+// The editor's persistent surface for refused edits: a bar pinned to the top of
+// the page. The line inside the Current Standings card is closed by
+// default (and off-screen), so on its own a director had no sign a score was
+// unsaved once the toast faded. Editors only — nothing is parked on a view-only
+// device (pushState) — and independent of the connection line below: an editor
+// who is offline AND holds a refused score is told both.
+function updateSyncAlert() {
+  const el = document.getElementById('sync-alert');
+  if (!el) return;
+  const show = canEdit() && Object.keys(stateQuarantine).length > 0;
+  // Written only when it changes: a rebuilt button loses a finger mid-tap.
+  if (show) setHtmlIfChanged(el, quarantineBarHtml());
+  el.hidden = !show;
+  document.body.classList.toggle('has-sync-alert', show); // styles.css reserves its height above the first card
+}
+
 function updateSyncIndicator() {
+  updateSyncAlert();
   // Two copies of the line: the one in the Current Standings card (directors)
   // and a footer one that only view-only devices show (styles.css), because the
   // standings card is not rendered for them any more (see "Standings secrecy").
@@ -3831,17 +3953,20 @@ function updateSyncIndicator() {
     // Startup gap before Firebase reports the connection state either way —
     // previously blank; a small jelly spinner reads as "working on it".
     html = spinner;
+  } else if (!fbConnected) {
+    // Ahead of the quarantine line: offline is the bigger news (new scores are
+    // not uploading at all), and the top bar (updateSyncAlert) still carries
+    // any refused edits.
+    text = '⚠️ Offline — will sync when back';
   } else if (Object.keys(stateQuarantine).length) {
     // The rules refused some of this device's edits and sync moved on without
     // them (see "Refused writes" above). Named, with Retry / Discard, ahead of
     // "Synced" — that word would be a lie while a score is sitting unsaved.
     html = quarantineLineHtml();
     quarantined = true;
-  } else if (fbConnected) {
+  } else {
     text = '☁️ Synced';
     synced = true;
-  } else {
-    text = '⚠️ Offline — will sync when back';
   }
   els.forEach((el) => {
     // The quarantine line carries buttons, so it is written only when it

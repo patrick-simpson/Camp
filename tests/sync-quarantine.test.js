@@ -10,7 +10,8 @@
 // in-memory database in tests/fake-rtdb.js through the app's real fbRef.
 
 const { makeFakeRtdb } = nodeRequire('./fake-rtdb.js');
-const STATE_PATH = 'campScoreboard/state';
+const STATE_PATH = dbPath('state'); // the active camp's root, so the senior twin runs the same file
+const serverState = (db) => db.serverTree()[CAMP.dbRoot].state;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms === undefined ? 5 : ms));
 const res = (n) => ({ medals: { gold: 't0', silver: 't1', bronze: 't2' }, savedAt: 'v' + n });
 const clone = (v) => JSON.parse(JSON.stringify(v));
@@ -100,7 +101,7 @@ test('a refused path is parked, and the rest of its batch still reaches the serv
     state.results.gC = res(1);
     touchData(); pushState();
     await settled();
-    const server = db.serverTree().campScoreboard.state;
+    const server = serverState(db);
     assert.ok(server.results.gA && server.results.gC, 'the paths the rules accept advanced: ' + JSON.stringify(server.results));
     assert.equal(server.results.gB, undefined, 'the refused path never landed');
     assert.deepEqual(Object.keys(stateQuarantine), ['results/gB']);
@@ -126,7 +127,7 @@ test('scores keep syncing with a poisoned path present, and the parked path is n
     state.results.gD = res(2);
     touchData(); pushState();
     await settled();
-    assert.ok(db.serverTree().campScoreboard.state.results.gD, 'a later score went straight through');
+    assert.ok(serverState(db).results.gD, 'a later score went straight through');
     const later = db.log.slice(before).map((l) => l.paths.join(','));
     assert.equal(later.length, 1, 'one clean write, no bisect: ' + later.join(' | '));
     assert.notOk(later.join(',').includes('gB'), 'the parked path stayed out of every later batch');
@@ -179,13 +180,13 @@ test('sync-F15: a path that changed since the refused batch is skipped, and its 
     state.results.gC = res(2); // a tap lands before the refusal comes back
     touchData();
     await settled();
-    assert.ok(db.serverTree().campScoreboard.state.results.gA, 'the unchanged path was retried and saved');
+    assert.ok(serverState(db).results.gA, 'the unchanged path was retried and saved');
     assert.notOk(spy.sent.slice(1).some((u) => 'results/gC' in u), 'the bisect did not retry gC at all: ' + JSON.stringify(spy.sent));
     pushState(); // what the tap's own debounce does a moment later
     await settled();
     const cWrites = spy.sent.filter((u) => 'results/gC' in u).map((u) => u['results/gC'].savedAt);
     assert.deepEqual(cWrites, ['v1', 'v2'], 'the refused batch carried v1; only v2 went after it');
-    assert.equal(db.serverTree().campScoreboard.state.results.gC.savedAt, 'v2', 'the newer value is what the server ends up with');
+    assert.equal(serverState(db).results.gC.savedAt, 'v2', 'the newer value is what the server ends up with');
     assert.deepEqual(Object.keys(stateQuarantine), ['results/gB']);
   } finally { teardown(); }
 });
@@ -219,7 +220,7 @@ test('sync-F15: a push made mid-bisect is held, runs after it, and the newer val
     const order = spy.sent.filter((u) => 'results/gC' in u).map((u) => u['results/gC'].savedAt);
     assert.deepEqual(order.slice(-1), ['v2'], 'the newest value is the LAST one sent: ' + order.join(','));
     assert.notOk(order.slice(1).includes('v1'), 'the old value was never re-sent after the tap');
-    assert.equal(db.serverTree().campScoreboard.state.results.gC.savedAt, 'v2');
+    assert.equal(serverState(db).results.gC.savedAt, 'v2');
   } finally { teardown(); }
 });
 
@@ -270,7 +271,7 @@ test('any other failure keeps the original handling: baseline restored, nothing 
     await settled();
     assert.equal(spy.sent.length, 2);
     assert.deepEqual(content(spy.sent[1]), ['results/gA'], 'the next push re-sent exactly the failed change');
-    assert.ok(db.serverTree().campScoreboard.state.results.gA);
+    assert.ok(serverState(db).results.gA);
     fbRef = Object.assign({}, db.ref(STATE_PATH), { update() { throw new Error('illegal key'); } });
     lastSyncedTree = clone(prev);
     state.results.gE = res(1);
@@ -295,7 +296,7 @@ test('a connection that drops mid-bisect hands the unreached paths back to the d
     state.results.gC = res(1);
     touchData(); pushState();
     await settled();
-    assert.ok(db.serverTree().campScoreboard.state.results.gA, 'gA went before the drop');
+    assert.ok(serverState(db).results.gA, 'gA went before the drop');
     assert.deepEqual(stateQuarantine, {}, 'gB was not refused alone, so it is not parked');
     assert.equal(pendingWrites, 0);
     assert.equal(stateBisecting, false);
@@ -319,7 +320,7 @@ test('two refused batches in flight are bisected one after the other, and both s
     assert.equal(pendingWrites, 2);
     await settled();
     assert.deepEqual(Object.keys(stateQuarantine).sort(), ['bonuses/bX', 'results/gB']);
-    const server = db.serverTree().campScoreboard.state;
+    const server = serverState(db);
     assert.ok(server.results.gA && server.bonuses.bY, 'the accepted path of each batch landed');
     assert.equal(pendingWrites, 0);
     assert.equal(stateBisecting, false);
@@ -334,7 +335,7 @@ test('more than 50 refused paths are halved, not retried one by one', async () =
     for (let i = 0; i < 120; i++) state.results['g' + i] = res(i);
     touchData(); pushState();
     await settled();
-    const server = db.serverTree().campScoreboard.state.results;
+    const server = serverState(db).results;
     assert.equal(Object.keys(server).length, 119, 'everything but the poisoned path got through');
     assert.deepEqual(Object.keys(stateQuarantine), ['results/g77']);
     assert.ok(db.log.length < 60, 'bisected, not 120 single writes: ' + db.log.length + ' writes');
@@ -378,7 +379,7 @@ test('Retry re-queues the parked paths, and clears the line once the rules accep
     retryQuarantined();
     await settled();
     assert.deepEqual(stateQuarantine, {}, 'the line clears itself');
-    assert.ok(db.serverTree().campScoreboard.state.results.gB, 'and the score is on the server');
+    assert.ok(serverState(db).results.gB, 'and the score is on the server');
     assert.ok(confirmedTree.results.gB, 'confirmed');
     assert.equal(persisted()._quarantine, undefined, 'and gone from the cache');
   } finally { teardown(); }
@@ -395,7 +396,7 @@ test('Retry sends the CURRENT value, which may have moved on since the refusal',
     db.allow(STATE_PATH + '/results/gB');
     retryQuarantined();
     await settled();
-    assert.equal(db.serverTree().campScoreboard.state.results.gB.savedAt, 'v2');
+    assert.equal(serverState(db).results.gB.savedAt, 'v2');
     assert.deepEqual(stateQuarantine, {});
   } finally { teardown(); }
 });
@@ -480,7 +481,7 @@ test('adopting a snapshot keeps parked edits on top and does not forget them', a
     touchData(); pushState();
     await settled();
     // Somebody else saves a different result; the live listener hands it to this idle phone.
-    const server = clone(db.serverTree().campScoreboard.state);
+    const server = clone(serverState(db));
     server.results = Object.assign({}, server.results, { gD: res(9) });
     handleRemoteSnapshot(server);
     assert.ok(state.results.gD, 'their result arrived');
@@ -501,7 +502,7 @@ test('a snapshot in which the server already agrees clears the parked path', asy
     state.results.gB = res(1);
     touchData(); pushState();
     await settled();
-    const server = clone(db.serverTree().campScoreboard.state);
+    const server = clone(serverState(db));
     server.results = Object.assign({}, server.results, { gB: res(1) }); // another device saved the same result
     handleRemoteSnapshot(server);
     assert.deepEqual(stateQuarantine, {});
@@ -538,20 +539,90 @@ test('the sync line names what was refused, escaped, with Retry and Discard — 
   } finally { fbConnKnown = false; fbConnected = false; teardown(); }
 });
 
-test('the sync line wins over Offline but not over a blocked or failed connection', async () => {
+test('the card line says Offline first, the top bar still carries the parked edit, and a blocked or failed connection outranks both lines', async () => {
   await boot();
   try {
+    const line = () => document.getElementById('sync-status');
+    const bar = () => document.getElementById('sync-alert');
     stateQuarantine = { 'results/gB': res(1) };
     fbConnKnown = true; fbConnected = false; syncDenied = false; sdkLoadFailed = false;
     updateSyncIndicator();
-    assert.ok(document.getElementById('sync-status').innerHTML.includes('couldn’t be saved'));
+    assert.ok(line().textContent.includes('Offline'), 'new scores are not uploading: say so first');
+    assert.equal(bar().hidden, false, 'while the top bar still names the refused edit');
+    assert.ok(bar().innerHTML.includes('1 change unsaved'));
+    fbConnected = true;
+    updateSyncIndicator();
+    assert.ok(line().innerHTML.includes('couldn’t be saved'), 'online, the card line names it too');
     syncDenied = true;
     updateSyncIndicator();
-    assert.ok(document.getElementById('sync-status').textContent.includes('Sync blocked'), 'a revoked login is the bigger problem');
+    assert.ok(line().textContent.includes('Sync blocked'), 'a revoked login is the bigger problem');
     syncDenied = false; sdkLoadFailed = true;
     updateSyncIndicator();
-    assert.ok(document.getElementById('sync-status').textContent.includes('Couldn’t connect'));
+    assert.ok(line().textContent.includes('Couldn’t connect'));
   } finally { fbConnKnown = false; fbConnected = false; syncDenied = false; sdkLoadFailed = false; teardown(); }
+});
+
+test('the top bar is an editor-only surface: shown with the line, hidden when cleared, never for a viewer', async () => {
+  await boot();
+  let restoreToggle = () => {};
+  try {
+    const bar = () => document.getElementById('sync-alert');
+    const roomCalls = [];
+    const cl = document.body.classList; // the stub's toggle is a no-op: record what the page was asked to reserve
+    const realToggle = cl.toggle;
+    restoreToggle = () => { cl.toggle = realToggle; };
+    cl.toggle = (name, force) => { roomCalls.push([name, force]); };
+    fbConnKnown = true; fbConnected = true;
+    stateQuarantine = { 'results/gB': res(1), 'results/gC': res(1) };
+    updateSyncIndicator();
+    assert.equal(bar().hidden, false);
+    assert.ok(bar().innerHTML.includes('2 changes unsaved'), bar().innerHTML);
+    assert.deepEqual(roomCalls.slice(-1)[0], ['has-sync-alert', true], 'the page reserves room for it');
+    assert.ok(bar().innerHTML.includes('data-sync-quarantine="retry"') && bar().innerHTML.includes('data-sync-quarantine="discard"'));
+    assert.notOk(bar().innerHTML.includes('gold'), 'labels only, never a place');
+    setMemberRole('viewer');
+    updateSyncIndicator();
+    assert.equal(bar().hidden, true, 'a counselor is never shown it');
+    assert.deepEqual(roomCalls.slice(-1)[0], ['has-sync-alert', false]);
+    setMemberRole('editor');
+    stateQuarantine = {};
+    updateSyncIndicator();
+    assert.equal(bar().hidden, true, 'and it is gone the moment nothing is parked');
+  } finally { restoreToggle(); fbConnKnown = false; fbConnected = false; teardown(); }
+});
+
+test('the park toast says where Retry and Discard are', async () => {
+  const db = await boot();
+  try {
+    db.refuse(STATE_PATH + '/results/gB');
+    state.results.gB = res(1);
+    touchData(); pushState();
+    await settled();
+    assert.ok(toasts.some((t) => t.includes('top of the page')), toasts.join('|'));
+  } finally { teardown(); }
+});
+
+test('a view-only device never quarantines: no park, no toast, no line, the original quiet handling', async () => {
+  const db = await boot();
+  try {
+    setMemberRole('viewer');
+    db.refuse(STATE_PATH); // the rules refuse every write from a viewer
+    await withWarns(async (warns) => {
+      state.meta.hiddenCards = Object.assign({}, state.meta.hiddenCards, { chat: true }); // any stray synced diff
+      touchData(); pushState();
+      await settled();
+      assert.ok(warns.some((w) => w.includes('sync push failed')), 'logged, as before: ' + warns.join('|'));
+    });
+    assert.deepEqual(stateQuarantine, {});
+    assert.equal(persisted()._quarantine, undefined);
+    assert.deepEqual(toasts, [], 'a counselor is told nothing');
+    assert.equal(stateBisecting, false);
+    assert.equal(pendingWrites, 0);
+    assert.equal(lastSyncedTree.meta.hiddenCards && lastSyncedTree.meta.hiddenCards.chat, undefined, 'baseline restored: the stray diff is simply re-diffed later');
+    fbConnKnown = true; fbConnected = true;
+    updateSyncIndicator();
+    assert.equal(document.getElementById('sync-alert').hidden, true);
+  } finally { fbConnKnown = false; fbConnected = false; teardown(); }
 });
 
 test('quarantineLabel reads in words for every synced area, and a removed game', () => {
@@ -586,4 +657,206 @@ test('the delegated click on the sync line runs Retry and Discard', async () => 
     onSyncStatusClick({ target: { closest: () => null } }); // a click on the line itself: ignored
     onSyncStatusClick({});
   } finally { confirm = realConfirm; teardown(); }
+});
+
+// ── A reload while a path is parked: through the REAL first-snapshot merge ──
+// The cache comes back as app.js's load code builds it: the stored state with
+// its _quarantine and _syncBase, `confirmedTree` still null (only the first
+// adopt sets it), the confirmed tree as the boot baseline.
+function reloadFromCache() {
+  state = persisted();
+  stateQuarantine = readQuarantine();
+  confirmedTree = null;
+  bootHadConfirmedBase = !!readConfirmedTree();
+  bootSyncedTree = readConfirmedTree() || syncedSnapshot();
+  lastSyncedTree = null;
+  remoteReady = false;
+  stateBisecting = false;
+  stateBisectQueue = [];
+  stateBisectHeld = false;
+  quarantineAutoRetried = {};
+  pendingWrites = 0;
+  dataEditPending = false;
+  applyingRemote = false;
+}
+
+async function parkResult(db, gid) {
+  db.refuse(STATE_PATH + '/results/' + gid);
+  state.results[gid] = res(1);
+  touchData(); pushState();
+  await settled();
+  assert.deepEqual(Object.keys(stateQuarantine), ['results/' + gid], 'precondition: parked');
+}
+
+test('RELOAD while parked and still refused: the merge re-sends the path and re-parks it, with no second toast', async () => {
+  const db = await boot();
+  try {
+    await parkResult(db, 'gB');
+    const ref = db.ref(STATE_PATH);
+    reloadFromCache();
+    const spy = spyOn(ref);
+    fbRef = spy.ref;
+    toasts = [];
+    handleRemoteSnapshot((await ref.once('value')).val());
+    await settled();
+    assert.ok(spy.sent.some((u) => content(u).includes('results/gB')), 'the parked path was re-sent: ' + JSON.stringify(spy.sent.map(paths)));
+    assert.deepEqual(Object.keys(stateQuarantine), ['results/gB'], 'and re-parked while the rules still refuse it');
+    assert.ok(state.results.gB, 'the score is still on screen');
+    assert.equal((confirmedTree.results || {}).gB, undefined, 'the baseline does not claim the server holds it');
+    assert.equal(persisted()._quarantine['results/gB'].savedAt, 'v1');
+    assert.ok(hasUnconfirmedLocalWork(), 'sign-out still warns about it');
+    assert.equal((serverState(db).results || {}).gB, undefined);
+    assert.notOk(toasts.some((t) => t.includes('couldn’t be saved')), 'a path that was already parked is not announced again: ' + toasts.join('|'));
+  } finally { teardown(); }
+});
+
+test('RELOAD while parked and the rules now accept it: the merge saves it and the line clears', async () => {
+  const db = await boot();
+  try {
+    await parkResult(db, 'gB');
+    db.allow(STATE_PATH + '/results/gB'); // the rules were fixed meanwhile
+    const ref = db.ref(STATE_PATH);
+    reloadFromCache();
+    fbRef = ref;
+    handleRemoteSnapshot((await ref.once('value')).val());
+    await settled();
+    assert.equal(serverState(db).results.gB.savedAt, 'v1', 'it reached the server');
+    assert.deepEqual(stateQuarantine, {});
+    assert.equal(persisted()._quarantine, undefined);
+    assert.ok(confirmedTree.results.gB, 'and is confirmed');
+    assert.notOk(hasUnconfirmedLocalWork());
+  } finally { teardown(); }
+});
+
+test('RELOAD: somebody else saved the same game meanwhile — their version wins, the parked one is dropped and the toast is true', async () => {
+  const db = await boot();
+  try {
+    await parkResult(db, 'gB');
+    db.allow(STATE_PATH + '/results/gB');
+    await db.ref(STATE_PATH + '/results/gB').set(Object.assign(res(9), { savedAt: 'theirs' })); // another device
+    db.refuse(STATE_PATH + '/results/gB');
+    const ref = db.ref(STATE_PATH);
+    reloadFromCache();
+    const spy = spyOn(ref);
+    fbRef = spy.ref;
+    toasts = [];
+    handleRemoteSnapshot((await ref.once('value')).val());
+    await settled();
+    assert.equal(state.results.gB.savedAt, 'theirs', 'this phone shows their version, as the toast says');
+    assert.deepEqual(stateQuarantine, {});
+    assert.notOk(spy.sent.some((u) => content(u).includes('results/gB')), 'and the older value was not sent over it');
+    assert.ok(toasts.some((t) => t.includes('kept their version')), toasts.join('|'));
+    assert.equal(persisted()._quarantine, undefined);
+  } finally { teardown(); }
+});
+
+test('RELOAD: the week was reset elsewhere — last week\'s refused result is not carried into it', async () => {
+  const db = await boot();
+  try {
+    state.results.gA = res(1); // a confirmed result, so the reset visibly removes something
+    touchData(); pushState();
+    await settled();
+    await parkResult(db, 'gB');
+    const server = clone(serverState(db));
+    delete server.results; // New week (reset) on another device
+    const ref = db.ref(STATE_PATH);
+    reloadFromCache();
+    const spy = spyOn(ref);
+    fbRef = spy.ref;
+    handleRemoteSnapshot(server);
+    await settled();
+    assert.equal(state.results.gB, undefined, 'the new week starts clean');
+    assert.deepEqual(stateQuarantine, {});
+    assert.notOk(spy.sent.some((u) => content(u).includes('results/gB')), 'nothing old was re-sent into it');
+  } finally { teardown(); }
+});
+
+// ── The server wins when it moved past a parked path (a live snapshot) ──
+test('a live snapshot after a reset elsewhere drops the parked path instead of laying it over the new week', async () => {
+  const db = await boot();
+  try {
+    state.results.gA = res(1);
+    touchData(); pushState();
+    await settled();
+    await parkResult(db, 'gB');
+    const server = clone(serverState(db));
+    delete server.results;
+    toasts = [];
+    handleRemoteSnapshot(server);
+    assert.equal(state.results.gB, undefined);
+    assert.deepEqual(stateQuarantine, {});
+    assert.equal(persisted()._quarantine, undefined);
+    assert.ok(toasts.some((t) => t.includes('replaced by a newer one')), toasts.join('|'));
+    fbConnKnown = true; fbConnected = true;
+    updateSyncIndicator();
+    assert.equal(document.getElementById('sync-alert').hidden, true, 'the bar went with it');
+  } finally { fbConnKnown = false; fbConnected = false; teardown(); }
+});
+
+test('a live snapshot that changes the same record drops the parked path; one that changes a neighbour keeps it', async () => {
+  const db = await boot();
+  try {
+    await parkResult(db, 'gB');
+    let server = clone(serverState(db));
+    server.results = Object.assign({}, server.results, { gD: res(9) }); // a neighbour
+    handleRemoteSnapshot(server);
+    assert.deepEqual(Object.keys(stateQuarantine), ['results/gB'], 'an unrelated result does not disturb it');
+    assert.ok(state.results.gB && state.results.gD);
+    server = clone(server);
+    server.results.gB = Object.assign(res(9), { savedAt: 'theirs' }); // the same record
+    toasts = [];
+    handleRemoteSnapshot(server);
+    assert.equal(state.results.gB.savedAt, 'theirs');
+    assert.deepEqual(stateQuarantine, {});
+    assert.ok(toasts.some((t) => t.includes('replaced by a newer one')));
+  } finally { teardown(); }
+});
+
+// ── One quiet automatic retry per parked path ──
+test('a parked path gets one silent automatic retry: accepted, the bar clears; refused, nothing new is said', async () => {
+  const db = await boot();
+  try {
+    await parkResult(db, 'gB');
+    assert.ok(quarantineRetryTimer, 'a retry is scheduled when something is parked');
+    clearTimeout(quarantineRetryTimer); quarantineRetryTimer = null;
+    // Still refused: re-parked, no new toast, and no second automatic retry.
+    toasts = [];
+    autoRetryQuarantined();
+    await settled();
+    assert.deepEqual(Object.keys(stateQuarantine), ['results/gB']);
+    assert.deepEqual(toasts, [], 'silent');
+    assert.equal(quarantineAutoRetried['results/gB'], true);
+    scheduleQuarantineAutoRetry();
+    assert.equal(quarantineRetryTimer, null, 'one retry per path, then it waits for a human');
+    // Accepted this time (but the flag already spent, so drive it by hand): the same
+    // rebase-and-push clears the path through the ack.
+    delete quarantineAutoRetried['results/gB'];
+    db.allow(STATE_PATH + '/results/gB');
+    autoRetryQuarantined();
+    await settled();
+    assert.deepEqual(stateQuarantine, {});
+    assert.equal(serverState(db).results.gB.savedAt, 'v1');
+    assert.deepEqual(quarantineAutoRetried, {}, 'the mark leaves with the path, so a later refusal is retried afresh');
+  } finally { clearTimeout(quarantineRetryTimer); quarantineRetryTimer = null; teardown(); }
+});
+
+test('the automatic retry keeps the parked path in place while it runs (no flicker) and does nothing without a connection or an editor', async () => {
+  const db = await boot();
+  try {
+    await parkResult(db, 'gB');
+    clearTimeout(quarantineRetryTimer); quarantineRetryTimer = null;
+    let sawParkedDuring = null;
+    const spy = spyOn(db.ref(STATE_PATH), (u) => { sawParkedDuring = Object.keys(stateQuarantine); });
+    fbRef = spy.ref;
+    autoRetryQuarantined();
+    await settled();
+    assert.deepEqual(sawParkedDuring, ['results/gB'], 'still parked while the retry is in flight');
+    // No connection / not an editor: no mark, no send.
+    delete quarantineAutoRetried['results/gB'];
+    const n = spy.sent.length;
+    remoteReady = false; autoRetryQuarantined(); remoteReady = true;
+    setMemberRole('viewer'); autoRetryQuarantined(); setMemberRole('editor');
+    assert.equal(spy.sent.length, n);
+    assert.deepEqual(quarantineAutoRetried, {});
+  } finally { clearTimeout(quarantineRetryTimer); quarantineRetryTimer = null; teardown(); }
 });

@@ -122,6 +122,13 @@
 
     <main class="main-wrap">
 
+      <!-- ── SYNC ALERT (editors only; app.js updateSyncAlert) ───────────
+           Edits the rules refused, with Retry / Discard — a bar pinned to the
+           very top (position: fixed) so a director sees an unsaved score
+           without opening the (closed) Current Standings card that carries
+           the same line. Hidden unless something is parked. -->
+      <section id="sync-alert" class="sync-alert" role="alert" hidden></section>
+
       <!-- ── NOTICE BOARD (the one big, unmissable message) ─────────────
            Deliberately the FIRST thing on the page and much larger than an
            announcement — one of these replaces the six separate notices that

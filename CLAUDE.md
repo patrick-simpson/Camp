@@ -301,12 +301,17 @@ What's covered, and why each file exists:
 - `sync.test.js` — **every invariant in the section below**, plus the deferred-
   snapshot and per-path-diff behavior. A failure here is a regression, not a
   test bug.
-- `sync-quarantine.test.js` — "Refused writes" below, driven against
+- `sync-quarantine.test.js` (+ `.senior`, which evals the same file against
+  `seniorScoreboard/state`) — "Refused writes" below, driven against
   `fake-rtdb.js` through the app's real `fbRef`: a refused path parked while the
   rest of its batch lands, the sync-F15 ordering (a mid-bisect push is held, a
   changed path is skipped), >50 paths halved, a network error left on the
   original path, Retry / Discard, the adopt that must not wipe a parked score,
-  the sync line. `boot-cache.test.js` pins that `_quarantine` loads at boot.
+  a RELOAD while parked run through the real first-snapshot merge (re-sent and
+  re-parked, saved once accepted, dropped when the server moved past it), the
+  server winning over a parked path, the one automatic retry, the top bar, a
+  view-only device never quarantining, the sync line.
+  `boot-cache.test.js` pins that `_quarantine` loads at boot.
 - `clock.test.js` — the synced countdown, including clock-skew between devices.
 - `week.test.js` — structural checks on the hand-edited data: `DAY_SCHEDULE`
   block ordering/durations, `nowBannerHtml` fuzzed over every minute of every
@@ -1090,7 +1095,23 @@ More sync invariants (each fixed after it bit us — don't regress these;
   back into state AND baseline, sends nothing). **Every other error keeps the
   original handler byte for byte** (restore `lastSyncedTree = prevBaseline`,
   settle) — a dropped connection is not a refusal; a connection that drops
-  mid-bisect hands the unreached paths back to the diff the same way.
+  mid-bisect hands the unreached paths back to the diff the same way. **Editors
+  only**: a view-only device's refused stray diff takes that same quiet original
+  path (`canEdit()` in the rejection handler) — no park, no toast, no line.
+  **Where an editor sees it**: the same news rides a bar pinned to the top of the
+  page, `#sync-alert` (`updateSyncAlert`, `position: fixed` — NOT sticky: html
+  and body both clip `overflow-x`, which makes body the never-scrolling sticky
+  container, so a sticky bar scrolled away; `body.has-sync-alert` reserves its
+  height above the first card), because the line inside the closed-by-default
+  Current Standings card was off-screen. One constant-height row, names
+  truncated; Retry / Discard are the same delegated buttons. The card line says
+  Offline FIRST when offline (the bar still names the refused edit), and the park
+  toast says where to act. Each parked path also gets ONE silent automatic Retry
+  `QUARANTINE_AUTO_RETRY_MS` (20 s) after parking (`scheduleQuarantineAutoRetry`
+  / `autoRetryQuarantined`; the path stays parked meanwhile so the bar doesn't
+  flicker; `quarantineAutoRetried` marks it, `unpark()` clears the mark) — a
+  transient refusal, which healed on the next push before parking, should not
+  need a human; a second refusal waits for Retry without a new toast.
   Ordering (sync-F15): the bisect counts in `pendingWrites` (so the adopt, reload,
   camp-switch and sign-out guards see it; `reloadBlocked` also names
   `stateBisecting`), one bisect runs at a time (`stateBisectQueue`), and
@@ -1103,11 +1124,23 @@ More sync invariants (each fixed after it bit us — don't regress these;
   snapshot (the server's own tree stays the confirmed baseline) — adopting must
   never silently wipe a score the sync line is still naming; `pruneQuarantine`
   drops a path once local equals confirmed (the retry got through, someone saved
-  the same value, Discard). The parked set is persisted as `state._quarantine` in
-  the same `STORAGE_KEY` write as the scores (never synced, never in a backup,
-  wiped with the cache on sign-out); after a reload the first-snapshot merge
-  re-sends the path, so it heals once the rules accept it and is re-parked if
-  not. `readQuarantine` runs at load: it may touch only `state` and `SYNC_KEYS`
+  the same value, Discard). **The server wins when it moved past a parked path**
+  (`dropSupersededQuarantine`): if the adopted snapshot changed that same value
+  against the last confirmed tree, or removed a record it lives in (New week
+  clears every result at once), the parked path is dropped, not laid over — last
+  week's refused result must not sit on top of a reset week — with a toast (the
+  first-snapshot merge counts it as a conflict, so "kept their version" is true).
+  Not judged on the merge's second pass (`confirmedBase` set: its `remote` is the
+  server tree with this phone's edits laid in). The parked set is persisted as
+  `state._quarantine` in the same `STORAGE_KEY` write as the scores (never
+  synced, never in a backup, wiped with the cache on sign-out); after a reload
+  the first-snapshot merge re-sends the path, so it heals once the rules accept
+  it and is re-parked if not — **`firstSnapshotMerge` takes its base
+  (`serverNorm`) from `confirmedTree`, never `lastSyncedTree`**: the adopt's
+  overlay puts the parked values INTO `lastSyncedTree`, and using it as the base
+  made the diff find nothing to send and the reload silently un-parked the path
+  (`sync-quarantine.test.js` reloads through the real merge to pin it).
+  `readQuarantine` runs at load: it may touch only `state` and `SYNC_KEYS`
   (the boot-cache TDZ rule). The line carries labels, never values, so it is safe
   for the secrecy rules.
 - **A bracket this build can't read is never healed or written.**
