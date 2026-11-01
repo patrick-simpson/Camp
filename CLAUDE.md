@@ -32,13 +32,18 @@ Files:
   `<link id="gfonts">` from `media="print"` to `all` once loaded (a blocking
   stylesheet left the page blank while fonts.googleapis.com was slow; an inline
   `onload` is refused by the CSP)
-- `app.js` — main logic + the week schedule (`DAY_SCHEDULE`), ~9500 lines
+- `app.js` — main logic, ~10000 lines. Its **SEAM block** (between the
+  `// ── SEAM: week data accessors` and `// ── end SEAM` markers, just after the
+  member helpers) is the only code that reads the week's own data — see "The
+  week-data seam" below
 - `defaults.js` — the built-in default week: day list + full game catalog
   (`defaultConfig()`); live config then lives in synced state
 - `camps.js` — the TWO CAMP PROFILES (see "Two camps, one app" below):
   junior + senior, each with its Firebase root, storage namespace, team
   branding, printed daily schedule, and seed data. Loads between defaults.js
-  and app.js; app.js reads everything through the active `CAMP`
+  and app.js; app.js reads the profile through the active `CAMP`, and the week
+  fields (schedule, meals, electives, verses, rota, team branding) only inside
+  its SEAM block
 - `camp-core.js` — PURE helpers the app and the TV page share, loaded between
   defaults.js and camps.js: Eastern-time maths (`etWallToEpoch`, DST-safe;
   `push-worker/worker.js` keeps its own pasted copy and `tests/camp-core.test.js`
@@ -408,6 +413,17 @@ What's covered, and why each file exists:
   regression that would lock people out under the rules), the `canEdit` truth
   table via `setMemberRole`, the `memberRecord` shape, `clearLocalData`'s
   wipe list, and that no PIN machinery survives.
+- `accessors.test.js` (+ `.senior`, which evals it) — every accessor in the SEAM
+  block against the camps.js constant it fronts: while a section is off, `===`
+  the constant itself, for every key the camp has; the shared empty lists are
+  frozen; junk in never throws; the sanitizers are applied on the way out (a
+  markup emoji, an external or quote-breakout crest, an over-long short name).
+- `seam.test.js` — greps `app.js` (minus the SEAM block), `chat.js`, `push.js`
+  and `settings.js` for direct reads of the week constants, `CAMP.<week field>`,
+  `setupTree` and `state.config.days|games`, and fails with `file:line`. The
+  builder's WRITES to the catalog (`.push`/`.splice`/`[i] =`/`moveItem`) are
+  recognised by shape and allowed. It also tests its own scan, so it can't go
+  quietly vacuous.
 
 The stub is deliberately minimal, and DOM lookups return a memoized stub element
 rather than null (closer to the real page, where a render function's container
@@ -522,6 +538,65 @@ does, so an app device always chooses by its own key.
   per-row + is easy to hit one level down; the fix was delete + re-add via a
   direct path URL. Check indentation when console-seeding.)
   `current-standings.html` serves both camps through `?camp=` (below).
+
+## The week-data seam (the SEAM block in app.js)
+
+Added at Step 4 of `docs/build-notes/BUILD-PLAN.md` (setup-rebuild-spec §9). The
+week's own data — the printed schedule (`DAY_SCHEDULE`, `SCHED_DAYS`,
+`DAY_NAMES`), meals, the cleanup rota, memory verses, electives, team branding
+and printed counselor lists, the roster seed, the double-points window, and the
+game/day catalog (`state.config.games|days`) — is read in ONE place. The per-camp
+constants moved INTO the block unchanged (the names are still globals, so
+`tests/camps.test.js` and the migration tests read them as before); every
+renderer, `chat.js`'s mention dictionary, `push.js`'s publisher and
+`settings.js`'s builder ask an accessor instead. **Do not read those constants,
+`CAMP.<week field>` or `state.config.days|games` anywhere else** —
+`tests/seam.test.js` fails with the line. A new reader of week data adds (or
+reuses) an accessor in the block.
+
+- **Why:** the setup rebuild (BUILD-PLAN Steps 14–22) lets a director edit the
+  week in the app, kept as shared data. The accessors are the single place that
+  will choose between the built-in copy and the shared one; no renderer changes
+  again. **No behaviour change today**: while a section is off — always, for now —
+  an accessor returns the camps.js constant itself (the same object). Verified
+  byte-identical on both camps (banner at 19 times of day, schedule sheet and
+  `.ics` for all seven days, follow card, verse, cleanup, electives, identity
+  picker, viewer and editor) before and after.
+- **Rules of the layer:** plain data, never markup; never throw on missing data
+  (a missing day is the shared frozen empty list `NO_ITEMS`, a missing verse
+  `NO_VERSE`) — and never mutate what one returns; text from the database passes
+  a `camp-core.js` sanitizer on the way out (`teamEmoji` → `safeEmoji`,
+  `teamShort` → `safeShort`, `teamCrestSrc` → `safeCrestSrc`).
+- **The accessors:** schedule — `scheduleForDow`, `scheduleWeek`, `weekDays`,
+  `dayLabel`, `competitionDows` (Mon–Fri), `competitionDays`, `dayById`; games —
+  `allGames`, `gameById`, `gamesForDayId(dayId)`, `gamesForBlock(dow, block)` (the
+  Morning-before-noon / Evening rule, matched to the weekday by each config day's
+  `dow`; the built-in blocks carry no id, so it takes the block); meals and
+  cleanup — `legacyMealOf(label)`, `blockMeal`, `mealFor`, `mealStart`,
+  `cleanupOnRota(dow)` (is the day on the rota at all: untracked says nothing, a
+  tracked day with no team reads "TBA"), `cleanupTeams(dow, meal)` (always an
+  array, `[]` = TBA); alerts — `blockKey`, `blockPushId`; verses — `verseTheme`,
+  `verseFor`; electives — `electivesFor`, `stationEmoji`, `electiveSlotStart`;
+  `doubleWindow`; teams — `teamIds`, `teamEmoji`, `teamShort`, `teamAccent`,
+  `teamCrestSrc` (was `teamShield`), `teamRoster(tid)`, `staffNames`, `seedTeams`,
+  `legacyRosterFor(i)`.
+- **Deliberately not built yet** (nothing reads them, so no dead code): the spec's
+  `planForDow`, `campWeek`, `finaleDow`, `teamAccentVars` (needs the CSS to read a
+  light/dark pair), `hubStatus`, `campersFor` — each lands with the step that
+  first needs it. Likewise the "on" half of every accessor: it arrives with the
+  shared setup data (Step 14 and the S5 steps).
+- **The builder is the authority, not a reader.** `settings.js` still WRITES the
+  catalog straight into `state.config` (`push`, `splice`, the reorder swap and
+  `moveItem`) — `competitionDays()`/`allGames()` front that same array. Reads
+  there go through the accessors.
+- **`staffNames()` is the printed roster only**; the member directory
+  (`memberDirectory`, which carries each person's key) stays chat's own source,
+  so the mention dictionary is unchanged.
+- **Pins that moved:** `cleanupAssigned` → `cleanupTeams` (`secrecy.test.js`,
+  `week.senior.test.js`), `teamShield` → `teamCrestSrc` (`week.senior.test.js`).
+- **Load order:** the block sits before the state is built (`let state = …`), and
+  every accessor reads `state` only when called, so nothing at load can hit a
+  top-level `const` declared further down (`boot-cache.test.js`).
 
 ## Camp chat (chat.js)
 
