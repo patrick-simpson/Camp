@@ -74,6 +74,11 @@ Files:
   on a cached value; a test pins the file pure. The TV page loads it and takes
   `groupPlaces` from it, so places and tie order match everywhere. The node's
   writer and the phone's readers arrive with the reveal (redesign D5)
+- `jelly-motion.js` — the SPRING SYSTEM and the ONE calm-motion switch (see
+  "Motion and calm motion" below). A classic script loaded between camps.js and
+  app.js with no dependency on `vendor/jelly.js` (that module can't parse on
+  iOS < 16.4 and boot-guard's `jelly-failed` path must still move). Globals
+  `JellyMotion`, `calmMotion()`, `calmReason()`
 - `settings.js` — the settings sheet + week-builder UI. The builder's
   `jelly-tabs` shell is built ONCE and kept; `renderSettings` refreshes only
   the active card (through `setHtmlIfChanged`), hidden cards are filled one
@@ -154,10 +159,10 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
 
 **Every time any code asset changes:**
 1. Bump the `?v=N` cache-busting query string in `index.html` — there are
-   FOURTEEN on the same number: `boot-guard.js`, `styles.css`, `vendor/jelly.js`,
+   FIFTEEN on the same number: `boot-guard.js`, `styles.css`, `vendor/jelly.js`,
    `firebase-config.js`, `defaults.js`, `camp-core.js`, `reveal-core.js`,
-   `camps.js`, `app.js`, `settings.js`, `chat.js`, `push.js`, `auth-phone.js`,
-   `auth-email-link.js` —
+   `camps.js`, `jelly-motion.js`, `app.js`, `settings.js`, `chat.js`, `push.js`,
+   `auth-phone.js`, `auth-email-link.js` —
    keep them in sync, all bumped together. Also bump
    `APP_VERSION` in `app.js` to the same number (it drives the auto-reload
    version check). `stalling.html` loads `vendor/jelly.js`, and
@@ -267,6 +272,58 @@ fetches the fresh `index.html` instead of a cached copy and can't loop.
 (A phone only starts polling once it's running a build that has this code,
 so it auto-reloads from the *next* deploy after it loads this one.)
 
+## Motion and calm motion (jelly-motion.js)
+
+Design: `docs/build-notes/app-shell-redesign-spec.md` §9–10; the reference feel is
+`docs/build-notes/mockups/final/motion-demo.html`. Redesign stage D0.
+
+- **Six springs**, one integrator: `JellyMotion.presets` = `press`, `arrive`,
+  `snap`, `settle` (full-screen takeovers only), `glide`, `wobble`. They are
+  integrated exactly as `vendor/jelly.js`'s `E()` does (semi-implicit Euler, mass
+  1, velocity first, ONE step per frame) and SAMPLED at dt = 1/60 s — what a
+  Jelly component computes on a 60 Hz phone — so `snap` overshoots 4.9% like
+  Jelly's own thumbs (sampling at 1/240 gave 7.3%). `tests/motion.test.js`
+  extracts the real `E()` from `vendor/jelly.js` and compares frame by frame.
+- **WAAPI only, no residue.** `play` / `playOut` / `press` / `release` /
+  `flipKeyed` write no inline style, no class, no `commitStyles()`: a leftover
+  `style=""` makes `setHtmlIfChanged` (`el.__dom === el.innerHTML`) rewrite the
+  whole root on the next render, re-creating Jelly components and cutting the
+  spring off. `fill: 'forwards'` is allowed only for the press hold (release
+  always cancels it) and for an exit until its `done()` removed the element.
+  `follow()` (an rAF spring that writes style) is only for nodes no string
+  renderer rewrites. `restamp(root)` is the escape hatch for a rare in-place
+  change inside a `setHtmlIfChanged` root. With no `Element.animate` (very old
+  WebKit, the test harness) every helper is a no-op and `playOut` still runs
+  its `done()`.
+- **Motion starts from diffs, never from renders.** Whoever knows a change
+  happened calls `play`; markup never carries animation classes. `morph` /
+  `flipKeyed` keep nodes with the same `data-key` (so a FLIP can move the real
+  nodes — rewriting a root through innerHTML replaced the nodes a plain FLIP
+  measured, and neighbours just jumped). `whenHandsOff(fn)` runs a list reflow
+  only with no pointer down and 400 ms after the last touch (a pointer "down"
+  for over 10 s counts as lost).
+- **One calm switch: `calmMotion()`** (and `calmReason()`). App code never reads
+  `matchMedia` for motion again. The OS "reduce motion" setting beats the switch
+  (it is an accessibility setting; Off must not override it); Off beats only
+  the battery signals; Auto adds the frame-rate sampler (≤ 36 Hz twice in a row
+  = saver, ≥ 50 Hz twice = not; 24 rAF intervals, median; 2 s after boot, 1.5 s
+  after the page becomes visible, every 5 min; it NEVER samples while
+  `JellyMotion.busy()` — a running animation, or a `busySource` the app
+  registered — and abandons a sample if motion starts mid-way) and
+  `navigator.getBattery()` (≤ 20% and not charging; Android Chrome only).
+  Calm comes on at once and ends only after 60 s without a battery signal (a
+  phone near the threshold must not flap); the switch and the OS are immediate.
+  Any `play` has a calm path (an opacity-only fade) or returns null, and calm
+  keyframes are stripped of anything that moves, so **no transform keyframe is
+  ever created while calm** (`motion.test.js` pins it).
+- **What it writes when the verdict changes:** `html.calm-motion`,
+  `html[data-jelly-motion]` (`reduce` / `no-preference`, which Jelly's own
+  components read) and a window `jelly-motion-change` event (Jelly listens), and
+  mirrors the verdict into `localStorage.campScoreboardCalmLast` (the reason,
+  or absent) for the pre-paint guard. The switch itself is
+  `localStorage.campScoreboardCalmMotion` (`on` / `off`; Auto = key absent).
+  Both are device-wide like the theme keys.
+
 ## Tests
 
 `node tests/run.js` (optionally with a filename filter: `node tests/run.js
@@ -358,7 +415,12 @@ What's covered, and why each file exists:
   sheet, update bar, members drawer, lock screen, scrim fade, pickers),
   `builder.test.js` (week-builder shell, drafts, joy press), `chat-view.test.js`
   (chat view lifecycle, drafts, Back), `theme.test.js` (pre-paint theme and
-  atomic flips) — each pins the state rules behind a glitch fix. Anything only
+  atomic flips) — each pins the state rules behind a glitch fix. `motion.test.js`
+  loads `jelly-motion.js` into its OWN vm context (a hand-made DOM, a fake clock
+  that also drives `setTimeout`, a queue-driven `requestAnimationFrame`, a WAAPI
+  recorder): the springs against Jelly's `E()`, overshoot and minimum visible
+  deformation, play/playOut/press/release/morph/flipKeyed, no residue, the calm
+  truth table, hysteresis and the sampler. Anything only
   visible in a browser (animation, layout) is source-checked or left to the
   Playwright pass.
 - `fake-rtdb.js` (+ `fake-rtdb.test.js`) — an in-memory Realtime Database for

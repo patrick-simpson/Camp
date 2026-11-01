@@ -439,6 +439,10 @@
        Firebase root, storage namespace, schedule, and seed data. Must load
        between defaults.js (junior's game catalog) and app.js (the consumer). -->
   <script src="camps.js?v=190"></script>
+  <!-- The spring system and the one calm-motion switch (calmMotion()). A classic
+       script with no dependency on vendor/jelly.js; app.js reads calmMotion()
+       and JellyMotion, so it must come first. -->
+  <script src="jelly-motion.js?v=190"></script>
   <script src="app.js?v=190"></script>
   <script src="settings.js?v=190"></script>
   <!-- Camp Chat (channels, mentions, photos) — self-contained layer; delete
