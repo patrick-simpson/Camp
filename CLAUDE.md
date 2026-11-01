@@ -456,7 +456,10 @@ What's covered, and why each file exists:
   handlers after a state swap, celebrations only for scoring), `home.test.js`
   (home panels, toast cap, announcement composer), `overlays.test.js` (schedule
   sheet, update bar, members drawer, lock screen, scrim fade, pickers),
-  `builder.test.js` (week-builder shell, drafts, joy press), `chat-view.test.js`
+  `shell.test.js` (page-shell text pins: the not-yet-defined hide, the boot
+  guard, no motion media query, **index.html's fifteen versioned assets share
+  one `?v=` equal to `APP_VERSION`, in load order**), `builder.test.js`
+  (week-builder shell, drafts, joy press), `chat-view.test.js`
   (chat view lifecycle, drafts, Back), `theme.test.js` (pre-paint theme and
   atomic flips) — each pins the state rules behind a glitch fix. `motion.test.js`
   loads `jelly-motion.js` into its OWN vm context (a hand-made DOM, a fake clock
