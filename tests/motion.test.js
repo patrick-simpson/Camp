@@ -638,3 +638,43 @@ test('the sampler starts 2 s after boot and again 1.5 s after the page becomes v
   env.fire('visibilitychange');
   assert.ok(env.timers.some((t) => t.at - env.clock.t === 1500), 'the wake-up sample');
 });
+
+// ── styles.css tokens ─────────────────────────────────────────────
+
+test('the linear() stops in styles.css are exactly what JellyMotion.cssLinear generates (no build step, so a test keeps them honest)', () => {
+  const CSS = readFixture('../styles.css');
+  const { JM } = makeEnv();
+  ['press', 'arrive'].forEach((n) => {
+    const m = new RegExp('--jm-' + n + ': (linear\\([^)]*\\));').exec(CSS);
+    assert.ok(m, '--jm-' + n + ' has a linear() version under @supports');
+    assert.equal(m[1], JM.cssLinear(n), '--jm-' + n + ' drifted: regenerate it with JellyMotion.cssLinear(\'' + n + '\')');
+  });
+  assert.ok(/@supports \(animation-timing-function: linear\(0, 1\)\) \{\s*:root \{/.test(CSS), 'and it only applies where linear() is understood');
+  // the sampled easing is the spring: starts at 0, ends at 1, peaks at the preset's overshoot
+  const vals = JM.cssLinear('press').slice(7, -1).split(',').map((s) => parseFloat(s));
+  assert.equal(vals[0], 0); assert.equal(vals[vals.length - 1], 1);
+  assert.ok(Math.abs(Math.max(...vals) - 1 - 0.114) < 0.01, 'its peak is the 11.4% overshoot');
+});
+
+test('the six bezier tokens are the spec\'s, and no hand-written cubic-bezier is left outside them', () => {
+  const CSS = readFixture('../styles.css').replace(/\/\*[\s\S]*?\*\//g, '');
+  const want = {
+    press: 'cubic-bezier(.34, 1.7, .5, 1)', arrive: 'cubic-bezier(.3, 1.6, .45, 1)', enter: 'cubic-bezier(.16, .82, .28, 1)',
+    toggle: 'cubic-bezier(.3, 1.8, .45, 1)', row: 'cubic-bezier(.28, 1.35, .5, 1)', std: 'cubic-bezier(.4, 0, .2, 1)',
+  };
+  const esc = (s) => s.replace(/[().]/g, '\\$&');
+  Object.keys(want).forEach((n) => assert.ok(new RegExp('--jm-' + n + ':\\s+' + esc(want[n]) + ';').test(CSS), '--jm-' + n + ' is the spec\'s curve'));
+  const loose = CSS.split('\n').filter((l) => /cubic-bezier\(/.test(l) && !/^\s*--jm-/.test(l));
+  assert.deepEqual(loose, [], 'every curve goes through a --jm- token: ' + loose.join(' | '));
+  const used = [...new Set([...CSS.matchAll(/var\(--jm-([a-z]+(?:-ms)?)\)/g)].map((m) => m[1]))];
+  used.forEach((u) => assert.ok(new RegExp('--jm-' + u + ':').test(CSS), 'var(--jm-' + u + ') is defined'));
+  assert.ok(used.length > 0, 'and the tokens are actually used');
+});
+
+test('Jelly\'s token overrides live in ONE place at the top of styles.css, and the toaster\'s radius is set on the element', () => {
+  const CSS = readFixture('../styles.css');
+  assert.equal((CSS.match(/^:root \{\s*\n\s*--jelly-color-background-accent:/gm) || []).length, 1, 'one base override block');
+  assert.ok(/jelly-toaster \{\s*--jelly-toast-radius: 14px;/.test(CSS),
+    'a :root value could never beat the toaster\'s own :host declaration');
+  assert.ok(CSS.indexOf('jelly-toaster {') < CSS.indexOf('MOTION TOKENS'), 'and it sits with the other Jelly overrides, above the motion tokens');
+});

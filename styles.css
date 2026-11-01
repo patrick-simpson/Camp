@@ -118,12 +118,24 @@ body.dark-theme,
 /* Camp overrides of Jelly's own tokens (unlayered, so they beat the module's
    @layer jelly defaults): keep the camp-blue accent both modes, and render
    Jelly components in Inter to match the rest of the app. Mirrors the same
-   explicit-attribute + media-fallback structure Jelly's stylesheet uses. */
+   explicit-attribute + media-fallback structure Jelly's stylesheet uses.
+   THIS is the one place Jelly's tokens are mapped onto the app's. The rest of
+   the redesign's mapping (redesign §8.10: surface, border, foreground, azure,
+   mint, amber and rose re-sourced from the new palette) lands with the shell's
+   palette in Step 13. It cannot be written yet: the --color-* tokens above are
+   themselves sourced FROM these --jelly-* ones, so pointing them back at
+   --color-* would be a cycle and both would go invalid. */
 :root {
   --jelly-color-background-accent: #3355ff;
   --jelly-color-foreground-on-accent: #ffffff;
   --jelly-font-display: 'Inter', system-ui, -apple-system, sans-serif;
   --jelly-font-text: 'Inter', system-ui, -apple-system, sans-serif;
+}
+/* A rounded card, not a pill: toasts wrap to two lines. On the element itself,
+   not :root: the toaster declares the token in its own :host rule, which an
+   inherited value from :root can never beat (an outer rule on the host can). */
+jelly-toaster {
+  --jelly-toast-radius: 14px;
 }
 :root[data-jelly-mode="dark"] {
   --jelly-color-background-accent: #6b85ff;
@@ -133,6 +145,31 @@ body.dark-theme,
   :root:not([data-jelly-mode="light"]) {
     --jelly-color-background-accent: #6b85ff;
     --jelly-color-foreground-on-accent: #181b1d;
+  }
+}
+
+/* MOTION TOKENS (redesign §9.3). For CSS transitions and keyframes that need no
+   JS: the curves approximate jelly-motion.js's springs with Jelly's own curves;
+   where `linear()` is supported the two spring-named ones are the springs
+   themselves, sampled by JellyMotion.cssLinear(). There is no build step, so the
+   stop lists are generated once and pasted: tests/motion.test.js regenerates
+   them and fails if this drifts (regenerate with
+   `JellyMotion.cssLinear('press')` / `('arrive')`). The animation DURATION stays
+   with each rule; the -ms tokens are the tuned pairs for new code. Calm motion
+   (html.calm-motion) switches the animations OFF at the rule that uses them;
+   a transition always names the properties it is for. */
+:root {
+  --jm-press:   cubic-bezier(.34, 1.7, .5, 1);   --jm-press-ms: 180ms;   /* jelly tap overshoot */
+  --jm-arrive:  cubic-bezier(.3, 1.6, .45, 1);   --jm-arrive-ms: 460ms;  /* arrive: overshoot + settle */
+  --jm-enter:   cubic-bezier(.16, .82, .28, 1);  --jm-enter-ms: 420ms;   /* jelly springIn */
+  --jm-toggle:  cubic-bezier(.3, 1.8, .45, 1);   --jm-toggle-ms: 360ms;  /* jelly toggles */
+  --jm-row:     cubic-bezier(.28, 1.35, .5, 1);  --jm-row-ms: 360ms;     /* jelly collapsible rows */
+  --jm-std:     cubic-bezier(.4, 0, .2, 1);      --jm-exit-ms: 150ms;    /* exits, calm */
+}
+@supports (animation-timing-function: linear(0, 1)) {
+  :root {
+    --jm-press: linear(0, 0.15 4.3%, 0.38 8.7%, 0.624 13%, 0.829 17.4%, 0.979 21.7%, 1.069 26.1%, 1.108 30.4%, 1.112 34.8%, 1.094 39.1%, 1.068 43.5%, 1.04 47.8%, 1.017 52.2%, 1.001 56.5%, 0.992 60.9%, 0.988 65.2%, 0.987 69.6%, 0.99 73.9%, 0.993 78.3%, 0.996 82.6%, 0.998 87%, 1 91.3%, 1.001 95.7%, 1);
+    --jm-arrive: linear(0, 0.163 4.3%, 0.422 8.7%, 0.682 13%, 0.893 17.4%, 1.032 21.7%, 1.104 26.1%, 1.124 30.4%, 1.109 34.8%, 1.079 39.1%, 1.046 43.5%, 1.018 47.8%, 0.999 52.2%, 0.989 56.5%, 0.985 60.9%, 0.986 65.2%, 0.989 69.6%, 0.993 73.9%, 0.997 78.3%, 1 82.6%, 1.001 87%, 1.002 91.3%, 1.002 95.7%, 1);
   }
 }
 
@@ -502,6 +539,8 @@ html.view-only .card-visibility-row {
 .lock-box.shake {
   animation: lock-shake 0.4s ease;
 }
+/* Was the one unguarded motion rule in the file. */
+html.calm-motion .lock-box.shake { animation: none; }
 
 @keyframes lock-shake {
   0%, 100% { transform: translateX(0); }
@@ -728,9 +767,7 @@ html.jelly-failed jelly-collapsible:not(:defined) {
   0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-danger) 45%, transparent); }
   70%, 100% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--color-danger) 0%, transparent); }
 }
-@media (prefers-reduced-motion: reduce) {
-  .live-home-card { animation: none; }
-}
+html.calm-motion .live-home-card { animation: none; }
 .live-home-top {
   display: flex;
   align-items: center;
@@ -1197,7 +1234,7 @@ body.no-scroll {
   background: var(--color-bg);
   border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   box-shadow: var(--shadow-sheet);
-  animation: sched-slide 0.28s cubic-bezier(0.22, 1, 0.36, 1);
+  animation: sched-slide 0.28s var(--jm-enter);
   overflow: hidden;
   touch-action: pan-y;
 }
@@ -1231,12 +1268,10 @@ body.no-scroll {
   to { transform: translateY(100%); }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .schedule-backdrop,
-  .schedule-sheet,
-  .schedule-overlay.closing .schedule-sheet,
-  .schedule-overlay.closing .schedule-backdrop { animation: none; }
-}
+html.calm-motion .schedule-backdrop,
+html.calm-motion .schedule-sheet,
+html.calm-motion .schedule-overlay.closing .schedule-sheet,
+html.calm-motion .schedule-overlay.closing .schedule-backdrop { animation: none; }
 
 /* ============================================================
    TEAM PICKER (which team to follow)
@@ -1577,7 +1612,7 @@ jelly-chip.sched-day-chip .today-dot {
   cursor: pointer;
   white-space: nowrap;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
-  animation: back-pill-in 0.28s cubic-bezier(0.2, 0.9, 0.3, 1.2) both;
+  animation: back-pill-in 0.28s var(--jm-arrive) both;
   transition: transform 0.12s ease, background 0.15s ease, border-color 0.15s ease;
 }
 .back-pill:hover {
@@ -1591,7 +1626,7 @@ jelly-chip.sched-day-chip .today-dot {
   display: inline-block;
   font-size: 1rem;
   line-height: 1;
-  transition: transform 0.15s cubic-bezier(0.2, 0.9, 0.3, 1.4);
+  transition: transform 0.15s var(--jm-press);
 }
 .back-pill:hover .back-pill-arrow {
   transform: translateX(-2px);
@@ -1603,10 +1638,8 @@ jelly-chip.sched-day-chip .today-dot {
   from { opacity: 0; transform: translateX(-10px); }
   to { opacity: 1; transform: translateX(0); }
 }
-@media (prefers-reduced-motion: reduce) {
-  .back-pill { animation: none; transition: none; }
-  .back-pill-arrow { transition: none; }
-}
+html.calm-motion .back-pill { animation: none; transition: none; }
+html.calm-motion .back-pill-arrow { transition: none; }
 
 .game-view-header {
   display: flex;
@@ -1995,9 +2028,7 @@ body.chat-open .sync-status-footer {
 .points-pulse td {
   animation: points-pulse 0.6s ease;
 }
-@media (prefers-reduced-motion: reduce) {
-  .points-pulse td { animation: none; }
-}
+html.calm-motion .points-pulse td { animation: none; }
 
 /* "Your team" summary card. Each team sets --team-accent (renderFollowCard);
    it falls back to the app primary so the neutral / no-shield states still work. */
@@ -3528,10 +3559,8 @@ body.chat-open .sync-status-footer {
   to { transform: translateY(12px); opacity: 0; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .toast,
-  .toast-out { animation: none; }
-}
+html.calm-motion .toast,
+html.calm-motion .toast-out { animation: none; }
 
 /* ============================================================
    RESPONSIVE
@@ -4253,10 +4282,8 @@ body.chat-open .sync-status-footer {
   margin-top: 0.2rem;
   transform: rotate(-135deg);
 }
-@media (prefers-reduced-motion: no-preference) {
-  .pa-row-summary::after {
-    transition: transform 0.2s ease;
-  }
+html:not(.calm-motion) .pa-row-summary::after {
+  transition: transform 0.2s ease;
 }
 
 .pa-count {
@@ -6042,7 +6069,7 @@ select.form-input {
 
 /* Goal joy: the number pops and team-emoji confetti sails up. */
 .score-pop {
-  animation: score-pop 0.6s cubic-bezier(0.2, 2.2, 0.4, 1);
+  animation: score-pop 0.6s var(--jm-toggle);
 }
 
 @keyframes score-pop {
@@ -6058,7 +6085,7 @@ select.form-input {
   bottom: 2px;
   font-size: 1.7rem;
   pointer-events: none;
-  animation: board-cannon var(--bd, 1.2s) cubic-bezier(0.15, 0.85, 0.45, 1) forwards;
+  animation: board-cannon var(--bd, 1.2s) var(--jm-enter) forwards;
   opacity: 0;
 }
 
@@ -6126,101 +6153,101 @@ select.form-input {
   white-space: nowrap;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .score-pop { animation: none; }
-  .board-cannon { display: none; }
-  .board-clock-zero,
-  .board-clock.clock-final-min,
-  .board-clock.clock-final-ten { animation: none; }
-  .big-board.board-final-ten { animation: none; }
-  .tool-box.alarming { animation: none; } /* the red border stays as the cue */
-}
+html.calm-motion .score-pop { animation: none; }
+html.calm-motion .board-cannon { display: none; }
+html.calm-motion .board-clock-zero,
+html.calm-motion .board-clock.clock-final-min,
+html.calm-motion .board-clock.clock-final-ten { animation: none; }
+html.calm-motion .big-board.board-final-ten { animation: none; }
+html.calm-motion .tool-box.alarming { animation: none; } /* the red border stays as the cue */
 
 /* ============================================================
    JOY LAYER — springy presses, tap sparkles, staggered reveals.
    Every rule here is decorative: transform/opacity only, fully
-   disabled under prefers-reduced-motion, and safe to delete.
+   off under html.calm-motion, and safe to delete.
    ============================================================ */
-@media (prefers-reduced-motion: no-preference) {
-  /* Springy press feedback on every tappable control (added/removed by
-     the delegated pointer handlers in app.js — see "Joy layer" there). */
-  .joy-pressed {
-    transform: scale(0.93);
-    transition: transform 0.09s ease;
-  }
-  /* A press called off mid-gesture (the touch became a scroll) eases back
-     instead of snapping from 93% — see joyPressAbort in app.js. */
-  .joy-release {
-    transition: transform 0.14s ease;
-  }
-  .joy-pop {
-    animation: joy-pop 0.42s cubic-bezier(0.34, 1.56, 0.64, 1);
-  }
-  @keyframes joy-pop {
-    0% { transform: scale(0.93); }
-    55% { transform: scale(1.05); }
-    100% { transform: scale(1); }
-  }
-  /* A tap quicker than the press delay never showed the 93% press, so its pop
-     starts from rest rather than snapping in. */
-  .joy-pop-quick {
-    animation: joy-pop-quick 0.42s cubic-bezier(0.34, 1.56, 0.64, 1);
-  }
-  @keyframes joy-pop-quick {
-    0% { transform: scale(1); }
-    55% { transform: scale(1.05); }
-    100% { transform: scale(1); }
-  }
+/* Every rule here is gated on html:not(.calm-motion), the one switch
+   (jelly-motion.js decides it; boot-guard.js paints it before first paint).
+   The @keyframes are top-level on purpose: they only run where a gated rule
+   names them. */
+/* Springy press feedback on every tappable control (added/removed by
+   the delegated pointer handlers in app.js — see "Joy layer" there). */
+html:not(.calm-motion) .joy-pressed {
+  transform: scale(0.93);
+  transition: transform 0.09s ease;
+}
+/* A press called off mid-gesture (the touch became a scroll) eases back
+   instead of snapping from 93% — see joyPressAbort in app.js. */
+html:not(.calm-motion) .joy-release {
+  transition: transform 0.14s ease;
+}
+html:not(.calm-motion) .joy-pop {
+  animation: joy-pop 0.42s var(--jm-press);
+}
+@keyframes joy-pop {
+  0% { transform: scale(0.93); }
+  55% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
+/* A tap quicker than the press delay never showed the 93% press, so its pop
+   starts from rest rather than snapping in. */
+html:not(.calm-motion) .joy-pop-quick {
+  animation: joy-pop-quick 0.42s var(--jm-press);
+}
+@keyframes joy-pop-quick {
+  0% { transform: scale(1); }
+  55% { transform: scale(1.05); }
+  100% { transform: scale(1); }
+}
 
-  /* Card contents rise in when a home panel opens — layered on top of
-     jelly-collapsible's own springy height animation. The heading is the
-     header slot (child 1), so content children start at nth-child(2).
-     Only while .card-opening is on (added for ~0.7s by the toggle listener
-     in app.js): keyed to [open] alone, the rise replayed on every open card
-     whenever the builder or chat takeover un-hid the page. */
-  jelly-collapsible.collapsible-card.card-opening[open] > *:not([slot="header"]) {
-    animation: joy-rise 0.38s cubic-bezier(0.22, 1, 0.36, 1) backwards;
-  }
-  jelly-collapsible.collapsible-card.card-opening[open] > *:nth-child(3) { animation-delay: 0.04s; }
-  jelly-collapsible.collapsible-card.card-opening[open] > *:nth-child(4) { animation-delay: 0.08s; }
-  jelly-collapsible.collapsible-card.card-opening[open] > *:nth-child(5) { animation-delay: 0.12s; }
-  jelly-collapsible.collapsible-card.card-opening[open] > *:nth-child(n+6) { animation-delay: 0.16s; }
+/* Card contents rise in when a home panel opens — layered on top of
+   jelly-collapsible's own springy height animation. The heading is the
+   header slot (child 1), so content children start at nth-child(2).
+   Only while .card-opening is on (added for ~0.7s by the toggle listener
+   in app.js): keyed to [open] alone, the rise replayed on every open card
+   whenever the builder or chat takeover un-hid the page. */
+html:not(.calm-motion) jelly-collapsible.collapsible-card.card-opening[open] > *:not([slot="header"]) {
+  animation: joy-rise 0.38s var(--jm-enter) backwards;
+}
+html:not(.calm-motion) jelly-collapsible.collapsible-card.card-opening[open] > *:nth-child(3) { animation-delay: 0.04s; }
+html:not(.calm-motion) jelly-collapsible.collapsible-card.card-opening[open] > *:nth-child(4) { animation-delay: 0.08s; }
+html:not(.calm-motion) jelly-collapsible.collapsible-card.card-opening[open] > *:nth-child(5) { animation-delay: 0.12s; }
+html:not(.calm-motion) jelly-collapsible.collapsible-card.card-opening[open] > *:nth-child(n+6) { animation-delay: 0.16s; }
 
-  /* Staggered list entry — applied transiently by joyStagger() after a
-     day switch or view change re-render. */
-  .joy-stagger > * {
-    animation: joy-rise 0.4s cubic-bezier(0.22, 1, 0.36, 1) backwards;
-  }
-  .joy-stagger > *:nth-child(2) { animation-delay: 0.04s; }
-  .joy-stagger > *:nth-child(3) { animation-delay: 0.08s; }
-  .joy-stagger > *:nth-child(4) { animation-delay: 0.12s; }
-  .joy-stagger > *:nth-child(5) { animation-delay: 0.16s; }
-  .joy-stagger > *:nth-child(6) { animation-delay: 0.20s; }
-  .joy-stagger > *:nth-child(7) { animation-delay: 0.24s; }
-  .joy-stagger > *:nth-child(n+8) { animation-delay: 0.28s; }
+/* Staggered list entry — applied transiently by joyStagger() after a
+   day switch or view change re-render. */
+html:not(.calm-motion) .joy-stagger > * {
+  animation: joy-rise 0.4s var(--jm-enter) backwards;
+}
+html:not(.calm-motion) .joy-stagger > *:nth-child(2) { animation-delay: 0.04s; }
+html:not(.calm-motion) .joy-stagger > *:nth-child(3) { animation-delay: 0.08s; }
+html:not(.calm-motion) .joy-stagger > *:nth-child(4) { animation-delay: 0.12s; }
+html:not(.calm-motion) .joy-stagger > *:nth-child(5) { animation-delay: 0.16s; }
+html:not(.calm-motion) .joy-stagger > *:nth-child(6) { animation-delay: 0.20s; }
+html:not(.calm-motion) .joy-stagger > *:nth-child(7) { animation-delay: 0.24s; }
+html:not(.calm-motion) .joy-stagger > *:nth-child(n+8) { animation-delay: 0.28s; }
 
-  /* A view sliding into place (game detail opening). */
-  .joy-slide-in {
-    animation: joy-slide 0.36s cubic-bezier(0.22, 1, 0.36, 1);
-  }
+/* A view sliding into place (game detail opening). */
+html:not(.calm-motion) .joy-slide-in {
+  animation: joy-slide 0.36s var(--jm-enter);
+}
 
-  @keyframes joy-rise {
-    from { opacity: 0; transform: translateY(14px) scale(0.985); }
-    to { opacity: 1; transform: none; }
-  }
-  /* Vertical on purpose: an X-axis slide pokes past the right edge of the
-     page mid-animation, and the scrollIntoView that accompanies opening a
-     game view chases that overhang — leaving the document horizontally
-     scrolled a few px with no visible scrollbar to recover it (overflow-x
-     is hidden). A Y-axis slide can't shift the horizontal scroll. */
-  @keyframes joy-slide {
-    from { opacity: 0; transform: translateY(22px); }
-    to { opacity: 1; transform: none; }
-  }
+@keyframes joy-rise {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+/* Vertical on purpose: an X-axis slide pokes past the right edge of the
+   page mid-animation, and the scrollIntoView that accompanies opening a
+   game view chases that overhang — leaving the document horizontally
+   scrolled a few px with no visible scrollbar to recover it (overflow-x
+   is hidden). A Y-axis slide can't shift the horizontal scroll. */
+@keyframes joy-slide {
+  from { opacity: 0; transform: translateY(22px); }
+  to { opacity: 1; transform: none; }
 }
 
 /* Tap sparkles — spawned into a fixed full-screen layer by joyBurst().
-   (No reduced-motion block needed: joyBurst() itself no-ops there.) */
+   (No calm block needed: joyBurst() itself no-ops while calm.) */
 #joy-layer {
   position: fixed;
   inset: 0;
@@ -6235,7 +6262,7 @@ select.form-input {
   font-size: 15px;
   line-height: 1;
   will-change: transform, opacity;
-  animation: joy-fly var(--t, 0.6s) cubic-bezier(0.16, 0.8, 0.4, 1) forwards;
+  animation: joy-fly var(--t, 0.6s) var(--jm-enter) forwards;
 }
 .joy-p.dot {
   width: 7px;

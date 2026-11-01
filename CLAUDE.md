@@ -15,7 +15,10 @@ Files:
   `<script>` in `<head>` or the app flashes before it locks. Besides the lock
   it also paints, before the first frame, what the stored hints say: an
   explicit Light/Dark choice (`campScoreboardTheme` → `data-jelly-mode`; Auto
-  leaves it unset) and `html.view-only` for a viewer-hinted device (on a dual-role account the active
+  leaves it unset), `html.calm-motion` + `data-jelly-motion="reduce"` when the
+  phone asks for reduced motion or the last session was calm
+  (`campScoreboardCalmLast`, written by jelly-motion.js), and
+  `html.view-only` for a viewer-hinted device (on a dual-role account the active
   camp's entry in `campScoreboardCampsHint` decides it: the single
   `campScoreboardAuthHint` keeps whichever camp was approved last). A second
   IIFE in it adds `html.jelly-failed` when `vendor/jelly.js` never defines its
@@ -323,6 +326,23 @@ Design: `docs/build-notes/app-shell-redesign-spec.md` §9–10; the reference fe
   or absent) for the pre-paint guard. The switch itself is
   `localStorage.campScoreboardCalmMotion` (`on` / `off`; Auto = key absent).
   Both are device-wide like the theme keys.
+- **styles.css answers to ONE class.** Every rule that animates is either under
+  `html:not(.calm-motion)` or has an `html.calm-motion <same selector>` rule that
+  switches it off; there is no `@media (prefers-reduced-motion)` anywhere (the
+  OS setting is already inside `calmMotion()`, and boot-guard adds the class for
+  it before first paint). `tests/shell.test.js` lints this over every animation
+  rule (tap sparkles, `.joy-p`, are the one exception: `joyBurst()` spawns none
+  while calm). The `--jm-*` tokens at the top of styles.css replace every
+  hand-written `cubic-bezier`; `--jm-press` and `--jm-arrive` become the sampled
+  springs themselves under `@supports (animation-timing-function: linear(0, 1))`
+  — the stop lists are pasted (no build step) and `motion.test.js` fails if they
+  drift from `JellyMotion.cssLinear()`. A rule keeps its own duration and takes
+  only the curve from a token. `jelly-toaster { --jelly-toast-radius: 14px }` is
+  set on the element (a `:root` value can't beat the toaster's own `:host`
+  declaration). The rest of the §8.10 Jelly token mapping (surface, border,
+  foreground, azure/mint/amber/rose) waits for the shell's palette (Step 13):
+  today's `--color-*` tokens are sourced FROM the `--jelly-*` ones, so mapping
+  them back would be a cycle.
 
 ## Tests
 

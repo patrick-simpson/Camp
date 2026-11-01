@@ -630,11 +630,11 @@ test('the game view head and the live panels are not rebuilt by every render', (
   assert.notOk(/if \(settled\) renderAll\(\)/.test(src), 'the clock settle no longer renders under a focused field');
 });
 
-test('the zero-clock flash ends, and stops entirely under reduced motion', () => {
+test('the zero-clock flash ends, and stops entirely under calm motion', () => {
   const css = readFixture('../styles.css');
   assert.notOk(/\.tool-box\.alarming\s*\{[^}]*infinite/.test(css), 'no endless strobe');
-  const reduce = css.split('@media (prefers-reduced-motion: reduce)').slice(1).map((s) => s.slice(0, s.indexOf('\n}\n')));
-  assert.ok(reduce.some((b) => /\.tool-box\.alarming\s*\{\s*animation:\s*none/.test(b)), 'reduced motion turns it off');
+  // Calm motion (the OS setting included) is html.calm-motion, the one switch.
+  assert.ok(/html\.calm-motion \.tool-box\.alarming\s*\{\s*animation:\s*none/.test(css), 'calm motion turns it off');
 });
 
 test('the viewer note no longer points at a PIN that does not exist', () => {

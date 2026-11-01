@@ -133,3 +133,75 @@ test('boot-guard.js stays a classic, blocking <script> in <head> (or the app fla
   assert.ok(tag, 'a plain classic script tag: no type=module, defer or async');
   assert.ok(tag.index < INDEX.indexOf('</head>'), 'and it is in <head>');
 });
+
+// ── Calm motion (redesign D0): no motion media queries, calm painted pre-paint ──
+
+// Every motion rule answers to the ONE switch, html.calm-motion (jelly-motion.js
+// decides it; boot-guard.js paints it). A @media (prefers-reduced-motion) query
+// left in styles.css would be a second, disagreeing answer: the OS setting is
+// already inside calmMotion(), and "Off" must not be able to un-calm it.
+test('styles.css has no motion media query left; every animation rule answers to html.calm-motion', () => {
+  const css = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.notOk(/prefers-reduced-motion/.test(css), 'no @media (prefers-reduced-motion …) in any form');
+  const rules = [...css.matchAll(/([^{}@][^{}]*)\{([^{}]*)\}/g)];
+  const unguarded = [];
+  rules.forEach(([, sel, body]) => {
+    const m = /(?:^|[;\s])animation:\s*([^;]*)/.exec(body);
+    if (!m || /^none\b/.test(m[1].trim())) return;
+    sel.split(',').map((s) => s.trim()).filter(Boolean).forEach((s) => {
+      if (s.startsWith('html:not(.calm-motion)') || s.startsWith('html.calm-motion')) return;
+      if (css.includes('html.calm-motion ' + s)) return; // its calm counterpart switches it off
+      unguarded.push(s);
+    });
+  });
+  // Tap sparkles are spawned by joyBurst(), which spawns nothing while calm.
+  assert.deepEqual(unguarded.filter((s) => s !== '.joy-p'), [], 'these animate while calm: ' + unguarded.join(' | '));
+  assert.ok(/html\.calm-motion \.lock-box\.shake \{ animation: none; \}/.test(CSS), 'the old unguarded lock-shake is gated too');
+  assert.notOk(/transition:\s*all/.test(css), 'and transition: all stays banned');
+});
+
+// Runs the REAL boot-guard.js against a stub page. `os` = the phone's reduce-motion
+// setting; `storage` seeds localStorage; `blocked` makes storage throw.
+function runGuard({ os, storage, blocked }) {
+  const vmm = nodeRequire('vm');
+  const classes = new Set(); const attrs = {};
+  const store = new Map(Object.entries(storage || {}));
+  const sb = {
+    document: {
+      documentElement: { classList: { add: (c) => classes.add(c), remove: (c) => classes.delete(c) }, setAttribute: (k, v) => { attrs[k] = v; }, removeAttribute: (k) => { delete attrs[k]; } },
+      querySelector: () => null, getElementById: () => null,
+    },
+    localStorage: blocked ? { getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); }, removeItem() { throw new Error('blocked'); } }
+      : { getItem: (k) => (store.has(k) ? store.get(k) : null), setItem: (k, v) => store.set(k, v), removeItem: (k) => store.delete(k) },
+    setTimeout: () => 0,
+    addEventListener: () => {},
+    matchMedia: (q) => ({ matches: /reduced-motion/.test(q) ? !!os : false }),
+  };
+  sb.window = sb; sb.top = sb; sb.self = sb;
+  vmm.runInContext(GUARD, vmm.createContext(sb), { filename: 'boot-guard.js' });
+  return { classes, attrs };
+}
+
+test('boot-guard paints the first frame calm for the OS setting or a calm last session, and never otherwise', () => {
+  const plain = runGuard({ os: false, storage: {} });
+  assert.notOk(plain.classes.has('calm-motion')); assert.equal(plain.attrs['data-jelly-motion'], undefined);
+  const os = runGuard({ os: true, storage: {} });
+  assert.ok(os.classes.has('calm-motion'), 'a phone set to reduce motion is calm on a first-ever visit');
+  assert.equal(os.attrs['data-jelly-motion'], 'reduce', "and Jelly's own components start calm too");
+  const last = runGuard({ os: false, storage: { campScoreboardCalmLast: 'battery-saver' } });
+  assert.ok(last.classes.has('calm-motion'), 'the last session was calm: this frame is too');
+  assert.equal(last.attrs['data-jelly-motion'], 'reduce');
+  const off = runGuard({ os: true, storage: { campScoreboardCalmMotion: 'off' } });
+  assert.ok(off.classes.has('calm-motion'), 'the OS beats a stored Off here as everywhere');
+  const blocked = runGuard({ os: true, blocked: true });
+  assert.ok(blocked.classes.has('calm-motion'), 'blocked storage still honours the OS setting');
+  assert.ok(blocked.classes.has('locked'), '(and still locks, as before)');
+});
+
+test('the calm keys in boot-guard.js are the literals jelly-motion.js writes', () => {
+  const MOTION = readFixture('../jelly-motion.js');
+  const last = /LAST_KEY = '([^']+)'/.exec(MOTION)[1];
+  assert.ok(GUARD.includes("'" + last + "'"), 'the guard reads ' + last);
+  assert.equal(last, 'campScoreboardCalmLast');
+  assert.equal(/PREF_KEY = '([^']+)'/.exec(MOTION)[1], 'campScoreboardCalmMotion');
+});
