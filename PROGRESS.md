@@ -151,7 +151,7 @@ owner's PC run stopped after Step 3 (v188). Running BUILD-PLAN Steps 4–10 and
 Sonnet review → Sonnet fix-up → deploy (serialized, one push at a time) →
 Haiku live check. Each deploy adds a "Step N LIVE" line right below this
 entry. It stops before ◆ Step 11 (the owner publishes the database rules).
-If interrupted: re-run the Workflow with resumeFromRunId; deployed steps are
+If interrupted: re-run the Workflow with resumeFromRunId wf_f7af6867-bb8 (script copy in docs/build-notes/build-run2.js); deployed steps are
 the "Build step N" commits on main.
 
 **9:35 PM ET Tue — STEP 3 LIVE (v188, commit 67cfaba).** Local run on the
