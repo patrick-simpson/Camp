@@ -36,6 +36,11 @@
     wobble: Object.freeze({ k: 170, c: 9 }),  // chunky-button release, medals landing, the crown, a refused tap
   });
   var DT = 1 / 60;
+  // The wobble's tail is sub-pixel long before the settle test below passes
+  // (1.37 s of ring for a 0.8 s button): cut it at 900 ms, where the dent has
+  // decayed to 0.2% — under a pixel on any control. It also keeps busy() (and so
+  // the calm sampler) from waiting out a ring nobody can see.
+  var MAX_MS = { wobble: 900 };
 
   var sampleCache = {};
   // x runs 0 -> 1 (with overshoot) along the spring; vs is the velocity at each
@@ -48,7 +53,8 @@
     if (sampleCache[key]) return sampleCache[key];
     var x = 0, v = v0;
     var xs = [0], vs = [v0];
-    for (var f = 1; f <= 240; f++) {
+    var cap = MAX_MS[name] ? Math.round(MAX_MS[name] / 1000 / DT) : 240;
+    for (var f = 1; f <= cap; f++) {
       var a = (1 - x) * p.k - v * p.c;
       v += a * DT; x += v * DT;               // jelly.js E(): v first, then x
       xs.push(x); vs.push(v);
@@ -315,6 +321,7 @@
   // gentler dent: 6% of 358 px is a 21 px sideways bulge past the gutter.
   var pressState = running ? new WeakMap() : null;
   var PRESS_CALM_OPACITY = 0.85;
+  var PRESS_DEEP_PX = 4, PRESS_EDGE_PX = 2;
   function pressFrame(p, q) {
     return {
       transform: 'translateY(' + (p.deep * q) + 'px) skewX(' + (-p.tilt * 0.6 * q) + 'deg) scale(' + (1 + 0.06 * p.amp * q) + ',' + (1 - 0.12 * p.amp * q) + ')',
@@ -327,11 +334,24 @@
     var w = r.width || 1, h = r.height || 1;
     var ox = point && point.x != null ? Math.max(0, Math.min(1, (point.x - r.left) / w)) : 0.5;
     var oy = point && point.y != null ? Math.max(0, Math.min(1, (point.y - r.top) / h)) : 0.5;
+    var amp = Math.min(1, 160 / w);
+    // The finger must stay ON the control while it is dented. The press moves the
+    // control `deep` px down and squashes it toward the touch point, so the
+    // finger's point lands (deep / sy) px above where it started in the control's
+    // own coordinates: in the top ~4.5 px that is OUTSIDE it, and the tap's click
+    // falls through to whatever is behind (a held tap near a button's top edge
+    // was silently dropped). So the dent only goes as deep as the finger's
+    // distance from the top edge allows, less PRESS_EDGE_PX of margin, and none
+    // at all in the top strip. transform-origin is painted at whole percents,
+    // so the maths uses the rounded origin the browser will use.
+    var sy = 1 - 0.12 * amp;
+    var originY = (Math.round(oy * 100) / 100) * h, touchY = oy * h;
+    var deep = Math.max(0, Math.min(PRESS_DEEP_PX, (touchY - originY) + sy * (originY - PRESS_EDGE_PX)));
     var p = {
       origin: Math.round(ox * 100) + '% ' + Math.round(oy * 100) + '%',
       tilt: (ox - 0.5) * 5,
-      deep: 4,
-      amp: Math.min(1, 160 / w),
+      deep: deep,
+      amp: amp,
     };
     pressState.set(el, p);
     var prev = running.get(el);
@@ -353,7 +373,7 @@
   // the dent with the no-overshoot glide instead of ringing.
   function release(el, o) {
     if (!canAnimate(el) || !pressState) return null;
-    var p = pressState.get(el) || { origin: '50% 50%', tilt: 0, deep: 4, amp: 1 };
+    var p = pressState.get(el) || { origin: '50% 50%', tilt: 0, deep: 0, amp: 1 }; // no touch point known: squash only, never a translate
     pressState.delete(el);
     var prev = running.get(el);
     if (prev) { try { prev.cancel(); } catch (e) { /* already gone */ } }
@@ -394,6 +414,7 @@
   var HELD = ['battery-saver', 'battery-low'];  // the reasons hysteresis may hold
   var OFF_AFTER_MS = 60000;                     // calm ends only after a minute without a signal
   var SAVER_HZ = 36, FULL_HZ = 50;
+  var CONFIRM_MS = 4000;                        // the second half of the twice-in-a-row rule
 
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function lsSet(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) { /* storage blocked: the guard just can't pre-paint it */ } }
@@ -488,13 +509,29 @@
   }
   // <= 36 Hz twice in a row -> saver on; >= 50 Hz twice in a row -> off. 120 Hz
   // phones read ~120. A reading in between resets both streaks.
+  // A reading that AGREES with a carried battery-saver verdict (last session's,
+  // or one the hold is keeping) is itself a signal: it renews the hold. Without
+  // that a phone that is always in Low Power Mode went calm, then full-motion
+  // springs at 30 fps for the five minutes until the confirming reading, then
+  // calm again.
   function observeHz(hz) {
-    if (hz <= SAVER_HZ) { streak.low++; streak.high = 0; }
+    if (hz <= SAVER_HZ) {
+      streak.low++; streak.high = 0;
+      if (held === 'battery-saver') lastSignalAt = JM.now();
+    }
     else if (hz >= FULL_HZ) { streak.high++; streak.low = 0; }
     else { streak.low = 0; streak.high = 0; }
     if (streak.low >= 2) inputs.saver = true;
     if (streak.high >= 2) inputs.saver = false;
     return refresh();
+  }
+  // A first reading that disagrees with the current verdict is only half of the
+  // twice-in-a-row rule: confirm it in seconds, not at the next 5-minute sample,
+  // so a first-ever launch on a phone in Low Power Mode is calm within ~7 s.
+  // It can only chain once: the confirming reading either completes a streak or
+  // resets it, and neither disagrees-by-one again.
+  function awaitingConfirm() {
+    return (streak.low === 1 && !inputs.saver) || (streak.high === 1 && inputs.saver);
   }
   var samplerTimer = 0;
   function sampleSoon(ms) { clearTimeout(samplerTimer); samplerTimer = setTimeout(sampleNow, ms == null ? 1500 : ms); }
@@ -508,7 +545,7 @@
       stamps.push(typeof ts === 'number' ? ts : nowMs());
       if (stamps.length < 25) { requestAnimationFrame(frame); return; }  // 25 stamps = 24 intervals
       observeHz(medianHz(stamps));
-      sampleSoon(5 * 60 * 1000);                                // and every 5 minutes while visible
+      sampleSoon(awaitingConfirm() ? CONFIRM_MS : 5 * 60 * 1000); // else every 5 minutes while visible
     })();
     return 'sampling';
   }
@@ -579,6 +616,7 @@
     decide: decide,
     refresh: refresh,
     observeHz: observeHz,
+    awaitingConfirm: awaitingConfirm,
     medianHz: medianHz,
     sampleNow: sampleNow,
     setOs: setOs,

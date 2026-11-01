@@ -222,7 +222,8 @@ function makeContext(opts) {
   sandbox.globalThis = sandbox;
 
   const ctx = vm.createContext(sandbox);
-  APP_FILES.forEach((f) => {
+  // makeContext({ without: ['jelly-motion.js'] }): a page where one script never loaded.
+  APP_FILES.filter((f) => !(opts && opts.without && opts.without.includes(f))).forEach((f) => {
     vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
   });
 

@@ -297,8 +297,8 @@ html.jelly-failed #theme-toggle[value="dark"]:not(:defined) > jelly-segment[valu
 /* Kill the mobile browser's built-in tap flash — a translucent blue
    rectangle painted over the element's whole hit box the moment a finger
    goes down, squared-off regardless of border-radius. Every tappable
-   element here has its own pressed feedback (:active transforms/background,
-   Jelly squish), and the Jelly components already suppress this inside
+   element here has its own pressed feedback (the press dent on plain buttons,
+   :active transforms/background on the rest, Jelly squish), and the Jelly components already suppress this inside
    their shadow roots — this covers the app's plain light-DOM controls. */
 :is(button, [role="button"], a, summary, label, input, select, textarea),
 .schedule-backdrop {
@@ -944,16 +944,16 @@ jelly-tabs:not(:defined) > jelly-tab-panel:not([active]) {
   cursor: pointer;
   font-family: inherit;
   color: var(--color-text);
-  transition: border-color 0.15s ease, transform 0.1s ease;
+  transition: border-color 0.15s ease;
 }
 
 .game-card:hover {
   border-color: var(--color-primary);
 }
-
-.game-card:active {
-  transform: scale(0.99);
-}
+/* No :active transform here (or on .back-pill): this is a plain <button>, so the
+   press dent (jelly-motion.js press(), started by app.js) owns the press. An
+   :active scale applies instantly, then the dent starts from identity at 80 ms —
+   the control popped back to 1.0 and dented again. */
 
 .game-card.done {
   border-color: color-mix(in srgb, var(--color-gold) 45%, var(--color-border));
@@ -1613,14 +1613,11 @@ jelly-chip.sched-day-chip .today-dot {
   white-space: nowrap;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
   animation: back-pill-in 0.28s var(--jm-arrive) both;
-  transition: transform 0.12s ease, background 0.15s ease, border-color 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 .back-pill:hover {
   border-color: var(--color-primary);
   background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
-}
-.back-pill:active {
-  transform: scale(0.95);
 }
 .back-pill-arrow {
   display: inline-block;

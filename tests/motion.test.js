@@ -212,7 +212,12 @@ test('follow() chases a target with the same integrator at the real frame dt', (
   assert.notOk(env.JM.busy(), 'and stops counting once settled');
 });
 
-test('the §9.5 rows meet their minimum visible deformation (arrivals ≥ 4% or ≥ 3px, reveal rows and medals ≥ 8%)', () => {
+// This checks the SPEC TABLE, not the app: the frame functions below are the
+// ones §9.5 prescribes, evaluated along the real preset samples, because no call
+// site in the app uses play()/playOut()/morph()/flipKeyed() yet. When a step
+// ships one of these rows, export its frame builder and test THAT here instead
+// (the press dent already is: see 'press dents toward the finger').
+test('the §9.5 table\'s rows meet their minimum visible deformation on the real presets (spec table only; arrivals ≥ 4% or ≥ 3px, reveal rows and medals ≥ 8%)', () => {
   const { JM } = makeEnv();
   const dev = (preset, fn) => { // peak |scale − 1| and peak overshoot px past rest across the samples
     const s = JM.sample(preset);
@@ -423,6 +428,76 @@ test('press dents toward the finger (≥ 10%), release rings past rest (≥ 3%),
   assert.equal(quick.kf[0].offset, 0);
 });
 
+// Where the finger lands in the control's OWN coordinates while a keyframe is
+// held: the inverse of `translateY(d) skewX(a) scale(sx,sy)` about the origin.
+// Inside the rect = the tap's click still hits the control; outside = it falls
+// through to whatever is behind and the tap is silently dropped.
+function fingerInControl(frame, rect, pt) {
+  const m = /translateY\(([-\d.e]+)px\) skewX\(([-\d.e]+)deg\) scale\(([-\d.e]+),([-\d.e]+)\)/.exec(frame.transform);
+  assert.ok(m, 'a dent frame: ' + frame.transform);
+  const [d, a, sx, sy] = m.slice(1).map(Number);
+  const [ox, oy] = frame.transformOrigin.split(' ').map((v) => parseFloat(v) / 100);
+  const o = { x: rect.left + ox * rect.width, y: rect.top + oy * rect.height };
+  let v = { x: pt.x - o.x, y: pt.y - o.y - d };
+  v = { x: v.x - Math.tan((a * Math.PI) / 180) * v.y, y: v.y };
+  return { x: o.x + v.x / sx, y: o.y + v.y / sy };
+}
+
+test('a held press keeps the finger INSIDE the dented control, at every point of every size (a tap near the top edge must still click)', () => {
+  const env = makeEnv();
+  const { JM } = env;
+  const sizes = [[140, 44], [358, 56], [120, 48], [30, 30], [64, 32], [358, 120], [16, 16]];
+  let checked = 0, zeroDepth = 0;
+  sizes.forEach(([w, h]) => {
+    const rect = { left: 40, top: 300, width: w, height: h };
+    const btn = env.el('button'); btn.rect = () => rect;
+    for (let dy = 0; dy <= h; dy += 0.5) {
+      for (const dx of [0, 1, w / 4, w / 2, w - 1, w]) {
+        const pt = { x: rect.left + dx, y: rect.top + dy };
+        const down = JM.press(btn, pt);
+        const local = fingerInControl(down.kf[1], rect, pt);
+        // never outside, and a 2 px margin from the top wherever the finger itself
+        // is that far from it. (x gets 0.05 px: the skew leans a few hundredths
+        // of a pixel across the rounded transform-origin, which no finger resolves.)
+        assert.ok(local.y >= rect.top - 1e-9 && local.y <= rect.top + h + 1e-9 && local.x >= rect.left - 0.05 && local.x <= rect.left + w + 0.05,
+          `${w}x${h} finger at (${dx}, ${dy}) maps to (${local.x - rect.left}, ${local.y - rect.top}) in the control: ${down.kf[1].transform} @ ${down.kf[1].transformOrigin}`);
+        // (0.1 px: with no translate left, the squash about the percent-rounded origin still moves the point by a few hundredths)
+        assert.ok(local.y - rect.top >= Math.min(2, dy) - 0.1, `${w}x${h} at y+${dy}: the finger keeps its 2 px margin from the top edge`);
+        // the release starts from this same dent, so it holds the same promise at its first frame
+        const up = JM.release(btn);
+        const first = fingerInControl(up.kf[0], rect, pt);
+        assert.ok(first.y >= rect.top - 1e-9, `${w}x${h} at y+${dy}: release begins with the finger still inside`);
+        if (/translateY\(0px\)/.test(down.kf[1].transform)) zeroDepth++;
+        checked++;
+      }
+    }
+  });
+  assert.ok(checked > 500);
+  assert.ok(zeroDepth > 0, 'in the top strip the dent drops its translate rather than losing the tap');
+  // deep still reaches its full 4 px once the finger is clear of the top edge
+  const btn = env.el('button'); btn.rect = () => ({ left: 0, top: 0, width: 140, height: 44 });
+  assert.ok(/translateY\(4px\)/.test(JM.press(btn, { x: 70, y: 30 }).kf[1].transform), 'a finger mid-control gets the full 4 px');
+  // a release with no known touch point never translates
+  const lone = env.el('button');
+  const loneUp = JM.release(lone);
+  assert.ok(loneUp.kf.every((f) => Math.abs(parseFloat(/translateY\(([-\d.e]+)px\)/.exec(f.transform)[1])) < 1e-9), 'no stored press, no translate');
+});
+
+test('the wobble rings for about 0.9 s, not 1.4 (the tail was sub-pixel), and every other preset is unchanged', () => {
+  const { JM } = makeEnv();
+  assert.ok(JM.durationMs('wobble') <= 900, 'wobble is cut at 900 ms: ' + JM.durationMs('wobble'));
+  const w = JM.sample('wobble');
+  assert.ok(Math.abs(1 - w.xs[w.xs.length - 2]) < 0.005, 'where it is cut the dent has decayed to under 0.5%, so pinning it to rest is invisible');
+  assert.equal(w.xs[w.xs.length - 1], 1); assert.equal(w.vs[w.vs.length - 1], 0);
+  // the other five settle on their own, exactly as before the cap existed
+  const was = { press: 633, arrive: 717, snap: 533, settle: 450, glide: 650 };
+  Object.keys(was).forEach((n) => assert.equal(JM.durationMs(n), was[n], n + ' still settles at ' + was[n] + ' ms'));
+  // and a release is no longer than the wobble it plays
+  const env = makeEnv(); const btn = env.el('button');
+  env.JM.press(btn, { x: 50, y: 20 });
+  assert.equal(env.JM.release(btn).opts.duration, env.JM.durationMs('wobble'));
+});
+
 test('a held press does not count as motion forever (the calm sampler must not wait on a thumb)', () => {
   const env = makeEnv();
   const btn = env.el('button');
@@ -611,6 +686,74 @@ test('a battery-saver verdict from the last session is held through boot, not fl
   assert.notOk(off.classes.has('calm-motion'), 'and undoes whatever the guard painted');
   const stale = makeEnv({ storage: { campScoreboardCalmLast: 'os' } });
   assert.notOk(stale.calm(), 'only the two battery verdicts are held; the OS is read live');
+});
+
+// Runs the page for `ms` at `hz` frames per second: timers fire in order and every
+// rAF turn lands one frame period apart, so a frame-rate sample reads `hz`.
+function runAt(env, hz, ms) {
+  const step = 1000 / hz, end = env.clock.t + ms;
+  while (env.clock.t < end) { env.advance(step); env.frame(0); }
+}
+
+test('a phone that is ALWAYS in Low Power Mode (30 Hz) stays calm across the 60 s mark and for good, with last session\'s verdict carried', () => {
+  const env = makeEnv({ storage: { campScoreboardCalmLast: 'battery-saver' } });
+  assert.ok(env.calm(), 'boot-guard painted it calm and the first compute agrees');
+  const key = () => env.store.get('campScoreboardCalmLast');
+  for (let s = 1; s <= 400; s++) {
+    runAt(env, 30, 1000);
+    assert.ok(env.calm(), `calm at ${s} s: it must not spring back to full motion at 30 fps (the old hold lapsed at ~62 s)`);
+    assert.equal(key(), 'battery-saver', `the pre-paint hint survives ${s} s, so a restart paints calm too`);
+  }
+  assert.equal(env.why(), 'battery-saver');
+  assert.notOk(env.JM.awaitingConfirm(), 'the second reading came in seconds, not minutes');
+  // the saver is now a real input, not a hold: nothing has to keep renewing it
+  env.advance(200000);
+  assert.ok(env.calm(), 'and with no frames read for minutes it is still calm');
+});
+
+test('a FIRST-EVER launch on a 30 Hz phone is calm in seconds: the confirming reading is ~4 s after the first, not five minutes', () => {
+  const env = makeEnv();
+  assert.notOk(env.calm(), 'nothing is known yet');
+  runAt(env, 30, 2000 + 25 * 34 + 100);        // the boot sample (2 s, then 24 intervals)
+  assert.ok(env.JM.awaitingConfirm(), 'one low reading is only half of the rule');
+  assert.notOk(env.calm());
+  const due = env.timers.map((t) => t.at - env.clock.t).filter((d) => d > 0).sort((a, b) => a - b)[0];
+  assert.ok(due <= 4000, 'the confirming sample is already scheduled within 4 s: ' + due);
+  runAt(env, 30, 4000 + 25 * 34 + 100);
+  assert.ok(env.calm(), 'two readings, ~8 s after boot'); assert.equal(env.why(), 'battery-saver');
+  assert.equal(env.store.get('campScoreboardCalmLast'), 'battery-saver');
+  assert.ok(env.timers.some((t) => t.at - env.clock.t > 4 * 60 * 1000), 'and then it goes back to a sample every five minutes');
+});
+
+test('a reading that agrees with the verdict, or with the phone being fast, schedules no early re-check; the quick confirm never chains', () => {
+  const fast = makeEnv();
+  runAt(fast, 60, 2000 + 25 * 17 + 100);
+  assert.notOk(fast.JM.awaitingConfirm(), 'a 60 Hz phone agrees with "not calm"');
+  assert.ok(fast.timers.every((t) => t.at - fast.clock.t > 4 * 60 * 1000 || t.at - fast.clock.t <= 0), 'the next sample is five minutes out');
+  const mid = makeEnv();                        // 40 Hz sits between the thresholds: neither verdict
+  runAt(mid, 40, 2000 + 25 * 25 + 100);
+  assert.notOk(mid.JM.awaitingConfirm(), 'an in-between reading resets the streaks and does not chain a re-check');
+  // low, then a fast confirm: the disagreement resolves to "not calm" and stops there
+  const flip = makeEnv();
+  runAt(flip, 30, 2000 + 25 * 34 + 100);
+  assert.ok(flip.JM.awaitingConfirm());
+  runAt(flip, 60, 4000 + 25 * 17 + 100);
+  assert.notOk(flip.JM.awaitingConfirm(), 'it stops after the one confirming reading');
+  assert.notOk(flip.calm());
+});
+
+test('leaving Low Power Mode: two fast readings end the saver, and calm lets go a minute after the last low signal (not at once)', () => {
+  const env = makeEnv();
+  runAt(env, 30, 12000);
+  assert.ok(env.calm());
+  env.advance(300000 - 12000);                 // the next five-minute sample is now queued for a frame
+  runAt(env, 60, 10000);                       // the phone left Low Power Mode: two readings at 60 Hz
+  assert.ok(env.calm(), 'two fast readings do not end calm by themselves: hysteresis keeps it a minute (the phone may be near the threshold)');
+  runAt(env, 60, 30000);
+  assert.ok(env.calm(), '30 s on');
+  runAt(env, 60, 40000);
+  assert.notOk(env.calm(), 'a minute after the last low signal it lets go');
+  assert.equal(env.store.get('campScoreboardCalmLast'), undefined, 'and the pre-paint hint is cleared');
 });
 
 // ── The sampler never runs during motion ──────────────────────────

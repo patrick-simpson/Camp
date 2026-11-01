@@ -146,6 +146,7 @@ send_later into this session). ETAs above shift by however long the pause lasts.
 ## Next steps (resume here)
 - **Step 4 LIVE** (v190, commit a4ed66e, Sun Nov 1 5:55 PM ET) — the week's data (days, blocks, electives, verse, cleanup, meals, team colours) is now read through one set of accessors in app.js instead of the old constants, so the next steps can move that data into the synced setup without touching the screens; nothing looks or behaves differently on either camp; owner action: none.
 - **Step 5 LIVE** (v189, commit 77506d4, Sun Nov 1 5:51 PM ET) — a score the database refuses no longer jams score saving for everyone's later entries: the refused one is set aside with a Retry / Discard bar at the top for editors while the rest keep saving; owner action: none.
+- **Step 12 note for Step 13** — only the toaster radius of the redesign §8.10 Jelly token mapping shipped with Step 12 (motion and calm). Surface, border, foreground, azure, mint, amber and rose are DEFERRED to Step 13's visual system: today's `--color-*` are sourced from `--jelly-*`, so mapping them back sooner is a cycle. It is written into BUILD-PLAN's Step 13 Ships and Opus-pass lines.
 **5:35 PM ET Sun Nov 1 — BACK IN THE CLOUD SESSION ("Resume please").** The
 owner's PC run stopped after Step 3 (v188). Running BUILD-PLAN Steps 4–10 and
 12 here as a Workflow (docs/build-notes/build-run2.js) in TWO parallel lanes —

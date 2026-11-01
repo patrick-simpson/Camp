@@ -7,6 +7,21 @@
 //  - tally: every team posts a score; top 3 auto-earn medals.
 //  - placement: no numbers, you just pick who took gold/silver/bronze.
 
+// jelly-motion.js is a classic script loaded just before this one. If it is
+// missing or fails (a deploy typo, an unbumped ?v=, a stale cached index.html)
+// app.js used to throw at load and the whole app was dead; chat.js and push.js
+// guard their hooks the same way. This is the smallest stand-in that keeps every
+// call site working: nothing moves, nothing is calm, the Calm motion switch just
+// reads Auto. Keys are the real literals (clearLocalData wipes them).
+if (typeof JellyMotion === 'undefined') {
+  globalThis.JellyMotion = {
+    pref: () => 'auto', setPref: () => false, busySource: () => {}, ring: () => null, press: () => null, release: () => null,
+    keys: { pref: 'campScoreboardCalmMotion', last: 'campScoreboardCalmLast' },
+  };
+  globalThis.calmMotion = () => false;
+  globalThis.calmReason = () => null;
+}
+
 const STORAGE_KEY = lsKey('campScoreboardV2'); // per-camp; junior stays the bare literal (suffix '')
 
 // Bump this to the current UTC timestamp (`date -u +%Y-%m-%dT%H:%M:%SZ`)

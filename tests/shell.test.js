@@ -144,13 +144,19 @@ test('styles.css has no motion media query left; every animation rule answers to
   const css = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
   assert.notOk(/prefers-reduced-motion/.test(css), 'no @media (prefers-reduced-motion …) in any form');
   const rules = [...css.matchAll(/([^{}@][^{}]*)\{([^{}]*)\}/g)];
+  // Whole selectors only: 'html.calm-motion .toast-out' must not stand in for
+  // '.toast' (a substring search once accepted exactly that).
+  const calmCounterparts = new Set();
+  rules.forEach(([, sel]) => sel.split(',').map((x) => x.trim()).forEach((x) => {
+    if (x.startsWith('html.calm-motion ')) calmCounterparts.add(x.slice('html.calm-motion '.length));
+  }));
   const unguarded = [];
   rules.forEach(([, sel, body]) => {
     const m = /(?:^|[;\s])animation:\s*([^;]*)/.exec(body);
     if (!m || /^none\b/.test(m[1].trim())) return;
     sel.split(',').map((s) => s.trim()).filter(Boolean).forEach((s) => {
       if (s.startsWith('html:not(.calm-motion)') || s.startsWith('html.calm-motion')) return;
-      if (css.includes('html.calm-motion ' + s)) return; // its calm counterpart switches it off
+      if (calmCounterparts.has(s)) return; // its calm counterpart (the same whole selector) switches it off
       unguarded.push(s);
     });
   });
@@ -211,6 +217,34 @@ test('index.html: the fifteen versioned assets share ONE ?v=, which is APP_VERSI
   const versions = [...new Set(refs.map((m) => m[2]))];
   assert.equal(versions.length, 1, 'one number on all of them: ' + versions.join(', '));
   assert.equal(+versions[0], APP_VERSION, 'and it is APP_VERSION (it drives the auto-reload check)');
+});
+
+// jelly-motion.js is the one script app.js cannot do without at LOAD (it calls
+// JellyMotion.busySource at top level). The ?v= test above catches a wrong
+// number; these catch the tag or the file going missing, and prove the app
+// survives it anyway (chat.js and push.js are typeof-guarded the same way).
+test('jelly-motion.js has its tag in index.html and exists on disk', () => {
+  assert.ok(/<script\s+src="jelly-motion\.js\?v=\d+"><\/script>/.test(INDEX), 'a plain classic script tag');
+  assert.ok(readFixture('../jelly-motion.js').includes('G.JellyMotion = JM'), 'and the file it names is there and publishes the global');
+});
+
+test('app.js still boots when jelly-motion.js never loaded: a no-op stand-in, nothing calm, the same storage keys', () => {
+  const vm = nodeRequire('vm');
+  const { makeContext } = nodeRequire('./harness.js');
+  let boot;
+  assert.doesNotThrow(() => { boot = makeContext({ without: ['jelly-motion.js'] }); }, 'app.js, settings.js, chat.js and push.js all load');
+  const get = (expr) => vm.runInContext(expr, boot.ctx);
+  assert.equal(get('calmMotion()'), false);
+  assert.equal(get('calmReason()'), null);
+  assert.equal(get('JellyMotion.pref()'), 'auto');
+  assert.equal(get('JellyMotion.press(null, {})'), null);
+  assert.equal(get('JellyMotion.release(null)'), null);
+  assert.doesNotThrow(() => get('renderAll()'), 'a render with the stand-in');
+  const MOTION = readFixture('../jelly-motion.js');
+  assert.equal(get('JellyMotion.keys.pref'), /PREF_KEY = '([^']+)'/.exec(MOTION)[1], 'the stand-in names the real switch key (clearLocalData wipes it)');
+  assert.equal(get('JellyMotion.keys.last'), /LAST_KEY = '([^']+)'/.exec(MOTION)[1]);
+  // and with the real file present the stand-in is never installed
+  assert.ok(JellyMotion.presets && JellyMotion.presets.wobble, 'the normal context has the real JellyMotion, not the stand-in');
 });
 
 test('the calm keys in boot-guard.js are the literals jelly-motion.js writes', () => {

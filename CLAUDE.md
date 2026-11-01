@@ -305,6 +305,11 @@ Design: `docs/build-notes/app-shell-redesign-spec.md` §9–10; the reference fe
   measured, and neighbours just jumped). `whenHandsOff(fn)` runs a list reflow
   only with no pointer down and 400 ms after the last touch (a pointer "down"
   for over 10 s counts as lost).
+- **app.js survives a missing jelly-motion.js.** A no-op `JellyMotion` +
+  `calmMotion()` / `calmReason()` stand-in at the top of app.js (nothing moves,
+  nothing is calm) is installed only when the real script never defined them; chat.js and
+  push.js are typeof-guarded the same way. `shell.test.js` boots the real scripts
+  without the file (`makeContext({ without: [...] })`).
 - **One calm switch: `calmMotion()`** (and `calmReason()`). App code never reads
   `matchMedia` for motion again. The OS "reduce motion" setting beats the switch
   (it is an accessibility setting; Off must not override it); Off beats only
@@ -314,6 +319,11 @@ Design: `docs/build-notes/app-shell-redesign-spec.md` §9–10; the reference fe
   `JellyMotion.busy()` — a running animation, or a `busySource` the app
   registered — and abandons a sample if motion starts mid-way) and
   `navigator.getBattery()` (≤ 20% and not charging; Android Chrome only).
+  A FIRST reading that disagrees with the current verdict is confirmed ~4 s later
+  (`CONFIRM_MS`, once — `awaitingConfirm()`), not at the next 5-minute sample, so
+  a first launch on a phone in Low Power Mode is calm within ~8 s; a low reading
+  that agrees with a carried `battery-saver` verdict renews its hold, so an
+  always-30 Hz phone never lapses to full-motion springs at 30 fps.
   Calm comes on at once and ends only after 60 s without a battery signal (a
   phone near the threshold must not flap); the switch and the OS are immediate.
   Any `play` has a calm path (an opacity-only fade) or returns null, and calm
@@ -339,8 +349,16 @@ Design: `docs/build-notes/app-shell-redesign-spec.md` §9–10; the reference fe
   `.joy-pressed` / `.joy-pop` classes are gone: a class would be residue
   (`class=""`) in a `setHtmlIfChanged` root. The dent is for plain
   `button, a, summary` only (`JOY_PRESSABLE`): Jelly components keep their own
-  canvas press physics. A control wider than ~160 px (a full-width list row)
-  gets a proportionally gentler dent. `JellyMotion.busySource` is how the app
+  canvas press physics, so a plain button/link/summary has NO `:active`
+  transform rule in styles.css (it would pop to its scale, then dent from
+  identity at 80 ms). A control wider than ~160 px (a full-width list row)
+  gets a proportionally gentler dent. **The finger must stay inside the dented
+  control**: the dent's depth is clamped by the touch point's distance from the
+  top edge (none in the top ~2 px strip), because a control that slides 4 px down
+  and squashes leaves the top strip empty and a held tap there clicked whatever
+  was behind it (`motion.test.js` maps the touch point through the held
+  transform for every point of every size). The wobble is cut at 900 ms (its
+  1.4 s tail was sub-pixel; the ring also keeps `busy()` true). `JellyMotion.busySource` is how the app
   tells the calm sampler what is moving (confetti, joy-layer children, a running
   stopwatch, a clock in its final minute).
 - **Settings → Calm motion: Auto · On · Off** (today's drawer; More absorbs it
@@ -465,8 +483,9 @@ What's covered, and why each file exists:
   loads `jelly-motion.js` into its OWN vm context (a hand-made DOM, a fake clock
   that also drives `setTimeout`, a queue-driven `requestAnimationFrame`, a WAAPI
   recorder): the springs against Jelly's `E()`, overshoot and minimum visible
-  deformation, play/playOut/press/release/morph/flipKeyed, no residue, the calm
-  truth table, hysteresis and the sampler. Anything only
+  deformation (the §9.5 TABLE only, until a step ships a real call site), play/playOut/press/release/morph/flipKeyed,
+  the held press keeping the finger inside the control, no residue, the calm
+  truth table, hysteresis and the sampler (an always-30 Hz phone stays calm). Anything only
   visible in a browser (animation, layout) is source-checked or left to the
   Playwright pass.
 - `fake-rtdb.js` (+ `fake-rtdb.test.js`) — an in-memory Realtime Database for

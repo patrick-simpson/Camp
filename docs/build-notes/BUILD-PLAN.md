@@ -369,10 +369,13 @@ Four **separate** deploys (P7), in this order, each with its own tests and live 
   Run the reveal / Tell everyone / Award points appear as Steps 23–24 ship), Chat as a tab, the
   bottom stack, keyboard handling, scroll memory, history and Back, deep links, **What counselors
   see** (the six Hide switches move here; the standings switch retires), `teamMark` keyed images,
-  accordion and idle-collapse removed, the Home Screen metas. Now hosts today's banner and live
+  accordion and idle-collapse removed, the Home Screen metas, **and the rest of the redesign §8.10 Jelly
+  token mapping that Step 12 deferred** (surface, border, foreground, azure, mint, amber, rose: today's
+  `--color-*` are sourced FROM the `--jelly-*` tokens, so mapping them back before the palette lands
+  would be a cycle; only the toaster radius shipped in Step 12). Now hosts today's banner and live
   home unchanged inside the new frame. Check whether `sw.js`'s open targets need the new deep links
   (`reveal`, `game:<id>`, `alert:<id>`); if so bump `PUSH_SW_VERSION`.
-- **Opus pass:** the visual system (redesign §8: tokens, type, colour roles, the blue roof, tab bar,
+- **Opus pass:** the visual system (redesign §8: tokens including the deferred §8.10 Jelly mapping, type, colour roles, the blue roof, tab bar,
   More's grouped lists, sheet and takeover frames) against mockups 09, 15, 16.
 - **Needs:** 12 (and the accessors from 4).
 - **Tests:** `tabs.test.js` (switching, dirty render, scroll memory, history including Next-replaces
