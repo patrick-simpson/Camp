@@ -1,0 +1,3 @@
+## 2024-05-19 - Lazily Cache Intl.DateTimeFormat
+**Learning:** Frequent instantiations of `Intl.DateTimeFormat` inside synchronous render loops or frequently called functions (especially during syncing or UI updates) create significant performance bottlenecks. The engine must repeatedly parse timezone configurations and locales.
+**Action:** Always lazily instantiate and cache `Intl.DateTimeFormat` instances in top-level variables or closures. Ensure the initializations are wrapped in `try...catch` blocks to gracefully degrade (e.g. falling back to `Date.prototype.toDateString()`) if the engine does not support the requested configuration or throws an error.
