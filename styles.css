@@ -1753,6 +1753,27 @@ jelly-chip.sched-day-chip .today-dot {
   color: var(--color-primary);
 }
 
+/* The rules refused some of this device's edits (stateQuarantine): the line
+   names them and offers Retry / Discard. Danger-TEXT token, never the fill. */
+.sync-status.quarantined {
+  color: var(--color-danger-text);
+}
+.sync-status.quarantined em {
+  font-style: normal;
+  font-weight: 700;
+}
+/* The two actions wrap as a pair, never one stranded on a line of its own. */
+.sync-quarantine-actions {
+  white-space: nowrap;
+}
+/* Roomy enough to hit on a phone; the generic .link-btn is a bare text link. */
+.sync-quarantine-btn {
+  font: inherit;
+  font-weight: 700;
+  padding: 0.4rem 0.35rem;
+  margin-left: 0.25rem;
+}
+
 /* The same line under the cards, for view-only devices: the Current Standings
    card that carries it for directors is not rendered for them. The builder and
    chat takeovers hide the footer, so they hide this too. */
