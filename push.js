@@ -1801,7 +1801,32 @@ function pushSyncBlockRows(body, all) {
   });
 }
 
-async function pushSendAlert() {
+// The Worker call itself, shared by the composer below and by a programmatic sender (the standings
+// reveal's Buzz on a real Start): one /notify of kind 'alert', then drain whatever batches it queued.
+async function pushSendAlertNow(text, audience, urgent) {
+  const res = await pushPost('/notify', { camp: CAMP.id, kind: 'alert', text, audience, urgent }, true);
+  pushDrainBatches(res.batches);
+  return { sent: Number(res.sent) || 0, queued: Number(res.queued) || 0, failed: Number(res.failed) || 0 };
+}
+
+// With no argument: the director's composer (reads the draft, asks before an urgent or everyone alert, writes
+// its result line). With { text, audience?, urgent? }: a DIRECT send for code that already confirmed with the
+// person (the reveal's Buzz): no composer, no confirm, never throws, answers { ok, sent, queued, failed } or
+// { ok: false, error }. Only a director's phone with the sender configured can send either way.
+async function pushSendAlert(opts) {
+  const direct = !!(opts && typeof opts.text === 'string');
+  if (direct) {
+    if (!(typeof canEdit === 'function' && canEdit())) return { ok: false, error: 'not-editor' };
+    if (!pushConfigured()) return { ok: false, error: 'not-configured' };
+    const text = String(opts.text).trim().slice(0, PUSH_ALERT_MAX);
+    if (!text) return { ok: false, error: 'empty' };
+    try {
+      return Object.assign({ ok: true }, await pushSendAlertNow(text, opts.audience || 'all', !!opts.urgent));
+    } catch (e) {
+      console.warn('[push] direct alert failed', e);
+      return { ok: false, error: pushErrorMessage(e) };
+    }
+  }
   if (pushSending) return;
   if (!(typeof canEdit === 'function' && canEdit())) { showToast('Only directors can send alerts.'); return; }
   const text = String(pushAlertDraft.text || '').trim().slice(0, PUSH_ALERT_MAX);
@@ -1816,10 +1841,9 @@ async function pushSendAlert() {
   if (send) send.setAttribute('disabled', '');
   pushSetResult('Sending…');
   try {
-    const res = await pushPost('/notify', { camp: CAMP.id, kind: 'alert', text, audience, urgent }, true);
-    pushDrainBatches(res.batches);
-    const n = (Number(res.sent) || 0) + (Number(res.queued) || 0);
-    const failed = Number(res.failed) || 0;
+    const res = await pushSendAlertNow(text, audience, urgent);
+    const n = res.sent + res.queued;
+    const failed = res.failed;
     pushSetResult(n
       ? `✅ Sent to ${n} phone${n === 1 ? '' : 's'}${failed ? ` · ${failed} couldn't be reached` : ''}.`
       : `Nobody in "${who}" has phone alerts on yet — nothing was sent.`);

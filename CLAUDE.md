@@ -825,6 +825,67 @@ scope with reveal-core.js).
   `revealChampionLine()` returns it until `campWeek().phase === 'after'` (or 14
   days), after the node and the grid are gone. A practice never writes it.
 
+- **The commands (a director's phone only).** Every write is built by a PURE
+  builder (time is an argument: `ServerValue.TIMESTAMP` in production) and sent as
+  ONE multi-path `update()` at the camp root (`revealRun` / `revealStart` →
+  `revealSend`). Compare-and-set is the rules' job; the builders write exactly what
+  they accept: a Start is `revealPublic/<mode> = { ctl, pub: null }` plus
+  `revealFull/<mode>` (the complete order, the director's member key, editor-only);
+  Next / Back / End are `revealPublic/<mode>/ctl` (the RAW confirmed ctl copied field
+  by field, `seq + 1`, `at` now, `sa` now only when `shown` grows) plus, when a place
+  is shown, `…/pub/g<k>` (that ONE group). The state machine is `revealPlan`
+  (redesign §4.2): intro → live (cur 0…n−1, replays after a Back publish nothing) →
+  champion (finale days only: `revealIsFinaleDay`, `finaleDow()` in the SEAM block,
+  Friday by default, inside the week when it has a date) → table → ended; Back at
+  the first place and at the intro is refused; End is `early` from anywhere but the
+  table; a REAL End deletes nothing, a PRACTICE End deletes both its nodes.
+  `g0` is the LAST place (the first shown); ties are one group; names are cut to 30
+  characters; a place being shown carries the team's name as it is now, the numbers
+  stay the frozen ones. `ca` is the director's `serverNow()` at the tap (the rules
+  refuse a Start whose `ca` is over a minute old), `until` is `untilFor` (08:00 the
+  next camp day across both clock changes; a practice two hours), `epoch` rides the
+  ctl when the week has one.
+- **After a command settles** the node is re-read with `once()` and THAT becomes
+  confirmed (`revealSend`): `revealInFlight` makes the SDK's optimistic echo of our own
+  write count for nothing, and `revealBusy()` (any director while a real reveal is
+  live, or a command unacknowledged) joins `reloadBlocked()`. A rules refusal re-reads
+  and says one sentence ("Another director already showed 4th place." — a place, never
+  a team); if the re-read is refused too the rules are not published
+  ("The reveal isn't switched on yet…", `revealDenied`, stage `off`, no button that
+  leads to a refusal). Nothing is queued: offline refuses at the tap. A Start waits for
+  the phone to be caught up (`revealStartGate`: connected, first pull done, nothing
+  unsent or being typed) and 10 s after the connection last changed.
+- **The button recharges** (`revealCharge`): after a place the big button and Back are
+  locked until `at + 4.5 s` (name 0–3 s, score to 4.5 s; the crowning 3 s); a tap sends
+  nothing and says "Wait 4 s. The big screen is still showing 5th place."; End never
+  locks. `revealRemoteModel()` is what the remote paints from: the stage
+  (`#takeover-reveal[data-phase]`), the button's and Back's states and words (mockup
+  07c), the count, the recharge, the Practice / Buzz / wake facts, `freezeStale` (scores
+  changed since the freeze while still at the intro: "Start again").
+- **The private order** (`revealFull`) is fetched with `once()` when the remote opens
+  (`revealSetRemoteOpen`) and after each acknowledged command, kept in memory only
+  (`revealFullFor`: only for the reveal the server holds), dropped when the remote
+  closes or the phone is demoted. No long-lived editor-only listener exists.
+- **Buzz** (`revealBuzzState`, `revealBuzzAfterStart`): a REAL Start calls
+  `pushSendAlert({ text: 'The standings reveal is starting', audience: 'all' })`
+  (push.js: a text argument is a direct send, no composer, no confirm, never throws)
+  only when phone alerts are live (`pushConfigured()`, i.e. `PUSH_SERVICE_URL` set at
+  Step 27); until then it is disabled with its reason. A practice has no path to it
+  (greyed: "Practice runs never buzz phones.") and never writes `real`.
+- **The screen stays on.** `wakeLockNeeded()` (app.js) = a timer running OR
+  `revealWakeNeeded()` (a director with the remote open, or a real reveal live on a
+  director's phone); every place that released the lock on "no timer" asks it, so a
+  clock ending cannot drop a reveal's lock. A refused lock reads `wake: 'off'`
+  ("Screen may sleep").
+- **Paint hook contract for the screens' session:** define `revealPaint(why, mode)`
+  (called after every confirmed change and time-driven change; `why` is `snapshot`,
+  `reread`, `denied`, `role`, `rescan`, `tick`, `timer`, `wake`, `clock`, `connection`,
+  `full`), read ONLY `revealMirrorView()` / `revealLiveView()` / `revealGridView()` /
+  `revealChampionLine()` for phones and `revealRemoteModel()` for the remote, call
+  `revealStart` / `revealNext` / `revealBack` / `revealEnd` (each answers
+  `{ ok, code, message? }`; they raise their own toasts unless `{ quiet: true }`),
+  `revealSetRemoteOpen(bool)`, `revealSetPractice(bool)`, `revealSetBuzz(bool)`.
+
 ## Set up the week: the frame, the hub, the clipboard (Step 14 — markup and visual system)
 
 P2 §11.0–11.2 ("the director's clipboard") inside redesign §8. Static markup in
@@ -1457,7 +1518,17 @@ What's covered, and why each file exists:
   finder, **a fake clock across 07:59:59 → 08:00:01 on the active tab, an inactive tab and
   after a wake from sleep**, `retireExpiredReveal` (editors only, never before `until`,
   once a minute, practice vs real), the champion line (a name, never a number, survives the
-  node), the sign-out wipe and the remembered server-clock offset
+  node), the sign-out wipe and the remembered server-clock offset; and the COMMANDS against
+  a JS model of database.rules.json's reveal clauses (`rulesModel`: ctl compare-and-set,
+  Start-without-pub, groups only after their place is shown, shapes, delete-after-until,
+  `revealFull.r` = the ctl id, `startedBy` = the writer): the freeze (ties, 30-character
+  names), the whole walk, Back, the replay, the crown, early / done End, the race against
+  another director, rules not published, the optimistic echo not being confirmed, the
+  recharge lock, **practice isolation** (only its own nodes, never `pushSendAlert`, End
+  deletes both), Buzz, `revealBusy` in `reloadBlocked`, the wake lock, the Start gate,
+  the model's words for every state of mockup 07c, **the public-node sweep** (no member
+  key, no director name, no hidden team's id, name or points in any serialized write of
+  a full reveal, a Back, an early End and a practice), DST `until`, the epoch
 - `tv.test.js` / `stalling.test.js` — the TV page for both camps, its Waiting
   screen for a counselor, the reload rules for a second account, a demotion and
   a sign-out, the ledger-decided cache fallback, a tie's order, and the link
@@ -2263,6 +2334,11 @@ ignores the "director alerts" opt-out). Design spec:
   the subrequest cap. `tests/push-e2e/` (opt-in) runs the real Worker in
   workerd against the RTDB emulator with ~30 mock phones — run it after any
   worker.js change.
+- **`pushSendAlert(opts)`**: with no argument it is the director's composer; with
+  `{ text, audience?, urgent? }` it is a DIRECT send for code that already confirmed with the
+  person (the standings reveal's Buzz): no composer, no confirm, never throws, answers
+  `{ ok, sent, queued, failed }` or `{ ok: false, error }`. Both go through
+  `pushSendAlertNow`, one `/notify` of kind `alert`.
 - **Honest limits** (owner accepted): iPhones must use the Home Screen app;
   iOS Focus modes can still silence alerts (web push can't be "time
   sensitive"); a phone that is off gets queued alerts when it comes back,

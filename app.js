@@ -5029,6 +5029,7 @@ function initSync() {
       fbConnected = !!s.val();
       fbConnKnown = true; // first real answer — retire the "Connecting…" spinner
       noteConnectionChange(fbConnected);
+      if (typeof revealOnConnectionChange === 'function') revealOnConnectionChange(fbConnected); // a Start waits out a fresh connection (reveal.js)
       updateSyncIndicator();
       // Re-register presence on every (re)connect — onDisconnect handlers
       // don't survive a dropped socket, so a reconnect after wifi drops or
@@ -6382,8 +6383,15 @@ function anyTimerRunning() {
     || Object.values(state.clocks || {}).some(clockLive);
 }
 
+// Something wants the screen held: a timer, or the standings reveal (a director's remote is open, or a real
+// reveal is live on this director's phone — reveal.js decides). Every place that used to ask only
+// anyTimerRunning() before letting go of the lock asks this, so a clock ending cannot drop a reveal's lock.
+function wakeLockNeeded() {
+  return anyTimerRunning() || (typeof revealWakeNeeded === 'function' && revealWakeNeeded());
+}
+
 async function acquireWakeLock() {
-  if (!('wakeLock' in navigator) || wakeLockSentinel || wakeLockPending || !anyTimerRunning()) return;
+  if (!('wakeLock' in navigator) || wakeLockSentinel || wakeLockPending || !wakeLockNeeded()) return;
   wakeLockPending = true;
   try {
     const sentinel = await navigator.wakeLock.request('screen');
@@ -6392,7 +6400,10 @@ async function acquireWakeLock() {
       return;
     }
     wakeLockSentinel = sentinel;
-    sentinel.addEventListener('release', () => { if (wakeLockSentinel === sentinel) wakeLockSentinel = null; });
+    sentinel.addEventListener('release', () => {
+      if (wakeLockSentinel === sentinel) { wakeLockSentinel = null; if (typeof revealOnWakeChange === 'function') revealOnWakeChange(); }
+    });
+    if (typeof revealOnWakeChange === 'function') revealOnWakeChange(); // the remote's "Screen stays on" line
   } catch (e) { /* user gesture / permission not available — ignore */ }
   finally { wakeLockPending = false; }
 }
@@ -6408,7 +6419,7 @@ function releaseWakeLock() {
 // something is still timing; if everything finished meanwhile, stand down.
 function rearmWakeLock() {
   if (!wakeLockWanted) return;
-  if (anyTimerRunning()) acquireWakeLock();
+  if (wakeLockNeeded()) acquireWakeLock();
   else releaseWakeLock();
 }
 document.addEventListener('visibilitychange', () => { if (!document.hidden) rearmWakeLock(); });
@@ -6512,7 +6523,7 @@ function tickBoardClocks() {
   const settled = settleExpiredClocks();
   // Nothing left running — stopped just above, or paused/expired from another
   // device: let the screen sleep again.
-  if (wakeLockWanted && !anyTimerRunning()) releaseWakeLock();
+  if (wakeLockWanted && !wakeLockNeeded()) releaseWakeLock();
   // Not a bare renderAll: this fires on its own, and an editor typing a score
   // when the clock hits zero lost the field (and the keyboard) to it.
   if (settled) renderAllWhenIdle();
@@ -6854,7 +6865,7 @@ function bindPicRound(wrap, g) {
       } else if (a === 'stop-lap') {
         const ms = Date.now() - w.startAt;
         w.running = false;
-        if (!anyTimerRunning()) releaseWakeLock();
+        if (!wakeLockNeeded()) releaseWakeLock();
         round.laps.push({ ms, photo: false });
         w.lapsTotal = picLapsSum(round);
         touchData();
@@ -6890,7 +6901,7 @@ function bindPicRound(wrap, g) {
         round.done = false;
         w.lapsTotal = 0;
         w.running = false;
-        if (!anyTimerRunning()) releaseWakeLock();
+        if (!wakeLockNeeded()) releaseWakeLock();
         saveState();
       } else if (a === 'photo') {
         photoInput.dataset.teamId = teamId;
@@ -9787,7 +9798,7 @@ function applyClockAction(g, act, secs) {
     }
   });
   if (act === 'start') requestWakeLock();
-  else if (!anyTimerRunning()) releaseWakeLock();
+  else if (!wakeLockNeeded()) releaseWakeLock();
   renderAll();
 }
 
@@ -11272,6 +11283,8 @@ function reloadBlocked() {
   if (canEdit() && editorMidEntry()) return true;
   if (Object.values(liveWatches || {}).some((w) => w && w.running)) return true;
   if (typeof chatComposerBusy === 'function' && chatComposerBusy()) return true;
+  // a director mid-reveal (a real reveal live on this phone, or a command not yet acknowledged): reload after it (reveal.js)
+  if (typeof revealBusy === 'function' && revealBusy()) return true;
   if (typeof rainBusy === 'function' && rainBusy()) return true; // a rain plan being made (setup-ui.js: only while open and touched in the last 2 minutes)
   if (typeof schedItemBusy === 'function' && schedItemBusy()) return true; // a Schedule item with edits not yet saved (setup-ui.js)
   return false;

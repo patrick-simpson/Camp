@@ -586,3 +586,951 @@ test('the server-clock estimate is remembered across a reload: a phone that open
   const fresh = makeContext({ camp: CAMP.id });
   assert.ok(Math.abs(vm.runInContext('serverNow() - Date.now()', fresh.ctx)) < 50, 'and from zero when there is none');
 });
+
+// ════════════════════════════════════════════════════════════════════
+// THE DIRECTORS' COMMANDS
+// ════════════════════════════════════════════════════════════════════
+// Every write goes through a MODEL of database.rules.json's reveal clauses (below), so a builder that
+// writes what the rules would refuse fails here, fast. The model is a tripwire, not the authority: the
+// real rules run against the real client in tests/emulator/reveal-client.mjs.
+
+let nowT = T0;                                            // the one clock: this page's Date.now AND the database's `now`
+const ME = 'jenn@example,com';                            // the director's member key (authUser below)
+
+function resolveTs(v) {
+  if (v && typeof v === 'object') {
+    if (v['.sv'] === 'timestamp') return nowT;
+    const out = Array.isArray(v) ? [] : {};
+    Object.keys(v).forEach((k) => { out[k] = resolveTs(v[k]); });
+    return out;
+  }
+  return v;
+}
+function setPathIn(tree, path, value) {
+  const parts = path.split('/');
+  let cur = tree;
+  parts.slice(0, -1).forEach((k) => { if (!cur[k] || typeof cur[k] !== 'object') cur[k] = {}; cur = cur[k]; });
+  if (value === null) delete cur[parts[parts.length - 1]]; else cur[parts[parts.length - 1]] = value;
+}
+const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+const inRange = (v, lo, hi) => isNum(v) && v >= lo && v <= hi;
+
+// database.rules.json, revealPublic and revealFull, evaluated for one multi-path update at the camp root by a
+// director whose member key is `me`. `root` = the camp's tree before the write, `values` = the update with
+// every timestamp resolved. Returns { ok: true } or { ok: false, why }.
+function rulesModel(root, values, now, me) {
+  const old = (path) => path.split('/').reduce((o, k) => (o && typeof o === 'object' ? o[k] : undefined), root);
+  const next = JSON.parse(JSON.stringify(root));
+  Object.keys(values).forEach((k) => setPathIn(next, k, values[k]));
+  const no = (why) => ({ ok: false, why });
+  const SHAPE_CTL = ['v', 'id', 'seq', 'phase', 'cur', 'shown', 'teams', 'finale', 'at', 'sa', 'ca', 'startedAt', 'until', 'endedAt', 'endKind', 'epoch'];
+  function ctlRule(ctl, was, mode, hasPub) {
+    if (!ctl || typeof ctl !== 'object') return 'ctl is not a branch';
+    const need = ['v', 'id', 'seq', 'phase', 'cur', 'shown', 'teams', 'finale', 'at', 'sa', 'ca', 'startedAt', 'until'];
+    if (need.some((k) => ctl[k] === undefined)) return 'ctl misses a field';
+    if (Object.keys(ctl).some((k) => !SHAPE_CTL.includes(k))) return 'ctl has an unknown field: ' + Object.keys(ctl).find((k) => !SHAPE_CTL.includes(k));
+    if (!inRange(ctl.v, 1, 9) || !REVEAL_ID_RE.test(String(ctl.id)) || !inRange(ctl.seq, 1, 9999)) return 'v / id / seq';
+    if (!/^(intro|live|champion|table|ended)$/.test(String(ctl.phase))) return 'phase';
+    if (!inRange(ctl.cur, -1, 5) || !inRange(ctl.shown, 0, 6) || !inRange(ctl.teams, 2, 6) || typeof ctl.finale !== 'boolean') return 'cur / shown / teams / finale';
+    if (!(ctl.cur < ctl.shown)) return 'cur must be below shown';
+    if (ctl.at !== now) return 'at must be server time';
+    if (!isNum(ctl.sa) || ctl.sa > now || !isNum(ctl.ca)) return 'sa / ca';
+    if (!(ctl.startedAt === now || (was && ctl.startedAt === was.startedAt))) return 'startedAt';
+    const cap = mode === 'practice' ? 10800000 : 172800000;
+    if (!(ctl.until === (was && was.until) || (isNum(ctl.until) && ctl.until > now && ctl.until <= now + cap))) return 'until';
+    if (ctl.endedAt !== undefined && !(ctl.endedAt === now || (was && ctl.endedAt === was.endedAt))) return 'endedAt';
+    if (ctl.endKind !== undefined && !/^(done|early)$/.test(String(ctl.endKind))) return 'endKind';
+    if (ctl.epoch !== undefined && !(typeof ctl.epoch === 'string' && ctl.epoch.length <= 24)) return 'epoch';
+    if (was && was.id === ctl.id) {                                                  // a command on the same reveal
+      if (ctl.seq !== was.seq + 1) return 'seq must be exactly one more (compare-and-set)';
+      if (was.phase === 'ended') return 'an ended reveal cannot be commanded';
+      if (ctl.shown < was.shown || ctl.shown > was.shown + 1) return 'shown moves by at most one, never down';
+      if (ctl.shown > was.shown ? ctl.sa !== now : ctl.sa !== was.sa) return 'sa moves only when a place is shown';
+      if (ctl.ca !== was.ca || ctl.startedAt !== was.startedAt || ctl.until !== was.until || ctl.finale !== was.finale) return 'ca / startedAt / until / finale are fixed inside a reveal';
+    } else {                                                                         // a Start
+      if (!(ctl.seq === 1 && ctl.shown === 0 && ctl.phase === 'intro' && ctl.startedAt === now && ctl.sa === now)) return 'a Start is seq 1, intro, shown 0, stamped now';
+      if (!(ctl.ca > now - 60000 && ctl.ca <= now + 60000)) return 'ca is more than a minute old';
+      if (hasPub) return 'a Start may not coexist with a pub';
+    }
+    return null;
+  }
+  function groupRule(key, grp, wasGroup, newCtl, oldCtl) {
+    if (!/^g[0-5]$/.test(key) || !grp || typeof grp !== 'object' || grp.place === undefined || grp.e === undefined) return 'group shape';
+    if (Object.keys(grp).some((k) => k !== 'place' && k !== 'e')) return 'group has an unknown field';
+    if (wasGroup !== undefined && newCtl.id === (oldCtl && oldCtl.id)) return 'a published place cannot be rewritten inside the same reveal';
+    if (!(newCtl.shown >= Number(key[1]) + 1)) return 'a group cannot be published before its place is shown';
+    if (!inRange(grp.place, 1, 6) || !grp.e || typeof grp.e !== 'object' || !Object.keys(grp.e).length) return 'place / e';
+    for (const tid of Object.keys(grp.e)) {
+      const e = grp.e[tid];
+      if (!/^t[0-5]$/.test(tid) || !e || typeof e !== 'object') return 'team key ' + tid;
+      if (['nm', 'p', 'g', 's', 'b'].some((k) => e[k] === undefined)) return 'entry misses a field';
+      if (Object.keys(e).some((k) => !['nm', 'k', 'p', 'g', 's', 'b', 'v', 'm', 'c'].includes(k))) return 'entry has an unknown field: ' + Object.keys(e).find((k) => !['nm', 'k', 'p', 'g', 's', 'b', 'v', 'm', 'c'].includes(k));
+      if (typeof e.nm !== 'string' || e.nm.length < 1 || e.nm.length > 30) return 'nm';
+      if (!inRange(e.p, -9999, 99999) || !inRange(e.g, 0, 99) || !inRange(e.s, 0, 99) || !inRange(e.b, 0, 99)) return 'p / g / s / b';
+      for (const k of ['v', 'm', 'c']) if (e[k] !== undefined && !inRange(e[k], -9999, 99999)) return k;
+      if (e.k !== undefined && !/^[a-z]{2,12}$/.test(String(e.k))) return 'k';
+    }
+    return null;
+  }
+  for (const key of Object.keys(values)) {
+    const [section, mode, a, b] = key.split('/');
+    const v = values[key];
+    if (section === 'revealPublic') {
+      if (!/^(real|practice)$/.test(String(mode))) return no('mode');
+      const was = old('revealPublic/' + mode);
+      const wasCtl = was && was.ctl;
+      if (a === undefined) {
+        if (v === null) { if (mode === 'real' && wasCtl && !(wasCtl.until <= now)) return no('a real reveal cannot be deleted before its until'); continue; }
+        if (!v || typeof v !== 'object' || !v.ctl || Object.keys(v).some((k) => k !== 'ctl' && k !== 'pub')) return no('a child is { ctl, pub } and nothing else');
+        const why = ctlRule(v.ctl, wasCtl, mode, !!v.pub); if (why) return no(why);
+        for (const gk of Object.keys(v.pub || {})) { const w = groupRule(gk, v.pub[gk], (wasCtl && wasCtl.id === v.ctl.id && was.pub) ? was.pub[gk] : undefined, v.ctl, wasCtl); if (w) return no(w); }
+      } else if (a === 'ctl' && b === undefined) {
+        const why = ctlRule(v, wasCtl, mode, !!(next.revealPublic && next.revealPublic[mode] && next.revealPublic[mode].pub)); if (why) return no(why);
+      } else if (a === 'pub' && b !== undefined && !key.split('/')[4]) {
+        const nc = next.revealPublic && next.revealPublic[mode] && next.revealPublic[mode].ctl;
+        if (!nc) return no('no ctl to publish under');
+        const w = groupRule(b, v, was && was.pub ? was.pub[b] : undefined, nc, wasCtl); if (w) return no(w);
+      } else return no('a path this model does not allow: ' + key);
+    } else if (section === 'revealFull') {
+      if (key.split('/').length !== 2) return no('revealFull is written whole');
+      if (v === null) continue;
+      const nc = next.revealPublic && next.revealPublic[mode] && next.revealPublic[mode].ctl;
+      if (!nc || v.r !== nc.id) return no('revealFull.r must equal the ctl id');
+      if (['r', 'n', 'frozenAt', 'startedBy', 'g'].some((k) => v[k] === undefined) || Object.keys(v).some((k) => !['r', 'n', 'frozenAt', 'lastScoreAt', 'startedBy', 'g'].includes(k))) return no('revealFull shape');
+      if (!inRange(v.n, 1, 6) || !(v.frozenAt === now || v.frozenAt === (old(key) && old(key).frozenAt)) || v.startedBy !== me) return no('n / frozenAt / startedBy');
+      if (v.lastScoreAt !== undefined && !(isNum(v.lastScoreAt) && v.lastScoreAt <= now)) return no('lastScoreAt');
+      for (const gk of Object.keys(v.g || {})) {
+        const grp = v.g[gk];
+        if (!/^g[0-5]$/.test(gk) || !grp || !inRange(grp.place, 1, 6)) return no('revealFull group ' + gk);
+        for (const tid of Object.keys(grp.e || {})) { const e = grp.e[tid]; if (!/^t[0-5]$/.test(tid) || typeof e.nm !== 'string' || !e.nm.length || e.nm.length > 30) return no('revealFull entry'); }
+      }
+    } else return no('a section this model does not allow: ' + section);
+  }
+  return { ok: true };
+}
+
+// The fake database with the model in front of the camp-root update, writes recorded.
+function withRulesModel(db, log) {
+  const orig = db.ref;
+  db.ref = (p) => {
+    const r = orig(p);
+    if (String(p) !== CAMP.dbRoot) return r;
+    const update = r.update;
+    r.update = (values) => {
+      // another director's write may land first (a test's hook); the server then judges ours against what it holds NOW
+      if (db.beforeUpdate) db.beforeUpdate(values);
+      const resolved = resolveTs(values);
+      const verdict = rulesModel((db.serverTree()[CAMP.dbRoot]) || {}, resolved, nowT, ME);
+      log.push({ values: resolved, verdict });
+      if (!verdict.ok) {
+        return new Promise((resolve, reject) => setTimeout(() => { const e = new Error('PERMISSION_DENIED: ' + verdict.why); e.code = 'PERMISSION_DENIED'; reject(e); }, 0));
+      }
+      return update.call(r, values);
+    };
+    return r;
+  };
+}
+
+// ── a director's phone with a known set of standings ─────────────────
+// Points are set by custom bonuses (the simplest exact source); a team's name carries its place so a leak
+// is greppable. `points` = per team index; ties are two equal numbers.
+function seedStandings(points, names) {
+  state.results = {};
+  state.bonuses = {};
+  state.teams.forEach((t, i) => {
+    t.name = (names && names[i]) || ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot'][i];
+    state.bonuses['b' + i] = { teamId: t.id, category: 'custom', label: 'x', points: points[i], at: Date.parse('2026-01-01') };
+  });
+}
+// 1st … last. Distinct, un-guessable point values so a leaked number is found by its digits.
+const SENTINEL_POINTS = [971, 863, 752, 641, 533, 427];
+
+async function bootDirector(opts) {
+  const o = opts || {};
+  nowT = o.now || T0;
+  const db = bootReveal('editor', o.db);
+  authUser = { email: 'jenn@example.com' };
+  Date.now = () => nowT;
+  db.now = () => nowT;
+  const log = [];
+  withRulesModel(db, log);
+  db.log2 = log;
+  clearTimeout(pushTimer); pushTimer = null; clearTimeout(pushConfigTimer); pushConfigTimer = null;
+  dataEditPending = false; pendingWrites = 0; remoteRefetchPending = false;
+  seedStandings(o.points || SENTINEL_POINTS.slice(0, state.teams.length));
+  toasts = [];
+  initReveal();
+  await waitQuiet();
+  return db;
+}
+let toasts = [];
+showToast = (m) => { toasts.push(String(m)); };
+function afterDirector() {
+  authUser = null;
+  teardownReveal();
+}
+const writesTo = (log, prefix) => log.filter((w) => w.verdict.ok).flatMap((w) => Object.keys(w.values).filter((k) => k.startsWith(prefix)).map((k) => ({ key: k, value: w.values[k] })));
+
+test('Start freezes the real standings, ties share a place, and the public node gets a ctl and no place at all', async () => {
+  const db = await bootDirector();
+  const r = await revealStart({ quiet: true });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const pubWrites = writesTo(db.log2, 'revealPublic/');
+  assert.equal(pubWrites.length, 1, 'one write to the public node');
+  const node = pubWrites[0].value;
+  assert.deepEqual(Object.keys(node).sort(), ['ctl', 'pub'], 'a whole child: ctl and an explicit pub: null (a Start leaves no earlier place behind)');
+  assert.equal(node.pub, null);
+  const ctl = node.ctl;
+  assert.equal(ctl.seq, 1); assert.equal(ctl.phase, 'intro'); assert.equal(ctl.cur, -1); assert.equal(ctl.shown, 0);
+  assert.equal(ctl.teams, N);
+  assert.equal(ctl.finale, false, 'a Wednesday');
+  assert.equal(ctl.until, untilFor(T0, false), 'Thursday 08:00 camp time, from reveal-core');
+  assert.equal(ctl.ca, T0, 'the director\'s clock at the tap, for the rules\' one-minute window');
+  assert.equal(ctl.at, T0); assert.equal(ctl.sa, T0); assert.equal(ctl.startedAt, T0);
+  assert.ok(REVEAL_ID_RE.test(ctl.id));
+  assert.deepEqual(Object.keys(ctl).sort(), ['at', 'ca', 'cur', 'finale', 'id', 'phase', 'sa', 'seq', 'shown', 'startedAt', 'teams', 'until', 'v'], 'no epoch in a legacy week, no member key, no name');
+  const full = writesTo(db.log2, 'revealFull/')[0].value;
+  assert.equal(full.r, ctl.id);
+  assert.equal(full.startedBy, ME, 'the director\'s key is written here and in no public field');
+  assert.equal(full.n, N);
+  assert.equal(Object.keys(full.g).length, N);
+  assert.equal(full.g.g0.place, N, 'g0 is the LAST place, the first one shown');
+  assert.equal(full.g['g' + (N - 1)].place, 1);
+  assert.deepEqual(Object.keys(full.g.g0.e), ['t' + (N - 1)]);
+  assert.equal(full.g['g' + (N - 1)].e.t0.p, SENTINEL_POINTS[0]);
+  assert.equal(confirmedReveal.real.ctl.id, ctl.id, 'the confirmed store holds the server\'s ctl');
+  assert.equal(revealFullFor('real').n, N, 'and this phone holds the up-next preview it just wrote');
+  afterDirector();
+});
+
+test('a tie is one place with several teams, ordered by golds, silvers, bronzes then name, and the next place skips', async () => {
+  const points = [900, 800, 800, 700, 600, 500].slice(0, state.teams.length);
+  const db = await bootDirector({ points });
+  const gid = allGames()[0].id;
+  const mult = allGames()[0].messtival ? 2 : 1;
+  state.results[gid] = { medals: { gold: state.teams[2].id, silver: state.teams[1].id, bronze: state.teams[0].id } };   // team 2 has the gold, so it leads the tie on points AND medals
+  state.bonuses.b0.points -= MEDAL_POINTS.bronze * mult;
+  state.bonuses.b1.points = 800 - MEDAL_POINTS.silver * mult;
+  state.bonuses.b2.points = 800 - MEDAL_POINTS.gold * mult;
+  assert.equal(revealFreezeRows().filter((r) => r.p === 800).length, 2, 'the setup really has a two-way tie');
+  const f = revealFreeze(nowT);
+  const places = f.groups.map((g) => g.place);
+  assert.deepEqual(places, places.slice().sort((a, b) => b - a), 'reveal order: the last place first');
+  const tie = f.groups.find((g) => g.entries.length === 2);
+  assert.ok(tie, 'a two-team group');
+  assert.equal(tie.place, 2, 'both are 2nd');
+  assert.deepEqual(tie.entries.map((e) => e.id), [state.teams[2].id, state.teams[1].id], 'the gold medal leads the tie');
+  assert.equal(f.groups.length, N - 1, 'one fewer place than teams');
+  assert.equal(f.groups[f.groups.length - 1].place, 1, '1st is still the last group shown');
+  const r = await revealStart({ quiet: true });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(writesTo(db.log2, 'revealFull/')[0].value.n, N - 1);
+  afterDirector();
+});
+
+test('a team name longer than 30 characters is cut, never refused; a missing name falls back to Team N', async () => {
+  const db = await bootDirector();
+  state.teams[0].name = 'A'.repeat(29) + '🦊🦊';
+  state.teams[1].name = '   ';
+  const r = await revealStart({ quiet: true });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  const g = writesTo(db.log2, 'revealFull/')[0].value.g;
+  const names = [].concat(...Object.values(g).map((x) => Object.values(x.e).map((e) => e.nm)));
+  assert.ok(names.every((n) => n.length >= 1 && n.length <= 30), names.join('|'));
+  assert.ok(names.includes('Team 2'), 'the blank name became Team 2');
+  assert.ok(!names.some((n) => /[\ud800-\udbff]$/.test(n)), 'no half an emoji');
+  afterDirector();
+});
+
+test('the whole reveal walks: every place, a Back, the replay, the final table, End; seq +1 each time, sa only when a place is shown', async () => {
+  const db = await bootDirector();
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  const ctlOf = () => confirmedReveal.real.ctl;
+  let prev = ctlOf();
+  const step = async (action, expect) => {
+    nowT += 5000;                                       // the beat is over: the button is ready
+    const r = await (action === 'next' ? revealNext({ quiet: true }) : action === 'back' ? revealBack({ quiet: true }) : revealEnd({ quiet: true }));
+    assert.equal(r.ok, true, action + ' ' + JSON.stringify(r) + ' ' + JSON.stringify((db.log2[db.log2.length - 1] || {}).verdict));
+    const c = ctlOf();
+    assert.equal(c.seq, prev.seq + 1, 'seq is one more');
+    Object.keys(expect).forEach((k) => assert.equal(c[k], expect[k], action + ': ' + k + ' is ' + c[k]));
+    assert.equal(c.sa === prev.sa, c.shown === prev.shown, 'sa moves exactly when a place is shown');
+    assert.equal(c.at, nowT, 'at is the command\'s server time');
+    assert.equal(c.ca, prev.ca); assert.equal(c.startedAt, prev.startedAt); assert.equal(c.until, prev.until); assert.equal(c.id, prev.id);
+    prev = c;
+  };
+  await step('next', { phase: 'live', cur: 0, shown: 1 });
+  await step('next', { phase: 'live', cur: 1, shown: 2 });
+  await step('back', { phase: 'live', cur: 0, shown: 2 });
+  await step('next', { phase: 'live', cur: 1, shown: 2 });                  // the replay: nothing new is published
+  for (let k = 2; k < N; k++) await step('next', { phase: 'live', cur: k, shown: k + 1 });
+  assert.equal(Object.keys(confirmedReveal.real.pub).length, N, 'every place is public only after it was shown');
+  await step('next', { phase: 'table', cur: N - 1, shown: N });             // a Wednesday: no crowning
+  await step('back', { phase: 'live', cur: N - 1, shown: N });
+  await step('next', { phase: 'table', cur: N - 1, shown: N });
+  await step('end', { phase: 'ended', endKind: 'done' });
+  assert.equal(ctlOf().endedAt, nowT);
+  const after = await revealNext({ quiet: true });
+  assert.equal(after.ok, false); assert.equal(after.code, 'ended', 'an ended reveal takes no command');
+  assert.equal(writesTo(db.log2, 'revealPublic/').filter((w) => /\/pub\/g/.test(w.key)).length, N, 'N groups were published in all: the replay and Back published none');
+  afterDirector();
+});
+
+test('an early End says early; Friday (inside the camp week) crowns the champions between the last place and the table', async () => {
+  const db = await bootDirector({ now: Date.parse('2027-06-25T23:31:00Z') });       // a Friday evening
+  const realWeek = campWeek;
+  campWeek = () => ({ start: '2027-06-20', phase: 'during' });
+  assert.equal(revealIsFinaleDay(nowT), true);
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  assert.equal(confirmedReveal.real.ctl.finale, true, 'decided at Start from the camp day');
+  const go = async (a) => { nowT += 5000; const r = await (a === 'next' ? revealNext({ quiet: true }) : a === 'back' ? revealBack({ quiet: true }) : revealEnd({ quiet: true })); assert.equal(r.ok, true, a + JSON.stringify(r)); };
+  for (let k = 0; k < N; k++) await go('next');
+  assert.equal(confirmedReveal.real.ctl.phase, 'live', 'all places shown, still live');
+  nowT += 5000;
+  assert.equal(revealRemoteModel().go.face, 'crown', 'the button offers the crowning');
+  await go('next');
+  assert.equal(confirmedReveal.real.ctl.phase, 'champion');
+  await go('next');
+  assert.equal(confirmedReveal.real.ctl.phase, 'table');
+  await go('back');                                                                   // back from the table lands on the champions
+  assert.equal(confirmedReveal.real.ctl.phase, 'champion');
+  await go('end');
+  assert.equal(confirmedReveal.real.ctl.endKind, 'early', 'End from anywhere but the table is early');
+  campWeek = realWeek;
+  afterDirector();
+});
+
+test('the finale is the camp\'s finale weekday inside its week: not the Friday before camp, not another day; the weekday is a setting', () => {
+  const realWeek = campWeek;
+  campWeek = () => ({ start: '2027-06-20', phase: 'during' });
+  assert.equal(revealIsFinaleDay(Date.parse('2027-06-25T23:31:00Z')), true, 'Friday of the camp week');
+  assert.equal(revealIsFinaleDay(Date.parse('2027-06-24T23:31:00Z')), false, 'Thursday');
+  assert.equal(revealIsFinaleDay(Date.parse('2027-07-02T23:31:00Z')), false, 'the Friday after the week');
+  assert.equal(revealIsFinaleDay(Date.parse('2027-06-18T23:31:00Z')), false, 'the Friday before it');
+  campWeek = () => ({ start: null, phase: 'unset' });
+  assert.equal(revealIsFinaleDay(Date.parse('2027-06-25T23:31:00Z')), true, 'with no week date, Friday is Friday');
+  campWeek = realWeek;
+  assert.equal(finaleDow(), 5, 'absent = Friday');
+  setupTree.meta.finaleDow = 4;
+  assert.equal(finaleDow(), 4);
+  setupTree.meta.finaleDow = 'soon';
+  assert.equal(finaleDow(), 5, 'junk = Friday');
+  delete setupTree.meta.finaleDow;
+});
+
+// ── compare-and-set: the other director got there first ──────────────
+
+test('two remotes press at once: the loser is refused by the rules, re-reads, says so in a sentence, and follows the server', async () => {
+  const db = await bootDirector();
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  nowT += 5000;
+  // another director's Next lands between this phone's tap and the server seeing it: the SDK echo of OUR write
+  // is not confirmed, and the winner's write moves seq and shown under it
+  db.beforeUpdate = () => {
+    db.beforeUpdate = null;
+    const cur = db.serverGet(REAL).ctl;
+    const other = Object.assign({}, cur, { seq: cur.seq + 1, phase: 'live', cur: 0, shown: 1, at: nowT, sa: nowT });
+    db.serverSet(REAL + '/ctl', other);
+    db.serverSet(REAL + '/pub/g0', { place: N, e: { ['t' + (N - 1)]: { nm: 'Winner', p: 1, g: 0, s: 0, b: 0, v: 0, m: 0, c: 0 } } });
+  };
+  const r = await revealNext();
+  assert.equal(r.ok, false);
+  assert.equal(r.code, 'refused');
+  assert.ok(toasts.some((t) => t === 'Another director already showed ' + ordinal(N) + ' place.'), 'the sentence names the place, never a team: ' + toasts.join(' | '));
+  assert.equal(confirmedReveal.real.ctl.seq, 2, 'the remote follows the server\'s ctl');
+  assert.equal(confirmedReveal.real.ctl.shown, 1);
+  assert.equal(revealInFlight.real, 0, 'nothing is left in flight');
+  // and it can carry on from there: the next press is a normal one
+  nowT += 5000;
+  assert.equal((await revealNext({ quiet: true })).ok, true);
+  assert.equal(confirmedReveal.real.ctl.shown, 2);
+  afterDirector();
+});
+
+test('a Start that another director\'s newer Start replaced is followed, not fought', async () => {
+  const db = await bootDirector();
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  const first = confirmedReveal.real.ctl.id;
+  nowT += 5000;
+  db.beforeUpdate = () => {
+    db.beforeUpdate = null;
+    db.serverSet(REAL, { ctl: Object.assign({}, db.serverGet(REAL).ctl, { id: 'r9zzzzzz-0000', seq: 1, at: nowT, sa: nowT, startedAt: nowT }) });
+  };
+  const r = await revealNext();
+  assert.equal(r.ok, false);
+  assert.ok(toasts.some((t) => /started a new reveal/.test(t)), toasts.join(' | '));
+  assert.notOk(confirmedReveal.real.ctl.id === first, 'the remote now follows the new reveal');
+  assert.equal(revealFullFor('real'), null, 'and does not use the freeze of the old one');
+  afterDirector();
+});
+
+test('rules not published: a write is refused and the re-read is refused too, so the remote says the reveal is not switched on, and offers no button that leads to a refusal', async () => {
+  const db = await bootDirector();
+  db.revokeRead(dbPath('revealPublic'));                    // the public path is not readable (old rules): the listener is cancelled
+  await wait();
+  assert.equal(revealDenied, true);
+  assert.equal(revealRemoteModel().stage, 'off');
+  assert.equal(revealRemoteModel().why, 'rules');
+  const r = await revealStart();
+  assert.equal(r.ok, false); assert.equal(r.code, 'rules');
+  assert.ok(toasts.some((t) => /isn.t switched on yet/.test(t)));
+  assert.equal(db.log2.filter((w) => w.verdict.ok).length, 0, 'nothing was sent');
+  afterDirector();
+});
+
+// ── confirmed state: only what the server acknowledged ───────────────
+
+test('the SDK\'s optimistic echo of this phone\'s own write is NOT confirmed; the acknowledged re-read is', async () => {
+  const db = await bootDirector();
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  const painted = [];
+  revealPaint = (why) => painted.push({ why, seq: confirmedReveal.real && confirmedReveal.real.ctl.seq });
+  nowT += 5000;
+  const seqBefore = confirmedReveal.real.ctl.seq;
+  const pending = revealNext({ quiet: true });
+  // the fake (like the SDK) has already raised the local event with the new ctl, but the write is unacknowledged
+  assert.ok(db.serverGet(REAL).ctl.seq > seqBefore, 'the database holds the new value');
+  assert.equal(confirmedReveal.real.ctl.seq, seqBefore, 'but nothing on this phone has taken it as confirmed');
+  assert.equal(revealRemoteView('real').phase, 'intro', 'every consumer still reads the confirmed state');
+  assert.equal(revealBusy(), true, 'and an auto-update may not reload the phone');
+  await pending;
+  assert.equal(confirmedReveal.real.ctl.seq, seqBefore + 1, 'acknowledged, then re-read, then confirmed');
+  assert.ok(painted.every((p) => p.seq === seqBefore || p.seq === seqBefore + 1), 'no screen ever saw a value that was not the confirmed one');
+  afterDirector();
+});
+
+test('a counselor\'s phone, which never writes, takes every snapshot as confirmed at once', async () => {
+  const db = bootReveal('viewer');
+  initReveal();
+  db.serverSet(REAL, { ctl: mkCtl({ seq: 2, cur: 0, shown: 1 }), pub: mkPub(1) });
+  assert.equal(confirmedReveal.real.ctl.seq, 2);
+  db.serverSet(REAL, { ctl: mkCtl({ seq: 3, cur: 1, shown: 2 }), pub: mkPub(2) });
+  assert.equal(confirmedReveal.real.ctl.seq, 3);
+  teardownReveal();
+});
+
+// ── the button recharges ─────────────────────────────────────────────
+
+test('after a place the button is locked for the beat (name 3 s, score to 4.5 s): a tap sends nothing and says how long; Back is locked too; End never is', async () => {
+  const db = await bootDirector();
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  const sent = () => db.log2.filter((w) => w.verdict.ok).length;
+  nowT += 100;
+  assert.equal((await revealNext({ quiet: true })).ok, true, 'the intro has no beat: Next works at once');
+  assert.equal(revealRemoteModel().back.state, 'first', 'at the first place Back is already unavailable, beat or no beat');
+  nowT += 5000;
+  assert.equal((await revealNext({ quiet: true })).ok, true);
+  const before = sent();
+  nowT += 1000;
+  let r = await revealNext();
+  assert.equal(r.ok, false); assert.equal(r.code, 'wait');
+  assert.ok(toasts.some((t) => t === 'Wait 4 s. The big screen is still showing ' + ordinal(N - 1) + ' place.'), 'the wait is until the button is ready (4.5 s after the command): ' + toasts.join(' | '));
+  assert.equal(sent(), before, 'nothing was sent');
+  const m = revealRemoteModel();
+  assert.equal(m.go.state, 'charging');
+  assert.equal(m.go.kicker, 'Showing the name… 2', 'counting down the name');
+  assert.equal(m.back.state, 'locked');
+  assert.equal(m.back.sub, 'after the score');
+  nowT += 2500;                                               // 3.5 s in: the score is on
+  const m2 = revealRemoteModel();
+  assert.equal(m2.go.kicker, 'Showing the score… 1');
+  r = await revealBack({ quiet: true });
+  assert.equal(r.code, 'wait', 'Back waits for the same beat');
+  nowT += 1000;                                               // 4.5 s: ready
+  assert.equal(revealRemoteModel().go.state, 'ready');
+  assert.equal((await revealNext({ quiet: true })).ok, true);
+  nowT += 10;
+  assert.equal((await revealEnd({ quiet: true })).ok, true, 'End is never locked');
+  assert.equal(confirmedReveal.real.ctl.phase, 'ended');
+  afterDirector();
+});
+
+// ── a practice is a different node and never buzzes ──────────────────
+
+test('a practice writes only its own pair of nodes, never touches real, never calls pushSendAlert, and End deletes its two nodes', async () => {
+  const db = await bootDirector();
+  const buzzes = [];
+  const realAlert = typeof pushSendAlert === 'function' ? pushSendAlert : null;
+  pushSendAlert = (o) => { buzzes.push(o); return Promise.resolve({ ok: true }); };
+  const realConfigured = pushConfigured;
+  pushConfigured = () => true;                                // phone alerts ARE live: still nothing for a practice
+  assert.equal((await revealStart({ quiet: true })).ok, true, 'a real reveal first, so "untouched" means something');
+  assert.equal(buzzes.length, 1, 'the real Start buzzed once');
+  await waitQuiet();
+  const realBefore = JSON.stringify([db.serverGet(REAL), db.serverGet(dbPath('revealFull/real'))]);
+  const logFrom = db.log2.length;
+  revealSetPractice(true);
+  assert.equal(revealBuzzState('practice').available, false);
+  assert.equal(revealBuzzState('practice').reason, 'Practice runs never buzz phones.');
+  const rr = await revealStart({ practice: true, quiet: true });
+  assert.equal(rr.ok, true, JSON.stringify(rr));
+  assert.equal(rr.mode, 'practice');
+  nowT += 5000; assert.equal((await revealRun('next', { mode: 'practice', quiet: true })).ok, true);
+  nowT += 5000; assert.equal((await revealRun('next', { mode: 'practice', quiet: true })).ok, true);
+  assert.equal(confirmedReveal.practice.ctl.shown, 2);
+  assert.equal(confirmedReveal.practice.ctl.until, untilFor(nowT, true) - 10000 + 0 || confirmedReveal.practice.ctl.until, 'a practice lives two hours');
+  assert.equal(confirmedReveal.practice.ctl.until, T0 + 2 * 3600 * 1000);
+  nowT += 5000;
+  assert.equal((await revealRun('end', { mode: 'practice', quiet: true })).ok, true);
+  await waitQuiet();
+  const keys = db.log2.slice(logFrom).filter((w) => w.verdict.ok).flatMap((w) => Object.keys(w.values));
+  assert.ok(keys.length >= 4);
+  keys.forEach((k) => assert.ok(/^reveal(Public|Full)\/practice(\/|$)/.test(k), 'a practice write outside its own nodes: ' + k));
+  assert.equal(JSON.stringify([db.serverGet(REAL), db.serverGet(dbPath('revealFull/real'))]), realBefore, 'the real reveal is byte-identical');
+  assert.equal(db.serverGet(PRACTICE), null, 'End practice deleted the public node…');
+  assert.equal(db.serverGet(dbPath('revealFull/practice')), null, '…and the private one, so its real standings leave at once');
+  assert.equal(confirmedReveal.practice, null);
+  assert.equal(buzzes.length, 1, 'a practice never called pushSendAlert');
+  const src = readFixture('../reveal.js');
+  const body = src.slice(src.indexOf('function revealBuzzAfterStart('), src.indexOf('\n}\n', src.indexOf('function revealBuzzAfterStart(')));
+  assert.ok(/if \(mode !== 'real'\) return/.test(body) && body.indexOf("mode !== 'real'") < body.indexOf('pushSendAlert'), 'the only path to pushSendAlert refuses a practice before it gets there');
+  assert.equal((src.match(/pushSendAlert\(/g) || []).length, 1, 'and there is exactly one call site');
+  pushSendAlert = realAlert; pushConfigured = realConfigured;
+  afterDirector();
+});
+
+test('Buzz: a real Start buzzes everyone once when phone alerts are live; until then it is disabled with its reason and sends nothing', async () => {
+  const db = await bootDirector();
+  const buzzes = [];
+  const realAlert = pushSendAlert, realConfigured = pushConfigured;
+  pushSendAlert = (o) => { buzzes.push(o); return Promise.resolve({ ok: true, sent: 3 }); };
+  assert.equal(pushConfigured(), false, 'PUSH_SERVICE_URL is blank today (Step 27 sets it)');
+  assert.deepEqual(revealBuzzState('real'), { available: false, on: false, forced: false, reason: 'Phone alerts are not switched on yet.' });
+  assert.equal(revealRemoteModel().buzz.available, false, 'the remote reads the same');
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  assert.equal(buzzes.length, 0, 'no phone alerts, no buzz');
+  // live: on by default for a real reveal, and switchable off
+  pushConfigured = () => true;
+  const s = revealBuzzState('real');
+  assert.equal(s.available, true); assert.equal(s.on, true);
+  revealSetBuzz(false);
+  assert.equal(revealBuzzState('real').on, false);
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  assert.equal(buzzes.length, 0, 'switched off: no buzz');
+  revealSetBuzz(true);
+  const r = await revealStart({ quiet: true });
+  assert.equal(r.ok, true);
+  assert.deepEqual(await r.buzz, { ok: true, sent: 3 });
+  assert.equal(buzzes.length, 1);
+  assert.deepEqual(buzzes[0], { text: 'The standings reveal is starting', audience: 'all', urgent: false });
+  pushSendAlert = realAlert; pushConfigured = realConfigured;
+  afterDirector();
+});
+
+test('pushSendAlert with a text is a direct send (no composer, no confirm, never throws); without one it is still the composer', async () => {
+  setMemberRole('editor');
+  const posts = [];
+  const realPost = pushPost, realConfigured = pushConfigured;
+  pushConfigured = () => true;
+  pushPost = async (path, body) => { posts.push({ path, body }); return { sent: 2, queued: 1, failed: 0, batches: [] }; };
+  let asked = 0;
+  confirm = () => { asked += 1; return true; };
+  const r = await pushSendAlert({ text: 'The standings reveal is starting', audience: 'all', urgent: false });
+  assert.deepEqual(r, { ok: true, sent: 2, queued: 1, failed: 0 });
+  assert.equal(asked, 0, 'no confirm: the director already pressed Start');
+  assert.equal(posts[0].path, '/notify');
+  assert.deepEqual(posts[0].body, { camp: CAMP.id, kind: 'alert', text: 'The standings reveal is starting', audience: 'all', urgent: false });
+  pushPost = async () => { throw new Error('network down'); };
+  const realWarn = console.warn; console.warn = () => {};
+  const bad = await pushSendAlert({ text: 'x' });
+  console.warn = realWarn;
+  assert.equal(bad.ok, false, 'a failure is an answer, not a throw');
+  pushConfigured = () => false;
+  assert.deepEqual(await pushSendAlert({ text: 'x' }), { ok: false, error: 'not-configured' });
+  setMemberRole('viewer');
+  pushConfigured = () => true;
+  assert.deepEqual(await pushSendAlert({ text: 'x' }), { ok: false, error: 'not-editor' });
+  pushPost = realPost; pushConfigured = realConfigured;
+  confirm = () => true;
+  setMemberRole(null);
+});
+
+// ── a director mid-reveal must not be reloaded ──────────────────────
+
+test('revealBusy: any director while a real reveal is live (remote open or not) and while a command is in flight; never a counselor, a practice, or an ended reveal', async () => {
+  const db = await bootDirector();
+  assert.equal(revealBusy(), false, 'nothing running');
+  assert.equal((await revealStart({ practice: true, quiet: true })).ok, true);
+  assert.equal(revealBusy(), false, 'a practice does not hold the phone');
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  assert.equal(revealRemoteOpen(), false, 'the remote is not even open');
+  assert.equal(revealBusy(), true, 'a live real reveal holds the phone');
+  assert.equal(reloadBlocked(), true, 'and the auto-update waits (reloadBlocked asks revealBusy)');
+  assert.ok(/revealBusy\(\)/.test(readFixture('../app.js').slice(readFixture('../app.js').indexOf('function reloadBlocked()'), readFixture('../app.js').indexOf('function reloadWhenSafe()'))));
+  setMemberRole('viewer');
+  assert.equal(revealBusy(), false, 'a counselor is never held');
+  setMemberRole('editor');
+  nowT += 5000;
+  await revealEnd({ quiet: true });
+  assert.equal(revealBusy(), false, 'ended: free to reload');
+  afterDirector();
+});
+
+// ── the screen stays on ──────────────────────────────────────────────
+
+test('the wake lock: held while a director\'s remote is open or a real reveal is live, taken back by the wake handler, kept when a clock ends, released after', async () => {
+  const db = await bootDirector();
+  const requests = [];
+  const releases = [];
+  const sentinel = () => { const s = { released: false, addEventListener: () => {}, release() { releases.push(1); this.released = true; } }; return s; };
+  navigator.wakeLock = { request: async (kind) => { requests.push(kind); return sentinel(); } };
+  wakeLockSentinel = null; wakeLockWanted = false; wakeLockPending = false;
+  assert.equal(revealWakeNeeded(), false);
+  revealSetRemoteOpen(true);
+  await waitQuiet();
+  assert.equal(revealWakeNeeded(), true);
+  assert.deepEqual(requests, ['screen'], 'opening the remote asks for the lock');
+  assert.equal(revealWakeHeld(), true);
+  assert.equal(revealRemoteModel().wake, 'on');
+  // a clock ending elsewhere must not drop it
+  releaseWakeLockIfIdle = null;
+  if (!wakeLockNeeded()) releaseWakeLock();
+  assert.equal(revealWakeHeld(), true, 'wakeLockNeeded() counts the reveal');
+  revealSetRemoteOpen(false);
+  assert.equal(revealWakeHeld(), false, 'closing the remote lets the screen sleep');
+  assert.equal(releases.length, 1);
+  // a live real reveal holds it without the remote
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  await waitQuiet();
+  assert.equal(revealWakeHeld(), true, 'a real reveal live on a director\'s phone');
+  // the OS dropped it when the page hid; coming back asks again
+  wakeLockSentinel = null;
+  rearmWakeLock();
+  await waitQuiet();
+  assert.equal(revealWakeHeld(), true);
+  nowT += 5000;
+  await revealEnd({ quiet: true });
+  await waitQuiet();
+  assert.equal(revealWakeHeld(), false, 'End releases it');
+  // a counselor's phone never asks
+  setMemberRole('viewer');
+  requests.length = 0;
+  revealSyncWake();
+  assert.equal(requests.length, 0);
+  delete navigator.wakeLock;
+  afterDirector();
+});
+
+test('a refused wake lock shows as "Screen may sleep" (wake: off), never as an error', async () => {
+  const db = await bootDirector();
+  navigator.wakeLock = { request: async () => { throw new Error('NotAllowedError'); } };
+  wakeLockSentinel = null; wakeLockWanted = false; wakeLockPending = false;
+  revealSetRemoteOpen(true);
+  await waitQuiet();
+  assert.equal(revealRemoteModel().wake, 'off');
+  revealSetRemoteOpen(false);
+  delete navigator.wakeLock;
+  afterDirector();
+});
+
+// ── who may Start, and when ──────────────────────────────────────────
+
+test('Start refuses a counselor, a view-only second tab, a phone that is not up to date and a connection that has only just come back', async () => {
+  const db = await bootDirector();
+  const sent = () => db.log2.filter((w) => w.verdict.ok).length;
+  setMemberRole('viewer');
+  assert.equal((await revealStart({ quiet: true })).code, 'viewer');
+  assert.equal((await revealNext({ quiet: true })).code, 'viewer');
+  setMemberRole('editor');
+  tabWriter = false;
+  assert.equal((await revealStart({ quiet: true })).code, 'view-only');
+  tabWriter = true;
+  dataEditPending = true;
+  let r = await revealStart({ quiet: true });
+  assert.equal(r.code, 'not-ready'); dataEditPending = false;
+  pendingWrites = 1;
+  assert.equal((await revealStart({ quiet: true })).code, 'not-ready'); pendingWrites = 0;
+  fbConnected = false;
+  assert.equal((await revealStart({ quiet: true })).code, 'offline'); fbConnected = true;
+  revealOnConnectionChange(true);                              // the socket flipped just now
+  assert.equal((await revealStart({ quiet: true })).code, 'not-ready', 'a socket that only looks alive is not trusted for ten seconds');
+  nowT += 11000;
+  assert.equal(revealStartGate().canStart, true);
+  assert.equal(sent(), 0, 'nothing was written by any refusal');
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  afterDirector();
+});
+
+test('the ready screen\'s checks: games not yet scored today are named (a warning, never a gate), and the last score\'s time is carried', async () => {
+  const db = await bootDirector();
+  state.meta.lastDataChangeAt = new Date(T0 - 120000).toISOString();
+  const g = revealStartGate();
+  assert.equal(g.lastScoreAt, T0 - 120000);
+  assert.ok(Array.isArray(g.unscored));
+  assert.equal(g.canStart, true, 'unscored games never block a Start');
+  afterDirector();
+});
+
+test('Start again while still at the intro: scores saved since the freeze are noticed, and a new Start replaces the old reveal', async () => {
+  const db = await bootDirector();
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  const first = confirmedReveal.real.ctl.id;
+  assert.equal(revealRemoteModel().freezeStale, false, 'the freeze is tonight\'s standings');
+  state.bonuses.b5 = { teamId: state.teams[N - 1].id, category: 'custom', label: 'late', points: 600, at: Date.parse('2026-01-01') };
+  assert.equal(revealRemoteModel().freezeStale, true, 'a score saved after the freeze: offer Start again');
+  nowT += 1000;
+  const r = await revealStart({ quiet: true });
+  assert.equal(r.ok, true);
+  assert.notOk(confirmedReveal.real.ctl.id === first, 'a new reveal');
+  assert.equal(confirmedReveal.real.pub, null, 'the new Start left no earlier place behind');
+  assert.equal(revealRemoteModel().freezeStale, false);
+  afterDirector();
+});
+
+test('a team renamed mid-reveal: places already shown keep the old name, later ones carry the new; the frozen numbers do not change', async () => {
+  const db = await bootDirector();
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  nowT += 5000;
+  await revealNext({ quiet: true });                                          // last place shown
+  const lastId = 't' + (N - 1);
+  const oldName = state.teams[N - 1].name;
+  state.teams[N - 1].name = 'Renamed';
+  state.teams[N - 2].name = 'Renamed too';
+  state.bonuses['b' + (N - 2)].points = 1;                                    // and a score that changes after the freeze
+  nowT += 5000;
+  await revealNext({ quiet: true });
+  const pub = confirmedReveal.real.pub;
+  assert.equal(pub.g0.e[lastId].nm, oldName, 'a shown place does not change');
+  assert.equal(pub.g1.e['t' + (N - 2)].nm, 'Renamed too', 'the next one carries the name as it is now');
+  assert.equal(pub.g1.e['t' + (N - 2)].p, SENTINEL_POINTS[N - 2], 'but the frozen points');
+  afterDirector();
+});
+
+// ── the remote's model: every state of mockup 07c ────────────────────
+
+test('the remote model maps the phase to the stage and the button\'s words: ready, intro, a place, a tie, the crown, champions, the table, ended', async () => {
+  const db = await bootDirector();
+  let m = revealRemoteModel();
+  assert.equal(m.stage, 'ready');
+  assert.equal(m.go.big, 'Start the reveal');
+  assert.equal(m.back.state, 'hidden');
+  revealSetPractice(true);
+  assert.equal(revealRemoteModel().go.big, 'Start a practice');
+  assert.equal(revealRemoteModel().practice, true);
+  revealSetPractice(false);
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  m = revealRemoteModel();
+  assert.equal(m.stage, 'intro');
+  assert.equal(m.go.kicker, 'Reveal'); assert.equal(m.go.big, ordinal(N) + ' place', 'junior starts at 6th, senior at 4th');
+  assert.equal(m.back.state, 'first'); assert.equal(m.back.sub, 'nothing before');
+  assert.deepEqual(m.count, { shown: 0, total: N });
+  nowT += 100;
+  await revealNext({ quiet: true });
+  nowT += 5000;
+  m = revealRemoteModel();
+  assert.equal(m.stage, 'live');
+  assert.equal(m.go.kicker, 'Reveal'); assert.equal(m.go.big, ordinal(N - 1) + ' place');
+  assert.equal(m.back.state, 'first', 'at the first place Back is disabled');
+  assert.equal(m.back.sub, 'Already at ' + ordinal(N) + ' place');
+  assert.deepEqual(m.count, { shown: 1, total: N });
+  await revealNext({ quiet: true });
+  nowT += 5000;
+  m = revealRemoteModel();
+  assert.equal(m.back.state, 'ready'); assert.equal(m.back.sub, 'show ' + ordinal(N) + ' again');
+  for (let k = 2; k < N; k++) { await revealNext({ quiet: true }); nowT += 5000; }
+  m = revealRemoteModel();
+  assert.equal(m.go.kicker, 'Next'); assert.equal(m.go.big, 'Show the final table', 'a Wednesday: no crowning');
+  await revealNext({ quiet: true }); nowT += 5000;
+  m = revealRemoteModel();
+  assert.equal(m.stage, 'table');
+  assert.equal(m.go.kicker, 'All places shown'); assert.equal(m.go.big, 'End the reveal');
+  assert.equal(m.back.sub, 'show 1st again');
+  await revealEnd({ quiet: true });
+  m = revealRemoteModel();
+  assert.equal(m.stage, 'ended');
+  assert.equal(m.go.kicker, 'Replaces tonight’s'); assert.equal(m.go.big, 'Start a new reveal');
+  assert.equal(m.endedAt, nowT);
+  afterDirector();
+});
+
+test('a tie reads "(tie)" on the button, and the offline face replaces both buttons\' words', async () => {
+  const points = [900, 800, 800, 700, 600, 500].slice(0, state.teams.length);
+  const db = await bootDirector({ points });
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  const groups = revealFullFor('real').groups;
+  const tieIdx = groups.findIndex((g) => g.entries.length === 2);
+  for (let k = 0; k < tieIdx; k++) { nowT += 5000; await revealNext({ quiet: true }); }
+  nowT += 5000;
+  assert.equal(revealRemoteModel().go.big, '2nd place (tie)');
+  fbConnected = false;
+  const off = revealRemoteModel();
+  assert.equal(off.go.state, 'offline');
+  assert.equal(off.go.kicker, 'Reconnecting…');
+  assert.equal(off.go.big, 'Your taps would not reach the big screen');
+  assert.equal(off.back.state, 'offline');
+  fbConnected = true;
+  afterDirector();
+});
+
+test('the Practice switch decides the mode only while nothing is active; a live real reveal wins; the up-next preview comes from revealFull with once() when the remote opens and is dropped when it closes', async () => {
+  const db = await bootDirector();
+  assert.equal(revealRemoteMode(), 'real');
+  revealSetPractice(true);
+  assert.equal(revealRemoteMode(), 'practice');
+  assert.equal((await revealStart({ practice: true, quiet: true })).ok, true);
+  assert.equal(revealRemoteMode(), 'practice');
+  revealSetPractice(false);
+  assert.equal(revealRemoteMode(), 'practice', 'a practice that is running keeps the remote');
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  assert.equal(revealRemoteMode(), 'real', 'a real Start takes over');
+  // the private order is fetched when the remote opens, and gone when it closes
+  revealForgetFull('real');
+  assert.equal(revealRemoteModel().go.state, 'blocked', 'Next cannot know the next place without it');
+  db.paths.length = 0;
+  revealSetRemoteOpen(true);
+  await waitQuiet();
+  assert.ok(db.paths.includes(dbPath('revealFull/real')), 'once() on revealFull/real when the remote opens');
+  assert.equal(revealFullFor('real').n, N);
+  assert.equal(revealRemoteModel().go.state, 'ready');
+  revealSetRemoteOpen(false);
+  assert.equal(revealFullFor('real'), null, 'nothing from revealFull outlives the remote');
+  afterDirector();
+});
+
+test('a counselor promoted to director mid-camp gets the up-next preview the first time the remote opens, with no reload; a demotion drops it', async () => {
+  const db = await bootDirector();
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  setMemberRole('viewer');
+  assert.equal(revealFullFor('real'), null, 'a demoted phone holds no private order');
+  setMemberRole('editor');
+  revealSetRemoteOpen(true);
+  await waitQuiet();
+  assert.equal(revealFullFor('real').n, N, 'fetched by once() on opening');
+  setMemberRole('viewer');
+  assert.equal(revealRemoteOpen(), false);
+  assert.equal(revealFullFor('real'), null);
+  afterDirector();
+});
+
+// ── the public-node sweep ────────────────────────────────────────────
+
+test('the public node never carries a member key, a director name or a hidden team\'s id, name or points: a full reveal, a Back, an early End and a practice, swept write by write', async () => {
+  const names = ['Alpha', 'Bravo', 'Charlie', 'Delta', 'Echo', 'Foxtrot'].slice(0, N);
+  const db = await bootDirector();
+  const sweep = (label, shownIdxs) => {
+    // every key that may appear in the public node, serialized, with what is allowed to be in it
+    const pub = writesTo(db.log2, 'revealPublic/').concat([]).map((w) => w.key + '=' + JSON.stringify(w.value)).join('\n');
+    assert.ok(!pub.includes(ME) && !/jenn|example/i.test(pub), label + ': a member key or a director name is in the public node');
+    assert.ok(!/startedBy|"by"|counselor/i.test(pub), label + ': an identity field');
+    // hidden = every team whose group is not yet shown
+    const full = revealFullFor(confirmedReveal.real ? 'real' : 'practice');
+    const hidden = full.groups.filter((g) => !shownIdxs.includes(g.idx));
+    hidden.forEach((g) => g.entries.forEach((e) => {
+      assert.ok(!pub.includes('"' + e.id + '"') && !pub.includes(e.nm) && !pub.includes(String(e.p)), label + ': hidden team ' + e.id + ' / ' + e.nm + ' / ' + e.p + ' is in the public node');
+    }));
+  };
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  sweep('after Start', []);
+  const shown = [];
+  for (let k = 0; k < N; k++) {
+    nowT += 5000;
+    await revealNext({ quiet: true });
+    shown.push(k);
+    sweep('after place ' + k, shown.slice());
+    if (k === 1) { nowT += 5000; await revealBack({ quiet: true }); sweep('after a Back', shown.slice()); nowT += 5000; await revealNext({ quiet: true }); sweep('after the replay', shown.slice()); }
+  }
+  nowT += 5000; await revealNext({ quiet: true }); sweep('after the table', shown.slice());
+  nowT += 5000; await revealEnd({ quiet: true }); sweep('after End', shown.slice());
+  // an early End: Start, one place, End: the rest never reaches the public node
+  nowT += 1000;
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  nowT += 5000; await revealNext({ quiet: true });
+  nowT += 5000; await revealEnd({ quiet: true });
+  const lastStart = db.log2.map((w, i) => ({ w, i })).filter((x) => x.w.verdict.ok && x.w.values['revealPublic/real']).pop().i;
+  const early = db.log2.slice(lastStart).filter((w) => w.verdict.ok).flatMap((w) => Object.keys(w.values).filter((k) => k.startsWith('revealPublic/')).map((k) => k + '=' + JSON.stringify(w.values[k]))).join('\n');
+  assert.ok(!early.includes(String(SENTINEL_POINTS[0])) && !early.includes('Alpha'), 'the early End: 1st place never went public');
+  const publicTree = JSON.stringify(db.serverGet(dbPath('revealPublic')));
+  assert.ok(!publicTree.includes(ME), 'and the stored public node holds no key');
+  // a practice: its public node is the same, from the same freeze
+  nowT += 1000;
+  revealSetPractice(true);
+  assert.equal((await revealStart({ practice: true, quiet: true })).ok, true);
+  nowT += 5000; await revealRun('next', { mode: 'practice', quiet: true });
+  const practiceTree = JSON.stringify(db.serverGet(PRACTICE));
+  assert.ok(!practiceTree.includes(ME) && !practiceTree.includes(String(SENTINEL_POINTS[0])), 'a practice at its first place holds nothing of 1st');
+  // the private node is the ONE place the key is written
+  const full = JSON.stringify(db.serverGet(dbPath('revealFull/practice')));
+  assert.ok(full.includes(ME), 'revealFull records who started it');
+  afterDirector();
+});
+
+test('reveal.js writes only to revealPublic/<mode>(/ctl | /pub/g<k>) and revealFull/<mode>, and only the builders know those paths', () => {
+  const src = readFixture('../reveal.js').replace(/\/\/[^\n]*/g, '');
+  const keys = [...src.matchAll(/['"`]((?:revealPublic|revealFull)\/[^'"`]*)['"`]/g)].map((m) => m[1].replace(/\$\{[^}]*\}/g, '<x>'));
+  keys.forEach((k) => assert.ok(/^reveal(Public|Full)\/(<x>|practice|real)?(\/ctl|\/pub\/g<x>)?$|^revealPublic\/<x>$|^revealPublic\/<x>\/ctl$|^revealPublic\/<x>\/pub\/g<x>$/.test(k) || /^reveal(Public|Full)\/$/.test(k) || /^reveal(Public|Full)\/(real|practice)$/.test(k), 'an unexpected path: ' + k));
+  assert.ok(!/\.set\(|\.remove\(|\.transaction\(/.test(src), 'no set, remove or transaction');
+  assert.equal((src.match(/\.update\(/g) || []).length, 2, 'exactly two writers: a command and the retirement, each one multi-path update()');
+});
+
+// ── until across the clock changes, the epoch, and the first pull ────
+
+test('Start\'s until is 08:00 camp time the next day across both clock changes, after midnight, and two hours for a practice', async () => {
+  const cases = [
+    ['2027-03-14T00:30:00Z', '2027-03-14T12:00:00Z', 'spring forward: Saturday evening → Sunday 08:00 EDT'],
+    ['2027-11-07T00:30:00Z', '2027-11-07T13:00:00Z', 'fall back: Saturday evening → Sunday 08:00 EST'],
+    ['2027-06-24T04:30:00Z', '2027-06-25T12:00:00Z', 'started after midnight: still the NEXT calendar day'],
+  ];
+  for (const [start, until, why] of cases) {
+    const db = await bootDirector({ now: Date.parse(start) });
+    const r = await revealStart({ quiet: true });
+    assert.equal(r.ok, true, why + ' ' + JSON.stringify(r));
+    assert.equal(confirmedReveal.real.ctl.until, Date.parse(until), why);
+    afterDirector();
+  }
+  const db = await bootDirector({ now: Date.parse('2027-06-23T23:31:00Z') });
+  revealSetPractice(true);
+  assert.equal((await revealStart({ practice: true, quiet: true })).ok, true);
+  assert.equal(confirmedReveal.practice.ctl.until, Date.parse('2027-06-24T01:31:00Z'), 'two hours, well inside the rules\' three');
+  afterDirector();
+});
+
+test('a week with an epoch stamps it on the ctl (phones ignore a reveal from another year); a legacy week writes none', async () => {
+  const db = await bootDirector();
+  state.meta.epoch = 'w20270621';
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  assert.equal(confirmedReveal.real.ctl.epoch, 'w20270621');
+  assert.ok(revealMirrorView(), 'and this phone, in that year, reads it');
+  delete state.meta.epoch;
+  assert.equal(revealMirrorView(), null, 'a phone in another year does not');
+  afterDirector();
+});
+
+test('no command before the first server answer, and a command with the connection down is refused, never queued', async () => {
+  nowT = T0;
+  const db = bootReveal('editor');
+  authUser = { email: 'jenn@example.com' };
+  Date.now = () => nowT; db.now = () => nowT;
+  const log = []; withRulesModel(db, log);
+  clearTimeout(pushTimer); pushTimer = null; dataEditPending = false;
+  seedStandings(SENTINEL_POINTS.slice(0, N));
+  initReveal();                                                           // listener attached, but no answer yet (loaded is false until it lands)
+  revealLoaded.real = false;
+  assert.equal((await revealStart({ quiet: true })).code, 'loading', 'Start would not know whether a reveal is already live');
+  revealLoaded.real = true;
+  fbConnected = false;
+  assert.equal((await revealStart({ quiet: true })).code, 'offline');
+  assert.equal(log.length, 0, 'nothing was handed to the SDK, so nothing is queued to land late');
+  fbConnected = true;
+  afterDirector();
+});
+
+test('a command in flight is never doubled: a second tap while the first is unacknowledged sends nothing', async () => {
+  const db = await bootDirector();
+  assert.equal((await revealStart({ quiet: true })).ok, true);
+  nowT += 5000;
+  const first = revealNext({ quiet: true });
+  const second = await revealNext({ quiet: true });
+  assert.equal(second.code, 'busy');
+  assert.equal((await first).ok, true);
+  assert.equal(db.log2.filter((w) => w.verdict.ok && Object.keys(w.values).some((k) => /\/pub\/g0$/.test(k))).length, 1, 'one place published, once');
+  afterDirector();
+});
+
+test('the hooks into app.js are the ones this file relies on: the connection hook is wired, and nothing else reads a reveal from state', () => {
+  const app = readFixture('../app.js');
+  const conn = app.slice(app.indexOf("ref('.info/connected')"), app.indexOf('// Count listener lives here'));
+  assert.ok(conn.includes('revealOnConnectionChange('), 'a Start waits out a fresh connection');
+  assert.ok(/function wakeLockNeeded\(\)/.test(app) && !/!anyTimerRunning\(\)\) releaseWakeLock/.test(app), 'every release site asks wakeLockNeeded');
+  const src = readFixture('../reveal.js');
+  assert.ok(!/state\.reveal|SYNC_KEYS/.test(src), 'a reveal never lives in synced state');
+});
