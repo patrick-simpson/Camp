@@ -56,7 +56,7 @@ suites keep working after R1 is live.
 |---|---|
 | `compat-old-client.mjs` | a v183–v196 client's real write set (26 operations, both camps: state per path and multi-path, the whole default `config`, members, presence, changelog, chat + stamp, a push device, the published week) behaves identically under the pre-R1 file and R1, and is accepted |
 | `compat-new-client-old-rules.mjs` | the code can deploy before the paste: every new node is refused cleanly under the published rules (so the client shows "not available yet") and works under R1; everyday traffic is identical; a denied `setup` listener never hurts the `state` listener |
-| `setup.mjs` | the seeded week of BOTH camps is accepted (built from `camps.js` by `camp-data.mjs`, junior's team patches included); a non-owner can't seed (`meta/on`), but edits a section that is on; anchors: a field write into a deleted block / day / camper / patch target, or a `{start,end}` move, is refused; a patch on a day that doesn't use the typical day is refused; stamps need server time and the writer's key; scalars and 100,000-char strings at containers, unknown children, bad ids and ranges are refused |
+| `setup.mjs` | the seeded week of BOTH camps is accepted (built from `camps.js` by `camp-data.mjs`, junior's team patches included; and the all-sections seed of Step 20: meals, verses, cleanup, junior's electives); a non-owner can't seed (`meta/on`), but edits a section that is on; anchors: a field write into a deleted block / day / camper / patch target, or a `{start,end}` move, is refused; a patch on a day that doesn't use the typical day is refused; stamps need server time and the writer's key; scalars and 100,000-char strings at containers, unknown children, bad ids and ranges are refused |
 | `restore.mjs` | create / retire an auto point; nothing editable in place; `pinned` is write-once; an `archive`, a `pre-wizard` or a pinned point can't be deleted (index, body, or both); `archive` / `pre-wizard` are the owner's to create |
 | `campers.mjs` | editor-only read at the root, per team and per leaf; whole-camper create; a name write into a deleted camper refused; scalars and unknown children refused |
 | `access-requests.mjs` | closed until `setup/meta/joinOpen`; own row only, server time, 60 s throttle (a leaf write to `note` and delete-and-recreate refused); a blocked identity, a member and an unverified email can't ask; editor read / delete |
@@ -67,11 +67,83 @@ suites keep working after R1 is live.
 | `reveal.mjs` | the public path, run for the first time: anonymous read of `revealPublic` and nothing else, no anonymous write or delete anywhere; Start, compare-and-set races, `shown` +1 at a time, `sa` moves only when a place is shown, no unrevealed place in the public node, no rewrite of a published place, a new Start replaces (and a Start written as `ctl` alone, carrying the old places, is refused); no scalar or 2 MB string at `revealPublic`, `pub`, a Start's `pub`, `revealFull` or its `g`; shape (no `by` / `startedBy` / `name`, `t6`, `g6`, `place` 7, `teams` 7, a 31-char name, `until` over 48 h / 3 h); a real reveal can't be deleted before `until` (directly, as a whole-node delete, or in a multi-path update), a practice any time, the owner any time; `revealFull` editor-only with `r` = ctl id and `startedBy` = the writer; a practice leaves `real` byte-identical; the recorded limit that a director can still delete one shown place is pinned |
 | `ancestor-validate.mjs` | prints what the emulator says to the one-line ancestor-validate probe, and proves the design doesn't depend on the answer: with every record-level and `teams`-node `.validate` stripped, the leaf anchors alone still refuse the field writes, a team flag included |
 
-`camp-data.mjs` loads `defaults.js` + `camp-core.js` + `camps.js` into a vm for
-either camp and builds a `setup` seed by setup-rebuild-spec §10.2 (junior: 26
-typical blocks, patches Tue 2 / Wed 1 / Thu 2 / Fri 8, one-offs 26; senior: 20
-typical, no patches, 6 stub blocks). It is a FIXTURE until Step 15's real
-`buildSeed`; `node camp-data.mjs` prints the counts.
+`camp-data.mjs` builds the `setup` seed the suites use. `buildSeed(id, sections)` is now the REAL seed (Step 15's `buildSeed`, run
+through the unit-test harness's vm; the schedule alone by default, `ALL_SECTIONS` for Step 20's switches). `buildSeedFixture(id)` is
+the hand-written copy (junior: 26 typical blocks, patches Tue 2 / Wed 1 / Thu 2 / Fri 8, one-offs 26; senior: 20 typical, no
+patches, 6 stub blocks) kept so a divergence from the real one is visible; `node camp-data.mjs` prints the counts.
+
+## Export replay — the readiness gate for Edit the week here (BUILD-PLAN Steps 16 and 20)
+
+`export-replay.mjs` answers one question before the owner presses **Edit the week here**: *on this camp's real data, does
+everything the buttons do work under the published rules, and does the camp read the same afterwards?* One command, one
+verdict per camp.
+
+**One-time (the owner).** In the Firebase console: Realtime Database → **Data** → the ⋮ menu at the top of the data →
+**Export JSON**. Do it at the database root, so both camps are in one file. Save it **outside the repo** (the Downloads
+folder is fine). It contains members' emails and phone numbers and the chat: it never belongs in git, and nothing here
+prints a value from it (paths and counts only, and anything that looks like an email or a phone is scrubbed from a printed
+difference). `tests/emulator/.gitignore` also ignores `exports/` and `*.export.json`, in case it is dropped here by mistake.
+
+**Every time:**
+
+```sh
+cd tests/emulator
+npm install                                                           # once
+npx firebase emulators:start --only database --project camp-test &   # once per sitting
+CAMP_EXPORT=/path/to/camp-export.json node export-replay.mjs
+```
+
+`CAMP_EXPORT` defaults to `camp-export.json` in the agent session's scratchpad `exports/` directory (the constant at the top of the script; outside the repo). An
+export taken at ONE camp's root (no `campScoreboard` wrapper) is detected as well; say which camp with
+`CAMP_EXPORT_CAMP=junior|senior` if the team count can't tell. `CAMP_ONLY=junior|senior` runs one camp. It takes about
+ten seconds per camp. Exit code 0 only when every check of every camp passes (2 = it could not start: no emulator, no
+file, not JSON). **When you are done, delete the export** (and `tests/emulator/*.log`, which hold paths only).
+
+**What it does, per camp.** It loads that camp's data into the emulator with the rules bypassed, then drives the REAL client
+(the shipped scripts through `tests/harness.js`, over `tests/fake-rtdb.js` holding the same data), signed in as the owner,
+through what the owner's taps run: `setupTurnOn(['schedule'])` (the `pre-seed` restore point, the seed, `meta/on/schedule`,
+A2's attachments of the games), the hub's "Put games on the schedule", the alert publisher (forced on: `PUSH_SERVICE_URL` is
+blank until phone alerts go live), then meals, verses, cleanup and electives. Every database call the client makes is recorded.
+
+| Check | What it proves |
+|---|---|
+| every write **accepted** | each recorded write (set, update, transaction, remove), replayed in order against the emulator under the REAL `database.rules.json` as the owner, is accepted. A refusal is printed with its path, never its value |
+| owner-only writes **refused** | the writes that flip `meta/on/*` (the turn-ons, Use the original week again) are replayed as a non-owner director against the same state and must be refused |
+| a faithful replay | a transaction ran in the emulator on the same value the client saw; the emulator's tree afterwards equals the client database's; no write carried a value the real SDK would throw on (`undefined`, `NaN`, a bad key: the fake silently prunes them) |
+| reads | the paths the client reads are readable under the real rules (the three engines' paths also by a director and a counselor) |
+| **seeded fidelity** | a fresh client loaded from the emulator before and after is compared on ~11,000 things: the schedule (all 7 days), the Happening-now banner for every minute of the week, the schedule sheet, the calendar files (the dated week, per day, and the undated legacy day), the games each block lists, the alert publisher's blocks and catalog, meals, `mealStart`, verses, cleanup, electives and slot starts, staff names. Only the documented intended differences (below) are allowed; anything else is printed as a readable diff |
+| the rollback | after **Use the original week again** for every section, the same ~11,000 things equal the "before" set exactly; turning it on again equals the first "after" exactly, writing only the switches |
+| **director edits** | a second phone signed in as a non-owner director makes 9–12 real edits with the app's own mutators (rename an item, Just Tuesday, skip a day, a one-off, the camp dates, a dish, cleanup teams, a verse, the theme verse, an elective station, a person) and every write must be accepted as that director, stamps and all |
+| teams | `state/teams` ids are exactly `t0…t5` (junior) or `t0…t3` (senior): BUILD-PLAN Step 25's pre-ship check |
+| placement (a report) | games the seed would leave on **no** schedule item, and cleanup slots that read TBA, listed by name |
+
+**The documented intended differences** (`replay-fidelity.mjs`, one named matcher each, narrow by camp, weekday and shape,
+so none can excuse unrelated drift): the schedule switch; senior's Afternoon games moving to their own blocks (3:00 PM Team
+competitions, 4:50 PM Legacy Game) and no longer showing the Evening pair; junior Friday's Team Skits item listing the Team
+Skits game; a game listed on the item that carries its name (A2's name rule), and no longer on the block its session used
+to put it on; calendar UIDs switching to block ids (and a description naming the placed games); the alert publisher's block
+ids changing format; senior's lunch `mealStart` becoming 12:30; junior's elective rows gaining their member-key list; staff
+names gaining the elective stations' typed game-leader names. The run also fails if it did not see the schedule switch, the
+UIDs and the ids change: a comparison that explains nothing means the "after" client never saw the edited week. If the
+printed schedule in `camps.js` changes, change the matchers with it. **How to read a finding:** a `block-games` / `sheet` /
+`ics` finding on a weekday you recognise is a game whose home moved; decide whether the new home is right (the hub's Put
+games on the schedule and the Schedule screen move it) and, if so, add a matcher for it. Anything with `banner`, `meal`,
+`cleanup`, `verse` or `schedule` in the key is a difference in what people read and should be understood first.
+
+**Proof it can go red** (`REPLAY_MUTATE`, each breaks one thing and the run must fail): `refused-write` replays one write
+the rules refuse; `seed-block` moves one seeded block in the emulator; `rollback-leak` leaves the schedule on in the
+rollback. A rules mutation is `R1_RULES=/path/to/weakened.json` (as for the R1 suites): with the `meta/on/$s` owner clause
+removed, "owner-only writes refused" goes red.
+
+**Before the real export exists:** `node make-synthetic-export.mjs` writes console-shaped exports of the shipped default
+weeks (fake people, example.com) into the scratchpad `exports/` directory (or the directory you give it): `synthetic-clean`
+(a quiet week: results, a bracket, chat, presence, members), `synthetic-junk` (RTDB-pruned empties, an old build's whole
+`teams` array, a result whose game left the week, a TBA game and one that cannot be placed, a game named for a schedule
+item, a pending member, a legacy presence row, an older published schedule, a private `pushServer` node that must be
+ignored) and the two single-camp-root forms. Run them first to see what a green run looks like.
+
+`replay-client.mjs` (the real client over the recording fake database), `replay-page.js` (the code that runs inside the
+app's vm context: boot, the taps, the snapshot, the director's edits) and `replay-fidelity.mjs` (the matchers) are the parts.
 
 ## The thing to remember
 

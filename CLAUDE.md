@@ -153,7 +153,7 @@ Files:
 - `tests/` — `node tests/run.js`, no dependencies, never served to the
   browser (see "Tests" below). `tests/emulator/` (rules in the RTDB
   emulator) and `tests/push-e2e/` (the alert sender in real workerd) are
-  opt-in suites that need npm + Java. `tests/rules-macros.js` is the SOURCE of
+  opt-in suites that need npm + Java (the owner-export readiness gate is `tests/emulator/export-replay.mjs`, see "Tests"). `tests/rules-macros.js` is the SOURCE of
   the R1 rules blocks (see "R1" under "Auth, members & roles"); it is not a test
   and is never loaded by the browser. `tests/stall.js` is a preload that makes timers
   stall at random, to hunt tests that wait on the clock (see "Waiting in a test")
@@ -1690,6 +1690,22 @@ The stub is deliberately minimal, and DOM lookups return a memoized stub element
 rather than null (closer to the real page, where a render function's container
 always exists). Tests assert on state and return values, never on markup —
 anything needing real layout belongs in the Playwright pass.
+
+**The readiness gate for Edit the week here (Steps 16 and 20): `tests/emulator/export-replay.mjs`.** The owner takes a
+console export of the whole database (Data → ⋮ → Export JSON; it holds members' emails, phones and chat, so keep it outside
+the repo, never commit it, delete it afterwards: `tests/emulator/.gitignore` ignores `exports/` and `*.export.json`) and one
+command, `CAMP_EXPORT=/path/to/camp-export.json node export-replay.mjs` in `tests/emulator/` with the database emulator
+running, gives a verdict per camp. For each camp it loads the exported data into the emulator, drives the REAL client (the
+shipped scripts through `tests/harness.js` over `tests/fake-rtdb.js` holding the same data) as the owner through
+`setupTurnOn` (schedule, then meals / verses / cleanup / electives), the games' attachments and the publisher, records every
+write, replays them under the real `database.rules.json` (each accepted; the owner-only ones refused to a non-owner
+director), compares what the camp reads before and after (the schedule, the banner for every minute, the calendar files, the
+games per block, the alert blocks, meals, verses, cleanup, electives, staff) allowing only the documented intended
+differences (`replay-fidelity.mjs`), checks that Use the original week again restores the "before" set exactly, replays a
+second director's edits, and reports team ids (`t0…t(N-1)`) and any game left on no schedule item. It prints paths and counts,
+never a value from the export. `make-synthetic-export.mjs` writes fake console exports (clean and "junk") to prove it before
+the real file exists, and `REPLAY_MUTATE=refused-write|seed-block|rollback-leak` or a weakened `R1_RULES` file shows it go red.
+Details and how to read a finding: `tests/emulator/README.md`.
 
 ## Two camps, one app (junior + senior)
 

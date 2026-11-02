@@ -40,10 +40,14 @@ function teamsOfTail(camp, label) {
 import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 
-export function buildSeed(id) {
+// `sections` (optional): the sections to seed, as setupTurnOn names them; default is the schedule alone, which is what
+// Step 16 presses. Step 20 presses the other four (junior's electives included); ALL_SECTIONS is every one the camp has.
+export const ALL_SECTIONS = ['schedule', 'meals', 'verses', 'cleanup', 'electives'];
+export function buildSeed(id, sections) {
   const { makeContext } = require('../harness.js');
   const { ctx } = makeContext({ camp: id });
-  return json(vm.runInContext('buildSeed(CAMP)', ctx));
+  ctx.__sections = sections || null;
+  return json(vm.runInContext('buildSeed(CAMP, __sections || undefined)', ctx));
 }
 
 export function buildSeedFixture(id) {

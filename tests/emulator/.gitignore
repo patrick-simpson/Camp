@@ -1,0 +1,12 @@
+# opt-in suites: nothing installed or exported here is ever committed
+node_modules/
+*.log
+exports/
+*.export.json
+# the copy the README's `cp ../../database.rules.json .` step leaves here
+/database.rules.json
+firebase-debug.log
+ui-debug.log
+database-debug.log
+# the lockfile is not kept (the repo has no package.json at its root and these suites are opt-in)
+package-lock.json

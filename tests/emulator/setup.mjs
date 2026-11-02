@@ -3,13 +3,15 @@
 // record, patch a day that doesn't use the typical day, forge a stamp, or drop a scalar where a
 // tree belongs is refused.
 import { harness, suite, NEW_RULES, OLD_RULES, ROOTS, OWNER, ED, ED2, VW, NOBODY, ref, set, get, update, remove, runTransaction, TS, assertFails, assertSucceeds, outcome } from './lib.mjs';
-import { buildSeed } from './camp-data.mjs';
+import { buildSeed, ALL_SECTIONS } from './camp-data.mjs';
 
 const s = suite('setup — seeded weeks, anchors, patches, stamps, shapes');
 const h = await harness('setup', NEW_RULES);
 await h.members();
 
 const SEEDS = { campScoreboard: buildSeed('junior'), seniorScoreboard: buildSeed('senior') };
+// Step 20's switches: the same, with meals, verses, cleanup and (junior) electives seeded too
+const SEEDS_ALL = { campScoreboard: buildSeed('junior', ALL_SECTIONS), seniorScoreboard: buildSeed('senior', ALL_SECTIONS) };
 const owner = () => h.as(OWNER), ed = () => h.as(ED), vw = () => h.as(VW);
 const block = (over) => Object.assign({ start: 600, end: 660, label: 'Team competitions', emoji: '🏅', type: 'games', ord: 10 }, over || {});
 // a small valid tree to arrange state for refusal cases (rules disabled)
@@ -33,6 +35,18 @@ for (const R of ROOTS) {
     await assertSucceeds(runTransaction(ref(owner(), P()), (cur) => (cur === null ? seed : undefined)));
     const back = (await get(ref(owner(), P('typical')))).val();
     if (Object.keys(back).length !== Object.keys(seed.typical).length) throw new Error('typical day did not round-trip');
+  });
+
+  await s.t(`${camp}: the ALL-sections seed (Step 20: meals, verses, cleanup${camp === 'junior' ? ', electives' : ''}) is accepted whole, and a non-owner's copy is refused`, async () => {
+    await h.seed((db) => remove(ref(db, P())));
+    const seed = JSON.parse(JSON.stringify(SEEDS_ALL[R]));
+    for (const k of ['meals', 'verses', 'cleanup'].concat(camp === 'junior' ? ['electives'] : [])) if (!seed.meta.on[k]) throw new Error(k + ' is not in the all-sections seed');
+    seed.meta.seeded = { at: TS(), byKey: OWNER.key, from: 'camps.js@v200' };
+    await assertFails(set(ref(ed(), P()), JSON.parse(JSON.stringify(seed))));
+    await assertSucceeds(runTransaction(ref(owner(), P()), (cur) => (cur === null ? seed : undefined)));
+    const back = (await get(ref(owner(), P()))).val();
+    if (camp === 'junior' && !(back.electives && back.electives.stations && back.electives.slots)) throw new Error('junior electives (stations and slots) did not round-trip');
+    if (!back.meals && camp === 'junior') throw new Error('junior meals did not round-trip');
   });
 
   await s.t(`${camp}: ...and the same seed written by a NON-owner director is refused (meta/on is the owner's)`, async () => {
