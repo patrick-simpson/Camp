@@ -2597,6 +2597,11 @@
        and JellyMotion, so it must come first. -->
   <script src="jelly-motion.js?v=200"></script>
   <script src="app.js?v=200"></script>
+  <!-- The standings reveal's engine (what a phone knows about a reveal, the 8 AM rule, the champion
+       line, the director's commands). Same optional-layer contract as chat.js: it needs app.js's
+       globals and reveal-core.js, every hook in app.js is typeof-guarded, and without this tag the app
+       simply shows no reveal. -->
+  <script src="reveal.js?v=200"></script>
   <!-- The setup engine (the week's schedule, menus, verses, rota and electives as
        data under <root>/setup; restore points; "also here"). Same optional-layer
        contract as chat.js: it needs app.js's globals, so it loads right after it, and

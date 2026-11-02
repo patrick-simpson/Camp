@@ -153,6 +153,12 @@ test('clearLocalData wipes the camp data a signed-out device must not keep', () 
   localStorage.setItem('campScoreboardCalmMotion', 'on'); // the Calm motion switch (device-wide, like the theme)
   localStorage.setItem('campScoreboardCalmLast', 'switch-on'); // its last verdict, which boot-guard.js paints from
   localStorage.setItem('campWeatherCache', '{}'); // public data — may stay
+  // the standings reveal (reveal.js): the last real reveal as the phone held it, and the crowned team's name, per camp
+  Object.keys(CAMPS).forEach((cid) => {
+    localStorage.setItem('campScoreboardRevealCache' + CAMPS[cid].storageSuffix, '{"ctl":{}}');
+    localStorage.setItem('campScoreboardChampion' + CAMPS[cid].storageSuffix, '{"ver":1}');
+  });
+  localStorage.setItem('campScoreboardServerOffset', '1500'); // this phone's clock vs the server's: not camp data
 
   clearLocalData();
 
@@ -161,6 +167,13 @@ test('clearLocalData wipes the camp data a signed-out device must not keep', () 
    'campScoreboardCalmMotion', 'campScoreboardCalmLast'].forEach((k) => {
     assert.equal(localStorage.getItem(k), null, `${k} must be cleared`);
   });
+  Object.keys(CAMPS).forEach((cid) => {
+    ['campScoreboardRevealCache', 'campScoreboardChampion'].forEach((b) => {
+      assert.equal(localStorage.getItem(b + CAMPS[cid].storageSuffix), null, `${b} (${cid}) must be cleared`);
+    });
+  });
+  assert.equal(localStorage.getItem('campScoreboardServerOffset'), '1500', 'the clock estimate describes the phone, not the camp: it stays');
+  localStorage.removeItem('campScoreboardServerOffset');
   assert.ok(store.has('campWeatherCache'), 'the forecast is not personal — it may stay');
 });
 

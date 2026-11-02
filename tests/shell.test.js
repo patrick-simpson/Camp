@@ -191,13 +191,13 @@ test('boot-guard paints the first frame calm for the OS setting or a calm last s
 
 // A deploy bumps every ?v= together (CLAUDE.md's checklist). One missed bump
 // strands phones on a mix of builds, and the new script is the easiest to
-// forget: jelly-motion.js is the fifteenth, setup-sync.js the sixteenth, setup-ui.js the seventeenth.
-test('index.html: the seventeen versioned assets share ONE ?v=, which is APP_VERSION, and jelly-motion.js loads between camps.js and app.js', () => {
+// forget: jelly-motion.js is the fifteenth, setup-sync.js the sixteenth, setup-ui.js the seventeenth, reveal.js the eighteenth.
+test('index.html: the eighteen versioned assets share ONE ?v=, which is APP_VERSION, and jelly-motion.js loads between camps.js and app.js', () => {
   const refs = [...INDEX.matchAll(/<(?:script|link)\b[^>]*?(?:src|href)="([^"]+\?v=(\d+))"/g)]
     .filter((m) => !/^https?:/.test(m[1]) && !/manifest\.json|apple-touch-icon/.test(m[1]));
   const files = refs.map((m) => m[1].split('?')[0]);
   assert.deepEqual(files, ['vendor/jelly.js', 'styles.css', 'boot-guard.js', 'firebase-config.js', 'defaults.js', 'camp-core.js',
-    'reveal-core.js', 'camps.js', 'jelly-motion.js', 'app.js', 'setup-sync.js', 'settings.js', 'setup-ui.js', 'chat.js', 'push.js', 'auth-phone.js', 'auth-email-link.js'],
+    'reveal-core.js', 'camps.js', 'jelly-motion.js', 'app.js', 'reveal.js', 'setup-sync.js', 'settings.js', 'setup-ui.js', 'chat.js', 'push.js', 'auth-phone.js', 'auth-email-link.js'],
   'every code asset, in load order');
   const versions = [...new Set(refs.map((m) => m[2]))];
   assert.equal(versions.length, 1, 'one number on all of them: ' + versions.join(', '));

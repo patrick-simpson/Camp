@@ -119,6 +119,8 @@ function setMemberRole(role, opts) {
   if (typeof setupOnRoleChange === 'function') setupOnRoleChange(memberRole, next);
   memberRole = next;
   memberRoleConfirmed = confirmed;
+  // The standings reveal listens to the practice child as a director only (reveal.js).
+  if (changed && typeof revealOnRoleChange === 'function') revealOnRoleChange();
   // The writer election starts the moment a role is KNOWN — the hinted role at
   // boot included, before auth confirms it — so no cache write or push can run
   // ahead of it. A null role (not resolved / kicked) leaves the tab as it is.
@@ -954,6 +956,12 @@ function electiveKnowsName(name) {
 // This week is the legacy one, so it is pinned to DOUBLE_WINDOW_LEGACY until a
 // week sets its own; once it can, a week with no window will return null.
 function doubleWindow() { return DOUBLE_WINDOW_LEGACY; }
+// The weekday (0 = Sunday … 6 = Saturday) on which the standings reveal ends in the champions' crowning
+// (setup/meta/finaleDow, always read like the week's start date; absent or junk = Friday).
+function finaleDow() {
+  const v = typeof setupTree !== 'undefined' && setupTree && setupTree.meta ? setupTree.meta.finaleDow : null;
+  return Number.isInteger(v) && v >= 0 && v <= 6 ? v : 5;
+}
 
 // ── Teams
 function teamIds() { return (state.teams || NO_ITEMS).map((t) => t.id); }
@@ -3330,7 +3338,24 @@ let applyingRemoteConfig = false;
 // `.info/serverTimeOffset`, so serverNow() is the same instant on every device
 // that has ever connected. With sync off (or before the first connect) the
 // offset is 0 and this is exactly Date.now() — identical to the old behavior.
-let serverTimeOffset = 0;
+//
+// The last estimate is kept in localStorage (device-wide, not camp data, not wiped on sign-out:
+// it describes this phone's clock, nothing else) so a phone that opens OFFLINE at 7:58 still
+// knows what time the server thinks it is: the standings reveal hides at 8:00 by the server's
+// clock, and a phone that fell back to its own clock could show a grid minutes after it.
+const SERVER_OFFSET_KEY = 'campScoreboardServerOffset';
+const SERVER_OFFSET_MAX_MS = 7 * 24 * 3600 * 1000; // a stored value this large is junk, not a clock
+function readStoredServerOffset() {
+  try {
+    const raw = localStorage.getItem(SERVER_OFFSET_KEY);
+    const v = raw === null ? NaN : Number(raw);
+    return Number.isFinite(v) && Math.abs(v) <= SERVER_OFFSET_MAX_MS ? v : 0;
+  } catch (e) { return 0; }
+}
+function rememberServerOffset(off) {
+  try { localStorage.setItem(SERVER_OFFSET_KEY, String(Math.round(off))); } catch (e) { /* the next connect refreshes it */ }
+}
+let serverTimeOffset = readStoredServerOffset();
 
 function serverNow() {
   return Date.now() + serverTimeOffset;
@@ -4990,9 +5015,12 @@ function initSync() {
       if (!Number.isFinite(off)) return;
       const changed = Math.abs(off - serverTimeOffset) > 500;
       serverTimeOffset = off;
+      if (changed) rememberServerOffset(off);
       // A big correction means every visible countdown was wrong — repaint now
       // rather than waiting for the next 500ms tick to creep it into place.
       if (changed && appStarted) tickBoardClocks();
+      // …and every "is it 8 AM yet" answer the standings reveal gave (reveal.js).
+      if (changed && typeof revealOnClockChange === 'function') revealOnClockChange();
     }, () => { /* rules/offline — stay on device time */ });
     // Honest connection state: RTDB's .info/connected flips as wifi comes and
     // goes, so the indicator can say "Offline — will sync when back" instead of
@@ -5052,6 +5080,10 @@ function initSync() {
     // Phone alerts (push.js — optional layer, same typeof guard). Same
     // invariant: it touches the database only from here on, post-approval.
     if (typeof initPush === 'function') initPush();
+    // The standings reveal (reveal.js — optional layer, same guard): the counselor mirror listens to
+    // <root>/revealPublic/real (a public path, but still only after approval, like every ref), a
+    // director also to its practice child. A refusal degrades the reveal only.
+    if (typeof initReveal === 'function') initReveal();
     // (Auto-reload is handled by startUpdatePolling — a same-origin poll of the
     // deployed index.html — so it works on a single device and doesn't depend on
     // Firebase or another client announcing the build.)
@@ -11889,6 +11921,9 @@ function renderShellTabs() {
 // The 30 s tick and the wake-up: the time-driven part of the visible tab only.
 function shellTick() {
   shellStamp();
+  // The reveal's time-driven moments (the 8 AM hide, the 3 s look-at-the-big-screen window, an
+  // unended reveal counting as over): a quiet 8:00 brings no snapshot, so no renderAll (reveal.js).
+  if (typeof revealTick === 'function') revealTick('tick');
   SHELL_ALWAYS.forEach((fn) => fn());
   const p = SHELL_PANELS[activeTab()];
   if (p) p.tick();
@@ -13423,6 +13458,7 @@ function clearLocalData() {
     'campScoreboardDismissedChanges', 'campScoreboardDismissedAnnouncements',
     'campScoreboardChatSeen', 'campScoreboardChatSubs',
     'campScoreboardPushOn', 'campScoreboardPushPrefs', STRANDED_KEY, UNDO_KEY,
+    'campScoreboardRevealCache', 'campScoreboardChampion', // (reveal.js: the last real reveal as the phone held it; the crowned team's name)
     'campScoreboardSetupV1', 'campSetupRpOutbox', 'campSetupRainDraft', 'campSetupAlertIntent']; // (setup-sync.js: the setup cache, the restore-point outbox; setup-ui.js: an unfinished rain plan, the alert choice kept for Step 26)
   Object.keys(CAMPS).forEach((cid) => {
     bases.forEach((b) => {

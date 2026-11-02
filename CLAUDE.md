@@ -76,7 +76,13 @@ Files:
   function read at call time), never read inside, so the 8 AM hide can't depend
   on a cached value; a test pins the file pure. The TV page loads it and takes
   `groupPlaces` from it, so places and tie order match everywhere. The node's
-  writer and the phone's readers arrive with the reveal (redesign D5)
+  writer and the phone's readers are `reveal.js` (below)
+- `reveal.js` — the standings reveal's ENGINE (see "The standings reveal: the
+  engine"): what a phone knows about a reveal (the confirmed store, the
+  `revealPublic/real` listener, the cache), the 8 AM rule (`expireReveal`, and on
+  directors' phones `retireExpiredReveal`), the champion line, and the directors'
+  commands. An optional layer like chat.js: a classic script loaded right after
+  app.js, every hook in app.js typeof-guarded
 - `jelly-motion.js` — the SPRING SYSTEM and the ONE calm-motion switch (see
   "Motion and calm motion" below). A classic script loaded between camps.js and
   app.js with no dependency on `vendor/jelly.js` (that module can't parse on
@@ -197,9 +203,9 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
 
 **Every time any code asset changes:**
 1. Bump the `?v=N` cache-busting query string in `index.html` — there are
-   SEVENTEEN on the same number: `boot-guard.js`, `styles.css`, `vendor/jelly.js`,
+   EIGHTEEN on the same number: `boot-guard.js`, `styles.css`, `vendor/jelly.js`,
    `firebase-config.js`, `defaults.js`, `camp-core.js`, `reveal-core.js`,
-   `camps.js`, `jelly-motion.js`, `app.js`, `setup-sync.js`, `settings.js`,
+   `camps.js`, `jelly-motion.js`, `app.js`, `reveal.js`, `setup-sync.js`, `settings.js`,
    `setup-ui.js`, `chat.js`, `push.js`, `auth-phone.js`, `auth-email-link.js` —
    keep them in sync, all bumped together. Also bump
    `APP_VERSION` in `app.js` to the same number (it drives the auto-reload
@@ -764,6 +770,60 @@ Rules for whoever wires it:
   `#now-champion` (the Saturday champion line, name and mark only),
   `#now-reveal-grid` and `#games-reveal-grid` (the frozen grid). New icons:
   `#i-rewind` (Back moves the room's screen: never a chevron) and `#i-crown`.
+
+## The standings reveal: the engine (reveal.js — Step 23, build session 1)
+
+Redesign §4.5, §4.9, §4.10. `reveal.js` is an optional layer (a classic script
+right after app.js, before setup-sync.js; every hook in app.js typeof-guarded) and
+paints NOTHING except emptying the 8 AM grid roots: the screens' build session
+defines `revealPaint(why, mode)`, which reveal.js calls after every confirmed
+change and every time-driven one. Names are all `reveal…` / `REVEAL_…` (one global
+scope with reveal-core.js).
+
+- **The confirmed store.** `confirmedReveal.real` / `.practice` hold the raw
+  `{ctl, pub}` the SERVER last said (or null); `revealLoaded` says a server
+  snapshot (not the cache) has landed. Every reader goes through reveal-core's
+  `revealView` (`revealMirrorView()` for the Now mirror and strip, with the 3 s
+  phone lag; `revealRemoteView(mode)` for a remote, no lag; `revealLiveView()` /
+  `revealGridView()` split a live reveal from a finished one). A snapshot raised
+  while this phone's own command is unacknowledged is the SDK's optimistic echo
+  and is NOT taken (`revealInFlight`); the command's completion re-reads the node.
+- **Listeners, after approval only.** `initReveal()` is called from `initSync`
+  (beside initPush), attaches ONE listener to `<root>/revealPublic/real` for
+  everyone and, for a director, one to `…/practice` (attached and detached by
+  `revealSyncRole()` from `setMemberRole`'s `revealOnRoleChange`; a counselor
+  never receives a practice's bytes). A refusal sets `revealDenied` and fails the
+  reveal closed — never `fbRef` or `syncDenied`. The only database paths reveal.js
+  names are `revealPublic/…` and `revealFull/…` (`reveal.test.js` scans for it).
+- **The cache.** `lsKey('campScoreboardRevealCache')` holds the real `{ctl,pub}`
+  for an instant paint and an offline start; never a practice, never an expired
+  reveal (an expired grid keeps no numbers on the phone), wiped by
+  `clearLocalData` with `lsKey('campScoreboardChampion')`.
+- **The clock.** `serverNow()` now starts from `campScoreboardServerOffset`
+  (device-wide, not camp data, kept on sign-out), written whenever the
+  `.info/serverTimeOffset` estimate moves, so a phone that opens offline at 7:58
+  still hides the grid at 8:00 by the SERVER's time. `revealNextBoundary` finds
+  the next moment anything changes with no snapshot (the 3 s look-at-the-big-screen
+  window, an unended reveal counting as over, 8 AM); one timer is armed for it and
+  re-armed after every change; the 30 s tick (`shellTick` → `revealTick`), a wake
+  (`visibilitychange` and `pageshow`, registered at load) and a corrected clock
+  (`revealOnClockChange`) run the same `revealTick`, so a missed timer costs
+  seconds, never correctness. Every consumer also decides "expired" at paint time.
+- **8 AM.** `expireReveal()` empties every grid root directly (`#now-reveal-grid`,
+  `#games-reveal-grid`) — an inactive tab included, with no render — and drops the
+  cache. On directors' phones `retireExpiredReveal()` deletes the expired nodes
+  (`revealPublic/<mode>` + `revealFull/<mode>` in one update): editors only (a
+  view-only second tab does not), at most once a minute, only while connected and
+  past the first pull, only for a child whose own `until` has passed (a practice
+  may also be a leftover in phase `ended`; a real reveal that merely ended is kept
+  until its `until`), after the opening `once()` re-scan of `revealPublic` (and
+  every 5 minutes while visible). The rules decide by server time, so an early
+  phone clock is simply refused and retried.
+- **The champion line.** From a FINALE reveal whose 1st place is on the phone
+  (after the 3 s lag), `revealRememberChampion()` stores `[{id, name}]` only —
+  read from the view's `champion`, never a score — in `lsKey('campScoreboardChampion')`;
+  `revealChampionLine()` returns it until `campWeek().phase === 'after'` (or 14
+  days), after the node and the grid are gone. A practice never writes it.
 
 ## Set up the week: the frame, the hub, the clipboard (Step 14 — markup and visual system)
 
@@ -1389,6 +1449,15 @@ alive: the run exits as soon as the cases finish (no stray timer holds it open).
 What's covered, and why each file exists:
 - `scoring.test.js` — score parse/format edges, `esc()`, `medalCounts()`
   (including double points and orphaned results), bonus buckets, tie-breaks.
+- `reveal.test.js` (+ `.senior`, which evals it) — reveal.js's read side and 8 AM rule
+  against `fake-rtdb.js`: what each role listens to (a counselor: `revealPublic/real`
+  only, never a practice, even by re-scan), the cache, a refused listener failing closed
+  without touching `syncDenied`, an other-year or too-new reveal, the phone lag keyed to
+  `sa` (Back, the table, End and a reload never re-hide a row), auto-end, the next-moment
+  finder, **a fake clock across 07:59:59 → 08:00:01 on the active tab, an inactive tab and
+  after a wake from sleep**, `retireExpiredReveal` (editors only, never before `until`,
+  once a minute, practice vs real), the champion line (a name, never a number, survives the
+  node), the sign-out wipe and the remembered server-clock offset
 - `tv.test.js` / `stalling.test.js` — the TV page for both camps, its Waiting
   screen for a counselor, the reload rules for a second account, a demotion and
   a sign-out, the ledger-decided cache fallback, a tie's order, and the link
@@ -1507,7 +1576,7 @@ What's covered, and why each file exists:
   (home panels, toast cap, announcement composer), `overlays.test.js` (schedule
   sheet, status pill, members drawer, lock screen, scrim fade, pickers),
   `shell.test.js` (page-shell text pins: the not-yet-defined hide, the boot
-  guard, no motion media query, **index.html's seventeen versioned assets share
+  guard, no motion media query, **index.html's eighteen versioned assets share
   one `?v=` equal to `APP_VERSION`, in load order**), `builder.test.js`
   (week-builder shell, drafts, joy press), `chat-view.test.js`
   (chat view lifecycle, drafts, Back), `theme.test.js` (pre-paint theme and
