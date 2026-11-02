@@ -107,7 +107,19 @@ Files:
 - `push-worker/` — the alert SENDER: a Cloudflare Worker (free plan) that is
   NOT served to browsers as code — the owner pastes `worker.js` into the
   Cloudflare dashboard. `README.md` there is the plain-English setup guide
-- `styles.css` — all styling (design tokens at the top, light + dark)
+- `styles.css` — all styling. The VISUAL SYSTEM block at the top (redesign
+  §8) is the one source of colour, type and shape: palette literals (`--paper`,
+  `--sheet`, `--ink`/`-2`/`-3`, `--blue`, `--link`, `--roof`, `--gold`, `--live`,
+  `--done`, `--well`/`--lift`, medal and flag colours), whole-`font` type tokens
+  (`--t-title`, `--t-row`, `--t-meta`, …), the 4px space grid, radii, edges,
+  `--target` (44) and the frame heights. Light on `:root`; dark under
+  `:root[data-jelly-mode="dark"]` and the OS media query — on `:root`, never
+  body, because the `--jelly-*` mapping is declared there. Sourcing runs one
+  way only: palette → `--jelly-color-*` (§8.10) → the older `--color-*` names
+  (kept for existing rules; `--color-bg`'s literal fallbacks are dead and stay
+  only for `shell.test.js`'s pin). Never map a palette or Jelly token from a
+  `--color-*` one. Any new colour meets §8.1 rule 6 in BOTH themes (7:1 under
+  16px, 4.5:1 at 16px+, 3:1 for boundaries)
 - `firebase-config.js` — sync config (also used by Firebase Auth sign-in)
 - `auth-email-link.js` / `auth-phone.js` — optional alternative sign-in
   methods (emailed link; phone number + texted code). Each loads via a guarded
@@ -116,7 +128,8 @@ Files:
   Google is the primary button and always remains.
 - `vendor/jelly.js` — vendored Jelly UI web components (chips, buttons,
   drawers, dialogs); it injects `--jelly-*` design tokens on :root at
-  runtime, which the app's `--color-*` tokens re-source. It carries LOCAL
+  runtime inside `@layer jelly`, which styles.css's unlayered mapping (from the
+  palette) beats in both modes, from the first frame. It carries LOCAL
   patches (grep `Local patch`: the external-removeAttribute close race, and
   the drawer/dialog scrim fade — `jellyScrimFade`) that a re-vendor must
   re-apply; `tests/overlays.test.js` runs the real helpers extracted from it
@@ -401,10 +414,48 @@ Design: `docs/build-notes/app-shell-redesign-spec.md` §9–10; the reference fe
   drift from `JellyMotion.cssLinear()`. A rule keeps its own duration and takes
   only the curve from a token. `jelly-toaster { --jelly-toast-radius: 14px }` is
   set on the element (a `:root` value can't beat the toaster's own `:host`
-  declaration). The rest of the §8.10 Jelly token mapping (surface, border,
-  foreground, azure/mint/amber/rose) waits for the shell's palette (Step 13):
-  today's `--color-*` tokens are sourced FROM the `--jelly-*` ones, so mapping
-  them back would be a cycle.
+  declaration). The full §8.10 Jelly token mapping landed with Step 13's
+  palette (see `styles.css` above): `[variant="amber"]` takes ink and, in dark,
+  `rose`/`mint` take navy (Jelly has one label colour for four fills of
+  different lightness), and `jelly-switch` reads ON done-green / OFF an ink-3
+  thumb.
+
+## The shell frame (Step 13 — UI pass done, wiring in progress)
+
+Static markup in index.html, styled in styles.css's THE FRAME section; a
+renderer only patches text, `hidden` and a few attributes. **`#app[data-tab]`**
+(`now | games | chat | more`; absent reads as Now) is the one switch the CSS
+reads: which `[data-tab-panel]` shows (`#tab-now` = today's `main-wrap`,
+unchanged; `#tab-games` with `#games-days` / `#games-standings` / `#games-rows`;
+`#tab-chat`, a fixed keyboard-riding panel; `#tab-more`), the header's form and
+where the tab blob rests. The switcher sets it together with `aria-selected` on
+the `#tabbar .tab[data-tab]` button. Header `#app-header`: `#hdr-id` (Now: who
+you are, the Your team sheet's button; identity/role/camp only), `.hdr-title`
+(`[data-title-for]`), `#hdr-who`, `#hdr-pill` (`data-tone` wait | offline |
+update | error, text in `#hdr-pill-text`; hides `#hdr-who` while shown),
+`#reveal-strip` (never on Now). Tab bar `#tabbar`: one `.tab-blob` (CSS rest
+position; spring it with JellyMotion, never a CSS transition), badges
+`#tab-badge-chat`, `#tab-dot-now`, `#tab-dot-more`; it slides away under
+`body.takeover-open`, `body.kb-open`, and today's `builder-open`/`chat-open`.
+Takeovers `.takeover` (`#takeover-game`: `.tk-back[data-takeover-back]` with
+`.tk-back-label`, `#takeover-game-title`/`-sub`/`-body`/`-dock`;
+`.tk-dock[data-kb-hide]`; `.is-roof` = the camp-blue broadcast roof, which
+never flips in dark). Sheets `.sheet-overlay` (`#sheet-team`, `[data-sheet-close]`,
+`[data-sheet-grab]`). More (`#more-director` — `html.view-only` never lays it
+out — `#more-camp`, `#more-phone`, `#more-camps`, `#more-fun`, `#more-account`,
+`#more-foot`): every row has a `data-more-row` hook, and the Settings drawer's
+ids move onto those rows when its content moves. Shared pieces: the line-icon
+sprite (`<svg class="ico"><use href="#i-…"/>`; flag marks `#flag-plain|swallow|
+stripe|chevron` with `.flag[data-flag]`), chunky `.btn` / `.btn-gold` /
+`.btn-big` (the edge compresses while held; a disabled one is a dashed well that
+says what's missing), segmented `.seg` / `.seg-btn` whose chosen state IS its
+`aria-checked` / `aria-selected` / `aria-current`, and grouped lists `.gl` /
+`.gl-row` / `.gl-panel` / `.gl-count` / `.gl-row-split` (a full-row
+`.gl-row-hit` button plus a sibling `.gl-link`, never nested buttons). Every
+target is 44×44 or more at 360 and 390 px, at 130% and 200% text. Toasts ride
+`calc(var(--tabbar-h) + 12px)` up (above a takeover's dock, and above the
+composer on the Chat tab); the v184 bottom-strip lift rules still out-rank that
+until the update / SDK lines move into `#hdr-pill`.
 
 ## Tests
 
