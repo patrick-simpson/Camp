@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Sun Nov 1, 6:46 PM ET** (update this line every time the file changes)
+Last updated: **Sun Nov 1, 7:25 PM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -144,7 +144,8 @@ send_later into this session). ETAs above shift by however long the pause lasts.
   (builder worktrees must never be committed).
 
 ## Next steps (resume here)
-- **Step 12 LIVE** (v191, commit 066d04d, Sun Nov 1 6:46 PM ET) — the whole page now moves on one springy motion system (new jelly-motion.js: six spring presets, a press dent on buttons and chips) and one Calm motion switch that follows the phone's Reduce Motion, Low Power / Energy Saver and low battery, with Auto / On / Off under Settings → Appearance and no flash on reload; nothing changes on either camp's scores or data; owner action: none (rollback: revert the Step 12 commits).
+- **Step 12 LIVE** (v192, commit d54d012, Sun Nov 1, 7:25 PM ET) — review fixes to the new motion system: pressing the update bar or the "can't reach sign-in" pill no longer makes it jump sideways while held, the Calm motion row in Settings no longer shifts under your thumb when its status text changes length, the Calm switch gets the same fallback look as the theme switch if Jelly fails to load, and a hidden tab stops checking the frame rate; nothing changes on either camp's scores or data; owner action: none.
+- **Step 12 LIVE** (v191, commit 066d04d, Sun Nov 1 6:46 PM ET) — the whole page now moves on one springy motion system (new jelly-motion.js: six spring presets, a press dent on plain buttons, links and summaries; Jelly's own chips keep their own press) and one Calm motion switch that follows the phone's Reduce Motion, Low Power / Energy Saver and low battery, with Auto / On / Off in its own Calm motion row in Settings between Appearance and Camp, and no flash on reload; nothing changes on either camp's scores or data; owner action: optional, open `docs/build-notes/mockups/final/motion-demo.html` beside the live site and eyeball that the springs feel the same (only a constant-for-constant test covers it) (rollback: revert the Step 12 commits).
 - **Step 4 LIVE** (v190, commit a4ed66e, Sun Nov 1 5:55 PM ET) — the week's data (days, blocks, electives, verse, cleanup, meals, team colours) is now read through one set of accessors in app.js instead of the old constants, so the next steps can move that data into the synced setup without touching the screens; nothing looks or behaves differently on either camp; owner action: none.
 - **Step 5 LIVE** (v189, commit 77506d4, Sun Nov 1 5:51 PM ET) — a score the database refuses no longer jams score saving for everyone's later entries: the refused one is set aside with a Retry / Discard bar at the top for editors while the rest keep saving; owner action: none.
 - **Step 12 note for Step 13** — only the toaster radius of the redesign §8.10 Jelly token mapping shipped with Step 12 (motion and calm). Surface, border, foreground, azure, mint, amber and rose are DEFERRED to Step 13's visual system: today's `--color-*` are sourced from `--jelly-*`, so mapping them back sooner is a cycle. It is written into BUILD-PLAN's Step 13 Ships and Opus-pass lines.
