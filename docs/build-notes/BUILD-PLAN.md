@@ -495,7 +495,10 @@ Four **separate** deploys (P7), in this order, each with its own tests and live 
   sitting.
 - **Needs:** 19; placed after 16.
 - **Live check:** Now's cleanup and verse moments and More → Meal cleanup / Memory verse show the
-  seeded data unchanged on both camps; an edited dish appears on the Now card after lunch.
+  seeded data unchanged on both camps; an edited dish appears on the Now card after lunch. **Senior
+  first:** its seed leaves "Supper and free time" without the Meal tag (the hub's Schedule row says so),
+  so tag it on the Schedule screen before turning meals and cleanup on; and note senior's meal start
+  (lunch 12:30, not the built-in 12:00) once the schedule is edited here — the "Next meal cleanup" time.
 - **Rollback:** the per-section **Use the original week again**.
 - **Owner:** 10 minutes.
 
@@ -626,7 +629,9 @@ Four **separate** deploys (P7), in this order, each with its own tests and live 
 
 ### Step 28 · New-year wizard (owner only) · P2 S8 · Apr · L (3) · Sonnet
 - **Ships:** P2 §11.3 in full: the five steps, the claim, hold-to-clear, the verified archive, **Undo
-  the new-year setup**, device-local reset on a new epoch, the history filter, the stranded-work
+  the new-year setup**, and the owner's other emergency valve, **Advanced → Start this section again
+  from the original** (P2 §10.1 / §11.16: the owner-only re-seed of a section that has ever been on;
+  no earlier step builds it — Steps 15 and 19 stop at "Use the original week again"), device-local reset on a new epoch, the history filter, the stranded-work
   download. The clear update **also deletes** `revealPublic` and `revealFull` (both
   children, §7 item 6).
 - **Needs:** 15, 19, 25; placed after 23 (it deletes the reveal nodes and ignores old-epoch reveals).

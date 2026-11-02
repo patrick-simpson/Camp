@@ -3851,12 +3851,32 @@ function setupNamesNear(a, b) {
   return x.charAt(0) === y.charAt(0) && setupNameSkeleton(x) === setupNameSkeleton(y);
 }
 
-// The member (from the directory: [{ key, name }]) a typed name nearly matches, or null. An exact name is no problem — a
-// counselor is found by name already — so only a near miss is flagged.
+// A name as it is compared: counselors' spellings merged, lower case. The first word of a longer name ("Sofia Reed") likewise.
+function setupNameCanon(s) {
+  return String(canonicalCounselorName(String(s == null ? '' : s).trim())).toLowerCase();
+}
+function setupFirstCanon(s) {
+  return setupNameCanon(String(s == null ? '' : s).trim().split(/\s+/)[0]);
+}
+
+// The member (from the directory: [{ key, name }]) a typed name is probably, or null. An exact name is no problem — a
+// counselor is found by name already — so only a miss is flagged, in this order: a member listed with a LONGER name that
+// starts with the typed one ("Sofia" / "Sofia Reed": the name matches nobody's sign-in, so a Link is worth offering; two
+// members sharing that first name are ambiguous, so none is offered) beats a near spelling ("Sophie" ≈ "Sofia"), which is
+// only looked for when no first name matched — an exact first name must never be hijacked by a near one.
 function setupNearMember(name, members) {
-  const list = members || [];
-  if (list.some((m) => m && m.name && String(canonicalCounselorName(String(m.name).trim())).toLowerCase() === String(canonicalCounselorName(String(name).trim())).toLowerCase())) return null;
-  return list.find((m) => m && m.name && (setupNamesNear(name, m.name) || setupNamesNear(name, String(m.name).trim().split(/\s+/)[0]))) || null;
+  const list = (members || []).filter((m) => m && m.name);
+  const want = setupNameCanon(name);
+  if (list.some((m) => setupNameCanon(m.name) === want)) return null;
+  const sameFirst = list.filter((m) => setupFirstCanon(m.name) === want);
+  if (sameFirst.length) return sameFirst.length === 1 ? sameFirst[0] : null;
+  return list.find((m) => setupNamesNear(name, m.name) || setupNamesNear(name, String(m.name).trim().split(/\s+/)[0])) || null;
+}
+// How the Link row and the hub say which member: their first name for a near spelling, their whole name when the typed one is
+// already their first name ("Sofia looks like Sofia Reed", not "Sofia looks like Sofia").
+function setupNearLabel(name, member) {
+  const full = String(member && member.name || '').trim();
+  return setupFirstCanon(full) === setupNameCanon(name) ? full : full.split(/\s+/)[0];
 }
 
 // The printed menus, verses, rota and stations as a tree: what a section's screen previews, read-only, while the section is
@@ -4036,8 +4056,14 @@ function electivePersonAdd(dk, slot, stId, person) {
     row.people = setupMapOf(row.people);
     const pid = electivePersonId(person, row.people);
     if (row.people[pid] && person.key) return false;
-    // The same name typed twice at one station is a double tap, not two people.
-    if (Object.keys(row.people).some((k) => String(setupMapOf(row.people[k]).name || '').toLowerCase() === name.toLowerCase())) return false;
+    // The same name typed twice at one station is a double tap, not two people — compared with the spellings merged
+    // ("Lilly" beside "Lily" is one person), and a typed first name where a member with that first name already stands
+    // is that member. (A member added where the typed name stands is allowed: Link then merges the two.)
+    const want = setupNameCanon(name);
+    if (Object.keys(row.people).some((k) => {
+      const have = String(setupMapOf(row.people[k]).name || '');
+      return setupNameCanon(have) === want || (!person.key && !setupIsTypedPerson(k) && setupFirstCanon(have) === want);
+    })) return false;
     row.people[pid] = { name, ord: electiveNextOrd(row.people) };
   }, { label: name + ' at ' + (((setupMapOf(setupTree.electives).stations || {})[stId] || {}).name || 'a station') + ', ' + SETUP_DAY_WORDS[dk], expect: ['electives/slots/' + dk + '/' + electiveSlotKey(slot) + '/' + stId] });
 }

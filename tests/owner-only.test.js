@@ -155,7 +155,7 @@ test('every owner-only control in the Set up the week markup starts hidden, and 
   assert.ok(/body\.setup-owner \[data-not-owner\]/.test(css), 'and removes the "Patrick turns on editing" sentence for the owner');
   // The owner's menu rows are exactly the four switches, and none is wired to anything but SETUP_OWNER_ACTIONS.
   ['new-year', 'undo-new-year', 'original', 'advanced'].forEach((a) => assert.ok(new RegExp('data-setup-act="' + a + '" data-owner-only hidden').test(html), a));
-  assert.deepEqual(Object.keys(SETUP_OWNER_ACTIONS), ['original'], 'Step 15 built Use the original week again; Advanced is Step 19, the wizard Step 28');
+  assert.deepEqual(Object.keys(SETUP_OWNER_ACTIONS), ['original'], 'Step 15 built Use the original week again; Advanced (Start this section again from the original) and the wizard are Step 28');
   assert.deepEqual(Object.keys(HUB_DOOR_ACTIONS).filter((k) => HUB_DOOR_ACTIONS[k]), ['original', 'sections'], 'the front door\'s Edit the week here and (step 19) Turn on for the four smaller sections; the new-year door is Step 28');
 });
 

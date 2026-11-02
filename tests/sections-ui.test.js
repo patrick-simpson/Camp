@@ -311,6 +311,8 @@ test('Meals: the day strip is the days that have a meal; the rows come from the 
     assert.equal(secDayKey('cleanup'), 'thu');
     state.ui.secDay = 'sun';
     assert.equal(secDayKey('cleanup'), 'mon', 'a day the screen is not about falls back');
+    state.ui.secDay = undefined;
+    assert.equal(secDayKey('meals'), 'mon', 'with no camp week running the menus open on the first competition day, not on Sunday\'s supper');
   } finally { xuEnd(); }
 });
 
@@ -328,6 +330,10 @@ test('Verses: a blur commits one record when it changed; the words are required 
     secVerseFocusOut(group);
     assert.equal(err.textContent, 'Use a link that starts with https://');
     assert.equal(verseFor(3).video, undefined, 'nothing was written');
+    els.video.value = 'https://example.com/v?x=1&y="2"';
+    secVerseFocusIn(group);
+    secVerseFocusOut(group);
+    assert.equal(err.textContent, 'That link has a space or a quote in it. Paste it again.', 'an https link that is refused for its characters is not told to start with https://');
     els.video.value = 'https://youtu.be/ok';
     secVerseFocusIn(group);
     secVerseFocusOut(group);
@@ -342,6 +348,45 @@ test('Verses: a blur commits one record when it changed; the words are required 
     secVerseFocusIn(group);
     secVerseFocusOut(group);
     assert.equal(verseFor(3).text, '', 'every field cleared: the verse is removed');
+  } finally { xuEnd(); }
+});
+
+test('Verses: tabbing through a verse writes nothing, and a colleague\'s edit made while a field is focused survives the blur', () => {
+  xuLoad();
+  try {
+    const mk = (verse, vals) => {
+      const els = {};
+      Object.keys(vals).forEach((k) => { els[k] = { value: vals[k], dataset: { verseField: k } }; });
+      const err = setupEl('verses-form').querySelector('[data-verse-error]');
+      return { els, group: { dataset: { verse }, querySelector: (q) => (q === '[data-verse-error]' ? err : null), querySelectorAll: () => Object.keys(els).map((k) => els[k]) } };
+    };
+    // The theme (text + ref + title: every key the canonical order would shuffle) and a day.
+    const th = mk('theme', { text: 'Theme words', ref: 'Gal 2:20', title: 'Alive' });
+    secVerseFocusIn(th.group);
+    secVerseFocusOut(th.group);
+    const day = mk('wed', { text: 'Be kind.', ref: 'Eph 4:32', video: '' });
+    secVerseFocusIn(day.group);
+    secVerseFocusOut(day.group);
+    assert.equal(verseFor(3).text, 'Be kind.');
+    // Same fields, nothing typed: not one write.
+    const rev = setupRev;
+    secVerseFocusIn(th.group); secVerseFocusOut(th.group);
+    secVerseFocusIn(day.group); secVerseFocusOut(day.group);
+    assert.equal(setupRev, rev, 'a blur with nothing typed commits nothing');
+    // A colleague changes both while this device sits in the fields; the blur must not put the stale text back.
+    secVerseFocusIn(th.group);
+    versesSetTheme({ text: 'THEIR theme', ref: 'Gal 2:20', title: 'Alive' });
+    secVerseFocusOut(th.group);
+    assert.equal(setupVerseTheme(secTree('verses')).text, 'THEIR theme');
+    secVerseFocusIn(day.group);
+    versesSetDay('wed', { text: 'THEIR words', ref: 'Eph 4:32' });
+    secVerseFocusOut(day.group);
+    assert.equal(verseFor(3).text, 'THEIR words');
+    // Typing over it is still one commit.
+    day.els.text.value = 'Mine.';
+    secVerseFocusIn(day.group);
+    secVerseFocusOut(day.group);
+    assert.equal(verseFor(3).text, 'Mine.');
   } finally { xuEnd(); }
 });
 

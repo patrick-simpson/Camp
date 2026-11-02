@@ -166,7 +166,17 @@ test('hubScheduleView over the seeded camp: no unmarked meal anywhere, and only 
   setupRev++;
   try {
     const v = hubScheduleView();
-    assert.deepEqual(v.unmarkedMeals, [], 'every seeded meal carries its Meal tag');
+    // Junior's every meal is tagged by the seed. Senior's printed "Supper and free time" is NOT (the seed tags only an exact
+    // Breakfast / Lunch / Supper label), and the warning says so; Step 20's live check tags it before meals and cleanup go on.
+    if (CAMP.id === 'junior') assert.deepEqual(v.unmarkedMeals, [], 'every seeded meal carries its Meal tag');
+    else {
+      assert.ok(v.unmarkedMeals.length, 'senior\'s supper reads like a meal and has no tag');
+      v.unmarkedMeals.forEach((m) => assert.deepEqual(m.names, ['Supper and free time']));
+      const row = hubStatus('schedule', clView({ on: { schedule: true }, schedule: v }));
+      assert.equal(row.mark, 'warn');
+      assert.equal(row.problems.length, 1, 'the same item on every day is one sentence, not five');
+      assert.ok(/^Supper and free time on .+ isn’t marked as a meal$/.test(row.problems[0]), row.problems[0]);
+    }
     const placeholders = (CAMP.placeholderDays || []).map((dow) => SETUP_DAY_WORDS[SETUP_DK[dow]]);
     assert.deepEqual(v.sample, placeholders, CAMP.id === 'senior' ? 'senior\'s arrival and send-off days' : 'junior has none');
     if (placeholders.length) {
@@ -186,6 +196,7 @@ test('hubScheduleView over the seeded camp: no unmarked meal anywhere, and only 
     setupRev++;
     const lunchy = hubScheduleView().unmarkedMeals;
     assert.ok(lunchy.length && lunchy.every((m) => m.names.includes('Lunch')), 'named, day by day');
+    assert.deepEqual(secLooseMeals([{ label: 'Supper and free time' }, { label: 'Supper', meal: 'supper' }, { label: 'Lunch cleanup — crew' }, { label: 'Free time' }]), ['Supper and free time', 'Lunch cleanup'], 'a label that begins with a meal word, once each; a tagged one is fine');
   } finally { setupTree = normalizeSetup({}); setupRev++; }
 });
 

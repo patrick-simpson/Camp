@@ -2870,7 +2870,7 @@ run all of it; electives only where `CAMP.features.electives` (junior).
   and free time" shows its dish; `mealCleanupNote(dow, label, meal)` / `icsCleanupText` take the tag
   as an optional third argument; `mealStart` and `electiveSlotStart` read the start of that day's
   tagged / Elective item once the SCHEDULE is edited here (a rain plan that moves Elective 1 moves
-  the time everyone sees; built in, the constants); `cleanupOnRota(dow)` = a day with a team on any
+  the time everyone sees; built in, the constants — and not quite "equal to the constants" for senior: its printed lunch starts 12:30 where `MEAL_START_MINUTES.Lunch` says 12:00, so once the schedule is edited here senior's "Next meal cleanup" time reads 12:30; `tests/sections.test.js` pins `mealStart` = the seeded Meal item's start on both camps); `cleanupOnRota(dow)` = a day with a team on any
   meal (an untracked day says nothing, exactly as the printed rota did — senior's empty rota stays
   silent); `cleanupTeams` in slot order; `verseTheme()` is `NO_THEME` when there is none (the card
   then leaves the theme out) and `verseFor` `NO_VERSE`; `electivesFor(dow)` keeps the legacy shape
@@ -2905,7 +2905,14 @@ run all of it; electives only where `CAMP.features.electives` (junior).
   dayName)` → "Each team cleans 2–3 times. Maples clean twice on Thursday." `setupNamesNear` /
   `setupNearMember` — "Sophie ≈ Sofia" (one letter apart, or the same consonants from the same first
   letter; never two names that are already one spelling, never an exact match: a counselor is found
-  by name already).
+  by name already). `setupNearMember` looks in this order: an exact full name → nothing to flag; a
+  member listed with a LONGER name that starts with the typed one ("Sofia" / "Sofia Reed" — the name
+  matches nobody's sign-in, so a Link is offered; two members sharing the first name → none, not
+  guessed) beats a near spelling, so an exact first name is never hijacked by "Sophie". `setupNearLabel`
+  says the member's whole name in that first-name case ("Sofia looks like Sofia Reed"). Adding a person
+  compares with the spellings merged (`setupNameCanon`: Lilly beside Lily is one chip) and refuses a
+  typed first name where a member with that first name already stands; a member added where the typed
+  name stands is allowed (Link merges them).
 - **Tests**: `sections.test.js` (above). `seed.test.js`'s two pins moved on purpose (a plain seed is
   still the schedule alone; the four sections seed when named; `setupTurnOn(['nonsense'])` is
   `none`), `setup-sync.test.js`'s depth pin (a new day of electives is
@@ -2953,10 +2960,16 @@ the row keeps its keyed shape, so turning the section on only swaps the inputs i
   (`#<s>-original`, `data-sec-original`): `secUseOriginal(section)` = one `setupUseOriginal([section])`
   after a question; the edits are kept. **Not built here: Advanced → "Start this section again from the
   original"** (the re-seed of a section that has ever been on, §10.1; the menu's Advanced row stays
-  unwired, `SETUP_OWNER_ACTIONS` has only `original`).
+  unwired, `SETUP_OWNER_ACTIONS` has only `original`; BUILD-PLAN assigns it to Step 28, the wizard).
 - **Meals** (`renderMealsScreen`): a row per Meal-tagged item of the day, once per meal (`secMealItems`:
   the plan's items in time order, tag from the SCHEDULE, so a "Supper and free time" item tagged Supper
-  is a row): the time and the meal's name, then the dish across the whole row (a textarea that grows —
+  is a row; an item that READS like a meal — a label beginning Breakfast / Lunch / Supper — but has no tag
+  gets no row, so the lede says "“Supper and free time” isn’t marked as a meal" (`secLooseMeals`, the
+  same test the Schedule hub row uses, one sentence for days that share it). Senior's seed leaves its
+  "Supper and free time" untagged (the seed tags only an exact label), so senior shows that warning from
+  the moment its schedule is turned on: **Step 20's live check tags senior's supper on the Schedule
+  screen BEFORE meals and cleanup are turned on.** The screen opens on the first competition day outside
+  camp week, not on Sunday's lone supper): the time and the meal's name, then the dish across the whole row (a textarea that grows —
   `field-sizing: content`, else `secGrow` — so a long dish wraps) with a 44px emoji button AFTER it (the
   dish first in the tab order; empty, a link-blue "+"). The button opens a one-row food picker under
   the dish (`secMealPicker`; a pick is one `mealsSet` commit, `secMealPick`, which moves the focus
@@ -2976,8 +2989,13 @@ the row keeps its keyed shape, so turning the section on only swaps the inputs i
   the form (Save blurs the field; the ✕ and the backdrop too), never between its own fields. Every
   problem is said at once (`secVerseProblems`): each field in error gets `aria-invalid` and the danger
   edge, and the words ("A verse needs its words. Type them, or clear the whole verse." / "Use a link that
-  starts with https://") sit under the first of them; the sheet stays up while anything is in error
-  (`versesRecord` is pure and checks before anything is written).
+  starts with https://", or for an https link refused for its characters "That link has a space or a
+  quote in it. Paste it again.") sit under the first of them; the sheet stays up while anything is in
+  error (`versesRecord` is pure and checks before anything is written). The blur's "did it change since
+  focus" test compares CANONICAL forms (`setupCanonVal` — `versesRecord` builds text, ref, title in its own
+  key order, so a raw compare never matched and every blur rewrote a colleague's edit with the stale form
+  value; `tests/sections-ui.test.js` pins both directions). The theme card on Now reads "Theme verse" with
+  no dangling separator when the theme has no title.
 - **Cleanup rota**: a row per meal keyed `c-<meal>` (the time, the meal, the teams as their marks and
   names — `secTeamHtml`, the teams sheet's shields and flags, never senior's hue-only circles — and a
   gold "!" when no team is on it on a rota that has teams on other meals) → the `sec-teams` sheet: the
@@ -3004,7 +3022,9 @@ the row keeps its keyed shape, so turning the section on only swaps the inputs i
   new name + emoji: ONE commit adds it to the list and the slot; Save docked), and **Same as Monday**
   (asks first when the day holds anything). A station's own sheet renames it, takes it off this slot,
   or deletes it everywhere (a question, then one undo entry); those two rows sit a 24px gap under the
-  form, each with its icon.
+  form, each with its icon. **Laptop layout deferred:** §11.12 / §11.13 describe a grid / three slot
+  columns at laptop width; these screens are the same centred phone column as the Step 14/15 screens at
+  1280px (consistent, not as specified).
 - **Motion** (§9.5, the Schedule's way — `secPaintList`): the cleanup, electives and verse lists are
   keyed; an edit on the same view glides the survivors once hands are off the list (`whenHandsOff` →
   `flipKeyed`), new rows and chips arrive, rows whose words changed pop (Fill evenly), and the chips

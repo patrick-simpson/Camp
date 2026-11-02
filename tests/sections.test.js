@@ -135,7 +135,14 @@ test('with every section on and freshly seeded, each accessor returns what the c
   Object.keys(STATION_EMOJI).forEach((n) => assert.equal(stationEmoji(n), STATION_EMOJI[n]));
   assert.equal(stationEmoji('Nobody invented this'), '🌟');
   [1, 2, 3, 4, 5].forEach((d) => ELECTIVE_SLOT_MIN.forEach((min, slot) => { if (SX_JR) assert.equal(electiveSlotStart(slot, d), min, 'slot ' + slot + ' day ' + d); }));
-  [1, 2, 3, 4, 5].forEach((d) => ['Breakfast', 'Lunch', 'Supper'].forEach((m) => { if (SX_JR) assert.equal(mealStart(d, m), MEAL_START_MINUTES[m], m + ' ' + d); }));
+  [1, 2, 3, 4, 5].forEach((d) => ['Breakfast', 'Lunch', 'Supper'].forEach((m) => { if (SX_JR) assert.equal(mealStart(d, m), MEAL_START_MINUTES[m], m + ' ' + d); }));  // Both camps: the meal's start IS the seeded Meal item's start (so a schedule edit moves it knowingly, never silently). Junior's
+  // equal the old constants; senior's printed lunch starts at 12:30 where the constant said 12:00, so senior's "Next meal
+  // cleanup" reads 12:30 once the schedule is edited here (the constant is the built-in week's, which senior never used).
+  [1, 2, 3, 4, 5].forEach((d) => ['Breakfast', 'Lunch', 'Supper'].forEach((m) => {
+    const hit = planForDow(d).find((b) => b.meal === m.toLowerCase() && !b.noTime);
+    assert.equal(mealStart(d, m), hit ? hit.start : MEAL_START_MINUTES[m], m + ' ' + d);
+  }));
+  if (!SX_JR) assert.equal(mealStart(1, 'Lunch'), 12 * 60 + 30, 'senior\'s printed lunch');
 });
 
 test('the accessors hand back the same objects until the tree changes (render-stability), and a change shows at once', () => {
@@ -400,6 +407,26 @@ test('"nearly the same name": Sophie ≈ Sofia, Zac ≈ Zack, but never Sofia/So
   assert.equal(setupNearMember('Sophie', members).key, 'sofia@x,com', 'against a first name');
   assert.equal(setupNearMember('Zac', members), null, 'an exact name is no problem: counselors are found by name already');
   assert.equal(setupNearMember('Maya', members), null);
+});
+
+test('a full-name directory: a typed first name is linked to its own member, never to a near spelling; and the same person is one chip', () => {
+  const members = [{ key: 'sofia@x,com', name: 'Sofia Reed' }, { key: 'sophie@x,com', name: 'Sophie Marsh' }, { key: 'zac@x,com', name: 'Zac Lund' }];
+  assert.equal(setupNearMember('Sofia', members).key, 'sofia@x,com', 'an exact first name beats Sophie, the near one that comes first in the list');
+  assert.equal(setupNearLabel('Sofia', members[0]), 'Sofia Reed', 'said with the whole name: "Sofia looks like Sofia" would be nonsense');
+  assert.equal(setupNearMember('Sophie', members).key, 'sophie@x,com', 'Sophie is Sophie Marsh\'s own first name');
+  assert.equal(setupNearMember('Zack', members).key, 'zac@x,com', 'a near spelling is still found when no first name matches');
+  assert.equal(setupNearLabel('Zack', members[2]), 'Zac');
+  assert.equal(setupNearMember('Sofia Reed', members), null, 'the whole name is found by name already');
+  assert.equal(setupNearMember('Sofie', members).key, 'sofia@x,com', 'the merged spelling is the first name');
+  assert.equal(setupNearMember('Sam', [{ key: 'a', name: 'Sam Ash' }, { key: 'b', name: 'Sam Bell' }]), null, 'two Sams: not guessed');
+  sxLoad();
+  electiveStationAdd('Archery', '🏹');
+  electiveSlotAddStation('tue', 1, 'st-archery');
+  assert.equal(electivePersonAdd('tue', 1, 'st-archery', { name: 'Lily' }).ok, true);
+  assert.equal(electivePersonAdd('tue', 1, 'st-archery', { name: 'Lilly' }).reason, 'cancelled', 'Lilly and Lily are one person');
+  assert.equal(electivePersonAdd('tue', 1, 'st-archery', { key: 'sofia@x,com', name: 'Sofia Reed' }).ok, true);
+  assert.equal(electivePersonAdd('tue', 1, 'st-archery', { name: 'Sofia' }).reason, 'cancelled', 'a typed first name where that member already stands');
+  assert.equal(electivePersonAdd('tue', 1, 'st-archery', { name: 'Zac' }).ok, true, 'a different name is added');
 });
 
 // ── the mutators ──

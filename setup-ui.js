@@ -134,7 +134,10 @@ function hubStatus(section, view) {
       (sc.empty || []).forEach((d) => problems.push(d + ' is empty'));
       (sc.broken || []).forEach((b) => problems.push(hubPlural(b.n, 'broken item', 'broken items') + ' on ' + b.day));
       (sc.overlaps || []).forEach((o) => problems.push(hubPlural(o.n, 'item overlaps', 'items overlap') + ' on ' + o.day + ' at ' + o.at));
-      (sc.unmarkedMeals || []).forEach((m) => problems.push(m.names.length === 1 ? m.names[0] + ' on ' + m.day + ' isn’t marked as a meal' : hubJoin(m.names) + ' on ' + m.day + ' aren’t marked as meals'));
+      // Days with the very same unmarked items are one sentence ("Supper and free time on Monday, Tuesday … isn’t marked").
+      const looseBy = {};
+      (sc.unmarkedMeals || []).forEach((m) => { const k = m.names.join('|'); (looseBy[k] = looseBy[k] || { names: m.names, days: [] }).days.push(m.day); });
+      Object.keys(looseBy).forEach((k) => { const m = looseBy[k]; problems.push((m.names.length === 1 ? m.names[0] : hubJoin(m.names)) + ' on ' + hubJoin(m.days) + (m.names.length === 1 ? ' isn’t marked as a meal' : ' aren’t marked as meals')); });
       const shape = sc.follow ? 'Typical day · ' + sc.follow + (sc.oneOffs ? ' · ' + hubPlural(sc.oneOffs, 'one-off', 'one-offs') : '') : 'Edited here';
       const row = hubMark(problems.length ? 'warn' : 'ok', shape, problems);
       // A day still on the seeded sample schedule (senior's arrival and send-off days) is a quiet note, never a warning (Q11).
@@ -425,6 +428,17 @@ function secMealItems(dow) {
   return out;
 }
 
+// A plan's items that read like a meal ("Supper", "Supper and free time") but carry no Meal tag: they get no menu line and no
+// cleanup line, so nothing on the Meals or Cleanup screens mentions them. Senior's printed "Supper and free time" is one.
+function secLooseMeals(plan) {
+  const loose = [];
+  (plan || []).forEach((b) => {
+    const head = setupHeadLabel(b.label);
+    if (!b.meal && /^(breakfast|lunch|supper)\b/i.test(head) && loose.indexOf(head) === -1) loose.push(head);
+  });
+  return loose;
+}
+
 function hubSecView() {
   const out = {};
   if (typeof setupSectionLive !== 'function') return out;
@@ -482,7 +496,7 @@ function hubSecView() {
     });
     const members = hubMembers().filter((m) => !m.pending).map((m) => ({ key: m.key, name: m.name }));
     const near = [];
-    typed.forEach((t) => { const hit = setupNearMember(t.name, members); if (hit) near.push({ name: t.name, member: String(hit.name).trim().split(/\s+/)[0] }); });
+    typed.forEach((t) => { const hit = setupNearMember(t.name, members); if (hit) near.push({ name: t.name, member: setupNearLabel(t.name, hit) }); });
     out.electives = { stations: setupElectiveStations(tree).length, slots: slotsUsed.length || 3, noStations, nobody, twice, near };
   }
   return out;
@@ -538,11 +552,7 @@ function hubScheduleView() {
     timed.forEach((a, i) => timed.slice(i + 1).forEach((b) => { if (b.start < a.end && a.start < b.end) { if (!n) first = Math.max(a.start, b.start); n++; } }));
     if (n) out.overlaps.push({ day: SETUP_DAY_WORDS[dk], n, at: setupClock(first) });
     // A Breakfast / Lunch / Supper item without the Meal tag gets no menu and no cleanup line.
-    const loose = [];
-    plan.forEach((b) => {
-      const head = setupHeadLabel(b.label);
-      if (!b.meal && /^(breakfast|lunch|supper)$/i.test(head) && loose.indexOf(head) === -1) loose.push(head);
-    });
+    const loose = secLooseMeals(plan);
     if (loose.length) out.unmarkedMeals.push({ day: SETUP_DAY_WORDS[dk], names: loose });
     if (day.placeholder === true && plan.length && hubStillSample(dow)) out.sample.push(SETUP_DAY_WORDS[dk]);
   }
@@ -558,8 +568,9 @@ const SETUP_SCREENS = ['hub', 'backups', 'classic', 'week', 'schedule', 'rain', 
 const SETUP_SHEETS = ['setup-menu', 'setup-changes', 'setup-devices', 'restore', 'sched-day', 'sched-item', 'rain-item', 'rain-done', 'sec-teams', 'sec-person', 'sec-station', 'sec-verse'];
 // The classic builder's tabs, in editorsHere's short vocabulary (setup-sync.js editorsHereWhereWords).
 const SETUP_CLASSIC_WHERE = { games: 'games', days: 'week', teams: 'teams', notice: 'notice', data: 'restore' };
-// The owner's menu rows (⋯ → Owner). A row is listed only when its action exists (Step 15: original,
-// advanced; Step 28: new-year, undo-new-year), so the menu never offers a switch that can only fail.
+// The owner's menu rows (⋯ → Owner). A row is listed only when its action exists (Step 15: original; Step 28: new-year,
+// undo-new-year, and Advanced → "Start this section again from the original", the owner-only re-seed of a section that has
+// ever been on — BUILD-PLAN Step 28 owns it), so the menu never offers a switch that can only fail.
 // { run(), why() } — why() returns a reason to show in place of the row's subline and grey it out
 // ("Not during camp week"), or ''.
 const SETUP_OWNER_ACTIONS = {};
@@ -3971,7 +3982,10 @@ function secDayKey(section) {
   if (days.indexOf(v) !== -1) return v;
   const wk = typeof campWeek === 'function' ? campWeek() : { phase: 'unset' };
   const today = SETUP_DK[campNow().dow];
-  return wk.phase === 'during' && days.indexOf(today) !== -1 ? today : days[0];
+  if (wk.phase === 'during' && days.indexOf(today) !== -1) return today;
+  // Not in camp week: open on the first competition day, not on Sunday's lone supper (the menus list every day with a meal).
+  const comp = hubCompetitionDks();
+  return days.find((d) => comp.indexOf(d) !== -1) || days[0];
 }
 function secSetDay(dk) {
   if (SETUP_DK.indexOf(dk) === -1) return;
@@ -4204,8 +4218,11 @@ function renderMealsScreen() {
   const dishes = items.filter((it) => setupMealRecord(tree, dk, it.meal)).length;
   setTextIfChanged(setupEl('meals-title'), 'Meals · ' + CAMP.label);
   setTextIfChanged(setupEl('meals-headline'), SETUP_DAY_WORDS[dk]);
-  setTextIfChanged(setupEl('meals-lede'), !items.length ? 'No meals on this day'
-    : hubPlural(items.length, 'meal', 'meals') + ' · ' + (dishes === items.length ? 'every one has a dish' : dishes ? dishes + ' with a dish' : 'no dishes yet'));
+  // An item that reads like a meal but has no Meal tag never gets a row here: say so, so a missing row isn't a mystery.
+  const loose = secLooseMeals(planForDow(dow));
+  setTextIfChanged(setupEl('meals-lede'), (!items.length ? 'No meals on this day'
+    : hubPlural(items.length, 'meal', 'meals') + ' · ' + (dishes === items.length ? 'every one has a dish' : dishes ? dishes + ' with a dish' : 'no dishes yet')) +
+    (loose.length ? ' · “' + loose[0] + '” isn’t marked as a meal' : ''));
   const rows = items.map((it) => ({ key: 'm-' + it.meal, it, rec: setupMealRecord(tree, dk, it.meal) }));
   const list = setupEl('meals-list');
   const newDay = !!list && list.__secView !== undefined && list.__secView !== dk;
@@ -4265,7 +4282,7 @@ function secMealFocusOut(row) {
   const dk = secDayKey('meals');
   const meal = row.dataset.meal;
   const t = secMealTyped(row);
-  const f = setupFocusOut('meals/' + dk + '/' + meal, t.rec);
+  const f = setupFocusOut('meals/' + dk + '/' + meal, t.rec ? setupCanonVal(t.rec) : null); // canonical, like the verse form
   if (!f.changed) return;
   const r = mealsSet(dk, meal, t.dish, t.emoji);
   if (!r.ok) { secRefused(r, 'meals'); renderMealsScreen(); }
@@ -4338,7 +4355,7 @@ async function secMealCopy() {
 // fields writes nothing half-typed. A day whose words are still the seed's "to be announced", or that has no reference, carries
 // the gold "!" with what's missing.
 
-const SEC_VERSE_SAY = { text: 'A verse needs its words. Type them, or clear the whole verse.', video: 'Use a link that starts with https://' };
+const SEC_VERSE_SAY = { text: 'A verse needs its words. Type them, or clear the whole verse.', video: 'Use a link that starts with https://', videoOdd: 'That link has a space or a quote in it. Paste it again.' };
 
 function secVerseIsTba(rec) {
   return !!(rec && /\bto be announced\b/i.test(String(rec.text || '')));
@@ -4444,7 +4461,7 @@ function secVerseProblems(typed, theme) {
   const t = (k) => String(typed[k] || '').trim();
   const out = [];
   if (!t('text') && (t('ref') || (theme && t('title')) || (!theme && t('video')))) out.push({ field: 'text', say: SEC_VERSE_SAY.text });
-  if (!theme && t('video') && !(typeof safeVideoUrl === 'function' && safeVideoUrl(t('video')) && /^https:\/\//.test(t('video')))) out.push({ field: 'video', say: SEC_VERSE_SAY.video });
+  if (!theme && t('video') && !(typeof safeVideoUrl === 'function' && safeVideoUrl(t('video')) && /^https:\/\//.test(t('video')))) out.push({ field: 'video', say: /^https:\/\//.test(t('video')) ? SEC_VERSE_SAY.videoOdd : SEC_VERSE_SAY.video });
   return out;
 }
 function secVerseSay(group, problems) {
@@ -4469,7 +4486,9 @@ function secVerseFocusOut(group) {
   const theme = group.dataset.verse === 'theme';
   const typed = secVerseTyped(group);
   const r0 = versesRecord(typed, theme);
-  const f = setupFocusOut(secVersePath(group), r0.rec || null);
+  // Compared in the focus-time value's CANONICAL form (keys sorted): versesRecord builds text, ref, title in its own order, so a
+  // raw compare never matched a verse that has a reference, and every blur counted as an edit that rewrote a colleague's change.
+  const f = setupFocusOut(secVersePath(group), r0.rec ? setupCanonVal(r0.rec) : null);
   // An error is said every time (the field was typed, the commit refused): the director fixes it where it is.
   if (!f.changed && !r0.error) { secVerseSay(group, []); return; }
   const r = theme ? versesSetTheme(typed) : versesSetDay(group.dataset.verse, typed);
@@ -4628,7 +4647,7 @@ function secStationHtml(row, live, members) {
   const links = [];
   const chips = row.people.map((p) => {
     const near = live && p.typed ? setupNearMember(p.name, members) : null;
-    const first = near ? String(near.name).trim().split(/\s+/)[0] : '';
+    const first = near ? setupNearLabel(p.name, near) : '';
     if (near) links.push('<div class="sec-link"><span>' + esc(p.name) + ' looks like ' + esc(first) + ' on your list.</span><button type="button" class="btn btn-sm" data-sec-link="' + esc(p.pid) + '" data-sec-member="' + esc(near.key) + '">Yes, it’s ' + esc(first) + '</button></div>');
     return live
       ? '<button type="button" class="sec-chip" data-key="p-' + esc(p.pid) + '" data-sec-off="' + esc(p.pid) + '" data-st="' + esc(row.id) + '"' + (near ? ' data-warn' : '') + ' aria-label="Take ' + esc(p.name) + ' off ' + esc(row.name) + '"><span>' + esc(p.name) + '</span><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>'

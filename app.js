@@ -8125,7 +8125,7 @@ function renderMemoryVerse() {
   // Edited here, a week with no theme verse yet shows none (the day's verse still reads).
   const themeHTML = !theme.text ? '' : `
     <div class="verse-theme">
-      <span class="verse-theme-label"><svg class="ico" aria-hidden="true"><use href="#i-book"/></svg>Theme verse · ${esc(theme.title)}</span>
+      <span class="verse-theme-label"><svg class="ico" aria-hidden="true"><use href="#i-book"/></svg>Theme verse${theme.title ? ' · ' + esc(theme.title) : ''}</span>
       <p class="verse-theme-text">“${esc(theme.text)}”</p>
       <p class="verse-theme-ref">${esc(theme.ref)}</p>
     </div>`;
