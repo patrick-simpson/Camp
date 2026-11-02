@@ -6312,6 +6312,20 @@ html.calm-motion .points-pulse td { animation: none; }
   margin-top: 1rem;
   text-align: center;
 }
+/* The whole-week button, its second choice during the week, and the plain-words snapshot note under them. */
+.sched-ics-week {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+}
+.sched-ics-note {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 0.8rem;
+  line-height: 1.35;
+}
 
 /* The viewer's own station, pinned next to an elective block's label. */
 .sched-you-chip {

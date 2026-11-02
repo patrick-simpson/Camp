@@ -1649,6 +1649,7 @@ function renderScheduleBody() {
     <h3 class="sched-day-title">${day.full} <span class="sched-day-tag">· ${esc(day.tag)}</span></h3>
     <div class="sched-timeline">${rows || '<p class="muted">Nothing scheduled.</p>'}</div>
     ${blocks.some((b) => !b.noTime) ? `<div class="sched-ics-row"><jelly-button id="sched-ics-btn" class="secondary-btn" variant="platinum" size="small">📆 Add ${day.full} to calendar</jelly-button></div>` : ''}
+    ${renderWeekIcsEntry()}
   `;
   if (!setHtmlIfChanged(wrap, html)) return; // the live button already has its handler (same dow/day: the day title is in the markup)
   const icsBtn = document.getElementById('sched-ics-btn');
@@ -1658,6 +1659,10 @@ function renderScheduleBody() {
       downloadBlob(blob, 'camp-' + day.short.toLowerCase() + '.ics');
     });
   }
+  const weekBtn = document.getElementById('sched-ics-week-btn');
+  if (weekBtn && !weekBtn.hasAttribute('disabled')) weekBtn.addEventListener('click', () => downloadWeekIcs());
+  const fromBtn = document.getElementById('sched-ics-from-btn');
+  if (fromBtn) fromBtn.addEventListener('click', () => downloadWeekIcs({ fromDow: campNow().dow }));
 }
 
 // ── "Add to calendar" (.ics) export of one schedule day ──────────
@@ -1692,14 +1697,33 @@ function icsFold(line) {
   return out.join('\r\n ');
 }
 
-// 'YYYYMMDD' in camp time for the given day-of-week of the current camp week.
+// 'YYYYMMDD' in camp time for the given day-of-week of the camp week: the week's own Sunday when a director has set
+// the dates (never "this week"), else the current calendar week, the way this has always worked.
 function campDateForDow(dow) {
+  const wk = campWeek();
+  if (wk.start) {
+    const [wy, wm, wd] = wk.start.split('-').map(Number);
+    return new Date(Date.UTC(wy, wm - 1, wd + dow)).toISOString().slice(0, 10).replace(/-/g, '');
+  }
   const [y, m, d] = campDateStr().split('-').map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d + (dow - campNow().dow)));
   return dt.toISOString().slice(0, 10).replace(/-/g, '');
 }
 
+// The standard US eastern VTIMEZONE both files carry (every line of it a fixed string).
+const ICS_VTIMEZONE = [
+  'BEGIN:VTIMEZONE', 'TZID:America/New_York',
+  'BEGIN:DAYLIGHT', 'TZOFFSETFROM:-0500', 'TZOFFSETTO:-0400', 'TZNAME:EDT',
+  'DTSTART:19700308T020000', 'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU', 'END:DAYLIGHT',
+  'BEGIN:STANDARD', 'TZOFFSETFROM:-0400', 'TZOFFSETTO:-0500', 'TZNAME:EST',
+  'DTSTART:19701101T020000', 'RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU', 'END:STANDARD',
+  'END:VTIMEZONE',
+];
+
 function buildDayIcs(dow) {
+  // Once the camp's dates are set, one day is the week's builder asked for one day: the same dates, the same UIDs
+  // (so importing the day and then the week never duplicates an event) and the same descriptions (§12.4).
+  if (campWeek().start) return buildWeekIcs({ dows: [dow] });
   const date = campDateForDow(dow);
   const stamp = new Date().toISOString().replace(/[-:.]/g, '').slice(0, 15) + 'Z';
   const fmt = (mins) => {
@@ -1729,22 +1753,145 @@ function buildDayIcs(dow) {
       desc ? `DESCRIPTION:${icsEscape(desc)}` : '',
     ].filter(Boolean).concat('END:VEVENT');
   });
-  const vtimezone = [
-    'BEGIN:VTIMEZONE', 'TZID:America/New_York',
-    'BEGIN:DAYLIGHT', 'TZOFFSETFROM:-0500', 'TZOFFSETTO:-0400', 'TZNAME:EDT',
-    'DTSTART:19700308T020000', 'RRULE:FREQ=YEARLY;BYMONTH=3;BYDAY=2SU', 'END:DAYLIGHT',
-    'BEGIN:STANDARD', 'TZOFFSETFROM:-0400', 'TZOFFSETTO:-0500', 'TZNAME:EST',
-    'DTSTART:19701101T020000', 'RRULE:FREQ=YEARLY;BYMONTH=11;BYDAY=1SU', 'END:STANDARD',
-    'END:VTIMEZONE',
-  ];
   // X-WR-CALNAME names the calendar an importer creates (Apple, Google), so
   // each camp's days land together instead of in "Untitled".
   return [
     'BEGIN:VCALENDAR', 'VERSION:2.0',
     'PRODID:-//Camp Scoreboard//camp.patricksimpson.info//EN', 'CALSCALE:GREGORIAN',
     'X-WR-CALNAME:' + icsEscape(CAMP.label),
-    ...vtimezone, ...[].concat(...events), 'END:VCALENDAR',
+    ...ICS_VTIMEZONE, ...[].concat(...events), 'END:VCALENDAR',
   ].map(icsFold).join('\r\n') + '\r\n';
+}
+
+// The schedule sheet's "Add the whole week to my calendar" (and, during the week, "Only the days from today"), with
+// the plain-words note that it is a snapshot (§12.4). Until a director has set the camp dates there is NO file to
+// offer, and for now the sheet then shows nothing at all — exactly what it showed before this existed, so a camp that
+// has not been touched renders byte-for-byte as it did. (The spec's disabled button, "Ask a director to set the camp
+// dates", is a one-line return here once the Camp week screen is how a director sets them.) The markup changes only
+// when the dates or the phase do, so an idle re-render rewrites nothing; the moment of the snapshot goes into the
+// file's own description and name, and the toast, not into this text.
+function renderWeekIcsEntry() {
+  const wk = campWeek();
+  if (!wk.start) return '';
+  const today = campNow().dow;
+  const fromToday = wk.phase === 'during' && today > 0 && today <= 6;
+  return `<div class="sched-ics-row sched-ics-week"><jelly-button id="sched-ics-week-btn" class="secondary-btn" variant="platinum" size="small">📆 Add the whole week to my calendar</jelly-button>`
+    + (fromToday ? `<jelly-button id="sched-ics-from-btn" class="secondary-btn" variant="platinum" size="small">📆 Only the days from today</jelly-button>` : '')
+    + `<p class="sched-ics-note">This is a snapshot of the schedule as it is now. Your calendar won’t update itself: if the schedule changes, download it again and delete the old camp events first.</p></div>`;
+}
+
+function downloadWeekIcs(opts) {
+  const now = new Date();
+  const ics = buildWeekIcs(Object.assign({ now }, opts));
+  if (!ics) return;
+  downloadBlob(new Blob([ics], { type: 'text/calendar' }), weekIcsFileName(now));
+  showToast('📆 Saved a snapshot of the schedule as of ' + icsSavedStamp(now).text + '. Your calendar won’t update itself: if the schedule changes, download it again and delete the old camp events first.');
+}
+
+// ── The whole week as one calendar file (setup-rebuild-spec §12.4) ──
+// Dates are the camp week's own (weekStart + dow), never "this week"; with no date there is no file (null — the
+// sheet says "Ask a director to set the camp dates"). Events are the TIMED blocks of planForDow, UID `<camp>-<week>-
+// <dk>-<block id>` once the schedule is edited here (stable under a rename, a move and a re-import: a calendar that
+// honours UID + SEQUENCE updates the event in place), `<camp>-<week>-<dk>-<position>-<start>` for the built-in copy.
+// DESCRIPTION: the games played in the block, the menu and who is on cleanup for a meal. Lines folded at 75 octets,
+// UTF-8 aware. `opts`: { dows: [..] one day, or a few; fromDow: leave out the days before it; now: a Date, for tests }.
+function icsMonthDay(utcDate) {
+  return ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][utcDate.getUTCMonth()] + ' ' + utcDate.getUTCDate();
+}
+// "Jul 18–24, 2027" / "Jul 30 – Aug 5, 2027": the week that starts on that Sunday.
+function icsWeekLabel(weekStart) {
+  const [y, m, d] = weekStart.split('-').map(Number);
+  const a = new Date(Date.UTC(y, m - 1, d));
+  const b = new Date(Date.UTC(y, m - 1, d + 6));
+  const range = a.getUTCMonth() === b.getUTCMonth() ? icsMonthDay(a) + '–' + b.getUTCDate() : icsMonthDay(a) + ' – ' + icsMonthDay(b);
+  return range + ', ' + b.getUTCFullYear();
+}
+// "Tue 9:40 AM" and "0720-0940" for the moment of the download, in camp time.
+function icsSavedStamp(now) {
+  const at = now || new Date();
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short', month: '2-digit', day: '2-digit', hour: 'numeric', minute: '2-digit', hour12: false }).formatToParts(at);
+    const get = (t) => (parts.find((p) => p.type === t) || {}).value || '';
+    const h = String(parseInt(get('hour'), 10) % 24).padStart(2, '0');
+    const mi = get('minute');
+    const h12 = (parseInt(h, 10) % 12) || 12;
+    return { text: get('weekday') + ' ' + h12 + ':' + mi + ' ' + (parseInt(h, 10) < 12 ? 'AM' : 'PM'), file: get('month') + get('day') + '-' + h + mi };
+  } catch (e) { return { text: at.toISOString().slice(0, 16).replace('T', ' ') + ' UTC', file: at.toISOString().slice(5, 16).replace(/[-:T]/g, '') }; }
+}
+// "Cleanup: 🦊 Ferocious Foxes + …" for a meal block on the rota, plain text (a calendar has no markup).
+function icsCleanupText(dow, label) {
+  const meal = legacyMealOf(label);
+  if (!meal || !cleanupOnRota(dow)) return '';
+  const teams = cleanupTeams(dow, meal);
+  return 'Cleanup: ' + (teams.length ? teams.map((id) => teamEmoji(id) + ' ' + teamName(id)).join(' + ') : 'TBA');
+}
+
+function buildWeekIcs(opts) {
+  const o = opts || {};
+  const wk = campWeek();
+  if (!wk.start) return null;
+  const [wy, wm, wd] = wk.start.split('-').map(Number);
+  const dateOf = (dow) => new Date(Date.UTC(wy, wm - 1, wd + dow)).toISOString().slice(0, 10).replace(/-/g, '');
+  const now = o.now instanceof Date ? o.now : new Date();
+  const utc = (d) => d.toISOString().replace(/[-:.]/g, '').slice(0, 15) + 'Z';
+  const fmt = (date, mins) => {
+    const mm = Math.min(mins, hm(23, 59)); // an end of 24:00 stays in the day
+    return `${date}T${String(Math.floor(mm / 60)).padStart(2, '0')}${String(mm % 60).padStart(2, '0')}00`;
+  };
+  // When a director last changed the schedule: SEQUENCE counts minutes from 180 days before the week to that moment
+  // (always higher after an edit, so a calendar that honours UID + SEQUENCE updates in place), LAST-MODIFIED is it.
+  const editedAt = typeof setupEditedAt === 'function' ? setupEditedAt('schedule') : 0;
+  const base = Date.UTC(wy, wm - 1, wd) - 180 * 86400000;
+  const seq = editedAt > base ? Math.floor((editedAt - base) / 60000) : 0;
+  const shared = scheduleIsShared();
+  const wanted = Array.isArray(o.dows) ? o.dows : null;
+  const events = [];
+  weekDays().forEach((day) => {
+    const dow = day.dow;
+    if (wanted && wanted.indexOf(dow) === -1) return;
+    if (Number.isInteger(o.fromDow) && dow < o.fromDow) return;
+    const date = dateOf(dow);
+    const legacy = scheduleForDow(dow);
+    planForDow(dow).forEach((r, i) => {
+      if (r.noTime) return;
+      const raw = legacy[i] || r; // the same order: the printed block this one came from (gamesForBlock wants it)
+      const lines = [];
+      const games = gamesForBlock(dow, raw);
+      if (games.length) lines.push('Games: ' + games.map((g) => g.name).join(', '));
+      const meal = mealInfo(dow, raw);
+      if (meal) lines.push('On the menu: ' + meal.dish);
+      const cleanup = icsCleanupText(dow, r.label);
+      if (cleanup) lines.push(cleanup);
+      const uid = shared ? `${CAMP.id}-${wk.start}-${r.dk}-${r.id}` : `${CAMP.id}-${wk.start}-${r.dk}-${i}-${r.start}`;
+      events.push([
+        'BEGIN:VEVENT',
+        `UID:${uid}@camp.patricksimpson.info`,
+        `SEQUENCE:${seq}`,
+        `DTSTAMP:${utc(now)}`,
+        editedAt ? `LAST-MODIFIED:${utc(new Date(editedAt))}` : '',
+        `DTSTART;TZID=America/New_York:${fmt(date, r.start)}`,
+        `DTEND;TZID=America/New_York:${fmt(date, r.end)}`,
+        `SUMMARY:${icsEscape(r.emoji + ' ' + r.label)}`,
+        lines.length ? `DESCRIPTION:${icsEscape(lines.join('\n'))}` : '',
+        'END:VEVENT',
+      ].filter(Boolean));
+    });
+  });
+  const saved = icsSavedStamp(now);
+  return [
+    'BEGIN:VCALENDAR', 'VERSION:2.0',
+    'PRODID:-//camp.patricksimpson.info//Camp Scoreboard//EN', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+    'X-WR-CALNAME:' + icsEscape(CAMP.label + ' · ' + icsWeekLabel(wk.start)),
+    'X-WR-TIMEZONE:America/New_York',
+    'X-WR-CALDESC:' + icsEscape('A snapshot of the schedule as it was on ' + saved.text + '. Your calendar will not update itself: if the schedule changes, download it again and delete the old camp events first.'),
+    ...ICS_VTIMEZONE, ...[].concat(...events), 'END:VCALENDAR',
+  ].map(icsFold).join('\r\n') + '\r\n';
+}
+
+// The file name carries the moment it was made, so two downloads are told apart: junior-camp-2027-07-18-saved-0720-0940.ics
+function weekIcsFileName(now) {
+  const wk = campWeek();
+  return CAMP.id + '-camp-' + (wk.start || 'dates-unset') + '-saved-' + icsSavedStamp(now).file + '.ics';
 }
 
 function wireSchedule() {

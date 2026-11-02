@@ -722,6 +722,13 @@ function setupEditedBy(section) {
   return e ? { at: e.at, byKey: e.byKey, name: setupEditorName(e.byKey) } : null;
 }
 
+// When a section was last changed (server ms, or this device's estimate for its own edit), or 0 — the .ics
+// file's LAST-MODIFIED and the seed of its SEQUENCE.
+function setupEditedAt(section) {
+  const e = setupEdited[section];
+  return e && typeof e.at === 'number' ? e.at : 0;
+}
+
 // A director's name from the member directory, for sentences ("Patrick changed this").
 // Editor-maintained, so it is the source of truth; with no directory yet — or a key
 // that isn't an editor — it says "Another director" rather than trusting anything a

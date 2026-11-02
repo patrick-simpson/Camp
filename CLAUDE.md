@@ -1281,8 +1281,15 @@ What's covered, and why each file exists:
   export: every line folded to 75 octets (`icsFold`, byte-counted, never inside
   a UTF-8 sequence), UIDs `<camp>-<dow>-<block index>-<start>@…` so the two
   camps' exports of one weekday can never overwrite each other and a re-import
-  updates in place, and `X-WR-CALNAME` = the camp's label. S5a will move the
-  UID onto camp + week + day + block id once the schedule is data.
+  updates in place, and `X-WR-CALNAME` = the camp's label — that is the per-day
+  file while no camp dates are set. Since step 15 it also pins the WEEK file
+  (`buildWeekIcs`): null with no dates, one VEVENT per timed block of all seven
+  days, dates from `weekStart + dow` across a month, a year and a DST edge, UIDs
+  unique and stable (camp + week + day + block id once the schedule is edited
+  here, camp + week + day + position + start for the built-in copy), SEQUENCE /
+  LAST-MODIFIED following the last schedule edit, the games / menu / cleanup in the
+  description, one-day and from-today files that share the week file's UIDs, and the
+  sheet's entry.
 - `legacy-roster.test.js` — the 2026 roster migration runs only without a
   `meta.epoch`.
 - `boot-cache.test.js` — loads the real scripts into a FRESH context over a
@@ -2547,6 +2554,28 @@ Both camps, junior and senior, run all of it.
   setup events), and the drawer's Save now writes the setup date before publishing.
   The schedule-change ALERT (`/notify` kind `schedule`, the baseline reset on a switch)
   is the Worker's step 26 (S9) and is not here.
+- **The whole-week calendar file** (app.js next to `buildDayIcs`, P2 §12.4):
+  `buildWeekIcs({dows, fromDow, now})` is null with no camp dates (`campWeek().start`); else
+  one VEVENT per TIMED block of `planForDow` for every day of `weekDays()` — dates are
+  `weekStart + dow` (never "this week"), times are wall-clock in `TZID=America/New_York`
+  with the shared `ICS_VTIMEZONE` (so a DST change can't shift anything). UID =
+  `<camp>-<week>-<dk>-<block id>@camp.patricksimpson.info` once the schedule is edited
+  here (stable under a rename and a move: a calendar that honours UID + SEQUENCE updates
+  the event in place), `<camp>-<week>-<dk>-<position>-<start>` for the built-in copy.
+  `SEQUENCE` = minutes from 180 days before the week to the last schedule edit
+  (`setupEditedAt('schedule')`, 0 if never), `LAST-MODIFIED` that moment. DESCRIPTION =
+  `Games: …` (`gamesForBlock`), `On the menu: …`, `Cleanup: …` for a meal; header has
+  `METHOD:PUBLISH`, `X-WR-CALNAME:<camp> · Jul 18–24\, 2027` (the comma is escaped:
+  it is a TEXT value), `X-WR-TIMEZONE` and an `X-WR-CALDESC` that says it is a snapshot
+  and to delete the old events first. `weekIcsFileName` =
+  `junior-camp-2027-07-18-saved-0720-0940.ics`. **With camp dates set, the per-day button
+  is the same builder asked for one day** (same UIDs, so importing a day then the week
+  never duplicates); with none it is the original per-day file, byte for byte.
+  The sheet's entry is `renderWeekIcsEntry()` (a "whole week" button, "Only the days from
+  today" during the week, the snapshot note in plain words): **with no camp dates it renders
+  NOTHING**, so an untouched camp's schedule sheet is exactly what it was — the spec's
+  disabled "Ask a director to set the camp dates" is a one-line change there when the
+  Camp week screen is how a director sets them.
 - **The seeded pass** (`tests/run.js`, `makeContext({camp, seeded: true})`): the seed,
   round-tripped through RTDB's canonical form, is already `setupTree` with the switch on
   and the catalog's games are linked (A2). The week / push / chat / ics / tabs / frame /
