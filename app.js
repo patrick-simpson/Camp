@@ -11381,6 +11381,11 @@ function shellSnap() {
     if (shellTabOk(state.ui.gameFrom)) o.from = state.ui.gameFrom;
     ov.push(o);
   }
+  if (revealRemoteIsOpen()) {
+    const o = { k: 'reveal' };
+    if (shellTabOk(state.ui.revealFrom)) o.from = state.ui.revealFrom;
+    ov.push(o);
+  }
   shell.sheets.forEach((id) => ov.push({ k: 'sheet', id }));
   return { tab: activeTab(), ov };
 }
@@ -11397,6 +11402,10 @@ function shellSnapFromRaw(raw) {
       const g = { k: 'game', id: o.id };
       if (shellTabOk(o.from)) g.from = o.from;
       ov.push(g);
+    } else if (o.k === 'reveal') {
+      const r = { k: 'reveal' };
+      if (shellTabOk(o.from)) r.from = o.from;
+      ov.push(r);
     } else if (o.k === 'sheet' && typeof o.id === 'string' && /^[a-z0-9-]{1,24}$/.test(o.id)) ov.push({ k: 'sheet', id: o.id });
   });
   return { tab: shellTabOk(raw.tab) ? raw.tab : 'now', ov };
@@ -11524,6 +11533,10 @@ function shellApply(s) {
   }
   state.ui.gameId = game && gameById(game.id) ? game.id : null;
   if (game && game.from) state.ui.gameFrom = game.from;
+  // The reveal remote is a takeover of its own (directors only; a Forward onto it as a counselor shows the tab).
+  const rv = s.ov.find((o) => o.k === 'reveal');
+  state.ui.revealOpen = !!(rv && revealRemoteMayOpen());
+  if (rv && rv.from) state.ui.revealFrom = rv.from;
   state.ui.tab = s.tab;
   shell.applying = true;
   try {
@@ -11594,8 +11607,9 @@ function shellArrivePanel(root) {
   }, { calm: [{ opacity: 0 }, { opacity: 1 }], calmMs: 120 });
 }
 
+// A takeover is up: a game, or the director's reveal remote (one at a time).
 function shellTakeoverOpen() {
-  return !!(state.ui.gameId && gameById(state.ui.gameId));
+  return !!(state.ui.gameId && gameById(state.ui.gameId)) || revealRemoteIsOpen();
 }
 
 // Which panel shows, the tab buttons' state, the takeover's body class. Returns
@@ -11663,6 +11677,7 @@ function shellOnScroll() {
 function shellCloseOverlays() {
   shell.sheets.slice().forEach((id) => (id === 'schedule' && typeof closeSchedule === 'function' ? closeSchedule() : shellSheetClose(id)));
   state.ui.gameId = null;
+  state.ui.revealOpen = false;
   if (builderOpen()) {
     if (typeof builderDirty === 'function' && builderDirty() && !confirm('Discard your unsaved changes?')) return false;
     if (typeof discardGameDraft === 'function') discardGameDraft();
@@ -11705,6 +11720,7 @@ function openGame(gid, opts) {
   // Focus returns to the control that opened the takeover (kept across a
   // "Next game" swap: the opener is the first one).
   if (!state.ui.gameId) shell.opener = document.activeElement || null;
+  state.ui.revealOpen = false; // one takeover at a time
   state.ui.gameId = g.id;
   state.ui.gameFrom = shellTabOk(opts.from) ? opts.from : activeTab();
   state.ui.gameDow = campNow().dow;
@@ -11721,6 +11737,46 @@ function closeGame() {
   shellStamp();
   saveState();
   renderAll(); // renderGameView hands focus back when the takeover goes (a Back gesture closes it too)
+}
+
+// ── takeovers (the director's reveal remote) ────────────────────────
+// The reveal remote (#takeover-reveal, reveal-ui.js) is a takeover of its own: a director opens it from
+// More → Run the reveal, Games' "Reveal these on the big screen" or Now's "Open the remote" (or the
+// `reveal` deep link), the shell files ONE history entry for it, and Back closes it onto the tab it came
+// from. State is device-local like the game's (`state.ui.revealOpen`, `revealFrom`). Reachable only for a
+// director whose screens file loaded: without reveal-ui.js there is no remote, and a counselor has none.
+function revealRemoteMayOpen() {
+  return canEdit() && typeof renderRevealRemote === 'function';
+}
+function revealRemoteIsOpen() {
+  return !!(state && state.ui && state.ui.revealOpen && revealRemoteMayOpen());
+}
+
+function openReveal(opts) {
+  if (!revealRemoteMayOpen() || builderOpen()) return false;
+  opts = opts || {};
+  if (!state.ui.revealOpen) shell.opener = document.activeElement || null;
+  state.ui.gameId = null; // one takeover at a time
+  state.ui.revealOpen = true;
+  state.ui.revealFrom = shellTabOk(opts.from) ? opts.from : activeTab();
+  shellStamp();
+  saveState();
+  renderAll();
+  return true;
+}
+
+function closeReveal() {
+  if (!state.ui.revealOpen) return;
+  state.ui.revealOpen = false;
+  shellStamp();
+  saveState();
+  renderAll(); // renderRevealRemote slides it out and hands focus back (a Back gesture closes it too)
+}
+
+// "‹ More", "‹ Games", "‹ Now": where the remote's Back lands.
+function shellRevealBackLabel() {
+  const from = shellTabOk(state.ui.revealFrom) ? state.ui.revealFrom : 'more';
+  return from === 'games' ? 'Games' : from === 'chat' ? 'Chat' : from === 'now' ? 'Now' : 'More';
 }
 
 // "‹ Now", "‹ Wednesday games", "‹ More": always a fixed place the Back lands on.
@@ -12374,6 +12430,8 @@ function shellHasUnsentWork() {
   if (typeof editorMidEntry === 'function' && canEdit() && editorMidEntry()) return true;
   if (typeof chatComposerBusy === 'function' && chatComposerBusy()) return true;
   if (typeof chatHasDraft === 'function' && chatHasDraft()) return true;
+  // A director running the reveal is never sent back to Now by a long lock-screen pause: the remote is the work.
+  if (revealRemoteIsOpen() && typeof revealBusy === 'function' && revealBusy()) return true;
   return false;
 }
 
@@ -12388,6 +12446,7 @@ function shellResume() {
   if (away <= SHELL_RESUME_MS || shellHasUnsentWork()) { shellTick(); return; }
   shell.sheets.slice().forEach((id) => (id === 'schedule' && typeof closeSchedule === 'function' ? closeSchedule() : shellSheetClose(id)));
   state.ui.gameId = null;
+  state.ui.revealOpen = false;
   if (builderOpen()) { state.ui.view = 'home'; if (typeof discardGameDraft === 'function') discardGameDraft(); }
   state.ui.tab = 'now';
   shell.scroll.now = 0;
@@ -12402,7 +12461,8 @@ function shellResume() {
 function shellParseTarget(raw) {
   const t = String(raw || '').replace(/^#/, '').trim();
   if (shellTabOk(t)) return { tab: t };
-  if (t === 'reveal' || /^alert:[A-Za-z0-9_-]{1,64}$/.test(t)) return { tab: 'now' };
+  if (t === 'reveal') return { tab: 'now', reveal: true };            // the director's remote (a counselor lands on Now, where the mirror is)
+  if (/^alert:[A-Za-z0-9_-]{1,64}$/.test(t)) return { tab: 'now' };
   if (t === 'schedule') return { tab: 'now', sheet: 'schedule' };
   let m = /^game:([A-Za-z0-9_.:-]{1,80})$/.exec(t);
   if (m) return { tab: 'now', game: m[1] };
@@ -12432,6 +12492,7 @@ function shellOpenTarget(raw) {
   shellStamp();
   saveState();
   renderAll();
+  if (t.reveal && revealRemoteMayOpen() && !builderOpen()) { state.ui.revealOpen = true; state.ui.revealFrom = 'now'; saveState(); renderAll(); }
   if (t.sheet === 'schedule' && typeof openSchedule === 'function') openSchedule();
   return true;
 }
@@ -12451,6 +12512,7 @@ function shellBoot() {
   if (!fresh) {
     ui.tab = 'now';
     ui.gameId = null;
+    ui.revealOpen = false;
     if (ui.view === 'settings') ui.view = 'home';
   } else if (ui.gameId) {
     // a game left open yesterday must not greet someone on Wednesday
@@ -12464,6 +12526,7 @@ function shellBoot() {
     ui.tab = t.tab;
     if (t.channel && typeof chatChannelById === 'function' && chatChannelById(t.channel)) ui.chatChannel = t.channel;
     if (t.game && gameById(t.game)) { ui.gameId = t.game; ui.gameFrom = 'now'; ui.gameDow = campNow().dow; }
+    if (t.reveal) { ui.revealOpen = true; ui.revealFrom = 'now'; } // renderAll drops it for anyone who is not a director
     shell.bootSheet = t.sheet || null;
     try {
       if (typeof history !== 'undefined' && history.replaceState) {
@@ -12485,6 +12548,8 @@ function wireShell() {
   if (strip) strip.addEventListener('click', () => showTab('now'));
   const back = document.querySelector('#takeover-game [data-takeover-back]');
   if (back) back.addEventListener('click', closeGame);
+  const revealBack = document.querySelector('#takeover-reveal [data-takeover-back]');
+  if (revealBack) revealBack.addEventListener('click', closeReveal);
   document.querySelectorAll('.sheet-overlay').forEach((el) => {
     const id = el.id.replace(/^sheet-/, '');
     el.querySelectorAll('[data-sheet-close]').forEach((c) => c.addEventListener('click', () => shellSheetClose(id)));
@@ -12496,6 +12561,7 @@ function wireShell() {
     const top = shell.sheets[shell.sheets.length - 1];
     if (top === 'sched-item' && typeof schedItemGuardClose === 'function' && schedItemGuardClose()) return; // a half-made edit asks first
     if (top && top !== 'schedule') shellSheetClose(top);
+    else if (!top && revealRemoteIsOpen()) closeReveal();
     else if (!top && shellTakeoverOpen()) closeGame();
   });
   window.addEventListener('popstate', shellOnPopState);
@@ -12566,12 +12632,17 @@ function renderAll() {
   // The shell (§13.2): paint the visible root, reconcile the history stack,
   // then render the visible tab (the others are marked dirty and catch up when
   // shown) and the open takeover.
+  // A remote left open for someone who is not (or no longer) a director closes here, before the shell derives what is up.
+  if (state.ui.revealOpen && !revealRemoteMayOpen()) state.ui.revealOpen = false;
   const rootChanged = shellSync();
   renderHeader();
   renderTabBadges();
   renderShellTabs();
   renderShellSheets();
   renderGameView();
+  // The reveal's screens (reveal-ui.js): the remote takeover, Now's mirror and grid, the header strip, the
+  // tab dot, More's row, Games' link. Each writes only what changed.
+  if (typeof renderRevealUi === 'function') renderRevealUi();
   // The builder's frame (setup-ui.js: hub, head, sheets) paints around the classic builder, which it still calls
   // for the Classic editor screen; without that file the builder is v197's.
   if (typeof renderSetupUi === 'function') renderSetupUi(inBuilder);
@@ -12600,6 +12671,7 @@ function builderOpen() {
 function openBuilder(tab) {
   if (!canEdit()) return;
   state.ui.gameId = null; // one takeover at a time
+  state.ui.revealOpen = false;
   state.ui.view = 'settings';
   if (tab) state.ui.settingsTab = tab;
   if (!state.ui.settingsTab) state.ui.settingsTab = 'games';
@@ -12657,6 +12729,7 @@ function init() {
   if (typeof wireChat === 'function') wireChat();
   if (typeof wirePush === 'function') wirePush();
   if (typeof wireSetupUi === 'function') wireSetupUi();
+  if (typeof wireRevealUi === 'function') wireRevealUi();
   wireShell();
   wireMore();
 

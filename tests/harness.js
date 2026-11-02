@@ -21,7 +21,7 @@ const fakeRtdb = require('./fake-rtdb.js'); // waitQuiet() asks it how many ackn
 
 const ROOT = path.join(__dirname, '..');
 // Load order mirrors the <script> tags at the bottom of index.html.
-const APP_FILES = ['defaults.js', 'camp-core.js', 'reveal-core.js', 'camps.js', 'jelly-motion.js', 'app.js', 'reveal.js', 'setup-sync.js', 'settings.js', 'setup-ui.js', 'chat.js', 'push.js'];
+const APP_FILES = ['defaults.js', 'camp-core.js', 'reveal-core.js', 'camps.js', 'jelly-motion.js', 'app.js', 'reveal.js', 'reveal-ui.js', 'setup-sync.js', 'settings.js', 'setup-ui.js', 'chat.js', 'push.js'];
 
 const noop = () => {};
 

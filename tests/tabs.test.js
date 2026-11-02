@@ -134,7 +134,8 @@ test('deep-link targets: every tab, game:<id>, reveal and alert:<id> resolve; ju
   assert.deepEqual(shellParseTarget('chat'), { tab: 'chat' });
   assert.deepEqual(shellParseTarget('chat:memes'), { tab: 'chat', channel: 'memes' });
   assert.deepEqual(shellParseTarget('game:g12'), { tab: 'now', game: 'g12' });
-  assert.deepEqual(shellParseTarget('reveal'), { tab: 'now' }, 'the live mirror is on Now');
+  // Step 23: the reveal deep link lands on Now (where a counselor's mirror is) and, for a director, opens the remote over it.
+  assert.deepEqual(shellParseTarget('reveal'), { tab: 'now', reveal: true }, 'the live mirror is on Now; a director also gets the remote');
   assert.deepEqual(shellParseTarget('alert:abc-1'), { tab: 'now' });
   assert.deepEqual(shellParseTarget('schedule'), { tab: 'now', sheet: 'schedule' });
   ['', 'settings', 'game:', 'game:<x>', 'chat:../x', 'alert:', 'javascript:alert(1)', null].forEach((t) => {

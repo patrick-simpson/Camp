@@ -268,7 +268,8 @@ function revealArmTimer() {
 // What a screen could notice changing with time alone.
 function revealTimeSig() {
   const f = (v) => (v ? [v.live, v.phase, v.expired, v.looking, v.onScreen, v.rows.length].join('|') : '-');
-  return f(revealMirrorView()) + '/' + (memberRole === 'editor' ? f(revealRemoteView('practice')) : '-');
+  // The camp day rides along: the grid's "Tonight's" becomes "Last night's" at midnight, with no snapshot to say so.
+  return f(revealMirrorView()) + '/' + (memberRole === 'editor' ? f(revealRemoteView('practice')) : '-') + '/' + revealYmdOf(serverNow());
 }
 
 // The 30 s tick (shellTick), a wake, a corrected clock and the timer all land here.

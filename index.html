@@ -2602,6 +2602,11 @@
        globals and reveal-core.js, every hook in app.js is typeof-guarded, and without this tag the app
        simply shows no reveal. -->
   <script src="reveal.js?v=200"></script>
+  <!-- The standings reveal's SCREENS (the director's remote, Now's mirror, the frozen grid, the header strip,
+       More's row). The static markup is above (index.html's comments name every hook); this file paints it.
+       Same optional-layer contract: every hook in app.js is typeof-guarded, and without this tag the engine
+       above still runs and paints nothing. Needs reveal.js, so it loads right after it. -->
+  <script src="reveal-ui.js?v=200"></script>
   <!-- The setup engine (the week's schedule, menus, verses, rota and electives as
        data under <root>/setup; restore points; "also here"). Same optional-layer
        contract as chat.js: it needs app.js's globals, so it loads right after it, and
