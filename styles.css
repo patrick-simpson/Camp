@@ -2728,6 +2728,144 @@ button.cb-row:active {
   position: relative;
 }
 
+/* ── Two directors changed the same field (P2 §6.3.5): Keep mine / Use theirs ──
+   Inline in the game editor, right above its Save, one .clash per field both
+   of you changed; Save stays a dashed well ("Pick one for Location, then
+   save") until each has a pick. The pick is the app's segmented control
+   (.seg, role="radiogroup"; the chosen .seg-btn is aria-checked="true", lifted
+   out of the well) with two lines per side: who, then the VALUE, so the choice
+   is between the two actual answers, not two abstract words. Markup:
+     <div class="clash-list">
+       <div class="clash" data-clash-field="location">
+         <p class="clash-q" id="clash-q-location">While you were editing, someone
+           changed <b>Location</b></p>
+         <div class="seg clash-pick" role="radiogroup" aria-labelledby="clash-q-location">
+           <button type="button" class="seg-btn" role="radio" aria-checked="false"
+             data-clash-pick="mine"><span class="clash-who">Keep mine</span>
+             <span class="clash-val">Field 2</span></button>
+           <button … data-clash-pick="theirs"><span class="clash-who">Use theirs</span>
+             <span class="clash-val">Gym</span></button>
+         </div>
+       </div>
+     </div>
+   "theirs" becomes "Use Patrick's" once the config carries who changed it (it
+   doesn't yet, so "someone"); never "his"/"hers". Values are escaped and
+   shown as cfgShow() prints them; an empty one reads "(empty)". */
+.clash-list {
+  margin: var(--s-4) 0 var(--s-2);
+  border-top: 1px solid var(--line-2);
+}
+.clash {
+  padding: var(--s-3) 0;
+  border-bottom: 1px solid var(--line);
+}
+.clash-q {
+  position: relative;
+  margin: 0 0 10px;
+  padding-left: 27px; /* the "!" sits in this gutter; the sentence stays inline */
+  font: 650 0.9375rem/1.4 var(--font-ui);
+  color: var(--ink);
+}
+.clash-q b {
+  font-weight: 800;
+}
+/* The same gold "!" as the hub's "to check" mark: a decision is waiting. */
+.clash-q::before,
+.settings-notes .config-note::before {
+  content: '!';
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: inset 0 0 0 1.5px var(--gold-edge);
+  color: var(--gold-ink);
+  font: 900 0.75rem/1 var(--font-ui);
+}
+.clash-pick .seg-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
+  min-height: 58px;
+  padding: 7px 12px;
+  text-align: left;
+}
+.clash-who {
+  font: 750 0.8125rem/1.2 var(--font-ui);
+  color: var(--ink-2);
+}
+.clash-val {
+  max-width: 100%;
+  font: 800 1rem/1.25 var(--font-ui);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+/* The chosen side also says so with a check, not only by lifting. */
+.clash-pick .seg-btn[aria-checked="true"] .clash-who::before {
+  content: '';
+  display: inline-block;
+  width: 4px;
+  height: 8px;
+  margin: 0 7px 1px 2px;
+  border: solid var(--done);
+  border-width: 0 2.2px 2.2px 0;
+  transform: rotate(45deg);
+}
+
+/* What the config engine set aside (settings.js configNotesHtml: "Put it back
+   with my changes", "Use mine"): the clash look, not an amber callout. One
+   hairline-divided strip above the builder's tabs; the buttons are small
+   chunky ones, Discard in danger text. Empty ⇒ zero height. */
+.settings-notes:not(:empty) {
+  margin: 0 0 var(--s-3);
+  border-top: 1px solid var(--line-2);
+}
+.settings-notes .config-note.warn-note {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 0 9px;
+  margin: 0;
+  padding: var(--s-3) 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
+  color: var(--ink);
+  font: 650 0.9375rem/1.4 var(--font-ui);
+}
+.settings-notes .config-note::before {
+  grid-row: 1 / span 2;
+}
+.clash-q::before {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+.settings-notes .config-note-actions {
+  grid-column: 2;
+  gap: var(--s-2) 10px;
+  margin-top: 10px;
+}
+.settings-notes .link-btn {
+  min-height: var(--target);
+  padding: 2px 14px;
+  border: 2px solid var(--card-b);
+  border-radius: var(--r-btn);
+  background: var(--sheet);
+  box-shadow: 0 var(--edge-btn) 0 var(--edge);
+  color: var(--ink);
+  font: 800 0.875rem/1.1 var(--font-ui);
+  text-decoration: none;
+}
+.settings-notes .link-btn.danger-link {
+  border-color: var(--color-danger-text);
+  box-shadow: 0 var(--edge-btn) 0 var(--color-danger-text);
+  color: var(--color-danger-text);
+}
+
 /* Advanced (owner only): closed by default, says what it is before it opens. */
 .setup-advanced {
   margin-top: var(--s-6);
@@ -8110,25 +8248,15 @@ select.form-input {
 }
 
 /* What the config engine set aside (settings.js, configNotesHtml): a record removed
-   while an edit of mine was on its way, an offline change that lost a clash. Empty ⇒
-   zero height. The buttons are plain link-buttons inside the amber note. */
-.settings-notes .config-note {
-  margin: 0 0 0.75rem;
-}
+   while an edit of mine was on its way, an offline change that lost a clash. Its
+   look is the clash's (SET UP THE WEEK above, next to .clash); only the layout of
+   the two lines lives here. */
 .settings-notes .config-note p {
   margin: 0;
 }
 .settings-notes .config-note-actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.35rem 1rem;
-  margin-top: 0.4rem;
-}
-.settings-notes .link-btn {
-  color: inherit;
-  font: inherit;
-  font-weight: 800;
-  text-decoration: underline;
 }
 
 /* The Games / Days tabs before the first config snapshot (settings.js,

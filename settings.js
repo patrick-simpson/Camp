@@ -247,7 +247,7 @@ function configNotesHtml() {
       const noun = n.section === 'games' ? 'game' : 'day';
       // `collide`: a NEW one of mine that met a different record under the same id.
       return `<div class="config-note warn-note">
-        <p>⚠️ ${n.collide
+        <p>${n.collide
           ? `Your new ${noun} <strong>${esc(n.name)}</strong> couldn’t be added: somebody added a different one with the same id at the same moment.`
           : `The ${noun} <strong>${esc(n.name)}</strong> was removed while you were editing it.`}</p>
         <p class="config-note-actions">
@@ -259,7 +259,7 @@ function configNotesHtml() {
     if (n.kind === 'clash' && n.mine === null && String(n.path).split('/').length === 2) {
       // A whole record: the JSON of a game says nothing, and its position isn't news.
       return `<div class="config-note warn-note">
-        <p>⚠️ While you were offline you deleted <strong>${esc(n.what)}</strong>, but someone changed it too — so it is still there.</p>
+        <p>While you were offline you deleted <strong>${esc(n.what)}</strong>, but someone changed it too — so it is still there.</p>
         <p class="config-note-actions">
           <button type="button" class="link-btn danger-link" data-note-act="usemine" data-note-id="${esc(n.id)}">Delete it anyway</button>
           <button type="button" class="link-btn" data-note-act="drop" data-note-id="${esc(n.id)}">Dismiss</button>
@@ -268,7 +268,7 @@ function configNotesHtml() {
     }
     if (n.kind === 'clash') {
       return `<div class="config-note warn-note">
-        <p>⚠️ While you were offline someone changed <strong>${esc(n.what)}</strong> too — theirs is showing (${esc(cfgShow(n.theirs))}), yours was ${esc(cfgShow(n.mine))}.</p>
+        <p>While you were offline someone changed <strong>${esc(n.what)}</strong> too — theirs is showing (${esc(cfgShow(n.theirs))}), yours was ${esc(cfgShow(n.mine))}.</p>
         <p class="config-note-actions">
           <button type="button" class="link-btn" data-note-act="usemine" data-note-id="${esc(n.id)}">Use mine</button>
           <button type="button" class="link-btn" data-note-act="drop" data-note-id="${esc(n.id)}">Dismiss</button>

@@ -781,6 +781,11 @@ rest of Step 14); until then the markup is inert and the builder is v197's.
   the app wipes the fill's `clip-path` from `inset(0 100% 0 0)` to `inset(0)`
   over 1.2 s while held — not a transform, so calm keeps it (it is the only
   way to see how long is left); a tap or a key reveals the two-tap button.
+- **Keep mine / Use theirs** (§6.3.5): `.clash-list` > `.clash[data-clash-field]`
+  > `.clash-q` + `.seg.clash-pick[role=radiogroup]` > two `.seg-btn[role=radio]
+  [data-clash-pick=mine|theirs]` with `.clash-who` and `.clash-val` — the full
+  markup is in styles.css beside `.clash`. The config engine's set-aside notes
+  (configNotesHtml) wear the same look: the gold "!", no emoji, no amber tint.
 
 ## Tests
 
