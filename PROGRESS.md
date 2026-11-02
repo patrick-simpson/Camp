@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Mon Nov 2, 12:35 AM ET** (update this line every time the file changes)
+Last updated: **Mon Nov 2, 2:25 AM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -144,6 +144,7 @@ send_later into this session). ETAs above shift by however long the pause lasts.
   (builder worktrees must never be committed).
 
 ## Next steps (resume here)
+- **Step 11 DONE** (rules only, no version bump, Mon Nov 2, ~2:20 AM ET) — the owner published the R1 security rules (prefix ccf2e5d3, read back identical) and every check passed: strangers locked out of all 14 private spots per camp, the big-screen feed public; as the owner, a temporary counselor and a temporary second director, 53/53 checks behaved as designed (an agent ran them with a test account, since removed). Live answers: the database does check parent-folder rules (the old "known hole" note was wrong and is corrected), and a full-size 100,000-character team photo is accepted, so no follow-up publish. Steps 14, 16, 22, 23 and 25 are unblocked; owner action: none.
 - **Step 10 LIVE** (v196, commit ab63b74, Mon Nov 2, 12:35 AM ET) — the one big Firebase security-rules release is now written and proven in the emulator but NOT published (new setup / camper / access-request / brackets4 / owner-only blocks, plus the single public read-only path for the standings reveal, with the kill switch written into the runbook; rules file starts ccf2e5d3); nothing changes on either camp until Step 11; owner action: none yet (Step 11 is where you paste the rules in Cloud Shell).
 - **Step 9 LIVE** (v196, commit befe4de, Sun Nov 1, 10:12 PM ET) — the week setup (games, days, teams, roster) now saves one field at a time instead of overwriting the whole setup, so two directors editing different fields of one game at once keep both edits, a setup edit made offline survives a reload and merges when the phone reconnects, a clash is set aside with Put it back / Use mine, and every setup change gets an Undo toast; owner action: none.
 - **Step 8 LIVE** (v195, commit 52995ee, Sun Nov 1, 8:34 PM ET) — when a new camp year starts (the setup wizard, Step 28, will stamp one), a phone's unsent scores from last year are set aside as a downloadable file with a Download / Dismiss bar instead of being pushed into the new year, and nothing changes on either camp until an epoch exists; owner action: none.
