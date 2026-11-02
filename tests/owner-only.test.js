@@ -156,7 +156,7 @@ test('every owner-only control in the Set up the week markup starts hidden, and 
   // The owner's menu rows are exactly the four switches, and none is wired to anything but SETUP_OWNER_ACTIONS.
   ['new-year', 'undo-new-year', 'original', 'advanced'].forEach((a) => assert.ok(new RegExp('data-setup-act="' + a + '" data-owner-only hidden').test(html), a));
   assert.deepEqual(Object.keys(SETUP_OWNER_ACTIONS), ['original'], 'Step 15 built Use the original week again; Advanced is Step 19, the wizard Step 28');
-  assert.deepEqual(Object.keys(HUB_DOOR_ACTIONS).filter((k) => HUB_DOOR_ACTIONS[k]), ['original'], 'and the front door\'s Edit the week here; the new-year door is Step 28');
+  assert.deepEqual(Object.keys(HUB_DOOR_ACTIONS).filter((k) => HUB_DOOR_ACTIONS[k]), ['original', 'sections'], 'the front door\'s Edit the week here and (step 19) Turn on for the four smaller sections; the new-year door is Step 28');
 });
 
 test('a non-owner director is never offered an owner control by any path: the sentence, the menu, the door click and the menu tap', () => {
@@ -201,4 +201,29 @@ test('Edit the week here and Use the original week again refuse anyone but the o
   assert.equal((await setupTurnOn()).reason, 'owner', 'a counselor too');
   ooReset();
   assert.equal((await setupTurnOn()).reason, 'owner', 'and a device nobody is signed in on');
+});
+
+test('Turn on and the way back for the four smaller sections are the owner\'s too (step 19): markup, the sentence others read, and the call itself', async () => {
+  ooReset();
+  const html = readFixture('../index.html');
+  ['meals', 'verses', 'cleanup', 'electives'].forEach((s) => {
+    assert.ok(new RegExp('id="' + s + '-door-btn"[^>]*data-owner-only hidden').test(html), s + ': Turn on is owner-only markup that starts hidden');
+    assert.ok(new RegExp('id="' + s + '-door-owner"[^>]*data-not-owner hidden').test(html), s + ': everyone else reads the sentence');
+    assert.ok(new RegExp('id="' + s + '-original"[^>]*data-sec-original="' + s + '" data-owner-only hidden').test(html), s + ': the way back is owner-only markup that starts hidden');
+  });
+  authUser = OO_DIRECTOR;
+  setMemberRole('editor');
+  memberDirectory = { [OWNER_MEMBER_KEY]: { role: 'editor', name: 'Patrick Simpson' } };
+  memberDirectoryLoaded = true;
+  const r = await setupTurnOn(['meals', 'verses', 'cleanup', 'electives'], { campRunning: false });
+  assert.deepEqual([r.ok, r.reason, r.message], [false, 'owner', 'Only Patrick can turn on editing.']);
+  assert.equal(setupUseOriginal(['meals']).reason, 'owner');
+  // The preview door's words for everyone else name the owner and carry no button the renderer would show.
+  paintPreviewDoor('meals', true, { lead: 'x', btn: 'Turn on', ownerText: 'Patrick turns it on.' });
+  assert.equal(document.getElementById('meals-door-btn').hidden, true);
+  assert.equal(document.getElementById('meals-door-owner').hidden, false);
+  assert.equal(document.getElementById('meals-door-owner-text').textContent, 'Patrick turns it on.');
+  assert.equal(await secTurnOnFlow(['meals']).then((x) => x.reason), 'owner', 'the conversation refuses a director before it asks anything');
+  assert.equal(await secUseOriginal('meals').then((x) => x.reason), 'owner');
+  ooReset();
 });

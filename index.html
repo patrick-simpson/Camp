@@ -366,6 +366,23 @@
                  the same marks, aria-hidden (each chip's aria-label says it). -->
             <p class="daypick-key" id="sched-days-key" aria-hidden="true" hidden><span><i class="daypick-dot" data-dot="typical"></i>follows the typical day</span><span><i class="daypick-dot" data-dot="changed"></i>changed</span><span><i class="daypick-warn"></i>to check</span></p>
           </nav>
+          <!-- Meals, Cleanup rota and Electives (Step 19): the same strip for the
+               days those screens are about (Mon–Fri, or the days that have a
+               meal); the renderer hides a day that doesn't apply and moves
+               aria-selected. Shown only on data-screen="meals|cleanup|electives".
+               Per day the renderer sets data-today (outlined) and `data-sd-warn`
+               (a gold "!": something on that day needs a look). -->
+          <nav class="sched-days sec-days" id="sec-days" data-setup-screen="sec" aria-label="Which day">
+            <div class="daypick" id="sec-days-track" role="tablist" aria-label="Which day">
+              <button type="button" class="daypick-btn" role="tab" aria-selected="false" data-day="sun"><span class="daypick-name">Sun</span><span class="daypick-dots" aria-hidden="true"></span><i class="daypick-warn" data-sd-warn aria-hidden="true" hidden></i></button>
+              <button type="button" class="daypick-btn" role="tab" aria-selected="false" data-day="mon"><span class="daypick-name">Mon</span><span class="daypick-dots" aria-hidden="true"></span><i class="daypick-warn" data-sd-warn aria-hidden="true" hidden></i></button>
+              <button type="button" class="daypick-btn" role="tab" aria-selected="false" data-day="tue"><span class="daypick-name">Tue</span><span class="daypick-dots" aria-hidden="true"></span><i class="daypick-warn" data-sd-warn aria-hidden="true" hidden></i></button>
+              <button type="button" class="daypick-btn" role="tab" aria-selected="false" data-day="wed"><span class="daypick-name">Wed</span><span class="daypick-dots" aria-hidden="true"></span><i class="daypick-warn" data-sd-warn aria-hidden="true" hidden></i></button>
+              <button type="button" class="daypick-btn" role="tab" aria-selected="false" data-day="thu"><span class="daypick-name">Thu</span><span class="daypick-dots" aria-hidden="true"></span><i class="daypick-warn" data-sd-warn aria-hidden="true" hidden></i></button>
+              <button type="button" class="daypick-btn" role="tab" aria-selected="false" data-day="fri"><span class="daypick-name">Fri</span><span class="daypick-dots" aria-hidden="true"></span><i class="daypick-warn" data-sd-warn aria-hidden="true" hidden></i></button>
+              <button type="button" class="daypick-btn" role="tab" aria-selected="false" data-day="sat"><span class="daypick-name">Sat</span><span class="daypick-dots" aria-hidden="true"></span><i class="daypick-warn" data-sd-warn aria-hidden="true" hidden></i></button>
+            </div>
+          </nav>
         </header>
 
         <!-- ── The hub: the checklist (§11.2) ── -->
@@ -441,27 +458,27 @@
                 <span class="gl-text"><span class="gl-title">Campers</span><span class="gl-sub" data-hub-summary></span><span class="hub-problem" data-hub-problem hidden></span></span>
                 <span class="gl-end"><i class="setup-face" data-hub-here hidden></i><span class="hub-mark" data-hub-mark data-mark="info"><i aria-hidden="true"></i><span data-hub-word></span></span></span>
               </div>
-              <div class="gl-row hub-row" data-hub-row="meals">
+              <button type="button" class="gl-row hub-row" data-hub-row="meals">
                 <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-meal"/></svg></span>
                 <span class="gl-text"><span class="gl-title">Meals</span><span class="gl-sub" data-hub-summary></span><span class="hub-problem" data-hub-problem hidden></span></span>
-                <span class="gl-end"><i class="setup-face" data-hub-here hidden></i><span class="hub-mark" data-hub-mark data-mark="info"><i aria-hidden="true"></i><span data-hub-word></span></span></span>
-              </div>
-              <div class="gl-row hub-row" data-hub-row="verses">
+                <span class="gl-end"><i class="setup-face" data-hub-here hidden></i><span class="hub-mark" data-hub-mark data-mark="info"><i aria-hidden="true"></i><span data-hub-word></span></span><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+              </button>
+              <button type="button" class="gl-row hub-row" data-hub-row="verses">
                 <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-book"/></svg></span>
                 <span class="gl-text"><span class="gl-title">Memory verses</span><span class="gl-sub" data-hub-summary></span><span class="hub-problem" data-hub-problem hidden></span></span>
-                <span class="gl-end"><i class="setup-face" data-hub-here hidden></i><span class="hub-mark" data-hub-mark data-mark="info"><i aria-hidden="true"></i><span data-hub-word></span></span></span>
-              </div>
-              <div class="gl-row hub-row" data-hub-row="cleanup">
+                <span class="gl-end"><i class="setup-face" data-hub-here hidden></i><span class="hub-mark" data-hub-mark data-mark="info"><i aria-hidden="true"></i><span data-hub-word></span></span><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+              </button>
+              <button type="button" class="gl-row hub-row" data-hub-row="cleanup">
                 <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-broom"/></svg></span>
                 <span class="gl-text"><span class="gl-title">Cleanup rota</span><span class="gl-sub" data-hub-summary></span><span class="hub-problem" data-hub-problem hidden></span></span>
-                <span class="gl-end"><i class="setup-face" data-hub-here hidden></i><span class="hub-mark" data-hub-mark data-mark="info"><i aria-hidden="true"></i><span data-hub-word></span></span></span>
-              </div>
+                <span class="gl-end"><i class="setup-face" data-hub-here hidden></i><span class="hub-mark" data-hub-mark data-mark="info"><i aria-hidden="true"></i><span data-hub-word></span></span><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+              </button>
               <!-- Junior only (CAMP.features.electives): the renderer un-hides it. -->
-              <div class="gl-row hub-row" data-hub-row="electives" hidden>
+              <button type="button" class="gl-row hub-row" data-hub-row="electives" hidden>
                 <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-shapes"/></svg></span>
                 <span class="gl-text"><span class="gl-title">Electives</span><span class="gl-sub" data-hub-summary></span><span class="hub-problem" data-hub-problem hidden></span></span>
-                <span class="gl-end"><i class="setup-face" data-hub-here hidden></i><span class="hub-mark" data-hub-mark data-mark="info"><i aria-hidden="true"></i><span data-hub-word></span></span></span>
-              </div>
+                <span class="gl-end"><i class="setup-face" data-hub-here hidden></i><span class="hub-mark" data-hub-mark data-mark="info"><i aria-hidden="true"></i><span data-hub-word></span></span><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+              </button>
             </div>
           </div>
 
@@ -832,6 +849,114 @@
           <div class="setup-dock rain-dock">
             <button type="button" class="btn btn-gold btn-block" id="rain-done"><span>Done</span><span class="rain-done-count" id="rain-done-count" hidden></span></button>
           </div>
+        </section>
+
+        <!-- ── Meals, Memory verses, Cleanup rota, Electives (P2 §11.10–11.13; Step 19) ──
+             Four screens in the same clipboard language as Camp week and Schedule:
+             the kicker / headline / lede, the screen's door (the read-only preview
+             while the section isn't edited here: the owner's gold "Turn on", every
+             other director's "Patrick turns it on."), then one column of hairline
+             rows. Meals, Cleanup and Electives share the day strip in the head
+             (#sec-days, Mon–Fri or the days that have meals); a renderer patches
+             text, `hidden` and aria-*, and the meal rows (which hold inputs) are
+             patched in place by key, never rebuilt under a focused field. A
+             read-only preview sets `disabled` / `aria-disabled` on every control.
+             Meal row (written by the renderer):
+               <div class="cb-row sec-meal" data-key="m-lunch" data-meal="lunch">
+                 <span class="cb-time">12:00<small>PM</small></span>
+                 <span class="cb-main">
+                   <span class="sec-meal-head"><span class="cb-title"><span class="sched-emo" aria-hidden="true">🥪</span><span>Lunch</span></span><input class="fld-input sec-emoji" data-meal-emoji …></span>
+                   <input class="fld-input sec-dish" data-meal-dish …>
+                 </span><span class="cb-end"></span></div>
+             Cleanup row: <button class="cb-row sec-row" data-meal="lunch" [data-warn]> time | emoji + meal, sub = the teams
+             (or "No team yet") | chevron — a <div> with no chevron in a preview. -->
+        <section class="setup-screen sec meals" id="setup-meals" data-setup-screen="meals" aria-labelledby="meals-title">
+          <div class="setup-intro">
+            <h2 class="setup-kicker" id="meals-title">Meals</h2>
+            <p class="setup-headline" id="meals-headline"></p>
+            <p class="setup-lede" id="meals-lede"></p>
+          </div>
+          <section class="hub-door setup-door" id="meals-door" hidden>
+            <p class="hub-door-lead" id="meals-door-lead"></p>
+            <p class="hub-door-text" id="meals-door-text"></p>
+            <button type="button" class="btn btn-gold btn-sm hub-door-btn" id="meals-door-btn" data-owner-only hidden></button>
+            <p class="hub-door-owner" id="meals-door-owner" data-not-owner hidden><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span id="meals-door-owner-text"></span></p>
+          </section>
+          <div class="gl cb-list sec-list" id="meals-list"></div>
+          <p class="setup-note" id="meals-empty" hidden><svg class="ico" aria-hidden="true"><use href="#i-meal"/></svg><span id="meals-empty-text"></span></p>
+          <button type="button" class="sched-add" id="meals-copy" hidden><svg class="ico" aria-hidden="true"><use href="#i-download"/></svg><span id="meals-copy-text">Copy from another day…</span></button>
+          <button type="button" class="btn-quiet sec-original" id="meals-original" data-sec-original="meals" data-owner-only hidden>Use the original menu again</button>
+        </section>
+
+        <section class="setup-screen sec verses" id="setup-verses" data-setup-screen="verses" aria-labelledby="verses-title">
+          <div class="setup-intro">
+            <h2 class="setup-kicker" id="verses-title">Memory verses</h2>
+            <p class="setup-headline" id="verses-headline"></p>
+            <p class="setup-lede" id="verses-lede"></p>
+          </div>
+          <section class="hub-door setup-door" id="verses-door" hidden>
+            <p class="hub-door-lead" id="verses-door-lead"></p>
+            <p class="hub-door-text" id="verses-door-text"></p>
+            <button type="button" class="btn btn-gold btn-sm hub-door-btn" id="verses-door-btn" data-owner-only hidden></button>
+            <p class="hub-door-owner" id="verses-door-owner" data-not-owner hidden><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span id="verses-door-owner-text"></span></p>
+          </section>
+          <!-- Built once by the renderer (one .more-sec per record: the theme,
+               then a competition day each: Verse, Where it is, Video link,
+               [data-verse-error]); the values are patched in place. -->
+          <div id="verses-form"></div>
+          <button type="button" class="btn-quiet sec-original" id="verses-original" data-sec-original="verses" data-owner-only hidden>Use the original verses again</button>
+        </section>
+
+        <section class="setup-screen sec cleanup" id="setup-cleanup" data-setup-screen="cleanup" aria-labelledby="cleanup-title">
+          <div class="setup-intro">
+            <h2 class="setup-kicker" id="cleanup-title">Cleanup rota</h2>
+            <p class="setup-headline" id="cleanup-headline"></p>
+            <p class="setup-lede" id="cleanup-lede"></p>
+          </div>
+          <section class="hub-door setup-door" id="cleanup-door" hidden>
+            <p class="hub-door-lead" id="cleanup-door-lead"></p>
+            <p class="hub-door-text" id="cleanup-door-text"></p>
+            <button type="button" class="btn btn-gold btn-sm hub-door-btn" id="cleanup-door-btn" data-owner-only hidden></button>
+            <p class="hub-door-owner" id="cleanup-door-owner" data-not-owner hidden><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span id="cleanup-door-owner-text"></span></p>
+          </section>
+          <div class="gl cb-list sec-list" id="cleanup-list"></div>
+          <p class="setup-note" id="cleanup-empty" hidden><svg class="ico" aria-hidden="true"><use href="#i-broom"/></svg><span id="cleanup-empty-text"></span></p>
+          <!-- The fairness line over the whole week: "Each team cleans 2–3 times.
+               Maples clean twice on Thursday." -->
+          <p class="setup-note" id="cleanup-fair" hidden><svg class="ico" aria-hidden="true"><use href="#i-broom"/></svg><span id="cleanup-fair-text"></span></p>
+          <button type="button" class="sched-add" id="cleanup-fill" hidden><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span id="cleanup-fill-text">Fill evenly</span></button>
+          <button type="button" class="btn-quiet sec-original" id="cleanup-original" data-sec-original="cleanup" data-owner-only hidden>Use the original rota again</button>
+        </section>
+
+        <section class="setup-screen sec electives" id="setup-electives" data-setup-screen="electives" aria-labelledby="electives-title">
+          <div class="setup-intro">
+            <h2 class="setup-kicker" id="electives-title">Electives</h2>
+            <p class="setup-headline" id="electives-headline"></p>
+            <p class="setup-lede" id="electives-lede"></p>
+          </div>
+          <section class="hub-door setup-door" id="electives-door" hidden>
+            <p class="hub-door-lead" id="electives-door-lead"></p>
+            <p class="hub-door-text" id="electives-door-text"></p>
+            <button type="button" class="btn btn-gold btn-sm hub-door-btn" id="electives-door-btn" data-owner-only hidden></button>
+            <p class="hub-door-owner" id="electives-door-owner" data-not-owner hidden><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span id="electives-door-owner-text"></span></p>
+          </section>
+          <!-- Which elective: a segmented control, one slot at a time (ux-R2),
+               each named with its time ("Elective 2 · 3:00 PM"). -->
+          <div class="seg sec-slots" id="elec-slots" role="tablist" aria-label="Which elective">
+            <button type="button" class="seg-btn" role="tab" aria-selected="false" data-slot="0">Elective 1</button>
+            <button type="button" class="seg-btn" role="tab" aria-selected="false" data-slot="1">Elective 2</button>
+            <button type="button" class="seg-btn" role="tab" aria-selected="false" data-slot="2">Elective 3</button>
+          </div>
+          <!-- A station is a block (written by the renderer): its name (a 44px
+               button that opens the station sheet), its people as wrapping chips
+               (tap one to take them off; Undo puts them back), then "Add
+               someone". A name that nearly matches a member gets a Link row. -->
+          <div class="gl sec-list sec-stations" id="elec-list"></div>
+          <p class="setup-note" id="elec-empty" hidden><svg class="ico" aria-hidden="true"><use href="#i-shapes"/></svg><span id="elec-empty-text"></span></p>
+          <p class="setup-note" id="elec-break" hidden><svg class="ico" aria-hidden="true"><use href="#i-shapes"/></svg><span id="elec-break-text"></span></p>
+          <button type="button" class="sched-add" id="elec-add-station" hidden><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span>Add a station</span></button>
+          <button type="button" class="sched-add" id="elec-same" hidden><svg class="ico" aria-hidden="true"><use href="#i-download"/></svg><span id="elec-same-text">Same as Monday</span></button>
+          <button type="button" class="btn-quiet sec-original" id="electives-original" data-sec-original="electives" data-owner-only hidden>Use the original stations again</button>
         </section>
 
         <!-- The classic builder (Games, Days, Teams, Notice, Data) as one screen
@@ -1631,6 +1756,86 @@
           <button type="button" class="btn" id="si-save-all"><span id="si-save-all-text">Every day like Wednesday</span><span class="si-scope-caption" id="si-scope-caption"></span></button>
         </div>
         <button type="button" class="btn btn-gold btn-block" id="si-save">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── CLEANUP AND ELECTIVES: their sheets (P2 §11.12–11.13; Step 19) ──
+       Shell sheets again (editors only, ONE at a time). #sheet-sec-teams: one
+       meal's cleanup, one or two teams as the item sheet's toggles (a solid ink
+       edge = on) and a Save in the dock. #sheet-sec-person: who to put at a
+       station — the people on the list (a member's key is kept), then
+       "Someone not on the list" (a typed name). #sheet-sec-station: a station
+       — pick one that isn't in this slot, or make a new one (name + emoji); in
+       edit mode its name and emoji, take it off this slot, delete it. -->
+  <div id="sheet-sec-teams" class="sheet-overlay" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-sec-teams-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-sec-teams-title">Wednesday · Lunch</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="sheet-body">
+        <p class="setup-sheet-lede" id="sec-teams-lede">Who cleans up after this meal — one team, or two.</p>
+        <div class="si-teams" id="sec-teams" role="group" aria-label="Teams on cleanup"></div>
+        <p class="fld-error" id="sec-teams-note" role="alert" hidden></p>
+      </div>
+      <div class="sheet-dock">
+        <button type="button" class="btn btn-gold btn-block" id="sec-teams-save">Save</button>
+        <button type="button" class="btn-quiet" id="sec-teams-clear">No team yet</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="sheet-sec-person" class="sheet-overlay" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet sheet-tall" role="dialog" aria-modal="true" aria-labelledby="sheet-sec-person-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-sec-person-title">Add to Swimming</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="sheet-body">
+        <!-- The People list, one 44px row each (written by the renderer):
+               <button class="gl-row" data-sec-person="alyssa@x,com"><span class="gl-text"><span class="gl-title">Alyssa</span><span class="gl-sub">Foxes</span></span></button> -->
+        <div class="gl" id="sec-person-list"></div>
+        <p class="setup-note" id="sec-person-empty" hidden><span>Everyone on the list is already here.</span></p>
+        <form class="sec-add" id="sec-person-form" autocomplete="off">
+          <label class="fld fld-wide"><span class="fld-label">Someone not on the list</span><input type="text" class="fld-input" id="sec-person-name" maxlength="60" placeholder="First name" enterkeyhint="done"></label>
+          <button type="submit" class="btn btn-sm" id="sec-person-add">Add</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div id="sheet-sec-station" class="sheet-overlay" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet sheet-tall" role="dialog" aria-modal="true" aria-labelledby="sheet-sec-station-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-sec-station-title">Add a station</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="sheet-body">
+        <!-- Add mode: the stations not in this slot yet (written by the
+             renderer, one 44px row each), then the form for a new one. Edit
+             mode: only the form, then the two ways out. -->
+        <div class="gl" id="sec-station-list" hidden></div>
+        <form class="sec-add" id="sec-station-form" autocomplete="off">
+          <label class="fld"><span class="fld-label" id="sec-station-form-label">A new station</span><input type="text" class="fld-input" id="sec-station-name" maxlength="60" placeholder="Name" enterkeyhint="done"></label>
+          <label class="fld sec-emo"><span class="fld-label">Emoji</span><input type="text" class="fld-input" id="sec-station-emoji" maxlength="16" placeholder="🎯"></label>
+          <p class="fld-error" id="sec-station-error" role="alert" hidden></p>
+          <button type="submit" class="btn btn-gold" id="sec-station-save">Add</button>
+        </form>
+        <div class="gl" id="sec-station-manage" hidden>
+          <button type="button" class="gl-row" id="sec-station-off">
+            <span class="gl-text"><span class="gl-title" id="sec-station-off-title">Take it off this elective</span><span class="gl-sub">The station stays on the list</span></span>
+          </button>
+          <button type="button" class="gl-row gl-row-danger" id="sec-station-delete">
+            <span class="gl-text"><span class="gl-title">Delete this station</span><span class="gl-sub">It comes off every day</span></span>
+          </button>
+        </div>
       </div>
     </div>
   </div>

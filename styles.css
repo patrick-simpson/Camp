@@ -10562,3 +10562,227 @@ html:not(.calm-motion) .joy-slide-in {
     opacity: 0;
   }
 }
+
+/* ============================================================
+   SET UP THE WEEK: Meals, Memory verses, Cleanup rota, Electives
+   (P2 §11.10–11.13; Step 19)
+   ============================================================
+   The clipboard once more, with nothing new in it: a meal is a run-sheet row
+   (the time at the left, its name, and the dish typed right there), the rota
+   a row per meal whose sub names the teams, a station a block of people as
+   wrapping chips, a verse a plain form. Markup: index.html #setup-meals,
+   #setup-verses, #setup-cleanup, #setup-electives, the shared day strip
+   #sec-days (in the head) and #sheet-sec-teams / -person / -station. */
+.setup[data-screen="meals"] [data-setup-screen="meals"],
+.setup[data-screen="verses"] [data-setup-screen="verses"],
+.setup[data-screen="cleanup"] [data-setup-screen="cleanup"],
+.setup[data-screen="electives"] [data-setup-screen="electives"],
+.setup[data-screen="meals"] [data-setup-screen="sec"],
+.setup[data-screen="cleanup"] [data-setup-screen="sec"],
+.setup[data-screen="electives"] [data-setup-screen="sec"] {
+  display: block;
+}
+.sec .setup-note {
+  margin: 0 2px var(--s-3);
+}
+/* The owner's way back, quietly at the foot (nobody else sees it). */
+.sec-original {
+  display: block;
+  margin: var(--s-6) auto 0;
+}
+
+/* Meals: the dish is typed in the row at full width, the emoji beside the meal's name. */
+.sec-meal .cb-main {
+  display: grid;
+  gap: 6px;
+}
+.sec-meal-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 8px;
+}
+.sec-meal-head .cb-title {
+  flex: 1 1 6rem;
+  min-width: 0;
+}
+.sec-emoji {
+  flex: none;
+  width: 4.5rem;
+  padding-inline: 4px;
+  text-align: center;
+}
+
+/* Cleanup: the gold "!" ahead of the sub of a meal nobody is on yet (the
+   Schedule's own mark); a row in a read-only preview is a plain <div>. */
+.sec-row[data-warn] .cb-sub::before {
+  content: '!';
+  display: inline-grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: inset 0 0 0 1.5px var(--gold-edge);
+  color: var(--gold-ink);
+  font: 900 0.6875rem/1 var(--font-ui);
+  vertical-align: -2px;
+}
+.sec-row .cb-sub {
+  color: var(--ink);
+}
+.sec-row[data-warn] .cb-sub {
+  color: var(--ink-2);
+}
+
+/* Electives: which one, then a block per station. */
+.sec-slots {
+  margin: 0 0 var(--s-3);
+}
+.sec-slots .seg-btn {
+  display: grid;
+  align-content: center;
+  gap: 1px;
+}
+.sec-slots .seg-btn small {
+  font: 600 0.75rem/1.1 var(--font-ui);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.sec-st {
+  padding: 6px 14px 14px;
+  border-top: 1px solid var(--line);
+}
+.sec-st:first-child {
+  border-top: 0;
+}
+.sec-st-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--target);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: 750 1rem/1.25 var(--font-ui);
+  letter-spacing: var(--track-row);
+  text-align: left;
+  overflow-wrap: break-word;
+  cursor: pointer;
+}
+div.sec-st-name {
+  cursor: default;
+}
+.sec-st-name > span:first-child {
+  flex: none;
+  font-weight: 400;
+}
+.sec-st-name > span:nth-child(2) {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.sec-st-name .ico {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--ink-3);
+}
+.sec-st-people {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* A person at a station: a solid ink edge like a team that meets; tapping it
+   takes them off (Undo puts them back), so it says so with its x. A name that
+   nearly matches a member carries the gold "!". */
+.sec-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--target);
+  max-width: 100%;
+  padding: 4px 12px;
+  border: 2px solid var(--ink-3);
+  border-radius: var(--r-btn);
+  background: var(--sheet);
+  color: var(--ink);
+  font: 700 0.9375rem/1.15 var(--font-ui);
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+span.sec-chip,
+div.sec-chip {
+  cursor: default;
+}
+.sec-chip .ico {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  color: var(--ink-2);
+}
+.sec-chip[data-warn]::before {
+  content: '!';
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: inset 0 0 0 1.5px var(--gold-edge);
+  color: var(--gold-ink);
+  font: 900 0.6875rem/1 var(--font-ui);
+}
+.sec-chip-add {
+  border-style: dashed;
+  background: none;
+  color: var(--link);
+}
+.sec-link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin-top: 8px;
+  font: 600 0.875rem/1.35 var(--font-ui);
+  color: var(--ink-2);
+}
+.sec-link > span {
+  flex: 1 1 12rem;
+}
+
+/* Verses and the two small forms (a station, someone not on the list). */
+.sec-verse {
+  display: grid;
+  gap: 12px;
+  padding: 12px 14px 14px;
+}
+.sec-text {
+  display: block;
+  min-height: 6.5rem;
+  resize: vertical;
+  font-weight: 600;
+  line-height: 1.38;
+}
+.sec-add {
+  display: grid;
+  gap: 12px;
+  margin-top: var(--s-4);
+}
+.sec-add .btn {
+  justify-self: start;
+}
+#sec-person-list:empty,
+#sec-station-list:empty {
+  display: none;
+}
+
+/* An empty list is no box (a station list with no stations, a cleanup day with no meals). */
+.sec-list:empty {
+  display: none;
+}

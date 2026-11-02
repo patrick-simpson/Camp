@@ -189,7 +189,10 @@ function setupDiff(a, b) {
 function setupRecordDepth(parts) {
   if (parts[0] === 'typical') return 2;
   if (parts[0] === 'dayBlocks') return 3;
-  if (parts[0] === 'electives') return parts[1] === 'slots' ? 5 : parts[1] === 'stations' ? 3 : 0;
+  // A station is written WHOLE (SETUP_DEPTHS: `electives/stations/<st>` is the leaf, name and emoji together), so it has no
+  // field ops to anchor; naming it a record here made an edit of an existing station read as a collision and be dropped
+  // ("another director removed this item"). Slots are the records with fields (`…/<st>/ord`, `…/people/<p>`).
+  if (parts[0] === 'electives') return parts[1] === 'slots' ? 5 : 0;
   return 0;
 }
 
@@ -3856,6 +3859,14 @@ function setupNearMember(name, members) {
   return list.find((m) => m && m.name && (setupNamesNear(name, m.name) || setupNamesNear(name, String(m.name).trim().split(/\s+/)[0]))) || null;
 }
 
+// The printed menus, verses, rota and stations as a tree: what a section's screen previews, read-only, while the section is
+// the original (the same data the owner's Turn on would seed).
+let setupBuiltInSecMemo = null;
+function setupBuiltInSections() {
+  if (!setupBuiltInSecMemo) setupBuiltInSecMemo = normalizeSetup(setupClone(syncCanon(buildSeed(CAMP, ['meals', 'verses', 'cleanup', 'electives']))));
+  return setupBuiltInSecMemo;
+}
+
 // ── mutators: every one is a commitSetup (one undo entry, one push), refused "off" until the section's switch is on ──
 
 function setupCap(s, n) {
@@ -3947,6 +3958,22 @@ function electiveStationAdd(name, emoji) {
     if (e) rec.emoji = e;
     d.electives.stations[id] = rec;
   }, { label: 'Added the ' + text + ' station' });
+  return Object.assign(r, { id });
+}
+// A new station that goes straight into one slot of one day ("Add a station" on an elective): ONE commit, one undo entry.
+function electiveStationAddToSlot(name, emoji, dk, slot) {
+  const text = setupCap(name, 60);
+  if (!text) return { ok: false, reason: 'name' };
+  const id = electiveStationNewId(setupTree, text);
+  const r = commitSetup((d) => {
+    d.electives.stations = setupMapOf(d.electives.stations);
+    const rec = { name: text };
+    const e = safeEmoji(emoji, '');
+    if (e) rec.emoji = e;
+    d.electives.stations[id] = rec;
+    const sl = electiveSlotAt(d, dk, slot);
+    sl[id] = { ord: electiveNextOrd(sl) };
+  }, { label: 'Added the ' + text + ' station on ' + SETUP_DAY_WORDS[dk] + ', elective ' + (slot + 1) });
   return Object.assign(r, { id });
 }
 function electiveStationEdit(id, name, emoji) {

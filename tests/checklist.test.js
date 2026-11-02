@@ -104,16 +104,18 @@ test('People problems: a team with no counselors, an incomplete record, people w
 
 // ── The rest of the rows ──
 test('rows whose screen comes later say `soon` and claim nothing; an optional one can be set aside', () => {
-  ['campers', 'meals', 'verses', 'cleanup', 'electives', 'alerts'].forEach((k) => {
+  ['campers', 'alerts'].forEach((k) => {
     const s = hubStatus(k, clView());
     assert.equal(s.mark, 'soon', k);
     assert.equal(s.word, 'Editing comes next', k);
     assert.deepEqual(s.problems, [], k + ' has nothing to check yet');
   });
-  assert.equal(hubStatus('meals', clView()).summary, 'The original menu');
-  assert.equal(hubStatus('verses', clView()).summary, 'The original verses');
-  assert.equal(hubStatus('cleanup', clView()).summary, 'The original rota');
-  assert.equal(hubStatus('electives', clView()).summary, 'The original stations');
+  // Meals, verses, the rota and electives have their screens now (Step 19): while the section is the original the row is a plain
+  // "info" line that claims nothing (their judging is sections.test.js's hub cases).
+  [['meals', 'The original menu'], ['verses', 'The original verses'], ['cleanup', 'The original rota'], ['electives', 'The original stations']].forEach(([k, line]) => {
+    const s = hubStatus(k, clView());
+    assert.deepEqual([s.mark, s.summary, s.word, s.problems.length], ['info', line, '', 0], k);
+  });
   const skipped = hubStatus('meals', clView({ skip: { meals: true } }));
   assert.equal(skipped.mark, 'skip');
   assert.equal(skipped.word, 'Not used');

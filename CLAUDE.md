@@ -723,8 +723,8 @@ rest of Step 14, in setup-ui.js: see "Set up the week: behaviour" below); with n
 `data-screen` on `#setup` the markup is inert and the builder is v197's.
 
 - **`#setup[data-screen]` is the one switch** (`hub | backups | classic`, and
-  Step 15's `week | schedule | rain`; a later screen adds its own pair of lines
-  in the CSS). `#setup` wraps `#settings-view`
+  Step 15's `week | schedule | rain`, Step 19's `meals | verses | cleanup | electives`; a later
+  screen adds its own pair of lines in the CSS). `#setup` wraps `#settings-view`
   inside `#tab-now`, shown only under `body.builder-open` (which hides every
   other child of main-wrap: `:not(#setup)`). **No `data-screen` = the v197
   builder exactly** (only `#settings-view`, with its own back); with one, the
@@ -778,8 +778,8 @@ rest of Step 14, in setup-ui.js: see "Set up the week: behaviour" below); with n
   people, notice, restore at Step 14; week and schedule at Step 15, which always
   open their screen — a read-only preview with the owner's Edit the week here
   while the schedule isn't edited here); **one whose screen comes later is a
-  `<div>`** (meals / verses / cleanup / electives → 19, campers → 25, alerts): never a dead button — the step that brings the
-  screen turns the div into a button. Electives starts hidden (junior only). At
+  `<div>`** (campers → 25, alerts): never a dead button — the step that brings the
+  screen turns the div into a button (Step 19 did it for meals, verses, cleanup and electives). Electives starts hidden (junior only). At
   ~130%+ text the mark drops under the summary (a container query on
   `.hub-list`, in em, so it follows the phone's text size) and the chevron stays
   centred on the whole row at its right edge, as on More.
@@ -888,8 +888,9 @@ into it from app.js / settings.js is typeof-guarded.
   "Ask Patrick to repair team slots", an unnamed team), **People** (a team with no counselor
   accounts, an incomplete member record — the owner row is exempt, people with no sign-in
   yet for a week), **Notice board** and **Restore points** (info; denied restore nodes warn).
-  Not yet (their data arrives with their step): meals, verses,
-  cleanup, electives, campers, phone alerts, asking-to-join, team colours. `hubModel`:
+  Step 19 judges **Meals, Memory verses, Cleanup rota and Electives** (`hubSectionStatus`, from
+  `hubSecView()`: see "Meals, verses, cleanup, electives: the screens"); not yet (their data
+  arrives with their step): campers, phone alerts, asking-to-join, team colours. `hubModel`:
   "N of M ready" counts only rows that can be judged (`soon` and `skip` are left out), "Next:
   Teams" names the first warning. `HUB_OPENS` is the table of rows that open something
   (a row whose screen exists is a `<button>`, otherwise a `<div>`: `checklist.test.js`
@@ -2904,6 +2905,92 @@ run all of it; electives only where `CAMP.features.electives` (junior).
   still the schedule alone; the four sections seed when named; `setupTurnOn(['nonsense'])` is
   `none`), `setup-sync.test.js`'s depth pin (a new day of electives is
   `electives/slots/mon/s0/st-art`, not `electives/slots/mon`).
+
+## Meals, verses, cleanup, electives: the screens (setup-ui.js §12 — Step 19)
+
+P2 §11.10–11.13 inside the Step 14 / 15 frame, in the same clipboard language (§11.0): kicker /
+headline / lede, the screen's door, then one column of hairline rows; nothing here is a new
+component (`.cb-row`, `.gl`, `.daypick`, `.seg`, `.si-team`, `.sched-add`, `.setup-note`,
+`.setup-door`, `.fld`, `.btn`, the shell sheets, `askDialog`). **Nothing is reachable by a counselor,
+and nothing is written until the owner turns a section on**: a section that is the original shows
+its screen as a read-only PREVIEW of the printed data (`secTree(section)` is the live tree when the
+section is on, else `setupBuiltInSections()`; every control disabled, a row a `<div>`).
+
+- **Routing**: `SETUP_SCREENS` gains `meals | verses | cleanup | electives`, `HUB_OPENS` their rows
+  (the four hub rows are `<button>`s with a chevron now; `checklist.test.js` checks the markup
+  against the table), `setupWhereNow` tells editorsHere the plain name, `renderSetupUi` dispatches to
+  `renderSecScreen(section)`, and `setupScreen()` reads a stored `electives` as the hub on a camp with
+  none. Three shell sheets join `SETUP_SHEETS` (`sec-teams`, `sec-person`, `sec-station`), each
+  allowed only with what a tap opened (`secUi.teams / person / station`).
+- **Markup / CSS**: index.html's block after `#setup-rain` (`#setup-meals`, `-verses`, `-cleanup`,
+  `-electives`; ids `<s>-title | -headline | -lede | -door…`), the shared day strip `#sec-days` in the
+  head (`data-setup-screen="sec"`: shown on meals / cleanup / electives only; Mon–Fri, or for the menus
+  every day that has a Meal item; a gold "!" on a day the hub's judgement would flag; `state.ui.secDay`
+  and, for electives, `state.ui.secSlot`, device-local), and the three sheets. The CSS is ONE block at
+  the END of styles.css ("SET UP THE WEEK: Meals, Memory verses, Cleanup rota, Electives"); every
+  tap target is the 44px token, and the row layouts hold at 130 % and 200 % text (the cb-list container
+  query puts the time above the title).
+- **The door and the prompt** (owner only, Q8): each screen's door is `paintPreviewDoor(prefix,
+  preview, copy)` with the section's own words — "The menus can now be edited here too." and the
+  owner's gold **Turn on**, every other director's "Patrick turns it on." (a section turned off with its
+  edits kept says "Showing the original · your edits are kept"). The hub carries the same prompt as its
+  front door `data-door="sections"` (`hubDoor`: only when the schedule is edited here and a section is
+  still the original; running → new-year → original outrank it; it names just what is still off); its
+  button is `HUB_DOOR_ACTIONS.sections` = `secTurnOnFlow(secOffSections())` — every section that is off
+  in ONE sitting, one restore point, one transaction. A screen's own Turn on is that section alone.
+  `secTurnOnFlow` is Edit the week here's conversation for any list of sections (a plain question first;
+  "Is a camp week running right now?" when no date is set; the freeze as a question the owner can
+  override in words; every refusal a sentence from `TURNON_WHY`), and refuses a non-owner before it
+  asks anything. The way back is a quiet owner-only line at the foot of each screen
+  (`#<s>-original`, `data-sec-original`): `secUseOriginal(section)` = one `setupUseOriginal([section])`
+  after a question; the edits are kept. **Not built here: Advanced → "Start this section again from the
+  original"** (the re-seed of a section that has ever been on, §10.1; the menu's Advanced row stays
+  unwired, `SETUP_OWNER_ACTIONS` has only `original`).
+- **Meals** (`renderMealsScreen`): a row per Meal-tagged item of the day, once per meal (`secMealItems`:
+  the plan's items in time order, tag from the SCHEDULE, so a "Supper and free time" item tagged Supper
+  is a row), the time column, the meal's name with an emoji field beside it and the dish full width under
+  it. The rows are written once per day and PATCHED in place by key (`secPaintKeyed`: a focused field
+  keeps its text and caret; values are set only when the field isn't focused). A commit happens on
+  focusout and only when the value changed since the field gained focus (`setupFocusIn / Out`, §6.4.9):
+  tapping into a dish and out writes nothing, and Enter finishes the field. Copy from another day… is an
+  `askDialog` with a button per day that has a dish.
+- **Memory verses**: the form is built once (the theme: title, verse, where it is; then a group per
+  competition day: verse, where it is, video link) and patched in place; each group commits on blur
+  as one record. A refusal is said under the group: "A verse needs its words. Type them, or clear the
+  whole verse." / "Use a link that starts with https://" (`versesRecord` is pure and checks before
+  anything is written).
+- **Cleanup rota**: a row per meal (the time, "🥪 Lunch", the teams as emoji + name, a gold "!" when no
+  team is on it on a rota that has teams on other meals) → the `sec-teams` sheet: the item sheet's team
+  toggles, one or two (a third is refused in words), Save, and "No team yet". **Fill evenly** is
+  `rotaFillEvenly` with a preview in words in an `askDialog` — one line a day, the fairness line, and any
+  rule it had to bend — then Apply (ONE `cleanupApply` commit, one undo entry) or Cancel; it fills only
+  the empty meals and keeps what is there, and with nothing empty it asks before redoing the whole rota.
+  The fairness line sits under the list for the whole week.
+- **Electives** (junior): the day strip plus a segmented Elective 1 · 2 · 3 (each with its time from
+  the schedule's Elective item), then a block per station: its name (a 44px button → the station sheet),
+  its people as wrapping chips (tap one to take them off — Undo is the way back, no question), "Add
+  someone" (→ `sec-person`: the People list, a member keeping their key, a pending member and "Someone
+  not on the list" as typed names), and a **Link** row for a typed name that nearly matches a member
+  ("Sophie looks like Sofia on your list."). "On break: …" under the list, **Add a station** (→
+  `sec-station`: pick one that isn't in this slot, or a new name + emoji: ONE commit adds it to the
+  list and the slot), and **Same as Monday** (asks first when the day holds anything). A station's own
+  sheet renames it, takes it off this slot, or deletes it everywhere (a question, then one undo entry).
+- **The hub's rows** (`hubSectionStatus`, Appendix B; pure over `v.sec[section]` that `hubSecView()`
+  builds from the live tree): not on → a plain info line ("The original menu"); on → Meals: todo with no
+  dishes, a warning for a meal with no dish (only a competition day, or a day that lists dishes, is
+  judged), summary "Sun–Fri"; Verses: "There is no theme verse yet", days with no verse, summary "Theme
+  + 5 days"; Cleanup: todo with nobody on it, a meal with no team, a team that isn't on this camp,
+  summary the fairness line; Electives: an Elective item whose slot has no stations, a station with
+  nobody, a person at two stations in one slot, a near name; summary "3 slots · 10 stations".
+- **Tests**: `sections-ui.test.js` (+ `.senior`) — one case per problem sentence, `hubSecView` on the
+  real tree (junior all ready; senior's menus and rota todo, no electives), the prompt (owner button,
+  the sentence everyone else reads, partly on, held, gone when all on), Turn on / Use the original as
+  conversations (owner only, the freeze), reachability (a counselor reaches none), the preview (every
+  control disabled, its handlers do nothing), each screen's handlers with element stand-ins, and the
+  idempotent paint; `owner-only.test.js` gains the four doors' markup and calls. The pass:
+  `docs/build-notes/verify/step19-pass.cjs` (every screen and sheet, both camps, editor / owner /
+  preview, 360 / 390, light / dark, 100 / 130 / 200 % text: no target under 44×44, no sideways
+  scroll; serve the worktree with `python3 -m http.server 8943`).
 
 ## Counselors ↔ teams ↔ accounts
 

@@ -19,6 +19,7 @@
 //   6. the sheets (menu, recent changes, devices) and who's here
 //   7. restore points: the screen, the restore sheet, hold-to-confirm, backup files
 //   8. wiring (wireSetupUi, called from app.js init)
+//  12. meals, memory verses, the cleanup rota, electives (step 19; the end of the file)
 
 // ── 1. The hub's model ───────────────────────────────────────────────
 
@@ -43,10 +44,14 @@ const HUB_PENDING_NAG_MS = 7 * 24 * 3600 * 1000; // a person with no sign-in is 
 const HUB_SOON_WORD = 'Editing comes next';
 // Which rows open something today. A row whose screen comes later is a plain <div> in the markup and
 // is not listed: the step that builds its screen turns the div into a button and adds its line here
-// (Step 15: Camp week and Schedule).
+// (Step 15: Camp week and Schedule; Step 19: Meals, Memory verses, Cleanup rota, Electives).
 const HUB_OPENS = {
   week: { screen: 'week' },
   schedule: { screen: 'schedule' },
+  meals: { screen: 'meals' },
+  verses: { screen: 'verses' },
+  cleanup: { screen: 'cleanup' },
+  electives: { screen: 'electives' },
   games: { screen: 'classic', tab: 'games' },
   teams: { screen: 'classic', tab: 'teams' },
   notice: { screen: 'classic', tab: 'notice' },
@@ -56,7 +61,9 @@ const HUB_OPENS = {
 // The front door's buttons, owner only (Q8). A button exists only when its action does: the steps that
 // build Edit the week here (15) and the new-year wizard (28) put a function here. Until then the door
 // just says what is true and nobody is offered a button that can only fail.
-const HUB_DOOR_ACTIONS = { original: null, 'new-year': null };
+const HUB_DOOR_ACTIONS = { original: null, 'new-year': null, sections: null };
+const HUB_SECTIONS = ['meals', 'verses', 'cleanup', 'electives'];     // the four smaller sections, each with its own switch (step 19)
+const HUB_SECTION_NOUNS = { meals: 'the menus', verses: 'the memory verses', cleanup: 'the cleanup rota', electives: 'the electives' };
 
 function hubPlural(n, one, many) {
   return n + ' ' + (n === 1 ? one : many);
@@ -137,7 +144,7 @@ function hubStatus(section, view) {
     case 'campers':
       return hubMark('soon', 'Camper lists come later', []);
     case 'meals': case 'verses': case 'cleanup': case 'electives':
-      return hubMark('soon', v.on && v.on[section] ? 'Edited here' : HUB_ORIGINAL[section], []);
+      return hubSectionStatus(section, v);
     case 'alerts':
       return hubMark('soon', 'Reminders follow the original schedule', []);
     case 'games': {
@@ -214,6 +221,49 @@ function hubStatus(section, view) {
   }
 }
 
+// Meals, Memory verses, Cleanup rota and Electives (Appendix B; step 19), from the plain `v.sec[section]` hubView builds:
+//   meals      { listed: dishes in all, days: 'Mon–Fri', missing: [{ day, meal }] }
+//   verses     { theme: bool, days: n, missing: ['Wednesday'] }
+//   cleanup    { any: bool, empty: [{ day, meal }], unknown: [ids], line: 'Each team cleans 2–3 times.' }
+//   electives  { stations: n, slots: n, noStations: [{ day, slot }], nobody: [{ name, day }], twice: [{ name, day, slot }], near: [{ name, member }] }
+// Not edited here: the section is the original and the row says so (nothing is judged); its screen is a read-only preview.
+function hubSectionStatus(section, v) {
+  if (!(v.on && v.on[section])) return hubMark('info', v.held && v.held[section] ? 'Showing the original — your edits are kept' : HUB_ORIGINAL[section], [], '');
+  const s = (v.sec && v.sec[section]) || {};
+  const problems = [];
+  if (section === 'meals') {
+    if (!s.listed) return hubMark('todo', 'No dishes yet', []);
+    const miss = s.missing || [];
+    if (miss.length) problems.push(miss.length === 1 ? miss[0].day + '’s ' + miss[0].meal + ' has no dish' : hubPlural(miss.length, 'meal has', 'meals have') + ' no dish');
+    return hubMark(problems.length ? 'warn' : 'ok', s.days || 'Mon–Fri', problems);
+  }
+  if (section === 'verses') {
+    if (!s.theme && !s.days) return hubMark('todo', 'No verses yet', []);
+    if (!s.theme) problems.push('There is no theme verse yet');
+    const miss = s.missing || [];
+    if (miss.length) problems.push(miss.length <= 2 ? hubJoin(miss) + (miss.length === 1 ? ' has' : ' have') + ' no verse' : miss.length + ' days have no verse');
+    return hubMark(problems.length ? 'warn' : 'ok', (s.theme ? 'Theme + ' : '') + hubPlural(s.days || 0, 'day', 'days'), problems);
+  }
+  if (section === 'cleanup') {
+    if (!s.any) return hubMark('todo', 'Nobody on the rota yet', []);
+    const empty = s.empty || [];
+    if (empty.length) problems.push(empty.length === 1 ? empty[0].day + '’s ' + empty[0].meal + ' has no team' : hubPlural(empty.length, 'meal has', 'meals have') + ' no team');
+    if ((s.unknown || []).length) problems.push('A team that isn’t on this camp is on the rota');
+    return hubMark(problems.length ? 'warn' : 'ok', String(s.line || 'Everyone is on the rota').replace(/\.$/, ''), problems);
+  }
+  // electives
+  if (!s.stations) return hubMark('todo', 'No stations yet', []);
+  const none = s.noStations || [];
+  if (none.length) problems.push(none.length === 1 ? none[0].day + '’s Elective ' + (none[0].slot + 1) + ' has no stations' : hubPlural(none.length, 'elective has', 'electives have') + ' no stations');
+  const nobody = s.nobody || [];
+  if (nobody.length) problems.push(nobody.length === 1 ? nobody[0].name + ' has nobody on ' + nobody[0].day : hubPlural(nobody.length, 'station has', 'stations have') + ' nobody');
+  const twice = s.twice || [];
+  if (twice.length) problems.push(twice.length === 1 ? twice[0].name + ' is at two stations in ' + twice[0].day + '’s Elective ' + (twice[0].slot + 1) : hubPlural(twice.length, 'person is', 'people are') + ' at two stations at once');
+  const near = s.near || [];
+  if (near.length) problems.push(near.length === 1 ? near[0].name + ' looks like ' + near[0].member + ' on your list' : hubPlural(near.length, 'name', 'names') + ' look like people on your list');
+  return hubMark(problems.length ? 'warn' : 'ok', hubPlural(s.slots || 0, 'slot', 'slots') + ' · ' + hubPlural(s.stations, 'station', 'stations'), problems);
+}
+
 // The paragraph above the list (§11.2, one front door at a time), in the spec's order:
 //   1. camp week is running  2. the new year is due  3. nothing is edited here yet
 // `ownerButton` is the owner's gold button label ('' when there is no action behind it yet) and `ownerText`
@@ -252,6 +302,19 @@ function hubDoor(view) {
         : 'The schedule, menus and verses are the copy that came with the app. Editing them here comes in the next update; nothing changes for anyone until then.',
       ownerButton: act ? 'Edit the week here' : '',
       ownerText: act ? name + ' turns on editing.' : '',
+    };
+  }
+  // A camp already editing its schedule here: the menus, verses, cleanup rota and electives can be edited here too
+  // (step 19). One question for the owner, one sentence for everyone else; it goes when the last one is on.
+  const off = HUB_SECTIONS.filter((s) => (s !== 'electives' || v.electives) && !(v.on && v.on[s]));
+  if (v.on && v.on.schedule && off.length) {
+    const act = !!actions.sections;
+    const held = off.some((s) => v.held && v.held[s]);
+    return {
+      door: 'sections', lead: hubCap(hubJoin(off.map((s) => HUB_SECTION_NOUNS[s]))) + ' can now be edited here too.',
+      text: held ? 'Your changes are kept. Turning it on brings them back.' : 'Turning it on changes nothing anyone can see until someone edits something.',
+      ownerButton: act ? 'Turn on' : '',
+      ownerText: act ? name + ' turns it on.' : '',
     };
   }
   return null;
@@ -336,10 +399,102 @@ function hubView() {
     notice: { status: notice && notice.status, has: !!(notice && (notice.title || notice.sub || (notice.zones && notice.zones.length) || (notice.steps && notice.steps.length))) },
     restore: { status: rest.status, newestAt: rest.rows.length ? rest.rows[0].at : 0, count: rest.rows.length },
     doorActions,
-    held: { schedule: hubSetupMeta().on && hubSetupMeta().on.schedule === false },
+    held: ['schedule'].concat(HUB_SECTIONS).reduce((o, s) => { o[s] = !!(hubSetupMeta().on && hubSetupMeta().on[s] === false); return o; }, {}),
     unscheduled: hubUnscheduledGames(),
     schedule: hubScheduleView(),
+    sec: hubSecView(),
   };
+}
+
+// ── what the four smaller sections' rows judge (read from the live tree, only for a section that is on) ──
+
+function hubCompetitionDks() {
+  return competitionDows().map((d) => SETUP_DK[d]);
+}
+
+// The meals a day has: its Meal-tagged items, once each (a menu is per meal, not per item), in time order — from the plan
+// the app shows (the edited schedule, else the printed week resolved the same way).
+function secMealItems(dow) {
+  const seen = {};
+  const out = [];
+  planForDow(dow).filter((b) => b.meal && !b.noTime).slice().sort((a, b) => a.start - b.start).forEach((b) => {
+    if (seen[b.meal]) return;
+    seen[b.meal] = true;
+    out.push({ meal: b.meal, name: SETUP_MEAL_NAMES[b.meal] || hubCap(b.meal), start: b.start });
+  });
+  return out;
+}
+
+function hubSecView() {
+  const out = {};
+  if (typeof setupSectionLive !== 'function') return out;
+  const tree = setupTree;
+  const comp = hubCompetitionDks();
+  if (setupSectionLive('meals')) {
+    let listed = 0;
+    const missing = [];
+    const dishDays = [];
+    SETUP_DK.forEach((dk, dow) => {
+      const have = SETUP_MEAL_KEYS.filter((m) => setupMealRecord(tree, dk, m));
+      listed += have.length;
+      if (have.length) dishDays.push(dk);
+      // Only a competition day, or a day that lists any dish, is judged: a Saturday breakfast nobody planned is not a problem.
+      secMealItems(dow).forEach((it) => { if (!setupMealRecord(tree, dk, it.meal) && (comp.indexOf(dk) !== -1 || have.length)) missing.push({ day: SETUP_DAY_WORDS[dk], meal: it.name.toLowerCase() }); });
+    });
+    out.meals = { listed, days: dishDays.length ? schedDaysWords(dishDays) : '', missing };
+  }
+  if (setupSectionLive('verses')) {
+    const days = comp.filter((dk) => setupVerseDay(tree, dk));
+    out.verses = { theme: !!setupVerseTheme(tree), days: days.length, missing: comp.filter((dk) => !setupVerseDay(tree, dk)).map((dk) => SETUP_DAY_WORDS[dk]) };
+  }
+  if (setupSectionLive('cleanup')) {
+    const slots = secCleanupSlots();
+    const unknown = [];
+    SETUP_DK.forEach((dk) => SETUP_MEAL_KEYS.forEach((m) => Object.keys(setupMapOf(setupMapOf(setupMapOf(tree.cleanup)[dk])[m])).forEach((id) => { if (/^t[0-9]$/.test(id) && setupTeamSlot(id) >= CAMP.teamCount && unknown.indexOf(id) === -1) unknown.push(id); })));
+    out.cleanup = {
+      any: SETUP_DK.some((dk) => setupCleanupTracked(tree, dk)),
+      empty: slots.filter((s) => !s.have.length).map((s) => ({ day: SETUP_DAY_WORDS[s.day], meal: s.name.toLowerCase() })),
+      unknown, line: rotaFairness(slots.map((s) => ({ day: s.day, teams: s.have })), teamIds(), (id) => teamShort(id) || teamName(id), (dk) => SETUP_DAY_WORDS[dk]).line,
+    };
+  }
+  if (setupSectionLive('electives') && setupHasElectives()) {
+    const noStations = [];
+    const nobody = [];
+    const twice = [];
+    const typed = [];
+    const slotsUsed = [];
+    comp.forEach((dk) => {
+      planForDow(SETUP_DK.indexOf(dk)).filter((b) => b.type === 'elective' && Number.isInteger(b.slot)).forEach((b) => {
+        if (slotsUsed.indexOf(b.slot) === -1) slotsUsed.push(b.slot);
+        const rows = setupElectiveRows(tree, dk, b.slot);
+        if (!rows.length) { noStations.push({ day: SETUP_DAY_WORDS[dk], slot: b.slot }); return; }
+        const seen = {};
+        rows.forEach((r) => {
+          if (!r.people.length) nobody.push({ name: r.name, day: SETUP_DAY_WORDS[dk] });
+          r.people.forEach((p) => {
+            const k = p.name.toLowerCase();
+            if (seen[k] && seen[k] !== r.id && !twice.some((t) => t.name === p.name && t.day === SETUP_DAY_WORDS[dk] && t.slot === b.slot)) twice.push({ name: p.name, day: SETUP_DAY_WORDS[dk], slot: b.slot });
+            seen[k] = r.id;
+          });
+        });
+      });
+      for (let slot = 0; slot < 3; slot++) setupElectiveRows(tree, dk, slot).forEach((r) => r.people.forEach((p) => { if (p.typed && !typed.some((t) => t.pid === p.pid)) typed.push({ pid: p.pid, name: p.name }); }));
+    });
+    const members = hubMembers().filter((m) => !m.pending).map((m) => ({ key: m.key, name: m.name }));
+    const near = [];
+    typed.forEach((t) => { const hit = setupNearMember(t.name, members); if (hit) near.push({ name: t.name, member: String(hit.name).trim().split(/\s+/)[0] }); });
+    out.electives = { stations: setupElectiveStations(tree).length, slots: slotsUsed.length || 3, noStations, nobody, twice, near };
+  }
+  return out;
+}
+
+// The cleanup rota as slots: every Meal-tagged item of a competition day, with the teams on it now.
+// [{ day: 'mon', meal: 'lunch', name: 'Lunch', start, have: ['t4'] }]
+function secCleanupSlots(tree) {
+  const t = tree || setupTree;
+  const out = [];
+  hubCompetitionDks().forEach((dk) => secMealItems(SETUP_DK.indexOf(dk)).forEach((it) => out.push({ day: dk, meal: it.meal, name: it.name, start: it.start, have: setupCleanupIds(t, dk, it.meal) })));
+  return out;
 }
 
 // What the Schedule row needs to judge the edited week (null while the schedule is the built-in copy): the days that
@@ -398,9 +553,9 @@ function hubScheduleView() {
 
 // #setup[data-screen] is the ONE switch the CSS reads (styles.css "SET UP THE WEEK"): hub | backups |
 // classic | week | schedule | rain. A step that adds a screen adds its name here and its pair of lines in the CSS.
-const SETUP_SCREENS = ['hub', 'backups', 'classic', 'week', 'schedule', 'rain'];
+const SETUP_SCREENS = ['hub', 'backups', 'classic', 'week', 'schedule', 'rain', 'meals', 'verses', 'cleanup', 'electives'];
 // Shell sheets this layer owns (shellSheetOpen ids; the elements are #sheet-<id>), one at a time.
-const SETUP_SHEETS = ['setup-menu', 'setup-changes', 'setup-devices', 'restore', 'sched-day', 'sched-item', 'rain-item', 'rain-done'];
+const SETUP_SHEETS = ['setup-menu', 'setup-changes', 'setup-devices', 'restore', 'sched-day', 'sched-item', 'rain-item', 'rain-done', 'sec-teams', 'sec-person', 'sec-station'];
 // The classic builder's tabs, in editorsHere's short vocabulary (setup-sync.js editorsHereWhereWords).
 const SETUP_CLASSIC_WHERE = { games: 'games', days: 'week', teams: 'teams', notice: 'notice', data: 'restore' };
 // The owner's menu rows (⋯ → Owner). A row is listed only when its action exists (Step 15: original,
@@ -428,6 +583,8 @@ function setupScreen() {
   const s = state.ui && state.ui.builderScreen;
   // The rain plan is the edited schedule's: a reload after Use the original week again lands on the Schedule preview.
   if (s === 'rain' && !(typeof scheduleIsShared === 'function' && scheduleIsShared())) return 'schedule';
+  // A camp with no electives (senior) has no such screen: a stale stored one reads as the hub.
+  if (s === 'electives' && !(typeof setupHasElectives === 'function' && setupHasElectives())) return 'hub';
   return SETUP_SCREENS.indexOf(s) !== -1 ? s : 'hub';
 }
 
@@ -445,6 +602,7 @@ function setupWhereNow() {
   if (s === 'week') return 'week';
   if (s === 'schedule') return 'schedule:' + (state.ui.setupDay || 'typical');
   if (s === 'rain') return 'rain:' + ((state.ui.rainDay && SETUP_DK.indexOf(state.ui.rainDay) !== -1) ? state.ui.rainDay : 'wed');
+  if (HUB_SECTIONS.indexOf(s) !== -1) return s;
   return SETUP_CLASSIC_WHERE[state.ui.settingsTab] || 'games';
 }
 
@@ -717,6 +875,7 @@ function renderSetupUi(open) {
   else if (screen === 'week') renderWeekScreen();
   else if (screen === 'schedule') renderScheduleScreen();
   else if (screen === 'rain') renderRainScreen();
+  else if (HUB_SECTIONS.indexOf(screen) !== -1) renderSecScreen(screen);
   else if (typeof renderSettings === 'function') renderSettings();
   renderSetupMenuRows();
   paintSetupFit();
@@ -1054,6 +1213,9 @@ function renderSetupSheet(id) {
   else if (id === 'sched-item') renderSchedItemSheet();
   else if (id === 'rain-item') renderRainItemSheet();
   else if (id === 'rain-done') renderRainDoneSheet();
+  else if (id === 'sec-teams') renderSecTeamsSheet();
+  else if (id === 'sec-person') renderSecPersonSheet();
+  else if (id === 'sec-station') renderSecStationSheet();
 }
 
 // Whether a setup sheet has anything to show (app.js shellSheetAllowed): the restore sheet needs a point
@@ -1063,6 +1225,9 @@ function setupSheetReady(id) {
   if (id === 'sched-day') return schedDayKey() !== 'typical';
   if (id === 'rain-item') return !!(setupRain.plan && (setupRain.bid || setupRain.gid));
   if (id === 'rain-done') return !!setupRain.plan;
+  if (id === 'sec-teams') return !!secUi.teams;
+  if (id === 'sec-person') return !!secUi.person;
+  if (id === 'sec-station') return !!secUi.station;
   return id !== 'restore' || !!setupUi.rsheet;
 }
 
@@ -1622,21 +1787,23 @@ SETUP_OWNER_ACTIONS.original = { run: setupUseOriginalFlow, why: () => (schedule
 
 // The read-only door a screen shows while the schedule is still the copy that came with the app: the same words as the
 // hub's, the owner's gold button, everyone else's sentence with the owner's name (§11.1, ux-R18). `prefix`: week | sched.
-function paintPreviewDoor(prefix, preview) {
+function paintPreviewDoor(prefix, preview, copy) {
   const el = setupEl(prefix + '-door');
   if (!el) return;
   setHiddenIfChanged(el, !preview);
   if (!preview) return;
   const owner = typeof isOwner === 'function' && isOwner();
   const name = hubCap(typeof ownerName === 'function' ? ownerName() : 'the owner');
+  const c = copy || {};
   // The hub says it in full; here one line (§8.8: no explanation paragraph above every screen's content). On Camp week
-  // the dates, double points and finale stay editable, so only the days are called read-only.
-  setTextIfChanged(setupEl(prefix + '-door-lead'), prefix === 'week' ? 'The original week · the days are read-only' : 'The original week · read-only');
+  // the dates, double points and finale stay editable, so only the days are called read-only. A section's screen (step 19)
+  // passes its own words: "The menus can now be edited here too." and the owner's "Turn on".
+  setTextIfChanged(setupEl(prefix + '-door-lead'), c.lead !== undefined ? c.lead : prefix === 'week' ? 'The original week · the days are read-only' : 'The original week · read-only');
   setTextIfChanged(setupEl(prefix + '-door-text'), '');
   const btn = setupEl(prefix + '-door-btn');
-  setTextIfChanged(btn, 'Edit the week here');
+  setTextIfChanged(btn, c.btn || 'Edit the week here');
   setHiddenIfChanged(btn, !owner);
-  setTextIfChanged(setupEl(prefix + '-door-owner-text'), name + ' turns on editing.');
+  setTextIfChanged(setupEl(prefix + '-door-owner-text'), c.ownerText || name + ' turns on editing.');
   setHiddenIfChanged(setupEl(prefix + '-door-owner'), owner);
 }
 
@@ -3673,6 +3840,7 @@ function wireSetupUi() {
   wireScheduleScreen();
   wireRainPlan();
   wireSchedulePlan();
+  wireSecScreens();
   // Camp week (§11.4): dates, the Days tick sheet, double points, the TV finale.
   on('#week-start', 'change', (e) => weekSetStart(e.target.value));
   on('#week-days', 'click', (e) => { const t = e.target.closest && e.target.closest('.wk-tick'); const row = t && t.closest('.wk-day'); if (t && row) weekTick(Number(row.dataset.dow), t.dataset.weekFollow); });
@@ -3749,4 +3917,740 @@ function wireSetupUi() {
   });
   on('#ask-dialog', 'close', () => askFinish(null, true));
   if (typeof onSetupEvent === 'function') onSetupEvent(setupUiOnEvent);
+}
+
+// ── 12. Meals, memory verses, the cleanup rota, electives (§11.10–11.13 — Step 19) ──────────────────
+// Four screens in the Step 14 / 15 frame, in the same clipboard language. While a section is the ORIGINAL its screen is a
+// read-only preview of the printed data (every control disabled; its door says so: the owner's Turn on, everyone else "Patrick
+// turns it on."); once it is on, every edit is one commitSetup (setup-sync.js section 10) and the undo pill is the way back.
+// Rows that hold inputs (a meal) are patched in place by key and never rebuilt under a focused field; a commit happens on blur
+// and only when the value changed since it gained focus (§6.4.9), so tabbing across the menu rewrites nothing.
+
+const secUi = {
+  teams: null,       // the open cleanup sheet: { dk, meal, name, picked: [ids], was: [ids] }
+  person: null,      // the open "Add someone" sheet: { dk, slot, st }
+  station: null,     // the open station sheet: { mode: 'add' | 'edit', dk, slot, st }
+  stripDay: undefined,
+  versesBuilt: false,
+};
+const SEC_MEAL_ICONS = { breakfast: '🍳', lunch: '🥪', supper: '🍲' };
+
+function secOn(section) {
+  return typeof sectionIsShared === 'function' && sectionIsShared(section);
+}
+// The controls work only for a director, on a section that is edited here.
+function secLive(section) {
+  return secOn(section) && canEdit();
+}
+function secTree(section) {
+  return secOn(section) ? setupTree : setupBuiltInSections();
+}
+
+// The days a screen is about: Mon–Fri, or for the menus every day that has a Meal item (Sunday supper, Saturday breakfast).
+function secDays(section) {
+  if (section === 'meals') {
+    const d = SETUP_DK.filter((dk, dow) => secMealItems(dow).length);
+    if (d.length) return d;
+  }
+  return hubCompetitionDks();
+}
+function secDayKey(section) {
+  const days = secDays(section);
+  const v = state.ui && state.ui.secDay;
+  if (days.indexOf(v) !== -1) return v;
+  const wk = typeof campWeek === 'function' ? campWeek() : { phase: 'unset' };
+  const today = SETUP_DK[campNow().dow];
+  return wk.phase === 'during' && days.indexOf(today) !== -1 ? today : days[0];
+}
+function secSetDay(dk) {
+  if (SETUP_DK.indexOf(dk) === -1) return;
+  state.ui.secDay = dk;
+  saveState();
+  renderAll();
+}
+function secSlotNow() {
+  const v = state.ui && state.ui.secSlot;
+  return v === 1 || v === 2 ? v : 0;
+}
+function secSetSlot(n) {
+  if (![0, 1, 2].includes(n)) return;
+  state.ui.secSlot = n;
+  saveState();
+  renderAll();
+}
+
+// "12:00<small>PM</small>" for a time column.
+function secTimeHtml(min) {
+  const t = setupClock(min).split(' ');
+  return esc(t[0]) + (t[1] ? '<small>' + esc(t[1]) + '</small>' : '');
+}
+
+// A refused commit in the words a section's screen uses (everything else is the Camp week's).
+function secRefused(r, section) {
+  if (r && !r.ok && r.reason === 'off') { setupSay('Turn on editing for ' + HUB_SECTION_NOUNS[section] + ' first.'); return; }
+  weekRefused(r);
+}
+
+// ── the door, the strip, the shared paint ──
+
+function secPaintDoor(section) {
+  const on = secOn(section);
+  const held = !!(hubSetupMeta().on && hubSetupMeta().on[section] === false);
+  const name = hubCap(typeof ownerName === 'function' ? ownerName() : 'the owner');
+  paintPreviewDoor(section, !on, {
+    lead: held ? 'Showing the original · your edits are kept' : hubCap(HUB_SECTION_NOUNS[section]) + ' can now be edited here too.',
+    btn: 'Turn on', ownerText: name + ' turns it on.',
+  });
+  // The owner's way back, only while the section is on (nobody else is ever offered a switch).
+  setHiddenIfChanged(setupEl(section + '-original'), !(on && typeof isOwner === 'function' && isOwner()));
+}
+
+// Which days carry a gold "!": the same judgement as the hub's row, day by day.
+function secDayIssue(section, dk) {
+  if (!secOn(section)) return false;
+  const dow = SETUP_DK.indexOf(dk);
+  if (section === 'meals') {
+    const any = SETUP_DK.some((k) => SETUP_MEAL_KEYS.some((m) => setupMealRecord(setupTree, k, m)));
+    const listed = SETUP_MEAL_KEYS.some((m) => setupMealRecord(setupTree, dk, m));
+    return any && (hubCompetitionDks().indexOf(dk) !== -1 || listed) && secMealItems(dow).some((it) => !setupMealRecord(setupTree, dk, it.meal));
+  }
+  if (section === 'cleanup') return secMealItems(dow).some((it) => !setupCleanupIds(setupTree, dk, it.meal).length) && SETUP_DK.some((k) => setupCleanupTracked(setupTree, k));
+  if (section === 'electives') {
+    return planForDow(dow).some((b) => b.type === 'elective' && Number.isInteger(b.slot) && (!setupElectiveRows(setupTree, dk, b.slot).length || setupElectiveRows(setupTree, dk, b.slot).some((r) => !r.people.length)));
+  }
+  return false;
+}
+
+function renderSecStrip(section, dk) {
+  const track = setupEl('sec-days-track');
+  if (!track || !track.querySelectorAll) return;
+  const days = secDays(section);
+  const todayKey = schedTodayKey();
+  const during = typeof campWeek === 'function' && campWeek().phase === 'during';
+  track.querySelectorAll('.daypick-btn[data-day]').forEach((btn) => {
+    const d = btn.dataset.day;
+    setHiddenIfChanged(btn, days.indexOf(d) === -1);
+    const sel = d === dk;
+    if (btn.getAttribute('aria-selected') !== String(sel)) btn.setAttribute('aria-selected', String(sel));
+    const isToday = d === todayKey && during;
+    if (isToday !== btn.hasAttribute('data-today')) { if (isToday) btn.setAttribute('data-today', ''); else btn.removeAttribute('data-today'); }
+    const issue = secDayIssue(section, d);
+    setHiddenIfChanged(btn.querySelector('[data-sd-warn]'), !issue);
+    btn.setAttribute('aria-label', SETUP_DAY_WORDS[d] + (isToday ? ', today' : '') + (issue ? ', something to check' : ''));
+  });
+  // The chosen day stays in view (once per change; the strip scrolls sideways at large text).
+  if (secUi.stripDay !== dk && track.clientWidth > 0) {
+    const prev = secUi.stripDay;
+    secUi.stripDay = dk;
+    stripRevealChip(track, track.querySelector('.daypick-btn[aria-selected="true"]'), prev !== undefined);
+    const chip = prev !== undefined && track.querySelector('.daypick-btn[aria-selected="true"]');
+    if (chip && typeof JellyMotion !== 'undefined') JellyMotion.play(chip, 'snap', (x) => ({ transform: 'scale(' + (0.86 + 0.14 * x) + ',' + (1.1 - 0.1 * x) + ')' }), { calm: false });
+  }
+  paintStripOverflow(track);
+}
+
+// Rows keyed `data-key`: the list is written only when its SET of rows changes; otherwise each row is patched in place
+// (a focused field keeps its text and its caret).
+function secPaintKeyed(list, rows, build, patch) {
+  if (!list) return;
+  const have = Array.prototype.map.call(list.children || [], (el) => el.dataset && el.dataset.key).join('|');
+  if (have !== rows.map((r) => r.key).join('|')) list.innerHTML = rows.map(build).join('');
+  rows.forEach((r) => { const el = list.querySelector('[data-key="' + r.key + '"]'); if (el && patch) patch(el, r); });
+}
+
+function secSetValue(input, value) {
+  if (!input) return;
+  if (document.activeElement !== input && input.value !== value) input.value = value;
+}
+function secSetDisabled(el, disabled) {
+  if (!el) return;
+  if (!!el.disabled !== disabled) el.disabled = disabled;
+}
+
+// ── Meals (§11.10) ──
+
+function secMealRowHtml(r) {
+  const label = r.it.name;
+  return '<div class="cb-row sec-meal" data-key="' + esc(r.key) + '" data-meal="' + esc(r.it.meal) + '">' +
+    '<span class="cb-time">' + secTimeHtml(r.it.start) + '</span>' +
+    '<span class="cb-main"><span class="sec-meal-head"><span class="cb-title"><span class="sched-emo" aria-hidden="true">' + (SEC_MEAL_ICONS[r.it.meal] || '🍽️') + '</span><span>' + esc(label) + '</span></span>' +
+    '<input type="text" class="fld-input sec-emoji" data-meal-emoji maxlength="16" autocomplete="off" placeholder="🍽️" aria-label="' + esc(label) + ' — emoji"></span>' +
+    '<input type="text" class="fld-input sec-dish" data-meal-dish maxlength="80" autocomplete="off" enterkeyhint="done" placeholder="What’s being served" aria-label="' + esc(label) + ' — what’s being served"></span>' +
+    '<span class="cb-end"></span></div>';
+}
+
+function renderMealsScreen() {
+  const live = secLive('meals');
+  const tree = secTree('meals');
+  const dk = secDayKey('meals');
+  const dow = SETUP_DK.indexOf(dk);
+  const items = secMealItems(dow);
+  const dishes = items.filter((it) => setupMealRecord(tree, dk, it.meal)).length;
+  setTextIfChanged(setupEl('meals-title'), 'Meals · ' + CAMP.label);
+  setTextIfChanged(setupEl('meals-headline'), SETUP_DAY_WORDS[dk]);
+  setTextIfChanged(setupEl('meals-lede'), !items.length ? 'No meals on this day'
+    : hubPlural(items.length, 'meal', 'meals') + ' · ' + (dishes === items.length ? 'every one has a dish' : dishes ? dishes + ' with a dish' : 'no dishes yet'));
+  const rows = items.map((it) => ({ key: 'm-' + it.meal, it, rec: setupMealRecord(tree, dk, it.meal) }));
+  secPaintKeyed(setupEl('meals-list'), rows, secMealRowHtml, (el, r) => {
+    const dish = el.querySelector('[data-meal-dish]');
+    const emo = el.querySelector('[data-meal-emoji]');
+    secSetValue(dish, r.rec ? r.rec.dish : '');
+    secSetValue(emo, r.rec && r.rec.emoji ? r.rec.emoji : '');
+    secSetDisabled(dish, !live);
+    secSetDisabled(emo, !live);
+  });
+  setHiddenIfChanged(setupEl('meals-empty'), items.length > 0);
+  setTextIfChanged(setupEl('meals-empty-text'), 'This day has no meal items. Mark an item as a meal on the Schedule screen and it shows up here.');
+  const from = secMealCopySources(dk);
+  setHiddenIfChanged(setupEl('meals-copy'), !(live && items.length && from.length));
+}
+
+// The days whose menu could be copied here: another day with at least one dish.
+function secMealCopySources(dk) {
+  return SETUP_DK.filter((k) => k !== dk && SETUP_MEAL_KEYS.some((m) => setupMealRecord(setupTree, k, m)));
+}
+
+// The value of one meal row's two inputs as the canonical record (null = no dish), for the "changed since focus" test.
+function secMealTyped(row) {
+  const dish = setupCap((row.querySelector('[data-meal-dish]') || {}).value, 80);
+  const emoji = safeEmoji((row.querySelector('[data-meal-emoji]') || {}).value, '');
+  if (!dish) return { dish: '', emoji: '', rec: null };
+  return { dish, emoji, rec: emoji ? { dish, emoji } : { dish } };
+}
+
+function secMealFocusIn(row) {
+  if (!row || !secLive('meals')) return;
+  setupFocusIn('meals/' + secDayKey('meals') + '/' + row.dataset.meal);
+}
+function secMealFocusOut(row) {
+  if (!row || !secLive('meals')) return;
+  const dk = secDayKey('meals');
+  const meal = row.dataset.meal;
+  const t = secMealTyped(row);
+  const f = setupFocusOut('meals/' + dk + '/' + meal, t.rec);
+  if (!f.changed) return;
+  const r = mealsSet(dk, meal, t.dish, t.emoji);
+  if (!r.ok) { secRefused(r, 'meals'); renderMealsScreen(); }
+}
+
+async function secMealCopy() {
+  if (!secLive('meals')) return;
+  const dk = secDayKey('meals');
+  const from = secMealCopySources(dk);
+  if (!from.length) { setupSay('No other day has a menu to copy yet.'); return; }
+  const pick = await askDialog({
+    title: 'Copy a menu to ' + SETUP_DAY_WORDS[dk] + '?',
+    body: [SETUP_DAY_WORDS[dk] + '’s dishes are replaced by the day you pick. Undo is right there if it’s the wrong one.'],
+    actions: [{ label: 'Not now', value: 'no', cancel: true }].concat(from.slice(0, 6).map((k) => ({ label: SETUP_DAY_WORDS[k], value: k }))),
+  });
+  if (!pick || pick === 'no') return;
+  const r = mealsCopyDay(pick, dk);
+  if (!r.ok) secRefused(r, 'meals');
+}
+
+// ── Memory verses (§11.11) ──
+
+const SEC_VERSE_FIELDS = [['title', 'Title'], ['text', 'Verse'], ['ref', 'Where it is'], ['video', 'Video link (optional)']];
+
+function secVerseGroupHtml(key, label, theme) {
+  const fld = (f, labelText, extra) => '<label class="fld"><span class="fld-label">' + labelText + '</span>' + extra + '</label>';
+  return '<div class="more-sec" data-verse="' + key + '"><div class="gl-head"><h3 class="gl-label">' + esc(label) + '</h3></div><div class="gl sec-verse">' +
+    (theme ? fld('title', 'Title', '<input type="text" class="fld-input" data-verse-field="title" maxlength="80" autocomplete="off" placeholder="Harvest of the Heart">') : '') +
+    fld('text', 'Verse', '<textarea class="fld-input sec-text" data-verse-field="text" rows="3" maxlength="600" placeholder="The words"></textarea>') +
+    fld('ref', 'Where it is', '<input type="text" class="fld-input" data-verse-field="ref" maxlength="80" autocomplete="off" placeholder="Romans 8:1 ESV">') +
+    (theme ? '' : fld('video', 'Video link (optional)', '<input type="url" class="fld-input" data-verse-field="video" maxlength="300" autocomplete="off" inputmode="url" placeholder="https://">')) +
+    '<p class="fld-error" data-verse-error role="alert" hidden></p></div></div>';
+}
+
+function renderVersesScreen() {
+  const live = secLive('verses');
+  const tree = secTree('verses');
+  const form = setupEl('verses-form');
+  const days = hubCompetitionDks();
+  if (form && !secUi.versesBuilt) {
+    form.innerHTML = secVerseGroupHtml('theme', 'Theme verse', true) + days.map((dk) => secVerseGroupHtml(dk, SETUP_DAY_WORDS[dk], false)).join('');
+    secUi.versesBuilt = true;
+  }
+  const theme = setupVerseTheme(tree);
+  const have = days.filter((dk) => setupVerseDay(tree, dk)).length;
+  setTextIfChanged(setupEl('verses-title'), 'Memory verses · ' + CAMP.label);
+  setTextIfChanged(setupEl('verses-headline'), (theme ? 'Theme + ' : '') + hubPlural(have, 'day', 'days'));
+  setTextIfChanged(setupEl('verses-lede'), live ? 'Type the words and where they are. A video link is optional.' : 'The verses that came with the app.');
+  if (!form || !form.querySelectorAll) return;
+  form.querySelectorAll('[data-verse]').forEach((group) => {
+    const key = group.dataset.verse;
+    const rec = key === 'theme' ? theme : setupVerseDay(tree, key);
+    group.querySelectorAll('[data-verse-field]').forEach((input) => {
+      const f = input.dataset.verseField;
+      secSetValue(input, rec && typeof rec[f] === 'string' ? rec[f] : '');
+      secSetDisabled(input, !live);
+    });
+  });
+}
+
+function secVerseGroup(target) {
+  return target && target.closest ? target.closest('[data-verse]') : null;
+}
+function secVersePath(group) {
+  return group.dataset.verse === 'theme' ? 'verses/theme' : 'verses/days/' + group.dataset.verse;
+}
+// The group's fields as a record to hand versesSetTheme / versesSetDay.
+function secVerseTyped(group) {
+  const rec = {};
+  group.querySelectorAll('[data-verse-field]').forEach((input) => { rec[input.dataset.verseField] = input.value; });
+  return rec;
+}
+function secVerseFocusIn(group) {
+  if (!group || !secLive('verses')) return;
+  setupFocusIn(secVersePath(group));
+}
+function secVerseFocusOut(group) {
+  if (!group || !secLive('verses')) return;
+  const theme = group.dataset.verse === 'theme';
+  const typed = secVerseTyped(group);
+  const r0 = versesRecord(typed, theme);
+  const f = setupFocusOut(secVersePath(group), r0.rec || null);
+  const err = group.querySelector('[data-verse-error]');
+  const say = (t) => { setTextIfChanged(err, t); setHiddenIfChanged(err, !t); };
+  // An error is said every time (the field was typed, the commit refused): the director fixes it where it is.
+  if (!f.changed && !r0.error) { say(''); return; }
+  const r = theme ? versesSetTheme(typed) : versesSetDay(group.dataset.verse, typed);
+  if (r.ok) { say(''); return; }
+  if (r.reason === 'text') say('A verse needs its words. Type them, or clear the whole verse.');
+  else if (r.reason === 'video') say('Use a link that starts with https://');
+  else secRefused(r, 'verses');
+}
+
+// ── Cleanup rota (§11.12) ──
+
+function secTeamWords(ids) {
+  return ids.map((id) => teamEmoji(id) + ' ' + esc(teamName(id))).join(' + ');
+}
+
+function secCleanupRowHtml(it, dk, tree, live) {
+  const ids = setupCleanupIds(tree, dk, it.meal);
+  const tag = live ? 'button' : 'div';
+  const warn = !ids.length && SETUP_DK.some((k) => setupCleanupTracked(tree, k));
+  return '<' + tag + (live ? ' type="button"' : '') + ' class="cb-row sec-row" data-meal="' + esc(it.meal) + '"' + (warn ? ' data-warn' : '') + '>' +
+    '<span class="cb-time">' + secTimeHtml(it.start) + '</span>' +
+    '<span class="cb-main"><span class="cb-title"><span class="sched-emo" aria-hidden="true">' + (SEC_MEAL_ICONS[it.meal] || '🍽️') + '</span><span>' + esc(it.name) + '</span></span>' +
+    '<span class="cb-sub">' + (ids.length ? secTeamWords(ids) : 'No team yet') + '</span></span>' +
+    '<span class="cb-end">' + (live ? '<svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg>' : '') + '</span></' + tag + '>';
+}
+
+function renderCleanupScreen() {
+  const live = secLive('cleanup');
+  const tree = secTree('cleanup');
+  const dk = secDayKey('cleanup');
+  const dow = SETUP_DK.indexOf(dk);
+  const items = secMealItems(dow);
+  const ids = items.map((it) => setupCleanupIds(tree, dk, it.meal));
+  const placed = ids.filter((x) => x.length).length;
+  setTextIfChanged(setupEl('cleanup-title'), 'Cleanup rota · ' + CAMP.label);
+  setTextIfChanged(setupEl('cleanup-headline'), SETUP_DAY_WORDS[dk]);
+  setTextIfChanged(setupEl('cleanup-lede'), !items.length ? 'No meals on this day'
+    : placed === items.length ? 'Every meal has a team' : placed ? placed + ' of ' + items.length + ' meals have a team' : 'No teams yet');
+  setHtmlIfChanged(setupEl('cleanup-list'), items.map((it) => secCleanupRowHtml(it, dk, tree, live)).join(''));
+  setHiddenIfChanged(setupEl('cleanup-empty'), items.length > 0);
+  setTextIfChanged(setupEl('cleanup-empty-text'), 'This day has no meal items. Mark an item as a meal on the Schedule screen and it shows up here.');
+  // The fairness line, over the whole week.
+  const slots = secCleanupSlots(tree);
+  const fair = rotaFairness(slots.map((s) => ({ day: s.day, teams: s.have })), teamIds(), (id) => teamShort(id) || teamName(id), (k) => SETUP_DAY_WORDS[k]);
+  setTextIfChanged(setupEl('cleanup-fair-text'), fair.text);
+  setHiddenIfChanged(setupEl('cleanup-fair'), !slots.length || !fair.max);
+  setHiddenIfChanged(setupEl('cleanup-fill'), !(live && slots.length));
+}
+
+function secOpenTeams(meal, opener) {
+  if (!secLive('cleanup')) return;
+  const dk = secDayKey('cleanup');
+  const it = secMealItems(SETUP_DK.indexOf(dk)).find((x) => x.meal === meal);
+  if (!it) return;
+  const was = setupCleanupIds(setupTree, dk, meal);
+  secUi.teams = { dk, meal, name: it.name, was, picked: was.slice() };
+  setupSheet('sec-teams', opener);
+}
+
+function renderSecTeamsSheet() {
+  const s = secUi.teams;
+  if (!s) return;
+  setTextIfChanged(setupEl('sheet-sec-teams-title'), SETUP_DAY_WORDS[s.dk] + ' · ' + s.name);
+  setHtmlIfChanged(setupEl('sec-teams'), teamIds().map((id) =>
+    '<button type="button" class="si-team" data-team="' + esc(id) + '" aria-pressed="' + (s.picked.indexOf(id) !== -1) + '">' + teamMarkHtml(id, { size: 24 }) + '<span>' + esc(teamName(id)) + '</span></button>').join(''));
+  const changed = JSON.stringify(s.picked.slice().sort()) !== JSON.stringify(s.was.slice().sort());
+  const save = setupEl('sec-teams-save');
+  setTextIfChanged(save, s.picked.length ? 'Save' : 'No team yet');
+  if (save) save.setAttribute('aria-disabled', String(!changed));
+  setHiddenIfChanged(setupEl('sec-teams-clear'), !s.was.length || !s.picked.length);
+}
+
+function secTeamsToggle(id) {
+  const s = secUi.teams;
+  if (!s || teamIds().indexOf(id) === -1) return;
+  const note = setupEl('sec-teams-note');
+  if (s.picked.indexOf(id) !== -1) s.picked = s.picked.filter((x) => x !== id);
+  else if (s.picked.length >= 2) { setTextIfChanged(note, 'A meal has one or two teams. Tap one to take it off first.'); setHiddenIfChanged(note, false); return; }
+  else s.picked = s.picked.concat([id]);
+  setTextIfChanged(note, '');
+  setHiddenIfChanged(note, true);
+  renderSecTeamsSheet();
+}
+
+function secTeamsSave(clear) {
+  const s = secUi.teams;
+  if (!s) return;
+  const picked = clear ? [] : s.picked;
+  if (JSON.stringify(picked.slice().sort()) === JSON.stringify(s.was.slice().sort())) { shellSheetClose('sec-teams'); return; }
+  const r = cleanupSet(s.dk, s.meal, picked, SETUP_DAY_WORDS[s.dk] + ' ' + s.meal + ' cleanup: ' + (picked.length ? picked.map((id) => teamShort(id) || teamName(id)).join(' + ') : 'no team'));
+  if (!r.ok) { secRefused(r, 'cleanup'); return; }
+  shellSheetClose('sec-teams');
+}
+
+// Fill evenly: a preview in words first (one line a day, the fairness line, any rule it had to bend), then Apply or Cancel.
+async function secFillEvenly() {
+  if (!secLive('cleanup')) return;
+  const slots = secCleanupSlots(setupTree);
+  if (!slots.length) return;
+  let redo = false;
+  if (!slots.some((s) => !s.have.length)) {
+    const again = await askDialog({
+      title: 'Redo the whole rota evenly?', body: ['Every meal already has a team. This starts over and replaces them all.'],
+      actions: [{ label: 'Keep it as it is', value: 'no', cancel: true }, { label: 'Redo it', value: 'redo', kind: 'gold' }],
+    });
+    if (again !== 'redo') return;
+    redo = true;
+  }
+  const res = rotaFillEvenly({ teams: teamIds(), redo, slots: slots.map((s) => ({ day: s.day, meal: s.meal, want: Math.max(1, s.have.length), have: s.have })) });
+  const short = (id) => teamEmoji(id) + ' ' + (teamShort(id) || teamName(id));
+  const lines = hubCompetitionDks().map((dk) => SETUP_DAY_WORDS[dk] + ': ' + res.slots.filter((s) => s.day === dk).map((s) => (SETUP_MEAL_NAMES[s.meal] || s.meal) + ' ' + (s.teams.map(short).join(' + ') || '—')).join(' · '));
+  const fair = rotaFairness(res.slots, teamIds(), (id) => teamShort(id) || teamName(id), (k) => SETUP_DAY_WORDS[k]);
+  const body = lines.concat([fair.text]);
+  if (res.relaxed.length) body.push('A few meals couldn’t follow every rule (' + res.relaxed.map((r) => SETUP_DAY_WORDS[r.split(' ')[0]] + ' ' + r.split(' ')[1]).join(', ') + '): there aren’t enough teams to keep each one off the same meal two days running.');
+  const pick = await askDialog({ title: 'Fill the rota evenly?', body, actions: [{ label: 'Cancel', value: 'no', cancel: true }, { label: 'Apply', value: 'apply', kind: 'gold' }] });
+  if (pick !== 'apply') return;
+  const changed = res.slots.filter((s, i) => JSON.stringify(s.teams) !== JSON.stringify(slots[i].have));
+  if (!changed.length) { setupSay('The rota was already even.'); return; }
+  const r = cleanupApply(changed, 'Filled the cleanup rota evenly');
+  if (!r.ok) secRefused(r, 'cleanup');
+}
+
+// ── Electives (§11.13) ──
+
+function secLinkTargets() {
+  return hubMembers().filter((m) => !m.pending).map((m) => ({ key: m.key, name: m.name }));
+}
+
+// One station's block: its name, its people as chips (tap = take off), "Add someone", and a Link row for a typed name that
+// nearly matches somebody on the list.
+function secStationHtml(row, live, members) {
+  const emoji = esc(row.emoji || '🌟');
+  const head = (live ? '<button type="button" class="sec-st-name" data-sec-station="' + esc(row.id) + '">' : '<div class="sec-st-name">') +
+    '<span aria-hidden="true">' + emoji + '</span><span>' + esc(row.name) + '</span>' + (live ? '<svg class="ico" aria-hidden="true"><use href="#i-chev-r"/></svg></button>' : '</div>');
+  const links = [];
+  const chips = row.people.map((p) => {
+    const near = live && p.typed ? setupNearMember(p.name, members) : null;
+    if (near) links.push('<div class="sec-link"><span>' + esc(p.name) + ' looks like ' + esc(String(near.name).trim().split(/\s+/)[0]) + ' on your list.</span><button type="button" class="btn btn-sm" data-sec-link="' + esc(p.pid) + '" data-sec-member="' + esc(near.key) + '">Link</button></div>');
+    return live
+      ? '<button type="button" class="sec-chip" data-sec-off="' + esc(p.pid) + '" data-st="' + esc(row.id) + '"' + (near ? ' data-warn' : '') + ' aria-label="Take ' + esc(p.name) + ' off ' + esc(row.name) + '"><span>' + esc(p.name) + '</span><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>'
+      : '<span class="sec-chip">' + esc(p.name) + '</span>';
+  }).join('');
+  const add = live ? '<button type="button" class="sec-chip sec-chip-add" data-sec-add="' + esc(row.id) + '"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span>Add someone</span></button>' : '';
+  return '<div class="sec-st" data-st="' + esc(row.id) + '">' + head + '<div class="sec-st-people">' + chips + add + '</div>' + links.join('') + '</div>';
+}
+
+function renderElectivesScreen() {
+  const live = secLive('electives');
+  const tree = secTree('electives');
+  const dk = secDayKey('electives');
+  const dow = SETUP_DK.indexOf(dk);
+  const slot = secSlotNow();
+  const rows = setupElectiveRows(tree, dk, slot);
+  setTextIfChanged(setupEl('electives-title'), 'Electives · ' + CAMP.label);
+  setTextIfChanged(setupEl('electives-headline'), SETUP_DAY_WORDS[dk]);
+  setTextIfChanged(setupEl('electives-lede'), rows.length
+    ? hubPlural(rows.length, 'station', 'stations') + ' · ' + hubPlural(rows.reduce((n, r) => n + r.people.length, 0), 'person', 'people')
+    : 'No stations in this elective yet');
+  // Which elective: each segment names its time (from the schedule's Elective item).
+  const seg = setupEl('elec-slots');
+  if (seg && seg.querySelectorAll) {
+    seg.querySelectorAll('.seg-btn[data-slot]').forEach((btn) => {
+      const n = Number(btn.dataset.slot);
+      const sel = n === slot;
+      if (btn.getAttribute('aria-selected') !== String(sel)) btn.setAttribute('aria-selected', String(sel));
+      setHtmlIfChanged(btn, 'Elective ' + (n + 1) + '<small>' + esc(setupClock(electiveSlotStart(n, dow))) + '</small>');
+    });
+  }
+  const members = live ? secLinkTargets() : [];
+  setHtmlIfChanged(setupEl('elec-list'), rows.map((r) => secStationHtml(r, live, members)).join(''));
+  setHiddenIfChanged(setupEl('elec-empty'), rows.length > 0);
+  setTextIfChanged(setupEl('elec-empty-text'), live ? 'Add the stations that run at this time.' : 'No stations at this time.');
+  // "On break": the people on this day's sheet who are at no station in this slot (the app calls the same line Break).
+  const brk = secBreakNames(tree, dk, slot);
+  setTextIfChanged(setupEl('elec-break-text'), brk.length ? 'On break: ' + hubJoin(brk) : '');
+  setHiddenIfChanged(setupEl('elec-break'), !brk.length);
+  const first = hubCompetitionDks()[0];
+  setHiddenIfChanged(setupEl('elec-add-station'), !live);
+  setHiddenIfChanged(setupEl('elec-same'), !(live && dk !== first && setupElectiveRows(tree, first, 0).length + setupElectiveRows(tree, first, 1).length + setupElectiveRows(tree, first, 2).length));
+  setTextIfChanged(setupEl('elec-same-text'), 'Same as ' + SETUP_DAY_WORDS[first]);
+}
+
+// Everyone on the day's sheet (any slot) who is at no station in this one, A to Z.
+function secBreakNames(tree, dk, slot) {
+  const at = {};
+  setupElectiveRows(tree, dk, slot).forEach((r) => r.people.forEach((p) => { at[p.name.toLowerCase()] = true; }));
+  const out = [];
+  for (let s = 0; s < 3; s++) setupElectiveRows(tree, dk, s).forEach((r) => r.people.forEach((p) => { if (!at[p.name.toLowerCase()] && out.indexOf(p.name) === -1) out.push(p.name); }));
+  return out.sort();
+}
+
+function secOpenAddPerson(st, opener) {
+  if (!secLive('electives')) return;
+  secUi.person = { dk: secDayKey('electives'), slot: secSlotNow(), st };
+  const input = setupEl('sec-person-name');
+  if (input) input.value = '';
+  setupSheet('sec-person', opener);
+}
+
+function renderSecPersonSheet() {
+  const s = secUi.person;
+  if (!s) return;
+  const row = setupElectiveRows(setupTree, s.dk, s.slot).find((r) => r.id === s.st);
+  setTextIfChanged(setupEl('sheet-sec-person-title'), 'Add to ' + (row ? row.name : 'this station'));
+  const here = {};
+  ((row && row.people) || []).forEach((p) => { here[p.pid] = true; here[p.name.toLowerCase()] = true; });
+  const people = hubMembers().filter((m) => m.name && !here[m.key] && !here[m.name.toLowerCase()]).sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+  setHtmlIfChanged(setupEl('sec-person-list'), people.map((m) =>
+    '<button type="button" class="gl-row" data-sec-person="' + esc(m.pending ? '' : m.key) + '" data-sec-name="' + esc(m.name) + '"><span class="gl-text"><span class="gl-title">' + esc(m.name) + '</span>' +
+    (m.teamId ? '<span class="gl-sub">' + esc(teamName(m.teamId)) + '</span>' : '') + '</span></button>').join(''));
+  setHiddenIfChanged(setupEl('sec-person-empty'), people.length > 0);
+}
+
+function secPersonAdd(key, name) {
+  const s = secUi.person;
+  if (!s) return;
+  const r = electivePersonAdd(s.dk, s.slot, s.st, { key: key || '', name });
+  if (!r.ok && r.reason === 'name') { const i = setupEl('sec-person-name'); if (i && typeof i.focus === 'function') i.focus(); return; }
+  if (!r.ok && r.reason !== 'cancelled') { secRefused(r, 'electives'); return; }
+  shellSheetClose('sec-person');
+}
+
+function secOpenStation(mode, st, opener) {
+  if (!secLive('electives')) return;
+  secUi.station = { mode, dk: secDayKey('electives'), slot: secSlotNow(), st: st || '' };
+  const rec = st ? setupMapOf(setupMapOf(setupTree.electives).stations)[st] : null;
+  const name = setupEl('sec-station-name');
+  const emo = setupEl('sec-station-emoji');
+  if (name) name.value = rec && typeof rec.name === 'string' ? rec.name : '';
+  if (emo) emo.value = rec && typeof rec.emoji === 'string' ? rec.emoji : '';
+  setHiddenIfChanged(setupEl('sec-station-error'), true);
+  setupSheet('sec-station', opener);
+}
+
+function renderSecStationSheet() {
+  const s = secUi.station;
+  if (!s) return;
+  const edit = s.mode === 'edit';
+  const inSlot = {};
+  setupElectiveRows(setupTree, s.dk, s.slot).forEach((r) => { inSlot[r.id] = true; });
+  const pick = edit ? [] : setupElectiveStations(setupTree).filter((x) => !inSlot[x.id]);
+  setTextIfChanged(setupEl('sheet-sec-station-title'), edit ? 'Edit this station' : 'Add a station');
+  setHtmlIfChanged(setupEl('sec-station-list'), pick.map((x) =>
+    '<button type="button" class="gl-row" data-sec-pick="' + esc(x.id) + '"><span class="gl-ico" aria-hidden="true">' + esc(x.emoji || '🌟') + '</span><span class="gl-text"><span class="gl-title">' + esc(x.name) + '</span></span></button>').join(''));
+  setHiddenIfChanged(setupEl('sec-station-list'), !pick.length);
+  setTextIfChanged(setupEl('sec-station-form-label'), edit ? 'Name' : pick.length ? 'Or a new station' : 'A new station');
+  setTextIfChanged(setupEl('sec-station-save'), edit ? 'Save' : 'Add');
+  setHiddenIfChanged(setupEl('sec-station-manage'), !edit);
+  const key = 'Elective ' + (s.slot + 1);
+  setTextIfChanged(setupEl('sec-station-off-title'), 'Take it off ' + SETUP_DAY_WORDS[s.dk] + '’s ' + key);
+}
+
+function secStationSave() {
+  const s = secUi.station;
+  if (!s) return;
+  const name = (setupEl('sec-station-name') || {}).value;
+  const emoji = (setupEl('sec-station-emoji') || {}).value;
+  const err = setupEl('sec-station-error');
+  const bad = () => { setTextIfChanged(err, 'Give it a name.'); setHiddenIfChanged(err, false); const i = setupEl('sec-station-name'); if (i && typeof i.focus === 'function') i.focus(); };
+  const r = s.mode === 'edit' ? electiveStationEdit(s.st, name, emoji) : electiveStationAddToSlot(name, emoji, s.dk, s.slot);
+  if (!r.ok && r.reason === 'name') { bad(); return; }
+  if (!r.ok) { secRefused(r, 'electives'); return; }
+  shellSheetClose('sec-station');
+}
+
+async function secStationDelete() {
+  const s = secUi.station;
+  if (!s || !s.st) return;
+  const rec = setupMapOf(setupMapOf(setupTree.electives).stations)[s.st];
+  const name = rec && rec.name ? rec.name : 'this station';
+  const pick = await askDialog({
+    title: 'Delete ' + name + '?', body: ['It comes off every day it runs. Undo is right there if it was a mistake.'],
+    actions: [{ label: 'Keep it', value: 'no', cancel: true }, { label: 'Delete it', value: 'delete', kind: 'danger' }],
+  });
+  if (pick !== 'delete') return;
+  const r = electiveStationRemove(s.st);
+  if (!r.ok) { secRefused(r, 'electives'); return; }
+  shellSheetClose('sec-station');
+}
+
+async function secElectiveSame() {
+  if (!secLive('electives')) return;
+  const dk = secDayKey('electives');
+  const first = hubCompetitionDks()[0];
+  if (dk === first) return;
+  const holds = [0, 1, 2].some((n) => setupElectiveRows(setupTree, dk, n).length);
+  if (holds) {
+    const pick = await askDialog({
+      title: 'Make ' + SETUP_DAY_WORDS[dk] + ' the same as ' + SETUP_DAY_WORDS[first] + '?',
+      body: [SETUP_DAY_WORDS[dk] + '’s three electives are replaced. Undo is right there if it’s not what you wanted.'],
+      actions: [{ label: 'Not now', value: 'no', cancel: true }, { label: 'Make it the same', value: 'go', kind: 'gold' }],
+    });
+    if (pick !== 'go') return;
+  }
+  const r = electiveCopyDay(first, dk);
+  if (!r.ok) secRefused(r, 'electives');
+}
+
+function secLinkPerson(pid, key) {
+  const m = secLinkTargets().find((x) => x.key === key);
+  if (!m) return;
+  const r = electiveLinkPerson(pid, m);
+  if (!r.ok && r.reason !== 'cancelled') secRefused(r, 'electives');
+}
+
+// ── the screens' paint, the owner's two doors, the wiring ──
+
+function renderSecScreen(section) {
+  secPaintDoor(section);
+  if (section !== 'verses') renderSecStrip(section, secDayKey(section));
+  if (section === 'meals') renderMealsScreen();
+  else if (section === 'verses') renderVersesScreen();
+  else if (section === 'cleanup') renderCleanupScreen();
+  else if (section === 'electives') renderElectivesScreen();
+}
+
+// Turn on: the owner's, one plain question first, the camp-week freeze as a question in words (the same conversation as Edit the
+// week here, for any list of sections). `sections` may name several (the hub's door turns on every one that is off, in one sitting).
+async function secTurnOnFlow(sections) {
+  if (!requireOwner('turn on editing')) return { ok: false, reason: 'owner' };
+  const want = sections.filter((s) => s !== 'electives' || setupHasElectives());
+  const nouns = hubJoin(want.map((s) => HUB_SECTION_NOUNS[s]));
+  const go = await askDialog({
+    title: 'Edit ' + nouns + ' here?',
+    body: ['Turning this on changes nothing anyone can see until someone edits something.', 'The first time, a restore point is saved first. The screen’s “Use the original … again” puts it all back.'],
+    actions: [{ label: 'Not yet', value: 'no', cancel: true }, { label: 'Turn on', value: 'go', kind: 'gold' }],
+  });
+  if (go !== 'go') return { ok: false, reason: 'cancelled' };
+  const opts = {};
+  for (let guard = 0; guard < 4; guard++) {
+    const r = await setupTurnOn(want, opts);
+    if (r.ok) { setupSay('Editing is on for ' + nouns + '.'); return r; }
+    if (r.reason === 'ask-camp-week') {
+      const running = await askDialog({
+        title: 'Is a camp week running right now?',
+        body: 'No dates are set, so the app can’t tell. Turning on editing mid-week changes what these are made from while counselors are relying on them.',
+        actions: [{ label: 'Not yet', value: 'no', kind: 'gold' }, { label: 'Yes, it’s running', value: 'yes' }, { label: 'Cancel', value: 'cancel', cancel: true }],
+      });
+      if (running === 'cancel' || running === null) return { ok: false, reason: 'cancelled' };
+      opts.campRunning = running === 'yes';
+      continue;
+    }
+    if (r.reason === 'camp-week') {
+      const again = await askDialog({
+        title: 'A camp week is running',
+        body: ['Turning on editing now is meant for before or after camp. Small edits are fine once it’s on.', 'Turn it on anyway?'],
+        actions: [{ label: 'Wait for later', value: 'wait', cancel: true }, { label: 'I know — turn it on', value: 'go', kind: 'danger' }],
+      });
+      if (again !== 'go') return { ok: false, reason: 'cancelled' };
+      opts.overrideCampWeek = true;
+      continue;
+    }
+    setupSay(r.reason === 'owner' ? r.message : (TURNON_WHY[r.reason] || TURNON_WHY.failed));
+    return r;
+  }
+  return { ok: false, reason: 'failed' };
+}
+
+// The sections of this camp that are still the original — what the hub's door turns on in one sitting.
+function secOffSections() {
+  return HUB_SECTIONS.filter((s) => (s !== 'electives' || setupHasElectives()) && !secOn(s));
+}
+
+async function secUseOriginal(section) {
+  if (!requireOwner('switch back to the original')) return { ok: false, reason: 'owner' };
+  const noun = HUB_SECTION_NOUNS[section];
+  const go = await askDialog({
+    title: 'Use the original ' + noun.replace(/^the /, '') + ' again?',
+    body: ['Everyone sees what came with the app. Your changes are kept, and Turn on brings them back.'],
+    actions: [{ label: 'Keep editing here', value: 'no', cancel: true }, { label: 'Use the original', value: 'go', kind: 'gold' }],
+  });
+  if (go !== 'go') return { ok: false, reason: 'cancelled' };
+  const r = setupUseOriginal([section]);
+  if (r.ok) setupSay('Back to the original. Your edits are kept.');
+  else setupSay(r.reason === 'owner' ? r.message : r.reason === 'already' ? 'Already using the original.' : 'That didn’t go through, so nothing was changed.');
+  return r;
+}
+
+HUB_DOOR_ACTIONS.sections = () => secTurnOnFlow(secOffSections());
+
+function wireSecScreens() {
+  const on = (sel, ev, fn) => { const el = typeof sel === 'string' ? document.querySelector(sel) : sel; if (el) el.addEventListener(ev, fn); };
+  const q = (e, sel) => (e.target && e.target.closest ? e.target.closest(sel) : null);
+  on('#sec-days', 'click', (e) => { const b = q(e, '.daypick-btn[data-day]'); if (b) secSetDay(b.dataset.day); });
+  const track = setupEl('sec-days-track');
+  if (track) track.addEventListener('scroll', () => paintStripOverflow(track), { passive: true });
+  HUB_SECTIONS.forEach((s) => {
+    on('#' + s + '-door-btn', 'click', () => { if (isOwner()) secTurnOnFlow([s]); });
+    on('#' + s + '-original', 'click', () => { if (isOwner()) secUseOriginal(s); });
+  });
+  // Meals: focus in / out on the row's two inputs; Enter finishes the field.
+  const meals = setupEl('meals-list');
+  if (meals) {
+    meals.addEventListener('focusin', (e) => secMealFocusIn(q(e, '.sec-meal')));
+    meals.addEventListener('focusout', (e) => secMealFocusOut(q(e, '.sec-meal')));
+    meals.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target && typeof e.target.blur === 'function') { e.preventDefault(); e.target.blur(); } });
+  }
+  on('#meals-copy', 'click', () => { secMealCopy(); });
+  // Verses.
+  const verses = setupEl('verses-form');
+  if (verses) {
+    verses.addEventListener('focusin', (e) => secVerseFocusIn(secVerseGroup(e.target)));
+    verses.addEventListener('focusout', (e) => secVerseFocusOut(secVerseGroup(e.target)));
+  }
+  // Cleanup.
+  on('#cleanup-list', 'click', (e) => { const b = q(e, 'button.sec-row[data-meal]'); if (b) secOpenTeams(b.dataset.meal, b); });
+  on('#cleanup-fill', 'click', () => { secFillEvenly(); });
+  const teams = setupEl('sheet-sec-teams');
+  if (teams) teams.addEventListener('click', (e) => { const b = q(e, '.si-team'); if (b) secTeamsToggle(b.dataset.team); });
+  on('#sec-teams-save', 'click', () => secTeamsSave(false));
+  on('#sec-teams-clear', 'click', () => secTeamsSave(true));
+  // Electives.
+  on('#elec-slots', 'click', (e) => { const b = q(e, '.seg-btn[data-slot]'); if (b) secSetSlot(Number(b.dataset.slot)); });
+  on('#elec-list', 'click', (e) => {
+    let b;
+    if ((b = q(e, '[data-sec-off]'))) { const r = electivePersonRemove(secDayKey('electives'), secSlotNow(), b.dataset.st, b.dataset.secOff); if (!r.ok) secRefused(r, 'electives'); }
+    else if ((b = q(e, '[data-sec-add]'))) secOpenAddPerson(b.dataset.secAdd, b);
+    else if ((b = q(e, '[data-sec-station]'))) secOpenStation('edit', b.dataset.secStation, b);
+    else if ((b = q(e, '[data-sec-link]'))) secLinkPerson(b.dataset.secLink, b.dataset.secMember);
+  });
+  on('#elec-add-station', 'click', (e) => secOpenStation('add', '', e.currentTarget));
+  on('#elec-same', 'click', () => { secElectiveSame(); });
+  const person = setupEl('sheet-sec-person');
+  if (person) person.addEventListener('click', (e) => { const b = q(e, '[data-sec-person]'); if (b) secPersonAdd(b.dataset.secPerson, b.dataset.secName); });
+  on('#sec-person-form', 'submit', (e) => { e.preventDefault(); secPersonAdd('', (setupEl('sec-person-name') || {}).value); });
+  const station = setupEl('sheet-sec-station');
+  if (station) station.addEventListener('click', (e) => {
+    const b = q(e, '[data-sec-pick]');
+    if (b && secUi.station) {
+      const r = electiveSlotAddStation(secUi.station.dk, secUi.station.slot, b.dataset.secPick);
+      if (r.ok || r.reason === 'cancelled') shellSheetClose('sec-station'); else secRefused(r, 'electives');
+    }
+  });
+  on('#sec-station-form', 'submit', (e) => { e.preventDefault(); secStationSave(); });
+  on('#sec-station-off', 'click', () => {
+    const s = secUi.station;
+    if (!s) return;
+    const r = electiveSlotRemoveStation(s.dk, s.slot, s.st);
+    if (!r.ok) secRefused(r, 'electives'); else shellSheetClose('sec-station');
+  });
+  on('#sec-station-delete', 'click', () => { secStationDelete(); });
 }

@@ -166,10 +166,14 @@ test('a director sees the setup sheets only while the builder is up', () => {
     setupRain.plan = { dk: 'wed', items: {}, games: {} };
     setupRain.bid = 'b-x';
     state.ui.setupDay = 'wed';
+    ['sec-teams', 'sec-person', 'sec-station'].forEach((id) => assert.equal(shellSheetAllowed(id), false, id + ' needs what a tap opened'));
+    secUi.teams = { dk: 'mon', meal: 'lunch', name: 'Lunch', picked: [], was: [] };
+    secUi.person = { dk: 'mon', slot: 0, st: 'st-x' };
+    secUi.station = { mode: 'add', dk: 'mon', slot: 0, st: '' };
     SETUP_SHEETS.forEach((id) => assert.equal(shellSheetAllowed(id), true, id));
     state.ui.view = 'home';
     SETUP_SHEETS.forEach((id) => assert.equal(shellSheetAllowed(id), false, id + ' with the builder closed'));
-  } finally { setupSched.item = null; setupRain.plan = null; setupRain.bid = null; suClose(); }
+  } finally { setupSched.item = null; setupRain.plan = null; setupRain.bid = null; secUi.teams = null; secUi.person = null; secUi.station = null; suClose(); }
 });
 
 // ── askDialog ──
@@ -472,8 +476,9 @@ test('paintHub writes each row\'s summary, first problem and mark into the stati
     paintHub();
     const games = document.querySelector('[data-hub-row="games"]');
     assert.ok(/ games · 5 days$/.test(games.querySelector('[data-hub-summary]').textContent) || /games · \d+ days/.test(games.querySelector('[data-hub-summary]').textContent));
-    assert.equal(document.querySelector('[data-hub-row="meals"]').querySelector('[data-hub-mark]').dataset.mark, 'soon');
-    assert.equal(document.querySelector('[data-hub-row="meals"]').querySelector('[data-hub-word]').textContent, 'Editing comes next');
+    assert.equal(document.querySelector('[data-hub-row="campers"]').querySelector('[data-hub-mark]').dataset.mark, 'soon');
+    assert.equal(document.querySelector('[data-hub-row="campers"]').querySelector('[data-hub-word]').textContent, 'Editing comes next');
+    assert.equal(document.querySelector('[data-hub-row="meals"]').querySelector('[data-hub-mark]').dataset.mark, 'info', 'Meals has its screen now (step 19): the original, said plainly');
     assert.ok(/^\d+ of \d+ ready$/.test(setupEl('hub-headline').textContent));
     assert.equal(setupEl('hub-title').textContent, 'Set up the week · ' + CAMP.label);
     assert.equal(setupEl('hub-door').dataset.door, 'original');
