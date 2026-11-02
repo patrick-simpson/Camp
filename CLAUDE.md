@@ -126,7 +126,9 @@ Files:
 - `tests/` — `node tests/run.js`, no dependencies, never served to the
   browser (see "Tests" below). `tests/emulator/` (rules in the RTDB
   emulator) and `tests/push-e2e/` (the alert sender in real workerd) are
-  opt-in suites that need npm + Java
+  opt-in suites that need npm + Java. `tests/rules-macros.js` is the SOURCE of
+  the R1 rules blocks (see "R1" under "Auth, members & roles"); it is not a test
+  and is never loaded by the browser
 - `current-standings.html` + `current-standings.js` + `tv-camp.js` — the TV /
   presenter standings page, for BOTH camps (see "The TV page" below). The page
   is markup, CSS, its own CSP and the build stamp; its script lives in
@@ -616,6 +618,14 @@ What's covered, and why each file exists:
   values' contrast and fails if a bare `color: var(--color-danger)` comes back.
 - `owner-row.test.js` — the owner's Members row is read-only, and the client
   constant matches the rules literal in both camps.
+- `rules.test.js` — the FILE `database.rules.json` is coherent: deny-all root,
+  per-camp member lookups, `email_verified` everywhere, the `emailKey` transform,
+  owner-key immutability, chat/changelog/presence/push pins, and (R1) that the
+  ten R1 blocks equal what `tests/rules-macros.js` produces in both camps, that
+  `revealPublic/.read` is the ONLY anonymous read in either camp, the anchors,
+  the owner-only leaves, the reveal's bounds and the size budget. It cannot see
+  what is published, and it proves nothing about behaviour: that is
+  `tests/emulator/` (see "R1").
 - `settings-crud.test.js` — the classic builder's create / edit / delete paths
   (`validateGameDraft`, `saveGameDraft`, `duplicateGame`, `deleteGame`,
   `deleteDay`, reorder, `pruneOrphanedGameData`). Everything the app keeps under
@@ -758,7 +768,9 @@ does, so an app device always chooses by its own key.
   combined ruleset — the junior block unchanged plus a `seniorScoreboard`
   copy with only the members-lookup path swapped. All fifteen
   unauthenticated probes (six read paths per camp, write probes, a
-  member-injection attempt) return `Permission denied`. The senior owner
+  member-injection attempt) return `Permission denied` — true of the ruleset
+  that is PUBLISHED today; once R1 is published exactly one read per camp
+  (`<root>/revealPublic`) answers `null` instead (see "R1"). The senior owner
   record `seniorScoreboard/members/patricksimpson,fx@gmail,com` is seeded
   editor via the console Data tab and is rules-immutable, same as junior's.
   (First seeding attempt landed NESTED INSIDE campScoreboard — the console's
@@ -1070,7 +1082,9 @@ rules**; the client code only shapes the UI.
   phone ~10/day, project-wide) — each shows its cap up front and turns the
   quota error into a "use Google" message; there is deliberately no live
   "X remaining" counter (Firebase exposes none, and faking one would need a
-  public counter poked into the locked DB). No public access.
+  public counter poked into the locked DB). No public access to camp data —
+  the one deliberate exception, once R1 is published, is the standings
+  reveal's `revealPublic` (anonymous READ only; see "R1").
 - **Two roles, from the member record only** (never from anything on the
   device): `viewer` (counselors — read-only; deliberately can't touch their
   own team's points) and `editor` (directors/game leaders — edit scores AND
@@ -1181,9 +1195,125 @@ rules**; the client code only shapes the UI.
   `role === 'editor'`, `email_verified` required, changelog append-only +
   editor-read, presence per-child member-writable, `roster`/`contacts`
   owner key immutable. (`roster`/`contacts` used to be pre-gated here; removed
-  2026-07-26 — member-readable with no validation and no feature behind them.
-  Don't re-add a path before its feature, and when a camper roster is real it
-  wants EDITOR-only read, not member read.)
+  2026-07-26 — member-readable with no validation and no feature behind them.)
+  **Policy (reworded 2026-11-02, Step 10): a new path may be published ahead of
+  its feature ONLY as part of a reviewed, additive, inert rules release, with
+  read gates at least as strict as its eventual use, emulator compat proofs in
+  both directions, and the unauthenticated probes. `roster`/`contacts`-style
+  member-readable, unvalidated placeholders remain forbidden** (R1's `campers`
+  is the proof of the pattern: editor-only read, validated down to the leaf).
+- **R1 — the one rules release: WRITTEN, PROVEN IN THE EMULATOR, NOT YET
+  PUBLISHED** (BUILD-PLAN Step 10, 2026-11-02; Step 11 is the owner's paste, then
+  an agent session fills the checklist below). `database.rules.json` now also
+  carries, identical in both camps modulo the root name: P2's `setup`, `campers`
+  (editor-only: minors' names), `teamPhotos`, `accessRequests`, `accessBlocked`,
+  `restoreIndex`, `restoreBody`, `editorsHere`; the standings reveal's
+  `revealPublic` + `revealFull` (each with a `real` and a `practice` child; no
+  `reveal`, `revealPractice` or `revealScreens` node exists); and ADDITIVE
+  amendments: `state/brackets4` (a branch, published ahead of Step 22 — the
+  rules test allows it beside `SYNC_KEYS` until then), optional
+  `state/teams/$i/{emoji,short,color,photoV}` (id/name/counselor stay
+  unvalidated, so a v183 whole-array write still passes), `state/meta/{epoch,
+  epochAt}` and `pushSchedule/{rev,src}`. Nothing shipped touches any of it, so
+  until the paste every new node answers `Permission denied` and a new client
+  degrades to "not available yet" (proved both directions below).
+  - **Source of truth for the R1 blocks is `tests/rules-macros.js`**, written with
+    the spec's macro names (`MEMBER`, `EDITOR`, `SELF`, `ANCHOR`, `PANCHOR`,
+    `NOWKEEP`, `SELFKEEP`, `OWNER`, `OWNERKEEP` …) once for both camps. Edit it,
+    run `node tests/rules-macros.js` (rewrites the R1 blocks in the JSON, leaves
+    every existing block byte-for-byte), and `rules.test.js` fails if the file
+    ever differs from the source — never hand-edit the R1 part of the JSON. The
+    existing blocks stay hand-written. A later rules change still goes through
+    the Appendix E runbook, and the repo file and the console change together.
+  - **The ONE anonymous-read path in either camp: `<root>/revealPublic/.read:
+    true`** (owner's answer of 2026-10-27: the big-screen page has no sign-in).
+    `.read` cascades DOWN only, so `<root>`, `state`, `members`, `chat`,
+    `revealFull` … still need membership; `rules.test.js` pins that this is the
+    only `true` read and that every other read and write mentions `auth != null`;
+    nothing under `$mode` re-grants one. It holds only what the camp already
+    saw on the big screen (the ctl, and one group per revealed place), bounded
+    by the rules' shape (g0–g5, t0–t5, names ≤ 30, no member key or counselor
+    name field exists). `revealFull` (the complete order, editor-only) keeps an
+    unrevealed place out of the public node; a group can't even be written
+    before its place is shown. **KILL SWITCH, one line**: change
+    `revealPublic/.read` from `true` to the `MEMBER` expression (`setup/.read`
+    spells it out) and publish through the runbook; phones and remotes carry on,
+    the big screen shows Waiting. Rules can't limit connections (Spark allows
+    100 at once): the TV page must hold its connection only while visible (Step 23).
+  - **Q8 owner-only acts** (no new role; the member record's shape is
+    untouched): `setup/meta/on/<section>`, `setup/meta/{epoch,epochAt}` and
+    `state/meta/{epoch,epochAt}`, every `setup/meta/wizard` leaf, and the
+    `archive` / `pre-wizard` restore kinds compare the caller to ONE literal
+    (`OWNER` = `SELF('patricksimpson,fx@gmail,com')`, the members-immutability
+    literal; `rules.test.js` pins all three agree). Each sits on a LEAF
+    (never a branch node, so nothing depends on how rules compare whole
+    branches), and `OWNERKEEP` lets any whole-node write carry an existing value
+    unchanged. A phone sign-in is never the owner. **Recorded, not assumed
+    (emulator, 2026-11-02): a non-owner director's DELETE of `on/<s>`, an epoch
+    key or the wizard claim is ALLOWED** — `.validate` is not evaluated for a
+    delete and the node's `.write` is editor-only (setup-rebuild-spec §1.4 limit
+    b). Pinned by `owner-only.mjs` so a change is noticed.
+  - **Anchors, not a hope about ancestors.** Every block field carries
+    `ANCHOR` (typical, dayBlocks) or `PANCHOR` (patches: a typical block that
+    exists, on a day whose `typical` is true; the patch `teams` leaf is the
+    same FOUR-parent expression, never five), so a field write into a deleted
+    record is refused whether or not ancestor `.validate` runs. **Recorded
+    (emulator, 2026-11-02): the emulator DOES evaluate ancestor `.validate` on a
+    deeper write** — `campScoreboard/state/zzz-probe/x = 1` is DENIED by
+    `state/$other:false` — which contradicts the "known hole" note below (observed
+    on the live database). `ancestor-validate.mjs` proves the anchors alone
+    refuse those writes with every record-level validate stripped, so R1 is
+    correct under either answer; the LIVE probe is still run once before the
+    paste (checklist) and its answer recorded here.
+  - **Behaviour is proven in the emulator** (opt-in; needs npm + Java; see
+    `tests/emulator/README.md`; `npm run test:r1`): `compat-old-client`
+    (26 operations of a v183–v196 client replayed on both rulesets, identical and
+    accepted), `compat-new-client-old-rules` (new nodes refused cleanly before,
+    accepted after; everyday traffic identical; a denied `setup` listener
+    never hurts the `state` one), `setup` (the seeded week of BOTH camps built
+    from camps.js, junior's Tue/Thu/Fri patches included; anchors, stamps, shapes),
+    `restore`, `campers`, `access-requests`, `editors-here`, `teams-fields`,
+    `brackets4`, `owner-only`, `reveal` (the public path's first proof: anonymous
+    read, shape, compare-and-set races, delete-only-after-`until`, practice
+    isolation) and `ancestor-validate`: 243 cases, all SAFE. They were
+    mutation-checked: weakening any one clause (the ended guard, the shown
+    clause, the delete guard, `revealFull` read, the seq/`ca` checks, the
+    joinOpen, pin, owner, anchor, patch-anchor, campers and photo clauses) turns
+    a suite red. The seed they use is a fixture (`tests/emulator/camp-data.mjs`,
+    rules of setup-rebuild-spec §10.2), until Step 15's real `buildSeed`.
+  - **Size**: 158 KB as committed (129 KB minified) for both camps, above the
+    spec's ≈110 / 82 KB estimate; `rules.test.js` budgets 192 KiB / 160 KiB.
+    Confirm the console accepts it at Step 11: a PUT over the limit is refused
+    and leaves the old rules live, and the fallback is the split of
+    setup-rebuild-spec §8.6 (R1a: state/teams/meta amendments, `setup`, restore
+    points, `editorsHere`, the reveal blocks; R1b: `campers`, `teamPhotos`,
+    `accessRequests`, `accessBlocked`).
+  - **R1 checklist (Step 11 fills the results; the file hash prefix to verify is
+    in the Step 10 commit message — recompute with
+    `sha256sum database.rules.json | cut -c1-8` after ANY edit):**
+    1. back up the live rules (runbook block 1); confirm the hash prefix.
+    2. publish (block 2); the console accepted the size: ______
+    3. read-back equals the file (block 3): ______
+    4. unauthenticated probes on both roots: all `Permission denied` EXCEPT
+       `GET <root>/revealPublic`, which says `null` (and its PUT, plus
+       `revealFull`, still denied): ______
+    5. discriminating checks (block 4): the owner reads `setup/meta` and
+       `campers` ALLOWED on both roots; a test counselor `campers` DENIED,
+       `setup` ALLOWED, a write to `editorsHere/<own key>/<id>` DENIED; a
+       non-member test account denied everywhere; **another director**
+       `set(false)` at `<root>/setup/meta/on/schedule` DENIED (as the owner it is
+       allowed — `.remove()` it at once): ______
+    6. the LIVE ancestor-validate probe: an editor writes
+       `campScoreboard/state/zzz-probe/x = 1` — refused ⇒ ancestors are
+       evaluated, accepted ⇒ the "known hole" below is right (delete the stray
+       at once; old builds ignore unknown state keys): ______
+    7. the live regex check: the owner writes a 100,000-character PNG data URL
+       to `<root>/teamPhotos/t0` and deletes it; if the live evaluator refuses
+       it, `teamPhotos/data` falls back to the prefix check plus
+       `!contains('"')`, `!contains('<')`, `!contains(' ')` (setup-rebuild-spec
+       §8.2): ______
+    8. a quick glance at the Firebase console's connections graph on the first
+       real reveal night (Step 23).
 - **Presence is keyed by member** (`presence/<memberKey>/<deviceId>`, changed
   2026-07-26). It used to be a flat caller-chosen UUID, which meant any member
   could overwrite or delete any OTHER member's row and mint unlimited rows; the
@@ -1212,7 +1342,10 @@ rules**; the client code only shapes the UI.
   `state/<unknown>/<child>` still passes, because `$other` is an ancestor of
   that path and RTDB never evaluates ancestor `.validate`. Closing it means
   moving `.write` onto each of the twelve children — all-or-nothing, and not
-  worth it against a threat model of a few known directors.
+  worth it against a threat model of a few known directors. (R1 adds
+  `brackets4` to the allowed keys ahead of its client, Step 22, and the
+  emulator DENIES that stray write — it does evaluate ancestors; whether the
+  live database does is the open probe in the R1 checklist.)
 - **`config` IS sealed** (`$other: false`, 2026-07-26 — the live node was read
   and holds exactly the five keys). Safe even if a stray ever appears, because
   `pushConfig` is a whole-node `set()` of `configForSync()` output: the write

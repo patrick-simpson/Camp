@@ -3690,6 +3690,14 @@ unauthenticated probes that say `Permission denied` under the old and new rules 
   10 minutes and paste block 1 again").
 - **A check only the new rules pass** is run in the browser afterwards (block 4).
 
+**As built (BUILD-PLAN Step 10, 2026-11-02).** The rules file is written and proven in the emulator
+(`tests/emulator/`, `npm run test:r1`; CLAUDE.md "R1"). Its `sha256` prefix, to compare in block 1 and
+set as `EXPECT` in block 2, is **`6b2a1c96`** (158,447 bytes; recompute with
+`sha256sum database.rules.json | cut -c1-8` after ANY edit to the file, and quote it in the commit
+message). The source of the R1 blocks is `tests/rules-macros.js`. Three things only the live database can
+answer are added below (block 4b): the ancestor-validate probe, a 100,000-character team photo, and the
+size. The **kill switch** for the one public path is block 5.
+
 **Block 1 — back up and fetch** (Google Cloud Shell, already signed in to gcloud):
 ```
 DB=https://camp-89cea-default-rtdb.firebaseio.com
@@ -3740,6 +3748,41 @@ Signed in as **you** (an editor): all four lines `ALLOWED` — under the old rul
 `DENIED` (decision Q8; if you run it as yourself it is allowed, so `.remove()` it straight away).
 Signed in as **a non-member test account**: all `DENIED`. Record
 the results in CLAUDE.md's R1 checklist (§8.9).
+
+**Block 4b — what only the live evaluator can answer** (same browser console and `db` as block 4,
+signed in as the owner; each deletes its own scratch write):
+```js
+// the ancestor-validate probe: REFUSED => ancestors ARE evaluated (the emulator says so); ACCEPTED =>
+// CLAUDE.md's "known hole" is real (the stray is removed at once; old builds ignore unknown state keys)
+db.ref('campScoreboard/state/zzz-probe/x').set(1).then(
+  () => { console.log('ACCEPTED'); return db.ref('campScoreboard/state/zzz-probe').remove(); },
+  (e) => console.log('REFUSED', e.code));
+// a 100,000-character team photo (22 + 99,978): the full-charset regex at its cap. REFUSED => fall back to the
+// prefix check + !contains('"') / '<' / ' ' for teamPhotos/data (§8.2) and re-publish
+db.ref('campScoreboard/teamPhotos/t0').set({ v: 1, data: 'data:image/png;base64,' + 'A'.repeat(99978) }).then(
+  () => { console.log('ACCEPTED'); return db.ref('campScoreboard/teamPhotos/t0').remove(); },
+  (e) => console.log('REFUSED', e.code));
+```
+Record both answers, and whether block 2 accepted the file's size (158 KB as committed, 129 KB minified;
+a refusal leaves the old rules live and means the R1a / R1b split of §8.6), in CLAUDE.md's R1 checklist.
+
+**Block 5 — the kill switch for the public reveal read** (only if the Firebase usage graph ever shows
+polling of `revealPublic`; one value, both roots; phones and remotes carry on, the big screen shows
+"Waiting" until it is switched back). `setup/.read` is exactly the member expression `MEMBER(R)`:
+```
+python3 - <<'EOF'
+import json
+r = json.load(open('rules.json'))
+for root in ('campScoreboard', 'seniorScoreboard'):
+    r['rules'][root]['revealPublic']['.read'] = r['rules'][root]['setup']['.read']
+json.dump(r, open('rules-killswitch.json', 'w'), indent=2)
+EOF
+curl -s -X PUT -H "Authorization: Bearer $TOKEN" --data-binary @rules-killswitch.json "$DB/.settings/rules.json"
+curl -s "$DB/campScoreboard/revealPublic.json"      # now says Permission denied
+```
+Mirror the same one-line change into `tests/rules-macros.js` (`'.read': true` becomes `MEMBER`) and the repo file
+in the same commit, or the two drift; `rules.test.js` will say so (its "only anonymous read" pin is the line to
+update on purpose). To switch it back, run block 2 with the original `rules.json`.
 
 **Order within a stage:** (1) a rules-only commit (`database.rules.json`, `tests/rules.test.js`,
 emulator suites; no `?v=` bump; the browser never loads the rules file; the commit message states

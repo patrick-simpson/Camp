@@ -856,6 +856,14 @@ written in BUILD-PLAN Step 10) must prove every clause before the publish. Its c
   key refused.
 - A practice write leaves `real` byte-identical.
 
+**Run 2026-11-02 (BUILD-PLAN Step 10).** The rules above are now in `database.rules.json`
+(generated from `tests/rules-macros.js`) and `tests/emulator/reveal.mjs` runs every case in this list, for
+both camps: 41 cases, all pass, and each clause turns the suite red when weakened (the `ended` guard,
+the `shown` clause, the delete guard, the `seq` and `ca` checks, a public `revealFull`). Two details the
+emulator settled: a leaf write that carries a value unchanged passes `SELFKEEP` (so a second director may
+re-write `revealFull/<mode>/startedBy` with the SAME key, never with a different one), and a ctl command
+that does not grow `shown` must carry the old `sa` (the suite checks both a moved and a stale `sa`).
+
 Publish order: the rules go out in P2's R1 PUT (same runbook, Appendix E there), before any client
 that writes them. That runbook's probe block gains the public path's checks: an unauthenticated
 read of `<root>/revealPublic` answers `null` (the one deliberate exception, and, because the old
