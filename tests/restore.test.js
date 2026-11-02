@@ -267,6 +267,24 @@ test('an automatic point is taken before the first setup commit after 20 idle mi
   } finally { rsTeardown(); }
 });
 
+test('a point in flight blocks a second automatic one (an import\'s pre-import point, then the setup commit that follows it), and a refused write gives the slot back', async () => {
+  const db = await rsSetup();
+  try {
+    const p = restoreSave('pre-import', 'Before importing a backup');
+    assert.equal(rpLastAt > 0, true, 'claimed at once, before the write is acknowledged');
+    rsToasts(() => commitSetup((d) => { d.typical['b-swim-900'].start = 870; }, { label: 'x', undo: false }));
+    await p;
+    await rsWait(20);
+    assert.deepEqual(Object.values(rsIndex(db)).map((r) => r.kind), ['pre-import'], 'no automatic point on top of it');
+    // A refused write (here: the rules say no) hands the slot back.
+    rpLastAt = 0;
+    db.refuse(RS_ROOT + '/restoreIndex');
+    const r = await restoreSave('manual', 'Refused');
+    assert.equal(r.reason, 'refused');
+    assert.equal(rpLastAt, 0);
+  } finally { rsTeardown(); }
+});
+
 test('offline: a point that cannot be written in 4 s goes to the outbox (<= 3, newest kept), the action proceeds, and it is sent once on reconnect', async () => {
   const db = await rsSetup();
   try {

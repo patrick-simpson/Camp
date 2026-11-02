@@ -1194,6 +1194,9 @@ function retrySetupQuarantine() {
     paths.forEach((p) => { back[p] = setupValueAt(setupBase, p); });
     setupLast = setupCanon(applySyncPaths(setupLast, back));
   }
+  // "Rules not published": no path was parked (there would have been dozens), so everything this phone changed
+  // since the server last confirmed is still unsent. Measure the next push from there.
+  if (setupWriteRefused && setupBase) setupLast = setupClone(setupBase);
   setupQuarantine = {};
   setupWriteRefused = false;
   setupQuarantineChanged();
@@ -1302,6 +1305,7 @@ function setupSyncLine() {
   if (fbConnKnown && !fbConnected) {
     return { tone: 'offline', text: unsent ? `Offline — ${unsent} change${unsent === 1 ? '' : 's'} will save when you’re back` : 'Offline — changes will save when you’re back', act: '' };
   }
+  if (setupRef && !setupReady) return { tone: 'saving', text: 'Connecting…', act: '' }; // the first pull hasn't landed: "Saved" would be a guess
   const parked = setupParkedCount();
   if (parked) return { tone: 'error', text: `Couldn’t save ${parked === 1 ? setupParkedWords() : parked + ' changes'}`, act: 'details' };
   if (setupPending > 0 || setupPushTimer != null || setupBisecting) return { tone: 'saving', text: 'Saving…', act: '' };
@@ -1561,13 +1565,17 @@ async function restoreSave(kind, label, opts) {
     try { if (restoreRetentionPlan(await restoreList()).manualFull) return refuse('manual-full'); } catch (e) { /* can't tell: let the write decide */ }
   }
   if (o.requireOnline && !restoreOnline()) return refuse('offline');
+  // This device now has a point in flight: a second automatic one must not follow it (an import's pre-import
+  // point and the setup commit that comes right after it). Given back if the write comes to nothing.
+  const prevAt = rpLastAt;
+  rpLastAt = Date.now();
   let write;
   try {
     write = restoreRootRef().update({
       ['restoreIndex/' + rid]: Object.assign({ at: firebase.database.ServerValue.TIMESTAMP, byKey: key }, row),
       ['restoreBody/' + rid]: str,
     });
-  } catch (e) { return refuse('refused'); }
+  } catch (e) { rpLastAt = prevAt; return refuse('refused'); }
   const result = await Promise.race([
     write.then(() => 'ok', (e) => ({ error: e })),
     new Promise((resolve) => setTimeout(() => resolve('slow'), rpWaitMs)),
@@ -1579,11 +1587,12 @@ async function restoreSave(kind, label, opts) {
     return { ok: true, rid, kind };
   }
   if (result === 'slow') {
-    if (o.requireOnline) return refuse('offline');
+    if (o.requireOnline) { rpLastAt = prevAt; return refuse('offline'); }
     rpOutboxAdd({ rid, row, body: str });
     write.then(() => { rpOutboxDrop(rid); }, () => {});
     return { ok: true, rid, kind, queued: true };
   }
+  rpLastAt = prevAt;
   return refuse('refused', { code: result.error && result.error.code });
 }
 

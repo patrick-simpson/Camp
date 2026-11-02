@@ -821,6 +821,16 @@ test('if EVERY path of a batch is refused, the rules are not published: editing 
     assert.equal(line.text, 'Editing the week here isn’t available yet — the database rules haven’t been updated');
     assert.equal(commitSetup((d) => { d.meta.weekStart = '2027-08-01'; }, {}).reason, 'loading', 'no more edits are taken');
     assert.equal(syncDenied, false, 'it never touches the state engine\'s terminal flag');
+    // Once the owner publishes the rules, Retry sends everything that was waiting.
+    db.allow(SS_PATH);
+    assert.equal(retrySetupQuarantine(), true);
+    await ssWait(400);
+    assert.equal(setupWriteRefused, false);
+    const sv = db.serverGet(SS_PATH);
+    assert.equal(sv.typical['b-swim-900'].start, 870);
+    assert.equal(sv.meals.mon.lunch.dish, 'Tacos');
+    assert.equal(sv.meta.weekStart, '2027-07-25');
+    assert.equal(setupSyncLine().tone, 'saved');
   } finally { ssTeardown(); }
 });
 
@@ -1043,6 +1053,17 @@ test('the sync line speaks in five tones, offline and refused never in the same 
   } finally { fbConnKnown = false; fbConnected = false; sdkLoadFailed = false; ssTeardown(); }
 });
 
+test('the sync line does not say "Saved" before the first pull has landed', async () => {
+  const db = await ssSetup(ssTree(), { hold: true });
+  fbConnKnown = true; fbConnected = true;
+  try {
+    assert.deepEqual(setupSyncLine(), { tone: 'saving', text: 'Connecting…', act: '' });
+    db.deliverFirstSnapshots();
+    await ssWait(5);
+    assert.equal(setupSyncLine().tone, 'saved');
+  } finally { fbConnKnown = false; fbConnected = false; ssTeardown(); }
+});
+
 test('engine events: a UI layer hears tree, commit and sync changes, and a listener that throws never stops the engine', async () => {
   const db = await ssSetup(ssTree());
   const heard = [];
@@ -1064,6 +1085,27 @@ test('engine events: a UI layer hears tree, commit and sync changes, and a liste
     ssToasts(() => commitSetup((d) => { d.typical['b-swim-900'].start = 880; }, { label: 'x' }));
     assert.equal(heard.length, n, 'unsubscribed');
   } finally { console.warn = warn; ssTeardown(); }
+});
+
+test('the app runs exactly as before when setup-sync.js never loaded: every hook in app.js is typeof-guarded', () => {
+  const vm = nodeRequire('vm');
+  const { makeContext } = nodeRequire('./harness.js');
+  let boot;
+  assert.doesNotThrow(() => { boot = makeContext({ camp: CAMP.id, without: ['setup-sync.js'] }); }, 'the page loads without it');
+  const run = (expr) => vm.runInContext(expr, boot.ctx);
+  assert.equal(run("typeof setupOn"), 'undefined', 'it really is absent');
+  assert.doesNotThrow(() => run(`
+    setMemberRole('editor');
+    renderAll(); updateSyncIndicator(); updateSyncAlert();
+    pendingWritesTotal(); reloadBlocked(); hasUnsyncedWork(); hasUnconfirmedLocalWork(); editorMidEntry();
+    flushPendingPush(); idleRetryTick(); armIdleRetry(); idleRetryTick();
+    decideTabWriter(true); decideTabWriter(false);
+    setMemberRole('viewer'); setMemberRole(null);
+    clearLocalData();
+    onSyncStatusClick({ target: { closest: () => null } });
+  `), 'every guarded call site tolerates the missing engine');
+  assert.equal(run('pendingWritesTotal()'), 0);
+  assert.equal(run('hasUnconfirmedLocalWork()'), false);
 });
 
 test('a node written by a NEWER build is recognised, so readers fall back instead of guessing', async () => {
