@@ -335,7 +335,7 @@ test('the view-only bar says so and offers the switch; the strip carries it for 
   t.run('updateSyncAlert()');
   const el = t.run("document.getElementById('sync-alert')");
   assert.equal(el.hidden, false);
-  assert.ok(/another tab/.test(el.innerHTML) && /view-only/.test(el.innerHTML), 'the sentence');
+  assert.ok(/another tab/i.test(el.innerHTML) && /view-only/i.test(el.innerHTML), 'the sentence');
   assert.ok(/data-tab-claim/.test(el.innerHTML) && /Use this tab instead/.test(el.innerHTML), 'the button');
   assert.ok(/Editor \(view-only tab\)/.test(t.run("(updateAccountRow(), document.getElementById('account-label').textContent)")), 'the account row names it');
   // a tap on the button asks the claim; a tap on anything else does not
@@ -369,10 +369,16 @@ test('Use this tab instead: steal, the old tab stops persisting BEFORE it flushe
   const atDemotion = a.storedRaw();
   assert.equal(tlUpdates(db).length, 0, 'queued, not yet sent');
 
+  // Make the order observable: what does pushState see of the write lock when the
+  // demoted tab flushes? (Swapping the flush ahead of the demotion would let its
+  // ack, and anything else it does on the way out, write the cache as a writer.)
+  a.run("window.__seen = []; { const real = pushState; pushState = function () { window.__seen.push(tabWriter); return real.apply(this, arguments); }; }");
+
   // B: the button.
   b.run('claimWriterTab()');
   await tlFlush();
   assert.equal(b.sandbox.__reloads, 1, 'the claiming tab reloads to re-adopt from the cache and the server');
+  assert.deepEqual(a.run('window.__seen'), [false], 'the flush ran AFTER tabWriter was set to false, and only once');
   assert.equal(a.run('tabWriter'), false, 'the old tab was told its lock is gone');
   assert.equal(a.run('canEdit()'), false);
   assert.equal(tlUpdates(db).length, 1, 'it flushed the queued push on the way out');
@@ -460,6 +466,199 @@ test('BroadcastChannel fallback: a newcomer asks, the writer answers, the claim 
   assert.equal(a.run('tabWriter'), false, 'the claim turned the old writer read-only');
   assert.equal(b.sandbox.__reloads, 1, 'and the claimant reloads once it has let go');
   a.run('tabBecomeViewer()'); // (leaves the channel registry tidy for the next case)
+});
+
+test('a snapshot is not adopted over a push an undecided tab is holding (state AND config)', async () => {
+  const mgr = tlLocks({ deferAnswers: true });
+  const db = makeFakeRtdb();
+  const t = tlTab({ locks: mgr, clock: true });
+  t.run("setMemberRole('editor')");
+  await tlFlush();
+  await tlConnect(t, db);
+  t.run("fbConfigRef = __db.ref(dbPath('config')); configReady = true");
+  assert.equal(t.run('editorMidEntry() || canAdoptRemote() === false'), false, 'quiet to start with');
+  // Only the held flag may be what keeps adoption away: no pending edit, no timers.
+  t.run('dataEditPending = false; pushTimer = null; pushConfigTimer = null; pushState()');
+  assert.equal(t.run('tabHeldState'), true, 'the state push was held');
+  assert.equal(t.run('editorMidEntry()'), true, 'a held state push is unsent work');
+  assert.equal(t.run('canAdoptRemote()'), false, 'so a snapshot is deferred, not adopted over it');
+  t.run('deferRemoteSnapshot()');
+  assert.equal(t.run('remoteRefetchPending'), true, 'and owed as a re-read');
+  t.run('tabHeldState = false');
+  assert.equal(t.run('editorMidEntry()'), false);
+  t.run('pushConfig()');
+  assert.equal(t.run('tabHeldConfig'), true, 'the config push was held');
+  assert.equal(t.run('editorMidEntry()'), true, 'a held config push is unsent work too');
+  assert.equal(t.run('canAdoptRemote()'), false);
+  assert.equal(db.log.length, 0, 'nothing reached the database while undecided');
+  mgr.answerNext();
+  await tlFlush();
+  await t.clock.advance(500);
+  await tlRealWait(5);
+  assert.equal(t.run('tabWriter'), true);
+  assert.equal(t.run('tabHeldConfig'), false, 'the held config push was re-armed on the yes');
+  assert.ok(db.serverTree()[CAMP.dbRoot].config, 'and the week config reached the server');
+});
+
+test('a week-config edit follows the same gate: held while undecided, never sent by a read-only tab', async () => {
+  // Undecided, then read-only: the config set() must not go out at all.
+  const mgr = tlLocks();
+  mgr.otherPageHolds();
+  const db = makeFakeRtdb();
+  const t = tlTab({ locks: mgr, clock: true });
+  t.run("setMemberRole('editor')");
+  await tlFlush();
+  await tlConnect(t, db);
+  t.run("fbConfigRef = __db.ref(dbPath('config')); configReady = true; pushConfig()");
+  assert.equal(db.log.length, 0, 'held while the answer is out');
+  assert.equal(t.run('tabHeldConfig'), true);
+  await t.clock.advance(1500);
+  await tlRealWait(5);
+  assert.equal(t.run('tabWriter'), false);
+  // The demotion flush sends what was held (an edit typed in the first second is the person's) ...
+  assert.equal(db.log.filter((l) => l.kind === 'set').length, 1, 'the held config edit is sent on the way to read-only');
+  const sent = db.log.length;
+  // ... and from then on a read-only tab sends no config at all.
+  t.run('pushConfig(); schedulePushConfig()');
+  await t.clock.advance(1000);
+  await tlRealWait(5);
+  assert.equal(db.log.length, sent, 'a view-only tab never pushes the week config');
+  assert.equal(t.run('tabHeldConfig'), false, 'and holds nothing');
+});
+
+test('a Web Locks request that never answers fails open after 4 s (the tab is not stuck undecided)', async () => {
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const db = makeFakeRtdb();
+    const t = tlTab({ locks: { request: () => new Promise(() => {}) }, clock: true });
+    t.run("setMemberRole('editor')");
+    await tlFlush();
+    await tlConnect(t, db);
+    t.run('state.results.g1 = ' + JSON.stringify(tlRes(1)) + '; touchData(); saveState(); flushPendingPush()');
+    assert.equal(t.run('tabWriter'), null, 'undecided while the request is out');
+    assert.equal(t.run('editorMidEntry()'), true);
+    await t.clock.advance(3999);
+    assert.equal(t.run('tabWriter'), null, 'not before the deadline');
+    await t.clock.advance(1);
+    assert.equal(t.run('tabWriter'), true, 'then it writes as before, no lock');
+    assert.equal(t.run('canEdit()'), true);
+    assert.ok(t.stored().results.g1, 'the owed cache write was made');
+    await t.clock.advance(500);
+    await tlRealWait(5);
+    assert.ok(db.serverTree()[CAMP.dbRoot].state.results.g1, 'and the held push went out');
+  } finally { console.warn = warn; }
+});
+
+test('the watchdog is per ask: a "no" answer cancels it, and a late grant after failing open lets go', async () => {
+  // A held-by-another answer arrives promptly; the 1.5 s retry loop (not the 4 s
+  // watchdog) decides, and 4 s later nothing flips the tab back.
+  const mgr = tlLocks();
+  mgr.otherPageHolds();
+  const t = tlTab({ locks: mgr, clock: true });
+  t.run("setMemberRole('editor')");
+  await tlFlush();
+  await t.clock.advance(1500);
+  assert.equal(t.run('tabWriter'), false);
+  await t.clock.advance(10000);
+  assert.equal(t.run('tabWriter'), false, 'the watchdog did not fire after a real answer');
+
+  // A request that is granted only AFTER the watchdog failed the tab open releases at once.
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    let grant = null;
+    const late = { request: (name, o, cb) => new Promise((resolve) => { grant = () => Promise.resolve(cb({ name })).then(resolve); }) };
+    const u = tlTab({ locks: late, clock: true });
+    u.run("setMemberRole('editor')");
+    await tlFlush();
+    await u.clock.advance(4000);
+    assert.equal(u.run('tabWriter'), true, 'failed open');
+    grant();
+    await tlFlush();
+    assert.equal(u.run('tabLockRelease'), null, 'the late lock was not kept (no second, conflicting decision)');
+    assert.equal(u.run('tabWriter'), true);
+  } finally { console.warn = warn; }
+});
+
+test('Use this tab instead needs a connection: offline it says so and steals nothing', async () => {
+  const mgr = tlLocks();
+  mgr.otherPageHolds();
+  const t = tlTab({ locks: mgr, clock: true });
+  t.run("setMemberRole('editor')");
+  await tlFlush();
+  await t.clock.advance(1500);
+  assert.equal(t.run('tabReadOnly()'), true);
+  const asked = mgr.calls.length;
+  t.run("window.__toast = null; showToast = (m) => { window.__toast = m; }");
+  t.sandbox.navigator.onLine = false;
+  t.run('claimWriterTab()');
+  await tlFlush();
+  assert.ok(/connection/i.test(t.run('window.__toast') || ''), 'a toast names why');
+  assert.equal(mgr.calls.length, asked, 'the lock was not stolen');
+  assert.equal(t.sandbox.__reloads, 0, 'and the page did not reload into an error page');
+  assert.equal(t.run('tabReadOnly()'), true, 'still a working (view-only) page');
+  t.sandbox.navigator.onLine = true;
+  t.run('claimWriterTab()');
+  await tlFlush();
+  assert.equal(t.sandbox.__reloads, 1, 'back online it goes ahead');
+});
+
+test('a view-only director tab: chat follows the member role (a hidden Chat card still opens for a director)', async () => {
+  const mgr = tlLocks();
+  mgr.otherPageHolds();
+  const t = tlTab({ locks: mgr, clock: true });
+  t.run("setMemberRole('editor')");
+  await tlFlush();
+  await t.clock.advance(1500);
+  assert.equal(t.run('canEdit()'), false);
+  t.run("state.meta.hiddenCards = { chat: true }");
+  assert.equal(t.run('chatHiddenFromMe()'), false, 'the card is drawn for a director, so a tap must open it');
+  t.run("openChat('general')");
+  assert.equal(t.run('state.ui.chatOpen'), true, 'chat opens in the view-only tab');
+  t.run('closeChat && closeChat()');
+  // a real viewer, same hidden card: refused (unchanged)
+  const v = tlTab();
+  v.run("setMemberRole('viewer'); state.meta.hiddenCards = { chat: true }");
+  assert.equal(v.run('chatHiddenFromMe()'), true);
+  v.run("openChat('general')");
+  assert.equal(!!v.run('state.ui.chatOpen'), false);
+});
+
+test('a view-only tab shows a parked change without Retry / Discard, and those do nothing there', async () => {
+  const mgr = tlLocks();
+  mgr.otherPageHolds();
+  const t = tlTab({ locks: mgr, clock: true });
+  t.run("setMemberRole('editor')");
+  await tlFlush();
+  await t.clock.advance(1500);
+  t.run("stateQuarantine = { 'results/g1': { medals: { gold: 't0' } } }");
+  assert.ok(!/data-sync-quarantine/.test(t.run('quarantineLineHtml()')), 'no buttons in a read-only tab');
+  assert.ok(/couldn’t be saved/.test(t.run('quarantineLineHtml()')), 'but the line still says so');
+  t.run("fbRef = {}; remoteReady = true; window.__confirms = 0; confirm = () => { window.__confirms++; return true; }");
+  t.run('retryQuarantined(); discardQuarantined()');
+  assert.equal(Object.keys(t.run('stateQuarantine')).length, 1, 'the parked path is still parked (the writer tab owns it)');
+  assert.equal(t.run('window.__confirms'), 0, 'nothing even asked');
+  // an editor that can write gets them
+  const w = tlTab();
+  w.run("setMemberRole('editor'); stateQuarantine = { 'results/g1': { medals: { gold: 't0' } } }");
+  assert.ok(/data-sync-quarantine=\"retry\"/.test(w.run('quarantineLineHtml()')), 'a writer still has Retry');
+});
+
+test('html.standings-shown follows standingsVisible(), so a director\'s view-only tab does not show the sync line twice', async () => {
+  const mgr = tlLocks();
+  mgr.otherPageHolds();
+  const flag = (tab) => tab.run("(window.__cls = {}, document.documentElement.classList.toggle = (c, on) => { window.__cls[c] = on; }, applyCardVisibility(), window.__cls['standings-shown'])");
+  const t = tlTab({ locks: mgr, clock: true });
+  t.run("setMemberRole('editor')");
+  await tlFlush();
+  await t.clock.advance(1500);
+  assert.equal(t.run('canEdit()'), false);
+  assert.equal(flag(t), true, 'a view-only director has the Current Standings card, which carries the line');
+  const v = tlTab();
+  v.run("setMemberRole('viewer')");
+  assert.equal(flag(v), false, 'a counselor has no card, so the footer line is theirs');
+  assert.ok(/html\.view-only:not\(\.standings-shown\) \.sync-status-footer/.test(readFixture('../styles.css')), 'and the footer rule keys off it');
 });
 
 test('persistence gate: the cache has exactly one writer in the source', () => {

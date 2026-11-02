@@ -454,13 +454,17 @@ What's covered, and why each file exists:
   with the real ifAvailable / steal / hold-until-unload semantics and a fake
   clock: no API fails open, viewers never lock, the lock name is per camp, the
   load-time migrate / a save / a first-snapshot adopt write nothing while
-  undecided (and are made once the answer is yes), a held push goes out, the
+  undecided (and are made once the answer is yes), a held push goes out (state
+  AND week config, and a held flag alone keeps a snapshot from being adopted), the
   250 ms × 1.5 s retry window then view-only, the reload-ordering case (the old
-  page holds the lock 800 ms), a throwing or rejecting API failing open, a viewer
-  flip releasing the lock, a confirmed role not restarting the election, a
-  view-only director still seeing standings but writing nothing, the bar, the
-  steal (old tab stops persisting before it flushes, an ack after demotion leaves
-  the cache alone, the claimant reloads, the next page is the writer), the
+  page holds the lock 800 ms), a throwing or rejecting API failing open, a
+  request that never answers failing open after 4 s, a viewer flip releasing the
+  lock, a confirmed role not restarting the election, a view-only director still
+  seeing standings (and opening a hidden Chat card) but writing nothing, the bar,
+  the steal (old tab stops persisting before it flushes — pinned by what
+  `pushState` sees of `tabWriter` — an ack after demotion leaves the cache alone,
+  the claimant reloads, offline it does not steal, the next page is the writer),
+  Retry / Discard absent from a read-only tab, `html.standings-shown`, the
   BroadcastChannel fallback, and the one-`setItem` source scan.
 - `sync-quarantine.test.js` (+ `.senior`, which evals the same file against
   `seniorScoreboard/state`) — "Refused writes" below, driven against
@@ -1375,18 +1379,36 @@ More sync invariants (each fixed after it bit us — don't regress these;
   - **View-only tab.** `canEdit()` is `memberRole === 'editor' && tabWriter !==
     false`, so every existing write gate holds and `html.view-only` paints. It is
     NOT a viewer for what it may SEE: `standingsVisible()`, the hide-from-viewers
-    card rule (`applyCardVisibility`) and the chat takeover's hidden-card check
-    read the member record's role (`memberRole`), so a director's second tab shows
-    every card and the standings (`ensureSecrecySeed` writes only when
-    `canEdit()`). A bar in the `#sync-alert` strip (never wanted at the
-    same time as a parked score, since a view-only tab cannot park one) says "This
-    camp is open in another tab — this one is view-only." with **Use this tab
-    instead**. A read-only tab never pushes (`tabMayPush`) and never asks for the
+    card rule (`applyCardVisibility`), `renderAll`'s chat takeover check AND
+    chat.js's `chatHiddenFromMe()` (the tap on the card) all read the member
+    record's role (`memberRole`), so a director's second tab shows every card and
+    the standings and opens chat even when it is hidden from viewers
+    (`ensureSecrecySeed` writes only when `canEdit()`). Any NEW "is this person a
+    viewer, for what they may see" test uses `memberRole`; `canEdit()` means "may
+    write" and is false in this tab. A bar in the `#sync-alert` strip (never wanted
+    at the same time as a parked score, since a view-only tab cannot park one) says
+    "View-only: another tab is editing." with **Use this tab instead** (kept to two
+    lines at 320px: the copy is short and `styles.css` drops both one step under
+    360px). A read-only tab never pushes (`tabMayPush`) and never asks for the
     lock again by itself (no auto-takeover: its in-memory copy is older than the
-    cache the writer kept).
+    cache the writer kept). A parked change loaded from the cache shows in its sync
+    line WITHOUT Retry / Discard (`quarantineLineHtml`; both functions also return
+    unless `canEdit()`): the writer tab owns it. The footer copy of the sync line
+    (`html.view-only`) is shown only while the Current Standings card is NOT on the
+    page — `applyCardVisibility` sets `html.standings-shown` from
+    `standingsVisible()`, so a director's view-only tab does not read it twice.
+  - **A lock request that never answers fails open.** Throw, rejection and a
+    missing API all fail open, but a request whose callback never runs would leave
+    `tabWriter` null for good (nothing cached, nothing pushed, every reload blocked
+    by the held flags, no error). Each ask gets a `TAB_ANSWER_MS` (4 s) watchdog,
+    cancelled when its callback runs (a held lock or a "no"), so it never cuts into
+    the 1.5 s retry window; if it fires, `tabFailOpen` decides and a lock granted
+    late is let go at once (`gaveUp`).
   - **Use this tab instead** = `navigator.locks.request(name, {steal: true})`
     and then `doReload()` to re-adopt from the cache and the server (a reload
-    first asks if `reloadBlocked()`). The old tab's lock promise rejects with
+    first asks if `reloadBlocked()`; OFFLINE it says "Needs a connection" and
+    steals nothing — the reload would fail into the browser's error page with the
+    lock already taken, leaving both tabs dead). The old tab's lock promise rejects with
     AbortError: it sets `tabWriter = false` FIRST (so nothing it does persists —
     an ack's `writeConfirmedTree` after demotion included), then
     `flushTabPushes()` sends what it had queued (the one time a read-only tab

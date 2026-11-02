@@ -193,6 +193,7 @@ let persistOwed = false;    // a cache write was asked for while undecided
 const TAB_RETRY_MS = 250;
 const TAB_RETRY_MAX = 6;    // 6 x 250 ms: a reloading page can still hold the lock for a moment
 const TAB_HELLO_MS = 300;   // fallback: how long a new tab waits for a writer's answer
+const TAB_ANSWER_MS = 4000; // a lock request whose callback never runs fails open after this long
 const TAB_ID = Math.random().toString(36).slice(2);
 
 function tabReadOnly() {
@@ -293,12 +294,26 @@ function startTabElection() {
   const locks = tabLocksApi();
   if (!locks) { tabFailOpen(run, null); return; }
   let retries = 0;
+  let gaveUp = false; // the watchdog already failed this election open
+  let watchdog = null;
   const attempt = () => {
     if (run !== tabElectionRun) return; // the role changed under the retry
+    // Throw, rejection and a missing API all fail open below, but a request whose
+    // callback NEVER runs would leave tabWriter null for good: the cache is never
+    // written, pushes hold forever and editorMidEntry blocks every reload — with
+    // no error shown. Each ask gets a deadline; failing open costs nothing here.
+    clearTimeout(watchdog);
+    watchdog = setTimeout(() => {
+      watchdog = null;
+      if (run !== tabElectionRun || tabWriter !== null) return;
+      gaveUp = true;
+      tabFailOpen(run, new Error('Web Locks did not answer'));
+    }, TAB_ANSWER_MS);
     let req;
     try {
       req = locks.request(tabLockName(), { ifAvailable: true }, (lock) => {
-        if (run !== tabElectionRun) return undefined; // stood down meanwhile: let the lock go
+        clearTimeout(watchdog); watchdog = null; // answered (a held lock or a "no"): the retry loop owns the clock now
+        if (run !== tabElectionRun || gaveUp) return undefined; // stood down (or failed open) meanwhile: let the lock go
         if (!lock) {
           // Another tab holds it — or a page that is reloading still does for a
           // moment (doReload / bfcache). Ask again before concluding.
@@ -310,8 +325,8 @@ function startTabElection() {
         decideTabWriter(true);
         return held;
       });
-    } catch (e) { tabFailOpen(run, e); return; }
-    if (req && typeof req.catch === 'function') req.catch((e) => onTabLockRejected(run, e));
+    } catch (e) { clearTimeout(watchdog); watchdog = null; tabFailOpen(run, e); return; }
+    if (req && typeof req.catch === 'function') req.catch((e) => { clearTimeout(watchdog); watchdog = null; onTabLockRejected(run, e); });
   };
   attempt();
 }
@@ -355,6 +370,10 @@ function tabFailOpen(run, e) {
 // copy is older than both, so it must never be the one that writes next.
 function claimWriterTab() {
   if (!tabReadOnly()) return;
+  // Offline, the reload below fails into the browser's error page (no service-worker
+  // fetch handler, and doReload's unique ?r= defeats the HTTP cache) — and the lock
+  // is stolen by then, so BOTH tabs would be unusable. Say so before stealing.
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) { showToast('Needs a connection to switch tabs. Try again when you are back online.'); return; }
   if (reloadBlocked() && !confirm('You have something unfinished here (an unsent message, a score being typed, or a running timer). Switch tabs anyway?')) return;
   if (tabChannel) {
     tabClaimPending = true;
@@ -384,7 +403,7 @@ function tabBecomeViewer() {
 
 // The view-only bar's copy (the sync-alert strip; see updateSyncAlert).
 function tabBarHtml() {
-  return '<span class="sync-alert-text">This camp is open in another tab — this one is view-only.</span>' +
+  return '<span class="sync-alert-text">View-only: another tab is editing.</span>' +
     '<button type="button" class="link-btn sync-quarantine-btn" data-tab-claim="1">Use this tab instead</button>';
 }
 
@@ -2843,6 +2862,10 @@ function applyCardVisibility() {
   // view-only tab still shows every card the first one does.
   const editor = memberRole === 'editor';
   const seeStandings = standingsVisible(); // the secret cards follow the confirmed role
+  // styles.css shows the footer sync line for a view-only device ONLY while the
+  // Current Standings card (which carries the same line) is not on the page — a
+  // director's view-only second tab has the card, and would read it twice.
+  document.documentElement.classList.toggle('standings-shown', seeStandings);
   HIDEABLE_CARDS.forEach((key) => {
     const hidden = cardHiddenFromViewers(key);
     const card = document.querySelector(`[data-card="${key}"]`);
@@ -4153,7 +4176,10 @@ function quarantineActionsHtml() {
 
 function quarantineLineHtml() {
   const n = Object.keys(stateQuarantine).length;
-  return `⚠️ ${n} change${n === 1 ? '' : 's'} couldn’t be saved: <em>${quarantineNames()}</em> ` + quarantineActionsHtml();
+  // No buttons for a tab that cannot write (a director's view-only second tab, a
+  // demoted phone): a parked path loaded from the cache belongs to the WRITER tab,
+  // and Retry / Discard here would only change this tab's memory.
+  return `⚠️ ${n} change${n === 1 ? '' : 's'} couldn’t be saved: <em>${quarantineNames()}</em>` + (canEdit() ? ' ' + quarantineActionsHtml() : '');
 }
 
 // The top bar's copy of it: one short row (the names truncate to the width).
@@ -4166,6 +4192,7 @@ function quarantineBarHtml() {
 // holds) and push now. What goes out is the CURRENT local value, which may have
 // moved on since the refusal. Refused again, it is simply parked again.
 function retryQuarantined() {
+  if (!canEdit()) return; // a read-only tab would clear its copy and push nothing: it would read as synced
   const paths = Object.keys(stateQuarantine);
   if (!paths.length) return;
   if (!fbRef || !remoteReady) { showToast('Not connected yet. Try again in a moment.'); return; }
@@ -4244,6 +4271,7 @@ function setStatePath(path, value) {
 // live state AND the diff baseline, so nothing is re-sent. Asked first — the
 // director typed those values.
 function discardQuarantined() {
+  if (!canEdit()) return; // see retryQuarantined
   const paths = Object.keys(stateQuarantine);
   if (!paths.length) return;
   if (!confirmedTree) { showToast('Not connected yet. Try again in a moment.'); return; }
@@ -4385,8 +4413,9 @@ function updateSyncAlert() {
 function updateSyncIndicator() {
   updateSyncAlert();
   // Two copies of the line: the one in the Current Standings card (directors)
-  // and a footer one that only view-only devices show (styles.css), because the
-  // standings card is not rendered for them any more (see "Standings secrecy").
+  // and a footer one that only view-only devices WITHOUT the standings card show
+  // (styles.css, html.standings-shown), because the card is not rendered for them
+  // any more (see "Standings secrecy").
   const els = ['sync-status', 'sync-status-footer'].map((id) => document.getElementById(id)).filter(Boolean);
   if (!els.length) return;
   const spinner = '<jelly-spinner type="dots" size="small" label="Connecting"></jelly-spinner> Connecting…';

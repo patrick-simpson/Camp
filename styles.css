@@ -1868,10 +1868,24 @@ html.calm-motion .back-pill-arrow { transition: none; }
   white-space: normal;
   line-height: 1.2;
   font-size: 0.8rem;
+  /* Two lines at most, clipped rather than spilling out of the fixed-height pill
+     (at 320px the button leaves the sentence a narrow column). */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 .sync-alert-tab .sync-quarantine-btn {
   flex: none;
   white-space: nowrap;
+}
+/* A 320px phone: the button leaves the sentence ~100px, which wrapped to three
+   lines (the third clipped). One step smaller on both keeps it to two. */
+@media (max-width: 359px) {
+  .sync-alert-tab .sync-alert-text,
+  .sync-alert-tab .sync-quarantine-btn {
+    font-size: 0.72rem;
+  }
 }
 /* Room for it above the first card (the reserve matches the bar: 8px + 2.9rem
    + a breath). Not in the builder / chat takeovers, which hide the page's
@@ -1881,7 +1895,9 @@ body.has-sync-alert:not(.builder-open):not(.chat-open) .main-wrap {
 }
 
 /* The same line under the cards, for view-only devices: the Current Standings
-   card that carries it for directors is not rendered for them. The builder and
+   card that carries it for directors is not rendered for them. A director's
+   view-only SECOND tab does render the card (app.js applyCardVisibility sets
+   html.standings-shown), so it must not show the line twice. The builder and
    chat takeovers hide the footer, so they hide this too. */
 .sync-status-footer {
   display: none;
@@ -1890,7 +1906,7 @@ body.has-sync-alert:not(.builder-open):not(.chat-open) .main-wrap {
   padding: 0 1rem;
   text-align: center;
 }
-html.view-only .sync-status-footer {
+html.view-only:not(.standings-shown) .sync-status-footer {
   display: block;
 }
 body.builder-open .sync-status-footer,

@@ -812,7 +812,11 @@ function chatOpenNow() {
 }
 
 function chatHiddenFromMe() {
-  return !canEdit() && typeof cardHiddenFromViewers === 'function' && cardHiddenFromViewers('chat');
+  // The member record's ROLE, not canEdit() (which is also false in a director's
+  // view-only second tab): this is a question about what I may SEE, and it must
+  // answer exactly as app.js's renderAll / applyCardVisibility do, or the card is
+  // drawn but a tap on it does nothing.
+  return memberRole !== 'editor' && typeof cardHiddenFromViewers === 'function' && cardHiddenFromViewers('chat');
 }
 
 function openChat(ch) {
