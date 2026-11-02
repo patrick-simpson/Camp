@@ -515,7 +515,14 @@ body {
      inherited text mid-fade against cards that had already flipped (white on
      white for ~100ms), and made the pre-module -> Jelly token landing a visible
      fade. Never put one back. */
+  /* CLIP, not hidden: `hidden` on body (with html's own overflow-x set, so
+     body's is not handed to the viewport) made body a scroll container that
+     never scrolls, and every position: sticky inside it — the app header, the
+     setup head — stuck to THAT and scrolled away with the page. `clip` cuts
+     the Jelly canvas bleed the same way without becoming a scroller.
+     `hidden` stays first as the fallback where clip is unknown. */
   overflow-x: hidden;
+  overflow-x: clip;
 }
 
 /* applyTheme() (app.js) adds this for two frames around a REAL light/dark flip,

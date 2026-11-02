@@ -693,6 +693,11 @@ never rebuilds a segmented control under a finger.
   `shellPaint`). manifest.json's `theme_color` / `background_color` are paper too.
   Whether iOS actually paints the status bar under a roof is the owner's iPhone
   check; the layout does not depend on the answer.
+- **Sticky really sticks**: body is `overflow-x: clip` (with `hidden` before it
+  as the fallback), never `hidden` alone. With html's own `overflow-x` set,
+  body's `hidden` made body a scroll container that never scrolls, and the
+  app header (and anything else `position: sticky`) scrolled away with the
+  page — v197 shipped that way. Don't put `hidden` back on its own.
 
 ## Tests
 
