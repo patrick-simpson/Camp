@@ -11405,7 +11405,7 @@ function shellSheetEl(id) {
 function shellSheetAllowed(id) {
   if (id === 'members' || id === 'history' || id === 'counselors') return canEdit();
   // Set up the week's own sheets (setup-ui.js): directors only, and only while the builder is up.
-  if (typeof SETUP_SHEETS !== 'undefined' && SETUP_SHEETS.includes(id)) return canEdit() && builderOpen();
+  if (typeof SETUP_SHEETS !== 'undefined' && SETUP_SHEETS.includes(id)) return canEdit() && builderOpen() && setupSheetReady(id);
   if (id === 'verse' || id === 'cleanup') return canEdit() || !cardHiddenFromViewers(id);
   return true;
 }
@@ -12139,6 +12139,7 @@ function wireShell() {
   });
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
+    if (typeof askIsOpen === 'function' && askIsOpen()) return; // a question over a sheet takes the Escape; the sheet stays
     const top = shell.sheets[shell.sheets.length - 1];
     if (top && top !== 'schedule') shellSheetClose(top);
     else if (!top && shellTakeoverOpen()) closeGame();

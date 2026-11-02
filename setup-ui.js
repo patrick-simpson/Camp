@@ -374,6 +374,9 @@ function setupGo(screen, opts) {
   saveState();
   renderAll();
   if (typeof window.scrollTo === 'function') { try { window.scrollTo(0, 0); } catch (e) { /* no scroll */ } }
+  // The tapped row is gone from the screen: focus lands on Back, which names where you are.
+  const back = setupEl('setup-back');
+  if (back && typeof back.focus === 'function') { try { back.focus({ preventScroll: true }); } catch (e) { /* fine */ } }
   return true;
 }
 
@@ -463,7 +466,9 @@ function paintSetupHere() {
   setHiddenIfChanged(btn, !h.count);
   if (!h.count) return;
   setHtmlIfChanged(setupEl('setup-here-faces'), h.faces.map((f) => '<i class="setup-face">' + esc(f) + '</i>').join(''));
-  const same = typeof editorsHereOn === 'function' ? editorsHereOn(setupUi.where) : '';
+  // On a screen another director is ALSO editing the line says so, short ("Sam is also editing the games"); the
+  // "changes merge field by field" half is in the tap-through. The hub itself is nothing anyone edits.
+  const same = setupScreen() !== 'hub' && typeof editorsHereOn === 'function' ? editorsHereOn(setupUi.where).split(' — ')[0] : '';
   setTextIfChanged(setupEl('setup-here-text'), same || h.text);
 }
 
@@ -471,8 +476,9 @@ function paintSetupHere() {
 async function setupShowWhoIsHere() {
   const h = typeof editorsHereHeader === 'function' ? editorsHereHeader() : { rows: [] };
   if (!h.rows.length) return;
+  const same = typeof editorsHereOn === 'function' && setupScreen() !== 'hub' ? editorsHereOn(setupUi.where) : '';
   await askDialog({
-    title: 'Also here', list: h.rows.map((r) => r.text),
+    title: 'Also here', body: same ? same + '.' : '', list: h.rows.map((r) => r.text),
     actions: [{ label: 'Close', value: 'close', cancel: true }],
   });
 }
@@ -639,6 +645,11 @@ function setupUiOnEvent(kind) {
 // the browser's own confirm, so no caller is ever left without an answer.
 let askState = null;
 let askClosing = null;
+
+// Is a question up (app.js's Escape handler leaves the sheet underneath alone while one is)?
+function askIsOpen() {
+  return !!askState;
+}
 
 function askAvailable() {
   const dlg = setupEl('ask-dialog');
@@ -880,6 +891,12 @@ function renderSetupSheet(id) {
   else if (id === 'setup-changes') renderSetupChanges();
   else if (id === 'setup-devices') renderSetupDevices();
   else if (id === 'restore') renderRestoreSheet();
+}
+
+// Whether a setup sheet has anything to show (app.js shellSheetAllowed): the restore sheet needs a point
+// that a tap opened, so a Forward or a stale history entry cannot raise an empty one.
+function setupSheetReady(id) {
+  return id !== 'restore' || !!setupUi.rsheet;
 }
 
 // The owner's rows (Q8): listed only for the owner AND only when their action exists; one that can't be
@@ -1141,7 +1158,7 @@ function renderRestoreSheet() {
     setHiddenIfChanged(row, !(sec && sec.offered));
     const what = row.querySelector('[data-rp-what]');
     if (what && sec) {
-      setTextIfChanged(what, s === 'scores' ? (sec.summary || 'Same as now — left as they are') : (sec.count ? sec.summary || sec.count + ' to change' : 'Same as now'));
+      setTextIfChanged(what, s === 'scores' ? (sec.summary || (rs.picks.scores ? 'Same as now' : 'Left as they are unless you tick this')) : (sec.count ? sec.summary || sec.count + ' to change' : 'Same as now'));
     }
     const cb = row.querySelector('[data-rp-pick]');
     if (cb && !!cb.checked !== !!rs.picks[s]) cb.checked = !!rs.picks[s];

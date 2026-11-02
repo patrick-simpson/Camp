@@ -860,8 +860,9 @@ into it from app.js / settings.js is typeof-guarded.
   reveals `#setup-sync-alert`, a copy of the header's Retry / Discard bar that
   `updateSyncAlert` keeps current; a view-only or set-aside notice shows at once.
 - **Who's here**: `editorsHereHeader()` into `#setup-here` (initials + sentence; on a screen
-  another director is also on, `editorsHereOn` words it: "also editing the games — changes
-  merge field by field"); tap → who is where, in an `askDialog`. Hub rows carry the initial
+  another director is also on and it isn't the hub, the line is the short half of
+  `editorsHereOn` — "Pat is also editing the games"; the tap-through adds "changes merge
+  field by field"); tap → who is where, in an `askDialog`. Hub rows carry the initial
   of a director whose `where` maps to them (`setupHereRow`). Opening the builder starts the
   device's `editorsHere` row (`editorsHereStart`), every screen change moves it
   (`setupMoveHere`), closing the builder stops it (`setupUiClosed`: also the pill and every
@@ -881,6 +882,12 @@ into it from app.js / settings.js is typeof-guarded.
   Escape / ✕ / the backdrop resolve as the `cancel` action. Where `jelly-dialog` never loaded
   it asks with the native `confirm` / `prompt`, so a caller always gets an answer. Copy: a verb
   on every button, never OK / Cancel.
+- **Escape and Back**: while a question is up (`askIsOpen()`) Escape belongs to it and the
+  sheet underneath stays (app.js's Escape handler checks); the phone's Back pops the top
+  history entry — a sheet, the Who can sign in drawer — before it leaves the builder. After a
+  screen change focus lands on Back (the tapped row is gone). The restore sheet is allowed
+  only with a point a tap opened (`setupSheetReady`), so a Forward or a stale history entry
+  can't raise an empty one.
 - **Sheets** (ONE open at a time: `setupSheet` closes the others first): the menu (⋯:
   Recent changes, Director devices, Classic editor, then the owner's rows), Recent changes
   (`undoRecent()`, each row ends in its own Undo or Redo), Director devices (`devicesList()`),
@@ -908,7 +915,9 @@ into it from app.js / settings.js is typeof-guarded.
 ## Tests
 
 `node tests/run.js` (optionally with a filename filter: `node tests/run.js
-sync`). Zero dependencies, no network, ~1 second. **Run it before every
+sync`). Zero dependencies, no network. The whole suite takes about 90 seconds of wall
+time since Step 14's engine tests (`setup-sync.test.js`, `restore.test.js`: ~15 s each, real
+timers); a filter runs one file in well under a second. **Run it before every
 commit**, alongside `node --check`.
 
 `tests/harness.js` loads the real `defaults.js` + `app.js` + `settings.js` into

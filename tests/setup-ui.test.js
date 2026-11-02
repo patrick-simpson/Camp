@@ -151,6 +151,8 @@ test('a counselor cannot reach the hub: openBuilder, setupGo, a stored screen, e
 test('a director sees the setup sheets only while the builder is up', () => {
   suOpen('editor');
   try {
+    assert.equal(shellSheetAllowed('restore'), false, 'the restore sheet needs a point that a tap opened: a Forward cannot raise an empty one');
+    setupUi.rsheet = { rid: 'x' };
     SETUP_SHEETS.forEach((id) => assert.equal(shellSheetAllowed(id), true, id));
     state.ui.view = 'home';
     SETUP_SHEETS.forEach((id) => assert.equal(shellSheetAllowed(id), false, id + ' with the builder closed'));
@@ -505,4 +507,63 @@ test('a page without the frame\'s markup falls back to v197\'s builder (renderSe
     renderSetupUi(true);
     assert.equal(settings, 1, 'with no #setup the old builder renders as it always did');
   } finally { document.getElementById = realGet; renderSettings = realRS; suClose(); }
+});
+
+// ── who's here ──
+test('who\'s here: the hub says "is also here"; on a screen they are also editing the line stays short; a hub row carries their initial', async () => {
+  suOpen();
+  authUser = { email: 'jenn@example.com', emailVerified: true };
+  memberDirectory = { 'pat@example,com': { role: 'editor', name: 'Pat Moore', addedBy: 'x', addedAt: 1 } };
+  memberDirectoryLoaded = true;
+  ehTree = { 'pat@example,com': { d1: { at: Date.now(), v: APP_VERSION, where: 'games' } } };
+  const realAsk = askDialog;
+  try {
+    state.ui.builderScreen = 'hub';
+    setupUi.where = 'hub';
+    paintSetupHere();
+    assert.equal(setupEl('setup-here').hidden, false);
+    assert.equal(setupEl('setup-here-text').textContent, 'Pat is also here');
+    assert.equal(setupEl('setup-here-faces').innerHTML, '<i class="setup-face">P</i>');
+    paintHub();
+    const face = document.querySelector('[data-hub-row="games"]').querySelector('[data-hub-here]');
+    assert.equal(face.textContent, 'P', 'the Games row carries Pat\'s initial: that is where Pat is');
+    assert.equal(face.hidden, false);
+    assert.equal(document.querySelector('[data-hub-row="teams"]').querySelector('[data-hub-here]').hidden, true);
+    state.ui.builderScreen = 'classic';
+    state.ui.settingsTab = 'games';
+    setupUi.where = 'games';
+    paintSetupHere();
+    assert.equal(setupEl('setup-here-text').textContent, 'Pat is also editing the games', 'short: it has to fit one line at 360 px');
+    let asked = null;
+    askDialog = async (o) => { asked = o; return 'close'; };
+    await setupShowWhoIsHere();
+    assert.ok(/changes merge field by field/.test(asked.body), 'the long half is in the tap-through');
+    assert.ok(/^Pat Moore/.test(asked.list[0]) || /^Pat/.test(asked.list[0]), asked.list[0]);
+    assert.equal(asked.actions[0].cancel, true);
+    ehTree = null;
+    paintSetupHere();
+    assert.equal(setupEl('setup-here').hidden, true, 'nobody else: nothing shown');
+  } finally { askDialog = realAsk; ehTree = null; authUser = null; memberDirectory = null; memberDirectoryLoaded = false; suClose(); }
+});
+
+test('a restore sheet that nothing opened never opens; Escape under a question leaves the sheet alone', () => {
+  suOpen();
+  try {
+    renderSetupUi(true);
+    shellSheetOpen('restore');
+    assert.equal(shell.sheets.includes('restore'), false, 'a stale history entry cannot show an empty restore sheet');
+    assert.equal(setupSheetReady('setup-menu'), true);
+    wireShell();
+    const keys = (__docListeners.keydown || []);
+    const escape = () => keys.forEach((h) => h({ key: 'Escape', preventDefault() {} }));
+    shellSheetOpen('setup-menu');
+    assert.equal(shell.sheets.includes('setup-menu'), true);
+    assert.equal(askIsOpen(), false);
+    askState = { resolve() {}, actions: [], input: false };
+    escape();
+    assert.equal(shell.sheets.includes('setup-menu'), true, 'a question is up: Escape belongs to it');
+    askState = null;
+    escape();
+    assert.equal(shell.sheets.includes('setup-menu'), false, 'no question: Escape closes the sheet as ever');
+  } finally { askState = null; shell.sheets.length = 0; suClose(); }
 });
