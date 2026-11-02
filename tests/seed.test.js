@@ -169,14 +169,17 @@ test('the plans are the same objects until the tree changes, and a block knows i
 
 // ── the seed ─────────────────────────────────────────────────────────
 
-test('buildSeed is deterministic, pure, and knows only the sections this build can seed', () => {
+test('buildSeed is deterministic, pure, and seeds the schedule alone unless a section is asked for by name', () => {
   const a = buildSeed(CAMP);
   const b = buildSeed(CAMP, ['schedule']);
   assert.deepEqual(a, b);
   assert.deepEqual(buildSeed(CAMP), seedClone(buildSeed(CAMP)), 'plain data');
   assert.ok(!('seeded' in a.meta), 'meta.seeded is added by mergeSeed, at write time');
   assert.deepEqual(a.meta, { schema: 1, on: { schedule: true } });
-  assert.deepEqual(buildSeed(CAMP, ['meals', 'verses', 'cleanup', 'electives']), { meta: { schema: 1, on: {} } }, 'the other sections are not built yet');
+  const rest = buildSeed(CAMP, ['meals', 'verses', 'cleanup', 'electives']);
+  assert.deepEqual(rest.meta, { schema: 1, on: { meals: true, verses: true, cleanup: true, electives: true } }, 'the other four sections seed when asked for (step 19; sections.test.js has their shapes)');
+  assert.ok(!rest.typical && !rest.days, 'and ask for no schedule');
+  assert.deepEqual(buildSeed(CAMP, ['nonsense']), { meta: { schema: 1, on: {} } }, 'a name this build does not know seeds nothing');
   // Never the directory or the device's state.
   const before = JSON.stringify(buildSeed(CAMP));
   const dir = memberDirectory; const role = memberRole;
@@ -633,7 +636,7 @@ test('A1 preconditions are said first: loading, offline, denied, a newer schema,
     setupTree.meta.schema = 2;
     assert.equal((await setupTurnOn(undefined, A1_QUIET)).reason, 'schema');
     setupTree.meta.schema = undefined;
-    assert.equal((await setupTurnOn(['meals'])).reason, 'none', 'a section this build cannot seed');
+    assert.equal((await setupTurnOn(['nonsense'])).reason, 'none', 'a section this build does not know');
     assert.equal(db.log.slice(from).length, 0, 'every refusal came before any write');
     // The point is the safety net: without it, nothing is written.
     db.refuse(A1_ROOT + '/restoreIndex');

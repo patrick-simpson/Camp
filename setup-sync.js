@@ -141,13 +141,38 @@ const SETUP_DEPTHS = {
 // fields, the section switch) and, with the `meta/edited/<section>` stamp pushSetup adds,
 // makes an update() with an ancestor AND a descendant path, which the SDK throws on.
 // Every diff of the setup tree goes through here, so no caller ever sees the coarse op.
+//
+// And one more, for the four smaller sections (step 19): the first write into a section with nothing in it (senior's menus,
+// a cleared rota) is a coarse `meals` / `cleanup` / `verses` / `electives` op carrying the whole container — it would
+// overwrite a colleague's first write beside it, and an undo of it would take the colleague's with it. Those are cut to the
+// records a later edit would have written (a create stops at the RECORD, never below it: a field op into an absent record
+// is dropped by setupApplyOps). An op that DELETES a whole container (the last dish of a day) is cut the same way, to the
+// records that went, so a colleague's dish beside it is not taken with it; `was` is the canonical tree before the edit.
+const SETUP_RECORD_DEPTH = {
+  meals: 3, cleanup: 3,
+  verses: (p) => (p[1] === 'days' ? 3 : 2),
+  electives: (p) => (p[1] === 'slots' ? (p[5] === 'people' ? 7 : 5) : 3),
+};
+function setupExpandCreate(path, value, out, was) {
+  const parts = path.split('/');
+  const d = SETUP_RECORD_DEPTH[parts[0]];
+  const depth = typeof d === 'function' ? d(parts) : d;
+  if (!depth || parts.length >= depth) { out[path] = value; return; }
+  const kids = value === null ? syncValueAt(was, path) : value;
+  if (!setupIsMap(kids)) { out[path] = value; return; }
+  Object.keys(kids).forEach((k) => setupExpandCreate(path + '/' + k, value === null ? null : kids[k], out, was));
+}
+
 function setupTreeDiff(prev, cur) {
-  const ops = treeDiff(prev, cur, SETUP_DEPTHS);
+  const raw = treeDiff(prev, cur, SETUP_DEPTHS);
+  const ops = {};
+  const before = syncCanon(prev) || {};
+  Object.keys(raw).forEach((p) => setupExpandCreate(p, raw[p], ops, before));
   if (ops.meta === undefined) return ops;
   const whole = ops.meta;
   delete ops.meta;
   if (whole === null) { // meta removed outright: every field that was there, one null each
-    const was = (syncCanon(prev) || {}).meta;
+    const was = before.meta;
     Object.keys(setupIsMap(was) ? was : {}).forEach((k) => { ops['meta/' + k] = null; });
   } else if (setupIsMap(whole)) {
     Object.keys(whole).forEach((k) => { ops['meta/' + k] = whole[k]; });
@@ -2274,7 +2299,7 @@ function devicesList() {
 // writes until the OWNER presses A1: `meta/on/schedule` is the switch, and while it is
 // off every accessor returns the camps.js constant itself.
 
-const SETUP_SEED_SECTIONS = ['schedule'];            // what this build can seed (the meals, verses, cleanup and electives sections arrive with step 19)
+const SETUP_SEED_SECTIONS = ['schedule'];            // what a plain buildSeed(camp) seeds: the schedule. The other four sections (step 19) are asked for by name
 const SETUP_HEAD_SLUG = 24;                          // a block id's slug is cut to this (§5.5): published ids stay <= 40 characters
 const SETUP_BLOCK_TYPES = ['activity', 'games', 'elective'];
 
@@ -2552,15 +2577,137 @@ function setupSeedSchedule(camp) {
   return out;
 }
 
-// The whole seed: `{ meta: { schema, on }, days, typical, patches, dayBlocks }`. PURE and deterministic — the camps.js
-// constants only, never the member directory or device state (`meta.seeded` is added by mergeSeed, at write time).
+// ── the other four sections' seeds (§10.2, step 19) ──────────────────
+
+const SETUP_MEAL_KEYS = ['breakfast', 'lunch', 'supper'];
+
+// Menus: MEALS[dow][meal] -> meals/<dk>/<meal> { dish, emoji? }. A dish the rules would refuse (empty, over 80) is cut or left out.
+function setupSeedMeals(camp) {
+  const out = {};
+  const meals = (camp && camp.meals) || {};
+  Object.keys(meals).forEach((dow) => {
+    const dk = SETUP_DK[Number(dow)];
+    if (!dk) return;
+    SETUP_MEAL_KEYS.forEach((m) => {
+      const e = meals[dow] && meals[dow][m];
+      const dish = e && typeof e.dish === 'string' ? e.dish.trim().slice(0, 80) : '';
+      if (!dish) return;
+      const rec = { dish };
+      if (typeof e.emoji === 'string' && e.emoji) rec.emoji = e.emoji;
+      (out[dk] = out[dk] || {})[m] = rec;
+    });
+  });
+  return out;
+}
+
+// Verses: the theme and one per competition day. Nothing the rules would refuse (no words, a video that is not https).
+function setupSeedVerses(camp) {
+  const out = {};
+  const th = camp && camp.memoryVerseTheme;
+  if (th && typeof th.text === 'string' && th.text.trim()) {
+    out.theme = { text: th.text.trim().slice(0, 600), title: String(th.title || '').slice(0, 80), ref: String(th.ref || '').slice(0, 80) };
+  }
+  const days = {};
+  const verses = (camp && camp.memoryVerses) || {};
+  Object.keys(verses).forEach((dow) => {
+    const dk = SETUP_DK[Number(dow)];
+    const v = verses[dow];
+    if (!dk || !v || typeof v.text !== 'string' || !v.text.trim()) return;
+    const rec = { text: v.text.trim().slice(0, 600), ref: String(v.ref || '').slice(0, 80) };
+    if (typeof safeVideoUrl === 'function' && safeVideoUrl(v.video) && v.video.length <= 300) rec.video = v.video;
+    days[dk] = rec;
+  });
+  if (Object.keys(days).length) out.days = days;
+  return out;
+}
+
+// The cleanup rota: MEAL_CLEANUP_SCHEDULE[dow][Meal] (a team id or a pair) -> cleanup/<dk>/<meal>/<tid>: true.
+function setupSeedCleanup(camp) {
+  const out = {};
+  const rota = (camp && camp.mealCleanupSchedule) || {};
+  Object.keys(rota).forEach((dow) => {
+    const dk = SETUP_DK[Number(dow)];
+    if (!dk || !rota[dow]) return;
+    SETUP_MEAL_KEYS.forEach((m) => {
+      [].concat(rota[dow][m.charAt(0).toUpperCase() + m.slice(1)] || []).forEach((tid) => {
+        if (typeof tid !== 'string' || !/^t[0-9]$/.test(tid)) return;
+        if (!out[dk]) out[dk] = {};
+        if (!out[dk][m]) out[dk][m] = {};
+        out[dk][m][tid] = true;
+      });
+    });
+  });
+  return out;
+}
+
+// Electives (junior only): the station list, then per day and slot the stations in the printed order, each with its people as
+// typed names (`n-<slug>`; a director links one to a member later). Senior (no electives) writes nothing.
+function setupSeedElectives(camp) {
+  if (!(camp && camp.features && camp.features.electives)) return {};
+  const stations = {};
+  const byName = {};
+  const emoji = camp.stationEmoji || {};
+  const mint = (name) => {
+    if (byName[name]) return byName[name];
+    const base = 'st-' + setupSlug(name, 30);
+    let id = base;
+    let n = 2;
+    while (stations[id]) id = base + '-' + n++;
+    byName[name] = id;
+    const rec = { name: String(name).slice(0, 60) };
+    if (typeof emoji[name] === 'string' && emoji[name]) rec.emoji = emoji[name];
+    stations[id] = rec;
+    return id;
+  };
+  const slots = {};
+  const days = camp.electives || {};
+  Object.keys(days).forEach((dow) => {
+    const dk = SETUP_DK[Number(dow)];
+    if (!dk) return;
+    (days[dow] || []).forEach((list, slot) => {
+      (list || []).forEach((pair, j) => {
+        const id = mint(pair[0]);
+        const people = {};
+        (pair[1] || []).forEach((name, k) => {
+          const base = 'n-' + setupSlug(name, 40);
+          let pid = base;
+          let c = 2;
+          while (people[pid]) pid = base + '-' + c++;
+          people[pid] = { name: String(name).slice(0, 60), ord: 10 * (k + 1) };
+        });
+        const rec = { ord: 10 * (j + 1) };
+        if (Object.keys(people).length) rec.people = people;
+        if (!slots[dk]) slots[dk] = {};
+        if (!slots[dk]['s' + slot]) slots[dk]['s' + slot] = {};
+        slots[dk]['s' + slot][id] = rec;
+      });
+    });
+  });
+  // A station nobody stands at on any day is still on the list a director picks from.
+  Object.keys(emoji).forEach((name) => mint(name));
+  const out = {};
+  if (Object.keys(stations).length) out.stations = stations;
+  if (Object.keys(slots).length) out.slots = slots;
+  return out;
+}
+
+// The whole seed: `{ meta: { schema, on }, days, typical, patches, dayBlocks, meals, verses, cleanup, electives }` for the
+// sections asked for (default: the schedule alone). PURE and deterministic — the camps.js constants only, never the member
+// directory or device state (`meta.seeded` is added by mergeSeed, at write time). A section with nothing to seed (senior's
+// menus and rota, its electives) is still switched on: absence means empty.
 function buildSeed(camp, sections) {
-  const want = (sections || SETUP_SEED_SECTIONS).filter((s) => SETUP_SEED_SECTIONS.indexOf(s) !== -1);
+  const want = (sections || SETUP_SEED_SECTIONS).filter((s) => SETUP_SECTIONS.indexOf(s) !== -1);
   const out = { meta: { schema: SETUP_SCHEMA, on: {} } };
   if (want.indexOf('schedule') !== -1) {
     Object.assign(out, setupSeedSchedule(camp));
     out.meta.on.schedule = true;
   }
+  [['meals', setupSeedMeals], ['verses', setupSeedVerses], ['cleanup', setupSeedCleanup], ['electives', setupSeedElectives]].forEach(([s, seedOf]) => {
+    if (want.indexOf(s) === -1) return;
+    const sub = seedOf(camp);
+    if (Object.keys(sub).length) out[s] = sub;
+    out.meta.on[s] = true;
+  });
   return out;
 }
 
@@ -2578,7 +2725,12 @@ function setupWeekStart() {
 // Is this camp's schedule edited here, and in a schema this build can read? Off (or a newer schema) = the built-in
 // week, everywhere.
 function setupScheduleLive() {
-  return setupOn('schedule') && !setupSchemaTooNew();
+  return setupSectionLive('schedule');
+}
+// The same question for any section (schedule, meals, verses, cleanup, electives): its switch is on and the schema is one
+// this build reads. Off (or a newer schema) = the camps.js copy, everywhere.
+function setupSectionLive(section) {
+  return setupOn(section) && !setupSchemaTooNew();
 }
 
 const SETUP_RICH_OF = new WeakMap(); // a legacy block an accessor handed out -> the rich block it came from
@@ -2805,7 +2957,8 @@ function mergeSeed(cur, seed, sections, info) {
 async function setupTurnOn(sections, opts) {
   const o = opts || {};
   const refuse = (reason, extra) => Object.assign({ ok: false, reason }, extra || {});
-  const want = (sections || SETUP_SEED_SECTIONS).filter((s) => SETUP_SEED_SECTIONS.indexOf(s) !== -1);
+  // Any of the five sections; the electives only where the camp has them (senior has none, so nothing can turn them on).
+  const want = (sections || SETUP_SEED_SECTIONS).filter((s) => SETUP_SECTIONS.indexOf(s) !== -1 && (s !== 'electives' || setupHasElectives()));
   if (!want.length) return refuse('none');
   const gate = ownerGate('turn on editing');
   if (!gate.ok) return refuse('owner', { message: gate.reason });
@@ -2851,7 +3004,7 @@ async function setupTurnOn(sections, opts) {
   // A2 in the same flow, against the tree that was just written: the games that have no place yet get one (a
   // catalog that is not editable yet is left for the hub's Put games on the schedule).
   let attach = null;
-  if (canEdit() && (typeof configEditable !== 'function' || configEditable())) {
+  if (off.indexOf('schedule') !== -1 && canEdit() && (typeof configEditable !== 'function' || configEditable())) { // only the schedule has games to place
     const tree = normalizeSetup(setupClone(res.snapshot.val()));
     const plan = setupGameAttachments(state.config, (dow) => resolveDay(tree, dow).map(setupRichBlock), CAMP);
     if (plan.ops.length) { setupApplyGameAttachments(state.config, plan.ops); saveConfig(); }
@@ -2866,7 +3019,7 @@ async function setupTurnOn(sections, opts) {
 function setupUseOriginal(sections) {
   const gate = ownerGate('switch back to the original week');
   if (!gate.ok) return { ok: false, reason: 'owner', message: gate.reason };
-  const want = (sections || SETUP_SEED_SECTIONS).filter((s) => SETUP_SEED_SECTIONS.indexOf(s) !== -1 && setupOn(s));
+  const want = (sections || SETUP_SEED_SECTIONS).filter((s) => SETUP_SECTIONS.indexOf(s) !== -1 && setupOn(s));
   if (!want.length) return { ok: false, reason: 'already' };
   const r = commitSetup((d) => { want.forEach((s) => { d.meta.on[s] = false; }); }, { undo: false, ownerWhat: 'switch back to the original week' });
   return r.ok ? { ok: true, turnedOff: want } : r;
@@ -3461,6 +3614,435 @@ function rainGameClashes(config, plan) {
     if (cur.blockId !== b.blockId || cur.dayId !== b.dayId) out.push({ gid, game: g, theirs: cur });
   });
   return out;
+}
+
+// ── 10. Meals, verses, cleanup, electives (§5.2, §9.2, §11.10–11.13 — build step 19) ───────────────
+// The four smaller sections of the week. The READERS are pure over a tree and memoized for the accessors in app.js's SEAM
+// block (the same objects until the tree changes: render-stability), the HELPERS are pure (fill evenly, the fairness line,
+// "nearly the same name"), and the MUTATORS are ordinary commitSetup calls — each refused ("off") until the owner turns
+// its section on, so nothing in here changes what anyone sees until then.
+
+function setupHasElectives() {
+  return !!(CAMP && CAMP.features && CAMP.features.electives);
+}
+
+const SETUP_MEAL_NAMES = { breakfast: 'Breakfast', lunch: 'Lunch', supper: 'Supper' };
+
+// A typed elective person's id ('n-' + slug) as opposed to a member key (an email or a +phone, which can never look like this).
+function setupIsTypedPerson(pid) {
+  return /^n-[a-z0-9-]+$/.test(String(pid));
+}
+
+// ── readers (pure over a tree) ──
+
+// meals/<dk>/<meal> as { dish, emoji? }, or null (no record, or no dish: the rules want one). The emoji is laundered here
+// because the schedule sheet writes it into markup.
+function setupMealRecord(tree, dk, meal) {
+  const rec = setupMapOf(setupMapOf(tree && tree.meals)[dk])[meal];
+  if (!setupIsMap(rec) || typeof rec.dish !== 'string' || !rec.dish.trim()) return null;
+  const emoji = safeEmoji(rec.emoji, '');
+  return emoji ? { dish: rec.dish, emoji } : { dish: rec.dish };
+}
+
+// cleanup/<dk>/<meal> as team ids in slot order — only the camp's own teams (an id past the roster is the hub's problem, not a name).
+function setupCleanupIds(tree, dk, meal) {
+  return setupTeamList(setupMapOf(setupMapOf(setupMapOf(tree && tree.cleanup)[dk])[meal])).filter((id) => setupTeamSlot(id) < CAMP.teamCount);
+}
+
+// Is this day on the rota at all? A day with a team on any meal is; an untracked day says nothing (as the printed rota did).
+function setupCleanupTracked(tree, dk) {
+  return SETUP_MEAL_KEYS.some((m) => setupCleanupIds(tree, dk, m).length > 0);
+}
+
+function setupVerseTheme(tree) {
+  const t = setupMapOf(setupMapOf(tree && tree.verses).theme);
+  if (typeof t.text !== 'string' || !t.text.trim()) return null;
+  return { title: typeof t.title === 'string' ? t.title : '', text: t.text, ref: typeof t.ref === 'string' ? t.ref : '' };
+}
+
+// verses/days/<dk> as { text, ref, video? } — the video only when it is a plain https link (re-checked here, whatever the rules let in).
+function setupVerseDay(tree, dk) {
+  const v = setupMapOf(setupMapOf(setupMapOf(tree && tree.verses).days)[dk]);
+  if (typeof v.text !== 'string' || !v.text.trim()) return null;
+  const out = { text: v.text, ref: typeof v.ref === 'string' ? v.ref : '' };
+  const video = safeVideoUrl(v.video);
+  if (video) out.video = video;
+  return out;
+}
+
+// The stations a director can pick from, by name: [{ id, name, emoji }].
+function setupElectiveStations(tree) {
+  const st = setupMapOf(setupMapOf(tree && tree.electives).stations);
+  return Object.keys(st).filter((id) => setupIsMap(st[id]) && typeof st[id].name === 'string' && st[id].name.trim())
+    .map((id) => ({ id, name: st[id].name, emoji: safeEmoji(st[id].emoji, '') }))
+    .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()) || (a.id < b.id ? -1 : 1));
+}
+
+// The name to show for one elective person: a member's own name from the directory (it follows a rename), else the name
+// typed with them. One spelling per counselor (respellCounselorText): "Lilly" reads "Lily" wherever it was typed.
+function setupPersonName(pid, rec) {
+  const dir = typeof memberDirectory !== 'undefined' && memberDirectory && typeof memberDirectory === 'object' ? memberDirectory : null;
+  const mem = !setupIsTypedPerson(pid) && dir && setupIsMap(dir[pid]) && typeof dir[pid].name === 'string' && dir[pid].name.trim() ? dir[pid].name.trim() : '';
+  const raw = mem || (setupIsMap(rec) && typeof rec.name === 'string' ? rec.name : '');
+  return respellCounselorText(raw.slice(0, 60));
+}
+
+// One slot of one day: [{ id, name, emoji, ord, people: [{ pid, name, ord, typed }] }] in (ord, id) order.
+function setupElectiveRows(tree, dk, slot) {
+  const stations = setupMapOf(setupMapOf(tree && tree.electives).stations);
+  const inSlot = setupMapOf(setupMapOf(setupMapOf(setupMapOf(tree && tree.electives).slots)[dk])['s' + slot]);
+  const byOrd = (a, b) => (Number(a.ord) || 0) - (Number(b.ord) || 0) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+  return Object.keys(inSlot).filter((id) => setupIsMap(inSlot[id]) && setupIsMap(stations[id]) && typeof stations[id].name === 'string' && stations[id].name.trim())
+    .map((id) => {
+      const ppl = setupMapOf(inSlot[id].people);
+      return {
+        id, name: stations[id].name, emoji: safeEmoji(stations[id].emoji, ''), ord: inSlot[id].ord,
+        people: Object.keys(ppl).filter((pid) => setupIsMap(ppl[pid]) && typeof ppl[pid].name === 'string')
+          .map((pid) => ({ pid, name: setupPersonName(pid, ppl[pid]), ord: ppl[pid].ord, id: pid, typed: setupIsTypedPerson(pid) }))
+          .sort(byOrd),
+      };
+    }).sort(byOrd);
+}
+
+// The derived reads the accessors share, built once per (tree, revision, member directory).
+let setupSecMemo = null;
+function setupSecs() {
+  const dir = typeof memberDirectory !== 'undefined' ? memberDirectory : null;
+  const m = setupSecMemo;
+  if (m && m.tree === setupTree && m.rev === setupRev && m.dir === dir) return m;
+  const tree = setupTree;
+  const meals = {};
+  const cleanup = {};
+  const verses = { theme: setupVerseTheme(tree), days: {} };
+  const electives = { byDow: {}, emoji: {}, names: [], keys: {} };
+  for (let dow = 0; dow < 7; dow++) {
+    const dk = SETUP_DK[dow];
+    SETUP_MEAL_KEYS.forEach((meal) => {
+      const rec = setupMealRecord(tree, dk, meal);
+      if (rec) (meals[dow] = meals[dow] || {})[meal] = rec;
+    });
+    cleanup[dow] = { tracked: setupCleanupTracked(tree, dk), meals: {} };
+    SETUP_MEAL_KEYS.forEach((meal) => { cleanup[dow].meals[meal] = setupCleanupIds(tree, dk, meal); });
+    const vd = setupVerseDay(tree, dk);
+    if (vd) verses.days[dow] = vd;
+    // The legacy shape, [slot -> [[station, [names], [keys]], …]], with a third list the legacy rows don't have: the member
+    // key of each name ('' for a typed one), which is how a signed-in counselor's own station is found by key before name.
+    const day = [];
+    for (let slot = 0; slot < 3; slot++) {
+      day[slot] = setupElectiveRows(tree, dk, slot).map((r) => [r.name, r.people.map((p) => p.name), r.people.map((p) => (p.typed ? '' : p.pid))]);
+      day[slot].forEach((row) => row[1].forEach((n) => { if (n && electives.names.indexOf(n) === -1) electives.names.push(n); }));
+    }
+    while (day.length && !day[day.length - 1].length) day.pop();
+    if (day.length) electives.byDow[dow] = day;
+  }
+  setupElectiveStations(tree).forEach((s) => { if (s.emoji && !electives.emoji[s.name]) electives.emoji[s.name] = s.emoji; });
+  setupSecMemo = { tree, rev: setupRev, dir, meals, cleanup, verses, electives };
+  return setupSecMemo;
+}
+
+// The accessors' reads (app.js SEAM block calls these behind typeof guards).
+function setupMealFor(dow, meal) { return (setupSecs().meals[dow] || {})[meal] || null; }
+function setupCleanupOnRota(dow) { return !!(setupSecs().cleanup[dow] || {}).tracked; }
+function setupCleanupFor(dow, meal) { return ((setupSecs().cleanup[dow] || { meals: {} }).meals[String(meal).toLowerCase()]) || null; }
+function setupVerseThemeNow() { return setupSecs().verses.theme; }
+function setupVerseFor(dow) { return setupSecs().verses.days[dow] || null; }
+function setupElectivesOf(dow) { return setupSecs().electives.byDow[dow] || null; }
+function setupStationEmoji(name) { return setupSecs().electives.emoji[name] || ''; }
+function setupElectiveNames() { return setupSecs().electives.names; }
+
+// ── helpers (pure) ──
+
+// "Fill evenly" (§11.12): which teams clean which meal. `input`:
+//   { teams: ['t0',…], redo: bool, slots: [{ day, meal, want: 1, have: ['t5'] }] }
+// in the order the days come; `have` is what the rota already holds (kept unless `redo`), `want` how many teams that meal
+// takes (a Friday with pairs says 2). The rules it keeps, in this order of importance: every team within one of every other
+// (the lowest count goes next), no team twice in a day, no team on the same meal two days running — a rule that cannot be
+// kept for a slot is dropped for that slot alone and the slot is reported in `relaxed`. Deterministic: the same input is
+// the same rota. Returns { slots: [{ day, meal, teams }], counts, spread, relaxed: ['mon lunch'] }.
+function rotaFillEvenly(input) {
+  const teams = ((input && input.teams) || []).slice();
+  const redo = !!(input && input.redo);
+  const slots = ((input && input.slots) || []).map((s) => ({
+    day: s.day, meal: s.meal, want: Math.max(1, Number(s.want) || 1),
+    teams: redo ? [] : [].concat(s.have || []).filter((t, i, a) => teams.indexOf(t) !== -1 && a.indexOf(t) === i),
+  }));
+  const counts = {};
+  teams.forEach((t) => { counts[t] = 0; });
+  slots.forEach((s) => s.teams.forEach((t) => { counts[t]++; }));
+  const lastUse = {};
+  const relaxed = [];
+  // The teams on the same meal the day before slot j (the nearest earlier slot of that meal on another day).
+  const beforeOf = (j) => {
+    for (let k = j - 1; k >= 0; k--) if (slots[k].meal === slots[j].meal && slots[k].day !== slots[j].day) return slots[k].teams;
+    return [];
+  };
+  slots.forEach((s, i) => {
+    while (s.teams.length < s.want) {
+      const today = {};
+      slots.forEach((o) => { if (o.day === s.day) o.teams.forEach((t) => { today[t] = true; }); });
+      const prev = {};
+      beforeOf(i).forEach((t) => { prev[t] = true; });
+      // How many of the day's later, still-unfilled meals a team could still take: the team with the fewest goes first, so a
+      // team that cannot repeat Thursday's supper is not left for Friday's supper.
+      const room = (t) => slots.filter((o, j) => j > i && o.day === s.day && o.teams.length < o.want && beforeOf(j).indexOf(t) === -1).length;
+      const pick = (noDay, noRun) => teams.filter((t) => s.teams.indexOf(t) === -1 && !(noDay && today[t]) && !(noRun && prev[t]))
+        .sort((a, b) => counts[a] - counts[b] || room(a) - room(b) || (lastUse[a] === undefined ? -1 : lastUse[a]) - (lastUse[b] === undefined ? -1 : lastUse[b]) || teams.indexOf(a) - teams.indexOf(b))[0];
+      let t = pick(true, true);
+      if (t === undefined) { t = pick(true, false); if (t !== undefined && relaxed.indexOf(s.day + ' ' + s.meal) === -1) relaxed.push(s.day + ' ' + s.meal); }
+      if (t === undefined) { t = pick(false, false); if (t !== undefined && relaxed.indexOf(s.day + ' ' + s.meal) === -1) relaxed.push(s.day + ' ' + s.meal); }
+      if (t === undefined) break; // fewer teams than the slot wants
+      s.teams.push(t);
+      counts[t]++;
+      lastUse[t] = i;
+    }
+  });
+  const all = teams.map((t) => counts[t]);
+  return { slots: slots.map((s) => ({ day: s.day, meal: s.meal, teams: s.teams.slice() })), counts, spread: all.length ? Math.max.apply(null, all) - Math.min.apply(null, all) : 0, relaxed };
+}
+
+// The fairness line under the rota (§11.12): "Each team cleans 2–3 times. Maples clean twice on Thursday."
+// `slots`: [{ day: 'thu', meal, teams }]; `nameOf(tid)` the team's short name; `dayName(dk)` the day's word.
+function rotaFairness(slots, teamIds, nameOf, dayName) {
+  const counts = {};
+  teamIds.forEach((t) => { counts[t] = 0; });
+  const perDay = {};
+  (slots || []).forEach((s) => (s.teams || []).forEach((t) => {
+    if (counts[t] === undefined) return;
+    counts[t]++;
+    const k = t + '/' + s.day;
+    perDay[k] = (perDay[k] || 0) + 1;
+  }));
+  const all = teamIds.map((t) => counts[t]);
+  const min = all.length ? Math.min.apply(null, all) : 0;
+  const max = all.length ? Math.max.apply(null, all) : 0;
+  const notes = [];
+  const none = teamIds.filter((t) => counts[t] === 0);
+  if (none.length) notes.push(none.map(nameOf).join(', ') + (none.length === 1 ? ' isn’t' : ' aren’t') + ' on the rota yet.');
+  Object.keys(perDay).forEach((k) => {
+    if (perDay[k] < 2) return;
+    const [t, d] = k.split('/');
+    notes.push(nameOf(t) + ' clean ' + (perDay[k] === 2 ? 'twice' : perDay[k] + ' times') + ' on ' + dayName(d) + '.');
+  });
+  const line = !max ? 'Nobody is on the rota yet.' : 'Each team cleans ' + (min === max ? min + (min === 1 ? ' time' : ' times') : min + '–' + max + ' times') + '.';
+  return { min, max, counts, line, notes, text: [line].concat(notes).join(' ') };
+}
+
+// Two names that are probably one person (§11.13 "Sophie → Sofia?"): not the same once counselors' spellings are merged
+// (those never need a link), but one letter apart, or the same consonants in the same order from the same first letter.
+function setupNameSkeleton(n) {
+  const s = String(n || '').toLowerCase().replace(/[^a-z]/g, '').replace(/ph/g, 'f').replace(/ck/g, 'k').replace(/y/g, 'i');
+  return s.charAt(0) + s.slice(1).replace(/[aeiou]/g, '');
+}
+function setupNamesNear(a, b) {
+  const x = String(canonicalCounselorName(String(a || '').trim())).toLowerCase();
+  const y = String(canonicalCounselorName(String(b || '').trim())).toLowerCase();
+  if (!x || !y || x === y || x.length < 3 || y.length < 3) return false;
+  if (Math.abs(x.length - y.length) <= 1) {
+    let d = 0;
+    if (x.length === y.length) { for (let i = 0; i < x.length; i++) if (x[i] !== y[i]) d++; if (d <= 1) return true; }
+    else {
+      const [lo, hi] = x.length < y.length ? [x, y] : [y, x];
+      for (let i = 0; i < hi.length; i++) if (hi.slice(0, i) + hi.slice(i + 1) === lo) return true;
+    }
+  }
+  return x.charAt(0) === y.charAt(0) && setupNameSkeleton(x) === setupNameSkeleton(y);
+}
+
+// The member (from the directory: [{ key, name }]) a typed name nearly matches, or null. An exact name is no problem — a
+// counselor is found by name already — so only a near miss is flagged.
+function setupNearMember(name, members) {
+  const list = members || [];
+  if (list.some((m) => m && m.name && String(canonicalCounselorName(String(m.name).trim())).toLowerCase() === String(canonicalCounselorName(String(name).trim())).toLowerCase())) return null;
+  return list.find((m) => m && m.name && (setupNamesNear(name, m.name) || setupNamesNear(name, String(m.name).trim().split(/\s+/)[0]))) || null;
+}
+
+// ── mutators: every one is a commitSetup (one undo entry, one push), refused "off" until the section's switch is on ──
+
+function setupCap(s, n) {
+  return String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, n);
+}
+
+// A meal's dish and emoji. An empty dish removes the record (the rules want a dish; an emoji alone is not a menu).
+function mealsSetMutate(d, dk, meal, dish, emoji) {
+  const text = setupCap(dish, 80);
+  const day = setupMapOf(d.meals[dk]);
+  d.meals[dk] = day;
+  if (!text) { delete day[meal]; return; }
+  const rec = { dish: text };
+  const e = safeEmoji(emoji, '');
+  if (e) rec.emoji = e;
+  day[meal] = rec;
+}
+function mealsSet(dk, meal, dish, emoji, label) {
+  if (SETUP_DK.indexOf(dk) === -1 || SETUP_MEAL_KEYS.indexOf(meal) === -1) return { ok: false, reason: 'cancelled' };
+  return commitSetup((d) => mealsSetMutate(d, dk, meal, dish, emoji), { label: label || (SETUP_DAY_WORDS[dk] + ' ' + meal + ': ' + (setupCap(dish, 40) || 'no dish')) });
+}
+// Copy one day's menu over another's (the target's own dishes are replaced).
+function mealsCopyDay(fromDk, toDk) {
+  if (fromDk === toDk) return { ok: false, reason: 'cancelled' };
+  return commitSetup((d) => { d.meals[toDk] = setupClone(setupMapOf(d.meals[fromDk])); }, { label: 'Copied ' + SETUP_DAY_WORDS[fromDk] + '’s menu to ' + SETUP_DAY_WORDS[toDk] });
+}
+
+// The theme verse, or one day's: `rec` { text, ref, title?, video? }; no words removes it. Returns commitSetup's result or
+// { ok: false, reason: 'text' | 'video' } before anything is written (the form says which).
+function versesRecord(rec, theme) {
+  const text = setupCap(rec && rec.text, 600);
+  const ref = setupCap(rec && rec.ref, 80);
+  const title = setupCap(rec && rec.title, 80);
+  const video = setupCap(rec && rec.video, 300);
+  if (!text) return (ref || title || video) ? { error: 'text' } : { empty: true };
+  if (!theme && video && !(safeVideoUrl(video) && /^https:\/\//.test(video))) return { error: 'video' };
+  const out = { text };
+  if (ref) out.ref = ref;
+  if (theme && title) out.title = title;
+  if (!theme && video) out.video = video;
+  return { rec: out };
+}
+function versesSetTheme(rec) {
+  const r = versesRecord(rec, true);
+  if (r.error) return { ok: false, reason: r.error };
+  return commitSetup((d) => { if (r.empty) delete d.verses.theme; else d.verses.theme = r.rec; }, { label: 'Theme verse' });
+}
+function versesSetDay(dk, rec) {
+  if (SETUP_DK.indexOf(dk) === -1) return { ok: false, reason: 'cancelled' };
+  const r = versesRecord(rec, false);
+  if (r.error) return { ok: false, reason: r.error };
+  return commitSetup((d) => { d.verses.days = setupMapOf(d.verses.days); if (r.empty) delete d.verses.days[dk]; else d.verses.days[dk] = r.rec; }, { label: SETUP_DAY_WORDS[dk] + '’s verse' });
+}
+
+// The teams on one meal's cleanup (a set, replaced whole): none removes the meal. The rules take only t0–t9 and `true`.
+function cleanupSetMutate(d, dk, meal, ids) {
+  const day = setupMapOf(d.cleanup[dk]);
+  d.cleanup[dk] = day;
+  const set = {};
+  [].concat(ids || []).forEach((id) => { if (/^t[0-9]$/.test(id) && setupTeamSlot(id) < CAMP.teamCount) set[id] = true; });
+  if (Object.keys(set).length) day[meal] = set; else delete day[meal];
+}
+function cleanupSet(dk, meal, ids, label) {
+  if (SETUP_DK.indexOf(dk) === -1 || SETUP_MEAL_KEYS.indexOf(meal) === -1) return { ok: false, reason: 'cancelled' };
+  return commitSetup((d) => cleanupSetMutate(d, dk, meal, ids), { label: label || (SETUP_DAY_WORDS[dk] + ' ' + meal + ' cleanup') });
+}
+// Apply a fill-evenly result ([{ day, meal, teams }]) as ONE commit.
+function cleanupApply(slots, label) {
+  return commitSetup((d) => { (slots || []).forEach((s) => cleanupSetMutate(d, s.day, s.meal, s.teams)); }, { label: label || 'Filled the cleanup rota evenly' });
+}
+
+// Stations. The id is `st-` + slug(name) (§5.5), a number added when it is taken.
+function electiveStationNewId(tree, name) {
+  const have = setupMapOf(setupMapOf(tree && tree.electives).stations);
+  const base = 'st-' + setupSlug(name, 30);
+  let id = base;
+  let n = 2;
+  while (have[id]) id = base + '-' + n++;
+  return id;
+}
+function electiveStationAdd(name, emoji) {
+  const text = setupCap(name, 60);
+  if (!text) return { ok: false, reason: 'name' };
+  const id = electiveStationNewId(setupTree, text);
+  const r = commitSetup((d) => {
+    d.electives.stations = setupMapOf(d.electives.stations);
+    const rec = { name: text };
+    const e = safeEmoji(emoji, '');
+    if (e) rec.emoji = e;
+    d.electives.stations[id] = rec;
+  }, { label: 'Added the ' + text + ' station' });
+  return Object.assign(r, { id });
+}
+function electiveStationEdit(id, name, emoji) {
+  const text = setupCap(name, 60);
+  if (!text) return { ok: false, reason: 'name' };
+  return commitSetup((d) => {
+    const rec = setupMapOf(d.electives.stations)[id];
+    if (!setupIsMap(rec)) return false;
+    rec.name = text;
+    const e = safeEmoji(emoji, '');
+    if (e) rec.emoji = e; else delete rec.emoji;
+  }, { label: 'Changed the ' + text + ' station', expect: ['electives/stations/' + id] });
+}
+// Remove a station from the list AND from every slot that holds it (one commit, one undo).
+function electiveStationRemove(id) {
+  const was = setupMapOf(setupMapOf(setupTree.electives).stations)[id];
+  return commitSetup((d) => {
+    delete setupMapOf(d.electives.stations)[id];
+    Object.keys(setupMapOf(d.electives.slots)).forEach((dk) => Object.keys(setupMapOf(d.electives.slots[dk])).forEach((s) => { delete setupMapOf(d.electives.slots[dk][s])[id]; }));
+  }, { label: 'Removed the ' + (was && was.name ? was.name : 'elective') + ' station' });
+}
+
+function electiveSlotKey(slot) { return 's' + slot; }
+function electiveSlotAt(d, dk, slot) {
+  d.electives.slots = setupMapOf(d.electives.slots);
+  d.electives.slots[dk] = setupMapOf(d.electives.slots[dk]);
+  d.electives.slots[dk][electiveSlotKey(slot)] = setupMapOf(d.electives.slots[dk][electiveSlotKey(slot)]);
+  return d.electives.slots[dk][electiveSlotKey(slot)];
+}
+const electiveNextOrd = (map) => 10 + Math.max(0, ...Object.keys(map).map((k) => Number(setupMapOf(map[k]).ord) || 0));
+
+function electiveSlotAddStation(dk, slot, stId) {
+  const st = setupMapOf(setupMapOf(setupTree.electives).stations)[stId];
+  return commitSetup((d) => {
+    const sl = electiveSlotAt(d, dk, slot);
+    if (sl[stId]) return false;
+    sl[stId] = { ord: electiveNextOrd(sl) };
+  }, { label: (st && st.name ? st.name : 'A station') + ' on ' + SETUP_DAY_WORDS[dk] + ', elective ' + (slot + 1), expect: ['electives/stations/' + stId] });
+}
+function electiveSlotRemoveStation(dk, slot, stId) {
+  const st = setupMapOf(setupMapOf(setupTree.electives).stations)[stId];
+  return commitSetup((d) => { delete electiveSlotAt(d, dk, slot)[stId]; }, { label: (st && st.name ? st.name : 'A station') + ' off ' + SETUP_DAY_WORDS[dk] + ', elective ' + (slot + 1) });
+}
+// A person at a station: a member (their key, name from the list) or a typed name (`n-<slug>`). Nothing happens when they're
+// already there.
+function electivePersonId(person, taken) {
+  if (person && person.key) return String(person.key).slice(0, 200);
+  const base = 'n-' + setupSlug(person && person.name, 40);
+  let id = base;
+  let n = 2;
+  while (taken && taken[id]) id = base + '-' + n++;
+  return id;
+}
+function electivePersonAdd(dk, slot, stId, person) {
+  const name = setupCap(person && person.name, 60);
+  if (!name) return { ok: false, reason: 'name' };
+  return commitSetup((d) => {
+    const row = electiveSlotAt(d, dk, slot)[stId];
+    if (!setupIsMap(row)) return false;
+    row.people = setupMapOf(row.people);
+    const pid = electivePersonId(person, row.people);
+    if (row.people[pid] && person.key) return false;
+    // The same name typed twice at one station is a double tap, not two people.
+    if (Object.keys(row.people).some((k) => String(setupMapOf(row.people[k]).name || '').toLowerCase() === name.toLowerCase())) return false;
+    row.people[pid] = { name, ord: electiveNextOrd(row.people) };
+  }, { label: name + ' at ' + (((setupMapOf(setupTree.electives).stations || {})[stId] || {}).name || 'a station') + ', ' + SETUP_DAY_WORDS[dk], expect: ['electives/slots/' + dk + '/' + electiveSlotKey(slot) + '/' + stId] });
+}
+function electivePersonRemove(dk, slot, stId, pid) {
+  const rec = setupMapOf(setupMapOf(setupMapOf(setupMapOf(setupMapOf(setupTree.electives).slots)[dk])[electiveSlotKey(slot)])[stId]).people;
+  const name = setupMapOf(rec)[pid] ? setupMapOf(rec)[pid].name : 'Someone';
+  return commitSetup((d) => { const row = electiveSlotAt(d, dk, slot)[stId]; if (!setupIsMap(row)) return false; delete setupMapOf(row.people)[pid]; },
+    { label: name + ' off ' + SETUP_DAY_WORDS[dk] + '’s ' + (((setupMapOf(setupTree.electives).stations || {})[stId] || {}).name || 'station') });
+}
+// "Same as Monday": the day's three slots become a copy of another day's.
+function electiveCopyDay(fromDk, toDk) {
+  if (fromDk === toDk) return { ok: false, reason: 'cancelled' };
+  return commitSetup((d) => { d.electives.slots = setupMapOf(d.electives.slots); d.electives.slots[toDk] = setupClone(setupMapOf(d.electives.slots[fromDk])); },
+    { label: SETUP_DAY_WORDS[toDk] + '’s electives: same as ' + SETUP_DAY_WORDS[fromDk] });
+}
+// Link a typed name to a member: everywhere the typed person stands, the member's key takes the place (same order).
+function electiveLinkPerson(pid, member) {
+  if (!setupIsTypedPerson(pid) || !member || !member.key) return { ok: false, reason: 'cancelled' };
+  const name = setupCap(member.name, 60) || 'Someone';
+  return commitSetup((d) => {
+    let n = 0;
+    Object.keys(setupMapOf(d.electives.slots)).forEach((dk) => Object.keys(d.electives.slots[dk]).forEach((s) => Object.keys(setupMapOf(d.electives.slots[dk][s])).forEach((st) => {
+      const row = d.electives.slots[dk][s][st];
+      const ppl = setupMapOf(row.people);
+      if (!ppl[pid]) return;
+      if (!ppl[member.key]) ppl[member.key] = { name, ord: ppl[pid].ord };
+      delete ppl[pid];
+      row.people = ppl;
+      n++;
+    })));
+    if (!n) return false;
+  }, { label: 'Linked ' + name + ' to their sign-in' });
 }
 
 setupLoadCache();

@@ -232,9 +232,11 @@ function makeContext(opts) {
   // as a round trip would leave it) is the setup tree with the switches on, and the catalog's games sit on their
   // schedule items (A2). Every existing week / push / chat / shell test re-runs against it (run.js, the seeded pass),
   // which is how the accessors' "on" half is proven to change nothing anyone can see.
+  // makeContext({ seeded: 'all' }): the same, with the four smaller sections (meals, verses, cleanup, electives) on too —
+  // what the page holds once the owner has turned everything on (step 19's switches, pressed at step 20).
   if (opts && opts.seeded) {
     vm.runInContext(`
-      setupTree = normalizeSetup(setupClone(syncCanon(buildSeed(CAMP))));
+      setupTree = normalizeSetup(setupClone(syncCanon(buildSeed(CAMP${opts.seeded === 'all' ? ", ['schedule', 'meals', 'verses', 'cleanup', 'electives']" : ''}))));
       setupRev++;
       setupApplyGameAttachments(state.config, setupGameAttachments(state.config, (dow) => planForDow(dow), CAMP).ops);
     `, ctx);

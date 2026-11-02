@@ -671,8 +671,9 @@ function teamStaffNames(teamId) {
 //   - While a section is off, an accessor returns the camps.js constant ITSELF
 //     (same object), so this layer is provably a no-op. The schedule's switch
 //     (setup/meta/on/schedule, the owner's Edit the week here) moves the
-//     schedule accessors onto the shared copy; the other sections stay built-in
-//     until their own steps.
+//     schedule accessors onto the shared copy, and each of meals, verses, cleanup
+//     and electives (setup/meta/on/<section>, step 19) moves its own accessors;
+//     teams stay built-in until step 25.
 //   - They return plain data, never markup, and never throw on missing data
 //     (a missing day is a shared frozen empty list, a missing verse an empty
 //     one). Never mutate what one returns.
@@ -743,6 +744,7 @@ const COMPETITION_DOWS = Object.freeze([1, 2, 3, 4, 5]);
 // nobody can scribble on it; and the verse a missing day reads as.
 const NO_ITEMS = Object.freeze([]);
 const NO_VERSE = Object.freeze({ text: '', ref: '', video: null });
+const NO_THEME = Object.freeze({ title: '', text: '', ref: '' });
 
 // ── Schedule
 // Is this camp's schedule edited in the app (setup/meta/on/schedule is true, in a schema this build reads)? setup-sync.js
@@ -839,17 +841,40 @@ function legacyMealOf(label) {
   const base = String(label || '').split(' — ')[0].trim();
   return MEAL_CLEANUP_MEALS.includes(base) ? base : null;
 }
+// Is this section (meals, verses, cleanup, electives) edited here — its switch on, in a schema this build reads? Off, or
+// without setup-sync.js, every accessor below is the camps.js constant itself.
+function sectionIsShared(section) { return typeof setupSectionLive === 'function' && setupSectionLive(section); }
+// The meal a block represents ('Breakfast' | 'Lunch' | 'Supper'), or null. Built in it is read off the label (legacyMealOf);
+// once the schedule is edited here it is the item's own Meal tag, so a "Supper and free time" item tagged Supper is a meal.
+function blockMeal(b) {
+  const rich = scheduleIsShared() && typeof setupRichOf === 'function' ? setupRichOf(b) : null;
+  if (rich) return rich.meal ? (MEAL_CLEANUP_MEALS.find((m) => m.toLowerCase() === rich.meal) || null) : null;
+  return legacyMealOf(b && b.label);
+}
 // The menu entry { dish, emoji } for a lowercase meal block name, or null.
 function mealFor(dow, meal) {
+  if (sectionIsShared('meals')) { const d = weekdayIndex(dow); return d < 0 || typeof setupMealFor !== 'function' ? null : setupMealFor(d, meal); }
   const day = MEALS[dow];
   return (day && day[meal]) || null;
 }
-function mealStart(dow, meal) { return MEAL_START_MINUTES[meal]; }
+// When a meal starts on a weekday: built in, the same for every day; once the schedule is edited here, the start of that
+// day's item tagged with the meal (else the usual).
+function mealStart(dow, meal) {
+  if (scheduleIsShared()) {
+    const hit = planForDow(dow).find((b) => b.meal === String(meal).toLowerCase() && !b.noTime);
+    if (hit) return hit.start;
+  }
+  return MEAL_START_MINUTES[meal];
+}
 // Is this weekday on the cleanup rota at all? (A tracked day with an unassigned
-// meal reads "TBA"; an untracked day says nothing.)
-function cleanupOnRota(dow) { return !!MEAL_CLEANUP_SCHEDULE[dow]; }
+// meal reads "TBA"; an untracked day says nothing.) Edited here: a day with a team on any meal.
+function cleanupOnRota(dow) {
+  if (sectionIsShared('cleanup')) { const d = weekdayIndex(dow); return d >= 0 && typeof setupCleanupOnRota === 'function' && setupCleanupOnRota(d); }
+  return !!MEAL_CLEANUP_SCHEDULE[dow];
+}
 // Team ids on cleanup for a day + meal, always an array ([] = TBA).
 function cleanupTeams(dow, meal) {
+  if (sectionIsShared('cleanup')) { const d = weekdayIndex(dow); return d < 0 || typeof setupCleanupFor !== 'function' ? NO_ITEMS : (setupCleanupFor(d, meal) || NO_ITEMS); }
   const day = MEAL_CLEANUP_SCHEDULE[dow];
   const assigned = day && day[meal];
   return assigned ? (Array.isArray(assigned) ? assigned : [assigned]) : NO_ITEMS;
@@ -873,14 +898,56 @@ function blockPushId(b, dow, i) {
 }
 
 // ── Memory verses
-function verseTheme() { return MEMORY_VERSE_THEME; }
-function verseFor(dow) { return MEMORY_VERSES[dow] || NO_VERSE; }
+// Edited here, no theme verse reads as an empty one (the card then leaves the theme out).
+function verseTheme() {
+  if (sectionIsShared('verses') && typeof setupVerseThemeNow === 'function') return setupVerseThemeNow() || NO_THEME;
+  return MEMORY_VERSE_THEME;
+}
+function verseFor(dow) {
+  if (sectionIsShared('verses') && typeof setupVerseFor === 'function') { const d = weekdayIndex(dow); return (d >= 0 && setupVerseFor(d)) || NO_VERSE; }
+  return MEMORY_VERSES[dow] || NO_VERSE;
+}
 
 // ── Electives
-// A day's slots, [slot → [[stationName, [kid names]], …]]; [] on a day with none.
-function electivesFor(dow) { return ELECTIVES[dow] || NO_ITEMS; }
-function stationEmoji(name) { return STATION_EMOJI[name] || '🌟'; }
-function electiveSlotStart(slot, dow) { return ELECTIVE_SLOT_MIN[slot]; }
+// A day's slots, [slot → [[stationName, [names], [member keys]?], …]]; [] on a day with none. Edited here the third list is
+// the member key behind each name ('' for a typed one) — see electiveIsMe.
+function electivesFor(dow) {
+  if (sectionIsShared('electives') && typeof setupElectivesOf === 'function') { const d = weekdayIndex(dow); return d < 0 ? NO_ITEMS : (setupElectivesOf(d) || NO_ITEMS); }
+  return ELECTIVES[dow] || NO_ITEMS;
+}
+function stationEmoji(name) {
+  if (sectionIsShared('electives') && typeof setupStationEmoji === 'function') return setupStationEmoji(name) || '🌟';
+  return STATION_EMOJI[name] || '🌟';
+}
+// When an elective slot starts on a weekday: the usual 1:15 / 3:00 / 4:00 while the schedule is built in; once it is edited
+// here, the start of that day's Elective item for the slot (a rain plan that moves Elective 1 moves the time everyone sees).
+function electiveSlotStart(slot, dow) {
+  if (scheduleIsShared()) {
+    const hit = planForDow(dow).find((b) => b.type === 'elective' && b.slot === slot && !b.noTime);
+    if (hit) return hit.start;
+  }
+  return ELECTIVE_SLOT_MIN[slot];
+}
+// Is this one of the people at a station — me? Built in a name is all there is: the device's chosen identity (canonical on
+// both sides: Alysa and Alyssa are one person). Edited here a person may carry a member key: my own sign-in matches by key
+// first, and a key that is somebody else's never matches by name; a typed name matches by name.
+function electiveIsMe(name, key) {
+  const mine = typeof authUser !== 'undefined' && authUser && typeof identityKey === 'function' ? identityKey(authUser) : '';
+  if (key && mine) return key === mine;
+  const me = canonicalCounselorName(state.identity);
+  return !!me && canonicalCounselorName(name) === me;
+}
+// Is a station's people list (a row of electivesFor) mine? `row` = [station, names, keys?].
+function electiveRowHasMe(row) {
+  const names = (row && row[1]) || [];
+  const keys = (row && row[2]) || [];
+  return names.some((n, i) => electiveIsMe(n, keys[i] || ''));
+}
+// A name an elective list knows, so adoptMemberTeam can take it as the device's identity (edited here, a name added to
+// the electives counts; built in, only the printed roster does).
+function electiveKnowsName(name) {
+  return sectionIsShared('electives') && typeof setupElectiveNames === 'function' && setupElectiveNames().some((n) => canonicalCounselorName(n) === name);
+}
 
 // ── Double points
 // The window, { start, end } epoch ms (camp-core.js doubleWindowFor shape).
@@ -905,6 +972,8 @@ function teamRoster(tid) { return TEAM_COUNSELORS[tid] || NO_ITEMS; }
 function staffNames() {
   const out = [];
   Object.keys(TEAM_COUNSELORS).forEach((tid) => teamRoster(tid).forEach((n) => out.push(n)));
+  // Edited here, the people on the elective stations are names a mention can find too (a game leader who is on no team).
+  if (sectionIsShared('electives') && typeof setupElectiveNames === 'function') setupElectiveNames().forEach((n) => { if (!out.includes(n)) out.push(n); });
   return out;
 }
 // What a brand-new device seeds for the roster, and what an older saved roster
@@ -982,13 +1051,15 @@ function electiveBreakKids(dow, slot) {
 // identity, no electives that day, or the identity isn't on that day's
 // sheet — counselors and parents). Used by the schedule sheet's "You" chip.
 function myStationFor(dow, slot) {
-  const name = canonicalCounselorName(state.identity);
-  if (!name) return null;
   const stations = electivesFor(dow)[slot] || [];
-  const found = stations.find(([, kids]) => (kids || []).includes(name));
+  const found = stations.find(electiveRowHasMe);
   if (found) return { station: found[0], emoji: stationEmoji(found[0]), onBreak: false };
-  if (electiveDayRoster(dow).has(name)) return { station: 'Break', emoji: '☕', onBreak: true };
+  if (electiveMeOnDay(dow)) return { station: 'Break', emoji: '☕', onBreak: true };
   return null;
+}
+// Am I at any station on this day (any slot)? Not being there at all says nothing: no "Break" for a counselor or a parent.
+function electiveMeOnDay(dow) {
+  return electivesFor(dow).some((slot) => (slot || []).some(electiveRowHasMe));
 }
 
 // Today's three elective slots for the stored identity (state.identity), as
@@ -996,15 +1067,13 @@ function myStationFor(dow, slot) {
 // show — no identity set, a weekend / no-elective day, or the identity isn't on
 // today's elective sheet at all. Reused by renderMyElectives.
 function myElectivesToday() {
-  const name = canonicalCounselorName(state.identity);
-  if (!name) return null;
   const { dow } = campNow();
   const day = electivesFor(dow);
   if (!day.length) return null;                        // dow 0/6 — no electives
-  if (!electiveDayRoster(dow).has(name)) return null;  // not on today's sheet
+  if (!electiveMeOnDay(dow)) return null;              // no identity, or not on today's sheet
   return [0, 1, 2].map((slot) => {
     const stations = day[slot] || [];
-    const found = stations.find(([, kids]) => kids.includes(name));
+    const found = stations.find(electiveRowHasMe);
     const station = found ? found[0] : null;
     return {
       slot,
@@ -1160,6 +1229,10 @@ function upcomingRainHint() {
 // What the kitchen is serving comes from mealFor() (the SEAM block).
 function mealInfo(dow, block) {
   if (!block) return null;
+  // Once the schedule is edited here the item's Meal tag says which meal it is (a "Supper and free time" item tagged Supper
+  // gets its dish); built in it is the label, as it has always been.
+  const rich = scheduleIsShared() && typeof setupRichOf === 'function' ? setupRichOf(block) : null;
+  if (rich) return rich.meal ? mealFor(dow, rich.meal) : null;
   return mealFor(dow, (block.label || '').toLowerCase());
 }
 
@@ -1177,8 +1250,10 @@ function decorateMealBlock(dow, block) {
 // A "🧽 <team>" note naming who's on cleanup for the meal a block represents,
 // shown next to the meal wherever it appears. '' when the block isn't a meal or
 // the day isn't on the cleanup rota; "TBA" for a tracked day not yet assigned.
-function mealCleanupNote(dow, label) {
-  const meal = legacyMealOf(label);
+function mealCleanupNote(dow, label, tagged) {
+  // `tagged` is blockMeal() of the item the label came from (its Meal tag once the schedule is edited here); without it
+  // the label says.
+  const meal = tagged !== undefined ? tagged : legacyMealOf(label);
   if (!meal || !cleanupOnRota(dow)) return '';
   const teams = cleanupTeams(dow, meal);
   if (!teams.length) return ` <span class="meal-cleanup-note">🧽 TBA</span>`;
@@ -1368,18 +1443,19 @@ function nowBannerHtml(dow, minutes) {
   // to omit the bar (untimed blocks, or before the day's first block).
   const progressBar = (progress) => progress == null ? '' :
     `<jelly-progress class="now-progress" size="small" value="${Math.round(Math.max(0, Math.min(1, progress)) * 100)}" max="100" aria-hidden="true"></jelly-progress>`;
-  const main = (emoji, label, time, next, progress) => eyebrow +
+  // `meal` / `nextMeal`: the Meal tag of the block and of the one after it (blockMeal), for the cleanup note.
+  const main = (emoji, label, time, next, progress, meal, nextMeal) => eyebrow +
     `<div class="now-main"><span class="now-emoji">${emoji}</span><div class="now-body">
-      <div class="now-label">${esc(label)}${time ? ` <span class="now-time">${time}</span>` : ''}${mealCleanupNote(dow, label)}</div>
-      ${next ? `<div class="now-next">Up next: ${next.emoji} ${esc(next.label)} at ${schedClock(next.start, true)}${mealCleanupNote(dow, next.label)}</div>` : ''}
+      <div class="now-label">${esc(label)}${time ? ` <span class="now-time">${time}</span>` : ''}${mealCleanupNote(dow, label, meal)}</div>
+      ${next ? `<div class="now-next">Up next: ${next.emoji} ${esc(next.label)} at ${schedClock(next.start, true)}${mealCleanupNote(dow, next.label, nextMeal)}</div>` : ''}
       ${upcomingRainHint()}
     </div></div>` + progressBar(progress);
 
   // Early morning, before the first block of the day.
   if (minutes < blocks[0].start) {
     const first = decorateMealBlock(dow, blocks[0]);
-    if (dow === 0) return main('🚌', 'Camp starts today!', null, first, null);
-    return main('🛏️', "Lights out — everyone's sleeping", null, first, null);
+    if (dow === 0) return main('🚌', 'Camp starts today!', null, first, null, undefined, blockMeal(blocks[0]));
+    return main('🛏️', "Lights out — everyone's sleeping", null, first, null, undefined, blockMeal(blocks[0]));
   }
 
   const found = blocks.find((x) => minutes >= x.start && minutes < x.end);
@@ -1398,16 +1474,15 @@ function nowBannerHtml(dow, minutes) {
   const time = b.noTime ? null : schedRange(b.start, b.end);
   const progress = b.noTime ? null : (minutes - b.start) / (b.end - b.start);
   if (b.type === 'elective') {
-    const me = canonicalCounselorName(state.identity);
-    const chip = (k) => `<span class="kid-chip${k === me ? ' kid-chip-you' : ''}">${esc(k)}${k === me ? ' ⭐' : ''}</span>`;
+    const chip = (k, key) => { const you = electiveIsMe(k, key || ''); return `<span class="kid-chip${you ? ' kid-chip-you' : ''}">${esc(k)}${you ? ' ⭐' : ''}</span>`; };
     const stations = electivesFor(dow)[b.slot] || [];
-    let rows = stations.map(([station, kids]) =>
-      `<div class="now-station${kids.includes(me) ? ' now-station-you' : ''}"><span class="now-station-name">${stationEmoji(station)} ${esc(station)}</span>
-        <span class="now-kids">${kids.map(chip).join('')}</span></div>`).join('');
+    let rows = stations.map((row) =>
+      `<div class="now-station${electiveRowHasMe(row) ? ' now-station-you' : ''}"><span class="now-station-name">${stationEmoji(row[0])} ${esc(row[0])}</span>
+        <span class="now-kids">${row[1].map((k, i) => chip(k, row[2] && row[2][i])).join('')}</span></div>`).join('');
     const breakKids = electiveBreakKids(dow, b.slot);
     if (breakKids.length) {
-      rows += `<div class="now-station now-break${breakKids.includes(me) ? ' now-station-you' : ''}"><span class="now-station-name">☕ Break</span>
-        <span class="now-kids">${breakKids.map(chip).join('')}</span></div>`;
+      rows += `<div class="now-station now-break${breakKids.some((k) => electiveIsMe(k, '')) ? ' now-station-you' : ''}"><span class="now-station-name">☕ Break</span>
+        <span class="now-kids">${breakKids.map((k) => chip(k)).join('')}</span></div>`;
     }
     return main(b.emoji, b.label, time, null, progress) + `<div class="now-stations">${rows}</div>`;
   }
@@ -1418,7 +1493,7 @@ function nowBannerHtml(dow, minutes) {
   // non-overlapping day this is the very next block, exactly as before.
   const after = blocks.find((x) => x.start >= found.end);
   const next = decorateMealBlock(dow, after || null);
-  return main(b.emoji, b.label, time, next, progress);
+  return main(b.emoji, b.label, time, next, progress, blockMeal(found), blockMeal(after));
 }
 
 function renderNowBanner() {
@@ -1614,16 +1689,15 @@ function renderScheduleBody() {
       // have to scan every roster for their name.
       const mine = myStationFor(dow, raw.slot);
       if (mine) labelBadge += `<span class="sched-you-chip">⭐ You: ${mine.emoji} ${esc(mine.station)}</span>`;
-      const me = canonicalCounselorName(state.identity);
-      const kidText = (kids) => kids.map((k) => k === me ? `<span class="sched-you">⭐ ${esc(k)}</span>` : esc(k)).join(' · ');
+      const kidText = (kids, keys) => kids.map((k, i) => electiveIsMe(k, keys && keys[i]) ? `<span class="sched-you">⭐ ${esc(k)}</span>` : esc(k)).join(' · ');
       const stations = electivesFor(dow)[raw.slot] || [];
       if (stations.length) {
-        let stationRows = stations.map(([station, kids]) =>
-          `<div class="sched-station${kids.includes(me) ? ' sched-station-you' : ''}"><span class="sched-station-name">${stationEmoji(station)} ${esc(station)}</span>
-            <span class="sched-station-kids">${kidText(kids)}</span></div>`).join('');
+        let stationRows = stations.map((row) =>
+          `<div class="sched-station${electiveRowHasMe(row) ? ' sched-station-you' : ''}"><span class="sched-station-name">${stationEmoji(row[0])} ${esc(row[0])}</span>
+            <span class="sched-station-kids">${kidText(row[1], row[2])}</span></div>`).join('');
         const breakKids = electiveBreakKids(dow, raw.slot);
         if (breakKids.length) {
-          stationRows += `<div class="sched-station sched-break${breakKids.includes(me) ? ' sched-station-you' : ''}"><span class="sched-station-name">☕ Break</span>
+          stationRows += `<div class="sched-station sched-break${breakKids.some((k) => electiveIsMe(k, '')) ? ' sched-station-you' : ''}"><span class="sched-station-name">☕ Break</span>
             <span class="sched-station-kids">${kidText(breakKids)}</span></div>`;
         }
         extra += `<div class="sched-stations">${stationRows}</div>`;
@@ -1634,7 +1708,7 @@ function renderScheduleBody() {
       <div class="sched-rail"><span class="sched-dot"></span></div>
       <div class="sched-card">
         <div class="sched-time">${raw.noTime ? '' : schedRange(raw.start, raw.end)}${status === 'now' ? '<span class="sched-now-pill">Now</span>' : ''}</div>
-        <div class="sched-label"><span class="sched-emoji">${b.emoji}</span> ${esc(b.label)}${mealCleanupNote(dow, b.label)}${labelBadge}</div>
+        <div class="sched-label"><span class="sched-emoji">${b.emoji}</span> ${esc(b.label)}${mealCleanupNote(dow, b.label, blockMeal(raw))}${labelBadge}</div>
         ${extra}
       </div>
     </div>`;
@@ -1822,8 +1896,8 @@ function icsSavedStamp(now) {
   } catch (e) { return { text: at.toISOString().slice(0, 16).replace('T', ' ') + ' UTC', file: at.toISOString().slice(5, 16).replace(/[-:T]/g, '') }; }
 }
 // "Cleanup: 🦊 Ferocious Foxes + …" for a meal block on the rota, plain text (a calendar has no markup).
-function icsCleanupText(dow, label) {
-  const meal = legacyMealOf(label);
+function icsCleanupText(dow, label, tagged) {
+  const meal = tagged !== undefined ? tagged : legacyMealOf(label);
   if (!meal || !cleanupOnRota(dow)) return '';
   const teams = cleanupTeams(dow, meal);
   return 'Cleanup: ' + (teams.length ? teams.map((id) => teamEmoji(id) + ' ' + teamName(id)).join(' + ') : 'TBA');
@@ -1863,7 +1937,7 @@ function buildWeekIcs(opts) {
       if (games.length) lines.push('Games: ' + games.map((g) => g.name).join(', '));
       const meal = mealInfo(dow, raw);
       if (meal) lines.push('On the menu: ' + meal.dish);
-      const cleanup = icsCleanupText(dow, r.label);
+      const cleanup = icsCleanupText(dow, r.label, blockMeal(raw));
       if (cleanup) lines.push(cleanup);
       const uid = shared ? `${CAMP.id}-${wk.start}-${r.dk}-${r.id}` : `${CAMP.id}-${wk.start}-${r.dk}-${i}-${r.start}`;
       events.push([
@@ -7622,7 +7696,7 @@ function adoptMemberTeam() {
   // A member row typed with an old spelling ("Alysa") still adopts the one the
   // electives data is keyed to ("Alyssa") — see canonicalCounselorName.
   const canonName = memberName ? canonicalCounselorName(memberName) : '';
-  const known = canonName && teamRoster(memberTeamId).includes(canonName) ? canonName : null;
+  const known = canonName && (teamRoster(memberTeamId).includes(canonName) || electiveKnowsName(canonName)) ? canonName : null;
   // Only adopt a name the electives data actually knows; otherwise leave the
   // identity answered-as-skipped rather than looking up nothing forever.
   const wanted = known || null;
@@ -8048,7 +8122,8 @@ function renderMemoryVerse() {
   const theme = verseTheme();
   const todayDow = campNow().dow;
 
-  const themeHTML = `
+  // Edited here, a week with no theme verse yet shows none (the day's verse still reads).
+  const themeHTML = !theme.text ? '' : `
     <div class="verse-theme">
       <span class="verse-theme-label"><svg class="ico" aria-hidden="true"><use href="#i-book"/></svg>Theme verse · ${esc(theme.title)}</span>
       <p class="verse-theme-text">“${esc(theme.text)}”</p>
@@ -8064,8 +8139,8 @@ function renderMemoryVerse() {
   const verseBox = `
     <div class="verse-day-card">
       <span class="verse-day-name">${esc(dayLabel(verseDay))}</span>
-      <p class="verse-day-text">“${esc(verse.text)}”</p>
-      <p class="verse-day-ref">${esc(verse.ref)}</p>
+      ${verse.text ? `<p class="verse-day-text">“${esc(verse.text)}”</p>
+      <p class="verse-day-ref">${esc(verse.ref)}</p>` : '<p class="verse-day-text muted">No verse for this day yet.</p>'}
       ${verseVideo}
     </div>`;
 

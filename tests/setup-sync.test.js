@@ -165,7 +165,7 @@ test('setupDiff recurses to each shape\'s depth: fields of a block, a meal whole
   assert.deepEqual(Object.keys(d).sort(), [
     'cleanup/mon/lunch/t3',
     'dayBlocks/sun/b-sun-registration-840/label',
-    'electives/slots/mon',
+    'electives/slots/mon/s0/st-art', // a new day is cut to its RECORDS (step 19: a colleague's first write beside it is not overwritten)
     'electives/stations/st-art',
     'meals/mon/lunch',
     'meta/double',

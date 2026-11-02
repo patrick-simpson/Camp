@@ -41,19 +41,26 @@ const seededJobs = process.env.SEEDED === 'off' ? [] : [].concat(...plain
     return out;
   }));
 
+// The SEEDED-ALL pass (build step 19): the files whose output a menu, a rota, a verse or an elective list could change run a
+// third time with the four smaller sections ON as well (makeContext({ seeded: 'all' }) — what the page holds once the owner has
+// turned everything on). Passing proves the sections' "on" half shows exactly what the built-in half did, on both camps.
+const SEEDED_ALL_FILES = ['week', 'ics', 'push', 'chat', 'home', 'tabs', 'shell', 'render-stability', 'secrecy', 'frame'];
+const seededAllJobs = seededJobs.filter((j) => SEEDED_ALL_FILES.indexOf(j.file.replace('.senior', '').replace('.test.js', '')) !== -1);
+
 let passed = 0;
 const failures = [];
 
 async function main() {
   const jobs = files.map((file) => ({ file, camp: file.includes('.senior.') ? 'senior' : 'junior', seeded: false }))
-    .concat(seededJobs.map((j) => Object.assign({ seeded: true }, j)));
+    .concat(seededJobs.map((j) => Object.assign({ seeded: true }, j)))
+    .concat(seededAllJobs.map((j) => Object.assign({}, j, { seeded: 'all' })));
   for (const { file, camp, seeded } of jobs) {
     // A file named *.senior.test.js runs against the SENIOR camp profile —
     // the harness seeds campScoreboardActiveCamp before the scripts load,
     // which is the only moment the camp choice can happen (camps.js reads it
     // at load time). Everything else runs as junior, exactly as before.
     const { ctx, sandbox } = makeContext({ camp, seeded });
-    const label = seeded ? file + ' (seeded)' : file;
+    const label = seeded === 'all' ? file + ' (seeded, every section)' : seeded ? file + ' (seeded)' : file;
     const cases = [];
     sandbox.assert = assert;
     sandbox.test = (name, fn) => cases.push({ name, fn });
@@ -108,7 +115,7 @@ async function main() {
     console.log(`\x1b[31m${failures.length} failed\x1b[0m, ${passed} passed`);
     process.exit(1);
   }
-  console.log(`\x1b[32m${passed} passed\x1b[0m (${files.length} file${files.length === 1 ? '' : 's'}${seededJobs.length ? ' + ' + seededJobs.length + ' seeded' : ''})`);
+  console.log(`\x1b[32m${passed} passed\x1b[0m (${files.length} file${files.length === 1 ? '' : 's'}${seededJobs.length ? ' + ' + seededJobs.length + ' seeded + ' + seededAllJobs.length + ' seeded-all' : ''})`);
 }
 
 main();

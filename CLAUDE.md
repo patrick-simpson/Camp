@@ -1601,6 +1601,15 @@ What's covered, and why each file exists:
   `rain-plan.test.js` (+ `.senior`) — opening, collapse, every action, the draft, Back,
   Done (clashes, verdict, ONE commit and ONE undo entry for setup + games), the home sheet's
   way in, and **M2 in handler calls (10)**; the REAL tap count is the Playwright script.
+- `sections.test.js` (+ `.senior`) — step 19's four sections: the seed's record shapes against
+  the rules, every accessor the constant itself while off and deep-equal to it once the seed is
+  on (both camps), the Meal tag (a tagged "Supper and free time" shows its dish and its cleanup
+  line; off, a meal is still read off its label), the verse video through `safeVideoUrl`,
+  fill-evenly (±1, no team twice a day, no team on one meal two days running, locked slots,
+  Friday's pairs, a relaxed rule is reported), the fairness line, an elective person's identity
+  (member key first, then name through `canonicalCounselorName`), the mutators' exact ops and
+  their `off` refusal, and Turn on against the fake database (ONE restore point, ONE
+  transaction, owner only, off-then-on keeps the edit).
 - **The seeded pass** — `tests/run.js` re-runs `SEEDED_FILES` (week, push, chat, ics,
   tabs, frame, shell, home, render-stability, game-view, secrecy, motion, overlays,
   boot-cache, backup) against a camp whose schedule is edited here
@@ -1609,7 +1618,11 @@ What's covered, and why each file exists:
   builds its own fresh context (boot-cache, secrecy's hint-paint boots, shell's
   missing-script boot) passes `seeded: scheduleIsShared()` through, and `ics.test.js`'s
   `wkSet` / `wkReset` put the seeded tree back (`wkOff` is the printed week on purpose) —
-  otherwise the "seeded" rerun quietly repeats the plain one.
+  otherwise the "seeded" rerun quietly repeats the plain one. A third pass,
+  `SEEDED_ALL_FILES` (week, ics, push, chat, home, tabs, shell, render-stability, secrecy,
+  frame), runs with `makeContext({camp, seeded: 'all'})`: the four smaller sections ON as
+  well, the page as it will be after step 20, proving their "on" half shows what the built-in
+  half did.
 - `seam.test.js` — greps `app.js` (minus the SEAM block), `chat.js`, `push.js`
   and `settings.js` for direct reads of the week constants, `CAMP.<week field>`,
   `setupTree` and `state.config.days|games` (including a computed key, an alias
@@ -1783,9 +1796,11 @@ reuses) an accessor in the block.
   **The "on" half of the schedule accessors is built (Step 15)**: `scheduleForDow`,
   `scheduleWeek`, `weekDays`, `planForDow`, `campWeek`, `blockKey`, `blockPushId`,
   `gamesForBlock`, `gamesForDay` and `unscheduledGames` choose between the built-in
-  copy and the shared one on `meta/on/schedule` (see "Schedule as data"); every other
-  accessor's "on" half arrives with its own section (meals, verses, cleanup, electives:
-  step 19; teams: step 25).
+  copy and the shared one on `meta/on/schedule` (see "Schedule as data"); `mealFor`,
+  `mealStart`, `blockMeal`, `cleanupOnRota`, `cleanupTeams`, `verseTheme`, `verseFor`,
+  `electivesFor`, `stationEmoji`, `electiveSlotStart` and `staffNames` choose on their own
+  section's switch (step 19: see "Meals, verses, cleanup, electives as data"); teams' "on"
+  half arrives with step 25.
 - **The builder is the authority, not a reader.** `settings.js` still WRITES the
   catalog straight into `state.config` (`push`, `splice`, the reorder swap and
   `moveItem`) — `competitionDays()`/`allGames()` front that same array. Reads
@@ -2813,6 +2828,82 @@ Both camps, junior and senior, run all of it.
   and switch-moved triggers, the week-date migration, the drawer's Save),
   `games-blocks.test.js` (+ `.senior`: the A2 oracle, never-touches-attached,
   re-homing, unplaced, each rule, exactly-once listing, `putGamesOnSchedule`).
+
+## Meals, verses, cleanup, electives as data (setup-sync.js §10 — Step 19, switches unpressed)
+
+Specs: P2 §5.2–5.3, §9.2, §10.2, §11.10–11.13. **Nothing here changes what anyone sees until the
+owner turns a section on** (`meta/on/<section>`; Step 20 presses them): while a section is off,
+its accessors return the camps.js constant itself, and every mutator is refused `off`. Both camps
+run all of it; electives only where `CAMP.features.electives` (junior).
+
+- **The seed** (`buildSeed(camp, sections)`): a plain `buildSeed(CAMP)` is still the schedule
+  alone (`SETUP_SEED_SECTIONS`, the default every test and A1 uses); the four sections are asked
+  for by name. `meals/<dk>/<meal>` `{dish ≤ 80, emoji?}` from `MEALS` (junior 16 dishes, Sunday
+  supper included); `verses/theme` and `verses/days/<dk>` from the constants (`video` only when
+  `safeVideoUrl` passes and ≤ 300); `cleanup/<dk>/<meal>/<tid>: true` from the printed rota
+  (Friday's pairs are two teams); `electives/stations/st-<slug ≤ 30>` `{name, emoji}` — every
+  station in `STATION_EMOJI`, used or not — and `electives/slots/<dk>/s<n>/<st>` `{ord: 10×(j+1),
+  people: {'n-<slug>': {name, ord}}}` (every printed person is a TYPED name; a director links one
+  to a member later). Senior seeds its verses only (no menu, rota or electives data): the
+  switches are still asked for by name, and a section with nothing to seed is simply switched on
+  empty (absence means empty). `mergeSeed` is generic and unchanged; `setupTurnOn(sections)` and
+  `setupUseOriginal(sections)` now take any of the five (electives filtered out where the camp has
+  none), and A2 (the games' links) runs only when the schedule is among the sections turned on.
+- **`setupSectionLive(s)`** = switch on AND schema ≤ 1 (`setupScheduleLive` is its schedule case);
+  app.js's `sectionIsShared(s)` wraps it behind a typeof guard.
+- **The readers** (pure over a tree: `setupMealRecord`, `setupCleanupIds`, `setupVerseDay`,
+  `setupElectiveRows`, …) feed one memo, `setupSecs()`, keyed on the tree, `setupRev` AND the member
+  directory (an elective person's name follows a rename), so an accessor hands back the same
+  objects until something changes (render-stability). What a database holds is laundered on the way
+  out: a meal emoji through `safeEmoji`, a verse video through `safeVideoUrl` (http and
+  `javascript:` dropped, the verse stays), a cleanup id that is not one of the camp's own teams
+  dropped, an elective name through `respellCounselorText` (one spelling per counselor).
+- **Accessors, "on" half**: `mealFor` (`setup.meals`); `blockMeal(b)` — the meal a block is,
+  from its **Meal tag** once the schedule is edited here (`setupRichOf(b).meal`), else read off the
+  label as before (`legacyMealOf`); `mealInfo` follows the tag the same way, so a tagged "Supper
+  and free time" shows its dish; `mealCleanupNote(dow, label, meal)` / `icsCleanupText` take the tag
+  as an optional third argument; `mealStart` and `electiveSlotStart` read the start of that day's
+  tagged / Elective item once the SCHEDULE is edited here (a rain plan that moves Elective 1 moves
+  the time everyone sees; built in, the constants); `cleanupOnRota(dow)` = a day with a team on any
+  meal (an untracked day says nothing, exactly as the printed rota did — senior's empty rota stays
+  silent); `cleanupTeams` in slot order; `verseTheme()` is `NO_THEME` when there is none (the card
+  then leaves the theme out) and `verseFor` `NO_VERSE`; `electivesFor(dow)` keeps the legacy shape
+  `[slot → [[station, [names], [member keys]]…]]` with a THIRD list the legacy rows don't have;
+  `stationEmoji`; `staffNames()` adds the people on the stations (the mention dictionary).
+- **An elective person's identity**: `electiveIsMe(name, key)` — my own sign-in matches by MEMBER
+  KEY first, a key that is somebody else's never matches by name, a typed name matches
+  `state.identity` through `canonicalCounselorName` on both sides (Lilly = Lily, Sofie = Sofia).
+  `electiveRowHasMe(row)`, `electiveMeOnDay(dow)`; `myStationFor`, `myElectivesToday`, the Now
+  banner and the schedule sheet's chips all use them. `adoptMemberTeam` takes a name the electives
+  list knows (`electiveKnowsName`) as the device's identity, as it did the printed roster's.
+- **The diff cuts a first write to records** (`setupTreeDiff`, `SETUP_RECORD_DEPTH`): the first
+  dish into a section with nothing in it is `meals/wed/lunch`, not a whole `meals` (which would
+  overwrite a colleague's first write and take theirs with an undo); the same for a deleted
+  container. It stops at the RECORD (`electives/slots/<dk>/<s>/<st>`, `…/people/<p>`) because a
+  field op into an absent record is dropped by `setupApplyOps`.
+- **The mutators** are plain `commitSetup`s (one undo entry, one push), each refused `off` until
+  the section is on: `mealsSet` (an empty dish removes the record — the rules want a dish, an emoji
+  alone is not a menu), `mealsCopyDay`; `versesSetTheme` / `versesSetDay` (`reason: 'text'` — a
+  verse needs its words — or `'video'` — https only — before anything is written; no words at all
+  removes it); `cleanupSet` (the meal's teams replaced as a set), `cleanupApply` (a fill-evenly
+  result as ONE commit); `electiveStationAdd/Edit/Remove` (a removal also takes the station off
+  every slot, one undo), `electiveSlotAddStation/RemoveStation`, `electivePersonAdd/Remove` (a
+  member key or a typed `n-<slug>`; the same name twice at one station is a double tap),
+  `electiveCopyDay` ("Same as Monday"), `electiveLinkPerson` (re-keys a typed name to a member
+  everywhere it stands, keeping its order).
+- **Pure helpers**: `rotaFillEvenly({teams, slots: [{day, meal, want, have}], redo})` — the lowest
+  count goes next, a team is not on one meal two days running nor twice in a day; the team with the
+  fewest remaining places that day goes first (so a team that cannot repeat Thursday's supper is
+  not left for Friday's supper); a rule it cannot keep for one slot is dropped for that slot alone
+  and listed in `relaxed`; `have` is kept unless `redo`. `rotaFairness(slots, teams, nameOf,
+  dayName)` → "Each team cleans 2–3 times. Maples clean twice on Thursday." `setupNamesNear` /
+  `setupNearMember` — "Sophie ≈ Sofia" (one letter apart, or the same consonants from the same first
+  letter; never two names that are already one spelling, never an exact match: a counselor is found
+  by name already).
+- **Tests**: `sections.test.js` (above). `seed.test.js`'s two pins moved on purpose (a plain seed is
+  still the schedule alone; the four sections seed when named; `setupTurnOn(['nonsense'])` is
+  `none`), `setup-sync.test.js`'s depth pin (a new day of electives is
+  `electives/slots/mon/s0/st-art`, not `electives/slots/mon`).
 
 ## Counselors ↔ teams ↔ accounts
 
