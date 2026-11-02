@@ -12,6 +12,8 @@ const { makeFakeRtdb, makeFakeFirebase } = nodeRequire('./fake-rtdb.js');
 
 const SS_PATH = dbPath('setup');
 const ssWait = (ms) => new Promise((r) => setTimeout(r, ms || 5));
+const SS_PUSH_MS = 40;
+const SS_FLUSH = SS_PUSH_MS + 110; // a push window and a margin: the engine's 300 ms debounce, shortened (setupPushMs)
 const ssClone = (v) => JSON.parse(JSON.stringify(v));
 
 const SS_JENN = { email: 'jenn@example.com', emailVerified: true };
@@ -35,6 +37,7 @@ function ssTree() {
 }
 
 function ssReset() {
+  setupPushMs = SS_PUSH_MS;
   authUser = SS_JENN;
   setMemberRole('editor');
   memberDirectory = {
@@ -70,6 +73,7 @@ async function ssSetup(server, opts) {
 }
 
 function ssTeardown() {
+  setupPushMs = SETUP_PUSH_MS;
   delete window.FIREBASE_CONFIG;
   delete window.firebase;
   setupRef = null;
@@ -238,7 +242,7 @@ test('dark: an empty node is "not set up yet" — the engine attaches, reads, an
     assert.deepEqual(setupBase, {});
     assert.equal(ssUpdates(db).length, 0, 'no write of any kind: ' + JSON.stringify(db.log));
     assert.equal(db.serverGet(SS_PATH), null);
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     assert.equal(ssUpdates(db).length, 0);
     assert.equal(db.listenerCount(SS_PATH), 1, 'one listener, read-only');
   } finally { ssTeardown(); }
@@ -249,10 +253,47 @@ test('dark: a snapshot adopted on an editor writes nothing either (no repair, no
   try {
     assert.equal(setupOn('schedule'), true);
     assert.equal(setupTree.typical['b-swim-900'].label, 'Swim');
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     assert.equal(ssUpdates(db).length, 0, JSON.stringify(db.log));
     assert.equal(db.serverGet(SS_PATH).days.fri, undefined, 'the in-memory day records were not pushed');
   } finally { ssTeardown(); }
+});
+
+test('an EMPTY server node (no meta at all) gates exactly like a seeded one: no coarse `meta` op slips past the owner or the section check', async () => {
+  const db = await ssSetup(null);
+  try {
+    memberDirectory[OWNER_MEMBER_KEY] = { role: 'editor', name: 'Patrick Simpson' };
+    const cases = {
+      on: (d) => { d.meta.on = { schedule: true }; },
+      epoch: (d) => { d.meta.epoch = 'w20270718'; },
+      wizard: (d) => { d.meta.wizard = { step: 1, byKey: 'x', at: 1, fromEpoch: 'legacy' }; },
+      seeded: (d) => { d.meta.seeded = { at: 1, byKey: 'x', from: 'camps.js' }; },
+    };
+    Object.keys(cases).forEach((f) => {
+      const r = commitSetup(cases[f], { label: 'x', turningOn: true });
+      assert.equal(r.ok, false, f);
+      assert.equal(r.reason, 'owner', f);
+    });
+    assert.equal(setupTree.meta.epoch, undefined, 'nothing was applied');
+    assert.equal(setupOn('schedule'), false);
+    await ssWait(SS_FLUSH);
+    assert.equal(ssUpdates(db).length, 0);
+    // The always-on week fields are the one thing a director may write into an empty node,
+    // and they go out as per-field leaves beside the stamp — never as `meta` + `meta/edited/…`
+    // (an update() with an ancestor and a descendant path throws).
+    const w = commitSetup((d) => { d.meta.weekStart = '2027-07-25'; }, { label: 'Moved the week' });
+    assert.equal(w.ok, true);
+    assert.equal(w.ops.meta, undefined);
+    assert.equal(w.ops['meta/weekStart'], '2027-07-25');
+    await ssWait(SS_FLUSH);
+    assert.equal(db.serverGet(SS_PATH).meta.weekStart, '2027-07-25');
+  } finally { ssTeardown(); }
+});
+
+test('setupTreeDiff turns a coarse meta op into per-field leaves, both ways', () => {
+  assert.deepEqual(setupTreeDiff({}, { meta: { weekStart: '2027-07-18', on: { schedule: true } } }), { 'meta/on': { schedule: true }, 'meta/weekStart': '2027-07-18' });
+  assert.deepEqual(setupTreeDiff({ meta: { weekStart: '2027-07-18', epoch: 'e' } }, {}), { 'meta/epoch': null, 'meta/weekStart': null });
+  assert.deepEqual(setupTreeDiff({ meta: { weekStart: 'a' } }, { meta: { weekStart: 'b' } }), { 'meta/weekStart': 'b' });
 });
 
 test('the switch is the owner\'s: with every section off, a commit into one is refused ("off") and writes nothing', async () => {
@@ -263,12 +304,12 @@ test('the switch is the owner\'s: with every section off, a commit into one is r
     assert.equal(r.reason, 'off');
     assert.equal(r.section, 'schedule');
     assert.equal(setupTree.typical['b-x-100'], undefined);
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     assert.equal(ssUpdates(db).length, 0);
     // The always-on week fields are the one exception: they exist before any section is on.
     const w = commitSetup((d) => { d.meta.weekStart = '2027-07-25'; }, { label: 'Moved the week' });
     assert.equal(w.ok, true);
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     assert.equal(db.serverGet(SS_PATH).meta.weekStart, '2027-07-25');
   } finally { ssTeardown(); }
 });
@@ -288,13 +329,13 @@ test('owner-only fields are refused before any write unless the owner commits th
       assert.equal(res.reason, 'owner', f);
     });
     assert.equal(setupTree.meta.on.schedule, undefined, 'nothing was applied');
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     assert.equal(ssUpdates(db).length, 0);
     // The owner, signed in as themselves, can.
     authUser = { email: 'Patricksimpson.FX@gmail.com', emailVerified: true };
     r = commitSetup(turnOn, { label: 'Turned on', turningOn: true });
     assert.equal(r.ok, true);
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     assert.equal(db.serverGet(SS_PATH).meta.on.schedule, true);
   } finally { ssTeardown(); }
 });
@@ -315,7 +356,7 @@ test('a viewer, a read-only tab and "still loading" are refused with a reason, w
     setupDenied = true;
     assert.equal(edit().reason, 'loading', 'rules not published: not editable');
     assert.equal(setupTree.typical['b-swim-900'].start, 900);
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     assert.equal(ssUpdates(db).length, 0);
   } finally { ssTeardown(); }
 });
@@ -334,7 +375,7 @@ test('a commit applies at once, persists immediately, and goes up as one update 
     assert.equal(cached.base.typical['b-swim-900'].start, 900, 'while the confirmed base still says what the server holds');
     assert.ok(setupPushTimer != null, 'a push is queued');
     assert.equal(db.serverGet(SS_PATH).typical['b-swim-900'].start, 900, 'nothing sent yet (300 ms coalescing)');
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     const sv = db.serverGet(SS_PATH);
     assert.equal(sv.typical['b-swim-900'].start, 870);
     assert.equal(sv.typical['b-lunch-720'].start, 720, 'a path nobody touched is not rewritten');
@@ -355,7 +396,7 @@ test('stamps are never part of a diff: meta/edited is excluded from the diffed t
   const db = await ssSetup(ssTree());
   try {
     ssToasts(() => commitSetup((d) => { d.typical['b-lunch-720'].label = 'Big lunch'; }, { label: 'Renamed Lunch' }));
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     assert.ok(db.serverGet(SS_PATH).meta.edited, 'the server holds a stamp');
     assert.equal(setupCanon(setupTree).meta.edited, undefined);
     assert.equal(setupBase.meta && setupBase.meta.edited, undefined, 'the confirmed base never holds one');
@@ -383,7 +424,7 @@ test('a bare focus-and-blur writes nothing, and a field the director really chan
     assert.equal(r.ok, true);
     assert.equal(r.noop, true);
     assert.equal(undoRecent().length, 0);
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     assert.equal(ssUpdates(db).length, 0);
     setupFocusIn(path);
     assert.equal(setupFocusOut(path, 870).changed, true);
@@ -412,13 +453,13 @@ test('NO automatic patch stripping: a typical-day edit never touches another day
     const r = ssToasts(() => commitSetup((d) => { d.typical['b-swim-900'].label = 'Swim — Cam'; }, { label: 'Renamed Swim' }));
     assert.equal(r.ok, true);
     assert.deepEqual(Object.keys(r.ops), ['typical/b-swim-900/label'], 'no patch op rode along');
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     assert.deepEqual(db.serverGet(SS_PATH).patches, { tue: { 'b-swim-900': { label: 'Swim — Cam' } } }, 'Tuesday\'s patch is still there');
     // Deleting the block leaves the patch row in the data; readers skip it instead of the engine "repairing" it.
     ssToasts(() => commitSetup((d) => { delete d.typical['b-swim-900']; }, { label: 'Removed Swim' }));
     assert.ok(setupTree.patches.tue['b-swim-900'], 'still stored (a later put-back would find it)');
     assert.deepEqual(setupLivePatches('tue'), {}, 'but nothing reads it while its block is gone');
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     assert.ok(db.serverGet(SS_PATH).patches.tue['b-swim-900'], 'and it was not deleted on the server by a diff nobody made');
   } finally { ssTeardown(); }
 });
@@ -455,7 +496,7 @@ test('an edit saved on a phone that never reached the server survives a reload: 
   try {
     assert.equal(setupTree.typical['b-swim-900'].start, 870, 'the cached edit is on screen even before the server answers (dead Wi-Fi)');
     assert.equal(setupTree.meals.mon.lunch.dish, 'Tacos', 'and the colleague\'s change arrived');
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     const sv = db.serverGet(SS_PATH);
     assert.equal(sv.typical['b-swim-900'].start, 870, 'mine was pushed');
     assert.equal(sv.meals.mon.lunch.dish, 'Tacos', 'theirs was kept');
@@ -494,7 +535,7 @@ test('the same path changed on both sides keeps the SERVER\'s value; mine is lis
     const res = ssToasts(() => undoEntry(entry.id));
     assert.equal(res.applied, 1);
     assert.equal(setupTree.typical['b-swim-900'].start, 870, 'Undo brought my offline change back');
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     assert.equal(db.serverGet(SS_PATH).typical['b-swim-900'].start, 870);
   } finally { ssTeardown(); }
 });
@@ -514,7 +555,7 @@ test('Use mine is a normal commit; Dismiss just forgets the clash', async () => 
       assert.equal(setupTree.typical['b-swim-900'].start, 870);
       assert.equal(setupClashes.length, 0, 'the note is gone');
     });
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     assert.equal(db.serverGet(SS_PATH).typical['b-swim-900'].start, 870);
     // Dismiss
     setupClashes = [{ id: 'nx', kind: 'clash', path: 'meta/weekStart', mine: '2027-08-01', theirs: '2027-07-18', what: 'w', at: '' }];
@@ -532,7 +573,7 @@ test('prune and key-order variants: an empty stored value and a differently orde
   server.verses = {}; // pruned by RTDB, so it never arrives
   const db = await ssSetup(server, { cache: ssCache(edited, base) });
   try {
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     assert.deepEqual(setupClashes, [], 'no phantom clash');
     assert.equal(db.serverGet(SS_PATH).typical['b-swim-900'].start, 870, 'my edit went up exactly once');
     assert.equal(ssUpdates(db).filter((l) => l.kind === 'update').length, 1);
@@ -553,14 +594,14 @@ test('a kept edit whose record the server deleted goes to the Put-it-back list i
     assert.equal(note.record, 'typical/b-swim-900');
     assert.equal(note.name, 'Swim');
     assert.equal(note.value.end, 975, 'with my change');
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     assert.ok(!ssUpdates(db).some((l) => l.paths && l.paths.some((p) => /b-swim-900/.test(p))), 'nothing was sent into the missing record');
     // Put it back: the whole record, with my edit, as a normal commit.
     const r = ssToasts(() => setupPutBack(note.id));
     assert.equal(r.ok, true);
     assert.equal(setupTree.typical['b-swim-900'].end, 975);
     assert.equal(setupClashes.length, 0);
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     assert.equal(db.serverGet(SS_PATH).typical['b-swim-900'].end, 975);
   } finally { ssTeardown(); }
 });
@@ -585,7 +626,7 @@ test('work from a PREVIOUS camp year is stranded as a download, never applied (t
     assert.equal(kept.changes[0].value, 870);
     assert.deepEqual(setupClashes, []);
     assert.equal(undoRecent().length, 0, 'last year\'s undo history is gone');
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     assert.equal(db.serverGet(SS_PATH).typical['b-swim-900'].start, 885, 'nothing of last year was pushed');
   } finally { strandedList = []; writeStranded(); ssTeardown(); }
 });
@@ -598,7 +639,7 @@ test('an EMPTY node on a phone that had content is a deliberate wipe: adopt empt
     assert.deepEqual(setupCanon(setupTree), {}, 'the empty node was adopted');
     assert.equal(setupOn('schedule'), false);
     assert.equal(strandedCount(), before + Object.keys(base).length, 'what the phone held is downloadable');
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     assert.equal(ssUpdates(db).length, 0, 'and nothing was written back');
     assert.equal(db.serverGet(SS_PATH), null);
   } finally { strandedList = []; writeStranded(); ssTeardown(); }
@@ -614,7 +655,7 @@ test('unconfirmed work older than 36 hours asks before it is sent; declining kee
   let db;
   try {
     db = await ssSetup(ssTree(), { cache: ssCache(edited, base, { baseAt: Date.now() - 40 * 3600 * 1000 }) });
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     assert.equal(asked.length, 1);
     assert.ok(/1 change/.test(asked[0]), asked[0]);
     assert.equal(db.serverGet(SS_PATH).typical['b-swim-900'].start, 900, 'declined: not sent');
@@ -638,7 +679,7 @@ test('a viewer (or a read-only tab) adopts the server verbatim and never pushes'
   attachSetupListener();
   db.deliverFirstSnapshots();
   try {
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     assert.equal(setupTree.typical['b-swim-900'].start, 900, 'the server\'s week');
     assert.equal(ssUpdates(db).length, 0, 'a viewer never writes');
     assert.equal(commitSetup((d) => { d.meta.weekStart = '2027-08-01'; }, {}).reason, 'readonly');
@@ -654,7 +695,7 @@ test('an echo of this device\'s own write keeps every live object and repaints n
     const lunch = setupTree.typical['b-lunch-720'];
     const tree = setupTree;
     const rev = setupRev;
-    await ssWait(350); // the push lands, and the database echoes the value back through the listener
+    await ssWait(SS_FLUSH); // the push lands, and the database echoes the value back through the listener
     assert.equal(setupTree, tree, 'the top-level object is the same');
     assert.equal(setupTree.typical['b-lunch-720'], lunch, 'so is every record');
     assert.equal(setupRev, rev, 'and nothing was repainted (rev unchanged)');
@@ -683,7 +724,7 @@ test('unsent edits (inside the 300 ms window) are rebased onto an incoming snaps
     await ssWait(5);
     assert.equal(setupTree.meals.mon.lunch.dish, 'Tacos', 'theirs arrived');
     assert.equal(setupTree.typical['b-swim-900'].start, 870, 'mine is still laid over it');
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     const sv = db.serverGet(SS_PATH);
     assert.equal(sv.typical['b-swim-900'].start, 870, 'and was sent');
     assert.equal(sv.meals.mon.lunch.dish, 'Tacos', 'without undoing his');
@@ -701,7 +742,7 @@ test('adopt-path dropped ops reach the Put-it-back list: an unsent edit to an it
     assert.ok(note, 'listed: ' + JSON.stringify(setupClashes));
     assert.equal(note.name, 'Lunch');
     assert.equal(note.value.start, 725, '"Lunch was removed — Put it back with your changes"');
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     assert.equal(db.serverGet(SS_PATH).typical['b-lunch-720'], undefined, 'nothing was written into the deleted record');
     // Discard just forgets it.
     setupDismissClash(note.id);
@@ -714,7 +755,7 @@ test('a snapshot that arrives while a write is in flight is not adopted: a re-re
   try {
     db.goOffline();
     ssToasts(() => commitSetup((d) => { d.typical['b-swim-900'].start = 870; }, { label: 'Moved Swim' }));
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     assert.equal(setupPending, 1, 'the push is queued behind the dead connection');
     assert.equal(pendingWritesTotal() > 0, true, 'and every reload / sign-out guard can see it');
     assert.equal(reloadBlocked(), true);
@@ -737,14 +778,14 @@ test('an edit made offline goes up on reconnect, in order, and survives a "reloa
   try {
     db.goOffline();
     ssToasts(() => commitSetup((d) => { d.typical['b-swim-900'].start = 870; }, { label: 'Moved Swim' }));
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     // The phone is force-quit: only the cache survives. The next page load re-reads it.
     const cached = JSON.parse(localStorage.getItem(lsKey(SETUP_KEY)));
     assert.equal(cached.tree.typical['b-swim-900'].start, 870);
     assert.equal(cached.base.typical['b-swim-900'].start, 900, 'the base is what the server last CONFIRMED, so the edit is still unconfirmed work');
     const db2 = await ssSetup(ssTree(), { cache: cached });
     assert.equal(setupTree.typical['b-swim-900'].start, 870);
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     assert.equal(db2.serverGet(SS_PATH).typical['b-swim-900'].start, 870, 'the first-snapshot merge re-sent it');
   } finally { ssTeardown(); }
 });
@@ -756,7 +797,7 @@ test('a refused path is parked, not a wedge: the rest of the batch goes through;
   try {
     db.refuse(SS_PATH + '/typical/b-lunch-720');
     ssToasts(() => commitSetup((d) => { d.typical['b-swim-900'].start = 870; d.typical['b-lunch-720'].start = 725; d.meals.mon.lunch.dish = 'Tacos'; }, { label: 'Three edits' }));
-    await ssWait(400);
+    await ssWait(SS_FLUSH + 40);
     const sv = db.serverGet(SS_PATH);
     assert.equal(sv.typical['b-swim-900'].start, 870, 'the paths the server took went through');
     assert.equal(sv.meals.mon.lunch.dish, 'Tacos');
@@ -783,7 +824,7 @@ test('a refused path is parked, not a wedge: the rest of the batch goes through;
     // Retry once the rules accept it.
     db.allow(SS_PATH + '/typical/b-lunch-720');
     assert.equal(retrySetupQuarantine(), true);
-    await ssWait(400);
+    await ssWait(SS_FLUSH + 40);
     assert.equal(db.serverGet(SS_PATH).typical['b-lunch-720'].start, 725);
     assert.equal(setupParkedCount(), 0);
     assert.equal(setupSyncLine().tone, 'saved');
@@ -795,7 +836,7 @@ test('Discard puts a parked path back to the confirmed value in the tree AND the
   try {
     db.refuse(SS_PATH + '/typical/b-lunch-720');
     ssToasts(() => commitSetup((d) => { d.typical['b-lunch-720'].start = 725; d.typical['b-swim-900'].start = 870; }, { label: 'Two edits' }));
-    await ssWait(400);
+    await ssWait(SS_FLUSH + 40);
     assert.equal(setupParkedCount(), 1);
     assert.equal(discardSetupQuarantine(), true, 'confirm() auto-accepts in the harness');
     assert.equal(setupTree.typical['b-lunch-720'].start, 720);
@@ -813,7 +854,7 @@ test('if EVERY path of a batch is refused, the rules are not published: editing 
   try {
     db.refuse(SS_PATH);
     ssToasts(() => commitSetup((d) => { d.typical['b-swim-900'].start = 870; d.meals.mon.lunch.dish = 'Tacos'; d.meta.weekStart = '2027-07-25'; }, { label: 'Three edits' }));
-    await ssWait(400);
+    await ssWait(SS_FLUSH + 40);
     assert.equal(setupWriteRefused, true);
     assert.equal(setupParkedCount(), 0, 'not forty quarantine rows');
     const line = setupSyncLine();
@@ -824,7 +865,7 @@ test('if EVERY path of a batch is refused, the rules are not published: editing 
     // Once the owner publishes the rules, Retry sends everything that was waiting.
     db.allow(SS_PATH);
     assert.equal(retrySetupQuarantine(), true);
-    await ssWait(400);
+    await ssWait(SS_FLUSH + 40);
     assert.equal(setupWriteRefused, false);
     const sv = db.serverGet(SS_PATH);
     assert.equal(sv.typical['b-swim-900'].start, 870);
@@ -904,7 +945,7 @@ test('an undecided tab holds a setup push (queued, not dropped) and sends it onc
   try {
     ssToasts(() => commitSetup((d) => { d.typical['b-swim-900'].start = 870; }, { label: 'Moved Swim' }));
     tabWriter = null; // the election re-opened
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     assert.equal(db.serverGet(SS_PATH).typical['b-swim-900'].start, 900, 'held');
     assert.equal(tabHeldSetup, true);
     assert.equal(editorMidEntry(), true, 'a held push blocks the reload like any unsent edit');
@@ -954,7 +995,15 @@ test('every guard counts the setup engine: pending writes, the timer, the flush,
     setMemberRole('viewer');
     setupBase = setupCanon(ssTree()); setupTree = normalizeSetup(ssTree()); setupTree.typical['b-swim-900'].start = 1;
     assert.equal(hasUnconfirmedLocalWork(), false, 'a viewer has nothing of its own to lose');
-  } finally { ssTeardown(); }
+    // A restore point queued offline is unconfirmed work too: sign-out would discard the outbox.
+    setMemberRole('editor');
+    setupBase = setupCanon(setupTree);
+    assert.equal(hasUnconfirmedLocalWork(), false);
+    rpOutboxAdd({ rid: 'rp-queued-1', row: { kind: 'manual', at: 1, label: 'x' }, body: '{}' });
+    assert.equal(hasUnconfirmedLocalWork(), true, 'sign-out asks while a restore point waits for the network');
+    rpOutboxDrop('rp-queued-1');
+    assert.equal(hasUnconfirmedLocalWork(), false);
+  } finally { localStorage.removeItem(lsKey(RP_OUTBOX_KEY)); ssTeardown(); }
 });
 
 test('the idle tick of app.js pays the setup engine\'s owed read (and keeps itself armed while one is owed)', async () => {
@@ -995,7 +1044,7 @@ test('undo covers the setup domain: it puts `before` back where the value still 
   try {
     const entry = ssToasts(() => commitSetup((d) => { d.typical['b-swim-900'].start = 870; d.meals.mon.lunch.dish = 'Tacos'; }, { label: 'Two edits' })).entry;
     assert.ok(entry && entry.ops.every((o) => o[0] === 'setup'));
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     // A colleague changes one of the two since.
     ssServer(db, (c) => { c.meals.mon.lunch.dish = 'Nachos'; });
     await ssWait(5);
@@ -1003,7 +1052,7 @@ test('undo covers the setup domain: it puts `before` back where the value still 
     assert.deepEqual(res, { applied: 1, total: 2 }, 'one of two: his change is left alone');
     assert.equal(setupTree.typical['b-swim-900'].start, 900);
     assert.equal(setupTree.meals.mon.lunch.dish, 'Nachos');
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     assert.equal(db.serverGet(SS_PATH).typical['b-swim-900'].start, 900, 'the undo syncs like any edit');
     assert.equal(undoRecent()[0].label, 'Undid: Two edits', 'and is itself an entry');
   } finally { ssTeardown(); }
@@ -1033,7 +1082,7 @@ test('the sync line speaks in five tones, offline and refused never in the same 
     assert.deepEqual(setupSyncLine(), { tone: 'saved', text: 'Saved', act: '' });
     ssToasts(() => commitSetup((d) => { d.typical['b-swim-900'].start = 870; }, { label: 'Moved Swim' }));
     assert.equal(setupSyncLine().tone, 'saving');
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     assert.equal(setupSyncLine().tone, 'saved');
     fbConnected = false;
     assert.deepEqual(setupSyncLine(), { tone: 'offline', text: 'Offline — changes will save when you’re back', act: '' });
@@ -1041,7 +1090,7 @@ test('the sync line speaks in five tones, offline and refused never in the same 
     ssToasts(() => commitSetup((d) => { d.typical['b-swim-900'].start = 880; }, { label: 'Moved Swim again' }));
     assert.equal(setupSyncLine().text, 'Offline — 1 change will save when you’re back');
     db.goOnline();
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     fbConnected = true;
     delete window.FIREBASE_CONFIG;
     assert.equal(setupSyncLine().tone, 'off', 'no sync configured');
@@ -1074,7 +1123,7 @@ test('engine events: a UI layer hears tree, commit and sync changes, and a liste
   try {
     ssToasts(() => commitSetup((d) => { d.typical['b-swim-900'].start = 870; }, { label: 'Moved Swim' }));
     assert.ok(heard.includes('commit'));
-    await ssWait(350);
+    await ssWait(SS_FLUSH);
     ssServer(db, (c) => { c.meals.mon.lunch.dish = 'Tacos'; });
     await ssWait(5);
     assert.ok(heard.includes('tree'));

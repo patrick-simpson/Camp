@@ -39,7 +39,7 @@ function ehSetup(opts) {
   window.firebase = makeFakeFirebase(db);
   fbConnKnown = true; fbConnected = true;
   ehMinMs = 30;
-  ehActive = false; ehRef = null; ehTree = null; ehWhere = ''; ehRowLive = false; ehLastWriteAt = 0; ehTimer = null;
+  ehActive = false; ehRef = null; ehTree = null; ehWhere = ''; ehRowLive = false; ehLastWriteAt = 0; ehTimer = null; ehRetried = false;
   presenceRows = null;
   return { db, disconnects };
 }
@@ -60,6 +60,78 @@ function ehTeardown() {
 function ehOther(db, key, device, row) {
   db.serverSet(EH_ROOT + '/editorsHere/' + key + '/' + device, Object.assign({ at: Date.now(), v: APP_VERSION }, row));
 }
+
+// ── reload with the builder open, a hinted role, a refused write ─────
+
+test('a reload with the builder open: nothing attaches or writes before approval, and the listener AND the row start when it lands', async () => {
+  const { db } = ehSetup();
+  try {
+    // The first render of a restored builder: a hinted (provisional) role, no sign-in yet.
+    authUser = null;
+    setMemberRole('editor', { provisional: true });
+    assert.equal(editorsHereStart('hub'), true);
+    assert.equal(ehRef, null, 'no identity: no listener');
+    // Signed in, but the member record has not answered: still a guess, so still nothing.
+    authUser = EH_JENN;
+    editorsHereOnConnect();
+    await ehWait(60);
+    assert.equal(ehRef, null, 'a provisional role attaches nothing');
+    assert.equal(ehRowLive, false);
+    assert.equal(db.serverGet(EH_MY_PATH()), null, 'and writes nothing');
+    // Approval lands (confirmed role), then the connect handler runs.
+    setMemberRole('editor');
+    editorsHereOnConnect();
+    await ehWait(80);
+    assert.ok(ehRef, 'the listener is attached');
+    assert.equal(ehRowLive, true);
+    assert.equal(db.serverGet(EH_MY_PATH()).where, 'hub');
+    ehOther(db, EH_PAT_KEY, 'dev-pat-0001', { where: 'schedule' });
+    await ehWait(20);
+    assert.equal(editorsHereList().length, 1, 'and another director is seen');
+  } finally { ehTeardown(); }
+});
+
+test('a refused write (the server stamps landed under a second apart) is retried ONCE with the latest place', async () => {
+  const { db } = ehSetup();
+  try {
+    editorsHereStart('hub');
+    await ehWait(80);
+    assert.equal(db.serverGet(EH_MY_PATH()).where, 'hub');
+    // The next update is refused once, the way the rules' 1 s floor would on uneven latency.
+    const orig = db.ref;
+    let refusals = 1;
+    db.ref = (p) => {
+      const r = orig(p);
+      if (String(p) === EH_MY_PATH()) {
+        const u = r.update;
+        r.update = (v) => (refusals-- > 0 ? Promise.reject({ code: 'PERMISSION_DENIED' }) : u.call(r, v));
+      }
+      return r;
+    };
+    ehLastWriteAt = 0;
+    editorsHereMove('schedule');
+    await ehWait(20);
+    assert.equal(db.serverGet(EH_MY_PATH()).where, 'hub', 'the refused write did not land');
+    editorsHereMove('meals'); // the person moved on while the retry was pending: the retry carries THIS
+    await ehWait(ehMinMs + 450);
+    assert.equal(db.serverGet(EH_MY_PATH()).where, 'meals');
+    assert.equal(ehRetried, false, 'a success re-arms the retry');
+  } finally { ehTeardown(); }
+});
+
+test('rules that refuse every write: one retry, then silence (no loop)', async () => {
+  const { db } = ehSetup();
+  try {
+    db.refuse(EH_ROOT + '/editorsHere');
+    let sets = 0;
+    const orig = db.ref;
+    db.ref = (p) => { const r = orig(p); if (String(p) === EH_MY_PATH()) { const s0 = r.set; r.set = (v) => { sets++; return s0.call(r, v); }; } return r; };
+    editorsHereStart('hub');
+    await ehWait(ehMinMs * 2 + 500);
+    assert.equal(sets, 2, 'the first write and exactly one retry');
+    assert.equal(ehRowLive, false);
+  } finally { ehTeardown(); }
+});
 
 // ── dark, and the write protocol ─────────────────────────────────────
 

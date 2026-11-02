@@ -605,7 +605,10 @@ function renderSetupUi(open) {
   const screen = setupScreen();
   if (root.dataset.screen !== screen) root.dataset.screen = screen;
   if (typeof applyOwnerClass === 'function') applyOwnerClass();
-  setTextIfChanged(setupEl('setup-back-label'), screen === 'hub' ? 'More' : 'Set up the week');
+  // Back from the hub returns to the tab the builder was opened FROM (More, or Games from an empty day's
+  // "Add games"): the shell keeps state.ui.tab untouched while the builder is up.
+  const cameFrom = { now: 'Now', games: 'Games', chat: 'Chat', more: 'More' }[state.ui.tab] || 'More';
+  setTextIfChanged(setupEl('setup-back-label'), screen === 'hub' ? cameFrom : 'Set up the week');
   paintSetupSync();
   paintSetupHere();
   paintSetupDock();
@@ -1274,7 +1277,9 @@ const RP_WHY = {
 
 async function rpApply() {
   const rs = setupUi.rsheet;
-  if (!rs || rs.state !== 'ready' || rs.busy) return;
+  // The sheet must still be OPEN: a hold that was still down when Escape / Back / a re-render dismissed
+  // the sheet would otherwise finish 1.2 s in and put the scores back after the person said no.
+  if (!rs || rs.state !== 'ready' || rs.busy || !shell.sheets.includes('restore')) return;
   const picks = {};
   RP_SECTIONS.forEach((s) => { picks[s] = !!(rs.picks[s] && rs.preview.sections[s] && rs.preview.sections[s].offered); });
   if (!RP_SECTIONS.some((s) => picks[s])) { showToast(RP_WHY.nothing); return; }
@@ -1492,7 +1497,7 @@ function wireSetupUi() {
   const hold = setupEl('rp-hold-btn');
   // The button under the finger goes when the alternative shows, so focus follows it (and back on Cancel).
   const focusOn = (id) => { const b = setupEl(id); if (b && !b.hidden && typeof b.focus === 'function') { try { b.focus({ preventScroll: true }); } catch (e) { /* fine */ } } };
-  if (hold) wireHold(hold, () => { rpApply(); }, () => { if (setupUi.rsheet) { setupUi.rsheet.reveal = true; renderRestoreSheet(); focusOn('rp-hold-confirm'); } });
+  if (hold) wireHold(hold, () => { rpApply(); }, () => { if (setupUi.rsheet && shell.sheets.includes('restore')) { setupUi.rsheet.reveal = true; renderRestoreSheet(); focusOn('rp-hold-confirm'); } });
   on('#rp-hold-cancel', 'click', () => { if (setupUi.rsheet) { setupUi.rsheet.reveal = false; renderRestoreSheet(); focusOn('rp-hold-btn'); } });
   on('#rp-keep-row', 'click', () => { rpKeepPoint(); });
   on('#rp-delete-row', 'click', () => { rpDeletePoint(); });

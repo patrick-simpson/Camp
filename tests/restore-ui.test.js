@@ -319,6 +319,21 @@ function ruHold() {
   return { anims, listeners, out };
 }
 
+test('a hold that finishes after the sheet was dismissed (Escape, Back, a re-render) puts nothing back', async () => {
+  ruOpen();
+  const realApply = restoreApply;
+  let called = 0;
+  try {
+    restoreApply = async () => { called++; return { ok: true, applied: ['scores'], kept: [] }; };
+    openRestoreSheetForFile(ruPoint(), 'b.json');
+    setupUi.rsheet.picks.scores = true;
+    shellSheetClose('restore'); // the person pressed Escape while the finger was still down
+    await rpApply(); // ...and the 1.2 s hold completes
+    assert.equal(called, 0, 'a dismissed sheet is a "no"');
+    assert.ok(setupUi.rsheet, 'and nothing was torn down by the stray finish');
+  } finally { restoreApply = realApply; ruClose(); }
+});
+
 test('hold-to-confirm: a full 1.2 s hold finishes once; letting go early drains the fill and does nothing; a quick tap reveals the two-tap button', async () => {
   assert.equal(RP_HOLD_MS, 1200);
   const h = ruHold();

@@ -1975,7 +1975,15 @@ function tryImport(text, opts) {
   // Backups v3 (setup-sync.js) nest the synced keys under `state` and carry the camp they came from; v2
   // is flat and is accepted exactly as before. `src` is the flat view both are read through.
   const v3 = !!(parsed && parsed.app === 'campScoreboardV3' && parsed.state && typeof parsed.state === 'object' && !Array.isArray(parsed.state));
-  const otherCamp = v3 && typeof parsed.camp === 'string' && parsed.camp !== CAMP.id;
+  // Whose backup is it? A `camp` that names another camp refuses it WHATEVER the file's other markers
+  // say (an edited `app` flag or a missing `state` must not skip the check), and a v3 file with no
+  // readable camp is refused outright — restoreParseBody does the same for restore points.
+  const campOf = parsed && typeof parsed === 'object' ? parsed.camp : undefined;
+  if ((campOf !== undefined || (parsed && parsed.app === 'campScoreboardV3')) && typeof campOf !== 'string') {
+    say("That backup doesn't say which camp it is from, so nothing was changed.");
+    return;
+  }
+  const otherCamp = typeof campOf === 'string' && campOf !== CAMP.id;
   const copyMode = !!(otherCamp && opts && opts.copyFromOtherCamp);
   if (otherCamp && !copyMode) {
     say('That backup is from ' + (CAMPS[parsed.camp] ? CAMPS[parsed.camp].label : 'another camp') + ', not ' + CAMP.label +

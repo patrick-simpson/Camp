@@ -40,7 +40,7 @@ async function rsSetup(opts) {
   const db = makeFakeRtdb({ manualFirstSnapshot: true });
   window.firebase = makeFakeFirebase(db);
   fbConnKnown = true; fbConnected = true;
-  rpLastAt = 0; rpLastAutoAt = 0; rpWaitMs = 40;
+  rpLastAt = 0; rpLastAutoAt = 0; rpWaitMs = 40; setupPushMs = 40;
   localStorage.removeItem(lsKey(RP_OUTBOX_KEY));
   localStorage.removeItem(lsKey(SETUP_KEY));
   // engine state
@@ -63,7 +63,8 @@ async function rsSetup(opts) {
   attachConfigListener();
   attachSetupListener();
   db.deliverFirstSnapshots();
-  await rsWait(450); // (the secrecy seed a confirmed director writes right after the first pull goes up and is acknowledged)
+  flushPendingPush(); // the secrecy seed a confirmed director writes right after the first pull: sent now, not after its 400 ms debounce
+  await rsWait(40);  // ...and acknowledged
   assert.equal(remoteReady && configReady && setupReady, true, 'all three engines are past their first pull');
   assert.equal(hasUnconfirmedLocalWork(), false, 'and nothing of this phone\'s is waiting to be confirmed');
   return db;
@@ -75,7 +76,7 @@ function rsTeardown() {
   fbRef = null; fbConfigRef = null; setupRef = null;
   fbConnKnown = false; fbConnected = false;
   remoteReady = false; configReady = false; setupReady = false;
-  rpWaitMs = RP_WAIT_MS;
+  rpWaitMs = RP_WAIT_MS; setupPushMs = SETUP_PUSH_MS;
   clearTimeout(setupPushTimer); setupPushTimer = null;
   clearTimeout(pushTimer); pushTimer = null;
   clearTimeout(pushConfigTimer); pushConfigTimer = null;
@@ -477,7 +478,7 @@ test('preconditions: a restore is refused while anything is in flight, offline, 
     const point = restoreBodyObject();
     rsToasts(() => commitSetup((d) => { d.typical['b-swim-900'].start = 870; }, { label: 'x', undo: false }));
     assert.equal((await restoreApply(point, { schedule: true }, { label: 'x' })).reason, 'busy', 'an edit still going up');
-    await rsWait(400);
+    await rsWait(450);
     fbConnected = false;
     assert.equal((await restoreApply(point, { schedule: true }, { label: 'x' })).reason, 'offline');
     fbConnected = true;
@@ -517,14 +518,14 @@ test('a selective restore emits a minimal diff: only the schedule changes, nothi
     await rsWait(10);
     const point = restoreBodyObject();
     rsToasts(() => commitSetup((d) => { d.typical['b-swim-900'].start = 870; d.meals.mon.lunch.dish = 'Tacos'; }, { label: 'x', undo: false }));
-    await rsWait(400);
+    await rsWait(150);
     const sBefore = JSON.stringify(db.serverGet(dbPath('state')));
     const cBefore = JSON.stringify(db.serverGet(dbPath('config')));
     const mark = db.log.length;
     const r = await restoreApply(point, { schedule: true }, { label: 'before the edit' });
     assert.equal(r.ok, true, JSON.stringify(r));
     assert.deepEqual(r.applied, ['schedule']);
-    await rsWait(400);
+    await rsWait(150);
     const sv = db.serverGet(dbPath('setup'));
     assert.equal(sv.typical['b-swim-900'].start, 900, 'put back');
     assert.equal(sv.meals.mon.lunch.dish, 'Pizza');
@@ -609,7 +610,7 @@ test('a section that is off now, or was off in the point, is not written into: n
     point.setup = { meta: { weekStart: '2027-08-01' }, typical: { 'b-x-1': { start: 1, end: 2, label: 'X', type: 'activity' } } };
     const r = await restoreApply(point, { schedule: true }, { label: 'a point' });
     assert.equal(r.ok, true, JSON.stringify(r));
-    await rsWait(400);
+    await rsWait(450);
     const sv = db.serverGet(dbPath('setup'));
     assert.equal(sv.meta.weekStart, '2027-08-01', 'the week dates came back');
     assert.equal(sv.typical, undefined, 'the schedule is the built-in copy right now: nothing was written into it');
@@ -646,7 +647,7 @@ test('a v3 backup round-trips the week through the engines, writes a pre-import 
     // Change everything, then import.
     state.results = {}; state.announcements = {}; state.notice = Object.assign({}, state.notice, { title: 'x' });
     rsToasts(() => commitSetup((d) => { d.typical['b-swim-900'].start = 870; }, { label: 'x', undo: false }));
-    await rsWait(400);
+    await rsWait(450);
     const mark = db.log.length;
     tryImport(backup);
     assert.equal(medalCounts().t0.points, before, 'scores restored');
@@ -671,7 +672,7 @@ test('an import never writes the epoch (state or setup), the switches or the sta
     b.state.meta = { epoch: 'w20990101', epochAt: 1, hiddenCards: { standings: true } };
     b.setup.meta = Object.assign({}, b.setup.meta, { epoch: 'w20990101', on: { schedule: false }, wizard: { step: 5 }, seeded: { at: 1 } });
     tryImport(JSON.stringify(b));
-    await rsWait(400);
+    await rsWait(450);
     assert.equal(state.meta.epoch, 'w20270718');
     const sv = db.serverGet(dbPath('setup'));
     assert.equal(sv.meta.epoch, 'w20270718');
@@ -708,6 +709,33 @@ test('another camp\'s backup is refused with its name; "copy from the other camp
     assert.equal(state.teams.length, CAMP.teamCount, 'a roster that does not fit is left out, quietly');
     assert.equal(errs.length, 0);
     void resultsBefore;
+  } finally { rsTeardown(); }
+});
+
+test('a hand-edited backup cannot skip the camp check or smuggle a junk catalog: camp missing, app flag edited, games not an array', async () => {
+  const db = await rsSetup();
+  try {
+    const other = CAMP.id === 'junior' ? 'senior' : 'junior';
+    const gamesBefore = state.config.games.length;
+    const mine = JSON.parse(backupJSON());
+    // A v3 file with its camp deleted is unreadable, never "probably mine".
+    const noCamp = rsClone(mine); delete noCamp.camp;
+    tryImport(JSON.stringify(noCamp));
+    assert.ok(/doesn't say which camp/.test(restoreDraft.error), restoreDraft.error);
+    assert.equal(state.config.games.length, gamesBefore);
+    assert.equal(restoreParseBody(JSON.stringify(noCamp)).ok === false, true);
+    // The other camp's file with the app flag edited away is still the other camp's.
+    const flat = rsClone(mine); flat.camp = other; delete flat.app; Object.assign(flat, flat.state); delete flat.state;
+    flat.teams = state.teams; // a roster that fits must not be the only backstop
+    flat.config = Object.assign({}, flat.config, { games: flat.config.games.slice(0, 1) });
+    tryImport(JSON.stringify(flat));
+    assert.ok(restoreDraft.error.includes(CAMPS[other].label), restoreDraft.error);
+    assert.equal(state.config.games.length, gamesBefore, 'nothing changed');
+    // A catalog that is not arrays is refused by the restore-point reader.
+    const junk = rsClone(mine); junk.config.games = 'x'; junk.config.days = 5;
+    const r = restoreParseBody(JSON.stringify(junk));
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'unreadable');
   } finally { rsTeardown(); }
 });
 

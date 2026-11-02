@@ -481,6 +481,12 @@ test('the frame paints the screen switch and the labelled back, and the builder 
     renderSetupUi(true);
     assert.equal(setupEl('setup').dataset.screen, 'hub');
     assert.equal(setupEl('setup-back-label').textContent, 'More');
+    // Opened from the Games tab (an empty day's "Add games"): Back names where it really goes.
+    state.ui.tab = 'games';
+    renderSetupUi(true);
+    assert.equal(setupEl('setup-back-label').textContent, 'Games');
+    state.ui.tab = 'more';
+    renderSetupUi(true);
     state.ui.builderScreen = 'backups';
     renderSetupUi(true);
     assert.equal(setupEl('setup').dataset.screen, 'backups');

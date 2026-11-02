@@ -731,7 +731,7 @@ rest of Step 14, in setup-ui.js: see "Set up the week: behaviour" below); with n
   aside and `.setup-classic-title` ("Classic editor") titles that screen.
   renderSettings still writes `#settings-view`.
 - **The head** (`.setup-head`, sticky, paper, full bleed): `#setup-back` with
-  `#setup-back-label` ("More" from the hub, "Set up the week" from a screen),
+  `#setup-back-label` (the tab the builder was opened from — More, or Games from an empty day's "Add games" — on the hub, "Set up the week" on a screen),
   `#setup-undo-dock` (the docked undo; its aria-label is the entry's label),
   `#setup-menu-btn` (→ `#sheet-setup-menu`). Second row (`.setup-status`, one
   left-aligned column): the sync line
@@ -834,6 +834,9 @@ rest of Step 14, in setup-ui.js: see "Set up the week: behaviour" below); with n
   back to the hold; focus follows. The revealing tap's own click must not land on
   what now fills the spot: the hold button cancels its `touchend` default, and
   "Yes" counts only a press that began on it (or a key / assistive-tech click).
+  `rpApply` (and the reveal) also require the restore sheet to still be OPEN: a hold
+  still down when Escape / Back dismissed the sheet must not finish and put the scores
+  back after the person said no.
 - **Keep mine / Use theirs** (§6.3.5): `.clash-list` > `.clash[data-clash-field]`
   > `.clash-q` + `.seg.clash-pick[role=radiogroup]` > two `.seg-btn[role=radio]
   [data-clash-pick=mine|theirs]` with `.clash-who` and `.clash-val` — the full
@@ -964,9 +967,10 @@ into it from app.js / settings.js is typeof-guarded.
 ## Tests
 
 `node tests/run.js` (optionally with a filename filter: `node tests/run.js
-sync`). Zero dependencies, no network. The whole suite takes about 90 seconds of wall
-time since Step 14's engine tests (`setup-sync.test.js`, `restore.test.js`: ~15 s each, real
-timers); a filter runs one file in well under a second. **Run it before every
+sync`). Zero dependencies, no network. The whole suite takes about 50 seconds of wall
+time: the engine tests wait on real timers (`setup-sync.test.js` ~5 s and `restore.test.js`
+~3 s per camp, with the setup push debounce shortened through `setupPushMs`; `sync` and
+`config-sync` ~5 s each on the 400 ms state/config debounces). A filter runs one file. **Run it before every
 commit**, alongside `node --check`.
 
 `tests/harness.js` loads the real `defaults.js` + `app.js` + `settings.js` into
@@ -985,7 +989,7 @@ Nothing in `tests/` is referenced by `index.html`, so adding to it cannot
 change what a browser loads. Timers a context starts (the app's toast and
 reveal timers, the `requestAnimationFrame` shim) are tracked, and `run.js`
 calls `clearAllTimers()` after each file, so a leftover chain can't keep Node
-alive: the run exits as soon as the cases finish, about a second.
+alive: the run exits as soon as the cases finish (no stray timer holds it open).
 
 What's covered, and why each file exists:
 - `scoring.test.js` — score parse/format edges, `esc()`, `medalCounts()`
@@ -2110,7 +2114,11 @@ and until then every commit into a section is refused ("off").
   section switch (absent / false = the built-in copy, true = the subtree is the
   whole truth) and is the OWNER's alone, as are `meta/epoch`, `epochAt`, `wizard`
   and `seeded` (`SETUP_OWNER_META`; a non-owner commit that touches one is refused
-  with "Only Patrick can …" before any write). `meta/edited/<section>` (who changed
+  with "Only Patrick can …" before any write — decided on the VALUES: every diff of the
+  tree goes through `setupTreeDiff`, which turns the coarse `meta` op treeDiff emits for a
+  camp with no `meta` yet into per-field `meta/<field>` leaves, so an empty node gates
+  exactly like a seeded one and a push never carries `meta` beside `meta/edited/…`, an
+  ancestor and descendant pair that `update()` throws on). `meta/edited/<section>` (who changed
   it, server time) is added at push and never part of the diffed tree.
 - **The tree**: `setupTree` (live, normalized), `setupBase` (what the server last
   CONFIRMED, canonical, persisted), `setupLast` (what it will hold once in-flight
@@ -2160,7 +2168,7 @@ and until then every commit into a section is refused ("off").
   `clearLocalData` with the restore-point outbox.
 - **Accounting** (P2 §6.5): `pendingWritesTotal()` adds `setupPending`; `editorMidEntry`
   counts the 300 ms timer and a held push (`tabHeldSetup`); `hasUnsyncedWork`,
-  `hasUnconfirmedLocalWork` (unconfirmed paths, a parked refusal), `flushPendingPush`
+  `hasUnconfirmedLocalWork` (unconfirmed paths, a parked refusal, a restore point waiting in the outbox), `flushPendingPush`
   and `idleRetryTick` all call in, typeof-guarded.
 - **Seams for the UI** (setup-ui.js, the rest of Step 14): `onSetupEvent(fn)`
   (`'tree' | 'commit' | 'sync' | 'clashes'`), `setupSyncLine()` →
@@ -2215,7 +2223,10 @@ and until then every commit into a section is refused ("off").
   clocks and brackets4 and still never campers. `tryImport(text, {copyFromOtherCamp})`
   accepts v2 (flat) as before, refuses another camp's backup by name unless the
   copy tick is set (then Schedule, Games and Teams only, and a roster that
-  doesn't fit is left out), shape-checks teams, restores announcements (dropped
+  doesn't fit is left out) — a `camp` naming another camp refuses whatever the
+  file's `app` flag says, and a v3 file with no readable camp is refused outright;
+  `restoreParseBody` also requires `config.games` / `config.days` to be arrays —
+  shape-checks teams, restores announcements (dropped
   before) and the notice board, merges `picSetup` modes without touching the
   words on the device, never applies `meta` (the epoch), and writes a
   `pre-import` point first (fire-and-forget).
@@ -2231,8 +2242,12 @@ and until then every commit into a section is refused ("off").
   `onDisconnect().remove()`, attaches the editor-only listener),
   `editorsHereMove(where)` on every screen or sheet change, `editorsHereStop()` on
   close; `editorsHereOnConnect()` (from app.js's `.info/connected` handler, beside
-  `registerPresence`) re-registers on every reconnect and does nothing with the
-  builder closed. `EDITORS_HERE_EAGER` (false) is the one switch for the spec's
+  `registerPresence`) re-registers on every reconnect, ATTACHES the listener when
+  the builder is open (a reload with it open starts it before sign-in, when nothing
+  can attach) and does nothing with the builder closed. `ehMayWrite` needs a CONFIRMED
+  role, so a hinted editor neither listens nor writes before approval. A write the
+  rules refuse (the server stamps landed under a second apart) is retried once with
+  the latest place, then swallowed. `EDITORS_HERE_EAGER` (false) is the one switch for the spec's
   row-on-every-connect behaviour, for the step that turns the setup screens on.
   Viewers, a view-only second tab and a demoted director never write or listen
   (demotion removes the row: `setupOnRoleChange` → `editorsHereOnRoleChange`); a

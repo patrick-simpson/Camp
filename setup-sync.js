@@ -34,6 +34,7 @@ const SETUP_DK = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const SETUP_DAY_WORDS = { sun: 'Sunday', mon: 'Monday', tue: 'Tuesday', wed: 'Wednesday', thu: 'Thursday', fri: 'Friday', sat: 'Saturday' };
 const SETUP_SECTIONS = ['schedule', 'meals', 'verses', 'cleanup', 'electives'];
 const SETUP_PUSH_MS = 300;                   // coalesce rapid edits (spec §6.4.2 step 6)
+let setupPushMs = SETUP_PUSH_MS;             // (a test shortens it: the suite waits on this timer a few hundred times)
 const SETUP_STALE_MS = 36 * 60 * 60 * 1000;  // unconfirmed longer than this asks before it is sent
 const SETUP_CLASH_MAX = 30;
 const SETUP_BISECT_SINGLES = 40;             // a refused batch up to this long is re-sent path by path; longer is halved first
@@ -134,8 +135,28 @@ const SETUP_DEPTHS = {
   },
 };
 
+// treeDiff over the setup tree, with ONE addition: `meta` is always diffed to per-field
+// leaves. With no `meta` on one side treeDiff emits a single coarse `meta` op carrying
+// the whole object — which slips past every gate keyed on the path (the owner-only
+// fields, the section switch) and, with the `meta/edited/<section>` stamp pushSetup adds,
+// makes an update() with an ancestor AND a descendant path, which the SDK throws on.
+// Every diff of the setup tree goes through here, so no caller ever sees the coarse op.
+function setupTreeDiff(prev, cur) {
+  const ops = treeDiff(prev, cur, SETUP_DEPTHS);
+  if (ops.meta === undefined) return ops;
+  const whole = ops.meta;
+  delete ops.meta;
+  if (whole === null) { // meta removed outright: every field that was there, one null each
+    const was = (syncCanon(prev) || {}).meta;
+    Object.keys(setupIsMap(was) ? was : {}).forEach((k) => { ops['meta/' + k] = null; });
+  } else if (setupIsMap(whole)) {
+    Object.keys(whole).forEach((k) => { ops['meta/' + k] = whole[k]; });
+  } else ops.meta = whole; // not a shape the tree ever holds; leave it for the caller's refusal paths
+  return ops;
+}
+
 function setupDiff(a, b) {
-  return treeDiff(setupCanon(a), setupCanon(b), SETUP_DEPTHS);
+  return setupTreeDiff(setupCanon(a), setupCanon(b));
 }
 
 // How many path segments name a RECORD whose existence a field write needs (the rules'
@@ -547,7 +568,7 @@ function processFirstSetup(remote) {
     const toEpoch = epochOfTree(remoteCanon);
     if (fromEpoch !== toEpoch) {
       const local = setupCanon(setupTree);
-      const mine = canEdit() ? treeDiff(setupBase, local, SETUP_DEPTHS) : {};
+      const mine = canEdit() ? setupTreeDiff(setupBase, local) : {};
       setupStrand(mine, local, fromEpoch, toEpoch);
       setupForgetLastYear();
       adoptSetup(remote, {});
@@ -575,11 +596,11 @@ function firstSetupMerge(remote) {
   if (!canEdit()) return false;
   const base = setupBase;
   const localCanon = setupCanon(setupTree);
-  const mine = treeDiff(base, localCanon, SETUP_DEPTHS);
+  const mine = setupTreeDiff(base, localCanon);
   const minePaths = Object.keys(mine);
   if (!minePaths.length) return false;
   const remoteCanon = setupCanon(remote || {});
-  const theirs = treeDiff(base, remoteCanon, SETUP_DEPTHS);
+  const theirs = setupTreeDiff(base, remoteCanon);
   const theirPaths = Object.keys(theirs);
   // A record the server deleted is not a clash with an edit INSIDE it: that edit is
   // dropped by setupApplyOps and offered back under "Put it back".
@@ -621,7 +642,7 @@ function adoptSetup(remote, mineOps) {
   }
   const localCanon = setupCanon(setupTree);
   const beforeJson = JSON.stringify(localCanon);
-  const unsent = mineOps !== undefined ? mineOps : (setupLast ? treeDiff(setupLast, localCanon, SETUP_DEPTHS) : {});
+  const unsent = mineOps !== undefined ? mineOps : (setupLast ? setupTreeDiff(setupLast, localCanon) : {});
   // A parked path the server has moved past (somebody changed the same value, or deleted
   // the record it lives in) is dropped: the server's version wins, as in the first merge.
   const parked = {};
@@ -647,7 +668,7 @@ function adoptSetup(remote, mineOps) {
   persistSetup();
   if (r.dropped.length) setupNoteDropped(r.dropped, localCanon);
   // What survived on top of the server's tree is re-sent by the next push.
-  if (setupRef && Object.keys(treeDiff(setupLast, setupCanon(setupTree), SETUP_DEPTHS)).length) scheduleSetupPush();
+  if (setupRef && Object.keys(setupTreeDiff(setupLast, setupCanon(setupTree))).length) scheduleSetupPush();
   setupNotify(changed ? 'tree' : 'sync');
   if (changed && typeof appStarted !== 'undefined' && appStarted && typeof renderAllWhenIdle === 'function') {
     // A change from ELSEWHERE: the data is applied; only the repaint waits for a focused field.
@@ -941,7 +962,7 @@ function commitSetup(mutate, opts) {
   if (mutate(draft) === false) return refuse('cancelled');
   normalizeSetup(draft);
   const after = setupCanon(draft);
-  const ops = treeDiff(before, after, SETUP_DEPTHS);
+  const ops = setupTreeDiff(before, after);
   const paths = Object.keys(ops);
   if (!paths.length) return { ok: true, noop: true, ops: {} }; // a bare focus-and-blur, an identical value: nothing to send, stamp or undo
   // Owner-only fields (the switches, the epoch, the wizard claim, the seed): refused
@@ -979,7 +1000,7 @@ function scheduleSetupPush() {
   clearTimeout(setupPushTimer);
   // Null the handle when it fires so `setupPushTimer !== null` is an accurate "an edit is
   // queued but unsent" (editorMidEntry and the reload guard read it).
-  setupPushTimer = setTimeout(() => { setupPushTimer = null; pushSetup(); }, SETUP_PUSH_MS);
+  setupPushTimer = setTimeout(() => { setupPushTimer = null; pushSetup(); }, setupPushMs);
 }
 
 // `meta/edited/<section>`: who changed a section and when — added at PUSH time with the
@@ -1004,7 +1025,7 @@ function pushSetup() {
   if (!setupLast) return;
   const cur = setupCanon(setupTree);
   const prev = setupLast;
-  const diff = treeDiff(prev, cur, SETUP_DEPTHS);
+  const diff = setupTreeDiff(prev, cur);
   if (!Object.keys(diff).length) return;
   const updates = Object.assign({}, diff, setupStamps(diff));
   setupLast = cur;
@@ -1268,11 +1289,12 @@ function setupBusy() {
 // What this phone changed that the server hasn't confirmed ({} when none, or when it has
 // no baseline to measure against).
 function setupUnconfirmed() {
-  return setupBase ? treeDiff(setupBase, setupCanon(setupTree), SETUP_DEPTHS) : {};
+  return setupBase ? setupTreeDiff(setupBase, setupCanon(setupTree)) : {};
 }
 
 function setupHasUnconfirmed() {
-  return Object.keys(setupUnconfirmed()).length > 0 || setupParkedCount() > 0;
+  // A restore point queued offline (the 4 s fallback) is work too: sign-out / a camp switch wipe the outbox.
+  return Object.keys(setupUnconfirmed()).length > 0 || setupParkedCount() > 0 || restoreOutboxCount() > 0;
 }
 
 // pagehide / visibilitychange: iOS suspends setTimeout when the phone locks, so a setup
@@ -1406,7 +1428,10 @@ function restoreParseBody(str) {
   try { body = JSON.parse(str); } catch (e) { return { ok: false, reason: 'unreadable' }; }
   if (!setupIsMap(body) || body.app !== RP_APP) return { ok: false, reason: 'unreadable' };
   if (body.camp !== CAMP.id) return { ok: false, reason: 'other-camp', camp: body.camp }; // never another camp's point
-  if (!setupIsMap(body.config)) return { ok: false, reason: 'unreadable' };
+  // The catalog must be what the restore reads it as: arrays (the legacy import refuses anything else).
+  // A hand-edited file whose `games` is a string would otherwise preview as "N games" and, ticked,
+  // replace the catalog with an empty one.
+  if (!setupIsMap(body.config) || !Array.isArray(body.config.games) || !Array.isArray(body.config.days)) return { ok: false, reason: 'unreadable' };
   body.setup = setupIsMap(body.setup) ? body.setup : {};
   body.state = setupIsMap(body.state) ? body.state : {};
   body.sectionsOn = Array.isArray(body.sectionsOn) ? body.sectionsOn.filter((s) => SETUP_SECTIONS.indexOf(s) !== -1) : [];
@@ -1744,7 +1769,7 @@ function restorePreview(body) {
   if ((body.epoch || '') !== ((state.meta && state.meta.epoch) || '')) out.epochNote = 'This is from the ' + restoreYearOf(body) + ' week, not this one.';
   // Schedule and week
   const t = restoreSetupTarget(body);
-  const ops = treeDiff(t.cur, t.target, SETUP_DEPTHS);
+  const ops = setupTreeDiff(t.cur, t.target);
   out.sections.schedule = { offered: t.offered.length > 0 || t.weekFields.length > 0, count: Object.keys(ops).length, summary: restoreSummarizeSetup(ops) };
   SETUP_SECTIONS.forEach((s) => {
     const was = (body.sectionsOn || []).indexOf(s) !== -1;
@@ -1939,13 +1964,17 @@ let ehWhere = '';                          // where this device is, as last aske
 let ehRowLive = false;                     // my row exists (set, not yet removed)
 let ehLastWriteAt = 0;
 let ehTimer = null;                        // the trailing write that honours the floor
+let ehRetried = false;                     // one retry per run of refusals (see ehRefused)
 
 function ehMyKey() {
   return identityKey(authUser);
 }
 
 function ehMayWrite() {
-  return canEdit() && restoreHasFirebase() && !!ehMyKey() && typeof presenceId === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(presenceId);
+  // memberRoleConfirmed: a HINTED editor (a stale hint on a demoted director's phone) paints the shell
+  // before the member record answers; nothing attaches or writes on that guess (the Step 3 rule —
+  // editorsHereOnConnect runs after approval and starts everything that was waiting).
+  return canEdit() && memberRoleConfirmed && restoreHasFirebase() && !!ehMyKey() && typeof presenceId === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(presenceId);
 }
 
 function ehRowRef() {
@@ -1965,6 +1994,7 @@ function ehWriteNow() {
   if (!ehMayWrite() || !(ehActive || EDITORS_HERE_EAGER)) return;
   const TS = firebase.database.ServerValue.TIMESTAMP;
   ehLastWriteAt = Date.now();
+  const ok = () => { ehRetried = false; };
   try {
     const ref = ehRowRef();
     if (!ehRowLive) {
@@ -1974,11 +2004,22 @@ function ehWriteNow() {
       const row = { at: TS, v: APP_VERSION };
       if (ehWhere) row.where = ehWhere;
       ehRowLive = true;
-      ref.set(row).catch(() => {});
+      ref.set(row).then(ok, () => { ehRowLive = false; ehRefused(); }); // a refused create is no row: the retry creates it
     } else {
-      ref.update({ at: TS, where: ehWhere || null }).catch(() => {}); // `where` removed, never blank
+      ref.update({ at: TS, where: ehWhere || null }).then(ok, ehRefused); // `where` removed, never blank
     }
   } catch (e) { /* the feature just shows nobody */ }
+}
+
+// The floor above is measured between this device's SEND times, but the rules compare the SERVER's
+// stamps: uneven latency (0.8 s on one write, 0.1 s on the next) can land two under a second apart
+// and the second is refused. One retry a beat later, carrying the LATEST place; a second refusal in a
+// row (rules that predate the feature) is swallowed for good — the feature just shows nobody.
+function ehRefused() {
+  if (ehRetried || !(ehActive || EDITORS_HERE_EAGER)) return;
+  ehRetried = true;
+  clearTimeout(ehTimer);
+  ehTimer = setTimeout(ehWriteNow, ehMinMs + 300);
 }
 
 // At most one write per row per EDITORS_HERE_MIN_MS: a quick run of screen changes is coalesced
@@ -1994,6 +2035,7 @@ function ehSchedule() {
 function editorsHereStart(where) {
   if (!canEdit()) return false; // a viewer or a view-only tab neither writes nor listens
   ehActive = true;
+  ehRetried = false;
   ehWhere = editorsHereWhereOk(where || '') ? (where || '') : '';
   attachEditorsHere();
   ehSchedule();
@@ -2033,7 +2075,12 @@ function editorsHereStop() {
 // app.js's .info/connected handler beside registerPresence(); nothing happens unless the builder is open.
 function editorsHereOnConnect() {
   ehRowLive = false;
-  if (ehActive || EDITORS_HERE_EAGER) { if (EDITORS_HERE_EAGER && canEdit()) attachEditorsHere(); ehSchedule(); }
+  if (!ehActive && !EDITORS_HERE_EAGER) return;
+  // Not only eager mode: a reload (or the auto-reload on a deploy) with Set up the week open starts
+  // the builder at the first render, BEFORE sign-in resolves — editorsHereStart found no identity and
+  // attached nothing, so this, after approval, is the listener's first chance. (attach checks itself.)
+  if (canEdit()) attachEditorsHere();
+  ehSchedule();
 }
 
 // ── listening (editor devices only) ──────────────────────────────────
