@@ -1077,8 +1077,8 @@ does, so an app device always chooses by its own key.
   combined ruleset — the junior block unchanged plus a `seniorScoreboard`
   copy with only the members-lookup path swapped. All fifteen
   unauthenticated probes (six read paths per camp, write probes, a
-  member-injection attempt) return `Permission denied` — true of the ruleset
-  that is PUBLISHED today; once R1 is published exactly one read per camp
+  member-injection attempt) return `Permission denied`, except that since R1
+  was published (2026-11-02) exactly one read per camp
   (`<root>/revealPublic`) answers `null` instead (see "R1"). The senior owner
   record `seniorScoreboard/members/patricksimpson,fx@gmail,com` is seeded
   editor via the console Data tab and is rules-immutable, same as junior's.
@@ -1410,7 +1410,7 @@ rules**; the client code only shapes the UI.
   quota error into a "use Google" message; there is deliberately no live
   "X remaining" counter (Firebase exposes none, and faking one would need a
   public counter poked into the locked DB). No public access to camp data —
-  the one deliberate exception, once R1 is published, is the standings
+  the one deliberate exception (R1, published 2026-11-02) is the standings
   reveal's `revealPublic` (anonymous READ only; see "R1").
 - **Two roles, from the member record only** (never from anything on the
   device): `viewer` (counselors — read-only; deliberately can't touch their
@@ -1529,9 +1529,10 @@ rules**; the client code only shapes the UI.
   both directions, and the unauthenticated probes. `roster`/`contacts`-style
   member-readable, unvalidated placeholders remain forbidden** (R1's `campers`
   is the proof of the pattern: editor-only read, validated down to the leaf).
-- **R1 — the one rules release: WRITTEN, PROVEN IN THE EMULATOR, NOT YET
-  PUBLISHED** (BUILD-PLAN Step 10, 2026-11-02; Step 11 is the owner's paste, then
-  an agent session fills the checklist below). `database.rules.json` now also
+- **R1 — the one rules release: PUBLISHED AND VERIFIED LIVE** (written in
+  BUILD-PLAN Step 10, 2026-11-02; published by the owner at Step 11 the same
+  night, read back byte-identical, every probe as expected — the checklist below
+  has the results). `database.rules.json` now also
   carries, identical in both camps modulo the root name: P2's `setup`, `campers`
   (editor-only: minors' names), `teamPhotos`, `accessRequests`, `accessBlocked`,
   `restoreIndex`, `restoreBody`, `editorsHere`; the standings reveal's
@@ -1541,9 +1542,10 @@ rules**; the client code only shapes the UI.
   rules test allows it beside `SYNC_KEYS` until then), optional
   `state/teams/$i/{emoji,short,color,photoV}` (id/name/counselor stay
   unvalidated, so a v183 whole-array write still passes), `state/meta/{epoch,
-  epochAt}` and `pushSchedule/{rev,src}`. Nothing shipped touches any of it, so
-  until the paste every new node answers `Permission denied` and a new client
-  degrades to "not available yet" (proved both directions below).
+  epochAt}` and `pushSchedule/{rev,src}`. No client shipped before Step 11 touches
+  any of it. Against the pre-R1 ruleset (the Step 11 backup, i.e. after a
+  rollback) every new node answers `Permission denied` and a new client degrades
+  to "not available yet" (proved both directions below).
   - **Source of truth for the R1 blocks is `tests/rules-macros.js`**, written with
     the spec's macro names (`MEMBER`, `EDITOR`, `SELF`, `ANCHOR`, `PANCHOR`,
     `NOWKEEP`, `SELFKEEP`, `OWNER`, `OWNERKEEP` …) once for both camps. Edit it,
@@ -1607,8 +1609,9 @@ rules**; the client code only shapes the UI.
     on the live database). `ancestor-validate.mjs` proves the anchors alone
     refuse those writes with every record-level and `teams`-node validate
     stripped (team flags included), so R1 is
-    correct under either answer; the LIVE probe is still run once before the
-    paste (checklist) and its answer recorded here.
+    correct under either answer. **Live answer (Step 11, 2026-11-02): the live
+    database refuses that write too** — ancestor `.validate` IS evaluated there,
+    and the old "known hole" note below is corrected.
   - **Behaviour is proven in the emulator** (opt-in; needs npm + Java; see
     `tests/emulator/README.md`; `npm run test:r1`): `compat-old-client`
     (26 operations of a v183–v196 client replayed on both rulesets, identical and
@@ -1631,7 +1634,8 @@ rules**; the client code only shapes the UI.
     `rules.test.js` budgets 192 KiB / 160 KiB against RTDB's documented 256 KiB
     limit. The longest single expression equals the longest already published
     (1,916 characters, chat's `.write`), so expression length is not the risk.
-    Confirm the console accepts it at Step 11: a PUT over the limit is refused
+    **The live database accepted it at Step 11 (2026-11-02); no split was
+    needed.** For a future, larger release: a PUT over the limit is refused
     and leaves the old rules live (nothing breaks). **A "too large" refusal means
     STOP and ask for the split** — R1a: state/teams/meta amendments, `setup`,
     restore points, `editorsHere`, the reveal blocks; R1b: `campers`,
@@ -1639,30 +1643,59 @@ rules**; the client code only shapes the UI.
     The split is not pre-generated: at 160 KB against a 256 KiB limit it is
     unlikely to be needed, and a pre-built pair would be two more hashes and two
     more runbooks to keep true.
-  - **R1 checklist (Step 11 fills the results; the file hash prefix to verify is
-    in the Step 10 commit message — recompute with
-    `sha256sum database.rules.json | cut -c1-8` after ANY edit):**
-    1. back up the live rules (runbook block 1); confirm the hash prefix.
-    2. publish (block 2); the console accepted the size: ______
-    3. read-back equals the file (block 3): ______
+  - **R1 checklist — FILLED at Step 11, Mon Nov 2 2026, about 1:50–2:20 AM ET**
+    (the file hash prefix to verify is in the Step 10 commit message — recompute
+    with `sha256sum database.rules.json | cut -c1-8` after ANY edit). How the
+    signed-in checks were run, should they ever need repeating without the owner
+    at a keyboard: through the RTDB REST API with real ID tokens (`?auth=`), the
+    owner's from an emailed sign-in link (Identity Toolkit `sendOobCode` +
+    `signInWithEmailLink`, link read through the owner's Gmail with permission —
+    it adds the email-link method to the owner's Auth user; Google sign-in is
+    unaffected), and a temporary `patricksimpsonfx+camptest@gmail.com` account
+    (same inbox) taken non-member → viewer → editor in junior only, then its
+    member record removed and its Auth user deleted. Results:
+    1. back up the live rules (runbook block 1); confirm the hash prefix:
+       **done** (owner, Cloud Shell; `ccf2e5d3` matched).
+    2. publish (block 2); the console accepted the size: **yes** (owner).
+    3. read-back equals the file (block 3): **RULES MATCH** (owner).
     4. unauthenticated probes on both roots: all `Permission denied` EXCEPT
        `GET <root>/revealPublic`, which says `null` (and its PUT, plus
-       `revealFull`, still denied): ______
+       `revealFull`, still denied): **as expected** — the owner ran all of
+       block 3; an agent re-ran every read: 14 private paths per camp
+       `Permission denied`, `revealPublic` `null` in both camps.
     5. discriminating checks (block 4): the owner reads `setup/meta` and
        `campers` ALLOWED on both roots; a test counselor `campers` DENIED,
        `setup` ALLOWED, a write to `editorsHere/<own key>/<id>` DENIED; a
        non-member test account denied everywhere; **another director**
        `set(false)` at `<root>/setup/meta/on/schedule` DENIED (as the owner it is
-       allowed — `.remove()` it at once): ______
+       allowed — `.remove()` it at once): **all as expected, 53/53** (agent,
+       with the tokens above). Owner: `setup/meta` + `campers` ALLOWED on both
+       roots (and state/config/members/chat still readable). Non-member: every
+       private read DENIED on both roots, `revealPublic` readable, an
+       `editorsHere` write DENIED. Counselor: state/config/members/chat/
+       `setup/meta` ALLOWED; `campers`, `campers/t0`, `editorsHere`,
+       `revealFull`, `restoreIndex`, `accessRequests`, `accessBlocked` DENIED;
+       senior (no record there) DENIED; writes to `editorsHere`,
+       `setup/meta/on/schedule`, `teamPhotos/t0` and its own `role` DENIED.
+       Other director: reads incl. `campers`, `editorsHere`, `revealFull`
+       ALLOWED; `set(false)` at `setup/meta/on/schedule` DENIED (the switch was
+       absent, so it was a real change); a same-value write to the owner's
+       member record DENIED; its own `editorsHere` row ALLOWED, a second write
+       inside a second DENIED (throttle), deleting it ALLOWED; senior `campers`
+       DENIED.
     6. the LIVE ancestor-validate probe: an editor writes
        `campScoreboard/state/zzz-probe/x = 1` — refused ⇒ ancestors are
        evaluated, accepted ⇒ the "known hole" below is right (delete the stray
-       at once; old builds ignore unknown state keys): ______
+       at once; old builds ignore unknown state keys): **REFUSED**
+       (`PERMISSION_DENIED`, by the owner in the browser console and again by
+       an agent) — ancestors ARE evaluated live, same as the emulator.
     7. the live regex check: the owner writes a 100,000-character PNG data URL
        to `<root>/teamPhotos/t0` and deletes it; if the live evaluator refuses
        it, `teamPhotos/data` falls back to the prefix check plus
        `!contains('"')`, `!contains('<')`, `!contains(' ')` (setup-rebuild-spec
-       §8.2): ______
+       §8.2): **ACCEPTED** (agent, as the owner; stored, then deleted) — the
+       full-charset regex stays, no fallback. Also REFUSED, as they should be:
+       100,001 characters, an `https://` address, and a `"`-breakout string.
     8. a quick glance at the Firebase console's connections graph on the first
        real reveal night (Step 23).
 - **Presence is keyed by member** (`presence/<memberKey>/<deviceId>`, changed
@@ -1689,14 +1722,13 @@ rules**; the client code only shapes the UI.
   subtree size, so this targets the actual vector: a multi-megabyte STRING
   dropped at `state/results`, which would land in every device's localStorage.
   `configForSync()` strips unknown keys before every config push, so a stray
-  from an imported backup can't bounce the whole `set()`. Known hole, accepted:
-  `state/<unknown>/<child>` still passes, because `$other` is an ancestor of
-  that path and RTDB never evaluates ancestor `.validate`. Closing it means
-  moving `.write` onto each of the twelve children — all-or-nothing, and not
-  worth it against a threat model of a few known directors. (R1 adds
-  `brackets4` to the allowed keys ahead of its client, Step 22, and the
-  emulator DENIES that stray write — it does evaluate ancestors; whether the
-  live database does is the open probe in the R1 checklist.)
+  from an imported backup can't bounce the whole `set()`. A deeper stray,
+  `state/<unknown>/<child>`, is refused too. (An older note here called that a
+  "known hole", on the theory that RTDB never evaluates an ancestor's
+  `.validate`; the live database DOES — probed at Step 11, 2026-11-02:
+  `state/zzz-probe/x = 1` is refused by `state/$other: false`, exactly as in the
+  emulator.) R1 adds `brackets4` to the allowed keys ahead of its client,
+  Step 22.
 - **`config` IS sealed** (`$other: false`, 2026-07-26 — the live node was read
   and holds exactly the five keys). Safe even if a stray ever appears, because
   `pushConfig` is a whole-node `set()` of `configForSync()` output: the write
