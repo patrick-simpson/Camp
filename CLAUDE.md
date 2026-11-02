@@ -2576,6 +2576,13 @@ Both camps, junior and senior, run all of it.
   NOTHING**, so an untouched camp's schedule sheet is exactly what it was — the spec's
   disabled "Ask a director to set the camp dates" is a one-line change there when the
   Camp week screen is how a director sets them.
+- **The real seed against the real rules**: `tests/emulator/camp-data.mjs`'s `buildSeed(id)` is
+  now `setup-sync.js`'s `buildSeed` run through the unit-test harness (the hand-written copy
+  it replaced is kept as `buildSeedFixture`), and the twelve R1 emulator suites were re-run
+  against it for BOTH camps — 27 + 40 + 33 + 14 + 11 + 16 + 13 + 16 + 3 + 22 + 45 + 9 cases,
+  all SAFE, including the owner's whole-`setup` transaction (`owner-only.mjs`) and
+  every pinned id / date / range (`setup.mjs`). Re-run them (README there) after any change
+  to the seed or to `mergeSeed`.
 - **The seeded pass** (`tests/run.js`, `makeContext({camp, seeded: true})`): the seed,
   round-tripped through RTDB's canonical form, is already `setupTree` with the switch on
   and the catalog's games are linked (A2). The week / push / chat / ics / tabs / frame /

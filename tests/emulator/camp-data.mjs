@@ -2,10 +2,12 @@
 // into a vm (as tests/harness.js does, minus the app) for either camp, and builds a
 // `setup` seed tree from it by the rules of setup-rebuild-spec §10.2.
 //
-// This is a TEST FIXTURE of the seed, written before the real `buildSeed` exists (BUILD-PLAN
-// Step 15). It exists so R1 is proven against the actual week — junior's Tue/Thu/Fri team
-// patches and one-offs, senior's 100%-typical days and placeholder stubs — and not only
-// against hand-made records. When Step 15 lands, its output replaces this function's.
+// `buildSeed(id)` is now the REAL seed (setup-sync.js, BUILD-PLAN Step 15), run through the
+// unit-test harness's vm so the rules are proven against exactly what Edit the week here
+// writes — junior's Tue/Thu/Fri team patches and one-offs, senior's 100%-typical days and
+// placeholder stubs. `buildSeedFixture(id)` below is the hand-written copy these suites used
+// before it existed, kept so a divergence between the two is visible (the unit tests pin the
+// real one against the printed week; this keeps the rules suites honest about both).
 import { readFileSync } from 'fs';
 import vm from 'vm';
 
@@ -35,7 +37,16 @@ function teamsOfTail(camp, label) {
   return ids.length && /^(?:.+?)(?:, | & |$)/.test(tail) && ids.length >= 2 && label.startsWith('Rising bell') ? ids : null;
 }
 
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+
 export function buildSeed(id) {
+  const { makeContext } = require('../harness.js');
+  const { ctx } = makeContext({ camp: id });
+  return json(vm.runInContext('buildSeed(CAMP)', ctx));
+}
+
+export function buildSeedFixture(id) {
   const { camp } = loadCamp(id);
   const sched = camp.daySchedule;
   const mk = (b, prefix, i, ord) => {
