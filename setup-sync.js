@@ -2808,7 +2808,6 @@ async function setupTurnOn(sections, opts) {
     if (plan.ops.length) { setupApplyGameAttachments(state.config, plan.ops); saveConfig(); }
     attach = { attached: plan.ops.length, unplaced: plan.unplaced };
   }
-  if (typeof pushRepublishSchedule === 'function') pushRepublishSchedule({ reset: true }).catch(() => {});
   return { ok: true, turnedOn: off, seeded: first, attach };
 }
 
@@ -2821,7 +2820,6 @@ function setupUseOriginal(sections) {
   const want = (sections || SETUP_SEED_SECTIONS).filter((s) => SETUP_SEED_SECTIONS.indexOf(s) !== -1 && setupOn(s));
   if (!want.length) return { ok: false, reason: 'already' };
   const r = commitSetup((d) => { want.forEach((s) => { d.meta.on[s] = false; }); }, { undo: false, ownerWhat: 'switch back to the original week' });
-  if (r.ok && typeof pushRepublishSchedule === 'function') pushRepublishSchedule({ reset: true }).catch(() => {});
   return r.ok ? { ok: true, turnedOff: want } : r;
 }
 

@@ -2517,7 +2517,8 @@ Both camps, junior and senior, run all of it.
   `setupRef.transaction(mergeSeed)`, a re-read of its own snapshot at once
   (`setupIdleTick`: it was turned away while the write was in flight), A2 against the
   committed tree as one config edit (skipped, for the hub to offer later, when the catalog
-  is not editable yet), and `pushRepublishSchedule({reset})` when phone alerts exist.
+  is not editable yet). Phone alerts follow on their own: push.js's setup-event hook
+  republishes when the switch moves (see "The published schedule").
   `setupUseOriginal` is one ordinary `commitSetup` writing `meta/on/<s>: false` (no undo
   entry: the other button is the undo). **Not built here:** the UI — `HUB_DOOR_ACTIONS.original`
   (the hub door's gold "Edit the week here") and `SETUP_OWNER_ACTIONS.original` (the owner
@@ -2525,6 +2526,27 @@ Both camps, junior and senior, run all of it.
   freeze questions; team branding (`short` / `emoji` written to `state.teams`, A1 step 3)
   waits for step 25, the first reader of those fields. Nothing presses the switch in this
   step: both camps stay on the built-in week until the owner does.
+- **The published schedule** (push.js; the whole push layer is still dormant while
+  `PUSH_SERVICE_URL` is blank): `pushPublishSchedule(weekStart)` is ONE transaction on
+  `pushSchedule` — `{weekStart, at, by, blocks, rev: (cur.rev||0)+1, src}`, where
+  `src = fnv1a(pushStableJson({weekStart, blocks}))` (8 hex, what the rules pin) — and
+  writes NOTHING when `cur` already holds that content (identical content is already
+  published; `rev` counts real changes only, monotonic by transaction, so racing editors
+  write once). Built-in camps publish as before (`d<dow>-<start>-<position>`); a camp
+  edited here publishes `<dk>-<block id>` with each block's own `alertKey`, ids that stay
+  put when a block is moved or renamed (a phone subscribed to "lunch" keeps getting it).
+  The week is `campWeek().start` (setup date, else the drawer's); with no date nothing is
+  published. Who publishes: the author's device 5 s after its setup commit
+  (`pushScheduleSoon`, from `onSetupEvent('commit')`), every editor device when the switch
+  itself moves (a `'tree'` event with `scheduleIsShared()` changed — the ids change format;
+  identical content aborts for all but the first), and any editor on load when the
+  published `src` is not its own (`pushMaybeRepublishSchedule`: a record with no `src`, from
+  an older build, never equals one, so it is put right — catch-up, never alerts).
+  `pushRepublishSchedule({force})` is the hub's Publish-now seam. `pushMigrateWeekStart`
+  copies the date alerts were set up with into `setup/meta/weekStart` once (retried on
+  setup events), and the drawer's Save now writes the setup date before publishing.
+  The schedule-change ALERT (`/notify` kind `schedule`, the baseline reset on a switch)
+  is the Worker's step 26 (S9) and is not here.
 - **The seeded pass** (`tests/run.js`, `makeContext({camp, seeded: true})`): the seed,
   round-tripped through RTDB's canonical form, is already `setupTree` with the switch on
   and the catalog's games are linked (A2). The week / push / chat / ics / tabs / frame /
@@ -2542,7 +2564,11 @@ Both camps, junior and senior, run all of it.
   one pre-seed point THEN one transaction, ONE config transaction for A2, no phantom diff
   afterwards, twice writes once, owner-only, every refusal before a write, the camp-week
   freeze, stamps / a wizard claim carried, off-then-on keeps the edit and the hand
-  attachment), `games-blocks.test.js` (+ `.senior`: the A2 oracle, never-touches-attached,
+  attachment), `push-publisher.test.js` (+ `.senior`: src stability, rev 1 → 2 → 3, identical
+  content writes nothing, two editors at once write once, the rules' record shape,
+  catch-up from an older build's record, dormant / counselor / no-date gates, the author
+  and switch-moved triggers, the week-date migration, the drawer's Save),
+  `games-blocks.test.js` (+ `.senior`: the A2 oracle, never-touches-attached,
   re-homing, unplaced, each rule, exactly-once listing, `putGamesOnSchedule`).
 
 ## Counselors ↔ teams ↔ accounts

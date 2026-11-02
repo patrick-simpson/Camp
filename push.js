@@ -981,6 +981,11 @@ function initPush() {
     pushSelfHeal().catch((e) => console.warn('[push] self-heal failed', e));
     if (typeof canEdit === 'function' && canEdit()) {
       pushMaybeRepublishSchedule().catch((e) => console.warn('[push] schedule republish failed', e));
+      if (typeof onSetupEvent === 'function' && !pushSetupHooked) {
+        pushSetupHooked = true;
+        pushLastShared = typeof scheduleIsShared === 'function' && scheduleIsShared();
+        onSetupEvent(pushOnSetupEvent);
+      }
     }
   } catch (e) { console.warn('[push] init failed', e); }
 }
@@ -1077,27 +1082,100 @@ function pushNotifyChat(ch, msgId, text) {
 // The published schedule (editors)
 // ════════════════════════════════════════════════════════════════════
 
-function pushPublishSchedule(weekStart) {
-  return pushWithTimeout(firebase.database().ref(dbPath('pushSchedule')).set({
-    weekStart,
-    at: firebase.database.ServerValue.TIMESTAMP,
-    by: identityKey(authUser),
-    blocks: pushScheduleBlocks(scheduleWeek()),
-  }), 10000, 'save-timeout');
+// What the Worker reads is the week as plain data (pushScheduleBlocks) and the Sunday it starts on. `src` is a short
+// hash of exactly that content, so two editors who build the same week write the same `src`, and a republish of
+// unchanged content is recognised as one (setup-rebuild-spec §12.1). `rev` counts the real changes, by transaction.
+function pushScheduleSrc(weekStart, blocks) {
+  return fnv1a(pushStableJson({ weekStart, blocks }));
 }
 
-// The schedule is code (camps.js), so a deploy can change it. The first
-// editor device to load a new build republishes — no tap — keeping the
-// week the director already set. A week that was never set stays unset:
-// there'd be nothing to remind anyone about.
+// The `src` this device last saw published (a read or its own write): the cheap "nothing to do" for a commit that
+// did not touch the schedule. null until it has looked.
+let pushPublishedSrc = null;
+
+// Publish the week: ONE transaction on pushSchedule — `{ weekStart, at, by, blocks, rev: (cur.rev || 0) + 1, src }`,
+// or nothing at all when `cur` already holds this content (the author still sends its own /notify, §12.2). A null
+// `cur` is legitimate (never published); the SDK re-runs the function on a stale guess. Built-in camps publish as
+// they always did (ids d<dow>-<start>-<position>); a camp whose schedule is edited here publishes <dk>-<block id>,
+// which stays put when a block is moved or renamed, with every block's own alert key. Resolves
+// { published, rev, src }.
+async function pushPublishSchedule(weekStart) {
+  const blocks = pushScheduleBlocks(scheduleWeek());
+  const src = pushScheduleSrc(weekStart, blocks);
+  const by = identityKey(authUser);
+  let rev = 0;
+  const res = await pushWithTimeout(firebase.database().ref(dbPath('pushSchedule')).transaction((cur) => {
+    if (cur && typeof cur === 'object' && cur.src === src && cur.weekStart === weekStart) { rev = Number(cur.rev) || 0; return undefined; }
+    rev = (cur && typeof cur === 'object' ? Number(cur.rev) || 0 : 0) + 1;
+    return { weekStart, at: firebase.database.ServerValue.TIMESTAMP, by, blocks, rev, src };
+  }, null, false), 10000, 'save-timeout');
+  pushPublishedSrc = src;
+  return { published: !!(res && res.committed), rev, src };
+}
+
+// Catch-up: republish when what is published differs from this device's own build of the week, never alerting.
+// The week is setup/meta/weekStart (campWeek(), which falls back to the date the drawer set); a camp with no date
+// publishes nothing — there is nobody to remind. `opts.force` is the hub's Publish now.
+async function pushRepublishSchedule(opts) {
+  const o = opts || {};
+  if (!pushConfigured() || typeof firebase === 'undefined' || !firebase.database) return { published: false, why: 'off' };
+  if (!(typeof canEdit === 'function' && canEdit())) return { published: false, why: 'readonly' };
+  const weekStart = typeof campWeek === 'function' ? campWeek().start : pushKnownWeekStart();
+  if (!weekStart) return { published: false, why: 'no-week' };
+  if (!o.force && pushScheduleSrc(weekStart, pushScheduleBlocks(scheduleWeek())) === pushPublishedSrc) return { published: false, why: 'same' };
+  return pushPublishSchedule(weekStart);
+}
+
+// The schedule is data a director edits (or, until Edit the week here is pressed, code in camps.js that a deploy
+// can change). The first editor device to load republishes — no tap — keeping the week the director already set. A
+// week that was never set stays unset: there'd be nothing to remind anyone about. A published record with no `src`
+// (an older build wrote it) never equals a build's own, so it is put right the same way.
 async function pushMaybeRepublishSchedule() {
   const snap = await pushWithTimeout(firebase.database().ref(dbPath('pushSchedule')).once('value'), 15000);
   const cur = snap.val();
   pushWeekStart = cur && isValidWeekStart(cur.weekStart) ? cur.weekStart : null;
+  pushPublishedSrc = cur && typeof cur.src === 'string' ? cur.src : null;
   renderPushWeekStatus();
-  if (!pushWeekStart || !canEdit()) return;
-  if (pushStableJson(cur.blocks || {}) === pushStableJson(pushScheduleBlocks(scheduleWeek()))) return;
-  await pushPublishSchedule(pushWeekStart);
+  pushMigrateWeekStart();
+  if (!pushWeekStart && !(typeof campWeek === 'function' && campWeek().start)) return;
+  await pushRepublishSchedule();
+}
+
+// The week date moves into setup/meta/weekStart (§10.6): a director device copies the one alerts were set up with,
+// once, when setup has none. Retried on setup events (the first snapshot may not have landed yet).
+let pushWeekMigrated = false;
+function pushMigrateWeekStart() {
+  if (pushWeekMigrated || !isValidWeekStart(pushWeekStart)) return;
+  if (typeof setupWeekStart !== 'function' || typeof commitSetup !== 'function' || !(typeof canEdit === 'function' && canEdit())) return;
+  if (setupWeekStart()) { pushWeekMigrated = true; return; }
+  const weekStart = pushWeekStart;
+  const r = commitSetup((d) => { d.meta.weekStart = weekStart; }, { undo: false });
+  if (r.ok) pushWeekMigrated = true; // 'loading' (no first snapshot yet) tries again on the next setup event
+}
+
+// Who publishes (§12.1): the author's device, a few seconds after its own setup commit; and every editor device when
+// the switch itself moves (Edit the week here, Use the original week again), because the ids change format then. The
+// content is deterministic, so racing editors write identical blocks and all but the first abort.
+let pushRepublishTimer = null;
+let pushLastShared = null;
+let pushSetupHooked = false;
+function pushScheduleSoon(ms) {
+  if (!pushConfigured() || !pushSyncReady) return;
+  clearTimeout(pushRepublishTimer);
+  pushRepublishTimer = setTimeout(() => {
+    pushRepublishTimer = null;
+    pushRepublishSchedule().catch((e) => console.warn('[push] schedule republish failed', e));
+  }, ms === undefined ? 5000 : ms);
+}
+
+function pushOnSetupEvent(kind) {
+  if (kind === 'commit') { pushScheduleSoon(); pushMigrateWeekStart(); return; }
+  if (kind === 'tree') {
+    const shared = typeof scheduleIsShared === 'function' && scheduleIsShared();
+    if (pushLastShared !== null && shared !== pushLastShared) pushScheduleSoon();
+    pushLastShared = shared;
+    pushMigrateWeekStart();
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -1786,6 +1864,8 @@ async function pushSaveWeekStart(value) {
   const btn = document.getElementById('pa-week-save');
   if (btn) btn.setAttribute('disabled', '');
   try {
+    // The date lives in setup/meta/weekStart (the Camp week screen sets it too); the published copy follows it.
+    if (typeof commitSetup === 'function') commitSetup((d) => { d.meta.weekStart = value; }, { undo: false });
     await pushPublishSchedule(value);
     pushWeekStart = value;
     showToast(`🗓️ Schedule alerts are set for ${pushWeekLabel(value)}.`, { mine: true });
