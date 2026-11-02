@@ -47,8 +47,17 @@
        framed instead, which covers the same clickjacking case. -->
   <title>Camp</title>
   <meta name="description" content="Live camp game scoring — standings, schedule, and team medals, synced across every device.">
-  <meta name="theme-color" content="#ffffff" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#181b1d" media="(prefers-color-scheme: dark)">
+  <!-- The browser chrome is the page's own paper / navy (--paper in
+       styles.css), so the status bar and the header read as one surface. -->
+  <meta name="theme-color" content="#f5efe2" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0c1030" media="(prefers-color-scheme: dark)">
+  <!-- Home Screen app (redesign §13.8). "default" keeps the status bar text
+       dark-on-light; if a real iPhone paints a light strip above a blue roof,
+       the roof simply starts below the status bar (no layout change). -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Camp">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <meta property="og:title" content="Camp">
   <meta property="og:description" content="Live camp game scoring — standings, schedule, and team medals.">
   <meta property="og:type" content="website">
@@ -60,7 +69,7 @@
   <!-- media="print" keeps this stylesheet off the critical path (a blocking one
        leaves a blank page while fonts.googleapis.com is slow); boot-guard.js
        flips it to "all" on load — the CSP refuses an inline onload=. -->
-  <link id="gfonts" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" media="print">
+  <link id="gfonts" href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,400..900&display=swap" rel="stylesheet" media="print">
   <!-- Jelly UI web components (vendored, see vendor/jelly.js header). Module
        scripts are deferred by spec, so this never blocks first paint and the
        classic scripts at the end of <body> always execute before it. -->

@@ -1,89 +1,226 @@
 /* ============================================================
-   CUSTOM PROPERTIES
-   ============================================================ */
-/* App tokens are re-sourced from Jelly UI's document-level tokens
-   (vendor/jelly.js injects --jelly-color-* on :root inside @layer jelly, and
-   flips them via html[data-jelly-mode] / prefers-color-scheme — applyTheme()
-   in app.js keeps that attribute in step with the app's theme choice).
-   Every remapped value keeps its pre-Jelly literal as the var() fallback so
-   the page still paints correctly BEFORE the deferred module evaluates (the
-   lock screen renders pre-paint) and stays usable if the module ever fails
-   to load. --color-bg's fallbacks are Jelly's own background-default values
-   (#ffffff / #181b1d), NOT a nicer gray: a different pre-module colour is a
-   visible background shift the moment Jelly's tokens land. Medals, card
-   shadows, radii, and primary-dark/hover have no Jelly equivalent and remain
-   hand-tuned. color-scheme for the light default comes
-   from Jelly's own :root rules — don't redeclare it here unlayered, or it
-   would beat Jelly's layered dark switch. */
+   VISUAL SYSTEM (redesign §8): colour, type, space, shape, teams
+   ============================================================
+   ONE source, read top to bottom, never in a loop:
+     1. the palette literals below (--paper, --ink, --blue, …), light + dark;
+     2. Jelly UI's tokens (--jelly-color-*), mapped FROM the palette (§8.10);
+     3. the older --color-* names, kept so the ~3,000 existing rules keep
+        working: each reads the palette, or a Jelly token that now does.
+   Nothing maps a palette or Jelly token from a --color-* one, which is what
+   made this mapping a cycle before the palette existed (Step 12's note).
+
+   Dark answers to the same switches as before: html[data-jelly-mode="dark"]
+   (an explicit Dark, set pre-paint by boot-guard.js and by applyTheme), or
+   the OS while on Auto (no attribute). The palette and the Jelly mapping live
+   on :root, NOT body: a var() resolves where it is declared, so a dark value
+   set on body would never reach a --jelly-* token declared on :root.
+
+   Contrast (WCAG, measured against --paper and --sheet in each theme): text
+   under 16px is 7:1 or more; 16px and up at least 4.5:1; boundaries a reader
+   must see (a switch's OFF outline, a dashed "hidden" row) at least 3:1. Any
+   new colour role has to meet the same rule in BOTH themes before it lands. */
 :root {
+  /* §8.3 colour roles — light (warm paper: less glare than white in sun, and
+     the near-white sheet separates from it without a shadow). */
+  --paper: #f5efe2;          /* the page */
+  --paper-2: #ebe2cf;        /* wells, segmented tracks */
+  --sheet: #fffdf8;          /* raised surfaces: grouped lists, sheets */
+  --ink: #141a48;            /* text, 14.4:1 on paper */
+  --ink-2: #373d72;          /* secondary text, 8.8:1 */
+  --ink-3: #43497a;          /* the lightest text allowed, 7.4:1; also OFF outlines */
+  --line: rgba(20, 26, 72, .13);   /* hairlines between rows */
+  --line-2: rgba(20, 26, 72, .26); /* the edge of a group or a field */
+  --card-b: #141a48;         /* a chunky control's border */
+  --edge: #141a48;           /* a chunky control's bottom edge */
+  --blue: #2c47ee;           /* camp blue for non-text: the tab blob, focus */
+  --blue-edge: #18299c;
+  --blue-tint: #e1e6ff;      /* a message's fill (one tint per meaning) */
+  --on-blue: #ffffff;
+  --link: #2234c4;           /* blue TEXT: links, "Today", badges (7.8:1) */
+  --roof: #2c47ee;           /* the broadcast roof; the same in dark */
+  --roof-edge: #18299c;
+  --on-roof: #ffffff;        /* 6.5:1; every roof label is 16px or more */
+  --gold: #f7b928;           /* the one primary action */
+  --gold-edge: #986409;
+  --gold-tint: #fff0c2;      /* a moment's panel, a count pill */
+  --gold-ink: #1f1500;       /* text on gold, 12:1 */
+  --live: #8f1a13;           /* live, the reveal strip, errors as fills */
+  --live-tint: #fde2de;
+  --done: #0d542d;
+  --done-tint: #d8efe0;
+  --medal-gold: #f2b632;     /* a disc means a PLACE won, never a count */
+  --medal-silver: #c9d0da;
+  --medal-bronze: #e0a36a;
+  --medal-ink: #141a48;      /* numerals and the outline, both themes */
+  --shadow-rgb: 20, 26, 72;  /* rgb triple, for rgba(var(--shadow-rgb), a) */
+  --focus-ring: 0 0 0 3px var(--paper), 0 0 0 5px var(--blue);
+
+  /* §8.4 team identity. A team's colour arrives as --team-accent-l / -d on
+     the element (camp-core.js safeColorVars); [data-team] turns that into
+     --team for the theme in force. Team colour is identity, never decoration:
+     outlines, a tag's outline, a flag's fill. Never a fill behind small text. */
+  --flag-red: #d92d20;       /* flag FILLS (brighter mark values) */
+  --flag-blue: #2f6fd0;
+  --flag-green: #2f8a35;
+  --flag-gold: #e0a100;
+  --flag-gold-text: #8a6100; /* gold as an outline or text; never a fill */
+  --flag-line: #141a48;      /* the 1.4px outline every flag gets */
+  --pole: #3b3f58;
+
+  /* §8.2 type. Inter for UI; at 22px and up font-optical-sizing picks Inter's
+     Display cut on its own (the variable font's opsz axis), so headlines need
+     no second family. Sizes are rem so a phone's larger-text setting reaches
+     them; line heights are ratios so a row grows with its text. Each token is
+     a whole `font` shorthand: `font: var(--t-row)`. */
+  --font-ui: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-scripture: ui-serif, 'New York', 'Iowan Old Style', Georgia, serif;
+  --t-display: 850 2.125rem/1.06 var(--font-ui);     /* 34/36  remote labels, mini-TV numbers */
+  --t-title: 800 1.75rem/1.08 var(--font-ui);        /* 28/30  tab titles, the Now card's block */
+  --t-head: 800 1.375rem/1.18 var(--font-ui);        /* 22/26  station headline, moments */
+  --t-row: 750 1.0625rem/1.2 var(--font-ui);         /* 17/20  game names, row titles */
+  --t-body: 600 1rem/1.32 var(--font-ui);            /* 16/21  descriptions, schedule labels */
+  --t-meta: 550 0.875rem/1.3 var(--font-ui);         /* 14/18  sublines (ink-2) */
+  --t-label: 750 0.8125rem/1.25 var(--font-ui);      /* 13/16  section labels, sentence case */
+  --t-tag: 800 0.78125rem/1.2 var(--font-ui);        /* 12.5/15 tags, tab labels: the floor is 12 */
+  --t-num: 850 1.375rem/1 var(--font-ui);            /* 22     points, places, scores */
+  --t-scripture: 500 1.4375rem/1.43 var(--font-scripture); /* 23/33 the memory verse */
+  --track-tight: -0.022em;   /* display sizes */
+  --track-row: -0.012em;     /* row titles */
+
+  /* §8.5 space, shape, targets: a 4px grid, 16px gutter, 8/12/16/24 rhythm. */
+  --s-1: 4px;
+  --s-2: 8px;
+  --s-3: 12px;
+  --s-4: 16px;
+  --s-6: 24px;
+  --gutter: 16px;
+  --r-card: 18px;            /* the Now card (the one physical object) */
+  --r-group: 16px;           /* a grouped list, a sheet's top corners */
+  --r-btn: 12px;             /* buttons, rows, segmented tracks */
+  --r-remote: 22px;
+  --r-tag: 6px;
+  --edge-card: 4px;          /* bottom edges: a heavier edge = more physical */
+  --edge-btn: 3px;
+  --edge-remote: 7px;
+  --target: 44px;            /* EVERY tap target, at least, both ways */
+  --row-min: 54px;           /* a grouped-list row */
+  --header-h: 56px;
+  --tabbar-h: calc(56px + env(safe-area-inset-bottom, 0px));
+  --strip-h: 40px;           /* the live-reveal strip under the header */
+
+  /* Older names (pre-redesign rules). New code uses the palette directly.
+     --color-bg reads Jelly's background-default, which reads --paper below:
+     its literal fallbacks are never used any more (the mapping is in this
+     file, so it applies before the module loads) and stay only because
+     tests/shell.test.js pins their exact text. */
   --color-bg: var(--jelly-color-background-default, #ffffff);
-  --color-surface: var(--jelly-color-background-surface, #ffffff);
-  --color-border: var(--jelly-color-border-default, #e2e6ec);
-  --color-text: var(--jelly-color-foreground-default, #1a2233);
-  --color-text-muted: var(--jelly-color-foreground-muted, #5b6472);
-  --color-primary: var(--jelly-color-background-accent, #3355ff);
-  --color-primary-dark: #2540c7;
-  --color-danger: var(--jelly-color-background-rose, #d63b3b);
-  /* Danger as TEXT on a surface (a "Remove" link, an error line, a minus
-     counter). Never colour text with the fill above: it is tuned to carry
-     WHITE text, so as text it is only 4.26:1 on the light page grey (#f4f6f9)
-     and drifts with Jelly's rose. Light: a fixed #b42318 (6.57:1 on white,
-     6.07:1 on #f4f6f9); the dark blocks below swap in a lighter red (#ff8a8a,
-     7.16:1). tests/contrast.test.js pins the values and that no rule colours
-     text with the fill. */
-  --color-danger-text: #b42318;
-  /* Text on primary/danger fills. White passes AA on the deep light-theme
-     accents; the dark theme's lighter accents need dark text instead. */
-  --color-on-primary: #ffffff;
+  --color-surface: var(--sheet);
+  --color-border: var(--line-2);
+  --color-text: var(--ink);
+  --color-text-muted: var(--ink-2);
+  --color-primary: var(--blue);
+  --color-primary-dark: var(--blue-edge);
+  --color-primary-hover: var(--blue-edge);
+  --color-on-primary: var(--on-blue);
+  --color-danger: var(--live);
   --color-on-danger: #ffffff;
+  /* Danger as TEXT on a surface (a "Remove" link, an error line, a minus
+     counter). Never colour text with the fill above: tests/contrast.test.js
+     pins these literals (light 6.57:1 on white, 5.9:1 on paper; dark 7:1+)
+     and that no rule colours text with the fill. */
+  --color-danger-text: #b42318;
   --color-gold: #96690a;
-  --color-gold-bg: #fff6dd;
-  --color-silver: #6b7280;
-  --color-silver-bg: #f1f3f6;
+  --color-gold-bg: var(--gold-tint);
+  --color-silver: #5f6673;
+  --color-silver-bg: #eeeae0;
   --color-bronze: #a15c2a;
-  --color-bronze-bg: #fbe9de;
-  --shadow-card: 0 1px 3px rgba(16, 24, 40, 0.08), 0 1px 2px rgba(16, 24, 40, 0.04);
-  --shadow-card-hover: 0 4px 14px rgba(16, 24, 40, 0.12), 0 2px 4px rgba(16, 24, 40, 0.06);
-  --shadow-sheet: var(--jelly-shadow-overlay, 0 -8px 40px rgba(16, 24, 40, 0.25));
-  --color-primary-hover: #2540c7; /* darkens on hover; white text stays readable */
+  --color-bronze-bg: #fbe6d6;
+  /* Flat on purpose (§8.1 rule 2, §8.8): surfaces separate by a hairline and
+     by paper vs sheet, never by a soft drop shadow. Only chunky controls get
+     a solid bottom edge, and they draw it themselves. */
+  --shadow-card: none;
+  --shadow-card-hover: none;
+  --shadow-sheet: 0 -10px 30px -12px rgba(var(--shadow-rgb), .35);
   --radius-lg: 16px;
-  --radius-md: 10px;
-  --radius-xl: 20px;
+  --radius-md: 12px;
+  --radius-xl: 18px;
 }
 
-/* Dark values for everything Jelly doesn't govern, plus dark *fallbacks* for
-   the remapped tokens (used only pre-module / if the module fails — after it
-   loads, the var() resolves and the fallback is ignored). */
-/* The :root[data-jelly-mode] form lets boot-guard.js paint an explicit choice
-   from the first frame (it sets the attribute pre-paint from the mirrored
-   campScoreboardTheme key); body.dark-theme is the same thing once applyTheme()
-   has run. Only an EXPLICIT Dark sets the class — Auto leaves it to the media
-   block below, so an OS flip never strands stale dark tokens. */
+/* §8.3 dark (navy). The roof, gold and medal discs deliberately do not flip. */
+:root[data-jelly-mode="dark"] {
+  --paper: #0c1030;
+  --paper-2: #151a45;
+  --sheet: #161c4b;
+  --ink: #f3f4ff;
+  --ink-2: #c5caf3;
+  --ink-3: #a3aade;
+  --line: rgba(255, 255, 255, .12);
+  --line-2: rgba(255, 255, 255, .24);
+  --card-b: rgba(255, 255, 255, .22);
+  --edge: #04061a;
+  --blue: #9aabff;
+  --blue-edge: #5a6ee6;
+  --blue-tint: #262f74;
+  --on-blue: #0c1030;
+  --link: #aab8ff;
+  --gold-tint: #3b3213;
+  --live: #ff8a7f;
+  --live-tint: #33121a;
+  --done: #62d890;
+  --done-tint: #14392a;
+  --medal-ink: #0c1030;
+  --shadow-rgb: 0, 0, 0;
+  --flag-line: #0c1030;
+  --pole: #c9cde8;
+}
+@media (prefers-color-scheme: dark) {
+  /* Auto on a dark phone. An explicit Light (data-jelly-mode="light", set
+     pre-paint) must not paint dark first. Keep in step with the block above. */
+  :root:not([data-jelly-mode="light"]) {
+    --paper: #0c1030;
+    --paper-2: #151a45;
+    --sheet: #161c4b;
+    --ink: #f3f4ff;
+    --ink-2: #c5caf3;
+    --ink-3: #a3aade;
+    --line: rgba(255, 255, 255, .12);
+    --line-2: rgba(255, 255, 255, .24);
+    --card-b: rgba(255, 255, 255, .22);
+    --edge: #04061a;
+    --blue: #9aabff;
+    --blue-edge: #5a6ee6;
+    --blue-tint: #262f74;
+    --on-blue: #0c1030;
+    --link: #aab8ff;
+    --gold-tint: #3b3213;
+    --live: #ff8a7f;
+    --live-tint: #33121a;
+    --done: #62d890;
+    --done-tint: #14392a;
+    --medal-ink: #0c1030;
+    --shadow-rgb: 0, 0, 0;
+    --flag-line: #0c1030;
+    --pole: #c9cde8;
+  }
+}
+
+/* Dark values for the older names that hold literals or need a dark-only
+   answer. The :root[data-jelly-mode="dark"] form lets boot-guard.js paint an
+   explicit choice from the first frame; body.dark-theme is the same once
+   applyTheme() has run. Only an EXPLICIT Dark sets the class — Auto is the
+   media block below, so an OS flip never strands stale dark tokens. */
 body.dark-theme,
 :root[data-jelly-mode="dark"] body {
   color-scheme: dark;
   --color-bg: var(--jelly-color-background-default, #181b1d);
-  --color-surface: var(--jelly-color-background-surface, #1a2030);
-  --color-border: var(--jelly-color-border-default, #2b3145);
-  --color-text: var(--jelly-color-foreground-default, #eef1f8);
-  --color-text-muted: var(--jelly-color-foreground-muted, #9aa3b8);
-  --color-primary: var(--jelly-color-background-accent, #6b85ff);
-  --color-primary-dark: #8ea0ff;
-  --color-danger: var(--jelly-color-background-rose, #ff6b6b);
-  --color-danger-text: #ff8a8a; /* ~7:1 on the dark surface */
+  --color-danger-text: #ff8a8a; /* 8:1 on navy */
+  --color-on-danger: var(--paper); /* the dark live fill is light: navy text on it */
   --color-gold: #e8c15a;
   --color-gold-bg: #3a3116;
   --color-silver: #c3c9d6;
   --color-silver-bg: #262c3d;
   --color-bronze: #e2a374;
   --color-bronze-bg: #3a2618;
-  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
-  --shadow-card-hover: 0 4px 16px rgba(0, 0, 0, 0.5);
-  --shadow-sheet: var(--jelly-shadow-overlay, 0 -8px 40px rgba(0, 0, 0, 0.6));
-  --color-primary-hover: #8ea0ff; /* lightens on hover — on-primary text is dark here */
-  /* White on #6b85ff is ~3.3:1 (fails AA); dark text is ~5.3:1. */
-  --color-on-primary: #181b1d;
-  --color-on-danger: #181b1d;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -92,44 +229,83 @@ body.dark-theme,
   :root:not([data-jelly-mode]) body:not(.light-theme):not(.dark-theme) {
     color-scheme: dark;
     --color-bg: var(--jelly-color-background-default, #181b1d);
-    --color-surface: var(--jelly-color-background-surface, #1a2030);
-    --color-border: var(--jelly-color-border-default, #2b3145);
-    --color-text: var(--jelly-color-foreground-default, #eef1f8);
-    --color-text-muted: var(--jelly-color-foreground-muted, #9aa3b8);
-    --color-primary: var(--jelly-color-background-accent, #6b85ff);
-    --color-primary-dark: #8ea0ff;
-    --color-danger: var(--jelly-color-background-rose, #ff6b6b);
     --color-danger-text: #ff8a8a;
+    --color-on-danger: var(--paper);
     --color-gold: #e8c15a;
     --color-gold-bg: #3a3116;
     --color-silver: #c3c9d6;
     --color-silver-bg: #262c3d;
     --color-bronze: #e2a374;
     --color-bronze-bg: #3a2618;
-    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
-    --shadow-card-hover: 0 4px 16px rgba(0, 0, 0, 0.5);
-    --shadow-sheet: var(--jelly-shadow-overlay, 0 -8px 40px rgba(0, 0, 0, 0.6));
-    --color-primary-hover: #8ea0ff;
-    --color-on-primary: #181b1d;
-    --color-on-danger: #181b1d;
   }
 }
 
-/* Camp overrides of Jelly's own tokens (unlayered, so they beat the module's
-   @layer jelly defaults): keep the camp-blue accent both modes, and render
-   Jelly components in Inter to match the rest of the app. Mirrors the same
-   explicit-attribute + media-fallback structure Jelly's stylesheet uses.
-   THIS is the one place Jelly's tokens are mapped onto the app's. The rest of
-   the redesign's mapping (redesign §8.10: surface, border, foreground, azure,
-   mint, amber and rose re-sourced from the new palette) lands with the shell's
-   palette in Step 13. It cannot be written yet: the --color-* tokens above are
-   themselves sourced FROM these --jelly-* ones, so pointing them back at
-   --color-* would be a cycle and both would go invalid. */
+/* A team's colour for the theme in force (§8.4). The -l/-d pair is written on
+   the element by the renderer; without one, --team falls back to ink. */
+[data-team] {
+  --team: var(--team-accent-l, var(--ink));
+}
+:root[data-jelly-mode="dark"] [data-team] {
+  --team: var(--team-accent-d, var(--team-accent-l, var(--ink)));
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-jelly-mode="light"]) [data-team] {
+    --team: var(--team-accent-d, var(--team-accent-l, var(--ink)));
+  }
+}
+
+/* §8.10: Jelly's tokens, mapped onto the palette in this ONE place. Unlayered,
+   so they beat the module's own @layer jelly values in both modes, and they
+   apply from the first frame (no shift when the deferred module lands). The
+   dark side needs no block of its own: every value here is a palette var,
+   and the palette flips on :root. */
 :root {
-  --jelly-color-background-accent: #3355ff;
+  --jelly-color-background-accent: var(--roof);
   --jelly-color-foreground-on-accent: #ffffff;
-  --jelly-font-display: 'Inter', system-ui, -apple-system, sans-serif;
-  --jelly-font-text: 'Inter', system-ui, -apple-system, sans-serif;
+  --jelly-color-background-default: var(--paper);
+  --jelly-color-background-surface: var(--sheet);
+  --jelly-color-background-muted: var(--paper);      /* a field's rest fill: a well */
+  --jelly-color-background-neutral: var(--paper-2);  /* "platinum" buttons, OFF tracks */
+  --jelly-color-background-neutral-emphasis: var(--ink-2);
+  --jelly-color-background-white: var(--sheet);
+  --jelly-color-border-default: var(--line-2);
+  --jelly-color-border-focus: var(--blue);
+  --jelly-color-foreground-default: var(--ink);
+  --jelly-color-foreground-muted: var(--ink-2);
+  --jelly-color-foreground-on-neutral: var(--ink);
+  --jelly-color-foreground-on-white: var(--ink);
+  --jelly-color-background-azure: var(--roof);
+  --jelly-color-background-mint: var(--done);
+  --jelly-color-background-amber: var(--gold);
+  --jelly-color-background-rose: var(--live);
+  --jelly-color-foreground-on-emphasis: #ffffff;
+  --jelly-color-shadow: var(--shadow-rgb);
+  --jelly-font-display: var(--font-ui);
+  --jelly-font-text: var(--font-ui);
+}
+/* Jelly has ONE label colour for its four saturated fills; ours don't share a
+   lightness. Gold always takes dark ink (white on gold is 1.9:1), and in dark
+   the live and done fills turn light, so they take navy too. Set on the host,
+   where the component reads it. */
+[variant="amber"] {
+  --jelly-color-foreground-on-emphasis: var(--gold-ink);
+}
+:root[data-jelly-mode="dark"] :is([variant="rose"], [variant="mint"]) {
+  --jelly-color-foreground-on-emphasis: var(--paper);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-jelly-mode="light"]) :is([variant="rose"], [variant="mint"]) {
+    --jelly-color-foreground-on-emphasis: var(--paper);
+  }
+}
+/* Switches read as ON/OFF in sunlight (§8.5): ON is done-green, OFF a well
+   with an ink-3 thumb (the old OFF track was 1.7:1). The words beside a
+   switch still say "On" / "Off". */
+jelly-switch {
+  --jelly-on: var(--done);
+  --jelly-off: var(--paper-2);
+  --jelly-switch-thumb-off: var(--ink-3);
+  --jelly-switch-thumb-on: var(--sheet);
 }
 /* A rounded card, not a pill: toasts wrap to two lines. On the element itself,
    not :root: the toaster declares the token in its own :host rule, which an
@@ -137,15 +313,8 @@ body.dark-theme,
 jelly-toaster {
   --jelly-toast-radius: 14px;
 }
-:root[data-jelly-mode="dark"] {
-  --jelly-color-background-accent: #6b85ff;
-  --jelly-color-foreground-on-accent: #181b1d; /* white on #6b85ff fails AA */
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-jelly-mode="light"]) {
-    --jelly-color-background-accent: #6b85ff;
-    --jelly-color-foreground-on-accent: #181b1d;
-  }
+jelly-drawer {
+  --jelly-drawer-radius: 20px;
 }
 
 /* MOTION TOKENS (redesign §9.3). For CSS transitions and keyframes that need no
@@ -321,7 +490,12 @@ html {
 
 body {
   margin: 0;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: var(--font-ui);
+  /* Tabular numerals everywhere (scores line up in every list), and Inter's
+     single-storey a, which reads friendlier at camp than the textbook one. */
+  font-feature-settings: 'tnum' 1, 'cv11' 1;
+  letter-spacing: -0.006em;
+  -webkit-font-smoothing: antialiased;
   background: var(--color-bg);
   color: var(--color-text);
   /* No colour transition here, on purpose. A theme flip changes every surface
