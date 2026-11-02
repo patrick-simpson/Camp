@@ -567,6 +567,25 @@ html.theme-switching *::after {
   stroke-linejoin: round;
 }
 
+/* A team's flag mark: <svg class="flag" data-flag="red"><use href="#flag-plain"/>.
+   The pole and the ink outline flip with the theme; the fill is the team's
+   bright mark colour (never the text-safe dark gold, which read as brown).
+   Flags carry no drop shadow; shields do. Sizes follow §8.4 (20–24 inline,
+   28–34 rows and header, 52 moments). */
+.flag {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  color: var(--flag-fill, var(--ink-3));
+  fill: var(--pole);
+  stroke: var(--flag-line);
+  stroke-width: 1.4;
+}
+.flag[data-flag="red"] { --flag-fill: var(--flag-red); }
+.flag[data-flag="blue"] { --flag-fill: var(--flag-blue); }
+.flag[data-flag="green"] { --flag-fill: var(--flag-green); }
+.flag[data-flag="gold"] { --flag-fill: var(--flag-gold); }
+
 /* ── Tab panels ─────────────────────────────────────────────────
    Only the active one is in the layout. No data-tab at all reads as Now, so a
    page whose switcher never ran still shows today's home. */

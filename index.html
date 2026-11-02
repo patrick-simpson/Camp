@@ -114,6 +114,16 @@
     <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5.2" y="10.6" width="13.6" height="9.6" rx="2.2"/><path d="M8.4 10.6V8a3.6 3.6 0 0 1 7.2 0v2.6"/></symbol>
     <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4.4 8.6A1.8 1.8 0 0 1 6.2 6.8h1.9l1.5-2.2h4.8l1.5 2.2h1.9a1.8 1.8 0 0 1 1.8 1.8v8.8a1.8 1.8 0 0 1-1.8 1.8H6.2a1.8 1.8 0 0 1-1.8-1.8z"/><circle cx="12" cy="12.6" r="3.4"/></symbol>
     <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4"/></symbol>
+    <!-- Team flag marks (§8.4) for a team with no shield (senior today): a
+         pennant on a pole, filled with the team's mark colour (currentColor,
+         from .flag[data-flag] or an inline --flag-fill) and outlined in ink.
+         Hue alone is not enough (senior Red and Gold are 1.8 apart under
+         deuteranopia), so each team in order also gets a SHAPE: plain,
+         swallowtail, white stripe, dark chevron. -->
+    <symbol id="flag-plain" viewBox="0 0 32 32"><rect x="5" y="2.5" width="2.6" height="27.5" rx="1.3" stroke="none"/><path fill="currentColor" stroke-linejoin="round" d="M7.6 4.4c5.4-2.6 9.4 2.4 19.4-.6v14c-10 3-14-2-19.4.6z"/></symbol>
+    <symbol id="flag-swallow" viewBox="0 0 32 32"><rect x="5" y="2.5" width="2.6" height="27.5" rx="1.3" stroke="none"/><path fill="currentColor" stroke-linejoin="round" d="M7.6 4.4c5.4-2.6 9.4 2.4 19.4-.6l-4.6 7 4.6 7c-10 3-14-2-19.4.6z"/></symbol>
+    <symbol id="flag-stripe" viewBox="0 0 32 32"><rect x="5" y="2.5" width="2.6" height="27.5" rx="1.3" stroke="none"/><path fill="currentColor" stroke-linejoin="round" d="M7.6 4.4c5.4-2.6 9.4 2.4 19.4-.6v14c-10 3-14-2-19.4.6z"/><path fill="#ffffff" stroke="none" opacity=".85" d="M7.6 9.6c5.4-2.6 9.4 2.4 19.4-.6v3.6c-10 3-14-2-19.4.6z"/></symbol>
+    <symbol id="flag-chevron" viewBox="0 0 32 32"><rect x="5" y="2.5" width="2.6" height="27.5" rx="1.3" stroke="none"/><path fill="currentColor" stroke-linejoin="round" d="M7.6 4.4c5.4-2.6 9.4 2.4 19.4-.6v14c-10 3-14-2-19.4.6z"/><path fill="#141a48" stroke="none" opacity=".85" d="M7.6 6.2l8.4 5.4-8.4 5.4z"/></symbol>
   </svg>
 
   <!-- ── SIGN-IN SCREEN ──────────────────────────────────────────
