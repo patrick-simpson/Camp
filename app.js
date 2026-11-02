@@ -4308,6 +4308,20 @@ function applyOpsSafe(tree, ops, anchors, opts) {
   return { tree: syncCanon(applySyncPaths(tree, apply)) || {}, dropped };
 }
 
+// fnv1a(str) → 8 hex chars: the 32-bit FNV-1a hash of a string's UTF-16 code units. A
+// content fingerprint, not a security measure — restore points carry one so a read-back
+// can tell "the body I wrote" from "something else" (setup-sync.js), and the schedule
+// publisher will stamp `src` with one (Step 15).
+function fnv1a(str) {
+  let h = 0x811c9dc5;
+  const s = String(str);
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, '0');
+}
+
 // ── Stranded work (setup-rebuild-spec §6.2 #3, "S2d") ──────────────
 // Unsent work from a PREVIOUS camp year must never be written into the current
 // one. The new-year wizard (Step 28) stamps `state.meta.epoch`; a phone that was

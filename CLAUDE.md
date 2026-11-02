@@ -1065,6 +1065,13 @@ What's covered, and why each file exists:
   echo keeping refs, bisect / quarantine / "rules not published", the read refused
   without touching `fbRef`/`syncDenied`, the tab-writer gate, accounting hooks, undo,
   the sync line, a cached week booting.
+- `restore.test.js` (+ `.senior`) — restore points against `fake-rtdb.js`: the body's
+  exclusions and hash, one multi-path write, owner-only kinds, the 4 s outbox,
+  retention (40 / 20, never pinned / archive / pre-wizard), pin and delete, another
+  camp's point refused, the preview, preconditions and the server re-read, a
+  minimal selective diff that never writes epoch or switches, a Games-only
+  restore keeping every game with scores, and Backups v3 (round trip, pre-import
+  point, other camp, v2 still accepted). `fnv1a` vectors.
 - `auth.test.js` — the `emailKey` contract (multi-dot/case/trim — the
   regression that would lock people out under the rules), the `canEdit` truth
   table via `setMemberRole`, the `memberRecord` shape, `clearLocalData`'s
@@ -1965,6 +1972,56 @@ and until then every commit into a section is refused ("off").
   `setupUseMine` / `setupPutBack` / `setupDismissClash`, `retrySetupQuarantine` /
   `discardSetupQuarantine`, `setupOn(section)` / `setupSeeded()` /
   `setupSchemaTooNew()`.
+- **Restore points** (P2 §7.2; same file): a SHARED, durable copy of the week.
+  `<root>/restoreBody/<rid>` is ONE JSON string (≤ 900,000 chars, so RTDB can't
+  prune or array-coerce it) and `<root>/restoreIndex/<rid>` is the list row
+  `{at, byKey, kind, label, note?, bytes, hash, epoch?, pinned?}`, both written in
+  ONE multi-path update at the camp root (`restoreSave`); `at` is the server's
+  clock and `byKey` the writer's identity, as the rules require. Never listened
+  to — `restoreList()` / `restoreRead()` are `once()`. `restoreBodyObject()` is
+  `{app:'campScoreboardV3', camp, at, epoch, appVersion, config, setup (minus the
+  owner-only meta and the stamps), sectionsOn, state}` and EXCLUDES campers,
+  members, chat, presence, push, photos and every device-local baseline;
+  `picSetup` travels as modes only, never words. (`sectionsOn` is one field beyond
+  the spec: "a section that wasn't on in the point isn't offered" needs it, and
+  `meta/on` is deliberately not in the body.) `restoreHash` = `fnv1a` (app.js, 8
+  hex) of the body minus `at` / `appVersion`. Kinds: `auto | manual | pre-seed |
+  pre-delete | pre-import | pre-restore | pre-wizard | archive`; `archive` and
+  `pre-wizard` are the owner's (client refuses first; rules too) and are
+  undeletable along with every pinned point (`restoreDeletable`). Waiting at most
+  4 s (`rpWaitMs`): a point that can't be written goes to the outbox
+  (`lsKey('campSetupRpOutbox')`, ≤ 3, newest kept, sent once on reconnect — a rid
+  already on the server is just dropped), and the action proceeds; `requireOnline`
+  (a restore, the wizard, Edit the week here's first press) refuses instead.
+  `commitSetup` takes an `auto` point before the first commit after 20 idle
+  minutes ("Before Jenn's edits, 3:05 PM"; one per 5 min per device; the body is
+  captured BEFORE the edit applies). Retention (`restoreRetain`, creating device,
+  one update): newest 40 unpinned auto / pre-* (never pre-wizard, archives,
+  pinned); unpinned manual capped at 20 ("manual-full": the UI asks to delete
+  one first). `restorePin` is write-once.
+- **Putting a point back** (`restorePreview(body)` then `restoreApply(body, picks,
+  {label, confirmed})`): preconditions first (`restorePreflight`: a director's
+  writer tab, online, nothing in flight or unconfirmed in ANY engine, then
+  `once()` re-reads of state, config and setup so the preview and the
+  `pre-restore` point come from the SERVER); a `pre-restore` point is written
+  online before anything changes; each chosen section (`schedule`, `games`,
+  `teams`, `notice`, `scores`) goes through its own engine as a diff (setup: one
+  `commitSetup` with `undo:false`; games: `configEdit`; teams: `stateEdit`).
+  A restore NEVER writes `meta/on`, `epoch`, `epochAt`, `wizard`, `seeded` or
+  `edited`; a setup section is offered only if it was on in the point AND is on
+  now. **A Games restore keeps every game that has a result, bracket (either
+  kind), draft, live match or clock** and `pruneOrphanedGameData` runs only when
+  Scores is ticked, which needs `opts.confirmed` (the sheet's hold-to-confirm,
+  decision Q23).
+- **Backups v3** (§7.4): `backupJSON()` (settings.js) is `backupObject()` — the
+  restore-point body plus `exportedAt`, so it includes camp, setup, notice, meta,
+  clocks and brackets4 and still never campers. `tryImport(text, {copyFromOtherCamp})`
+  accepts v2 (flat) as before, refuses another camp's backup by name unless the
+  copy tick is set (then Schedule, Games and Teams only, and a roster that
+  doesn't fit is left out), shape-checks teams, restores announcements (dropped
+  before) and the notice board, merges `picSetup` modes without touching the
+  words on the device, never applies `meta` (the epoch), and writes a
+  `pre-import` point first (fire-and-forget).
 - **Not here yet** (Step 15, per BUILD-PLAN): `resolveDay`, `buildSeed`, the
   publisher hash, A1/A2 and the accessors that switch on `meta/on/schedule`.
 

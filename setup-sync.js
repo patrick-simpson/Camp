@@ -25,8 +25,8 @@
 //   2. the engine: cache + persistSetup(), listener, first snapshot (three-way merge),
 //      later snapshots (rebase), commitSetup, push, refusals (bisect + quarantine),
 //      clashes and the Put-it-back list, undo, accounting, the sync line
-//   3. restore points and Backups v3        (added in the next commit)
-//   4. "also here" (editorsHere) and Devices (added in the one after)
+//   3. restore points and Backups v3
+//   4. "also here" (editorsHere) and Devices (the next commit)
 
 const SETUP_KEY = 'campScoreboardSetupV1';   // lsKey()'d; wiped by clearLocalData
 const SETUP_SCHEMA = 1;                      // the highest meta/schema this build understands
@@ -957,6 +957,7 @@ function commitSetup(mutate, opts) {
   // block that is gone or a day that is its own.
   const applied = setupApplyOps(before, ops);
   if (applied.dropped.length) return refuse('removed', { dropped: applied.dropped, byName: (setupEditedBy(setupSectionOf(applied.dropped[0].path)) || {}).name || 'Another director' });
+  restoreAutoForEdit(); // "Before Jenn's edits, 3:05 PM": the body is captured NOW, before this edit is applied
   let entry = null;
   if (o.undo !== false) {
     entry = undoRecord(o.label || 'Changed the week setup', paths.map((p) => ['setup', p, setupValueAt(before, p), ops[p]]), o);
@@ -1305,5 +1306,599 @@ function setupSyncLine() {
   if (setupPending > 0 || setupPushTimer != null || setupBisecting) return { tone: 'saving', text: 'Saving…', act: '' };
   return { tone: 'saved', text: 'Saved', act: '' };
 }
+
+// ── 3. Restore points and Backups v3 (§7.2, §7.4) ────────────────────
+// A restore point is a SHARED, durable copy of the week: <root>/restoreBody/<rid> holds
+// ONE JSON string (so RTDB can neither prune nor array-coerce it) and
+// <root>/restoreIndex/<rid> the list row. Both are written in ONE multi-path update at the
+// camp root, never listened to (an editor's `once()` when the screen opens), and any
+// editor can restore from one. The body EXCLUDES campers, members, chat, presence, push
+// data and photos. The rules (published, Step 11) make `archive`, `pre-wizard` and every
+// pinned point undeletable by anyone, and `archive` / `pre-wizard` creatable only by the
+// owner; the client says so first.
+//   body  { app, camp, at, epoch, appVersion, config, setup (minus the owner-only meta and
+//           the stamps), sectionsOn, state: { teams, results, … , picSetup (modes only) } }
+// `sectionsOn` is one field beyond the spec's body: the rule "a section that wasn't on in
+// the point isn't offered" needs to know, and `meta/on` is deliberately not in the body.
+const RP_APP = 'campScoreboardV3';
+const RP_KINDS = ['auto', 'manual', 'pre-seed', 'pre-delete', 'pre-import', 'pre-restore', 'pre-wizard', 'archive'];
+const RP_OWNER_KINDS = ['archive', 'pre-wizard'];
+const RP_BODY_MAX = 900000;               // the rules' limit on a body string, in characters
+const RP_WAIT_MS = 4000;                  // a point that can't be written in this long goes to the outbox
+const RP_AUTO_MIN_MS = 5 * 60 * 1000;     // one automatic point per device per 5 minutes (pre-* kinds are exempt)
+const RP_AUTO_IDLE_MS = 20 * 60 * 1000;   // the first setup commit after 20 minutes without a point on this device
+const RP_KEEP_AUTO = 40;                  // newest unpinned auto / pre-* points kept (pre-wizard and archives never count)
+const RP_KEEP_MANUAL = 20;                // unpinned manual points kept (the UI asks to delete one first)
+const RP_OUTBOX_KEY = 'campSetupRpOutbox';
+const RP_OUTBOX_MAX = 3;
+const RP_ID_RE = /^rp-[a-z0-9-]{4,48}$/;
+const RP_SECTIONS = ['schedule', 'games', 'teams', 'notice', 'scores']; // the sheet's checkboxes (data-rp-section)
+const RP_STATE_KEYS = ['teams', 'results', 'brackets', 'brackets4', 'drafts', 'picRounds', 'bonuses', 'live', 'clocks', 'announcements', 'notice', 'meta'];
+const RP_SCORE_KEYS = ['results', 'brackets', 'brackets4', 'drafts', 'picRounds', 'bonuses', 'live', 'clocks'];
+const RP_SETUP_KEYS = { schedule: ['days', 'typical', 'patches', 'dayBlocks'], meals: ['meals'], verses: ['verses'], cleanup: ['cleanup'], electives: ['electives'] };
+let rpWaitMs = RP_WAIT_MS;                // (a test shortens it)
+let rpLastAt = 0;                         // when this device last wrote any point
+let rpLastAutoAt = 0;
+let rpFlushing = false;
+
+function restoreRootRef() {
+  return firebase.database().ref(CAMP.dbRoot);
+}
+
+function restoreHasFirebase() {
+  return typeof firebase !== 'undefined' && !!firebase.database && !!(window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey);
+}
+
+function restoreOnline() {
+  return restoreHasFirebase() && fbConnKnown && fbConnected;
+}
+
+function restoreNewId() {
+  return 'rp-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 6).padEnd(4, '0');
+}
+
+// The year archive's id: rp-archive-<outgoing epoch>-<4 random> (or rp-archive-pre-<YYYYMMDD>-… for the
+// first wizard run, when the legacy epoch has none). The random tail means a retried or re-taken step
+// never collides with its own earlier write.
+function restoreArchiveId(epoch, date) {
+  const stem = epoch ? String(epoch).toLowerCase().replace(/[^a-z0-9-]/g, '') : 'pre-' + String(date || new Date().toISOString().slice(0, 10)).replace(/-/g, '');
+  return ('rp-archive-' + stem).slice(0, 43) + '-' + Math.random().toString(36).slice(2, 6).padEnd(4, '0');
+}
+
+// What the week is, as of now. EXCLUDES campers, members, chat, presence, push, photos.
+function restoreBodyObject() {
+  const setup = setupCanon(setupTree);
+  if (setup.meta) {
+    SETUP_OWNER_META.concat(['edited']).forEach((k) => { delete setup.meta[k]; });
+    if (!Object.keys(setup.meta).length) delete setup.meta;
+  }
+  const st = {};
+  RP_STATE_KEYS.forEach((k) => { if (state[k] !== undefined && state[k] !== null) st[k] = setupClone(state[k]); });
+  if (state.picSetup) st.picSetup = setupClone(picSetupForSync(state.picSetup)); // the modes only — never the words
+  return {
+    app: RP_APP,
+    camp: CAMP.id,
+    at: new Date().toISOString(),
+    epoch: (state.meta && state.meta.epoch) || '',
+    appVersion: APP_VERSION,
+    config: setupClone(configForSync(state.config)),
+    setup,
+    sectionsOn: SETUP_SECTIONS.filter(setupOn),
+    state: st,
+  };
+}
+
+// The content fingerprint, EXCLUDING `at` and `appVersion` (two points of the same data hash the same).
+function restoreHash(body) {
+  return fnv1a(JSON.stringify(Object.assign({}, body, { at: undefined, appVersion: undefined })));
+}
+
+// A point read back from the database is whatever any editor's device wrote: type-check it before it
+// can reach a render or a write.
+function restoreParseBody(str) {
+  if (typeof str !== 'string' || !str) return { ok: false, reason: 'missing' };
+  let body;
+  try { body = JSON.parse(str); } catch (e) { return { ok: false, reason: 'unreadable' }; }
+  if (!setupIsMap(body) || body.app !== RP_APP) return { ok: false, reason: 'unreadable' };
+  if (body.camp !== CAMP.id) return { ok: false, reason: 'other-camp', camp: body.camp }; // never another camp's point
+  if (!setupIsMap(body.config)) return { ok: false, reason: 'unreadable' };
+  body.setup = setupIsMap(body.setup) ? body.setup : {};
+  body.state = setupIsMap(body.state) ? body.state : {};
+  body.sectionsOn = Array.isArray(body.sectionsOn) ? body.sectionsOn.filter((s) => SETUP_SECTIONS.indexOf(s) !== -1) : [];
+  body.epoch = typeof body.epoch === 'string' ? body.epoch : '';
+  return { ok: true, body };
+}
+
+// ── the list ─────────────────────────────────────────────────────────
+
+function restoreCleanRow(rid, v) {
+  if (!RP_ID_RE.test(rid) || !setupIsMap(v) || RP_KINDS.indexOf(v.kind) === -1) return null;
+  return {
+    rid,
+    at: Number(v.at) || 0,
+    byKey: typeof v.byKey === 'string' ? v.byKey.slice(0, 200) : '',
+    kind: v.kind,
+    label: typeof v.label === 'string' ? v.label.slice(0, 120) : '',
+    note: typeof v.note === 'string' ? v.note.slice(0, 200) : '',
+    bytes: Number(v.bytes) || 0,
+    hash: typeof v.hash === 'string' ? v.hash : '',
+    epoch: typeof v.epoch === 'string' ? v.epoch.slice(0, 40) : '',
+    pinned: v.pinned === true,
+  };
+}
+
+// Newest first. `once()`, never a listener: nothing holds this node open.
+async function restoreList() {
+  const snap = await restoreRootRef().child('restoreIndex').once('value');
+  const v = snap.val();
+  const rows = [];
+  if (setupIsMap(v)) Object.keys(v).forEach((rid) => { const r = restoreCleanRow(rid, v[rid]); if (r) rows.push(r); });
+  return rows.sort((a, b) => (b.at - a.at) || (a.rid < b.rid ? 1 : a.rid > b.rid ? -1 : 0));
+}
+
+// May the app delete this point? The rules say no to archives, pre-wizard points and every pinned one.
+function restoreDeletable(row) {
+  return !!row && !row.pinned && RP_OWNER_KINDS.indexOf(row.kind) === -1;
+}
+
+// Retention (§7.2): the newest 40 unpinned auto / pre-* points stay (never pre-wizard, never an archive,
+// never a pinned one); unpinned manual points are capped at 20, and the UI asks to delete one FIRST.
+function restoreRetentionPlan(rows) {
+  const newestFirst = rows.slice().sort((a, b) => (b.at - a.at) || (a.rid < b.rid ? 1 : -1));
+  const auto = newestFirst.filter((r) => !r.pinned && (r.kind === 'auto' || (r.kind.indexOf('pre-') === 0 && r.kind !== 'pre-wizard')));
+  const manual = newestFirst.filter((r) => !r.pinned && r.kind === 'manual');
+  return { toDelete: auto.slice(RP_KEEP_AUTO).map((r) => r.rid), manualCount: manual.length, manualFull: manual.length >= RP_KEEP_MANUAL };
+}
+
+// The creating device deletes the oldest beyond the limit: body + index in ONE update.
+async function restoreRetain() {
+  const plan = restoreRetentionPlan(await restoreList());
+  if (!plan.toDelete.length) return plan;
+  const gone = {};
+  plan.toDelete.forEach((rid) => { gone['restoreIndex/' + rid] = null; gone['restoreBody/' + rid] = null; });
+  await restoreRootRef().update(gone);
+  return plan;
+}
+
+async function restoreDelete(rid) {
+  if (!canEdit()) return { ok: false, reason: 'readonly' };
+  const row = (await restoreList()).find((r) => r.rid === rid);
+  if (!row) return { ok: false, reason: 'missing' };
+  if (!restoreDeletable(row)) return { ok: false, reason: 'kept' }; // "Kept points can't be deleted from the app"
+  await restoreRootRef().update({ ['restoreIndex/' + rid]: null, ['restoreBody/' + rid]: null });
+  return { ok: true };
+}
+
+// "Name and keep": pinned is WRITE-ONCE (the rules refuse unpinning), and it can't change a point's label.
+async function restorePin(rid) {
+  if (!canEdit()) return { ok: false, reason: 'readonly' };
+  if (!RP_ID_RE.test(rid)) return { ok: false, reason: 'id' };
+  await restoreRootRef().child('restoreIndex/' + rid + '/pinned').set(true);
+  return { ok: true };
+}
+
+async function restoreRead(rid) {
+  if (!RP_ID_RE.test(rid)) return { ok: false, reason: 'id' };
+  const snap = await restoreRootRef().child('restoreBody/' + rid).once('value');
+  return restoreParseBody(snap.val());
+}
+
+// Read-back verification (the wizard's archive): the body is there, parses, and matches what the index
+// row says — its length and its hash.
+async function restoreVerify(rid) {
+  const [rowSnap, bodySnap] = await Promise.all([
+    restoreRootRef().child('restoreIndex/' + rid).once('value'),
+    restoreRootRef().child('restoreBody/' + rid).once('value'),
+  ]);
+  const row = restoreCleanRow(rid, rowSnap.val());
+  const str = bodySnap.val();
+  if (!row || typeof str !== 'string') return { ok: false, reason: 'missing' };
+  const parsed = restoreParseBody(str);
+  if (!parsed.ok) return { ok: false, reason: parsed.reason };
+  if (row.bytes !== str.length || row.hash !== restoreHash(parsed.body)) return { ok: false, reason: 'mismatch' };
+  return { ok: true, row, body: parsed.body };
+}
+
+// ── writing a point ──────────────────────────────────────────────────
+
+function rpOutboxRead() {
+  try {
+    const a = JSON.parse(localStorage.getItem(lsKey(RP_OUTBOX_KEY)) || '[]');
+    return Array.isArray(a) ? a.filter((e) => e && typeof e.rid === 'string' && setupIsMap(e.row) && typeof e.body === 'string') : [];
+  } catch (e) { return []; }
+}
+
+function rpOutboxWrite(list) {
+  try {
+    if (list.length) localStorage.setItem(lsKey(RP_OUTBOX_KEY), JSON.stringify(list));
+    else localStorage.removeItem(lsKey(RP_OUTBOX_KEY));
+  } catch (e) { /* quota: best effort — the SDK's own queue may still deliver it */ }
+}
+
+function restoreOutboxCount() {
+  return rpOutboxRead().length;
+}
+
+function rpOutboxAdd(entry) {
+  const list = rpOutboxRead().filter((e) => e.rid !== entry.rid).concat(entry);
+  rpOutboxWrite(list.slice(-RP_OUTBOX_MAX)); // newest kept
+}
+
+function rpOutboxDrop(rid) {
+  const list = rpOutboxRead();
+  if (list.some((e) => e.rid === rid)) rpOutboxWrite(list.filter((e) => e.rid !== rid));
+}
+
+// Save a point of `kind`. Resolves { ok:true, rid, queued? } or { ok:false, reason } (readonly, owner,
+// kind, label, too-big, offline, refused, manual-full). The body is captured SYNCHRONOUSLY, before the
+// first await, so an automatic point taken just before an edit holds the pre-edit week. Waiting at
+// most 4 s: a point that can't be written in that time goes to the outbox (<= 3, newest kept) and is
+// uploaded on reconnect, and the action goes ahead (local undo covers it) — except where
+// `opts.requireOnline` (the wizard, a restore, Edit the week here the first time, "Start this section
+// again": nothing may proceed without the point).
+//   opts: body (a pre-built one), id, note, pinned, requireOnline, skipCap
+async function restoreSave(kind, label, opts) {
+  const o = opts || {};
+  const refuse = (reason, extra) => Object.assign({ ok: false, reason }, extra || {});
+  if (RP_KINDS.indexOf(kind) === -1) return refuse('kind');
+  if (RP_OWNER_KINDS.indexOf(kind) !== -1 && !isOwner()) return refuse('owner', { message: ownerGate('do that').reason });
+  if (!canEdit()) return refuse('readonly');
+  const text = String(label || '').trim().slice(0, 120);
+  if (!text) return refuse('label');
+  const body = o.body || restoreBodyObject();
+  const str = JSON.stringify(body);
+  if (str.length > RP_BODY_MAX) return refuse('too-big');
+  const rid = o.id || restoreNewId();
+  const key = identityKey(authUser);
+  if (!RP_ID_RE.test(rid)) return refuse('id');
+  if (!restoreHasFirebase() || !key) return refuse('offline'); // a device with no sync has nowhere to keep one
+  const row = { kind, label: text, bytes: str.length, hash: restoreHash(body) };
+  if (o.note) row.note = String(o.note).slice(0, 200);
+  if (body.epoch) row.epoch = String(body.epoch).slice(0, 40);
+  if (o.pinned) row.pinned = true;
+  if (kind === 'manual' && !o.skipCap && restoreOnline()) {
+    try { if (restoreRetentionPlan(await restoreList()).manualFull) return refuse('manual-full'); } catch (e) { /* can't tell: let the write decide */ }
+  }
+  if (o.requireOnline && !restoreOnline()) return refuse('offline');
+  let write;
+  try {
+    write = restoreRootRef().update({
+      ['restoreIndex/' + rid]: Object.assign({ at: firebase.database.ServerValue.TIMESTAMP, byKey: key }, row),
+      ['restoreBody/' + rid]: str,
+    });
+  } catch (e) { return refuse('refused'); }
+  const result = await Promise.race([
+    write.then(() => 'ok', (e) => ({ error: e })),
+    new Promise((resolve) => setTimeout(() => resolve('slow'), rpWaitMs)),
+  ]);
+  if (result === 'ok') {
+    rpLastAt = Date.now();
+    if (kind === 'auto') rpLastAutoAt = rpLastAt;
+    if (kind !== 'manual' && kind !== 'archive') restoreRetain().catch(() => {}); // the creating device trims the oldest
+    return { ok: true, rid, kind };
+  }
+  if (result === 'slow') {
+    if (o.requireOnline) return refuse('offline');
+    rpOutboxAdd({ rid, row, body: str });
+    write.then(() => { rpOutboxDrop(rid); }, () => {});
+    return { ok: true, rid, kind, queued: true };
+  }
+  return refuse('refused', { code: result.error && result.error.code });
+}
+
+// A point that was waiting for a connection: send it now, once. Idempotent — a rid that already exists
+// on the server (the SDK's own queue delivered it) is just dropped from the outbox.
+async function restoreFlushOutbox() {
+  if (rpFlushing || !canEdit() || !restoreOnline()) return;
+  const list = rpOutboxRead();
+  const key = identityKey(authUser);
+  if (!list.length || !key) return;
+  rpFlushing = true;
+  try {
+    for (const e of list) {
+      try {
+        const there = (await restoreRootRef().child('restoreIndex/' + e.rid).once('value')).exists();
+        if (!there) {
+          await restoreRootRef().update({
+            ['restoreIndex/' + e.rid]: Object.assign({ at: firebase.database.ServerValue.TIMESTAMP, byKey: key }, e.row),
+            ['restoreBody/' + e.rid]: e.body,
+          });
+        }
+        rpOutboxDrop(e.rid);
+      } catch (err) {
+        if (err && err.code === 'PERMISSION_DENIED') rpOutboxDrop(e.rid); // refused for good (e.g. an owner-only kind): don't retry forever
+        else break; // the connection dropped again: the rest wait
+      }
+    }
+  } finally { rpFlushing = false; }
+}
+
+// A point taken automatically before the first setup commit after 20 idle minutes ("Before Jenn's
+// edits, 3:05 PM"), throttled to one per 5 minutes per device. Fire-and-forget: the edit goes ahead.
+// Called by commitSetup before it applies anything.
+function restoreAutoForEdit() {
+  const now = Date.now();
+  if (now - rpLastAt < RP_AUTO_IDLE_MS || now - rpLastAutoAt < RP_AUTO_MIN_MS) return;
+  if (!restoreOnline() || !setupRef || !setupReady) return;
+  let when = '';
+  try { when = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date(now)); } catch (e) { when = ''; }
+  const first = typeof memberName === 'string' && memberName.trim() ? memberName.trim().split(/\s+/)[0] : 'a director';
+  rpLastAutoAt = now; // claim the slot now: the write is async
+  restoreSave('auto', 'Before ' + first + '’s edits' + (when ? ', ' + when : '')).catch(() => {});
+}
+
+// Any other automatic point (pre-seed, pre-delete, pre-import…), exempt from the 5-minute throttle.
+function restoreAuto(kind, label, opts) {
+  return restoreSave(kind, label, opts).catch(() => ({ ok: false, reason: 'refused' }));
+}
+
+// ── what a restore would change ──────────────────────────────────────
+
+function restoreYearOf(body) {
+  const y = body && typeof body.at === 'string' ? body.at.slice(0, 4) : '';
+  return /^20\d\d$/.test(y) ? y : 'earlier';
+}
+
+// The current setup, minus what a restore never touches (the owner-only meta and the stamps).
+function restoreSetupNow() {
+  const cur = setupCanon(setupTree);
+  if (cur.meta) {
+    SETUP_OWNER_META.forEach((k) => { delete cur.meta[k]; });
+    if (!Object.keys(cur.meta).length) delete cur.meta;
+  }
+  return cur;
+}
+
+// The setup tree a restore of `body` would leave: each offered section replaced by the point's (absent in
+// the point = empty then), the week's own fields put back when the point has them. Never `meta/on`,
+// `epoch`, `epochAt`, `wizard`, `seeded` or `edited`. A section is offered only if it was on in the point
+// AND is on now (a restore must not write into the built-in copy, and must not leave a section on the
+// data it was off for).
+function restoreSetupTarget(body) {
+  const cur = restoreSetupNow();
+  const target = setupClone(cur);
+  const pointOn = body.sectionsOn || [];
+  const offered = SETUP_SECTIONS.filter((s) => pointOn.indexOf(s) !== -1 && setupOn(s));
+  offered.forEach((s) => {
+    RP_SETUP_KEYS[s].forEach((k) => {
+      if (body.setup[k] !== undefined) target[k] = setupClone(body.setup[k]); else delete target[k];
+    });
+  });
+  const week = body.setup.meta && setupIsMap(body.setup.meta) ? body.setup.meta : {};
+  const weekFields = SETUP_WEEK_META.filter((f) => week[f] !== undefined);
+  weekFields.forEach((f) => { target.meta = target.meta || {}; target.meta[f] = setupClone(week[f]); });
+  return { cur, target: setupCanon(target), offered, weekFields };
+}
+
+// The target with the owner-only meta (on, epoch, epochAt, wizard, seeded) put back from the CURRENT tree:
+// a restore replaces the sections, and carries those through untouched (it never writes them).
+function restoreMergedSetup(curFull, target) {
+  const out = setupClone(target);
+  const keep = {};
+  SETUP_OWNER_META.forEach((k) => { if (curFull.meta && curFull.meta[k] !== undefined) keep[k] = curFull.meta[k]; });
+  if (Object.keys(keep).length || out.meta) out.meta = Object.assign({}, out.meta, keep);
+  return out;
+}
+
+// Words for a set of setup ops: "Tuesday's schedule (4 items) · menus · verses".
+function restoreSummarizeSetup(ops) {
+  const days = {};
+  const other = [];
+  Object.keys(ops).forEach((p) => {
+    const parts = p.split('/');
+    if (parts[0] === 'dayBlocks' || parts[0] === 'patches') { const d = parts[1]; days[d] = (days[d] || 0) + 1; return; }
+    if (parts[0] === 'typical') { days.typical = (days.typical || 0) + 1; return; }
+    if (parts[0] === 'days') { days[parts[1]] = (days[parts[1]] || 0) + 1; return; }
+    const word = { meals: 'menus', verses: 'verses', cleanup: 'cleanup rota', electives: 'electives', meta: 'week dates' }[parts[0]];
+    if (word && other.indexOf(word) === -1) other.push(word);
+  });
+  const out = Object.keys(days).map((d) => (d === 'typical' ? 'the typical day' : (SETUP_DAY_WORDS[d] || d) + '’s schedule') + ' (' + days[d] + ' item' + (days[d] === 1 ? '' : 's') + ')');
+  return out.concat(other).join(' · ');
+}
+
+// A game that isn't in the point must STILL survive a Games restore if anything is recorded under it
+// (a result, a bracket of either kind, a draft, a live match, a clock): Games without Scores never costs
+// a result (sync-F8). Returns the merged config and the kept games.
+function restoreGameHasRecords(gid) {
+  return ['results', 'brackets', 'brackets4', 'drafts', 'live', 'clocks'].some((k) => state[k] && state[k][gid]);
+}
+
+function restoreMergeGames(pointConfig) {
+  const merged = setupClone(pointConfig);
+  merged.games = cfgList(merged.games);
+  merged.days = cfgList(merged.days);
+  const cur = state.config || {};
+  const pointIds = new Set(merged.games.map((g) => g && g.id));
+  const kept = cfgList(cur.games).filter((g) => g && !pointIds.has(g.id) && restoreGameHasRecords(g.id));
+  merged.games = merged.games.concat(setupClone(kept));
+  const dayIds = new Set(merged.days.map((d) => d && d.id));
+  kept.forEach((g) => { // a kept game stays visible: its day comes along when the point has no such day
+    if (g.dayId && !dayIds.has(g.dayId)) {
+      const d = cfgList(cur.days).find((x) => x && x.id === g.dayId);
+      if (d) { merged.days.push(setupClone(d)); dayIds.add(d.id); }
+    }
+  });
+  return { config: merged, kept };
+}
+
+function restoreTeamsFit(pointTeams) {
+  if (!rosterIsWhole(pointTeams)) return false;
+  const have = (state.teams || []).map((t) => t.id).sort().join(',');
+  return pointTeams.map((t) => t.id).sort().join(',') === have && new Set(pointTeams.map((t) => t.id)).size === pointTeams.length;
+}
+
+// What ticking each box would do, computed locally against what is current — so the sheet can say
+// "Tuesday's schedule (4 items) · 2 games · team names" before anything is written. Pure: it reads state.
+function restorePreview(body) {
+  const out = { sections: {}, kept: [], notOffered: [], epochNote: '' };
+  if ((body.epoch || '') !== ((state.meta && state.meta.epoch) || '')) out.epochNote = 'This is from the ' + restoreYearOf(body) + ' week, not this one.';
+  // Schedule and week
+  const t = restoreSetupTarget(body);
+  const ops = treeDiff(t.cur, t.target, SETUP_DEPTHS);
+  out.sections.schedule = { offered: t.offered.length > 0 || t.weekFields.length > 0, count: Object.keys(ops).length, summary: restoreSummarizeSetup(ops) };
+  SETUP_SECTIONS.forEach((s) => {
+    const was = (body.sectionsOn || []).indexOf(s) !== -1;
+    const is = setupOn(s);
+    if (is && !was) out.notOffered.push({ section: s, reason: 'point-off', text: 'This point is from before this section was edited here. Going back to the original week is the owner’s switch.' });
+    else if (was && !is) out.notOffered.push({ section: s, reason: 'now-off', text: 'This section is showing the original week right now, so there is nothing to put back.' });
+  });
+  // Games
+  const g = restoreMergeGames(body.config);
+  const gops = treeDiff(cfgCanon(state.config), cfgCanon(g.config), CFG_DEPTHS);
+  const gids = {};
+  Object.keys(gops).filter((p) => !cfgIsOrderPath(p)).forEach((p) => { gids[p.split('/').slice(0, 2).join('/')] = true; });
+  const gcount = Object.keys(gids).length;
+  out.sections.games = { offered: true, count: gcount, summary: gcount ? gcount + ' game' + (gcount === 1 ? '' : 's') + ' or day' + (gcount === 1 ? '' : 's') : '' };
+  out.kept = g.kept.map((k) => ({ id: k.id, name: k.name || k.id, why: typeof gameRecordLabels === 'function' ? gameRecordLabels(k.id).join(' and ') : 'scores' }));
+  // Teams
+  const pt = body.state.teams;
+  const fits = restoreTeamsFit(pt);
+  const tops = fits ? treeDiff(teamsCanon(state.teams), teamsCanon(pt), TEAMS_DEPTHS) : {};
+  const tids = {};
+  Object.keys(tops).forEach((p) => { tids[p.split('/')[1]] = true; });
+  out.sections.teams = { offered: fits, count: Object.keys(tids).length, summary: Object.keys(tids).length ? 'team names' : '', reason: fits ? '' : 'differ' };
+  // Notice (and announcements)
+  const noticeNow = JSON.stringify(syncCanon({ n: state.notice, a: state.announcements }) || {});
+  const noticePt = JSON.stringify(syncCanon({ n: body.state.notice, a: body.state.announcements }) || {});
+  out.sections.notice = { offered: body.state.notice !== undefined || body.state.announcements !== undefined, count: noticeNow === noticePt ? 0 : 1, summary: noticeNow === noticePt ? '' : 'the notice board' };
+  // Scores: left alone unless this is ticked (decision Q23), then hold-to-confirm
+  let sc = 0;
+  RP_SCORE_KEYS.filter((k) => SYNC_KEYS.indexOf(k) !== -1).forEach((k) => {
+    const cur = state[k] && typeof state[k] === 'object' ? state[k] : {};
+    const pv = setupIsMap(body.state[k]) ? body.state[k] : {};
+    sc += Object.keys(Object.assign({}, cur, pv)).filter((id) => JSON.stringify(syncCanon(cur[id])) !== JSON.stringify(syncCanon(pv[id]))).length;
+  });
+  out.sections.scores = { offered: true, count: sc, summary: sc ? sc + ' saved score' + (sc === 1 ? '' : 's') + ' would change' : '', needsHold: true };
+  return out;
+}
+
+// ── putting a point back ─────────────────────────────────────────────
+
+// Step 0 (sync-F8): the preview and the pre-restore point must come from the SERVER, not a stale local
+// copy, and nothing of this phone's may be in flight. Reads state, config and setup with once() and adopts
+// them (nothing is unsent, so adopting loses nothing).
+async function restorePreflight() {
+  if (!canEdit()) return { ok: false, reason: 'readonly' };
+  if (!restoreOnline()) return { ok: false, reason: 'offline' };
+  flushPendingPush();
+  const busy = () => pendingWritesTotal() > 0 || hasUnconfirmedLocalWork() || restoreOutboxCount() > 0 || setupBisecting;
+  if (busy()) return { ok: false, reason: 'busy' };
+  try {
+    const [st, cf, su] = await Promise.all([
+      fbRef ? fbRef.once('value') : null,
+      fbConfigRef ? fbConfigRef.once('value') : null,
+      setupRef ? setupRef.once('value') : null,
+    ]);
+    if (busy()) return { ok: false, reason: 'busy' };
+    if (st && st.val()) handleRemoteSnapshot(st.val());
+    if (cf && cf.val()) applyRemoteConfig(cf.val());
+    if (su) adoptSetup(su.val(), {});
+  } catch (e) {
+    return { ok: false, reason: 'offline' };
+  }
+  return { ok: true };
+}
+
+// Put `picks` ({schedule, games, teams, notice, scores: bool}) of `body` back, each THROUGH ITS ENGINE as a
+// diff, so other sections and other editors' unrelated work are untouched:
+//   schedule  one commitSetup with undo:false
+//   games     configEdit (the config engine's field ops -> one transaction) — keeping every game that has
+//             anything recorded under it; pruneOrphanedGameData runs ONLY when Scores is ticked
+//   teams     stateEdit  /  notice, scores   saveState after normalizeSyncedState (today's tryImport path)
+// Never writes meta/on, epoch, edited, wizard or seeded. Scores need `opts.confirmed` (the hold-to-
+// confirm). `body.camp` must be this camp (restoreParseBody refuses another camp's point).
+async function restoreApply(body, picks, opts) {
+  const o = opts || {};
+  const refuse = (reason, extra) => Object.assign({ ok: false, reason }, extra || {});
+  if (!body || body.camp !== CAMP.id) return refuse('other-camp');
+  const want = RP_SECTIONS.filter((s) => picks && picks[s]);
+  if (!want.length) return refuse('nothing');
+  if (want.indexOf('scores') !== -1 && !o.confirmed) return refuse('confirm');
+  const pre = await restorePreflight();
+  if (!pre.ok) return refuse(pre.reason);
+  if (want.indexOf('games') !== -1 && !configEditable()) return refuse('loading');
+  const preview = restorePreview(body); // (after the re-read: it is computed from what the server holds)
+  const blocked = want.filter((s) => !preview.sections[s] || !preview.sections[s].offered);
+  if (blocked.length) return refuse('not-offered', { sections: blocked });
+  // The pre-restore point comes first, online, from what the server holds now.
+  const saved = await restoreSave('pre-restore', 'Before putting back “' + String(o.label || 'a restore point').slice(0, 60) + '”', { requireOnline: true });
+  if (!saved.ok) return refuse(saved.reason === 'offline' ? 'offline' : 'pre-restore', { detail: saved.reason });
+  const applied = [];
+  const label = 'Put back ' + String(o.label || 'a restore point');
+  if (want.indexOf('schedule') !== -1) {
+    const t = restoreSetupTarget(body);
+    const r = commitSetup((draft) => { setupReplaceTree(draft, normalizeSetup(restoreMergedSetup(setupCanon(draft), t.target))); }, { label, undo: false });
+    if (!r.ok) return refuse('schedule', { detail: r.reason, applied });
+    applied.push('schedule');
+  }
+  if (want.indexOf('games') !== -1) {
+    const g = restoreMergeGames(body.config);
+    configEdit(label, () => { state.config = g.config; migrateState(state); }, { undo: false });
+    applied.push('games');
+  }
+  if (want.indexOf('teams') !== -1) {
+    stateEdit(label, () => { state.teams = setupClone(body.state.teams); }, { undo: false });
+    applied.push('teams');
+  }
+  if (want.indexOf('notice') !== -1) {
+    if (setupIsMap(body.state.notice)) { state.notice = setupClone(body.state.notice); normalizeNotice(); }
+    if (setupIsMap(body.state.announcements)) state.announcements = setupClone(body.state.announcements);
+    applied.push('notice');
+  }
+  if (want.indexOf('scores') !== -1) {
+    RP_SCORE_KEYS.filter((k) => SYNC_KEYS.indexOf(k) !== -1).forEach((k) => { state[k] = setupIsMap(body.state[k]) ? setupClone(body.state[k]) : {}; });
+    if (setupIsMap(body.state.picSetup)) { // the modes only: the words on this device are never overwritten
+      Object.keys(body.state.picSetup).forEach((gid) => {
+        const src = body.state.picSetup[gid] && body.state.picSetup[gid].source;
+        if (src === undefined) return;
+        state.picSetup = state.picSetup || {};
+        state.picSetup[gid] = Object.assign({ words: [] }, state.picSetup[gid], { source: src });
+      });
+    }
+    applied.push('scores');
+  }
+  if (want.some((s) => s === 'notice' || s === 'scores')) {
+    normalizeSyncedState();
+    if (want.indexOf('scores') !== -1 && typeof pruneOrphanedGameData === 'function') pruneOrphanedGameData(); // ONLY with Scores ticked
+    touchData({ celebrate: false });
+    saveState();
+  }
+  if (typeof refreshBuilderCards === 'function') refreshBuilderCards();
+  if (typeof appStarted !== 'undefined' && appStarted) renderAll();
+  return { ok: true, applied, kept: preview.kept, pre: saved.rid };
+}
+
+// ── Backups v3 (§7.4) ────────────────────────────────────────────────
+// backupJSON() is now the restore-point body plus `exportedAt`: it INCLUDES camp, setup, notice, meta,
+// clocks and brackets4, and still never campers (or members, chat, photos). tryImport (settings.js)
+// accepts v2 as before, refuses another camp's backup unless "copy from the other camp" is ticked
+// (then only Schedule, Games and Teams), shape-checks teams, restores announcements (dropped before),
+// writes a `pre-import` point first and applies through the engines.
+
+function backupObject() {
+  return Object.assign(restoreBodyObject(), { exportedAt: new Date().toISOString() });
+}
+
+// The parts of a v3 backup that are not the v2 flat keys: the setup data (only sections that are on here
+// AND were on in the backup), the notice board and announcements (not in "copy from the other camp"). Never
+// `meta`: it carries the epoch.
+function restoreImportExtras(parsed, copyMode) {
+  const st = setupIsMap(parsed.state) ? parsed.state : {};
+  if (!copyMode) {
+    if (setupIsMap(st.notice)) { state.notice = setupClone(st.notice); normalizeNotice(); }
+    if (setupIsMap(st.announcements)) state.announcements = setupClone(st.announcements);
+  }
+  if (setupIsMap(parsed.setup) && setupEditable() && canEdit()) {
+    const body = { setup: parsed.setup, sectionsOn: Array.isArray(parsed.sectionsOn) ? parsed.sectionsOn : [], camp: CAMP.id };
+    const t = restoreSetupTarget(body);
+    if (t.offered.length || t.weekFields.length) {
+      commitSetup((draft) => { setupReplaceTree(draft, normalizeSetup(restoreMergedSetup(setupCanon(draft), t.target))); },
+        { label: 'Restored a backup', undo: false });
+    }
+  }
+}
+
+// A device back online sends the point that was waiting in the outbox.
+onSetupEvent((kind) => { if (kind === 'sync' && fbConnected && rpOutboxRead().length) restoreFlushOutbox().catch(() => {}); });
 
 setupLoadCache();

@@ -1712,6 +1712,9 @@ function wireNoticeTab(card) {
 // ── Data tab ──────────────────────────────────────────────────────
 
 function backupJSON() {
+  // Backups v3 (setup-sync.js): the restore-point body plus exportedAt — it now carries camp, setup,
+  // notice, meta, clocks and brackets4 as well, and still never campers, members, chat or photos.
+  if (typeof backupObject === 'function') return JSON.stringify(backupObject(), null, 2);
   const payload = {
     app: 'campScoreboardV2',
     exportedAt: new Date().toISOString(),
@@ -1807,7 +1810,9 @@ function wireDataTab(card) {
   document.getElementById('restore-defaults-btn').addEventListener('click', restoreDefaults);
 }
 
-function tryImport(text) {
+// `opts.copyFromOtherCamp`: the backup is the OTHER camp's, and only its Schedule, Games and Teams are
+// taken (the "copy from the other camp" tick). Without it another camp's backup is refused.
+function tryImport(text, opts) {
   if (!configEditable()) {
     showRestoreError('The games list is still loading — try again in a moment.');
     return;
@@ -1820,11 +1825,23 @@ function tryImport(text) {
     return;
   }
 
+  // Backups v3 (setup-sync.js) nest the synced keys under `state` and carry the camp they came from; v2
+  // is flat and is accepted exactly as before. `src` is the flat view both are read through.
+  const v3 = !!(parsed && parsed.app === 'campScoreboardV3' && parsed.state && typeof parsed.state === 'object' && !Array.isArray(parsed.state));
+  const otherCamp = v3 && typeof parsed.camp === 'string' && parsed.camp !== CAMP.id;
+  const copyMode = !!(otherCamp && opts && opts.copyFromOtherCamp);
+  if (otherCamp && !copyMode) {
+    showRestoreError('That backup is from ' + (CAMPS[parsed.camp] ? CAMPS[parsed.camp].label : 'another camp') + ', not ' + CAMP.label +
+      '. Nothing was changed. (To copy its schedule, games and teams, tick “copy from the other camp”.)');
+    return;
+  }
+  const src = v3 ? Object.assign({}, parsed.state, { config: parsed.config }) : parsed;
+
   let config = null;
-  if (parsed && parsed.config && Array.isArray(parsed.config.games)) {
-    config = parsed.config;
-  } else if (parsed && Array.isArray(parsed.games)) {
-    config = parsed; // legacy backup: the whole object IS the config
+  if (src && src.config && Array.isArray(src.config.games)) {
+    config = src.config;
+  } else if (src && Array.isArray(src.games)) {
+    config = src; // legacy backup: the whole object IS the config
   }
 
   if (!config) {
@@ -1836,13 +1853,17 @@ function tryImport(text) {
   // hand-edited / t-<timestamp> one) with no UI left to repair it, and every
   // result keyed by team id would score the wrong teams. Refuse before the
   // confirm. An absent or empty `teams` is still fine — the camp keeps its own.
-  if (Array.isArray(parsed.teams) && parsed.teams.length) {
-    const ids = parsed.teams.map((t) => t && t.id);
+  let teamsOk = Array.isArray(src.teams) && src.teams.length > 0;
+  if (teamsOk) {
+    const ids = src.teams.map((t) => t && t.id);
     const wellFormed = ids.length === CAMP.teamCount && ids.every(isTeamId) && new Set(ids).size === ids.length;
     if (!wellFormed) {
-      showRestoreError('That backup has ' + parsed.teams.length + ' teams, but ' + CAMP.label + ' runs ' + CAMP.teamCount +
-        '. It may be from the other camp, so nothing was changed.');
-      return;
+      if (!copyMode) {
+        showRestoreError('That backup has ' + src.teams.length + ' teams, but ' + CAMP.label + ' runs ' + CAMP.teamCount +
+          '. It may be from the other camp, so nothing was changed.');
+        return;
+      }
+      teamsOk = false; // copying from the other camp: a roster that doesn't fit is simply left out
     }
   }
   showRestoreError('');
@@ -1854,6 +1875,10 @@ function tryImport(text) {
   const restoreText = document.getElementById('restore-textarea');
   if (restoreText) restoreText.value = '';
 
+  // The week as it is NOW, kept as a `pre-import` restore point before anything changes (written in the
+  // background: the import goes ahead, and a restore point can put this back).
+  if (typeof restoreAuto === 'function') restoreAuto('pre-import', 'Before importing a backup');
+
   // One commit of the whole catalog: it goes up as field ops against the confirmed
   // baseline (a game the backup lacks is a delete op, one it adds a create). No Undo
   // entry: a restore also swaps scores and the roster, which Undo does not cover
@@ -1864,11 +1889,26 @@ function tryImport(text) {
   }, { undo: false });
   // Only accept correctly-typed sections — a hand-edited backup with e.g.
   // "results": null would crash every render after it had already synced.
-  if (Array.isArray(parsed.teams) && parsed.teams.length) state.teams = parsed.teams;
-  ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live'].forEach((key) => {
-    const v = parsed[key];
-    if (v && typeof v === 'object' && !Array.isArray(v)) state[key] = v;
-  });
+  if (teamsOk) state.teams = src.teams;
+  // Copying from the other camp takes the Schedule, Games and Teams only — never its scores.
+  if (!copyMode) {
+    ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'clocks', 'announcements'].forEach((key) => {
+      const v = src[key];
+      if (!(v && typeof v === 'object' && !Array.isArray(v))) return;
+      if (key === 'picSetup' && v3) { // a v3 backup carries the modes only: the words on this device are kept
+        Object.keys(v).forEach((gid) => {
+          const source = v[gid] && v[gid].source;
+          if (source === undefined) return;
+          state.picSetup = state.picSetup || {};
+          state.picSetup[gid] = Object.assign({ words: [] }, state.picSetup[gid], { source });
+        });
+        return;
+      }
+      state[key] = v;
+    });
+  }
+  // The setup data (only sections switched on here), the notice board — never `meta`, which carries the epoch.
+  if (v3 && typeof restoreImportExtras === 'function') restoreImportExtras(parsed, copyMode);
   // A backup is untrusted input with exactly the shape problem CLAUDE.md warns
   // about: anything that round-tripped through Realtime Database has had its
   // empty arrays/objects pruned away, so an imported bracket can arrive with no
