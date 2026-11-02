@@ -951,6 +951,12 @@ body:has(.takeover:not([hidden]) > .tk-dock:not([hidden])) jelly-toaster[positio
   bottom: calc(env(safe-area-inset-bottom, 0px) + 104px);
 }
 
+/* On the Chat tab the composer sits on top of the tab bar: toasts clear both,
+   so a toast never swallows a tap meant for Send. */
+body:has(#app[data-tab="chat"]) jelly-toaster[position="bottom"] {
+  bottom: calc(var(--tabbar-h) + 76px);
+}
+
 /* ── Chat as a tab (§6) ─────────────────────────────────────────
    A fixed panel between the header and the tab bar, with its own scroll; it
    rides the keyboard (--kb-h, set from visualViewport on iOS) while the tab
@@ -6430,6 +6436,14 @@ body.chat-open #app-footer {
   height: calc(100dvh - 1rem);
 }
 .chat-view[hidden] { display: none; }
+/* Re-hosted as the Chat tab (§6): it fills the fixed #tab-chat panel instead
+   of the screen, and the composer sits directly above the tab bar. */
+#tab-chat .chat-view {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  padding: 0 var(--gutter);
+}
 .chat-head {
   display: flex;
   align-items: center;
@@ -6439,120 +6453,115 @@ body.chat-open #app-footer {
   flex: 1 1 auto;
   min-width: 0;
   margin: 0;
-  font-size: 1.05rem;
+  font: 800 1.0625rem/1.2 var(--font-ui);
+  letter-spacing: var(--track-row);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.chat-clear-btn { font-size: 1rem; }
-/* "📣 Announcements" is ~161px at full size: clipped for editors (pill, bell
-   and broom beside it) at 360px. A touch smaller fits down to ~345px. */
+.chat-clear-btn {
+  min-width: var(--target);
+  min-height: var(--target);
+  font-size: 1rem;
+}
+/* "Announcements" beside the pill, bell and broom: a touch smaller fits an
+   editor's header down to ~345px. */
 @media (max-width: 380px) {
   .chat-title { font-size: 0.92rem; }
 }
-/* Editors on the smallest phones (320-350px) still lose "Announcements" to the
-   ellipsis: tighten the gaps and take the title down one more step. */
 @media (max-width: 350px) {
   .chat-head { gap: 0.4rem; }
   .chat-title { font-size: 0.8rem; }
 }
 .chat-sub-btn {
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: var(--color-surface);
-  width: 2.2rem;
-  height: 2.2rem;
+  width: var(--target);
+  height: var(--target);
+  border: 1.5px solid var(--line-2);
+  border-radius: 50%;
+  background: var(--sheet);
   font-size: 1rem;
   cursor: pointer;
 }
 .chat-sub-on {
-  border-color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
+  border-color: var(--blue);
+  background: var(--blue-tint);
 }
 .chat-link {
   color: var(--color-primary);
   text-decoration: underline;
   overflow-wrap: anywhere;
 }
-/* flex: 0 0 auto is load-bearing. The strip is an overflow-x:auto box, so its
-   automatic min-height is 0 and it would otherwise be a flex-shrink
-   participant: .chat-list's content-sized basis (every message) soaked up the
-   overflow and crushed the tabs to a 5px sliver in any busy channel. Only
-   .chat-list may flex. The padding is room for the unread badge, which sits
-   on the tab's corner (it would be clipped by this box's overflow otherwise);
-   the negative side margin hands that padding back so the tabs still line up
-   with the page gutter. */
+/* The channel switcher: a segmented well, segments sized to their labels
+   (mockup 15). Text labels only — emoji never label a tab (§8.6) — and the
+   four short labels fit a 360px phone. flex: 0 0 auto is load-bearing: the
+   strip must never be a flex-shrink participant, or a busy .chat-list crushes
+   it to a sliver. The unread count stays OUT of flow on the segment's corner:
+   a count inside the label widened its segment each time a message landed in
+   another channel and slid the others under the finger. */
 .chat-tabs {
   display: flex;
   flex: 0 0 auto;
-  gap: 0.35rem;
-  margin: 0.1rem -0.25rem 0.4rem;
-  padding: 0.4rem 0.25rem 0.1rem;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
+  gap: 2px;
+  margin: var(--s-1) 0 var(--s-2);
+  padding: 2px;
+  border-radius: var(--r-btn);
+  background: var(--well);
 }
-.chat-tabs::-webkit-scrollbar { display: none; }
 .chat-tab {
   position: relative;
-  flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.4rem 0.7rem;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: var(--color-surface);
-  color: var(--color-text);
-  font-family: inherit;
-  font-size: 0.82rem;
-  font-weight: 700;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.chat-tab-active {
-  border-color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
-}
-/* On the tab's corner, out of flow: a badge that took room inside the pill
-   widened its tab by ~22px every time a message landed in another channel and
-   shoved the tabs to its right under the finger. */
-.chat-tab-badge {
-  position: absolute;
-  top: -0.4rem;
-  right: -0.2rem;
+  flex: 1 1 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 1.1rem;
-  height: 1.1rem;
-  padding: 0 0.25rem;
-  border-radius: 999px;
-  background: var(--color-primary);
-  color: #fff;
-  font-size: 0.68rem;
-  line-height: 1;
+  min-height: var(--target);
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--ink-2);
+  font: 750 0.875rem/1.15 var(--font-ui);
+  cursor: pointer;
+  white-space: nowrap;
 }
-/* The four pills with labels are ~447px wide: wider than any phone, so Photos
-   sat off-screen with no hint the strip scrolled. Under 480px they share the
-   row equally as emoji (the header names the open channel); the label stays
-   in the DOM, visually hidden, for screen readers. */
-@media (max-width: 480px) {
+.chat-tab-emoji {
+  display: none;
+}
+.chat-tab-active {
+  background: var(--lift);
+  color: var(--ink);
+  font-weight: 850;
+  box-shadow: 0 0 0 1.5px var(--card-b), 0 2px 0 var(--edge);
+}
+.chat-tab-badge {
+  position: absolute;
+  z-index: 1;
+  top: -7px;
+  right: -3px;
+  display: inline-grid;
+  place-items: center;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: var(--link);
+  color: var(--on-link);
+  font: 800 0.75rem/1 var(--font-ui);
+  box-shadow: 0 0 0 2px var(--paper);
+}
+@media (max-width: 380px) {
   .chat-tab {
-    flex: 1 1 0;
-    min-width: 0;
-    justify-content: center;
-    padding: 0.4rem 0.2rem;
+    padding: 4px 7px;
+    font-size: 0.8125rem;
   }
-  .chat-tab-emoji { font-size: 1.05rem; line-height: 1.2; }
-  .chat-tab-label {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    white-space: nowrap;
+}
+/* A 320px phone is the one width the four labels can't share: the well
+   scrolls sideways rather than dropping a channel or falling back to emoji. */
+@media (max-width: 339px) {
+  .chat-tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
   }
+  .chat-tab { flex: 0 0 auto; }
 }
 .chat-list {
   flex: 1 1 auto;
@@ -6560,86 +6569,114 @@ body.chat-open #app-footer {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 10px;
   padding: 0.25rem 0.1rem 0.75rem;
 }
+/* Anchor a short conversation to the composer, like every messenger: the
+   first child's auto margin, not justify-content:flex-end (which stops an
+   overflowing list from scrolling back to its top). */
+.chat-list > :first-child {
+  margin-top: auto;
+}
 .chat-note { margin: 1rem 0.25rem; }
+/* Sentence case, never letter-spaced capitals (§8.2). */
 .chat-day-sep {
   display: flex;
   align-items: center;
   gap: 0.6rem;
   margin: 0.5rem 0 0.1rem;
-  color: var(--color-text-muted);
-  font-size: 0.72rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
+  color: var(--ink-2);
+  font: var(--t-label);
 }
 .chat-day-sep::before,
 .chat-day-sep::after {
   content: '';
   flex: 1;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--line);
 }
+/* A message (mockup 15): the name and time sit ABOVE the bubble, which is
+   only the words; your own messages are blue-tinted with the time under
+   them (column-reverse puts the head below, no markup change). */
 .chat-bubble {
-  max-width: 88%;
+  display: flex;
+  flex-direction: column;
+  max-width: 82%;
   align-self: flex-start;
-  padding: 0.5rem 0.7rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  border-bottom-left-radius: 4px;
-  background: var(--color-surface);
 }
 .chat-bubble-mine {
   align-self: flex-end;
-  border-bottom-left-radius: var(--radius-md);
-  border-bottom-right-radius: 4px;
-  border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-border));
-  background: color-mix(in srgb, var(--color-primary) 9%, var(--color-surface));
+  flex-direction: column-reverse;
+  align-items: flex-end;
 }
 .chat-bubble-head {
   display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
+  align-items: center;
+  gap: 0.4rem;
+  min-height: 1.25rem;
+  margin: 0 4px 3px;
+  font: 600 0.8125rem/1.3 var(--font-ui);
+  color: var(--ink-2);
+}
+.chat-bubble-mine .chat-bubble-head {
+  margin: 3px 4px 0;
 }
 .chat-bubble-name {
-  font-size: 0.78rem;
   font-weight: 800;
+  color: var(--ink);
+}
+.chat-bubble-mine .chat-bubble-name {
+  display: none;
 }
 .chat-bubble-time {
-  font-size: 0.68rem;
-  color: var(--color-text-muted);
+  color: var(--ink-2);
+}
+.chat-bubble-time::before {
+  content: '· ';
+}
+.chat-bubble-mine .chat-bubble-time::before {
+  content: none;
 }
 .chat-delete-btn {
-  margin-left: auto;
+  display: inline-grid;
+  place-items: center;
+  width: var(--target);
+  height: var(--target);
+  margin: -12px -10px -12px auto;
   border: none;
   background: transparent;
-  color: var(--color-text-muted);
-  font-size: 0.8rem;
+  color: var(--ink-2);
+  font: inherit;
   cursor: pointer;
-  padding: 0 0.15rem;
-  font-family: inherit;
 }
 .chat-bubble-text {
-  margin: 0.15rem 0 0;
-  font-size: 0.92rem;
-  line-height: 1.45;
+  margin: 0;
+  padding: 9px 12px;
+  border: 1.5px solid var(--line-2);
+  border-radius: 16px;
+  background: var(--sheet);
+  font: 550 1rem/1.35 var(--font-ui);
   overflow-wrap: anywhere;
 }
+.chat-bubble-mine .chat-bubble-text {
+  border-color: transparent;
+  background: var(--blue-tint);
+}
+/* A mention is a gold mark; one that means YOU is the solid gold. */
 .chat-mention {
-  font-weight: 800;
-  color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+  padding: 0 3px;
   border-radius: 4px;
-  padding: 0 2px;
+  background: var(--gold-tint);
+  box-shadow: inset 0 0 0 1.5px var(--gold-edge);
+  color: var(--ink);
+  font-weight: 800;
 }
 .chat-mention-you {
-  color: #fff;
-  background: var(--color-primary);
+  background: var(--gold);
+  color: var(--gold-ink);
 }
 .chat-thumb-btn {
   display: block;
-  margin: 0.3rem 0 0.1rem;
+  margin: 0 0 4px;
   padding: 0;
   border: none;
   background: transparent;
@@ -6649,47 +6686,62 @@ body.chat-open #app-footer {
   display: block;
   max-width: min(60vw, 260px);
   max-height: 260px;
-  border-radius: var(--radius-md);
+  border-radius: 14px;
 }
+/* The composer: a 44px rounded field and the gold Send, on paper with one
+   hairline above. The field is 16px so iOS doesn't zoom the page on focus. */
 .chat-composer {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: var(--s-2);
   position: sticky;
   bottom: 0;
-  padding: 0.5rem 0 calc(0.5rem + env(safe-area-inset-bottom));
-  background: var(--color-bg);
+  margin: 0 calc(-1 * var(--s-1));
+  padding: var(--s-2) var(--s-1) calc(var(--s-2) + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line-2);
+  background: var(--paper);
+}
+#tab-chat .chat-composer {
+  margin: 0 calc(-1 * var(--gutter));
+  padding: var(--s-2) 12px;
 }
 .chat-text-input {
   flex: 1 1 auto;
   min-width: 0;
-  font: inherit;
-  font-size: 0.95rem;
-  color: var(--color-text);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  padding: 0.55rem 0.9rem;
+  min-height: var(--target);
+  padding: 9px 14px;
+  border: 2px solid var(--card-b);
+  border-radius: 22px;
+  background: var(--sheet);
+  color: var(--ink);
+  font: 550 1rem/1.3 var(--font-ui);
 }
 .chat-photo-btn,
 .chat-send-btn {
   flex: 0 0 auto;
-  width: 2.6rem;
-  height: 2.6rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: var(--color-surface);
+  min-width: var(--target);
+  height: var(--target);
+  border: 1.5px solid var(--line-2);
+  border-radius: 22px;
+  background: var(--sheet);
+  color: var(--ink);
   font-size: 1.1rem;
   cursor: pointer;
-  color: var(--color-text);
 }
 .chat-send-btn {
-  border-color: var(--color-primary);
-  background: var(--color-primary);
-  color: #fff;
+  padding: 0 14px;
+  border: 2px solid var(--gold-edge);
+  background: var(--gold);
+  box-shadow: 0 3px 0 var(--gold-edge);
+  color: var(--gold-ink);
+  font: 850 1rem/1 var(--font-ui);
+  transition: box-shadow var(--jm-press-ms) var(--jm-press);
+}
+.chat-send-btn:active {
+  box-shadow: 0 1px 0 var(--gold-edge);
 }
 .chat-photo-btn[disabled] { opacity: 0.5; }
 
