@@ -682,8 +682,8 @@ function teamStaffNames(teamId) {
 //   - Text from the database passes a camp-core.js sanitizer on its way out.
 // The per-camp constants moved here unchanged from their old spots in this
 // file (tests/camps.test.js still reads them by global name). Not yet
-// accessors, because nothing reads them yet: finaleDow, teamAccentVars,
-// hubStatus, campersFor.
+// accessors, because nothing reads them yet: teamAccentVars, hubStatus,
+// campersFor. (finaleDow arrived with the standings reveal, Step 23.)
 
 const DEFAULT_TEAM_NAMES = CAMP.defaultTeamNames;
 const TEAM_EMOJI = CAMP.teamEmoji;

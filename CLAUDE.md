@@ -1361,7 +1361,7 @@ setup-ui.js sections 8–11. No new file, so no new `?v=` entry.
   (`schedGiveOwn`, `schedMakeFollowAgain`); read-only (`aria-disabled`) while the schedule is
   the original. Double points: **in the legacy epoch (no `state.meta.epoch`) the form is
   hidden and the fixed window is read out**; with an epoch it writes `meta/double`. TV
-  finale: `meta/finaleDow`. Nothing reads `double` / `finaleDow` yet (Steps 23 and 28).
+  finale: `meta/finaleDow`. Nothing reads `double` yet (Step 28); `finaleDow()` (SEAM block, absent or junk = Friday) is read by the standings reveal's Start (Step 23).
 - **The Schedule screen** (`renderScheduleScreen`): the day strip (ring = follows the typical
   day, dot = has changes, gold "!" = `schedDayIssues`; opens with today's chip at the left
   edge during the camp week, and keeps the chosen chip in view), rows by part of the day
@@ -2072,11 +2072,11 @@ reuses) an accessor in the block.
   tracked day with no team reads "TBA"), `cleanupTeams(dow, meal)` (always an
   array, `[]` = TBA); alerts — `blockKey`, `blockPushId`; verses — `verseTheme`,
   `verseFor`; electives — `electivesFor`, `stationEmoji`, `electiveSlotStart`;
-  `doubleWindow`; teams — `teamIds`, `teamEmoji`, `teamShort`, `teamAccent`,
+  `doubleWindow`, `finaleDow` (the weekday the standings reveal crowns the champions, Friday by default); teams — `teamIds`, `teamEmoji`, `teamShort`, `teamAccent`,
   `teamCrestSrc` (was `teamShield`), `teamRoster(tid)`, `staffNames`, `seedTeams`,
   `legacyRosterFor(i)`.
 - **Deliberately not built yet** (nothing reads them, so no dead code): the spec's
-  `finaleDow`, `teamAccentVars` (needs the CSS to read a light/dark pair),
+  `teamAccentVars` (needs the CSS to read a light/dark pair),
   `hubStatus`, `campersFor` — each lands with the step that first needs it.
   **The "on" half of the schedule accessors is built (Step 15)**: `scheduleForDow`,
   `scheduleWeek`, `weekDays`, `planForDow`, `campWeek`, `blockKey`, `blockPushId`,

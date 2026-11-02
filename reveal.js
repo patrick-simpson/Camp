@@ -443,7 +443,7 @@ const REVEAL_BUZZ_TEXT = 'The standings reveal is starting';
 const revealInFlight = { real: 0, practice: 0 };        // commands handed to the server and not yet acknowledged
 const revealInFlightSince = { real: 0, practice: 0 };
 const revealFullStore = { real: null, practice: null }; // the director's private copy of the complete order: { r, n, groups }
-const revealFullFetching = { real: false, practice: false };
+const revealFullFetching = { real: null, practice: null };   // the read in progress (a promise), so a caller that needs the order waits for IT
 const revealFullTried = { real: '', practice: '' };      // the reveal id the private freeze was last asked for (so an absent one is not asked for on every tick)
 let revealConnChangedAt = 0;
 let revealRemoteOpenFlag = false;                       // a director's remote is on screen
@@ -456,7 +456,7 @@ function revealResetCommands() {
   revealInFlight.real = 0; revealInFlight.practice = 0;
   revealInFlightSince.real = 0; revealInFlightSince.practice = 0;
   revealFullStore.real = null; revealFullStore.practice = null;
-  revealFullFetching.real = false; revealFullFetching.practice = false;
+  revealFullFetching.real = null; revealFullFetching.practice = null;
   revealFullTried.real = ''; revealFullTried.practice = '';
   revealConnChangedAt = 0; revealRemoteOpenFlag = false; revealPracticeOn = false; revealBuzzOn = true; revealStarting = false;
 }
@@ -833,17 +833,18 @@ function revealNormalizeFull(raw) {
 }
 
 function revealFetchFull(mode) {
-  if (memberRole !== 'editor' || !revealStarted || !revealSdkReady() || revealFullFetching[mode]) return Promise.resolve(revealFullStore[mode]);
-  revealFullFetching[mode] = true;
-  const asked = confirmedReveal[mode] && confirmedReveal[mode].ctl ? confirmedReveal[mode].ctl.id : '';
-  revealFullTried[mode] = asked;
-  return firebase.database().ref(dbPath('revealFull/' + mode)).once('value').then((snap) => {
-    revealFullFetching[mode] = false;
+  if (revealFullFetching[mode]) return revealFullFetching[mode];
+  if (memberRole !== 'editor' || !revealStarted || !revealSdkReady()) return Promise.resolve(revealFullStore[mode]);
+  revealFullTried[mode] = confirmedReveal[mode] && confirmedReveal[mode].ctl ? confirmedReveal[mode].ctl.id : '';
+  const read = firebase.database().ref(dbPath('revealFull/' + mode)).once('value').then((snap) => {
+    revealFullFetching[mode] = null;
     if (memberRole !== 'editor') return null;                  // demoted while it was in flight
     revealFullStore[mode] = revealNormalizeFull(snap && snap.val());
     if (typeof revealPaint === 'function') revealPaint('full', mode);
     return revealFullStore[mode];
-  }).catch(() => { revealFullFetching[mode] = false; return null; });
+  }).catch(() => { revealFullFetching[mode] = null; return null; });
+  revealFullFetching[mode] = read;
+  return read;
 }
 
 // After every evaluation: keep the wake lock honest, and keep the private freeze in step with the reveal
