@@ -543,6 +543,60 @@ function identityFromKey(key) {
 // into a larger atomic update — one refused row would take the rest with it.
 const OWNER_MEMBER_KEY = 'patricksimpson,fx@gmail,com';
 
+// ── The owner (decision Q8) ─────────────────────────────────────────────────
+// The two big switches — Edit the week here (and the sections after it), the
+// new-year setup and Undo the new-year setup — are the OWNER's alone. The rules
+// enforce it (OWNER / OWNERKEEP on every leaf that carries one); this is the
+// client half, so a director who is NOT the owner is never offered a button that
+// can only fail, and a non-owner call path is refused before anything is written.
+//   isOwner()   from the SIGN-IN, never anything stored on the device: the
+//               identity firebase.auth() reports, an editor whose member record
+//               has answered, and a verified address (the rules' `email_verified`;
+//               a phone identity never matches the owner's email key).
+//   ownerName() the owner's first name as the member directory spells it (the
+//               owner row is rules-immutable, so an editor cannot rename it into
+//               something misleading), else "the owner". Fails CLOSED like
+//               chatAuthorName: no directory yet, no name on the row => the
+//               plain word, never a guess.
+//   ownerGate(what) / requireOwner(what)   the refusal, as data and as a toast:
+//               "Only Patrick can turn on editing." — said BEFORE any write.
+//   ownerSays(rest)  "Patrick turns on editing." / "The owner turns on editing."
+//               — the sentence every other director sees in place of the button.
+function isOwner() {
+  if (!authUser || memberRole !== 'editor' || !memberRoleConfirmed) return false;
+  if (authUser.emailVerified === false) return false;
+  return identityKey(authUser) === OWNER_MEMBER_KEY;
+}
+
+function ownerName() {
+  const rec = memberDirectoryLoaded && memberDirectory && Object.prototype.hasOwnProperty.call(memberDirectory, OWNER_MEMBER_KEY)
+    ? memberDirectory[OWNER_MEMBER_KEY] : null;
+  const first = rec && typeof rec.name === 'string' ? rec.name.trim().split(/\s+/)[0] : '';
+  return first ? first.slice(0, 30) : 'the owner';
+}
+
+function ownerGate(what) {
+  if (isOwner()) return { ok: true, reason: '' };
+  return { ok: false, reason: 'Only ' + ownerName() + ' can ' + String(what || 'do that') + '.' };
+}
+
+function requireOwner(what) {
+  const gate = ownerGate(what);
+  if (!gate.ok && typeof showToast === 'function') showToast(gate.reason);
+  return gate.ok;
+}
+
+function ownerSays(rest) {
+  const name = ownerName();
+  return name.charAt(0).toUpperCase() + name.slice(1) + ' ' + String(rest || '') + '.';
+}
+
+// body.setup-owner is what styles.css reads to show the owner-only buttons (the
+// markup also starts them `hidden`, and the rules refuse the writes anyway).
+function applyOwnerClass() {
+  document.body.classList.toggle('setup-owner', isOwner());
+}
+
 // A member row for someone who has no sign-in yet — a counselor we know by
 // name and team, whose email or phone gets filled in later. The key must be
 // something `identityKey()` can NEVER produce, or a stranger could inherit
@@ -12455,6 +12509,7 @@ let appStarted = false;
 
 function applyRoleClass() {
   document.documentElement.classList.toggle('view-only', !canEdit());
+  applyOwnerClass();
 }
 
 function startApp() {

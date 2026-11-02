@@ -1548,6 +1548,19 @@ rules**; the client code only shapes the UI.
   before writing. Any bulk member write (the seed roster today; the new-year
   wizard later) must skip that key and be per-row and best-effort, never folded
   into a larger atomic update, so one refused row can't take unrelated work with it.
+- **Owner-only gating** (decision Q8, Step 14): the new-year setup, Edit the week
+  here and the other sections' switches are the owner's alone — the rules say so
+  (`OWNER` / `OWNERKEEP`); the client half is four helpers in app.js beside
+  `OWNER_MEMBER_KEY`. `isOwner()` reads the SIGN-IN (`authUser`'s identity key ===
+  `OWNER_MEMBER_KEY`, a confirmed editor, a verified address), never anything stored
+  on the device — a forged hint or camps ledger changes nothing. `ownerName()` is the
+  owner row's first name from the member directory (the row is rules-immutable, so no
+  editor can rename it) and fails closed to "the owner". `ownerGate(what)` /
+  `requireOwner(what)` give the refusal ("Only Patrick can …") BEFORE any write, and
+  `ownerSays('turns on editing')` is the sentence every other director reads in place
+  of the button. `applyOwnerClass()` (from `applyRoleClass`) sets `body.setup-owner`,
+  which styles.css reads to show the `data-owner-only` controls. Any NEW owner-only
+  action goes through these, and `tests/owner-only.test.js` is where it is pinned.
 - **Live revocation**: the member self-read stays an `.on('value')` — a
   removal cancels it (→ not-approved kick + `clearLocalData()`), a role change
   fires a fresh snapshot (→ `setMemberRole` re-renders in place).
