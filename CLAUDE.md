@@ -169,14 +169,15 @@ Files:
   the R1 rules blocks (see "R1" under "Auth, members & roles"); it is not a test
   and is never loaded by the browser. `tests/stall.js` is a preload that makes timers
   stall at random, to hunt tests that wait on the clock (see "Waiting in a test")
-- `current-standings.html` + `current-standings.js` + `tv-camp.js` — the TV /
-  presenter standings page, for BOTH camps (see "The TV page" below). The page
-  is markup, CSS, its own CSP and the build stamp; its script lives in
-  `current-standings.js` (a page with a CSP refuses inline script); `tv-camp.js`
+- `current-standings.html` + `current-standings.js` + `tv-camp.js` — the big-screen
+  reveal page, for BOTH camps (see "The TV page" below): **public and read-only**,
+  no sign-in, no Auth SDK, reads only `<root>/revealPublic` and `.info`, writes
+  nothing. The page is markup, CSS, its own CSP and the build stamp; its script lives
+  in `current-standings.js` (a page with a CSP refuses inline script); `tv-camp.js`
   is a dozen lines that set `window.CAMP_FORCE` from `?camp=` before camps.js
-  runs. It loads `defaults.js` + `camp-core.js` + `camps.js` instead of carrying
-  copies, so only `MEDAL_POINTS` and the `emailKey` rule are still mirrored
-  ("keep in sync")
+  runs. It loads `defaults.js` + `camp-core.js` + `reveal-core.js` + `camps.js`
+  instead of carrying copies, so only the flag shapes are still mirrored ("keep in
+  sync")
 - `stalling.html` — self-contained presenter gag page (loads no camp code; its
   Current Standings card links to the TV page for the device's camp)
 - `manifest.json`, `apple-touch-icon.png` — PWA/home-screen identity
@@ -236,7 +237,8 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
    **If you touched `database.rules.json`, it is not live until it is pasted
    into the Firebase console** — the tests only check the file.
    **If you bump the Firebase SDK version**, the three `<script>` tags in
-   `index.html` and `current-standings.html` carry `integrity="sha384-…"`
+   `index.html` (app, auth, database) and the two in `current-standings.html`
+   (app, database: the big screen loads no Auth SDK) carry `integrity="sha384-…"`
    hashes pinned to `10.12.0`. New version ⇒ recompute them, or the SDK is
    blocked and nobody can sign in or sync (`firebaseSdkReady()` fails →
    `onSdkLoadFailed`: a "Couldn't reach the sign-in service" screen, or a
@@ -1637,10 +1639,11 @@ What's covered, and why each file exists:
   the model's words for every state of mockup 07c, **the public-node sweep** (no member
   key, no director name, no hidden team's id, name or points in any serialized write of
   a full reveal, a Back, an early End and a practice), DST `until`, the epoch
-- `tv.test.js` / `stalling.test.js` — the TV page for both camps, its Waiting
-  screen for a counselor, the reload rules for a second account, a demotion and
-  a sign-out, the ledger-decided cache fallback, a tie's order, and the link
-  into it (see "The TV page").
+- `tv.test.js` / `stalling.test.js` — the big-screen page for both camps (public and
+  read-only since Step 23: the paths it may touch, no write, no `firebase.auth`, the
+  frames and their beats on a fake clock, Waiting, late join, real beats practice, a
+  refused feed, hidden-for-a-minute, the CSP and the stamp in both places), and the
+  link into it (see "The TV page").
 - `camp-core.test.js` — `camp-core.js`: the legacy double-window pin (the
   constants, and the seeded relative window resolving to them to the
   millisecond), DST edges, parity with the alert sender's copy of the maths,
@@ -2499,7 +2502,7 @@ rules**; the client code only shapes the UI.
   the rules' `.replace('.', ',')`, which in the rules language replaces ALL
   dots — so the client uses `replaceAll`, never JS `.replace` (which would
   only catch the first dot and lock out any multi-dot address, the owner's
-  included). `current-standings.js` duplicates this — keep in sync.
+  included). (The big-screen page used to duplicate this; it signs nobody in now.)
 - **Member record**: `{ role, name?, teamId?, addedBy, addedAt }`
   (`memberRecord()`; `name`/`teamId` omitted, not null, when empty). Built at `campScoreboard/members`,
   editor-managed via More → **Who can sign in** (`renderMembers`). Your
@@ -2652,8 +2655,8 @@ rules**; the client code only shapes the UI.
     one line**: change `revealPublic/.read` from `true` to the `MEMBER`
     expression (`setup/.read` spells it out) and publish through the runbook;
     phones and remotes carry on, the big screen shows Waiting. Rules can't limit
-    connections (Spark allows 100 at once): the TV page must hold its connection
-    only while visible (Step 23).
+    connections (Spark allows 100 at once): the TV page holds its connection
+    only while visible (built, Step 23: `goOffline()` after 60 s hidden).
   - **Q8 owner-only acts** (no new role; the member record's shape is
     untouched): `setup/meta/on/<section>`, `setup/meta/{epoch,epochAt}` and
     `state/meta/{epoch,epochAt}`, every `setup/meta/wizard` leaf, and the
@@ -4018,83 +4021,137 @@ change actually reached devices mid-week.
 
 ## The TV page (current-standings.html) — both camps
 
-The big-screen reveal. **An interim page**: it is still the SIGNED-IN page it
-always was (Google sign-in, then the camp's members check), and until the
-redesign replaces it with a public read-only subscriber (see
-`docs/build-notes/app-shell-redesign-spec.md` §4.11) it shows live standings to
-a DIRECTOR only (Step 3). A counselor's account gets "Waiting for the
-directors…", and no state or config listener is ever attached for it. The
-approval read is a live `.on('value')` on that account's member record: a
-demotion, a removal or a second account reloads the page (`leavePage`), and a
-promotion attaches the listeners without a reload. `directorStandings` is the
-one switch that lets standings compute. A signed-out visitor sees the sign-in
-panel and a non-member the "isn't on the list" panel; neither reads `state`.
-Nothing here is CSS: `#screen[hidden]` is pinned because the author rule would
-otherwise beat the attribute. The page's places come from reveal-core's
-`groupPlaces`. (The TV keeps no copy of the rule.)
+The big-screen reveal (redesign §4.11, Step 23). **A PUBLIC, READ-ONLY subscriber**:
+anyone with the address can open it, so it has no account at all. No sign-in, no
+Auth SDK (index.html carries three Firebase SDK tags, this page two: app +
+database, each with its pinned `integrity` hash), no sign-in overlay, no members
+read. It reads exactly **`<root>/revealPublic`** (one listener, both children),
+**`.info/serverTimeOffset`** and **`.info/connected`**, writes NOTHING (not a
+presence row, not a heartbeat: an anonymously writable path is the one thing the
+design refuses), and never computes a standing: names, points and places arrive
+already frozen into the node, one place at a time, and only places a director has
+shown are in the node at all. With no live reveal it says "Waiting for the
+directors…" (mockup 11). The old signed-in, directors-only interim page is gone.
 
-**Step 23 design pass (markup ahead of its script — do not deploy the two
-apart).** The HTML is already the PUBLIC page's: the sign-in overlay (`#auth-overlay`
-and its panels) and the "← Back" chip are gone, while `current-standings.js` is
-still the interim signed-in script above until a build session rewrites it. In
-that gap a signed-out visitor would sit on "Loading standings…" (the script's
-overlay calls find no element and return), so the markup and the rewritten
-script ship in ONE deploy. What the markup provides: the waiting screen of mockup
-11 (`#waiting` > `#wait-camp`, `#wait-status[data-tone=connecting|ok|offline]` +
-`#wait-status-text`, `#wait-shields` — the marks in their fixed order — and
-`#wait-feed`, "Can't reach the standings feed"); `#tv-practice` (the Practice tag,
-the remote's mini TV wears the same); `.tv-chips` > `#tv-reconnect` and
-`#update-chip`; `#intro-go` (the intro's line, "Starting with 6th place" — the old
-"Press → or tap to begin" is gone with the advancing); `.hero-break .words` for the
-breakdown in words (no medal discs for counts); and the app's four flag symbols
-(`#flag-plain|swallow|stripe|chevron`, `.tv-flag[data-flag]`) so senior teams draw
-as flags. The frames keep their layout and motion, recoloured from black on white
-onto the app's paper and ink (so waiting → reveal is one surface and the mini TV
-matches); `#loading` stays only for the interim script.
-
+- **What it draws is `tvFrame()`**, reveal-core's pure function of `(ctl, pub,
+  server time)` (the remote's mini TV runs the very same one): `waiting | intro |
+  hero | board | champion | table`, plus `heroIdx`, `beat` (`name` alone for 3 s →
+  `score` → `breakdown` at 4.5 s → docks into the board at 8 s, all measured from
+  `ctl.at`), `docked` and `fresh`. A live `real` reveal always wins; a live
+  `practice` plays (tagged "Practice", `#tv-practice`) only when there is none, and a
+  real Start takes the screen over at once; a real reveal that has ended hands the
+  screen back to a practice still playing. Waiting also covers: ended, auto-ended
+  (15 min idle in champion / table, 60 in intro / live), `until` passed, a schema
+  too new, a frame with nothing to draw (an empty board is not a frame, so a
+  half-written command fails closed rather than leaving a blank stage), a refused
+  listener, and **no server clock yet** — until `.info/serverTimeOffset` answers
+  nothing is painted from the node (`serverNow()` is NaN, which `tvFrame` reads as
+  "no clock"), so a TV with a wrong clock can neither show a stale reveal nor hide a
+  live one, and every time comparison uses the SERVER's time, never the TV's.
+- **Time moves the screen with no snapshot.** `nextBoundary()` is the soonest of
+  every child's `at + 3 / 4.5 / 8 s`, auto-end and `until`; one `setTimeout`
+  re-armed after every paint (`armTimer`, +25 ms so it is never early), plus a 30 s
+  safety tick and the page coming back to the front. `render()` is deduped by a
+  signature (child, id, seq, frame, hero, beat, docked, the places' words), so an
+  idle tick touches nothing, and it wraps everything in a try/catch that fails closed
+  to Waiting.
+- **No replay for a late joiner.** `animate` is true only for a page that was
+  already showing a reveal (it watched the change) or a place still inside its first
+  3 s (`fresh`): everything else — a reload, a late open — draws the frame as it
+  stands (`.hero` without `.enter`, `#board.still` so no rows pop in, no crowning
+  barrage), and only a place inside its first 3 s gets its confetti. A Back is a new
+  command (`seq`), so the place replays; the same `seq` arriving again is an echo
+  and changes nothing. Ties keep the side-by-side layout and a two-way tie keeps the
+  shield fight (name beat only; not for a late joiner, a three-way tie or reduced
+  motion).
+- **The words are the phones' words**: "2 gold · 1 silver · 1 bronze" then
+  "verse 4 · cleanup 3 · quick 2" (the second line only when one is non-zero; a
+  negative reads with a minus sign), in the hero (`.hero-break .words`) and on the
+  board (`.med`) — never medal discs, which mean a place won, never a count (§8.4).
+  The intro says "Get ready…" and **never names the first place**: a tie at the
+  bottom makes it not the last team's number, and the node carries no group count on
+  purpose (a count would tell the room a tie exists before it is revealed). No
+  keyboard or click advancing exists (the old handlers are gone): the only document
+  listener is `visibilitychange`.
+- **Marks are by team id, from files that ship with the page** (`teamMark`): a
+  shield that passes `safeCrestSrc` (junior), else the camp's flag drawn from the
+  page's own `#flag-*` symbols (senior; the SHAPE by the team's slot, so two flags
+  stay apart without colour), else an emoji tile through `safeEmoji`. No P2 team
+  photo, colour or emoji a director typed ever reaches this public page. Names come
+  from the node through `normalizeRevealPub` (control characters spaced out, cut to
+  30) and are `esc()`'d; crests are DOM nodes with `img.src = …`, never concatenated.
+- **Connection**: the status line (`#wait-status[data-tone]`) says `connecting`
+  until the first answer, `ok` ("Connected · this screen is ready") only when the
+  socket is up AND the clock and the feed have answered, `offline` ("Reconnecting…")
+  after a drop, ten seconds of never connecting, a refusal or a missing SDK. On a
+  reveal's frames the news rides the `#tv-reconnect` chip instead, and the frame
+  stays; on return the listener repaints from the node at once. A **refused listener
+  is terminal in the SDK**, so the page fails closed (Waiting, the small "Can't reach
+  the standings feed" line) and attaches again every 30 s: the rules get published or
+  the read is switched back on and the screen comes back by itself. A page whose SDK
+  never loaded says the same, and reloads itself (at most three times per tab,
+  `sessionStorage`) only once its own update poll proves the network answers.
+- **Holds its connection only while visible**: hidden for 60 s → `goOffline()`,
+  shown again → `goOnline()`. Spark allows 100 connections at once across both camps,
+  every phone and every TV page, and a public page makes it easy for a few curious
+  people to open one; a TV never hides, a phone in a pocket does. The kill switch is
+  in the R1 notes (one rules line); the connections graph deserves a glance on the
+  first real reveal night.
 - **Camp choice**: `?camp=junior|senior` (case-insensitive), else the camp this
   device's own app last used (`campScoreboardActiveCamp`, same origin), else
   junior. `tv-camp.js` sets `window.CAMP_FORCE` before `camps.js` loads, and
   `activeCampId()` honours it only when it names a real camp (the app never sets
-  it, so every app device is unchanged). Everything per-camp then comes from
-  `CAMP`: `dbRoot` (state, config and the approval check read THIS camp's
-  paths), `storageSuffix` (the offline cache key), team count, default names,
-  emoji and crests. The tab title names the camp.
-- **Nothing is copied from the app any more** except `MEDAL_POINTS` and the
-  `emailKey` rule: the double-points window (`DOUBLE_WINDOW_LEGACY`,
-  `bonusIsDouble`) and the orphan filter (`liveGameIdSet`: a result whose game
-  left the week is not counted once the config is known — before that every
-  result counts) come from `camp-core.js`; before the live config arrives the
-  camp's built-in catalog decides which games double.
-- **Rendered strings are laundered with the app's own code.** Team emoji go
-  through `safeEmoji` once, in `normalizeTeams` (a record's `emoji` field, when a
-  later build writes one; today only the slot's built-in mascot); names stay
-  `esc()`'d; crest images are built with `document.createElement('img')` and
-  `img.src = safeCrestSrc(…)` — never concatenated into markup. A team with no
-  crest that passes (senior has no flag artwork yet) gets an **emoji tile**
-  (`.crest-tile`), never an `<img src="undefined">`. Intro, hero, board and
-  champion loops run over the real team ids (four teams or six).
-- **The page has its own CSP** (a `<meta>`, mirroring index.html's: no inline
-  script, `script-src 'self'` plus the pinned Firebase SDK on gstatic, images
-  `'self' data:`). It loads no Google Fonts, so unlike index.html it has no
-  fonts host. **A new external host or an inline script breaks the page
-  silently** — add the host to this page's meta too, and put script in a file.
+  it). Everything per-camp then comes from `CAMP`: `dbRoot` (the feed is THIS
+  camp's `revealPublic`), team count, default names, emoji, crests and flags. The tab
+  title names the camp.
+- **Nothing is copied from the app** except the flag shapes / colours
+  (`TEAM_FLAG_SHAPES`, `TEAM_FLAG_COLORS`: "keep in sync" with app.js): the page loads
+  `defaults.js`, `camp-core.js` (sanitizers), `reveal-core.js` (`tvFrame`,
+  `normalizeRevealCtl`, `normalizeRevealPub`, the beat and auto-end constants),
+  `tv-camp.js` and `camps.js`. `MEDAL_POINTS`, the double-points window, `emailKey`
+  and the orphan filter are gone with the standings maths.
+- **The page has its own CSP** (a `<meta>`): no inline script, `script-src 'self'`
+  plus the pinned Firebase SDK on gstatic and the database's own `*.firebaseio.com`
+  (its long-polling fallback), images `'self' data:`, `connect-src` the database's
+  https / wss hosts and nothing else. **The sign-in hosts are gone** (Google's
+  accounts and apis, the project's auth domain, the googleapis token services):
+  nothing here signs in. It loads no Google Fonts. **A new external host or an inline
+  script breaks the page silently** — add the host to this page's meta too, and put
+  script in a file.
 - **The build stamp lives in two places**: `<meta name="tv-build">` (what the
   page's own 90-second / refocus check reads, falling back to the comment) AND
   the exact text `var TV_BUILD = '<stamp>'` in an HTML comment. A TV left open
-  on a v184-or-earlier page polls its own address and reads that text with a
-  regex to decide whether to reload; with the script moved out that text would
-  otherwise be gone and the stuck page would never learn about any later build.
-  Every TV build keeps both, equal. It reloads itself only on its intro screen;
-  mid-reveal it shows the update chip.
-- **Tests**: `tests/tv.test.js` loads the page's real scripts (in tag order)
-  into a vm behind a DOM that records every `innerHTML` and every created
-  element — camp selection, per-camp database paths, N-team loops, null-safe
-  crests, hostile emoji / name / crest rendering inert (an allowlist of tags and
-  attributes over everything the page wrote), the orphan filter and doubling,
-  the CSP meta and no inline script body, and the stamp in both places.
-  `tests/stalling.test.js` pins the standings card's `?camp=` link and its
-  team-count table against `camps.js`.
+  on a v184-or-earlier page, or on the signed-in interim page, polls its own
+  address and reads that text with a regex to decide whether to reload; the text
+  must stay in the HTML or a stuck TV would never learn about any later build.
+  Every TV build keeps both, equal. **A newer build reloads the page only while it
+  is waiting** (nothing on the stage); mid-reveal a small `#update-chip` appears
+  instead, and the page reloads the moment the reveal is over. Reload the TV once
+  after the deploy that ships this page.
+- **Practice is public while it plays** (owner-accepted, redesign §4.12 row 19): the
+  `practice` child holds only the places it has shown, End deletes it, and no phone
+  ever reads it. The Practice switch says so in words.
+- **Old pages during the rollout** (§4.11): a signed-in interim page keeps working
+  until it reloads into this one and never shows a counselor anything; this page
+  against rules that were not published would show Waiting and the small line and
+  leak nothing; phones and TVs can be updated in either order (a TV updated first
+  just waits).
+- **Tests**: `tests/tv.test.js` loads the page's real scripts (in tag order) into a
+  vm behind a DOM that records every `innerHTML` and every created element, a fake
+  clock that drives `setTimeout` / `setInterval` / `Date.now`, and a fake Firebase
+  whose every object throws (and records) on any call the page is not meant to make.
+  It pins: the paths (nothing but `<root>/revealPublic` and `.info`), no write, no
+  `firebase.auth`, no sign-in text anywhere, exactly two SDK tags with their hashes;
+  Waiting and its marks per camp; nothing painted before the clock answers and the
+  server's time used over the TV's own; every frame and beat on the page's own timer;
+  words not discs; ties; senior flags; the finale; Back; late join; real beats
+  practice and a practice returning; ended / expired / idle / too-new reveals;
+  hostile names; a refused feed and its retry; no SDK; a drop and a return; hidden for
+  60 s; the CSP (no sign-in host); the order of scripts; and the stamp in both places
+  with the update rules. `tests/stalling.test.js` pins the standings card's `?camp=`
+  link and its team-count table against `camps.js`. The end-to-end run (two remotes and
+  a signed-out TV against a local database emulator with the real rules) is
+  `tests/emulator/reveal-e2e.cjs` (see "Tests").
 
 ## Footer timestamps (More's footer line)
 

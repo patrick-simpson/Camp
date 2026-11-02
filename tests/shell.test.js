@@ -106,11 +106,12 @@ test('a failed module leaves sheets closable, and Appearance is plain buttons th
   assert.notOk(/jelly-segmented/.test(INDEX.replace(/<!--[\s\S]*?-->/g, '')), 'no jelly-segmented left in the page');
 });
 
-test('the TV page (current-standings.js) does not flash the sign-in overlay for a healthy, fast approval', () => {
-  const TV = readFixture('../current-standings.js'); // the page's script moved out of the HTML in Step 2
-  assert.ok(/var CHECK_OVERLAY_DELAY_MS = \d{4}/.test(TV), "'checking' waits before it covers the page");
-  assert.ok(/if \(checkTimer\) \{ clearTimeout\(checkTimer\)/.test(TV), 'any later mode cancels the pending overlay');
-  assert.ok(/function paintAuthOverlay\(/.test(TV), "and 'signin' / 'denied' still paint immediately");
+test('the TV page (current-standings.js) has no sign-in to flash: it is public and read-only since Step 23', () => {
+  const TV = readFixture('../current-standings.js');
+  const HTML = readFixture('../current-standings.html');
+  assert.notOk(/CHECK_OVERLAY_DELAY_MS|paintAuthOverlay|setAuthOverlay/.test(TV), 'the sign-in overlay machinery is gone');
+  assert.notOk(/id="auth-overlay"|id="loading"/.test(HTML), 'and so is its markup, and the "Loading standings…" cover');
+  assert.ok(/id="waiting"(?![^>]*hidden)/.test(HTML), 'the page opens on Waiting, so the first frame is the right one');
 });
 
 test('boot-guard.js stays a classic, blocking <script> in <head> (or the app flashes before it locks)', () => {
