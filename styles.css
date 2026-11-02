@@ -5786,6 +5786,28 @@ select.form-input {
   font-weight: 800;
 }
 
+/* What the config engine set aside (settings.js, configNotesHtml): a record removed
+   while an edit of mine was on its way, an offline change that lost a clash. Empty ⇒
+   zero height. The buttons are plain link-buttons inside the amber note. */
+.settings-notes .config-note {
+  margin: 0 0 0.75rem;
+}
+.settings-notes .config-note p {
+  margin: 0;
+}
+.settings-notes .config-note-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  margin-top: 0.4rem;
+}
+.settings-notes .link-btn {
+  color: inherit;
+  font: inherit;
+  font-weight: 800;
+  text-decoration: underline;
+}
+
 /* The Games / Days tabs before the first config snapshot (settings.js,
    renderConfigLoading) — same inline dots-spinner treatment as .sync-status. */
 .config-loading {

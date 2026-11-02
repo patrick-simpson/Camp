@@ -91,7 +91,12 @@ Files:
   the page to the top. `builderDirty()` counts only an OPEN game editor with
   edits (a stranded draft must not freeze sync or the auto-reload), Back and
   tab switches never silently discard it, and a tab other than Games carries an
-  "Unsaved changes" reminder while one is open
+  "Unsaved changes" reminder while one is open. Every commit to `state.config` or
+  the roster goes through `configEdit` / `stateEdit` (an Undo toast; see "Undo
+  core"), looks its record up by id when it runs, and the game editor writes only
+  the fields it changed (`gameDraftOrigin`, `gameFieldOps`). A strip above the
+  tabs (`configNotesHtml`) lists what the config engine set aside — Put it back /
+  Use mine (see "The week config is a field-op engine")
 - `chat.js` — Camp Chat (see "Camp chat" below): four channels, automatic
   mention alerts, compressed in-database photos. Self-contained layer,
   loaded after settings.js; every hook in app.js is typeof-guarded
@@ -589,6 +594,11 @@ What's covered, and why each file exists:
   node, delete-vs-edit → Put it back (received and found-at-commit), the offline edit →
   real reload (a fresh context over the cache) → first-snapshot merge, clash → Use mine,
   the 36 h ask, epoch strand and follow, and accounting.
+- `config-builder.test.js` (+ `.senior`) — the builder side of it: the game editor's
+  field-diff save (a colleague's other field kept silently, a field both changed
+  asked, removed-meanwhile offered back, a no-change save sends nothing, a new game is
+  one whole-record op), the notes strip's markup (escaped) and the repaint after an
+  Undo.
 - `undo.test.js` (+ `.senior`) — **the undo core**: canonical entries, the Undo/Redo
   toast actions, undo only where the value still equals `after` (partial and refused
   reports), adds/deletes/reorders/days/teams, the offline-clash synthetic entry, the
@@ -1375,8 +1385,8 @@ More sync invariants (each fixed after it bit us — don't regress these;
     (or a read-only tab) has no edits, so it just adopts. Data applies AT ONCE, even
     mid-entry; only the repaint waits for a focused field (`renderAllWhenIdle`) —
     `pendingRemoteConfig`, `configFirstHeld` and `flushPendingRemoteConfig` are gone.
-    A commit's mutation resolves its record BY ID when it runs (P10: a snapshot may
-    have replaced every object since a row was drawn). `migrateState` still runs on the
+    Handlers resolve their record BY ID when they commit (P10): a snapshot may have
+    replaced every object since a row was drawn. `migrateState` still runs on the
     result; only a REAL version change from an editor re-pushes.
   - **The first snapshot waits for the state engine's first pull** (`cfgFirstPending`,
     released by `handleRemoteSnapshot` — its epoch lives in `state/meta`), then
@@ -1402,7 +1412,8 @@ More sync invariants (each fixed after it bit us — don't regress these;
     apart from the cached copy the snapshot replaces; it lifts at once when no snapshot
     can ever come (sync not configured, SDK down, config read refused).
   - **Notes** (`state._cfgNotes`, ≤ 30, in the cache blob, not synced): `putback`
-    `{section, key, name, record}` and `clash` `{path, mine, theirs, what}`.
+    `{section, key, name, record}` and `clash` `{path, mine, theirs, what}`; shown in
+    a strip above the builder's tabs (`configNotesHtml`, wired once, escaped).
     `cfgPutBack` re-creates the record with my edits and `cfgUseMine` writes my value —
     both ordinary undoable commits. A bare reorder of a vanished record is dropped
     silently.
@@ -1414,8 +1425,16 @@ More sync invariants (each fixed after it bit us — don't regress these;
     deliberately stays about `state` alone. A refused or failed config write says
     "Couldn't save the week setup"; the edit stays unconfirmed and goes up with the
     next builder change or, after a reload, the first-snapshot merge.
-- **Undo core** (setup rebuild spec §7.1 — build step 9). Commits go through two
-  wrappers: `configEdit(label, mutate, opts)` (games and days) and
+  - **The game editor saves only what it changed** (§6.3.5): `ensureGameDraft` keeps
+    `gameDraftOrigin` (a deep copy of the saved game as the sheet opened);
+    `saveGameDraft` computes `gameFieldOps(origin, out)` and applies just those fields
+    to the game as it is NOW (resolved by id). A field somebody else ALSO changed to
+    something different is asked about (`confirm`: OK keeps mine, Cancel keeps theirs;
+    the other edits are saved either way); a game removed meanwhile offers "put it back
+    with your changes". `tests/fixtures/legacy-builder-v183.js` parity holds. New game
+    ids are NOT randomised yet (build step 21).
+- **Undo core** (setup rebuild spec §7.1 — build step 9). The builder's commits go
+  through two wrappers: `configEdit(label, mutate, opts)` (games and days) and
   `stateEdit(label, mutate, opts)` (teams: rename, counselors, reorder; the roster in
   the same id-keyed form via `teamsCanon`, `_o` = position). Each snapshots the
   canonical tree, runs the mutation (which looks its record up BY ID — P10), commits
@@ -1432,12 +1451,13 @@ More sync invariants (each fixed after it bit us — don't regress these;
   changes — someone changed game “X” · name since; left theirs." / "Can't undo —
   someone changed this since."; the config has no per-record authorship, so it says
   "someone"). The undo is itself a commit, so it becomes a new `Undid: …` entry whose
-  toast offers **Redo** (undoing that entry; there is no separate redo stack). Not
-  undoable, on purpose: People/access changes (they keep their confirms), scores
-  (their own tools), a backup restore and "Put back the original games and days"
-  (`{ undo: false }` — they also move scores/roster), and deleting or changing the
-  format of a game that had records (`label: null` — Undo would bring back the game
-  but not its result). Stored per camp in
+  toast offers **Redo** (undoing that entry; there is no separate redo stack). After
+  an undo the builder forgets its markup memo (`refreshBuilderCards`) because its text
+  fields commit without repainting. Not undoable, on purpose: People/access changes
+  (they keep their confirms), scores (their own tools), a backup restore and "Put back
+  the original games and days" (`{ undo: false }` — they also move scores/roster), and
+  deleting or changing the format of a game that had records (`label: null` — Undo
+  would bring back the game but not its result). Stored per camp in
   `lsKey('campSetupUndo')` (`UNDO_KEY`): memory + storage, ≤ 50 entries, ≤ 200 KB,
   oldest dropped, an entry over 20 KB (a seed, a big restore) not stacked at all;
   read lazily (never at load — boot-cache.test.js); cleared on an epoch change

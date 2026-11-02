@@ -28,6 +28,7 @@ function mountBuilder() {
   SETTINGS_TABS.forEach((t) => { cards[t.key] = fakeEl(); });
   const tabs = fakeEl();
   const updated = fakeEl();
+  const notesStrip = fakeEl(); // what the config engine set aside (configNotesHtml)
   const back = fakeEl();
   // The reminder slot every non-games panel carries (syncUnsavedNotes).
   const notes = SETTINGS_TABS.filter((t) => t.key !== 'games').map(() => fakeEl());
@@ -42,13 +43,14 @@ function mountBuilder() {
     if (!view.shellWrites) return null;
     if (sel === 'jelly-tabs.settings-tabs') return tabs;
     if (sel === '.settings-updated') return updated;
+    if (sel === '.settings-notes') return notesStrip;
     const m = /\[data-settings-card="(\w+)"\]/.exec(sel);
     return m ? cards[m[1]] : null;
   };
   const realGet = document.getElementById;
   document.getElementById = (id) => (id === 'settings-view' ? view : id === 'settings-back-btn' ? back : realGet(id));
   window.scrollTo = () => {};
-  return { view, tabs, cards, updated, back, notes, unmount: () => { document.getElementById = realGet; } };
+  return { view, tabs, cards, updated, notesStrip, back, notes, unmount: () => { document.getElementById = realGet; } };
 }
 
 function openBuilderOn(tab) {
@@ -99,6 +101,33 @@ test('the tab shell is built once; later renders only set what changed', () => {
     renderSettings();
     assert.equal(b.view.shellWrites, 1, 'a programmatic tab change does not rebuild the shell either');
     assert.equal(b.tabs.getAttribute('value'), 'teams', '...it just moves the tabs value');
+  } finally { b.unmount(); }
+});
+
+test('the config notes strip (put-it-back / clashes) is empty by default, written through setHtmlIfChanged, and wired once', () => {
+  openBuilderOn('days');
+  const b = mountBuilder();
+  try {
+    delete state._cfgNotes;
+    renderSettings();
+    assert.equal(b.notesStrip.innerHTML, '', 'nothing set aside ⇒ nothing drawn');
+    assert.equal((b.notesStrip.listeners.click || []).length, 1, 'one delegated listener, attached when the shell is built');
+    state._cfgNotes = [{ id: 'n1', kind: 'putback', section: 'days', key: 'd9', name: 'Wednesday', record: { id: 'd9', name: 'Wednesday', _o: 2 }, at: '' }];
+    renderSettings();
+    assert.ok(b.notesStrip.innerHTML.includes('Wednesday') && b.notesStrip.innerHTML.includes('Put it back with my changes'));
+    const html = b.notesStrip.innerHTML;
+    b.notesStrip.__html = html; // (setHtmlIfChanged's own memo)
+    renderSettings();
+    assert.equal((b.notesStrip.listeners.click || []).length, 1, 'a re-render does not stack listeners');
+    // The buttons act on the note by id.
+    let dropped = null;
+    const realDrop = cfgDropNote;
+    cfgDropNote = (id) => { dropped = id; };
+    try {
+      b.notesStrip.listeners.click[0]({ target: { closest: () => ({ dataset: { noteAct: 'drop', noteId: 'n1' } }) } });
+    } finally { cfgDropNote = realDrop; }
+    assert.equal(dropped, 'n1');
+    delete state._cfgNotes;
   } finally { b.unmount(); }
 });
 

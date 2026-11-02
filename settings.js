@@ -23,6 +23,11 @@ let gameDraft = null;
 let gameDraftFor = null; // which editGameId gameDraft was built for
 let gameDraftSnapshot = '';
 let gameDraftSource = ''; // canonical JSON of the saved game the draft was built from
+// A deep copy of the saved game as it stood when the sheet opened (null for a new
+// game). Save writes only the fields the draft changed RELATIVE TO THIS, onto the
+// CURRENT game — so another director's edit to a different field is never undone
+// (setup-rebuild-spec §6.3.5).
+let gameDraftOrigin = null;
 let extrasOpen = false;
 let quickGamePrefill = null; // one-shot defaults for the next new-game draft
 
@@ -131,6 +136,7 @@ function renderSettings() {
       <button class="link-btn back-btn" id="settings-back-btn">← Back to scoreboard</button>
       <h2>Set up the week</h2>
       <div class="settings-updated"></div>
+      <div class="settings-notes"></div>
       <jelly-tabs class="settings-tabs" size="small" value="${esc(tab)}">
         ${SETTINGS_TABS.map((t) =>
           `<jelly-tab-panel value="${t.key}" label="${esc(t.label)}"${t.key === tab ? ' active' : ''}>
@@ -159,6 +165,21 @@ function renderSettings() {
       // collapsed under it — put the scoreboard back where it was.
       if (typeof builderReturnY === 'number') window.scrollTo(0, builderReturnY);
     });
+
+    // What a merge or a rebase set aside (see cfgNotes in app.js): one delegated
+    // listener, because the strip is rewritten through setHtmlIfChanged.
+    const notesEl = view.querySelector('.settings-notes');
+    if (notesEl) {
+      notesEl.addEventListener('click', (e) => {
+        const btn = e.target.closest && e.target.closest('[data-note-act]');
+        if (!btn) return;
+        const id = btn.dataset.noteId;
+        const act = btn.dataset.noteAct;
+        if (act === 'putback') cfgPutBack(id);
+        else if (act === 'usemine') cfgUseMine(id);
+        else if (act === 'drop') cfgDropNote(id);
+      });
+    }
 
     view.querySelectorAll('.settings-unsaved').forEach((note) => {
       note.addEventListener('click', (e) => {
@@ -193,6 +214,8 @@ function renderSettings() {
   }
 
   setHtmlIfChanged(view.querySelector('.settings-updated'), updatedLine);
+  const notesStrip = view.querySelector('.settings-notes');
+  if (notesStrip) setHtmlIfChanged(notesStrip, configNotesHtml());
   // Without the Jelly module (html.jelly-failed — iOS < 16.4 can't parse it)
   // there is no tab bar to reveal a hidden card and every panel shows, so
   // fill them all, as before.
@@ -204,6 +227,46 @@ function renderSettings() {
   });
   syncUnsavedNotes(view);
   if (tabbed) scheduleBuilderPrefill();
+}
+
+// The builder's text fields commit WITHOUT repainting (a blur-time rebuild eats the next
+// tap), so after one the field shows what was typed while the card's remembered markup
+// still holds the old value — and an Undo that restores that old value would then look
+// "unchanged" to setHtmlIfChanged and leave the typed text on screen. Forget the markup
+// memo so the next render rewrites the cards from the live config. (app.js undoEntry.)
+function refreshBuilderCards() {
+  const view = document.getElementById('settings-view');
+  if (!view) return;
+  view.querySelectorAll('[data-settings-card]').forEach((card) => { card.__html = null; });
+}
+
+// The strip above the tabs for what the config engine set aside instead of dropping
+// (cfgNotes in app.js): a record somebody removed while an edit of mine was on its way,
+// and an offline change that lost to a colleague's on the same field. Every action is a
+// normal commit (undoable) or a dismissal; typed text is escaped.
+function configNotesHtml() {
+  return cfgNotes().map((n) => {
+    if (n.kind === 'putback') {
+      const noun = n.section === 'games' ? 'game' : 'day';
+      return `<div class="config-note warn-note">
+        <p>⚠️ The ${noun} <strong>${esc(n.name)}</strong> was removed while you were editing it.</p>
+        <p class="config-note-actions">
+          <button type="button" class="link-btn" data-note-act="putback" data-note-id="${esc(n.id)}">Put it back with my changes</button>
+          <button type="button" class="link-btn danger-link" data-note-act="drop" data-note-id="${esc(n.id)}">Discard</button>
+        </p>
+      </div>`;
+    }
+    if (n.kind === 'clash') {
+      return `<div class="config-note warn-note">
+        <p>⚠️ While you were offline someone changed <strong>${esc(n.what)}</strong> too — theirs is showing (${esc(cfgShow(n.theirs))}), yours was ${esc(cfgShow(n.mine))}.</p>
+        <p class="config-note-actions">
+          <button type="button" class="link-btn" data-note-act="usemine" data-note-id="${esc(n.id)}">Use mine</button>
+          <button type="button" class="link-btn" data-note-act="drop" data-note-id="${esc(n.id)}">Dismiss</button>
+        </p>
+      </div>`;
+    }
+    return '';
+  }).join('');
 }
 
 // A game draft with edits in it survives a trip to another tab (see the
@@ -380,12 +443,18 @@ function wireGameRows(card) {
       const posInGroup = group.indexOf(g);
       const neighbor = group[posInGroup + parseInt(btn.dataset.dir, 10)];
       if (!neighbor) return;
-      const iA = allGames().indexOf(g);
-      const iB = allGames().indexOf(neighbor);
-      const tmp = allGames()[iA];
-      state.config.games[iA] = allGames()[iB];
-      state.config.games[iB] = tmp;
-      saveConfig();
+      const idA = g.id;
+      const idB = neighbor.id;
+      // Resolved by id when it runs (a snapshot may have replaced every object), and an
+      // order change is two `_o` field ops, so a colleague's rename isn't touched.
+      configEdit(`Moved “${g.name}” ${parseInt(btn.dataset.dir, 10) < 0 ? 'up' : 'down'}`, () => {
+        const iA = allGames().findIndex((x) => x.id === idA);
+        const iB = allGames().findIndex((x) => x.id === idB);
+        if (iA < 0 || iB < 0) return false;
+        const tmp = allGames()[iA];
+        state.config.games[iA] = allGames()[iB];
+        state.config.games[iB] = tmp;
+      });
       renderAll();
     });
   });
@@ -490,6 +559,7 @@ function ensureGameDraft() {
   const g = editId === 'new' ? null : gameById(editId);
   gameDraft = toEditableDraft(g || newGameShape());
   gameDraftSource = gameSourceKey(g);
+  gameDraftOrigin = g ? JSON.parse(JSON.stringify(g)) : null;
   gameDraftSnapshot = JSON.stringify(gameDraft);
 }
 
@@ -968,9 +1038,43 @@ function saveGameDraft() {
     .map((sec) => ({ h: (sec.h || '').trim(), items: splitLines(sec.items) }))
     .filter((sec) => sec.h || sec.items.length);
 
-  if (!isNew) {
-    const existing = gameById(out.id);
-    const formatChanged = existing && existing.format !== out.format;
+  let label;
+  let fields = null; // an existing game: the fields THIS save writes, onto the current game
+  if (isNew) {
+    label = 'Added “' + out.name + '”';
+  } else {
+    const origin = gameDraftOrigin;
+    const current = gameById(out.id);
+    if (!current) {
+      // Somebody deleted this game while its editor was open here. The draft is the
+      // only copy of what was typed: offer it back rather than losing it.
+      if (confirm('"' + out.name + '" was removed while you were editing it. OK puts it back with your changes; Cancel throws your changes away.')) {
+        configEdit('Put back “' + out.name + '”', () => { state.config.games.push(out); });
+        saveState();
+      } else {
+        discardGameDraft();
+        saveState();
+      }
+      gameDraft = null;
+      gameDraftFor = null;
+      state.ui.editGameId = null;
+      renderAll();
+      return;
+    }
+    // Only the fields this editor CHANGED since the sheet opened are written, onto the
+    // game as it is NOW — so a colleague's edit to a different field is kept. A field
+    // both of us changed is asked about, not decided silently.
+    const ops = gameFieldOps(origin, out);
+    const clashes = Object.keys(ops).filter((f) => gameFieldClash(origin, current, out, f));
+    let keepMine = true;
+    if (clashes.length) {
+      const lines = clashes.slice(0, 3).map((f) =>
+        (CFG_FIELD_LABELS[f] || f) + ' — yours: ' + cfgShow(out[f]) + ', theirs: ' + cfgShow(current[f]));
+      keepMine = confirm('Someone else also changed ' + (clashes.length === 1 ? 'this' : 'these') + ' on "' + out.name + '" while you were editing it:\n\n' +
+        lines.join('\n') + '\n\nOK keeps your version; Cancel keeps theirs. Your other changes are saved either way.');
+    }
+    fields = Object.keys(ops).filter((f) => keepMine || clashes.indexOf(f) === -1);
+    const formatChanged = fields.indexOf('format') > -1 && current.format !== out.format;
     // Result, bracket, score entry, live match, clock and drawing setup are all
     // shaped by the old format — leaving any behind reads as garbage (or throws)
     // under the new one. Name everything that goes, in one confirm.
@@ -979,24 +1083,55 @@ function saveGameDraft() {
       const list = going.length > 1 ? going.slice(0, -1).join(', ') + ' and ' + going[going.length - 1] : going[0];
       if (!confirm('"' + out.name + '" has records under its old format. Saving clears ' + list + ' so the game can be re-run. Continue?')) return;
       clearGameRecords(out.id);
+      label = null; // the records are gone for good: an Undo that brought the format back would be a lie
+    } else {
+      label = fields.length === 1 && fields[0] === 'name' ? 'Renamed “' + current.name + '”' : 'Edited “' + out.name + '”';
     }
   }
 
-  if (isNew) {
-    const taken = new Set([...allGames().map((g) => g.id), ...Object.keys(state.results || {})]);
-    out.id = makeId(out.name, taken);
-    state.config.games.push(out);
-  } else {
-    const idx = allGames().findIndex((g) => g.id === out.id);
-    if (idx > -1) state.config.games.splice(idx, 1, out);
-  }
-
-  saveConfig();
+  configEdit(label, () => {
+    if (isNew) {
+      const taken = new Set([...allGames().map((g) => g.id), ...Object.keys(state.results || {})]);
+      out.id = makeId(out.name, taken);
+      state.config.games.push(out);
+      return undefined;
+    }
+    const g = gameById(out.id); // resolved now, not when the sheet opened (P10)
+    if (!g) return false;
+    fields.forEach((f) => {
+      if (f in out) g[f] = JSON.parse(JSON.stringify(out[f]));
+      else delete g[f];
+    });
+    return undefined;
+  });
   saveState();
   state.ui.editGameId = null;
   gameDraft = null;
   gameDraftFor = null;
   renderAll();
+}
+
+// The top-level fields of a game that `out` changes relative to `origin`, in canonical
+// form ({ field: value | null }). A game with no origin (opened while it didn't exist
+// here) has every field as its own.
+function gameFieldOps(origin, out) {
+  const ops = {};
+  const diff = treeDiff({ g: origin }, { g: out }, { g: 2 });
+  if (Object.prototype.hasOwnProperty.call(diff, 'g')) {
+    Object.keys(out).forEach((f) => { if (f !== 'id') { const c = syncCanon(out[f]); ops[f] = c === undefined ? null : c; } });
+    return ops;
+  }
+  Object.keys(diff).forEach((p) => { ops[p.slice(2)] = diff[p]; });
+  return ops;
+}
+
+// Did somebody else change field `f` while this editor was open, to something other
+// than what this editor is about to write? (Canonical compare: a key reorder or a
+// pruned empty is no change.)
+function gameFieldClash(origin, current, mine, f) {
+  const canon = (v) => { const c = syncCanon(v); return JSON.stringify(c === undefined ? null : c); };
+  const cur = canon(current[f]);
+  return cur !== canon(origin ? origin[f] : undefined) && cur !== canon(mine[f]);
 }
 
 function duplicateGame() {
@@ -1009,14 +1144,17 @@ function duplicateGame() {
   }
   const original = gameById(gameDraft.id);
   if (!original) return;
+  const originalId = original.id;
   const copy = JSON.parse(JSON.stringify(original));
   copy.name = copy.name + ' (copy)';
   delete copy.prompts; // only one drawing-prompts game is supported per week
   const taken = new Set([...allGames().map((g) => g.id), ...Object.keys(state.results || {})]);
   copy.id = makeId(copy.name, taken);
-  const idx = allGames().findIndex((g) => g.id === original.id);
-  state.config.games.splice(idx + 1, 0, copy);
-  saveConfig();
+  configEdit('Duplicated “' + original.name + '”', () => {
+    const idx = allGames().findIndex((g) => g.id === originalId);
+    if (idx > -1) state.config.games.splice(idx + 1, 0, copy);
+    else state.config.games.push(copy);
+  });
   state.ui.editGameId = copy.id;
   gameDraft = null;
   gameDraftFor = null;
@@ -1042,14 +1180,18 @@ function deleteGame(gameId) {
 
   if (!confirm(msg)) return;
 
-  const idx = allGames().findIndex((x) => x.id === gameId);
-  if (idx > -1) state.config.games.splice(idx, 1);
+  // A game with records loses them with it, and Undo brings back only the game itself —
+  // so there is no Undo for that one (the confirm above already said so).
+  const hadRecords = gameRecordLabels(gameId).length > 0;
+  configEdit(hadRecords ? null : 'Deleted “' + g.name + '”', () => {
+    const idx = allGames().findIndex((x) => x.id === gameId);
+    if (idx > -1) state.config.games.splice(idx, 1);
+  });
   clearGameRecords(gameId);
   if (state.ui.gameId === gameId) state.ui.gameId = null;
   state.ui.editGameId = null;
   gameDraft = null;
   gameDraftFor = null;
-  saveConfig();
   saveState();
   renderAll();
 }
@@ -1103,9 +1245,17 @@ function dayRowHTML(day, i, total) {
 function wireDaysTab(card) {
   card.querySelectorAll('.reorder-btn[data-day-id]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const idx = competitionDays().findIndex((d) => d.id === btn.dataset.dayId);
-      moveItem(state.config.days, idx, parseInt(btn.dataset.dir, 10));
-      saveConfig();
+      const dayId = btn.dataset.dayId;
+      const dir = parseInt(btn.dataset.dir, 10);
+      const day = dayById(dayId);
+      if (!day) return;
+      // Every handler here looks its day up BY ID when it commits (P10): a snapshot
+      // may have replaced every object since this row was drawn.
+      configEdit(`Moved “${day.name}” ${dir < 0 ? 'up' : 'down'}`, () => {
+        const idx = competitionDays().findIndex((d) => d.id === dayId);
+        if (idx < 0) return false;
+        moveItem(state.config.days, idx, dir);
+      });
       renderAll();
     });
   });
@@ -1118,30 +1268,34 @@ function wireDaysTab(card) {
   // values is hidden behind the builder until the next renderAll anyway.
   card.querySelectorAll('.day-name-input').forEach((input) => {
     input.addEventListener('change', () => {
-      const day = dayById(input.dataset.dayId);
+      const dayId = input.dataset.dayId;
+      const day = dayById(dayId);
       if (!day) return;
       const val = input.value.trim();
-      if (val) day.name = val;
-      else input.value = day.name;
-      saveConfig();
+      if (!val) { input.value = day.name; return; }
+      configEdit(`Renamed “${day.name}”`, () => { const d = dayById(dayId); if (!d) return false; d.name = val; });
     });
   });
 
   card.querySelectorAll('.day-dow-input').forEach((sel) => {
     sel.addEventListener('change', () => {
-      const day = dayById(sel.dataset.dayId);
+      const dayId = sel.dataset.dayId;
+      const day = dayById(dayId);
       if (!day) return;
-      day.dow = sel.value === '' ? null : parseInt(sel.value, 10);
-      saveConfig();
+      configEdit(`Changed the weekday of “${day.name}”`, () => {
+        const d = dayById(dayId);
+        if (!d) return false;
+        d.dow = sel.value === '' ? null : parseInt(sel.value, 10);
+      });
     });
   });
 
   card.querySelectorAll('.day-note-input').forEach((ta) => {
     ta.addEventListener('change', () => {
-      const day = dayById(ta.dataset.dayId);
+      const dayId = ta.dataset.dayId;
+      const day = dayById(dayId);
       if (!day) return;
-      day.note = ta.value;
-      saveConfig();
+      configEdit(`Edited the note for “${day.name}”`, () => { const d = dayById(dayId); if (!d) return false; d.note = ta.value; });
     });
   });
 
@@ -1152,8 +1306,9 @@ function wireDaysTab(card) {
   const addBtn = document.getElementById('add-day-btn');
   if (addBtn) {
     addBtn.addEventListener('click', () => {
-      state.config.days.push({ id: 'd-' + Date.now().toString(36), name: 'New day', dow: null, note: '' });
-      saveConfig();
+      configEdit('Added a day', () => {
+        state.config.days.push({ id: 'd-' + Date.now().toString(36), name: 'New day', dow: null, note: '' });
+      });
       renderAll();
     });
   }
@@ -1173,12 +1328,13 @@ function deleteDay(dayId) {
 
   if (!confirm('Delete "' + day.name + '"? It has no games.')) return;
 
-  const idx = competitionDays().findIndex((d) => d.id === dayId);
-  if (idx > -1) state.config.days.splice(idx, 1);
+  configEdit('Deleted “' + day.name + '”', () => {
+    const idx = competitionDays().findIndex((d) => d.id === dayId);
+    if (idx > -1) state.config.days.splice(idx, 1);
+  });
   if (state.ui.day === dayId) {
     state.ui.day = competitionDays()[0] ? competitionDays()[0].id : null;
   }
-  saveConfig();
   saveState();
   renderAll();
 }
@@ -1226,9 +1382,16 @@ function teamRowHTML(team, i, total) {
 function wireTeamsTab(card) {
   card.querySelectorAll('.reorder-btn[data-team-id]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const idx = state.teams.findIndex((t) => t.id === btn.dataset.teamId);
-      moveItem(state.teams, idx, parseInt(btn.dataset.dir, 10));
-      saveState();
+      const teamId = btn.dataset.teamId;
+      const dir = parseInt(btn.dataset.dir, 10);
+      const team = state.teams.find((t) => t.id === teamId);
+      if (!team) return;
+      // By id when it commits (P10), per field for the undo entry and the push (a reorder is two `_o` ops).
+      stateEdit(`Moved ${team.name} ${dir < 0 ? 'up' : 'down'}`, () => {
+        const idx = state.teams.findIndex((t) => t.id === teamId);
+        if (idx < 0) return false;
+        moveItem(state.teams, idx, dir);
+      });
       renderAll();
     });
   });
@@ -1238,21 +1401,21 @@ function wireTeamsTab(card) {
   // caused the blur.
   card.querySelectorAll('.team-name-input').forEach((input) => {
     input.addEventListener('change', () => {
-      const team = state.teams.find((t) => t.id === input.dataset.teamId);
+      const teamId = input.dataset.teamId;
+      const team = state.teams.find((t) => t.id === teamId);
       if (!team) return;
       const val = input.value.trim();
-      if (val) team.name = val;
-      else input.value = team.name;
-      saveState();
+      if (!val) { input.value = team.name; return; }
+      stateEdit(`Renamed ${team.name}`, () => { const t = state.teams.find((x) => x.id === teamId); if (!t) return false; t.name = val; });
     });
   });
 
   card.querySelectorAll('.team-counselor-input').forEach((input) => {
     input.addEventListener('change', () => {
-      const team = state.teams.find((t) => t.id === input.dataset.teamId);
+      const teamId = input.dataset.teamId;
+      const team = state.teams.find((t) => t.id === teamId);
       if (!team) return;
-      team.counselor = input.value.trim();
-      saveState();
+      stateEdit(`Changed the counselors of ${team.name}`, () => { const t = state.teams.find((x) => x.id === teamId); if (!t) return false; t.counselor = input.value.trim(); });
     });
   });
 }
@@ -1672,8 +1835,14 @@ function tryImport(text) {
   const restoreText = document.getElementById('restore-textarea');
   if (restoreText) restoreText.value = '';
 
-  state.config = config;
-  migrateState(state);
+  // One commit of the whole catalog: it goes up as field ops against the confirmed
+  // baseline (a game the backup lacks is a delete op, one it adds a create). No Undo
+  // entry: a restore also swaps scores and the roster, which Undo does not cover
+  // (restore points will).
+  configEdit('Restored a backup', () => {
+    state.config = config;
+    migrateState(state);
+  }, { undo: false });
   // Only accept correctly-typed sections — a hand-edited backup with e.g.
   // "results": null would crash every render after it had already synced.
   if (Array.isArray(parsed.teams) && parsed.teams.length) state.teams = parsed.teams;
@@ -1689,7 +1858,6 @@ function tryImport(text) {
   normalizeSyncedState();
   pruneOrphanedGameData();
 
-  saveConfig();
   saveState();
   renderAll();
 }
@@ -1712,12 +1880,12 @@ function restoreDefaults() {
   const def = CAMP.defaultConfig();
   if (!confirm('Put back the original ' + def.games.length + ' games and ' + def.days.length + ' days? Your custom games and days are thrown away. Team names and saved results are kept.')) return;
 
-  state.config = CAMP.defaultConfig();
+  // No Undo entry: custom games' results go with them (below), which Undo does not bring back.
+  configEdit('Put back the original games and days', () => { state.config = CAMP.defaultConfig(); }, { undo: false });
   if (!competitionDays().some((d) => d.id === state.ui.day)) {
     state.ui.day = competitionDays()[0] ? competitionDays()[0].id : null;
   }
   pruneOrphanedGameData(); // custom games' results would otherwise haunt the standings
-  saveConfig();
   saveState();
   renderAll();
 }
