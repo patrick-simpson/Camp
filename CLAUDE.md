@@ -292,7 +292,11 @@ only while the app has not started: a lock screen has no header to hold a pill).
 `showToast` keeps at most
 `TOAST_MAX_VISIBLE` (3) on screen, dismissing the oldest that isn't a "Your
 team…" toast.
-The reload uses `doReload` (adds a throwaway `?r=` cache-buster) so it
+The reload uses `doReload` (adds a throwaway `?r=` cache-buster, written with
+`history.replaceState(history.state, …)` and then `location.reload()`, NOT
+`location.replace()`: a replace starts a document whose `history.state` is null,
+so the shell read its stack as foreign and filed a second Now and tab above the
+old ones, and Back on Now stopped leaving the app) so it
 fetches the fresh `index.html` instead of a cached copy and can't loop.
 (A phone only starts polling once it's running a build that has this code,
 so it auto-reloads from the *next* deploy after it loads this one.)
@@ -393,12 +397,14 @@ Design: `docs/build-notes/app-shell-redesign-spec.md` §9–10; the reference fe
 - **More → This phone → Calm motion: Auto · On · Off** (plain radio buttons in
   Appearance, under Theme), with one plain-English line under
   it saying what is happening right now (`renderCalmRow` / `calmReasonLine`;
-  "Your phone asks for less motion, so Camp stays calm…" when the OS wins over
-  Off). The line follows `jelly-motion-change`, so it stays true when battery
-  saver turns calm on by itself. The note reserves three lines
-  (`.gl-panel-note { min-height }`: two lines reserved, so a verdict that changed
-  length can't move the control under the finger — at 200% text it wraps further
-  and nudges it, accepted: copy cut to fit would lose the owner-approved wording).
+  "Your phone asks for less motion. Change it in your phone's Settings." when the
+  OS wins over Off). The line follows `jelly-motion-change`, so it stays true when
+  battery saver turns calm on by itself. The note reserves two lines
+  (`.gl-panel-note { min-height }`, in the note's own line-height), so a verdict
+  that changed length can't move the control under the finger; the longest verdict
+  (the OS one, 70 characters) was measured at two lines at 360px and
+  `motion.test.js` pins 76 characters as the ceiling. At 130%+ text it wraps to a
+  third line and nudges the rows below, accepted.
   The control is `<button role="radio">`s, so a failed Jelly module leaves it
   working with no fallback styling. While the page is hidden the sampler does not
   poll: it returns and `visibilitychange` re-arms it.
@@ -433,7 +439,7 @@ future edit must not break (all pinned by `tests/tabs.test.js`):
   `state.ui.gameId` (+ `gameFrom`: the tab it was opened from, `gameDow`),
   `state.ui.view === 'settings'` (the classic builder) and `shell.sheets` say
   what is open; `renderAll` → `shellSync()` paints the root (`#app[data-tab]`,
-  `aria-selected`, `body.takeover-open`) and `shellReconcile()` makes the stack
+  `aria-current="page"`, `body.takeover-open`) and `shellReconcile()` makes the stack
   match. No click handler pushes history. The stack is always `[Now] + [the tab,
   unless Now] + one entry per open overlay`, so an entry's snapshot
   `{campShell:1, tab, ov:[{k:'game'|'builder'|'sheet', id, from?}]}` is a pure
@@ -522,7 +528,7 @@ renderer only patches text, `hidden` and a few attributes. **`#app[data-tab]`**
 reads: which `[data-tab-panel]` shows (`#tab-now` = today's `main-wrap`,
 unchanged; `#tab-games` with `#games-days` / `#games-standings` / `#games-rows`;
 `#tab-chat`, a fixed keyboard-riding panel; `#tab-more`), the header's form and
-where the tab blob rests. The switcher sets it together with `aria-selected` on
+where the tab blob rests. The switcher sets it together with `aria-current="page"` on
 the `#tabbar .tab[data-tab]` button. Header `#app-header`: `#hdr-id` (Now: who
 you are, the Your team sheet's button; identity/role/camp only), `.hdr-title`
 (`[data-title-for]`), `#hdr-who`, `#hdr-pill` (`data-tone` wait | offline |
@@ -537,7 +543,7 @@ panel in 120 ms), badges
 `#tab-badge-chat`, `#tab-dot-now`, `#tab-dot-more`; it slides away under
 `body.takeover-open`, `body.kb-open`, and today's `builder-open`.
 Takeovers `.takeover` (`#takeover-game`: `.tk-back[data-takeover-back]` with
-`.tk-back-label`, `#takeover-game-title`/`-sub`/`-body`/`-dock`;
+`.tk-back-label`, `#takeover-game-title`/`-sub`/`-status`/`-body`/`-dock`;
 `.tk-dock[data-kb-hide]`; `.is-roof` = the camp-blue broadcast roof, which
 never flips in dark). Sheets `.sheet-overlay` (`#sheet-team`, `[data-sheet-close]`,
 `[data-sheet-grab]`; also `#sheet-verse`, `#sheet-cleanup`, `#sheet-counselors`).
@@ -605,7 +611,18 @@ never rebuilds a segmented control under a finger.
   say what is happening in a toast. The refused-edits / stranded-work / view-only
   tab bar stays a BAR (`#sync-alert`, now inside the sticky header, in flow): it
   carries Retry / Discard / Download, which a pill cannot, so there is no
-  "Couldn't save" pill beside it.
+  "Couldn't save" pill beside it. **The game takeover covers the header and
+  makes `#app` inert**, so the header's bar and pill would be out of reach in the
+  one place scores are saved: `#takeover-game-status` (in flow between `.tk-head`
+  and `.tk-body`, hidden unless something shows) carries a second copy,
+  `#tk-sync-alert` and `#tk-pill`. `updateSyncAlert` writes the same markup into
+  both bars (`setHtmlIfChanged`, so a finger mid-tap keeps its button),
+  `renderSyncPill` paints both pills from `SYNC_PILLS`, `wireSyncStatus` /
+  `wirePill` wire both, and `paintTakeoverStatus` shows the row only while one of
+  them is up. Retry / Discard in the bar are full 44px targets
+  (`.sync-alert .sync-quarantine-btn`). Toasts need nothing like it: the toaster
+  (z 10002) sits above a drawer (10001), so a toast raised from inside Alerts or
+  Who can sign in is visible, only inert while the modal is open.
 - **More** (`renderMore`, rendered with the tab; `wireMore` / `wireSegs` once):
   Director (editors only: **What counselors see**, **Set up the week** → today's
   classic builder, **Change history**, **Who can sign in**; Run the reveal is
@@ -785,7 +802,14 @@ What's covered, and why each file exists:
   blinked; chips twitched). Home panels write through `setHtmlIfChanged`,
   the day tabs refresh their panels in place, and the progress bar is nudged
   rather than rebuilt (the rain hint is patched in place — `splitNowBanner`
-  keeps it out of the bar's shape check). Panels that are SUPPOSED to change
+  keeps it out of the bar's shape check). The frame's volatile lines are pinned
+  by BEHAVIOUR (write counters on the stub: a pill flip writes the pill and not
+  the shield or the identity text; `renderMore` with changed alerts / presence
+  writes no segmented-control attribute), and a Playwright MutationObserver pass
+  over both camps, both roles and all four tabs sees zero DOM mutations from two
+  idle `renderAll`s: every visibility toggle in the render path goes through
+  `setHiddenIfChanged` / `setTextIfChanged` / `setClassNameIfChanged`, so a new
+  panel's `el.hidden = …` or `el.className = …` is a regression. Panels that are SUPPOSED to change
   under their own markup — anything holding a game clock (the 500 ms tick
   rewrites its digits), a Big Board (goal cannons get appended), a score form
   — use `setLiveHtmlIfChanged(el, html, holds)` instead: it compares markup

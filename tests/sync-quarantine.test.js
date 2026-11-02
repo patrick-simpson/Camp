@@ -598,7 +598,7 @@ test('the park toast says where Retry and Discard are', async () => {
     state.results.gB = res(1);
     touchData(); pushState();
     await settled();
-    assert.ok(toasts.some((t) => t.includes('top of the page')), toasts.join('|'));
+    assert.ok(toasts.some((t) => t.includes('top of the screen')), toasts.join('|'));
   } finally { teardown(); }
 });
 

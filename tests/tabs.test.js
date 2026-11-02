@@ -33,11 +33,12 @@ let popHandler = null;
 const winHandlers = {};
 const tabClicks = {};
 const tabBtns = ['now', 'games', 'chat', 'more'].map((t) => {
-  const attrs = new Map([['aria-selected', t === 'now' ? 'true' : 'false']]);
+  const attrs = new Map(t === 'now' ? [['aria-current', 'page']] : []);
   return {
     dataset: { tab: t },
     getAttribute: (n) => (attrs.has(n) ? attrs.get(n) : null),
     setAttribute: (n, v) => attrs.set(n, String(v)),
+    removeAttribute: (n) => attrs.delete(n),
     addEventListener: (ev, fn) => { if (ev === 'click') tabClicks[t] = fn; },
   };
 });
@@ -75,7 +76,7 @@ function reset() {
   state.ui.tab = 'now'; state.ui.gameId = null; state.ui.view = 'home';
   appAttrs.clear(); classes.clear(); scrolls = [];
   window.scrollY = 0;
-  tabBtns.forEach((b) => b.setAttribute('aria-selected', b.dataset.tab === 'now' ? 'true' : 'false'));
+  tabBtns.forEach((b) => { if (b.dataset.tab === 'now') b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
   globalThis.history = fakeHistory();
   globalThis.history.replaceState(shellEntryState({ tab: 'now', ov: [] }), '');
   shell.cur = { tab: 'now', ov: [] };
@@ -143,13 +144,21 @@ test('deep-link targets: every tab, game:<id>, reveal and alert:<id> resolve; ju
 
 // ── switching ───────────────────────────────────────────────────────
 
-test('tapping a tab shows it: the one data-tab switch, the buttons\' aria-selected, a saved choice', () => {
+test('the tab bar is a nav of plain buttons, not half of the ARIA tab pattern', () => {
+  const html = readFixture('../index.html');
+  const bar = html.slice(html.indexOf('<nav id="tabbar"'), html.indexOf('</nav>', html.indexOf('<nav id="tabbar"')));
+  assert.notOk(/role="tab(list)?"|aria-selected/.test(bar), 'role=tab with no roving tabindex or arrow keys is a promise the bar does not keep');
+  assert.equal((bar.match(/aria-current="page"/g) || []).length, 1, 'exactly one starts as the current page');
+  assert.equal((bar.match(/<button/g) || []).length, 4);
+});
+
+test('tapping a tab shows it: the one data-tab switch, the buttons\' aria-current, a saved choice', () => {
   reset();
   assert.equal(appAttrs.get('data-tab'), 'now');
   tabClicks.games();
   assert.equal(activeTab(), 'games');
   assert.equal(appAttrs.get('data-tab'), 'games');
-  assert.deepEqual(tabBtns.map((b) => b.getAttribute('aria-selected')), ['false', 'true', 'false', 'false']);
+  assert.deepEqual(tabBtns.map((b) => b.getAttribute('aria-current')), [null, 'page', null, null], 'the tab bar is navigation: the current one says so, the others say nothing');
   assert.equal(state.ui.tab, 'games');
   assert.ok(JSON.parse(localStorage.getItem(STORAGE_KEY)).ui.tab === 'games', 'device-local, saved with the rest of ui');
   assert.notOk(showTab('bogus'), 'an unknown tab is refused');
@@ -394,6 +403,37 @@ test('a reload restores the tab within ten minutes and opens on Now after that',
   assert.equal(activeTab(), 'now', 'eleven minutes away: Now');
   boot(60 * 1000, 'bogus');
   assert.equal(activeTab(), 'now', 'a corrupt tab reads as Now');
+});
+
+test('the update reload keeps the history entry: no second Now under Games, Back still leaves the app', async () => {
+  reset();
+  showTab('games');
+  assert.ok(shellOpenTarget('game:' + gid()));
+  const before = keys();
+  const len = history.entries.length;
+  const realReplaceState = history.replaceState;
+  let urlSeen = null;
+  history.replaceState = (st, t, url) => { urlSeen = url; realReplaceState(st, t); };
+  const realLoc = globalThis.location;
+  const hadURL = 'URL' in globalThis; // the stub context carries none; doReload builds its address with one
+  if (!hadURL) globalThis.URL = nodeRequire('url').URL;
+  let went = null;
+  let reloaded = 0;
+  // doReload used location.replace(), which drops history.state: a clean reload
+  // keeps the entry and asks the browser to reload it.
+  globalThis.location = { href: 'http://localhost/index.html', replace: (u) => { went = u; }, reload: () => { reloaded += 1; } };
+  try { doReload(); } finally { globalThis.location = realLoc; history.replaceState = realReplaceState; if (!hadURL) delete globalThis.URL; }
+  assert.equal(went, null, 'not location.replace: that would null the entry\'s state');
+  assert.equal(reloaded, 1);
+  assert.ok(/[?&]r=\d+/.test(urlSeen || ''), 'the throwaway ?r= still busts the cache: ' + urlSeen);
+  assert.deepEqual(keys(), before, 'the stack is exactly as it was');
+  assert.equal(history.entries.length, len);
+  // The next document boots over that entry: the shell adopts it and files nothing.
+  shell.cur = null; shell.root = null; shell.sheets.length = 0; shell.q.length = 0; shell.busy = false;
+  shellBoot();
+  renderAll();
+  assert.deepEqual(keys(), before, 'boot plans nothing against a stack it recognises');
+  assert.equal(history.entries.length, len);
 });
 
 test('a game left open yesterday (or one the week no longer has) does not greet anyone on boot', () => {

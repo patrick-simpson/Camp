@@ -919,8 +919,9 @@ function renderChatBadges() {
     const b = document.querySelector(`.chat-tab-badge[data-ch="${c.id}"]`);
     if (b) {
       const n = unreadCount(c.id);
-      b.hidden = n === 0;
-      b.textContent = n > 99 ? '99+' : String(n);
+      // Written only on a change: this runs on every renderAll.
+      setHiddenIfChanged(b, n === 0);
+      setTextIfChanged(b, n > 99 ? '99+' : String(n));
     }
   });
 }

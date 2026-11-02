@@ -908,7 +908,9 @@ test('the Calm row never moves under a thumb, and needs no Jelly to work', () =>
   // the longest verdicts are the ones that have to fit the reservation: two lines in More's
   // 358px panel (about 44 characters a line at 14px); a 360px phone is the narrowest we draw
   const longest = Math.max(...[['off', true, 'os'], ['auto', true, 'battery-saver'], ['auto', true, 'battery-low'], ['auto', false, null], ['auto', true, null], ['on', true, 'switch-on'], ['off', false, 'switch-off']].map((a) => calmReasonLine(...a).length));
-  assert.ok(longest <= 190, 'no verdict is absurdly long: ' + longest + ' chars');
+  // Measured in Chromium at 360px: 70 characters is two lines (the OS verdict, the longest);
+  // the old 88-character one wrapped to three and moved everything below it by 19px.
+  assert.ok(longest <= 76, 'no verdict outgrows the two reserved lines: ' + longest + ' chars');
   // the segmented controls are plain radio buttons (More): the chosen value is aria-checked,
   // which styles.css paints, so there is no module-failed fallback to keep in step
   assert.ok(/\.seg-btn:is\(\[aria-checked="true"\]/.test(CSS), 'the chosen one is painted from its ARIA state');

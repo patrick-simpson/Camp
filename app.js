@@ -1169,7 +1169,7 @@ function renderNoticeBoard() {
   const el = document.getElementById('notice-board');
   if (!el) return;
   const html = noticeCardHtml(false);
-  el.hidden = !html;
+  setHiddenIfChanged(el, !html);
   // Runs on every renderAll and the 30 s tick; an unconditional rewrite
   // dropped whatever text a counselor had selected in the card. It holds
   // plain nodes only (no listeners, no jelly parts), so skipping is safe.
@@ -5107,7 +5107,7 @@ async function bisectRefusedBatch(job) {
     }
   }
   pruneQuarantineAndRepaint();
-  if (parked) showToast('⚠️ A change couldn’t be saved. Retry or Discard it from the red bar at the top of the page.');
+  if (parked) showToast('⚠️ A change couldn’t be saved. Retry or Discard it from the red bar at the top of the screen.');
   scheduleQuarantineAutoRetry();
 }
 
@@ -5270,7 +5270,7 @@ function onSyncStatusClick(e) {
 }
 
 function wireSyncStatus() {
-  ['sync-status', 'sync-status-footer', 'sync-alert'].forEach((id) => {
+  ['sync-status', 'sync-status-footer', 'sync-alert', 'tk-sync-alert'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('click', onSyncStatusClick);
   });
@@ -5365,8 +5365,11 @@ let sdkLoadFailed = false;
 // device (pushState) — and independent of the connection line below: an editor
 // who is offline AND holds a refused score is told both.
 function updateSyncAlert() {
-  const el = document.getElementById('sync-alert');
-  if (!el) return;
+  // Two copies of the one bar: the header's, and the game takeover's own strip (the
+  // takeover covers the header and makes #app inert, so the header's bar can't be
+  // tapped while a director is scoring, which is when a refused score needs it).
+  const els = ['sync-alert', 'tk-sync-alert'].map((id) => document.getElementById(id)).filter(Boolean);
+  if (!els.length) return;
   // A director's SECOND tab is view-only (tabWriter): the same strip says so and
   // offers the switch. canEdit() is false there, so nothing is ever parked and the
   // two messages can never want the strip at once.
@@ -5377,11 +5380,24 @@ function updateSyncAlert() {
   // news rather than an error, so it borrows the calm "tab" look.
   const stranded = !viewOnlyTab && !parked && strandedCount() > 0;
   const show = viewOnlyTab || parked || stranded;
-  // Written only when it changes: a rebuilt button loses a finger mid-tap.
-  if (show) setHtmlIfChanged(el, viewOnlyTab ? tabBarHtml() : parked ? quarantineBarHtml() : strandedBarHtml());
-  el.classList.toggle('sync-alert-tab', viewOnlyTab || stranded);
-  el.hidden = !show;
+  const html = show ? (viewOnlyTab ? tabBarHtml() : parked ? quarantineBarHtml() : strandedBarHtml()) : '';
+  els.forEach((el) => {
+    // Written only when it changes: a rebuilt button loses a finger mid-tap.
+    if (show) setHtmlIfChanged(el, html);
+    el.classList.toggle('sync-alert-tab', viewOnlyTab || stranded);
+    setHiddenIfChanged(el, !show);
+  });
+  paintTakeoverStatus();
   document.body.classList.toggle('has-sync-alert', show); // styles.css reserves its height above the first card
+}
+
+// The takeover's status row is there only while its bar or its pill is.
+function paintTakeoverStatus() {
+  const box = document.getElementById('takeover-game-status');
+  if (!box) return;
+  const a = document.getElementById('tk-sync-alert');
+  const p = document.getElementById('tk-pill');
+  setHiddenIfChanged(box, !((a && !a.hidden) || (p && !p.hidden)));
 }
 
 function updateSyncIndicator() {
@@ -6872,7 +6888,7 @@ function renderStandings() {
     // pulse baseline, no point-history baseline carried across the role flip.
     setHtmlIfChanged(tbody, '');
     const hint = document.getElementById('catchup-hint');
-    if (hint) { hint.hidden = true; setHtmlIfChanged(hint, ''); }
+    if (hint) { setHiddenIfChanged(hint, true); setHtmlIfChanged(hint, ''); }
     lastPointsByTeam = null;
     clPrevSnap = null;
     remoteJustApplied = false;
@@ -6951,10 +6967,10 @@ function renderStandings() {
 function renderCatchupHint(ranked, counts) {
   const el = document.getElementById('catchup-hint');
   if (!el) return;
-  if (!pointsReadAllowed('renderCatchupHint')) { el.hidden = true; setHtmlIfChanged(el, ''); return; }
+  if (!pointsReadAllowed('renderCatchupHint')) { setHiddenIfChanged(el, true); setHtmlIfChanged(el, ''); return; }
   const leader = ranked[0];
   if (!leader || ranked.length < 2 || counts[leader.id].points <= 0) {
-    el.hidden = true;
+    setHiddenIfChanged(el, true);
     setHtmlIfChanged(el, '');
     return;
   }
@@ -6975,7 +6991,7 @@ function renderCatchupHint(ranked, counts) {
     const golds = Math.ceil(gap / (MEDAL_POINTS.gold * (doubled ? 2 : 1)));
     setHtmlIfChanged(el, `🥇 ${pair} needs ${golds}${doubled ? ' double-points' : ''} gold${golds === 1 ? '' : 's'} (${gap} pt${gap === 1 ? '' : 's'}) to catch ${leaderBit}.`);
   }
-  el.hidden = false;
+  setHiddenIfChanged(el, false);
 }
 
 // ── Change history (append-only log at a SEPARATE Firebase path) ──────────────
@@ -7135,18 +7151,18 @@ function recordPointHistory(counts, isRemote) {
 function renderFollowCard() {
   const card = document.getElementById('follow-team-card');
   if (!card) return;
-  if (state.followTeam === undefined) { card.hidden = true; return; }
+  if (state.followTeam === undefined) { setHiddenIfChanged(card, true); return; }
   if (state.followTeam === null) {
-    card.className = 'follow-team-card';
+    setClassNameIfChanged(card, 'follow-team-card');
     card.style.removeProperty('--team-accent');
-    card.hidden = false;
+    setHiddenIfChanged(card, false);
     if (!setHtmlIfChanged(card, `<p class="muted follow-neutral-line">🏳️ Not following a team — <button id="pick-team-link" class="link-btn">pick one</button></p>`)) return;
     const link = document.getElementById('pick-team-link');
     if (link) link.addEventListener('click', openTeamPicker);
     return;
   }
   const team = state.teams.find((t) => t.id === state.followTeam);
-  if (!team) { card.hidden = true; return; }
+  if (!team) { setHiddenIfChanged(card, true); return; }
   const next = findNextMatchupFor(team.id);
   const nextLine = next
     ? `<p class="follow-next-line">⏭️ Up next: vs ${teamEmoji(next.opponentId)} ${esc(teamName(next.opponentId))} in ${esc(next.game.name)}</p>`
@@ -7182,10 +7198,10 @@ function renderFollowCard() {
   </div>`;
   }
   const accent = teamAccent(team.id);
-  card.className = 'follow-team-card' + (shield ? ' has-shield' : '');
+  setClassNameIfChanged(card, 'follow-team-card' + (shield ? ' has-shield' : ''));
   if (accent) card.style.setProperty('--team-accent', accent);
   else card.style.removeProperty('--team-accent');
-  card.hidden = false;
+  setHiddenIfChanged(card, false);
   // Skipping an unchanged rebuild matters most here: the shield is a lazy,
   // async-decoded image, and a fresh <img> can paint blank for a frame — the
   // crest blinked every time anyone saved a score. When the card DOES change
@@ -7223,8 +7239,8 @@ function renderMyElectives() {
   const card = document.getElementById('my-electives-card');
   if (!card) return;
   const rows = myElectivesToday();
-  if (!rows) { card.hidden = true; setHtmlIfChanged(card, ''); return; }
-  card.hidden = false;
+  if (!rows) { setHiddenIfChanged(card, true); setHtmlIfChanged(card, ''); return; }
+  setHiddenIfChanged(card, false);
   // Same rule as the other home panels: this runs on every renderAll and the
   // 30 s tick, so identical markup must not be rewritten (it drops a text
   // selection and repaints the card for nothing).
@@ -8348,8 +8364,8 @@ function renderLiveHome() {
   const wrap = document.getElementById('live-home');
   if (!wrap) return;
   let games = liveHomeGames();
-  if (!games.length) { wrap.hidden = true; setLiveHtmlIfChanged(wrap, '', []); return; }
-  wrap.hidden = false;
+  if (!games.length) { setHiddenIfChanged(wrap, true); setLiveHtmlIfChanged(wrap, '', []); return; }
+  setHiddenIfChanged(wrap, false);
 
   let boardHTML = '';
   const bg = homeBoardGame();
@@ -10267,7 +10283,7 @@ function setTheme(choice) {
 // in synced state: a phone's battery is its own business). This is only the
 // row: the three-part control, and one line saying what is happening RIGHT NOW.
 function calmReasonLine(pref, calm, reason) {
-  if (reason === 'os') return "Your phone asks for less motion, so Camp stays calm. Change it in your phone's Settings.";
+  if (reason === 'os') return "Your phone asks for less motion. Change it in your phone's Settings."; // two lines at 360px: the note reserves two
   if (reason === 'switch-on') return 'Calm all the time, as you chose.';
   if (reason === 'battery-saver') return 'Calm right now: your phone is saving battery.';
   if (reason === 'battery-low') return 'Calm right now: your battery is low.';
@@ -10433,8 +10449,8 @@ function renderWhatsNew() {
   const wrap = document.getElementById('whats-new');
   if (!wrap) return;
   const active = activeChanges();
-  if (!active.length) { wrap.hidden = true; wrap.innerHTML = ''; return; }
-  wrap.hidden = false;
+  if (!active.length) { setHiddenIfChanged(wrap, true); if (wrap.innerHTML) wrap.innerHTML = ''; return; }
+  setHiddenIfChanged(wrap, false);
   wrap.innerHTML = active.map((c) => `
     <div class="whats-new-banner" role="status">
       <button class="whats-new-dismiss" data-change-id="${esc(c.id)}" aria-label="Dismiss this update">✕</button>
@@ -10528,7 +10544,7 @@ function renderAnnouncements() {
   const active = activeAnnouncements().concat(fromChat)
     .sort((a, b) => String(b.at).localeCompare(String(a.at)));
   const editor = canEdit();
-  if (!active.length && !editor) { wrap.hidden = true; wrap.innerHTML = ''; wrap.__lastHtml = ''; wrap.__lastComposerKey = ''; return; }
+  if (!active.length && !editor) { setHiddenIfChanged(wrap, true); if (wrap.innerHTML) wrap.innerHTML = ''; wrap.__lastHtml = ''; wrap.__lastComposerKey = ''; return; }
 
   const banners = active.map((a) => `
     <div class="announce-banner" role="status">
@@ -10780,7 +10796,18 @@ function doReload() {
   try {
     const u = new URL(location.href);
     u.searchParams.set('r', String(Date.now()));
-    location.replace(u.toString());
+    // location.replace() would start a new document whose history.state is null,
+    // so shellBoot read "not ours" and the next reconcile filed a second Now and
+    // tab ABOVE the old ones: Back from Games then took two presses and Back on Now
+    // stopped leaving the app. Rewriting the URL in place keeps the entry (and the
+    // shell's state in it); the unseen ?r= still makes the reload fetch a fresh
+    // index.html, and it still can't loop.
+    if (typeof history !== 'undefined' && history.replaceState) {
+      history.replaceState(history.state, '', u.toString());
+      location.reload();
+    } else {
+      location.replace(u.toString());
+    }
   } catch (e) {
     location.reload();
   }
@@ -11128,7 +11155,8 @@ function shellPaint() {
   if (app && app.getAttribute('data-tab') !== attr) app.setAttribute('data-tab', attr);
   document.querySelectorAll('#tabbar .tab').forEach((btn) => {
     const on = btn.dataset.tab === tab;
-    if (btn.getAttribute('aria-selected') !== String(on)) btn.setAttribute('aria-selected', String(on));
+    if (on) { if (btn.getAttribute('aria-current') !== 'page') btn.setAttribute('aria-current', 'page'); }
+    else if (btn.getAttribute('aria-current') !== null) btn.removeAttribute('aria-current');
   });
   const takeover = shellTakeoverOpen();
   document.body.classList.toggle('takeover-open', takeover);
@@ -11531,6 +11559,9 @@ function setTextIfChanged(el, text) {
 function setHiddenIfChanged(el, hidden) {
   if (el && el.hidden !== hidden) el.hidden = hidden;
 }
+function setClassNameIfChanged(el, name) {
+  if (el && el.className !== name) el.className = name;
+}
 
 // ── the header (§2.2) ──────────────────────────────────────────────
 function frameRoleWord() { return memberRole === 'editor' ? 'Director' : 'Counselor'; }
@@ -11608,16 +11639,23 @@ function syncPillModel() {
   return null;
 }
 
+// The pill is drawn twice: in the header, and in the game takeover's status strip
+// (the takeover covers the header; see index.html #takeover-game-status).
+const SYNC_PILLS = [['hdr-pill', 'hdr-pill-text'], ['tk-pill', 'tk-pill-text']];
+
 function renderSyncPill() {
-  const pill = document.getElementById('hdr-pill');
-  if (!pill) return;
   const m = syncPillModel();
-  if (!m) { setHiddenIfChanged(pill, true); return; }
-  if (pill.__tone !== m.tone) { pill.__tone = m.tone; pill.setAttribute('data-tone', m.tone); }
-  pill.__go = m.act;
-  pill.__say = m.say || '';
-  setTextIfChanged(document.getElementById('hdr-pill-text'), m.text);
-  setHiddenIfChanged(pill, false);
+  SYNC_PILLS.forEach(([pid, tid]) => {
+    const pill = document.getElementById(pid);
+    if (!pill) return;
+    if (!m) { setHiddenIfChanged(pill, true); return; }
+    if (pill.__tone !== m.tone) { pill.__tone = m.tone; pill.setAttribute('data-tone', m.tone); }
+    pill.__go = m.act;
+    pill.__say = m.say || '';
+    setTextIfChanged(document.getElementById(tid), m.text);
+    setHiddenIfChanged(pill, false);
+  });
+  paintTakeoverStatus();
 }
 
 // The connection just dropped or came back: the Reconnecting → Offline step is a
@@ -11821,6 +11859,7 @@ function wireMore() {
   });
   wireSegs();
   wirePill();
+  wirePill(document.getElementById('tk-pill')); // the game takeover's copy (the header is under it)
 }
 
 // What fills a sheet when it opens, and on every pass while it stays open.
@@ -12052,11 +12091,11 @@ function renderAll() {
   const inBuilder = builderOpen();
   document.body.classList.toggle('builder-open', inBuilder);
   const builderView = document.getElementById('settings-view');
-  if (builderView) builderView.hidden = !inBuilder;
+  setHiddenIfChanged(builderView, !inBuilder); // renderAll runs on every snapshot: write only a change
   applyCardVisibility(); // before the shell derives what is open — it may close a hidden card's game
   if (!canEdit()) closeHistoryForViewer(); // a demoted editor's open change history
   const historyRow = document.getElementById('history-row');
-  if (historyRow) historyRow.hidden = !canEdit(); // editors' only in code too, not just in CSS (html.view-only)
+  setHiddenIfChanged(historyRow, !canEdit()); // editors' only in code too, not just in CSS (html.view-only)
   // The shell (§13.2): paint the visible root, reconcile the history stack,
   // then render the visible tab (the others are marked dirty and catch up when
   // shown) and the open takeover.

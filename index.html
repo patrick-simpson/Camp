@@ -173,7 +173,7 @@
 
   <!-- data-tab names the tab on screen (now | games | chat | more). It is the
        ONE switch the CSS reads: which panel shows, the header's form, where the
-       tab blob rests. The tab switcher sets it together with aria-selected on
+       tab blob rests. The tab switcher sets it together with aria-current="page" on
        the matching #tabbar button. -->
   <div id="app" data-tab="now">
 
@@ -488,7 +488,9 @@
     <p id="sync-status-footer" class="sync-status sync-status-footer" aria-live="polite"></p>
 
     <!-- ── TAB BAR (redesign §2.2) ─────────────────────────────────
-         Plain buttons, not jelly-tabs / jelly-segmented (their text-only
+         Plain buttons in a <nav> (the active one is aria-current="page"; it is
+         navigation, not the ARIA tab pattern, which would owe the bar a roving
+         tabindex and arrow keys), not jelly-tabs / jelly-segmented (their text-only
          labels and pre-upgrade snap). Fixed to the bottom above the home
          indicator; slides away under a takeover (body.takeover-open) and
          while typing (body.kb-open). The blob is ONE element: its resting
@@ -498,21 +500,21 @@
          (unread total), #tab-dot-now (red, a reveal is live and you are
          elsewhere), #tab-dot-more (gold, someone is asking to join). -->
     <nav id="tabbar" class="tabbar" aria-label="Camp sections">
-      <div class="tabbar-row" role="tablist">
+      <div class="tabbar-row">
         <i class="tab-blob" aria-hidden="true"></i>
-        <button type="button" class="tab" id="tab-btn-now" data-tab="now" role="tab" aria-selected="true" aria-controls="tab-now">
+        <button type="button" class="tab" id="tab-btn-now" data-tab="now" aria-current="page">
           <span class="tab-ico"><svg class="ico" aria-hidden="true"><use href="#i-clock"/></svg><i class="tab-dot tab-dot-live" id="tab-dot-now" hidden></i></span>
           <span class="tab-label">Now</span>
         </button>
-        <button type="button" class="tab" id="tab-btn-games" data-tab="games" role="tab" aria-selected="false" aria-controls="tab-games">
+        <button type="button" class="tab" id="tab-btn-games" data-tab="games">
           <span class="tab-ico"><svg class="ico" aria-hidden="true"><use href="#i-trophy"/></svg></span>
           <span class="tab-label">Games</span>
         </button>
-        <button type="button" class="tab" id="tab-btn-chat" data-tab="chat" role="tab" aria-selected="false" aria-controls="tab-chat">
+        <button type="button" class="tab" id="tab-btn-chat" data-tab="chat">
           <span class="tab-ico"><svg class="ico" aria-hidden="true"><use href="#i-bubble"/></svg><b class="tab-badge" id="tab-badge-chat" hidden></b></span>
           <span class="tab-label">Chat</span>
         </button>
-        <button type="button" class="tab" id="tab-btn-more" data-tab="more" role="tab" aria-selected="false" aria-controls="tab-more">
+        <button type="button" class="tab" id="tab-btn-more" data-tab="more">
           <span class="tab-ico"><svg class="ico" aria-hidden="true"><use href="#i-dots"/></svg><i class="tab-dot tab-dot-gold" id="tab-dot-more" hidden></i></span>
           <span class="tab-label">More</span>
         </button>
@@ -543,6 +545,17 @@
         <p class="tk-sub" id="takeover-game-sub"></p>
       </div>
     </header>
+    <!-- The takeover covers the header, and #app is inert under it, so the
+         header's Retry / Discard bar and status pill would be out of reach in the
+         one place scores are saved. This strip is their second home: app.js
+         (updateSyncAlert, renderSyncPill) writes the same bar and pill into it,
+         and it is hidden unless one of them shows. -->
+    <div class="tk-status" id="takeover-game-status" hidden>
+      <section id="tk-sync-alert" class="sync-alert" role="alert" hidden></section>
+      <button type="button" id="tk-pill" class="hdr-pill tk-pill" data-tone="offline" aria-live="polite" hidden>
+        <span class="hdr-pill-face"><i class="hdr-pill-dot" aria-hidden="true"></i><span id="tk-pill-text"></span></span>
+      </button>
+    </div>
     <div class="tk-body" id="takeover-game-body"></div>
     <div class="tk-dock" id="takeover-game-dock" data-kb-hide hidden></div>
   </section>

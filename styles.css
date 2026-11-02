@@ -938,13 +938,13 @@ html.calm-motion .tabbar {
   font: 700 0.78125rem/1.2 var(--font-ui);
   letter-spacing: 0;
 }
-.tab[aria-selected="true"] {
+.tab[aria-current="page"] {
   color: var(--ink);
 }
-.tab[aria-selected="true"] .tab-ico {
+.tab[aria-current="page"] .tab-ico {
   color: var(--blue);
 }
-.tab[aria-selected="true"] .tab-label {
+.tab[aria-current="page"] .tab-label {
   font-weight: 800;
 }
 /* Counts and dots sit on the icon's corner, ringed in the bar's own colour so
@@ -1102,6 +1102,30 @@ body.kb-open .takeover {
 }
 .tk-sub:empty {
   display: none;
+}
+/* The takeover's own home for the header's Retry / Discard bar and status pill
+   (the takeover covers the header and #app is inert under it). In flow between
+   the head and the body, so it never floats over a score field; gone unless a
+   bar or a pill is showing. The bar and pill keep their header look. */
+.tk-status {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--s-1);
+  padding: var(--s-2) 0 0;
+  border-bottom: 1px solid var(--line-2);
+  background: var(--paper);
+}
+.tk-status[hidden] {
+  display: none;
+}
+.tk-status .sync-alert {
+  margin-bottom: var(--s-2);
+}
+.tk-status .tk-pill {
+  align-self: flex-end;
+  margin: 0 var(--gutter) var(--s-1);
 }
 .tk-body {
   flex: 1 1 auto;
@@ -2289,6 +2313,9 @@ html.calm-motion .live-home-card { animation: none; }
 }
 .you-strip .notify-btn {
   width: 100%;
+  /* Jelly's "small" button is 42px tall; every tap target in the frame is 44. An
+     outer rule on the element beats the token the component sets on its own :host. */
+  --jelly-button-height: var(--target);
 }
 .you-strip:empty {
   display: none;
@@ -3290,6 +3317,12 @@ html.calm-motion #takeover-game .rules-details summary::after {
   font-weight: 700;
   padding: 0.4rem 0.35rem;
   margin-left: 0.25rem;
+}
+/* In the bar (the header's, and the game takeover's copy) these are the one way to
+   save or drop a refused score, so they are full 44px targets (the bar is 2.9rem). */
+.sync-alert .sync-quarantine-btn {
+  min-width: var(--target);
+  min-height: var(--target);
 }
 
 /* The same news as a bar under the header's identity row, for editors (app.js

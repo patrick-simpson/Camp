@@ -54,22 +54,56 @@ test('the header says who you are: the team and your name for a counselor, the c
   setMemberRole('viewer');
   memberName = 'Sam';
   state.followTeam = 't1';
+  const camp = String(CAMP.label).replace(/\bCamp\b/, 'camp'); // sentence case, as the frame writes it (§8.2)
   const m = headerModel();
   assert.equal(m.teamId, 't1');
   assert.equal(m.name, teamName('t1'));
   assert.ok(m.sub.startsWith('Sam'), m.sub);
-  assert.ok(m.sub.includes(CAMP.label), 'the camp is named: ' + m.sub);
-  assert.equal(m.who, 'Sam · Counselor');
+  assert.ok(m.sub.includes(camp), 'the camp is named, in sentence case: ' + m.sub);
+  assert.equal(m.who, 'Sam · ' + teamShort('t1'), 'the right-hand line is you and your team');
   setMemberRole('editor');
   state.followTeam = null;
   memberName = 'Jenn';
   const d = headerModel();
   assert.equal(d.teamId, null, 'a director with no team gets the camp mark');
-  assert.equal(d.name, 'Jenn');
-  assert.ok(d.sub.startsWith('Director'), d.sub);
+  assert.equal(d.name, camp, 'with no team the headline is the camp, so a director on both camps never loses which one this is');
+  assert.equal(d.sub, 'Jenn · Director · ' + dayLabel(campNow().dow));
   memberName = null;
-  assert.equal(headerModel().name, 'Director', 'with no name on file the role is the name: never a guess from the email');
+  assert.equal(headerModel().sub.startsWith('Director'), true, 'with no name on file the role stands alone: never a guess from the email');
+  assert.equal(headerModel().name, camp);
   memberName = null;
+});
+
+test('the game takeover has its own status strip: the header covers it and #app is inert under it, so Retry / Discard and the pill are mirrored in', () => {
+  freshState();
+  setMemberRole('editor');
+  const el = (id) => document.getElementById(id);
+  const saveQ = stateQuarantine; const saveNv = newVersionSeen;
+  try {
+    stateQuarantine = { 'results/gX': { at: 1 } };
+    newVersionSeen = true;
+    updateSyncAlert();
+    renderSyncPill();
+    assert.equal(el('sync-alert').hidden, false);
+    assert.equal(el('tk-sync-alert').hidden, false, 'a refused score is told in the takeover too');
+    assert.equal(el('tk-sync-alert').innerHTML, el('sync-alert').innerHTML, 'the same bar, same buttons');
+    assert.ok(/data-sync-quarantine="retry"/.test(el('tk-sync-alert').innerHTML) && /data-sync-quarantine="discard"/.test(el('tk-sync-alert').innerHTML));
+    assert.equal(el('tk-pill').hidden, false);
+    assert.equal(el('tk-pill-text').textContent, el('hdr-pill-text').textContent, 'the pill says the same thing');
+    assert.equal(el('takeover-game-status').hidden, false, 'the strip shows while either is up');
+    stateQuarantine = {};
+    newVersionSeen = false;
+    updateSyncAlert();
+    renderSyncPill();
+    assert.equal(el('tk-sync-alert').hidden, true);
+    assert.equal(el('takeover-game-status').hidden, !(el('tk-pill') && !el('tk-pill').hidden), 'and goes away with them');
+  } finally { stateQuarantine = saveQ; newVersionSeen = saveNv; updateSyncAlert(); renderSyncPill(); }
+  // The markup: inside the takeover (not #app, which is inert under it), ahead of its body, and wired.
+  const tk = INDEX.slice(INDEX.indexOf('<section id="takeover-game"'), INDEX.indexOf('id="takeover-game-dock"'));
+  assert.ok(tk.indexOf('id="takeover-game-status"') > tk.indexOf('class="tk-head"') && tk.indexOf('id="takeover-game-status"') < tk.indexOf('id="takeover-game-body"'), 'between the head and the body, in flow');
+  assert.ok(/id="tk-sync-alert"/.test(tk) && /id="tk-pill"/.test(tk));
+  assert.ok(/\['sync-status', 'sync-status-footer', 'sync-alert', 'tk-sync-alert'\]/.test(APP), 'its Retry / Discard clicks reach onSyncStatusClick');
+  assert.ok(/wirePill\(document\.getElementById\('tk-pill'\)\)/.test(APP), 'its pill asks before a reload, like the header one');
 });
 
 test('the header never carries a number: no points, no place, whoever you are', () => {
