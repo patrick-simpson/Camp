@@ -42,8 +42,11 @@ const HUB_OPTIONAL = ['campers', 'meals', 'verses', 'cleanup', 'electives'];
 const HUB_PENDING_NAG_MS = 7 * 24 * 3600 * 1000; // a person with no sign-in is a warning for a week, then just a note
 const HUB_SOON_WORD = 'Editing comes next';
 // Which rows open something today. A row whose screen comes later is a plain <div> in the markup and
-// is not listed: the step that builds its screen turns the div into a button and adds its line here.
+// is not listed: the step that builds its screen turns the div into a button and adds its line here
+// (Step 15: Camp week and Schedule).
 const HUB_OPENS = {
+  week: { screen: 'week' },
+  schedule: { screen: 'schedule' },
   games: { screen: 'classic', tab: 'games' },
   teams: { screen: 'classic', tab: 'teams' },
   notice: { screen: 'classic', tab: 'notice' },
@@ -109,11 +112,23 @@ function hubStatus(section, view) {
   const owner = v.ownerName || 'the owner';
   switch (section) {
     case 'week': {
+      // Dates are the camp week's own setting and always editable; a camp that never set them is not "not ready"
+      // (the 2026 week has none), so no dates is a plain line, never a warning.
       const range = hubWeekRange(v.weekStart);
-      return hubMark('soon', range || 'No dates set yet', []);
+      return range ? hubMark('ok', range, []) : hubMark('info', 'No dates set yet', [], '');
     }
-    case 'schedule':
-      return hubMark('soon', v.setupTooNew ? 'Made with a newer version — reload to see it' : (v.on && v.on.schedule ? 'Edited here' : HUB_ORIGINAL.schedule), []);
+    case 'schedule': {
+      if (v.setupTooNew) return hubMark('warn', 'Made with a newer version', ['Reload to see the schedule that was made with a newer version']);
+      if (!(v.on && v.on.schedule)) return hubMark('info', HUB_ORIGINAL.schedule, [], '');
+      const sc = v.schedule || {};
+      const problems = [];
+      if (sc.typicalEmpty) problems.push('The typical day is empty');
+      (sc.empty || []).forEach((d) => problems.push(d + ' is empty'));
+      (sc.broken || []).forEach((b) => problems.push(hubPlural(b.n, 'broken item', 'broken items') + ' on ' + b.day));
+      (sc.overlaps || []).forEach((o) => problems.push(hubPlural(o.n, 'item overlaps', 'items overlap') + ' on ' + o.day + ' at ' + o.at));
+      const shape = sc.follow ? 'Typical day · ' + sc.follow + (sc.oneOffs ? ' · ' + hubPlural(sc.oneOffs, 'one-off', 'one-offs') : '') : 'Edited here';
+      return hubMark(problems.length ? 'warn' : 'ok', shape, problems);
+    }
     case 'campers':
       return hubMark('soon', 'Camper lists come later', []);
     case 'meals': case 'verses': case 'cleanup': case 'electives':
@@ -304,14 +319,40 @@ function hubView() {
     notice: { status: notice && notice.status, has: !!(notice && (notice.title || notice.sub || (notice.zones && notice.zones.length) || (notice.steps && notice.steps.length))) },
     restore: { status: rest.status, newestAt: rest.rows.length ? rest.rows[0].at : 0, count: rest.rows.length },
     doorActions,
+    schedule: hubScheduleView(),
   };
+}
+
+// What the Schedule row needs to judge the edited week (null while the schedule is the built-in copy): the days that
+// follow the typical day, one-offs, empty days, broken items and unmarked overlaps, each as the sentence's parts.
+function hubScheduleView() {
+  if (typeof scheduleIsShared !== 'function' || !scheduleIsShared() || typeof planForDow !== 'function') return null;
+  const tree = setupTree;
+  const out = { typicalEmpty: false, follow: '', oneOffs: 0, empty: [], broken: [], overlaps: [] };
+  const followDks = SETUP_DK.filter((dk) => setupMapOf(setupMapOf(tree.days)[dk]).typical === true);
+  out.typicalEmpty = followDks.length > 0 && !Object.keys(setupMapOf(tree.typical)).length;
+  out.follow = followDks.length ? schedDaysWords(followDks) : '';
+  for (let dow = 0; dow < 7; dow++) {
+    const dk = SETUP_DK[dow];
+    const day = setupMapOf(setupMapOf(tree.days)[dk]);
+    const plan = planForDow(dow);
+    out.oneOffs += plan.filter((b) => b.origin === 'oneoff').length;
+    if (!plan.length && !(day.typical === true && out.typicalEmpty) && day.placeholder !== true) out.empty.push(SETUP_DAY_WORDS[dk]);
+    if (plan.broken && plan.broken.length) out.broken.push({ day: SETUP_DAY_WORDS[dk], n: plan.broken.length });
+    const timed = plan.filter((b) => !b.noTime && !b.overlapOk);
+    let n = 0;
+    let first = 0;
+    timed.forEach((a, i) => timed.slice(i + 1).forEach((b) => { if (b.start < a.end && a.start < b.end) { if (!n) first = Math.max(a.start, b.start); n++; } }));
+    if (n) out.overlaps.push({ day: SETUP_DAY_WORDS[dk], n, at: setupClock(first) });
+  }
+  return out;
 }
 
 // ── 2. The frame: screens, navigation, the head ──────────────────────
 
 // #setup[data-screen] is the ONE switch the CSS reads (styles.css "SET UP THE WEEK"): hub | backups |
-// classic. A step that adds a screen adds its name here and its pair of lines in the CSS.
-const SETUP_SCREENS = ['hub', 'backups', 'classic'];
+// classic | week | schedule | rain. A step that adds a screen adds its name here and its pair of lines in the CSS.
+const SETUP_SCREENS = ['hub', 'backups', 'classic', 'week', 'schedule', 'rain'];
 // Shell sheets this layer owns (shellSheetOpen ids; the elements are #sheet-<id>), one at a time.
 const SETUP_SHEETS = ['setup-menu', 'setup-changes', 'setup-devices', 'restore'];
 // The classic builder's tabs, in editorsHere's short vocabulary (setup-sync.js editorsHereWhereWords).
@@ -353,6 +394,9 @@ function setupWhereNow() {
   const s = setupScreen();
   if (s === 'hub') return 'hub';
   if (s === 'backups') return 'restore';
+  if (s === 'week') return 'week';
+  if (s === 'schedule') return 'schedule:' + (state.ui.setupDay || 'typical');
+  if (s === 'rain') return 'rain:' + ((state.ui.rainDay && SETUP_DK.indexOf(state.ui.rainDay) !== -1) ? state.ui.rainDay : 'wed');
   return SETUP_CLASSIC_WHERE[state.ui.settingsTab] || 'games';
 }
 
@@ -608,13 +652,14 @@ function renderSetupUi(open) {
   // Back from the hub returns to the tab the builder was opened FROM (More, or Games from an empty day's
   // "Add games"): the shell keeps state.ui.tab untouched while the builder is up.
   const cameFrom = { now: 'Now', games: 'Games', chat: 'Chat', more: 'More' }[state.ui.tab] || 'More';
-  setTextIfChanged(setupEl('setup-back-label'), screen === 'hub' ? cameFrom : 'Set up the week');
+  setTextIfChanged(setupEl('setup-back-label'), screen === 'hub' ? cameFrom : screen === 'rain' ? 'Schedule' : 'Set up the week');
   paintSetupSync();
   paintSetupHere();
   paintSetupDock();
   setupMoveHere();
   if (screen === 'hub') paintHub();
   else if (screen === 'backups') renderBackups();
+  else if (screen === 'week') renderWeekScreen();
   else if (typeof renderSettings === 'function') renderSettings();
   renderSetupMenuRows();
   paintSetupFit();
@@ -1421,6 +1466,373 @@ function rpDownloadBackup() {
 
 // ── 8. Wiring (app.js init calls wireSetupUi once; the markup is static, so one pass is enough) ──
 
+// ── 8. Owner doors and the Camp week screen (§10.1, §11.4) ───────────
+
+// The sentence for each reason setupTurnOn can refuse with, said BEFORE anything is written.
+const TURNON_WHY = {
+  loading: 'Still loading the week setup — try again in a moment.',
+  denied: 'Editing here isn’t available yet — the database rules need updating first.',
+  schema: 'This camp’s setup was made by a newer version. Reload the page first.',
+  tab: 'This tab is view-only. Use the tab that is open for editing.',
+  offline: 'Turning on editing needs a connection. Try again when you’re online.',
+  already: 'Editing is already on.',
+  'restore-point': 'The restore point couldn’t be saved first, so nothing was changed.',
+  refused: 'The database refused it, so nothing was changed.',
+  failed: 'That didn’t go through, so nothing was changed.',
+  none: 'Nothing to turn on.',
+};
+
+function setupSay(text) {
+  if (typeof showToast === 'function') showToast(text);
+}
+
+// Edit the week here (A1): the owner's front-door button. A plain question first (it changes nothing anyone sees), the
+// camp-week freeze as a question in words, then the transaction. Every refusal is said in a sentence; the owner can
+// override the freeze only by saying so.
+async function setupEditTheWeek() {
+  if (!requireOwner('turn on editing')) return { ok: false, reason: 'owner' };
+  const camp = CAMP.label;
+  const go = await askDialog({
+    title: 'Edit the ' + camp + ' week here?',
+    body: ['Turning this on changes nothing anyone can see until someone edits something.', 'A restore point is saved first, and “Use the original week again” in the ⋯ menu puts it all back.'],
+    actions: [{ label: 'Not yet', value: 'no', cancel: true }, { label: 'Turn on editing', value: 'go', kind: 'gold' }],
+  });
+  if (go !== 'go') return { ok: false, reason: 'cancelled' };
+  const opts = {};
+  for (let guard = 0; guard < 4; guard++) {
+    const r = await setupTurnOn(['schedule'], opts);
+    if (r.ok) {
+      const n = r.attach ? r.attach.attached : 0;
+      setupSay('Editing is on for ' + camp + '.' + (n ? ' ' + hubPlural(n, 'game', 'games') + ' put on the schedule.' : ''));
+      return r;
+    }
+    if (r.reason === 'ask-camp-week') {
+      const running = await askDialog({
+        title: 'Is a camp week running right now?',
+        body: 'No dates are set, so the app can’t tell. Turning on editing mid-week changes what the schedule is made from while counselors are relying on it.',
+        actions: [{ label: 'Not yet', value: 'no', kind: 'gold' }, { label: 'Yes, it’s running', value: 'yes' }, { label: 'Cancel', value: 'cancel', cancel: true }],
+      });
+      if (running === 'cancel' || running === null) return { ok: false, reason: 'cancelled' };
+      opts.campRunning = running === 'yes';
+      continue;
+    }
+    if (r.reason === 'camp-week') {
+      const again = await askDialog({
+        title: 'A camp week is running',
+        body: ['Turning on editing now is meant for before or after camp. Rain plans and small edits are fine once it’s on.', 'Turn it on anyway?'],
+        actions: [{ label: 'Wait for later', value: 'wait', cancel: true }, { label: 'I know — turn it on', value: 'go', kind: 'danger' }],
+      });
+      if (again !== 'go') return { ok: false, reason: 'cancelled' };
+      opts.overrideCampWeek = true;
+      continue;
+    }
+    setupSay(r.reason === 'owner' ? r.message : (TURNON_WHY[r.reason] || TURNON_WHY.failed));
+    return r;
+  }
+  return { ok: false, reason: 'failed' };
+}
+
+// Use the original week again: the switch goes false on every device at once; every edit is kept.
+async function setupUseOriginalFlow() {
+  if (!requireOwner('switch back to the original week')) return { ok: false, reason: 'owner' };
+  const go = await askDialog({
+    title: 'Use the original week again?',
+    body: ['Everyone sees the schedule that came with the app. Your changes are kept, and Edit the week here brings them back.'],
+    actions: [{ label: 'Keep editing here', value: 'no', cancel: true }, { label: 'Use the original week', value: 'go', kind: 'gold' }],
+  });
+  if (go !== 'go') return { ok: false, reason: 'cancelled' };
+  const r = setupUseOriginal(['schedule']);
+  if (r.ok) setupSay('Back to the original week. Your edits are kept.');
+  else setupSay(r.reason === 'owner' ? r.message : r.reason === 'already' ? 'Already using the original week.' : 'That didn’t go through, so nothing was changed.');
+  return r;
+}
+
+HUB_DOOR_ACTIONS.original = setupEditTheWeek;
+SETUP_OWNER_ACTIONS.original = { run: setupUseOriginalFlow, why: () => (scheduleIsShared() ? '' : 'Already using the original week.') };
+
+// The read-only door a screen shows while the schedule is still the copy that came with the app: the same words as the
+// hub's, the owner's gold button, everyone else's sentence with the owner's name (§11.1, ux-R18). `prefix`: week | sched.
+function paintPreviewDoor(prefix, preview) {
+  const el = setupEl(prefix + '-door');
+  if (!el) return;
+  setHiddenIfChanged(el, !preview);
+  if (!preview) return;
+  const owner = typeof isOwner === 'function' && isOwner();
+  const name = hubCap(typeof ownerName === 'function' ? ownerName() : 'the owner');
+  setTextIfChanged(setupEl(prefix + '-door-lead'), 'This camp is still using the original week.');
+  setTextIfChanged(setupEl(prefix + '-door-text'), prefix === 'week'
+    ? 'The dates, double points and finale below are yours to set. The days become editable once editing is turned on.'
+    : 'This is the schedule that came with the app. Turning on editing changes nothing anyone can see until someone edits something.');
+  const btn = setupEl(prefix + '-door-btn');
+  setTextIfChanged(btn, 'Edit the week here');
+  setHiddenIfChanged(btn, !owner);
+  setTextIfChanged(setupEl(prefix + '-door-owner-text'), name + ' turns on editing.');
+  setHiddenIfChanged(setupEl(prefix + '-door-owner'), owner);
+}
+
+// The tree a Schedule or Camp week screen reads: the live one when the schedule is edited here, else the seeded
+// built-in week (a read-only preview with real block ids).
+function schedViewTree() {
+  return scheduleIsShared() ? setupTree : setupBuiltInTree();
+}
+
+// The date of weekday `dow` of the camp week that starts on `ymd` ("Jul 21"), or ''.
+function weekDateWords(ymd, dow) {
+  const m = /^(20\d{2})-(\d{2})-(\d{2})$/.exec(String(ymd || ''));
+  if (!m) return '';
+  return new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]) + dow * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
+// "Jul 18–24, 2027" (or "Jul 28 – Aug 3, 2027" across a month) for the camp week that starts on the Sunday `ymd`.
+function weekHeadline(ymd) {
+  const m = /^(20\d{2})-(\d{2})-(\d{2})$/.exec(String(ymd || ''));
+  if (!m) return '';
+  const a = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+  const b = new Date(a.getTime() + 6 * 86400000);
+  const mon = (d) => d.toLocaleDateString('en-US', { month: 'short', timeZone: 'UTC' });
+  const year = b.getUTCFullYear();
+  return mon(a) === mon(b) ? mon(a) + ' ' + a.getUTCDate() + '–' + b.getUTCDate() + ', ' + year : mon(a) + ' ' + a.getUTCDate() + ' – ' + mon(b) + ' ' + b.getUTCDate() + ', ' + year;
+}
+
+const WEEK_DOW_WORDS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+// "Thu Jul 23, 5 PM" in camp time, for the fixed legacy double-points window.
+function weekStampWords(ms) {
+  const f = (o) => new Date(ms).toLocaleString('en-US', Object.assign({ timeZone: 'America/New_York' }, o));
+  const t = f({ hour: 'numeric', minute: '2-digit' }).replace(':00', '');
+  return f({ weekday: 'short', month: 'short', day: 'numeric' }).replace(',', '') + ', ' + t;
+}
+
+function weekDoubleLegacy() {
+  return !(state.meta && state.meta.epoch);
+}
+
+function weekSelectOptions(sel, items, value) {
+  if (!sel) return;
+  const html = items.map((it) => '<option value="' + esc(String(it[0])) + '">' + esc(it[1]) + '</option>').join('');
+  setHtmlIfChanged(sel, html);
+  if (document.activeElement !== sel && String(sel.value) !== String(value)) sel.value = String(value);
+}
+
+function renderWeekScreen() {
+  const preview = !scheduleIsShared();
+  const ymd = (typeof campWeek === 'function' && campWeek().start) || '';
+  const range = hubWeekRange(ymd);
+  setTextIfChanged(setupEl('week-title'), 'Camp week · ' + CAMP.label);
+  setTextIfChanged(setupEl('week-headline'), ymd ? weekHeadline(ymd) : 'No dates yet');
+  const tree = schedViewTree();
+  const follow = SETUP_DK.filter((dk, i) => i >= 1 && i <= 5 && setupMapOf(setupMapOf(tree.days)[dk]).typical === true);
+  setTextIfChanged(setupEl('week-lede'), ymd
+    ? 'Sunday to Saturday' + (follow.length ? ' · ' + schedDaysWords(follow) + ' follow the typical day' : '')
+    : 'Pick the Sunday camp starts. Reminders and the TV page use it.');
+  paintPreviewDoor('week', preview);
+  // Dates. A native date: the phone's own picker. While the new year is due, the route into its setup replaces it.
+  const due = typeof newYearDue === 'function' && !!newYearDue();
+  setHiddenIfChanged(setupEl('week-start-row'), due);
+  setHiddenIfChanged(setupEl('week-wizard'), !due);
+  const input = setupEl('week-start');
+  if (input && document.activeElement !== input && input.value !== ymd) input.value = ymd;
+  setTextIfChanged(setupEl('week-start-sub'), range ? range : 'A Sunday');
+  // Days: a tick sheet. Each row names its day, its date and its tag; the chosen tick is aria-checked.
+  document.querySelectorAll('#week-days .wk-day[data-dow]').forEach((row) => {
+    const dow = Number(row.dataset.dow);
+    const dk = SETUP_DK[dow];
+    const day = setupMapOf(setupMapOf(tree.days)[dk]);
+    const tag = weekDays()[dow] ? weekDays()[dow].tag : '';
+    setTextIfChanged(row.querySelector('[data-week-date]'), ymd ? ' · ' + weekDateWords(ymd, dow) : '');
+    setTextIfChanged(row.querySelector('[data-week-tag]'), tag || '');
+    row.querySelectorAll('.wk-tick').forEach((t) => {
+      const on = (t.dataset.weekFollow === 'typical') === (day.typical === true);
+      if (t.getAttribute('aria-checked') !== String(on)) t.setAttribute('aria-checked', String(on));
+      if (preview) { if (t.getAttribute('aria-disabled') !== 'true') t.setAttribute('aria-disabled', 'true'); } else if (t.hasAttribute('aria-disabled')) t.removeAttribute('aria-disabled');
+    });
+  });
+  // Double points: in the legacy epoch the window is fixed; later it is the week's own (meta/double).
+  const legacy = weekDoubleLegacy();
+  setHiddenIfChanged(setupEl('week-double-legacy'), !legacy);
+  setHiddenIfChanged(setupEl('week-double-box'), legacy);
+  setHiddenIfChanged(setupEl('week-double-note'), true);
+  if (legacy && typeof DOUBLE_WINDOW_LEGACY === 'object') {
+    const endDay = new Date(DOUBLE_WINDOW_LEGACY.end - 1).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'America/New_York' }).replace(',', '');
+    setTextIfChanged(setupEl('week-double-legacy-text'),
+      'This year’s double points are fixed (' + weekStampWords(DOUBLE_WINDOW_LEGACY.start) + ' – end of ' + endDay + ', ' + etParts(DOUBLE_WINDOW_LEGACY.start).year +
+      '). A new window takes effect with the new-year setup.');
+  } else {
+    const dbl = setupMapOf(setupTree.meta).double;
+    const on = setupIsMap(dbl);
+    const sw = setupEl('week-double-on');
+    if (sw && sw.hasAttribute('checked') !== on) sw.toggleAttribute('checked', on);
+    paintSwitchWord('week-double-on', on);
+    setHiddenIfChanged(setupEl('week-double-form'), !on);
+    const d = on ? dbl : { fromDow: 4, fromMin: 1020, toDow: 6, toMin: 0 };
+    weekSelectOptions(setupEl('week-double-from'), WEEK_DOW_WORDS.map((w, i) => [i, w]), d.fromDow);
+    weekSelectOptions(setupEl('week-double-until'), WEEK_DOW_WORDS.map((w, i) => [i + 1, 'End of ' + w]), d.toDow);
+    const at = setupEl('week-double-at');
+    const hh = String(Math.floor(d.fromMin / 60)).padStart(2, '0') + ':' + String(d.fromMin % 60).padStart(2, '0');
+    if (at && document.activeElement !== at && at.value !== hh) at.value = hh;
+  }
+  // The big screen's finale day (Friday unless chosen).
+  const fin = setupMapOf(setupTree.meta).finaleDow;
+  weekSelectOptions(setupEl('week-finale'), WEEK_DOW_WORDS.map((w, i) => [i, w]), Number.isInteger(fin) ? fin : 5);
+}
+
+function weekSetStart(value) {
+  const err = setupEl('week-start-error');
+  const say = (t) => { setTextIfChanged(err, t); setHiddenIfChanged(err, !t); };
+  if (!value) { say('Pick a date, or leave it as it was.'); return; }
+  if (typeof isValidWeekStart === 'function' && !isValidWeekStart(value)) { say('Camp starts on a Sunday. Pick the Sunday the week begins.'); const i = setupEl('week-start'); if (i) i.value = campWeek().start || ''; return; }
+  say('');
+  const r = commitSetup((d) => { d.meta.weekStart = value; }, { label: 'Camp starts ' + hubWeekRange(value).split(' – ')[0] });
+  if (!r.ok) weekRefused(r);
+}
+
+function weekSaveDouble(on) {
+  const from = Number((setupEl('week-double-from') || {}).value);
+  const until = Number((setupEl('week-double-until') || {}).value);
+  const at = String((setupEl('week-double-at') || {}).value || '17:00').split(':').map(Number);
+  const fromMin = (at[0] || 0) * 60 + (at[1] || 0);
+  const note = (t) => { setTextIfChanged(setupEl('week-double-note-text'), t); setHiddenIfChanged(setupEl('week-double-note'), !t); };
+  if (!on) { const r = commitSetup((d) => { delete d.meta.double; }, { label: 'No double points this week' }); if (!r.ok) weekRefused(r); note(''); return; }
+  if (until * 1440 <= from * 1440 + fromMin) { note('Double points have to end after they start.'); return; }
+  note('');
+  const r = commitSetup((d) => { d.meta.double = { fromDow: from, fromMin, toDow: until, toMin: 0 }; }, { label: 'Double points ' + WEEK_DOW_WORDS[from] + ' to ' + WEEK_DOW_WORDS[Math.min(6, until - 1)] });
+  if (!r.ok) weekRefused(r);
+}
+
+function weekSetFinale(value) {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 0 || n > 6) return;
+  const r = commitSetup((d) => { d.meta.finaleDow = n; }, { label: 'TV finale on ' + WEEK_DOW_WORDS[n] });
+  if (!r.ok) weekRefused(r);
+}
+
+// A commit the engine refused, in words (the one place both the Camp week and Schedule screens say it).
+function weekRefused(r) {
+  if (!r || r.ok) return;
+  let t = 'That didn’t go through, so nothing was changed.';
+  if (r.reason === 'readonly') t = 'Only a director can change the week.';
+  else if (r.reason === 'loading') t = 'Still loading the week setup — try again in a moment.';
+  else if (r.reason === 'off') t = 'Turn on editing first (Edit the week here).';
+  else if (r.reason === 'removed') t = (r.byName || 'Another director') + ' removed this item, so the change wasn’t saved.';
+  else if (r.reason === 'owner') t = r.message || t;
+  setupSay(t);
+}
+
+// A tick on the Days sheet: its day follows the typical day, or has its own schedule — the same two operations as the
+// Schedule screen's day menu.
+function weekTick(dow, kind) {
+  if (!scheduleIsShared()) return;
+  const dk = SETUP_DK[dow];
+  const now = setupMapOf(setupTree.days[dk]).typical === true ? 'typical' : 'own';
+  if (kind === now) return;
+  if (kind === 'own') schedGiveOwn(dow); else schedMakeFollowAgain(dow);
+}
+
+// ── 9. Day operations shared by Camp week and Schedule (§11.4, §11.5) ─
+
+// ONE undo entry for a change that touches the setup tree AND the games catalog (a day that stops following the typical
+// day re-homes its games; a rain plan moves them): both writes go in undo-less and their before/after pairs are recorded
+// together, so Undo puts the games back with the items. `configMutate` may be null. Returns commitSetup's result plus
+// { entry }. Nothing is written when the games list can't be edited yet.
+function setupCombined(label, setupMutate, configMutate, opts) {
+  const o = opts || {};
+  if (configMutate && typeof configEditable === 'function' && !configEditable()) return { ok: false, reason: 'config-loading' };
+  const beforeSetup = setupCanon(setupTree);
+  const beforeCfg = cfgCanon(state.config);
+  const r = commitSetup(setupMutate, Object.assign({}, o, { undo: false }));
+  if (!r.ok) return r;
+  let cfgOps = {};
+  if (configMutate) {
+    configEdit(label, configMutate, { undo: false });
+    cfgOps = treeDiff(beforeCfg, cfgCanon(state.config), CFG_DEPTHS);
+  }
+  const ops = Object.keys(r.ops).map((p) => ['setup', p, setupValueAt(beforeSetup, p), r.ops[p]])
+    .concat(Object.keys(cfgOps).map((p) => ['config', p, cfgValueAt(beforeCfg, p), cfgOps[p]]));
+  const entry = ops.length ? undoRecord(label, ops) : null;
+  return Object.assign(r, { entry, cfgOps });
+}
+
+// The games (config) that sit on schedule items of a day that is about to lose them.
+function schedGamesLosing(dow, ids) {
+  const dayIds = competitionDays().filter((d) => d.dow === dow).map((d) => d.id);
+  return schedGamesOn(state.config, ids, dayIds);
+}
+
+function schedUnlinkMutator(games) {
+  const set = {};
+  games.forEach((g) => { set[g.id] = true; });
+  return () => { ((state.config && state.config.games) || []).forEach((g) => { if (g && set[g.id]) { delete g.blockId; delete g.ord; } }); };
+}
+
+// The `pre-delete` restore point a destructive day operation takes first. A device with no sync has nowhere to keep one
+// and goes on; any other refusal stops it, said in a sentence.
+async function schedSafetyPoint(label) {
+  const rp = await restoreSave('pre-delete', label);
+  if (rp.ok || rp.reason === 'offline') return true;
+  setupSay('A restore point couldn’t be saved first, so nothing was changed.');
+  return false;
+}
+
+function schedDayWord(dow) {
+  return SETUP_DAY_WORDS[SETUP_DK[dow]];
+}
+
+// Give a day its own schedule: its items are copied with the same ids and it stops following the typical day, in one
+// atomic commit (so a colleague's late "Just Friday" is refused by the rules' anchor and explained).
+async function schedGiveOwn(dow) {
+  const dk = SETUP_DK[dow];
+  const word = schedDayWord(dow);
+  const go = await askDialog({
+    title: 'Give ' + word + ' its own schedule?',
+    body: ['It keeps the items it shows now. After this, changes to the typical day stop reaching ' + word + '.'],
+    actions: [{ label: 'Not now', value: 'no', cancel: true }, { label: 'Give ' + word + ' its own', value: 'go', kind: 'gold' }],
+  });
+  if (go !== 'go') return false;
+  const r = commitSetup((d) => schedOwnMutate(d, dk, planForDow(dow)), { label: 'Gave ' + word + ' its own schedule' });
+  if (!r.ok) weekRefused(r);
+  return r.ok;
+}
+
+// Make a day follow the typical day again: its own items go, and games on items only that day had are listed as not
+// on the schedule. Asks first and saves a `pre-delete` restore point.
+async function schedMakeFollowAgain(dow) {
+  const dk = SETUP_DK[dow];
+  const word = schedDayWord(dow);
+  const own = Object.keys(setupMapOf(setupMapOf(setupTree.dayBlocks)[dk]));
+  const only = own.filter((id) => !setupIsMap(setupMapOf(setupTree.typical)[id]));
+  const games = schedGamesLosing(dow, only);
+  const body = [word + '’s own items go and it shows the typical day again.'];
+  if (games.length) body.push(hubPlural(games.length, 'game sits', 'games sit') + ' on items only ' + word + ' has. ' + (games.length === 1 ? 'It keeps its results and is' : 'They keep their results and are') + ' listed as not on the schedule.');
+  const go = await askDialog({
+    title: 'Make ' + word + ' follow the typical day again?', body,
+    actions: [{ label: 'Keep its own', value: 'no', cancel: true }, { label: 'Follow the typical day', value: 'go', kind: 'danger' }],
+  });
+  if (go !== 'go') return false;
+  if (!(await schedSafetyPoint('Before ' + word + ' follows the typical day'))) return false;
+  const r = setupCombined('Made ' + word + ' follow the typical day', (d) => schedFollowMutate(d, dk), games.length ? schedUnlinkMutator(games) : null);
+  if (!r.ok) { if (r.reason === 'config-loading') setupSay('Still loading the games list — try again in a moment.'); else weekRefused(r); }
+  return r.ok;
+}
+
+// Clear all of a day's changes (its patches and one-offs), leaving it on the typical day. Same safety as above.
+async function schedClearDay(dow) {
+  const dk = SETUP_DK[dow];
+  const word = schedDayWord(dow);
+  const oneOffs = Object.keys(setupMapOf(setupMapOf(setupTree.dayBlocks)[dk]));
+  const games = schedGamesLosing(dow, oneOffs);
+  const body = [word + ' goes back to exactly the typical day: its changes and its own items are removed.'];
+  if (games.length) body.push(hubPlural(games.length, 'game sits', 'games sit') + ' on items only ' + word + ' has; ' + (games.length === 1 ? 'it is' : 'they are') + ' listed as not on the schedule.');
+  const go = await askDialog({
+    title: 'Clear all of ' + word + '’s changes?', body,
+    actions: [{ label: 'Keep them', value: 'no', cancel: true }, { label: 'Clear ' + word + '’s changes', value: 'go', kind: 'danger' }],
+  });
+  if (go !== 'go') return false;
+  if (!(await schedSafetyPoint('Before clearing ' + word + '’s changes'))) return false;
+  const r = setupCombined('Cleared ' + word + '’s changes', (d) => schedClearMutate(d, dk), games.length ? schedUnlinkMutator(games) : null);
+  if (!r.ok) { if (r.reason === 'config-loading') setupSay('Still loading the games list — try again in a moment.'); else weekRefused(r); }
+  return r.ok;
+}
+
 function wireSetupUi() {
   if (setupUi.wired) return;
   setupUi.wired = true;
@@ -1442,6 +1854,14 @@ function wireSetupUi() {
     const fn = HUB_DOOR_ACTIONS[door && door.dataset.door];
     if (typeof fn === 'function' && typeof isOwner === 'function' && isOwner()) fn();
   });
+  // Camp week (§11.4): dates, the Days tick sheet, double points, the TV finale.
+  on('#week-start', 'change', (e) => weekSetStart(e.target.value));
+  on('#week-days', 'click', (e) => { const t = e.target.closest && e.target.closest('.wk-tick'); const row = t && t.closest('.wk-day'); if (t && row) weekTick(Number(row.dataset.dow), t.dataset.weekFollow); });
+  on('#week-double-on', 'change', (e) => weekSaveDouble(!!e.target.checked));
+  ['#week-double-from', '#week-double-at', '#week-double-until'].forEach((id) => on(id, 'change', () => weekSaveDouble(true)));
+  on('#week-finale', 'change', (e) => weekSetFinale(e.target.value));
+  on('#week-wizard', 'click', () => { const fn = HUB_DOOR_ACTIONS['new-year']; if (typeof fn === 'function' && isOwner()) fn(); });
+  ['week', 'sched'].forEach((pre) => on('#' + pre + '-door-btn', 'click', () => { if (isOwner()) setupEditTheWeek(); }));
   // Undo: the pill and the dock are one gesture each; a long press on the dock opens Recent changes.
   on('#setup-undo', 'click', () => setupUndoRun(setupUi.pill.id));
   const dock = setupEl('setup-undo-dock');

@@ -104,7 +104,7 @@ test('People problems: a team with no counselors, an incomplete record, people w
 
 // ── The rest of the rows ──
 test('rows whose screen comes later say `soon` and claim nothing; an optional one can be set aside', () => {
-  ['week', 'schedule', 'campers', 'meals', 'verses', 'cleanup', 'electives', 'alerts'].forEach((k) => {
+  ['campers', 'meals', 'verses', 'cleanup', 'electives', 'alerts'].forEach((k) => {
     const s = hubStatus(k, clView());
     assert.equal(s.mark, 'soon', k);
     assert.equal(s.word, 'Editing comes next', k);
@@ -114,14 +114,28 @@ test('rows whose screen comes later say `soon` and claim nothing; an optional on
   assert.equal(hubStatus('verses', clView()).summary, 'The original verses');
   assert.equal(hubStatus('cleanup', clView()).summary, 'The original rota');
   assert.equal(hubStatus('electives', clView()).summary, 'The original stations');
-  assert.equal(hubStatus('schedule', clView()).summary, 'The original schedule');
-  assert.equal(hubStatus('schedule', clView({ on: { schedule: true } })).summary, 'Edited here');
-  assert.equal(hubStatus('week', clView({ weekStart: '2027-07-18' })).summary, 'Sun Jul 18 – Sat Jul 24');
-  assert.equal(hubStatus('week', clView()).summary, 'No dates set yet');
   const skipped = hubStatus('meals', clView({ skip: { meals: true } }));
   assert.equal(skipped.mark, 'skip');
   assert.equal(skipped.word, 'Not used');
   assert.equal(hubStatus('games', clView({ skip: { games: true } })).mark, 'ok', 'only the optional sections can be set aside');
+});
+
+test('Camp week and Schedule have their screens now (Step 15): dates are ok or a plain line, never a warning; the schedule says where it stands', () => {
+  const wk = hubStatus('week', clView({ weekStart: '2027-07-18' }));
+  assert.deepEqual([wk.mark, wk.summary], ['ok', 'Sun Jul 18 – Sat Jul 24']);
+  const none = hubStatus('week', clView());
+  assert.deepEqual([none.mark, none.summary, none.word], ['info', 'No dates set yet', ''], 'the 2026 week has no dates: that is not a chore');
+  const off = hubStatus('schedule', clView());
+  assert.deepEqual([off.mark, off.summary, off.word], ['info', 'The original schedule', '']);
+  const on = hubStatus('schedule', clView({ on: { schedule: true } }));
+  assert.deepEqual([on.mark, on.summary], ['ok', 'Edited here'], 'no model of the days yet: still ready');
+  const good = hubStatus('schedule', clView({ on: { schedule: true }, schedule: { follow: 'Mon–Fri', oneOffs: 3, empty: [], broken: [], overlaps: [] } }));
+  assert.deepEqual([good.mark, good.summary], ['ok', 'Typical day · Mon–Fri · 3 one-offs']);
+  const bad = hubStatus('schedule', clView({ on: { schedule: true }, schedule: { follow: 'Mon–Fri', oneOffs: 0, typicalEmpty: true, empty: ['Saturday'], broken: [{ day: 'Tuesday', n: 1 }], overlaps: [{ day: 'Tuesday', n: 2, at: '9:15 PM' }] } }));
+  assert.equal(bad.mark, 'warn');
+  assert.deepEqual(bad.problems, ['The typical day is empty', 'Saturday is empty', '1 broken item on Tuesday', '2 items overlap on Tuesday at 9:15 PM']);
+  const newer = hubStatus('schedule', clView({ setupTooNew: true }));
+  assert.equal(newer.mark, 'warn');
 });
 
 test('Notice board and Restore points are information, not chores; denied restore nodes are a warning', () => {

@@ -48,7 +48,7 @@ test('More → Set up the week opens the hub; a named classic tab opens the clas
   } finally { suClose(); }
 });
 
-test('hub rows open their screens: Games, Teams and Notice → the classic editor on that tab, Restore points → backups, People → the members drawer', () => {
+test('hub rows open their screens: Camp week and Schedule → theirs, Games, Teams and Notice → the classic editor on that tab, Restore points → backups, People → the members drawer', () => {
   suOpen();
   const real = openMembers;
   let members = 0;
@@ -65,8 +65,12 @@ test('hub rows open their screens: Games, Teams and Notice → the classic edito
     hubOpen('people');
     assert.equal(members, 1);
     assert.equal(state.ui.builderScreen, 'backups', 'the drawer opens over the screen; it does not move it');
-    hubOpen('schedule');
+    hubOpen('campers');
     assert.equal(state.ui.builderScreen, 'backups', 'a row with no screen yet does nothing');
+    hubOpen('week');
+    assert.equal(state.ui.builderScreen, 'week');
+    hubOpen('schedule');
+    assert.equal(state.ui.builderScreen, 'schedule');
   } finally { openMembers = real; suClose(); }
 });
 
@@ -391,7 +395,11 @@ test('the owner\'s menu rows exist only for the owner AND only when their action
     authUser = { email: 'patricksimpson.fx@gmail.com', emailVerified: true };
     assert.equal(isOwner(), true);
     renderSetupMenuRows();
-    assert.equal(document.querySelector('.setup-owner-sec').hidden, true, 'no action is built yet (Steps 15 and 28): nothing to list');
+    assert.equal(document.querySelector('.setup-owner-sec').hidden, false, 'Use the original week again is built (Step 15)');
+    assert.equal(row('original').hidden, false);
+    assert.equal(row('original').querySelector('[data-setup-why]').textContent, 'Already using the original week.', 'greyed, with its reason: the schedule is not edited here, so there is nothing to go back from');
+    assert.equal(row('new-year').hidden, true, 'the wizard is not built until Step 28: never listed');
+    assert.equal(row('advanced').hidden, true);
     SETUP_OWNER_ACTIONS.original = { run: () => {}, why: () => '' };
     SETUP_OWNER_ACTIONS['new-year'] = { run: () => {}, why: () => 'Not during camp week' };
     renderSetupMenuRows();
