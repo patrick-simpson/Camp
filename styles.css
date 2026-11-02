@@ -4296,8 +4296,10 @@ button.rain-game:active {
 .rain-move-off {
   margin-top: var(--s-3);
 }
-.rain-sheet .si-ask {
-  margin-top: var(--s-3);
+.rain-sheet .si-ask,
+.rain-sheet .si-switches,
+.rain-sheet .si-asks {
+  margin-top: var(--s-3); /* the panes are blocks, not the item sheet's grid */
 }
 
 /* ── Done (the summary sheet) ── */
