@@ -877,6 +877,14 @@ scope with reveal-core.js).
   director's phone); every place that released the lock on "no timer" asks it, so a
   clock ending cannot drop a reveal's lock. A refused lock reads `wake: 'off'`
   ("Screen may sleep").
+- **Proved against the published rules** by `tests/emulator/reveal-client.mjs`
+  (opt-in): the shipped reveal.js, through the unit tests' vm and DOM stub, talks to
+  the emulator under `database.rules.json` through an adapter from the SDK's modular API
+  to the compat shape the app calls; every command of the state machine (both camps), the
+  Friday crowning, a practice, two remotes racing, a stale-`ca` Start, a counselor's mirror
+  and `retireExpiredReveal` run for real. Mutation-checked: a stale `sa`, a Start written as
+  `ctl` alone, a `seq` that does not advance, a place published one early and a member key
+  in the public ctl each turn it red. Re-run it after ANY change to a builder in reveal.js.
 - **Paint hook contract for the screens' session:** define `revealPaint(why, mode)`
   (called after every confirmed change and time-driven change; `why` is `snapshot`,
   `reread`, `denied`, `role`, `rescan`, `tick`, `timer`, `wake`, `clock`, `connection`,
@@ -2586,7 +2594,9 @@ rules**; the client code only shapes the UI.
     `restore`, `campers`, `access-requests`, `editors-here`, `teams-fields`,
     `brackets4`, `owner-only`, `reveal` (the public path's first proof: anonymous
     read, shape, compare-and-set races, delete-only-after-`until`, practice
-    isolation, scalars refused) and `ancestor-validate`: 251 cases, all SAFE. They
+    isolation, scalars refused), `reveal-client` (Step 23: the REAL client's
+    writes and reads against these rules, below) and `ancestor-validate`: 267
+    cases, all SAFE. They
     were mutation-checked: weakening any one clause (the ended guard, the shown
     clause, the delete guard, `revealFull` read, the seq/`ca` checks, the
     joinOpen, pin, owner, anchor, patch-anchor, team-flag-anchor, the four reveal
