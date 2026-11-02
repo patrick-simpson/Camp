@@ -11,20 +11,21 @@
 //                                schedule from an older build, a private `pushServer` node the replay must ignore.
 //
 // Every person is fake (example.com). Nothing here is read from, or written to, the real database. Usage:
-//   node make-synthetic-export.mjs [outDir]      (default: the scratchpad's exports/ directory, outside the repo)
+//   node make-synthetic-export.mjs [outDir]      (default: camp-synthetic-exports in the system temp directory, outside the repo)
 //
 // The shape is the console's: ONE JSON document at the database root, the two camp roots under it, in RTDB's
 // stored form (nulls and empties pruned, a dense list as an array, a list with gaps as an index-keyed map).
 import { createRequire } from 'module';
 import vm from 'vm';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 const require = createRequire(import.meta.url);
 const { makeContext, clearAllTimers } = require('../harness.js');
 const { toStored, fromStored } = require('../fake-rtdb.js');
 
-export const DEFAULT_EXPORT_DIR = '/tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/exports';
+export const DEFAULT_EXPORT_DIR = path.join(os.tmpdir(), 'camp-synthetic-exports'); // outside the repo; pass a directory to put them elsewhere
 const stored = (v) => fromStored(toStored(JSON.parse(JSON.stringify(v))));
 
 const OWNER = 'patricksimpson,fx@gmail,com';

@@ -1283,6 +1283,13 @@ has even been scheduled. So:
   has settled". Use it where a test used to sleep for a flush. It ignores a timer longer than 1 s
   (the calm-motion sampler's 2 s, a toast), and a write queued by an OFFLINE fake database (that
   one waits for `goOnline()`, it is not in flight). It looks at the file's own context only.
+- **A "nothing happened" assertion rests on `waitQuiet()`'s horizon.** `waitQuiet()` returns after two quiet
+  2 ms hops, where the old fixed sleep (150 ms, 560 ms in `editors-here`) was long enough to let a stray timer
+  fire. It still sees every app timer of 1 s or less and every acknowledgement `fake-rtdb.js` owes, so "no write was
+  made" holds against any debounce, retry or ack chain; it does NOT see a write started by a timer longer than 1 s, or by
+  anything other than the app's `setTimeout` / the fake database. Where a test must rule out a long timer, wait for
+  that timer's own delay (the code's constant) or assert on the delay the code asked for; a runaway retry loop
+  now shows as `waitQuiet`'s 20 s deadline error, not as one extra write.
 - **`waitUntil(cond, 'what we wait for', ms?)`** polls every 2 ms, resolves as soon as `cond()` is
   truthy and throws at a 20 s deadline naming the condition. Use it for a specific state
   (`waitUntil(() => remoteReady && configReady && setupReady, …)`, `waitUntil(() => ehTimer, 'the
@@ -1551,6 +1558,12 @@ What's covered, and why each file exists:
   values' contrast and fails if a bare `color: var(--color-danger)` comes back.
   (A field's placeholder uses `--placeholder` — `--ink-3` 85 % over `--sheet`,
   about 5:1 in both themes; the browser's own grey is 3.5:1 in dark.)
+- `export-guard.test.js` — a Firebase console export (members' emails, phones, chat) can't be committed by
+  accident: `git check-ignore` says the names the console really writes (`<project>-default-rtdb-export.json`,
+  `camp-export.json`, `*.export.json`, an `exports/` folder) are ignored at the repo root and under `tests/`,
+  `tests/emulator/`, `docs/`; the replay tooling itself is not swallowed by the patterns; and no tracked file is named
+  like an export or holds a camp root (`campScoreboard` / `seniorScoreboard`, or `members` + `state`) at its top level,
+  so a renamed export is caught too. Skips, saying so, outside a git work tree.
 - `owner-row.test.js` — the owner's Members row is read-only, and the client
   constant matches the rules literal in both camps.
 - `rules.test.js` — the FILE `database.rules.json` is coherent: deny-all root,
@@ -1693,8 +1706,9 @@ anything needing real layout belongs in the Playwright pass.
 
 **The readiness gate for Edit the week here (Steps 16 and 20): `tests/emulator/export-replay.mjs`.** The owner takes a
 console export of the whole database (Data → ⋮ → Export JSON; it holds members' emails, phones and chat, so keep it outside
-the repo, never commit it, delete it afterwards: `tests/emulator/.gitignore` ignores `exports/` and `*.export.json`) and one
-command, `CAMP_EXPORT=/path/to/camp-export.json node export-replay.mjs` in `tests/emulator/` with the database emulator
+the repo, never commit it, delete it afterwards: the repo's root `.gitignore` and `tests/emulator/.gitignore` ignore every
+`*export*.json` and an `exports/` folder as a net, and `tests/export-guard.test.js` pins that) and one
+command, `CAMP_EXPORT=/path/to/camp-89cea-default-rtdb-export.json node export-replay.mjs` in `tests/emulator/` with the database emulator
 running, gives a verdict per camp. For each camp it loads the exported data into the emulator, drives the REAL client (the
 shipped scripts through `tests/harness.js` over `tests/fake-rtdb.js` holding the same data) as the owner through
 `setupTurnOn` (schedule, then meals / verses / cleanup / electives), the games' attachments and the publisher, records every
@@ -1702,8 +1716,9 @@ write, replays them under the real `database.rules.json` (each accepted; the own
 director), compares what the camp reads before and after (the schedule, the banner for every minute, the calendar files, the
 games per block, the alert blocks, meals, verses, cleanup, electives, staff) allowing only the documented intended
 differences (`replay-fidelity.mjs`), checks that Use the original week again restores the "before" set exactly, replays a
-second director's edits, and reports team ids (`t0…t(N-1)`) and any game left on no schedule item. It prints paths and counts,
-never a value from the export. `make-synthetic-export.mjs` writes fake console exports (clean and "junk") to prove it before
+second director's edits, and reports team ids (`t0…t(N-1)`) and any game left on no schedule item. It prints paths and counts and
+no email, phone number or chat (a difference it cannot explain is printed as text, scrubbed of emails and phones, so it can
+name a game, a dish, an elective station or a counselor). `make-synthetic-export.mjs` writes fake console exports (clean and "junk") to prove it before
 the real file exists, and `REPLAY_MUTATE=refused-write|seed-block|rollback-leak` or a weakened `R1_RULES` file shows it go red.
 Details and how to read a finding: `tests/emulator/README.md`.
 
@@ -2375,7 +2390,7 @@ rules**; the client code only shapes the UI.
     `restore`, `campers`, `access-requests`, `editors-here`, `teams-fields`,
     `brackets4`, `owner-only`, `reveal` (the public path's first proof: anonymous
     read, shape, compare-and-set races, delete-only-after-`until`, practice
-    isolation, scalars refused) and `ancestor-validate`: 249 cases, all SAFE. They
+    isolation, scalars refused) and `ancestor-validate`: 251 cases, all SAFE. They
     were mutation-checked: weakening any one clause (the ended guard, the shown
     clause, the delete guard, `revealFull` read, the seq/`ca` checks, the
     joinOpen, pin, owner, anchor, patch-anchor, team-flag-anchor, the four reveal

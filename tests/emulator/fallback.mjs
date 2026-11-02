@@ -30,7 +30,7 @@ async function scenario(rulesFile, label) {
 }
 
 const oldR = await scenario('old.rules.json', 'PUBLISHED');
-const newR = await scenario('database.rules.json', 'NEW');
+const newR = await scenario(new URL('../../database.rules.json', import.meta.url), 'NEW');
 const ok = (!oldR.stampWorks && oldR.plainWorks)   // today: fallback carries it
         && (newR.stampWorks && !newR.plainWorks);  // after paste: stamp required
 console.log(ok

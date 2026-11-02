@@ -12,7 +12,6 @@ and the repo root still has no `package.json`.
 
 ```sh
 cd tests/emulator
-cp ../../database.rules.json .          # run.mjs / rate.mjs / fallback.mjs read ./database.rules.json
 npm install                             # ~1 min, downloads the emulator jar
 npx firebase emulators:start --only database --project camp-test &
 npm test                                # the 2026 suites: run.mjs, rate.mjs
@@ -20,9 +19,11 @@ npm run test:r1                         # the R1 release suites (below)
 npm run test:all                        # both
 ```
 
-The R1 suites read `../../database.rules.json` directly (no copy needed). Point
-any of them at a candidate file with `R1_RULES=/path/to/file.json node setup.mjs`
-— that is how they are mutation-checked: weaken one clause, expect a red suite.
+Every suite reads `../../database.rules.json` itself and hands it to its own emulator namespace, so there is no copy to
+make and nothing that can go stale. (`firebase.json` names no rules file on purpose: the Firebase CLI refuses one outside
+this folder, and a copy beside it would be a second file to keep true; the emulator starts without one.) Point any of the
+R1 suites at a candidate file with `R1_RULES=/path/to/file.json node setup.mjs` — that is how they are mutation-checked:
+weaken one clause, expect a red suite.
 
 ## The 2026 suites
 
@@ -79,21 +80,25 @@ everything the buttons do work under the published rules, and does the camp read
 verdict per camp.
 
 **One-time (the owner).** In the Firebase console: Realtime Database → **Data** → the ⋮ menu at the top of the data →
-**Export JSON**. Do it at the database root, so both camps are in one file. Save it **outside the repo** (the Downloads
-folder is fine). It contains members' emails and phone numbers and the chat: it never belongs in git, and nothing here
-prints a value from it (paths and counts only, and anything that looks like an email or a phone is scrubbed from a printed
-difference). `tests/emulator/.gitignore` also ignores `exports/` and `*.export.json`, in case it is dropped here by mistake.
+**Export JSON**. Do it at the database root, so both camps are in one file. The console saves it as
+`<project>-default-rtdb-export.json` (for this project `camp-89cea-default-rtdb-export.json`). Save it **outside the repo**
+(the Downloads folder is fine). It contains members' emails and phone numbers and the chat: it never belongs in git. The
+replay prints no email, phone number or chat (a path or a count mostly; a difference it cannot explain is printed as the
+text the camp reads, scrubbed of anything that looks like an email or a phone, so it can name a game, a dish, a verse, an
+elective station or a counselor). As a net, the repo's root `.gitignore` and `tests/emulator/.gitignore` ignore every
+`*export*.json` (and an `exports/` folder), so `git add -A` skips an export dropped into the repo by mistake; do not rely
+on that, and delete the file afterwards.
 
 **Every time:**
 
 ```sh
 cd tests/emulator
-npm install                                                           # once
+npm install                                                           # once (nothing else to set up: no rules file to copy)
 npx firebase emulators:start --only database --project camp-test &   # once per sitting
-CAMP_EXPORT=/path/to/camp-export.json node export-replay.mjs
+CAMP_EXPORT=/path/to/camp-89cea-default-rtdb-export.json node export-replay.mjs
 ```
 
-`CAMP_EXPORT` defaults to `camp-export.json` in the agent session's scratchpad `exports/` directory (the constant at the top of the script; outside the repo). An
+`CAMP_EXPORT` has no default (where the file lives is up to you; with it unset the script says so and exits 2). An
 export taken at ONE camp's root (no `campScoreboard` wrapper) is detected as well; say which camp with
 `CAMP_EXPORT_CAMP=junior|senior` if the team count can't tell. `CAMP_ONLY=junior|senior` runs one camp. It takes about
 ten seconds per camp. Exit code 0 only when every check of every camp passes (2 = it could not start: no emulator, no
@@ -135,8 +140,8 @@ the rules refuse; `seed-block` moves one seeded block in the emulator; `rollback
 rollback. A rules mutation is `R1_RULES=/path/to/weakened.json` (as for the R1 suites): with the `meta/on/$s` owner clause
 removed, "owner-only writes refused" goes red.
 
-**Before the real export exists:** `node make-synthetic-export.mjs` writes console-shaped exports of the shipped default
-weeks (fake people, example.com) into the scratchpad `exports/` directory (or the directory you give it): `synthetic-clean`
+**Before the real export exists:** `node make-synthetic-export.mjs [dir]` writes console-shaped exports of the shipped default
+weeks (fake people, example.com) into `camp-synthetic-exports` in the system temp directory (or the directory you give it): `synthetic-clean`
 (a quiet week: results, a bracket, chat, presence, members), `synthetic-junk` (RTDB-pruned empties, an old build's whole
 `teams` array, a result whose game left the week, a TBA game and one that cannot be placed, a game named for a schedule
 item, a pending member, a legacy presence row, an older published schedule, a private `pushServer` node that must be

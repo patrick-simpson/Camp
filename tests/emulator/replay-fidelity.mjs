@@ -9,11 +9,16 @@
 const DK = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const j = (s) => { try { return JSON.parse(s); } catch (e) { return undefined; } };
 
-// ── readable output, with nothing personal in it ───────────────────────────────────────────────────────────
+// ── readable output, with no email, phone number or chat in it ─────────────────────────────────────────────────
 // A diff is printed to a terminal and may be pasted somewhere: emails and phone numbers (an elective's member key,
-// a member-derived name) are replaced, and long lines cut.
+// a member-derived name) are replaced, and long lines cut. Not everything personal can be caught by a pattern: a
+// difference the matchers cannot explain is printed as the text the camp reads, so it can name a game, a dish, a
+// verse, an elective station or a counselor. Chat is never loaded into the client at all (replay-client.mjs LOAD_KEYS).
+export function redact(s) {
+  return String(s).replace(/[\w.+-]+@[\w-]+(?:[.,][\w-]+)+/g, '‹member›').replace(/\+\d{7,15}/g, '‹phone›');
+}
 export function scrub(s, max = 170) {
-  const t = String(s).replace(/[\w.+-]+@[\w-]+(?:[.,][\w-]+)+/g, '‹member›').replace(/\+\d{7,15}/g, '‹phone›').replace(/\s+/g, ' ');
+  const t = redact(s).replace(/\s+/g, ' ');
   return t.length > max ? t.slice(0, max) + '…' : t;
 }
 

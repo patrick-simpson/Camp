@@ -1,9 +1,12 @@
 # opt-in suites: nothing installed or exported here is ever committed
 node_modules/
 *.log
+# a console export holds members' emails, phone numbers and chat: <project>-default-rtdb-export.json,
+# camp-export.json, synthetic-*.export.json, whatever it is called (the repo root's .gitignore says the same)
 exports/
-*.export.json
-# the copy the README's `cp ../../database.rules.json .` step leaves here
+*export*.json
+# an older copy of the rules the suites and the emulator used to need beside them (neither does now: the suites read
+# ../../database.rules.json and firebase.json names no rules file)
 /database.rules.json
 firebase-debug.log
 ui-debug.log

@@ -1,13 +1,15 @@
 // Readiness gate for the owner's two big switches (BUILD-PLAN Step 16: Edit the week here / schedule, and Step 20:
 // meals, verses, cleanup, electives). One command, one verdict per camp:
 //
-//     CAMP_EXPORT=/path/to/camp-export.json node export-replay.mjs
+//     CAMP_EXPORT=/path/to/camp-89cea-default-rtdb-export.json node export-replay.mjs
 //
 // The input is what the Firebase console's Realtime Database "Export JSON" writes at the database root (the two camp
 // roots `campScoreboard` and `seniorScoreboard`; anything else in it is ignored), or an export taken at ONE camp's root
 // (detected; say which camp with CAMP_EXPORT_CAMP=junior|senior if the team count can't tell). The export holds members'
-// emails, phone numbers and chat: keep it OUTSIDE the repo, never commit it, delete it after. This script never prints
-// a value from it (paths and counts only; a printed difference is scrubbed of anything that looks like an email or a phone).
+// emails, phone numbers and chat: keep it OUTSIDE the repo, never commit it, delete it after (the repo's .gitignore files
+// ignore every *export*.json, as a net). This script prints no email, phone number or chat: a path or a count mostly, and
+// a difference it cannot explain as the text the camp reads (scrubbed of anything that looks like an email or a phone, but
+// it can name a game, a dish, a verse, an elective station or a counselor).
 //
 // For EACH camp in the export it:
 //   1. loads that camp's data into the database emulator with the rules bypassed, exactly as exported;
@@ -29,15 +31,16 @@
 //
 // Exit code 0 only when every check of every camp passes. Needs the database emulator on 127.0.0.1:9000 (README.md).
 //
-// Self-test: REPLAY_MUTATE=<refused-write|seed-block|rollback-leak|owner-only-open> deliberately breaks one thing so the
-// harness can be seen to go red (see README.md); with it set the exit code is inverted ONLY by you reading the verdict.
+// Self-test: REPLAY_MUTATE=<refused-write|seed-block|rollback-leak> deliberately breaks one thing so the harness can be seen
+// to go red (see README.md; a weakened rules file, R1_RULES=/path/to/file.json, does the same for the owner-only clauses);
+// with it set the exit code is inverted ONLY by you reading the verdict.
 import fs from 'fs';
 import net from 'net';
 import { harness, NEW_RULES, OWNER, ED, VW, ref, set, get, update, remove, runTransaction, outcome } from './lib.mjs';
 import { bootClient, bootable, LOAD_KEYS } from './replay-client.mjs';
-import { compare, equalSnapshots, summarize, scrub, REQUIRED_MATCHERS, REQUIRED_PREFIXES } from './replay-fidelity.mjs';
+import { compare, equalSnapshots, summarize, scrub, redact, REQUIRED_MATCHERS, REQUIRED_PREFIXES } from './replay-fidelity.mjs';
 
-const EXPORT_PATH = process.env.CAMP_EXPORT || '/tmp/claude-0/-home-user-Camp/0f7c2075-f70d-5c41-9f9f-e6ae084416ea/scratchpad/exports/camp-export.json';
+const EXPORT_PATH = process.env.CAMP_EXPORT || process.argv[2] || ''; // no default: where the export lives is the owner's call, and it must not be in the repo
 const ONLY = (process.env.CAMP_ONLY || '').toLowerCase();
 const MUTATE = process.env.REPLAY_MUTATE || '';
 const VERBOSE = !!process.env.REPLAY_VERBOSE;
@@ -91,8 +94,12 @@ const readKeys = async (h, R, keys) => {
 
 // ── the export ─────────────────────────────────────────────────────────────────────────────────────────────────
 function loadExport(file) {
+  if (!file) {
+    console.error(red('Say which export to replay.') + `\n  CAMP_EXPORT=/path/to/the-export.json node export-replay.mjs\nTake one in the Firebase console (Realtime Database → Data → ⋮ → Export JSON) and save it OUTSIDE the repo; or write fake ones first: node make-synthetic-export.mjs`);
+    process.exit(2);
+  }
   if (!fs.existsSync(file)) {
-    console.error(red(`No export at ${file}`) + `\nTake one in the Firebase console (Realtime Database → Data → ⋮ → Export JSON), save it OUTSIDE the repo, and run:\n  CAMP_EXPORT=/path/to/camp-export.json node export-replay.mjs`);
+    console.error(red(`No export at ${file}`) + `\nTake one in the Firebase console (Realtime Database → Data → ⋮ → Export JSON), save it OUTSIDE the repo, and run:\n  CAMP_EXPORT=/path/to/camp-89cea-default-rtdb-export.json node export-replay.mjs`);
     process.exit(2);
   }
   let raw;
@@ -353,7 +360,7 @@ async function runCamp(campId, node) {
     if (place.tba.length) note(`${place.tba.length} meal-cleanup slot(s) read TBA (${place.tba.filter((t) => t.dow === 1).map((t) => t.meal).join('/') || 'none on Monday'} …): ${campId === 'senior' ? "senior's rota is empty by design" : 'the printed rota leaves them open'}`);
     note(`A2 placed ${placed} game(s) on first press`);
   } catch (e) {
-    if (e instanceof Stop) { /* the check above said why */ } else check('the harness ran to the end', false, (e && e.stack ? e.stack.split('\n').slice(0, 4).join('\n') : String(e)).replace(/[\w.+-]+@[\w-]+(?:[.,][\w-]+)+/g, '‹member›'));
+    if (e instanceof Stop) { /* the check above said why */ } else check('the harness ran to the end', false, redact(e && e.stack ? e.stack.split('\n').slice(0, 4).join('\n') : String(e)));
   } finally {
     clients.forEach((c) => c.stop());
     await h.done();

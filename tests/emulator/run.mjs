@@ -5,7 +5,7 @@ import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebas
 import { readFileSync } from 'fs';
 import { ref, set, get, update, remove, push, child, serverTimestamp } from 'firebase/database';
 
-const RULES = readFileSync('./database.rules.json', 'utf8');
+const RULES = readFileSync(new URL('../../database.rules.json', import.meta.url), 'utf8');
 let pass = 0, fail = 0;
 const results = [];
 async function t(name, fn) {
