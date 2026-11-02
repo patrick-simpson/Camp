@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node run.mjs && node rate.mjs"
+    "test": "node run.mjs && node rate.mjs",
+    "test:r1": "node compat-old-client.mjs && node compat-new-client-old-rules.mjs && node setup.mjs && node restore.mjs && node campers.mjs && node access-requests.mjs && node editors-here.mjs && node teams-fields.mjs && node brackets4.mjs && node owner-only.mjs && node reveal.mjs && node ancestor-validate.mjs",
+    "test:all": "npm test && npm run test:r1"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^3.0.4",
