@@ -160,10 +160,7 @@ function renderSettings() {
       discardGameDraft();
       state.ui.view = 'home';
       saveState();
-      renderAll();
-      // The home cards were display:none behind the builder, so the page had
-      // collapsed under it — put the scoreboard back where it was.
-      if (typeof builderReturnY === 'number') window.scrollTo(0, builderReturnY);
+      renderAll(); // the shell puts the tab it came from back where it was scrolled
     });
 
     // What a merge or a rebase set aside (see cfgNotes in app.js): one delegated

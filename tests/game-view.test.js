@@ -425,37 +425,55 @@ function countingWrites(el) {
   return c;
 }
 
-test('renderGameView builds the head once per game, and again only when the game changes', () => {
+test('renderGameView builds the takeover body once per game, and again only when the game changes', () => {
   freshState();
   setMemberRole('editor');
   const [a, b] = state.config.games.filter((x) => x.format === 'placement');
-  const view = document.getElementById('game-view');
-  const w = countingWrites(view);
-  const back = document.getElementById('back-btn');
-  let wired = 0;
-  back.addEventListener = () => { wired++; };
+  const tk = document.getElementById('takeover-game');
+  const body = document.getElementById('takeover-game-body');
+  const w = countingWrites(body);
+  tk.hidden = true;
 
   state.ui.gameId = a.id;
   renderGameView();
   assert.equal(w.writes, 1, 'built on open');
-  assert.equal(wired, 1);
-  const head = view.__headHtml;
+  assert.equal(tk.hidden, false, 'the takeover is up');
+  const head = body.__headHtml;
   renderGameView();
   renderGameView();
-  assert.equal(w.writes, 1, 'unchanged renders leave the back pill, title and open rules alone');
-  assert.equal(wired, 1, 'and do not re-wire Back');
-  assert.ok(view.__headHtml === head);
+  assert.equal(w.writes, 1, 'unchanged renders leave the title, the open rules and the scroll alone');
+  assert.ok(body.__headHtml === head);
 
   state.ui.gameId = b.id;
   renderGameView();
-  assert.equal(w.writes, 2, 'a different game is a different head');
+  assert.equal(w.writes, 2, 'a different game (Next game) is a different head');
 
   state.ui.gameId = null;
   renderGameView();
-  assert.equal(view.__headHtml, null, 'closing forgets it, so the next open plays the entrance');
+  assert.equal(body.__headHtml, null, 'closing forgets it, so the next open builds afresh');
+  assert.equal(tk.hidden, true);
   state.ui.gameId = b.id;
   renderGameView();
   assert.equal(w.writes, 3, 'reopened → built afresh');
+});
+
+test('the takeover header names the game and where Back goes, written only when it differs', () => {
+  freshState();
+  setMemberRole('editor');
+  const g = state.config.games.find((x) => x.format === 'placement');
+  const title = document.getElementById('takeover-game-title');
+  const label = document.getElementById('takeover-game-back-label');
+  let titleWrites = 0;
+  let t = '';
+  Object.defineProperty(title, 'textContent', { configurable: true, get: () => t, set: (v) => { t = v; titleWrites += 1; } });
+  state.ui.gameFrom = 'games';
+  state.ui.gameId = g.id;
+  renderGameView();
+  assert.ok(t.includes(g.name));
+  assert.equal(label.textContent, dayById(g.dayId).name + ' games', '"‹ Wednesday games": the place Back lands');
+  renderGameView();
+  assert.equal(titleWrites, 1, 'a second render writes nothing');
+  state.ui.gameId = null; renderGameView();
 });
 
 test('the Pictionary tools survive a render that changes nothing — a running lap included', () => {
@@ -622,8 +640,10 @@ test('the game view head and the live panels are not rebuilt by every render', (
     assert.ok(start > -1, name + ' exists');
     return src.slice(start, src.indexOf('\n}\n', start));
   };
-  assert.ok(/view\.__headHtml !== headHtml/.test(body('renderGameView')), 'head rebuilt only when it changes');
-  assert.notOk(/\bview\.innerHTML = html\b/.test(body('renderGameView')), 'no unconditional whole-view rewrite');
+  assert.ok(/body\.__headHtml !== headHtml/.test(body('renderGameView')), 'head rebuilt only when it changes');
+  assert.notOk(/\bbody\.innerHTML = html\b/.test(body('renderGameView')), 'no unconditional whole-body rewrite');
+  ['rememberGameOpener', 'restoreGameOpener', 'scrollToGameView', 'setCardOpenNow', 'gameOpener'].forEach((n) =>
+    assert.notOk(new RegExp('\\b' + n + '\\b').test(src.replace(/\/\/.*$/gm, '')), n + ' retired: the tab under a takeover never moves'));
   ['renderLiveHome', 'renderLiveWatch', 'renderLiveTallyWatch', 'renderResult', 'renderTally', 'renderPlacement']
     .forEach((fn) => assert.ok(body(fn).includes('setLiveHtmlIfChanged('), fn + ' skips unchanged rebuilds'));
   assert.ok(/paintBoardClocks\(\);\s*$/.test(body('renderAll')), 'renderAll ends by painting the clocks');

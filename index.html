@@ -256,22 +256,6 @@
       <!-- ── LIVE NOW (a game in progress — surfaced + highlighted) ── -->
       <section id="live-home" class="live-home" hidden></section>
 
-      <!-- ── CAMP CHAT (chat.js) — the home card. Static markup so the
-           hide-from-viewers switch wires like every other card's; chat.js
-           fills the preview + badge, and tapping opens the full-screen
-           #chat-view takeover below. -->
-      <section id="chat-card" class="card chat-card" data-card="chat" hidden>
-        <button type="button" id="chat-card-main" class="chat-card-main">
-          <span class="chat-card-title">💬 Chat <span id="chat-card-badge" class="chat-badge" hidden></span></span>
-          <span class="chat-card-preview" id="chat-card-preview">Loading…</span>
-          <span class="settings-link-chevron" aria-hidden="true">›</span>
-        </button>
-        <div class="settings-row card-visibility-row">
-          <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🙈</span> Hide from viewers</span>
-          <jelly-switch class="hide-card-toggle" data-hide-card="chat" label="Hide Chat from viewers"></jelly-switch>
-        </div>
-      </section>
-
       <!-- ── HOME PANELS ────────────────────────────────────
            The five expandable cards are jelly-collapsible elements inside a
            single-open jelly-accordion (opening one closes the others). Each
@@ -361,17 +345,9 @@
 
       </jelly-accordion>
 
-      <!-- ── GAME VIEW (detail; outside the accordion so it shows even when
-           Competitions is collapsed, e.g. opened from a Live-now card) ── -->
-      <section id="game-view" class="card game-view" hidden></section>
-
       <!-- ── WEEK BUILDER (editor-only; opened from Settings → Set up the
            week; body.builder-open hides every sibling section while it's up) ── -->
       <section id="settings-view" class="settings-view" hidden></section>
-
-      <!-- Full-screen Camp Chat (chat.js renders the content; body.chat-open
-           hides every sibling section, same trick as the week builder). -->
-      <section id="chat-view" class="chat-view" hidden></section>
 
     </main>
 
@@ -390,7 +366,9 @@
          bar with its own scroll (a chat list anchors to the bottom; the
          document scroll would fight it). #chat-view moves in here and is
          built once, as today; renderAll only touches the badges. -->
-    <section id="tab-chat" class="tab-panel" data-tab-panel="chat" aria-labelledby="tab-btn-chat"></section>
+    <section id="tab-chat" class="tab-panel" data-tab-panel="chat" aria-labelledby="tab-btn-chat">
+      <section id="chat-view" class="chat-view"></section>
+    </section>
 
     <!-- ── MORE (redesign §7, mockups 09 and 16) ─────────────────────
          Grouped lists, never a card per row: one sheet per group, hairline
@@ -604,7 +582,7 @@
   <section id="takeover-game" class="takeover" role="dialog" aria-modal="true" aria-labelledby="takeover-game-title" hidden>
     <header class="tk-head">
       <button type="button" class="tk-back" data-takeover-back>
-        <svg class="ico" aria-hidden="true"><use href="#i-chev-l"/></svg><span class="tk-back-label">Now</span>
+        <svg class="ico" aria-hidden="true"><use href="#i-chev-l"/></svg><span class="tk-back-label" id="takeover-game-back-label">Now</span>
       </button>
       <div class="tk-titles">
         <h2 class="tk-title" id="takeover-game-title"></h2>

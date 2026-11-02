@@ -524,17 +524,19 @@ test('the class-based press retired with the dent: no .joy-pressed / .joy-pop le
   assert.notOk(/joy-pressed|joy-pop|joy-release|joyPop/.test(app), 'app.js');
 });
 
-test('Back to scoreboard puts the scoreboard back where it was scrolled', () => {
+test('Back to scoreboard puts the tab it came from back where it was scrolled', () => {
   freshState();
   setMemberRole('editor');
   const b = mountBuilder();
   const scrolls = [];
   try {
-    window.scrollTo = (x, y) => scrolls.push([x, y]);
-    window.scrollY = 700;
+    window.scrollTo = (x, y) => { scrolls.push([x, y]); window.scrollY = y; };
+    renderAll(); // the shell paints Now
+    window.scrollY = 700; shellOnScroll();
     openBuilder('games');
-    assert.equal(builderReturnY, 700, 'remembered when the builder opened (the page collapses behind it)');
-    window.scrollY = 0;
+    assert.equal(shell.root, 'builder');
+    window.scrollY = 0; shellOnScroll(); // the page collapsed behind the builder; the clamp must not overwrite Now's slot
+    assert.equal(shell.scroll.now, 700, 'the tab keeps its scroll while the builder is up');
     scrolls.length = 0;
     b.back.fire('click');
     assert.equal(state.ui.view, 'home');

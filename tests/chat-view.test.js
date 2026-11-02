@@ -1,8 +1,9 @@
 // Chat view regressions from the 2026-10-27 glitch sweep (v183, Playwright at
 // 320-430px). Everything that can be checked without layout is pinned here: the
 // "sync is off" vs "loading" distinction, drafts, the in-place shell update that
-// keeps the composer/pill alive, own-send + photo pinning, the lightbox race, the
-// phone-Back history entry and scroll restore. The pure-CSS fixes (tab strip not
+// keeps the composer/pill alive, own-send + photo pinning, the lightbox race and,
+// since chat became the Chat tab, that the view survives tab switches (the
+// shell owns Back and scroll: tests/tabs.test.js). The pure-CSS fixes (tab strip not
 // squashed, badge on the corner, toast rail clear of the composer) need real
 // layout and were verified in Chromium — see the commit message.
 
@@ -24,10 +25,7 @@ test('"sync is off" is only said when sync really is off, not while it is still 
     window.FIREBASE_CONFIG = { apiKey: 'k' };
     fbRef = null; sdkLoadFailed = false; syncDenied = false;
     chatDenied = false; chatReady = {};
-    renderChatCard();
-    const preview = document.getElementById('chat-card-preview');
-    assert.equal(preview.textContent, 'Loading…', 'cold start, sync not started yet');
-    assert.notOk(chatSyncOff());
+    assert.notOk(chatSyncOff(), 'cold start, sync not started yet');
     assert.ok(chatListHTML('general').includes('skeleton'), 'an open view shows the skeleton, not the sentence');
     sdkLoadFailed = true;
     assert.ok(chatSyncOff(), 'SDK never loaded → really off');
@@ -37,8 +35,6 @@ test('"sync is off" is only said when sync really is off, not while it is still 
     syncDenied = false;
     window.FIREBASE_CONFIG = null;
     assert.ok(chatSyncOff(), 'no Firebase config on this device → local only, really off');
-    renderChatCard();
-    assert.ok(preview.textContent.includes('live sync'));
     window.FIREBASE_CONFIG = { apiKey: 'k' };
     fbRef = {};
     assert.notOk(chatSyncOff(), 'sync is up');
@@ -49,48 +45,52 @@ test('"sync is off" is only said when sync really is off, not while it is still 
   }
 });
 
-test('the SDK failing refreshes an open chat (the open view is not re-rendered by renderAll)', () => {
-  const saved = { cfg: window.FIREBASE_CONFIG, fbRef, sdkLoadFailed };
+test('the SDK failing refreshes a built chat (the built view is not re-rendered by renderAll)', () => {
+  const saved = { cfg: window.FIREBASE_CONFIG, fbRef, sdkLoadFailed, built: chatViewBuiltFor };
   const calls = [];
-  const realCard = globalThis.renderChatCard, realView = globalThis.renderChatView;
+  const realStatus = globalThis.renderChatStatus, realView = globalThis.renderChatView;
   try {
     window.FIREBASE_CONFIG = { apiKey: 'k' };
     fbRef = null; sdkLoadFailed = true;
-    state.ui.chatOpen = true;
-    globalThis.renderChatCard = () => calls.push('card');
+    chatViewBuiltFor = 'general';
+    globalThis.renderChatStatus = () => calls.push('status');
     globalThis.renderChatView = (force) => calls.push('view:' + !!force);
     onChatSyncStateChanged();
-    assert.deepEqual(calls, ['card', 'view:true']);
+    assert.deepEqual(calls, ['status', 'view:true']);
+    calls.length = 0;
+    chatViewBuiltFor = null; // the Chat tab was never opened: there is no view to refresh
+    onChatSyncStateChanged();
+    assert.deepEqual(calls, ['status']);
   } finally {
-    globalThis.renderChatCard = realCard; globalThis.renderChatView = realView;
-    state.ui.chatOpen = false;
+    globalThis.renderChatStatus = realStatus; globalThis.renderChatView = realView;
+    chatViewBuiltFor = saved.built;
     window.FIREBASE_CONFIG = saved.cfg; fbRef = saved.fbRef; sdkLoadFailed = saved.sdkLoadFailed;
   }
 });
 
-test('attaching chat sync swaps a stale "sync is off" card/view for the loading state at once', () => {
-  const savedFb = globalThis.firebase, savedStarted = chatSyncStarted, savedOpen = state.ui.chatOpen;
+test('attaching chat sync swaps a stale "sync is off" view for the loading state at once', () => {
+  const savedFb = globalThis.firebase, savedStarted = chatSyncStarted, savedBuilt = chatViewBuiltFor;
   const calls = [];
-  const realCard = globalThis.renderChatCard, realView = globalThis.renderChatView;
+  const realStatus = globalThis.renderChatStatus, realView = globalThis.renderChatView;
   const ref = { limitToLast: () => ref, on: () => {}, once: () => new Promise(() => {}) };
   try {
     globalThis.firebase = { database: () => ({ ref: () => ref }) };
-    globalThis.renderChatCard = () => calls.push('card');
+    globalThis.renderChatStatus = () => calls.push('status');
     globalThis.renderChatView = (force) => calls.push('view:' + !!force);
     chatSyncStarted = false;
-    state.ui.chatOpen = true;
+    chatViewBuiltFor = 'general';
     initChatSync();
-    assert.deepEqual(calls, ['card', 'view:true'], 'refreshed once, after the listeners are attached');
+    assert.deepEqual(calls, ['status', 'view:true'], 'refreshed once, after the listeners are attached');
     calls.length = 0;
     initChatSync(); // idempotent: a second call attaches nothing and repaints nothing
     assert.deepEqual(calls, []);
     chatSyncStarted = false;
-    state.ui.chatOpen = false;
+    chatViewBuiltFor = null;
     initChatSync();
-    assert.deepEqual(calls, ['card'], 'a closed chat only needs its card refreshed');
+    assert.deepEqual(calls, ['status'], 'a chat tab never opened only needs its badge refreshed');
   } finally {
-    globalThis.firebase = savedFb; chatSyncStarted = savedStarted; state.ui.chatOpen = savedOpen;
-    globalThis.renderChatCard = realCard; globalThis.renderChatView = realView;
+    globalThis.firebase = savedFb; chatSyncStarted = savedStarted; chatViewBuiltFor = savedBuilt;
+    globalThis.renderChatStatus = realStatus; globalThis.renderChatView = realView;
   }
 });
 
@@ -268,22 +268,23 @@ test('a forced render that changes nothing does not touch the message list (no t
   }
 });
 
-test('closing and reopening chat keeps the half-typed message', () => {
+test('leaving the Chat tab and coming back keeps the half-typed message, in the same composer', () => {
   const { input } = chatStubs();
   setMemberRole('viewer');
   chatDrafts = {};
   try {
     openChat('general');
     input.value = 'a long half-written reply';
-    closeChat();
+    chatSetDraft('general', input.value); // what the input event does
+    showTab('now');
     assert.equal(chatDrafts.general, 'a long half-written reply');
-    input.value = ''; // a fresh composer node
+    assert.ok(chatHasDraft(), 'the shell will not send someone home over it');
     openChat('general');
-    assert.equal(input.value, 'a long half-written reply');
+    assert.equal(input.value, 'a long half-written reply', 'the composer node was never rebuilt');
     chatSetDraft('general', '');
     assert.notOk('general' in chatDrafts, 'an empty draft is dropped, not stored');
   } finally {
-    closeChat(); chatDrafts = {}; input.value = '';
+    showTab('now'); chatDrafts = {}; input.value = '';
     setMemberRole('editor');
   }
 });
@@ -331,106 +332,82 @@ test('a late lightbox response cannot replace the photo now on screen', async ()
   }
 });
 
-// ── phone Back + scroll restore ──
+// ── the Chat tab (phone Back and scroll are the shell's: tests/tabs.test.js) ──
 
-test('opening chat files one history entry, closing pops it, and phone Back closes the chat', () => {
-  const pushes = [];
-  let backs = 0;
-  globalThis.history = { state: null, pushState(s) { pushes.push(s); this.state = s; }, back() { backs += 1; } };
-  const handlers = {};
-  const realAdd = window.addEventListener;
-  window.addEventListener = (ev, fn) => { handlers[ev] = fn; };
-  setMemberRole('viewer');
-  try {
-    chatHistoryEntry = false;
-    wireChat();
-    openChat('general');
-    openChat('memes'); // already open (a notification tap): no second entry
-    assert.equal(pushes.length, 1, 'one entry per open');
-    assert.ok(pushes[0].campChat);
-    handlers.popstate({ state: null }); // the phone's Back button
-    assert.notOk(state.ui.chatOpen, 'Back closed the chat');
-    assert.equal(backs, 0, 'the browser already popped it — never go back twice');
-    openChat('general');
-    closeChat(); // the ← Camp pill
-    assert.equal(backs, 1, 'the pill pops our entry so the stack does not grow');
-    closeChat();
-    assert.equal(backs, 1, 'and only once');
-  } finally {
-    window.addEventListener = realAdd;
-    delete globalThis.history;
-    chatHistoryEntry = false;
-    state.ui.chatOpen = false;
-    setMemberRole('editor');
-  }
+test('chat files no history entry of its own, and has no back pill or popstate listener', () => {
+  const src = readFixture('../chat.js');
+  assert.notOk(/campChat|chatHistoryPush|chatHistoryPop|chatHistoryEntry|popstate/.test(src), 'the shell\'s history rules cover the Chat tab');
+  assert.notOk(/chat-back-btn|closeChat|chatSavedScrollY/.test(src), 'no back pill, no close, no saved page scroll');
+  assert.ok(/id="chat-send-btn"[^>]*>Send</.test(src), 'a gold Send, as a word');
+  assert.ok(src.includes('#i-camera'), 'and the camera icon, not an emoji');
 });
 
-test('a chat closed by renderAll (hidden from viewers) hands its history entry back', () => {
-  let backs = 0;
-  globalThis.history = { state: null, pushState(s) { this.state = s; }, back() { backs += 1; } };
+test('a message arriving while another tab shows still lands in the built list, and the tab bar counts it', () => {
   setMemberRole('viewer');
+  const realStatus = globalThis.renderChatStatus;
+  const calls = [];
   try {
-    chatHistoryEntry = false;
-    openChat('general');
-    assert.ok(chatHistoryEntry, 'chat open, entry filed');
-    state.meta.hiddenCards = { chat: true }; // editors hid the card; renderAll force-closes it
-    renderAll();
-    assert.notOk(state.ui.chatOpen, 'renderAll closed the chat');
-    assert.equal(backs, 1, 'our entry was popped so Back is not a dead press');
-    assert.notOk(chatHistoryEntry);
-    renderAll(); renderChatCard();
-    assert.equal(backs, 1, 'only once');
+    chatViewBuiltFor = 'general'; chatReady = { general: true }; chatMsgs.general = [];
+    const appended = [];
+    const realAppend = globalThis.appendChatBubble;
+    globalThis.appendChatBubble = (ch, m) => appended.push(m.id);
+    globalThis.renderChatStatus = () => calls.push('status');
+    state.ui.tab = 'now'; // not looking at chat
+    onChatMsgAdded('general', { key: 'm1', val: () => ({ at: serverNow(), byKey: 'sam@camp,test', name: 'Sam', text: 'hello' }) });
+    assert.deepEqual(appended, ['m1'], 'drawn while hidden, or it would be missing on return');
+    assert.ok(calls.includes('status'), 'the tab badge is refreshed');
+    globalThis.appendChatBubble = realAppend;
   } finally {
-    state.meta.hiddenCards = {};
-    delete globalThis.history;
-    chatHistoryEntry = false;
-    state.ui.chatOpen = false;
+    globalThis.renderChatStatus = realStatus;
+    chatViewBuiltFor = null; chatMsgs.general = []; chatReady = {};
     setMemberRole('editor');
   }
 });
 
 test('the SDK-failure path in app.js still tells chat (source pin for the typeof-guarded hook)', () => {
   // The guarded call is invisible to every other test: a rename on either side
-  // would silently bring back the stuck "Loading…" card after a definitive
-  // SDK failure. Run the real onSdkLoadFailed with chat open and watch it land.
-  const saved = { cfg: window.FIREBASE_CONFIG, fbRef, sdkLoadFailed, appStarted };
+  // would silently bring back the stuck "Loading…" list after a definitive
+  // SDK failure. Run the real onSdkLoadFailed with the view built and watch it land.
+  const saved = { cfg: window.FIREBASE_CONFIG, fbRef, sdkLoadFailed, appStarted, built: chatViewBuiltFor };
   const calls = [];
-  const realCard = globalThis.renderChatCard, realView = globalThis.renderChatView;
+  const realStatus = globalThis.renderChatStatus, realView = globalThis.renderChatView;
   try {
     window.FIREBASE_CONFIG = { apiKey: 'k' };
     fbRef = null; appStarted = true;
-    state.ui.chatOpen = true;
-    globalThis.renderChatCard = () => calls.push('card');
+    chatViewBuiltFor = 'general';
+    globalThis.renderChatStatus = () => calls.push('status');
     globalThis.renderChatView = (force) => calls.push('view:' + !!force);
     onSdkLoadFailed('x');
     assert.ok(sdkLoadFailed);
-    assert.ok(calls.includes('card') && calls.includes('view:true'), 'chat was refreshed: ' + calls.join(','));
+    assert.ok(calls.includes('status') && calls.includes('view:true'), 'chat was refreshed: ' + calls.join(','));
   } finally {
-    globalThis.renderChatCard = realCard; globalThis.renderChatView = realView;
-    state.ui.chatOpen = false;
+    globalThis.renderChatStatus = realStatus; globalThis.renderChatView = realView;
+    chatViewBuiltFor = saved.built;
     window.FIREBASE_CONFIG = saved.cfg; fbRef = saved.fbRef; sdkLoadFailed = saved.sdkLoadFailed; appStarted = saved.appStarted;
     setMemberRole('editor');
   }
 });
 
-test('closing chat puts the home page back where the Chat card was', () => {
-  const scrolls = [];
-  const realScrollTo = window.scrollTo;
-  window.scrollTo = (x, y) => scrolls.push({ left: x, top: y });
-  window.scrollY = 228;
-  setMemberRole('viewer');
+test('the Chat panel remembers its list scroll while the tab is away, and lands on the newest message otherwise', () => {
+  const list = document.getElementById('chat-list');
+  const realBottom = globalThis.chatScrollToBottom;
+  let bottoms = 0;
   try {
-    openChat('general');
-    window.scrollY = 0; // the takeover collapsed the page
-    closeChat();
-    assert.equal(scrolls.length, 1);
-    assert.equal(scrolls[0].top, 228);
-    scrolls.length = 0;
-    closeChat(); // chat restored open on a cold load: nothing was saved, nothing to restore
-    assert.equal(scrolls.length, 0);
+    chatViewBuiltFor = 'general';
+    globalThis.chatScrollToBottom = () => { bottoms += 1; };
+    Object.assign(list, { scrollTop: 120, scrollHeight: 2000, clientHeight: 500 });
+    chatOnTabHidden(); // the reader had scrolled up
+    list.scrollTop = 0; // a hidden panel forgets
+    chatOnTabShown();
+    assert.equal(list.scrollTop, 120, 'put back');
+    assert.equal(bottoms, 0);
+    Object.assign(list, { scrollTop: 1480, scrollHeight: 2000, clientHeight: 500 });
+    chatOnTabHidden(); // at the bottom
+    list.scrollTop = 0;
+    chatOnTabShown();
+    assert.equal(bottoms, 1, 'a reader who was at the bottom comes back to the newest message');
   } finally {
-    window.scrollTo = realScrollTo;
-    window.scrollY = 0;
-    setMemberRole('editor');
+    globalThis.chatScrollToBottom = realBottom;
+    chatViewBuiltFor = null;
   }
 });

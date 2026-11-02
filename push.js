@@ -1098,14 +1098,19 @@ async function pushMaybeRepublishSchedule() {
 // Notification taps and messages from sw.js
 // ════════════════════════════════════════════════════════════════════
 
-// A tap on a notification lands here with what to open: 'chat:<channel>' or
-// 'schedule'. A notification from the OTHER camp switches camps first (the
+// A tap on a notification lands here with what to open: 'chat:<channel>',
+// 'schedule', and the shell's deep links 'reveal', 'game:<id>' and
+// 'alert:<id>' (redesign §13.5 — nothing SENDS these three yet: sw.js and the
+// Worker still emit only chat / schedule, and a director alert opens Now, which
+// is where alert:<id> and reveal land anyway; the page accepts them now so the
+// later sender and the in-app links agree on one set). A notification from the
+// OTHER camp switches camps first (the
 // usual set-key-and-reload), carrying the target across in sessionStorage —
 // but only into a camp this account is known to be on, so a stale alert can
 // never bounce anyone into a denial screen.
 function pushHandleOpen(open, camp) {
   const target = String(open || '');
-  if (!/^(chat:[a-z0-9_-]{1,32}|schedule)$/.test(target)) return;
+  if (!/^(chat:[a-z0-9_-]{1,32}|schedule|reveal|game:[A-Za-z0-9_.:-]{1,80}|alert:[A-Za-z0-9_-]{1,64})$/.test(target)) return;
   if (camp && typeof CAMPS !== 'undefined' && CAMPS[camp] && camp !== CAMP.id) {
     const role = typeof readCampsHint === 'function' ? readCampsHint()[camp] : null;
     if ((role === 'editor' || role === 'viewer') && typeof switchCamp === 'function') {
@@ -1114,12 +1119,15 @@ function pushHandleOpen(open, camp) {
     }
     return; // never open the other camp's thing inside this one
   }
-  if (target === 'schedule') {
-    if (typeof openSchedule === 'function') openSchedule();
+  if (target.startsWith('chat:')) {
+    const ch = target.slice(5);
+    if (typeof openChat === 'function' && (typeof chatChannelById !== 'function' || chatChannelById(ch))) openChat(ch);
     return;
   }
-  const ch = target.slice(5);
-  if (typeof openChat === 'function' && (typeof chatChannelById !== 'function' || chatChannelById(ch))) openChat(ch);
+  // schedule → the sheet over Now; reveal / alert:<id> → Now; game:<id> → the
+  // game takeover (a game this week doesn't have just leaves the app where it is).
+  if (typeof shellOpenTarget === 'function') shellOpenTarget(target);
+  else if (target === 'schedule' && typeof openSchedule === 'function') openSchedule();
 }
 
 function onPushServiceWorkerMessage(e) {

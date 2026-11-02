@@ -614,7 +614,7 @@ test('Use this tab instead needs a connection: offline it says so and steals not
   assert.equal(t.sandbox.__reloads, 1, 'back online it goes ahead');
 });
 
-test('a view-only director tab: chat follows the member role (a hidden Chat card still opens for a director)', async () => {
+test('a view-only director tab: chat follows the member role (a hidden Chat tab still opens for a director)', async () => {
   const mgr = tlLocks();
   mgr.otherPageHolds();
   const t = tlTab({ locks: mgr, clock: true });
@@ -625,14 +625,14 @@ test('a view-only director tab: chat follows the member role (a hidden Chat card
   t.run("state.meta.hiddenCards = { chat: true }");
   assert.equal(t.run('chatHiddenFromMe()'), false, 'the card is drawn for a director, so a tap must open it');
   t.run("openChat('general')");
-  assert.equal(t.run('state.ui.chatOpen'), true, 'chat opens in the view-only tab');
-  t.run('closeChat && closeChat()');
+  assert.equal(t.run("activeTab()"), 'chat', 'chat opens in the view-only tab');
+  t.run("showTab('now')");
   // a real viewer, same hidden card: refused (unchanged)
   const v = tlTab();
   v.run("setMemberRole('viewer'); state.meta.hiddenCards = { chat: true }");
   assert.equal(v.run('chatHiddenFromMe()'), true);
   v.run("openChat('general')");
-  assert.equal(!!v.run('state.ui.chatOpen'), false);
+  assert.equal(v.run('activeTab()'), 'now', 'refused: the viewer stays where they were');
 });
 
 test('a view-only tab shows a parked change without Retry / Discard, and those do nothing there', async () => {

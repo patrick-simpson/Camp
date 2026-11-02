@@ -1368,6 +1368,7 @@ function openSchedule() {
   document.body.classList.add('no-scroll');
   const app = document.getElementById('app');
   if (app) app.inert = true; // background isn't reachable by tab/AT while the sheet is up
+  shellSheetOpen('schedule'); // the shell files a history entry: phone Back closes the sheet
   renderSchedule();
   // Land the reader on "now" (today only — other days start at the top).
   requestAnimationFrame(() => {
@@ -1384,6 +1385,7 @@ function openSchedule() {
 // slide down. closeSchedule is also a click listener, so its first argument
 // can be an Event: only a number counts.
 function closeSchedule(fromDy) {
+  shellSheetClose('schedule'); // its history entry goes now, not after the slide-out
   const overlay = scheduleOverlayEl();
   const sheet = overlay.querySelector('.schedule-sheet');
   if (sheet) {
@@ -8074,15 +8076,15 @@ function renderDayTabs() {
   // each time anyone saved a score.
   const label = (d) => d.name.slice(0, 3) + (d.dow === todayDow ? ' •' : '');
   const inners = days.map((d) => `${dayNoteHTML(d, todayDay)}<div class="day-panel-body">${dayGamesHTML(d)}</div>`);
-  const shell = JSON.stringify(days.map((d) => [d.id, label(d)]));
+  const tabsSig = JSON.stringify(days.map((d) => [d.id, label(d)]));
   const live = nav.querySelector('jelly-tabs');
   const panels = live ? [...live.querySelectorAll('jelly-tab-panel')] : [];
-  if (live && nav.__tabsShell === shell && panels.length === days.length) {
+  if (live && nav.__tabsShell === tabsSig && panels.length === days.length) {
     panels.forEach((p, i) => { if (setHtmlIfChanged(p, inners[i])) wireDayPanels(p); });
     if (live.getAttribute('value') !== state.ui.day) live.setAttribute('value', state.ui.day);
     return;
   }
-  nav.__tabsShell = shell;
+  nav.__tabsShell = tabsSig;
 
   nav.innerHTML = `<jelly-tabs class="day-tabs" size="small" value="${esc(state.ui.day)}">` +
     days.map((d, i) =>
@@ -8097,9 +8099,7 @@ function renderDayTabs() {
     const value = e.detail && e.detail.value;
     if (!value || value === state.ui.day) return;
     state.ui.day = value;
-    // Leave any open game view — the panels themselves are already rendered,
-    // so no renderAll: the component's own panel transition is the animation.
-    if (state.ui.gameId) { state.ui.gameId = null; renderGameView(); }
+    // The component's own panel transition is the animation: no renderAll.
     saveState();
   });
 
@@ -8215,13 +8215,7 @@ function dayGamesHTML(day) {
 // same controls now exist once per day panel).
 function wireDayPanels(nav) {
   nav.querySelectorAll('.game-card').forEach((card) => {
-    card.addEventListener('click', () => {
-      rememberGameOpener(card);
-      state.ui.gameId = card.dataset.gameId;
-      saveState();
-      renderAll();
-      scrollToGameView();
-    });
+    card.addEventListener('click', () => openGame(card.dataset.gameId));
   });
   nav.querySelectorAll('.empty-day-builder-btn').forEach((btn) =>
     btn.addEventListener('click', () => openBuilder('games')));
@@ -8231,137 +8225,53 @@ function wireDayPanels(nav) {
 
 // ── Game view ────────────────────────────────────────────────────
 
-// The game id rendered on the previous pass — lets renderGameView act only
-// on open/close TRANSITIONS (folding the accordion) instead of every render.
-let lastGameViewId = null;
-
-// Where the open game was opened FROM: the tapped card's spot on screen, and
-// whether Competitions was open. Back used to drop the page to the top of home
-// (hiding the game view shrank the document), spring the list open under the
-// viewport and land mid-list with the tapped card off-screen — and it opened
-// Competitions even for someone who came from the home Big Board. Now Back
-// puts the page back exactly as it was (restoreGameOpener).
-let gameOpener = null;
-
-// The page position to come back to, plus where the opener's CONTAINER sat
-// (the Competitions card, or the home live strip) so Back can allow for
-// anything that appeared above it meanwhile. Not the tapped card itself: it is
-// mid-transform both times (pressed-in when tapped, rising in when the list
-// re-opens), and a measurement through a transform is off by its offset.
-function rememberGameOpener(el) {
-  const comp = document.querySelector('.competitions-card');
-  const anchorSel = el.closest('#live-home') ? '#live-home' : '.competitions-card';
-  const anchor = document.querySelector(anchorSel);
-  gameOpener = {
-    y: window.scrollY,
-    anchorSel,
-    anchorTop: anchor ? anchor.getBoundingClientRect().top + window.scrollY : null,
-    compOpen: !!(comp && comp.hasAttribute('open')),
-  };
-}
-
-// Called by Back right after its renderAll, in the same frame — the list was
-// re-opened without its spring (setCardOpenNow), so the layout is already
-// final and one instant scroll puts the page back where it was.
-function restoreGameOpener(gid) {
-  const o = gameOpener;
-  gameOpener = null;
-  if (o) {
-    const anchor = document.querySelector(o.anchorSel);
-    const shift = anchor && o.anchorTop != null && anchor.getClientRects().length
-      ? anchor.getBoundingClientRect().top + window.scrollY - o.anchorTop : 0;
-    window.scrollTo(0, o.y + shift);
-    return;
-  }
-  // No record (the page was reloaded with the game open): land on its card.
-  const card = gid && [...document.querySelectorAll('.game-card')]
-    .find((el) => el.dataset.gameId === gid && el.getClientRects().length);
-  if (card) card.scrollIntoView({ block: 'center' });
-}
-
-// Bring a just-opened game into view. Scrolled BEFORE the slide-in starts: a
-// target measured mid-slide is off by the slide's offset. The fold that
-// opening does is instant (setCardOpenNow), so the target isn't still moving.
-// Instant by default: folding the accordion already shrank the page and moved
-// the scroll position, so a smooth scroll's first painted frame sat at the
-// wrong place (the game below the fold) and then travelled. `smooth` is for
-// the home Big Board, whose game really is a screenful or two away.
-function scrollToGameView(smooth) {
-  const gv = document.getElementById('game-view');
-  if (!gv || gv.hidden) return;
-  gv.scrollIntoView({ behavior: smooth && !calmMotion() ? 'smooth' : 'auto', block: 'start' });
-  joySlideIn(gv);
-}
-
-// Flip a home card open or shut with no height animation. jelly-collapsible
-// springs its grid rows over ~0.36 s, and opening a game / Back both scroll
-// to an exact spot in that same moment: aimed at a layout still springing,
-// the open overshot (back pill above the screen) and Back whipped the page up
-// and down. The component's shadow root is open, so its transition is
-// switched off for this one flip — if Jelly's internals ever change, the
-// lookup finds nothing and the card simply animates as it used to.
-function setCardOpenNow(card, open) {
-  const sr = card.shadowRoot;
-  const parts = sr ? ['.wrap', '.content'].map((s) => sr.querySelector(s)).filter(Boolean) : [];
-  parts.forEach((el) => { el.style.transition = 'none'; });
-  if (typeof card.toggle === 'function') card.toggle(open);
-  else if (open) card.setAttribute('open', '');
-  else card.removeAttribute('open');
-  // Commit the new rows while the transition is off, then hand it back.
-  parts.forEach((el) => { void getComputedStyle(el).gridTemplateRows; });
-  parts.forEach((el) => { el.style.transition = ''; });
-}
-
+// The game takeover (redesign §5.5): full screen over whatever tab opened it,
+// its own scroll, a labelled back that names where it returns. The tab
+// underneath never moves, so nothing about the page has to be remembered and
+// restored (the old accordion fold, rememberGameOpener / restoreGameOpener and
+// scrollToGameView retired with the appended #game-view). Opening, closing and
+// the history entry are the shell's: openGame / closeGame above.
 function renderGameView() {
-  const view = document.getElementById('game-view');
-  const dayNav = document.getElementById('day-tabs'); // tabs + per-day panels
+  const tk = document.getElementById('takeover-game');
+  const body = document.getElementById('takeover-game-body');
+  if (!tk || !body) return;
   const g = state.ui.gameId ? gameById(state.ui.gameId) : null;
-
-  // Focus handoff: entering a game folds the home accordion shut (the game
-  // card is the whole screen); leaving it re-opens Competitions so you land
-  // back on the list you came from. Only on the transition — a re-render
-  // while a game is open must not fight a panel someone peeked into.
-  if (!!g !== !!lastGameViewId || (g && g.id !== lastGameViewId)) {
-    const comp = document.querySelector('.competitions-card');
-    if (g) {
-      document.querySelectorAll('.collapsible-card[open]').forEach((d) => setCardOpenNow(d, false));
-    } else if (comp && !comp.hidden && (!gameOpener || gameOpener.compOpen)) {
-      // Skipped when Competitions is hidden from this viewer — otherwise it
-      // would sit open behind the scenes and pop out already-expanded if the
-      // editor un-hid it later — and when the game was opened from the home
-      // Big Board with Competitions shut (there's no list to go back to).
-      setCardOpenNow(comp, true);
-    }
-  }
-  lastGameViewId = g ? g.id : null;
-
   if (!g) {
-    view.hidden = true;
-    view.__headHtml = null; // the next open builds afresh (the back pill's entrance plays)
-    if (dayNav) dayNav.hidden = false;
+    if (tk.__gid) { // it was up: focus goes back to what opened it
+      const o = shell.opener;
+      shell.opener = null;
+      if (o && o.isConnected !== false && typeof o.focus === 'function') { try { o.focus({ preventScroll: true }); } catch (e) { /* gone */ } }
+    }
+    if (!tk.hidden) tk.hidden = true;
+    tk.__gid = null;
+    body.__headHtml = null; // the next open builds afresh
     return;
   }
-  view.hidden = false;
-  if (dayNav) dayNav.hidden = true;
+  const opening = tk.hidden || tk.__gid !== g.id;
+  tk.hidden = false;
+  tk.__gid = g.id;
 
+  // The header names the game and where Back goes; plain text nodes, written
+  // only when they differ (this runs on every renderAll).
   const badge = FORMAT_BADGES[g.format] || { label: g.format || '?', cls: '' };
-  const backDay = dayById(g.dayId);
-  // The head (back pill, title, rules) is built once per game and then left
-  // alone. It used to be rewritten on every renderAll — every snapshot,
-  // every clock tap — which replayed the back pill's slide-in (a blink on
-  // every goal) and slammed "How to play" shut under someone reading it.
+  const setText = (id, text) => {
+    const el = document.getElementById(id);
+    if (el && el.textContent !== text) el.textContent = text;
+  };
+  setText('takeover-game-title', `${g.emoji ? g.emoji + ' ' : ''}${g.name}`);
+  setText('takeover-game-sub', `📍 ${g.location} · ${g.session} · ${badge.label}`);
+  const backLabel = shellGameBackLabel(g);
+  setText('takeover-game-back-label', backLabel);
+  const backBtn = tk.querySelector('[data-takeover-back]');
+  if (backBtn && backBtn.getAttribute('aria-label') !== 'Back to ' + backLabel) backBtn.setAttribute('aria-label', 'Back to ' + backLabel);
+
+  // The body head (double-points tag, rules) is built once per game and then
+  // left alone. It used to be rewritten on every renderAll — every snapshot,
+  // every clock tap — which slammed "How to play" shut under someone reading it.
   // Compared as a plain string, not via setHtmlIfChanged: opening the rules
   // adds `open` to the <details>, which that would read as "DOM changed" and
   // rebuild — shut.
   const headHtml = `
-    <button id="back-btn" class="back-pill back-btn"><span class="back-pill-arrow" aria-hidden="true">←</span> ${esc(backDay ? backDay.name : 'All')} games</button>
-    <div class="game-view-header">
-      <span class="game-emoji-lg">${esc(g.emoji)}</span>
-      <div>
-        <h2>${esc(g.name)}</h2>
-        <p class="muted">📍 ${esc(g.location)} · ${esc(g.session)} · <jelly-badge class="format-badge" variant="${esc(badge.variant || 'platinum')}" size="small">${esc(badge.label)}</jelly-badge></p>
-      </div>
-    </div>
     ${g.messtival ? '<p class="messtival-tag">🎉 Double points until the end of Friday</p>' : ''}
     ${(g.rules || []).length ? `<details class="rules-details">
       <summary>How to play</summary>
@@ -8370,23 +8280,20 @@ function renderGameView() {
         <ul>${(sec.items || []).map((it) => `<li>${esc(it)}</li>`).join('')}</ul>
       `).join('')}
     </details>` : ''}`;
-  if (view.__headHtml !== headHtml || !view.querySelector('#entry-area')) {
-    view.innerHTML = `${headHtml}
+  if (body.__headHtml !== headHtml || !body.querySelector('#entry-area')) {
+    body.innerHTML = `${headHtml}
     <div id="clock-area"></div>
     <div id="tools-area"></div>
     <div id="entry-area"></div>
   `;
-    view.__headHtml = headHtml;
-
-    document.getElementById('back-btn').addEventListener('click', () => {
-      const gid = state.ui.gameId;
-      state.ui.gameId = null;
-      saveState();
-      renderAll();
-      // No joyStagger here any more: re-opening Competitions already rises its
-      // contents in, and a second rise inside the first read as sluggish.
-      restoreGameOpener(gid);
-    });
+    body.__headHtml = headHtml;
+    body.scrollTop = 0;
+  }
+  if (opening) {
+    // A whole screen arrives with the full-screen spring (settle: no bounce);
+    // the page behind it is inert, so focus moves in with it.
+    if (typeof JellyMotion !== 'undefined') JellyMotion.play(tk, 'settle', (x) => ({ transform: `translateX(${(1 - x) * 100}%)` }));
+    if (backBtn && typeof backBtn.focus === 'function') { try { backBtn.focus({ preventScroll: true }); } catch (e) { /* fine */ } }
   }
 
   // Standalone game clock — everyone sees it tick live; only editors get the
@@ -8561,23 +8468,14 @@ function renderLiveHome() {
   // Its listeners hold no state (openGame looks the game up by id), so they
   // are wired only onto fresh nodes.
   if (setLiveHtmlIfChanged(wrap, liveHtml, [])) {
-    const openGame = (el) => {
-      const g = gameById(el.dataset.gameId);
-      if (!g) return;
-      rememberGameOpener(el);
-      state.ui.gameId = g.id;
-      state.ui.day = g.dayId;
-      saveState();
-      renderAll();
-      scrollToGameView(true);
-    };
+    const openFrom = (el) => openGame(el.dataset.gameId);
     wrap.querySelectorAll('.live-home-card').forEach((btn) => {
-      btn.addEventListener('click', () => openGame(btn));
+      btn.addEventListener('click', () => openFrom(btn));
     });
     const board = wrap.querySelector('.home-board');
     if (board) {
-      board.addEventListener('click', () => openGame(board));
-      board.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') openGame(board); });
+      board.addEventListener('click', () => openFrom(board));
+      board.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') openFrom(board); });
     }
   }
   // Every render, written or not: it diffs the score against the last one.
@@ -9675,7 +9573,7 @@ function holdBoardCelebrations() {
       .filter((x) => x.t != null);
     // Only onto a replacement in the SAME place: opening the game from the
     // home board must not carry the home board's volley into the game view.
-    const host = board.closest('#live-home, #game-view');
+    const host = board.closest('#live-home, #takeover-game');
     if (host && (cannons.length || pops.length)) held.push({ board, host, gid: board.dataset.boardGame, cannons, pops });
   });
   return () => held.forEach(({ board, host, gid, cannons, pops }) => {
@@ -10913,6 +10811,9 @@ function startUpdatePolling() {
 // index.html (and thus the new ?v assets), never a stale cached copy — which
 // would otherwise bounce us straight back into "update available" forever.
 function doReload() {
+  // A reload mid-session must reopen on the same tab: stamp the shell so the
+  // "away more than 10 minutes" rule (shellBoot) doesn't read it as a cold start.
+  try { shellStamp(); persistState(); } catch (e) { /* the reload goes ahead */ }
   try {
     const u = new URL(location.href);
     u.searchParams.set('r', String(Date.now()));
@@ -11039,6 +10940,751 @@ function startIdleCollapse() {
 
 // ── Init ─────────────────────────────────────────────────────────
 
+// ════════════════════════════════════════════════════════════════════
+// THE SHELL — four tabs, takeovers, sheets, history (redesign §2, §13)
+// ════════════════════════════════════════════════════════════════════
+// Three containers, one job each: a TAB is a place you live (Now, Games, Chat,
+// More), a TAKEOVER is something you do (a game today), a SHEET is something
+// you read and leave (the schedule). The source of truth stays where it always
+// was — state.ui.tab, state.ui.gameId, state.ui.view === 'settings', and the
+// open sheets — and everything else is DERIVED from it on every renderAll:
+// which panel shows, which takeover is up, and what the browser's history
+// stack must look like so the phone's Back does the obvious thing. Nothing
+// below ever pushes history from a click handler; a handler changes state and
+// renderAll → shellSync() reconciles the stack against it.
+//
+// HISTORY (§13.5). The stack is always [Now] + [the tab, unless it is Now] +
+// one entry per open overlay, so every entry's snapshot is a pure function of
+// its top (shellChain), and a plan from one snapshot to another is a pure
+// function too (shellHistPlan). Leaving Now for a tab pushes ONE entry (Back
+// returns to Now; Back on Now leaves the app), moving between non-Now tabs
+// REPLACES it, a takeover or sheet pushes, "Next game" replaces the takeover's
+// entry. Entry URLs are never touched (no hash): a hash is only an INPUT, a
+// deep link, consumed at boot. Entries carry {campShell:1, tab, ov:[…]}, so a
+// reload, Back, Forward or a long-press jump all land on a known snapshot that
+// shellApply() paints.
+//
+// DIRTY RENDER (§13.2). Only the visible tab's renderer runs on a snapshot or
+// the 30 s tick; the others are marked dirty and catch up when shown. A panel
+// whose renderer has SIDE EFFECTS (standings: the change history, point
+// alerts, the rank baseline — §13.9) must not live behind this: those stay in
+// SHELL_ALWAYS until they are lifted out.
+
+const SHELL_TABS = ['now', 'games', 'chat', 'more'];
+// Away longer than this and the app reopens on Now (§13.4); also how long a
+// reload remembers a tab / takeover.
+const SHELL_RESUME_MS = 10 * 60 * 1000;
+
+const shell = {
+  cur: null,       // the history entry we believe the browser is on (a snapshot); null = not ours / unknown
+  root: null,      // what is painted: a tab id, or 'builder'
+  dirty: { now: true, games: true, chat: true, more: true },
+  scroll: { now: 0, games: 0, chat: 0, more: 0 }, // document scroll per tab (a takeover and the chat panel scroll themselves)
+  sheets: [],      // open sheet ids, oldest first
+  opener: null,    // the element that opened the takeover / a sheet, focus returns to it
+  q: [],           // pending history ops (a Back must finish before the next push)
+  busy: false,
+  busyTimer: null,
+  hiddenAt: 0,
+  applying: false, // shellApply is painting a snapshot: nothing may reconcile mid-way
+  bootSheet: null,
+  wired: false,
+};
+
+function shellTabOk(t) { return SHELL_TABS.includes(t); }
+
+function activeTab() {
+  const t = state && state.ui && state.ui.tab;
+  return shellTabOk(t) ? t : 'now';
+}
+
+// What the document is currently showing: a tab, or the week builder (which
+// still lives inside #tab-now until it becomes a takeover of its own).
+function shellVisibleRoot() {
+  return builderOpen() ? 'builder' : activeTab();
+}
+
+// ── snapshots (pure) ────────────────────────────────────────────────
+// {tab, ov:[{k:'builder'} | {k:'game', id, from?} | {k:'sheet', id}]}
+function shellSnap() {
+  const ov = [];
+  if (builderOpen()) ov.push({ k: 'builder' });
+  const gid = state.ui.gameId;
+  if (gid && gameById(gid)) {
+    const o = { k: 'game', id: gid };
+    if (shellTabOk(state.ui.gameFrom)) o.from = state.ui.gameFrom;
+    ov.push(o);
+  }
+  shell.sheets.forEach((id) => ov.push({ k: 'sheet', id }));
+  return { tab: activeTab(), ov };
+}
+
+// A history entry's state is whatever a device wrote (or an older build left),
+// so it is validated like any other stored input: exactly this shape or null.
+function shellSnapFromRaw(raw) {
+  if (!raw || typeof raw !== 'object' || raw.campShell !== 1) return null;
+  const ov = [];
+  (Array.isArray(raw.ov) ? raw.ov : []).slice(0, 4).forEach((o) => {
+    if (!o || typeof o !== 'object') return;
+    if (o.k === 'builder') ov.push({ k: 'builder' });
+    else if (o.k === 'game' && typeof o.id === 'string' && /^[A-Za-z0-9_.:-]{1,80}$/.test(o.id)) {
+      const g = { k: 'game', id: o.id };
+      if (shellTabOk(o.from)) g.from = o.from;
+      ov.push(g);
+    } else if (o.k === 'sheet' && typeof o.id === 'string' && /^[a-z0-9-]{1,24}$/.test(o.id)) ov.push({ k: 'sheet', id: o.id });
+  });
+  return { tab: shellTabOk(raw.tab) ? raw.tab : 'now', ov };
+}
+
+function shellSnapKey(s) {
+  return s.tab + '|' + s.ov.map((o) => o.k + ':' + (o.id || '')).join(',');
+}
+
+// Every entry from the base up to `s` (the stack is fully determined by its top).
+function shellChain(s) {
+  const out = [{ tab: 'now', ov: [] }];
+  if (s.tab !== 'now') out.push({ tab: s.tab, ov: [] });
+  s.ov.forEach((o, i) => out.push({ tab: s.tab, ov: s.ov.slice(0, i + 1) }));
+  return out;
+}
+
+// What to do to the browser's history to get from the entry it is on (`cur`,
+// null when that entry isn't ours) to `want`. A single pop + single push is
+// ONE replace: tab → tab, and "Next game" over the game it replaces.
+function shellHistPlan(cur, want) {
+  const b = shellChain(want);
+  if (!cur) return [{ op: 'replace', s: b[0] }].concat(b.slice(1).map((s) => ({ op: 'push', s })));
+  const a = shellChain(cur);
+  let p = 0;
+  while (p < a.length && p < b.length && shellSnapKey(a[p]) === shellSnapKey(b[p])) p += 1;
+  const pops = a.length - p;
+  const pushes = b.slice(p);
+  if (!pops && !pushes.length) return [];
+  if (pops === 1 && pushes.length === 1) return [{ op: 'replace', s: pushes[0] }];
+  const ops = [];
+  if (pops) ops.push({ op: 'back', n: pops });
+  pushes.forEach((s) => ops.push({ op: 'push', s }));
+  return ops;
+}
+
+// ── history runner ──────────────────────────────────────────────────
+function shellEntryState(s) {
+  const ov = s.ov.map((o) => {
+    const x = { k: o.k };
+    if (o.id) x.id = o.id;
+    if (o.from) x.from = o.from;
+    return x;
+  });
+  return { campShell: 1, tab: s.tab, ov };
+}
+
+function shellHistPump() {
+  if (shell.busy) return;
+  const hist = typeof history !== 'undefined' ? history : null;
+  while (shell.q.length) {
+    const op = shell.q.shift();
+    try {
+      if (!hist) continue;
+      if (op.op === 'push' && hist.pushState) hist.pushState(shellEntryState(op.s), '');
+      else if (op.op === 'replace' && hist.replaceState) hist.replaceState(shellEntryState(op.s), '');
+      else if (op.op === 'back' && hist.go) {
+        // The popstate this raises is OUR doing (the UI already shows where we
+        // are), so the queue waits for it — a push issued before it would land
+        // on the wrong entry. The timer is the no-popstate-ever safety net.
+        shell.busy = true;
+        shell.busyTimer = setTimeout(shellBackDone, 600);
+        hist.go(-op.n);
+        return;
+      }
+    } catch (e) { /* no history API (or a sandbox): Back just leaves, as before */ }
+  }
+}
+
+function shellBackDone() {
+  if (shell.busyTimer) { clearTimeout(shell.busyTimer); shell.busyTimer = null; }
+  shell.busy = false;
+  shellHistPump();
+}
+
+// Make the browser's stack match the state. `shell.cur` moves to `want` at
+// once (the queued ops get it there), so a second call before they finish
+// plans from where they will end up.
+function shellReconcile() {
+  if (shell.applying) return;
+  const want = shellSnap();
+  const ops = shellHistPlan(shell.cur, want);
+  shell.cur = want;
+  if (!ops.length) return;
+  shell.q.push(...ops);
+  shellHistPump();
+}
+
+// The phone's Back / Forward / a history jump: the entry it landed on says
+// where we are; paint that. Our own queued Back lands here too, and is ignored.
+function shellOnPopState(e) {
+  if (shell.busy) { shellBackDone(); return; }
+  shell.q.length = 0; // the person's navigation outranks whatever we had queued
+  const s = shellSnapFromRaw(e && e.state) || { tab: 'now', ov: [] };
+  shell.cur = s;
+  shellApply(s);
+}
+
+// Paint a snapshot: open / close what it names, switch to its tab. Every piece
+// of state moves first and the stack is reconciled once at the end (by the
+// renderAll inside), so it never plans against a half-applied snapshot.
+function shellApply(s) {
+  const game = s.ov.find((o) => o.k === 'game');
+  const wantBuilder = s.ov.some((o) => o.k === 'builder');
+  if (!wantBuilder && builderOpen()) {
+    // Back out of an open game editor would strand its draft: ask first, and if
+    // the answer is no the reconcile in renderAll puts the entry straight back
+    // (shell.cur is the entry the browser is on, the builder is still open).
+    if (typeof builderDirty === 'function' && builderDirty() && !confirm('Discard your unsaved changes?')) {
+      renderAll();
+      return;
+    }
+    if (typeof discardGameDraft === 'function') discardGameDraft();
+    state.ui.view = 'home';
+  } else if (wantBuilder && !builderOpen() && canEdit()) {
+    state.ui.view = 'settings';
+    if (!state.ui.settingsTab) state.ui.settingsTab = 'games';
+  }
+  state.ui.gameId = game && gameById(game.id) ? game.id : null;
+  if (game && game.from) state.ui.gameFrom = game.from;
+  state.ui.tab = s.tab;
+  shell.applying = true;
+  try {
+    shell.sheets.slice().forEach((id) => {
+      if (s.ov.some((o) => o.k === 'sheet' && o.id === id)) return;
+      if (id === 'schedule' && typeof closeSchedule === 'function') closeSchedule();
+      else shellSheetClose(id);
+    });
+    s.ov.filter((o) => o.k === 'sheet').forEach((o) => {
+      if (shell.sheets.includes(o.id)) return;
+      if (o.id === 'schedule' && typeof openSchedule === 'function') openSchedule();
+      else shellSheetOpen(o.id);
+    });
+  } finally { shell.applying = false; }
+  shellStamp();
+  saveState();
+  renderAll();
+}
+
+// ── painting ────────────────────────────────────────────────────────
+function shellStamp() {
+  if (state && state.ui) state.ui.shellAt = Date.now();
+}
+
+function shellTabIndex(root) {
+  const i = SHELL_TABS.indexOf(root);
+  return i < 0 ? 0 : i;
+}
+
+// The blob is one element resting where CSS puts it (#app[data-tab]); it
+// springs from the old tab's place (JellyMotion snap, stretching with its
+// velocity). Calm jumps: calm === false means no motion at all.
+function shellSpringBlob(from, to) {
+  const blob = document.getElementById('tabbar') && document.getElementById('tabbar').querySelector('.tab-blob');
+  const row = document.getElementById('tabbar') && document.getElementById('tabbar').querySelector('.tabbar-row');
+  if (!blob || !row || typeof JellyMotion === 'undefined' || !row.clientWidth) return;
+  const dx = (shellTabIndex(from) - shellTabIndex(to)) * (row.clientWidth / SHELL_TABS.length);
+  if (!dx) return;
+  JellyMotion.play(blob, 'snap', (x, v) => ({
+    transform: `translateX(${dx * (1 - x)}px) scaleX(${1 + Math.min(0.3, Math.abs(v) * 0.05)})`,
+  }), { calm: false });
+}
+
+// Pop the icon of the tab just chosen (a tiny press spring).
+function shellPopIcon(tab) {
+  const ico = document.querySelector(`#tabbar .tab[data-tab="${tab}"] .tab-ico`);
+  if (!ico || typeof JellyMotion === 'undefined') return;
+  JellyMotion.play(ico, 'press', (x) => ({ transform: `scale(${1 + 0.14 * Math.sin(Math.PI * Math.min(1, x))})` }), { calm: false });
+}
+
+function shellTakeoverOpen() {
+  return !!(state.ui.gameId && gameById(state.ui.gameId));
+}
+
+// Which panel shows, the tab buttons' state, the takeover's body class. Returns
+// whether the visible root CHANGED, so the caller can restore its scroll after
+// the new panel has rendered.
+function shellPaint() {
+  const root = shellVisibleRoot();
+  const tab = activeTab();
+  const prev = shell.root;
+  const changed = root !== prev;
+  if (changed && prev === 'chat' && typeof chatOnTabHidden === 'function') chatOnTabHidden();
+  const app = document.getElementById('app');
+  // The builder still lives inside #tab-now, so while it is up the Now panel is
+  // the one in the layout (the tab buttons keep naming the tab to return to).
+  const attr = root === 'builder' ? 'now' : root;
+  if (app && app.getAttribute('data-tab') !== attr) app.setAttribute('data-tab', attr);
+  document.querySelectorAll('#tabbar .tab').forEach((btn) => {
+    const on = btn.dataset.tab === tab;
+    if (btn.getAttribute('aria-selected') !== String(on)) btn.setAttribute('aria-selected', String(on));
+  });
+  const takeover = shellTakeoverOpen();
+  document.body.classList.toggle('takeover-open', takeover);
+  // Everything behind a takeover is unreachable for Tab and screen readers.
+  if (app && 'inert' in app && !shell.sheets.length) app.inert = takeover;
+  if (changed) {
+    shell.root = root;
+    if (prev && prev !== 'builder' && root !== 'builder') { shellSpringBlob(prev, root); shellPopIcon(root); }
+  }
+  return changed;
+}
+
+// Put the incoming root's document scroll back (a tab remembers where it was;
+// the builder, a takeover's host and the chat panel start at the top).
+function shellRestoreScroll(root) {
+  const y = root === 'now' || root === 'games' || root === 'more' ? (shell.scroll[root] || 0) : 0;
+  shellScrollTo(y, false);
+  if (root === 'chat' && typeof chatOnTabShown === 'function') chatOnTabShown();
+}
+
+function shellScrollTo(y, smooth) {
+  if (typeof window === 'undefined' || typeof window.scrollTo !== 'function') return;
+  if (smooth && !calmMotion()) window.scrollTo({ top: y, behavior: 'smooth' });
+  else window.scrollTo(0, y);
+}
+
+// Passive scroll listener: remembers the visible tab's document scroll, and
+// shows the header's hairline only once something has moved under it. A
+// takeover or the builder collapses the page, so those never write a tab's slot.
+function shellOnScroll() {
+  const header = document.getElementById('app-header');
+  const y = (typeof window !== 'undefined' && window.scrollY) || 0;
+  if (header) header.classList.toggle('is-scrolled', y > 2);
+  const root = shell.root;
+  if (root === 'now' || root === 'games' || root === 'more') {
+    if (!shellTakeoverOpen() && !shell.sheets.length) shell.scroll[root] = y;
+  }
+}
+
+// ── switching ───────────────────────────────────────────────────────
+// Close whatever is stacked over the tabs before moving to one (a deep link, a
+// notification tap). A builder with an unsaved game editor is never discarded
+// silently.
+function shellCloseOverlays() {
+  shell.sheets.slice().forEach((id) => (id === 'schedule' && typeof closeSchedule === 'function' ? closeSchedule() : shellSheetClose(id)));
+  state.ui.gameId = null;
+  if (builderOpen()) {
+    if (typeof builderDirty === 'function' && builderDirty() && !confirm('Discard your unsaved changes?')) return false;
+    if (typeof discardGameDraft === 'function') discardGameDraft();
+    state.ui.view = 'home';
+  }
+  return true;
+}
+
+function showTab(tab, opts) {
+  opts = opts || {};
+  if (!shellTabOk(tab)) return false;
+  const stacked = shellSnap().ov.length > 0;
+  if (tab === activeTab() && !stacked) {
+    if (!opts.silent) shellRetap(tab);
+    return true;
+  }
+  if (stacked && !shellCloseOverlays()) return false;
+  state.ui.tab = tab;
+  shellStamp();
+  saveState();
+  renderAll();
+  return true;
+}
+
+// Tapping the tab you are on glides it to the top (Chat: to the newest message).
+function shellRetap(tab) {
+  if (tab === 'chat') {
+    if (typeof chatScrollToBottom === 'function') chatScrollToBottom();
+    return;
+  }
+  shellScrollTo(0, true);
+}
+
+// ── takeovers (the game) ────────────────────────────────────────────
+// `from` names where the labelled back returns: the tab the game was opened on.
+function openGame(gid, opts) {
+  const g = gameById(gid);
+  if (!g) return false;
+  opts = opts || {};
+  // Focus returns to the control that opened the takeover (kept across a
+  // "Next game" swap: the opener is the first one).
+  if (!state.ui.gameId) shell.opener = document.activeElement || null;
+  state.ui.gameId = g.id;
+  state.ui.gameFrom = shellTabOk(opts.from) ? opts.from : activeTab();
+  state.ui.gameDow = campNow().dow;
+  state.ui.day = g.dayId;
+  shellStamp();
+  saveState();
+  renderAll();
+  return true;
+}
+
+function closeGame() {
+  if (!state.ui.gameId) return;
+  state.ui.gameId = null;
+  shellStamp();
+  saveState();
+  renderAll(); // renderGameView hands focus back when the takeover goes (a Back gesture closes it too)
+}
+
+// "‹ Now", "‹ Wednesday games", "‹ More": always a fixed place the Back lands on.
+function shellGameBackLabel(g) {
+  const from = shellTabOk(state.ui.gameFrom) ? state.ui.gameFrom : 'now';
+  if (from === 'games') {
+    const d = g ? dayById(g.dayId) : null;
+    return d ? d.name + ' games' : 'Games';
+  }
+  return from === 'more' ? 'More' : from === 'chat' ? 'Chat' : 'Now';
+}
+
+// ── sheets ──────────────────────────────────────────────────────────
+// Short reference you read and leave. The frame (.sheet-overlay in index.html)
+// is shared: backdrop / ✕ / Escape / Back close it, the grab strip drags it
+// down, focus is trapped while open and returns to the opener. `schedule` is
+// the older #schedule-overlay, which keeps its own markup and motion and only
+// reports here, so Back closes it too.
+function shellSheetEl(id) {
+  return id === 'schedule' ? null : document.getElementById('sheet-' + id);
+}
+
+function shellSheetOpen(id, opener) {
+  if (shell.sheets.includes(id)) return;
+  if (id !== 'schedule') {
+    const el = shellSheetEl(id);
+    if (!el) return;
+    el.hidden = false;
+    shell.opener = opener || document.activeElement || null;
+    const sheet = el.querySelector('.sheet');
+    if (sheet && typeof JellyMotion !== 'undefined') {
+      JellyMotion.play(sheet, 'arrive', (x) => ({ transform: `translateY(${(1 - x) * 100}%)` }));
+    }
+    const close = el.querySelector('.sheet-close');
+    if (close && typeof close.focus === 'function') { try { close.focus({ preventScroll: true }); } catch (e) { /* fine */ } }
+    const app = document.getElementById('app');
+    if (app && 'inert' in app) app.inert = true;
+  }
+  shell.sheets.push(id);
+  shellReconcile();
+}
+
+function shellSheetClose(id) {
+  const i = shell.sheets.indexOf(id);
+  if (i < 0) return;
+  shell.sheets.splice(i, 1);
+  if (id !== 'schedule') {
+    const el = shellSheetEl(id);
+    if (el) {
+      el.hidden = true;
+      const sheet = el.querySelector('.sheet');
+      if (sheet) { sheet.style.transform = ''; sheet.style.transition = ''; }
+    }
+    if (!shell.sheets.length) {
+      const app = document.getElementById('app');
+      if (app && 'inert' in app) app.inert = shellTakeoverOpen();
+    }
+    const o = shell.opener;
+    shell.opener = null;
+    if (o && o.isConnected !== false && typeof o.focus === 'function') { try { o.focus({ preventScroll: true }); } catch (e) { /* gone */ } }
+  }
+  shellReconcile();
+}
+
+// Drag the grab strip down to close; the list inside scrolls normally.
+function wireSheetDrag(overlay) {
+  const grab = overlay.querySelector('[data-sheet-grab]');
+  const sheet = overlay.querySelector('.sheet');
+  if (!grab || !sheet) return;
+  let startY = null;
+  let dy = 0;
+  const id = overlay.id.replace(/^sheet-/, '');
+  const end = () => {
+    if (startY == null) return;
+    startY = null;
+    sheet.style.transition = calmMotion() ? '' : 'transform 0.2s ease';
+    if (dy > 90) { sheet.style.transform = ''; shellSheetClose(id); return; }
+    sheet.style.transform = '';
+  };
+  grab.addEventListener('touchstart', (e) => { startY = e.touches[0].clientY; dy = 0; sheet.style.transition = 'none'; }, { passive: true });
+  grab.addEventListener('touchmove', (e) => {
+    if (startY == null) return;
+    dy = Math.max(0, e.touches[0].clientY - startY);
+    sheet.style.transform = `translateY(${dy}px)`;
+  }, { passive: true });
+  grab.addEventListener('touchend', end);
+  grab.addEventListener('touchcancel', () => { dy = 0; end(); });
+}
+
+// ── dirty render ────────────────────────────────────────────────────
+// What each tab renders. The Competitions / Standings / Cleanup / Verse /
+// Bonus cards still sit in Now's markup, so they render with it until they
+// move into the Games and More panels (then these lists move with them).
+const SHELL_PANELS = {
+  now: {
+    render() {
+      renderNoticeBoard();
+      renderWhatsNew();
+      renderAnnouncements();
+      renderNowBanner();
+      renderLiveHome();
+      renderDayTabs(); // includes every day panel's game list
+      renderMyElectives();
+      renderMemoryVerse();
+      renderMealCleanup();
+      renderBonuses();
+      renderFooter();
+    },
+    // What changes with the clock alone (the 30 s tick).
+    tick() {
+      renderNowBanner();
+      renderNoticeBoard();
+      renderWhatsNew();
+      renderMyElectives();
+      renderAnnouncements();
+    },
+  },
+  games: { render() {}, tick() {} },
+  chat: {
+    render() { if (typeof renderChatView === 'function') renderChatView(); },
+    tick() {},
+  },
+  more: { render() {}, tick() {} },
+};
+
+// Renderers that run on every pass whatever tab is showing: they have side
+// effects (renderStandings records the change history, raises the point
+// alerts and keeps the start-of-day rank baseline for directors) or keep
+// state honest (pruning expired announcements). A renderer moves out of here
+// only when its side effects have been lifted out of it (§13.9).
+const SHELL_ALWAYS = [
+  () => pruneExpiredAnnouncements(),
+  () => renderStandings(),
+  () => refreshOpenSchedule(),
+];
+
+function renderTab(tab) {
+  const p = SHELL_PANELS[tab];
+  if (p) p.render();
+  shell.dirty[tab] = false;
+}
+
+// Called from renderAll: the visible tab renders, the rest wait.
+function renderShellTabs() {
+  const active = activeTab();
+  SHELL_ALWAYS.forEach((fn) => fn());
+  renderTab(active);
+  SHELL_TABS.forEach((t) => { if (t !== active) shell.dirty[t] = true; });
+}
+
+// The 30 s tick and the wake-up: the time-driven part of the visible tab only.
+function shellTick() {
+  shellStamp();
+  SHELL_ALWAYS.forEach((fn) => fn());
+  const p = SHELL_PANELS[activeTab()];
+  if (p) p.tick();
+  SHELL_TABS.forEach((t) => { if (t !== activeTab()) shell.dirty[t] = true; });
+  renderTabBadges();
+}
+
+// Counts on the tab bar. Patched in place — the buttons are static markup.
+function renderTabBadges() {
+  const chat = document.getElementById('tab-badge-chat');
+  if (chat) {
+    const hidden = typeof chatHiddenFromMe === 'function' && chatHiddenFromMe();
+    const n = !hidden && typeof unreadTotal === 'function' ? unreadTotal() : 0;
+    const text = n > 99 ? '99+' : n ? String(n) : '';
+    if (chat.hidden !== (n === 0)) chat.hidden = n === 0;
+    if (chat.textContent !== text) chat.textContent = text;
+    const btn = document.getElementById('tab-btn-chat');
+    const label = n ? 'Chat, ' + n + ' unread' : 'Chat';
+    if (btn && btn.getAttribute('aria-label') !== label) btn.setAttribute('aria-label', label);
+  }
+}
+
+// ── keyboard (§13.6) ────────────────────────────────────────────────
+// A text-entry element is focused: the tab bar slides away and a takeover's
+// score dock steps aside. NOT fieldFocused(): that one deliberately says "no"
+// inside the chat view (so chatting doesn't defer scoreboard updates), which
+// would leave the chat composer — the main reason for this rule — without it.
+function textEntryFocused() {
+  const ae = document.activeElement;
+  return !!(ae && (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable ||
+    /^JELLY-(INPUT|TEXTAREA|OTP)$/.test(ae.tagName || '')) && ae.type !== 'file' && ae.type !== 'checkbox' && ae.type !== 'radio');
+}
+
+let shellKbTimer = null;
+function shellSyncKeyboard() {
+  if (shellKbTimer) { clearTimeout(shellKbTimer); shellKbTimer = null; }
+  if (textEntryFocused()) { document.body.classList.add('kb-open'); return; }
+  // Moving between two fields fires focusout then focusin: wait a beat so the
+  // bar doesn't flicker.
+  shellKbTimer = setTimeout(() => {
+    shellKbTimer = null;
+    if (!textEntryFocused()) document.body.classList.remove('kb-open');
+  }, 100);
+}
+
+// iOS doesn't move fixed elements with the keyboard: the visual viewport says
+// how much of the layout viewport it covers, and the docks ride on that.
+function shellSyncViewport() {
+  const vv = typeof window !== 'undefined' ? window.visualViewport : null;
+  if (!vv) return;
+  const kb = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+  document.documentElement.style.setProperty('--kb-h', kb + 'px');
+}
+
+// ── coming back, boot, deep links ───────────────────────────────────
+function shellHasUnsentWork() {
+  if (typeof editorMidEntry === 'function' && canEdit() && editorMidEntry()) return true;
+  if (typeof chatComposerBusy === 'function' && chatComposerBusy()) return true;
+  if (typeof chatHasDraft === 'function' && chatHasDraft()) return true;
+  return false;
+}
+
+// Away longer than SHELL_RESUME_MS: reopen on Now at the top, takeovers closed,
+// unless something half-typed would be lost (replaces the 5-minute idle collapse
+// of the cards for the shell's own state).
+function shellResume() {
+  const away = shell.hiddenAt ? Date.now() - shell.hiddenAt : 0;
+  shell.hiddenAt = 0;
+  if (away <= SHELL_RESUME_MS || shellHasUnsentWork()) { renderTabBadges(); return; }
+  shell.sheets.slice().forEach((id) => (id === 'schedule' && typeof closeSchedule === 'function' ? closeSchedule() : shellSheetClose(id)));
+  state.ui.gameId = null;
+  if (builderOpen()) { state.ui.view = 'home'; if (typeof discardGameDraft === 'function') discardGameDraft(); }
+  state.ui.tab = 'now';
+  shell.scroll.now = 0;
+  shellStamp();
+  saveState();
+  renderAll();
+  shellScrollTo(0, false);
+}
+
+// 'now' | 'games' | 'chat' | 'more' | 'schedule' | 'reveal' | 'alert:<id>' |
+// 'game:<id>' | 'chat:<channel>' → what to show. Unknown targets show Now.
+function shellParseTarget(raw) {
+  const t = String(raw || '').replace(/^#/, '').trim();
+  if (shellTabOk(t)) return { tab: t };
+  if (t === 'reveal' || /^alert:[A-Za-z0-9_-]{1,64}$/.test(t)) return { tab: 'now' };
+  if (t === 'schedule') return { tab: 'now', sheet: 'schedule' };
+  let m = /^game:([A-Za-z0-9_.:-]{1,80})$/.exec(t);
+  if (m) return { tab: 'now', game: m[1] };
+  m = /^chat:([a-z0-9_-]{1,32})$/.exec(t);
+  if (m) return { tab: 'chat', channel: m[1] };
+  return null;
+}
+
+// A deep link: a notification tap, ?open=, a #hash at launch. A takeover or
+// sheet opened from nowhere has nothing under it, so shellReconcile's plan
+// first tags the base entry as Now and then pushes what the link names.
+function shellOpenTarget(raw) {
+  const t = shellParseTarget(raw);
+  if (!t) return false;
+  if (t.channel && typeof chatChannelById === 'function' && !chatChannelById(t.channel)) return false;
+  if (t.game && !gameById(t.game)) return false;
+  if (!shellCloseOverlays()) return false;
+  state.ui.tab = t.tab;
+  if (t.channel) state.ui.chatChannel = t.channel;
+  if (t.game) {
+    const g = gameById(t.game);
+    state.ui.gameId = g.id;
+    state.ui.gameFrom = 'now';
+    state.ui.gameDow = campNow().dow;
+    state.ui.day = g.dayId;
+  }
+  shellStamp();
+  saveState();
+  renderAll();
+  if (t.sheet === 'schedule' && typeof openSchedule === 'function') openSchedule();
+  return true;
+}
+
+// Boot, before the first renderAll. A tab, game or builder is restored only
+// within SHELL_RESUME_MS of the last time the shell moved (a reload, the
+// auto-update, an iOS eviction); a longer absence opens on Now. A #hash names
+// a deep link and always wins; it is consumed (the URL is never left holding
+// it, so a later reload doesn't replay it).
+function shellBoot() {
+  const ui = state.ui;
+  const fresh = ui.shellAt && Date.now() - ui.shellAt <= SHELL_RESUME_MS;
+  if (ui.chatOpen) { // a build before the Chat tab stored "chat is open" here
+    delete ui.chatOpen;
+    if (fresh) ui.tab = 'chat';
+  }
+  if (!fresh) {
+    ui.tab = 'now';
+    ui.gameId = null;
+    if (ui.view === 'settings') ui.view = 'home';
+  } else if (ui.gameId) {
+    // a game left open yesterday must not greet someone on Wednesday
+    if (!gameById(ui.gameId) || ui.gameDow !== campNow().dow) ui.gameId = null;
+  }
+  if (!shellTabOk(ui.tab)) ui.tab = 'now';
+  let hash = '';
+  try { hash = String((typeof location !== 'undefined' && location.hash) || ''); } catch (e) { /* none */ }
+  if (hash && shellParseTarget(hash)) {
+    const t = shellParseTarget(hash);
+    ui.tab = t.tab;
+    if (t.channel && typeof chatChannelById === 'function' && chatChannelById(t.channel)) ui.chatChannel = t.channel;
+    if (t.game && gameById(t.game)) { ui.gameId = t.game; ui.gameFrom = 'now'; ui.gameDow = campNow().dow; }
+    shell.bootSheet = t.sheet || null;
+    try {
+      if (typeof history !== 'undefined' && history.replaceState) {
+        history.replaceState(history.state, '', location.pathname + (location.search || ''));
+      }
+    } catch (e) { /* the hash just stays */ }
+  }
+  shell.cur = typeof history !== 'undefined' ? shellSnapFromRaw(history.state) : null;
+  shellStamp();
+}
+
+function wireShell() {
+  if (shell.wired) return;
+  shell.wired = true;
+  document.querySelectorAll('#tabbar .tab').forEach((btn) => {
+    btn.addEventListener('click', () => showTab(btn.dataset.tab));
+  });
+  const strip = document.getElementById('reveal-strip');
+  if (strip) strip.addEventListener('click', () => showTab('now'));
+  const back = document.querySelector('#takeover-game [data-takeover-back]');
+  if (back) back.addEventListener('click', closeGame);
+  document.querySelectorAll('.sheet-overlay').forEach((el) => {
+    const id = el.id.replace(/^sheet-/, '');
+    el.querySelectorAll('[data-sheet-close]').forEach((c) => c.addEventListener('click', () => shellSheetClose(id)));
+    wireSheetDrag(el);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const top = shell.sheets[shell.sheets.length - 1];
+    if (top && top !== 'schedule') shellSheetClose(top);
+    else if (!top && shellTakeoverOpen()) closeGame();
+  });
+  window.addEventListener('popstate', shellOnPopState);
+  window.addEventListener('scroll', shellOnScroll, { passive: true });
+  // Focus handling for the keyboard rule.
+  document.addEventListener('focusin', shellSyncKeyboard);
+  document.addEventListener('focusout', shellSyncKeyboard);
+  if (window.visualViewport) {
+    window.visualViewport.addEventListener('resize', shellSyncViewport);
+    window.visualViewport.addEventListener('scroll', shellSyncViewport);
+  }
+  // Waking up: iOS restores a frozen page without firing the interval.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { shell.hiddenAt = Date.now(); shellStamp(); saveState(); return; }
+    shellResume();
+  });
+  window.addEventListener('pagehide', () => { shellStamp(); saveState(); });
+  window.addEventListener('pageshow', (e) => { if (e && e.persisted) shellResume(); });
+}
+
+// The shell's part of every renderAll, in order: settle state, derive and paint
+// the root, reconcile history. Returns whether the visible root changed.
+function shellSync() {
+  if (state.ui.gameId && !gameById(state.ui.gameId)) state.ui.gameId = null; // the game left the week
+  const changed = shellPaint();
+  shellReconcile();
+  return changed;
+}
+
 function renderAll() {
   const setDownBoardCelebrations = holdBoardCelebrations(); // see there
   // Builder visibility is derived from state every render — settings.js
@@ -11052,37 +11698,20 @@ function renderAll() {
   document.body.classList.toggle('builder-open', inBuilder);
   const builderView = document.getElementById('settings-view');
   if (builderView) builderView.hidden = !inBuilder;
-  // Chat takeover, same pattern as the builder: derived from state.ui every
-  // render, one takeover at a time, and force-closed for a viewer whose
-  // editors hid the chat card (mirrors the hidden-Competitions rule below).
-  const inChat = !!state.ui.chatOpen && !inBuilder &&
-    !(memberRole !== 'editor' && cardHiddenFromViewers('chat'));
-  if (state.ui.chatOpen && !inChat) state.ui.chatOpen = false;
-  document.body.classList.toggle('chat-open', inChat);
-  const chatView = document.getElementById('chat-view');
-  if (chatView) chatView.hidden = !inChat;
-  applyCardVisibility(); // before renderGameView — may close a hidden card's game
+  applyCardVisibility(); // before the shell derives what is open — it may close a hidden card's game
   if (!canEdit()) closeHistoryForViewer(); // a demoted editor's open change history
   const historyRow = document.getElementById('history-row');
   if (historyRow) historyRow.hidden = !canEdit(); // editors' only in code too, not just in CSS (html.view-only)
-  renderNoticeBoard();
-  renderWhatsNew();
-  pruneExpiredAnnouncements();
-  renderAnnouncements();
-  renderNowBanner();
-  renderLiveHome();
-  renderDayTabs(); // includes every day panel's game list
+  // The shell (§13.2): paint the visible root, reconcile the history stack,
+  // then render the visible tab (the others are marked dirty and catch up when
+  // shown) and the open takeover.
+  const rootChanged = shellSync();
+  renderTabBadges();
+  renderShellTabs();
   renderGameView();
-  renderStandings();
-  renderMyElectives();
-  renderMemoryVerse();
-  renderMealCleanup();
-  renderBonuses();
-  renderFooter();
-  refreshOpenSchedule();
   if (inBuilder && typeof renderSettings === 'function') renderSettings();
-  if (typeof renderChatCard === 'function') renderChatCard();
-  if (inChat && typeof renderChatView === 'function') renderChatView();
+  if (typeof renderChatStatus === 'function') renderChatStatus();
+  if (rootChanged) shellRestoreScroll(shell.root); // after the new panel has rendered
   setDownBoardCelebrations();
   // Last: a clock this pass rebuilt is born with its final-minute / final-ten
   // classes instead of losing them until the next 500 ms tick.
@@ -11099,21 +11728,19 @@ function builderOpen() {
   return state.ui.view === 'settings';
 }
 
-// Where the scoreboard was scrolled when the builder opened. body.builder-open
-// display:none's the home cards, so the page collapses (and scrollY with it)
-// while the builder is up; settings.js's back button scrolls back here.
-let builderReturnY = 0;
+// (Where the page was scrolled is the shell's: the tab it came from keeps its
+// scroll slot and gets it back when the builder closes — shellRestoreScroll.)
 
 function openBuilder(tab) {
   if (!canEdit()) return;
-  builderReturnY = window.scrollY;
   closeSettings(); // hand off from the settings sheet
+  state.ui.gameId = null; // one takeover at a time
   state.ui.view = 'settings';
   if (tab) state.ui.settingsTab = tab;
   if (!state.ui.settingsTab) state.ui.settingsTab = 'games';
+  shellStamp();
   saveState();
   renderAll();
-  window.scrollTo({ top: 0 });
 }
 
 // Keep an open schedule sheet in step with time and synced results — its
@@ -11163,6 +11790,7 @@ function init() {
   wireCampSwitcher();
   if (typeof wireChat === 'function') wireChat();
   if (typeof wirePush === 'function') wirePush();
+  wireShell();
 
   document.getElementById('notify-toggle-btn').addEventListener('click', toggleNotify);
   updateNotifyButton();
@@ -11200,11 +11828,14 @@ function init() {
     }
   }
 
+  shellBoot(); // which tab / takeover to open on, and what the history stack already says
   renderAll();
+  if (shell.bootSheet === 'schedule') { shell.bootSheet = null; openSchedule(); }
 
   // Keep the "happening now" banner (and any open schedule sheet) current
   // without any taps — and expire "what's new" banners once they hit two hours.
-  setInterval(() => { renderNowBanner(); refreshOpenSchedule(); renderNoticeBoard(); renderWhatsNew(); renderMyElectives(); pruneExpiredAnnouncements(); renderAnnouncements(); if (typeof renderChatCard === 'function') renderChatCard(); }, 30 * 1000);
+  // Only the visible tab's time-driven part runs (the others catch up when shown).
+  setInterval(() => { shellTick(); if (typeof renderChatStatus === 'function') renderChatStatus(); }, 30 * 1000);
 
   // Tick every visible Big Board clock (no-ops instantly when none is on
   // screen, so the interval is effectively free the rest of the week).

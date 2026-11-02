@@ -173,25 +173,25 @@ test('chatPreviewOf shows text or the photo placeholder', () => {
 
 test('chat is not gated on canEdit — viewers can open it', () => {
   setMemberRole('viewer');
-  state.ui.chatOpen = false;
+  state.ui.tab = 'now';
   openChat('general');
-  assert.ok(state.ui.chatOpen, 'a viewer opened chat');
+  assert.equal(activeTab(), 'chat', 'a viewer opened the Chat tab');
   assert.equal(state.ui.chatChannel, 'general');
-  closeChat();
-  assert.notOk(state.ui.chatOpen);
+  showTab('now');
+  assert.equal(activeTab(), 'now');
   setMemberRole('editor');
 });
 
 test('hide-from-viewers is the chat kill switch', () => {
   setMemberRole('viewer');
   state.meta.hiddenCards = { chat: true };
-  state.ui.chatOpen = false;
+  state.ui.tab = 'now';
   openChat('general');
-  assert.notOk(state.ui.chatOpen, 'a viewer cannot open hidden chat');
+  assert.equal(activeTab(), 'now', 'a viewer cannot open hidden chat (their Chat tab says it is off)');
   setMemberRole('editor');
   openChat('general');
-  assert.ok(state.ui.chatOpen, 'editors always can');
-  closeChat();
+  assert.equal(activeTab(), 'chat', 'editors always can');
+  showTab('now');
   state.meta.hiddenCards = {};
 });
 

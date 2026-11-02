@@ -64,8 +64,7 @@ let chatDrafts = {};
 // reply to something older — by id, not byKey, so the same account on a second
 // device doesn't get yanked to the bottom too.
 const chatOwnSendIds = new Set();
-let chatSavedScrollY = 0;     // home-page scroll to restore when chat closes
-let chatHistoryEntry = false; // a history entry of ours is on top (phone Back closes chat)
+let chatListMemo = null;      // the list's scroll while the Chat tab is away (a hidden panel forgets it)
 let chatLightboxSeq = 0;      // which lightbox open is current (late responses check it)
 let chatLightboxOnKey = null; // the open lightbox's Escape handler
 
@@ -90,11 +89,11 @@ function chatSyncOff() {
 }
 
 // app.js calls this (typeof-guarded) when the SDK definitively fails, so a
-// "Loading…" card/list becomes the real sentence instead of waiting for the
-// next 30 s tick (the open view isn't re-rendered by renderAll).
+// "Loading…" list becomes the real sentence instead of waiting for the next
+// 30 s tick (the built view isn't re-rendered by renderAll).
 function onChatSyncStateChanged() {
-  renderChatCard();
-  if (chatOpenNow()) renderChatView(true);
+  renderChatStatus();
+  if (chatBuilt()) renderChatView(true);
 }
 
 // ── Message shape ─────────────────────────────────────────────────
@@ -156,8 +155,8 @@ function initChatSync() {
       ref.on('child_added', (snap) => onChatMsgAdded(ch, snap), () => {
         // Rules refused (not pasted yet / access changed): chat-only degrade.
         chatDenied = true;
-        renderChatCard();
-        if (chatOpenNow()) renderChatView(true);
+        renderChatStatus();
+        if (chatBuilt()) renderChatView(true);
       });
       ref.on('child_removed', (snap) => onChatMsgRemoved(ch, snap));
       // RTDB fires the whole initial backlog as child_added BEFORE this
@@ -165,17 +164,17 @@ function initChatSync() {
       // unread, never toasts) and "live" (runs the alert path).
       ref.once('value').then(() => {
         chatReady[ch] = true;
-        renderChatCard();
-        if (chatOpenNow() && state.ui.chatChannel === ch) renderChatView(true);
+        renderChatStatus();
+        if (chatBuilt() && state.ui.chatChannel === ch) renderChatView(true);
       }).catch(() => { /* the child_added error handler already spoke */ });
     } catch (e) { /* no firebase — card shows the sync-off note */ }
   });
-  // The card or an open view may still be showing "sync is off" from before this
-  // point (the SDK failed, retried and recovered): swap it for the loading state
-  // now, not at the first backlog. A no-op when it already says Loading… —
+  // A built view may still be showing "sync is off" from before this point (the
+  // SDK failed, retried and recovered): swap it for the loading state now, not
+  // at the first backlog. A no-op when it already says Loading… —
   // updateChatShell writes through setHtmlIfChanged.
-  renderChatCard();
-  if (chatOpenNow()) renderChatView(true);
+  renderChatStatus();
+  if (chatBuilt()) renderChatView(true);
 }
 
 function onChatMsgAdded(ch, snap) {
@@ -193,10 +192,11 @@ function onChatMsgAdded(ch, snap) {
   // message and append it at the bottom out of order. A genuinely new
   // message never sorts before everything already in the window.
   const backfill = !!chatReady[ch] && list.length > 1 && list[0].id === msg.id;
-  // Drawn whenever its channel is the one built on screen — even with the tab
-  // in the background, or it would be missing on return (and already marked
-  // read). Only marking it seen needs the person to actually be looking.
-  const shownHere = chatOpenNow() && chatViewBuiltFor === ch;
+  // Drawn whenever its channel is the one built — even while another tab (or a
+  // backgrounded page) is showing, or it would be missing on return (and
+  // already marked read). Only marking it seen needs the person to actually be
+  // looking.
+  const shownHere = chatViewBuiltFor === ch;
   if (chatReady[ch] && !backfill) {
     notifyChatMessage(ch, msg);
     if (shownHere) appendChatBubble(ch, msg);
@@ -207,7 +207,7 @@ function onChatMsgAdded(ch, snap) {
   // Announcements-channel messages also ride the top banner strip for 15
   // minutes (renderAnnouncements merges chatAnnouncementBanners in).
   if (ch === 'announcements' && typeof renderAnnouncements === 'function') renderAnnouncements();
-  renderChatCard();
+  renderChatStatus();
   renderChatBadges();
 }
 
@@ -218,8 +218,8 @@ function onChatMsgRemoved(ch, snap) {
   // Remove just that bubble. In a full channel EVERY new message first
   // removes the oldest (the limitToLast window slides), and a full rebuild
   // here wiped the half-typed message and dropped the keyboard each time.
-  if (chatOpenNow() && chatViewBuiltFor === ch) removeChatBubble(snap.key);
-  renderChatCard();
+  if (chatViewBuiltFor === ch) removeChatBubble(snap.key);
+  renderChatStatus();
   renderChatBadges();
   if (ch === 'announcements' && typeof renderAnnouncements === 'function') renderAnnouncements();
 }
@@ -314,8 +314,8 @@ function chatAtomicSend(updates, rateKey) {
 // someone), so bubbles built before it arrives are showing fallbacks. app.js
 // calls this from the members listener to rebuild them with the real names.
 function onMemberDirectoryChanged() {
-  renderChatCard();
-  if (chatOpenNow()) renderChatView(true);
+  renderChatStatus();
+  if (chatBuilt()) renderChatView(true);
 }
 
 function chatDirectoryRecord(key) {
@@ -520,7 +520,7 @@ function clearChatChannel(ch) {
         });
       return removeBatch();
     })
-    .then(() => { chatMsgs[ch] = []; showToast('Channel cleared', { mine: true }); renderChatView(true); renderChatCard(); })
+    .then(() => { chatMsgs[ch] = []; showToast('Channel cleared', { mine: true }); renderChatView(true); renderChatStatus(); })
     .catch(() => showToast("Couldn't clear the channel — are you still an editor?"));
 }
 
@@ -673,7 +673,7 @@ function markChannelSeen(ch) {
   const newest = shown.length ? Math.min(shown[shown.length - 1].at || 0, serverNow() + 5000) : 0;
   seen[ch] = Math.max(serverNow(), newest);
   try { localStorage.setItem(lsKey(CHAT_SEEN_KEY), JSON.stringify(seen)); } catch (e) { /* fine */ }
-  renderChatCard();
+  renderChatStatus();
   renderChatBadges();
 }
 
@@ -806,77 +806,75 @@ function notifyChatMessage(ch, msg) {
   // Everything else: the unread badge (renderChatCard, from the caller).
 }
 
-// ── Open / close (device-local, like state.ui.day) ────────────────
+// ── Open / close ──────────────────────────────────────────────────
+// Chat is a TAB now (redesign §6): the shell owns which tab shows, its scroll
+// and its history, so there is nothing here to open or close. "Open" means the
+// Chat tab is on screen and nothing is stacked over it; "built" means the view
+// exists (it is built once, on first show, and then kept — a tab switch never
+// rebuilds it, so the composer node, its draft and the keyboard survive).
 function chatOpenNow() {
-  return !!(state.ui && state.ui.chatOpen);
+  return typeof activeTab === 'function' && shellVisibleRoot() === 'chat' && activeTab() === 'chat' && !shellTakeoverOpen();
+}
+
+function chatBuilt() {
+  return !!chatViewBuiltFor;
 }
 
 function chatHiddenFromMe() {
   // The member record's ROLE, not canEdit() (which is also false in a director's
   // view-only second tab): this is a question about what I may SEE, and it must
-  // answer exactly as app.js's renderAll / applyCardVisibility do, or the card is
-  // drawn but a tap on it does nothing.
+  // answer exactly as app.js's renderAll / applyCardVisibility do, or the tab is
+  // drawn but shows the wrong thing.
   return memberRole !== 'editor' && typeof cardHiddenFromViewers === 'function' && cardHiddenFromViewers('chat');
 }
 
+// A notification tap or the push layer asks for a channel: switch to the Chat
+// tab on it. (A viewer the editors have hidden chat from gets nothing: their
+// Chat tab says it is turned off.)
 function openChat(ch) {
   if (!chatChannels().length || chatHiddenFromMe()) return;
-  // The takeover hides the rest of the page, so the document collapses to the
-  // chat's height and the browser clamps scrollY to 0 — remember where the
-  // person was so closeChat can put them back at the Chat card.
-  if (!chatOpenNow()) chatSavedScrollY = (typeof window !== 'undefined' && window.scrollY) || 0;
-  chatParkDraft();
-  // Push the Back entry BEFORE the page collapses: the browser files the
-  // current scroll position with the entry it's leaving, and a Back (which
-  // restores that position) would otherwise restore the clamped 0.
-  chatHistoryPush();
-  state.ui.chatOpen = true;
   state.ui.chatChannel = chatChannelById(ch) ? ch : (state.ui.chatChannel || 'general');
-  if (state.ui.view === 'settings') state.ui.view = 'home'; // one takeover at a time
   saveState();
-  chatViewBuiltFor = null; // force a fresh build
-  renderAll();
-  markChannelSeen(state.ui.chatChannel);
+  if (typeof showTab === 'function') showTab('chat', { silent: true });
+  // Already on the tab: only the channel changed. (A no-op when the view is
+  // built for it; builds the view the first time.)
+  if (chatOpenNow()) { renderChatView(); markChannelSeen(state.ui.chatChannel); }
 }
 
 // Whatever is in the composer is that channel's draft, kept for when the view
-// is rebuilt (closing and reopening chat, or a notification tap that jumps
-// channels) — the person's half-typed reply shouldn't die with the DOM.
+// is rebuilt (a role flip, a notification tap that jumps channels) — the
+// person's half-typed reply shouldn't die with the DOM.
 function chatParkDraft() {
   const input = document.getElementById('chat-input');
   if (chatViewBuiltFor && input) chatSetDraft(chatViewBuiltFor, input.value || '');
 }
 
-function closeChat() {
-  chatParkDraft();
-  state.ui.chatOpen = false;
-  saveState();
-  chatViewBuiltFor = null;
-  renderAll();
-  // Layout is synchronous after renderAll (the home panels write through
-  // setHtmlIfChanged, so their heights are intact), so this lands correctly.
-  if (chatSavedScrollY && typeof window !== 'undefined' && typeof window.scrollTo === 'function') {
-    window.scrollTo(0, chatSavedScrollY); // positional form: no smooth-scroll CSS here, so it's instant
+// Anything typed and unsent, in any channel: the shell won't send someone
+// home after a long absence while there is a reply half-written.
+function chatHasDraft() {
+  const input = document.getElementById('chat-input');
+  if (chatViewBuiltFor && input && String(input.value || '').trim()) return true;
+  return Object.keys(chatDrafts).some((k) => String(chatDrafts[k] || '').trim());
+}
+
+// The Chat panel is display:none on the other tabs, and a hidden list forgets
+// its scroll: remember it on the way out, put it back (or the newest message,
+// when the reader was at the bottom) on the way in. Called by the shell.
+function chatOnTabHidden() {
+  const list = document.getElementById('chat-list');
+  if (!list || !chatViewBuiltFor) { chatListMemo = null; return; }
+  chatListMemo = { top: list.scrollTop, atBottom: list.scrollHeight - list.scrollTop - list.clientHeight < 80 };
+}
+
+function chatOnTabShown() {
+  if (!chatViewBuiltFor) return;
+  const list = document.getElementById('chat-list');
+  if (list) {
+    if (!chatListMemo || chatListMemo.atBottom) chatScrollToBottom();
+    else list.scrollTop = chatListMemo.top;
   }
-  chatSavedScrollY = 0;
-  chatHistoryPop();
-}
-
-// ── Phone Back closes the chat ────────────────────────────────────
-// The takeover is in-page state with no history entry, so Android Back / an iOS
-// edge-swipe left Camp altogether instead of closing it. Opening pushes one
-// entry (same URL); the popstate listener (wireChat) closes the chat when it's
-// popped; closing from the ← Camp pill pops it back off so the stack never
-// grows. Chat only — settings and game detail still have no entry of their own.
-function chatHistoryPush() {
-  if (typeof history === 'undefined' || !history.pushState || chatHistoryEntry) return;
-  try { history.pushState({ campChat: 1 }, ''); chatHistoryEntry = true; } catch (e) { /* no history API: Back just leaves, as before */ }
-}
-
-function chatHistoryPop() {
-  if (!chatHistoryEntry) return;
-  chatHistoryEntry = false;
-  try { history.back(); } catch (e) { /* fine */ }
+  chatListMemo = null;
+  markChannelSeen(chatCurrentChannel()); // coming to the tab counts as reading the channel
 }
 
 // ── Rendering ─────────────────────────────────────────────────────
@@ -889,50 +887,15 @@ function chatRelativeTime(atMs) {
   return formatEasternStamp(new Date(atMs).toISOString()) || '';
 }
 
-// The home card: latest message + unread badge (static markup lives in
-// index.html so the hide-from-viewers switch wires up like every card's).
-function renderChatCard() {
-  // renderAll can close the chat without us (editors hid the card, or the
-  // builder took over); our history entry would then sit on top and the next
-  // phone Back would visibly do nothing. Hand it back. Idempotent with
-  // closeChat's own pop (the flag drops first), and runs on every renderAll
-  // and the 30 s tick, so a stale entry never lingers.
-  if (!chatOpenNow() && chatHistoryEntry) chatHistoryPop();
-  const card = document.getElementById('chat-card');
-  if (!card) return;
-  if (!chatChannels().length) { card.hidden = true; return; }
-  // applyCardVisibility owns `hidden` for hide-from-viewers; only reveal here.
-  if (!chatHiddenFromMe()) card.hidden = false;
-  const preview = document.getElementById('chat-card-preview');
-  const badge = document.getElementById('chat-card-badge');
-  if (badge) {
-    const n = unreadTotal();
-    badge.hidden = n === 0;
-    badge.textContent = n > 99 ? '99+' : String(n);
-  }
-  if (!preview) return;
-  if (chatDenied) {
-    preview.textContent = "Chat isn't available yet — the database rules need updating.";
-    return;
-  }
-  if (chatSyncOff()) {
-    preview.textContent = 'Chat needs live sync, which is off on this device.';
-    return;
-  }
-  let latest = null;
-  let latestCh = null;
-  chatChannels().forEach((c) => {
-    (chatMsgs[c.id] || []).forEach((m) => { if (!latest || m.at > latest.at) { latest = m; latestCh = c; } });
-  });
-  const ready = chatChannels().some((c) => chatReady[c.id]);
-  preview.textContent = latest
-    ? `${latestCh ? latestCh.emoji + ' ' : ''}${chatPreviewOf(latest)} · ${chatRelativeTime(latest.at)}`
-    : (ready ? 'No messages yet — start the conversation!' : 'Loading…');
-  // Home-screen icon badge (installed PWAs on platforms that support it) —
-  // best-effort and silent everywhere else.
+// What every chat event refreshes outside the view itself: the tab bar's unread
+// badge (app.js renderTabBadges) and the Home Screen icon badge (installed PWAs
+// on platforms that support it; best-effort and silent everywhere else). The
+// home card and its preview line retired with the Chat tab.
+function renderChatStatus() {
+  if (typeof renderTabBadges === 'function') renderTabBadges();
   try {
     if (navigator.setAppBadge) {
-      const n = unreadTotal();
+      const n = chatHiddenFromMe() ? 0 : unreadTotal();
       if (n) navigator.setAppBadge(n);
       else if (navigator.clearAppBadge) navigator.clearAppBadge();
     }
@@ -1019,6 +982,17 @@ function chatListHTML(ch) {
 function renderChatView(force) {
   const view = document.getElementById('chat-view');
   if (!view) return;
+  // Editors can turn chat off for counselors (What counselors see): the tab
+  // stays (four tabs never change shape) and says so; the shell comes back when
+  // it is turned on again (its data-chat-shell no longer matches).
+  if (chatHiddenFromMe()) {
+    if (view.dataset.chatShell !== 'off') {
+      view.innerHTML = '<p class="muted chat-note">Chat is turned off right now.</p>';
+      view.dataset.chatShell = 'off';
+    }
+    chatViewBuiltFor = null;
+    return;
+  }
   const ch = chatCurrentChannel();
   if (!force && chatViewBuiltFor === ch) { renderChatBadges(); return; }
   const c = chatChannelById(ch) || chatChannels()[0] || { id: ch, label: ch, short: ch, emoji: '💬' };
@@ -1146,7 +1120,6 @@ function buildChatShell(view, ch, c, prev) {
   const listHTML = chatListHTML(ch);
   view.innerHTML = `
     <div class="chat-head">
-      <button id="chat-back-btn" class="back-pill"><span class="back-pill-arrow" aria-hidden="true">←</span> Camp</button>
       <h2 class="chat-title">${c.emoji} ${esc(c.short)}</h2>
       <button id="chat-sub-btn" class="chat-sub-btn${subbed ? ' chat-sub-on' : ''}"
         title="${bell.title}"
@@ -1157,9 +1130,9 @@ function buildChatShell(view, ch, c, prev) {
     <div id="chat-list" class="chat-list">${listHTML}</div>
     <div class="chat-composer">
       <input type="file" id="chat-photo-input" accept="image/*" hidden>
-      <button type="button" id="chat-photo-btn" class="chat-photo-btn" aria-label="Send a photo">📷</button>
+      <button type="button" id="chat-photo-btn" class="chat-photo-btn" aria-label="Send a photo"><svg class="ico" aria-hidden="true"><use href="#i-camera"/></svg></button>
       <input type="text" id="chat-input" class="chat-text-input" placeholder="Message ${esc(c.short)}…" maxlength="${CHAT_TEXT_MAX}" autocomplete="off">
-      <button type="button" id="chat-send-btn" class="chat-send-btn" aria-label="Send">➤</button>
+      <button type="button" id="chat-send-btn" class="chat-send-btn">Send</button>
     </div>`;
   view.dataset.chatShell = chatShellSig();
   // Seed setHtmlIfChanged's cache so the first in-place update compares against
@@ -1192,8 +1165,6 @@ function buildChatShell(view, ch, c, prev) {
 // rewired whenever its channel changes.
 function wireChatView(ch) {
   const view = document.getElementById('chat-view');
-  const back = document.getElementById('chat-back-btn');
-  if (back) back.addEventListener('click', closeChat);
   view.querySelectorAll('.chat-tab').forEach((btn) => {
     btn.addEventListener('click', () => {
       state.ui.chatChannel = btn.dataset.ch;
@@ -1327,22 +1298,10 @@ function openChatLightbox(photoId) {
 
 // ── Wiring (called once from init() via typeof guard) ─────────────
 function wireChat() {
-  const main = document.getElementById('chat-card-main');
-  if (main) main.addEventListener('click', () => openChat(state.ui.chatChannel || 'general'));
-  // Coming back to the tab while a channel is open counts as reading it.
+  // Coming back to the page while the Chat tab is on screen counts as reading
+  // the channel. (Phone Back needs nothing here: the shell's history rules
+  // cover the Chat tab like any other.)
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && chatOpenNow()) markChannelSeen(state.ui.chatChannel);
   });
-  // Phone Back closes the chat (chatHistoryPush). Our entry carries
-  // {campChat:1}; popping to one without it while chat is open means Back.
-  if (typeof history !== 'undefined' && history.pushState) {
-    chatHistoryEntry = !!(history.state && history.state.campChat);
-    window.addEventListener('popstate', (e) => {
-      const mine = !!(e.state && e.state.campChat);
-      chatHistoryEntry = mine;
-      if (!mine && chatOpenNow()) closeChat();
-    });
-    // Reloaded with the chat persisted open: give Back something to pop.
-    if (chatOpenNow() && !chatHistoryEntry) chatHistoryPush();
-  }
 }

@@ -420,7 +420,79 @@ Design: `docs/build-notes/app-shell-redesign-spec.md` §9–10; the reference fe
   different lightness), and `jelly-switch` reads ON done-green / OFF an ink-3
   thumb.
 
-## The shell frame (Step 13 — UI pass done, wiring in progress)
+## The shell: tabs, takeovers, sheets, history (Step 13 — behaviour wired)
+
+app.js's "THE SHELL" section (`shell`, `SHELL_TABS`, `showTab`, `shellSync`,
+`shellReconcile`, `openGame` / `closeGame`, `shellSheetOpen` / `shellSheetClose`,
+`shellOpenTarget`, `shellBoot`, `wireShell`) drives the frame below. Rules a
+future edit must not break (all pinned by `tests/tabs.test.js`):
+
+- **State is the source of truth, the browser's history is DERIVED from it.**
+  `state.ui.tab` (`now|games|chat|more`, device-local, saved with `ui`),
+  `state.ui.gameId` (+ `gameFrom`: the tab it was opened from, `gameDow`),
+  `state.ui.view === 'settings'` (the classic builder) and `shell.sheets` say
+  what is open; `renderAll` → `shellSync()` paints the root (`#app[data-tab]`,
+  `aria-selected`, `body.takeover-open`) and `shellReconcile()` makes the stack
+  match. No click handler pushes history. The stack is always `[Now] + [the tab,
+  unless Now] + one entry per open overlay`, so an entry's snapshot
+  `{campShell:1, tab, ov:[{k:'game'|'builder'|'sheet', id, from?}]}` is a pure
+  function of its top (`shellChain`) and a plan from one snapshot to another is
+  too (`shellHistPlan`): leaving Now pushes ONE entry, tab → tab REPLACES it,
+  back to Now pops it, a takeover or sheet pushes, one pop plus one push is a
+  replace ("Next game" over the game it replaces). Back / Forward / a history
+  jump land on a snapshot that `shellApply` paints; our own `history.go(-n)` is
+  recognised (`shell.busy`) and its popstate ignored, and the ops queue waits for
+  it. Entry URLs are never touched: a `#hash` is only an INPUT (a deep link at
+  boot, consumed). A takeover opened cold first tags the base entry Now, then
+  pushes, so the label and the gesture agree. Back out of an open game editor
+  with unsaved edits asks first (and re-pushes on "no").
+- **Dirty render.** `renderShellTabs()` runs `SHELL_ALWAYS` (renderers with
+  side effects: `renderStandings` — the change history, point alerts, rank
+  baseline, §13.9 — plus pruning and the open schedule), the VISIBLE tab's
+  `SHELL_PANELS[tab].render`, and marks the others dirty; a tab renders when
+  shown. The 30 s tick (`shellTick`) runs only the visible tab's time-driven
+  part. The Competitions / Standings / Cleanup / Verse / Bonus cards still sit
+  in Now's markup, so they render with Now until they move into Games and More
+  (then move their lines in `SHELL_PANELS`; **a renderer with side effects may
+  only leave `SHELL_ALWAYS` once the side effects are lifted out of it**).
+- **Scroll memory**: a passive scroll listener records the visible TAB's
+  document scroll (`shell.scroll`); a takeover, the builder and the Chat panel
+  never write a tab's slot, and a root change restores the incoming tab's scroll
+  after it has rendered. Re-tapping the active tab glides to the top (Chat: to
+  the newest message). `builderReturnY`, `gameOpener` / `rememberGameOpener` /
+  `restoreGameOpener` / `scrollToGameView` and the accordion fold on game open
+  are gone: the tab under a takeover never moves.
+- **Coming back** (`shellResume`): hidden more than 10 minutes → reopen on Now
+  at the top with takeovers closed, unless something is half-typed
+  (`shellHasUnsentWork`: a focused score field / dirty builder, a sending or
+  typed chat message). A reload restores the tab / game / builder only if
+  `state.ui.shellAt` is within 10 minutes (`doReload` stamps it, so the auto-
+  update reload keeps your place) and a game only on the same camp day.
+- **The game takeover** (`#takeover-game`, §5.5): `renderGameView` writes the
+  header text and the labelled back (`shellGameBackLabel`: "Now", "Wednesday
+  games", "More", "Chat") only when they differ, and builds the body (double-
+  points tag, rules `<details>`, `#clock-area` / `#tools-area` / `#entry-area`)
+  once per game — compared as a string so an open "How to play" survives. The
+  existing entry renderers are untouched. Open with `openGame(id, {from})`,
+  close with `closeGame()`.
+- **Sheets** (`.sheet-overlay`, ids `sheet-<name>`): `shellSheetOpen/Close`
+  (focus returns to the opener, `#app` goes inert, grab-strip drag closes,
+  Escape / ✕ / backdrop / Back close). `schedule` is the older
+  `#schedule-overlay`, which keeps its own markup and only reports in.
+- **Keyboard** (§13.6): `textEntryFocused()` (a tag allowlist; NOT
+  `fieldFocused()`, which says no inside `#chat-view`) sets `body.kb-open` on
+  focusin and clears it 100 ms after focusout; `visualViewport` sets `--kb-h`.
+- **Deep links** (`shellParseTarget` / `shellOpenTarget`, used by `#hash` at
+  boot and by push.js's `pushHandleOpen`): `now games chat more`, `chat:<ch>`,
+  `schedule` (the sheet over Now), `game:<id>` (the takeover), `reveal` and
+  `alert:<id>` (Now). **sw.js needed no change**: nothing sends the three new
+  targets yet (the Worker emits `chat:<ch>`, `schedule` or none; sw.js's
+  validator drops anything else to "", which opens Now — where `reveal` and
+  `alert:<id>` land anyway), so `PUSH_SW_VERSION` stays. When Step 23 starts
+  sending `reveal`, the Worker, sw.js's regex and `PUSH_SW_VERSION` change
+  together.
+
+## The shell frame (Step 13 — markup and visual system)
 
 Static markup in index.html, styled in styles.css's THE FRAME section; a
 renderer only patches text, `hidden` and a few attributes. **`#app[data-tab]`**
@@ -602,6 +674,14 @@ What's covered, and why each file exists:
   truth table, hysteresis and the sampler (an always-30 Hz phone stays calm). Anything only
   visible in a browser (animation, layout) is source-checked or left to the
   Playwright pass.
+- `tabs.test.js` — the shell (see "The shell: tabs, takeovers, sheets,
+  history"): the pure history rules (`shellChain`, `shellHistPlan`, entry
+  validation, deep-link parsing), tab switching, dirty render, scroll memory,
+  history against a fake `history` with real entries and an asynchronous `go()`
+  (Now → tab pushes one entry, tab → tab replaces, Back, Next-game replaces, cold
+  deep links, a reload within / after ten minutes, the builder and the schedule
+  sheet on the stack, the dirty-editor confirm), the chat tab, the keyboard rule
+  and the sw.js "no change needed" pin.
 - `fake-rtdb.js` (+ `fake-rtdb.test.js`) — an in-memory Realtime Database for
   sync tests: `const { makeFakeRtdb } = nodeRequire('./fake-rtdb.js')`. It
   reproduces what has bitten this app — pruning of nulls/empties, array↔map
@@ -996,37 +1076,46 @@ so nobody can post as someone else).
   segment (`renderChatText`) — never regex over escaped HTML.
 - **Unread**: per-camp seen map `lsKey('campScoreboardChatSeen')`
   (`{ch: lastSeenMs}`, wiped by `clearLocalData`); unread = other
-  people's messages after lastSeen. Badges on the home card + channel
-  tabs; seen marked while the channel is open and the tab visible.
-- **UI**: home card `#chat-card` (`data-card="chat"`, in `HIDEABLE_CARDS`
-  — hide-from-viewers is the editors' kill switch and force-closes a
-  viewer's open chat) → full-screen `#chat-view` via `body.chat-open`
-  (builder-style takeover; `state.ui.chatOpen`/`chatChannel`,
-  device-local). The shell (header, tab strip, list, composer) is BUILT once
-  per open (`buildChatShell`, also when the viewer's role flips — the 🧹
-  button is the one role-dependent part); a channel switch, bell toggle or
-  directory update only PATCHES it in place (`updateChatShell`: active tab,
-  header, composer placeholder, the list through `setHtmlIfChanged`), and a
-  non-forced `renderChatView` is a no-op while `chatViewBuiltFor` already
-  matches — `renderAll` runs it on every snapshot. So the composer node
-  survives a channel switch (iOS won't re-focus a detached input: the keyboard
-  would drop) and live messages append incrementally. Half-typed text lives
-  in the in-memory `chatDrafts` (per channel, never localStorage, gone on
-  sign-out) and follows the person across channel switches and a
-  close/reopen. Every handler reads the channel at call time
+  people's messages after lastSeen. Badges on the Chat tab bar button +
+  channel tabs; seen marked while the channel is open and the tab visible.
+- **UI**: the **Chat tab** (`#tab-chat`, a fixed panel between the header and
+  the tab bar, redesign §6; `#chat-view` lives inside it). There is no home card
+  and no `body.chat-open`: `chatOpenNow()` means "the Chat tab is on screen with
+  nothing stacked over it" (`activeTab()` / `shellTakeoverOpen()`), and
+  `chatBuilt()` means the view exists. The tab's unread badge is
+  `renderTabBadges()` (`unreadTotal()`, capped "99+", named in the button's
+  `aria-label`); `renderChatStatus()` refreshes it and the Home Screen icon
+  badge after every chat event. When the editors hide Chat from counselors
+  (`hiddenCards.chat`, in `HIDEABLE_CARDS`) the tab stays and its panel says
+  "Chat is turned off right now" (`data-chat-shell="off"`; the shell is rebuilt
+  when it comes back); the switch itself moves to What counselors see. The
+  view (header, tab strip, list, composer) is BUILT once, on the tab's first
+  show (`buildChatShell`, also when the viewer's role flips — the 🧹
+  button is the one role-dependent part) and then KEPT across tab switches; a
+  channel switch, bell toggle or directory update only PATCHES it in place
+  (`updateChatShell`: active tab, header, composer placeholder, the list through
+  `setHtmlIfChanged`), and a non-forced `renderChatView` is a no-op while
+  `chatViewBuiltFor` already matches — the tab's panel renderer runs it only
+  while Chat is the visible tab. So the composer node survives a channel
+  switch AND a trip to another tab (iOS won't re-focus a detached input: the
+  keyboard would drop), and live messages append incrementally even while
+  another tab shows (`shownHere` = built for that channel; only MARKING seen
+  needs `chatOpenNow()`). A hidden panel forgets its list scroll, so
+  `chatOnTabHidden` / `chatOnTabShown` (called by the shell) remember it and
+  land on the newest message when the reader was at the bottom. Half-typed text
+  lives in the in-memory `chatDrafts` (per channel, never localStorage, gone on
+  sign-out) and follows the person across channel switches and tab trips
+  (`chatHasDraft()` also stops the shell sending someone home after a long
+  absence). Every handler reads the channel at call time
   (`chatCurrentChannel`), never closed over at build time. The header names
-  the open channel by its SHORT label; under 480px the tab strip shows
-  emoji only (label kept for screen readers) and the unread badge sits on
-  the tab's corner out of flow. "Sync is off" is only said when it is
+  the open channel by its SHORT label. "Sync is off" is only said when it is
   definitive (`chatSyncOff`: no config, SDK failed, or a rules refusal);
   otherwise the list reads "Loading…", and app.js's `onSdkLoadFailed` calls
   the typeof-guarded `onChatSyncStateChanged` so it flips at once.
-  **Phone Back closes chat**: opening pushes one history entry
-  (`chatHistoryPush`, state `{campChat:1}`); `wireChat`'s `popstate` listener
-  closes the chat when it's popped; closing from the ← Camp pill pops it back
-  off (`chatHistoryPop`), and `renderChatCard` hands back a stale entry when
-  `renderAll` closed the chat itself. Chat only — settings and game detail
-  still have no history entry of their own.
+  **Phone Back** is the shell's (leaving Now for Chat pushes one entry, Back
+  returns to Now): chat files no history entry of its own and has no back pill
+  or `popstate` listener. `openChat(ch)` (notification taps, push.js) switches to
+  the tab on that channel and refuses a viewer who has chat hidden.
 - **Rules**: `chat` + `chatPhotos` blocks per camp root (member-read,
   member-create-with-own-byKey, author-or-editor delete, editor
   channel-clear, string caps, `$other: false`). Until pasted, chat shows
