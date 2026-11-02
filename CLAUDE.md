@@ -625,6 +625,21 @@ never rebuilds a segmented control under a finger.
   shell's own "come back after 10 minutes" rule replaced the idle collapse.
   `renderStandings` stays in `SHELL_ALWAYS` (its side effects are not lifted
   out yet, §13.9).
+- **The 44px rule reaches everything that moved into the frame** (Playwright
+  audit, 360 and 390 px, 100 / 130 / 200% text via the root font size, both
+  themes, both camps, counselor and director: header, tab bar, Games, Chat, More,
+  every sheet and drawer, the game takeover). A `jelly-switch` is 44px tall
+  (`--jelly-switch-height: var(--target)`; the component's large preset is 40);
+  the Jelly chips that moved (`.bonus-team-chip`, `.verse-day-chip`, `.pts-btn`)
+  are `height` / `min-width: var(--target)` on the HOST (the component fixes its
+  host at 30 / 36px, and an outer rule on the host beats its `:host`);
+  "How to play" and the lone text links (`.quick-game-btn`, `#clear-result-btn`,
+  Now's follow-card and announcement links until Step 17 retires them) get a
+  44px hit box. A takeover whose back label is long ("Wednesday games") lets its
+  title wrap onto its own row (`.tk-head` wraps, `.tk-titles { flex: 1 1 13rem }`).
+  Not audited: the week builder (settings.js, its own screens) and a game
+  mid-play (a live bracket, score entry); the audit opens each game's takeover in
+  its saved state.
 - **Sparkles only where a press means something** (§9.7): the tap burst fires on
   `JOY_SPARKLE` (jelly-buttons, chips, `.pts-btn`, `.btn-gold`, `[data-joy]`)
   and never inside `JOY_QUIET` (tab bar, header, More, takeover head, the

@@ -256,3 +256,14 @@ test('the Your team sheet never shows a number, and says what is set by the acco
   assert.ok(/Your team is set by your account/.test(body));
   assert.ok(/CAMP\.features\.electives/.test(body), '"Not you? Change" exists only where electives do');
 });
+
+// ── the 44px rule reaches what moved into the frame ─────────────────
+
+test('the 44px target rule: switches, the chips that moved into Games and the sheets, "How to play", lone text links', () => {
+  assert.ok(/jelly-switch \{[^}]*--jelly-switch-height: var\(--target\)/.test(CSS), 'a switch is 44px tall (the component\'s own large preset is 40)');
+  assert.ok(/jelly-chip:is\(\.bonus-meal-chip, \.bonus-cat-chip, \.bonus-team-chip, \.verse-day-chip, \.pts-btn\) \{[^}]*height: var\(--target\);[^}]*min-width: var\(--target\)/.test(CSS),
+    'the component fixes its host at 30 / 36px: an outer rule on the host beats its :host');
+  assert.ok(/\.rules-details summary \{[^}]*min-height: var\(--target\)/.test(CSS), '"How to play"');
+  assert.ok(/\.quick-game-btn,\s*#clear-result-btn,[\s\S]*?\{[^}]*min-height: var\(--target\)/.test(CSS), 'lone text links');
+  assert.ok(/\.tk-head \{[^}]*flex-wrap: wrap/.test(CSS) && /\.tk-titles \{[^}]*flex: 1 1 13rem/.test(CSS), 'a long back label sends the title under it instead of to three lines');
+});

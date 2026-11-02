@@ -317,6 +317,9 @@ body.dark-theme,
    with an ink-3 thumb (the old OFF track was 1.7:1). The words beside a
    switch still say "On" / "Off". */
 jelly-switch {
+  /* 44px tall (the 44px target rule): the component's own large preset is 40. */
+  --jelly-switch-width: 76px;
+  --jelly-switch-height: var(--target);
   --jelly-on: var(--done);
   --jelly-off: var(--paper-2);
   --jelly-switch-thumb-off: var(--ink-3);
@@ -1003,8 +1006,9 @@ body.kb-open .takeover {
 .tk-head {
   flex: none;
   display: flex;
+  flex-wrap: wrap; /* a long back label ("Wednesday games") sends the title to its own row */
   align-items: center;
-  gap: var(--s-2);
+  gap: 0 var(--s-2);
   min-height: calc(60px + env(safe-area-inset-top, 0px));
   padding: env(safe-area-inset-top, 0px) var(--gutter) 0 10px;
   border-bottom: 1px solid var(--line-2);
@@ -1031,8 +1035,9 @@ body.kb-open .takeover {
   stroke-width: 2.6;
 }
 .tk-titles {
-  flex: 1 1 auto;
+  flex: 1 1 13rem; /* below this the title wraps under the back button instead of to 3 lines */
   min-width: 0;
+  padding: 4px 0;
 }
 .tk-title {
   margin: 0;
@@ -2972,6 +2977,9 @@ html.calm-motion .back-pill-arrow { transition: none; }
 }
 
 .rules-details summary {
+  display: flex;
+  align-items: center;
+  min-height: var(--target); /* "How to play" is a tap target: 44px, whatever the text size */
   cursor: pointer;
   font-weight: 700;
   font-size: 0.95rem;
@@ -5977,6 +5985,32 @@ jelly-chip.pts-btn {
 }
 jelly-chip.pts-btn {
   flex: 1;
+}
+/* The 44px target rule reaches the chips that moved into the Games tab and the
+   Memory verse / Meal cleanup sheets (the component's own box is 30–36px). */
+jelly-chip:is(.bonus-meal-chip, .bonus-cat-chip, .bonus-team-chip, .verse-day-chip, .pts-btn) {
+  height: var(--target); /* the component fixes its host at 30 / 36px; an outer rule beats its :host */
+  min-width: var(--target); /* "Fri" and a "0" are narrower than a finger */
+}
+.bonus-custom-input,
+.bonus-points-input {
+  min-height: var(--target);
+}
+/* Text links that sit alone on a line in the frame's tabs get a 44px hit box
+   (Now's follow card and announcement opener until Step 17 retires them, the
+   Games tab's quick-game link). The builder's inline links keep their size. */
+.quick-game-btn,
+#clear-result-btn,
+#follow-team-card .link-btn,
+#announcements .link-btn,
+.you-strip .link-btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target);
+}
+.quick-game-btn {
+  display: flex;
+  justify-content: center;
 }
 jelly-icon-button.bonus-sign-btn,
 jelly-icon-button.bonus-remove-btn {
