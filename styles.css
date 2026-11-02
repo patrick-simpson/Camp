@@ -2024,6 +2024,745 @@ jelly-switch:not([checked])::part(track) {
   display: none;
 }
 
+/* ============================================================
+   SET UP THE WEEK: the frame and the hub (P2 §11.0–11.2)
+   ============================================================
+   The director's clipboard: one column of rows divided by hairlines, like a
+   printed run sheet; a status is a quiet mark at the row end with a specific
+   line under the title ("Saturday is empty", never "Incomplete"); verbs in
+   sentence case; colour only where it means something (gold = the one main
+   action and "needs a look", done-green = ready, danger text = a refusal).
+   Built from the frame's pieces (.gl, .gl-row, .btn, .tk-back) so it reads as
+   the same app as More. Markup: index.html #setup; nothing here animates — the
+   pill's arrival and docking are JellyMotion's (arrive in, glide to the dock). */
+
+/* Only while the builder is up (renderAll toggles body.builder-open). */
+.setup {
+  display: none;
+}
+body.builder-open .setup {
+  display: block;
+}
+/* No data-screen yet: the v197 builder exactly (the frame stays out). */
+.setup:not([data-screen]) > :not(#settings-view) {
+  display: none;
+}
+/* THE switch: one screen at a time. A step that adds a screen adds its line. */
+.setup[data-screen] [data-setup-screen] {
+  display: none;
+}
+.setup[data-screen="hub"] [data-setup-screen="hub"],
+.setup[data-screen="backups"] [data-setup-screen="backups"],
+.setup[data-screen="classic"] [data-setup-screen="classic"] {
+  display: block;
+}
+/* In the frame, the classic builder's own back and heading step aside: the
+   head's labelled back and the frame's title replace them. */
+.setup[data-screen] #settings-back-btn,
+.setup[data-screen] #settings-view > h2 {
+  display: none;
+}
+/* The frame's head clears the notch itself. */
+body.builder-open .main-wrap:has(> .setup[data-screen]) {
+  padding-top: 0;
+}
+/* Owner-only (decision Q8): gone unless the renderer said this IS the owner
+   (body.setup-owner, from isOwner() each render), whatever `hidden` says; and
+   the sentence the other directors read instead is gone for the owner. */
+body:not(.setup-owner) [data-owner-only],
+body.setup-owner [data-not-owner] {
+  display: none !important;
+}
+
+/* ── The head: back, undo dock, ⋯ / the sync line, who's here ── */
+.setup-head {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  margin: 0 -1rem; /* full bleed over main-wrap's gutters */
+  padding: env(safe-area-inset-top, 0px) var(--gutter) 6px;
+  border-bottom: 1px solid var(--line-2);
+  background: var(--paper);
+}
+.setup-bar {
+  display: flex;
+  align-items: center;
+  min-height: 54px;
+}
+.setup-back {
+  margin-right: auto;
+}
+.setup-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--target);
+  height: var(--target);
+  margin-right: -6px; /* the ⋯ glyph sits on the gutter, its hit area past it */
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.setup-icon + .setup-icon {
+  margin-left: 4px;
+}
+.setup-icon .ico {
+  width: 24px;
+  height: 24px;
+  stroke-width: 2.3;
+}
+#setup-undo-dock {
+  color: var(--link);
+}
+.setup-status {
+  display: flex;
+  flex-wrap: wrap; /* a long sync sentence sends who's-here under it */
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 var(--s-3);
+  min-height: 32px;
+}
+/* One truthful sentence. 13.5px: ink-2 is 8.8:1 on paper, danger text 7.9:1. */
+.setup-sync {
+  position: relative;
+  flex: 1 1 auto; /* its own width: "Saved" shares the row, a long sentence takes it */
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 7px;
+  min-width: 0;
+  margin: 0;
+  padding: 3px 0;
+  font: 650 0.84375rem/1.3 var(--font-ui);
+  color: var(--ink-2);
+}
+.setup-sync-mark {
+  flex: none;
+  position: relative;
+  width: 14px;
+  height: 14px;
+}
+.setup-sync-mark::before {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+}
+/* saved: a check in done-green */
+.setup-sync[data-tone="saved"] .setup-sync-mark::before {
+  inset: 0 0 0 4px;
+  width: 4.5px;
+  height: 9px;
+  border: solid var(--done);
+  border-width: 0 2.2px 2.2px 0;
+  border-radius: 0;
+  transform: rotate(45deg);
+}
+/* saving: a breathing dot (calm: a still one still says "working") */
+.setup-sync[data-tone="saving"] .setup-sync-mark::before {
+  background: var(--ink-3);
+  animation: frame-breathe 1.2s var(--jm-std) infinite;
+}
+html.calm-motion .setup-sync[data-tone="saving"] .setup-sync-mark::before {
+  animation: none;
+}
+/* offline / first pull pending: kept here, waiting — a gold dot */
+.setup-sync[data-tone="offline"] .setup-sync-mark::before {
+  background: var(--gold);
+  box-shadow: inset 0 0 0 1.5px var(--gold-edge);
+}
+/* refused: red, and the whole line opens the details */
+.setup-sync[data-tone="error"] {
+  color: var(--color-danger-text);
+  font-weight: 750;
+}
+.setup-sync[data-tone="error"] .setup-sync-mark::before {
+  background: var(--live);
+}
+/* rules not published: an empty ring, nothing will happen */
+.setup-sync[data-tone="off"] .setup-sync-mark::before {
+  box-shadow: inset 0 0 0 2px var(--ink-3);
+}
+.setup-sync-act {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: 800 0.84375rem/1.3 var(--font-ui);
+  cursor: pointer;
+}
+/* Its hit area is the whole line, 44px tall (the line itself is 32). */
+.setup-sync-act::after {
+  content: '';
+  position: absolute;
+  inset: -6px 0;
+}
+.setup-sync-act .ico {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.6;
+}
+/* Who's here: initials, then the sentence. Directors aren't teams, so the
+   discs are plain ink on the paper well, never a team colour. */
+.setup-here {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--target);
+  margin: -6px -6px -6px auto;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--r-btn);
+  background: none;
+  color: var(--ink);
+  font: 700 0.84375rem/1.25 var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.setup-faces {
+  display: flex;
+}
+.setup-face {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--paper);
+  border-radius: 50%;
+  background: var(--paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--ink-2);
+  color: var(--ink);
+  font: 800 0.75rem/1 var(--font-ui);
+  font-style: normal;
+}
+.setup-faces > .setup-face + .setup-face {
+  margin-left: -8px;
+}
+
+/* The undo pill: hangs under the head at the right, over the content but not
+   across it (a toast at the bottom swallowed the next tap on a sheet's Save).
+   Chunky, because it is a button; the only thing in the frame with a shadow,
+   because it floats. One at a time; it docks into #setup-undo-dock. */
+.setup-undo {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: var(--gutter);
+  max-width: calc(100% - 2 * var(--gutter));
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--target);
+  padding: 4px 16px 4px 11px;
+  border: 2px solid var(--card-b);
+  border-radius: 999px;
+  background: var(--sheet);
+  box-shadow: 0 var(--edge-btn) 0 var(--edge), 0 12px 24px -14px rgba(var(--shadow-rgb), .6);
+  color: var(--ink-2);
+  font: 600 0.9375rem/1.2 var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow var(--jm-press-ms) var(--jm-press);
+}
+.setup-undo:active {
+  box-shadow: 0 1px 0 var(--edge), 0 12px 24px -14px rgba(var(--shadow-rgb), .6);
+}
+.setup-undo .ico {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  stroke-width: 2.5;
+  color: var(--link);
+}
+.setup-undo-verb {
+  flex: none;
+  color: var(--link);
+  font-weight: 850;
+}
+.setup-undo-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The refused-save bar inside the head (same look as the header's). */
+.setup-head .sync-alert {
+  margin: 4px 0 2px;
+}
+
+/* ── Screens ── */
+.setup-screen {
+  padding: var(--s-4) 0 calc(48px + env(safe-area-inset-bottom, 0px));
+}
+.setup-intro {
+  padding: 2px 2px var(--s-4);
+}
+/* The screen's name, small; the answer, big (§8.1 rule 1). */
+.setup-kicker {
+  margin: 0;
+  font: var(--t-label);
+  font-size: 0.875rem;
+  color: var(--ink-2);
+}
+.setup-headline,
+.setup-title {
+  margin: 4px 0 0;
+  font: var(--t-title);
+  letter-spacing: var(--track-tight);
+  color: var(--ink);
+  overflow-wrap: anywhere;
+}
+.setup-lede {
+  margin: 6px 0 0;
+  font: var(--t-body);
+  color: var(--ink-2);
+}
+.setup-headline:empty,
+.setup-lede:empty {
+  display: none;
+}
+.setup-classic-title {
+  margin: var(--s-4) 2px var(--s-3);
+}
+
+/* One front door at a time (§11.2): plain words on paper and, for the owner,
+   the screen's one gold button. Not a tinted callout (§8.1 rule 7). */
+.hub-door {
+  margin: 0 0 var(--s-6);
+  padding: 0 2px;
+}
+.hub-door-lead {
+  margin: 0;
+  font: var(--t-row);
+  letter-spacing: var(--track-row);
+  color: var(--ink);
+}
+.hub-door-text {
+  margin: 4px 0 0;
+  font: var(--t-meta);
+  font-size: 0.9375rem;
+  color: var(--ink-2);
+}
+.hub-door-lead:empty,
+.hub-door-text:empty {
+  display: none;
+}
+.hub-door-btn {
+  margin-top: var(--s-3);
+}
+/* What another director reads where the owner has a button. */
+.hub-door-owner {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: var(--s-3) 0 0;
+  font: 700 0.9375rem/1.35 var(--font-ui);
+  color: var(--ink);
+}
+.hub-door-owner .ico {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  color: var(--ink-2);
+}
+
+/* ── Hub rows ── */
+div.hub-row {
+  cursor: default; /* a row whose screen comes later: information, no chevron */
+}
+/* The title and summary share their lines with the mark; the problem gets
+   the row's full width under both, so "Rain bowling isn't on the schedule"
+   reads on one line at 360 instead of three. */
+.hub-row {
+  grid-template-areas:
+    "ico title end"
+    "ico sum end"
+    ". prob prob";
+  row-gap: 0;
+}
+.hub-row > .gl-ico {
+  grid-area: ico;
+}
+.hub-row > .gl-text {
+  display: contents;
+}
+.hub-row .gl-title {
+  grid-area: title;
+}
+.hub-row [data-hub-summary] {
+  grid-area: sum;
+}
+.hub-row .hub-problem {
+  grid-area: prob;
+}
+.hub-row > .gl-end {
+  grid-area: end;
+  gap: 8px;
+}
+/* Larger text (130% and up on a phone): the title needs the width, so the
+   mark drops under the summary, left-aligned with it. The query's em is the
+   list's own text size, so it follows the phone's text setting, not pixels. */
+.hub-list {
+  container-type: inline-size;
+}
+@container (max-width: 18em) {
+  .hub-row {
+    grid-template-columns: 30px minmax(0, 1fr);
+    grid-template-areas:
+      "ico title"
+      "ico sum"
+      ". end"
+      ". prob";
+  }
+  .hub-row > .gl-end {
+    justify-content: flex-start;
+    margin-top: 4px;
+  }
+  .hub-row .hub-mark {
+    max-width: none;
+    text-align: left;
+  }
+  .hub-row > .gl-end .gl-chev {
+    margin-left: auto; /* the chevron keeps the row's right edge */
+  }
+}
+.hub-row .gl-end .setup-face {
+  width: 26px;
+  height: 26px;
+  border-color: var(--sheet);
+}
+/* The first problem, in ink (the summary above it is ink-2): the line to act on. */
+.hub-problem {
+  display: block;
+  margin-top: 3px;
+  font: 650 0.875rem/1.32 var(--font-ui);
+  color: var(--ink);
+}
+/* The mark: a glyph drawn here from data-mark, and its word. Never colour
+   alone (§8.9): a check, a "!" disc, a ring, a dash — each also says it. */
+.hub-mark {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 8.5em;
+  font: 750 0.84375rem/1.15 var(--font-ui);
+  color: var(--ink-2);
+  text-align: right;
+}
+.hub-mark > i {
+  flex: none;
+  position: relative;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+}
+.hub-mark[data-mark="ok"] {
+  color: var(--done);
+}
+.hub-mark[data-mark="ok"] > i {
+  background: var(--done);
+}
+.hub-mark[data-mark="ok"] > i::after {
+  content: '';
+  position: absolute;
+  left: 6.3px;
+  top: 3.4px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--sheet);
+  border-width: 0 2.2px 2.2px 0;
+  transform: rotate(45deg);
+}
+.hub-mark[data-mark="warn"] {
+  color: var(--ink);
+}
+.hub-mark[data-mark="warn"] > i {
+  background: var(--gold);
+  box-shadow: inset 0 0 0 1.5px var(--gold-edge);
+}
+.hub-mark[data-mark="warn"] > i::after {
+  content: '!';
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: var(--gold-ink);
+  font: 900 0.75rem/1 var(--font-ui);
+}
+.hub-mark[data-mark="todo"] > i {
+  width: 16px;
+  height: 16px;
+  margin: 0 1px;
+  box-shadow: inset 0 0 0 2px var(--ink-3);
+}
+.hub-mark[data-mark="skip"] > i {
+  width: 12px;
+  height: 2.5px;
+  margin: 0 3px;
+  border-radius: 2px;
+  background: var(--ink-3);
+}
+.hub-mark:is([data-mark="info"], [data-mark="soon"]) > i {
+  display: none;
+}
+.hub-mark[data-mark="soon"] {
+  font-weight: 650;
+}
+/* "— Not used" is a decision, not a gap: the whole row steps back. */
+.hub-row:has(.hub-mark[data-mark="skip"]) :is(.gl-title, .gl-ico) {
+  color: var(--ink-2);
+}
+
+/* A grouped-list row that can't be used right now says why in its subline
+   (the owner's "Start the new-year setup" during camp week): not a dead
+   button, a reason. Ink-2 title, no chevron. */
+.gl-row[aria-disabled="true"] {
+  cursor: default;
+}
+.gl-row[aria-disabled="true"] .gl-title {
+  color: var(--ink-2);
+}
+.gl-row[aria-disabled="true"] .gl-chev {
+  visibility: hidden;
+}
+label.gl-row:active {
+  background: color-mix(in srgb, var(--ink) 6%, var(--sheet));
+}
+.setup-owner-sec,
+.backups .rp-sec {
+  margin-top: var(--s-6);
+}
+
+/* ── Clipboard rows (.cb-row): the run-sheet line every setup list uses —
+   restore points, recent changes, director devices, and Step 15's schedule
+   items. The TIME (or version) sits in its own left column in tabular
+   numerals so a column of them reads down like a printed sheet; the label is
+   the row's medium-weight title with who / what kind under it; the end holds
+   a mark (a pin for a kept point), a chevron when the row opens something, or
+   one small action (.btn.btn-sm, "Undo"). A <button> when the whole row opens
+   something, a <div> when it carries its own action. */
+.cb-row {
+  display: grid;
+  grid-template-columns: 4.75rem minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--s-3);
+  width: 100%;
+  min-height: var(--row-min);
+  margin: 0;
+  padding: 11px 14px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+}
+.cb-list > .cb-row:first-child {
+  border-top: 0;
+}
+button.cb-row {
+  cursor: pointer;
+}
+button.cb-row:active {
+  background: color-mix(in srgb, var(--ink) 6%, var(--sheet));
+}
+.cb-time {
+  padding-top: 1px;
+  font: 750 0.9375rem/1.25 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  color: var(--ink);
+}
+.cb-time small {
+  display: block;
+  font: 600 0.8125rem/1.3 var(--font-ui);
+  color: var(--ink-2);
+}
+.cb-main {
+  min-width: 0;
+}
+.cb-title {
+  display: block;
+  font: 700 1rem/1.28 var(--font-ui);
+  letter-spacing: var(--track-row);
+  overflow-wrap: anywhere;
+}
+.cb-sub {
+  display: block;
+  margin-top: 1px;
+  font: 550 0.84375rem/1.32 var(--font-ui);
+  color: var(--ink-2);
+}
+.cb-end {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-3);
+}
+.cb-end .ico {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.4;
+}
+.cb-empty {
+  margin: var(--s-3) 2px 0;
+  font: var(--t-meta);
+  font-size: 0.9375rem;
+  color: var(--ink-2);
+}
+/* A small chunky button at a row's end ("Undo"): still a full 44px target. */
+.btn.btn-sm {
+  min-height: var(--target);
+  padding: 2px 12px;
+  font: 800 0.875rem/1.1 var(--font-ui);
+}
+
+/* A plain line with an icon (§8.1 rule 7: notes are never another tinted
+   callout): "This is from the 2026 week", "Emergency switches…". */
+.setup-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: var(--s-3) 2px 0;
+  font: 600 0.875rem/1.4 var(--font-ui);
+  color: var(--ink-2);
+}
+.setup-note .ico {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+}
+.setup-sheet-lede {
+  margin: 0 0 var(--s-3);
+  font: var(--t-meta);
+  font-size: 0.9375rem;
+  color: var(--ink-2);
+}
+.setup-sheet-lede:empty {
+  display: none;
+}
+
+/* A sheet's one action, docked under its scrolling body (the restore sheet). */
+.sheet-dock {
+  flex: none;
+  display: grid;
+  gap: 10px;
+  padding: var(--s-3) var(--gutter);
+  border-top: 1px solid var(--line-2);
+  background: var(--sheet);
+}
+
+/* Restore: which sections to put back. Each row IS its checkbox (the box is
+   the row's icon column), so the whole label toggles it. */
+.rp-pick .rp-opt {
+  display: block;
+  padding: 5px 14px;
+}
+.rp-check {
+  position: relative;
+  display: flex;
+  min-height: var(--target);
+  align-items: center;
+  /* An empty box must be SEEN (§8.1 rule 6, 3:1): the module fills it with a
+     neutral that vanishes on the dark sheet and has no part to outline, so
+     the fill goes and an ink-3 ring is drawn behind the box instead (the
+     checked fill covers it). */
+  --jelly-fill: transparent;
+  --jelly-checkbox-size: 28px;
+  --jelly-checkbox-gap: 14px;
+  --jelly-checkbox-radius: 9px;
+  /* A pen tick on a clipboard: ink box, sheet-coloured check (both themes),
+     not five blocks of camp blue. */
+  --jelly-on: var(--ink);
+  --jelly-checkbox-mark: var(--sheet);
+}
+.rp-check::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 28px;
+  height: 28px;
+  margin-top: -14px;
+  border-radius: 9px;
+  box-shadow: inset 0 0 0 2px var(--ink-3);
+  pointer-events: none;
+}
+.rp-check .gl-title {
+  color: var(--ink);
+}
+.rp-pick + .setup-note {
+  margin-top: var(--s-4);
+}
+
+/* Hold-to-confirm (§11.0), for exactly two acts: clearing the scoreboard and a
+   restore that includes scores. The fill is drawn by the app over 1.2 s while
+   held (a clip-path wipe from the left, never a transform, so calm keeps it:
+   it is the only way to see how long is left); letting go early drains it.
+   A tap or a key reveals the two-tap alternative under it instead. */
+.btn-hold {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  touch-action: none; /* a hold must not turn into a scroll */
+  -webkit-user-select: none;
+  user-select: none;
+}
+.btn-hold-fill {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: color-mix(in srgb, var(--live) 18%, var(--sheet));
+  clip-path: inset(0 100% 0 0);
+}
+.btn-hold-label {
+  position: relative;
+}
+
+/* Advanced (owner only): closed by default, says what it is before it opens. */
+.setup-advanced {
+  margin-top: var(--s-6);
+  border-top: 1px solid var(--line-2);
+}
+.setup-advanced-sum {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: var(--target);
+  padding: 4px 2px;
+  font: 800 0.96875rem/1.2 var(--font-ui);
+  color: var(--ink);
+  list-style: none;
+  cursor: pointer;
+}
+.setup-advanced-sum::-webkit-details-marker {
+  display: none;
+}
+.setup-advanced-sum::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border: solid var(--ink-2);
+  border-width: 0 2.4px 2.4px 0;
+  transform: translateY(-2px) rotate(45deg);
+}
+.setup-advanced[open] > .setup-advanced-sum::after {
+  transform: translateY(2px) rotate(-135deg);
+}
+.setup-advanced > .setup-note {
+  margin-top: 0;
+}
+
 /* ── Per-team 0–5 point buttons (Memory Verse) ─────────────────── */
 .pts-grid {
   display: flex;
@@ -6698,8 +7437,9 @@ jelly-button.winner-btn.winner-ready {
    ============================================================ */
 
 /* The builder opens full-page: hide everything else in main-wrap (and the
-   footer) while it's up, so the collapsible cards don't render beneath it. */
-body.builder-open .main-wrap > :not(#settings-view) {
+   footer) while it's up, so the collapsible cards don't render beneath it.
+   #setup holds the frame and the classic builder (#settings-view) both. */
+body.builder-open .main-wrap > :not(#setup) {
   display: none;
 }
 

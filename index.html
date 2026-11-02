@@ -115,6 +115,18 @@
     <symbol id="i-lock" viewBox="0 0 24 24"><rect x="5.2" y="10.6" width="13.6" height="9.6" rx="2.2"/><path d="M8.4 10.6V8a3.6 3.6 0 0 1 7.2 0v2.6"/></symbol>
     <symbol id="i-camera" viewBox="0 0 24 24"><path d="M4.4 8.6A1.8 1.8 0 0 1 6.2 6.8h1.9l1.5-2.2h4.8l1.5 2.2h1.9a1.8 1.8 0 0 1 1.8 1.8v8.8a1.8 1.8 0 0 1-1.8 1.8H6.2a1.8 1.8 0 0 1-1.8-1.8z"/><circle cx="12" cy="12.6" r="3.4"/></symbol>
     <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4"/></symbol>
+    <!-- Set up the week (P2 §11): one per hub section, plus the frame's undo,
+         devices, restore points and backup files. -->
+    <symbol id="i-undo" viewBox="0 0 24 24"><path d="M8.8 5.2 4.6 9.4l4.2 4.2"/><path d="M4.8 9.4h9.4a5.4 5.4 0 0 1 0 10.8H10"/></symbol>
+    <symbol id="i-pennant" viewBox="0 0 24 24"><path d="M6.2 3.6v16.8"/><path d="M6.2 4.8 18.8 9.2 6.2 13.6z"/></symbol>
+    <symbol id="i-tent" viewBox="0 0 24 24"><path d="M3.4 19.6h17.2M12 4.6 4.6 19.6M12 4.6l7.4 15"/><path d="M12 12.8 9.4 19.6M12 12.8l2.6 6.8"/></symbol>
+    <symbol id="i-meal" viewBox="0 0 24 24"><path d="M6.8 3.8v6a2.3 2.3 0 0 0 4.6 0v-6M9.1 3.8v16.4"/><path d="M17.2 20.2V3.8c-2 1.2-3 3.7-3 6.8v3.2h3"/></symbol>
+    <symbol id="i-shapes" viewBox="0 0 24 24"><circle cx="7.4" cy="7.6" r="3.4"/><rect x="13.4" y="4.2" width="6.8" height="6.8" rx="1.3"/><path d="M12 13.2l4.4 7H7.6z"/></symbol>
+    <symbol id="i-archive" viewBox="0 0 24 24"><rect x="3.6" y="4.4" width="16.8" height="4.4" rx="1.2"/><path d="M5.2 8.8v9.4a1.6 1.6 0 0 0 1.6 1.6h10.4a1.6 1.6 0 0 0 1.6-1.6V8.8M10 12.6h4"/></symbol>
+    <symbol id="i-phone" viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2.4"/><path d="M10.8 17.6h2.4"/></symbol>
+    <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v10.8M7.6 10.6 12 15l4.4-4.4M5 19.6h14"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15.2V4.4M7.6 8.8 12 4.4l4.4 4.4M5 19.6h14"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 24 24"><path d="M9.2 4h5.6l-.9 5.2 3 3.2H7.1l3-3.2z"/><path d="M12 12.4v7.8"/></symbol>
     <!-- Team flag marks (§8.4) for a team with no shield (senior today): a
          pennant on a pole, filled with the team's mark colour (currentColor,
          from .flag[data-flag] or an inline --flag-fill) and outlined in ink.
@@ -256,9 +268,249 @@
       <!-- ── LIVE NOW (a game in progress — surfaced + highlighted) ── -->
       <section id="live-home" class="live-home" hidden></section>
 
-      <!-- ── WEEK BUILDER (editor-only; opened from More → Set up the week;
-           body.builder-open hides every sibling section while it's up) ── -->
-      <section id="settings-view" class="settings-view" hidden></section>
+      <!-- ── SET UP THE WEEK (P2 §11.0–11.2; editor-only; opened from More →
+           Director → Set up the week; body.builder-open hides every sibling
+           section while it's up). #setup[data-screen] is the ONE switch the CSS
+           reads, like #app[data-tab]: hub | backups | classic (later steps add
+           week, schedule, games, teams, people, campers, meals, verses, cleanup,
+           electives, wizard — each with its own pair of lines in styles.css).
+           ABSENT data-screen = the v197 builder exactly: only #settings-view
+           shows, with its own back button, so this markup is inert until the
+           hub is wired. Nothing here is rebuilt: a renderer patches text,
+           `hidden` and the data-* below (setTextIfChanged / setHiddenIfChanged).
+           Owner-only controls carry data-owner-only and start hidden; CSS also
+           keeps them gone unless body.setup-owner (set from isOwner(), never
+           from anything stored), so a slip in a renderer can't show one; the
+           sentence other directors read instead carries data-not-owner. -->
+      <div id="setup" class="setup">
+        <header class="setup-head" id="setup-head">
+          <div class="setup-bar">
+            <!-- Labelled back (§11.1): "More" from the hub (where it was
+                 opened), "Set up the week" from a screen. -->
+            <button type="button" class="tk-back setup-back" id="setup-back" data-setup-back>
+              <svg class="ico" aria-hidden="true"><use href="#i-chev-l"/></svg><span class="tk-back-label" id="setup-back-label">More</span>
+            </button>
+            <!-- The undo pill's dock (§7.1): after its 6 s the pill shrinks into
+                 this button; tap = undo the newest, long-press = Recent changes.
+                 aria-label carries the label ("Undo: moved Swim to 3:00 PM"). -->
+            <button type="button" class="setup-icon" id="setup-undo-dock" aria-label="Undo" hidden>
+              <svg class="ico" aria-hidden="true"><use href="#i-undo"/></svg>
+            </button>
+            <button type="button" class="setup-icon" id="setup-menu-btn" aria-haspopup="dialog" aria-controls="sheet-setup-menu" aria-label="More setup options">
+              <svg class="ico" aria-hidden="true"><use href="#i-dots"/></svg>
+            </button>
+          </div>
+          <div class="setup-status">
+            <!-- The sync line (§11.1): ONE truthful sentence. data-tone:
+                 saved (Saved) · saving (Saving…) · offline (Saved on this device
+                 · will sync when you're back online — also while the first
+                 snapshot is pending) · error (Couldn't save Teams; #setup-sync-act
+                 shows, and its hit area covers the line) · off (Editing here isn't
+                 available yet). The mark is drawn by CSS from the tone. -->
+            <p class="setup-sync" id="setup-sync" data-tone="saved" aria-live="polite">
+              <i class="setup-sync-mark" aria-hidden="true"></i><span class="setup-sync-text" id="setup-sync-text">Saved</span>
+              <button type="button" class="setup-sync-act" id="setup-sync-act" hidden>Details<svg class="ico" aria-hidden="true"><use href="#i-chev-r"/></svg></button>
+            </p>
+            <!-- Who's here (§6.7): up to three initials (<i class="setup-face">J</i>)
+                 and one sentence ("Jenn is also here", "Jenn and Sam are also
+                 here", "You (another device)"); tap → who is where, and since when. -->
+            <button type="button" class="setup-here" id="setup-here" hidden>
+              <span class="setup-faces" id="setup-here-faces" aria-hidden="true"></span>
+              <span class="setup-here-text" id="setup-here-text"></span>
+            </button>
+          </div>
+          <!-- Retry / Discard / Download my changes for a refused save: the
+               header's #sync-alert bar, mirrored here because the app header
+               steps aside for the builder (the same idea as #tk-sync-alert). -->
+          <section id="setup-sync-alert" class="sync-alert" role="alert" hidden></section>
+          <!-- The undo pill (§7.1): hangs under the head, right-aligned, one at a
+               time (a new one replaces it), for 6 s, then docks above. ONE
+               button: the label says what Undo will put back. -->
+          <button type="button" class="setup-undo" id="setup-undo" hidden>
+            <svg class="ico" aria-hidden="true"><use href="#i-undo"/></svg><span class="setup-undo-verb">Undo</span><span class="setup-undo-label" id="setup-undo-label"></span>
+          </button>
+        </header>
+
+        <!-- ── The hub: the checklist (§11.2) ── -->
+        <section class="setup-screen hub" id="setup-hub" data-setup-screen="hub" aria-labelledby="hub-title">
+          <!-- The answer is the headline (redesign §8.1 rule 1): the screen's
+               NAME is the small kicker ("Set up the week · Junior camp"), the
+               big line is where the week stands ("7 of 10 ready"), the lede what
+               to do next ("Next: Teams"), from hubStatus() over the counted rows
+               (The week group; Electives only where the camp has them). -->
+          <div class="setup-intro">
+            <h2 class="setup-kicker" id="hub-title">Set up the week</h2>
+            <p class="setup-headline" id="hub-headline"></p>
+            <p class="setup-lede" id="hub-lede"></p>
+          </div>
+
+          <!-- One front door at a time (§11.2, ux-R4), chosen in order:
+               data-door = running | new-year | original (none: hidden). The gold
+               button is the owner's (Q8); every other director reads the same
+               lead with the owner's name in #hub-door-owner-text instead
+               ("Patrick turns on editing."). -->
+          <section class="hub-door" id="hub-door" data-door="original" hidden>
+            <p class="hub-door-lead" id="hub-door-lead"></p>
+            <p class="hub-door-text" id="hub-door-text"></p>
+            <button type="button" class="btn btn-gold btn-block hub-door-btn" id="hub-door-btn" data-owner-only hidden></button>
+            <p class="hub-door-owner" id="hub-door-owner" data-not-owner hidden><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span id="hub-door-owner-text"></span></p>
+          </section>
+
+          <!-- Rows: data-hub-row is the section key. A row whose screen exists is
+               a <button> with a chevron; a row whose screen arrives in a later
+               step is a <div> with no chevron (never a dead button) and the
+               step that brings the screen turns it into a button. Each row: the
+               summary [data-hub-summary] (ink-2), the first problem
+               [data-hub-problem] (ink; hidden when none), another director's
+               initial while they are on that screen [data-hub-here], and the
+               mark [data-hub-mark][data-mark] = ok (Ready) | warn (3 to check) |
+               todo (Not started) | skip (Not used) | info (Draft, 12 min ago) |
+               soon (Editing comes next), its word in [data-hub-word]. -->
+          <div class="more-sec">
+            <div class="gl-head"><h3 class="gl-label">The week</h3></div>
+            <div class="gl hub-list">
+              <div class="gl-row hub-row" data-hub-row="week">
+                <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-calendar"/></svg></span>
+                <span class="gl-text"><span class="gl-title">Camp week</span><span class="gl-sub" data-hub-summary></span><span class="hub-problem" data-hub-problem hidden></span></span>
+                <span class="gl-end"><i class="setup-face" data-hub-here hidden></i><span class="hub-mark" data-hub-mark data-mark="info"><i aria-hidden="true"></i><span data-hub-word></span></span></span>
+              </div>
+              <div class="gl-row hub-row" data-hub-row="schedule">
+                <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-clock"/></svg></span>
+                <span class="gl-text"><span class="gl-title">Schedule</span><span class="gl-sub" data-hub-summary></span><span class="hub-problem" data-hub-problem hidden></span></span>
+                <span class="gl-end"><i class="setup-face" data-hub-here hidden></i><span class="hub-mark" data-hub-mark data-mark="info"><i aria-hidden="true"></i><span data-hub-word></span></span></span>
+              </div>
+              <button type="button" class="gl-row hub-row" data-hub-row="games">
+                <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-trophy"/></svg></span>
+                <span class="gl-text"><span class="gl-title">Games</span><span class="gl-sub" data-hub-summary></span><span class="hub-problem" data-hub-problem hidden></span></span>
+                <span class="gl-end"><i class="setup-face" data-hub-here hidden></i><span class="hub-mark" data-hub-mark data-mark="info"><i aria-hidden="true"></i><span data-hub-word></span></span><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+              </button>
+              <button type="button" class="gl-row hub-row" data-hub-row="teams">
+                <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-pennant"/></svg></span>
+                <span class="gl-text"><span class="gl-title">Teams</span><span class="gl-sub" data-hub-summary></span><span class="hub-problem" data-hub-problem hidden></span></span>
+                <span class="gl-end"><i class="setup-face" data-hub-here hidden></i><span class="hub-mark" data-hub-mark data-mark="info"><i aria-hidden="true"></i><span data-hub-word></span></span><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+              </button>
+              <button type="button" class="gl-row hub-row" data-hub-row="people">
+                <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-people"/></svg></span>
+                <span class="gl-text"><span class="gl-title">People</span><span class="gl-sub" data-hub-summary></span><span class="hub-problem" data-hub-problem hidden></span></span>
+                <span class="gl-end"><i class="setup-face" data-hub-here hidden></i><span class="hub-mark" data-hub-mark data-mark="info"><i aria-hidden="true"></i><span data-hub-word></span></span><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+              </button>
+              <div class="gl-row hub-row" data-hub-row="campers">
+                <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-tent"/></svg></span>
+                <span class="gl-text"><span class="gl-title">Campers</span><span class="gl-sub" data-hub-summary></span><span class="hub-problem" data-hub-problem hidden></span></span>
+                <span class="gl-end"><i class="setup-face" data-hub-here hidden></i><span class="hub-mark" data-hub-mark data-mark="info"><i aria-hidden="true"></i><span data-hub-word></span></span></span>
+              </div>
+              <div class="gl-row hub-row" data-hub-row="meals">
+                <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-meal"/></svg></span>
+                <span class="gl-text"><span class="gl-title">Meals</span><span class="gl-sub" data-hub-summary></span><span class="hub-problem" data-hub-problem hidden></span></span>
+                <span class="gl-end"><i class="setup-face" data-hub-here hidden></i><span class="hub-mark" data-hub-mark data-mark="info"><i aria-hidden="true"></i><span data-hub-word></span></span></span>
+              </div>
+              <div class="gl-row hub-row" data-hub-row="verses">
+                <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-book"/></svg></span>
+                <span class="gl-text"><span class="gl-title">Memory verses</span><span class="gl-sub" data-hub-summary></span><span class="hub-problem" data-hub-problem hidden></span></span>
+                <span class="gl-end"><i class="setup-face" data-hub-here hidden></i><span class="hub-mark" data-hub-mark data-mark="info"><i aria-hidden="true"></i><span data-hub-word></span></span></span>
+              </div>
+              <div class="gl-row hub-row" data-hub-row="cleanup">
+                <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-broom"/></svg></span>
+                <span class="gl-text"><span class="gl-title">Cleanup rota</span><span class="gl-sub" data-hub-summary></span><span class="hub-problem" data-hub-problem hidden></span></span>
+                <span class="gl-end"><i class="setup-face" data-hub-here hidden></i><span class="hub-mark" data-hub-mark data-mark="info"><i aria-hidden="true"></i><span data-hub-word></span></span></span>
+              </div>
+              <!-- Junior only (CAMP.features.electives): the renderer un-hides it. -->
+              <div class="gl-row hub-row" data-hub-row="electives" hidden>
+                <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-shapes"/></svg></span>
+                <span class="gl-text"><span class="gl-title">Electives</span><span class="gl-sub" data-hub-summary></span><span class="hub-problem" data-hub-problem hidden></span></span>
+                <span class="gl-end"><i class="setup-face" data-hub-here hidden></i><span class="hub-mark" data-hub-mark data-mark="info"><i aria-hidden="true"></i><span data-hub-word></span></span></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Not counted in "N of M ready": they publish or protect the week. -->
+          <div class="more-sec">
+            <div class="gl-head"><h3 class="gl-label">Sharing and backups</h3></div>
+            <div class="gl hub-list">
+              <div class="gl-row hub-row" data-hub-row="alerts">
+                <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-bell"/></svg></span>
+                <span class="gl-text"><span class="gl-title">Phone alerts</span><span class="gl-sub" data-hub-summary></span><span class="hub-problem" data-hub-problem hidden></span></span>
+                <span class="gl-end"><span class="hub-mark" data-hub-mark data-mark="info"><i aria-hidden="true"></i><span data-hub-word></span></span></span>
+              </div>
+              <button type="button" class="gl-row hub-row" data-hub-row="notice">
+                <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-megaphone"/></svg></span>
+                <span class="gl-text"><span class="gl-title">Notice board</span><span class="gl-sub" data-hub-summary></span><span class="hub-problem" data-hub-problem hidden></span></span>
+                <span class="gl-end"><i class="setup-face" data-hub-here hidden></i><span class="hub-mark" data-hub-mark data-mark="info"><i aria-hidden="true"></i><span data-hub-word></span></span><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+              </button>
+              <button type="button" class="gl-row hub-row" data-hub-row="restore">
+                <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-archive"/></svg></span>
+                <span class="gl-text"><span class="gl-title">Restore points</span><span class="gl-sub" data-hub-summary></span><span class="hub-problem" data-hub-problem hidden></span></span>
+                <span class="gl-end"><i class="setup-face" data-hub-here hidden></i><span class="hub-mark" data-hub-mark data-mark="info"><i aria-hidden="true"></i><span data-hub-word></span></span><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── Restore points & backups (§7.2, §7.4, §11.16) ──
+             Lists are written by the renderer as .cb-row buttons (one per
+             point; see styles.css "Clipboard rows"): the time in its own
+             tabular column, the label, who and what kind under it, a pin when
+             kept. Tapping one opens #sheet-restore. -->
+        <section class="setup-screen backups" id="setup-backups" data-setup-screen="backups" aria-labelledby="backups-title">
+          <div class="setup-intro">
+            <h2 class="setup-title" id="backups-title">Restore points</h2>
+            <p class="setup-lede" id="backups-lede"></p>
+          </div>
+          <!-- Asks for a name (askDialog), then saves a manual point. -->
+          <button type="button" class="btn btn-gold btn-block" id="rp-save-btn">Save a restore point now</button>
+          <!-- The rules aren't published, or the read was refused: one plain line
+               instead of the lists (the rest of the screen stays). -->
+          <p class="setup-note" id="rp-note" hidden><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span id="rp-note-text"></span></p>
+          <div class="more-sec rp-sec" id="rp-sec-kept" hidden>
+            <div class="gl-head"><h3 class="gl-label">Kept</h3><span class="gl-note">Can't be deleted from the app</span></div>
+            <div class="gl cb-list" id="rp-kept"></div>
+          </div>
+          <div class="more-sec rp-sec" id="rp-sec-recent">
+            <div class="gl-head"><h3 class="gl-label">Recent</h3><span class="gl-note" id="rp-recent-note"></span></div>
+            <div class="gl cb-list" id="rp-list"></div>
+            <p class="cb-empty" id="rp-empty" hidden>None yet. One is saved for you before every big change.</p>
+          </div>
+          <!-- Archive points (one per past camp year) with their winner line;
+               the newest one also offers Undo the new-year setup (owner). -->
+          <div class="more-sec rp-sec" id="rp-sec-years" hidden>
+            <div class="gl-head"><h3 class="gl-label">Past years</h3></div>
+            <div class="gl cb-list" id="rp-years"></div>
+          </div>
+          <div class="more-sec rp-sec">
+            <div class="gl-head"><h3 class="gl-label">Backup files</h3></div>
+            <div class="gl">
+              <button type="button" class="gl-row" id="backup-download-btn">
+                <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-download"/></svg></span>
+                <span class="gl-text"><span class="gl-title">Download a backup file</span><span class="gl-sub">The week, games, teams and scores</span></span>
+                <span class="gl-end"></span>
+              </button>
+              <!-- A label, so the whole row opens the file picker (the input is
+                   visually hidden, never display:none, so it stays focusable). -->
+              <label class="gl-row" id="backup-restore-row" for="backup-file-input">
+                <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-upload"/></svg></span>
+                <span class="gl-text"><span class="gl-title">Restore from a file</span><span class="gl-sub" id="backup-restore-sub">A backup of this camp; you pick what to put back</span></span>
+                <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+                <input type="file" id="backup-file-input" class="visually-hidden" accept="application/json,.json">
+              </label>
+            </div>
+          </div>
+          <!-- Advanced (owner only, §11.16): collapsed, with its warning line;
+               per-section "Show the original instead" switches and "Start this
+               section again from the original" arrive with Step 15. -->
+          <details class="setup-advanced" id="setup-advanced" data-owner-only hidden>
+            <summary class="setup-advanced-sum">Advanced</summary>
+            <p class="setup-note"><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span>Emergency switches. Each one changes what every phone shows.</span></p>
+            <div id="setup-advanced-body"></div>
+          </details>
+        </section>
+
+        <!-- The classic builder (Games, Days, Teams, Notice, Data) as one screen
+             of the frame until each section's replacement ships (§11.1);
+             renderSettings still writes #settings-view. In the frame its own
+             back button and heading step aside (CSS). -->
+        <h2 class="setup-title setup-classic-title" data-setup-screen="classic">Classic editor</h2>
+        <section id="settings-view" class="settings-view" data-setup-screen="classic" hidden></section>
+      </div>
 
     </main>
 
@@ -674,6 +926,161 @@
             <span class="gl-text"><span class="gl-title">Standings and points</span><span class="gl-sub">Secret until you reveal them</span></span>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SET UP THE WEEK: its sheets (P2 §6.7, §7.1, §7.2, §11.2) ──────
+       Shell sheets (shellSheetOpen / shellSheetAllowed: editors only). One at a
+       time, never a stack (§11.0): ⋯ → Devices CLOSES the menu and opens Devices.
+       Every row id/data-* below is the hook; lists are filled by the renderer
+       with .cb-row clipboard rows. -->
+  <div id="sheet-setup-menu" class="sheet-overlay" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-setup-menu-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-setup-menu-title">Set up the week</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="sheet-body">
+        <div class="gl">
+          <button type="button" class="gl-row" data-setup-act="changes">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-undo"/></svg></span>
+            <span class="gl-text"><span class="gl-title">Recent changes</span><span class="gl-sub">Undo any one of your last 50</span></span>
+            <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+          </button>
+          <button type="button" class="gl-row" data-setup-act="devices">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-phone"/></svg></span>
+            <span class="gl-text"><span class="gl-title">Director devices</span><span class="gl-sub" id="setup-menu-devices-sub">Which version each one is running</span></span>
+            <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+          </button>
+          <button type="button" class="gl-row" data-setup-act="classic">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-calendar"/></svg></span>
+            <span class="gl-text"><span class="gl-title">Classic editor</span><span class="gl-sub">Games, days, teams and the notice, as before</span></span>
+            <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+          </button>
+        </div>
+        <!-- The owner's switches (decision Q8): rendered for OWNER_MEMBER_KEY
+             only. A switch that can't be used right now stays listed with
+             aria-disabled="true" and its reason as the subline ("Not during
+             camp week") — never a button that silently does nothing. Each
+             arrives with its step: new-year (28), undo-new-year (28),
+             original (15), advanced (15). -->
+        <div class="more-sec setup-owner-sec" data-owner-only hidden>
+          <div class="gl-head">
+            <h3 class="gl-label">Owner</h3>
+            <span class="gl-note"><svg class="ico" aria-hidden="true"><use href="#i-eye-off"/></svg>Only you see these</span>
+          </div>
+          <div class="gl">
+            <button type="button" class="gl-row" data-setup-act="new-year" data-owner-only hidden>
+              <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-sun"/></svg></span>
+              <span class="gl-text"><span class="gl-title">Start the new-year setup</span><span class="gl-sub" data-setup-why></span></span>
+              <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+            </button>
+            <button type="button" class="gl-row" data-setup-act="undo-new-year" data-owner-only hidden>
+              <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-undo"/></svg></span>
+              <span class="gl-text"><span class="gl-title">Undo the new-year setup</span><span class="gl-sub" data-setup-why></span></span>
+              <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+            </button>
+            <button type="button" class="gl-row" data-setup-act="original" data-owner-only hidden>
+              <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-archive"/></svg></span>
+              <span class="gl-text"><span class="gl-title">Use the original week again</span><span class="gl-sub" data-setup-why>Everyone sees the schedule that came with the app. Your changes are kept.</span></span>
+              <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+            </button>
+            <button type="button" class="gl-row" data-setup-act="advanced" data-owner-only hidden>
+              <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-lock"/></svg></span>
+              <span class="gl-text"><span class="gl-title">Advanced</span><span class="gl-sub" data-setup-why>Section switches and fresh starts</span></span>
+              <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Recent changes (§7.1): newest first; each .cb-row ends in its own Undo
+       (.btn.btn-sm[data-undo-id]). A change someone altered since is undone
+       where it can be and the toast says what was left. -->
+  <div id="sheet-setup-changes" class="sheet-overlay" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-setup-changes-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-setup-changes-title">Recent changes</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="sheet-body">
+        <div class="gl cb-list" id="setup-changes-list"></div>
+        <p class="cb-empty" id="setup-changes-empty" hidden>Nothing to undo yet.</p>
+        <!-- §7.1: access changes aren't undoable; say so where people look. -->
+        <p class="setup-note"><svg class="ico" aria-hidden="true"><use href="#i-people"/></svg><span>Changes to who can sign in aren't here: change them back in People.</span></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Director devices (§6.7): presence rows of directors, matched to their
+       editorsHere row by device id, grouped by version. A hint, never a gate. -->
+  <div id="sheet-setup-devices" class="sheet-overlay" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-setup-devices-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-setup-devices-title">Director devices</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="sheet-body">
+        <p class="setup-sheet-lede" id="setup-devices-lede"></p>
+        <div class="gl cb-list" id="setup-devices-list"></div>
+        <p class="cb-empty" id="setup-devices-empty" hidden>No other director has Camp open.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Restoring a point (§7.2): what it would change, section by section, then
+       ONE action. The checkboxes are fixed sections; a section the point can't
+       offer is hidden and named in #rp-not-offered. Scores start unticked
+       (decision Q23); ticking it swaps the gold button for hold-to-confirm. -->
+  <div id="sheet-restore" class="sheet-overlay" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-restore-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-restore-title">Restore point</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="sheet-body">
+        <p class="setup-sheet-lede" id="rp-meta"></p>
+        <!-- "This is from the 2026 week." — a plain line with an icon (§8.1 rule 7). -->
+        <p class="setup-note" id="rp-epoch-note" hidden><svg class="ico" aria-hidden="true"><use href="#i-calendar"/></svg><span id="rp-epoch-text"></span></p>
+        <div class="gl-head"><h3 class="gl-label">Put back</h3></div>
+        <div class="gl rp-pick">
+          <div class="gl-row rp-opt" data-rp-section="schedule">
+            <jelly-checkbox class="rp-check" data-rp-pick="schedule" checked><span class="gl-title">Schedule and week</span><span class="gl-sub" data-rp-what></span></jelly-checkbox>
+          </div>
+          <div class="gl-row rp-opt" data-rp-section="games">
+            <jelly-checkbox class="rp-check" data-rp-pick="games" checked><span class="gl-title">Games</span><span class="gl-sub" data-rp-what></span></jelly-checkbox>
+          </div>
+          <div class="gl-row rp-opt" data-rp-section="teams">
+            <jelly-checkbox class="rp-check" data-rp-pick="teams" checked><span class="gl-title">Teams</span><span class="gl-sub" data-rp-what></span></jelly-checkbox>
+          </div>
+          <div class="gl-row rp-opt" data-rp-section="notice">
+            <jelly-checkbox class="rp-check" data-rp-pick="notice" checked><span class="gl-title">Notice board</span><span class="gl-sub" data-rp-what></span></jelly-checkbox>
+          </div>
+          <div class="gl-row rp-opt rp-opt-scores" data-rp-section="scores">
+            <jelly-checkbox class="rp-check" data-rp-pick="scores"><span class="gl-title">Scores</span><span class="gl-sub" data-rp-what>Left as they are unless you tick this</span></jelly-checkbox>
+          </div>
+        </div>
+        <!-- Games kept because they have scores (sync-F8): "Rain bowling · 🥇 Foxes". -->
+        <p class="setup-note" id="rp-kept-note" hidden><svg class="ico" aria-hidden="true"><use href="#i-trophy"/></svg><span id="rp-kept-text"></span></p>
+        <p class="setup-note" id="rp-not-offered" hidden><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span id="rp-not-offered-text"></span></p>
+      </div>
+      <!-- One action. Scores ticked → the hold button names the camp; a tap or
+           a key on it reveals the two-tap alternative under it (§11.0). -->
+      <div class="sheet-dock">
+        <button type="button" class="btn btn-gold btn-block" id="rp-restore-btn">Put these back</button>
+        <button type="button" class="btn btn-danger btn-block btn-hold" id="rp-hold-btn" hidden><span class="btn-hold-fill" aria-hidden="true"></span><span class="btn-hold-label" id="rp-hold-label">Hold to put back Junior camp's scores</span></button>
+        <button type="button" class="btn btn-danger btn-block" id="rp-hold-confirm" hidden></button>
       </div>
     </div>
   </div>

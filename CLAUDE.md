@@ -700,6 +700,88 @@ never rebuilds a segmented control under a finger.
   app header (and anything else `position: sticky`) scrolled away with the
   page — v197 shipped that way. Don't put `hidden` back on its own.
 
+## Set up the week: the frame, the hub, the clipboard (Step 14 — markup and visual system)
+
+P2 §11.0–11.2 ("the director's clipboard") inside redesign §8. Static markup in
+index.html (`#setup`, its four sheets, `#ask-dialog`), styled in styles.css's
+"SET UP THE WEEK" section; a renderer patches text, `hidden` and the data-*
+named here, never rebuilds a row. **The behaviour is wired separately** (the
+rest of Step 14); until then the markup is inert and the builder is v197's.
+
+- **`#setup[data-screen]` is the one switch** (`hub | backups | classic`; a later
+  screen adds its own pair of lines in the CSS). `#setup` wraps `#settings-view`
+  inside `#tab-now`, shown only under `body.builder-open` (which hides every
+  other child of main-wrap: `:not(#setup)`). **No `data-screen` = the v197
+  builder exactly** (only `#settings-view`, with its own back); with one, the
+  frame's head shows, the classic builder's `#settings-back-btn` and `h2` step
+  aside and `.setup-classic-title` ("Classic editor") titles that screen.
+  renderSettings still writes `#settings-view`.
+- **The head** (`.setup-head`, sticky, paper, full bleed): `#setup-back` with
+  `#setup-back-label` ("More" from the hub, "Set up the week" from a screen),
+  `#setup-undo-dock` (the docked undo; its aria-label is the entry's label),
+  `#setup-menu-btn` (→ `#sheet-setup-menu`). Second row: the sync line
+  `#setup-sync[data-tone=saved|saving|offline|error|off]` (`#setup-sync-text`;
+  `#setup-sync-act` "Details" only for `error`, its hit area the whole line; the
+  mark is drawn by CSS from the tone) and who's here `#setup-here`
+  (`#setup-here-faces` takes up to three `<i class="setup-face">J</i>`,
+  `#setup-here-text` the sentence). `#setup-sync-alert` is a mirror of the
+  header's Retry / Discard / Download bar (the app header steps aside for the
+  builder). `#setup-undo` is THE undo pill (one button, `#setup-undo-label`):
+  it hangs under the head at the right for 6 s, then docks; never a toast.
+- **The hub** (`#setup-hub`): the answer is the headline — `#hub-title` is the
+  small kicker/name ("Set up the week · Junior camp"), `#hub-headline` the big
+  line ("7 of 10 ready"), `#hub-lede` what next. `#hub-door[data-door=running|
+  new-year|original]` (hidden when none): `#hub-door-lead`, `#hub-door-text`,
+  the owner's gold `#hub-door-btn` (`data-owner-only`) or everyone else's
+  `#hub-door-owner` / `#hub-door-owner-text` ("Patrick turns on editing.",
+  `data-not-owner`). Rows `[data-hub-row=week|schedule|games|teams|people|
+  campers|meals|verses|cleanup|electives|alerts|notice|restore]` each carry
+  `[data-hub-summary]`, `[data-hub-problem]` (hidden when none; it spans the
+  row's full width), `[data-hub-here]` (another director's initial) and
+  `[data-hub-mark][data-mark=ok|warn|todo|skip|info|soon]` + `[data-hub-word]`
+  — CSS draws the glyph (check / gold "!" / ring / dash), never an emoji. **A
+  row whose screen exists is a `<button>` with a chevron** (games, teams,
+  people, notice, restore at Step 14); **one whose screen comes later is a
+  `<div>`** (week and schedule → Step 15, meals / verses / cleanup / electives →
+  19, campers → 25, alerts): never a dead button — the step that brings the
+  screen turns the div into a button. Electives starts hidden (junior only). At
+  ~130%+ text the mark drops under the summary (a container query on
+  `.hub-list`, in em, so it follows the phone's text size).
+- **Owner-only** (decision Q8): `data-owner-only` elements start `hidden`, and
+  CSS also removes them unless `body.setup-owner` — set from `isOwner()` on
+  every render, never from anything stored — and removes `data-not-owner`
+  sentences for the owner. Belt and braces; the rules refuse the writes anyway.
+- **Restore points** (`#setup-backups`): `#rp-save-btn` (gold), `#rp-note` /
+  `#rp-note-text` (rules refused), `#rp-sec-kept` / `#rp-kept`, `#rp-sec-recent` /
+  `#rp-list` / `#rp-recent-note` / `#rp-empty`, `#rp-sec-years` / `#rp-years`,
+  `#backup-download-btn`, `#backup-restore-row` (a label for the visually hidden
+  `#backup-file-input`), the owner's `#setup-advanced` / `#setup-advanced-body`.
+- **Clipboard rows** (`.cb-row` in a `.gl.cb-list`): `.cb-time` (a tabular
+  column, `<small>` for the day or date), `.cb-main` > `.cb-title` + `.cb-sub`,
+  `.cb-end`. A `<button>` when the row opens something, a `<div>` when it ends
+  in its own `.btn.btn-sm`. Restore points, recent changes, devices — and
+  Step 15's schedule items should be these too.
+- **Sheets** (shell sheets, editors only, ONE at a time — ⋯ → Devices closes
+  the menu first): `#sheet-setup-menu` (`[data-setup-act=changes|devices|
+  classic]`; the owner group `.setup-owner-sec` with `new-year|undo-new-year|
+  original|advanced`, each `data-owner-only hidden`; one that can't be used
+  right now gets `aria-disabled="true"` and its reason in `[data-setup-why]`),
+  `#sheet-setup-changes` (`#setup-changes-list`, `#setup-changes-empty`),
+  `#sheet-setup-devices` (`#setup-devices-lede`, `#setup-devices-list`,
+  `#setup-devices-empty`), `#sheet-restore` (`#sheet-restore-title`, `#rp-meta`,
+  `#rp-epoch-note`, `.rp-opt[data-rp-section]` > `jelly-checkbox.rp-check
+  [data-rp-pick]` + `[data-rp-what]`, `#rp-kept-note`, `#rp-not-offered`, and a
+  `.sheet-dock` with `#rp-restore-btn` / `#rp-hold-btn` / `#rp-hold-confirm`).
+- **askDialog** (`jelly-dialog#ask-dialog.ask`): `#ask-title`, `#ask-body`,
+  `#ask-actions` of `.btn` / `.btn.btn-gold` (THE main action) /
+  `.btn.btn-danger` (destructive; danger text, never a red fill); a short pair
+  shares a row, long labels stack. Every jelly-dialog now has the sheet's flat
+  scrim, a hairline edge and a 44px ✕ (the vendor patch above).
+- **Hold-to-confirm** (`.btn-hold` > `.btn-hold-fill` + `.btn-hold-label`):
+  the app wipes the fill's `clip-path` from `inset(0 100% 0 0)` to `inset(0)`
+  over 1.2 s while held — not a transform, so calm keeps it (it is the only
+  way to see how long is left); a tap or a key reveals the two-tap button.
+
 ## Tests
 
 `node tests/run.js` (optionally with a filename filter: `node tests/run.js
