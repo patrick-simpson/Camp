@@ -375,8 +375,7 @@ function setupGo(screen, opts) {
   renderAll();
   if (typeof window.scrollTo === 'function') { try { window.scrollTo(0, 0); } catch (e) { /* no scroll */ } }
   // The tapped row is gone from the screen: focus lands on Back, which names where you are.
-  const back = setupEl('setup-back');
-  if (back && typeof back.focus === 'function') { try { back.focus({ preventScroll: true }); } catch (e) { /* fine */ } }
+  setupFocusBack();
   return true;
 }
 
@@ -520,6 +519,17 @@ function paintHub() {
   setTextIfChanged(setupEl('hub-title'), model.kicker);
   setTextIfChanged(setupEl('hub-headline'), model.headline);
   setTextIfChanged(setupEl('hub-lede'), model.lede);
+  // "Next: People" is the line to act on: when its row opens something it is a target (#hub-next) in
+  // place of the plain lede, and opens that row.
+  const nextKey = model.next && HUB_OPENS[model.next] ? model.next : '';
+  setHiddenIfChanged(setupEl('hub-lede'), !!nextKey);
+  setTextIfChanged(setupEl('hub-next-text'), nextKey ? model.lede : '');
+  const nextBtn = setupEl('hub-next');
+  if (nextBtn && nextBtn.dataset && nextBtn.dataset.hubOpen !== nextKey) nextBtn.dataset.hubOpen = nextKey;
+  setHiddenIfChanged(nextBtn, !nextKey);
+  // Why only some rows count toward "N of M ready": said once, beside the group's name.
+  const waiting = HUB_COUNTED.filter((k) => (k !== 'electives' || view.electives) && model.rows[k].mark === 'soon').length;
+  setTextIfChanged(setupEl('hub-week-note'), waiting ? waiting + ' can’t be changed here yet' : '');
   const hereBy = {};
   if (typeof editorsHereList === 'function') {
     editorsHereList().forEach((r) => { const k = setupHereRow(r.where); if (k && !hereBy[k]) hereBy[k] = setupFaceOf(r.name); });
@@ -553,6 +563,10 @@ function paintHubDoor(door) {
   setHiddenIfChanged(el, !door);
   if (!door) return;
   if (el.dataset.door !== door.door) el.dataset.door = door.door;
+  // Nothing behind the original-week door yet: its lead alone, as one plain line (data-quiet). The
+  // paragraph about what comes in which update repeated what the rows already show.
+  const quiet = door.door === 'original' && !door.ownerButton;
+  if (quiet !== el.hasAttribute('data-quiet')) { if (quiet) el.setAttribute('data-quiet', ''); else el.removeAttribute('data-quiet'); }
   setTextIfChanged(setupEl('hub-door-lead'), door.lead);
   setTextIfChanged(setupEl('hub-door-text'), door.text);
   // Owner gating (Q8): the button is the owner's and only exists with its action; everyone else reads the
@@ -586,7 +600,8 @@ function renderSetupUi(open) {
     if (setupUi.wasOpen) setupUiClosed();
     return;
   }
-  if (!setupUi.wasOpen) setupUiOpened();
+  const justOpened = !setupUi.wasOpen;
+  if (justOpened) setupUiOpened();
   const screen = setupScreen();
   if (root.dataset.screen !== screen) root.dataset.screen = screen;
   if (typeof applyOwnerClass === 'function') applyOwnerClass();
@@ -599,6 +614,30 @@ function renderSetupUi(open) {
   else if (screen === 'backups') renderBackups();
   else if (typeof renderSettings === 'function') renderSettings();
   renderSetupMenuRows();
+  paintSetupFit();
+  // Opening the takeover puts focus on its labelled back (redesign §8.9), as every screen change does
+  // (setupGo). A tap leaves :focus-visible off, so touch shows no ring.
+  if (justOpened) setupFocusBack();
+}
+
+function setupFocusBack() {
+  const back = setupEl('setup-back');
+  if (back && typeof back.focus === 'function') { try { back.focus({ preventScroll: true }); } catch (e) { /* fine */ } }
+}
+
+// Large text: the frame is under 18em of its own text across (the test the hub's rows and the clipboard
+// lists use in CSS, read here because it decides how the HEAD itself is pinned, which no container query
+// can). styles.css .setup-big then pins only the bar. Read from layout each paint, never stored.
+function paintSetupFit() {
+  const root = setupEl('setup');
+  if (!root || !root.classList || typeof getComputedStyle !== 'function') return;
+  let big = false;
+  try {
+    const em = parseFloat(getComputedStyle(root).fontSize) || 16;
+    const w = root.clientWidth;
+    big = w > 0 && w / em < 18;
+  } catch (e) { big = false; }
+  if (root.classList.contains('setup-big') !== big) root.classList.toggle('setup-big', big);
 }
 
 function setupUiOpened() {
@@ -764,9 +803,13 @@ function setupUndoOffer(entry) {
   setTextIfChanged(setupEl('setup-undo-label'), shape.label);
   pill.hidden = false;
   paintSetupDock(); // the dock steps aside while the pill is up
-  // It lands from above, small and a little late (arrive); calm is a fade.
+  // It drops in from above and squashes on landing, the overshoot spent as a squash from its top corner
+  // instead of a swell (§9.5 "Banner arrives"); calm is a fade.
   if (typeof JellyMotion !== 'undefined') {
-    JellyMotion.play(pill, 'arrive', (x) => ({ opacity: Math.min(1, x * 1.8), transform: 'translateY(' + ((1 - x) * -16) + 'px) scale(' + (0.9 + 0.1 * x) + ')', transformOrigin: '100% 0' }));
+    JellyMotion.play(pill, 'arrive', (x) => {
+      const o = Math.max(0, x - 1);
+      return { opacity: Math.min(1, x * 1.8), transform: 'translateY(' + (Math.min(1, x) - 1) * 16 + 'px) scale(' + (1 + 0.5 * o) + ',' + (1 - 1.4 * o) + ')', transformOrigin: '100% 0' };
+    });
   }
   clearTimeout(p.timer);
   p.timer = setTimeout(setupPillDock, UNDO_PILL_MS);
@@ -792,7 +835,13 @@ function setupPillDock() {
     dx = (b.left + b.width / 2) - (a.left + a.width / 2);
     dy = (b.top + b.height / 2) - (a.top + a.height / 2);
   }
-  const done = () => { pill.hidden = true; paintSetupDock(); };
+  const done = () => {
+    pill.hidden = true;
+    paintSetupDock();
+    // The dock takes the pill in with a small pop of its icon (decorative: none under calm).
+    const ico = dock && !dock.hidden && dock.querySelector ? dock.querySelector('.ico') : null;
+    if (ico && typeof JellyMotion !== 'undefined') JellyMotion.play(ico, 'press', (x) => ({ transform: 'scale(' + (0.78 + 0.22 * x) + ')' }), { calm: false });
+  };
   if (typeof JellyMotion !== 'undefined') {
     JellyMotion.playOut(pill, (x) => ({ opacity: 1 - x, transform: 'translate(' + (x * dx) + 'px,' + (x * dy) + 'px) scale(' + (1 - 0.8 * x) + ')', transformOrigin: '50% 50%' }), 260, done);
   } else done();
@@ -932,6 +981,8 @@ function renderSetupDevices() {
   if (!lede || !list) return;
   const d = typeof devicesList === 'function' ? devicesList() : { rows: [], lede: '' };
   setTextIfChanged(lede, d.lede);
+  // Nobody else here: the empty line alone says it (the lede said the same thing above a bare rule).
+  setHiddenIfChanged(lede, !d.rows.length);
   const html = d.rows.map((r) =>
     '<div class="cb-row">' + setupTimeCell(r.at) + '<span class="cb-main"><span class="cb-title">' + esc(r.mine ? 'This device' : r.name) + '</span>' +
     '<span class="cb-sub">' + esc(r.v === null ? 'Version unknown' : 'Version ' + r.v) + ' · seen ' + esc(r.ago) + '</span></span>' +
@@ -1010,16 +1061,30 @@ function rpWho(row) {
   return (name === 'You' ? 'You' : name) + ' · ' + (RP_KIND_WORDS[row.kind] || row.kind).toLowerCase();
 }
 
+// A past year's point says its YEAR where the others say a time of day (6:12 AM means nothing for 2026).
+function rpYearCell(ms) {
+  try {
+    const d = new Date(ms);
+    const y = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, year: 'numeric' }).format(d);
+    const md = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, month: 'short', day: 'numeric' }).format(d);
+    return '<span class="cb-time">' + esc(y) + '<small>' + esc(md) + '</small></span>';
+  } catch (e) { return setupTimeCell(ms); }
+}
+
 function rpRowHtml(row) {
   const pin = row.pinned ? '<svg class="ico" aria-hidden="true" role="img" aria-label="Kept"><use href="#i-pin"/></svg>' : '';
-  return '<button type="button" class="cb-row" data-rp-open="' + esc(row.rid) + '">' + setupTimeCell(row.at) +
+  const when = row.kind === 'archive' || row.kind === 'pre-wizard' ? rpYearCell(row.at) : setupTimeCell(row.at);
+  return '<button type="button" class="cb-row" data-rp-open="' + esc(row.rid) + '">' + when +
     '<span class="cb-main"><span class="cb-title">' + esc(row.label || RP_KIND_WORDS[row.kind]) + '</span><span class="cb-sub">' + esc(rpWho(row)) +
     (row.note ? ' · ' + esc(row.note) : '') + '</span></span><span class="cb-end">' + pin + '<svg class="ico" aria-hidden="true"><use href="#i-chev-r"/></svg></span></button>';
 }
 
 function renderBackups() {
   const r = setupUi.restore;
-  setTextIfChanged(setupEl('backups-lede'), 'A saved copy of the week you can put back, in part or all of it. One is saved for you before every big change.');
+  // The screen's name small, the answer big (§8.1 rule 1), one lede line.
+  setTextIfChanged(setupEl('backups-title'), 'Restore points · ' + CAMP.label);
+  setTextIfChanged(setupEl('backups-headline'), hubStatus('restore', { restore: { status: r.status, newestAt: r.rows.length ? r.rows[0].at : 0, count: r.rows.length }, now: typeof serverNow === 'function' ? serverNow() : Date.now() }).summary);
+  setTextIfChanged(setupEl('backups-lede'), 'One is saved for you before every big change.');
   paintRestoreNote();
   const dead = r.status === 'denied' || r.status === 'nosync';
   const save = setupEl('rp-save-btn');
@@ -1034,7 +1099,7 @@ function renderBackups() {
   setHiddenIfChanged(setupEl('rp-sec-kept'), !kept.length);
   setHiddenIfChanged(setupEl('rp-sec-years'), !years.length);
   setHiddenIfChanged(setupEl('rp-sec-recent'), dead);
-  setTextIfChanged(setupEl('rp-recent-note'), recent.length ? recent.length + ', newest first' : '');
+  setTextIfChanged(setupEl('rp-recent-note'), recent.length ? recent.length + ' saved' : '');
   setHiddenIfChanged(setupEl('rp-empty'), !(r.status === 'ok' && !recent.length));
   const owner = typeof isOwner === 'function' && isOwner();
   setHiddenIfChanged(setupEl('setup-advanced'), !(owner && Object.keys(SETUP_OWNER_ACTIONS).some((k) => SETUP_OWNER_ACTIONS[k] && SETUP_OWNER_ACTIONS[k].advanced)));
@@ -1176,11 +1241,16 @@ function renderRestoreSheet() {
   const go = setupEl('rp-restore-btn');
   setHiddenIfChanged(go, scores || !ready);
   if (go) { if (go.disabled !== (!any || rs.busy)) go.disabled = !any || rs.busy; setTextIfChanged(go, rs.busy ? 'Putting back…' : 'Put these back'); }
-  setHiddenIfChanged(setupEl('rp-hold-btn'), !(scores && ready));
-  setTextIfChanged(setupEl('rp-hold-label'), 'Hold to put back ' + restoreCampWord() + '’s scores');
+  // Revealed, the hold button steps aside for the filled "Yes" and a Cancel back to it: two identical red
+  // buttons stacked left a director guessing which one commits.
+  setHiddenIfChanged(setupEl('rp-hold-btn'), !(scores && ready && !rs.reveal));
+  const holdText = 'Hold to put back ' + restoreCampWord() + '’s scores';
+  setTextIfChanged(setupEl('rp-hold-label'), holdText);
+  setTextIfChanged(setupEl('rp-hold-fill-label'), holdText);
   const conf = setupEl('rp-hold-confirm');
   setHiddenIfChanged(conf, !(scores && ready && rs.reveal));
   setTextIfChanged(conf, 'Yes, put back ' + restoreCampWord() + '’s scores');
+  setHiddenIfChanged(setupEl('rp-hold-cancel'), !(scores && ready && rs.reveal));
   // Keep / delete (the row's own actions, §7.2): a kept point can't be deleted from the app.
   const manage = setupEl('rp-manage');
   setHiddenIfChanged(manage, !(rs.source === 'index' && rs.row));
@@ -1290,6 +1360,10 @@ function wireHold(btn, onDone, onReveal) {
   };
   btn.addEventListener('pointerup', release);
   btn.addEventListener('pointercancel', release);
+  // A tap reveals the alternative IN this button's place (it steps aside, and the sheet grows by Cancel):
+  // the browser's click for that same tap would land on whatever now fills the spot ("Yes", or Cancel).
+  // The button's own acts are all pointer and key handlers, so its touch click is never needed.
+  btn.addEventListener('touchend', (e) => { if (e.cancelable) e.preventDefault(); });
   btn.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onReveal(); } });
   btn.addEventListener('click', (e) => { if (e.detail === 0) onReveal(); }); // assistive tech activates with a click and no pointer
 }
@@ -1356,6 +1430,8 @@ function wireSetupUi() {
     const row = e.target && e.target.closest ? e.target.closest('button[data-hub-row]') : null;
     if (row) hubOpen(row.dataset.hubRow);
   });
+  on('#hub-next', 'click', (e) => { const k = e.currentTarget.dataset.hubOpen; if (k) hubOpen(k); });
+  if (typeof window.addEventListener === 'function') window.addEventListener('resize', () => { if (setupUi.wasOpen) paintSetupFit(); });
   on('#hub-door-btn', 'click', () => {
     const door = setupEl('hub-door');
     const fn = HUB_DOOR_ACTIONS[door && door.dataset.door];
@@ -1407,9 +1483,17 @@ function wireSetupUi() {
     renderRestoreSheet();
   }));
   on('#rp-restore-btn', 'click', () => { rpApply(); });
-  on('#rp-hold-confirm', 'click', () => { rpApply(); });
+  // Belt and braces for the same hazard with a mouse or a hybrid pointer: "Yes" counts only when the press
+  // began on it (or comes from a key or assistive tech, detail 0), never a click left over from the tap that
+  // revealed it.
+  let confirmArmed = false;
+  on('#rp-hold-confirm', 'pointerdown', () => { confirmArmed = true; });
+  on('#rp-hold-confirm', 'click', (e) => { const ok = confirmArmed || e.detail === 0; confirmArmed = false; if (ok) rpApply(); });
   const hold = setupEl('rp-hold-btn');
-  if (hold) wireHold(hold, () => { rpApply(); }, () => { if (setupUi.rsheet) { setupUi.rsheet.reveal = true; renderRestoreSheet(); } });
+  // The button under the finger goes when the alternative shows, so focus follows it (and back on Cancel).
+  const focusOn = (id) => { const b = setupEl(id); if (b && !b.hidden && typeof b.focus === 'function') { try { b.focus({ preventScroll: true }); } catch (e) { /* fine */ } } };
+  if (hold) wireHold(hold, () => { rpApply(); }, () => { if (setupUi.rsheet) { setupUi.rsheet.reveal = true; renderRestoreSheet(); focusOn('rp-hold-confirm'); } });
+  on('#rp-hold-cancel', 'click', () => { if (setupUi.rsheet) { setupUi.rsheet.reveal = false; renderRestoreSheet(); focusOn('rp-hold-btn'); } });
   on('#rp-keep-row', 'click', () => { rpKeepPoint(); });
   on('#rp-delete-row', 'click', () => { rpDeletePoint(); });
   // askDialog: a choice resolves it; Escape, the ✕ and the backdrop reach us as Jelly's own `close`.

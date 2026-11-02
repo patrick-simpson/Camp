@@ -299,6 +299,14 @@
             <button type="button" class="setup-icon" id="setup-menu-btn" aria-haspopup="dialog" aria-controls="sheet-setup-menu" aria-label="More setup options">
               <svg class="ico" aria-hidden="true"><use href="#i-dots"/></svg>
             </button>
+            <!-- The undo pill (§7.1): hangs under the head, right-aligned, one at a
+                 time (a new one replaces it), for 6 s, then docks above. ONE
+                 button: the label says what Undo will put back. It sits in the
+                 bar, out of flow, so at large text (only the bar pinned) it still
+                 hangs under what stays on screen. -->
+            <button type="button" class="setup-undo" id="setup-undo" hidden>
+              <svg class="ico" aria-hidden="true"><use href="#i-undo"/></svg><span class="setup-undo-verb">Undo</span><span class="setup-undo-label" id="setup-undo-label"></span>
+            </button>
           </div>
           <div class="setup-status">
             <!-- The sync line (§11.1): ONE truthful sentence. data-tone:
@@ -308,8 +316,7 @@
                  shows, and its hit area covers the line) · off (Editing here isn't
                  available yet). The mark is drawn by CSS from the tone. -->
             <p class="setup-sync" id="setup-sync" data-tone="saved" aria-live="polite">
-              <i class="setup-sync-mark" aria-hidden="true"></i><span class="setup-sync-text" id="setup-sync-text">Saved</span>
-              <button type="button" class="setup-sync-act" id="setup-sync-act" hidden>Details<svg class="ico" aria-hidden="true"><use href="#i-chev-r"/></svg></button>
+              <i class="setup-sync-mark" aria-hidden="true"></i><span class="setup-sync-body"><span class="setup-sync-text" id="setup-sync-text">Saved</span> <button type="button" class="setup-sync-act" id="setup-sync-act" hidden>Details<svg class="ico" aria-hidden="true"><use href="#i-chev-r"/></svg></button></span>
             </p>
             <!-- Who's here (§6.7): up to three initials (<i class="setup-face">J</i>)
                  and one sentence ("Jenn is also here", "Jenn and Sam are also
@@ -323,12 +330,6 @@
                header's #sync-alert bar, mirrored here because the app header
                steps aside for the builder (the same idea as #tk-sync-alert). -->
           <section id="setup-sync-alert" class="sync-alert" role="alert" hidden></section>
-          <!-- The undo pill (§7.1): hangs under the head, right-aligned, one at a
-               time (a new one replaces it), for 6 s, then docks above. ONE
-               button: the label says what Undo will put back. -->
-          <button type="button" class="setup-undo" id="setup-undo" hidden>
-            <svg class="ico" aria-hidden="true"><use href="#i-undo"/></svg><span class="setup-undo-verb">Undo</span><span class="setup-undo-label" id="setup-undo-label"></span>
-          </button>
         </header>
 
         <!-- ── The hub: the checklist (§11.2) ── -->
@@ -342,6 +343,9 @@
             <h2 class="setup-kicker" id="hub-title">Set up the week</h2>
             <p class="setup-headline" id="hub-headline"></p>
             <p class="setup-lede" id="hub-lede"></p>
+            <!-- "Next: People" when the next row opens something: the line to act
+                 on, so it is a link-coloured target that opens that row. -->
+            <button type="button" class="setup-next" id="hub-next" data-hub-open="" hidden><span id="hub-next-text"></span><svg class="ico" aria-hidden="true"><use href="#i-chev-r"/></svg></button>
           </div>
 
           <!-- One front door at a time (§11.2, ux-R4), chosen in order:
@@ -367,7 +371,9 @@
                todo (Not started) | skip (Not used) | info (Draft, 12 min ago) |
                soon (Editing comes next), its word in [data-hub-word]. -->
           <div class="more-sec">
-            <div class="gl-head"><h3 class="gl-label">The week</h3></div>
+            <!-- Why "N of M ready" counts only some rows: said once, here, instead of
+                 a word on every row whose screen comes later. -->
+            <div class="gl-head"><h3 class="gl-label">The week</h3><span class="gl-note" id="hub-week-note"></span></div>
             <div class="gl hub-list">
               <div class="gl-row hub-row" data-hub-row="week">
                 <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-calendar"/></svg></span>
@@ -453,22 +459,21 @@
              kept. Tapping one opens #sheet-restore. -->
         <section class="setup-screen backups" id="setup-backups" data-setup-screen="backups" aria-labelledby="backups-title">
           <div class="setup-intro">
-            <h2 class="setup-title" id="backups-title">Restore points</h2>
+            <h2 class="setup-kicker" id="backups-title">Restore points</h2>
+            <p class="setup-headline" id="backups-headline"></p>
             <p class="setup-lede" id="backups-lede"></p>
           </div>
-          <!-- Asks for a name (askDialog), then saves a manual point. -->
-          <button type="button" class="btn btn-gold btn-block" id="rp-save-btn">Save a restore point now</button>
           <!-- The rules aren't published, or the read was refused: one plain line
                instead of the lists (the rest of the screen stays). -->
           <p class="setup-note" id="rp-note" hidden><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span id="rp-note-text"></span></p>
           <div class="more-sec rp-sec" id="rp-sec-kept" hidden>
-            <div class="gl-head"><h3 class="gl-label">Kept</h3><span class="gl-note">Can't be deleted from the app</span></div>
+            <div class="gl-head"><h3 class="gl-label">Kept</h3><span class="gl-note">Can’t be deleted from the app</span></div>
             <div class="gl cb-list" id="rp-kept"></div>
           </div>
           <div class="more-sec rp-sec" id="rp-sec-recent">
             <div class="gl-head"><h3 class="gl-label">Recent</h3><span class="gl-note" id="rp-recent-note"></span></div>
             <div class="gl cb-list" id="rp-list"></div>
-            <p class="cb-empty" id="rp-empty" hidden>None yet. One is saved for you before every big change.</p>
+            <p class="cb-empty" id="rp-empty" hidden>None yet.</p>
           </div>
           <!-- Archive points (one per past camp year) with their winner line;
                the newest one also offers Undo the new-year setup (owner). -->
@@ -502,6 +507,12 @@
             <p class="setup-note"><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span>Emergency switches. Each one changes what every phone shows.</span></p>
             <div id="setup-advanced-body"></div>
           </details>
+          <!-- The screen's one gold action, docked at the foot (the takeover has no
+               tab bar there): in reach of a thumb, not in the upper third.
+               Asks for a name (askDialog), then saves a manual point. -->
+          <div class="setup-dock">
+            <button type="button" class="btn btn-gold btn-block" id="rp-save-btn">Save a restore point now</button>
+          </div>
         </section>
 
         <!-- The classic builder (Games, Days, Teams, Notice, Data) as one screen
@@ -1014,7 +1025,7 @@
         <div class="gl cb-list" id="setup-changes-list"></div>
         <p class="cb-empty" id="setup-changes-empty" hidden>Nothing to undo yet.</p>
         <!-- §7.1: access changes aren't undoable; say so where people look. -->
-        <p class="setup-note"><svg class="ico" aria-hidden="true"><use href="#i-people"/></svg><span>Changes to who can sign in aren't here: change them back in People.</span></p>
+        <p class="setup-note"><svg class="ico" aria-hidden="true"><use href="#i-people"/></svg><span>Changes to who can sign in aren’t here: change them back in People.</span></p>
       </div>
     </div>
   </div>
@@ -1032,7 +1043,7 @@
       <div class="sheet-body">
         <p class="setup-sheet-lede" id="setup-devices-lede"></p>
         <div class="gl cb-list" id="setup-devices-list"></div>
-        <p class="cb-empty" id="setup-devices-empty" hidden>No other director has Camp open.</p>
+        <p class="cb-empty" id="setup-devices-empty" hidden>No other director has Camp open right now.</p>
       </div>
     </div>
   </div>
@@ -1095,8 +1106,11 @@
            a key on it reveals the two-tap alternative under it (§11.0). -->
       <div class="sheet-dock">
         <button type="button" class="btn btn-gold btn-block" id="rp-restore-btn">Put these back</button>
-        <button type="button" class="btn btn-danger btn-block btn-hold" id="rp-hold-btn" hidden><span class="btn-hold-fill" aria-hidden="true"></span><span class="btn-hold-label" id="rp-hold-label">Hold to put back Junior camp's scores</span></button>
-        <button type="button" class="btn btn-danger btn-block" id="rp-hold-confirm" hidden></button>
+        <button type="button" class="btn btn-danger btn-block btn-hold" id="rp-hold-btn" hidden><span class="btn-hold-label" id="rp-hold-label">Hold to put back Junior camp’s scores</span><span class="btn-hold-fill" aria-hidden="true"><span class="btn-hold-label" id="rp-hold-fill-label"></span></span></button>
+        <!-- After a tap (not a hold) the hold button steps aside for these two:
+             the filled commit, and Cancel back to the hold. -->
+        <button type="button" class="btn btn-danger btn-danger-fill btn-block" id="rp-hold-confirm" hidden></button>
+        <button type="button" class="btn-quiet" id="rp-hold-cancel" hidden>Cancel</button>
       </div>
     </div>
   </div>

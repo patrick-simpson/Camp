@@ -1017,12 +1017,69 @@ function clearGameRecords(gameId) {
   GAME_RECORD_MAPS.forEach((m) => { if (state[m.key]) delete state[m.key][gameId]; });
 }
 
-// How a field's value reads on a pick button: the plain text, never JSON for a string, "(empty)" for none.
-function clashShow(v) {
+// How a field's value reads on a pick button, in words a camp director can choose between: never JSON,
+// never an internal id. `f` is the field, `other` the other side's value (a rules clash shows the line
+// that differs) and `side` 'mine' | 'theirs' for the last-resort "Your version" / "Their version".
+function clashShow(v, f, other, side) {
+  const cut = (t) => (t.length > 60 ? t.slice(0, 60) + '…' : t);
+  const plural = (n, one, many) => n + ' ' + (n === 1 ? one : many);
+  if (f === 'messtival') return v ? 'On' : 'Off';
+  if (f === 'rules') return clashRulesLine(v, other);
+  if (f === 'prompts') {
+    const n = Array.isArray(v) ? v.length : 0;
+    return n ? plural(n, 'drawing prompt', 'drawing prompts') : 'No drawing prompts';
+  }
+  if (f === 'timer') {
+    if (!v || typeof v !== 'object') return 'No timer';
+    const mins = (Array.isArray(v.presets) ? v.presets : []).map((sec) => Math.round(Number(sec) / 6) / 10).filter((m) => m > 0);
+    const parts = [];
+    if (mins.length) parts.push(mins.join(', ') + (mins.length === 1 && mins[0] === 1 ? ' minute' : ' minutes'));
+    if (Number(v.rounds) > 1) parts.push(v.rounds + ' rounds');
+    const label = typeof v.label === 'string' ? v.label.trim() : '';
+    return cut((label ? label + ' · ' : '') + (parts.join(' · ') || 'A timer'));
+  }
+  if (f === 'liveTracker') {
+    if (!v || typeof v !== 'object') return 'No scoreboard';
+    const n = Number(v.innings) || 1;
+    const per = String(v.periodLabel || 'Round').trim().toLowerCase() || 'round';
+    return cut(plural(n, per, per + 's') + (v.unit ? ' · ' + String(v.unit) : ''));
+  }
   if (v === null || v === undefined || v === '') return '(empty)';
-  if (typeof v === 'string') return v.length > 60 ? v.slice(0, 60) + '…' : v;
-  const j = JSON.stringify(v);
-  return j.length > 60 ? j.slice(0, 60) + '…' : j;
+  if (f === 'dayId') {
+    const day = typeof dayById === 'function' ? dayById(v) : null;
+    return day && day.name ? cut(String(day.name)) : 'A day that’s gone';
+  }
+  if (f === 'format' && typeof FORMAT_BADGES !== 'undefined' && FORMAT_BADGES[v]) return FORMAT_BADGES[v].label;
+  if (typeof v === 'string') return cut(v);
+  if (typeof v === 'boolean') return v ? 'On' : 'Off';
+  if (typeof v === 'number') return String(v);
+  if (Array.isArray(v) && v.every((x) => typeof x === 'string' || typeof x === 'number')) return cut(v.join(', '));
+  return side === 'theirs' ? 'Their version' : 'Your version';
+}
+
+// A rules clash, as the first line that differs: "How it works: “Winner takes all.”" (a section only one
+// side has reads as its heading; a renamed heading as the heading alone).
+function clashRulesLine(v, other) {
+  const a = Array.isArray(v) ? v : [];
+  const b = Array.isArray(other) ? other : [];
+  const items = (sec) => (sec && Array.isArray(sec.items) ? sec.items : sec && typeof sec.items === 'string' ? splitLines(sec.items) : []);
+  const head = (sec) => (sec && typeof sec.h === 'string' ? sec.h.trim() : '');
+  const cut = (t) => (t.length > 60 ? t.slice(0, 60) + '…' : t);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    if (JSON.stringify(a[i] === undefined ? null : a[i]) === JSON.stringify(b[i] === undefined ? null : b[i])) continue;
+    const sec = a[i];
+    if (!sec) return b[i] && head(b[i]) ? 'No “' + cut(head(b[i])) + '” section' : 'Fewer sections';
+    const mine = items(sec);
+    const theirs = items(b[i]);
+    let line = '';
+    for (let j = 0; j < Math.max(mine.length, theirs.length); j++) {
+      if (mine[j] !== theirs[j]) { line = mine[j] === undefined ? '' : String(mine[j]); break; }
+    }
+    const h = head(sec);
+    if (!line) return h ? cut(h) + (mine.length < theirs.length ? ' (shorter)' : '') : '(empty)';
+    return cut((h ? h + ': ' : '') + '“' + line + '”');
+  }
+  return a.length ? 'The same rules' : '(empty)';
 }
 
 // The inline block for this draft (or null): one .clash per field, each a radiogroup of the two actual
@@ -1033,7 +1090,7 @@ function gameClashView(draft) {
   const html = '<div class="clash-list" id="gd-clashes">' + gameClash.items.map((i) => {
     const q = 'clash-q-' + i.f;
     const btn = (who, val, key) => `<button type="button" class="seg-btn" role="radio" aria-checked="${i.pick === key}" data-clash-pick="${key}">` +
-      `<span class="clash-who">${who}</span><span class="clash-val">${esc(clashShow(val))}</span></button>`;
+      `<span class="clash-who">${who}</span><span class="clash-val">${esc(clashShow(val, i.f, key === 'mine' ? i.theirs : i.mine, key))}</span></button>`;
     return `<div class="clash" data-clash-field="${esc(i.f)}">` +
       `<p class="clash-q" id="${esc(q)}">While you were editing, someone changed <b>${esc(i.label)}</b></p>` +
       `<div class="seg clash-pick" role="radiogroup" aria-labelledby="${esc(q)}">${btn('Keep mine', i.mine, 'mine')}${btn('Use theirs', i.theirs, 'theirs')}</div></div>`;

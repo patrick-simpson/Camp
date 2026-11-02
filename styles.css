@@ -2089,6 +2089,31 @@ body.setup-owner [data-not-owner] {
   align-items: center;
   min-height: 54px;
 }
+/* Large text (setup-ui.js paintSetupFit: the frame is under 18em of its own
+   text across, the hub rows' test): only the bar stays pinned and the sync line
+   and who's here scroll away with the page. Pinned whole, the head was 161 px
+   at 130% and 185 px at 200%, over every screen. The head steps out of the box
+   tree so the bar's sticky range is the whole frame, not the head. */
+.setup.setup-big .setup-head {
+  display: contents;
+}
+.setup.setup-big .setup-bar {
+  position: sticky; /* also the undo pill's containing block: it hangs under the bar */
+  top: 0;
+  z-index: 30;
+  margin: 0 -1rem;
+  padding: env(safe-area-inset-top, 0px) var(--gutter) 0;
+  border-bottom: 1px solid var(--line-2);
+  background: var(--paper);
+}
+.setup.setup-big .setup-status {
+  margin: 0 -1rem;
+  padding: 2px var(--gutter) 4px;
+  border-bottom: 1px solid var(--line-2);
+}
+.setup.setup-big .setup-head .sync-alert {
+  margin: 4px 0 2px;
+}
 .setup-back {
   margin-right: auto;
 }
@@ -2116,22 +2141,28 @@ body.setup-owner [data-not-owner] {
 #setup-undo-dock {
   color: var(--link);
 }
+/* One column, read down like a clipboard: the sync line, then who's here under
+   it, both from the left edge (never a zig-zag of left, then right). */
 .setup-status {
-  display: flex;
-  flex-wrap: wrap; /* a long sync sentence sends who's-here under it */
-  align-items: center;
-  justify-content: space-between;
-  gap: 0 var(--s-3);
-  min-height: 32px;
-}
-/* One truthful sentence. 13.5px: ink-2 is 8.8:1 on paper, danger text 7.9:1. */
-.setup-sync {
-  position: relative;
-  flex: 1 1 auto; /* its own width: "Saved" shares the row, a long sentence takes it */
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 2px 7px;
+  justify-content: flex-start;
+  gap: 0 var(--s-3);
+  min-height: 32px;
+  container-type: inline-size; /* the em test below is this row's own text size */
+}
+/* One truthful sentence. 13.5px: ink-2 is 8.8:1 on paper, danger text 7.9:1. */
+/* The mark and ONE text column: the mark never wraps away from its sentence
+   (on its own line it read as a stray glyph), and Details flows at the end of
+   the words. */
+.setup-sync {
+  position: relative;
+  flex: 1 1 auto;
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: flex-start;
+  gap: 7px;
   min-width: 0;
   margin: 0;
   padding: 3px 0;
@@ -2143,6 +2174,11 @@ body.setup-owner [data-not-owner] {
   position: relative;
   width: 14px;
   height: 14px;
+  margin-top: calc((1.3em - 14px) / 2); /* centred on the first line, at any text size */
+}
+.setup-sync-body {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 .setup-sync-mark::before {
   content: '';
@@ -2189,6 +2225,8 @@ html.calm-motion .setup-sync[data-tone="saving"] .setup-sync-mark::before {
   display: inline-flex;
   align-items: center;
   gap: 1px;
+  white-space: nowrap; /* "Details ›" wraps as one word with the sentence */
+  vertical-align: top;
   padding: 0;
   border: 0;
   background: none;
@@ -2210,12 +2248,14 @@ html.calm-motion .setup-sync[data-tone="saving"] .setup-sync-mark::before {
 /* Who's here: initials, then the sentence. Directors aren't teams, so the
    discs are plain ink on the paper well, never a team colour. */
 .setup-here {
-  flex: none;
+  flex: 1 1 100%; /* its own line under the sync line, and the sentence wraps in it */
   display: inline-flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
+  min-width: 0;
   min-height: var(--target);
-  margin: -6px -6px -6px auto;
+  margin: -6px -6px -4px; /* the faces line up with the sync mark */
   padding: 0 6px;
   border: 0;
   border-radius: var(--r-btn);
@@ -2225,8 +2265,32 @@ html.calm-motion .setup-sync[data-tone="saving"] .setup-sync-mark::before {
   text-align: left;
   cursor: pointer;
 }
+.setup-here-text {
+  min-width: 0;
+  white-space: normal;
+}
 .setup-faces {
+  flex: none;
   display: flex;
+}
+/* Large text: the faces only, beside the sync line (the sentence stays the
+   button's name, and a tap lists who is where). */
+@container (max-width: 18em) {
+  .setup-here {
+    flex: none;
+    margin: -6px -6px -6px auto;
+  }
+  .setup-here-text {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  .setup-sync {
+    flex: 1 1 0;
+  }
 }
 .setup-face {
   display: inline-grid;
@@ -2263,7 +2327,9 @@ html.calm-motion .setup-sync[data-tone="saving"] .setup-sync-mark::before {
   border: 2px solid var(--card-b);
   border-radius: 999px;
   background: var(--sheet);
-  box-shadow: 0 var(--edge-btn) 0 var(--edge), 0 12px 24px -14px rgba(var(--shadow-rgb), .6);
+  /* A paper halo, solid then fading: no half-letters of the headline it floats
+     over show round it (they read as a rendering glitch, not a floating pill). */
+  box-shadow: 0 var(--edge-btn) 0 var(--edge), 0 0 0 8px var(--paper), 0 0 20px 20px var(--paper), 0 12px 24px -14px rgba(var(--shadow-rgb), .6);
   color: var(--ink-2);
   font: 600 0.9375rem/1.2 var(--font-ui);
   text-align: left;
@@ -2271,7 +2337,7 @@ html.calm-motion .setup-sync[data-tone="saving"] .setup-sync-mark::before {
   transition: box-shadow var(--jm-press-ms) var(--jm-press);
 }
 .setup-undo:active {
-  box-shadow: 0 1px 0 var(--edge), 0 12px 24px -14px rgba(var(--shadow-rgb), .6);
+  box-shadow: 0 1px 0 var(--edge), 0 0 0 8px var(--paper), 0 0 20px 20px var(--paper), 0 12px 24px -14px rgba(var(--shadow-rgb), .6);
 }
 .setup-undo .ico {
   flex: none;
@@ -2327,6 +2393,28 @@ html.calm-motion .setup-sync[data-tone="saving"] .setup-sync-mark::before {
 .setup-lede:empty {
   display: none;
 }
+/* "Next: People ›": the one line on the hub a director acts on, so it is a
+   link-coloured 44px target right under the answer. */
+.setup-next {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: var(--target);
+  margin: 0 0 -6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: 750 1rem/1.3 var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.setup-next .ico {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.6;
+}
 .setup-classic-title {
   margin: var(--s-4) 2px var(--s-3);
 }
@@ -2351,6 +2439,16 @@ html.calm-motion .setup-sync[data-tone="saving"] .setup-sync-mark::before {
 }
 .hub-door-lead:empty,
 .hub-door-text:empty {
+  display: none;
+}
+/* A door with nothing behind it yet (setup-ui.js data-quiet): one plain line,
+   no bold lead and no paragraph about what comes in which update. */
+.hub-door[data-quiet] .hub-door-lead {
+  font: var(--t-meta);
+  font-size: 0.9375rem;
+  color: var(--ink-2);
+}
+.hub-door[data-quiet] .hub-door-text {
   display: none;
 }
 .hub-door-btn {
@@ -2429,8 +2527,20 @@ div.hub-row {
     max-width: none;
     text-align: left;
   }
+  /* The chevron keeps the row's right edge, centred on the whole row as on
+     More, never down on the mark's line. */
+  .hub-row:has(.gl-chev) {
+    padding-right: calc(14px + 18px + 8px);
+  }
   .hub-row > .gl-end .gl-chev {
-    margin-left: auto; /* the chevron keeps the row's right edge */
+    position: absolute;
+    top: 50%;
+    right: 14px;
+    margin-top: -9px;
+  }
+  /* An end with nothing to show (no mark word, nobody here) takes no line. */
+  .hub-row > .gl-end:not(:has(> .setup-face:not([hidden]), > .hub-mark:not([hidden]):not([data-mark="soon"]))) {
+    margin-top: 0;
   }
 }
 .hub-row .gl-end .setup-face {
@@ -2512,8 +2622,16 @@ div.hub-row {
 .hub-mark:is([data-mark="info"], [data-mark="soon"]) > i {
   display: none;
 }
-.hub-mark[data-mark="soon"] {
-  font-weight: 650;
+/* A row whose screen comes later carries no mark of its own: its summary says
+   what the app shows today, and the group's note says once why it isn't
+   counted. The word stays for screen readers. */
+.hub-mark[data-mark="soon"] > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 /* "— Not used" is a decision, not a gap: the whole row steps back. */
 .hub-row:has(.hub-mark[data-mark="skip"]) :is(.gl-title, .gl-ico) {
@@ -2538,6 +2656,35 @@ label.gl-row:active {
 .setup-owner-sec,
 .backups .rp-sec {
   margin-top: var(--s-6);
+}
+/* A group's note ("7 can't be changed here yet") goes under its name when both
+   don't fit, instead of squeezing the name to a word a line at large text. */
+.setup .gl-head {
+  flex-wrap: wrap;
+}
+.setup .gl-head .gl-label {
+  flex: none;
+}
+.setup .gl-head .gl-note {
+  flex: 1 1 auto;
+}
+.backups .setup-intro + .rp-sec,
+.backups .setup-intro + .setup-note + .rp-sec {
+  margin-top: var(--s-2);
+}
+/* The screen's gold action at the foot, where a thumb is (the takeover hides
+   the tab bar): it rides the bottom of the screen while the lists scroll. */
+.setup-screen.backups {
+  padding-bottom: 0;
+}
+.setup-dock {
+  position: sticky;
+  bottom: 0;
+  z-index: 5;
+  margin: var(--s-6) -1rem 0;
+  padding: var(--s-3) var(--gutter) calc(var(--s-3) + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--line-2);
+  background: var(--paper);
 }
 
 /* ── Clipboard rows (.cb-row): the run-sheet line every setup list uses —
@@ -2567,6 +2714,51 @@ label.gl-row:active {
 .cb-list > .cb-row:first-child {
   border-top: 0;
 }
+/* An empty list is no box (a bordered nothing read as a heavy rule). */
+.cb-list:empty {
+  display: none;
+}
+/* Larger text (130% and up on a phone; the hub rows' 18em test, in the list's
+   own text size): a fixed time column left the title 21 px at 200%, one letter
+   a line. The time and day become one small line above the title instead. */
+.cb-list {
+  container-type: inline-size;
+}
+@container (max-width: 18em) {
+  .cb-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas:
+      "time end"
+      "main end";
+    row-gap: 2px;
+  }
+  .cb-time {
+    grid-area: time;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0 .35em;
+    padding-top: 0;
+    font-size: 0.8125rem;
+  }
+  .cb-time small {
+    display: inline;
+  }
+  .cb-main {
+    grid-area: main;
+  }
+  .cb-end {
+    grid-area: end;
+  }
+  /* A row that ends in a button ("Undo") puts it on the time line, so the
+     title below gets the whole width. */
+  .cb-row:has(> .cb-end .btn) {
+    grid-template-areas:
+      "time end"
+      "main main";
+    align-items: center;
+  }
+}
 button.cb-row {
   cursor: pointer;
 }
@@ -2592,13 +2784,14 @@ button.cb-row:active {
   display: block;
   font: 700 1rem/1.28 var(--font-ui);
   letter-spacing: var(--track-row);
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word; /* whole words; only a word wider than the row breaks */
 }
 .cb-sub {
   display: block;
   margin-top: 1px;
   font: 550 0.84375rem/1.32 var(--font-ui);
   color: var(--ink-2);
+  overflow-wrap: break-word;
 }
 .cb-end {
   align-self: center;
@@ -2721,15 +2914,49 @@ button.cb-row:active {
   -webkit-user-select: none;
   user-select: none;
 }
+/* The fill is solid red over the button with its own copy of the label in
+   the on-red colour, clipped to the same inset(): the button visibly turns red
+   from left to right, in both themes (an 18% tint read as nothing). */
 .btn-hold-fill {
   position: absolute;
   inset: 0;
-  z-index: -1;
-  background: color-mix(in srgb, var(--live) 18%, var(--sheet));
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: inherit;
+  background: var(--live);
+  color: var(--on-live);
   clip-path: inset(0 100% 0 0);
+  pointer-events: none;
 }
 .btn-hold-label {
   position: relative;
+}
+/* The second tap of hold-to-confirm, alone in the dock once the hold button
+   has stepped aside: the one place a destructive button is filled, so which
+   button commits is never in doubt. */
+.btn.btn-danger-fill {
+  border-color: var(--live);
+  background: var(--live);
+  color: var(--on-live);
+  box-shadow: 0 var(--edge-btn) 0 var(--edge);
+}
+.btn.btn-danger-fill:active {
+  box-shadow: 0 1px 0 var(--edge);
+}
+/* A quiet text action under a dock's button ("Cancel"): no chunky edge, still 44px. */
+.btn-quiet {
+  justify-self: center;
+  min-width: var(--target);
+  min-height: var(--target);
+  padding: 0 var(--s-4);
+  border: 0;
+  border-radius: var(--r-btn);
+  background: none;
+  color: var(--link);
+  font: 750 0.9375rem/1.2 var(--font-ui);
+  cursor: pointer;
 }
 
 /* ── Two directors changed the same field (P2 §6.3.5): Keep mine / Use theirs ──
@@ -2797,20 +3024,56 @@ button.cb-row:active {
     grid-auto-flow: row;
     grid-auto-columns: auto;
   }
+  .clash-pick .seg-btn + .seg-btn::after {
+    left: 10px;
+    right: 10px;
+    top: -2px;
+    bottom: auto;
+    border-left: 0;
+    border-top: 1px solid var(--line-2);
+  }
 }
 .clash-pick .seg-btn {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  justify-content: center;
+  justify-content: flex-start; /* both answers start on one line, whatever their length */
   gap: 1px;
   min-height: 58px;
-  padding: 7px 12px;
+  padding: 8px 12px;
   text-align: left;
 }
+/* A hairline between the halves (a rule across when they stack), so the well
+   reads as two choices, not one read-only table. */
+.clash-pick .seg-btn + .seg-btn::after {
+  content: '';
+  position: absolute;
+  left: -2px;
+  top: 10px;
+  bottom: 10px;
+  border-left: 1px solid var(--line-2);
+}
+.clash-pick .seg-btn[aria-checked="true"]::after,
+.clash-pick .seg-btn[aria-checked="true"] + .seg-btn::after {
+  display: none;
+}
 .clash-who {
+  display: flex;
+  align-items: center;
   font: 750 0.8125rem/1.2 var(--font-ui);
   color: var(--ink-2);
+}
+/* An empty radio ring before each side, filled on the chosen one (shape, not
+   colour alone): before a pick it is plain which two things can be tapped. */
+.clash-who::before {
+  content: '';
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-right: 7px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px var(--ink-3);
 }
 .clash-val {
   max-width: 100%;
@@ -2818,16 +3081,9 @@ button.cb-row:active {
   color: var(--ink);
   overflow-wrap: anywhere;
 }
-/* The chosen side also says so with a check, not only by lifting. */
+/* The chosen side fills its ring, not only lifts. */
 .clash-pick .seg-btn[aria-checked="true"] .clash-who::before {
-  content: '';
-  display: inline-block;
-  width: 4px;
-  height: 8px;
-  margin: 0 7px 1px 2px;
-  border: solid var(--done);
-  border-width: 0 2.2px 2.2px 0;
-  transform: rotate(45deg);
+  box-shadow: inset 0 0 0 5px var(--ink);
 }
 
 /* What the config engine set aside (settings.js configNotesHtml: "Put it back

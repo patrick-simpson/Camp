@@ -733,19 +733,38 @@ rest of Step 14, in setup-ui.js: see "Set up the week: behaviour" below); with n
 - **The head** (`.setup-head`, sticky, paper, full bleed): `#setup-back` with
   `#setup-back-label` ("More" from the hub, "Set up the week" from a screen),
   `#setup-undo-dock` (the docked undo; its aria-label is the entry's label),
-  `#setup-menu-btn` (→ `#sheet-setup-menu`). Second row: the sync line
-  `#setup-sync[data-tone=saved|saving|offline|error|off]` (`#setup-sync-text`;
-  `#setup-sync-act` "Details" only for `error`, its hit area the whole line; the
-  mark is drawn by CSS from the tone) and who's here `#setup-here`
-  (`#setup-here-faces` takes up to three `<i class="setup-face">J</i>`,
-  `#setup-here-text` the sentence). `#setup-sync-alert` is a mirror of the
-  header's Retry / Discard / Download bar (the app header steps aside for the
-  builder). `#setup-undo` is THE undo pill (one button, `#setup-undo-label`):
-  it hangs under the head at the right for 6 s, then docks; never a toast.
+  `#setup-menu-btn` (→ `#sheet-setup-menu`). Second row (`.setup-status`, one
+  left-aligned column): the sync line
+  `#setup-sync[data-tone=saved|saving|offline|error|off]` — the CSS-drawn mark,
+  then ONE text column `.setup-sync-body` holding `#setup-sync-text` and, inline
+  at the end of the words, `#setup-sync-act` "Details" (only for `error`, its hit
+  area the whole line), so the mark never wraps away from its sentence — and
+  under it who's here `#setup-here` (`#setup-here-faces` takes up to three
+  `<i class="setup-face">J</i>`, `#setup-here-text` the sentence, which wraps).
+  `#setup-sync-alert` is a mirror of the header's Retry / Discard / Download bar
+  (the app header steps aside for the builder). `#setup-undo` is THE undo pill
+  (one button, `#setup-undo-label`), out of flow INSIDE `.setup-bar`: it hangs
+  under the head at the right for 6 s with a paper halo (no half-letters of the
+  headline show round it), then docks; never a toast. **Large text**
+  (`#setup.setup-big`, set by setup-ui.js `paintSetupFit` when the frame is under
+  18em of its own text across — the same test as the CSS container queries, read
+  in JS because it decides how the head itself is pinned): the head goes
+  `display: contents` and only the bar is sticky (it is then the pill's
+  containing block), so the sync line and who's here scroll away — pinned whole,
+  the head was 185 px at 200%. Who's here shows only the faces beside the sync
+  line under 18em (a container query on `.setup-status`; the sentence stays the
+  button's name).
 - **The hub** (`#setup-hub`): the answer is the headline — `#hub-title` is the
   small kicker/name ("Set up the week · Junior camp"), `#hub-headline` the big
-  line ("7 of 10 ready"), `#hub-lede` what next. `#hub-door[data-door=running|
-  new-year|original]` (hidden when none): `#hub-door-lead`, `#hub-door-text`,
+  line ("7 of 10 ready"), `#hub-lede` what next — replaced by `#hub-next`
+  (`#hub-next-text`, `data-hub-open`), a link-coloured 44px target with a
+  chevron, when the next row opens something ("Next: People ›" opens People).
+  The week group's `#hub-week-note` says once why only some rows count ("7 can't
+  be changed here yet"); a `soon` row shows no mark of its own (its word is
+  visually hidden, kept for screen readers). `#hub-door[data-door=running|
+  new-year|original]` (hidden when none; `data-quiet` = the original-week door
+  with no action behind it yet: its lead alone, one plain ink-2 line, no
+  paragraph): `#hub-door-lead`, `#hub-door-text`,
   the owner's gold `#hub-door-btn` (`data-owner-only`) or everyone else's
   `#hub-door-owner` / `#hub-door-owner-text` ("Patrick turns on editing.",
   `data-not-owner`). Rows `[data-hub-row=week|schedule|games|teams|people|
@@ -760,20 +779,30 @@ rest of Step 14, in setup-ui.js: see "Set up the week: behaviour" below); with n
   19, campers → 25, alerts): never a dead button — the step that brings the
   screen turns the div into a button. Electives starts hidden (junior only). At
   ~130%+ text the mark drops under the summary (a container query on
-  `.hub-list`, in em, so it follows the phone's text size).
+  `.hub-list`, in em, so it follows the phone's text size) and the chevron stays
+  centred on the whole row at its right edge, as on More.
 - **Owner-only** (decision Q8): `data-owner-only` elements start `hidden`, and
   CSS also removes them unless `body.setup-owner` — set from `isOwner()` on
   every render, never from anything stored — and removes `data-not-owner`
   sentences for the owner. Belt and braces; the rules refuse the writes anyway.
-- **Restore points** (`#setup-backups`): `#rp-save-btn` (gold), `#rp-note` /
+- **Restore points** (`#setup-backups`): the frame's title pattern — the
+  `#backups-title` kicker ("Restore points · Junior Camp"), `#backups-headline`
+  the answer (`hubStatus('restore')`'s summary: "Last saved 10 min ago" / "None
+  saved yet"), one `#backups-lede` line; `#rp-save-btn` (gold) in a `.setup-dock`
+  that sticks to the foot of the screen (the takeover has no tab bar), `#rp-note` /
   `#rp-note-text` (rules refused), `#rp-sec-kept` / `#rp-kept`, `#rp-sec-recent` /
   `#rp-list` / `#rp-recent-note` / `#rp-empty`, `#rp-sec-years` / `#rp-years`,
   `#backup-download-btn`, `#backup-restore-row` (a label for the visually hidden
   `#backup-file-input`), the owner's `#setup-advanced` / `#setup-advanced-body`.
 - **Clipboard rows** (`.cb-row` in a `.gl.cb-list`): `.cb-time` (a tabular
-  column, `<small>` for the day or date), `.cb-main` > `.cb-title` + `.cb-sub`,
-  `.cb-end`. A `<button>` when the row opens something, a `<div>` when it ends
-  in its own `.btn.btn-sm`. Restore points, recent changes, devices — and
+  column, `<small>` for the day or date; a past year's point shows the YEAR, its
+  date under it), `.cb-main` > `.cb-title` + `.cb-sub` (whole words wrap,
+  `break-word`, never `anywhere`), `.cb-end`. A `<button>` when the row opens
+  something, a `<div>` when it ends in its own `.btn.btn-sm`. At ~130%+ text
+  (a container query on `.cb-list`, 18em) the time and day become one small line
+  above the title, and a row ending in a button puts it on that line so the
+  title gets the whole width (the fixed column left titles 21 px wide at 200%).
+  An empty `.cb-list` is no box. Restore points, recent changes, devices — and
   Step 15's schedule items should be these too.
 - **Sheets** (shell sheets, editors only, ONE at a time — ⋯ → Devices closes
   the menu first): `#sheet-setup-menu` (`[data-setup-act=changes|devices|
@@ -785,20 +814,36 @@ rest of Step 14, in setup-ui.js: see "Set up the week: behaviour" below); with n
   `#setup-devices-empty`), `#sheet-restore` (`#sheet-restore-title`, `#rp-meta`,
   `#rp-epoch-note`, `.rp-opt[data-rp-section]` > `jelly-checkbox.rp-check
   [data-rp-pick]` + `[data-rp-what]`, `#rp-kept-note`, `#rp-not-offered`, and a
-  `.sheet-dock` with `#rp-restore-btn` / `#rp-hold-btn` / `#rp-hold-confirm`).
+  `.sheet-dock` with `#rp-restore-btn` / `#rp-hold-btn` / `#rp-hold-confirm` /
+  `#rp-hold-cancel`). With nobody else here the devices sheet is its one empty
+  line (the lede is hidden).
 - **askDialog** (`jelly-dialog#ask-dialog.ask`): `#ask-title`, `#ask-body`,
   `#ask-actions` of `.btn` / `.btn.btn-gold` (THE main action) /
   `.btn.btn-danger` (destructive; danger text, never a red fill); a short pair
   shares a row, long labels stack. Every jelly-dialog now has the sheet's flat
   scrim, a hairline edge and a 44px ✕ (the vendor patch above).
-- **Hold-to-confirm** (`.btn-hold` > `.btn-hold-fill` + `.btn-hold-label`):
-  the app wipes the fill's `clip-path` from `inset(0 100% 0 0)` to `inset(0)`
-  over 1.2 s while held — not a transform, so calm keeps it (it is the only
-  way to see how long is left); a tap or a key reveals the two-tap button.
+- **Hold-to-confirm** (`.btn-hold` > `.btn-hold-label` + `.btn-hold-fill` >
+  its own copy of the label, `#rp-hold-fill-label`): the fill is solid
+  `--live` with the copy in `--on-live`, ABOVE the label, and the app wipes its
+  `clip-path` from `inset(0 100% 0 0)` to `inset(0)` over 1.2 s while held, so
+  the button visibly turns red left to right in both themes — not a transform,
+  so calm keeps it (it is the only way to see how long is left). A tap or a key
+  reveals the two-tap alternative IN the hold button's place: the filled
+  `#rp-hold-confirm` (`.btn-danger-fill`, the one filled destructive button, so
+  which one commits is never in doubt) and `#rp-hold-cancel` (`.btn-quiet`)
+  back to the hold; focus follows. The revealing tap's own click must not land on
+  what now fills the spot: the hold button cancels its `touchend` default, and
+  "Yes" counts only a press that began on it (or a key / assistive-tech click).
 - **Keep mine / Use theirs** (§6.3.5): `.clash-list` > `.clash[data-clash-field]`
   > `.clash-q` + `.seg.clash-pick[role=radiogroup]` > two `.seg-btn[role=radio]
   [data-clash-pick=mine|theirs]` with `.clash-who` and `.clash-val` — the full
-  markup is in styles.css beside `.clash`. The config engine's set-aside notes
+  markup is in styles.css beside `.clash`. Each side wears a radio ring that
+  fills when picked, with a hairline between the halves, and both start on one
+  line. Values are words (settings.js `clashShow(v, field, other, side)`): a
+  rules clash is its first differing line ("How it works: “Winner takes all.”",
+  `clashRulesLine`), a day its name, a format its label, double points On / Off,
+  prompts a count, a timer its minutes, the scoreboard its rounds and unit;
+  never JSON — the last resort is "Your version" / "Their version". The config engine's set-aside notes
   (configNotesHtml) wear the same look: the gold "!", no emoji, no amber tint.
 
 ## Set up the week: behaviour (setup-ui.js — Step 14)
@@ -849,7 +894,8 @@ into it from app.js / settings.js is typeof-guarded.
   reads ("Patrick turns on editing.", via `ownerName()`) exist only when the door's action
   exists — `HUB_DOOR_ACTIONS.original` / `['new-year']` are `null` until Steps 15 and 28 put
   a function there — so at Step 14 nobody is offered a button that can only fail, and the
-  text says editing "comes in the next update". The menu's owner rows work the same way
+  door is just its lead as one plain line (`data-quiet`; the model's text, "comes in the next
+  update", is not shown). The menu's owner rows work the same way
   (`SETUP_OWNER_ACTIONS`: listed only for `isOwner()` AND when the action exists; a row that
   can't be used right now stays, greyed, with its reason in `[data-setup-why]`); a tap is
   re-checked against `isOwner()` and `why()` before it runs. `body.setup-owner` is set from
@@ -869,8 +915,9 @@ into it from app.js / settings.js is typeof-guarded.
   setup sheet).
 - **The undo pill**: while the frame is up, `undoRecord` / `undoEntry` call
   `setupUndoOffer(entry)` instead of raising Step 9's toast: `#setup-undo` hangs under the
-  head for `UNDO_PILL_MS` (6 s; JellyMotion `arrive`, calm = a fade), then `setupPillDock`
-  shrinks it into `#setup-undo-dock` (`playOut`). Tap = undo that entry; the dock undoes the
+  head for `UNDO_PILL_MS` (6 s; JellyMotion `arrive` dropping in and squashing on landing,
+  §9.5's banner mapping; calm = a fade), then `setupPillDock` shrinks it into
+  `#setup-undo-dock` (`playOut`) and the dock's icon pops (`press`, none under calm). Tap = undo that entry; the dock undoes the
   newest entry (`undoTop`), a 500 ms press on it opens Recent changes, Ctrl/Cmd-Z does the
   same when focus isn't in a text field (and not with a sheet open). One at a time, a new
   one replaces it; an `Undid: …` entry reads **Redo**. A partial undo ("Undid 1 of 2 …") is
@@ -884,8 +931,9 @@ into it from app.js / settings.js is typeof-guarded.
   on every button, never OK / Cancel.
 - **Escape and Back**: while a question is up (`askIsOpen()`) Escape belongs to it and the
   sheet underneath stays (app.js's Escape handler checks); the phone's Back pops the top
-  history entry — a sheet, the Who can sign in drawer — before it leaves the builder. After a
-  screen change focus lands on Back (the tapped row is gone). The restore sheet is allowed
+  history entry — a sheet, the Who can sign in drawer — before it leaves the builder. Opening
+  the builder and every screen change put focus on Back (`setupFocusBack`; a tap leaves
+  `:focus-visible` off, so touch shows no ring). The restore sheet is allowed
   only with a point a tap opened (`setupSheetReady`), so a Forward or a stale history entry
   can't raise an empty one.
 - **Sheets** (ONE open at a time: `setupSheet` closes the others first): the menu (⋯:
@@ -903,7 +951,8 @@ into it from app.js / settings.js is typeof-guarded.
   Scores ticked the hold button naming the camp ("Hold to put back Junior camp's scores") — a
   1.2 s clip-path wipe on `.btn-hold-fill` over pointer events (not a transform, so calm keeps it;
   letting go early drains it; a tap, Enter / Space or a click with no pointer reveals
-  `#rp-hold-confirm`, the two-tap alternative). `restoreApply` does the work and its refusal
+  `#rp-hold-confirm`, the two-tap alternative, with `#rp-hold-cancel`, in the hold button's
+  place — see Hold-to-confirm above). `restoreApply` does the work and its refusal
   reasons are worded in `RP_WHY`. A point's own **Keep this point** (write-once, says "Kept points
   can't be deleted from the app") and **Delete this point** (only where `restoreDeletable`) sit in
   `#rp-manage`. A backup FILE picked on the screen: a v3 file of this camp opens the same sheet
