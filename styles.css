@@ -266,16 +266,17 @@ jelly-dialog:not(:defined)[open]::before {
   border-bottom: 1px solid var(--color-border);
   border-radius: 24px 24px 0 0;
 }
-/* Appearance is a jelly-segmented; without the module it was inert text. Show
-   its three options as pills (the chosen one marked) — app.js's degraded-mode
-   click handler makes them work. Scoped to #theme-toggle: other segmented
-   controls (member roles, camp switch) stay inert rather than half-working. */
-html.jelly-failed #theme-toggle:not(:defined) {
+/* Appearance and Calm motion are jelly-segmented; without the module they were
+   inert text. Show their options as pills (the chosen one marked) — app.js's
+   degraded-mode click handler makes them work. Scoped to these two ids: other
+   segmented controls (member roles, camp switch) stay inert rather than
+   half-working. */
+html.jelly-failed :is(#theme-toggle, #calm-toggle):not(:defined) {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
 }
-html.jelly-failed #theme-toggle:not(:defined) > jelly-segment {
+html.jelly-failed :is(#theme-toggle, #calm-toggle):not(:defined) > jelly-segment {
   padding: 0.4em 0.85em;
   border: 1px solid var(--color-border);
   border-radius: 999px;
@@ -283,7 +284,10 @@ html.jelly-failed #theme-toggle:not(:defined) > jelly-segment {
 }
 html.jelly-failed #theme-toggle[value="light"]:not(:defined) > jelly-segment[value="light"],
 html.jelly-failed #theme-toggle[value="auto"]:not(:defined) > jelly-segment[value="auto"],
-html.jelly-failed #theme-toggle[value="dark"]:not(:defined) > jelly-segment[value="dark"] {
+html.jelly-failed #theme-toggle[value="dark"]:not(:defined) > jelly-segment[value="dark"],
+html.jelly-failed #calm-toggle[value="auto"]:not(:defined) > jelly-segment[value="auto"],
+html.jelly-failed #calm-toggle[value="on"]:not(:defined) > jelly-segment[value="on"],
+html.jelly-failed #calm-toggle[value="off"]:not(:defined) > jelly-segment[value="off"] {
   border-color: var(--color-primary);
   font-weight: 700;
 }
@@ -4951,6 +4955,11 @@ jelly-button.winner-btn.winner-ready {
   font-size: 0.85rem;
   line-height: 1.4;
   color: var(--color-text-muted);
+  /* Three lines are always reserved: the longest verdict wraps to three on a
+     phone and the shortest to one, and the sheet is anchored to the bottom, so
+     a line that changed length moved the Calm control (and Appearance) ~38px
+     under the finger — a second tap landed on the row label. */
+  min-height: calc(3 * 1.4em);
 }
 
 .settings-row-label {

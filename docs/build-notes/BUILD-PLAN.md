@@ -350,14 +350,15 @@ Four **separate** deploys (P7), in this order, each with its own tests and live 
   with the frame-rate sampler, battery check and the OS setting (the OS beats Off); Calm motion
   Auto / On / Off in today's Settings drawer for now; pre-paint calm in `boot-guard.js`;
   `JOY_REDUCED` and the raw reads replaced; the nine media blocks become `html.calm-motion`; Jelly
-  token mapping.
+  token mapping **(toaster radius only; the rest moves to Step 13's visual system, see its Ships line)**.
 - **Needs:** — (placed after 4 so the two refactors don't overlap).
 - **Tests:** `motion.test.js` (sampler vs Jelly's integrator; presets' damping and overshoot; the
   minimum visible deformation per row; calm truth table; no transform keyframes while calm;
   `outerHTML` unchanged after press, release, play, playOut, flipKeyed), `shell.test.js` (no motion
   media queries; pre-paint calm), `auth.test.js` wipe list.
 - **Live check:** the switch works; a phone with Reduce Motion is calm; no first-paint flash after
-  a reload (the boot guard); the springs match `motion-demo.html` (Step 0) side by side.
+  a reload (the boot guard); the springs match `motion-demo.html` (Step 0) side by side (an
+  owner eyeball: only `motion.test.js`'s constant-for-constant check backs it).
 - **Rollback:** revert.
 
 ### Step 13 · The shell: tabs, header, More, takeovers · redesign D2 · Jan · XL (5) · Opus pass, then Sonnet

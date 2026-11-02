@@ -357,7 +357,14 @@ Design: `docs/build-notes/app-shell-redesign-spec.md` §9–10; the reference fe
   top edge (none in the top ~2 px strip), because a control that slides 4 px down
   and squashes leaves the top strip empty and a held tap there clicked whatever
   was behind it (`motion.test.js` maps the touch point through the held
-  transform for every point of every size). The wobble is cut at 900 ms (its
+  transform for every point of every size). **A WAAPI transform replaces the
+  element's resting CSS transform, it does not compose with it**, so `press` /
+  `release` read `getComputedStyle(el).transform` (after cancelling their own
+  hold, or they would read the dent back) and write it in front of every dent
+  frame (`restingTransform`, `p.base`): the update bar and the SDK-down pill are
+  centred with `left:50%; transform:translateX(-50%)` and used to jump half their
+  width sideways, past the viewport edge, for the whole hold (`motion.test.js`
+  gives the fake element a resting transform). The wobble is cut at 900 ms (its
   1.4 s tail was sub-pixel; the ring also keeps `busy()` true). `JellyMotion.busySource` is how the app
   tells the calm sampler what is moving (confetti, joy-layer children, a running
   stopwatch, a clock in its final minute).
@@ -366,7 +373,14 @@ Design: `docs/build-notes/app-shell-redesign-spec.md` §9–10; the reference fe
   it saying what is happening right now (`renderCalmRow` / `calmReasonLine`;
   "Your phone asks for less motion, so Camp stays calm…" when the OS wins over
   Off). The line follows `jelly-motion-change`, so it stays true when battery
-  saver turns calm on by itself.
+  saver turns calm on by itself. The note reserves three lines
+  (`.settings-row-note { min-height }`): the settings sheet is bottom-anchored,
+  so a verdict that changed length moved the control ~38 px under the finger.
+  At 320 px the two longest verdicts wrap to four lines and still nudge it 19 px
+  (accepted: copy cut to fit would lose the owner-approved wording). The
+  degraded-mode pill styling (`html.jelly-failed`) covers this control as well as
+  Appearance. While the page is hidden the sampler does not poll: it returns
+  and `visibilitychange` re-arms it.
 - **styles.css answers to ONE class.** Every rule that animates is either under
   `html:not(.calm-motion)` or has an `html.calm-motion <same selector>` rule that
   switches it off; there is no `@media (prefers-reduced-motion)` anywhere (the

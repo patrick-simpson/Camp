@@ -322,9 +322,24 @@
   var pressState = running ? new WeakMap() : null;
   var PRESS_CALM_OPACITY = 0.85;
   var PRESS_DEEP_PX = 4, PRESS_EDGE_PX = 2;
+  // A WAAPI transform REPLACES the element's resting CSS transform, it does not
+  // compose with it. A control centred with `left:50%; transform:translateX(-50%)`
+  // (the update bar, the SDK-down pill) jumped half its own width sideways for the
+  // whole hold, and past the viewport edge on a phone. So the resting transform is
+  // read when the press lands (after our own hold is cancelled, or it would read
+  // the dent back) and written in front of every frame: p.base is '' for the
+  // ordinary control (computed 'none'), so those frames are byte-for-byte what
+  // they were.
+  function restingTransform(el) {
+    try {
+      if (typeof getComputedStyle !== 'function') return '';
+      var t = getComputedStyle(el).transform;
+      return t && t !== 'none' ? t + ' ' : '';
+    } catch (e) { return ''; }
+  }
   function pressFrame(p, q) {
     return {
-      transform: 'translateY(' + (p.deep * q) + 'px) skewX(' + (-p.tilt * 0.6 * q) + 'deg) scale(' + (1 + 0.06 * p.amp * q) + ',' + (1 - 0.12 * p.amp * q) + ')',
+      transform: (p.base || '') + 'translateY(' + (p.deep * q) + 'px) skewX(' + (-p.tilt * 0.6 * q) + 'deg) scale(' + (1 + 0.06 * p.amp * q) + ',' + (1 - 0.12 * p.amp * q) + ')',
       transformOrigin: p.origin,
     };
   }
@@ -347,15 +362,16 @@
     var sy = 1 - 0.12 * amp;
     var originY = (Math.round(oy * 100) / 100) * h, touchY = oy * h;
     var deep = Math.max(0, Math.min(PRESS_DEEP_PX, (touchY - originY) + sy * (originY - PRESS_EDGE_PX)));
+    var prev = running.get(el);
+    if (prev) { try { prev.cancel(); } catch (e) { /* already gone */ } }
     var p = {
       origin: Math.round(ox * 100) + '% ' + Math.round(oy * 100) + '%',
       tilt: (ox - 0.5) * 5,
       deep: deep,
       amp: amp,
+      base: restingTransform(el), // read even when calm: calm can flip mid-hold and release then dents
     };
     pressState.set(el, p);
-    var prev = running.get(el);
-    if (prev) { try { prev.cancel(); } catch (e) { /* already gone */ } }
     var a;
     if (calmMotion()) {
       // Feedback, not motion: the control dims while held.
@@ -373,10 +389,13 @@
   // the dent with the no-overshoot glide instead of ringing.
   function release(el, o) {
     if (!canAnimate(el) || !pressState) return null;
-    var p = pressState.get(el) || { origin: '50% 50%', tilt: 0, deep: 0, amp: 1 }; // no touch point known: squash only, never a translate
+    var p = pressState.get(el);
     pressState.delete(el);
     var prev = running.get(el);
     if (prev) { try { prev.cancel(); } catch (e) { /* already gone */ } }
+    // No stored press (the tap beat the press delay): no touch point known, so
+    // squash only, never a translate; the resting transform is read fresh.
+    if (!p) p = { origin: '50% 50%', tilt: 0, deep: 0, amp: 1, base: calmMotion() ? '' : restingTransform(el) };
     var fromRest = !!(o && o.fromRest);
     if (calmMotion()) {
       var ca = el.animate([{ opacity: fromRest ? 1 : PRESS_CALM_OPACITY }, { opacity: 1 }], { duration: 120, easing: 'cubic-bezier(.4,0,.2,1)', fill: 'backwards' });
@@ -538,7 +557,11 @@
   // Returns 'waiting' (busy / hidden: retried), or 'sampling'.
   function sampleNow() {
     if (typeof requestAnimationFrame !== 'function') return 'waiting';
-    if ((typeof document !== 'undefined' && document.hidden) || busy()) { sampleSoon(1500); return 'waiting'; }
+    // Hidden: wait for the visibilitychange listener below, which re-arms the
+    // sampler when the page comes back. Re-arming here too was an endless 1.5 s
+    // timer loop on every backgrounded tab.
+    if (typeof document !== 'undefined' && document.hidden) return 'waiting';
+    if (busy()) { sampleSoon(1500); return 'waiting'; }
     var stamps = [];
     (function frame(ts) {
       if (busy()) { sampleSoon(1500); return; }                 // something started moving: abandon

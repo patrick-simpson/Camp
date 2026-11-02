@@ -33,7 +33,7 @@ function parseInto(root, html) {
   }
 }
 class FakeNode {
-  constructor(tag) { this.tag = tag; this.attrs = new Map(); this.children = []; this.parent = null; this.text = ''; this.animations = []; this.rect = null; this.canAnimate = true; }
+  constructor(tag) { this.tag = tag; this.attrs = new Map(); this.children = []; this.parent = null; this.text = ''; this.animations = []; this.rect = null; this.canAnimate = true; this.restTransform = 'none'; }
   get dataset() { const d = {}; for (const [k, v] of this.attrs) if (k.startsWith('data-')) d[k.slice(5)] = v; return d; }
   get className() { return this.attrs.get('class') || ''; }
   set className(v) { this.attrs.set('class', v); }
@@ -99,6 +99,8 @@ function makeEnv(o) {
     clearTimeout: (id) => { const i = timers.findIndex((x) => x.id === id); if (i >= 0) timers.splice(i, 1); },
     requestAnimationFrame: (cb) => { rafQ.push(cb); return rafQ.length; },
     cancelAnimationFrame: () => {},
+    // Only `transform` is read: a node's resting CSS transform (what getComputedStyle reports once our own animation is cancelled).
+    getComputedStyle: (el) => ({ transform: el.restTransform }),
     Event: class { constructor(type) { this.type = type; } },
     dispatchEvent: (e) => { events.push(e.type); return true; },
   };
@@ -483,6 +485,38 @@ test('a held press keeps the finger INSIDE the dented control, at every point of
   assert.ok(loneUp.kf.every((f) => Math.abs(parseFloat(/translateY\(([-\d.e]+)px\)/.exec(f.transform)[1])) < 1e-9), 'no stored press, no translate');
 });
 
+test('a press keeps the control\'s resting transform: a bar centred with translateX(-50%) must not jump sideways while held', () => {
+  const env = makeEnv();
+  const { JM } = env;
+  const rest = 'matrix(1, 0, 0, 1, -97.5, 0)'; // left:50%; transform:translateX(-50%) on a 195 px bar
+  const bar = env.el('button'); bar.restTransform = rest; bar.rect = () => ({ left: 98, top: 700, width: 195, height: 44 });
+  const dent = /translateY\([-\d.e]+px\) skewX\([-\d.e]+deg\) scale\([\d.]+,[\d.]+\)$/;
+  const lead = (kf) => kf.map((f) => f.transform).filter((t) => !t.startsWith(rest + ' ') || !dent.test(t));
+  const down = JM.press(bar, { x: 190, y: 720 });
+  assert.deepEqual(lead(down.kf), [], 'every frame of the hold starts with the resting transform, then the dent: ' + down.kf.map((f) => f.transform).join(' | '));
+  assert.equal(down.kf[0].transform, rest + ' translateY(0px) skewX(0deg) scale(1,1)', 'the first frame is the resting pose, not a jump');
+  // …and the release, which reads the stored base (and is cancelled-first so it can never read the dent back)
+  const up = JM.release(bar);
+  assert.deepEqual(lead(up.kf), [], 'the ringing release keeps it too');
+  const soft = (JM.press(bar, { x: 190, y: 720 }), JM.release(bar, { soft: true }));
+  assert.deepEqual(lead(soft.kf), [], 'so does a called-off press');
+  // a tap that beat the press delay never stored a press: the base is read fresh
+  const quick = JM.release(bar, { fromRest: true });
+  assert.deepEqual(lead(quick.kf), [], 'and the pop from rest');
+  // the ordinary control (computed "none") gets frames byte-for-byte as before: no prefix at all
+  const plain = env.el('button');
+  assert.ok(JM.press(plain, { x: 10, y: 20 }).kf.every((f) => f.transform.startsWith('translateY(')), 'no resting transform, no prefix');
+  assert.ok(JM.release(plain, { fromRest: true }).kf.every((f) => f.transform.startsWith('translateY(')));
+  // the resting transform is read AFTER our own hold is cancelled (a live getComputedStyle would otherwise read the dent back)
+  const held = env.el('button'); held.restTransform = rest;
+  const a1 = JM.press(held, { x: 50, y: 20 });
+  let cancelledWhenRead = null;
+  const realCS = env.win.getComputedStyle;
+  env.win.getComputedStyle = (el) => { cancelledWhenRead = a1.cancelled; return realCS(el); };
+  JM.press(held, { x: 50, y: 20 });
+  assert.equal(cancelledWhenRead, true, 'a second press cancels the first dent before reading the base');
+});
+
 test('the wobble rings for about 0.9 s, not 1.4 (the tail was sub-pixel), and every other preset is unchanged', () => {
   const { JM } = makeEnv();
   assert.ok(JM.durationMs('wobble') <= 900, 'wobble is cut at 900 ms: ' + JM.durationMs('wobble'));
@@ -778,9 +812,13 @@ test('the sampler waits while anything is moving and abandons a sample if motion
   assert.equal(JM.sampleNow(), 'waiting');
   a.finish();
   assert.equal(JM.sampleNow(), 'sampling');
-  // a hidden page is not sampled
+  // a hidden page is not sampled, and it does not poll either: visibilitychange re-arms it
   env.rafQ.length = 0; env.doc.hidden = true;
+  env.timers.length = 0;
   assert.equal(JM.sampleNow(), 'waiting');
+  assert.equal(env.timers.length, 0, 'no 1.5 s retry loop on a backgrounded tab');
+  env.doc.hidden = false; env.fire('visibilitychange');
+  assert.ok(env.timers.some((t) => t.at - env.clock.t === 1500), 'coming back re-arms it');
 });
 
 test('a full 24-interval sample at 30 Hz, twice, turns the saver on; the next is scheduled five minutes out', () => {
@@ -860,6 +898,23 @@ test('the line under Calm motion says what is happening right now, in plain word
   assert.ok(/^Full motion right now\./.test(line('auto', false, null)));
   const all = [['off', true, 'os'], ['auto', true, 'battery-saver'], ['auto', false, null], ['on', true, 'switch-on']].map((a) => line(...a)).join(' ');
   assert.notOk(/\b(battery API|hysteresis|sampler|prefers-reduced)\b/i.test(all), 'no jargon for a camp counselor');
+});
+
+test('the Calm row never moves under a thumb, and still works as plain text when Jelly never loads', () => {
+  const CSS = readFixture('../styles.css');
+  const note = /\.settings-row-note\s*\{([^}]*)\}/.exec(CSS);
+  assert.ok(note && /min-height:\s*calc\(3 \* 1\.4em\)/.test(note[1]) && /line-height:\s*1\.4\b/.test(note[1]),
+    'three lines of the note\'s own line-height are always reserved, so a shorter verdict cannot shift the control');
+  // the longest verdicts are the ones that have to fit the reservation: 3 lines at 360 px (a 218 px note);
+  // at 320 px (178 px) the two longest wrap to 4, an accepted 19 px nudge
+  const longest = Math.max(...[['off', true, 'os'], ['auto', true, 'battery-saver'], ['auto', true, 'battery-low'], ['auto', false, null], ['auto', true, null], ['on', true, 'switch-on'], ['off', false, 'switch-off']].map((a) => calmReasonLine(...a).length));
+  assert.ok(longest <= 90, 'no verdict outgrows the three reserved lines: ' + longest + ' chars');
+  // the degraded-mode fallback styles both segmented controls, with the chosen value marked
+  assert.ok(/html\.jelly-failed :is\(#theme-toggle, #calm-toggle\):not\(:defined\)\s*\{[^}]*display:\s*flex/.test(CSS), 'pill layout for both');
+  assert.ok(/html\.jelly-failed :is\(#theme-toggle, #calm-toggle\):not\(:defined\) > jelly-segment\s*\{[^}]*border-radius:\s*999px/.test(CSS), 'pill segments for both');
+  ['auto', 'on', 'off'].forEach((v) => {
+    assert.ok(CSS.includes('html.jelly-failed #calm-toggle[value="' + v + '"]:not(:defined) > jelly-segment[value="' + v + '"]'), 'the chosen ' + v + ' is marked');
+  });
 });
 
 test('the Calm motion control writes the switch, repaints the row and survives Auto again', () => {
