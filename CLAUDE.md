@@ -714,6 +714,57 @@ never rebuilds a segmented control under a finger.
   app header (and anything else `position: sticky`) scrolled away with the
   page — v197 shipped that way. Don't put `hidden` back on its own.
 
+## The standings reveal: the screens (Step 23 — markup and visual system)
+
+Redesign §4, mockups 05, 05b, 06, 07, 07b, 07c, 09, 11 with the Appendix A
+"Mockup deltas" applied (no screens count anywhere — the big screen is public and
+can't report in; "Started 7:31", never a name, on phones; the Practice copy; the
+chip and the mini TV wear "Practice"). Static markup in index.html (comments there
+name every hook), styles in styles.css's THE STANDINGS REVEAL block. **Nothing is
+wired yet** — every root ships `hidden` and the build sessions add `reveal.js`.
+Rules for whoever wires it:
+
+- **Switches, not hidden-juggling.** `#takeover-reveal[data-phase]` (`ready |
+  intro | live | champion | table | ended | off`) is the ONE thing that picks the
+  remote's panel (`#reveal-ready` / `#reveal-live` / `#reveal-off`) and whether
+  Back is in the dock; `[data-mode="practice"]` adds the mini TV's tag (the roof
+  stays blue: a practice is public too). `#tab-now[data-reveal="live"]` (set
+  with `#now-reveal` un-hidden) makes Now the reveal: the notice, the team strip,
+  the schedule banner, a live board, the grid and the champion line step aside;
+  announcements and the builder stay.
+- **One row system** for the remote ladder, the mirror and the grid:
+  `.rv-list[data-kind="remote | mirror | grid"] > .rv-row[data-state]`
+  (`shown` · `still` · `looking` · `unrevealed` · `hidden` · `next`), plus
+  `data-onscreen`, `data-champion` and `data-key` (keyed for JellyMotion). The
+  exact markup is the ROW MARKUP comment at `#now-reveal`; a renderer never styles
+  a row. Counts are words in nowrap spans, never medal discs. The lists are the
+  `setHtmlIfChanged` roots; the peek is `#reveal-ladder[data-peek]` (the LIST's
+  attribute, so holding it never makes the memo stale).
+- **The mini TV** (`.mtv#reveal-tv`, `data-frame` = `tvFrame().mode`, `data-beat`)
+  is drawn in container units (`--u`, one design pixel of 352), so one picture is
+  the 352px stage and the 150px thumbnail; always the TV's light colours. The stage
+  is the thumbnail on phones under 700px tall AND while nothing is on the big screen
+  (ready / ended / off), so the checks and both switches fit above Start; it grows
+  when the show starts (spring it with JellyMotion, never a CSS transition).
+- **The dock** never uses `disabled` (a tap during the wait must reach the handler
+  for the wobble + toast): `aria-disabled` + `#reveal-go[data-state]` (`ready |
+  charging | offline | blocked`, `data-face="crown"`) and `#reveal-back[data-state]`
+  (`ready | locked | first | offline`). The recharge fill is CSS on `width` (a
+  progress bar: it runs under calm too) from `--charge-ms` / `--charge-from` set on
+  the button. Locked / first are pressed flat into the well, never faded (the reason
+  must read in sunlight).
+- **Larger text** is handled by size containers keyed in rem (`rv-list`: points join
+  the name's column from ~120%, the place stacks above the team from ~170%;
+  `rm-dock`: Back gets its own row above the gold from ~170%). The place columns are
+  rem; the marks stay px. The big button's labels have ceilings (past ~40 / 20px
+  they only wrap).
+- **Other hooks:** `#reveal-strip-count` (the header strip's "3 of 6 shown"),
+  `#reveal-row` (More's gold row; `data-state` adds `practice`), `#games-reveal-link`
+  (the remote's way in from Games), `#now-reveal-remote` (directors on Now),
+  `#now-champion` (the Saturday champion line, name and mark only),
+  `#now-reveal-grid` and `#games-reveal-grid` (the frozen grid). New icons:
+  `#i-rewind` (Back moves the room's screen: never a chevron) and `#i-crown`.
+
 ## Set up the week: the frame, the hub, the clipboard (Step 14 — markup and visual system)
 
 P2 §11.0–11.2 ("the director's clipboard") inside redesign §8. Static markup in

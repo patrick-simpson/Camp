@@ -135,6 +135,11 @@
     <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2.2"/><path d="M15.5 8.5V6.7a2.2 2.2 0 0 0-2.2-2.2H6.7a2.2 2.2 0 0 0-2.2 2.2v6.6a2.2 2.2 0 0 0 2.2 2.2h1.8"/></symbol>
     <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.8 7h14.4M9.6 7V5.2h4.8V7M6.8 7l.8 12.3h8.8l.8-12.3M10.2 10.6v5.4M13.8 10.6v5.4"/></symbol>
     <symbol id="i-rain" viewBox="0 0 24 24"><path d="M7.2 15.2a3.9 3.9 0 0 1-.5-7.77 5.2 5.2 0 0 1 10.1.72 3.55 3.55 0 0 1 .4 7.05z"/><path d="M8.7 18.3 7.9 20.4M12.5 18.3l-.8 2.1M16.3 18.3l-.8 2.1"/></symbol>
+    <!-- Step 23 (the reveal): the remote's Back is a REWIND (it moves the big
+         screen), never a chevron (‹ More leaves the remote); the crown marks the
+         champions (Friday) and nothing else. -->
+    <symbol id="i-rewind" viewBox="0 0 24 24"><path d="M11.6 6.2 5.8 12l5.8 5.8"/><path d="M18.4 6.2 12.6 12l5.8 5.8"/></symbol>
+    <symbol id="i-crown" viewBox="0 0 24 24"><path d="M4.4 17.4 3.6 8l4.8 3.7L12 5.2l3.6 6.5L20.4 8l-.8 9.4z"/><path d="M5 20.4h14"/></symbol>
     <!-- Team flag marks (§8.4) for a team with no shield (senior today): a
          pennant on a pole, filled with the team's mark colour (currentColor,
          from .flag[data-flag] or an inline --flag-fill) and outlined in ink.
@@ -234,18 +239,88 @@
            Download live inside it, so it stays a bar rather than a pill. -->
       <section id="sync-alert" class="sync-alert" role="alert" hidden></section>
       <!-- The live-reveal strip (§2.2): every tab but Now, only while places
-           are still being revealed; tapping it goes to Now. Inside the
-           header so it sticks with it. Its content arrives with the reveal
-           (Step 23); CSS keeps it off Now whatever its hidden state. -->
+           are still being revealed (phases intro, live, champion; gone at the
+           final table); tapping it goes to Now. Inside the header so it sticks
+           with it. CSS keeps it off Now whatever its hidden state (Now carries
+           its own strip inside #now-reveal). #reveal-strip-count is patched
+           alone ("3 of 6 shown"; empty at intro, and the separator goes with it). -->
       <button type="button" id="reveal-strip" class="reveal-strip" hidden>
         <i class="reveal-strip-dot" aria-hidden="true"></i>
-        <span id="reveal-strip-text">Live on the big screen</span>
+        <span class="reveal-strip-body"><span id="reveal-strip-text">Live on the big screen</span><span class="reveal-strip-count" id="reveal-strip-count"></span></span>
         <svg class="ico reveal-strip-chev" aria-hidden="true"><use href="#i-chev-r"/></svg>
       </button>
     </header>
 
     <!-- ── NOW (today's home, hosted unchanged inside the new frame) ── -->
     <main class="main-wrap tab-panel" id="tab-now" data-tab-panel="now" aria-labelledby="tab-btn-now">
+
+      <!-- ── THE LIVE REVEAL ON NOW (redesign §4.9, mockup 05) ─────────────
+           Phones' mirror of the big screen while places are still being revealed
+           (phases intro, live, champion — revealView(…).live). Set
+           #tab-now[data-reveal="live"] at the same time as un-hiding this: that ONE
+           switch makes Now the reveal (styles.css puts away the notice, the team
+           strip, the schedule banner, the live board and the grid; announcements
+           and the builder stay). Everything here is read from revealView() alone.
+           Static frame; the renderer patches text and hidden, and writes the list:
+             #now-reveal-started  "Started 7:31" (never a name: the public node has none)
+             #now-reveal-count    "3 of 6 shown" (aria-live)
+             #now-reveal-list     the rows, through setHtmlIfChanged (ROW MARKUP below)
+             #now-reveal-remote   directors only: Open the remote
+             #now-reveal-hn-*     the current block, shrunk to one "Happening now" row;
+                                  #now-reveal-day opens the day's schedule sheet
+           ROW MARKUP (one shape for the remote ladder, this mirror and the grid; the
+           list's data-kind picks the look, so a renderer never styles a row itself).
+           Every row carries data-key (g<idx> for a revealed group, still-<n> for a
+           place to come) so JellyMotion.morph / flipKeyed keep the real nodes:
+             <div class="rv-row" role="listitem" data-key="still-0" data-state="still">
+               <svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg>
+               <span class="rv-msg">Still to come</span></div>
+             <div class="rv-row" role="listitem" data-key="g2" data-state="looking">
+               <svg class="ico" aria-hidden="true"><use href="#i-tv"/></svg>
+               <span class="rv-msg">Look at the big screen</span>
+               <span class="rv-os">On the big screen now</span></div>
+             <div class="rv-row" role="listitem" data-key="g2" data-state="shown" data-onscreen>
+               <span class="rv-pl">4<sup>th</sup></span>         (+ <em class="rv-tie">tie</em>)
+               <div class="rv-teams">
+                 <div class="rv-team" data-team="t0" style="safeColorVars(…)">
+                   <span class="rv-mark">teamMarkHtml(id, {size: 34})</span>
+                   <span class="rv-nm"><b class="rv-name">Ferocious Foxes</b>
+                     <span class="rv-you">Your team</span>          (the viewer's own)
+                     <small class="rv-medals"><span>2 gold</span> · <span>1 silver</span> · <span>1 bronze</span></small>
+                     <small class="rv-extra"><span>verse 4</span> · <span>cleanup 3</span> · <span>quick 2</span></small></span>
+                                                    (rv-extra: the grid only; each count its own span)
+                   <span class="rv-pts">22<small> points</small></span></div>
+                 …one .rv-team per team in a tie…
+                 <span class="rv-os">On the big screen now</span></div></div>  (on-screen row only)
+           data-champion on the 1st row once a finale crowned it (Friday) adds the
+           crown: <svg class="ico rv-crown"><use href="#i-crown"/></svg> first in .rv-pl.
+           Words, never medal discs: a disc means a place won, never a count (§8.4). -->
+      <section id="now-reveal" class="now-reveal" aria-labelledby="now-reveal-title" hidden>
+        <div class="rv-strip" aria-hidden="true">
+          <i class="rv-strip-dot"></i>
+          <span class="rv-strip-text">Live on the big screen</span>
+          <span class="rv-strip-at" id="now-reveal-started"></span>
+        </div>
+        <div class="rv-head">
+          <h2 class="rv-title" id="now-reveal-title">Tonight's standings</h2>
+          <span class="rv-count" id="now-reveal-count" aria-live="polite"></span>
+        </div>
+        <div class="rv-list" id="now-reveal-list" data-kind="mirror" role="list"></div>
+        <p class="rv-note">Places appear here a few seconds after the big screen shows them, and stay until 8 AM tomorrow.</p>
+        <button type="button" class="btn btn-block rv-open-remote" id="now-reveal-remote" hidden>
+          <svg class="ico" aria-hidden="true"><use href="#i-tv"/></svg>Open the remote
+        </button>
+        <div class="rv-happening" id="now-reveal-happening" hidden>
+          <div class="rv-happening-head">
+            <h3 class="rv-happening-label">Happening now</h3>
+            <button type="button" class="rv-day" id="now-reveal-day">Whole day<svg class="ico" aria-hidden="true"><use href="#i-chev-r"/></svg></button>
+          </div>
+          <p class="rv-happening-row">
+            <span class="rv-hn-time" id="now-reveal-hn-time"></span>
+            <span class="rv-hn-text"><span class="rv-hn-label"><span class="rv-hn-emoji" id="now-reveal-hn-emoji" aria-hidden="true"></span><span id="now-reveal-hn-label"></span></span><span class="rv-hn-sub" id="now-reveal-hn-sub"></span></span>
+          </p>
+        </div>
+      </section>
 
       <!-- ── NOTICE BOARD (the one big, unmissable message) ─────────────
            Deliberately the FIRST thing on the page and much larger than an
@@ -275,6 +350,37 @@
 
       <!-- ── LIVE NOW (a game in progress — surfaced + highlighted) ── -->
       <section id="live-home" class="live-home" hidden></section>
+
+      <!-- ── THE REVEALED GRID (redesign §4.10, mockup 05b) ────────────────
+           The places a reveal showed, frozen, from the final table (or an early or
+           automatic end) until 08:00 camp time the next day — under the current
+           block, as an ordinary section. Same rows as #now-reveal-list (ROW MARKUP
+           above) with data-kind="grid": the team's SHORT name, the counts in words
+           on two lines, points big on the right; a place never shown is a row
+           <div class="rv-row" data-state="unrevealed"> lock + "Not revealed" (one per
+           team still hidden: counts teams, never groups). Title "Tonight's standings"
+           before midnight, "Last night's standings" after; the sub line "Revealed
+           7:44 PM · hides at 8 AM". expireReveal() EMPTIES the list and hides the
+           section at 8 AM directly (a quiet 8:00 brings no snapshot, so no render);
+           every renderer also re-checks `expired` at paint. -->
+      <section id="now-reveal-grid" class="reveal-grid" aria-labelledby="now-reveal-grid-title" hidden>
+        <div class="rv-head rv-head-stack">
+          <h2 class="rv-title" id="now-reveal-grid-title">Tonight's standings</h2>
+          <p class="rv-sub" id="now-reveal-grid-sub"></p>
+        </div>
+        <div class="rv-list" id="now-reveal-grid-list" data-kind="grid" role="list"></div>
+      </section>
+
+      <!-- The week's champion, by name and mark only (§3.3): remembered on each
+           phone from a finale reveal (lsKey('campScoreboardChampion')) and shown
+           until the camp week ends, after the grid itself has gone at 8 AM. No
+           number, ever. #now-champion-mark gets teamMarkHtml (34px; one per team
+           in a shared title), #now-champion-name the name(s) joined "and". -->
+      <section id="now-champion" class="now-champion" aria-labelledby="now-champion-label" hidden>
+        <svg class="ico now-champion-crown" aria-hidden="true"><use href="#i-crown"/></svg>
+        <span class="now-champion-mark" id="now-champion-mark" aria-hidden="true"></span>
+        <span class="now-champion-text"><span class="now-champion-label" id="now-champion-label">This week's champions</span><span class="now-champion-name" id="now-champion-name"></span></span>
+      </section>
 
       <!-- ── SET UP THE WEEK (P2 §11.0–11.2; editor-only; opened from More →
            Director → Set up the week; body.builder-open hides every sibling
@@ -996,6 +1102,15 @@
          shared-places block; nothing else here moves. data-card is the hook
          applyCardVisibility reads. -->
     <section id="tab-games" class="tab-panel" data-tab-panel="games" aria-labelledby="tab-btn-games">
+      <!-- The revealed grid again, at the top of Games (§4.10): the same section
+           and rows as Now's #now-reveal-grid, its own ids. -->
+      <section id="games-reveal-grid" class="reveal-grid" aria-labelledby="games-reveal-grid-title" hidden>
+        <div class="rv-head rv-head-stack">
+          <h2 class="rv-title" id="games-reveal-grid-title">Tonight's standings</h2>
+          <p class="rv-sub" id="games-reveal-grid-sub"></p>
+        </div>
+        <div class="rv-list" id="games-reveal-grid-list" data-kind="grid" role="list"></div>
+      </section>
       <p id="games-off" class="tab-off" role="status" hidden>Games are turned off right now.</p>
       <section id="games-days" class="games-days" data-card="competitions">
         <div id="day-tabs"></div>
@@ -1033,6 +1148,14 @@
           </div>
           <p id="catchup-hint" class="catchup-hint" hidden></p>
         </div>
+
+        <!-- The remote's second way in (§4.8): directors only, right under the
+             standings they would reveal. Un-hidden with the rest of the reveal. -->
+        <button type="button" class="reveal-link" id="games-reveal-link" hidden>
+          <svg class="ico" aria-hidden="true"><use href="#i-tv"/></svg>
+          <span class="reveal-link-text">Reveal these on the big screen</span>
+          <svg class="ico reveal-link-chev" aria-hidden="true"><use href="#i-chev-r"/></svg>
+        </button>
 
         <div class="card bonus-card" data-card="bonus">
           <h2 class="card-title">Quick points</h2>
@@ -1075,8 +1198,11 @@
           <span class="gl-note"><svg class="ico" aria-hidden="true"><use href="#i-eye-off"/></svg>Only directors see this</span>
         </div>
         <!-- The one gold, physical row on the page (Step 23 un-hides it).
-             data-state: ready | live | blocked; the state line is patched. -->
-        <button type="button" class="more-reveal" data-more-row="reveal" data-state="ready" hidden>
+             data-state: ready | live | practice | blocked; #more-reveal-state is
+             patched ("Ready" · "Live · 3 of 6 shown" · "Practice on the big
+             screen" · "Not switched on yet"). Never a screens count: the big
+             screen is public and can't report in (Appendix A deltas, 09). -->
+        <button type="button" id="reveal-row" class="more-reveal" data-more-row="reveal" data-state="ready" hidden>
           <span class="more-reveal-ico" aria-hidden="true"><svg class="ico"><use href="#i-tv"/></svg></span>
           <span class="gl-text"><span class="more-reveal-title">Run the reveal</span><span class="more-reveal-state"><i aria-hidden="true"></i><span id="more-reveal-state">Ready</span></span></span>
           <svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg>
@@ -1284,6 +1410,222 @@
     </div>
     <div class="tk-body" id="takeover-game-body"></div>
     <div class="tk-dock" id="takeover-game-dock" data-kb-hide hidden></div>
+  </section>
+
+  <!-- ── THE REVEAL REMOTE (redesign §4.2, §4.8; mockups 06, 07, 07b, 07c) ──
+       Directors only, from More → Director → Run the reveal, Games' "Reveal these
+       on the big screen", or Now's "Open the remote". Mockup B's layout in A's
+       light colours: the camp-blue roof (everyone sees what you press here), a
+       mini copy of the big screen, the places, and one huge thumb-zone button.
+       ONE switch decides the screen, like #app[data-tab]:
+         data-phase = ready | intro | live | champion | table | ended | off
+           ready/ended  #reveal-ready (the checks, Practice, Buzz) and the big button
+                        alone (no Back); ended also shows #reveal-ended
+           intro…table  #reveal-live (the ladder) with Back beside the big button
+           off          #reveal-off ("isn't switched on yet": the rules refused a
+                        Start); no dock, so nothing leads to a refusal
+         data-mode = real | practice — practice: the chip, the mini TV's tag
+                        (.mtv-tag) and the copy the renderer writes ("Start a
+                        practice", "End practice"); the layout is the same
+       The renderer patches text / hidden / these attributes only (setTextIfChanged,
+       setHiddenIfChanged); the ladder list is the one setHtmlIfChanged root
+       (ROW MARKUP at #now-reveal; data-kind="remote" draws the compact rows, plus
+       data-state="hidden" — lock + "Hidden until you reveal it" — and
+       data-state="next": the place number, a .rv-mask "Up next · only on this phone /
+       Press and hold to peek", and the team lines in a .rv-teams.rv-peek beside it).
+       The peek is the LIST's attribute (#reveal-ladder[data-peek]), never the
+       row's, so holding it never makes the list's memoized markup stale. -->
+  <section id="takeover-reveal" class="takeover is-roof reveal-remote" role="dialog" aria-modal="true" aria-labelledby="takeover-reveal-title" data-phase="ready" data-mode="real" hidden>
+    <header class="tk-head">
+      <button type="button" class="tk-back" data-takeover-back>
+        <svg class="ico" aria-hidden="true"><use href="#i-chev-l"/></svg><span class="tk-back-label" id="takeover-reveal-back-label">More</span>
+      </button>
+      <div class="tk-titles">
+        <h2 class="tk-title" id="takeover-reveal-title">Reveal</h2>
+      </div>
+      <!-- data-tone: ready (green) · live (red, breathing) · practice · ended ·
+           off. Words, never a count of screens: "Ready", "Live", "Practice",
+           "Ended", "Not on yet". -->
+      <span class="tk-chip rm-chip" id="reveal-chip" data-tone="ready"><i aria-hidden="true"></i><span id="reveal-chip-text">Ready</span></span>
+    </header>
+
+    <div class="tk-body rm-body" id="takeover-reveal-body">
+      <!-- The stage: the big screen in miniature + one status line. -->
+      <div class="rm-stage">
+        <!-- The mini TV (§4.8): a picture of the big screen, always in the TV's
+             light colours, drawn from the same tvFrame() as the TV page, never an
+             iframe. Sized in container units, so it is the same picture at 352px
+             and as the 150px thumbnail of a small phone. data-frame = waiting |
+             intro | hero | board | champion | table (tvFrame().mode); data-beat =
+             name | score | breakdown (the hero's beat: the name alone, then place
+             and points, then the counts). Slots are text (setTextIfChanged) or
+             teamMarkHtml through setHtmlIfChanged (the marks); #mtv-board takes
+             <li class="mtv-row" data-key="g<idx>"><span class="mtv-pl">5th</span>
+             <span class="mtv-mk">teamMarkHtml</span><span class="mtv-nm">Pilgrims</span>
+             <span class="mtv-pts">18</span></li>, the best place first. A picture:
+             aria-hidden; #reveal-tv-now says the same in words. -->
+        <div class="mtv" id="reveal-tv" data-frame="waiting" aria-hidden="true">
+          <div class="mtv-screen">
+            <div class="mtv-f mtv-wait" data-for="waiting">
+              <p class="mtv-wait-title">Waiting for the directors…</p>
+              <div class="mtv-marks" id="mtv-wait-marks"></div>
+            </div>
+            <div class="mtv-f mtv-intro" data-for="intro">
+              <p class="mtv-intro-title">Current standings</p>
+              <div class="mtv-marks" id="mtv-intro-marks"></div>
+            </div>
+            <div class="mtv-f mtv-hero" data-for="hero">
+              <p class="mtv-hero-place" id="mtv-hero-place"></p>
+              <div class="mtv-hero-marks" id="mtv-hero-marks"></div>
+              <div class="mtv-hero-info">
+                <p class="mtv-hero-name" id="mtv-hero-name"></p>
+                <p class="mtv-hero-points"><b id="mtv-hero-points"></b> points</p>
+                <p class="mtv-hero-break" id="mtv-hero-break"></p>
+              </div>
+            </div>
+            <div class="mtv-f mtv-board" data-for="board table">
+              <p class="mtv-board-title" id="mtv-board-title">Standings so far</p>
+              <ol class="mtv-rows" id="mtv-board"></ol>
+            </div>
+            <div class="mtv-f mtv-champ" data-for="champion">
+              <svg class="ico mtv-crown"><use href="#i-crown"/></svg>
+              <p class="mtv-champ-lead">Camp champions</p>
+              <div class="mtv-champ-marks" id="mtv-champ-marks"></div>
+              <p class="mtv-champ-name" id="mtv-champ-name"></p>
+            </div>
+            <span class="mtv-tag">Practice</span>
+          </div>
+        </div>
+        <div class="rm-tvline">
+          <!-- What the big screen shows, in words ("4th place on the big screen",
+               "Waiting for the directors"): the thumbnail's caption on a small
+               phone, and the mini TV's text for a screen reader everywhere. -->
+          <p class="rm-tvnow" id="reveal-tv-now">Waiting for the directors</p>
+          <p class="rm-meta">
+            <!-- From presence: "11 phones have Camp open" (no screens count: a
+                 public page can't report in). -->
+            <span class="rm-phones" id="reveal-phones"></span>
+            <!-- The screen wake lock: data-wake="on" (Screen stays on) | "off"
+                 (Screen may sleep — the OS refused it). -->
+            <span class="rm-wake" id="reveal-wake" data-wake="on"><svg class="ico" aria-hidden="true"><use href="#i-sun"/></svg><span id="reveal-wake-text">Screen stays on</span></span>
+          </p>
+        </div>
+      </div>
+
+      <!-- READY (and ENDED): the checks, then the two switches. Start is gated
+           only by "This phone is up to date" (§4.6); the others inform. -->
+      <section class="rm-panel rm-ready" id="reveal-ready" aria-labelledby="reveal-ready-title">
+        <!-- 07c state 7: "Last reveal ended 7:52 PM" / "Counselors see it until 8 AM
+             tomorrow" (a practice ending says nothing here: it leaves nothing). -->
+        <div class="rm-ended" id="reveal-ended" hidden>
+          <span class="rm-mark" data-tone="ok" aria-hidden="true"><svg class="ico"><use href="#i-check"/></svg></span>
+          <span class="rm-ended-text"><b id="reveal-ended-title"></b><span id="reveal-ended-sub"></span></span>
+        </div>
+        <h3 class="rm-h" id="reveal-ready-title">Before you start</h3>
+        <!-- Each check: data-tone ok (done-green check) · warn (gold, "!": a game
+             with no score — a warning, never a gate) · wait (this phone is catching
+             up: Start waits) · info (the big-screen reminder, never a gate). The
+             title and sub line say it in words; the mark only repeats them. -->
+        <div class="rm-checks">
+          <div class="rm-check" id="reveal-check-scored" data-tone="ok">
+            <span class="rm-mark" aria-hidden="true"><svg class="ico rm-i-ok"><use href="#i-check"/></svg><svg class="ico rm-i-wait"><use href="#i-clock"/></svg><b class="rm-i-warn">!</b></span>
+            <span class="rm-check-text"><span class="rm-check-title" id="reveal-check-scored-title">Every game today is scored</span><span class="rm-check-sub" id="reveal-check-scored-sub"></span></span>
+          </div>
+          <div class="rm-check" id="reveal-check-phone" data-tone="ok">
+            <span class="rm-mark" aria-hidden="true"><svg class="ico rm-i-ok"><use href="#i-check"/></svg><svg class="ico rm-i-wait"><use href="#i-clock"/></svg><b class="rm-i-warn">!</b></span>
+            <span class="rm-check-text"><span class="rm-check-title" id="reveal-check-phone-title">This phone is up to date</span><span class="rm-check-sub" id="reveal-check-phone-sub">Connected · nothing waiting to send</span></span>
+          </div>
+          <!-- The one reminder that replaced the screens check (Appendix A
+               deltas, 06): a public page can't say it is open, so this is a row to
+               read, never a gate. #reveal-screen-path is the page and the camp
+               (senior: current-standings.html?camp=senior); the host stays static
+               so the line breaks at the slash. Copy puts the whole address on the
+               clipboard for whoever is at the TV. -->
+          <div class="rm-check rm-check-screen" id="reveal-check-screen" data-tone="info">
+            <span class="rm-mark" aria-hidden="true"><svg class="ico"><use href="#i-tv"/></svg></span>
+            <span class="rm-check-text"><span class="rm-check-title">Open the big screen on the TV</span><span class="rm-check-sub"><span class="rm-url">camp.patricksimpson.info/<wbr><span id="reveal-screen-path">current-standings.html</span></span><span class="rm-url-note">It should say Waiting for the directors…</span></span></span>
+            <button type="button" class="rm-copy" id="reveal-copy-link" aria-label="Copy the big screen's address"><svg class="ico" aria-hidden="true"><use href="#i-copy"/></svg><span>Copy</span></button>
+          </div>
+        </div>
+        <!-- Switches say their state in words beside the track (What counselors
+             see does the same). Buzz: "Buzz all 38 counselors" + the alert's
+             words; while Practice is on, or before phone alerts are live, the row
+             takes data-off, the switch is disabled and #reveal-buzz-sub gives the
+             reason ("Practice runs never buzz phones" · "Phone alerts aren't
+             switched on yet"). -->
+        <div class="gl rm-opts">
+          <div class="gl-row rm-opt" id="reveal-opt-practice">
+            <span class="gl-text"><span class="gl-title">Practice run</span><span class="gl-sub">Shows the real standings on the big screen. Anyone watching it can see them.</span></span>
+            <span class="gl-switch"><jelly-switch id="reveal-practice" label="Practice run"></jelly-switch><em class="gl-switch-state" id="reveal-practice-state">Off</em></span>
+          </div>
+          <div class="gl-row rm-opt" id="reveal-opt-buzz">
+            <span class="gl-text"><span class="gl-title" id="reveal-buzz-title">Buzz all counselors</span><span class="gl-sub" id="reveal-buzz-sub">“The standings reveal is starting”</span></span>
+            <span class="gl-switch"><jelly-switch id="reveal-buzz" label="Buzz all counselors"></jelly-switch><em class="gl-switch-state" id="reveal-buzz-state">Off</em></span>
+          </div>
+        </div>
+      </section>
+
+      <!-- INTRO … TABLE: the places. 1st at the top, filling from the bottom up. -->
+      <section class="rm-panel rm-live" id="reveal-live" aria-labelledby="reveal-live-title">
+        <div class="rm-ladh">
+          <div class="rm-ladh-text">
+            <h3 class="rm-h" id="reveal-live-title">Places <span class="rm-count" id="reveal-count"></span></h3>
+            <!-- Another director's remote: "Started by Jenn at 7:31" (from the
+                 editor-only revealFull; the public node carries no name). -->
+            <p class="rm-started" id="reveal-started" hidden></p>
+          </div>
+          <!-- Far from the thumb zone, always confirmed (askDialog: "End the
+               reveal?" … [Keep showing] [End the reveal]); never locked. -->
+          <button type="button" class="btn rm-end" id="reveal-end"><span id="reveal-end-label">End reveal</span></button>
+        </div>
+        <!-- At intro only, when the live standings moved after the freeze. -->
+        <div class="rm-stale" id="reveal-stale" hidden>
+          <span class="rm-stale-text">Scores changed since you started.</span>
+          <button type="button" class="btn rm-restart" id="reveal-restart">Start again</button>
+        </div>
+        <div class="rv-list" id="reveal-ladder" data-kind="remote" role="list"></div>
+      </section>
+
+      <!-- OFF: a Start the rules refused. Nothing to press. -->
+      <section class="rm-panel rm-off" id="reveal-off" aria-labelledby="reveal-off-title">
+        <svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg>
+        <div>
+          <h3 class="rm-off-title" id="reveal-off-title">The reveal isn't switched on yet</h3>
+          <p class="rm-off-text">The database rules need one update before the big screen can show anything. Until then counselor phones show no standings at all.</p>
+        </div>
+      </section>
+    </div>
+
+    <!-- THE DOCK (thumb zone). Two buttons that never share a glyph: Back is a
+         REWIND (it moves the room's screen), ‹ More leaves. Neither ever takes the
+         `disabled` attribute: a tap during the wait must still reach the handler
+         (it answers with the wobble and the toast), so "can't press" is
+         aria-disabled="true" plus data-state.
+         #reveal-go data-state: ready (gold) · charging (the TV is playing the
+           beat: a paler face, .rm-go-fill grows over --charge-ms, starting
+           --charge-from into it, e.g. style="--charge-from:-1200ms"; the face
+           counts down in words: "Showing the name… 3") · offline (dashed well,
+           "Reconnecting… 2 s / Your taps would not reach the big screen") ·
+           blocked (dashed well before a Start: "Waiting for this phone to catch
+           up…"). data-face="crown" adds the crown to "Crown the champions".
+           #reveal-go-k is the small line, #reveal-go-m the big one (§4.2 table).
+         #reveal-back data-state: ready (rewind, "Back / show 5th again") · locked
+           (lock glyph, dimmed, "after the score") · first ("nothing before") ·
+           offline (dashed). Absent from ready / ended (CSS, by data-phase). -->
+    <div class="tk-dock rm-dock" id="reveal-dock">
+      <div class="rm-dock-row">
+        <button type="button" class="rm-back" id="reveal-back" data-state="ready">
+          <span class="rm-back-ico" aria-hidden="true"><svg class="ico rm-i-rewind"><use href="#i-rewind"/></svg><svg class="ico rm-i-lock"><use href="#i-lock"/></svg></span>
+          <span class="rm-back-k">Back</span>
+          <span class="rm-back-s" id="reveal-back-sub"></span>
+        </button>
+        <button type="button" class="rm-go" id="reveal-go" data-state="ready">
+          <i class="rm-go-fill" aria-hidden="true"></i>
+          <span class="rm-go-k" id="reveal-go-k">Freezes the standings when you tap</span>
+          <span class="rm-go-m"><svg class="ico rm-go-crown" aria-hidden="true"><use href="#i-crown"/></svg><span id="reveal-go-m">Start the reveal</span></span>
+        </button>
+      </div>
+    </div>
   </section>
 
   <!-- ── SHEETS (redesign §2.1) ────────────────────────────────────

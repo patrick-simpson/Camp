@@ -85,6 +85,19 @@
   --flag-line: #141a48;      /* the 1.4px outline every flag gets */
   --pole: #3b3f58;
 
+  /* The standings reveal (redesign §4). The up-next row on the remote is
+     MASKED: a two-tone gold hatch under ink text (13:1 and up on both stripes,
+     both themes). --charge is the big gold button's paler face while it
+     recharges (gold-ink on it is 11:1); like gold it never flips. The mini TV
+     is a picture of the big screen, which is always light, so its own colours
+     are literals on .mtv; only its frame follows the theme. */
+  --hatch-1: #fff6d8;
+  --hatch-2: #ffe7a1;
+  --charge: #f5d988;
+  --on-done: #ffffff;        /* a check on a --done disc */
+  --tv-frame: #141a48;
+  --tv-edge: #141a48;
+
   /* §8.2 type. Inter for UI; at 22px and up font-optical-sizing picks Inter's
      Display cut on its own (the variable font's opsz axis), so headlines need
      no second family. Sizes are rem so a phone's larger-text setting reaches
@@ -202,6 +215,11 @@
   --shadow-rgb: 0, 0, 0;
   --flag-line: #0c1030;
   --pole: #c9cde8;
+  --hatch-1: #3a3214;
+  --hatch-2: #2a240d;
+  --on-done: #0c1030;
+  --tv-frame: #a3aade;
+  --tv-edge: #04061a;
 }
 @media (prefers-color-scheme: dark) {
   /* Auto on a dark phone. An explicit Light (data-jelly-mode="light", set
@@ -240,6 +258,11 @@
     --shadow-rgb: 0, 0, 0;
     --flag-line: #0c1030;
     --pole: #c9cde8;
+    --hatch-1: #3a3214;
+    --hatch-2: #2a240d;
+    --on-done: #0c1030;
+    --tv-frame: #a3aade;
+    --tv-edge: #04061a;
   }
 }
 
@@ -854,7 +877,25 @@ body.builder-open .main-wrap {
   flex: none;
   border-radius: 50%;
   background: currentColor;
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 26%, transparent);
   animation: frame-breathe 1.2s var(--jm-std) infinite;
+}
+/* "Live on the big screen · 3 of 6 shown": the count is patched alone and
+   brings its own separator, so an empty count (intro) leaves no stray dot. At
+   large text it wraps under the words instead of pushing the chevron off. */
+.reveal-strip-body {
+  display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
+  padding: 6px 0;
+}
+.reveal-strip-count {
+  font-weight: 650;
+}
+.reveal-strip-count:not(:empty)::before {
+  content: '·';
+  margin: 0 .45em;
+  font-weight: 800;
 }
 .reveal-strip-chev {
   width: 20px;
@@ -2091,6 +2132,1490 @@ jelly-switch:not([checked])::part(track) {
 }
 .more-foot:empty {
   display: none;
+}
+
+/* ============================================================
+   THE STANDINGS REVEAL (redesign §4; Step 23)
+   ============================================================
+   Four surfaces, one row system:
+     .reveal-strip / .rv-strip  red "Live on the big screen" (the header's strip on
+                                the other tabs; Now's own strip inside #now-reveal)
+     #now-reveal                the counselor mirror on Now (mockup 05)
+     .reveal-grid               the frozen grid until 8 AM, Now and Games (05b)
+     #takeover-reveal           the director remote (06, 07, 07b, 07c)
+   Rows: .rv-list[data-kind="mirror | grid | remote"] > .rv-row[data-state]. ONE
+   grouped list with hairlines (§8.1 rule 2), never a stack of cards, and only the
+   row on the big screen carries an accent: a 6px gold inner edge. Rows never
+   animate themselves in: places land through JellyMotion on keyed rows (§9.5),
+   and markup never carries an animation class. The row markup is documented
+   at #now-reveal in index.html. */
+
+/* Now becomes the reveal: one attribute on the tab, set with #now-reveal. The
+   notice, the team strip, the schedule banner, a live board, the grid and the
+   champion line step aside; announcements (an emergency outranks the moment)
+   and the builder stay. */
+#tab-now[data-reveal="live"] > :is(#notice-board, #whats-new, .you-strip, #now-banner, #live-home, #now-reveal-grid, #now-champion) {
+  display: none;
+}
+.now-reveal[hidden],
+.reveal-grid[hidden],
+.now-champion[hidden],
+.reveal-link[hidden],
+.rv-happening[hidden],
+.rm-ended[hidden],
+.rm-stale[hidden],
+.rm-started[hidden] {
+  display: none;
+}
+
+/* Now's own red strip: full bleed under the header, and sticky under it while
+   the ladder scrolls, so "Live" never leaves the screen. Not a button: on Now
+   there is nowhere to go. */
+.rv-strip {
+  position: sticky;
+  top: var(--hdr-live, calc(env(safe-area-inset-top, 0px) + var(--header-h)));
+  z-index: 30;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px var(--s-2);
+  min-height: var(--strip-h);
+  margin: calc(-1 * var(--s-1)) -1rem 0;
+  padding: 6px 1rem;
+  background: var(--live);
+  color: var(--on-live);
+}
+.rv-strip-dot {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 26%, transparent);
+}
+html:not(.calm-motion) .rv-strip-dot {
+  animation: frame-breathe 1.2s var(--jm-std) infinite;
+}
+.rv-strip-text {
+  font: 800 0.9375rem/1.2 var(--font-ui);
+}
+.rv-strip-at {
+  margin-left: auto;
+  font: 700 0.875rem/1.2 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A reveal section's head: the title, and the count on the same baseline. */
+.rv-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px var(--s-3);
+  margin: var(--s-4) 2px var(--s-2);
+}
+.rv-head-stack {
+  display: block;
+  margin-top: 0;
+}
+.rv-title {
+  margin: 0;
+  font: 800 1.5rem/1.1 var(--font-ui);
+  letter-spacing: var(--track-tight);
+}
+/* The grid is an ordinary section under the current block, not the moment. */
+.reveal-grid .rv-title {
+  font: 800 1.0625rem/1.2 var(--font-ui);
+  letter-spacing: var(--track-row);
+}
+.rv-count,
+.rv-sub {
+  font: 700 0.9375rem/1.3 var(--font-ui);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.rv-sub {
+  margin: 2px 0 0;
+  font-size: 0.875rem;
+}
+.rv-note {
+  margin: var(--s-3) 2px 0;
+  font: 600 0.9375rem/1.4 var(--font-ui);
+  color: var(--ink-2);
+}
+.rv-open-remote {
+  margin-top: var(--s-3);
+}
+.rv-open-remote .ico {
+  width: 20px;
+  height: 20px;
+}
+
+/* ── Rows ── */
+.rv-list {
+  overflow: hidden;
+  border: 1.5px solid var(--line-2);
+  border-radius: var(--r-group);
+  background: var(--sheet);
+}
+.rv-list:empty {
+  display: none;
+}
+.rv-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 2.75rem minmax(0, 1fr); /* the place grows with the text; the marks don't */
+  align-items: center;
+  column-gap: 10px;
+  min-height: 62px;
+  padding: 9px 14px 9px 12px;
+  border-top: 1px solid var(--line);
+}
+.rv-row:first-child {
+  border-top: 0;
+}
+/* The place: a big numeral with its ordinal raised, never a medal disc. */
+.rv-pl {
+  align-self: center;
+  font: 850 1.6875rem/1 var(--font-ui);
+  letter-spacing: var(--track-tight);
+  font-variant-numeric: tabular-nums;
+}
+.rv-pl sup {
+  margin-left: 1px;
+  font-size: .48em;
+  font-weight: 800;
+  line-height: 0;
+  vertical-align: .95em;
+  letter-spacing: 0;
+}
+.rv-tie {
+  display: block;
+  width: fit-content;
+  margin-top: 5px;
+  padding: 1px 5px;
+  border-radius: var(--r-tag);
+  box-shadow: inset 0 0 0 1.5px var(--ink-3);
+  color: var(--ink);
+  font: var(--t-tag);
+  font-style: normal;
+  letter-spacing: 0;
+}
+/* Friday: the champions' row wears the crown over its numeral. */
+.rv-crown {
+  display: block;
+  width: 24px;
+  height: 24px;
+  margin: 0 0 3px -1px;
+  fill: var(--gold);
+  stroke: var(--gold-edge);
+  stroke-width: 1.8;
+}
+.rv-teams {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+/* One line per team (two or three in a tie): mark · name and counts · points. */
+.rv-team {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 10px;
+}
+.rv-mark {
+  display: grid;
+  place-items: center;
+}
+.rv-nm {
+  min-width: 0;
+}
+.rv-name {
+  font: 800 1.03125rem/1.2 var(--font-ui);
+  letter-spacing: var(--track-row);
+  overflow-wrap: anywhere;
+}
+/* "Your team", outlined in the team's own colour: identity, never a fill. */
+.rv-you {
+  display: inline-block;
+  margin: 2px 0 0 5px;
+  padding: 1px 7px;
+  border-radius: var(--r-tag);
+  box-shadow: inset 0 0 0 2px var(--team, var(--ink));
+  color: var(--ink);
+  font: var(--t-tag);
+  letter-spacing: 0;
+  white-space: nowrap;
+  vertical-align: 2px;
+}
+.rv-medals,
+.rv-extra {
+  display: block;
+  margin-top: 2px;
+  font: 600 0.84375rem/1.3 var(--font-ui);
+  color: var(--ink-2);
+}
+.rv-extra {
+  display: none; /* the grid's second line only */
+}
+/* Each count is one unit ("quick 0" never leaves its 0 on the next line). */
+:is(.rv-medals, .rv-extra) > span {
+  white-space: nowrap;
+}
+.rv-pts {
+  min-width: 2ch;
+  font: 850 1.625rem/1 var(--font-ui);
+  letter-spacing: var(--track-tight);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.rv-pts small {
+  display: block;
+  margin-top: 4px;
+  font: 700 0.75rem/1.2 var(--font-ui);
+  letter-spacing: 0;
+  color: var(--ink-2);
+}
+
+/* The place on the big screen right now: the gold inner edge, and the tag in
+   the row (under the team, lined up with the name). */
+.rv-row[data-onscreen],
+.rv-row[data-state="looking"] {
+  box-shadow: inset 6px 0 0 var(--gold);
+}
+.rv-os {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: start;
+  margin-left: 46px;
+  padding: 3px 9px 3px 8px;
+  border-radius: var(--r-tag);
+  background: var(--gold);
+  color: var(--gold-ink);
+  font: 850 0.78125rem/1.2 var(--font-ui);
+}
+.rv-os::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: #951b14; /* on gold in both themes */
+}
+
+/* Places still to come (counselors: one row per TEAM, no place number, so a
+   tie can't be read off the count) and places an early End never showed. They
+   sit in the well, recessed, with a lock. */
+.rv-row:is([data-state="still"], [data-state="unrevealed"]) {
+  grid-template-columns: 22px minmax(0, 1fr);
+  min-height: var(--target);
+  padding: 6px 14px 6px 18px;
+  background: var(--well);
+  color: var(--ink-2);
+}
+.rv-row:is([data-state="still"], [data-state="unrevealed"], [data-state="hidden"]) > .ico {
+  width: 18px;
+  height: 18px;
+}
+.rv-msg {
+  font: 700 0.9375rem/1.25 var(--font-ui);
+}
+/* The 3 s while the room sees a new place first (§4.7): where the place will
+   land, a row that says where to look. */
+.rv-row[data-state="looking"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  min-height: 62px;
+  padding-left: 20px;
+  background: var(--gold-tint);
+}
+.rv-row[data-state="looking"] > .ico {
+  width: 24px;
+  height: 24px;
+}
+.rv-row[data-state="looking"] .rv-msg {
+  font: 850 1.0625rem/1.2 var(--font-ui);
+  color: var(--ink);
+}
+.rv-row[data-state="looking"] .rv-os {
+  margin-left: 0;
+}
+
+/* The grid (mockup 05b): denser, the short name, two lines of counts in words,
+   the points alone on the right. */
+.rv-list[data-kind="grid"] .rv-row {
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  column-gap: 9px;
+  min-height: 56px;
+  padding: 8px 14px 8px 10px;
+}
+.rv-list[data-kind="grid"] .rv-pl {
+  font-size: 1.3125rem;
+}
+.rv-list[data-kind="grid"] .rv-team {
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  column-gap: 9px;
+}
+.rv-list[data-kind="grid"] .rv-name {
+  font-size: 0.96875rem;
+}
+.rv-list[data-kind="grid"] :is(.rv-medals, .rv-extra) {
+  display: block;
+  margin-top: 1px;
+  font-size: 0.8125rem;
+}
+.rv-list[data-kind="grid"] .rv-pts {
+  font-size: 1.375rem;
+}
+.rv-list[data-kind="grid"] .rv-pts small,
+.rv-list[data-kind="remote"] .rv-pts small {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.rv-list[data-kind="grid"] .rv-os {
+  display: none;
+}
+
+/* Larger text (§8.9): the list is a size container, and the thresholds are in
+   rem, so they move with the reader's text size, not the phone. From about 120%
+   the points join the name's column ("22 points" under the counts) so the name
+   keeps its width; from about 170% the place sits above the team too. The
+   compact remote ladder keeps one line (its names ellipsise). Thresholds:
+   19rem is 304px at 100% (under the 325px list of a 360 phone) and 395px at
+   130% (over the 355px list of a 390 phone); 13rem is 270px at 130% and 416px at
+   200%. */
+.rv-list:is([data-kind="mirror"], [data-kind="grid"]) {
+  container: rv-list / inline-size;
+}
+@container rv-list (max-width: 19rem) {
+  .rv-team {
+    grid-template-columns: 36px minmax(0, 1fr);
+    align-items: start; /* the mark stays beside the name, not mid-row */
+  }
+  .rv-mark {
+    padding-top: 2px;
+  }
+  .rv-list[data-kind="grid"] .rv-team {
+    grid-template-columns: 32px minmax(0, 1fr);
+  }
+  .rv-pts,
+  .rv-list[data-kind="grid"] .rv-pts {
+    grid-column: 2;
+    margin-top: 4px;
+    font-size: 1.375rem;
+    text-align: left;
+  }
+  .rv-pts small {
+    display: inline;
+    margin: 0;
+  }
+}
+@container rv-list (max-width: 13rem) {
+  .rv-row,
+  .rv-list[data-kind="grid"] .rv-row {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 4px;
+  }
+  .rv-crown,
+  .rv-tie {
+    display: inline-block;
+    vertical-align: middle;
+  }
+  .rv-crown {
+    margin: 0 8px 0 0;
+  }
+  .rv-tie {
+    margin: 0 0 0 8px;
+  }
+  .rv-os {
+    margin-left: 0;
+  }
+}
+
+/* "Look at the big screen" calms to a fade; the breathing dot stops. */
+html:not(.calm-motion) .rv-row[data-state="looking"] > .ico {
+  animation: frame-breathe 1.2s var(--jm-std) infinite;
+}
+
+/* ── The champion line (§3.3): name and mark, never a number ── */
+.now-champion {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--s-3);
+  padding: 10px 14px;
+  border: 1.5px solid var(--line-2);
+  border-radius: var(--r-group);
+  background: var(--sheet);
+}
+.now-champion-crown {
+  width: 26px;
+  height: 26px;
+  fill: var(--gold);
+  stroke: var(--gold-edge);
+  stroke-width: 1.8;
+}
+.now-champion-mark {
+  display: flex;
+  gap: 4px;
+}
+.now-champion-label {
+  display: block;
+  font: var(--t-label);
+  color: var(--ink-2);
+}
+.now-champion-name {
+  display: block;
+  font: 800 1.0625rem/1.2 var(--font-ui);
+  letter-spacing: var(--track-row);
+}
+
+/* "Happening now", shrunk to one row under the mirror. */
+.rv-happening {
+  margin-top: var(--s-4);
+}
+.rv-happening-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: 0 2px;
+  border-bottom: 1px solid var(--line-2);
+}
+.rv-happening-label {
+  margin: 0;
+  font: 750 0.875rem/1.25 var(--font-ui);
+  color: var(--ink-2);
+}
+.rv-day {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: var(--target);
+  padding: 0 0 0 var(--s-2);
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: 800 1rem/1.2 var(--font-ui);
+  cursor: pointer;
+}
+.rv-day .ico {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.6;
+}
+.rv-happening-row {
+  display: grid;
+  grid-template-columns: minmax(3.25rem, auto) minmax(0, 1fr);
+  gap: 0 var(--s-3);
+  margin: 10px 2px 0;
+}
+.rv-hn-time {
+  font: 700 1rem/1.3 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+}
+.rv-hn-label {
+  display: block;
+  font: 800 1.0625rem/1.25 var(--font-ui);
+}
+.rv-hn-emoji:not(:empty) {
+  margin-right: 6px;
+}
+.rv-hn-sub {
+  display: block;
+  margin-top: 1px;
+  font: 600 0.9375rem/1.35 var(--font-ui);
+  color: var(--ink-2);
+}
+
+/* Games: the directors' way into the remote, under the standings. */
+.reveal-link {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  min-height: var(--row-min);
+  padding: var(--s-2) 14px;
+  border: 1.5px solid var(--line-2);
+  border-radius: var(--r-group);
+  background: var(--sheet);
+  color: var(--link);
+  font: 800 1rem/1.25 var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.reveal-link:active {
+  background: color-mix(in srgb, var(--ink) 6%, var(--sheet));
+}
+.reveal-link-chev {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.6;
+}
+
+/* More → Run the reveal: a practice is a different mark from Live; Live breathes. */
+.more-reveal[data-state="practice"] .more-reveal-state i {
+  background: #141a48;
+}
+html:not(.calm-motion) .more-reveal[data-state="live"] .more-reveal-state i {
+  animation: frame-breathe 1.2s var(--jm-std) infinite;
+}
+
+/* ── The remote (§4.8) ─────────────────────────────────────────
+   A takeover with the camp-blue roof. #takeover-reveal[data-phase] is the one
+   switch: which panel shows, and whether Back is in the dock. */
+.rm-chip[data-tone="live"] i {
+  background: #951b14;
+  box-shadow: 0 0 0 3px rgba(149, 27, 20, .2);
+}
+html:not(.calm-motion) .rm-chip[data-tone="live"] i {
+  animation: frame-breathe 1.2s var(--jm-std) infinite;
+}
+/* Practice: an ink square, not a dot, so it never reads as Ready at a glance. */
+.rm-chip[data-tone="practice"] i {
+  border-radius: 2px;
+  background: #141a48;
+  transform: rotate(45deg) scale(.85);
+}
+.rm-chip[data-tone="ended"] i,
+.rm-chip[data-tone="off"] i {
+  background: none;
+  box-shadow: inset 0 0 0 2px #43497a;
+}
+.reveal-remote .tk-body {
+  padding-top: var(--s-3);
+}
+/* "Reveal" is short: the chip keeps the roof's row instead of wrapping. */
+.reveal-remote .tk-titles {
+  flex: 1 1 auto;
+}
+
+/* The stage: the mini TV and its line. */
+.rm-tvline {
+  margin-top: 13px; /* clear the TV's 5px edge, then 8px */
+}
+/* On a tall phone the mini TV says it; the words stay for a screen reader. */
+.rm-tvnow {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.rm-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2px var(--s-3);
+  margin: 0 2px;
+  font: 700 0.875rem/1.3 var(--font-ui);
+  color: var(--ink-2);
+}
+.rm-phones:empty {
+  display: none;
+}
+.rm-wake {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.rm-wake .ico {
+  width: 16px;
+  height: 16px;
+}
+/* The OS refused the wake lock: say so in ink, not the quiet line. */
+.rm-wake[data-wake="off"] {
+  color: var(--ink);
+}
+.rm-wake[data-wake="off"] .ico {
+  opacity: .5;
+}
+
+/* The panels: shown by phase, never by a renderer's hidden. */
+.rm-panel {
+  display: none;
+}
+.reveal-remote:is(:not([data-phase]), [data-phase="ready"], [data-phase="ended"]) #reveal-ready,
+.reveal-remote:is([data-phase="intro"], [data-phase="live"], [data-phase="champion"], [data-phase="table"]) #reveal-live,
+.reveal-remote[data-phase="off"] #reveal-off {
+  display: block;
+}
+.rm-h {
+  margin: var(--s-4) 2px var(--s-2);
+  font: 800 1rem/1.25 var(--font-ui);
+}
+
+/* Before you start: a run sheet of checks, the mark repeating the words. */
+.rm-checks {
+  padding: 0 12px;
+  border: 1.5px solid var(--line-2);
+  border-radius: 14px;
+  background: var(--sheet);
+}
+.rm-check {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s-2) 10px;
+  min-height: var(--row-min);
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.rm-check:first-child {
+  border-top: 0;
+}
+.rm-mark {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+}
+.rm-mark .ico {
+  width: 15px;
+  height: 15px;
+  stroke-width: 3;
+}
+.rm-mark > * {
+  display: none;
+}
+.rm-check[data-tone="ok"] .rm-mark,
+.rm-ended .rm-mark {
+  background: var(--done);
+  color: var(--on-done);
+}
+.rm-check[data-tone="ok"] .rm-i-ok,
+.rm-check[data-tone="wait"] .rm-i-wait,
+.rm-check[data-tone="warn"] .rm-i-warn,
+.rm-check-screen .rm-mark > .ico,
+.rm-ended .rm-mark > .ico {
+  display: block;
+}
+.rm-check[data-tone="warn"] .rm-mark {
+  background: var(--gold);
+  box-shadow: inset 0 0 0 1.5px var(--gold-edge);
+  color: var(--gold-ink);
+  font: 900 0.9375rem/1 var(--font-ui);
+}
+.rm-check[data-tone="wait"] .rm-mark {
+  box-shadow: inset 0 0 0 2px var(--ink-3);
+  color: var(--ink-2);
+}
+.rm-check[data-tone="wait"] .rm-mark .ico {
+  stroke-width: 2.4;
+}
+.rm-check-screen .rm-mark {
+  border-radius: 7px;
+  background: var(--blue-tint);
+  color: var(--link);
+}
+.rm-check-screen .rm-mark .ico {
+  width: 17px;
+  height: 17px;
+  stroke-width: 2.2;
+}
+.rm-check-text {
+  min-width: 0;
+}
+.rm-check-title {
+  display: block;
+  font: 750 0.9375rem/1.25 var(--font-ui);
+}
+.rm-check-sub {
+  display: block;
+  margin-top: 2px;
+  font: 600 0.84375rem/1.38 var(--font-ui);
+  color: var(--ink-2);
+}
+.rm-check-sub:empty {
+  display: none;
+}
+.rm-url,
+.rm-url-note {
+  display: block;
+}
+.rm-url {
+  color: var(--ink);
+  font-weight: 750;
+  overflow-wrap: anywhere;
+  -webkit-user-select: all;
+  user-select: all;
+}
+/* A small chunky button: a mini .btn, icon over the word. */
+.rm-copy {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  min-width: 52px;
+  min-height: 48px;
+  padding: 4px 8px;
+  border: 2px solid var(--card-b);
+  border-radius: var(--r-btn);
+  background: var(--sheet);
+  box-shadow: 0 var(--edge-btn) 0 var(--edge);
+  color: var(--ink);
+  font: 800 0.75rem/1.1 var(--font-ui);
+  cursor: pointer;
+  transition: box-shadow var(--jm-press-ms) var(--jm-press);
+}
+.rm-copy:active {
+  box-shadow: 0 1px 0 var(--edge);
+}
+.rm-copy .ico {
+  width: 18px;
+  height: 18px;
+}
+.rm-opts {
+  margin-top: var(--s-3);
+}
+.rm-opt {
+  grid-template-columns: minmax(0, 1fr) auto;
+  cursor: default;
+}
+/* Buzz switched off by a rule (a practice, alerts not live yet): the reason is
+   the subline, the title steps back a shade, the text stays readable. */
+.rm-opt[data-off] .gl-title {
+  color: var(--ink-2);
+}
+.rm-ended {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  margin: var(--s-4) 2px 0;
+}
+.rm-ended b {
+  display: block;
+  font: 750 0.9375rem/1.25 var(--font-ui);
+}
+.rm-ended-text > span {
+  display: block;
+  margin-top: 1px;
+  font: 600 0.84375rem/1.35 var(--font-ui);
+  color: var(--ink-2);
+}
+
+/* The places: "Places · 3 of 6 shown", End reveal far from the thumb. */
+.rm-ladh {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+  margin: var(--s-3) 0 var(--s-2);
+}
+.rm-ladh-text {
+  min-width: 0;
+}
+.rm-ladh .rm-h {
+  margin: 0 2px;
+}
+.rm-count {
+  font-weight: 700;
+  color: var(--ink-2);
+}
+.rm-count:not(:empty)::before {
+  content: '·';
+  margin: 0 .35em 0 .2em;
+}
+.rm-started {
+  margin: 2px 2px 0;
+  font: 600 0.8125rem/1.3 var(--font-ui);
+  color: var(--ink-2);
+}
+.rm-end {
+  flex: none;
+  padding: 4px 14px;
+}
+.rm-stale {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-2) var(--s-3);
+  margin-bottom: var(--s-2);
+  padding: 8px 8px 8px 14px;
+  border-radius: var(--r-btn);
+  background: var(--gold-tint);
+  box-shadow: inset 0 0 0 1.5px var(--gold-edge);
+}
+.rm-stale-text {
+  font: 750 0.9375rem/1.3 var(--font-ui);
+}
+.rm-restart {
+  padding: 4px 14px;
+}
+
+/* The ladder: compact 44px rows (mockup 07). Hidden places sit in the well with
+   a lock; the next place is the one MASKED row; shown places are mark · name ·
+   points, the name ellipsised, the points never. */
+.rv-list[data-kind="remote"] {
+  border-radius: 14px;
+}
+.rv-list[data-kind="remote"] .rv-row {
+  grid-template-columns: 2.5rem minmax(0, 1fr);
+  column-gap: 9px;
+  min-height: var(--target);
+  padding: 0 14px 0 10px;
+}
+.rv-list[data-kind="remote"] .rv-pl {
+  font-size: 1.375rem;
+}
+.rv-list[data-kind="remote"] .rv-pl sup {
+  font-size: .55em;
+}
+.rv-list[data-kind="remote"] .rv-teams {
+  gap: 0;
+}
+.rv-list[data-kind="remote"] .rv-team {
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  column-gap: 9px;
+  min-height: var(--target);
+}
+.rv-list[data-kind="remote"] .rv-name {
+  display: block;
+  overflow: hidden;
+  font-size: 0.96875rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rv-list[data-kind="remote"] :is(.rv-you, .rv-medals, .rv-extra) {
+  display: none;
+}
+.rv-list[data-kind="remote"] .rv-pts {
+  font-size: 1.3125rem;
+}
+/* On the remote the on-screen tag is a plain line under the name. */
+.rv-list[data-kind="remote"] .rv-row[data-onscreen] {
+  min-height: 58px;
+  padding-bottom: 6px;
+}
+.rv-list[data-kind="remote"] .rv-os {
+  margin: -8px 0 0 41px; /* under the name: the 32px mark + its 9px gap */
+  padding: 0;
+  background: none;
+  color: var(--ink-2);
+  font: 800 0.8125rem/1.2 var(--font-ui);
+}
+.rv-list[data-kind="remote"] .rv-os::before {
+  width: 8px;
+  height: 8px;
+  background: var(--live);
+}
+.rv-row[data-state="hidden"] {
+  background: var(--well);
+  color: var(--ink-2);
+}
+.rv-row[data-state="hidden"] .rv-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+}
+.rv-row[data-state="hidden"] .rv-msg .ico {
+  width: 16px;
+  height: 16px;
+  margin-top: .18em;
+}
+/* Up next: only on this phone, masked by a gold hatch inside an ink outline.
+   Press and hold to peek (the LIST takes data-peek, so the row's markup never
+   changes under the finger); iOS's callout and selection would fight the hold. */
+.rv-row[data-state="next"] {
+  min-height: 56px;
+  background: repeating-linear-gradient(135deg, var(--hatch-1) 0 8px, var(--hatch-2) 8px 16px);
+  box-shadow: inset 0 0 0 2px var(--ink);
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: pointer;
+}
+.rv-mask {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: var(--ink);
+}
+.rv-mask > .ico {
+  width: 20px;
+  height: 20px;
+}
+.rv-mask b {
+  display: block;
+  font: 850 0.9375rem/1.2 var(--font-ui);
+}
+.rv-mask small {
+  display: block;
+  margin-top: 1px;
+  font: 650 0.8125rem/1.25 var(--font-ui);
+  color: var(--ink-2);
+}
+.rv-list:not([data-peek]) .rv-peek,
+.rv-list[data-peek] .rv-row[data-state="next"] .rv-mask {
+  display: none;
+}
+.rv-list[data-peek] .rv-row[data-state="next"] {
+  background: var(--sheet);
+}
+
+/* ── The mini TV ──────────────────────────────────────────────
+   Drawn at a design size of 352×198 in container units (--u = one design
+   pixel), so the same picture is 352 wide on a 390 phone and a 150 thumbnail on
+   a small one. The TV is always light: these literals never follow the theme. */
+.mtv {
+  --u: calc(100cqw / 352);
+  position: relative;
+  container-type: inline-size;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 3px solid var(--tv-frame);
+  border-radius: 16px;
+  background: #f5efe2;
+  box-shadow: 0 5px 0 var(--tv-edge);
+  color: #141a48;
+}
+.mtv-screen {
+  position: absolute;
+  inset: 0;
+  font-family: var(--font-ui);
+}
+.mtv-screen p {
+  margin: 0;
+}
+.mtv-f {
+  position: absolute;
+  inset: 0;
+  display: none;
+}
+.mtv[data-frame="waiting"] .mtv-f[data-for~="waiting"],
+.mtv[data-frame="intro"] .mtv-f[data-for~="intro"],
+.mtv[data-frame="hero"] .mtv-f[data-for~="hero"],
+.mtv[data-frame="board"] .mtv-f[data-for~="board"],
+.mtv[data-frame="table"] .mtv-f[data-for~="table"],
+.mtv[data-frame="champion"] .mtv-f[data-for~="champion"] {
+  display: flex;
+}
+.mtv-marks {
+  display: flex;
+  justify-content: center;
+  gap: calc(var(--u) * 10);
+}
+/* A team mark in the TV is sized by the picture, not by teamMarkHtml's px. */
+.mtv .mtv-marks .tm,
+.mtv .mtv-hero-marks .tm,
+.mtv .mtv-champ-marks .tm,
+.mtv .mtv-rows .tm {
+  width: var(--mk);
+  height: auto;
+  font-size: calc(var(--mk) * .56);
+  filter: drop-shadow(0 calc(var(--u) * 2) calc(var(--u) * 2) rgba(20, 26, 72, .28));
+}
+.mtv .tm.flag,
+.mtv .tm-tile {
+  height: var(--mk);
+}
+.mtv-marks {
+  --mk: calc(var(--u) * 40);
+}
+.mtv-wait,
+.mtv-intro,
+.mtv-champ {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: calc(var(--u) * 16);
+  padding: calc(var(--u) * 12);
+  text-align: center;
+}
+.mtv-wait-title {
+  font: 850 calc(var(--u) * 23)/1.05 var(--font-ui);
+  letter-spacing: -0.025em;
+}
+html:not(.calm-motion) .mtv-wait .mtv-marks > :nth-child(odd) {
+  animation: mtv-bob 3s var(--jm-std) infinite;
+}
+html:not(.calm-motion) .mtv-wait .mtv-marks > :nth-child(even) {
+  animation: mtv-bob 3s var(--jm-std) -1.5s infinite;
+}
+@keyframes mtv-bob {
+  50% { transform: translateY(calc(var(--u) * -4)); }
+}
+.mtv-intro-title {
+  font: 900 calc(var(--u) * 34)/0.95 var(--font-ui);
+  letter-spacing: -0.01em;
+  text-transform: uppercase;
+}
+.mtv-intro .mtv-marks {
+  --mk: calc(var(--u) * 36);
+}
+/* A place's moment: name alone, then place and points, then the counts. */
+.mtv-hero {
+  align-items: center;
+  gap: calc(var(--u) * 18);
+  padding: calc(var(--u) * 34) calc(var(--u) * 14) calc(var(--u) * 12) calc(var(--u) * 18);
+}
+.mtv-hero-place {
+  position: absolute;
+  top: calc(var(--u) * 12);
+  left: calc(var(--u) * 18);
+  font: 800 calc(var(--u) * 14)/1 var(--font-ui);
+  color: #373d72;
+}
+.mtv-hero-marks {
+  --mk: calc(var(--u) * 112);
+  flex: none;
+  display: flex;
+  gap: calc(var(--u) * 6);
+}
+.mtv-hero-marks:has(> :nth-child(2)) {
+  --mk: calc(var(--u) * 64);
+}
+.mtv-hero-info {
+  min-width: 0;
+}
+.mtv-hero-name {
+  font: 850 calc(var(--u) * 27)/1.02 var(--font-ui);
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+  transition: font-size var(--jm-arrive-ms) var(--jm-std);
+}
+.mtv .mtv-hero-points {
+  margin-top: calc(var(--u) * 6);
+  font: 800 calc(var(--u) * 15)/1 var(--font-ui);
+}
+.mtv-hero-points b {
+  font: 900 calc(var(--u) * 42)/1 var(--font-ui);
+  letter-spacing: -0.03em;
+}
+.mtv .mtv-hero-break {
+  margin-top: calc(var(--u) * 9);
+  font: 700 calc(var(--u) * 13.5)/1.25 var(--font-ui);
+  color: #373d72;
+}
+.mtv-hero-place,
+.mtv-hero-points,
+.mtv-hero-break {
+  transition: opacity 300ms var(--jm-std);
+}
+.mtv[data-beat="name"] :is(.mtv-hero-place, .mtv-hero-points, .mtv-hero-break),
+.mtv[data-beat="score"] .mtv-hero-break {
+  opacity: 0;
+}
+.mtv[data-beat="name"] .mtv-hero-name {
+  font-size: calc(var(--u) * 34);
+}
+html.calm-motion .mtv-hero-name {
+  transition: none;
+}
+/* The board fills from the bottom, like the big screen's. */
+.mtv-board {
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: calc(var(--u) * 5);
+  padding: calc(var(--u) * 9) calc(var(--u) * 14);
+}
+.mtv .mtv-board-title {
+  margin-bottom: auto;
+  font: 800 calc(var(--u) * 12)/1 var(--font-ui);
+  color: #373d72;
+}
+.mtv-rows {
+  display: grid;
+  gap: calc(var(--u) * 3.5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mtv-row {
+  --mk: calc(var(--u) * 12);
+  display: grid;
+  grid-template-columns: calc(var(--u) * 28) calc(var(--u) * 13) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: calc(var(--u) * 7);
+  height: calc(var(--u) * 21);
+  padding: 0 calc(var(--u) * 9);
+  border: calc(var(--u) * 1.4) solid #141a48;
+  border-radius: calc(var(--u) * 6);
+  background: #fffdf8;
+  font: 800 calc(var(--u) * 12)/1.1 var(--font-ui);
+}
+.mtv-row[data-pl="1"] { background: #fff0c2; border-color: #986409; }
+.mtv-row[data-pl="2"] { background: #edeef1; border-color: #7d8894; }
+.mtv-row[data-pl="3"] { background: #f6e3d0; border-color: #a9682f; }
+.mtv-nm {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mtv-pts {
+  font-weight: 900;
+  font-variant-numeric: tabular-nums;
+}
+.mtv-champ {
+  gap: calc(var(--u) * 6);
+}
+.mtv-crown {
+  width: calc(var(--u) * 28);
+  height: calc(var(--u) * 28);
+  fill: #f7b928;
+  stroke: #986409;
+  stroke-width: 1.8;
+}
+.mtv-champ-lead {
+  font: 900 calc(var(--u) * 11)/1 var(--font-ui);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.mtv-champ-marks {
+  --mk: calc(var(--u) * 64);
+  display: flex;
+  gap: calc(var(--u) * 8);
+}
+.mtv-champ-name {
+  font: 900 calc(var(--u) * 24)/1.02 var(--font-ui);
+  letter-spacing: -0.02em;
+}
+/* The same tag the big screen wears for a practice (current-standings.html). */
+.mtv-tag {
+  position: absolute;
+  top: calc(var(--u) * 9);
+  right: calc(var(--u) * 9);
+  display: none;
+  padding: calc(var(--u) * 3) calc(var(--u) * 8) calc(var(--u) * 3) calc(var(--u) * 7);
+  border-radius: calc(var(--u) * 5);
+  background: #141a48;
+  color: #ffffff;
+  font: 850 calc(var(--u) * 11.5)/1.2 var(--font-ui);
+  box-shadow: inset calc(var(--u) * 4) 0 0 #f7b928;
+}
+.reveal-remote[data-mode="practice"] .mtv-tag {
+  display: block;
+}
+
+/* ── The dock: Back and the big button ── */
+.rm-dock {
+  container: rm-dock / inline-size;
+}
+.rm-dock-row {
+  display: grid;
+  grid-template-columns: 106px minmax(0, 1fr);
+  gap: var(--s-6); /* a Back hit by a nervous thumb rewinds the room's screen */
+  align-items: stretch;
+}
+.reveal-remote:is(:not([data-phase]), [data-phase="ready"], [data-phase="ended"]) .rm-dock-row {
+  grid-template-columns: minmax(0, 1fr);
+}
+.reveal-remote:is(:not([data-phase]), [data-phase="ready"], [data-phase="ended"]) .rm-back,
+.reveal-remote[data-phase="off"] .rm-dock {
+  display: none;
+}
+/* THE button: 92px of gold with a 7px edge that compresses while held (the
+   dent toward the finger is JellyMotion's, on top). min-height, so a label that
+   wraps grows it instead of spilling. */
+.rm-go {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 92px;
+  padding: 8px 14px;
+  border: 3px solid var(--gold-edge);
+  border-radius: var(--r-remote);
+  background: var(--gold);
+  box-shadow: 0 var(--edge-remote) 0 var(--gold-edge);
+  color: var(--gold-ink);
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: box-shadow var(--jm-press-ms) var(--jm-press), opacity 200ms var(--jm-std);
+}
+.rm-go:active {
+  box-shadow: 0 2px 0 var(--gold-edge);
+}
+.rm-go-k {
+  position: relative;
+  font: 800 min(0.9375rem, 20px)/1.15 var(--font-ui);
+}
+/* Huge, but capped: past ~40px a wider label only wraps, it reads no better. */
+.rm-go-m {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .22em;
+  font: 900 min(2.125rem, 9.2vw, 40px)/1.02 var(--font-ui);
+  letter-spacing: -0.03em;
+  text-wrap: balance;
+}
+.rm-go-crown {
+  display: none;
+  width: .78em;
+  height: .78em;
+  flex: none;
+  fill: #ffffff;
+  stroke-width: 2.4;
+}
+.rm-go[data-face="crown"] .rm-go-crown {
+  display: block;
+}
+/* Recharging: a paler face, the gold filling left to right while the big
+   screen plays the beat, the wait in words on the face (§4.2). The fill is a
+   progress bar, so it runs under calm too, on width: no transform. */
+.rm-go-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: -1;
+  display: none;
+  width: 100%;
+  border-right: 2px solid var(--gold-edge);
+  background: var(--gold);
+}
+.rm-go[data-state="charging"] {
+  background: var(--charge);
+  cursor: default;
+}
+.rm-go[data-state="charging"] .rm-go-m {
+  font-size: min(1.75rem, 6.9vw, 34px);
+}
+.rm-go[data-state="charging"] .rm-go-fill {
+  display: block;
+}
+html:not(.calm-motion) .rm-go[data-state="charging"] .rm-go-fill,
+html.calm-motion .rm-go[data-state="charging"] .rm-go-fill {
+  animation: rm-charge var(--charge-ms, 4500ms) linear var(--charge-from, 0ms) both;
+}
+@keyframes rm-charge {
+  from { width: 0; }
+  to { width: 100%; }
+}
+/* Nothing would reach the big screen (offline), or this phone isn't caught up
+   before a Start: a dashed well that says why, never a greyed copy of gold. */
+.rm-go:is([data-state="offline"], [data-state="blocked"]) {
+  border: 2px dashed var(--ink-3);
+  background: var(--well);
+  box-shadow: none;
+  color: var(--ink);
+  cursor: default;
+}
+.rm-go[data-state="offline"] .rm-go-m {
+  font: 800 1.125rem/1.2 var(--font-ui);
+  letter-spacing: -0.01em;
+}
+/* A tap too soon under calm: one 200 ms dim instead of the wobble. */
+html.calm-motion .rm-go[data-refused] {
+  opacity: .72;
+}
+.rm-back {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  min-width: 0;
+  min-height: 92px;
+  padding: 6px 4px;
+  border: 2px solid var(--card-b);
+  border-radius: 20px;
+  background: var(--sheet);
+  box-shadow: 0 4px 0 var(--edge);
+  color: var(--ink);
+  font: inherit;
+  text-align: center;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+  transition: box-shadow var(--jm-press-ms) var(--jm-press);
+}
+.rm-back:active {
+  box-shadow: 0 1px 0 var(--edge);
+}
+.rm-back-ico .ico {
+  width: 24px;
+  height: 24px;
+  stroke-width: 2.6;
+}
+.rm-i-lock {
+  display: none;
+}
+.rm-back-k {
+  font: 850 1rem/1.1 var(--font-ui);
+}
+.rm-back-s {
+  font: 700 0.78125rem/1.15 var(--font-ui);
+  color: var(--ink-2);
+}
+.rm-back-s:empty {
+  display: none;
+}
+/* Locked for the beat, or nothing before: pressed flat into the well (no edge
+   = can't be pushed). Never faded: the reason has to read in sunlight. */
+.rm-back:is([data-state="locked"], [data-state="first"]) {
+  border-color: var(--line-2);
+  background: var(--well);
+  box-shadow: none;
+  color: var(--ink-2);
+  cursor: default;
+}
+.rm-back[data-state="locked"] .rm-i-rewind {
+  display: none;
+}
+.rm-back[data-state="locked"] .rm-i-lock {
+  display: block;
+}
+.rm-back[data-state="offline"] {
+  border: 2px dashed var(--ink-3);
+  background: var(--well);
+  box-shadow: none;
+  cursor: default;
+}
+/* Very large text (the dock under ~14rem wide): Back gets its own short row
+   above the gold, so neither label is crushed into a 106px column. */
+@container rm-dock (max-width: 14rem) {
+  .rm-dock-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s-4);
+  }
+  .rm-back {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 2px 8px;
+    min-height: 52px;
+    padding: 6px 12px;
+  }
+}
+
+/* The rules refused a Start: say so, offer nothing that would be refused. */
+.rm-off {
+  margin: var(--s-4) 2px 0;
+}
+.reveal-remote[data-phase="off"] #reveal-off {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: var(--s-3);
+  align-items: start;
+}
+.rm-off > .ico {
+  width: 24px;
+  height: 24px;
+  margin-top: 1px;
+}
+.rm-off-title {
+  margin: 0;
+  font: 850 1.0625rem/1.25 var(--font-ui);
+}
+.rm-off-text {
+  margin: 4px 0 0;
+  font: 600 0.9375rem/1.45 var(--font-ui);
+  color: var(--ink-2);
+}
+
+/* The thumbnail stage (mockup 07b): the mini TV becomes a 150px picture beside
+   its words. On a small phone (iPhone SE 375×667, Android 360×640; §4.8) it is
+   always so, and the stage and the ladder close up so all six places fit above
+   the dock. On every phone it is so while nothing is on the big screen (ready,
+   ended, off): a full-size "Waiting…" earns no room there, and the checks and
+   both switches then fit above the Start button. The TV grows when the show
+   starts (a layout change JellyMotion can spring, never a CSS transition). */
+.reveal-remote:is(:not([data-phase]), [data-phase="ready"], [data-phase="ended"], [data-phase="off"]) .rm-stage {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--s-3);
+}
+.reveal-remote:is(:not([data-phase]), [data-phase="ready"], [data-phase="ended"], [data-phase="off"]) .mtv {
+  border-width: 2px;
+  border-radius: 10px;
+  box-shadow: 0 3px 0 var(--tv-edge);
+}
+.reveal-remote:is(:not([data-phase]), [data-phase="ready"], [data-phase="ended"], [data-phase="off"]) .rm-tvline {
+  margin-top: 0;
+}
+.reveal-remote:is(:not([data-phase]), [data-phase="ready"], [data-phase="ended"], [data-phase="off"]) .rm-tvnow {
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip-path: none;
+  white-space: normal;
+  margin: 0;
+  font: 800 0.9375rem/1.2 var(--font-ui);
+  color: var(--ink);
+}
+.reveal-remote:is(:not([data-phase]), [data-phase="ready"], [data-phase="ended"], [data-phase="off"]) .rm-meta {
+  display: block;
+  margin: 0;
+  font: 650 0.8125rem/1.3 var(--font-ui);
+}
+.reveal-remote:is(:not([data-phase]), [data-phase="ready"], [data-phase="ended"], [data-phase="off"]) .rm-meta > * {
+  display: flex;
+  margin-top: 3px;
+}
+@media (max-height: 699px) {
+  .reveal-remote .tk-body {
+    padding-top: 10px;
+  }
+  .reveal-remote .rm-stage {
+    display: grid;
+    grid-template-columns: 150px minmax(0, 1fr);
+    align-items: center;
+    gap: var(--s-3);
+  }
+  .reveal-remote .mtv {
+    border-width: 2px;
+    border-radius: 10px;
+    box-shadow: 0 3px 0 var(--tv-edge);
+  }
+  .reveal-remote .rm-tvline {
+    margin-top: 0;
+  }
+  .reveal-remote .rm-tvnow {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+    white-space: normal;
+    margin: 0;
+    font: 800 0.9375rem/1.2 var(--font-ui);
+    color: var(--ink);
+  }
+  .reveal-remote .rm-meta {
+    display: block;
+    margin: 0;
+    font: 650 0.8125rem/1.3 var(--font-ui);
+  }
+  .reveal-remote .rm-meta > * {
+    display: flex;
+    margin-top: 3px;
+  }
+  .rm-ladh {
+    margin: 10px 0 6px;
+  }
+  .rm-h {
+    margin-top: var(--s-3);
+  }
+  .rm-dock {
+    padding-top: 10px;
+  }
 }
 
 /* ============================================================
