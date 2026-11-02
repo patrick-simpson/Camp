@@ -593,7 +593,11 @@ What's covered, and why each file exists:
   snapshot landing mid-push, the in-flight edit, `null` abort, re-seed of an emptied
   node, delete-vs-edit → Put it back (received and found-at-commit), the offline edit →
   real reload (a fresh context over the cache) → first-snapshot merge, clash → Use mine,
-  the 36 h ask, epoch strand and follow, and accounting.
+  the 36 h ask, epoch strand and follow, and accounting; plus the review-fix set —
+  a renumbering never clashes (an offline delete or reorder beside a colleague's earlier
+  delete / insert), a lost delete leaves its neighbours in place, same-id creates never
+  overwrite (in the transaction, on a snapshot, in the first merge), last year's notes
+  forgotten, and a seeded fuzz of the first-snapshot merge (both camps).
 - `config-builder.test.js` (+ `.senior`) — the builder side of it: the game editor's
   field-diff save (a colleague's other field kept silently, a field both changed
   asked, removed-meanwhile offered back, a no-change save sends nothing, a new game is
@@ -603,7 +607,9 @@ What's covered, and why each file exists:
   toast actions, undo only where the value still equals `after` (partial and refused
   reports), adds/deletes/reorders/days/teams, the offline-clash synthetic entry, the
   50-entry / 200 KB / 20 KB caps and persistence across a reload, clearing on epoch /
-  demotion / `clearLocalData`, and the viewer gate.
+  demotion / `clearLocalData`, the viewer gate, the guards (a scored game, a day with
+  games), a vanished record counted as left, neighbour placement of a restored game, and
+  the 6 s / 44px toast action.
 - `contrast.test.js` — danger red as TEXT. `--color-danger` is a fill tuned to
   carry white text; any rule that colours text red uses `--color-danger-text`
   (light `#b42318`, 6.57:1 on white; dark `#ff8a8a`). The test pins the token
@@ -1354,8 +1360,11 @@ More sync invariants (each fixed after it bit us — don't regress these;
     `null`, a reorder = its `_o` changing). `treeDiff` and `applyOpsSafe` are the
     shared pure helpers (next to `syncCanon`) the setup engine will reuse;
     `applyOpsSafe(tree, ops, CFG_ANCHORS)` drops a FIELD op into a record that is
-    gone (reported, never resurrected half-built) and always applies a create or a
-    delete. A record whose canonical form is unchanged keeps its object across every
+    gone (reported, never resurrected half-built) and always applies a delete — and a
+    create into free space. A create that meets a record already there is NEVER an
+    overwrite: identical content (position `_o` aside) is skipped, different content is
+    dropped as a `collide` (two phones minted one id at once; `opts.overwrite` is only
+    for a deliberate Use mine). A record whose canonical form is unchanged keeps its object across every
     adopt (`cfgFromCanon(…, prev)`): open views and the render-stability rules need it.
   - **A persisted confirmed baseline**: `state._cfgBase` (canonical config the server
     last CONFIRMED), `_cfgBaseAt`, `_cfgBaseEpoch`, in the SAME `STORAGE_KEY` write
@@ -1392,13 +1401,23 @@ More sync invariants (each fixed after it bit us — don't regress these;
     released by `handleRemoteSnapshot` — its epoch lives in `state/meta`), then
     `configReady` flips and `firstConfigMerge` runs a three-way merge: mine
     (`treeDiff(base, local)`) kept where no path of theirs overlaps and pushed;
-    the same path changed on both sides keeps the SERVER's (the loser is listed as a
+    **positions (`_o`) are never paths for this test** — every insert or delete
+    renumbers all later records, so counting them made an offline delete clash with a
+    colleague's earlier delete and revert. `cfgMergeOrder` settles positions afterwards
+    from RELATIVE order: the server's order, my new records after their old neighbour,
+    my reorder laid back only where the server didn't move the same records (both
+    reordering: the server's stands, quietly), then a dense `_o` so no tie-break can
+    swap a pair. Whole records compare without `_o` ("the server already says it"), and
+    a NEW record of mine meeting a different one under its id is a `collide` note, not
+    a clash. The same path changed on both sides keeps the SERVER's (the loser is listed as a
     `clash` note with **Use mine** / **Dismiss**, and gets a synthetic undo entry whose
     `before` is MINE and `after` the server's, so Undo brings it back); a kept op whose
     record the server deleted is dropped by `applyOpsSafe` into a **Put it back** note
     instead of being pushed into a refusal. Unconfirmed longer than 36 h asks first
     (`confirm`, as the state engine does). An EPOCH change (the baseline's
-    `_cfgBaseEpoch` ≠ `state.meta.epoch`) strands the ops as downloadable JSON
+    `_cfgBaseEpoch` ≠ `state.meta.epoch`) first forgets last year's notes and undo
+    history (`cfgForgetLastYear` — also when nothing was unconfirmed, before the adopt
+    re-stamps the epoch), then strands the ops as downloadable JSON
     (`cfgStrand`, paths prefixed `config/`, same store and bar as the state engine's
     stranded work) and adopts — and `cfgFollowStateEpoch` (called at the end of
     `applyRemoteState`) keeps the baseline's epoch following the state engine's, so a
@@ -1412,11 +1431,16 @@ More sync invariants (each fixed after it bit us — don't regress these;
     apart from the cached copy the snapshot replaces; it lifts at once when no snapshot
     can ever come (sync not configured, SDK down, config read refused).
   - **Notes** (`state._cfgNotes`, ≤ 30, in the cache blob, not synced): `putback`
-    `{section, key, name, record}` and `clash` `{path, mine, theirs, what}`; shown in
-    a strip above the builder's tabs (`configNotesHtml`, wired once, escaped).
-    `cfgPutBack` re-creates the record with my edits and `cfgUseMine` writes my value —
-    both ordinary undoable commits. A bare reorder of a vanished record is dropped
-    silently.
+    `{section, key, name, record, collide?}` and `clash` `{path, mine, theirs, what}`;
+    shown in a strip above the builder's tabs (`configNotesHtml`, wired once, escaped;
+    a whole-record clash reads "you deleted X, but someone changed it too" with
+    **Delete it anyway**). `cfgPutBack` re-creates the record with my edits (a `collide`
+    note re-keys it with a fresh random tail — the other record is somebody's and stays)
+    and `cfgUseMine` writes my value — both ordinary undoable commits, and `cfgUseMine`
+    keeps its note when nothing could be written (the record is gone, or `cfgRecordGuard`
+    refuses: removing a game that has a result/bracket/clock, or a day that has games,
+    is the builder's own confirmed Delete, not a side door). A bare reorder of a
+    vanished record is dropped silently.
   - **Accounting**: config writes are counted (`pendingConfigWrites`);
     `pendingWritesTotal()` = scores + config feeds `reloadBlocked` and
     `hasUnsyncedWork`; `hasUnconfirmedLocalWork` (sign-out) also asks
@@ -1431,8 +1455,10 @@ More sync invariants (each fixed after it bit us — don't regress these;
     to the game as it is NOW (resolved by id). A field somebody else ALSO changed to
     something different is asked about (`confirm`: OK keeps mine, Cancel keeps theirs;
     the other edits are saved either way); a game removed meanwhile offers "put it back
-    with your changes". `tests/fixtures/legacy-builder-v183.js` parity holds. New game
-    ids are NOT randomised yet (build step 21).
+    with your changes". `tests/fixtures/legacy-builder-v183.js` parity holds. A NEW
+    game's id (builder, ⚡ quick game, Duplicate) is the name's slug + `-` + 4 random
+    base36 (`makeId`, `takenGameIds`: `taken` covers every `GAME_RECORD_MAPS` key too);
+    day ids are still `d-<ms>`.
 - **Undo core** (setup rebuild spec §7.1 — build step 9). The builder's commits go
   through two wrappers: `configEdit(label, mutate, opts)` (games and days) and
   `stateEdit(label, mutate, opts)` (teams: rename, counselors, reorder; the roster in
@@ -1450,7 +1476,13 @@ More sync invariants (each fixed after it bit us — don't regress these;
   paths somebody changed since are left alone and said out loud ("Undid 1 of 2
   changes — someone changed game “X” · name since; left theirs." / "Can't undo —
   someone changed this since."; the config has no per-record authorship, so it says
-  "someone"). The undo is itself a commit, so it becomes a new `Undid: …` entry whose
+  "someone"). Undo keeps the builder's own guards (`UNDO_DOMAINS.*.guard` →
+  `cfgRecordGuard`: it won't remove a scored game or a day that has games — it says
+  so and keeps the entry), counts an op whose record a colleague deleted as left, not
+  applied, and puts a deleted record back beside its old NEIGHBOUR (`cfgPlaceRestored`)
+  with the renumber ops of later records skipped (never listed as "changed since").
+  The Undo toast lasts `UNDO_TOAST_MS` (6 s) and its button is a 44px target that takes
+  no layout room; the docked undo pill (step 14) replaces both. The undo is itself a commit, so it becomes a new `Undid: …` entry whose
   toast offers **Redo** (undoing that entry; there is no separate redo stack). After
   an undo the builder forgets its markup memo (`refreshBuilderCards`) because its text
   fields commit without repainting. Not undoable, on purpose: People/access changes

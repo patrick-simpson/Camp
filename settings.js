@@ -248,11 +248,24 @@ function configNotesHtml() {
   return cfgNotes().map((n) => {
     if (n.kind === 'putback') {
       const noun = n.section === 'games' ? 'game' : 'day';
+      // `collide`: a NEW one of mine that met a different record under the same id.
       return `<div class="config-note warn-note">
-        <p>⚠️ The ${noun} <strong>${esc(n.name)}</strong> was removed while you were editing it.</p>
+        <p>⚠️ ${n.collide
+          ? `Your new ${noun} <strong>${esc(n.name)}</strong> couldn’t be added: somebody added a different one with the same id at the same moment.`
+          : `The ${noun} <strong>${esc(n.name)}</strong> was removed while you were editing it.`}</p>
         <p class="config-note-actions">
-          <button type="button" class="link-btn" data-note-act="putback" data-note-id="${esc(n.id)}">Put it back with my changes</button>
+          <button type="button" class="link-btn" data-note-act="putback" data-note-id="${esc(n.id)}">${n.collide ? 'Add mine as a new one' : 'Put it back with my changes'}</button>
           <button type="button" class="link-btn danger-link" data-note-act="drop" data-note-id="${esc(n.id)}">Discard</button>
+        </p>
+      </div>`;
+    }
+    if (n.kind === 'clash' && n.mine === null && String(n.path).split('/').length === 2) {
+      // A whole record: the JSON of a game says nothing, and its position isn't news.
+      return `<div class="config-note warn-note">
+        <p>⚠️ While you were offline you deleted <strong>${esc(n.what)}</strong>, but someone changed it too — so it is still there.</p>
+        <p class="config-note-actions">
+          <button type="button" class="link-btn danger-link" data-note-act="usemine" data-note-id="${esc(n.id)}">Delete it anyway</button>
+          <button type="button" class="link-btn" data-note-act="drop" data-note-id="${esc(n.id)}">Dismiss</button>
         </p>
       </div>`;
     }
@@ -337,15 +350,18 @@ function moveItem(arr, i, dir) {
   arr[j] = tmp;
 }
 
+// A new game's id: the name's slug + '-' + 4 random base36 (rain-bowling-k3f9). Two
+// directors adding "Rain bowling" at the same moment used to mint the SAME id, and the
+// later create replaced the other's game outright; with a tail they can't (and the
+// engine refuses to overwrite a different record anyway — applyOpsSafe). `takenSet`
+// still guards the rare repeat. Seed and existing ids never change.
 function makeId(name, takenSet) {
   let base = String(name).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
   if (!base) base = 'game';
-  let id = base;
-  let n = 2;
-  while (takenSet.has(id)) {
-    id = base + '-' + n;
-    n += 1;
-  }
+  let id;
+  do {
+    id = base + '-' + Math.random().toString(36).slice(2, 6).padEnd(4, '0');
+  } while (takenSet.has(id));
   return id;
 }
 
@@ -957,6 +973,14 @@ const GAME_RECORD_MAPS = [
   { key: 'picSetup', label: 'the drawing-words setup' },
 ];
 
+// Every id something is already kept under — the games themselves and every per-game
+// map above — so a new id can never land on a leftover record.
+function takenGameIds() {
+  const taken = new Set(allGames().map((g) => g.id));
+  GAME_RECORD_MAPS.forEach((m) => Object.keys(state[m.key] || {}).forEach((k) => taken.add(k)));
+  return taken;
+}
+
 // Labels of whatever is recorded for this game right now (empty ⇒ nothing).
 function gameRecordLabels(gameId) {
   return GAME_RECORD_MAPS.filter((m) => state[m.key] && state[m.key][gameId]).map((m) => m.label);
@@ -1091,8 +1115,7 @@ function saveGameDraft() {
 
   configEdit(label, () => {
     if (isNew) {
-      const taken = new Set([...allGames().map((g) => g.id), ...Object.keys(state.results || {})]);
-      out.id = makeId(out.name, taken);
+      out.id = makeId(out.name, takenGameIds());
       state.config.games.push(out);
       return undefined;
     }
@@ -1148,8 +1171,7 @@ function duplicateGame() {
   const copy = JSON.parse(JSON.stringify(original));
   copy.name = copy.name + ' (copy)';
   delete copy.prompts; // only one drawing-prompts game is supported per week
-  const taken = new Set([...allGames().map((g) => g.id), ...Object.keys(state.results || {})]);
-  copy.id = makeId(copy.name, taken);
+  copy.id = makeId(copy.name, takenGameIds());
   configEdit('Duplicated “' + original.name + '”', () => {
     const idx = allGames().findIndex((g) => g.id === originalId);
     if (idx > -1) state.config.games.splice(idx + 1, 0, copy);

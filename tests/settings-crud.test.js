@@ -103,7 +103,7 @@ test('validateGameDraft: scoreboard periods and outs on a bracket game', () => {
 
 // ── saveGameDraft ────────────────────────────────────────────────
 
-test('saveGameDraft: a new game gets a slug id that dodges existing games AND result keys', () => {
+test('saveGameDraft: a new game gets a slug id with a random tail that dodges existing games AND every per-game record key', () => {
   const games = crudSetup();
   state.ui.editGameId = 'new';
   ensureGameDraft();
@@ -112,19 +112,28 @@ test('saveGameDraft: a new game gets a slug id that dodges existing games AND re
   saveGameDraft();
   assert.equal(state.config.games.length, before + 1);
   const made = state.config.games[state.config.games.length - 1];
-  assert.equal(made.id, 'sock-hop');
+  assert.ok(/^sock-hop-[a-z0-9]{4}$/.test(made.id), made.id + ': slug + 4 random base36 (two phones adding the same name cannot mint one id)');
   assert.equal(made.name, 'Sock Hop', 'trimmed');
   assert.equal(made.emoji, '🏕️', 'default emoji when none is typed');
   assert.equal(state.ui.editGameId, null, 'the editor closes');
   assert.equal(gameDraft, null, 'and the draft is dropped');
 
-  // A leftover result under the slug (an orphan from another week) is a taken id too.
-  state.results['sock-hop-2'] = { medals: { gold: 't0', silver: 't1', bronze: 't2' } };
-  state.ui.editGameId = 'new';
-  ensureGameDraft();
-  Object.assign(gameDraft, { name: 'Sock Hop', format: 'placement' });
-  saveGameDraft();
-  assert.equal(state.config.games[state.config.games.length - 1].id, 'sock-hop-3');
+  // A leftover record under the id the dice land on is a taken id too — in ANY per-game map
+  // (an orphan result, a bracket, a clock…): the first roll collides, the second is used.
+  const realRandom = Math.random;
+  try {
+    GAME_RECORD_MAPS.forEach((m) => {
+      crudSetup();
+      const dice = [0.5, 0.25]; // 0.5 -> 'i000', 0.25 -> '9000'
+      Math.random = () => (dice.length ? dice.shift() : realRandom());
+      state[m.key]['sock-hop-i000'] = { medals: { gold: 't0', silver: 't1', bronze: 't2' } };
+      state.ui.editGameId = 'new';
+      ensureGameDraft();
+      Object.assign(gameDraft, { name: 'Sock Hop', format: 'placement' });
+      saveGameDraft();
+      assert.equal(state.config.games[state.config.games.length - 1].id, 'sock-hop-9000', m.key + ' counts as taken');
+    });
+  } finally { Math.random = realRandom; }
 });
 
 test('saveGameDraft: validation errors save nothing', () => {
@@ -150,7 +159,7 @@ test('saveGameDraft: text-mode fields are parsed back to real shapes', () => {
     messtival: false,
   });
   saveGameDraft();
-  const g = state.config.games.find((x) => x.id === 'candy-count');
+  const g = state.config.games.find((x) => x.name === 'Candy Count');
   assert.deepEqual(g.counterSteps, [1, 5, 10]);
   assert.deepEqual(g.timer, { label: 'Round', presets: [300, 150], rounds: 3 });
   assert.deepEqual(g.rules, [{ h: 'Setup', items: ['one', 'two'] }, { h: 'Only a heading', items: [] }],
@@ -169,7 +178,7 @@ test('saveGameDraft: a single timer round is not stored; prompts become lines', 
     timer: { label: '', presets: '2', rounds: '1' },
   });
   saveGameDraft();
-  const g = state.config.games.find((x) => x.id === 'draw-off');
+  const g = state.config.games.find((x) => x.name === 'Draw Off');
   assert.deepEqual(g.prompts, ['Cat', 'Dog']);
   assert.deepEqual(g.timer.presets, [120]);
   assert.notOk('rounds' in g.timer);
@@ -505,9 +514,13 @@ test('v183 and current saveGameDraft agree on an edited and on a brand-new game'
     ensureGameDraft();
     draftEdits(gameDraft);
     if (viaLegacy) loadLegacyEditor().saveGameDraft(); else saveGameDraft();
-    return JSON.stringify(state.config.games[state.config.games.length - 1]);
+    return state.config.games[state.config.games.length - 1];
   };
-  assert.equal(run(false), run(true));
+  const now = run(false);
+  const legacy = run(true);
+  // (v183's editor calls the live makeId, so both carry the random tail.)
+  assert.ok(/^edited-name-[a-z0-9]{4}$/.test(now.id) && /^edited-name-[a-z0-9]{4}$/.test(legacy.id), 'a random tail: ' + now.id + ' / ' + legacy.id);
+  assert.equal(JSON.stringify(Object.assign({}, now, { id: null })), JSON.stringify(Object.assign({}, legacy, { id: null })), 'everything but the id is the same game');
 });
 
 // ── Teams: fixed counts (S0j) ────────────────────────────────────

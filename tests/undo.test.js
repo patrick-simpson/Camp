@@ -331,3 +331,90 @@ test('Undo reads the live config at the moment it runs (a remote apply replaced 
     });
   } finally { udTeardown(); }
 });
+
+// ── Review fixes: undo honours what the builder's own handlers protect ─────────
+
+test('undo: an op whose record a colleague deleted since is left (nothing changed), never reported as Undone', () => {
+  udSetup();
+  try {
+    udToasts((toasts) => {
+      const g = state.config.games[0];
+      configEdit('Cleared location', () => { udGame(g.id).location = ''; });
+      state.config.games.splice(0, 1); // a colleague deleted the game since
+      const res = undoEntry(undoRecent()[0].id);
+      assert.equal(res.applied, 0);
+      assert.ok(/Can’t undo/.test(toasts[toasts.length - 1].msg), toasts[toasts.length - 1].msg);
+      assert.equal(udGame(g.id), undefined, 'and the game was not resurrected half-made');
+    });
+  } finally { udTeardown(); }
+});
+
+test('undo refuses what the builder\'s own Delete would ask about: a scored game, a day that has games', () => {
+  udSetup();
+  try {
+    udToasts((toasts) => {
+      configEdit('Added a game', () => { state.config.games.push({ id: 'brand-new', name: 'Brand new', dayId: state.config.days[0].id, session: 'Morning', format: 'placement', rules: [] }); });
+      state.results['brand-new'] = { medals: { gold: 't0', silver: 't1', bronze: 't2' } }; // scored since
+      const e = undoRecent()[0];
+      assert.equal(undoEntry(e.id).applied, 0);
+      assert.ok(udGame('brand-new'), 'the game stays');
+      assert.ok(/saved result/.test(toasts[toasts.length - 1].msg) && /Games tab/.test(toasts[toasts.length - 1].msg), toasts[toasts.length - 1].msg);
+      assert.ok(undoRecent().some((x) => x.id === e.id), 'the entry is kept');
+      delete state.results['brand-new'];
+      assert.equal(undoEntry(e.id).applied, 1, 'with nothing recorded it undoes');
+      assert.equal(udGame('brand-new'), undefined);
+
+      configEdit('Added a day', () => { state.config.days.push({ id: 'd-new', name: 'New day', dow: null, note: '' }); });
+      udGame(state.config.games[0].id).dayId = 'd-new'; // a colleague scheduled a game on it
+      const d = undoRecent()[0];
+      assert.equal(undoEntry(d.id).applied, 0);
+      assert.ok(state.config.days.some((x) => x.id === 'd-new'), 'the day stays');
+      assert.ok(/games scheduled/.test(toasts[toasts.length - 1].msg), toasts[toasts.length - 1].msg);
+    });
+  } finally { udTeardown(); }
+});
+
+test('undoing a delete puts the game back beside its old NEIGHBOUR after a colleague changed the list ahead of it, and the toast names no game whose order nobody touched', () => {
+  udSetup();
+  try {
+    udToasts((toasts) => {
+      const ids = state.config.games.map((g) => g.id);
+      const victim = ids[10];
+      configEdit('Deleted “x”', () => { state.config.games.splice(10, 1); });
+      state.config.games.splice(2, 1); // a colleague deleted an earlier game
+      const e = undoRecent()[0];
+      assert.equal(undoEntry(e.id).applied, 1);
+      const after = state.config.games.map((g) => g.id);
+      assert.equal(after.indexOf(victim), after.indexOf(ids[11]) - 1, 'right before the game that followed it');
+      assert.equal(after[after.indexOf(victim) - 1], ids[9], 'and right after the one that preceded it');
+      assert.equal(toasts[toasts.length - 1].msg, 'Undone: Deleted “x”', 'no "someone changed … order" noise');
+      // And an INSERT ahead of it shifts every position by one:
+      const list = state.config.games.map((g) => g.id);
+      const [prev, mid, next] = [list[4], list[5], list[6]];
+      configEdit('Deleted “y”', () => { state.config.games.splice(5, 1); });
+      state.config.games.unshift({ id: 'their-new', name: 'Their new', dayId: state.config.days[0].id, session: 'Morning', format: 'placement', rules: [] });
+      assert.equal(undoEntry(undoRecent()[0].id).applied, 1);
+      const now = state.config.games.map((g) => g.id);
+      assert.equal(now[now.indexOf(mid) - 1], prev);
+      assert.equal(now[now.indexOf(mid) + 1], next);
+    });
+  } finally { udTeardown(); }
+});
+
+test('the Undo button is a 44px target that takes no room, and the toast no longer lingers for 8 seconds', () => {
+  udSetup();
+  try {
+    udToasts((toasts) => {
+      configEdit('Renamed', () => { state.config.games[0].name = 'Changed'; });
+      assert.equal(toasts[toasts.length - 1].opts.duration, 6000);
+    });
+    const kids = [];
+    const toast = { querySelector: () => null, appendChild: (b) => kids.push(b), isConnected: true };
+    addToastAction(toast, { label: 'Undo', run() {} });
+    const css = String(kids[0].style && kids[0].style.cssText || '');
+    const pad = /padding:\s*(\d+)px/.exec(css);
+    const margin = /margin:\s*-(\d+)px/.exec(css);
+    assert.ok(pad && Number(pad[1]) >= 12, 'vertical padding builds the hit area: ' + css);
+    assert.ok(margin && Number(margin[1]) === Number(pad[1]), 'and the negative margin takes it back out of the layout');
+  } finally { udTeardown(); }
+});

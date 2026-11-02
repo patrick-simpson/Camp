@@ -398,6 +398,11 @@ Four **separate** deploys (P7), in this order, each with its own tests and live 
   next; the owner-only gating is already in place for the buttons that arrive in Step 15.
 - **Opus pass:** the hub, the frame around every setup screen and the director's-clipboard language
   (P2 §11.0–11.2).
+- **Replaces Step 9's stopgaps:** the docked undo pill (6 s) takes over from the Undo/Redo toast
+  action (`addToastAction` in `undoRecord` / `undoEntry` — a toast over the builder swallows the next
+  tap), and the inline "Keep mine / Use his" of P2 §6.3.5 replaces `saveGameDraft`'s native
+  `confirm()` for a field both directors changed (the confirm cannot name who). The config has no
+  authorship, so the undo messages say "someone" until then.
 - **Needs:** 11 (rules); placed after 13 so the hub's home (More → Director) already exists.
 - **Tests:** `setup-sync.test.js`, `restore.test.js`, `editors-here.test.js`, `checklist.test.js`,
   `owner-only.test.js` (the owner helpers and the hub's owner-only rendering contract; Steps 15, 19

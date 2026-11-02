@@ -3160,6 +3160,21 @@ function cfgValueAt(tree, path) {
   return v === undefined ? null : JSON.parse(JSON.stringify(v));
 }
 
+// A position is `_o`, and every insert, delete and move AHEAD of a record rewrites it,
+// so a record's `_o` changing is usually somebody else's edit renumbering it — not a
+// touch of the record itself. The merge never lets one count as a clash.
+function cfgIsOrderPath(p) {
+  return String(p).split('/')[2] === '_o';
+}
+
+// A record without its position (what "is this the same game?" compares).
+function cfgStripOrder(v) {
+  if (!v || typeof v !== 'object' || Array.isArray(v) || !('_o' in v)) return v;
+  const c = Object.assign({}, v);
+  delete c._o;
+  return c;
+}
+
 function cfgLater(a, b) {
   return String(a || '') >= String(b || '') ? (a || undefined) : b;
 }
@@ -3253,16 +3268,28 @@ function cfgNoteDropped(dropped, localCanon) {
   const added = [];
   Object.keys(records).forEach((rp) => {
     const [section, key] = rp.split('/');
-    const rec = localCanon && localCanon[section] && localCanon[section][key];
+    // `collide`: not a record somebody removed, but a NEW one of mine that met a different
+    // record under the same id (two phones minted it at once) — set aside, not overwritten.
+    // The record is taken from the op itself: this phone's copy under that id may already
+    // be the other one's (a snapshot got there first), and the same collision is reported
+    // by the snapshot AND by my push's commit — once is enough.
+    const collideOp = records[rp].find((d) => d.collide);
+    const collide = !!collideOp;
+    const rec = collide ? syncCanon(collideOp.value) : localCanon && localCanon[section] && localCanon[section][key];
     if (!rec) return;
+    if (collide && cfgNotes().some((n) => n.kind === 'putback' && n.collide && n.section === section && n.key === key &&
+      JSON.stringify(cfgStripOrder(n.record)) === JSON.stringify(cfgStripOrder(rec)))) return;
     // A bare reorder of something that is gone isn't worth a question.
-    if (records[rp].every((d) => d.path.split('/')[2] === '_o')) return;
-    added.push({ id: cfgNoteId(), kind: 'putback', section, key, name: rec.name || key, record: rec, at: new Date().toISOString() });
+    if (records[rp].every((d) => cfgIsOrderPath(d.path))) return;
+    added.push({ id: cfgNoteId(), kind: 'putback', section, key, name: rec.name || key, record: rec, at: new Date().toISOString(), ...(collide ? { collide: true } : {}) });
   });
   if (!added.length) return;
   cfgSetNotes(cfgNotes().filter((n) => !(n.kind === 'putback' && added.some((a) => a.section === n.section && a.key === n.key))).concat(added));
-  const names = added.map((a) => '“' + a.name + '”').join(', ');
-  showToast(`⚠️ ${names} ${added.length === 1 ? 'was' : 'were'} removed while you were editing. Settings → Set up the week can put ${added.length === 1 ? 'it' : 'them'} back with your changes.`);
+  const gone = added.filter((a) => !a.collide);
+  const clashed = added.filter((a) => a.collide);
+  const quoted = (list) => list.map((a) => '“' + a.name + '”').join(', ');
+  if (gone.length) showToast(`⚠️ ${quoted(gone)} ${gone.length === 1 ? 'was' : 'were'} removed while you were editing. Settings → Set up the week can put ${gone.length === 1 ? 'it' : 'them'} back with your changes.`);
+  if (clashed.length) showToast(`⚠️ ${quoted(clashed)} couldn’t be added: somebody added a different one with the same id at the same moment. Settings → Set up the week can add ${clashed.length === 1 ? 'it' : 'them'} again under ${clashed.length === 1 ? 'a new id' : 'new ids'}.`);
 }
 
 // The games or days list of a config (a parameter, not `state.config`: the seam scan
@@ -3273,7 +3300,19 @@ function cfgSectionList(config, section) {
   return config[key];
 }
 
+// A key no record in `section` carries yet: `base` + a random 4-char tail (the same
+// shape settings.js gives a new game's id, so a re-keyed record looks like any other).
+function cfgFreshKey(section, base) {
+  const taken = new Set(cfgSectionList(state.config, section).map((r, i) => cfgKey(r, i)));
+  const stem = String(base || 'item').replace(/-[a-z0-9]{4}$/, '').replace(/[^A-Za-z0-9-]/g, '') || 'item';
+  let key;
+  do { key = stem + '-' + Math.random().toString(36).slice(2, 6).padEnd(4, '0'); } while (taken.has(key));
+  return key;
+}
+
 // Put a removed record back, with my edits, as an ordinary (undoable) config commit.
+// A `collide` note (my NEW record met a different one under the same id) adds it again
+// under a fresh id instead — the other record is somebody's and stays.
 function cfgPutBack(noteId) {
   const note = cfgNotes().find((n) => n.id === noteId && n.kind === 'putback');
   if (!note) return false;
@@ -3283,30 +3322,62 @@ function cfgPutBack(noteId) {
   delete rec._o;
   const noun = note.section === 'games' ? 'game' : 'day';
   let exists = false;
-  configEdit(`Put back ${noun} “${note.name}”`, () => {
+  configEdit(`${note.collide ? 'Added' : 'Put back'} ${noun} “${note.name}”`, () => {
     const list = cfgSectionList(state.config, note.section);
-    if (list.some((r) => r && cfgKey(r, -1) === note.key)) { exists = true; return false; }
+    if (list.some((r, i) => r && cfgKey(r, i) === note.key)) {
+      if (!note.collide) { exists = true; return false; }
+      rec.id = cfgFreshKey(note.section, note.key);
+    }
     list.splice(typeof order === 'number' ? Math.min(order, list.length) : list.length, 0, rec);
+    migrateState(state); // heal what the canonical form pruned (a game's empty rules[]), as cfgApplyPaths does
   });
   cfgDropNote(noteId);
   if (exists) showToast(`“${note.name}” is already back.`);
   return !exists;
 }
 
+// Writing a whole record that REPLACES or REMOVES a game or day that exists skips the
+// confirms the builder's own Delete asks (a game's saved result, bracket…; a day's games),
+// so the engine's side doors — Use mine, Undo — refuse it and point at the builder.
+// Returns the reason, or '' when it is fine.
+function cfgRecordGuard(path, value) {
+  const parts = String(path).split('/');
+  if (parts.length !== 2) return '';
+  const [section, key] = parts;
+  const rec = cfgCanon(state.config)[section] && cfgCanon(state.config)[section][key];
+  if (!rec) return ''; // creating: nothing to lose
+  if (value !== null && JSON.stringify(cfgStripOrder(value)) === JSON.stringify(cfgStripOrder(rec))) return '';
+  const name = '“' + (rec.name || key) + '”';
+  if (section === 'games') {
+    const labels = typeof gameRecordLabels === 'function' ? gameRecordLabels(rec.id || key) : [];
+    if (labels.length) return `${name} has ${labels.join(' and ')} — remove it from the Games tab instead, which asks first.`;
+  } else if (value === null && gamesForDayId(rec.id || key).length) {
+    return `${name} has games scheduled on it — move or delete those first.`;
+  }
+  return '';
+}
+
 // A clash's "Use mine": write my offline value over the server's, as a normal commit.
+// The note stays when nothing could be written (the record is gone, or removing it would
+// throw away scores) — a "Use mine" that silently did nothing was the worst answer.
 function cfgUseMine(noteId) {
   const note = cfgNotes().find((n) => n.id === noteId && n.kind === 'clash');
   if (!note) return false;
   if (!canEdit() || !configEditable()) { showToast('The games list isn’t ready to edit yet — try again in a moment.'); return false; }
-  configEdit(`Used your version of ${note.what}`, () => { cfgApplyPaths({ [note.path]: note.mine }); });
+  const block = cfgRecordGuard(note.path, note.mine);
+  if (block) { showToast(block); return false; }
+  let dropped = [];
+  configEdit(`Used your version of ${note.what}`, () => { dropped = cfgApplyPaths({ [note.path]: note.mine }, { overwrite: true }).dropped; });
+  if (dropped.length) { showToast(`Couldn’t use yours: ${note.what} has been removed since.`); return false; }
   cfgDropNote(noteId);
   return true;
 }
 
 // Apply canonical-path changes to the live config (a change into a record that is
-// gone is dropped, never resurrecting it). Returns applyOpsSafe's result.
-function cfgApplyPaths(changes) {
-  const r = applyOpsSafe(cfgCanon(state.config), changes, CFG_ANCHORS);
+// gone is dropped, never resurrecting it). Returns applyOpsSafe's result. `opts` is
+// applyOpsSafe's: a deliberate "Use mine" overwrites the record it names.
+function cfgApplyPaths(changes, opts) {
+  const r = applyOpsSafe(cfgCanon(state.config), changes, CFG_ANCHORS, opts);
   state.config = cfgFromCanon(r.tree, state.config.updatedAt, state.config);
   migrateState(state); // heal what the canonical form prunes (a game's empty rules[])
   return r;
@@ -3343,6 +3414,10 @@ function onConfigSnapshot(remote) {
 function processFirstConfig(remote) {
   cfgFirstPending = null;
   configReady = true; // the server has spoken and its epoch is known: pushes may flow
+  // A phone back from before a new camp year: last year's notes and undo history go
+  // BEFORE the merge or the adopt re-stamps the baseline's epoch (cfgFollowStateEpoch
+  // can't, it waits for configReady) — even when nothing of mine was unconfirmed.
+  if (cfgBaseTree() && (state._cfgBaseEpoch || '') !== ((state.meta && state.meta.epoch) || '')) cfgForgetLastYear();
   if (!remote) {
     // An empty node: this phone's catalog is the only one there is — seed it.
     seedConfigIfAbsent();
@@ -3363,7 +3438,8 @@ function releaseFirstConfig() {
 
 // Adopt `remote` (the server's config) with this phone's unconfirmed edits laid
 // over it — rebase on receipt, never stash. `opts.mine` supplies the ops to lay
-// over (the first-snapshot merge's kept set); by default they are everything this
+// over (the first-snapshot merge's kept set, and `opts.reorder` its position
+// settlement); by default they are everything this
 // phone changed since the server last confirmed (treeDiff(_cfgBase, config)). A
 // viewer has no edits of its own, so it just adopts. With no baseline (first run
 // of this engine) nothing is unconfirmed: a plain adopt, and tracking starts.
@@ -3379,6 +3455,7 @@ function applyRemoteConfig(remote, opts) {
   const base = cfgBaseTree();
   const mine = opts && opts.mine ? opts.mine : (base && canEdit() ? treeDiff(base, localCanon, CFG_DEPTHS) : {});
   const rebased = applyOpsSafe(remoteCanon, mine, CFG_ANCHORS);
+  if (opts && opts.reorder) rebased.tree = opts.reorder(rebased.tree); // the first-snapshot merge settles positions
   applyingRemoteConfig = true;
   state.config = cfgFromCanon(rebased.tree, cfgLater(remote && remote.updatedAt, Object.keys(mine).length ? state.config.updatedAt : ''), state.config);
   const upgraded = migrateState(state);
@@ -3411,9 +3488,11 @@ function applyRemoteConfig(remote, opts) {
 // Keep every path of mine that nobody else touched and push exactly those; the
 // same path changed on both sides keeps the SERVER's value (the loser is listed
 // for "Use mine" and gets an undo entry); a kept op whose record the server
-// deleted goes to "Put it back". Returns false when there is nothing of mine to
-// protect (the caller adopts plainly). Work from an earlier camp year is stranded,
-// never merged; work older than 36 h asks first.
+// deleted goes to "Put it back". Positions (`_o`) are NOT paths in that sense —
+// every insert or delete renumbers everything after it — so they never clash:
+// cfgMergeOrder settles them from relative order afterwards. Returns false when
+// there is nothing of mine to protect (the caller adopts plainly). Work from an
+// earlier camp year is stranded, never merged; work older than 36 h asks first.
 function firstConfigMerge(remote) {
   if (!canEdit()) return false; // a viewer / read-only tab has no edits of its own to keep
   const base = cfgBaseTree();
@@ -3432,31 +3511,91 @@ function firstConfigMerge(remote) {
     return true;
   }
   const theirs = treeDiff(base, remoteCanon, CFG_DEPTHS);
-  const theirPaths = Object.keys(theirs);
+  const theirPaths = Object.keys(theirs).filter((q) => !cfgIsOrderPath(q)); // a renumbering is not a touch
   // A record the server deleted is not a clash with an edit INSIDE it: that edit is
   // dropped by applyOpsSafe and offered back under "Put it back".
   const recordDeleted = (q) => theirs[q] === null && CFG_ANCHORS[q.split('/')[0]] === q.split('/').length;
+  const isRecord = (p) => CFG_ANCHORS[p.split('/')[0]] === p.split('/').length;
   let keep = {};
   const clashed = [];
+  const collided = []; // my NEW record met a different one under the same id
   minePaths.forEach((p) => {
-    if (JSON.stringify(cfgValueAt(remoteCanon, p)) === JSON.stringify(mine[p])) return; // the server already says it
+    if (cfgIsOrderPath(p)) return;
+    // Whole records compare without their position: a colleague's insert moved it.
+    if (JSON.stringify(cfgStripOrder(cfgValueAt(remoteCanon, p))) === JSON.stringify(cfgStripOrder(mine[p]))) return; // the server already says it
+    if (isRecord(p) && mine[p] !== null && cfgValueAt(remoteCanon, p) !== null) { collided.push(p); return; }
     const clash = theirPaths.some((q) => syncPathsOverlap(p, q) && !(recordDeleted(q) && p.startsWith(q + '/')));
     if (clash) clashed.push(p); else keep[p] = mine[p];
   });
+  let declined = false;
   const keepPaths = Object.keys(keep);
   if (keepPaths.length && baseAt && Date.now() - baseAt > CFG_STALE_MS) {
     const when = formatEasternStamp(new Date(baseAt).toISOString()) || 'a while ago';
-    if (!confirm(`This phone has ${keepPaths.length} change${keepPaths.length === 1 ? '' : 's'} to the week setup saved since ${when} that never reached the server. Send ${keepPaths.length === 1 ? 'it' : 'them'} now?`)) keep = {};
+    if (!confirm(`This phone has ${keepPaths.length} change${keepPaths.length === 1 ? '' : 's'} to the week setup saved since ${when} that never reached the server. Send ${keepPaths.length === 1 ? 'it' : 'them'} now?`)) { keep = {}; declined = true; }
   }
-  applyRemoteConfig(remote, { mine: keep });
+  applyRemoteConfig(remote, {
+    mine: keep,
+    reorder: declined ? null : (tree) => cfgMergeOrder(base, localCanon, remoteCanon, tree),
+  });
   cfgRecordClashes(clashed, mine, localCanon, remoteCanon);
-  if (Object.keys(keep).length) pushConfig(); // the unconfirmed ops, exactly (they differ from the new base)
+  if (collided.length) cfgNoteDropped(collided.map((p) => ({ path: p, value: mine[p], record: p, collide: true })), localCanon);
+  pushConfig(); // whatever now differs from the new base (my kept ops and positions); a no-op when nothing does
   return true;
+}
+
+// The records of one section of a canonical tree, in list order.
+function cfgOrderIds(tree, section) {
+  const m = (tree && tree[section]) || {};
+  const at = (id) => (m[id] && typeof m[id]._o === 'number' ? m[id]._o : Infinity);
+  return Object.keys(m).sort((a, b) => (at(a) === at(b) ? 0 : at(a) < at(b) ? -1 : 1) || (a < b ? -1 : a > b ? 1 : 0));
+}
+
+// Positions after the first-snapshot merge, per section. The SERVER's order is the
+// starting point (it carries every colleague's insert, delete and move); a record I
+// added goes right after the one that preceded it on my phone; and where I MOVED
+// records the server did not move, my relative order of the ones we both still have is
+// laid back over the slots they occupy. Two people reordering the same records: the
+// server's order stands, quietly. Every record then gets a dense `_o`, so none tie
+// and cfgUnkeyed's key tie-break can never swap a pair (a restored record used to).
+// `merged` is the canonical tree to settle (changed in place and returned).
+function cfgMergeOrder(base, local, remote, merged) {
+  ['days', 'games'].forEach((section) => {
+    const m = merged[section];
+    if (!m) return;
+    const remoteIds = cfgOrderIds(remote, section);
+    const localIds = cfgOrderIds(local, section);
+    const baseIds = cfgOrderIds(base, section);
+    const inRemote = new Set(remoteIds);
+    const order = remoteIds.filter((id) => m[id]);
+    localIds.forEach((id, i) => {
+      if (!m[id] || inRemote.has(id)) return; // only a record I ADDED needs a place
+      let at = 0;
+      for (let j = i - 1; j >= 0; j--) {
+        const k = order.indexOf(localIds[j]);
+        if (k > -1) { at = k + 1; break; }
+      }
+      order.splice(at, 0, id);
+    });
+    const inBase = new Set(baseIds);
+    const inLocal = new Set(localIds);
+    const both = (id) => inBase.has(id) && inLocal.has(id) && inRemote.has(id) && !!m[id];
+    const same = (a, b) => a.length === b.length && a.every((id, i) => id === b[i]);
+    const baseSeq = baseIds.filter(both);
+    const mineSeq = localIds.filter(both);
+    if (!same(mineSeq, baseSeq) && same(remoteIds.filter(both), baseSeq)) {
+      const slots = [];
+      order.forEach((id, i) => { if (both(id)) slots.push(i); });
+      mineSeq.forEach((id, n) => { order[slots[n]] = id; });
+    }
+    Object.keys(m).forEach((id) => { if (order.indexOf(id) === -1) order.push(id); }); // never lose a record
+    order.forEach((id, i) => { m[id]._o = i; });
+  });
+  return merged;
 }
 
 function cfgRecordClashes(paths, mine, localCanon, remoteCanon) {
   // A lost reorder is not worth a question (the server's order stands); anything else is listed.
-  const shown = paths.filter((p) => p.split('/')[2] !== '_o');
+  const shown = paths.filter((p) => !cfgIsOrderPath(p));
   if (!shown.length) return;
   const added = shown.map((p) => ({
     id: cfgNoteId(), kind: 'clash', path: p, mine: mine[p], theirs: cfgValueAt(remoteCanon, p),
@@ -3472,7 +3611,7 @@ function cfgRecordClashes(paths, mine, localCanon, remoteCanon) {
 // Unsent config edits from a PREVIOUS camp year are set aside as downloadable JSON,
 // never applied (same store and bar as the state engine's stranded work).
 function cfgStrand(mine, localCanon, fromEpoch, toEpoch, baseAt) {
-  const changes = Object.keys(mine).filter((p) => p.split('/')[2] !== '_o').map((p) => ({
+  const changes = Object.keys(mine).filter((p) => !cfgIsOrderPath(p)).map((p) => ({
     path: 'config/' + p, what: cfgWhat(p, localCanon), value: mine[p] === undefined ? null : mine[p],
   }));
   if (!changes.length) return false;
@@ -3512,9 +3651,15 @@ function cfgFollowStateEpoch() {
     migrateState(state);
   }
   state._cfgBaseEpoch = e;
-  if (cfgNotes().length) delete state._cfgNotes; // last year's clashes and put-backs
-  undoClear(); // and last year's undo history
+  cfgForgetLastYear();
   persistState();
+}
+
+// Last camp year's clash and put-back notes and its undo history mean nothing in the
+// new one (Put it back would carry last year's game into this year's catalog).
+function cfgForgetLastYear() {
+  if (cfgNotes().length) delete state._cfgNotes;
+  undoClear();
 }
 
 // ── Sending the config ───────────────────────────────────────────────
@@ -3687,6 +3832,8 @@ const UNDO_KEY = 'campSetupUndo';
 const UNDO_MAX_ENTRIES = 50;
 const UNDO_MAX_BYTES = 200000;
 const UNDO_ENTRY_MAX_BYTES = 20000;
+// How long the Undo / Redo toast stays (the spec's docked pill, step 14, is 6 s; this toast stands in until it lands).
+const UNDO_TOAST_MS = 6000;
 let undoList = null; // lazily read from storage on first use (never at load: boot-cache.test.js)
 let undoLastRecorded = null;
 
@@ -3741,7 +3888,7 @@ function undoRecord(label, ops, opts) {
   undoWrite();
   undoLastRecorded = entry;
   if (!(opts && opts.quiet)) {
-    showToast(entry.label, { action: { label: 'Undo', run: () => undoEntry(entry.id) }, duration: 8000 });
+    showToast(entry.label, { action: { label: 'Undo', run: () => undoEntry(entry.id) }, duration: UNDO_TOAST_MS });
   }
   return entry;
 }
@@ -3791,13 +3938,43 @@ function teamsApplyPaths(changes) {
   if (reorder) state.teams.sort((a, b) => order[a.id] - order[b.id]);
 }
 
-// Each domain says how to read a path now and how to commit changes (through its
-// normal engine, quietly: undoEntry raises the one toast).
+// Undoing a delete puts the record back where it was — by its former NEIGHBOUR when
+// the entry remembers one (the renumber op of the record that followed it), else by its
+// old index clamped to the list — instead of at a stale `_o` that a colleague's later
+// insert or delete has moved under it. Fractions are fine: the list re-derives dense
+// positions on the next canonical pass.
+function cfgPlaceRestored(changes, entryOps) {
+  const out = Object.assign({}, changes);
+  const live = cfgCanon(state.config);
+  Object.keys(changes).forEach((p) => {
+    const parts = p.split('/');
+    const v = changes[p];
+    if (parts.length !== 2 || !v || typeof v !== 'object' || typeof v._o !== 'number') return;
+    const section = parts[0];
+    const now = live[section] || {};
+    const count = Object.keys(now).length;
+    const next = (entryOps || []).find((op) => op[0] === 'config' && op[1].split('/')[0] === section &&
+      cfgIsOrderPath(op[1]) && op[2] === v._o + 1 && op[3] === v._o);
+    const nextRec = next && now[next[1].split('/')[1]];
+    out[p] = Object.assign({}, v, { _o: nextRec ? nextRec._o - 0.5 : (v._o < count ? v._o - 0.5 : count) });
+  });
+  return out;
+}
+
+// Each domain says how to read a path now, whether restoring a value would throw away
+// something the builder's own handlers protect (`guard`: a reason, or ''), and how to
+// commit changes through its normal engine, quietly (undoEntry raises the one toast).
+// `apply` returns the paths the engine had to drop because their record is gone.
 const UNDO_DOMAINS = {
   config: {
     valueAt: (path) => cfgValueAt(cfgCanon(state.config), path),
     what: (path) => cfgWhat(path, cfgCanon(state.config)),
-    apply: (changes, label) => configEdit(label, () => { cfgApplyPaths(changes); }, { quiet: true }),
+    guard: (path, value) => cfgRecordGuard(path, value),
+    apply: (changes, label, entryOps) => {
+      let dropped = [];
+      configEdit(label, () => { dropped = cfgApplyPaths(cfgPlaceRestored(changes, entryOps)).dropped; }, { quiet: true });
+      return dropped.map((d) => d.path);
+    },
   },
   teams: {
     valueAt: (path) => cfgValueAt(teamsCanon(state.teams), path),
@@ -3806,7 +3983,7 @@ const UNDO_DOMAINS = {
       const t = (state.teams || []).find((x) => x.id === id);
       return `team “${(t && t.name) || id}”${field ? ' · ' + (field === 'counselor' ? 'counselors' : field === '_o' ? 'order' : field) : ''}`;
     },
-    apply: (changes, label) => stateEdit(label, () => teamsApplyPaths(changes), { quiet: true }),
+    apply: (changes, label) => { stateEdit(label, () => teamsApplyPaths(changes), { quiet: true }); return []; },
   },
 };
 
@@ -3821,25 +3998,37 @@ function undoEntry(id) {
     showToast('That change is from an earlier camp year, so it can’t be undone here.');
     return null;
   }
+  // A position op beside a whole-record op in its section is just the renumbering that
+  // insert or delete caused: restoring the record places it (cfgPlaceRestored), and
+  // listing games whose order nobody touched as "changed since" would be noise.
+  const structural = {};
+  entry.ops.forEach((op) => { if (op[1].split('/').length === 2) structural[op[0] + '/' + op[1].split('/')[0]] = true; });
+  const renumber = (op) => cfgIsOrderPath(op[1]) && structural[op[0] + '/' + op[1].split('/')[0]];
+  const ops = entry.ops.filter((op) => !renumber(op));
   const byDomain = {};
-  entry.ops.forEach((op) => { (byDomain[op[0]] = byDomain[op[0]] || []).push(op); });
-  const left = [];
+  ops.forEach((op) => { (byDomain[op[0]] = byDomain[op[0]] || []).push(op); });
+  const left = []; // somebody changed it since
+  const held = []; // refused: it would throw away what the builder's own Delete asks about
   let applied = 0;
   undoLastRecorded = null;
   Object.keys(byDomain).forEach((domain) => {
     const h = UNDO_DOMAINS[domain];
     if (!h) { byDomain[domain].forEach((op) => left.push(op)); return; }
     const changes = {};
+    const taken = [];
     byDomain[domain].forEach((op) => {
-      if (JSON.stringify(h.valueAt(op[1])) === JSON.stringify(op[3])) changes[op[1]] = op[2];
-      else left.push(op);
+      if (JSON.stringify(h.valueAt(op[1])) !== JSON.stringify(op[3])) { left.push(op); return; }
+      const why = h.guard ? h.guard(op[1], op[2]) : '';
+      if (why) { held.push(why); return; }
+      changes[op[1]] = op[2];
+      taken.push(op);
     });
-    const n = Object.keys(changes).length;
-    if (!n) return;
-    h.apply(changes, 'Undid: ' + entry.label);
-    applied += n;
+    if (!taken.length) return;
+    const dropped = h.apply(changes, 'Undid: ' + entry.label, entry.ops) || [];
+    applied += taken.length - dropped.length;
+    taken.filter((op) => dropped.indexOf(op[1]) > -1).forEach((op) => left.push(op)); // its record is gone: nothing changed
   });
-  const total = entry.ops.length;
+  const total = ops.length;
   const redo = undoLastRecorded;
   if (applied) {
     undoDrop(id);
@@ -3850,13 +4039,13 @@ function undoEntry(id) {
   }
   const action = redo ? { label: 'Redo', run: () => undoEntry(redo.id) } : null;
   if (!applied) {
-    showToast('Can’t undo — someone changed this since.');
-  } else if (left.length) {
+    showToast(held.length ? 'Can’t undo — ' + held[0] : 'Can’t undo — someone changed this since.');
+  } else if (left.length || held.length) {
     const names = left.map((op) => (UNDO_DOMAINS[op[0]] ? UNDO_DOMAINS[op[0]].what(op[1]) : op[1]))
       .filter((w, i, a) => a.indexOf(w) === i).slice(0, 2).join(' and ');
-    showToast(`Undid ${applied} of ${total} changes — someone changed ${names} since; left theirs.`, { action, duration: 8000 });
+    showToast(`Undid ${applied} of ${total} changes${left.length ? ` — someone changed ${names} since; left theirs` : ''}.${held.length ? ' ' + held[0] : ''}`, { action, duration: UNDO_TOAST_MS });
   } else {
-    showToast('Undone: ' + entry.label, { action, duration: 8000 });
+    showToast('Undone: ' + entry.label, { action, duration: UNDO_TOAST_MS });
   }
   return { applied, total };
 }
@@ -4098,13 +4287,27 @@ function treeDiff(prev, cur, depthSpec) {
 // so `games/<id>/name` is dropped (and reported) when games/<id> is gone — writing
 // it would resurrect a half record — while a whole-record op (a create) or a delete
 // always applies. A field delete (null) into an absent record is a no-op, not news.
-// `dropped` entries: { path, value, record }.
-function applyOpsSafe(tree, ops, anchors) {
+// The mirror case: a whole-record CREATE meeting a record that already exists is never
+// an overwrite (two phones minted the same id at once — the later write would silently
+// replace the other's game). Identical content (position `_o` aside) means the tree
+// already says it and the op is skipped; different content is dropped as a collision.
+// `opts.overwrite` is for a deliberate "Use mine". `dropped` entries: { path, value,
+// record, collide? }.
+function applyOpsSafe(tree, ops, anchors, opts) {
   const dropped = [];
   const apply = {};
   Object.keys(ops).forEach((path) => {
     const parts = path.split('/');
     const depth = anchors && anchors[parts[0]];
+    if (depth && parts.length === depth && ops[path] !== null && !(opts && opts.overwrite)) {
+      const cur = syncValueAt(tree, path);
+      if (cur !== undefined) {
+        if (JSON.stringify(cfgStripOrder(cur)) !== JSON.stringify(cfgStripOrder(syncCanon(ops[path])))) {
+          dropped.push({ path, value: ops[path], record: path, collide: true });
+        }
+        return;
+      }
+    }
     if (depth && parts.length > depth) {
       const record = parts.slice(0, depth).join('/');
       if (syncValueAt(tree, record) === undefined) {
@@ -4194,8 +4397,9 @@ function strandedDownloadJson() {
     label: CAMP.label,
     downloadedAt: new Date().toISOString(),
     note: 'Changes this phone made but never sent to the server before a new camp year began. ' +
-      'They were NOT added to the new year. Each change is a database path under state/ (scores and teams) ' +
-      'or config/ (the games and days setup) and the value that was set there (null = it was deleted).',
+      'They were NOT added to the new year. Each change is a path under state/ (scores and teams) ' +
+      'or config/ (the games and days setup, by id: config/games/<game id>/<field>, config/days/<day id>/<field>) ' +
+      'and the value that was set there (null = it was deleted).',
     entries: readStranded(),
   }, null, 2);
 }
@@ -5477,14 +5681,16 @@ const liveToasts = []; // { toast, mine }
 // so the button is appended to the toast it returned. Its click must not also
 // dismiss through the toast's own click handler, and closes the toast itself after
 // running. Plain inline styling: the toast lives in the toaster's shadow tree,
-// where the page's stylesheet doesn't reach.
+// where the page's stylesheet doesn't reach. The padding makes a 44px-tall hit area and
+// the negative margin takes it back out of the layout, so the toast is no taller than
+// before (a 26px Undo was a miss-tap under a thumb, and the toast covers what's below).
 function addToastAction(toast, action) {
   const btn = document.createElement('button');
   btn.type = 'button';
   btn.className = 'toast-action';
   btn.textContent = action.label;
   btn.style.cssText = 'appearance:none;border:0;background:transparent;color:inherit;font:inherit;font-weight:700;' +
-    'text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:4px 6px;margin:-4px 0;border-radius:8px;touch-action:manipulation';
+    'text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:14px 10px;margin:-14px -4px;border-radius:8px;touch-action:manipulation';
   btn.addEventListener('click', (e) => {
     e.stopPropagation();
     try { action.run(); } finally {

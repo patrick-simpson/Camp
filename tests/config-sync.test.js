@@ -690,3 +690,311 @@ test('Put it back / Use mine refuse while the catalog cannot be edited', async (
     });
   } finally { csTeardown(); }
 });
+
+// ── Review fixes: positions never clash, ids never overwrite, a new year forgets ──
+
+const csIds = (c) => (c.games || []).map((g) => g.id);
+
+// A phone that edited offline, then reloaded: configReady false, the cache holds the edit,
+// the server (and then its colleague) moves on, and the first snapshot lands.
+async function csOffline(db, edit, server) {
+  edit();
+  saveConfig();
+  clearTimeout(pushConfigTimer); pushConfigTimer = null;
+  csJustBooted();
+  csServer(db, server);
+  await csWait(40);
+  assert.equal(configReady, true);
+}
+
+test('first-snapshot merge: an offline delete beside a colleague\'s EARLIER delete or insert is kept — a renumbering is not a clash', async () => {
+  for (const colleague of ['delete', 'insert', 'swap-head']) {
+    const db = await csSetup();
+    try {
+      await csToasts(async (toasts) => {
+        const ids = csIds(state.config);
+        const victim = ids[10];
+        await csOffline(db, () => { state.config.games.splice(10, 1); }, (c) => {
+          if (colleague === 'delete') c.games.splice(2, 1);
+          else if (colleague === 'insert') c.games.unshift({ id: 'their-new', name: 'Their new', dayId: c.days[0].id, session: 'Morning', format: 'placement', rules: [] });
+          else { const t = c.games[0]; c.games[0] = c.games[1]; c.games[1] = t; }
+        });
+        const server = db.serverGet(CS_PATH);
+        assert.equal(csGame(db, victim), undefined, colleague + ': my delete reached the server');
+        assert.equal(gameById(victim), undefined, 'and this phone');
+        assert.deepEqual(cfgNotes(), [], colleague + ': no clash note');
+        assert.notOk(toasts.some((t) => /clashed/.test(t.msg)), 'and no toast');
+        const expect = csIds(db.serverGet(CS_PATH)).filter((x) => x !== victim);
+        assert.deepEqual(csIds(server), expect, 'the colleague\'s order, minus my delete');
+        assert.deepEqual(state.config.games.map((g) => g.id), expect, 'this phone agrees');
+        assert.deepEqual(cfgUnconfirmed(), {});
+      });
+    } finally { csTeardown(); }
+  }
+});
+
+test('first-snapshot merge: my reorder survives a colleague\'s earlier delete or insert (relative order, not stale numbers)', async () => {
+  const db = await csSetup();
+  try {
+    await csToasts(async () => {
+      const ids = csIds(state.config);
+      const [a, b] = ids.slice(-2);
+      await csOffline(db, () => {
+        const g = state.config.games;
+        const t = g[g.length - 1]; g[g.length - 1] = g[g.length - 2]; g[g.length - 2] = t; // swap the last two
+      }, (c) => { c.games.splice(0, 1); });
+      const server = csIds(db.serverGet(CS_PATH));
+      assert.equal(server.indexOf(b) < server.indexOf(a), true, 'the swap landed on the server');
+      assert.deepEqual(server.slice(0, -2), ids.slice(1, -2), 'the colleague\'s delete too, everything else in order');
+      assert.deepEqual(state.config.games.map((g) => g.id), server);
+    });
+  } finally { csTeardown(); }
+});
+
+test('first-snapshot merge: a reorder both of us made keeps the SERVER\'s order, quietly', async () => {
+  const db = await csSetup();
+  try {
+    await csToasts(async (toasts) => {
+      const ids = csIds(state.config);
+      await csOffline(db, () => { const g = state.config.games; [g[0], g[1]] = [g[1], g[0]]; }, (c) => {
+        const g = c.games; [g[1], g[2]] = [g[2], g[1]];
+      });
+      const server = csIds(db.serverGet(CS_PATH));
+      assert.deepEqual(server.slice(0, 3), [ids[0], ids[2], ids[1]], 'theirs stands');
+      assert.deepEqual(cfgNotes(), [], 'a lost reorder is not worth a question');
+      assert.equal(toasts.length, 0);
+    });
+  } finally { csTeardown(); }
+});
+
+test('first-snapshot merge: a delete that LOSES (the colleague edited that game) leaves every neighbour where it was', async () => {
+  for (const at of [3, 8, 14]) {
+    const db = await csSetup();
+    try {
+      await csToasts(async () => {
+        const ids = csIds(state.config);
+        const victim = ids[at];
+        await csOffline(db, () => { state.config.games.splice(at, 1); }, (c) => { c.games[at].headline = 'Their tagline'; });
+        assert.deepEqual(csIds(db.serverGet(CS_PATH)), ids, 'at ' + at + ': the order on the server is the one it had (no tie-break swap)');
+        assert.deepEqual(state.config.games.map((g) => g.id), ids);
+        const note = cfgNotes()[0];
+        assert.equal(note.kind, 'clash');
+        assert.equal(note.path, 'games/' + victim);
+        assert.equal(note.mine, null);
+        assert.ok(/game “/.test(note.what), 'named in words: ' + note.what);
+      });
+    } finally { csTeardown(); }
+  }
+});
+
+test('first-snapshot merge: a create that already reached the server is not a clash, even when a colleague moved things since', async () => {
+  const db = await csSetup();
+  try {
+    await csToasts(async (toasts) => {
+      const mineGame = { id: 'brand-new-a1b2', name: 'Brand new', dayId: state.config.days[0].id, session: 'Morning', format: 'placement', rules: [] };
+      await csOffline(db, () => { state.config.games.push(Object.assign({}, mineGame)); }, (c) => {
+        // The transaction DID commit (the page reloaded before the ack), and a colleague then inserted at the top.
+        c.games.push(Object.assign({}, mineGame));
+        c.games.unshift({ id: 'their-new', name: 'Their new', dayId: c.days[0].id, session: 'Morning', format: 'placement', rules: [] });
+      });
+      assert.deepEqual(cfgNotes(), []);
+      assert.equal(toasts.length, 0, 'no false "clashed" toast');
+      assert.equal(csIds(db.serverGet(CS_PATH)).filter((x) => x === mineGame.id).length, 1, 'one copy');
+      assert.equal(state.config.games.filter((g) => g.id === mineGame.id).length, 1);
+      assert.equal(undoRecent().length, 0, 'and no synthetic undo entry');
+    });
+  } finally { csTeardown(); }
+});
+
+test('first-snapshot merge: a new game of mine under an id a colleague also minted is set aside (never overwriting theirs), and Add mine as a new one re-keys it', async () => {
+  const db = await csSetup();
+  try {
+    await csToasts(async (toasts) => {
+      const day = state.config.days[0].id;
+      await csOffline(db,
+        () => { state.config.games.push({ id: 'rain-bowling', name: 'Rain bowling by A', dayId: day, session: 'Morning', format: 'placement', rules: [] }); },
+        (c) => { c.games.push({ id: 'rain-bowling', name: 'Rain bowling by B', dayId: day, session: 'Morning', format: 'tally', rules: [] }); });
+      assert.equal(csGame(db, 'rain-bowling').name, 'Rain bowling by B', 'the colleague\'s game stands on the server');
+      assert.equal(gameById('rain-bowling').name, 'Rain bowling by B', 'and on this phone');
+      const note = cfgNotes().find((n) => n.kind === 'putback');
+      assert.ok(note && note.collide && note.name === 'Rain bowling by A');
+      assert.ok(toasts.some((t) => /couldn’t be added/.test(t.msg)));
+      assert.equal(cfgPutBack(note.id), true);
+      flushPendingPush();
+      await csWait(40);
+      const names = (db.serverGet(CS_PATH).games || []).map((g) => g.name);
+      assert.ok(names.includes('Rain bowling by A') && names.includes('Rain bowling by B'), 'both games exist now');
+      const mineNow = state.config.games.find((g) => g.name === 'Rain bowling by A');
+      assert.ok(/^rain-bowling-[a-z0-9]{4}$/.test(mineNow.id), 'under a fresh id: ' + mineNow.id);
+      assert.equal(gameById('rain-bowling').name, 'Rain bowling by B', 'theirs untouched');
+      assert.deepEqual(cfgNotes(), []);
+    });
+  } finally { csTeardown(); }
+});
+
+test('the engine never overwrites a different record with a create: in my push\'s transaction, and on a snapshot that lands first', async () => {
+  const day = () => state.config.days[0].id;
+  const mk = (name) => ({ id: 'rain-bowling', name, dayId: day(), session: 'Morning', format: 'placement', rules: [] });
+  // (1) found at commit
+  let db = await csSetup();
+  try {
+    await csToasts(async (toasts) => {
+      state.config.games.push(mk('Rain bowling by A'));
+      saveConfig();
+      db.contend(CS_PATH, (d) => csServer(d, (c) => { c.games.push(mk('Rain bowling by B')); }));
+      flushPendingPush();
+      await csWait(40);
+      assert.equal(csGame(db, 'rain-bowling').name, 'Rain bowling by B', 'the established game was not replaced');
+      assert.equal(gameById('rain-bowling').name, 'Rain bowling by B', 'this phone follows the server');
+      assert.ok(cfgNotes().some((n) => n.collide && n.name === 'Rain bowling by A'), 'mine is a note, not a loss ');
+      assert.equal(cfgNotes().length, 1, 'once, not once per path that noticed');
+      assert.equal(toasts.filter((t) => /couldn’t be added/.test(t.msg)).length, 1);
+      assert.ok(toasts.some((t) => /couldn’t be added/.test(t.msg)), 'and I was told');
+      assert.deepEqual(cfgUnconfirmed(), {}, 'nothing stays unconfirmed');
+    });
+  } finally { csTeardown(); }
+  // (2) the colleague's game arrives as a snapshot while mine is still unsent
+  db = await csSetup();
+  try {
+    await csToasts(async () => {
+      state.config.games.push(mk('Rain bowling by A'));
+      saveConfig();
+      clearTimeout(pushConfigTimer); pushConfigTimer = null;
+      csServer(db, (c) => { c.games.push(mk('Rain bowling by B')); });
+      await csWait(30);
+      assert.equal(gameById('rain-bowling').name, 'Rain bowling by B');
+      assert.ok(cfgNotes().some((n) => n.collide), 'listed');
+    });
+  } finally { csTeardown(); }
+});
+
+test('applyOpsSafe: a create over an identical record is skipped (the server keeps its position), over a different one is dropped as a collision, and a deliberate overwrite applies', () => {
+  const anchors = { games: 2 };
+  const tree = { games: { x: { id: 'x', name: 'Theirs', _o: 0 } } };
+  let r = applyOpsSafe(tree, { 'games/x': { id: 'x', name: 'Theirs', _o: 5 } }, anchors);
+  assert.deepEqual(r.dropped, []);
+  assert.equal(r.tree.games.x._o, 0, 'identical content: its position is the server\'s');
+  r = applyOpsSafe(tree, { 'games/x': { id: 'x', name: 'Mine', _o: 1 } }, anchors);
+  assert.equal(r.tree.games.x.name, 'Theirs');
+  assert.deepEqual(r.dropped.map((d) => [d.path, d.record, d.collide]), [['games/x', 'games/x', true]]);
+  r = applyOpsSafe(tree, { 'games/x': { id: 'x', name: 'Mine', _o: 1 } }, anchors, { overwrite: true });
+  assert.equal(r.tree.games.x.name, 'Mine');
+  r = applyOpsSafe(tree, { 'games/y': { id: 'y', name: 'New', _o: 1 } }, anchors);
+  assert.ok(r.tree.games.y && r.dropped.length === 0, 'a create into free space is a create');
+});
+
+test('Put it back heals what the canonical form prunes, like every other apply (an empty rules[] comes back an array)', async () => {
+  const db = await csSetup();
+  try {
+    csToasts(() => {
+      const rec = { id: 'quick-1', name: 'Quick', dayId: state.config.days[0].id, session: 'Morning', format: 'placement', _o: 3 };
+      cfgSetNotes([{ id: 'n1', kind: 'putback', section: 'games', key: 'quick-1', name: 'Quick', record: rec, at: '' }]);
+      assert.equal(cfgPutBack('n1'), true);
+      assert.ok(Array.isArray(gameById('quick-1').rules), 'rules is [] again, not undefined');
+      assert.equal(state.config.games.findIndex((g) => g.id === 'quick-1'), 3, 'at its old place');
+    });
+  } finally { csTeardown(); }
+});
+
+test('Use mine keeps its note when nothing could be written: the record is gone, or removing it would throw away scores', async () => {
+  const db = await csSetup();
+  try {
+    csToasts((toasts) => {
+      const gone = { id: 'n1', kind: 'clash', path: 'games/vanished/location', mine: 'Gym', theirs: 'Field', what: 'game “Vanished” · location', at: '' };
+      cfgSetNotes([gone]);
+      assert.equal(cfgUseMine('n1'), false);
+      assert.equal(cfgNotes().length, 1, 'the note stays so the person can still Dismiss it knowingly');
+      assert.ok(/removed since/.test(toasts[toasts.length - 1].msg));
+      // "Delete it anyway" on a game that has a saved result is the builder's confirm, not a side door.
+      const g = state.config.games[0];
+      state.results[g.id] = { medals: { gold: 't0', silver: 't1', bronze: 't2' } };
+      cfgSetNotes([{ id: 'n2', kind: 'clash', path: 'games/' + g.id, mine: null, theirs: syncCanon(g), what: 'game “' + g.name + '”', at: '' }]);
+      assert.equal(cfgUseMine('n2'), false);
+      assert.ok(gameById(g.id), 'still there');
+      assert.ok(/saved result/.test(toasts[toasts.length - 1].msg), toasts[toasts.length - 1].msg);
+      delete state.results[g.id];
+      assert.equal(cfgUseMine('n2'), true, 'with nothing recorded it is an ordinary delete');
+      assert.equal(gameById(g.id), undefined);
+    });
+  } finally { csTeardown(); }
+});
+
+test('a phone back from a new camp year forgets last year\'s notes and undo history — even with nothing unconfirmed', async () => {
+  const db = await csSetup();
+  try {
+    await csToasts(async () => {
+      cfgSetNotes([{ id: 'n1', kind: 'putback', section: 'games', key: 'old', name: 'Old', record: { id: 'old', name: 'Old', _o: 0 }, at: '' }]);
+      configEdit('Last year\'s edit', () => { state.config.games[0].location = 'Somewhere'; });
+      const remote = db.serverGet(CS_PATH);
+      remote.games[0].location = 'Somewhere'; // the server holds it (confirmed) — nothing of mine is outstanding
+      db.serverSet(CS_PATH, remote);
+      await csWait(20);
+      assert.equal(cfgNotes().length, 1);
+      assert.ok(undoRecent().length >= 1);
+      // The "reload": new epoch from the state engine, the baseline still carries the old one.
+      csJustBooted();
+      state.meta.epoch = 'w20270606';
+      state._cfgBaseEpoch = '';
+      processFirstConfig(db.serverGet(CS_PATH));
+      assert.deepEqual(cfgNotes(), [], 'Put it back can no longer carry last year\'s game into this year');
+      assert.deepEqual(undoRecent(), []);
+      assert.equal(state._cfgBaseEpoch, 'w20270606');
+    });
+  } finally { delete state.meta.epoch; strandedList = []; csTeardown(); }
+});
+
+test('the stranded download names id-keyed paths a person can read', () => {
+  const j = JSON.parse(strandedDownloadJson());
+  assert.ok(/config\/games\/<game id>\/<field>/.test(j.note));
+});
+
+test('fuzz: the first-snapshot merge converges, loses no foreign edit, applies every untouched delete and never duplicates (inserts, deletes, swaps, field edits on both sides)', async () => {
+  let seed = 20261102;
+  const rnd = () => { seed = (seed + 0x6D2B79F5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  const pick = (n) => Math.floor(rnd() * n);
+  for (let round = 0; round < 30; round++) {
+    const db = await csSetup();
+    try {
+      await csToasts(async () => {
+        const base = csIds(state.config);
+        const day = state.config.days[0].id;
+        const myDel = new Set(); const theirDel = new Set(); const theirEdit = {}; const myEdit = {};
+        const mkNew = (tag) => ({ id: tag + '-' + round, name: tag + ' ' + round, dayId: day, session: 'Morning', format: 'placement', rules: [] });
+        const mineOps = () => {
+          const g = state.config.games;
+          for (let k = pick(3); k > 0; k--) { const i = pick(g.length); myDel.add(g[i].id); g.splice(i, 1); }
+          if (rnd() < 0.5) g.splice(pick(g.length + 1), 0, mkNew('mine'));
+          if (rnd() < 0.5 && g.length > 1) { const i = pick(g.length - 1); [g[i], g[i + 1]] = [g[i + 1], g[i]]; }
+          if (rnd() < 0.7) { const x = g[pick(g.length)]; myEdit[x.id] = 'mine-loc-' + round; x.location = myEdit[x.id]; }
+        };
+        const theirOps = (c) => {
+          for (let k = pick(3); k > 0; k--) { const i = pick(c.games.length); theirDel.add(c.games[i].id); c.games.splice(i, 1); }
+          if (rnd() < 0.5) c.games.splice(pick(c.games.length + 1), 0, mkNew('their'));
+          if (rnd() < 0.5 && c.games.length > 1) { const i = pick(c.games.length - 1); [c.games[i], c.games[i + 1]] = [c.games[i + 1], c.games[i]]; }
+          for (let k = 1 + pick(3); k > 0; k--) { const x = c.games[pick(c.games.length)]; theirEdit[x.id] = 'their-tag-' + round + '-' + k; x.headline = theirEdit[x.id]; }
+        };
+        await csOffline(db, mineOps, theirOps);
+        flushPendingPush();
+        await csWait(40);
+        const server = db.serverGet(CS_PATH);
+        const sIds = csIds(server);
+        const where = ' (round ' + round + ')';
+        assert.equal(new Set(sIds).size, sIds.length, 'no duplicate ids' + where);
+        assert.deepEqual(state.config.games.map((g) => g.id), sIds, 'the phone and the server agree on the list and its order' + where);
+        assert.deepEqual(cfgUnconfirmed(), {}, 'nothing left unconfirmed' + where);
+        base.forEach((id) => {
+          const touchedByThem = theirDel.has(id) || theirEdit[id] !== undefined;
+          if (theirDel.has(id)) assert.ok(!sIds.includes(id), id + ' stays deleted (colleague)' + where);
+          else if (myDel.has(id) && !touchedByThem) assert.ok(!sIds.includes(id), id + ': my delete of an untouched game applied' + where);
+          else if (myDel.has(id)) assert.ok(sIds.includes(id), id + ': their edit beats my delete' + where);
+          else assert.ok(sIds.includes(id), id + ' untouched survives' + where);
+          const sg = server.games.find((g) => g.id === id);
+          if (sg && theirEdit[id] !== undefined) assert.equal(sg.headline, theirEdit[id], 'their edit of ' + id + ' kept' + where);
+          if (sg && myEdit[id] !== undefined) assert.equal(sg.location, myEdit[id], 'my edit of ' + id + ' kept' + where);
+        });
+        assert.ok(!server.games.some((g) => g.name === 'their ' + round) || sIds.includes('their-' + round), 'their insert survives' + where);
+        assert.ok(!state.config.games.some((g) => g.name === 'mine ' + round) || sIds.includes('mine-' + round), 'my insert reached the server' + where);
+      });
+    } finally { csTeardown(); }
+  }
+});
