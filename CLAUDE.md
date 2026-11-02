@@ -83,6 +83,12 @@ Files:
   directors' phones `retireExpiredReveal`), the champion line, and the directors'
   commands. An optional layer like chat.js: a classic script loaded right after
   app.js, every hook in app.js typeof-guarded
+- `reveal-ui.js` — the reveal's SCREENS (see "The standings reveal: the screens,
+  behaviour"): the director's remote, Now's live mirror, the frozen grid, the header
+  strip, the tab dot, the champion line, More's row and Games' link. Defines
+  `revealPaint`, which the engine calls; a classic script right after reveal.js,
+  every hook in app.js typeof-guarded, so deleting its `<script>` leaves the engine
+  running and painting nothing
 - `jelly-motion.js` — the SPRING SYSTEM and the ONE calm-motion switch (see
   "Motion and calm motion" below). A classic script loaded between camps.js and
   app.js with no dependency on `vendor/jelly.js` (that module can't parse on
@@ -203,9 +209,9 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
 
 **Every time any code asset changes:**
 1. Bump the `?v=N` cache-busting query string in `index.html` — there are
-   EIGHTEEN on the same number: `boot-guard.js`, `styles.css`, `vendor/jelly.js`,
+   NINETEEN on the same number: `boot-guard.js`, `styles.css`, `vendor/jelly.js`,
    `firebase-config.js`, `defaults.js`, `camp-core.js`, `reveal-core.js`,
-   `camps.js`, `jelly-motion.js`, `app.js`, `reveal.js`, `setup-sync.js`, `settings.js`,
+   `camps.js`, `jelly-motion.js`, `app.js`, `reveal.js`, `reveal-ui.js`, `setup-sync.js`, `settings.js`,
    `setup-ui.js`, `chat.js`, `push.js`, `auth-phone.js`, `auth-email-link.js` —
    keep them in sync, all bumped together. Also bump
    `APP_VERSION` in `app.js` to the same number (it drives the auto-reload
@@ -457,7 +463,7 @@ future edit must not break (all pinned by `tests/tabs.test.js`):
 
 - **State is the source of truth, the browser's history is DERIVED from it.**
   `state.ui.tab` (`now|games|chat|more`, device-local, saved with `ui`),
-  `state.ui.gameId` (+ `gameFrom`: the tab it was opened from, `gameDow`),
+  `state.ui.gameId` (+ `gameFrom`: the tab it was opened from, `gameDow`), `state.ui.revealOpen` (+ `revealFrom`: the director's reveal remote, a second takeover, see "The standings reveal: the screens, behaviour"),
   `state.ui.view === 'settings'` (the classic builder) and `shell.sheets` say
   what is open; `renderAll` → `shellSync()` paints the root (`#app[data-tab]`,
   `aria-current="page"`, `body.takeover-open`) and `shellReconcile()` makes the stack
@@ -726,9 +732,9 @@ Redesign §4, mockups 05, 05b, 06, 07, 07b, 07c, 09, 11 with the Appendix A
 "Mockup deltas" applied (no screens count anywhere — the big screen is public and
 can't report in; "Started 7:31", never a name, on phones; the Practice copy; the
 chip and the mini TV wear "Practice"). Static markup in index.html (comments there
-name every hook), styles in styles.css's THE STANDINGS REVEAL block. **Nothing is
-wired yet** — every root ships `hidden` and the build sessions add `reveal.js`.
-Rules for whoever wires it:
+name every hook), styles in styles.css's THE STANDINGS REVEAL block. Every root ships
+`hidden`; **reveal.js is the engine and reveal-ui.js paints these roots** (the next two
+sections). Rules for whoever edits them:
 
 - **Switches, not hidden-juggling.** `#takeover-reveal[data-phase]` (`ready |
   intro | live | champion | table | ended | off`) is the ONE thing that picks the
@@ -775,8 +781,8 @@ Rules for whoever wires it:
 
 Redesign §4.5, §4.9, §4.10. `reveal.js` is an optional layer (a classic script
 right after app.js, before setup-sync.js; every hook in app.js typeof-guarded) and
-paints NOTHING except emptying the 8 AM grid roots: the screens' build session
-defines `revealPaint(why, mode)`, which reveal.js calls after every confirmed
+paints NOTHING except emptying the 8 AM grid roots: reveal-ui.js defines
+`revealPaint(why, mode)`, which reveal.js calls after every confirmed
 change and every time-driven one. Names are all `reveal…` / `REVEAL_…` (one global
 scope with reveal-core.js).
 
@@ -885,14 +891,105 @@ scope with reveal-core.js).
   and `retireExpiredReveal` run for real. Mutation-checked: a stale `sa`, a Start written as
   `ctl` alone, a `seq` that does not advance, a place published one early and a member key
   in the public ctl each turn it red. Re-run it after ANY change to a builder in reveal.js.
-- **Paint hook contract for the screens' session:** define `revealPaint(why, mode)`
-  (called after every confirmed change and time-driven change; `why` is `snapshot`,
+- **Paint hook contract** (reveal-ui.js defines `revealPaint(why, mode)`, which the engine
+  calls after every confirmed change and time-driven change; `why` is `snapshot`,
   `reread`, `denied`, `role`, `rescan`, `tick`, `timer`, `wake`, `clock`, `connection`,
   `full`), read ONLY `revealMirrorView()` / `revealLiveView()` / `revealGridView()` /
   `revealChampionLine()` for phones and `revealRemoteModel()` for the remote, call
   `revealStart` / `revealNext` / `revealBack` / `revealEnd` (each answers
   `{ ok, code, message? }`; they raise their own toasts unless `{ quiet: true }`),
   `revealSetRemoteOpen(bool)`, `revealSetPractice(bool)`, `revealSetBuzz(bool)`.
+
+## The standings reveal: the screens, behaviour (reveal-ui.js — Step 23, build session 2)
+
+Redesign §4.1, §4.8–4.10. reveal-ui.js paints the design pass's static markup from the
+engine's views; every write goes through `setHtmlIfChanged` (or a keyed morph),
+`setTextIfChanged`, `setHiddenIfChanged` or `dataset` guarded to differ, so an idle repaint
+writes nothing (`reveal-ui.test.js` and `reveal-remote.test.js` count the writes). Names are
+`revealUi…` / `renderReveal…`. It runs from `renderAll` (`renderRevealUi`), from the engine's
+`revealPaint`, and from one re-armed timer while the remote is open.
+
+- **SECRECY (the one rule).** The phones' screens (Now's mirror, the grids, the strip, the dot,
+  the champion line) read the reveal through `revealLiveView()` / `revealGridView()` /
+  `revealChampionLine()` ONLY, i.e. reveal-core's `revealView`, which fails closed. No points
+  helper, no private freeze, no `confirmedReveal`, no remote model: a source scan pins it, and a
+  counselor's phone never builds `revealRemoteModel()`, never opens the remote (`openReveal`
+  refuses, `renderAll` puts a forged `state.ui.revealOpen` away) and never has the withheld place
+  in any markup or sink. A director's live standings stay in Games; a director sees no frozen
+  grid (live standings "as always"), but gets the same mirror plus "Open the remote".
+- **Now's mirror** (`renderRevealMirror`): rows from `revealUiMirrorHtml` — one still-to-come row
+  per TEAM first (a tie cannot be read off the count), then the places shown best first. While the
+  newest place is held back (3 s after `sa`) one still row becomes "Look at the big screen" where the
+  place will land and that team is NOT in the markup. Counts are words, each in its own nowrap span,
+  never a medal disc; "Your team" is `state.followTeam`'s row (ink outline until Step 25 supplies a
+  validated per-theme team colour as `--team`); "Started 7:31", never a name. The list is cleared
+  whenever the mirror is not live (a hidden list is no place to keep numbers). The "Happening now" row
+  is read from `scheduleForDow` and follows the 30 s tick (`SHELL_PANELS.now.tick`).
+- **The frozen grid** (`renderRevealGrids`, Now and Games, counselors only): `revealUiGridHtml`,
+  "Not revealed" per team an early End never showed (a count of teams, never of groups), "Tonight's" /
+  "Last night's" by camp day (`revealTimeSig` carries the camp day so it flips at midnight with no
+  snapshot), "Revealed 7:31 PM · hides at 8 AM". `expireReveal()` empties it at 8 AM.
+- **The strip and the dot** (`renderRevealStrip`): on every tab but Now, only while `revealLiveView()`;
+  the count is patched alone ("3 of 6 shown", empty at the intro); when it appears or goes the header
+  grows by its own height and a scrolled reader is moved by the same amount (measured only at that
+  moment). More's row says "Ready" / "Live · 3 of 6 shown" / "Practice on the big screen" / "Not
+  switched on yet"; the champion line is name and mark only and never beside the grid or over the live mirror.
+- **Rows are stable strings** (`revealUiShownRowHtml` / `Still` / `Looking` / `revealUiLadderModel`): keyed
+  `data-key` (`g<place>`, `still-<i>`, `unrev-<i>`, `look`, `h-<i>`), no inline style and no animation
+  class beyond the marks' own size variable. A change to a list that is already drawn MORPHS it
+  (`revealUiPaintList` → `JellyMotion.flipKeyed`, behind `whenHandsOff` on a counselor's phone); first
+  paints, hidden tabs and a hidden page are plain writes.
+- **Motion** (§9.5, all `JellyMotion`, calm = fades / a ring, nothing that moves): the look row arrives
+  (`arrive`), a landing row unwraps on `wobble` with its shield dropping and its points rolling up, the
+  panel unfolds when it appears on a phone that was watching Now, "On the big screen now" slides on `snap`
+  from its old row, Your team bursts once (`joyBurst`, calm `joyRing`), the champion crown drops with
+  confetti (a canvas that will not draw never costs the paint: try/catch). The ledger (`revealUiNote` /
+  `revealUiOnce`, §9.8) records the first sighting and plays nothing: a reload, a late join, a reopened remote
+  and an inactive tab replay nothing.
+
+**The remote** (`renderRevealRemote`, `#takeover-reveal`):
+- **Shell.** A takeover of its own (`revealRemoteIsOpen()` = `state.ui.revealOpen` and a director whose
+  screens loaded: `revealRemoteMayOpen()`), `state.ui.revealFrom` names the tab it came from, one history
+  entry `{k:'reveal', from}` (Back pops it, Forward restores it for a director only), `openReveal` /
+  `closeReveal`, opened from More's row, Games' link, Now's "Open the remote" and the `reveal` deep link
+  (`shellParseTarget` → `{tab:'now', reveal:true}`; a counselor lands on Now). One takeover at a time
+  (opening a game, the builder or a deep link closes it); `shellTakeoverOpen()` covers it, so the tab bar
+  slides away and `#app` is inert; Escape closes it; the roof is re-derived from the element
+  (`revealUiRoofSync`) so the status bar is the camp blue while it is up; a long lock-screen pause never sends
+  a director home while a reveal is live (`shellHasUnsentWork`); `shellBoot` restores it only within 10 minutes.
+  The engine is told `revealSetRemoteOpen(true/false)` (the private freeze, the wake lock).
+- **What it paints** is `revealRemoteModel()` and nothing else (confirmed state, the server clock):
+  `data-phase` / `data-mode` / the chip, the mini TV (`revealUiPaintTv`: reveal-core's `tvFrame` into the
+  slots, caption in words as a polite live region), the ready panel's checks (only "this phone is up to date"
+  gates a Start; an unscored game is a warning with its name), the Practice and Buzz rows, the ladder
+  (`revealUiLadderModel`: hidden rows carry a place and nothing else, ONE masked next row, shown rows with
+  their team; without the private freeze the hidden rows have no place numbers and there is no peek), "Started by
+  Pat at 7:21 PM" from the member list for another director's reveal (`revealFull` keeps the starter's key,
+  editor-only), "Scores changed since you started" at the intro.
+- **The dock**: `#reveal-go` / `#reveal-back` carry `data-state` and `aria-disabled`, never `disabled` (a tap
+  during the wait must reach the handler: the engine's toast says why and the button wobbles once, calm: a
+  200 ms dim via `data-refused`). The recharge fill's `--charge-ms` / `--charge-from` are written once per command
+  (`revealUi.go.key`, reset on open) so a repaint never restarts the animation; the countdown seconds, the beat
+  boundaries and the quiet window after a reconnect re-arm ONE timer (`revealUiNextMoment`); the label swap and the
+  ready pop skip the first paint and the countdown's own seconds.
+- **The peek** (`revealUiPeek`): hold 350 ms (Enter / Space on a keyboard) and the LIST gets `data-peek` (the row's
+  markup never changes, so the hold is not cut off); it ends on release or after 3 s, cannot start during the big
+  screen's 8 s beat (the row then says "Masked while the big screen plays") and is put away when a new command lands.
+  The next team's name and points ARE in the director's own DOM while masked (CSS masks them); every other
+  hidden row has none.
+- **Confirms** (`askDialog`): End the reveal / the practice (the sentence names 8 AM, "tomorrow" only when it
+  is), Start a new reveal over last night's (a real Start only), "N games have no score yet / Start anyway?",
+  never for a practice that replaces nothing and never for Start again.
+
+**Tests:** `reveal-ui.test.js` (the phones' screens, secrecy, idle repaint, ids in index.html, loads without
+either file) and `reveal-remote.test.js` (the shell, every stage and dock state, tvFrame beats, the ladder, the peek,
+checks, confirms, the whole walk, calm), both `.senior` twins, both in `SEEDED_FILES`. A test that writes a reveal
+node for the remote must write it to the fake database too (the remote's opening reads would replace a node the
+database does not hold) and wait for the listener (`waitUntil`), not `waitQuiet`: a countdown timer on a frozen
+test clock re-arms for ever. Browser pass (Playwright against the real code; no screens are mocked): 360 / 390 px,
+100 / 130 / 200 % text, light / dark, both camps, counselor / director: every target at least 44x44, every text
+line meeting the contrast rule, no sideways scroll, in every state of the remote, the mirror, the grids, the strip,
+More, Games and the champion line.
 
 ## Set up the week: the frame, the hub, the clipboard (Step 14 — markup and visual system)
 
@@ -1518,6 +1615,9 @@ alive: the run exits as soon as the cases finish (no stray timer holds it open).
 What's covered, and why each file exists:
 - `scoring.test.js` — score parse/format edges, `esc()`, `medalCounts()`
   (including double points and orphaned results), bonus buckets, tie-breaks.
+- `reveal-ui.test.js` / `reveal-remote.test.js` (+ `.senior` twins) — the reveal's screens: see "The standings
+  reveal: the screens, behaviour" (secrecy, the 3 s lag, idle repaint writes nothing, the remote's shell, dock states,
+  ladder, peek, confirms)
 - `reveal.test.js` (+ `.senior`, which evals it) — reveal.js's read side and 8 AM rule
   against `fake-rtdb.js`: what each role listens to (a counselor: `revealPublic/real`
   only, never a practice, even by re-scan), the cache, a refused listener failing closed
@@ -1655,7 +1755,7 @@ What's covered, and why each file exists:
   (home panels, toast cap, announcement composer), `overlays.test.js` (schedule
   sheet, status pill, members drawer, lock screen, scrim fade, pickers),
   `shell.test.js` (page-shell text pins: the not-yet-defined hide, the boot
-  guard, no motion media query, **index.html's eighteen versioned assets share
+  guard, no motion media query, **index.html's nineteen versioned assets share
   one `?v=` equal to `APP_VERSION`, in load order**), `builder.test.js`
   (week-builder shell, drafts, joy press), `chat-view.test.js`
   (chat view lifecycle, drafts, Back), `theme.test.js` (pre-paint theme and

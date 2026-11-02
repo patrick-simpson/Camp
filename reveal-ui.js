@@ -234,15 +234,35 @@ function revealUiPaintList(root, html, o) {
   const run = () => {
     if (root.__rvPending !== html) return;
     root.__rvPending = null;
+    const before = revealUiTagBefore(root);
     let added = [];
     try { added = JellyMotion.flipKeyed(root, html, 'glide') || []; } catch (e) { root.innerHTML = html; }
     root.__html = html;
     root.__dom = root.innerHTML;
+    revealUiTagMoved(root, before);
     if (o.after) o.after(added, root);
   };
   root.__rvPending = html;
   if (o.handsOff && JellyMotion.whenHandsOff) JellyMotion.whenHandsOff(run); else run();
   return true;
+}
+
+// "On the big screen now" moves from one row to another (Back, or a newer place): the tag slides from where it was, on
+// `snap`, stretched by its own speed (calm: it simply jumps). Measured before the morph and played after it.
+function revealUiTagBefore(root) {
+  const tag = root && root.querySelector ? root.querySelector('.rv-os') : null;
+  return tag && tag.getBoundingClientRect ? { y: tag.getBoundingClientRect().top } : null;
+}
+function revealUiTagMoved(root, before) {
+  if (!before || typeof JellyMotion === 'undefined' || !root.querySelector) return;
+  const tag = root.querySelector('.rv-os');
+  if (!tag || !tag.getBoundingClientRect) return;
+  const dy = before.y - tag.getBoundingClientRect().top;
+  if (Math.abs(dy) < 2) return;
+  JellyMotion.play(tag, 'snap', (x, v) => {
+    const s = Math.min(0.5, Math.abs(v * dy) / 1600);
+    return { transform: 'translateY(' + dy * (1 - x) + 'px) scale(' + (1 - 0.2 * s) + ',' + (1 + s) + ')', transformOrigin: '0 50%' };
+  }, { calm: false });
 }
 
 // ── motion: a place lands (§9.5) ─────────────────────────────────────

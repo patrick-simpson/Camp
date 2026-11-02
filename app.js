@@ -11943,6 +11943,8 @@ const SHELL_PANELS = {
       renderWhatsNew();
       renderMyElectives();
       renderAnnouncements();
+      // the mirror's "Happening now" row follows the clock too (it is not a snapshot's business)
+      if (typeof renderRevealMirror === 'function' && typeof confirmedReveal !== 'undefined') renderRevealMirror();
     },
   },
   games: {
