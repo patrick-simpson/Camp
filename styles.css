@@ -6319,6 +6319,10 @@ html.calm-motion .points-pulse td { animation: none; }
   justify-content: center;
   gap: 0.5rem;
 }
+/* Two buttons share a row only when each keeps its words on one line; a phone gets them stacked, full width. */
+.sched-ics-week jelly-button.secondary-btn {
+  flex: 1 1 14rem;
+}
 .sched-ics-note {
   flex-basis: 100%;
   margin: 0;
