@@ -10,9 +10,16 @@
 // After any change: paste the file into the console, then re-run the
 // unauthenticated probes in the runbook.
 
-const RULES = JSON.parse(readFixture('../database.rules.json')).rules;
+const RULES_TEXT = readFixture('../database.rules.json');
+const RULES = JSON.parse(RULES_TEXT).rules;
 const ROOTS = ['campScoreboard', 'seniorScoreboard'];
 const OWNER = 'patricksimpson,fx@gmail,com';
+// The R1 blocks (setup, campers, reveal …) are written once, with the spec's macro
+// names, in tests/rules-macros.js; the file we publish spells them out. Both camps come
+// from the same functions. `node tests/rules-macros.js` regenerates the file.
+const SRC = nodeRequire('./rules-macros.js');
+const R1_NODES = ['setup', 'campers', 'teamPhotos', 'accessRequests', 'accessBlocked', 'restoreIndex',
+  'restoreBody', 'editorsHere', 'revealPublic', 'revealFull'];
 
 // Every rule expression anywhere in the tree, with its path — the workhorse.
 function walk(node, path, out) {
@@ -35,8 +42,9 @@ test('nothing is granted at the database root — no cascading read or write', (
 });
 
 test('both camps exist and expose exactly the same set of gated paths', () => {
-  const expected = ['changelog', 'chat', 'chatPhotos', 'chatRate', 'config', 'members', 'presence',
-    'push', 'pushAlerts', 'pushSchedule', 'state'];
+  const expected = ['accessBlocked', 'accessRequests', 'campers', 'changelog', 'chat', 'chatPhotos', 'chatRate',
+    'config', 'editorsHere', 'members', 'presence', 'push', 'pushAlerts', 'pushSchedule', 'restoreBody',
+    'restoreIndex', 'revealFull', 'revealPublic', 'setup', 'state', 'teamPhotos'];
   ROOTS.forEach((r) => {
     assert.deepEqual(Object.keys(RULES[r]).filter((k) => !k.startsWith('.')).sort(), expected,
       `${r} covers every path the client touches — an ungated path is an open door`);
@@ -135,6 +143,12 @@ test('image fields are pinned to inline JPEG data URLs — no outbound requests'
     assert.ok(/length <= \d+/.test(thumb), `${root}: thumb is size-capped`);
     const photo = RULES[root].chatPhotos.$photoId['.validate'];
     assert.ok(photo.includes("beginsWith('data:image/jpeg;base64,')"), `${root}: full photo must be an inline image`);
+    // team crests (P2) accept png OR jpeg, but only through the FULL base64 charset regex: a prefix
+    // check lets a quote-breakout payload through, and the crest string is later built into an <img>
+    const crest = RULES[root].teamPhotos.$tid.data['.validate'];
+    assert.ok(crest.includes('matches(/^data:image\\/(png|jpeg);base64,[A-Za-z0-9+\\/]+={0,2}$/)'),
+      `${root}: a team photo is an inline png/jpeg matched end to end, not by prefix`);
+    assert.ok(/length <= 100000/.test(crest), `${root}: and capped at 100,000 characters`);
   });
 });
 
@@ -172,14 +186,53 @@ test('the unused PII paths do not exist at all', () => {
     ['roster', 'contacts'].forEach((p) => {
       assert.equal(RULES[root][p], undefined, `${root}/${p} must not have a rules block until it has a feature`);
     });
+    // `campers` (minors' first names, P2 S7) IS published ahead of its feature, but only as part
+    // of the reviewed R1 release and with the strict gate the comment above asks for: EDITOR-only
+    // read, the very expression state's write uses, and no member grant anywhere beneath it.
+    assert.equal(RULES[root].campers['.read'], RULES[root].state['.write'], `${root}: campers is editor-read`);
+    assert.equal(RULES[root].campers['.write'], RULES[root].state['.write'], `${root}: and editor-write`);
+    walk(RULES[root].campers, [], []).forEach(({ path, rule, expr }) => {
+      if (rule === '.read' || rule === '.write') {
+        assert.equal(expr, RULES[root].state['.write'], `${root}/campers/${path} must not grant members anything`);
+      }
+    });
+    const named = Object.keys(RULES[root]).filter((k) => /camper/i.test(k));
+    assert.deepEqual(named, ['campers'], `${root}: no other node may hold camper data`);
   });
 });
 
-test('no rule is accidentally left permanently true', () => {
+test('no rule is accidentally left permanently true — except the one public read', () => {
+  // The standings reveal (redesign §4.4) is the ONE path a person with no sign-in may read: the
+  // big-screen page has no login. Everything else, reads and writes, stays closed.
   ALL.forEach(({ path, rule, expr }) => {
     if (rule === '.read' || rule === '.write') {
+      if (rule === '.read' && ROOTS.some((r) => path === r + '/revealPublic')) return;
       assert.ok(expr !== true && expr !== 'true', `${path} ${rule} is unconditionally open`);
     }
+  });
+});
+
+test('revealPublic/.read is the ONLY anonymous read in either camp', () => {
+  const trues = ALL.filter((r) => r.rule === '.read' && (r.expr === true || r.expr === 'true'));
+  assert.deepEqual(trues.map((r) => r.path).sort(), ROOTS.map((r) => r + '/revealPublic').sort(),
+    'exactly one `true` read per camp, and it is the reveal feed');
+  ALL.forEach(({ path, rule, expr }) => {
+    if (rule !== '.read' && rule !== '.write') return;
+    if (rule === '.read' && path.endsWith('/revealPublic')) return;
+    if (expr === false) return; // a closed door needs no sign-in check
+    assert.ok(typeof expr === 'string' && expr.includes('auth != null'),
+      `${path} ${rule} must require a sign-in (only revealPublic/.read is public)`);
+  });
+  ROOTS.forEach((root) => {
+    // `.read` cascades down only: the feed's parent and its private twin stay member-only
+    assert.equal(RULES[root]['.read'], undefined, `${root} itself grants nothing`);
+    assert.equal(RULES[root].revealFull['.read'], RULES[root].state['.write'], `${root}/revealFull is editor-read`);
+    assert.equal(RULES[root].revealFull['.write'], RULES[root].state['.write'], `${root}/revealFull is editor-write`);
+    // nothing under the public node re-grants a read, and its write is editor-only
+    assert.notOk(walk(RULES[root].revealPublic.$mode, [], []).some((r) => r.rule === '.read' || r.rule === '.write'),
+      `${root}: nothing beneath revealPublic/$mode may add its own read or write`);
+    assert.ok(RULES[root].revealPublic['.write'].startsWith('(' + RULES[root].state['.write'] + ')'),
+      `${root}: revealPublic is editor-write`);
   });
 });
 
@@ -302,9 +355,30 @@ test('state accepts exactly the synced keys, and each must be a branch', () => {
       assert.ok(st[k]['.validate'].includes('!newData.isString()'), `${root}/state/${k} must be a branch`);
     });
     assert.equal(st.$other['.validate'], false, `${root}/state refuses unknown keys`);
+    // `brackets4` (the 4-team bracket, BUILD-PLAN Step 22) is published AHEAD of its client in
+    // R1: until Step 22 adds it to SYNC_KEYS nothing writes it, and the rule is a branch-only
+    // gate. Drop this allowance when SYNC_KEYS carries it.
+    const allowed = SYNC_KEYS.concat(SYNC_KEYS.includes('brackets4') ? [] : ['brackets4']);
+    assert.ok(st.brackets4['.validate'].includes('!newData.isString()'), `${root}/state/brackets4 must be a branch`);
     const named = Object.keys(st).filter((k) => !k.startsWith('.') && k !== '$other').sort();
-    assert.deepEqual(named, SYNC_KEYS.slice().sort(),
-      `${root}/state's allowed keys must be exactly SYNC_KEYS — a mismatch silently drops a write`);
+    assert.deepEqual(named, allowed.slice().sort(),
+      `${root}/state's allowed keys must be exactly SYNC_KEYS (+ brackets4 until Step 22) — a mismatch silently drops a write`);
+  });
+});
+
+test('state/teams and state/meta take only the NEW optional fields, and a v183 whole-array write still passes', () => {
+  ROOTS.forEach((root) => {
+    const teams = RULES[root].state.teams;
+    // id / name / counselor stay unvalidated and there is no $other:false — a v183 client's
+    // whole `teams` array (which carries none of the branding fields) must keep being accepted.
+    assert.deepEqual(Object.keys(teams.$i).sort(), ['color', 'emoji', 'photoV', 'short'], `${root}: only the new fields`);
+    assert.equal(teams.$i.$other, undefined, `${root}: no $other:false under a team`);
+    assert.ok(teams.$i.emoji['.validate'].includes("contains('<')") && teams.$i.emoji['.validate'].includes('contains("\'")'),
+      `${root}: team emoji refuses markup and a quote`);
+    assert.ok(/length <= 20/.test(teams.$i.short['.validate']), `${root}: team short is capped`);
+    assert.ok(teams.$i.color['.validate'].includes('/^[a-z]{2,12}$/'), `${root}: color is a bare key, never a quote-breakout`);
+    assert.equal(RULES[root].state.meta.$other, undefined,
+      `${root}: no $other:false under state/meta — older builds' fields stay valid`);
   });
 });
 
@@ -454,4 +528,319 @@ test('a push endpoint must be a real push service (no relaying through the sende
     });
     assert.ok(v.includes('matches(/^https:'), `${root} endpoint must be anchored and https`);
   });
+});
+
+// ── R1 (BUILD-PLAN Step 10): setup, campers, photos, requests, restore points, "also here",
+//    the owner-only clauses and the standings reveal. Written but NOT yet published — Step 11
+//    pastes it. The emulator suites in tests/emulator prove what these blocks DO; these tests
+//    prove the file is the one tests/rules-macros.js produces and that its invariants hold.
+
+test('the R1 blocks in the file are exactly what the macro source produces, in both camps', () => {
+  ROOTS.forEach((root) => {
+    const want = SRC.newBlocks(root);
+    assert.deepEqual(Object.keys(want).sort(), R1_NODES.slice().sort(), 'the source writes the ten R1 nodes');
+    R1_NODES.forEach((k) => {
+      assert.equal(JSON.stringify(RULES[root][k]), JSON.stringify(want[k]),
+        `${root}/${k} differs from tests/rules-macros.js — edit the source and run \`node tests/rules-macros.js\`, never the JSON`);
+    });
+    // and the additive amendments to existing blocks are present, node for node
+    SRC.amendments(root).forEach(([path, node]) => {
+      const at = path.reduce((n, k) => (n ? n[k] : null), RULES[root]);
+      assert.ok(at, `${root}/${path.join('/')} exists`);
+      Object.keys(node).forEach((k) => assert.equal(JSON.stringify(at[k]), JSON.stringify(node[k]), `${root}/${path.join('/')}/${k}`));
+    });
+  });
+});
+
+test('the macro source expands to the expressions already published (MEMBER, EDITOR, the owner key)', () => {
+  ROOTS.forEach((root) => {
+    const m = SRC.macros(root);
+    assert.equal(m.MEMBER, RULES[root].state['.read'], `${root}: MEMBER is today's state/.read`);
+    assert.equal(m.EDITOR, RULES[root].state['.write'], `${root}: EDITOR is today's state/.write`);
+    assert.ok(RULES[root].members.$memberKey['.write'].includes(`$memberKey != '${OWNER}'`),
+      `${root}: and the members-immutability literal is the owner key`);
+  });
+  assert.equal(SRC.OWNER_KEY, OWNER);
+  assert.equal(SRC.OWNER_KEY, OWNER_MEMBER_KEY, 'the OWNER clause is the client constant (app.js)');
+});
+
+test('every R1 block is identical in both camps, modulo the root name', () => {
+  R1_NODES.concat(['state', 'pushSchedule']).forEach((k) => {
+    const junior = JSON.stringify(RULES.campScoreboard[k]).replaceAll("'campScoreboard'", "'seniorScoreboard'");
+    assert.equal(junior, JSON.stringify(RULES.seniorScoreboard[k]), `${k} differs between camps beyond the root name`);
+  });
+});
+
+test('every R1 node is gated by sign-in, with the read gates the plan promised', () => {
+  ROOTS.forEach((root) => {
+    const R = RULES[root];
+    const editor = R.state['.write'];
+    const member = R.state['.read'];
+    assert.equal(R.setup['.read'], member, `${root}/setup is member-read`);
+    assert.equal(R.setup['.write'], editor, `${root}/setup is editor-write`);
+    assert.equal(R.teamPhotos['.read'], member, `${root}/teamPhotos is member-read`);
+    assert.equal(R.teamPhotos.$tid['.write'], editor, `${root}/teamPhotos is editor-write`);
+    ['accessRequests', 'accessBlocked', 'restoreIndex', 'restoreBody', 'editorsHere'].forEach((k) => {
+      assert.equal(R[k]['.read'], editor, `${root}/${k} is editor-read`);
+    });
+    assert.ok(R.restoreIndex.$rid['.write'].startsWith('(' + editor + ')'), `${root}/restoreIndex is editor-write`);
+    assert.ok(R.restoreBody.$rid['.write'].startsWith('(' + editor + ')'), `${root}/restoreBody is editor-write`);
+    assert.equal(R.accessBlocked.$k['.write'], editor, `${root}/accessBlocked is editor-write`);
+  });
+});
+
+// A container is only a branch if its rule says so — otherwise a multi-megabyte STRING dropped at
+// setup/typical (or a scalar at a $dk level) lands in every device's cache.
+test('every setup / campers container is a branch (or demands children), so a scalar never lands', () => {
+  const bare = (node, path, out) => {
+    Object.keys(node).filter((k) => !k.startsWith('.') && k !== '$other').forEach((k) => {
+      const child = node[k];
+      if (!child || typeof child !== 'object' || !Object.keys(child).some((c) => !c.startsWith('.'))) return;
+      const v = child['.validate'];
+      if (!(typeof v === 'string' && (v.includes('!newData.isString()') || v.includes('hasChildren')))) out.push(path.concat(k).join('/'));
+      bare(child, path.concat(k), out);
+    });
+    return out;
+  };
+  ROOTS.forEach((root) => {
+    ['setup', 'campers'].forEach((top) => {
+      assert.deepEqual(bare(RULES[root][top], [top], []), [], `${root}: containers with no branch/hasChildren guard`);
+    });
+  });
+});
+
+test('every block field carries the anchor, and the patch teams rule is the four-parent anchor', () => {
+  const FOUR = 'newData.parent().parent().parent().parent()';
+  const ANCHOR = "newData.parent().child('start').exists() && newData.parent().child('label').exists()";
+  const fields = (block) => Object.keys(block).filter((k) => !k.startsWith('.') && !k.startsWith('$'));
+  ROOTS.forEach((root) => {
+    const setup = RULES[root].setup;
+    [['typical', setup.typical.$bid], ['dayBlocks', setup.dayBlocks.$dk.$bid]].forEach(([kind, block]) => {
+      fields(block).forEach((f) => {
+        assert.ok(block[f]['.validate'].includes(ANCHOR), `${root}/${kind}.${f} must refuse a write into a record whose start/label are gone`);
+      });
+      assert.ok(block['.validate'].includes("hasChildren(['start', 'end', 'label', 'type'])"), `${root}/${kind}: whole-record shape`);
+    });
+    const patch = setup.patches.$dk.$bid;
+    fields(patch).forEach((f) => {
+      const v = patch[f]['.validate'];
+      assert.ok(v.includes(`${FOUR}.child('typical').child($bid).child('start').exists()`) &&
+        v.includes(`${FOUR}.child('days').child($dk).child('typical').val() === true`),
+        `${root}/patches.${f} needs a real typical block on a day that uses the typical day`);
+      assert.notOk(v.includes(`${FOUR}.parent()`), `${root}/patches.${f}: never five parents (that is <root>/typical)`);
+    });
+    assert.ok(patch.teams['.validate'].startsWith('newData.hasChildren() && '), `${root}: patch teams is a non-empty branch`);
+    assert.equal(patch.alertKey, undefined, `${root}: a patch never carries an alertKey`);
+    assert.equal(setup.typical.$bid.off, undefined, `${root}: the typical day has no off flag`);
+    assert.ok(setup.dayBlocks.$dk.$bid.off && patch.off, `${root}: one-offs and patches can be cancelled`);
+    assert.ok(patch.teams.$tid['.validate'].includes('$tid.matches(/^t[0-9]$/)'), `${root}: team ids`);
+  });
+});
+
+test('accessRequests: own row only, server time, closed until joinOpen, 60 s throttle, not a member, not blocked', () => {
+  ROOTS.forEach((root) => {
+    const a = RULES[root].accessRequests;
+    const w = a.$reqKey['.write'];
+    const split = w.indexOf(') || (!newData.exists()');
+    assert.ok(split > 0, `${root}: create and delete are separate branches`);
+    const create = w.slice(0, split);
+    assert.ok(create.includes('$reqKey ===') && create.includes('email_verified'), `${root}: create is the requester's own verified identity`);
+    assert.ok(create.includes("newData.child('at').val() === now"), `${root}: and stamps server time on every create/rewrite`);
+    assert.ok(create.includes(`root.child('${root}').child('setup').child('meta').child('joinOpen').val() === true`), `${root}: closed until a director opens asking`);
+    assert.ok(create.includes(`!root.child('${root}').child('accessBlocked').child($reqKey).exists()`), `${root}: a blocked identity can't write`);
+    assert.ok(create.includes('!(auth != null') && create.includes(".child('members')"), `${root}: and a member can't create one`);
+    assert.ok(create.includes("data.child('at').val() < now - 60000"), `${root}: rewriting waits a minute`);
+    const del = w.slice(split);
+    assert.ok(del.includes("data.child('at').val() < now - 60000"), `${root}: a requester deletes their own row only after 60 s (no delete-and-recreate)`);
+    assert.ok(del.includes(RULES[root].state['.write']), `${root}: an editor may delete any row`);
+    assert.ok(a.$reqKey['.read'].includes('$reqKey ===') && a.$reqKey['.read'].includes('email_verified'), `${root}: a requester reads only their own row`);
+    assert.deepEqual(a['.indexOn'], ['at'], `${root}: the editor's limitToLast(25) query is indexed`);
+    assert.equal(a.$reqKey.$other['.validate'], false, `${root}: a request carries name/note/at and nothing else`);
+    // R1 opens no stranger-writable surface: joinOpen itself is only editor-written
+    assert.equal(RULES[root].setup['.write'], RULES[root].state['.write'], `${root}: joinOpen is editor-written`);
+  });
+});
+
+test('restore points: an archive, a pre-wizard or a pinned point can never be deleted; pinned is write-once', () => {
+  ROOTS.forEach((root) => {
+    const idx = RULES[root].restoreIndex.$rid;
+    ["data.child('kind').val() !== 'archive'", "data.child('kind').val() !== 'pre-wizard'", "data.child('pinned').val() !== true"].forEach((c) => {
+      assert.ok(idx['.write'].includes(c), `${root}/restoreIndex delete is refused unless ${c}`);
+    });
+    const body = RULES[root].restoreBody.$rid['.write'];
+    ['archive', 'pre-wizard'].forEach((k) => assert.ok(body.includes(`.child('kind').val() !== '${k}'`), `${root}/restoreBody: its body is protected too (${k})`));
+    assert.ok(body.includes(".child('pinned').val() !== true"), `${root}/restoreBody: and a pinned point's body`);
+    assert.ok(idx.pinned['.write'].includes('!data.exists() && newData.val() === true'), `${root}: pinned may be set once, to true, never unset`);
+    assert.ok(idx.at['.validate'].includes('=== now'), `${root}: a point is stamped by the server`);
+    assert.ok(idx.byKey['.validate'].includes('auth.token.email'), `${root}: and signed by the writer`);
+    assert.ok(/length <= 900000/.test(RULES[root].restoreBody.$rid['.validate']), `${root}: bodies are capped`);
+    assert.equal(idx.$other['.validate'], false, `${root}: no unknown fields on an index row`);
+    assert.ok(idx.kind['.validate'].includes("'archive'") && idx.kind['.validate'].includes("'pre-wizard'") && idx.kind['.validate'].includes(SRC.macros(root).OWNER),
+      `${root}: the archive / pre-wizard kinds name OWNER (Q8)`);
+  });
+});
+
+test('editorsHere is editor-only both ways, pinned to the writer, and its location has no slash', () => {
+  ROOTS.forEach((root) => {
+    const e = RULES[root].editorsHere;
+    assert.equal(e['.read'], RULES[root].state['.write'], `${root}: a viewer can't see who is in the builder`);
+    const w = e.$k.$d['.write'];
+    assert.ok(w.includes('$k ===') && w.includes('email_verified'), `${root}: only your own key`);
+    assert.ok(w.includes(RULES[root].state['.write']), `${root}: and only while an editor (a delete needs only the key)`);
+    assert.ok(w.includes("data.child('at').val() < now - 1000"), `${root}: a second write inside a second is refused`);
+    assert.ok(e.$k.$d.at['.validate'].includes('=== now'), `${root}: stamped by the server`);
+    const where = e.$k.$d.where['.validate'];
+    assert.ok(where.includes('/^[a-z0-9:_-]{1,60}$/'), `${root}: where is a short token — its character class has no slash, so it can't smuggle a path`);
+  });
+});
+
+test('every new named record closes the door on unnamed children (the sweep)', () => {
+  const sweep = (node, path, out) => {
+    if (!node || typeof node !== 'object') return out;
+    const named = Object.keys(node).filter((k) => !k.startsWith('.') && !k.startsWith('$'));
+    if (named.length && !(node.$other && node.$other['.validate'] === false)) out.push(path);
+    Object.keys(node).filter((k) => !k.startsWith('.')).forEach((k) => sweep(node[k], path + '/' + k, out));
+    return out;
+  };
+  ROOTS.forEach((root) => {
+    const open = [];
+    ['setup', 'campers', 'teamPhotos', 'accessRequests', 'accessBlocked', 'restoreIndex', 'editorsHere', 'revealPublic', 'revealFull']
+      .forEach((p) => sweep(RULES[root][p], p, open));
+    assert.deepEqual(open, [], `${root}: records that name fields but accept others`);
+  });
+});
+
+test('stamps use server time or carry an unchanged value — never a client clock', () => {
+  const KEEP = 'newData.val() === now || newData.val() === data.val()';
+  ROOTS.forEach((root) => {
+    const s = RULES[root].setup.meta;
+    assert.ok(s.edited.$s.at['.validate'].includes(KEEP), `${root}: edited.at is NOWKEEP`);
+    assert.ok(s.edited.$s.byKey['.validate'].includes('newData.val() === data.val() ||') && s.edited.$s.byKey['.validate'].includes('email_verified'),
+      `${root}: edited.byKey is SELFKEEP — yours when written, someone else's only carried unchanged`);
+    assert.ok(s.seeded.byKey['.validate'].includes('newData.val() === data.val() ||'), `${root}: seeded.byKey is SELFKEEP`);
+    assert.ok(RULES[root].revealPublic.$mode.ctl.at['.validate'].includes('=== now'), `${root}: a reveal command is stamped by the server`);
+    assert.ok(RULES[root].revealFull.$mode.frozenAt['.validate'].includes(KEEP), `${root}: frozenAt is NOWKEEP`);
+    assert.ok(RULES[root].revealFull.$mode.startedBy['.validate'].includes('email_verified'), `${root}: startedBy is the writer's own key`);
+  });
+});
+
+// ── decision Q8: four acts are the OWNER's alone, without adding a role ─────────
+test('the OWNER clause compares the owner literal to the caller, verified email or phone', () => {
+  ROOTS.forEach((root) => {
+    const o = SRC.macros(root).OWNER;
+    assert.ok(o.includes(`'${OWNER_MEMBER_KEY}' === auth.token.email.toLowerCase().replace('.', ',')`), `${root}: the caller's email key`);
+    assert.ok(o.includes(`'${OWNER_MEMBER_KEY}' === auth.token.phone_number`), `${root}: and, like every SELF, a phone number — which an E.164 key never equals`);
+    assert.ok(o.includes('email_verified == true'), `${root}: an unverified email is never the owner`);
+  });
+});
+
+test('meta/on, the epoch pair, the wizard claim and the archive kinds all require the owner', () => {
+  ROOTS.forEach((root) => {
+    const O = SRC.macros(root).OWNER;
+    const KEEP = `newData.val() === data.val() || (${O})`;
+    const setup = RULES[root].setup.meta;
+    assert.ok(setup.on.$s['.validate'].includes(KEEP), `${root}: setup/meta/on/<section> is OWNERKEEP`);
+    ['epoch', 'epochAt'].forEach((f) => {
+      assert.ok(setup[f]['.validate'].includes(KEEP), `${root}: setup/meta/${f} is OWNERKEEP`);
+      assert.ok(RULES[root].state.meta[f]['.validate'].includes(KEEP), `${root}: state/meta/${f} is OWNERKEEP`);
+    });
+    ['step', 'byKey', 'at', 'fromEpoch', 'archiveId', 'answers'].forEach((f) => {
+      assert.ok(setup.wizard[f]['.validate'].includes(`(${O})`), `${root}: wizard.${f} requires OWNER whenever it is written`);
+    });
+    assert.ok(setup.wizard.fromEpoch['.validate'].includes('length >= 1'), `${root}: fromEpoch is never empty — 'legacy' stands for the legacy epoch`);
+    // an owner clause on a `.validate` sits on a LEAF, never on a branch node: the design must not
+    // depend on how rules compare whole branches or on whether ancestor .validate runs
+    let found = 0;
+    const visit = (node, path) => {
+      Object.keys(node).forEach((k) => {
+        const v = node[k];
+        if (k === '.validate' && typeof v === 'string' && v.includes(O)) {
+          found++;
+          assert.notOk(Object.keys(node).some((c) => !c.startsWith('.')), `${root}/${path.join('/')}: an owner clause on a branch node`);
+        } else if (!k.startsWith('.') && v && typeof v === 'object') visit(v, path.concat(k));
+      });
+    };
+    visit(RULES[root], []);
+    assert.equal(found, 12, `${root}: setup/meta on + epoch + epochAt, state/meta epoch + epochAt, six wizard leaves, the restore kind`);
+  });
+});
+
+// ── the standings reveal (redesign §4.4), written from the spec ────────────────
+test('the reveal blocks exist in both camps with a real and a practice child, and no screens node', () => {
+  ROOTS.forEach((root) => {
+    ['revealScreens', 'revealPractice', 'reveal'].forEach((k) => assert.equal(RULES[root][k], undefined, `${root}/${k} must not exist`));
+    ['revealPublic', 'revealFull'].forEach((k) => {
+      assert.ok(RULES[root][k].$mode['.validate'].includes('$mode.matches(/^(real|practice)$/)'), `${root}/${k}: one rule for both modes`);
+    });
+    const c = RULES[root].revealPublic.$mode.ctl;
+    assert.equal(c.$other['.validate'], false, `${root}: no startedBy, no by, no member key — unknown fields are refused`);
+    ['startedBy', 'by', 'name'].forEach((f) => assert.equal(c[f], undefined, `${root}: ctl names no ${f}`));
+    const known = ['v', 'id', 'seq', 'phase', 'cur', 'shown', 'teams', 'finale', 'at', 'sa', 'ca', 'startedAt', 'until', 'endedAt', 'endKind', 'epoch'];
+    assert.deepEqual(Object.keys(c).filter((k) => !k.startsWith('.') && k !== '$other').sort(), known.slice().sort(), `${root}: the ctl fields`);
+  });
+});
+
+test('the public reveal is bounded: group g0-g5, team t0-t5, names <= 30, numbers in range', () => {
+  ROOTS.forEach((root) => {
+    const g = RULES[root].revealPublic.$mode.pub.$g;
+    assert.ok(g['.validate'].includes('$g.matches(/^g[0-5]$/)'), `${root}: groups g0..g5`);
+    assert.ok(g.e.$tid['.validate'].includes('$tid.matches(/^t[0-5]$/)'), `${root}: teams t0..t5`);
+    assert.ok(/length <= 30/.test(g.e.$tid.nm['.validate']) && /length >= 1/.test(g.e.$tid.nm['.validate']), `${root}: nm is 1-30 characters`);
+    assert.ok(g.place['.validate'].includes('>= 1') && g.place['.validate'].includes('<= 6'), `${root}: place 1..6`);
+    assert.equal(g.$other['.validate'], false, `${root}: a group has place and e only`);
+    assert.equal(g.e.$tid.$other['.validate'], false, `${root}: an entry has the listed fields only`);
+    ['p', 'v', 'm', 'c'].forEach((f) => assert.ok(g.e.$tid[f]['.validate'].includes('<= 99999') && g.e.$tid[f]['.validate'].includes('>= -9999'), `${root}: ${f} is bounded`));
+    // a group can be published only once its place has been shown, and never rewritten in the same reveal
+    for (let i = 0; i < 6; i++) {
+      assert.ok(g['.validate'].includes(`($g === 'g${i}' && newData.parent().parent().child('ctl').child('shown').val() >= ${i + 1})`), `${root}: g${i} needs shown >= ${i + 1}`);
+    }
+    assert.ok(g['.validate'].includes("!data.exists() || newData.parent().parent().child('ctl').child('id').val() !== data.parent().parent().child('ctl').child('id').val()"),
+      `${root}: a published place can't be rewritten inside the same reveal`);
+    // the private twin holds the whole order but is editor-only, and its id must match the public ctl
+    const f = RULES[root].revealFull.$mode;
+    assert.ok(f['.validate'].includes("newData.child('r').val() === newData.parent().parent().child('revealPublic').child($mode).child('ctl').child('id').val()"), `${root}: revealFull.r == ctl.id`);
+    assert.equal(f.g.$g['.validate'].includes('shown'), false, `${root}: revealFull groups have no SHOWN clause`);
+  });
+});
+
+test('the reveal ctl enforces compare-and-set, one place at a time, a fresh Start, and a guarded delete', () => {
+  ROOTS.forEach((root) => {
+    const v = RULES[root].revealPublic.$mode.ctl['.validate'];
+    ["newData.child('seq').val() === data.child('seq').val() + 1", "data.child('phase').val() !== 'ended'",
+      "newData.child('shown').val() <= data.child('shown').val() + 1", "newData.child('shown').val() >= data.child('shown').val()",
+      "newData.child('cur').val() < newData.child('shown').val()",
+      "newData.child('ca').val() > now - 60000", "newData.child('ca').val() <= now + 60000",
+      "newData.child('startedAt').val() === now", "newData.child('seq').val() === 1", "newData.child('shown').val() === 0",
+      "newData.child('phase').val() === 'intro'",
+      "newData.child('until').val() === data.child('until').val()", "newData.child('finale').val() === data.child('finale').val()",
+      "newData.child('ca').val() === data.child('ca').val()", "newData.child('startedAt').val() === data.child('startedAt').val()",
+    ].forEach((c) => assert.ok(v.includes(c), `${root}: ctl rule says ${c}`));
+    const until = RULES[root].revealPublic.$mode.ctl.until['.validate'];
+    assert.ok(until.includes('10800000') && until.includes('172800000'), `${root}: a practice <= 3 h, a real reveal <= 48 h`);
+    // the one delete clause: only after `until` (server clock) — or by the owner (the new-year wizard)
+    const w = RULES[root].revealPublic['.write'];
+    assert.ok(w.includes("!data.child('real').exists() || newData.child('real').exists() || data.child('real').child('ctl').child('until').val() <= now"),
+      `${root}: deleting the real reveal waits for until`);
+    assert.ok(w.endsWith(`(${SRC.macros(root).OWNER}))`), `${root}: the owner may clear it any time`);
+  });
+});
+
+test('the public read is switched off by changing ONE value (the kill switch in the runbook)', () => {
+  // setup-rebuild-spec Appendix E: if the usage graph ever shows polling, change revealPublic/.read
+  // from true to the member expression and re-publish. Phones and remotes carry on; the big screen
+  // shows Waiting. The replacement expression must therefore exist verbatim in the file already.
+  ROOTS.forEach((root) => {
+    assert.equal(RULES[root].revealPublic['.read'], true);
+    assert.equal(RULES[root].setup['.read'], SRC.macros(root).MEMBER, `${root}: the member expression the kill switch swaps in`);
+  });
+});
+
+test('the rules file stays well inside the published size limit', () => {
+  // A PUT over the limit is refused and leaves the OLD rules live (nothing breaks), but a refused
+  // release at 9 PM is a bad evening. RTDB's documented limit is 256 KiB; keep a margin.
+  const { Buffer } = nodeRequire('buffer'); // the vm context has no Buffer of its own
+  const bytes = Buffer.byteLength(RULES_TEXT, 'utf8');
+  const minified = Buffer.byteLength(JSON.stringify(JSON.parse(RULES_TEXT)), 'utf8');
+  assert.ok(bytes < 192 * 1024, `as committed ${bytes} bytes — over 192 KiB, split R1 into R1a/R1b (setup-rebuild-spec §8.6)`);
+  assert.ok(minified < 160 * 1024, `minified ${minified} bytes`);
 });
