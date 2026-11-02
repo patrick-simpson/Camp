@@ -48,6 +48,9 @@
   --live-tint: #fde2de;
   --done: #0d542d;
   --done-tint: #d8efe0;
+  --on-live: #ffffff;        /* text on a --live fill */
+  --on-link: #ffffff;        /* a count badge's numeral on --link */
+  --warn-mark: #986409;      /* the dot in the "Offline" pill, on gold-tint */
   --medal-gold: #f2b632;     /* a disc means a PLACE won, never a count */
   --medal-silver: #c9d0da;
   --medal-bronze: #e0a36a;
@@ -169,6 +172,9 @@
   --done: #62d890;
   --done-tint: #14392a;
   --medal-ink: #0c1030;
+  --on-live: #0c1030;
+  --on-link: #0c1030;
+  --warn-mark: #f7b928;
   --shadow-rgb: 0, 0, 0;
   --flag-line: #0c1030;
   --pole: #c9cde8;
@@ -198,6 +204,9 @@
     --done: #62d890;
     --done-tint: #14392a;
     --medal-ink: #0c1030;
+    --on-live: #0c1030;
+    --on-link: #0c1030;
+    --warn-mark: #f7b928;
     --shadow-rgb: 0, 0, 0;
     --flag-line: #0c1030;
     --pole: #c9cde8;
@@ -521,9 +530,768 @@ html.theme-switching *::after {
 #app {
   max-width: 640px;
   margin: 0 auto;
-  /* The footer carries its own bottom padding — anything more here just
-     adds dead scroll below the last line. */
-  padding-bottom: 0;
+  /* Room for the fixed tab bar plus a breath, so the last line of any tab can
+     scroll clear of it (redesign §13.7). */
+  padding-bottom: calc(var(--tabbar-h) + var(--s-6));
+}
+
+/* ============================================================
+   THE FRAME (redesign §2.2, §13): icons, header, tab panels, tab
+   bar, takeovers, sheets
+   ============================================================
+   Everything here is static markup in index.html; renderers only patch text,
+   hidden and a few attributes. #app[data-tab] is the one switch the CSS
+   reads (which panel, the header's form, where the tab blob rests). */
+
+/* The line-icon family (§8.6): one stroke weight, round caps, currentColor. */
+.ico-sprite {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+.ico {
+  width: 24px;
+  height: 24px;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ── Tab panels ─────────────────────────────────────────────────
+   Only the active one is in the layout. No data-tab at all reads as Now, so a
+   page whose switcher never ran still shows today's home. */
+#app[data-tab]:not([data-tab="now"]) #tab-now,
+#app:not([data-tab="games"]) #tab-games,
+#app:not([data-tab="chat"]) #tab-chat,
+#app:not([data-tab="more"]) #tab-more {
+  display: none;
+}
+/* Today's footer and connection line belong to Now until they move into More's
+   footer (§2.4). */
+#app[data-tab]:not([data-tab="now"]) :is(#app-footer, #sync-status-footer) {
+  display: none;
+}
+#tab-games,
+#tab-more {
+  padding: var(--s-1) var(--gutter) 0;
+}
+
+/* ── Header ─────────────────────────────────────────────────────
+   Paper, sticky, no bar colour: the page's own surface carries on under the
+   status bar (theme-color is paper too), so the frame reads as one sheet of
+   paper with a tab bar, not a stack of coloured strips. */
+.app-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  background: var(--paper);
+  padding-top: env(safe-area-inset-top, 0px);
+}
+/* Set by a passive scroll listener once the page has moved under the header:
+   a hairline appears only when there is something to separate. */
+.app-header.is-scrolled {
+  box-shadow: 0 1px 0 var(--line-2);
+}
+.hdr-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  min-height: var(--header-h);
+  padding: 0 var(--gutter);
+}
+/* Who you are (Now). The whole block is the button for the Your team sheet;
+   its box bleeds 6px past the gutter so the shield sits ON the gutter line. */
+.hdr-id {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: var(--target);
+  margin: 0 -6px;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: var(--r-btn);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.hdr-mark {
+  width: 34px;
+  height: 34px;
+  flex: none;
+}
+img.hdr-mark,
+.hdr-mark img {
+  display: block;
+  width: 34px;
+  height: auto;
+  /* Shields keep their soft drop shadow (§8.4); flags and tiles don't. */
+  filter: drop-shadow(0 1.5px 1.5px rgba(var(--shadow-rgb), .28));
+}
+/* A director with no team gets the camp's mark instead of a shield. */
+.hdr-campmark {
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: var(--blue);
+  color: var(--on-blue);
+}
+.hdr-campmark .ico {
+  width: 22px;
+  height: 22px;
+}
+.hdr-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.hdr-name,
+.hdr-sub {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.hdr-name {
+  font: 800 1.0625rem/1.18 var(--font-ui);
+  letter-spacing: -0.015em;
+}
+.hdr-sub {
+  font: 600 0.8125rem/1.3 var(--font-ui);
+  color: var(--ink-2);
+}
+/* The tab's name (Games, Chat, More): orientation, so it is the biggest text
+   in the header, but the tab's own content keeps the headline (§8.1 rule 1). */
+.hdr-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font: var(--t-title);
+  letter-spacing: var(--track-tight);
+}
+.hdr-title > span {
+  display: none;
+}
+#app[data-tab="games"] .hdr-title > [data-title-for="games"],
+#app[data-tab="chat"] .hdr-title > [data-title-for="chat"],
+#app[data-tab="more"] .hdr-title > [data-title-for="more"] {
+  display: inline;
+}
+#app:not([data-tab]) :is(.hdr-title, .hdr-who),
+#app[data-tab="now"] :is(.hdr-title, .hdr-who),
+#app[data-tab]:not([data-tab="now"]) .hdr-id {
+  display: none;
+}
+.hdr-who {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font: 700 0.8125rem/1.3 var(--font-ui);
+  color: var(--ink-2);
+  text-align: right;
+}
+/* The status pill takes the identity line's place when something is wrong. */
+.hdr-pill:not([hidden]) ~ .hdr-who {
+  display: none;
+}
+.hdr-pill {
+  flex: none;
+  display: flex;
+  align-items: center;
+  min-height: var(--target);
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+.hdr-pill-face {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 2px 10px;
+  border-radius: 9px;
+  background: var(--paper-2);
+  box-shadow: inset 0 0 0 1.5px var(--line-2);
+  font: 800 0.8125rem/1.2 var(--font-ui);
+}
+.hdr-pill-dot {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--ink-3);
+}
+.hdr-pill[data-tone="offline"] .hdr-pill-face {
+  background: var(--gold-tint);
+  box-shadow: inset 0 0 0 1.5px var(--gold-edge);
+}
+.hdr-pill[data-tone="offline"] .hdr-pill-dot {
+  background: var(--warn-mark);
+}
+.hdr-pill[data-tone="update"] .hdr-pill-face {
+  background: var(--blue-tint);
+  box-shadow: inset 0 0 0 1.5px var(--blue);
+}
+.hdr-pill[data-tone="update"] .hdr-pill-dot {
+  background: var(--blue);
+}
+.hdr-pill[data-tone="error"] .hdr-pill-face {
+  background: var(--live-tint);
+  box-shadow: inset 0 0 0 1.5px var(--live);
+}
+.hdr-pill[data-tone="error"] .hdr-pill-dot {
+  background: var(--live);
+}
+/* Reconnecting breathes; calm holds it still (a solid dot still says "wait"). */
+.hdr-pill[data-tone="wait"] .hdr-pill-dot {
+  animation: frame-breathe 1.6s var(--jm-std) infinite;
+}
+@keyframes frame-breathe {
+  50% { opacity: .3; }
+}
+
+/* The live-reveal strip: red, under the header on every tab but Now. */
+.reveal-strip {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  width: 100%;
+  min-height: var(--strip-h);
+  padding: 0 var(--gutter);
+  border: 0;
+  background: var(--live);
+  color: var(--on-live);
+  font: 750 0.9375rem/1.2 var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+#app:not([data-tab]) .reveal-strip,
+#app[data-tab="now"] .reveal-strip {
+  display: none;
+}
+.reveal-strip-dot {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  border-radius: 50%;
+  background: currentColor;
+  animation: frame-breathe 1.2s var(--jm-std) infinite;
+}
+.reveal-strip-chev {
+  width: 20px;
+  height: 20px;
+  margin-left: auto;
+  stroke-width: 2.6;
+}
+html.calm-motion .hdr-pill[data-tone="wait"] .hdr-pill-dot,
+html.calm-motion .reveal-strip-dot {
+  animation: none;
+}
+
+/* ── Tab bar ────────────────────────────────────────────────────
+   Sheet-white on paper with one hairline: the only surface that is always on
+   screen, so it is the quietest one. Every button is a full quarter of the
+   width by 50px — far past the 44×44 floor — and grows with larger text
+   (min-height, never height). */
+.tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 50;
+  padding: 5px max(6px, env(safe-area-inset-right, 0px)) env(safe-area-inset-bottom, 0px) max(6px, env(safe-area-inset-left, 0px));
+  background: var(--sheet);
+  border-top: 1px solid var(--line-2);
+  transition: transform var(--jm-enter-ms) var(--jm-enter), visibility 0s;
+}
+/* Out of the way under a takeover and while typing (§13.6): it slides down;
+   visibility follows once it has gone so it can't take focus. Today's
+   builder and chat takeovers count as takeovers until they move into the
+   frame (chat becomes a tab: drop body.chat-open from this list then). */
+body.takeover-open .tabbar,
+body.kb-open .tabbar,
+body.builder-open .tabbar,
+body.chat-open .tabbar {
+  transform: translateY(100%);
+  visibility: hidden;
+  transition: transform var(--jm-exit-ms) var(--jm-std), visibility 0s linear var(--jm-exit-ms);
+}
+html.calm-motion .tabbar {
+  transition: none;
+}
+.tabbar-row {
+  --tab-i: 0;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  max-width: 640px;
+  margin: 0 auto;
+}
+#app[data-tab="games"] .tabbar-row { --tab-i: 1; }
+#app[data-tab="chat"] .tabbar-row { --tab-i: 2; }
+#app[data-tab="more"] .tabbar-row { --tab-i: 3; }
+/* ONE blob, resting behind the active icon. The switcher springs it from the
+   old tab with JellyMotion (snap, a stretch from its velocity); calm just lets
+   it jump here. Never transitioned in CSS: a transition would fight the
+   spring and replay on a theme flip. */
+.tab-blob {
+  position: absolute;
+  top: 0;
+  left: calc(100% / 4 * (var(--tab-i) + .5) - 30px);
+  width: 60px;
+  height: 30px;
+  border-radius: 15px;
+  background: var(--blue-tint);
+  box-shadow: inset 0 0 0 1.5px var(--blue);
+  pointer-events: none;
+}
+.tab {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  min-height: 50px;
+  padding: 0 2px 4px;
+  border: 0;
+  border-radius: var(--r-btn);
+  background: none;
+  color: var(--ink-2);
+  font: inherit;
+  cursor: pointer;
+}
+.tab-ico {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 60px;
+  height: 30px;
+}
+.tab-label {
+  font: 700 0.78125rem/1.2 var(--font-ui);
+  letter-spacing: 0;
+}
+.tab[aria-selected="true"] {
+  color: var(--ink);
+}
+.tab[aria-selected="true"] .tab-ico {
+  color: var(--blue);
+}
+.tab[aria-selected="true"] .tab-label {
+  font-weight: 800;
+}
+/* Counts and dots sit on the icon's corner, ringed in the bar's own colour so
+   they read as cut out of it. Never colour alone: the count is a number, and
+   the dots' meaning is in the button's accessible name. */
+.tab-badge {
+  position: absolute;
+  top: -4px;
+  left: 35px;
+  min-width: 19px;
+  height: 19px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: var(--link);
+  color: var(--on-link);
+  font: 800 0.75rem/19px var(--font-ui);
+  font-style: normal;
+  text-align: center;
+  box-shadow: 0 0 0 2px var(--sheet);
+}
+.tab-dot {
+  position: absolute;
+  top: 0;
+  left: 38px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--sheet);
+}
+.tab-dot-live {
+  background: var(--live);
+}
+.tab-dot-gold {
+  background: var(--gold);
+  box-shadow: 0 0 0 2px var(--sheet), inset 0 0 0 1.5px var(--gold-edge);
+}
+
+/* Toasts ride above the tab bar (§13.7). The v184 lift rules further down
+   (update bar, SDK pill, chat composer) still out-rank this while those
+   layers exist; they retire when the update / SDK lines move into the header
+   pill, and this becomes the only bottom offset. */
+jelly-toaster[position="bottom"] {
+  bottom: calc(var(--tabbar-h) + var(--s-3));
+}
+/* Over a takeover the tab bar is gone; a toast clears the dock instead, so it
+   never lands on Save. */
+body.takeover-open jelly-toaster[position="bottom"] {
+  bottom: calc(env(safe-area-inset-bottom, 0px) + var(--s-3));
+}
+body:has(.takeover:not([hidden]) > .tk-dock:not([hidden])) jelly-toaster[position="bottom"] {
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 104px);
+}
+
+/* ── Chat as a tab (§6) ─────────────────────────────────────────
+   A fixed panel between the header and the tab bar, with its own scroll; it
+   rides the keyboard (--kb-h, set from visualViewport on iOS) while the tab
+   bar slides away. */
+#app[data-tab="chat"] #tab-chat {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: calc(env(safe-area-inset-top, 0px) + var(--header-h));
+  bottom: var(--tabbar-h);
+  display: flex;
+  flex-direction: column;
+  max-width: 640px;
+  margin: 0 auto;
+}
+body.kb-open #app[data-tab="chat"] #tab-chat {
+  bottom: var(--kb-h, 0px);
+}
+
+/* ── Takeovers ──────────────────────────────────────────────────
+   Full screen, own scroll, labelled back. Paper header by default; .is-roof
+   on the section turns it into the camp-blue broadcast roof, which does NOT
+   flip in dark (the roof means "everyone sees what you press here"). */
+.takeover {
+  position: fixed;
+  inset: 0;
+  z-index: 54;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  color: var(--ink);
+}
+body.kb-open .takeover {
+  bottom: var(--kb-h, 0px);
+}
+.tk-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: calc(60px + env(safe-area-inset-top, 0px));
+  padding: env(safe-area-inset-top, 0px) var(--gutter) 0 10px;
+  border-bottom: 1px solid var(--line-2);
+  background: var(--paper);
+}
+.tk-back {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  min-width: var(--target);
+  min-height: var(--target);
+  padding: 0 8px 0 2px;
+  border: 0;
+  border-radius: var(--r-btn);
+  background: none;
+  color: var(--link);
+  font: 750 1rem/1.1 var(--font-ui);
+  cursor: pointer;
+}
+.tk-back .ico {
+  width: 22px;
+  height: 22px;
+  stroke-width: 2.6;
+}
+.tk-titles {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.tk-title {
+  margin: 0;
+  font: 850 1.125rem/1.15 var(--font-ui);
+  letter-spacing: var(--track-row);
+  overflow-wrap: anywhere;
+}
+.tk-sub {
+  margin: 1px 0 0;
+  font: var(--t-meta);
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.tk-sub:empty {
+  display: none;
+}
+.tk-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: var(--s-3) var(--gutter) calc(var(--s-6) + env(safe-area-inset-bottom, 0px));
+}
+.tk-dock {
+  flex: none;
+  padding: var(--s-3) var(--gutter) calc(var(--s-3) + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--line-2);
+  background: var(--paper);
+}
+/* Nothing in the game's Save / Next bar is needed mid-typing (§5.5); a dock
+   that carries the action (Tell everyone) rides the keyboard instead. */
+body.kb-open .tk-dock[data-kb-hide] {
+  display: none;
+}
+body.kb-open .tk-dock {
+  padding-bottom: var(--s-3);
+}
+/* The roof. White on camp blue is 6.5:1, so every roof label is 16px+. */
+.takeover.is-roof .tk-head {
+  min-height: calc(56px + env(safe-area-inset-top, 0px));
+  border-bottom: 5px solid var(--roof-edge);
+  background: var(--roof);
+  color: var(--on-roof);
+}
+.takeover.is-roof .tk-back {
+  padding: 0 12px 0 6px;
+  background: rgba(255, 255, 255, .18);
+  color: var(--on-roof);
+}
+.takeover.is-roof .tk-title {
+  font: 800 1.1875rem/1.15 var(--font-ui);
+}
+.takeover.is-roof .tk-sub {
+  font: 650 1rem/1.25 var(--font-ui);
+  color: var(--on-roof);
+}
+/* A status chip on the roof's right ("● Ready", "● Live · 3 of 6"). */
+.tk-chip {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 11px 7px 9px;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #141a48;
+  font: 800 0.875rem/1.2 var(--font-ui);
+}
+.tk-chip i {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #0d542d;
+}
+.tk-chip i.is-live {
+  background: #951b14;
+  box-shadow: 0 0 0 3px rgba(149, 27, 20, .2);
+}
+
+/* ── Sheets ─────────────────────────────────────────────────────
+   Thrown up from the bottom; the grab strip is the drag handle. */
+.sheet-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+.sheet-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(var(--shadow-rgb), .42);
+}
+.sheet {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 640px;
+  max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 40px);
+  margin: 0 auto;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  border-radius: 20px 20px 0 0;
+  background: var(--sheet);
+  box-shadow: var(--shadow-sheet);
+}
+.sheet-grab {
+  flex: none;
+  display: grid;
+  place-items: center;
+  height: 24px;
+  touch-action: none;
+  cursor: grab;
+}
+.sheet-grab::before {
+  content: '';
+  width: 40px;
+  height: 5px;
+  border-radius: 3px;
+  /* 3:1 against the sheet in both themes: a boundary you must see, not ink. */
+  background: color-mix(in srgb, var(--ink-3) 62%, var(--sheet));
+}
+.sheet-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 0 6px var(--s-2) var(--gutter);
+}
+.sheet-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font: var(--t-head);
+  letter-spacing: var(--track-tight);
+}
+.sheet-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--target);
+  height: var(--target);
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.sheet-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: var(--s-1) var(--gutter) var(--s-6);
+}
+
+/* ── Chunky buttons (§8.1 rule 3, §8.10) ────────────────────────
+   Chunky means pressable: a 2px border and a solid bottom edge that
+   compresses while held (that compression is feedback, so calm keeps it);
+   the dent toward the finger and the wobble back are JellyMotion's, on top.
+   Rows that navigate have a chevron instead; static information has neither.
+   min-height, never height, so a label can wrap at large text sizes. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: var(--target);
+  padding: 4px 16px;
+  border: 2px solid var(--card-b);
+  border-radius: var(--r-btn);
+  background: var(--sheet);
+  color: var(--ink);
+  box-shadow: 0 var(--edge-btn) 0 var(--edge);
+  font: 800 0.9375rem/1.15 var(--font-ui);
+  text-align: center;
+  cursor: pointer;
+  transition: box-shadow var(--jm-press-ms) var(--jm-press);
+}
+.btn:active {
+  box-shadow: 0 1px 0 var(--edge);
+}
+/* THE primary action on a screen: gold, one per screen. */
+.btn-gold {
+  border-color: var(--gold-edge);
+  background: var(--gold);
+  color: var(--gold-ink);
+  box-shadow: 0 var(--edge-btn) 0 var(--gold-edge);
+}
+.btn-gold:active {
+  box-shadow: 0 1px 0 var(--gold-edge);
+}
+.btn-block {
+  display: flex;
+  width: 100%;
+}
+/* A dock's one big action (Save result, Send to everyone). */
+.btn-big {
+  min-height: 62px;
+  border-width: 3px;
+  border-radius: 18px;
+  box-shadow: 0 6px 0 var(--edge);
+  font: 900 1.3125rem/1.1 var(--font-ui);
+  letter-spacing: -0.01em;
+}
+.btn-big.btn-gold {
+  box-shadow: 0 6px 0 var(--gold-edge);
+}
+.btn-big:active,
+.btn-big.btn-gold:active {
+  box-shadow: 0 2px 0 var(--gold-edge);
+}
+/* Not yet: a dashed well that says what is missing ("Pick bronze, then
+   save"), never a greyed-out copy of the real button. */
+.btn:disabled,
+.btn[aria-disabled="true"] {
+  border: 2px dashed var(--ink-3);
+  background: var(--paper-2);
+  color: var(--ink-2);
+  box-shadow: none;
+  cursor: default;
+}
+
+/* ── Segmented controls (Theme, Calm motion, Camp, the day picker, chat
+   channels) ───────────────────────────────────────────────────────
+   Shell markup, not jelly-segmented (§8.10): a well with 44px segments;
+   the chosen one is lifted out of it (sheet, ink ring, a 2px edge). The state
+   is the ARIA attribute the renderer already has to set (aria-checked in a
+   radiogroup, aria-selected in a tablist, aria-current), so there is no
+   second "on" class to keep in step. .seg-fit sizes segments to their labels
+   (chat channels with counts) instead of sharing the width equally. */
+.seg {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--r-btn);
+  background: var(--paper-2);
+}
+.seg.seg-fit {
+  display: flex;
+}
+.seg-btn {
+  min-width: 0;
+  min-height: var(--target);
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--ink-2);
+  font: 700 0.90625rem/1.15 var(--font-ui);
+  cursor: pointer;
+}
+.seg-fit .seg-btn {
+  flex: 1 1 auto;
+  white-space: nowrap;
+}
+.seg-btn:is([aria-checked="true"], [aria-selected="true"], [aria-current="true"], [aria-current="page"]) {
+  background: var(--sheet);
+  color: var(--ink);
+  font-weight: 800;
+  box-shadow: 0 0 0 1.5px var(--card-b), 0 2px 0 var(--edge);
+}
+/* An unread count inside a segment ("General 2"). */
+.seg-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 19px;
+  height: 19px;
+  margin-left: 4px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: var(--link);
+  color: var(--on-link);
+  font: 800 0.75rem/1 var(--font-ui);
+  vertical-align: 1px;
 }
 
 /* ============================================================
@@ -837,8 +1605,9 @@ html.calm-motion .lock-box.shake { animation: none; }
    LAYOUT
    ============================================================ */
 .main-wrap {
-  /* Top padding stands in for the removed header (and clears the notch). */
-  padding: calc(15px + env(safe-area-inset-top)) 1rem 0;
+  /* The sticky header (.app-header) clears the notch now; this is only the
+     breath between it and the first section. */
+  padding: var(--s-1) 1rem 0;
   display: flex;
   flex-direction: column;
   /* 15px between every section (hidden sections don't create gaps), so the
