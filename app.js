@@ -2888,6 +2888,9 @@ let fbRef = null;
 // key lets the rules pin the whole subtree to the writer's own identity.
 const presenceId = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : newBonusId();
 let presenceCount = 0;
+// The presence tree as the listener last heard it (member -> device -> {at}): setup-sync.js's Devices
+// list joins it with editorsHere by device id. Null until the first snapshot.
+let presenceRows = null;
 
 // Claim this tab's presence row and arrange for it to vanish when the socket
 // drops. Called on every (re)connect, because onDisconnect handlers don't
@@ -4701,13 +4704,16 @@ function initSync() {
       // don't survive a dropped socket, so a reconnect after wifi drops or
       // the phone waking up needs a fresh one each time.
       if (fbConnected) registerPresence();
+      // "Also here" (setup-sync.js): a director's builder row needs registering afresh on every connect too.
+      if (fbConnected && typeof editorsHereOnConnect === 'function') editorsHereOnConnect();
     });
     // Count listener lives here (not inside the connected handler above) so
     // it's registered exactly once — putting it there would re-subscribe on
     // every reconnect and stack up duplicate listeners.
     try {
       firebase.database().ref(dbPath('presence')).on('value', (snap) => {
-        presenceCount = presenceDeviceCount(snap.val());
+        presenceRows = snap.val();
+        presenceCount = presenceDeviceCount(presenceRows);
         renderPresence();
       }, () => { /* denied: the chip stays hidden. Never touch fbRef/syncDenied. */ });
     } catch (e) { /* ignore — chip just stays hidden */ }

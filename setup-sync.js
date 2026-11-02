@@ -26,7 +26,7 @@
 //      later snapshots (rebase), commitSetup, push, refusals (bisect + quarantine),
 //      clashes and the Put-it-back list, undo, accounting, the sync line
 //   3. restore points and Backups v3
-//   4. "also here" (editorsHere) and Devices (the next commit)
+//   4. "also here" (editorsHere) and the Devices list
 
 const SETUP_KEY = 'campScoreboardSetupV1';   // lsKey()'d; wiped by clearLocalData
 const SETUP_SCHEMA = 1;                      // the highest meta/schema this build understands
@@ -366,7 +366,7 @@ const setupListeners = [];
 
 // The one hook UI layers use to repaint (the hub, the sync line, the sheets). Kinds:
 // 'sync' (connection / pending / quarantine changed), 'tree' (the data changed),
-// 'commit' (this device committed), 'clashes'. A listener that throws never stops the engine.
+// 'commit' (this device committed), 'clashes', 'here' (who else has the builder open changed). A listener that throws never stops the engine.
 function onSetupEvent(fn) {
   setupListeners.push(fn);
   return () => { const i = setupListeners.indexOf(fn); if (i !== -1) setupListeners.splice(i, 1); };
@@ -1282,6 +1282,7 @@ function flushSetupPush() {
 // is not typing into the builder any more.
 function setupOnRoleChange(prev, next) {
   if (prev === 'editor' && next !== 'editor') { setupFocus = null; setupFocusOwed = {}; }
+  if (typeof editorsHereOnRoleChange === 'function') editorsHereOnRoleChange(prev, next);
 }
 
 // ── the sync line (the builder frame's `#setup-sync[data-tone]`) ─────
@@ -1900,5 +1901,303 @@ function restoreImportExtras(parsed, copyMode) {
 
 // A device back online sends the point that was waiting in the outbox.
 onSetupEvent((kind) => { if (kind === 'sync' && fbConnected && rpOutboxRead().length) restoreFlushOutbox().catch(() => {}); });
+
+// ── 4. "Also here" (editorsHere) and the Devices list (§6.7) ─────────
+// Which directors have Set up the week open right now, and where in it. A SEPARATE node from
+// presence (which stays `{at}` and untouched — the footer chip is unchanged):
+//   <root>/editorsHere/<memberKey>/<deviceId> = { at, v, where? }
+// editor-read, key-pinned to the writer, `at === now` on every write and a 1 s floor per row, so
+// viewers neither write nor receive it and only editor devices hold its listener. `where` is a
+// short vocabulary ([a-z0-9:_-]{1,60}, never blank — it is REMOVED, not emptied, on leaving).
+// No heartbeat: a ghost row lasts until the server notices the dead socket. Under rules that
+// predate it the writes are refused and swallowed (the feature just shows nobody).
+//
+// DARK (the owner's rule for Step 14: nothing writes unless a director acts): a row exists only
+// while this device has Set up the week open — editorsHereStart() when it opens, ...Move() on every
+// screen or sheet change, ...Stop() when it closes. The spec wanted a row from every editor device
+// on every connect (so a Devices row with no match reads "older than this build"); that is one
+// switch, EDITORS_HERE_EAGER, for the step that turns the setup screens on. Until then a Devices
+// row with no editorsHere row says its build is UNKNOWN, not old.
+const EDITORS_HERE_MIN_MS = 1200;          // sits above the rules' 1000 ms floor, so a real person is never refused
+const EDITORS_HERE_EAGER = false;          // true = a row on every connect of every editor device (spec §6.7)
+const EDITORS_HERE_WHERE_RE = /^[a-z0-9:_-]{1,60}$/;
+const DEVICES_FRESH_MS = 10 * 60 * 1000;   // a presence row older than this isn't a device that is here
+let ehMinMs = EDITORS_HERE_MIN_MS;         // (a test shortens it)
+let ehActive = false;                      // Set up the week is open on this device
+let ehRef = null;                          // the editorsHere listener's ref
+let ehTree = null;                         // what that listener last said (editor devices only)
+let ehWhere = '';                          // where this device is, as last asked
+let ehRowLive = false;                     // my row exists (set, not yet removed)
+let ehLastWriteAt = 0;
+let ehTimer = null;                        // the trailing write that honours the floor
+
+function ehMyKey() {
+  return identityKey(authUser);
+}
+
+function ehMayWrite() {
+  return canEdit() && restoreHasFirebase() && !!ehMyKey() && typeof presenceId === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(presenceId);
+}
+
+function ehRowRef() {
+  return firebase.database().ref(dbPath('editorsHere/' + ehMyKey() + '/' + presenceId));
+}
+
+// Is `where` something the rules would take? ('' = nowhere in particular.)
+function editorsHereWhereOk(where) {
+  return where === '' || EDITORS_HERE_WHERE_RE.test(where);
+}
+
+// ── writing my row ───────────────────────────────────────────────────
+
+function ehWriteNow() {
+  clearTimeout(ehTimer);
+  ehTimer = null;
+  if (!ehMayWrite() || !(ehActive || EDITORS_HERE_EAGER)) return;
+  const TS = firebase.database.ServerValue.TIMESTAMP;
+  ehLastWriteAt = Date.now();
+  try {
+    const ref = ehRowRef();
+    if (!ehRowLive) {
+      // The first write of a connection: the row, and its removal when the socket drops. onDisconnect
+      // doesn't survive a dropped socket, so every (re)connect comes through here again.
+      if (typeof ref.onDisconnect === 'function') ref.onDisconnect().remove().catch(() => {});
+      const row = { at: TS, v: APP_VERSION };
+      if (ehWhere) row.where = ehWhere;
+      ehRowLive = true;
+      ref.set(row).catch(() => {});
+    } else {
+      ref.update({ at: TS, where: ehWhere || null }).catch(() => {}); // `where` removed, never blank
+    }
+  } catch (e) { /* the feature just shows nobody */ }
+}
+
+// At most one write per row per EDITORS_HERE_MIN_MS: a quick run of screen changes is coalesced
+// into one trailing write carrying the LAST place, never a refusal.
+function ehSchedule() {
+  if (!ehMayWrite() || !(ehActive || EDITORS_HERE_EAGER)) return;
+  const wait = ehLastWriteAt + ehMinMs - Date.now();
+  if (wait <= 0) { ehWriteNow(); return; }
+  if (!ehTimer) ehTimer = setTimeout(ehWriteNow, wait);
+}
+
+// Set up the week was opened on this device (the hub, `where` = 'hub'). Director devices only.
+function editorsHereStart(where) {
+  if (!canEdit()) return false; // a viewer or a view-only tab neither writes nor listens
+  ehActive = true;
+  ehWhere = editorsHereWhereOk(where || '') ? (where || '') : '';
+  attachEditorsHere();
+  ehSchedule();
+  setupNotify('here');
+  return true;
+}
+
+// A screen or sheet changed inside the builder.
+function editorsHereMove(where) {
+  if (!ehActive && !EDITORS_HERE_EAGER) return false;
+  const w = where || '';
+  if (!editorsHereWhereOk(w)) return false;
+  if (w === ehWhere && ehRowLive) return true;
+  ehWhere = w;
+  ehSchedule();
+  return true;
+}
+
+// The builder closed (or this device stopped being a director): the row goes, and so does the listener.
+// (Eager mode keeps the row for the whole connection and only removes `where`.)
+function editorsHereStop() {
+  const wasActive = ehActive;
+  ehActive = false;
+  ehWhere = '';
+  clearTimeout(ehTimer);
+  ehTimer = null;
+  if (EDITORS_HERE_EAGER && ehRowLive && ehMayWrite()) { ehSchedule(); return; }
+  if (ehRowLive && restoreHasFirebase() && ehMyKey()) {
+    try { ehRowRef().remove().catch(() => {}); } catch (e) { /* ignore */ }
+  }
+  ehRowLive = false;
+  detachEditorsHere();
+  if (wasActive) setupNotify('here');
+}
+
+// Every (re)connect: the row and its onDisconnect handler need registering afresh. Called from
+// app.js's .info/connected handler beside registerPresence(); nothing happens unless the builder is open.
+function editorsHereOnConnect() {
+  ehRowLive = false;
+  if (ehActive || EDITORS_HERE_EAGER) { if (EDITORS_HERE_EAGER && canEdit()) attachEditorsHere(); ehSchedule(); }
+}
+
+// ── listening (editor devices only) ──────────────────────────────────
+
+function attachEditorsHere() {
+  if (ehRef || !ehMayWrite()) return;
+  try {
+    ehRef = firebase.database().ref(dbPath('editorsHere'));
+    ehRef.on('value', (snap) => {
+      ehTree = snap.val();
+      setupNotify('here');
+    }, () => {
+      // Refused (rules that predate it, or access changed): this feature only. Never fbRef/syncDenied.
+      ehTree = null;
+      ehRef = null;
+      setupNotify('here');
+    });
+  } catch (e) { ehRef = null; }
+}
+
+function detachEditorsHere() {
+  if (ehRef) { try { ehRef.off('value'); } catch (e) { /* ignore */ } }
+  ehRef = null;
+  ehTree = null;
+}
+
+// A demotion or removal: the row goes and the listener with it (setupOnRoleChange, from setMemberRole).
+function editorsHereOnRoleChange(prev, next) {
+  if (prev === 'editor' && next !== 'editor') {
+    ehActive = false;
+    clearTimeout(ehTimer);
+    ehTimer = null;
+    if (ehRowLive && restoreHasFirebase() && ehMyKey()) { try { ehRowRef().remove().catch(() => {}); } catch (e) { /* ignore */ } }
+    ehRowLive = false;
+    ehWhere = '';
+    detachEditorsHere();
+  }
+}
+
+// ── reading ──────────────────────────────────────────────────────────
+
+// A director's name for display: the member directory's (editor-maintained), failing CLOSED to
+// "Another director" like chatAuthorName — never anything the writing device claimed. Only keys whose
+// directory role is editor are shown at all, once the directory has arrived.
+function ehEditorKeyShown(key) {
+  if (!memberDirectoryLoaded || !memberDirectory) return true; // can't tell yet: the node is editor-read, so its writers were editors
+  const rec = Object.prototype.hasOwnProperty.call(memberDirectory, key) ? memberDirectory[key] : null;
+  return !!rec && rec.role === 'editor';
+}
+
+// Words for a `where`: "Tuesday's schedule", "this item", "Rain bowling".
+function editorsHereWhereWords(where) {
+  const parts = String(where || '').split(':');
+  const day = (dk) => SETUP_DAY_WORDS[dk] || dk;
+  switch (parts[0]) {
+    case 'hub': return 'the checklist';
+    case 'week': return 'the camp week';
+    case 'schedule': return parts[1] === 'typical' ? 'the typical day' : parts[1] ? day(parts[1]) + '’s schedule' : 'the schedule';
+    case 'item': return 'an item on ' + (day(parts[1]) || 'the schedule');
+    case 'rain': return day(parts[1]) + '’s rain plan';
+    case 'games': return 'the games';
+    case 'game': {
+      const g = typeof allGames === 'function' ? allGames().find((x) => x.id === parts[1]) : null;
+      return g ? g.name : 'a game';
+    }
+    case 'teams': return 'the teams';
+    case 'team': return typeof teamName === 'function' ? teamName(parts[1]) : 'a team';
+    case 'people': return 'the people list';
+    case 'campers': return 'the campers';
+    case 'meals': return 'the menus';
+    case 'verses': return 'the memory verses';
+    case 'cleanup': return 'the cleanup rota';
+    case 'electives': return 'the electives';
+    case 'wizard': return 'the new-year setup';
+    case 'restore': return 'the restore points';
+    default: return 'the setup';
+  }
+}
+
+function ehAgo(at) {
+  const ms = serverNow() - Number(at || 0);
+  if (!(ms > 0)) return 'just now';
+  const m = Math.floor(ms / 60000);
+  if (m < 1) return 'just now';
+  if (m < 60) return m + ' min ago';
+  return Math.floor(m / 60) + ' h ago';
+}
+
+// Everybody else who has Set up the week open, newest first. This device's own row is skipped;
+// another device of the same director is "You (another device)".
+function editorsHereList() {
+  const out = [];
+  if (!canEdit() || !setupIsMap(ehTree)) return out;
+  const me = ehMyKey();
+  Object.keys(ehTree).forEach((key) => {
+    const devices = ehTree[key];
+    if (!setupIsMap(devices) || !ehEditorKeyShown(key)) return;
+    Object.keys(devices).forEach((device) => {
+      const r = devices[device];
+      if (!setupIsMap(r) || typeof r.at !== 'number') return;
+      if (key === me && device === presenceId) return;
+      const where = typeof r.where === 'string' && editorsHereWhereOk(r.where) ? r.where : '';
+      out.push({
+        key, device, at: r.at, v: typeof r.v === 'number' ? r.v : null, where,
+        mine: key === me, name: key === me ? 'You (another device)' : setupEditorName(key),
+        words: where ? editorsHereWhereWords(where) : 'the setup', ago: ehAgo(r.at),
+      });
+    });
+  });
+  return out.sort((a, b) => b.at - a.at);
+}
+
+// The header: up to three initials, or the phone's "Jenn is also here" (tap → "Jenn · Tuesday's schedule · 2 min ago").
+function editorsHereHeader() {
+  const rows = editorsHereList();
+  const names = [...new Set(rows.map((r) => r.name))];
+  const faces = names.slice(0, 3).map((n) => (n === 'You (another device)' ? 'Y' : n === 'Another director' ? 'D' : n.charAt(0).toUpperCase()));
+  let text = '';
+  if (names.length === 1) text = names[0] === 'You (another device)' ? 'You are also here on another device' : names[0] + ' is also here';
+  else if (names.length === 2) text = names[0] + ' and ' + names[1] + ' are also here';
+  else if (names.length > 2) text = names[0] + ' and ' + (names.length - 1) + ' others are also here';
+  return { count: rows.length, faces, text, rows: rows.map((r) => ({ name: r.name, text: r.name + ' · ' + r.words + ' · ' + r.ago })) };
+}
+
+// On a matching screen: "Jenn is also editing Tuesday — changes merge field by field". In a sheet for the same
+// item: "Jenn is editing this item too". `where` is this device's own.
+function editorsHereOn(where) {
+  const same = editorsHereList().filter((r) => r.where === where && r.where !== '');
+  if (!same.length) return '';
+  const names = [...new Set(same.map((r) => r.name))];
+  const who = names.length === 1 ? names[0] : names.length === 2 ? names[0] + ' and ' + names[1] : names[0] + ' and ' + (names.length - 1) + ' others';
+  if (/^item:/.test(where)) return who + (names.length === 1 ? ' is' : ' are') + ' editing this item too';
+  return who + (names.length === 1 ? ' is' : ' are') + ' also editing ' + editorsHereWhereWords(where) + ' — changes merge field by field';
+}
+
+// ── Devices (the hub's ⋯ menu) ───────────────────────────────────────
+// Director devices only: presence rows (at within 10 minutes) of members whose directory role is editor, each
+// matched to its editorsHere row by DEVICE ID and grouped by build. A hint, never a gate: "2 director devices
+// are on an older version — they update when reopened". (Old VIEWER builds don't matter: they never write
+// setup or config.)
+function devicesList() {
+  const out = { rows: [], byBuild: {}, older: 0, unknown: 0, total: 0, lede: 'No other director devices are here right now' };
+  if (!canEdit() || !setupIsMap(presenceRows)) return out;
+  const me = ehMyKey();
+  const now = serverNow();
+  Object.keys(presenceRows).forEach((key) => {
+    const devices = presenceRows[key];
+    if (!setupIsMap(devices) || typeof devices.at === 'number') return; // the old flat shape is ignored, as presenceDeviceCount does
+    if (!memberDirectoryLoaded || !memberDirectory || !ehEditorKeyShown(key)) return; // role-less: not a director device as far as this phone can tell
+    Object.keys(devices).forEach((device) => {
+      const p = devices[device];
+      if (!setupIsMap(p) || typeof p.at !== 'number') return;
+      if (now - p.at > DEVICES_FRESH_MS) return;
+      const here = setupIsMap(ehTree) && setupIsMap(ehTree[key]) && setupIsMap(ehTree[key][device]) ? ehTree[key][device] : null;
+      const v = here && typeof here.v === 'number' ? here.v : null;
+      // `older` is a claim only when the row's own build is known — or when every editor device writes one (eager).
+      const older = v !== null ? v < APP_VERSION : EDITORS_HERE_EAGER;
+      out.rows.push({
+        key, device, at: p.at, v, older, unknown: v === null && !EDITORS_HERE_EAGER,
+        mine: key === me && device === presenceId, name: key === me ? 'You' : setupEditorName(key), ago: ehAgo(p.at),
+      });
+      const label = v === null ? 'unknown' : String(v);
+      out.byBuild[label] = (out.byBuild[label] || 0) + 1;
+      if (older) out.older++;
+      if (v === null && !EDITORS_HERE_EAGER) out.unknown++;
+    });
+  });
+  out.total = out.rows.length;
+  out.rows.sort((a, b) => b.at - a.at);
+  out.lede = out.older
+    ? out.older + ' director device' + (out.older === 1 ? ' is' : 's are') + ' on an older version — ' + (out.older === 1 ? 'it updates' : 'they update') + ' when reopened'
+    : (out.total ? 'Every director device here is up to date' + (out.unknown ? ' as far as we can tell' : '') : 'No other director devices are here right now');
+  return out;
+}
 
 setupLoadCache();

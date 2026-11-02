@@ -1072,6 +1072,12 @@ What's covered, and why each file exists:
   minimal selective diff that never writes epoch or switches, a Games-only
   restore keeping every game with scores, and Backups v3 (round trip, pre-import
   point, other camp, v2 still accepted). `fnv1a` vectors.
+- `editors-here.test.js` (+ `.senior`) — "also here" and Devices: dark (no row, no
+  listener, no write on connect), the write protocol and the rules' shape, the 1 s
+  floor coalescing, reconnect, viewers / view-only tabs / a demotion never writing
+  or listening, a refused write swallowed, fail-closed names, only directors shown,
+  the header and matching-screen sentences, every `where` worded, and the Devices
+  join by device id with its 10-minute filter and build grouping.
 - `auth.test.js` — the `emailKey` contract (multi-dot/case/trim — the
   regression that would lock people out under the rules), the `canEdit` truth
   table via `setMemberRole`, the `memberRecord` shape, `clearLocalData`'s
@@ -2022,6 +2028,36 @@ and until then every commit into a section is refused ("off").
   before) and the notice board, merges `picSetup` modes without touching the
   words on the device, never applies `meta` (the epoch), and writes a
   `pre-import` point first (fire-and-forget).
+- **"Also here"** (P2 §6.7): `<root>/editorsHere/<memberKey>/<deviceId> = {at, v,
+  where?}` — editor-read, key-pinned to the writer, `at === now` and a 1 s floor
+  per row (the client's `ehMinMs` is 1.2 s: quick screen changes coalesce into ONE
+  trailing write of the last place, never a refusal). Presence is untouched and
+  stays `{at}`. `where` is the short vocabulary `[a-z0-9:_-]{1,60}` (`hub`,
+  `schedule:tue`, `item:tue:<bid>`, `rain:<dk>`, `game:<gid>`, `team:<tid>`,
+  `people`, …) and is REMOVED, never blanked, on leaving. **Dark by the owner's
+  rule**: a row exists only while Set up the week is open on a director's device —
+  `editorsHereStart(where)` on open (writes the row, registers
+  `onDisconnect().remove()`, attaches the editor-only listener),
+  `editorsHereMove(where)` on every screen or sheet change, `editorsHereStop()` on
+  close; `editorsHereOnConnect()` (from app.js's `.info/connected` handler, beside
+  `registerPresence`) re-registers on every reconnect and does nothing with the
+  builder closed. `EDITORS_HERE_EAGER` (false) is the one switch for the spec's
+  row-on-every-connect behaviour, for the step that turns the setup screens on.
+  Viewers, a view-only second tab and a demoted director never write or listen
+  (demotion removes the row: `setupOnRoleChange` → `editorsHereOnRoleChange`); a
+  refused write or listener is swallowed and degrades only this feature. Reading:
+  `editorsHereList()` (names via `setupEditorName`, fail-closed "Another director";
+  only keys whose directory role is editor; my own row skipped, my other phone is
+  "You (another device)"), `editorsHereHeader()` (up to three initials, "Jenn is
+  also here"), `editorsHereOn(where)` ("Jenn is also editing Tuesday — changes merge
+  field by field" / "Jenn is editing this item too"), `editorsHereWhereWords`.
+- **Devices** (the hub's ⋯): `devicesList()` joins app.js's presence tree
+  (`presenceRows`, now kept by the presence listener) with `editorsHere` by DEVICE ID,
+  keeps rows from the last 10 minutes, only members whose directory role is editor,
+  groups by build `v`, and says "N director devices are on an older version — they
+  update when reopened". A hint, never a gate. Because rows exist only with the
+  builder open, a device with no row is "build unknown", not "older" (the spec's
+  inference needs `EDITORS_HERE_EAGER`).
 - **Not here yet** (Step 15, per BUILD-PLAN): `resolveDay`, `buildSeed`, the
   publisher hash, A1/A2 and the accessors that switch on `meta/on/schedule`.
 
