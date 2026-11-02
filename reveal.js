@@ -830,7 +830,10 @@ function revealNormalizeFull(raw) {
   const n = revealInt(raw.n, 1, REVEAL_MAX_GROUPS);
   const groups = normalizeRevealPub(raw.g);
   if (!r || n === null || groups.length !== n || groups.some((g, i) => g.idx !== i)) return null; // a half-readable freeze is never used
-  return { r, n, groups };
+  // `by` is the director's own member key (editor-only data): the remote names the director in "Started by Jenn
+  // at 7:31" and never writes or shows the raw key.
+  const by = typeof raw.startedBy === 'string' && raw.startedBy.length <= 160 ? raw.startedBy : '';
+  return { r, n, groups, by };
 }
 
 function revealFetchFull(mode) {

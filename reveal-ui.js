@@ -20,10 +20,19 @@
 //  - Names are all `revealUi…` / `renderReveal…` so they cannot collide with reveal.js / reveal-core.js
 //    (one global scope).
 
+const REVEAL_UI_PEEK_MS = 350;          // how long a finger holds the masked next row before it shows
+const REVEAL_UI_PEEK_MAX_MS = 3000;     // a peek never lasts longer than this, finger or not
+const REVEAL_UI_SCREEN_HOST = 'camp.patricksimpson.info';
+const REVEAL_UI_REFUSED = ['wait', 'offline', 'busy', 'not-ready', 'loading', 'no-full'];   // the codes that mean "that tap sent nothing"
+
 const revealUi = {
   wired: false,
   ledger: {},          // §9.8: what each animated thing last animated to; a first sighting records and never plays
   timer: null,         // the next moment the remote's own words change with no snapshot (a countdown second, a beat)
+  peekHold: 0, peekOff: 0, peekOk: true,
+  go: { state: '', big: '', key: '' },
+  seq: null,           // the remote's last painted command (a new one scrolls the ladder, re-masks the peek)
+  tvSeq: null, tvBeat: null, tvMode: null,
   lastLive: undefined,  // undefined: never evaluated; '': evaluated, not live; else the live reveal's id
   once: {},
 };
@@ -155,6 +164,55 @@ function revealUiGridHtml(v, mine) {
     out.push(revealUiShownRowHtml(g, { kind: 'grid', mine, onscreen: false, champion: !!(v.champion && g.place === 1) }));
   });
   return out.join('');
+}
+
+// The director's ladder: 1st at the top, hidden places in the well, ONE masked next row, the shown ones with their
+// teams. `full` (the private freeze) names the places; without it the unrevealed rows are plain "Hidden" rows with no
+// number. Returns { html, items } (items: [{ key, state }] in order, for tests and motion).
+function revealUiLadderModel(m) {
+  const c = m.ctl;
+  if (!c) return { html: '', items: [] };
+  const node = confirmedReveal[m.mode];
+  const pub = normalizeRevealPub(node && node.pub).filter((g) => g.idx < c.shown);
+  const byIdx = {};
+  pub.forEach((g) => { byIdx[g.idx] = g; });
+  const full = revealFullFor(m.mode);
+  const view = m.view;
+  const champion = !!(view && view.champion);
+  const items = [];
+  const html = [];
+  const push = (key, state, h) => { items.push({ key, state }); html.push(h); };
+  const hiddenRow = (key, place) => '<div class="rv-row" role="listitem" data-key="' + key + '" data-state="hidden">' +
+    '<span class="rv-pl">' + (place ? revealUiOrdHtml(place) : '') + '</span><span class="rv-msg">' + REVEAL_UI_ICON('i-lock') + 'Hidden until you reveal it</span></div>';
+  const row = (g, o) => revealUiShownRowHtml({ place: g.place, tie: g.entries.length > 1, entries: g.entries }, Object.assign({ kind: 'remote', mine: null }, o));
+  const onScreenPlace = view ? view.onScreen : null;
+  if (full) {
+    const nextIdx = m.next && m.next.action === 'reveal' ? m.next.idx : -1;
+    for (let idx = full.n - 1; idx >= 0; idx--) {
+      const fg = full.groups.find((g) => g.idx === idx);
+      if (!fg) continue;
+      if (idx < c.shown && byIdx[idx]) {
+        const g = byIdx[idx];
+        push('g' + g.place, 'shown', row(g, { onscreen: onScreenPlace === g.place, champion: champion && g.place === 1 }));
+      } else if (idx === nextIdx) {
+        const word = revealUi.peekOk ? 'Press and hold to peek' : 'Masked while the big screen plays';
+        push('g' + fg.place, 'next', '<div class="rv-row" role="listitem" tabindex="0" data-key="g' + fg.place + '" data-state="next" aria-label="Up next, hidden. Press and hold, or press Enter, to peek.">' +
+          '<span class="rv-pl">' + revealUiOrdHtml(fg.place) + (fg.entries.length > 1 ? '<em class="rv-tie">tie</em>' : '') + '</span>' +
+          '<span class="rv-mask">' + REVEAL_UI_ICON('i-eye-off') + '<span><b>Up next · only on this phone</b><small>' + word + '</small></span></span>' +
+          '<div class="rv-teams rv-peek">' + fg.entries.map((e) => revealUiTeamHtml('remote', e, null)).join('') + '</div></div>');
+      } else {
+        push('g' + fg.place, 'hidden', hiddenRow('g' + fg.place, fg.place));
+      }
+    }
+  } else {
+    // The freeze has not been read (yet): the hidden count is the teams not shown, an upper bound on the places left.
+    const shownTeams = pub.reduce((n, g) => n + g.entries.length, 0);
+    for (let i = 0; i < Math.max(0, c.teams - shownTeams); i++) push('h-' + i, 'hidden', hiddenRow('h-' + i, 0));
+    pub.slice().sort((a, b) => b.idx - a.idx).forEach((g) => {
+      push('g' + g.place, 'shown', row(g, { onscreen: onScreenPlace === g.place, champion: champion && g.place === 1 }));
+    });
+  }
+  return { html: html.join(''), items };
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -404,6 +462,362 @@ function renderRevealGamesLink() {
 }
 
 // ════════════════════════════════════════════════════════════════════
+// THE DIRECTOR'S REMOTE (#takeover-reveal)
+// ════════════════════════════════════════════════════════════════════
+// The mini TV: tvFrame() — the same pure function the big-screen page runs — drawn into the static slots. Always the
+// TV's own light colours (CSS), in container units, so the 352px stage and the 150px thumbnail are one picture.
+function revealUiMarksHtml(ids, size) {
+  return ids.map((id) => teamMarkHtml(id, { size })).join('');
+}
+
+function revealUiBoardHtml(groups) {
+  const rows = [];
+  groups.slice().sort((a, b) => b.idx - a.idx).forEach((g) => {
+    g.entries.forEach((e) => {
+      rows.push('<li class="mtv-row" data-key="g' + g.place + '-' + esc(e.id) + '" data-pl="' + g.place + '"><span class="mtv-pl">' + esc(ordinal(g.place)) + '</span>' +
+        '<span class="mtv-mk">' + teamMarkHtml(e.id, { size: 24 }) + '</span><span class="mtv-nm">' + esc(e.nm) + '</span><span class="mtv-pts">' + e.p + '</span></li>');
+    });
+  });
+  return rows.join('');
+}
+
+// What the big screen is showing, in words (the thumbnail's caption on a small phone; the mini TV's text for a screen reader).
+function revealUiTvWords(frame, m) {
+  let w;
+  if (frame.mode === 'hero') { const g = frame.groups.find((x) => x.idx === frame.heroIdx); w = g ? ordinal(g.place) + ' place on the big screen' : 'A place on the big screen'; }
+  else if (frame.mode === 'intro') w = 'Current standings on the big screen';
+  else if (frame.mode === 'board') w = 'The standings so far on the big screen';
+  else if (frame.mode === 'table') w = 'The final table on the big screen';
+  else if (frame.mode === 'champion') w = 'The champions on the big screen';
+  else w = 'Waiting for the directors';
+  return m.practice && frame.mode !== 'waiting' ? 'Practice · ' + w : w;
+}
+
+function revealUiPaintTv(m) {
+  const tv = revealUiEl('reveal-tv');
+  if (!tv) return;
+  const node = confirmedReveal[m.mode];
+  const frame = tvFrame(node && node.ctl, node && node.pub, serverNow, { denied: m.mode === 'real' ? revealDenied : revealPracticeDenied });
+  revealUiData(tv, 'frame', frame.mode);
+  revealUiData(tv, 'beat', frame.mode === 'hero' ? frame.beat : null);
+  const ids = teamIds();
+  setHtmlIfChanged(revealUiEl('mtv-wait-marks'), revealUiMarksHtml(ids, 40));
+  setHtmlIfChanged(revealUiEl('mtv-intro-marks'), revealUiMarksHtml(ids, 36));
+  if (frame.mode === 'hero') {
+    const g = frame.groups.find((x) => x.idx === frame.heroIdx);
+    if (g) {
+      setTextIfChanged(revealUiEl('mtv-hero-place'), ordinal(g.place) + ' place' + (g.entries.length > 1 ? ' · tie' : ''));
+      setHtmlIfChanged(revealUiEl('mtv-hero-marks'), revealUiMarksHtml(g.entries.map((e) => e.id), 112));
+      setTextIfChanged(revealUiEl('mtv-hero-name'), g.entries.map((e) => e.nm).join(' & '));
+      setTextIfChanged(revealUiEl('mtv-hero-points'), String(g.entries[0].p));
+      setTextIfChanged(revealUiEl('mtv-hero-break'), g.entries.length === 1 ? g.entries[0].g + ' gold · ' + g.entries[0].s + ' silver · ' + g.entries[0].b + ' bronze' : '');
+    }
+  } else if (frame.mode === 'board' || frame.mode === 'table') {
+    setTextIfChanged(revealUiEl('mtv-board-title'), frame.mode === 'table' ? 'Final standings' : 'Standings so far');
+    const docked = frame.groups.filter((x) => x.idx < frame.docked);
+    setHtmlIfChanged(revealUiEl('mtv-board'), revealUiBoardHtml(docked));
+  } else if (frame.mode === 'champion') {
+    const first = frame.groups.find((x) => x.place === 1);
+    setHtmlIfChanged(revealUiEl('mtv-champ-marks'), first ? revealUiMarksHtml(first.entries.map((e) => e.id), 64) : '');
+    setTextIfChanged(revealUiEl('mtv-champ-name'), first ? first.entries.map((e) => e.nm).join(' & ') : '');
+  }
+  setTextIfChanged(revealUiEl('reveal-tv-now'), revealUiTvWords(frame, m));
+  // The picture moves with the show: a new place's shield drops and its name arrives, the score pops at its beat, the
+  // crown lands. Only for a change on a remote already looking (§9.8), and never replayed on a reopen.
+  const seq = frame.mode === 'hero' || frame.mode === 'champion' ? node.ctl.seq : null;
+  const moved = revealUiNote('tv:seq', seq) && seq !== null;
+  if (moved && revealUiVisible() && typeof JellyMotion !== 'undefined') {
+    if (frame.mode === 'hero') {
+      revealUiDrop(revealUiEl('mtv-hero-marks'));
+      JellyMotion.play(revealUiEl('mtv-hero-name'), 'arrive', (x) => ({ transform: 'translateY(' + (18 * (1 - Math.min(1, x))) + 'px)' }), { calmMs: 200 });
+    } else {
+      revealUiCrownMoment(tv);
+    }
+  }
+  const beat = frame.mode === 'hero' ? frame.beat : null;
+  if (revealUiNote('tv:beat:' + seq, beat) && beat === 'score' && revealUiVisible() && typeof JellyMotion !== 'undefined') {
+    JellyMotion.play(revealUiEl('mtv-hero-points'), 'press', (x) => ({ transform: 'scale(' + (0.8 + 0.2 * Math.min(1.4, x)) + ')', transformOrigin: '0 100%' }), { calmMs: 200 });
+  }
+  return frame;
+}
+
+// The ready screen's checks (mockup 06). Only "this phone is up to date" gates a Start; the others inform.
+function revealUiScoredWords(gate) {
+  const n = gate.unscored.length;
+  if (!n) {
+    const when = gate.lastScoreAt ? 'Last score saved ' + revealUiClock(gate.lastScoreAt, true) : '';
+    return { tone: 'ok', title: 'Every game today is scored', sub: when };
+  }
+  if (n === 1) return { tone: 'warn', title: gate.unscored[0] + ' has no score yet', sub: 'You can still start. Scores saved later are not in this reveal.' };
+  const names = gate.unscored.slice(0, 3).join(', ') + (n > 3 ? ' and ' + (n - 3) + ' more' : '');
+  return { tone: 'warn', title: n + ' games have no score yet', sub: names + '. You can still start; scores saved later are not in this reveal.' };
+}
+
+function revealUiPhoneWords(gate) {
+  if (gate.phoneCaughtUp) return { tone: 'ok', title: 'This phone is up to date', sub: 'Connected · nothing waiting to send' };
+  let sub = 'Waiting for this phone to catch up…';
+  if (!fbConnected) sub = 'Not connected yet';
+  else if (gate.quiet) sub = 'The connection just changed. Waiting a few seconds';
+  else if (typeof pendingWrites !== 'undefined' && pendingWrites > 0) sub = 'Sending scores…';
+  else if (!remoteReady) sub = 'Loading the latest scores…';
+  return { tone: 'wait', title: 'This phone is catching up', sub };
+}
+
+function revealUiScreenPath() {
+  return CAMP.id === 'senior' ? 'current-standings.html?camp=senior' : 'current-standings.html';
+}
+
+function revealUiBuzzTitle() {
+  let n = 0;
+  if (memberDirectoryLoaded && memberDirectory) {
+    Object.keys(memberDirectory).forEach((k) => { const r = memberDirectory[k]; if (r && r.role !== 'editor' && !/^pending-/.test(k)) n += 1; });
+  }
+  return n > 0 ? 'Buzz all ' + n + ' counselors' : 'Buzz all counselors';
+}
+
+function revealUiPaintReady(m, gate) {
+  const ended = m.stage === 'ended';
+  setHiddenIfChanged(revealUiEl('reveal-ended'), !ended);
+  if (ended) {
+    setTextIfChanged(revealUiEl('reveal-ended-title'), 'Last reveal ended ' + revealUiClock(m.endedAt, true));
+    setTextIfChanged(revealUiEl('reveal-ended-sub'), 'Counselors see it ' + revealUiUntilWords(m.until));
+  }
+  const sc = revealUiScoredWords(gate);
+  const ph = revealUiPhoneWords(gate);
+  [['reveal-check-scored', sc], ['reveal-check-phone', ph]].forEach(([id, w]) => {
+    revealUiData(revealUiEl(id), 'tone', w.tone);
+    setTextIfChanged(revealUiEl(id + '-title'), w.title);
+    setTextIfChanged(revealUiEl(id + '-sub'), w.sub);
+  });
+  setTextIfChanged(revealUiEl('reveal-screen-path'), revealUiScreenPath());
+  // The Practice switch: its state in words beside the track.
+  const on = revealPracticeSwitch();
+  const psw = revealUiEl('reveal-practice');
+  if (psw && psw.hasAttribute('checked') !== on) psw.toggleAttribute('checked', on);
+  setTextIfChanged(revealUiEl('reveal-practice-state'), on ? 'On' : 'Off');
+  // Buzz: greyed with its reason while a practice is on (practice runs never buzz) or phone alerts are not live yet.
+  const bz = revealBuzzState(m.practice ? 'practice' : 'real');
+  const off = !bz.available;
+  revealUiData(revealUiEl('reveal-opt-buzz'), 'off', off ? true : null);
+  setTextIfChanged(revealUiEl('reveal-buzz-title'), revealUiBuzzTitle());
+  setTextIfChanged(revealUiEl('reveal-buzz-sub'), off ? bz.reason : '“' + REVEAL_BUZZ_TEXT + '”');
+  const bsw = revealUiEl('reveal-buzz');
+  if (bsw) {
+    if (bsw.hasAttribute('disabled') !== off) bsw.toggleAttribute('disabled', off);
+    if (bsw.hasAttribute('checked') !== !!bz.on) bsw.toggleAttribute('checked', !!bz.on);
+  }
+  setTextIfChanged(revealUiEl('reveal-buzz-state'), bz.on ? 'On' : 'Off');
+}
+
+// The first name of the director who started the reveal, from the private freeze (never from the public node, which has
+// none), or '' when the member list cannot say.
+function revealUiStarterName(by) {
+  if (!by || !memberDirectoryLoaded || !memberDirectory || !Object.prototype.hasOwnProperty.call(memberDirectory, by)) return '';
+  const rec = memberDirectory[by];
+  const first = rec && typeof rec.name === 'string' ? rec.name.trim().split(/\s+/)[0] : '';
+  return first.slice(0, 30);
+}
+
+function revealUiPaintLive(m) {
+  setTextIfChanged(revealUiEl('reveal-count'), m.count ? m.count.shown + ' of ' + m.count.total + ' shown' : '');
+  setTextIfChanged(revealUiEl('reveal-end-label'), m.practice ? 'End practice' : 'End reveal');
+  setHiddenIfChanged(revealUiEl('reveal-stale'), !m.freezeStale);
+  const full = revealFullFor(m.mode);
+  const other = !!(full && full.by && full.by !== identityKey(authUser));
+  setHiddenIfChanged(revealUiEl('reveal-started'), !other);
+  if (other) setTextIfChanged(revealUiEl('reveal-started'), 'Started by ' + (revealUiStarterName(full.by) || 'another director') + ' at ' + revealUiClock(m.startedAt, true));
+  // The peek is allowed while nothing is playing on the big screen (a counselor beside the director could read 1st place
+  // off a phone held up in a crowded room during a beat).
+  const c = m.ctl;
+  revealUi.peekOk = !c || c.phase === 'intro' || serverNow() - c.at >= REVEAL_BEAT_DOCK_MS;
+  const ladder = revealUiLadderModel(m);
+  revealUiPaintList(revealUiEl('reveal-ladder'), ladder.html, {
+    animate: true, after: (added) => revealUiLanded(added, null),
+  });
+  const list = revealUiEl('reveal-ladder');
+  if (!revealUi.peekOk || (c && revealUi.seq !== null && revealUi.seq !== c.id + ':' + c.seq)) revealUiPeek(false);
+  // A new command: keep the place on the big screen and the next one in view (the ladder can be taller than the screen).
+  const seqKey = c ? c.id + ':' + c.seq : null;
+  if (seqKey && revealUi.seq !== seqKey && list && list.querySelector) {
+    const target = list.querySelector('[data-onscreen]') || list.querySelector('[data-state="next"]');
+    if (target && target.scrollIntoView && revealUi.seq !== null) { try { target.scrollIntoView({ block: 'nearest', behavior: revealUiCalm() ? 'auto' : 'smooth' }); } catch (e) { /* fine */ } }
+  }
+  revealUi.seq = seqKey;
+}
+
+// The two buttons. The dock never takes `disabled` (a tap during the wait must still reach the handler, which answers
+// with the wobble and one toast): "can't press" is aria-disabled plus data-state.
+function revealUiBlockedWords(m, gate) {
+  if (m.loading) return 'Checking the big screen…';
+  if (m.why === 'no-sync') return 'Sync is off on this phone';
+  if (m.stage === 'ready' || m.stage === 'ended') return 'Waiting for this phone to catch up…';
+  return 'Loading the places…';
+}
+
+function revealUiPaintDock(m, gate) {
+  const go = revealUiEl('reveal-go');
+  const back = revealUiEl('reveal-back');
+  const startStage = m.stage === 'ready' || m.stage === 'ended';
+  let st = m.go.state;
+  let kicker = m.go.kicker;
+  const big = m.go.big;
+  if (startStage && st === 'ready') {
+    if (!gate.canStart) st = 'blocked';
+    else if (m.stage === 'ready') kicker = m.practice ? 'Rehearsal · uses the real standings' : 'Freezes the standings when you tap';
+  }
+  if (st === 'blocked') kicker = revealUiBlockedWords(m, gate);
+  const prevState = revealUi.go.state;
+  const prevBig = revealUi.go.big;
+  revealUiData(go, 'state', st);
+  revealUiData(go, 'face', m.go.face);
+  revealUiAttr(go, 'aria-disabled', st !== 'ready' ? 'true' : null);
+  setTextIfChanged(revealUiEl('reveal-go-k'), kicker);
+  setTextIfChanged(revealUiEl('reveal-go-m'), big);
+  if (st === 'charging' && m.ctl) {
+    const key = m.ctl.id + ':' + m.ctl.seq;
+    if (revealUi.go.key !== key) {
+      revealUi.go.key = key;
+      const elapsed = Math.max(0, Math.round(serverNow() - m.ctl.at));
+      if (go && go.style) { go.style.setProperty('--charge-ms', m.charge.total + 'ms'); go.style.setProperty('--charge-from', '-' + elapsed + 'ms'); }
+    }
+  } else revealUi.go.key = '';
+  revealUi.go.state = st;
+  revealUi.go.big = big;
+  if (prevState !== '' && revealUiVisible() && typeof JellyMotion !== 'undefined') {
+    // The label swap: the new line rises (§9.5). The countdown's own seconds never animate, only a change of the big line.
+    if (prevBig && prevBig !== big) {
+      const m2 = revealUiEl('reveal-go-m');
+      if (m2) JellyMotion.play(m2, 'press', (x) => ({ transform: 'translateY(' + (28 * (1 - Math.min(1, x))) + 'px) scale(' + (0.9 + 0.1 * Math.min(1, x)) + ')' }), { calmMs: 120 });
+    }
+    // Ready again: one pop (and a tick on a phone that can feel it); iOS has no vibrate, the label swap is its signal.
+    if (prevState === 'charging' && st === 'ready') {
+      if (go) JellyMotion.play(go, 'press', (x) => ({ transform: 'scale(' + (0.94 + 0.06 * Math.min(1.5, x)) + ')' }), { calm: false });
+      try { if (typeof navigator !== 'undefined' && typeof navigator.vibrate === 'function') navigator.vibrate(8); } catch (e) { /* no haptics */ }
+    }
+  }
+  // Back
+  const bs = m.back.state === 'hidden' ? 'first' : m.back.state;
+  revealUiData(back, 'state', bs);
+  revealUiAttr(back, 'aria-disabled', bs !== 'ready' ? 'true' : null);
+  setTextIfChanged(revealUiEl('reveal-back-sub'), m.back.sub);
+}
+
+// The words and the shape of the remote's roof: chip, title, back label.
+function revealUiPaintRoof(tk, m) {
+  revealUiData(tk, 'phase', m.stage);
+  revealUiData(tk, 'mode', m.mode);
+  let tone = 'ready';
+  let text = 'Ready';
+  if (m.stage === 'off') { tone = 'off'; text = 'Not on yet'; }
+  else if (m.stage === 'ended') { tone = 'ended'; text = 'Ended'; }
+  else if (m.practice) { tone = 'practice'; text = 'Practice'; }
+  else if (m.stage !== 'ready') { tone = 'live'; text = 'Live'; }
+  revealUiData(revealUiEl('reveal-chip'), 'tone', tone);
+  setTextIfChanged(revealUiEl('reveal-chip-text'), text);
+  const label = shellRevealBackLabel();
+  setTextIfChanged(revealUiEl('takeover-reveal-back-label'), label);
+  const backBtn = tk.querySelector('[data-takeover-back]');
+  revealUiAttr(backBtn, 'aria-label', 'Back to ' + label);
+}
+
+function revealUiPaintMeta() {
+  const n = typeof presenceCount === 'number' ? presenceCount : 0;
+  setTextIfChanged(revealUiEl('reveal-phones'), syncEnabled() && n > 0 ? n + (n === 1 ? ' phone has' : ' phones have') + ' Camp open' : '');
+  const wake = revealWakeHeld();
+  revealUiData(revealUiEl('reveal-wake'), 'wake', wake ? 'on' : 'off');
+  setTextIfChanged(revealUiEl('reveal-wake-text'), wake ? 'Screen stays on' : 'Screen may sleep');
+}
+
+// The next moment the remote's own words change with no snapshot to say so: a countdown second on the button, the end of
+// a beat on the mini TV, the end of the 10 s a Start waits after the connection last changed, the end of the peek ban.
+function revealUiNextMoment(m) {
+  const now = serverNow();
+  let best = null;
+  const take = (t) => { if (Number.isFinite(t) && t > now && (best === null || t < best)) best = t; };
+  const c = m.ctl;
+  if (c) {
+    [REVEAL_BEAT_SCORE_MS, REVEAL_BEAT_BREAKDOWN_MS, REVEAL_BEAT_DOCK_MS].forEach((b) => take(c.at + b));
+    if (m.charge.left > 0) take(now + (m.charge.left % 1000 || 1000));
+  }
+  return best === null ? null : Math.max(30, best - now + 15);
+}
+
+function revealUiArm(m) {
+  if (revealUi.timer) { clearTimeout(revealUi.timer); revealUi.timer = null; }
+  if (!revealRemoteIsOpen()) return;
+  let wait = revealUiNextMoment(m);
+  // a Start also waits out the quiet window after the connection last changed
+  if (typeof revealConnChangedAt !== 'undefined' && revealConnChangedAt && Date.now() - revealConnChangedAt < REVEAL_CONNECT_QUIET_MS) {
+    const q = REVEAL_CONNECT_QUIET_MS - (Date.now() - revealConnChangedAt) + 30;
+    wait = wait === null ? q : Math.min(wait, q);
+  }
+  if (wait === null) return;
+  revealUi.timer = setTimeout(() => { revealUi.timer = null; if (revealRemoteIsOpen()) renderRevealRemote(); }, wait);
+}
+
+function revealUiRoofSync() {
+  if (typeof shell === 'undefined' || typeof roofUp !== 'function') return;
+  if (shell.roof !== roofUp()) { shell.roof = roofUp(); applyChromeColor(); }
+}
+
+// Called from renderAll (renderRevealUi) and by every change the engine reports while the remote is open.
+function renderRevealRemote() {
+  const tk = revealUiEl('takeover-reveal');
+  if (!tk) return;
+  if (!revealRemoteIsOpen()) { revealUiCloseRemote(tk); return; }
+  const opening = tk.hidden || !tk.__open;
+  if (tk.hidden) tk.hidden = false;
+  if (tk.style && tk.style.pointerEvents) tk.style.pointerEvents = '';
+  tk.__open = true;
+  if (opening) {
+    // A reopened remote draws the current picture and replays nothing (§9.8).
+    revealUi.go.key = ''; revealUi.seq = null; revealUi.go.state = ''; revealUi.go.big = '';
+    Object.keys(revealUi.ledger).forEach((k) => { if (k.indexOf('tv:') === 0) delete revealUi.ledger[k]; });
+  }
+  revealSetRemoteOpen(true);
+  const m = revealRemoteModel();
+  const gate = revealStartGate();
+  revealUiPaintRoof(tk, m);
+  revealUiPaintTv(m);
+  revealUiPaintMeta();
+  if (m.stage === 'ready' || m.stage === 'ended') revealUiPaintReady(m, gate);
+  if (m.stage !== 'ready' && m.stage !== 'ended' && m.stage !== 'off') revealUiPaintLive(m);
+  revealUiPaintDock(m, gate);
+  revealUiArm(m);
+  if (opening) {
+    revealUiRoofSync();
+    // A whole screen arrives with the full-screen spring; the page behind it is inert, so focus moves in with it.
+    if (typeof JellyMotion !== 'undefined') JellyMotion.play(tk, 'settle', (x) => ({ transform: 'translateX(' + (1 - x) * 100 + '%)' }));
+    const back = tk.querySelector('[data-takeover-back]');
+    if (back && typeof back.focus === 'function') { try { back.focus({ preventScroll: true }); } catch (e) { /* fine */ } }
+  }
+}
+
+function revealUiCloseRemote(tk) {
+  if (tk.__open) {
+    tk.__open = false;
+    revealSetRemoteOpen(false);
+    revealUiPeek(false);
+    if (revealUi.timer) { clearTimeout(revealUi.timer); revealUi.timer = null; }
+    const o = shell.opener;
+    shell.opener = null;
+    if (o && o.isConnected !== false && typeof o.focus === 'function') { try { o.focus({ preventScroll: true }); } catch (e) { /* gone */ } }
+    // It slides back out to the right (220 ms; calm: a 140 ms fade), taking no taps on the way, hidden at the end unless
+    // the remote was reopened meanwhile.
+    if (!tk.hidden && typeof JellyMotion !== 'undefined') {
+      if (tk.style) tk.style.pointerEvents = 'none';
+      JellyMotion.playOut(tk, (x) => ({ transform: 'translateX(' + x * 100 + '%)' }), 220, () => {
+        if (tk.__open) return;
+        tk.hidden = true;
+        if (tk.style) tk.style.pointerEvents = '';
+        revealUiRoofSync();
+      });
+    } else tk.hidden = true;
+    revealUiRoofSync();
+  } else if (!tk.hidden && !(tk.style && tk.style.pointerEvents)) { tk.hidden = true; revealUiRoofSync(); }
+}
+
+// ════════════════════════════════════════════════════════════════════
 // WHAT THE ENGINE AND THE SHELL CALL
 // ════════════════════════════════════════════════════════════════════
 // Every surface, each writing only what changed. Cheap enough to run on every renderAll: a phone with no reveal reads
@@ -416,6 +830,7 @@ function renderRevealUi() {
   renderRevealStrip();
   renderRevealMoreRow();
   renderRevealGamesLink();
+  renderRevealRemote();
 }
 
 // reveal.js calls this after every confirmed change and every time-driven one (why: snapshot, reread, denied, role,
@@ -424,9 +839,166 @@ function revealPaint(why, mode) {
   renderRevealUi();
 }
 
+// ════════════════════════════════════════════════════════════════════
+// TAPS
+// ════════════════════════════════════════════════════════════════════
+// A tap that sent nothing: one short sideways wobble (calm: a 200 ms dim), and the toast the engine already raised.
+function revealUiRefused(el) {
+  if (!el) return;
+  if (revealUiCalm()) {
+    revealUiData(el, 'refused', true);
+    setTimeout(() => revealUiData(el, 'refused', null), 200);
+    return;
+  }
+  if (typeof JellyMotion !== 'undefined') JellyMotion.play(el, 'wobble', (x) => ({ transform: 'translateX(' + 9 * (1 - Math.min(1, x)) * Math.cos(9 * x) + 'px)' }), { calm: false });
+}
+
+async function revealUiAsk(opts) {
+  if (typeof askDialog === 'function') return askDialog(opts);
+  return confirm([opts.title].concat(opts.body || []).join('\n\n')) ? opts.actions.find((a) => !a.cancel).value : opts.actions.find((a) => a.cancel).value;
+}
+
+// Start (or Start a practice, or Start a new reveal over last night's). A real Start over a reveal that is still showing
+// asks first; a practice never does (it replaces nothing real); a game with no score is a warning, never a gate.
+async function revealUiStartFlow(m, o) {
+  o = o || {};
+  const practice = !!m.practice;
+  const gate = revealStartGate();
+  if (!o.again && gate.canStart) {
+    if (!practice && m.stage === 'ended') {
+      const ok = await revealUiAsk({
+        title: 'Start a new reveal?',
+        body: 'This replaces tonight’s standings on every counselor’s phone. The places already shown disappear at once.',
+        actions: [{ label: 'Keep tonight’s', value: 'keep', cancel: true }, { label: 'Start a new reveal', value: 'start', kind: 'gold' }],
+      });
+      if (ok !== 'start') return { ok: false, code: 'cancelled' };
+    }
+    if (gate.unscored.length) {
+      const n = gate.unscored.length;
+      const ok = await revealUiAsk({
+        title: n === 1 ? gate.unscored[0] + ' has no score yet' : n + ' games have no score yet',
+        body: [n === 1 ? 'Scores saved after you start are not in this reveal.' : 'They are not in this reveal unless you score them first.', 'Start anyway?'],
+        list: n === 1 ? [] : gate.unscored.slice(0, 6),
+        actions: [{ label: 'Not now', value: 'wait', cancel: true }, { label: practice ? 'Start a practice' : 'Start anyway', value: 'start', kind: 'gold' }],
+      });
+      if (ok !== 'start') return { ok: false, code: 'cancelled' };
+    }
+  }
+  return revealStart({ practice });
+}
+
+async function revealUiEndFlow(m) {
+  const practice = !!m.practice;
+  const early = m.stage !== 'table';
+  const ok = await revealUiAsk({
+    title: practice ? 'End the practice?' : 'End the reveal?',
+    body: practice
+      ? 'The practice places leave the big screen at once. Nothing is kept.'
+      : (early ? 'Counselors keep the places shown so far ' : 'Counselors keep tonight’s standings ') + revealUiUntilWords(m.until) + '. The big screen goes back to waiting.',
+    actions: [{ label: 'Keep showing', value: 'keep', cancel: true }, { label: practice ? 'End practice' : 'End the reveal', value: 'end', kind: 'gold' }],
+  });
+  if (ok !== 'end') return { ok: false, code: 'cancelled' };
+  const res = await revealEnd({ mode: m.mode });
+  if (res && res.ok) {
+    revealUiPeek(false);
+    if (practice && typeof showToast === 'function') showToast('Practice ended. The big screen is waiting again.');
+  }
+  return res;
+}
+
+function revealUiSparkle(ev) {
+  if (!ev || typeof joyBurst !== 'function') return;
+  joyBurst(ev.clientX, ev.clientY, false);   // calm: joyBurst returns, nothing moves
+}
+
+async function revealUiGo(ev) {
+  const el = revealUiEl('reveal-go');
+  const m = revealRemoteModel();
+  let res;
+  if (m.go.action === 'start') res = await revealUiStartFlow(m);
+  else if (m.go.action === 'end') res = await revealUiEndFlow(m);
+  else res = await revealNext();
+  if (res && res.ok) revealUiSparkle(ev);
+  else if (res && REVEAL_UI_REFUSED.includes(res.code)) revealUiRefused(el);
+  return res;
+}
+
+async function revealUiBack() {
+  const el = revealUiEl('reveal-back');
+  const res = await revealBack();
+  if (res && !res.ok && (REVEAL_UI_REFUSED.includes(res.code) || res.code === 'first')) revealUiRefused(el);
+  return res;
+}
+
+// "Scores changed since you started": a fresh freeze over the same intro (nobody has seen a place, so nothing to confirm).
+async function revealUiRestart() {
+  const m = revealRemoteModel();
+  return revealUiStartFlow(m, { again: true });
+}
+
+function revealUiCopyLink() {
+  const url = 'https://' + REVEAL_UI_SCREEN_HOST + '/' + revealUiScreenPath();
+  const done = () => { if (typeof showToast === 'function') showToast('Copied the big screen’s address.'); };
+  try {
+    if (typeof navigator !== 'undefined' && navigator.clipboard && navigator.clipboard.writeText) { navigator.clipboard.writeText(url).then(done, () => { copyTextToClipboard(url); done(); }); return; }
+  } catch (e) { /* fall through */ }
+  copyTextToClipboard(url);
+  done();
+}
+
+// ── the peek ─────────────────────────────────────────────────────────
+// Hold the masked next row for 350 ms and the team, shield and points show until the finger lifts (or 3 s pass); the
+// mask comes back at once whenever the big screen is playing a beat and whenever a new command lands. The LIST holds the
+// attribute, so peeking never changes the row's markup (a rewrite would cut the hold off).
+function revealUiPeek(on) {
+  const list = revealUiEl('reveal-ladder');
+  clearTimeout(revealUi.peekHold);
+  clearTimeout(revealUi.peekOff);
+  revealUi.peekHold = 0;
+  revealUi.peekOff = 0;
+  if (!list) return;
+  if (on) {
+    if (!revealUi.peekOk) return;
+    revealUiData(list, 'peek', true);
+    revealUi.peekOff = setTimeout(() => revealUiPeek(false), REVEAL_UI_PEEK_MAX_MS);
+    const row = list.querySelector ? list.querySelector('[data-state="next"]') : null;
+    if (row && typeof JellyMotion !== 'undefined') JellyMotion.play(row, 'press', (x) => ({ transform: 'scaleY(' + (0.96 + 0.04 * Math.min(1.4, x)) + ')' }), { calmMs: 120 });
+  } else revealUiData(list, 'peek', null);
+}
+
+function revealUiWirePeek(list) {
+  if (!list) return;
+  const isNext = (e) => !!(e.target && e.target.closest && e.target.closest('[data-state="next"]'));
+  list.addEventListener('pointerdown', (e) => {
+    if (!isNext(e)) return;
+    clearTimeout(revealUi.peekHold);
+    revealUi.peekHold = setTimeout(() => { revealUi.peekHold = 0; revealUiPeek(true); }, REVEAL_UI_PEEK_MS);
+  });
+  ['pointerup', 'pointercancel', 'pointerleave'].forEach((t) => list.addEventListener(t, () => revealUiPeek(false)));
+  list.addEventListener('contextmenu', (e) => { if (isNext(e) && e.preventDefault) e.preventDefault(); }); // iOS's callout would fight the hold
+  list.addEventListener('keydown', (e) => {
+    if ((e.key === 'Enter' || e.key === ' ') && isNext(e)) { if (e.preventDefault) e.preventDefault(); revealUiPeek(true); }
+  });
+}
+
 function wireRevealUi() {
   if (revealUi.wired) return;
   revealUi.wired = true;
   const on = (id, type, fn) => { const el = revealUiEl(id); if (el) el.addEventListener(type, fn); };
+  on('reveal-go', 'click', revealUiGo);
+  on('reveal-back', 'click', revealUiBack);
+  on('reveal-end', 'click', () => { revealUiEndFlow(revealRemoteModel()); });
+  on('reveal-restart', 'click', revealUiRestart);
+  on('reveal-copy-link', 'click', revealUiCopyLink);
+  // A change event is the person's own tap (a programmatic `checked` never fires one), so a switch simply flips.
+  on('reveal-practice', 'change', () => { revealSetPractice(!revealPracticeSwitch()); renderRevealRemote(); });
+  on('reveal-buzz', 'change', () => { revealSetBuzz(!revealBuzzState('real').on); renderRevealRemote(); });
+  on('reveal-row', 'click', (e) => openReveal({ from: 'more' }));
+  on('games-reveal-link', 'click', () => openReveal({ from: 'games' }));
+  on('now-reveal-remote', 'click', () => openReveal({ from: 'now' }));
   on('now-reveal-day', 'click', () => { if (typeof openSchedule === 'function') openSchedule(); });
+  revealUiWirePeek(revealUiEl('reveal-ladder'));
+  // What the big screen is showing is also said to a screen reader as it changes.
+  revealUiAttr(revealUiEl('reveal-tv-now'), 'aria-live', 'polite');
+  document.addEventListener('visibilitychange', () => { if (document.hidden) revealUiPeek(false); });
 }

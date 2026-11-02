@@ -28,7 +28,7 @@ const files = fs.readdirSync(__dirname)
 // SEEDED=all runs every file seeded (a probe for which tests still assume an empty setup tree).
 const SEEDED_FILES = [
   'week', 'push', 'chat', 'ics', 'tabs', 'frame', 'shell', 'home', 'render-stability', 'game-view', 'secrecy', 'motion', 'overlays', 'boot-cache', 'backup',
-  'reveal-ui',
+  'reveal-ui', 'reveal-remote',
 ];
 const seededAll = process.env.SEEDED === 'all';
 const plain = fs.readdirSync(__dirname).filter((f) => f.endsWith('.test.js') && !f.includes('.senior.'));
