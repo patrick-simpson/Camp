@@ -143,3 +143,46 @@ test('the engine refuses every setup field the rules make owner-only (SETUP_OWNE
   assert.equal(setupIsOwnerPath('meta/weekStart'), false, 'the week dates are any director\'s');
   assert.equal(setupIsOwnerPath('typical/b-x-1/start'), false);
 });
+
+// ── The hub's owner-only rendering contract (Step 14; Steps 15, 19 and 28 add their buttons here) ──
+test('every owner-only control in the Set up the week markup starts hidden, and CSS removes it unless body.setup-owner (and the sentence others read, for the owner)', () => {
+  const html = readFixture('../index.html');
+  const css = readFixture('../styles.css');
+  const tags = html.match(/<[a-z]+[^>]*\bdata-owner-only\b[^>]*>/g) || [];
+  assert.ok(tags.length >= 7, 'the door button, the Owner menu group, its four rows and Advanced: ' + tags.length);
+  tags.forEach((t) => assert.ok(/\shidden[\s>]/.test(t), 'starts hidden, so a slip in a renderer cannot show it: ' + t.slice(0, 70)));
+  assert.ok(/body:not\(\.setup-owner\) \[data-owner-only\][\s\S]{0,120}display:\s*none\s*!important/.test(css), 'CSS removes them for everyone but the owner, whatever `hidden` says');
+  assert.ok(/body\.setup-owner \[data-not-owner\]/.test(css), 'and removes the "Patrick turns on editing" sentence for the owner');
+  // The owner's menu rows are exactly the four switches, and none is wired to anything but SETUP_OWNER_ACTIONS.
+  ['new-year', 'undo-new-year', 'original', 'advanced'].forEach((a) => assert.ok(new RegExp('data-setup-act="' + a + '" data-owner-only hidden').test(html), a));
+  assert.deepEqual(Object.keys(SETUP_OWNER_ACTIONS), [], 'no owner action is built yet: Step 15 adds original / advanced, Step 28 the wizard');
+  assert.deepEqual(Object.keys(HUB_DOOR_ACTIONS).filter((k) => HUB_DOOR_ACTIONS[k]), [], 'and no front-door button either');
+});
+
+test('a non-owner director is never offered an owner control by any path: the sentence, the menu, the door click and the menu tap', () => {
+  ooReset();
+  authUser = OO_DIRECTOR;
+  setMemberRole('editor');
+  const saveDoor = HUB_DOOR_ACTIONS.original;
+  const saveOwn = SETUP_OWNER_ACTIONS.original;
+  try {
+    let ran = 0;
+    HUB_DOOR_ACTIONS.original = () => { ran++; };
+    SETUP_OWNER_ACTIONS.original = { run: () => { ran++; }, why: () => '' };
+    memberDirectory = { [OWNER_MEMBER_KEY]: { role: 'editor', name: 'Patrick Simpson' } };
+    memberDirectoryLoaded = true;
+    const door = hubDoor(hubView());
+    assert.equal(door.ownerText, 'Patrick turns on editing.', 'the owner\'s name, from the member directory');
+    paintHubDoor(door);
+    assert.equal(document.getElementById('hub-door-btn').hidden, true);
+    assert.equal(document.getElementById('hub-door-owner').hidden, false);
+    setupMenuAct('original');
+    assert.equal(ran, 0, 'the tap is re-checked against isOwner(), whatever the markup shows');
+    renderSetupMenuRows();
+    assert.equal(document.querySelector('[data-setup-act="original"]').hidden, true);
+  } finally {
+    HUB_DOOR_ACTIONS.original = saveDoor;
+    if (saveOwn) SETUP_OWNER_ACTIONS.original = saveOwn; else delete SETUP_OWNER_ACTIONS.original;
+    ooReset();
+  }
+});

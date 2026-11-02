@@ -1176,7 +1176,11 @@ What's covered, and why each file exists:
   warning only when it doesn't.
 - `owner-only.test.js` — `isOwner()` from the sign-in (never the device),
   `ownerName()` failing closed to "the owner", `ownerGate` / `ownerSays`, and
-  `body.setup-owner`. Steps 15, 19 and 28 extend it as each owner-only button lands.
+  `body.setup-owner`, and the hub's owner-only contract: every `data-owner-only` control
+  in the markup starts `hidden` and CSS removes it unless `body.setup-owner`, no owner action
+  is built yet (`SETUP_OWNER_ACTIONS`, `HUB_DOOR_ACTIONS` empty), and a non-owner director
+  reaches an owner control by no path (the sentence, the menu, the door click, the menu tap).
+  Steps 15, 19 and 28 extend it as each owner-only button lands.
 - `setup-sync.test.js` (+ `.senior`) — the setup engine against `fake-rtdb.js`:
   heal and canonical form, per-shape depths, anchors, dark (nothing written, owner
   switches refused), first-snapshot three-way merge (prune and key-order variants),
