@@ -2560,6 +2560,7 @@ function setupScheduleLive() {
 const SETUP_RICH_OF = new WeakMap(); // a legacy block an accessor handed out -> the rich block it came from
 let setupPlanMemo = null;            // the live tree's plans, rebuilt only when the tree (or its revision) changes
 let setupBuiltInMemo = null;         // the built-in week resolved the same way (planForDow while the schedule is off)
+let setupBuiltInTreeMemo = null;     // …and the seeded tree it was resolved from (the Schedule screen's read-only preview reads it)
 
 function setupBuildPlans(tree) {
   const rich = [];
@@ -2596,11 +2597,12 @@ function setupLivePlans() {
 
 // The built-in week, seed-resolved (the same function over a built-in tree, cached once): what planForDow answers
 // while the schedule is off, so the Schedule screen can preview it with real block ids.
+function setupBuiltInTree() {
+  if (!setupBuiltInTreeMemo) setupBuiltInTreeMemo = normalizeSetup(setupClone(syncCanon(buildSeed(CAMP, ['schedule']))));
+  return setupBuiltInTreeMemo;
+}
 function setupBuiltInPlans() {
-  if (!setupBuiltInMemo) {
-    const tree = normalizeSetup(setupClone(syncCanon(buildSeed(CAMP, ['schedule']))));
-    setupBuiltInMemo = setupBuildPlans(tree);
-  }
+  if (!setupBuiltInMemo) setupBuiltInMemo = setupBuildPlans(setupBuiltInTree());
   return setupBuiltInMemo;
 }
 
@@ -2828,6 +2830,565 @@ function setupUseOriginal(sections) {
   if (!want.length) return { ok: false, reason: 'already' };
   const r = commitSetup((d) => { want.forEach((s) => { d.meta.on[s] = false; }); }, { undo: false, ownerWhat: 'switch back to the original week' });
   return r.ok ? { ok: true, turnedOff: want } : r;
+}
+
+// ── 8. Schedule editing (§11.5): the mutators the Schedule screen's sheets commit ─────────────────
+// Everything here is PURE over a draft tree (commitSetup hands the mutator a COPY and diffs it), so a test drives
+// each rule with a plain object and the screens only gather the answers. The fields an item has, in the order a
+// patch or a record lists them; `alertKey` and `ord` are set when a record is made and never edited here (a rename
+// keeps its reminder key unless the director says "start fresh", §11.5).
+
+const SCHED_FIELDS = ['label', 'emoji', 'start', 'end', 'type', 'slot', 'meal', 'noTime', 'teams', 'overlapOk'];
+const SCHED_FIELD_WORDS = { label: 'name', emoji: 'emoji', start: 'start time', end: 'end time', type: 'kind', slot: 'elective', meal: 'meal', noTime: 'time setting', teams: 'teams', overlapOk: 'overlap setting' };
+const SCHED_GAP_MIN = 15;     // a gap this long between two items shows "Add something" (phone)
+const SCHED_STEP = 5;         // minutes: the item sheet's time inputs, and every move
+
+// A value as the stored tree compares it: absent and false are the same for the flags, a teams map by its ids.
+function schedNorm(field, v) {
+  if (field === 'noTime' || field === 'overlapOk') return v === true;
+  if (field === 'teams') { const ids = setupTeamList(v); return ids.length ? ids.join(',') : ''; }
+  return v === undefined || v === null ? '' : v;
+}
+
+// The stored record of a day's item, wherever it lives: { where: 'dayBlocks' | 'typical' | null, rec, patch, typical }.
+// `rec` is what the schedule resolves to (typical + patch, or the own record).
+function schedFind(tree, dk, bid) {
+  const t = setupIsMap(tree) ? tree : {};
+  const own = setupMapOf(setupMapOf(t.dayBlocks)[dk])[bid];
+  if (setupIsMap(own)) return { where: 'dayBlocks', rec: own, patch: null, typical: null };
+  const typ = setupMapOf(t.typical)[bid];
+  if (setupIsMap(typ) && setupMapOf(setupMapOf(t.days)[dk]).typical === true) {
+    const patch = setupMapOf(setupMapOf(t.patches)[dk])[bid];
+    return { where: 'typical', rec: Object.assign({}, typ, setupMapOf(patch)), patch: setupMapOf(patch), typical: typ };
+  }
+  if (setupIsMap(typ) && !dk) return { where: 'typical', rec: typ, patch: null, typical: typ };
+  return { where: null, rec: null, patch: null, typical: null };
+}
+
+// Every block id in use anywhere (typical or any day's own): a new id must be free in all of them, because a
+// typical id and an own id both publish as `<dk>-<id>`.
+function schedTakenIds(tree) {
+  const taken = {};
+  Object.keys(setupMapOf(tree.typical)).forEach((id) => { taken[id] = true; });
+  Object.keys(setupMapOf(tree.dayBlocks)).forEach((dk) => Object.keys(setupMapOf(tree.dayBlocks[dk])).forEach((id) => { taken[id] = true; }));
+  return taken;
+}
+
+// The stored record for an item sheet's fields. `item`: { label, emoji, start, end, type ('activity' | 'games' |
+// 'elective'), slot?, meal?, noTime?, teams? ({t0:true} | ids), overlapOk? }. Optional fields are left out, never null.
+function schedRecord(item, extra) {
+  const rec = { start: item.start, end: item.end, label: String(item.label).trim(), emoji: item.emoji, type: SETUP_BLOCK_TYPES.indexOf(item.type) !== -1 ? item.type : 'activity' };
+  if (rec.type === 'elective' && (item.slot === 0 || item.slot === 1 || item.slot === 2)) rec.slot = item.slot;
+  if (item.meal === 'breakfast' || item.meal === 'lunch' || item.meal === 'supper') rec.meal = item.meal;
+  if (item.noTime === true) rec.noTime = true;
+  const ids = Array.isArray(item.teams) ? item.teams : setupTeamList(item.teams);
+  if (ids.length) rec.teams = ids.reduce((o, id) => { o[id] = true; return o; }, {});
+  if (item.overlapOk === true) rec.overlapOk = true;
+  return Object.assign(rec, extra || {});
+}
+
+// Does one day's item need a field a patch cannot carry? A patch can set a value or fall back to the typical one,
+// but it cannot REMOVE a typical field (a meal, an elective slot, the teams): "Just Tuesday" is not offered for such
+// a change and the sheet says why. Returns the field words, or ''.
+function schedUnpatchable(typical, item) {
+  const rec = schedRecord(item);
+  const bad = ['meal', 'slot', 'teams'].filter((f) => schedNorm(f, typical[f]) !== '' && schedNorm(f, rec[f]) === '');
+  return bad.map((f) => SCHED_FIELD_WORDS[f]).join(' and ');
+}
+
+// Which of the sheet's fields differ from a stored record (as the schedule resolves it)?
+function schedChanged(rec, item) {
+  const next = schedRecord(item);
+  return SCHED_FIELDS.filter((f) => schedNorm(f, rec[f]) !== schedNorm(f, next[f]));
+}
+
+function schedPutField(target, f, next) {
+  if (f === 'noTime' || f === 'overlapOk') { if (next[f] === true) target[f] = true; else delete target[f]; return; }
+  if (next[f] === undefined) delete target[f]; else target[f] = setupClone(next[f]);
+}
+
+// ord for a new item: after everything its container holds, so same-start ties read in the order they were added.
+function schedNextOrd(draft, dk, scope) {
+  let top = -10;
+  const take = (m) => Object.keys(setupMapOf(m)).forEach((id) => { const o = Number(m[id] && m[id].ord); if (Number.isFinite(o) && o > top) top = o; });
+  if (scope === 'typical') take(draft.typical);
+  else take(setupMapOf(draft.dayBlocks)[dk]);
+  return top + 10;
+}
+
+// Add an item. scope 'typical' puts it on the typical day (every day that follows it gets it); scope 'day' makes it
+// that day's own (a one-off on a day that follows the typical day, a plain item on an own day). Returns the new id.
+function schedAddMutate(draft, p) {
+  const rec = schedRecord(p.item, { alertKey: setupAlertKey(p.item.label) });
+  const scope = p.scope === 'typical' ? 'typical' : 'day';
+  rec.ord = schedNextOrd(draft, p.dk, scope);
+  const id = setupMintId(scope === 'typical' ? '' : p.dk, p.item.label, p.item.start, schedTakenIds(draft));
+  if (scope === 'typical') draft.typical[id] = rec;
+  else { draft.dayBlocks[p.dk] = setupMapOf(draft.dayBlocks[p.dk]); draft.dayBlocks[p.dk][id] = rec; }
+  return id;
+}
+
+// Save an edit of an item that exists. p: { dk, bid, item, scope: 'typical' | 'day', changeOwn: [dk…] }.
+//   a one-off or an own item  → its record, whatever the scope
+//   scope 'typical'           → typical/<bid>, and the patches on those fields go with it: the seen day's, and the days
+//                               in `changeOwn` ("Change Wednesday too"); every other patch is that day keeping its own
+//   scope 'day'               → patches/<dk>/<bid> carrying only what differs from the typical item (a field set back
+//                               to the typical value is dropped from the patch: "Back to the usual")
+// Returns { ok } or { ok:false, reason: 'gone' | 'unpatchable', fields }.
+function schedEditMutate(draft, p) {
+  const found = schedFind(draft, p.dk, p.bid);
+  if (!found.where) return { ok: false, reason: 'gone' };
+  const next = schedRecord(p.item);
+  if (found.where === 'dayBlocks') {
+    const rec = draft.dayBlocks[p.dk][p.bid];
+    SCHED_FIELDS.forEach((f) => schedPutField(rec, f, next));
+    return { ok: true };
+  }
+  if (p.scope === 'typical' || !p.dk) {
+    // What the director changed is measured against what the seen day RESOLVES to (typical + its own patch): a day's
+    // patched field that the sheet left alone must not be written into the typical day.
+    const changed = SCHED_FIELDS.filter((f) => schedNorm(f, found.rec[f]) !== schedNorm(f, next[f]));
+    const rec = draft.typical[p.bid];
+    changed.forEach((f) => schedPutField(rec, f, next));
+    const dks = [p.dk].concat(p.changeOwn || []).filter(Boolean);
+    dks.forEach((dk) => {
+      const patch = setupMapOf(draft.patches[dk])[p.bid];
+      if (!setupIsMap(patch)) return;
+      changed.forEach((f) => { delete patch[f]; });
+    });
+    return { ok: true };
+  }
+  const bad = schedUnpatchable(found.typical, p.item);
+  if (bad) return { ok: false, reason: 'unpatchable', fields: bad };
+  draft.patches[p.dk] = setupMapOf(draft.patches[p.dk]);
+  const patch = setupIsMap(draft.patches[p.dk][p.bid]) ? draft.patches[p.dk][p.bid] : {};
+  SCHED_FIELDS.forEach((f) => {
+    if (schedNorm(f, next[f]) === schedNorm(f, found.typical[f])) { delete patch[f]; return; }
+    if (f === 'noTime' || f === 'overlapOk') patch[f] = next[f] === true;
+    else patch[f] = setupClone(next[f]);
+  });
+  if (Object.keys(patch).length) draft.patches[p.dk][p.bid] = patch; else delete draft.patches[p.dk][p.bid];
+  return { ok: true };
+}
+
+// Take an item out. scope 'day' on a typical item = skipped that day (patches/<dk>/<bid>/off, "Bring back" undoes it);
+// scope 'typical' = removed from every day (its patches go with it). An own or one-off item is deleted.
+function schedRemoveMutate(draft, p) {
+  const found = schedFind(draft, p.dk, p.bid);
+  if (!found.where) return { ok: false, reason: 'gone' };
+  if (found.where === 'dayBlocks') { delete draft.dayBlocks[p.dk][p.bid]; return { ok: true }; }
+  if (p.scope === 'typical' || !p.dk) {
+    delete draft.typical[p.bid];
+    Object.keys(setupMapOf(draft.patches)).forEach((dk) => { if (setupIsMap(draft.patches[dk])) delete draft.patches[dk][p.bid]; });
+    return { ok: true };
+  }
+  draft.patches[p.dk] = setupMapOf(draft.patches[p.dk]);
+  draft.patches[p.dk][p.bid] = Object.assign(setupMapOf(draft.patches[p.dk][p.bid]), { off: true });
+  return { ok: true };
+}
+
+// Bring back what a day skipped.
+function schedBringBackMutate(draft, p) {
+  const own = setupMapOf(setupMapOf(draft.dayBlocks)[p.dk])[p.bid];
+  if (setupIsMap(own)) { delete own.off; return { ok: true }; }
+  const patch = setupMapOf(setupMapOf(draft.patches)[p.dk])[p.bid];
+  if (!setupIsMap(patch)) return { ok: false, reason: 'gone' };
+  delete patch.off;
+  return { ok: true };
+}
+
+// Which days an "Every day like Tuesday" save reaches, and which keep their own value. `fields`: the changed field
+// names. { change: [dk…] (days that follow the typical day and show the item, in week order — the seen day first is NOT
+// special), keep: [{ dk, fields: [word…] }] }.
+function schedScopeInfo(tree, bid, fields) {
+  const change = [];
+  const keep = [];
+  SETUP_DK.forEach((dk) => {
+    if (setupMapOf(setupMapOf(tree.days)[dk]).typical !== true) return;
+    const patch = setupMapOf(setupMapOf(tree.patches)[dk])[bid];
+    if (setupIsMap(patch) && patch.off === true) return; // skipped that day: nothing to change
+    const own = fields.filter((f) => setupIsMap(patch) && patch[f] !== undefined);
+    if (own.length) keep.push({ dk, fields: own });
+    else change.push(dk);
+  });
+  return { change, keep };
+}
+
+// "Mon–Fri" / "Mon, Tue, Thu, Fri" for a list of day keys (a run of three or more reads as a range).
+function schedDaysWords(dks) {
+  const idx = dks.map((dk) => SETUP_DK.indexOf(dk)).filter((i) => i >= 0).sort((a, b) => a - b);
+  const short = (i) => SETUP_DAY_WORDS[SETUP_DK[i]].slice(0, 3);
+  const out = [];
+  for (let i = 0; i < idx.length;) {
+    let j = i;
+    while (j + 1 < idx.length && idx[j + 1] === idx[j] + 1) j++;
+    if (j - i >= 2) out.push(short(idx[i]) + '–' + short(idx[j]));
+    else for (let k = i; k <= j; k++) out.push(short(idx[k]));
+    i = j + 1;
+  }
+  return out.join(', ');
+}
+
+// Items of a resolved day (rich blocks) that a candidate time would overlap: timed items only, an item marked
+// `overlapOk` never counts, and the candidate itself is left out by id.
+function schedOverlaps(blocks, cand) {
+  if (cand.noTime) return [];
+  return (blocks || []).filter((b) => b.id !== cand.id && !b.noTime && !b.overlapOk && b.start < cand.end && cand.start < b.end);
+}
+
+// Ripple a move down the day. `blocks`: the day's rich blocks in time order; the item `id` moves by `delta` minutes
+// and so does everything that starts at or after the item's OLD start (later items keep their order and lengths). An
+// item that runs until the end of the day is elastic: its start moves, its end stays 1440, and it shrinks to at least
+// 5 minutes. Any other item that would end after midnight (or start before 00:00) is not moved and is listed in
+// `nofit`, so a ripple can never produce end > 1440. Returns { moves: { id: { start, end } }, nofit: [block…] }.
+function schedRipple(blocks, id, delta, opts) {
+  const list = (blocks || []).filter((b) => !b.noTime).slice().sort((a, b) => a.start - b.start);
+  const me = list.find((b) => b.id === id);
+  const moves = {};
+  const nofit = [];
+  if (!me) return { moves, nofit };
+  const o = opts || {};
+  const from = me.start;
+  list.forEach((b) => {
+    if (b.id !== id && b.start < from) return;
+    if (b.id === id && o.skipSelf) return;
+    const start = b.start + delta;
+    if (b.end === 1440 && start >= 0 && start <= 1440 - SCHED_STEP) { moves[b.id] = { start, end: 1440 }; return; }
+    const end = b.end + delta;
+    if (start < 0 || end > 1440) { nofit.push(b); return; }
+    moves[b.id] = { start, end };
+  });
+  return { moves, nofit };
+}
+
+// The time gaps worth an "Add something" row: between two timed items, SCHED_GAP_MIN or longer.
+function schedGaps(blocks) {
+  const list = (blocks || []).filter((b) => !b.noTime).slice().sort((a, b) => a.start - b.start || a.end - b.end);
+  const out = [];
+  let reach = null;
+  list.forEach((b) => {
+    if (reach !== null && b.start - reach >= SCHED_GAP_MIN) out.push({ start: reach, end: b.start });
+    reach = reach === null ? b.end : Math.max(reach, b.end);
+  });
+  return out;
+}
+
+// Give a day its own schedule: its resolved items become `dayBlocks/<dk>` WITH THE SAME ids (so attached games and
+// alert keys don't move), the day stops following the typical day and its patches go, in ONE commit. An item the
+// day skipped is simply not copied. `blocks`: the day's rich blocks (planForDow).
+function schedOwnMutate(draft, dk, blocks) {
+  draft.dayBlocks[dk] = setupMapOf(draft.dayBlocks[dk]);
+  (blocks || []).forEach((b) => {
+    if (b.origin === 'oneoff' || b.origin === 'own') return; // already its own
+    const rec = schedRecord({ label: b.base, emoji: b.emoji, start: b.start, end: b.end, type: b.type, slot: b.slot, meal: b.meal, noTime: b.noTime, teams: b.teams, overlapOk: b.overlapOk }, { alertKey: b.alertKey, ord: b.ord });
+    draft.dayBlocks[dk][b.id] = rec;
+  });
+  draft.days[dk] = Object.assign(setupMapOf(draft.days[dk]), { typical: false });
+  delete draft.patches[dk];
+}
+
+// Make a day follow the typical day again: the day's own items go (games on them are re-homed by the caller first).
+function schedFollowMutate(draft, dk) {
+  draft.days[dk] = Object.assign(setupMapOf(draft.days[dk]), { typical: true });
+  delete draft.dayBlocks[dk];
+}
+
+// Clear a day's changes (patches and one-offs) and leave it following the typical day.
+function schedClearMutate(draft, dk) {
+  delete draft.patches[dk];
+  delete draft.dayBlocks[dk];
+}
+
+// Copy items onto an EMPTY own day from another day's resolved items (new ids, same reminder keys).
+function schedCopyIntoMutate(draft, dk, blocks) {
+  draft.dayBlocks[dk] = setupMapOf(draft.dayBlocks[dk]);
+  const taken = schedTakenIds(draft);
+  (blocks || []).forEach((b, i) => {
+    const rec = schedRecord({ label: b.base, emoji: b.emoji, start: b.start, end: b.end, type: b.type, slot: b.slot, meal: b.meal, noTime: b.noTime, teams: b.teams, overlapOk: b.overlapOk }, { alertKey: b.alertKey, ord: 10 * i });
+    draft.dayBlocks[dk][setupMintId(dk, b.base, b.start, taken)] = rec;
+  });
+}
+
+// The games that sit on the given schedule items of a weekday, in the catalog (config.games). `ids`: block ids.
+function schedGamesOn(config, ids, dayIds) {
+  const set = {};
+  ids.forEach((i) => { set[i] = true; });
+  return ((config && config.games) || []).filter((g) => g && set[g.blockId] && (!dayIds || dayIds.indexOf(g.dayId) !== -1));
+}
+
+// The commit the screens call. `p.kind`: add | edit | remove | bring | own | follow | clear | copy. Returns commitSetup's
+// result plus { id } for an add; { ok:false, reason } says why nothing was written. The restore point for the
+// destructive ones is the CALLER's (it is async and may need the director's answer first).
+function schedCommit(p) {
+  let outcome = { ok: true };
+  let newId = null;
+  const mutate = (draft) => {
+    let r;
+    switch (p.kind) {
+      case 'add': newId = schedAddMutate(draft, p); r = { ok: true }; break;
+      case 'edit': r = schedEditMutate(draft, p); break;
+      case 'remove': r = schedRemoveMutate(draft, p); break;
+      case 'bring': r = schedBringBackMutate(draft, p); break;
+      case 'own': schedOwnMutate(draft, p.dk, p.blocks); r = { ok: true }; break;
+      case 'follow': schedFollowMutate(draft, p.dk); r = { ok: true }; break;
+      case 'clear': schedClearMutate(draft, p.dk); r = { ok: true }; break;
+      case 'copy': schedCopyIntoMutate(draft, p.dk, p.blocks); r = { ok: true }; break;
+      default: r = { ok: false, reason: 'kind' };
+    }
+    outcome = r;
+    return r.ok ? undefined : false;
+  };
+  // The item must still be there: the sheet says where it found it (`where`, as it was when the sheet opened), so one a
+  // colleague removed since is refused by name ("Pat removed this item") instead of being resurrected half-made.
+  const expect = [];
+  if (p.kind === 'edit' || p.kind === 'remove' || p.kind === 'bring') {
+    const where = p.where || schedFind(setupTree, p.dk, p.bid).where;
+    if (where === 'dayBlocks') expect.push('dayBlocks/' + p.dk + '/' + p.bid);
+    else if (where === 'typical') expect.push('typical/' + p.bid);
+  }
+  const res = commitSetup(mutate, { label: p.label, expect });
+  if (!res.ok && res.reason === 'cancelled' && outcome && !outcome.ok) return Object.assign({}, res, { reason: outcome.reason, fields: outcome.fields });
+  return newId ? Object.assign(res, { id: newId }) : res;
+}
+
+// ── 9. The rain plan (§11.6): staged changes for ONE day, the draft's shape, the Done check ─────────
+// A plan is { dk, epoch, at, items: { <setup path>: { base, staged } }, games: { <gid>: { base, staged } } }. For every staged
+// field the value it had when it was staged (`base`) is kept beside the new one (`staged`, null = delete), so Done can
+// tell a field a colleague changed since from one only this device touched (sync-F4). Nothing here writes: the screen
+// builds a plan with these, shows it through rainView, and rainCommit sends it as ONE commit.
+
+const RAIN_DRAFT_KEY = 'campSetupRainDraft';  // lsKey()'d; wiped by clearLocalData
+const RAIN_DRAFT_STALE_MS = 12 * 3600 * 1000;  // "Finish or discard yesterday's rain plan?"
+const RAIN_BUSY_MS = 2 * 60 * 1000;            // the panel holds a reload only while it was touched this recently
+
+function rainPlanNew(dk, epoch, at) {
+  return { dk, epoch: epoch || '', at: at || Date.now(), items: {}, games: {} };
+}
+
+// What a path holds right now (null = absent), canonical.
+function rainBaseAt(tree, path) {
+  return setupValueAt(setupCanon(tree), path);
+}
+
+// Where a day's field lives: an own or one-off item keeps it on its record, a typical item as a patch.
+function rainPath(tree, dk, bid, field) {
+  const own = setupIsMap(setupMapOf(setupMapOf(tree.dayBlocks)[dk])[bid]);
+  return (own ? 'dayBlocks/' : 'patches/') + dk + '/' + bid + '/' + field;
+}
+
+// Stage `value` at `path`. The base stays the FIRST one seen; a field put back to its base leaves the plan.
+function rainStage(plan, tree, path, value) {
+  const was = plan.items[path];
+  const base = was ? was.base : rainBaseAt(tree, path);
+  const staged = value === undefined ? null : value;
+  if (JSON.stringify(syncCanon(base)) === JSON.stringify(syncCanon(staged))) delete plan.items[path];
+  else plan.items[path] = { base, staged };
+  return plan;
+}
+
+// Stage fields of one item: { start, end } or { off: true }. `rich`: the item's rich block.
+function rainStageFields(plan, tree, dk, bid, fields) {
+  Object.keys(fields).forEach((f) => rainStage(plan, tree, rainPath(tree, dk, bid, f), fields[f]));
+  return plan;
+}
+
+// Put one item back as planned: every staged field of it leaves the plan.
+function rainUnstage(plan, dk, bid) {
+  Object.keys(plan.items).forEach((p) => {
+    const parts = p.split('/');
+    if (parts[1] === dk && parts[2] === bid) delete plan.items[p];
+  });
+  return plan;
+}
+
+function rainIsStaged(plan, dk, bid) {
+  return Object.keys(plan.items).some((p) => { const parts = p.split('/'); return parts[1] === dk && parts[2] === bid; });
+}
+
+// The tree with the plan applied (a copy).
+function rainStagedTree(tree, plan) {
+  const t = setupClone(tree);
+  Object.keys(plan.items).forEach((p) => setupSetPath(t, p, plan.items[p].staged));
+  return normalizeSetup(t);
+}
+
+// The day before and after the plan, as rich blocks. `skipped` is what the plan skips (and what was skipped already).
+function rainView(tree, plan, dow) {
+  const mk = (t) => { const r = resolveDay(t, dow); const out = r.map(setupRichBlock); out.skipped = r.skipped.map(setupRichBlock); return out; };
+  return { before: mk(tree), after: mk(rainStagedTree(tree, plan)) };
+}
+
+// ── what a swap / a nudge does, as { id: { start, end } } (null: it cannot be done) ──
+const rainLen = (b) => b.end - b.start;
+function rainTimed(blocks) { return (blocks || []).filter((b) => !b.noTime).slice().sort((a, b) => a.start - b.start || a.end - b.end); }
+
+// Each takes the other's start AND end: nothing else moves and nothing overlaps.
+function rainSwapSlots(a, b) {
+  return { [a.id]: { start: b.start, end: b.end }, [b.id]: { start: a.start, end: a.end } };
+}
+// Each takes the other's start and keeps its own length. null when one would run past midnight.
+function rainSwapLengths(a, b) {
+  const ae = b.start + rainLen(a);
+  const be = a.start + rainLen(b);
+  if (ae > 1440 || be > 1440) return null;
+  return { [a.id]: { start: b.start, end: ae }, [b.id]: { start: a.start, end: be } };
+}
+// Swap with the timed neighbour (dir -1 earlier, +1 later); each keeps its length and the pair keeps its span.
+// null when there is no such neighbour.
+function rainNudge(blocks, id, dir) {
+  const list = rainTimed(blocks);
+  const i = list.findIndex((b) => b.id === id);
+  const j = i + (dir < 0 ? -1 : 1);
+  if (i < 0 || j < 0 || j >= list.length) return null;
+  const x = dir < 0 ? list[j] : list[i]; // the earlier of the two
+  const y = dir < 0 ? list[i] : list[j]; // the later
+  const gap = Math.max(0, y.start - x.end);
+  const ys = x.start;
+  const ye = ys + rainLen(y);
+  const xs = ye + gap;
+  const xe = xs + rainLen(x);
+  if (xe > 1440) return null;
+  return { [y.id]: { start: ys, end: ye }, [x.id]: { start: xs, end: xe } };
+}
+
+// Change time: the item to a new start/end (end 1440 = until the end of the day); `ripple` carries everything after it.
+// { moves, nofit } — nofit lists the items a ripple left alone because they would not fit before midnight.
+function rainRetime(blocks, id, start, end, ripple) {
+  const me = (blocks || []).find((b) => b.id === id);
+  if (!me) return { moves: {}, nofit: [] };
+  if (!ripple) return { moves: { [id]: { start, end } }, nofit: [] };
+  const r = schedRipple(blocks, id, start - me.start, { skipSelf: true });
+  r.moves[id] = { start, end };
+  return r;
+}
+
+// ── the summary ──
+// Lines for Done, in day order: { kind: 'time' | 'skip' | 'add' | 'game', … }.
+function rainChanges(tree, plan, dow, config, dayIdsOf) {
+  const v = rainView(tree, plan, dow);
+  const after = {};
+  v.after.forEach((b) => { after[b.id] = b; });
+  const lines = [];
+  v.before.forEach((b) => {
+    const a = after[b.id];
+    if (!a) lines.push({ kind: 'skip', id: b.id, label: b.label, emoji: b.emoji, start: b.start });
+    else if (a.start !== b.start || a.end !== b.end) lines.push({ kind: 'time', id: b.id, label: a.label, emoji: a.emoji, start: a.start, end: a.end, was: { start: b.start, end: b.end } });
+  });
+  const beforeIds = {};
+  v.before.forEach((b) => { beforeIds[b.id] = true; });
+  v.after.forEach((b) => { if (!beforeIds[b.id]) lines.push({ kind: 'add', id: b.id, label: b.label, emoji: b.emoji, start: b.start, end: b.end }); });
+  lines.sort((a, b) => (a.start - b.start) || (a.id < b.id ? -1 : 1));
+  Object.keys(plan.games || {}).forEach((gid) => {
+    const g = ((config && config.games) || []).find((x) => x && x.id === gid);
+    const to = plan.games[gid].staged;
+    if (g && to) lines.push({ kind: 'game', id: gid, label: g.name, emoji: g.emoji, to });
+  });
+  return { lines, before: v.before, after: v.after };
+}
+
+// The verdict Done always says: overlaps among timed items not marked on purpose, and any new gap of 45+ minutes the
+// plan opened. [{ kind: 'overlap', a, b } | { kind: 'gap', start, end }], empty = "Nothing overlaps".
+function rainVerdict(before, after) {
+  const out = [];
+  const list = rainTimed(after);
+  for (let i = 0; i < list.length; i++) {
+    for (let j = i + 1; j < list.length; j++) {
+      const a = list[i];
+      const b = list[j];
+      if (b.start >= a.end) break;
+      if (a.overlapOk || b.overlapOk) continue;
+      out.push({ kind: 'overlap', a, b, start: Math.max(a.start, b.start), end: Math.min(a.end, b.end) });
+    }
+  }
+  const had = schedGaps(before).filter((g) => g.end - g.start >= 45).map((g) => g.start + '-' + g.end);
+  schedGaps(after).filter((g) => g.end - g.start >= 45 && had.indexOf(g.start + '-' + g.end) === -1).forEach((g) => out.push({ kind: 'gap', start: g.start, end: g.end }));
+  return out;
+}
+
+// Done's first check: every staged field's stored base against what the tree holds NOW (a colleague may have changed
+// it since). [{ path, mine, theirs, label }] — nothing written until each is answered Keep his / Use yours.
+function rainClashes(tree, plan) {
+  const now = setupCanon(tree);
+  const out = [];
+  Object.keys(plan.items).forEach((path) => {
+    const cur = setupValueAt(now, path);
+    if (JSON.stringify(syncCanon(cur)) === JSON.stringify(syncCanon(plan.items[path].base))) return;
+    if (JSON.stringify(syncCanon(cur)) === JSON.stringify(syncCanon(plan.items[path].staged))) return; // they did the same thing
+    out.push({ path, mine: plan.items[path].staged, theirs: cur, base: plan.items[path].base });
+  });
+  return out;
+}
+
+// The commit's mutator: the staged values written, a patch field equal to the typical item's dropped (a swap back is
+// "Back to the usual", not a patch), and a patch emptied of every field removed. `keep`: paths whose clash was answered
+// "Keep his" (left as the tree has them).
+function rainCommitMutate(draft, plan, keep) {
+  const skip = {};
+  (keep || []).forEach((p) => { skip[p] = true; });
+  Object.keys(plan.items).forEach((p) => { if (!skip[p]) setupSetPath(draft, p, plan.items[p].staged); });
+  Object.keys(plan.items).forEach((p) => {
+    const parts = p.split('/');
+    if (parts[0] !== 'patches' || parts.length !== 4) return;
+    const typ = setupMapOf(draft.typical)[parts[2]];
+    const patch = setupMapOf(setupMapOf(draft.patches)[parts[1]])[parts[2]];
+    if (!setupIsMap(typ) || !setupIsMap(patch)) return;
+    if (parts[3] !== 'off' && patch[parts[3]] !== undefined && schedNorm(parts[3], patch[parts[3]]) === schedNorm(parts[3], typ[parts[3]])) delete patch[parts[3]];
+  });
+}
+
+// The competition sessions a target item belongs to (config.sessions, else Morning / Evening): the bucket the game's
+// `session` is set to when it moves onto an item.
+function rainSessionFor(config, block) {
+  const sessions = Array.isArray(config && config.sessions) && config.sessions.length ? config.sessions : ['Morning', 'Evening'];
+  if (!block) return null;
+  if (sessions.indexOf('Afternoon') !== -1) return block.start < 720 ? 'Morning' : block.start < 1020 ? 'Afternoon' : 'Evening';
+  return block.start < 720 ? (sessions.indexOf('Morning') !== -1 ? 'Morning' : sessions[0]) : (sessions.indexOf('Evening') !== -1 ? 'Evening' : sessions[sessions.length - 1]);
+}
+
+// Stage one game's move: `to` = { blockId, dayId, dow, session, ord, messtival? } or { blockId: null } (not on the schedule).
+function rainStageGame(plan, game, to) {
+  const was = plan.games[game.id];
+  const base = was ? was.base : { blockId: game.blockId === undefined ? null : game.blockId, dayId: game.dayId, session: game.session, ord: Number.isFinite(game.ord) ? game.ord : null, messtival: game.messtival === true };
+  const same = (to.blockId || null) === base.blockId && (to.blockId === null || (to.dayId === base.dayId && (to.messtival === undefined || to.messtival === base.messtival)));
+  if (same) delete plan.games[game.id];
+  else plan.games[game.id] = { base, staged: to };
+  return plan;
+}
+
+// Apply the plan's game moves to a config in place (the config engine's push then sends exactly the fields that
+// changed). `keepGames`: ids whose move was answered "Keep his".
+function rainApplyGames(config, plan, keepGames) {
+  const skip = {};
+  (keepGames || []).forEach((g) => { skip[g] = true; });
+  let n = 0;
+  Object.keys(plan.games || {}).forEach((gid) => {
+    if (skip[gid]) return;
+    const g = ((config && config.games) || []).find((x) => x && x.id === gid);
+    if (!g) return;
+    const to = plan.games[gid].staged;
+    if (!to.blockId) { delete g.blockId; delete g.ord; n++; return; }
+    g.blockId = to.blockId;
+    g.ord = to.ord;
+    if (to.dayId) g.dayId = to.dayId;
+    if (to.session) g.session = to.session;
+    if (to.messtival !== undefined) { if (to.messtival) g.messtival = true; else delete g.messtival; }
+    n++;
+  });
+  return n;
+}
+
+// Games whose stored link no longer matches what the plan assumed (a colleague moved them since): the same
+// Keep his / Use yours question as a time.
+function rainGameClashes(config, plan) {
+  const out = [];
+  Object.keys(plan.games || {}).forEach((gid) => {
+    const g = ((config && config.games) || []).find((x) => x && x.id === gid);
+    if (!g) return;
+    const b = plan.games[gid].base;
+    const cur = { blockId: g.blockId === undefined ? null : g.blockId, dayId: g.dayId };
+    if (cur.blockId !== b.blockId || cur.dayId !== b.dayId) out.push({ gid, game: g, theirs: cur });
+  });
+  return out;
 }
 
 setupLoadCache();
