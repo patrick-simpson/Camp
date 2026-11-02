@@ -279,3 +279,54 @@ test('putGamesOnSchedule: refused while the schedule is the built-in copy, or fo
   setMemberRole(null);
   gbOff();
 });
+
+// ── the schedule sheet and the calendar list a block's games, whatever kind of block it is ──
+
+function gbSheetHtml(dow) {
+  scheduleDay = dow;
+  renderScheduleBody();
+  return document.getElementById('schedule-body').innerHTML;
+}
+
+test('the schedule sheet and the per-day calendar name the games under ANY block the shared schedule links them to', () => {
+  gbOn();
+  setupApplyGameAttachments(state.config, gbPlan(state.config).ops);
+  const day = competitionDays().find((d) => d.dow === 2);
+  const moved = allGames().find((g) => g.dayId === day.id && g.session === 'Morning');
+  const lunch = planForDow(2).find((b) => b.label === 'Lunch');
+  moved.blockId = lunch.id; moved.ord = 5;
+  const html = gbSheetHtml(2);
+  const at = html.indexOf('Lunch');
+  assert.ok(at > 0, 'the sheet shows lunch');
+  const lunchCard = html.slice(html.lastIndexOf('sched-block', at), html.indexOf('sched-block', at + 5) === -1 ? html.length : html.indexOf('sched-block', at + 5));
+  assert.ok(lunchCard.includes(moved.name), 'the game the rain plan moved onto lunch is listed under lunch');
+  assert.ok(lunchCard.includes('sched-game-chip'));
+  const ics = buildDayIcs(2).replace(/\r\n /g, '');
+  const ev = ics.split('BEGIN:VEVENT').find((e) => /SUMMARY:[^\r]*Lunch/.test(e));
+  assert.ok(ev && ev.includes(icsEscape(moved.name)), 'and in the calendar event');
+  // Built-in, the same links change nothing: only a games block holds games.
+  gbOff();
+  state.config.games.forEach((g) => { if (g.id === moved.id) { g.blockId = lunch.id; g.ord = 5; } });
+  const off = gbSheetHtml(2);
+  const offAt = off.indexOf('Lunch');
+  const offCard = off.slice(off.lastIndexOf('sched-block', offAt), off.indexOf('sched-block', offAt + 5) === -1 ? off.length : off.indexOf('sched-block', offAt + 5));
+  assert.ok(!offCard.includes('sched-game-chip'), 'off: links are ignored, exactly as before');
+  gbOff();
+});
+
+test('junior Team Skits and senior\'s Afternoon games finally show in the sheet once the schedule is edited here', () => {
+  gbOn();
+  setupApplyGameAttachments(state.config, gbPlan(state.config).ops);
+  if (CAMP.id === 'junior') {
+    const html = gbSheetHtml(5);
+    const at = html.indexOf('Team Skits</div>') > -1 ? html.indexOf('Team Skits</div>') : html.lastIndexOf('Team Skits');
+    assert.ok(allGames().some((g) => g.id === 'team-skits'));
+    const skitsGame = allGames().find((g) => g.id === 'team-skits');
+    const chips = html.split('sched-game-chip').length - 1;
+    assert.ok(html.includes(skitsGame.name) && chips >= 1 && at > 0, 'Friday 7:00 PM Team Skits lists the Team Skits game');
+  } else {
+    const html = gbSheetHtml(3);
+    ['team-comp-pm-d3', 'legacy-game-d3'].forEach((id) => assert.ok(html.includes(allGames().find((g) => g.id === id).name), id + ' is on the sheet'));
+  }
+  gbOff();
+});

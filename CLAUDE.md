@@ -2477,7 +2477,14 @@ Both camps, junior and senior, run all of it.
   Morning/Evening rule, **links ignored** — exactly today), `gamesForDay(dow)` →
   `[{block, games}]`, `unscheduledGames(dow)` (games on that weekday's competition days
   listed under no block — in either mode; built-in senior shows its 10 Afternoon games
-  and junior Team Skits here, which is the bug A2 fixes), `campWeek()` →
+  and junior Team Skits here, which is the bug A2 fixes; the schedule sheet and the
+  per-day `.ics` ask `gamesForBlock` for EVERY block now, not only `type: 'games'` ones —
+  built-in that is the same answer, edited here it lists Team Skits under Friday 7:00 PM
+  and a game the rain plan moved onto lunch under lunch. Measured in Chromium against the
+  live v198 build with the seed switched on: junior's ONLY visible difference is the
+  Team Skits chip (and its `.ics` line), the 10,080-minute banner digest is identical
+  (`67c9222c` junior, `7604588f` senior); senior's Afternoon games move to their own
+  blocks and stop being shown under the 3:00 and 4:50 PM blocks as the Evening pair), `campWeek()` →
   `{start, phase}`: `setup/meta/weekStart` (ALWAYS read, even with every section off)
   else the date phone alerts were set up with (`pushKnownWeekStart()`), a real SUNDAY
   or null; `phase` is `unset | before | during | after` and `during` is the Saturday

@@ -1599,15 +1599,15 @@ function renderScheduleBody() {
 
     let extra = '';
     let labelBadge = ''; // forecast badge next to the label (future electives only)
-    if (raw.type === 'games') {
-      // Competition days are editable; gamesForBlock maps this block's real
-      // day-of-week to whichever configured day(s) carry that dow.
-      const games = gamesForBlock(dow, raw);
-      if (games.length) {
-        extra = `<div class="sched-games">${games.map((g) =>
-          `<span class="sched-game-chip ${state.results[g.id] ? 'played' : ''}">${esc(g.emoji)} ${esc(g.name)}${state.results[g.id] ? ' ✓' : ''}</span>`).join('')}</div>`;
-      }
-    } else if (raw.type === 'elective') {
+    // The games played in this item. Competition days are editable; gamesForBlock maps this block's real day-of-week to
+    // whichever configured day(s) carry that dow. Any kind of block can hold games once the schedule is edited here
+    // (junior's Team Skits, a game the rain plan moved onto lunch); built-in, only a games block does, as it always has.
+    const games = gamesForBlock(dow, raw);
+    if (games.length) {
+      extra = `<div class="sched-games">${games.map((g) =>
+        `<span class="sched-game-chip ${state.results[g.id] ? 'played' : ''}">${esc(g.emoji)} ${esc(g.name)}${state.results[g.id] ? ' ✓' : ''}</span>`).join('')}</div>`;
+    }
+    if (raw.type === 'elective') {
       labelBadge = electiveWxHtml(dow, raw.slot);
       // Pin the viewer's own station at the top of the block so they don't
       // have to scan every roster for their name.
@@ -1625,7 +1625,7 @@ function renderScheduleBody() {
           stationRows += `<div class="sched-station sched-break${breakKids.includes(me) ? ' sched-station-you' : ''}"><span class="sched-station-name">☕ Break</span>
             <span class="sched-station-kids">${kidText(breakKids)}</span></div>`;
         }
-        extra = `<div class="sched-stations">${stationRows}</div>`;
+        extra += `<div class="sched-stations">${stationRows}</div>`;
       }
     }
 
@@ -1734,11 +1734,9 @@ function buildDayIcs(dow) {
   const events = day.map((raw, i) => ({ raw, i })).filter(({ raw }) => !raw.noTime).map(({ raw, i }) => {
     const b = decorateMealBlock(dow, raw);
     let desc = '';
-    if (raw.type === 'games') {
-      // Name the actual games in the event body, like the schedule sheet does.
-      const games = gamesForBlock(dow, raw);
-      if (games.length) desc = games.map((g) => `${g.emoji} ${g.name}`).join(', ');
-    }
+    // Name the actual games in the event body, like the schedule sheet does (any block that holds games).
+    const held = gamesForBlock(dow, raw);
+    if (held.length) desc = held.map((g) => `${g.emoji} ${g.name}`).join(', ');
     // UID = camp + day + the block's position in the day + its start. Before,
     // the junior and senior exports of the same weekday shared UIDs
     // (campday-<dow>-<start>), so importing both overwrote one with the other.
