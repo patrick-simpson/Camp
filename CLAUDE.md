@@ -1235,11 +1235,24 @@ rules**; the client code only shapes the UI.
     by the rules' shape (g0–g5, t0–t5, names ≤ 30, no member key or counselor
     name field exists). `revealFull` (the complete order, editor-only) keeps an
     unrevealed place out of the public node; a group can't even be written
-    before its place is shown. **KILL SWITCH, one line**: change
-    `revealPublic/.read` from `true` to the `MEMBER` expression (`setup/.read`
-    spells it out) and publish through the runbook; phones and remotes carry on,
-    the big screen shows Waiting. Rules can't limit connections (Spark allows
-    100 at once): the TV page must hold its connection only while visible (Step 23).
+    before its place is shown, and a Start may not coexist with a `pub` (a
+    client that writes only `ctl` can't carry the previous reveal's places under
+    a fresh one). **Size-bounded** (the Spark download quota counts on it):
+    `revealPublic`, its `pub`, `revealFull` and its `g` are each a BRANCH, so no
+    scalar — a multi-megabyte string — can land anywhere an anonymous reader
+    downloads (the review of Step 10 found all four open; `rules.test.js` sweeps
+    the containers and `reveal.mjs` writes the scalars). **Recorded limit, not a
+    promise:** the delete guard protects the NODE (a real reveal can't be erased
+    before its 08:00 `until`), not its places — a director can still delete one
+    shown place or `pub` mid-reveal, which is accepted because the same director
+    can Start a replacement at any time, and a per-group guard would cost a ~1 KB
+    expression plus a "new id" exception to cover only a client bug.
+    `reveal.mjs` pins it, so adding the guard later is noticed. **KILL SWITCH,
+    one line**: change `revealPublic/.read` from `true` to the `MEMBER`
+    expression (`setup/.read` spells it out) and publish through the runbook;
+    phones and remotes carry on, the big screen shows Waiting. Rules can't limit
+    connections (Spark allows 100 at once): the TV page must hold its connection
+    only while visible (Step 23).
   - **Q8 owner-only acts** (no new role; the member record's shape is
     untouched): `setup/meta/on/<section>`, `setup/meta/{epoch,epochAt}` and
     `state/meta/{epoch,epochAt}`, every `setup/meta/wizard` leaf, and the
@@ -1255,14 +1268,18 @@ rules**; the client code only shapes the UI.
     b). Pinned by `owner-only.mjs` so a change is noticed.
   - **Anchors, not a hope about ancestors.** Every block field carries
     `ANCHOR` (typical, dayBlocks) or `PANCHOR` (patches: a typical block that
-    exists, on a day whose `typical` is true; the patch `teams` leaf is the
-    same FOUR-parent expression, never five), so a field write into a deleted
+    exists, on a day whose `typical` is true; the patch `teams` NODE is the
+    same FOUR-parent expression, never five), and so does the team-flag LEAF
+    `teams/$tid` (`ANCHOR_TID`, one `.parent()` deeper; `PANCHOR_TID` is FIVE
+    parents from the leaf to `setup`) — its protection must not rest on the
+    `teams` node's validate, an ancestor — so a field write into a deleted
     record is refused whether or not ancestor `.validate` runs. **Recorded
     (emulator, 2026-11-02): the emulator DOES evaluate ancestor `.validate` on a
     deeper write** — `campScoreboard/state/zzz-probe/x = 1` is DENIED by
     `state/$other:false` — which contradicts the "known hole" note below (observed
     on the live database). `ancestor-validate.mjs` proves the anchors alone
-    refuse those writes with every record-level validate stripped, so R1 is
+    refuse those writes with every record-level and `teams`-node validate
+    stripped (team flags included), so R1 is
     correct under either answer; the LIVE probe is still run once before the
     paste (checklist) and its answer recorded here.
   - **Behaviour is proven in the emulator** (opt-in; needs npm + Java; see
@@ -1275,19 +1292,26 @@ rules**; the client code only shapes the UI.
     `restore`, `campers`, `access-requests`, `editors-here`, `teams-fields`,
     `brackets4`, `owner-only`, `reveal` (the public path's first proof: anonymous
     read, shape, compare-and-set races, delete-only-after-`until`, practice
-    isolation) and `ancestor-validate`: 243 cases, all SAFE. They were
-    mutation-checked: weakening any one clause (the ended guard, the shown
+    isolation, scalars refused) and `ancestor-validate`: 249 cases, all SAFE. They
+    were mutation-checked: weakening any one clause (the ended guard, the shown
     clause, the delete guard, `revealFull` read, the seq/`ca` checks, the
-    joinOpen, pin, owner, anchor, patch-anchor, campers and photo clauses) turns
-    a suite red. The seed they use is a fixture (`tests/emulator/camp-data.mjs`,
+    joinOpen, pin, owner, anchor, patch-anchor, team-flag-anchor, the four reveal
+    BRANCH guards, the Start-without-`pub` clause, campers and photo clauses)
+    turns a suite red. The seed they use is a fixture (`tests/emulator/camp-data.mjs`,
     rules of setup-rebuild-spec §10.2), until Step 15's real `buildSeed`.
-  - **Size**: 158 KB as committed (129 KB minified) for both camps, above the
-    spec's ≈110 / 82 KB estimate; `rules.test.js` budgets 192 KiB / 160 KiB.
+  - **Size**: 160 KB as committed (131 KB minified) for both camps, above the
+    spec's old ≈110 / 82 KB estimate (§8.6 now quotes these figures);
+    `rules.test.js` budgets 192 KiB / 160 KiB against RTDB's documented 256 KiB
+    limit. The longest single expression equals the longest already published
+    (1,916 characters, chat's `.write`), so expression length is not the risk.
     Confirm the console accepts it at Step 11: a PUT over the limit is refused
-    and leaves the old rules live, and the fallback is the split of
-    setup-rebuild-spec §8.6 (R1a: state/teams/meta amendments, `setup`, restore
-    points, `editorsHere`, the reveal blocks; R1b: `campers`, `teamPhotos`,
-    `accessRequests`, `accessBlocked`).
+    and leaves the old rules live (nothing breaks). **A "too large" refusal means
+    STOP and ask for the split** — R1a: state/teams/meta amendments, `setup`,
+    restore points, `editorsHere`, the reveal blocks; R1b: `campers`,
+    `teamPhotos`, `accessRequests`, `accessBlocked` (setup-rebuild-spec §8.6).
+    The split is not pre-generated: at 160 KB against a 256 KiB limit it is
+    unlikely to be needed, and a pre-built pair would be two more hashes and two
+    more runbooks to keep true.
   - **R1 checklist (Step 11 fills the results; the file hash prefix to verify is
     in the Step 10 commit message — recompute with
     `sha256sum database.rules.json | cut -c1-8` after ANY edit):**

@@ -591,7 +591,7 @@ test('every R1 node is gated by sign-in, with the read gates the plan promised',
 
 // A container is only a branch if its rule says so — otherwise a multi-megabyte STRING dropped at
 // setup/typical (or a scalar at a $dk level) lands in every device's cache.
-test('every setup / campers container is a branch (or demands children), so a scalar never lands', () => {
+test('every setup / campers / reveal container is a branch (or demands children), so a scalar never lands', () => {
   const bare = (node, path, out) => {
     Object.keys(node).filter((k) => !k.startsWith('.') && k !== '$other').forEach((k) => {
       const child = node[k];
@@ -603,15 +603,21 @@ test('every setup / campers container is a branch (or demands children), so a sc
     return out;
   };
   ROOTS.forEach((root) => {
-    ['setup', 'campers'].forEach((top) => {
+    // revealPublic is the one node an anonymous reader downloads whole: a scalar (a multi-megabyte string)
+    // at it, at pub, or at revealFull / its g would otherwise be accepted (review of Step 10)
+    ['setup', 'campers', 'revealPublic', 'revealFull'].forEach((top) => {
+      assert.ok(RULES[root][top]['.validate'].includes('!newData.isString()'), `${root}/${top} must itself be a branch`);
       assert.deepEqual(bare(RULES[root][top], [top], []), [], `${root}: containers with no branch/hasChildren guard`);
     });
+    assert.ok(RULES[root].revealPublic.$mode.pub['.validate'].includes('!newData.isString()'), `${root}/revealPublic/$mode/pub is a branch`);
+    assert.ok(RULES[root].revealFull.$mode.g['.validate'].includes('!newData.isString()'), `${root}/revealFull/$mode/g is a branch`);
   });
 });
 
-test('every block field carries the anchor, and the patch teams rule is the four-parent anchor', () => {
+test('every block field and team-flag leaf carries the anchor; the patch teams rule is the four-parent anchor, its leaf five', () => {
   const FOUR = 'newData.parent().parent().parent().parent()';
   const ANCHOR = "newData.parent().child('start').exists() && newData.parent().child('label').exists()";
+  const ANCHOR_TID = "newData.parent().parent().child('start').exists() && newData.parent().parent().child('label').exists()";
   const fields = (block) => Object.keys(block).filter((k) => !k.startsWith('.') && !k.startsWith('$'));
   ROOTS.forEach((root) => {
     const setup = RULES[root].setup;
@@ -620,6 +626,8 @@ test('every block field carries the anchor, and the patch teams rule is the four
         assert.ok(block[f]['.validate'].includes(ANCHOR), `${root}/${kind}.${f} must refuse a write into a record whose start/label are gone`);
       });
       assert.ok(block['.validate'].includes("hasChildren(['start', 'end', 'label', 'type'])"), `${root}/${kind}: whole-record shape`);
+      // the team-flag leaf is anchored too: its protection must not rest on the teams node's validate alone
+      assert.ok(block.teams.$tid['.validate'].includes(ANCHOR_TID), `${root}/${kind}.teams.$tid must refuse a flag written into a deleted block`);
     });
     const patch = setup.patches.$dk.$bid;
     fields(patch).forEach((f) => {
@@ -634,6 +642,14 @@ test('every block field carries the anchor, and the patch teams rule is the four
     assert.equal(setup.typical.$bid.off, undefined, `${root}: the typical day has no off flag`);
     assert.ok(setup.dayBlocks.$dk.$bid.off && patch.off, `${root}: one-offs and patches can be cancelled`);
     assert.ok(patch.teams.$tid['.validate'].includes('$tid.matches(/^t[0-9]$/)'), `${root}: team ids`);
+    // the patch team-flag LEAF is one level below its siblings, so `setup` is FIVE parents away (the teams node: four)
+    const FIVE = `${FOUR}.parent()`;
+    const tv = patch.teams.$tid['.validate'];
+    assert.ok(tv.includes(`${FIVE}.child('typical').child($bid).child('start').exists()`) &&
+      tv.includes(`${FIVE}.child('typical').child($bid).child('label').exists()`) &&
+      tv.includes(`${FIVE}.child('days').child($dk).child('typical').val() === true`),
+      `${root}/patches.teams.$tid: a flag needs a real typical block on a day that uses the typical day`);
+    assert.notOk(tv.includes(`${FIVE}.parent()`), `${root}/patches.teams.$tid: never six parents`);
   });
 });
 
@@ -814,6 +830,7 @@ test('the reveal ctl enforces compare-and-set, one place at a time, a fresh Star
       "newData.child('phase').val() === 'intro'",
       "newData.child('until').val() === data.child('until').val()", "newData.child('finale').val() === data.child('finale').val()",
       "newData.child('ca').val() === data.child('ca').val()", "newData.child('startedAt').val() === data.child('startedAt').val()",
+      "!newData.parent().child('pub').exists()", // a Start carries no places from an earlier reveal, even if written as ctl alone
     ].forEach((c) => assert.ok(v.includes(c), `${root}: ctl rule says ${c}`));
     const until = RULES[root].revealPublic.$mode.ctl.until['.validate'];
     assert.ok(until.includes('10800000') && until.includes('172800000'), `${root}: a practice <= 3 h, a real reveal <= 48 h`);

@@ -1329,6 +1329,12 @@ root name. `R` is the camp root literal.
   — a patch field may only be written for a typical block that exists, on a day that **uses** the
   typical day (sync-F16b). Placed on every patch leaf **including `teams`**, which sits at the same
   depth as `start` (four `.parent()` calls, never five; sync-F6 / sec-F6).
+- `ANCHOR_TID` / `PANCHOR_TID` — the same two anchors for the **team-flag leaf** `teams/$tid`, one level
+  deeper than the `teams` node: `ANCHOR_TID` = `newData.parent().parent().child('start').exists() &&
+  newData.parent().parent().child('label').exists()`; `PANCHOR_TID` is `PANCHOR` with FIVE `.parent()`
+  calls to `setup`. Review of Step 10: without them the leaf's only protection was the ancestor `teams`
+  node's validate, exactly what the live evaluator may not run, so a flag write could resurrect a half
+  block or create a patch for a block that does not exist.
 - `NOWKEEP` = `newData.isNumber() && (newData.val() === now || newData.val() === data.val())` — a
   stamp must be server time when it is written, but a whole-node write (A1's transaction, a
   restore) may carry an existing stamp unchanged (sync-F1).
@@ -1479,7 +1485,7 @@ pattern):
   "alertKey":  { ".validate": "newData.isString() && newData.val().matches(/^[a-z0-9-]{1,48}$/) && ANCHOR" },
   "overlapOk": { ".validate": "newData.isBoolean() && ANCHOR" },
   "teams":     { ".validate": "newData.hasChildren() && ANCHOR",
-                 "$tid": { ".validate": "$tid.matches(/^t[0-9]$/) && newData.val() === true" } },
+                 "$tid": { ".validate": "$tid.matches(/^t[0-9]$/) && newData.val() === true && ANCHOR_TID" } },
   "$other":    { ".validate": false }
 }
 ```
@@ -1492,7 +1498,8 @@ typical block's `start` and `label` and a typical day): `start` `INT(0,1439) && 
 `ANCHOR`; **`teams` `newData.hasChildren() && PANCHOR`** — the `teams` node is at the same depth
 as `start`, so it is the same four-parent `PANCHOR` (the draft's "five parents, one level deeper"
 reached `<root>/typical` and refused every team patch, including junior's seed; sync-F6, sec-F6) —
-with the same `$tid` child; `"$other": false`. No `alertKey` in a patch.
+with the same `$tid` child, whose rule carries `PANCHOR_TID` (FIVE parents: the leaf is one level
+below the `teams` node); `"$other": false`. No `alertKey` in a patch.
 
 ```jsonc
 "campers": {
@@ -1645,8 +1652,10 @@ shape is untouched.
   in the months between R1 and S7. Gate: the emulator suites (§8.8) print SAFE for both
   directions, and seeded setup trees for **both** camps (from `buildSeed`, including junior's
   team patches) are written successfully under the new rules in the emulator.
-- **Size check (sec-review note b).** The combined file roughly doubles (≈ 82 KB minified, ≈ 110
-  KB as committed). Before R1, confirm the published RTDB rules size limit; a PUT over the limit
+- **Size check (sec-review note b).** The combined file roughly doubles. The estimate here was ≈ 82 KB
+  minified / ≈ 110 KB as committed; **as built (Step 10) it is 130,506 bytes minified / 160,463 as
+  committed**, against RTDB's documented 256 KiB limit, and its longest single expression equals the
+  longest already published (1,916 characters). Before R1, confirm the published RTDB rules size limit; a PUT over the limit
   is refused and leaves the old rules live (nothing breaks), and in that case R1 splits into R1a
   (`state`/`teams`/`meta` amendments, `setup`, restore points, `editorsHere`, the reveal blocks) and R1b (`campers`,
   `teamPhotos`, `accessRequests`, `accessBlocked`), each with the same runbook.
@@ -1764,7 +1773,8 @@ The R1 checklist in CLAUDE.md records each line's result.
   and that no other node name contains `camper`.
 - "image fields are pinned to inline JPEG data URLs" (`:128`) accepts `png|jpeg` for
   `teamPhotos` only, with the full base64 charset regex.
-- New: every setup block leaf (anchor fields included) contains `ANCHOR` or `PANCHOR`, and the
+- New: every setup block leaf (anchor fields included, and the team-flag `teams/$tid` leaf with its
+  `ANCHOR_TID` / five-parent `PANCHOR_TID`) contains `ANCHOR` or `PANCHOR`, and the
   patch `teams` rule is the four-parent `PANCHOR`; every setup/campers container has `BRANCH` or a
   `hasChildren`; `accessRequests` create requires `SELF`, `!MEMBER`, `at === now`, `joinOpen` and
   not-blocked, and self-delete requires the 60 s age; restore nodes refuse deleting
@@ -3692,7 +3702,8 @@ unauthenticated probes that say `Permission denied` under the old and new rules 
 
 **As built (BUILD-PLAN Step 10, 2026-11-02).** The rules file is written and proven in the emulator
 (`tests/emulator/`, `npm run test:r1`; CLAUDE.md "R1"). Its `sha256` prefix, to compare in block 1 and
-set as `EXPECT` in block 2, is **`6b2a1c96`** (158,447 bytes; recompute with
+set as `EXPECT` in block 2, is **`ccf2e5d3`** (160,463 bytes; it was `6b2a1c96` before the review fixes of Step 10 —
+the four reveal BRANCH guards, the Start-without-`pub` clause and the team-flag leaf anchors; recompute with
 `sha256sum database.rules.json | cut -c1-8` after ANY edit to the file, and quote it in the commit
 message). The source of the R1 blocks is `tests/rules-macros.js`. Three things only the live database can
 answer are added below (block 4b): the ancestor-validate probe, a 100,000-character team photo, and the
@@ -3712,7 +3723,9 @@ EXPECT=xxxxxxxx
 [ "$(sha256sum rules.json | cut -c1-8)" = "$EXPECT" ] && \
   curl -s -X PUT -H "Authorization: Bearer $TOKEN" --data-binary @rules.json "$DB/.settings/rules.json"
 ```
-(A refusal — including "too large", §8.6 — leaves the old rules live; nothing breaks.)
+(A refusal — including "too large", §8.6 — leaves the old rules live; nothing breaks. **A "too large"
+refusal means STOP and ask for the R1a / R1b split of §8.6**; do not trim the file by hand, and do not
+publish half of it. The file is 160 KB against RTDB's documented 256 KiB limit, so this is not expected.)
 
 **Block 3 — read back and unauthenticated probes:**
 ```

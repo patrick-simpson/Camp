@@ -44,10 +44,18 @@ function macros(R) {
   // A record's anchor pair: after ANY write both must exist, so a field write into a
   // deleted record (or a {start,end} move of one) is refused instead of recreating half a block.
   m.ANCHOR = "newData.parent().child('start').exists() && newData.parent().child('label').exists()";
-  // Patch leaves sit at patches/$dk/$bid/<field>: four .parent() calls reach `setup`.
-  const SETUP = 'newData.parent().parent().parent().parent()';
-  const TYP = `${SETUP}.child('typical').child($bid)`;
-  m.PANCHOR = `${m.DK} && ${TYP}.child('start').exists() && ${TYP}.child('label').exists() && ${SETUP}.child('days').child($dk).child('typical').val() === true`;
+  // Patch leaves sit at patches/$dk/$bid/<field>: four .parent() calls reach `setup`; a teams/$tid
+  // leaf is one level deeper, so five (the `teams` NODE itself is a field: four, never five).
+  const panchor = (up) => {
+    const SETUP = 'newData' + '.parent()'.repeat(up);
+    const TYP = `${SETUP}.child('typical').child($bid)`;
+    return `${m.DK} && ${TYP}.child('start').exists() && ${TYP}.child('label').exists() && ${SETUP}.child('days').child($dk).child('typical').val() === true`;
+  };
+  m.PANCHOR = panchor(4);
+  // The team-flag LEAF carries the block anchor too (review of Step 10): its protection must not come
+  // only from the ancestor `teams` node's validate, the very thing whose evaluation is in doubt live.
+  m.ANCHOR_TID = "newData.parent().parent().child('start').exists() && newData.parent().parent().child('label').exists()";
+  m.PANCHOR_TID = panchor(5);
   m.NOWKEEP = 'newData.isNumber() && (newData.val() === now || newData.val() === data.val())';
   m.SELFKEEP = `newData.val() === data.val() || ${P(m.SELF('newData.val()'))}`;
   m.OWNER = m.SELF(`'${OWNER_KEY}'`);
@@ -58,9 +66,10 @@ function macros(R) {
 
 // ── setup/typical, dayBlocks, patches ────────────────────────────────────────
 function blockShape(m, kind) {
-  const { ANCHOR, PANCHOR, NESTR, INT, EMOJI, P } = m;
+  const { ANCHOR, PANCHOR, ANCHOR_TID, PANCHOR_TID, NESTR, INT, EMOJI, P } = m;
   const patch = kind === 'patch';
   const A = patch ? PANCHOR : ANCHOR;
+  const A_TID = patch ? PANCHOR_TID : ANCHOR_TID;
   const startKey = '$bid.matches(/^b-[a-z0-9-]{1,36}$/)';
   const startHead = kind === 'dayBlock' ? `${m.DK} && ${startKey}` : startKey;
   const f = (expr) => ({ '.validate': expr });
@@ -81,7 +90,7 @@ function blockShape(m, kind) {
   if (!patch) out.alertKey = f(`newData.isString() && newData.val().matches(/^[a-z0-9-]{1,48}$/) && ${A}`);
   out.overlapOk = f(`newData.isBoolean() && ${A}`);
   if (kind !== 'typical') out.off = f(`newData.isBoolean() && ${A}`);
-  out.teams = { '.validate': `newData.hasChildren() && ${A}`, $tid: f("$tid.matches(/^t[0-9]$/) && newData.val() === true") };
+  out.teams = { '.validate': `newData.hasChildren() && ${A}`, $tid: f(`$tid.matches(/^t[0-9]$/) && newData.val() === true && ${A_TID}`) };
   out.$other = f(false);
   return out;
 }
@@ -321,8 +330,14 @@ function newBlocks(R) {
     // An editor may start, drive, replace or end a reveal. DELETING the real reveal is allowed only once its
     // `until` (08:00 next day) has passed on the SERVER's clock, so a wrong phone clock or a buggy client can't
     // erase counselors' grid early; OWNER (the new-year wizard) may clear it at any time. Deleting `practice`
-    // is never restricted.
+    // is never restricted. LIMIT, recorded not hidden (owner-visible in CLAUDE.md): this guards the NODE, not
+    // its places — a director can still delete one shown place (or `pub`) mid-reveal. The same director can
+    // Start a replacement at any time, so a per-group delete guard would only cover a client bug, at the price
+    // of a ~1 KB expression plus a "new id" exception; reveal.mjs pins the behaviour so a change is noticed.
     '.write': `${EDIT} && (!data.child('real').exists() || newData.child('real').exists() || data.child('real').child('ctl').child('until').val() <= now || ${P(OWNER)})`,
+    // anonymous readers download this node whole, so a scalar (a multi-megabyte string) must never land
+    // at it or at `pub`: BRANCH here, on pub, and on revealFull / its `g` (the $mode level demands ctl / r)
+    '.validate': BRANCH,
     $mode: {
       '.validate': "$mode.matches(/^(real|practice)$/) && newData.hasChildren(['ctl'])",
       ctl: {
@@ -335,9 +350,12 @@ function newBlocks(R) {
           + ` && ${ctlNew('shown')} <= ${ctlOld('shown')} + 1`
           + ` && (${ctlNew('shown')} > ${ctlOld('shown')} ? ${ctlNew('sa')} === now : ${sameAsOld('sa')})`
           + ` && ${sameAsOld('ca')} && ${sameAsOld('startedAt')} && ${sameAsOld('until')} && ${sameAsOld('finale')})`
+          // a Start leaves no place of an earlier reveal behind: a client that writes only `ctl` (not the
+          // whole node, spec 4.5) can't carry the previous reveal's places under a fresh ctl with shown 0
           + ` : (${ctlNew('seq')} === 1 && ${ctlNew('shown')} === 0 && ${ctlNew('phase')} === 'intro'`
           + ` && ${ctlNew('startedAt')} === now && ${ctlNew('sa')} === now`
-          + ` && ${ctlNew('ca')} > now - 60000 && ${ctlNew('ca')} <= now + 60000))`,
+          + ` && ${ctlNew('ca')} > now - 60000 && ${ctlNew('ca')} <= now + 60000`
+          + ` && !newData.parent().child('pub').exists()))`,
         v: v(INT(1, 9)),
         id: v('newData.isString() && newData.val().matches(/^r[a-z0-9]{6,12}-[a-z0-9]{4}$/)'),
         seq: v(INT(1, 9999)),
@@ -356,7 +374,7 @@ function newBlocks(R) {
         epoch: v(STR(24)),
         $other: v(false), // no startedBy, no by, no member key of any kind
       },
-      pub: { $g: groupShape(m, " && (!data.exists() || newData.parent().parent().child('ctl').child('id').val() !== data.parent().parent().child('ctl').child('id').val())"
+      pub: { '.validate': BRANCH, $g: groupShape(m, " && (!data.exists() || newData.parent().parent().child('ctl').child('id').val() !== data.parent().parent().child('ctl').child('id').val())"
         + ` && (${place('g0', 1)} || ${place('g1', 2)} || ${place('g2', 3)} || ${place('g3', 4)} || ${place('g4', 5)} || ${place('g5', 6)})`) },
       $other: v(false),
     },
@@ -364,6 +382,7 @@ function newBlocks(R) {
   out.revealFull = {
     '.read': EDITOR,
     '.write': EDITOR,
+    '.validate': BRANCH,
     $mode: {
       '.validate': "$mode.matches(/^(real|practice)$/) && newData.hasChildren(['r', 'n', 'frozenAt', 'startedBy', 'g'])"
         + " && newData.child('r').val() === newData.parent().parent().child('revealPublic').child($mode).child('ctl').child('id').val()",
@@ -372,7 +391,7 @@ function newBlocks(R) {
       frozenAt: v(NOWKEEP),
       lastScoreAt: v('newData.isNumber() && newData.val() <= now'),
       startedBy: v(SELFKEEP),
-      g: { $g: groupShape(m) },
+      g: { '.validate': BRANCH, $g: groupShape(m) },
       $other: v(false),
     },
   };

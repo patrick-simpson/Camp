@@ -725,7 +725,10 @@ Written with P2's macros (§8.1 there: `MEMBER(R)`, `EDITOR(R)`, `OWNER`, `SELF(
         // An editor may start, drive, replace or end a reveal. DELETING the real reveal is allowed
         // only once its `until` (08:00 next day) has passed on the SERVER's clock, so a wrong phone
         // clock or a buggy client can't erase counselors' grid early; OWNER (the new-year wizard)
-        // may clear it at any time. Deleting `practice` is never restricted.
+        // may clear it at any time. Deleting `practice` is never restricted. LIMIT: this guards the
+        // NODE, not its places (a director can still delete one shown place; see the guarantees below).
+  ".validate": "BRANCH",   // anonymous readers download this whole node: no scalar (a multi-megabyte
+                           // string) may land here, at `pub`, or at revealFull / its `g`
   "$mode": {
     ".validate": "$mode.matches(/^(real|practice)$/) && newData.hasChildren(['ctl'])",
     "ctl": {
@@ -746,7 +749,8 @@ Written with P2's macros (§8.1 there: `MEMBER(R)`, `EDITOR(R)`, `OWNER`, `SELF(
              : ( newData.child('seq').val() === 1 && newData.child('shown').val() === 0
                  && newData.child('phase').val() === 'intro' && newData.child('startedAt').val() === now
                  && newData.child('sa').val() === now
-                 && newData.child('ca').val() > now - 60000 && newData.child('ca').val() <= now + 60000 ) )",
+                 && newData.child('ca').val() > now - 60000 && newData.child('ca').val() <= now + 60000
+                 && !newData.parent().child('pub').exists() ) )",   // a Start leaves no earlier places behind (even if a client writes ctl alone)
       "v":         { ".validate": "INT(1,9)" },
       "id":        { ".validate": "newData.isString() && newData.val().matches(/^r[a-z0-9]{6,12}-[a-z0-9]{4}$/)" },
       "seq":       { ".validate": "INT(1,9999)" },
@@ -766,6 +770,7 @@ Written with P2's macros (§8.1 there: `MEMBER(R)`, `EDITOR(R)`, `OWNER`, `SELF(
       "$other":    { ".validate": false }          // no startedBy, no by, no member key of any kind
     },
     "pub": {
+      ".validate": "BRANCH",
       "$g": {
         ".validate": "$g.matches(/^g[0-5]$/) && newData.hasChildren(['place','e'])
           && (!data.exists() || newData.parent().parent().child('ctl').child('id').val() !== data.parent().parent().child('ctl').child('id').val())
@@ -797,6 +802,7 @@ Written with P2's macros (§8.1 there: `MEMBER(R)`, `EDITOR(R)`, `OWNER`, `SELF(
 "revealFull": {
   ".read": "EDITOR(R)",
   ".write": "EDITOR(R)",
+  ".validate": "BRANCH",
   "$mode": {
     ".validate": "$mode.matches(/^(real|practice)$/) && newData.hasChildren(['r','n','frozenAt','startedBy','g'])
       && newData.child('r').val() === newData.parent().parent().child('revealPublic').child($mode).child('ctl').child('id').val()",
@@ -805,7 +811,7 @@ Written with P2's macros (§8.1 there: `MEMBER(R)`, `EDITOR(R)`, `OWNER`, `SELF(
     "frozenAt":    { ".validate": "NOWKEEP" },
     "lastScoreAt": { ".validate": "newData.isNumber() && newData.val() <= now" },
     "startedBy":   { ".validate": "SELFKEEP" },
-    "g":           { "$g": { /* same group shape as revealPublic/<mode>/pub/$g, without the id and SHOWN clauses */ } },
+    "g":           { ".validate": "BRANCH", "$g": { /* same group shape as revealPublic/<mode>/pub/$g, without the id and SHOWN clauses */ } },
     "$other":      { ".validate": false }
   }
 }
@@ -819,13 +825,19 @@ sign-in can write anything, anywhere**; only directors can start or drive a reve
 pressing at once can't both succeed (`seq` must be exactly one more, `shown` can only grow by
 one); an ended reveal can't be revived (Start makes a new one); a published place can't be quietly
 rewritten inside the same reveal, and can't be published before its place is shown, so **no
-unrevealed place can be in the public node even if a client is buggy**; the node has no field that
+unrevealed place can be in the public node even if a client is buggy** (a Start may not coexist with
+a `pub`, so a client that writes only `ctl` can't carry the previous reveal's places under a fresh one);
+**no scalar or oversized string can land anywhere an anonymous reader downloads** (`revealPublic`, its
+`pub`, `revealFull`, its `g` are branches, so the per-child bounds below are real bounds); the node has no field that
 is meant to hold a member key or a counselor name (`$other: false` everywhere; the only strings are
 `id`, `phase`, `endKind`, `epoch`, a team name ≤ 30 characters and a colour key); a Start that sat
 in an offline queue for more than a minute can't land and wipe a live reveal; phones' lag anchor
 (`sa`) moves only when a new place is shown; counselors can never read `revealFull` (the complete
-order); a real reveal can't be deleted before its 8 AM `until` (server clock) except by the owner's
-new-year wizard; a practice can't outlive 3 hours; nobody can write a stamp that isn't server
+order); a real reveal NODE can't be deleted before its 8 AM `until` (server clock) except by the owner's
+new-year wizard (**recorded limit: the guard is on the node, not its places — a director can still
+delete one shown place or `pub` mid-reveal; accepted, because the same director can Start a replacement
+at any time and a per-group delete guard would cost a ~1 KB expression plus a "new id" exception to
+cover only a client bug; `reveal.mjs` pins the behaviour so adding the guard later is a noticed decision**); a practice can't outlive 3 hours; nobody can write a stamp that isn't server
 time. What rules can't promise: that the numbers or names a director publishes are true, or that
 the node is deleted promptly after 8 AM (the app does that, §4.5; every reader ignores an expired
 node either way).
@@ -848,18 +860,27 @@ written in BUILD-PLAN Step 10) must prove every clause before the publish. Its c
 - *Shape:* a `by`, `startedBy`, `name` or any unknown field in `ctl`, a group or an entry refused;
   `t6`, `g6`, `place` 7, `teams` 7 refused; a string where a number is required refused; an entry
   without `nm` refused; a 31-character `nm` refused; a real `until` more than 48 h out and a
-  practice `until` more than 3 h out refused.
+  practice `until` more than 3 h out refused; a scalar (a number, a boolean, a 2 MB string) at
+  `revealPublic`, `real`, `pub`, a group, a Start's `pub`, `revealFull` or its `g` refused; a Start
+  written as `ctl` alone while the previous reveal's places are public refused (a whole-node Start
+  with `pub: null` accepted).
 - *Delete:* an editor's delete of `real` before `until` refused (also as a whole-`revealPublic`
   delete), after `until` accepted (the expired node is seeded with rules disabled); delete of
   `practice` accepted any time; the owner's delete accepted any time.
+  Recorded limit, pinned: an editor's delete of one shown place, or of `pub`, on an unexpired real
+  reveal is ACCEPTED (the node itself stays guarded).
 - *`revealFull`:* a counselor's read refused; `r` ≠ the ctl id refused; `startedBy` ≠ the writer's
   key refused.
 - A practice write leaves `real` byte-identical.
 
 **Run 2026-11-02 (BUILD-PLAN Step 10).** The rules above are now in `database.rules.json`
 (generated from `tests/rules-macros.js`) and `tests/emulator/reveal.mjs` runs every case in this list, for
-both camps: 41 cases, all pass, and each clause turns the suite red when weakened (the `ended` guard,
-the `shown` clause, the delete guard, the `seq` and `ca` checks, a public `revealFull`). Two details the
+both camps: 45 cases, all pass, and each clause turns the suite red when weakened (the `ended` guard,
+the `shown` clause, the delete guard, the `seq` and `ca` checks, a public `revealFull`, the four BRANCH
+guards, the Start-without-`pub` clause). The review of Step 10 found the first draft of this block
+(copied from the spec) left `revealPublic`, `pub`, `revealFull` and `g` open to a 2 MB scalar and a Start
+written as `ctl` alone able to keep the old places; both are closed above and have cases (scalars at each
+of the four, in a Start payload, and the ctl-only Start). Two details the
 emulator settled: a leaf write that carries a value unchanged passes `SELFKEEP` (so a second director may
 re-write `revealFull/<mode>/startedBy` with the SAME key, never with a different one), and a ctl command
 that does not grow `shown` must carry the old `sa` (the suite checks both a moved and a stale `sa`).
@@ -882,7 +903,8 @@ is on; a practice writes only its own pair of nodes:
   at:TS, sa:TS, ca:serverNow(), startedAt:TS, until, epoch}, pub: null },
   'revealFull/<mode>': {r:id, n, frozenAt:TS, lastScoreAt, startedBy:me, g} }`. Writing
   `revealPublic/real` whole removes the previous reveal's places, which is "a new reveal replaces
-  the previous one". Start is disabled while `pendingWrites > 0` or when `.info/connected` changed
+  the previous one" — and the rules require it: a Start whose node still carries a `pub` (for example
+  a `ctl`-only write over an earlier reveal) is refused. Start is disabled while `pendingWrites > 0` or when `.info/connected` changed
   less than 10 s ago (a socket that only looks alive), and the rules refuse a Start whose `ca` is
   over a minute old (an offline-queued tap replayed later).
 - **Next / Back / End**: `update({ 'revealPublic/<mode>/ctl': newCtl,

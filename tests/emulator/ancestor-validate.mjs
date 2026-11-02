@@ -5,9 +5,11 @@
 // `hasChildren` is defence in depth. This suite
 //   1. runs the one-line probe in the EMULATOR and prints what it says (the live database gets the same
 //      probe from a browser console before R1, §8.6, and CLAUDE.md records both answers), and
-//   2. proves the design claim: with every record-level `.validate` STRIPPED out of the rules (so only the
-//      leaf anchors are left), a field write into a deleted block / camper / day / patch is still refused.
-import { harness, suite, NEW_RULES, ROOTS, ED, ref, set, update, remove, assertFails, assertSucceeds, outcome } from './lib.mjs';
+//   2. proves the design claim: with every record-level `.validate` AND every `teams` node validate STRIPPED
+//      out of the rules (so only the leaf anchors are left), a field write into a deleted block / camper /
+//      day / patch is still refused, a team flag included (its `$tid` leaf carries the block anchor too — the
+//      teams node's own validate is exactly an ancestor of that leaf).
+import { harness, suite, NEW_RULES, ROOTS, ED, ref, set, get, update, remove, assertFails, assertSucceeds, outcome } from './lib.mjs';
 
 const s = suite('ancestor-validate — the design must not depend on it');
 
@@ -32,11 +34,14 @@ for (const R of ROOTS) {
   strip(r.setup.days.$dk);
   strip(r.campers.$tid.$cid);
   strip(r.setup.meals.$dk.$meal);
+  strip(r.setup.typical.$bid.teams);
+  strip(r.setup.dayBlocks.$dk.$bid.teams);
+  strip(r.setup.patches.$dk.$bid.teams);
 }
 const h = await harness('ancestor-leaf-only', JSON.stringify(rules));
 await h.members();
 const ed = () => h.as(ED);
-await s.t(`record-level validates stripped from ${stripped} nodes (both camps)`, async () => { if (stripped !== 10) throw new Error('expected 10 stripped, got ' + stripped); });
+await s.t(`record-level and teams-node validates stripped from ${stripped} nodes (both camps)`, async () => { if (stripped !== 16) throw new Error('expected 16 stripped, got ' + stripped); });
 
 for (const R of ROOTS) {
   const P = (p) => `${R}/setup/${p}`;
@@ -60,6 +65,23 @@ for (const R of ROOTS) {
     await h.seed((db) => remove(ref(db, P('typical/b-team-comp-600'))));
     await assertFails(set(ref(ed(), P('patches/tue/b-team-comp-600/label')), 'Orphan'));
     await assertFails(set(ref(ed(), P('patches/tue/b-team-comp-600/teams')), { t0: true }));
+  });
+  await s.t(`${R}: ...a team flag into a deleted or never-existing block (typical, one-off, patch); a flag into a real block still lands`, async () => {
+    await h.seed((db) => remove(ref(db, P('typical/b-team-comp-600'))));
+    await assertFails(set(ref(ed(), P('typical/b-gone-123/teams/t0')), true));
+    await assertFails(set(ref(ed(), P('typical/b-gone-123/teams')), { t0: true, t1: true }));
+    await assertFails(set(ref(ed(), P('dayBlocks/sat/b-sat-gone-540/teams/t0')), true));
+    await assertFails(set(ref(ed(), P('patches/mon/b-gone-123/teams/t1')), true));   // mon uses the typical day, but the block is gone
+    await assertFails(set(ref(ed(), P('patches/mon/b-gone-123/teams')), { t1: true }));
+    for (const gone of ['typical/b-gone-123', 'dayBlocks/sat/b-sat-gone-540', 'patches/mon/b-gone-123']) {
+      if ((await get(ref(ed(), P(gone)))).exists()) throw new Error(gone + ' was resurrected as a half block');
+    }
+    // controls: a real typical block takes a flag, and a patch for it on a typical day too (and not on an own day)
+    await assertSucceeds(set(ref(ed(), P('typical/b-team-comp-600')), block));
+    await assertSucceeds(set(ref(ed(), P('typical/b-team-comp-600/teams/t0')), true));
+    await assertSucceeds(set(ref(ed(), P('patches/tue/b-team-comp-600/teams/t1')), true));
+    await assertFails(set(ref(ed(), P('patches/sat/b-team-comp-600/teams/t1')), true));   // sat is its own day (typical: false)
+    await assertSucceeds(remove(ref(ed(), P('patches/tue/b-team-comp-600'))));
   });
   await s.t(`${R}: ...and a camper's name or ord`, async () => {
     await assertFails(set(ref(ed(), `${R}/campers/t0/c-abc123def4/name`), 'Zombie'));

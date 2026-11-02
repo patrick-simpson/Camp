@@ -523,7 +523,7 @@
             "teams": {
               ".validate": "newData.hasChildren() && newData.parent().child('start').exists() && newData.parent().child('label').exists()",
               "$tid": {
-                ".validate": "$tid.matches(/^t[0-9]$/) && newData.val() === true"
+                ".validate": "$tid.matches(/^t[0-9]$/) && newData.val() === true && newData.parent().parent().child('start').exists() && newData.parent().parent().child('label').exists()"
               }
             },
             "$other": {
@@ -576,7 +576,7 @@
               "teams": {
                 ".validate": "newData.hasChildren() && newData.parent().child('start').exists() && newData.parent().child('label').exists()",
                 "$tid": {
-                  ".validate": "$tid.matches(/^t[0-9]$/) && newData.val() === true"
+                  ".validate": "$tid.matches(/^t[0-9]$/) && newData.val() === true && newData.parent().parent().child('start').exists() && newData.parent().parent().child('label').exists()"
                 }
               },
               "$other": {
@@ -627,7 +627,7 @@
               "teams": {
                 ".validate": "newData.hasChildren() && $dk.matches(/^(sun|mon|tue|wed|thu|fri|sat)$/) && newData.parent().parent().parent().parent().child('typical').child($bid).child('start').exists() && newData.parent().parent().parent().parent().child('typical').child($bid).child('label').exists() && newData.parent().parent().parent().parent().child('days').child($dk).child('typical').val() === true",
                 "$tid": {
-                  ".validate": "$tid.matches(/^t[0-9]$/) && newData.val() === true"
+                  ".validate": "$tid.matches(/^t[0-9]$/) && newData.val() === true && $dk.matches(/^(sun|mon|tue|wed|thu|fri|sat)$/) && newData.parent().parent().parent().parent().parent().child('typical').child($bid).child('start').exists() && newData.parent().parent().parent().parent().parent().child('typical').child($bid).child('label').exists() && newData.parent().parent().parent().parent().parent().child('days').child($dk).child('typical').val() === true"
                 }
               },
               "$other": {
@@ -907,10 +907,11 @@
       "revealPublic": {
         ".read": true,
         ".write": "(auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor'))) && (!data.child('real').exists() || newData.child('real').exists() || data.child('real').child('ctl').child('until').val() <= now || (auth != null && ((auth.token.email != null && auth.token.email_verified == true && 'patricksimpson,fx@gmail,com' === auth.token.email.toLowerCase().replace('.', ',')) || (auth.token.phone_number != null && 'patricksimpson,fx@gmail,com' === auth.token.phone_number))))",
+        ".validate": "!newData.isString() && !newData.isNumber() && !newData.isBoolean()",
         "$mode": {
           ".validate": "$mode.matches(/^(real|practice)$/) && newData.hasChildren(['ctl'])",
           "ctl": {
-            ".validate": "newData.hasChildren(['v', 'id', 'seq', 'phase', 'cur', 'shown', 'teams', 'finale', 'at', 'sa', 'ca', 'startedAt', 'until']) && newData.child('cur').val() < newData.child('shown').val() && ((data.exists() && newData.child('id').val() === data.child('id').val()) ? (newData.child('seq').val() === data.child('seq').val() + 1 && data.child('phase').val() !== 'ended' && newData.child('shown').val() >= data.child('shown').val() && newData.child('shown').val() <= data.child('shown').val() + 1 && (newData.child('shown').val() > data.child('shown').val() ? newData.child('sa').val() === now : newData.child('sa').val() === data.child('sa').val()) && newData.child('ca').val() === data.child('ca').val() && newData.child('startedAt').val() === data.child('startedAt').val() && newData.child('until').val() === data.child('until').val() && newData.child('finale').val() === data.child('finale').val()) : (newData.child('seq').val() === 1 && newData.child('shown').val() === 0 && newData.child('phase').val() === 'intro' && newData.child('startedAt').val() === now && newData.child('sa').val() === now && newData.child('ca').val() > now - 60000 && newData.child('ca').val() <= now + 60000))",
+            ".validate": "newData.hasChildren(['v', 'id', 'seq', 'phase', 'cur', 'shown', 'teams', 'finale', 'at', 'sa', 'ca', 'startedAt', 'until']) && newData.child('cur').val() < newData.child('shown').val() && ((data.exists() && newData.child('id').val() === data.child('id').val()) ? (newData.child('seq').val() === data.child('seq').val() + 1 && data.child('phase').val() !== 'ended' && newData.child('shown').val() >= data.child('shown').val() && newData.child('shown').val() <= data.child('shown').val() + 1 && (newData.child('shown').val() > data.child('shown').val() ? newData.child('sa').val() === now : newData.child('sa').val() === data.child('sa').val()) && newData.child('ca').val() === data.child('ca').val() && newData.child('startedAt').val() === data.child('startedAt').val() && newData.child('until').val() === data.child('until').val() && newData.child('finale').val() === data.child('finale').val()) : (newData.child('seq').val() === 1 && newData.child('shown').val() === 0 && newData.child('phase').val() === 'intro' && newData.child('startedAt').val() === now && newData.child('sa').val() === now && newData.child('ca').val() > now - 60000 && newData.child('ca').val() <= now + 60000 && !newData.parent().child('pub').exists()))",
             "v": {
               ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 9"
             },
@@ -964,6 +965,7 @@
             }
           },
           "pub": {
+            ".validate": "!newData.isString() && !newData.isNumber() && !newData.isBoolean()",
             "$g": {
               ".validate": "$g.matches(/^g[0-5]$/) && newData.hasChildren(['place', 'e']) && (!data.exists() || newData.parent().parent().child('ctl').child('id').val() !== data.parent().parent().child('ctl').child('id').val()) && (($g === 'g0' && newData.parent().parent().child('ctl').child('shown').val() >= 1) || ($g === 'g1' && newData.parent().parent().child('ctl').child('shown').val() >= 2) || ($g === 'g2' && newData.parent().parent().child('ctl').child('shown').val() >= 3) || ($g === 'g3' && newData.parent().parent().child('ctl').child('shown').val() >= 4) || ($g === 'g4' && newData.parent().parent().child('ctl').child('shown').val() >= 5) || ($g === 'g5' && newData.parent().parent().child('ctl').child('shown').val() >= 6))",
               "place": {
@@ -1018,6 +1020,7 @@
       "revealFull": {
         ".read": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor'))",
         ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('campScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('campScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor'))",
+        ".validate": "!newData.isString() && !newData.isNumber() && !newData.isBoolean()",
         "$mode": {
           ".validate": "$mode.matches(/^(real|practice)$/) && newData.hasChildren(['r', 'n', 'frozenAt', 'startedBy', 'g']) && newData.child('r').val() === newData.parent().parent().child('revealPublic').child($mode).child('ctl').child('id').val()",
           "r": {
@@ -1036,6 +1039,7 @@
             ".validate": "newData.val() === data.val() || (auth != null && ((auth.token.email != null && auth.token.email_verified == true && newData.val() === auth.token.email.toLowerCase().replace('.', ',')) || (auth.token.phone_number != null && newData.val() === auth.token.phone_number)))"
           },
           "g": {
+            ".validate": "!newData.isString() && !newData.isNumber() && !newData.isBoolean()",
             "$g": {
               ".validate": "$g.matches(/^g[0-5]$/) && newData.hasChildren(['place', 'e'])",
               "place": {
@@ -1609,7 +1613,7 @@
             "teams": {
               ".validate": "newData.hasChildren() && newData.parent().child('start').exists() && newData.parent().child('label').exists()",
               "$tid": {
-                ".validate": "$tid.matches(/^t[0-9]$/) && newData.val() === true"
+                ".validate": "$tid.matches(/^t[0-9]$/) && newData.val() === true && newData.parent().parent().child('start').exists() && newData.parent().parent().child('label').exists()"
               }
             },
             "$other": {
@@ -1662,7 +1666,7 @@
               "teams": {
                 ".validate": "newData.hasChildren() && newData.parent().child('start').exists() && newData.parent().child('label').exists()",
                 "$tid": {
-                  ".validate": "$tid.matches(/^t[0-9]$/) && newData.val() === true"
+                  ".validate": "$tid.matches(/^t[0-9]$/) && newData.val() === true && newData.parent().parent().child('start').exists() && newData.parent().parent().child('label').exists()"
                 }
               },
               "$other": {
@@ -1713,7 +1717,7 @@
               "teams": {
                 ".validate": "newData.hasChildren() && $dk.matches(/^(sun|mon|tue|wed|thu|fri|sat)$/) && newData.parent().parent().parent().parent().child('typical').child($bid).child('start').exists() && newData.parent().parent().parent().parent().child('typical').child($bid).child('label').exists() && newData.parent().parent().parent().parent().child('days').child($dk).child('typical').val() === true",
                 "$tid": {
-                  ".validate": "$tid.matches(/^t[0-9]$/) && newData.val() === true"
+                  ".validate": "$tid.matches(/^t[0-9]$/) && newData.val() === true && $dk.matches(/^(sun|mon|tue|wed|thu|fri|sat)$/) && newData.parent().parent().parent().parent().parent().child('typical').child($bid).child('start').exists() && newData.parent().parent().parent().parent().parent().child('typical').child($bid).child('label').exists() && newData.parent().parent().parent().parent().parent().child('days').child($dk).child('typical').val() === true"
                 }
               },
               "$other": {
@@ -1993,10 +1997,11 @@
       "revealPublic": {
         ".read": true,
         ".write": "(auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor'))) && (!data.child('real').exists() || newData.child('real').exists() || data.child('real').child('ctl').child('until').val() <= now || (auth != null && ((auth.token.email != null && auth.token.email_verified == true && 'patricksimpson,fx@gmail,com' === auth.token.email.toLowerCase().replace('.', ',')) || (auth.token.phone_number != null && 'patricksimpson,fx@gmail,com' === auth.token.phone_number))))",
+        ".validate": "!newData.isString() && !newData.isNumber() && !newData.isBoolean()",
         "$mode": {
           ".validate": "$mode.matches(/^(real|practice)$/) && newData.hasChildren(['ctl'])",
           "ctl": {
-            ".validate": "newData.hasChildren(['v', 'id', 'seq', 'phase', 'cur', 'shown', 'teams', 'finale', 'at', 'sa', 'ca', 'startedAt', 'until']) && newData.child('cur').val() < newData.child('shown').val() && ((data.exists() && newData.child('id').val() === data.child('id').val()) ? (newData.child('seq').val() === data.child('seq').val() + 1 && data.child('phase').val() !== 'ended' && newData.child('shown').val() >= data.child('shown').val() && newData.child('shown').val() <= data.child('shown').val() + 1 && (newData.child('shown').val() > data.child('shown').val() ? newData.child('sa').val() === now : newData.child('sa').val() === data.child('sa').val()) && newData.child('ca').val() === data.child('ca').val() && newData.child('startedAt').val() === data.child('startedAt').val() && newData.child('until').val() === data.child('until').val() && newData.child('finale').val() === data.child('finale').val()) : (newData.child('seq').val() === 1 && newData.child('shown').val() === 0 && newData.child('phase').val() === 'intro' && newData.child('startedAt').val() === now && newData.child('sa').val() === now && newData.child('ca').val() > now - 60000 && newData.child('ca').val() <= now + 60000))",
+            ".validate": "newData.hasChildren(['v', 'id', 'seq', 'phase', 'cur', 'shown', 'teams', 'finale', 'at', 'sa', 'ca', 'startedAt', 'until']) && newData.child('cur').val() < newData.child('shown').val() && ((data.exists() && newData.child('id').val() === data.child('id').val()) ? (newData.child('seq').val() === data.child('seq').val() + 1 && data.child('phase').val() !== 'ended' && newData.child('shown').val() >= data.child('shown').val() && newData.child('shown').val() <= data.child('shown').val() + 1 && (newData.child('shown').val() > data.child('shown').val() ? newData.child('sa').val() === now : newData.child('sa').val() === data.child('sa').val()) && newData.child('ca').val() === data.child('ca').val() && newData.child('startedAt').val() === data.child('startedAt').val() && newData.child('until').val() === data.child('until').val() && newData.child('finale').val() === data.child('finale').val()) : (newData.child('seq').val() === 1 && newData.child('shown').val() === 0 && newData.child('phase').val() === 'intro' && newData.child('startedAt').val() === now && newData.child('sa').val() === now && newData.child('ca').val() > now - 60000 && newData.child('ca').val() <= now + 60000 && !newData.parent().child('pub').exists()))",
             "v": {
               ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 9"
             },
@@ -2050,6 +2055,7 @@
             }
           },
           "pub": {
+            ".validate": "!newData.isString() && !newData.isNumber() && !newData.isBoolean()",
             "$g": {
               ".validate": "$g.matches(/^g[0-5]$/) && newData.hasChildren(['place', 'e']) && (!data.exists() || newData.parent().parent().child('ctl').child('id').val() !== data.parent().parent().child('ctl').child('id').val()) && (($g === 'g0' && newData.parent().parent().child('ctl').child('shown').val() >= 1) || ($g === 'g1' && newData.parent().parent().child('ctl').child('shown').val() >= 2) || ($g === 'g2' && newData.parent().parent().child('ctl').child('shown').val() >= 3) || ($g === 'g3' && newData.parent().parent().child('ctl').child('shown').val() >= 4) || ($g === 'g4' && newData.parent().parent().child('ctl').child('shown').val() >= 5) || ($g === 'g5' && newData.parent().parent().child('ctl').child('shown').val() >= 6))",
               "place": {
@@ -2104,6 +2110,7 @@
       "revealFull": {
         ".read": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor'))",
         ".write": "auth != null && ((auth.token.email != null && auth.token.email_verified == true && root.child('seniorScoreboard').child('members').child(auth.token.email.toLowerCase().replace('.', ',')).child('role').val() == 'editor') || (auth.token.phone_number != null && root.child('seniorScoreboard').child('members').child(auth.token.phone_number).child('role').val() == 'editor'))",
+        ".validate": "!newData.isString() && !newData.isNumber() && !newData.isBoolean()",
         "$mode": {
           ".validate": "$mode.matches(/^(real|practice)$/) && newData.hasChildren(['r', 'n', 'frozenAt', 'startedBy', 'g']) && newData.child('r').val() === newData.parent().parent().child('revealPublic').child($mode).child('ctl').child('id').val()",
           "r": {
@@ -2122,6 +2129,7 @@
             ".validate": "newData.val() === data.val() || (auth != null && ((auth.token.email != null && auth.token.email_verified == true && newData.val() === auth.token.email.toLowerCase().replace('.', ',')) || (auth.token.phone_number != null && newData.val() === auth.token.phone_number)))"
           },
           "g": {
+            ".validate": "!newData.isString() && !newData.isNumber() && !newData.isBoolean()",
             "$g": {
               ".validate": "$g.matches(/^g[0-5]$/) && newData.hasChildren(['place', 'e'])",
               "place": {

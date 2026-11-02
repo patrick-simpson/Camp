@@ -141,7 +141,14 @@ for (const R of ROOTS) {
     await assertFails(update(ref(ed(), R), startPayload('real', { id: 'r2abcdef-9zz1', ctl: { phase: 'live' } })));
     await assertFails(update(ref(ed(), R), startPayload('real', { id: 'r2abcdef-9zz1', ctl: { startedAt: Date.now() - 5000 } })));
     await assertFails(update(ref(ed(), R), startPayload('real', { id: 'r2abcdef-9zz1', ctl: { sa: Date.now() - 5000 } })));
-    await assertSucceeds(update(ref(ed2(), R), startPayload('real', { id: 'r2abcdef-9zz1', by: ED2.key })));
+    // a Start written as `ctl` ALONE (not the whole node) would leave the previous reveal's six places public
+    // under a fresh ctl with shown 0: refused because a Start may not coexist with a `pub`
+    const second = startPayload('real', { id: 'r2abcdef-9zz1', by: ED2.key });
+    await assertFails(update(ref(ed2(), R), { 'revealPublic/real/ctl': second['revealPublic/real'].ctl, 'revealFull/real': second['revealFull/real'] }));
+    await assertFails(set(ref(ed2(), `${pub}/real/ctl`), second['revealPublic/real'].ctl));
+    if ((await ctlOf(R)).id !== RID) throw new Error('a ctl-only Start landed');
+    if (Object.keys(await val(anon(), `${pub}/real/pub`)).length !== 6) throw new Error('the earlier places were disturbed');
+    await assertSucceeds(update(ref(ed2(), R), second));
     const ctl = await ctlOf(R);
     if (ctl.id !== 'r2abcdef-9zz1' || ctl.shown !== 0) throw new Error('replace failed');
     if ((await val(anon(), `${pub}/real/pub`)) !== null) throw new Error('the previous places survived a new Start');
@@ -175,6 +182,34 @@ for (const R of ROOTS) {
     await bad({ e: { t0: entry(0) } });
     await assertFails(update(ref(ed(), R), Object.assign(nextPayload('real', cur), { [`revealPublic/real/pub/g6`]: group(0) })));    // g6
     await assertSucceeds(update(ref(ed(), R), nextPayload('real', cur, { group: { place: 6, e: { t0: Object.assign(entry(0), { nm: 'x'.repeat(30) }), t1: entry(1) } } }))); // a tie: two entries, 30-char name
+  });
+  await s.t(`${R}: no scalar or multi-megabyte string can land at revealPublic, pub, a Start's pub, revealFull or its g (the anonymous node is size-bounded)`, async () => {
+    const BIG = 'x'.repeat(2000000);
+    await clear(R);
+    // with NO reveal present: the delete-guard clause lets an editor write anywhere, so only `.validate` stops these
+    for (const bad of [BIG, 12345, true]) {
+      await assertFails(set(ref(ed(), pub), bad));
+      await assertFails(set(ref(ed(), `${pub}/real`), bad));
+      await assertFails(set(ref(ed(), `${pub}/practice`), bad));
+      await assertFails(set(ref(ed(), `${R}/revealFull`), bad));
+      await assertFails(set(ref(ed(), `${R}/revealFull/real`), bad));
+    }
+    if ((await val(anon(), pub)) !== null) throw new Error('something landed at revealPublic');
+    // with a reveal present
+    await assertSucceeds(update(ref(ed(), R), startPayload('real')));
+    for (const bad of [BIG, 12345, true]) {
+      await assertFails(set(ref(ed(), `${pub}/real/pub`), bad));
+      await assertFails(set(ref(ed(), `${pub}/real/pub/g0`), bad));
+      await assertFails(set(ref(ed(), `${R}/revealFull/real/g`), bad));
+      await assertFails(set(ref(ed(), `${R}/revealFull/real/g/g0`), bad));
+    }
+    // inside a Start's own payload
+    await assertFails(update(ref(ed(), R), { 'revealPublic/real': { ctl: startPayload('real', { id: 'r7abcdef-5ee5' })['revealPublic/real'].ctl, pub: BIG },
+      'revealFull/real': startPayload('real', { id: 'r7abcdef-5ee5' })['revealFull/real'] }));
+    await assertFails(update(ref(ed(), R), startPayload('real', { id: 'r7abcdef-5ee5', full: { g: BIG } })));
+    // the public node is still exactly the one reveal
+    const seen = await val(anon(), pub);
+    if (Object.keys(seen).join() !== 'real' || seen.real.ctl.id !== RID || seen.real.pub) throw new Error('unexpected public content: ' + JSON.stringify(seen).slice(0, 200));
   });
   await s.t(`${R}: teams 7, shown 7, cur 6, a string seq, and an unknown phase are refused; a real until over 48 h and a practice until over 3 h too`, async () => {
     await clear(R);
@@ -233,6 +268,21 @@ for (const R of ROOTS) {
     await assertSucceeds(update(ref(owner(), R), { 'revealPublic/real': null, 'revealFull/real': null }));
     await assertSucceeds(update(ref(ed(), R), startPayload('real')));
     await assertSucceeds(remove(ref(owner(), pub)));
+  });
+
+  await s.t(`${R}: RECORDED LIMIT (not a promise): the delete guard protects the NODE, so a director CAN still delete one shown place or \`pub\` mid-reveal`, async () => {
+    // CLAUDE.md "R1" says so in plain words. Pinned so that adding a per-group guard (which would flip these to
+    // refusals) is a decision, noticed here, rather than a silent change. The same director could Start a replacement anyway.
+    await clear(R);
+    await assertSucceeds(update(ref(ed(), R), startPayload('real')));
+    let cur = await ctlOf(R);
+    await assertSucceeds(update(ref(ed(), R), nextPayload('real', cur)));
+    cur = await ctlOf(R);
+    await assertSucceeds(update(ref(ed(), R), nextPayload('real', cur)));
+    await assertSucceeds(remove(ref(ed(), `${pub}/real/pub/g0`)));
+    await assertSucceeds(remove(ref(ed(), `${pub}/real/pub`)));
+    if (!(await ctlOf(R))) throw new Error('the node itself must survive');
+    await assertFails(remove(ref(ed(), `${pub}/real`)));                                            // ...but the node is still guarded until `until`
   });
 
   // ── revealFull ─────────────────────────────────────────────────────────────
