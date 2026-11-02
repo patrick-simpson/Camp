@@ -1,6 +1,6 @@
 // Step 19 Playwright pass: every screen and sheet of Meals / Memory verses / Cleanup rota / Electives (and the hub's prompt), as editor and as owner, both
 // camps, 360 and 390 wide, light and dark, 100% / 130% / 200% text. Reports every tap target under 44x44 and any page that
-// scrolls sideways; screenshots under shots/. node step15-pass.cjs [baseUrl]  (OUT=<dir> for the screenshots; QUICK=junior STEPS=meals,cleanup for one config)
+// scrolls sideways, any row title or sub squeezed under 80px, and any segment whose label overflows it; screenshots under shots/. node step15-pass.cjs [baseUrl]  (OUT=<dir> for the screenshots; QUICK=junior STEPS=meals,cleanup for one config)
 const { chromium } = require('playwright');
 const fs = require('fs');
 const BASE = (process.argv[2] || 'http://localhost:8943').replace(/\/$/, '');
@@ -27,7 +27,13 @@ const MEASURE = () => {
   }));
   const sideways = document.documentElement.scrollWidth > window.innerWidth + 1;
   const clip = [...document.querySelectorAll('#setup, .sheet-overlay:not([hidden]) .sheet')].filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => (e.id || e.className).toString().slice(0, 30) + ' ' + e.scrollWidth + '>' + e.clientWidth);
-  return { issues, sideways, clip };
+  // A row's words squeezed into a narrow column (a .gl-row with no .gl-ico put its text in the 30px icon column: one word a line).
+  const shown = (e) => !e.closest('[hidden]') && getComputedStyle(e).display !== 'none' && e.getBoundingClientRect().width > 0;
+  const narrow = [...document.querySelectorAll('#setup .gl-title, #setup .gl-sub, .sheet-overlay:not([hidden]) .gl-title, .sheet-overlay:not([hidden]) .gl-sub')]
+    .filter((e) => shown(e) && e.getBoundingClientRect().width < 80).map((e) => (e.textContent || '').trim().slice(0, 24) + ' ' + Math.round(e.getBoundingClientRect().width) + 'px');
+  // A segment whose label overflows its button (the electives control at 200% text).
+  const segs = [...document.querySelectorAll('#setup .seg-btn')].filter((e) => shown(e) && e.scrollWidth > e.clientWidth + 1).map((e) => (e.textContent || '').trim().slice(0, 24) + ' ' + e.scrollWidth + '>' + e.clientWidth);
+  return { issues, sideways, clip, narrow, segs };
 };
 
 async function openPage(browser, { camp, w, scheme, text, owner, off }) {
@@ -67,6 +73,8 @@ const STEPS = {
   meals: (p) => p.evaluate(() => { state.ui.secDay = 'wed'; setupGo('meals'); }),
   'meals-sun': (p) => p.evaluate(() => { state.ui.secDay = 'sun'; setupGo('meals'); }),
   verses: (p) => p.evaluate(() => { setupGo('verses'); }),
+  'verse-sheet': (p) => p.evaluate(() => { setupGo('verses'); secOpenVerse(hubCompetitionDks()[0], null); }),
+  'meals-pick': (p) => p.evaluate(() => { state.ui.secDay = 'wed'; setupGo('meals'); renderAll(); const b = document.querySelector('#meals-list .sec-meal [data-meal-emoji]'); if (b) b.click(); }),
   cleanup: (p) => p.evaluate(() => { state.ui.secDay = 'wed'; setupGo('cleanup'); }),
   'cleanup-sheet': (p) => p.evaluate(() => { state.ui.secDay = 'fri'; setupGo('cleanup'); secOpenTeams('lunch', null); }),
   'cleanup-fill': (p) => p.evaluate(() => { state.ui.secDay = 'wed'; setupGo('cleanup'); secFillEvenly(); }),
@@ -88,10 +96,10 @@ const STEPS = {
         await page.waitForTimeout(550);
         const m = await page.evaluate(MEASURE);
         const tag = [cfg.camp, cfg.w, cfg.scheme, cfg.text + '%', cfg.owner ? 'owner' : 'editor', cfg.off ? 'preview' : 'live', name].join(' ');
-        report.push({ tag, issues: m.issues, sideways: m.sideways, clip: m.clip });
+        report.push({ tag, issues: m.issues, sideways: m.sideways, clip: m.clip, narrow: m.narrow, segs: m.segs });
         if (shoot && shoot.indexOf(name) !== -1) await page.screenshot({ path: OUT + [cfg.camp, cfg.w, cfg.scheme, cfg.text, cfg.off ? 'preview' : 'live', name].join('-') + '.png' });
         // close whatever sheet is open before the next step
-        await page.evaluate(() => { ['sec-teams', 'sec-person', 'sec-station'].forEach((id) => { try { shellSheetClose(id); } catch (e) {} }); secUi.teams = null; secUi.person = null; secUi.station = null; try { const d = document.getElementById('ask-dialog'); const b = d && d.querySelector('[data-ask-i]'); if (askIsOpen() && b) b.click(); } catch (e) {} });
+        await page.evaluate(() => { ['sec-teams', 'sec-person', 'sec-station', 'sec-verse'].forEach((id) => { try { shellSheetClose(id); } catch (e) {} }); secUi.teams = null; secUi.person = null; secUi.station = null; secUi.verse = null; try { const d = document.getElementById('ask-dialog'); const b = d && d.querySelector('[data-ask-i]'); if (askIsOpen() && b) b.click(); } catch (e) {} });
         await page.waitForTimeout(150);
       } catch (e) { report.push({ tag: cfg.camp + ' ' + cfg.w + ' ' + name, error: String(e).slice(0, 200) }); }
     }
@@ -99,17 +107,17 @@ const STEPS = {
     await ctx.close();
   };
   const ALL = Object.keys(STEPS);
-  const SHOT = ['hub', 'meals', 'verses', 'cleanup', 'cleanup-sheet', 'cleanup-fill', 'electives', 'elec-person', 'elec-station-add', 'elec-station-edit'];
+  const SHOT = ['hub', 'meals', 'meals-pick', 'verses', 'verse-sheet', 'cleanup', 'cleanup-sheet', 'cleanup-fill', 'electives', 'elec-person', 'elec-station-add', 'elec-station-edit'];
   if (process.env.QUICK) {
     const camp = process.env.QUICK;
     const names = (process.env.STEPS || 'meals,cleanup').split(',');
     await run({ camp, w: Number(process.env.W || 360), scheme: process.env.SCHEME || 'light', text: Number(process.env.TEXT || 100), owner: process.env.OWNER !== '0', off: process.env.OFF === '1' }, names, names);
     await browser.close();
-    console.log(JSON.stringify(report.filter((r) => (r.issues && r.issues.length) || r.sideways || r.error || r.pageErrors)));
+    console.log(JSON.stringify(report.filter((r) => (r.issues && r.issues.length) || r.sideways || r.error || r.pageErrors || (r.narrow && r.narrow.length) || (r.segs && r.segs.length))));
     return;
   }
-  const JR = ['hub', 'meals', 'meals-sun', 'verses', 'cleanup', 'cleanup-sheet', 'cleanup-fill', 'electives', 'electives-3', 'elec-person', 'elec-station-add', 'elec-station-edit'];
-  const SR = ['hub', 'meals', 'meals-sun', 'verses', 'cleanup', 'cleanup-sheet', 'cleanup-fill'];
+  const JR = ['hub', 'meals', 'meals-sun', 'meals-pick', 'verses', 'verse-sheet', 'cleanup', 'cleanup-sheet', 'cleanup-fill', 'electives', 'electives-3', 'elec-person', 'elec-station-add', 'elec-station-edit'];
+  const SR = ['hub', 'meals', 'meals-sun', 'meals-pick', 'verses', 'verse-sheet', 'cleanup', 'cleanup-sheet', 'cleanup-fill'];
   for (const camp of ['junior', 'senior']) {
     const set = camp === 'junior' ? JR : SR;
     await run({ camp, w: 360, scheme: 'light', text: 100, owner: true }, set, SHOT);
@@ -120,6 +128,6 @@ const STEPS = {
     await run({ camp, w: 360, scheme: 'light', text: 200, owner: false }, set, ['hub', 'meals', 'verses', 'cleanup', 'cleanup-sheet', 'electives', 'elec-person']);
   }
   await browser.close();
-  const bad = report.filter((r) => r.error || r.pageErrors || (r.issues && r.issues.length) || r.sideways || (r.clip && r.clip.length));
+  const bad = report.filter((r) => r.error || r.pageErrors || (r.issues && r.issues.length) || r.sideways || (r.clip && r.clip.length) || (r.narrow && r.narrow.length) || (r.segs && r.segs.length));
   console.log(JSON.stringify({ checked: report.length, bad }, null, 1));
 })();

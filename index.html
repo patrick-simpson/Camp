@@ -132,6 +132,8 @@
     <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19.4V5.2M6.3 10.9 12 5.2l5.7 5.7"/></symbol>
     <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4.6v14.2M6.3 13.1l5.7 5.7 5.7-5.7"/></symbol>
     <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8.5" y="8.5" width="11" height="11" rx="2.2"/><path d="M15.5 8.5V6.7a2.2 2.2 0 0 0-2.2-2.2H6.7a2.2 2.2 0 0 0-2.2 2.2v6.6a2.2 2.2 0 0 0 2.2 2.2h1.8"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4.8 7h14.4M9.6 7V5.2h4.8V7M6.8 7l.8 12.3h8.8l.8-12.3M10.2 10.6v5.4M13.8 10.6v5.4"/></symbol>
     <symbol id="i-rain" viewBox="0 0 24 24"><path d="M7.2 15.2a3.9 3.9 0 0 1-.5-7.77 5.2 5.2 0 0 1 10.1.72 3.55 3.55 0 0 1 .4 7.05z"/><path d="M8.7 18.3 7.9 20.4M12.5 18.3l-.8 2.1M16.3 18.3l-.8 2.1"/></symbol>
     <!-- Team flag marks (§8.4) for a team with no shield (senior today): a
          pennant on a pole, filled with the team's mark colour (currentColor,
@@ -860,16 +862,23 @@
              (#sec-days, Mon–Fri or the days that have meals); a renderer patches
              text, `hidden` and aria-*, and the meal rows (which hold inputs) are
              patched in place by key, never rebuilt under a focused field. A
-             read-only preview sets `disabled` / `aria-disabled` on every control.
+             read-only preview shows the data as plain text: no field, no chip,
+             nothing that looks pressable (§8.1.3); the row keeps its shape, so
+             turning the section on only swaps the inputs in.
              Meal row (written by the renderer):
                <div class="cb-row sec-meal" data-key="m-lunch" data-meal="lunch">
                  <span class="cb-time">12:00<small>PM</small></span>
-                 <span class="cb-main">
-                   <span class="sec-meal-head"><span class="cb-title"><span class="sched-emo" aria-hidden="true">🥪</span><span>Lunch</span></span><input class="fld-input sec-emoji" data-meal-emoji …></span>
-                   <input class="fld-input sec-dish" data-meal-dish …>
-                 </span><span class="cb-end"></span></div>
-             Cleanup row: <button class="cb-row sec-row" data-meal="lunch" [data-warn]> time | emoji + meal, sub = the teams
-             (or "No team yet") | chevron — a <div> with no chevron in a preview. -->
+                 <span class="cb-main"><span class="cb-title">Lunch</span>
+                   <span class="cb-sub sec-dish-text" data-meal-text>🌭 Hot Dogs</span></span>   (the preview's)
+                 <span class="cb-end"></span>
+                 <span class="sec-dish-line">                                         (live: the whole row's width)
+                   <textarea class="fld-input sec-dish" data-meal-dish rows="1" …></textarea>
+                   <button class="sec-emo-btn" data-meal-emoji aria-expanded="false" aria-label="Lunch — emoji (optional)">🌭 | +</button></span>
+                 <span class="sec-emo-pick" role="group" hidden>  one row of food emoji (44px each) + None
+               </div>
+             The dish comes first in the tab order; the emoji button's `value` is the emoji.
+             Cleanup row: <button class="cb-row sec-row" data-key="c-lunch" data-meal="lunch" [data-warn]> time | meal, sub = the
+             teams' marks and names (or "No team yet") | chevron — a <div> with no chevron in a preview. -->
         <section class="setup-screen sec meals" id="setup-meals" data-setup-screen="meals" aria-labelledby="meals-title">
           <div class="setup-intro">
             <h2 class="setup-kicker" id="meals-title">Meals</h2>
@@ -884,7 +893,7 @@
           </section>
           <div class="gl cb-list sec-list" id="meals-list"></div>
           <p class="setup-note" id="meals-empty" hidden><svg class="ico" aria-hidden="true"><use href="#i-meal"/></svg><span id="meals-empty-text"></span></p>
-          <button type="button" class="sched-add" id="meals-copy" hidden><svg class="ico" aria-hidden="true"><use href="#i-download"/></svg><span id="meals-copy-text">Copy from another day…</span></button>
+          <button type="button" class="sched-add" id="meals-copy" hidden><svg class="ico" aria-hidden="true"><use href="#i-copy"/></svg><span id="meals-copy-text">Copy from another day…</span></button>
           <button type="button" class="btn-quiet sec-original" id="meals-original" data-sec-original="meals" data-owner-only hidden>Use the original menu again</button>
         </section>
 
@@ -900,10 +909,14 @@
             <button type="button" class="btn btn-gold btn-sm hub-door-btn" id="verses-door-btn" data-owner-only hidden></button>
             <p class="hub-door-owner" id="verses-door-owner" data-not-owner hidden><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span id="verses-door-owner-text"></span></p>
           </section>
-          <!-- Built once by the renderer (one .more-sec per record: the theme,
-               then a competition day each: Verse, Where it is, Video link,
-               [data-verse-error]); the values are patched in place. -->
-          <div id="verses-form"></div>
+          <!-- A run sheet (written by the renderer): the theme, then a row per
+               competition day —
+                 <button class="cb-row sec-vrow" data-key="v-mon" data-verse="mon" [data-warn]>
+                   <span class="cb-time">Mon</span><span class="cb-main"><span class="cb-title">Ephesians 2:8–9</span>
+                   <span class="cb-sub sec-vtext">For by grace you have been saved…</span></span>
+                   <span class="cb-end">chevron</span></button>
+               (a <div> with no chevron in a preview). A tap opens #sheet-sec-verse. -->
+          <div class="gl cb-list sec-list" id="verses-list"></div>
           <button type="button" class="btn-quiet sec-original" id="verses-original" data-sec-original="verses" data-owner-only hidden>Use the original verses again</button>
         </section>
 
@@ -924,7 +937,7 @@
           <!-- The fairness line over the whole week: "Each team cleans 2–3 times.
                Maples clean twice on Thursday." -->
           <p class="setup-note" id="cleanup-fair" hidden><svg class="ico" aria-hidden="true"><use href="#i-broom"/></svg><span id="cleanup-fair-text"></span></p>
-          <button type="button" class="sched-add" id="cleanup-fill" hidden><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span id="cleanup-fill-text">Fill evenly</span></button>
+          <button type="button" class="sched-add" id="cleanup-fill" hidden><svg class="ico" aria-hidden="true"><use href="#i-broom"/></svg><span id="cleanup-fill-text">Fill evenly</span></button>
           <button type="button" class="btn-quiet sec-original" id="cleanup-original" data-sec-original="cleanup" data-owner-only hidden>Use the original rota again</button>
         </section>
 
@@ -940,22 +953,28 @@
             <button type="button" class="btn btn-gold btn-sm hub-door-btn" id="electives-door-btn" data-owner-only hidden></button>
             <p class="hub-door-owner" id="electives-door-owner" data-not-owner hidden><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span id="electives-door-owner-text"></span></p>
           </section>
-          <!-- Which elective: a segmented control, one slot at a time (ux-R2),
-               each named with its time ("Elective 2 · 3:00 PM"). -->
-          <div class="seg sec-slots" id="elec-slots" role="tablist" aria-label="Which elective">
-            <button type="button" class="seg-btn" role="tab" aria-selected="false" data-slot="0">Elective 1</button>
-            <button type="button" class="seg-btn" role="tab" aria-selected="false" data-slot="1">Elective 2</button>
-            <button type="button" class="seg-btn" role="tab" aria-selected="false" data-slot="2">Elective 3</button>
+          <!-- Which elective: a short label, then a segmented control, one slot
+               at a time (ux-R2). Each segment is its number over its time ("2" /
+               "3:00 PM"; aria-label "Elective 2, 3:00 PM"): "Elective 1" with a
+               time under it overflowed its third of the track at 200% text. -->
+          <p class="sec-slots-label" id="elec-slots-label">Elective</p>
+          <div class="seg sec-slots" id="elec-slots" role="tablist" aria-labelledby="elec-slots-label">
+            <button type="button" class="seg-btn" role="tab" aria-selected="false" data-slot="0">1</button>
+            <button type="button" class="seg-btn" role="tab" aria-selected="false" data-slot="1">2</button>
+            <button type="button" class="seg-btn" role="tab" aria-selected="false" data-slot="2">3</button>
           </div>
-          <!-- A station is a block (written by the renderer): its name (a 44px
-               button that opens the station sheet), its people as wrapping chips
-               (tap one to take them off; Undo puts them back), then "Add
-               someone". A name that nearly matches a member gets a Link row. -->
+          <!-- A station is a block keyed data-key="st-<id>" (written by the
+               renderer): its name (a 44px button that opens the station sheet),
+               its people as wrapping chips keyed "p-<pid>" (tap one to take them
+               off — #elec-hint says so once; Undo puts them back), then the quiet
+               "+ Add someone" line. A name that nearly matches a member gets a
+               "Yes, it's Sofia" row. In a preview the people are one plain line. -->
+          <p class="sec-hint" id="elec-hint" hidden>Tap a name to take them off.</p>
           <div class="gl sec-list sec-stations" id="elec-list"></div>
           <p class="setup-note" id="elec-empty" hidden><svg class="ico" aria-hidden="true"><use href="#i-shapes"/></svg><span id="elec-empty-text"></span></p>
           <p class="setup-note" id="elec-break" hidden><svg class="ico" aria-hidden="true"><use href="#i-shapes"/></svg><span id="elec-break-text"></span></p>
           <button type="button" class="sched-add" id="elec-add-station" hidden><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span>Add a station</span></button>
-          <button type="button" class="sched-add" id="elec-same" hidden><svg class="ico" aria-hidden="true"><use href="#i-download"/></svg><span id="elec-same-text">Same as Monday</span></button>
+          <button type="button" class="sched-add" id="elec-same" hidden><svg class="ico" aria-hidden="true"><use href="#i-copy"/></svg><span id="elec-same-text">Same as Monday</span></button>
           <button type="button" class="btn-quiet sec-original" id="electives-original" data-sec-original="electives" data-owner-only hidden>Use the original stations again</button>
         </section>
 
@@ -1767,7 +1786,8 @@
        station — the people on the list (a member's key is kept), then
        "Someone not on the list" (a typed name). #sheet-sec-station: a station
        — pick one that isn't in this slot, or make a new one (name + emoji); in
-       edit mode its name and emoji, take it off this slot, delete it. -->
+       edit mode its name and emoji, take it off this slot, delete it (Save
+       docked). #sheet-sec-verse: one memory verse. -->
   <div id="sheet-sec-teams" class="sheet-overlay" hidden>
     <div class="sheet-backdrop" data-sheet-close></div>
     <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-sec-teams-title">
@@ -1782,8 +1802,9 @@
         <p class="fld-error" id="sec-teams-note" role="alert" hidden></p>
       </div>
       <div class="sheet-dock">
+        <!-- Always "Save" (a verb, never a state); clearing is the quiet line. -->
         <button type="button" class="btn btn-gold btn-block" id="sec-teams-save">Save</button>
-        <button type="button" class="btn-quiet" id="sec-teams-clear">No team yet</button>
+        <button type="button" class="btn-quiet" id="sec-teams-clear">Take the teams off</button>
       </div>
     </div>
   </div>
@@ -1797,8 +1818,13 @@
         <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
       </header>
       <div class="sheet-body">
-        <!-- The People list, one 44px row each (written by the renderer):
-               <button class="gl-row" data-sec-person="alyssa@x,com"><span class="gl-text"><span class="gl-title">Alyssa</span><span class="gl-sub">Foxes</span></span></button> -->
+        <!-- Who to add, one 48px row each (written by the renderer): first the
+             people on break in this elective (members and typed names alike, sub
+             "On break"), then everyone else on the list, their sub where they
+             already are ("At Laser Tag") or their team. The icon column is the
+             team's mark, or the first letter in a disc:
+               <button class="gl-row" data-sec-person="alyssa@x,com" data-sec-name="Alyssa"><span class="gl-ico">mark</span>
+                 <span class="gl-text"><span class="gl-title">Alyssa</span><span class="gl-sub">On break</span></span></button> -->
         <div class="gl" id="sec-person-list"></div>
         <p class="setup-note" id="sec-person-empty" hidden><span>Everyone on the list is already here.</span></p>
         <form class="sec-add" id="sec-person-form" autocomplete="off">
@@ -1824,18 +1850,52 @@
         <div class="gl" id="sec-station-list" hidden></div>
         <form class="sec-add" id="sec-station-form" autocomplete="off">
           <label class="fld"><span class="fld-label" id="sec-station-form-label">A new station</span><input type="text" class="fld-input" id="sec-station-name" maxlength="60" placeholder="Name" enterkeyhint="done"></label>
-          <label class="fld sec-emo"><span class="fld-label">Emoji</span><input type="text" class="fld-input" id="sec-station-emoji" maxlength="16" placeholder="🎯"></label>
+          <label class="fld sec-emo"><span class="fld-label">Emoji (optional)</span><input type="text" class="fld-input" id="sec-station-emoji" maxlength="16" placeholder="🎯"></label>
           <p class="fld-error" id="sec-station-error" role="alert" hidden></p>
-          <button type="submit" class="btn btn-gold" id="sec-station-save">Add</button>
         </form>
-        <div class="gl" id="sec-station-manage" hidden>
+        <div class="gl sec-manage" id="sec-station-manage" hidden>
           <button type="button" class="gl-row" id="sec-station-off">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-x"/></svg></span>
             <span class="gl-text"><span class="gl-title" id="sec-station-off-title">Take it off this elective</span><span class="gl-sub">The station stays on the list</span></span>
           </button>
           <button type="button" class="gl-row gl-row-danger" id="sec-station-delete">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-trash"/></svg></span>
             <span class="gl-text"><span class="gl-title">Delete this station</span><span class="gl-sub">It comes off every day</span></span>
           </button>
         </div>
+      </div>
+      <!-- The sheet's one action, docked (§11.0: sheets have a sticky footer);
+           it submits the form above. -->
+      <div class="sheet-dock">
+        <button type="submit" form="sec-station-form" class="btn btn-gold btn-block" id="sec-station-save">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- One memory verse (the theme, or a day): #verses-form is the group
+       (data-verse="theme" | "mon"…, set when it opens) — Title (theme only),
+       the Verse in the scripture serif growing with its words, the Reference,
+       the Video link (days only). Each field's own error sits under it
+       ([data-verse-error] is moved under the first field in error; every field
+       in error gets aria-invalid). The values are filled when it opens and
+       committed when focus leaves the form (Save, ✕, the backdrop). -->
+  <div id="sheet-sec-verse" class="sheet-overlay" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet sheet-tall" role="dialog" aria-modal="true" aria-labelledby="sheet-sec-verse-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-sec-verse-title">Monday’s verse</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <form class="sheet-body sec-verse" id="verses-form" data-verse="mon" autocomplete="off">
+        <label class="fld" data-verse-only="theme" hidden><span class="fld-label">Theme name</span><input type="text" class="fld-input" data-verse-field="title" maxlength="80" placeholder="Theme name"></label>
+        <label class="fld"><span class="fld-label">Verse</span><textarea class="fld-input sec-text" data-verse-field="text" rows="3" maxlength="600" placeholder="The words, as counselors will read them"></textarea></label>
+        <label class="fld"><span class="fld-label">Reference (book chapter:verse)</span><input type="text" class="fld-input" data-verse-field="ref" maxlength="80" placeholder="Book chapter:verse"></label>
+        <label class="fld" data-verse-only="day"><span class="fld-label">Video link (optional)</span><input type="url" class="fld-input" data-verse-field="video" maxlength="300" inputmode="url" placeholder="https://"></label>
+        <p class="fld-error" id="verse-error" data-verse-error role="alert" hidden></p>
+      </form>
+      <div class="sheet-dock">
+        <button type="button" class="btn btn-gold btn-block" id="sec-verse-save">Save</button>
       </div>
     </div>
   </div>

@@ -39,6 +39,10 @@
   --ink: #141a48;            /* text, 14.4:1 on paper */
   --ink-2: #373d72;          /* secondary text, 8.8:1 */
   --ink-3: #43497a;          /* the lightest text allowed, 7.4:1; also OFF outlines */
+  /* A field's placeholder: lighter than a value, still 4.5:1 on the sheet in
+     both themes (the browser's own grey is 3.5:1 in dark). Follows the theme
+     through --ink-3 and --sheet. */
+  --placeholder: color-mix(in srgb, var(--ink-3) 85%, var(--sheet));
   --line: rgba(20, 26, 72, .13);   /* hairlines between rows */
   --line-2: rgba(20, 26, 72, .26); /* the edge of a group or a field */
   --card-b: #141a48;         /* a chunky control's border */
@@ -1997,7 +2001,72 @@ jelly-dialog.ask {
   display: flex;
   flex-wrap: wrap;
   gap: var(--s-3) 10px;
-  margin-top: 18px;
+  margin-top: 6px;
+}
+/* A long question (Fill evenly's table, at 200% text) keeps its buttons in
+   reach: the row sticks to the dialog's foot while the rest scrolls under it. */
+.ask-actions:not(:empty) {
+  position: sticky;
+  bottom: -18px; /* the dialog's bottom padding */
+  z-index: 1;
+  margin: 6px calc(-1 * var(--gutter)) -18px; /* over the side padding too, so nothing shows beside it */
+  padding: 12px var(--gutter) 18px;
+  background: var(--jelly-color-background-surface, var(--sheet));
+}
+/* A list of choices: one full-width button a line, the way out last. */
+.ask-actions[data-stack] {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+.ask-actions[data-stack] > .btn {
+  width: 100%;
+}
+.ask-actions > .btn-quiet {
+  align-self: center;
+}
+/* Fill evenly's preview: a day label, then a hairline row per meal (time ·
+   meal, the teams under it). */
+.ask-table {
+  margin: var(--s-2) 0 var(--s-3);
+  container-type: inline-size;
+}
+.ask-thead {
+  margin: var(--s-3) 0 2px;
+  font: var(--t-label);
+  color: var(--ink-2);
+}
+.ask-body .ask-thead {
+  margin-bottom: 2px;
+}
+.ask-trow {
+  display: grid;
+  grid-template-columns: 4.75rem minmax(0, 1fr);
+  column-gap: 10px;
+  padding: 7px 0;
+  border-top: 1px solid var(--line);
+  color: var(--ink);
+  font-weight: 650;
+}
+.ask-ttime {
+  grid-row: span 2;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.ask-tteams {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+}
+/* Large text: the time becomes a small line above the meal (the cb-list's rule). */
+@container (max-width: 15em) {
+  .ask-trow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ask-ttime {
+    grid-row: auto;
+    font-size: 0.8125rem;
+  }
 }
 /* Each button starts at its label's width: two that fit share the row (and
    the spare width), one that doesn't sends both to full-width lines. */
@@ -3640,6 +3709,11 @@ button.cb-row:active {
   color: var(--ink);
   font: 700 1rem/1.2 var(--font-ui);
   font-variant-numeric: tabular-nums;
+}
+.fld-input::placeholder {
+  color: var(--placeholder);
+  font-weight: 550;
+  opacity: 1;
 }
 .fld-input:disabled {
   border-style: dashed;
@@ -10585,37 +10659,122 @@ html:not(.calm-motion) .joy-slide-in {
 .sec .setup-note {
   margin: 0 2px var(--s-3);
 }
+/* A note right under a list keeps the 8/12/16/24 rhythm (it sat 5px under). */
+.sec .sec-list + .setup-note,
+.sec .setup-note + .setup-note {
+  margin-top: var(--s-3);
+}
+.sec .setup-note .ico {
+  margin-top: 0;
+}
 /* The owner's way back, quietly at the foot (nobody else sees it). */
 .sec-original {
   display: block;
   margin: var(--s-6) auto 0;
 }
 
-/* Meals: the dish is typed in the row at full width, the emoji beside the meal's name. */
-.sec-meal .cb-main {
-  display: grid;
-  gap: 6px;
+/* Meals: the time and the meal's name on the first line, then the dish across
+   the whole row (a textarea that grows, so a long dish wraps instead of being
+   cut off) with its emoji button after it. A preview is the dish as words. */
+.sec-meal {
+  row-gap: 8px;
 }
-.sec-meal-head {
+.sec-meal > .sec-dish-line,
+.sec-meal > .sec-emo-pick {
+  grid-column: 1 / -1;
+}
+.sec-dish-line {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 4px 8px;
+  align-items: flex-start;
+  gap: 8px;
 }
-.sec-meal-head .cb-title {
-  flex: 1 1 6rem;
+.sec-dish-line[hidden],
+.sec-dish-text[hidden] {
+  display: none;
+}
+.sec-dish {
+  flex: 1 1 auto;
   min-width: 0;
+  min-height: var(--target);
+  field-sizing: content;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.3;
 }
-.sec-emoji {
+/* The dish's emoji: a 44px square after the field; empty, a link-blue "+"
+   (an emoji placeholder in full colour read as a value already set). */
+.sec-emo-btn {
   flex: none;
-  width: 4.5rem;
-  padding-inline: 4px;
-  text-align: center;
+  display: grid;
+  place-items: center;
+  width: var(--target);
+  height: var(--target);
+  padding: 0;
+  border: 2px solid var(--field-b);
+  border-radius: 10px;
+  background: var(--sheet);
+  color: var(--link);
+  font-size: 22px; /* a fixed 44px square: the glyph doesn't grow past it at 200% text */
+  line-height: 1;
+  cursor: pointer;
+}
+.sec-emo-btn[aria-expanded="true"] {
+  border-color: var(--ink);
+  box-shadow: 0 2px 0 var(--edge);
+}
+.sec-emo-btn .sec-emo-plus {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2.6;
+}
+.sec-emo-btn[data-empty] .sec-emo-now,
+.sec-emo-btn:not([data-empty]) .sec-emo-plus {
+  display: none;
+}
+/* One row of food, scrolled sideways: 44px each, "None" first. */
+.sec-emo-pick {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--r-btn);
+  background: var(--well);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+}
+.sec-emo-pick::-webkit-scrollbar {
+  display: none;
+}
+.sec-emo-pick[hidden] {
+  display: none;
+}
+.sec-food {
+  flex: none;
+  width: var(--target);
+  height: var(--target);
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+.sec-food-none {
+  width: auto;
+  min-width: var(--target);
+  padding: 0 10px;
+  color: var(--ink-2);
+  font: 750 0.875rem/1 var(--font-ui);
+}
+.sec-food[aria-pressed="true"] {
+  background: var(--lift);
+  box-shadow: 0 0 0 1.5px var(--seg-ring), 0 2px 0 var(--edge);
 }
 
 /* Cleanup: the gold "!" ahead of the sub of a meal nobody is on yet (the
-   Schedule's own mark); a row in a read-only preview is a plain <div>. */
+   Schedule's own mark); a row in a read-only preview is a plain <div>. The
+   teams are their marks and names, as on the teams sheet. */
 .sec-row[data-warn] .cb-sub::before {
   content: '!';
   display: inline-grid;
@@ -10636,23 +10795,93 @@ html:not(.calm-motion) .joy-slide-in {
 .sec-row[data-warn] .cb-sub {
   color: var(--ink-2);
 }
+.sec-team {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  vertical-align: middle;
+}
+.sec-team .tm {
+  flex: none;
+}
+.sec-plus {
+  color: var(--ink-2);
+}
 
-/* Electives: which one, then a block per station. */
+/* Memory verses: a run sheet — the day in the time column, the reference as
+   the title, the first words under it (two lines at most). */
+.sec-vrow .sec-vtext {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.sec-vrow .cb-time {
+  font-variant-numeric: normal;
+}
+/* The verse's sheet: the words in the scripture serif, the way counselors
+   read them, growing with the text (no box to scroll inside). */
+.sec-verse {
+  display: grid;
+  gap: 12px;
+}
+.sec-verse .fld[hidden] {
+  display: none;
+}
+.sec-text {
+  display: block;
+  min-height: 6.5rem;
+  field-sizing: content;
+  resize: none;
+  overflow: hidden;
+  font: 500 1.125rem/1.45 var(--font-scripture);
+}
+/* A field in error: the danger edge and its words right under it (position
+   and text as well as colour). */
+.fld-input[aria-invalid="true"] {
+  border-color: var(--color-danger-text);
+}
+.sec-verse .fld-error {
+  margin-top: -6px;
+}
+
+/* Electives: which one (a short label, then the numbers with their times),
+   then a block per station. */
+.sec-slots-label {
+  margin: 0 2px 6px;
+  font: var(--t-label);
+  color: var(--ink-2);
+}
 .sec-slots {
   margin: 0 0 var(--s-3);
 }
 .sec-slots .seg-btn {
   display: grid;
+  justify-items: center;
   align-content: center;
   gap: 1px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.sec-slots .seg-n {
+  font: 800 1.0625rem/1.1 var(--font-ui);
 }
 .sec-slots .seg-btn small {
   font: 600 0.75rem/1.1 var(--font-ui);
   color: var(--ink-2);
   font-variant-numeric: tabular-nums;
 }
+.sec-hint {
+  margin: 0 2px var(--s-2);
+  font: 600 0.875rem/1.4 var(--font-ui);
+  color: var(--ink-2);
+}
+.sec-hint[hidden] {
+  display: none;
+}
 .sec-st {
-  padding: 6px 14px 14px;
+  padding: 6px 14px 8px;
   border-top: 1px solid var(--line);
 }
 .sec-st:first-child {
@@ -10697,12 +10926,16 @@ div.sec-st-name {
   flex-wrap: wrap;
   gap: 8px;
 }
+.sec-st-people:empty {
+  display: none;
+}
 /* A person at a station: a solid ink edge like a team that meets; tapping it
-   takes them off (Undo puts them back), so it says so with its x. A name that
-   nearly matches a member carries the gold "!". */
+   takes them off (Undo puts them back), so it says so with its x and the line
+   above the list. A name that nearly matches a member carries the gold "!". */
 .sec-chip {
   display: inline-flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
   min-height: var(--target);
   max-width: 100%;
@@ -10712,12 +10945,12 @@ div.sec-st-name {
   background: var(--sheet);
   color: var(--ink);
   font: 700 0.9375rem/1.15 var(--font-ui);
+  text-align: left;
   overflow-wrap: anywhere;
   cursor: pointer;
 }
-span.sec-chip,
-div.sec-chip {
-  cursor: default;
+.sec-chip[data-leaving] {
+  pointer-events: none;
 }
 .sec-chip .ico {
   flex: none;
@@ -10738,10 +10971,50 @@ div.sec-chip {
   color: var(--gold-ink);
   font: 900 0.6875rem/1 var(--font-ui);
 }
-.sec-chip-add {
-  border-style: dashed;
+/* In a preview the people are one plain line of names: static information is
+   never chunky (§8.1.3). Same elements, so turning it on only swaps them. */
+.sec-st-people[data-plain] {
+  display: block;
+  margin: 0 0 6px;
+  font: 600 0.9375rem/1.4 var(--font-ui);
+  color: var(--ink);
+}
+.sec-st-people[data-plain] .sec-chip {
+  display: inline;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  cursor: default;
+}
+.sec-st-people[data-plain] .sec-chip + .sec-chip::before {
+  content: ', ';
+}
+.sec-nobody {
+  color: var(--ink-2);
+}
+/* "+ Add someone": a quiet link line, a full target, no box (a dashed box is
+   kept for an unpicked toggle, §8.3). */
+.sec-add-link {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--target);
+  margin: 4px 0 0;
+  padding: 0;
+  border: 0;
   background: none;
   color: var(--link);
+  font: 750 0.9375rem/1.2 var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.sec-add-link .ico {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.6;
 }
 .sec-link {
   display: flex;
@@ -10756,19 +11029,23 @@ div.sec-chip {
   flex: 1 1 12rem;
 }
 
-/* Verses and the two small forms (a station, someone not on the list). */
-.sec-verse {
+/* The person sheet's icon column: a team's mark, or the first letter in a disc. */
+.sec-initial {
   display: grid;
-  gap: 12px;
-  padding: 12px 14px 14px;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--well);
+  color: var(--ink-2);
+  font: 800 0.8125rem/1 var(--font-ui);
 }
-.sec-text {
-  display: block;
-  min-height: 6.5rem;
-  resize: vertical;
-  font-weight: 600;
-  line-height: 1.38;
+/* The station sheet: what the station is, then (well apart) the two ways out. */
+.sec-manage {
+  margin-top: var(--s-6);
 }
+
+/* The two small forms (a station, someone not on the list). */
 .sec-add {
   display: grid;
   gap: 12px;
@@ -10780,6 +11057,27 @@ div.sec-chip {
 #sec-person-list:empty,
 #sec-station-list:empty {
   display: none;
+}
+
+/* The shared day strip: seven days (the menus run Sunday supper to Saturday
+   breakfast) fit a 360px phone at 44px each, and the gold "!" sits under the
+   day's name (where the Schedule strip has its dots), never over it. */
+.sec-days .daypick[data-n="7"] .daypick-btn {
+  min-width: 44px;
+  padding-inline: 3px;
+}
+.sec-days .daypick-dots {
+  display: none;
+}
+.sec-days .daypick-warn {
+  position: static;
+  justify-self: center;
+  width: 13px;
+  height: 13px;
+}
+.sec-days .daypick-warn[hidden] {
+  display: grid;
+  visibility: hidden;
 }
 
 /* An empty list is no box (a station list with no stations, a cleanup day with no meals). */

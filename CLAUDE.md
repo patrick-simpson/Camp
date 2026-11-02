@@ -945,7 +945,10 @@ into it from app.js / settings.js is typeof-guarded.
   during Jelly's exit would be closed by it), escapes every string, focus on the safe action,
   Escape / ✕ / the backdrop resolve as the `cancel` action. Where `jelly-dialog` never loaded
   it asks with the native `confirm` / `prompt`, so a caller always gets an answer. Copy: a verb
-  on every button, never OK / Cancel.
+  on every button, never OK / Cancel; a plain cancel is "Not now". `html` (caller-built from
+  escaped parts) replaces the paragraphs in the dialog while `body` stays the words the native
+  fallback shows; `stack` makes a list of choices; `kind: 'quiet'` a link-like way out. The
+  action row is sticky at the dialog's foot, so a long question keeps its buttons in reach.
 - **Escape and Back**: while a question is up (`askIsOpen()`) Escape belongs to it and the
   sheet underneath stays (app.js's Escape handler checks); the phone's Back pops the top
   history entry — a sheet, the Who can sign in drawer — before it leaves the builder. Opening
@@ -1497,6 +1500,8 @@ What's covered, and why each file exists:
   carry white text; any rule that colours text red uses `--color-danger-text`
   (light `#b42318`, 6.57:1 on white; dark `#ff8a8a`). The test pins the token
   values' contrast and fails if a bare `color: var(--color-danger)` comes back.
+  (A field's placeholder uses `--placeholder` — `--ink-3` 85 % over `--sheet`,
+  about 5:1 in both themes; the browser's own grey is 3.5:1 in dark.)
 - `owner-row.test.js` — the owner's Members row is read-only, and the client
   constant matches the rules literal in both camps.
 - `rules.test.js` — the FILE `database.rules.json` is coherent: deny-all root,
@@ -2914,14 +2919,17 @@ component (`.cb-row`, `.gl`, `.daypick`, `.seg`, `.si-team`, `.sched-add`, `.set
 `.setup-door`, `.fld`, `.btn`, the shell sheets, `askDialog`). **Nothing is reachable by a counselor,
 and nothing is written until the owner turns a section on**: a section that is the original shows
 its screen as a read-only PREVIEW of the printed data (`secTree(section)` is the live tree when the
-section is on, else `setupBuiltInSections()`; every control disabled, a row a `<div>`).
+section is on, else `setupBuiltInSections()`; a row a `<div>`, the data as plain words — a dish is a
+`.cb-sub` line, a station's people one line of names — never a disabled field or a chunky chip, §8.1.3;
+the row keeps its keyed shape, so turning the section on only swaps the inputs in).
 
 - **Routing**: `SETUP_SCREENS` gains `meals | verses | cleanup | electives`, `HUB_OPENS` their rows
   (the four hub rows are `<button>`s with a chevron now; `checklist.test.js` checks the markup
   against the table), `setupWhereNow` tells editorsHere the plain name, `renderSetupUi` dispatches to
   `renderSecScreen(section)`, and `setupScreen()` reads a stored `electives` as the hub on a camp with
-  none. Three shell sheets join `SETUP_SHEETS` (`sec-teams`, `sec-person`, `sec-station`), each
-  allowed only with what a tap opened (`secUi.teams / person / station`).
+  none. Four shell sheets join `SETUP_SHEETS` (`sec-teams`, `sec-person`, `sec-station`, each
+  allowed only with what a tap opened — `secUi.teams / person / station` — and `sec-verse`, which
+  raised without a tap shows the verse its form was last on, fresh from the tree).
 - **Markup / CSS**: index.html's block after `#setup-rain` (`#setup-meals`, `-verses`, `-cleanup`,
   `-electives`; ids `<s>-title | -headline | -lede | -door…`), the shared day strip `#sec-days` in the
   head (`data-setup-screen="sec"`: shown on meals / cleanup / electives only; Mon–Fri, or for the menus
@@ -2948,33 +2956,63 @@ section is on, else `setupBuiltInSections()`; every control disabled, a row a `<
   unwired, `SETUP_OWNER_ACTIONS` has only `original`).
 - **Meals** (`renderMealsScreen`): a row per Meal-tagged item of the day, once per meal (`secMealItems`:
   the plan's items in time order, tag from the SCHEDULE, so a "Supper and free time" item tagged Supper
-  is a row), the time column, the meal's name with an emoji field beside it and the dish full width under
-  it. The rows are written once per day and PATCHED in place by key (`secPaintKeyed`: a focused field
-  keeps its text and caret; values are set only when the field isn't focused). A commit happens on
-  focusout and only when the value changed since the field gained focus (`setupFocusIn / Out`, §6.4.9):
-  tapping into a dish and out writes nothing, and Enter finishes the field. Copy from another day… is an
-  `askDialog` with a button per day that has a dish.
-- **Memory verses**: the form is built once (the theme: title, verse, where it is; then a group per
-  competition day: verse, where it is, video link) and patched in place; each group commits on blur
-  as one record. A refusal is said under the group: "A verse needs its words. Type them, or clear the
-  whole verse." / "Use a link that starts with https://" (`versesRecord` is pure and checks before
-  anything is written).
-- **Cleanup rota**: a row per meal (the time, "🥪 Lunch", the teams as emoji + name, a gold "!" when no
-  team is on it on a rota that has teams on other meals) → the `sec-teams` sheet: the item sheet's team
-  toggles, one or two (a third is refused in words), Save, and "No team yet". **Fill evenly** is
-  `rotaFillEvenly` with a preview in words in an `askDialog` — one line a day, the fairness line, and any
-  rule it had to bend — then Apply (ONE `cleanupApply` commit, one undo entry) or Cancel; it fills only
-  the empty meals and keeps what is there, and with nothing empty it asks before redoing the whole rota.
+  is a row): the time and the meal's name, then the dish across the whole row (a textarea that grows —
+  `field-sizing: content`, else `secGrow` — so a long dish wraps) with a 44px emoji button AFTER it (the
+  dish first in the tab order; empty, a link-blue "+"). The button opens a one-row food picker under
+  the dish (`secMealPicker`; a pick is one `mealsSet` commit, `secMealPick`, which moves the focus
+  baseline so the blur after it writes nothing). The rows are written once per day and PATCHED in place
+  by key (`secPaintKeyed`: a focused field keeps its text and caret; values are set only when the field
+  isn't focused). A commit happens on focusout and only when the value changed since the field gained
+  focus (`setupFocusIn / Out`, §6.4.9): tapping into a dish and out writes nothing, and Enter finishes
+  the field. Copy from another day… is an `askDialog` with the days as full-width rows ("Monday · 3
+  dishes", `stack: true`) and a quiet Not now after them.
+- **Memory verses**: a run sheet (`secVerseRowHtml`, keyed `v-<key>`): the theme ("Harvest of the Heart ·
+  Galatians 2:20"), then a row per competition day — the day in the time column, the reference as the
+  title, the first words as a two-line sub, a chevron; a verse still saying "to be announced" (senior's
+  seed), one with no reference, or a missing one carries the gold "!" and says so. The headline is the
+  theme's name; the lede says what is missing. A tap opens `sec-verse`: Title (theme only), the Verse in
+  the scripture serif growing with its words, Reference (book chapter:verse), Video link (days only),
+  Save docked. `#verses-form` IS the group (`data-verse`); it commits as one record when focus LEAVES
+  the form (Save blurs the field; the ✕ and the backdrop too), never between its own fields. Every
+  problem is said at once (`secVerseProblems`): each field in error gets `aria-invalid` and the danger
+  edge, and the words ("A verse needs its words. Type them, or clear the whole verse." / "Use a link that
+  starts with https://") sit under the first of them; the sheet stays up while anything is in error
+  (`versesRecord` is pure and checks before anything is written).
+- **Cleanup rota**: a row per meal keyed `c-<meal>` (the time, the meal, the teams as their marks and
+  names — `secTeamHtml`, the teams sheet's shields and flags, never senior's hue-only circles — and a
+  gold "!" when no team is on it on a rota that has teams on other meals) → the `sec-teams` sheet: the
+  item sheet's team toggles (written once per set of teams, `aria-pressed` patched, so the tapped one
+  pops), one or two (a third is refused in words), **Save** (always that word) and the quiet "Take the
+  teams off". **Fill evenly** is `rotaFillEvenly` with the preview in ONE `askDialog`: a hairline table
+  (`html`: a day label, a row per meal — time · meal · the teams' marks and short names), the fairness
+  line and any rule it had to bend; titled "Redo the whole rota evenly?" with "This replaces every
+  meal's team." when every meal already has one (no second question: Undo covers it); then Apply (ONE
+  `cleanupApply` commit, one undo entry) or Not now. Its `body` is the same preview in words, for the
+  native-confirm fallback. The dialog's buttons stay in reach at any length (`.ask-actions` is sticky).
   The fairness line sits under the list for the whole week.
-- **Electives** (junior): the day strip plus a segmented Elective 1 · 2 · 3 (each with its time from
-  the schedule's Elective item), then a block per station: its name (a 44px button → the station sheet),
-  its people as wrapping chips (tap one to take them off — Undo is the way back, no question), "Add
-  someone" (→ `sec-person`: the People list, a member keeping their key, a pending member and "Someone
-  not on the list" as typed names), and a **Link** row for a typed name that nearly matches a member
-  ("Sophie looks like Sofia on your list."). "On break: …" under the list, **Add a station** (→
-  `sec-station`: pick one that isn't in this slot, or a new name + emoji: ONE commit adds it to the
-  list and the slot), and **Same as Monday** (asks first when the day holds anything). A station's own
-  sheet renames it, takes it off this slot, or deletes it everywhere (a question, then one undo entry).
+- **Electives** (junior): the day strip, the label "Elective", then a segmented control whose segments
+  are the slot's number over its time ("2" / "3:00 PM", aria-label "Elective 2, 3:00 PM" — "Elective 1"
+  with a time overflowed its third at 200 % text), then a block per station keyed `st-<id>`: its name (a
+  44px button → the station sheet), its people as wrapping chips keyed `p-<pid>` (tap one to take them
+  off — "Tap a name to take them off." says so once above the list; Undo is the way back, no
+  question), the quiet "+ Add someone" line (→ `sec-person`: first the people ON BREAK in this
+  elective, members and typed names alike, then everyone else on the list with where they already are —
+  "At Laser Tag" — or their team; each row's icon the team mark or an initial disc; a member keeps
+  their key, a pending member and "Someone not on the list" are typed names), and a row for a typed
+  name that nearly matches a member ("Sophie looks like Sofia on your list. [Yes, it's Sofia]"). "On
+  break: …" under the list, **Add a station** (→ `sec-station`: pick one that isn't in this slot, or a
+  new name + emoji: ONE commit adds it to the list and the slot; Save docked), and **Same as Monday**
+  (asks first when the day holds anything). A station's own sheet renames it, takes it off this slot,
+  or deletes it everywhere (a question, then one undo entry); those two rows sit a 24px gap under the
+  form, each with its icon.
+- **Motion** (§9.5, the Schedule's way — `secPaintList`): the cleanup, electives and verse lists are
+  keyed; an edit on the same view glides the survivors once hands are off the list (`whenHandsOff` →
+  `flipKeyed`), new rows and chips arrive, rows whose words changed pop (Fill evenly), and the chips
+  inside a station glide relative to it (`secInnerRects / secInnerGlide`). A chip tapped off squashes
+  out first (`playOut`), then the commit (a refusal brings it back). A new day or slot is an immediate
+  replace that slides in from that side (`secSlideIn`); the picked slot snaps like the day pill; a team
+  toggle pops. Calm motion and reduced motion: opacity only. The day strip fits seven days at 360px
+  (`data-n="7"`) and its gold "!" sits under the day's name.
 - **The hub's rows** (`hubSectionStatus`, Appendix B; pure over `v.sec[section]` that `hubSecView()`
   builds from the live tree): not on → a plain info line ("The original menu"); on → Meals: todo with no
   dishes, a warning for a meal with no dish (only a competition day, or a day that lists dishes, is
@@ -2990,7 +3028,8 @@ section is on, else `setupBuiltInSections()`; every control disabled, a row a `<
   idempotent paint; `owner-only.test.js` gains the four doors' markup and calls. The pass:
   `docs/build-notes/verify/step19-pass.cjs` (every screen and sheet, both camps, editor / owner /
   preview, 360 / 390, light / dark, 100 / 130 / 200 % text: no target under 44×44, no sideways
-  scroll; serve the worktree with `python3 -m http.server 8943`).
+  scroll, no row title or sub squeezed under 80px, no segment label overflowing its button; serve the
+  worktree with `python3 -m http.server 8943`).
   `docs/build-notes/verify/step19-same.cjs` is the proof that turning the four sections on changes
   nothing anyone sees: in Chromium the banner at every quarter hour of all seven days, every day's
   schedule sheet, the verses, rota and electives are identical with the schedule on and with

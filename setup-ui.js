@@ -312,7 +312,7 @@ function hubDoor(view) {
     const held = off.some((s) => v.held && v.held[s]);
     return {
       door: 'sections', lead: hubCap(hubJoin(off.map((s) => HUB_SECTION_NOUNS[s]))) + ' can now be edited here too.',
-      text: held ? 'Your changes are kept. Turning it on brings them back.' : 'Turning it on changes nothing anyone can see until someone edits something.',
+      text: (held ? 'Your changes are kept. Turning ' + (off.length > 1 ? 'them' : 'it') + ' on brings them back.' : 'Turning ' + (off.length > 1 ? 'them' : 'it') + ' on changes nothing anyone can see until someone edits something.'),
       ownerButton: act ? 'Turn on' : '',
       ownerText: act ? name + ' turns it on.' : '',
     };
@@ -555,7 +555,7 @@ function hubScheduleView() {
 // classic | week | schedule | rain. A step that adds a screen adds its name here and its pair of lines in the CSS.
 const SETUP_SCREENS = ['hub', 'backups', 'classic', 'week', 'schedule', 'rain', 'meals', 'verses', 'cleanup', 'electives'];
 // Shell sheets this layer owns (shellSheetOpen ids; the elements are #sheet-<id>), one at a time.
-const SETUP_SHEETS = ['setup-menu', 'setup-changes', 'setup-devices', 'restore', 'sched-day', 'sched-item', 'rain-item', 'rain-done', 'sec-teams', 'sec-person', 'sec-station'];
+const SETUP_SHEETS = ['setup-menu', 'setup-changes', 'setup-devices', 'restore', 'sched-day', 'sched-item', 'rain-item', 'rain-done', 'sec-teams', 'sec-person', 'sec-station', 'sec-verse'];
 // The classic builder's tabs, in editorsHere's short vocabulary (setup-sync.js editorsHereWhereWords).
 const SETUP_CLASSIC_WHERE = { games: 'games', days: 'week', teams: 'teams', notice: 'notice', data: 'restore' };
 // The owner's menu rows (⋯ → Owner). A row is listed only when its action exists (Step 15: original,
@@ -936,10 +936,15 @@ function setupUiOnEvent(kind) {
 //   title    plain text (the dialog's accessible name too)
 //   body     a string, or an array of paragraphs (plain text; escaped here, never markup)
 //   list     lines shown as a hairline list under the body ("Tuesday's schedule · 4 items")
-//   actions  [{ label, value, kind: 'gold' | 'danger', cancel: true }] in the order shown. A verb on
-//            every button ("Keep editing", "Discard"), never OK / Cancel. At most one `gold` (THE main
-//            action) or `danger` (destructive: danger text, never a red fill). The `cancel` action is
-//            what Escape, the ✕ and the backdrop resolve as (null when none).
+//   html     markup the CALLER built from escaped parts (a preview table with team marks), shown in
+//            place of body + list in the dialog; `body` stays the same words in plain text, which is
+//            what the browser's own confirm shows where Jelly's dialog never loaded
+//   stack    true: one full-width button a line (a list of choices, e.g. the days to copy from)
+//   actions  [{ label, value, kind: 'gold' | 'danger' | 'quiet', cancel: true }] in the order shown. A
+//            verb on every button ("Keep editing", "Discard"), never OK / Cancel. At most one `gold` (THE
+//            main action) or `danger` (destructive: danger text, never a red fill); `quiet` is a plain
+//            link-like line (a way out after a list of choices). The `cancel` action is what Escape,
+//            the ✕ and the backdrop resolve as (null when none).
 //   input    { label, value, placeholder, maxLength } adds one text field; read the answer with
 //            askForText(), which resolves { value, text }.
 // Replaces native confirm / alert / prompt on every screen this project touches. One at a time: a second
@@ -960,13 +965,14 @@ function askAvailable() {
 }
 
 function askBodyHtml(o) {
+  if (typeof o.html === 'string' && o.html) return o.html;
   const paras = (Array.isArray(o.body) ? o.body : o.body ? [o.body] : []).map((p) => '<p>' + esc(p) + '</p>').join('');
   const list = Array.isArray(o.list) && o.list.length ? '<ul>' + o.list.map((l) => '<li>' + esc(l) + '</li>').join('') + '</ul>' : '';
   return paras + list;
 }
 
 function askActionsHtml(actions) {
-  return actions.map((a, i) => '<button type="button" class="btn' + (a.kind === 'gold' ? ' btn-gold' : a.kind === 'danger' ? ' btn-danger' : '') +
+  return actions.map((a, i) => '<button type="button" class="' + (a.kind === 'quiet' ? 'btn-quiet' : 'btn') + (a.kind === 'gold' ? ' btn-gold' : a.kind === 'danger' ? ' btn-danger' : '') +
     '" data-ask-i="' + i + '">' + esc(a.label) + '</button>').join('');
 }
 
@@ -1011,6 +1017,7 @@ async function askOpen(opts) {
   body.__html = null;
   const box = setupEl('ask-actions');
   box.innerHTML = askActionsHtml(actions);
+  if (typeof box.toggleAttribute === 'function') box.toggleAttribute('data-stack', !!o.stack);
   return new Promise((resolve) => {
     askState = { resolve, actions, input: !!o.input };
     dlg.setAttribute('open', '');
@@ -1216,6 +1223,7 @@ function renderSetupSheet(id) {
   else if (id === 'sec-teams') renderSecTeamsSheet();
   else if (id === 'sec-person') renderSecPersonSheet();
   else if (id === 'sec-station') renderSecStationSheet();
+  else if (id === 'sec-verse') renderSecVerseSheet();
 }
 
 // Whether a setup sheet has anything to show (app.js shellSheetAllowed): the restore sheet needs a point
@@ -3930,10 +3938,13 @@ const secUi = {
   teams: null,       // the open cleanup sheet: { dk, meal, name, picked: [ids], was: [ids] }
   person: null,      // the open "Add someone" sheet: { dk, slot, st }
   station: null,     // the open station sheet: { mode: 'add' | 'edit', dk, slot, st }
+  verse: null,       // the open verse sheet: { key: 'theme' | 'mon'… }
   stripDay: undefined,
-  versesBuilt: false,
+  slotShown: undefined,
 };
-const SEC_MEAL_ICONS = { breakfast: '🍳', lunch: '🥪', supper: '🍲' };
+// The meal row's emoji picker: one row of food, 44px each, "None" first.
+const SEC_FOOD = [['🥞', 'Pancakes'], ['🍳', 'Eggs'], ['🥓', 'Bacon'], ['🧇', 'Waffles'], ['🥣', 'Cereal'], ['🥪', 'Sandwich'], ['🌭', 'Hot dog'], ['🍔', 'Burger'],
+  ['🍕', 'Pizza'], ['🌮', 'Tacos'], ['🍝', 'Pasta'], ['🍗', 'Chicken'], ['🍲', 'Stew'], ['🥗', 'Salad'], ['🍦', 'Ice cream'], ['🍪', 'Cookies']];
 
 function secOn(section) {
   return typeof sectionIsShared === 'function' && sectionIsShared(section);
@@ -4025,6 +4036,8 @@ function renderSecStrip(section, dk) {
   const track = setupEl('sec-days-track');
   if (!track || !track.querySelectorAll) return;
   const days = secDays(section);
+  // How many days show: seven (the menus' Sunday supper to Saturday breakfast) tighten so the week fits a 360px phone.
+  if (track.dataset && track.dataset.n !== String(days.length)) track.dataset.n = String(days.length);
   const todayKey = schedTodayKey();
   const during = typeof campWeek === 'function' && campWeek().phase === 'during';
   track.querySelectorAll('.daypick-btn[data-day]').forEach((btn) => {
@@ -4066,17 +4079,120 @@ function secSetDisabled(el, disabled) {
   if (!el) return;
   if (!!el.disabled !== disabled) el.disabled = disabled;
 }
+function secSetFlag(el, name, on) {
+  if (!el || typeof el.hasAttribute !== 'function' || el.hasAttribute(name) === on) return;
+  if (on) el.setAttribute(name, ''); else el.removeAttribute(name);
+}
+
+// A textarea grows with its words (CSS field-sizing where the browser has it; else its scroll height, once per new value).
+function secGrow(el) {
+  if (!el || !el.style || typeof el.scrollHeight !== 'number' || !el.offsetParent || el.__grownFor === el.value) return;
+  if (typeof CSS !== 'undefined' && CSS.supports && CSS.supports('field-sizing', 'content')) return;
+  el.__grownFor = el.value;
+  el.style.height = 'auto';
+  el.style.height = (el.scrollHeight + el.offsetHeight - el.clientHeight) + 'px';
+}
+
+// ── motion (§9.5, the Schedule's way) ──
+// A list keyed `data-key` is painted through secPaintList: on the same view an edit glides the survivors to their new places
+// once hands are off the list (a remote save never slides a row under a thumb), new rows arrive, and rows whose words changed
+// give a small pop (`pulse`, e.g. after Fill evenly); `inner` does the same for the chips inside each keyed row. A new day or
+// slot is an immediate replace that slides in from that side. Calm motion, no Jelly or no <template> support is a plain
+// replace (and the slide a fade). Its own memo, so an idle renderAll touches nothing.
+function secPaintList(list, html, view, o) {
+  if (!list || (list.__secHtml === html && list.__secView === view)) return;
+  const was = list.__secView;
+  const same = list.__secHtml !== undefined && was === view;
+  list.__secHtml = html;
+  list.__secView = view;
+  const calm = typeof calmMotion === 'function' && calmMotion();
+  if (!same || calm || typeof JellyMotion === 'undefined' || !JellyMotion.flipKeyed || !list.children || !list.children.length) {
+    list.innerHTML = html;
+    if (was !== undefined && !same && o && o.dir) secSlideIn(list, o.dir(was, view));
+    return;
+  }
+  JellyMotion.whenHandsOff(() => {
+    if (list.__secHtml !== html) return;
+    try {
+      const inner = o && o.inner ? secInnerRects(list, o.inner) : null;
+      const words = {};
+      Array.prototype.forEach.call(list.children, (c) => { if (c.dataset && c.dataset.key) words[c.dataset.key] = c.textContent; });
+      const added = JellyMotion.flipKeyed(list, html, 'glide') || [];
+      added.forEach(secArrive);
+      if (inner) secInnerGlide(list, o.inner, inner, added);
+      if (o && o.pulse) {
+        Array.prototype.forEach.call(list.children, (c) => {
+          const k = c.dataset && c.dataset.key;
+          const at = k && words[k] !== undefined && words[k] !== c.textContent ? c.querySelector(o.pulse) : null;
+          if (at) JellyMotion.play(at, 'press', (x) => ({ transform: 'scale(' + (0.94 + 0.06 * x) + ')', transformOrigin: '0 50%' }), { calm: false });
+        });
+      }
+    } catch (e) { list.innerHTML = html; } // a page that cannot morph (no template support) still shows the list
+  });
+}
+function secArrive(n) {
+  if (typeof JellyMotion === 'undefined') return;
+  JellyMotion.play(n, 'arrive', (x) => ({ opacity: Math.min(1, x), transform: 'translateY(' + (-10 * (1 - Math.min(1, x))) + 'px)' }), { calm: [{ opacity: 0 }, { opacity: 1 }] });
+}
+// The list comes in from the side of the day (or slot) that was picked; calm: a short fade.
+function secSlideIn(list, dir) {
+  if (typeof JellyMotion === 'undefined' || !dir) return;
+  JellyMotion.play(list, 'arrive', (x) => ({ opacity: Math.min(1, 0.35 + 0.65 * x), transform: 'translateX(' + (dir * 16 * (1 - x)) + 'px)' }), { calm: [{ opacity: 0.4 }, { opacity: 1 }] });
+}
+// Which way a view moved: 'tue' / 'tue|1' keys in week order (a slot is a third of a day).
+function secViewDir(a, b) {
+  const at = (v) => { const p = String(v).split('|'); return SETUP_DK.indexOf(p[0]) * 3 + (Number(p[1]) || 0); };
+  const d = at(b) - at(a);
+  return d > 0 ? 1 : d < 0 ? -1 : 0;
+}
+// Chips inside each keyed row, by row and chip key, relative to their row (the row may be gliding itself).
+function secInnerRects(list, sel) {
+  const out = {};
+  Array.prototype.forEach.call(list.children, (row) => {
+    const rk = row.dataset && row.dataset.key;
+    if (!rk) return;
+    const rr = row.getBoundingClientRect();
+    row.querySelectorAll(sel).forEach((c) => { const r = c.getBoundingClientRect(); out[rk + '|' + c.dataset.key] = { x: r.left - rr.left, y: r.top - rr.top }; });
+  });
+  return out;
+}
+function secInnerGlide(list, sel, before, added) {
+  Array.prototype.forEach.call(list.children, (row) => {
+    const rk = row.dataset && row.dataset.key;
+    if (!rk || added.indexOf(row) !== -1) return;
+    const rr = row.getBoundingClientRect();
+    row.querySelectorAll(sel).forEach((c) => {
+      const b = before[rk + '|' + c.dataset.key];
+      if (!b) { JellyMotion.play(c, 'arrive', (x) => ({ opacity: Math.min(1, x), transform: 'scale(' + (0.85 + 0.15 * x) + ')' }), { calm: [{ opacity: 0 }, { opacity: 1 }] }); return; }
+      const r = c.getBoundingClientRect();
+      const dx = b.x - (r.left - rr.left);
+      const dy = b.y - (r.top - rr.top);
+      if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+      JellyMotion.play(c, 'glide', (x) => ({ transform: 'translate(' + dx * (1 - x) + 'px,' + dy * (1 - x) + 'px)' }), { calm: false, layer: true });
+    });
+  });
+}
+// The pill that was picked springs into place (the day strip's snap).
+function secSnap(el) {
+  if (el && typeof JellyMotion !== 'undefined') JellyMotion.play(el, 'snap', (x) => ({ transform: 'scale(' + (0.86 + 0.14 * x) + ',' + (1.1 - 0.1 * x) + ')' }), { calm: false });
+}
 
 // ── Meals (§11.10) ──
 
+// One meal: the time and the meal's name, then (live) the dish across the whole row with its emoji button after it — the dish
+// first in the tab order — or (a preview) the dish as plain words. Same row either way: turning the section on only swaps which
+// half shows. The emoji button's `value` is the emoji; it opens a one-row picker under the dish.
 function secMealRowHtml(r) {
   const label = r.it.name;
+  const picks = '<button type="button" class="sec-food sec-food-none" data-emo="" aria-pressed="false">None</button>' +
+    SEC_FOOD.map((f) => '<button type="button" class="sec-food" data-emo="' + f[0] + '" aria-pressed="false" aria-label="' + esc(f[1]) + '">' + f[0] + '</button>').join('');
   return '<div class="cb-row sec-meal" data-key="' + esc(r.key) + '" data-meal="' + esc(r.it.meal) + '">' +
     '<span class="cb-time">' + secTimeHtml(r.it.start) + '</span>' +
-    '<span class="cb-main"><span class="sec-meal-head"><span class="cb-title"><span class="sched-emo" aria-hidden="true">' + (SEC_MEAL_ICONS[r.it.meal] || '🍽️') + '</span><span>' + esc(label) + '</span></span>' +
-    '<input type="text" class="fld-input sec-emoji" data-meal-emoji maxlength="16" autocomplete="off" placeholder="🍽️" aria-label="' + esc(label) + ' — emoji"></span>' +
-    '<input type="text" class="fld-input sec-dish" data-meal-dish maxlength="80" autocomplete="off" enterkeyhint="done" placeholder="What’s being served" aria-label="' + esc(label) + ' — what’s being served"></span>' +
-    '<span class="cb-end"></span></div>';
+    '<span class="cb-main"><span class="cb-title">' + esc(label) + '</span><span class="cb-sub sec-dish-text" data-meal-text></span></span>' +
+    '<span class="cb-end"></span>' +
+    '<span class="sec-dish-line"><textarea class="fld-input sec-dish" data-meal-dish rows="1" maxlength="80" autocomplete="off" enterkeyhint="done" placeholder="What’s being served" aria-label="' + esc(label) + ' — what’s being served"></textarea>' +
+    '<button type="button" class="sec-emo-btn" data-meal-emoji aria-expanded="false" aria-label="' + esc(label) + ' — emoji (optional)"><span class="sec-emo-now" aria-hidden="true"></span><svg class="ico sec-emo-plus" aria-hidden="true"><use href="#i-plus"/></svg></button></span>' +
+    '<span class="sec-emo-pick" role="group" aria-label="An emoji for ' + esc(label) + '" hidden>' + picks + '</span></div>';
 }
 
 function renderMealsScreen() {
@@ -4091,16 +4207,36 @@ function renderMealsScreen() {
   setTextIfChanged(setupEl('meals-lede'), !items.length ? 'No meals on this day'
     : hubPlural(items.length, 'meal', 'meals') + ' · ' + (dishes === items.length ? 'every one has a dish' : dishes ? dishes + ' with a dish' : 'no dishes yet'));
   const rows = items.map((it) => ({ key: 'm-' + it.meal, it, rec: setupMealRecord(tree, dk, it.meal) }));
-  secPaintKeyed(setupEl('meals-list'), rows, secMealRowHtml, (el, r) => {
+  const list = setupEl('meals-list');
+  const newDay = !!list && list.__secView !== undefined && list.__secView !== dk;
+  if (newDay && list.querySelectorAll) list.querySelectorAll('.sec-emo-pick:not([hidden])').forEach((p) => secMealPicker(p.closest('.sec-meal'), false));
+  secPaintKeyed(list, rows, secMealRowHtml, (el, r) => {
     const dish = el.querySelector('[data-meal-dish]');
     const emo = el.querySelector('[data-meal-emoji]');
+    const d = r.rec ? r.rec.dish : '';
+    const e = r.rec && r.rec.emoji ? r.rec.emoji : '';
     // The rows are kept from day to day (same meals), so what differs by day — the time — is patched too.
     setHtmlIfChanged(el.querySelector('.cb-time'), secTimeHtml(r.it.start));
-    secSetValue(dish, r.rec ? r.rec.dish : '');
-    secSetValue(emo, r.rec && r.rec.emoji ? r.rec.emoji : '');
+    secSetValue(dish, d);
+    secSetValue(emo, e);
     secSetDisabled(dish, !live);
     secSetDisabled(emo, !live);
+    // A preview is words, not fields (§8.1.3: static information is never chunky).
+    const text = el.querySelector('[data-meal-text]');
+    setTextIfChanged(text, d ? (e ? e + ' ' : '') + d : 'No dish yet');
+    setHiddenIfChanged(text, live);
+    setHiddenIfChanged(el.querySelector('.sec-dish-line'), !live);
+    if (!live) secMealPicker(el, false);
+    if (emo) {
+      setTextIfChanged(emo.querySelector && emo.querySelector('.sec-emo-now'), emo.value || '');
+      secSetFlag(emo, 'data-empty', !emo.value);
+    }
+    secGrow(dish);
   });
+  if (list) {
+    if (newDay) secSlideIn(list, secViewDir(list.__secView, dk));
+    list.__secView = dk;
+  }
   setHiddenIfChanged(setupEl('meals-empty'), items.length > 0);
   setTextIfChanged(setupEl('meals-empty-text'), 'This day has no meal items. Mark an item as a meal on the Schedule screen and it shows up here.');
   const from = secMealCopySources(dk);
@@ -4135,15 +4271,61 @@ function secMealFocusOut(row) {
   if (!r.ok) { secRefused(r, 'meals'); renderMealsScreen(); }
 }
 
+// The emoji picker under one meal's dish: one open at a time.
+function secMealPicker(row, open) {
+  if (!row || !row.querySelector) return;
+  const btn = row.querySelector('[data-meal-emoji]');
+  const pick = row.querySelector('.sec-emo-pick');
+  if (!btn || !pick || typeof pick.querySelectorAll !== 'function') return;
+  const want = open === undefined ? !!pick.hidden : open;
+  if (want === !pick.hidden) return;
+  if (want) {
+    const list = setupEl('meals-list');
+    if (list && list.querySelectorAll) list.querySelectorAll('.sec-emo-pick:not([hidden])').forEach((p) => { if (p !== pick) secMealPicker(p.closest('.sec-meal'), false); });
+    pick.querySelectorAll('.sec-food').forEach((b) => { const on = String(b.dataset.emo === (btn.value || '')); if (b.getAttribute('aria-pressed') !== on) b.setAttribute('aria-pressed', on); });
+  }
+  pick.hidden = !want;
+  if (typeof btn.setAttribute === 'function') btn.setAttribute('aria-expanded', String(want));
+  if (want && typeof JellyMotion !== 'undefined') JellyMotion.play(pick, 'arrive', (x) => ({ opacity: Math.min(1, x), transform: 'translateY(' + (-6 * (1 - Math.min(1, x))) + 'px)' }), { calm: [{ opacity: 0 }, { opacity: 1 }] });
+}
+
+// A pick is one commit (the dish as typed, this emoji). The focus baseline is moved to what was just written, so the blur that
+// follows doesn't write it a second time.
+function secMealPick(row, emoji) {
+  if (!row || !secLive('meals')) return;
+  const dk = secDayKey('meals');
+  const meal = row.dataset.meal;
+  const btn = row.querySelector('[data-meal-emoji]');
+  secMealPicker(row, false);
+  const t = secMealTyped(row);
+  if (!t.dish) {
+    setupSay('Type the dish first, then pick its emoji.');
+    const d = row.querySelector('[data-meal-dish]');
+    if (d && typeof d.focus === 'function') d.focus();
+    return;
+  }
+  if (btn) btn.value = emoji;
+  const r = mealsSet(dk, meal, t.dish, emoji);
+  if (!r.ok) secRefused(r, 'meals');
+  if (row.contains && row.contains(document.activeElement)) setupFocusIn('meals/' + dk + '/' + meal);
+  renderMealsScreen();
+  if (btn && typeof btn.focus === 'function') { try { btn.focus({ preventScroll: true }); } catch (e) { /* fine */ } }
+  const now = btn && btn.querySelector ? btn.querySelector('.sec-emo-now') : null;
+  if (now && typeof JellyMotion !== 'undefined') JellyMotion.play(now, 'press', (x) => ({ transform: 'scale(' + (0.6 + 0.4 * x) + ')' }), { calm: false });
+}
+
 async function secMealCopy() {
   if (!secLive('meals')) return;
   const dk = secDayKey('meals');
   const from = secMealCopySources(dk);
   if (!from.length) { setupSay('No other day has a menu to copy yet.'); return; }
+  const dishes = (k) => SETUP_MEAL_KEYS.filter((m) => setupMealRecord(setupTree, k, m)).length;
+  // The days are rows to pick from, the way out a quiet line after them (it used to be the first cell of the day grid).
   const pick = await askDialog({
     title: 'Copy a menu to ' + SETUP_DAY_WORDS[dk] + '?',
     body: [SETUP_DAY_WORDS[dk] + '’s dishes are replaced by the day you pick. Undo is right there if it’s the wrong one.'],
-    actions: [{ label: 'Not now', value: 'no', cancel: true }].concat(from.slice(0, 6).map((k) => ({ label: SETUP_DAY_WORDS[k], value: k }))),
+    stack: true,
+    actions: from.slice(0, 6).map((k) => ({ label: SETUP_DAY_WORDS[k] + ' · ' + hubPlural(dishes(k), 'dish', 'dishes'), value: k })).concat([{ label: 'Not now', value: 'no', cancel: true, kind: 'quiet' }]),
   });
   if (!pick || pick === 'no') return;
   const r = mealsCopyDay(pick, dk);
@@ -4151,43 +4333,94 @@ async function secMealCopy() {
 }
 
 // ── Memory verses (§11.11) ──
+// A run sheet: the theme, then a row per competition day ("Mon · Ephesians 2:8–9", the first words under it). A tap opens the
+// verse's sheet; a record is committed when focus leaves the sheet's form (Save, the ✕, the backdrop), so moving between its
+// fields writes nothing half-typed. A day whose words are still the seed's "to be announced", or that has no reference, carries
+// the gold "!" with what's missing.
 
-const SEC_VERSE_FIELDS = [['title', 'Title'], ['text', 'Verse'], ['ref', 'Where it is'], ['video', 'Video link (optional)']];
+const SEC_VERSE_SAY = { text: 'A verse needs its words. Type them, or clear the whole verse.', video: 'Use a link that starts with https://' };
 
-function secVerseGroupHtml(key, label, theme) {
-  const fld = (f, labelText, extra) => '<label class="fld"><span class="fld-label">' + labelText + '</span>' + extra + '</label>';
-  return '<div class="more-sec" data-verse="' + key + '"><div class="gl-head"><h3 class="gl-label">' + esc(label) + '</h3></div><div class="gl sec-verse">' +
-    (theme ? fld('title', 'Title', '<input type="text" class="fld-input" data-verse-field="title" maxlength="80" autocomplete="off" placeholder="Harvest of the Heart">') : '') +
-    fld('text', 'Verse', '<textarea class="fld-input sec-text" data-verse-field="text" rows="3" maxlength="600" placeholder="The words"></textarea>') +
-    fld('ref', 'Where it is', '<input type="text" class="fld-input" data-verse-field="ref" maxlength="80" autocomplete="off" placeholder="Romans 8:1 ESV">') +
-    (theme ? '' : fld('video', 'Video link (optional)', '<input type="url" class="fld-input" data-verse-field="video" maxlength="300" autocomplete="off" inputmode="url" placeholder="https://">')) +
-    '<p class="fld-error" data-verse-error role="alert" hidden></p></div></div>';
+function secVerseIsTba(rec) {
+  return !!(rec && /\bto be announced\b/i.test(String(rec.text || '')));
+}
+
+function secVerseRowHtml(key, rec, live) {
+  const theme = key === 'theme';
+  const tag = live ? 'button' : 'div';
+  const tba = secVerseIsTba(rec);
+  const ref = rec && rec.ref ? rec.ref : '';
+  const named = theme ? [rec && rec.title, ref].filter(Boolean).join(' · ') : ref;
+  const title = named || (rec ? 'No reference yet' : theme ? 'No theme verse yet' : 'No verse yet');
+  const sub = !rec ? 'Not set' : tba ? 'Still says “to be announced”' : rec.text;
+  const warn = !rec || tba || !ref;
+  return '<' + tag + (live ? ' type="button"' : '') + ' class="cb-row sec-row sec-vrow" data-key="v-' + esc(key) + '" data-verse="' + esc(key) + '"' + (warn ? ' data-warn' : '') + '>' +
+    '<span class="cb-time">' + esc(theme ? 'Theme' : SETUP_DAY_WORDS[key].slice(0, 3)) + '</span>' +
+    '<span class="cb-main"><span class="cb-title">' + esc(title) + '</span><span class="cb-sub sec-vtext">' + esc(sub) + '</span></span>' +
+    '<span class="cb-end">' + (live ? '<svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg>' : '') + '</span></' + tag + '>';
 }
 
 function renderVersesScreen() {
   const live = secLive('verses');
   const tree = secTree('verses');
-  const form = setupEl('verses-form');
   const days = hubCompetitionDks();
-  if (form && !secUi.versesBuilt) {
-    form.innerHTML = secVerseGroupHtml('theme', 'Theme verse', true) + days.map((dk) => secVerseGroupHtml(dk, SETUP_DAY_WORDS[dk], false)).join('');
-    secUi.versesBuilt = true;
-  }
   const theme = setupVerseTheme(tree);
-  const have = days.filter((dk) => setupVerseDay(tree, dk)).length;
+  const recs = [['theme', theme]].concat(days.map((dk) => [dk, setupVerseDay(tree, dk)]));
+  const missing = days.filter((dk) => !setupVerseDay(tree, dk)).length;
+  const tba = recs.filter((r) => secVerseIsTba(r[1])).length;
+  const noRef = recs.filter((r) => r[1] && !secVerseIsTba(r[1]) && !r[1].ref).length;
   setTextIfChanged(setupEl('verses-title'), 'Memory verses · ' + CAMP.label);
-  setTextIfChanged(setupEl('verses-headline'), (theme ? 'Theme + ' : '') + hubPlural(have, 'day', 'days'));
-  setTextIfChanged(setupEl('verses-lede'), live ? 'Type the words and where they are. A video link is optional.' : 'The verses that came with the app.');
-  if (!form || !form.querySelectorAll) return;
-  form.querySelectorAll('[data-verse]').forEach((group) => {
-    const key = group.dataset.verse;
-    const rec = key === 'theme' ? theme : setupVerseDay(tree, key);
-    group.querySelectorAll('[data-verse-field]').forEach((input) => {
-      const f = input.dataset.verseField;
-      secSetValue(input, rec && typeof rec[f] === 'string' ? rec[f] : '');
-      secSetDisabled(input, !live);
-    });
-  });
+  // The answer is the headline: the week's theme by name.
+  setTextIfChanged(setupEl('verses-headline'), theme && theme.title && !secVerseIsTba(theme) ? theme.title : theme ? 'Theme to be announced' : 'No theme yet');
+  const bits = [];
+  if (missing) bits.push(hubPlural(missing, 'day has', 'days have') + ' no verse');
+  if (tba) bits.push(hubPlural(tba, 'verse still says', 'verses still say') + ' to be announced');
+  if (noRef) bits.push(hubPlural(noRef, 'verse has', 'verses have') + ' no reference');
+  setTextIfChanged(setupEl('verses-lede'), bits.length ? hubCap(bits.join(' · ')) : live ? 'Every day has its verse. Tap one to change it.' : 'The verses that came with the app.');
+  secPaintList(setupEl('verses-list'), recs.map((r) => secVerseRowHtml(r[0], r[1], live)).join(''), 'all', { pulse: '.cb-sub' });
+}
+
+function secOpenVerse(key, opener) {
+  if (!secLive('verses') || (key !== 'theme' && SETUP_DK.indexOf(key) === -1)) return;
+  secFillVerse(key);
+  setupSheet('sec-verse', opener);
+  const form = setupEl('verses-form');
+  const grow = () => { const t = form && form.querySelector ? form.querySelector('[data-verse-field="text"]') : null; secGrow(t); };
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(grow); else grow();
+}
+// The form shows one verse, filled from the tree when it opens (never on a repaint: that would undo typing in the other fields).
+function secFillVerse(key) {
+  const theme = key === 'theme';
+  const rec = theme ? setupVerseTheme(setupTree) : setupVerseDay(setupTree, key);
+  secUi.verse = { key };
+  const form = setupEl('verses-form');
+  if (form && form.querySelectorAll) {
+    form.dataset.verse = key;
+    form.querySelectorAll('[data-verse-only]').forEach((f) => setHiddenIfChanged(f, f.dataset.verseOnly !== (theme ? 'theme' : 'day')));
+    form.querySelectorAll('[data-verse-field]').forEach((input) => { const f = input.dataset.verseField; input.value = rec && typeof rec[f] === 'string' ? rec[f] : ''; input.__grownFor = undefined; });
+    secVerseSay(form, []);
+  }
+}
+
+// Raised without a tap (Forward, a history entry) it shows the verse its form is on, fresh from the tree. A section that is
+// not edited here shows it read-only.
+function renderSecVerseSheet() {
+  const form = setupEl('verses-form');
+  if (!secUi.verse) secFillVerse(form && form.dataset && form.dataset.verse ? form.dataset.verse : hubCompetitionDks()[0]);
+  const s = secUi.verse;
+  setTextIfChanged(setupEl('sheet-sec-verse-title'), s.key === 'theme' ? 'Theme verse' : (SETUP_DAY_WORDS[s.key] || 'This day') + '’s verse');
+  const live = secLive('verses');
+  if (form && form.querySelectorAll) form.querySelectorAll('[data-verse-field]').forEach((input) => secSetDisabled(input, !live));
+  secSetDisabled(setupEl('sec-verse-save'), !live);
+}
+
+// Save: the blur commits what was typed (secVerseFocusOut); the sheet stays up while anything in it is in error.
+function secVerseSave() {
+  const form = setupEl('verses-form');
+  const a = document.activeElement;
+  if (form && a && form.contains && form.contains(a) && typeof a.blur === 'function') a.blur();
+  const err = form && form.querySelector ? form.querySelector('[data-verse-error]') : null;
+  if (err && !err.hidden) return;
+  shellSheetClose('sec-verse');
 }
 
 function secVerseGroup(target) {
@@ -4196,11 +4429,36 @@ function secVerseGroup(target) {
 function secVersePath(group) {
   return group.dataset.verse === 'theme' ? 'verses/theme' : 'verses/days/' + group.dataset.verse;
 }
-// The group's fields as a record to hand versesSetTheme / versesSetDay.
+// The group's fields as a record to hand versesSetTheme / versesSetDay (a field this kind of verse doesn't have is hidden).
 function secVerseTyped(group) {
   const rec = {};
-  group.querySelectorAll('[data-verse-field]').forEach((input) => { rec[input.dataset.verseField] = input.value; });
+  group.querySelectorAll('[data-verse-field]').forEach((input) => {
+    if (input.closest && input.closest('[hidden]')) return;
+    rec[input.dataset.verseField] = input.value;
+  });
   return rec;
+}
+// Every problem at once (§8.1.6): each field in error is marked (aria-invalid, the danger edge) and the words sit right under
+// the first of them.
+function secVerseProblems(typed, theme) {
+  const t = (k) => String(typed[k] || '').trim();
+  const out = [];
+  if (!t('text') && (t('ref') || (theme && t('title')) || (!theme && t('video')))) out.push({ field: 'text', say: SEC_VERSE_SAY.text });
+  if (!theme && t('video') && !(typeof safeVideoUrl === 'function' && safeVideoUrl(t('video')) && /^https:\/\//.test(t('video')))) out.push({ field: 'video', say: SEC_VERSE_SAY.video });
+  return out;
+}
+function secVerseSay(group, problems) {
+  const err = group.querySelector('[data-verse-error]');
+  setTextIfChanged(err, problems.map((p) => p.say).join(' '));
+  setHiddenIfChanged(err, !problems.length);
+  group.querySelectorAll('[data-verse-field]').forEach((input) => {
+    if (typeof input.setAttribute !== 'function') return;
+    const bad = problems.some((p) => p.field === input.dataset.verseField);
+    if (bad) { input.setAttribute('aria-invalid', 'true'); input.setAttribute('aria-describedby', 'verse-error'); } else if (input.hasAttribute('aria-invalid')) { input.removeAttribute('aria-invalid'); input.removeAttribute('aria-describedby'); }
+  });
+  const first = problems.length ? group.querySelector('[data-verse-field="' + problems[0].field + '"]') : null;
+  const fld = first && first.closest ? first.closest('.fld') : null;
+  if (err && fld && fld.parentNode && fld.nextSibling !== err) fld.parentNode.insertBefore(err, fld.nextSibling);
 }
 function secVerseFocusIn(group) {
   if (!group || !secLive('verses')) return;
@@ -4212,30 +4470,33 @@ function secVerseFocusOut(group) {
   const typed = secVerseTyped(group);
   const r0 = versesRecord(typed, theme);
   const f = setupFocusOut(secVersePath(group), r0.rec || null);
-  const err = group.querySelector('[data-verse-error]');
-  const say = (t) => { setTextIfChanged(err, t); setHiddenIfChanged(err, !t); };
   // An error is said every time (the field was typed, the commit refused): the director fixes it where it is.
-  if (!f.changed && !r0.error) { say(''); return; }
+  if (!f.changed && !r0.error) { secVerseSay(group, []); return; }
   const r = theme ? versesSetTheme(typed) : versesSetDay(group.dataset.verse, typed);
-  if (r.ok) { say(''); return; }
-  if (r.reason === 'text') say('A verse needs its words. Type them, or clear the whole verse.');
-  else if (r.reason === 'video') say('Use a link that starts with https://');
-  else secRefused(r, 'verses');
+  if (r.ok) { secVerseSay(group, []); return; }
+  if (r.reason === 'text' || r.reason === 'video') {
+    const all = secVerseProblems(typed, theme);
+    secVerseSay(group, all.length ? all : [{ field: r.reason, say: SEC_VERSE_SAY[r.reason] }]);
+  } else secRefused(r, 'verses');
 }
 
 // ── Cleanup rota (§11.12) ──
 
+// A team in words: its shield or flag, then its name (the teams sheet's marks; senior's coloured circles were hue alone, §8.4).
+function secTeamHtml(id, name) {
+  return '<span class="sec-team">' + teamMarkHtml(id, { size: 20 }) + '<span>' + esc(name) + '</span></span>';
+}
 function secTeamWords(ids) {
-  return ids.map((id) => teamEmoji(id) + ' ' + esc(teamName(id))).join(' + ');
+  return ids.map((id) => secTeamHtml(id, teamName(id))).join('<span class="sec-plus" aria-hidden="true"> + </span>');
 }
 
 function secCleanupRowHtml(it, dk, tree, live) {
   const ids = setupCleanupIds(tree, dk, it.meal);
   const tag = live ? 'button' : 'div';
   const warn = !ids.length && SETUP_DK.some((k) => setupCleanupTracked(tree, k));
-  return '<' + tag + (live ? ' type="button"' : '') + ' class="cb-row sec-row" data-meal="' + esc(it.meal) + '"' + (warn ? ' data-warn' : '') + '>' +
+  return '<' + tag + (live ? ' type="button"' : '') + ' class="cb-row sec-row" data-key="c-' + esc(it.meal) + '" data-meal="' + esc(it.meal) + '"' + (warn ? ' data-warn' : '') + '>' +
     '<span class="cb-time">' + secTimeHtml(it.start) + '</span>' +
-    '<span class="cb-main"><span class="cb-title"><span class="sched-emo" aria-hidden="true">' + (SEC_MEAL_ICONS[it.meal] || '🍽️') + '</span><span>' + esc(it.name) + '</span></span>' +
+    '<span class="cb-main"><span class="cb-title">' + esc(it.name) + '</span>' +
     '<span class="cb-sub">' + (ids.length ? secTeamWords(ids) : 'No team yet') + '</span></span>' +
     '<span class="cb-end">' + (live ? '<svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg>' : '') + '</span></' + tag + '>';
 }
@@ -4252,7 +4513,7 @@ function renderCleanupScreen() {
   setTextIfChanged(setupEl('cleanup-headline'), SETUP_DAY_WORDS[dk]);
   setTextIfChanged(setupEl('cleanup-lede'), !items.length ? 'No meals on this day'
     : placed === items.length ? 'Every meal has a team' : placed ? placed + ' of ' + items.length + ' meals have a team' : 'No teams yet');
-  setHtmlIfChanged(setupEl('cleanup-list'), items.map((it) => secCleanupRowHtml(it, dk, tree, live)).join(''));
+  secPaintList(setupEl('cleanup-list'), items.map((it) => secCleanupRowHtml(it, dk, tree, live)).join(''), dk, { dir: secViewDir, pulse: '.cb-sub' });
   setHiddenIfChanged(setupEl('cleanup-empty'), items.length > 0);
   setTextIfChanged(setupEl('cleanup-empty-text'), 'This day has no meal items. Mark an item as a meal on the Schedule screen and it shows up here.');
   // The fairness line, over the whole week.
@@ -4273,16 +4534,16 @@ function secOpenTeams(meal, opener) {
   setupSheet('sec-teams', opener);
 }
 
+// The toggles are written once (per set of teams) and their aria-pressed patched, so a tap pops the very button tapped.
 function renderSecTeamsSheet() {
   const s = secUi.teams;
   if (!s) return;
   setTextIfChanged(setupEl('sheet-sec-teams-title'), SETUP_DAY_WORDS[s.dk] + ' · ' + s.name);
-  setHtmlIfChanged(setupEl('sec-teams'), teamIds().map((id) =>
-    '<button type="button" class="si-team" data-team="' + esc(id) + '" aria-pressed="' + (s.picked.indexOf(id) !== -1) + '">' + teamMarkHtml(id, { size: 24 }) + '<span>' + esc(teamName(id)) + '</span></button>').join(''));
-  const changed = JSON.stringify(s.picked.slice().sort()) !== JSON.stringify(s.was.slice().sort());
-  const save = setupEl('sec-teams-save');
-  setTextIfChanged(save, s.picked.length ? 'Save' : 'No team yet');
-  if (save) save.setAttribute('aria-disabled', String(!changed));
+  const box = setupEl('sec-teams');
+  setHtmlIfChanged(box, teamIds().map((id) =>
+    '<button type="button" class="si-team" data-team="' + esc(id) + '" aria-pressed="false">' + teamMarkHtml(id, { size: 24 }) + '<span>' + esc(teamName(id)) + '</span></button>').join(''));
+  if (box && box.querySelectorAll) box.querySelectorAll('.si-team[data-team]').forEach((b) => { const on = String(s.picked.indexOf(b.dataset.team) !== -1); if (b.getAttribute('aria-pressed') !== on) b.setAttribute('aria-pressed', on); });
+  // Save is always a live verb (it just closes when nothing changed): a dashed, disabled-looking Save read as "off" (§8.3).
   setHiddenIfChanged(setupEl('sec-teams-clear'), !s.was.length || !s.picked.length);
 }
 
@@ -4296,6 +4557,9 @@ function secTeamsToggle(id) {
   setTextIfChanged(note, '');
   setHiddenIfChanged(note, true);
   renderSecTeamsSheet();
+  const box = setupEl('sec-teams');
+  const btn = box && box.querySelector ? box.querySelector('.si-team[data-team="' + id + '"]') : null;
+  if (btn && typeof JellyMotion !== 'undefined') JellyMotion.play(btn, 'press', (x) => ({ transform: 'scale(' + (0.9 + 0.1 * x) + ')' }), { calm: false });
 }
 
 function secTeamsSave(clear) {
@@ -4308,27 +4572,39 @@ function secTeamsSave(clear) {
   shellSheetClose('sec-teams');
 }
 
-// Fill evenly: a preview in words first (one line a day, the fairness line, any rule it had to bend), then Apply or Cancel.
+// Fill evenly: ONE question with the preview in it — a hairline table, a day label then one row per meal (time · meal · the
+// teams' marks and short names), the fairness line, any rule it had to bend — then Apply or Not now. When every meal already
+// has a team it says that it replaces them all (no second question: Undo covers a mistake). The dialog keeps its two buttons
+// in reach at the foot however long the table is (.ask-actions is sticky). `body` is the same preview in words, which is what
+// the browser's own confirm shows where Jelly's dialog never loaded.
 async function secFillEvenly() {
   if (!secLive('cleanup')) return;
   const slots = secCleanupSlots(setupTree);
   if (!slots.length) return;
-  let redo = false;
-  if (!slots.some((s) => !s.have.length)) {
-    const again = await askDialog({
-      title: 'Redo the whole rota evenly?', body: ['Every meal already has a team. This starts over and replaces them all.'],
-      actions: [{ label: 'Keep it as it is', value: 'no', cancel: true }, { label: 'Redo it', value: 'redo', kind: 'gold' }],
-    });
-    if (again !== 'redo') return;
-    redo = true;
-  }
+  const redo = !slots.some((s) => !s.have.length);
   const res = rotaFillEvenly({ teams: teamIds(), redo, slots: slots.map((s) => ({ day: s.day, meal: s.meal, want: Math.max(1, s.have.length), have: s.have })) });
-  const short = (id) => teamEmoji(id) + ' ' + (teamShort(id) || teamName(id));
-  const lines = hubCompetitionDks().map((dk) => SETUP_DAY_WORDS[dk] + ': ' + res.slots.filter((s) => s.day === dk).map((s) => (SETUP_MEAL_NAMES[s.meal] || s.meal) + ' ' + (s.teams.map(short).join(' + ') || '—')).join(' · '));
-  const fair = rotaFairness(res.slots, teamIds(), (id) => teamShort(id) || teamName(id), (k) => SETUP_DAY_WORDS[k]);
-  const body = lines.concat([fair.text]);
-  if (res.relaxed.length) body.push('A few meals couldn’t follow every rule (' + res.relaxed.map((r) => SETUP_DAY_WORDS[r.split(' ')[0]] + ' ' + r.split(' ')[1]).join(', ') + '): there aren’t enough teams to keep each one off the same meal two days running.');
-  const pick = await askDialog({ title: 'Fill the rota evenly?', body, actions: [{ label: 'Cancel', value: 'no', cancel: true }, { label: 'Apply', value: 'apply', kind: 'gold' }] });
+  const shortName = (id) => teamShort(id) || teamName(id);
+  const days = hubCompetitionDks().filter((dk) => res.slots.some((s) => s.day === dk));
+  const mealName = (m) => SETUP_MEAL_NAMES[m] || m;
+  const lines = days.map((dk) => SETUP_DAY_WORDS[dk] + ': ' + res.slots.filter((s) => s.day === dk).map((s) => mealName(s.meal) + ' ' + (s.teams.map(shortName).join(' + ') || '—')).join(' · '));
+  const fair = rotaFairness(res.slots, teamIds(), shortName, (k) => SETUP_DAY_WORDS[k]);
+  const relaxed = res.relaxed.length ? 'A few meals couldn’t follow every rule (' + res.relaxed.map((r) => SETUP_DAY_WORDS[r.split(' ')[0]] + ' ' + r.split(' ')[1]).join(', ') + '): there aren’t enough teams to keep each one off the same meal two days running.' : '';
+  const lede = redo ? 'This replaces every meal’s team.' : '';
+  const table = days.map((dk) => {
+    const items = secMealItems(SETUP_DK.indexOf(dk));
+    return '<div class="ask-tday"><p class="ask-thead">' + esc(SETUP_DAY_WORDS[dk]) + '</p>' + res.slots.filter((s) => s.day === dk).map((s) => {
+      const it = items.find((x) => x.meal === s.meal);
+      return '<div class="ask-trow"><span class="ask-ttime">' + (it ? esc(setupClock(it.start)) : '') + '</span><span class="ask-tmeal">' + esc(it ? it.name : mealName(s.meal)) + '</span>' +
+        '<span class="ask-tteams">' + (s.teams.length ? s.teams.map((id) => secTeamHtml(id, shortName(id))).join('') : '—') + '</span></div>';
+    }).join('') + '</div>';
+  }).join('');
+  const html = (lede ? '<p>' + esc(lede) + '</p>' : '') + '<div class="ask-table">' + table + '</div><p>' + esc(fair.text) + '</p>' + (relaxed ? '<p>' + esc(relaxed) + '</p>' : '');
+  const pick = await askDialog({
+    title: redo ? 'Redo the whole rota evenly?' : 'Fill the rota evenly?',
+    body: (lede ? [lede] : []).concat(lines, [fair.text], relaxed ? [relaxed] : []),
+    html,
+    actions: [{ label: 'Not now', value: 'no', cancel: true }, { label: 'Apply', value: 'apply', kind: 'gold' }],
+  });
   if (pick !== 'apply') return;
   const changed = res.slots.filter((s, i) => JSON.stringify(s.teams) !== JSON.stringify(slots[i].have));
   if (!changed.length) { setupSay('The rota was already even.'); return; }
@@ -4342,8 +4618,9 @@ function secLinkTargets() {
   return hubMembers().filter((m) => !m.pending).map((m) => ({ key: m.key, name: m.name }));
 }
 
-// One station's block: its name, its people as chips (tap = take off), "Add someone", and a Link row for a typed name that
-// nearly matches somebody on the list.
+// One station's block, keyed `st-<id>`: its name, its people as chips keyed `p-<pid>` (tap = take off), the quiet "+ Add
+// someone" line, and a row for a typed name that nearly matches somebody on the list. In a preview the people are one plain
+// line of names ("Sam, Sofia"): static information is never chunky (§8.1.3).
 function secStationHtml(row, live, members) {
   const emoji = esc(row.emoji || '🌟');
   const head = (live ? '<button type="button" class="sec-st-name" data-sec-station="' + esc(row.id) + '">' : '<div class="sec-st-name">') +
@@ -4351,13 +4628,16 @@ function secStationHtml(row, live, members) {
   const links = [];
   const chips = row.people.map((p) => {
     const near = live && p.typed ? setupNearMember(p.name, members) : null;
-    if (near) links.push('<div class="sec-link"><span>' + esc(p.name) + ' looks like ' + esc(String(near.name).trim().split(/\s+/)[0]) + ' on your list.</span><button type="button" class="btn btn-sm" data-sec-link="' + esc(p.pid) + '" data-sec-member="' + esc(near.key) + '">Link</button></div>');
+    const first = near ? String(near.name).trim().split(/\s+/)[0] : '';
+    if (near) links.push('<div class="sec-link"><span>' + esc(p.name) + ' looks like ' + esc(first) + ' on your list.</span><button type="button" class="btn btn-sm" data-sec-link="' + esc(p.pid) + '" data-sec-member="' + esc(near.key) + '">Yes, it’s ' + esc(first) + '</button></div>');
     return live
-      ? '<button type="button" class="sec-chip" data-sec-off="' + esc(p.pid) + '" data-st="' + esc(row.id) + '"' + (near ? ' data-warn' : '') + ' aria-label="Take ' + esc(p.name) + ' off ' + esc(row.name) + '"><span>' + esc(p.name) + '</span><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>'
+      ? '<button type="button" class="sec-chip" data-key="p-' + esc(p.pid) + '" data-sec-off="' + esc(p.pid) + '" data-st="' + esc(row.id) + '"' + (near ? ' data-warn' : '') + ' aria-label="Take ' + esc(p.name) + ' off ' + esc(row.name) + '"><span>' + esc(p.name) + '</span><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>'
       : '<span class="sec-chip">' + esc(p.name) + '</span>';
   }).join('');
-  const add = live ? '<button type="button" class="sec-chip sec-chip-add" data-sec-add="' + esc(row.id) + '"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span>Add someone</span></button>' : '';
-  return '<div class="sec-st" data-st="' + esc(row.id) + '">' + head + '<div class="sec-st-people">' + chips + add + '</div>' + links.join('') + '</div>';
+  const people = live ? '<div class="sec-st-people">' + chips + '</div>'
+    : '<p class="sec-st-people" data-plain>' + (chips || '<span class="sec-nobody">Nobody yet</span>') + '</p>';
+  const add = live ? '<button type="button" class="sec-add-link" data-sec-add="' + esc(row.id) + '"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span>Add someone</span></button>' : '';
+  return '<div class="sec-st" data-key="st-' + esc(row.id) + '" data-st="' + esc(row.id) + '">' + head + people + add + links.join('') + '</div>';
 }
 
 function renderElectivesScreen() {
@@ -4372,18 +4652,25 @@ function renderElectivesScreen() {
   setTextIfChanged(setupEl('electives-lede'), rows.length
     ? hubPlural(rows.length, 'station', 'stations') + ' · ' + hubPlural(rows.reduce((n, r) => n + r.people.length, 0), 'person', 'people')
     : 'No stations in this elective yet');
-  // Which elective: each segment names its time (from the schedule's Elective item).
+  // Which elective: each segment is its number over its time (from the schedule's Elective item); the label above says what
+  // the numbers are, so the segments still fit at 200% text.
   const seg = setupEl('elec-slots');
   if (seg && seg.querySelectorAll) {
     seg.querySelectorAll('.seg-btn[data-slot]').forEach((btn) => {
       const n = Number(btn.dataset.slot);
       const sel = n === slot;
+      const at = setupClock(electiveSlotStart(n, dow));
       if (btn.getAttribute('aria-selected') !== String(sel)) btn.setAttribute('aria-selected', String(sel));
-      setHtmlIfChanged(btn, 'Elective ' + (n + 1) + '<small>' + esc(setupClock(electiveSlotStart(n, dow))) + '</small>');
+      setHtmlIfChanged(btn, '<span class="seg-n">' + (n + 1) + '</span><small>' + esc(at) + '</small>');
+      const label = 'Elective ' + (n + 1) + ', ' + at;
+      if (btn.getAttribute('aria-label') !== label) btn.setAttribute('aria-label', label);
     });
+    if (secUi.slotShown !== undefined && secUi.slotShown !== slot) secSnap(seg.querySelector('.seg-btn[aria-selected="true"]'));
+    secUi.slotShown = slot;
   }
   const members = live ? secLinkTargets() : [];
-  setHtmlIfChanged(setupEl('elec-list'), rows.map((r) => secStationHtml(r, live, members)).join(''));
+  secPaintList(setupEl('elec-list'), rows.map((r) => secStationHtml(r, live, members)).join(''), dk + '|' + slot, { dir: secViewDir, inner: '.sec-st-people > [data-key]' });
+  setHiddenIfChanged(setupEl('elec-hint'), !(live && rows.some((r) => r.people.length)));
   setHiddenIfChanged(setupEl('elec-empty'), rows.length > 0);
   setTextIfChanged(setupEl('elec-empty-text'), live ? 'Add the stations that run at this time.' : 'No stations at this time.');
   // "On break": the people on this day's sheet who are at no station in this slot (the app calls the same line Break).
@@ -4398,11 +4685,23 @@ function renderElectivesScreen() {
 
 // Everyone on the day's sheet (any slot) who is at no station in this one, A to Z.
 function secBreakNames(tree, dk, slot) {
+  return secBreakPeople(tree, dk, slot).map((p) => p.name);
+}
+// The same people with who they are: a member's key (never for a typed name), so adding them back keeps the key.
+function secBreakPeople(tree, dk, slot) {
   const at = {};
   setupElectiveRows(tree, dk, slot).forEach((r) => r.people.forEach((p) => { at[p.name.toLowerCase()] = true; }));
   const out = [];
-  for (let s = 0; s < 3; s++) setupElectiveRows(tree, dk, s).forEach((r) => r.people.forEach((p) => { if (!at[p.name.toLowerCase()] && out.indexOf(p.name) === -1) out.push(p.name); }));
-  return out.sort();
+  const seen = {};
+  for (let s = 0; s < 3; s++) {
+    setupElectiveRows(tree, dk, s).forEach((r) => r.people.forEach((p) => {
+      const k = p.name.toLowerCase();
+      if (at[k] || seen[k]) return;
+      seen[k] = true;
+      out.push({ name: p.name, key: p.typed ? '' : p.pid });
+    }));
+  }
+  return out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 
 function secOpenAddPerson(st, opener) {
@@ -4413,17 +4712,46 @@ function secOpenAddPerson(st, opener) {
   setupSheet('sec-person', opener);
 }
 
+// Who could go to this station: first the people on break in this elective (members and typed names alike — the ones a
+// director is looking for), then everyone else on the list, each with where they already are ("At Laser Tag": adding them
+// here books them twice) or their team. The icon is the team's mark, or the first letter in a disc.
+function secPersonChoices(s) {
+  const rows = setupElectiveRows(setupTree, s.dk, s.slot);
+  const row = rows.find((r) => r.id === s.st);
+  const here = {};
+  ((row && row.people) || []).forEach((p) => { here[p.pid] = true; here[p.name.toLowerCase()] = true; });
+  const at = {};
+  rows.forEach((r) => r.people.forEach((p) => { if (r.id === s.st) return; at[p.name.toLowerCase()] = r.name; if (!p.typed) at[p.pid] = r.name; }));
+  const dir = memberDirectory && typeof memberDirectory === 'object' ? memberDirectory : {};
+  const out = [];
+  const taken = {};
+  secBreakPeople(setupTree, s.dk, s.slot).forEach((p) => {
+    const k = p.name.toLowerCase();
+    if (here[k] || (p.key && here[p.key])) return;
+    taken[k] = true;
+    if (p.key) taken[p.key] = true;
+    const m = p.key && dir[p.key];
+    out.push({ key: p.key, name: p.name, teamId: (m && m.teamId) || '', sub: 'On break' });
+  });
+  hubMembers().filter((m) => m.name && !here[m.key] && !here[m.name.toLowerCase()] && !taken[m.key] && !taken[m.name.toLowerCase()])
+    .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()))
+    .forEach((m) => {
+      const where = at[m.key] || at[m.name.toLowerCase()];
+      out.push({ key: m.pending ? '' : m.key, name: m.name, teamId: m.teamId, sub: where ? 'At ' + where : m.teamId ? teamName(m.teamId) : '' });
+    });
+  return out;
+}
+
 function renderSecPersonSheet() {
   const s = secUi.person;
   if (!s) return;
   const row = setupElectiveRows(setupTree, s.dk, s.slot).find((r) => r.id === s.st);
   setTextIfChanged(setupEl('sheet-sec-person-title'), 'Add to ' + (row ? row.name : 'this station'));
-  const here = {};
-  ((row && row.people) || []).forEach((p) => { here[p.pid] = true; here[p.name.toLowerCase()] = true; });
-  const people = hubMembers().filter((m) => m.name && !here[m.key] && !here[m.name.toLowerCase()]).sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+  const people = secPersonChoices(s);
   setHtmlIfChanged(setupEl('sec-person-list'), people.map((m) =>
-    '<button type="button" class="gl-row" data-sec-person="' + esc(m.pending ? '' : m.key) + '" data-sec-name="' + esc(m.name) + '"><span class="gl-text"><span class="gl-title">' + esc(m.name) + '</span>' +
-    (m.teamId ? '<span class="gl-sub">' + esc(teamName(m.teamId)) + '</span>' : '') + '</span></button>').join(''));
+    '<button type="button" class="gl-row" data-sec-person="' + esc(m.key) + '" data-sec-name="' + esc(m.name) + '"><span class="gl-ico" aria-hidden="true">' +
+    (m.teamId && teamIds().indexOf(m.teamId) !== -1 ? teamMarkHtml(m.teamId, { size: 24 }) : '<span class="sec-initial">' + esc(m.name.trim().charAt(0).toUpperCase()) + '</span>') + '</span>' +
+    '<span class="gl-text"><span class="gl-title">' + esc(m.name) + '</span>' + (m.sub ? '<span class="gl-sub">' + esc(m.sub) + '</span>' : '') + '</span></button>').join(''));
   setHiddenIfChanged(setupEl('sec-person-empty'), people.length > 0);
 }
 
@@ -4512,6 +4840,23 @@ async function secElectiveSame() {
   if (!r.ok) secRefused(r, 'electives');
 }
 
+// Tap a person off: the chip squashes out (scale and fade; calm: a fade), then the commit; the rest glide into the gap once hands
+// are off the list (secPaintList). A refused commit brings the chip back.
+function secChipOff(chip) {
+  if (!chip || (chip.hasAttribute && chip.hasAttribute('data-leaving')) || !secLive('electives')) return;
+  const dk = secDayKey('electives');
+  const slot = secSlotNow();
+  const st = chip.dataset.st;
+  const pid = chip.dataset.secOff;
+  const go = () => {
+    const r = electivePersonRemove(dk, slot, st, pid);
+    if (!r.ok) { secSetFlag(chip, 'data-leaving', false); if (chip.style) chip.style.visibility = ''; secRefused(r, 'electives'); }
+  };
+  secSetFlag(chip, 'data-leaving', true);
+  if (typeof JellyMotion === 'undefined' || !JellyMotion.playOut) { go(); return; }
+  JellyMotion.playOut(chip, (x) => ({ opacity: 1 - x, transform: 'scale(' + (1 - 0.04 * x) + ')' }), 150, () => { if (chip.style) chip.style.visibility = 'hidden'; go(); });
+}
+
 function secLinkPerson(pid, key) {
   const m = secLinkTargets().find((x) => x.key === key);
   if (!m) return;
@@ -4538,8 +4883,8 @@ async function secTurnOnFlow(sections) {
   const nouns = hubJoin(want.map((s) => HUB_SECTION_NOUNS[s]));
   const go = await askDialog({
     title: 'Edit ' + nouns + ' here?',
-    body: ['Turning this on changes nothing anyone can see until someone edits something.', 'The first time, a restore point is saved first. The screen’s “Use the original … again” puts it all back.'],
-    actions: [{ label: 'Not yet', value: 'no', cancel: true }, { label: 'Turn on', value: 'go', kind: 'gold' }],
+    body: ['Turning ' + (want.length > 1 ? 'them' : 'this') + ' on changes nothing anyone can see until someone edits something.', 'The first time, a restore point is saved first. Each screen has a “Use the original” button at the bottom that puts it all back.'],
+    actions: [{ label: 'Not now', value: 'no', cancel: true }, { label: 'Turn on', value: 'go', kind: 'gold' }],
   });
   if (go !== 'go') return { ok: false, reason: 'cancelled' };
   const opts = {};
@@ -4550,7 +4895,7 @@ async function secTurnOnFlow(sections) {
       const running = await askDialog({
         title: 'Is a camp week running right now?',
         body: 'No dates are set, so the app can’t tell. Turning on editing mid-week changes what these are made from while counselors are relying on them.',
-        actions: [{ label: 'Not yet', value: 'no', kind: 'gold' }, { label: 'Yes, it’s running', value: 'yes' }, { label: 'Cancel', value: 'cancel', cancel: true }],
+        actions: [{ label: 'Not yet', value: 'no', kind: 'gold' }, { label: 'Yes, it’s running', value: 'yes' }, { label: 'Don’t turn it on', value: 'cancel', cancel: true }],
       });
       if (running === 'cancel' || running === null) return { ok: false, reason: 'cancelled' };
       opts.campRunning = running === 'yes';
@@ -4583,7 +4928,7 @@ async function secUseOriginal(section) {
   const go = await askDialog({
     title: 'Use the original ' + noun.replace(/^the /, '') + ' again?',
     body: ['Everyone sees what came with the app. Your changes are kept, and Turn on brings them back.'],
-    actions: [{ label: 'Keep editing here', value: 'no', cancel: true }, { label: 'Use the original', value: 'go', kind: 'gold' }],
+    actions: [{ label: 'Not now', value: 'no', cancel: true }, { label: 'Use the original', value: 'go', kind: 'gold' }],
   });
   if (go !== 'go') return { ok: false, reason: 'cancelled' };
   const r = setupUseOriginal([section]);
@@ -4609,15 +4954,29 @@ function wireSecScreens() {
   if (meals) {
     meals.addEventListener('focusin', (e) => secMealFocusIn(q(e, '.sec-meal')));
     meals.addEventListener('focusout', (e) => secMealFocusOut(q(e, '.sec-meal')));
-    meals.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target && typeof e.target.blur === 'function') { e.preventDefault(); e.target.blur(); } });
+    // Enter finishes the dish (one line; it only wraps to show it all). Escape folds an open emoji picker.
+    meals.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { const row = q(e, '.sec-meal'); if (row && row.querySelector('.sec-emo-pick:not([hidden])')) { e.stopPropagation(); secMealPicker(row, false); } return; }
+      if (e.key === 'Enter' && e.target && e.target.matches && e.target.matches('[data-meal-dish]') && typeof e.target.blur === 'function') { e.preventDefault(); e.target.blur(); }
+    });
+    meals.addEventListener('input', (e) => { if (e.target && e.target.matches && e.target.matches('[data-meal-dish]')) secGrow(e.target); });
+    meals.addEventListener('click', (e) => {
+      let b;
+      if ((b = q(e, '.sec-food[data-emo]'))) secMealPick(q(e, '.sec-meal'), b.dataset.emo);
+      else if ((b = q(e, '[data-meal-emoji]'))) secMealPicker(q(e, '.sec-meal'));
+    });
   }
   on('#meals-copy', 'click', () => { secMealCopy(); });
-  // Verses.
+  // Verses: a row opens its sheet; the sheet's form commits when focus leaves it (not between its own fields).
+  on('#verses-list', 'click', (e) => { const b = q(e, 'button.sec-vrow[data-verse]'); if (b) secOpenVerse(b.dataset.verse, b); });
   const verses = setupEl('verses-form');
   if (verses) {
-    verses.addEventListener('focusin', (e) => secVerseFocusIn(secVerseGroup(e.target)));
-    verses.addEventListener('focusout', (e) => secVerseFocusOut(secVerseGroup(e.target)));
+    verses.addEventListener('focusin', (e) => { if (!(e.relatedTarget && verses.contains(e.relatedTarget))) secVerseFocusIn(secVerseGroup(e.target)); });
+    verses.addEventListener('focusout', (e) => { if (!(e.relatedTarget && verses.contains(e.relatedTarget))) secVerseFocusOut(secVerseGroup(e.target)); });
+    verses.addEventListener('input', (e) => { if (e.target && e.target.matches && e.target.matches('textarea')) secGrow(e.target); });
+    verses.addEventListener('submit', (e) => { e.preventDefault(); secVerseSave(); });
   }
+  on('#sec-verse-save', 'click', () => secVerseSave());
   // Cleanup.
   on('#cleanup-list', 'click', (e) => { const b = q(e, 'button.sec-row[data-meal]'); if (b) secOpenTeams(b.dataset.meal, b); });
   on('#cleanup-fill', 'click', () => { secFillEvenly(); });
@@ -4629,7 +4988,7 @@ function wireSecScreens() {
   on('#elec-slots', 'click', (e) => { const b = q(e, '.seg-btn[data-slot]'); if (b) secSetSlot(Number(b.dataset.slot)); });
   on('#elec-list', 'click', (e) => {
     let b;
-    if ((b = q(e, '[data-sec-off]'))) { const r = electivePersonRemove(secDayKey('electives'), secSlotNow(), b.dataset.st, b.dataset.secOff); if (!r.ok) secRefused(r, 'electives'); }
+    if ((b = q(e, '[data-sec-off]'))) secChipOff(b);
     else if ((b = q(e, '[data-sec-add]'))) secOpenAddPerson(b.dataset.secAdd, b);
     else if ((b = q(e, '[data-sec-station]'))) secOpenStation('edit', b.dataset.secStation, b);
     else if ((b = q(e, '[data-sec-link]'))) secLinkPerson(b.dataset.secLink, b.dataset.secMember);
