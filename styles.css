@@ -3963,6 +3963,475 @@ button.cb-row:active {
   color: var(--color-danger-text);
 }
 
+/* ── Rain plan (§11.6) ── */
+.setup-screen.rain {
+  padding-bottom: 0;
+}
+/* Now: the row's time column says it, in link blue with a dot, where the
+   end time would be (the end moves into the sub). */
+.rain-now {
+  display: flex !important;
+  align-items: center;
+  gap: 5px;
+  color: var(--link) !important;
+  font-weight: 800 !important;
+}
+.rain-now::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.rain-row[data-when="past"] .cb-title,
+.rain-row[data-when="past"] .cb-time {
+  color: var(--ink-2);
+}
+/* What it was, struck: the new time is in the time column. */
+.rain-was {
+  margin-left: 6px;
+  color: var(--ink-2);
+  text-decoration-thickness: 1.5px;
+}
+.cb-sub > .rain-was:first-child {
+  margin-left: 0;
+}
+/* A games item's games, right under it: indented to the titles, no hairline
+   between an item and its own games (they read as one), each a full 44px
+   target that opens the move picker. */
+.rain-game {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  width: 100%;
+  min-height: var(--target);
+  margin: 0;
+  padding: 2px 14px 2px calc(14px + 4.75rem + var(--s-3) + var(--emo-col) + var(--emo-gap));
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: 650 0.9375rem/1.25 var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.rain-game:last-child,
+.rain-game:has(+ :not(.rain-game)) {
+  padding-bottom: 8px;
+}
+.rain-row + .rain-game {
+  margin-top: -6px;
+}
+button.rain-game:active {
+  background: color-mix(in srgb, var(--ink) 6%, var(--sheet));
+}
+.rain-game-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: var(--emo-col) minmax(0, 1fr);
+  column-gap: var(--emo-gap);
+  margin-left: calc(-1 * (var(--emo-col) + var(--emo-gap)));
+}
+.rain-game-act {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  max-width: 55%;
+  color: var(--link);
+  font: 750 0.875rem/1.2 var(--font-ui);
+  text-align: right;
+}
+.rain-game-act .ico {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.6;
+}
+/* A game staged to move away: its name struck where it was, and its new home
+   on a line of its own under the name, in ink (at the row's end it squeezed
+   the name to a word a line). Tapping it again reopens the move picker. */
+.rain-game[data-staged] .rain-game-name > :nth-child(2) {
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+  color: var(--ink-2);
+}
+.rain-game-to {
+  grid-column: 2;
+  font: 700 0.8125rem/1.3 var(--font-ui);
+  color: var(--ink);
+}
+.rain-game-to:empty {
+  display: none;
+}
+/* A folded run of items between two shown rows: a recessed band that says
+   how many and until when; any fold opens the whole day. */
+.rain-fold {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: var(--target);
+  margin: 0;
+  padding: 4px 14px 4px calc(14px + 4.75rem + var(--s-3));
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: var(--well); /* recessed in both themes (paper-2 vanished on the navy sheet) */
+  color: var(--link);
+  font: 750 0.875rem/1.25 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  cursor: pointer;
+}
+.rain-fold + .cb-row {
+  border-top-color: var(--line);
+}
+.rain-more {
+  display: flex;
+  align-items: center;
+  min-height: var(--target);
+  margin: 4px 0 0;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: 750 0.9375rem/1.2 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.rain-more[hidden] {
+  display: none;
+}
+.rain .sched-add {
+  margin-top: 0;
+}
+.rain-done-count::before {
+  content: '·';
+  margin-right: 6px; /* the button's own gap is the space before it */
+}
+.rain-done-count[hidden] {
+  display: none;
+}
+/* Large text (the lists' own 18em test): the time column has become a line
+   above the title, so the games, folds and gaps indent by the emoji only. */
+@container (max-width: 18em) {
+  .rain-game {
+    padding-left: calc(14px + var(--emo-col) + var(--emo-gap));
+  }
+  .rain-fold,
+  .sched-gap {
+    padding-left: 14px;
+  }
+  .rain-game-act {
+    max-width: 45%;
+  }
+}
+
+/* The item sheet's panes: one at a time, the sheet's data-pane the switch. */
+.rain-sheet .rain-pane {
+  display: none;
+}
+.rain-sheet[data-pane="actions"] [data-rain-pane="actions"],
+.rain-sheet[data-pane="swap"] [data-rain-pane="swap"],
+.rain-sheet[data-pane="how"] [data-rain-pane="how"],
+.rain-sheet[data-pane="time"] [data-rain-pane="time"],
+.rain-sheet[data-pane="games"] [data-rain-pane="games"],
+.rain-sheet[data-pane="move"] [data-rain-pane="move"] {
+  display: block;
+}
+.rain-sheet .sheet-head .tk-back {
+  margin-left: calc(-1 * var(--gutter) + 6px);
+}
+.rain-sheet .sheet-head .tk-back[hidden] {
+  display: none;
+}
+/* With a back in the head, the title steps down to the row size, so "‹ Team
+   competitions" and the pane's own title don't fight for the line. */
+.rain-sheet:not([data-pane="actions"]) .sheet-title {
+  font: var(--t-row);
+}
+.rain-sheet .gl + .gl,
+.rain-sheet .cb-list + .gl {
+  margin-top: var(--s-3);
+}
+/* Earlier | Later: one row, two halves, a hairline between them. */
+.rain-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid var(--line);
+}
+.rain-pair-btn {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  min-height: var(--row-min);
+  margin: 0;
+  padding: var(--s-2) 14px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.rain-pair-btn + .rain-pair-btn {
+  border-left: 1px solid var(--line);
+}
+.rain-pair-btn > .ico {
+  width: 22px;
+  height: 22px;
+  color: var(--ink-2);
+}
+.rain-pair-btn:active {
+  background: color-mix(in srgb, var(--ink) 6%, var(--sheet));
+}
+.rain-pair-btn[aria-disabled="true"] {
+  color: var(--ink-3);
+  cursor: default;
+}
+.rain-pair-btn[aria-disabled="true"]:active {
+  background: none;
+}
+.rain-pair-text {
+  min-width: 0;
+}
+/* Swap's two ways, each showing its RESULT, so the choice is between two
+   outcomes, not two abstract words. The default is the gold one; one tap
+   stages it. */
+.rain-opts {
+  display: grid;
+  gap: 14px;
+}
+.rain-opt {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  margin: 0;
+  padding: 12px 14px 14px;
+  border: 2px solid var(--card-b);
+  border-radius: 14px;
+  background: var(--sheet);
+  box-shadow: 0 var(--edge-btn) 0 var(--edge);
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow var(--jm-press-ms) var(--jm-press);
+}
+.rain-opt:active {
+  box-shadow: 0 1px 0 var(--edge);
+}
+.rain-opt-main {
+  border-color: var(--gold-edge);
+  background: var(--gold);
+  color: var(--gold-ink);
+  box-shadow: 0 var(--edge-btn) 0 var(--gold-edge);
+}
+.rain-opt-main:active {
+  box-shadow: 0 1px 0 var(--gold-edge);
+}
+.rain-opt-title {
+  font: 850 1.0625rem/1.2 var(--font-ui);
+  letter-spacing: var(--track-row);
+}
+.rain-opt-lines {
+  display: grid;
+  gap: 2px;
+}
+.rain-opt-lines:empty,
+.rain-opt-foot:empty {
+  display: none;
+}
+.rain-opt-line {
+  display: grid;
+  grid-template-columns: var(--emo-col) minmax(0, 1fr) auto;
+  column-gap: var(--emo-gap);
+  align-items: baseline;
+  font: 650 0.9375rem/1.35 var(--font-ui);
+}
+.rain-opt-line b {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.rain-opt-foot {
+  display: grid;
+  gap: 4px;
+  font: 650 0.875rem/1.35 var(--font-ui);
+  color: var(--ink-2);
+}
+.rain-opt-main .rain-opt-foot {
+  color: var(--gold-ink);
+}
+.rain-opt-warn {
+  position: relative;
+  padding-left: 24px;
+  color: var(--ink);
+}
+.rain-opt-warn::before {
+  content: '!';
+  position: absolute;
+  left: 0;
+  top: 1px;
+  display: grid;
+  place-items: center;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: inset 0 0 0 1.5px var(--gold-edge);
+  color: var(--gold-ink);
+  font: 900 0.6875rem/1 var(--font-ui);
+}
+.rain-quiet {
+  display: block;
+  justify-self: start;
+  margin: 4px 0 4px -6px;
+  padding: 0 8px;
+}
+.rain-quiet[hidden] {
+  display: none;
+}
+.rain-move-days {
+  margin: 0 0 var(--s-3);
+}
+.rain-move-off {
+  margin-top: var(--s-3);
+}
+.rain-sheet .si-ask {
+  margin-top: var(--s-3);
+}
+
+/* ── Done (the summary sheet) ── */
+.rain-sum {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line-2);
+}
+.rain-sum:empty {
+  display: none;
+}
+.clash-list:not([hidden]) + .rain-sum {
+  border-top: 0; /* the last clash's rule is the line */
+}
+.rain-sum-li {
+  display: grid;
+  grid-template-columns: var(--emo-col) minmax(0, 1fr);
+  column-gap: var(--emo-gap);
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--line);
+  font: 600 0.9375rem/1.4 var(--font-ui);
+  color: var(--ink);
+}
+.rain-sum-li b {
+  font-weight: 800;
+}
+.rain-sum-li s {
+  margin-left: 4px;
+  color: var(--ink-2);
+  text-decoration-thickness: 1.5px;
+  white-space: nowrap;
+}
+/* The overlap verdict is always said, in one of two marks: the done-green
+   check (nothing overlaps) or the gold "!" with one line per overlap. */
+.rain-verdict {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 9px;
+  margin: var(--s-3) 2px 0;
+}
+.rain-verdict-mark {
+  position: relative;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border-radius: 50%;
+}
+.rain-verdict[data-tone="ok"] .rain-verdict-mark {
+  background: var(--done);
+}
+.rain-verdict[data-tone="ok"] .rain-verdict-mark::after {
+  content: '';
+  position: absolute;
+  left: 6.5px;
+  top: 3.5px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--sheet);
+  border-width: 0 2.2px 2.2px 0;
+  transform: rotate(45deg);
+}
+.rain-verdict[data-tone="warn"] .rain-verdict-mark {
+  display: grid;
+  place-items: center;
+  background: var(--gold);
+  box-shadow: inset 0 0 0 1.5px var(--gold-edge);
+}
+.rain-verdict[data-tone="warn"] .rain-verdict-mark::after {
+  content: '!';
+  color: var(--gold-ink);
+  font: 900 0.75rem/1 var(--font-ui);
+}
+.rain-verdict-lines {
+  display: grid;
+  gap: 4px;
+}
+.rain-verdict-line {
+  margin: 0;
+  font: 700 0.9375rem/1.4 var(--font-ui);
+  color: var(--ink);
+}
+.sheet-body > .setup-note {
+  margin-top: var(--s-3);
+}
+.rain-sum-alt {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--s-2);
+}
+.rain-sum-alt .btn-quiet {
+  justify-self: auto;
+}
+
+/* ── The home schedule sheet's way in (editors, §11.1) ── */
+.schedule-plan {
+  flex: none;
+  padding: 10px var(--gutter) calc(10px + env(safe-area-inset-bottom, 0px));
+  border-top: 1px solid var(--line-2);
+  background: var(--sheet);
+}
+.schedule-plan[hidden],
+.schedule-plan-btn[hidden],
+.schedule-plan-note[hidden] {
+  display: none;
+}
+.schedule-plan-btn .ico {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2.3;
+}
+.schedule-plan-note {
+  margin: 0;
+  font: 600 0.875rem/1.4 var(--font-ui);
+  color: var(--ink-2);
+}
+.schedule-plan-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target);
+  margin: -12px 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: 750 0.875rem/1.2 var(--font-ui);
+  vertical-align: middle;
+  cursor: pointer;
+}
+/* With the plan line docked under it, the schedule's own bottom padding (it
+   cleared the home indicator) moves to the dock. */
+.schedule-sheet:has(> .schedule-plan:not([hidden])) .schedule-body {
+  padding-bottom: 1rem;
+}
 
 /* ── Per-team 0–5 point buttons (Memory Verse) ─────────────────── */
 .pts-grid {

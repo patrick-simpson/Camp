@@ -722,8 +722,9 @@ named here, never rebuilds a row. **The behaviour is wired separately** (the
 rest of Step 14, in setup-ui.js: see "Set up the week: behaviour" below); with no
 `data-screen` on `#setup` the markup is inert and the builder is v197's.
 
-- **`#setup[data-screen]` is the one switch** (`hub | backups | classic`; a later
-  screen adds its own pair of lines in the CSS). `#setup` wraps `#settings-view`
+- **`#setup[data-screen]` is the one switch** (`hub | backups | classic`, and
+  Step 15's `week | schedule | rain`; a later screen adds its own pair of lines
+  in the CSS). `#setup` wraps `#settings-view`
   inside `#tab-now`, shown only under `body.builder-open` (which hides every
   other child of main-wrap: `:not(#setup)`). **No `data-screen` = the v197
   builder exactly** (only `#settings-view`, with its own back); with one, the
@@ -802,8 +803,8 @@ rest of Step 14, in setup-ui.js: see "Set up the week: behaviour" below); with n
   (a container query on `.cb-list`, 18em) the time and day become one small line
   above the title, and a row ending in a button puts it on that line so the
   title gets the whole width (the fixed column left titles 21 px wide at 200%).
-  An empty `.cb-list` is no box. Restore points, recent changes, devices — and
-  Step 15's schedule items should be these too.
+  An empty `.cb-list` is no box. Restore points, recent changes, devices, and
+  Step 15's schedule, rain plan, swap and move rows are all these.
 - **Sheets** (shell sheets, editors only, ONE at a time — ⋯ → Devices closes
   the menu first): `#sheet-setup-menu` (`[data-setup-act=changes|devices|
   classic]`; the owner group `.setup-owner-sec` with `new-year|undo-new-year|
@@ -963,6 +964,133 @@ into it from app.js / settings.js is typeof-guarded.
   (`tryImport(text, { copyFromOtherCamp, confirmed, say })`); an older flat file asks once, then
   `tryImport`. `tryImport`'s new `opts.say` takes its complaints (default: the Data tab's) and
   `opts.confirmed` skips its native confirm.
+
+## Camp week, Schedule, the rain plan (Step 15 — markup and visual system)
+
+P2 §11.4–11.6 inside the Step 14 frame, styled in styles.css's "SET UP THE WEEK: Camp
+week, Schedule, the rain plan" block. Static markup a renderer patches (text, `hidden`,
+aria-checked / aria-selected / aria-pressed, data-*) and lists it fills with clipboard rows;
+the full row templates are in index.html's comments beside each list. The CSS switch lines
+for `data-screen="week" | "schedule" | "rain"` exist; **routing, renderers and every
+handler are the wiring session's** (`SETUP_SCREENS`, `HUB_OPENS`, `SETUP_SHEETS`,
+`renderSetupUi`'s dispatch, `setupWhereNow`, Back labels).
+
+- **The day strip** `#sched-days` (shown on `schedule` only) lives INSIDE `#setup-head`, so
+  it pins with the head (at large text it scrolls away with the sync line). `.daypick`, a
+  well that scrolls sideways: `button.daypick-btn[role=tab][data-day=typical|sun…sat]`,
+  chosen `aria-selected="true"`, today `data-today` (a link-blue ring), `[data-dot=typical]`
+  (a ring: follows the typical day) and `[data-dot=changed]` (a filled dot) under the name,
+  `[data-sd-warn]` the gold "!" at the corner; each button's `aria-label` says it all in
+  words. Open scrolled so today's chip is at the left edge (its offset within the track).
+  The move picker reuses `.daypick` as a radiogroup (`#rain-move-days`, `data-dk`).
+- **Rows**: `.cb-row` with the emoji in its own column — `.cb-title > .sched-emo + span`
+  (a grid, so labels start level and a wrapped label never runs under its emoji; the
+  `.cb-sub` indents to match). Schedule rows `.sched-row[data-bid]` with
+  `[data-diff=only|changed]`, `[data-notime]` ("Not shown" under the time), `[data-warn]`
+  (the gold "!" before the sub), `[data-skipped]` (title struck). The sub is the KIND in
+  words ("Meal", "Games · 3 games", "Elective 1"; none for a plain activity, none when the
+  label already says it) then at most ONE `.sched-tag` — a difference from the typical day
+  ("Wed only", "Changed for Wed", "Own version on Fri"), an ink outline; the rain plan's
+  `[data-tag=changed|skipped]` is filled ink. Lists are split by part of day,
+  `[data-sched-part|data-sched-list=morning|afternoon|evening]` (before 12:00, to 5:00 PM,
+  after), because 12-hour run-sheet times need it; an empty part is hidden. A gap ≥ 15 min
+  is a `button.sched-gap[data-gap-start][data-gap-end]` row between two rows (dashed).
+  A read-only preview renders rows as `<div>`s with no chevron.
+- **Camp week** `#setup-week`: `#week-title` / `#week-headline` ("Jul 18–24, 2027") /
+  `#week-lede`; the read-only door `#week-door` (`-lead`, `-text`, owner `-btn`,
+  `-owner` / `-owner-text`, the hub door's pattern); Dates `#week-start-row` (a label row)
+  `#week-start` (native date), `#week-start-sub`, `#week-start-error`, `#week-wizard`
+  (while `newYearDue()`); Days `#week-days` — a TICK SHEET, not seven segmented controls:
+  a header row (`.wk-head`, "Typical day | Own schedule") over two 44px tick columns;
+  `.wk-day[data-dow]` > `.wk-day-name` (+ `[data-week-date]`, `[data-week-tag]`) and
+  `.wk-ticks[role=radiogroup]` > `button.wk-tick[role=radio][data-week-follow=typical|own]`
+  (chosen: an ink disc in its ring; `.wk-tick-word` is the accessible name, shown beside
+  the ring at large text where the header row steps aside); Double points
+  `#week-double-legacy` / `-text` (legacy epoch: the form is hidden), `#week-double-box`,
+  `#week-double-on` (jelly-switch + `[data-switch-state]`), `#week-double-form` >
+  `#week-double-from` / `#week-double-at` / `#week-double-until`, `#week-double-note`;
+  `#week-finale` (TV finale). Selects are native on purpose (the phone's own wheel); a
+  read-only preview sets `disabled` / `aria-disabled="true"` on every control.
+- **Schedule** `#setup-schedule` (the strip's tabpanel): `#sched-title` / `#sched-headline`
+  (the DAY: "Wednesday", "The typical day") / `#sched-lede` ("Today · follows the typical
+  day · 2 changes"); `.sched-acts` > `#sched-rain-link` (`#sched-rain-link-text`, "Rain plan
+  for today") and `#sched-day-btn` ("Day options" → `#sheet-sched-day`), both hidden on the
+  typical day and in a preview; `#sched-door` (same parts as the week's); `#sched-day-note`
+  / `-text` (where a day differs), `#sched-scope-note` / `-text` (the typical day: "Changes
+  Mon–Fri, except days that have their own version of this"); the guided first build
+  `#sched-empty` (`-text`, `#sched-add-first`, `#sched-copy-from`, `#sched-copy-archive`) and
+  `#sched-copy` (`-text`, `#sched-copy-week`); `#sched-sec-skipped` /
+  `#sched-skipped-label` / `#sched-skipped-list` (rows with `[data-sched-bring]` Bring back);
+  `#sched-add` / `#sched-add-text`.
+- **Sheets** (shell sheets, editors only, one at a time): `#sheet-sched-day` (rows
+  `[data-sched-act=rain|own|follow|copy|clear]`, titles in `[data-sched-act-title]`;
+  `clear` is a `.gl-row-danger`). `#sheet-sched-item` (`.sheet-tall`, ≤ 90dvh): `#si-where`
+  / `-text` / `#si-reset` (Back to the usual), `#si-label` (a jelly-input drawn as a field:
+  its fill goes, the host carries the 2px edge), `#si-label-error`, `#si-emoji-grid`
+  (`button.si-emo[data-emoji][aria-pressed]`) + `#si-emoji-other`, `#si-start` / `#si-end`
+  (native time, step 300) / `#si-end-fld` / `#si-time-error`, `#si-allday`, `#si-showtime`,
+  `#si-type` (`[data-si-type]`, Elective carries `data-feature="electives"`), `#si-meal-fld`
+  / `#si-meal`, `#si-slot-fld` / `#si-slot`, `#si-teams-fld` / `#si-teams`
+  (`button.si-team[data-team][aria-pressed]`: solid ink edge on, dashed ink-3 off),
+  `#si-games-fld` / `#si-games` (rows with `[data-si-move]`) / `#si-add-game`, `#si-alert`
+  / `-text`, the inline questions `#si-overlap` (`[data-si-overlap=push|ok]`), `#si-ownday`
+  (`[data-si-ownday=keep|change]`), `#si-rekey` (`[data-si-rekey=same|fresh]`), `#si-nofit`,
+  `#si-remove` / `-text`; the dock: `#si-tell` (`.sheet-tell`, `#si-tell-check`), the scope
+  pair `#si-scope` > `#si-save-day` / `#si-save-all` (texts in `#si-save-day-text` /
+  `#si-save-all-text`; the live caption `#si-scope-caption` rides INSIDE the second, so it
+  is read as that choice) — two EQUAL plain buttons, stacked — or the single gold `#si-save`.
+  An inline question is the gold "!" + a sentence + its two answers, never a dialog over the
+  sheet. The sheet grid uses `grid-auto-rows: max-content`: a scrolling grid otherwise
+  squeezes an `overflow:hidden` group (`.gl`) to nothing.
+- **The rain plan** `#setup-rain` (`data-screen="rain"`): `#rain-title` ("Rain plan ·
+  Wednesday") / `#rain-headline` (the answer: "Wednesday as planned" → "3 changes to
+  Wednesday") / `#rain-lede`; `#rain-note` / `-text` (a restored draft, a colleague's
+  change); `#rain-list` — collapsed around now: rows `.rain-row[data-bid]` with
+  `[data-when=now|past]` (now: `<small class="rain-now">Now</small>` in the time column, the
+  end moves to the sub "Until 9:45"), `[data-staged]` (the filled "Changed" tag + the old
+  time struck, `s.rain-was`), skipped rows `<div>`s with `[data-rain-bring]`; a games
+  item's games right under it, `button.rain-game[data-gid][data-bid]` (indented to the
+  titles, 44px, "Move ›"; staged: the name struck and `.rain-game-to` "To Thursday · Team
+  competitions" on a line under it); a folded run `button.rain-fold[data-rain-expand]` ("6
+  more until 5:00", a recessed band); `#rain-more` / `#rain-more-text` (also
+  `[data-rain-expand]`); `#rain-add`; the dock's gold `#rain-done` with `#rain-done-count`
+  ("3 changes", shown only when something is staged).
+- **`#sheet-rain-item[data-pane=actions|swap|how|time|games|move]`** — ONE sheet with
+  panes, never a stack: `#rain-pane-back` / `#rain-pane-back-label` ("‹ Team
+  competitions", hidden on actions and on a move opened straight from the list),
+  `#rain-item-title` (no emoji: §8.6), `#rain-item-when`. actions: `[data-rain-act=swap|
+  time|earlier|later|games|skip|reset]` (`earlier` / `later` are one `.rain-pair` row of
+  two halves with `[data-rain-pair-sub]`; a missing neighbour is `aria-disabled`),
+  `#rain-games-sub`, `#rain-skip-sub`, `#rain-reset-sub`. swap: `#rain-swap-earlier` above
+  `#rain-swap-list` (`.cb-row.rain-pick[data-bid]`, the length in the sub; this item is
+  `[data-self]` "This one"; the body opens scrolled so "This one" is at its top). how: two
+  `button.rain-opt[data-rain-how=slots|lengths]` that SHOW THEIR RESULTS
+  (`[data-rain-how-lines]` > `.rain-opt-line`, `[data-rain-how-foot]` with
+  `.rain-opt-warn` per overlap); slots is the gold `.rain-opt-main`; one tap stages it.
+  time: `#rain-start` / `#rain-end` / `#rain-end-fld` / `#rain-time-error`, `#rain-allday`,
+  `#rain-ripple`, `#rain-time-warn`, and the dock `#rain-item-dock` > `#rain-time-use`.
+  games: `#rain-games-list` (`[data-rain-move]`). move: `#rain-move-days`, `#rain-move-list`
+  (that day's Games items first), `#rain-move-all` / `-text`, `#rain-move-none`,
+  `#rain-move-double` / `-text` (`[data-rain-double=yes|no]`).
+- **`#sheet-rain-done`**: `#rain-sum-title`, `#rain-clashes` (the game editor's `.clash`
+  Keep his / Use yours), `#rain-sum-list` (`li.rain-sum-li`), the verdict that is ALWAYS
+  said `#rain-verdict[data-tone=ok|warn]` > `#rain-verdict-lines` (`.rain-verdict-line`),
+  `#rain-tell` (`.sheet-tell`, `#rain-tell-check`), `#rain-offline`; the dock `#rain-commit`
+  (gold; with an unpicked clash the dashed `aria-disabled` "Pick one for Lunch first"),
+  `#rain-keep`, `#rain-discard` (`.btn-quiet-danger`).
+- **The way in from the home schedule sheet**: `#schedule-plan` docked under
+  `#schedule-body` (editors only): `#schedule-plan-btn` / `#schedule-plan-text` ("Change
+  today's plan"; another day's name when it isn't today) when the schedule is edited here,
+  else `#schedule-plan-note` with `#schedule-plan-hub` (opens Set up the week; ux-R18).
+- **M2 by design (≤ 12 taps):** Change today's plan · Team competitions · Swap with… ·
+  Elective 1 · Swap their time slots · Axe Throwing (straight from the list: no Games…
+  step) · Thu · Team competitions · Done · Done = 10. The panel opens collapsed around now
+  with every games item and its games in view, the swap list opens on "This one" with
+  Elective 1 six rows down, and Thursday's move list shows its Games items first.
+- **Motion** (JellyMotion, calm-aware; nothing here animates by CSS): a staged row re-sorts
+  by key (`glide`, only once hands are off the list), its "Changed" tag pops (`press`), a
+  pane change arrives from the side (`arrive`, calm: a 120 ms fade), the fold opening
+  unfolds (`arrive` + `glide`), and the sheets are the shell's.
 
 ## Tests
 

@@ -764,6 +764,65 @@
           <button type="button" class="sched-add" id="sched-add" hidden><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span id="sched-add-text">Add to Wednesday</span></button>
         </section>
 
+        <!-- ── Rain plan (P2 §11.6; Step 15) — one day, staged, one hand ──
+             Reached from the home schedule sheet's Change today's plan and from
+             a day's sheet (Rain plan for Tuesday). Every change is for this day
+             only and is STAGED: nothing is written until the summary's Done.
+             The list opens collapsed around now (ux-R2): the item happening
+             now, the next three, every item with games, and every staged item;
+             the runs in between fold into one line each. Rows, in time order
+             (a staged move re-sorts; the old time stays, struck through):
+               <button type="button" class="cb-row rain-row" data-bid="…"
+                       [data-when="now|past"] [data-staged]>
+                 <span class="cb-time">1:15<small>–2:00</small></span>
+                 <span class="cb-main">
+                   <span class="cb-title"><span class="sched-emo" aria-hidden="true">🏅</span><span>Team competitions</span></span>
+                   <span class="cb-sub"><b class="sched-tag" data-tag="changed">Changed</b><s class="rain-was">10:00–11:45</s></span>
+                 </span>
+                 <span class="cb-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+               </button>
+             now: <small class="rain-now">Now</small> in place of the end time
+             (the end moves to the sub: "Until 9:45"); a skipped row is a <div>
+             with [data-skipped], its title struck, sub "Skipped today", and
+             its own <button class="btn btn-sm" data-rain-bring="bid">Bring back</button>
+             in .cb-end. A games item's games follow it, one 44px row each,
+             indented under its title — the M2 path taps a game straight from
+             the list (no Games… step) and lands on the move picker:
+               <button type="button" class="rain-game" data-gid="…" data-bid="…" [data-staged]>
+                 <span class="rain-game-name"><span class="sched-emo" aria-hidden="true">🪓</span><span>Axe Throwing</span><span class="rain-game-to"></span></span>
+                 <span class="rain-game-act">Move<svg class="ico" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+               </button>
+             (staged: [data-staged], the name struck, and its new home on a line
+             under it, in the name's third child — <span class="rain-game-to">To
+             Thursday · Team competitions</span> — the act still says Move); a
+             folded run between two shown rows:
+               <button type="button" class="rain-fold" data-rain-expand><span>6 more until 5:00</span></button>
+             Any [data-rain-expand] shows the whole day (and hides #rain-more). -->
+        <section class="setup-screen rain" id="setup-rain" data-setup-screen="rain" aria-labelledby="rain-title">
+          <div class="setup-intro">
+            <!-- Kicker "Rain plan · Wednesday"; the answer is where the plan
+                 stands: "Wednesday as planned" → "3 changes to Wednesday". -->
+            <h2 class="setup-kicker" id="rain-title">Rain plan</h2>
+            <p class="setup-headline" id="rain-headline"></p>
+            <p class="setup-lede" id="rain-lede">For today only. Nobody sees a change until you press Done.</p>
+          </div>
+          <!-- One plain line when it matters: a draft restored after a reload
+               ("Your unfinished plan from 9:12 is back"), or a colleague's
+               change to a staged item ("Patrick moved Lunch since you started:
+               you'll choose at Done"). -->
+          <p class="setup-note" id="rain-note" hidden><svg class="ico" aria-hidden="true"><use href="#i-history"/></svg><span id="rain-note-text"></span></p>
+          <div class="gl cb-list rain-list" id="rain-list"></div>
+          <button type="button" class="rain-more" id="rain-more" data-rain-expand hidden><span id="rain-more-text">Show the whole day</span></button>
+          <button type="button" class="sched-add" id="rain-add"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span>Add something for today</span></button>
+          <!-- The screen's one action, at the foot where the thumb is. Label
+               "Done" with nothing staged (it just leaves); with changes,
+               "Done · 3 changes" (the count in #rain-done-count) opens the
+               summary (#sheet-rain-done). -->
+          <div class="setup-dock rain-dock">
+            <button type="button" class="btn btn-gold btn-block" id="rain-done"><span>Done</span><span class="rain-done-count" id="rain-done-count" hidden></span></button>
+          </div>
+        </section>
+
         <!-- The classic builder (Games, Days, Teams, Notice, Data) as one screen
              of the frame until each section's replacement ships (§11.1);
              renderSettings still writes #settings-view. In the frame its own
@@ -1549,6 +1608,217 @@
     </div>
   </div>
 
+  <!-- The rain plan's item sheet (§11.6): ONE sheet with panes, never a
+       stack. #sheet-rain-item[data-pane] is the switch:
+         actions — Swap with…, Change time, Earlier | Later, Games…, Skip today,
+                   and (a staged item) Put it back as planned;
+         swap    — today's other timed items in time order from now, this one
+                   marked ("This one"); what happened before now is behind
+                   #rain-swap-earlier, above the list. The body opens scrolled
+                   so "This one" is at its top — what follows it is what a rain
+                   plan swaps with (M2's Elective 1 is then the sixth row, in
+                   view on a 360x640 phone) — and the few rows between now and
+                   it are a short scroll up;
+         how     — two lengths differ: Swap their time slots (the default, the
+                   gold one) or Keep their lengths, each with its result;
+         time    — new start / end, until the end of the day, move everything
+                   after it too; #rain-item-dock's Use this time;
+         games   — this item's games, each with Move…;
+         move    — one game: a day, then an item on it (or Not on the schedule).
+       #rain-pane-back ("‹ Team competitions") goes back to actions (hidden on
+       actions; from move it goes to games when that's where it came from, else
+       it closes — a game tapped straight from the list opens on move). -->
+  <div id="sheet-rain-item" class="sheet-overlay rain-sheet" data-pane="actions" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet sheet-tall" role="dialog" aria-modal="true" aria-labelledby="rain-item-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <button type="button" class="tk-back rain-pane-back" id="rain-pane-back" hidden><svg class="ico" aria-hidden="true"><use href="#i-chev-l"/></svg><span class="tk-back-label" id="rain-pane-back-label">Back</span></button>
+        <h2 class="sheet-title" id="rain-item-title"></h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <!-- "10:00–11:45 AM · 3 games" (staged: "Now 1:15–2:00 PM · was 10:00–11:45 AM"). -->
+      <p class="sheet-sub" id="rain-item-when"></p>
+      <div class="sheet-body">
+
+        <div class="rain-pane" data-rain-pane="actions">
+          <div class="gl">
+            <button type="button" class="gl-row" data-rain-act="swap">
+              <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-swap"/></svg></span>
+              <span class="gl-text"><span class="gl-title">Swap with…</span><span class="gl-sub">Trade places with another item today</span></span>
+              <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+            </button>
+            <button type="button" class="gl-row" data-rain-act="time">
+              <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-clock"/></svg></span>
+              <span class="gl-text"><span class="gl-title">Change time</span><span class="gl-sub">Pick a new start and end</span></span>
+              <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+            </button>
+            <!-- Earlier | Later: swap with the timed neighbour, each keeps its
+                 length. The sub names the neighbour ("Before Prepare for
+                 competitions"); a button with no neighbour is aria-disabled. -->
+            <div class="rain-pair">
+              <button type="button" class="rain-pair-btn" data-rain-act="earlier"><svg class="ico" aria-hidden="true"><use href="#i-up"/></svg><span class="rain-pair-text"><span class="gl-title">Earlier</span><span class="gl-sub" data-rain-pair-sub="earlier"></span></span></button>
+              <button type="button" class="rain-pair-btn" data-rain-act="later"><svg class="ico" aria-hidden="true"><use href="#i-down"/></svg><span class="rain-pair-text"><span class="gl-title">Later</span><span class="gl-sub" data-rain-pair-sub="later"></span></span></button>
+            </div>
+            <button type="button" class="gl-row" data-rain-act="games" hidden>
+              <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-trophy"/></svg></span>
+              <span class="gl-text"><span class="gl-title">Games…</span><span class="gl-sub" id="rain-games-sub"></span></span>
+              <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+            </button>
+            <button type="button" class="gl-row" data-rain-act="skip">
+              <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-x"/></svg></span>
+              <span class="gl-text"><span class="gl-title">Skip today</span><span class="gl-sub" id="rain-skip-sub">You can bring it back</span></span>
+              <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+            </button>
+            <button type="button" class="gl-row" data-rain-act="reset" hidden>
+              <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-undo"/></svg></span>
+              <span class="gl-text"><span class="gl-title">Put it back as planned</span><span class="gl-sub" id="rain-reset-sub"></span></span>
+              <span class="gl-end"></span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Swap rows: <button type="button" class="cb-row rain-pick" data-bid="…">
+               <span class="cb-time">1:15<small>–2:00</small></span>
+               <span class="cb-main"><span class="cb-title"><span class="sched-emo" aria-hidden="true">🌟</span><span>Elective 1</span></span><span class="cb-sub">45 min</span></span>
+               <span class="cb-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+             </button>
+             — the length in the sub, because it decides what the swap does; this
+             item itself is a <div class="cb-row rain-pick" data-self> with sub
+             "This one". -->
+        <div class="rain-pane" data-rain-pane="swap">
+          <button type="button" class="btn-quiet rain-quiet" id="rain-swap-earlier" hidden>Show earlier today</button>
+          <div class="gl cb-list" id="rain-swap-list"></div>
+        </div>
+
+        <!-- Two lengths differ. Each option's result lines go in its
+             [data-rain-how-lines] as <span class="rain-opt-line"><span class="sched-emo" aria-hidden="true">🏅</span><span>Team competitions</span><b>1:15–2:00 PM</b></span>,
+             and its consequence in [data-rain-how-foot]: "Nothing else moves" /
+             one <span class="rain-opt-warn">Overlaps Snack Shack break, 2:00–2:45</span>
+             per overlap (named BEFORE choosing). One tap stages it and goes back
+             to the list. -->
+        <div class="rain-pane" data-rain-pane="how">
+          <p class="setup-sheet-lede" id="rain-how-lede"></p>
+          <div class="rain-opts">
+            <button type="button" class="rain-opt rain-opt-main" data-rain-how="slots">
+              <span class="rain-opt-title">Swap their time slots</span>
+              <span class="rain-opt-lines" data-rain-how-lines="slots"></span>
+              <span class="rain-opt-foot" data-rain-how-foot="slots"></span>
+            </button>
+            <button type="button" class="rain-opt" data-rain-how="lengths">
+              <span class="rain-opt-title">Keep their lengths</span>
+              <span class="rain-opt-lines" data-rain-how-lines="lengths"></span>
+              <span class="rain-opt-foot" data-rain-how-foot="lengths"></span>
+            </button>
+          </div>
+        </div>
+
+        <div class="rain-pane" data-rain-pane="time">
+          <div class="si-times">
+            <label class="fld"><span class="fld-label">Starts</span><input type="time" step="300" class="fld-input" id="rain-start"></label>
+            <label class="fld" id="rain-end-fld"><span class="fld-label">Ends</span><input type="time" step="300" class="fld-input" id="rain-end"></label>
+          </div>
+          <p class="fld-error" id="rain-time-error" role="alert" hidden>Ends before it starts</p>
+          <div class="gl si-switches">
+            <div class="gl-row si-switch">
+              <span class="gl-text"><span class="gl-title">Until the end of the day</span></span>
+              <span class="gl-switch"><em class="gl-switch-state" data-switch-state="rain-allday">Off</em><jelly-switch id="rain-allday" label="Until the end of the day"></jelly-switch></span>
+            </div>
+            <div class="gl-row si-switch">
+              <span class="gl-text"><span class="gl-title">Move everything after it too</span><span class="gl-sub">Later items keep their order and lengths</span></span>
+              <span class="gl-switch"><em class="gl-switch-state" data-switch-state="rain-ripple">Off</em><jelly-switch id="rain-ripple" label="Move everything after it too"></jelly-switch></span>
+            </div>
+          </div>
+          <!-- Items a ripple can't fit before midnight, one line each
+               (<p class="si-ask-q si-ask-warn">Cabin devotional doesn't fit before midnight — shorten it or skip it today</p>). -->
+          <div class="si-asks" id="rain-time-warn" hidden></div>
+        </div>
+
+        <!-- Games… rows: <div class="cb-row"> with no time column, the game's
+             emoji + name, and <button type="button" class="btn btn-sm" data-rain-move="g-axe">Move…</button>. -->
+        <div class="rain-pane" data-rain-pane="games">
+          <div class="gl cb-list si-games" id="rain-games-list"></div>
+        </div>
+
+        <!-- Move one game: the day (a strip of days; today reads "Today",
+             aria-checked on the chosen one, default today), then that day's
+             Games items first as .cb-row buttons (time · emoji label · "2 games"),
+             the rest behind #rain-move-all; Not on the schedule last. Moving to
+             a double-points item asks #rain-move-double first. -->
+        <div class="rain-pane" data-rain-pane="move">
+          <div class="daypick rain-move-days" id="rain-move-days" role="radiogroup" aria-label="Which day">
+            <button type="button" class="daypick-btn" role="radio" aria-checked="false" data-dk="sun"><span class="daypick-name">Sun</span></button>
+            <button type="button" class="daypick-btn" role="radio" aria-checked="false" data-dk="mon"><span class="daypick-name">Mon</span></button>
+            <button type="button" class="daypick-btn" role="radio" aria-checked="false" data-dk="tue"><span class="daypick-name">Tue</span></button>
+            <button type="button" class="daypick-btn" role="radio" aria-checked="false" data-dk="wed"><span class="daypick-name">Wed</span></button>
+            <button type="button" class="daypick-btn" role="radio" aria-checked="false" data-dk="thu"><span class="daypick-name">Thu</span></button>
+            <button type="button" class="daypick-btn" role="radio" aria-checked="false" data-dk="fri"><span class="daypick-name">Fri</span></button>
+            <button type="button" class="daypick-btn" role="radio" aria-checked="false" data-dk="sat"><span class="daypick-name">Sat</span></button>
+          </div>
+          <div class="gl cb-list" id="rain-move-list"></div>
+          <button type="button" class="btn-quiet rain-quiet" id="rain-move-all" hidden><span id="rain-move-all-text">Everything else on Thursday</span></button>
+          <div class="gl rain-move-off">
+            <button type="button" class="gl-row" id="rain-move-none">
+              <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-archive"/></svg></span>
+              <span class="gl-text"><span class="gl-title">Not on the schedule</span><span class="gl-sub">It keeps its results</span></span>
+              <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+            </button>
+          </div>
+          <div class="si-ask" id="rain-move-double" hidden><p class="si-ask-q" id="rain-move-double-text"></p><div class="si-ask-a"><button type="button" class="btn btn-sm" data-rain-double="yes">Make it double</button><button type="button" class="btn btn-sm" data-rain-double="no">Keep it single</button></div></div>
+        </div>
+      </div>
+      <div class="sheet-dock" id="rain-item-dock" hidden>
+        <button type="button" class="btn btn-gold btn-block" id="rain-time-use">Use this time</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- The rain plan's Done (§11.6): conflicts first, then what will change,
+       then the overlap verdict, then the alert choice. -->
+  <div id="sheet-rain-done" class="sheet-overlay" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="rain-sum-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="rain-sum-title"></h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="sheet-body">
+        <!-- A staged field someone else changed since: one .clash each (the
+             game editor's Keep mine / Use theirs, see styles.css .clash), with
+             .clash-q "Patrick moved Lunch to 12:15 since you started this plan"
+             and the sides "Keep his" / "Use yours". -->
+        <div class="clash-list" id="rain-clashes" hidden></div>
+        <!-- One line per change:
+             <li class="rain-sum-li"><span class="sched-emo" aria-hidden="true">🏅</span><span class="rain-sum-text"><b>Team competitions</b> now 1:15–2:00 PM <s>10:00–11:45 AM</s></span></li>
+             (a game: "<b>Axe Throwing</b> moves to Thursday · Team competitions";
+             a skip: "<b>Evening competition</b> skipped today"). -->
+        <ul class="rain-sum" id="rain-sum-list"></ul>
+        <!-- ALWAYS said: data-tone="ok" "Nothing overlaps." (the check) or
+             data-tone="warn" with one .rain-verdict-line per overlap or gap
+             ("Team competitions overlaps Snack Shack break, 2:00–2:45 PM"). -->
+        <div class="rain-verdict" id="rain-verdict" data-tone="ok">
+          <i class="rain-verdict-mark" aria-hidden="true"></i>
+          <div class="rain-verdict-lines" id="rain-verdict-lines"><p class="rain-verdict-line">Nothing overlaps.</p></div>
+        </div>
+        <div class="sheet-tell" id="rain-tell" hidden>
+          <jelly-checkbox class="rp-check" id="rain-tell-check"><span class="gl-title">Tell people who get reminders for these</span></jelly-checkbox>
+          <p class="setup-note"><svg class="ico" aria-hidden="true"><use href="#i-bell"/></svg><span>Only phones that turned on reminders for these items get it — tell everyone else in person.</span></p>
+        </div>
+        <p class="setup-note" id="rain-offline" hidden><svg class="ico" aria-hidden="true"><use href="#i-phone"/></svg><span>No signal. This saves on your phone and goes out when you’re back online.</span></p>
+      </div>
+      <!-- Done is the one gold action. While a clash has no pick it is the
+           dashed "not yet" well with the reason ("Pick one for Lunch first",
+           aria-disabled="true"). Keep editing closes the sheet; Discard asks. -->
+      <div class="sheet-dock rain-sum-dock">
+        <button type="button" class="btn btn-gold btn-block" id="rain-commit">Done</button>
+        <div class="rain-sum-alt">
+          <button type="button" class="btn-quiet" id="rain-keep">Keep editing</button>
+          <button type="button" class="btn-quiet btn-quiet-danger" id="rain-discard">Discard the plan</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- ── FULL WEEK SCHEDULE (bottom sheet, opened from Happening Now and More) ── -->
   <div id="schedule-overlay" class="schedule-overlay" hidden>
@@ -1563,6 +1833,17 @@
         <nav id="schedule-days" class="schedule-days" aria-label="Pick a day"></nav>
       </div>
       <div id="schedule-body" class="schedule-body"></div>
+      <!-- Editors only (P2 §11.1). With this camp's schedule edited here
+           (setupOn('schedule')): #schedule-plan-btn "Change today's plan" (the
+           shown day's name when it isn't today: "Change Thursday's plan"),
+           which opens the rain plan on that day. Without it: the one line
+           #schedule-plan-note, whose #schedule-plan-hub opens Set up the week
+           (never a button that leads to a refusal, ux-R18). Hidden for
+           counselors and while nothing applies. -->
+      <div class="schedule-plan" id="schedule-plan" hidden>
+        <button type="button" class="btn btn-block schedule-plan-btn" id="schedule-plan-btn" hidden><svg class="ico" aria-hidden="true"><use href="#i-rain"/></svg><span id="schedule-plan-text">Change today’s plan</span></button>
+        <p class="schedule-plan-note" id="schedule-plan-note" hidden>To change today’s plan here, turn on editing in <button type="button" class="schedule-plan-link" id="schedule-plan-hub">Set up the week</button></p>
+      </div>
     </div>
   </div>
 
