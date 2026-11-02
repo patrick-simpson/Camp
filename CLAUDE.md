@@ -2390,9 +2390,18 @@ More sync invariants (each fixed after it bit us — don't regress these;
     `gameDraftOrigin` (a deep copy of the saved game as the sheet opened);
     `saveGameDraft` computes `gameFieldOps(origin, out)` and applies just those fields
     to the game as it is NOW (resolved by id). A field somebody else ALSO changed to
-    something different is asked about (`confirm`: OK keeps mine, Cancel keeps theirs;
-    the other edits are saved either way); a game removed meanwhile offers "put it back
-    with your changes". `tests/fixtures/legacy-builder-v183.js` parity holds. A NEW
+    something different is asked about INLINE (Step 14; the native `confirm` is gone): the
+    first Save tap writes nothing and raises `gameClash` — a `.clash` per field above
+    Save, a radiogroup of the two actual values ("Keep mine" / "Use theirs"; the config
+    has no authorship, so "someone changed Location"), Save a dashed well ("Pick one for
+    Location, then save") until each has a pick; the next Save writes the picks and the
+    fields nobody else touched either way. The block is rebuilt from the game as it is at
+    every Save tap, so a pick made about values that changed again is asked again
+    (`gameClashSync`), and it is cleared with the draft. A game removed meanwhile asks in
+    `askDialog` ("Someone deleted “X” while you were editing it": Discard my changes / Put
+    it back with my changes; dismissing it changes nothing — the draft is the only copy).
+    The format-change confirm and the editor's own "Discard?" are still native.
+    `tests/fixtures/legacy-builder-v183.js` parity holds. A NEW
     game's id (builder, ⚡ quick game, Duplicate) is the name's slug + `-` + 4 random
     base36 (`makeId`, `takenGameIds`: `taken` covers every `GAME_RECORD_MAPS` key too);
     day ids are still `d-<ms>`.

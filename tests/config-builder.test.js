@@ -15,6 +15,13 @@ function csToasts(fn) {
   try { return fn(toasts); } finally { showToast = real; }
 }
 
+async function csToastsAsync(fn) {
+  const real = showToast;
+  const toasts = [];
+  showToast = (msg, opts) => { toasts.push({ msg, opts }); };
+  try { return await fn(toasts); } finally { showToast = real; }
+}
+
 // ── The game editor writes only what it changed (spec §6.3.5) ────────
 
 function gdSetup() {
@@ -87,8 +94,8 @@ test('Save writes only the fields this editor changed, onto the game as it is NO
   } finally { gdTeardown(); }
 });
 
-test('a field BOTH of us changed is asked about: OK keeps mine, Cancel keeps theirs, and my other edits are saved either way', () => {
-  [[true, 'Field 2'], [false, 'Their gym']].forEach(([keepMine, expected]) => {
+test('a field BOTH of us changed is asked about INLINE (Keep mine / Use theirs), nothing is written until each has a pick, and my other edits are saved either way', () => {
+  ['mine', 'theirs'].forEach((pick) => {
     gdSetup();
     try {
       csToasts(() => {
@@ -97,36 +104,115 @@ test('a field BOTH of us changed is asked about: OK keeps mine, Cancel keeps the
         draft.location = 'Field 2';
         draft.headline = 'My tagline';
         gdColleague((c) => { c.games.find((x) => x.id === id).location = 'Their gym'; });
-        const asked = gdConfirm(keepMine, () => { saveGameDraft(); });
-        assert.equal(asked.length, 1);
-        assert.ok(/location — yours: “Field 2”, theirs: “Their gym”/.test(asked[0]), asked[0]);
-        assert.equal(gameById(id).location, expected);
+        const asked = gdConfirm(true, () => { saveGameDraft(); });
+        assert.deepEqual(asked, [], 'no native confirm any more');
+        assert.equal(gameById(id).location, 'Their gym', 'nothing was written by the first tap');
+        assert.equal(gameById(id).headline, state.config.games[0].headline, 'not even the field nobody else touched');
+        assert.ok(gameClash && gameClash.gid === id && gameClash.items.length === 1, 'the inline question is up');
+        const item = gameClash.items[0];
+        assert.deepEqual([item.f, item.label, item.mine, item.theirs, item.pick], ['location', 'Location', 'Field 2', 'Their gym', null]);
+        const view = gameClashView(draft);
+        assert.deepEqual(view.waiting, ['Location']);
+        assert.ok(/While you were editing, someone changed <b>Location<\/b>/.test(view.html), 'the config has no authorship: someone');
+        assert.ok(/role="radiogroup"/.test(view.html) && /data-clash-pick="mine"/.test(view.html) && /data-clash-pick="theirs"/.test(view.html));
+        assert.ok(/Keep mine<\/span><span class="clash-val">Field 2</.test(view.html) && /Use theirs<\/span><span class="clash-val">Their gym</.test(view.html), 'the two actual answers');
+        assert.ok(/aria-checked="false"/.test(view.html) && !/aria-checked="true"/.test(view.html));
+        // Save is a dashed well until there is a pick: tapping it again writes nothing and asks again.
+        saveGameDraft();
+        assert.equal(gameById(id).location, 'Their gym');
+        gameClash.items[0].pick = pick;
+        assert.deepEqual(gameClashView(draft).waiting, []);
+        assert.ok(new RegExp('aria-checked="true" data-clash-pick="' + pick + '"').test(gameClashView(draft).html));
+        saveGameDraft();
+        assert.equal(gameById(id).location, pick === 'mine' ? 'Field 2' : 'Their gym');
         assert.equal(gameById(id).headline, 'My tagline', 'the field nobody else touched is saved either way');
+        assert.equal(gameClash, null, 'settled');
+        assert.equal(state.ui.editGameId, null, 'the sheet closed');
       });
     } finally { gdTeardown(); }
   });
 });
 
-test('a game removed while its editor was open: OK puts it back with my changes, Cancel throws them away', () => {
-  [true, false].forEach((putBack) => {
+test('a pick is about the values it was made on: a colleague changing the field again asks again; their reverting it removes the question', () => {
+  gdSetup();
+  try {
+    csToasts(() => {
+      const id = state.config.games[0].id;
+      const draft = gdOpen(id);
+      draft.location = 'Field 2';
+      gdColleague((c) => { c.games.find((x) => x.id === id).location = 'Their gym'; });
+      saveGameDraft();
+      gameClash.items[0].pick = 'mine';
+      gdColleague((c) => { c.games.find((x) => x.id === id).location = 'Another place'; });
+      saveGameDraft();
+      assert.equal(gameById(id).location, 'Another place', 'not saved: the answer changed under the pick');
+      assert.equal(gameClash.items[0].pick, null);
+      assert.equal(gameClash.items[0].theirs, 'Another place');
+      // They put it back to what it was when I opened the sheet: nothing left to ask.
+      const origin = gameDraftOrigin.location;
+      gdColleague((c) => { c.games.find((x) => x.id === id).location = origin; });
+      saveGameDraft();
+      assert.equal(gameById(id).location, 'Field 2', 'no clash: just my edit');
+      assert.equal(gameClash, null);
+    });
+  } finally { gdTeardown(); }
+});
+
+test('the editor markup: the inline question sits above Save, Save is a dashed well naming what to pick, and values are escaped', () => {
+  gdSetup();
+  try {
+    csToasts(() => {
+      const id = state.config.games[0].id;
+      const draft = gdOpen(id);
+      draft.location = '<img src=x onerror=alert(1)>';
+      gdColleague((c) => { c.games.find((x) => x.id === id).location = 'Gym'; });
+      saveGameDraft();
+      const card = document.getElementById('gd-card-test');
+      renderGameEditor(card);
+      const html = card.innerHTML;
+      assert.ok(html.indexOf('id="gd-clashes"') !== -1 && html.indexOf('id="gd-clashes"') < html.indexOf('id="gd-save-btn"'), 'above Save');
+      assert.ok(/<button type="button" class="btn btn-block" id="gd-save-btn" aria-disabled="true">Pick one for Location, then save<\/button>/.test(html), 'a dashed well, not a greyed-out Save');
+      assert.ok(html.indexOf('<img src=x') === -1 && html.indexOf('&lt;img src=x') !== -1, 'a typed value never becomes markup');
+      gameClash.items[0].pick = 'theirs';
+      renderGameEditor(card);
+      assert.ok(/<jelly-button class="primary-btn" id="gd-save-btn">Save game<\/jelly-button>/.test(card.innerHTML), 'with a pick, Save is Save');
+    });
+  } finally { gdTeardown(); }
+});
+
+test('a game removed while its editor was open: asked in a dialog (Put it back with my changes / Discard my changes); dismissing it changes nothing', async () => {
+  for (const choice of ['back', 'discard', null]) {
     gdSetup();
+    const realAsk = globalThis.askDialog;
+    const asked = [];
+    globalThis.askDialog = async (o) => { asked.push(o); return choice; };
     try {
-      csToasts(() => {
+      await csToastsAsync(async () => {
         const id = state.config.games[0].id;
         const draft = gdOpen(id);
         draft.location = 'My edit';
         gdColleague((c) => { c.games = c.games.filter((x) => x.id !== id); });
         assert.equal(gameById(id), undefined);
-        const asked = gdConfirm(putBack, () => { saveGameDraft(); });
+        await saveGameDraft();
         assert.equal(asked.length, 1);
-        assert.ok(/was removed while you were editing it/.test(asked[0]));
-        if (putBack) assert.equal(gameById(id).location, 'My edit', 'back, with my change');
-        else assert.equal(gameById(id), undefined, 'discarded');
-        assert.equal(state.ui.editGameId, null);
-        assert.equal(gameDraft, null);
+        assert.ok(/^Someone deleted “.*” while you were editing it$/.test(asked[0].title), asked[0].title);
+        assert.deepEqual(asked[0].actions.map((a) => a.label), ['Discard my changes', 'Put it back with my changes'], 'a verb on each');
+        assert.equal(asked[0].actions[1].kind, 'gold');
+        if (choice === 'back') {
+          assert.equal(gameById(id).location, 'My edit', 'back, with my change');
+          assert.equal(state.ui.editGameId, null);
+        } else if (choice === 'discard') {
+          assert.equal(gameById(id), undefined, 'discarded');
+          assert.equal(state.ui.editGameId, null);
+          assert.equal(gameDraft, null);
+        } else {
+          assert.equal(gameById(id), undefined);
+          assert.equal(state.ui.editGameId, id, 'dismissed: still editing, the draft is the only copy');
+          assert.ok(gameDraft && gameDraft.location === 'My edit');
+        }
       });
-    } finally { gdTeardown(); }
-  });
+    } finally { globalThis.askDialog = realAsk; gdTeardown(); }
+  }
 });
 
 test('saving without a change commits nothing and says nothing', () => {

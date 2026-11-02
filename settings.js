@@ -28,6 +28,11 @@ let gameDraftSource = ''; // canonical JSON of the saved game the draft was buil
 // CURRENT game — so another director's edit to a different field is never undone
 // (setup-rebuild-spec §6.3.5).
 let gameDraftOrigin = null;
+// A field BOTH directors changed while this editor was open (P2 §6.3.5): asked about INLINE, above Save, one
+// pick per field ("Keep mine" / "Use theirs"), never decided silently. null, or
+// { gid, items: [{ f, label, mine, theirs, pick: null | 'mine' | 'theirs' }] }. Rebuilt at every Save tap from the
+// game as it is then: a pick made about values that have since changed again is asked about again.
+let gameClash = null;
 let extrasOpen = false;
 let quickGamePrefill = null; // one-shot defaults for the next new-game draft
 
@@ -52,6 +57,7 @@ function discardGameDraft() {
   state.ui.editGameId = null;
   gameDraft = null;
   gameDraftFor = null;
+  gameClash = null;
 }
 
 // ── Entry point ───────────────────────────────────────────────────
@@ -574,6 +580,7 @@ function ensureGameDraft() {
     extrasOpen = false; // a refresh keeps the user's own disclosure state
   }
   gameDraftFor = editId;
+  gameClash = null; // a different game (or a refreshed one) has nothing to settle yet
   const g = editId === 'new' ? null : gameById(editId);
   gameDraft = toEditableDraft(g || newGameShape());
   gameDraftSource = gameSourceKey(g);
@@ -586,6 +593,7 @@ function renderGameEditor(card) {
   const draft = gameDraft;
   const isNew = state.ui.editGameId === 'new';
   const hasSavedResult = !isNew && !!state.results[draft.id];
+  const clash = gameClashView(draft);
 
   // wireGameEditor closes over the draft OBJECT, so a rebuilt draft (another
   // game, or a clean one refreshed from a remote edit) must be re-wired even
@@ -651,8 +659,11 @@ function renderGameEditor(card) {
     <div id="gd-rules">${rulesEditorHTML(draft)}</div>
     <button type="button" class="link-btn" id="gd-add-rule">+ Add section</button>
 
+    ${clash ? clash.html : ''}
     <div class="editor-actions">
-      <jelly-button class="primary-btn" id="gd-save-btn">Save game</jelly-button>
+      ${clash && clash.waiting.length
+        ? `<button type="button" class="btn btn-block" id="gd-save-btn" aria-disabled="true">Pick one for ${esc(clash.waiting.slice(0, 2).join(' and '))}${clash.waiting.length > 2 ? ' and more' : ''}, then save</button>`
+        : '<jelly-button class="primary-btn" id="gd-save-btn">Save game</jelly-button>'}
       <button type="button" class="link-btn" id="gd-cancel-btn">Cancel</button>
     </div>
     <p class="entry-error" id="gd-error" hidden></p>
@@ -908,6 +919,20 @@ function wireGameEditor(card) {
   });
 
   document.getElementById('gd-save-btn').addEventListener('click', saveGameDraft);
+  const clashList = document.getElementById('gd-clashes');
+  if (clashList) {
+    clashList.addEventListener('click', (e) => {
+      const btn = e.target.closest && e.target.closest('[data-clash-pick]');
+      const row = btn && btn.closest('[data-clash-field]');
+      const item = row && gameClash && gameClash.items.find((i) => i.f === row.dataset.clashField);
+      if (!item) return;
+      item.pick = btn.dataset.clashPick === 'theirs' ? 'theirs' : 'mine';
+      renderAll();
+      // The card was rewritten under the finger: keep keyboard users where they were.
+      const again = document.querySelector('[data-clash-field="' + item.f + '"] [data-clash-pick="' + item.pick + '"]');
+      if (again && typeof again.focus === 'function') again.focus();
+    });
+  }
 
   if (!isNew) {
     document.getElementById('gd-duplicate-btn').addEventListener('click', duplicateGame);
@@ -992,6 +1017,45 @@ function clearGameRecords(gameId) {
   GAME_RECORD_MAPS.forEach((m) => { if (state[m.key]) delete state[m.key][gameId]; });
 }
 
+// How a field's value reads on a pick button: the plain text, never JSON for a string, "(empty)" for none.
+function clashShow(v) {
+  if (v === null || v === undefined || v === '') return '(empty)';
+  if (typeof v === 'string') return v.length > 60 ? v.slice(0, 60) + '…' : v;
+  const j = JSON.stringify(v);
+  return j.length > 60 ? j.slice(0, 60) + '…' : j;
+}
+
+// The inline block for this draft (or null): one .clash per field, each a radiogroup of the two actual
+// answers. The config has no authorship, so it says "someone" — until it does, never a name it can't know.
+function gameClashView(draft) {
+  if (!gameClash || !draft || gameClash.gid !== draft.id || !gameClash.items.length) return null;
+  const waiting = gameClash.items.filter((i) => !i.pick).map((i) => i.label);
+  const html = '<div class="clash-list" id="gd-clashes">' + gameClash.items.map((i) => {
+    const q = 'clash-q-' + i.f;
+    const btn = (who, val, key) => `<button type="button" class="seg-btn" role="radio" aria-checked="${i.pick === key}" data-clash-pick="${key}">` +
+      `<span class="clash-who">${who}</span><span class="clash-val">${esc(clashShow(val))}</span></button>`;
+    return `<div class="clash" data-clash-field="${esc(i.f)}">` +
+      `<p class="clash-q" id="${esc(q)}">While you were editing, someone changed <b>${esc(i.label)}</b></p>` +
+      `<div class="seg clash-pick" role="radiogroup" aria-labelledby="${esc(q)}">${btn('Keep mine', i.mine, 'mine')}${btn('Use theirs', i.theirs, 'theirs')}</div></div>`;
+  }).join('') + '</div>';
+  return { html, waiting };
+}
+
+// Which fields both of us changed, as clash items; picks made about the SAME values carry over.
+function gameClashSync(gid, out, current, fields) {
+  const prev = gameClash && gameClash.gid === gid ? gameClash : null;
+  const same = (a, b) => JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b);
+  gameClash = {
+    gid,
+    items: fields.map((f) => {
+      const old = prev && prev.items.find((i) => i.f === f);
+      const keep = old && same(old.mine, out[f]) && same(old.theirs, current[f]);
+      return { f, label: ((CFG_FIELD_LABELS[f] || f).charAt(0).toUpperCase() + (CFG_FIELD_LABELS[f] || f).slice(1)), mine: out[f] === undefined ? null : out[f], theirs: current[f] === undefined ? null : current[f], pick: keep ? old.pick : null };
+    }),
+  };
+  return gameClash;
+}
+
 function saveGameDraft() {
   if (configLocked()) return;
   const draft = gameDraft;
@@ -1073,33 +1137,49 @@ function saveGameDraft() {
     const current = gameById(out.id);
     if (!current) {
       // Somebody deleted this game while its editor was open here. The draft is the
-      // only copy of what was typed: offer it back rather than losing it.
-      if (confirm('"' + out.name + '" was removed while you were editing it. OK puts it back with your changes; Cancel throws your changes away.')) {
-        configEdit('Put back “' + out.name + '”', () => { state.config.games.push(out); });
-        saveState();
-      } else {
-        discardGameDraft();
-        saveState();
-      }
-      gameDraft = null;
-      gameDraftFor = null;
-      state.ui.editGameId = null;
-      renderAll();
-      return;
+      // only copy of what was typed: offer it back rather than losing it. (The config has no
+      // authorship, so it says "someone".) Dismissing the question changes nothing: the editor stays.
+      const settle = (putBack) => {
+        if (putBack && !gameById(out.id)) {
+          configEdit('Put back “' + out.name + '”', () => { state.config.games.push(out); });
+          saveState();
+        } else if (!putBack) {
+          discardGameDraft();
+          saveState();
+        }
+        gameDraft = null;
+        gameDraftFor = null;
+        state.ui.editGameId = null;
+        gameClash = null;
+        renderAll();
+      };
+      if (typeof askDialog !== 'function') { settle(confirm('"' + out.name + '" was removed while you were editing it. OK puts it back with your changes; Cancel throws your changes away.')); return; }
+      return askDialog({
+        title: 'Someone deleted “' + out.name + '” while you were editing it',
+        body: 'Put it back with your changes, or throw your changes away?',
+        actions: [{ label: 'Discard my changes', value: 'discard', kind: 'danger' }, { label: 'Put it back with my changes', value: 'back', kind: 'gold' }],
+      }).then((choice) => {
+        if (!choice) return; // dismissed: still editing
+        if (gameById(out.id)) { saveGameDraft(); return; } // it came back meanwhile: save normally
+        settle(choice === 'back');
+      });
     }
     // Only the fields this editor CHANGED since the sheet opened are written, onto the
     // game as it is NOW — so a colleague's edit to a different field is kept. A field
     // both of us changed is asked about, not decided silently.
     const ops = gameFieldOps(origin, out);
     const clashes = Object.keys(ops).filter((f) => gameFieldClash(origin, current, out, f));
-    let keepMine = true;
+    let picks = {};
     if (clashes.length) {
-      const lines = clashes.slice(0, 3).map((f) =>
-        (CFG_FIELD_LABELS[f] || f) + ' — yours: ' + cfgShow(out[f]) + ', theirs: ' + cfgShow(current[f]));
-      keepMine = confirm('Someone else also changed ' + (clashes.length === 1 ? 'this' : 'these') + ' on "' + out.name + '" while you were editing it:\n\n' +
-        lines.join('\n') + '\n\nOK keeps your version; Cancel keeps theirs. Your other changes are saved either way.');
+      // Asked inline, above Save, one pick per field (§6.3.5); nothing is written until each has one. The
+      // block is rebuilt from the game as it is NOW, so a colleague's newer change asks again.
+      const c = gameClashSync(out.id, out, current, clashes);
+      if (c.items.some((i) => !i.pick)) { renderAll(); return; }
+      c.items.forEach((i) => { picks[i.f] = i.pick; });
+    } else {
+      gameClash = null;
     }
-    fields = Object.keys(ops).filter((f) => keepMine || clashes.indexOf(f) === -1);
+    fields = Object.keys(ops).filter((f) => clashes.indexOf(f) === -1 || picks[f] === 'mine');
     const formatChanged = fields.indexOf('format') > -1 && current.format !== out.format;
     // Result, bracket, score entry, live match, clock and drawing setup are all
     // shaped by the old format — leaving any behind reads as garbage (or throws)
@@ -1133,6 +1213,7 @@ function saveGameDraft() {
   state.ui.editGameId = null;
   gameDraft = null;
   gameDraftFor = null;
+  gameClash = null;
   renderAll();
 }
 
