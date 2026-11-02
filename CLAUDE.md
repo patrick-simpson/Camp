@@ -449,6 +449,19 @@ What's covered, and why each file exists:
   team, different field, same field, a server-side reorder), and a refused team
   field parked as "Team names" and discarded. `sync.test.js`'s "teams are
   written whole" case was changed on purpose by S2b.
+- `tablock.test.js` (+ `.senior`) — "Two tabs of one camp: one writer" above, one
+  fresh copy of the app per tab (`makeContext`) over a stubbed `navigator.locks`
+  with the real ifAvailable / steal / hold-until-unload semantics and a fake
+  clock: no API fails open, viewers never lock, the lock name is per camp, the
+  load-time migrate / a save / a first-snapshot adopt write nothing while
+  undecided (and are made once the answer is yes), a held push goes out, the
+  250 ms × 1.5 s retry window then view-only, the reload-ordering case (the old
+  page holds the lock 800 ms), a throwing or rejecting API failing open, a viewer
+  flip releasing the lock, a confirmed role not restarting the election, a
+  view-only director still seeing standings but writing nothing, the
+  steal (old tab stops persisting before it flushes, an ack after demotion leaves
+  the cache alone, the claimant reloads, the next page is the writer), the
+  BroadcastChannel fallback, and the one-`setItem` source scan.
 - `sync-quarantine.test.js` (+ `.senior`, which evals the same file against
   `seniorScoreboard/state`) — "Refused writes" below, driven against
   `fake-rtdb.js` through the app's real `fbRef`: a refused path parked while the
@@ -1012,7 +1025,9 @@ rules**; the client code only shapes the UI.
   device): `viewer` (counselors — read-only; deliberately can't touch their
   own team's points) and `editor` (directors/game leaders — edit scores AND
   manage the member list). `canEdit()` still gates ~28 call sites; its backing
-  store swapped from localStorage to `memberRole`, set by `setMemberRole()`.
+  store swapped from localStorage to `memberRole`, set by `setMemberRole()` —
+  and it is also false in an editor's SECOND tab of the same camp, which is
+  view-only (see "Two tabs of one camp: one writer").
 - **THE INVARIANT**: no database ref attaches until sign-in resolves AND the
   self-read of `campScoreboard/members/<identityKey>` confirms approval.
   `startSync()` (the only sanctioned entry to `initSync()`) is called *only*
@@ -1323,9 +1338,59 @@ More sync invariants (each fixed after it bit us — don't regress these;
   acks). Unconfirmed work older than 36 h since the last confirmation asks
   before sending; an EMPTY state node on a phone that has a baseline is
   treated as a deliberate wipe (adopt it, push back only our own edits +
-  the roster), not seeded. Known limit: two tabs of the SAME camp on one
-  device can overwrite each other's unconfirmed edits in the shared cache —
-  use one tab per camp.
+  the roster), not seeded. Two tabs of the SAME camp on one device used to
+  overwrite each other's unconfirmed edits in the shared cache; they now have
+  ONE writer (next bullet).
+- **Two tabs of one camp: one writer** (S2c, setup rebuild spec §6.9). The cache
+  (`STORAGE_KEY`) holds this device's unconfirmed edits and the baseline they are
+  measured against, and each tab kept its own in-memory copy and wrote the WHOLE
+  cache, so the later write erased the other's unsent work. An EDITOR tab now
+  takes the Web Lock `camp-writer:<camp>` (per camp, so a junior and a senior tab
+  never contend) before it persists anything. `tabWriter` is `null` (undecided),
+  `true` (owns the cache) or `false` (another tab does: **view-only**).
+  - **One gate.** Every cache write is `persistState()` — a no-op unless
+    `tabWriter === true`, and while undecided the write is OWED and made the
+    moment the tab is decided a writer. `tests/tablock.test.js` scans every
+    shipped script for any other `setItem` on the key; add no second writer (the
+    week-setup node's own cache, when S4 adds one, goes through the same gate).
+  - **Undecided until the answer.** The election starts in `setMemberRole`, the
+    moment a role is KNOWN — the hinted role boot() paints included, before auth
+    confirms it. A device whose stored hint says editor starts undecided AT LOAD
+    (`tabHintedEditor()`, read from the same hint keys boot() uses; the literal
+    for `CAMPS_HINT_KEY` is repeated there because that const is declared far
+    below — a TDZ read), so the load-time migrate cannot write ahead of the
+    election; every other tab (a viewer, or no hint) is a writer from the start,
+    and `startTabElection()` undecides it if it turns out to be an editor. While
+    undecided `pushState`/`pushConfig` HOLD (`tabMayPush`: the diff is untouched,
+    so the push goes out the moment the tab is decided; the held flags count as
+    unsent work in `editorMidEntry`, so a snapshot is not adopted over it).
+  - **Not granted → retry** every 250 ms for 1.5 s (`TAB_RETRY_MS` ×
+    `TAB_RETRY_MAX`) — a reloading page can still hold the lock for a moment —
+    then the tab is view-only. **Fail open**: no `navigator.locks`, a throw, or a
+    non-abort rejection makes the tab a writer (today's behaviour), and where
+    `BroadcastChannel('camp-tabs:<camp>')` exists a hello / here / claim /
+    released exchange keeps a second tab from racing the first (300 ms hello
+    window). Viewers never lock and are writers by default (decision C27); a
+    hinted editor whose record says viewer releases the lock (`tabBecomeViewer`).
+  - **View-only tab.** `canEdit()` is `memberRole === 'editor' && tabWriter !==
+    false`, so every existing write gate holds and `html.view-only` paints. It is
+    NOT a viewer for what it may SEE: `standingsVisible()`, the hide-from-viewers
+    card rule (`applyCardVisibility`) and the chat takeover's hidden-card check
+    read the member record's role (`memberRole`), so a director's second tab shows
+    every card and the standings (`ensureSecrecySeed` writes only when
+    `canEdit()`). A read-only tab never pushes (`tabMayPush`) and never asks for the
+    lock again by itself (no auto-takeover: its in-memory copy is older than the
+    cache the writer kept).
+  - **Use this tab instead** = `navigator.locks.request(name, {steal: true})`
+    and then `doReload()` to re-adopt from the cache and the server (a reload
+    first asks if `reloadBlocked()`). The old tab's lock promise rejects with
+    AbortError: it sets `tabWriter = false` FIRST (so nothing it does persists —
+    an ack's `writeConfirmedTree` after demotion included), then
+    `flushTabPushes()` sends what it had queued (the one time a read-only tab
+    pushes), then shows the bar. Its unacked edits are in the cache it last wrote
+    as a writer and are re-merged by the first-snapshot merge.
+  - A hinted editor on a device whose SDK cannot load is downgraded to viewer
+    (`onSdkLoadFailed`), which releases the lock like any viewer flip.
 - **Refused writes: a rules refusal is quarantined, never a wedge** (S2a, setup
   rebuild spec §6.2 #1). `pushState` is one atomic multi-path `update()`, so ONE
   path the rules refuse refused the whole batch, and the old handler re-sent the

@@ -115,6 +115,11 @@ function setMemberRole(role, opts) {
   const changed = memberRole !== next || memberRoleConfirmed !== confirmed;
   memberRole = next;
   memberRoleConfirmed = confirmed;
+  // The writer election starts the moment a role is KNOWN — the hinted role at
+  // boot included, before auth confirms it — so no cache write or push can run
+  // ahead of it. A null role (not resolved / kicked) leaves the tab as it is.
+  if (next === 'editor') startTabElection();
+  else if (next === 'viewer') tabBecomeViewer();
   // A device promoted during a session seeds the old-build keys now, not at its
   // next data change (ensureSecrecySeed still needs a synced first pull). Only a
   // confirmed director seeds: a hint-painted device must not write on a guess.
@@ -143,8 +148,237 @@ function isTeamId(id) {
   return typeof id === 'string' && /^t\d+$/.test(id);
 }
 
+// ── Two tabs of one camp: ONE writer (setup-rebuild-spec §6.9) ────────────────
+// STORAGE_KEY holds this device's unconfirmed edits and the confirmed baseline
+// they are measured against (_syncBase). Two tabs of the same camp each keep their
+// own in-memory copy and each used to write the WHOLE cache, so the later write
+// erased the other tab's unsent edits and rewound its baseline. An EDITOR tab now
+// takes a Web Lock ('camp-writer:<camp>') BEFORE it persists anything:
+//   tabWriter === null    undecided: nothing is written to the cache and pushes wait
+//                         (queued, not dropped: the diff is kept, so they go out the
+//                         moment the tab is decided)
+//   tabWriter === true    this tab owns the cache. Viewers are writers by default —
+//                         they have no unconfirmed edits to protect, so they never lock
+//   tabWriter === false   another tab owns it: this one is VIEW-ONLY. canEdit() is
+//                         false (every existing write gate holds) and the cache is
+//                         never written
+// Every cache write goes through persistState() (a test scans the source for any
+// other setItem on the key), and every read of "may this tab write" goes through
+// tabWriter — declared up here because the load-time migrate (a cached week
+// upgraded while app.js is still evaluating) already calls persistState().
+// A device whose stored hint says EDITOR starts undecided at load, before boot()
+// has even set the role, so that migrate cannot write ahead of the election; every
+// other tab (a viewer, or a device with no hint — nothing cached worth protecting)
+// is a writer from the start, and startTabElection() undecides it if it turns out
+// to be an editor after all.
+function tabHintedEditor() {
+  try {
+    let h = null;
+    try { const c = JSON.parse(localStorage.getItem('campScoreboardCampsHint') || '{}'); h = c && c[CAMP.id]; } catch (e) { h = null; }
+    if (h !== 'editor' && h !== 'viewer') h = localStorage.getItem(AUTH_HINT_KEY); // boot()'s order: per-camp ledger, else the single hint
+    return h === 'editor';
+  } catch (e) { return false; }
+}
+// (the literal above is CAMPS_HINT_KEY, which is declared far below: a TDZ read here)
+let tabWriter = tabHintedEditor() ? null : true;
+let tabElectionOn = false;  // an editor election has run (or is running) for this role stint
+let tabElectionRun = 0;     // bumped when the role leaves 'editor', so a late retry stands down
+let tabLockRelease = null;  // resolves the lock promise we hold (a viewer flip frees the lock)
+let tabChannel = null;      // BroadcastChannel fallback (no Web Locks), else null
+let tabClaimPending = false; // fallback: we asked the writer to let go and will reload
+let tabFlushing = false;    // a demoted tab is sending what it had queued
+let tabHeldState = false;   // a state push was asked for while undecided
+let tabHeldConfig = false;  // a config push was asked for while undecided
+let persistOwed = false;    // a cache write was asked for while undecided
+const TAB_RETRY_MS = 250;
+const TAB_RETRY_MAX = 6;    // 6 x 250 ms: a reloading page can still hold the lock for a moment
+const TAB_HELLO_MS = 300;   // fallback: how long a new tab waits for a writer's answer
+const TAB_ID = Math.random().toString(36).slice(2);
+
+function tabReadOnly() {
+  return tabWriter === false;
+}
+
 function canEdit() {
-  return memberRole === 'editor';
+  return memberRole === 'editor' && tabWriter !== false;
+}
+
+// The ONE writer of the cache. A no-op unless this tab owns it; while undecided
+// the write is owed and made the moment the tab is decided a writer.
+function persistState() {
+  if (tabWriter !== true) {
+    if (tabWriter === null) persistOwed = true;
+    return false;
+  }
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    return true;
+  } catch (e) {
+    // Private mode / quota exceeded: cloud + in-memory state still work, and the
+    // previous consistent cache stays. Never let a failed write kill the caller.
+    console.warn('localStorage write failed (private mode or quota?)', e);
+    return false;
+  }
+}
+
+function tabLocksApi() {
+  try {
+    const l = navigator.locks;
+    return l && typeof l.request === 'function' ? l : null;
+  } catch (e) { return null; }
+}
+
+function tabLockName() {
+  return 'camp-writer:' + CAMP.id;
+}
+
+// What a change of writer means to the screen: canEdit() just flipped.
+function tabRepaint() {
+  if (!appStarted) return;
+  applyRoleClass();
+  updateAccountRow();
+  renderAll();
+}
+
+function decideTabWriter(writer) {
+  if (tabWriter === writer) return;
+  const wasReadOnly = tabWriter === false;
+  tabWriter = writer;
+  if (writer) {
+    // Undecided no more: make the cache write and the pushes that were waiting.
+    if (persistOwed) { persistOwed = false; persistState(); }
+    if (tabHeldState) { tabHeldState = false; schedulePush(); }
+    if (tabHeldConfig) { tabHeldConfig = false; schedulePushConfig(); }
+  } else {
+    // Another tab owns the cache. Persistence is already off (tabWriter is
+    // false); send what this tab had queued — an edit typed in the first second
+    // is the person's — then show the bar. The cache write owed is the other
+    // tab's business now.
+    persistOwed = false;
+    flushTabPushes();
+  }
+  if (wasReadOnly !== (writer === false)) tabRepaint(); // only a flip of canEdit() needs a repaint
+}
+
+// A tab that stops being the writer still SENDS what it had queued (the database
+// is shared; only the cache is not). pushState/pushConfig refuse a read-only tab
+// except inside this call.
+function flushTabPushes() {
+  tabFlushing = true;
+  try {
+    flushPendingPush();
+    if (tabHeldState) { tabHeldState = false; pushState(); }
+    if (tabHeldConfig) { tabHeldConfig = false; pushConfig(); }
+  } finally { tabFlushing = false; }
+}
+
+// pushState / pushConfig ask this first. Undecided tabs hold (and remember that
+// they did); a read-only tab has no edits of its own to send.
+function tabMayPush(kind) {
+  if (tabWriter === null) {
+    if (kind === 'config') tabHeldConfig = true; else tabHeldState = true;
+    return false;
+  }
+  return tabWriter === true || tabFlushing;
+}
+
+// Called when the role becomes 'editor' (setMemberRole, including the hinted role
+// painted at boot — before auth confirms it). Idempotent for the stint.
+function startTabElection() {
+  if (tabElectionOn) return;
+  tabElectionOn = true;
+  const run = ++tabElectionRun;
+  tabWriter = null; // a promoted viewer waits for the lock too
+  const locks = tabLocksApi();
+  if (!locks) { tabFailOpen(run, null); return; }
+  let retries = 0;
+  const attempt = () => {
+    if (run !== tabElectionRun) return; // the role changed under the retry
+    let req;
+    try {
+      req = locks.request(tabLockName(), { ifAvailable: true }, (lock) => {
+        if (run !== tabElectionRun) return undefined; // stood down meanwhile: let the lock go
+        if (!lock) {
+          // Another tab holds it — or a page that is reloading still does for a
+          // moment (doReload / bfcache). Ask again before concluding.
+          if (retries < TAB_RETRY_MAX) { retries += 1; setTimeout(attempt, TAB_RETRY_MS); } else decideTabWriter(false);
+          return undefined;
+        }
+        // Held until this page unloads: the promise never settles by itself.
+        const held = new Promise((resolve) => { tabLockRelease = resolve; });
+        decideTabWriter(true);
+        return held;
+      });
+    } catch (e) { tabFailOpen(run, e); return; }
+    if (req && typeof req.catch === 'function') req.catch((e) => onTabLockRejected(run, e));
+  };
+  attempt();
+}
+
+// The held lock's promise rejects with AbortError when another tab STEALS it
+// ("Use this tab instead"). Anything else is the API misbehaving: fail open.
+function onTabLockRejected(run, e) {
+  if (run !== tabElectionRun) return;
+  if (e && e.name === 'AbortError') {
+    tabLockRelease = null;
+    decideTabWriter(false); // sets tabWriter = false FIRST, then flushes, then the bar
+  } else tabFailOpen(run, e);
+}
+
+// Web Locks missing or throwing: write as before (a tab that cannot be told apart
+// must not be locked out of its own camp), and where BroadcastChannel exists let
+// the tabs find each other with a hello / claim.
+function tabFailOpen(run, e) {
+  if (e) console.warn('Web Locks unavailable, writing without a lock', e);
+  let ch = null;
+  try { if (typeof BroadcastChannel === 'function') ch = new BroadcastChannel('camp-tabs:' + CAMP.id); } catch (err) { ch = null; }
+  if (!ch) { decideTabWriter(true); return; }
+  tabChannel = ch;
+  let answered = false;
+  ch.onmessage = (ev) => {
+    const m = ev && ev.data;
+    if (!m || m.id === TAB_ID || run !== tabElectionRun) return;
+    // A writer answers a newcomer; a claim from another tab turns a writer read-only.
+    if (m.t === 'hello' && tabWriter === true) ch.postMessage({ t: 'here', id: TAB_ID, to: m.id });
+    else if (m.t === 'here' && m.to === TAB_ID && tabWriter === null) { answered = true; decideTabWriter(false); }
+    else if (m.t === 'claim' && tabWriter === true) { decideTabWriter(false); ch.postMessage({ t: 'released', id: TAB_ID, to: m.id }); }
+    else if (m.t === 'released' && m.to === TAB_ID && tabClaimPending) { tabClaimPending = false; doReload(); }
+  };
+  try { ch.postMessage({ t: 'hello', id: TAB_ID }); } catch (err) { /* the timer below decides */ }
+  setTimeout(() => { if (!answered && run === tabElectionRun && tabWriter === null) decideTabWriter(true); }, TAB_HELLO_MS);
+}
+
+// "Use this tab instead": steal the lock. The old tab's lock promise rejects and
+// it stops persisting before it flushes; this tab then reloads to re-adopt from
+// the cache the old tab last wrote as a writer and from the server — its own
+// copy is older than both, so it must never be the one that writes next.
+function claimWriterTab() {
+  if (!tabReadOnly()) return;
+  if (reloadBlocked() && !confirm('You have something unfinished here (an unsent message, a score being typed, or a running timer). Switch tabs anyway?')) return;
+  if (tabChannel) {
+    tabClaimPending = true;
+    try { tabChannel.postMessage({ t: 'claim', id: TAB_ID }); } catch (e) { /* the timer below reloads anyway */ }
+    setTimeout(() => { if (tabClaimPending) { tabClaimPending = false; doReload(); } }, 1500);
+    return;
+  }
+  const locks = tabLocksApi();
+  if (!locks) { doReload(); return; }
+  try {
+    locks.request(tabLockName(), { steal: true }, () => {
+      doReload();
+      return new Promise((resolve) => { tabLockRelease = resolve; });
+    }).catch(() => { /* stolen back by yet another tab: that one reloads, and so does this page */ });
+  } catch (e) { doReload(); }
+}
+
+// Viewers never lock (nothing unconfirmed to protect): an editor hint that turns
+// out to be a viewer record lets go of the lock and stops being read-only.
+function tabBecomeViewer() {
+  tabElectionOn = false;
+  tabElectionRun += 1;
+  if (tabLockRelease) { const r = tabLockRelease; tabLockRelease = null; r(); }
+  if (tabChannel) { try { tabChannel.close(); } catch (e) { /* fine */ } tabChannel = null; }
+  decideTabWriter(true);
 }
 
 // ── Standings secrecy ─────────────────────────────────────────────
@@ -173,7 +407,9 @@ let standingsGuardThrows = false; // test seam only, off in the browser
 function setStandingsGuardThrows(on) { standingsGuardThrows = !!on; }
 
 function standingsVisible() {
-  return canEdit() && memberRoleConfirmed;
+  // The member record's role, not canEdit(): a director's SECOND tab is view-only
+  // (see tabWriter) but the person is still a director and still sees standings.
+  return memberRole === 'editor' && memberRoleConfirmed;
 }
 
 function pointsReadAllowed(reader) {
@@ -2472,8 +2708,9 @@ if (state.notify === undefined) state.notify = false; // device-local, not synce
 // asked" round-trips through localStorage naturally — same as followTeam.
 if (migrateState(state)) {
   // Persist the upgraded shape right away (saveState() isn't safe yet —
-  // the sync globals below haven't been initialized at this point).
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
+  // the sync globals below haven't been initialized at this point). The tab is
+  // not a decided writer yet, so this is OWED and made once it is (persistState).
+  persistState();
 }
 normalizeSyncedState();
 
@@ -2497,13 +2734,9 @@ function saveState() {
   // adopting a stale remote copy (see the initSync merge). Set before the
   // write so a quota/private-mode throw doesn't skip the flag.
   if (!remoteReady) dirtySinceLoad = true;
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-  } catch (e) {
-    // Private mode / quota exceeded: cloud + in-memory state still work, so
-    // the Save button shouldn't appear dead. Just warn and keep going.
-    console.warn('localStorage write failed (private mode or quota?)', e);
-  }
+  // A failed write (private mode / quota) is warned about inside persistState:
+  // cloud + in-memory state still work, so the Save button must not look dead.
+  persistState();
   if (!applyingRemote) schedulePush();
 }
 
@@ -2558,7 +2791,7 @@ const SECRET_CARDS = ['standings', 'bonus'];
 // only with sync on. Deliberately NOT in normalizeSyncedState, which runs for
 // everyone and on every load.
 function ensureSecrecySeed() {
-  if (!standingsVisible() || !syncEnabled() || !remoteReady) return;
+  if (!canEdit() || !standingsVisible() || !syncEnabled() || !remoteReady) return;
   if (!state.meta) state.meta = {};
   if (!state.meta.hiddenCards || typeof state.meta.hiddenCards !== 'object') state.meta.hiddenCards = {};
   let changed = false;
@@ -2599,7 +2832,9 @@ function toggleCardHidden(card) {
 // result). Hiding force-closes the card for viewers so a later un-hide
 // doesn't surface it already open — matching the closed-by-default rule.
 function applyCardVisibility() {
-  const editor = canEdit();
+  // The person's ROLE, not this tab's write lock (tabWriter): a director's second,
+  // view-only tab still shows every card the first one does.
+  const editor = memberRole === 'editor';
   const seeStandings = standingsVisible(); // the secret cards follow the confirmed role
   HIDEABLE_CARDS.forEach((key) => {
     const hidden = cardHiddenFromViewers(key);
@@ -2751,9 +2986,9 @@ function writeConfirmedTree(tree, persistNow) {
   confirmedTree = tree;
   state._syncBase = tree;
   state._syncBaseAt = Date.now(); // when the server last confirmed anything to this phone
-  if (persistNow) {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* the previous consistent pair stays */ }
-  }
+  // (A failed write leaves the previous consistent pair; a tab that no longer owns
+  // the cache — an ack arriving after demotion — writes nothing: persistState.)
+  if (persistNow) persistState();
 }
 
 // The editable week config (days/games catalog) syncs on its own sibling ref
@@ -2801,7 +3036,7 @@ function applyRemoteConfig(remote) {
   applyingRemoteConfig = true;
   state.config = remote;
   const upgraded = migrateState(state);
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
+  persistState();
   applyingRemoteConfig = false;
   // Push back only a REAL migration (the version moved) and only from an
   // editor. migrateState also returns true when it merely healed what RTDB
@@ -2826,7 +3061,7 @@ function applyRemoteConfig(remote) {
 // Settings code calls this after mutating state.config.
 function saveConfig() {
   state.config.updatedAt = new Date().toISOString();
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
+  persistState();
   if (!applyingRemoteConfig) schedulePushConfig();
 }
 
@@ -2922,6 +3157,7 @@ function pushConfig() {
   // Not before the first config snapshot: until then this phone doesn't know
   // what the server holds, and a whole-node set() would overwrite it.
   if (!fbConfigRef || applyingRemoteConfig || !configReady) return;
+  if (!tabMayPush('config')) return; // see pushState
   pendingConfigWrites++;
   const settle = () => { pendingConfigWrites = Math.max(0, pendingConfigWrites - 1); };
   // set() can throw synchronously (an illegal key from a hand-edited backup);
@@ -3222,7 +3458,7 @@ function firstSnapshotMerge(remote) {
     // someone else's remote update.
     applyRemoteState(applySyncPaths(serverNorm, keep), serverNorm, { asLocalEdit: true }); // base stays the SERVER's tree
     Object.keys(words).forEach((gid) => { if (state.picSetup[gid]) state.picSetup[gid].words = words[gid]; });
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
+    persistState();
     lastSyncedTree = serverNorm;
     pushState();
   }
@@ -3311,7 +3547,7 @@ function applyRemoteState(remote, confirmedBase, opts) {
   // a parked path the server now agrees on is no longer parked
   if ((Object.keys(stateQuarantine).length && pruneQuarantine()) || superseded.length) quarantineChanged();
   if (superseded.length) showToast('↩️ A change that couldn’t be saved was replaced by a newer one from another device.');
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* ignore */ }
+  persistState();
   applyingRemote = false;
   // The first snapshot of a page load is catch-up, never news (chat's backlog
   // rule): a phone that was away, or one that never synced before, would
@@ -3615,6 +3851,9 @@ function computeSyncUpdates(prev, cur) {
 
 function pushState() {
   if (!fbRef || applyingRemote || !remoteReady) return;
+  // Undecided tabs hold (the diff below is untouched, so it goes out once decided);
+  // a read-only tab has no edits of its own (see the tab writer block).
+  if (!tabMayPush('state')) return;
   // A refused batch is being re-sent path by path (see the quarantine block
   // below). A push now could land a newer value that the retry then overwrites
   // with its older one, so it waits and runs the moment the bisect ends. The
@@ -3729,7 +3968,7 @@ function readQuarantine() {
 function quarantineChanged() {
   if (Object.keys(stateQuarantine).length) state._quarantine = stateQuarantine;
   else delete state._quarantine;
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* the in-memory copy still shows the line */ }
+  persistState(); // (the in-memory copy still shows the line if the write fails)
   updateSyncIndicator();
 }
 
@@ -9500,7 +9739,9 @@ function editorMidEntry() {
   // A half-built game in the week builder is unsaved in-memory work — the
   // update-poll auto-reload and remote merges must not wipe it.
   if (typeof builderDirty === 'function' && builderDirty()) return true;
-  return dataEditPending || pushTimer != null || pushConfigTimer != null; // a real edit is typed/queued but not yet synced
+  // a real edit is typed/queued but not yet synced — including a push an undecided
+  // tab is holding (tabMayPush): the timer that asked for it has already fired
+  return dataEditPending || pushTimer != null || pushConfigTimer != null || tabHeldState || tabHeldConfig;
 }
 
 // Send any debounced push right now (e.g. when a score field loses focus, or
@@ -9689,7 +9930,7 @@ function renderAll() {
   // render, one takeover at a time, and force-closed for a viewer whose
   // editors hid the chat card (mirrors the hidden-Competitions rule below).
   const inChat = !!state.ui.chatOpen && !inBuilder &&
-    !(!canEdit() && cardHiddenFromViewers('chat'));
+    !(memberRole !== 'editor' && cardHiddenFromViewers('chat'));
   if (state.ui.chatOpen && !inChat) state.ui.chatOpen = false;
   document.body.classList.toggle('chat-open', inChat);
   const chatView = document.getElementById('chat-view');
