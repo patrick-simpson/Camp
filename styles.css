@@ -1312,6 +1312,17 @@ body.kb-open .tk-dock {
 .btn-gold:active {
   box-shadow: 0 1px 0 var(--gold-edge);
 }
+/* Destructive ("Discard", "Delete this point"): the sheet's face with the
+   danger TEXT colour as border, label and edge, never a red fill (a fill would
+   outshout the safe choice beside it). 7.9:1 on the sheet in light, 8:1 dark. */
+.btn-danger {
+  border-color: var(--color-danger-text);
+  color: var(--color-danger-text);
+  box-shadow: 0 var(--edge-btn) 0 var(--color-danger-text);
+}
+.btn-danger:active {
+  box-shadow: 0 1px 0 var(--color-danger-text);
+}
 .btn-block {
   display: flex;
   width: 100%;
@@ -1907,6 +1918,95 @@ jelly-drawer[side="bottom"]::part(close) {
   font-size: 18px;
   color: var(--ink-2);
 }
+/* Every jelly-dialog (askDialog, the team and camp pickers) wears the sheet's
+   frame: the same flat scrim, a hairline edge instead of the module's soft
+   halo, and a 44px ✕ (part="close" is a local patch in vendor/jelly.js: the
+   module drew it 30px, under the target rule, with no way to reach it). */
+jelly-dialog::part(backdrop) {
+  background: rgba(var(--shadow-rgb), .42);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+jelly-dialog::part(dialog) {
+  border: 1.5px solid var(--line-2);
+  background: var(--sheet);
+  box-shadow: 0 18px 44px -18px rgba(var(--shadow-rgb), .55);
+}
+/* The dialog box takes focus when it opens (so Tab starts inside it): that is
+   not a control, so no ring around the whole box. Its buttons keep theirs. */
+jelly-dialog::part(dialog):focus {
+  outline: none;
+}
+jelly-dialog::part(close) {
+  top: 6px;
+  inset-inline-end: 6px;
+  width: var(--target);
+  height: var(--target);
+  font-size: 17px;
+  color: var(--ink-2);
+}
+/* askDialog: a question, a line or two of plain words, then the choices. Left
+   aligned like everything else on the clipboard; the title leaves the ✕ its
+   corner. */
+jelly-dialog.ask {
+  --jelly-dialog-width: min(420px, 100%);
+  --jelly-dialog-radius: 20px;
+  --jelly-dialog-padding: 20px var(--gutter) 18px;
+}
+.ask-title {
+  margin: 4px 40px 8px 0;
+  font: var(--t-head);
+  font-size: 1.25rem;
+  letter-spacing: var(--track-tight);
+  color: var(--ink);
+}
+.ask-title:empty {
+  display: none;
+}
+.ask-body {
+  font: var(--t-body);
+  font-weight: 550;
+  color: var(--ink-2);
+}
+.ask-body:empty {
+  display: none;
+}
+.ask-body p {
+  margin: 0 0 var(--s-2);
+}
+.ask-body :is(b, strong) {
+  color: var(--ink);
+  font-weight: 750;
+}
+/* What a choice would touch ("Tuesday's schedule · 4 items"): a hairline list,
+   not bullets. */
+.ask-body ul {
+  margin: var(--s-2) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.ask-body li {
+  padding: 7px 0;
+  border-top: 1px solid var(--line);
+  color: var(--ink);
+  font-weight: 650;
+}
+/* Two short choices share a row (the safe one first, the decisive one under
+   the right thumb); a long label wraps the pair into a full-width stack. */
+.ask-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s-3) 10px;
+  margin-top: 18px;
+}
+/* Each button starts at its label's width: two that fit share the row (and
+   the spare width), one that doesn't sends both to full-width lines. */
+.ask-actions > .btn {
+  flex: 1 1 auto;
+  width: max-content;
+  max-width: 100%;
+}
+
 /* The OFF track is a well on the sheet (1.27:1): an ink-3 outline makes the
    control's edge a boundary you can see (§8.1 rule 6). */
 jelly-switch:not([checked])::part(track) {

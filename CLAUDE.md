@@ -130,8 +130,9 @@ Files:
   drawers, dialogs); it injects `--jelly-*` design tokens on :root at
   runtime inside `@layer jelly`, which styles.css's unlayered mapping (from the
   palette) beats in both modes, from the first frame. It carries LOCAL
-  patches (grep `Local patch`: the external-removeAttribute close race, and
-  the drawer/dialog scrim fade — `jellyScrimFade`) that a re-vendor must
+  patches (grep `Local patch`: the external-removeAttribute close race,
+  the drawer/dialog scrim fade — `jellyScrimFade` — and `part="close"` on the
+  dialog's ✕ so styles.css can make it 44×44) that a re-vendor must
   re-apply; `tests/overlays.test.js` runs the real helpers extracted from it
 - `sw.js` — notification + push service worker (deliberately NO fetch
   handler, so it can never serve stale code; kill-switch documented inside).

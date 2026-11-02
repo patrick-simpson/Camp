@@ -761,6 +761,22 @@
     <div id="camp-picker-options" class="team-picker-options"></div>
   </jelly-dialog>
 
+  <!-- ── ASK (askDialog: the one confirm of the setup screens; P2 §11.0) ──
+       Replaces native confirm / alert / prompt on every screen the setup
+       rebuild touches. askDialog({title, body, actions}) writes the three slots
+       (title as textContent, the label attribute to match; body and actions are
+       built from escaped strings) and resolves with the chosen action; Escape,
+       the ✕ and the backdrop resolve as the cancel one. Each action is a
+       <button class="btn"> plus at most one of .btn-gold (THE main action) or
+       .btn-danger (destructive), in the order given — a short pair shares a row,
+       long labels stack full width. Copy: a verb on every button ("Keep editing",
+       "Discard", "Put it back with your changes"), never OK / Cancel. -->
+  <jelly-dialog id="ask-dialog" class="ask" label="">
+    <h2 class="ask-title" id="ask-title"></h2>
+    <div class="ask-body" id="ask-body"></div>
+    <div class="ask-actions" id="ask-actions"></div>
+  </jelly-dialog>
+
   <!-- ── TOASTS (point-change / matchup alerts) ──────────────────── -->
   <!-- Jelly toast rail (bottom). The legacy container below stays as the
        showToast() fallback for when the module hasn't loaded. -->

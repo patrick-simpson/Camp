@@ -5372,7 +5372,9 @@ class Oi extends HTMLElement {
 
       <div class="wrap">
         <div class="dialog" part="dialog" role="dialog" aria-modal="true" tabindex="-1">
-          <button class="close" aria-label="Close">✕</button>
+          <!-- Local patch (2026-11-02): part="close", as the drawer's ✕ has, so the
+               app can size it to the 44x44 target rule; behaviour unchanged. -->
+          <button class="close" part="close" aria-label="Close">✕</button>
           <slot></slot>
         </div>
       </div>
