@@ -1,24 +1,30 @@
-// The week-config first-pull gate (setup-rebuild-spec S0h, scoring#3). The
-// games/days catalog syncs on its own node as a whole-object last-write-wins,
-// and a phone that edits it BEFORE its first config snapshot would see the edit
-// silently replaced by that snapshot (or, worse, push its stale catalog over
-// everyone's). So until the first snapshot lands: nothing is pushed (the
-// null-seed aside) and the games/days builder is read-only. Driven against the
-// in-memory Realtime Database in tests/fake-rtdb.js, with the app's real
-// listener (attachConfigListener).
+// The week-config first-pull gate (setup-rebuild-spec S0h, scoring#3), as the
+// config engine v2 (step 9, tests/config-sync.test.js) leaves it. Nothing is pushed
+// before the first config snapshot has been PROCESSED (the null-seed aside), and a
+// device with no confirmed baseline (_cfgBase — its first run of the engine) keeps the
+// games/days builder read-only until then, because nothing could tell its edit apart
+// from the cached copy the snapshot replaces. A device WITH a baseline may edit
+// meanwhile: tests/config-sync.test.js covers the merge. Driven against the in-memory
+// Realtime Database in tests/fake-rtdb.js, with the app's real listener
+// (attachConfigListener).
 
 const { makeFakeRtdb } = nodeRequire('./fake-rtdb.js');
 const CONFIG_PATH = 'campScoreboard/config';
 const wait = (ms) => new Promise((r) => setTimeout(r, ms || 5));
 
-// Sync configured (so the gate applies), a fake database, the real listener.
+// Sync configured (so the gate applies), a fake database, the real listener. The
+// state engine's first pull has landed (remoteReady) unless a case says otherwise: the
+// first config snapshot waits for it (its epoch lives in state/meta).
 function gateSetup(opts) {
   freshState();
   setMemberRole('editor');
   window.FIREBASE_CONFIG = { apiKey: 'test' };
   configReady = false;
+  cfgFirstPending = null;
+  remoteReady = !(opts && opts.stateFirst === false);
   syncDenied = false;
   pendingConfigWrites = 0;
+  delete state._cfgBase;
   const db = makeFakeRtdb(Object.assign({ manualFirstSnapshot: true }, opts));
   fbConfigRef = db.ref(CONFIG_PATH);
   attachConfigListener();
@@ -29,11 +35,15 @@ function gateTeardown() {
   delete window.FIREBASE_CONFIG;
   fbConfigRef = null;
   configReady = false;
+  cfgFirstPending = null;
+  remoteReady = false;
   syncDenied = false;
   pendingConfigWrites = 0;
-  configFirstHeld = false;
-  pendingRemoteConfig = null;
+  configPushOwed = false;
+  delete state._cfgBase;
+  delete state._cfgNotes;
   dataEditPending = false;
+  document.activeElement = null;
   clearTimeout(pushConfigTimer);
   pushConfigTimer = null;
   setMemberRole(null);
@@ -139,10 +149,11 @@ test('the first snapshot opens the gate, adopts the server catalog, and refreshe
   } finally { renderAll = real; appStarted = wasStarted; state.ui.view = 'home'; gateTeardown(); }
 });
 
-test('a FIRST snapshot parked mid-entry keeps the builder shut until it is applied', () => {
+test('a FIRST snapshot arriving mid-entry is applied AT ONCE; only the repaint waits for the focused field', () => {
   const db = gateSetup();
   const real = renderAll;
-  renderAll = () => {};
+  let renders = 0;
+  renderAll = () => { renders += 1; };
   const wasStarted = appStarted;
   appStarted = true;
   try {
@@ -150,24 +161,21 @@ test('a FIRST snapshot parked mid-entry keeps the builder shut until it is appli
     remote.games = remote.games.slice(0, 3);
     remote.updatedAt = '2026-12-01T00:00:00.000Z';
     db.serverSet(CONFIG_PATH, remote);
-    dataEditPending = true; // a score edit is queued: the snapshot is held, like a focused field
+    dataEditPending = true; // a score edit is queued...
+    document.activeElement = { tagName: 'INPUT' }; // ...and a field has the keyboard
     db.deliverFirstSnapshots();
     assert.equal(configReady, true);
-    assert.ok(pendingRemoteConfig, 'the snapshot is parked');
-    assert.notOk(state.config.games.length === 3, 'state.config is still the stale cached catalog');
-    assert.equal(configEditable(), false, 'a Save now would whole-set that stale catalog over the server\'s');
-    const card = builderCard();
-    renderSettingsSection('games', card);
-    assert.ok(card.innerHTML.includes('Loading the games list'));
-    dataEditPending = false;
-    flushPendingRemoteConfig();
-    assert.equal(state.config.games.length, 3, 'the parked snapshot is applied');
-    assert.equal(configEditable(), true);
-    assert.equal(pendingRemoteConfig, null);
-  } finally { renderAll = real; appStarted = wasStarted; gateTeardown(); }
+    assert.equal(state.config.games.length, 3, 'the data is in state.config straight away (no parked snapshot, no stale catalog)');
+    assert.equal(configEditable(), true, 'so the builder is never shut by a focused field');
+    assert.equal(renders, 0, 'but nothing repaints under the focused field');
+    assert.equal(renderOwed, true, 'the repaint is owed to the idle tick');
+    document.activeElement = null;
+    idleRetryTick();
+    assert.ok(renders >= 1, 'and is paid once focus has left');
+  } finally { renderAll = real; appStarted = wasStarted; renderOwed = false; gateTeardown(); }
 });
 
-test('a LATER snapshot parked mid-entry never shuts an open builder', () => {
+test('a LATER snapshot mid-entry is applied at once too, and never shuts an open builder', () => {
   const db = gateSetup();
   const real = renderAll;
   renderAll = () => {};
@@ -180,9 +188,53 @@ test('a LATER snapshot parked mid-entry never shuts an open builder', () => {
     later.updatedAt = '2027-01-01T00:00:00.000Z';
     later.games = later.games.slice(0, 2);
     db.serverSet(CONFIG_PATH, later);
-    assert.ok(pendingRemoteConfig, 'held, as before');
+    assert.equal(state.config.games.length, 2, 'applied (rebased), not parked');
     assert.equal(configEditable(), true, 'an open game editor must not be swapped for "Loading"');
-  } finally { renderAll = real; gateTeardown(); }
+  } finally { renderAll = real; renderOwed = false; gateTeardown(); }
+});
+
+test('the first snapshot waits for the state engine\'s first pull (its epoch is in state/meta)', () => {
+  const db = gateSetup({ stateFirst: false });
+  try {
+    const remote = JSON.parse(JSON.stringify(state.config));
+    remote.games = remote.games.slice(0, 3);
+    db.serverSet(CONFIG_PATH, remote);
+    db.deliverFirstSnapshots();
+    assert.equal(configReady, false, 'not processed yet: the epoch to compare against is unknown');
+    assert.ok(cfgFirstPending, 'the snapshot is held');
+    assert.equal(configEditable(), false, 'a device with no baseline stays read-only meanwhile');
+    pushConfig();
+    assert.equal(db.log.filter((l) => l.kind === 'transaction').length, 0, 'and nothing is pushed');
+    // The state engine's first pull lands: its handler hands the config snapshot back.
+    handleRemoteSnapshot(syncedSnapshot());
+    assert.equal(remoteReady, true);
+    assert.equal(configReady, true);
+    assert.equal(cfgFirstPending, null);
+    assert.equal(state.config.games.length, 3, 'and it was adopted');
+    assert.equal(configEditable(), true);
+  } finally { gateTeardown(); fbRef = null; }
+});
+
+test('a device with a confirmed baseline may edit before the first snapshot; the merge keeps the edit', async () => {
+  const db = gateSetup();
+  try {
+    const server = JSON.parse(JSON.stringify(state.config));
+    db.serverSet(CONFIG_PATH, server);
+    state._cfgBase = cfgCanon(state.config); // what a returning phone has cached
+    assert.equal(configEditable(), true, 'a baseline can merge an edit made before the snapshot');
+    const id = state.config.games[0].id;
+    const renamed = withToasts(() => {
+      state.config.games[0].name = 'Edited before the snapshot';
+      saveConfig();
+      assert.equal(db.log.filter((l) => l.kind === 'transaction').length, 0, 'still nothing pushed before the first pull');
+      return true;
+    });
+    assert.ok(renamed);
+    db.deliverFirstSnapshots();
+    await wait(30);
+    assert.equal(gameById(id).name, 'Edited before the snapshot', 'the edit survived the first snapshot');
+    assert.equal(db.serverGet(CONFIG_PATH).games[0].name, 'Edited before the snapshot', 'and went up');
+  } finally { gateTeardown(); }
 });
 
 test('an identical first snapshot still repaints the builder (applyRemoteConfig alone would not)', () => {
@@ -200,7 +252,7 @@ test('an identical first snapshot still repaints the builder (applyRemoteConfig 
   } finally { renderAll = real; appStarted = wasStarted; state.ui.view = 'home'; gateTeardown(); }
 });
 
-test('after the first snapshot an edit goes up as a whole-config set, and is counted until acknowledged', async () => {
+test('after the first snapshot an edit goes up as a transaction of field ops, and is counted until acknowledged', async () => {
   const db = gateSetup();
   try {
     db.serverSet(CONFIG_PATH, state.config);
@@ -221,6 +273,8 @@ test('after the first snapshot an edit goes up as a whole-config set, and is cou
     assert.equal(pendingConfigWrites, 0);
     assert.notOk(reloadBlocked());
     assert.equal(db.serverGet(CONFIG_PATH).games[0].name, 'Renamed offline');
+    assert.ok(db.log.some((l) => l.kind === 'transaction'), 'sent as a transaction');
+    assert.notOk(db.log.some((l) => l.kind === 'set'), 'never a whole-node set()');
   } finally { gateTeardown(); }
 });
 

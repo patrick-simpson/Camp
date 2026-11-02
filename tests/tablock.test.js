@@ -129,6 +129,14 @@ async function tlConnect(tab, db) {
   tab.run("fbRef = __db.ref(dbPath('state')); remoteReady = true; pendingWrites = 0; dataEditPending = false; lastSyncedTree = syncedSnapshot();");
   db.log.length = 0;
 }
+// The week config is pushed as a transaction of this phone's unconfirmed ops (config engine v2),
+// so a push needs a server copy the SDK has cached (a listener), a confirmed baseline, and a
+// real edit to send. Leaves the tab ready for pushConfig().
+function tlSeedConfigEdit(tab, db) {
+  db.serverSet(CAMP.dbRoot + '/config', JSON.parse(tab.run('JSON.stringify(state.config)')));
+  tab.run("fbConfigRef = __db.ref(dbPath('config')); fbConfigRef.on('value', () => {}); configReady = true; " +
+    "state._cfgBase = cfgCanon(state.config); state.config.games[0].name = 'Edited while undecided'");
+}
 const tlUpdates = (db) => db.log.filter((l) => l.kind === 'update' || l.kind === 'set');
 const tlRes = (n) => ({ medals: { gold: 't0', silver: 't1', bronze: 't2' }, savedAt: 'v' + n });
 
@@ -475,7 +483,7 @@ test('a snapshot is not adopted over a push an undecided tab is holding (state A
   t.run("setMemberRole('editor')");
   await tlFlush();
   await tlConnect(t, db);
-  t.run("fbConfigRef = __db.ref(dbPath('config')); configReady = true");
+  tlSeedConfigEdit(t, db);
   assert.equal(t.run('editorMidEntry() || canAdoptRemote() === false'), false, 'quiet to start with');
   // Only the held flag may be what keeps adoption away: no pending edit, no timers.
   t.run('dataEditPending = false; pushTimer = null; pushConfigTimer = null; pushState()');
@@ -497,11 +505,11 @@ test('a snapshot is not adopted over a push an undecided tab is holding (state A
   await tlRealWait(5);
   assert.equal(t.run('tabWriter'), true);
   assert.equal(t.run('tabHeldConfig'), false, 'the held config push was re-armed on the yes');
-  assert.ok(db.serverTree()[CAMP.dbRoot].config, 'and the week config reached the server');
+  assert.equal(db.serverGet(CAMP.dbRoot + '/config').games[0].name, 'Edited while undecided', 'and the week config edit reached the server');
 });
 
 test('a week-config edit follows the same gate: held while undecided, never sent by a read-only tab', async () => {
-  // Undecided, then read-only: the config set() must not go out at all.
+  // Undecided, then read-only: the config transaction must not go out at all.
   const mgr = tlLocks();
   mgr.otherPageHolds();
   const db = makeFakeRtdb();
@@ -509,14 +517,16 @@ test('a week-config edit follows the same gate: held while undecided, never sent
   t.run("setMemberRole('editor')");
   await tlFlush();
   await tlConnect(t, db);
-  t.run("fbConfigRef = __db.ref(dbPath('config')); configReady = true; pushConfig()");
+  tlSeedConfigEdit(t, db);
+  db.log.length = 0;
+  t.run('pushConfig()');
   assert.equal(db.log.length, 0, 'held while the answer is out');
   assert.equal(t.run('tabHeldConfig'), true);
   await t.clock.advance(1500);
   await tlRealWait(5);
   assert.equal(t.run('tabWriter'), false);
   // The demotion flush sends what was held (an edit typed in the first second is the person's) ...
-  assert.equal(db.log.filter((l) => l.kind === 'set').length, 1, 'the held config edit is sent on the way to read-only');
+  assert.equal(db.log.filter((l) => l.kind === 'transaction').length, 1, 'the held config edit is sent on the way to read-only');
   const sent = db.log.length;
   // ... and from then on a read-only tab sends no config at all.
   t.run('pushConfig(); schedulePushConfig()');

@@ -135,13 +135,14 @@ test('a remote config that only lost empty fields to RTDB is not pushed back by 
   freshState();
   setMemberRole('editor');
   const savedRef = fbConfigRef;
-  fbConfigRef = { set: () => Promise.resolve() };
+  fbConfigRef = { transaction: () => Promise.resolve({ committed: false }) }; // config engine v2 sends a transaction, never a set()
   pushConfigTimer = null;
   try {
     const remote = clone(state.config);
     remote.games = remote.games.map((g) => { const c = Object.assign({}, g); delete c.rules; return c; }); // pruned []
     applyRemoteConfig(remote);
-    assert.equal(pushConfigTimer, null, 'no whole-config set() from every open editor device');
+    assert.equal(pushConfigTimer, null, 'no config push from every open editor device');
+    assert.deepEqual(cfgUnconfirmed(), {}, 'and healing an empty is not an unconfirmed edit either (the canonical form prunes it)');
   } finally {
     clearTimeout(pushConfigTimer); pushConfigTimer = null;
     fbConfigRef = savedRef;

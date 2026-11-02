@@ -113,6 +113,9 @@ function setMemberRole(role, opts) {
   const next = role === 'editor' || role === 'viewer' ? role : null;
   const confirmed = next !== null && !(opts && opts.provisional);
   const changed = memberRole !== next || memberRoleConfirmed !== confirmed;
+  // A device that stops being an editor keeps no undo history: it could not use it,
+  // and the next person to sign in on it must not find the last director's changes.
+  if (memberRole === 'editor' && next !== 'editor') undoClear();
   memberRole = next;
   memberRoleConfirmed = confirmed;
   // The writer election starts the moment a role is KNOWN — the hinted role at
@@ -2973,18 +2976,20 @@ let pendingWrites = 0;
 let pendingConfigWrites = 0;
 function pendingWritesTotal() { return pendingWrites + pendingConfigWrites; }
 // The config's first-pull gate, twin of `remoteReady`: false until the first
-// config snapshot arrives. Until then nothing is pushed (the null-seed aside)
-// and the games/days builder is read-only (configEditable) — there is no merge
-// for config yet, so an edit made before the first snapshot would be silently
-// replaced by it (applyRemoteConfig is whole-object last-write-wins).
+// config snapshot has been PROCESSED (it waits for the state's first pull, whose
+// epoch it needs — see onConfigSnapshot). Until then nothing is pushed (the
+// null-seed aside). A device holding a confirmed baseline (state._cfgBase) may
+// edit the catalog meanwhile: those edits are three-way merged when the snapshot
+// lands (firstConfigMerge). A device with NO baseline (its first run of this
+// engine) stays read-only (configEditable): nothing could tell its edit apart
+// from the cached copy, and the first snapshot replaces that copy.
 let configReady = false;
-// True while the FIRST config snapshot has arrived but is parked in
-// pendingRemoteConfig (a field was focused). configReady is already true then,
-// yet state.config is still the stale cached catalog, so a builder Save would
-// whole-set it over the server's. configEditable() stays false until the
-// parked snapshot is applied (flushPendingRemoteConfig). Later held snapshots
-// do NOT set it — an open game editor must never be swapped for "Loading".
-let configFirstHeld = false;
+// The first config snapshot, when it arrived before the state's first pull;
+// processed the moment that pull lands (handleRemoteSnapshot). { remote } or null.
+let cfgFirstPending = null;
+// A config push asked for while a transaction was still in flight: it runs the
+// moment that one settles (one transaction at a time — see pushConfig).
+let configPushOwed = false;
 // The synced state as we last knew it on the server — the baseline the next
 // push diffs against so it writes ONLY the items this device changed (per-path
 // update), instead of overwriting the whole tree and clobbering edits another
@@ -3025,14 +3030,12 @@ function writeConfirmedTree(tree, persistNow) {
 // (campScoreboard/config) — deliberately OUTSIDE campScoreboard/state so older
 // cached clients, and the state node's own key-list bookkeeping (SYNC_KEYS /
 // SYNC_ITEM_MAPS / the merge's replace list), never have to know about it.
-// Whole-object last-write-wins: with one or two editors that's acceptable, and
-// builder inputs commit on change/blur so the write window stays small.
+// The node is still ONE array-shaped object (old builds read it unchanged), but
+// since the config engine v2 (below) nobody writes it whole: edits travel as
+// id-keyed field ops applied by a transaction to the server's CURRENT value.
 let fbConfigRef = null;
 let pushConfigTimer = null;
 let applyingRemoteConfig = false;
-// A remote config that arrived while the builder had a focused input — applied
-// on focusout instead of mid-typing (see the flush wiring in init()).
-let pendingRemoteConfig = null;
 
 // ── Shared clock reference ───────────────────────────────────────
 // The synced game clock stores an absolute `endAt` and every device counts down
@@ -3056,23 +3059,336 @@ function syncEnabled() {
   return !!fbRef;
 }
 
-function applyRemoteConfig(remote) {
-  // Compared in RTDB-canonical form (syncCanon): the echo of this device's
-  // own edit comes back key-sorted with nulls dropped (a new day's dow: null),
-  // and a plain string compare read that as somebody else's change — a second
-  // full builder rebuild half a second after every Add day / new game.
+// ══ Config engine v2 (setup-rebuild-spec §6.3 / §7.1 core — build step 9, "S3") ═══
+// The root fix for scoring#3. The week catalog (campScoreboard/config: days +
+// games) used to be written WHOLE, so a director saving from a stale copy erased
+// every other director's edit. Now:
+//   • An edit is a set of FIELD OPS keyed by record id (`games/<gid>/<field>`,
+//     `days/<id>/<field>`; a record add/delete is the whole record / null; a
+//     reorder is a change of its `_o`). Ops are measured against `state._cfgBase`,
+//     the config the server last CONFIRMED to this phone, which rides in the SAME
+//     STORAGE_KEY write as `state.config` (the `_syncBase` rule: the pair can't
+//     disagree). Unconfirmed work = treeDiff(_cfgBase, config), so it survives a
+//     reload or a force-quit.
+//   • A push is a TRANSACTION that applies those ops to the server's CURRENT value
+//     (applyOpsSafe: an op into a record somebody deleted is dropped and listed
+//     under "Put it back"). Nobody set()s the node any more.
+//   • A snapshot is REBASED — server + my unconfirmed ops — never stashed or
+//     swapped in. Data applies at once, even mid-entry; only the repaint waits for
+//     a focused field (renderAllWhenIdle).
+//   • The FIRST snapshot after load is a three-way merge, like the state engine's.
+// The node itself is unchanged (the same five-key, array-shaped object), so old
+// builds read it fine; their whole set() still lands (it can only clobber from a
+// device that hasn't reloaded).
+// CFG_DEPTHS: how far treeDiff recurses before a value is one leaf (version and
+// sessions whole; each game/day FIELD is a leaf — rules, timer, liveTracker… are
+// written whole). CFG_ANCHORS: how many path segments name a record, so applyOpsSafe
+// can tell a field op into a vanished record from one into a live record.
+const CFG_DEPTHS = { version: 1, sessions: 1, days: 3, games: 3 };
+const CFG_ANCHORS = { days: 2, games: 2 };
+const CFG_STALE_MS = 36 * 60 * 60 * 1000; // unconfirmed longer than this asks before it is sent (as the state engine does)
+const CFG_NOTES_MAX = 30;
+
+// An array, or the index-keyed map RTDB hands back for a sparse one, as a list.
+function cfgList(v) {
+  if (Array.isArray(v)) return v;
+  if (v && typeof v === 'object') {
+    return Object.keys(v).sort((a, b) => (Number(a) - Number(b)) || (a < b ? -1 : a > b ? 1 : 0)).map((k) => v[k]);
+  }
+  return [];
+}
+
+// The map key a record goes by: its id (a '/' would split the path), else its position.
+function cfgKey(rec, i) {
+  const id = rec && typeof rec.id === 'string' && rec.id ? rec.id : '~' + i;
+  return id.replace(/\//g, '%2F');
+}
+
+function cfgKeyed(list) {
+  const out = {};
+  cfgList(list).forEach((rec, i) => {
+    if (!rec || typeof rec !== 'object') return;
+    let key = cfgKey(rec, i);
+    while (out[key]) key += '~'; // a duplicate id (a hand-edited backup) keeps both records
+    out[key] = Object.assign({}, rec, { _o: i });
+  });
+  return out;
+}
+
+// Canonical id-space — for diff and merge ONLY, never stored on the server.
+function cfgCanon(c) {
+  const src = c && typeof c === 'object' ? c : {};
+  return syncCanon({ version: src.version, sessions: src.sessions, days: cfgKeyed(src.days), games: cfgKeyed(src.games) }) || {};
+}
+
+// A keyed map back to a list ordered by (_o, key). A record whose canonical form
+// is unchanged keeps the object it already was (`prevList`): open views, the game
+// editor's lookups and the render-stability rules all lean on identity per record.
+function cfgUnkeyed(map, prevList) {
+  const prevByKey = {};
+  cfgList(prevList).forEach((rec, i) => { if (rec && typeof rec === 'object') prevByKey[cfgKey(rec, i)] = rec; });
+  const orderOf = (r) => (typeof r._o === 'number' ? r._o : Infinity);
+  return Object.keys(map && typeof map === 'object' ? map : {})
+    .map((key) => ({ key, rec: map[key] }))
+    .filter((e) => e.rec && typeof e.rec === 'object')
+    .sort((a, b) => {
+      const ao = orderOf(a.rec), bo = orderOf(b.rec);
+      if (ao !== bo) return ao < bo ? -1 : 1;
+      return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
+    })
+    .map(({ key, rec }) => {
+      const plain = Object.assign({}, rec);
+      delete plain._o;
+      const prev = prevByKey[key];
+      return prev && JSON.stringify(syncCanon(prev)) === JSON.stringify(plain) ? prev : plain;
+    });
+}
+
+function cfgFromCanon(t, updatedAt, prev) {
+  const tree = t || {};
+  const out = {};
+  if (tree.version !== undefined) out.version = tree.version;
+  if (updatedAt) out.updatedAt = updatedAt;
+  if (tree.sessions !== undefined) out.sessions = tree.sessions;
+  out.days = cfgUnkeyed(tree.days, prev && prev.days);
+  out.games = cfgUnkeyed(tree.games, prev && prev.games);
+  return out;
+}
+
+function cfgValueAt(tree, path) {
+  const v = syncValueAt(tree, path);
+  return v === undefined ? null : JSON.parse(JSON.stringify(v));
+}
+
+function cfgLater(a, b) {
+  return String(a || '') >= String(b || '') ? (a || undefined) : b;
+}
+
+// The confirmed baseline (canonical form) or null on a device that never had one.
+function cfgBaseTree() {
+  const b = state && state._cfgBase;
+  return b && typeof b === 'object' && !Array.isArray(b) ? b : null;
+}
+
+// Advance the baseline to what the server confirmed. One persistState carries it
+// together with state.config — the pair is never written apart.
+function writeCfgBase(tree) {
+  state._cfgBase = tree;
+  state._cfgBaseAt = Date.now();
+  state._cfgBaseEpoch = (state.meta && state.meta.epoch) || '';
+  persistState();
+}
+
+// What this phone changed that the server hasn't confirmed ({} when none, or on a
+// device with no baseline to measure against).
+function cfgUnconfirmed() {
+  const base = cfgBaseTree();
+  return base ? treeDiff(base, cfgCanon(state.config), CFG_DEPTHS) : {};
+}
+
+// ── Words for a path (toasts, notes, the stranded download) ──────────
+const CFG_FIELD_LABELS = {
+  name: 'name', emoji: 'emoji', dayId: 'day', session: 'session', location: 'location', format: 'format',
+  headline: 'tagline', rules: 'rules', timer: 'timer', liveTracker: 'scoreboard', messtival: 'double points',
+  note: 'note', dow: 'day of the week', prompts: 'drawing prompts', _o: 'order',
+};
+
+function cfgWhat(path, ...trees) {
+  const parts = String(path).split('/');
+  if (parts[0] === 'version') return 'the week setup version';
+  if (parts[0] === 'sessions') return 'the session names';
+  if (parts[0] === 'games' || parts[0] === 'days') {
+    let name = parts[1];
+    for (const t of trees) {
+      const rec = t && t[parts[0]] && t[parts[0]][parts[1]];
+      if (rec && rec.name) { name = rec.name; break; }
+    }
+    const noun = parts[0] === 'games' ? 'game' : 'day';
+    const field = parts[2] ? (CFG_FIELD_LABELS[parts[2]] || parts[2]) : '';
+    return field ? `${noun} “${name}” · ${field}` : `${noun} “${name}”`;
+  }
+  return String(path);
+}
+
+function cfgShow(v) {
+  if (v === null || v === undefined) return 'nothing';
+  if (typeof v === 'string') return v === '' ? 'blank' : '“' + (v.length > 40 ? v.slice(0, 40) + '…' : v) + '”';
+  if (typeof v === 'object') { const j = JSON.stringify(v); return j.length > 40 ? j.slice(0, 40) + '…' : j; }
+  return String(v);
+}
+
+// ── Notes: what a merge or a rebase set aside instead of dropping ─────
+// `state._cfgNotes` rides in the STORAGE_KEY blob (not synced, not in a backup),
+// so a clash or a vanished record is still waiting after a reload. Two kinds:
+//   putback  an edit of mine hit a record somebody deleted — { section, key, name,
+//            record (canonical, with _o) }: Put it back with my changes / Discard
+//   clash    the same field was changed on both sides while I was offline and the
+//            server's value won — { path, mine, theirs, what }: Use mine / Dismiss
+// Settings → Set up the week shows them (settings.js renderConfigNotes).
+function cfgNotes() {
+  const n = state && state._cfgNotes;
+  return Array.isArray(n) ? n : [];
+}
+
+function cfgSetNotes(list) {
+  if (list.length) state._cfgNotes = list.slice(-CFG_NOTES_MAX);
+  else delete state._cfgNotes;
+  persistState();
+  if (appStarted && state.ui && state.ui.view === 'settings') renderAllWhenIdle();
+}
+
+function cfgNoteId() {
+  return 'n' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+function cfgDropNote(id) {
+  cfgSetNotes(cfgNotes().filter((n) => n.id !== id));
+}
+
+// Ops that were dropped because their record is gone on the server. `localCanon`
+// is this phone's config at that moment — it still holds the record, with my edits.
+function cfgNoteDropped(dropped, localCanon) {
+  const records = {};
+  dropped.forEach((d) => { (records[d.record] = records[d.record] || []).push(d); });
+  const added = [];
+  Object.keys(records).forEach((rp) => {
+    const [section, key] = rp.split('/');
+    const rec = localCanon && localCanon[section] && localCanon[section][key];
+    if (!rec) return;
+    // A bare reorder of something that is gone isn't worth a question.
+    if (records[rp].every((d) => d.path.split('/')[2] === '_o')) return;
+    added.push({ id: cfgNoteId(), kind: 'putback', section, key, name: rec.name || key, record: rec, at: new Date().toISOString() });
+  });
+  if (!added.length) return;
+  cfgSetNotes(cfgNotes().filter((n) => !(n.kind === 'putback' && added.some((a) => a.section === n.section && a.key === n.key))).concat(added));
+  const names = added.map((a) => '“' + a.name + '”').join(', ');
+  showToast(`⚠️ ${names} ${added.length === 1 ? 'was' : 'were'} removed while you were editing. Settings → Set up the week can put ${added.length === 1 ? 'it' : 'them'} back with your changes.`);
+}
+
+// The games or days list of a config (a parameter, not `state.config`: the seam scan
+// reads that literally and a computed key would trip it).
+function cfgSectionList(config, section) {
+  const key = section === 'games' ? 'games' : 'days';
+  if (!Array.isArray(config[key])) config[key] = [];
+  return config[key];
+}
+
+// Put a removed record back, with my edits, as an ordinary (undoable) config commit.
+function cfgPutBack(noteId) {
+  const note = cfgNotes().find((n) => n.id === noteId && n.kind === 'putback');
+  if (!note) return false;
+  if (!canEdit() || !configEditable()) { showToast('The games list isn’t ready to edit yet — try again in a moment.'); return false; }
+  const rec = Object.assign({}, note.record);
+  const order = rec._o;
+  delete rec._o;
+  const noun = note.section === 'games' ? 'game' : 'day';
+  let exists = false;
+  configEdit(`Put back ${noun} “${note.name}”`, () => {
+    const list = cfgSectionList(state.config, note.section);
+    if (list.some((r) => r && cfgKey(r, -1) === note.key)) { exists = true; return false; }
+    list.splice(typeof order === 'number' ? Math.min(order, list.length) : list.length, 0, rec);
+  });
+  cfgDropNote(noteId);
+  if (exists) showToast(`“${note.name}” is already back.`);
+  return !exists;
+}
+
+// A clash's "Use mine": write my offline value over the server's, as a normal commit.
+function cfgUseMine(noteId) {
+  const note = cfgNotes().find((n) => n.id === noteId && n.kind === 'clash');
+  if (!note) return false;
+  if (!canEdit() || !configEditable()) { showToast('The games list isn’t ready to edit yet — try again in a moment.'); return false; }
+  configEdit(`Used your version of ${note.what}`, () => { cfgApplyPaths({ [note.path]: note.mine }); });
+  cfgDropNote(noteId);
+  return true;
+}
+
+// Apply canonical-path changes to the live config (a change into a record that is
+// gone is dropped, never resurrecting it). Returns applyOpsSafe's result.
+function cfgApplyPaths(changes) {
+  const r = applyOpsSafe(cfgCanon(state.config), changes, CFG_ANCHORS);
+  state.config = cfgFromCanon(r.tree, state.config.updatedAt, state.config);
+  migrateState(state); // heal what the canonical form prunes (a game's empty rules[])
+  return r;
+}
+
+// ── Receiving the config ─────────────────────────────────────────────
+
+// The week-config listener. Its own function so tests can attach it to a fake
+// database (tests/config-gate.test.js) without standing up the whole of initSync.
+function attachConfigListener() {
+  fbConfigRef.on('value', (snap) => {
+    onConfigSnapshot(snap.val());
+  }, (err) => {
+    console.warn('Firebase config read failed, staying local', err);
+    fbConfigRef = null;
+    syncDenied = true;
+    updateSyncIndicator();
+  });
+}
+
+// The FIRST snapshot waits for the state's first pull (handleRemoteSnapshot hands
+// it back): the merge compares epochs, and the epoch lives in state/meta. Later
+// ones are rebased on arrival.
+function onConfigSnapshot(remote) {
+  if (!configReady) {
+    if (!remoteReady) { cfgFirstPending = { remote }; return; }
+    processFirstConfig(remote);
+    return;
+  }
+  if (!remote) { seedConfigIfAbsent(); return; } // the node was emptied: this phone's catalog is the only one left
+  applyRemoteConfig(remote);
+}
+
+function processFirstConfig(remote) {
+  cfgFirstPending = null;
+  configReady = true; // the server has spoken and its epoch is known: pushes may flow
+  if (!remote) {
+    // An empty node: this phone's catalog is the only one there is — seed it.
+    seedConfigIfAbsent();
+  } else if (!firstConfigMerge(remote)) {
+    applyRemoteConfig(remote);
+  }
+  // The builder may have been showing "Loading the games list…"; open it now, even
+  // when the catalog came back identical (applyRemoteConfig renders only on a
+  // change). Held while a field is focused, like every background render.
+  if (appStarted && state.ui.view === 'settings') renderAllWhenIdle();
+}
+
+// The state engine's first pull has landed: hand over a config snapshot that was
+// waiting for its epoch.
+function releaseFirstConfig() {
+  if (cfgFirstPending && !configReady) processFirstConfig(cfgFirstPending.remote);
+}
+
+// Adopt `remote` (the server's config) with this phone's unconfirmed edits laid
+// over it — rebase on receipt, never stash. `opts.mine` supplies the ops to lay
+// over (the first-snapshot merge's kept set); by default they are everything this
+// phone changed since the server last confirmed (treeDiff(_cfgBase, config)). A
+// viewer has no edits of its own, so it just adopts. With no baseline (first run
+// of this engine) nothing is unconfirmed: a plain adopt, and tracking starts.
+function applyRemoteConfig(remote, opts) {
+  // Compared in RTDB-canonical form (syncCanon): the echo of this device's own edit
+  // comes back key-sorted with nulls dropped, and a plain string compare read that
+  // as somebody else's change — a second full builder rebuild half a second after
+  // every Add day / new game.
   const beforeJson = JSON.stringify(syncCanon(state.config));
   const v0 = remote && remote.version;
+  const remoteCanon = cfgCanon(remote);
+  const localCanon = cfgCanon(state.config);
+  const base = cfgBaseTree();
+  const mine = opts && opts.mine ? opts.mine : (base && canEdit() ? treeDiff(base, localCanon, CFG_DEPTHS) : {});
+  const rebased = applyOpsSafe(remoteCanon, mine, CFG_ANCHORS);
   applyingRemoteConfig = true;
-  state.config = remote;
+  state.config = cfgFromCanon(rebased.tree, cfgLater(remote && remote.updatedAt, Object.keys(mine).length ? state.config.updatedAt : ''), state.config);
   const upgraded = migrateState(state);
-  persistState();
+  writeCfgBase(remoteCanon);
   applyingRemoteConfig = false;
-  // Push back only a REAL migration (the version moved) and only from an
-  // editor. migrateState also returns true when it merely healed what RTDB
-  // pruned (a quick game's empty rules[]), and re-pushing then made every
-  // open editor device set() the whole catalog on every config event —
-  // racing whoever was actually editing.
+  if (rebased.dropped.length) cfgNoteDropped(rebased.dropped, localCanon);
+  // Push back only a REAL migration (the version moved) and only from an editor.
+  // migrateState also returns true when it merely healed what RTDB pruned (a quick
+  // game's empty rules[]), and re-pushing then made every open editor device write
+  // on every config event — racing whoever was actually editing.
   if (upgraded && canEdit() && state.config.version !== v0) schedulePushConfig();
   if (appStarted && JSON.stringify(syncCanon(state.config)) !== beforeJson) {
     // A config change can move points (double-points flag, a deleted game with
@@ -3084,11 +3400,127 @@ function applyRemoteConfig(remote) {
     // those writes because byKey really is the writer). The editor who made the
     // change already logged it from their own render.
     remoteJustApplied = true;
-    renderAll();
+    renderAllWhenIdle(); // data is already applied; only the repaint waits for a focused field
   }
 }
 
-// Settings code calls this after mutating state.config.
+// The first config snapshot after load, three-way:
+//   base   = the config the server last confirmed to this phone (_cfgBase)
+//   mine   = what this phone changed since base (treeDiff, still unconfirmed)
+//   theirs = what everyone else changed on the server since base
+// Keep every path of mine that nobody else touched and push exactly those; the
+// same path changed on both sides keeps the SERVER's value (the loser is listed
+// for "Use mine" and gets an undo entry); a kept op whose record the server
+// deleted goes to "Put it back". Returns false when there is nothing of mine to
+// protect (the caller adopts plainly). Work from an earlier camp year is stranded,
+// never merged; work older than 36 h asks first.
+function firstConfigMerge(remote) {
+  if (!canEdit()) return false; // a viewer / read-only tab has no edits of its own to keep
+  const base = cfgBaseTree();
+  if (!base) return false;
+  const baseAt = Number(state._cfgBaseAt) || 0;
+  const localCanon = cfgCanon(state.config);
+  const mine = treeDiff(base, localCanon, CFG_DEPTHS);
+  const minePaths = Object.keys(mine);
+  if (!minePaths.length) return false;
+  const remoteCanon = cfgCanon(remote);
+  const fromEpoch = state._cfgBaseEpoch || '';
+  const toEpoch = (state.meta && state.meta.epoch) || '';
+  if (fromEpoch !== toEpoch) {
+    cfgStrand(mine, localCanon, fromEpoch, toEpoch, baseAt);
+    applyRemoteConfig(remote, { mine: {} });
+    return true;
+  }
+  const theirs = treeDiff(base, remoteCanon, CFG_DEPTHS);
+  const theirPaths = Object.keys(theirs);
+  // A record the server deleted is not a clash with an edit INSIDE it: that edit is
+  // dropped by applyOpsSafe and offered back under "Put it back".
+  const recordDeleted = (q) => theirs[q] === null && CFG_ANCHORS[q.split('/')[0]] === q.split('/').length;
+  let keep = {};
+  const clashed = [];
+  minePaths.forEach((p) => {
+    if (JSON.stringify(cfgValueAt(remoteCanon, p)) === JSON.stringify(mine[p])) return; // the server already says it
+    const clash = theirPaths.some((q) => syncPathsOverlap(p, q) && !(recordDeleted(q) && p.startsWith(q + '/')));
+    if (clash) clashed.push(p); else keep[p] = mine[p];
+  });
+  const keepPaths = Object.keys(keep);
+  if (keepPaths.length && baseAt && Date.now() - baseAt > CFG_STALE_MS) {
+    const when = formatEasternStamp(new Date(baseAt).toISOString()) || 'a while ago';
+    if (!confirm(`This phone has ${keepPaths.length} change${keepPaths.length === 1 ? '' : 's'} to the week setup saved since ${when} that never reached the server. Send ${keepPaths.length === 1 ? 'it' : 'them'} now?`)) keep = {};
+  }
+  applyRemoteConfig(remote, { mine: keep });
+  cfgRecordClashes(clashed, mine, localCanon, remoteCanon);
+  if (Object.keys(keep).length) pushConfig(); // the unconfirmed ops, exactly (they differ from the new base)
+  return true;
+}
+
+function cfgRecordClashes(paths, mine, localCanon, remoteCanon) {
+  // A lost reorder is not worth a question (the server's order stands); anything else is listed.
+  const shown = paths.filter((p) => p.split('/')[2] !== '_o');
+  if (!shown.length) return;
+  const added = shown.map((p) => ({
+    id: cfgNoteId(), kind: 'clash', path: p, mine: mine[p], theirs: cfgValueAt(remoteCanon, p),
+    what: cfgWhat(p, localCanon, remoteCanon), at: new Date().toISOString(),
+  }));
+  cfgSetNotes(cfgNotes().filter((n) => !(n.kind === 'clash' && added.some((a) => a.path === n.path))).concat(added));
+  // The synthetic entry changes MINE into THEIRS, so Undo (which puts `before` back
+  // where the value still equals `after`) brings my offline edit back.
+  added.forEach((a) => undoRecord('Bring back your offline change to ' + a.what, [['config', a.path, a.mine, a.theirs]], { quiet: true }));
+  showToast(`⚠️ ${added.length} change${added.length === 1 ? '' : 's'} you made offline clashed with someone else’s — kept theirs. Settings → Set up the week lets you bring ${added.length === 1 ? 'it' : 'them'} back.`);
+}
+
+// Unsent config edits from a PREVIOUS camp year are set aside as downloadable JSON,
+// never applied (same store and bar as the state engine's stranded work).
+function cfgStrand(mine, localCanon, fromEpoch, toEpoch, baseAt) {
+  const changes = Object.keys(mine).filter((p) => p.split('/')[2] !== '_o').map((p) => ({
+    path: 'config/' + p, what: cfgWhat(p, localCanon), value: mine[p] === undefined ? null : mine[p],
+  }));
+  if (!changes.length) return false;
+  const kept = addStranded({
+    at: new Date().toISOString(),
+    from: fromEpoch || 'legacy',
+    to: toEpoch || 'legacy',
+    lastSyncedAt: baseAt ? new Date(baseAt).toISOString() : null,
+    changes,
+  });
+  const n = changes.length;
+  showToast(`⚠️ This phone had ${n} change${n === 1 ? '' : 's'} to the week setup from last camp week that never synced. ${n === 1 ? 'It wasn’t' : 'They weren’t'} added to this week. ` +
+    (kept ? `Download ${n === 1 ? 'it' : 'them'} from the bar at the top of the page.` : 'This phone is out of room to keep them, so download them now.'));
+  updateSyncIndicator();
+  return true;
+}
+
+// The config base follows the state engine's epoch (sync-F11). The wizard (step 28)
+// doesn't write `config`, so a config snapshot never tells the base about a new
+// year. Whenever the state engine adopts an epoch other than the one the base was
+// confirmed under: edits still unconfirmed are last year's and are stranded right
+// then, and the base takes the new epoch in the same write — so a device that
+// stays open across the wizard and then edits games offline keeps THOSE edits
+// through a reload. A no-op until an epoch exists (both sides read '').
+function cfgFollowStateEpoch() {
+  if (!configReady) return; // the first config snapshot compares epochs itself
+  const base = cfgBaseTree();
+  if (!base) return;
+  const e = (state.meta && state.meta.epoch) || '';
+  const was = state._cfgBaseEpoch || '';
+  if (was === e) return;
+  const localCanon = cfgCanon(state.config);
+  const mine = canEdit() ? treeDiff(base, localCanon, CFG_DEPTHS) : {};
+  if (Object.keys(mine).length) {
+    cfgStrand(mine, localCanon, was, e, Number(state._cfgBaseAt) || 0);
+    state.config = cfgFromCanon(base, state.config.updatedAt, state.config);
+    migrateState(state);
+  }
+  state._cfgBaseEpoch = e;
+  if (cfgNotes().length) delete state._cfgNotes; // last year's clashes and put-backs
+  undoClear(); // and last year's undo history
+  persistState();
+}
+
+// ── Sending the config ───────────────────────────────────────────────
+
+// Settings code calls this after mutating state.config (configEdit does, for the
+// ones that also want an undo entry).
 function saveConfig() {
   state.config.updatedAt = new Date().toISOString();
   persistState();
@@ -3103,15 +3535,13 @@ function schedulePushConfig() {
   pushConfigTimer = setTimeout(() => { pushConfigTimer = null; pushConfig(); }, 400);
 }
 
-// The exact top-level keys the config node may carry. A config push is a whole
-// node set(), so once the rules seal this node with "$other": false, ONE
-// unrecognised key would bounce the entire write — and pushConfig's only
-// failure handling is a console.warn, so the week builder would just silently
-// stop syncing. Strays are plausible: tryImport (settings.js) assigns
-// state.config wholesale from a pasted backup, and applyRemoteConfig adopts
-// whatever the node already holds. Strip on the way out instead. Because this
-// is a set() and not an update(), that also prunes any stray already in the
-// live node on the first config edit after this ships.
+// The exact top-level keys the config node may carry. The rules seal this node
+// with "$other": false, so ONE unrecognised key would bounce the whole write.
+// Strays are plausible: tryImport (settings.js) assigns state.config wholesale from
+// a pasted backup, and a server node may hold a leftover. cfgFromCanon already
+// emits only these; this is the last line (and the seed's). Because a push replaces
+// the node's value with the transaction's result, a stray already in the live node
+// is pruned by the first edit after this ships.
 // Keep in sync with defaultConfig() (defaults.js) and seniorDefaultConfig().
 const CONFIG_KEYS = ['version', 'updatedAt', 'sessions', 'days', 'games'];
 
@@ -3121,92 +3551,94 @@ function configForSync(config) {
   return out;
 }
 
-// The week-config listener. Its own function so tests can attach it to a fake
-// database (tests/config-gate.test.js) without standing up the whole of initSync.
-function attachConfigListener() {
-  fbConfigRef.on('value', (snap) => {
-    const remote = snap.val();
-    const firstConfig = !configReady;
-    configReady = true; // the server has spoken: pushes may flow, the builder may open
-    if (!remote) {
-      // An empty node: this phone's catalog is the only one there is — seed it.
-      seedConfigIfAbsent();
-    } else if (editorMidEntry()) {
-      // Held back mid-entry — applied by the builder's focusout flush, or by the
-      // idle retry tick if focus never returns to the builder.
-      pendingRemoteConfig = remote;
-      if (firstConfig) configFirstHeld = true; // the builder stays read-only until it lands
-      armIdleRetry();
-    } else {
-      pendingRemoteConfig = null;
-      configFirstHeld = false;
-      applyRemoteConfig(remote);
-    }
-    // The builder was showing "Loading the games list…"; open it now, even
-    // when the catalog came back identical (applyRemoteConfig renders only on
-    // a change). Held while a field is focused, like every background render.
-    if (firstConfig && appStarted && state.ui.view === 'settings') renderAllWhenIdle();
-  }, (err) => {
-    console.warn('Firebase config read failed, staying local', err);
-    fbConfigRef = null;
-    syncDenied = true;
-    updateSyncIndicator();
-  });
-}
-
 // May the games/days catalog be edited right now? Yes once the first config
-// snapshot has landed, and also whenever no snapshot is ever coming that could
-// replace an edit: sync isn't configured (local-only), the SDK never loaded
-// (read-only copy anyway), or the config read was refused (access revoked).
-// Otherwise the builder shows "Loading the games list…". Applies to the Games
-// and Days tabs and to the Data tab's import / restore-defaults, i.e. every
-// writer of state.config. The three-way merge that lets this lift (S3) is not
-// built yet.
+// snapshot has been processed; before that only on a device holding a confirmed
+// baseline (its edit is kept and three-way merged when the snapshot lands), and
+// whenever no snapshot is ever coming that could replace an edit: sync isn't
+// configured (local-only), the SDK never loaded (read-only copy anyway), or the
+// config read was refused (access revoked). Otherwise the builder shows "Loading
+// the games list…". Covers the Games and Days tabs and the Data tab's import /
+// restore-defaults, i.e. every writer of state.config.
 function configEditable() {
-  if (configReady) return !configFirstHeld;
+  if (configReady) return true;
   if (!(window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey)) return true;
-  return syncDenied || sdkLoadFailed;
+  if (syncDenied || sdkLoadFailed) return true;
+  return !!cfgBaseTree();
 }
 
-// Apply a config snapshot that was parked while a field was focused. The one
-// place that consumes pendingRemoteConfig (the idle tick and the builder's
-// focusout both call it). If the parked snapshot was the FIRST one, the builder
-// was showing "Loading the games list…" and applyRemoteConfig repaints only on
-// a change, so repaint here to lift the placeholder.
-function flushPendingRemoteConfig() {
-  if (!pendingRemoteConfig) return;
-  const rc = pendingRemoteConfig;
-  const wasFirst = configFirstHeld;
-  pendingRemoteConfig = null;
-  configFirstHeld = false;
-  applyRemoteConfig(rc);
-  if (wasFirst && appStarted && state.ui.view === 'settings') renderAllWhenIdle();
-}
-
+// One transaction at a time, applying MY unconfirmed ops (the diff against the
+// confirmed baseline) to the server's CURRENT value — so two directors editing
+// different fields of one game both land, and an old build's whole set() landing
+// between our read and our commit just makes the SDK re-run this on the new value.
 function pushConfig() {
-  // Not before the first config snapshot: until then this phone doesn't know
-  // what the server holds, and a whole-node set() would overwrite it.
+  // Not before the first config snapshot: until then this phone doesn't know what
+  // the server holds (or which year it is in).
   if (!fbConfigRef || applyingRemoteConfig || !configReady) return;
   if (!tabMayPush('config')) return; // see pushState
+  if (pendingConfigWrites > 0) { configPushOwed = true; return; }
+  const base = cfgBaseTree();
+  if (!base) return; // no confirmed baseline yet (a seed is in flight): nothing to measure against
+  const atPush = cfgCanon(state.config);
+  const ops = treeDiff(base, atPush, CFG_DEPTHS);
+  if (!Object.keys(ops).length) return;
   pendingConfigWrites++;
-  const settle = () => { pendingConfigWrites = Math.max(0, pendingConfigWrites - 1); };
-  // set() can throw synchronously (an illegal key from a hand-edited backup);
-  // without the catch the counter would stay raised and block every reload.
+  const settle = () => {
+    pendingConfigWrites = Math.max(0, pendingConfigWrites - 1);
+    if (configPushOwed) { configPushOwed = false; pushConfig(); }
+  };
+  let dropped = [];
+  // transaction() can throw synchronously (an illegal key from a hand-edited
+  // backup); without the catch the counter would stay raised and block every reload.
   try {
-    // JSON round-trip strips any `undefined` (which Realtime DB rejects).
-    fbConfigRef.set(JSON.parse(JSON.stringify(configForSync(state.config)))).then(settle, (e) => {
-      settle();
-      configPushFailed(e);
-    });
+    fbConfigRef.transaction((cur) => {
+      // ABORT: the node is really gone (our listener keeps it cached, so null is not
+      // "not loaded yet"). The listener is about to see the null and re-seed it from
+      // this phone's catalog, edits included; the ops stay unconfirmed until then.
+      if (cur === null || cur === undefined) return undefined;
+      const r = applyOpsSafe(cfgCanon(cur), ops, CFG_ANCHORS);
+      dropped = r.dropped; // the LAST run's (the SDK may re-run this on a newer server value)
+      return JSON.parse(JSON.stringify(configForSync(cfgFromCanon(r.tree, new Date().toISOString()))));
+    }, null, false).then((res) => {
+      try {
+        if (res && res.committed) cfgPushCommitted(res.snapshot.val(), ops, dropped);
+        else console.warn('config push aborted: the node is gone on the server; it will be re-seeded');
+      } finally { settle(); }
+    }, (e) => { settle(); configPushFailed(e); });
   } catch (e) {
     settle();
     configPushFailed(e);
   }
 }
 
+// The transaction committed `serverVal`. The server's value may include other
+// editors' changes this phone hasn't received yet, so rebase the LOCAL copy onto it:
+// local = the committed value + only the edits made since this push started. (Setting
+// the base to the committed value without that would make the next diff "undo"
+// somebody else's change.) The push-time tree is the base plus the ops we sent — a
+// snapshot that landed mid-push has already rebased the base, and this follows it.
+function cfgPushCommitted(serverVal, ops, txnDropped) {
+  const server = cfgCanon(serverVal);
+  const localBefore = cfgCanon(state.config);
+  const atPush = applyOpsSafe(cfgBaseTree() || {}, ops, CFG_ANCHORS).tree;
+  const since = treeDiff(atPush, localBefore, CFG_DEPTHS); // edits made while the push was in flight
+  const r = applyOpsSafe(server, since, CFG_ANCHORS);
+  const beforeJson = JSON.stringify(syncCanon(state.config));
+  applyingRemoteConfig = true;
+  state.config = cfgFromCanon(r.tree, cfgLater(serverVal && serverVal.updatedAt, state.config.updatedAt), state.config);
+  migrateState(state);
+  writeCfgBase(server); // base + config persisted in ONE setItem
+  applyingRemoteConfig = false;
+  const lost = (txnDropped || []).concat(r.dropped);
+  if (lost.length) cfgNoteDropped(lost, localBefore);
+  if (appStarted && JSON.stringify(syncCanon(state.config)) !== beforeJson) {
+    remoteJustApplied = true; // others' changes rode in with the commit
+    renderAllWhenIdle();
+  }
+}
+
 // The builder's save is the one write this app used to lose in silence (the
 // catch was a console.warn). Say so; the edit is still on this phone and goes up
-// with the next builder change.
+// with the next builder change — or, after a reload, with the first-snapshot merge.
 function configPushFailed(e) {
   console.warn('config push failed', e);
   if (typeof showToast === 'function') showToast("Couldn't save the week setup — check your connection and try again.");
@@ -3215,7 +3647,8 @@ function configPushFailed(e) {
 // First upgraded client on an empty config node seeds the catalog — as a
 // transaction that only writes into a node that is really empty, so two phones
 // seeding at once (or one racing a director's first save) can't overwrite each
-// other. Never touches an existing node: returning undefined aborts.
+// other. Never touches an existing node: returning undefined aborts. The seeded
+// value becomes the confirmed baseline.
 function seedConfigIfAbsent() {
   if (!fbConfigRef) return;
   pendingConfigWrites++;
@@ -3224,11 +3657,208 @@ function seedConfigIfAbsent() {
     fbConfigRef.transaction(
       (cur) => (cur === null ? JSON.parse(JSON.stringify(configForSync(state.config))) : undefined),
       null, false,
-    ).then(settle, (e) => { settle(); console.warn('config seed failed', e); });
+    ).then((res) => {
+      try {
+        if (res && res.committed && res.snapshot) writeCfgBase(cfgCanon(res.snapshot.val()));
+      } finally { settle(); }
+    }, (e) => { settle(); console.warn('config seed failed', e); });
   } catch (e) {
     settle();
     console.warn('config seed threw', e);
   }
+}
+
+// ── Commits that can be undone (setup-rebuild-spec §7.1, core) ────────────
+// configEdit / stateEdit are the two commit wrappers: snapshot the canonical tree,
+// run the mutation (which looks its record up BY ID when it runs — P10: a remote
+// apply may have replaced every object since the handler was wired), commit through
+// the normal engine, and record what changed as an undo entry. Entry:
+//   { id, label, at, epoch, ops: [[domain, path, before, after], …] }
+// with canonical before/after from the engine's own diff; domain ∈ config | teams
+// (setup and campers join later). Undo puts `before` back ONLY where the current
+// value still equals `after`; paths somebody changed since are left alone and
+// said out loud. The undo is itself a commit, so it becomes a new "Undid: …" entry
+// (no separate redo stack). People/access changes are not undoable (they keep
+// their own confirms); scores keep their own tools.
+// Persisted per camp in lsKey('campSetupUndo') — at most 50 entries / 200 KB, oldest
+// dropped; an entry over 20 KB (a restore, a seed) isn't stacked — and cleared on
+// an epoch change, when a device stops being an editor, and by clearLocalData.
+const UNDO_KEY = 'campSetupUndo';
+const UNDO_MAX_ENTRIES = 50;
+const UNDO_MAX_BYTES = 200000;
+const UNDO_ENTRY_MAX_BYTES = 20000;
+let undoList = null; // lazily read from storage on first use (never at load: boot-cache.test.js)
+let undoLastRecorded = null;
+
+function undoRead() {
+  if (undoList) return undoList;
+  let list = [];
+  try {
+    const raw = JSON.parse(localStorage.getItem(lsKey(UNDO_KEY)) || '[]');
+    if (Array.isArray(raw)) list = raw.filter((e) => e && typeof e.id === 'string' && Array.isArray(e.ops));
+  } catch (e) { /* unreadable or blocked storage: no history as far as this page can tell */ }
+  undoList = list;
+  return list;
+}
+
+function undoWrite() {
+  try {
+    if (undoList && undoList.length) localStorage.setItem(lsKey(UNDO_KEY), JSON.stringify(undoList));
+    else localStorage.removeItem(lsKey(UNDO_KEY));
+  } catch (e) { /* quota / private mode: the in-memory copy still serves this page */ }
+}
+
+function undoClear() {
+  undoList = [];
+  undoLastRecorded = null;
+  undoWrite();
+}
+
+function undoDrop(id) {
+  undoList = undoRead().filter((e) => e.id !== id);
+  undoWrite();
+}
+
+// Newest first (what a "Recent changes" list would show).
+function undoRecent() {
+  return undoRead().slice().reverse();
+}
+
+// Returns the entry, or null when there was nothing to record or it was too big.
+function undoRecord(label, ops, opts) {
+  if (!ops || !ops.length || !label) return null;
+  const entry = {
+    id: 'u' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+    label: String(label),
+    at: new Date().toISOString(),
+    epoch: (state.meta && state.meta.epoch) || '',
+    ops,
+  };
+  if (JSON.stringify(entry).length > UNDO_ENTRY_MAX_BYTES) return null;
+  const list = undoRead();
+  list.push(entry);
+  while (list.length > UNDO_MAX_ENTRIES || (list.length > 1 && JSON.stringify(list).length > UNDO_MAX_BYTES)) list.shift();
+  undoWrite();
+  undoLastRecorded = entry;
+  if (!(opts && opts.quiet)) {
+    showToast(entry.label, { action: { label: 'Undo', run: () => undoEntry(entry.id) }, duration: 8000 });
+  }
+  return entry;
+}
+
+function configEdit(label, mutate, opts) {
+  const before = cfgCanon(state.config);
+  if (mutate() === false) return false;
+  const ops = treeDiff(before, cfgCanon(state.config), CFG_DEPTHS);
+  const paths = Object.keys(ops);
+  if (!paths.length) return true; // nothing real changed: nothing to send, stamp or undo
+  saveConfig();
+  if (!(opts && opts.undo === false)) undoRecord(label, paths.map((p) => ['config', p, cfgValueAt(before, p), ops[p]]), opts);
+  return true;
+}
+
+// The roster in the same id-keyed form (teams/<id>/<field>, `_o` = position), so a
+// rename, a counselor edit and a reorder diff and undo field by field.
+const TEAMS_DEPTHS = { teams: 3 };
+function teamsCanon(teams) {
+  const keyed = {};
+  (teams || []).forEach((t, i) => { if (t && typeof t.id === 'string') keyed[t.id] = Object.assign({}, t, { _o: i }); });
+  return syncCanon({ teams: keyed }) || {};
+}
+
+function stateEdit(label, mutate, opts) {
+  const before = teamsCanon(state.teams);
+  if (mutate() === false) return false;
+  const ops = treeDiff(before, teamsCanon(state.teams), TEAMS_DEPTHS);
+  const paths = Object.keys(ops);
+  if (!paths.length) return true;
+  saveState();
+  if (!(opts && opts.undo === false)) undoRecord(label, paths.map((p) => ['teams', p, cfgValueAt(before, p), ops[p]]), opts);
+  return true;
+}
+
+function teamsApplyPaths(changes) {
+  const order = {};
+  (state.teams || []).forEach((t, i) => { order[t.id] = i; });
+  let reorder = false;
+  Object.keys(changes).forEach((path) => {
+    const [, id, field] = path.split('/');
+    const t = (state.teams || []).find((x) => x.id === id);
+    if (!t || !field) return;
+    if (field === '_o') { if (typeof changes[path] === 'number') { order[id] = changes[path]; reorder = true; } return; }
+    if (changes[path] === null) delete t[field]; else t[field] = changes[path];
+  });
+  if (reorder) state.teams.sort((a, b) => order[a.id] - order[b.id]);
+}
+
+// Each domain says how to read a path now and how to commit changes (through its
+// normal engine, quietly: undoEntry raises the one toast).
+const UNDO_DOMAINS = {
+  config: {
+    valueAt: (path) => cfgValueAt(cfgCanon(state.config), path),
+    what: (path) => cfgWhat(path, cfgCanon(state.config)),
+    apply: (changes, label) => configEdit(label, () => { cfgApplyPaths(changes); }, { quiet: true }),
+  },
+  teams: {
+    valueAt: (path) => cfgValueAt(teamsCanon(state.teams), path),
+    what: (path) => {
+      const [, id, field] = path.split('/');
+      const t = (state.teams || []).find((x) => x.id === id);
+      return `team “${(t && t.name) || id}”${field ? ' · ' + (field === 'counselor' ? 'counselors' : field === '_o' ? 'order' : field) : ''}`;
+    },
+    apply: (changes, label) => stateEdit(label, () => teamsApplyPaths(changes), { quiet: true }),
+  },
+};
+
+// Undo one entry. Returns { applied, total } (null when the entry is gone or the
+// device may not edit).
+function undoEntry(id) {
+  const entry = undoRead().find((e) => e.id === id);
+  if (!entry) return null;
+  if (!canEdit()) { showToast('Only a director can undo a change.'); return null; }
+  if ((entry.epoch || '') !== ((state.meta && state.meta.epoch) || '')) {
+    undoDrop(id);
+    showToast('That change is from an earlier camp year, so it can’t be undone here.');
+    return null;
+  }
+  const byDomain = {};
+  entry.ops.forEach((op) => { (byDomain[op[0]] = byDomain[op[0]] || []).push(op); });
+  const left = [];
+  let applied = 0;
+  undoLastRecorded = null;
+  Object.keys(byDomain).forEach((domain) => {
+    const h = UNDO_DOMAINS[domain];
+    if (!h) { byDomain[domain].forEach((op) => left.push(op)); return; }
+    const changes = {};
+    byDomain[domain].forEach((op) => {
+      if (JSON.stringify(h.valueAt(op[1])) === JSON.stringify(op[3])) changes[op[1]] = op[2];
+      else left.push(op);
+    });
+    const n = Object.keys(changes).length;
+    if (!n) return;
+    h.apply(changes, 'Undid: ' + entry.label);
+    applied += n;
+  });
+  const total = entry.ops.length;
+  const redo = undoLastRecorded;
+  if (applied) {
+    undoDrop(id);
+    // The builder's text fields commit without repainting (a blur-time rebuild eats the
+    // next tap), so an undo has to bring them up to date itself.
+    if (typeof refreshBuilderCards === 'function') refreshBuilderCards();
+    if (appStarted) renderAllWhenIdle();
+  }
+  const action = redo ? { label: 'Redo', run: () => undoEntry(redo.id) } : null;
+  if (!applied) {
+    showToast('Can’t undo — someone changed this since.');
+  } else if (left.length) {
+    const names = left.map((op) => (UNDO_DOMAINS[op[0]] ? UNDO_DOMAINS[op[0]].what(op[1]) : op[1]))
+      .filter((w, i, a) => a.indexOf(w) === i).slice(0, 2).join(' and ');
+    showToast(`Undid ${applied} of ${total} changes — someone changed ${names} since; left theirs.`, { action, duration: 8000 });
+  } else {
+    showToast('Undone: ' + entry.label, { action, duration: 8000 });
+  }
+  return { applied, total };
 }
 
 // ── Adopting a remote snapshot ───────────────────────────────────
@@ -3263,9 +3893,8 @@ let remoteRefetchPending = false;
 let idleRetryTimer = null;
 
 // Arm (or keep) the once-a-second idle check that drains whatever we deferred.
-// The week-config listener arms it too: its pendingRemoteConfig stash was only
-// ever flushed by a focusout inside the builder, so a config edit that arrived
-// while a *scoreboard* input was focused sat unapplied indefinitely.
+// (The week config no longer parks here: it applies at once and only its REPAINT
+// waits, through renderAllWhenIdle — see applyRemoteConfig.)
 function armIdleRetry() {
   if (!idleRetryTimer) idleRetryTimer = setInterval(idleRetryTick, 1000);
 }
@@ -3298,7 +3927,7 @@ function renderAllWhenIdle() {
 }
 
 function idleRetryTick() {
-  if (!remoteRefetchPending && !pendingRemoteConfig && !renderOwed) {
+  if (!remoteRefetchPending && !renderOwed) {
     clearInterval(idleRetryTimer);
     idleRetryTimer = null;
     return;
@@ -3306,9 +3935,8 @@ function idleRetryTick() {
   // An owed render waits only for the field to let go — not for pushes to
   // settle like the remote adopt below (with sync off they never do).
   if (renderOwed && !fieldFocused()) { renderOwed = false; renderAll(); }
-  if (!remoteRefetchPending && !pendingRemoteConfig) return;
+  if (!remoteRefetchPending) return;
   if (!canAdoptRemote()) return; // still mid-entry / mid-push — check again next tick
-  flushPendingRemoteConfig();
   if (remoteRefetchPending && fbRef) {
     clearDeferredSnapshot();
     fbRef.once('value')
@@ -3319,8 +3947,16 @@ function idleRetryTick() {
   }
 }
 
-// Entry point for every snapshot, live or re-fetched.
+// Entry point for every snapshot, live or re-fetched. The wrapper exists for ONE
+// thing: the week config's first snapshot waits for this engine's first pull (its
+// epoch is in state/meta), and every path out of the body below — adopt, merge,
+// seed, strand — has to release it afterwards.
 function handleRemoteSnapshot(remote) {
+  const first = !remoteReady;
+  try { handleRemoteSnapshotBody(remote); } finally { if (first) releaseFirstConfig(); }
+}
+
+function handleRemoteSnapshotBody(remote) {
   const firstSnapshot = !remoteReady;
   remoteReady = true; // server truth received — pushes may flow now
   if (!remote) {
@@ -3422,6 +4058,67 @@ function syncCanonTree(t) {
   return out;
 }
 
+// ── Shared pure helpers for the id-keyed engines (setup-rebuild-spec §6.1) ──
+// The config engine uses them now; the setup engine (S4) is built on the same two.
+//
+// treeDiff(prev, cur, depthSpec) → { 'a/b/c': value | null }. Both sides are
+// compared in canonical form (syncCanon). Objects present on BOTH sides recurse
+// until `depthSpec` says leaf; arrays and scalars are leaves; an object absent on
+// one side is written whole (a create) or as null (a delete). `depthSpec` maps a
+// TOP-LEVEL key to how many path segments reach its leaves (default 1 = the whole
+// value is one leaf), or to a function (parts) => isLeaf for the odd shape. The
+// values returned are copies, safe to keep.
+function treeDiff(prev, cur, depthSpec) {
+  const isMap = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+  const isLeaf = (parts) => {
+    const d = depthSpec && depthSpec[parts[0]];
+    if (typeof d === 'function') return !!d(parts);
+    return parts.length >= (typeof d === 'number' ? d : 1);
+  };
+  const out = {};
+  const walk = (a, b, parts) => {
+    if (JSON.stringify(a) === JSON.stringify(b)) return;
+    if (!isLeaf(parts) && isMap(a) && isMap(b)) {
+      Object.keys(Object.assign({}, a, b)).forEach((k) => walk(a[k], b[k], parts.concat(k)));
+      return;
+    }
+    out[parts.join('/')] = b === undefined ? null : b;
+  };
+  const pa = syncCanon(prev);
+  const pb = syncCanon(cur);
+  const ma = isMap(pa) ? pa : {};
+  const mb = isMap(pb) ? pb : {};
+  Object.keys(Object.assign({}, ma, mb)).forEach((k) => walk(ma[k], mb[k], [k]));
+  return out;
+}
+
+// applyOpsSafe(tree, ops, anchors) → { tree, dropped }. Applies treeDiff-style ops
+// to a canonical tree, EXCEPT a field op whose record is absent: `anchors` maps a
+// top-level key to how many path segments name a record (games: 2 → games/<id>),
+// so `games/<id>/name` is dropped (and reported) when games/<id> is gone — writing
+// it would resurrect a half record — while a whole-record op (a create) or a delete
+// always applies. A field delete (null) into an absent record is a no-op, not news.
+// `dropped` entries: { path, value, record }.
+function applyOpsSafe(tree, ops, anchors) {
+  const dropped = [];
+  const apply = {};
+  Object.keys(ops).forEach((path) => {
+    const parts = path.split('/');
+    const depth = anchors && anchors[parts[0]];
+    if (depth && parts.length > depth) {
+      const record = parts.slice(0, depth).join('/');
+      if (syncValueAt(tree, record) === undefined) {
+        if (ops[path] !== null) dropped.push({ path, value: ops[path], record });
+        return;
+      }
+    }
+    apply[path] = ops[path];
+  });
+  // Canonical in, canonical out: deleting a record's last sibling must not leave an
+  // empty map behind (the database would have pruned it).
+  return { tree: syncCanon(applySyncPaths(tree, apply)) || {}, dropped };
+}
+
 // ── Stranded work (setup-rebuild-spec §6.2 #3, "S2d") ──────────────
 // Unsent work from a PREVIOUS camp year must never be written into the current
 // one. The new-year wizard (Step 28) stamps `state.meta.epoch`; a phone that was
@@ -3497,8 +4194,8 @@ function strandedDownloadJson() {
     label: CAMP.label,
     downloadedAt: new Date().toISOString(),
     note: 'Changes this phone made but never sent to the server before a new camp year began. ' +
-      'They were NOT added to the new year. Each change is a database path under state/ and the value ' +
-      'that was set there (null = it was deleted).',
+      'They were NOT added to the new year. Each change is a database path under state/ (scores and teams) ' +
+      'or config/ (the games and days setup) and the value that was set there (null = it was deleted).',
     entries: readStranded(),
   }, null, 2);
 }
@@ -3734,6 +4431,7 @@ function applyRemoteState(remote, confirmedBase, opts) {
     notifyResultChanges(resultChanges);
     notifyNewAnnouncements(annBefore);
   }
+  cfgFollowStateEpoch(); // the week config's baseline follows the epoch this snapshot carries (sync-F11)
   ensureSecrecySeed(); // after the snapshot is in place, so the one-key write diffs against it
 }
 
@@ -4774,14 +5472,43 @@ function playMineChime() {
 const TOAST_MAX_VISIBLE = 3;
 const liveToasts = []; // { toast, mine }
 
+// A button inside a toast (opts.action = { label, run }): Undo after a builder
+// commit, Redo after an undo. The Jelly toaster has no action slot and is vendored,
+// so the button is appended to the toast it returned. Its click must not also
+// dismiss through the toast's own click handler, and closes the toast itself after
+// running. Plain inline styling: the toast lives in the toaster's shadow tree,
+// where the page's stylesheet doesn't reach.
+function addToastAction(toast, action) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'toast-action';
+  btn.textContent = action.label;
+  btn.style.cssText = 'appearance:none;border:0;background:transparent;color:inherit;font:inherit;font-weight:700;' +
+    'text-decoration:underline;text-underline-offset:3px;cursor:pointer;padding:4px 6px;margin:-4px 0;border-radius:8px;touch-action:manipulation';
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    try { action.run(); } finally {
+      const close = toast.querySelector && toast.querySelector('.close');
+      if (close) close.click(); else if (toast.remove) toast.remove();
+    }
+  });
+  // Before the ✕ when the toast has one (a direct child of the Jelly toast), else last.
+  const close = toast.querySelector && toast.querySelector('.close');
+  if (close && close.parentNode === toast && typeof toast.insertBefore === 'function') toast.insertBefore(btn, close);
+  else toast.appendChild(btn);
+}
+
 function showToast(message, opts) {
   const mine = !!(opts && opts.mine);
+  const action = opts && opts.action;
+  const ms = (opts && opts.duration) || (mine ? 5500 : 4000);
   // Jelly toaster (the <jelly-toaster position="bottom"> rail in index.html).
   // Falls back to the legacy #toast-container pill if the module hasn't
   // loaded/failed — toasts carry sync errors and must always surface.
   if (window.jellyToast) {
-    const toast = window.jellyToast(message, { tone: mine ? 'success' : 'info', duration: mine ? 5500 : 4000 });
+    const toast = window.jellyToast(message, { tone: mine ? 'success' : 'info', duration: ms });
     if (toast) {
+      if (action) addToastAction(toast, action);
       liveToasts.push({ toast, mine });
       for (let i = liveToasts.length - 1; i >= 0; i--) if (!liveToasts[i].toast.isConnected) liveToasts.splice(i, 1);
       while (liveToasts.length > TOAST_MAX_VISIBLE) {
@@ -4803,12 +5530,13 @@ function showToast(message, opts) {
   const el = document.createElement('div');
   el.className = 'toast' + (mine ? ' toast-mine' : '');
   el.textContent = message;
+  if (action) addToastAction(el, action);
   container.appendChild(el);
   const remove = () => el.remove();
   setTimeout(() => {
     el.classList.add('toast-out');
     setTimeout(remove, 250);
-  }, mine ? 5500 : 4000);
+  }, ms);
 }
 
 function maybeNativeNotification(title, body, tag) {
@@ -10242,17 +10970,6 @@ function init() {
   // Week builder entry point (Settings sheet → Set up the week).
   const builderRow = document.getElementById('builder-row');
   if (builderRow) builderRow.addEventListener('click', () => openBuilder());
-  // A remote config held back while a builder input was focused (see the
-  // fbConfigRef listener) is applied once focus leaves the form.
-  const builderView = document.getElementById('settings-view');
-  if (builderView) {
-    builderView.addEventListener('focusout', () => {
-      setTimeout(() => {
-        if (pendingRemoteConfig && !editorMidEntry()) flushPendingRemoteConfig();
-      }, 0);
-    });
-  }
-
   // (Sync is NOT started here — startSync() runs from the approved branch
   // of the member listener, the only place allowed to attach database refs.
   // Until then the indicator honestly reads "Connecting…", or "This device
@@ -10949,6 +11666,9 @@ function hasUnsyncedWork() {
 // the one copy of that work. (A camp switch keeps per-camp storage.)
 function hasUnconfirmedLocalWork() {
   if (pendingConfigWrites > 0) return true; // a builder save the server hasn't acknowledged
+  // Saved on this phone but never confirmed — including a builder edit from an
+  // earlier session, which only the persisted baseline (_cfgBase) can tell apart.
+  if (canEdit() && Object.keys(cfgUnconfirmed()).length) return true;
   try {
     const base = confirmedTree || bootSyncedTree;
     if (!base) return false;
@@ -11070,7 +11790,7 @@ function clearLocalData() {
   const bases = ['campScoreboardV2', 'campScoreboardDayRanks',
     'campScoreboardDismissedChanges', 'campScoreboardDismissedAnnouncements',
     'campScoreboardChatSeen', 'campScoreboardChatSubs',
-    'campScoreboardPushOn', 'campScoreboardPushPrefs', STRANDED_KEY];
+    'campScoreboardPushOn', 'campScoreboardPushPrefs', STRANDED_KEY, UNDO_KEY];
   Object.keys(CAMPS).forEach((cid) => {
     bases.forEach((b) => {
       try { localStorage.removeItem(b + CAMPS[cid].storageSuffix); } catch (e) { /* ignore */ }

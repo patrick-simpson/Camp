@@ -431,9 +431,20 @@ test('syncedSnapshot covers exactly the synced keys', () => {
 test('flushPendingPush sends both the score push AND the week-config push', () => {
   freshState();
   const ref = useFakeRef();
+  // The week config goes up as a TRANSACTION of this phone's unconfirmed ops (config
+  // engine v2, tests/config-sync.test.js) — it needs a confirmed baseline and a real edit.
   const configWrites = [];
-  fbConfigRef = { set: (v) => { configWrites.push(v); return Promise.resolve(); } };
+  const serverConfig = JSON.parse(JSON.stringify(state.config));
+  fbConfigRef = {
+    transaction: (fn) => {
+      const next = fn(JSON.parse(JSON.stringify(serverConfig)));
+      configWrites.push(next);
+      return Promise.resolve({ committed: true, snapshot: { val: () => next } });
+    },
+  };
   configReady = true; // the first config snapshot has landed (tests/config-gate.test.js covers before it)
+  state._cfgBase = cfgCanon(state.config);
+  state.config.games[0].name += ' (edited)';
 
   state.results = { g1: { medals: { gold: 't0' } } };
   schedulePush();

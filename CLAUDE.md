@@ -576,8 +576,24 @@ What's covered, and why each file exists:
   Keep helpers that run at load free of later top-level `const`s.
 - `bracket-guard.test.js` — a foreign-shaped bracket renders the reload card, is
   never healed, pushed, or shown as live (see "A bracket this build can't read").
-- `config-gate.test.js` — the week-config first-pull gate above, driven
-  against `fake-rtdb.js` with the app's real `attachConfigListener`.
+- `config-gate.test.js` — the week-config first-pull gate (nothing pushed before the
+  first snapshot is processed, the baseline-less builder read-only, the first snapshot
+  waiting for the state's first pull, data applied at once mid-entry, the null-seed),
+  driven against `fake-rtdb.js` with the app's real `attachConfigListener`.
+- `config-sync.test.js` (+ `.senior`) — **the config engine v2** (see "The week config
+  is a field-op engine"): `treeDiff` / `applyOpsSafe` and the canonical id-space
+  (including a seeded fuzz: base + diff = edit for random inserts, deletes, reorders and
+  field edits, both catalogs), rebase on receipt, two devices editing two fields of one
+  game, same field last-commit-wins, an old build's whole `set()` landing mid-push, a
+  snapshot landing mid-push, the in-flight edit, `null` abort, re-seed of an emptied
+  node, delete-vs-edit → Put it back (received and found-at-commit), the offline edit →
+  real reload (a fresh context over the cache) → first-snapshot merge, clash → Use mine,
+  the 36 h ask, epoch strand and follow, and accounting.
+- `undo.test.js` (+ `.senior`) — **the undo core**: canonical entries, the Undo/Redo
+  toast actions, undo only where the value still equals `after` (partial and refused
+  reports), adds/deletes/reorders/days/teams, the offline-clash synthetic entry, the
+  50-entry / 200 KB / 20 KB caps and persistence across a reload, clearing on epoch /
+  demotion / `clearLocalData`, and the viewer gate.
 - `contrast.test.js` — danger red as TEXT. `--color-danger` is a fill tuned to
   carry white text; any rule that colours text red uses `--color-danger-text`
   (light `#b42318`, 6.57:1 on white; dark `#ff8a8a`). The test pins the token
@@ -1114,7 +1130,7 @@ rules**; the client code only shapes the UI.
   theme hint, the Calm motion switch and its last verdict
   (`campScoreboardCalmMotion` / `campScoreboardCalmLast`), the parked email, and
   any stranded last-year work `campScoreboardStranded` — the sign-out question
-  names it first)
+  names it first — and the builder's undo history `campSetupUndo`)
   plus IndexedDB photos (`clearPhotos`), then reloads. Theme and Calm motion are
   NOT preserved — the boot guards discard partial state, so they reset to Auto.
 - **Rules are PUBLISHED and enforced** (2026-07-25). Verified after the flip:
@@ -1313,30 +1329,121 @@ More sync invariants (each fixed after it bit us — don't regress these;
   arrives. Without it, a device on slow wifi that saves anything before
   its first sync queues a `set()` of stale local state that wipes
   everyone's newer scores on connect.
-- **The week config has its own first-pull gate** (`configReady`, twin of
-  `remoteReady`). `campScoreboard/config` is a whole-object last-write-wins node
-  with no merge yet, so a catalog edit made BEFORE its first snapshot would be
-  silently replaced by it (or push a stale catalog over everyone's). Until the
-  first config snapshot: `pushConfig` writes nothing, and the Games and Days
-  tabs (plus Import, Restore defaults and the ⚡ quick game — every writer of
-  `state.config`) are read-only behind "Loading the games list…"
-  (`configEditable()` / `renderConfigLoading`). It lifts at once when no
-  snapshot can ever come: sync not configured, SDK down, or the config read
-  refused. An empty node is seeded by a TRANSACTION that only writes into a
-  truly empty node (`seedConfigIfAbsent`), never a `set()`. Config writes are
-  counted (`pendingConfigWrites`); `pendingWritesTotal()` = scores + config
-  feeds `reloadBlocked`, `hasUnsyncedWork` and `hasUnconfirmedLocalWork`, while
-  `canAdoptRemote` deliberately stays about `state` alone. A refused or failed
-  config write now says "Couldn't save the week setup" instead of a console
-  warn. Known cost: a director who opens the builder offline on a phone that has
-  not yet heard from the server waits until it connects (the three-way merge
-  that lifts this is the config engine rebuild, not built yet). A FIRST snapshot
-  that arrives while a field is focused is parked in `pendingRemoteConfig` with
-  `configFirstHeld` set: `configReady` is already true but `state.config` is
-  still the stale cache, so the builder stays read-only until
-  `flushPendingRemoteConfig()` (the one consumer — idle tick and builder
-  focusout) applies it and repaints. Later parked snapshots never set the flag,
-  so an open game editor is never swapped for "Loading".
+- **The week config is a field-op engine, never a whole-object write** (config
+  engine v2, setup rebuild spec §6.3 — build step 9; it replaced scoring#3's
+  whole-`set()` last-write-wins). `campScoreboard/config` is still the same
+  five-key, array-shaped node (`version`, `updatedAt`, `sessions`, `days`, `games` —
+  old builds read it unchanged; their whole `set()` still lands and can only clobber
+  from a device that hasn't reloaded). What changed is how a device talks to it:
+  - **Canonical id-space** (`cfgCanon` / `cfgFromCanon`, diff and merge ONLY, never
+    stored): `days` and `games` keyed by record id, each record carrying its list
+    position as `_o`; `syncCanon`'d, so RTDB's pruning and key order are no change.
+    `treeDiff(prev, cur, CFG_DEPTHS)` turns two such trees into id-keyed ops
+    (`games/<gid>/<field>` — every game field is ONE leaf, so `rules`, `timer`,
+    `liveTracker` are written whole; a record add = the whole record, a delete =
+    `null`, a reorder = its `_o` changing). `treeDiff` and `applyOpsSafe` are the
+    shared pure helpers (next to `syncCanon`) the setup engine will reuse;
+    `applyOpsSafe(tree, ops, CFG_ANCHORS)` drops a FIELD op into a record that is
+    gone (reported, never resurrected half-built) and always applies a create or a
+    delete. A record whose canonical form is unchanged keeps its object across every
+    adopt (`cfgFromCanon(…, prev)`): open views and the render-stability rules need it.
+  - **A persisted confirmed baseline**: `state._cfgBase` (canonical config the server
+    last CONFIRMED), `_cfgBaseAt`, `_cfgBaseEpoch`, in the SAME `STORAGE_KEY` write
+    as `state.config` (`writeCfgBase` — the `_syncBase` rule: the pair can't disagree).
+    Unconfirmed work = `treeDiff(_cfgBase, config)` (`cfgUnconfirmed()`), so it
+    survives a reload, a force-quit and an iOS eviction. Never synced, never in a
+    backup (`backupJSON` lists its keys). A device with no baseline (its first run of
+    this engine) plain-adopts the first snapshot, and tracking starts there.
+  - **A push is a TRANSACTION** (`pushConfig`) applying MY unconfirmed ops to the
+    server's CURRENT value (`applyOpsSafe` on `cfgCanon(cur)`), stamping `updatedAt`
+    inside it — so two directors editing different fields of one game both land, an
+    old build's `set()` landing between our read and our commit just makes the SDK
+    re-run it, and the same field edited on both sides is last-commit-wins. One at a
+    time (`pendingConfigWrites`; a push asked for mid-flight sets `configPushOwed` and
+    runs when it settles). A `null` current value ABORTS (the node is really gone —
+    the listener is about to see the null and re-seed it from this phone's catalog,
+    edits included). On commit `cfgPushCommitted` REBASES the local copy: committed
+    server value + only the edits made since the push began, measured from the push-
+    time tree (baseline + the ops sent), so a snapshot that landed mid-push can't make
+    the next diff "undo" a colleague's change. Ops the transaction dropped go to the
+    Put-it-back list. Sync not configured ⇒ no ref ⇒ nothing is pushed (local-only
+    unchanged). `configForSync` still strips unknown keys; because the node's value
+    is replaced by the transaction's result, a stray already in it is pruned by the
+    first edit.
+  - **A snapshot is REBASED, never stashed or swapped in** (`applyRemoteConfig`):
+    server + my unconfirmed ops (`applyOpsSafe`), base := the server's tree. A viewer
+    (or a read-only tab) has no edits, so it just adopts. Data applies AT ONCE, even
+    mid-entry; only the repaint waits for a focused field (`renderAllWhenIdle`) —
+    `pendingRemoteConfig`, `configFirstHeld` and `flushPendingRemoteConfig` are gone.
+    A commit's mutation resolves its record BY ID when it runs (P10: a snapshot may
+    have replaced every object since a row was drawn). `migrateState` still runs on the
+    result; only a REAL version change from an editor re-pushes.
+  - **The first snapshot waits for the state engine's first pull** (`cfgFirstPending`,
+    released by `handleRemoteSnapshot` — its epoch lives in `state/meta`), then
+    `configReady` flips and `firstConfigMerge` runs a three-way merge: mine
+    (`treeDiff(base, local)`) kept where no path of theirs overlaps and pushed;
+    the same path changed on both sides keeps the SERVER's (the loser is listed as a
+    `clash` note with **Use mine** / **Dismiss**, and gets a synthetic undo entry whose
+    `before` is MINE and `after` the server's, so Undo brings it back); a kept op whose
+    record the server deleted is dropped by `applyOpsSafe` into a **Put it back** note
+    instead of being pushed into a refusal. Unconfirmed longer than 36 h asks first
+    (`confirm`, as the state engine does). An EPOCH change (the baseline's
+    `_cfgBaseEpoch` ≠ `state.meta.epoch`) strands the ops as downloadable JSON
+    (`cfgStrand`, paths prefixed `config/`, same store and bar as the state engine's
+    stranded work) and adopts — and `cfgFollowStateEpoch` (called at the end of
+    `applyRemoteState`) keeps the baseline's epoch following the state engine's, so a
+    device open across the wizard strands only genuinely old-year edits (sync-F11).
+    Nothing is pushed before `configReady` (the null-seed aside: an empty node is
+    seeded by a TRANSACTION into a truly empty node, `seedConfigIfAbsent`, and the
+    seeded value becomes the baseline). **The builder is editable while the games list
+    loads only on a device that HAS a baseline** (`configEditable()`): its edit is
+    merged when the snapshot lands. A device without one keeps the "Loading the games
+    list…" placeholders (`renderConfigLoading`) because nothing could tell its edit
+    apart from the cached copy the snapshot replaces; it lifts at once when no snapshot
+    can ever come (sync not configured, SDK down, config read refused).
+  - **Notes** (`state._cfgNotes`, ≤ 30, in the cache blob, not synced): `putback`
+    `{section, key, name, record}` and `clash` `{path, mine, theirs, what}`.
+    `cfgPutBack` re-creates the record with my edits and `cfgUseMine` writes my value —
+    both ordinary undoable commits. A bare reorder of a vanished record is dropped
+    silently.
+  - **Accounting**: config writes are counted (`pendingConfigWrites`);
+    `pendingWritesTotal()` = scores + config feeds `reloadBlocked` and
+    `hasUnsyncedWork`; `hasUnconfirmedLocalWork` (sign-out) also asks
+    `cfgUnconfirmed()` for an editor, so a builder edit that never reached the server —
+    even from an earlier session — is named in the sign-out question; `canAdoptRemote`
+    deliberately stays about `state` alone. A refused or failed config write says
+    "Couldn't save the week setup"; the edit stays unconfirmed and goes up with the
+    next builder change or, after a reload, the first-snapshot merge.
+- **Undo core** (setup rebuild spec §7.1 — build step 9). Commits go through two
+  wrappers: `configEdit(label, mutate, opts)` (games and days) and
+  `stateEdit(label, mutate, opts)` (teams: rename, counselors, reorder; the roster in
+  the same id-keyed form via `teamsCanon`, `_o` = position). Each snapshots the
+  canonical tree, runs the mutation (which looks its record up BY ID — P10), commits
+  through the normal engine (`saveConfig` / `saveState`: nothing real changed ⇒
+  nothing stamped, sent or recorded) and records
+  `{id, label, at, epoch, ops: [[domain, path, before, after], …]}` with canonical
+  values from the engine's own diff (`undoRecord`), then shows its toast with an
+  **Undo** button (`showToast(msg, { action: { label, run }, duration })` — the
+  Jelly toaster has no action slot and is vendored, so `addToastAction` appends the
+  button to the toast it returns). `undoEntry(id)` puts `before` back ONLY where the
+  current value still equals `after` (canonical compare), per domain through
+  `UNDO_DOMAINS` (`config`, `teams`; setup and campers join with their engines);
+  paths somebody changed since are left alone and said out loud ("Undid 1 of 2
+  changes — someone changed game “X” · name since; left theirs." / "Can't undo —
+  someone changed this since."; the config has no per-record authorship, so it says
+  "someone"). The undo is itself a commit, so it becomes a new `Undid: …` entry whose
+  toast offers **Redo** (undoing that entry; there is no separate redo stack). Not
+  undoable, on purpose: People/access changes (they keep their confirms), scores
+  (their own tools), a backup restore and "Put back the original games and days"
+  (`{ undo: false }` — they also move scores/roster), and deleting or changing the
+  format of a game that had records (`label: null` — Undo would bring back the game
+  but not its result). Stored per camp in
+  `lsKey('campSetupUndo')` (`UNDO_KEY`): memory + storage, ≤ 50 entries, ≤ 200 KB,
+  oldest dropped, an entry over 20 KB (a seed, a big restore) not stacked at all;
+  read lazily (never at load — boot-cache.test.js); cleared on an epoch change
+  (`cfgFollowStateEpoch`), when a device stops being an editor (`setMemberRole`), and
+  by `clearLocalData`. An entry from an earlier epoch refuses and is dropped. A viewer
+  or a read-only tab can't undo (`canEdit()`).
 - **The first snapshot is a three-way merge, per path** (2026-10-26). The
   cached state carries `state._syncBase`: the tree the server last CONFIRMED
   (advanced only on adopt and on an acknowledged push — never
@@ -1391,9 +1498,10 @@ More sync invariants (each fixed after it bit us — don't regress these;
   and **Dismiss** (asks first; it is the only copy). The bar uses the strip's
   neutral `sync-alert-tab` look, and waits behind this week's refused scores (red)
   and the view-only-tab bar; Download never deletes. Signing out names it in its
-  question. Not built here: the device-local reset on a new epoch
-  (`campScoreboardEpochSeen`) and the config / setup engines' own epoch checks
-  arrive with the wizard (Step 28) and the config engine.
+  question. The week config's own epoch check (step 9) strands its ops into the same
+  store with `config/…` paths (see "The week config is a field-op engine"). Not built
+  here: the device-local reset on a new epoch (`campScoreboardEpochSeen`) and the
+  setup engine's epoch check arrive with the wizard (Step 28) and the setup engine.
 - **Two tabs of one camp: one writer** (S2c, setup rebuild spec §6.9). The cache
   (`STORAGE_KEY`) holds this device's unconfirmed edits and the baseline they are
   measured against, and each tab kept its own in-memory copy and wrote the WHOLE
@@ -1608,9 +1716,8 @@ More sync invariants (each fixed after it bit us — don't regress these;
   of a game. `deferRemoteSnapshot()` therefore records that a read is owed and
   an idle tick re-reads (`fbRef.once`) once the device is quiet. Re-reading,
   not replaying a stashed payload, is deliberate — the payload may already be
-  superseded. The same tick also drains `pendingRemoteConfig` (which used to
-  be flushed only by a focusout inside the week builder) and pays off an owed
-  render: a BACKGROUND event — a game clock settling at 0:00, the staff list
+  superseded. The same tick also pays off an owed render (the week config no
+  longer parks here: it applies at once and only its repaint waits): a BACKGROUND event — a game clock settling at 0:00, the staff list
   changing — calls `renderAllWhenIdle()` rather than `renderAll()`, so it
   can't rebuild a focused field under an editor's thumb (keyboard dropped, an
   open select gone); `fieldFocused()` defers it to the next quiet tick.
