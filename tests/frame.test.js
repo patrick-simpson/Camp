@@ -102,7 +102,7 @@ test('the game takeover has its own status strip: the header covers it and #app 
   const tk = INDEX.slice(INDEX.indexOf('<section id="takeover-game"'), INDEX.indexOf('id="takeover-game-dock"'));
   assert.ok(tk.indexOf('id="takeover-game-status"') > tk.indexOf('class="tk-head"') && tk.indexOf('id="takeover-game-status"') < tk.indexOf('id="takeover-game-body"'), 'between the head and the body, in flow');
   assert.ok(/id="tk-sync-alert"/.test(tk) && /id="tk-pill"/.test(tk));
-  assert.ok(/\['sync-status', 'sync-status-footer', 'sync-alert', 'tk-sync-alert'\]/.test(APP), 'its Retry / Discard clicks reach onSyncStatusClick');
+  assert.ok(/\['sync-status', 'sync-status-footer', 'sync-alert', 'tk-sync-alert', 'setup-sync-alert'\]/.test(APP), 'its Retry / Discard clicks reach onSyncStatusClick (the Set up the week copy too)');
   assert.ok(/wirePill\(document\.getElementById\('tk-pill'\)\)/.test(APP), 'its pill asks before a reload, like the header one');
 });
 

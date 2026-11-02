@@ -3874,7 +3874,11 @@ function undoRecord(label, ops, opts) {
   undoWrite();
   undoLastRecorded = entry;
   if (!(opts && opts.quiet)) {
-    showToast(entry.label, { action: { label: 'Undo', run: () => undoEntry(entry.id) }, duration: UNDO_TOAST_MS });
+    // Inside Set up the week the docked undo pill takes it (setup-ui.js): a toast at the foot of the
+    // screen swallowed the next tap on a sheet's Save. Anywhere else (the ⚡ quick game) it is still a toast.
+    if (!(typeof setupUndoOffer === 'function' && setupUndoOffer(entry))) {
+      showToast(entry.label, { action: { label: 'Undo', run: () => undoEntry(entry.id) }, duration: UNDO_TOAST_MS });
+    }
   }
   return entry;
 }
@@ -4029,9 +4033,12 @@ function undoEntry(id) {
   } else if (left.length || held.length) {
     const names = left.map((op) => (UNDO_DOMAINS[op[0]] ? UNDO_DOMAINS[op[0]].what(op[1]) : op[1]))
       .filter((w, i, a) => a.indexOf(w) === i).slice(0, 2).join(' and ');
-    showToast(`Undid ${applied} of ${total} changes${left.length ? ` — someone changed ${names} since; left theirs` : ''}.${held.length ? ' ' + held[0] : ''}`, { action, duration: UNDO_TOAST_MS });
-  } else {
-    showToast('Undone: ' + entry.label, { action, duration: UNDO_TOAST_MS });
+    // A partial undo is a sentence to read, not a button to tap: a plain toast, no action. The newest entry
+    // is still the Undid: one, so the dock (and Recent changes) can put it back.
+    showToast(`Undid ${applied} of ${total} changes${left.length ? ` — someone changed ${names} since; left theirs` : ''}.${held.length ? ' ' + held[0] : ''}`,
+      typeof setupUndoOffer === 'function' && builderOpen() ? undefined : { action, duration: UNDO_TOAST_MS });
+  } else if (!(redo && typeof setupUndoOffer === 'function' && setupUndoOffer(redo))) {
+    showToast('Undone: ' + entry.label, { action, duration: UNDO_TOAST_MS }); // (inside Set up the week the pill says "Redo" instead)
   }
   return { applied, total };
 }
@@ -5363,7 +5370,7 @@ function onSyncStatusClick(e) {
 }
 
 function wireSyncStatus() {
-  ['sync-status', 'sync-status-footer', 'sync-alert', 'tk-sync-alert'].forEach((id) => {
+  ['sync-status', 'sync-status-footer', 'sync-alert', 'tk-sync-alert', 'setup-sync-alert'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('click', onSyncStatusClick);
   });
@@ -5483,6 +5490,8 @@ function updateSyncAlert() {
     el.classList.toggle('sync-alert-tab', viewOnlyTab || stranded);
     setHiddenIfChanged(el, !show);
   });
+  // The builder's own copy (the header steps aside for it): a refused save stays one red line until its Details is tapped.
+  if (typeof setupUiSyncAlert === 'function') setupUiSyncAlert(show, html, viewOnlyTab || stranded);
   paintTakeoverStatus();
   document.body.classList.toggle('has-sync-alert', show); // styles.css reserves its height above the first card
 }
@@ -11395,6 +11404,8 @@ function shellSheetEl(id) {
 // What a deep link or a Forward may open: the director-only drawers need a director.
 function shellSheetAllowed(id) {
   if (id === 'members' || id === 'history' || id === 'counselors') return canEdit();
+  // Set up the week's own sheets (setup-ui.js): directors only, and only while the builder is up.
+  if (typeof SETUP_SHEETS !== 'undefined' && SETUP_SHEETS.includes(id)) return canEdit() && builderOpen();
   if (id === 'verse' || id === 'cleanup') return canEdit() || !cardHiddenFromViewers(id);
   return true;
 }
@@ -11967,6 +11978,7 @@ function shellSheetFill(id) {
   if (id === 'team') renderTeamSheet();
   else if (id === 'verse') renderMemoryVerse();
   else if (id === 'cleanup') renderMealCleanup();
+  else if (typeof SETUP_SHEETS !== 'undefined' && SETUP_SHEETS.includes(id)) renderSetupSheet(id);
 }
 function renderShellSheets() {
   shell.sheets.forEach((id) => { if (id !== 'schedule') shellSheetFill(id); });
@@ -12205,7 +12217,10 @@ function renderAll() {
   renderShellTabs();
   renderShellSheets();
   renderGameView();
-  if (inBuilder && typeof renderSettings === 'function') renderSettings();
+  // The builder's frame (setup-ui.js: hub, head, sheets) paints around the classic builder, which it still calls
+  // for the Classic editor screen; without that file the builder is v197's.
+  if (typeof renderSetupUi === 'function') renderSetupUi(inBuilder);
+  else if (inBuilder && typeof renderSettings === 'function') renderSettings();
   if (typeof renderChatStatus === 'function') renderChatStatus();
   if (rootChanged) shellRestoreScroll(shell.root); // after the new panel has rendered
   setDownBoardCelebrations();
@@ -12233,6 +12248,7 @@ function openBuilder(tab) {
   state.ui.view = 'settings';
   if (tab) state.ui.settingsTab = tab;
   if (!state.ui.settingsTab) state.ui.settingsTab = 'games';
+  if (typeof setupOnOpen === 'function') setupOnOpen(tab); // the hub, or a named classic tab
   shellStamp();
   saveState();
   renderAll();
@@ -12285,6 +12301,7 @@ function init() {
   wireCampSwitcher();
   if (typeof wireChat === 'function') wireChat();
   if (typeof wirePush === 'function') wirePush();
+  if (typeof wireSetupUi === 'function') wireSetupUi();
   wireShell();
   wireMore();
 
@@ -12538,7 +12555,10 @@ document.addEventListener('pointercancel', () => { joyPressAbort(); }, { passive
 // is named here (or carries data-joy), and the chrome around the work stays quiet
 // wherever the work happens to sit.
 const JOY_SPARKLE = 'jelly-button, jelly-chip, .pts-btn, .btn-gold, [data-joy]';
-const JOY_QUIET = '#tabbar, #app-header, .more, .tk-head, jelly-drawer, #chat-view, .lock-screen';
+// Set up the week is a calm clipboard: its gold buttons (the one main action of a screen, a sheet or a
+// question) must not sparkle when tapped.
+const JOY_QUIET = '#tabbar, #app-header, .more, .tk-head, jelly-drawer, #chat-view, .lock-screen, #setup, ' +
+  '#sheet-setup-menu, #sheet-setup-changes, #sheet-setup-devices, #sheet-restore, #ask-dialog';
 document.addEventListener('click', (e) => {
   const t = e.target.closest && e.target.closest(JOY_SPARKLE);
   if (!t || t.closest(JOY_QUIET)) return;

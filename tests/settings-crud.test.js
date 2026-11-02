@@ -11,6 +11,7 @@ function crudSetup() {
   freshState();
   setMemberRole('editor');
   state.ui.view = 'settings';
+  state.ui.builderScreen = 'classic'; // the classic builder is a screen of the Set up the week frame (setup-ui.js)
   state.ui.editGameId = null;
   gameDraft = null;
   gameDraftFor = null;

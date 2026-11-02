@@ -41,6 +41,11 @@ function builderDirty() {
     !!gameDraft && JSON.stringify(gameDraft) !== gameDraftSnapshot;
 }
 
+// How the open editor's game is named in a question: "Rain bowling" in quotes, or "this game".
+function builderDirtyName() {
+  return gameDraft && gameDraft.name && gameDraft.name.trim() ? '“' + gameDraft.name.trim() + '”' : 'this game';
+}
+
 // Close the game editor and drop its draft. Also called by app.js's renderAll
 // when it force-closes the builder for a device that lost editor access.
 function discardGameDraft() {
@@ -1813,15 +1818,19 @@ function wireDataTab(card) {
 // `opts.copyFromOtherCamp`: the backup is the OTHER camp's, and only its Schedule, Games and Teams are
 // taken (the "copy from the other camp" tick). Without it another camp's backup is refused.
 function tryImport(text, opts) {
+  // `opts.say(message)` takes the complaint where the caller shows it (Set up the week's Restore points
+  // screen, a toast); `opts.confirmed` says the caller already asked (its own dialog). The Data tab's own
+  // paste box passes neither, so it behaves exactly as before.
+  const say = (opts && opts.say) || showRestoreError;
   if (!configEditable()) {
-    showRestoreError('The games list is still loading — try again in a moment.');
+    say('The games list is still loading — try again in a moment.');
     return;
   }
   let parsed;
   try {
     parsed = JSON.parse(text);
   } catch (e) {
-    showRestoreError("That doesn't look like a Camp Scoreboard backup. Copy it fresh and paste the whole thing.");
+    say("That doesn't look like a Camp Scoreboard backup. Copy it fresh and paste the whole thing.");
     return;
   }
 
@@ -1831,7 +1840,7 @@ function tryImport(text, opts) {
   const otherCamp = v3 && typeof parsed.camp === 'string' && parsed.camp !== CAMP.id;
   const copyMode = !!(otherCamp && opts && opts.copyFromOtherCamp);
   if (otherCamp && !copyMode) {
-    showRestoreError('That backup is from ' + (CAMPS[parsed.camp] ? CAMPS[parsed.camp].label : 'another camp') + ', not ' + CAMP.label +
+    say('That backup is from ' + (CAMPS[parsed.camp] ? CAMPS[parsed.camp].label : 'another camp') + ', not ' + CAMP.label +
       '. Nothing was changed. (To copy its schedule, games and teams, tick “copy from the other camp”.)');
     return;
   }
@@ -1845,7 +1854,7 @@ function tryImport(text, opts) {
   }
 
   if (!config) {
-    showRestoreError("That doesn't look like a Camp Scoreboard backup. Copy it fresh and paste the whole thing.");
+    say("That doesn't look like a Camp Scoreboard backup. Copy it fresh and paste the whole thing.");
     return;
   }
   // The Teams tab can no longer add or delete a team (S0j), so a restore must not
@@ -1859,16 +1868,16 @@ function tryImport(text, opts) {
     const wellFormed = ids.length === CAMP.teamCount && ids.every(isTeamId) && new Set(ids).size === ids.length;
     if (!wellFormed) {
       if (!copyMode) {
-        showRestoreError('That backup has ' + src.teams.length + ' teams, but ' + CAMP.label + ' runs ' + CAMP.teamCount +
+        say('That backup has ' + src.teams.length + ' teams, but ' + CAMP.label + ' runs ' + CAMP.teamCount +
           '. It may be from the other camp, so nothing was changed.');
         return;
       }
       teamsOk = false; // copying from the other camp: a roster that doesn't fit is simply left out
     }
   }
-  showRestoreError('');
+  say('');
 
-  if (!confirm("Replace this device's entire setup (teams, days, games) AND saved scores? This syncs to every device. Consider downloading a backup first.")) return;
+  if (!(opts && opts.confirmed) && !confirm("Replace this device's entire setup (teams, days, games) AND saved scores? This syncs to every device. Consider downloading a backup first.")) return;
   // Imported — the box empties, as it always did. Cleared on the live field
   // too: a card whose markup didn't change is no longer rebuilt.
   restoreDraft.text = '';

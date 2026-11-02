@@ -89,6 +89,12 @@ Files:
   every hook in app.js is typeof-guarded, so deleting its `<script>` leaves a
   running app. DARK at Step 14: it reads, and writes only when a director acts
   (and every section's switch is the owner's, which nothing turns on yet)
+- `setup-ui.js` — SET UP THE WEEK's behaviour (see "Set up the week: behaviour"
+  below): the hub and its checklist (`hubStatus`, pure), the frame's head (sync
+  line, who's here), Back, the docked undo pill, `askDialog`, the four sheets,
+  Restore points and hold-to-confirm. Loaded right after settings.js (which it calls
+  for the Classic editor screen); every hook into it is typeof-guarded, so deleting
+  its `<script>` leaves the v197 builder (no `data-screen` on `#setup`)
 - `settings.js` — the settings sheet + week-builder UI. The builder's
   `jelly-tabs` shell is built ONCE and kept; `renderSettings` refreshes only
   the active card (through `setHtmlIfChanged`), hidden cards are filled one
@@ -190,11 +196,10 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
 
 **Every time any code asset changes:**
 1. Bump the `?v=N` cache-busting query string in `index.html` — there are
-   SIXTEEN on the same number (seventeen once `setup-ui.js` lands later in
-   Step 14): `boot-guard.js`, `styles.css`, `vendor/jelly.js`,
+   SEVENTEEN on the same number: `boot-guard.js`, `styles.css`, `vendor/jelly.js`,
    `firebase-config.js`, `defaults.js`, `camp-core.js`, `reveal-core.js`,
    `camps.js`, `jelly-motion.js`, `app.js`, `setup-sync.js`, `settings.js`,
-   `chat.js`, `push.js`, `auth-phone.js`, `auth-email-link.js` —
+   `setup-ui.js`, `chat.js`, `push.js`, `auth-phone.js`, `auth-email-link.js` —
    keep them in sync, all bumped together. Also bump
    `APP_VERSION` in `app.js` to the same number (it drives the auto-reload
    version check). `stalling.html` loads `vendor/jelly.js`, and
@@ -714,7 +719,8 @@ P2 §11.0–11.2 ("the director's clipboard") inside redesign §8. Static markup
 index.html (`#setup`, its four sheets, `#ask-dialog`), styled in styles.css's
 "SET UP THE WEEK" section; a renderer patches text, `hidden` and the data-*
 named here, never rebuilds a row. **The behaviour is wired separately** (the
-rest of Step 14); until then the markup is inert and the builder is v197's.
+rest of Step 14, in setup-ui.js: see "Set up the week: behaviour" below); with no
+`data-screen` on `#setup` the markup is inert and the builder is v197's.
 
 - **`#setup[data-screen]` is the one switch** (`hub | backups | classic`; a later
   screen adds its own pair of lines in the CSS). `#setup` wraps `#settings-view`
@@ -794,6 +800,110 @@ rest of Step 14); until then the markup is inert and the builder is v197's.
   [data-clash-pick=mine|theirs]` with `.clash-who` and `.clash-val` — the full
   markup is in styles.css beside `.clash`. The config engine's set-aside notes
   (configNotesHtml) wear the same look: the gold "!", no emoji, no amber tint.
+
+## Set up the week: behaviour (setup-ui.js — Step 14)
+
+Wires the markup above to the engine (setup-sync.js, "The setup engine"). One classic
+script; a renderer patches text, `hidden` and `data-*` on static markup and never
+rebuilds a row (an idle `paintHub` writes nothing: `setup-ui.test.js`), and every hook
+into it from app.js / settings.js is typeof-guarded.
+
+- **Frame hooks in app.js**: `renderAll` calls `renderSetupUi(inBuilder)` (without the
+  file: `renderSettings()` as before); `openBuilder(tab)` calls `setupOnOpen(tab)`;
+  `init` calls `wireSetupUi()`; `shellSheetAllowed` / `shellSheetFill` know
+  `SETUP_SHEETS`; `updateSyncAlert` hands its bar to `setupUiSyncAlert`; `JOY_QUIET`
+  gains `#setup`, the four sheets and `#ask-dialog` (the gold buttons must not sparkle).
+- **Screens and Back**: `state.ui.builderScreen` (device-local; `hub` default,
+  `backups`, `classic`; anything else reads as the hub) is mirrored into
+  `#setup[data-screen]`. More → Set up the week opens the hub; `openBuilder('games')`
+  ("Add games") lands on the classic screen on that tab; hub rows Games / Teams /
+  Notice open the classic screen on that tab (`state.ui.settingsTab`), Restore points
+  opens `backups`, People opens the Who can sign in drawer. Back goes screen → hub →
+  closes the builder; a dirty game editor (`builderDirty()`, named by
+  `builderDirtyName()`) asks through `askDialog` first, and "Keep editing" puts the
+  person back on it. The classic screen still renders through `renderSettings()` and
+  keeps its own tab shell. The hub does not push history entries of its own (the
+  builder is one entry; the four sheets are shell sheets and do).
+- **Counselors reach none of it**: the More row is editor-only, `openBuilder` / `setupGo`
+  refuse without `canEdit()`, `renderAll` closes the builder for anyone who isn't an
+  editor, the four sheets are allowed only for `canEdit() && builderOpen()`, and no deep
+  link names a setup screen (`shellParseTarget`). Nothing the hub shows is a point or a
+  place: it counts games and people and names no score.
+- **The checklist** (`hubStatus(section, view)`, Appendix B): pure — `hubView()` builds the
+  plain `view` from the page and tests hand one in. Marks `ok | warn | todo | skip | info`
+  plus `soon` (this step's: the section's screen is still to come, so the row says "Editing
+  comes next" and a plain summary — "The original menu" — and claims nothing). Evaluated
+  today: **Games** (a game on no day, a day with no games, a tournament with no bracket for
+  the camp's team count, "N games still say TBA"), **Teams** (wrong count / bad id →
+  "Ask Patrick to repair team slots", an unnamed team), **People** (a team with no counselor
+  accounts, an incomplete member record — the owner row is exempt, people with no sign-in
+  yet for a week), **Notice board** and **Restore points** (info; denied restore nodes warn).
+  Not yet (their data arrives with their step): the schedule, week dates, meals, verses,
+  cleanup, electives, campers, phone alerts, asking-to-join, team colours. `hubModel`:
+  "N of M ready" counts only rows that can be judged (`soon` and `skip` are left out), "Next:
+  Teams" names the first warning. `HUB_OPENS` is the table of rows that open something
+  (a row whose screen exists is a `<button>`, otherwise a `<div>`: `checklist.test.js`
+  checks `index.html` against it).
+- **The front door** (`hubDoor`): running → new year due → nothing edited here yet, in that
+  order. **Owner-only (Q8)**: the owner's gold button and the sentence every other director
+  reads ("Patrick turns on editing.", via `ownerName()`) exist only when the door's action
+  exists — `HUB_DOOR_ACTIONS.original` / `['new-year']` are `null` until Steps 15 and 28 put
+  a function there — so at Step 14 nobody is offered a button that can only fail, and the
+  text says editing "comes in the next update". The menu's owner rows work the same way
+  (`SETUP_OWNER_ACTIONS`: listed only for `isOwner()` AND when the action exists; a row that
+  can't be used right now stays, greyed, with its reason in `[data-setup-why]`); a tap is
+  re-checked against `isOwner()` and `why()` before it runs. `body.setup-owner` is set from
+  `isOwner()` on every render (`applyOwnerClass`).
+- **The sync line** (`setupUiSyncLine`): the setup engine's `setupSyncLine()` speaks first
+  (its refusals and "rules not published"), then a refused score (`stateQuarantine`), then
+  anything unconfirmed ("Saving…"). `Details` (error only; the whole line is its hit area)
+  reveals `#setup-sync-alert`, a copy of the header's Retry / Discard bar that
+  `updateSyncAlert` keeps current; a view-only or set-aside notice shows at once.
+- **Who's here**: `editorsHereHeader()` into `#setup-here` (initials + sentence; on a screen
+  another director is also on, `editorsHereOn` words it: "also editing the games — changes
+  merge field by field"); tap → who is where, in an `askDialog`. Hub rows carry the initial
+  of a director whose `where` maps to them (`setupHereRow`). Opening the builder starts the
+  device's `editorsHere` row (`editorsHereStart`), every screen change moves it
+  (`setupMoveHere`), closing the builder stops it (`setupUiClosed`: also the pill and every
+  setup sheet).
+- **The undo pill**: while the frame is up, `undoRecord` / `undoEntry` call
+  `setupUndoOffer(entry)` instead of raising Step 9's toast: `#setup-undo` hangs under the
+  head for `UNDO_PILL_MS` (6 s; JellyMotion `arrive`, calm = a fade), then `setupPillDock`
+  shrinks it into `#setup-undo-dock` (`playOut`). Tap = undo that entry; the dock undoes the
+  newest entry (`undoTop`), a 500 ms press on it opens Recent changes, Ctrl/Cmd-Z does the
+  same when focus isn't in a text field (and not with a sheet open). One at a time, a new
+  one replaces it; an `Undid: …` entry reads **Redo**. A partial undo ("Undid 1 of 2 …") is
+  a plain sentence toast with no button; the newest entry is still the `Undid:` one, so the
+  dock can put it back. Outside the builder (the ⚡ quick game) the old toast action stays.
+- **askDialog** (`askDialog(opts)` → the chosen action's `value`; `askForText(opts)` →
+  `{ value, text }`): one at a time (a second waits for the first's exit, because a re-open
+  during Jelly's exit would be closed by it), escapes every string, focus on the safe action,
+  Escape / ✕ / the backdrop resolve as the `cancel` action. Where `jelly-dialog` never loaded
+  it asks with the native `confirm` / `prompt`, so a caller always gets an answer. Copy: a verb
+  on every button, never OK / Cancel.
+- **Sheets** (ONE open at a time: `setupSheet` closes the others first): the menu (⋯:
+  Recent changes, Director devices, Classic editor, then the owner's rows), Recent changes
+  (`undoRecent()`, each row ends in its own Undo or Redo), Director devices (`devicesList()`),
+  and the restore sheet.
+- **Restore points**: `refreshRestoreIndex()` reads `restoreList()` once (never a listener) when
+  the builder opens, on the screen, and after a save, into `setupUi.restore` (`status`: idle |
+  loading | ok | denied | offline | nosync — a refused read says the rules aren't published and
+  turns Save off). "Save a restore point now" asks for a name (`askForText`, 60 characters,
+  default "Saved by Jenn, 3:05 PM") then `restoreSave('manual', name)`; at the 20-by-hand cap it
+  offers to delete the oldest one that isn't kept. The restore sheet opens from a row
+  (`restoreRead` → `restorePreview`) or from a backup file; sections tick as the preview says
+  (Scores never pre-ticked, decision Q23), the dock shows ONE action: **Put these back**, or with
+  Scores ticked the hold button naming the camp ("Hold to put back Junior camp's scores") — a
+  1.2 s clip-path wipe on `.btn-hold-fill` over pointer events (not a transform, so calm keeps it;
+  letting go early drains it; a tap, Enter / Space or a click with no pointer reveals
+  `#rp-hold-confirm`, the two-tap alternative). `restoreApply` does the work and its refusal
+  reasons are worded in `RP_WHY`. A point's own **Keep this point** (write-once, says "Kept points
+  can't be deleted from the app") and **Delete this point** (only where `restoreDeletable`) sit in
+  `#rp-manage`. A backup FILE picked on the screen: a v3 file of this camp opens the same sheet
+  (you pick what to put back); another camp's asks once to copy its schedule, games and teams
+  (`tryImport(text, { copyFromOtherCamp, confirmed, say })`); an older flat file asks once, then
+  `tryImport`. `tryImport`'s new `opts.say` takes its complaints (default: the Data tab's) and
+  `opts.confirmed` skips its native confirm.
 
 ## Tests
 
@@ -940,7 +1050,7 @@ What's covered, and why each file exists:
   (home panels, toast cap, announcement composer), `overlays.test.js` (schedule
   sheet, status pill, members drawer, lock screen, scrim fade, pickers),
   `shell.test.js` (page-shell text pins: the not-yet-defined hide, the boot
-  guard, no motion media query, **index.html's sixteen versioned assets share
+  guard, no motion media query, **index.html's seventeen versioned assets share
   one `?v=` equal to `APP_VERSION`, in load order**), `builder.test.js`
   (week-builder shell, drafts, joy press), `chat-view.test.js`
   (chat view lifecycle, drafts, Back), `theme.test.js` (pre-paint theme and
@@ -1078,6 +1188,25 @@ What's covered, and why each file exists:
   or listening, a refused write swallowed, fail-closed names, only directors shown,
   the header and matching-screen sentences, every `where` worded, and the Devices
   join by device id with its 10-minute filter and build grouping.
+- `checklist.test.js` (+ `.senior`) — the hub's checklist: one case per problem sentence
+  `hubStatus` can honestly evaluate this step (Games, Teams, People, Notice, Restore
+  points), the `soon` rows claiming nothing, "N of M ready" / what is next, the front
+  door's order, **the owner-only rendering contract** (a button only for the owner AND only
+  with an action behind it; every other director reads the owner's name; never a dead
+  button), `hubView` over the live page, and the hub rows in `index.html` (a row that
+  opens a screen is a `<button>`, one that doesn't is a `<div>`).
+- `setup-ui.test.js` (+ `.senior`) — navigation (More → hub, a named tab → the classic
+  screen, Back, a dirty game editor asking through `askDialog`), **a counselor reaching
+  none of it** (`openBuilder`, `setupGo`, a stored screen, every setup sheet, a forged
+  history entry, a deep link), the sync line and its Details, the undo pill (no toast
+  inside the builder, Redo, docking, one at a time, Ctrl/Cmd-Z, a partial undo as a plain
+  sentence), Recent changes, the owner's menu rows, `askDialog` (native fallback,
+  escaping), and that an idle `paintHub` writes nothing.
+- `restore-ui.test.js` (+ `.senior`) — the Restore points screen (Kept / Recent / Past
+  years, rules-not-published and no-sync notes), Save a restore point now (name, 60
+  characters, the 20-by-hand cap), the restore sheet (sections, Scores unticked, the
+  hold button naming the camp, the two-tap alternative), the hold itself (1.2 s clip-path
+  wipe, drain on early release, a tap reveals), keep and delete, and backup files.
 - `auth.test.js` — the `emailKey` contract (multi-dot/case/trim — the
   regression that would lock people out under the rules), the `canEdit` truth
   table via `setMemberRole`, the `memberRecord` shape, `clearLocalData`'s
@@ -2290,8 +2419,11 @@ More sync invariants (each fixed after it bit us — don't regress these;
   applied, and puts a deleted record back beside its old NEIGHBOUR (`cfgPlaceRestored`)
   with the renumber ops of later records skipped (never listed as "changed since").
   The Undo toast lasts `UNDO_TOAST_MS` (6 s) and its button is a 44px target that takes
-  no layout room; the docked undo pill (step 14) replaces both. The undo is itself a commit, so it becomes a new `Undid: …` entry whose
-  toast offers **Redo** (undoing that entry; there is no separate redo stack). After
+  no layout room — and is now only what runs OUTSIDE Set up the week (the ⚡ quick game):
+  while the builder's frame is up, `undoRecord` and `undoEntry` hand the entry to
+  `setupUndoOffer` (setup-ui.js, "The undo pill") and raise no toast at all, because a
+  toast over the builder swallowed the next tap. The undo is itself a commit, so it becomes a new `Undid: …` entry whose
+  pill / toast offers **Redo** (undoing that entry; there is no separate redo stack). After
   an undo the builder forgets its markup memo (`refreshBuilderCards`) because its text
   fields commit without repainting. Not undoable, on purpose: People/access changes
   (they keep their confirms), scores (their own tools), a backup restore and "Put back

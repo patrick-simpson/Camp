@@ -141,6 +141,7 @@ test('the first snapshot opens the gate, adopts the server catalog, and refreshe
     remote.updatedAt = '2026-12-01T00:00:00.000Z';
     db.serverSet(CONFIG_PATH, remote);
     state.ui.view = 'settings';
+    state.ui.builderScreen = 'classic';
     db.deliverFirstSnapshots();
     assert.equal(configReady, true);
     assert.equal(configEditable(), true);
@@ -247,6 +248,7 @@ test('an identical first snapshot still repaints the builder (applyRemoteConfig 
   try {
     db.serverSet(CONFIG_PATH, state.config);
     state.ui.view = 'settings';
+    state.ui.builderScreen = 'classic';
     db.deliverFirstSnapshots();
     assert.ok(renders >= 1);
   } finally { renderAll = real; appStarted = wasStarted; state.ui.view = 'home'; gateTeardown(); }

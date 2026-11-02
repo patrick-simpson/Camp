@@ -1074,6 +1074,22 @@
         <!-- Games kept because they have scores (sync-F8): "Rain bowling · 🥇 Foxes". -->
         <p class="setup-note" id="rp-kept-note" hidden><svg class="ico" aria-hidden="true"><use href="#i-trophy"/></svg><span id="rp-kept-text"></span></p>
         <p class="setup-note" id="rp-not-offered" hidden><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span id="rp-not-offered-text"></span></p>
+        <!-- This point's own actions (§7.2): keep it (write-once; kept points can't be deleted from the
+             app) or delete it. Shown for a point from the list, never for a backup file. -->
+        <div class="more-sec rp-manage" id="rp-manage" hidden>
+          <div class="gl">
+            <button type="button" class="gl-row" id="rp-keep-row">
+              <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-pin"/></svg></span>
+              <span class="gl-text"><span class="gl-title">Keep this point</span><span class="gl-sub">Kept points can’t be deleted from the app</span></span>
+              <span class="gl-end"></span>
+            </button>
+            <button type="button" class="gl-row" id="rp-delete-row">
+              <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-x"/></svg></span>
+              <span class="gl-text"><span class="gl-title">Delete this point</span></span>
+              <span class="gl-end"></span>
+            </button>
+          </div>
+        </div>
       </div>
       <!-- One action. Scores ticked → the hold button names the camp; a tap or
            a key on it reveals the two-tap alternative under it (§11.0). -->
@@ -1223,6 +1239,10 @@
        before. Dark until a director acts. -->
   <script src="setup-sync.js?v=197"></script>
   <script src="settings.js?v=197"></script>
+  <!-- Set up the week's screens (the hub, the frame's head, the undo pill, askDialog, the sheets, restore
+       points). Same optional-layer contract: every hook is typeof-guarded, and without this tag the builder
+       is v197's. After settings.js, which it calls for the Classic editor screen. -->
+  <script src="setup-ui.js?v=197"></script>
   <!-- Camp Chat (channels, mentions, photos) — self-contained layer; delete
        this tag and the app runs exactly as before (all hooks typeof-guard). -->
   <script src="chat.js?v=197"></script>
