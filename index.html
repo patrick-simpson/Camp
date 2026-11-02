@@ -381,8 +381,162 @@
          built once, as today; renderAll only touches the badges. -->
     <section id="tab-chat" class="tab-panel" data-tab-panel="chat" aria-labelledby="tab-btn-chat"></section>
 
-    <!-- ── MORE (redesign §7) ── -->
-    <section id="tab-more" class="tab-panel more" data-tab-panel="more" aria-labelledby="tab-btn-more"></section>
+    <!-- ── MORE (redesign §7, mockups 09 and 16) ─────────────────────
+         Grouped lists, never a card per row: one sheet per group, hairline
+         rows (54px+), icon · title · one plain line · chevron. Directors see
+         the Director group first; counselors start at Camp. Static: the
+         renderer patches only the volatile lines (#alerts-state, the calm
+         verdict, the account line, the footer, the join count) in place, so
+         a push-state change can never rebuild a segmented control under a
+         finger. Every data-more-row is the hook for its handler; where today's
+         Settings drawer has the same row, its id moves here with the drawer's
+         content (builder-row, history-row, members-row, alerts-row,
+         signout-btn, theme-toggle, calm-toggle, camp-switch, account-label,
+         calm-reason) and the data-more-* hook can stay as a second name. -->
+    <section id="tab-more" class="tab-panel more" data-tab-panel="more" aria-labelledby="tab-btn-more">
+
+      <!-- Directors only. html.view-only never lays it out, whatever hidden says;
+           Run the reveal (Step 23), Tell everyone and Award points (Step 24)
+           join this group as they ship. -->
+      <div id="more-director" class="more-sec">
+        <div class="gl-head">
+          <h2 class="gl-label">Director</h2>
+          <span class="gl-note"><svg class="ico" aria-hidden="true"><use href="#i-eye-off"/></svg>Only directors see this</span>
+        </div>
+        <!-- The one gold, physical row on the page (Step 23 un-hides it).
+             data-state: ready | live | blocked; the state line is patched. -->
+        <button type="button" class="more-reveal" data-more-row="reveal" data-state="ready" hidden>
+          <span class="more-reveal-ico" aria-hidden="true"><svg class="ico"><use href="#i-tv"/></svg></span>
+          <span class="gl-text"><span class="more-reveal-title">Run the reveal</span><span class="more-reveal-state"><i aria-hidden="true"></i><span id="more-reveal-state">Ready</span></span></span>
+          <svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg>
+        </button>
+        <div class="gl">
+          <button type="button" class="gl-row" data-more-row="counselors-see">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-eye"/></svg></span>
+            <span class="gl-text"><span class="gl-title">What counselors see</span><span class="gl-sub">Sections on or off · preview</span></span>
+            <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+          </button>
+          <button type="button" class="gl-row" data-more-row="builder">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-calendar"/></svg></span>
+            <span class="gl-text"><span class="gl-title">Set up the week <span class="gl-count" id="more-join-count" hidden></span></span><span class="gl-sub">Schedule, games, teams</span></span>
+            <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+          </button>
+          <button type="button" class="gl-row" data-more-row="history">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-history"/></svg></span>
+            <span class="gl-text"><span class="gl-title">Change history</span><span class="gl-sub">Who saved what, and when</span></span>
+            <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+          </button>
+          <button type="button" class="gl-row" data-more-row="members">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-people"/></svg></span>
+            <span class="gl-text"><span class="gl-title">Who can sign in</span><span class="gl-sub">Counselors and directors</span></span>
+            <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+          </button>
+        </div>
+      </div>
+
+      <div id="more-camp" class="more-sec">
+        <div class="gl-head"><h2 class="gl-label">Camp</h2></div>
+        <div class="gl">
+          <button type="button" class="gl-row" data-more-row="schedule">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-calendar"/></svg></span>
+            <span class="gl-text"><span class="gl-title">Full schedule</span></span>
+            <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+          </button>
+          <button type="button" class="gl-row" data-more-row="verse">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-book"/></svg></span>
+            <span class="gl-text"><span class="gl-title">Memory verse</span></span>
+            <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+          </button>
+          <button type="button" class="gl-row" data-more-row="cleanup">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-broom"/></svg></span>
+            <span class="gl-text"><span class="gl-title">Meal cleanup</span></span>
+            <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+          </button>
+        </div>
+      </div>
+
+      <div id="more-phone" class="more-sec">
+        <div class="gl-head"><h2 class="gl-label">This phone</h2></div>
+        <div class="gl">
+          <!-- ONE Alerts row (§7.1): the state line says, in plain words, what
+               actually reaches this phone. -->
+          <button type="button" class="gl-row" data-more-row="alerts">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-bell"/></svg></span>
+            <span class="gl-text"><span class="gl-title">Alerts</span><span class="gl-sub" id="alerts-state">Off</span></span>
+            <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+          </button>
+          <!-- Appearance, inline: no extra screen for two settings. The chosen
+               segment is its aria-checked; the renderer sets it, and nothing
+               here is ever rebuilt (the verdict line is its own text node). -->
+          <div class="gl-panel" data-more-row="appearance">
+            <p class="gl-panel-label" id="more-theme-label">Theme</p>
+            <div class="seg" role="radiogroup" aria-labelledby="more-theme-label" data-seg="theme">
+              <button type="button" class="seg-btn" role="radio" aria-checked="false" data-value="light">Light</button>
+              <button type="button" class="seg-btn" role="radio" aria-checked="true" data-value="auto">Auto</button>
+              <button type="button" class="seg-btn" role="radio" aria-checked="false" data-value="dark">Dark</button>
+            </div>
+            <p class="gl-panel-label" id="more-calm-label">Calm motion</p>
+            <div class="seg" role="radiogroup" aria-labelledby="more-calm-label" data-seg="calm">
+              <button type="button" class="seg-btn" role="radio" aria-checked="true" data-value="auto">Auto</button>
+              <button type="button" class="seg-btn" role="radio" aria-checked="false" data-value="on">On</button>
+              <button type="button" class="seg-btn" role="radio" aria-checked="false" data-value="off">Off</button>
+            </div>
+            <p class="gl-panel-note" data-more="calm-reason" role="status"></p>
+          </div>
+          <!-- Your team: the row opens the Your team sheet; "Not you? Change"
+               is its own 44px target inside it (re-asks which counselor you
+               are). Hidden for a director with no team. -->
+          <div class="gl-row gl-row-split" data-more-row="team">
+            <button type="button" class="gl-row-hit" aria-labelledby="more-team-title" aria-haspopup="dialog" aria-controls="sheet-team" data-more-team-open></button>
+            <span class="gl-ico gl-mark" id="more-team-mark" aria-hidden="true"></span>
+            <span class="gl-text">
+              <span class="gl-title" id="more-team-title">Your team<span id="more-team-name"></span></span>
+              <span class="gl-sub"><span id="more-team-you"></span> <button type="button" class="gl-link" data-more-team-change>Not you? Change</button></span>
+            </span>
+            <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Accounts on BOTH camps' lists only. Picking the other camp is the
+           usual set-key-then-reload (switchCamp). -->
+      <div id="more-camps" class="more-sec" hidden>
+        <div class="gl-head"><h2 class="gl-label" id="more-camps-label">Switch camp</h2></div>
+        <div class="gl">
+          <div class="gl-panel">
+            <div class="seg" role="radiogroup" aria-labelledby="more-camps-label" data-seg="camp">
+              <button type="button" class="seg-btn" role="radio" aria-checked="true" data-value="junior">Junior camp</button>
+              <button type="button" class="seg-btn" role="radio" aria-checked="false" data-value="senior">Senior camp</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="more-fun" class="more-sec">
+        <div class="gl-head"><h2 class="gl-label">Fun</h2></div>
+        <div class="gl">
+          <a href="stalling.html" class="gl-row" data-more-row="stalling">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-mic"/></svg></span>
+            <span class="gl-text"><span class="gl-title">Stalling with Patrick</span></span>
+            <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+          </a>
+        </div>
+      </div>
+
+      <div id="more-account" class="more-sec">
+        <div class="gl-head"><h2 class="gl-label">Account</h2></div>
+        <div class="gl">
+          <button type="button" class="gl-row" data-more-row="signout">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-signout"/></svg></span>
+            <span class="gl-text"><span class="gl-title">Sign out</span><span class="gl-sub" data-more="account"></span></span>
+            <span class="gl-end"></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- "v197 · data updated 10:38 AM · 11 phones have Camp open" -->
+      <p class="more-foot" id="more-foot"></p>
+    </section>
 
     <!-- The connection line, for view-only devices: the Current Standings card
          that carries it for directors is not rendered for them. -->

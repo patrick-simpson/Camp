@@ -25,6 +25,8 @@
   --paper: #f5efe2;          /* the page */
   --paper-2: #ebe2cf;        /* wells, segmented tracks */
   --sheet: #fffdf8;          /* raised surfaces: grouped lists, sheets */
+  --well: #ebe2cf;           /* a recessed track (segmented controls) */
+  --lift: #fffdf8;           /* the chosen segment, lifted out of the well */
   --ink: #141a48;            /* text, 14.4:1 on paper */
   --ink-2: #373d72;          /* secondary text, 8.8:1 */
   --ink-3: #43497a;          /* the lightest text allowed, 7.4:1; also OFF outlines */
@@ -109,7 +111,7 @@
   --row-min: 54px;           /* a grouped-list row */
   --header-h: 56px;
   --tabbar-h: calc(56px + env(safe-area-inset-bottom, 0px));
-  --strip-h: 40px;           /* the live-reveal strip under the header */
+  --strip-h: 44px;           /* the live-reveal strip (40 in the spec's sketch; 44 so it is a full target) */
 
   /* Older names (pre-redesign rules). New code uses the palette directly.
      --color-bg reads Jelly's background-default, which reads --paper below:
@@ -154,6 +156,8 @@
   --paper: #0c1030;
   --paper-2: #151a45;
   --sheet: #161c4b;
+  --well: #0a0e2a;   /* darker than the sheet, so it reads recessed in dark too */
+  --lift: #242c6c;
   --ink: #f3f4ff;
   --ink-2: #c5caf3;
   --ink-3: #a3aade;
@@ -186,6 +190,8 @@
     --paper: #0c1030;
     --paper-2: #151a45;
     --sheet: #161c4b;
+    --well: #0a0e2a;   /* darker than the sheet, so it reads recessed in dark too */
+    --lift: #242c6c;
     --ink: #f3f4ff;
     --ink-2: #c5caf3;
     --ink-3: #a3aade;
@@ -1253,7 +1259,7 @@ body.kb-open .tk-dock {
   gap: 2px;
   padding: 2px;
   border-radius: var(--r-btn);
-  background: var(--paper-2);
+  background: var(--well);
 }
 .seg.seg-fit {
   display: flex;
@@ -1274,7 +1280,7 @@ body.kb-open .tk-dock {
   white-space: nowrap;
 }
 .seg-btn:is([aria-checked="true"], [aria-selected="true"], [aria-current="true"], [aria-current="page"]) {
-  background: var(--sheet);
+  background: var(--lift);
   color: var(--ink);
   font-weight: 800;
   box-shadow: 0 0 0 1.5px var(--card-b), 0 2px 0 var(--edge);
@@ -1292,6 +1298,289 @@ body.kb-open .tk-dock {
   color: var(--on-link);
   font: 800 0.75rem/1 var(--font-ui);
   vertical-align: 1px;
+}
+
+/* ── Grouped lists (More, sheets, What counselors see) ──────────
+   §8.1 rule 2: ONE sheet per group with hairline rows, like a printed run
+   sheet, never a stack of bordered cards. Only the row that matters gets an
+   accent. A row that navigates is a button (or link) with a chevron; a row
+   that only informs has neither. */
+.more-sec + .more-sec {
+  margin-top: var(--s-4);
+}
+.gl-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: 0 2px 6px;
+}
+.gl-label {
+  margin: 0;
+  font: var(--t-label);
+  color: var(--ink-2);
+}
+.gl-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: var(--t-label);
+  color: var(--ink-2);
+  text-align: right;
+}
+.gl-note .ico {
+  width: 15px;
+  height: 15px;
+  stroke-width: 2.3;
+}
+.gl {
+  overflow: hidden;
+  border: 1.5px solid var(--line-2);
+  border-radius: var(--r-group);
+  background: var(--sheet);
+}
+.gl-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  min-height: var(--row-min);
+  margin: 0;
+  padding: var(--s-2) 14px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+.gl > :first-child {
+  border-top: 0;
+}
+/* Held: the row darkens a step (feedback, so calm keeps it). */
+:is(button, a).gl-row:active,
+.gl-row-split:has(> .gl-row-hit:active) {
+  background: color-mix(in srgb, var(--ink) 6%, var(--sheet));
+}
+.gl-ico {
+  display: grid;
+  place-items: center;
+  color: var(--ink-2);
+}
+.gl-ico .ico {
+  width: 22px;
+  height: 22px;
+}
+.gl-text {
+  min-width: 0;
+}
+.gl-title {
+  display: block;
+  font: 750 1.03125rem/1.22 var(--font-ui);
+  letter-spacing: var(--track-row);
+}
+.gl-sub {
+  display: block;
+  margin-top: 1px;
+  font: 550 0.84375rem/1.32 var(--font-ui);
+  color: var(--ink-2);
+}
+.gl-sub:empty {
+  display: none;
+}
+.gl-end {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ink-3);
+}
+.gl-chev {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.6;
+}
+/* A count that needs a director ("1 asking to join"): rides the title line,
+   so the subline keeps its one line, and wraps under the title on a narrow
+   phone rather than squeezing it. */
+.gl-count {
+  display: inline-block;
+  margin: 2px 0 0 4px;
+  padding: 2px 7px;
+  border-radius: 7px;
+  background: var(--gold-tint);
+  box-shadow: inset 0 0 0 1.5px var(--gold-edge);
+  color: var(--ink);
+  font: var(--t-tag);
+  letter-spacing: 0;
+  white-space: nowrap;
+  vertical-align: 1px;
+}
+/* A team's mark in a row: a 30px shield (or flag, or emoji tile). */
+.gl-mark img {
+  display: block;
+  width: 30px;
+  height: auto;
+  filter: drop-shadow(0 1.5px 1.5px rgba(var(--shadow-rgb), .28));
+}
+/* A row with a second target inside it (Your team · "Not you? Change"): an
+   invisible button covers the whole row (named by the row's title through
+   aria-labelledby), and the inner link sits above it with its own 44px-tall
+   hit area. Two buttons can't nest, so they are siblings. */
+.gl-row-split {
+  cursor: default;
+}
+.gl-row-hit {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.gl-row-split > :not(.gl-row-hit) {
+  position: relative;
+  pointer-events: none;
+}
+.gl-link {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target);
+  margin: -13px 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: 800 0.84375rem/1.32 var(--font-ui);
+  cursor: pointer;
+  pointer-events: auto;
+}
+/* A setting that lives in the group itself (Appearance): labelled controls,
+   no extra screen. */
+.gl-panel {
+  padding: var(--s-3) 14px 14px;
+  border-top: 1px solid var(--line);
+}
+.gl-panel-label {
+  margin: 0 0 6px;
+  font: 800 0.96875rem/1.2 var(--font-ui);
+}
+.gl-panel .seg + .gl-panel-label {
+  margin-top: var(--s-3);
+}
+/* What Auto is doing right now. Two lines reserved, so the control above
+   never moves when the verdict changes length under a thumb. */
+.gl-panel-note {
+  min-height: calc(2 * 1.4em);
+  margin: var(--s-2) 0 0;
+  font: 600 0.875rem/1.4 var(--font-ui);
+  color: var(--ink-2);
+}
+/* A switch row (What counselors see): the state is said in words beside the
+   switch, never by the track alone. */
+.gl-switch {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  min-height: var(--target);
+}
+.gl-switch-state {
+  font: 750 0.875rem/1 var(--font-ui);
+  font-style: normal;
+  color: var(--ink-2);
+}
+/* A rule, not a setting: shown, never switchable. */
+.gl-row.is-locked {
+  cursor: default;
+}
+.gl-row.is-locked .gl-ico {
+  color: var(--ink-3);
+}
+/* The directors never see it twice and counselors never see it at all. */
+html.view-only #more-director {
+  display: none;
+}
+
+/* Run the reveal: the one gold, physical row on the page (§7.1, mockup 09). */
+.more-reveal {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  min-height: 76px;
+  margin: 0 0 var(--s-3);
+  padding: 10px 14px 10px 12px;
+  border: 2.5px solid var(--gold-edge);
+  border-radius: var(--r-card);
+  background: var(--gold);
+  box-shadow: 0 5px 0 var(--gold-edge);
+  color: var(--gold-ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: box-shadow var(--jm-press-ms) var(--jm-press);
+}
+.more-reveal:active {
+  box-shadow: 0 2px 0 var(--gold-edge);
+}
+/* The TV tile is ink on gold in BOTH themes: it is the object, not the page. */
+.more-reveal-ico {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  border-radius: 13px;
+  background: #141a48;
+  color: #ffffff;
+}
+.more-reveal-title {
+  display: block;
+  font: 850 1.3125rem/1.15 var(--font-ui);
+  letter-spacing: var(--track-tight);
+}
+.more-reveal-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  font: 700 0.875rem/1.25 var(--font-ui);
+}
+.more-reveal-state i {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  border-radius: 50%;
+  background: #0d542d;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, .6);
+}
+.more-reveal[data-state="live"] .more-reveal-state i {
+  background: #8f1a13;
+}
+.more-reveal[data-state="blocked"] .more-reveal-state i {
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--gold-ink);
+}
+.more-reveal .gl-chev {
+  color: var(--gold-ink);
+}
+
+/* Version · data updated · phones online: quiet, left-aligned, last. */
+.more-foot {
+  margin: var(--s-6) 2px 0;
+  font: 600 0.8125rem/1.45 var(--font-ui);
+  color: var(--ink-2);
+}
+.more-foot:empty {
+  display: none;
 }
 
 /* ============================================================
