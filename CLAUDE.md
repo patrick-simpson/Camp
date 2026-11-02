@@ -3778,6 +3778,25 @@ Nothing here is CSS: `#screen[hidden]` is pinned because the author rule would
 otherwise beat the attribute. The page's places come from reveal-core's
 `groupPlaces`. (The TV keeps no copy of the rule.)
 
+**Step 23 design pass (markup ahead of its script — do not deploy the two
+apart).** The HTML is already the PUBLIC page's: the sign-in overlay (`#auth-overlay`
+and its panels) and the "← Back" chip are gone, while `current-standings.js` is
+still the interim signed-in script above until a build session rewrites it. In
+that gap a signed-out visitor would sit on "Loading standings…" (the script's
+overlay calls find no element and return), so the markup and the rewritten
+script ship in ONE deploy. What the markup provides: the waiting screen of mockup
+11 (`#waiting` > `#wait-camp`, `#wait-status[data-tone=connecting|ok|offline]` +
+`#wait-status-text`, `#wait-shields` — the marks in their fixed order — and
+`#wait-feed`, "Can't reach the standings feed"); `#tv-practice` (the Practice tag,
+the remote's mini TV wears the same); `.tv-chips` > `#tv-reconnect` and
+`#update-chip`; `#intro-go` (the intro's line, "Starting with 6th place" — the old
+"Press → or tap to begin" is gone with the advancing); `.hero-break .words` for the
+breakdown in words (no medal discs for counts); and the app's four flag symbols
+(`#flag-plain|swallow|stripe|chevron`, `.tv-flag[data-flag]`) so senior teams draw
+as flags. The frames keep their layout and motion, recoloured from black on white
+onto the app's paper and ink (so waiting → reveal is one surface and the mini TV
+matches); `#loading` stays only for the interim script.
+
 - **Camp choice**: `?camp=junior|senior` (case-insensitive), else the camp this
   device's own app last used (`campScoreboardActiveCamp`, same origin), else
   junior. `tv-camp.js` sets `window.CAMP_FORCE` before `camps.js` loads, and
