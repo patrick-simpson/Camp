@@ -438,6 +438,20 @@ What's covered, and why each file exists:
 - `sync.test.js` — **every invariant in the section below**, plus the deferred-
   snapshot and per-path-diff behavior. A failure here is a regression, not a
   test bug.
+- `sync-epoch.test.js` (+ `.senior`, which evals the same file) — "A new camp
+  year strands a phone's unsent work" below, against `fake-rtdb.js` with the
+  wizard's commit written straight into the database: no epoch (and the same
+  epoch) on both sides is the ordinary merge and writes nothing to the stranded
+  store; a different epoch (later, and back to legacy) strands every path kind —
+  scores, a team rename, a deletion — with zero database writes and the server's
+  tree adopted as the new confirmed base; the toast count; only the activity
+  stamp outstanding; an EMPTY node keeping the console-wipe rule; this year's
+  value for the same game id standing; a parked refusal cleared; reload read-back,
+  dedupe, the ten-entry cap, a blocked or full store, the per-camp key and
+  `clearLocalData`; the bar (count, buttons, calm look, priority behind a red
+  refusal and the view-only tab, a counselor's phone), Download's JSON, Dismiss
+  asking first, the sign-out question, and a source pin that stranding never
+  touches the network. (Its strand cases fail with the epoch branch removed.)
 - `teams-sync.test.js` (+ `.senior`, 4 teams) — "Team names and counselors sync
   per field" below, against `fake-rtdb.js` with a second device writing straight
   into the database: the diff matrix (one path per field, `''` and `null`, whole
@@ -1098,7 +1112,9 @@ rules**; the client code only shapes the UI.
 - **Sign-out** (`signOutAndClear`) wipes the camp data cached on the device
   (`clearLocalData`: STORAGE_KEY, day ranks, dismissed banners, the hint, the
   theme hint, the Calm motion switch and its last verdict
-  (`campScoreboardCalmMotion` / `campScoreboardCalmLast`), the parked email)
+  (`campScoreboardCalmMotion` / `campScoreboardCalmLast`), the parked email, and
+  any stranded last-year work `campScoreboardStranded` — the sign-out question
+  names it first)
   plus IndexedDB photos (`clearPhotos`), then reloads. Theme and Calm motion are
   NOT preserved — the boot guards discard partial state, so they reset to Auto.
 - **Rules are PUBLISHED and enforced** (2026-07-25). Verified after the flip:
@@ -1344,7 +1360,40 @@ More sync invariants (each fixed after it bit us — don't regress these;
   treated as a deliberate wipe (adopt it, push back only our own edits +
   the roster), not seeded. Two tabs of the SAME camp on one device used to
   overwrite each other's unconfirmed edits in the shared cache; they now have
-  ONE writer (next bullet).
+  ONE writer (two bullets down). A different EPOCH on the server strands this
+  phone's work instead of merging it (next bullet).
+- **A new camp year strands a phone's unsent work, never applies it** (S2d, setup
+  rebuild spec §6.2 #3 / §6.11). The new-year wizard (Step 28, not built) will stamp
+  `state/meta/epoch` (`w<YYYYMMDD>`; absent = the legacy week, which is every camp
+  today). `firstSnapshotMerge` compares the epoch in the baseline the server last
+  CONFIRMED to this phone (`epochOfTree(base)`, i.e. `_syncBase`) with the one in
+  the snapshot; when they differ, the three-way merge does NOT run: every path this
+  phone changed (`strandOldEpochWork`) is written to
+  `lsKey('campScoreboardStranded')` (`STRANDED_KEY`) as
+  `{at, from, to, lastSyncedAt, changes: [{path, what, value}]}` — `from`/`to` are
+  the epoch or `'legacy'` (never `''`), `value` is the canonical (`syncCanon`) form
+  and `null` is a deletion — then the server's tree is adopted and **nothing is
+  pushed**. A refused edit parked from last year (`stateQuarantine`) goes with it,
+  so no red bar survives into the new year. Only `meta/lastDataChangeAt`
+  outstanding is not "work": a plain adopt, no toast. It is checked BEFORE the
+  three-way compare, and `tests/sync-epoch.test.js` pins that the function writes
+  nothing to the database. Rules of the store: per camp (`lsKey`), wiped by
+  `clearLocalData`, lazily read (`readStranded` — never at load), newest ten
+  entries, identical work stranded twice (two tabs, a crash between the set-aside
+  and the adopt) is one entry, never synced, never in a backup, never in
+  `SYNC_KEYS`. **An EMPTY node is not an epoch change** (a console wipe takes
+  `meta` with it): it keeps the wipe rule above. An epoch going BACK (Undo the
+  new-year setup) strands exactly like one going forward. The person is told by a
+  toast ("This phone had N changes from last camp week that never synced. They
+  weren't added to this week. Download them from the bar at the top of the page.")
+  and then by a calm bar in the `#sync-alert` strip — "N old changes not added to
+  this week." with **Download** (one JSON file, `camp-unsynced-changes-<camp>-<date>.json`)
+  and **Dismiss** (asks first; it is the only copy). The bar uses the strip's
+  neutral `sync-alert-tab` look, and waits behind this week's refused scores (red)
+  and the view-only-tab bar; Download never deletes. Signing out names it in its
+  question. Not built here: the device-local reset on a new epoch
+  (`campScoreboardEpochSeen`) and the config / setup engines' own epoch checks
+  arrive with the wizard (Step 28) and the config engine.
 - **Two tabs of one camp: one writer** (S2c, setup rebuild spec §6.9). The cache
   (`STORAGE_KEY`) holds this device's unconfirmed edits and the baseline they are
   measured against, and each tab kept its own in-memory copy and wrote the WHOLE

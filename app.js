@@ -3422,6 +3422,135 @@ function syncCanonTree(t) {
   return out;
 }
 
+// ── Stranded work (setup-rebuild-spec §6.2 #3, "S2d") ──────────────
+// Unsent work from a PREVIOUS camp year must never be written into the current
+// one. The new-year wizard (Step 28) stamps `state.meta.epoch`; a phone that was
+// away across it comes back holding edits made against last year's tree, and the
+// three-way merge would happily re-apply every path nobody "touched" (the wizard
+// cleared them all, so nobody did). When the epoch the server last confirmed to
+// this phone differs from the one the server holds now, NONE of this phone's
+// paths are kept: they are set aside here, as downloadable JSON, and the server's
+// tree is adopted. Until an epoch exists (every camp today) both sides read '' and
+// none of this runs. Stored per camp (lsKey) and wiped by clearLocalData; the
+// bar in the sync-alert strip offers Download / Dismiss, and nothing here is
+// ever synced or pushed.
+const STRANDED_KEY = 'campScoreboardStranded';
+const STRANDED_MAX_ENTRIES = 10; // newest kept; a phone only strands once per new year, so this is generous
+let strandedList = null; // lazily read from storage on first use (never at load: boot-cache.test.js)
+
+function readStranded() {
+  if (strandedList) return strandedList;
+  let list = [];
+  try {
+    const raw = JSON.parse(localStorage.getItem(lsKey(STRANDED_KEY)) || '[]');
+    if (Array.isArray(raw)) list = raw.filter((en) => en && typeof en === 'object' && Array.isArray(en.changes));
+  } catch (e) { /* unreadable or blocked storage: nothing stranded as far as this page can tell */ }
+  strandedList = list;
+  return list;
+}
+
+function strandedCount() {
+  return readStranded().reduce((n, en) => n + en.changes.length, 0);
+}
+
+// Returns false when the write failed (the in-memory copy still serves Download
+// for this page's life).
+function writeStranded() {
+  try {
+    if (strandedList && strandedList.length) localStorage.setItem(lsKey(STRANDED_KEY), JSON.stringify(strandedList));
+    else localStorage.removeItem(lsKey(STRANDED_KEY));
+    return true;
+  } catch (e) { return false; }
+}
+
+// The epoch a synced tree carries ('' = the legacy week, which has none).
+function epochOfTree(t) {
+  const e = syncValueAt(t, 'meta/epoch');
+  return typeof e === 'string' ? e : '';
+}
+
+function addStranded(entry) {
+  const list = readStranded();
+  // Two tabs (or a reload after a crash between this write and the adopt's) can
+  // strand the same work twice: identical epochs and changes are one entry.
+  const key = (en) => en.from + '>' + en.to + ':' + JSON.stringify(en.changes);
+  if (!list.some((en) => key(en) === key(entry))) list.push(entry);
+  while (list.length > STRANDED_MAX_ENTRIES) list.shift();
+  return writeStranded();
+}
+
+function strandedBarHtml() {
+  const n = strandedCount();
+  // Short on purpose: the calm strip clips at two lines, and at 320px that is ~38
+  // characters. The toast and the sign-out question carry the full sentence.
+  return `<span class="sync-alert-text" title="From last camp week: they never synced, so they weren’t added to this week.">${n} old change${n === 1 ? '' : 's'} not added to this week.</span>` +
+    '<span class="sync-quarantine-actions">' +
+    '<button type="button" class="link-btn sync-quarantine-btn" data-stranded="download">Download</button> ' +
+    '<button type="button" class="link-btn danger-link sync-quarantine-btn" data-stranded="dismiss">Dismiss</button>' +
+    '</span>';
+}
+
+function strandedDownloadJson() {
+  return JSON.stringify({
+    app: 'campScoreboardStranded',
+    camp: CAMP.id,
+    label: CAMP.label,
+    downloadedAt: new Date().toISOString(),
+    note: 'Changes this phone made but never sent to the server before a new camp year began. ' +
+      'They were NOT added to the new year. Each change is a database path under state/ and the value ' +
+      'that was set there (null = it was deleted).',
+    entries: readStranded(),
+  }, null, 2);
+}
+
+function downloadStranded() {
+  if (!strandedCount()) return;
+  downloadBlob(new Blob([strandedDownloadJson()], { type: 'application/json' }),
+    'camp-unsynced-changes-' + CAMP.id + '-' + new Date().toISOString().slice(0, 10) + '.json');
+  showToast('Saved to your downloads. Tap Dismiss in the bar once you have the file.');
+}
+
+// Delete what was set aside. Asked first: this is the only copy.
+function dismissStranded() {
+  const n = strandedCount();
+  if (!n) return;
+  if (!confirm(`Delete ${n === 1 ? 'this change' : 'these ' + n + ' changes'} from this phone? ${n === 1 ? 'It was' : 'They were'} not added to this week, and ${n === 1 ? 'it' : 'they'} can’t be brought back.`)) return;
+  strandedList = [];
+  writeStranded();
+  updateSyncIndicator();
+}
+
+// This phone's paths against a server that has moved to another epoch: set them
+// aside, adopt the server. Returns false when there is nothing worth setting
+// aside (only the activity stamp), so the caller falls through to a plain adopt.
+function strandOldEpochWork(remote, mine, fromEpoch, toEpoch, baseAt) {
+  const changes = Object.keys(mine).filter((p) => p !== 'meta/lastDataChangeAt').map((p) => ({
+    path: p, what: quarantineLabel(p), value: mine[p] === undefined ? null : mine[p],
+  }));
+  if (!changes.length) return false;
+  const kept = addStranded({
+    at: new Date().toISOString(),
+    from: fromEpoch || 'legacy',
+    to: toEpoch || 'legacy',
+    lastSyncedAt: baseAt ? new Date(baseAt).toISOString() : null,
+    changes,
+  });
+  // A refused edit parked from last year would be laid back over the new tree by
+  // the adopt below and keep its red bar up for a week it doesn't belong to.
+  if (Object.keys(stateQuarantine).length) {
+    stateQuarantine = {};
+    quarantineAutoRetried = {};
+    quarantineChanged();
+  }
+  dataEditPending = false;
+  applyRemoteState(remote); // the server's tree is also the new confirmed base; nothing is pushed
+  const n = changes.length;
+  showToast(`⚠️ This phone had ${n} change${n === 1 ? '' : 's'} from last camp week that never synced. ${n === 1 ? 'It wasn’t' : 'They weren’t'} added to this week. ` +
+    (kept ? `Download ${n === 1 ? 'it' : 'them'} from the bar at the top of the page.` : 'This phone is out of room to keep them, so download them now.'));
+  updateSyncIndicator();
+  return true;
+}
+
 // Returns true when it handled the snapshot (adopted + pushed our edits).
 function firstSnapshotMerge(remote) {
   // Read before anything below adopts a snapshot (which re-stamps it).
@@ -3431,6 +3560,16 @@ function firstSnapshotMerge(remote) {
   const mine = computeSyncUpdates(base, local);
   const minePaths = Object.keys(mine);
   if (!minePaths.length) return false; // nothing of ours outstanding — plain adopt
+  // A different epoch than the one the server last confirmed to this phone: the
+  // new year began while it was away, so its unsent work is last year's (see
+  // "Stranded work" above). A wholly EMPTY node says nothing about an epoch (a
+  // console wipe takes meta with it), so that case keeps its own rule in
+  // handleRemoteSnapshot. Legacy camps read '' on both sides: a no-op.
+  if (remote && Object.keys(remote).length) {
+    const fromEpoch = epochOfTree(base);
+    const toEpoch = epochOfTree(remote);
+    if (fromEpoch !== toEpoch) return strandOldEpochWork(remote, mine, fromEpoch, toEpoch, baseAt);
+  }
   const serverTree = syncCanonTree(remote);
   const theirs = computeSyncUpdates(base, serverTree);
   const theirPaths = Object.keys(theirs);
@@ -4295,6 +4434,11 @@ function discardQuarantined() {
 function onSyncStatusClick(e) {
   const claim = e && e.target && e.target.closest ? e.target.closest('[data-tab-claim]') : null;
   if (claim && claim.dataset && claim.dataset.tabClaim) { claimWriterTab(); return; }
+  const set = e && e.target && e.target.closest ? e.target.closest('[data-stranded]') : null;
+  if (set && set.dataset && set.dataset.stranded) {
+    if (set.dataset.stranded === 'download') downloadStranded(); else dismissStranded();
+    return;
+  }
   const btn = e && e.target && e.target.closest ? e.target.closest('[data-sync-quarantine]') : null;
   if (!btn) return;
   if (btn.dataset.syncQuarantine === 'discard') discardQuarantined(); else retryQuarantined();
@@ -4402,10 +4546,15 @@ function updateSyncAlert() {
   // offers the switch. canEdit() is false there, so nothing is ever parked and the
   // two messages can never want the strip at once.
   const viewOnlyTab = memberRole === 'editor' && tabReadOnly();
-  const show = viewOnlyTab || (canEdit() && Object.keys(stateQuarantine).length > 0);
+  const parked = !viewOnlyTab && canEdit() && Object.keys(stateQuarantine).length > 0;
+  // Work set aside from a previous camp year (strandOldEpochWork) waits its turn:
+  // this week's refused scores and the view-only tab are more urgent, and it is
+  // news rather than an error, so it borrows the calm "tab" look.
+  const stranded = !viewOnlyTab && !parked && strandedCount() > 0;
+  const show = viewOnlyTab || parked || stranded;
   // Written only when it changes: a rebuilt button loses a finger mid-tap.
-  if (show) setHtmlIfChanged(el, viewOnlyTab ? tabBarHtml() : quarantineBarHtml());
-  el.classList.toggle('sync-alert-tab', viewOnlyTab);
+  if (show) setHtmlIfChanged(el, viewOnlyTab ? tabBarHtml() : parked ? quarantineBarHtml() : strandedBarHtml());
+  el.classList.toggle('sync-alert-tab', viewOnlyTab || stranded);
   el.hidden = !show;
   document.body.classList.toggle('has-sync-alert', show); // styles.css reserves its height above the first card
 }
@@ -10921,7 +11070,7 @@ function clearLocalData() {
   const bases = ['campScoreboardV2', 'campScoreboardDayRanks',
     'campScoreboardDismissedChanges', 'campScoreboardDismissedAnnouncements',
     'campScoreboardChatSeen', 'campScoreboardChatSubs',
-    'campScoreboardPushOn', 'campScoreboardPushPrefs'];
+    'campScoreboardPushOn', 'campScoreboardPushPrefs', STRANDED_KEY];
   Object.keys(CAMPS).forEach((cid) => {
     bases.forEach((b) => {
       try { localStorage.removeItem(b + CAMPS[cid].storageSuffix); } catch (e) { /* ignore */ }
@@ -10940,9 +11089,16 @@ let signingOut = false;
 function signOutAndClear() {
   if (signingOut) return;
   flushPendingPush();
-  const msg = (hasUnsyncedWork() || hasUnconfirmedLocalWork())
+  // Work set aside from a previous camp year lives only on this phone too: say so
+  // first, whichever question follows (see "Stranded work").
+  const strandedN = strandedCount();
+  const them = strandedN === 1 ? 'it' : 'them';
+  const strandedNote = strandedN
+    ? `This phone still holds ${strandedN} change${strandedN === 1 ? '' : 's'} from last camp week that never synced. Signing out deletes ${them}; Download ${them} from the bar at the top first if you want ${them}.\n\n`
+    : '';
+  const msg = strandedNote + ((hasUnsyncedWork() || hasUnconfirmedLocalWork())
     ? "A score you saved hasn't reached the server yet — signing out now will lose it. Sign out anyway?"
-    : 'Sign out? Camp data stored on this device will be cleared.';
+    : 'Sign out? Camp data stored on this device will be cleared.');
   if (!confirm(msg)) return;
   signingOut = true;
   // Phone alerts first, while still signed in: this device's push records
