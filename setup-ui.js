@@ -452,6 +452,7 @@ async function setupBack() {
   if (!(await setupConfirmLeave())) return;
   if (screen === 'rain') {
     if (!(await rainLeave())) return;
+    if (rainBackHome()) return;
     state.ui.setupDay = rainDk();
     setupGo('schedule');
     return;
@@ -660,7 +661,7 @@ function renderSetupUi(open) {
   // Back from the hub returns to the tab the builder was opened FROM (More, or Games from an empty day's
   // "Add games"): the shell keeps state.ui.tab untouched while the builder is up.
   const cameFrom = { now: 'Now', games: 'Games', chat: 'Chat', more: 'More' }[state.ui.tab] || 'More';
-  setTextIfChanged(setupEl('setup-back-label'), screen === 'hub' ? cameFrom : screen === 'rain' ? 'Schedule' : 'Set up the week');
+  setTextIfChanged(setupEl('setup-back-label'), screen === 'hub' ? cameFrom : screen === 'rain' ? (setupRain.cameFrom === 'now' ? 'Now' : 'Schedule') : 'Set up the week');
   paintSetupSync();
   paintSetupHere();
   paintSetupDock();
@@ -922,6 +923,11 @@ function paintSetupDock() {
   const top = setupUi.wasOpen && canEdit() ? undoTop() : null;
   const show = !!top && !(pill && !pill.hidden);
   setHiddenIfChanged(dock, !show);
+  // While the pill hangs under the head, the screen makes room for it (styles.css .setup[data-pill]): it floated
+  // over the headline that was the feedback for the very change it undoes.
+  const root = setupEl('setup');
+  const up = !!(pill && !pill.hidden);
+  if (root && root.hasAttribute && up !== root.hasAttribute('data-pill')) { if (up) root.setAttribute('data-pill', ''); else root.removeAttribute('data-pill'); }
   if (!top) return;
   const s = undoShape(top);
   const label = s.verb + ': ' + s.label;
@@ -1577,10 +1583,10 @@ function paintPreviewDoor(prefix, preview) {
   if (!preview) return;
   const owner = typeof isOwner === 'function' && isOwner();
   const name = hubCap(typeof ownerName === 'function' ? ownerName() : 'the owner');
-  setTextIfChanged(setupEl(prefix + '-door-lead'), 'This camp is still using the original week.');
-  setTextIfChanged(setupEl(prefix + '-door-text'), prefix === 'week'
-    ? 'The dates, double points and finale below are yours to set. The days become editable once editing is turned on.'
-    : 'This is the schedule that came with the app. Turning on editing changes nothing anyone can see until someone edits something.');
+  // The hub says it in full; here one line (§8.8: no explanation paragraph above every screen's content). On Camp week
+  // the dates, double points and finale stay editable, so only the days are called read-only.
+  setTextIfChanged(setupEl(prefix + '-door-lead'), prefix === 'week' ? 'The original week · the days are read-only' : 'The original week · read-only');
+  setTextIfChanged(setupEl(prefix + '-door-text'), '');
   const btn = setupEl(prefix + '-door-btn');
   setTextIfChanged(btn, 'Edit the week here');
   setHiddenIfChanged(btn, !owner);
@@ -1896,6 +1902,19 @@ function schedPartOf(b) { return b.start < 720 ? 'morning' : b.start < 1020 ? 'a
 
 function schedClockWords(m) { return m >= 1440 ? 'midnight' : schedClock(m, false); }
 
+// Setup's one time style in words (P2 §11.6): "1:15–2:00 PM", "11:30 AM–12:15 PM", "9:30 PM–midnight" — the same
+// "9:40 AM" as setup-sync.js setupClock. The run-sheet rows keep their bare "10:00–11:45" column (the part of day is the
+// list's heading); every sentence, question and struck "was" uses this, never app.js schedRange's "10:00–11:45am".
+function setupRange(start, end) {
+  if (end >= 1440) return setupClock(start) + '–midnight';
+  return ((start < 720) === (end < 720) ? schedClock(start, false) : setupClock(start)) + '–' + setupClock(end);
+}
+// A length in words: "45 min", "1 h", "1 h 45 min".
+function setupLength(mins) {
+  const m = Math.max(0, Math.round(mins));
+  return m >= 60 ? Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : '') : m + ' min';
+}
+
 function schedGamesOf(b, dow) {
   const dayIds = dow >= 0 ? competitionDays().filter((d) => d.dow === dow).map((d) => d.id) : null;
   return allGames().filter((g) => g.blockId === b.id && (!dayIds || dayIds.indexOf(g.dayId) !== -1));
@@ -1935,18 +1954,34 @@ function schedRowSub(b, ctx) {
 function schedRowHtml(b, ctx) {
   const sub = schedRowSub(b, ctx);
   const time = b.noTime
-    ? esc(schedClock(b.start, false)) + '<small>Not shown</small>'
+    ? esc(schedClock(b.start, false)) + '<small>time hidden</small>'
     : esc(schedClock(b.start, false)) + '<small>–' + esc(schedClockWords(b.end)) + '</small>';
   const subHtml = sub.text || sub.tag ? '<span class="cb-sub">' + esc(sub.text) + (sub.tag ? '<b class="sched-tag">' + esc(sub.tag) + '</b>' : '') + '</span>' : '';
   const inner = '<span class="cb-time">' + time + '</span><span class="cb-main"><span class="cb-title"><span class="sched-emo" aria-hidden="true">' + esc(b.emoji) + '</span><span>' + esc(b.label) + '</span></span>' + subHtml + '</span>' +
     '<span class="cb-end">' + (ctx.editable ? '<svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg>' : '') + '</span>';
   const attrs = ' class="cb-row sched-row" data-bid="' + esc(b.id) + '"' + (b.noTime ? ' data-notime' : '') + (sub.warn ? ' data-warn' : '') +
-    (sub.tag ? ' data-diff="' + (b.origin === 'oneoff' ? 'only' : 'changed') + '"' : '');
+    (sub.tag ? ' data-diff="' + (b.origin === 'oneoff' ? 'only' : 'changed') + '"' : '') + ' data-key="r-' + esc(b.id) + '"';
   return ctx.editable ? '<button type="button"' + attrs + '>' + inner + '</button>' : '<div' + attrs + '>' + inner + '</div>';
 }
 
+// Paint one part-of-day list. On the same day an edit that re-sorts it glides the survivors to their new places (the
+// rain list's keyed FLIP, once hands are off the list); a day switch, calm motion or no Jelly is a plain replace — on a
+// new day the shared block ids would otherwise all slide about. Its own memo, so an idle renderAll touches nothing.
+function schedPaintList(list, html, dayKey) {
+  if (!list || (list.__schedHtml === html && list.__schedDay === dayKey)) return;
+  const same = list.__schedHtml !== undefined && list.__schedDay === dayKey;
+  list.__schedHtml = html;
+  list.__schedDay = dayKey;
+  const calm = typeof calmMotion === 'function' && calmMotion();
+  if (!same || calm || typeof JellyMotion === 'undefined' || !JellyMotion.flipKeyed || !list.children || !list.children.length) { list.innerHTML = html; return; }
+  JellyMotion.whenHandsOff(() => {
+    if (list.__schedHtml !== html) return;
+    try { JellyMotion.flipKeyed(list, html, 'glide'); } catch (e) { list.innerHTML = html; }
+  });
+}
+
 function schedGapHtml(g) {
-  return '<button type="button" class="sched-gap" data-gap-start="' + g.start + '" data-gap-end="' + g.end + '"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span>Add something · ' + esc(schedRange(g.start, g.end)) + '</span></button>';
+  return '<button type="button" class="sched-gap" data-key="gap-' + g.start + '" data-gap-start="' + g.start + '" data-gap-end="' + g.end + '"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span>Add something · ' + esc(setupRange(g.start, g.end)) + '</span></button>';
 }
 
 // How many items of a day differ from the typical day, in the words of the note under the lede.
@@ -2001,6 +2036,54 @@ function renderSchedStrip(dayKey, shared) {
     const chip = track.querySelector('.daypick-btn[data-today]');
     if (chip && typeof chip.offsetLeft === 'number') { track.scrollLeft = chip.offsetLeft; setupSched.stripPlaced = true; }
   }
+  // The chosen day is always in view: once per day change the strip moves just enough to show its chip whole, clear of
+  // the edge fade (outside camp week nothing placed it, and Saturday opened with no chosen chip on screen).
+  const prev = setupSched.stripDay;
+  if (prev !== dayKey && track.clientWidth > 0) {
+    setupSched.stripDay = dayKey;
+    stripRevealChip(track, track.querySelector('.daypick-btn[aria-selected="true"]'), prev !== undefined);
+    // The chosen chip lands with the day pill's snap (§9.5); calm: nothing (the lift itself says it).
+    const chip = prev !== undefined && track.querySelector('.daypick-btn[aria-selected="true"]');
+    if (chip && typeof JellyMotion !== 'undefined') JellyMotion.play(chip, 'snap', (x) => ({ transform: 'scale(' + (0.86 + 0.14 * x) + ',' + (1.1 - 0.1 * x) + ')' }), { calm: false });
+  }
+  paintStripOverflow(track);
+  setHiddenIfChanged(setupEl('sched-days-key'), !(shared && dayKey === 'typical'));
+}
+
+// Scroll a day strip just enough that `chip` is whole and clear of the edge fades (the "nearest" rule). The strip snaps
+// chips to its start (scroll-padding keeps that clear of the left fade), so the target is a snap position — a spot
+// between two would be snapped back, and on the right that hid the chip again.
+function stripRevealChip(track, chip, smooth) {
+  if (!track || !chip || typeof chip.getBoundingClientRect !== 'function') return;
+  const t = track.getBoundingClientRect();
+  const origin = t.left - track.scrollLeft; // content x = viewport x - origin
+  const startOf = (el) => el.getBoundingClientRect().left - origin;
+  const viewL = track.scrollLeft + 16;
+  const viewR = track.scrollLeft + track.clientWidth - 24;
+  let left = null;
+  if (startOf(chip) < viewL) left = startOf(chip) - 16;
+  else if (chip.getBoundingClientRect().right - origin > viewR) {
+    const need = chip.getBoundingClientRect().right - origin - track.clientWidth + 24;
+    const snaps = Array.prototype.filter.call(track.children, (c) => !c.hidden && c.getBoundingClientRect().width > 0).map((c) => startOf(c) - 16);
+    const snap = snaps.find((x) => x >= need - 1);
+    left = snap !== undefined ? snap : need;
+  }
+  if (left === null) return;
+  left = Math.max(0, Math.min(track.scrollWidth - track.clientWidth, Math.round(left)));
+  const calm = typeof calmMotion === 'function' && calmMotion();
+  if (typeof track.scrollTo === 'function') track.scrollTo({ left, behavior: smooth && !calm ? 'smooth' : 'auto' });
+  else track.scrollLeft = left;
+}
+
+// A strip that scrolls fades out at the edge(s) it continues past (styles.css .daypick[data-overflow]): with the
+// scrollbar hidden, a strip that ended cleanly after "Thu" read as a week without Friday.
+function paintStripOverflow(track) {
+  if (!track || !(track.clientWidth > 0)) return;
+  const max = track.scrollWidth - track.clientWidth;
+  const at = track.scrollLeft;
+  const v = max <= 1 ? '' : at <= 1 ? 'end' : at >= max - 1 ? 'start' : 'both';
+  if ((track.getAttribute('data-overflow') || '') === v) return;
+  if (v) track.setAttribute('data-overflow', v); else track.removeAttribute('data-overflow');
 }
 
 // Whether a day has something to look at: empty, a broken item, an overlap nobody okayed.
@@ -2039,7 +2122,7 @@ function renderScheduleScreen() {
   }
   setTextIfChanged(setupEl('sched-lede'), lede);
   const menu = shared && dayKey !== 'typical' && canEdit();
-  setHiddenIfChanged(setupEl('sched-rain-link'), !menu);
+  setHiddenIfChanged(setupEl('sched-rain-link'), !menu || !blocks.length); // an empty day has nothing to rain-plan
   setHiddenIfChanged(setupEl('sched-day-btn'), !menu);
   if (menu) setTextIfChanged(setupEl('sched-rain-link-text'), 'Rain plan for ' + (dayKey === schedTodayKey() ? 'today' : SETUP_DAY_WORDS[dayKey]));
   paintPreviewDoor('sched', preview);
@@ -2074,7 +2157,7 @@ function renderScheduleScreen() {
       if (gap) html += schedGapHtml(gap);
       html += schedRowHtml(b, ctx);
     });
-    setHtmlIfChanged(list, html);
+    schedPaintList(list, html, dayKey);
   });
   // Skipped on this day
   const skipped = dayKey !== 'typical' && blocks.skipped ? blocks.skipped : [];
@@ -2150,7 +2233,12 @@ function schedOpenItem(opts) {
     origin: b ? b.origin : 'new', rec: b ? schedItemOfBlock(b) : null, form, ask: { overlap: null, own: null, rekey: null }, moves: null,
     hasTeams: form.teams.length > 0, label0: form.label, stage: !!o.stage, // stage: a one-off added in the rain plan is STAGED, not saved
   };
+  const sheetEl = document.querySelector('#sheet-sched-item .sheet');
+  if (sheetEl && sheetEl.removeAttribute) sheetEl.removeAttribute('data-flow');
+  setupSched.item.emojiOpen = false;
+  setupSched.item.flow = false;
   setupSheet('sched-item', o.opener);
+  if (typeof requestAnimationFrame === 'function') requestAnimationFrame(schedItemFit); // measured once it is laid out
   if (typeof setupMoveHere === 'function') setupMoveHere();
 }
 
@@ -2209,7 +2297,8 @@ function renderSchedItemSheet() {
   const f = it.form;
   const m = schedItemModel(it);
   const dayWord = it.dayKey === 'typical' ? 'the typical day' : SETUP_DAY_WORDS[it.dayKey];
-  setTextIfChanged(setupEl('sheet-sched-item-title'), it.mode === 'add' ? 'New item' : (f.label || it.label0 || 'Item'));
+  // A short fixed title: the name is the first field under it (a long name as the title took the screen at 200%).
+  setTextIfChanged(setupEl('sheet-sched-item-title'), it.mode === 'add' ? 'New item' : 'Edit item');
   let where;
   if (it.mode === 'add') where = it.dayKey === 'typical' ? 'Adding to the typical day' : 'Adding to ' + dayWord;
   else if (it.dayKey === 'typical') where = 'The typical day · ' + (schedDaysWords(SETUP_DK.filter((dk) => setupMapOf(setupMapOf(setupTree.days)[dk]).typical === true)) || 'no day yet');
@@ -2223,7 +2312,16 @@ function renderSchedItemSheet() {
   if (label && document.activeElement !== label && label.value !== f.label) label.value = f.label;
   setTextIfChanged(setupEl('si-label-error'), m.errors.label);
   setHiddenIfChanged(setupEl('si-label-error'), !m.errors.label || !f.touched);
-  // Emoji: the grid is built once; one is pressed, or the "other" box holds a custom one.
+  // Emoji: one tile beside the name shows the choice and opens the grid inline (it.emojiOpen); the grid is built once,
+  // one is pressed, or the "other" box holds a custom one.
+  setTextIfChanged(setupEl('si-emoji-now'), f.emoji || '🙂');
+  const pick = setupEl('si-emoji-btn');
+  if (pick) {
+    const lbl = 'Emoji' + (f.emoji ? ' ' + f.emoji : '') + (it.emojiOpen ? '' : ', change');
+    if (pick.getAttribute('aria-label') !== lbl) pick.setAttribute('aria-label', lbl);
+    if (pick.getAttribute('aria-expanded') !== String(!!it.emojiOpen)) pick.setAttribute('aria-expanded', String(!!it.emojiOpen));
+  }
+  setHiddenIfChanged(setupEl('si-emoji'), !it.emojiOpen);
   const grid = setupEl('si-emoji-grid');
   if (grid && !grid.children.length) grid.innerHTML = SCHED_EMOJI.map((e) => '<button type="button" class="si-emo" data-emoji="' + e[0] + '" aria-pressed="false" aria-label="' + esc(e[1]) + '">' + e[0] + '</button>').join('');
   let inGrid = false;
@@ -2275,8 +2373,13 @@ function renderSchedItemSheet() {
   // Questions
   setHiddenIfChanged(setupEl('si-overlap'), !m.overlap);
   if (m.overlap) {
-    setTextIfChanged(setupEl('si-overlap-text'), 'Overlaps ' + setupHeadLabel(m.overlap.label) + ' (' + schedRange(m.overlap.start, m.overlap.end) + ').');
-    setHiddenIfChanged(setupEl('si-overlap-push'), !m.pushBy);
+    setTextIfChanged(setupEl('si-overlap-text'), 'Overlaps ' + setupHeadLabel(m.overlap.label) + ' (' + setupRange(m.overlap.start, m.overlap.end) + ').');
+    // A clash with an item that starts at or before this one is solved by starting after it; pushing later items back
+    // is the answer only for a clash with a LATER item (it never moved Breakfast out of Cabin time's way).
+    const after = schedOverlapAfter(f, m.overlap);
+    setHiddenIfChanged(setupEl('si-overlap-after'), after === null);
+    if (after !== null) setTextIfChanged(setupEl('si-overlap-after'), 'Start at ' + setupClock(after) + ' instead');
+    setHiddenIfChanged(setupEl('si-overlap-push'), !m.pushBy || after !== null);
     setTextIfChanged(setupEl('si-overlap-push'), 'Push later items back ' + m.pushBy + ' min');
   }
   setHiddenIfChanged(setupEl('si-ownday'), !m.ownAsk);
@@ -2297,10 +2400,16 @@ function renderSchedItemSheet() {
   setTextIfChanged(setupEl('si-remove-text'), it.mode !== 'edit' ? '' : 'Remove…');
   // The dock: one gold Save, or the two equal scope buttons
   const dayScoped = !it.stage && it.dayKey !== 'typical' && (it.origin === 'typical' || it.origin === 'changed' || (it.mode === 'add' && setupMapOf(setupMapOf(setupTree.days)[it.dayKey]).typical === true));
-  setHiddenIfChanged(setupEl('si-scope'), !dayScoped);
-  setHiddenIfChanged(setupEl('si-save'), dayScoped);
-  setHiddenIfChanged(setupEl('si-tell'), true);
   const blocked = !m.valid || m.pending;
+  // Not yet: ONE dashed well that names the missing step and takes the director to it (styles.css .btn:disabled's
+  // rule — never two greyed-out copies of the real buttons, the reason below the fold). The real buttons step aside
+  // (still aria-disabled, so a tap that slips through does nothing).
+  const wait = blocked ? schedItemWait(it, m) : null;
+  setHiddenIfChanged(setupEl('si-wait'), !wait);
+  setTextIfChanged(setupEl('si-wait-text'), wait ? wait.text : '');
+  setHiddenIfChanged(setupEl('si-scope'), !dayScoped || !!wait);
+  setHiddenIfChanged(setupEl('si-save'), dayScoped || !!wait);
+  setHiddenIfChanged(setupEl('si-tell'), true);
   const setDisabled = (el, off) => { if (!el) return; if (off) el.setAttribute('aria-disabled', 'true'); else el.removeAttribute('aria-disabled'); };
   const save = setupEl('si-save');
   setTextIfChanged(save, it.mode === 'add' ? (it.stage ? 'Add for ' + (it.dayKey === schedTodayKey() ? 'today' : dayWord) : it.dayKey === 'typical' ? 'Add to the typical day' : 'Add to ' + dayWord) : 'Save');
@@ -2319,6 +2428,54 @@ function renderSchedItemSheet() {
     setDisabled(setupEl('si-save-day'), blocked || !!m.unpatchable);
     setDisabled(setupEl('si-save-all'), blocked);
   }
+  schedItemFit();
+}
+
+// What the dock's well says while the save can't happen yet, and where a tap on it goes (`to`: an element id), in the
+// order a director meets them going down the sheet: the name, the times, then the open question.
+function schedItemWait(it, m) {
+  const verb = it.mode === 'add' ? 'add' : 'save';
+  if (m.errors.label) return { text: String(it.form.label).trim() ? 'Shorten the name, then ' + verb : 'Type what happens, then ' + verb, to: 'si-label' };
+  if (m.errors.time) return { text: 'Fix the times first ↑', to: 'si-start' };
+  if (!m.valid) return { text: 'Pick an emoji first ↑', to: 'si-emoji-btn' };
+  if (m.overlap) return { text: 'Answer the overlap question first ↑', to: 'si-overlap' };
+  if (m.ownAsk) return { text: 'Answer the question about ' + (m.ownAsk.length > 1 ? 'the other days' : SETUP_DAY_WORDS[m.ownAsk[0].dk]) + ' first ↑', to: 'si-ownday' };
+  if (m.rekey) return { text: 'Answer the reminders question first ↑', to: 'si-rekey' };
+  return null;
+}
+
+// The well's tap: bring the step into view and put focus on it (a question's first answer, or the field itself).
+function schedItemGoToWait() {
+  const it = setupSched.item;
+  if (!it) return;
+  const w = schedItemWait(it, schedItemModel(it));
+  const el = w && setupEl(w.to);
+  if (!el) return;
+  if (w.to === 'si-emoji-btn' && !it.emojiOpen) { it.emojiOpen = true; renderSchedItemSheet(); }
+  try { el.scrollIntoView({ block: 'center', behavior: typeof calmMotion === 'function' && calmMotion() ? 'auto' : 'smooth' }); } catch (e) { /* no layout */ }
+  const target = el.classList && el.classList.contains('si-ask') ? el.querySelector('button:not([hidden])') : el;
+  if (target && typeof target.focus === 'function') { try { target.focus({ preventScroll: true }); } catch (e) { /* fine */ } }
+}
+
+// "Start at 8:30 instead": a clash with an item that starts at or before this one is answered by starting right after
+// it, the same length (capped at midnight). null when that isn't the clash, or the item would start at midnight.
+function schedOverlapAfter(f, hit) {
+  if (!hit || hit.start > f.start || !(hit.end < 1440)) return null;
+  return hit.end;
+}
+
+// Large text: when the sheet's fixed parts (grab, head, where-from line, dock) take more than 45% of it, the whole
+// sheet scrolls as one (styles.css [data-flow]): pinned, they left a 38px window onto the form at 200%. Decided per
+// open and only ever switched ON while it is open, so the form never jumps between the two layouts mid-edit.
+function schedItemFit() {
+  const it = setupSched.item;
+  const sheet = document.querySelector('#sheet-sched-item .sheet');
+  if (!it || !sheet || !sheet.children || it.flow) return;
+  const h = Number(sheet.clientHeight) || 0;
+  if (!h) return;
+  let fixed = 0;
+  Array.prototype.forEach.call(sheet.children, (c) => { if (!(c.classList && c.classList.contains('sheet-body'))) fixed += Number(c.offsetHeight) || 0; });
+  if (fixed > h * 0.45) { it.flow = true; sheet.setAttribute('data-flow', ''); }
 }
 
 // A field changed: whatever it was, the questions the old answer belonged to are asked again.
@@ -2475,6 +2632,18 @@ function schedBringBack(bid) {
   if (!r.ok) weekRefused(r);
 }
 
+// The emoji tile opens (or closes) the grid inline; it arrives with the shell's arrive spring, calm: a fade.
+function schedItemEmojiToggle(open) {
+  const it = setupSched.item;
+  if (!it) return;
+  it.emojiOpen = !!open;
+  renderSchedItemSheet();
+  const box = setupEl('si-emoji');
+  if (open && box && typeof JellyMotion !== 'undefined') {
+    JellyMotion.play(box, 'arrive', (x) => ({ opacity: Math.min(1, x), transform: 'translateY(' + (-8 * (1 - Math.min(1, x))) + 'px)' }), { calm: [{ opacity: 0 }, { opacity: 1 }] });
+  }
+}
+
 // The item sheet's own handlers (delegated from #sheet-sched-item; wireSetupUi calls this once).
 function wireSchedItemSheet() {
   const root = setupEl('sheet-sched-item');
@@ -2507,13 +2676,23 @@ function wireSchedItemSheet() {
     if (!f || !it) return;
     const q = (sel) => (e.target.closest ? e.target.closest(sel) : null);
     let b;
-    if ((b = q('.si-emo'))) { f.emoji = b.dataset.emoji; schedItemTouched('emoji'); }
+    if (q('#si-emoji-btn')) { schedItemEmojiToggle(!it.emojiOpen); }
+    else if ((b = q('.si-emo'))) { f.emoji = b.dataset.emoji; it.emojiOpen = false; schedItemTouched('emoji'); const t = setupEl('si-emoji-btn'); if (t && t.focus) { try { t.focus({ preventScroll: true }); } catch (err) { /* fine */ } } }
+    else if (q('#si-wait')) schedItemGoToWait();
     else if ((b = q('[data-si-type]'))) { f.kind = b.dataset.siType; schedItemTouched('kind'); }
     else if ((b = q('[data-si-meal]'))) { f.meal = b.dataset.siMeal; schedItemTouched('kind'); }
     else if ((b = q('[data-si-slot]'))) { f.slot = Number(b.dataset.siSlot); schedItemTouched('kind'); }
     else if ((b = q('.si-team'))) { const id = b.dataset.team; f.teams = f.teams.indexOf(id) === -1 ? f.teams.concat([id]) : f.teams.filter((x) => x !== id); if (!f.teams.length) f.teams = [id]; schedItemTouched('teams'); }
     else if ((b = q('[data-si-overlap]'))) {
       const m = schedItemModel(it);
+      const after = b.dataset.siOverlap === 'after' ? schedOverlapAfter(f, m.overlap) : null;
+      if (after !== null) {
+        const len = f.end - f.start;
+        f.start = after;
+        if (f.end < 1440) f.end = Math.min(1440, after + len);
+        schedItemTouched('time');
+        return;
+      }
       if (b.dataset.siOverlap === 'ok') { f.overlapOk = true; it.ask.overlap = 'ok'; } else if (m.overlap && m.pushBy) {
         const others = schedBlocksFor(it.dayKey).filter((x) => x.id !== it.bid);
         it.moves = schedRipple(others, m.overlap.id, m.pushBy);
@@ -2544,6 +2723,8 @@ function wireSchedItemSheet() {
 function wireScheduleScreen() {
   const on = (sel, ev, fn) => { const el = document.querySelector(sel); if (el) el.addEventListener(ev, fn); };
   on('#sched-days', 'click', (e) => { const b = e.target.closest && e.target.closest('.daypick-btn[data-day]'); if (b) schedSetDay(b.dataset.day); });
+  const track = setupEl('sched-days-track');
+  if (track) track.addEventListener('scroll', () => paintStripOverflow(track), { passive: true });
   on('#setup-schedule', 'click', (e) => {
     const q = (sel) => (e.target.closest ? e.target.closest(sel) : null);
     let b;
@@ -2577,6 +2758,7 @@ const setupRain = {
   expanded: false,   // "Show the whole day"
   restored: '',      // "Your unfinished plan from 9:12 is back"
   pane: 'actions',   // the item sheet's pane
+  cameFrom: '',      // 'now': opened from the home schedule sheet (Back / Done return there)
   bid: null,         // the item the sheet is about
   gid: null,         // the game the move pane is about
   from: '',          // where the move pane came from: 'games' | 'list'
@@ -2631,8 +2813,12 @@ function rainCount(plan) {
 
 // Open the rain plan on a day (the typical day means today, else Wednesday). A draft for the same day and year comes
 // back; one older than 12 hours asks whether to finish it.
-async function rainOpen(dayKey) {
+async function rainOpen(dayKey, opts) {
   if (!canEdit() || !scheduleIsShared()) return false;
+  // Where the director came from: 'now' (the home schedule sheet's "Change today's plan") — then Back says Now, and
+  // Back and Done go back there with the schedule sheet open, not into Set up the week. In memory only: a reload lands
+  // on the Schedule screen as before.
+  setupRain.cameFrom = opts && opts.from === 'now' ? 'now' : '';
   const dk = SETUP_DK.indexOf(dayKey) !== -1 ? dayKey : (campWeek().phase === 'during' ? schedTodayKey() : 'wed');
   const draft = rainDraftLoad();
   let plan = null;
@@ -2718,11 +2904,11 @@ function rainRowHtml(b, ctx) {
   const nGames = (ctx.games[b.id] || []).length;
   const timeCell = isNow
     ? esc(schedClock(b.start, false)) + '<small class="rain-now">Now</small>'
-    : b.noTime ? esc(schedClock(b.start, false)) + '<small>Not shown</small>' : esc(schedClock(b.start, false)) + '<small>–' + esc(rainClock(b.end)) + '</small>';
+    : b.noTime ? esc(schedClock(b.start, false)) + '<small>time hidden</small>' : esc(schedClock(b.start, false)) + '<small>–' + esc(rainClock(b.end)) + '</small>';
   const bits = [];
   if (isNow) bits.push('Until ' + rainClock(b.end));
   if (b.type === 'games' && !nGames) bits.push('Games');
-  const sub = (staged ? '<b class="sched-tag" data-tag="changed">Changed</b>' + (was ? '<s class="rain-was">' + esc(schedRange(was.start, was.end)) + '</s>' : '') : '') + esc(bits.join(' · '));
+  const sub = (staged ? '<b class="sched-tag" data-tag="changed">Changed</b>' + (was ? '<s class="rain-was">' + esc(setupRange(was.start, was.end)) + '</s>' : '') : '') + esc(bits.join(' · '));
   const attrs = ' class="cb-row rain-row" data-key="r-' + esc(b.id) + '" data-bid="' + esc(b.id) + '"' + (isNow ? ' data-when="now"' : past ? ' data-when="past"' : '') + (staged ? ' data-staged' : '');
   return '<button type="button"' + attrs + '><span class="cb-time">' + timeCell + '</span><span class="cb-main"><span class="cb-title"><span class="sched-emo" aria-hidden="true">' + esc(b.emoji) + '</span><span>' + esc(b.label) + '</span></span>' +
     (sub ? '<span class="cb-sub">' + sub + '</span>' : '') + '</span><span class="cb-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span></button>';
@@ -2793,10 +2979,11 @@ function renderRainScreen() {
   let run = [];
   const flush = (nextStart) => {
     if (!run.length) return;
+    // The last fold says when the run ENDS ("6 more until midnight"), like the ones between rows; "after" in front of
+    // the last item's end read as if the run happened after it.
     const label = html === '' ? hubPlural(run.length, 'earlier item', 'earlier items')
-      : nextStart === null ? run.length + ' more after ' + rainClock(run[run.length - 1].end)
-        : run.length + ' more until ' + rainClock(nextStart);
-    html += '<button type="button" class="rain-fold" data-key="f-' + esc(run[0].id) + '" data-rain-expand><span>' + esc(label) + '</span></button>';
+      : run.length + ' more until ' + rainClock(nextStart === null ? Math.max.apply(null, run.map((b) => b.end)) : nextStart);
+    html += '<button type="button" class="rain-fold" data-key="f-' + esc(run[0].id) + '" data-rain-expand><span>' + esc(label) + '</span><svg class="ico" aria-hidden="true"><use href="#i-chev-r"/></svg></button>';
     hidden += run.length;
     run = [];
   };
@@ -2853,8 +3040,16 @@ function rainSetPane(pane, opts) {
   setupRain.pane = pane;
   if (was !== pane) {
     sheet.dataset.pane = pane;
+    // Forward panes arrive from the right, Back from the left (opts.back); the spring's overshoot is spent as a small
+    // squash on landing (the shell's panel arrive, §9.5), never as a slide past rest. Calm: a fade.
     const el = document.querySelector('[data-rain-pane="' + pane + '"]');
-    if (el && typeof JellyMotion !== 'undefined') JellyMotion.play(el, 'arrive', (x) => ({ opacity: Math.min(1, x), transform: 'translateX(' + (24 * (1 - Math.min(1, x))) + 'px)' }), { calm: [{ opacity: 0 }, { opacity: 1 }] });
+    const dir = opts && opts.back ? -1 : 1;
+    if (el && typeof JellyMotion !== 'undefined') {
+      JellyMotion.play(el, 'arrive', (x) => {
+        const o = Math.max(0, x - 1);
+        return { opacity: Math.min(1, x * 1.6), transform: 'translateX(' + (dir * 24 * (1 - Math.min(1, x))) + 'px) scale(' + (1 - 0.6 * o) + ',' + (1 + 0.3 * o) + ')', transformOrigin: dir > 0 ? '0 50%' : '100% 50%' };
+      }, { calm: [{ opacity: 0 }, { opacity: 1 }] });
+    }
   }
   renderRainItemSheet();
   if (!opts || !opts.keepScroll) { const body = sheet.querySelector('.sheet-body'); if (body && pane !== 'swap') body.scrollTop = 0; }
@@ -2882,8 +3077,8 @@ function rainOpenMove(gid, from, opener) {
 function rainWhenWords(b, plan) {
   const l = rainChanges(setupTree, plan, rainDow(), state.config).lines.find((x) => x.id === b.id && x.kind === 'time');
   const nGames = (rainGamesByBlock()[b.id] || []).length;
-  const base = schedRange(b.start, b.end) + (nGames ? ' · ' + hubPlural(nGames, 'game', 'games') : '');
-  return l ? 'Now ' + base + ' · was ' + schedRange(l.was.start, l.was.end) : base;
+  const base = setupRange(b.start, b.end) + (nGames ? ' · ' + hubPlural(nGames, 'game', 'games') : '');
+  return l ? 'Now ' + base + ' · was ' + setupRange(l.was.start, l.was.end) : base;
 }
 
 function rainOthers(bid) {
@@ -2938,7 +3133,7 @@ function renderRainActions(b, plan) {
   const staged = rainIsStaged(plan, rainDk(), b.id);
   setHiddenIfChanged(document.querySelector('[data-rain-act="reset"]'), !staged);
   const l = rainChanges(setupTree, plan, rainDow(), state.config).lines.find((x) => x.id === b.id && x.kind === 'time');
-  setTextIfChanged(setupEl('rain-reset-sub'), l ? 'Back to ' + schedRange(l.was.start, l.was.end) : '');
+  setTextIfChanged(setupEl('rain-reset-sub'), l ? 'Back to ' + setupRange(l.was.start, l.was.end) : '');
   setDis(document.querySelector('[data-rain-act="swap"]'), b.noTime);
   setDis(document.querySelector('[data-rain-act="time"]'), b.noTime);
 }
@@ -2951,8 +3146,7 @@ function renderRainSwap(b) {
   const show = setupRain.swap.showEarlier ? all : all.filter((x) => !earlier(x));
   setHiddenIfChanged(setupEl('rain-swap-earlier'), setupRain.swap.showEarlier || show.length === all.length);
   setHtmlIfChanged(setupEl('rain-swap-list'), show.map((x) => {
-    const len = x.end - x.start;
-    const lenWords = len >= 60 ? Math.floor(len / 60) + ' h' + (len % 60 ? ' ' + (len % 60) + ' min' : '') : len + ' min';
+    const lenWords = setupLength(x.end - x.start);
     const inner = '<span class="cb-time">' + esc(schedClock(x.start, false)) + '<small>–' + esc(rainClock(x.end)) + '</small></span><span class="cb-main"><span class="cb-title"><span class="sched-emo" aria-hidden="true">' + esc(x.emoji) + '</span><span>' + esc(x.label) + '</span></span><span class="cb-sub">' + (x.id === b.id ? 'This one' : esc(lenWords)) + '</span></span>';
     return x.id === b.id ? '<div class="cb-row rain-pick" data-self data-bid="' + esc(x.id) + '">' + inner + '</div>'
       : '<button type="button" class="cb-row rain-pick" data-bid="' + esc(x.id) + '">' + inner + '<span class="cb-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span></button>';
@@ -2973,7 +3167,7 @@ function rainHowOption(b, other, moves) {
   const lines = [b, other].map((x) => { const m = moves[x.id]; return { id: x.id, emoji: x.emoji, label: x.label, start: m.start, end: m.end }; });
   const warns = [];
   lines.forEach((l) => {
-    schedOverlaps(after.filter((x) => !moves[x.id]), { id: l.id, start: l.start, end: l.end }).forEach((o) => warns.push('Overlaps ' + setupHeadLabel(o.label) + ', ' + schedRange(Math.max(l.start, o.start), Math.min(l.end, o.end))));
+    schedOverlaps(after.filter((x) => !moves[x.id]), { id: l.id, start: l.start, end: l.end }).forEach((o) => warns.push('Overlaps ' + setupHeadLabel(o.label) + ', ' + setupRange(Math.max(l.start, o.start), Math.min(l.end, o.end))));
   });
   return { lines, warns };
 }
@@ -2982,14 +3176,14 @@ function renderRainHow(b) {
   const other = rainBlock(setupRain.swap.other);
   if (!b || !other) return;
   const opts = { slots: rainSwapSlots(b, other), lengths: rainSwapLengths(b, other) };
-  setTextIfChanged(setupEl('rain-how-lede'), b.label + ' is ' + (b.end - b.start) + ' minutes and ' + other.label + ' is ' + (other.end - other.start) + '. How should they trade?');
+  setTextIfChanged(setupEl('rain-how-lede'), b.label + ' is ' + setupLength(b.end - b.start) + ' and ' + other.label + ' is ' + setupLength(other.end - other.start) + '. How should they trade?');
   ['slots', 'lengths'].forEach((k) => {
     const btn = document.querySelector('[data-rain-how="' + k + '"]');
     const moves = opts[k];
     if (!moves) { if (btn) btn.setAttribute('aria-disabled', 'true'); setHtmlIfChanged(document.querySelector('[data-rain-how-lines="' + k + '"]'), '<span class="rain-opt-line">It would run past midnight</span>'); setHtmlIfChanged(document.querySelector('[data-rain-how-foot="' + k + '"]'), ''); return; }
     if (btn) btn.removeAttribute('aria-disabled');
     const r = rainHowOption(b, other, moves);
-    setHtmlIfChanged(document.querySelector('[data-rain-how-lines="' + k + '"]'), r.lines.map((l) => '<span class="rain-opt-line"><span class="sched-emo" aria-hidden="true">' + esc(l.emoji) + '</span><span>' + esc(l.label) + '</span><b>' + esc(schedRange(l.start, l.end)) + '</b></span>').join(''));
+    setHtmlIfChanged(document.querySelector('[data-rain-how-lines="' + k + '"]'), r.lines.map((l) => '<span class="rain-opt-line"><span class="sched-emo" aria-hidden="true">' + esc(l.emoji) + '</span><span>' + esc(l.label) + '</span><b>' + esc(setupRange(l.start, l.end)) + '</b></span>').join(''));
     setHtmlIfChanged(document.querySelector('[data-rain-how-foot="' + k + '"]'), r.warns.length ? r.warns.map((w) => '<span class="rain-opt-warn">' + esc(w) + '</span>').join('') : 'Nothing else moves');
   });
 }
@@ -3028,11 +3222,12 @@ function renderRainTime(b) {
 
 function renderRainGames(b) {
   const gms = b ? (rainGamesByBlock()[b.id] || []) : [];
-  setHtmlIfChanged(setupEl('rain-games-list'), gms.map((g) => '<div class="cb-row"><span class="cb-main"><span class="cb-title"><span class="sched-emo" aria-hidden="true">' + esc(g.emoji) + '</span><span>' + esc(g.name) + '</span></span></span><span class="cb-end"><button type="button" class="btn btn-sm" data-rain-move="' + esc(g.id) + '">Move…</button></span></div>').join(''));
+  // One look for one action: the whole row is the button and ends in "Move ›", as a game row on the list does.
+  setHtmlIfChanged(setupEl('rain-games-list'), gms.map((g) => '<button type="button" class="cb-row rain-game-pick" data-rain-move="' + esc(g.id) + '"><span class="cb-main"><span class="cb-title"><span class="sched-emo" aria-hidden="true">' + esc(g.emoji) + '</span><span>' + esc(g.name) + '</span></span></span><span class="cb-end"><span class="rain-game-act">Move<svg class="ico" aria-hidden="true"><use href="#i-chev-r"/></svg></span></span></button>').join(''));
 }
 
 // The move pane: days that have a competition day (the strip), that day's Games items first, the rest behind
-// "Everything else", and Not on the schedule last.
+// "Other items on Thursday", and Not on the schedule last.
 function rainMoveDays() {
   return SETUP_DK.filter((dk, i) => competitionDays().some((d) => d.dow === i));
 }
@@ -3050,6 +3245,9 @@ function renderRainMove(g) {
     const name = btn.querySelector('.daypick-name');
     if (name) setTextIfChanged(name, dk === rainDk() ? 'Today' : SETUP_DAY_WORDS[dk].slice(0, 3));
   });
+  const strip = setupEl('rain-move-days');
+  if (strip && strip.dataset.shown !== m.dk && strip.clientWidth > 0) { strip.dataset.shown = m.dk; stripRevealChip(strip, strip.querySelector('[aria-checked="true"]'), false); }
+  paintStripOverflow(strip);
   const dow = SETUP_DK.indexOf(m.dk);
   const blocks = dow === rainDow() ? rainView(setupTree, rainEnsure(), dow).after : planForDow(dow);
   const gamesFor = (b) => allGames().filter((x) => x.blockId === b.id && (competitionDays().find((d) => d.id === x.dayId) || {}).dow === dow && x.id !== g.id);
@@ -3059,7 +3257,7 @@ function renderRainMove(g) {
     (gamesFor(b).length ? '<span class="cb-sub">' + hubPlural(gamesFor(b).length, 'game', 'games') + '</span>' : '') + '</span><span class="cb-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span></button>';
   setHtmlIfChanged(setupEl('rain-move-list'), first.map(row).join('') + (m.all ? rest.map(row).join('') : ''));
   setHiddenIfChanged(setupEl('rain-move-all'), m.all || !rest.length);
-  setTextIfChanged(setupEl('rain-move-all-text'), 'Everything else on ' + (m.dk === rainDk() ? 'today' : SETUP_DAY_WORDS[m.dk]));
+  setTextIfChanged(setupEl('rain-move-all-text'), m.dk === rainDk() ? 'Other items today' : 'Other items on ' + SETUP_DAY_WORDS[m.dk]);
   setHiddenIfChanged(setupEl('rain-move-double'), !m.ask);
   if (m.ask) setTextIfChanged(setupEl('rain-move-double-text'), 'That item has double-points games. Make ' + g.name + ' double points too?');
 }
@@ -3185,9 +3383,9 @@ function renderRainDoneSheet() {
   }).join(''));
   setHtmlIfChanged(setupEl('rain-sum-list'), c.lines.map((l) => {
     let text;
-    if (l.kind === 'time') text = '<b>' + esc(l.label) + '</b> now ' + esc(schedRange(l.start, l.end)) + ' <s>' + esc(schedRange(l.was.start, l.was.end)) + '</s>';
+    if (l.kind === 'time') text = '<b>' + esc(l.label) + '</b> now ' + esc(setupRange(l.start, l.end)) + ' <s>' + esc(setupRange(l.was.start, l.was.end)) + '</s>';
     else if (l.kind === 'skip') text = '<b>' + esc(l.label) + '</b> skipped today';
-    else if (l.kind === 'add') text = '<b>' + esc(l.label) + '</b> added, ' + esc(schedRange(l.start, l.end));
+    else if (l.kind === 'add') text = '<b>' + esc(l.label) + '</b> added, ' + esc(setupRange(l.start, l.end));
     else {
       const to = l.to;
       const dayRec = to.blockId ? (competitionDays().find((d) => d.id === to.dayId) || {}) : null;
@@ -3199,8 +3397,8 @@ function renderRainDoneSheet() {
   // ALWAYS said: overlaps and new gaps, or that there are none.
   const verdict = rainVerdict(c.before, c.after);
   const lines = verdict.map((v) => v.kind === 'overlap'
-    ? setupHeadLabel(v.a.label) + ' overlaps ' + setupHeadLabel(v.b.label) + ', ' + schedRange(v.start, v.end)
-    : 'There is a gap from ' + schedRange(v.start, v.end));
+    ? setupHeadLabel(v.a.label) + ' overlaps ' + setupHeadLabel(v.b.label) + ', ' + setupRange(v.start, v.end)
+    : 'There is a gap from ' + setupRange(v.start, v.end));
   const vEl = setupEl('rain-verdict');
   const tone = verdict.length ? 'warn' : 'ok';
   if (vEl && vEl.dataset && vEl.dataset.tone !== tone) vEl.dataset.tone = tone;
@@ -3234,8 +3432,19 @@ function rainFinish(wrote) {
   rainDraftDrop();
   shellSheetClose('rain-done');
   shellSheetClose('rain-item');
+  if (rainBackHome()) return;
   state.ui.setupDay = rainDk();
   setupGo('schedule');
+}
+
+// Opened from the home schedule sheet: leave the builder for Now and put that sheet back up. false otherwise.
+function rainBackHome() {
+  if (setupRain.cameFrom !== 'now') return false;
+  setupRain.cameFrom = '';
+  state.ui.builderScreen = 'hub'; // nothing stale for the next More → Set up the week
+  setupCloseBuilder();
+  if (typeof openSchedule === 'function') openSchedule();
+  return true;
 }
 
 async function rainCommit() {
@@ -3297,13 +3506,15 @@ function wireRainPlan() {
     else if (q('#rain-done')) rainOpenDone();
   });
   const sheet = setupEl('sheet-rain-item');
+  const moveDays = setupEl('rain-move-days');
+  if (moveDays) moveDays.addEventListener('scroll', () => paintStripOverflow(moveDays), { passive: true });
   if (sheet) {
     sheet.addEventListener('click', (e) => {
       const q = (sel) => (e.target.closest ? e.target.closest(sel) : null);
       let b;
       if (q('#rain-pane-back')) {
         const p = setupRain.pane;
-        if (p === 'how') rainSetPane('swap', { keepScroll: true }); else if (p === 'move' && setupRain.from === 'games') rainSetPane('games'); else rainSetPane('actions');
+        if (p === 'how') rainSetPane('swap', { keepScroll: true, back: true }); else if (p === 'move' && setupRain.from === 'games') rainSetPane('games', { back: true }); else rainSetPane('actions', { back: true });
       }
       else if ((b = q('[data-rain-act]'))) { if (!b.hasAttribute('aria-disabled')) rainAct(b.dataset.rainAct); }
       else if (q('#rain-swap-earlier')) { setupRain.swap.showEarlier = true; renderRainItemSheet(); }
@@ -3366,7 +3577,7 @@ function wireSchedulePlan() {
     const box = setupEl('schedule-plan');
     const d = Number(box && box.dataset && box.dataset.dow);
     if (typeof closeSchedule === 'function') closeSchedule();
-    rainOpen(SETUP_DK[Number.isInteger(d) && d >= 0 && d <= 6 ? d : campNow().dow]);
+    rainOpen(SETUP_DK[Number.isInteger(d) && d >= 0 && d <= 6 ? d : campNow().dow], { from: 'now' });
   });
   const hub = setupEl('schedule-plan-hub');
   if (hub) hub.addEventListener('click', () => {

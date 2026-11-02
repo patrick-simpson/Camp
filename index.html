@@ -361,6 +361,10 @@
               <button type="button" class="daypick-btn" role="tab" aria-selected="false" aria-controls="setup-schedule" data-day="fri"><span class="daypick-name">Fri</span><span class="daypick-dots" aria-hidden="true"><i class="daypick-dot" data-dot="typical" hidden></i><i class="daypick-dot" data-dot="changed" hidden></i></span><i class="daypick-warn" data-sd-warn aria-hidden="true" hidden></i></button>
               <button type="button" class="daypick-btn" role="tab" aria-selected="false" aria-controls="setup-schedule" data-day="sat"><span class="daypick-name">Sat</span><span class="daypick-dots" aria-hidden="true"><i class="daypick-dot" data-dot="typical" hidden></i><i class="daypick-dot" data-dot="changed" hidden></i></span><i class="daypick-warn" data-sd-warn aria-hidden="true" hidden></i></button>
             </div>
+            <!-- The marks in words, once, under the strip on the typical day's
+                 view (where "which days follow it" is the question): drawn with
+                 the same marks, aria-hidden (each chip's aria-label says it). -->
+            <p class="daypick-key" id="sched-days-key" aria-hidden="true" hidden><span><i class="daypick-dot" data-dot="typical"></i>follows the typical day</span><span><i class="daypick-dot" data-dot="changed"></i>changed</span><span><i class="daypick-warn"></i>to check</span></p>
           </nav>
         </header>
 
@@ -564,11 +568,14 @@
             <p class="setup-headline" id="week-headline"></p>
             <p class="setup-lede" id="week-lede"></p>
           </div>
-          <!-- Same door as the hub's (§11.1 read-only preview), one per screen. -->
+          <!-- The hub's door (§11.1 read-only preview) in short: the full
+               paragraph is the hub's alone; here one line ("The original week ·
+               the days are read-only"), the owner's compact gold Edit the week
+               here beside it, the 🔒 line for every other director. -->
           <section class="hub-door setup-door" id="week-door" hidden>
             <p class="hub-door-lead" id="week-door-lead"></p>
             <p class="hub-door-text" id="week-door-text"></p>
-            <button type="button" class="btn btn-gold btn-block hub-door-btn" id="week-door-btn" data-owner-only hidden></button>
+            <button type="button" class="btn btn-gold btn-sm hub-door-btn" id="week-door-btn" data-owner-only hidden></button>
             <p class="hub-door-owner" id="week-door-owner" data-not-owner hidden><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span id="week-door-owner-text"></span></p>
           </section>
 
@@ -650,7 +657,7 @@
             <div class="gl">
               <label class="gl-row wk-field" for="week-finale">
                 <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-tv"/></svg></span>
-                <span class="gl-text"><span class="gl-title">TV finale</span><span class="gl-sub">The champion celebration, after that day’s reveal</span></span>
+                <span class="gl-text"><span class="gl-title">TV finale</span><span class="gl-sub">Champion celebration day</span></span>
                 <span class="wk-ctl"><select class="fld-input" id="week-finale"></select></span>
               </label>
             </div>
@@ -678,7 +685,7 @@
              "Elective 1"; none for a plain activity) then at most one tag:
              "Wed only" (a one-off), "Changed for Wed" (patched), on the typical
              day "Own version on Fri". [data-notime] (Show the time is off) dims
-             the time and says "Not shown" in its <small>; [data-warn] puts the
+             the time and says "time hidden" in its <small>; [data-warn] puts the
              gold "!" before the sub (an overlap the director hasn't okayed). A
              read-only preview renders the same row as a <div> with no chevron.
              A gap of 15 minutes or more between two rows (phone) becomes, in
@@ -697,18 +704,20 @@
             <p class="setup-lede" id="sched-lede"></p>
             <!-- A day view's two actions on one line: its rain plan (a link-
                  coloured 44px target, the hub's "Next" look; hidden on the typical
-                 day and in a read-only preview) and the day's own sheet
-                 (#sheet-sched-day: own schedule / follow the typical day again /
-                 clear its changes / copy from another day). -->
+                 day, on a day with nothing on it and in a read-only preview) and,
+                 pinned at the right, the day's own sheet as a 44x44 ⋯ (its name
+                 for the screen reader only; #sheet-sched-day: own schedule /
+                 follow the typical day again / clear its changes / copy from
+                 another day). -->
             <div class="sched-acts" id="sched-acts">
               <button type="button" class="setup-next sched-rain-link" id="sched-rain-link" hidden><svg class="ico ico-lead" aria-hidden="true"><use href="#i-rain"/></svg><span id="sched-rain-link-text">Rain plan for Wednesday</span><svg class="ico" aria-hidden="true"><use href="#i-chev-r"/></svg></button>
-              <button type="button" class="sched-day-btn" id="sched-day-btn" aria-haspopup="dialog" aria-controls="sheet-sched-day" hidden><span id="sched-day-btn-text">Day options</span><svg class="ico" aria-hidden="true"><use href="#i-dots"/></svg></button>
+              <button type="button" class="sched-day-btn" id="sched-day-btn" aria-haspopup="dialog" aria-controls="sheet-sched-day" hidden><span class="visually-hidden" id="sched-day-btn-text">Day options</span><svg class="ico" aria-hidden="true"><use href="#i-dots"/></svg></button>
             </div>
           </div>
           <section class="hub-door setup-door" id="sched-door" hidden>
             <p class="hub-door-lead" id="sched-door-lead"></p>
             <p class="hub-door-text" id="sched-door-text"></p>
-            <button type="button" class="btn btn-gold btn-block hub-door-btn" id="sched-door-btn" data-owner-only hidden></button>
+            <button type="button" class="btn btn-gold btn-sm hub-door-btn" id="sched-door-btn" data-owner-only hidden></button>
             <p class="hub-door-owner" id="sched-door-owner" data-not-owner hidden><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span id="sched-door-owner-text"></span></p>
           </section>
           <!-- Plain lines with an icon (never a tinted callout): where this day
@@ -795,8 +804,10 @@
              (staged: [data-staged], the name struck, and its new home on a line
              under it, in the name's third child — <span class="rain-game-to">To
              Thursday · Team competitions</span> — the act still says Move); a
-             folded run between two shown rows:
-               <button type="button" class="rain-fold" data-rain-expand><span>6 more until 5:00</span></button>
+             folded run between two shown rows, a plain hairline row in link
+             ink from the time column ("3 earlier items" at the top; the last
+             one says until when the run ends):
+               <button type="button" class="rain-fold" data-rain-expand><span>6 more until 5:00</span><svg class="ico" aria-hidden="true"><use href="#i-chev-r"/></svg></button>
              Any [data-rain-expand] shows the whole day (and hides #rain-more). -->
         <section class="setup-screen rain" id="setup-rain" data-setup-screen="rain" aria-labelledby="rain-title">
           <div class="setup-intro">
@@ -1475,8 +1486,11 @@
   <!-- The item sheet (§11.5): one schedule item, every field. Opened from a
        Schedule row, a gap row (start/end prefilled) or Add. The fields are
        static; the renderer sets values, `hidden` and aria-checked. Inline
-       questions (.si-ask) appear above the dock when they apply and each must
-       be answered before the save it guards. The dock is the save:
+       questions (.si-ask) appear right under the times when they apply and
+       each must be answered before the save it guards; while one is open (or
+       the name is empty) the dock is ONE dashed well, #si-wait, that names the
+       step ("Answer the overlap question first ↑", "Type what happens, then
+       add") and takes the director to it. Otherwise the dock is the save:
          - an item from the typical day, seen on a day: the two equal scope
            buttons #si-save-day "Just Wednesday" / #si-save-all "Every day like
            Wednesday" (labels in #si-save-day-text / #si-save-all-text), the
@@ -1495,7 +1509,10 @@
     <div class="sheet sheet-tall" role="dialog" aria-modal="true" aria-labelledby="sheet-sched-item-title">
       <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
       <header class="sheet-head">
-        <h2 class="sheet-title" id="sheet-sched-item-title">Team competitions</h2>
+        <!-- A short fixed title ("Edit item" / "New item"): the name is the
+             first field right under it, and a long name as the title took the
+             screen at large text. -->
+        <h2 class="sheet-title" id="sheet-sched-item-title">Edit item</h2>
         <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
       </header>
       <!-- Where this item comes from, in words: "Wednesday · from the typical
@@ -1503,20 +1520,25 @@
            (#si-reset, shown only for a patched item). -->
       <p class="sheet-sub" id="si-where"><span id="si-where-text"></span> <button type="button" class="sheet-sub-act" id="si-reset" hidden>Back to the usual</button></p>
       <div class="sheet-body si">
-        <label class="fld fld-wide"><span class="fld-label">What happens</span><jelly-input class="form-input" id="si-label" type="text" maxlength="120" label="What happens"></jelly-input></label>
-        <p class="fld-error" id="si-label-error" role="alert" hidden></p>
-
-        <div class="fld fld-wide">
-          <span class="fld-label" id="si-emoji-label">Emoji</span>
-          <!-- A short grid of camp emoji, one 44px button each —
+        <!-- The order is what a director edits most: the name (its emoji a 44px
+             tile beside it), the times, then what kind of item. The tile opens
+             the emoji grid inline (#si-emoji, aria-expanded): a short grid of
+             camp emoji, one 44px button each —
                <button type="button" class="si-emo" data-emoji="🏅" aria-pressed="false" aria-label="Medal">🏅</button>
-               (aria-pressed="true" on the chosen one) — then #si-emoji-other, a
-               small text box for anything else (its value IS the choice when
-               it isn't one of the grid's). -->
-          <div class="si-emoji" role="group" aria-labelledby="si-emoji-label">
-            <div class="si-emoji-grid" id="si-emoji-grid"></div>
-            <input type="text" class="fld-input si-emoji-other" id="si-emoji-other" maxlength="8" aria-label="Another emoji" placeholder="Other">
+             (aria-pressed="true" on the chosen one) — then #si-emoji-other, a
+             small text box for anything else (its value IS the choice when it
+             isn't one of the grid's). Picking one closes the grid. -->
+        <div class="fld fld-wide si-name">
+          <span class="fld-label">What happens</span>
+          <div class="si-name-row">
+            <button type="button" class="si-emo-pick" id="si-emoji-btn" aria-expanded="false" aria-controls="si-emoji" aria-label="Emoji"><span id="si-emoji-now" aria-hidden="true">🌟</span></button>
+            <jelly-input class="form-input" id="si-label" type="text" maxlength="120" label="What happens"></jelly-input>
           </div>
+        </div>
+        <p class="fld-error" id="si-label-error" role="alert" hidden></p>
+        <div class="si-emoji" id="si-emoji" role="group" aria-label="Emoji" hidden>
+          <div class="si-emoji-grid" id="si-emoji-grid"></div>
+          <input type="text" class="fld-input si-emoji-other" id="si-emoji-other" maxlength="8" aria-label="Another emoji" placeholder="Other">
         </div>
 
         <div class="si-times">
@@ -1533,6 +1555,23 @@
             <span class="gl-text"><span class="gl-title">Show the time</span><span class="gl-sub">Off for items like “Lights out”</span></span>
             <span class="gl-switch"><em class="gl-switch-state" data-switch-state="si-showtime">On</em><jelly-switch id="si-showtime" label="Show the time" checked></jelly-switch></span>
           </div>
+        </div>
+
+        <!-- Inline questions, each a plain line and its answers, right under
+             the times that usually raise them:
+             overlap ("Overlaps Breakfast (8:00–8:30 AM).") → "Start at 8:30
+             instead" (#si-overlap-after, when the clash is with an item that
+             starts at or before this one) | "Push later items back 30 min"
+             (#si-overlap-push, when it is with a later one) | "That's on purpose";
+             a day with its own value ("Wednesday has its own start time
+             (10:30).") → keep | change; a renamed item → same | fresh;
+             a ripple that can't fit ("Cabin devotional doesn't fit before
+             midnight — shorten it or skip it today") is a line with no answers. -->
+        <div class="si-asks">
+          <div class="si-ask" id="si-overlap" hidden><p class="si-ask-q" id="si-overlap-text"></p><div class="si-ask-a"><button type="button" class="btn btn-sm" data-si-overlap="after" id="si-overlap-after" hidden>Start later instead</button><button type="button" class="btn btn-sm" data-si-overlap="push" id="si-overlap-push">Push later items back</button><button type="button" class="btn btn-sm" data-si-overlap="ok">That’s on purpose</button></div></div>
+          <div class="si-ask" id="si-ownday" hidden><p class="si-ask-q" id="si-ownday-text"></p><div class="si-ask-a"><button type="button" class="btn btn-sm" data-si-ownday="keep" id="si-ownday-keep">Keep Wednesday’s</button><button type="button" class="btn btn-sm" data-si-ownday="change" id="si-ownday-change">Change Wednesday too</button></div></div>
+          <div class="si-ask" id="si-rekey" hidden><p class="si-ask-q">Is this still the same thing for reminders?</p><div class="si-ask-a"><button type="button" class="btn btn-sm" data-si-rekey="same">Yes, same</button><button type="button" class="btn btn-sm" data-si-rekey="fresh">No, start fresh</button></div></div>
+          <p class="si-ask-q si-ask-warn" id="si-nofit" hidden></p>
         </div>
 
         <div class="fld fld-wide">
@@ -1579,22 +1618,10 @@
 
         <p class="setup-note" id="si-alert"><svg class="ico" aria-hidden="true"><use href="#i-bell"/></svg><span id="si-alert-text"></span></p>
 
-        <!-- Inline questions, each a plain line and its two answers:
-             overlap ("Overlaps Prepare for bed (9:15–9:30 PM).") → push | ok;
-             a day with its own value ("Wednesday has its own start time
-             (10:30).") → keep | change; a renamed item → same | fresh;
-             a ripple that can't fit ("Cabin devotional doesn't fit before
-             midnight — shorten it or skip it today") is a line with no answers. -->
-        <div class="si-asks">
-          <div class="si-ask" id="si-overlap" hidden><p class="si-ask-q" id="si-overlap-text"></p><div class="si-ask-a"><button type="button" class="btn btn-sm" data-si-overlap="push" id="si-overlap-push">Push later items back</button><button type="button" class="btn btn-sm" data-si-overlap="ok">That’s on purpose</button></div></div>
-          <div class="si-ask" id="si-ownday" hidden><p class="si-ask-q" id="si-ownday-text"></p><div class="si-ask-a"><button type="button" class="btn btn-sm" data-si-ownday="keep" id="si-ownday-keep">Keep Wednesday’s</button><button type="button" class="btn btn-sm" data-si-ownday="change" id="si-ownday-change">Change Wednesday too</button></div></div>
-          <div class="si-ask" id="si-rekey" hidden><p class="si-ask-q">Is this still the same thing for reminders?</p><div class="si-ask-a"><button type="button" class="btn btn-sm" data-si-rekey="same">Yes, same</button><button type="button" class="btn btn-sm" data-si-rekey="fresh">No, start fresh</button></div></div>
-          <p class="si-ask-q si-ask-warn" id="si-nofit" hidden></p>
-        </div>
-
         <button type="button" class="danger-link si-remove" id="si-remove"><span id="si-remove-text">Remove…</span></button>
       </div>
       <div class="sheet-dock si-dock">
+        <button type="button" class="btn btn-block si-wait" id="si-wait" hidden><span id="si-wait-text"></span></button>
         <div class="sheet-tell" id="si-tell" hidden>
           <jelly-checkbox class="rp-check" id="si-tell-check"><span class="gl-title">Tell people who follow this</span></jelly-checkbox>
           <p class="setup-note">Only phones that turned on reminders for this item get it — tell everyone else in person.</p>
@@ -1734,8 +1761,9 @@
           <div class="si-asks" id="rain-time-warn" hidden></div>
         </div>
 
-        <!-- Games… rows: <div class="cb-row"> with no time column, the game's
-             emoji + name, and <button type="button" class="btn btn-sm" data-rain-move="g-axe">Move…</button>. -->
+        <!-- Games… rows: the list's own game-row look, the whole row the
+             button, ending in "Move ›" —
+               <button type="button" class="cb-row rain-game-pick" data-rain-move="g-axe"><span class="cb-main"><span class="cb-title"><span class="sched-emo" aria-hidden="true">🪓</span><span>Axe Throwing</span></span></span><span class="cb-end"><span class="rain-game-act">Move<svg …chev-r/></span></span></button> -->
         <div class="rain-pane" data-rain-pane="games">
           <div class="gl cb-list si-games" id="rain-games-list"></div>
         </div>
@@ -1756,7 +1784,7 @@
             <button type="button" class="daypick-btn" role="radio" aria-checked="false" data-dk="sat"><span class="daypick-name">Sat</span></button>
           </div>
           <div class="gl cb-list" id="rain-move-list"></div>
-          <button type="button" class="btn-quiet rain-quiet" id="rain-move-all" hidden><span id="rain-move-all-text">Everything else on Thursday</span></button>
+          <button type="button" class="btn-quiet rain-quiet" id="rain-move-all" hidden><span id="rain-move-all-text">Other items on Thursday</span></button>
           <div class="gl rain-move-off">
             <button type="button" class="gl-row" id="rain-move-none">
               <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-archive"/></svg></span>

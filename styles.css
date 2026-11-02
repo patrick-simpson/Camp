@@ -2313,6 +2313,19 @@ html.calm-motion .setup-sync[data-tone="saving"] .setup-sync-mark::before {
   margin-left: -8px;
 }
 
+/* While the pill is up (setup-ui.js paintSetupDock: .setup[data-pill]) the
+   screen's intro steps down by the pill's height, so the headline — often the
+   very feedback for the change the pill undoes — is never under it; the step
+   uses the arrive curve's tokens (calm: no motion, html.calm-motion). */
+.setup-intro {
+  transition: padding-top var(--jm-arrive-ms) var(--jm-arrive);
+}
+.setup[data-pill] .setup-intro {
+  padding-top: calc(var(--target) + 14px);
+}
+html.calm-motion .setup-intro {
+  transition: none;
+}
 /* The undo pill: hangs under the head at the right, over the content but not
    across it (a toast at the bottom swallowed the next tap on a sheet's Save).
    Chunky, because it is a button; the only thing in the frame with a shadow,
@@ -2385,7 +2398,15 @@ html.calm-motion .setup-sync[data-tone="saving"] .setup-sync-mark::before {
   font: var(--t-title);
   letter-spacing: var(--track-tight);
   color: var(--ink);
-  overflow-wrap: anywhere;
+  /* A word breaks only when it can't fit a line on its own (anywhere split
+     "Wednesda / y" at 200% text). */
+  overflow-wrap: break-word;
+}
+/* The answer grows less than body text at large sizes, as iOS Dynamic Type's
+   titles do: capped so the longest day name ("Wednesday as planned") keeps its
+   words whole on a 360px phone (§8.9: nothing broken at 200%). */
+.setup-headline {
+  font-size: min(1.75rem, 10.5vw);
 }
 .setup-lede {
   margin: 6px 0 0;
@@ -3256,10 +3277,27 @@ button.cb-row:active {
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scroll-snap-type: x proximity;
+  scroll-padding-inline: 16px 24px; /* a snapped chip clears the edge fades */
   scrollbar-width: none;
 }
 .daypick::-webkit-scrollbar {
   display: none;
+}
+/* With the scrollbar hidden, a strip that continues fades out at that edge
+   (setup-ui.js paintStripOverflow sets data-overflow from the scroll position),
+   so a chip always visibly goes on: one that ended cleanly after "Thu" read as
+   a week with no Friday. */
+.daypick[data-overflow="end"] {
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+}
+.daypick[data-overflow="start"] {
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 16px);
+  mask-image: linear-gradient(90deg, transparent, #000 16px);
+}
+.daypick[data-overflow="both"] {
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 16px, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 16px, #000 calc(100% - 24px), transparent);
 }
 .daypick-btn {
   position: relative;
@@ -3356,6 +3394,27 @@ button.cb-row:active {
 .daypick-warn[hidden] {
   display: none;
 }
+/* The marks in words, under the strip on the typical day's view: the same
+   ring, dot and "!" (ink-2 marks: 3:1 and more on paper). */
+.daypick-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin: 6px 2px 0;
+  font: 600 0.8125rem/1.3 var(--font-ui);
+  color: var(--ink-2);
+}
+.daypick-key[hidden] {
+  display: none;
+}
+.daypick-key > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.daypick-key .daypick-warn {
+  position: static;
+}
 
 /* ── Schedule (§11.5) ── */
 /* The day's two actions on one line under its lede: the rain plan (a link,
@@ -3363,7 +3422,6 @@ button.cb-row:active {
    right edge where the thumb reaches it. */
 .sched-acts {
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
   gap: 0 var(--s-3);
   margin-top: 2px;
@@ -3372,6 +3430,7 @@ button.cb-row:active {
   display: none;
 }
 .sched-acts .setup-next {
+  min-width: 0;
   margin: 0;
 }
 .setup-next .ico-lead {
@@ -3380,28 +3439,54 @@ button.cb-row:active {
   margin-right: 6px;
   stroke-width: 2.2;
 }
+/* Day options: a 44x44 ⋯ pinned to the right edge of the same line (its name
+   for the screen reader only), so "Rain plan for Saturday ›" never pushes it
+   onto a right-aligned line of its own. */
 .sched-day-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: var(--target);
-  margin: 0 -8px 0 auto;
-  padding: 0 8px 0 10px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--target);
+  height: var(--target);
+  margin: 0 -10px 0 auto;
+  padding: 0;
   border: 0;
-  border-radius: var(--r-btn);
+  border-radius: 50%;
   background: none;
   color: var(--ink-2);
-  font: 750 0.875rem/1.2 var(--font-ui);
   cursor: pointer;
 }
 .sched-day-btn .ico {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
+  stroke-width: 2.3;
 }
-/* A screen's door (the read-only preview's "Edit the week here", §11.1) sits
-   under its intro like the hub's. */
+/* A screen's door (the read-only preview, §11.1) in short: one quiet line, the
+   owner's compact gold "Edit the week here" beside it, or the 🔒 line for every
+   other director under it. The full paragraph is the hub's alone (§8.8). */
 .setup-door {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px var(--s-3);
   margin-bottom: var(--s-4);
+}
+.setup-door[hidden] {
+  display: none;
+}
+.setup-door .hub-door-lead {
+  flex: 1 1 12rem;
+  font: var(--t-meta);
+  font-size: 0.9375rem;
+  color: var(--ink-2);
+}
+.setup-door .hub-door-btn {
+  flex: none;
+  margin: 0;
+}
+.setup-door .hub-door-owner {
+  flex: 1 1 100%;
+  margin: 0;
 }
 .sched .setup-note,
 .rain .setup-note {
@@ -3424,7 +3509,7 @@ button.cb-row:active {
   vertical-align: -2px;
 }
 /* "Show the time" is off ("Lights out"): the time is still the row's place in
-   the day, so it stays, a step quieter, with "Not shown" under it. */
+   the day, so it stays, a step quieter, with "time hidden" under it. */
 .sched-row[data-notime] .cb-time {
   color: var(--ink-2);
 }
@@ -3484,15 +3569,24 @@ button.cb-row:active {
 /* The guided first build and "Use this for Monday to Friday?": a line and
    its action, on paper, not a callout. */
 .sched-start {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px;
   margin: var(--s-2) 2px var(--s-4);
 }
+.sched-start[hidden] {
+  display: none;
+}
+/* The line on its own row; the actions wrap under it from the same left edge. */
 .sched-start-text {
-  margin: 0 0 var(--s-3);
+  flex: 1 0 100%;
+  margin: 0 0 4px;
   font: var(--t-body);
   color: var(--ink);
 }
-.sched-start .btn + .btn {
-  margin-left: 8px;
+.sched-start .btn[hidden] {
+  display: none;
 }
 .sched-start .btn .ico {
   width: 18px;
@@ -3506,8 +3600,10 @@ button.cb-row:active {
 }
 
 /* ── Camp week (§11.4) ── */
-/* A field row: the name at the left, the native control at the right; at
-   large text the control drops under the name (the row's own em test). */
+/* A field row: the name at the left, the native control at the right; on a
+   phone (under ~25em of the list's own text, so also at large text) the control
+   drops under the name: beside it, the date box squeezed "Starts / on" and
+   the saved range onto three lines at 360px. */
 .week .gl {
   container-type: inline-size;
 }
@@ -3518,7 +3614,7 @@ button.cb-row:active {
 .wk-ctl {
   min-width: 8.5rem;
 }
-@container (max-width: 18em) {
+@container (max-width: 25em) {
   .wk-field {
     grid-template-columns: 30px minmax(0, 1fr);
   }
@@ -3744,6 +3840,7 @@ button.cb-row:active {
   cursor: pointer;
 }
 .sheet-body.si {
+  overflow-x: hidden; /* never sideways: Jelly's input canvas reaches past its box */
   display: grid;
   grid-auto-rows: max-content; /* a scrolling grid must not squeeze its rows: an
                                   overflow:hidden group (.gl) collapsed to 0 */
@@ -3767,11 +3864,53 @@ button.cb-row:active {
 .si .fld-error {
   margin-top: calc(-1 * var(--s-3));
 }
+/* "This is", "Which meal", "Which elective": segments sized to their words that
+   wrap onto a second row of the well at large text, instead of four equal
+   columns whose words ran out of their segments at 130% and 200%. */
+.si .seg {
+  display: flex;
+  flex-wrap: wrap;
+}
+.si .seg-btn {
+  flex: 1 1 auto;
+  white-space: nowrap;
+}
+/* The name, with its emoji as one tile at its left: the first thing on the
+   sheet is what a director types, the emoji a tap away (§8.1: the answer is the
+   headline; the grid took the first screen and pushed the times off it). */
+.si-name-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+.si-emo-pick {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px; /* the name box's height, so the two read as one row */
+  padding: 0;
+  border: 2px solid var(--field-b);
+  border-radius: 10px;
+  background: var(--well);
+  font-size: min(1.5rem, 28px); /* stays inside its 48px tile at large text */
+  line-height: 1;
+  cursor: pointer;
+}
+.si-emo-pick[aria-expanded="true"] {
+  background: var(--lift);
+  box-shadow: 0 0 0 2px var(--ink);
+}
+/* The grid opens inline under the name (the tile's aria-expanded). */
 .si-emoji {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 4px;
+  margin-top: calc(-1 * var(--s-2));
+}
+.si-emoji[hidden] {
+  display: none;
 }
 .si-emoji-grid {
   display: contents;
@@ -3801,7 +3940,9 @@ button.cb-row:active {
 }
 .si-times {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  /* Side by side while a time box keeps its "08:30 PM" whole; at large text
+     they stack (two at 200% clipped the digits to "07:3"). */
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9em), 1fr));
   gap: var(--s-3);
 }
 .si-times .fld[hidden] {
@@ -3935,6 +4076,32 @@ button.cb-row:active {
 .si-dock .btn[hidden] {
   display: none;
 }
+/* Not yet (a question is open, or there is no name): ONE dashed well that says
+   what is missing and, tapped, takes the director to it — the "not yet" look of
+   .btn:disabled, but a real button, so it stays in the tab order. */
+.btn.si-wait {
+  border: 2px dashed var(--ink-3);
+  background: var(--paper-2);
+  color: var(--ink-2);
+  box-shadow: none;
+}
+.btn.si-wait:active {
+  box-shadow: none;
+}
+/* Large text (setup-ui.js schedItemFit): when the head and the dock would take
+   more than ~45% of the sheet, the whole sheet scrolls as one — head, form and
+   dock — instead of leaving a 38px window onto the form between them. */
+#sheet-sched-item .sheet[data-flow] {
+  overflow-x: hidden; /* never sideways: Jelly's input canvas reaches past its box */
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+#sheet-sched-item .sheet[data-flow] > * {
+  flex: none;
+}
+#sheet-sched-item .sheet[data-flow] > .sheet-body {
+  overflow: visible;
+}
 /* "Tell people who follow this" (the item sheet's dock, the rain plan's Done):
    the ink tick of the restore sheet, its plain caveat under the label. */
 .sheet-tell {
@@ -3989,9 +4156,11 @@ button.cb-row:active {
 }
 /* What it was, struck: the new time is in the time column. */
 .rain-was {
+  display: inline-block; /* whole: when it doesn't fit beside the tag it drops to its own line */
   margin-left: 6px;
   color: var(--ink-2);
   text-decoration-thickness: 1.5px;
+  white-space: nowrap;
 }
 .cb-sub > .rain-was:first-child {
   margin-left: 0;
@@ -4048,6 +4217,16 @@ button.rain-game:active {
   height: 16px;
   stroke-width: 2.6;
 }
+/* The Games… pane's rows: the same action as a game row on the list, so the
+   same look — the whole row is the button and ends in "Move ›". */
+.si-games .rain-game-pick {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+}
+.rain-game-pick .rain-game-act {
+  max-width: none;
+}
 /* A game staged to move away: its name struck where it was, and its new home
    on a line of its own under the name, in ink (at the row's end it squeezed
    the name to a word a line). Tapping it again reopens the move picker. */
@@ -4064,23 +4243,35 @@ button.rain-game:active {
 .rain-game-to:empty {
   display: none;
 }
-/* A folded run of items between two shown rows: a recessed band that says
-   how many and until when; any fold opens the whole day. */
+/* A folded run of items between two shown rows: a plain hairline row of the
+   list, from the time column, in link ink with its chevron (no fill: a tint
+   would be a third meaning, §8.1 rule 7, and on paper the link reads 7.8:1);
+   any fold opens the whole day. */
 .rain-fold {
   display: flex;
   align-items: center;
+  gap: 2px;
   width: 100%;
   min-height: var(--target);
   margin: 0;
-  padding: 4px 14px 4px calc(14px + 4.75rem + var(--s-3));
+  padding: 4px 14px;
   border: 0;
   border-top: 1px solid var(--line);
-  background: var(--well); /* recessed in both themes (paper-2 vanished on the navy sheet) */
+  background: none;
   color: var(--link);
   font: 750 0.875rem/1.25 var(--font-ui);
   font-variant-numeric: tabular-nums;
   text-align: left;
   cursor: pointer;
+}
+.rain-fold .ico {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.6;
+}
+button.rain-fold:active {
+  background: color-mix(in srgb, var(--ink) 6%, var(--sheet));
 }
 .rain-fold + .cb-row {
   border-top-color: var(--line);
@@ -4117,7 +4308,6 @@ button.rain-game:active {
   .rain-game {
     padding-left: calc(14px + var(--emo-col) + var(--emo-gap));
   }
-  .rain-fold,
   .sched-gap {
     padding-left: 14px;
   }
@@ -4163,6 +4353,11 @@ button.rain-game:active {
 .rain-sheet .rain-pane-back {
   min-width: 0;
   max-width: calc(100% - var(--target) - var(--s-2));
+}
+/* The back takes the spare room when the title steps aside (data-title-quiet:
+   out of the flow), so the ✕ stays at the right edge as in every sheet. */
+.rain-sheet .rain-pane-back:not([hidden]) {
+  margin-right: auto;
 }
 .rain-sheet .rain-pane-back .tk-back-label {
   min-width: 0;

@@ -1,6 +1,7 @@
 // M2 (P2 §11.6): the one-handed rain-plan moment, junior Wednesday, a seeded context, real taps.
 // Change today's plan · Team competitions · Swap with… · Elective 1 · Swap their time slots · Axe Throwing · Thu ·
 // Team competitions · Done · Done. Counts every tap, checks each target is already in view (no scrolling) at 360x640.
+// It ends where it started: Now, with the schedule sheet open again (view "home", scheduleSheet true).
 //   node step15-m2.cjs [baseUrl] [camp]   (serve the worktree first: python3 -m http.server 8941; OUT=<dir> for screenshots)
 const { chromium } = require('playwright');
 const BASE = (process.argv[2] || 'http://localhost:8941').replace(/\/$/, '');
@@ -67,7 +68,7 @@ const OUT = (process.env.OUT || require('os').tmpdir()) + '/';
     const tc = planForDow(3).find((b) => /^Team competitions/.test(b.label));
     const e1 = planForDow(3).find((b) => b.type === 'elective' && b.slot === 0);
     const axe = gameById('axe-throwing');
-    return { tc: tc && [tc.start, tc.end], e1: e1 && [e1.start, e1.end], axe: axe && [axe.dayId, axe.blockId], screen: state.ui.builderScreen, undo: undoRecent().map((e) => e.label) };
+    return { tc: tc && [tc.start, tc.end], e1: e1 && [e1.start, e1.end], axe: axe && [axe.dayId, axe.blockId], view: state.ui.view, screen: state.ui.view === 'settings' ? state.ui.builderScreen : null, scheduleSheet: !document.getElementById('schedule-overlay').hidden, undo: undoRecent().map((e) => e.label) };
   });
   console.log(JSON.stringify({ camp: CAMP, taps, gate: taps <= 12 ? 'PASS' : 'OVER', log, result, errs }, null, 1));
   await browser.close();
