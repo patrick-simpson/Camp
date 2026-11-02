@@ -358,6 +358,26 @@ test('cold deep links: #games, #chat, #more and game:<id> each land on their own
   }
 });
 
+test('a same-page link that only changes the #fragment is a deep link too, and the stack is re-planned from the new entry', async () => {
+  reset();
+  showTab('more');
+  location.hash = '#game:' + gid();
+  history.pushState(null, ''); // the browser files an entry that is not ours
+  winHandlers.hashchange();
+  location.hash = '';
+  assert.equal(state.ui.gameId, gid(), 'the takeover opened');
+  assert.equal(activeTab(), 'now');
+  assert.deepEqual(keys().slice(-2), ['now|', 'now|game:' + gid()], 'the new entry is tagged Now, the takeover pushed on top (what was beneath stays beneath)');
+  history.back();
+  await flush();
+  assert.equal(state.ui.gameId, null);
+  assert.equal(activeTab(), 'now');
+  // junk is dropped quietly (and the fragment is stripped either way)
+  location.hash = '#bogus';
+  winHandlers.hashchange();
+  location.hash = '';
+});
+
 test('a reload restores the tab within ten minutes and opens on Now after that', () => {
   const boot = (ageMs, tab) => {
     freshState(); setMemberRole('editor');

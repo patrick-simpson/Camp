@@ -486,7 +486,8 @@ future edit must not break (all pinned by `tests/tabs.test.js`):
   `fieldFocused()`, which says no inside `#chat-view`) sets `body.kb-open` on
   focusin and clears it 100 ms after focusout; `visualViewport` sets `--kb-h`.
 - **Deep links** (`shellParseTarget` / `shellOpenTarget`, used by `#hash` at
-  boot and by push.js's `pushHandleOpen`): `now games chat more`, `chat:<ch>`,
+  boot, by a same-page `hashchange` (the new entry is re-planned: tagged Now,
+  the rest pushed) and by push.js's `pushHandleOpen`): `now games chat more`, `chat:<ch>`,
   `schedule` (the sheet over Now), `game:<id>` (the takeover), `reveal` and
   `alert:<id>` (Now). **sw.js needed no change**: nothing sends the three new
   targets yet (the Worker emits `chat:<ch>`, `schedule` or none; sw.js's

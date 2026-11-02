@@ -11661,6 +11661,19 @@ function wireShell() {
     else if (!top && shellTakeoverOpen()) closeGame();
   });
   window.addEventListener('popstate', shellOnPopState);
+  // A link to this same page that differs only by its #fragment (a tap on a
+  // shared link while Camp is already open) navigates without a reload: treat
+  // it like the boot-time deep link. The browser filed a new entry for it that
+  // is not ours, so the stack is re-planned from there (tag it Now, push the rest).
+  window.addEventListener('hashchange', () => {
+    const hash = String((typeof location !== 'undefined' && location.hash) || '');
+    if (!hash) return;
+    const known = !!shellParseTarget(hash);
+    try { history.replaceState(null, '', location.pathname + (location.search || '')); } catch (e) { /* the hash just stays */ }
+    if (!known) return;
+    shell.cur = null;
+    shellOpenTarget(hash);
+  });
   window.addEventListener('scroll', shellOnScroll, { passive: true });
   // Focus handling for the keyboard rule.
   document.addEventListener('focusin', shellSyncKeyboard);
