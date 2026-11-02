@@ -668,16 +668,19 @@ function teamStaffNames(teamId) {
 // that a director edits in the app; the accessors will pick it up). Rules of
 // the layer (setup-rebuild-spec §9.1), pinned by tests/seam.test.js and
 // tests/accessors.test.js:
-//   - While a section is off — today, always — an accessor returns the camps.js
-//     constant ITSELF (same object), so this layer is provably a no-op.
+//   - While a section is off, an accessor returns the camps.js constant ITSELF
+//     (same object), so this layer is provably a no-op. The schedule's switch
+//     (setup/meta/on/schedule, the owner's Edit the week here) moves the
+//     schedule accessors onto the shared copy; the other sections stay built-in
+//     until their own steps.
 //   - They return plain data, never markup, and never throw on missing data
 //     (a missing day is a shared frozen empty list, a missing verse an empty
 //     one). Never mutate what one returns.
 //   - Text from the database passes a camp-core.js sanitizer on its way out.
 // The per-camp constants moved here unchanged from their old spots in this
 // file (tests/camps.test.js still reads them by global name). Not yet
-// accessors, because nothing reads them yet: planForDow, campWeek,
-// finaleDow, teamAccentVars, hubStatus, campersFor.
+// accessors, because nothing reads them yet: finaleDow, teamAccentVars,
+// hubStatus, campersFor.
 
 const DEFAULT_TEAM_NAMES = CAMP.defaultTeamNames;
 const TEAM_EMOJI = CAMP.teamEmoji;
@@ -742,12 +745,46 @@ const NO_ITEMS = Object.freeze([]);
 const NO_VERSE = Object.freeze({ text: '', ref: '', video: null });
 
 // ── Schedule
-// One day's blocks, [{ start, end, label, emoji, type?, slot?, noTime? }].
-function scheduleForDow(dow) { return DAY_SCHEDULE[dow] || NO_ITEMS; }
+// Is this camp's schedule edited in the app (setup/meta/on/schedule is true, in a schema this build reads)? setup-sync.js
+// answers; with its <script> tag gone, or the switch off, every schedule accessor is the camps.js constant itself.
+function scheduleIsShared() { return typeof setupScheduleLive === 'function' && setupScheduleLive(); }
+// A weekday 0–6 from a number or a one-digit string, else -1 (junk reads as an empty day, never a throw).
+function weekdayIndex(dow) {
+  const n = typeof dow === 'string' && /^[0-6]$/.test(dow) ? Number(dow) : dow;
+  return Number.isInteger(n) && n >= 0 && n <= 6 ? n : -1;
+}
+// One day's blocks, [{ start, end, label, emoji, type?, slot?, noTime? }] — the printed shape, whichever copy it
+// comes from; the same array object until the shared tree changes.
+function scheduleForDow(dow) {
+  if (scheduleIsShared()) { const d = weekdayIndex(dow); return d < 0 ? NO_ITEMS : setupLegacyDay(d); }
+  return DAY_SCHEDULE[dow] || NO_ITEMS;
+}
+// One day's blocks with everything the schedule screen, the alert publisher and the calendar file need:
+// [{ id, dk, start, end, label (rendered), base (the label as stored), emoji, type, slot?, meal?, noTime?, teams?,
+// alertKey, origin: typical|changed|oneoff|own, overlapOk?, ord }], plus `.skipped` and `.broken` lists. While the
+// schedule is built-in it is the printed week resolved the same way, so a preview has real block ids.
+function planForDow(dow) {
+  const d = weekdayIndex(dow);
+  if (d < 0 || typeof setupPlanOf !== 'function') return NO_ITEMS;
+  return setupPlanOf(d, scheduleIsShared());
+}
 // The whole week, { 0..6: blocks }.
-function scheduleWeek() { return DAY_SCHEDULE; }
+function scheduleWeek() { return scheduleIsShared() ? setupLegacyWeek() : DAY_SCHEDULE; }
 // The schedule sheet's day list, indexed by weekday: [{ dow, short, full, tag }].
-function weekDays() { return SCHED_DAYS; }
+function weekDays() { return scheduleIsShared() ? setupWeekDays() : SCHED_DAYS; }
+// The camp week: { start: 'YYYY-MM-DD' (the Sunday) | null, phase: 'unset' | 'before' | 'during' | 'after' }. The date is
+// setup/meta/weekStart — always read, even with every section off — else the one phone alerts were set up with;
+// 'during' is the day before the Sunday through the day after the Saturday, the window the freeze (A1, the new-year
+// wizard) refuses inside.
+function campWeek() {
+  let start = typeof setupWeekStart === 'function' ? setupWeekStart() : null;
+  if (!start && typeof pushKnownWeekStart === 'function') start = pushKnownWeekStart();
+  if (!start) return { start: null, phase: 'unset' };
+  const t = campDateStr().split('-').map(Number);
+  const s = start.split('-').map(Number);
+  const gap = Math.round((Date.UTC(t[0], t[1] - 1, t[2]) - Date.UTC(s[0], s[1] - 1, s[2])) / 86400000);
+  return { start, phase: gap < -1 ? 'before' : gap <= 7 ? 'during' : 'after' };
+}
 function dayLabel(dow) { return DAY_NAMES[dow] || ''; }
 // The weekdays that carry competition, and the editable competition days
 // (state.config.days — the authority for which days have games).
@@ -760,15 +797,39 @@ function allGames() { return (state.config && state.config.games) || NO_ITEMS; }
 function gameById(id) { return allGames().find((g) => g.id === id); }
 // Games listed under a competition-day id (config.days[].id), not a weekday.
 function gamesForDayId(dayId) { return allGames().filter((g) => g.dayId === dayId); }
-// Games under one schedule block of weekday `dow`. The built-in schedule's
-// blocks carry no id, so this is the long-standing rule: a games block holds
-// that weekday's Morning games if it starts before noon, else its Evening ones
-// (editable competition days are matched to the weekday by their dow).
+// Games under one schedule block of weekday `dow`. While the schedule is the built-in copy the blocks carry no id,
+// so this is the long-standing rule: a games block holds that weekday's Morning games if it starts before noon,
+// else its Evening ones (editable competition days are matched to the weekday by their dow). Once the schedule is
+// edited here it is the link a game carries: games whose `blockId` is this block (any kind of block can hold games),
+// in `ord` order, ties by position in the catalog. The block must be one an accessor returned.
 function gamesForBlock(dow, block) {
-  if (!block || block.type !== 'games') return NO_ITEMS;
+  if (!block) return NO_ITEMS;
+  const rich = scheduleIsShared() && typeof setupRichOf === 'function' ? setupRichOf(block) : null;
+  if (rich) {
+    const dayIds = competitionDays().filter((d) => d.dow === dow).map((d) => d.id);
+    return allGames()
+      .map((g, i) => ({ g, i }))
+      .filter((x) => x.g.blockId === rich.id && dayIds.includes(x.g.dayId))
+      .sort((a, b) => ((Number.isFinite(a.g.ord) ? a.g.ord : 1e9) - (Number.isFinite(b.g.ord) ? b.g.ord : 1e9)) || (a.i - b.i))
+      .map((x) => x.g);
+  }
+  if (block.type !== 'games') return NO_ITEMS;
   const session = block.start < 720 ? 'Morning' : 'Evening';
   const dayIds = competitionDays().filter((d) => d.dow === dow).map((d) => d.id);
   return allGames().filter((g) => dayIds.includes(g.dayId) && g.session === session);
+}
+// A weekday's blocks that hold games, in schedule order: [{ block, games }].
+function gamesForDay(dow) {
+  return scheduleForDow(dow).map((block) => ({ block, games: gamesForBlock(dow, block) })).filter((x) => x.games.length);
+}
+// The games on this weekday's competition days that sit on NO block of it — a game with no schedule item, or one
+// whose item was removed or skipped for the day (or, while the schedule is built-in, one the Morning/Evening rule
+// doesn't reach: senior's Afternoon games).
+function unscheduledGames(dow) {
+  const dayIds = competitionDays().filter((d) => d.dow === dow).map((d) => d.id);
+  const listed = new Set();
+  gamesForDay(dow).forEach((x) => x.games.forEach((g) => listed.add(g)));
+  return allGames().filter((g) => dayIds.includes(g.dayId) && !listed.has(g));
 }
 
 // ── Meals and cleanup
@@ -795,11 +856,21 @@ function cleanupTeams(dow, meal) {
 }
 
 // ── Alerts: the stable key a block is subscribed by, and its published id.
-// (pushBlockKey lives in push.js, which loads later and may be absent.)
-function blockKey(b) { return typeof pushBlockKey === 'function' ? pushBlockKey(b && b.label) : ''; }
+// (pushBlockKey lives in push.js, which loads later and may be absent.) A block the shared schedule handed out carries
+// its own: the key it was seeded with (today's, and never recomputed on a rename) and the id `<dk>-<block id>`, which
+// stays put when the block is moved or renamed.
+function blockKey(b) {
+  const rich = scheduleIsShared() && typeof setupRichOf === 'function' ? setupRichOf(b) : null;
+  if (rich) return rich.alertKey;
+  return typeof pushBlockKey === 'function' ? pushBlockKey(b && b.label) : '';
+}
 // The start is read as a number, the same way the publisher validates it, so a
 // padded or string start can never yield an id the validation didn't accept.
-function blockPushId(b, dow, i) { return 'd' + dow + '-' + Number(b.start) + '-' + i; }
+function blockPushId(b, dow, i) {
+  const rich = scheduleIsShared() && typeof setupRichOf === 'function' ? setupRichOf(b) : null;
+  if (rich) return rich.dk + '-' + rich.id;
+  return 'd' + dow + '-' + Number(b.start) + '-' + i;
+}
 
 // ── Memory verses
 function verseTheme() { return MEMORY_VERSE_THEME; }

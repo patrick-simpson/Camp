@@ -227,6 +227,19 @@ function makeContext(opts) {
     vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
   });
 
+  // makeContext({ seeded: true }): a camp whose schedule is already edited here — what the page holds once the owner
+  // has pressed Edit the week here and the first setup snapshot has landed: the seed (through RTDB's canonical form,
+  // as a round trip would leave it) is the setup tree with the switches on, and the catalog's games sit on their
+  // schedule items (A2). Every existing week / push / chat / shell test re-runs against it (run.js, the seeded pass),
+  // which is how the accessors' "on" half is proven to change nothing anyone can see.
+  if (opts && opts.seeded) {
+    vm.runInContext(`
+      setupTree = normalizeSetup(setupClone(syncCanon(buildSeed(CAMP))));
+      setupRev++;
+      setupApplyGameAttachments(state.config, setupGameAttachments(state.config, (dow) => planForDow(dow), CAMP).ops);
+    `, ctx);
+  }
+
   // The function-level half of the sink recorder: wraps the app's own ways of
   // making noise (showToast, maybeNativeNotification, copyTextToClipboard, the
   // chimes) and stands up recording versions of the browser's (Notification,

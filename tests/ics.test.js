@@ -49,6 +49,9 @@ test('a long description folds and unfolds to the full text', () => {
     id: 'ics-long', name: 'A game with a really quite exceedingly long name to push the line well past the limit',
     emoji: '🎯', dayId, session: session.start < 720 ? 'Morning' : 'Evening', format: 'placement', rules: [],
   });
+  // Once the schedule is edited here a game is listed under the item it is LINKED to; a new one has no link yet,
+  // which is what Put games on the schedule writes (the seeded pass runs this file with the schedule on).
+  if (scheduleIsShared()) setupApplyGameAttachments(state.config, setupGameAttachments(state.config, (d) => planForDow(d), CAMP).ops);
   const ics = buildDayIcs(dow);
   const desc = unfold(ics).split('\r\n').find((l) => l.startsWith('DESCRIPTION:') && l.includes('exceedingly'));
   assert.ok(desc, 'the games block names the game');

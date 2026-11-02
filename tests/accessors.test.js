@@ -197,3 +197,49 @@ test('the alert publisher keys come from the accessors and match the old spellin
   assert.deepEqual(Object.keys(odd), ['d2-480-0'], 'a string start publishes under the validated id');
   assert.equal(odd['d2-480-0'].start, 480);
 });
+
+// ── the camp week (step 15): the Sunday the week starts on ──────────
+
+test('campWeek: no date is "unset"; setup/meta/weekStart wins; the drawer\'s date is the fallback; a non-Sunday is ignored', () => {
+  const realToday = campDateStr;
+  const realPush = typeof pushWeekStart === 'undefined' ? undefined : pushWeekStart;
+  try {
+    campDateStr = () => '2027-07-12';
+    setupTree = normalizeSetup({}); setupRev++;
+    pushWeekStart = null;
+    assert.deepEqual(campWeek(), { start: null, phase: 'unset' });
+    setupTree = normalizeSetup({ meta: { weekStart: '2027-07-18' } }); setupRev++;
+    assert.deepEqual(campWeek(), { start: '2027-07-18', phase: 'before' }, 'meta is always read, with every section off');
+    setupTree = normalizeSetup({ meta: { weekStart: '2027-07-19' } }); setupRev++; // a Monday
+    assert.deepEqual(campWeek(), { start: null, phase: 'unset' }, 'a date that is not a Sunday is no date');
+    setupTree = normalizeSetup({ meta: { weekStart: 'not a date' } }); setupRev++;
+    assert.equal(campWeek().start, null);
+    setupTree = normalizeSetup({}); setupRev++;
+    pushWeekStart = '2027-07-25';
+    assert.deepEqual(campWeek(), { start: '2027-07-25', phase: 'before' }, 'alerts were set up for that week first');
+    setupTree = normalizeSetup({ meta: { weekStart: '2027-07-18' } }); setupRev++;
+    assert.equal(campWeek().start, '2027-07-18', 'the setup date wins over the drawer\'s');
+  } finally {
+    campDateStr = realToday; pushWeekStart = realPush;
+    setupTree = normalizeSetup({}); setupRev++;
+  }
+});
+
+test('campWeek phase: before, during (the day before the Sunday through the day after the Saturday), after', () => {
+  const realToday = campDateStr;
+  try {
+    setupTree = normalizeSetup({ meta: { weekStart: '2027-07-18' } }); setupRev++;
+    const at = (day) => { campDateStr = () => day; return campWeek().phase; };
+    assert.equal(at('2027-07-10'), 'before');
+    assert.equal(at('2027-07-16'), 'before', 'two days ahead');
+    assert.equal(at('2027-07-17'), 'during', 'the Saturday before: setup day');
+    assert.equal(at('2027-07-18'), 'during');
+    assert.equal(at('2027-07-22'), 'during');
+    assert.equal(at('2027-07-25'), 'during', 'the Sunday after: tear-down day');
+    assert.equal(at('2027-07-26'), 'after');
+    assert.equal(at('2027-12-01'), 'after');
+  } finally {
+    campDateStr = realToday;
+    setupTree = normalizeSetup({}); setupRev++;
+  }
+});

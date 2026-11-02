@@ -1410,7 +1410,17 @@ What's covered, and why each file exists:
   block against the camps.js constant it fronts: while a section is off, `===`
   the constant itself, for every key the camp has; the shared empty lists are
   frozen; junk in never throws; the sanitizers are applied on the way out (a
-  markup emoji, an external or quote-breakout crest, an over-long short name).
+  markup emoji, an external or quote-breakout crest, an over-long short name);
+  and `campWeek()` (unset / before / during / after, setup date over the drawer's).
+- `seed.test.js` (+ `.senior`) and `games-blocks.test.js` (+ `.senior`) — the schedule as
+  data: the seed's round trip, measured shape and frozen id fixtures, the 10,080-minute
+  banner fuzz before vs after seeding, the A2 oracle (see "Schedule as data"). Both
+  eval-twin under senior.
+- **The seeded pass** — `tests/run.js` re-runs `SEEDED_FILES` (week, push, chat, ics,
+  tabs, frame, shell, home, render-stability, game-view, secrecy, motion, overlays,
+  boot-cache, backup) against a camp whose schedule is edited here
+  (`makeContext({camp, seeded: true})`; junior, and senior where the file has a
+  `.senior` twin). `SEEDED=all` probes every file, `SEEDED=off` skips it.
 - `seam.test.js` — greps `app.js` (minus the SEAM block), `chat.js`, `push.js`
   and `settings.js` for direct reads of the week constants, `CAMP.<week field>`,
   `setupTree` and `state.config.days|games` (including a computed key, an alias
@@ -1553,8 +1563,9 @@ reuses) an accessor in the block.
 - **Why:** the setup rebuild (BUILD-PLAN Steps 14–22) lets a director edit the
   week in the app, kept as shared data. The accessors are the single place that
   will choose between the built-in copy and the shared one; no renderer changes
-  again. **No behaviour change today**: while a section is off — always, for now —
-  an accessor returns the camps.js constant itself (the same object). Verified
+  again. **No behaviour change until a switch is pressed**: while a section is off
+  (every section is, until the owner's Edit the week here) an accessor returns the
+  camps.js constant itself (the same object). Verified
   byte-identical on both camps (banner at 19 times of day, schedule sheet and
   `.ics` for all seven days, follow card, verse, cleanup, electives, identity
   picker, viewer and editor) before and after.
@@ -1563,8 +1574,9 @@ reuses) an accessor in the block.
   `NO_VERSE`) — and never mutate what one returns; text from the database passes
   a `camp-core.js` sanitizer on the way out (`teamEmoji` → `safeEmoji`,
   `teamShort` → `safeShort`, `teamCrestSrc` → `safeCrestSrc`).
-- **The accessors:** schedule — `scheduleForDow`, `scheduleWeek`, `weekDays`,
-  `dayLabel`, `competitionDows` (Mon–Fri), `competitionDays`, `dayById`; games —
+- **The accessors:** schedule — `scheduleIsShared`, `scheduleForDow`, `planForDow`,
+  `scheduleWeek`, `weekDays`, `campWeek`, `dayLabel`, `competitionDows` (Mon–Fri),
+  `competitionDays`, `dayById`; games —
   `allGames`, `gameById`, `gamesForDayId(dayId)`, `gamesForBlock(dow, block)` (the
   Morning-before-noon / Evening rule, matched to the weekday by each config day's
   `dow`; the built-in blocks carry no id, so it takes the block); meals and
@@ -1577,10 +1589,14 @@ reuses) an accessor in the block.
   `teamCrestSrc` (was `teamShield`), `teamRoster(tid)`, `staffNames`, `seedTeams`,
   `legacyRosterFor(i)`.
 - **Deliberately not built yet** (nothing reads them, so no dead code): the spec's
-  `planForDow`, `campWeek`, `finaleDow`, `teamAccentVars` (needs the CSS to read a
-  light/dark pair), `hubStatus`, `campersFor` — each lands with the step that
-  first needs it. Likewise the "on" half of every accessor: it arrives with the
-  shared setup data (Step 14 and the S5 steps).
+  `finaleDow`, `teamAccentVars` (needs the CSS to read a light/dark pair),
+  `hubStatus`, `campersFor` — each lands with the step that first needs it.
+  **The "on" half of the schedule accessors is built (Step 15)**: `scheduleForDow`,
+  `scheduleWeek`, `weekDays`, `planForDow`, `campWeek`, `blockKey`, `blockPushId`,
+  `gamesForBlock`, `gamesForDay` and `unscheduledGames` choose between the built-in
+  copy and the shared one on `meta/on/schedule` (see "Schedule as data"); every other
+  accessor's "on" half arrives with its own section (meals, verses, cleanup, electives:
+  step 19; teams: step 25).
 - **The builder is the authority, not a reader.** `settings.js` still WRITES the
   catalog straight into `state.config` (`push`, `splice`, the reorder swap and
   `moveItem`) — `competitionDays()`/`allGames()` front that same array. Reads
@@ -2393,8 +2409,106 @@ and until then every commit into a section is refused ("off").
   update when reopened". A hint, never a gate. Because rows exist only with the
   builder open, a device with no row is "build unknown", not "older" (the spec's
   inference needs `EDITORS_HERE_EAGER`).
-- **Not here yet** (Step 15, per BUILD-PLAN): `resolveDay`, `buildSeed`, the
-  publisher hash, A1/A2 and the accessors that switch on `meta/on/schedule`.
+- **Step 15 adds** the schedule maths, the seed, the plans the accessors read and
+  Put games on the schedule to the END of this file — see the next section.
+
+## Schedule as data: the seed, the plans, A2 (setup-sync.js §5 — Step 15, switch unpressed)
+
+Specs: P2 §5.4–5.6, §9, §10. **Nothing here changes what anyone sees until the owner
+presses Edit the week here** (`meta/on/schedule`, section 5's A1, built in the same
+step): while the switch is off every accessor returns the camps.js constant itself.
+Both camps, junior and senior, run all of it.
+
+- **`resolveDay(tree, dow)`** is the ONE function every schedule consumer goes through:
+  the typical day (when `days/<dk>/typical`) with the day's patches laid over it, minus
+  what is `off`, plus the day's `dayBlocks`, sorted by `(start, ord, id)` — a total
+  order, so every device agrees on which block Happening Now finds first. Returns rich
+  blocks with `.skipped` (cancelled for the day, "Bring back") and `.broken` (a partial
+  record from a two-director race; readers skip it, the hub lists it). `validBlock`,
+  `renderLabel(b)` (a block with `teams` ends ` — 🦃 Turkey, 🍁 Maples & …`, built from
+  `teamEmoji` / `teamShort`), `legacyBlock(b)` (exactly today's `DAY_SCHEDULE` entry,
+  same fields in the same order). `setupRichBlock(b)` is what `planForDow` returns:
+  `{id, dk, start, end, label (rendered), base (as stored), emoji, type, slot?, meal?,
+  noTime?, teams?, alertKey, origin: typical|changed|oneoff|own, overlapOk?, ord}`.
+- **`buildSeed(camp, sections)`** is PURE and deterministic (the camps.js constants only,
+  never the directory or device state; `meta.seeded` is added at write time). Monday is
+  the typical day (`ord` = 10 × position); Tuesday–Friday become patches (a different
+  tail, emoji or team group), `{off:true}` patches (a typical item that day lacks) and
+  one-offs in `dayBlocks` (an item typical lacks; its `ord` sits between its neighbours,
+  so Tue/Thu movie night still sorts before "Prepare for bed" and keeps winning Happening
+  Now); Sunday, Saturday and any day with no weekday blocks are own days. Ids are
+  `b-<slug of the head label, ≤ 24>-<start>` (own days `b-<dk>-…`; a collision gets
+  `-2`), so a published id `<dk>-<id>` is ≤ 40 characters (longest 39). `alertKey` =
+  `pushBlockKey(label)` for every block — **today's keys, never recomputed on a rename**,
+  so every phone's subscriptions survive. `meal` = `legacyMealOf(label)` lower-cased
+  (tagged now, read from step 19). A label tail that `joinTeams` reproduces EXACTLY
+  becomes `teams` (junior's morning meeting, group B on Tue/Thu/Sat); any other tail
+  stays label text. Measured and pinned: junior 26 typical items, patches Tue 2 / Wed 1
+  / Thu 2 / Fri 8 (all `off`), one-offs Sun 9 / Tue 1 / Thu 1 / Fri 10 / Sat 5, ~9.6 KB;
+  senior 20 typical, no patches, Sun 2 / Sat 4, ~4.6 KB. `camps.js` gained
+  `placeholderDays` (senior `[0, 6]`: the stub bookends are seeded `placeholder: true`,
+  so the hub says "sample day", never a warning) and `gameBlockOverrides` (`{}` in both).
+  `tests/fixtures-setup-seed-{junior,senior}.json` FREEZE the seeded ids and alert keys:
+  a change to the slug rule can never silently re-key a live camp — **never edit them**.
+- **The plans** (`setupLivePlans()`, memoized on the tree's identity AND `setupRev`, so a
+  test or restore that swaps the tree whole still rebuilds; the same objects until the
+  tree changes — render-stability): rich `[7]`, legacy `[7]`, `week`, `days`.
+  `SETUP_RICH_OF` (a WeakMap) maps each legacy block an accessor handed out back to its
+  rich twin, which is how `blockKey(b)` / `blockPushId(b, dow, i)` / `gamesForBlock` know
+  a block's id and alert key without the legacy shape carrying any extra field (so
+  `scheduleForDow(d)` deep-equals `DAY_SCHEDULE[d]`). A COPY of a block (the meal
+  decorator's) is not in the map and falls back to the printed rules. While the switch is
+  off `planForDow` answers from `setupBuiltInPlans()` — the built-in week resolved the
+  same way, cached once — so a preview has real block ids.
+- **The accessors** (app.js SEAM block; every one typeof-guards setup-sync.js): switch =
+  `scheduleIsShared()` = `setupScheduleLive()` = `meta/on/schedule === true` AND
+  `meta/schema` ≤ 1 (a newer build's data is never guessed at: built-in copy).
+  `scheduleForDow`, `scheduleWeek`, `weekDays` (the day strip: dow, short, full, tag
+  from `setup/days`), `planForDow`, `blockKey` / `blockPushId` (rich: the stored
+  `alertKey` and `<dk>-<id>`), `gamesForBlock` (on: games whose `blockId` is the block,
+  in `ord` order, ties by catalog position, any kind of block; off: the long-standing
+  Morning/Evening rule, **links ignored** — exactly today), `gamesForDay(dow)` →
+  `[{block, games}]`, `unscheduledGames(dow)` (games on that weekday's competition days
+  listed under no block — in either mode; built-in senior shows its 10 Afternoon games
+  and junior Team Skits here, which is the bug A2 fixes), `campWeek()` →
+  `{start, phase}`: `setup/meta/weekStart` (ALWAYS read, even with every section off)
+  else the date phone alerts were set up with (`pushKnownWeekStart()`), a real SUNDAY
+  or null; `phase` is `unset | before | during | after` and `during` is the Saturday
+  before through the Sunday after (what the A1 / new-year freeze refuses inside).
+- **A2, Put games on the schedule** (`setupGameAttachments(config, resolve, camp)` is
+  pure; `setupApplyGameAttachments(config, ops)`; `putGamesOnSchedule()` is the button's
+  function): touches ONLY games with no `blockId` or one that does not resolve on the
+  game's day — never an attached game's link or `ord`, so rain-plan moves and hand
+  attachments survive any number of off/on cycles. First rule that applies, on the game's
+  day: the camp's `gameBlockOverrides`; a timed block whose head label IS the game's
+  name; a `games` block whose head label contains it (curly quotes read as straight);
+  by session — Morning: the first games block before 12:00, Afternoon: the games blocks
+  12:00–4:59 PM naming the game's first word (else the first), Evening: the first games
+  block from 5:00 PM; otherwise unplaced (`why: 'day' | 'rule'`, never guessed). `ord` goes
+  after what the block already holds, in catalog order, from 10. `putGamesOnSchedule`
+  mutates `state.config.games` and calls `saveConfig()` — the config engine sends ONE
+  transaction (`games/<id>/blockId`, `games/<id>/ord`); refused (`off`, `readonly`,
+  `loading`) before anything changes. **Oracle** (pinned, game by game): junior 22/22
+  (Morning → 10:00 Team competitions, Evening → 18:00 Evening competition, Team Skits →
+  Fri 19:00 Team Skits); senior 25/25 (9:45 / 3:00 PM Team competitions, Legacy Game →
+  16:50, Hot Seat and Let's Make a Deal → 18:50). A game created in the classic
+  builder AFTER the switch is pressed has no link until Put games on the schedule is
+  pressed (the Games screen of step 21 sets it on create).
+- **The seeded pass** (`tests/run.js`, `makeContext({camp, seeded: true})`): the seed,
+  round-tripped through RTDB's canonical form, is already `setupTree` with the switch on
+  and the catalog's games are linked (A2). The week / push / chat / ics / tabs / frame /
+  shell / home / render-stability / game-view / secrecy / motion / overlays / boot-cache /
+  backup tests re-run against it, junior and (where the file has a `.senior` twin)
+  senior — `SEEDED=all` probes every file (only the off-mode pins — `accessors`,
+  `checklist`, `owner-only`, `setup-ui` — assume an empty tree), `SEEDED=off` skips the
+  pass. A redesign test joins `SEEDED_FILES` when it ships (steps 17 and 18: `now-model`,
+  `games-tab`).
+- **Tests**: `seed.test.js` (+ `.senior`: round trip of all seven days through the fake
+  RTDB, the measured shape, the rules' record shapes, the frozen id fixtures, the
+  10,080-minute banner fuzz identical before and after seeding, the alert publisher's
+  keys and catalog identical, a renamed + moved block keeping its published id and
+  key), `games-blocks.test.js` (+ `.senior`: the A2 oracle, never-touches-attached,
+  re-homing, unplaced, each rule, exactly-once listing, `putGamesOnSchedule`).
 
 ## Counselors ↔ teams ↔ accounts
 

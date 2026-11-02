@@ -290,6 +290,12 @@ function isValidWeekStart(s) {
   return dt.getUTCFullYear() === y && dt.getUTCMonth() === mo - 1 && dt.getUTCDate() === d && dt.getUTCDay() === 0;
 }
 
+// The week phone alerts were last set up for (the drawer's date), as far as this device has read it — campWeek()'s
+// fallback while setup/meta/weekStart is empty. null until the drawer or the publisher has looked.
+function pushKnownWeekStart() {
+  return isValidWeekStart(pushWeekStart) ? pushWeekStart : null;
+}
+
 // "Jul 18–24" / "Jul 30 – Aug 5" for the week starting on that Sunday.
 function pushWeekLabel(weekStart) {
   if (!isValidWeekStart(weekStart)) return '';

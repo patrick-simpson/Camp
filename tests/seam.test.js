@@ -78,6 +78,8 @@ test('the SEAM block exists once in app.js, whole, and holds every week constant
     'cleanupOnRota', 'cleanupTeams', 'blockKey', 'blockPushId', 'verseTheme', 'verseFor', 'electivesFor',
     'stationEmoji', 'electiveSlotStart', 'doubleWindow', 'teamIds', 'teamEmoji', 'teamShort', 'teamAccent',
     'teamCrestSrc', 'teamRoster', 'staffNames', 'seedTeams', 'legacyRosterFor',
+    // step 15: the schedule's "on" half (planForDow, campWeek) and the game links
+    'scheduleIsShared', 'weekdayIndex', 'planForDow', 'campWeek', 'gamesForDay', 'unscheduledGames',
   ].forEach((fn) => {
     assert.ok(block.includes('function ' + fn + '('), fn + '() lives in the block');
     assert.equal(src.split('function ' + fn + '(').length, 2, fn + '() is defined once');

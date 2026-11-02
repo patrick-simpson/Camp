@@ -484,6 +484,7 @@ CAMPS.junior = {
   seedCounselors: SEED_COUNSELORS,
   daySchedule: DAY_SCHEDULE,
   schedDays: SCHED_DAYS,
+  gameBlockOverrides: {},       // { gameId: schedule block id }: wins over "Put games on the schedule"'s own rules (none needed yet)
   electives: ELECTIVES,
   stationEmoji: STATION_EMOJI,
   electiveSlotMin: ELECTIVE_SLOT_MIN,
@@ -673,6 +674,8 @@ CAMPS.senior = {
   seedCounselors: [],           // no printed senior roster yet ⇒ the seed button never shows
   daySchedule: DAY_SCHEDULE,
   schedDays: SCHED_DAYS,
+  placeholderDays: [0, 6],      // Sunday arrival and Saturday send-off are STUBS: the seed marks them, so the hub says "sample day", never a warning
+  gameBlockOverrides: {},
   electives: {},
   stationEmoji: {},
   electiveSlotMin: [],

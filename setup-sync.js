@@ -2256,4 +2256,458 @@ function devicesList() {
   return out;
 }
 
+// ════════════════════════════════════════════════════════════════════
+// 5. The schedule as data (setup-rebuild-spec §5.4–5.6, §10 — build step 15 / "S5a")
+// ════════════════════════════════════════════════════════════════════
+// Four things live here, in this order: the PURE schedule maths (slug, ids, resolveDay,
+// renderLabel, legacyBlock — the one function every schedule consumer goes through), the
+// SEED (camps.js's printed week → setup data, deterministic), the memoized plans the
+// app.js accessors read once a camp's schedule is edited here, and Edit the week here
+// (A1) with Put games on the schedule (A2). Nothing below runs at load and nothing in it
+// writes until the OWNER presses A1: `meta/on/schedule` is the switch, and while it is
+// off every accessor returns the camps.js constant itself.
+
+const SETUP_SEED_SECTIONS = ['schedule'];            // what this build can seed (the meals, verses, cleanup and electives sections arrive with step 19)
+const SETUP_HEAD_SLUG = 24;                          // a block id's slug is cut to this (§5.5): published ids stay <= 40 characters
+const SETUP_BLOCK_TYPES = ['activity', 'games', 'elective'];
+
+// ── ids and labels ───────────────────────────────────────────────────
+
+// lowercase, runs of non-alphanumerics -> one '-', cut to `max`, edge dashes trimmed (§5.5).
+function setupSlug(s, max) {
+  const slug = String(s == null ? '' : s).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, max).replace(/-+$/, '');
+  return slug || 'block';
+}
+
+// The part of a label that names the BLOCK: text before ' — ' or ' (' (push.js's pushHeadLabel; a test pins the two equal).
+function setupHeadLabel(label) {
+  const s = String(label == null ? '' : label);
+  const cuts = [s.indexOf(' — '), s.indexOf(' (')].filter((i) => i >= 0);
+  return (cuts.length ? s.slice(0, Math.min.apply(null, cuts)) : s).trim();
+}
+
+// The phone-reminder key of a block: today's, for every seeded block (alertKey = pushBlockKey(label)).
+function setupAlertKey(label) {
+  return typeof pushBlockKey === 'function' ? pushBlockKey(label) : setupSlug(setupHeadLabel(label), 48);
+}
+
+// `b-<slug>-<start>` for a typical block, `b-<dk>-<slug>-<start>` for a day's own; a collision inside one container gets -2, -3….
+function setupMintId(dk, label, start, taken) {
+  const base = 'b-' + (dk ? dk + '-' : '') + setupSlug(setupHeadLabel(label), SETUP_HEAD_SLUG) + '-' + start;
+  let id = base;
+  for (let n = 2; taken[id]; n++) id = base + '-' + n;
+  taken[id] = true;
+  return id;
+}
+
+function setupTeamSlot(id) {
+  const n = Number(String(id).slice(1));
+  return Number.isInteger(n) ? n : 99;
+}
+
+// {t1:true,…} as ids in slot order (anything that isn't a team id is dropped).
+function setupTeamList(teams) {
+  const t = setupMapOf(teams);
+  return Object.keys(t).filter((id) => /^t[0-9]$/.test(id) && t[id] === true).sort((a, b) => setupTeamSlot(a) - setupTeamSlot(b));
+}
+
+// "🦃 Turkey, 🍁 Maples & 🚜 John Deeres": camps.js's joinTeamAbbrevs, with the emoji and short name given.
+function setupJoinTeams(ids, emojiOf, shortOf) {
+  const items = ids.map((id) => emojiOf(id) + ' ' + shortOf(id));
+  if (items.length < 2) return items.join('');
+  return items.slice(0, -1).join(', ') + ' & ' + items[items.length - 1];
+}
+
+// A block's label as the schedule shows it: a block with `teams` ends with its team tail.
+function renderLabel(b) {
+  const ids = setupTeamList(b && b.teams);
+  return ids.length ? b.label + ' — ' + setupJoinTeams(ids, teamEmoji, teamShort) : b.label;
+}
+
+// A block this build can place: whole-minute start/end in range, a non-empty label. A partial record
+// (a race between two directors' field writes) is skipped by the readers and listed by the hub.
+function validBlock(b) {
+  return setupIsMap(b) && Number.isInteger(b.start) && b.start >= 0 && b.start <= 1439
+    && Number.isInteger(b.end) && b.end >= 1 && b.end <= 1440 && b.end > b.start
+    && typeof b.label === 'string' && b.label.length > 0;
+}
+
+// Exactly today's DAY_SCHEDULE entry — same fields, same key order (a rendered label, a sanitized emoji, an
+// unknown type read as an activity).
+function legacyBlock(b) {
+  const o = {
+    start: b.start,
+    end: b.end,
+    label: renderLabel(b),
+    emoji: safeEmoji(b.emoji, '🕒'),
+    type: SETUP_BLOCK_TYPES.indexOf(b.type) !== -1 ? b.type : 'activity',
+  };
+  if (b.slot === 0 || b.slot === 1 || b.slot === 2) o.slot = b.slot;
+  if (b.noTime === true) o.noTime = true;
+  return o;
+}
+
+// Does a patch say anything the typical block doesn't? (An equal-to-typical field is not a change, §5.4.)
+function setupPatchDiffers(p, t) {
+  return Object.keys(setupMapOf(p)).some((k) => k !== 'off' && JSON.stringify(syncCanon(p[k])) !== JSON.stringify(syncCanon(t[k])));
+}
+
+// One day of the shared schedule, as rich blocks sorted by (start, ord, id) — a total order, so every device
+// agrees on which block Happening Now finds first. `origin`: typical | changed | oneoff | own. `.skipped` lists
+// what was cancelled for the day, `.broken` the partial records (§5.6).
+function resolveDay(tree, dow) {
+  const t = setupIsMap(tree) ? tree : {};
+  const dk = SETUP_DK[dow];
+  const out = [];
+  const skipped = [];
+  const broken = [];
+  const day = setupMapOf(setupMapOf(t.days)[dk]);
+  if (day.typical === true) {
+    const typical = setupMapOf(t.typical);
+    const patches = setupMapOf(setupMapOf(t.patches)[dk]);
+    Object.keys(typical).forEach((id) => {
+      if (!setupIsMap(typical[id])) { broken.push({ id, dk }); return; }
+      const p = setupMapOf(patches[id]);
+      const b = Object.assign({ id, dk, origin: setupPatchDiffers(p, typical[id]) ? 'changed' : 'typical' }, typical[id], p);
+      if (!validBlock(b)) { broken.push(b); return; }
+      if (b.off === true) { b.origin = 'skipped'; skipped.push(b); return; }
+      out.push(b);
+    });
+  }
+  const own = setupMapOf(setupMapOf(t.dayBlocks)[dk]);
+  Object.keys(own).forEach((id) => {
+    if (!setupIsMap(own[id])) { broken.push({ id, dk }); return; }
+    const b = Object.assign({ id, dk, origin: day.typical === true ? 'oneoff' : 'own' }, own[id]);
+    if (!validBlock(b)) { broken.push(b); return; }
+    if (b.off === true) { b.origin = 'skipped'; skipped.push(b); return; }
+    out.push(b);
+  });
+  out.sort((a, b) => (a.start - b.start) || ((Number(a.ord) || 0) - (Number(b.ord) || 0)) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  out.skipped = skipped;
+  out.broken = broken;
+  return out;
+}
+
+// The rich block the accessors hand out (planForDow): everything the schedule screen, the publisher and the
+// calendar file need, with the label RENDERED and the stored one kept as `base`.
+function setupRichBlock(b) {
+  const l = legacyBlock(b);
+  const r = { id: b.id, dk: b.dk, origin: b.origin, start: l.start, end: l.end, label: l.label, base: b.label, emoji: l.emoji, type: l.type };
+  if (l.slot !== undefined) r.slot = l.slot;
+  if (l.noTime) r.noTime = true;
+  const teams = setupTeamList(b.teams);
+  if (teams.length) r.teams = teams.reduce((o, id) => { o[id] = true; return o; }, {});
+  if (b.meal === 'breakfast' || b.meal === 'lunch' || b.meal === 'supper') r.meal = b.meal;
+  r.alertKey = typeof b.alertKey === 'string' && /^[a-z0-9-]{1,48}$/.test(b.alertKey) ? b.alertKey : setupAlertKey(l.label);
+  if (b.overlapOk === true) r.overlapOk = true;
+  r.ord = Number(b.ord) || 0;
+  return r;
+}
+
+// ── the seed ─────────────────────────────────────────────────────────
+
+// "emoji short" -> team id, for the camp's own teams: how a label's team tail is recognised.
+function setupSeedTeamLookup(camp) {
+  const out = {};
+  Object.keys((camp && camp.teamEmoji) || {}).forEach((id) => { out[camp.teamEmoji[id] + ' ' + camp.teamAbbrev[id]] = id; });
+  return out;
+}
+
+// A printed label as { label, teams? }: a tail that joinTeams(ids in slot order) reproduces EXACTLY becomes `teams`
+// (the junior morning meeting); any other tail stays plain label text.
+function setupSeedLabel(label, camp, lookup) {
+  const at = String(label).indexOf(' — ');
+  if (at < 0) return { label };
+  const tail = String(label).slice(at + 3);
+  const ids = tail.split(/, | & /).map((item) => lookup[item]);
+  if (!ids.length || ids.some((id) => !id) || new Set(ids).size !== ids.length) return { label };
+  ids.sort((a, b) => setupTeamSlot(a) - setupTeamSlot(b));
+  if (setupJoinTeams(ids, (id) => camp.teamEmoji[id], (id) => camp.teamAbbrev[id]) !== tail) return { label };
+  return { label: String(label).slice(0, at), teams: ids.reduce((o, id) => { o[id] = true; return o; }, {}) };
+}
+
+// A printed block as the seed stores it (no id, no ord yet).
+function setupSeedRecord(raw, camp, lookup) {
+  const s = setupSeedLabel(raw.label, camp, lookup);
+  const rec = { start: raw.start, end: raw.end, label: s.label, emoji: raw.emoji, type: raw.type };
+  if (raw.slot !== undefined) rec.slot = raw.slot;
+  if (raw.noTime) rec.noTime = true;
+  const meal = typeof legacyMealOf === 'function' ? legacyMealOf(raw.label) : null;
+  if (meal) rec.meal = meal.toLowerCase();
+  if (s.teams) rec.teams = s.teams;
+  rec.alertKey = setupAlertKey(raw.label);
+  return rec;
+}
+
+function setupSeedSameShape(t, d) {
+  return t.start === d.start && t.end === d.end && t.type === d.type && t.slot === d.slot && !!t.noTime === !!d.noTime
+    && setupHeadLabel(t.label) === setupHeadLabel(d.label) && !(t.teams && !d.teams);
+}
+
+const setupSeedRound = (n) => Math.round(n * 1000) / 1000;
+
+// The schedule section of the seed (§10.2). Monday is the typical day; Tuesday to Friday become patches (a different
+// tail, emoji or team group), `off` patches (a typical item that day doesn't have) and one-offs (an item typical
+// doesn't have). A day with no weekday blocks, and Sunday and Saturday, are their own.
+function setupSeedSchedule(camp) {
+  const sched = (camp && camp.daySchedule) || {};
+  const tags = {};
+  ((camp && camp.schedDays) || []).forEach((d) => { tags[d.dow] = d.tag; });
+  const placeholders = (camp && camp.placeholderDays) || [];
+  const lookup = setupSeedTeamLookup(camp);
+  const out = { days: {}, typical: {}, patches: {}, dayBlocks: {} };
+  const taken = {};
+  const typical = []; // [{ id, rec }] in Monday's order
+  (sched[1] || []).forEach((raw, i) => {
+    const rec = setupSeedRecord(raw, camp, lookup);
+    rec.ord = 10 * i;
+    const id = setupMintId('', raw.label, raw.start, taken);
+    out.typical[id] = rec;
+    typical.push({ id, rec });
+  });
+  for (let dow = 0; dow < 7; dow++) {
+    const dk = SETUP_DK[dow];
+    const arr = sched[dow] || [];
+    const usesTypical = dow >= 1 && dow <= 5 && arr.length > 0 && typical.length > 0;
+    const day = { typical: usesTypical };
+    if (tags[dow]) day.tag = tags[dow];
+    if (placeholders.indexOf(dow) !== -1) day.placeholder = true;
+    out.days[dk] = day;
+    const dayTaken = Object.assign({}, taken); // an own id must not collide with a typical one: both publish as <dk>-<id>
+    const used = {};
+    const patch = {};
+    const oneOffs = [];
+    let pending = [];        // one-offs waiting for the next matched block, to be given an ord between its neighbours
+    let prevOrd = null;
+    const flush = (nextOrd) => {
+      const m = pending.length;
+      if (!m) return;
+      const lo = prevOrd !== null ? prevOrd : (nextOrd !== null ? nextOrd - 10 : 0);
+      const hi = nextOrd !== null ? nextOrd : lo + 10;
+      pending.forEach((p, j) => { p.rec.ord = setupSeedRound(lo + (hi - lo) * (j + 1) / (m + 1)); });
+      pending = [];
+    };
+    arr.forEach((raw, i) => {
+      const rec = setupSeedRecord(raw, camp, lookup);
+      if (!usesTypical) {
+        rec.ord = 10 * i;
+        (out.dayBlocks[dk] = out.dayBlocks[dk] || {})[setupMintId(dk, raw.label, raw.start, dayTaken)] = rec;
+        return;
+      }
+      const free = typical.filter((t) => !used[t.id] && setupSeedSameShape(t.rec, rec));
+      const hit = free.find((t) => t.rec.label === rec.label && t.rec.emoji === rec.emoji && JSON.stringify(t.rec.teams) === JSON.stringify(rec.teams)) || free[0];
+      if (hit) {
+        used[hit.id] = true;
+        flush(hit.rec.ord);
+        prevOrd = hit.rec.ord;
+        const p = {};
+        if (rec.label !== hit.rec.label) p.label = rec.label;
+        if (rec.emoji !== hit.rec.emoji) p.emoji = rec.emoji;
+        if (rec.teams && JSON.stringify(rec.teams) !== JSON.stringify(hit.rec.teams)) p.teams = rec.teams;
+        if (Object.keys(p).length) patch[hit.id] = p;
+        return;
+      }
+      const one = { rec, id: setupMintId(dk, raw.label, raw.start, dayTaken) };
+      pending.push(one);
+      oneOffs.push(one);
+    });
+    flush(null);
+    if (usesTypical) {
+      typical.forEach((t) => { if (!used[t.id]) patch[t.id] = { off: true }; });
+      if (Object.keys(patch).length) out.patches[dk] = patch;
+      oneOffs.forEach((o) => { (out.dayBlocks[dk] = out.dayBlocks[dk] || {})[o.id] = o.rec; });
+    }
+  }
+  return out;
+}
+
+// The whole seed: `{ meta: { schema, on }, days, typical, patches, dayBlocks }`. PURE and deterministic — the camps.js
+// constants only, never the member directory or device state (`meta.seeded` is added by mergeSeed, at write time).
+function buildSeed(camp, sections) {
+  const want = (sections || SETUP_SEED_SECTIONS).filter((s) => SETUP_SEED_SECTIONS.indexOf(s) !== -1);
+  const out = { meta: { schema: SETUP_SCHEMA, on: {} } };
+  if (want.indexOf('schedule') !== -1) {
+    Object.assign(out, setupSeedSchedule(camp));
+    out.meta.on.schedule = true;
+  }
+  return out;
+}
+
+
+// The camp's Sunday, setup/meta/weekStart, when it is a real date (always read: `meta` exists before any section is on);
+// null when absent or not a Sunday the rules would accept.
+function setupWeekStart() {
+  const v = setupTree && setupTree.meta ? setupTree.meta.weekStart : null;
+  if (typeof v !== 'string' || !/^20\d{2}-\d{2}-\d{2}$/.test(v)) return null;
+  return typeof isValidWeekStart === 'function' && !isValidWeekStart(v) ? null : v;
+}
+
+// ── the plans the accessors read ─────────────────────────────────────
+
+// Is this camp's schedule edited here, and in a schema this build can read? Off (or a newer schema) = the built-in
+// week, everywhere.
+function setupScheduleLive() {
+  return setupOn('schedule') && !setupSchemaTooNew();
+}
+
+const SETUP_RICH_OF = new WeakMap(); // a legacy block an accessor handed out -> the rich block it came from
+let setupPlanMemo = null;            // the live tree's plans, rebuilt only when the tree (or its revision) changes
+let setupBuiltInMemo = null;         // the built-in week resolved the same way (planForDow while the schedule is off)
+
+function setupBuildPlans(tree) {
+  const rich = [];
+  const legacy = [];
+  const week = {};
+  for (let dow = 0; dow < 7; dow++) {
+    const resolved = resolveDay(tree, dow);
+    const r = resolved.map(setupRichBlock);
+    r.skipped = resolved.skipped.map(setupRichBlock);
+    r.broken = resolved.broken;
+    const l = resolved.map(legacyBlock);
+    l.forEach((b, i) => SETUP_RICH_OF.set(b, r[i]));
+    rich.push(r);
+    legacy.push(l);
+    week[dow] = l;
+  }
+  const days = SETUP_DK.map((dk, dow) => ({
+    dow,
+    short: SETUP_DAY_WORDS[dk].slice(0, 3),
+    full: SETUP_DAY_WORDS[dk],
+    tag: typeof setupMapOf(setupMapOf(tree.days)[dk]).tag === 'string' ? setupMapOf(tree.days)[dk].tag : '',
+  }));
+  return { rich, legacy, week, days };
+}
+
+// The live tree's plans: the same objects until the tree changes (render-stability: an idle re-render must not see
+// new block objects). Keyed on the tree's identity AND its revision — a test (or a restore) may swap the tree whole.
+function setupLivePlans() {
+  const m = setupPlanMemo;
+  if (m && m.tree === setupTree && m.rev === setupRev) return m;
+  setupPlanMemo = Object.assign(setupBuildPlans(setupTree), { tree: setupTree, rev: setupRev });
+  return setupPlanMemo;
+}
+
+// The built-in week, seed-resolved (the same function over a built-in tree, cached once): what planForDow answers
+// while the schedule is off, so the Schedule screen can preview it with real block ids.
+function setupBuiltInPlans() {
+  if (!setupBuiltInMemo) {
+    const tree = normalizeSetup(setupClone(syncCanon(buildSeed(CAMP, ['schedule']))));
+    setupBuiltInMemo = setupBuildPlans(tree);
+  }
+  return setupBuiltInMemo;
+}
+
+// The accessors' three reads (app.js's SEAM block calls these behind typeof guards).
+function setupPlanOf(dow, shared) { return (shared ? setupLivePlans() : setupBuiltInPlans()).rich[dow] || []; }
+function setupLegacyDay(dow) { return setupLivePlans().legacy[dow] || []; }
+function setupLegacyWeek() { return setupLivePlans().week; }
+function setupWeekDays() { return setupLivePlans().days; }
+// The rich block behind a block an accessor returned (null for any other object — a copy, a raw literal).
+function setupRichOf(block) { return block && typeof block === 'object' ? (SETUP_RICH_OF.get(block) || null) : null; }
+
+// ── A2: Put games on the schedule (§10.3) ────────────────────────────
+// A game's `blockId` links it to the schedule item it is played in (config.games[].blockId, with `ord` the order
+// inside the item). The Morning / Evening rule the schedule sheet used to apply is the fallback that reproduces
+// the printed pairing; this writes it down once so it can be moved by hand (the rain plan), and so senior's
+// Afternoon games and junior's Team Skits finally show somewhere.
+
+const SETUP_GAME_ORD_STEP = 10;
+
+// A name or label as the rules compare it: lower case, curly quotes straightened, spaces collapsed.
+function setupNameKey(s) {
+  return String(s == null ? '' : s).toLowerCase().replace(/[‘’]/g, "'").replace(/[“”]/g, '"').replace(/\s+/g, ' ').trim();
+}
+
+// The block a game belongs on (§10.3, first rule that applies wins), or null. `blocks`: the game's day, rich, in
+// schedule order. 0) the camp profile's override; 1) a TIMED block whose head label is the game's name; 2) a games
+// block whose head label contains the name; 3) by session — Morning: the first games block before 12:00,
+// Afternoon: the games blocks from 12:00 to 4:59 PM that name the game's first word (else the first of them),
+// Evening: the first games block from 5:00 PM.
+function setupGameHome(game, blocks, camp) {
+  const over = camp && camp.gameBlockOverrides && camp.gameBlockOverrides[game.id];
+  if (over) { const hit = blocks.find((b) => b.id === over); if (hit) return hit; }
+  const name = setupNameKey(game.name);
+  const head = (b) => setupNameKey(setupHeadLabel(b.label));
+  const timed = blocks.filter((b) => !b.noTime);
+  if (name) {
+    const same = timed.find((b) => head(b) === name);
+    if (same) return same;
+    const within = timed.find((b) => b.type === 'games' && head(b).indexOf(name) !== -1);
+    if (within) return within;
+  }
+  const games = timed.filter((b) => b.type === 'games');
+  if (game.session === 'Morning') return games.find((b) => b.start < 720) || null;
+  if (game.session === 'Evening') return games.find((b) => b.start >= 1020) || null;
+  if (game.session === 'Afternoon') {
+    const pm = games.filter((b) => b.start >= 720 && b.start < 1020);
+    const first = (name.match(/[a-z0-9]+/) || [''])[0];
+    return (first && pm.find((b) => head(b).indexOf(first) !== -1)) || pm[0] || null;
+  }
+  return null;
+}
+
+// What A2 would write. `config`: { days, games }; `resolve(dow)`: that weekday's rich blocks. Only games with no
+// `blockId`, or one that does not resolve on the game's day, are touched — never an attached game's link or `ord`,
+// so a rain-plan move or a hand-made attachment survives any number of off / on cycles (sync-F2). `ord` goes after
+// what the block already holds, in the catalog's current order. Returns { ops: [{ id, blockId, ord }],
+// unplaced: [{ id, why: 'day' | 'rule' }] } and changes nothing.
+function setupGameAttachments(config, resolve, camp) {
+  const games = Array.isArray(config && config.games) ? config.games : [];
+  const days = Array.isArray(config && config.days) ? config.days : [];
+  const dowOf = (g) => { const d = days.find((x) => x && x.id === g.dayId); return d && Number.isInteger(d.dow) && d.dow >= 0 && d.dow <= 6 ? d.dow : -1; };
+  const blocksOf = {};
+  const blocks = (dow) => blocksOf[dow] || (blocksOf[dow] = resolve(dow) || []);
+  const cursor = {}; // `${dow}/${blockId}` -> the highest ord the block holds so far
+  const attached = (g, dow) => dow >= 0 && typeof g.blockId === 'string' && blocks(dow).some((b) => b.id === g.blockId);
+  games.forEach((g) => {
+    const dow = dowOf(g);
+    if (attached(g, dow)) {
+      const k = dow + '/' + g.blockId;
+      cursor[k] = Math.max(cursor[k] || 0, Number.isFinite(g.ord) ? g.ord : 0);
+    }
+  });
+  const ops = [];
+  const unplaced = [];
+  games.forEach((g) => {
+    if (!g || typeof g.id !== 'string') return;
+    const dow = dowOf(g);
+    if (attached(g, dow)) return;
+    if (dow < 0) { unplaced.push({ id: g.id, why: 'day' }); return; }
+    const home = setupGameHome(g, blocks(dow), camp);
+    if (!home) { unplaced.push({ id: g.id, why: 'rule' }); return; }
+    const k = dow + '/' + home.id;
+    cursor[k] = (cursor[k] || 0) + SETUP_GAME_ORD_STEP;
+    ops.push({ id: g.id, blockId: home.id, ord: cursor[k] });
+  });
+  return { ops, unplaced };
+}
+
+// Apply those ops to a config in place (the config engine's push then sends exactly games/<id>/blockId and /ord).
+function setupApplyGameAttachments(config, ops) {
+  let n = 0;
+  (ops || []).forEach((op) => {
+    const g = ((config && config.games) || []).find((x) => x && x.id === op.id);
+    if (!g) return;
+    g.blockId = op.blockId;
+    g.ord = op.ord;
+    n++;
+  });
+  return n;
+}
+
+// The hub's "Put games on the schedule", and the second half of Edit the week here: one config edit (the config
+// engine sends one transaction) for every game that has no place yet. Needs the schedule edited here — the links name
+// its blocks — and an editable catalog. Never undoable by itself: the `pre-seed` restore point covers A1's run of it.
+function putGamesOnSchedule() {
+  const refuse = (reason, extra) => Object.assign({ ok: false, reason }, extra || {});
+  if (!canEdit()) return refuse('readonly');
+  if (!setupScheduleLive()) return refuse('off');
+  if (typeof configEditable === 'function' && !configEditable()) return refuse('loading');
+  const plan = setupGameAttachments(state.config, (dow) => planForDow(dow), CAMP);
+  if (!plan.ops.length) return { ok: true, noop: true, attached: 0, unplaced: plan.unplaced };
+  setupApplyGameAttachments(state.config, plan.ops);
+  saveConfig();
+  return { ok: true, attached: plan.ops.length, unplaced: plan.unplaced };
+}
+
 setupLoadCache();
