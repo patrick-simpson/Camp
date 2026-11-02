@@ -2942,6 +2942,7 @@ function schedEditMutate(draft, p) {
   if (found.where === 'dayBlocks') {
     const rec = draft.dayBlocks[p.dk][p.bid];
     SCHED_FIELDS.forEach((f) => schedPutField(rec, f, next));
+    if (p.alertKey) rec.alertKey = p.alertKey;
     return { ok: true };
   }
   if (p.scope === 'typical' || !p.dk) {
@@ -2950,6 +2951,7 @@ function schedEditMutate(draft, p) {
     const changed = SCHED_FIELDS.filter((f) => schedNorm(f, found.rec[f]) !== schedNorm(f, next[f]));
     const rec = draft.typical[p.bid];
     changed.forEach((f) => schedPutField(rec, f, next));
+    if (p.alertKey) rec.alertKey = p.alertKey; // "No, start fresh": a new reminder key for a renamed item (a patch cannot carry one)
     const dks = [p.dk].concat(p.changeOwn || []).filter(Boolean);
     dks.forEach((dk) => {
       const patch = setupMapOf(draft.patches[dk])[p.bid];
@@ -2969,6 +2971,23 @@ function schedEditMutate(draft, p) {
   });
   if (Object.keys(patch).length) draft.patches[p.dk][p.bid] = patch; else delete draft.patches[p.dk][p.bid];
   return { ok: true };
+}
+
+// Move other items of a day (the ripple that follows "Push later items back"): { id: { start, end } }. An own or one-off
+// item keeps its times on its record, a typical item as a patch on that day (dropped when it equals the typical time),
+// and from the typical day (dk '') on the typical record.
+function schedMovesMutate(draft, dk, moves) {
+  Object.keys(moves || {}).forEach((id) => {
+    const f = schedFind(draft, dk, id);
+    const m = moves[id];
+    if (f.where === 'dayBlocks') { draft.dayBlocks[dk][id].start = m.start; draft.dayBlocks[dk][id].end = m.end; return; }
+    if (f.where !== 'typical') return;
+    if (!dk) { draft.typical[id].start = m.start; draft.typical[id].end = m.end; return; }
+    draft.patches[dk] = setupMapOf(draft.patches[dk]);
+    const patch = setupIsMap(draft.patches[dk][id]) ? draft.patches[dk][id] : {};
+    ['start', 'end'].forEach((k) => { if (m[k] === f.typical[k]) delete patch[k]; else patch[k] = m[k]; });
+    if (Object.keys(patch).length) draft.patches[dk][id] = patch; else delete draft.patches[dk][id];
+  });
 }
 
 // Take an item out. scope 'day' on a typical item = skipped that day (patches/<dk>/<bid>/off, "Bring back" undoes it);
@@ -3135,6 +3154,8 @@ function schedCommit(p) {
       case 'copy': schedCopyIntoMutate(draft, p.dk, p.blocks); r = { ok: true }; break;
       default: r = { ok: false, reason: 'kind' };
     }
+    // The ripple follows the scope: "Every day like Tuesday" moves the typical items, "Just Tuesday" Tuesday's.
+    if (r.ok && p.moves && (p.kind === 'add' || p.kind === 'edit')) schedMovesMutate(draft, p.scope === 'typical' || !p.dk ? '' : p.dk, p.moves);
     outcome = r;
     return r.ok ? undefined : false;
   };

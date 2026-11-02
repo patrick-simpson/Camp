@@ -354,7 +354,7 @@ function hubScheduleView() {
 // classic | week | schedule | rain. A step that adds a screen adds its name here and its pair of lines in the CSS.
 const SETUP_SCREENS = ['hub', 'backups', 'classic', 'week', 'schedule', 'rain'];
 // Shell sheets this layer owns (shellSheetOpen ids; the elements are #sheet-<id>), one at a time.
-const SETUP_SHEETS = ['setup-menu', 'setup-changes', 'setup-devices', 'restore'];
+const SETUP_SHEETS = ['setup-menu', 'setup-changes', 'setup-devices', 'restore', 'sched-day', 'sched-item'];
 // The classic builder's tabs, in editorsHere's short vocabulary (setup-sync.js editorsHereWhereWords).
 const SETUP_CLASSIC_WHERE = { games: 'games', days: 'week', teams: 'teams', notice: 'notice', data: 'restore' };
 // The owner's menu rows (⋯ → Owner). A row is listed only when its action exists (Step 15: original,
@@ -660,6 +660,7 @@ function renderSetupUi(open) {
   if (screen === 'hub') paintHub();
   else if (screen === 'backups') renderBackups();
   else if (screen === 'week') renderWeekScreen();
+  else if (screen === 'schedule') renderScheduleScreen();
   else if (typeof renderSettings === 'function') renderSettings();
   renderSetupMenuRows();
   paintSetupFit();
@@ -988,11 +989,15 @@ function renderSetupSheet(id) {
   else if (id === 'setup-changes') renderSetupChanges();
   else if (id === 'setup-devices') renderSetupDevices();
   else if (id === 'restore') renderRestoreSheet();
+  else if (id === 'sched-day') renderSchedDaySheet();
+  else if (id === 'sched-item') renderSchedItemSheet();
 }
 
 // Whether a setup sheet has anything to show (app.js shellSheetAllowed): the restore sheet needs a point
 // that a tap opened, so a Forward or a stale history entry cannot raise an empty one.
 function setupSheetReady(id) {
+  if (id === 'sched-item') return !!setupSched.item;
+  if (id === 'sched-day') return schedDayKey() !== 'typical';
   return id !== 'restore' || !!setupUi.rsheet;
 }
 
@@ -1833,6 +1838,711 @@ async function schedClearDay(dow) {
   return r.ok;
 }
 
+
+// ── 10. The Schedule screen (§11.5): the day strip, the rows, the item sheet ─────────────────────────
+
+// The state the sheets hold while they are open (device-local, in memory: a half-made edit is never synced or cached).
+const setupSched = {
+  item: null,        // the open item sheet: { dayKey, dk, dow, mode: 'add' | 'edit', bid, where, origin, rec, form, ask, moves, hasTeams, label0 }
+  stripPlaced: false, // the strip opened scrolled to today once per visit
+};
+
+const SCHED_PARTS = ['morning', 'afternoon', 'evening'];
+const SCHED_EMOJI = [
+  ['🏅', 'Medal'], ['🍽️', 'Meal'], ['🍳', 'Breakfast'], ['🥪', 'Lunch'], ['🍲', 'Supper'], ['☕', 'Break'], ['🌟', 'Star'], ['📣', 'Announcement'],
+  ['🎲', 'Games'], ['🏊', 'Swim'], ['🎯', 'Target'], ['🏕️', 'Camp'], ['🔥', 'Campfire'], ['🎬', 'Movie'], ['🎶', 'Music'], ['🙏', 'Prayer'],
+  ['📖', 'Reading'], ['🧼', 'Cleanup'], ['🛏️', 'Bed'], ['🌙', 'Night'], ['⚽', 'Sports'], ['🎨', 'Crafts'], ['🚌', 'Travel'], ['👋', 'Welcome'],
+];
+
+// 'typical' or a day key, from state.ui.setupDay; with nothing chosen, today during the camp week, else the typical day.
+function schedDayKey() {
+  const v = state.ui && state.ui.setupDay;
+  if (v === 'typical' || SETUP_DK.indexOf(v) !== -1) return v;
+  const wk = typeof campWeek === 'function' ? campWeek() : { phase: 'unset' };
+  return wk.phase === 'during' ? SETUP_DK[campNow().dow] : 'typical';
+}
+function schedDowOf(dayKey) { return SETUP_DK.indexOf(dayKey); }
+function schedDayName(dayKey) { return dayKey === 'typical' ? 'the typical day' : SETUP_DAY_WORDS[dayKey]; }
+function schedTodayKey() { return SETUP_DK[campNow().dow]; }
+
+// The typical day as rich blocks, in the order a day shows them.
+function schedTypicalBlocks(tree) {
+  return Object.keys(setupMapOf(tree.typical)).map((id) => {
+    const rec = tree.typical[id];
+    if (!setupIsMap(rec)) return null;
+    const b = Object.assign({ id, dk: '', origin: 'typical' }, rec);
+    return validBlock(b) ? setupRichBlock(b) : null;
+  }).filter(Boolean).sort((a, b) => (a.start - b.start) || (a.ord - b.ord) || (a.id < b.id ? -1 : 1));
+}
+
+function schedBlocksFor(dayKey) {
+  return dayKey === 'typical' ? schedTypicalBlocks(schedViewTree()) : planForDow(schedDowOf(dayKey));
+}
+
+function schedPartOf(b) { return b.start < 720 ? 'morning' : b.start < 1020 ? 'afternoon' : 'evening'; }
+
+function schedClockWords(m) { return m >= 1440 ? 'midnight' : schedClock(m, false); }
+
+function schedGamesOf(b, dow) {
+  const dayIds = dow >= 0 ? competitionDays().filter((d) => d.dow === dow).map((d) => d.id) : null;
+  return allGames().filter((g) => g.blockId === b.id && (!dayIds || dayIds.indexOf(g.dayId) !== -1));
+}
+
+// The sub of a row: the KIND in words (none for a plain activity, none when the label already says it), then at most one
+// tag — a difference from the typical day.
+function schedRowSub(b, ctx) {
+  const parts = [];
+  const label = String(b.label).toLowerCase();
+  if (b.type === 'games') {
+    const n = ctx.shared ? schedGamesOf(b, ctx.dow).length : 0;
+    parts.push('Games' + (n ? ' · ' + hubPlural(n, 'game', 'games') : ''));
+  } else if (b.type === 'elective') {
+    const w = 'Elective ' + ((Number.isInteger(b.slot) ? b.slot : 0) + 1);
+    if (label.indexOf(w.toLowerCase()) === -1) parts.push(w);
+  } else if (b.meal) parts.push('Meal');
+  let tag = '';
+  if (ctx.dayKey !== 'typical') {
+    const short = SETUP_DAY_WORDS[ctx.dayKey].slice(0, 3);
+    if (b.origin === 'oneoff') tag = short + ' only';
+    else if (b.origin === 'changed') tag = 'Changed for ' + short;
+  } else if (ctx.shared) {
+    const days = SETUP_DK.filter((dk) => {
+      if (setupMapOf(setupMapOf(setupTree.days)[dk]).typical !== true) return false;
+      const p = setupMapOf(setupMapOf(setupTree.patches)[dk])[b.id];
+      return setupIsMap(p) && setupPatchDiffers(p, setupTree.typical[b.id] || {});
+    });
+    if (days.length === 1) tag = 'Own version on ' + SETUP_DAY_WORDS[days[0]].slice(0, 3);
+    else if (days.length > 1) tag = 'Own version on ' + days.length + ' days';
+  }
+  const warn = !b.noTime && !b.overlapOk && schedOverlaps(ctx.blocks, b).length ? schedOverlaps(ctx.blocks, b)[0] : null;
+  if (warn) parts.push('Overlaps ' + setupHeadLabel(warn.label));
+  return { text: parts.join(' · '), tag, warn: !!warn };
+}
+
+function schedRowHtml(b, ctx) {
+  const sub = schedRowSub(b, ctx);
+  const time = b.noTime
+    ? esc(schedClock(b.start, false)) + '<small>Not shown</small>'
+    : esc(schedClock(b.start, false)) + '<small>–' + esc(schedClockWords(b.end)) + '</small>';
+  const subHtml = sub.text || sub.tag ? '<span class="cb-sub">' + esc(sub.text) + (sub.tag ? '<b class="sched-tag">' + esc(sub.tag) + '</b>' : '') + '</span>' : '';
+  const inner = '<span class="cb-time">' + time + '</span><span class="cb-main"><span class="cb-title"><span class="sched-emo" aria-hidden="true">' + esc(b.emoji) + '</span><span>' + esc(b.label) + '</span></span>' + subHtml + '</span>' +
+    '<span class="cb-end">' + (ctx.editable ? '<svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg>' : '') + '</span>';
+  const attrs = ' class="cb-row sched-row" data-bid="' + esc(b.id) + '"' + (b.noTime ? ' data-notime' : '') + (sub.warn ? ' data-warn' : '') +
+    (sub.tag ? ' data-diff="' + (b.origin === 'oneoff' ? 'only' : 'changed') + '"' : '');
+  return ctx.editable ? '<button type="button"' + attrs + '>' + inner + '</button>' : '<div' + attrs + '>' + inner + '</div>';
+}
+
+function schedGapHtml(g) {
+  return '<button type="button" class="sched-gap" data-gap-start="' + g.start + '" data-gap-end="' + g.end + '"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span>Add something · ' + esc(schedRange(g.start, g.end)) + '</span></button>';
+}
+
+// How many items of a day differ from the typical day, in the words of the note under the lede.
+function schedDayDiffs(dow) {
+  const dk = SETUP_DK[dow];
+  const day = setupMapOf(setupMapOf(setupTree.days)[dk]);
+  if (day.typical !== true) return null;
+  const plan = planForDow(dow);
+  return { skipped: plan.skipped.length, oneOffs: plan.filter((b) => b.origin === 'oneoff').length, changed: plan.filter((b) => b.origin === 'changed').length };
+}
+
+function schedStripLabel(dk, dow, shared) {
+  const name = SETUP_DAY_WORDS[dk];
+  const bits = [name];
+  if (dk === schedTodayKey()) bits.push('today');
+  if (shared) {
+    const d = schedDayDiffs(dow);
+    bits.push(d ? 'follows the typical day' : 'its own schedule');
+    if (d) { const n = d.skipped + d.oneOffs + d.changed; if (n) bits.push(hubPlural(n, 'change', 'changes')); }
+  }
+  return bits.join(', ');
+}
+
+function renderSchedStrip(dayKey, shared) {
+  const track = setupEl('sched-days-track');
+  if (!track) return;
+  const todayKey = schedTodayKey();
+  track.querySelectorAll('.daypick-btn[data-day]').forEach((btn) => {
+    const dk = btn.dataset.day;
+    const sel = dk === dayKey;
+    if (btn.getAttribute('aria-selected') !== String(sel)) btn.setAttribute('aria-selected', String(sel));
+    if (dk === 'typical') {
+      btn.setAttribute('aria-label', 'The typical day' + (sel ? ', chosen' : ''));
+      return;
+    }
+    const dow = schedDowOf(dk);
+    const isToday = dk === todayKey && campWeek().phase === 'during';
+    if (isToday !== btn.hasAttribute('data-today')) { if (isToday) btn.setAttribute('data-today', ''); else btn.removeAttribute('data-today'); }
+    const diffs = shared ? schedDayDiffs(dow) : null;
+    const follows = !!diffs || (!shared && setupMapOf(setupMapOf(schedViewTree().days)[dk]).typical === true);
+    const changed = !!diffs && (diffs.skipped + diffs.oneOffs + diffs.changed) > 0;
+    const dotT = btn.querySelector('[data-dot="typical"]');
+    const dotC = btn.querySelector('[data-dot="changed"]');
+    setHiddenIfChanged(dotT, !follows || changed);
+    setHiddenIfChanged(dotC, !changed);
+    const issues = shared ? schedDayIssues(dow) : false;
+    setHiddenIfChanged(btn.querySelector('[data-sd-warn]'), !issues);
+    btn.setAttribute('aria-label', schedStripLabel(dk, dow, shared) + (issues ? ', something to check' : ''));
+  });
+  // Opens with today's chip pinned at the left edge, during the camp week (ux-R2); otherwise from the start.
+  if (!setupSched.stripPlaced) {
+    const chip = track.querySelector('.daypick-btn[data-today]');
+    if (chip && typeof chip.offsetLeft === 'number') { track.scrollLeft = chip.offsetLeft; setupSched.stripPlaced = true; }
+  }
+}
+
+// Whether a day has something to look at: empty, a broken item, an overlap nobody okayed.
+function schedDayIssues(dow) {
+  const dk = SETUP_DK[dow];
+  const plan = planForDow(dow);
+  if (plan.broken && plan.broken.length) return true;
+  const day = setupMapOf(setupMapOf(setupTree.days)[dk]);
+  if (!plan.length && day.placeholder !== true) return true;
+  const timed = plan.filter((b) => !b.noTime && !b.overlapOk);
+  return timed.some((a, i) => timed.slice(i + 1).some((b) => b.start < a.end && a.start < b.end));
+}
+
+function renderScheduleScreen() {
+  const shared = scheduleIsShared();
+  const preview = !shared;
+  const dayKey = schedDayKey();
+  const dow = schedDowOf(dayKey);
+  const tree = schedViewTree();
+  const blocks = schedBlocksFor(dayKey);
+  const ctx = { dayKey, dow, shared, editable: shared && canEdit(), blocks };
+  renderSchedStrip(dayKey, shared);
+  // Head
+  setTextIfChanged(setupEl('sched-title'), 'Schedule · ' + CAMP.label);
+  setTextIfChanged(setupEl('sched-headline'), dayKey === 'typical' ? 'The typical day' : SETUP_DAY_WORDS[dayKey]);
+  const dayRec = dow >= 0 ? setupMapOf(setupMapOf(tree.days)[dayKey]) : {};
+  const follows = dow >= 0 && dayRec.typical === true;
+  const followers = SETUP_DK.filter((dk) => setupMapOf(setupMapOf(tree.days)[dk]).typical === true);
+  const diffs = shared && dow >= 0 ? schedDayDiffs(dow) : null;
+  let lede;
+  if (dayKey === 'typical') lede = followers.length ? schedDaysWords(followers) + ' follow this' : 'No day follows it yet';
+  else {
+    const n = diffs ? diffs.skipped + diffs.oneOffs + diffs.changed : 0;
+    lede = (dayKey === schedTodayKey() && campWeek().phase === 'during' ? 'Today · ' : '') + (follows ? 'Follows the typical day' + (n ? ' · ' + hubPlural(n, 'change', 'changes') : '') : 'Its own schedule') +
+      (weekDays()[dow] && weekDays()[dow].tag ? ' · ' + weekDays()[dow].tag : '');
+  }
+  setTextIfChanged(setupEl('sched-lede'), lede);
+  const menu = shared && dayKey !== 'typical' && canEdit();
+  setHiddenIfChanged(setupEl('sched-rain-link'), !menu);
+  setHiddenIfChanged(setupEl('sched-day-btn'), !menu);
+  if (menu) setTextIfChanged(setupEl('sched-rain-link-text'), 'Rain plan for ' + (dayKey === schedTodayKey() ? 'today' : SETUP_DAY_WORDS[dayKey]));
+  paintPreviewDoor('sched', preview);
+  const note = diffs && (diffs.skipped + diffs.oneOffs + diffs.changed) >= 3
+    ? SETUP_DAY_WORDS[dayKey] + ' is different from the typical day: ' + [diffs.skipped ? hubPlural(diffs.skipped, 'item skipped', 'items skipped') : '', diffs.oneOffs ? diffs.oneOffs + ' ' + SETUP_DAY_WORDS[dayKey] + '-only' : '', diffs.changed ? diffs.changed + ' changed' : ''].filter(Boolean).join(', ')
+    : '';
+  setTextIfChanged(setupEl('sched-day-note-text'), note);
+  setHiddenIfChanged(setupEl('sched-day-note'), !note);
+  setTextIfChanged(setupEl('sched-scope-note-text'), 'Changes ' + (followers.length ? schedDaysWords(followers) : 'to the typical day') + ', except days that have their own version of this');
+  setHiddenIfChanged(setupEl('sched-scope-note'), !(shared && dayKey === 'typical' && blocks.length));
+  // The guided first build, and Copy to Mon–Fri once the typical day has three items
+  const empty = !blocks.length && shared && canEdit();
+  setHiddenIfChanged(setupEl('sched-empty'), !empty);
+  if (empty) {
+    setTextIfChanged(setupEl('sched-empty-text'), dayKey === 'typical' ? 'Start with the first thing in the morning, usually breakfast.' : SETUP_DAY_WORDS[dayKey] + ' has nothing yet. Start with the first thing, or copy another day.');
+    setHiddenIfChanged(setupEl('sched-copy-from'), dayKey === 'typical');
+    setHiddenIfChanged(setupEl('sched-copy-archive'), true);
+  }
+  const copyDays = schedCopyWeekDays(tree);
+  const showCopy = shared && canEdit() && dayKey === 'typical' && blocks.length >= 3 && copyDays.length > 0;
+  setHiddenIfChanged(setupEl('sched-copy'), !showCopy);
+  // The lists, by part of the day
+  SCHED_PARTS.forEach((part) => {
+    const mine = blocks.filter((b) => schedPartOf(b) === part);
+    setHiddenIfChanged(document.querySelector('[data-sched-part="' + part + '"]'), !mine.length);
+    const list = document.querySelector('[data-sched-list="' + part + '"]');
+    if (!list) return;
+    const gaps = ctx.editable ? schedGaps(blocks) : [];
+    let html = '';
+    mine.forEach((b, i) => {
+      const gap = gaps.find((g) => g.end === b.start && i > 0 && g.start >= mine[i - 1].start);
+      if (gap) html += schedGapHtml(gap);
+      html += schedRowHtml(b, ctx);
+    });
+    setHtmlIfChanged(list, html);
+  });
+  // Skipped on this day
+  const skipped = dayKey !== 'typical' && blocks.skipped ? blocks.skipped : [];
+  setHiddenIfChanged(setupEl('sched-sec-skipped'), !skipped.length);
+  if (skipped.length) {
+    setTextIfChanged(setupEl('sched-skipped-label'), 'Skipped on ' + SETUP_DAY_WORDS[dayKey]);
+    setHtmlIfChanged(setupEl('sched-skipped-list'), skipped.map((b) =>
+      '<div class="cb-row sched-row" data-bid="' + esc(b.id) + '" data-skipped><span class="cb-time">' + esc(schedClock(b.start, false)) + '<small>–' + esc(schedClockWords(b.end)) + '</small></span>' +
+      '<span class="cb-main"><span class="cb-title"><span class="sched-emo" aria-hidden="true">' + esc(b.emoji) + '</span><span>' + esc(b.label) + '</span></span></span>' +
+      '<span class="cb-end">' + (ctx.editable ? '<button type="button" class="btn btn-sm" data-sched-bring="' + esc(b.id) + '">Bring back</button>' : '') + '</span></div>').join(''));
+  }
+  setHiddenIfChanged(setupEl('sched-add'), !ctx.editable || !blocks.length);
+  setTextIfChanged(setupEl('sched-add-text'), dayKey === 'typical' ? 'Add to the typical day' : 'Add to ' + SETUP_DAY_WORDS[dayKey]);
+}
+
+// Mon–Fri days that could follow the typical day: not following it, and with nothing of their own.
+function schedCopyWeekDays(tree) {
+  return [1, 2, 3, 4, 5].map((i) => SETUP_DK[i]).filter((dk) => setupMapOf(setupMapOf(tree.days)[dk]).typical !== true && !Object.keys(setupMapOf(setupMapOf(tree.dayBlocks)[dk])).length);
+}
+
+function schedSetDay(dayKey) {
+  if (dayKey !== 'typical' && SETUP_DK.indexOf(dayKey) === -1) return;
+  state.ui.setupDay = dayKey;
+  saveState();
+  renderAll();
+}
+
+// ── the item sheet ──
+
+function schedMinToInput(m) {
+  const v = Math.max(0, Math.min(1439, m));
+  return String(Math.floor(v / 60)).padStart(2, '0') + ':' + String(v % 60).padStart(2, '0');
+}
+function schedInputToMin(v) {
+  const m = /^(\d{1,2}):(\d{2})/.exec(String(v || ''));
+  return m ? Number(m[1]) * 60 + Number(m[2]) : NaN;
+}
+
+// A rich block (or nothing) as the sheet's form.
+function schedFormOf(b, defaults) {
+  if (!b) {
+    const d = defaults || {};
+    const start = Number.isInteger(d.start) ? d.start : 9 * 60;
+    return { label: '', emoji: '🌟', start, end: Number.isInteger(d.end) ? d.end : Math.min(1440, start + 45), noTime: false, kind: 'activity', meal: 'lunch', slot: 0, teams: [], overlapOk: false };
+  }
+  return {
+    label: b.base, emoji: b.emoji, start: b.start, end: b.end, noTime: !!b.noTime,
+    kind: b.meal ? 'meal' : b.type === 'games' ? 'games' : b.type === 'elective' ? 'elective' : 'activity',
+    meal: b.meal || 'lunch', slot: Number.isInteger(b.slot) ? b.slot : 0, teams: setupTeamList(b.teams), overlapOk: !!b.overlapOk,
+  };
+}
+
+// The sheet's form as the engine's item.
+function schedFormItem(f) {
+  const item = { label: String(f.label).trim(), emoji: f.emoji, start: f.start, end: f.end, noTime: f.noTime, overlapOk: f.overlapOk, type: f.kind === 'meal' ? 'activity' : f.kind, teams: f.teams };
+  if (f.kind === 'meal') item.meal = f.meal;
+  if (f.kind === 'elective') item.slot = f.slot;
+  return item;
+}
+
+// Open the item sheet: edit an item of the day being looked at, or add one (`opts.add`, with optional start / end).
+function schedOpenItem(opts) {
+  const dayKey = schedDayKey();
+  const dk = dayKey === 'typical' ? '' : dayKey;
+  const o = opts || {};
+  let b = null;
+  if (o.bid) b = schedBlocksFor(dayKey).find((x) => x.id === o.bid) || null;
+  if (o.bid && !b) return;
+  const found = b ? schedFind(setupTree, dk, b.id) : null;
+  const form = schedFormOf(b, o);
+  setupSched.item = {
+    dayKey, dk, dow: schedDowOf(dayKey), mode: b ? 'edit' : 'add', bid: b ? b.id : null, where: found ? found.where : null,
+    origin: b ? b.origin : 'new', rec: b ? schedItemOfBlock(b) : null, form, ask: { overlap: null, own: null, rekey: null }, moves: null,
+    hasTeams: form.teams.length > 0, label0: form.label,
+  };
+  setupSheet('sched-item', o.opener);
+  if (typeof setupMoveHere === 'function') setupMoveHere();
+}
+
+function schedItemOfBlock(b) {
+  return { label: b.base, emoji: b.emoji, start: b.start, end: b.end, type: b.meal ? 'activity' : b.type, slot: b.slot, meal: b.meal, noTime: b.noTime, teams: b.teams, overlapOk: b.overlapOk };
+}
+
+// Everything the sheet shows that is NOT a plain field, as data: errors, the questions that apply, the save buttons.
+function schedItemModel(it) {
+  const f = it.form;
+  const item = schedFormItem(f);
+  const errors = { label: '', time: '' };
+  if (!item.label) errors.label = 'Give it a name.';
+  else if (item.label.length > 120) errors.label = 'Keep the name under 120 characters.';
+  if (!(item.start >= 0 && item.start <= 1439)) errors.time = 'Pick a start time.';
+  else if (!(item.end > item.start && item.end <= 1440)) errors.time = 'Ends before it starts.';
+  const valid = !errors.label && !errors.time && safeEmoji(item.emoji, '') === item.emoji && !!item.emoji;
+  const typicalView = it.dayKey === 'typical';
+  const changed = it.rec ? schedChanged(it.rec, item) : SCHED_FIELDS.slice();
+  const timeChanged = it.mode === 'add' || changed.some((x) => x === 'start' || x === 'end' || x === 'noTime');
+  const blocks = schedBlocksFor(it.dayKey).filter((b) => b.id !== it.bid);
+  let overlap = null;
+  let pushBy = 0;
+  if (valid && timeChanged && !f.overlapOk && it.ask.overlap === null) {
+    const hits = schedOverlaps(blocks, { id: it.bid, start: item.start, end: item.end, noTime: item.noTime });
+    if (hits.length) {
+      overlap = hits[0];
+      const later = hits.filter((b) => b.start >= item.start);
+      pushBy = later.length ? Math.ceil(Math.max.apply(null, later.map((b) => item.end - b.start)) / SCHED_STEP) * SCHED_STEP : 0;
+    }
+  }
+  // Which days an "Every day like …" save reaches, and which keep their own value.
+  const fromTypical = it.origin === 'typical' || it.origin === 'changed' || typicalView;
+  const scopeInfo = fromTypical && it.mode === 'edit' && changed.length ? schedScopeInfo(setupTree, it.bid, changed) : { change: [], keep: [] };
+  const keep = scopeInfo.keep.filter((k) => k.dk !== it.dk);
+  // An answer belongs to the question it was given for: a keystroke elsewhere never re-asks it.
+  const ownKey = JSON.stringify(keep);
+  const ownAsk = valid && keep.length && (it.ask.own === null || it.ask.ownKey !== ownKey) ? keep : null;
+  const headOld = setupNameKey(setupHeadLabel(it.label0));
+  const headNew = setupNameKey(setupHeadLabel(item.label));
+  const rekey = valid && it.mode === 'edit' && (it.ask.rekey === null || it.ask.rekeyKey !== headNew) && headOld && headNew && headOld !== headNew &&
+    headOld.indexOf(headNew) === -1 && headNew.indexOf(headOld) === -1 && headOld.split(' ')[0] !== headNew.split(' ')[0];
+  const unpatchable = fromTypical && !typicalView && it.mode === 'edit' && it.rec ? schedUnpatchable(setupTree.typical[it.bid] || {}, item) : '';
+  const pending = !!(overlap || ownAsk || rekey);
+  const nofit = it.moves && it.moves.nofit.length ? it.moves.nofit : [];
+  return { item, errors, valid, changed, overlap, pushBy, ownAsk, ownKey, headNew, keep, scopeInfo, rekey, unpatchable, pending, nofit, fromTypical, typicalView };
+}
+
+function schedFieldWords(fields) {
+  return fields.map((x) => SCHED_FIELD_WORDS[x] || x);
+}
+
+function renderSchedItemSheet() {
+  const it = setupSched.item;
+  if (!it || !setupEl('sheet-sched-item')) return;
+  const f = it.form;
+  const m = schedItemModel(it);
+  const dayWord = it.dayKey === 'typical' ? 'the typical day' : SETUP_DAY_WORDS[it.dayKey];
+  setTextIfChanged(setupEl('sheet-sched-item-title'), it.mode === 'add' ? 'New item' : (f.label || it.label0 || 'Item'));
+  let where;
+  if (it.mode === 'add') where = it.dayKey === 'typical' ? 'Adding to the typical day' : 'Adding to ' + dayWord;
+  else if (it.dayKey === 'typical') where = 'The typical day · ' + (schedDaysWords(SETUP_DK.filter((dk) => setupMapOf(setupMapOf(setupTree.days)[dk]).typical === true)) || 'no day yet');
+  else if (it.origin === 'changed') where = 'Changed for ' + dayWord;
+  else if (it.origin === 'oneoff') where = dayWord + ' only';
+  else if (it.origin === 'own') where = dayWord;
+  else where = dayWord + ' · from the typical day';
+  setTextIfChanged(setupEl('si-where-text'), where);
+  setHiddenIfChanged(setupEl('si-reset'), !(it.origin === 'changed' && it.mode === 'edit'));
+  const label = setupEl('si-label');
+  if (label && document.activeElement !== label && label.value !== f.label) label.value = f.label;
+  setTextIfChanged(setupEl('si-label-error'), m.errors.label);
+  setHiddenIfChanged(setupEl('si-label-error'), !m.errors.label || !f.touched);
+  // Emoji: the grid is built once; one is pressed, or the "other" box holds a custom one.
+  const grid = setupEl('si-emoji-grid');
+  if (grid && !grid.children.length) grid.innerHTML = SCHED_EMOJI.map((e) => '<button type="button" class="si-emo" data-emoji="' + e[0] + '" aria-pressed="false" aria-label="' + esc(e[1]) + '">' + e[0] + '</button>').join('');
+  let inGrid = false;
+  grid.querySelectorAll('.si-emo').forEach((b) => {
+    const on = b.dataset.emoji === f.emoji;
+    if (on) inGrid = true;
+    if (b.getAttribute('aria-pressed') !== String(on)) b.setAttribute('aria-pressed', String(on));
+  });
+  const other = setupEl('si-emoji-other');
+  if (other && document.activeElement !== other) { const v = inGrid ? '' : f.emoji; if (other.value !== v) other.value = v; }
+  // Times
+  const st = setupEl('si-start');
+  if (st && document.activeElement !== st && st.value !== schedMinToInput(f.start)) st.value = schedMinToInput(f.start);
+  const allday = f.end >= 1440;
+  const en = setupEl('si-end');
+  if (en && document.activeElement !== en && !allday && en.value !== schedMinToInput(f.end)) en.value = schedMinToInput(f.end);
+  setHiddenIfChanged(setupEl('si-end-fld'), allday);
+  setHiddenIfChanged(setupEl('si-time-error'), !m.errors.time);
+  setTextIfChanged(setupEl('si-time-error'), m.errors.time || 'Ends before it starts');
+  const ad = setupEl('si-allday');
+  if (ad && ad.hasAttribute('checked') !== allday) ad.toggleAttribute('checked', allday);
+  paintSwitchWord('si-allday', allday);
+  const sh = setupEl('si-showtime');
+  if (sh && sh.hasAttribute('checked') === f.noTime) sh.toggleAttribute('checked', !f.noTime);
+  paintSwitchWord('si-showtime', !f.noTime);
+  // Kind
+  document.querySelectorAll('[data-si-type]').forEach((b) => {
+    const on = b.dataset.siType === f.kind;
+    if (b.getAttribute('aria-checked') !== String(on)) b.setAttribute('aria-checked', String(on));
+    if (b.dataset.siType === 'elective') setHiddenIfChanged(b, !(CAMP.features && CAMP.features.electives));
+  });
+  setHiddenIfChanged(setupEl('si-meal-fld'), f.kind !== 'meal');
+  document.querySelectorAll('[data-si-meal]').forEach((b) => { const on = b.dataset.siMeal === f.meal; if (b.getAttribute('aria-checked') !== String(on)) b.setAttribute('aria-checked', String(on)); });
+  setHiddenIfChanged(setupEl('si-slot-fld'), f.kind !== 'elective');
+  document.querySelectorAll('[data-si-slot]').forEach((b) => { const on = Number(b.dataset.siSlot) === f.slot; if (b.getAttribute('aria-checked') !== String(on)) b.setAttribute('aria-checked', String(on)); });
+  // Teams, when the item lists them
+  setHiddenIfChanged(setupEl('si-teams-fld'), !it.hasTeams);
+  if (it.hasTeams) setHtmlIfChanged(setupEl('si-teams'), teamIds().map((id) =>
+    '<button type="button" class="si-team" data-team="' + esc(id) + '" aria-pressed="' + (f.teams.indexOf(id) !== -1) + '">' + teamMarkHtml(id, { size: 24 }) + '<span>' + esc(teamName(id)) + '</span></button>').join(''));
+  // Games here
+  const games = it.mode === 'edit' ? schedGamesOf({ id: it.bid }, it.dayKey === 'typical' ? -1 : it.dow) : [];
+  setHiddenIfChanged(setupEl('si-games-fld'), !games.length);
+  if (games.length) setHtmlIfChanged(setupEl('si-games'), games.map((g) =>
+    '<div class="cb-row"><span class="cb-main"><span class="cb-title"><span class="sched-emo" aria-hidden="true">' + esc(g.emoji) + '</span><span>' + esc(g.name) + '</span></span></span></div>').join(''));
+  setHiddenIfChanged(setupEl('si-add-game'), true);
+  // Reminders
+  setTextIfChanged(setupEl('si-alert-text'), it.mode === 'edit' ? 'People who follow “' + setupHeadLabel(it.label0) + '” get reminded before this.' : '');
+  setHiddenIfChanged(setupEl('si-alert'), it.mode !== 'edit');
+  // Questions
+  setHiddenIfChanged(setupEl('si-overlap'), !m.overlap);
+  if (m.overlap) {
+    setTextIfChanged(setupEl('si-overlap-text'), 'Overlaps ' + setupHeadLabel(m.overlap.label) + ' (' + schedRange(m.overlap.start, m.overlap.end) + ').');
+    setHiddenIfChanged(setupEl('si-overlap-push'), !m.pushBy);
+    setTextIfChanged(setupEl('si-overlap-push'), 'Push later items back ' + m.pushBy + ' min');
+  }
+  setHiddenIfChanged(setupEl('si-ownday'), !m.ownAsk);
+  if (m.ownAsk) {
+    const k = m.ownAsk[0];
+    const day = SETUP_DAY_WORDS[k.dk];
+    const many = m.ownAsk.length > 1;
+    setTextIfChanged(setupEl('si-ownday-text'), (many ? m.ownAsk.map((x) => SETUP_DAY_WORDS[x.dk]).join(' and ') + ' have their own ' : day + ' has its own ') + schedFieldWords(k.fields).join(' and ') +
+      (many ? '' : (k.fields.length === 1 && k.fields[0] === 'start' ? ' (' + schedClockWords(setupTree.patches[k.dk][it.bid].start) + ')' : '')) + '.');
+    setTextIfChanged(setupEl('si-ownday-keep'), many ? 'Keep their own' : 'Keep ' + day + '’s');
+    setTextIfChanged(setupEl('si-ownday-change'), many ? 'Change them too' : 'Change ' + day + ' too');
+  }
+  setHiddenIfChanged(setupEl('si-rekey'), !m.rekey);
+  setHiddenIfChanged(setupEl('si-nofit'), !m.nofit.length);
+  if (m.nofit.length) setTextIfChanged(setupEl('si-nofit'), m.nofit.map((b) => setupHeadLabel(b.label)).join(', ') + (m.nofit.length === 1 ? ' doesn’t' : ' don’t') + ' fit before midnight — shorten it or skip it today.');
+  // Remove
+  setHiddenIfChanged(setupEl('si-remove'), it.mode !== 'edit');
+  setTextIfChanged(setupEl('si-remove-text'), it.mode !== 'edit' ? '' : 'Remove…');
+  // The dock: one gold Save, or the two equal scope buttons
+  const dayScoped = it.dayKey !== 'typical' && (it.origin === 'typical' || it.origin === 'changed' || (it.mode === 'add' && setupMapOf(setupMapOf(setupTree.days)[it.dayKey]).typical === true));
+  setHiddenIfChanged(setupEl('si-scope'), !dayScoped);
+  setHiddenIfChanged(setupEl('si-save'), dayScoped);
+  setHiddenIfChanged(setupEl('si-tell'), true);
+  const blocked = !m.valid || m.pending;
+  const setDisabled = (el, off) => { if (!el) return; if (off) el.setAttribute('aria-disabled', 'true'); else el.removeAttribute('aria-disabled'); };
+  const save = setupEl('si-save');
+  setTextIfChanged(save, it.mode === 'add' ? (it.dayKey === 'typical' ? 'Add to the typical day' : 'Add to ' + dayWord) : 'Save');
+  setDisabled(save, blocked);
+  if (dayScoped) {
+    const add = it.mode === 'add';
+    setTextIfChanged(setupEl('si-save-day-text'), (add ? 'Add to just ' : 'Just ') + SETUP_DAY_WORDS[it.dayKey]);
+    setTextIfChanged(setupEl('si-save-all-text'), (add ? 'Add to every day like ' : 'Every day like ') + SETUP_DAY_WORDS[it.dayKey]);
+    let caption;
+    if (add) caption = 'Mon–Fri, and any day that follows the typical day';
+    else {
+      const days = m.scopeInfo.change.length ? m.scopeInfo.change : SETUP_DK.filter((dk) => setupMapOf(setupMapOf(setupTree.days)[dk]).typical === true);
+      caption = schedDaysWords(days) + (m.keep.length && it.ask.own === 'keep' ? ' — ' + m.keep.map((k) => SETUP_DAY_WORDS[k.dk]).join(' and ') + ' keep' + (m.keep.length === 1 ? 's' : '') + ' ' + (m.keep.length === 1 ? 'its' : 'their') + ' own ' + schedFieldWords(m.keep[0].fields).join(' and ') : '');
+    }
+    setTextIfChanged(setupEl('si-scope-caption'), m.unpatchable ? 'Just ' + SETUP_DAY_WORDS[it.dayKey] + ' can’t change the ' + m.unpatchable : caption);
+    setDisabled(setupEl('si-save-day'), blocked || !!m.unpatchable);
+    setDisabled(setupEl('si-save-all'), blocked);
+  }
+}
+
+// A field changed: whatever it was, the questions the old answer belonged to are asked again.
+function schedItemTouched(what) {
+  const it = setupSched.item;
+  if (!it) return;
+  it.form.touched = true;
+  if (what === 'time') { it.ask.overlap = null; it.moves = null; }
+  renderSchedItemSheet();
+}
+
+async function schedSaveItem(scope) {
+  const it = setupSched.item;
+  if (!it) return;
+  const m = schedItemModel(it);
+  if (!m.valid) { it.form.touched = true; renderSchedItemSheet(); return; }
+  if (m.pending || (scope === 'day' && m.unpatchable)) return;
+  const dk = it.dk;
+  const word = it.dayKey === 'typical' ? 'the typical day' : SETUP_DAY_WORDS[it.dayKey];
+  const moves = it.moves && Object.keys(it.moves.moves).length ? it.moves.moves : null;
+  const label = it.mode === 'add' ? 'Added ' + m.item.label + ' to ' + word
+    : 'Changed ' + (m.item.label || it.label0) + (m.changed.length ? ' · ' + schedFieldWords(m.changed).join(', ') : '') + ' on ' + word;
+  const p = { kind: it.mode === 'add' ? 'add' : 'edit', dk, bid: it.bid, where: it.where, scope: it.dayKey === 'typical' ? 'typical' : (it.origin === 'new' && setupMapOf(setupMapOf(setupTree.days)[it.dayKey]).typical !== true ? 'day' : scope || 'day'),
+    item: m.item, changeOwn: it.ask.own === 'change' && it.ask.ownKey === m.ownKey ? m.keep.map((k) => k.dk) : [], moves, label };
+  if (it.mode === 'edit' && it.ask.rekey === 'fresh' && it.ask.rekeyKey === m.headNew) p.alertKey = setupAlertKey(m.item.label);
+  const r = schedCommit(p);
+  if (!r.ok) {
+    if (r.reason === 'unpatchable') setupSay('Just ' + SETUP_DAY_WORDS[it.dayKey] + ' can’t change the ' + r.fields + '. Use “Every day like ' + SETUP_DAY_WORDS[it.dayKey] + '”.');
+    else if (r.reason === 'gone') setupSay('That item is gone, so the change wasn’t saved.');
+    else weekRefused(Object.assign({}, r, { byName: r.byName }));
+    return;
+  }
+  setupSched.item = null;
+  shellSheetClose('sched-item');
+}
+
+// "Back to the usual": the day's patch on this item goes.
+function schedItemReset() {
+  const it = setupSched.item;
+  if (!it || it.origin !== 'changed') return;
+  const typ = setupTree.typical[it.bid] || {};
+  const rich = setupRichBlock(Object.assign({ id: it.bid, dk: '', origin: 'typical' }, typ));
+  const r = schedCommit({ kind: 'edit', dk: it.dk, bid: it.bid, where: it.where, scope: 'day', item: schedItemOfBlock(rich), label: 'Put ' + (typ.label || 'the item') + ' back to the usual on ' + SETUP_DAY_WORDS[it.dayKey] });
+  if (!r.ok) { weekRefused(r); return; }
+  setupSched.item = null;
+  shellSheetClose('sched-item');
+}
+
+async function schedRemoveItem() {
+  const it = setupSched.item;
+  if (!it || it.mode !== 'edit') return;
+  const word = it.dayKey === 'typical' ? 'the typical day' : SETUP_DAY_WORDS[it.dayKey];
+  const name = setupHeadLabel(it.label0) || it.label0;
+  const dayGames = schedGamesOf({ id: it.bid }, it.dayKey === 'typical' ? -1 : it.dow);
+  const allGamesOn = schedGamesOf({ id: it.bid }, -1);
+  let scope = 'day';
+  const fromTypical = it.origin === 'typical' || it.origin === 'changed';
+  const note = (games) => (games.length ? [hubPlural(games.length, 'game sits', 'games sit') + ' on it. ' + (games.length === 1 ? 'It keeps its results and is' : 'They keep their results and are') + ' listed as not on the schedule.'] : []);
+  if (it.dayKey === 'typical' || fromTypical) {
+    const day = it.dayKey === 'typical' ? '' : SETUP_DAY_WORDS[it.dayKey];
+    const actions = it.dayKey === 'typical'
+      ? [{ label: 'Keep it', value: 'no', cancel: true }, { label: 'Remove from the typical day', value: 'typical', kind: 'danger' }]
+      : [{ label: 'Keep it', value: 'no', cancel: true }, { label: 'Skip just ' + day, value: 'day' }, { label: 'Remove from every day like ' + day, value: 'typical', kind: 'danger' }];
+    const pick = await askDialog({ title: it.dayKey === 'typical' ? 'Remove ' + name + ' from the typical day?' : 'Remove ' + name + '?', body: it.dayKey === 'typical' ? ['Every day that follows the typical day loses it.'].concat(note(allGamesOn)) : ['Skipping it affects only ' + day + ', and you can bring it back. Removing it takes it off every day that follows the typical day.'].concat(note(dayGames)), actions });
+    if (pick !== 'day' && pick !== 'typical') return;
+    scope = pick;
+  } else {
+    const ok = await askDialog({ title: 'Remove ' + name + '?', body: ['It is only on ' + word + '.'].concat(note(dayGames)), actions: [{ label: 'Keep it', value: 'no', cancel: true }, { label: 'Remove it', value: 'go', kind: 'danger' }] });
+    if (ok !== 'go') return;
+  }
+  const losing = scope === 'typical' ? allGamesOn : (fromTypical ? [] : dayGames);
+  const dk = it.dk;
+  const label = (scope === 'day' && fromTypical ? 'Skipped ' : 'Removed ') + name + ' ' + (scope === 'typical' ? 'from the typical day' : 'on ' + word);
+  const r = setupCombined(label, (d) => {
+    const x = schedRemoveMutate(d, { dk, bid: it.bid, scope });
+    if (!x.ok) return false;
+  }, losing.length ? schedUnlinkMutator(losing) : null, { expect: it.where === 'dayBlocks' ? ['dayBlocks/' + dk + '/' + it.bid] : ['typical/' + it.bid] });
+  if (!r.ok) { if (r.reason === 'config-loading') setupSay('Still loading the games list — try again in a moment.'); else weekRefused(r); return; }
+  setupSched.item = null;
+  shellSheetClose('sched-item');
+}
+
+// ── the day's menu (⋯ on a day) and the other actions of the screen ──
+
+function renderSchedDaySheet() {
+  const dayKey = schedDayKey();
+  if (dayKey === 'typical' || !setupEl('sheet-sched-day')) return;
+  const dow = schedDowOf(dayKey);
+  const word = SETUP_DAY_WORDS[dayKey];
+  const follows = setupMapOf(setupMapOf(setupTree.days)[dayKey]).typical === true;
+  const diffs = schedDayDiffs(dow);
+  const changes = diffs ? diffs.skipped + diffs.oneOffs + diffs.changed : 0;
+  setTextIfChanged(setupEl('sheet-sched-day-title'), word);
+  const show = { rain: true, own: follows, follow: !follows, copy: !follows && !planForDow(dow).length, clear: follows && changes > 0 };
+  Object.keys(show).forEach((act) => {
+    const row = document.querySelector('[data-sched-act="' + act + '"]');
+    if (!row) return;
+    setHiddenIfChanged(row, !show[act]);
+    const t = row.querySelector('[data-sched-act-title]');
+    if (t) setTextIfChanged(t, act === 'rain' ? 'Rain plan for ' + word : act === 'own' ? 'Give ' + word + ' its own schedule' : act === 'follow' ? 'Make ' + word + ' follow the typical day again' : 'Clear all of ' + word + '’s changes');
+  });
+  setTextIfChanged(document.querySelector('[data-sched-act-sub]'), 'Start ' + word + ' from another day’s items');
+}
+
+async function schedDayAct(act) {
+  const dayKey = schedDayKey();
+  if (dayKey === 'typical') return;
+  const dow = schedDowOf(dayKey);
+  shellSheetClose('sched-day');
+  if (act === 'rain') { if (typeof rainOpen === 'function') rainOpen(dayKey); return; }
+  if (act === 'own') await schedGiveOwn(dow);
+  else if (act === 'follow') await schedMakeFollowAgain(dow);
+  else if (act === 'clear') await schedClearDay(dow);
+  else if (act === 'copy') await schedCopyFromDay(dow);
+}
+
+// Copy another day's items onto an empty own day (a day picker in an askDialog, one button per day that has items).
+async function schedCopyFromDay(dow) {
+  const dk = SETUP_DK[dow];
+  const options = [];
+  for (let i = 0; i < 7; i++) if (i !== dow && planForDow(i).length) options.push(i);
+  if (!options.length) { setupSay('No other day has items to copy yet.'); return; }
+  const pick = await askDialog({
+    title: 'Copy from which day?', body: ['Its items become ' + SETUP_DAY_WORDS[dk] + '’s own, and you can change them from there.'],
+    actions: [{ label: 'Not now', value: 'no', cancel: true }].concat(options.slice(0, 6).map((i) => ({ label: SETUP_DAY_WORDS[SETUP_DK[i]], value: String(i) }))),
+  });
+  if (pick === 'no' || pick === null || pick === undefined) return;
+  const from = Number(pick);
+  const r = schedCommit({ kind: 'copy', dk, blocks: planForDow(from), label: 'Copied ' + SETUP_DAY_WORDS[SETUP_DK[from]] + ' to ' + SETUP_DAY_WORDS[dk] });
+  if (!r.ok) weekRefused(r);
+}
+
+function schedCopyWeek() {
+  const dks = schedCopyWeekDays(setupTree);
+  if (!dks.length) return;
+  const r = commitSetup((d) => { dks.forEach((dk) => { d.days[dk] = Object.assign(setupMapOf(d.days[dk]), { typical: true }); }); }, { label: 'Made ' + schedDaysWords(dks) + ' follow the typical day' });
+  if (!r.ok) weekRefused(r);
+}
+
+function schedBringBack(bid) {
+  const dayKey = schedDayKey();
+  const dk = dayKey === 'typical' ? '' : dayKey;
+  const b = (schedBlocksFor(dayKey).skipped || []).find((x) => x.id === bid);
+  const r = schedCommit({ kind: 'bring', dk, bid, label: 'Brought back ' + (b ? b.label : 'an item') + ' on ' + (dk ? SETUP_DAY_WORDS[dk] : 'the typical day') });
+  if (!r.ok) weekRefused(r);
+}
+
+// The item sheet's own handlers (delegated from #sheet-sched-item; wireSetupUi calls this once).
+function wireSchedItemSheet() {
+  const root = setupEl('sheet-sched-item');
+  if (!root) return;
+  const form = () => (setupSched.item && setupSched.item.form) || null;
+  root.addEventListener('input', (e) => {
+    const f = form();
+    if (!f) return;
+    const t = e.target;
+    if (t.id === 'si-label') { f.label = String(t.value || ''); schedItemTouched('label'); }
+    else if (t.id === 'si-emoji-other') { const v = String(t.value || '').trim(); if (v) { f.emoji = v; schedItemTouched('emoji'); } }
+  });
+  root.addEventListener('change', (e) => {
+    const f = form();
+    if (!f) return;
+    const t = e.target;
+    if (t.id === 'si-start') {
+      const v = schedInputToMin(t.value);
+      if (!Number.isNaN(v)) { const len = f.end - f.start; f.start = v; if (f.end < 1440 && f.end <= f.start) f.end = Math.min(1440, v + Math.max(5, len > 0 ? len : 45)); schedItemTouched('time'); }
+    } else if (t.id === 'si-end') {
+      const v = schedInputToMin(t.value);
+      if (!Number.isNaN(v)) { f.end = v === 0 ? 1440 : v; schedItemTouched('time'); }
+    } else if (t.id === 'si-allday') { f.end = t.checked ? 1440 : Math.min(1439, f.start + 45); schedItemTouched('time'); }
+    else if (t.id === 'si-showtime') { f.noTime = !t.checked; schedItemTouched('time'); }
+    else if (t.id === 'si-tell-check') { /* the alert intent: Step 26 */ }
+  });
+  root.addEventListener('click', (e) => {
+    const f = form();
+    const it = setupSched.item;
+    if (!f || !it) return;
+    const q = (sel) => (e.target.closest ? e.target.closest(sel) : null);
+    let b;
+    if ((b = q('.si-emo'))) { f.emoji = b.dataset.emoji; schedItemTouched('emoji'); }
+    else if ((b = q('[data-si-type]'))) { f.kind = b.dataset.siType; schedItemTouched('kind'); }
+    else if ((b = q('[data-si-meal]'))) { f.meal = b.dataset.siMeal; schedItemTouched('kind'); }
+    else if ((b = q('[data-si-slot]'))) { f.slot = Number(b.dataset.siSlot); schedItemTouched('kind'); }
+    else if ((b = q('.si-team'))) { const id = b.dataset.team; f.teams = f.teams.indexOf(id) === -1 ? f.teams.concat([id]) : f.teams.filter((x) => x !== id); if (!f.teams.length) f.teams = [id]; schedItemTouched('teams'); }
+    else if ((b = q('[data-si-overlap]'))) {
+      const m = schedItemModel(it);
+      if (b.dataset.siOverlap === 'ok') { f.overlapOk = true; it.ask.overlap = 'ok'; } else if (m.overlap && m.pushBy) {
+        const others = schedBlocksFor(it.dayKey).filter((x) => x.id !== it.bid);
+        it.moves = schedRipple(others, m.overlap.id, m.pushBy);
+        it.ask.overlap = 'push';
+      }
+      renderSchedItemSheet();
+    }
+    else if ((b = q('[data-si-ownday]'))) { const m = schedItemModel(it); it.ask.own = b.dataset.siOwnday; it.ask.ownKey = m.ownKey; renderSchedItemSheet(); }
+    else if ((b = q('[data-si-rekey]'))) { const m = schedItemModel(it); it.ask.rekey = b.dataset.siRekey; it.ask.rekeyKey = m.headNew; renderSchedItemSheet(); }
+    else if (q('#si-reset')) schedItemReset();
+    else if (q('#si-remove')) schedRemoveItem();
+    else if (q('#si-save-day')) { if (!q('#si-save-day').hasAttribute('aria-disabled')) schedSaveItem('day'); }
+    else if (q('#si-save-all')) { if (!q('#si-save-all').hasAttribute('aria-disabled')) schedSaveItem('typical'); }
+    else if (q('#si-save')) { if (!q('#si-save').hasAttribute('aria-disabled')) schedSaveItem('day'); }
+  });
+  // ✕ and the backdrop ask before they throw a half-made edit away (Escape and Back close as they always do).
+  root.addEventListener('click', async (e) => {
+    const it = setupSched.item;
+    const close = e.target.closest && e.target.closest('[data-sheet-close]');
+    if (!close || !it || !it.form.touched) return;
+    e.stopPropagation();
+    const ok = await askDialog({ title: 'Discard your changes to ' + (it.form.label || it.label0 || 'this item') + '?', body: 'They haven’t been saved yet.', actions: [{ label: 'Keep editing', value: 'keep', cancel: true }, { label: 'Discard', value: 'discard', kind: 'danger' }] });
+    if (ok === 'discard') { setupSched.item = null; shellSheetClose('sched-item'); }
+  }, true);
+}
+
+// The Schedule screen's own handlers (delegated from #setup-schedule and #sched-days).
+function wireScheduleScreen() {
+  const on = (sel, ev, fn) => { const el = document.querySelector(sel); if (el) el.addEventListener(ev, fn); };
+  on('#sched-days', 'click', (e) => { const b = e.target.closest && e.target.closest('.daypick-btn[data-day]'); if (b) schedSetDay(b.dataset.day); });
+  on('#setup-schedule', 'click', (e) => {
+    const q = (sel) => (e.target.closest ? e.target.closest(sel) : null);
+    let b;
+    if ((b = q('button.sched-row[data-bid]'))) schedOpenItem({ bid: b.dataset.bid, opener: b });
+    else if ((b = q('.sched-gap'))) schedOpenItem({ start: Number(b.dataset.gapStart), end: Number(b.dataset.gapEnd), opener: b });
+    else if ((b = q('[data-sched-bring]'))) schedBringBack(b.dataset.schedBring);
+    else if (q('#sched-add') || q('#sched-add-first')) {
+      const blocks = schedBlocksFor(schedDayKey());
+      const last = blocks.length ? Math.min(1380, Math.max.apply(null, blocks.map((x) => x.end))) : 8 * 60;
+      schedOpenItem({ start: last >= 1380 ? 9 * 60 : last, opener: q('#sched-add') || q('#sched-add-first') });
+    }
+    else if (q('#sched-copy-from')) schedCopyFromDay(schedDowOf(schedDayKey()));
+    else if (q('#sched-copy-week')) schedCopyWeek();
+    else if (q('#sched-day-btn')) setupSheet('sched-day', q('#sched-day-btn'));
+    else if (q('#sched-rain-link')) { if (typeof rainOpen === 'function') rainOpen(schedDayKey()); }
+  });
+  const day = setupEl('sheet-sched-day');
+  if (day) day.addEventListener('click', (e) => { const r = e.target.closest && e.target.closest('[data-sched-act]'); if (r) schedDayAct(r.dataset.schedAct); });
+  wireSchedItemSheet();
+}
+
 function wireSetupUi() {
   if (setupUi.wired) return;
   setupUi.wired = true;
@@ -1854,6 +2564,7 @@ function wireSetupUi() {
     const fn = HUB_DOOR_ACTIONS[door && door.dataset.door];
     if (typeof fn === 'function' && typeof isOwner === 'function' && isOwner()) fn();
   });
+  wireScheduleScreen();
   // Camp week (§11.4): dates, the Days tick sheet, double points, the TV finale.
   on('#week-start', 'change', (e) => weekSetStart(e.target.value));
   on('#week-days', 'click', (e) => { const t = e.target.closest && e.target.closest('.wk-tick'); const row = t && t.closest('.wk-day'); if (t && row) weekTick(Number(row.dataset.dow), t.dataset.weekFollow); });

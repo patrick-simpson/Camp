@@ -157,10 +157,15 @@ test('a director sees the setup sheets only while the builder is up', () => {
   try {
     assert.equal(shellSheetAllowed('restore'), false, 'the restore sheet needs a point that a tap opened: a Forward cannot raise an empty one');
     setupUi.rsheet = { rid: 'x' };
+    assert.equal(shellSheetAllowed('sched-item'), false, 'the item sheet needs an item that a tap opened');
+    state.ui.setupDay = 'typical';
+    assert.equal(shellSheetAllowed('sched-day'), false, 'a day\'s menu needs a day, not the typical day');
+    setupSched.item = { x: 1 };
+    state.ui.setupDay = 'wed';
     SETUP_SHEETS.forEach((id) => assert.equal(shellSheetAllowed(id), true, id));
     state.ui.view = 'home';
     SETUP_SHEETS.forEach((id) => assert.equal(shellSheetAllowed(id), false, id + ' with the builder closed'));
-  } finally { suClose(); }
+  } finally { setupSched.item = null; suClose(); }
 });
 
 // ── askDialog ──
