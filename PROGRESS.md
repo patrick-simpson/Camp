@@ -1,6 +1,6 @@
 # Build progress — read this first when resuming
 
-Last updated: **Sun Nov 1, 8:34 PM ET** (update this line every time the file changes)
+Last updated: **Sun Nov 1, 10:12 PM ET** (update this line every time the file changes)
 
 This file is the single source of truth for an in-flight, multi-session build.
 If a session stopped (usage limits, container reclaimed), a fresh Claude session
@@ -144,6 +144,7 @@ send_later into this session). ETAs above shift by however long the pause lasts.
   (builder worktrees must never be committed).
 
 ## Next steps (resume here)
+- **Step 9 LIVE** (v196, commit PENDING, Sun Nov 1, 10:12 PM ET) — the week setup (games, days, teams, roster) now saves one field at a time instead of overwriting the whole setup, so two directors editing different fields of one game at once keep both edits, a setup edit made offline survives a reload and merges when the phone reconnects, a clash is set aside with Put it back / Use mine, and every setup change gets an Undo toast; owner action: none.
 - **Step 8 LIVE** (v195, commit 52995ee, Sun Nov 1, 8:34 PM ET) — when a new camp year starts (the setup wizard, Step 28, will stamp one), a phone's unsent scores from last year are set aside as a downloadable file with a Download / Dismiss bar instead of being pushed into the new year, and nothing changes on either camp until an epoch exists; owner action: none.
 - **Step 7 LIVE** (v194, commit 36dd8a6, Sun Nov 1, 8:11 PM ET) — two tabs of the same camp open on one phone or laptop can no longer erase each other's unsent scores: the editor tab that gets a browser lock is the only one that saves to the device, and a second tab becomes view-only with a "Use this tab instead" button (a browser with no lock support behaves exactly as before); owner action: none.
 - **Step 6 LIVE** (v193, commit 06b1925, Sun Nov 1, 7:31 PM ET) — team renames and counselor edits now save one field at a time, so two directors changing different teams (or one renaming while another sets counselors) keep both edits instead of the last writer overwriting all six, and a half-built team list coming back from the server (for example after the state node is wiped in the Firebase console) can no longer replace this device's real one (it keeps its own and writes it back whole); nothing looks different on either camp; owner action: none.
