@@ -31,7 +31,6 @@ function mkPub(shown) {
   }
   return pub;
 }
-const wait = (ms) => new Promise((r) => setTimeout(r, ms === undefined ? 5 : ms));
 
 // A clean engine, a signed-in phone of the given role, and a fake database with the camp's public node on it.
 function resetReveal() {
@@ -96,7 +95,7 @@ test('a counselor\'s phone never reads a practice: not by listener, not by the d
   db.serverSet(PRACTICE, { ctl: mkCtl({ id: 'r2kz9fxq-4hd3', until: T0 + 7200000 }), pub: mkPub(2) });
   db.serverSet(REAL, { ctl: mkCtl(), pub: mkPub(2) });
   initReveal();
-  await wait();
+  await waitQuiet();
   assert.ok(confirmedReveal.real, 'the real reveal arrived');
   assert.equal(confirmedReveal.practice, null, 'the practice did not');
   assert.equal(await revealRescan(), false, 'a counselor phone does not even re-scan the whole public node');
@@ -129,7 +128,7 @@ test('the cached reveal paints at once; the first server snapshot replaces it, a
   assert.ok(before && before.live, 'the cached reveal is live on screen before any listener answers');
   assert.equal(before.rows.length, 1);
   initReveal();
-  await wait();
+  await waitQuiet();
   assert.equal(revealMirrorView(), null, 'the server says there is no reveal: nothing');
   assert.equal(localStorage.getItem(lsKey(REVEAL_CACHE_KEY)), null, 'and the cache goes with it');
   db.serverSet(REAL, { ctl: mkCtl(), pub: mkPub(2) });
@@ -142,13 +141,13 @@ test('a refused listener fails closed, for the reveal only: the cache is ignored
   const db = bootReveal('viewer');
   db.serverSet(REAL, { ctl: mkCtl(), pub: mkPub(2) });
   initReveal();
-  await wait();
+  await waitQuiet();
   atTime(T0 + 20000);
   assert.ok(revealMirrorView(), 'live before the refusal');
   const painted = [];
   revealPaint = (why) => painted.push(why);
   db.revokeRead(REAL);
-  await wait();
+  await waitQuiet();
   assert.equal(revealDenied, true);
   assert.equal(revealMirrorView(), null, 'a cached, even a fresh, reveal is not shown once the read is refused');
   assert.equal(revealLiveView(), null);
@@ -389,7 +388,7 @@ function expiredSetup(role, extra) {
 
 test('retireExpiredReveal is for directors only: a counselor sends nothing, ever', async () => {
   const { db, ctl } = expiredSetup('viewer');
-  await wait();
+  await waitQuiet();
   atTime(ctl.until + 5000);
   const before = db.log.length;
   assert.equal(retireExpiredReveal().why, 'not-editor');
@@ -401,7 +400,7 @@ test('retireExpiredReveal is for directors only: a counselor sends nothing, ever
 
 test('retireExpiredReveal never sends before until, and deletes both nodes the moment it passes', async () => {
   const { db, ctl } = expiredSetup('editor');
-  await wait();
+  await waitQuiet();
   atTime(ctl.until - 1000);
   assert.equal(retireExpiredReveal().why, 'nothing', 'one second early: nothing is expired, nothing is sent');
   assert.ok(db.serverGet(REAL));
@@ -417,7 +416,7 @@ test('retireExpiredReveal never sends before until, and deletes both nodes the m
 
 test('retireExpiredReveal sends at most once a minute, only while connected and past the first pull', async () => {
   const { db, ctl } = expiredSetup('editor');
-  await wait();
+  await waitQuiet();
   atTime(ctl.until + 1000);
   fbConnected = false;
   assert.equal(retireExpiredReveal().why, 'not-ready', 'offline');
@@ -460,7 +459,7 @@ test('retireExpiredReveal retires a practice by ITS until (or a leftover ended o
   assert.ok(db.serverGet(REAL), 'still the real one is untouched');
   // a real reveal that has ENDED but whose 8 AM is ahead stays (the grid is for phones until then)
   db.serverSet(REAL, { ctl: Object.assign({}, real, { phase: 'ended', endedAt: T0, endKind: 'early' }), pub: mkPub(2) });
-  await wait();
+  await waitQuiet();
   atTime(T0 + 3 * 3600 * 1000 + 120000);
   assert.equal(retireExpiredReveal().why, 'nothing', 'an ended real reveal is kept until its until');
   teardownReveal();
@@ -468,7 +467,7 @@ test('retireExpiredReveal retires a practice by ITS until (or a leftover ended o
 
 test('a view-only second tab of a director does not delete (the writer tab does)', async () => {
   const { ctl } = expiredSetup('editor');
-  await wait();
+  await waitQuiet();
   tabWriter = false;
   atTime(ctl.until + 5000);
   assert.equal(retireExpiredReveal().why, 'not-editor');
@@ -967,7 +966,7 @@ test('a Start that another director\'s newer Start replaced is followed, not fou
 test('rules not published: a write is refused and the re-read is refused too, so the remote says the reveal is not switched on, and offers no button that leads to a refusal', async () => {
   const db = await bootDirector();
   db.revokeRead(dbPath('revealPublic'));                    // the public path is not readable (old rules): the listener is cancelled
-  await wait();
+  await waitQuiet();
   assert.equal(revealDenied, true);
   assert.equal(revealRemoteModel().stage, 'off');
   assert.equal(revealRemoteModel().why, 'rules');
