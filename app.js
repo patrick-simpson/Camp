@@ -5725,7 +5725,16 @@ function updateNotifyButton() {
   }
   const sw = document.getElementById('notify-toggle');
   if (sw) sw.toggleAttribute('checked', !!state.notify);
+  paintSwitchWord('notify-toggle', !!state.notify);
   renderAlertsState();
+}
+
+// The word beside an Alerts switch (§8.5: the state is said, not left to the
+// track's colour). Written only when it changes.
+function paintSwitchWord(id, on) {
+  const w = document.querySelector(`[data-switch-state="${id}"]`);
+  const t = on ? 'On' : 'Off';
+  if (w && w.textContent !== t) w.textContent = t;
 }
 
 // changes: [{ team, delta, total }]
@@ -7698,7 +7707,7 @@ function renderMemoryVerse() {
 
   const themeHTML = `
     <div class="verse-theme">
-      <span class="verse-theme-label">📖 Theme Verse · ${esc(theme.title)}</span>
+      <span class="verse-theme-label"><svg class="ico" aria-hidden="true"><use href="#i-book"/></svg>Theme verse · ${esc(theme.title)}</span>
       <p class="verse-theme-text">“${esc(theme.text)}”</p>
       <p class="verse-theme-ref">${esc(theme.ref)}</p>
     </div>`;
@@ -8167,14 +8176,26 @@ function renderGameView() {
       const o = shell.opener;
       shell.opener = null;
       if (o && o.isConnected !== false && typeof o.focus === 'function') { try { o.focus({ preventScroll: true }); } catch (e) { /* gone */ } }
-    }
-    if (!tk.hidden) tk.hidden = true;
+      tk.__gid = null; // before the exit: with no WAAPI its end runs at once
+      // It slides back out to the right (playOut 220 ms; calm: a 140 ms fade),
+      // taking no taps on the way, and is hidden at the end unless a game
+      // reopened it meanwhile. Runs once: renderAll calls this again mid-exit.
+      if (!tk.hidden && typeof JellyMotion !== 'undefined') {
+        tk.style.pointerEvents = 'none';
+        JellyMotion.playOut(tk, (x) => ({ transform: `translateX(${x * 100}%)` }), 220, () => {
+          if (tk.__gid) return;
+          tk.hidden = true;
+          tk.style.pointerEvents = '';
+        });
+      } else tk.hidden = true;
+    } else if (!tk.hidden && !tk.style.pointerEvents) tk.hidden = true;
     tk.__gid = null;
     body.__headHtml = null; // the next open builds afresh
     return;
   }
   const opening = tk.hidden || tk.__gid !== g.id;
   tk.hidden = false;
+  tk.style.pointerEvents = '';
   tk.__gid = g.id;
 
   // The header names the game and where Back goes; plain text nodes, written
@@ -8184,8 +8205,9 @@ function renderGameView() {
     const el = document.getElementById(id);
     if (el && el.textContent !== text) el.textContent = text;
   };
-  setText('takeover-game-title', `${g.emoji ? g.emoji + ' ' : ''}${g.name}`);
-  setText('takeover-game-sub', `📍 ${g.location} · ${g.session} · ${badge.label}`);
+  // Plain words (§8.6: no emoji in a heading or a status line; mockup 14).
+  setText('takeover-game-title', g.name);
+  setText('takeover-game-sub', [g.location, g.session, badge.label].filter(Boolean).join(' · '));
   const backLabel = shellGameBackLabel(g);
   setText('takeover-game-back-label', backLabel);
   const backBtn = tk.querySelector('[data-takeover-back]');
@@ -10250,7 +10272,9 @@ function calmReasonLine(pref, calm, reason) {
   if (reason === 'battery-saver') return 'Calm right now: your phone is saving battery.';
   if (reason === 'battery-low') return 'Calm right now: your battery is low.';
   if (pref === 'off') return 'Full motion, as you chose.';
-  return calm ? 'Calm right now.' : 'Full motion right now. Auto turns calm on by itself when your phone is saving battery.';
+  // One short state line (§7.1); what Auto watches is the control's
+  // aria-description in index.html, not a paragraph under it.
+  return calm ? 'Calm right now.' : 'Full motion right now.';
 }
 
 function renderCalmRow() {
@@ -10269,6 +10293,7 @@ function setCalmPref(choice) {
 function applySoundIcon() {
   const el = document.getElementById('sound-toggle');
   if (el) el.toggleAttribute('checked', soundOn());
+  paintSwitchWord('sound-toggle', soundOn());
 }
 
 function toggleSound() {
@@ -11051,16 +11076,36 @@ function shellSpringBlob(from, to) {
   if (!blob || !row || typeof JellyMotion === 'undefined' || !row.clientWidth) return;
   const dx = (shellTabIndex(from) - shellTabIndex(to)) * (row.clientWidth / SHELL_TABS.length);
   if (!dx) return;
-  JellyMotion.play(blob, 'snap', (x, v) => ({
-    transform: `translateX(${dx * (1 - x)}px) scaleX(${1 + Math.min(0.3, Math.abs(v) * 0.05)})`,
-  }), { calm: false });
+  // Jelly stretch from the blob's own speed (px/s): long one way, thin the other
+  // (§9.5: scale(1+s, 1−0.4s), s = min(.5, |v|/1600)).
+  JellyMotion.play(blob, 'snap', (x, v) => {
+    const s = Math.min(0.5, Math.abs(v * dx) / 1600);
+    return { transform: `translateX(${dx * (1 - x)}px) scale(${1 + s}, ${1 - 0.4 * s})` };
+  }, { calm: false });
 }
 
 // Pop the icon of the tab just chosen (a tiny press spring).
 function shellPopIcon(tab) {
   const ico = document.querySelector(`#tabbar .tab[data-tab="${tab}"] .tab-ico`);
   if (!ico || typeof JellyMotion === 'undefined') return;
-  JellyMotion.play(ico, 'press', (x) => ({ transform: `scale(${1 + 0.14 * Math.sin(Math.PI * Math.min(1, x))})` }), { calm: false });
+  JellyMotion.play(ico, 'press', (x) => ({ transform: `scale(${0.78 + 0.22 * x})` }), { calm: false });
+}
+
+// The incoming panel arrives from 22px down, its top edge leading; the spring's
+// overshoot becomes a ~4% squash instead of a bounce past rest (§9.5 row 1).
+// fill 'backwards' (play's), so no transform outlives the motion: a transformed
+// panel would capture the fixed Chat panel and the sticky pieces inside it.
+function shellArrivePanel(root) {
+  const panel = document.getElementById('tab-' + root);
+  if (!panel || typeof JellyMotion === 'undefined') return;
+  JellyMotion.play(panel, 'arrive', (x) => {
+    const o = Math.max(0, x - 1);
+    return {
+      transform: `translateY(${22 * (1 - Math.min(1, x))}px) scale(${1 + 0.12 * o}, ${1 - 0.3 * o})`,
+      transformOrigin: '50% 0',
+      opacity: Math.min(1, x * 1.6),
+    };
+  }, { calm: [{ opacity: 0 }, { opacity: 1 }], calmMs: 120 });
 }
 
 function shellTakeoverOpen() {
@@ -11092,7 +11137,7 @@ function shellPaint() {
   if (app && 'inert' in app && !shell.sheets.length) app.inert = takeover;
   if (changed) {
     shell.root = root;
-    if (prev && prev !== 'builder' && root !== 'builder') { shellSpringBlob(prev, root); shellPopIcon(root); }
+    if (prev && prev !== 'builder' && root !== 'builder') { shellSpringBlob(prev, root); shellPopIcon(root); shellArrivePanel(root); }
   }
   return changed;
 }
@@ -11243,9 +11288,17 @@ function shellSheetOpen(id, opener) {
     el.hidden = false;
     shellSheetFill(id);
     shell.opener = opener || document.activeElement || null;
+    el.style.pointerEvents = ''; // reopened mid-exit
     const sheet = el.querySelector('.sheet');
+    const scrim = el.querySelector('.sheet-backdrop');
     if (sheet && typeof JellyMotion !== 'undefined') {
-      JellyMotion.play(sheet, 'arrive', (x) => ({ transform: `translateY(${(1 - x) * 100}%)` }));
+      // Thrown up from below; the overshoot is NOT more travel (that lifted the
+      // whole sheet 67px off the bottom of the screen with the page showing
+      // under it) but a stretch from the planted bottom edge (§9.5).
+      JellyMotion.play(sheet, 'arrive', (x) => (x <= 1
+        ? { transform: `translateY(${(1 - x) * 100}%)`, transformOrigin: '50% 100%' }
+        : { transform: `scale(${1 - 0.25 * (x - 1)}, ${1 + 0.35 * (x - 1)})`, transformOrigin: '50% 100%' }));
+      if (scrim) JellyMotion.play(scrim, 'glide', (x) => ({ opacity: Math.min(1, x) }), { calm: [{ opacity: 0 }, { opacity: 1 }] });
     }
     const close = el.querySelector('.sheet-close');
     if (close && typeof close.focus === 'function') { try { close.focus({ preventScroll: true }); } catch (e) { /* fine */ } }
@@ -11269,9 +11322,23 @@ function shellSheetClose(id) {
   if (id !== 'schedule') {
     const el = shellSheetEl(id);
     if (el) {
-      el.hidden = true;
+      // Slides back down (playOut: calm is a 140 ms fade) and is hidden at the
+      // end — unless it was reopened meanwhile. Focus and inert are settled now,
+      // below, not when the motion ends; the overlay stops taking taps at once.
       const sheet = el.querySelector('.sheet');
-      if (sheet) { sheet.style.transform = ''; sheet.style.transition = ''; }
+      const scrim = el.querySelector('.sheet-backdrop');
+      const from = (sheet && sheet.style.transform) || 'translateY(0px)'; // a drag lets go from where the finger left it
+      const done = () => {
+        if (shell.sheets.includes(id)) return;
+        el.hidden = true;
+        el.style.pointerEvents = '';
+        if (sheet) { sheet.style.transform = ''; sheet.style.transition = ''; }
+      };
+      if (sheet && typeof JellyMotion !== 'undefined' && !el.hidden) {
+        el.style.pointerEvents = 'none';
+        if (scrim) JellyMotion.playOut(scrim, (x) => ({ opacity: 1 - x }), 220);
+        JellyMotion.playOut(sheet, (x) => ({ transform: x ? 'translateY(100%)' : from }), 220, done);
+      } else done();
     }
     if (!shell.sheets.length) {
       const app = document.getElementById('app');
@@ -11296,7 +11363,7 @@ function wireSheetDrag(overlay) {
     if (startY == null) return;
     startY = null;
     sheet.style.transition = calmMotion() ? '' : 'transform 0.2s ease';
-    if (dy > 90) { sheet.style.transform = ''; shellSheetClose(id); return; }
+    if (dy > 90) { shellSheetClose(id); return; } // the exit starts from where the finger let go
     sheet.style.transform = '';
   };
   grab.addEventListener('touchstart', (e) => { startY = e.touches[0].clientY; dy = 0; sheet.style.transition = 'none'; }, { passive: true });
@@ -11486,13 +11553,16 @@ function headerModel() {
   const me = frameMyName();
   const role = frameRoleWord();
   const day = dayLabel(campNow().dow);
-  const camp = CAMP.label || '';
-  const tail = [camp, day].filter(Boolean);
+  // Sentence case, as everywhere in the frame (§8.2): "Junior camp".
+  const camp = String(CAMP.label || '').replace(/\bCamp\b/, 'camp');
+  // The headline is what you're FOR: your team, or, with no team, the camp. A
+  // director on both camps must never lose which one this is to a long name
+  // (mockup 02: "Junior camp" over "Jenn · Director · Wednesday").
   return {
     teamId: team ? team.id : null,
-    name: team ? team.name : (me || role),
-    sub: (team ? [me].concat(tail) : [me ? role : ''].concat(tail)).filter(Boolean).join(' · '),
-    who: [me, role].filter(Boolean).join(' · '),
+    name: team ? team.name : (camp || role),
+    sub: (team ? [me, camp, day] : [me, role, day]).filter(Boolean).join(' · '),
+    who: (team ? [me, teamShort(team.id) || team.name] : [me, role]).filter(Boolean).join(' · '),
   };
 }
 
@@ -11587,6 +11657,10 @@ function renderTeamSheet() {
   const factsEl = document.getElementById('ts-facts');
   const actionsEl = document.getElementById('ts-actions');
   const me = frameMyName();
+  // One headline: the sheet's own title IS the team's name (§8.1 rule 1); the
+  // mark sits beside the counselors line under it.
+  setTextIfChanged(document.getElementById('sheet-team-title'), team ? team.name : 'Your team');
+  setHiddenIfChanged(nameEl, !!team);
   if (!team) {
     setHiddenIfChanged(markEl, true);
     setTextIfChanged(nameEl, 'No team yet');
@@ -11603,8 +11677,10 @@ function renderTeamSheet() {
   const next = findNextMatchupFor(team.id);
   const cleanup = findNextCleanupFor(team.id);
   const facts = [];
-  if (next) facts.push(`<div class="ts-fact"><span class="ts-fact-label">Up next</span><span class="ts-fact-text">vs ${esc(teamName(next.opponentId))} in ${esc(next.game.name)}</span></div>`);
-  if (cleanup) facts.push(`<div class="ts-fact"><span class="ts-fact-label">Next meal cleanup</span><span class="ts-fact-text">${esc(dayLabel(cleanup.day))} ${esc(cleanup.meal)}</span></div>`);
+  // Plain hairline rows with a line icon, not tinted boxes (§8.1 rule 7).
+  const fact = (ico, label, text) => `<div class="ts-fact"><svg class="ico ts-fact-ico" aria-hidden="true"><use href="#i-${ico}"/></svg><span class="ts-fact-words"><span class="ts-fact-label">${label}</span><span class="ts-fact-text">${text}</span></span></div>`;
+  if (next) facts.push(fact('trophy', 'Up next', `vs ${esc(teamName(next.opponentId))} in ${esc(next.game.name)}`));
+  if (cleanup) facts.push(fact('broom', 'Next meal cleanup', `${esc(dayLabel(cleanup.day))} ${esc(cleanup.meal)}`));
   setHtmlIfChanged(factsEl, facts.join(''));
   const acts = [];
   if (CAMP.features.electives) {
@@ -11931,6 +12007,14 @@ function wireShell() {
     shellOpenTarget(hash);
   });
   window.addEventListener('scroll', shellOnScroll, { passive: true });
+  // The header's real height (it wraps for a long status pill or large text, and
+  // carries the sync bar): the fixed Chat panel starts under it, never behind it.
+  const header = document.getElementById('app-header');
+  if (header && typeof ResizeObserver === 'function') {
+    new ResizeObserver(() => {
+      document.documentElement.style.setProperty('--hdr-live', header.offsetHeight + 'px');
+    }).observe(header);
+  }
   // Focus handling for the keyboard rule.
   document.addEventListener('focusin', shellSyncKeyboard);
   document.addEventListener('focusout', shellSyncKeyboard);

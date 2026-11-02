@@ -27,6 +27,15 @@
   --sheet: #fffdf8;          /* raised surfaces: grouped lists, sheets */
   --well: #ebe2cf;           /* a recessed track (segmented controls) */
   --lift: #fffdf8;           /* the chosen segment, lifted out of the well */
+  /* Boundaries a reader must see (§8.1 rule 6, 3:1): the chosen segment's ring
+     and a text field's edge. Ink in light; in dark the .22 white of --card-b
+     measured 1.95:1, so dark lifts them to ink-3 (8.4:1 on the well). */
+  --seg-ring: var(--card-b);
+  --field-b: var(--card-b);
+  /* A segmented track drawn on PAPER (the chat switcher) rather than on a
+     sheet: in dark the --well is 1.02:1 against paper, so it lifts instead. */
+  --well-paper: var(--well);
+  --well-paper-line: transparent;
   --ink: #141a48;            /* text, 14.4:1 on paper */
   --ink-2: #373d72;          /* secondary text, 8.8:1 */
   --ink-3: #43497a;          /* the lightest text allowed, 7.4:1; also OFF outlines */
@@ -131,14 +140,17 @@
   --color-on-danger: #ffffff;
   /* Danger as TEXT on a surface (a "Remove" link, an error line, a minus
      counter). Never colour text with the fill above: tests/contrast.test.js
-     pins these literals (light 6.57:1 on white, 5.9:1 on paper; dark 7:1+)
-     and that no rule colours text with the fill. */
-  --color-danger-text: #b42318;
-  --color-gold: #96690a;
+     pins these literals and that no rule colours text with the fill. Light is
+     --live's value (#b42318 was tuned for white: 5.74:1 on paper; this is
+     7.9:1 on paper, 7:1 for the small text it usually is). */
+  --color-danger-text: #8f1a13;
+  /* Medal TEXT on its own tint (results lines, 13–17px): 7:1 or better since
+     --color-gold-bg moved to --gold-tint (the old #96690a fell to 4.28:1). */
+  --color-gold: #6b4a00;
   --color-gold-bg: var(--gold-tint);
-  --color-silver: #5f6673;
+  --color-silver: #454b57;
   --color-silver-bg: #eeeae0;
-  --color-bronze: #a15c2a;
+  --color-bronze: #6e3810;
   --color-bronze-bg: #fbe6d6;
   /* Flat on purpose (§8.1 rule 2, §8.8): surfaces separate by a hairline and
      by paper vs sheet, never by a soft drop shadow. Only chunky controls get
@@ -159,6 +171,10 @@
   --well: #0a0e2a;   /* darker than the sheet, so it reads recessed in dark too */
   --lift: #242c6c;
   --ink: #f3f4ff;
+  --seg-ring: var(--ink-3);
+  --field-b: var(--ink-3);
+  --well-paper: var(--paper-2);
+  --well-paper-line: var(--line-2);
   --ink-2: #c5caf3;
   --ink-3: #a3aade;
   --line: rgba(255, 255, 255, .12);
@@ -193,6 +209,10 @@
     --well: #0a0e2a;   /* darker than the sheet, so it reads recessed in dark too */
     --lift: #242c6c;
     --ink: #f3f4ff;
+    --seg-ring: var(--ink-3);
+    --field-b: var(--ink-3);
+    --well-paper: var(--paper-2);
+    --well-paper-line: var(--line-2);
     --ink-2: #c5caf3;
     --ink-3: #a3aade;
     --line: rgba(255, 255, 255, .12);
@@ -234,7 +254,7 @@ body.dark-theme,
   --color-gold-bg: #3a3116;
   --color-silver: #c3c9d6;
   --color-silver-bg: #262c3d;
-  --color-bronze: #e2a374;
+  --color-bronze: #e8ad82; /* 7.3:1 on its dark tint */
   --color-bronze-bg: #3a2618;
 }
 
@@ -250,7 +270,7 @@ body.dark-theme,
     --color-gold-bg: #3a3116;
     --color-silver: #c3c9d6;
     --color-silver-bg: #262c3d;
-    --color-bronze: #e2a374;
+    --color-bronze: #e8ad82; /* 7.3:1 on its dark tint */
     --color-bronze-bg: #3a2618;
   }
 }
@@ -527,6 +547,15 @@ html.theme-switching *::after {
    reads (which panel, the header's form, where the tab blob rests). */
 
 /* The line-icon family (§8.6): one stroke weight, round caps, currentColor. */
+/* Present for screen readers, not drawn. */
+.visually-hidden {
+  position: absolute !important;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 .ico-sprite {
   position: absolute;
   width: 0;
@@ -600,10 +629,11 @@ html.theme-switching *::after {
 }
 .hdr-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--s-3);
+  gap: 2px var(--s-3);
   min-height: var(--header-h);
-  padding: 0 var(--gutter);
+  padding: 4px var(--gutter);
 }
 /* Who you are (Now). The whole block is the button for the Your team sheet;
    its box bleeds 6px past the gutter so the shield sits ON the gutter line. */
@@ -611,7 +641,9 @@ html.theme-switching *::after {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex: 1 1 auto;
+  /* Wraps: when the identity and a status pill can't share the line (a long
+     pill, 130–200% text) the pill drops under it instead of crushing it. */
+  flex: 1 1 12rem;
   min-width: 0;
   min-height: var(--target);
   margin: 0 -6px;
@@ -660,7 +692,12 @@ img.hdr-mark,
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+/* A long team name (or 200% text) gets two lines before it is cut. */
 .hdr-name {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
   font: 800 1.0625rem/1.18 var(--font-ui);
   letter-spacing: -0.015em;
 }
@@ -671,6 +708,8 @@ img.hdr-mark,
 /* The tab's name (Games, Chat, More): orientation, so it is the biggest text
    in the header, but the tab's own content keeps the headline (§8.1 rule 1). */
 .hdr-title {
+  /* Its own width decides the wrap (a one-word title shares the line with a
+     short pill; 200% text or a long pill drops the pill under it). */
   flex: 1 1 auto;
   min-width: 0;
   margin: 0;
@@ -706,7 +745,8 @@ img.hdr-mark,
   display: none;
 }
 .hdr-pill {
-  flex: none;
+  flex: 0 1 auto;
+  max-width: 100%;
   display: flex;
   align-items: center;
   min-height: var(--target);
@@ -728,6 +768,8 @@ img.hdr-mark,
   background: var(--paper-2);
   box-shadow: inset 0 0 0 1.5px var(--line-2);
   font: 800 0.8125rem/1.2 var(--font-ui);
+  white-space: normal;
+  text-align: left;
 }
 .hdr-pill-dot {
   width: 8px;
@@ -910,15 +952,17 @@ html.calm-motion .tabbar {
    the dots' meaning is in the button's accessible name. */
 .tab-badge {
   position: absolute;
+  display: grid;
+  place-items: center;
   top: -4px;
   left: 35px;
-  min-width: 19px;
-  height: 19px;
-  padding: 0 5px;
-  border-radius: 10px;
+  min-width: max(19px, 1.6em);
+  min-height: 19px;
+  padding: .1em .4em;
+  border-radius: 999px;
   background: var(--link);
   color: var(--on-link);
-  font: 800 0.75rem/19px var(--font-ui);
+  font: 800 0.75rem/1.25 var(--font-ui);
   font-style: normal;
   text-align: center;
   box-shadow: 0 0 0 2px var(--sheet);
@@ -976,7 +1020,9 @@ body.kb-open:has(#app[data-tab="chat"]) jelly-toaster[position="bottom"] {
   position: fixed;
   left: 0;
   right: 0;
-  top: calc(env(safe-area-inset-top, 0px) + var(--header-h));
+  /* --hdr-live is the header as drawn (app.js measures it): it grows when the
+     status pill wraps under the title, or a sync bar shows inside it. */
+  top: var(--hdr-live, calc(env(safe-area-inset-top, 0px) + var(--header-h)));
   bottom: var(--tabbar-h);
   display: flex;
   flex-direction: column;
@@ -1010,12 +1056,15 @@ body.kb-open .takeover {
   align-items: center;
   gap: 0 var(--s-2);
   min-height: calc(60px + env(safe-area-inset-top, 0px));
-  padding: env(safe-area-inset-top, 0px) var(--gutter) 0 10px;
+  /* The gutter on both sides, so a title wrapped to its own row lines up with
+     the body; the back button bleeds left to keep its chevron on the edge. */
+  padding: env(safe-area-inset-top, 0px) var(--gutter) 0;
   border-bottom: 1px solid var(--line-2);
   background: var(--paper);
 }
 .tk-back {
   flex: none;
+  margin-left: -10px;
   display: inline-flex;
   align-items: center;
   gap: 1px;
@@ -1302,17 +1351,17 @@ body.kb-open .tk-dock {
   background: var(--lift);
   color: var(--ink);
   font-weight: 800;
-  box-shadow: 0 0 0 1.5px var(--card-b), 0 2px 0 var(--edge);
+  box-shadow: 0 0 0 1.5px var(--seg-ring), 0 2px 0 var(--edge);
 }
 /* An unread count inside a segment ("General 2"). */
 .seg-count {
   display: inline-grid;
   place-items: center;
-  min-width: 19px;
-  height: 19px;
+  min-width: max(19px, 1.6em); /* grows with its digits at 200% text */
+  min-height: 19px;
   margin-left: 4px;
-  padding: 0 5px;
-  border-radius: 10px;
+  padding: .1em .4em;
+  border-radius: 999px;
   background: var(--link);
   color: var(--on-link);
   font: 800 0.75rem/1 var(--font-ui);
@@ -1340,16 +1389,19 @@ body.kb-open .tk-dock {
   color: var(--ink-2);
 }
 .gl-note {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+  display: block;
   font: var(--t-label);
   color: var(--ink-2);
   text-align: right;
 }
+/* Inline in the text, so when the note wraps (200% text) the icon stays in
+   front of its first word instead of stranding at the far side of the box. */
 .gl-note .ico {
+  display: inline-block;
   width: 15px;
   height: 15px;
+  margin-right: 5px;
+  vertical-align: -2px;
   stroke-width: 2.3;
 }
 .gl {
@@ -1534,6 +1586,19 @@ html.view-only #more-director {
 .gl-row[hidden],
 .gl-panel[hidden],
 .gl-mark[hidden],
+.gl-sep {
+  color: var(--ink-2);
+}
+#more-team-you:empty + .gl-sep,
+.gl-sep:has(+ .gl-link[hidden]) {
+  display: none;
+}
+/* The team row always has a title and a subline (and wraps to many lines with
+   a long name or large text): its mark stays with the title, not mid-row. */
+[data-more-row="team"] .gl-mark {
+  align-self: start;
+  margin-top: 2px;
+}
 .gl-link[hidden],
 .tab-off[hidden],
 .ts-mark[hidden] {
@@ -1662,9 +1727,12 @@ html.view-only #more-director {
   letter-spacing: var(--track-tight);
   overflow-wrap: anywhere;
 }
+.ts-name[hidden] {
+  display: none;
+}
 .ts-sub {
   margin: 2px 0 0;
-  font: 600 0.90625rem/1.35 var(--font-ui);
+  font: var(--t-meta);
   color: var(--ink-2);
 }
 .ts-sub:empty {
@@ -1673,18 +1741,28 @@ html.view-only #more-director {
 .ts-facts {
   display: flex;
   flex-direction: column;
-  gap: var(--s-2);
 }
 .ts-facts:empty {
   display: none;
 }
 .ts-fact {
   display: flex;
+  align-items: flex-start;
+  gap: var(--s-3);
+  padding: var(--s-3) 0;
+  border-top: 1px solid var(--line);
+}
+.ts-fact-ico {
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  color: var(--ink-2);
+}
+.ts-fact-words {
+  display: flex;
   flex-direction: column;
   gap: 1px;
-  padding: var(--s-2) 14px;
-  border-radius: var(--r-card);
-  background: var(--paper-2);
+  min-width: 0;
 }
 .ts-fact-label {
   font: var(--t-tag);
@@ -1741,18 +1819,68 @@ html.view-only #more-director {
 .alerts-open {
   display: flex;
   flex-direction: column;
-  gap: 0.65rem;
-  padding: 0.75rem 1rem 0;
+  gap: var(--s-2);
+  padding-top: var(--s-3);
 }
+/* Sentence case, never letter-spaced capitals (§8.2). */
 .alerts-sec-label {
   margin: 0;
-  font: var(--t-tag);
-  letter-spacing: .04em;
-  text-transform: uppercase;
+  font: var(--t-label);
   color: var(--ink-2);
 }
 .alerts-sec-closed {
-  padding: 1rem 1rem 0;
+  padding-top: var(--s-5);
+}
+/* The switches as one grouped list with hairlines, not a stack of boxes. */
+.alerts-gl .settings-row {
+  min-height: var(--row-min);
+  padding: var(--s-2) 14px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
+}
+.alerts-gl .settings-row:first-child {
+  border-top: 0;
+}
+.alerts-empty {
+  margin: 0;
+  color: var(--ink-2);
+}
+
+/* The drawers still on jelly-drawer (Alerts, Change history, Who can sign in)
+   wear the shell sheet's frame (.sheet): flush to the bottom, rounded on top
+   only, the same flat scrim (no blur), a 44px close on the gutter. ::part()
+   rules from outside beat the component's own. */
+jelly-drawer[side="bottom"]::part(backdrop) {
+  background: rgba(var(--shadow-rgb), .42);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+jelly-drawer[side="bottom"]::part(sheet) {
+  inset-inline: 0;
+  bottom: 0;
+  max-width: 640px;
+  max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 40px);
+  margin-inline: auto;
+  padding: 18px var(--gutter) calc(var(--s-6) + env(safe-area-inset-bottom, 0px));
+  border-radius: 20px 20px 0 0;
+  background: var(--sheet);
+  box-shadow: var(--shadow-sheet);
+}
+jelly-drawer[side="bottom"]::part(close) {
+  top: 8px;
+  inset-inline-end: 6px; /* where the shell sheet's ✕ sits (.sheet-head) */
+  width: var(--target);
+  height: var(--target);
+  font-size: 18px;
+  color: var(--ink-2);
+}
+/* The OFF track is a well on the sheet (1.27:1): an ink-3 outline makes the
+   control's edge a boundary you can see (§8.1 rule 6). */
+jelly-switch:not([checked])::part(track) {
+  box-shadow: inset 0 0 0 2px var(--ink-3);
+  border-radius: 999px;
 }
 
 /* Version · data updated · phones online: quiet, left-aligned, last. */
@@ -2189,6 +2317,11 @@ jelly-tabs.day-tabs {
 }
 jelly-tabs.day-tabs::part(tabs) {
   width: 100%;
+  /* INTERIM until Step 18: the chosen day is the shell's lifted segment, not a
+     roof-blue pill (in dark it was the loudest thing on the screen). Set on the
+     part, so it reaches only the picker, never the game cards in the panels. */
+  --jelly-color-background-accent: var(--lift);
+  --jelly-color-foreground-on-accent: var(--ink);
 }
 
 /* Pre-upgrade: panels are plain light DOM — show only the active day's, and
@@ -2226,10 +2359,8 @@ jelly-tabs:not(:defined) > jelly-tab-panel:not([active]) {
    ============================================================ */
 .session-heading {
   margin: 0.5rem 0 0.1rem;
-  font-size: 0.85rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-text-muted);
+  font: var(--t-label); /* sentence case, never letter-spaced capitals (§8.2) */
+  color: var(--ink-2);
 }
 
 .session-empty {
@@ -3000,6 +3131,50 @@ html.calm-motion .back-pill-arrow { transition: none; }
 
 .rules-details li {
   margin-bottom: 0.3rem;
+}
+/* The game takeover's "How to play": a flat hairline row with a disclosure
+   chevron (mockup 14), not a bordered box. Calm holds the chevron still. */
+#takeover-game .rules-details {
+  margin: 0 0 var(--s-3);
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+}
+#takeover-game .rules-details summary {
+  justify-content: space-between;
+  gap: var(--s-2);
+  list-style: none;
+  font: var(--t-row);
+}
+#takeover-game .rules-details summary::-webkit-details-marker {
+  display: none;
+}
+#takeover-game .rules-details summary::after {
+  content: '';
+  flex: none;
+  width: 9px;
+  height: 9px;
+  margin-right: 6px;
+  border-right: 2.4px solid var(--ink-2);
+  border-bottom: 2.4px solid var(--ink-2);
+  transform: rotate(-45deg);
+  transition: transform var(--jm-press-ms) var(--jm-press);
+}
+#takeover-game .rules-details[open] summary::after {
+  transform: rotate(45deg);
+}
+html.calm-motion #takeover-game .rules-details summary::after {
+  transition: none;
+}
+#takeover-game .rules-details[open] {
+  padding-bottom: var(--s-3);
+}
+#takeover-game .rules-details h4 {
+  text-transform: none;
+  letter-spacing: 0;
+  font: var(--t-label);
+  color: var(--ink-2);
 }
 
 /* ============================================================
@@ -4065,6 +4240,69 @@ html.calm-motion .points-pulse td { animation: none; }
 
 .verse-video-link:hover {
   background: color-mix(in srgb, var(--color-primary) 20%, var(--color-surface));
+}
+
+/* The Memory verse and Meal cleanup SHEETS (More): the old card's chrome
+   comes off (§8.8): no letter-spaced capitals, no coloured left rule, no
+   tinted panels; the scripture is set in the serif (§8.2). */
+:is(#sheet-verse, #sheet-cleanup) :is(.verse-theme-label, .verse-day-name) {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  text-transform: none;
+  letter-spacing: 0;
+  font: var(--t-label);
+}
+#sheet-verse .verse-theme-label {
+  color: var(--ink-2);
+}
+#sheet-verse .verse-theme-label .ico {
+  width: 18px;
+  height: 18px;
+}
+:is(#sheet-verse, #sheet-cleanup) .verse-day-name {
+  color: var(--link);
+}
+#sheet-verse .verse-theme {
+  padding: 0 0 var(--s-3);
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
+}
+:is(#sheet-verse, #sheet-cleanup) .verse-day-card {
+  padding: var(--s-1) 0 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+#sheet-verse :is(.verse-theme-text, .verse-day-text) {
+  font: var(--t-scripture);
+  font-style: normal;
+}
+#sheet-verse .verse-theme-text {
+  font-size: 1.125rem;
+}
+/* Their day pickers become the shell's segmented look (a well, the chosen day
+   lifted with an ink ring) instead of a fourth picker style of solid blue
+   pills. Tokens on the chips: the component draws them. */
+:is(#sheet-verse, #sheet-cleanup) .verse-day-row {
+  flex-wrap: nowrap;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--r-btn);
+  background: var(--well);
+}
+:is(#sheet-verse, #sheet-cleanup) jelly-chip.verse-day-chip {
+  flex: 1 1 0;
+  --jelly-fill: var(--well);
+  --jelly-on: var(--lift);
+  --jelly-label: var(--ink-2);
+  --jelly-label-on: var(--ink);
+  --jelly-chip-radius: 10px;
+}
+:is(#sheet-verse, #sheet-cleanup) jelly-chip.verse-day-chip[selected] {
+  --jelly-ring: var(--seg-ring);
 }
 
 /* ============================================================
@@ -6343,47 +6581,34 @@ body.builder-open .main-wrap > :not(#settings-view) {
   height: auto;
   padding: 0 var(--gutter);
 }
-.chat-head {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-}
 .chat-title {
-  flex: 1 1 auto;
-  min-width: 0;
   margin: 0;
-  font: 800 1.0625rem/1.2 var(--font-ui);
-  letter-spacing: var(--track-row);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.chat-clear-btn {
-  min-width: var(--target);
-  min-height: var(--target);
-  font-size: 1rem;
+/* The switcher row: the channel segments, then the bell (and an editor's
+   broom) as plain line-icon buttons at its end — no row of their own above it. */
+.chat-switch {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-end;
+  gap: 2px;
+  margin: 0 0 var(--s-2);
 }
-/* "Announcements" beside the pill, bell and broom: a touch smaller fits an
-   editor's header down to ~345px. */
-@media (max-width: 380px) {
-  .chat-title { font-size: 0.92rem; }
-}
-@media (max-width: 350px) {
-  .chat-head { gap: 0.4rem; }
-  .chat-title { font-size: 0.8rem; }
-}
-.chat-sub-btn {
+.chat-icon-btn {
+  flex: none;
+  display: grid;
+  place-items: center;
   width: var(--target);
   height: var(--target);
-  border: 1.5px solid var(--line-2);
+  margin-bottom: 2px;
+  padding: 0;
+  border: 0;
   border-radius: 50%;
-  background: var(--sheet);
-  font-size: 1rem;
+  background: none;
+  color: var(--ink-2);
   cursor: pointer;
 }
 .chat-sub-on {
-  border-color: var(--blue);
-  background: var(--blue-tint);
+  color: var(--link);
 }
 .chat-link {
   color: var(--color-primary);
@@ -6391,24 +6616,53 @@ body.builder-open .main-wrap > :not(#settings-view) {
   overflow-wrap: anywhere;
 }
 /* The channel switcher: a segmented well, segments sized to their labels
-   (mockup 15). Text labels only — emoji never label a tab (§8.6) — and the
-   four short labels fit a 360px phone. flex: 0 0 auto is load-bearing: the
-   strip must never be a flex-shrink participant, or a busy .chat-list crushes
-   it to a sliver. The unread count stays OUT of flow on the segment's corner:
-   a count inside the label widened its segment each time a message landed in
-   another channel and slid the others under the finger. */
+   (mockup 15). Text labels only — emoji never label a tab (§8.6). The row
+   (.chat-switch) is flex: 0 0 auto, which is load-bearing: it must never be a
+   flex-shrink participant, or a busy .chat-list crushes it to a sliver. The
+   unread count stays OUT of flow on the segment's corner: a count inside the
+   label widened its segment each time a message landed in another channel and
+   slid the others under the finger.
+   .chat-tabs is the SCROLLER (always allowed: at 130–200% text a channel must
+   never be clipped out of reach, §8.9); its top/right padding is the room the
+   corner badge needs, which a scroller would otherwise clip. .chat-well is the
+   drawn track: the strip's full width when the labels fit, wider when not. */
 .chat-tabs {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scroll-padding-inline: 8px;
+  scrollbar-width: none;
+  padding: 9px 4px 0 0;
+}
+.chat-tabs::-webkit-scrollbar {
+  display: none;
+}
+/* More channels past an edge: that edge fades (chat.js keeps the classes in
+   step with the scroll), so a clipped label reads as "scroll", not as cut. */
+.chat-tabs.more-end {
+  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+}
+.chat-tabs.more-start {
+  mask-image: linear-gradient(to left, #000 calc(100% - 28px), transparent);
+}
+.chat-tabs.more-start.more-end {
+  mask-image: linear-gradient(to right, transparent, #000 28px, #000 calc(100% - 28px), transparent);
+}
+.chat-well {
   display: flex;
-  flex: 0 0 auto;
   gap: 2px;
-  margin: var(--s-1) 0 var(--s-2);
+  width: max-content;
+  min-width: 100%;
   padding: 2px;
   border-radius: var(--r-btn);
-  background: var(--well);
+  background: var(--well-paper);
+  box-shadow: inset 0 0 0 1px var(--well-paper-line);
 }
 .chat-tab {
   position: relative;
-  flex: 1 1 auto;
+  flex: 1 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -6429,7 +6683,7 @@ body.builder-open .main-wrap > :not(#settings-view) {
   background: var(--lift);
   color: var(--ink);
   font-weight: 850;
-  box-shadow: 0 0 0 1.5px var(--card-b), 0 2px 0 var(--edge);
+  box-shadow: 0 0 0 1.5px var(--seg-ring), 0 2px 0 var(--edge);
 }
 .chat-tab-badge {
   position: absolute;
@@ -6438,13 +6692,13 @@ body.builder-open .main-wrap > :not(#settings-view) {
   right: -3px;
   display: inline-grid;
   place-items: center;
-  min-width: 19px;
-  height: 19px;
-  padding: 0 5px;
-  border-radius: 10px;
+  min-width: max(19px, 1.6em); /* grows with its digits at 200% text */
+  min-height: 19px;
+  padding: .1em .4em;
+  border-radius: 999px;
   background: var(--link);
   color: var(--on-link);
-  font: 800 0.75rem/1 var(--font-ui);
+  font: 800 0.75rem/1.2 var(--font-ui);
   box-shadow: 0 0 0 2px var(--paper);
 }
 @media (max-width: 380px) {
@@ -6452,15 +6706,6 @@ body.builder-open .main-wrap > :not(#settings-view) {
     padding: 4px 7px;
     font-size: 0.8125rem;
   }
-}
-/* A 320px phone is the one width the four labels can't share: the well
-   scrolls sideways rather than dropping a channel or falling back to emoji. */
-@media (max-width: 339px) {
-  .chat-tabs {
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-  .chat-tab { flex: 0 0 auto; }
 }
 .chat-list {
   flex: 1 1 auto;
@@ -6510,7 +6755,7 @@ body.builder-open .main-wrap > :not(#settings-view) {
 .chat-bubble-head {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
+  gap: 0;
   min-height: 1.25rem;
   margin: 0 4px 3px;
   font: 600 0.8125rem/1.3 var(--font-ui);
@@ -6530,7 +6775,7 @@ body.builder-open .main-wrap > :not(#settings-view) {
   color: var(--ink-2);
 }
 .chat-bubble-time::before {
-  content: '· ';
+  content: '\00a0· '; /* the head has no gap of its own: one space each side */
 }
 .chat-bubble-mine .chat-bubble-time::before {
   content: none;
@@ -6555,6 +6800,7 @@ body.builder-open .main-wrap > :not(#settings-view) {
   background: var(--sheet);
   font: 550 1rem/1.35 var(--font-ui);
   overflow-wrap: anywhere;
+  white-space: pre-wrap; /* a Shift+Enter line break survives */
 }
 .chat-bubble-mine .chat-bubble-text {
   border-color: transparent;
@@ -6569,9 +6815,10 @@ body.builder-open .main-wrap > :not(#settings-view) {
   color: var(--ink);
   font-weight: 800;
 }
+/* Yours: the same tint with a heavier gold edge. Never the solid gold, which
+   is the one primary action (§8.3): a filled "Foxes" read as a second Send. */
 .chat-mention-you {
-  background: var(--gold);
-  color: var(--gold-ink);
+  box-shadow: inset 0 0 0 2px var(--gold-edge);
 }
 .chat-thumb-btn {
   display: block;
@@ -6608,12 +6855,25 @@ body.builder-open .main-wrap > :not(#settings-view) {
   flex: 1 1 auto;
   min-width: 0;
   min-height: var(--target);
-  padding: 9px 14px;
-  border: 2px solid var(--card-b);
+  /* A textarea that grows with what's written (up to ~4 lines) so a long
+     message can be proofread, not scrolled sideways out of sight. chat.js
+     sizes it where field-sizing isn't supported (iOS before 18). */
+  field-sizing: content;
+  max-height: 6.6em;
+  margin: 0;
+  padding: 10px 14px;
+  border: 2px solid var(--field-b);
   border-radius: 22px;
   background: var(--sheet);
   color: var(--ink);
   font: 550 1rem/1.3 var(--font-ui);
+  resize: none;
+  overflow-y: auto;
+}
+/* The browser's own placeholder grey is 3.5:1 in dark, 4.5:1 needed. */
+.chat-text-input::placeholder {
+  color: var(--ink-3);
+  opacity: 1;
 }
 .chat-photo-btn,
 .chat-send-btn {

@@ -386,7 +386,11 @@ Four **separate** deploys (P7), in this order, each with its own tests and live 
   at 130% and 200% text, both themes, both camps.
 - **Live check:** both camps, as counselor and director. **Real iPhone, Home Screen app** (status-bar
   colour under the blue roof, tab bar above the home indicator, keyboard with the chat composer,
-  Back gestures, wake lock available).
+  Back gestures, wake lock available). **Also note the status-bar GLYPH colour** on a roof screen
+  (force `.takeover.is-roof` until Steps 23–24 ship one): `status-bar-style` is `default`, so iOS
+  draws dark glyphs, and black on #2c47ee is 3.24:1. If they are dark, the roof screens keep paper
+  behind the status bar (pad the roof by `env(safe-area-inset-top)` in `--paper`, blue below it)
+  and `CHROME_ROOF` stays paper: no status-bar-style flip mid-session.
 - **Rollback:** revert (one deploy).
 - **Owner:** the iPhone check, 20 minutes (§6).
 

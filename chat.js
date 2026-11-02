@@ -356,6 +356,16 @@ function chatAuthorName(msg) {
   return identityFromKey(key) || 'Someone';
 }
 
+// The composer grows with its text (CSS caps it at ~4 lines, then it scrolls).
+// field-sizing: content does this natively; elsewhere (iOS before 18) the
+// height follows scrollHeight, re-measured after every value change.
+function chatFitComposer(input) {
+  if (!input || !input.style || typeof input.scrollHeight !== 'number') return;
+  if (typeof CSS !== 'undefined' && CSS.supports && CSS.supports('field-sizing', 'content')) return;
+  input.style.height = 'auto';
+  input.style.height = (input.scrollHeight + (input.offsetHeight - input.clientHeight)) + 'px';
+}
+
 function sendChatMessage(ch) {
   const input = document.getElementById('chat-input');
   const text = ((input && input.value) || '').trim().slice(0, CHAT_TEXT_MAX);
@@ -369,7 +379,7 @@ function sendChatMessage(ch) {
     name: String(chatDisplayName()).slice(0, 60),
     text,
   };
-  if (input) input.value = '';
+  if (input) { input.value = ''; chatFitComposer(input); }
   chatSetDraft(ch, '');
   const id = firebase.database().ref(dbPath('chat/' + ch)).push().key;
   const rateKey = 'chatRate/' + myKey;
@@ -382,7 +392,7 @@ function sendChatMessage(ch) {
       // message was removed again, which may have rebuilt the view — the
       // element captured at send time could be detached by then.
       const box = document.getElementById('chat-input');
-      if (box && state.ui.chatChannel === ch && !box.value) { box.value = text; chatSetDraft(ch, text); } // give the words back
+      if (box && state.ui.chatChannel === ch && !box.value) { box.value = text; chatSetDraft(ch, text); chatFitComposer(box); } // give the words back
       else if (!chatDrafts[ch]) chatSetDraft(ch, text); // they've moved on: the draft waits in that channel
       showToast("Couldn't send — check your connection and try again.");
     })
@@ -723,8 +733,8 @@ function toggleChatSub(ch) {
   setChatSub(ch, on);
   const c = chatChannelById(ch);
   showToast(on
-    ? `🔔 You'll get an alert for every message in ${c ? c.short : ch}.`
-    : `🔕 ${c ? c.short : ch} muted — you'll still get an alert when someone mentions you.`,
+    ? `You'll get an alert for every message in ${c ? c.short : ch}.`
+    : `${c ? c.short : ch} is muted. You'll still get an alert when someone mentions you.`,
     { mine: on });
   renderChatView(true);
 }
@@ -874,6 +884,8 @@ function chatOnTabShown() {
     else list.scrollTop = chatListMemo.top;
   }
   chatListMemo = null;
+  const view = document.getElementById('chat-view');
+  if (view) chatRevealActiveTab(view); // built while hidden, the strip measured nothing
   markChannelSeen(chatCurrentChannel()); // coming to the tab counts as reading the channel
 }
 
@@ -1021,11 +1033,13 @@ function chatSetDraft(ch, text) {
   else delete chatDrafts[ch];
 }
 
-function chatBellAttrs(subbed) {
+// The bell is a line icon (§8.6: no emoji on buttons), slashed while muted;
+// aria-pressed carries the state for screen readers.
+function chatBellAttrs(subbed, c) {
   return {
-    icon: subbed ? '🔔' : '🔕',
-    title: subbed ? 'Subscribed — every message here alerts you' : 'Muted — only mentions alert you',
-    label: subbed ? 'Unsubscribe from this channel' : 'Subscribe to this channel',
+    icon: `<svg class="ico" aria-hidden="true"><use href="#i-bell${subbed ? '' : '-off'}"/></svg>`,
+    title: subbed ? 'Subscribed: every message here alerts you' : 'Muted: only mentions alert you',
+    label: 'Alerts for every message in ' + (c ? c.short : 'this channel'),
   };
 }
 
@@ -1033,17 +1047,21 @@ function chatBellAttrs(subbed) {
 // & Important Info" was ellipsized at every phone width between the pill, the
 // bell and (for editors) the broom.
 function paintChatHeader(view, ch, c) {
+  // Screen readers only: the selected segment already names the channel, and
+  // a visible row repeating it cost ~56px of list above the keyboard.
   const title = view.querySelector('.chat-title');
-  const text = `${c.emoji} ${c.short}`;
-  if (title && title.textContent !== text) title.textContent = text;
+  if (title && title.textContent !== c.label) title.textContent = c.label;
   const bell = view.querySelector('#chat-sub-btn');
   if (bell) {
     const subbed = chatSubscribed(ch);
-    const a = chatBellAttrs(subbed);
+    const a = chatBellAttrs(subbed, c);
     bell.classList.toggle('chat-sub-on', subbed);
     bell.title = a.title;
-    bell.setAttribute('aria-label', a.label);
-    if (bell.textContent !== a.icon) bell.textContent = a.icon;
+    if (bell.getAttribute('aria-label') !== a.label) bell.setAttribute('aria-label', a.label);
+    if (bell.getAttribute('aria-pressed') !== String(subbed)) {
+      bell.setAttribute('aria-pressed', String(subbed));
+      bell.innerHTML = a.icon;
+    }
   }
 }
 
@@ -1052,11 +1070,24 @@ function paintChatHeader(view, ch, c) {
 function chatRevealActiveTab(view) {
   const strip = view.querySelector('.chat-tabs');
   const tab = strip && strip.querySelector('.chat-tab-active');
+  chatMarkStripEdges(strip);
   if (!strip || !tab || strip.scrollWidth <= strip.clientWidth) return;
   const s = strip.getBoundingClientRect();
   const t = tab.getBoundingClientRect();
   if (t.left >= s.left && t.right <= s.right) return; // already fully in view
   strip.scrollLeft += (t.left - s.left) - (s.width - t.width) / 2;
+  chatMarkStripEdges(strip);
+}
+
+// Which edges of the channel strip have channels past them (styles.css fades
+// those edges). Classes only, written when they change.
+function chatMarkStripEdges(strip) {
+  if (!strip || !strip.classList || typeof strip.scrollWidth !== 'number') return;
+  const over = strip.scrollWidth - strip.clientWidth > 1;
+  const start = over && strip.scrollLeft > 1;
+  const end = over && strip.scrollLeft + strip.clientWidth < strip.scrollWidth - 1;
+  if (strip.classList.contains('more-start') !== start) strip.classList.toggle('more-start', start);
+  if (strip.classList.contains('more-end') !== end) strip.classList.toggle('more-end', end);
 }
 
 function updateChatShell(view, ch, c, prev) {
@@ -1073,10 +1104,14 @@ function updateChatShell(view, ch, c, prev) {
     // bring the target's back.
     chatSetDraft(prev, input.value);
     input.value = chatDrafts[ch] || '';
+    chatFitComposer(input);
   }
   chatViewBuiltFor = ch;
   paintChatHeader(view, ch, c);
-  view.querySelectorAll('.chat-tab').forEach((t) => t.classList.toggle('chat-tab-active', t.dataset.ch === ch));
+  view.querySelectorAll('.chat-tab').forEach((t) => {
+    t.classList.toggle('chat-tab-active', t.dataset.ch === ch);
+    if (t.setAttribute) t.setAttribute('aria-pressed', String(t.dataset.ch === ch));
+  });
   input.placeholder = `Message ${c.short}…`;
   // setHtmlIfChanged: a forced render that changes nothing (a members snapshot
   // that didn't touch names) must not re-create the bubbles — every thumbnail
@@ -1110,28 +1145,31 @@ function buildChatShell(view, ch, c, prev) {
   // The label is visually hidden under 480px (styles.css) but stays in the
   // DOM so the tab keeps its accessible name.
   const tabs = chatChannels().map((t) => `
-    <button type="button" class="chat-tab${t.id === ch ? ' chat-tab-active' : ''}" data-ch="${t.id}">
+    <button type="button" class="chat-tab${t.id === ch ? ' chat-tab-active' : ''}" data-ch="${t.id}" aria-pressed="${t.id === ch}">
       <span class="chat-tab-emoji">${t.emoji}</span><span class="chat-tab-label">${esc(t.short)}</span>
       <span class="chat-tab-badge" data-ch="${t.id}" hidden></span>
     </button>`).join('');
 
   const subbed = chatSubscribed(ch);
-  const bell = chatBellAttrs(subbed);
+  const bell = chatBellAttrs(subbed, c);
   const listHTML = chatListHTML(ch);
+  // One row: the channel switcher (it scrolls sideways when the labels can't
+  // share the width: 130–200% text, 320px) with the bell and, for editors, the
+  // broom as line icons at its end (§8.6).
   view.innerHTML = `
-    <div class="chat-head">
-      <h2 class="chat-title">${c.emoji} ${esc(c.short)}</h2>
-      <button id="chat-sub-btn" class="chat-sub-btn${subbed ? ' chat-sub-on' : ''}"
-        title="${bell.title}"
-        aria-label="${bell.label}">${bell.icon}</button>
-      ${canEdit() ? '<button id="chat-clear-btn" class="link-btn danger-link chat-clear-btn" title="Clear this channel">🧹</button>' : ''}
+    <h2 class="chat-title visually-hidden">${esc(c.label)}</h2>
+    <div class="chat-switch">
+      <div class="chat-tabs"><div class="chat-well">${tabs}</div></div>
+      <button type="button" id="chat-sub-btn" class="chat-icon-btn chat-sub-btn${subbed ? ' chat-sub-on' : ''}"
+        title="${bell.title}" aria-pressed="${subbed}"
+        aria-label="${esc(bell.label)}">${bell.icon}</button>
+      ${canEdit() ? '<button type="button" id="chat-clear-btn" class="chat-icon-btn chat-clear-btn" title="Clear this channel" aria-label="Clear this channel"><svg class="ico" aria-hidden="true"><use href="#i-broom"/></svg></button>' : ''}
     </div>
-    <div class="chat-tabs">${tabs}</div>
     <div id="chat-list" class="chat-list">${listHTML}</div>
     <div class="chat-composer">
       <input type="file" id="chat-photo-input" accept="image/*" hidden>
       <button type="button" id="chat-photo-btn" class="chat-photo-btn" aria-label="Send a photo"><svg class="ico" aria-hidden="true"><use href="#i-camera"/></svg></button>
-      <input type="text" id="chat-input" class="chat-text-input" placeholder="Message ${esc(c.short)}…" maxlength="${CHAT_TEXT_MAX}" autocomplete="off">
+      <textarea id="chat-input" class="chat-text-input" rows="1" enterkeyhint="send" placeholder="Message ${esc(c.short)}…" maxlength="${CHAT_TEXT_MAX}" autocomplete="off"></textarea>
       <button type="button" id="chat-send-btn" class="chat-send-btn">Send</button>
     </div>`;
   view.dataset.chatShell = chatShellSig();
@@ -1145,7 +1183,7 @@ function buildChatShell(view, ch, c, prev) {
   const input = document.getElementById('chat-input');
   if (input) {
     const text = carry ? carry.value : (chatDrafts[ch] || '');
-    if (text) input.value = text;
+    if (text) { input.value = text; chatFitComposer(input); }
     if (carry && carry.focused) {
       input.focus();
       try { if (carry.start != null) input.setSelectionRange(carry.start, carry.end); } catch (e) { /* fine */ }
@@ -1165,6 +1203,8 @@ function buildChatShell(view, ch, c, prev) {
 // rewired whenever its channel changes.
 function wireChatView(ch) {
   const view = document.getElementById('chat-view');
+  const strip = view.querySelector('.chat-tabs');
+  if (strip && strip.addEventListener) strip.addEventListener('scroll', () => chatMarkStripEdges(strip), { passive: true });
   view.querySelectorAll('.chat-tab').forEach((btn) => {
     btn.addEventListener('click', () => {
       state.ui.chatChannel = btn.dataset.ch;
@@ -1185,8 +1225,14 @@ function wireChatView(ch) {
   }
   const input = document.getElementById('chat-input');
   if (input) {
-    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendChatMessage(chatCurrentChannel()); });
-    input.addEventListener('input', () => chatSetDraft(chatCurrentChannel(), input.value));
+    // Enter sends (the keyboard's key says "send"); Shift+Enter is a new line.
+    // Never mid-composition (a CJK / dictation candidate being picked).
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || e.shiftKey || e.isComposing) return;
+      e.preventDefault();
+      sendChatMessage(chatCurrentChannel());
+    });
+    input.addEventListener('input', () => { chatSetDraft(chatCurrentChannel(), input.value); chatFitComposer(input); });
   }
   const photoBtn = document.getElementById('chat-photo-btn');
   const photoInput = document.getElementById('chat-photo-input');

@@ -108,6 +108,7 @@
     <symbol id="i-book" viewBox="0 0 24 24"><path d="M4.5 5.6c2.6-1 5.2-.8 7.5.8 2.3-1.6 4.9-1.8 7.5-.8v12.6c-2.6-1-5.2-.8-7.5.8-2.3-1.6-4.9-1.8-7.5-.8z"/><path d="M12 6.4v12.4"/></symbol>
     <symbol id="i-broom" viewBox="0 0 24 24"><path d="M14.5 4.2 11 11.4"/><path d="M8.2 10.6l5.2 2.4-1.6 6.6-7.6-3.6z"/><path d="M7.8 17.4l1.4-2.6"/></symbol>
     <symbol id="i-bell" viewBox="0 0 24 24"><path d="M6.2 16.6V11a5.8 5.8 0 0 1 11.6 0v5.6l1.5 1.6H4.7z"/><path d="M10 20.4a2.2 2.2 0 0 0 4 0"/></symbol>
+    <symbol id="i-bell-off" viewBox="0 0 24 24"><path d="M6.2 16.6V11a5.8 5.8 0 0 1 11.6 0v5.6l1.5 1.6H4.7z"/><path d="M10 20.4a2.2 2.2 0 0 0 4 0"/><path d="M3.6 3.6l16.8 16.8"/></symbol>
     <symbol id="i-signout" viewBox="0 0 24 24"><path d="M10 4.5H6.4A1.6 1.6 0 0 0 4.8 6.1v11.8a1.6 1.6 0 0 0 1.6 1.6H10"/><path d="M14.2 8.2 18 12l-3.8 3.8M18 12H9.4"/></symbol>
     <symbol id="i-people" viewBox="0 0 24 24"><circle cx="9" cy="8.6" r="3.2"/><path d="M3.6 19.2a5.6 5.6 0 0 1 10.8 0"/><path d="M15.4 5.8a3 3 0 0 1 0 5.6M17.6 14.2a5.4 5.4 0 0 1 2.8 5"/></symbol>
     <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3.6" width="6" height="10.4" rx="3"/><path d="M5.8 11.4a6.2 6.2 0 0 0 12.4 0M12 17.6v3"/></symbol>
@@ -420,7 +421,7 @@
               <button type="button" class="seg-btn" role="radio" aria-checked="false" data-value="dark">Dark</button>
             </div>
             <p class="gl-panel-label" id="more-calm-label">Calm motion</p>
-            <div class="seg" id="calm-toggle" role="radiogroup" aria-labelledby="more-calm-label" data-seg="calm">
+            <div class="seg" id="calm-toggle" role="radiogroup" aria-labelledby="more-calm-label" aria-description="Auto turns calm on by itself when your phone is saving battery or its battery is low." data-seg="calm">
               <button type="button" class="seg-btn" role="radio" aria-checked="true" data-value="auto">Auto</button>
               <button type="button" class="seg-btn" role="radio" aria-checked="false" data-value="on">On</button>
               <button type="button" class="seg-btn" role="radio" aria-checked="false" data-value="off">Off</button>
@@ -435,7 +436,7 @@
             <span class="gl-ico gl-mark" id="more-team-mark" aria-hidden="true"></span>
             <span class="gl-text">
               <span class="gl-title" id="more-team-title">Your team<span id="more-team-name"></span></span>
-              <span class="gl-sub"><span id="more-team-you"></span> <button type="button" class="gl-link" data-more-team-change>Not you? Change</button></span>
+              <span class="gl-sub"><span id="more-team-you"></span><span class="gl-sep" aria-hidden="true"> · </span><button type="button" class="gl-link" data-more-team-change>Not you? Change</button></span>
             </span>
             <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
           </div>
@@ -708,17 +709,22 @@
     <h2 class="settings-title">Alerts</h2>
     <section class="alerts-open" aria-labelledby="alerts-open-label">
       <h3 class="alerts-sec-label" id="alerts-open-label">While Camp is open</h3>
-      <div class="settings-row">
-        <span class="settings-row-label">Pop-up alerts</span>
-        <jelly-switch id="notify-toggle" label="Pop-up alerts while Camp is open"></jelly-switch>
-      </div>
-      <div class="settings-row">
-        <span class="settings-row-label">Sound</span>
-        <jelly-switch id="sound-toggle" label="Sounds"></jelly-switch>
+      <!-- One grouped list, hairlines between rows; the state is said in a
+           word beside each switch (app.js paintSwitchWord), never by the track. -->
+      <div class="gl alerts-gl">
+        <div class="settings-row">
+          <span class="settings-row-label">Pop-up alerts</span>
+          <span class="gl-switch"><em class="gl-switch-state" data-switch-state="notify-toggle">Off</em><jelly-switch id="notify-toggle" label="Pop-up alerts while Camp is open"></jelly-switch></span>
+        </div>
+        <div class="settings-row">
+          <span class="settings-row-label">Sound</span>
+          <span class="gl-switch"><em class="gl-switch-state" data-switch-state="sound-toggle">Off</em><jelly-switch id="sound-toggle" label="Sounds"></jelly-switch></span>
+        </div>
       </div>
     </section>
     <h3 class="alerts-sec-label alerts-sec-closed" id="alerts-closed-label">When Camp is closed</h3>
-    <div class="settings-body" id="alerts-body"></div>
+    <!-- push.js renders this section when the sheet opens; until then it says so. -->
+    <div class="settings-body" id="alerts-body"><p class="alerts-empty">Not set up on this phone yet.</p></div>
   </jelly-drawer>
 
   <!-- ── TEAM PICKER (who are you rooting for?) ─────────────────── -->

@@ -478,13 +478,24 @@ future edit must not break (all pinned by `tests/tabs.test.js`):
   close with `closeGame()`.
 - **Sheets** (`.sheet-overlay`, ids `sheet-<name>`): `shellSheetOpen/Close`
   (focus returns to the opener, `#app` goes inert, grab-strip drag closes,
-  Escape / ✕ / backdrop / Back close). `schedule` is the older
+  Escape / ✕ / backdrop / Back close). Motion (§9.5): the sheet is thrown up on
+  `arrive` with its overshoot drawn as a stretch from the PLANTED bottom edge
+  (never more travel: that lifted it off the bottom of the screen), the scrim
+  fades in on `glide`; closing slides it down with `playOut` (220 ms; calm: a
+  140 ms fade) and hides it at the end unless it was reopened meanwhile — focus
+  and inert are settled at the moment of close, and the overlay takes no taps
+  on its way out. A drag lets go from where the finger left it. The game
+  takeover does the same to the right (`renderGameView`'s close branch). `schedule` is the older
   `#schedule-overlay`, which keeps its own markup and only reports in. So do the
   three remaining jelly-drawers — **Alerts, Change history, Who can sign in**
   (`SHELL_DRAWERS`: ids `alerts` / `history` / `members`): the shell opens and
   closes the drawer and files the history entry, and the drawer's own ✕ /
   backdrop / Escape report back through its `close` event (`wireMore`), so phone
-  Back closes it instead of popping the tab beneath. `shellSheetAllowed` says who
+  Back closes it instead of popping the tab beneath. They wear the shell sheet's
+  frame through `jelly-drawer[side="bottom"]::part(sheet|backdrop|close)`
+  (flush to the bottom, rounded on top, flat scrim). Moving Alerts into a real
+  `.sheet-overlay` would also need push.js's `pushDrawerOpen` and the frame test's
+  drawer pin to change. `shellSheetAllowed` says who
   may open which (the directors' drawers, `counselors`, and a hidden Memory verse /
   Meal cleanup refuse everyone else, whatever asked: a deep link, a Forward).
   `shellSheetFill` renders a reading sheet on open and on every `renderAll` while
@@ -518,7 +529,11 @@ you are, the Your team sheet's button; identity/role/camp only), `.hdr-title`
 update | error, text in `#hdr-pill-text`; hides `#hdr-who` while shown),
 `#reveal-strip` (never on Now), and `#sync-alert` (the refused-edits / view-only-tab
 bar, IN the header under the identity row so it sticks with it). Tab bar `#tabbar`: one `.tab-blob` (CSS rest
-position; spring it with JellyMotion, never a CSS transition), badges
+position; spring it with JellyMotion, never a CSS transition: `shellSpringBlob`
+stretches it `scale(1+s, 1−0.4s)` from its speed, `shellPopIcon` pops the icon
+.78→1, `shellArrivePanel` brings the panel up 22px with its overshoot as a ~4%
+squash — fill `backwards`, so no transform outlives it — and calm fades the
+panel in 120 ms), badges
 `#tab-badge-chat`, `#tab-dot-now`, `#tab-dot-more`; it slides away under
 `body.takeover-open`, `body.kb-open`, and today's `builder-open`.
 Takeovers `.takeover` (`#takeover-game`: `.tk-back[data-takeover-back]` with
@@ -564,10 +579,17 @@ never rebuilds a segmented control under a finger.
   never re-created by a re-render. Older surfaces (the follow card, boards)
   still draw their own crests; migrate them here, not by copying the rule.
 - **Header** (`renderHeader` from `renderAll` and the 30 s tick): `headerModel()` —
-  a counselor with a team: the team's mark + name, "Sam · Junior Camp ·
-  Wednesday"; a director with no team: the camp mark, "Jenn", "Director · …";
-  never a number (a test pins it) and never a name guessed from the email. The
-  right-hand `#hdr-who` is "Sam · Counselor" on the other tabs. Tapping `#hdr-id`
+  a counselor with a team: the team's mark + name, "Sam · Junior camp ·
+  Wednesday"; a director with no team: the camp mark, the CAMP as the headline
+  ("Junior camp", sentence case) over "Jenn · Director · Wednesday" (mockup 02:
+  a director on both camps must never lose which camp this is); never a number
+  (a test pins it) and never a name guessed from the email. The right-hand
+  `#hdr-who` is "Sam · Foxes" (the team's short name) on the other tabs, "Jenn ·
+  Director" with no team. The row WRAPS: when the identity / title and the
+  status pill can't share a line (a long pill, 130–200% text) the pill drops
+  under them; the team name gets two lines before it is cut. The header's drawn
+  height is measured into `--hdr-live` (a ResizeObserver in `wireShell`), which
+  the fixed Chat panel starts under. Tapping `#hdr-id`
   opens the **Your team sheet** (`renderTeamSheet`: counselors, "Up next",
   "Next meal cleanup", and the "Not you? Change" door — only where
   `CAMP.features.electives`; a team set by the account says so instead of
@@ -1192,7 +1214,7 @@ so nobody can post as someone else).
 - **Channel subscriptions** (`lsKey('campScoreboardChatSubs')`, wiped on
   sign-out): a subscribed channel alerts on EVERY message. Announcements
   is subscribed BY DEFAULT (owner's call) and can be muted; everything
-  else is opt-in via the 🔔/🔕 bell in the chat header (`toggleChatSub`).
+  else is opt-in via the bell at the end of the channel strip (`toggleChatSub`).
 - **The banner strip**: a message posted in the Announcements channel also
   rides the top-of-app announcements area for 15 minutes
   (`chatAnnouncementBanners`, merged in by `renderAnnouncements`,
@@ -1221,8 +1243,8 @@ so nobody can post as someone else).
   (`hiddenCards.chat`, in `HIDEABLE_CARDS`) the tab stays and its panel says
   "Chat is turned off right now" (`data-chat-shell="off"`; the shell is rebuilt
   when it comes back); the switch itself moves to What counselors see. The
-  view (header, tab strip, list, composer) is BUILT once, on the tab's first
-  show (`buildChatShell`, also when the viewer's role flips — the 🧹
+  view (channel strip, list, composer) is BUILT once, on the tab's first
+  show (`buildChatShell`, also when the viewer's role flips — the broom
   button is the one role-dependent part) and then KEPT across tab switches; a
   channel switch, bell toggle or directory update only PATCHES it in place
   (`updateChatShell`: active tab, header, composer placeholder, the list through
@@ -1239,8 +1261,17 @@ so nobody can post as someone else).
   sign-out) and follows the person across channel switches and tab trips
   (`chatHasDraft()` also stops the shell sending someone home after a long
   absence). Every handler reads the channel at call time
-  (`chatCurrentChannel`), never closed over at build time. The header names
-  the open channel by its SHORT label. "Sync is off" is only said when it is
+  (`chatCurrentChannel`), never closed over at build time. There is no channel
+  header row: the open channel's name is a visually-hidden `h2` (the selected
+  segment already shows it), and the bell (`#i-bell` / `#i-bell-off`,
+  `aria-pressed`) and an editor's broom are line-icon buttons at the END of the
+  switcher row (`.chat-switch`). The strip (`.chat-tabs`) always scrolls sideways
+  when the labels can't share the width (130–200% text, a bell + broom at 360px),
+  its clipped edges fade (`chatMarkStripEdges`), and the open channel is scrolled
+  into view (`chatRevealActiveTab`, also on `chatOnTabShown`); `.chat-well` is the
+  drawn track inside it. The composer is a `<textarea rows=1>` that grows to ~4
+  lines (`field-sizing: content`, `chatFitComposer` elsewhere): Enter sends,
+  Shift+Enter is a new line (bubbles keep it: `pre-wrap`). "Sync is off" is only said when it is
   definitive (`chatSyncOff`: no config, SDK failed, or a rules refusal);
   otherwise the list reads "Loading…", and app.js's `onSdkLoadFailed` calls
   the typeof-guarded `onChatSyncStateChanged` so it flips at once.
