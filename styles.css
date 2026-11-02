@@ -788,6 +788,19 @@ img.hdr-mark,
   50% { opacity: .3; }
 }
 
+/* INTERIM, until the builder and chat move into the frame (a takeover and the
+   Chat tab): today's full-screen builder and chat bring their own back pill and
+   size themselves to the whole screen, so the header steps aside for them and
+   the page gets its notch padding back — exactly the v196 layout. */
+body.builder-open .app-header,
+body.chat-open .app-header {
+  display: none;
+}
+body.builder-open .main-wrap,
+body.chat-open .main-wrap {
+  padding-top: calc(15px + env(safe-area-inset-top, 0px));
+}
+
 /* The live-reveal strip: red, under the header on every tab but Now. */
 .reveal-strip {
   display: flex;
