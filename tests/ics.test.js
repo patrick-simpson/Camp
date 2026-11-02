@@ -292,3 +292,24 @@ test('the file name carries the week and the moment it was made', () => {
     assert.equal(icsWeekLabel('2028-01-30'), 'Jan 30 – Feb 5, 2028');
   } finally { wkReset(); }
 });
+
+test('an edit on the Schedule screen reaches the calendar file: the new time and name, a stable UID for a moved item, nothing for a skipped one', () => {
+  freshState();
+  setMemberRole('editor');
+  setupTree = normalizeSetup(setupClone(syncCanon(buildSeed(CAMP))));
+  setupRev++;
+  const dow = 3;
+  const pick = planForDow(dow).find((b) => b.origin === 'typical' && b.type === 'activity' && !b.noTime && !b.meal && !b.teams);
+  const uidFor = (ics) => unfold(ics).split('\r\n').filter((l) => l.startsWith('UID:')).filter((l) => l.indexOf(pick.id) !== -1);
+  const before = buildDayIcs(dow);
+  const uids0 = uidsOf(before);
+  const r = schedCommit({ kind: 'edit', dk: 'wed', bid: pick.id, scope: 'day', item: { label: 'Archery', emoji: pick.emoji, start: pick.start + 15, end: pick.end + 15, type: pick.type }, label: 'x' });
+  assert.equal(r.ok, true);
+  const after = buildDayIcs(dow);
+  assert.ok(/Archery/.test(unfold(after)), 'the new name');
+  assert.equal(uidsOf(after).length, uids0.length);
+  assert.deepEqual(uidsOf(after), uids0, 'moving or renaming an item never changes its UID: a re-import updates in place');
+  schedCommit({ kind: 'remove', dk: 'wed', bid: pick.id, scope: 'day', label: 'x' });
+  assert.equal(uidsOf(buildDayIcs(dow)).length, uids0.length - 1, 'a skipped item is not in the file');
+  assert.ok(!/Archery/.test(unfold(buildDayIcs(dow))));
+});

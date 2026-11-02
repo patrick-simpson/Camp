@@ -2906,6 +2906,9 @@ function renderRainItemSheet() {
   const backTo = pane === 'actions' ? '' : pane === 'move' && setupRain.from === 'list' ? '' : pane === 'move' && setupRain.from === 'games' ? 'Games' : (b ? setupHeadLabel(b.label) : 'Back');
   setHiddenIfChanged(setupEl('rain-pane-back'), !backTo);
   setTextIfChanged(setupEl('rain-pane-back-label'), backTo);
+  // The back already names the item: the title is then for the screen reader only (styles.css .rain-sheet[data-title-quiet]).
+  const quiet = !!backTo && pane !== 'move';
+  if (quiet !== sheet.hasAttribute('data-title-quiet')) { if (quiet) sheet.setAttribute('data-title-quiet', ''); else sheet.removeAttribute('data-title-quiet'); }
   setHiddenIfChanged(setupEl('rain-item-dock'), pane !== 'time');
   if (pane === 'actions') renderRainActions(b, plan);
   else if (pane === 'swap') renderRainSwap(b);

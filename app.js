@@ -1742,9 +1742,12 @@ function buildDayIcs(dow) {
     // the junior and senior exports of the same weekday shared UIDs
     // (campday-<dow>-<start>), so importing both overwrote one with the other.
     // The position keeps two blocks that start together apart.
+    // Once the schedule is edited here an item's block id is its identity: moving or renaming it must update the event in
+    // place, not duplicate it (the position and start above would change with the edit).
+    const rich = scheduleIsShared() ? planForDow(dow)[i] : null;
     return [
       'BEGIN:VEVENT',
-      `UID:${CAMP.id}-${dow}-${i}-${raw.start}@camp.patricksimpson.info`,
+      `UID:${rich ? CAMP.id + '-' + dow + '-' + rich.id : CAMP.id + '-' + dow + '-' + i + '-' + raw.start}@camp.patricksimpson.info`,
       `DTSTAMP:${stamp}`,
       `DTSTART;TZID=America/New_York:${fmt(raw.start)}`,
       `DTEND;TZID=America/New_York:${fmt(raw.end)}`,

@@ -2480,6 +2480,16 @@ function setupSeedSchedule(camp) {
     if (tags[dow]) day.tag = tags[dow];
     if (placeholders.indexOf(dow) !== -1) day.placeholder = true;
     out.days[dk] = day;
+    // The printed week overlaps on purpose in a few places (junior's cabin movie nights run over "Prepare for bed" and the
+    // devotional): of each overlapping pair of timed items the longer is marked `overlapOk` (§5.2), so the hub and the
+    // Schedule screen start by warning about nothing the camp meant.
+    const okIdx = new Set();
+    arr.forEach((a, i) => arr.forEach((b, j) => {
+      if (j <= i || a.noTime || b.noTime || !(a.start < b.end && b.start < a.end)) return;
+      const la = a.end - a.start;
+      const lb = b.end - b.start;
+      okIdx.add(la > lb ? i : lb > la ? j : j);
+    }));
     const dayTaken = Object.assign({}, taken); // an own id must not collide with a typical one: both publish as <dk>-<id>
     const used = {};
     const patch = {};
@@ -2496,6 +2506,7 @@ function setupSeedSchedule(camp) {
     };
     arr.forEach((raw, i) => {
       const rec = setupSeedRecord(raw, camp, lookup);
+      if (okIdx.has(i)) rec.overlapOk = true;
       if (!usesTypical) {
         rec.ord = 10 * i;
         (out.dayBlocks[dk] = out.dayBlocks[dk] || {})[setupMintId(dk, raw.label, raw.start, dayTaken)] = rec;
@@ -2511,6 +2522,7 @@ function setupSeedSchedule(camp) {
         if (rec.label !== hit.rec.label) p.label = rec.label;
         if (rec.emoji !== hit.rec.emoji) p.emoji = rec.emoji;
         if (rec.teams && JSON.stringify(rec.teams) !== JSON.stringify(hit.rec.teams)) p.teams = rec.teams;
+        if (rec.overlapOk && !hit.rec.overlapOk) p.overlapOk = true;
         if (Object.keys(p).length) patch[hit.id] = p;
         return;
       }

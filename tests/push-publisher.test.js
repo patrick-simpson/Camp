@@ -249,3 +249,37 @@ test('the drawer\'s Save sets the date in setup and publishes it', async () => {
     assert.equal(ctx.db.serverGet(PP_PATH).rev, 1);
   } finally { ppTeardown(ctx); }
 });
+
+test('what a director edits on the Schedule screen is what phones are told: a move keeps its id and reminder key, a rename keeps the key until "start fresh", a skipped item is not published', async () => {
+  freshState();
+  setMemberRole('editor');
+  ppOn();
+  const dow = 3;
+  const pick = planForDow(dow).find((b) => b.origin === 'typical' && b.type === 'activity' && !b.noTime && !b.meal && !b.teams && b.end - b.start >= 30);
+  const before = pushScheduleBlocks(scheduleWeek());
+  const pid = 'wed-' + pick.id;
+  assert.ok(before[pid], 'published as <dk>-<block id>');
+  const key = before[pid].key;
+  // moved just on Wednesday: same id, same key, new start
+  let r = schedCommit({ kind: 'edit', dk: 'wed', bid: pick.id, scope: 'day', item: { label: pick.base, emoji: pick.emoji, start: pick.start + 15, end: pick.end + 15, type: pick.type }, label: 'x' });
+  assert.equal(r.ok, true);
+  let after = pushScheduleBlocks(scheduleWeek());
+  assert.equal(after[pid].start, pick.start + 15);
+  assert.equal(after[pid].key, key);
+  // renamed everywhere: the key holds
+  r = schedCommit({ kind: 'edit', dk: 'wed', bid: pick.id, scope: 'typical', item: { label: 'Totally new name', emoji: pick.emoji, start: pick.start + 15, end: pick.end + 15, type: pick.type }, label: 'x' });
+  after = pushScheduleBlocks(scheduleWeek());
+  assert.equal(after[pid].label, 'Totally new name');
+  assert.equal(after[pid].key, key, 'people who follow it keep following it');
+  // ...until the director says start fresh
+  r = schedCommit({ kind: 'edit', dk: 'wed', bid: pick.id, scope: 'typical', item: { label: 'Totally new name', emoji: pick.emoji, start: pick.start + 15, end: pick.end + 15, type: pick.type }, alertKey: 'totally-new-name', label: 'x' });
+  assert.equal(r.ok, true);
+  assert.equal(pushScheduleBlocks(scheduleWeek())[pid].key, 'totally-new-name');
+  // skipped on Wednesday only
+  schedCommit({ kind: 'remove', dk: 'wed', bid: pick.id, scope: 'day', label: 'x' });
+  after = pushScheduleBlocks(scheduleWeek());
+  assert.equal(after[pid], undefined, 'a skipped item is not published');
+  assert.ok(after['tue-' + pick.id] || after['mon-' + pick.id], 'other days still have it');
+  // the content hash moved with every edit (so the author republishes and racing editors agree)
+  assert.ok(pushScheduleSrc(PP_WEEK, after) !== pushScheduleSrc(PP_WEEK, before));
+});

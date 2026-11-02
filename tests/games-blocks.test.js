@@ -330,3 +330,32 @@ test('junior Team Skits and senior\'s Afternoon games finally show in the sheet 
   }
   gbOff();
 });
+
+test('a game moved by the rain plan shows on its new item (and day), leaves the old one, and A2 never puts it back', () => {
+  freshState();
+  setMemberRole('editor');
+  setupTree = normalizeSetup(setupClone(syncCanon(buildSeed(CAMP))));
+  setupRev++;
+  setupApplyGameAttachments(state.config, gbPlan(state.config).ops);
+  const dayOf = (dow) => competitionDays().find((d) => d.dow === dow);
+  const fromDow = CAMP.id === 'junior' ? 3 : 1;
+  const toDow = fromDow + 1;
+  const game = allGames().find((g) => g.dayId === dayOf(fromDow).id && g.blockId);
+  const oldBlock = planForDow(fromDow).find((b) => b.id === game.blockId);
+  const target = planForDow(toDow).find((b) => b.type === 'games' && b.id !== oldBlock.id) || planForDow(toDow).find((b) => b.type === 'games');
+  assert.ok(game && oldBlock && target);
+  const plan = rainPlanNew(SETUP_DK[fromDow], '', 1);
+  rainStageGame(plan, game, { blockId: target.id, dayId: dayOf(toDow).id, session: rainSessionFor(state.config, target), ord: 500 });
+  rainApplyGames(state.config, plan);
+  const moved = gameById(game.id);
+  assert.equal(gamesForBlock(toDow, scheduleForDow(toDow).find((b) => setupRichOf(b).id === target.id)).some((g) => g.id === game.id), true, 'on the new item');
+  assert.equal(gamesForBlock(fromDow, scheduleForDow(fromDow).find((b) => setupRichOf(b).id === oldBlock.id)).some((g) => g.id === game.id), false, 'off the old one');
+  assert.equal(unscheduledGames(toDow).some((g) => g.id === game.id), false);
+  assert.equal(gbPlan(state.config).ops.some((op) => op.id === game.id), false, 'A2 touches only games with no place: a move survives any number of off / on cycles');
+  // not on the schedule: listed as unscheduled, and A2 offers it a home again (it has no place)
+  const off = rainPlanNew(SETUP_DK[toDow], '', 1);
+  rainStageGame(off, moved, { blockId: null });
+  rainApplyGames(state.config, off);
+  assert.equal(gameById(game.id).blockId, undefined);
+  assert.equal(unscheduledGames(toDow).some((g) => g.id === game.id), true);
+});

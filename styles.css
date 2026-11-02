@@ -4149,6 +4149,27 @@ button.rain-game:active {
 .rain-sheet:not([data-pane="actions"]) .sheet-title {
   font: var(--t-row);
 }
+/* A pane whose back already says the item's name ("‹ Team competitions") keeps
+   the title only for the screen reader: at large text the two fought for one
+   line and the title was pushed off the edge. */
+.rain-sheet[data-title-quiet] .sheet-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.rain-sheet .rain-pane-back {
+  min-width: 0;
+  max-width: calc(100% - var(--target) - var(--s-2));
+}
+.rain-sheet .rain-pane-back .tk-back-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .rain-sheet .gl + .gl,
 .rain-sheet .cb-list + .gl {
   margin-top: var(--s-3);
@@ -4241,13 +4262,26 @@ button.rain-game:active {
   display: none;
 }
 .rain-opt-line {
-  display: grid;
-  grid-template-columns: var(--emo-col) minmax(0, 1fr) auto;
+  display: flex;
+  flex-wrap: wrap;
   column-gap: var(--emo-gap);
   align-items: baseline;
   font: 650 0.9375rem/1.35 var(--font-ui);
 }
+/* A line wraps instead of squeezing the name (at 200% text the times took the
+   whole row and the name was drawn over them): emoji, the name (at least 8em),
+   then the times, which drop under the name when there is no room. */
+.rain-opt-line .sched-emo {
+  flex: none;
+  width: var(--emo-col);
+}
+.rain-opt-line > span:nth-child(2) {
+  flex: 1 1 8em;
+  min-width: 0;
+}
 .rain-opt-line b {
+  flex: none;
+  margin-left: auto;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;

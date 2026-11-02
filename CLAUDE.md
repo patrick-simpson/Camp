@@ -888,19 +888,25 @@ into it from app.js / settings.js is typeof-guarded.
   "Ask Patrick to repair team slots", an unnamed team), **People** (a team with no counselor
   accounts, an incomplete member record — the owner row is exempt, people with no sign-in
   yet for a week), **Notice board** and **Restore points** (info; denied restore nodes warn).
-  Not yet (their data arrives with their step): the schedule, week dates, meals, verses,
+  Not yet (their data arrives with their step): meals, verses,
   cleanup, electives, campers, phone alerts, asking-to-join, team colours. `hubModel`:
   "N of M ready" counts only rows that can be judged (`soon` and `skip` are left out), "Next:
   Teams" names the first warning. `HUB_OPENS` is the table of rows that open something
   (a row whose screen exists is a `<button>`, otherwise a `<div>`: `checklist.test.js`
-  checks `index.html` against it).
+  checks `index.html` against it). **Step 15** gave Camp week and Schedule their screens:
+  Camp week is `ok` with its dates or a plain `info` "No dates set yet" (the 2026 week has
+  none: never a chore); Schedule is `info` "The original schedule" while it isn't edited
+  here, else Appendix B's problems from `hubScheduleView()` (typical day empty, an empty day,
+  broken items, an overlap nobody marked) with the summary "Typical day · Mon–Fri · 3
+  one-offs"; a schema this build can't read is a warning.
 - **The front door** (`hubDoor`): running → new year due → nothing edited here yet, in that
   order. **Owner-only (Q8)**: the owner's gold button and the sentence every other director
   reads ("Patrick turns on editing.", via `ownerName()`) exist only when the door's action
-  exists — `HUB_DOOR_ACTIONS.original` / `['new-year']` are `null` until Steps 15 and 28 put
-  a function there — so at Step 14 nobody is offered a button that can only fail, and the
-  door is just its lead as one plain line (`data-quiet`; the model's text, "comes in the next
-  update", is not shown). The menu's owner rows work the same way
+  exists — `HUB_DOOR_ACTIONS.original` is Step 15's Edit the week here (`setupEditTheWeek`),
+  `['new-year']` stays `null` until Step 28 puts
+  a function there — nobody is offered a button that can only fail, and a door with no
+  action is just its lead as one plain line (`data-quiet`; the model's text, "comes in the
+  next update", is not shown). The menu's owner rows work the same way
   (`SETUP_OWNER_ACTIONS`: listed only for `isOwner()` AND when the action exists; a row that
   can't be used right now stays, greyed, with its reason in `[data-setup-why]`); a tap is
   re-checked against `isOwner()` and `why()` before it runs. `body.setup-owner` is set from
@@ -972,9 +978,10 @@ P2 §11.4–11.6 inside the Step 14 frame, styled in styles.css's "SET UP THE WE
 week, Schedule, the rain plan" block. Static markup a renderer patches (text, `hidden`,
 aria-checked / aria-selected / aria-pressed, data-*) and lists it fills with clipboard rows;
 the full row templates are in index.html's comments beside each list. The CSS switch lines
-for `data-screen="week" | "schedule" | "rain"` exist; **routing, renderers and every
-handler are the wiring session's** (`SETUP_SCREENS`, `HUB_OPENS`, `SETUP_SHEETS`,
-`renderSetupUi`'s dispatch, `setupWhereNow`, Back labels).
+for `data-screen="week" | "schedule" | "rain"` exist. **The behaviour is built — see "Camp
+week, Schedule and the rain plan: behaviour" below** (routing in `SETUP_SCREENS`,
+`HUB_OPENS`, `SETUP_SHEETS`, `renderSetupUi`'s dispatch, `setupWhereNow`; the renderers and
+every handler in setup-ui.js sections 8–11; the mutators in setup-sync.js sections 8–9).
 
 - **The day strip** `#sched-days` (shown on `schedule` only) lives INSIDE `#setup-head`, so
   it pins with the head (at large text it scrolls away with the sync line). `.daypick`, a
@@ -1092,6 +1099,96 @@ handler are the wiring session's** (`SETUP_SCREENS`, `HUB_OPENS`, `SETUP_SHEETS`
   by key (`glide`, only once hands are off the list), its "Changed" tag pops (`press`), a
   pane change arrives from the side (`arrive`, calm: a 120 ms fade), the fold opening
   unfolds (`arrive` + `glide`), and the sheets are the shell's.
+
+## Camp week, Schedule and the rain plan: behaviour (Step 15)
+
+The markup and visual system are above; this is what runs. Engine in setup-sync.js sections
+8–9 (pure over a draft tree; `commitSetup` is still the one write path), screens in
+setup-ui.js sections 8–11. No new file, so no new `?v=` entry.
+
+- **Routing.** `HUB_OPENS` has `week` and `schedule`; `SETUP_SCREENS` adds `week | schedule |
+  rain`; `SETUP_SHEETS` adds `sched-day`, `sched-item`, `rain-item`, `rain-done` (each opens
+  only with something a tap opened: `setupSheetReady`). `setupWhereNow` tells editorsHere
+  `week`, `schedule:<day|typical>` or `rain:<day>`. `state.ui.setupDay` (`typical | sun…sat`,
+  device-local; with none, today during the camp week else typical) and `state.ui.rainDay`.
+  `setupScreen()` returns `schedule` for a stored `rain` when the schedule isn't edited here
+  (a reload after Use the original week again). Back from the rain plan goes to that day's
+  Schedule and asks first when anything is staged (`rainLeave`: Keep planning / Leave it for
+  later / Discard).
+- **Camp week** (`renderWeekScreen`). Dates: a native date, only a Sunday (`isValidWeekStart`),
+  one undoable commit to `meta/weekStart` (always editable: `week` is a section that is
+  always on). Days: a tick sheet, the same two operations as the Schedule's day menu
+  (`schedGiveOwn`, `schedMakeFollowAgain`); read-only (`aria-disabled`) while the schedule is
+  the original. Double points: **in the legacy epoch (no `state.meta.epoch`) the form is
+  hidden and the fixed window is read out**; with an epoch it writes `meta/double`. TV
+  finale: `meta/finaleDow`. Nothing reads `double` / `finaleDow` yet (Steps 23 and 28).
+- **The Schedule screen** (`renderScheduleScreen`): the day strip (ring = follows the typical
+  day, dot = has changes, gold "!" = `schedDayIssues`; opens with today's chip at the left
+  edge during the camp week), rows by part of the day built as strings through
+  `setHtmlIfChanged`, gap rows (`schedGaps`, ≥ 15 min), skipped items with Bring back. While
+  the schedule is the original every row is a `<div>` (`schedViewTree()` = the seeded
+  built-in tree) and the screen shows the owner's door. The **item sheet** keeps its form in
+  `setupSched.item`; `schedItemModel()` derives everything that isn't a plain field. Its
+  questions are inline, each answered before the save it guards and **keyed to the question
+  it was answered for** (a keystroke elsewhere never re-asks): an overlap (`Push later items
+  back N min` runs `schedRipple`; `That's on purpose` sets `overlapOk`), a day with its own
+  value for a changed field (`Keep Wednesday's` / `Change Wednesday too`), a renamed item
+  (`Yes, same` keeps `alertKey`; `No, start fresh` mints one — a patch can't carry it, so it is
+  written to the record). Two equal scope buttons for an item that comes from the typical day:
+  **Just Tue** writes `patches/tue/<bid>/<field>` for what differs (a field set back to the
+  typical value drops out — "Back to the usual"); **Every day like Tue** writes
+  `typical/<bid>/<field>` and removes the seen day's patch on exactly the fields that changed
+  (never one the sheet left alone). A change a patch can't carry (removing a meal, an elective
+  slot or the teams) refuses Just Tue in words. Remove asks skip-just-this-day / remove-from-
+  every-day / delete a one-off, and re-homes the games with `setupCombined` (**ONE undo entry
+  for the setup and the games**). Closing with ✕ or the scrim on an edited sheet asks first;
+  Escape and the phone's Back do not (the edit is lost). "Tell people who follow this" is not
+  built (the alert sender is Step 26).
+- **Day operations** are shared by Camp week and Schedule: give a day its own schedule (same
+  ids, `typical:false`, patches gone, one commit), follow again / clear (confirm, a
+  `pre-delete` restore point first — a device with no sync has nowhere to keep one and goes
+  on, any other refusal stops it — and the games on removed items listed as not on the
+  schedule). Copy to Mon–Fri turns on the Mon–Fri days with nothing of their own. "Start from
+  last year's Sunday" is not built (no archive yet).
+- **The rain plan** (`rainOpen` → the `rain` screen). A plan is `{dk, epoch, at, items:
+  {path: {base, staged, g?}}, games: {gid: {base, staged}}}`: every staged field keeps the
+  value it had when first staged (`rainStage`: a field put back to its base leaves the plan;
+  `g` ties the fields one action staged, so Put it back on one half of a swap puts the other
+  back). It is saved to `lsKey('campSetupRainDraft')` on every stage (wiped on sign-out), comes
+  back after a reload, is dropped on another day or camp year, and an old one (> 12 h) asks.
+  `rainBusy()` (in `reloadBlocked`) holds an auto-reload only while a plan with changes is
+  open and was touched in the last 2 minutes. The list opens collapsed around now (now, the
+  next three, every games item with its games, every staged item; runs fold; `rain-fold` and
+  `Show the whole day`). One item sheet with panes (`data-pane`): actions, swap (opens scrolled
+  to "This one"), how (two lengths differ: **Swap their time slots** or **Keep their lengths**,
+  each showing its result and the overlaps it opens before choosing), time (new start/end,
+  until the end of the day, ripple that never ends past midnight), games, move (a game to any
+  item on any day with a competition day; its `dayId` follows the item's weekday, `session`
+  the item's time, `ord` after what it holds; onto double-points games asks first). **Done**
+  (`rainOpenDone`): clashes first — every staged base against the tree NOW (`Use yours` /
+  `Keep theirs`; Done waits for each), the lines, the verdict that is ALWAYS said (overlaps and
+  new 45-minute gaps, or "Nothing overlaps."), then `rainCommit`: `restoreAutoForEdit` (inside
+  `commitSetup`) + ONE setup commit + ONE config change + ONE undo entry "Rain plan for
+  Wednesday" (`setupCombined`). Offline it says so in words. "Add something for today" is the
+  item sheet in staging mode (`it.stage`): a whole one-off record staged under
+  `dayBlocks/<dk>/<id>`. The "Tell people" choice is kept as an intent in
+  `lsKey('campSetupAlertIntent')` only when phone alerts are live (nothing sends it until
+  Step 26). Motion: `JellyMotion.flipKeyed` glides survivors when a staged row re-sorts (not
+  under a thumb: `whenHandsOff`), the Changed tag pops (`press`), panes arrive from the side;
+  calm is a plain replace / fade.
+- **The home schedule sheet's way in** (`renderSchedulePlan`, called from `renderSchedule`):
+  editors see **Change today's plan** (another day's name when it isn't today) when the
+  schedule is edited here, else one line pointing at Set up the week — never a button that
+  leads to a refusal; counselors see none of it.
+- **Calendar and phones.** With the schedule edited here the per-day `.ics` uses the block id
+  in its UID (moving or renaming an item updates the event in place; the position and start it
+  used would change with the edit). The publisher already republishes after a setup commit.
+- **Gates.** M2 (junior Wednesday, seeded context, real taps at 360×640):
+  `docs/build-notes/verify/step15-m2.cjs` — **10 taps**, every target already in view, over the
+  gate of 12 never. The wider pass (every screen and sheet, both camps, editor and owner, 360 /
+  390, light / dark, 100 / 130 / 200 % text: no target under 44×44, no sideways scroll):
+  `docs/build-notes/verify/step15-pass.cjs`. Both serve the worktree (`python3 -m http.server`),
+  block Firebase and stand in for the first snapshots (`setupReady = configReady = true`).
 
 ## Tests
 
@@ -1421,8 +1518,24 @@ What's covered, and why each file exists:
   and `campWeek()` (unset / before / during / after, setup date over the drawer's).
 - `seed.test.js` (+ `.senior`) and `games-blocks.test.js` (+ `.senior`) — the schedule as
   data: the seed's round trip, measured shape and frozen id fixtures, the 10,080-minute
-  banner fuzz before vs after seeding, the A2 oracle (see "Schedule as data"). Both
+  banner fuzz before vs after seeding, the A2 oracle (see "Schedule as data"), and that a
+  game the rain plan moved shows on its new item and is never put back by A2. Both
   eval-twin under senior.
+- `schedule-edit.test.js` (+ `.senior`) — setup-sync.js sections 8–9, pure over a tree:
+  edit by scope (typical vs just this day; the patches that go with it; a day's own patch
+  never written into the typical day), the days an "Every day like…" save reaches, add /
+  remove / bring back, give a day its own schedule (same ids, one commit, the day reads
+  exactly as before) and follow again, the ripple (never past midnight, an end-of-day item
+  elastic), overlaps and gaps, "open and save every seeded item unchanged: zero ops", and the
+  rain plan's engine (first base kept, swaps, nudges, retime, Done's clash check, verdict,
+  commit mutator, game moves). `schedule-screen.test.js` (+ `.senior`) — the Schedule screen's
+  behaviour layer: rows, preview mode, gaps, the item sheet's questions (overlap, a day with
+  its own value, a rename), the scope buttons, remove with games, the day's menu.
+  `week-screen.test.js` (+ `.senior`) — Camp week (dates, ticks, finale, the legacy double
+  window), Edit the week here as a conversation, Use the original week again.
+  `rain-plan.test.js` (+ `.senior`) — opening, collapse, every action, the draft, Back,
+  Done (clashes, verdict, ONE commit and ONE undo entry for setup + games), the home sheet's
+  way in, and **M2 in handler calls (10)**; the REAL tap count is the Playwright script.
 - **The seeded pass** — `tests/run.js` re-runs `SEEDED_FILES` (week, push, chat, ics,
   tabs, frame, shell, home, render-stability, game-view, secrecy, motion, overlays,
   boot-cache, backup) against a camp whose schedule is edited here
@@ -2534,12 +2647,17 @@ Both camps, junior and senior, run all of it.
   is not editable yet). Phone alerts follow on their own: push.js's setup-event hook
   republishes when the switch moves (see "The published schedule").
   `setupUseOriginal` is one ordinary `commitSetup` writing `meta/on/<s>: false` (no undo
-  entry: the other button is the undo). **Not built here:** the UI — `HUB_DOOR_ACTIONS.original`
-  (the hub door's gold "Edit the week here") and `SETUP_OWNER_ACTIONS.original` (the owner
-  menu's "Use the original week again") are the wiring session's, and the dialogs for the
-  freeze questions; team branding (`short` / `emoji` written to `state.teams`, A1 step 3)
+  entry: the other button is the undo). The buttons are `HUB_DOOR_ACTIONS.original`
+  (`setupEditTheWeek`: a plain question first, "Is a camp week running right now?" when no
+  date is set, the freeze as a question the owner can override in words, every refusal a
+  sentence — `TURNON_WHY`) and `SETUP_OWNER_ACTIONS.original` (`setupUseOriginalFlow`, greyed
+  with "Already using the original week." while off). **Not built here:** team branding (`short` / `emoji` written to `state.teams`, A1 step 3)
   waits for step 25, the first reader of those fields. Nothing presses the switch in this
-  step: both camps stay on the built-in week until the owner does.
+  step: both camps stay on the built-in week until the owner does. **The seed marks the
+  printed week's own overlaps `overlapOk`** (junior's Tue and Thu cabin movie nights run over
+  Prepare for bed and the devotional: the longer item of each overlapping pair), so a freshly
+  seeded camp warns about nothing; the frozen id fixtures are unaffected (they pin ids and
+  alert keys only).
 - **The published schedule** (push.js; the whole push layer is still dormant while
   `PUSH_SERVICE_URL` is blank): `pushPublishSchedule(weekStart)` is ONE transaction on
   `pushSchedule` — `{weekStart, at, by, blocks, rev: (cur.rev||0)+1, src}`, where

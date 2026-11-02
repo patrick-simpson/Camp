@@ -219,6 +219,21 @@ test('the seed has the measured shape (§10.2): typical day, patches, one-offs, 
   SETUP_DK.forEach((dk, d) => assert.equal(s.days[dk].tag, SCHED_DAYS[d].tag, dk + ' keeps its tag'));
 });
 
+test('the printed week\'s overlaps are marked on purpose in the seed: the longer item of each overlapping pair, so the hub starts by warning about nothing', () => {
+  const tree = seedTreeOf();
+  const marked = [];
+  SEED_DOWS.forEach((d) => {
+    const plan = resolveDay(tree, d).map(setupRichBlock);
+    const timed = plan.filter((b) => !b.noTime);
+    timed.forEach((a, i) => timed.slice(i + 1).forEach((b) => { if (b.start < a.end && a.start < b.end) assert.ok(a.overlapOk || b.overlapOk, 'day ' + d + ' ' + a.label + ' / ' + b.label + ' overlap and neither is marked'); }));
+    plan.filter((b) => b.overlapOk).forEach((b) => marked.push(SETUP_DK[d] + ' ' + setupHeadLabel(b.label)));
+  });
+  assert.deepEqual(marked, CAMP.id === 'junior' ? ['tue Boys cabin movie night', 'thu Boys cabin movie night'] : [], 'only what the printed schedule overlaps');
+  const keep = setupTree;
+  setupTree = tree; setupRev++; // the camp as Edit the week here leaves it
+  try { assert.equal(hubScheduleView().overlaps.length, 0, 'the hub finds nothing to check on a freshly seeded camp'); } finally { setupTree = keep; setupRev++; }
+});
+
 test('every seeded record is one the published rules accept', () => {
   const s = buildSeed(CAMP);
   const check = (id, b, where) => {
@@ -234,7 +249,8 @@ test('every seeded record is one the published rules accept', () => {
     assert.equal(typeof b.ord, 'number', where + ' ord');
     assert.ok(/^[a-z0-9-]{1,48}$/.test(b.alertKey), where + ' alertKey');
     if (b.teams) Object.keys(b.teams).forEach((t) => assert.ok(/^t[0-9]$/.test(t) && b.teams[t] === true, where + ' teams'));
-    const allowed = ['start', 'end', 'label', 'emoji', 'type', 'slot', 'noTime', 'meal', 'ord', 'alertKey', 'teams'];
+    const allowed = ['start', 'end', 'label', 'emoji', 'type', 'slot', 'noTime', 'meal', 'ord', 'alertKey', 'teams', 'overlapOk'];
+    if (b.overlapOk !== undefined) assert.equal(b.overlapOk, true, where + ' overlapOk');
     Object.keys(b).forEach((k) => assert.ok(allowed.indexOf(k) !== -1, where + ' has an unexpected field ' + k));
   };
   Object.keys(s.typical).forEach((id) => check(id, s.typical[id], 'typical'));
