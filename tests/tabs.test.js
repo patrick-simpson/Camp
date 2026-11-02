@@ -402,7 +402,11 @@ test('coming back after ten minutes reopens on Now; a half-written message or ty
   showTab('chat');
   openGame(gid());
   shell.hiddenAt = Date.now() - 5 * 60 * 1000;
-  shellResume();
+  let ticks = 0;
+  const realTick = shellTick;
+  shellTick = () => { ticks += 1; };
+  try { shellResume(); } finally { shellTick = realTick; }
+  assert.equal(ticks, 1, 'waking runs the time-driven pass (a frozen iOS page fires no interval)');
   assert.equal(activeTab(), 'chat', 'five minutes: nothing moves');
   assert.equal(state.ui.gameId, gid());
   // away long, but a reply is half-written

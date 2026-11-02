@@ -281,7 +281,7 @@ The bar's own tap asks first (`wireReloadBanner`: `reloadBlocked()` sampled at
 pointerdown, since the tap itself blurs the composer) instead of reloading
 past an unsent message or a typed score. Bottom-strip layout (styles.css, one
 block next to `.update-banner-alert`; every offset is measured from the tab
-bar, `--tabbar-h`): on a tab the bar sits `.75rem` above it with the toaster
+bar, `--tabbar-h` = the bar as drawn, 58px + the home-indicator inset): on a tab the bar sits `.75rem` above it with the toaster
 lifted above that (8rem); on the Chat tab the bar is lifted to 5.5rem so it
 never covers the composer, and the toaster to 12rem to clear both (4.75rem when
 there is no bar); the SDK-down pill, when it shares the strip with the bar,

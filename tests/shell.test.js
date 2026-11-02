@@ -254,3 +254,18 @@ test('the calm keys in boot-guard.js are the literals jelly-motion.js writes', (
   assert.equal(last, 'campScoreboardCalmLast');
   assert.equal(/PREF_KEY = '([^']+)'/.exec(MOTION)[1], 'campScoreboardCalmMotion');
 });
+
+test('the frame\'s roots are where the shell expects them: chat in its tab, the game in a takeover, no leftovers', () => {
+  const tab = (id) => INDEX.slice(INDEX.indexOf('id="' + id + '"'));
+  const between = (a, b) => INDEX.slice(INDEX.indexOf('id="' + a + '"'), INDEX.indexOf('id="' + b + '"'));
+  assert.ok(between('tab-chat', 'tab-more').includes('id="chat-view"'), '#chat-view lives inside the Chat tab (it moved out of Now)');
+  assert.notOk(between('tab-now', 'tab-games').includes('chat-view'), 'Now no longer carries the chat takeover');
+  assert.notOk(/id="chat-card"|id="game-view"/.test(INDEX), 'the home chat card and the appended game view are gone');
+  assert.ok(/id="takeover-game-body"/.test(INDEX) && /id="takeover-game-back-label"/.test(INDEX), 'the game takeover has its body and its labelled back');
+  ['now', 'games', 'chat', 'more'].forEach((t) => {
+    assert.ok(INDEX.includes('id="tab-btn-' + t + '"') && INDEX.includes('id="tab-' + t + '"'), t + ' has its button and its panel');
+  });
+  assert.ok(between('tab-now', 'tab-games').includes('id="now-banner"') && between('tab-now', 'tab-games').includes('id="live-home"'),
+    'Now hosts today\'s banner and live home unchanged');
+  assert.notOk(/chat-open/.test(CSS) || /chat-open/.test(readFixture('../app.js')) || /chat-open/.test(readFixture('../chat.js')), 'no body.chat-open anywhere: chat is a tab');
+});

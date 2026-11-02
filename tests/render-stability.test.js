@@ -56,3 +56,30 @@ test('no CSS rule animates every property', () => {
   const css = readFixture('../styles.css');
   assert.notOk(/transition:\s*all\b/.test(css), 'name the properties a transition is for');
 });
+
+test('a snapshot while the Chat tab shows leaves its built view alone, and Now\'s roots are not written at all', () => {
+  freshState();
+  setMemberRole('viewer');
+  const writes = { chat: 0, list: 0, banner: 0 };
+  const count = (el, key) => {
+    let html = '';
+    Object.defineProperty(el, 'innerHTML', { configurable: true, get: () => html, set: (v) => { html = v; writes[key] += 1; } });
+  };
+  count(document.getElementById('chat-view'), 'chat');
+  count(document.getElementById('chat-list'), 'list');
+  count(document.getElementById('now-banner'), 'banner');
+  try {
+    state.ui.tab = 'chat';
+    chatViewBuiltFor = null;
+    renderAll(); // builds the chat view once
+    const built = { ...writes };
+    assert.ok(built.chat >= 1, 'built on first show');
+    chatViewBuiltFor = 'general'; // (the stub DOM has no real children to compare against)
+    renderAll(); renderAll(); renderAll();
+    assert.equal(writes.chat, built.chat, 'three more snapshots: the view is not rebuilt');
+    assert.equal(writes.banner, 0, 'and Now\'s banner is never written while Chat shows');
+  } finally {
+    state.ui.tab = 'now'; chatViewBuiltFor = null;
+    setMemberRole('editor');
+  }
+});

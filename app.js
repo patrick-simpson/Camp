@@ -11547,7 +11547,9 @@ function shellHasUnsentWork() {
 function shellResume() {
   const away = shell.hiddenAt ? Date.now() - shell.hiddenAt : 0;
   shell.hiddenAt = 0;
-  if (away <= SHELL_RESUME_MS || shellHasUnsentWork()) { renderTabBadges(); return; }
+  // iOS restores a frozen page without firing the interval, so waking up runs the
+  // time-driven pass itself (the block that changed, a banner that expired).
+  if (away <= SHELL_RESUME_MS || shellHasUnsentWork()) { shellTick(); return; }
   shell.sheets.slice().forEach((id) => (id === 'schedule' && typeof closeSchedule === 'function' ? closeSchedule() : shellSheetClose(id)));
   state.ui.gameId = null;
   if (builderOpen()) { state.ui.view = 'home'; if (typeof discardGameDraft === 'function') discardGameDraft(); }

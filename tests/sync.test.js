@@ -467,3 +467,22 @@ test('an unchanged state pushes nothing at all', () => {
   pushState();
   assert.equal(ref.writes.length, 0);
 });
+
+test('a snapshot applied while another tab shows leaves Now to catch up, but the standings side effects still run', () => {
+  freshState();
+  setMemberRole('editor');
+  useFakeRef();
+  state.ui.tab = 'chat';
+  renderAll();
+  const realStandings = renderStandings;
+  let standings = 0;
+  renderStandings = () => { standings += 1; };
+  try {
+    applyRemoteState({ teams: state.teams, results: { g1: { medals: { gold: 't0' } } } });
+    renderAll();
+    assert.ok(standings >= 1, 'the change history and point alerts do not wait for the Games tab');
+    assert.ok(shell.dirty.now, 'Now is marked stale, not rendered under the Chat tab');
+    showTab('now');
+    assert.notOk(shell.dirty.now, 'and renders once, when shown');
+  } finally { renderStandings = realStandings; state.ui.tab = 'now'; }
+});

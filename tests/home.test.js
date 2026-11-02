@@ -483,3 +483,15 @@ test('the pill snap is creation-only — the change handler never calls it', () 
   const handler = body.slice(body.indexOf("addEventListener('change'"), body.indexOf('settleDayTabPill(tabs)'));
   assert.ok(handler.length > 0 && !handler.includes('settleDayTabPill'), 'the spring is the point of a tap');
 });
+
+test('Now hosts the banner, the live strip and the five home cards; renderAll gives them to the Now panel, not to every tab', () => {
+  const src = readFixture('../app.js');
+  const panel = src.slice(src.indexOf('const SHELL_PANELS = {'), src.indexOf('const SHELL_ALWAYS'));
+  const now = panel.slice(panel.indexOf('now: {'), panel.indexOf('games: {'));
+  ['renderNoticeBoard', 'renderAnnouncements', 'renderNowBanner', 'renderLiveHome', 'renderDayTabs', 'renderMyElectives', 'renderMemoryVerse', 'renderMealCleanup', 'renderBonuses', 'renderFooter']
+    .forEach((fn) => assert.ok(now.includes(fn + '('), fn + ' renders with Now'));
+  const all = src.slice(src.indexOf('function renderAll() {'), src.indexOf('// ── Week builder'));
+  assert.notOk(/renderNowBanner\(\)|renderLiveHome\(\)|renderDayTabs\(\)/.test(all), 'renderAll no longer renders them unconditionally');
+  assert.ok(all.includes('renderShellTabs()'));
+  assert.ok(/pruneExpiredAnnouncements\(\)/.test(src.slice(src.indexOf('const SHELL_ALWAYS'), src.indexOf('function renderTab('))), 'announcement pruning still runs on every pass');
+});

@@ -110,7 +110,7 @@
   --target: 44px;            /* EVERY tap target, at least, both ways */
   --row-min: 54px;           /* a grouped-list row */
   --header-h: 56px;
-  --tabbar-h: calc(56px + env(safe-area-inset-bottom, 0px));
+  --tabbar-h: calc(58px + env(safe-area-inset-bottom, 0px)); /* the bar as drawn: 1px hairline + 5px + a 52px button (the 56 of the spec's sketch left the chat composer 2px behind it) */
   --strip-h: 44px;           /* the live-reveal strip (40 in the spec's sketch; 44 so it is a full target) */
 
   /* Older names (pre-redesign rules). New code uses the palette directly.
