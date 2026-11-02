@@ -430,7 +430,8 @@ What's covered, and why each file exists:
   on a reorder / resize / missing roster / id-less record), two directors'
   different-team and name-vs-counselor edits both surviving, the acknowledged
   push advancing the confirmed baseline per field, an old build's whole write
-  still adopted, an offline rename merged through the real first snapshot (different
+  still adopted, the half-built-roster guard (editor writes back whole, viewer
+  doesn't), an offline rename merged through the real first snapshot (different
   team, different field, same field, a server-side reorder), and a refused team
   field parked as "Team names" and discarded. `sync.test.js`'s "teams are
   written whole" case was changed on purpose by S2b.
@@ -1422,9 +1423,15 @@ More sync invariants (each fixed after it bit us — don't regress these;
   Per-position paths have ONE known narrow race, accepted: a rename sent in the
   seconds between another director's reorder and its snapshot reaching this
   phone names the team now sitting at that index; reordering teams is a
-  once-a-year setup act. Old builds still send the whole array and every
-  build adopts it — nothing to migrate, and `database.rules.json` already
-  accepts a per-field write (`teams` only has to stay a branch).
+  once-a-year setup act. **The guard that comes with it**:
+  because a single `teams/2/name` can now re-grow a roster in a `state` node
+  wiped from the console, RTDB would hand back a roster with holes and no ids.
+  `applyRemoteState` adopts `remote.teams` only when `rosterIsWhole` (an array,
+  every record with a string `id`); otherwise this device keeps its own roster
+  and an EDITOR writes it back whole (`lastSyncedTree.teams = null` +
+  `schedulePush`; a viewer writes nothing). Old builds still send the whole
+  array and every build adopts it — nothing to migrate, and `database.rules.json`
+  already accepts a per-field write (`teams` only has to stay a branch).
   Quarantine needs nothing special: `quarantineLabel('teams/1/name')` reads
   "Team names" and `setStatePath` walks the roster array.
 - **`editorMidEntry` is an allowlist** (its focus test is `fieldFocused()`):

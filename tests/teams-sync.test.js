@@ -80,11 +80,16 @@ test('teams are no longer a singleton, and the notice still is', () => {
   assert.ok(SYNC_KEYS.includes('teams'), 'they still sync');
 });
 
-test('rosterAligned says what it means', () => {
+test('rosterAligned and rosterIsWhole say what they mean', () => {
   assert.equal(rosterAligned([{ id: 'a' }], [{ id: 'a', name: 'x' }]), true);
   assert.equal(rosterAligned([{ id: 'a' }], [{ id: 'b' }]), false);
   assert.equal(rosterAligned([], []), false, 'an empty roster has nothing to line up');
   assert.equal(rosterAligned([{ id: 'a' }], null), false);
+  assert.equal(rosterIsWhole([{ id: 't0' }, { id: 't1' }]), true);
+  assert.equal(rosterIsWhole([{ id: 't0' }, { name: 'no id' }]), false);
+  assert.equal(rosterIsWhole([{ id: 't0' }, null]), false);
+  assert.equal(rosterIsWhole({ 2: { name: 'Zed' } }), false, 'the object RTDB returns for a sparse roster');
+  assert.equal(rosterIsWhole([]), false);
 });
 
 // ── against the database ─────────────────────────────────────────
@@ -244,6 +249,44 @@ test('an OLD client\'s whole-roster write is adopted, and the next edit is per f
     await rename(2, 'New Name');
     assert.equal(serverState(db).teams[2].name, 'New Name');
     assert.equal(serverState(db).teams[2].counselor, 'Old Counselor');
+  } finally { teardown(); }
+});
+
+// ── a half-built roster on the server ────────────────────────────
+
+test('a node wiped from the console and re-grown by one rename never replaces the real roster', async () => {
+  const db = await boot();
+  try {
+    const mine = roster();
+    await db.ref(STATE_PATH + '/teams').remove();
+    await db.ref(STATE_PATH).update({ 'teams/2/name': 'Zed' }); // another device renamed one team of a roster it no longer had
+    const snap = await db.ref(STATE_PATH).once('value');
+    assert.equal(rosterIsWhole(snap.val().teams), false, 'the server really does hold a roster with holes and no ids');
+    handleRemoteSnapshot(snap.val());
+    assert.deepEqual(roster(), mine, 'this device keeps its own roster');
+    assert.ok(Array.isArray(state.teams) && state.teams.every((t) => typeof t.id === 'string'));
+    // …and, as an editor, puts it back whole.
+    assert.ok(pushTimer !== null, 'a write-back is queued');
+    clearTimeout(pushTimer); pushTimer = null;
+    pushState();
+    await settled();
+    assert.deepEqual(serverState(db).teams.map((t) => t.id), mine.map((t) => t.id), 'the server has a whole roster again');
+    assert.deepEqual(serverState(db).teams, mine);
+  } finally { teardown(); }
+});
+
+test('a half-built roster is also refused when it is an array with holes, and a viewer never writes it back', async () => {
+  const db = await boot();
+  try {
+    const mine = roster();
+    setMemberRole('viewer');
+    await db.ref(STATE_PATH + '/teams').remove();
+    await db.ref(STATE_PATH).update({ 'teams/0/name': 'A', 'teams/1/name': 'B' }); // dense enough to read back as an array
+    const snap = await db.ref(STATE_PATH).once('value');
+    assert.ok(Array.isArray(snap.val().teams) && !rosterIsWhole(snap.val().teams));
+    handleRemoteSnapshot(snap.val());
+    assert.deepEqual(roster(), mine);
+    assert.equal(pushTimer, null, 'a counselor\'s phone has no write to make');
   } finally { teardown(); }
 });
 

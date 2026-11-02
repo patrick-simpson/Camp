@@ -3247,8 +3247,14 @@ function applyRemoteState(remote, confirmedBase, opts) {
   // means "empty" — RTDB prunes empty objects on write. Treating
   // missing as keep-local made "New week (reset)" un-syncable: other
   // devices kept their old results and re-pushed them later. Teams
-  // stay guarded — a snapshot without a roster is malformed.
-  if (remote.teams) state.teams = remote.teams;
+  // stay guarded — a snapshot without a roster is malformed, and so is a
+  // half-built one (rosterIsWhole): this device keeps its own roster and, as an
+  // editor, writes it back whole below.
+  let rosterBroken = false;
+  if (remote.teams) {
+    if (rosterIsWhole(remote.teams)) state.teams = remote.teams;
+    else rosterBroken = true;
+  }
   // Announcements as they stood before this snapshot — anything the merge
   // adds beyond these is news worth a toast (see notifyNewAnnouncements).
   const annBefore = state.announcements || {};
@@ -3294,6 +3300,14 @@ function applyRemoteState(remote, confirmedBase, opts) {
   // otherwise the next push would re-send data we just received.
   lastSyncedTree = syncedSnapshot();
   writeConfirmedTree(confirmedBase || serverTree || lastSyncedTree);
+  // A half-built roster came back (see rosterIsWhole), so the server no longer
+  // holds what this device does: forget that it was confirmed and the next push
+  // diffs `teams` as new — the whole array. A shallow copy, so the confirmed tree
+  // written just above is left alone. Editors only: a viewer's write is refused.
+  if (rosterBroken && canEdit()) {
+    lastSyncedTree = Object.assign({}, lastSyncedTree, { teams: null });
+    schedulePush();
+  }
   // a parked path the server now agrees on is no longer parked
   if ((Object.keys(stateQuarantine).length && pruneQuarantine()) || superseded.length) quarantineChanged();
   if (superseded.length) showToast('↩️ A change that couldn’t be saved was replaced by a newer one from another device.');
@@ -3479,6 +3493,15 @@ function rosterAligned(a, b) {
   if (!Array.isArray(a) || !Array.isArray(b) || !a.length || a.length !== b.length) return false;
   return a.every((t, i) => t && b[i] && typeof t === 'object' && typeof b[i] === 'object'
     && typeof t.id === 'string' && t.id === b[i].id);
+}
+
+// A roster this app can run on: an array whose every record carries an id.
+// Per-field team writes mean a state node wiped from the console can be re-grown
+// by a single rename as `teams/2/name` alone, which RTDB hands back as a roster
+// with holes and no ids. That must never replace the real one (applyRemoteState
+// keeps ours and writes it back whole).
+function rosterIsWhole(t) {
+  return Array.isArray(t) && t.length > 0 && t.every((x) => x && typeof x === 'object' && typeof x.id === 'string');
 }
 
 // The synced portion of state as it should exist on the server: a deep copy
