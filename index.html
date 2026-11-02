@@ -127,6 +127,12 @@
     <symbol id="i-download" viewBox="0 0 24 24"><path d="M12 4v10.8M7.6 10.6 12 15l4.4-4.4M5 19.6h14"/></symbol>
     <symbol id="i-upload" viewBox="0 0 24 24"><path d="M12 15.2V4.4M7.6 8.8 12 4.4l4.4 4.4M5 19.6h14"/></symbol>
     <symbol id="i-pin" viewBox="0 0 24 24"><path d="M9.2 4h5.6l-.9 5.2 3 3.2H7.1l3-3.2z"/><path d="M12 12.4v7.8"/></symbol>
+    <!-- Step 15 (Schedule, rain plan): swap, earlier / later, add, rain. -->
+    <symbol id="i-swap" viewBox="0 0 24 24"><path d="M5 8.4h13.4M14.8 4.7l3.7 3.7-3.7 3.7"/><path d="M19 15.6H5.6M9.2 11.9l-3.7 3.7 3.7 3.7"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 19.4V5.2M6.3 10.9 12 5.2l5.7 5.7"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 4.6v14.2M6.3 13.1l5.7 5.7 5.7-5.7"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+    <symbol id="i-rain" viewBox="0 0 24 24"><path d="M7.2 15.2a3.9 3.9 0 0 1-.5-7.77 5.2 5.2 0 0 1 10.1.72 3.55 3.55 0 0 1 .4 7.05z"/><path d="M8.7 18.3 7.9 20.4M12.5 18.3l-.8 2.1M16.3 18.3l-.8 2.1"/></symbol>
     <!-- Team flag marks (§8.4) for a team with no shield (senior today): a
          pennant on a pole, filled with the team's mark colour (currentColor,
          from .flag[data-flag] or an inline --flag-fill) and outlined in ink.
@@ -330,6 +336,32 @@
                header's #sync-alert bar, mirrored here because the app header
                steps aside for the builder (the same idea as #tk-sync-alert). -->
           <section id="setup-sync-alert" class="sync-alert" role="alert" hidden></section>
+          <!-- The Schedule screen's day strip (P2 §11.5), INSIDE the head so it is
+               pinned with it (one sticky element, no second offset to keep in
+               step). Shown only on data-screen="schedule". A tablist: the chosen
+               day is aria-selected="true" (the renderer moves it; the markup
+               carries none), the list below is the tab panel. Per day the
+               renderer sets: data-today (outlined), the two dots' hidden —
+               [data-dot=typical] a ring = follows the typical day,
+               [data-dot=changed] a filled dot = has changes or one-offs — the
+               warn mark [data-sd-warn] (a hub issue on that day), and the
+               button's aria-label in words ("Wednesday, today, follows the
+               typical day, 2 changes"), since the dots are drawn. On a phone it
+               scrolls sideways and opens with today's chip at the left edge
+               during camp week (ux-R2: scroll the track so the chip's offsetLeft
+               is its scrollLeft). -->
+          <nav class="sched-days" id="sched-days" data-setup-screen="schedule" aria-label="Which day">
+            <div class="daypick" id="sched-days-track" role="tablist" aria-label="Which day">
+              <button type="button" class="daypick-btn" role="tab" aria-selected="false" aria-controls="setup-schedule" data-day="typical"><span class="daypick-name">Typical day</span><span class="daypick-dots" aria-hidden="true"></span></button>
+              <button type="button" class="daypick-btn" role="tab" aria-selected="false" aria-controls="setup-schedule" data-day="sun"><span class="daypick-name">Sun</span><span class="daypick-dots" aria-hidden="true"><i class="daypick-dot" data-dot="typical" hidden></i><i class="daypick-dot" data-dot="changed" hidden></i></span><i class="daypick-warn" data-sd-warn aria-hidden="true" hidden></i></button>
+              <button type="button" class="daypick-btn" role="tab" aria-selected="false" aria-controls="setup-schedule" data-day="mon"><span class="daypick-name">Mon</span><span class="daypick-dots" aria-hidden="true"><i class="daypick-dot" data-dot="typical" hidden></i><i class="daypick-dot" data-dot="changed" hidden></i></span><i class="daypick-warn" data-sd-warn aria-hidden="true" hidden></i></button>
+              <button type="button" class="daypick-btn" role="tab" aria-selected="false" aria-controls="setup-schedule" data-day="tue"><span class="daypick-name">Tue</span><span class="daypick-dots" aria-hidden="true"><i class="daypick-dot" data-dot="typical" hidden></i><i class="daypick-dot" data-dot="changed" hidden></i></span><i class="daypick-warn" data-sd-warn aria-hidden="true" hidden></i></button>
+              <button type="button" class="daypick-btn" role="tab" aria-selected="false" aria-controls="setup-schedule" data-day="wed"><span class="daypick-name">Wed</span><span class="daypick-dots" aria-hidden="true"><i class="daypick-dot" data-dot="typical" hidden></i><i class="daypick-dot" data-dot="changed" hidden></i></span><i class="daypick-warn" data-sd-warn aria-hidden="true" hidden></i></button>
+              <button type="button" class="daypick-btn" role="tab" aria-selected="false" aria-controls="setup-schedule" data-day="thu"><span class="daypick-name">Thu</span><span class="daypick-dots" aria-hidden="true"><i class="daypick-dot" data-dot="typical" hidden></i><i class="daypick-dot" data-dot="changed" hidden></i></span><i class="daypick-warn" data-sd-warn aria-hidden="true" hidden></i></button>
+              <button type="button" class="daypick-btn" role="tab" aria-selected="false" aria-controls="setup-schedule" data-day="fri"><span class="daypick-name">Fri</span><span class="daypick-dots" aria-hidden="true"><i class="daypick-dot" data-dot="typical" hidden></i><i class="daypick-dot" data-dot="changed" hidden></i></span><i class="daypick-warn" data-sd-warn aria-hidden="true" hidden></i></button>
+              <button type="button" class="daypick-btn" role="tab" aria-selected="false" aria-controls="setup-schedule" data-day="sat"><span class="daypick-name">Sat</span><span class="daypick-dots" aria-hidden="true"><i class="daypick-dot" data-dot="typical" hidden></i><i class="daypick-dot" data-dot="changed" hidden></i></span><i class="daypick-warn" data-sd-warn aria-hidden="true" hidden></i></button>
+            </div>
+          </nav>
         </header>
 
         <!-- ── The hub: the checklist (§11.2) ── -->
@@ -513,6 +545,223 @@
           <div class="setup-dock">
             <button type="button" class="btn btn-gold btn-block" id="rp-save-btn">Save a restore point now</button>
           </div>
+        </section>
+
+        <!-- ── Camp week (P2 §11.4; Step 15) ──
+             The dates, which days follow the typical day, double points and
+             the TV finale. Static markup; the renderer patches values, `hidden`
+             and aria-checked. While this camp's schedule isn't edited here the
+             screen is a READ-ONLY preview: #week-door says so (owner: the gold
+             Edit the week here; everyone else: "Patrick turns on editing."),
+             and every control in it carries `disabled` (inputs, selects) or
+             aria-disabled="true" (segment buttons) — set by the renderer. -->
+        <section class="setup-screen week" id="setup-week" data-setup-screen="week" aria-labelledby="week-title">
+          <div class="setup-intro">
+            <h2 class="setup-kicker" id="week-title">Camp week</h2>
+            <!-- The answer: the week itself ("Jul 18–24, 2027"), or "No dates
+                 yet"; the lede what kind of week ("Sunday to Saturday · Monday
+                 to Friday follow the typical day"). -->
+            <p class="setup-headline" id="week-headline"></p>
+            <p class="setup-lede" id="week-lede"></p>
+          </div>
+          <!-- Same door as the hub's (§11.1 read-only preview), one per screen. -->
+          <section class="hub-door setup-door" id="week-door" hidden>
+            <p class="hub-door-lead" id="week-door-lead"></p>
+            <p class="hub-door-text" id="week-door-text"></p>
+            <button type="button" class="btn btn-gold btn-block hub-door-btn" id="week-door-btn" data-owner-only hidden></button>
+            <p class="hub-door-owner" id="week-door-owner" data-not-owner hidden><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span id="week-door-owner-text"></span></p>
+          </section>
+
+          <div class="more-sec">
+            <div class="gl-head"><h3 class="gl-label">Dates</h3></div>
+            <div class="gl">
+              <!-- A label row: the whole row focuses the native date picker. While
+                   newYearDue() the input row is hidden and #week-wizard (the
+                   route into the new-year setup, §10.6) shows instead. -->
+              <label class="gl-row wk-field" id="week-start-row" for="week-start">
+                <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-calendar"/></svg></span>
+                <span class="gl-text"><span class="gl-title">Starts on</span><span class="gl-sub" id="week-start-sub">A Sunday</span></span>
+                <span class="wk-ctl"><input type="date" class="fld-input" id="week-start"></span>
+              </label>
+              <p class="fld-error" id="week-start-error" role="alert" hidden></p>
+              <button type="button" class="gl-row" id="week-wizard" hidden>
+                <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-sun"/></svg></span>
+                <span class="gl-text"><span class="gl-title" id="week-wizard-title">Getting ready for 2027?</span><span class="gl-sub">The new-year setup sets the dates</span></span>
+                <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Seven days, Sun–Sat (ux-R14: ONE choice per day), as a printed
+               form with two tick columns under one header — "Typical day" |
+               "Own schedule" — so which days follow the typical day reads down
+               a column at a glance (seven segmented controls stacked were a
+               wall). Each row: the day's name, its date ([data-week-date]) and
+               tag ([data-week-tag], "Competition day 3"), and a radiogroup of
+               two 44px ticks [data-week-follow=typical|own]; the chosen one is
+               aria-checked="true" (a filled disc in its ring; the other an empty
+               ring). Each tick's words (.wk-tick-word) are its accessible name,
+               visually hidden under the column header — and shown beside the
+               rings at large text, where the header row steps aside. Switching runs
+               the same atomic operation as the Schedule screen's "Give Friday
+               its own schedule" / "Make Friday follow the typical day again",
+               with its confirm. A read-only preview sets aria-disabled="true"
+               on every tick. -->
+          <div class="more-sec">
+            <div class="gl-head"><h3 class="gl-label">Days</h3></div>
+            <div class="gl wk-days" id="week-days">
+              <div class="wk-day wk-head" aria-hidden="true"><span></span><span class="wk-col">Typical day</span><span class="wk-col">Own schedule</span></div>
+              <div class="wk-day" data-dow="0"><span class="wk-day-name">Sunday<small data-week-date></small><span class="wk-day-tag" data-week-tag></span></span><div class="wk-ticks" role="radiogroup" aria-label="Sunday"><button type="button" class="wk-tick" role="radio" aria-checked="false" data-week-follow="typical"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Follows the typical day</span></button><button type="button" class="wk-tick" role="radio" aria-checked="false" data-week-follow="own"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Its own schedule</span></button></div></div>
+              <div class="wk-day" data-dow="1"><span class="wk-day-name">Monday<small data-week-date></small><span class="wk-day-tag" data-week-tag></span></span><div class="wk-ticks" role="radiogroup" aria-label="Monday"><button type="button" class="wk-tick" role="radio" aria-checked="false" data-week-follow="typical"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Follows the typical day</span></button><button type="button" class="wk-tick" role="radio" aria-checked="false" data-week-follow="own"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Its own schedule</span></button></div></div>
+              <div class="wk-day" data-dow="2"><span class="wk-day-name">Tuesday<small data-week-date></small><span class="wk-day-tag" data-week-tag></span></span><div class="wk-ticks" role="radiogroup" aria-label="Tuesday"><button type="button" class="wk-tick" role="radio" aria-checked="false" data-week-follow="typical"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Follows the typical day</span></button><button type="button" class="wk-tick" role="radio" aria-checked="false" data-week-follow="own"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Its own schedule</span></button></div></div>
+              <div class="wk-day" data-dow="3"><span class="wk-day-name">Wednesday<small data-week-date></small><span class="wk-day-tag" data-week-tag></span></span><div class="wk-ticks" role="radiogroup" aria-label="Wednesday"><button type="button" class="wk-tick" role="radio" aria-checked="false" data-week-follow="typical"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Follows the typical day</span></button><button type="button" class="wk-tick" role="radio" aria-checked="false" data-week-follow="own"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Its own schedule</span></button></div></div>
+              <div class="wk-day" data-dow="4"><span class="wk-day-name">Thursday<small data-week-date></small><span class="wk-day-tag" data-week-tag></span></span><div class="wk-ticks" role="radiogroup" aria-label="Thursday"><button type="button" class="wk-tick" role="radio" aria-checked="false" data-week-follow="typical"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Follows the typical day</span></button><button type="button" class="wk-tick" role="radio" aria-checked="false" data-week-follow="own"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Its own schedule</span></button></div></div>
+              <div class="wk-day" data-dow="5"><span class="wk-day-name">Friday<small data-week-date></small><span class="wk-day-tag" data-week-tag></span></span><div class="wk-ticks" role="radiogroup" aria-label="Friday"><button type="button" class="wk-tick" role="radio" aria-checked="false" data-week-follow="typical"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Follows the typical day</span></button><button type="button" class="wk-tick" role="radio" aria-checked="false" data-week-follow="own"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Its own schedule</span></button></div></div>
+              <div class="wk-day" data-dow="6"><span class="wk-day-name">Saturday<small data-week-date></small><span class="wk-day-tag" data-week-tag></span></span><div class="wk-ticks" role="radiogroup" aria-label="Saturday"><button type="button" class="wk-tick" role="radio" aria-checked="false" data-week-follow="typical"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Follows the typical day</span></button><button type="button" class="wk-tick" role="radio" aria-checked="false" data-week-follow="own"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Its own schedule</span></button></div></div>
+            </div>
+          </div>
+
+          <!-- Double points (setup/meta/double). In the legacy epoch the whole
+               form is hidden and #week-double-legacy says the window is fixed.
+               The switch row's state word is [data-switch-state="week-double-on"]
+               (paintSwitchWord); off hides #week-double-form. Native selects:
+               the phone's own picker (a wheel on iOS) beats a popover list one-
+               handed, the same reason §11.0 gives for time and date. -->
+          <div class="more-sec" id="week-sec-double">
+            <div class="gl-head"><h3 class="gl-label">Double points</h3></div>
+            <p class="setup-note" id="week-double-legacy" hidden><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span id="week-double-legacy-text"></span></p>
+            <div class="gl" id="week-double-box">
+              <div class="gl-row wk-switch">
+                <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-star"/></svg></span>
+                <span class="gl-text"><span class="gl-title">Double points this week</span></span>
+                <span class="gl-switch"><em class="gl-switch-state" data-switch-state="week-double-on">Off</em><jelly-switch id="week-double-on" label="Double points this week"></jelly-switch></span>
+              </div>
+              <div class="wk-double" id="week-double-form" hidden>
+                <label class="fld"><span class="fld-label">From</span><select class="fld-input" id="week-double-from"></select></label>
+                <label class="fld"><span class="fld-label">At</span><input type="time" step="300" class="fld-input" id="week-double-at"></label>
+                <label class="fld fld-wide"><span class="fld-label">Until</span><select class="fld-input" id="week-double-until"></select></label>
+              </div>
+            </div>
+            <p class="setup-note" id="week-double-note" hidden><svg class="ico" aria-hidden="true"><use href="#i-star"/></svg><span id="week-double-note-text"></span></p>
+          </div>
+
+          <div class="more-sec">
+            <div class="gl-head"><h3 class="gl-label">The big screen</h3></div>
+            <div class="gl">
+              <label class="gl-row wk-field" for="week-finale">
+                <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-tv"/></svg></span>
+                <span class="gl-text"><span class="gl-title">TV finale</span><span class="gl-sub">The champion celebration, after that day’s reveal</span></span>
+                <span class="wk-ctl"><select class="fld-input" id="week-finale"></select></span>
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <!-- ── Schedule (P2 §11.5; Step 15) ──
+             The day strip is in the head (#sched-days). One screen for the
+             typical day and each day of the week (state.ui.setupDay). The rows
+             are clipboard rows (.cb-row, see styles.css) written by the renderer
+             into the three part-of-day lists — Morning (before 12:00),
+             Afternoon (12:00–5:00 PM), Evening (5:00 PM on) — because a run
+             sheet's 12-hour times need the part of day to be unambiguous, and
+             a long day needs landmarks. A part with no items is hidden. Row:
+               <button type="button" class="cb-row sched-row" data-bid="b-0600"
+                       [data-diff="only|changed"] [data-notime] [data-warn]>
+                 <span class="cb-time">10:00<small>–11:45</small></span>
+                 <span class="cb-main">
+                   <span class="cb-title"><span class="sched-emo" aria-hidden="true">🏅</span><span>Team competitions</span></span>
+                   <span class="cb-sub">Games · 3 games<b class="sched-tag">Changed for Wed</b></span>
+                 </span>
+                 <span class="cb-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+               </button>
+             — the sub is the KIND in words ("Meal", "Games · 3 games",
+             "Elective 1"; none for a plain activity) then at most one tag:
+             "Wed only" (a one-off), "Changed for Wed" (patched), on the typical
+             day "Own version on Fri". [data-notime] (Show the time is off) dims
+             the time and says "Not shown" in its <small>; [data-warn] puts the
+             gold "!" before the sub (an overlap the director hasn't okayed). A
+             read-only preview renders the same row as a <div> with no chevron.
+             A gap of 15 minutes or more between two rows (phone) becomes, in
+             the list between them:
+               <button type="button" class="sched-gap" data-gap-start="840" data-gap-end="885">
+                 <svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span>Add something · 2:00–2:45</span>
+               </button> -->
+        <section class="setup-screen sched" id="setup-schedule" data-setup-screen="schedule" role="tabpanel" aria-labelledby="sched-title">
+          <div class="setup-intro">
+            <!-- Kicker: "Schedule · Junior camp". The answer is the DAY you are
+                 looking at ("Wednesday", "The typical day"), and the lede where
+                 it stands: "Follows the typical day · 2 changes" / "Its own
+                 schedule" / "Mon–Fri follow this" / "Competition day 3". -->
+            <h2 class="setup-kicker" id="sched-title">Schedule</h2>
+            <p class="setup-headline" id="sched-headline"></p>
+            <p class="setup-lede" id="sched-lede"></p>
+            <!-- A day view's two actions on one line: its rain plan (a link-
+                 coloured 44px target, the hub's "Next" look; hidden on the typical
+                 day and in a read-only preview) and the day's own sheet
+                 (#sheet-sched-day: own schedule / follow the typical day again /
+                 clear its changes / copy from another day). -->
+            <div class="sched-acts" id="sched-acts">
+              <button type="button" class="setup-next sched-rain-link" id="sched-rain-link" hidden><svg class="ico ico-lead" aria-hidden="true"><use href="#i-rain"/></svg><span id="sched-rain-link-text">Rain plan for Wednesday</span><svg class="ico" aria-hidden="true"><use href="#i-chev-r"/></svg></button>
+              <button type="button" class="sched-day-btn" id="sched-day-btn" aria-haspopup="dialog" aria-controls="sheet-sched-day" hidden><span id="sched-day-btn-text">Day options</span><svg class="ico" aria-hidden="true"><use href="#i-dots"/></svg></button>
+            </div>
+          </div>
+          <section class="hub-door setup-door" id="sched-door" hidden>
+            <p class="hub-door-lead" id="sched-door-lead"></p>
+            <p class="hub-door-text" id="sched-door-text"></p>
+            <button type="button" class="btn btn-gold btn-block hub-door-btn" id="sched-door-btn" data-owner-only hidden></button>
+            <p class="hub-door-owner" id="sched-door-owner" data-not-owner hidden><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span id="sched-door-owner-text"></span></p>
+          </section>
+          <!-- Plain lines with an icon (never a tinted callout): where this day
+               differs ("Friday evening is different from the typical day: 8 items
+               skipped, 10 Friday-only"); on the typical day, what a save there
+               reaches ("Changes Mon–Fri, except days that have their own version
+               of this"). -->
+          <p class="setup-note" id="sched-day-note" hidden><svg class="ico" aria-hidden="true"><use href="#i-calendar"/></svg><span id="sched-day-note-text"></span></p>
+          <p class="setup-note" id="sched-scope-note" hidden><svg class="ico" aria-hidden="true"><use href="#i-calendar"/></svg><span id="sched-scope-note-text"></span></p>
+
+          <!-- Guided first build (an empty typical day, or an empty arrival /
+               send-off day): one line and one action. -->
+          <div class="sched-start" id="sched-empty" hidden>
+            <p class="sched-start-text" id="sched-empty-text">Start with the first thing in the morning, usually breakfast.</p>
+            <button type="button" class="btn btn-gold" id="sched-add-first"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>Add the first item</button>
+            <button type="button" class="btn" id="sched-copy-from" hidden>Copy from another day…</button>
+            <button type="button" class="btn" id="sched-copy-archive" hidden></button>
+          </div>
+
+          <div class="more-sec sched-part" data-sched-part="morning" hidden>
+            <div class="gl-head"><h3 class="gl-label">Morning</h3></div>
+            <div class="gl cb-list sched-list" data-sched-list="morning"></div>
+          </div>
+          <div class="more-sec sched-part" data-sched-part="afternoon" hidden>
+            <div class="gl-head"><h3 class="gl-label">Afternoon</h3></div>
+            <div class="gl cb-list sched-list" data-sched-list="afternoon"></div>
+          </div>
+          <div class="more-sec sched-part" data-sched-part="evening" hidden>
+            <div class="gl-head"><h3 class="gl-label">Evening</h3></div>
+            <div class="gl cb-list sched-list" data-sched-list="evening"></div>
+          </div>
+
+          <!-- Once the typical day has three items: "Use this for Monday to
+               Friday?" with its one action. -->
+          <div class="sched-start" id="sched-copy" hidden>
+            <p class="sched-start-text" id="sched-copy-text">Use this for Monday to Friday?</p>
+            <button type="button" class="btn" id="sched-copy-week">Copy to Mon–Fri</button>
+          </div>
+
+          <!-- Typical items skipped on this day, one row each:
+               <div class="cb-row sched-row" data-bid="…" data-skipped>
+                 <span class="cb-time">6:00<small>–6:45</small></span>
+                 <span class="cb-main"><span class="cb-title"><span class="sched-emo" aria-hidden="true">🏅</span><span>Evening competition</span></span></span>
+                 <span class="cb-end"><button type="button" class="btn btn-sm" data-sched-bring="b-1080">Bring back</button></span>
+               </div> -->
+          <div class="more-sec" id="sched-sec-skipped" hidden>
+            <div class="gl-head"><h3 class="gl-label" id="sched-skipped-label">Skipped on Wednesday</h3></div>
+            <div class="gl cb-list" id="sched-skipped-list"></div>
+          </div>
+
+          <!-- Add anywhere (the gap rows add at a time): opens the item sheet
+               empty. "Add to Wednesday" / "Add to the typical day". -->
+          <button type="button" class="sched-add" id="sched-add" hidden><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span id="sched-add-text">Add to Wednesday</span></button>
         </section>
 
         <!-- The classic builder (Games, Days, Teams, Notice, Data) as one screen
@@ -1114,6 +1363,192 @@
       </div>
     </div>
   </div>
+
+  <!-- ── SCHEDULE AND RAIN PLAN: their sheets (P2 §11.5–11.6; Step 15) ──
+       Shell sheets like the four above (editors only, ONE at a time: opening
+       one closes the others). Every id / data-* is a hook; lists are filled
+       with .cb-row clipboard rows. -->
+
+  <!-- A day's own actions (Schedule → "Day options"). Rows are listed or
+       hidden by what the day is: own / follow (the one that applies), rain,
+       clear (only with changes), copy (an empty day). Each that needs a
+       restore point and a confirm asks through askDialog. -->
+  <div id="sheet-sched-day" class="sheet-overlay" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-sched-day-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-sched-day-title">Wednesday</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="sheet-body">
+        <div class="gl">
+          <button type="button" class="gl-row" data-sched-act="rain">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-rain"/></svg></span>
+            <span class="gl-text"><span class="gl-title" data-sched-act-title>Rain plan for Wednesday</span><span class="gl-sub">Move things around, for this day only</span></span>
+            <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+          </button>
+          <button type="button" class="gl-row" data-sched-act="own" hidden>
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-calendar"/></svg></span>
+            <span class="gl-text"><span class="gl-title" data-sched-act-title>Give Wednesday its own schedule</span><span class="gl-sub">It keeps today’s items; the typical day stops changing it</span></span>
+            <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+          </button>
+          <button type="button" class="gl-row" data-sched-act="follow" hidden>
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-calendar"/></svg></span>
+            <span class="gl-text"><span class="gl-title" data-sched-act-title>Make Wednesday follow the typical day again</span><span class="gl-sub">Saves a restore point first</span></span>
+            <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+          </button>
+          <button type="button" class="gl-row" data-sched-act="copy" hidden>
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-download"/></svg></span>
+            <span class="gl-text"><span class="gl-title">Copy from another day…</span><span class="gl-sub" data-sched-act-sub></span></span>
+            <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+          </button>
+          <button type="button" class="gl-row gl-row-danger" data-sched-act="clear" hidden>
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-undo"/></svg></span>
+            <span class="gl-text"><span class="gl-title" data-sched-act-title>Clear all of Wednesday’s changes</span><span class="gl-sub">Saves a restore point first</span></span>
+            <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- The item sheet (§11.5): one schedule item, every field. Opened from a
+       Schedule row, a gap row (start/end prefilled) or Add. The fields are
+       static; the renderer sets values, `hidden` and aria-checked. Inline
+       questions (.si-ask) appear above the dock when they apply and each must
+       be answered before the save it guards. The dock is the save:
+         - an item from the typical day, seen on a day: the two equal scope
+           buttons #si-save-day "Just Wednesday" / #si-save-all "Every day like
+           Wednesday" (labels in #si-save-day-text / #si-save-all-text), the
+           second carrying the live caption #si-scope-caption inside it, naming
+           the days that will ACTUALLY change ("Mon, Tue, Thu, Fri — Wednesday
+           keeps its own start time"); adding asks "Add to just Wednesday" /
+           "Add to every day like Wednesday" and removing "Skip just Wednesday"
+           / "Remove from every day like Wednesday" (the same two buttons,
+           relabelled; #si-save is then hidden);
+         - anything else (the typical day itself, a one-off, an own day): the
+           single #si-save "Save".
+       #si-tell (☐ Tell people who follow this) shows only when the change
+       touches today or tomorrow in camp week with phone alerts live. -->
+  <div id="sheet-sched-item" class="sheet-overlay" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet sheet-tall" role="dialog" aria-modal="true" aria-labelledby="sheet-sched-item-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-sched-item-title">Team competitions</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <!-- Where this item comes from, in words: "Wednesday · from the typical
+           day" / "Wednesday only" / "Changed for Wednesday · Back to the usual"
+           (#si-reset, shown only for a patched item). -->
+      <p class="sheet-sub" id="si-where"><span id="si-where-text"></span> <button type="button" class="sheet-sub-act" id="si-reset" hidden>Back to the usual</button></p>
+      <div class="sheet-body si">
+        <label class="fld fld-wide"><span class="fld-label">What happens</span><jelly-input class="form-input" id="si-label" type="text" maxlength="120" label="What happens"></jelly-input></label>
+        <p class="fld-error" id="si-label-error" role="alert" hidden></p>
+
+        <div class="fld fld-wide">
+          <span class="fld-label" id="si-emoji-label">Emoji</span>
+          <!-- A short grid of camp emoji, one 44px button each —
+               <button type="button" class="si-emo" data-emoji="🏅" aria-pressed="false" aria-label="Medal">🏅</button>
+               (aria-pressed="true" on the chosen one) — then #si-emoji-other, a
+               small text box for anything else (its value IS the choice when
+               it isn't one of the grid's). -->
+          <div class="si-emoji" role="group" aria-labelledby="si-emoji-label">
+            <div class="si-emoji-grid" id="si-emoji-grid"></div>
+            <input type="text" class="fld-input si-emoji-other" id="si-emoji-other" maxlength="8" aria-label="Another emoji" placeholder="Other">
+          </div>
+        </div>
+
+        <div class="si-times">
+          <label class="fld"><span class="fld-label">Starts</span><input type="time" step="300" class="fld-input" id="si-start"></label>
+          <label class="fld" id="si-end-fld"><span class="fld-label">Ends</span><input type="time" step="300" class="fld-input" id="si-end"></label>
+        </div>
+        <p class="fld-error" id="si-time-error" role="alert" hidden>Ends before it starts</p>
+        <div class="gl si-switches">
+          <div class="gl-row si-switch">
+            <span class="gl-text"><span class="gl-title">Until the end of the day</span><span class="gl-sub">For “Lights out” and anything that runs to midnight</span></span>
+            <span class="gl-switch"><em class="gl-switch-state" data-switch-state="si-allday">Off</em><jelly-switch id="si-allday" label="Until the end of the day"></jelly-switch></span>
+          </div>
+          <div class="gl-row si-switch">
+            <span class="gl-text"><span class="gl-title">Show the time</span><span class="gl-sub">Off for items like “Lights out”</span></span>
+            <span class="gl-switch"><em class="gl-switch-state" data-switch-state="si-showtime">On</em><jelly-switch id="si-showtime" label="Show the time" checked></jelly-switch></span>
+          </div>
+        </div>
+
+        <div class="fld fld-wide">
+          <span class="fld-label" id="si-type-label">This is</span>
+          <div class="seg" id="si-type" role="radiogroup" aria-labelledby="si-type-label">
+            <button type="button" class="seg-btn" role="radio" aria-checked="true" data-si-type="activity">Activity</button>
+            <button type="button" class="seg-btn" role="radio" aria-checked="false" data-si-type="meal">Meal</button>
+            <button type="button" class="seg-btn" role="radio" aria-checked="false" data-si-type="games">Games</button>
+            <button type="button" class="seg-btn" role="radio" aria-checked="false" data-si-type="elective" data-feature="electives">Elective</button>
+          </div>
+        </div>
+        <div class="fld fld-wide" id="si-meal-fld" hidden>
+          <span class="fld-label" id="si-meal-label">Which meal</span>
+          <div class="seg" id="si-meal" role="radiogroup" aria-labelledby="si-meal-label">
+            <button type="button" class="seg-btn" role="radio" aria-checked="false" data-si-meal="breakfast">Breakfast</button>
+            <button type="button" class="seg-btn" role="radio" aria-checked="false" data-si-meal="lunch">Lunch</button>
+            <button type="button" class="seg-btn" role="radio" aria-checked="false" data-si-meal="supper">Supper</button>
+          </div>
+        </div>
+        <div class="fld fld-wide" id="si-slot-fld" hidden>
+          <span class="fld-label" id="si-slot-label">Which elective</span>
+          <div class="seg" id="si-slot" role="radiogroup" aria-labelledby="si-slot-label">
+            <button type="button" class="seg-btn" role="radio" aria-checked="false" data-si-slot="0">Elective 1</button>
+            <button type="button" class="seg-btn" role="radio" aria-checked="false" data-si-slot="1">Elective 2</button>
+            <button type="button" class="seg-btn" role="radio" aria-checked="false" data-si-slot="2">Elective 3</button>
+          </div>
+        </div>
+
+        <!-- Who meets (shown when the item lists teams): one toggle per team,
+           <button type="button" class="si-team" data-team="t0" aria-pressed="true">[teamMark 24]<span>Foxes</span></button> -->
+        <div class="fld fld-wide" id="si-teams-fld" hidden>
+          <span class="fld-label" id="si-teams-label">Who meets</span>
+          <div class="si-teams" id="si-teams" role="group" aria-labelledby="si-teams-label"></div>
+        </div>
+
+        <!-- Games here (a Games item): this day's attached games, each
+           <div class="cb-row"><span class="cb-time"></span><span class="cb-main"><span class="cb-title"><span class="sched-emo">🪓</span><span>Axe Throwing</span></span></span><span class="cb-end"><button type="button" class="btn btn-sm" data-si-move="g-axe">Move…</button></span></div>
+           (no time column: .si-games rows have none), then #si-add-game (S6a). -->
+        <div class="fld fld-wide" id="si-games-fld" hidden>
+          <span class="fld-label">Games here</span>
+          <div class="gl cb-list si-games" id="si-games"></div>
+          <button type="button" class="sched-add" id="si-add-game" hidden><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span>Add a game here</span></button>
+        </div>
+
+        <p class="setup-note" id="si-alert"><svg class="ico" aria-hidden="true"><use href="#i-bell"/></svg><span id="si-alert-text"></span></p>
+
+        <!-- Inline questions, each a plain line and its two answers:
+             overlap ("Overlaps Prepare for bed (9:15–9:30 PM).") → push | ok;
+             a day with its own value ("Wednesday has its own start time
+             (10:30).") → keep | change; a renamed item → same | fresh;
+             a ripple that can't fit ("Cabin devotional doesn't fit before
+             midnight — shorten it or skip it today") is a line with no answers. -->
+        <div class="si-asks">
+          <div class="si-ask" id="si-overlap" hidden><p class="si-ask-q" id="si-overlap-text"></p><div class="si-ask-a"><button type="button" class="btn btn-sm" data-si-overlap="push" id="si-overlap-push">Push later items back</button><button type="button" class="btn btn-sm" data-si-overlap="ok">That’s on purpose</button></div></div>
+          <div class="si-ask" id="si-ownday" hidden><p class="si-ask-q" id="si-ownday-text"></p><div class="si-ask-a"><button type="button" class="btn btn-sm" data-si-ownday="keep" id="si-ownday-keep">Keep Wednesday’s</button><button type="button" class="btn btn-sm" data-si-ownday="change" id="si-ownday-change">Change Wednesday too</button></div></div>
+          <div class="si-ask" id="si-rekey" hidden><p class="si-ask-q">Is this still the same thing for reminders?</p><div class="si-ask-a"><button type="button" class="btn btn-sm" data-si-rekey="same">Yes, same</button><button type="button" class="btn btn-sm" data-si-rekey="fresh">No, start fresh</button></div></div>
+          <p class="si-ask-q si-ask-warn" id="si-nofit" hidden></p>
+        </div>
+
+        <button type="button" class="danger-link si-remove" id="si-remove"><span id="si-remove-text">Remove…</span></button>
+      </div>
+      <div class="sheet-dock si-dock">
+        <div class="sheet-tell" id="si-tell" hidden>
+          <jelly-checkbox class="rp-check" id="si-tell-check"><span class="gl-title">Tell people who follow this</span></jelly-checkbox>
+          <p class="setup-note">Only phones that turned on reminders for this item get it — tell everyone else in person.</p>
+        </div>
+        <div class="si-scope" id="si-scope" hidden>
+          <button type="button" class="btn" id="si-save-day"><span id="si-save-day-text">Just Wednesday</span></button>
+          <button type="button" class="btn" id="si-save-all"><span id="si-save-all-text">Every day like Wednesday</span><span class="si-scope-caption" id="si-scope-caption"></span></button>
+        </div>
+        <button type="button" class="btn btn-gold btn-block" id="si-save">Save</button>
+      </div>
+    </div>
+  </div>
+
 
   <!-- ── FULL WEEK SCHEDULE (bottom sheet, opened from Happening Now and More) ── -->
   <div id="schedule-overlay" class="schedule-overlay" hidden>

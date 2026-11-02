@@ -2053,7 +2053,10 @@ body.builder-open .setup {
 }
 .setup[data-screen="hub"] [data-setup-screen="hub"],
 .setup[data-screen="backups"] [data-setup-screen="backups"],
-.setup[data-screen="classic"] [data-setup-screen="classic"] {
+.setup[data-screen="classic"] [data-setup-screen="classic"],
+.setup[data-screen="week"] [data-setup-screen="week"],
+.setup[data-screen="schedule"] [data-setup-screen="schedule"],
+.setup[data-screen="rain"] [data-setup-screen="rain"] {
   display: block;
 }
 /* In the frame, the classic builder's own back and heading step aside: the
@@ -3170,6 +3173,796 @@ button.cb-row:active {
 .setup-advanced > .setup-note {
   margin-top: 0;
 }
+
+/* ============================================================
+   SET UP THE WEEK: Camp week, Schedule, the rain plan (P2 §11.4–11.6; Step 15)
+   ============================================================
+   The clipboard again: the day is a run sheet — times down the left in
+   tabular numerals, one hairline row per item, the part of the day as a short
+   sentence-case label — and only a DIFFERENCE gets a tag ("Wed only",
+   "Changed for Wed"), so a day that follows the typical day reads clean and
+   its changes stand out. The rain plan is the same sheet in one hand: the day
+   folded around now, a games item's games right under it (one tap from the
+   list to the move picker), one gold Done at the foot, and every action in a
+   bottom sheet, never a row of buttons. Nothing here animates by itself: a
+   re-sorted row glides by key, a staged mark pops, a pane arrives (JellyMotion,
+   calm-aware). Markup: index.html #setup-week, #setup-schedule, #setup-rain,
+   #sched-days (in the head), #sheet-sched-day, #sheet-sched-item,
+   #sheet-rain-item, #sheet-rain-done, #schedule-plan. */
+
+/* The emoji column: schedule blocks are where emoji belong (redesign §8.6),
+   but in their own narrow column, so labels start level down the sheet and a
+   wrapped label never runs back under its emoji. Subs line up with the label. */
+.setup,
+.sheet,
+.schedule-plan {
+  --emo-col: 1.4rem;
+  --emo-gap: 6px;
+}
+.cb-title:has(> .sched-emo) {
+  display: grid;
+  grid-template-columns: var(--emo-col) minmax(0, 1fr);
+  column-gap: var(--emo-gap);
+}
+.sched-emo {
+  text-align: center;
+  font-size: 1.0625rem;
+  line-height: inherit;
+  font-weight: 400;
+}
+.cb-main:has(> .cb-title > .sched-emo) > .cb-sub {
+  padding-left: calc(var(--emo-col) + var(--emo-gap));
+}
+/* The one tag a schedule row may carry: a difference from the typical day,
+   in ink inside a hairline outline (never a fill; the kind of item is plain
+   words before it). The rain plan's own "Changed" is the inverse — filled ink
+   — because a staged change is the thing to find on that screen. */
+.sched-tag {
+  display: inline-block;
+  margin: 0 0 0 6px;
+  padding: 1px 6px 2px;
+  border-radius: var(--r-tag);
+  box-shadow: inset 0 0 0 1.5px var(--ink-3);
+  color: var(--ink);
+  font: var(--t-tag);
+  letter-spacing: 0;
+  white-space: nowrap;
+  vertical-align: 1px;
+}
+.cb-sub > .sched-tag:first-child {
+  margin-left: 0;
+}
+.sched-tag[data-tag="changed"],
+.sched-tag[data-tag="skipped"] {
+  background: var(--ink);
+  box-shadow: none;
+  color: var(--sheet);
+}
+
+/* ── The day strip (.daypick): the Schedule head's days, the move picker's ──
+   A well like the segmented control, but it scrolls sideways when the days
+   don't fit (the typical day + seven), so every day keeps a full target. The
+   chosen day is lifted out of the well; TODAY wears a link-blue ring (blue
+   means "today" across the app, §8.3), chosen or not. */
+.sched-days {
+  margin: 2px 0 4px;
+}
+.daypick {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--r-btn);
+  background: var(--well);
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+}
+.daypick::-webkit-scrollbar {
+  display: none;
+}
+.daypick-btn {
+  position: relative;
+  flex: 1 0 auto;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 3px;
+  min-width: 46px;
+  min-height: 48px;
+  padding: 5px 9px 4px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--ink-2);
+  font: 700 0.90625rem/1.1 var(--font-ui);
+  white-space: nowrap;
+  scroll-snap-align: start;
+  cursor: pointer;
+}
+.daypick-btn:is([aria-selected="true"], [aria-checked="true"]) {
+  background: var(--lift);
+  color: var(--ink);
+  font-weight: 800;
+  box-shadow: 0 0 0 1.5px var(--seg-ring), 0 2px 0 var(--edge);
+}
+.daypick-btn[data-today] {
+  color: var(--link);
+  box-shadow: inset 0 0 0 2px var(--link);
+}
+.daypick-btn[data-today]:is([aria-selected="true"], [aria-checked="true"]) {
+  color: var(--ink);
+  box-shadow: inset 0 0 0 2px var(--link), 0 2px 0 var(--edge);
+}
+/* The typical day is a different kind of thing from the seven: a hairline
+   after it says so without a second control. */
+.daypick-btn[data-day="typical"] {
+  margin-right: 5px;
+}
+.daypick-btn[data-day="typical"]::after {
+  content: '';
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  right: -4px;
+  width: 1.5px;
+  background: var(--line-2);
+}
+/* Under each day: a RING = follows the typical day, a filled DOT = has its
+   own changes or one-offs. The row keeps its height when a day has neither,
+   so the names stay level. (The button's aria-label says both in words.) */
+.daypick-dots {
+  display: flex;
+  justify-content: center;
+  gap: 3px;
+  min-height: 6px;
+}
+.rain-move-days .daypick-dots,
+.daypick-btn[data-day="typical"] .daypick-dots {
+  display: none;
+}
+.daypick-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.daypick-dot[data-dot="typical"] {
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
+.daypick-dot[data-dot="changed"] {
+  background: currentColor;
+}
+.daypick-dot[hidden] {
+  display: none;
+}
+/* A day with something to check: the hub's gold "!" in small, at its corner. */
+.daypick-warn {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: inset 0 0 0 1.5px var(--gold-edge);
+}
+.daypick-warn::after {
+  content: '!';
+  color: var(--gold-ink);
+  font: 900 0.625rem/1 var(--font-ui);
+}
+.daypick-warn[hidden] {
+  display: none;
+}
+
+/* ── Schedule (§11.5) ── */
+/* The day's two actions on one line under its lede: the rain plan (a link,
+   the hub's "Next" look, with its cloud) at the left, "Day options" at the
+   right edge where the thumb reaches it. */
+.sched-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 var(--s-3);
+  margin-top: 2px;
+}
+.sched-acts:not(:has(> :not([hidden]))) {
+  display: none;
+}
+.sched-acts .setup-next {
+  margin: 0;
+}
+.setup-next .ico-lead {
+  width: 20px;
+  height: 20px;
+  margin-right: 6px;
+  stroke-width: 2.2;
+}
+.sched-day-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--target);
+  margin: 0 -8px 0 auto;
+  padding: 0 8px 0 10px;
+  border: 0;
+  border-radius: var(--r-btn);
+  background: none;
+  color: var(--ink-2);
+  font: 750 0.875rem/1.2 var(--font-ui);
+  cursor: pointer;
+}
+.sched-day-btn .ico {
+  width: 20px;
+  height: 20px;
+}
+/* A screen's door (the read-only preview's "Edit the week here", §11.1) sits
+   under its intro like the hub's. */
+.setup-door {
+  margin-bottom: var(--s-4);
+}
+.sched .setup-note,
+.rain .setup-note {
+  margin: 0 2px var(--s-3);
+}
+/* An item the director hasn't okayed an overlap for: the gold "!" ahead of
+   its sub, the same mark as everywhere else that wants a look. */
+.sched-row[data-warn] .cb-sub::before {
+  content: '!';
+  display: inline-grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: inset 0 0 0 1.5px var(--gold-edge);
+  color: var(--gold-ink);
+  font: 900 0.6875rem/1 var(--font-ui);
+  vertical-align: -2px;
+}
+/* "Show the time" is off ("Lights out"): the time is still the row's place in
+   the day, so it stays, a step quieter, with "Not shown" under it. */
+.sched-row[data-notime] .cb-time {
+  color: var(--ink-2);
+}
+/* A typical item skipped on this day: kept in its own list with Bring back,
+   its name struck so it can't be read as still on. */
+.cb-row[data-skipped] .cb-title > :last-child {
+  text-decoration: line-through;
+  text-decoration-thickness: 1.5px;
+  color: var(--ink-2);
+}
+/* A gap of 15 minutes or more between two items: an empty slot, drawn as one
+   (a dashed hairline), that adds at its time. Starts under the titles. */
+.sched-gap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--target);
+  margin: 0;
+  padding: 4px 14px 4px calc(14px + 4.75rem + var(--s-3));
+  border: 0;
+  border-top: 1.5px dashed var(--line-2);
+  background: none;
+  color: var(--link);
+  font: 750 0.875rem/1.25 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  cursor: pointer;
+}
+.sched-gap + .cb-row {
+  border-top-style: dashed;
+  border-top-width: 1.5px;
+  border-top-color: var(--line-2);
+}
+.sched-gap .ico,
+.sched-add .ico {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  stroke-width: 2.6;
+}
+/* Add, under a list: a link-coloured line with its plus, a full target. */
+.sched-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--target);
+  margin: var(--s-2) 0 0;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: 750 0.9375rem/1.2 var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+/* The guided first build and "Use this for Monday to Friday?": a line and
+   its action, on paper, not a callout. */
+.sched-start {
+  margin: var(--s-2) 2px var(--s-4);
+}
+.sched-start-text {
+  margin: 0 0 var(--s-3);
+  font: var(--t-body);
+  color: var(--ink);
+}
+.sched-start .btn + .btn {
+  margin-left: 8px;
+}
+.sched-start .btn .ico {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.6;
+}
+.sched-part + .sched-start,
+.sched-start + .more-sec,
+#sched-sec-skipped {
+  margin-top: var(--s-4);
+}
+
+/* ── Camp week (§11.4) ── */
+/* A field row: the name at the left, the native control at the right; at
+   large text the control drops under the name (the row's own em test). */
+.week .gl {
+  container-type: inline-size;
+}
+.wk-field {
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  cursor: default;
+}
+.wk-ctl {
+  min-width: 8.5rem;
+}
+@container (max-width: 18em) {
+  .wk-field {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+  .wk-ctl {
+    grid-column: 1 / -1;
+    min-width: 0;
+  }
+}
+/* Native controls (date, time, select): the phone's own pickers, drawn as
+   the app's fields — a 2px border a sun-washed eye can find, 44px tall,
+   tabular digits. color-scheme follows the theme, so the picker icons show
+   on the navy sheet too. */
+.fld-input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--target);
+  margin: 0;
+  padding: 8px 10px;
+  border: 2px solid var(--field-b);
+  border-radius: 10px;
+  background: var(--sheet);
+  color: var(--ink);
+  font: 700 1rem/1.2 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+}
+.fld-input:disabled {
+  border-style: dashed;
+  background: var(--paper-2);
+  color: var(--ink-2);
+  opacity: 1;
+}
+.fld {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  margin: 0;
+}
+.fld-label {
+  font: var(--t-label);
+  color: var(--ink-2);
+}
+.fld-wide {
+  grid-column: 1 / -1;
+}
+.fld-error {
+  margin: 4px 2px 0;
+  font: 700 0.875rem/1.35 var(--font-ui);
+  color: var(--color-danger-text);
+}
+.fld-error:empty {
+  display: none;
+}
+/* Seven days as a tick sheet: the name, date and tag at the left, then two
+   44px tick columns under one header row, so the column of filled discs says
+   at a glance which days follow the typical day. */
+.wk-day {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 64px 64px;
+  align-items: center;
+  min-height: var(--row-min);
+  padding: 6px 4px 6px 14px;
+  border-top: 1px solid var(--line);
+}
+.wk-days > .wk-day:first-child {
+  border-top: 0;
+}
+.wk-head {
+  min-height: 0;
+  padding-top: 10px;
+  padding-bottom: 4px;
+}
+.wk-col {
+  font: var(--t-tag);
+  color: var(--ink-2);
+  text-align: center;
+}
+.wk-day-name {
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
+  font: var(--t-row);
+  letter-spacing: var(--track-row);
+}
+.wk-day-name small {
+  font: 600 0.8125rem/1.3 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+.wk-day-tag {
+  flex-basis: 100%;
+  font: var(--t-meta);
+  letter-spacing: 0;
+  color: var(--ink-2);
+}
+.wk-day-tag:empty {
+  display: none;
+}
+.wk-ticks {
+  display: contents;
+}
+.wk-tick {
+  display: grid;
+  place-items: center;
+  justify-self: center;
+  width: var(--target);
+  height: var(--target);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+/* A radio drawn as the clipboard's pen mark: an ink-3 ring (3:1, found in
+   sunlight); chosen, an ink ring with an ink disc in it. */
+.wk-tick-mark {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px var(--ink-3);
+}
+.wk-tick[aria-checked="true"] .wk-tick-mark {
+  box-shadow: inset 0 0 0 2px var(--ink), inset 0 0 0 6px var(--sheet);
+  background: var(--ink);
+}
+.wk-tick[aria-disabled="true"] {
+  cursor: default;
+}
+.wk-tick-word {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+/* Large text (the list's own em test): two 64px columns can't hold their
+   headers, so the header row goes and each tick says its words beside its
+   ring, the pair on a line under the day. */
+@container (max-width: 18em) {
+  .wk-head {
+    display: none;
+  }
+  .wk-days > .wk-day:nth-child(2) {
+    border-top: 0;
+  }
+  .wk-day {
+    grid-template-columns: minmax(0, 1fr);
+    padding-right: 14px;
+  }
+  .wk-ticks {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 var(--s-4);
+    margin: 4px 0 0 -10px;
+  }
+  .wk-tick {
+    width: auto;
+    height: auto;
+    min-height: var(--target);
+    grid-auto-flow: column;
+    gap: 8px;
+    padding: 0 10px;
+    border-radius: var(--r-btn);
+    color: var(--ink);
+    font: 700 0.9375rem/1.2 var(--font-ui);
+    text-align: left;
+  }
+  .wk-tick-word {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+    white-space: normal;
+  }
+}
+.wk-tick[aria-disabled="true"]:not([aria-checked="true"]) .wk-tick-mark {
+  box-shadow: inset 0 0 0 2px var(--line-2);
+}
+.wk-switch {
+  cursor: default;
+}
+.wk-double {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  gap: 12px;
+  padding: 4px 14px 14px;
+}
+.wk-double[hidden] {
+  display: none;
+}
+
+/* ── Item sheet (§11.5) ── */
+/* ≤ 90% of the screen (§11.0); the form scrolls, the save stays docked. */
+.sheet.sheet-tall {
+  max-height: min(90dvh, calc(100dvh - env(safe-area-inset-top, 0px) - 40px));
+}
+/* Under a sheet's title, where the thing comes from or when it is. */
+.sheet-sub {
+  flex: none;
+  margin: -6px var(--gutter) 6px;
+  font: var(--t-meta);
+  font-size: 0.9375rem;
+  color: var(--ink-2);
+}
+.sheet-sub:empty {
+  display: none;
+}
+.sheet-sub-act {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target);
+  margin: -12px 0;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: 750 0.9375rem/1.2 var(--font-ui);
+  vertical-align: middle;
+  cursor: pointer;
+}
+.sheet-body.si {
+  display: grid;
+  grid-auto-rows: max-content; /* a scrolling grid must not squeeze its rows: an
+                                  overflow:hidden group (.gl) collapsed to 0 */
+  align-content: start;
+  gap: var(--s-4);
+}
+/* "What happens" is a jelly-input (§8.10) drawn as the sheet's other fields:
+   the blob's fill goes and the host carries the 2px field edge, so a text box
+   and a time box beside it read as the same kind of thing (the bare fill was
+   a boundary nobody finds in sunlight). Its focus ring stays Jelly's. */
+.fld jelly-input.form-input {
+  --jelly-fill: transparent;
+  --jelly-input-padding-inline: 10px;
+  --jelly-input-radius: 8px;
+  height: 48px;
+  border: 2px solid var(--field-b);
+  border-radius: 10px;
+  background: var(--sheet);
+  font: 700 1rem/1.2 var(--font-ui);
+}
+.si .fld-error {
+  margin-top: calc(-1 * var(--s-3));
+}
+.si-emoji {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.si-emoji-grid {
+  display: contents;
+}
+/* One emoji choice: a 44px square; the chosen one is lifted like a segment. */
+.si-emo {
+  display: grid;
+  place-items: center;
+  width: var(--target);
+  height: var(--target);
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: var(--well);
+  font-size: 1.375rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.si-emo[aria-pressed="true"] {
+  background: var(--lift);
+  box-shadow: 0 0 0 2px var(--ink), 0 2px 0 var(--edge);
+}
+.si-emoji-other {
+  width: 5.5rem;
+  min-height: var(--target);
+  text-align: center;
+}
+.si-times {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--s-3);
+}
+.si-times .fld[hidden] {
+  display: none;
+}
+.si-switch {
+  grid-template-columns: minmax(0, 1fr) auto;
+  cursor: default;
+}
+.si-teams {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* A team that meets here: solid ink edge and its full name in ink; one that
+   doesn't: a dashed ink-3 edge (3:1, seen in sunlight) — the state is never
+   colour alone. The team's mark rides inside. */
+.si-team {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: var(--target);
+  padding: 4px 12px 4px 6px;
+  border: 2px dashed var(--ink-3);
+  border-radius: var(--r-btn);
+  background: none;
+  color: var(--ink-2);
+  font: 700 0.875rem/1.15 var(--font-ui);
+  cursor: pointer;
+}
+.si-team[aria-pressed="true"] {
+  border-style: solid;
+  border-color: var(--ink);
+  background: var(--sheet);
+  color: var(--ink);
+  box-shadow: 0 2px 0 var(--edge);
+}
+.si-team img {
+  width: 24px;
+  height: auto;
+}
+.si-games .cb-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+.si-games .cb-time:empty {
+  display: none;
+}
+.si-games + .sched-add {
+  margin-top: 2px;
+}
+/* An inline question: the gold "!" (a decision is waiting), the plain
+   sentence, its two answers under it, never a dialog over the sheet. */
+.si-asks {
+  display: grid;
+  gap: var(--s-3);
+}
+.si-asks:not(:has(> :not([hidden]))) {
+  display: none;
+}
+.si-ask {
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--line-2);
+}
+.si-ask[hidden],
+.si-ask-q[hidden] {
+  display: none;
+}
+.si-ask-q {
+  position: relative;
+  margin: 0;
+  padding-left: 27px;
+  font: 650 0.9375rem/1.4 var(--font-ui);
+  color: var(--ink);
+}
+.si-ask-q::before {
+  content: '!';
+  position: absolute;
+  left: 0;
+  top: 1px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: inset 0 0 0 1.5px var(--gold-edge);
+  color: var(--gold-ink);
+  font: 900 0.75rem/1 var(--font-ui);
+}
+.si-ask-a {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+  padding-left: 27px;
+}
+.si-remove {
+  justify-self: start;
+  min-height: var(--target);
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  font: 750 0.9375rem/1.2 var(--font-ui);
+  cursor: pointer;
+}
+/* The scope question, as two EQUAL buttons (same face, same weight: neither
+   is the safe default, the question must be read), stacked so each label is
+   whole on one line. The second carries its live caption INSIDE it, under its
+   name — the days that will actually change — so the caption is read as part
+   of that choice, and the button's accessible name includes it. */
+.si-scope {
+  display: grid;
+  gap: 10px;
+}
+.si-scope[hidden] {
+  display: none;
+}
+.si-scope .btn {
+  flex-direction: column;
+  gap: 2px;
+  padding-block: 6px;
+}
+.si-scope-caption {
+  font: 650 0.8125rem/1.3 var(--font-ui);
+  color: var(--ink-2);
+}
+.si-scope-caption:empty {
+  display: none;
+}
+.si-dock .btn[hidden] {
+  display: none;
+}
+/* "Tell people who follow this" (the item sheet's dock, the rain plan's Done):
+   the ink tick of the restore sheet, its plain caveat under the label. */
+.sheet-tell {
+  margin-top: var(--s-4);
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--line-2);
+}
+.sheet-dock .sheet-tell {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+.sheet-tell[hidden] {
+  display: none;
+}
+.sheet-tell .setup-note {
+  margin: 4px 0 0 42px;
+}
+/* A destructive row or quiet action ("Clear all of Wednesday's changes",
+   "Discard the plan"): danger TEXT, never a red fill. */
+.btn-quiet.btn-quiet-danger {
+  color: var(--color-danger-text);
+}
+.gl-row-danger .gl-title,
+.gl-row-danger .gl-ico {
+  color: var(--color-danger-text);
+}
+
 
 /* ── Per-team 0–5 point buttons (Memory Verse) ─────────────────── */
 .pts-grid {
