@@ -788,16 +788,14 @@ img.hdr-mark,
   50% { opacity: .3; }
 }
 
-/* INTERIM, until the builder and chat move into the frame (a takeover and the
-   Chat tab): today's full-screen builder and chat bring their own back pill and
-   size themselves to the whole screen, so the header steps aside for them and
-   the page gets its notch padding back — exactly the v196 layout. */
-body.builder-open .app-header,
-body.chat-open .app-header {
+/* INTERIM, until the builder moves into the frame as a takeover: today's
+   full-screen builder brings its own back pill and sizes itself to the whole
+   screen, so the header steps aside for it and the page gets its notch padding
+   back — exactly the v196 layout. (Chat is a tab now: it keeps the header.) */
+body.builder-open .app-header {
   display: none;
 }
-body.builder-open .main-wrap,
-body.chat-open .main-wrap {
+body.builder-open .main-wrap {
   padding-top: calc(15px + env(safe-area-inset-top, 0px));
 }
 
@@ -857,12 +855,10 @@ html.calm-motion .reveal-strip-dot {
 }
 /* Out of the way under a takeover and while typing (§13.6): it slides down;
    visibility follows once it has gone so it can't take focus. Today's
-   builder and chat takeovers count as takeovers until they move into the
-   frame (chat becomes a tab: drop body.chat-open from this list then). */
+   builder counts as a takeover until it moves into the frame. */
 body.takeover-open .tabbar,
 body.kb-open .tabbar,
-body.builder-open .tabbar,
-body.chat-open .tabbar {
+body.builder-open .tabbar {
   transform: translateY(100%);
   visibility: hidden;
   transition: transform var(--jm-exit-ms) var(--jm-std), visibility 0s linear var(--jm-exit-ms);
@@ -3160,7 +3156,7 @@ html.calm-motion .back-pill-arrow { transition: none; }
 /* Room for it above the first card (the reserve matches the bar: 8px + 2.9rem
    + a breath). Not in the builder / chat takeovers, which hide the page's
    contents (and the bar with them). */
-body.has-sync-alert:not(.builder-open):not(.chat-open) .main-wrap {
+body.has-sync-alert:not(.builder-open) .main-wrap {
   padding-top: calc(4.2rem + env(safe-area-inset-top, 0px));
 }
 
@@ -3179,8 +3175,7 @@ body.has-sync-alert:not(.builder-open):not(.chat-open) .main-wrap {
 html.view-only:not(.standings-shown) .sync-status-footer {
   display: block;
 }
-body.builder-open .sync-status-footer,
-body.chat-open .sync-status-footer {
+body.builder-open .sync-status-footer {
   display: none;
 }
 
@@ -5829,7 +5824,7 @@ html:not(.calm-motion) .pa-row-summary::after {
 .update-banner {
   position: fixed;
   left: 50%;
-  bottom: 1rem;
+  bottom: calc(var(--tabbar-h) + 0.75rem);
   transform: translateX(-50%);
   z-index: 60;
   max-width: calc(100% - 2rem);
@@ -5984,7 +5979,7 @@ jelly-icon-button.bonus-remove-btn {
 .update-banner-alert {
   position: fixed;
   left: 50%;
-  bottom: 1rem;
+  bottom: calc(var(--tabbar-h) + 0.75rem);
   transform: translateX(-50%);
   z-index: 60;
   width: min(480px, calc(100% - 2rem));
@@ -5993,40 +5988,58 @@ jelly-icon-button.bonus-remove-btn {
 .update-banner-alert jelly-button {
   margin-top: 0.5rem;
 }
-/* The toaster (bottom-right, z-index 10002) and this bar share the bottom
-   edge, and the toasts take taps — so a toast landed right over the
-   "Refresh" button. While the bar is up the toaster rides above it (outer
-   styles beat the component's own :host rule). 8rem clears the bar even where
-   its text wraps tallest (~118px at 320px wide). A browser without :has()
-   keeps the old placement. */
+/* THE BOTTOM STACK (redesign §13.7), bottom to top. Every offset is measured
+   from the tab bar (--tabbar-h already carries the home-indicator inset), and
+   the rules below are one design: change them together (overlays.test.js pins
+   the order, not just each value).
+     tabs:      tab bar < update bar (.75rem) < SDK pill (6.5rem) < toasts (8rem)
+     chat tab:  tab bar < composer (~58px) < update bar (5.5rem) < toasts (12rem)
+                (the pill, when the bar is up too, shares the toaster's 12rem)
+     takeover:  no tab bar — the same strip measured from the screen's edge
+     typing:    in chat the composer rides the keyboard, so the strip rides it
+                too (--kb-h, set from visualViewport on iOS)
+   The toast rail takes taps, so a toast over the composer swallowed Send and a
+   toast over the bar swallowed Refresh; 8rem clears the bar even where its text
+   wraps tallest (~118px at 320px wide). Without a bar, chat's rail only has to
+   clear the composer. The id inside :has() is deliberate: it outranks the plain
+   `body:has(#update-banner)` offset, so two matching rules can't tie. Outer-
+   document rules beat the component's own :host position; a browser without
+   :has() keeps the base placement. The update bar and the SDK pill move into
+   the header's status pill with the rest of the bar's retirement, and this
+   whole stack shrinks to the toaster. */
 body:has(#update-banner) jelly-toaster[position="bottom"] {
-  bottom: calc(8rem + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--tabbar-h) + 8rem);
 }
-/* In chat the sticky composer lives in the same bottom strip (input, 📷, ➤ at
-   the very bottom of the screen). The banner persists exactly while a message
-   is being typed — the auto-reload is held for it — so at bottom:1rem it sat
+/* In chat the sticky composer lives in the same bottom strip (input, 📷, Send
+   directly above the tab bar). The banner persists exactly while a message is
+   being typed — the auto-reload is held for it — so at the base offset it sat
    on top of the box, and a tap meant for Send landed on the banner. Lift both
    banner flavours (the SDK-down pill shares .update-banner) clear of it. */
-body.chat-open .update-banner-alert,
-body.chat-open .update-banner {
-  bottom: calc(5.5rem + env(safe-area-inset-bottom, 0px));
+body:has(#app[data-tab="chat"]) .update-banner-alert,
+body:has(#app[data-tab="chat"]) .update-banner {
+  bottom: calc(var(--tabbar-h) + 5.5rem);
 }
-/* The bottom strip's stacking order, bottom to top (the toaster rule and
-   chat-lift rules around here are one design — change them together):
-     home:  update bar (1rem) < toasts (8rem)
-     chat:  composer (~58px) < update bar (5.5rem) < toasts (12rem)
-   The toast rail takes taps, so a toast over the composer swallowed Send and a
-   toast over the bar swallowed Refresh. Without the bar, chat's rail only has
-   to clear the composer (5rem). 12rem clears the lifted bar even at 320px wide,
-   where its text wraps tallest (~102px, so its top sits ~190px up). The id
-   inside :has() is deliberate: it outranks the plain `body:has(#update-banner)`
-   offset above, so the two can't tie in the other order. Outer-document rules
-   beat the component's own :host position. */
-body.chat-open jelly-toaster[position="bottom"] {
-  bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
+body:has(#app[data-tab="chat"]):has(#update-banner) jelly-toaster[position="bottom"] {
+  bottom: calc(var(--tabbar-h) + 12rem);
 }
-body.chat-open:has(#update-banner) jelly-toaster[position="bottom"] {
-  bottom: calc(12rem + env(safe-area-inset-bottom, 0px));
+/* Typing in chat: the tab bar is gone and the composer sits on the keyboard. */
+body.kb-open:has(#app[data-tab="chat"]) .update-banner-alert,
+body.kb-open:has(#app[data-tab="chat"]) .update-banner {
+  bottom: calc(var(--kb-h, 0px) + 5.5rem);
+}
+body.kb-open:has(#app[data-tab="chat"]) jelly-toaster[position="bottom"] {
+  bottom: calc(var(--kb-h, 0px) + 76px);
+}
+body.kb-open:has(#app[data-tab="chat"]):has(#update-banner) jelly-toaster[position="bottom"] {
+  bottom: calc(var(--kb-h, 0px) + 12rem);
+}
+/* Over a takeover there is no tab bar: the strip is measured from the edge. */
+body.takeover-open .update-banner-alert,
+body.takeover-open .update-banner {
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem);
+}
+body.takeover-open:has(#update-banner) jelly-toaster[position="bottom"] {
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 8rem);
 }
 /* On the home page the fixed bar covered the Bonus card and the footer's
    Settings link at full scroll (it stays up while a reload is held for an
@@ -6038,13 +6051,19 @@ body.has-update-banner .app-footer {
    well it sat completely behind it. Stack the pill above. (:has() is
    progressive — an older browser just keeps today's overlap.) */
 body:has(#update-banner) #sdk-banner {
-  bottom: calc(6.5rem + env(safe-area-inset-bottom, 0px));
+  bottom: calc(var(--tabbar-h) + 6.5rem);
 }
 /* In chat the update bar is itself lifted (5.5rem, above), so a pill at 6.5rem
    sat mostly behind it. Stack it above the lifted bar instead — same 12rem the
    toaster uses, so one rule of thumb: nothing in the strip is ever hidden. */
-body.chat-open:has(#update-banner) #sdk-banner {
-  bottom: calc(12rem + env(safe-area-inset-bottom, 0px));
+body:has(#app[data-tab="chat"]):has(#update-banner) #sdk-banner {
+  bottom: calc(var(--tabbar-h) + 12rem);
+}
+body.kb-open:has(#app[data-tab="chat"]):has(#update-banner) #sdk-banner {
+  bottom: calc(var(--kb-h, 0px) + 12rem);
+}
+body.takeover-open:has(#update-banner) #sdk-banner {
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 6.5rem);
 }
 
 /* ============================================================
@@ -6408,59 +6427,6 @@ body.builder-open #app-footer {
 /* ============================================================
    CAMP CHAT (chat.js — channels, mentions, photos)
    ============================================================ */
-/* The full-screen takeover, same trick as the week builder. */
-body.chat-open .main-wrap > :not(#chat-view),
-body.chat-open #app-footer {
-  display: none;
-}
-/* Home card: one big tap target + the editor-only hide switch below. */
-.chat-card {
-  padding: 0.35rem 0.5rem;
-}
-.chat-card-main {
-  display: flex;
-  align-items: center;
-  gap: 0.6rem;
-  width: 100%;
-  padding: 0.55rem 0.4rem;
-  border: none;
-  background: transparent;
-  font-family: inherit;
-  text-align: left;
-  cursor: pointer;
-  color: var(--color-text);
-}
-.chat-card-title {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  font-size: 1.05rem;
-  font-weight: 800;
-  white-space: nowrap;
-}
-.chat-card-preview {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.82rem;
-  color: var(--color-text-muted);
-}
-.chat-badge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 1.3rem;
-  height: 1.3rem;
-  padding: 0 0.3rem;
-  border-radius: 999px;
-  background: var(--color-primary);
-  color: #fff;
-  font-size: 0.72rem;
-  font-weight: 800;
-}
-
 /* The chat view: header / tabs / scrolling list / pinned composer. */
 .chat-view {
   display: flex;

@@ -220,42 +220,60 @@ test('the banner samples "unfinished work" at press, before a tap moves focus', 
 
 test('the update banner is lifted clear of the chat composer and reserves footer room', () => {
   const css = readFixture('../styles.css');
-  assert.ok(/body\.chat-open \.update-banner-alert,\s*body\.chat-open \.update-banner \{[^}]*bottom: calc\(5\.5rem/.test(css),
-    'both banner flavours (the SDK pill shares .update-banner) move above the sticky composer');
+  assert.ok(/body:has\(#app\[data-tab="chat"\]\) \.update-banner-alert,\s*body:has\(#app\[data-tab="chat"\]\) \.update-banner \{[^}]*bottom: calc\(var\(--tabbar-h\) \+ 5\.5rem/.test(css),
+    'both banner flavours (the SDK pill shares .update-banner) move above the sticky composer, measured from the tab bar');
   assert.ok(/body\.has-update-banner \.app-footer \{[^}]*padding-bottom/.test(css));
-  assert.ok(/body:has\(#update-banner\) #sdk-banner \{[^}]*bottom: calc\(6\.5rem/.test(css), 'the SDK pill stacks above the update bar instead of hiding behind it');
+  assert.ok(/body:has\(#update-banner\) #sdk-banner \{[^}]*bottom: calc\(var\(--tabbar-h\) \+ 6\.5rem/.test(css), 'the SDK pill stacks above the update bar instead of hiding behind it');
   const src = readFixture('../app.js');
   assert.ok(/classList\.add\('has-update-banner'\)/.test(src));
+  assert.notOk(/chat-open/.test(css), 'chat is a tab: no body.chat-open rule is left to go stale');
 });
 
-// The bottom strip is three groups' work meeting (home panels lifted the toaster
-// over the bar, overlays lifted the bar over the chat composer, chat lifted the
-// toaster over both). Pin the ORDER, not just each rule, so a later edit to one
-// offset can't quietly put a tap target under another.
-test('the bottom strip stacks: composer < update bar < SDK pill and toasts, in chat and at home', () => {
+// The bottom strip is three groups' work meeting (the home panels lifted the
+// toaster over the bar, overlays lifted the bar over the chat composer, chat
+// lifted the toaster over both) and, since the shell, all of it sits on the tab
+// bar. Pin the ORDER, not just each rule, so a later edit to one offset can't
+// quietly put a tap target under another.
+test('the bottom strip stacks: tab bar < composer < update bar < SDK pill and toasts, on tabs, in chat and over a takeover', () => {
   const css = readFixture('../styles.css');
+  // "calc(var(--tabbar-h) + Nrem)" or "calc(var(--kb-h, 0px) + Nrem)" or "calc(env(...) + Nrem)" -> N in rem
   const rem = (re) => {
     const m = css.match(re);
     assert.ok(m, 'rule present: ' + re);
     return parseFloat(m[1]);
   };
-  const barHome = rem(/\.update-banner-alert \{[^}]*bottom: ([\d.]+)rem/);
-  const barChat = rem(/body\.chat-open \.update-banner-alert,\s*body\.chat-open \.update-banner \{[^}]*bottom: calc\(([\d.]+)rem/);
-  const toastHome = rem(/body:has\(#update-banner\) jelly-toaster\[position="bottom"\] \{[^}]*bottom: calc\(([\d.]+)rem/);
-  const toastChat = rem(/body\.chat-open jelly-toaster\[position="bottom"\] \{[^}]*bottom: calc\(([\d.]+)rem/);
-  const toastChatBar = rem(/body\.chat-open:has\(#update-banner\) jelly-toaster\[position="bottom"\] \{[^}]*bottom: calc\(([\d.]+)rem/);
-  const pillHome = rem(/body:has\(#update-banner\) #sdk-banner \{[^}]*bottom: calc\(([\d.]+)rem/);
-  const pillChat = rem(/body\.chat-open:has\(#update-banner\) #sdk-banner \{[^}]*bottom: calc\(([\d.]+)rem/);
+  const px = (re) => {
+    const m = css.match(re);
+    assert.ok(m, 'rule present: ' + re);
+    return parseFloat(m[1]) / 16;
+  };
+  const barHome = rem(/\.update-banner-alert \{[^}]*bottom: calc\(var\(--tabbar-h\) \+ ([\d.]+)rem/);
+  const barChat = rem(/body:has\(#app\[data-tab="chat"\]\) \.update-banner-alert,\s*body:has\(#app\[data-tab="chat"\]\) \.update-banner \{[^}]*bottom: calc\(var\(--tabbar-h\) \+ ([\d.]+)rem/);
+  const toastHome = rem(/body:has\(#update-banner\) jelly-toaster\[position="bottom"\] \{[^}]*bottom: calc\(var\(--tabbar-h\) \+ ([\d.]+)rem/);
+  const toastChat = px(/body:has\(#app\[data-tab="chat"\]\) jelly-toaster\[position="bottom"\] \{[^}]*bottom: calc\(var\(--tabbar-h\) \+ ([\d.]+)px/);
+  const toastChatBar = rem(/body:has\(#app\[data-tab="chat"\]\):has\(#update-banner\) jelly-toaster\[position="bottom"\] \{[^}]*bottom: calc\(var\(--tabbar-h\) \+ ([\d.]+)rem/);
+  const pillHome = rem(/body:has\(#update-banner\) #sdk-banner \{[^}]*bottom: calc\(var\(--tabbar-h\) \+ ([\d.]+)rem/);
+  const pillChat = rem(/body:has\(#app\[data-tab="chat"\]\):has\(#update-banner\) #sdk-banner \{[^}]*bottom: calc\(var\(--tabbar-h\) \+ ([\d.]+)rem/);
   const composer = 58 / 16; // the sticky composer's height, in rem
   assert.ok(barChat > composer, 'the lifted bar clears the composer');
   assert.ok(toastChat > composer, 'toasts clear the composer with no bar up');
-  assert.ok(toastHome > barHome + 6, 'at home, toasts ride above the bar (its tallest wrap is ~102px)');
+  assert.ok(toastHome > barHome + 6, 'on a tab, toasts ride above the bar (its tallest wrap is ~102px)');
   assert.ok(toastChatBar > barChat + 6, 'in chat, toasts ride above the LIFTED bar, not just the composer');
   assert.ok(pillChat > barChat + 6, 'in chat the SDK pill stacks above the lifted bar');
-  assert.ok(pillHome > barHome, 'at home the SDK pill stacks above the bar');
+  assert.ok(pillHome > barHome, 'on a tab the SDK pill stacks above the bar');
+  // Typing in chat: the whole strip rides the keyboard, in the same order.
+  const kbBar = rem(/body\.kb-open:has\(#app\[data-tab="chat"\]\) \.update-banner-alert,\s*body\.kb-open:has\(#app\[data-tab="chat"\]\) \.update-banner \{[^}]*bottom: calc\(var\(--kb-h, 0px\) \+ ([\d.]+)rem/);
+  const kbToast = px(/body\.kb-open:has\(#app\[data-tab="chat"\]\) jelly-toaster\[position="bottom"\] \{[^}]*bottom: calc\(var\(--kb-h, 0px\) \+ ([\d.]+)px/);
+  const kbToastBar = rem(/body\.kb-open:has\(#app\[data-tab="chat"\]\):has\(#update-banner\) jelly-toaster\[position="bottom"\] \{[^}]*bottom: calc\(var\(--kb-h, 0px\) \+ ([\d.]+)rem/);
+  assert.ok(kbBar > composer && kbToast > composer && kbToastBar > kbBar + 6, 'the keyboard layer keeps the same order');
+  assert.equal(kbBar, barChat);
+  // Over a takeover there is no tab bar: the strip is measured from the edge.
+  const tkBar = rem(/body\.takeover-open \.update-banner-alert,\s*body\.takeover-open \.update-banner \{[^}]*bottom: calc\(env\(safe-area-inset-bottom, 0px\) \+ ([\d.]+)rem/);
+  const tkToastBar = rem(/body\.takeover-open:has\(#update-banner\) jelly-toaster\[position="bottom"\] \{[^}]*bottom: calc\(env\(safe-area-inset-bottom, 0px\) \+ ([\d.]+)rem/);
+  assert.ok(tkToastBar > tkBar + 6, 'over a takeover toasts still ride above the bar');
   // The id inside :has() is what makes the chat+bar rule win over the plain
   // home one — both match in chat, so equal specificity would be source order.
-  assert.ok(css.indexOf('body.chat-open:has(#update-banner) jelly-toaster') > css.indexOf('body:has(#update-banner) jelly-toaster'),
+  assert.ok(css.indexOf('body:has(#app[data-tab="chat"]):has(#update-banner) jelly-toaster') > css.indexOf('body:has(#update-banner) jelly-toaster'),
     'the chat+bar toaster rule comes after the home one');
 });
 

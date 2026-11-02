@@ -280,14 +280,17 @@ the database and survives a reload).
 The bar's own tap asks first (`wireReloadBanner`: `reloadBlocked()` sampled at
 pointerdown, since the tap itself blurs the composer) instead of reloading
 past an unsent message or a typed score. Bottom-strip layout (styles.css, one
-block next to `.update-banner-alert`): at home the bar sits at `bottom: 1rem`
-with the toaster lifted above it (8rem); in chat (`body.chat-open`) the bar is
-lifted to 5.5rem so it never covers the composer, and the toaster to 12rem to
-clear both (5rem when there is no bar); the SDK-down pill, when it shares
-the strip with the bar, stacks above it (6.5rem at home, 12rem in chat). The
-toaster takes taps, so a toast over the composer swallowed Send and one over
-the bar swallowed Refresh — change the offsets together (`overlays.test.js`
-pins their order). `showToast` keeps at most
+block next to `.update-banner-alert`; every offset is measured from the tab
+bar, `--tabbar-h`): on a tab the bar sits `.75rem` above it with the toaster
+lifted above that (8rem); on the Chat tab the bar is lifted to 5.5rem so it
+never covers the composer, and the toaster to 12rem to clear both (4.75rem when
+there is no bar); the SDK-down pill, when it shares the strip with the bar,
+stacks above it (6.5rem on a tab, 12rem in chat). Over a takeover (no tab bar)
+the same strip is measured from the screen's edge, and while typing in chat it
+rides the keyboard (`--kb-h`). The toaster takes taps, so a toast over the
+composer swallowed Send and one over the bar swallowed Refresh — change the
+offsets together (`overlays.test.js` pins their order, in all three layers).
+The bar and the SDK pill retire into `#hdr-pill` with the rest of Step 13. `showToast` keeps at most
 `TOAST_MAX_VISIBLE` (3) on screen, dismissing the oldest that isn't a "Your
 team…" toast.
 The reload uses `doReload` (adds a throwaway `?r=` cache-buster) so it
@@ -508,7 +511,7 @@ update | error, text in `#hdr-pill-text`; hides `#hdr-who` while shown),
 `#reveal-strip` (never on Now). Tab bar `#tabbar`: one `.tab-blob` (CSS rest
 position; spring it with JellyMotion, never a CSS transition), badges
 `#tab-badge-chat`, `#tab-dot-now`, `#tab-dot-more`; it slides away under
-`body.takeover-open`, `body.kb-open`, and today's `builder-open`/`chat-open`.
+`body.takeover-open`, `body.kb-open`, and today's `builder-open`.
 Takeovers `.takeover` (`#takeover-game`: `.tk-back[data-takeover-back]` with
 `.tk-back-label`, `#takeover-game-title`/`-sub`/`-body`/`-dock`;
 `.tk-dock[data-kb-hide]`; `.is-roof` = the camp-blue broadcast roof, which
@@ -526,8 +529,8 @@ says what's missing), segmented `.seg` / `.seg-btn` whose chosen state IS its
 `.gl-row-hit` button plus a sibling `.gl-link`, never nested buttons). Every
 target is 44×44 or more at 360 and 390 px, at 130% and 200% text. Toasts ride
 `calc(var(--tabbar-h) + 12px)` up (above a takeover's dock, and above the
-composer on the Chat tab); the v184 bottom-strip lift rules still out-rank that
-until the update / SDK lines move into `#hdr-pill`.
+composer on the Chat tab); the update bar and SDK pill ride the same stack
+until they move into `#hdr-pill` (see "What's new banners & auto-reload").
 
 ## Tests
 
