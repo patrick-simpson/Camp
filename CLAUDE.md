@@ -775,9 +775,10 @@ rest of Step 14, in setup-ui.js: see "Set up the week: behaviour" below); with n
   `[data-hub-mark][data-mark=ok|warn|todo|skip|info|soon]` + `[data-hub-word]`
   — CSS draws the glyph (check / gold "!" / ring / dash), never an emoji. **A
   row whose screen exists is a `<button>` with a chevron** (games, teams,
-  people, notice, restore at Step 14); **one whose screen comes later is a
-  `<div>`** (week and schedule → Step 15, meals / verses / cleanup / electives →
-  19, campers → 25, alerts): never a dead button — the step that brings the
+  people, notice, restore at Step 14; week and schedule at Step 15, which always
+  open their screen — a read-only preview with the owner's Edit the week here
+  while the schedule isn't edited here); **one whose screen comes later is a
+  `<div>`** (meals / verses / cleanup / electives → 19, campers → 25, alerts): never a dead button — the step that brings the
   screen turns the div into a button. Electives starts hidden (junior only). At
   ~130%+ text the mark drops under the summary (a container query on
   `.hub-list`, in em, so it follows the phone's text size) and the chevron stays
