@@ -17,6 +17,7 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const fakeRtdb = require('./fake-rtdb.js'); // waitQuiet() asks it how many acknowledgements are still owed
 
 const ROOT = path.join(__dirname, '..');
 // Load order mirrors the <script> tags at the bottom of index.html.
@@ -130,22 +131,68 @@ function makeContext(opts) {
   // Every timer the app starts inside this context, so __clearTimers can cancel
   // the ones a file leaves behind (the handle is dropped when it fires).
   const pendingTimers = new Set();
+  const timerDelays = new Map(); // handle -> the delay it was asked for (waitQuiet looks at the short ones)
   const realSetTimeout = setTimeout;
   const realClearTimeout = clearTimeout;
   const trackedSetTimeout = (fn, ms, ...args) => {
     const handle = realSetTimeout(() => {
       pendingTimers.delete(handle);
+      timerDelays.delete(handle);
       if (typeof fn === 'function') fn(...args);
     }, ms);
     pendingTimers.add(handle);
+    timerDelays.set(handle, Number(ms) || 0);
     return handle;
   };
   const trackedClearTimeout = (handle) => {
     pendingTimers.delete(handle);
+    timerDelays.delete(handle);
     realClearTimeout(handle);
+  };
+
+  // ── Waiting for the app, not for the clock ─────────────────────────────────────────────────────────────────
+  // A fixed `await sleep(40)` is a bet that a chain of timers and acknowledgements finishes inside 40 ms. It
+  // does on an idle laptop and loses when the process stalls (a GC pause, a cold container, three suites at
+  // once): the sleep's own timer comes due before the next link of the chain has even been scheduled. The two
+  // helpers below wait for the thing itself and have a generous deadline instead of a short guess, so a stall
+  // only makes a test slower, never wrong. They use the REAL timers, so they leave nothing in the tracked set.
+  const WAIT_DEADLINE_MS = 20000;
+  const SHORT_TIMER_MS = 1000; // a timer asked for longer than this (the calm-motion sampler's 2 s, a toast, a long fallback) is not a debounce to wait out
+  const hop = () => new Promise((resolve) => realSetTimeout(resolve, 2));
+  // waitUntil(cond, label, ms): resolves as soon as cond() is truthy (checked every 2 ms), rejects with `label` at the
+  // deadline. cond may be async. Returns the truthy value.
+  const waitUntil = async (cond, label, ms) => {
+    const deadline = Date.now() + (ms || WAIT_DEADLINE_MS);
+    for (;;) {
+      const v = await cond();
+      if (v) return v;
+      if (Date.now() > deadline) throw new AssertionError('timed out waiting for ' + (label || 'the condition'));
+      await hop();
+    }
+  };
+  // waitQuiet(): resolves once every short app timer (a debounce, a retry, a floor) this context started has fired AND
+  // every acknowledgement fake-rtdb still owes has been delivered, and nothing new started for two hops in a row —
+  // "the push went out, was acknowledged and everything it set off has settled". Timers asked for longer than
+  // SHORT_TIMER_MS are ignored on purpose (a toast, a long fallback), and so is a write queued by a database that is
+  // offline: it is not in flight, it is waiting for goOnline().
+  const waitQuiet = async (ms) => {
+    const deadline = Date.now() + (ms || WAIT_DEADLINE_MS);
+    let calm = 0;
+    while (calm < 2) {
+      await hop();
+      const busy = [...timerDelays.values()].filter((d) => d <= SHORT_TIMER_MS);
+      const acks = fakeRtdb.inflight();
+      if (busy.length === 0 && acks === 0) calm += 1;
+      else {
+        calm = 0;
+        if (Date.now() > deadline) throw new AssertionError('timed out waiting for ' + busy.length + ' app timer(s) (delays ' + busy.join(', ') + ' ms) and ' + acks + ' database acknowledgement(s) to settle');
+      }
+    }
   };
   const sandbox = {
     console,
+    waitUntil,
+    waitQuiet,
     document: doc,
     localStorage: {
       getItem: (k) => (store.has(k) ? store.get(k) : null),

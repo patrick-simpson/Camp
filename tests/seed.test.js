@@ -436,7 +436,7 @@ test('the alert publisher: keys, labels and the drawer\'s catalog are identical 
 const A1_ROOT = CAMP.dbRoot;
 const A1_OWNER = { email: 'patricksimpson.fx@gmail.com', emailVerified: true };
 const A1_JENN = { email: 'jenn@example.com', emailVerified: true };
-const a1Wait = (ms) => new Promise((r) => setTimeout(r, ms || 5));
+// (Waits are for the app, not the clock: waitUntil / waitQuiet in tests/harness.js.)
 const A1_QUIET = { campRunning: false }; // no camp week is set in these cases: the freeze question's answer is "no"
 
 async function a1Setup(opts) {
@@ -472,7 +472,8 @@ async function a1Setup(opts) {
   attachSetupListener();
   db.deliverFirstSnapshots();
   flushPendingPush();
-  await a1Wait(40);
+  await waitUntil(() => remoteReady && configReady && setupReady, 'all three engines to pass their first pull');
+  await waitQuiet();
   assert.equal(remoteReady && configReady && setupReady, true, 'all three engines are past their first pull');
   return db;
 }
@@ -497,15 +498,14 @@ function a1Teardown() {
 }
 
 async function a1Settle() {
-  for (let i = 0; i < 80; i++) {
-    if (pendingWritesTotal() === 0 && !hasUnconfirmedLocalWork() && !pushTimer && !pushConfigTimer && !setupPushTimer) return;
-    await a1Wait(50);
-  }
+  await waitQuiet();
+  await waitUntil(() => pendingWritesTotal() === 0 && !hasUnconfirmedLocalWork() && !pushTimer && !pushConfigTimer && !setupPushTimer,
+    'every write this phone made to be acknowledged');
 }
 
 // The commit's own snapshot is adopted through the engine (a re-read when it was turned away mid-write): wait for it.
 async function a1WaitShared(on) {
-  for (let i = 0; i < 60 && scheduleIsShared() !== on; i++) await a1Wait(10);
+  await waitUntil(() => scheduleIsShared() === on, 'the engine to adopt the schedule switch');
   assert.equal(scheduleIsShared(), on, 'the engine adopted the switch');
 }
 

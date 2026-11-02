@@ -24,8 +24,8 @@ function useFakeRef(serverValue) {
   lastSyncedTree = null;
   pendingWrites = 0;
   dataEditPending = false;
-  pushTimer = null;
-  pushConfigTimer = null;
+  clearTimeout(pushTimer); pushTimer = null;
+  clearTimeout(pushConfigTimer); pushConfigTimer = null;
   document.activeElement = null;
   return ref;
 }
@@ -238,7 +238,7 @@ test('a view-only save (day tab, theme) is not treated as scoreboard activity', 
   assert.notOk(dataEditPending, 'so it never counts as an edit worth protecting');
   // Its 400ms debounce does briefly hold a snapshot off (any unsent write does),
   // but only until the push fires — and the deferred read is retried, not lost.
-  pushTimer = null;
+  clearTimeout(pushTimer); pushTimer = null;
   assert.ok(canAdoptRemote());
 });
 

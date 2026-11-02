@@ -9,7 +9,7 @@ const { makeFakeRtdb, makeFakeFirebase } = nodeRequire('./fake-rtdb.js');
 
 const EH_ROOT = CAMP.dbRoot;
 const EH_RULES = JSON.parse(readFixture('../database.rules.json')).rules[EH_ROOT];
-const ehWait = (ms) => new Promise((r) => setTimeout(r, ms || 5));
+const ehWait = (ms) => new Promise((r) => setTimeout(r, ms || 5)); // 10 ms or less: one hop (a write's acknowledgement). Waiting for a timer or a chain is waitQuiet() (tests/harness.js).
 const EH_JENN = { email: 'jenn@example.com', emailVerified: true };
 const EH_JENN_KEY = 'jenn@example,com';
 const EH_PAT_KEY = 'pat@example,com';
@@ -74,19 +74,19 @@ test('a reload with the builder open: nothing attaches or writes before approval
     // Signed in, but the member record has not answered: still a guess, so still nothing.
     authUser = EH_JENN;
     editorsHereOnConnect();
-    await ehWait(60);
+    await waitQuiet();
     assert.equal(ehRef, null, 'a provisional role attaches nothing');
     assert.equal(ehRowLive, false);
     assert.equal(db.serverGet(EH_MY_PATH()), null, 'and writes nothing');
     // Approval lands (confirmed role), then the connect handler runs.
     setMemberRole('editor');
     editorsHereOnConnect();
-    await ehWait(80);
+    await waitQuiet();
     assert.ok(ehRef, 'the listener is attached');
     assert.equal(ehRowLive, true);
     assert.equal(db.serverGet(EH_MY_PATH()).where, 'hub');
     ehOther(db, EH_PAT_KEY, 'dev-pat-0001', { where: 'schedule' });
-    await ehWait(20);
+    await waitQuiet();
     assert.equal(editorsHereList().length, 1, 'and another director is seen');
   } finally { ehTeardown(); }
 });
@@ -95,7 +95,7 @@ test('a refused write (the server stamps landed under a second apart) is retried
   const { db } = ehSetup();
   try {
     editorsHereStart('hub');
-    await ehWait(80);
+    await waitQuiet();
     assert.equal(db.serverGet(EH_MY_PATH()).where, 'hub');
     // The next update is refused once, the way the rules' 1 s floor would on uneven latency.
     const orig = db.ref;
@@ -110,10 +110,10 @@ test('a refused write (the server stamps landed under a second apart) is retried
     };
     ehLastWriteAt = 0;
     editorsHereMove('schedule');
-    await ehWait(20);
+    await waitUntil(() => ehTimer, 'the refused write to leave a retry pending');
     assert.equal(db.serverGet(EH_MY_PATH()).where, 'hub', 'the refused write did not land');
     editorsHereMove('meals'); // the person moved on while the retry was pending: the retry carries THIS
-    await ehWait(ehMinMs + 450);
+    await waitQuiet();
     assert.equal(db.serverGet(EH_MY_PATH()).where, 'meals');
     assert.equal(ehRetried, false, 'a success re-arms the retry');
   } finally { ehTeardown(); }
@@ -127,7 +127,7 @@ test('rules that refuse every write: one retry, then silence (no loop)', async (
     const orig = db.ref;
     db.ref = (p) => { const r = orig(p); if (String(p) === EH_MY_PATH()) { const s0 = r.set; r.set = (v) => { sets++; return s0.call(r, v); }; } return r; };
     editorsHereStart('hub');
-    await ehWait(ehMinMs * 2 + 500);
+    await waitQuiet();
     assert.equal(sets, 2, 'the first write and exactly one retry');
     assert.equal(ehRowLive, false);
   } finally { ehTeardown(); }
@@ -139,7 +139,7 @@ test('dark: no row, no listener, and no write on connect — until a director op
   const { db } = ehSetup();
   try {
     editorsHereOnConnect(); // a (re)connect with the builder closed
-    await ehWait(60);
+    await waitQuiet();
     assert.equal(db.serverGet(EH_ROOT + '/editorsHere'), null);
     assert.equal(db.log.length, 0, JSON.stringify(db.log));
     assert.equal(db.listenerCount(EH_ROOT + '/editorsHere'), 0, 'no listener either');
@@ -153,7 +153,7 @@ test('opening the builder writes my row once — { at (server), v, where } under
   const { db, disconnects } = ehSetup();
   try {
     assert.equal(editorsHereStart('hub'), true);
-    await ehWait(20);
+    await waitQuiet();
     const row = db.serverGet(EH_MY_PATH());
     assert.ok(row, 'my row is there');
     assert.deepEqual(Object.keys(row).sort(), ['at', 'v', 'where']);
@@ -177,15 +177,19 @@ test('moving between screens updates `where` in place (at refreshed), and leavin
   const { db } = ehSetup();
   try {
     editorsHereStart('hub');
-    await ehWait(10);
+    await waitUntil(() => db.serverGet(EH_MY_PATH()), 'my row to be written');
     const first = db.serverGet(EH_MY_PATH()).at;
     // A quick run of screen changes: the first goes out when the floor allows, the rest collapse into ONE trailing write of the LAST place.
+    // The run has to be INSIDE the floor, so the floor is stamped right here, in the same synchronous block as the moves (a 30 ms
+    // floor counted from the first write was lost whenever the process stalled for 30 ms between the two).
+    ehMinMs = 150;
+    ehLastWriteAt = Date.now();
     const mark = db.log.length;
     editorsHereMove('schedule:typical');
     editorsHereMove('schedule:tue');
     editorsHereMove('item:tue:b-swim-900');
     assert.equal(db.log.slice(mark).filter((l) => l.kind === 'update').length, 0, 'inside the floor: held');
-    await ehWait(80);
+    await waitQuiet(); // the trailing write goes out when the floor allows, and is acknowledged
     const writes = db.log.slice(mark).filter((l) => l.kind === 'update');
     assert.equal(writes.length, 1, 'one trailing write, never a refusal');
     assert.equal(db.serverGet(EH_MY_PATH()).where, 'item:tue:b-swim-900', 'carrying the last place');
@@ -194,15 +198,15 @@ test('moving between screens updates `where` in place (at refreshed), and leavin
     // The same place again is not a write.
     const n = db.log.length;
     assert.equal(editorsHereMove('item:tue:b-swim-900'), true);
-    await ehWait(60);
+    await waitQuiet();
     assert.equal(db.log.length, n);
     // Not a place the rules would take: not written.
     ['Has Capitals', 'x'.repeat(61), 'a/b', 'a b'].forEach((bad) => assert.equal(editorsHereMove(bad), false, bad));
-    await ehWait(60);
+    await waitQuiet();
     assert.equal(db.serverGet(EH_MY_PATH()).where, 'item:tue:b-swim-900');
     // Leaving the builder removes the row and the listener (dark mode: nothing lingers).
     editorsHereStop();
-    await ehWait(20);
+    await waitQuiet();
     assert.equal(db.serverGet(EH_MY_PATH()), null);
     assert.equal(db.listenerCount(EH_ROOT + '/editorsHere'), 0);
   } finally { ehTeardown(); }
@@ -212,11 +216,11 @@ test('a reconnect with the builder open registers the row and its onDisconnect a
   const { db, disconnects } = ehSetup();
   try {
     editorsHereStart('games');
-    await ehWait(40);
+    await waitQuiet();
     assert.equal(disconnects.length, 1);
     db.serverSet(EH_MY_PATH(), null); // the server noticed the dead socket and dropped it
     editorsHereOnConnect();
-    await ehWait(60);
+    await waitQuiet();
     assert.equal(db.serverGet(EH_MY_PATH()).where, 'games', 'back, in the same place');
     assert.equal(disconnects.length, 2, 'registered again');
   } finally { ehTeardown(); }
@@ -227,7 +231,7 @@ test('viewers never write or listen: a counselor, a view-only second tab and a d
   try {
     assert.equal(editorsHereStart('hub'), false);
     assert.equal(editorsHereMove('games'), false);
-    await ehWait(60);
+    await waitQuiet();
     assert.equal(db.log.length, 0);
     assert.equal(db.listenerCount(EH_ROOT + '/editorsHere'), 0);
     assert.deepEqual(editorsHereList(), []);
@@ -238,10 +242,10 @@ test('viewers never write or listen: a counselor, a view-only second tab and a d
     assert.equal(db.log.length, 0);
     // A director who is demoted mid-session: the row goes and the listener with it.
     assert.equal(editorsHereStart('hub'), true);
-    await ehWait(30);
+    await waitQuiet();
     assert.ok(db.serverGet(EH_MY_PATH()));
     setMemberRole('viewer');
-    await ehWait(30);
+    await waitQuiet();
     assert.equal(db.serverGet(EH_MY_PATH()), null, 'removed');
     assert.equal(db.listenerCount(EH_ROOT + '/editorsHere'), 0, 'and no longer listening');
     assert.deepEqual(editorsHereList(), []);
@@ -254,7 +258,7 @@ test('a refused write or listener is swallowed (rules that predate it): nothing 
     db.refuse(EH_ROOT + '/editorsHere');
     db.revokeRead(EH_ROOT + '/editorsHere');
     assert.doesNotThrow(() => editorsHereStart('hub'));
-    await ehWait(60);
+    await waitQuiet();
     assert.deepEqual(editorsHereList(), []);
     assert.equal(syncDenied, false);
     assert.equal(editorsHereHeader().count, 0);

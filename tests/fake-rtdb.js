@@ -31,6 +31,17 @@
 // { manualFirstSnapshot: true } and call deliverFirstSnapshots() when the
 // "network answers", to test what the app does BEFORE its first pull.
 
+// Every acknowledgement (a write's promise, a refusal, a transaction's run) is delivered a macrotask after the call, as
+// the real SDK's is. They are counted while they are on their way so a test can wait for "everything acknowledged"
+// instead of guessing at a delay: `inflight()` is how many are still pending, across every fake database. (The
+// harness's waitQuiet() reads it; a chain of acknowledgements, each setting off the next write, is otherwise invisible.)
+let inflightAcks = 0;
+function later(fn) {
+  inflightAcks += 1;
+  setTimeout(() => { inflightAcks -= 1; fn(); }, 0);
+}
+const inflight = () => inflightAcks;
+
 const clone = (v) => (v === undefined ? undefined : JSON.parse(JSON.stringify(v)));
 const isObj = (v) => v !== null && typeof v === 'object';
 const split = (p) => String(p || '').split('/').filter(Boolean);
@@ -188,7 +199,7 @@ function makeFakeRtdb(opts) {
   function enqueueWrite(kind, touchedPaths, apply) {
     db.log.push({ kind, paths: touchedPaths.map((p) => p.join('/')) });
     return new Promise((resolve, reject) => {
-      if (touchedPaths.some(isRefused)) { setTimeout(() => reject(denied(touchedPaths[0].join('/'))), 0); return; }
+      if (touchedPaths.some(isRefused)) { later(() => reject(denied(touchedPaths[0].join('/')))); return; }
       if (!online) {
         pending.push({
           kind,
@@ -203,7 +214,7 @@ function makeFakeRtdb(opts) {
       }
       apply(server);
       fire();
-      setTimeout(resolve, 0);
+      later(resolve);
     });
   }
 
@@ -218,7 +229,7 @@ function makeFakeRtdb(opts) {
       on(type, cb, errCb) {
         if (type !== 'value') throw new Error('fake-rtdb: only "value" listeners are supported');
         if (readDenials.some((d) => d.every((seg, i) => parts[i] === seg))) {
-          if (errCb) setTimeout(() => errCb(denied(parts.join('/'))), 0);
+          if (errCb) later(() => errCb(denied(parts.join('/'))));
           return cb;
         }
         listeners.push({ parts, cb, errCb, last: null, started: false });
@@ -289,7 +300,7 @@ function makeFakeRtdb(opts) {
             }
             reject(new Error('fake-rtdb: transaction kept losing the race'));
           };
-          if (online) setTimeout(run, 0); else pending.push({ kind: 'txn', touched: [parts], run });
+          if (online) later(run); else pending.push({ kind: 'txn', touched: [parts], run });
         });
       },
     };
@@ -313,7 +324,7 @@ function makeFakeRtdb(opts) {
       if (p.run) { p.run(); return; }
       if (p.touched.some(isRefused)) { p.reject(denied(p.touched[0].join('/'))); return; } // rolls back: dropped from the queue
       p.commit();
-      setTimeout(p.resolve, 0);
+      later(p.resolve);
     });
     fire();
   };
@@ -365,4 +376,4 @@ function makeFakeFirebase(db) {
   return { database };
 }
 
-module.exports = { makeFakeRtdb, makeFakeFirebase, toStored, fromStored };
+module.exports = { makeFakeRtdb, makeFakeFirebase, toStored, fromStored, inflight };

@@ -155,7 +155,8 @@ Files:
   emulator) and `tests/push-e2e/` (the alert sender in real workerd) are
   opt-in suites that need npm + Java. `tests/rules-macros.js` is the SOURCE of
   the R1 rules blocks (see "R1" under "Auth, members & roles"); it is not a test
-  and is never loaded by the browser
+  and is never loaded by the browser. `tests/stall.js` is a preload that makes timers
+  stall at random, to hunt tests that wait on the clock (see "Waiting in a test")
 - `current-standings.html` + `current-standings.js` + `tv-camp.js` — the TV /
   presenter standings page, for BOTH camps (see "The TV page" below). The page
   is markup, CSS, its own CSP and the build stamp; its script lives in
@@ -1263,10 +1264,51 @@ setup-ui.js sections 8–11. No new file, so no new `?v=` entry.
 
 `node tests/run.js` (optionally with a filename filter: `node tests/run.js
 sync`). Zero dependencies, no network. The whole suite takes about 50 seconds of wall
-time: the engine tests wait on real timers (`setup-sync.test.js` ~5 s and `restore.test.js`
-~3 s per camp, with the setup push debounce shortened through `setupPushMs`; `sync` and
-`config-sync` ~5 s each on the 400 ms state/config debounces). A filter runs one file. **Run it before every
+time but only about 25 of CPU: the rest is the engine tests waiting out the app's real
+debounces (the state / config push is 400 ms; the setup push is shortened to 40 ms through
+`setupPushMs`), so `restore`, `config-sync`, `seed` and `setup-sync` are 2–4 s per camp and
+everything else well under 1 s. A filter runs one file (and its seeded / senior twins). **Run it before every
 commit**, alongside `node --check`.
+
+**Waiting in a test — wait for the app, never for the clock** (the intermittent "1 failed,
+2955 passed" seen once on main was this class of test). A fixed `await sleep(40)` is a bet
+that a chain of debounce timers and database acknowledgements finishes inside 40 ms; it wins
+on an idle laptop and loses whenever the process stalls (a GC pause, a cold container, three
+suites at once), because the sleep's own timer comes due before the next link of the chain
+has even been scheduled. So:
+- **`waitQuiet()`** (a global in every test file, from `tests/harness.js`) resolves once every
+  short app timer (asked for 1 s or less: a debounce, a retry, a floor) has fired AND every
+  acknowledgement `fake-rtdb.js` still owes has been delivered (`inflight()`), with nothing new
+  started for two hops. It is "the push went out, was acknowledged and everything that set off
+  has settled". Use it where a test used to sleep for a flush. It ignores a timer longer than 1 s
+  (the calm-motion sampler's 2 s, a toast), and a write queued by an OFFLINE fake database (that
+  one waits for `goOnline()`, it is not in flight). It looks at the file's own context only.
+- **`waitUntil(cond, 'what we wait for', ms?)`** polls every 2 ms, resolves as soon as `cond()` is
+  truthy and throws at a 20 s deadline naming the condition. Use it for a specific state
+  (`waitUntil(() => remoteReady && configReady && setupReady, …)`, `waitUntil(() => ehTimer, 'the
+  refused write to leave a retry pending')`) — especially when `waitQuiet()` would wait out a timer
+  the test means to catch pending. Never a bounded `for` loop that falls through silently at the
+  end: that is a sleep with extra steps (`rsSettle` / `a1Settle` / `settled` were).
+- **Still fine** (all deterministic): a `ssWait(5)`–`(10)` for the ONE hop of an acknowledgement
+  (the ack timer was armed before the sleep's, so timers fire it first, whatever stalled); a test
+  timer armed AFTER and longer than the app timer it waits out (`closeSchedule`'s 200 ms against
+  `sleep(260)`: timers fire in expiry order); an elapsed-time wait that only needs "at least this
+  long" (a stall can only lengthen it).
+- **Never** let a test depend on two things happening within N ms of each other. A floor or window
+  that the test must stay INSIDE is stamped in the same synchronous block as the actions
+  (`ehLastWriteAt = Date.now()` beside the three `editorsHereMove`s, with a 150 ms floor), and a
+  "this must not take longer than…" check asserts on the delay the code ASKED for (the chat
+  send's `setTimeout`), not on a stopwatch.
+- **A timer a case leaves pending is the next case's problem.** The app's own debounce
+  (`pushTimer`, `pushConfigTimer`) keeps running after a test resets the variable to `null`, and
+  fires `pushState()` into whatever database the NEXT test has attached — a first-pull test then
+  finds its offline work already sent and nothing to strand. A reset is `clearTimeout(pushTimer);
+  pushTimer = null`, in `boot()` and in `teardown()`, never the assignment alone.
+- **`tests/stall.js`** is the hunter: `node -r ./tests/stall.js tests/run.js <filter>` makes
+  timer callbacks stall at random (`STALL_SEED`, `STALL_P` = 0.15, `STALL_MS` = 100; same seed,
+  same stalls). A test that fails under it and passes without is waiting on the clock. Sweep a
+  few seeds after touching any async test (`for s in 1 2 3 4 5; do STALL_SEED=$s node -r
+  ./tests/stall.js tests/run.js; done`), and loop a file you changed under CPU contention too.
 
 `tests/harness.js` loads the real `defaults.js` + `app.js` + `settings.js` into
 a Node `vm` context behind a small DOM stub, so the tests exercise the exact
@@ -1435,12 +1477,19 @@ What's covered, and why each file exists:
   terminally), multi-path `update`, `transaction` (null first run, contention
   re-run, abort), `.info/connected`, an offline queue that replays in order,
   injected per-path refusals, and `{ manualFirstSnapshot: true }` so a test
-  controls when the first pull lands. Drive the app's real `fbRef` /
+  controls when the first pull lands. Every acknowledgement is delivered a
+  macrotask after its call and COUNTED while on its way: `inflight()` (exported) is how many
+  are owed across all fake databases, which is what `waitQuiet()` waits on. Drive the app's real `fbRef` /
   `fbConfigRef` with `db.ref(...)` instead of a one-method stub.
   `tests/fixtures/legacy-builder-v183.js` is the game editor's
   `toEditableDraft` + `saveGameDraft` verbatim from v183 (never edited): the
   config-engine rebuild's field-diff save must produce the same game from the
   same draft (`settings-crud.test.js` runs both).
+- `wait.test.js` — the waiting helpers every async test uses (see "Waiting in a test"):
+  `waitUntil` resolves at once when the condition holds, takes an async one and names what it
+  waited for at its deadline; `waitQuiet` waits out a short timer a timer started and a whole
+  chain of fake-database acknowledgements (each setting off the next write), ignores a long timer
+  and a write an offline database is only holding, and names the timers that would not settle.
 - `spelling.test.js` — the three-name merge and the alias table (old spellings
   only in the alias block of camps.js; old data still matches everywhere).
 - `ics.test.js` (+ `.senior`, which evals the same file) — the "Add to calendar"

@@ -10,7 +10,7 @@
 
 const { makeFakeRtdb } = nodeRequire('./fake-rtdb.js');
 const CONFIG_PATH = 'campScoreboard/config';
-const wait = (ms) => new Promise((r) => setTimeout(r, ms || 5));
+// (Waits are for the app, not the clock: waitUntil / waitQuiet in tests/harness.js.)
 
 // Sync configured (so the gate applies), a fake database, the real listener. The
 // state engine's first pull has landed (remoteReady) unless a case says otherwise: the
@@ -232,7 +232,7 @@ test('a device with a confirmed baseline may edit before the first snapshot; the
     });
     assert.ok(renamed);
     db.deliverFirstSnapshots();
-    await wait(30);
+    await waitQuiet();
     assert.equal(gameById(id).name, 'Edited before the snapshot', 'the edit survived the first snapshot');
     assert.equal(db.serverGet(CONFIG_PATH).games[0].name, 'Edited before the snapshot', 'and went up');
   } finally { gateTeardown(); }
@@ -262,7 +262,7 @@ test('after the first snapshot an edit goes up as a transaction of field ops, an
     db.goOffline(); // a write now stays pending, like the real SDK's offline queue
     state.config.games[0].name = 'Renamed offline';
     saveConfig();
-    await wait(450); // the 400 ms debounce
+    await waitQuiet(); // the 400 ms debounce fires and the (offline) write is queued
     assert.equal(pendingConfigWrites, 1, 'one config write is in flight');
     assert.equal(pendingWritesTotal(), 1);
     assert.equal(pendingWrites, 0, 'the state counter is untouched');
@@ -271,7 +271,7 @@ test('after the first snapshot an edit goes up as a transaction of field ops, an
     assert.ok(hasUnconfirmedLocalWork(), 'or a sign-out');
     assert.ok(canAdoptRemote(), 'but a scores snapshot is still safe to adopt (state only)');
     db.goOnline();
-    await wait(20);
+    await waitQuiet();
     assert.equal(pendingConfigWrites, 0);
     assert.notOk(reloadBlocked());
     assert.equal(db.serverGet(CONFIG_PATH).games[0].name, 'Renamed offline');
@@ -295,7 +295,7 @@ test('a refused config write is surfaced, not swallowed, and does not wedge the 
     saveConfig();
     flushPendingPush();
     assert.equal(pendingConfigWrites, 1);
-    await wait(30);
+    await waitQuiet();
     assert.equal(pendingConfigWrites, 0, 'settled on failure too');
     assert.ok(toasts.some((t) => /Couldn't save the week setup/.test(t)), toasts.join(' | '));
   } finally { showToast = real; console.warn = realWarn; gateTeardown(); }
@@ -305,7 +305,7 @@ test('an empty config node is seeded by a transaction, once, and never over an e
   const db = gateSetup();
   try {
     db.deliverFirstSnapshots(); // the node is empty
-    await wait(20);
+    await waitQuiet();
     assert.equal(configReady, true);
     assert.ok(db.log.some((l) => l.kind === 'transaction'), 'seeded through a transaction: ' + JSON.stringify(db.log));
     assert.notOk(db.log.some((l) => l.kind === 'set'), 'never a whole-node set');
@@ -320,7 +320,7 @@ test('two phones seeding at once: the loser aborts instead of overwriting the wi
     const winner = { version: 99, updatedAt: '2026-12-01T00:00:00.000Z', sessions: ['Morning'], days: [{ id: 'd1', name: 'Mon', dow: 1 }], games: [] };
     db.contend(CONFIG_PATH, (d) => d.serverSet(CONFIG_PATH, winner)); // the other phone seeds mid-transaction
     db.deliverFirstSnapshots();
-    await wait(30);
+    await waitQuiet();
     assert.equal(db.serverGet(CONFIG_PATH).version, 99, 'the first seed stands');
     assert.equal(pendingConfigWrites, 0);
   } finally { gateTeardown(); }
@@ -356,7 +356,7 @@ test('a refused config read (access revoked) opens the builder rather than leavi
   console.warn = () => {};
   try {
     db.revokeRead(CONFIG_PATH);
-    await wait(10);
+    await waitUntil(() => syncDenied, 'the refused read to be reported');
     assert.equal(syncDenied, true);
     assert.equal(configEditable(), true, 'no snapshot is coming; the app is already kicking this device out');
     assert.equal(fbConfigRef, null);

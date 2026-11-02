@@ -150,7 +150,7 @@ test('own-send ids are released once the send settles, and a refusal parks the w
     sendChatMessage('general');
     assert.equal(input.value, '', 'the composer clears on send');
     assert.equal(chatOwnSendIds.size, 1, 'tracked while in flight');
-    await new Promise((r) => realTimeout(r, 60));
+    await waitUntil(() => chatOwnSendIds.size === 0, 'the refused send to settle (the retries, then the id released)');
     assert.equal(chatOwnSendIds.size, 0, 'released after the refusal');
     assert.equal(chatDrafts.general, 'typed in general', 'the words wait in the channel they were typed for');
     // and a good send leaves no draft or id behind
@@ -158,7 +158,8 @@ test('own-send ids are released once the send settles, and a refusal parks the w
     chatLastSendAt = 0; chatSendTail = Promise.resolve();
     document.getElementById('chat-input').value = 'all good';
     sendChatMessage('memes');
-    await new Promise((r) => realTimeout(r, 60));
+    assert.equal(chatOwnSendIds.size, 1, 'tracked while in flight');
+    await waitUntil(() => chatOwnSendIds.size === 0, 'the send to be acknowledged and its id released');
     assert.equal(chatOwnSendIds.size, 0);
     assert.notOk(chatDrafts.memes, 'a sent message is not a draft');
   } finally {

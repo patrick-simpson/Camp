@@ -13,7 +13,7 @@ const { makeContext } = nodeRequire('./harness.js');
 const { makeFakeRtdb } = nodeRequire('./fake-rtdb.js');
 
 const CS_PATH = dbPath('config');
-const csWait = (ms) => new Promise((r) => setTimeout(r, ms || 5));
+const csWait = (ms) => new Promise((r) => setTimeout(r, ms || 5)); // a few ms: one hop. Waiting for a push / its acknowledgement / what it sets off is waitQuiet() (tests/harness.js), never a longer guess.
 const csClone = (v) => JSON.parse(JSON.stringify(v));
 
 // A signed-in editor whose first config snapshot has landed: a baseline, configReady, a
@@ -37,6 +37,7 @@ async function csSetup() {
   fbConfigRef = db.ref(CS_PATH);
   attachConfigListener();
   db.deliverFirstSnapshots();
+  await waitUntil(() => configReady, 'the first config snapshot to be processed');
   await csWait(5);
   assert.equal(configReady, true, 'the first snapshot was processed');
   assert.ok(cfgBaseTree(), 'and left a confirmed baseline');
@@ -206,7 +207,7 @@ test('canonical comparison: key order and RTDB pruning in the snapshot are not s
     state.config.days.push({ id: 'd-new', name: 'New day', dow: null, note: '' }); // dow: null is pruned by the server
     saveConfig();
     flushPendingPush();
-    await csWait(30);
+    await waitQuiet();
     assert.deepEqual(cfgUnconfirmed(), {}, 'the echo of my own write (key-sorted, null dropped) leaves nothing unconfirmed');
     assert.equal(pendingConfigWrites, 0);
   } finally { csTeardown(); }
@@ -239,7 +240,7 @@ test('two devices edit two fields of ONE game at once: both are kept, on the ser
     // Mid-transaction another device changes a different field of the same game.
     db.contend(CS_PATH, (d) => csServer(d, (c) => { c.games.find((g) => g.id === id).headline = 'Their tagline'; }));
     flushPendingPush();
-    await csWait(40);
+    await waitQuiet();
     const g = csGame(db, id);
     assert.equal(g.location, 'Gym', 'mine landed on the server');
     assert.equal(g.headline, 'Their tagline', 'and so did theirs (the transaction re-ran on the new value)');
@@ -258,7 +259,7 @@ test('the SAME field edited on both sides: the last to commit wins', async () =>
     saveConfig();
     db.contend(CS_PATH, (d) => csServer(d, (c) => { c.games.find((g) => g.id === id).location = 'Field 2'; }));
     flushPendingPush();
-    await csWait(40);
+    await waitQuiet();
     assert.equal(csGame(db, id).location, 'Gym', 'mine committed last');
     assert.equal(gameById(id).location, 'Gym');
   } finally { csTeardown(); }
@@ -277,7 +278,7 @@ test('only the changed fields travel: a push never carries another record, and a
     db.contend(CS_PATH, (d) => { const old = d.serverGet(CS_PATH); old.games = old.games.filter((g) => g.id !== other); d.serverSet(CS_PATH, old); });
     fbConfigRef.transaction = (fn, a, b) => realTxn((cur) => { const r = fn(cur); seen.push(r); return r; }, a, b);
     flushPendingPush();
-    await csWait(40);
+    await waitQuiet();
     assert.ok(seen.length >= 1);
     assert.equal(csGame(db, id).location, 'Gym', 'my op applied on top of the value the old build left');
     assert.equal(csGame(db, other), undefined, 'and I did not resurrect what the old build\'s set() removed (I never touched it)');
@@ -296,7 +297,7 @@ test('a snapshot that lands while my push is in flight is rebased, and never rev
     csServer(db, (c) => { c.games.find((g) => g.id === b).location = 'Theirs'; });
     assert.equal(gameById(b).location, 'Theirs');
     assert.equal(gameById(a).location, 'Gym', 'mine is still laid over it');
-    await csWait(40);
+    await waitQuiet();
     assert.equal(gameById(a).location, 'Gym');
     assert.equal(gameById(b).location, 'Theirs', 'their field survived my commit\'s rebase');
     assert.equal(csGame(db, a).location, 'Gym');
@@ -315,7 +316,7 @@ test('an edit made while the push is in flight is kept (and sent next), not over
     saveConfig();
     flushPendingPush();                                  // one transaction at a time: this one is owed
     assert.equal(configPushOwed, true);
-    await csWait(60);
+    await waitQuiet();
     assert.equal(pendingConfigWrites, 0);
     assert.equal(configPushOwed, false);
     assert.equal(gameById(id).location, 'Back to the field');
@@ -337,7 +338,7 @@ test('a push the server cannot take (the node is gone) aborts without writing, a
   try {
     state.config.games[0].name = 'Never lands';
     pushConfig();
-    await csWait(20);
+    await waitQuiet();
     assert.equal(db.serverGet(CS_PATH), null, 'nothing was written into the empty node');
     assert.equal(pendingConfigWrites, 0);
     assert.deepEqual(Object.keys(cfgUnconfirmed()), ['games/' + state.config.games[0].id + '/name'], 'the edit is still unconfirmed');
@@ -350,7 +351,7 @@ test('a node emptied on the server is re-seeded from this phone, edits included,
     state.config.games[0].name = 'Survives a wipe';
     saveConfig();
     db.serverSet(CS_PATH, null);
-    await csWait(30);
+    await waitQuiet();
     assert.equal(csGame(db, state.config.games[0].id).name, 'Survives a wipe');
     assert.deepEqual(cfgUnconfirmed(), {});
     assert.equal(pendingConfigWrites, 0);
@@ -364,7 +365,7 @@ test('the server value carries only the five config keys, and a stray already in
     state.config.games[0].name = 'Edited';
     saveConfig();
     flushPendingPush();
-    await csWait(30);
+    await waitQuiet();
     assert.deepEqual(Object.keys(db.serverGet(CS_PATH)).sort(), CONFIG_KEYS.slice().sort());
     assert.deepEqual(Object.keys(configForSync({ version: 1, stray: 1, games: [] })).sort(), ['games', 'version']);
   } finally { csTeardown(); }
@@ -382,7 +383,7 @@ test('a real catalog migration (the version moved) is pushed by an editor; plain
     clearTimeout(pushConfigTimer);
     pushConfigTimer = null;
     pushConfig();
-    await csWait(30);
+    await waitQuiet();
     assert.equal(db.serverGet(CS_PATH).version, 5, 'and the migration went up as ops');
   } finally { csTeardown(); }
 });
@@ -424,7 +425,7 @@ test('delete vs edit (received first): my edit to a record somebody deleted beco
       assert.equal(state.config.games[0].id, id, 'in its old place');
       assert.equal(cfgNotes().length, 0);
       flushPendingPush();
-      await csWait(40);
+      await waitQuiet();
       assert.equal(csGame(db, id).location, 'My new spot', 'and re-created on the server');
     });
   } finally { csTeardown(); }
@@ -439,7 +440,7 @@ test('delete vs edit (found at commit): the transaction drops my op and the note
       saveConfig();
       db.contend(CS_PATH, (d) => csServer(d, (c) => { c.games = c.games.filter((g) => g.id !== id); }));
       flushPendingPush();
-      await csWait(40);
+      await waitQuiet();
       assert.equal(csGame(db, id), undefined, 'nothing resurrected it half-built');
       assert.equal(cfgNotes().filter((n) => n.kind === 'putback').length, 1);
       assert.equal(gameById(id), undefined);
@@ -483,7 +484,7 @@ test('offline edit -> reload -> reconnect: the first-snapshot merge keeps the ed
     run("setMemberRole('editor'); remoteReady = true; fbConfigRef = __db.ref(dbPath('config')); attachConfigListener();");
     assert.equal(run('configEditable()'), true, 'a baseline lets it edit before the first snapshot');
     db2.deliverFirstSnapshots();
-    await csWait(40);
+    await waitQuiet();
     const g = db2.serverGet(CS_PATH).games.find((x) => x.id === id);
     assert.equal(g.location, 'Edited offline', 'the offline edit reached the server');
     assert.equal(g.headline, 'Their tagline', 'beside the colleague\'s');
@@ -513,7 +514,7 @@ test('first-snapshot merge: the same field changed on both sides keeps the SERVE
         c.games.find((g) => g.id === id).location = 'Gym';
         c.games[1].headline = 'Also theirs';
       });
-      await csWait(30);
+      await waitQuiet();
       assert.equal(configReady, true);
       assert.equal(gameById(id).location, 'Gym', 'the server\'s value won');
       assert.equal(gameById(state.config.games[1].id).headline, 'Also theirs', 'and their other edit landed');
@@ -527,7 +528,7 @@ test('first-snapshot merge: the same field changed on both sides keeps the SERVE
       assert.equal(cfgUseMine(clash.id), true);
       assert.equal(gameById(id).location, 'Field 2', 'Use mine is a normal commit');
       flushPendingPush();
-      await csWait(40);
+      await waitQuiet();
       assert.equal(csGame(db, id).location, 'Field 2');
       assert.equal(cfgNotes().length, 0);
     });
@@ -544,7 +545,7 @@ test('first-snapshot merge: an edit inside a record the server deleted goes to P
       clearTimeout(pushConfigTimer); pushConfigTimer = null;
       csJustBooted();
       csServer(db, (c) => { c.games = c.games.filter((g) => g.id !== id); });
-      await csWait(30);
+      await waitQuiet();
       assert.equal(gameById(id), undefined, 'the server\'s catalog');
       assert.equal(cfgNotes().filter((n) => n.kind === 'putback' && n.key === id).length, 1);
       assert.equal(csGame(db, id), undefined, 'nothing was pushed for it');
@@ -573,7 +574,7 @@ test('first-snapshot merge: work unconfirmed for more than 36 hours asks before 
     state._cfgBaseAt = Date.now() - 40 * 60 * 60 * 1000;
     confirm = (m) => { asked.push(m); return false; };
     assert.equal(firstConfigMerge(db.serverGet(CS_PATH)), true);
-    await csWait(20);
+    await waitQuiet();
     assert.equal(asked.length, 1, 'asked once');
     assert.ok(/never reached the server/.test(asked[0]));
     assert.ok(csGame(db, state.config.games[0].id).location !== 'Old work', 'declined: not sent');
@@ -592,7 +593,7 @@ test('a new camp year strands the offline edits instead of merging them (first s
       state._cfgBaseEpoch = 'w20260801';          // the epoch the server last confirmed to this phone
       state.meta.epoch = 'w20270801';             // the epoch the state engine has just adopted
       assert.equal(firstConfigMerge(db.serverGet(CS_PATH)), true);
-      await csWait(20);
+      await waitQuiet();
       assert.equal(strandedCount(), before + 1, 'set aside as downloadable work');
       const entry = readStranded()[readStranded().length - 1];
       assert.ok(entry.changes[0].path.startsWith('config/games/'));
@@ -653,7 +654,7 @@ test('an unconfirmed edit is counted by every guard until the server acknowledge
     assert.ok(hasUnsyncedWork());
     assert.ok(canAdoptRemote(), 'state adoption is unaffected');
     db.goOnline();
-    await csWait(40);
+    await waitQuiet();
     assert.equal(pendingConfigWrites, 0);
     assert.notOk(hasUnconfirmedLocalWork());
     assert.notOk(reloadBlocked());
@@ -670,7 +671,7 @@ test('a failed push is retried by the next builder change and reported, not lost
       state.config.games[0].name = 'Refused';
       saveConfig();
       flushPendingPush();
-      await csWait(30);
+      await waitQuiet();
       assert.ok(toasts.some((t) => /Couldn't save the week setup/.test(t.msg)));
       assert.equal(pendingConfigWrites, 0, 'the counter did not wedge');
       assert.ok(Object.keys(cfgUnconfirmed()).length, 'the edit is still on this phone, unconfirmed');
@@ -703,7 +704,7 @@ async function csOffline(db, edit, server) {
   clearTimeout(pushConfigTimer); pushConfigTimer = null;
   csJustBooted();
   csServer(db, server);
-  await csWait(40);
+  await waitQuiet();
   assert.equal(configReady, true);
 }
 
@@ -821,7 +822,7 @@ test('first-snapshot merge: a new game of mine under an id a colleague also mint
       assert.ok(toasts.some((t) => /couldn’t be added/.test(t.msg)));
       assert.equal(cfgPutBack(note.id), true);
       flushPendingPush();
-      await csWait(40);
+      await waitQuiet();
       const names = (db.serverGet(CS_PATH).games || []).map((g) => g.name);
       assert.ok(names.includes('Rain bowling by A') && names.includes('Rain bowling by B'), 'both games exist now');
       const mineNow = state.config.games.find((g) => g.name === 'Rain bowling by A');
@@ -843,7 +844,7 @@ test('the engine never overwrites a different record with a create: in my push\'
       saveConfig();
       db.contend(CS_PATH, (d) => csServer(d, (c) => { c.games.push(mk('Rain bowling by B')); }));
       flushPendingPush();
-      await csWait(40);
+      await waitQuiet();
       assert.equal(csGame(db, 'rain-bowling').name, 'Rain bowling by B', 'the established game was not replaced');
       assert.equal(gameById('rain-bowling').name, 'Rain bowling by B', 'this phone follows the server');
       assert.ok(cfgNotes().some((n) => n.collide && n.name === 'Rain bowling by A'), 'mine is a note, not a loss ');
@@ -861,7 +862,7 @@ test('the engine never overwrites a different record with a create: in my push\'
       saveConfig();
       clearTimeout(pushConfigTimer); pushConfigTimer = null;
       csServer(db, (c) => { c.games.push(mk('Rain bowling by B')); });
-      await csWait(30);
+      await waitQuiet();
       assert.equal(gameById('rain-bowling').name, 'Rain bowling by B');
       assert.ok(cfgNotes().some((n) => n.collide), 'listed');
     });
@@ -928,7 +929,7 @@ test('a phone back from a new camp year forgets last year\'s notes and undo hist
       const remote = db.serverGet(CS_PATH);
       remote.games[0].location = 'Somewhere'; // the server holds it (confirmed) — nothing of mine is outstanding
       db.serverSet(CS_PATH, remote);
-      await csWait(20);
+      await waitQuiet();
       assert.equal(cfgNotes().length, 1);
       assert.ok(undoRecent().length >= 1);
       // The "reload": new epoch from the state engine, the baseline still carries the old one.
@@ -975,7 +976,7 @@ test('fuzz: the first-snapshot merge converges, loses no foreign edit, applies e
         };
         await csOffline(db, mineOps, theirOps);
         flushPendingPush();
-        await csWait(40);
+        await waitQuiet();
         const server = db.serverGet(CS_PATH);
         const sIds = csIds(server);
         const where = ' (round ' + round + ')';

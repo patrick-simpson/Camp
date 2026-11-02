@@ -385,7 +385,7 @@ test('a clock hitting zero while a score is being typed does not steal the field
 });
 
 test('focus alone is what editorMidEntry adds over fieldFocused', () => {
-  dataEditPending = false; pushTimer = null; pushConfigTimer = null;
+  dataEditPending = false; clearTimeout(pushTimer); pushTimer = null; clearTimeout(pushConfigTimer); pushConfigTimer = null;
   document.activeElement = { tagName: 'TEXTAREA' };
   assert.ok(fieldFocused() && editorMidEntry());
   document.activeElement = null;

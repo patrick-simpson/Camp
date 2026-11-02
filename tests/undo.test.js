@@ -194,6 +194,7 @@ test('an offline clash\'s synthetic entry changes MINE into THEIRS, so Undo brin
       fbConfigRef = db.ref(dbPath('config'));
       attachConfigListener();
       db.deliverFirstSnapshots();
+      await waitUntil(() => configReady, 'the first config snapshot to be processed');
       await udWait(10);
       const id = state.config.games[0].id;
       state.config.games[0].location = 'Field 2'; // offline, never sent
@@ -203,7 +204,7 @@ test('an offline clash\'s synthetic entry changes MINE into THEIRS, so Undo brin
       const server = db.serverGet(dbPath('config'));
       server.games.find((g) => g.id === id).location = 'Gym';
       db.serverSet(dbPath('config'), server);
-      await udWait(30);
+      await waitQuiet();
       assert.equal(udGame(id).location, 'Gym', 'the server won the merge');
       const e = undoRecent().find((x) => /Bring back your offline change/.test(x.label));
       assert.ok(e, 'the synthetic entry exists');

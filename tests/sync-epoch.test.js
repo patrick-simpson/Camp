@@ -19,7 +19,9 @@ const serverState = (db) => db.serverTree()[CAMP.dbRoot].state;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms === undefined ? 5 : ms));
 const clone = (v) => JSON.parse(JSON.stringify(v));
 const res = (n) => ({ medals: { gold: 't0', silver: 't1', bronze: 't2' }, savedAt: 'v' + n });
-const settled = async () => { for (let i = 0; i < 40 && (pendingWrites > 0 || stateBisecting); i++) await wait(2); await wait(2); };
+// Every state write acknowledged (and any refusal bisected) — waited for, not guessed at: a bounded poll of ~80 ms gave up
+// early when the process stalled and the next assertion saw a write still in flight.
+const settled = async () => { await waitUntil(() => pendingWrites === 0 && !stateBisecting, 'every state write to be acknowledged'); await wait(2); };
 const STRANDED = () => lsKey('campScoreboardStranded');
 const storedStranded = () => JSON.parse(localStorage.getItem(STRANDED()) || '[]');
 const bar = () => document.getElementById('sync-alert');
@@ -43,7 +45,7 @@ async function boot(serverMeta) {
   await ref.set(syncedSnapshot());
   const snap = await ref.once('value');
   fbRef = ref;
-  remoteReady = true; pendingWrites = 0; dataEditPending = false; pushTimer = null; pushConfigTimer = null;
+  remoteReady = true; pendingWrites = 0; dataEditPending = false; clearTimeout(pushTimer); pushTimer = null; clearTimeout(pushConfigTimer); pushConfigTimer = null;
   applyingRemote = false; document.activeElement = null;
   stateQuarantine = {}; stateBisecting = false; stateBisectQueue = []; stateBisectHeld = false;
   delete state._quarantine;
@@ -56,6 +58,8 @@ async function boot(serverMeta) {
 }
 
 function teardown() {
+  // A debounced push left pending would fire into the NEXT test's database (the app's timer outlives the case).
+  clearTimeout(pushTimer); pushTimer = null; clearTimeout(pushConfigTimer); pushConfigTimer = null;
   fbRef = null; remoteReady = false; pendingWrites = 0; dataEditPending = false;
   stateQuarantine = {}; stateBisecting = false; stateBisectQueue = []; stateBisectHeld = false;
   delete state._quarantine;

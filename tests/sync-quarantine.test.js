@@ -40,8 +40,8 @@ async function boot(opts) {
   remoteReady = true;
   pendingWrites = 0;
   dataEditPending = false;
-  pushTimer = null;
-  pushConfigTimer = null;
+  clearTimeout(pushTimer); pushTimer = null;
+  clearTimeout(pushConfigTimer); pushConfigTimer = null;
   applyingRemote = false;
   document.activeElement = null;
   stateQuarantine = {};
@@ -61,6 +61,8 @@ async function boot(opts) {
 }
 
 function teardown() {
+  // A debounced push left pending would fire into the NEXT test's database (the app's timer outlives the case).
+  clearTimeout(pushTimer); pushTimer = null; clearTimeout(pushConfigTimer); pushConfigTimer = null;
   fbRef = null;
   remoteReady = false;
   pendingWrites = 0;
@@ -89,7 +91,9 @@ function spyOn(ref, hook) {
 const paths = (u) => Object.keys(u).sort();
 // touchData() stamps meta/lastDataChangeAt into every batch; it is never what a test is about.
 const content = (u) => paths(u).filter((p) => p !== 'meta/lastDataChangeAt');
-const settled = async () => { for (let i = 0; i < 40 && (pendingWrites > 0 || stateBisecting); i++) await wait(2); await wait(2); };
+// Every state write acknowledged (and any refusal bisected) — waited for, not guessed at: a bounded poll of ~80 ms gave up
+// early when the process stalled and the next assertion saw a write still in flight.
+const settled = async () => { await waitUntil(() => pendingWrites === 0 && !stateBisecting, 'every state write to be acknowledged'); await wait(2); };
 const persisted = () => JSON.parse(localStorage.getItem(STORAGE_KEY));
 
 test('a refused path is parked, and the rest of its batch still reaches the server', async () => {

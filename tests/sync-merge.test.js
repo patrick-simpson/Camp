@@ -21,8 +21,8 @@ function useFakeRef() {
   lastSyncedTree = null;
   pendingWrites = 0;
   dataEditPending = false;
-  pushTimer = null;
-  pushConfigTimer = null;
+  clearTimeout(pushTimer); pushTimer = null;
+  clearTimeout(pushConfigTimer); pushConfigTimer = null;
   document.activeElement = null;
   return ref;
 }
@@ -136,7 +136,7 @@ test('a remote config that only lost empty fields to RTDB is not pushed back by 
   setMemberRole('editor');
   const savedRef = fbConfigRef;
   fbConfigRef = { transaction: () => Promise.resolve({ committed: false }) }; // config engine v2 sends a transaction, never a set()
-  pushConfigTimer = null;
+  clearTimeout(pushConfigTimer); pushConfigTimer = null;
   try {
     const remote = clone(state.config);
     remote.games = remote.games.map((g) => { const c = Object.assign({}, g); delete c.rules; return c; }); // pruned []

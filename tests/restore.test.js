@@ -9,7 +9,8 @@ const { makeFakeRtdb, makeFakeFirebase } = nodeRequire('./fake-rtdb.js');
 
 const RS_ROOT = CAMP.dbRoot;
 const RS_RULES = JSON.parse(readFixture('../database.rules.json')).rules[RS_ROOT];
-const rsWait = (ms) => new Promise((r) => setTimeout(r, ms || 5));
+// Waits here are for the app, never for the clock (see waitUntil / waitQuiet in tests/harness.js): a fixed sleep is
+// a bet that a chain of debounces and acknowledgements fits inside it, and loses when the process stalls.
 const rsClone = (v) => JSON.parse(JSON.stringify(v));
 const RS_JENN = { email: 'jenn@example.com', emailVerified: true };
 const RS_JENN_KEY = 'jenn@example,com';
@@ -64,7 +65,8 @@ async function rsSetup(opts) {
   attachSetupListener();
   db.deliverFirstSnapshots();
   flushPendingPush(); // the secrecy seed a confirmed director writes right after the first pull: sent now, not after its 400 ms debounce
-  await rsWait(40);  // ...and acknowledged
+  await waitUntil(() => remoteReady && configReady && setupReady, 'all three engines to pass their first pull');
+  await waitQuiet(); // ...and acknowledged
   assert.equal(remoteReady && configReady && setupReady, true, 'all three engines are past their first pull');
   assert.equal(hasUnconfirmedLocalWork(), false, 'and nothing of this phone\'s is waiting to be confirmed');
   return db;
@@ -101,10 +103,9 @@ function rsToasts(fn) {
 
 // Wait until everything this phone changed has been acknowledged (no timer, nothing in flight, nothing unconfirmed).
 async function rsSettle() {
-  for (let i = 0; i < 80; i++) {
-    if (pendingWritesTotal() === 0 && !hasUnconfirmedLocalWork() && !pushTimer && !pushConfigTimer && !setupPushTimer) return;
-    await rsWait(50);
-  }
+  await waitQuiet();
+  await waitUntil(() => pendingWritesTotal() === 0 && !hasUnconfirmedLocalWork() && !pushTimer && !pushConfigTimer && !setupPushTimer,
+    'every write this phone made to be acknowledged');
 }
 
 const rsIndex = (db) => db.serverGet(RS_ROOT + '/restoreIndex') || {};
@@ -244,7 +245,7 @@ test('an automatic point is taken before the first setup commit after 20 idle mi
   const db = await rsSetup();
   try {
     rsToasts(() => commitSetup((d) => { d.typical['b-swim-900'].start = 870; }, { label: 'Moved Swim' }));
-    await rsWait(20);
+    await waitQuiet();
     let rows = Object.values(rsIndex(db));
     assert.equal(rows.length, 1);
     assert.equal(rows[0].kind, 'auto');
@@ -253,17 +254,17 @@ test('an automatic point is taken before the first setup commit after 20 idle mi
     assert.equal(body.setup.typical['b-swim-900'].start, 900, 'the week as it was BEFORE the edit');
     // A second commit right after: no second point.
     rsToasts(() => commitSetup((d) => { d.typical['b-swim-900'].start = 880; }, { label: 'x' }));
-    await rsWait(20);
+    await waitQuiet();
     assert.equal(Object.keys(rsIndex(db)).length, 1, 'throttled');
     // Even after the idle gap, the 5-minute floor holds; past both it makes another.
     rpLastAt = Date.now() - 21 * 60 * 1000;
     rpLastAutoAt = Date.now() - 60 * 1000;
     rsToasts(() => commitSetup((d) => { d.typical['b-swim-900'].start = 860; }, { label: 'x' }));
-    await rsWait(20);
+    await waitQuiet();
     assert.equal(Object.keys(rsIndex(db)).length, 1, 'one a minute ago: still throttled');
     rpLastAutoAt = Date.now() - 6 * 60 * 1000;
     rsToasts(() => commitSetup((d) => { d.typical['b-swim-900'].start = 850; }, { label: 'x' }));
-    await rsWait(20);
+    await waitQuiet();
     assert.equal(Object.keys(rsIndex(db)).length, 2);
   } finally { rsTeardown(); }
 });
@@ -275,7 +276,7 @@ test('a point in flight blocks a second automatic one (an import\'s pre-import p
     assert.equal(rpLastAt > 0, true, 'claimed at once, before the write is acknowledged');
     rsToasts(() => commitSetup((d) => { d.typical['b-swim-900'].start = 870; }, { label: 'x', undo: false }));
     await p;
-    await rsWait(20);
+    await waitQuiet();
     assert.deepEqual(Object.values(rsIndex(db)).map((r) => r.kind), ['pre-import'], 'no automatic point on top of it');
     // A refused write (here: the rules say no) hands the slot back.
     rpLastAt = 0;
@@ -302,9 +303,9 @@ test('offline: a point that cannot be written in 4 s goes to the outbox (<= 3, n
     assert.equal(restoreOutboxCount(), 3);
     assert.ok(rpOutboxRead().every((e) => /Queued/.test(e.row.label)), 'newest kept');
     db.goOnline(); fbConnected = true;
-    await rsWait(30);
+    await waitQuiet();
     await restoreFlushOutbox();
-    await rsWait(10);
+    await waitQuiet();
     assert.equal(restoreOutboxCount(), 0);
     const labels = Object.values(rsIndex(db)).map((x) => x.label).sort();
     assert.equal(new Set(labels).size, labels.length, 'no duplicates: ' + labels);
@@ -478,7 +479,7 @@ test('preconditions: a restore is refused while anything is in flight, offline, 
     const point = restoreBodyObject();
     rsToasts(() => commitSetup((d) => { d.typical['b-swim-900'].start = 870; }, { label: 'x', undo: false }));
     assert.equal((await restoreApply(point, { schedule: true }, { label: 'x' })).reason, 'busy', 'an edit still going up');
-    await rsWait(450);
+    await waitQuiet();
     fbConnected = false;
     assert.equal((await restoreApply(point, { schedule: true }, { label: 'x' })).reason, 'offline');
     fbConnected = true;
@@ -515,17 +516,17 @@ test('a selective restore emits a minimal diff: only the schedule changes, nothi
   const db = await rsSetup({ epoch: 'w20270718', setup: Object.assign(rsTree(), {}) });
   try {
     ssTouchEpoch(db);
-    await rsWait(10);
+    await waitQuiet();
     const point = restoreBodyObject();
     rsToasts(() => commitSetup((d) => { d.typical['b-swim-900'].start = 870; d.meals.mon.lunch.dish = 'Tacos'; }, { label: 'x', undo: false }));
-    await rsWait(150);
+    await waitQuiet();
     const sBefore = JSON.stringify(db.serverGet(dbPath('state')));
     const cBefore = JSON.stringify(db.serverGet(dbPath('config')));
     const mark = db.log.length;
     const r = await restoreApply(point, { schedule: true }, { label: 'before the edit' });
     assert.equal(r.ok, true, JSON.stringify(r));
     assert.deepEqual(r.applied, ['schedule']);
-    await rsWait(150);
+    await waitQuiet();
     const sv = db.serverGet(dbPath('setup'));
     assert.equal(sv.typical['b-swim-900'].start, 900, 'put back');
     assert.equal(sv.meals.mon.lunch.dish, 'Pizza');
@@ -591,7 +592,7 @@ test('Teams and Notice restore through stateEdit / saveState; a roster that does
     assert.deepEqual(r.applied, ['teams', 'notice']);
     assert.equal(state.teams[0].name, oldName);
     assert.ok(state.notice.title !== 'Changed notice');
-    await rsWait(450);
+    await waitQuiet();
     assert.equal(db.serverGet(dbPath('state')).teams[0].name, oldName, 'and it synced');
     point.state.teams = point.state.teams.slice(0, 2);
     const bad = await restoreApply(point, { teams: true }, { label: 'earlier' });
@@ -610,7 +611,7 @@ test('a section that is off now, or was off in the point, is not written into: n
     point.setup = { meta: { weekStart: '2027-08-01' }, typical: { 'b-x-1': { start: 1, end: 2, label: 'X', type: 'activity' } } };
     const r = await restoreApply(point, { schedule: true }, { label: 'a point' });
     assert.equal(r.ok, true, JSON.stringify(r));
-    await rsWait(450);
+    await waitQuiet();
     const sv = db.serverGet(dbPath('setup'));
     assert.equal(sv.meta.weekStart, '2027-08-01', 'the week dates came back');
     assert.equal(sv.typical, undefined, 'the schedule is the built-in copy right now: nothing was written into it');
@@ -647,14 +648,14 @@ test('a v3 backup round-trips the week through the engines, writes a pre-import 
     // Change everything, then import.
     state.results = {}; state.announcements = {}; state.notice = Object.assign({}, state.notice, { title: 'x' });
     rsToasts(() => commitSetup((d) => { d.typical['b-swim-900'].start = 870; }, { label: 'x', undo: false }));
-    await rsWait(450);
+    await waitQuiet();
     const mark = db.log.length;
     tryImport(backup);
     assert.equal(medalCounts().t0.points, before, 'scores restored');
     assert.equal(state.notice.title, 'Backed-up notice');
     assert.ok(state.announcements.a1, 'announcements are no longer dropped');
     assert.equal(setupTree.typical['b-swim-900'].start, 900, 'the schedule section that is on came back through commitSetup');
-    await rsWait(50);
+    await waitQuiet();
     const preRid = Object.keys(rsIndex(db)).find((k) => rsIndex(db)[k].kind === 'pre-import');
     assert.ok(preRid, 'a pre-import point was written');
     const preBody = JSON.parse(rsBodies(db)[preRid]);
@@ -667,12 +668,12 @@ test('an import never writes the epoch (state or setup), the switches or the sta
   const db = await rsSetup({ epoch: 'w20270718' });
   try {
     ssTouchEpoch(db);
-    await rsWait(10);
+    await waitQuiet();
     const b = JSON.parse(backupJSON());
     b.state.meta = { epoch: 'w20990101', epochAt: 1, hiddenCards: { standings: true } };
     b.setup.meta = Object.assign({}, b.setup.meta, { epoch: 'w20990101', on: { schedule: false }, wizard: { step: 5 }, seeded: { at: 1 } });
     tryImport(JSON.stringify(b));
-    await rsWait(450);
+    await waitQuiet();
     assert.equal(state.meta.epoch, 'w20270718');
     const sv = db.serverGet(dbPath('setup'));
     assert.equal(sv.meta.epoch, 'w20270718');

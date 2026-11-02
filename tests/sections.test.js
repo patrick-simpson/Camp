@@ -573,7 +573,7 @@ const { makeFakeRtdb, makeFakeFirebase } = nodeRequire('./fake-rtdb.js');
 const SX_ROOT = CAMP.dbRoot;
 const SX_OWNER = { email: 'patricksimpson.fx@gmail.com', emailVerified: true };
 const SX_JENN = { email: 'jenn@example.com', emailVerified: true };
-const sxWait = (ms) => new Promise((r) => setTimeout(r, ms || 5));
+// (Waits are for the app, not the clock: waitUntil / waitQuiet in tests/harness.js.)
 
 async function sxBoot(opts) {
   const o = opts || {};
@@ -608,7 +608,8 @@ async function sxBoot(opts) {
   attachSetupListener();
   db.deliverFirstSnapshots();
   flushPendingPush();
-  await sxWait(40);
+  await waitUntil(() => remoteReady && configReady && setupReady, 'all three engines to pass their first pull');
+  await waitQuiet();
   assert.equal(remoteReady && configReady && setupReady, true, 'all three engines are past their first pull');
   return db;
 }
@@ -633,7 +634,7 @@ function sxDown() {
 const sxServer = (db) => db.serverGet(SX_ROOT + '/setup') || {};
 const sxPoints = (db) => Object.values(db.serverGet(SX_ROOT + '/restoreIndex') || {});
 async function sxLive(section, on) {
-  for (let i = 0; i < 60 && sectionIsShared(section) !== on; i++) await sxWait(10);
+  await waitUntil(() => sectionIsShared(section) === on, section + ' to be adopted by the engine');
   assert.equal(sectionIsShared(section), on, section + ' ' + (on ? 'is' : 'is not') + ' edited here');
 }
 const SX_QUIET = { campRunning: false };
@@ -725,8 +726,7 @@ test('Use the original again keeps the edits; turning on again brings them back 
 });
 
 async function a1Settle() {
-  for (let i = 0; i < 80; i++) {
-    if (pendingWritesTotal() === 0 && !hasUnconfirmedLocalWork() && !pushTimer && !pushConfigTimer && !setupPushTimer) return;
-    await sxWait(50);
-  }
+  await waitQuiet();
+  await waitUntil(() => pendingWritesTotal() === 0 && !hasUnconfirmedLocalWork() && !pushTimer && !pushConfigTimer && !setupPushTimer,
+    'every write this phone made to be acknowledged');
 }
