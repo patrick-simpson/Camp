@@ -354,7 +354,7 @@ function hubScheduleView() {
 // classic | week | schedule | rain. A step that adds a screen adds its name here and its pair of lines in the CSS.
 const SETUP_SCREENS = ['hub', 'backups', 'classic', 'week', 'schedule', 'rain'];
 // Shell sheets this layer owns (shellSheetOpen ids; the elements are #sheet-<id>), one at a time.
-const SETUP_SHEETS = ['setup-menu', 'setup-changes', 'setup-devices', 'restore', 'sched-day', 'sched-item'];
+const SETUP_SHEETS = ['setup-menu', 'setup-changes', 'setup-devices', 'restore', 'sched-day', 'sched-item', 'rain-item', 'rain-done'];
 // The classic builder's tabs, in editorsHere's short vocabulary (setup-sync.js editorsHereWhereWords).
 const SETUP_CLASSIC_WHERE = { games: 'games', days: 'week', teams: 'teams', notice: 'notice', data: 'restore' };
 // The owner's menu rows (⋯ → Owner). A row is listed only when its action exists (Step 15: original,
@@ -380,6 +380,8 @@ function setupEl(id) {
 
 function setupScreen() {
   const s = state.ui && state.ui.builderScreen;
+  // The rain plan is the edited schedule's: a reload after Use the original week again lands on the Schedule preview.
+  if (s === 'rain' && !(typeof scheduleIsShared === 'function' && scheduleIsShared())) return 'schedule';
   return SETUP_SCREENS.indexOf(s) !== -1 ? s : 'hub';
 }
 
@@ -448,6 +450,12 @@ async function setupConfirmLeave() {
 async function setupBack() {
   const screen = setupScreen();
   if (!(await setupConfirmLeave())) return;
+  if (screen === 'rain') {
+    if (!(await rainLeave())) return;
+    state.ui.setupDay = rainDk();
+    setupGo('schedule');
+    return;
+  }
   if (screen === 'hub') setupCloseBuilder();
   else {
     if (typeof discardGameDraft === 'function') discardGameDraft();
@@ -661,6 +669,7 @@ function renderSetupUi(open) {
   else if (screen === 'backups') renderBackups();
   else if (screen === 'week') renderWeekScreen();
   else if (screen === 'schedule') renderScheduleScreen();
+  else if (screen === 'rain') renderRainScreen();
   else if (typeof renderSettings === 'function') renderSettings();
   renderSetupMenuRows();
   paintSetupFit();
@@ -991,6 +1000,8 @@ function renderSetupSheet(id) {
   else if (id === 'restore') renderRestoreSheet();
   else if (id === 'sched-day') renderSchedDaySheet();
   else if (id === 'sched-item') renderSchedItemSheet();
+  else if (id === 'rain-item') renderRainItemSheet();
+  else if (id === 'rain-done') renderRainDoneSheet();
 }
 
 // Whether a setup sheet has anything to show (app.js shellSheetAllowed): the restore sheet needs a point
@@ -998,6 +1009,8 @@ function renderSetupSheet(id) {
 function setupSheetReady(id) {
   if (id === 'sched-item') return !!setupSched.item;
   if (id === 'sched-day') return schedDayKey() !== 'typical';
+  if (id === 'rain-item') return !!(setupRain.plan && (setupRain.bid || setupRain.gid));
+  if (id === 'rain-done') return !!setupRain.plan;
   return id !== 'restore' || !!setupUi.rsheet;
 }
 
@@ -2124,9 +2137,9 @@ function schedFormItem(f) {
 
 // Open the item sheet: edit an item of the day being looked at, or add one (`opts.add`, with optional start / end).
 function schedOpenItem(opts) {
-  const dayKey = schedDayKey();
-  const dk = dayKey === 'typical' ? '' : dayKey;
   const o = opts || {};
+  const dayKey = o.dayKey || schedDayKey();
+  const dk = dayKey === 'typical' ? '' : dayKey;
   let b = null;
   if (o.bid) b = schedBlocksFor(dayKey).find((x) => x.id === o.bid) || null;
   if (o.bid && !b) return;
@@ -2135,7 +2148,7 @@ function schedOpenItem(opts) {
   setupSched.item = {
     dayKey, dk, dow: schedDowOf(dayKey), mode: b ? 'edit' : 'add', bid: b ? b.id : null, where: found ? found.where : null,
     origin: b ? b.origin : 'new', rec: b ? schedItemOfBlock(b) : null, form, ask: { overlap: null, own: null, rekey: null }, moves: null,
-    hasTeams: form.teams.length > 0, label0: form.label,
+    hasTeams: form.teams.length > 0, label0: form.label, stage: !!o.stage, // stage: a one-off added in the rain plan is STAGED, not saved
   };
   setupSheet('sched-item', o.opener);
   if (typeof setupMoveHere === 'function') setupMoveHere();
@@ -2283,14 +2296,14 @@ function renderSchedItemSheet() {
   setHiddenIfChanged(setupEl('si-remove'), it.mode !== 'edit');
   setTextIfChanged(setupEl('si-remove-text'), it.mode !== 'edit' ? '' : 'Remove…');
   // The dock: one gold Save, or the two equal scope buttons
-  const dayScoped = it.dayKey !== 'typical' && (it.origin === 'typical' || it.origin === 'changed' || (it.mode === 'add' && setupMapOf(setupMapOf(setupTree.days)[it.dayKey]).typical === true));
+  const dayScoped = !it.stage && it.dayKey !== 'typical' && (it.origin === 'typical' || it.origin === 'changed' || (it.mode === 'add' && setupMapOf(setupMapOf(setupTree.days)[it.dayKey]).typical === true));
   setHiddenIfChanged(setupEl('si-scope'), !dayScoped);
   setHiddenIfChanged(setupEl('si-save'), dayScoped);
   setHiddenIfChanged(setupEl('si-tell'), true);
   const blocked = !m.valid || m.pending;
   const setDisabled = (el, off) => { if (!el) return; if (off) el.setAttribute('aria-disabled', 'true'); else el.removeAttribute('aria-disabled'); };
   const save = setupEl('si-save');
-  setTextIfChanged(save, it.mode === 'add' ? (it.dayKey === 'typical' ? 'Add to the typical day' : 'Add to ' + dayWord) : 'Save');
+  setTextIfChanged(save, it.mode === 'add' ? (it.stage ? 'Add for ' + (it.dayKey === schedTodayKey() ? 'today' : dayWord) : it.dayKey === 'typical' ? 'Add to the typical day' : 'Add to ' + dayWord) : 'Save');
   setDisabled(save, blocked);
   if (dayScoped) {
     const add = it.mode === 'add';
@@ -2324,6 +2337,15 @@ async function schedSaveItem(scope) {
   if (!m.valid) { it.form.touched = true; renderSchedItemSheet(); return; }
   if (m.pending || (scope === 'day' && m.unpatchable)) return;
   const dk = it.dk;
+  if (it.stage) { // the rain plan's "Add something for today": a whole one-off record, staged with the rest
+    const taken = schedTakenIds(rainStagedTree(setupTree, rainEnsure()));
+    const id = setupMintId(dk, m.item.label, m.item.start, taken);
+    const rec = schedRecord(m.item, { alertKey: setupAlertKey(m.item.label), ord: schedNextOrd(rainStagedTree(setupTree, rainEnsure()), dk, 'day') });
+    rainStageNow((plan) => rainStage(plan, setupTree, 'dayBlocks/' + dk + '/' + id, rec));
+    setupSched.item = null;
+    shellSheetClose('sched-item');
+    return;
+  }
   const word = it.dayKey === 'typical' ? 'the typical day' : SETUP_DAY_WORDS[it.dayKey];
   const moves = it.moves && Object.keys(it.moves.moves).length ? it.moves.moves : null;
   const label = it.mode === 'add' ? 'Added ' + m.item.label + ' to ' + word
@@ -2543,6 +2565,813 @@ function wireScheduleScreen() {
   wireSchedItemSheet();
 }
 
+
+// ── 11. The rain plan (§11.6): one day, staged, one hand ─────────────────────────────────────────
+
+// The plan being made (in memory), and the sheet's own state. The DRAFT (what survives a reload) is the plan in
+// lsKey(RAIN_DRAFT_KEY): a plan is dropped on an epoch change, one older than 12 hours asks first, and the panel holds a
+// reload only while it is open and was touched in the last 2 minutes (rainBusy), so an abandoned plan never stops updates.
+const setupRain = {
+  plan: null,        // rainPlanNew(...) shape: { dk, epoch, at, items, games }
+  touchedAt: 0,
+  expanded: false,   // "Show the whole day"
+  restored: '',      // "Your unfinished plan from 9:12 is back"
+  pane: 'actions',   // the item sheet's pane
+  bid: null,         // the item the sheet is about
+  gid: null,         // the game the move pane is about
+  from: '',          // where the move pane came from: 'games' | 'list'
+  swap: { other: null, showEarlier: false },
+  time: { start: 0, end: 0, allday: false, ripple: false },
+  move: { dk: '', all: false, ask: null },
+  picks: {},         // Done's clashes: key -> 'mine' | 'theirs'
+  staged: {},        // bid -> true: which rows carried the Changed tag at the last paint (a new one pops)
+  painted: false,
+};
+
+function rainDk() {
+  const v = state.ui && state.ui.rainDay;
+  return SETUP_DK.indexOf(v) !== -1 ? v : 'wed';
+}
+function rainDow() { return SETUP_DK.indexOf(rainDk()); }
+function rainDayName() { return SETUP_DAY_WORDS[rainDk()]; }
+function rainEpoch() { return (state.meta && state.meta.epoch) || ''; }
+function rainIsToday() { return rainDk() === schedTodayKey(); }
+
+function rainDraftLoad() {
+  try {
+    const raw = localStorage.getItem(lsKey(RAIN_DRAFT_KEY));
+    if (!raw) return null;
+    const d = JSON.parse(raw);
+    if (!d || typeof d !== 'object' || SETUP_DK.indexOf(d.dk) === -1 || !setupIsMap(d.items) || !setupIsMap(d.games)) return null;
+    return d;
+  } catch (e) { return null; }
+}
+function rainDraftSave() {
+  setupRain.touchedAt = Date.now();
+  if (!setupRain.plan) return;
+  setupRain.plan.at = Date.now();
+  try {
+    if (Object.keys(setupRain.plan.items).length || Object.keys(setupRain.plan.games).length) localStorage.setItem(lsKey(RAIN_DRAFT_KEY), JSON.stringify(setupRain.plan));
+    else localStorage.removeItem(lsKey(RAIN_DRAFT_KEY));
+  } catch (e) { /* the plan still works in memory */ }
+}
+function rainDraftDrop() {
+  try { localStorage.removeItem(lsKey(RAIN_DRAFT_KEY)); } catch (e) { /* fine */ }
+}
+
+// The panel holds a reload only while it is open and was touched in the last two minutes.
+function rainBusy() {
+  return !!(setupRain.plan && (Object.keys(setupRain.plan.items).length || Object.keys(setupRain.plan.games).length) && builderOpen() && setupScreen() === 'rain' && Date.now() - setupRain.touchedAt < RAIN_BUSY_MS);
+}
+
+function rainCount(plan) {
+  const c = rainChanges(setupTree, plan, rainDow(), state.config);
+  return c.lines.length;
+}
+
+// Open the rain plan on a day (the typical day means today, else Wednesday). A draft for the same day and year comes
+// back; one older than 12 hours asks whether to finish it.
+async function rainOpen(dayKey) {
+  if (!canEdit() || !scheduleIsShared()) return false;
+  const dk = SETUP_DK.indexOf(dayKey) !== -1 ? dayKey : (campWeek().phase === 'during' ? schedTodayKey() : 'wed');
+  const draft = rainDraftLoad();
+  let plan = null;
+  let restored = '';
+  if (draft && draft.dk === dk && draft.epoch === rainEpoch()) {
+    let keep = true;
+    if (Date.now() - (draft.at || 0) > RAIN_DRAFT_STALE_MS) {
+      const pick = await askDialog({ title: 'Finish or discard yesterday’s rain plan?', body: ['You started a rain plan for ' + SETUP_DAY_WORDS[dk] + ' that was never finished.'], actions: [{ label: 'Discard it', value: 'discard', kind: 'danger' }, { label: 'Finish it', value: 'finish', kind: 'gold', cancel: true }] });
+      keep = pick !== 'discard';
+    }
+    if (keep) { plan = draft; restored = 'Your unfinished plan from ' + new Date(draft.at || Date.now()).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' }).replace(' ', ' ') + ' is back.'; }
+    else rainDraftDrop();
+  }
+  setupRain.plan = plan || rainPlanNew(dk, rainEpoch(), Date.now());
+  setupRain.restored = restored;
+  setupRain.expanded = false;
+  setupRain.picks = {};
+  setupRain.tellSet = false;
+  setupRain.painted = false;
+  state.ui.rainDay = dk;
+  setupRain.touchedAt = Date.now();
+  if (builderOpen()) setupGo('rain');
+  else { openBuilder(); setupGo('rain'); }
+  return true;
+}
+
+// The plan for the open screen: the one in memory, else the draft (a reload reopens the screen), else a fresh one.
+function rainEnsure() {
+  const dk = rainDk();
+  if (setupRain.plan && setupRain.plan.dk === dk) return setupRain.plan;
+  const draft = rainDraftLoad();
+  setupRain.plan = draft && draft.dk === dk && draft.epoch === rainEpoch() ? draft : rainPlanNew(dk, rainEpoch(), Date.now());
+  setupRain.touchedAt = Date.now();
+  return setupRain.plan;
+}
+
+// Back from the rain plan: with nothing staged it just goes; with something staged it asks (the draft stays for later
+// unless the director discards it).
+async function rainLeave() {
+  const plan = setupRain.plan;
+  if (!plan || (!Object.keys(plan.items).length && !Object.keys(plan.games).length)) { setupRain.plan = null; rainDraftDrop(); return true; }
+  const pick = await askDialog({
+    title: 'Leave the rain plan?', body: ['Nothing is saved for anyone until you press Done. Your plan stays on this phone if you leave it for later.'],
+    actions: [{ label: 'Keep planning', value: 'keep', cancel: true }, { label: 'Leave it for later', value: 'later' }, { label: 'Discard the plan', value: 'discard', kind: 'danger' }],
+  });
+  if (pick === 'discard') { setupRain.plan = null; rainDraftDrop(); return true; }
+  if (pick === 'later') { rainDraftSave(); return true; }
+  return false;
+}
+
+// ── the list ──
+
+function rainClock(m) { return m >= 1440 ? 'midnight' : schedClock(m, false); }
+
+// Which rows the collapsed list shows: the item happening now (or the first), the next three, any item with games, and
+// every staged item. A day that isn't today starts from its top.
+function rainVisible(items, nowMin, plan, games) {
+  const shown = {};
+  let nowIdx = items.findIndex((b) => !b.noTime && nowMin !== null && b.start <= nowMin && nowMin < b.end);
+  if (nowIdx < 0) nowIdx = items.findIndex((b) => !b.noTime && (nowMin === null || b.start >= nowMin));
+  if (nowIdx < 0) nowIdx = 0;
+  for (let i = nowIdx; i < Math.min(items.length, nowIdx + 4); i++) shown[items[i].id] = true;
+  items.forEach((b) => { if (games[b.id] && games[b.id].length) shown[b.id] = true; if (rainIsStaged(plan, rainDk(), b.id)) shown[b.id] = true; });
+  return shown;
+}
+
+function rainGamesByBlock(view) {
+  const dow = rainDow();
+  const dayIds = competitionDays().filter((d) => d.dow === dow).map((d) => d.id);
+  const out = {};
+  allGames().forEach((g) => {
+    if (g.blockId && dayIds.indexOf(g.dayId) !== -1) (out[g.blockId] = out[g.blockId] || []).push(g);
+  });
+  Object.keys(out).forEach((k) => out[k].sort((a, b) => ((Number.isFinite(a.ord) ? a.ord : 1e9) - (Number.isFinite(b.ord) ? b.ord : 1e9))));
+  return out;
+}
+
+function rainRowHtml(b, ctx) {
+  const staged = ctx.stagedIds[b.id];
+  const was = ctx.was[b.id];
+  const isNow = ctx.nowMin !== null && !b.noTime && b.start <= ctx.nowMin && ctx.nowMin < b.end;
+  const past = ctx.nowMin !== null && !b.noTime && b.end <= ctx.nowMin;
+  const nGames = (ctx.games[b.id] || []).length;
+  const timeCell = isNow
+    ? esc(schedClock(b.start, false)) + '<small class="rain-now">Now</small>'
+    : b.noTime ? esc(schedClock(b.start, false)) + '<small>Not shown</small>' : esc(schedClock(b.start, false)) + '<small>–' + esc(rainClock(b.end)) + '</small>';
+  const bits = [];
+  if (isNow) bits.push('Until ' + rainClock(b.end));
+  if (b.type === 'games' && !nGames) bits.push('Games');
+  const sub = (staged ? '<b class="sched-tag" data-tag="changed">Changed</b>' + (was ? '<s class="rain-was">' + esc(schedRange(was.start, was.end)) + '</s>' : '') : '') + esc(bits.join(' · '));
+  const attrs = ' class="cb-row rain-row" data-key="r-' + esc(b.id) + '" data-bid="' + esc(b.id) + '"' + (isNow ? ' data-when="now"' : past ? ' data-when="past"' : '') + (staged ? ' data-staged' : '');
+  return '<button type="button"' + attrs + '><span class="cb-time">' + timeCell + '</span><span class="cb-main"><span class="cb-title"><span class="sched-emo" aria-hidden="true">' + esc(b.emoji) + '</span><span>' + esc(b.label) + '</span></span>' +
+    (sub ? '<span class="cb-sub">' + sub + '</span>' : '') + '</span><span class="cb-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span></button>';
+}
+
+function rainGameHtml(g, b, plan) {
+  const st = plan.games[g.id];
+  const to = st && st.staged;
+  let toWords = '';
+  if (to) {
+    if (!to.blockId) toWords = 'Off the schedule';
+    else {
+      const day = (competitionDays().find((d) => d.id === to.dayId) || {});
+      const dowT = day.dow;
+      const blk = Number.isInteger(dowT) ? planForDow(dowT).find((x) => x.id === to.blockId) : null;
+      toWords = 'To ' + (Number.isInteger(dowT) ? (dowT === rainDow() ? 'today' : SETUP_DAY_WORDS[SETUP_DK[dowT]]) : 'another day') + (blk ? ' · ' + setupHeadLabel(blk.label) : '');
+    }
+  }
+  return '<button type="button" class="rain-game" data-key="g-' + esc(g.id) + '" data-gid="' + esc(g.id) + '" data-bid="' + esc(b.id) + '"' + (to ? ' data-staged' : '') + '><span class="rain-game-name"><span class="sched-emo" aria-hidden="true">' + esc(g.emoji) + '</span><span>' + esc(g.name) + '</span>' +
+    (to ? '<span class="rain-game-to">' + esc(toWords) + '</span>' : '') + '</span><span class="rain-game-act">Move<svg class="ico" aria-hidden="true"><use href="#i-chev-r"/></svg></span></button>';
+}
+
+// Paint the list with the shell's motion: survivors glide to their new place (only once hands are off the list), new rows
+// arrive; with calm motion or no Jelly it is a plain replace.
+function rainPaintList(list, html, unfold) {
+  if (!list || list.__rainHtml === html) return;
+  const first = list.__rainHtml === undefined;
+  list.__rainHtml = html;
+  const calm = typeof calmMotion === 'function' && calmMotion();
+  if (first || calm || typeof JellyMotion === 'undefined' || !JellyMotion.flipKeyed) { list.innerHTML = html; return; }
+  JellyMotion.whenHandsOff(() => {
+    if (list.__rainHtml !== html) return;
+    try {
+      const added = JellyMotion.flipKeyed(list, html, 'glide') || [];
+      if (unfold) added.forEach((n) => JellyMotion.play(n, 'arrive', (x) => ({ opacity: Math.min(1, x), transform: 'translateY(' + (-10 * (1 - Math.min(1, x))) + 'px)' }), { calm: [{ opacity: 0 }, { opacity: 1 }] }));
+    } catch (e) { list.innerHTML = html; } // a page that cannot morph (no template support) still shows the list
+  });
+}
+
+function renderRainScreen() {
+  if (!setupEl('setup-rain')) return;
+  const plan = rainEnsure();
+  const dk = rainDk();
+  const dow = rainDow();
+  const day = rainDayName();
+  const view = rainView(setupTree, plan, dow);
+  const changes = rainChanges(setupTree, plan, dow, state.config);
+  const n = changes.lines.length;
+  setTextIfChanged(setupEl('rain-title'), 'Rain plan · ' + day);
+  setTextIfChanged(setupEl('rain-headline'), n ? hubPlural(n, 'change', 'changes') + ' to ' + day : day + ' as planned');
+  setTextIfChanged(setupEl('rain-lede'), 'For ' + (rainIsToday() ? 'today' : day) + ' only. Nobody sees a change until you press Done.');
+  const clashes = rainClashes(setupTree, plan).length + rainGameClashes(state.config, plan).length;
+  const by = typeof setupEditedBy === 'function' ? setupEditedBy('schedule') : null;
+  const note = clashes ? ((by && by.name && by.name !== 'You (another device)') ? by.name : 'Someone') + ' changed something you moved since you started: you’ll choose at Done.' : setupRain.restored;
+  setTextIfChanged(setupEl('rain-note-text'), note);
+  setHiddenIfChanged(setupEl('rain-note'), !note);
+  const games = rainGamesByBlock(view);
+  const nowMin = rainIsToday() ? campNow().minutes : null;
+  const stagedIds = {};
+  const was = {};
+  changes.lines.forEach((l) => { stagedIds[l.id] = true; if (l.kind === 'time') was[l.id] = l.was; });
+  Object.keys(plan.items).forEach((p) => { const parts = p.split('/'); if (parts[1] === dk) stagedIds[parts[2]] = true; });
+  const items = view.after;
+  const shown = setupRain.expanded ? null : rainVisible(items, nowMin, plan, games);
+  const ctx = { stagedIds, was, nowMin, games };
+  let html = '';
+  let hidden = 0;
+  let run = [];
+  const flush = (nextStart) => {
+    if (!run.length) return;
+    const label = html === '' ? hubPlural(run.length, 'earlier item', 'earlier items')
+      : nextStart === null ? run.length + ' more after ' + rainClock(run[run.length - 1].end)
+        : run.length + ' more until ' + rainClock(nextStart);
+    html += '<button type="button" class="rain-fold" data-key="f-' + esc(run[0].id) + '" data-rain-expand><span>' + esc(label) + '</span></button>';
+    hidden += run.length;
+    run = [];
+  };
+  items.forEach((b) => {
+    if (shown && !shown[b.id]) { run.push(b); return; }
+    flush(b.start);
+    html += rainRowHtml(b, ctx);
+    (games[b.id] || []).forEach((g) => { html += rainGameHtml(g, b, plan); });
+  });
+  flush(null);
+  (view.after.skipped || []).forEach((b) => {
+    html += '<div class="cb-row rain-row" data-key="s-' + esc(b.id) + '" data-bid="' + esc(b.id) + '" data-skipped><span class="cb-time">' + esc(schedClock(b.start, false)) + '<small>–' + esc(rainClock(b.end)) + '</small></span><span class="cb-main"><span class="cb-title"><span class="sched-emo" aria-hidden="true">' + esc(b.emoji) + '</span><span>' + esc(b.label) + '</span></span><span class="cb-sub">Skipped today</span></span><span class="cb-end"><button type="button" class="btn btn-sm" data-rain-bring="' + esc(b.id) + '">Bring back</button></span></div>';
+  });
+  rainPaintList(setupEl('rain-list'), html, setupRain.unfold);
+  setupRain.unfold = false;
+  setHiddenIfChanged(setupEl('rain-more'), !hidden || setupRain.expanded);
+  if (hidden) setTextIfChanged(setupEl('rain-more-text'), 'Show the whole day (' + hidden + ' more)');
+  setTextIfChanged(setupEl('rain-done-count'), n ? hubPlural(n, 'change', 'changes') : '');
+  setHiddenIfChanged(setupEl('rain-done-count'), !n);
+  rainPopNewTags(stagedIds);
+  setupRain.painted = true;
+}
+
+// A row that just became "Changed" pops its tag (press; calm: nothing).
+function rainPopNewTags(now) {
+  const prev = setupRain.staged;
+  setupRain.staged = now;
+  if (!setupRain.painted || typeof JellyMotion === 'undefined' || (typeof calmMotion === 'function' && calmMotion())) return;
+  Object.keys(now).forEach((id) => {
+    if (prev[id]) return;
+    const row = document.querySelector('#rain-list .rain-row[data-bid="' + id + '"] .sched-tag');
+    if (row) JellyMotion.play(row, 'press', (x) => ({ transform: 'scale(' + (0.7 + 0.3 * x) + ')' }), { calm: false });
+  });
+}
+
+function rainStageNow(mutator) {
+  const plan = rainEnsure();
+  mutator(plan);
+  rainDraftSave();
+  renderAll();
+}
+
+// ── the item sheet and its panes ──
+
+function rainBlock(bid) {
+  const v = rainView(setupTree, rainEnsure(), rainDow());
+  return v.after.find((b) => b.id === bid) || (v.after.skipped || []).find((b) => b.id === bid) || null;
+}
+
+function rainSetPane(pane, opts) {
+  const sheet = setupEl('sheet-rain-item');
+  if (!sheet) return;
+  const was = sheet.dataset.pane;
+  setupRain.pane = pane;
+  if (was !== pane) {
+    sheet.dataset.pane = pane;
+    const el = document.querySelector('[data-rain-pane="' + pane + '"]');
+    if (el && typeof JellyMotion !== 'undefined') JellyMotion.play(el, 'arrive', (x) => ({ opacity: Math.min(1, x), transform: 'translateX(' + (24 * (1 - Math.min(1, x))) + 'px)' }), { calm: [{ opacity: 0 }, { opacity: 1 }] });
+  }
+  renderRainItemSheet();
+  if (!opts || !opts.keepScroll) { const body = sheet.querySelector('.sheet-body'); if (body && pane !== 'swap') body.scrollTop = 0; }
+}
+
+function rainOpenItem(bid, opener) {
+  setupRain.bid = bid;
+  setupRain.gid = null;
+  setupRain.swap = { other: null, showEarlier: false };
+  setupRain.from = '';
+  setupSheet('rain-item', opener);
+  rainSetPane('actions');
+}
+
+function rainOpenMove(gid, from, opener) {
+  setupRain.gid = gid;
+  setupRain.from = from;
+  const g = gameById(gid);
+  const dayDow = g ? (competitionDays().find((d) => d.id === g.dayId) || {}).dow : null;
+  setupRain.move = { dk: Number.isInteger(dayDow) ? SETUP_DK[dayDow] : rainDk(), all: false, ask: null };
+  if (!shell.sheets.includes('rain-item')) setupSheet('rain-item', opener);
+  rainSetPane('move');
+}
+
+function rainWhenWords(b, plan) {
+  const l = rainChanges(setupTree, plan, rainDow(), state.config).lines.find((x) => x.id === b.id && x.kind === 'time');
+  const nGames = (rainGamesByBlock()[b.id] || []).length;
+  const base = schedRange(b.start, b.end) + (nGames ? ' · ' + hubPlural(nGames, 'game', 'games') : '');
+  return l ? 'Now ' + base + ' · was ' + schedRange(l.was.start, l.was.end) : base;
+}
+
+function rainOthers(bid) {
+  const v = rainView(setupTree, rainEnsure(), rainDow());
+  return rainTimed(v.after);
+}
+
+function renderRainItemSheet() {
+  const sheet = setupEl('sheet-rain-item');
+  if (!sheet) return;
+  const plan = rainEnsure();
+  const pane = setupRain.pane;
+  if (sheet.dataset && sheet.dataset.pane !== pane) sheet.dataset.pane = pane;
+  const b = setupRain.bid ? rainBlock(setupRain.bid) : null;
+  const g = setupRain.gid ? gameById(setupRain.gid) : null;
+  // Header: the item's name (no emoji: §8.6) and when it is; a game move names the game.
+  const title = pane === 'move' && g ? g.name : b ? b.label : '';
+  setTextIfChanged(setupEl('rain-item-title'), title);
+  setTextIfChanged(setupEl('rain-item-when'), pane === 'move' ? 'Which item does it belong to?' : b ? rainWhenWords(b, plan) : '');
+  const backTo = pane === 'actions' ? '' : pane === 'move' && setupRain.from === 'list' ? '' : pane === 'move' && setupRain.from === 'games' ? 'Games' : (b ? setupHeadLabel(b.label) : 'Back');
+  setHiddenIfChanged(setupEl('rain-pane-back'), !backTo);
+  setTextIfChanged(setupEl('rain-pane-back-label'), backTo);
+  setHiddenIfChanged(setupEl('rain-item-dock'), pane !== 'time');
+  if (pane === 'actions') renderRainActions(b, plan);
+  else if (pane === 'swap') renderRainSwap(b);
+  else if (pane === 'how') renderRainHow(b);
+  else if (pane === 'time') renderRainTime(b);
+  else if (pane === 'games') renderRainGames(b);
+  else if (pane === 'move') renderRainMove(g);
+}
+
+function renderRainActions(b, plan) {
+  if (!b) return;
+  const timed = rainTimed(rainView(setupTree, plan, rainDow()).after);
+  const i = timed.findIndex((x) => x.id === b.id);
+  const prev = i > 0 ? timed[i - 1] : null;
+  const next = i >= 0 && i < timed.length - 1 ? timed[i + 1] : null;
+  const setDis = (el, off) => { if (!el) return; if (off) el.setAttribute('aria-disabled', 'true'); else el.removeAttribute('aria-disabled'); };
+  const earlier = document.querySelector('[data-rain-act="earlier"]');
+  const later = document.querySelector('[data-rain-act="later"]');
+  setDis(earlier, !prev || b.noTime);
+  setDis(later, !next || b.noTime);
+  setTextIfChanged(document.querySelector('[data-rain-pair-sub="earlier"]'), prev ? 'Before ' + setupHeadLabel(prev.label) : 'Nothing earlier');
+  setTextIfChanged(document.querySelector('[data-rain-pair-sub="later"]'), next ? 'After ' + setupHeadLabel(next.label) : 'Nothing later');
+  const gms = (rainGamesByBlock()[b.id] || []);
+  const gamesRow = document.querySelector('[data-rain-act="games"]');
+  setHiddenIfChanged(gamesRow, !gms.length);
+  setTextIfChanged(setupEl('rain-games-sub'), gms.length ? hubPlural(gms.length, 'game', 'games') + ' here · move any of them' : '');
+  const staged = rainIsStaged(plan, rainDk(), b.id);
+  setHiddenIfChanged(document.querySelector('[data-rain-act="reset"]'), !staged);
+  const l = rainChanges(setupTree, plan, rainDow(), state.config).lines.find((x) => x.id === b.id && x.kind === 'time');
+  setTextIfChanged(setupEl('rain-reset-sub'), l ? 'Back to ' + schedRange(l.was.start, l.was.end) : '');
+  setDis(document.querySelector('[data-rain-act="swap"]'), b.noTime);
+  setDis(document.querySelector('[data-rain-act="time"]'), b.noTime);
+}
+
+function renderRainSwap(b) {
+  if (!b) return;
+  const nowMin = rainIsToday() ? campNow().minutes : null;
+  const all = rainOthers(b.id);
+  const earlier = (x) => nowMin !== null && x.end <= nowMin && x.id !== b.id;
+  const show = setupRain.swap.showEarlier ? all : all.filter((x) => !earlier(x));
+  setHiddenIfChanged(setupEl('rain-swap-earlier'), setupRain.swap.showEarlier || show.length === all.length);
+  setHtmlIfChanged(setupEl('rain-swap-list'), show.map((x) => {
+    const len = x.end - x.start;
+    const lenWords = len >= 60 ? Math.floor(len / 60) + ' h' + (len % 60 ? ' ' + (len % 60) + ' min' : '') : len + ' min';
+    const inner = '<span class="cb-time">' + esc(schedClock(x.start, false)) + '<small>–' + esc(rainClock(x.end)) + '</small></span><span class="cb-main"><span class="cb-title"><span class="sched-emo" aria-hidden="true">' + esc(x.emoji) + '</span><span>' + esc(x.label) + '</span></span><span class="cb-sub">' + (x.id === b.id ? 'This one' : esc(lenWords)) + '</span></span>';
+    return x.id === b.id ? '<div class="cb-row rain-pick" data-self data-bid="' + esc(x.id) + '">' + inner + '</div>'
+      : '<button type="button" class="cb-row rain-pick" data-bid="' + esc(x.id) + '">' + inner + '<span class="cb-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span></button>';
+  }).join(''));
+  // The body opens with "This one" at its top: what follows it is what a rain plan swaps with.
+  if (!setupRain.swap.placed) {
+    setupRain.swap.placed = true;
+    const self = document.querySelector('#rain-swap-list [data-self]');
+    const body = document.querySelector('#sheet-rain-item .sheet-body');
+    if (self && body && typeof self.offsetTop === 'number') body.scrollTop = Math.max(0, self.offsetTop - 4);
+  }
+}
+
+// What each option of a swap leaves: its lines and the overlaps it opens, named before choosing.
+function rainHowOption(b, other, moves) {
+  const view = rainView(setupTree, rainEnsure(), rainDow()).after;
+  const after = view.map((x) => (moves[x.id] ? Object.assign({}, x, moves[x.id]) : x));
+  const lines = [b, other].map((x) => { const m = moves[x.id]; return { id: x.id, emoji: x.emoji, label: x.label, start: m.start, end: m.end }; });
+  const warns = [];
+  lines.forEach((l) => {
+    schedOverlaps(after.filter((x) => !moves[x.id]), { id: l.id, start: l.start, end: l.end }).forEach((o) => warns.push('Overlaps ' + setupHeadLabel(o.label) + ', ' + schedRange(Math.max(l.start, o.start), Math.min(l.end, o.end))));
+  });
+  return { lines, warns };
+}
+
+function renderRainHow(b) {
+  const other = rainBlock(setupRain.swap.other);
+  if (!b || !other) return;
+  const opts = { slots: rainSwapSlots(b, other), lengths: rainSwapLengths(b, other) };
+  setTextIfChanged(setupEl('rain-how-lede'), b.label + ' is ' + (b.end - b.start) + ' minutes and ' + other.label + ' is ' + (other.end - other.start) + '. How should they trade?');
+  ['slots', 'lengths'].forEach((k) => {
+    const btn = document.querySelector('[data-rain-how="' + k + '"]');
+    const moves = opts[k];
+    if (!moves) { if (btn) btn.setAttribute('aria-disabled', 'true'); setHtmlIfChanged(document.querySelector('[data-rain-how-lines="' + k + '"]'), '<span class="rain-opt-line">It would run past midnight</span>'); setHtmlIfChanged(document.querySelector('[data-rain-how-foot="' + k + '"]'), ''); return; }
+    if (btn) btn.removeAttribute('aria-disabled');
+    const r = rainHowOption(b, other, moves);
+    setHtmlIfChanged(document.querySelector('[data-rain-how-lines="' + k + '"]'), r.lines.map((l) => '<span class="rain-opt-line"><span class="sched-emo" aria-hidden="true">' + esc(l.emoji) + '</span><span>' + esc(l.label) + '</span><b>' + esc(schedRange(l.start, l.end)) + '</b></span>').join(''));
+    setHtmlIfChanged(document.querySelector('[data-rain-how-foot="' + k + '"]'), r.warns.length ? r.warns.map((w) => '<span class="rain-opt-warn">' + esc(w) + '</span>').join('') : 'Nothing else moves');
+  });
+}
+
+function rainStageMoves(moves) {
+  const plan = rainEnsure();
+  const group = 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+  Object.keys(moves).forEach((id) => rainStageFields(plan, setupTree, rainDk(), id, moves[id], moves[id] && Object.keys(moves).length > 1 ? group : undefined));
+  rainDraftSave();
+}
+
+function renderRainTime(b) {
+  if (!b) return;
+  const t = setupRain.time;
+  if (!t.init || t.bid !== b.id) { setupRain.time = Object.assign({ init: true, bid: b.id }, { start: b.start, end: b.end, allday: b.end >= 1440, ripple: false }); }
+  const tt = setupRain.time;
+  const st = setupEl('rain-start');
+  if (st && document.activeElement !== st && st.value !== schedMinToInput(tt.start)) st.value = schedMinToInput(tt.start);
+  const en = setupEl('rain-end');
+  if (en && document.activeElement !== en && !tt.allday && en.value !== schedMinToInput(tt.end)) en.value = schedMinToInput(tt.end);
+  setHiddenIfChanged(setupEl('rain-end-fld'), tt.allday);
+  const bad = !(tt.start >= 0 && tt.start <= 1439) || !(tt.end > tt.start && tt.end <= 1440);
+  setHiddenIfChanged(setupEl('rain-time-error'), !bad);
+  const ad = setupEl('rain-allday');
+  if (ad && ad.hasAttribute('checked') !== tt.allday) ad.toggleAttribute('checked', tt.allday);
+  paintSwitchWord('rain-allday', tt.allday);
+  const rp = setupEl('rain-ripple');
+  if (rp && rp.hasAttribute('checked') !== tt.ripple) rp.toggleAttribute('checked', tt.ripple);
+  paintSwitchWord('rain-ripple', tt.ripple);
+  const r = bad ? { moves: {}, nofit: [] } : rainRetime(rainTimed(rainView(setupTree, rainEnsure(), rainDow()).after), b.id, tt.start, tt.end, tt.ripple);
+  setHiddenIfChanged(setupEl('rain-time-warn'), !r.nofit.length);
+  setHtmlIfChanged(setupEl('rain-time-warn'), r.nofit.map((x) => '<p class="si-ask-q si-ask-warn">' + esc(setupHeadLabel(x.label)) + ' doesn’t fit before midnight — shorten it or skip it today</p>').join(''));
+  const use = setupEl('rain-time-use');
+  if (use) { if (bad) use.setAttribute('aria-disabled', 'true'); else use.removeAttribute('aria-disabled'); }
+}
+
+function renderRainGames(b) {
+  const gms = b ? (rainGamesByBlock()[b.id] || []) : [];
+  setHtmlIfChanged(setupEl('rain-games-list'), gms.map((g) => '<div class="cb-row"><span class="cb-main"><span class="cb-title"><span class="sched-emo" aria-hidden="true">' + esc(g.emoji) + '</span><span>' + esc(g.name) + '</span></span></span><span class="cb-end"><button type="button" class="btn btn-sm" data-rain-move="' + esc(g.id) + '">Move…</button></span></div>').join(''));
+}
+
+// The move pane: days that have a competition day (the strip), that day's Games items first, the rest behind
+// "Everything else", and Not on the schedule last.
+function rainMoveDays() {
+  return SETUP_DK.filter((dk, i) => competitionDays().some((d) => d.dow === i));
+}
+
+function renderRainMove(g) {
+  if (!g) return;
+  const m = setupRain.move;
+  const days = rainMoveDays();
+  if (days.indexOf(m.dk) === -1) m.dk = days.indexOf(rainDk()) !== -1 ? rainDk() : (days[0] || rainDk());
+  document.querySelectorAll('#rain-move-days [data-dk]').forEach((btn) => {
+    const dk = btn.dataset.dk;
+    setHiddenIfChanged(btn, days.indexOf(dk) === -1);
+    const on = dk === m.dk;
+    if (btn.getAttribute('aria-checked') !== String(on)) btn.setAttribute('aria-checked', String(on));
+    const name = btn.querySelector('.daypick-name');
+    if (name) setTextIfChanged(name, dk === rainDk() ? 'Today' : SETUP_DAY_WORDS[dk].slice(0, 3));
+  });
+  const dow = SETUP_DK.indexOf(m.dk);
+  const blocks = dow === rainDow() ? rainView(setupTree, rainEnsure(), dow).after : planForDow(dow);
+  const gamesFor = (b) => allGames().filter((x) => x.blockId === b.id && (competitionDays().find((d) => d.id === x.dayId) || {}).dow === dow && x.id !== g.id);
+  const first = blocks.filter((b) => b.type === 'games' || gamesFor(b).length);
+  const rest = blocks.filter((b) => first.indexOf(b) === -1 && !b.noTime);
+  const row = (b) => '<button type="button" class="cb-row" data-bid="' + esc(b.id) + '"><span class="cb-time">' + esc(schedClock(b.start, false)) + '<small>–' + esc(rainClock(b.end)) + '</small></span><span class="cb-main"><span class="cb-title"><span class="sched-emo" aria-hidden="true">' + esc(b.emoji) + '</span><span>' + esc(b.label) + '</span></span>' +
+    (gamesFor(b).length ? '<span class="cb-sub">' + hubPlural(gamesFor(b).length, 'game', 'games') + '</span>' : '') + '</span><span class="cb-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span></button>';
+  setHtmlIfChanged(setupEl('rain-move-list'), first.map(row).join('') + (m.all ? rest.map(row).join('') : ''));
+  setHiddenIfChanged(setupEl('rain-move-all'), m.all || !rest.length);
+  setTextIfChanged(setupEl('rain-move-all-text'), 'Everything else on ' + (m.dk === rainDk() ? 'today' : SETUP_DAY_WORDS[m.dk]));
+  setHiddenIfChanged(setupEl('rain-move-double'), !m.ask);
+  if (m.ask) setTextIfChanged(setupEl('rain-move-double-text'), 'That item has double-points games. Make ' + g.name + ' double points too?');
+}
+
+// Moving a game onto an item: its day follows the item's weekday, its session the item's time, its order after what the
+// item holds; onto an item of double-points games the director is asked first.
+function rainPickMove(bid, doubleAnswer) {
+  const g = gameById(setupRain.gid);
+  const m = setupRain.move;
+  if (!g) return;
+  const dow = SETUP_DK.indexOf(m.dk);
+  const blocks = dow === rainDow() ? rainView(setupTree, rainEnsure(), dow).after : planForDow(dow);
+  const block = blocks.find((b) => b.id === bid);
+  if (!block) return;
+  const dayRec = competitionDays().find((d) => d.dow === dow && d.id === g.dayId) || competitionDays().find((d) => d.dow === dow);
+  if (!dayRec) return;
+  const there = allGames().filter((x) => x.blockId === bid && (competitionDays().find((d) => d.id === x.dayId) || {}).dow === dow && x.id !== g.id);
+  const doubles = there.some((x) => x.messtival === true) && g.messtival !== true;
+  if (doubles && doubleAnswer === undefined) { m.ask = { bid }; renderRainItemSheet(); return; }
+  const top = there.reduce((o, x) => Math.max(o, Number.isFinite(x.ord) ? x.ord : 0), 0);
+  const to = { blockId: bid, dayId: dayRec.id, session: rainSessionFor(state.config, block), ord: top + SETUP_GAME_ORD_STEP };
+  if (doubles) to.messtival = doubleAnswer === 'yes';
+  m.ask = null;
+  rainStageNow((plan) => rainStageGame(plan, g, to));
+  shellSheetClose('rain-item');
+}
+
+function rainMoveNone() {
+  const g = gameById(setupRain.gid);
+  if (!g) return;
+  rainStageNow((plan) => rainStageGame(plan, g, { blockId: null }));
+  shellSheetClose('rain-item');
+}
+
+function rainAct(act) {
+  const b = setupRain.bid ? rainBlock(setupRain.bid) : null;
+  if (!b) return;
+  const plan = rainEnsure();
+  const dk = rainDk();
+  if (act === 'swap') { setupRain.swap = { other: null, showEarlier: false, placed: false }; rainSetPane('swap', { keepScroll: true }); return; }
+  if (act === 'time') { setupRain.time = { init: false }; rainSetPane('time'); return; }
+  if (act === 'games') { rainSetPane('games'); return; }
+  if (act === 'earlier' || act === 'later') {
+    const moves = rainNudge(rainView(setupTree, plan, rainDow()).after, b.id, act === 'earlier' ? -1 : 1);
+    if (!moves) return;
+    rainStageNow(() => rainStageMoves(moves));
+    shellSheetClose('rain-item');
+    return;
+  }
+  if (act === 'skip') {
+    const gms = rainGamesByBlock()[b.id] || [];
+    rainStageNow((p) => rainStageFields(p, setupTree, dk, b.id, { off: true }));
+    if (gms.length) rainSetPane('games'); else shellSheetClose('rain-item');
+    return;
+  }
+  if (act === 'reset') { rainStageNow((p) => rainUnstage(p, dk, b.id)); shellSheetClose('rain-item'); }
+}
+
+function rainPickSwap(bid) {
+  const b = rainBlock(setupRain.bid);
+  const other = rainBlock(bid);
+  if (!b || !other || b.id === other.id) return;
+  setupRain.swap.other = bid;
+  if (b.end - b.start === other.end - other.start) { rainStageNow(() => rainStageMoves(rainSwapSlots(b, other))); shellSheetClose('rain-item'); return; }
+  rainSetPane('how');
+}
+
+function rainPickHow(how) {
+  const b = rainBlock(setupRain.bid);
+  const other = rainBlock(setupRain.swap.other);
+  if (!b || !other) return;
+  const moves = how === 'slots' ? rainSwapSlots(b, other) : rainSwapLengths(b, other);
+  if (!moves) return;
+  rainStageNow(() => rainStageMoves(moves));
+  shellSheetClose('rain-item');
+}
+
+function rainUseTime() {
+  const b = rainBlock(setupRain.bid);
+  const t = setupRain.time;
+  if (!b || !t) return;
+  if (!(t.start >= 0 && t.start <= 1439) || !(t.end > t.start && t.end <= 1440)) return;
+  const r = rainRetime(rainTimed(rainView(setupTree, rainEnsure(), rainDow()).after), b.id, t.start, t.end, t.ripple);
+  rainStageNow(() => rainStageMoves(r.moves));
+  shellSheetClose('rain-item');
+}
+
+// ── Done ──
+
+function rainClashRows(plan) {
+  const out = [];
+  rainClashes(setupTree, plan).forEach((c) => {
+    const parts = c.path.split('/');
+    const b = rainBlock(parts[2]) || { label: parts[2] };
+    out.push({ key: c.path, label: b.label, field: parts[3], mine: c.mine, theirs: c.theirs, game: false });
+  });
+  rainGameClashes(state.config, plan).forEach((c) => out.push({ key: 'game:' + c.gid, label: c.game.name, field: 'place', mine: null, theirs: null, game: true }));
+  return out;
+}
+
+function rainClashValue(row, which) {
+  if (row.game) return which === 'mine' ? 'your move' : 'their move';
+  const v = which === 'mine' ? row.mine : row.theirs;
+  if (v === null || v === undefined) return row.field === 'off' ? 'not skipped' : 'as planned';
+  if (row.field === 'start' || row.field === 'end') return schedClockWords(v);
+  if (row.field === 'off') return 'skipped';
+  return String(v);
+}
+
+function renderRainDoneSheet() {
+  const plan = rainEnsure();
+  const dow = rainDow();
+  const day = rainDayName();
+  const c = rainChanges(setupTree, plan, dow, state.config);
+  const n = c.lines.length;
+  setTextIfChanged(setupEl('rain-sum-title'), n ? hubPlural(n, 'change', 'changes') + ' to ' + day : 'Nothing to change');
+  const clashRows = rainClashRows(plan);
+  setHiddenIfChanged(setupEl('rain-clashes'), !clashRows.length);
+  setHtmlIfChanged(setupEl('rain-clashes'), clashRows.map((r, i) => {
+    const q = 'rain-clash-q-' + i;
+    const btn = (who, which) => '<button type="button" class="seg-btn" role="radio" aria-checked="' + (setupRain.picks[r.key] === which) + '" data-rain-clash="' + esc(r.key) + '" data-pick="' + which + '"><span class="clash-who">' + who + '</span><span class="clash-val">' + esc(rainClashValue(r, which)) + '</span></button>';
+    return '<div class="clash"><p class="clash-q" id="' + q + '">While you were planning, someone changed <b>' + esc(r.label) + '</b></p><div class="seg clash-pick" role="radiogroup" aria-labelledby="' + q + '">' + btn('Use yours', 'mine') + btn('Keep theirs', 'theirs') + '</div></div>';
+  }).join(''));
+  setHtmlIfChanged(setupEl('rain-sum-list'), c.lines.map((l) => {
+    let text;
+    if (l.kind === 'time') text = '<b>' + esc(l.label) + '</b> now ' + esc(schedRange(l.start, l.end)) + ' <s>' + esc(schedRange(l.was.start, l.was.end)) + '</s>';
+    else if (l.kind === 'skip') text = '<b>' + esc(l.label) + '</b> skipped today';
+    else if (l.kind === 'add') text = '<b>' + esc(l.label) + '</b> added, ' + esc(schedRange(l.start, l.end));
+    else {
+      const to = l.to;
+      const dayRec = to.blockId ? (competitionDays().find((d) => d.id === to.dayId) || {}) : null;
+      const blk = dayRec && Number.isInteger(dayRec.dow) ? planForDow(dayRec.dow).find((x) => x.id === to.blockId) : null;
+      text = '<b>' + esc(l.label) + '</b> ' + (to.blockId ? 'moves to ' + (dayRec && Number.isInteger(dayRec.dow) ? (dayRec.dow === dow ? 'today' : SETUP_DAY_WORDS[SETUP_DK[dayRec.dow]]) : 'another day') + (blk ? ' · ' + esc(setupHeadLabel(blk.label)) : '') : 'comes off the schedule');
+    }
+    return '<li class="rain-sum-li"><span class="sched-emo" aria-hidden="true">' + esc(l.emoji) + '</span><span class="rain-sum-text">' + text + '</span></li>';
+  }).join(''));
+  // ALWAYS said: overlaps and new gaps, or that there are none.
+  const verdict = rainVerdict(c.before, c.after);
+  const lines = verdict.map((v) => v.kind === 'overlap'
+    ? setupHeadLabel(v.a.label) + ' overlaps ' + setupHeadLabel(v.b.label) + ', ' + schedRange(v.start, v.end)
+    : 'There is a gap from ' + schedRange(v.start, v.end));
+  const vEl = setupEl('rain-verdict');
+  const tone = verdict.length ? 'warn' : 'ok';
+  if (vEl && vEl.dataset && vEl.dataset.tone !== tone) vEl.dataset.tone = tone;
+  setHtmlIfChanged(setupEl('rain-verdict-lines'), (lines.length ? lines : ['Nothing overlaps.']).map((t) => '<p class="rain-verdict-line">' + esc(t) + '</p>').join(''));
+  // "Tell people who get reminders for these": only when phone alerts are live and the day is today or later in the camp
+  // week; ticked for a time that moved or an item skipped (ux-R11). The choice is kept as an intent for the alert sender
+  // (Step 26); nothing is sent from here.
+  const tellable = typeof pushConfigured === 'function' && pushConfigured() && campWeek().phase === 'during' && dow >= campNow().dow && c.lines.some((l) => l.kind === 'time' || l.kind === 'skip');
+  setHiddenIfChanged(setupEl('rain-tell'), !tellable);
+  const tellBox = setupEl('rain-tell-check');
+  if (tellable && tellBox && !setupRain.tellSet) { setupRain.tellSet = true; tellBox.toggleAttribute('checked', true); }
+  setHiddenIfChanged(setupEl('rain-offline'), restoreOnline() || !restoreHasFirebase());
+  const waiting = clashRows.find((r) => !setupRain.picks[r.key]);
+  const commit = setupEl('rain-commit');
+  if (commit) {
+    setTextIfChanged(commit, waiting ? 'Pick one for ' + waiting.label + ' first' : 'Done');
+    if (waiting) commit.setAttribute('aria-disabled', 'true'); else commit.removeAttribute('aria-disabled');
+  }
+}
+
+function rainOpenDone() {
+  const plan = rainEnsure();
+  if (!Object.keys(plan.items).length && !Object.keys(plan.games).length) { rainFinish(false); return; }
+  setupRain.picks = {};
+  setupSheet('rain-done', setupEl('rain-done'));
+}
+
+// Back to the day's schedule after Done, Discard or Done with nothing staged.
+function rainFinish(wrote) {
+  setupRain.plan = null;
+  rainDraftDrop();
+  shellSheetClose('rain-done');
+  shellSheetClose('rain-item');
+  state.ui.setupDay = rainDk();
+  setupGo('schedule');
+}
+
+async function rainCommit() {
+  const plan = rainEnsure();
+  const dow = rainDow();
+  const day = rainDayName();
+  const rows = rainClashRows(plan);
+  if (rows.some((r) => !setupRain.picks[r.key])) return;
+  const keepPaths = rows.filter((r) => !r.game && setupRain.picks[r.key] === 'theirs').map((r) => r.key);
+  const keepGames = rows.filter((r) => r.game && setupRain.picks[r.key] === 'theirs').map((r) => r.key.slice(5));
+  const hasGames = Object.keys(plan.games).length > 0;
+  const label = 'Rain plan for ' + day;
+  const r = setupCombined(label, (d) => rainCommitMutate(d, plan, keepPaths), hasGames ? () => rainApplyGames(state.config, plan, keepGames) : null);
+  if (!r.ok) {
+    if (r.reason === 'config-loading') setupSay('Still loading the games list — try again in a moment.');
+    else weekRefused(r);
+    return;
+  }
+  const tell = setupEl('rain-tell-check');
+  if (tell && !setupEl('rain-tell').hidden && tell.hasAttribute('checked')) setupAlertIntentAdd({ at: Date.now(), dk: rainDk(), label, lines: rainChanges(setupTree, plan, dow, state.config).lines.map((l) => ({ kind: l.kind, id: l.id })) });
+  const online = restoreOnline() || !restoreHasFirebase();
+  rainFinish(true);
+  if (!online) setupSay('Saved on your phone only. Nobody else has this yet — it goes out when you have signal.');
+}
+
+// The director's "tell people" choice, kept for the alert sender (Step 26) and wiped on sign-out.
+function setupAlertIntentAdd(entry) {
+  try {
+    const key = lsKey('campSetupAlertIntent');
+    const list = JSON.parse(localStorage.getItem(key) || '[]');
+    list.push(entry);
+    localStorage.setItem(key, JSON.stringify(list.slice(-10)));
+  } catch (e) { /* the sender is not built yet: losing the intent loses nothing else */ }
+}
+
+async function rainDiscard() {
+  const ok = await askDialog({ title: 'Discard the rain plan?', body: ['Nothing was saved for anyone. This throws the plan away.'], actions: [{ label: 'Keep it', value: 'no', cancel: true }, { label: 'Discard the plan', value: 'go', kind: 'danger' }] });
+  if (ok === 'go') rainFinish(false);
+}
+
+// One plain line to add a one-off for the day: the item sheet in staging mode (the same fields and questions).
+function rainAddItem(opener) {
+  const dk = rainDk();
+  const blocks = rainView(setupTree, rainEnsure(), rainDow()).after;
+  const last = blocks.length ? Math.min(1380, Math.max.apply(null, blocks.map((x) => x.end))) : 8 * 60;
+  schedOpenItem({ dayKey: dk, stage: true, start: last >= 1380 ? 9 * 60 : last, opener });
+}
+
+function wireRainPlan() {
+  const on = (sel, ev, fn) => { const el = document.querySelector(sel); if (el) el.addEventListener(ev, fn); };
+  on('#setup-rain', 'click', (e) => {
+    const q = (sel) => (e.target.closest ? e.target.closest(sel) : null);
+    let b;
+    if ((b = q('[data-rain-bring]'))) { rainStageNow((p) => rainStage(p, setupTree, rainPath(setupTree, rainDk(), b.dataset.rainBring, 'off'), null)); }
+    else if ((b = q('.rain-game'))) rainOpenMove(b.dataset.gid, 'list', b);
+    else if ((b = q('button.rain-row[data-bid]'))) rainOpenItem(b.dataset.bid, b);
+    else if (q('[data-rain-expand]')) { setupRain.expanded = true; setupRain.unfold = true; renderAll(); }
+    else if (q('#rain-add')) rainAddItem(q('#rain-add'));
+    else if (q('#rain-done')) rainOpenDone();
+  });
+  const sheet = setupEl('sheet-rain-item');
+  if (sheet) {
+    sheet.addEventListener('click', (e) => {
+      const q = (sel) => (e.target.closest ? e.target.closest(sel) : null);
+      let b;
+      if (q('#rain-pane-back')) {
+        const p = setupRain.pane;
+        if (p === 'how') rainSetPane('swap', { keepScroll: true }); else if (p === 'move' && setupRain.from === 'games') rainSetPane('games'); else rainSetPane('actions');
+      }
+      else if ((b = q('[data-rain-act]'))) { if (!b.hasAttribute('aria-disabled')) rainAct(b.dataset.rainAct); }
+      else if (q('#rain-swap-earlier')) { setupRain.swap.showEarlier = true; renderRainItemSheet(); }
+      else if ((b = q('#rain-swap-list button.rain-pick[data-bid]'))) rainPickSwap(b.dataset.bid);
+      else if ((b = q('[data-rain-how]'))) { if (!b.hasAttribute('aria-disabled')) rainPickHow(b.dataset.rainHow); }
+      else if (q('#rain-time-use')) { if (!q('#rain-time-use').hasAttribute('aria-disabled')) rainUseTime(); }
+      else if ((b = q('[data-rain-move]'))) rainOpenMove(b.dataset.rainMove, 'games');
+      else if ((b = q('#rain-move-days [data-dk]'))) { setupRain.move.dk = b.dataset.dk; setupRain.move.ask = null; renderRainItemSheet(); }
+      else if (q('#rain-move-all')) { setupRain.move.all = true; renderRainItemSheet(); }
+      else if (q('#rain-move-none')) rainMoveNone();
+      else if ((b = q('[data-rain-double]'))) rainPickMove(setupRain.move.ask && setupRain.move.ask.bid, b.dataset.rainDouble);
+      else if ((b = q('#rain-move-list button[data-bid]'))) rainPickMove(b.dataset.bid);
+    });
+    sheet.addEventListener('change', (e) => {
+      const t = e.target;
+      const tt = setupRain.time;
+      if (!tt || !tt.init) return;
+      if (t.id === 'rain-start') { const v = schedInputToMin(t.value); if (!Number.isNaN(v)) { const len = tt.end - tt.start; tt.start = v; if (tt.end < 1440 && tt.end <= tt.start) tt.end = Math.min(1440, v + Math.max(5, len > 0 ? len : 45)); } }
+      else if (t.id === 'rain-end') { const v = schedInputToMin(t.value); if (!Number.isNaN(v)) tt.end = v === 0 ? 1440 : v; }
+      else if (t.id === 'rain-allday') { tt.allday = !!t.checked; tt.end = tt.allday ? 1440 : Math.min(1439, tt.start + 45); }
+      else if (t.id === 'rain-ripple') tt.ripple = !!t.checked;
+      else return;
+      renderRainItemSheet();
+    });
+  }
+  const done = setupEl('sheet-rain-done');
+  if (done) done.addEventListener('click', (e) => {
+    const q = (sel) => (e.target.closest ? e.target.closest(sel) : null);
+    let b;
+    if ((b = q('[data-rain-clash]'))) { setupRain.picks[b.dataset.rainClash] = b.dataset.pick; renderRainDoneSheet(); }
+    else if (q('#rain-commit')) { if (!q('#rain-commit').hasAttribute('aria-disabled')) rainCommit(); }
+    else if (q('#rain-keep')) shellSheetClose('rain-done');
+    else if (q('#rain-discard')) rainDiscard();
+  });
+}
+
+// The home schedule sheet's way in (editors only; §11.1, ux-R18): with the schedule edited here "Change today's plan"
+// (another day's name when it isn't today); otherwise one line pointing at Set up the week. Never a button that leads to
+// a refusal. Called from app.js renderSchedule.
+function renderSchedulePlan(dow) {
+  const box = document.getElementById('schedule-plan');
+  if (!box) return;
+  const show = typeof canEdit === 'function' && canEdit();
+  setHiddenIfChanged(box, !show);
+  if (!show) return;
+  const shared = scheduleIsShared();
+  setHiddenIfChanged(setupEl('schedule-plan-btn'), !shared);
+  setHiddenIfChanged(setupEl('schedule-plan-note'), shared);
+  if (shared) {
+    const today = campNow().dow;
+    const d = Number.isInteger(dow) ? dow : today;
+    setTextIfChanged(setupEl('schedule-plan-text'), d === today ? 'Change today’s plan' : 'Change ' + SETUP_DAY_WORDS[SETUP_DK[d]] + '’s plan');
+    box.dataset.dow = String(d);
+  }
+}
+
+function wireSchedulePlan() {
+  const btn = setupEl('schedule-plan-btn');
+  if (btn) btn.addEventListener('click', () => {
+    const box = setupEl('schedule-plan');
+    const d = Number(box && box.dataset && box.dataset.dow);
+    if (typeof closeSchedule === 'function') closeSchedule();
+    rainOpen(SETUP_DK[Number.isInteger(d) && d >= 0 && d <= 6 ? d : campNow().dow]);
+  });
+  const hub = setupEl('schedule-plan-hub');
+  if (hub) hub.addEventListener('click', () => {
+    if (typeof closeSchedule === 'function') closeSchedule();
+    openBuilder();
+  });
+}
+
 function wireSetupUi() {
   if (setupUi.wired) return;
   setupUi.wired = true;
@@ -2565,6 +3394,8 @@ function wireSetupUi() {
     if (typeof fn === 'function' && typeof isOwner === 'function' && isOwner()) fn();
   });
   wireScheduleScreen();
+  wireRainPlan();
+  wireSchedulePlan();
   // Camp week (§11.4): dates, the Days tick sheet, double points, the TV finale.
   on('#week-start', 'change', (e) => weekSetStart(e.target.value));
   on('#week-days', 'click', (e) => { const t = e.target.closest && e.target.closest('.wk-tick'); const row = t && t.closest('.wk-day'); if (t && row) weekTick(Number(row.dataset.dow), t.dataset.weekFollow); });

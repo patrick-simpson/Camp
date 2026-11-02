@@ -1541,6 +1541,7 @@ function closeSchedule(fromDy) {
 function renderSchedule() {
   renderScheduleDays();
   renderScheduleBody();
+  if (typeof renderSchedulePlan === 'function') renderSchedulePlan(scheduleDay); // editors: "Change today's plan" (setup-ui.js)
 }
 
 function renderScheduleDays() {
@@ -11160,6 +11161,7 @@ function reloadBlocked() {
   if (canEdit() && editorMidEntry()) return true;
   if (Object.values(liveWatches || {}).some((w) => w && w.running)) return true;
   if (typeof chatComposerBusy === 'function' && chatComposerBusy()) return true;
+  if (typeof rainBusy === 'function' && rainBusy()) return true; // a rain plan being made (setup-ui.js: only while open and touched in the last 2 minutes)
   return false;
 }
 
@@ -13333,7 +13335,7 @@ function clearLocalData() {
     'campScoreboardDismissedChanges', 'campScoreboardDismissedAnnouncements',
     'campScoreboardChatSeen', 'campScoreboardChatSubs',
     'campScoreboardPushOn', 'campScoreboardPushPrefs', STRANDED_KEY, UNDO_KEY,
-    'campScoreboardSetupV1', 'campSetupRpOutbox', 'campSetupRainDraft']; // (setup-sync.js: the setup cache, the restore-point outbox, an unfinished rain plan)
+    'campScoreboardSetupV1', 'campSetupRpOutbox', 'campSetupRainDraft', 'campSetupAlertIntent']; // (setup-sync.js: the setup cache, the restore-point outbox; setup-ui.js: an unfinished rain plan, the alert choice kept for Step 26)
   Object.keys(CAMPS).forEach((cid) => {
     bases.forEach((b) => {
       try { localStorage.removeItem(b + CAMPS[cid].storageSuffix); } catch (e) { /* ignore */ }

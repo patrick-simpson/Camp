@@ -419,3 +419,15 @@ test('game moves: staged on the plan, applied to the config (blockId, ord, sessi
   assert.equal(rainSessionFor({ sessions: ['Morning', 'Evening'] }, { start: 600 }), 'Morning');
   assert.equal(rainSessionFor({ sessions: ['Morning', 'Afternoon', 'Evening'] }, { start: 900 }), 'Afternoon');
 });
+
+test('putting back one half of a swap puts the other half back too (the fields one action staged are tied together)', () => {
+  seRainDay();
+  const plan = rainPlanNew('wed', '', 1);
+  const tc = seRich(3, 'b-team-competitions-600');
+  const lunch = seRich(3, 'b-lunch-720');
+  const moves = rainSwapSlots(tc, lunch);
+  Object.keys(moves).forEach((id) => rainStageFields(plan, setupTree, 'wed', id, moves[id], 'g1'));
+  rainStageFields(plan, setupTree, 'wed', 'b-swim-900', { off: true });
+  rainUnstage(plan, 'wed', 'b-lunch-720');
+  assert.deepEqual(Object.keys(plan.items), ['patches/wed/b-swim-900/off'], 'both halves gone, the unrelated skip stays');
+});

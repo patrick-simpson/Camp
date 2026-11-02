@@ -3198,26 +3198,37 @@ function rainPath(tree, dk, bid, field) {
 }
 
 // Stage `value` at `path`. The base stays the FIRST one seen; a field put back to its base leaves the plan.
-function rainStage(plan, tree, path, value) {
+function rainStage(plan, tree, path, value, group) {
   const was = plan.items[path];
   const base = was ? was.base : rainBaseAt(tree, path);
   const staged = value === undefined ? null : value;
   if (JSON.stringify(syncCanon(base)) === JSON.stringify(syncCanon(staged))) delete plan.items[path];
-  else plan.items[path] = { base, staged };
+  else {
+    plan.items[path] = { base, staged };
+    // `g` ties the fields one action staged together (a swap moves two items): putting one back puts its partner back too.
+    const g = group || (was && was.g);
+    if (g) plan.items[path].g = g;
+  }
   return plan;
 }
 
 // Stage fields of one item: { start, end } or { off: true }. `rich`: the item's rich block.
-function rainStageFields(plan, tree, dk, bid, fields) {
-  Object.keys(fields).forEach((f) => rainStage(plan, tree, rainPath(tree, dk, bid, f), fields[f]));
+function rainStageFields(plan, tree, dk, bid, fields, group) {
+  Object.keys(fields).forEach((f) => rainStage(plan, tree, rainPath(tree, dk, bid, f), fields[f], group));
   return plan;
 }
 
-// Put one item back as planned: every staged field of it leaves the plan.
+// Put one item back as planned: every staged field of it leaves the plan, and so does anything staged by the same action
+// (the other half of a swap), or the day would be left with a half-swap.
 function rainUnstage(plan, dk, bid) {
+  const groups = {};
   Object.keys(plan.items).forEach((p) => {
     const parts = p.split('/');
-    if (parts[1] === dk && parts[2] === bid) delete plan.items[p];
+    if (parts[1] === dk && parts[2] === bid && plan.items[p].g) groups[plan.items[p].g] = true;
+  });
+  Object.keys(plan.items).forEach((p) => {
+    const parts = p.split('/');
+    if ((parts[1] === dk && parts[2] === bid) || (plan.items[p].g && groups[plan.items[p].g])) delete plan.items[p];
   });
   return plan;
 }

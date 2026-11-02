@@ -160,12 +160,16 @@ test('a director sees the setup sheets only while the builder is up', () => {
     assert.equal(shellSheetAllowed('sched-item'), false, 'the item sheet needs an item that a tap opened');
     state.ui.setupDay = 'typical';
     assert.equal(shellSheetAllowed('sched-day'), false, 'a day\'s menu needs a day, not the typical day');
+    assert.equal(shellSheetAllowed('rain-item'), false, 'the rain plan\'s sheets need a plan that a tap opened');
+    assert.equal(shellSheetAllowed('rain-done'), false);
     setupSched.item = { x: 1 };
+    setupRain.plan = { dk: 'wed', items: {}, games: {} };
+    setupRain.bid = 'b-x';
     state.ui.setupDay = 'wed';
     SETUP_SHEETS.forEach((id) => assert.equal(shellSheetAllowed(id), true, id));
     state.ui.view = 'home';
     SETUP_SHEETS.forEach((id) => assert.equal(shellSheetAllowed(id), false, id + ' with the builder closed'));
-  } finally { setupSched.item = null; suClose(); }
+  } finally { setupSched.item = null; setupRain.plan = null; setupRain.bid = null; suClose(); }
 });
 
 // ── askDialog ──
