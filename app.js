@@ -3461,13 +3461,25 @@ function picSetupForSync(picSetup) {
 }
 
 // Maps written per-child (one path per game/team/bonus) so concurrent edits to
-// DIFFERENT items on different devices never overwrite each other. teams/meta
-// are small singletons written whole.
+// DIFFERENT items on different devices never overwrite each other. `teams` is
+// per FIELD (see rosterAligned); `meta` is per field inside computeSyncUpdates.
 const SYNC_ITEM_MAPS = ['results', 'brackets', 'picRounds', 'picSetup', 'bonuses', 'clocks', 'announcements'];
 // `live` is NOT here — it's diffed one level deeper (per match field) in
 // computeSyncUpdates so concurrent refs don't clobber each other's fields.
-// `notice` is a singleton too — one composed card, always written whole.
-const SYNC_SINGLETONS = ['teams', 'notice'];
+// `notice` is the one singleton left — one composed card, always written whole.
+// (`teams` stopped being one in S2b: a rename is one field, not the whole roster.)
+const SYNC_SINGLETONS = ['notice'];
+
+// Do two rosters line up by position — the same length, and the same team id at
+// every index? Only then can a change be sent as `teams/<i>/<field>`; anything
+// else (a reorder, a different size, no roster on one side, a record with no id)
+// is structural and goes up as the whole `teams` array. Takes the canonical or
+// the raw form alike (both are arrays of plain records).
+function rosterAligned(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b) || !a.length || a.length !== b.length) return false;
+  return a.every((t, i) => t && b[i] && typeof t === 'object' && typeof b[i] === 'object'
+    && typeof t.id === 'string' && t.id === b[i].id);
+}
 
 // The synced portion of state as it should exist on the server: a deep copy
 // with Pictionary words stripped (never synced). Serves as both the push
@@ -3480,8 +3492,8 @@ function syncedSnapshot() {
 }
 
 // Flat RTDB multi-location update (path -> value, or null to delete) covering
-// exactly what changed between two synced snapshots. Item maps diff per child;
-// singletons diff whole.
+// exactly what changed between two synced snapshots. Item maps diff per child,
+// the roster per field, the notice whole.
 function computeSyncUpdates(prev, cur) {
   const up = {};
   SYNC_ITEM_MAPS.forEach((k) => {
@@ -3549,6 +3561,26 @@ function computeSyncUpdates(prev, cur) {
       if (f === 'hiddenCards' && !(f in c) && p[f] && typeof p[f] === 'object') Object.keys(p[f]).forEach((card) => { up['meta/hiddenCards/' + card] = null; });
       else if (!(f in c)) up['meta/' + f] = null;
     });
+  }
+  // teams: per FIELD while the roster lines up by position, so two directors
+  // renaming DIFFERENT teams (or one renaming and one setting counselors) keep
+  // both edits — the whole array used to go up on every rename and the last
+  // writer won all six. Reordering moves ids between positions, so a reorder (or
+  // any roster that doesn't line up) is written whole, like a first push.
+  {
+    const pt = prev ? prev.teams : undefined;
+    const ct = cur ? cur.teams : undefined;
+    if (JSON.stringify(ct) !== JSON.stringify(pt)) {
+      if (rosterAligned(pt, ct)) {
+        ct.forEach((t, i) => {
+          const p = pt[i];
+          Object.keys(t).forEach((f) => {
+            if (JSON.stringify(t[f]) !== JSON.stringify(p[f])) up['teams/' + i + '/' + f] = t[f] === undefined ? null : t[f];
+          });
+          Object.keys(p).forEach((f) => { if (!(f in t)) up['teams/' + i + '/' + f] = null; });
+        });
+      } else up.teams = ct === undefined ? null : ct;
+    }
   }
   SYNC_SINGLETONS.forEach((k) => {
     const pv = prev ? prev[k] : undefined;

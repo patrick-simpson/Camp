@@ -412,10 +412,15 @@ test('a new pairing or mode switch replaces the whole live node', () => {
     'a fresh matchup must not inherit the old one leftover fields');
 });
 
-test('teams are written whole (meta is per field — see sync-merge.test.js)', () => {
+// CHANGED ON PURPOSE in S2b (it used to assert teams are written whole): a rename
+// is one FIELD now. The whole array still goes up when the roster doesn't line up
+// by position — the structural case; teams-sync.test.js has the full matrix.
+test('teams are written per field when they line up, whole when they do not (meta is per field — see sync-merge.test.js)', () => {
   freshState();
   const up = computeSyncUpdates({ teams: [{ id: 't0', name: 'A' }] }, { teams: [{ id: 't0', name: 'B' }] });
-  assert.deepEqual(Object.keys(up), ['teams']);
+  assert.deepEqual(up, { 'teams/0/name': 'B' });
+  const whole = computeSyncUpdates({ teams: [{ id: 't0', name: 'A' }, { id: 't1', name: 'B' }] }, { teams: [{ id: 't1', name: 'B' }, { id: 't0', name: 'A' }] });
+  assert.deepEqual(Object.keys(whole), ['teams'], 'a reorder moves ids between positions, so it is the whole roster');
 });
 
 test('syncedSnapshot covers exactly the synced keys', () => {

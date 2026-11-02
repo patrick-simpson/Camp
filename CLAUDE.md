@@ -424,6 +424,16 @@ What's covered, and why each file exists:
 - `sync.test.js` — **every invariant in the section below**, plus the deferred-
   snapshot and per-path-diff behavior. A failure here is a regression, not a
   test bug.
+- `teams-sync.test.js` (+ `.senior`, 4 teams) — "Team names and counselors sync
+  per field" below, against `fake-rtdb.js` with a second device writing straight
+  into the database: the diff matrix (one path per field, `''` and `null`, whole
+  on a reorder / resize / missing roster / id-less record), two directors'
+  different-team and name-vs-counselor edits both surviving, the acknowledged
+  push advancing the confirmed baseline per field, an old build's whole write
+  still adopted, an offline rename merged through the real first snapshot (different
+  team, different field, same field, a server-side reorder), and a refused team
+  field parked as "Team names" and discarded. `sync.test.js`'s "teams are
+  written whole" case was changed on purpose by S2b.
 - `sync-quarantine.test.js` (+ `.senior`, which evals the same file against
   `seniorScoreboard/state`) — "Refused writes" below, driven against
   `fake-rtdb.js` through the app's real `fbRef`: a refused path parked while the
@@ -1392,9 +1402,31 @@ More sync invariants (each fixed after it bit us — don't regress these;
   silently not saved.
 - **Concurrent editors don't clobber each other:** tally `drafts` are diffed
   per score/medal leaf (a NEW draft too), `meta` per field and `hiddenCards`
-  per card (`teams` and `notice` are still written whole). Verse/cleanup
+  per card, `teams` per FIELD (next bullet; only `notice` is still written
+  whole). Verse/cleanup
   points use deterministic ids (`verse-<team>-<dow>`,
   `cleanup-<team>-<dow>-<meal>`) so two devices write one slot, not two.
+- **Team names and counselors sync per field** (S2b, setup rebuild spec §6.2 #2).
+  `teams` used to be a singleton, so renaming one team re-sent the whole roster
+  and a second director's rename of a DIFFERENT team (or of the same team's
+  counselor) was reverted by whichever phone saved last. `computeSyncUpdates` now
+  emits `teams/<i>/<field>` (a removed field is `null`) when the two rosters line
+  up by position — `rosterAligned`: same length, same id at every index — and the
+  WHOLE `teams` array otherwise: a reorder (the Teams tab's ↑/↓ moves ids between
+  positions), a different size, no roster on one side (the first push, the
+  empty-node re-seed), a record with no id. `SYNC_SINGLETONS` is `['notice']`.
+  `firstSnapshotMerge` needed nothing: a per-field path from this phone and one
+  from the server only conflict when equal or nested (`syncPathsOverlap`), and a
+  server-side reorder is a whole-`teams` path that overlaps everything under it,
+  so an offline rename never lands on whichever team moved into its slot.
+  Per-position paths have ONE known narrow race, accepted: a rename sent in the
+  seconds between another director's reorder and its snapshot reaching this
+  phone names the team now sitting at that index; reordering teams is a
+  once-a-year setup act. Old builds still send the whole array and every
+  build adopts it — nothing to migrate, and `database.rules.json` already
+  accepts a per-field write (`teams` only has to stay a branch).
+  Quarantine needs nothing special: `quarantineLabel('teams/1/name')` reads
+  "Team names" and `setStatePath` walks the roster array.
 - **`editorMidEntry` is an allowlist** (its focus test is `fieldFocused()`):
   native INPUT/TEXTAREA/SELECT, contentEditable, and only
   `JELLY-(INPUT|TEXTAREA|SELECT|OTP)`; the chat composer is deliberately not
