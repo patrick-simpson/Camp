@@ -214,6 +214,7 @@ test('a viewer\'s standings table and ledgers are emptied, not just hidden', () 
   seedWeek();
   const tbody = document.getElementById('standings-tbody');
   const bonus = document.getElementById('bonus-body');
+  state.ui.tab = 'games'; // the ledger lives on the Games tab, and only the visible tab renders
   setMemberRole('editor');
   renderAll();
   assert.ok(tbody.innerHTML.length > 100, 'precondition: a director\'s table has rows');

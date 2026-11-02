@@ -662,7 +662,11 @@ CAMPS.senior = {
   oldPlaceholderTeamNames: [],  // empty ⇒ normalizeSyncedState never auto-renames senior teams
   oldPlaceholderCounselors: [],
   teamEmoji: TEAM_EMOJI,
-  teamCrest: {},                // no flag artwork yet — emoji fallback everywhere
+  teamCrest: {},                // no flag artwork yet — teamMark draws a flag (below), then an emoji tile
+  // The flag's COLOUR per team (index.html's #flag-* marks; styles.css .flag[data-flag]).
+  // The SHAPE (plain / swallowtail / stripe / chevron) comes from the team's order,
+  // so two teams stay apart under colour-blindness (redesign §8.4).
+  teamFlag: { t0: 'red', t1: 'blue', t2: 'green', t3: 'gold' },
   teamAccent: TEAM_ACCENT,
   teamAbbrev: TEAM_ABBREV,
   teamCounselors: {},           // filled by member teamId assignments, not a printed sheet

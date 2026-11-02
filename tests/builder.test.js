@@ -379,14 +379,16 @@ test('"Last edited" is camp time, not the device\'s zone', () => {
   } finally { b.unmount(); }
 });
 
-test('the card rise-in only runs while a card is opening, never on un-hide', () => {
-  // A CSS animation restarts whenever an element goes display:none → shown, so
-  // a rule keyed to [open] alone replayed on every open card each time the
-  // builder or chat takeover closed.
+test('nothing on the page folds open any more: no accordion, no collapsible card, no idle collapse', () => {
+  // The home cards left Now (Games tab, More sheets): redesign §2.1, "Nothing folds
+  // open in place". The v184 .card-opening gate went with them.
   const css = readFixture('../styles.css');
-  assert.notOk(/collapsible-card\[open\]\s*>\s*\*:not\(\[slot="header"\]\)\s*\{\s*animation:\s*joy-rise/.test(css),
-    'joy-rise must be gated on the transient .card-opening class');
-  assert.ok(/collapsible-card\.card-opening\[open\]\s*>\s*\*:not\(\[slot="header"\]\)\s*\{\s*animation:\s*joy-rise/.test(css));
+  const html = readFixture('../index.html');
+  const app = readFixture('../app.js').replace(/\/\/.*$/gm, '');
+  assert.notOk(/jelly-(accordion|collapsible)/.test(html), 'index.html');
+  assert.notOk(/card-opening|jelly-(accordion|collapsible)/.test(css.replace(/\/\*[\s\S]*?\*\//g, '')), 'styles.css');
+  assert.notOk(/collapseCardsForIdle|startIdleCollapse|applyCardDefaults|card-opening|collapsible-card/.test(app), 'app.js');
+  assert.notOk((typeof __docListeners !== 'undefined' && __docListeners.toggle) || false, 'no capture-phase toggle listener');
 });
 
 // ── Review follow-ups ────────────────────────────────────────────
@@ -489,31 +491,6 @@ test('Jelly components keep their own press physics; disabled controls are not d
     clock.advance(500);
     assert.equal(calls.length, 0);
     assert.equal(joyPress, null);
-  });
-});
-
-test('a card only gets .card-opening when ITS toggle opens it, and only briefly', () => {
-  // Behavioural twin of the stylesheet check above: the class is what the CSS
-  // rise-in is keyed to, so a toggle from anything else must not add it.
-  withFakeTimers((clock) => {
-    const toggle = __docListeners.toggle[0];
-    assert.ok(toggle, 'app.js registers the capture-phase toggle listener');
-    const card = classEl({ matches: (sel) => sel === 'jelly-collapsible.collapsible-card', hasAttribute: (n) => n === 'open' });
-    toggle({ target: card });
-    assert.ok(card.classes.has('card-opening'));
-    clock.advance(300);
-    toggle({ target: card }); // re-armed, not stacked
-    clock.advance(500);
-    assert.ok(card.classes.has('card-opening'), 'the second toggle restarted the 700ms window');
-    clock.advance(300);
-    assert.notOk(card.classes.has('card-opening'), 'and it comes off, so un-hiding never replays the rise');
-
-    const closed = classEl({ matches: () => true, hasAttribute: () => false });
-    toggle({ target: closed });
-    assert.notOk(closed.classes.has('card-opening'), 'a card that CLOSED does not rise');
-    const details = classEl({ matches: () => false, hasAttribute: () => true });
-    toggle({ target: details });
-    assert.notOk(details.classes.has('card-opening'), 'a <details> inside a card does not re-run the card');
   });
 });
 

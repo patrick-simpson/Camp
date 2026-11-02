@@ -188,8 +188,8 @@
     <header id="app-header" class="app-header">
       <div class="hdr-row">
         <button type="button" id="hdr-id" class="hdr-id" aria-haspopup="dialog" aria-controls="sheet-team">
-          <span class="hdr-mark hdr-campmark" aria-hidden="true"><svg class="ico"><use href="#i-sun"/></svg></span>
-          <span class="hdr-text"><span class="hdr-name">Camp</span><span class="hdr-sub"></span></span>
+          <span class="hdr-mark hdr-campmark" id="hdr-mark" aria-hidden="true"><svg class="ico"><use href="#i-sun"/></svg></span>
+          <span class="hdr-text"><span class="hdr-name" id="hdr-name">Camp</span><span class="hdr-sub" id="hdr-sub"></span></span>
         </button>
         <h1 class="hdr-title">
           <span data-title-for="games">Games</span>
@@ -206,6 +206,12 @@
         </button>
         <span id="hdr-who" class="hdr-who"></span>
       </div>
+      <!-- The editors' persistent surface for refused edits (and the view-only
+           tab / stranded-work strips): app.js updateSyncAlert. In the header, in
+           flow, so it sticks under the identity row on every tab instead of
+           floating over it; hidden unless something is parked. Retry / Discard /
+           Download live inside it, so it stays a bar rather than a pill. -->
+      <section id="sync-alert" class="sync-alert" role="alert" hidden></section>
       <!-- The live-reveal strip (§2.2): every tab but Now, only while places
            are still being revealed; tapping it goes to Now. Inside the
            header so it sticks with it. Its content arrives with the reveal
@@ -219,13 +225,6 @@
 
     <!-- ── NOW (today's home, hosted unchanged inside the new frame) ── -->
     <main class="main-wrap tab-panel" id="tab-now" data-tab-panel="now" aria-labelledby="tab-btn-now">
-
-      <!-- ── SYNC ALERT (editors only; app.js updateSyncAlert) ───────────
-           Edits the rules refused, with Retry / Discard — a bar pinned to the
-           very top (position: fixed) so a director sees an unsaved score
-           without opening the (closed) Current Standings card that carries
-           the same line. Hidden unless something is parked. -->
-      <section id="sync-alert" class="sync-alert" role="alert" hidden></section>
 
       <!-- ── NOTICE BOARD (the one big, unmissable message) ─────────────
            Deliberately the FIRST thing on the page and much larger than an
@@ -256,36 +255,31 @@
       <!-- ── LIVE NOW (a game in progress — surfaced + highlighted) ── -->
       <section id="live-home" class="live-home" hidden></section>
 
-      <!-- ── HOME PANELS ────────────────────────────────────
-           The five expandable cards are jelly-collapsible elements inside a
-           single-open jelly-accordion (opening one closes the others). Each
-           keeps .card for its chrome and .collapsible-card as the JS hook
-           (applyCardDefaults / collapseCardsForIdle). Render functions fill
-           the same inner containers as before. -->
-      <jelly-accordion class="home-accordion" single>
+      <!-- ── WEEK BUILDER (editor-only; opened from More → Set up the week;
+           body.builder-open hides every sibling section while it's up) ── -->
+      <section id="settings-view" class="settings-view" hidden></section>
 
-        <!-- Every card carries an editor-only "Hide from viewers" switch
-             (.card-visibility-row, hidden for view-only via CSS). The switch's
-             data-hide-card names which card it governs; state.meta.hiddenCards
-             is synced, so hiding takes effect on every device. -->
+    </main>
 
-        <!-- ── COMPETITIONS (day tabs + per-day game lists) ── -->
-        <jelly-collapsible class="card competitions-card collapsible-card" data-card="competitions">
-          <h2 slot="header">Competitions</h2>
-          <div class="settings-row card-visibility-row">
-            <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🙈</span> Hide from viewers</span>
-            <jelly-switch class="hide-card-toggle" data-hide-card="competitions" label="Hide Competitions from viewers"></jelly-switch>
-          </div>
-          <!-- jelly-tabs with one panel per day; renderDayTabs fills it. -->
-          <div id="day-tabs"></div>
-        </jelly-collapsible>
+    <!-- ── GAMES (redesign §5) ── Roots split by volatility: the day tabs
+         (today's Competitions list, one panel per day), the directors'
+         standings + quick points (hidden from every counselor in code,
+         SECRET_CARDS), and a reserved root for the Step 18 rebuild. Step 18
+         replaces the day tabs with the day picker and the table with the
+         shared-places block; nothing else here moves. data-card is the hook
+         applyCardVisibility reads. -->
+    <section id="tab-games" class="tab-panel" data-tab-panel="games" aria-labelledby="tab-btn-games">
+      <p id="games-off" class="tab-off" role="status" hidden>Games are turned off right now.</p>
+      <section id="games-days" class="games-days" data-card="competitions">
+        <div id="day-tabs"></div>
+      </section>
 
-        <!-- ── WEEK STANDINGS ─────────────────────────────── -->
-        <jelly-collapsible class="card standings-card collapsible-card" data-card="standings">
-          <h2 slot="header">Current Standings</h2>
-          <!-- Counselors never see standings (the owner's rule), so there is no
-               "Hide from viewers" switch on this card or on Quick Points: they
-               are hidden from non-directors in code (SECRET_CARDS in app.js). -->
+      <section id="games-standings" class="games-standings" aria-label="Directors' standings">
+        <!-- Counselors never see standings (the owner's rule), so there is no
+             switch on these two sections: they are hidden from non-directors in
+             code (SECRET_CARDS in app.js). -->
+        <div class="card standings-card" data-card="standings">
+          <h2 class="card-title">Current standings</h2>
           <p class="card-secret-note"><span aria-hidden="true">🔒</span> Counselors can't see this</p>
           <p class="muted standings-hint">Only counts games saved in this app — your paper scoreboard is the official one.</p>
           <p id="sync-status" class="sync-status" aria-live="polite"></p>
@@ -311,54 +305,15 @@
             </table>
           </div>
           <p id="catchup-hint" class="catchup-hint" hidden></p>
-        </jelly-collapsible>
+        </div>
 
-        <!-- ── MEAL CLEANUP ───────────────────────────────── -->
-        <jelly-collapsible class="card cleanup-card collapsible-card" data-card="cleanup">
-          <h2 slot="header">Meal Cleanup</h2>
-          <div class="settings-row card-visibility-row">
-            <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🙈</span> Hide from viewers</span>
-            <jelly-switch class="hide-card-toggle" data-hide-card="cleanup" label="Hide Meal Cleanup from viewers"></jelly-switch>
-          </div>
-          <p id="cleanup-desc" class="muted card-desc">Each meal a team is on cleanup — pick a day to see the rota.</p>
-          <div id="cleanup-body"></div>
-        </jelly-collapsible>
-
-        <!-- ── MEMORY VERSE ───────────────────────────────── -->
-        <jelly-collapsible class="card verse-card collapsible-card" data-card="verse">
-          <h2 slot="header">Memory Verse</h2>
-          <div class="settings-row card-visibility-row">
-            <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🙈</span> Hide from viewers</span>
-            <jelly-switch class="hide-card-toggle" data-hide-card="verse" label="Hide Memory Verse from viewers"></jelly-switch>
-          </div>
-          <p id="verse-desc" class="muted card-desc">Each day's memory verse — pick a day to read it.</p>
-          <div id="verse-body"></div>
-        </jelly-collapsible>
-
-        <!-- ── BONUS POINTS ───────────────────────────────── -->
-        <jelly-collapsible class="card bonus-card collapsible-card" data-card="bonus">
-          <h2 slot="header">Quick Points</h2>
+        <div class="card bonus-card" data-card="bonus">
+          <h2 class="card-title">Quick points</h2>
           <p class="card-secret-note"><span aria-hidden="true">🔒</span> Counselors can't see this</p>
           <p class="muted card-desc">Extra one-off points for other tasks — added to each team's total above.</p>
           <div id="bonus-body"></div>
-        </jelly-collapsible>
-
-      </jelly-accordion>
-
-      <!-- ── WEEK BUILDER (editor-only; opened from Settings → Set up the
-           week; body.builder-open hides every sibling section while it's up) ── -->
-      <section id="settings-view" class="settings-view" hidden></section>
-
-    </main>
-
-    <!-- ── GAMES (redesign §5; filled when today's Competitions and Current
-         Standings cards move here) ── Three roots split by volatility: the
-         day picker is built once per competitionDays() signature, the
-         directors' standings re-render only when medalCounts changes, and a
-         day switch swaps only #games-rows. -->
-    <section id="tab-games" class="tab-panel" data-tab-panel="games" aria-labelledby="tab-btn-games">
-      <div id="games-days" class="games-days"></div>
-      <div id="games-standings" class="games-standings"></div>
+        </div>
+      </section>
       <div id="games-rows" class="games-rows"></div>
     </section>
 
@@ -400,22 +355,22 @@
           <svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg>
         </button>
         <div class="gl">
-          <button type="button" class="gl-row" data-more-row="counselors-see">
+          <button type="button" class="gl-row" id="counselors-row" data-more-row="counselors-see">
             <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-eye"/></svg></span>
-            <span class="gl-text"><span class="gl-title">What counselors see</span><span class="gl-sub">Sections on or off · preview</span></span>
+            <span class="gl-text"><span class="gl-title">What counselors see</span><span class="gl-sub">Which sections counselors can open</span></span>
             <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
           </button>
-          <button type="button" class="gl-row" data-more-row="builder">
+          <button type="button" class="gl-row" id="builder-row" data-more-row="builder">
             <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-calendar"/></svg></span>
             <span class="gl-text"><span class="gl-title">Set up the week <span class="gl-count" id="more-join-count" hidden></span></span><span class="gl-sub">Schedule, games, teams</span></span>
             <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
           </button>
-          <button type="button" class="gl-row" data-more-row="history">
+          <button type="button" class="gl-row" id="history-row" data-more-row="history">
             <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-history"/></svg></span>
             <span class="gl-text"><span class="gl-title">Change history</span><span class="gl-sub">Who saved what, and when</span></span>
             <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
           </button>
-          <button type="button" class="gl-row" data-more-row="members">
+          <button type="button" class="gl-row" id="members-row" data-more-row="members">
             <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-people"/></svg></span>
             <span class="gl-text"><span class="gl-title">Who can sign in</span><span class="gl-sub">Counselors and directors</span></span>
             <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
@@ -426,17 +381,17 @@
       <div id="more-camp" class="more-sec">
         <div class="gl-head"><h2 class="gl-label">Camp</h2></div>
         <div class="gl">
-          <button type="button" class="gl-row" data-more-row="schedule">
+          <button type="button" class="gl-row" id="schedule-row" data-more-row="schedule">
             <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-calendar"/></svg></span>
             <span class="gl-text"><span class="gl-title">Full schedule</span></span>
             <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
           </button>
-          <button type="button" class="gl-row" data-more-row="verse">
+          <button type="button" class="gl-row" id="verse-row" data-more-row="verse" data-card="verse">
             <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-book"/></svg></span>
             <span class="gl-text"><span class="gl-title">Memory verse</span></span>
             <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
           </button>
-          <button type="button" class="gl-row" data-more-row="cleanup">
+          <button type="button" class="gl-row" id="cleanup-row" data-more-row="cleanup" data-card="cleanup">
             <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-broom"/></svg></span>
             <span class="gl-text"><span class="gl-title">Meal cleanup</span></span>
             <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
@@ -449,7 +404,7 @@
         <div class="gl">
           <!-- ONE Alerts row (§7.1): the state line says, in plain words, what
                actually reaches this phone. -->
-          <button type="button" class="gl-row" data-more-row="alerts">
+          <button type="button" class="gl-row" id="alerts-row" data-more-row="alerts">
             <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-bell"/></svg></span>
             <span class="gl-text"><span class="gl-title">Alerts</span><span class="gl-sub" id="alerts-state">Off</span></span>
             <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
@@ -457,20 +412,20 @@
           <!-- Appearance, inline: no extra screen for two settings. The chosen
                segment is its aria-checked; the renderer sets it, and nothing
                here is ever rebuilt (the verdict line is its own text node). -->
-          <div class="gl-panel" data-more-row="appearance">
+          <div class="gl-panel" id="appearance-panel" data-more-row="appearance">
             <p class="gl-panel-label" id="more-theme-label">Theme</p>
-            <div class="seg" role="radiogroup" aria-labelledby="more-theme-label" data-seg="theme">
+            <div class="seg" id="theme-toggle" role="radiogroup" aria-labelledby="more-theme-label" data-seg="theme">
               <button type="button" class="seg-btn" role="radio" aria-checked="false" data-value="light">Light</button>
               <button type="button" class="seg-btn" role="radio" aria-checked="true" data-value="auto">Auto</button>
               <button type="button" class="seg-btn" role="radio" aria-checked="false" data-value="dark">Dark</button>
             </div>
             <p class="gl-panel-label" id="more-calm-label">Calm motion</p>
-            <div class="seg" role="radiogroup" aria-labelledby="more-calm-label" data-seg="calm">
+            <div class="seg" id="calm-toggle" role="radiogroup" aria-labelledby="more-calm-label" data-seg="calm">
               <button type="button" class="seg-btn" role="radio" aria-checked="true" data-value="auto">Auto</button>
               <button type="button" class="seg-btn" role="radio" aria-checked="false" data-value="on">On</button>
               <button type="button" class="seg-btn" role="radio" aria-checked="false" data-value="off">Off</button>
             </div>
-            <p class="gl-panel-note" data-more="calm-reason" role="status"></p>
+            <p class="gl-panel-note" id="calm-reason" data-more="calm-reason" role="status"></p>
           </div>
           <!-- Your team: the row opens the Your team sheet; "Not you? Change"
                is its own 44px target inside it (re-asks which counselor you
@@ -489,11 +444,11 @@
 
       <!-- Accounts on BOTH camps' lists only. Picking the other camp is the
            usual set-key-then-reload (switchCamp). -->
-      <div id="more-camps" class="more-sec" hidden>
+      <div id="more-camps" class="more-sec" data-camp-row hidden>
         <div class="gl-head"><h2 class="gl-label" id="more-camps-label">Switch camp</h2></div>
         <div class="gl">
           <div class="gl-panel">
-            <div class="seg" role="radiogroup" aria-labelledby="more-camps-label" data-seg="camp">
+            <div class="seg" id="camp-switch" role="radiogroup" aria-labelledby="more-camps-label" data-seg="camp">
               <button type="button" class="seg-btn" role="radio" aria-checked="true" data-value="junior">Junior camp</button>
               <button type="button" class="seg-btn" role="radio" aria-checked="false" data-value="senior">Senior camp</button>
             </div>
@@ -504,7 +459,7 @@
       <div id="more-fun" class="more-sec">
         <div class="gl-head"><h2 class="gl-label">Fun</h2></div>
         <div class="gl">
-          <a href="stalling.html" class="gl-row" data-more-row="stalling">
+          <a href="stalling.html" class="gl-row" id="stalling-row" data-more-row="stalling">
             <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-mic"/></svg></span>
             <span class="gl-text"><span class="gl-title">Stalling with Patrick</span></span>
             <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
@@ -515,9 +470,9 @@
       <div id="more-account" class="more-sec">
         <div class="gl-head"><h2 class="gl-label">Account</h2></div>
         <div class="gl">
-          <button type="button" class="gl-row" data-more-row="signout">
+          <button type="button" class="gl-row" id="signout-btn" data-more-row="signout">
             <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-signout"/></svg></span>
-            <span class="gl-text"><span class="gl-title">Sign out</span><span class="gl-sub" data-more="account"></span></span>
+            <span class="gl-text"><span class="gl-title">Sign out</span><span class="gl-sub" id="account-label" data-more="account"></span></span>
             <span class="gl-end"></span>
           </button>
         </div>
@@ -530,8 +485,6 @@
     <!-- The connection line, for view-only devices: the Current Standings card
          that carries it for directors is not rendered for them. -->
     <p id="sync-status-footer" class="sync-status sync-status-footer" aria-live="polite"></p>
-
-    <footer id="app-footer" class="app-footer"></footer>
 
     <!-- ── TAB BAR (redesign §2.2) ─────────────────────────────────
          Plain buttons, not jelly-tabs / jelly-segmented (their text-only
@@ -609,11 +562,109 @@
         <h2 class="sheet-title" id="sheet-team-title">Your team</h2>
         <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
       </header>
-      <div class="sheet-body" id="sheet-team-body"></div>
+      <div class="sheet-body" id="sheet-team-body">
+        <div class="ts-head">
+          <span class="ts-mark" id="ts-mark" aria-hidden="true"></span>
+          <div class="ts-names">
+            <p class="ts-name" id="ts-name"></p>
+            <p class="ts-sub" id="ts-sub"></p>
+          </div>
+        </div>
+        <div class="ts-facts" id="ts-facts"></div>
+        <div class="ts-actions" id="ts-actions"></div>
+      </div>
     </div>
   </div>
 
-  <!-- ── FULL WEEK SCHEDULE (bottom sheet, opened from Happening Now) ── -->
+  <!-- Memory verse and Meal cleanup (More → Camp): the same day-by-day content
+       the home cards held, as reading sheets. Directors' award buttons stay
+       inside (renderMemoryVerse / renderMealCleanup write the bodies). -->
+  <div id="sheet-verse" class="sheet-overlay" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-verse-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-verse-title">Memory verse</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="sheet-body">
+        <p id="verse-desc" class="muted card-desc">Each day's memory verse — pick a day to read it.</p>
+        <div id="verse-body"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="sheet-cleanup" class="sheet-overlay" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-cleanup-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-cleanup-title">Meal cleanup</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="sheet-body">
+        <p id="cleanup-desc" class="muted card-desc">Each meal a team is on cleanup — pick a day to see the rota.</p>
+        <div id="cleanup-body"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- What counselors see (More → Director): the Hide switches, one per
+       section, in one place. Same data as ever (state.meta.hiddenCards): ON means
+       counselors see it. Standings are not a switch: they are a rule. -->
+  <div id="sheet-counselors" class="sheet-overlay" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-counselors-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-counselors-title">What counselors see</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="sheet-body">
+        <p class="muted card-desc">Switch a section off and counselors' phones stop showing it. Directors always see everything.</p>
+        <div class="gl">
+          <div class="gl-row" data-hide-row="competitions">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-trophy"/></svg></span>
+            <span class="gl-text"><span class="gl-title" id="hide-competitions-title">Games</span><span class="gl-sub">The day-by-day game lists</span></span>
+            <span class="gl-switch">
+              <jelly-switch class="hide-card-toggle" data-hide-card="competitions" label="Games shown to counselors"></jelly-switch>
+              <em class="gl-switch-state" data-hide-state="competitions">Shown</em>
+            </span>
+          </div>
+          <div class="gl-row" data-hide-row="verse">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-book"/></svg></span>
+            <span class="gl-text"><span class="gl-title" id="hide-verse-title">Memory verse</span><span class="gl-sub">Each day's verse</span></span>
+            <span class="gl-switch">
+              <jelly-switch class="hide-card-toggle" data-hide-card="verse" label="Memory verse shown to counselors"></jelly-switch>
+              <em class="gl-switch-state" data-hide-state="verse">Shown</em>
+            </span>
+          </div>
+          <div class="gl-row" data-hide-row="cleanup">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-broom"/></svg></span>
+            <span class="gl-text"><span class="gl-title" id="hide-cleanup-title">Meal cleanup</span><span class="gl-sub">Who is on cleanup, and when</span></span>
+            <span class="gl-switch">
+              <jelly-switch class="hide-card-toggle" data-hide-card="cleanup" label="Meal cleanup shown to counselors"></jelly-switch>
+              <em class="gl-switch-state" data-hide-state="cleanup">Shown</em>
+            </span>
+          </div>
+          <div class="gl-row" data-hide-row="chat">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-bubble"/></svg></span>
+            <span class="gl-text"><span class="gl-title" id="hide-chat-title">Chat</span><span class="gl-sub">The four channels</span></span>
+            <span class="gl-switch">
+              <jelly-switch class="hide-card-toggle" data-hide-card="chat" label="Chat shown to counselors"></jelly-switch>
+              <em class="gl-switch-state" data-hide-state="chat">Shown</em>
+            </span>
+          </div>
+          <div class="gl-row is-locked">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-lock"/></svg></span>
+            <span class="gl-text"><span class="gl-title">Standings and points</span><span class="gl-sub">Secret until you reveal them</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── FULL WEEK SCHEDULE (bottom sheet, opened from Happening Now and More) ── -->
   <div id="schedule-overlay" class="schedule-overlay" hidden>
     <div class="schedule-backdrop"></div>
     <div class="schedule-sheet" role="dialog" aria-modal="true" aria-label="Full week schedule">
@@ -629,89 +680,12 @@
     </div>
   </div>
 
-  <!-- ── SETTINGS (gear overlay) ─────────────────────────────────
-       Consolidates the controls that used to sit loose in the header:
-       appearance, sound, and score-entry access — plus the presenter
-       "Stalling with Patrick" page, which used to be a hidden corner dot. -->
-  <jelly-drawer id="settings-overlay" side="bottom" label="Settings">
-    <h2 class="settings-title">⚙️ Settings</h2>
-    <div class="settings-body">
-      <!-- The account row stays first — it's who-you-are, not a menu entry.
-           Everything below it is ALPHABETICAL (owner's call, 2026-07-26):
-           Appearance · Calm motion · Camp · Change history · Phone alerts · Set up the
-           week · Sound · Stalling with Patrick · Who can sign in. Keep it
-           that way when adding rows. Signing out also clears the camp data
-           cached locally (see signOutAndClear). -->
-      <div class="settings-row settings-row-account">
-        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🔑</span> <span id="account-label"></span></span>
-        <jelly-button id="signout-btn" size="small" variant="platinum">Sign out</jelly-button>
-      </div>
-      <div class="settings-row settings-row-theme">
-        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🌗</span> Appearance</span>
-        <jelly-segmented id="theme-toggle" size="small" label="Appearance" value="auto">
-          <jelly-segment value="light">☀️ Light</jelly-segment>
-          <jelly-segment value="auto">Auto</jelly-segment>
-          <jelly-segment value="dark">🌙 Dark</jelly-segment>
-        </jelly-segmented>
-      </div>
-      <!-- Calm motion (redesign §10.3): device-local, the owner's labels. The line
-           under it says what is happening RIGHT NOW (renderCalmRow in app.js):
-           the OS "reduce motion" setting beats Off, and the line says so. -->
-      <div class="settings-row settings-row-calm">
-        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🍃</span> Calm motion</span>
-        <jelly-segmented id="calm-toggle" size="small" label="Calm motion" value="auto">
-          <jelly-segment value="auto">Auto</jelly-segment>
-          <jelly-segment value="on">On</jelly-segment>
-          <jelly-segment value="off">Off</jelly-segment>
-        </jelly-segmented>
-        <p class="settings-row-note" id="calm-reason" role="status"></p>
-      </div>
-      <!-- Accounts on BOTH camps' lists get this switcher (hidden otherwise —
-           see updateAccountRow). Picking the other camp reloads into it. -->
-      <div class="settings-row settings-row-camp" id="camp-row" hidden>
-        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">⛺</span> Camp</span>
-        <jelly-segmented id="camp-switch" size="small" label="Camp">
-          <jelly-segment value="junior">🛡️ Junior</jelly-segment>
-          <jelly-segment value="senior">🚩 Senior</jelly-segment>
-        </jelly-segmented>
-      </div>
-      <!-- Editors only (hidden for view-only via CSS): opens the point-change log. -->
-      <button id="history-row" class="settings-link" type="button">
-        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🕘</span> Change history</span>
-        <span class="settings-link-chevron" aria-hidden="true">›</span>
-      </button>
-      <!-- Everyone (viewers too): notifications that reach a CLOSED app. -->
-      <button id="alerts-row" class="settings-link" type="button">
-        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">📲</span> Phone alerts</span>
-        <span class="settings-link-chevron" aria-hidden="true">›</span>
-      </button>
-      <!-- Editors only (hidden for view-only via CSS): the week builder. -->
-      <button id="builder-row" class="settings-link" type="button">
-        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🛠️</span> Set up the week</span>
-        <span class="settings-link-chevron" aria-hidden="true">›</span>
-      </button>
-      <div class="settings-row">
-        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🔔</span> Sound</span>
-        <jelly-switch id="sound-toggle" label="Sounds"></jelly-switch>
-      </div>
-      <a class="settings-link" href="stalling.html">
-        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">🎙️</span> Stalling with Patrick</span>
-        <span class="settings-link-chevron" aria-hidden="true">›</span>
-      </a>
-      <!-- Editors only: manage who can sign in (the database allowlist). -->
-      <button id="members-row" class="settings-link" type="button">
-        <span class="settings-row-label"><span class="settings-row-emoji" aria-hidden="true">👥</span> Who can sign in</span>
-        <span class="settings-link-chevron" aria-hidden="true">›</span>
-      </button>
-    </div>
-  </jelly-drawer>
-
   <!-- ── CHANGE HISTORY (editor-only point-change log) ─────────────
-       Reuses the settings sheet's overlay/sheet CSS. Opened from the
-       Change-history row in Settings; contents fetched from the separate
+       Reuses the drawer CSS. Opened from the
+       Change history row in More → Director; contents fetched from the separate
        campScoreboard/changelog Firebase path. -->
   <jelly-drawer id="history-overlay" side="bottom" label="Change history">
-    <h2 class="settings-title">🕘 Change history</h2>
+    <h2 class="settings-title">Change history</h2>
     <p class="muted history-sub">Every point change, newest first — team, amount, and what caused it.</p>
     <div class="settings-body" id="history-body"></div>
   </jelly-drawer>
@@ -720,15 +694,30 @@
        The database allowlist the security rules check on every request.
        Rendered by renderMembers() in app.js. -->
   <jelly-drawer id="members-overlay" side="bottom" label="Who can sign in">
-    <h2 class="settings-title">👥 Who can sign in</h2>
+    <h2 class="settings-title">Who can sign in</h2>
     <div class="settings-body" id="members-body"></div>
   </jelly-drawer>
 
-  <!-- ── PHONE ALERTS (everyone: turn on Web Push for this phone and pick
-       what buzzes it; editors also send alerts and set the camp week) ───
-       Rendered by renderPushDrawer() in push.js. -->
-  <jelly-drawer id="alerts-overlay" side="bottom" label="Phone alerts">
-    <h2 class="settings-title">📲 Phone alerts</h2>
+  <!-- ── ALERTS (More → This phone → Alerts; everyone) ─────────────
+       One sheet, two sections, so a counselor who turned on only the in-app half
+       is never left thinking their pocket will buzz: "While Camp is open"
+       (pop-ups and sound, this page) and "When Camp is closed" (push.js: Web Push
+       that reaches a closed phone; editors also send alerts and set the camp
+       week). The second is rendered by renderPushDrawer() into #alerts-body. -->
+  <jelly-drawer id="alerts-overlay" side="bottom" label="Alerts">
+    <h2 class="settings-title">Alerts</h2>
+    <section class="alerts-open" aria-labelledby="alerts-open-label">
+      <h3 class="alerts-sec-label" id="alerts-open-label">While Camp is open</h3>
+      <div class="settings-row">
+        <span class="settings-row-label">Pop-up alerts</span>
+        <jelly-switch id="notify-toggle" label="Pop-up alerts while Camp is open"></jelly-switch>
+      </div>
+      <div class="settings-row">
+        <span class="settings-row-label">Sound</span>
+        <jelly-switch id="sound-toggle" label="Sounds"></jelly-switch>
+      </div>
+    </section>
+    <h3 class="alerts-sec-label alerts-sec-closed" id="alerts-closed-label">When Camp is closed</h3>
     <div class="settings-body" id="alerts-body"></div>
   </jelly-drawer>
 

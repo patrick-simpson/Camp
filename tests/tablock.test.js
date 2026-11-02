@@ -345,7 +345,7 @@ test('the view-only bar says so and offers the switch; the strip carries it for 
   assert.equal(el.hidden, false);
   assert.ok(/another tab/i.test(el.innerHTML) && /view-only/i.test(el.innerHTML), 'the sentence');
   assert.ok(/data-tab-claim/.test(el.innerHTML) && /Use this tab instead/.test(el.innerHTML), 'the button');
-  assert.ok(/Editor \(view-only tab\)/.test(t.run("(updateAccountRow(), document.getElementById('account-label').textContent)")), 'the account row names it');
+  assert.ok(/Director \(view-only tab\)/.test(t.run("(updateAccountRow(), document.getElementById('account-label').textContent)")), 'the account row names it');
   // a tap on the button asks the claim; a tap on anything else does not
   t.run('window.__claims = 0; claimWriterTab = () => { window.__claims++; }');
   t.run("onSyncStatusClick({ target: { closest: (s) => (s === '[data-tab-claim]' ? { dataset: { tabClaim: '1' } } : null) } })");

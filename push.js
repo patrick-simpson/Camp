@@ -950,7 +950,7 @@ function pushOfferReconnect() {
       return;
     } catch (e) { /* fall back to the plain toast */ }
   }
-  showToast('📲 Phone alerts stopped on this phone — reconnect in Settings → Phone alerts.');
+  showToast('📲 Phone alerts stopped on this phone — reconnect in More → Alerts.');
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -1183,7 +1183,7 @@ function pushClearBadge() {
   } catch (e) { /* fine */ }
 })();
 
-// From app.js init(): the Settings row, the worker's messages, the badge.
+// From app.js init(): the More → Alerts row, the worker's messages, the badge.
 // init() wires the whole app in sequence, so this must never throw out.
 function wirePush() {
   try {
@@ -1211,7 +1211,7 @@ function wirePush() {
 }
 
 // ════════════════════════════════════════════════════════════════════
-// The drawer (Settings → 📲 Phone alerts)
+// The drawer (More → Alerts → "When Camp is closed")
 // ════════════════════════════════════════════════════════════════════
 
 function pushDrawerEl() {
@@ -1225,26 +1225,22 @@ function pushDrawerOpen() {
 
 function renderPushDrawerIfOpen() {
   if (pushDrawerOpen()) renderPushDrawer();
+  // More's Alerts row says in plain words what actually reaches this phone, and
+  // that follows the push state wherever it changes (typeof-guarded: app.js owns it).
+  if (typeof renderAlertsState === 'function') renderAlertsState();
 }
 
-// Same hand-off as openMembers: let the Settings drawer finish closing
-// before this one opens, so their scroll-lock/inert bookkeeping never overlap.
+// Opened from More → This phone → Alerts. The drawer sits on the shell's history
+// stack (shellSheetOpen in app.js), so phone Back closes it.
 function openPushDrawer() {
-  const s = document.getElementById('settings-overlay');
   const overlay = pushDrawerEl();
   if (!overlay) return;
   pushAlertResult = '';
   pushBlocksOpen = false;
   renderPushDrawer();
   pushRefreshServerBits();
-  const openNow = () => overlay.setAttribute('open', '');
-  if (s && s.hasAttribute('open') && customElements.get('jelly-drawer')) {
-    s.addEventListener('close', openNow, { once: true });
-    s.removeAttribute('open');
-  } else {
-    if (s) s.removeAttribute('open');
-    openNow();
-  }
+  if (typeof shellSheetOpen === 'function') shellSheetOpen('alerts');
+  else overlay.setAttribute('open', '');
 }
 
 // What the status card should say.
@@ -1324,7 +1320,7 @@ function pushStatusHTML(st) {
           <li>Tap <strong>Share</strong> <span aria-hidden="true">⬆️</span> in Safari's toolbar.</li>
           <li>Choose <strong>Add to Home Screen</strong>.</li>
           <li>Open <strong>Camp</strong> from the new icon on your Home Screen.</li>
-          <li>Come back to Settings → Phone alerts.</li>
+          <li>Come back to More → Alerts.</li>
         </ol>`;
     case 'denied': {
       const iphone = '<li><strong>iPhone:</strong> Settings → Notifications → Camp → Allow Notifications.</li>';

@@ -76,11 +76,34 @@ test('no Firebase config at all (local dev) still just runs the app', () => {
   cleanupSdkTest();
 });
 
-test('a failed SDK says so in the sync indicator and offers a tap-to-reload bar', () => {
+test('a failed SDK says so in the sync indicator and in the header pill (a returning device has a header)', () => {
   seedReturningEditor();
   globalThis.firebase = { apps: [], auth: () => ({}) };
+  const status = document.getElementById('sync-status');
+  const appended = [];
+  const real = { appendChild: document.body.appendChild };
+  document.body.appendChild = (el) => appended.push(el);
+
+  startAuth();
+  startAuth(); // a second failure must not stack anything
+
+  assert.ok(status.textContent.includes('read-only'), 'indicator: ' + status.textContent);
+  const pill = document.getElementById('hdr-pill');
+  assert.equal(pill.hidden, false, 'the pill is up');
+  assert.equal(pill.__tone, 'error');
+  assert.ok(/connect/i.test(document.getElementById('hdr-pill-text').textContent));
+  assert.equal(pill.__go, 'reload', 'a tap reloads (after the unsent-work question)');
+  assert.equal(appended.length, 0, 'no bottom bar over a page that has a header');
+
+  document.body.appendChild = real.appendChild || (() => {});
+  cleanupSdkTest();
+});
+
+test('a failed SDK on the sign-in screen (no header behind it) keeps one tap-to-reload bar', () => {
+  seedReturningEditor();
+  appStarted = false;
+  globalThis.firebase = { apps: [], auth: () => ({}) };
   const real = { getElementById: document.getElementById, createElement: document.createElement };
-  const status = real.getElementById('sync-status');
   const appended = [];
   document.getElementById = (id) => (id === 'sdk-banner' ? (appended.find((b) => b.id === id) || null) : real.getElementById(id));
   document.createElement = () => { const b = real.createElement(); b.type = ''; return b; };
@@ -89,10 +112,9 @@ test('a failed SDK says so in the sync indicator and offers a tap-to-reload bar'
   startAuth();
   startAuth(); // a second failure must not stack a second bar
 
-  assert.ok(status.textContent.includes('read-only'), 'indicator: ' + status.textContent);
   assert.equal(appended.length, 1, 'exactly one bar');
   assert.equal(appended[0].id, 'sdk-banner');
-  assert.ok(appended[0].textContent.includes('Tap to reload'));
+  assert.ok(/tap to reload/i.test(appended[0].textContent));
 
   document.getElementById = real.getElementById;
   document.createElement = real.createElement;

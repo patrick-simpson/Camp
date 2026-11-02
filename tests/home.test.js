@@ -484,14 +484,24 @@ test('the pill snap is creation-only — the change handler never calls it', () 
   assert.ok(handler.length > 0 && !handler.includes('settleDayTabPill'), 'the spring is the point of a tap');
 });
 
-test('Now hosts the banner, the live strip and the five home cards; renderAll gives them to the Now panel, not to every tab', () => {
+test('Now hosts the banner, the live strip and messages; Games hosts the day tabs; More hosts the rest; renderAll gives each to ITS tab only', () => {
   const src = readFixture('../app.js');
   const panel = src.slice(src.indexOf('const SHELL_PANELS = {'), src.indexOf('const SHELL_ALWAYS'));
-  const now = panel.slice(panel.indexOf('now: {'), panel.indexOf('games: {'));
-  ['renderNoticeBoard', 'renderAnnouncements', 'renderNowBanner', 'renderLiveHome', 'renderDayTabs', 'renderMyElectives', 'renderMemoryVerse', 'renderMealCleanup', 'renderBonuses', 'renderFooter']
+  const part = (from, to) => panel.slice(panel.indexOf(from), panel.indexOf(to));
+  const now = part('now: {', 'games: {');
+  ['renderNoticeBoard', 'renderAnnouncements', 'renderNowBanner', 'renderLiveHome', 'renderMyElectives']
     .forEach((fn) => assert.ok(now.includes(fn + '('), fn + ' renders with Now'));
+  ['renderDayTabs', 'renderMemoryVerse', 'renderMealCleanup', 'renderBonuses', 'renderFooter']
+    .forEach((fn) => assert.notOk(now.includes(fn + '('), fn + ' left Now'));
+  const games = part('games: {', 'chat: {');
+  ['renderDayTabs', 'renderBonuses'].forEach((fn) => assert.ok(games.includes(fn + '('), fn + ' renders with Games'));
+  assert.ok(part('more: {', '};').includes('renderMore()'), 'More renders its volatile lines');
+  // The reading sheets render while they are open, whatever tab is under them.
+  assert.ok(/function renderShellSheets\(\)[\s\S]*shellSheetFill/.test(src));
+  assert.ok(/function shellSheetFill[\s\S]*renderMemoryVerse\(\)[\s\S]*renderMealCleanup\(\)/.test(src));
   const all = src.slice(src.indexOf('function renderAll() {'), src.indexOf('// ── Week builder'));
   assert.notOk(/renderNowBanner\(\)|renderLiveHome\(\)|renderDayTabs\(\)/.test(all), 'renderAll no longer renders them unconditionally');
   assert.ok(all.includes('renderShellTabs()'));
   assert.ok(/pruneExpiredAnnouncements\(\)/.test(src.slice(src.indexOf('const SHELL_ALWAYS'), src.indexOf('function renderTab('))), 'announcement pruning still runs on every pass');
 });
+

@@ -198,7 +198,7 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
    files actually change.)
 2. Update `CODE_UPDATED_AT` near the top of `app.js` to the current UTC
    time (`date -u +%Y-%m-%dT%H:%M:%SZ`) — this drives the "Code last
-   updated" line in the page footer. There's no build pipeline to stamp
+   updated" tooltip on More's footer line. There's no build pipeline to stamp
    this automatically, so it's a manual step, easy to forget.
    `current-standings.html` has its own build stamp — bump it when that file
    changes — and the stamp lives in TWO places that must carry the same value:
@@ -266,8 +266,8 @@ to the one the page is running (`myAppVersion`). A higher deployed number
 calls `onNewVersion`. This is **deploy-driven and works on a single
 device** — no Firebase or peer announcement involved — which is why the
 `?v=` bump on every deploy is what actually triggers it (bump all three
-assets together, as always). Every device gets a dismissible "tap to
-refresh" bar (`#update-banner`) and auto-reloads only once `reloadBlocked()`
+assets together, as always). Every device gets an "Update ready · tap" status
+pill in the header (`#hdr-pill`, `renderSyncPill`) and auto-reloads only once `reloadBlocked()`
 says it's safe (rechecked inside the final 1.2 s, retried every 12 s):
 for EVERY role, no unconfirmed write (`pendingWritesTotal() > 0`: scores AND the
 week-config node — the SDK's offline queue is in memory only, so a reload would
@@ -277,20 +277,19 @@ focused composer or still sending (`chatComposerBusy`); for editors, also
 not mid-entry (`editorMidEntry`: a focused score field, or a queued data
 push). A synced game clock deliberately does NOT block it (its `endAt` is in
 the database and survives a reload).
-The bar's own tap asks first (`wireReloadBanner`: `reloadBlocked()` sampled at
+The pill's own tap asks first (`wirePill`: `reloadBlocked()` sampled at
 pointerdown, since the tap itself blurs the composer) instead of reloading
-past an unsent message or a typed score. Bottom-strip layout (styles.css, one
-block next to `.update-banner-alert`; every offset is measured from the tab
-bar, `--tabbar-h` = the bar as drawn, 58px + the home-indicator inset): on a tab the bar sits `.75rem` above it with the toaster
-lifted above that (8rem); on the Chat tab the bar is lifted to 5.5rem so it
-never covers the composer, and the toaster to 12rem to clear both (4.75rem when
-there is no bar); the SDK-down pill, when it shares the strip with the bar,
-stacks above it (6.5rem on a tab, 12rem in chat). Over a takeover (no tab bar)
-the same strip is measured from the screen's edge, and while typing in chat it
-rides the keyboard (`--kb-h`). The toaster takes taps, so a toast over the
-composer swallowed Send and one over the bar swallowed Refresh — change the
-offsets together (`overlays.test.js` pins their order, in all three layers).
-The bar and the SDK pill retire into `#hdr-pill` with the rest of Step 13. `showToast` keeps at most
+past an unsent message or a typed score. **The bottom strip is the toaster
+alone** (styles.css, THE BOTTOM STACK note): the update bar and the SDK-down
+pill moved into the header's status pill (both of the bar's layouts, and the
+`has-update-banner` footer room, are gone). Toasts take taps, so they clear the
+tab bar (`--tabbar-h` = the bar as drawn, 58px + the home-indicator inset), the
+chat composer on the Chat tab (`+ 76px`), and a takeover's dock; while typing in
+chat they ride the keyboard (`--kb-h`). Change the offsets together
+(`overlays.test.js` pins their order, in all three layers). The ONE bottom bar
+left is the sign-in screen's tap-to-reload (`showSdkDownBanner`, `.update-banner`,
+only while the app has not started: a lock screen has no header to hold a pill).
+`showToast` keeps at most
 `TOAST_MAX_VISIBLE` (3) on screen, dismissing the oldest that isn't a "Your
 team…" toast.
 The reload uses `doReload` (adds a throwaway `?r=` cache-buster) so it
@@ -384,26 +383,25 @@ Design: `docs/build-notes/app-shell-redesign-spec.md` §9–10; the reference fe
   element's resting CSS transform, it does not compose with it**, so `press` /
   `release` read `getComputedStyle(el).transform` (after cancelling their own
   hold, or they would read the dent back) and write it in front of every dent
-  frame (`restingTransform`, `p.base`): the update bar and the SDK-down pill are
+  frame (`restingTransform`, `p.base`): a fixed element (the sign-in screen's SDK-down bar is one) is
   centred with `left:50%; transform:translateX(-50%)` and used to jump half their
   width sideways, past the viewport edge, for the whole hold (`motion.test.js`
   gives the fake element a resting transform). The wobble is cut at 900 ms (its
   1.4 s tail was sub-pixel; the ring also keeps `busy()` true). `JellyMotion.busySource` is how the app
   tells the calm sampler what is moving (confetti, joy-layer children, a running
   stopwatch, a clock in its final minute).
-- **Settings → Calm motion: Auto · On · Off** (today's drawer; More absorbs it
-  in Step 13), between Appearance and Camp, with one plain-English line under
+- **More → This phone → Calm motion: Auto · On · Off** (plain radio buttons in
+  Appearance, under Theme), with one plain-English line under
   it saying what is happening right now (`renderCalmRow` / `calmReasonLine`;
   "Your phone asks for less motion, so Camp stays calm…" when the OS wins over
   Off). The line follows `jelly-motion-change`, so it stays true when battery
   saver turns calm on by itself. The note reserves three lines
-  (`.settings-row-note { min-height }`): the settings sheet is bottom-anchored,
-  so a verdict that changed length moved the control ~38 px under the finger.
-  At 320 px the two longest verdicts wrap to four lines and still nudge it 19 px
-  (accepted: copy cut to fit would lose the owner-approved wording). The
-  degraded-mode pill styling (`html.jelly-failed`) covers this control as well as
-  Appearance. While the page is hidden the sampler does not poll: it returns
-  and `visibilitychange` re-arms it.
+  (`.gl-panel-note { min-height }`: two lines reserved, so a verdict that changed
+  length can't move the control under the finger — at 200% text it wraps further
+  and nudges it, accepted: copy cut to fit would lose the owner-approved wording).
+  The control is `<button role="radio">`s, so a failed Jelly module leaves it
+  working with no fallback styling. While the page is hidden the sampler does not
+  poll: it returns and `visibilitychange` re-arms it.
 - **styles.css answers to ONE class.** Every rule that animates is either under
   `html:not(.calm-motion)` or has an `html.calm-motion <same selector>` rule that
   switches it off; there is no `@media (prefers-reduced-motion)` anywhere (the
@@ -481,7 +479,16 @@ future edit must not break (all pinned by `tests/tabs.test.js`):
 - **Sheets** (`.sheet-overlay`, ids `sheet-<name>`): `shellSheetOpen/Close`
   (focus returns to the opener, `#app` goes inert, grab-strip drag closes,
   Escape / ✕ / backdrop / Back close). `schedule` is the older
-  `#schedule-overlay`, which keeps its own markup and only reports in.
+  `#schedule-overlay`, which keeps its own markup and only reports in. So do the
+  three remaining jelly-drawers — **Alerts, Change history, Who can sign in**
+  (`SHELL_DRAWERS`: ids `alerts` / `history` / `members`): the shell opens and
+  closes the drawer and files the history entry, and the drawer's own ✕ /
+  backdrop / Escape report back through its `close` event (`wireMore`), so phone
+  Back closes it instead of popping the tab beneath. `shellSheetAllowed` says who
+  may open which (the directors' drawers, `counselors`, and a hidden Memory verse /
+  Meal cleanup refuse everyone else, whatever asked: a deep link, a Forward).
+  `shellSheetFill` renders a reading sheet on open and on every `renderAll` while
+  it stays open (`renderShellSheets`), whatever tab is under it.
 - **Keyboard** (§13.6): `textEntryFocused()` (a tag allowlist; NOT
   `fieldFocused()`, which says no inside `#chat-view`) sets `body.kb-open` on
   focusin and clears it 100 ms after focusout; `visualViewport` sets `--kb-h`.
@@ -509,7 +516,8 @@ the `#tabbar .tab[data-tab]` button. Header `#app-header`: `#hdr-id` (Now: who
 you are, the Your team sheet's button; identity/role/camp only), `.hdr-title`
 (`[data-title-for]`), `#hdr-who`, `#hdr-pill` (`data-tone` wait | offline |
 update | error, text in `#hdr-pill-text`; hides `#hdr-who` while shown),
-`#reveal-strip` (never on Now). Tab bar `#tabbar`: one `.tab-blob` (CSS rest
+`#reveal-strip` (never on Now), and `#sync-alert` (the refused-edits / view-only-tab
+bar, IN the header under the identity row so it sticks with it). Tab bar `#tabbar`: one `.tab-blob` (CSS rest
 position; spring it with JellyMotion, never a CSS transition), badges
 `#tab-badge-chat`, `#tab-dot-now`, `#tab-dot-more`; it slides away under
 `body.takeover-open`, `body.kb-open`, and today's `builder-open`.
@@ -517,10 +525,15 @@ Takeovers `.takeover` (`#takeover-game`: `.tk-back[data-takeover-back]` with
 `.tk-back-label`, `#takeover-game-title`/`-sub`/`-body`/`-dock`;
 `.tk-dock[data-kb-hide]`; `.is-roof` = the camp-blue broadcast roof, which
 never flips in dark). Sheets `.sheet-overlay` (`#sheet-team`, `[data-sheet-close]`,
-`[data-sheet-grab]`). More (`#more-director` — `html.view-only` never lays it
+`[data-sheet-grab]`; also `#sheet-verse`, `#sheet-cleanup`, `#sheet-counselors`).
+More (`#more-director` — `html.view-only` never lays it
 out — `#more-camp`, `#more-phone`, `#more-camps`, `#more-fun`, `#more-account`,
-`#more-foot`): every row has a `data-more-row` hook, and the Settings drawer's
-ids move onto those rows when its content moves. Shared pieces: the line-icon
+`#more-foot`): every row has a `data-more-row` hook AND carries the id the
+retired Settings drawer's row had (`#builder-row`, `#history-row`, `#members-row`,
+`#alerts-row`, `#signout-btn`, `#theme-toggle`, `#calm-toggle`, `#calm-reason`,
+`#camp-switch`, `#account-label`; the Sound switch `#sound-toggle` moved into the
+Alerts drawer), so the code and tests that looked them up kept working.
+Shared pieces: the line-icon
 sprite (`<svg class="ico"><use href="#i-…"/>`; flag marks `#flag-plain|swallow|
 stripe|chevron` with `.flag[data-flag]`), chunky `.btn` / `.btn-gold` /
 `.btn-big` (the edge compresses while held; a disabled one is a dashed well that
@@ -530,8 +543,102 @@ says what's missing), segmented `.seg` / `.seg-btn` whose chosen state IS its
 `.gl-row-hit` button plus a sibling `.gl-link`, never nested buttons). Every
 target is 44×44 or more at 360 and 390 px, at 130% and 200% text. Toasts ride
 `calc(var(--tabbar-h) + 12px)` up (above a takeover's dock, and above the
-composer on the Chat tab); the update bar and SDK pill ride the same stack
-until they move into `#hdr-pill` (see "What's new banners & auto-reload").
+composer on the Chat tab); see "What's new banners & auto-reload".
+
+## The frame's pieces (Step 13 — session B: header, pill, More, Games)
+
+All in app.js's "THE FRAME'S PIECES" block. Everything is split by VOLATILITY and
+patches in place (`setTextIfChanged`, `setHiddenIfChanged`, `setHtmlIfChanged`),
+so a connection flicker never re-creates the shield and a push-state change
+never rebuilds a segmented control under a finger.
+
+- **`teamMark` is the one helper for how a team looks** (§8.4):
+  `teamMarkSpec(id)` → a **shield** image when the camp ships artwork
+  (`CAMP.teamCrest`, junior), else a **flag** (`CAMP.teamFlag`, senior: red /
+  blue / green / gold; the SHAPE — plain, swallowtail, stripe, chevron — comes
+  from the team's ORDER so two teams stay apart under colour-blindness), else an
+  emoji **tile** (its accent goes into `style` only if it is a plain hex).
+  `teamMarkHtml(id, {size, label})` is the markup (`.tm`, sized by `--tm`);
+  **`paintTeamMark(el, id, opts)` writes through `setHtmlIfChanged`**, so the
+  `<img>` of a long-lived spot (header, Your team sheet, More's team row) is
+  never re-created by a re-render. Older surfaces (the follow card, boards)
+  still draw their own crests; migrate them here, not by copying the rule.
+- **Header** (`renderHeader` from `renderAll` and the 30 s tick): `headerModel()` —
+  a counselor with a team: the team's mark + name, "Sam · Junior Camp ·
+  Wednesday"; a director with no team: the camp mark, "Jenn", "Director · …";
+  never a number (a test pins it) and never a name guessed from the email. The
+  right-hand `#hdr-who` is "Sam · Counselor" on the other tabs. Tapping `#hdr-id`
+  opens the **Your team sheet** (`renderTeamSheet`: counselors, "Up next",
+  "Next meal cleanup", and the "Not you? Change" door — only where
+  `CAMP.features.electives`; a team set by the account says so instead of
+  offering "Change team"). It closes itself before the team / identity picker
+  dialog opens.
+- **Status pill** (`#hdr-pill`, `syncPillModel` → `renderSyncPill`): appears ONLY
+  when something is wrong and takes `#hdr-who`'s place. In priority order: **Can't
+  connect · tap** (SDK failed: reload), **Update ready · tap** (`newVersionSeen`:
+  reload), **Sync blocked** (rules cancelled a read), **Reconnecting…** for the
+  first `PILL_WAIT_MS` (10 s) after the connection drops (`noteConnectionChange`,
+  one-shot timer, not the tick) and then **Offline · saved on this phone**. The two
+  reload tones ask before throwing away unsent work (`wirePill`); the others only
+  say what is happening in a toast. The refused-edits / stranded-work / view-only
+  tab bar stays a BAR (`#sync-alert`, now inside the sticky header, in flow): it
+  carries Retry / Discard / Download, which a pill cannot, so there is no
+  "Couldn't save" pill beside it.
+- **More** (`renderMore`, rendered with the tab; `wireMore` / `wireSegs` once):
+  Director (editors only: **What counselors see**, **Set up the week** → today's
+  classic builder, **Change history**, **Who can sign in**; Run the reveal is
+  built but `hidden` until Step 23, Tell everyone / Award points arrive with Step
+  24), Camp (**Full schedule**, **Memory verse**, **Meal cleanup** — the last
+  two are reading SHEETS holding the day-by-day content and the directors' award
+  buttons, `#verse-body` / `#cleanup-body`), This phone (**Alerts**, Appearance,
+  Your team), Switch camp (accounts on both camps' lists), Fun, Account, footer
+  (`renderMoreFoot`: "v197 · data updated … · N phones have Camp open", which
+  replaced the page footer). Theme, Calm motion and Camp are `.seg` radio-groups:
+  `paintSeg` sets `aria-checked` + the roving tab stop, `wireSegs` handles click
+  and the arrow keys (`setTheme` / `setCalmPref` / `switchCamp`). The **Alerts**
+  row's line (`alertsStateLine`, patched by `renderAlertsState` — push.js calls it
+  wherever the push state changes) says what really reaches the phone; it opens
+  the push drawer, now two sections: "While Camp is open" (pop-ups
+  `#notify-toggle`, which is the same `state.notify` as the Now strip's Notify
+  me button, and Sound `#sound-toggle`) and "When Camp is closed" (`#alerts-body`,
+  push.js). "Not you?" in the Your team row re-asks the counselor on junior and
+  offers sign-out on senior (no identity to re-ask).
+- **What counselors see** (`#sheet-counselors`): one switch per section on the
+  **same `state.meta.hiddenCards` keys** (`HIDEABLE_CARDS` unchanged): Games
+  (`competitions`), Memory verse, Meal cleanup, Chat. A switch is **ON when
+  counselors can see the section** (the data still says "hidden"), with the
+  word "Shown" / "Hidden" beside it (`data-hide-state`). Standings are a locked
+  row, "Secret until you reveal them": the old standings switch is retired (the
+  key stays seeded true for old builds, `ensureSecrecySeed`). `applyCardVisibility`
+  hides the section WHERE IT LIVES — `#games-days` (`data-card="competitions"`,
+  with `#games-off` "Games are turned off right now"), More's `#verse-row` /
+  `#cleanup-row` (and closes their sheet if open), the standings and Quick
+  points sections — and the Chat tab shows chat.js's "Chat is turned off right
+  now". **Not built: "Preview as a counselor"** (§7.4): a render override of the
+  role is a secrecy risk that wants its own step.
+- **The Games tab is the interim home of the old cards** until Step 18:
+  `#games-days` holds today's `#day-tabs` (every day's game list),
+  `#games-standings` the Current standings table and Quick points (both
+  `SECRET_CARDS`: directors only), `#games-rows` is reserved. The home cards no
+  longer fold open: **the accordion, `jelly-collapsible` cards, `applyCardDefaults`,
+  the 5-minute idle collapse and the `.card-opening` rise are gone**, and the
+  shell's own "come back after 10 minutes" rule replaced the idle collapse.
+  `renderStandings` stays in `SHELL_ALWAYS` (its side effects are not lifted
+  out yet, §13.9).
+- **Sparkles only where a press means something** (§9.7): the tap burst fires on
+  `JOY_SPARKLE` (jelly-buttons, chips, `.pts-btn`, `.btn-gold`, `[data-joy]`)
+  and never inside `JOY_QUIET` (tab bar, header, More, takeover head, the
+  drawers, chat, the lock screen). A positive list: a new control is quiet until
+  it is named.
+- **Home Screen / status bar**: index.html carries `apple-mobile-web-app-capable`,
+  `mobile-web-app-capable`, `apple-mobile-web-app-title`, status-bar style
+  `default`, and the two pre-paint `theme-color` metas (paper `#f5efe2` light,
+  `#0c1030` dark). `applyTheme` → `applyChromeColor` writes the same pair into the
+  no-media meta (`CHROME_PAPER`) and switches it to the camp-blue roof
+  (`CHROME_ROOF`) while a `.takeover.is-roof` is up (`roofUp()`, rechecked from
+  `shellPaint`). manifest.json's `theme_color` / `background_color` are paper too.
+  Whether iOS actually paints the status bar under a roof is the owner's iPhone
+  check; the layout does not depend on the answer.
 
 ## Tests
 
@@ -548,8 +655,8 @@ in a vm script land in the context's global lexical scope, test files reference
 `state`, `medalCounts`, `SYNC_KEYS`, … directly, exactly as app.js does.
 `document.addEventListener` calls made at load are recorded (never fired by
 the harness itself) in `__docListeners[type]`, so a test can reach the
-delegated handlers — the joy-press pointer handlers, the card `toggle`
-listener, the failed-module tap-to-close — by event type.
+delegated handlers — the joy-press pointer handlers, the failed-module
+tap-to-close — by event type.
 
 Nothing in `tests/` is referenced by `index.html`, so adding to it cannot
 change what a browser loads. Timers a context starts (the app's toast and
@@ -660,10 +767,16 @@ What's covered, and why each file exists:
   the board that replaced theirs. New panels on the renderAll path should do
   the same; never `transition: all` (it animated chips' line-height on every
   rebuild).
+- `frame.test.js` (+ `.senior`, which evals it) — session B's pieces: `teamMark`
+  (shield / flag-with-a-shape / tile; `paintTeamMark` writes only when the mark
+  changes), the header model (never a number), More keeping the retired Settings
+  drawer's ids, What counselors see (four switches on the existing keys, ON =
+  shown, the standings row locked), the three drawers on the history stack, and
+  the Your team sheet reading no standings.
 - `game-view.test.js` (the rules above: live-html skip, kept forms firing real
   handlers after a state swap, celebrations only for scoring), `home.test.js`
   (home panels, toast cap, announcement composer), `overlays.test.js` (schedule
-  sheet, update bar, members drawer, lock screen, scrim fade, pickers),
+  sheet, status pill, members drawer, lock screen, scrim fade, pickers),
   `shell.test.js` (page-shell text pins: the not-yet-defined hide, the boot
   guard, no motion media query, **index.html's fifteen versioned assets share
   one `?v=` equal to `APP_VERSION`, in load order**), `builder.test.js`
@@ -873,8 +986,8 @@ does, so an app device always chooses by its own key.
   active-camp key IS the memory). Owner's revised call, 2026-07-25;
   ask-every-launch was the original behavior. The camp question outranks
   the team picker — the team question is held while the camp dialog is open
-  and re-asked on its close. Mid-session switching: the Settings **Camp
-  segmented switcher** (`#camp-switch`) + the footer camp chip (both only
+  and re-asked on its close. Mid-session switching: More's **Switch camp**
+  group (`#more-camps`, the Junior / Senior radio buttons `#camp-switch`; only
   when `campScoreboardCampsHint` shows both camps).
 - **Denied in the active camp → probe the other one** (`denyMember`): a
   senior-only counselor whose first sign-in lands on the junior default
@@ -1260,7 +1373,7 @@ rules**; the client code only shapes the UI.
   included). `current-standings.js` duplicates this — keep in sync.
 - **Member record**: `{ role, name?, teamId?, addedBy, addedAt }`
   (`memberRecord()`; `name`/`teamId` omitted, not null, when empty). Built at `campScoreboard/members`,
-  editor-managed via Settings → **Who can sign in** (`renderMembers`). Your
+  editor-managed via More → **Who can sign in** (`renderMembers`). Your
   own row is disabled (another editor must change your access); the owner key
   is additionally immutable in the rules (the lockout anchor).
 - **The owner row is read-only** (`OWNER_MEMBER_KEY` in app.js, the same literal
@@ -1557,7 +1670,7 @@ rules**; the client code only shapes the UI.
 ## Counselors ↔ teams ↔ accounts
 
 A member record can carry a **`teamId`** (`'t0'`…`'t5'`) — the team that
-person is ON. It's set per-row in Settings → **Who can sign in**, and it does
+person is ON. It's set per-row in More → **Who can sign in**, and it does
 three things.
 
 **1. The app opens on their team.** `adoptMemberTeam()` (called from
@@ -1904,7 +2017,7 @@ More sync invariants (each fixed after it bit us — don't regress these;
     cache the writer kept). A parked change loaded from the cache shows in its sync
     line WITHOUT Retry / Discard (`quarantineLineHtml`; both functions also return
     unless `canEdit()`): the writer tab owns it. The footer copy of the sync line
-    (`html.view-only`) is shown only while the Current Standings card is NOT on the
+    (`html.view-only`) is shown only while the Current standings section is NOT on the
     page — `applyCardVisibility` sets `html.standings-shown` from
     `standingsVisible()`, so a director's view-only tab does not read it twice.
   - **A lock request that never answers fails open.** Throw, rejection and a
@@ -1945,12 +2058,12 @@ More sync invariants (each fixed after it bit us — don't regress these;
   mid-bisect hands the unreached paths back to the diff the same way. **Editors
   only**: a view-only device's refused stray diff takes that same quiet original
   path (`canEdit()` in the rejection handler) — no park, no toast, no line.
-  **Where an editor sees it**: the same news rides a bar pinned to the top of the
-  page, `#sync-alert` (`updateSyncAlert`, `position: fixed` — NOT sticky: html
-  and body both clip `overflow-x`, which makes body the never-scrolling sticky
-  container, so a sticky bar scrolled away; `body.has-sync-alert` reserves its
-  height above the first card), because the line inside the closed-by-default
-  Current Standings card was off-screen. One constant-height row, names
+  **Where an editor sees it**: the same news rides a bar under the header's
+  identity row, `#sync-alert` (`updateSyncAlert`; it lives INSIDE the sticky
+  `#app-header`, in flow, so it sticks with it on every tab and never floats over
+  the identity row — it used to be `position: fixed`, which the header replaced;
+  `body.has-sync-alert` is still toggled as a hook), because the standings
+  section holding the line is not on every tab. One constant-height row, names
   truncated; Retry / Discard are the same delegated buttons. The card line says
   Offline FIRST when offline (the bar still names the refused edit), and the park
   toast says where to act. Each parked path also gets ONE silent automatic Retry
@@ -2087,7 +2200,7 @@ More sync invariants (each fixed after it bit us — don't regress these;
 
 `defaultConfig()` in `defaults.js` only seeds a **brand-new** device/state —
 `makeFreshState()` on first-ever load, or `migrateState()` if `state.config`
-is entirely missing. Once a week has been set up (Settings → Set up the
+is entirely missing. Once a week has been set up (More → Set up the
 week), the live days/games catalog lives in its own Firebase node,
 `campScoreboard/config` — a *sibling* ref to `campScoreboard/state`, kept
 separate deliberately (see the `fbConfigRef` comment in `app.js`) so older
@@ -2176,10 +2289,11 @@ otherwise beat the attribute. The page's places come from reveal-core's
   `tests/stalling.test.js` pins the standings card's `?camp=` link and its
   team-count table against `camps.js`.
 
-## Footer timestamps
+## Footer timestamps (More's footer line)
 
 - **"Code last updated"** — `CODE_UPDATED_AT` constant in `app.js`,
-  manually bumped (see deploy steps above).
+  manually bumped (see deploy steps above). It is the tooltip of More's footer
+  line (`renderMoreFoot`); the page footer it used to ride is gone.
 - **"Data last updated"** — `state.meta.lastDataChangeAt`, stamped by
   `touchData()` at points that represent real scoreboard activity (a game
   result saved, a bracket match recorded, a team renamed). Deliberately
@@ -2204,7 +2318,7 @@ when a single message has structure (per-team assignments, a running order)
 and everyone must see it; reach for an announcement when it's one line that
 should expire on its own.
 
-- **Composed in the week builder**, Settings → Set up the week → **Notice**
+- **Composed in the week builder**, More → Set up the week → **Notice**
   (`renderNoticeTab` in settings.js), not typed into a single box: heading,
   intro, per-team assignments, numbered steps with bullets, closing line —
   plus a live preview that renders the real card.
@@ -2231,25 +2345,28 @@ should expire on its own.
 - Editor-typed text is escaped on render; nothing typed into the builder can
   inject markup.
 
-## Hiding home panels from viewers
+## Hiding sections from viewers (More → What counselors see)
 
-Each of the five home cards carries an editor-only "🙈 Hide from viewers"
-`jelly-switch` (`.hide-card-toggle[data-hide-card="<key>"]`, in a
-`.card-visibility-row` that CSS hides for `html.view-only`). Flipping one adds
-that card's key to **`state.meta.hiddenCards`** — synced, so it applies on
-every device — and view-only devices then don't render the card at all.
-Editors always see every card, including the switch that governs it.
+Four sections carry an editor-only switch in **More → Director → What counselors
+see** (`#sheet-counselors`, `.hide-card-toggle[data-hide-card="<key>"]`): Games,
+Memory verse, Meal cleanup, Chat. Flipping one adds that key to
+**`state.meta.hiddenCards`** — synced, so it applies on every device — and
+view-only devices then don't render the section at all. Editors always see
+every section. (This used to be a "🙈 Hide from viewers" switch on each home card;
+the switches moved when the cards left Now. Same data, same keys.)
 
-- Keys are the cards' `data-card` values, listed in `HIDEABLE_CARDS` (app.js).
+- Keys are the sections' `data-card` values (the Games list, More's two Camp
+  rows, the two secret sections) listed in `HIDEABLE_CARDS` (app.js); Chat has no
+  element to hide — its tab says "Chat is turned off right now".
 - All of it is applied centrally by `applyCardVisibility()`, called at the
-  TOP of `renderAll` — before `renderGameView`, because hiding Competitions
-  also has to close a viewer's open game detail (otherwise the hidden card's
+  TOP of `renderAll` — before `renderGameView`, because hiding Games
+  also has to close a viewer's open game detail (otherwise the hidden section's
   content stays readable).
-- Hiding force-closes the card for viewers, so a later un-hide doesn't pop it
-  out already expanded (matches the closed-by-default rule).
+- Hiding closes an open Memory verse / Meal cleanup sheet for viewers, so a later
+  un-hide never surfaces it already on screen.
 - These are deliberately NOT `touchData()` moments — a display preference is
   not scoreboard activity, so they don't bump "Data last updated".
-- RTDB prunes `hiddenCards` away entirely once it's empty (all cards shown);
+- RTDB prunes `hiddenCards` away entirely once it's empty (all sections shown);
   `normalizeSyncedState` heals it back to `{}`, and readers must tolerate it
   being missing. A legacy `state.meta.standingsHidden` boolean from the
   standings-only first version is still honored on read.

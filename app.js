@@ -61,7 +61,7 @@ const CHANGES = [];
 //   'viewer' — counselors. Can watch everything, can change nothing.
 //              (Deliberate: counselors must not bump their own team's points.)
 //   'editor' — directors / game leaders. Edit scores AND manage the member
-//              list (Settings → Who can sign in).
+//              list (More → Who can sign in).
 //
 // THE ONE INVARIANT (see also CLAUDE.md → "Auth, members & roles"):
 // no database ref may attach until sign-in resolves AND the self-read of
@@ -812,7 +812,7 @@ function inDoubleBonusWindow() {
 
 // ── Game catalog ────────────────────────────────────────────────
 // The week's games and days now live in editable, synced state
-// (state.config) — built out by editors in Settings → Set up the week.
+// (state.config) — built out by editors in More → Set up the week.
 // The built-in defaults are in defaults.js (defaultConfig()); the
 // builder UI is in settings.js. dayLabel() (the SEAM block) stays: the memory-verse,
 // meal-cleanup, and daily-schedule features are keyed by real day of
@@ -1062,7 +1062,7 @@ function mealCleanupNote(dow, label) {
 // camper actually needed.
 //
 // Unlike an announcement, it isn't typed in a single box and it doesn't
-// expire on a timer. It's composed in the week builder (Settings → Set up
+// expire on a timer. It's composed in the week builder (More → Set up
 // the week → Notice) and lives in synced state, so every device shows the
 // same thing, and it is either a DRAFT (nobody sees it; keep editing as long
 // as you like) or POSTED (on every device until you put it back to draft).
@@ -1668,40 +1668,17 @@ function wireSchedule() {
   }
 }
 
-// ── Settings sheet (gear overlay) ────────────────────────────────
-// A bottom sheet holding appearance, sound, and score-entry access —
-// controls that used to sit loose in the header — plus the "Stalling
-// with Patrick" presenter link (formerly a hidden corner dot). Mirrors
-// the schedule sheet's open/close/inert/Escape behavior.
-function settingsOverlayEl() {
-  return document.getElementById('settings-overlay');
-}
-
-// The settings sheet is a jelly-drawer: backdrop, ✕, Escape, focus restore,
-// scroll lock, and background inerting are all handled by the component.
-// open/close toggle the attribute (works pre-upgrade too — the change is
-// buffered and applied when the element registers).
-function openSettings() {
-  const overlay = settingsOverlayEl();
-  if (!overlay) return;
-  overlay.setAttribute('open', '');
-}
-
-function closeSettings() {
-  const overlay = settingsOverlayEl();
-  if (!overlay) return;
-  overlay.removeAttribute('open');
-}
-
+// ── Drawer fallbacks (the Jelly module never loaded) ─────────────
+// The old gear drawer is gone: its rows live in More (the tab), and the drawers
+// that remain — Change history, Who can sign in, Alerts — are opened from More
+// and sit on the shell's history stack (shellSheetOpen), so phone Back closes them.
 function wireSettings() {
-  const btn = document.getElementById('settings-btn');
-  if (btn) btn.addEventListener('click', openSettings);
   // Degraded-mode escape hatch: if the Jelly module never loaded, the sheets
   // render via the :not(:defined)[open] fallback CSS and have no ✕/backdrop —
   // let Escape close them. (When the component IS registered it owns Escape.)
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape' || customElements.get('jelly-drawer')) return;
-    ['settings-overlay', 'history-overlay', 'team-picker-overlay', 'members-overlay', 'alerts-overlay'].forEach((id) => {
+    ['history-overlay', 'team-picker-overlay', 'members-overlay', 'alerts-overlay'].forEach((id) => {
       const el = document.getElementById(id);
       if (el && el.hasAttribute('open')) el.removeAttribute('open');
     });
@@ -1723,16 +1700,6 @@ function wireSettings() {
     e.preventDefault();
     e.stopPropagation();
   }, true);
-  // The Appearance control is a jelly-segmented, which is inert without the
-  // module — make its options tappable. Gated on the component being absent, or
-  // this would double-fire alongside its own change event.
-  document.addEventListener('click', (e) => {
-    if (customElements.get('jelly-segmented')) return;
-    const seg = e.target.closest && e.target.closest('#theme-toggle jelly-segment');
-    if (seg) setTheme(seg.getAttribute('value'));
-    const calm = e.target.closest && e.target.closest('#calm-toggle jelly-segment');
-    if (calm) setCalmPref(calm.getAttribute('value'));
-  });
 }
 
 // Which open sheets does a tap close while the Jelly module is absent? Elements
@@ -1749,10 +1716,8 @@ function failedModuleSheetsToClose(open, target, clientY) {
 }
 
 // ── Change-history sheet (editor-only) ───────────────────────────
-// Opened from the Settings sheet; reuses the same overlay/sheet CSS. Manages
-// its own open/close state (it does NOT call closeSettings, whose delayed
-// finish would clear `inert` out from under this sheet) — it hands off from
-// Settings by hiding it instantly, then restores the app on close.
+// Opened from More → Director; a jelly-drawer on the shell's history stack
+// (shellSheetOpen), so phone Back closes it.
 function historyOverlayEl() {
   return document.getElementById('history-overlay');
 }
@@ -1770,21 +1735,10 @@ function openHistory() {
   // Every point change, newest first: directors' eyes only (see "Standings
   // secrecy"). The row is hidden for viewers, and the rules refuse them the read.
   if (!canEdit()) return;
-  const s = settingsOverlayEl();
   const overlay = historyOverlayEl();
   if (!overlay) return;
   renderHistory();
-  const openNow = () => overlay.setAttribute('open', '');
-  // Hand off from the Settings drawer: let its teardown finish first so the
-  // two drawers' scroll-lock/inert bookkeeping never overlaps. Its 'close'
-  // event fires synchronously on a programmatic close, so there's no gap.
-  if (s && s.hasAttribute('open') && customElements.get('jelly-drawer')) {
-    s.addEventListener('close', openNow, { once: true });
-    s.removeAttribute('open');
-  } else {
-    if (s) s.removeAttribute('open');
-    openNow();
-  }
+  shellSheetOpen('history');
 }
 
 function renderHistory() {
@@ -1867,7 +1821,7 @@ function renderHistoryRows(rows) {
   return html;
 }
 
-// ── Members (Settings → Who can sign in) ─────────────────────────
+// ── Members (More → Who can sign in) ─────────────────────────
 // Editor-only management of campScoreboard/members — the allowlist the
 // security rules check on every read and write. Same drawer pattern as the
 // change history. All writes here are themselves rule-checked server-side
@@ -1902,18 +1856,10 @@ function inviteText(key, role) {
 function openMembers() {
   if (!canEdit()) return;
   lastInvite = null;
-  const s = settingsOverlayEl();
   const overlay = membersOverlayEl();
   if (!overlay) return;
   renderMembers();
-  const openNow = () => overlay.setAttribute('open', '');
-  if (s && s.hasAttribute('open') && customElements.get('jelly-drawer')) {
-    s.addEventListener('close', openNow, { once: true });
-    s.removeAttribute('open');
-  } else {
-    if (s) s.removeAttribute('open');
-    openNow();
-  }
+  shellSheetOpen('members');
 }
 
 function renderMembers() {
@@ -2514,17 +2460,10 @@ function wireMembers() {
   if (row) row.addEventListener('click', openMembers);
 }
 
-// The mid-session way to change camps: a Junior/Senior segmented control in
-// Settings. Hidden unless this account is on both camps' lists — see
-// updateAccountRow. Picking the other camp is the usual set-key-and-reload.
+// The mid-session way to change camps: the Junior / Senior control in More
+// (wireSegs → switchCamp). Hidden unless this account is on both camps' lists —
+// see updateAccountRow. Picking the other camp is the usual set-key-and-reload.
 function wireCampSwitcher() {
-  const seg = document.getElementById('camp-switch');
-  if (seg) {
-    seg.addEventListener('change', (e) => {
-      const id = e.detail && e.detail.value;
-      if (id && id !== CAMP.id) switchCamp(id);
-    });
-  }
   // However the camp picker closes (choice, backdrop, Escape), the deferred
   // team question gets its turn back.
   const overlay = document.getElementById('camp-picker-overlay');
@@ -2551,34 +2490,11 @@ function formatEasternStamp(iso) {
   return `${get('month')} ${get('day')}, ${get('hour')}:${get('minute')}${(get('dayPeriod') || '').toLowerCase()} ET`;
 }
 
-// One line: who's here now, when data last changed, what build this is,
-// and the Settings link (the header is gone — this is the gear now). The
-// presence count lives here and renderPresence just re-renders the footer.
+// The footer line (version · data stamp · phones online) is More's footer now
+// (renderMoreFoot). The presence count still lands here, so renderPresence keeps
+// its name and just refreshes that line.
 function renderFooter() {
-  const el = document.getElementById('app-footer');
-  if (!el) return;
-  const dataStamp = formatEasternStamp(state.meta && state.meta.lastDataChangeAt);
-  const bits = [];
-  if (syncEnabled() && presenceCount > 0) {
-    bits.push(`<span title="${presenceCount} device${presenceCount === 1 ? '' : 's'} here now">👥 ${presenceCount} here</span>`);
-  }
-  // Which camp this page is: always shown on senior (so the two apps are
-  // never confused), and tappable to switch when the account has both.
-  if (hasBothCamps()) {
-    bits.push(`<button id="footer-camp-chip" class="footer-link" aria-label="Switch camp">${CAMP.id === 'senior' ? '🚩' : '🛡️'} ${esc(CAMP.label)} ⇄</button>`);
-  } else if (CAMP.id === 'senior') {
-    bits.push(`<span>🚩 ${esc(CAMP.label)}</span>`);
-  }
-  bits.push(`📋 Data: ${dataStamp ? esc(dataStamp) : 'no scores yet'}`);
-  bits.push(`<span title="Code last updated: ${esc(formatEasternStamp(CODE_UPDATED_AT) || 'unknown')}">🛠️ v${APP_VERSION}</span>`);
-  bits.push(`<button id="settings-btn" class="footer-link" aria-label="Settings">⚙️ Settings</button>`);
-  if (!setHtmlIfChanged(el, `<p class="footer-line">${bits.join(' · ')}</p>`)) return;
-  // Fresh nodes need their listeners (wireSettings runs once at init,
-  // before the first footer render).
-  const btn = document.getElementById('settings-btn');
-  if (btn) btn.addEventListener('click', openSettings);
-  const campChip = document.getElementById('footer-camp-chip');
-  if (campChip) campChip.addEventListener('click', () => { openCampPicker(); });
+  renderMoreFoot();
 }
 
 // ── State ────────────────────────────────────────────────────────
@@ -2595,7 +2511,7 @@ function loadState() {
 
 function makeFreshState() {
   return {
-    config: CAMP.defaultConfig(), // editable days/games catalog (Settings → Set up the week)
+    config: CAMP.defaultConfig(), // editable days/games catalog (More → Set up the week)
     teams: seedTeams(),
     results: {},   // gameId -> { medals: {gold, silver, bronze}, scores?, savedAt }
     brackets: {},  // gameId -> in-progress tournament
@@ -2747,7 +2663,7 @@ normalizeSyncedState();
 
 // Who's with this team, everywhere the app names a team's counselors. The
 // member directory is the live truth once anyone is assigned to a team in
-// Settings → Who can sign in; the hand-typed team.counselor text is the
+// More → Who can sign in; the hand-typed team.counselor text is the
 // fallback for teams nobody has been assigned to yet (and for the moment
 // before the directory loads).
 function counselorName(id) {
@@ -2796,8 +2712,9 @@ function touchData(opts) {
 // activity, so they don't bump "Data last updated".
 //
 // Keys match the data-card attributes in index.html (and the switches'
-// data-hide-card). Four cards carry a switch (competitions, verse, cleanup,
-// chat). The other two, standings and bonus, are listed too so the one code
+// data-hide-card, in the What counselors see sheet). Four sections carry a switch
+// (competitions = the Games tab's list, verse, cleanup, chat — the Chat tab shows
+// "Chat is turned off right now" instead of hiding). The other two, standings and bonus, are listed too so the one code
 // path handles every card, but they have no switch: they are SECRET_CARDS below,
 // hidden from every non-director whatever this map says.
 const HIDEABLE_CARDS = ['competitions', 'standings', 'verse', 'cleanup', 'bonus', 'chat'];
@@ -2858,35 +2775,38 @@ function toggleCardHidden(card) {
   renderAll();
 }
 
-// Applies every card's hidden state and syncs the switches. Runs from
-// renderAll (before renderGameView, which depends on the competitions
-// result). Hiding force-closes the card for viewers so a later un-hide
-// doesn't surface it already open — matching the closed-by-default rule.
+// Applies every section's hidden state and syncs the switches (What counselors
+// see, More → Director). Runs from renderAll (before renderGameView, which depends
+// on the competitions result). A section the viewer may not see is hidden where
+// it lives — the Games list, More's Memory verse / Meal cleanup rows, the standings
+// section — and a reading sheet already open for it is closed, so a later un-hide
+// never surfaces it already on screen.
 function applyCardVisibility() {
   // The person's ROLE, not this tab's write lock (tabWriter): a director's second,
-  // view-only tab still shows every card the first one does.
+  // view-only tab still shows every section the first one does.
   const editor = memberRole === 'editor';
-  const seeStandings = standingsVisible(); // the secret cards follow the confirmed role
+  const seeStandings = standingsVisible(); // the secret sections follow the confirmed role
   // styles.css shows the footer sync line for a view-only device ONLY while the
-  // Current Standings card (which carries the same line) is not on the page — a
-  // director's view-only second tab has the card, and would read it twice.
+  // Current Standings section (which carries the same line) is not on the page — a
+  // director's view-only second tab has it, and would read it twice.
   document.documentElement.classList.toggle('standings-shown', seeStandings);
   HIDEABLE_CARDS.forEach((key) => {
     const hidden = cardHiddenFromViewers(key);
+    const hideForMe = hidden && !(SECRET_CARDS.includes(key) ? seeStandings : editor);
     const card = document.querySelector(`[data-card="${key}"]`);
     if (card) {
-      const hideForMe = hidden && !(SECRET_CARDS.includes(key) ? seeStandings : editor);
-      card.hidden = hideForMe;
-      if (hideForMe && card.hasAttribute('open')) {
-        if (typeof card.toggle === 'function') card.toggle(false);
-        else card.removeAttribute('open');
-      }
+      setHiddenIfChanged(card, hideForMe);
+      if (hideForMe && shell.sheets.includes(key)) shellSheetClose(key); // verse / cleanup
     }
+    // ON = counselors see it (the data is still "hidden from viewers").
     const sw = document.querySelector(`.hide-card-toggle[data-hide-card="${key}"]`);
-    if (sw) sw.toggleAttribute('checked', hidden);
+    if (sw && sw.hasAttribute('checked') === hidden) sw.toggleAttribute('checked', !hidden);
+    setTextIfChanged(document.querySelector(`[data-hide-state="${key}"]`), hidden ? 'Hidden' : 'Shown');
   });
+  // The Games tab says why it is empty for a counselor the directors turned it off for.
+  setHiddenIfChanged(document.getElementById('games-off'), !(!editor && cardHiddenFromViewers('competitions')));
   // A viewer must not keep reading a game detail out of a hidden Competitions
-  // card. Cleared here (not saved) so the renderGameView later in this same
+  // list. Cleared here (not saved) so the renderGameView later in this same
   // pass closes the view.
   if (!editor && cardHiddenFromViewers('competitions') && state.ui.gameId) {
     state.ui.gameId = null;
@@ -3241,7 +3161,7 @@ function cfgShow(v) {
 //            record (canonical, with _o) }: Put it back with my changes / Discard
 //   clash    the same field was changed on both sides while I was offline and the
 //            server's value won — { path, mine, theirs, what }: Use mine / Dismiss
-// Settings → Set up the week shows them (settings.js renderConfigNotes).
+// More → Set up the week shows them (settings.js renderConfigNotes).
 function cfgNotes() {
   const n = state && state._cfgNotes;
   return Array.isArray(n) ? n : [];
@@ -3290,8 +3210,8 @@ function cfgNoteDropped(dropped, localCanon) {
   const gone = added.filter((a) => !a.collide);
   const clashed = added.filter((a) => a.collide);
   const quoted = (list) => list.map((a) => '“' + a.name + '”').join(', ');
-  if (gone.length) showToast(`⚠️ ${quoted(gone)} ${gone.length === 1 ? 'was' : 'were'} removed while you were editing. Settings → Set up the week can put ${gone.length === 1 ? 'it' : 'them'} back with your changes.`);
-  if (clashed.length) showToast(`⚠️ ${quoted(clashed)} couldn’t be added: somebody added a different one with the same id at the same moment. Settings → Set up the week can add ${clashed.length === 1 ? 'it' : 'them'} again under ${clashed.length === 1 ? 'a new id' : 'new ids'}.`);
+  if (gone.length) showToast(`⚠️ ${quoted(gone)} ${gone.length === 1 ? 'was' : 'were'} removed while you were editing. More → Set up the week can put ${gone.length === 1 ? 'it' : 'them'} back with your changes.`);
+  if (clashed.length) showToast(`⚠️ ${quoted(clashed)} couldn’t be added: somebody added a different one with the same id at the same moment. More → Set up the week can add ${clashed.length === 1 ? 'it' : 'them'} again under ${clashed.length === 1 ? 'a new id' : 'new ids'}.`);
 }
 
 // The games or days list of a config (a parameter, not `state.config`: the seam scan
@@ -3607,7 +3527,7 @@ function cfgRecordClashes(paths, mine, localCanon, remoteCanon) {
   // The synthetic entry changes MINE into THEIRS, so Undo (which puts `before` back
   // where the value still equals `after`) brings my offline edit back.
   added.forEach((a) => undoRecord('Bring back your offline change to ' + a.what, [['config', a.path, a.mine, a.theirs]], { quiet: true }));
-  showToast(`⚠️ ${added.length} change${added.length === 1 ? '' : 's'} you made offline clashed with someone else’s — kept theirs. Settings → Set up the week lets you bring ${added.length === 1 ? 'it' : 'them'} back.`);
+  showToast(`⚠️ ${added.length} change${added.length === 1 ? '' : 's'} you made offline clashed with someone else’s — kept theirs. More → Set up the week lets you bring ${added.length === 1 ? 'it' : 'them'} back.`);
 }
 
 // Unsent config edits from a PREVIOUS camp year are set aside as downloadable JSON,
@@ -4697,6 +4617,7 @@ function initSync() {
     firebase.database().ref('.info/connected').on('value', (s) => {
       fbConnected = !!s.val();
       fbConnKnown = true; // first real answer — retire the "Connecting…" spinner
+      noteConnectionChange(fbConnected);
       updateSyncIndicator();
       // Re-register presence on every (re)connect — onDisconnect handlers
       // don't survive a dropped socket, so a reconnect after wifi drops or
@@ -5465,6 +5386,7 @@ function updateSyncAlert() {
 
 function updateSyncIndicator() {
   updateSyncAlert();
+  renderSyncPill();
   // Two copies of the line: the one in the Current Standings card (directors)
   // and a footer one that only view-only devices WITHOUT the standings card show
   // (styles.css, html.standings-shown), because the card is not rendered for them
@@ -5795,11 +5717,15 @@ function toggleNotify() {
 
 function updateNotifyButton() {
   const btn = document.getElementById('notify-toggle-btn');
-  if (!btn) return;
-  btn.hidden = !!state.notify;
-  btn.textContent = '🔕 Notify me';
-  btn.classList.toggle('active', !!state.notify);
-  btn.setAttribute('aria-pressed', String(!!state.notify));
+  if (btn) {
+    btn.hidden = !!state.notify;
+    btn.textContent = '🔕 Notify me';
+    btn.classList.toggle('active', !!state.notify);
+    btn.setAttribute('aria-pressed', String(!!state.notify));
+  }
+  const sw = document.getElementById('notify-toggle');
+  if (sw) sw.toggleAttribute('checked', !!state.notify);
+  renderAlertsState();
 }
 
 // changes: [{ team, delta, total }]
@@ -7335,7 +7261,7 @@ function teamPickerOverlayEl() {
 //
 // This overrides a hand-picked choice on purpose: the account is the truth,
 // and a counselor who tapped a different team during camp week shouldn't
-// keep seeing someone else's team as "yours". Un-assign them in Settings →
+// keep seeing someone else's team as "yours". Un-assign them in More →
 // Who can sign in and the picker comes back.
 function adoptMemberTeam() {
   if (!memberTeamId) return false;
@@ -8175,7 +8101,7 @@ function dayGamesHTML(day) {
   if (!dayGames.length) {
     html += `<p class="muted session-empty">No games scheduled for ${esc(day.name)} yet.</p>`;
     if (canEdit()) {
-      html += `<button class="link-btn empty-day-builder-btn">🛠️ Set up games in Settings</button>`;
+      html += `<button class="link-btn empty-day-builder-btn">🛠️ Set up games in More</button>`;
     }
   }
 
@@ -9233,7 +9159,7 @@ function renderTournament(container, g) {
     if (state.teams.length !== 6) {
       setLiveHtmlIfChanged(container, `
         <h3>Run the bracket</h3>
-        <p class="tie-note">⚠️ The bracket wizard needs exactly 6 teams — you have ${state.teams.length}. Adjust the roster in Settings → Set up the week, or switch this game to another format.</p>
+        <p class="tie-note">⚠️ The bracket wizard needs exactly 6 teams — you have ${state.teams.length}. Adjust the roster in More → Set up the week, or switch this game to another format.</p>
       `, [g]);
       return;
     }
@@ -10258,10 +10184,26 @@ function applyTheme() {
     document.documentElement.removeAttribute('data-jelly-mode');
   }
   window.dispatchEvent(new CustomEvent('jelly-theme-change'));
-  // Reflect the choice into the Appearance segmented control (attribute
-  // set — never fires its change event, so no feedback loop).
-  const toggle = document.getElementById('theme-toggle');
-  if (toggle) toggle.setAttribute('value', state.theme === 'dark' ? 'dark' : state.theme === 'light' ? 'light' : 'auto');
+  // Reflect the choice into More's Theme control (radio buttons: aria-checked
+  // only, never a click, so no feedback loop).
+  paintSeg(document.getElementById('theme-toggle'), state.theme === 'dark' ? 'dark' : state.theme === 'light' ? 'light' : 'auto');
+  applyChromeColor();
+}
+
+// The browser chrome (the status bar of a Home Screen app) is the colour of what is
+// at the TOP of the screen: the paper header in both themes, or the camp-blue roof
+// while a broadcast takeover (.takeover.is-roof — the reveal remote, Tell everyone;
+// Steps 23–24) is up. Keep these hexes in step with --paper and --roof in styles.css
+// and with the pre-paint <meta name="theme-color"> pair in index.html.
+const CHROME_PAPER = { light: '#f5efe2', dark: '#0c1030' };
+const CHROME_ROOF = '#2c47ee';
+
+function roofUp() {
+  const el = document.querySelector && document.querySelector('.takeover.is-roof:not([hidden])');
+  return !!(el && el.classList && el.classList.contains('is-roof') && !el.hidden);
+}
+
+function applyChromeColor() {
   // The app can override the OS theme, so keep the browser chrome color in step.
   // A no-media meta appended last wins over the pre-paint media metas.
   let meta = document.getElementById('dynamic-theme-color');
@@ -10271,9 +10213,8 @@ function applyTheme() {
     meta.id = 'dynamic-theme-color';
     document.head.appendChild(meta);
   }
-  // Explicit hexes matching Jelly's background-default (keep these in sync with
-  // the palette — and with the --color-bg fallbacks in styles.css).
-  meta.content = dark ? '#181b1d' : '#ffffff';
+  const color = roofUp() ? CHROME_ROOF : CHROME_PAPER[appliedLook === 'dark' ? 'dark' : 'light'];
+  if (meta.content !== color) meta.content = color;
 }
 
 // Auto follows the OS. The page itself already does (the @media block), but the
@@ -10299,7 +10240,7 @@ function setTheme(choice) {
   applyTheme();
 }
 
-// ── Calm motion row (Settings → Calm motion: Auto · On · Off) ────
+// ── Calm motion row (More → Calm motion: Auto · On · Off) ────
 // The switch and the verdict both live in jelly-motion.js (device-local, never
 // in synced state: a phone's battery is its own business). This is only the
 // row: the three-part control, and one line saying what is happening RIGHT NOW.
@@ -10314,12 +10255,9 @@ function calmReasonLine(pref, calm, reason) {
 
 function renderCalmRow() {
   const pref = JellyMotion.pref();
-  const seg = document.getElementById('calm-toggle');
-  // Attribute set — never fires the control's change event, so no feedback loop.
-  if (seg && seg.getAttribute('value') !== pref) seg.setAttribute('value', pref);
-  const line = document.getElementById('calm-reason');
-  const text = calmReasonLine(pref, calmMotion(), calmReason());
-  if (line && line.textContent !== text) line.textContent = text;
+  // aria-checked only — never a click, so no feedback loop.
+  paintSeg(document.getElementById('calm-toggle'), pref);
+  setTextIfChanged(document.getElementById('calm-reason'), calmReasonLine(pref, calmMotion(), calmReason()));
 }
 
 // Called from the Calm motion segmented control: 'auto' | 'on' | 'off'.
@@ -10746,7 +10684,7 @@ function fieldFocused() {
   // exactly like a native field; missing this would let a deploy's auto-reload
   // eat a score being typed.
   // It is an ALLOWLIST on purpose. Every Jelly component delegates focus, so
-  // on Android/desktop Chrome a plain tap on a card header (jelly-collapsible),
+  // on Android/desktop Chrome a plain tap on a Jelly host (a jelly-tabs header),
   // a jelly-button or a chip leaves THAT host focused — and the old
   // `startsWith('JELLY-')` test counted it as typing, which froze live updates
   // on that phone until something else took focus (verified 2026-10-26).
@@ -10823,57 +10761,10 @@ function doReload() {
   }
 }
 
-// What tapping a refresh banner does. The auto-reload waits on reloadBlocked()
-// (an unsent chat message, a score being typed, an unconfirmed write, a running
-// lap), but the banner's own tap used to call doReload() straight past it — and
-// the banner sat right where the chat composer is. Ask before throwing that
-// work away; a quiet page just reloads.
-// Two details make the check real: a tap on the banner moves focus off the
-// composer (chatComposerBusy only counts a FOCUSED composer), so the state is
-// sampled at pointerdown, before focus moves; and mousedown is cancelled so
-// that backing out of the question leaves the composer focused — and the draft
-// still protected from the auto-reload — instead of quietly un-guarding it.
-function wireReloadBanner(bar) {
-  let heldAtPress = false;
-  bar.addEventListener('pointerdown', () => { heldAtPress = reloadBlocked(); });
-  bar.addEventListener('mousedown', (e) => e.preventDefault());
-  bar.addEventListener('click', () => {
-    const held = heldAtPress || reloadBlocked();
-    heldAtPress = false;
-    if (held && !confirm('You have something unfinished here (an unsent message, a score being typed, or a running timer). Refresh anyway?')) return;
-    doReload();
-  });
-}
-
-function showUpdateBanner() {
-  if (document.getElementById('update-banner')) return;
-  document.body.classList.add('has-update-banner'); // reserves footer room so the fixed bar never hides the last card
-  // Jelly path: an info alert with a Refresh button (whole banner stays
-  // tappable, like the old pill). This is auto-reload safety UI, so it must
-  // never depend on the module having loaded — legacy pill as fallback.
-  if (customElements.get('jelly-alert') && customElements.get('jelly-button')) {
-    const bar = document.createElement('jelly-alert');
-    bar.id = 'update-banner';
-    bar.className = 'update-banner-alert';
-    bar.setAttribute('tone', 'info');
-    const text = document.createElement('span');
-    text.textContent = 'New version available — ';
-    const btn = document.createElement('jelly-button');
-    btn.setAttribute('size', 'small');
-    btn.textContent = 'Refresh';
-    bar.append(text, btn);
-    wireReloadBanner(bar);
-    document.body.appendChild(bar);
-    return;
-  }
-  const bar = document.createElement('button');
-  bar.id = 'update-banner';
-  bar.className = 'update-banner';
-  bar.type = 'button';
-  bar.textContent = 'New version available — tap to refresh';
-  wireReloadBanner(bar);
-  document.body.appendChild(bar);
-}
+// (The "new version" bar and the "can't connect" pill are the header's status pill
+// now — renderSyncPill / wirePill: its tap asks before a reload throws away
+// unsent work, sampling reloadBlocked() at pointerdown because the tap itself
+// blurs a chat composer.)
 
 // Work that only exists on THIS page and would vanish in a reload. The RTDB
 // web SDK keeps its offline write queue in memory only, so a reload while a
@@ -10904,38 +10795,8 @@ function reloadWhenSafe() {
 function onNewVersion() {
   if (newVersionSeen) return; // a reload is already scheduled/pending
   newVersionSeen = true;
-  showUpdateBanner();
+  renderSyncPill();
   reloadWhenSafe();
-}
-
-// ── Idle auto-collapse ───────────────────────────────────────────
-// After a few minutes of no interaction, collapse the expandable cards so a
-// returning viewer sees a compact page. Never collapses while an editor is
-// mid-entry. Device-local; a manual expand sticks until the next idle stretch.
-let idleTimer = null;
-const IDLE_COLLAPSE_MS = 5 * 60 * 1000;
-
-function collapseCardsForIdle() {
-  if (editorMidEntry()) { resetIdleTimer(); return; } // don't yank a card mid-entry
-  // jelly-collapsible animates its own collapse (and skips it under reduced
-  // motion). toggle(false) when upgraded so the accordion hears the change;
-  // plain attribute removal as the pre-upgrade fallback.
-  document.querySelectorAll('.collapsible-card[open]').forEach((d) => {
-    if (typeof d.toggle === 'function') d.toggle(false);
-    else d.removeAttribute('open');
-  });
-}
-
-function resetIdleTimer() {
-  if (idleTimer) clearTimeout(idleTimer);
-  idleTimer = setTimeout(collapseCardsForIdle, IDLE_COLLAPSE_MS);
-}
-
-function startIdleCollapse() {
-  ['pointerdown', 'keydown', 'scroll', 'touchstart'].forEach((ev) =>
-    document.addEventListener(ev, resetIdleTimer, { passive: true }));
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) resetIdleTimer(); });
-  resetIdleTimer();
 }
 
 // ── Init ─────────────────────────────────────────────────────────
@@ -10989,6 +10850,7 @@ const shell = {
   applying: false, // shellApply is painting a snapshot: nothing may reconcile mid-way
   bootSheet: null,
   wired: false,
+  roof: false,     // a blue-roof takeover is up (the status bar follows it)
 };
 
 function shellTabOk(t) { return SHELL_TABS.includes(t); }
@@ -11225,6 +11087,7 @@ function shellPaint() {
   });
   const takeover = shellTakeoverOpen();
   document.body.classList.toggle('takeover-open', takeover);
+  if (shell.roof !== roofUp()) { shell.roof = roofUp(); applyChromeColor(); } // the status bar follows the roof
   // Everything behind a takeover is unreachable for Tab and screen readers.
   if (app && 'inert' in app && !shell.sheets.length) app.inert = takeover;
   if (changed) {
@@ -11344,16 +11207,41 @@ function shellGameBackLabel(g) {
 // down, focus is trapped while open and returns to the opener. `schedule` is
 // the older #schedule-overlay, which keeps its own markup and motion and only
 // reports here, so Back closes it too.
+// The three jelly-drawers that remain (Alerts, Change history, Who can sign in)
+// ride the same stack: the drawer keeps its own backdrop, focus and scroll lock;
+// the shell only OPENS and CLOSES it and files the history entry, so phone Back
+// closes it instead of popping the tab beneath. Their own ✕ / backdrop / Escape
+// report back through the `close` event (wireShell).
+const SHELL_DRAWERS = { alerts: 'alerts-overlay', history: 'history-overlay', members: 'members-overlay' };
+
 function shellSheetEl(id) {
-  return id === 'schedule' ? null : document.getElementById('sheet-' + id);
+  if (id === 'schedule') return null;
+  return document.getElementById(SHELL_DRAWERS[id] || 'sheet-' + id);
+}
+
+// What a deep link or a Forward may open: the director-only drawers need a director.
+function shellSheetAllowed(id) {
+  if (id === 'members' || id === 'history' || id === 'counselors') return canEdit();
+  if (id === 'verse' || id === 'cleanup') return canEdit() || !cardHiddenFromViewers(id);
+  return true;
 }
 
 function shellSheetOpen(id, opener) {
   if (shell.sheets.includes(id)) return;
+  if (!shellSheetAllowed(id)) return;
+  if (SHELL_DRAWERS[id]) {
+    const d = shellSheetEl(id);
+    if (!d) return;
+    d.setAttribute('open', '');
+    shell.sheets.push(id);
+    shellReconcile();
+    return;
+  }
   if (id !== 'schedule') {
     const el = shellSheetEl(id);
     if (!el) return;
     el.hidden = false;
+    shellSheetFill(id);
     shell.opener = opener || document.activeElement || null;
     const sheet = el.querySelector('.sheet');
     if (sheet && typeof JellyMotion !== 'undefined') {
@@ -11372,6 +11260,12 @@ function shellSheetClose(id) {
   const i = shell.sheets.indexOf(id);
   if (i < 0) return;
   shell.sheets.splice(i, 1);
+  if (SHELL_DRAWERS[id]) {
+    const d = shellSheetEl(id);
+    if (d && d.hasAttribute('open')) d.removeAttribute('open'); // its own close event lands here again and finds nothing to do
+    shellReconcile();
+    return;
+  }
   if (id !== 'schedule') {
     const el = shellSheetEl(id);
     if (el) {
@@ -11416,9 +11310,10 @@ function wireSheetDrag(overlay) {
 }
 
 // ── dirty render ────────────────────────────────────────────────────
-// What each tab renders. The Competitions / Standings / Cleanup / Verse /
-// Bonus cards still sit in Now's markup, so they render with it until they
-// move into the Games and More panels (then these lists move with them).
+// What each tab renders. Now: the banner, the live strip, messages. Games: today's
+// Competitions day tabs and the directors' quick points (the standings table is in
+// SHELL_ALWAYS below). More: its volatile lines. Memory verse and Meal cleanup are
+// reading SHEETS opened from More: they render while open (renderShellSheets).
 const SHELL_PANELS = {
   now: {
     render() {
@@ -11427,12 +11322,7 @@ const SHELL_PANELS = {
       renderAnnouncements();
       renderNowBanner();
       renderLiveHome();
-      renderDayTabs(); // includes every day panel's game list
       renderMyElectives();
-      renderMemoryVerse();
-      renderMealCleanup();
-      renderBonuses();
-      renderFooter();
     },
     // What changes with the clock alone (the 30 s tick).
     tick() {
@@ -11443,12 +11333,21 @@ const SHELL_PANELS = {
       renderAnnouncements();
     },
   },
-  games: { render() {}, tick() {} },
+  games: {
+    render() {
+      renderDayTabs(); // includes every day panel's game list
+      renderBonuses();
+    },
+    tick() {},
+  },
   chat: {
     render() { if (typeof renderChatView === 'function') renderChatView(); },
     tick() {},
   },
-  more: { render() {}, tick() {} },
+  more: {
+    render() { renderMore(); },
+    tick() { renderMoreFoot(); },
+  },
 };
 
 // Renderers that run on every pass whatever tab is showing: they have side
@@ -11483,6 +11382,7 @@ function shellTick() {
   const p = SHELL_PANELS[activeTab()];
   if (p) p.tick();
   SHELL_TABS.forEach((t) => { if (t !== activeTab()) shell.dirty[t] = true; });
+  renderHeader();
   renderTabBadges();
 }
 
@@ -11499,6 +11399,362 @@ function renderTabBadges() {
     const label = n ? 'Chat, ' + n + ' unread' : 'Chat';
     if (btn && btn.getAttribute('aria-label') !== label) btn.setAttribute('aria-label', label);
   }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// THE FRAME'S PIECES — team marks, the header, the status pill, the Your team
+// sheet, and More (redesign §2.2, §7, §8.4, §13.1)
+// ════════════════════════════════════════════════════════════════════
+// Roots are split by VOLATILITY: the identity block changes only with identity /
+// team / role / camp / the day, the pill flips with the connection, and More's
+// volatile lines (the alerts verdict, the calm verdict, the account line, the
+// footer) are text nodes of their own. Every writer below patches in place or
+// writes through setHtmlIfChanged, so a connection flicker never re-creates the
+// shield and a push-state change never rebuilds a segmented control under a finger.
+
+// ── teamMark: the ONE helper for how a team looks (§8.4) ───────────
+// A shield image when the camp ships one (junior), else a flag mark (senior), else
+// an emoji tile. The shape of a flag comes from the team's ORDER so two teams stay
+// apart under colour-blindness; its colour from CAMP.teamFlag. Callers that paint
+// a long-lived spot (header, sheet, More row) use paintTeamMark, which writes only
+// when the mark would change, so the <img> is never re-created by a re-render.
+const TEAM_FLAG_SHAPES = ['plain', 'swallow', 'stripe', 'chevron'];
+const TEAM_FLAG_COLORS = ['red', 'blue', 'green', 'gold'];
+
+function teamMarkSpec(id) {
+  const src = teamCrestSrc(id);
+  if (src) return { kind: 'shield', src };
+  const color = CAMP.teamFlag && CAMP.teamFlag[id];
+  if (TEAM_FLAG_COLORS.includes(color)) {
+    const i = Math.max(0, teamIds().indexOf(id));
+    return { kind: 'flag', color, shape: TEAM_FLAG_SHAPES[i % TEAM_FLAG_SHAPES.length] };
+  }
+  // The accent goes into a style attribute: only a plain hex ever does.
+  const accent = teamAccent(id);
+  return { kind: 'tile', emoji: teamEmoji(id), accent: /^#[0-9a-fA-F]{3,8}$/.test(accent || '') ? accent : '' };
+}
+
+// opts.size: px width (default 34); opts.label: spoken name ('' = decorative,
+// the name is printed beside it).
+function teamMarkHtml(id, opts) {
+  const size = Math.max(12, Math.min(160, Number(opts && opts.size) || 34));
+  const label = (opts && opts.label) || '';
+  const a11y = label ? `role="img" aria-label="${esc(label)}"` : 'aria-hidden="true"';
+  const spec = teamMarkSpec(id);
+  const tm = `--tm:${size}px`;
+  if (spec.kind === 'shield') {
+    return `<img class="tm tm-shield" data-team="${esc(id)}" src="${esc(spec.src)}" alt="${esc(label)}" style="${tm}" width="${size}" height="${Math.round(size * 667 / 480)}" decoding="async">`;
+  }
+  if (spec.kind === 'flag') {
+    return `<svg class="tm flag" data-team="${esc(id)}" data-flag="${spec.color}" style="${tm}" viewBox="0 0 32 32" ${a11y}><use href="#flag-${spec.shape}"/></svg>`;
+  }
+  return `<span class="tm tm-tile" data-team="${esc(id)}" style="${tm}${spec.accent ? ';--tm-accent:' + spec.accent : ''}" ${a11y}>${spec.emoji}</span>`;
+}
+
+function paintTeamMark(el, id, opts) {
+  if (!el) return false;
+  return setHtmlIfChanged(el, teamMarkHtml(id, opts));
+}
+
+// textContent only when it differs: a text node patched in place never replays
+// anything and never drops a selection.
+function setTextIfChanged(el, text) {
+  if (el && el.textContent !== text) el.textContent = text;
+}
+function setHiddenIfChanged(el, hidden) {
+  if (el && el.hidden !== hidden) el.hidden = hidden;
+}
+
+// ── the header (§2.2) ──────────────────────────────────────────────
+function frameRoleWord() { return memberRole === 'editor' ? 'Director' : 'Counselor'; }
+
+// A person's own name as the app knows it: the member record's, else the
+// "which one are you?" pick. '' when neither is set (never a guess from the email).
+function frameMyName() {
+  const n = memberName && String(memberName).trim();
+  if (n) return n;
+  return state.identity ? canonicalCounselorName(state.identity) : '';
+}
+
+function followedTeam() {
+  const tid = state.followTeam;
+  return tid ? (state.teams || NO_ITEMS).find((t) => t.id === tid) || null : null;
+}
+
+function headerModel() {
+  const team = followedTeam();
+  const me = frameMyName();
+  const role = frameRoleWord();
+  const day = dayLabel(campNow().dow);
+  const camp = CAMP.label || '';
+  const tail = [camp, day].filter(Boolean);
+  return {
+    teamId: team ? team.id : null,
+    name: team ? team.name : (me || role),
+    sub: (team ? [me].concat(tail) : [me ? role : ''].concat(tail)).filter(Boolean).join(' · '),
+    who: [me, role].filter(Boolean).join(' · '),
+  };
+}
+
+const HDR_CAMP_MARK = '<svg class="ico"><use href="#i-sun"/></svg>';
+
+function renderHeader() {
+  const idBtn = document.getElementById('hdr-id');
+  if (!idBtn) return;
+  const m = headerModel();
+  const mark = document.getElementById('hdr-mark');
+  if (mark) {
+    if (m.teamId) {
+      if (mark.classList.contains('hdr-campmark')) mark.classList.remove('hdr-campmark');
+      paintTeamMark(mark, m.teamId, { size: 34 });
+    } else {
+      if (!mark.classList.contains('hdr-campmark')) mark.classList.add('hdr-campmark');
+      setHtmlIfChanged(mark, HDR_CAMP_MARK);
+    }
+  }
+  setTextIfChanged(document.getElementById('hdr-name'), m.name);
+  setTextIfChanged(document.getElementById('hdr-sub'), m.sub);
+  setTextIfChanged(document.getElementById('hdr-who'), m.who);
+  renderSyncPill();
+}
+
+// ── the status pill (§2.2) ─────────────────────────────────────────
+// Appears ONLY when something is wrong, and takes the identity line's place. It is
+// its own node, patched in place. This is the one home of what used to be the
+// bottom update bar and the "can't reach sign-in" pill: both still ask before a
+// reload throws away unsent work (wirePill: the same pointerdown / confirm rule).
+let fbOfflineSince = 0; // when the connection last dropped (the wait → offline step)
+const PILL_WAIT_MS = 10 * 1000;
+
+function syncPillModel() {
+  if (sdkLoadFailed) return { tone: 'error', text: 'Can’t connect · tap', act: 'reload' };
+  if (newVersionSeen) return { tone: 'update', text: 'Update ready · tap', act: 'reload' };
+  if (syncDenied) return { tone: 'error', text: 'Sync blocked', act: 'say', say: 'Your access changed, so this phone stopped syncing. If that is a surprise, ask a director.' };
+  if (syncEnabled() && fbConnKnown && !fbConnected) {
+    const waiting = (typeof navigator === 'undefined' || navigator.onLine !== false) && fbOfflineSince && Date.now() - fbOfflineSince < PILL_WAIT_MS;
+    if (waiting) return { tone: 'wait', text: 'Reconnecting…', act: 'say', say: 'Reconnecting to the camp server.' };
+    return { tone: 'offline', text: 'Offline · saved on this phone', act: 'say', say: 'You are offline. What you save stays on this phone and syncs when the connection is back.' };
+  }
+  return null;
+}
+
+function renderSyncPill() {
+  const pill = document.getElementById('hdr-pill');
+  if (!pill) return;
+  const m = syncPillModel();
+  if (!m) { setHiddenIfChanged(pill, true); return; }
+  if (pill.__tone !== m.tone) { pill.__tone = m.tone; pill.setAttribute('data-tone', m.tone); }
+  pill.__go = m.act;
+  pill.__say = m.say || '';
+  setTextIfChanged(document.getElementById('hdr-pill-text'), m.text);
+  setHiddenIfChanged(pill, false);
+}
+
+// The connection just dropped or came back: the Reconnecting → Offline step is a
+// one-shot timer, not the 30 s tick.
+function noteConnectionChange(connected) {
+  if (connected) { fbOfflineSince = 0; return; }
+  if (!fbOfflineSince) fbOfflineSince = Date.now();
+  setTimeout(renderSyncPill, PILL_WAIT_MS + 100);
+}
+
+function wirePill(pill) {
+  pill = pill || document.getElementById('hdr-pill'); // (a test hands in its own element)
+  if (!pill) return;
+  // Sampled at pointerdown, before the tap moves focus off a chat composer or a
+  // score field (reloadBlocked / chatComposerBusy only count a FOCUSED field).
+  let heldAtPress = false;
+  pill.addEventListener('pointerdown', () => { heldAtPress = reloadBlocked(); });
+  pill.addEventListener('mousedown', (e) => e.preventDefault());
+  pill.addEventListener('click', () => {
+    const held = heldAtPress || reloadBlocked();
+    heldAtPress = false;
+    if (pill.__go !== 'reload') { if (pill.__say) showToast(pill.__say); return; }
+    if (held && !confirm('You have something unfinished here (an unsent message, a score being typed, or a running timer). Refresh anyway?')) return;
+    doReload();
+  });
+}
+
+// ── the Your team sheet (§2.2) ─────────────────────────────────────
+// Who is on the team, what is next for it, and the "Not you?" door. Never points:
+// a counselor's phone must not learn a standing from here.
+function renderTeamSheet() {
+  const nameEl = document.getElementById('ts-name');
+  if (!nameEl) return;
+  const team = followedTeam();
+  const markEl = document.getElementById('ts-mark');
+  const subEl = document.getElementById('ts-sub');
+  const factsEl = document.getElementById('ts-facts');
+  const actionsEl = document.getElementById('ts-actions');
+  const me = frameMyName();
+  if (!team) {
+    setHiddenIfChanged(markEl, true);
+    setTextIfChanged(nameEl, 'No team yet');
+    setTextIfChanged(subEl, 'Pick the team you are with and its next games show up here.');
+    setHtmlIfChanged(factsEl, '');
+    if (setHtmlIfChanged(actionsEl, '<button type="button" class="btn btn-gold btn-block" data-ts="team">Pick a team</button>')) wireTeamSheetActions(actionsEl);
+    return;
+  }
+  setHiddenIfChanged(markEl, false);
+  paintTeamMark(markEl, team.id, { size: 52 });
+  setTextIfChanged(nameEl, team.name);
+  const staff = counselorName(team.id);
+  setTextIfChanged(subEl, staff ? 'Counselors: ' + staff : '');
+  const next = findNextMatchupFor(team.id);
+  const cleanup = findNextCleanupFor(team.id);
+  const facts = [];
+  if (next) facts.push(`<div class="ts-fact"><span class="ts-fact-label">Up next</span><span class="ts-fact-text">vs ${esc(teamName(next.opponentId))} in ${esc(next.game.name)}</span></div>`);
+  if (cleanup) facts.push(`<div class="ts-fact"><span class="ts-fact-label">Next meal cleanup</span><span class="ts-fact-text">${esc(dayLabel(cleanup.day))} ${esc(cleanup.meal)}</span></div>`);
+  setHtmlIfChanged(factsEl, facts.join(''));
+  const acts = [];
+  if (CAMP.features.electives) {
+    acts.push(me
+      ? `<p class="ts-you">You’re ${esc(me)}</p><button type="button" class="btn btn-block" data-ts="identity">Not you? Change</button>`
+      : '<button type="button" class="btn btn-block" data-ts="identity">Tell us who you are</button>');
+  }
+  acts.push(memberTeamId
+    ? '<p class="ts-note">Your team is set by your account.</p>'
+    : '<button type="button" class="btn btn-block" data-ts="team">Change team</button>');
+  if (setHtmlIfChanged(actionsEl, acts.join(''))) wireTeamSheetActions(actionsEl);
+}
+
+function wireTeamSheetActions(root) {
+  root.querySelectorAll('[data-ts]').forEach((b) => b.addEventListener('click', () => {
+    const which = b.dataset.ts;
+    shellSheetClose('team'); // the picker is a dialog of its own: one thing over the page at a time
+    if (which === 'identity') openIdentityPicker(); else openTeamPicker();
+  }));
+}
+
+function openTeamSheet(opener) {
+  renderTeamSheet();
+  shellSheetOpen('team', opener);
+}
+
+// ── More (§7) ──────────────────────────────────────────────────────
+// Static markup; this patches only the lines that can change.
+function alertsStateLine() {
+  const st = typeof pushStatus === 'function' ? pushStatus() : 'dormant';
+  if (st === 'on') return 'On · reaches you even with Camp closed';
+  if (st === 'reconnect') return 'Tap to reconnect · closed-app alerts are paused';
+  return state.notify ? 'Only while Camp is open' : 'Off';
+}
+
+function renderAlertsState() {
+  setTextIfChanged(document.getElementById('alerts-state'), alertsStateLine());
+}
+
+// A segmented control of plain radio buttons: the chosen one is its aria-checked,
+// and the one tab stop (roving tabindex) rides on it.
+function paintSeg(seg, value) {
+  if (!seg) return;
+  seg.querySelectorAll('.seg-btn').forEach((btn) => {
+    const on = btn.dataset.value === value;
+    if (btn.getAttribute('aria-checked') !== String(on)) btn.setAttribute('aria-checked', String(on));
+    const ti = on ? '0' : '-1';
+    if (btn.getAttribute('tabindex') !== ti) btn.setAttribute('tabindex', ti);
+  });
+}
+
+function wireSegs() {
+  document.querySelectorAll('#tab-more [data-seg]').forEach((seg) => {
+    const choose = (btn) => {
+      const v = btn.dataset.value;
+      const kind = seg.dataset.seg;
+      if (kind === 'theme') setTheme(v);
+      else if (kind === 'calm') setCalmPref(v);
+      else if (kind === 'camp') { if (v !== CAMP.id) switchCamp(v); }
+    };
+    seg.addEventListener('click', (e) => {
+      const btn = e.target.closest && e.target.closest('.seg-btn');
+      if (btn) choose(btn);
+    });
+    // Radio-group keys: the arrows move the choice (and the focus with it).
+    seg.addEventListener('keydown', (e) => {
+      const dir = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+      if (!dir) return;
+      const btns = [...seg.querySelectorAll('.seg-btn')];
+      const i = btns.findIndex((b) => b === document.activeElement || b.getAttribute('aria-checked') === 'true');
+      const next = btns[(Math.max(0, i) + dir + btns.length) % btns.length];
+      if (!next) return;
+      e.preventDefault();
+      choose(next);
+      next.focus();
+    });
+  });
+}
+
+function renderMoreTeamRow() {
+  const row = document.querySelector('#tab-more [data-more-row="team"]');
+  if (!row) return;
+  const team = followedTeam();
+  // A director with no team has no "your team" to show.
+  setHiddenIfChanged(row, !team && memberRole === 'editor');
+  if (row.hidden) return;
+  const me = frameMyName();
+  const mark = document.getElementById('more-team-mark');
+  if (team) { setHiddenIfChanged(mark, false); paintTeamMark(mark, team.id, { size: 30 }); } else setHiddenIfChanged(mark, true);
+  setTextIfChanged(document.getElementById('more-team-name'), team ? ' · ' + team.name : '');
+  setTextIfChanged(document.getElementById('more-team-you'), team ? (me ? 'You’re ' + me : '') : 'Pick the team you are with');
+  const link = row.querySelector('[data-more-team-change]');
+  if (link) {
+    const label = CAMP.features.electives ? (me ? 'Not you? Change' : 'Tell us who you are') : 'Not you? Sign out';
+    setTextIfChanged(link, label);
+    setHiddenIfChanged(link, !team || (!CAMP.features.electives && !me));
+  }
+}
+
+function renderMoreFoot() {
+  const el = document.getElementById('more-foot');
+  if (!el) return;
+  const stamp = formatEasternStamp(state.meta && state.meta.lastDataChangeAt);
+  const bits = ['v' + APP_VERSION, stamp ? 'data updated ' + stamp : 'no scores yet'];
+  if (syncEnabled() && presenceCount > 0) bits.push(presenceCount + (presenceCount === 1 ? ' phone has' : ' phones have') + ' Camp open');
+  setTextIfChanged(el, bits.join(' · '));
+  // "Code last updated" (CODE_UPDATED_AT, bumped by hand at every deploy) rides as the line's tooltip.
+  const built = 'Code last updated: ' + (formatEasternStamp(CODE_UPDATED_AT) || 'unknown');
+  if (el.title !== built) el.title = built;
+}
+
+function renderMore() {
+  const editor = memberRole === 'editor';
+  setHiddenIfChanged(document.getElementById('more-director'), !editor);
+  renderAlertsState();
+  renderCalmRow();
+  paintSeg(document.getElementById('theme-toggle'), state.theme === 'dark' ? 'dark' : state.theme === 'light' ? 'light' : 'auto');
+  renderMoreTeamRow();
+  updateAccountRow();
+  renderMoreFoot();
+}
+
+function wireMore() {
+  const on = (sel, fn) => { const el = document.querySelector(sel); if (el) el.addEventListener('click', fn); };
+  on('#counselors-row', (e) => shellSheetOpen('counselors', e.currentTarget));
+  on('#schedule-row', () => openSchedule());
+  on('#verse-row', (e) => shellSheetOpen('verse', e.currentTarget));
+  on('#cleanup-row', (e) => shellSheetOpen('cleanup', e.currentTarget));
+  on('[data-more-team-open]', (e) => openTeamSheet(e.currentTarget));
+  on('[data-more-team-change]', () => { if (CAMP.features.electives) openIdentityPicker(); else signOutAndClear(); });
+  const hdrId = document.getElementById('hdr-id');
+  if (hdrId) hdrId.addEventListener('click', () => openTeamSheet(hdrId));
+  // The three drawers close by their own ✕ / backdrop / Escape: they report back
+  // here so the history entry goes with them.
+  Object.keys(SHELL_DRAWERS).forEach((id) => {
+    const d = document.getElementById(SHELL_DRAWERS[id]);
+    if (d) d.addEventListener('close', () => shellSheetClose(id));
+  });
+  wireSegs();
+  wirePill();
+}
+
+// What fills a sheet when it opens, and on every pass while it stays open.
+function shellSheetFill(id) {
+  if (id === 'team') renderTeamSheet();
+  else if (id === 'verse') renderMemoryVerse();
+  else if (id === 'cleanup') renderMealCleanup();
+}
+function renderShellSheets() {
+  shell.sheets.forEach((id) => { if (id !== 'schedule') shellSheetFill(id); });
 }
 
 // ── keyboard (§13.6) ────────────────────────────────────────────────
@@ -11721,8 +11977,10 @@ function renderAll() {
   // then render the visible tab (the others are marked dirty and catch up when
   // shown) and the open takeover.
   const rootChanged = shellSync();
+  renderHeader();
   renderTabBadges();
   renderShellTabs();
+  renderShellSheets();
   renderGameView();
   if (inBuilder && typeof renderSettings === 'function') renderSettings();
   if (typeof renderChatStatus === 'function') renderChatStatus();
@@ -11733,7 +11991,7 @@ function renderAll() {
   paintBoardClocks();
 }
 
-// ── Week builder (Settings → Set up the week) ────────────────────
+// ── Week builder (More → Set up the week) ────────────────────
 // A full-page editor-only view over the main page: body.builder-open hides
 // every other main-wrap section via CSS. settings.js renders the content
 // (renderSettings) and signals "back" by setting state.ui.view = 'home'
@@ -11748,7 +12006,6 @@ function builderOpen() {
 
 function openBuilder(tab) {
   if (!canEdit()) return;
-  closeSettings(); // hand off from the settings sheet
   state.ui.gameId = null; // one takeover at a time
   state.ui.view = 'settings';
   if (tab) state.ui.settingsTab = tab;
@@ -11769,20 +12026,19 @@ function refreshOpenSchedule() {
 function init() {
   applyTheme();
   applySoundIcon();
-  document.getElementById('theme-toggle').addEventListener('change', (e) => {
-    setTheme((e.detail && e.detail.value) || e.target.getAttribute('value'));
-  });
-  document.getElementById('calm-toggle').addEventListener('change', (e) => {
-    setCalmPref((e.detail && e.detail.value) || e.target.getAttribute('value'));
-  });
+  // (Theme, Calm motion and Camp are plain radio buttons in More: wireSegs.)
   // The verdict can change without a tap (battery saver on, the phone's own
   // setting flipped): keep the line under the control telling the truth.
   window.addEventListener('jelly-motion-change', renderCalmRow);
   renderCalmRow();
   document.getElementById('sound-toggle').addEventListener('change', toggleSound);
-  // One "Hide from viewers" switch per card (editor-only; hidden by CSS for
-  // view-only). The switches are static markup, so wiring them once here is
-  // enough — applyCardVisibility keeps their checked state in step.
+  // The Alerts sheet's "While Camp is open" pop-ups switch is the same state as
+  // the Notify me button on Now (toggleNotify keeps both in step).
+  const notifySw = document.getElementById('notify-toggle');
+  if (notifySw) notifySw.addEventListener('change', () => { if (!!notifySw.hasAttribute('checked') !== !!state.notify) return; toggleNotify(); });
+  // One switch per section in What counselors see (More → Director; editor-only,
+  // hidden by CSS for view-only). The switches are static markup, so wiring them
+  // once here is enough — applyCardVisibility keeps their checked state in step.
   document.querySelectorAll('.hide-card-toggle[data-hide-card]').forEach((sw) => {
     sw.addEventListener('change', () => toggleCardHidden(sw.dataset.hideCard));
   });
@@ -11806,6 +12062,7 @@ function init() {
   if (typeof wireChat === 'function') wireChat();
   if (typeof wirePush === 'function') wirePush();
   wireShell();
+  wireMore();
 
   document.getElementById('notify-toggle-btn').addEventListener('click', toggleNotify);
   updateNotifyButton();
@@ -11826,7 +12083,6 @@ function init() {
   updateSyncIndicator();
   renderPresence();
 
-  startIdleCollapse();
   startUpdatePolling();
   startWeatherUpdates();
   // Notification-only service worker (no fetch handler — see sw.js header).
@@ -11858,22 +12114,21 @@ function init() {
 }
 
 function updateAccountRow() {
+  // The Account row's line in More: who is signed in, and as what.
   const label = document.getElementById('account-label');
-  if (!label) return;
-  const who = identityLabel(authUser); // email or phone number
-  const camp = hasBothCamps() ? ' · ' + CAMP.label : '';
-  label.textContent = (canEdit() ? '✏️ Editor' : tabReadOnly() ? '👀 Editor (view-only tab)' : '👀 Viewer') + (who ? ' — ' + who : '') + camp;
+  if (label) {
+    const who = identityLabel(authUser); // email or phone number
+    const role = canEdit() ? 'Director' : tabReadOnly() ? 'Director (view-only tab)' : 'Counselor';
+    const text = (who ? who + ' · ' : '') + role;
+    setTextIfChanged(label, text);
+  }
   // The camp switcher only exists for accounts on both camps' lists. The
   // control just reflects the active camp — the page reloads on change, so
   // it never has to track anything.
-  const row = document.getElementById('camp-row');
-  if (row) {
-    row.hidden = !hasBothCamps();
-    const seg = document.getElementById('camp-switch');
-    if (seg) {
-      seg.setAttribute('value', CAMP.id);
-      try { seg.value = CAMP.id; } catch (e) { /* attribute is enough */ }
-    }
+  const group = document.getElementById('more-camps');
+  if (group) {
+    setHiddenIfChanged(group, !hasBothCamps());
+    paintSeg(document.getElementById('camp-switch'), CAMP.id);
   }
 }
 
@@ -12053,34 +12308,18 @@ document.addEventListener('pointerup', () => {
 
 document.addEventListener('pointercancel', () => { joyPressAbort(); }, { passive: true });
 
-// Card contents rise in when a home card OPENS (styles.css, .card-opening).
-// The class is transient on purpose: a CSS animation restarts whenever an
-// element goes from display:none back to shown, so an always-on rule replayed
-// the rise on every open card each time the builder or chat takeover closed.
-// Only the card's own toggle counts — a <details> inside it firing `toggle`
-// must not re-run the whole card.
-document.addEventListener('toggle', (e) => {
-  const c = e.target;
-  if (!c || !c.matches || !c.matches('jelly-collapsible.collapsible-card') || !c.hasAttribute('open')) return;
-  c.classList.add('card-opening');
-  clearTimeout(c.__openingTimer);
-  c.__openingTimer = setTimeout(() => c.classList.remove('card-opening'), 700);
-}, true);
-
-// Sparkle on every real button push (not on text fields). Card headers are
-// jelly-collapsible shadow buttons — the host is the click target out here,
-// so it's included for the sparkle (but deliberately NOT in JOY_TAPPABLE:
-// press-scaling a whole card looks heavy-handed).
+// Sparkle only where a press MEANS something (redesign §9.7): a score, a save, an
+// award, a medal pick — never on tabs, back buttons, rows, switches or links, which
+// are navigation and settings. A positive list, so a new control is quiet until it
+// is named here (or carries data-joy), and the chrome around the work stays quiet
+// wherever the work happens to sit.
+const JOY_SPARKLE = 'jelly-button, jelly-chip, .pts-btn, .btn-gold, [data-joy]';
+const JOY_QUIET = '#tabbar, #app-header, .more, .tk-head, jelly-drawer, #chat-view, .lock-screen';
 document.addEventListener('click', (e) => {
-  const t = e.target.closest && e.target.closest(JOY_TAPPABLE + ', jelly-collapsible');
-  if (!t) return;
+  const t = e.target.closest && e.target.closest(JOY_SPARKLE);
+  if (!t || t.closest(JOY_QUIET)) return;
   joyBurst(e.clientX, e.clientY, false);
 }, { passive: true });
-
-// Panel expand/collapse animation now lives inside jelly-collapsible itself
-// (springy grid-rows height, bouncy chevron, content pop) — the joy layer
-// only adds the tap sparkle on the header (see the click listener above,
-// which includes jelly-collapsible in its sparkle targets).
 
 // ── Auth gate ────────────────────────────────────────────────────
 // See the "Sign-in & roles" block at the top of this file for the model.
@@ -12094,24 +12333,10 @@ function applyRoleClass() {
   document.documentElement.classList.toggle('view-only', !canEdit());
 }
 
-// Every collapsible card starts collapsed on each load — a tidy, quick-to-scan
-// home screen for everyone, editors included. Manual expands aren't remembered
-// across reloads, and the idle timer re-collapses everything after a few
-// minutes of no interaction.
-// Attribute-only on purpose: setting the .open PROPERTY before the jelly
-// module upgrades the element would plant an own property that shadows the
-// class accessor forever (the classic pre-upgrade gotcha).
-function applyCardDefaults() {
-  document.querySelectorAll('.collapsible-card').forEach((d) => {
-    d.removeAttribute('open');
-  });
-}
-
 function startApp() {
   document.documentElement.classList.remove('locked');
   document.documentElement.classList.toggle('camp-senior', CAMP.id === 'senior');
   applyRoleClass();
-  applyCardDefaults();
   // Seed the "up next" baseline from what this phone already holds, so the
   // first LIVE change after a quiet boot still alerts. detectMatchupChanges used
   // to seed itself on its first call — which was the first snapshot's — and
@@ -12281,8 +12506,8 @@ function onSdkLoadFailed(msg) {
   } else {
     showAuthScreen('signin', { error: msg || 'Couldn\u2019t reach the sign-in service \u2014 check your connection and reload.' });
   }
-  updateSyncIndicator();
-  showSdkDownBanner();
+  updateSyncIndicator(); // → renderSyncPill: a returning device gets the header pill
+  if (!appStarted) showSdkDownBanner(); // the lock screen has no header: it keeps a tap-to-reload bar
   // Chat's "Loading…" becomes its real "sync is off" note now that it's final.
   if (typeof onChatSyncStateChanged === 'function') onChatSyncStateChanged();
   // Bounded: SDK_MAX_RETRIES reloads per tab session (reset once the SDK loads,
@@ -12303,17 +12528,18 @@ function onSdkLoadFailed(msg) {
   document.addEventListener('visibilitychange', () => { if (!document.hidden) go(); });
 }
 
+// The sign-in screen (no header behind it) keeps a plain tap-to-reload bar. A
+// plain button on purpose: this is recovery UI for a page whose scripts are
+// failing, so it can't lean on the jelly module having loaded. Nothing unsent can
+// exist here (the app never started), so it reloads without asking.
 function showSdkDownBanner() {
   if (document.getElementById('sdk-banner')) return;
-  document.body.classList.add('has-update-banner');
-  // A plain button on purpose: this is recovery UI for a page whose scripts
-  // are failing, so it can't lean on the jelly module having loaded.
   const bar = document.createElement('button');
   bar.id = 'sdk-banner';
   bar.className = 'update-banner';
   bar.type = 'button';
-  bar.textContent = 'Couldn\u2019t connect \u2014 read-only copy. Tap to reload';
-  wireReloadBanner(bar);
+  bar.textContent = 'Couldn\u2019t connect \u2014 tap to reload';
+  bar.addEventListener('click', doReload);
   document.body.appendChild(bar);
 }
 
@@ -12537,8 +12763,7 @@ function switchCamp(campId) {
   flushPendingPush();
   if (hasUnsyncedWork() &&
       !confirm("A score you saved hasn't reached the server yet. Switching camps now can lose it. Switch anyway?")) {
-    const seg = document.getElementById('camp-switch');
-    if (seg) { seg.setAttribute('value', CAMP.id); seg.value = CAMP.id; } // it already moved — put it back
+    paintSeg(document.getElementById('camp-switch'), CAMP.id); // it already moved — put it back
     return;
   }
   // Storage blocked (private mode, or a locked-down browser): the whole switch

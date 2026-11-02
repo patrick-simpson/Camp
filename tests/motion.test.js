@@ -900,21 +900,18 @@ test('the line under Calm motion says what is happening right now, in plain word
   assert.notOk(/\b(battery API|hysteresis|sampler|prefers-reduced)\b/i.test(all), 'no jargon for a camp counselor');
 });
 
-test('the Calm row never moves under a thumb, and still works as plain text when Jelly never loads', () => {
+test('the Calm row never moves under a thumb, and needs no Jelly to work', () => {
   const CSS = readFixture('../styles.css');
-  const note = /\.settings-row-note\s*\{([^}]*)\}/.exec(CSS);
-  assert.ok(note && /min-height:\s*calc\(3 \* 1\.4em\)/.test(note[1]) && /line-height:\s*1\.4\b/.test(note[1]),
-    'three lines of the note\'s own line-height are always reserved, so a shorter verdict cannot shift the control');
-  // the longest verdicts are the ones that have to fit the reservation: 3 lines at 360 px (a 218 px note);
-  // at 320 px (178 px) the two longest wrap to 4, an accepted 19 px nudge
+  const note = /\.gl-panel-note\s*\{([^}]*)\}/.exec(CSS);
+  assert.ok(note && /min-height:\s*calc\(2 \* 1\.4em\)/.test(note[1]) && /\/1\.4\b/.test(note[1]),
+    'two lines of the note\'s own line-height are always reserved, so a shorter verdict cannot shift the control');
+  // the longest verdicts are the ones that have to fit the reservation: two lines in More's
+  // 358px panel (about 44 characters a line at 14px); a 360px phone is the narrowest we draw
   const longest = Math.max(...[['off', true, 'os'], ['auto', true, 'battery-saver'], ['auto', true, 'battery-low'], ['auto', false, null], ['auto', true, null], ['on', true, 'switch-on'], ['off', false, 'switch-off']].map((a) => calmReasonLine(...a).length));
-  assert.ok(longest <= 90, 'no verdict outgrows the three reserved lines: ' + longest + ' chars');
-  // the degraded-mode fallback styles both segmented controls, with the chosen value marked
-  assert.ok(/html\.jelly-failed :is\(#theme-toggle, #calm-toggle\):not\(:defined\)\s*\{[^}]*display:\s*flex/.test(CSS), 'pill layout for both');
-  assert.ok(/html\.jelly-failed :is\(#theme-toggle, #calm-toggle\):not\(:defined\) > jelly-segment\s*\{[^}]*border-radius:\s*999px/.test(CSS), 'pill segments for both');
-  ['auto', 'on', 'off'].forEach((v) => {
-    assert.ok(CSS.includes('html.jelly-failed #calm-toggle[value="' + v + '"]:not(:defined) > jelly-segment[value="' + v + '"]'), 'the chosen ' + v + ' is marked');
-  });
+  assert.ok(longest <= 190, 'no verdict is absurdly long: ' + longest + ' chars');
+  // the segmented controls are plain radio buttons (More): the chosen value is aria-checked,
+  // which styles.css paints, so there is no module-failed fallback to keep in step
+  assert.ok(/\.seg-btn:is\(\[aria-checked="true"\]/.test(CSS), 'the chosen one is painted from its ARIA state');
 });
 
 test('the Calm motion control writes the switch, repaints the row and survives Auto again', () => {

@@ -43,8 +43,12 @@ test('the home panels that re-render on every snapshot go through the guard', ()
     assert.ok(start > -1, name + ' exists');
     return src.slice(start, src.indexOf('\n}\n', start));
   };
-  ['renderFooter', 'renderFollowCard', 'renderBonuses', 'renderMemoryVerse', 'renderMealCleanup', 'renderNowBanner', 'renderDayTabs']
+  ['renderFollowCard', 'renderBonuses', 'renderMemoryVerse', 'renderMealCleanup', 'renderNowBanner', 'renderDayTabs', 'renderTeamSheet']
     .forEach((fn) => assert.ok(body(fn).includes('setHtmlIfChanged('), fn + ' skips unchanged rebuilds'));
+  // The frame's volatile lines are text nodes patched in place, never rewritten.
+  ['renderHeader', 'renderSyncPill', 'renderMoreFoot', 'renderAlertsState']
+    .forEach((fn) => assert.ok(/setTextIfChanged\(|setHiddenIfChanged\(/.test(body(fn)), fn + ' patches in place'));
+  assert.ok(body('paintTeamMark').includes('setHtmlIfChanged('), 'a team mark is written only when it would change');
   // The progress bar is nudged in place, never re-created, when only the
   // elapsed time moved.
   assert.ok(/bar\.setAttribute\('value'/.test(body('renderNowBanner')));

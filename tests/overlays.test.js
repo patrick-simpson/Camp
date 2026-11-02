@@ -169,112 +169,123 @@ function fakeBanner() {
   return { on, addEventListener: (type, fn) => { on[type] = fn; } };
 }
 
-test('tapping the update banner asks before throwing unfinished work away', () => {
+test('tapping the "Update ready" pill asks before throwing unfinished work away', () => {
   const realConfirm = confirm;
   let asked = 0;
   let answer = false;
   confirm = () => { asked++; return answer; };
   try {
     window.__reloads = 0;
-    const bar = fakeBanner();
-    wireReloadBanner(bar);
+    const pill = fakeBanner();
+    pill.__go = 'reload';
+    wirePill(pill);
 
     pendingWrites = 1; // an unconfirmed score: the auto-reload is holding for it
-    bar.on.click();
+    pill.on.click();
     assert.equal(asked, 1, 'asked');
     assert.equal(window.__reloads, 0, 'declined: nothing reloaded');
     answer = true;
-    bar.on.click();
+    pill.on.click();
     assert.equal(window.__reloads, 1, 'accepted: reloads');
 
     pendingWrites = 0; // a quiet page just reloads
     const before = asked;
-    bar.on.click();
+    pill.on.click();
     assert.equal(asked, before, 'no question when nothing is at stake');
     assert.equal(window.__reloads, 2);
   } finally { confirm = realConfirm; pendingWrites = 0; }
 });
 
-test('the banner samples "unfinished work" at press, before a tap moves focus', () => {
-  // A tap on the banner blurs the chat composer, and chatComposerBusy() only
+test('the pill samples "unfinished work" at press, before a tap moves focus', () => {
+  // A tap on the pill blurs the chat composer, and chatComposerBusy() only
   // counts a FOCUSED composer — so by click time the draft looked safe to drop.
   const realConfirm = confirm;
   let asked = 0;
   confirm = () => { asked++; return false; };
   try {
     window.__reloads = 0;
-    const bar = fakeBanner();
-    wireReloadBanner(bar);
+    const pill = fakeBanner();
+    pill.__go = 'reload';
+    wirePill(pill);
     pendingWrites = 1;
-    bar.on.pointerdown();
+    pill.on.pointerdown();
     pendingWrites = 0; // focus moved, the composer stopped counting
-    bar.on.click();
+    pill.on.click();
     assert.equal(asked, 1, 'still asked');
     assert.equal(window.__reloads, 0);
     // The press memory is one-shot: a later keyboard activation of a quiet page isn't asked.
-    bar.on.click();
+    pill.on.click();
     assert.equal(asked, 1);
     assert.equal(window.__reloads, 1);
   } finally { confirm = realConfirm; pendingWrites = 0; }
 });
 
-test('the update banner is lifted clear of the chat composer and reserves footer room', () => {
+test('an Offline / Reconnecting pill never reloads: its tap only says what is happening', () => {
+  const toasts = [];
+  const realToast = showToast;
+  showToast = (m) => toasts.push(m);
+  try {
+    window.__reloads = 0;
+    const pill = fakeBanner();
+    pill.__go = 'say';
+    pill.__say = 'You are offline.';
+    wirePill(pill);
+    pill.on.click();
+    assert.equal(window.__reloads, 0);
+    assert.deepEqual(toasts, ['You are offline.']);
+  } finally { showToast = realToast; }
+});
+
+test('the status pill: what it says, in what order, and when it is simply absent', () => {
+  const save = { sdk: sdkLoadFailed, nv: newVersionSeen, den: syncDenied, known: fbConnKnown, conn: fbConnected, since: fbOfflineSince };
+  try {
+    sdkLoadFailed = false; newVersionSeen = false; syncDenied = false; fbConnKnown = false; fbConnected = false; fbOfflineSince = 0;
+    assert.equal(syncPillModel(), null, 'nothing wrong: no pill at all');
+    fbConnKnown = true; fbConnected = true;
+    assert.equal(syncPillModel(), null, 'connected: no pill');
+    fbConnected = false; fbOfflineSince = Date.now();
+    if (syncEnabled()) assert.equal(syncPillModel().tone, 'wait', 'just dropped: Reconnecting');
+    fbOfflineSince = Date.now() - PILL_WAIT_MS - 1;
+    if (syncEnabled()) assert.equal(syncPillModel().tone, 'offline', 'for a while: Offline, saved on this phone');
+    newVersionSeen = true;
+    assert.equal(syncPillModel().tone, 'update', 'a new version outranks the connection line');
+    assert.equal(syncPillModel().act, 'reload');
+    sdkLoadFailed = true;
+    assert.equal(syncPillModel().tone, 'error', 'a failed SDK outranks everything');
+    assert.equal(syncPillModel().act, 'reload');
+  } finally {
+    sdkLoadFailed = save.sdk; newVersionSeen = save.nv; syncDenied = save.den; fbConnKnown = save.known; fbConnected = save.conn; fbOfflineSince = save.since;
+  }
+});
+
+test('the SDK pill lives on the sign-in screen only; the app has the header pill instead', () => {
   const css = readFixture('../styles.css');
-  assert.ok(/body:has\(#app\[data-tab="chat"\]\) \.update-banner-alert,\s*body:has\(#app\[data-tab="chat"\]\) \.update-banner \{[^}]*bottom: calc\(var\(--tabbar-h\) \+ 5\.5rem/.test(css),
-    'both banner flavours (the SDK pill shares .update-banner) move above the sticky composer, measured from the tab bar');
-  assert.ok(/body\.has-update-banner \.app-footer \{[^}]*padding-bottom/.test(css));
-  assert.ok(/body:has\(#update-banner\) #sdk-banner \{[^}]*bottom: calc\(var\(--tabbar-h\) \+ 6\.5rem/.test(css), 'the SDK pill stacks above the update bar instead of hiding behind it');
   const src = readFixture('../app.js');
-  assert.ok(/classList\.add\('has-update-banner'\)/.test(src));
+  assert.ok(/\.update-banner \{[^}]*z-index: 10002/.test(css), 'above the lock screen');
+  assert.ok(/if \(!appStarted\) showSdkDownBanner\(\)/.test(src), 'the bar is the lock screen\'s only');
+  assert.notOk(/has-update-banner|update-banner-alert|showUpdateBanner|wireReloadBanner/.test(src.replace(/\/\/.*$/gm, '')), 'the bottom update bar is gone from app.js');
+  assert.notOk(/has-update-banner|update-banner-alert|#update-banner/.test(css), 'and from the stylesheet');
   assert.notOk(/chat-open/.test(css), 'chat is a tab: no body.chat-open rule is left to go stale');
 });
 
-// The bottom strip is three groups' work meeting (the home panels lifted the
-// toaster over the bar, overlays lifted the bar over the chat composer, chat
-// lifted the toaster over both) and, since the shell, all of it sits on the tab
-// bar. Pin the ORDER, not just each rule, so a later edit to one offset can't
-// quietly put a tap target under another.
-test('the bottom strip stacks: tab bar < composer < update bar < SDK pill and toasts, on tabs, in chat and over a takeover', () => {
+// The bottom strip is now the toaster alone, on the tab bar. Pin the ORDER, so a
+// later edit to one offset can't quietly put a tap target under another.
+test('the toaster clears the tab bar, the chat composer and a takeover\'s dock, on tabs, in chat and over a takeover', () => {
   const css = readFixture('../styles.css');
-  // "calc(var(--tabbar-h) + Nrem)" or "calc(var(--kb-h, 0px) + Nrem)" or "calc(env(...) + Nrem)" -> N in rem
-  const rem = (re) => {
+  const num = (re, unit) => {
     const m = css.match(re);
     assert.ok(m, 'rule present: ' + re);
-    return parseFloat(m[1]);
+    return unit === 'px' ? parseFloat(m[1]) / 16 : parseFloat(m[1]);
   };
-  const px = (re) => {
-    const m = css.match(re);
-    assert.ok(m, 'rule present: ' + re);
-    return parseFloat(m[1]) / 16;
-  };
-  const barHome = rem(/\.update-banner-alert \{[^}]*bottom: calc\(var\(--tabbar-h\) \+ ([\d.]+)rem/);
-  const barChat = rem(/body:has\(#app\[data-tab="chat"\]\) \.update-banner-alert,\s*body:has\(#app\[data-tab="chat"\]\) \.update-banner \{[^}]*bottom: calc\(var\(--tabbar-h\) \+ ([\d.]+)rem/);
-  const toastHome = rem(/body:has\(#update-banner\) jelly-toaster\[position="bottom"\] \{[^}]*bottom: calc\(var\(--tabbar-h\) \+ ([\d.]+)rem/);
-  const toastChat = px(/body:has\(#app\[data-tab="chat"\]\) jelly-toaster\[position="bottom"\] \{[^}]*bottom: calc\(var\(--tabbar-h\) \+ ([\d.]+)px/);
-  const toastChatBar = rem(/body:has\(#app\[data-tab="chat"\]\):has\(#update-banner\) jelly-toaster\[position="bottom"\] \{[^}]*bottom: calc\(var\(--tabbar-h\) \+ ([\d.]+)rem/);
-  const pillHome = rem(/body:has\(#update-banner\) #sdk-banner \{[^}]*bottom: calc\(var\(--tabbar-h\) \+ ([\d.]+)rem/);
-  const pillChat = rem(/body:has\(#app\[data-tab="chat"\]\):has\(#update-banner\) #sdk-banner \{[^}]*bottom: calc\(var\(--tabbar-h\) \+ ([\d.]+)rem/);
   const composer = 58 / 16; // the sticky composer's height, in rem
-  assert.ok(barChat > composer, 'the lifted bar clears the composer');
-  assert.ok(toastChat > composer, 'toasts clear the composer with no bar up');
-  assert.ok(toastHome > barHome + 6, 'on a tab, toasts ride above the bar (its tallest wrap is ~102px)');
-  assert.ok(toastChatBar > barChat + 6, 'in chat, toasts ride above the LIFTED bar, not just the composer');
-  assert.ok(pillChat > barChat + 6, 'in chat the SDK pill stacks above the lifted bar');
-  assert.ok(pillHome > barHome, 'on a tab the SDK pill stacks above the bar');
-  // Typing in chat: the whole strip rides the keyboard, in the same order.
-  const kbBar = rem(/body\.kb-open:has\(#app\[data-tab="chat"\]\) \.update-banner-alert,\s*body\.kb-open:has\(#app\[data-tab="chat"\]\) \.update-banner \{[^}]*bottom: calc\(var\(--kb-h, 0px\) \+ ([\d.]+)rem/);
-  const kbToast = px(/body\.kb-open:has\(#app\[data-tab="chat"\]\) jelly-toaster\[position="bottom"\] \{[^}]*bottom: calc\(var\(--kb-h, 0px\) \+ ([\d.]+)px/);
-  const kbToastBar = rem(/body\.kb-open:has\(#app\[data-tab="chat"\]\):has\(#update-banner\) jelly-toaster\[position="bottom"\] \{[^}]*bottom: calc\(var\(--kb-h, 0px\) \+ ([\d.]+)rem/);
-  assert.ok(kbBar > composer && kbToast > composer && kbToastBar > kbBar + 6, 'the keyboard layer keeps the same order');
-  assert.equal(kbBar, barChat);
-  // Over a takeover there is no tab bar: the strip is measured from the edge.
-  const tkBar = rem(/body\.takeover-open \.update-banner-alert,\s*body\.takeover-open \.update-banner \{[^}]*bottom: calc\(env\(safe-area-inset-bottom, 0px\) \+ ([\d.]+)rem/);
-  const tkToastBar = rem(/body\.takeover-open:has\(#update-banner\) jelly-toaster\[position="bottom"\] \{[^}]*bottom: calc\(env\(safe-area-inset-bottom, 0px\) \+ ([\d.]+)rem/);
-  assert.ok(tkToastBar > tkBar + 6, 'over a takeover toasts still ride above the bar');
-  // The id inside :has() is what makes the chat+bar rule win over the plain
-  // home one — both match in chat, so equal specificity would be source order.
-  assert.ok(css.indexOf('body:has(#app[data-tab="chat"]):has(#update-banner) jelly-toaster') > css.indexOf('body:has(#update-banner) jelly-toaster'),
-    'the chat+bar toaster rule comes after the home one');
+  const tabs = css.match(/\njelly-toaster\[position="bottom"\] \{[^}]*bottom: calc\(var\(--tabbar-h\) \+ var\(--s-3\)\)/);
+  assert.ok(tabs, 'on a tab: just above the tab bar');
+  const chat = num(/body:has\(#app\[data-tab="chat"\]\) jelly-toaster\[position="bottom"\] \{[^}]*bottom: calc\(var\(--tabbar-h\) \+ ([\d.]+)px/, 'px');
+  assert.ok(chat > composer, 'in chat, toasts clear the composer');
+  const kb = num(/body\.kb-open:has\(#app\[data-tab="chat"\]\) jelly-toaster\[position="bottom"\] \{[^}]*bottom: calc\(var\(--kb-h, 0px\) \+ ([\d.]+)px/, 'px');
+  assert.ok(kb > composer, 'typing in chat: the toasts ride the keyboard, clear of the composer');
+  assert.ok(/body:has\(\.takeover:not\(\[hidden\]\) > \.tk-dock:not\(\[hidden\]\)\) jelly-toaster\[position="bottom"\] \{[^}]*bottom: calc\(env\(safe-area-inset-bottom, 0px\) \+ 104px\)/.test(css),
+    'over a takeover with a dock, clear of the dock');
 });
 
 // ── Members drawer ───────────────────────────────────────────────

@@ -82,11 +82,11 @@ test('the theme-color meta tracks an OS flip while on Auto', () => {
   assert.equal(os.listeners.length, 1, 'one change listener is registered');
   applyTheme();
   const meta = document.getElementById('dynamic-theme-color');
-  assert.equal(meta.content, '#ffffff', 'light OS: light chrome');
+  assert.equal(meta.content, '#f5efe2', 'light OS: the paper header\'s colour');
   os.flip(true);
-  assert.equal(meta.content, '#181b1d', 'OS went dark: the no-media meta (which beats the media metas) follows');
+  assert.equal(meta.content, '#0c1030', 'OS went dark: the no-media meta (which beats the media metas) follows');
   os.flip(false);
-  assert.equal(meta.content, '#ffffff', 'and back');
+  assert.equal(meta.content, '#f5efe2', 'and back');
 });
 
 test('an explicit choice ignores an OS flip', () => {
@@ -97,7 +97,7 @@ test('an explicit choice ignores an OS flip', () => {
   applyTheme();
   const meta = document.getElementById('dynamic-theme-color');
   os.flip(true);
-  assert.equal(meta.content, '#ffffff', 'Light stays light when the phone goes dark');
+  assert.equal(meta.content, '#f5efe2', 'Light stays light when the phone goes dark');
 });
 
 test('a real flip suspends colour transitions; the first paint and a no-op re-apply do not', () => {
@@ -157,4 +157,31 @@ test('pre-paint: a dual-role account paints the ACTIVE camp\'s role, not the las
     'senior: a director there, so no view-only class');
   assert.deepEqual(paintedByBootGuard([]), ['locked'], 'no hint at all stays locked');
   assert.deepEqual(paintedByBootGuard([['campScoreboardAuthHint', 'viewer']]), ['view-only'], 'a single-camp viewer is unchanged');
+});
+
+test('the status bar follows the roof: paper normally, camp blue while a broadcast takeover is up, in both themes', () => {
+  const os = osScheme(false);
+  state.theme = null;
+  appliedLook = null;
+  applyTheme();
+  const meta = document.getElementById('dynamic-theme-color');
+  assert.equal(meta.content, '#f5efe2');
+  const realQuery = document.querySelector;
+  const roof = { classList: { contains: (c) => c === 'is-roof' }, hidden: false };
+  document.querySelector = (sel) => (sel === '.takeover.is-roof:not([hidden])' ? roof : realQuery.call(document, sel));
+  try {
+    applyChromeColor();
+    assert.equal(meta.content, '#2c47ee', 'the roof is blue');
+    os.flip(true);
+    applyTheme();
+    assert.equal(meta.content, '#2c47ee', 'and stays blue in dark (it is the object, not the page)');
+    roof.hidden = true; // the takeover closed
+    applyChromeColor();
+    assert.equal(meta.content, '#0c1030', 'closed: back to the paper header, dark');
+  } finally { document.querySelector = realQuery; }
+  // The pre-paint media metas in index.html carry the same pair.
+  const html = readFixture('../index.html');
+  assert.ok(html.includes('content="#f5efe2" media="(prefers-color-scheme: light)"'));
+  assert.ok(html.includes('content="#0c1030" media="(prefers-color-scheme: dark)"'));
+  assert.ok(/"theme_color": "#f5efe2"/.test(readFixture('../manifest.json')), 'a Home Screen launch splash starts on paper too');
 });

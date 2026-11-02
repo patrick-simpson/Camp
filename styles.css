@@ -450,32 +450,6 @@ jelly-dialog:not(:defined)[open]::before {
   border-bottom: 1px solid var(--color-border);
   border-radius: 24px 24px 0 0;
 }
-/* Appearance and Calm motion are jelly-segmented; without the module they were
-   inert text. Show their options as pills (the chosen one marked) — app.js's
-   degraded-mode click handler makes them work. Scoped to these two ids: other
-   segmented controls (member roles, camp switch) stay inert rather than
-   half-working. */
-html.jelly-failed :is(#theme-toggle, #calm-toggle):not(:defined) {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-html.jelly-failed :is(#theme-toggle, #calm-toggle):not(:defined) > jelly-segment {
-  padding: 0.4em 0.85em;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  cursor: pointer;
-}
-html.jelly-failed #theme-toggle[value="light"]:not(:defined) > jelly-segment[value="light"],
-html.jelly-failed #theme-toggle[value="auto"]:not(:defined) > jelly-segment[value="auto"],
-html.jelly-failed #theme-toggle[value="dark"]:not(:defined) > jelly-segment[value="dark"],
-html.jelly-failed #calm-toggle[value="auto"]:not(:defined) > jelly-segment[value="auto"],
-html.jelly-failed #calm-toggle[value="on"]:not(:defined) > jelly-segment[value="on"],
-html.jelly-failed #calm-toggle[value="off"]:not(:defined) > jelly-segment[value="off"] {
-  border-color: var(--color-primary);
-  font-weight: 700;
-}
-
 /* Keyboard focus ring for every interactive control (mouse/touch unaffected). */
 :is(button, [role="button"], select, input, a):focus-visible {
   outline: 2px solid var(--color-primary);
@@ -595,9 +569,9 @@ html.theme-switching *::after {
 #app:not([data-tab="more"]) #tab-more {
   display: none;
 }
-/* Today's footer and connection line belong to Now until they move into More's
-   footer (§2.4). */
-#app[data-tab]:not([data-tab="now"]) :is(#app-footer, #sync-status-footer) {
+/* The view-only connection line belongs to Now (the header pill says the same
+   when something is wrong, on every tab). */
+#app[data-tab]:not([data-tab="now"]) #sync-status-footer {
   display: none;
 }
 #tab-games,
@@ -963,10 +937,11 @@ html.calm-motion .tabbar {
   box-shadow: 0 0 0 2px var(--sheet), inset 0 0 0 1.5px var(--gold-edge);
 }
 
-/* Toasts ride above the tab bar (§13.7). The v184 lift rules further down
-   (update bar, SDK pill, chat composer) still out-rank this while those
-   layers exist; they retire when the update / SDK lines move into the header
-   pill, and this becomes the only bottom offset. */
+/* THE BOTTOM STACK (§13.7): toasts are the only thing that floats above the page
+   now that the update bar and the SDK pill are the header's status pill. They
+   take taps, so they clear the tab bar; on Chat the composer too; over a
+   takeover its dock (below). Measured from the tab bar (--tabbar-h already
+   carries the home-indicator inset). overlays.test.js pins the order. */
 jelly-toaster[position="bottom"] {
   bottom: calc(var(--tabbar-h) + var(--s-3));
 }
@@ -983,6 +958,11 @@ body:has(.takeover:not([hidden]) > .tk-dock:not([hidden])) jelly-toaster[positio
    so a toast never swallows a tap meant for Send. */
 body:has(#app[data-tab="chat"]) jelly-toaster[position="bottom"] {
   bottom: calc(var(--tabbar-h) + 76px);
+}
+/* Typing in chat: the tab bar is gone and the composer sits on the keyboard, so
+   the toasts ride it too (--kb-h, set from visualViewport on iOS). */
+body.kb-open:has(#app[data-tab="chat"]) jelly-toaster[position="bottom"] {
+  bottom: calc(var(--kb-h, 0px) + 76px);
 }
 
 /* ── Chat as a tab (§6) ─────────────────────────────────────────
@@ -1543,6 +1523,18 @@ html.view-only #more-director {
   display: none;
 }
 
+/* The `hidden` attribute must win over each of these display rules (More hides
+   a section, a row, the team row's mark; the Games tab hides its note). */
+.more-sec[hidden],
+.gl-row[hidden],
+.gl-panel[hidden],
+.gl-mark[hidden],
+.gl-link[hidden],
+.tab-off[hidden],
+.ts-mark[hidden] {
+  display: none;
+}
+
 /* Run the reveal: the one gold, physical row on the page (§7.1, mockup 09). */
 .more-reveal {
   display: grid;
@@ -1607,6 +1599,157 @@ html.view-only #more-director {
   color: var(--gold-ink);
 }
 
+/* ── Team marks (teamMark, app.js; redesign §8.4) ───────────────
+   One element per team look, sized by --tm: a shield image, a flag (the .flag
+   colours above) or an emoji tile. The tile is the last resort and still
+   carries the team's own colour as its edge. */
+.tm {
+  flex: none;
+}
+.tm-shield {
+  display: block;
+  width: var(--tm, 34px);
+  height: auto;
+  filter: drop-shadow(0 1.5px 1.5px rgba(var(--shadow-rgb), .28));
+}
+.tm.flag {
+  display: block;
+  width: var(--tm, 34px);
+  height: var(--tm, 34px);
+}
+.tm-tile {
+  display: grid;
+  place-items: center;
+  width: var(--tm, 34px);
+  height: var(--tm, 34px);
+  border-radius: 28%;
+  background: var(--paper-2);
+  box-shadow: inset 0 0 0 2px var(--tm-accent, var(--line-2));
+  font-size: calc(var(--tm, 34px) * .56);
+  line-height: 1;
+}
+/* The mark slots in the header, the sheet and More's team row hold whatever
+   size paintTeamMark gives them. */
+.hdr-mark:has(> .tm),
+.ts-mark,
+.gl-mark {
+  display: grid;
+  place-items: center;
+}
+.hdr-mark:has(> .tm-shield) {
+  width: 34px;
+}
+
+/* ── Your team sheet (§2.2) ─────────────────────────────────────
+   Who is on the team and what is next for it. Never a number. */
+.ts-head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: var(--s-1) 0 var(--s-3);
+}
+.ts-names {
+  min-width: 0;
+}
+.ts-name {
+  margin: 0;
+  font: var(--t-head);
+  letter-spacing: var(--track-tight);
+  overflow-wrap: anywhere;
+}
+.ts-sub {
+  margin: 2px 0 0;
+  font: 600 0.90625rem/1.35 var(--font-ui);
+  color: var(--ink-2);
+}
+.ts-sub:empty {
+  display: none;
+}
+.ts-facts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+}
+.ts-facts:empty {
+  display: none;
+}
+.ts-fact {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: var(--s-2) 14px;
+  border-radius: var(--r-card);
+  background: var(--paper-2);
+}
+.ts-fact-label {
+  font: var(--t-tag);
+  color: var(--ink-2);
+}
+.ts-fact-text {
+  font: 700 1rem/1.3 var(--font-ui);
+}
+.ts-actions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s-2);
+  padding-top: var(--s-4);
+}
+.ts-you,
+.ts-note {
+  margin: 0;
+  font: 600 0.90625rem/1.35 var(--font-ui);
+  color: var(--ink-2);
+}
+
+/* ── Games tab, interim (Step 18 replaces the day tabs and the table) ── */
+#tab-games {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+#tab-games > [hidden] {
+  display: none;
+}
+.games-standings {
+  display: flex;
+  flex-direction: column;
+  gap: 15px;
+}
+.games-standings > .card[hidden] {
+  display: none;
+}
+.games-rows:empty {
+  display: none;
+}
+/* A tab a counselor can't use right now: one calm sentence, not a blank page. */
+.tab-off {
+  margin: var(--s-6) 0;
+  padding: var(--s-4);
+  border-radius: var(--r-card);
+  background: var(--paper-2);
+  color: var(--ink-2);
+  font: 650 1rem/1.4 var(--font-ui);
+  text-align: center;
+}
+
+/* ── Alerts drawer: its two sections ───────────────────────────── */
+.alerts-open {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+  padding: 0.75rem 1rem 0;
+}
+.alerts-sec-label {
+  margin: 0;
+  font: var(--t-tag);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--ink-2);
+}
+.alerts-sec-closed {
+  padding: 1rem 1rem 0;
+}
+
 /* Version · data updated · phones online: quiet, left-aligned, last. */
 .more-foot {
   margin: var(--s-6) 2px 0;
@@ -1615,33 +1758,6 @@ html.view-only #more-director {
 }
 .more-foot:empty {
   display: none;
-}
-
-/* ============================================================
-   FOOTER
-   ============================================================ */
-.app-footer {
-  max-width: 640px;
-  margin: 0 auto;
-  padding: 15px 1rem 0.75rem;
-  text-align: center;
-}
-
-.footer-line {
-  margin: 0;
-  font-size: 0.72rem;
-  color: var(--color-text-muted);
-}
-
-/* The Settings entry point, inline on the footer line. */
-.footer-link {
-  background: none;
-  border: none;
-  padding: 0.25rem 0;
-  font: inherit;
-  font-weight: 600;
-  color: var(--color-primary);
-  cursor: pointer;
 }
 
 /* ── Per-team 0–5 point buttons (Memory Verse) ─────────────────── */
@@ -1756,13 +1872,8 @@ html.view-only .standings-hint,
 html.view-only .card-desc {
   display: none;
 }
-html.view-only .card-visibility-row {
-  display: none;
-}
-
-/* The two secret cards (Current Standings, Quick Points) are hidden from
-   non-directors in code, so a director sees this note in place of the old
-   "Hide from viewers" switch. */
+/* The two secret sections (Current standings, Quick points) are hidden from
+   non-directors in code, so a director sees this note on them instead of a switch. */
 .card-secret-note {
   margin: 0 0 0.5rem;
   padding: 0.6rem 0.85rem;
@@ -1773,16 +1884,6 @@ html.view-only .card-visibility-row {
   color: var(--color-text-muted);
 }
 
-/* Editor-only "Hide from viewers" row, first child of each card's body.
-   .settings-row's background is --color-surface (it normally sits against the
-   settings drawer's --color-bg) — inside a card that's the SAME surface, so
-   the row would blend in; swap to --color-bg for the contrast
-   .rules-section-editor uses for the same "content box inside a card" case. */
-.card-visibility-row {
-  background: var(--color-bg);
-  margin-bottom: 0.5rem;
-}
-
 .view-only-note {
   background: var(--color-bg);
   border: 1px dashed var(--color-border);
@@ -1790,12 +1891,6 @@ html.view-only .card-visibility-row {
   padding: 0.9rem 1rem;
   color: var(--color-text-muted);
   font-size: 0.92rem;
-}
-
-/* The role button is a jelly-button host — it draws its own pill; the class
-   only carries the view-only tint via Jelly's fill/label hooks. */
-.settings-row-account #account-label {
-  overflow-wrap: anywhere; /* long emails wrap instead of pushing Sign out off */
 }
 
 .lock-box {
@@ -1922,7 +2017,6 @@ html.calm-motion .lock-box.shake { animation: none; }
 /* ============================================================
    HEADER
    ============================================================ */
-/* (No app header — Settings lives as a link on the footer line.) */
 
 /* ============================================================
    LAYOUT
@@ -1950,65 +2044,6 @@ html.calm-motion .lock-box.shake { animation: none; }
   margin: 0 0 0.75rem;
   font-size: 1.15rem;
   font-weight: 800;
-}
-
-/* ── Home panels: jelly-collapsible cards in a single-open accordion ──
-   Each panel keeps .card for its chrome; the component supplies the header
-   button, springy expand/collapse, and the rotating chevron. The card's own
-   padding moves onto the component's padding vars so the header button is a
-   full-width, full-height tap target (its hover/press tint runs edge to
-   edge). */
-.home-accordion {
-  display: flex;
-  flex-direction: column;
-  gap: 15px; /* match .main-wrap's section gap */
-}
-
-jelly-collapsible.card {
-  padding: 0;
-  --jelly-collapsible-padding-inline: 1.25rem;
-  --jelly-collapsible-padding-block: 1rem;
-  --jelly-collapsible-radius: var(--radius-lg);
-  --jelly-collapsible-chevron: 18px;
-  /* Body text matches what the old cards inherited from <body>. */
-  --jelly-collapsible-body-font: 1rem;
-  /* Wide content (the standings table) must not propagate its min-content
-     width up through the component's shadow grid and stretch the page —
-     pin the card's inline size so .table-scroll scrolls internally. */
-  contain: inline-size;
-}
-
-/* The slotted heading sits inside the component's header button. */
-jelly-collapsible.card h2[slot="header"] {
-  margin: 0;
-}
-
-/* Pre-upgrade header stack — ONLY when the module failed (html.jelly-failed),
-   so a failed load still reads as the usual stack of cards. On a NORMAL load
-   these stay under the global :not(:defined){visibility:hidden} above: the
-   module is what releases DOMContentLoaded, and boot() (which fills in the
-   follow card, Happening-now banner, chat card and day tabs ABOVE the
-   accordion) runs on that event — so painting the five bare headers early
-   showed a half-built page that then got shoved ~620px down (CLS 0.43) on every
-   open. Hidden, the accordion still holds its layout space and the first frame
-   is just the page background. */
-html.jelly-failed jelly-accordion:not(:defined) {
-  visibility: visible;
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-}
-html.jelly-failed jelly-collapsible:not(:defined) {
-  visibility: visible;
-  display: block;
-  padding: 1rem 1.25rem; /* stand in for the header button's padding */
-}
-/* Gated on :where(html:not(.jelly-failed)) — zero added specificity, so this is
-   the same (0,2,1) as before and a normal load is unchanged — so that when the
-   module never comes up the bodies show (see the failed-module fallbacks above)
-   without a higher-specificity override that would trample the view-only hides. */
-:where(html:not(.jelly-failed)) jelly-collapsible:not(:defined) > :not([slot="header"]) {
-  display: none;
 }
 
 /* "Live now" home-screen card — a game in progress, surfaced + highlighted. */
@@ -3074,24 +3109,17 @@ html.calm-motion .back-pill-arrow { transition: none; }
   margin-left: 0.25rem;
 }
 
-/* The same news as a bar pinned to the top of the page, for editors (app.js
-   updateSyncAlert): the card that holds the line above is closed by default, so
-   a refused score needs a surface a director cannot miss while scoring. FIXED,
-   not sticky — html and body both clip overflow-x, which makes body the
-   (never-scrolling) sticky container, so a sticky bar scrolled away with the
-   page (measured). One constant-height row (the names truncate, the full line
-   is in the Standings card) so the page can reserve exactly its height below:
-   it never hides the first card at scroll 0. Danger-TEXT token, never the fill.
-   No entrance motion — it appears, calmly, and is gone the moment it clears. */
+/* The same news as a bar under the header's identity row, for editors (app.js
+   updateSyncAlert): the section that holds the line above is not on every tab,
+   so a refused score needs a surface a director cannot miss while scoring. It
+   lives INSIDE the sticky header, in flow, so it sticks with it and never floats
+   over the identity row. One constant-height row (the names truncate, the full
+   line is in the standings section). Danger-TEXT token, never the fill. No
+   entrance motion — it appears, calmly, and is gone the moment it clears. */
 .sync-alert {
-  position: fixed;
-  top: calc(8px + env(safe-area-inset-top, 0px));
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 60;
   box-sizing: border-box;
-  width: min(608px, calc(100% - 2rem));
-  height: 2.9rem;
+  min-height: 2.9rem;
+  margin: 0 var(--gutter) var(--s-2);
   display: flex;
   align-items: center;
   gap: 0.4rem;
@@ -3099,7 +3127,6 @@ html.calm-motion .back-pill-arrow { transition: none; }
   border: 1.5px solid var(--color-danger-text);
   border-radius: var(--radius-md);
   background: var(--color-surface);
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.22);
   font-size: 0.85rem;
   font-weight: 700;
   color: var(--color-danger-text);
@@ -3153,13 +3180,6 @@ html.calm-motion .back-pill-arrow { transition: none; }
     font-size: 0.72rem;
   }
 }
-/* Room for it above the first card (the reserve matches the bar: 8px + 2.9rem
-   + a breath). Not in the builder / chat takeovers, which hide the page's
-   contents (and the bar with them). */
-body.has-sync-alert:not(.builder-open) .main-wrap {
-  padding-top: calc(4.2rem + env(safe-area-inset-top, 0px));
-}
-
 /* The same line under the cards, for view-only devices: the Current Standings
    card that carries it for directors is not rendered for them. A director's
    view-only SECOND tab does render the card (app.js applyCardVisibility sets
@@ -5684,14 +5704,7 @@ html:not(.calm-motion) .pa-row-summary::after {
   color: var(--color-text-muted);
   white-space: nowrap;
 }
-/* ── Camp picker / switcher (dual-camp accounts) ──────────────── */
-.settings-row-camp {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
+/* ── Camp picker (dual-camp accounts' first launch) ──────────────── */
 /* The options reuse .team-picker-option; only the sub-line is new. */
 .camp-picker-option {
   display: flex;
@@ -5820,14 +5833,18 @@ html:not(.calm-motion) .pa-row-summary::after {
   color: var(--color-text-muted);
 }
 
-/* New-version tap-to-refresh bar (auto-reload on deploy) */
+/* The sign-in screen's tap-to-reload bar (app.js showSdkDownBanner): the one
+   place a bottom bar is left, because the lock screen has no header to hold a
+   pill. Once the app is up, "Update ready" and "Can't connect" are the header's
+   status pill. */
 .update-banner {
   position: fixed;
   left: 50%;
-  bottom: calc(var(--tabbar-h) + 0.75rem);
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem);
   transform: translateX(-50%);
-  z-index: 60;
+  z-index: 10002;
   max-width: calc(100% - 2rem);
+  min-height: var(--target);
   border: none;
   border-radius: 999px;
   padding: 0.7rem 1.2rem;
@@ -5972,98 +5989,6 @@ jelly-icon-button.bonus-remove-btn {
 jelly-icon-button.bonus-remove-btn {
   --jelly-icon-button-size: 2rem;
   --jelly-icon-button-icon-size: 0.9rem;
-}
-
-/* Jelly variant of the update banner (jelly-alert host — the alert draws its
-   own rounded box; the host only carries placement). */
-.update-banner-alert {
-  position: fixed;
-  left: 50%;
-  bottom: calc(var(--tabbar-h) + 0.75rem);
-  transform: translateX(-50%);
-  z-index: 60;
-  width: min(480px, calc(100% - 2rem));
-  cursor: pointer;
-}
-.update-banner-alert jelly-button {
-  margin-top: 0.5rem;
-}
-/* THE BOTTOM STACK (redesign §13.7), bottom to top. Every offset is measured
-   from the tab bar (--tabbar-h already carries the home-indicator inset), and
-   the rules below are one design: change them together (overlays.test.js pins
-   the order, not just each value).
-     tabs:      tab bar < update bar (.75rem) < SDK pill (6.5rem) < toasts (8rem)
-     chat tab:  tab bar < composer (~58px) < update bar (5.5rem) < toasts (12rem)
-                (the pill, when the bar is up too, shares the toaster's 12rem)
-     takeover:  no tab bar — the same strip measured from the screen's edge
-     typing:    in chat the composer rides the keyboard, so the strip rides it
-                too (--kb-h, set from visualViewport on iOS)
-   The toast rail takes taps, so a toast over the composer swallowed Send and a
-   toast over the bar swallowed Refresh; 8rem clears the bar even where its text
-   wraps tallest (~118px at 320px wide). Without a bar, chat's rail only has to
-   clear the composer. The id inside :has() is deliberate: it outranks the plain
-   `body:has(#update-banner)` offset, so two matching rules can't tie. Outer-
-   document rules beat the component's own :host position; a browser without
-   :has() keeps the base placement. The update bar and the SDK pill move into
-   the header's status pill with the rest of the bar's retirement, and this
-   whole stack shrinks to the toaster. */
-body:has(#update-banner) jelly-toaster[position="bottom"] {
-  bottom: calc(var(--tabbar-h) + 8rem);
-}
-/* In chat the sticky composer lives in the same bottom strip (input, 📷, Send
-   directly above the tab bar). The banner persists exactly while a message is
-   being typed — the auto-reload is held for it — so at the base offset it sat
-   on top of the box, and a tap meant for Send landed on the banner. Lift both
-   banner flavours (the SDK-down pill shares .update-banner) clear of it. */
-body:has(#app[data-tab="chat"]) .update-banner-alert,
-body:has(#app[data-tab="chat"]) .update-banner {
-  bottom: calc(var(--tabbar-h) + 5.5rem);
-}
-body:has(#app[data-tab="chat"]):has(#update-banner) jelly-toaster[position="bottom"] {
-  bottom: calc(var(--tabbar-h) + 12rem);
-}
-/* Typing in chat: the tab bar is gone and the composer sits on the keyboard. */
-body.kb-open:has(#app[data-tab="chat"]) .update-banner-alert,
-body.kb-open:has(#app[data-tab="chat"]) .update-banner {
-  bottom: calc(var(--kb-h, 0px) + 5.5rem);
-}
-body.kb-open:has(#app[data-tab="chat"]) jelly-toaster[position="bottom"] {
-  bottom: calc(var(--kb-h, 0px) + 76px);
-}
-body.kb-open:has(#app[data-tab="chat"]):has(#update-banner) jelly-toaster[position="bottom"] {
-  bottom: calc(var(--kb-h, 0px) + 12rem);
-}
-/* Over a takeover there is no tab bar: the strip is measured from the edge. */
-body.takeover-open .update-banner-alert,
-body.takeover-open .update-banner {
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem);
-}
-body.takeover-open:has(#update-banner) jelly-toaster[position="bottom"] {
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 8rem);
-}
-/* On the home page the fixed bar covered the Bonus card and the footer's
-   Settings link at full scroll (it stays up while a reload is held for an
-   editor mid-entry). Extra room at the foot of the page lets them scroll clear. */
-body.has-update-banner .app-footer {
-  padding-bottom: calc(6.5rem + env(safe-area-inset-bottom, 0px));
-}
-/* The SDK-down pill takes the same bottom slot; with a new-version bar up as
-   well it sat completely behind it. Stack the pill above. (:has() is
-   progressive — an older browser just keeps today's overlap.) */
-body:has(#update-banner) #sdk-banner {
-  bottom: calc(var(--tabbar-h) + 6.5rem);
-}
-/* In chat the update bar is itself lifted (5.5rem, above), so a pill at 6.5rem
-   sat mostly behind it. Stack it above the lifted bar instead — same 12rem the
-   toaster uses, so one rule of thumb: nothing in the strip is ever hidden. */
-body:has(#app[data-tab="chat"]):has(#update-banner) #sdk-banner {
-  bottom: calc(var(--tabbar-h) + 12rem);
-}
-body.kb-open:has(#app[data-tab="chat"]):has(#update-banner) #sdk-banner {
-  bottom: calc(var(--kb-h, 0px) + 12rem);
-}
-body.takeover-open:has(#update-banner) #sdk-banner {
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 6.5rem);
 }
 
 /* ============================================================
@@ -6230,8 +6155,7 @@ jelly-button.winner-btn.winner-ready {
 }
 
 /* ============================================================
-   SETTINGS SHEET (gear overlay) — appearance, sound, score access,
-   and the "Stalling with Patrick" presenter link
+   DRAWER BODIES (Alerts, Change history, Who can sign in)
    ============================================================ */
 .settings-title {
   margin: 0;
@@ -6249,8 +6173,7 @@ jelly-button.winner-btn.winner-ready {
   gap: 0.65rem;
 }
 
-.settings-row,
-.settings-link {
+.settings-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -6259,30 +6182,6 @@ jelly-button.winner-btn.winner-ready {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   padding: 0.85rem 1rem;
-}
-
-/* The Appearance row hosts a three-segment control — let it wrap under the
-   label on narrow phones instead of squeezing the segments. */
-.settings-row-theme,
-.settings-row-calm {
-  flex-wrap: wrap;
-}
-.settings-row-theme jelly-segmented,
-.settings-row-calm jelly-segmented {
-  flex: 1 1 100%;
-}
-/* The calm row's "what is happening right now" line (renderCalmRow). */
-.settings-row-note {
-  flex: 1 1 100%;
-  margin: 0;
-  font-size: 0.85rem;
-  line-height: 1.4;
-  color: var(--color-text-muted);
-  /* Three lines are always reserved: the longest verdict wraps to three on a
-     phone and the shortest to one, and the sheet is anchored to the bottom, so
-     a line that changed length moved the Calm control (and Appearance) ~38px
-     under the finger — a second tap landed on the row label. */
-  min-height: calc(3 * 1.4em);
 }
 
 .settings-row-label {
@@ -6297,37 +6196,6 @@ jelly-button.winner-btn.winner-ready {
 .settings-row-emoji {
   font-size: 1.15rem;
   line-height: 1;
-}
-
-/* The presenter link is a full tappable row. */
-.settings-link {
-  text-decoration: none;
-  cursor: pointer;
-  transition: border-color 0.15s ease;
-}
-
-.settings-link:hover {
-  border-color: var(--color-primary);
-}
-
-.settings-link-chevron {
-  font-size: 1.3rem;
-  color: var(--color-text-muted);
-  line-height: 1;
-}
-
-/* The Change-history row is a <button> styled like the link rows. */
-button.settings-link {
-  width: 100%;
-  font-family: inherit;
-  font-size: 1rem;
-  color: var(--color-text);
-  text-align: left;
-}
-
-/* Editors only — hidden for view-only devices, like the other edit tools. */
-html.view-only #history-row {
-  display: none;
 }
 
 /* ── Change-history sheet contents ── */
@@ -6419,8 +6287,7 @@ html.view-only #history-row {
 
 /* The builder opens full-page: hide everything else in main-wrap (and the
    footer) while it's up, so the collapsible cards don't render beneath it. */
-body.builder-open .main-wrap > :not(#settings-view),
-body.builder-open #app-footer {
+body.builder-open .main-wrap > :not(#settings-view) {
   display: none;
 }
 
@@ -7527,20 +7394,6 @@ html.calm-motion .tool-box.alarming { animation: none; } /* the red border stays
 /* (The press feedback is not CSS any more: app.js's delegated pointer handlers
    call JellyMotion.press / release, which are WAAPI only and leave nothing in
    the DOM — the old .joy-pressed / .joy-pop classes lived here.) */
-
-/* Card contents rise in when a home panel opens — layered on top of
-   jelly-collapsible's own springy height animation. The heading is the
-   header slot (child 1), so content children start at nth-child(2).
-   Only while .card-opening is on (added for ~0.7s by the toggle listener
-   in app.js): keyed to [open] alone, the rise replayed on every open card
-   whenever the builder or chat takeover un-hid the page. */
-html:not(.calm-motion) jelly-collapsible.collapsible-card.card-opening[open] > *:not([slot="header"]) {
-  animation: joy-rise 0.38s var(--jm-enter) backwards;
-}
-html:not(.calm-motion) jelly-collapsible.collapsible-card.card-opening[open] > *:nth-child(3) { animation-delay: 0.04s; }
-html:not(.calm-motion) jelly-collapsible.collapsible-card.card-opening[open] > *:nth-child(4) { animation-delay: 0.08s; }
-html:not(.calm-motion) jelly-collapsible.collapsible-card.card-opening[open] > *:nth-child(5) { animation-delay: 0.12s; }
-html:not(.calm-motion) jelly-collapsible.collapsible-card.card-opening[open] > *:nth-child(n+6) { animation-delay: 0.16s; }
 
 /* Staggered list entry — applied transiently by joyStagger() after a
    day switch or view change re-render. */
