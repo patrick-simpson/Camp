@@ -4094,6 +4094,8 @@ function renderMealsScreen() {
   secPaintKeyed(setupEl('meals-list'), rows, secMealRowHtml, (el, r) => {
     const dish = el.querySelector('[data-meal-dish]');
     const emo = el.querySelector('[data-meal-emoji]');
+    // The rows are kept from day to day (same meals), so what differs by day — the time — is patched too.
+    setHtmlIfChanged(el.querySelector('.cb-time'), secTimeHtml(r.it.start));
     secSetValue(dish, r.rec ? r.rec.dish : '');
     secSetValue(emo, r.rec && r.rec.emoji ? r.rec.emoji : '');
     secSetDisabled(dish, !live);

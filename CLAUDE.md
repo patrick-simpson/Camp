@@ -2991,6 +2991,12 @@ section is on, else `setupBuiltInSections()`; every control disabled, a row a `<
   `docs/build-notes/verify/step19-pass.cjs` (every screen and sheet, both camps, editor / owner /
   preview, 360 / 390, light / dark, 100 / 130 / 200 % text: no target under 44×44, no sideways
   scroll; serve the worktree with `python3 -m http.server 8943`).
+  `docs/build-notes/verify/step19-same.cjs` is the proof that turning the four sections on changes
+  nothing anyone sees: in Chromium the banner at every quarter hour of all seven days, every day's
+  schedule sheet, the verses, rota and electives are identical with the schedule on and with
+  everything on, both camps (the one difference: `staffNames()` gains the elective stations' game
+  leaders, Patrick and Stephen, for the chat mention dictionary — the spec's "+ elective people
+  names").
 
 ## Counselors ↔ teams ↔ accounts
 
