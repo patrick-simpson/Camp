@@ -186,3 +186,19 @@ test('a non-owner director is never offered an owner control by any path: the se
     ooReset();
   }
 });
+
+test('Edit the week here and Use the original week again refuse anyone but the owner, by name, before any write (step 15)', async () => {
+  ooReset();
+  authUser = OO_DIRECTOR;
+  setMemberRole('editor');
+  memberDirectory = { [OWNER_MEMBER_KEY]: { role: 'editor', name: 'Patrick Simpson' } };
+  memberDirectoryLoaded = true;
+  const on = await setupTurnOn();
+  assert.deepEqual([on.ok, on.reason, on.message], [false, 'owner', 'Only Patrick can turn on editing.']);
+  const off = setupUseOriginal();
+  assert.deepEqual([off.ok, off.reason, off.message], [false, 'owner', 'Only Patrick can switch back to the original week.']);
+  setMemberRole('viewer');
+  assert.equal((await setupTurnOn()).reason, 'owner', 'a counselor too');
+  ooReset();
+  assert.equal((await setupTurnOn()).reason, 'owner', 'and a device nobody is signed in on');
+});

@@ -2494,6 +2494,37 @@ Both camps, junior and senior, run all of it.
   16:50, Hot Seat and Let's Make a Deal → 18:50). A game created in the classic
   builder AFTER the switch is pressed has no link until Put games on the schedule is
   pressed (the Games screen of step 21 sets it on create).
+- **A1, Edit the week here** (`setupTurnOn(sections, opts)`) and **Use the original week
+  again** (`setupUseOriginal(sections)`), both OWNER-ONLY (`isOwner()`, from the sign-in;
+  the rules refuse anyone else too). The switch is `meta/on/<section>` with three states:
+  absent = never turned on, `false` = turned off (data kept), `true` = the subtree is the
+  whole truth. `mergeSeed(cur, seed, sections, info)` is the pure heart: never turned on →
+  the seeded subtree AND `on: true`; turned off before → ONLY `on: true` (the data, edited
+  or deliberately empty, returns exactly as it was; `meta.seeded` is not re-stamped); already
+  on → nothing; it sets `meta.schema`, stamps `meta.seeded = {at, byKey, from:
+  'camps.js@v<APP_VERSION>'}` only when it seeded, copies every other field unchanged
+  (`weekStart`, `meta/edited` stamps, a live `meta/wizard` claim — the rules accept an
+  unchanged stamp, which is what lets A1 run after anyone has edited anything), returns
+  `undefined` (the transaction aborts: a second press, or the owner's other device, writes
+  nothing) when nothing changes, and never touches a node a newer schema wrote. `setupTurnOn`
+  says every refusal BEFORE it writes: `owner` (+`message`), `none`, `loading`, `denied`,
+  `schema`, `tab` (a view-only second tab), `offline`, `already`, `camp-week` (the freeze:
+  `campWeek().phase === 'during'`, or no date and the owner answered "yes, a camp week is
+  running"), `ask-camp-week` (no date set: the caller must ask "Is a camp week running right
+  now?" and pass `{campRunning}`; `{overrideCampWeek}` is the owner's "I know a camp week is
+  running" tick), `restore-point`, `failed`, `refused`. Then, in order: a `pre-seed` restore
+  point (REQUIRED, online — only when something is seeded for the first time), ONE
+  `setupRef.transaction(mergeSeed)`, a re-read of its own snapshot at once
+  (`setupIdleTick`: it was turned away while the write was in flight), A2 against the
+  committed tree as one config edit (skipped, for the hub to offer later, when the catalog
+  is not editable yet), and `pushRepublishSchedule({reset})` when phone alerts exist.
+  `setupUseOriginal` is one ordinary `commitSetup` writing `meta/on/<s>: false` (no undo
+  entry: the other button is the undo). **Not built here:** the UI — `HUB_DOOR_ACTIONS.original`
+  (the hub door's gold "Edit the week here") and `SETUP_OWNER_ACTIONS.original` (the owner
+  menu's "Use the original week again") are the wiring session's, and the dialogs for the
+  freeze questions; team branding (`short` / `emoji` written to `state.teams`, A1 step 3)
+  waits for step 25, the first reader of those fields. Nothing presses the switch in this
+  step: both camps stay on the built-in week until the owner does.
 - **The seeded pass** (`tests/run.js`, `makeContext({camp, seeded: true})`): the seed,
   round-tripped through RTDB's canonical form, is already `setupTree` with the switch on
   and the catalog's games are linked (A2). The week / push / chat / ics / tabs / frame /
@@ -2507,7 +2538,11 @@ Both camps, junior and senior, run all of it.
   RTDB, the measured shape, the rules' record shapes, the frozen id fixtures, the
   10,080-minute banner fuzz identical before and after seeding, the alert publisher's
   keys and catalog identical, a renamed + moved block keeping its published id and
-  key), `games-blocks.test.js` (+ `.senior`: the A2 oracle, never-touches-attached,
+  key; and A1 against the fake database with all three engines past their first snapshot:
+  one pre-seed point THEN one transaction, ONE config transaction for A2, no phantom diff
+  afterwards, twice writes once, owner-only, every refusal before a write, the camp-week
+  freeze, stamps / a wizard claim carried, off-then-on keeps the edit and the hand
+  attachment), `games-blocks.test.js` (+ `.senior`: the A2 oracle, never-touches-attached,
   re-homing, unplaced, each rule, exactly-once listing, `putGamesOnSchedule`).
 
 ## Counselors ↔ teams ↔ accounts

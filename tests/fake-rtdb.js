@@ -277,7 +277,7 @@ function makeFakeRtdb(opts) {
               const nowServer = getAt(server, parts);
               if (next === undefined) { resolve({ committed: false, snapshot: snapshotOf(parts, nowServer) }); return; }
               if (JSON.stringify(nowServer === undefined ? null : nowServer) === JSON.stringify(seen === undefined ? null : seen)) {
-                const stored = toStored(clone(next));
+                const stored = toStored(resolveSv(clone(next))); // a transaction may return ServerValue.TIMESTAMP, like set / update
                 setAt(server, parts, stored);
                 fire();
                 resolve({ committed: true, snapshot: snapshotOf(parts, stored) });

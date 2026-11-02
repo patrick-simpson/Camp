@@ -2710,4 +2710,119 @@ function putGamesOnSchedule() {
   return { ok: true, attached: plan.ops.length, unplaced: plan.unplaced };
 }
 
+// ── A1: Edit the week here, and Use the original week again (§10.1) — the OWNER's ────────────────
+// The switch is `meta/on/<section>`: absent = never turned on, false = turned off (data kept), true = the
+// subtree is the whole truth. Only the owner presses it (the rules refuse anyone else, and the app shows the
+// button to nobody else): isOwner() is the sign-in, never anything stored on the device.
+
+// What the transaction writes: for each requested section — never turned on: its seeded subtree AND the switch;
+// turned off before: ONLY the switch (the data, edited or deliberately empty, comes back exactly as it was);
+// already on: nothing. `meta.schema` is set, `meta.seeded` when anything was seeded, and every other field
+// (weekStart, meta/edited stamps, a live wizard claim) is copied unchanged — the rules accept an unchanged stamp
+// (NOWKEEP / SELFKEEP), which is what lets A1 run after anyone has edited anything. Returns undefined (the
+// transaction aborts) when nothing would change, so a second press writes nothing. PURE: `info.at` is the server's
+// timestamp placeholder in production and a number in a test.
+function mergeSeed(cur, seed, sections, info) {
+  const out = setupIsMap(cur) ? setupClone(cur) : {};
+  if (!setupIsMap(out.meta)) out.meta = {};
+  const meta = out.meta;
+  if (typeof meta.schema === 'number' && meta.schema > SETUP_SCHEMA) return undefined; // a newer build wrote this: never downgrade it
+  if (!setupIsMap(meta.on)) meta.on = {};
+  const on = meta.on;
+  let changed = false;
+  let seeded = false;
+  (sections || []).forEach((s) => {
+    if (SETUP_SECTIONS.indexOf(s) === -1 || on[s] === true) return;
+    if (on[s] === false) { on[s] = true; changed = true; return; }
+    (RP_SETUP_KEYS[s] || []).forEach((k) => {
+      if (seed && seed[k] !== undefined) out[k] = setupClone(seed[k]); else delete out[k];
+    });
+    on[s] = true;
+    changed = true;
+    seeded = true;
+  });
+  if (!changed) return undefined;
+  meta.schema = SETUP_SCHEMA;
+  if (seeded) meta.seeded = { at: info.at, byKey: info.byKey, from: info.from };
+  return out;
+}
+
+// Edit the week here. Returns { ok:true, turnedOn, seeded, attach } or { ok:false, reason, … } — reasons, each said
+// BEFORE anything is written: owner (message), loading, denied, schema, tab, offline, already ("You already turned
+// this on" — also what a second device sees), camp-week (the freeze: a camp week is running), ask-camp-week (no date
+// is set, so the caller must ask "Is a camp week running right now?" and pass campRunning), restore-point (the
+// `pre-seed` point is the safety net and is required), failed, refused. `opts`: { campRunning: bool, overrideCampWeek:
+// bool (the owner ticked "I know a camp week is running") }.
+async function setupTurnOn(sections, opts) {
+  const o = opts || {};
+  const refuse = (reason, extra) => Object.assign({ ok: false, reason }, extra || {});
+  const want = (sections || SETUP_SEED_SECTIONS).filter((s) => SETUP_SEED_SECTIONS.indexOf(s) !== -1);
+  if (!want.length) return refuse('none');
+  const gate = ownerGate('turn on editing');
+  if (!gate.ok) return refuse('owner', { message: gate.reason });
+  if (!setupRef || !setupReady) return refuse('loading');
+  if (setupDenied || setupWriteRefused) return refuse('denied');
+  if (setupSchemaTooNew()) return refuse('schema');
+  if (!tabMayPush('setup')) return refuse('tab'); // a view-only second tab never writes
+  if (!restoreOnline()) return refuse('offline');
+  const off = want.filter((s) => !setupOn(s));
+  if (!off.length) return refuse('already');
+  if (!o.overrideCampWeek) {
+    const wk = campWeek();
+    if (wk.phase === 'during') return refuse('camp-week');
+    if (wk.phase === 'unset') {
+      if (o.campRunning === undefined) return refuse('ask-camp-week');
+      if (o.campRunning === true) return refuse('camp-week');
+    }
+  }
+  const key = identityKey(authUser);
+  if (!key) return refuse('owner', { message: ownerGate('turn on editing').reason });
+  // The safety net first, and only when something is being seeded for the first time: what A1 writes OUTSIDE
+  // setup (the games' links) is covered by this point, and a restore never flips the switch itself.
+  const first = off.filter((s) => (setupTree.meta.on || {})[s] === undefined);
+  if (first.length) {
+    const rp = await restoreSave('pre-seed', 'Before turning on editing', { requireOnline: true });
+    if (!rp.ok) return refuse('restore-point', { why: rp.reason });
+  }
+  const seed = buildSeed(CAMP, off);
+  const info = { at: firebase.database.ServerValue.TIMESTAMP, byKey: key, from: 'camps.js@v' + APP_VERSION };
+  setupPending++;
+  setupNotify('sync');
+  let res;
+  try {
+    res = await setupRef.transaction((cur) => mergeSeed(cur, seed, off, info), null, false);
+  } catch (e) {
+    return refuse(e && e.code === 'PERMISSION_DENIED' ? 'refused' : 'failed', { code: e && e.code });
+  } finally {
+    setupPending = Math.max(0, setupPending - 1);
+    setupNotify('sync');
+  }
+  if (typeof setupIdleTick === 'function') setupIdleTick(); // the commit's own snapshot was turned away while this write was in flight: re-read it NOW, so the switch shows at once
+  if (!res || !res.committed) return refuse('already'); // another device pressed it first
+  // A2 in the same flow, against the tree that was just written: the games that have no place yet get one (a
+  // catalog that is not editable yet is left for the hub's Put games on the schedule).
+  let attach = null;
+  if (canEdit() && (typeof configEditable !== 'function' || configEditable())) {
+    const tree = normalizeSetup(setupClone(res.snapshot.val()));
+    const plan = setupGameAttachments(state.config, (dow) => resolveDay(tree, dow).map(setupRichBlock), CAMP);
+    if (plan.ops.length) { setupApplyGameAttachments(state.config, plan.ops); saveConfig(); }
+    attach = { attached: plan.ops.length, unplaced: plan.unplaced };
+  }
+  if (typeof pushRepublishSchedule === 'function') pushRepublishSchedule({ reset: true }).catch(() => {});
+  return { ok: true, turnedOn: off, seeded: first, attach };
+}
+
+// Use the original week again: the switch goes false, instantly on every device, and every edit is KEPT (Edit the
+// week here brings it back). One ordinary setup commit, owner-only through the engine's own gate, no undo entry
+// (pressing the other button is the undo).
+function setupUseOriginal(sections) {
+  const gate = ownerGate('switch back to the original week');
+  if (!gate.ok) return { ok: false, reason: 'owner', message: gate.reason };
+  const want = (sections || SETUP_SEED_SECTIONS).filter((s) => SETUP_SEED_SECTIONS.indexOf(s) !== -1 && setupOn(s));
+  if (!want.length) return { ok: false, reason: 'already' };
+  const r = commitSetup((d) => { want.forEach((s) => { d.meta.on[s] = false; }); }, { undo: false, ownerWhat: 'switch back to the original week' });
+  if (r.ok && typeof pushRepublishSchedule === 'function') pushRepublishSchedule({ reset: true }).catch(() => {});
+  return r.ok ? { ok: true, turnedOff: want } : r;
+}
+
 setupLoadCache();

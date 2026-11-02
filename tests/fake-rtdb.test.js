@@ -162,3 +162,12 @@ test('writes through the fake carry plain data across the vm boundary', async ()
   out.list.push(4);
   assert.deepEqual(db.serverGet('x').list, [1, 2, 3], 'a returned value is a copy, not the stored tree');
 });
+
+test('transaction: a returned ServerValue.TIMESTAMP is resolved by the database, like set and update', async () => {
+  const db = makeFakeRtdb();
+  const r = await db.ref('setup').transaction(() => ({ meta: { seeded: { at: { '.sv': 'timestamp' }, byKey: 'x' } } }));
+  assert.equal(r.committed, true);
+  const at = db.serverGet('setup/meta/seeded/at');
+  assert.equal(typeof at, 'number');
+  assert.ok(Math.abs(at - db.now()) < 5000);
+});

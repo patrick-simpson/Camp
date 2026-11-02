@@ -5,7 +5,7 @@
 // pressing the switch changes nothing anyone can see. Runs under the senior profile too
 // (seed.senior.test.js evals this file).
 
-const { makeFakeRtdb } = nodeRequire('./fake-rtdb.js');
+const { makeFakeRtdb, makeFakeFirebase } = nodeRequire('./fake-rtdb.js');
 
 const SEED_DOWS = [0, 1, 2, 3, 4, 5, 6];
 const seedClone = (v) => JSON.parse(JSON.stringify(v));
@@ -409,4 +409,321 @@ test('the alert publisher: keys, labels and the drawer\'s catalog are identical 
   assert.equal(moved.start, 725);
   assert.equal(moved.key, lunch.alertKey, 'and the same key: phones subscribed to "lunch" keep getting it');
   setupTree = normalizeSetup({}); setupRev++;
+});
+
+// ── A1: Edit the week here, and Use the original week again (§10.1) ──
+// Driven against the in-memory database with the real engines past their first snapshot. The switch is the OWNER's.
+
+const A1_ROOT = CAMP.dbRoot;
+const A1_OWNER = { email: 'patricksimpson.fx@gmail.com', emailVerified: true };
+const A1_JENN = { email: 'jenn@example.com', emailVerified: true };
+const a1Wait = (ms) => new Promise((r) => setTimeout(r, ms || 5));
+const A1_QUIET = { campRunning: false }; // no camp week is set in these cases: the freeze question's answer is "no"
+
+async function a1Setup(opts) {
+  const o = opts || {};
+  freshState();
+  authUser = o.user || A1_OWNER;
+  setMemberRole('editor');
+  memberName = 'Patrick';
+  memberDirectory = { [OWNER_MEMBER_KEY]: { role: 'editor', name: 'Patrick' }, 'jenn@example,com': { role: 'editor', name: 'Jenn Reed' } };
+  memberDirectoryLoaded = true;
+  window.FIREBASE_CONFIG = { apiKey: 'test' };
+  const db = makeFakeRtdb({ manualFirstSnapshot: true });
+  window.firebase = makeFakeFirebase(db);
+  fbConnKnown = true; fbConnected = true;
+  rpLastAt = 0; rpLastAutoAt = 0; rpWaitMs = 40; setupPushMs = 40;
+  localStorage.removeItem(lsKey(RP_OUTBOX_KEY));
+  localStorage.removeItem(lsKey(SETUP_KEY));
+  setupRef = null; setupReady = false; setupDenied = false; setupWriteRefused = false;
+  setupTree = normalizeSetup({}); setupBase = null; setupBaseAt = 0; setupBootBase = null; setupLast = null;
+  setupPending = 0; clearTimeout(setupPushTimer); setupPushTimer = null; setupRefetchOwed = false;
+  setupQuarantine = {}; setupClashes = []; setupEdited = {}; setupRev = 0;
+  undoClear();
+  delete state._cfgBase; delete state._cfgNotes;
+  configReady = false; cfgFirstPending = null; remoteReady = false; syncDenied = false;
+  db.serverSet(dbPath('state'), syncedSnapshot());
+  db.serverSet(dbPath('config'), state.config);
+  if (o.setup) db.serverSet(dbPath('setup'), o.setup);
+  fbRef = db.ref(dbPath('state'));
+  fbConfigRef = db.ref(dbPath('config'));
+  setupRef = db.ref(dbPath('setup'));
+  fbRef.on('value', (snap) => handleRemoteSnapshot(snap.val()));
+  attachConfigListener();
+  attachSetupListener();
+  db.deliverFirstSnapshots();
+  flushPendingPush();
+  await a1Wait(40);
+  assert.equal(remoteReady && configReady && setupReady, true, 'all three engines are past their first pull');
+  return db;
+}
+
+function a1Teardown() {
+  delete window.FIREBASE_CONFIG;
+  delete window.firebase;
+  fbRef = null; fbConfigRef = null; setupRef = null;
+  fbConnKnown = false; fbConnected = false;
+  remoteReady = false; configReady = false; setupReady = false;
+  rpWaitMs = RP_WAIT_MS; setupPushMs = SETUP_PUSH_MS;
+  clearTimeout(setupPushTimer); setupPushTimer = null;
+  clearTimeout(pushTimer); pushTimer = null;
+  clearTimeout(pushConfigTimer); pushConfigTimer = null;
+  dataEditPending = false;
+  undoClear();
+  setMemberRole(null);
+  authUser = null; memberDirectory = null; memberDirectoryLoaded = false; memberName = null;
+  setupTree = normalizeSetup({}); setupRev++;
+  localStorage.removeItem(lsKey(RP_OUTBOX_KEY));
+  localStorage.removeItem(lsKey(SETUP_KEY));
+}
+
+async function a1Settle() {
+  for (let i = 0; i < 80; i++) {
+    if (pendingWritesTotal() === 0 && !hasUnconfirmedLocalWork() && !pushTimer && !pushConfigTimer && !setupPushTimer) return;
+    await a1Wait(50);
+  }
+}
+
+// The commit's own snapshot is adopted through the engine (a re-read when it was turned away mid-write): wait for it.
+async function a1WaitShared(on) {
+  for (let i = 0; i < 60 && scheduleIsShared() !== on; i++) await a1Wait(10);
+  assert.equal(scheduleIsShared(), on, 'the engine adopted the switch');
+}
+
+const a1Server = (db) => db.serverGet(A1_ROOT + '/setup') || {};
+const a1Points = (db) => Object.values(db.serverGet(A1_ROOT + '/restoreIndex') || {});
+
+test('mergeSeed: seeds a section never turned on, flips only the switch for one turned off, and leaves one that is on', () => {
+  const info = { at: 1700000000000, byKey: 'patricksimpson,fx@gmail,com', from: 'camps.js@v199' };
+  const seed = buildSeed(CAMP);
+  const fresh = mergeSeed(null, seed, ['schedule'], info);
+  assert.equal(JSON.stringify(syncCanon(fresh.meta)), JSON.stringify(syncCanon({ schema: 1, on: { schedule: true }, seeded: info })));
+  assert.deepEqual(fresh.typical, seed.typical);
+  assert.deepEqual(fresh.days, seed.days);
+  assert.equal(mergeSeed({}, seed, [], info), undefined, 'no sections: nothing to write');
+  assert.equal(mergeSeed(fresh, seed, ['schedule'], info), undefined, 'already on: the transaction aborts');
+  assert.equal(mergeSeed(fresh, seed, ['nonsense'], info), undefined);
+  // Turned off before: ONLY the switch, the data (edited here) stays exactly as it is, and seeded is not re-stamped.
+  const edited = JSON.parse(JSON.stringify(fresh));
+  edited.meta.on.schedule = false;
+  edited.typical[Object.keys(edited.typical)[0]].label = 'Edited here';
+  edited.dayBlocks = { sun: { 'b-sun-mine-1': { start: 600, end: 660, label: 'Mine', type: 'activity' } } };
+  const again = mergeSeed(edited, seed, ['schedule'], { at: 2, byKey: 'x', from: 'y' });
+  assert.equal(again.meta.on.schedule, true);
+  assert.deepEqual(again.meta.seeded, info, 'the first seed record stays');
+  assert.equal(again.typical[Object.keys(again.typical)[0]].label, 'Edited here');
+  assert.deepEqual(again.dayBlocks, edited.dayBlocks, 'a day the owner rewrote is not re-seeded');
+  // It never mutates what it was given, and copies every other field unchanged (stamps, a wizard claim, the week date).
+  const cur = { meta: { weekStart: '2027-07-18', edited: { week: { at: 5, byKey: 'a' } }, wizard: { step: 3, byKey: 'o', at: 9 }, on: { meals: true } }, meals: { mon: { lunch: { dish: 'x' } } } };
+  const frozen = JSON.stringify(cur);
+  const merged = mergeSeed(cur, seed, ['schedule'], info);
+  assert.equal(JSON.stringify(cur), frozen, 'the input is untouched');
+  assert.equal(merged.meta.weekStart, '2027-07-18');
+  assert.deepEqual(merged.meta.edited, cur.meta.edited);
+  assert.equal(JSON.stringify(syncCanon(merged.meta.wizard)), JSON.stringify(syncCanon(cur.meta.wizard)));
+  assert.deepEqual(merged.meta.on, { meals: true, schedule: true }, 'another section\'s switch is carried');
+  assert.deepEqual(merged.meals, cur.meals);
+  // A node written by a newer build is never touched.
+  assert.equal(mergeSeed({ meta: { schema: 2 } }, seed, ['schedule'], info), undefined);
+});
+
+test('A1 on an empty node: a pre-seed point first, then ONE transaction that seeds and flips the switch; A2 links the games', async () => {
+  const db = await a1Setup();
+  try {
+    const from = db.log.length;
+    const r = await setupTurnOn(undefined, A1_QUIET);
+    assert.equal(r.ok, true, JSON.stringify(r));
+    assert.deepEqual(r.turnedOn, ['schedule']);
+    assert.deepEqual(r.seeded, ['schedule']);
+    assert.equal(r.attach.attached, allGames().length, 'every game got a place');
+    const server = a1Server(db);
+    assert.equal(server.meta.on.schedule, true);
+    assert.equal(server.meta.schema, 1);
+    assert.equal(server.meta.seeded.byKey, OWNER_MEMBER_KEY);
+    assert.equal(server.meta.seeded.from, 'camps.js@v' + APP_VERSION);
+    assert.equal(typeof server.meta.seeded.at, 'number', 'the server\'s clock, resolved by the transaction');
+    assert.equal(JSON.stringify(syncCanon(server.typical)), JSON.stringify(syncCanon(buildSeed(CAMP).typical)), 'the seeded typical day, after the round trip');
+    // Order of writes: the safety net, THEN the transaction.
+    const log = db.log.slice(from);
+    const rp = log.findIndex((l) => l.kind === 'update' && l.paths.some((p) => /restoreIndex\/rp-/.test(p)));
+    const txn = log.findIndex((l) => l.kind === 'transaction' && l.paths[0] === A1_ROOT + '/setup');
+    assert.ok(rp !== -1 && txn !== -1 && rp < txn, 'the pre-seed restore point is written before the transaction');
+    assert.equal(a1Points(db).filter((x) => x.kind === 'pre-seed').length, 1);
+    // The engine adopted it like any other snapshot: the accessors flipped, and there is no phantom diff.
+    await a1WaitShared(true);
+    assert.deepEqual(setupDiff(setupBase, setupTree), {}, 'nothing for the engine to push');
+    await a1Settle();
+    assert.equal(setupPendingCount(), 0);
+    // A2's one config transaction landed on the server: every game carries blockId and ord.
+    const games = (db.serverGet(A1_ROOT + '/config') || {}).games;
+    const list = Array.isArray(games) ? games : Object.values(games);
+    assert.ok(list.every((g) => typeof g.blockId === 'string' && g.ord > 0), 'the games\' links reached the config node');
+    assert.equal(db.log.slice(from).filter((l) => l.kind === 'transaction' && l.paths[0] === A1_ROOT + '/config').length, 1, 'ONE config transaction');
+  } finally { a1Teardown(); }
+});
+
+test('A1 twice writes once: a second press, or the owner\'s other device, aborts and the node is untouched', async () => {
+  const db = await a1Setup();
+  try {
+    assert.equal((await setupTurnOn(undefined, A1_QUIET)).ok, true);
+    await a1WaitShared(true);
+    const node = JSON.stringify(a1Server(db));
+    const points = a1Points(db).filter((x) => x.kind === 'pre-seed').length;
+    const second = await setupTurnOn(undefined, A1_QUIET);
+    assert.equal(second.reason, 'already', 'the switch is on: "You already turned this on"');
+    // The other device has not heard yet: it presses too. The transaction re-runs on the server's value and aborts.
+    setupTree = normalizeSetup({}); setupRev++;
+    assert.equal(scheduleIsShared(), false);
+    const stale = await setupTurnOn(undefined, A1_QUIET);
+    assert.equal(stale.ok, false);
+    assert.equal(stale.reason, 'already');
+    assert.equal(JSON.stringify(a1Server(db)), node, 'not a byte changed');
+    assert.equal(a1Points(db).filter((x) => x.kind === 'pre-seed').length, points + 1, 'a point is only a safety net: the stale press took its own, harmlessly');
+  } finally { a1Teardown(); }
+});
+
+test('only the owner can press it: another director or a counselor is refused before anything is written', async () => {
+  const db = await a1Setup({ user: A1_JENN });
+  try {
+    const from = db.log.length;
+    const r = await setupTurnOn(undefined, A1_QUIET);
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'owner');
+    assert.equal(r.message, 'Only Patrick can turn on editing.');
+    setMemberRole('viewer');
+    assert.equal((await setupTurnOn(undefined, A1_QUIET)).reason, 'owner');
+    setMemberRole('editor');
+    assert.equal(db.log.slice(from).length, 0, 'not even a restore point');
+    assert.equal(scheduleIsShared(), false);
+    const back = setupUseOriginal();
+    assert.equal(back.reason, 'owner', 'the owner check comes first, whatever is on');
+    assert.equal(back.message, 'Only Patrick can switch back to the original week.');
+  } finally { a1Teardown(); }
+});
+
+test('A1 preconditions are said first: loading, offline, denied, a newer schema, a restore point that cannot be written', async () => {
+  const db = await a1Setup();
+  try {
+    const from = db.log.length;
+    setupReady = false;
+    assert.equal((await setupTurnOn(undefined, A1_QUIET)).reason, 'loading');
+    setupReady = true;
+    fbConnected = false;
+    assert.equal((await setupTurnOn(undefined, A1_QUIET)).reason, 'offline');
+    fbConnected = true;
+    setupDenied = true;
+    assert.equal((await setupTurnOn(undefined, A1_QUIET)).reason, 'denied');
+    setupDenied = false;
+    setupTree.meta.schema = 2;
+    assert.equal((await setupTurnOn(undefined, A1_QUIET)).reason, 'schema');
+    setupTree.meta.schema = undefined;
+    assert.equal((await setupTurnOn(['meals'])).reason, 'none', 'a section this build cannot seed');
+    assert.equal(db.log.slice(from).length, 0, 'every refusal came before any write');
+    // The point is the safety net: without it, nothing is written.
+    db.refuse(A1_ROOT + '/restoreIndex');
+    const r = await setupTurnOn(undefined, A1_QUIET);
+    assert.equal(r.reason, 'restore-point');
+    assert.equal(db.serverGet(A1_ROOT + '/setup'), null, 'the node was not touched');
+    assert.equal(scheduleIsShared(), false);
+    db.allow(A1_ROOT + '/restoreIndex');
+  } finally { a1Teardown(); }
+});
+
+test('the camp-week freeze: a running week refuses, an unset date asks, "no" proceeds, the override proceeds', async () => {
+  const db = await a1Setup();
+  const realToday = campDateStr;
+  try {
+    setupTree.meta.weekStart = '2027-07-18'; setupRev++;
+    campDateStr = () => '2027-07-20';
+    assert.equal((await setupTurnOn()).reason, 'camp-week');
+    campDateStr = () => '2027-03-01';
+    delete setupTree.meta.weekStart; setupRev++;
+    assert.equal((await setupTurnOn()).reason, 'ask-camp-week', 'no date: the owner is asked "Is a camp week running right now?"');
+    assert.equal((await setupTurnOn(undefined, { campRunning: true })).reason, 'camp-week');
+    setupTree.meta.weekStart = '2027-07-18'; setupRev++;
+    campDateStr = () => '2027-07-20';
+    assert.equal((await setupTurnOn(undefined, { overrideCampWeek: true })).ok, true, '"I know a camp week is running"');
+  } finally { campDateStr = realToday; a1Teardown(); }
+});
+
+test('A1 after edits: stamps, a live wizard claim and another section\'s switch are carried; a second section still commits', async () => {
+  const carried = { meta: { weekStart: '2027-07-18', on: { meals: true }, edited: { week: { at: 1700000000000, byKey: 'jenn@example,com' } }, wizard: { step: 2, byKey: OWNER_MEMBER_KEY, at: 1700000000000, fromEpoch: 'legacy' } }, meals: { mon: { lunch: { dish: 'Pizza', emoji: '🍕' } } } };
+  const db = await a1Setup({ setup: carried });
+  const realToday = campDateStr;
+  try {
+    campDateStr = () => '2027-03-01';
+    const r = await setupTurnOn(undefined, A1_QUIET);
+    assert.equal(r.ok, true, JSON.stringify(r));
+    const server = a1Server(db);
+    assert.equal(JSON.stringify(syncCanon(server.meta.edited)), JSON.stringify(syncCanon(carried.meta.edited)), 'the stamp is carried as it was');
+    assert.equal(JSON.stringify(syncCanon(server.meta.wizard)), JSON.stringify(syncCanon(carried.meta.wizard)));
+    assert.equal(server.meta.weekStart, '2027-07-18');
+    assert.deepEqual(server.meta.on, { meals: true, schedule: true });
+    assert.deepEqual(server.meals, carried.meals);
+  } finally { campDateStr = realToday; a1Teardown(); }
+});
+
+test('off then on keeps everything: the edit, the hand attachment and the empty day all survive; only the switch moves', async () => {
+  const db = await a1Setup();
+  try {
+    assert.equal((await setupTurnOn(undefined, A1_QUIET)).ok, true);
+    await a1WaitShared(true);
+    await a1Settle();
+    // An edit on the schedule, and a game moved by hand.
+    const lunchId = planForDow(2).find((b) => b.label === 'Lunch').id;
+    const edit = commitSetup((d) => { d.typical[lunchId].label = 'Midday meal'; }, { label: 'Renamed lunch' });
+    assert.equal(edit.ok, true);
+    const day = competitionDays().find((d) => d.dow === 2);
+    const moved = allGames().find((g) => g.dayId === day.id && g.session === 'Morning');
+    moved.blockId = lunchId; moved.ord = 777;
+    saveConfig();
+    await a1Settle();
+    const serverBefore = JSON.stringify(a1Server(db));
+    const seeded = a1Server(db).meta.seeded;
+    // Use the original week again: instant, and the built-in copy is back.
+    const off = setupUseOriginal();
+    assert.equal(off.ok, true, JSON.stringify(off));
+    assert.equal(scheduleIsShared(), false);
+    assert.ok(scheduleForDow(2) === DAY_SCHEDULE[2], 'the printed week, the constant itself');
+    await a1Settle();
+    assert.equal(a1Server(db).meta.on.schedule, false, 'the switch is false on the server');
+    assert.equal(a1Server(db).typical[lunchId].label, 'Midday meal', 'the edit is KEPT');
+    const points = a1Points(db).length;
+    // Edit the week here again.
+    const on = await setupTurnOn(undefined, A1_QUIET);
+    assert.equal(on.ok, true, JSON.stringify(on));
+    assert.deepEqual(on.seeded, [], 'nothing was seeded: only the switch');
+    await a1WaitShared(true);
+    await a1Settle();
+    const after = a1Server(db);
+    assert.equal(after.meta.on.schedule, true);
+    assert.deepEqual(after.meta.seeded, seeded, 'the first seed record stays');
+    assert.equal(after.typical[lunchId].label, 'Midday meal', 'the edit came back');
+    assert.equal(scheduleIsShared(), true);
+    assert.equal(planForDow(2).find((b) => b.id === lunchId).label, 'Midday meal');
+    const g = allGames().find((x) => x.id === moved.id);
+    assert.equal(g.blockId, lunchId, 'the hand attachment is untouched');
+    assert.equal(g.ord, 777);
+    assert.equal(a1Points(db).length, points, 'no second pre-seed point: nothing was seeded');
+    // Everything but the switch is exactly as it was.
+    const strip = (t) => { const c = JSON.parse(t); delete c.meta.on; delete c.meta.edited; return JSON.stringify(c); };
+    assert.equal(strip(JSON.stringify(after)), strip(serverBefore));
+  } finally { a1Teardown(); }
+});
+
+test('Use the original week again is the owner\'s too, and refused for another director before it writes', async () => {
+  const db = await a1Setup();
+  try {
+    assert.equal((await setupTurnOn(undefined, A1_QUIET)).ok, true);
+    await a1WaitShared(true);
+    await a1Settle();
+    authUser = A1_JENN;
+    const from = db.log.length;
+    const r = setupUseOriginal();
+    assert.equal(r.ok, false);
+    assert.equal(r.reason, 'owner');
+    assert.equal(r.message, 'Only Patrick can switch back to the original week.');
+    assert.equal(scheduleIsShared(), true, 'still on');
+    assert.equal(db.log.slice(from).length, 0);
+  } finally { a1Teardown(); }
 });
