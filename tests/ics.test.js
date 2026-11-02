@@ -105,16 +105,40 @@ const WK_DOWS = [0, 1, 2, 3, 4, 5, 6];
 const wkLines = (ics) => unfold(ics).split('\r\n');
 const wkProp = (ics, name) => wkLines(ics).filter((l) => l.startsWith(name + ':') || l.startsWith(name + ';'));
 
-function wkSet(week) {
-  setupTree = normalizeSetup(week ? { meta: { weekStart: week } } : {});
-  setupRev++;
-}
+// The seeded pass (run.js) runs this file against a camp whose schedule is already edited here. Every helper below keeps
+// it that way: wkSet / wkReset put back the seeded tree (not an empty one, which would switch the schedule OFF from the
+// first week test on and quietly turn the rest of the pass into the plain one).
+const ICS_SEEDED = scheduleIsShared();
 function wkSeed(week) {
-  setupTree = normalizeSetup(Object.assign(syncCanon(buildSeed(CAMP)), {}));
+  setupTree = normalizeSetup(setupClone(syncCanon(buildSeed(CAMP))));
   if (week) setupTree.meta.weekStart = week;
   setupRev++;
 }
-function wkReset() { setupTree = normalizeSetup({}); setupRev++; setupEdited = {}; }
+function wkSet(week) {
+  if (ICS_SEEDED) { wkSeed(week); return; }
+  setupTree = normalizeSetup(week ? { meta: { weekStart: week } } : {});
+  setupRev++;
+}
+// The built-in week on purpose, in either pass (a test of what the printed copy does).
+function wkOff(week) {
+  setupTree = normalizeSetup(week ? { meta: { weekStart: week } } : {});
+  setupRev++;
+}
+function wkReset() {
+  if (ICS_SEEDED) wkSeed(null);
+  else { setupTree = normalizeSetup({}); setupRev++; }
+  setupEdited = {};
+}
+
+test('the helpers keep the pass what it says it is: the seeded run stays on the edited-here week, the plain run on the printed one', () => {
+  wkSet(WK_START);
+  assert.equal(scheduleIsShared(), ICS_SEEDED);
+  wkReset();
+  assert.equal(scheduleIsShared(), ICS_SEEDED);
+  wkOff(WK_START);
+  assert.equal(scheduleIsShared(), false, 'wkOff is the printed copy in either pass');
+  wkReset();
+});
 
 test('no camp dates, no week file: it is null, and the sheet offers nothing for it', () => {
   wkReset();
@@ -214,7 +238,7 @@ test('with the schedule edited here, a UID is camp + week + day + BLOCK id: a re
 });
 
 test('built-in camps keep position + start in the UID, so nothing claims a stability the printed week does not have', () => {
-  wkSet(WK_START);
+  wkOff(WK_START);
   try {
     const uids = uidsOf(buildWeekIcs({ now: WK_NOW }));
     assert.ok(uids.some((u) => /^[a-z]+-2027-07-18-tue-\d+-\d+@/.test(u)), 'junior Tue and Thu movie night no longer share a UID');
@@ -266,20 +290,31 @@ test('one day, or the days from today, are the same builder asked for fewer even
   } finally { wkReset(); }
 });
 
-test('the schedule sheet offers the week once dates exist — and "only from today" only during the week', () => {
-  const real = campDateStr;
+test('the schedule sheet offers the week once dates exist — and "only from today" only from the camp\'s Sunday on, never on it', () => {
+  const realDate = campDateStr;
+  const realNow = campNow;
+  // [camp date, weekday]: the clock is stubbed whole, so this reads the same on any day it is run.
+  const at = (date, dow) => { campDateStr = () => date; campNow = () => ({ dow, minutes: 600 }); return renderWeekIcsEntry(); };
   try {
     wkSet(WK_START);
-    campDateStr = () => '2027-07-10';
-    let html = renderWeekIcsEntry();
+    let html = at('2027-07-10', 6);
     assert.ok(html.includes('sched-ics-week-btn') && html.includes('Add the whole week to my calendar'));
     assert.ok(!html.includes('sched-ics-from-btn'), 'not before the week');
     assert.ok(html.includes('download it again and delete the old camp events first'), 'said in plain words, under the button');
-    campDateStr = () => '2027-07-21';
-    html = renderWeekIcsEntry();
-    assert.equal(html.includes('sched-ics-from-btn'), campNow().dow > 0, 'during the week: the second choice (when today is not Sunday)');
-    assert.equal(renderWeekIcsEntry(), html, 'an idle re-render is the same markup');
-  } finally { campDateStr = real; wkReset(); }
+    assert.ok(!at('2027-07-17', 6).includes('sched-ics-from-btn'), 'the Saturday BEFORE camp is "during" (the freeze window) but "from today" would be one day: not offered');
+    assert.ok(!at('2027-07-18', 0).includes('sched-ics-from-btn'), 'on the Sunday it is the whole week: not offered twice');
+    assert.ok(at('2027-07-19', 1).includes('sched-ics-from-btn'), 'Monday');
+    html = at('2027-07-21', 3);
+    assert.ok(html.includes('sched-ics-from-btn'), 'mid-week');
+    assert.equal(at('2027-07-21', 3), html, 'an idle re-render is the same markup');
+    assert.ok(at('2027-07-24', 6).includes('sched-ics-from-btn'), 'the last day');
+    assert.ok(!at('2027-07-25', 0).includes('sched-ics-from-btn'), 'the Sunday after: nothing left of the week to pick from');
+    assert.ok(!at('2027-07-26', 1).includes('sched-ics-from-btn'), 'after the week');
+    // And what the button asks for is the days from that weekday on.
+    at('2027-07-21', 3);
+    const from = uidsOf(buildWeekIcs({ now: WK_NOW, fromDow: campNow().dow }));
+    assert.ok(from.length && from.every((u) => /-(wed|thu|fri|sat)-/.test(u)));
+  } finally { campDateStr = realDate; campNow = realNow; wkReset(); }
 });
 
 test('the file name carries the week and the moment it was made', () => {

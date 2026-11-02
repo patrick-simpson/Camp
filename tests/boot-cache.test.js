@@ -24,8 +24,11 @@ function cachedWeek(mutate) {
   return JSON.stringify(state);
 }
 
+// The seeded pass boots the fresh context seeded too (the schedule edited here, the games on their items, applied once
+// the scripts have loaded): a cached week that carries blockIds loads the same either way.
+const BOOT_SEEDED = scheduleIsShared();
 function bootWith(json) {
-  const { ctx } = makeContext({ storage: { [STORAGE_KEY]: json } });
+  const { ctx } = makeContext({ storage: { [STORAGE_KEY]: json }, seeded: BOOT_SEEDED });
   const get = (expr) => vm.runInContext(expr, ctx);
   return { ctx, get };
 }

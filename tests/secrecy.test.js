@@ -118,6 +118,9 @@ function openGameAsViewer(gameId) {
 
 // ── The guard ────────────────────────────────────────────────────────
 
+// The seeded pass boots its own fresh contexts seeded too, so a hint-painted first frame is checked over the edited-here week as well.
+const SECRECY_SEEDED = scheduleIsShared();
+
 test('standingsVisible is true for a director only, and a role that has not resolved is not one', () => {
   setMemberRole('editor');
   assert.ok(standingsVisible());
@@ -615,7 +618,7 @@ test('hint-paint: a counselor phone booting from a cached week with points paint
   assert.ok(medalCounts().t0.points > 0);
   const vm = nodeRequire('vm');
   const { makeContext } = nodeRequire('./harness.js');
-  const boot = makeContext({ storage: { [STORAGE_KEY]: cache, campScoreboardAuthHint: 'viewer', campScoreboardCampsHint: JSON.stringify({ junior: 'viewer' }) } });
+  const boot = makeContext({ seeded: SECRECY_SEEDED, storage: { [STORAGE_KEY]: cache, campScoreboardAuthHint: 'viewer', campScoreboardCampsHint: JSON.stringify({ junior: 'viewer' }) } });
   boot.sandbox.installSinks();
   const get = (expr) => vm.runInContext(expr, boot.ctx);
   // applyTheme dispatches an event on window; the stub window has neither
@@ -637,7 +640,7 @@ test('hint-paint, editor: a stale director hint on a phone whose database cannot
   const cache = JSON.stringify(state);
   const vm = nodeRequire('vm');
   const { makeContext } = nodeRequire('./harness.js');
-  const boot = makeContext({ storage: { [STORAGE_KEY]: cache, campScoreboardAuthHint: 'editor', campScoreboardCampsHint: JSON.stringify({ junior: 'editor' }) } });
+  const boot = makeContext({ seeded: SECRECY_SEEDED, storage: { [STORAGE_KEY]: cache, campScoreboardAuthHint: 'editor', campScoreboardCampsHint: JSON.stringify({ junior: 'editor' }) } });
   boot.sandbox.installSinks();
   const get = (expr) => vm.runInContext(expr, boot.ctx);
   get('globalThis.CustomEvent = function (type, init) { this.type = type; this.detail = init && init.detail; }; globalThis.dispatchEvent = function () { return true; }');

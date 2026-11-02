@@ -896,9 +896,13 @@ into it from app.js / settings.js is typeof-guarded.
   checks `index.html` against it). **Step 15** gave Camp week and Schedule their screens:
   Camp week is `ok` with its dates or a plain `info` "No dates set yet" (the 2026 week has
   none: never a chore); Schedule is `info` "The original schedule" while it isn't edited
-  here, else Appendix B's problems from `hubScheduleView()` (typical day empty, an empty day,
-  broken items, an overlap nobody marked) with the summary "Typical day · Mon–Fri · 3
-  one-offs"; a schema this build can't read is a warning.
+  here ("Showing the original — your edits are kept" once it was turned off again — the
+  door then says so too), else Appendix B's problems from `hubScheduleView()` (typical day
+  empty, an empty day, broken items, an overlap nobody marked, a Breakfast / Lunch / Supper
+  item without the Meal tag) with the summary "Typical day · Mon–Fri · 3 one-offs"; a day
+  still on the seeded sample schedule (senior's Sunday and Saturday: `hubStillSample` asks
+  the plan, not the `placeholder` flag, which stays for good) is a quiet `note` on the row,
+  never a warning (Q11); a schema this build can't read is a warning.
 - **The front door** (`hubDoor`): running → new year due → nothing edited here yet, in that
   order. **Owner-only (Q8)**: the owner's gold button and the sentence every other director
   reads ("Patrick turns on editing.", via `ownerName()`) exist only when the door's action
@@ -1195,9 +1199,16 @@ setup-ui.js sections 8–11. No new file, so no new `?v=` entry.
   (never one the sheet left alone). A change a patch can't carry (removing a meal, an elective
   slot or the teams) refuses Just Tue in words. Remove asks skip-just-this-day / remove-from-
   every-day / delete a one-off, and re-homes the games with `setupCombined` (**ONE undo entry
-  for the setup and the games**). Closing with ✕ or the scrim on an edited sheet asks first;
-  Escape and the phone's Back do not (the edit is lost). "Tell people who follow this" is not
-  built (the alert sender is Step 26).
+  for the setup and the games**). Closing an edited sheet by ANY route asks first — ✕, the
+  scrim, Escape (app.js's Escape handler) and the phone's Back (`shellApply`: the sheet stays
+  up and the stack entry goes back) all go through `schedItemGuardClose()`; Discard closes it,
+  Keep editing leaves it. While such a sheet is open, `schedItemBusy()` holds the deploy
+  auto-reload (`reloadBlocked`), as `rainBusy()` does for a rain plan. A block made by hand
+  gets `b-` + 8 random base36 (`setupMintNewId`: an added item, a rain-plan one-off, the items
+  of a copied day) — never the seed's slug id (`setupMintId`, seed only), which two directors
+  adding the same name at once would mint twice and which a collision suffix could push past
+  the 40 characters `pushSchedule` allows once published as `<dk>-<id>`. "Tell people who
+  follow this" is not built (the alert sender is Step 26).
 - **Day operations** are shared by Camp week and Schedule: give a day its own schedule (same
   ids, `typical:false`, patches gone, one commit), follow again / clear (confirm, a
   `pre-delete` restore point first — a device with no sync has nowhere to keep one and goes
@@ -1594,7 +1605,11 @@ What's covered, and why each file exists:
   tabs, frame, shell, home, render-stability, game-view, secrecy, motion, overlays,
   boot-cache, backup) against a camp whose schedule is edited here
   (`makeContext({camp, seeded: true})`; junior, and senior where the file has a
-  `.senior` twin). `SEEDED=all` probes every file, `SEEDED=off` skips it.
+  `.senior` twin). `SEEDED=all` probes every file, `SEEDED=off` skips it. A test that
+  builds its own fresh context (boot-cache, secrecy's hint-paint boots, shell's
+  missing-script boot) passes `seeded: scheduleIsShared()` through, and `ics.test.js`'s
+  `wkSet` / `wkReset` put the seeded tree back (`wkOff` is the printed week on purpose) —
+  otherwise the "seeded" rerun quietly repeats the plain one.
 - `seam.test.js` — greps `app.js` (minus the SEAM block), `chat.js`, `push.js`
   and `settings.js` for direct reads of the week constants, `CAMP.<week field>`,
   `setupTree` and `state.config.days|games` (including a computed key, an alias
@@ -1979,9 +1994,10 @@ ignores the "director alerts" opt-out). Design spec:
 - **Data**: per camp root — `push/<memberKey>/<deviceId>` (one record per
   person+device: endpoint, keys, prefs; owner-only read/write in the rules;
   removed members can still delete their own), `pushSchedule` (the week's
-  blocks + `weekStart`, editor-written — the schedule is JS in camps.js and
-  the Worker can't run JS, so editor devices publish it as data and
-  re-publish automatically when the code's schedule changes), `pushAlerts`
+  blocks + `weekStart` + `rev` + `src`, editor-written — the schedule is JS in camps.js
+  (or, once edited on the Schedule screen, data in `setup/`) and the Worker can't run JS, so
+  editor devices publish it as data and re-publish automatically when it changes; the week
+  is `campWeek().start`, i.e. `setup/meta/weekStart`, see "The published schedule"), `pushAlerts`
   (director-alert audit log, Worker-written, editor-read). Worker-private
   state lives in top-level `pushServer/` (VAPID keys — generated by the
   Worker on first use and NEVER regenerated, cron cursor, dedupe markers,
@@ -2672,9 +2688,18 @@ Both camps, junior and senior, run all of it.
   `loading`) before anything changes. **Oracle** (pinned, game by game): junior 22/22
   (Morning → 10:00 Team competitions, Evening → 18:00 Evening competition, Team Skits →
   Fri 19:00 Team Skits); senior 25/25 (9:45 / 3:00 PM Team competitions, Legacy Game →
-  16:50, Hot Seat and Let's Make a Deal → 18:50). A game created in the classic
-  builder AFTER the switch is pressed has no link until Put games on the schedule is
-  pressed (the Games screen of step 21 sets it on create).
+  16:50, Hot Seat and Let's Make a Deal → 18:50). **A game created in the classic builder
+  (Add game, ⚡ quick game) while the schedule is edited here is placed at once**:
+  `setupAttachNewGame(config, game)` runs A2's rules for that ONE game inside the config
+  edit that adds it (`saveGameDraft`), so it shows on its natural block, in the calendar
+  file and on counselors' phones; a duplicate keeps its original's link (the copy is a clone).
+  Restore defaults and an imported backup run the whole of A2 (`putGamesOnSchedule()`) after
+  they replace the catalog — a game with no link is otherwise listed on no block. It never
+  re-places a game whose link still resolves; a game taken off the schedule on purpose
+  (`blockId` removed) is untouched by a new game, and `gamesForBlock` deliberately has NO
+  fallback for a missing link (that would resurrect it). The hub's Games row warns "N games
+  aren't on the schedule" from `unscheduledGames()` (`hubUnscheduledGames`) while the schedule
+  is edited here.
 - **A1, Edit the week here** (`setupTurnOn(sections, opts)`) and **Use the original week
   again** (`setupUseOriginal(sections)`), both OWNER-ONLY (`isOwner()`, from the sign-in;
   the rules refuse anyone else too). The switch is `meta/on/<section>` with three states:
@@ -2751,8 +2776,11 @@ Both camps, junior and senior, run all of it.
   is the same builder asked for one day** (same UIDs, so importing a day then the week
   never duplicates); with none it is the original per-day file, byte for byte.
   The sheet's entry is `renderWeekIcsEntry()` (a "whole week" button, "Only the days from
-  today" during the week, the snapshot note in plain words): **with no camp dates it renders
-  NOTHING**, so an untouched camp's schedule sheet is exactly what it was — the spec's
+  today" from the camp's Sunday until its last Saturday — never on the Sunday itself, which
+  is the whole week, and never on the Saturday BEFORE camp, which `campWeek().phase`
+  already calls "during" (the freeze window) — the snapshot note in plain words): **with no
+  camp dates it renders NOTHING, on the very line it replaced**, so an untouched camp's
+  schedule sheet is byte for byte what it was — the spec's
   disabled "Ask a director to set the camp dates" is a one-line change there when the
   Camp week screen is how a director sets them.
 - **The real seed against the real rules**: `tests/emulator/camp-data.mjs`'s `buildSeed(id)` is

@@ -138,13 +138,19 @@ test('adding: to the typical day (a typical id) or to one day (that day\'s own i
   seStart();
   let r = schedCommit({ kind: 'add', dk: 'tue', scope: 'typical', item: { label: 'Snack Shack', emoji: '🍦', start: 840, end: 870, type: 'activity' }, label: 'x' });
   assert.equal(r.ok, true);
-  seMatch(/^b-snack-shack-840$/, r.id);
+  // A block made by hand is `b-` + 8 random base36 (§5.5), never the seed's slug id: two directors adding the same item at
+  // once can't mint one id, and `<dk>-<id>` is 14 characters whatever the name (the pushSchedule rule allows 40).
+  seMatch(/^b-[a-z0-9]{8}$/, r.id);
   assert.equal(setupTree.typical[r.id].alertKey, 'snack-shack');
   assert.ok(setupTree.typical[r.id].ord > 90, 'after the rest of the typical day');
+  const first = r.id;
   r = schedCommit({ kind: 'add', dk: 'tue', scope: 'day', item: { label: 'Snack Shack', emoji: '🍦', start: 840, end: 870, type: 'activity' }, label: 'x' });
-  seMatch(/^b-tue-snack-shack-840$/, r.id);
+  seMatch(/^b-[a-z0-9]{8}$/, r.id);
+  assert.ok(r.id !== first, 'never the typical day\'s id: a typical id and an own id both publish as <dk>-<id>');
   const again = schedCommit({ kind: 'add', dk: 'tue', scope: 'day', item: { label: 'Snack Shack', emoji: '🍦', start: 840, end: 870, type: 'activity' }, label: 'x' });
-  assert.ok(again.id !== r.id, 'a collision gets a suffix');
+  assert.ok(again.id !== r.id, 'a fresh id every time, with no suffix to grow');
+  const long = schedCommit({ kind: 'add', dk: 'wed', scope: 'day', item: { label: 'A very long name for an item that would have filled a slug id to the brim', emoji: '🍦', start: 840, end: 870, type: 'activity' }, label: 'x' });
+  assert.ok(('wed-' + long.id).length <= 14, 'a long name cannot push the published id over the rule\'s 40');
   assert.equal(planForDow(2).filter((b) => /Snack/.test(b.label)).length, 3);
 });
 
@@ -199,7 +205,8 @@ test('Copy from another day fills an empty own day with new ids and the same rem
   assert.equal(r.ok, true);
   const ids = Object.keys(setupTree.dayBlocks.sat);
   assert.equal(ids.length, planForDow(1).length);
-  ids.forEach((id) => seMatch(/^b-sat-/, id));
+  ids.forEach((id) => seMatch(/^b-[a-z0-9]{8}$/, id));
+  assert.equal(new Set(ids).size, ids.length);
   assert.equal(planForDow(6).find((b) => b.base === 'Swim').alertKey, 'swim');
 });
 

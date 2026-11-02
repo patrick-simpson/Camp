@@ -250,6 +250,28 @@ test('the drawer\'s Save sets the date in setup and publishes it', async () => {
   } finally { ppTeardown(ctx); }
 });
 
+test('the drawer\'s Save publishes nothing when the setup date could not be written, so the two copies never disagree', async () => {
+  const ctx = await ppSetup();
+  const realEditable = setupEditable;
+  const realToast = showToast;
+  const said = [];
+  showToast = (m) => { said.push(String(m)); };
+  try {
+    await pushSaveWeekStart(PP_WEEK);
+    assert.equal(setupWeekStart(), PP_WEEK);
+    assert.equal(ctx.db.serverGet(PP_PATH).weekStart, PP_WEEK);
+    // The setup is still loading: commitSetup refuses, and campWeek() would prefer the OLD setup date over a newer
+    // published one (the next republish would write it straight back), so nothing is published.
+    setupEditable = () => false;
+    said.length = 0;
+    await pushSaveWeekStart('2027-07-25');
+    assert.equal(setupWeekStart(), PP_WEEK, 'the setup date is unchanged');
+    assert.equal(ctx.db.serverGet(PP_PATH).weekStart, PP_WEEK, 'and so is the published copy');
+    assert.equal(pushWeekStart, PP_WEEK);
+    assert.ok(said.some((m) => /still loading/.test(m)) && !said.some((m) => /alerts are set for/.test(m)), 'said, not reported as saved: ' + said.join(' | '));
+  } finally { setupEditable = realEditable; showToast = realToast; ppTeardown(ctx); }
+});
+
 test('what a director edits on the Schedule screen is what phones are told: a move keeps its id and reminder key, a rename keeps the key until "start fresh", a skipped item is not published', async () => {
   freshState();
   setMemberRole('editor');

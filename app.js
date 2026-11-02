@@ -1649,8 +1649,7 @@ function renderScheduleBody() {
   const html = `
     <h3 class="sched-day-title">${day.full} <span class="sched-day-tag">· ${esc(day.tag)}</span></h3>
     <div class="sched-timeline">${rows || '<p class="muted">Nothing scheduled.</p>'}</div>
-    ${blocks.some((b) => !b.noTime) ? `<div class="sched-ics-row"><jelly-button id="sched-ics-btn" class="secondary-btn" variant="platinum" size="small">📆 Add ${day.full} to calendar</jelly-button></div>` : ''}
-    ${renderWeekIcsEntry()}
+    ${blocks.some((b) => !b.noTime) ? `<div class="sched-ics-row"><jelly-button id="sched-ics-btn" class="secondary-btn" variant="platinum" size="small">📆 Add ${day.full} to calendar</jelly-button></div>` : ''}${renderWeekIcsEntry()}
   `;
   if (!setHtmlIfChanged(wrap, html)) return; // the live button already has its handler (same dow/day: the day title is in the markup)
   const icsBtn = document.getElementById('sched-ics-btn');
@@ -1768,15 +1767,17 @@ function buildDayIcs(dow) {
 // The schedule sheet's "Add the whole week to my calendar" (and, during the week, "Only the days from today"), with
 // the plain-words note that it is a snapshot (§12.4). Until a director has set the camp dates there is NO file to
 // offer, and for now the sheet then shows nothing at all — exactly what it showed before this existed, so a camp that
-// has not been touched renders byte-for-byte as it did. (The spec's disabled button, "Ask a director to set the camp
-// dates", is a one-line return here once the Camp week screen is how a director sets them.) The markup changes only
+// has not been touched renders byte-for-byte as it did (the entry sits on the line it replaced, so even the blank line
+// is the same). (The spec's disabled button, "Ask a director to set the camp dates", is a one-line return here; now that
+// the Camp week screen is how a director sets them, whether to show it is the deploy session's call.) The markup changes only
 // when the dates or the phase do, so an idle re-render rewrites nothing; the moment of the snapshot goes into the
 // file's own description and name, and the toast, not into this text.
 function renderWeekIcsEntry() {
   const wk = campWeek();
   if (!wk.start) return '';
-  const today = campNow().dow;
-  const fromToday = wk.phase === 'during' && today > 0 && today <= 6;
+  // 'during' starts a day early (the freeze window), so the Saturday BEFORE camp is 'during' too: from there "the days
+  // from today" would be only the camp's own Saturday. Offer it from the Sunday on, and not ON the Sunday (the whole week).
+  const fromToday = wk.phase === 'during' && campDateStr() >= wk.start && campNow().dow > 0;
   return `<div class="sched-ics-row sched-ics-week"><jelly-button id="sched-ics-week-btn" class="secondary-btn" variant="platinum" size="small">📆 Add the whole week to my calendar</jelly-button>`
     + (fromToday ? `<jelly-button id="sched-ics-from-btn" class="secondary-btn" variant="platinum" size="small">📆 Only the days from today</jelly-button>` : '')
     + `<p class="sched-ics-note">This is a snapshot of the schedule as it is now. Your calendar won’t update itself: if the schedule changes, download it again and delete the old camp events first.</p></div>`;
@@ -11165,6 +11166,7 @@ function reloadBlocked() {
   if (Object.values(liveWatches || {}).some((w) => w && w.running)) return true;
   if (typeof chatComposerBusy === 'function' && chatComposerBusy()) return true;
   if (typeof rainBusy === 'function' && rainBusy()) return true; // a rain plan being made (setup-ui.js: only while open and touched in the last 2 minutes)
+  if (typeof schedItemBusy === 'function' && schedItemBusy()) return true; // a Schedule item with edits not yet saved (setup-ui.js)
   return false;
 }
 
@@ -11377,6 +11379,13 @@ function shellOnPopState(e) {
 // of state moves first and the stack is reconciled once at the end (by the
 // renderAll inside), so it never plans against a half-applied snapshot.
 function shellApply(s) {
+  // A Schedule item with unsaved edits is asked about first: Back keeps the sheet up (the reconcile in renderAll puts
+  // the entry straight back) and the answer closes it, which files the pop again. Before anything below moves.
+  if (shell.sheets.includes('sched-item') && !s.ov.some((o) => o.k === 'sheet' && o.id === 'sched-item') &&
+      typeof schedItemGuardClose === 'function' && schedItemGuardClose()) {
+    renderAll();
+    return;
+  }
   const game = s.ov.find((o) => o.k === 'game');
   const wantBuilder = s.ov.some((o) => o.k === 'builder');
   if (!wantBuilder && builderOpen()) {
@@ -12362,6 +12371,7 @@ function wireShell() {
     if (e.key !== 'Escape') return;
     if (typeof askIsOpen === 'function' && askIsOpen()) return; // a question over a sheet takes the Escape; the sheet stays
     const top = shell.sheets[shell.sheets.length - 1];
+    if (top === 'sched-item' && typeof schedItemGuardClose === 'function' && schedItemGuardClose()) return; // a half-made edit asks first
     if (top && top !== 'schedule') shellSheetClose(top);
     else if (!top && shellTakeoverOpen()) closeGame();
   });

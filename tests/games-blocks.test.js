@@ -359,3 +359,93 @@ test('a game moved by the rain plan shows on its new item (and day), leaves the 
   assert.equal(gameById(game.id).blockId, undefined);
   assert.equal(unscheduledGames(toDow).some((g) => g.id === game.id), true);
 });
+
+// ── a game created after the switch is pressed ───────────────────────
+
+test('a game created while the schedule is edited here is put on its natural block at once — only that game, only by A2\'s rules', () => {
+  gbOn();
+  setMemberRole('editor');
+  setupApplyGameAttachments(state.config, gbPlan(state.config).ops);
+  const dow = 3;
+  const day = competitionDays().find((d) => d.dow === dow);
+  // A game taken off the schedule on purpose has no link either: a new game must not put it back.
+  const off = allGames().find((g) => g.dayId === day.id && g.blockId);
+  delete off.blockId; delete off.ord;
+  const fresh = { id: 'gb-new', name: 'Brand new game', emoji: '🎯', dayId: day.id, session: 'Morning', format: 'placement', rules: [] };
+  state.config.games.push(fresh);
+  assert.equal(unscheduledGames(dow).includes(fresh), true, 'before: on no block');
+  assert.equal(setupAttachNewGame(state.config, fresh), true);
+  const home = planForDow(dow).find((b) => b.id === fresh.blockId);
+  assert.ok(home && home.type === 'games' && home.start < 720, 'the first Morning games block');
+  assert.equal(gamesForBlock(dow, scheduleForDow(dow).find((b) => setupRichOf(b).id === home.id)).includes(fresh), true, 'listed under it');
+  const others = allGames().filter((g) => g !== fresh && g.blockId === home.id && g.dayId === day.id); // a typical id is shared by every day that follows the typical day
+  assert.ok(others.every((g) => g.ord < fresh.ord), 'after what the block already holds');
+  assert.equal(unscheduledGames(dow).includes(off), true, 'the game that was taken off on purpose is still off');
+  assert.equal(off.blockId, undefined);
+  // A game that already has a link is left alone, and the built-in week never takes a link.
+  const keep = allGames().find((g) => g.dayId === day.id && g.blockId && g !== fresh);
+  const was = [keep.blockId, keep.ord];
+  assert.equal(setupAttachNewGame(state.config, keep), false);
+  assert.deepEqual([keep.blockId, keep.ord], was);
+  gbOff();
+  const plain = { id: 'gb-plain', name: 'Plain', dayId: day.id, session: 'Morning', format: 'placement', rules: [] };
+  assert.equal(setupAttachNewGame(state.config, plain), false);
+  assert.equal(plain.blockId, undefined);
+});
+
+test('Add game in the classic builder lands on its block with the schedule edited here, and on none with the printed week', () => {
+  const dow = 2;
+  const make = () => {
+    window.scrollTo = () => {};
+    setMemberRole('editor');
+    state.ui.view = 'settings';
+    state.ui.builderScreen = 'classic';
+    state.ui.editGameId = 'new';
+    gameDraft = null; gameDraftFor = null;
+    ensureGameDraft();
+    Object.assign(gameDraft, { name: 'Sock Hop', format: 'placement', dayId: competitionDays().find((d) => d.dow === dow).id, session: 'Evening' });
+    saveGameDraft();
+    return state.config.games[state.config.games.length - 1];
+  };
+  gbOn();
+  setupApplyGameAttachments(state.config, gbPlan(state.config).ops);
+  let made = make();
+  assert.equal(typeof made.blockId, 'string', 'a link at birth');
+  assert.equal(unscheduledGames(dow).includes(made), false);
+  assert.equal(gamesForDay(dow).some((x) => x.games.includes(made)), true, 'and in the schedule sheet / calendar / counselor view');
+  gbOff();
+  made = make();
+  assert.equal(made.blockId, undefined, 'the printed week has no links to write');
+  assert.equal(unscheduledGames(dow).includes(made), false, 'the Morning / Evening rule still lists it');
+});
+
+test('Restore defaults and an old backup run A2, so the catalog they bring is on the schedule', () => {
+  gbOn();
+  setMemberRole('editor');
+  window.scrollTo = () => {};
+  const realConfirm = globalThis.confirm;
+  globalThis.confirm = () => true;
+  try {
+    state.config.games.forEach((g) => { g.blockId = 'b-nowhere-1'; g.ord = 1; });
+    restoreDefaults();
+    assert.deepEqual(allGames().filter((g) => typeof g.blockId !== 'string'), [], 'every original game has a link again');
+    assert.deepEqual(competitionDays().map((d) => unscheduledGames(d.dow).length).filter((n) => n), [], 'and is listed under a block');
+  } finally { globalThis.confirm = realConfirm; gbOff(); }
+});
+
+test('the hub\'s Games row warns about games on no schedule item — only while the schedule is edited here', () => {
+  gbOn();
+  setupApplyGameAttachments(state.config, gbPlan(state.config).ops);
+  assert.deepEqual(hubUnscheduledGames(), []);
+  const dow = 3;
+  const day = competitionDays().find((d) => d.dow === dow);
+  const g = allGames().find((x) => x.dayId === day.id && x.blockId);
+  delete g.blockId; delete g.ord;
+  assert.deepEqual(hubUnscheduledGames(), [g.name]);
+  const v = hubView();
+  assert.deepEqual(v.unscheduled, [g.name]);
+  assert.ok(hubStatus('games', v).problems.includes(g.name + ' isn’t on the schedule'));
+  assert.ok(hubStatus('games', Object.assign({}, v, { unscheduled: ['A', 'B'] })).problems.includes('2 games aren’t on the schedule'));
+  gbOff();
+  assert.deepEqual(hubUnscheduledGames(), [], 'the printed week lists games by its own rule: nothing to warn about');
+});

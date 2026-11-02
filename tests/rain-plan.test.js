@@ -235,7 +235,7 @@ test('a one-off added in the plan is STAGED (a whole record), shows up in the da
     assert.equal(Object.keys(setupMapOf(setupTree.dayBlocks.wed)).length, before, 'nothing written yet');
     const paths = Object.keys(setupRain.plan.items);
     assert.equal(paths.length, 1);
-    assert.ok(/^dayBlocks\/wed\/b-wed-indoor-games-1230$/.test(paths[0]));
+    assert.ok(/^dayBlocks\/wed\/b-[a-z0-9]{8}$/.test(paths[0]));
     assert.equal(rainChanges(setupTree, setupRain.plan, 3, state.config).lines[0].kind, 'add');
   } finally { setupSched.item = null; rpEnd(); }
 });

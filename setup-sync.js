@@ -2298,11 +2298,23 @@ function setupAlertKey(label) {
   return typeof pushBlockKey === 'function' ? pushBlockKey(label) : setupSlug(setupHeadLabel(label), 48);
 }
 
-// `b-<slug>-<start>` for a typical block, `b-<dk>-<slug>-<start>` for a day's own; a collision inside one container gets -2, -3….
+// The SEED's ids: `b-<slug>-<start>` for a typical block, `b-<dk>-<slug>-<start>` for a day's own (a collision inside one
+// container gets -2, -3…). Seeding is deterministic so a second run mints the same ids; a block created by hand uses setupMintNewId.
 function setupMintId(dk, label, start, taken) {
   const base = 'b-' + (dk ? dk + '-' : '') + setupSlug(setupHeadLabel(label), SETUP_HEAD_SLUG) + '-' + start;
   let id = base;
   for (let n = 2; taken[id]; n++) id = base + '-' + n;
+  taken[id] = true;
+  return id;
+}
+
+// A block CREATED here (an added item, a rain-plan one-off, the items of a copied day) gets `b-` + 8 random base36
+// characters (§5.5), never the slug id the seed uses: two directors adding the same-named item at the same minute
+// can't mint one id and merge their fields, and the id publishes as `<dk>-<id>` = 14 characters, so no name can push
+// it past the 40 the pushSchedule rule allows (a slug id on a long own-day name plus one collision suffix could).
+function setupMintNewId(taken) {
+  let id;
+  do { id = 'b-' + Math.random().toString(36).slice(2, 10).padEnd(8, '0'); } while (taken[id]);
   taken[id] = true;
   return id;
 }
@@ -2731,6 +2743,22 @@ function putGamesOnSchedule() {
   return { ok: true, attached: plan.ops.length, unplaced: plan.unplaced };
 }
 
+// One game, just created (the classic builder's Add game and the ⚡ quick game both end in saveGameDraft): put it on
+// its natural block at once, by A2's own rules, so it shows in the schedule, the calendar file and every counselor's
+// view instead of on no item until somebody finds "Put games on the schedule". Called INSIDE the config edit that adds
+// the game, so the game goes up whole with its link. Touches only this game: a game taken off the schedule on
+// purpose (no blockId either) is never put back by someone else adding one. A duplicate carries its original's link
+// (the copy is a clone), so it needs none. Returns true when it was placed.
+function setupAttachNewGame(config, game) {
+  if (!setupScheduleLive() || !config || !game || typeof game.blockId === 'string') return false;
+  const placed = { days: config.days, games: (config.games || []).filter((g) => g === game || (g && typeof g.blockId === 'string')) };
+  const op = setupGameAttachments(placed, (dow) => planForDow(dow), CAMP).ops.find((o) => o.id === game.id);
+  if (!op) return false;
+  game.blockId = op.blockId;
+  game.ord = op.ord;
+  return true;
+}
+
 // ── A1: Edit the week here, and Use the original week again (§10.1) — the OWNER's ────────────────
 // The switch is `meta/on/<section>`: absent = never turned on, false = turned off (data kept), true = the
 // subtree is the whole truth. Only the owner presses it (the rules refuse anyone else, and the app shows the
@@ -2934,7 +2962,7 @@ function schedAddMutate(draft, p) {
   const rec = schedRecord(p.item, { alertKey: setupAlertKey(p.item.label) });
   const scope = p.scope === 'typical' ? 'typical' : 'day';
   rec.ord = schedNextOrd(draft, p.dk, scope);
-  const id = setupMintId(scope === 'typical' ? '' : p.dk, p.item.label, p.item.start, schedTakenIds(draft));
+  const id = setupMintNewId(schedTakenIds(draft));
   if (scope === 'typical') draft.typical[id] = rec;
   else { draft.dayBlocks[p.dk] = setupMapOf(draft.dayBlocks[p.dk]); draft.dayBlocks[p.dk][id] = rec; }
   return id;
@@ -3136,7 +3164,7 @@ function schedCopyIntoMutate(draft, dk, blocks) {
   const taken = schedTakenIds(draft);
   (blocks || []).forEach((b, i) => {
     const rec = schedRecord({ label: b.base, emoji: b.emoji, start: b.start, end: b.end, type: b.type, slot: b.slot, meal: b.meal, noTime: b.noTime, teams: b.teams, overlapOk: b.overlapOk }, { alertKey: b.alertKey, ord: 10 * i });
-    draft.dayBlocks[dk][setupMintId(dk, b.base, b.start, taken)] = rec;
+    draft.dayBlocks[dk][setupMintNewId(taken)] = rec;
   });
 }
 

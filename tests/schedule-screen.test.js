@@ -330,3 +330,63 @@ test('the day strip names each day in words and the open sheet knows its day; se
     assert.equal(schedInputToMin('09:30'), 570);
   } finally { state.ui.builderScreen = undefined; ssEnd(); }
 });
+
+test('an item sheet with edits asks before it closes by ANY route (✕, Escape, the phone\'s Back); Discard closes it, Keep editing leaves it, and it holds the deploy reload', async () => {
+  ssStart({ day: 'tue' });
+  state.ui.view = 'settings';
+  state.ui.builderScreen = 'schedule';
+  const realAsk = askDialog;
+  const asked = [];
+  let answer = 'keep';
+  askDialog = (o) => { asked.push(o); return Promise.resolve(answer); };
+  const settle = () => new Promise((r) => setTimeout(r, 0));
+  try {
+    wireShell();
+    const keys = (__docListeners.keydown || []);
+    const escape = () => keys.forEach((h) => h({ key: 'Escape', preventDefault() {} }));
+    schedOpenItem({ bid: planForDow(2).find((b) => !b.noTime).id });
+    assert.equal(shell.sheets.includes('sched-item'), true, 'the sheet is up');
+    // Nothing edited: nothing to ask, nothing held, Escape closes as ever.
+    assert.equal(schedItemGuardClose(), false);
+    assert.equal(schedItemBusy(), false);
+    assert.equal(reloadBlocked(), false);
+    escape();
+    assert.equal(shell.sheets.includes('sched-item'), false);
+    assert.equal(asked.length, 0);
+    // Edited: the deploy reload waits, and every route asks.
+    schedOpenItem({ bid: planForDow(2).find((b) => !b.noTime).id });
+    setupSched.item.form.label = 'Half-typed';
+    schedItemTouched('label');
+    assert.equal(schedItemBusy(), true);
+    assert.equal(reloadBlocked(), true, 'an unsaved item edit holds the auto-reload, as a game draft does');
+    escape();
+    await settle();
+    assert.equal(asked.length, 1, 'Escape asks');
+    assert.equal(asked[0].title, 'Discard your changes to Half-typed?');
+    assert.deepEqual(asked[0].actions.map((a) => a.label), ['Keep editing', 'Discard']);
+    assert.equal(shell.sheets.includes('sched-item'), true, 'Keep editing: still up');
+    assert.ok(setupSched.item && setupSched.item.form.touched, 'with the edit intact');
+    // The phone's Back (a snapshot without the sheet): the sheet stays and the question is asked.
+    shellApply({ tab: 'now', ov: [{ k: 'builder' }] });
+    await settle();
+    assert.equal(asked.length, 2, 'Back asks too');
+    assert.equal(shell.sheets.includes('sched-item'), true);
+    // A question already up is not stacked on.
+    askState = { resolve() {}, actions: [], input: false };
+    escape();
+    assert.equal(asked.length, 2);
+    askState = null;
+    // Discard closes it, and a closed sheet holds nothing.
+    answer = 'discard';
+    escape();
+    await settle();
+    assert.equal(asked.length, 3);
+    assert.equal(shell.sheets.includes('sched-item'), false, 'Discard closes it');
+    assert.equal(setupSched.item, null);
+    assert.equal(schedItemBusy(), false);
+    assert.equal(reloadBlocked(), false);
+    // A sheet closed some other way that left its item set cannot hold the reload for good.
+    setupSched.item = { form: { touched: true } };
+    assert.equal(schedItemBusy(), false, 'only while the sheet is really up');
+  } finally { askDialog = realAsk; askState = null; shell.sheets.length = 0; ssSheetClose(); ssEnd(); state.ui.view = 'home'; }
+});

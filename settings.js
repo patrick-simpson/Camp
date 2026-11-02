@@ -1256,6 +1256,8 @@ function saveGameDraft() {
     if (isNew) {
       out.id = makeId(out.name, takenGameIds());
       state.config.games.push(out);
+      // With the schedule edited here a game lives on a schedule item; a new one is put on its natural one (A2's rules).
+      if (typeof setupAttachNewGame === 'function') setupAttachNewGame(state.config, out);
       return undefined;
     }
     const g = gameById(out.id); // resolved now, not when the sheet opened (P10)
@@ -2071,6 +2073,9 @@ function tryImport(text, opts) {
   // import syncs. Heal it before anything renders or pushes.
   normalizeSyncedState();
   pruneOrphanedGameData();
+  // An older backup (or the other camp's copy) has games with no schedule item: with the schedule edited here that
+  // leaves them on no block, so A2 puts each on its natural one (it never moves a link that still resolves).
+  if (typeof putGamesOnSchedule === 'function') putGamesOnSchedule();
 
   saveState();
   renderAll();
@@ -2100,6 +2105,7 @@ function restoreDefaults() {
     state.ui.day = competitionDays()[0] ? competitionDays()[0].id : null;
   }
   pruneOrphanedGameData(); // custom games' results would otherwise haunt the standings
+  if (typeof putGamesOnSchedule === 'function') putGamesOnSchedule(); // the original games carry no schedule item (A2)
   saveState();
   renderAll();
 }

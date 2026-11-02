@@ -217,7 +217,7 @@ test('app.js still boots when jelly-motion.js never loaded: a no-op stand-in, no
   const vm = nodeRequire('vm');
   const { makeContext } = nodeRequire('./harness.js');
   let boot;
-  assert.doesNotThrow(() => { boot = makeContext({ without: ['jelly-motion.js'] }); }, 'app.js, settings.js, chat.js and push.js all load');
+  assert.doesNotThrow(() => { boot = makeContext({ without: ['jelly-motion.js'], seeded: scheduleIsShared() }); }, 'app.js, settings.js, chat.js and push.js all load');
   const get = (expr) => vm.runInContext(expr, boot.ctx);
   assert.equal(get('calmMotion()'), false);
   assert.equal(get('calmReason()'), null);

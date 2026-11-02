@@ -138,6 +138,55 @@ test('Camp week and Schedule have their screens now (Step 15): dates are ok or a
   assert.equal(newer.mark, 'warn');
 });
 
+test('Schedule row, Appendix B sentences: "showing the original, your edits are kept", a meal without its tag, and a quiet note for a day still on the sample', () => {
+  const held = hubStatus('schedule', clView({ held: { schedule: true } }));
+  assert.deepEqual([held.mark, held.summary, held.word], ['info', 'Showing the original — your edits are kept', '']);
+  const door = hubDoor(clView({ held: { schedule: true }, doorActions: { original: true } }));
+  assert.equal(door.door, 'original');
+  assert.equal(door.text, 'Your changes to the schedule are kept. Turning on editing brings them back.');
+  assert.equal(door.ownerButton, 'Edit the week here');
+  assert.equal(door.ownerText, 'Patrick can switch it back on.', 'everyone else reads the owner\'s name, no button');
+  assert.equal(hubDoor(clView({ doorActions: { original: true } })).lead, 'This camp is still using the original week.', 'never turned on: the old sentence');
+  const meals = hubStatus('schedule', clView({ on: { schedule: true }, schedule: { follow: 'Mon–Fri', oneOffs: 0, empty: [], broken: [], overlaps: [], unmarkedMeals: [{ day: 'Tuesday', names: ['Lunch'] }, { day: 'Friday', names: ['Breakfast', 'Supper'] }] } }));
+  assert.equal(meals.mark, 'warn');
+  assert.deepEqual(meals.problems, ['Lunch on Tuesday isn’t marked as a meal', 'Breakfast and Supper on Friday aren’t marked as meals']);
+  const sample = hubStatus('schedule', clView({ on: { schedule: true }, schedule: { follow: 'Mon–Fri', oneOffs: 0, empty: [], broken: [], overlaps: [], sample: ['Sunday', 'Saturday'] } }));
+  assert.equal(sample.mark, 'ok', 'a placeholder day is information, never a warning');
+  assert.deepEqual(sample.problems, []);
+  assert.equal(sample.note, 'Sunday and Saturday still use the sample schedule');
+  assert.equal(hubStatus('schedule', clView({ on: { schedule: true }, schedule: { follow: 'Mon–Fri', sample: ['Sunday'] } })).note, 'Sunday still uses the sample schedule');
+  assert.equal(hubStatus('schedule', clView({ on: { schedule: true }, schedule: { follow: 'Mon–Fri' } })).note, undefined);
+});
+
+test('hubScheduleView over the seeded camp: no unmarked meal anywhere, and only a day that still matches the seed is a sample day (the placeholder flag stays for good)', () => {
+  freshState();
+  setupTree = normalizeSetup(setupClone(syncCanon(buildSeed(CAMP))));
+  setupRev++;
+  try {
+    const v = hubScheduleView();
+    assert.deepEqual(v.unmarkedMeals, [], 'every seeded meal carries its Meal tag');
+    const placeholders = (CAMP.placeholderDays || []).map((dow) => SETUP_DAY_WORDS[SETUP_DK[dow]]);
+    assert.deepEqual(v.sample, placeholders, CAMP.id === 'senior' ? 'senior\'s arrival and send-off days' : 'junior has none');
+    if (placeholders.length) {
+      // A director replaces the first one: the note goes, the flag stays.
+      const dow = CAMP.placeholderDays[0];
+      const dk = SETUP_DK[dow];
+      setupTree.dayBlocks[dk] = { 'b-x-540': { start: 540, end: 600, label: 'Welcome', emoji: '👋', type: 'activity', ord: 0, alertKey: 'welcome' } };
+      setupTree.days[dk].typical = false;
+      setupRev++;
+      assert.deepEqual(hubScheduleView().sample, placeholders.slice(1), 'the replaced day is no longer called a sample');
+      assert.equal(setupMapOf(setupTree.days)[dk].placeholder, true, 'the flag itself is untouched');
+    }
+    // A Lunch without its tag is named.
+    const lunch = Object.keys(setupTree.typical).find((id) => setupTree.typical[id].meal === 'lunch');
+    assert.ok(lunch, 'the seeded typical day has a lunch');
+    delete setupTree.typical[lunch].meal;
+    setupRev++;
+    const lunchy = hubScheduleView().unmarkedMeals;
+    assert.ok(lunchy.length && lunchy.every((m) => m.names.includes('Lunch')), 'named, day by day');
+  } finally { setupTree = normalizeSetup({}); setupRev++; }
+});
+
 test('Notice board and Restore points are information, not chores; denied restore nodes are a warning', () => {
   assert.deepEqual([hubStatus('notice', clView()).mark, hubStatus('notice', clView()).word, hubStatus('notice', clView()).summary], ['info', 'Draft', 'Nothing written yet']);
   assert.equal(hubStatus('notice', clView({ notice: { status: 'draft', has: true } })).summary, 'Not on anyone’s phone yet');

@@ -674,7 +674,7 @@ CAMPS.senior = {
   seedCounselors: [],           // no printed senior roster yet ⇒ the seed button never shows
   daySchedule: DAY_SCHEDULE,
   schedDays: SCHED_DAYS,
-  placeholderDays: [0, 6],      // Sunday arrival and Saturday send-off are STUBS: the seed marks them, so the hub says "sample day", never a warning
+  placeholderDays: [0, 6],      // Sunday arrival and Saturday send-off are STUBS: the seed marks them, so the hub shows a quiet "still use the sample schedule" note (only while the day still matches the seed), never a warning
   gameBlockOverrides: {},
   electives: {},
   stationEmoji: {},

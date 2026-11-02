@@ -1864,8 +1864,16 @@ async function pushSaveWeekStart(value) {
   const btn = document.getElementById('pa-week-save');
   if (btn) btn.setAttribute('disabled', '');
   try {
-    // The date lives in setup/meta/weekStart (the Camp week screen sets it too); the published copy follows it.
-    if (typeof commitSetup === 'function') commitSetup((d) => { d.meta.weekStart = value; }, { undo: false });
+    // The date lives in setup/meta/weekStart (the Camp week screen sets it too); the published copy follows it. If that
+    // write is refused (the setup is still loading) nothing is published: campWeek() prefers the setup date, so a
+    // published date it did not match would be overwritten with the old week by the next republish.
+    if (typeof commitSetup === 'function') {
+      const r = commitSetup((d) => { d.meta.weekStart = value; }, { undo: false });
+      if (!r.ok) {
+        showToast(r.reason === 'loading' ? 'The camp setup is still loading. Try again in a moment.' : 'Couldn’t save the camp dates just now. Try again.');
+        return;
+      }
+    }
     await pushPublishSchedule(value);
     pushWeekStart = value;
     showToast(`🗓️ Schedule alerts are set for ${pushWeekLabel(value)}.`, { mine: true });

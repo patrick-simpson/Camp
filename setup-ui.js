@@ -119,15 +119,20 @@ function hubStatus(section, view) {
     }
     case 'schedule': {
       if (v.setupTooNew) return hubMark('warn', 'Made with a newer version', ['Reload to see the schedule that was made with a newer version']);
-      if (!(v.on && v.on.schedule)) return hubMark('info', HUB_ORIGINAL.schedule, [], '');
+      // Turned off again with the edits kept (Use the original week again): said plainly, so nobody wonders where they went.
+      if (!(v.on && v.on.schedule)) return hubMark('info', v.held && v.held.schedule ? 'Showing the original — your edits are kept' : HUB_ORIGINAL.schedule, [], '');
       const sc = v.schedule || {};
       const problems = [];
       if (sc.typicalEmpty) problems.push('The typical day is empty');
       (sc.empty || []).forEach((d) => problems.push(d + ' is empty'));
       (sc.broken || []).forEach((b) => problems.push(hubPlural(b.n, 'broken item', 'broken items') + ' on ' + b.day));
       (sc.overlaps || []).forEach((o) => problems.push(hubPlural(o.n, 'item overlaps', 'items overlap') + ' on ' + o.day + ' at ' + o.at));
+      (sc.unmarkedMeals || []).forEach((m) => problems.push(m.names.length === 1 ? m.names[0] + ' on ' + m.day + ' isn’t marked as a meal' : hubJoin(m.names) + ' on ' + m.day + ' aren’t marked as meals'));
       const shape = sc.follow ? 'Typical day · ' + sc.follow + (sc.oneOffs ? ' · ' + hubPlural(sc.oneOffs, 'one-off', 'one-offs') : '') : 'Edited here';
-      return hubMark(problems.length ? 'warn' : 'ok', shape, problems);
+      const row = hubMark(problems.length ? 'warn' : 'ok', shape, problems);
+      // A day still on the seeded sample schedule (senior's arrival and send-off days) is a quiet note, never a warning (Q11).
+      if (sc.sample && sc.sample.length) row.note = hubJoin(sc.sample) + (sc.sample.length === 1 ? ' still uses' : ' still use') + ' the sample schedule';
+      return row;
     }
     case 'campers':
       return hubMark('soon', 'Camper lists come later', []);
@@ -145,6 +150,9 @@ function hubStatus(section, view) {
       if (lost.length) problems.push(lost.length === 1 ? (lost[0].name || 'A game') + ' isn’t on a day' : lost.length + ' games aren’t on a day');
       const empty = days.filter((d) => d && !games.some((g) => g.dayId === d.id)).map((d) => d.name || 'A day');
       if (empty.length) problems.push(empty.length > 2 ? empty.length + ' days have no games' : hubJoin(empty) + (empty.length === 1 ? ' has' : ' have') + ' no games');
+      // With the schedule edited here a game must sit on one of its items, or no counselor sees it in the schedule.
+      const loose = Array.isArray(v.unscheduled) ? v.unscheduled : [];
+      if (loose.length) problems.push(loose.length === 1 ? loose[0] + ' isn’t on the schedule' : loose.length + ' games aren’t on the schedule');
       const tc = Number(v.teamCount) || 0;
       if (tc !== 4 && tc !== 6) {
         const bad = games.filter((g) => g && g.format === 'tournament').map((g) => g.name || 'A tournament');
@@ -226,6 +234,15 @@ function hubDoor(view) {
     };
   }
   const anyOn = ['schedule', 'meals', 'verses', 'cleanup', 'electives'].some((s) => v.on && v.on[s]);
+  if (!anyOn && v.held && v.held.schedule) {
+    const act = !!actions.original;
+    return {
+      door: 'original', lead: 'This camp is showing the original week.',
+      text: 'Your changes to the schedule are kept. Turning on editing brings them back.',
+      ownerButton: act ? 'Edit the week here' : '',
+      ownerText: act ? name + ' can switch it back on.' : '',
+    };
+  }
   if (!anyOn) {
     const act = !!actions.original;
     return {
@@ -319,16 +336,37 @@ function hubView() {
     notice: { status: notice && notice.status, has: !!(notice && (notice.title || notice.sub || (notice.zones && notice.zones.length) || (notice.steps && notice.steps.length))) },
     restore: { status: rest.status, newestAt: rest.rows.length ? rest.rows[0].at : 0, count: rest.rows.length },
     doorActions,
+    held: { schedule: hubSetupMeta().on && hubSetupMeta().on.schedule === false },
+    unscheduled: hubUnscheduledGames(),
     schedule: hubScheduleView(),
   };
 }
 
 // What the Schedule row needs to judge the edited week (null while the schedule is the built-in copy): the days that
 // follow the typical day, one-offs, empty days, broken items and unmarked overlaps, each as the sentence's parts.
+// The names of the games on a competition day that sit on no schedule item, once the schedule is edited here ([]
+// while it is the built-in copy: there the Morning / Evening rule decides, and senior's Afternoon games are known).
+function hubUnscheduledGames() {
+  if (typeof scheduleIsShared !== 'function' || !scheduleIsShared() || typeof unscheduledGames !== 'function') return [];
+  const dows = [];
+  competitionDays().forEach((d) => { if (Number.isInteger(d.dow) && dows.indexOf(d.dow) === -1) dows.push(d.dow); });
+  const names = [];
+  dows.forEach((dow) => unscheduledGames(dow).forEach((g) => names.push(String(g.name || '').trim() || 'A game')));
+  return names;
+}
+
+// Is this weekday's plan still the seeded one (same items at the same times)? Placeholder days stay flagged in the tree
+// for good, so the quiet "sample schedule" note asks the plan, not the flag, whether anyone has replaced it.
+function hubStillSample(dow) {
+  const built = typeof setupBuiltInPlans === 'function' ? setupBuiltInPlans().rich[dow] || [] : [];
+  const now = planForDow(dow);
+  return now.length === built.length && now.every((b, i) => b.label === built[i].label && b.start === built[i].start && b.end === built[i].end);
+}
+
 function hubScheduleView() {
   if (typeof scheduleIsShared !== 'function' || !scheduleIsShared() || typeof planForDow !== 'function') return null;
   const tree = setupTree;
-  const out = { typicalEmpty: false, follow: '', oneOffs: 0, empty: [], broken: [], overlaps: [] };
+  const out = { typicalEmpty: false, follow: '', oneOffs: 0, empty: [], broken: [], overlaps: [], unmarkedMeals: [], sample: [] };
   const followDks = SETUP_DK.filter((dk) => setupMapOf(setupMapOf(tree.days)[dk]).typical === true);
   out.typicalEmpty = followDks.length > 0 && !Object.keys(setupMapOf(tree.typical)).length;
   out.follow = followDks.length ? schedDaysWords(followDks) : '';
@@ -344,6 +382,14 @@ function hubScheduleView() {
     let first = 0;
     timed.forEach((a, i) => timed.slice(i + 1).forEach((b) => { if (b.start < a.end && a.start < b.end) { if (!n) first = Math.max(a.start, b.start); n++; } }));
     if (n) out.overlaps.push({ day: SETUP_DAY_WORDS[dk], n, at: setupClock(first) });
+    // A Breakfast / Lunch / Supper item without the Meal tag gets no menu and no cleanup line.
+    const loose = [];
+    plan.forEach((b) => {
+      const head = setupHeadLabel(b.label);
+      if (!b.meal && /^(breakfast|lunch|supper)$/i.test(head) && loose.indexOf(head) === -1) loose.push(head);
+    });
+    if (loose.length) out.unmarkedMeals.push({ day: SETUP_DAY_WORDS[dk], names: loose });
+    if (day.placeholder === true && plan.length && hubStillSample(dow)) out.sample.push(SETUP_DAY_WORDS[dk]);
   }
   return out;
 }
@@ -594,7 +640,7 @@ function paintHub() {
     const st = model.rows[k];
     if (k === 'electives') setHiddenIfChanged(e.row, !view.electives);
     setTextIfChanged(e.sum, st.summary);
-    const prob = st.problems[0] || '';
+    const prob = st.problems[0] || st.note || '';
     setTextIfChanged(e.prob, prob);
     setHiddenIfChanged(e.prob, !prob);
     if (e.mark) {
@@ -1518,7 +1564,7 @@ async function setupEditTheWeek() {
   const camp = CAMP.label;
   const go = await askDialog({
     title: 'Edit the ' + camp + ' week here?',
-    body: ['Turning this on changes nothing anyone can see until someone edits something.', 'A restore point is saved first, and “Use the original week again” in the ⋯ menu puts it all back.'],
+    body: ['Turning this on changes nothing anyone can see until someone edits something.', 'The first time, a restore point is saved first. “Use the original week again” in the ⋯ menu puts it all back.'],
     actions: [{ label: 'Not yet', value: 'no', cancel: true }, { label: 'Turn on editing', value: 'go', kind: 'gold' }],
   });
   if (go !== 'go') return { ok: false, reason: 'cancelled' };
@@ -2496,7 +2542,7 @@ async function schedSaveItem(scope) {
   const dk = it.dk;
   if (it.stage) { // the rain plan's "Add something for today": a whole one-off record, staged with the rest
     const taken = schedTakenIds(rainStagedTree(setupTree, rainEnsure()));
-    const id = setupMintId(dk, m.item.label, m.item.start, taken);
+    const id = setupMintNewId(taken);
     const rec = schedRecord(m.item, { alertKey: setupAlertKey(m.item.label), ord: schedNextOrd(rainStagedTree(setupTree, rainEnsure()), dk, 'day') });
     rainStageNow((plan) => rainStage(plan, setupTree, 'dayBlocks/' + dk + '/' + id, rec));
     setupSched.item = null;
@@ -2708,15 +2754,32 @@ function wireSchedItemSheet() {
     else if (q('#si-save-all')) { if (!q('#si-save-all').hasAttribute('aria-disabled')) schedSaveItem('typical'); }
     else if (q('#si-save')) { if (!q('#si-save').hasAttribute('aria-disabled')) schedSaveItem('day'); }
   });
-  // ✕ and the backdrop ask before they throw a half-made edit away (Escape and Back close as they always do).
-  root.addEventListener('click', async (e) => {
-    const it = setupSched.item;
+  // ✕ and the backdrop ask before they throw a half-made edit away; Escape and the phone's Back reach the same question
+  // through schedItemGuardClose (app.js's Escape handler and shellApply call it).
+  root.addEventListener('click', (e) => {
     const close = e.target.closest && e.target.closest('[data-sheet-close]');
-    if (!close || !it || !it.form.touched) return;
-    e.stopPropagation();
-    const ok = await askDialog({ title: 'Discard your changes to ' + (it.form.label || it.label0 || 'this item') + '?', body: 'They haven’t been saved yet.', actions: [{ label: 'Keep editing', value: 'keep', cancel: true }, { label: 'Discard', value: 'discard', kind: 'danger' }] });
-    if (ok === 'discard') { setupSched.item = null; shellSheetClose('sched-item'); }
+    if (close && schedItemGuardClose()) e.stopPropagation();
   }, true);
+}
+
+// Closing the item sheet by ANY route asks before it throws a half-made edit away. Returns true when it took the close
+// over (a question is up, or already was: the sheet stays) and false when nothing is at stake, so the caller closes
+// as it always did. Discard closes it; Keep editing leaves everything as it was.
+function schedItemGuardClose() {
+  const it = setupSched.item;
+  if (!it || !it.form || !it.form.touched || !shell.sheets.includes('sched-item')) return false;
+  if (askIsOpen()) return true;
+  askDialog({ title: 'Discard your changes to ' + (it.form.label || it.label0 || 'this item') + '?', body: 'They haven’t been saved yet.', actions: [{ label: 'Keep editing', value: 'keep', cancel: true }, { label: 'Discard', value: 'discard', kind: 'danger' }] })
+    .then((ok) => { if (ok === 'discard' && setupSched.item === it) { setupSched.item = null; shellSheetClose('sched-item'); } });
+  return true;
+}
+
+// An open item sheet with edits that are not saved holds the deploy's auto-reload (reloadBlocked), as the game editor's
+// draft does: the form lives in memory only. Only while the sheet is really up — a close path that left the item set
+// must never hold a reload for good.
+function schedItemBusy() {
+  const it = setupSched.item;
+  return !!(it && it.form && it.form.touched && typeof shell !== 'undefined' && shell.sheets.includes('sched-item'));
 }
 
 // The Schedule screen's own handlers (delegated from #setup-schedule and #sched-days).
