@@ -161,7 +161,7 @@ function isTeamId(id) {
 //                         they have no unconfirmed edits to protect, so they never lock
 //   tabWriter === false   another tab owns it: this one is VIEW-ONLY. canEdit() is
 //                         false (every existing write gate holds) and the cache is
-//                         never written
+//                         never written; a bar offers "Use this tab instead"
 // Every cache write goes through persistState() (a test scans the source for any
 // other setItem on the key), and every read of "may this tab write" goes through
 // tabWriter — declared up here because the load-time migrate (a cached week
@@ -237,6 +237,7 @@ function tabRepaint() {
   if (!appStarted) return;
   applyRoleClass();
   updateAccountRow();
+  updateSyncIndicator(); // the view-only bar lives in the sync-alert strip
   renderAll();
 }
 
@@ -379,6 +380,12 @@ function tabBecomeViewer() {
   if (tabLockRelease) { const r = tabLockRelease; tabLockRelease = null; r(); }
   if (tabChannel) { try { tabChannel.close(); } catch (e) { /* fine */ } tabChannel = null; }
   decideTabWriter(true);
+}
+
+// The view-only bar's copy (the sync-alert strip; see updateSyncAlert).
+function tabBarHtml() {
+  return '<span class="sync-alert-text">This camp is open in another tab — this one is view-only.</span>' +
+    '<button type="button" class="link-btn sync-quarantine-btn" data-tab-claim="1">Use this tab instead</button>';
 }
 
 // ── Standings secrecy ─────────────────────────────────────────────
@@ -4258,6 +4265,8 @@ function discardQuarantined() {
 // One delegated listener per sync line (all three copies); the buttons live inside
 // markup updateSyncIndicator rewrites, so they can't carry listeners of their own.
 function onSyncStatusClick(e) {
+  const claim = e && e.target && e.target.closest ? e.target.closest('[data-tab-claim]') : null;
+  if (claim && claim.dataset && claim.dataset.tabClaim) { claimWriterTab(); return; }
   const btn = e && e.target && e.target.closest ? e.target.closest('[data-sync-quarantine]') : null;
   if (!btn) return;
   if (btn.dataset.syncQuarantine === 'discard') discardQuarantined(); else retryQuarantined();
@@ -4361,9 +4370,14 @@ let sdkLoadFailed = false;
 function updateSyncAlert() {
   const el = document.getElementById('sync-alert');
   if (!el) return;
-  const show = canEdit() && Object.keys(stateQuarantine).length > 0;
+  // A director's SECOND tab is view-only (tabWriter): the same strip says so and
+  // offers the switch. canEdit() is false there, so nothing is ever parked and the
+  // two messages can never want the strip at once.
+  const viewOnlyTab = memberRole === 'editor' && tabReadOnly();
+  const show = viewOnlyTab || (canEdit() && Object.keys(stateQuarantine).length > 0);
   // Written only when it changes: a rebuilt button loses a finger mid-tap.
-  if (show) setHtmlIfChanged(el, quarantineBarHtml());
+  if (show) setHtmlIfChanged(el, viewOnlyTab ? tabBarHtml() : quarantineBarHtml());
+  el.classList.toggle('sync-alert-tab', viewOnlyTab);
   el.hidden = !show;
   document.body.classList.toggle('has-sync-alert', show); // styles.css reserves its height above the first card
 }
@@ -10101,7 +10115,7 @@ function updateAccountRow() {
   if (!label) return;
   const who = identityLabel(authUser); // email or phone number
   const camp = hasBothCamps() ? ' · ' + CAMP.label : '';
-  label.textContent = (canEdit() ? '✏️ Editor' : '👀 Viewer') + (who ? ' — ' + who : '') + camp;
+  label.textContent = (canEdit() ? '✏️ Editor' : tabReadOnly() ? '👀 Editor (view-only tab)' : '👀 Viewer') + (who ? ' — ' + who : '') + camp;
   // The camp switcher only exists for accounts on both camps' lists. The
   // control just reflects the active camp — the page reloads on change, so
   // it never has to track anything.

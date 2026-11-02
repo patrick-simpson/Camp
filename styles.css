@@ -1855,6 +1855,24 @@ html.calm-motion .back-pill-arrow { transition: none; }
 .sync-alert .sync-quarantine-actions {
   flex: none;
 }
+/* The same strip says "this tab is view-only" for a director's SECOND tab (app.js
+   tabBarHtml). That is news, not an error: the ordinary border and text, and the
+   sentence may take two lines on a phone while the button stays whole (the strip's
+   height, and so the page's reserve below it, does not change). */
+.sync-alert.sync-alert-tab {
+  border-color: var(--color-border);
+  color: var(--color-text);
+  font-weight: 600;
+}
+.sync-alert-tab .sync-alert-text {
+  white-space: normal;
+  line-height: 1.2;
+  font-size: 0.8rem;
+}
+.sync-alert-tab .sync-quarantine-btn {
+  flex: none;
+  white-space: nowrap;
+}
 /* Room for it above the first card (the reserve matches the bar: 8px + 2.9rem
    + a breath). Not in the builder / chat takeovers, which hide the page's
    contents (and the bar with them). */

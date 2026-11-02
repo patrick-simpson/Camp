@@ -458,7 +458,7 @@ What's covered, and why each file exists:
   250 ms × 1.5 s retry window then view-only, the reload-ordering case (the old
   page holds the lock 800 ms), a throwing or rejecting API failing open, a viewer
   flip releasing the lock, a confirmed role not restarting the election, a
-  view-only director still seeing standings but writing nothing, the
+  view-only director still seeing standings but writing nothing, the bar, the
   steal (old tab stops persisting before it flushes, an ack after demotion leaves
   the cache alone, the claimant reloads, the next page is the writer), the
   BroadcastChannel fallback, and the one-`setItem` source scan.
@@ -1378,7 +1378,10 @@ More sync invariants (each fixed after it bit us — don't regress these;
     card rule (`applyCardVisibility`) and the chat takeover's hidden-card check
     read the member record's role (`memberRole`), so a director's second tab shows
     every card and the standings (`ensureSecrecySeed` writes only when
-    `canEdit()`). A read-only tab never pushes (`tabMayPush`) and never asks for the
+    `canEdit()`). A bar in the `#sync-alert` strip (never wanted at the
+    same time as a parked score, since a view-only tab cannot park one) says "This
+    camp is open in another tab — this one is view-only." with **Use this tab
+    instead**. A read-only tab never pushes (`tabMayPush`) and never asks for the
     lock again by itself (no auto-takeover: its in-memory copy is older than the
     cache the writer kept).
   - **Use this tab instead** = `navigator.locks.request(name, {steal: true})`

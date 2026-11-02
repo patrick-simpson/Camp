@@ -325,6 +325,29 @@ test('a view-only director still sees standings but cannot write, seed or score'
   assert.equal(cardHidden(v), true, '(a real viewer does not)');
 });
 
+test('the view-only bar says so and offers the switch; the strip carries it for a director only', async () => {
+  const mgr = tlLocks();
+  mgr.otherPageHolds();
+  const t = tlTab({ locks: mgr, clock: true });
+  t.run("setMemberRole('editor')");
+  await tlFlush();
+  await t.clock.advance(1500);
+  t.run('updateSyncAlert()');
+  const el = t.run("document.getElementById('sync-alert')");
+  assert.equal(el.hidden, false);
+  assert.ok(/another tab/.test(el.innerHTML) && /view-only/.test(el.innerHTML), 'the sentence');
+  assert.ok(/data-tab-claim/.test(el.innerHTML) && /Use this tab instead/.test(el.innerHTML), 'the button');
+  assert.ok(/Editor \(view-only tab\)/.test(t.run("(updateAccountRow(), document.getElementById('account-label').textContent)")), 'the account row names it');
+  // a tap on the button asks the claim; a tap on anything else does not
+  t.run('window.__claims = 0; claimWriterTab = () => { window.__claims++; }');
+  t.run("onSyncStatusClick({ target: { closest: (s) => (s === '[data-tab-claim]' ? { dataset: { tabClaim: '1' } } : null) } })");
+  assert.equal(t.run('window.__claims'), 1);
+  // a viewer never sees it
+  const v = tlTab({ locks: mgr });
+  v.run("setMemberRole('viewer'); updateSyncAlert()");
+  assert.equal(v.run("document.getElementById('sync-alert').hidden"), true);
+});
+
 test('Use this tab instead: steal, the old tab stops persisting BEFORE it flushes, the new one reloads', async () => {
   const mgr = tlLocks();
   const db = makeFakeRtdb();
@@ -360,6 +383,7 @@ test('Use this tab instead: steal, the old tab stops persisting BEFORE it flushe
   await tlRealWait(10);
   assert.ok(db.serverTree()[CAMP.dbRoot].state.results.g1, 'the flushed score reached the server');
   assert.equal(a.storedRaw(), atDemotion, 'an ack arriving after demotion does not touch the cache');
+  assert.equal(a.run('(updateSyncAlert(), document.getElementById("sync-alert").hidden)'), false, 'the old tab shows the bar too');
 
   // From here the old tab never pushes (no edits of its own) - and cannot write.
   a.run('state.results.g2 = ' + JSON.stringify(tlRes(2)) + '; saveState(); pushState()');
