@@ -12035,7 +12035,8 @@ function init() {
   // The Alerts sheet's "While Camp is open" pop-ups switch is the same state as
   // the Notify me button on Now (toggleNotify keeps both in step).
   const notifySw = document.getElementById('notify-toggle');
-  if (notifySw) notifySw.addEventListener('change', () => { if (!!notifySw.hasAttribute('checked') !== !!state.notify) return; toggleNotify(); });
+  // (A change event is the person's own tap — a programmatic `checked` never fires one — so it simply flips the state.)
+  if (notifySw) notifySw.addEventListener('change', toggleNotify);
   // One switch per section in What counselors see (More → Director; editor-only,
   // hidden by CSS for view-only). The switches are static markup, so wiring them
   // once here is enough — applyCardVisibility keeps their checked state in step.

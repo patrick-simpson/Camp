@@ -267,3 +267,10 @@ test('the 44px target rule: switches, the chips that moved into Games and the sh
   assert.ok(/\.quick-game-btn,\s*#clear-result-btn,[\s\S]*?\{[^}]*min-height: var\(--target\)/.test(CSS), 'lone text links');
   assert.ok(/\.tk-head \{[^}]*flex-wrap: wrap/.test(CSS) && /\.tk-titles \{[^}]*flex: 1 1 13rem/.test(CSS), 'a long back label sends the title under it instead of to three lines');
 });
+
+test('the Alerts sheet\'s pop-ups switch is the same state as the Notify me button, and keeps More\'s verdict in step', () => {
+  assert.ok(/notifySw\.addEventListener\('change', toggleNotify\)/.test(APP), 'a tap on the switch flips state.notify');
+  const body = APP.slice(APP.indexOf('function updateNotifyButton()'), APP.indexOf('// changes: [{ team, delta, total }]'));
+  assert.ok(/getElementById\('notify-toggle'\)[\s\S]*toggleAttribute\('checked', !!state\.notify\)/.test(body), 'the switch follows the state');
+  assert.ok(/renderAlertsState\(\)/.test(body), 'and so does the Alerts row line');
+});
