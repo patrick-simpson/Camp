@@ -1216,6 +1216,12 @@
        and JellyMotion, so it must come first. -->
   <script src="jelly-motion.js?v=197"></script>
   <script src="app.js?v=197"></script>
+  <!-- The setup engine (the week's schedule, menus, verses, rota and electives as
+       data under <root>/setup; restore points; "also here"). Same optional-layer
+       contract as chat.js: it needs app.js's globals, so it loads right after it, and
+       every hook in app.js is typeof-guarded — delete this tag and the app runs as
+       before. Dark until a director acts. -->
+  <script src="setup-sync.js?v=197"></script>
   <script src="settings.js?v=197"></script>
   <!-- Camp Chat (channels, mentions, photos) — self-contained layer; delete
        this tag and the app runs exactly as before (all hooks typeof-guard). -->

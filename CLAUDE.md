@@ -82,6 +82,13 @@ Files:
   app.js with no dependency on `vendor/jelly.js` (that module can't parse on
   iOS < 16.4 and boot-guard's `jelly-failed` path must still move). Globals
   `JellyMotion`, `calmMotion()`, `calmReason()`
+- `setup-sync.js` — the SETUP ENGINE (see "The setup engine" below): the week's
+  schedule, menus, verses, rota and electives as data under `<root>/setup`, the
+  single `persistSetup()` gate, the setup undo domain, the sync line's state.
+  Loaded right after app.js (it uses app.js's globals) and before settings.js;
+  every hook in app.js is typeof-guarded, so deleting its `<script>` leaves a
+  running app. DARK at Step 14: it reads, and writes only when a director acts
+  (and every section's switch is the owner's, which nothing turns on yet)
 - `settings.js` — the settings sheet + week-builder UI. The builder's
   `jelly-tabs` shell is built ONCE and kept; `renderSettings` refreshes only
   the active card (through `setHtmlIfChanged`), hidden cards are filled one
@@ -183,10 +190,11 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
 
 **Every time any code asset changes:**
 1. Bump the `?v=N` cache-busting query string in `index.html` — there are
-   FIFTEEN on the same number: `boot-guard.js`, `styles.css`, `vendor/jelly.js`,
+   SIXTEEN on the same number (seventeen once `setup-ui.js` lands later in
+   Step 14): `boot-guard.js`, `styles.css`, `vendor/jelly.js`,
    `firebase-config.js`, `defaults.js`, `camp-core.js`, `reveal-core.js`,
-   `camps.js`, `jelly-motion.js`, `app.js`, `settings.js`, `chat.js`, `push.js`,
-   `auth-phone.js`, `auth-email-link.js` —
+   `camps.js`, `jelly-motion.js`, `app.js`, `setup-sync.js`, `settings.js`,
+   `chat.js`, `push.js`, `auth-phone.js`, `auth-email-link.js` —
    keep them in sync, all bumped together. Also bump
    `APP_VERSION` in `app.js` to the same number (it drives the auto-reload
    version check). `stalling.html` loads `vendor/jelly.js`, and
@@ -932,7 +940,7 @@ What's covered, and why each file exists:
   (home panels, toast cap, announcement composer), `overlays.test.js` (schedule
   sheet, status pill, members drawer, lock screen, scrim fade, pickers),
   `shell.test.js` (page-shell text pins: the not-yet-defined hide, the boot
-  guard, no motion media query, **index.html's fifteen versioned assets share
+  guard, no motion media query, **index.html's sixteen versioned assets share
   one `?v=` equal to `APP_VERSION`, in load order**), `builder.test.js`
   (week-builder shell, drafts, joy press), `chat-view.test.js`
   (chat view lifecycle, drafts, Back), `theme.test.js` (pre-paint theme and
@@ -1047,6 +1055,16 @@ What's covered, and why each file exists:
   the camp's own. The Teams tab's bracket note is a calm line when the roster
   matches the camp (senior's 4; `settings-teams.senior.test.js`) and the amber
   warning only when it doesn't.
+- `owner-only.test.js` — `isOwner()` from the sign-in (never the device),
+  `ownerName()` failing closed to "the owner", `ownerGate` / `ownerSays`, and
+  `body.setup-owner`. Steps 15, 19 and 28 extend it as each owner-only button lands.
+- `setup-sync.test.js` (+ `.senior`) — the setup engine against `fake-rtdb.js`:
+  heal and canonical form, per-shape depths, anchors, dark (nothing written, owner
+  switches refused), first-snapshot three-way merge (prune and key-order variants),
+  clashes and Put it back, the epoch strand and the wipe, rebase of unsent edits,
+  echo keeping refs, bisect / quarantine / "rules not published", the read refused
+  without touching `fbRef`/`syncDenied`, the tab-writer gate, accounting hooks, undo,
+  the sync line, a cached week booting.
 - `auth.test.js` — the `emailKey` contract (multi-dot/case/trim — the
   regression that would lock people out under the rules), the `canEdit` truth
   table via `setMemberRole`, the `memberRecord` shape, `clearLocalData`'s
@@ -1874,6 +1892,81 @@ rules**; the client code only shapes the UI.
 - Playwright: seed `localStorage.campScoreboardAuthHint = 'editor'` to paint
   the app without a real sign-in; the popup itself can't run headless against
   Google, so the live sign-in check happens against the deployed site.
+
+## The setup engine (setup-sync.js — Step 14, dark)
+
+Specs: P2 §5, §6.4, §7. Nothing here changes what a counselor or a director
+sees until a director acts: Step 15 ships Edit the week here (the owner's switch),
+and until then every commit into a section is refused ("off").
+
+- **The node** `<root>/setup` (`meta`, `days`, `typical`, `patches`, `dayBlocks`,
+  `meals`, `verses`, `cleanup`, `electives`; rules published and verified, Step 11).
+  Every member reads it (ONE read-only listener, `initSetupSync`, attached from
+  `initSync` after approval); only editors write. `meta/on/<section>` is the
+  section switch (absent / false = the built-in copy, true = the subtree is the
+  whole truth) and is the OWNER's alone, as are `meta/epoch`, `epochAt`, `wizard`
+  and `seeded` (`SETUP_OWNER_META`; a non-owner commit that touches one is refused
+  with "Only Patrick can …" before any write). `meta/edited/<section>` (who changed
+  it, server time) is added at push and never part of the diffed tree.
+- **The tree**: `setupTree` (live, normalized), `setupBase` (what the server last
+  CONFIRMED, canonical, persisted), `setupLast` (what it will hold once in-flight
+  pushes land). Diffs and merges run on `setupCanon` forms (empties pruned, keys
+  sorted, and minus the in-memory fillers: the seven default day records and
+  `meta/edited`), so healing can never be pushed as an edit nobody made.
+  `normalizeSetup` is structure-only and never rewrites a stored value; an orphan
+  patch (its typical block is gone) stays in the data and readers use
+  `setupLivePatches(dk)` — the spec's in-memory delete would put an invented
+  delete into the next diff. `SETUP_DEPTHS` says how deep `treeDiff` recurses per
+  shape; `setupApplyOps` is applyOpsSafe for this tree (the rules' anchors: a field
+  needs its record, a patch needs its typical block AND a day that follows the
+  typical day).
+- **Write path**: `commitSetup(mutate, {label, undo, quiet, expect, turningOn})`
+  edits a copy, diffs, refuses (`readonly`, `loading`, `cancelled`, `removed`,
+  `off`, `owner`) before anything changes, records the undo entry (domain `setup`
+  in `UNDO_DOMAINS`), applies, persists IMMEDIATELY and pushes after 300 ms as one
+  multi-path `update()` plus the section stamps. Never push before the first pull
+  (`setupReady`). A bare focus-and-blur writes nothing (`setupFocusIn/Out`; a
+  commit of an unchanged value is a no-op with no stamp and no undo). **No
+  automatic patch stripping**: only a mutate removes a patch field.
+- **Snapshots**: the first one is a three-way merge per path against the persisted
+  base (same path changed on both sides keeps the server's, mine goes to the
+  clash list with a synthetic undo entry; a kept op whose record the server
+  deleted goes to Put it back instead of into a refusal; > 36 h unconfirmed asks;
+  a moved `meta/epoch` strands unconfirmed paths as a download; an empty node on a
+  phone that had content is a wipe — adopt empty, keep the copy only as a
+  download, never re-seed). The engine NEVER seeds. Later ones adopt only with
+  nothing in flight (otherwise `setupRefetchOwed`, paid by `idleRetryTick` with
+  `once()`, never a replay), rebase unsent edits on top, and keep the live object
+  of every unchanged subtree (`setupKeepRefs`; an echo of my own write repaints
+  nothing). `setupClashes` (clashes + Put-it-back notes, ≤ 30) is persisted.
+- **Refusals**: on `PERMISSION_DENIED` only, a batch is re-sent path by path
+  (`bisectSetupBatch`); a path refused alone is parked in `setupQuarantine`
+  (persisted, treated as sent) with Retry / Discard; every path refused with none
+  explained by a vanished record means the rules for setup/* aren't published
+  (`setupWriteRefused`: editing off, the sync line says so). A refused READ sets
+  `setupDenied` and degrades the setup engine only — never `fbRef` / `syncDenied`.
+  The header's red bar (`updateSyncAlert`) shows a parked setup path when no score
+  is parked (`setupQuarantineBarHtml`, `[data-setup-quarantine]`).
+- **The cache** is `lsKey('campScoreboardSetupV1')` = `{v, tree, base, baseAt,
+  epoch, clashes, quarantine}` in ONE setItem, written only by `persistSetup()` —
+  a no-op unless this tab owns the cache (a view-only second tab never writes;
+  owed while the election is pending, paid by `decideTabWriter` →
+  `setupOnTabDecided`). Read at load by `setupLoadCache()` (the last line of the
+  file, so nothing it uses is a TDZ read: `boot-cache.test.js`). Wiped by
+  `clearLocalData` with the restore-point outbox.
+- **Accounting** (P2 §6.5): `pendingWritesTotal()` adds `setupPending`; `editorMidEntry`
+  counts the 300 ms timer and a held push (`tabHeldSetup`); `hasUnsyncedWork`,
+  `hasUnconfirmedLocalWork` (unconfirmed paths, a parked refusal), `flushPendingPush`
+  and `idleRetryTick` all call in, typeof-guarded.
+- **Seams for the UI** (setup-ui.js, the rest of Step 14): `onSetupEvent(fn)`
+  (`'tree' | 'commit' | 'sync' | 'clashes'`), `setupSyncLine()` →
+  `{tone: saved|saving|offline|error|off, text, act}`, `setupEditedBy(section)`,
+  `setupEditorName(key)` (fails closed to "Another director"), `setupClashList()` /
+  `setupUseMine` / `setupPutBack` / `setupDismissClash`, `retrySetupQuarantine` /
+  `discardSetupQuarantine`, `setupOn(section)` / `setupSeeded()` /
+  `setupSchemaTooNew()`.
+- **Not here yet** (Step 15, per BUILD-PLAN): `resolveDay`, `buildSeed`, the
+  publisher hash, A1/A2 and the accessors that switch on `meta/on/schedule`.
 
 ## Counselors ↔ teams ↔ accounts
 

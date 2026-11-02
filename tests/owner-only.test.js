@@ -131,3 +131,15 @@ test('the owner literal here is the one both camps\' rules use for OWNER (and th
     assert.ok(on.includes("'" + OWNER_MEMBER_KEY + "' === auth.token.email"), root + ': meta/on is owner-only, by this key');
   });
 });
+
+test('the engine refuses every setup field the rules make owner-only (SETUP_OWNER_META covers each one), before any write', () => {
+  ['campScoreboard', 'seniorScoreboard'].forEach((root) => {
+    const meta = OO_RULES[root].setup.meta;
+    const ownerFields = Object.keys(meta).filter((k) => !k.startsWith('.') && JSON.stringify(meta[k]).includes("'" + OWNER_MEMBER_KEY + "' === auth.token"));
+    assert.ok(ownerFields.length >= 4, root + ': found ' + ownerFields.join(','));
+    ownerFields.forEach((f) => assert.ok(SETUP_OWNER_META.includes(f), root + ': meta/' + f + ' is owner-only in the rules but the client would offer it'));
+    ownerFields.forEach((f) => assert.equal(setupIsOwnerPath('meta/' + f + '/x'), true));
+  });
+  assert.equal(setupIsOwnerPath('meta/weekStart'), false, 'the week dates are any director\'s');
+  assert.equal(setupIsOwnerPath('typical/b-x-1/start'), false);
+});

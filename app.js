@@ -116,6 +116,7 @@ function setMemberRole(role, opts) {
   // A device that stops being an editor keeps no undo history: it could not use it,
   // and the next person to sign in on it must not find the last director's changes.
   if (memberRole === 'editor' && next !== 'editor') undoClear();
+  if (typeof setupOnRoleChange === 'function') setupOnRoleChange(memberRole, next);
   memberRole = next;
   memberRoleConfirmed = confirmed;
   // The writer election starts the moment a role is KNOWN — the hinted role at
@@ -192,6 +193,7 @@ let tabClaimPending = false; // fallback: we asked the writer to let go and will
 let tabFlushing = false;    // a demoted tab is sending what it had queued
 let tabHeldState = false;   // a state push was asked for while undecided
 let tabHeldConfig = false;  // a config push was asked for while undecided
+let tabHeldSetup = false;   // a setup push was asked for while undecided (setup-sync.js)
 let persistOwed = false;    // a cache write was asked for while undecided
 const TAB_RETRY_MS = 250;
 const TAB_RETRY_MAX = 6;    // 6 x 250 ms: a reloading page can still hold the lock for a moment
@@ -254,12 +256,15 @@ function decideTabWriter(writer) {
     if (persistOwed) { persistOwed = false; persistState(); }
     if (tabHeldState) { tabHeldState = false; schedulePush(); }
     if (tabHeldConfig) { tabHeldConfig = false; schedulePushConfig(); }
+    if (tabHeldSetup) { tabHeldSetup = false; if (typeof pushSetup === 'function') pushSetup(); }
+    if (typeof setupOnTabDecided === 'function') setupOnTabDecided(true);
   } else {
     // Another tab owns the cache. Persistence is already off (tabWriter is
     // false); send what this tab had queued — an edit typed in the first second
     // is the person's — then show the bar. The cache write owed is the other
     // tab's business now.
     persistOwed = false;
+    if (typeof setupOnTabDecided === 'function') setupOnTabDecided(false);
     flushTabPushes();
   }
   if (wasReadOnly !== (writer === false)) tabRepaint(); // only a flip of canEdit() needs a repaint
@@ -274,6 +279,7 @@ function flushTabPushes() {
     flushPendingPush();
     if (tabHeldState) { tabHeldState = false; pushState(); }
     if (tabHeldConfig) { tabHeldConfig = false; pushConfig(); }
+    if (tabHeldSetup) { tabHeldSetup = false; if (typeof pushSetup === 'function') pushSetup(); }
   } finally { tabFlushing = false; }
 }
 
@@ -281,7 +287,7 @@ function flushTabPushes() {
 // they did); a read-only tab has no edits of its own to send.
 function tabMayPush(kind) {
   if (tabWriter === null) {
-    if (kind === 'config') tabHeldConfig = true; else tabHeldState = true;
+    if (kind === 'config') tabHeldConfig = true; else if (kind === 'setup') tabHeldSetup = true; else tabHeldState = true;
     return false;
   }
   return tabWriter === true || tabFlushing;
@@ -2950,7 +2956,8 @@ let pendingWrites = 0;
 // ask; canAdoptRemote() deliberately stays about `state` only — a config write
 // in flight doesn't make a SCORES snapshot unsafe to adopt.
 let pendingConfigWrites = 0;
-function pendingWritesTotal() { return pendingWrites + pendingConfigWrites; }
+// (+ the setup engine's pushes in flight — setup-sync.js, typeof-guarded like every optional layer)
+function pendingWritesTotal() { return pendingWrites + pendingConfigWrites + (typeof setupPendingCount === 'function' ? setupPendingCount() : 0); }
 // The config's first-pull gate, twin of `remoteReady`: false until the first
 // config snapshot has been PROCESSED (it waits for the state's first pull, whose
 // epoch it needs — see onConfigSnapshot). Until then nothing is pushed (the
@@ -4092,11 +4099,14 @@ function renderAllWhenIdle() {
 }
 
 function idleRetryTick() {
-  if (!remoteRefetchPending && !renderOwed) {
+  // The setup engine's owed re-read (setup-sync.js) rides the same once-a-second tick.
+  const setupOwed = typeof setupRefetchIsOwed === 'function' && setupRefetchIsOwed();
+  if (!remoteRefetchPending && !renderOwed && !setupOwed) {
     clearInterval(idleRetryTimer);
     idleRetryTimer = null;
     return;
   }
+  if (setupOwed && typeof setupIdleTick === 'function') setupIdleTick();
   // An owed render waits only for the field to let go — not for pushes to
   // settle like the remote adopt below (with sync off they never do).
   if (renderOwed && !fieldFocused()) { renderOwed = false; renderAll(); }
@@ -4690,6 +4700,10 @@ function initSync() {
     // Week-config catalog listener (sibling ref — see the fbConfigRef comment).
     fbConfigRef = firebase.database().ref(dbPath('config'));
     attachConfigListener();
+    // The week's setup data (setup-sync.js — optional layer, typeof-guarded): one
+    // read-only listener, attached HERE and only here, i.e. after membership was
+    // confirmed. Its refusals degrade the setup engine only, never fbRef/syncDenied.
+    if (typeof initSetupSync === 'function') initSetupSync();
     // Staff directory: who's on the camp list and which team each is with.
     // Members may read the whole list (it's the staff roster), and this is
     // what makes the real counselor names show on each team everywhere. Only
@@ -5318,6 +5332,11 @@ function onSyncStatusClick(e) {
     if (set.dataset.stranded === 'download') downloadStranded(); else dismissStranded();
     return;
   }
+  const setupBtn = e && e.target && e.target.closest ? e.target.closest('[data-setup-quarantine]') : null;
+  if (setupBtn && setupBtn.dataset && setupBtn.dataset.setupQuarantine && typeof retrySetupQuarantine === 'function') {
+    if (setupBtn.dataset.setupQuarantine === 'discard') discardSetupQuarantine(); else retrySetupQuarantine();
+    return;
+  }
   const btn = e && e.target && e.target.closest ? e.target.closest('[data-sync-quarantine]') : null;
   if (!btn) return;
   if (btn.dataset.syncQuarantine === 'discard') discardQuarantined(); else retryQuarantined();
@@ -5428,13 +5447,16 @@ function updateSyncAlert() {
   // offers the switch. canEdit() is false there, so nothing is ever parked and the
   // two messages can never want the strip at once.
   const viewOnlyTab = memberRole === 'editor' && tabReadOnly();
-  const parked = !viewOnlyTab && canEdit() && Object.keys(stateQuarantine).length > 0;
+  const stateParked = !viewOnlyTab && canEdit() && Object.keys(stateQuarantine).length > 0;
+  // A refused path of the week's setup (setup-sync.js) uses the same bar when no score is parked.
+  const setupParked = !viewOnlyTab && !stateParked && canEdit() && typeof setupParkedCount === 'function' && setupParkedCount() > 0;
+  const parked = stateParked || setupParked;
   // Work set aside from a previous camp year (strandOldEpochWork) waits its turn:
   // this week's refused scores and the view-only tab are more urgent, and it is
   // news rather than an error, so it borrows the calm "tab" look.
   const stranded = !viewOnlyTab && !parked && strandedCount() > 0;
   const show = viewOnlyTab || parked || stranded;
-  const html = show ? (viewOnlyTab ? tabBarHtml() : parked ? quarantineBarHtml() : strandedBarHtml()) : '';
+  const html = show ? (viewOnlyTab ? tabBarHtml() : stateParked ? quarantineBarHtml() : setupParked ? setupQuarantineBarHtml() : strandedBarHtml()) : '';
   els.forEach((el) => {
     // Written only when it changes: a rebuilt button loses a finger mid-tap.
     if (show) setHtmlIfChanged(el, html);
@@ -5457,6 +5479,7 @@ function paintTakeoverStatus() {
 function updateSyncIndicator() {
   updateSyncAlert();
   renderSyncPill();
+  if (typeof setupNotify === 'function') setupNotify('sync'); // the builder frame's own sync line follows the same truth
   // Two copies of the line: the one in the Current Standings card (directors)
   // and a footer one that only view-only devices WITHOUT the standings card show
   // (styles.css, html.standings-shown), because the card is not rendered for them
@@ -10798,7 +10821,9 @@ function editorMidEntry() {
   if (typeof builderDirty === 'function' && builderDirty()) return true;
   // a real edit is typed/queued but not yet synced — including a push an undecided
   // tab is holding (tabMayPush): the timer that asked for it has already fired
-  return dataEditPending || pushTimer != null || pushConfigTimer != null || tabHeldState || tabHeldConfig;
+  // (and a setup edit still inside its 300 ms window, or a setup push an undecided tab holds)
+  return dataEditPending || pushTimer != null || pushConfigTimer != null || tabHeldState || tabHeldConfig ||
+    tabHeldSetup || (typeof setupBusy === 'function' && setupBusy());
 }
 
 // Send any debounced push right now (e.g. when a score field loses focus, or
@@ -10810,6 +10835,7 @@ function editorMidEntry() {
 function flushPendingPush() {
   if (pushTimer) { clearTimeout(pushTimer); pushTimer = null; pushState(); }
   if (pushConfigTimer) { clearTimeout(pushConfigTimer); pushConfigTimer = null; pushConfig(); }
+  if (typeof flushSetupPush === 'function') flushSetupPush();
 }
 
 // The app.js build number this page loaded with, read off its own <script> tag.
@@ -12914,6 +12940,7 @@ function hasBothCamps() {
 // button) is itself a focused Jelly host, so that would always say yes.
 function hasUnsyncedWork() {
   return pendingWritesTotal() > 0 || dataEditPending || pushTimer != null || pushConfigTimer != null ||
+    (typeof setupBusy === 'function' && setupBusy()) ||
     (typeof builderDirty === 'function' && builderDirty());
 }
 
@@ -12926,6 +12953,8 @@ function hasUnconfirmedLocalWork() {
   // Saved on this phone but never confirmed — including a builder edit from an
   // earlier session, which only the persisted baseline (_cfgBase) can tell apart.
   if (canEdit() && Object.keys(cfgUnconfirmed()).length) return true;
+  // The same for the week's setup (setup-sync.js): an unconfirmed path, a parked refusal.
+  if (canEdit() && typeof setupHasUnconfirmed === 'function' && setupHasUnconfirmed()) return true;
   try {
     const base = confirmedTree || bootSyncedTree;
     if (!base) return false;
@@ -13046,7 +13075,8 @@ function clearLocalData() {
   const bases = ['campScoreboardV2', 'campScoreboardDayRanks',
     'campScoreboardDismissedChanges', 'campScoreboardDismissedAnnouncements',
     'campScoreboardChatSeen', 'campScoreboardChatSubs',
-    'campScoreboardPushOn', 'campScoreboardPushPrefs', STRANDED_KEY, UNDO_KEY];
+    'campScoreboardPushOn', 'campScoreboardPushPrefs', STRANDED_KEY, UNDO_KEY,
+    'campScoreboardSetupV1', 'campSetupRpOutbox']; // (setup-sync.js: the setup cache, the restore-point outbox)
   Object.keys(CAMPS).forEach((cid) => {
     bases.forEach((b) => {
       try { localStorage.removeItem(b + CAMPS[cid].storageSuffix); } catch (e) { /* ignore */ }
