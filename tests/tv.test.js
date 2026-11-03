@@ -491,6 +491,19 @@ test('a tie is one place with two teams side by side; a two-way tie fights in th
   h = tv.hero();
   assert.ok(h.has('tied') && !h.has('fight'), 'three-way: no clean head-to-head geometry');
   assert.equal(h.entries.length, 3);
+  assert.ok(h.has('many') && h.has('n3'), 'three or more are sized from their count (the page\'s .hero.many rules)');
+  tv.feed({ real: nodeOf(tv, tie2, { cur: 0, shown: 1, teams: 3, seq: 4 }) });
+  assert.ok(!tv.hero().has('many'), 'a two-way tie keeps the two-column sizes');
+  // the six-way tie a Practice shows before any score exists: every team on one place
+  const tie6 = [grp(1, ent('t0', 'A', 0), ent('t1', 'B', 0), ent('t2', 'C', 0), ent('t3', 'D', 0), ent('t4', 'E', 0), ent('t5', 'F', 0))];
+  tv.feed({ real: nodeOf(tv, tie6, { cur: 0, shown: 1, teams: 6, seq: 5 }) });
+  h = tv.hero();
+  assert.equal(h.entries.length, 6);
+  assert.ok(h.has('many') && h.has('n6'));
+  // the stylesheet carries a column width for every count the class can name, and the breakdown never wraps
+  const css = readFixture('../current-standings.html');
+  ['n3', 'n4', 'n5', 'n6'].forEach((c) => assert.ok(new RegExp('\\.hero\\.' + c + ' \\{ --tn: ' + c.slice(1) + '; \\}').test(css), c + ' sets --tn'));
+  assert.ok(/\.hero\.many \.hero-break \.words \{ white-space: nowrap;/.test(css), 'a breakdown line is one line');
 });
 
 test('a TV that asks for reduced motion gets no confetti, no cannons and no shield fight (it has no Calm switch, so it honours the OS setting itself)', () => {

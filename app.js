@@ -3356,6 +3356,20 @@ function rememberServerOffset(off) {
   try { localStorage.setItem(SERVER_OFFSET_KEY, String(Math.round(off))); } catch (e) { /* the next connect refreshes it */ }
 }
 let serverTimeOffset = readStoredServerOffset();
+// Has this phone EVER learned the server's clock (a remembered estimate or a live answer)? A brand-new install
+// has serverNow() === Date.now() until the first `.info/serverTimeOffset` answer, and the standings reveal's
+// 3-second hold-back of the newest place is measured against it: a phone whose own clock runs fast could show
+// a place before the room hears it. revealViewOf passes `clockUnknown` while this is false and revealView
+// holds the newest place back, failing closed, until the first answer (the handler below re-runs the reveal).
+// Written with the estimate (even a tiny one) so a later launch knows at once.
+function readStoredServerOffsetKnown() {
+  try {
+    const raw = localStorage.getItem(SERVER_OFFSET_KEY);
+    const v = raw === null ? NaN : Number(raw);
+    return Number.isFinite(v) && Math.abs(v) <= SERVER_OFFSET_MAX_MS;
+  } catch (e) { return false; }
+}
+let serverOffsetKnown = readStoredServerOffsetKnown();
 
 function serverNow() {
   return Date.now() + serverTimeOffset;
@@ -5014,13 +5028,16 @@ function initSync() {
       const off = Number(s.val());
       if (!Number.isFinite(off)) return;
       const changed = Math.abs(off - serverTimeOffset) > 500;
+      const firstAnswer = !serverOffsetKnown;
       serverTimeOffset = off;
-      if (changed) rememberServerOffset(off);
+      serverOffsetKnown = true;
+      if (changed || firstAnswer) rememberServerOffset(off);
       // A big correction means every visible countdown was wrong — repaint now
       // rather than waiting for the next 500ms tick to creep it into place.
       if (changed && appStarted) tickBoardClocks();
       // …and every "is it 8 AM yet" answer the standings reveal gave (reveal.js).
-      if (changed && typeof revealOnClockChange === 'function') revealOnClockChange();
+      // (the first answer too, even a small one: it lifts the reveal's clock-unknown hold-back)
+      if ((changed || firstAnswer) && typeof revealOnClockChange === 'function') revealOnClockChange();
     }, () => { /* rules/offline — stay on device time */ });
     // Honest connection state: RTDB's .info/connected flips as wifi comes and
     // goes, so the indicator can say "Offline — will sync when back" instead of

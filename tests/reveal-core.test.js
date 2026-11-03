@@ -237,6 +237,29 @@ test('a phone holds the newest place back for 3 s after it is shown, and only th
   assert.equal(revealView(ctl, pub, ctl.sa + 1000, 'editor').rows.length, 1);
 });
 
+test('a phone that has never learned the server clock holds the newest place back whatever its own clock says (fails closed); the remote and the big screen never wait', () => {
+  const ctl = mkCtl({ cur: 1, shown: 2, sa: T0 + 50000, at: T0 + 50000 });
+  const pub = mkPub(2);
+  const late = ctl.sa + 60000;                                      // long past the 3 s window on the phone's own clock
+  const held = revealView(ctl, pub, late, 'viewer', { clockUnknown: true });
+  assert.equal(held.looking, true, 'held back until the clock is known');
+  assert.equal(held.rows.length, 1, 'only the newest place is withheld');
+  assert.equal(held.onScreen, null);
+  assert.equal(revealView(ctl, pub, late, 'editor', { clockUnknown: true }).rows.length, 1, 'a director\'s own phone is a phone');
+  assert.equal(revealView(ctl, pub, late, 'remote', { clockUnknown: true }).rows.length, 2, 'the remote IS the big screen');
+  assert.equal(revealView(ctl, pub, late, 'tv', { clockUnknown: true }).rows.length, 2);
+  // known (or not said): exactly the ordinary rule
+  assert.equal(revealView(ctl, pub, late, 'viewer', { clockUnknown: false }).rows.length, 2);
+  assert.equal(revealView(ctl, pub, late, 'viewer').rows.length, 2);
+  // only the literal true counts: a truthy junk value is not "unknown"
+  assert.equal(revealView(ctl, pub, late, 'viewer', { clockUnknown: 'yes' }).rows.length, 2);
+  // nothing shown yet: nothing to hold back; and 8 AM still hides everything
+  assert.equal(revealView(mkCtl({ cur: -1, shown: 0 }), null, late, 'viewer', { clockUnknown: true }).rows.length, 0);
+  const over = revealView(Object.assign({}, ctl, { phase: 'ended' }), pub, ctl.until + 1, 'viewer', { clockUnknown: true });
+  assert.equal(over.expired, true);
+  assert.deepEqual(over.rows, []);
+});
+
 test('the lag keys off sa: Back, the table, End and a reload never re-hide a place already shown', () => {
   const sa = T0 + 50000;
   const pub = mkPub(3);

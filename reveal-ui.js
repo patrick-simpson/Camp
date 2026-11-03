@@ -23,7 +23,8 @@
 const REVEAL_UI_PEEK_MS = 350;          // how long a finger holds the masked next row before it shows
 const REVEAL_UI_PEEK_MAX_MS = 3000;     // a peek never lasts longer than this, finger or not
 const REVEAL_UI_SCREEN_HOST = 'camp.patricksimpson.info';
-const REVEAL_UI_REFUSED = ['wait', 'offline', 'busy', 'not-ready', 'loading', 'no-full'];   // the codes that mean "that tap sent nothing"
+// the codes that mean "that tap sent nothing" (the button wobbles; reveal.js's revealWhyWords says why in a toast)
+const REVEAL_UI_REFUSED = ['wait', 'offline', 'busy', 'not-ready', 'loading', 'no-full', 'teams', 'clock', 'no-identity', 'viewer', 'view-only', 'no-sync'];
 
 const revealUi = {
   wired: false,
@@ -699,9 +700,14 @@ function revealUiPaintLive(m) {
 
 // The two buttons. The dock never takes `disabled` (a tap during the wait must still reach the handler, which answers
 // with the wobble and one toast): "can't press" is aria-disabled plus data-state.
+// What the dock says when the Start can't work on this phone however long it waits (reveal.js revealStartBlock): the
+// tap says it in a sentence, this is the one-line version that rides under the dead button.
+const REVEAL_UI_START_WHY = { teams: 'The teams need fixing first', 'no-identity': 'Sign in again to start', clock: 'This phone’s clock isn’t ready' };
+
 function revealUiBlockedWords(m, gate) {
   if (m.loading) return 'Loading the reveal…'; // the phone reads the database here, not the TV: never send anyone to look at it
   if (m.why === 'no-sync') return 'Sync is off on this phone';
+  if (gate && gate.startWhy && REVEAL_UI_START_WHY[gate.startWhy]) return REVEAL_UI_START_WHY[gate.startWhy];
   if (m.stage === 'ready' || m.stage === 'ended') return 'Waiting for this phone to catch up…';
   return 'Loading the places…';
 }

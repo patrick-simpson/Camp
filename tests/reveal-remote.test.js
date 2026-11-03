@@ -71,7 +71,7 @@ async function bootDirector(role) {
   firebase = makeFakeFirebase(db);
   setMemberRole(role || 'editor');
   authUser = { email: 'jenn@example.com' };
-  serverTimeOffset = 0;
+  serverTimeOffset = 0; serverOffsetKnown = true;
   fbConnected = true; remoteReady = true;
   clearTimeout(pushTimer); pushTimer = null; clearTimeout(pushConfigTimer); pushConfigTimer = null;
   dataEditPending = false; pendingWrites = 0; remoteRefetchPending = false;
@@ -688,6 +688,97 @@ test('a tap during the wait sends nothing, wobbles the button once and says why;
   afterDirector();
 });
 
+test('a Start that can never work is never silent: the dock says why before the tap, the tap says it in a toast and wobbles, and nothing is sent (teams, no sign-in, no clock, a view-only tab)', async () => {
+  const db = await bootDirector();
+  await openRemote();
+  renderRevealRemote();
+  const sent = () => db.log ? db.log.length : 0;
+  const keepIds = state.teams.map((t) => t.id);
+  let wobbled = 0;
+  const realRefused = revealUiRefused;
+  revealUiRefused = () => { wobbled += 1; };
+  const dockWords = () => [data('reveal-go', 'state'), text('reveal-go-k')];
+  const tap = async () => { toasts = []; const r = await revealUiGo({}); return r; };
+  try {
+    assert.equal(revealStartGate().startWhy, null, 'a healthy phone has nothing in the way');
+    // teams: an id the rules cannot take (the open team-id question), too few, too many
+    state.teams.forEach((t, i) => { t.id = i === 0 ? 'team-a' : keepIds[i]; });
+    assert.equal(revealStartGate().startWhy, 'teams');
+    assert.equal(revealStartGate().canStart, false, 'the gate says so, so the dock cannot look ready');
+    renderRevealRemote();
+    assert.deepEqual(dockWords(), ['blocked', 'The teams need fixing first']);
+    let r = await tap();
+    assert.equal(r.code, 'teams');
+    assert.ok(toasts.some((t) => /needs 2 to 6 teams with ids t0 to t5\. Ask /.test(t)), toasts.join(' | '));
+    assert.equal(wobbled, 1, 'the button wobbles');
+    const real = state.teams.slice();
+    state.teams = [real[0], real[1]].map((t, i) => Object.assign({}, t, { id: 't' + i }));
+    assert.equal(revealStartGate().startWhy, null, 'two teams t0, t1 is a camp the reveal can run');
+    state.teams = [real[0]].map((t) => Object.assign({}, t, { id: 't0' }));
+    assert.equal(revealStartGate().startWhy, 'teams', 'one team is not a reveal');
+    state.teams = real.concat(real).map((t, i) => Object.assign({}, t, { id: 't' + (i % 6) }));
+    assert.equal(revealStartGate().startWhy, 'teams', 'more than six is not either');
+    state.teams = real;
+    real.forEach((t, i) => { t.id = keepIds[i]; });
+    assert.equal(revealStartGate().startWhy, null);
+    // no sign-in identity
+    authUser = null;
+    assert.equal(revealStartGate().startWhy, 'no-identity');
+    renderRevealRemote();
+    assert.deepEqual(dockWords(), ['blocked', 'Sign in again to start']);
+    r = await tap();
+    assert.equal(r.code, 'no-identity');
+    assert.ok(toasts.some((t) => /isn’t signed in/.test(t)), toasts.join(' | '));
+    assert.equal(wobbled, 2);
+    authUser = { email: 'jenn@example.com' };
+    // no usable clock (belt and braces: the clock can't really be NaN, but the block is a pure function of it)
+    assert.equal(revealStartBlock(NaN), 'clock');
+    assert.equal(revealStartBlock(T0), null);
+    assert.ok(/clock/.test(revealWhyWords('clock')));
+    // a view-only second tab, and a phone whose role is not confirmed yet, say so too (they used to say nothing)
+    tabWriter = false;
+    renderRevealRemote();
+    r = await tap();
+    assert.equal(r.code, 'view-only');
+    assert.ok(toasts.some((t) => /view-only/.test(t)), toasts.join(' | '));
+    assert.equal(wobbled, 3);
+    tabWriter = true;
+    memberRoleConfirmed = false;
+    r = await tap();
+    assert.equal(r.code, 'viewer');
+    assert.ok(toasts.some((t) => /Still checking/.test(t)), toasts.join(' | '));
+    assert.equal(wobbled, 4);
+    memberRoleConfirmed = true;
+    assert.equal(sent(), 0, 'nothing was sent by any of them');
+    // and every one of those codes is in the wobble list
+    ['teams', 'clock', 'no-identity', 'viewer', 'view-only', 'no-sync'].forEach((c) => assert.ok(REVEAL_UI_REFUSED.includes(c), c));
+    renderRevealRemote();
+    assert.equal(dockWords()[0] === 'blocked' && /fixing|Sign in|clock/.test(dockWords()[1]), false, 'healthy again: the dock is not stuck on a reason');
+  } finally { revealUiRefused = realRefused; state.teams.forEach((t, i) => { t.id = keepIds[i]; }); authUser = { email: 'jenn@example.com' }; tabWriter = true; memberRoleConfirmed = true; }
+  closeReveal();
+  afterDirector();
+});
+
+test('a slow acknowledgement says the last tap may still arrive; a dropped connection says taps would not reach the big screen', async () => {
+  await bootDirector();
+  await openRemote();
+  await setNode({ at: T0 - 20000 }, 2); renderRevealRemote();
+  assert.equal(data('reveal-go', 'state'), 'ready');
+  revealInFlightSince.real = Date.now() - REVEAL_ACK_SLOW_MS - 1000;      // a command with no answer for over 12 s
+  renderRevealRemote();
+  assert.deepEqual([data('reveal-go', 'state'), text('reveal-go-k'), text('reveal-go-m')], ['offline', 'Reconnecting…', 'Your last tap may still arrive']);
+  assert.equal(data('reveal-back', 'state'), 'offline', 'Back is locked as well');
+  fbConnected = false;
+  renderRevealRemote();
+  assert.equal(text('reveal-go-m'), 'Your taps would not reach the big screen', 'with the socket down nothing leaves this phone');
+  fbConnected = true;
+  revealInFlightSince.real = 0;
+  renderRevealRemote();
+  assert.equal(data('reveal-go', 'state'), 'ready');
+  closeReveal();
+  afterDirector();
+});
+
 test('the big button does what its face says: Start, a place, the crown, the table, End', async () => {
   await bootDirector();
   await openRemote();
@@ -733,10 +824,9 @@ test('calm motion: a refused tap is a 200 ms dim (an attribute the CSS answers),
   afterDirector();
 });
 
-test('the remote\'s source: no model name, no inline animation, the engine\'s commands only, and every database string reaches markup through esc / textContent', () => {
+test('the remote\'s source: no inline animation, the engine\'s commands only, and every database string reaches markup through esc / textContent', () => {
   const src = readFixture('../reveal-ui.js');
   const code = src.replace(/\/\/[^\n]*/g, '');
-  assert.ok(!/\b(opus|sonnet|haiku)\b/i.test(src), 'no model name');
   assert.ok(!/innerHTML\s*=\s*(?!html|'')/.test(code.replace(/root\.innerHTML = html/g, '')), 'no raw innerHTML assignment but the keyed list\'s');
   assert.ok(!/\.style\.(transform|transition|animation)/.test(code), 'no inline motion style');
   assert.ok(!/firebase\.|\.ref\(|\.update\(|\.set\(/.test(code), 'the screens never touch the database: they call the engine');

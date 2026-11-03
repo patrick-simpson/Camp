@@ -71,7 +71,7 @@ async function phone(R, person, role) {
     state.results = {}; state.bonuses = {};
     state.teams.forEach((t, i) => { t.name = ${JSON.stringify(NAMES)}[i]; state.bonuses['b' + i] = { teamId: t.id, category: 'custom', label: 'x', points: ${JSON.stringify(points)}[i], at: Date.parse('2026-01-01') }; });
   })()`);
-  p.skew = (ms) => run(`serverTimeOffset = ${ms}`);          // this phone's idea of the server's clock: moves the recharge, never the server
+  p.skew = (ms) => run(`serverTimeOffset = ${ms}; serverOffsetKnown = true`);   // this phone's idea of the server's clock: moves the recharge, never the server
   p.boot = async () => {
     run('initReveal()');
     await p.until('revealLoaded.real', 'the first answer for the real node');
@@ -253,9 +253,10 @@ for (const R of ROOTS) {
     if (!r.ok) throw new Error('Next: ' + JSON.stringify(r));
     await c.until('confirmedReveal.real && confirmedReveal.real.ctl.shown === 1', 'the first place to arrive');
     // inside the 3 s window the counselor's screen holds the newest place back; after it, it appears
+    // (and this phone has never learned the server's clock, so it holds the place back whatever its own clock says)
     const look = c.run('revealMirrorView()');
-    if (look.looking && look.rows.length !== 0) throw new Error('the newest place must wait for the big screen');
-    c.run('serverTimeOffset = 4000');
+    if (!look.looking || look.rows.length !== 0) throw new Error('the newest place must wait for the big screen');
+    c.run('serverTimeOffset = 4000; serverOffsetKnown = true');
     if (c.run('revealMirrorView().rows.length') !== 1) throw new Error('after the look, the place is on the phone');
     // a counselor reads no practice and no private order
     if (c.run('confirmedReveal.practice') !== null) throw new Error('a counselor holds a practice');

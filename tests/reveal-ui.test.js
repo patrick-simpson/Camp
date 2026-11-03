@@ -56,7 +56,7 @@ function bootUi(role) {
   const db = makeFakeRtdb();
   firebase = makeFakeFirebase(db);
   setMemberRole(role);
-  serverTimeOffset = 0;
+  serverTimeOffset = 0; serverOffsetKnown = true;
   fbConnected = true; remoteReady = true;
   state.ui.tab = 'now';
   return db;

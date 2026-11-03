@@ -57,7 +57,7 @@ function bootReveal(role, opts) {
   firebase = makeFakeFirebase(db);
   db.paths = paths;
   setMemberRole(role);
-  serverTimeOffset = 0;
+  serverTimeOffset = 0; serverOffsetKnown = true;   // a phone that has met the server's clock (an unknown one holds the newest place back: see the clock-unknown test)
   fbConnected = true; remoteReady = true;
   return db;
 }
@@ -211,6 +211,50 @@ test('the phone holds back only the newest place, only until sa + 3 s; Back, the
   db.serverSet(REAL, { ctl: mkCtl({ cur: 2, shown: 3, sa: T0 + 70000, at: T0 + 70000, seq: 8, teams: N }), pub: mkPub(3) });
   atTime(T0 + 71000);
   assert.equal(revealMirrorView().rows.length, 2, 'the new third place is the only one held back');
+  teardownReveal();
+});
+
+test('a phone that has never learned the server clock fails closed: the newest place stays held back until the first answer, which is remembered even when small', async () => {
+  const db = bootReveal('viewer');
+  initReveal();
+  serverOffsetKnown = false;                                  // a brand-new install: serverNow() is just this phone's clock
+  localStorage.removeItem(SERVER_OFFSET_KEY);
+  const sa = T0 + 10000;
+  db.serverSet(REAL, { ctl: mkCtl({ cur: 1, shown: 2, sa, at: sa }), pub: mkPub(2) });
+  atTime(sa + 60000);                                         // a minute on its own clock: far past the 3 s window
+  let v = revealMirrorView();
+  assert.equal(v.looking, true, 'held back: a fast phone clock could otherwise show it before the room hears it');
+  assert.equal(v.rows.length, 1);
+  assert.equal(revealRemoteView('real').rows.length, 2, 'a remote never waits');
+  // the REAL `.info/serverTimeOffset` handler, lifted out of initSync and run in this page
+  const app = readFixture('../app.js');
+  const head = "ref('.info/serverTimeOffset').on('value', ";
+  const from = app.indexOf(head) + head.length;
+  const body = app.slice(from, app.indexOf('}, () => { /* rules/offline', from) + 1);
+  assert.ok(body.startsWith('(s) => {'), 'the handler is where this test looks for it');
+  const handler = (0, eval)('(' + body + ')');
+  let woke = 0;
+  const realWake = revealOnClockChange;
+  revealOnClockChange = () => { woke++; realWake(); };
+  handler({ val: () => 80 });                                 // 80 ms: under the 500 ms "changed" bar, still the first answer
+  assert.equal(serverOffsetKnown, true);
+  assert.equal(woke, 1, 'the reveal is re-evaluated at once');
+  assert.equal(localStorage.getItem(SERVER_OFFSET_KEY), '80', 'remembered even though it is small');
+  v = revealMirrorView();
+  assert.equal(v.looking, false);
+  assert.equal(v.rows.length, 2, 'the place appears once the clock is known');
+  handler({ val: () => 90 });                                 // a refinement is not a first answer
+  assert.equal(woke, 1);
+  // a later launch knows at once; junk in storage does not count
+  assert.equal(readStoredServerOffsetKnown(), true);
+  localStorage.setItem(SERVER_OFFSET_KEY, 'soon');
+  assert.equal(readStoredServerOffsetKnown(), false);
+  localStorage.setItem(SERVER_OFFSET_KEY, String(SERVER_OFFSET_MAX_MS * 2));
+  assert.equal(readStoredServerOffsetKnown(), false);
+  localStorage.removeItem(SERVER_OFFSET_KEY);
+  assert.equal(readStoredServerOffsetKnown(), false);
+  revealOnClockChange = realWake;
+  serverTimeOffset = 0; serverOffsetKnown = true;
   teardownReveal();
 });
 

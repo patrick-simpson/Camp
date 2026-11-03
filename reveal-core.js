@@ -204,7 +204,10 @@ function revealNow(serverNow) {
 // the room hears it from the big screen first) or 'remote' | 'tv' (no lag: they
 // ARE the big screen). opts: { denied: true } when the listener was refused;
 // { epoch } to ignore a reveal from another camp year (omit it where the epoch
-// can't be known, the TV).
+// can't be known, the TV); { clockUnknown: true } when this device has never
+// learned the server's clock (a fresh install before its first answer): a
+// phone then holds the newest place back whatever its own clock says, because
+// the 3-second lag below is measured against a time that could be early.
 //
 // Returns null — nothing — for no/denied/foreign/too-new/other-year data or no
 // usable clock. For an expired reveal it returns a CLOSED view (no rows, nothing
@@ -227,7 +230,7 @@ function revealView(ctl, pub, serverNow, role, opts) {
   const now = revealNow(serverNow);
   if (now === null) return null;
   const groups = normalizeRevealPub(pub).filter((g) => g.idx < c.shown);
-  const lag = (role === 'viewer' || role === 'editor') && c.shown > 0 && now < c.sa + REVEAL_LOOK_MS;
+  const lag = (role === 'viewer' || role === 'editor') && c.shown > 0 && (o.clockUnknown === true || now < c.sa + REVEAL_LOOK_MS);
   const visible = lag ? groups.filter((g) => g.idx !== c.shown - 1) : groups;
   const rows = visible.map((g) => ({ place: g.place, tie: g.entries.length > 1, entries: g.entries }))
     .sort((a, b) => a.place - b.place);

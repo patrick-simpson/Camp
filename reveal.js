@@ -74,6 +74,8 @@ function revealViewOf(mode, role) {
   return revealView(node.ctl, node.pub, serverNow, role, {
     denied: mode === 'real' ? revealDenied : revealPracticeDenied,
     epoch: revealEpoch(),
+    // A phone that has never learned the server's clock fails closed (the newest place is held back): see app.js.
+    clockUnknown: !serverOffsetKnown,
   });
 }
 
@@ -493,6 +495,33 @@ function revealOnConnectionChange() {
   if (typeof revealPaint === 'function') revealPaint('connection', null);
 }
 
+// The sentence for a command this phone refused before sending anything, by reason. A refusal with no
+// sentence left a gold button that looked ready, was tapped and did nothing, so every reason a director can
+// reach says why (and reveal-ui.js wobbles the button for each).
+function revealWhyWords(code) {
+  switch (code) {
+    case 'rules': return 'The reveal isn’t switched on yet (the database rules need updating).';
+    case 'teams': return 'The reveal needs 2 to 6 teams with ids t0 to t5. Ask ' + (typeof ownerName === 'function' ? ownerName() : 'the owner') + '.';
+    case 'no-identity': return 'This phone isn’t signed in. Reload the page and sign in again.';
+    case 'clock': return 'This phone’s clock isn’t ready. Reload the page and try again.';
+    case 'viewer': return 'Still checking that you’re a director. Try again in a moment.';
+    case 'view-only': return 'This tab is view-only. Use the tab that is editing.';
+    case 'no-sync': return 'Sync is off on this phone.';
+    default: return '';
+  }
+}
+
+// Why a Start cannot work on this phone however long it waits, or null. Cheap (no standings are computed), so
+// the gate can ask it on every paint and the dock says why instead of looking ready. revealFreeze applies the
+// same rule to the rows it builds; the Start that gets past this still goes through that check.
+function revealStartBlock(nowMs) {
+  const teams = state && Array.isArray(state.teams) ? state.teams : [];
+  if (teams.length < 2 || teams.length > REVEAL_MAX_GROUPS || teams.some((t) => !t || !REVEAL_TEAM_KEY_RE.test(String(t.id)))) return 'teams';
+  if (!identityKey(authUser)) return 'no-identity';
+  if (!Number.isFinite(untilFor(nowMs, false))) return 'clock';
+  return null;
+}
+
 // The ready screen's checks (mockup 06): is this phone up to date, is every game today scored, when
 // was the last score saved. Only the first gates a Start; the other two are said, never enforced.
 function revealStartGate() {
@@ -507,11 +536,12 @@ function revealStartGate() {
   } catch (e) { unscored = []; }
   const last = Date.parse(state.meta && state.meta.lastDataChangeAt);
   const pending = !revealLoaded.real || (revealPracticeOn && !revealLoaded.practice);
+  const startWhy = may.ok ? revealStartBlock(now) : null;
   return {
     mayCommand: may.ok, code: may.ok ? (pending ? 'loading' : null) : may.code,
-    phoneCaughtUp: settled && !quiet, settled, quiet,
+    phoneCaughtUp: settled && !quiet, settled, quiet, startWhy,
     unscored, lastScoreAt: Number.isFinite(last) ? last : null,
-    canStart: may.ok && settled && !quiet && !pending && !revealStarting,
+    canStart: may.ok && !startWhy && settled && !quiet && !pending && !revealStarting,
   };
 }
 
@@ -791,7 +821,12 @@ function revealRemoteModel() {
   if (goState === 'charging') {
     kicker = charge.kind === 'name' ? 'Showing the name… ' + charge.secs : charge.kind === 'score' ? 'Showing the score… ' + charge.secs : 'Crowning… ' + charge.secs;
     big = next.action === 'crown' ? 'Champions next' : next.action === 'table' ? 'Final table next' : next.action === 'end' ? 'End the reveal' : next.place ? revealPlaceWord(next.place, next.tie) + ' next' : 'Next place';
-  } else if (goState === 'offline') { kicker = 'Reconnecting…'; big = 'Your taps would not reach the big screen'; }
+  } else if (goState === 'offline') {
+    // Disconnected: nothing is sent. Connected but slow to answer: the last tap is already with the SDK and may
+    // still land (revealSend's note), so the line must not promise it won't.
+    kicker = 'Reconnecting…';
+    big = fbConnected ? 'Your last tap may still arrive' : 'Your taps would not reach the big screen';
+  }
   const startedAt = c ? c.startedAt : null;
   return {
     mode, practice, stage, loading: !revealLoaded[mode],
@@ -952,6 +987,14 @@ function revealReread(mode) {
 
 // Hand one update to the server and settle. In flight is counted for the duration (so the SDK's optimistic
 // echo is not taken as confirmed and an auto-update cannot reload the phone), then the node is re-read.
+// WHAT GUARDS A STALE TAP: the app refuses a command while `.info/connected` is false, and the rules' `seq`
+// compare-and-set refuses a second one that raced it. Only a Start also carries a freshness window (`ca`).
+// RECORDED LIMIT, accepted: a Next, Back or End tapped in the seconds before a half-dead socket is noticed
+// (`.info/connected` still true) sits in the SDK's own offline queue and is applied on reconnect if `seq` is
+// still current; `sa` / `at` take the SERVER's time at delivery, so the big screen can show that place late,
+// even minutes after the tap. revealSlowAck() flips the dock to "Reconnecting…" after 12 s and keeps it
+// locked (the command still counts in flight) but cannot cancel the queued write, and the rules cannot be
+// tightened in this step. What it can never do is skip or invent a place: `seq` and `shown` only move by one.
 function revealSend(mode, updates) {
   revealInFlight[mode] += 1;
   revealInFlightSince[mode] = Date.now();
@@ -971,7 +1014,7 @@ function revealPublicGroups(mode) {
 
 // The one sentence for a command the server refused: rules not published, or another director got there first.
 function revealExplainRefusal(mode, before, rr, quiet) {
-  if (rr.denied) { revealDenied = true; revealSay('The reveal isn’t switched on yet (the database rules need updating).', quiet); return { code: 'rules' }; }
+  if (rr.denied) { revealDenied = true; revealSay(revealWhyWords('rules'), quiet); return { code: 'rules' }; }
   const node = confirmedReveal[mode];
   const after = node ? normalizeRevealCtl(node.ctl) : null;
   if (after && before && after.id === before.id && after.shown > before.shown) {
@@ -998,7 +1041,7 @@ async function revealRun(action, opts) {
   const quiet = !!o.quiet;
   const mode = o.mode || revealRemoteMode();
   const may = revealMayCommand();
-  if (!may.ok) return revealRefuse(may.code, may.code === 'rules' ? 'The reveal isn’t switched on yet (the database rules need updating).' : '', quiet);
+  if (!may.ok) return revealRefuse(may.code, revealWhyWords(may.code), quiet);
   if (!revealLoaded[mode]) return revealRefuse('loading', '', quiet);
   if (!fbConnected) return revealRefuse('offline', 'Your taps would not reach the big screen.', quiet);
   if (revealInFlight[mode] > 0) return revealRefuse('busy', '', quiet);
@@ -1057,26 +1100,28 @@ async function revealStart(opts) {
   const quiet = !!o.quiet;
   const mode = o.practice ? 'practice' : 'real';
   const gate = revealStartGate();
-  if (!gate.mayCommand) return revealRefuse(gate.code, gate.code === 'rules' ? 'The reveal isn’t switched on yet (the database rules need updating).' : '', quiet);
+  if (!gate.mayCommand) return revealRefuse(gate.code, revealWhyWords(gate.code), quiet);
   if (revealStarting || revealInFlight[mode] > 0) return revealRefuse('busy', '', quiet);
   if (gate.code === 'loading') return revealRefuse('loading', '', quiet);
   if (!fbConnected) return revealRefuse('offline', 'Your taps would not reach the big screen.', quiet);
   if (!gate.phoneCaughtUp) return revealRefuse('not-ready', 'Waiting for this phone to catch up…', quiet);
   const me = identityKey(authUser);
-  if (!me) return revealRefuse('no-identity', '', quiet);
+  if (!me) return revealRefuse('no-identity', revealWhyWords('no-identity'), quiet);
   const nowMs = serverNow();
+  const block = revealStartBlock(nowMs);
+  if (block) return revealRefuse(block, revealWhyWords(block), quiet);
   const freeze = revealFreeze(nowMs);
-  if (!freeze.ok) return revealRefuse(freeze.code, '', quiet);
+  if (!freeze.ok) return revealRefuse(freeze.code, revealWhyWords(freeze.code), quiet);
   const id = revealNewId(nowMs);
   const built = revealBuildStart(freeze, { mode, id, ts: revealTs(), nowMs, me, finale: revealIsFinaleDay(nowMs), epoch: revealEpoch() });
-  if (!built.ok) return revealRefuse(built.code, '', quiet);
+  if (!built.ok) return revealRefuse(built.code, revealWhyWords(built.code), quiet);
   revealStarting = true;
   try {
     const res = await revealSend(mode, built.updates);
     if (!res.ok) {
       if (revealIsDenied(res.err)) {
         // the rules refused a Start: either they are not published, or the `ca` window / a clause said no
-        if (res.denied) { revealDenied = true; return revealRefuse('rules', 'The reveal isn’t switched on yet (the database rules need updating).', quiet); }
+        if (res.denied) { revealDenied = true; return revealRefuse('rules', revealWhyWords('rules'), quiet); }
         return revealRefuse('refused', 'That Start didn’t reach the server. Start again?', quiet);
       }
       return revealRefuse('failed', 'Couldn’t reach the server. Try again.', quiet);

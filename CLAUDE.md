@@ -71,7 +71,7 @@ Files:
   nothing for no / refused / too-new / other-year data or no clock; an expired
   reveal is a closed view whose only content is the champion's NAME line; a
   phone holds the newest place back 3 s after `ctl.sa`, never re-hiding one
-  already shown) and `tvFrame` (the big screen's frame as a pure function of
+  already shown, and holds it back outright while `opts.clockUnknown`) and `tvFrame` (the big screen's frame as a pure function of
   the node and the server clock). Time is always an ARGUMENT (a number or a
   function read at call time), never read inside, so the 8 AM hide can't depend
   on a cached value; a test pins the file pure. The TV page loads it and takes
@@ -836,6 +836,14 @@ scope with reveal-core.js).
   (`visibilitychange` and `pageshow`, registered at load) and a corrected clock
   (`revealOnClockChange`) run the same `revealTick`, so a missed timer costs
   seconds, never correctness. Every consumer also decides "expired" at paint time.
+  **A phone that has never learned the server's clock fails closed** (`serverOffsetKnown`,
+  app.js): until a remembered estimate or the first `.info/serverTimeOffset` answer, serverNow()
+  is just the phone's own clock, which could run fast, so `revealViewOf` passes
+  `clockUnknown` and `revealView` holds the newest place back whatever that clock says
+  (the remote and the big screen never wait). The estimate is remembered on the first
+  answer even when it is small (it used to be kept only past 500 ms), and the first
+  answer re-runs the reveal through `revealOnClockChange`. Only a brand-new install, or one
+  that opens offline with nothing stored, is ever in that state.
 - **8 AM.** `expireReveal()` empties every grid root directly (`#now-reveal-grid`,
   `#games-reveal-grid`) — an inactive tab included, with no render — and drops the
   cache. On directors' phones `retireExpiredReveal()` deletes the expired nodes
@@ -879,9 +887,24 @@ scope with reveal-core.js).
   and says one sentence ("Another director already showed 4th place." — a place, never
   a team); if the re-read is refused too the rules are not published
   ("The reveal isn't switched on yet…", `revealDenied`, stage `off`, no button that
-  leads to a refusal). Nothing is queued: offline refuses at the tap. A Start waits for
+  leads to a refusal). Nothing is queued by the app: while `.info/connected` is false a tap
+  is refused at the tap. **Recorded limit (accepted, the rules can't change in this step):** only
+  a Start has a freshness guard (`ca`, a minute); a Next, Back or End tapped in the seconds
+  before a half-dead socket is noticed (`.info/connected` still true) sits in the SDK's own
+  offline queue and is applied on reconnect if `seq` is still current. `sa` / `at` take the
+  server's time at delivery, so the big screen can show that place late, even minutes after the
+  tap (never a skipped or invented one: `seq` and `shown` move by one). `revealSlowAck()` flips
+  the dock to "Reconnecting… / Your last tap may still arrive" after 12 s and keeps it locked;
+  it cannot cancel the queued write. A Start waits for
   the phone to be caught up (`revealStartGate`: connected, first pull done, nothing
-  unsent or being typed) and 10 s after the connection last changed.
+  unsent or being typed) and 10 s after the connection last changed. **A Start that can
+  never work on this phone says so** (`revealStartBlock`, folded into the gate's `canStart`
+  as `startWhy`): the teams aren't 2 to 6 ids `t0`…`t5`, the phone has no sign-in, or no
+  usable clock. The dock then reads "The teams need fixing first" / "Sign in again to
+  start" / "This phone's clock isn't ready", and a tap says why in a toast
+  (`revealWhyWords`, which also words the director-reachable refusals `viewer`,
+  `view-only`, `no-sync`, `rules`) and wobbles the button (`REVEAL_UI_REFUSED`) — never a
+  gold button that looks ready and does nothing.
 - **The button recharges** (`revealCharge`): after a place the big button and Back are
   locked until `at + 4.5 s` (name 0–3 s, score to 4.5 s; the crowning 3 s); a tap sends
   nothing and says "Wait 4 s. The big screen is still showing 5th place."; End never
@@ -4114,7 +4137,14 @@ directors…" (mockup 11). The old signed-in, directors-only interim page is gon
   command (`seq`), so the place replays; the same `seq` arriving again is an echo
   and changes nothing. Ties keep the side-by-side layout and a two-way tie keeps the
   shield fight (name beat only; not for a late joiner, a three-way tie or reduced
-  motion).
+  motion). **Three or more on one place are sized from their count**: `buildHero` adds
+  `many` and `n3`…`n6`, and `.hero.many` (current-standings.html) derives one column's
+  width `--cw` from `--tn`, then scales the shield, the name (both beats), the points and
+  the two breakdown lines from it, the lines never wrapping (a third column used to wrap
+  each breakdown onto two lines and run off the bottom of a 16:9 screen; six shields ran
+  off both sides: the six-way tie is what a Practice shows before any score exists).
+  Measured at 1024×768, 1280×720, 1366×768 and 1920×1080 with 3, 4 and 6 teams on one
+  place and the longest real names, both camps; a two-way tie keeps its own sizes.
 - **The words are the phones' words**: "2 gold · 1 silver · 1 bronze" then
   "verse 4 · cleanup 3 · quick 2" (the second line only when one is non-zero; a
   negative reads with a minus sign), in the hero (`.hero-break .words`) and on the

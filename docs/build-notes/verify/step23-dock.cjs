@@ -24,7 +24,8 @@ async function open(browser, { camp, scheme, w, h, text }) {
     const sdk = document.getElementById('sdk-banner'); if (sdk) sdk.remove();
     setMemberRole('editor');
     document.querySelectorAll('jelly-dialog[open]').forEach((d) => d.removeAttribute('open'));
-    fbConnected = true; remoteReady = true; serverTimeOffset = 0;
+    fbConnected = true; remoteReady = true; serverTimeOffset = 0; serverOffsetKnown = true;
+    authUser = { email: 'jenn@example.com' };          // a Start with no sign-in reads "Sign in again to start" (revealStartBlock)
     revealStarted = true; revealMayCommand = () => ({ ok: true });
     renderAll();
     document.documentElement.style.fontSize = text + '%';
@@ -96,6 +97,22 @@ const MEASURE = () => {
         ['the crowning', { phase: 'champion', shown: n, cur: n - 1, finale: true, ageMs: 1500, bump: 1 }],
         ['the final table', { phase: 'table', shown: n, cur: n - 1, finale: true }],
       ];
+      // The Start that can never work (revealStartBlock): the dock's small line says why. Measured on the first face's own
+      // screen (no reveal), each put back afterwards.
+      const blocks = [
+        ['blocked: teams', () => { state.teams[0].id = 'team-a'; }, () => { state.teams[0].id = 't0'; }, 'The teams need fixing first'],
+        ['blocked: sign-in', () => { window.__au = authUser; authUser = null; }, () => { authUser = window.__au; }, 'Sign in again to start'],
+      ];
+      await page.evaluate(() => { revealLoaded.real = true; revealLoaded.practice = true; });   // "Loading the reveal…" outranks a reason
+      for (const [name, on, off, words] of blocks) {
+        await page.evaluate(on); await page.evaluate(() => renderRevealUi());
+        await page.waitForTimeout(120);
+        const r = await page.evaluate(MEASURE);
+        checked++;
+        const why = [r.state !== 'blocked' && 'the dock is not blocked', r.k !== words && 'the small line is not the reason', !r.inK && 'small line leaves the button', !r.inM && 'big line leaves the button'].filter(Boolean);
+        if (why.length) bad.push(`${tag} · ${name} ("${r.k}" / "${r.m}"): ${why.join(', ')}`);
+        await page.evaluate(off); await page.evaluate(() => renderRevealUi());
+      }
       for (const [name, spec] of faces) {
         if (spec) await setReveal(page, spec);
         await page.waitForTimeout(120);

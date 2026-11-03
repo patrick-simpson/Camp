@@ -948,7 +948,11 @@ is on; a practice writes only its own pair of nodes:
   demotion the in-memory copy is dropped with the remote.
 - **Offline / reconnecting**: the big button (and Back) turn into a dashed, grey face:
   "Reconnecting… 2 s" over "Your taps would not reach the big screens" when `.info/connected` is
-  false (07c state 3). No queued commands.
+  false (07c state 3). The app queues no commands. **Recorded limit (accepted at Step 23's review):** a tap made in
+  the seconds before a half-dead socket is noticed (`.info/connected` still true) sits in the SDK's own offline
+  queue and applies on reconnect if `seq` is still current, with the server's time at delivery; only a Start has a
+  freshness guard (`ca`). A slow acknowledgement (12 s) turns the face to "Reconnecting…" over "Your last tap may
+  still arrive".
 - **The screen stays on.** While this device is an editor and a non-practice reveal is live, or
   the remote is open, it holds a Screen Wake Lock (`navigator.wakeLock.request('screen')`),
   re-requests it on `visibilitychange` (the OS drops it when the page hides), and releases it at

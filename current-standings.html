@@ -346,6 +346,25 @@
     .hero.tied .hero-points .num { font-size: clamp(2.2rem, 9vh, 7rem); }
     .hero.tied .hero-break .medals { justify-content: center; font-size: clamp(1rem, 2.6vw, 2.6rem); }
     .hero.tied .hero-break .bonus { text-align: center; font-size: clamp(0.9rem, 2vw, 2rem); }
+    /* Three or more teams on one place (a rehearsal's Practice before any score is the six-way case). The two-way
+       sizes above are tuned for two columns: with words for the medals and the bonus, a third column wrapped
+       every breakdown onto two lines and ran off the bottom of a 16:9 screen, and six shields ran off both
+       sides. So the columns are sized from their COUNT (the class is n<count>, set when the place is built):
+       --cw is one column's width, the shield, the name and both breakdown lines scale from it, and the
+       breakdown lines never wrap. */
+    .hero.many { --tgap: clamp(0.6rem, 2.4vw, 3rem); --cw: calc((min(100vw, 1800px) - 2rem - (var(--tn) - 1) * var(--tgap)) / var(--tn)); }
+    .hero.n3 { --tn: 3; } .hero.n4 { --tn: 4; } .hero.n5 { --tn: 5; } .hero.n6 { --tn: 6; }
+    .hero.many .hero-entries { gap: var(--tgap); }
+    .hero.many .hero-entry { width: var(--cw); flex: none; }
+    .hero.many .hero-shield { width: min(clamp(140px, 30vh, 360px), calc(var(--cw) * 0.85)); }
+    .hero.many .hero-shield.tv-flag { height: min(clamp(140px, 30vh, 360px), calc(var(--cw) * 0.85)); }
+    .hero.many .hero-shield.crest-tile { font-size: min(clamp(76px, 18vh, 216px), calc(var(--cw) * 0.5)); }
+    .hero.many .hero-name { font-size: clamp(1.1rem, calc(var(--cw) * 0.075), 4rem); overflow-wrap: break-word; }
+    .hero.many.solo .hero-name { font-size: clamp(1.1rem, calc(var(--cw) * 0.11), 5.5rem); }
+    .hero.many .hero-points .lbl { font-size: clamp(0.8rem, calc(var(--cw) * 0.09), 3.2rem); }
+    .hero.many .hero-points .num { font-size: clamp(2rem, min(9vh, calc(var(--cw) * 0.3)), 7rem); }
+    .hero.many .hero-break .words { white-space: nowrap; font-size: clamp(0.65rem, calc(var(--cw) * 0.07), 3.6rem); }
+    .hero.many .hero-break .words + .words { font-size: clamp(0.6rem, calc(var(--cw) * 0.06), 2.8rem); }
 
     /* ── Tie fight 🥊: during the solo spotlight the two shields wind up,
        charge, and CLASH in the middle (twice), with a 💥 burst at each

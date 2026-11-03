@@ -573,6 +573,9 @@
     if (animate) hero.classList.add('enter');
     // Ties get the compact side-by-side layout (see .hero.tied CSS).
     if (tie) hero.classList.add('tied');
+    // Three or more on one place are sized from their count (see .hero.many in the page's CSS): a Practice before any
+    // score exists puts all six teams on one place.
+    if (g.entries.length > 2) hero.classList.add('many', 'n' + Math.min(6, g.entries.length));
     setBeat(hero, f.beat);
     // Two-way tie: the shields FIGHT for the spot during the name beat — two charge-and-clash cycles
     // with a 💥 burst at each contact (52% of each 1.5 s cycle). Not for 3-way ties (no clean
