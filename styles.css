@@ -3852,7 +3852,8 @@ body.builder-open .setup {
 .setup[data-screen="classic"] [data-setup-screen="classic"],
 .setup[data-screen="week"] [data-setup-screen="week"],
 .setup[data-screen="schedule"] [data-setup-screen="schedule"],
-.setup[data-screen="rain"] [data-setup-screen="rain"] {
+.setup[data-screen="rain"] [data-setup-screen="rain"],
+.setup[data-screen="games"] [data-setup-screen="games"] {
   display: block;
 }
 /* In the frame, the classic builder's own back and heading step aside: the
@@ -16690,4 +16691,265 @@ button.gs-row:focus-visible {
   .gres-r {
     border-color: var(--ink-3);
   }
+}
+
+/* ============================================================
+   SET UP THE WEEK: Games (P2 §11.14; Step 21)
+   ============================================================
+   The clipboard again, one day at a time: every schedule item that holds
+   games (or is a Games item) is a heading — its time as a small kicker, its
+   emoji and label under it — over ONE grouped sheet of its games in play
+   order, "Add a game here" closing that sheet. The heading is set in from the
+   box's edge to the rows' own inset, so the item's emoji and name stand in the
+   same columns as its games' below: the eye reads an item and its games as
+   one thing, with no box drawn round the heading. A game row is its name and
+   one plain line (the format in a word, then where); nothing here names a
+   point or a place. The game sheet grows as it is filled (data-stage) and has
+   no Save: each field saves as it changes, and the dock says so. Nothing here
+   animates in CSS: a stage arriving, a pane changing and a row gliding are
+   JellyMotion's (named in index.html), so calm needs nothing here. Markup:
+   index.html #sg-days (in the head), #setup-games, #sheet-game, #sheet-sg-day,
+   and the i-bracket / i-tally / i-podium glyphs. */
+
+/* ── The day strip: seven days on a 360px phone, the count under the name ── */
+.sg-days .daypick-btn {
+  min-width: 44px;
+  padding-inline: 3px;
+}
+/* The day's game count in tabular figures, with the gold "!" beside it on the
+   same line when the day needs a look. An empty line (not a games day) keeps
+   its height, so the names stay level along the strip. */
+.daypick-n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-height: 13px;
+  font: 800 0.8125rem/1 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+}
+.sg-days .daypick-warn {
+  position: static;
+  width: 12px;
+  height: 12px;
+}
+.sg-days .daypick-warn::after {
+  font-size: 0.5625rem;
+}
+/* Not a games day: the name a step quieter in weight (never lighter than ink-2). */
+.sg-days .daypick-btn[data-off]:not([aria-selected="true"]) {
+  font-weight: 600;
+}
+
+/* ── The screen ── */
+.sg .setup-note {
+  margin: 0 2px var(--s-3);
+}
+/* The day's ⋯ rides the headline's line at the right (the Schedule's "Day
+   options" button), so a day with nothing else to act on has no line holding a
+   lone ⋯ under its lede. */
+.sg-intro {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: var(--s-2);
+}
+.sg-intro > * {
+  grid-column: 1;
+}
+.sg-intro > .sched-day-btn {
+  grid-column: 2;
+  grid-row: 2;
+  align-self: center;
+}
+/* The day's note, said as the plain line it is, with its pin. */
+.sg-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  min-width: 0;
+  margin: 10px 0 0;
+  font: 650 0.9375rem/1.4 var(--font-ui);
+  color: var(--ink);
+  overflow-wrap: break-word;
+}
+.sg-note .ico {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  color: var(--ink-2);
+}
+
+/* One schedule item and its games. */
+.sg-item + .sg-item,
+.sg-items:not(:empty) + .sg-off {
+  margin-top: var(--s-6);
+}
+.sg-items:empty {
+  display: none;
+}
+/* The heading: the time small above, the item's emoji and name at row size
+   under it — both set in to the rows' inset (the box's 1.5px edge + its 14px)
+   so the name sits in the same column as the games' names below it. */
+.sg-item-h {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0 15px 8px 15.5px;
+}
+.sg-item-time {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
+  font: 750 0.8125rem/1.25 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+.sg-item-time:empty {
+  display: none; /* the original week's session headings have no time */
+}
+.sg-item-time small {
+  font: inherit;
+}
+/* Today's item under way: "Now" in link blue with its dot (the rain plan's). */
+.sg-item-now {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: 800 0.8125rem/1.25 var(--font-ui);
+  color: var(--link);
+}
+.sg-item-now::before {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.sg-item-name {
+  display: grid;
+  grid-template-columns: var(--emo-col) minmax(0, 1fr);
+  column-gap: var(--emo-gap);
+  font: 800 1.0625rem/1.25 var(--font-ui);
+  letter-spacing: var(--track-row);
+  color: var(--ink);
+  overflow-wrap: break-word;
+}
+.sg-item-name > :only-child {
+  grid-column: 1 / -1; /* no emoji: the name takes the line */
+}
+/* Large text (130% and up on a phone): the heading comes back to the screen's
+   own edge, so a long word keeps its line ("competitions" broke one letter
+   short at 200%); a word that still can't fit breaks with a hyphen. */
+.sg-items {
+  container-type: inline-size;
+}
+.sg-item-name {
+  -webkit-hyphens: auto;
+  hyphens: auto;
+}
+@container (max-width: 18em) {
+  .sg-item-h {
+    padding-inline: 2px;
+  }
+}
+
+/* A game: its name (emoji in the run sheet's own column) and one plain line.
+   No time column — the heading above carries the item's time. */
+.sg-list .sg-game {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+.sg-game[data-warn] .cb-sub::before {
+  content: '!';
+  display: inline-grid;
+  place-items: center;
+  width: 15px;
+  height: 15px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: inset 0 0 0 1.5px var(--gold-edge);
+  color: var(--gold-ink);
+  font: 900 0.6875rem/1 var(--font-ui);
+  vertical-align: -2px;
+}
+/* Not on the schedule: an invisible full-row button opens the game; "Put on
+   the schedule" sits above it with its own 44px target, on its own line under
+   the words, from the name's column (beside them, it squeezed the name and its
+   "was on…" into a third of the row). */
+.sg-list .sg-game.gl-row-split {
+  position: relative;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: none; /* the clipboard's large-text areas don't apply: it is one column already */
+  row-gap: 8px;
+}
+.sg-game.gl-row-split > .cb-main,
+.sg-game.gl-row-split > .cb-end {
+  grid-area: auto;
+}
+.sg-game.gl-row-split > .cb-end {
+  justify-self: start;
+  margin-left: calc(var(--emo-col) + var(--emo-gap));
+}
+.sg-game .gl-row-hit:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 3px var(--blue);
+}
+.sg-game .sg-place {
+  position: relative;
+  z-index: 1;
+  pointer-events: auto;
+}
+/* "Add a game here": the sheet's last line, its plus in the emoji column so
+   the words start where the games' names do. */
+.sg-add-here {
+  display: grid;
+  grid-template-columns: var(--emo-col) minmax(0, 1fr);
+  column-gap: var(--emo-gap);
+  align-items: center;
+  width: 100%;
+  min-height: var(--target);
+  margin: 0;
+  padding: 6px 14px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: none;
+  color: var(--link);
+  font: 750 0.9375rem/1.25 var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.cb-list > .sg-add-here:first-child {
+  border-top: 0;
+}
+.sg-add-here:active {
+  background: color-mix(in srgb, var(--ink) 6%, var(--sheet));
+}
+.sg-add-here .ico {
+  justify-self: center;
+  width: 20px;
+  height: 20px;
+  stroke-width: 2.6;
+}
+/* The day's own add, under everything. */
+.sg-add {
+  margin-top: var(--s-4);
+}
+.sg-off .gl-note {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── The day's sheet (#sheet-sg-day) ── */
+.sg-day-body {
+  display: grid;
+  grid-auto-rows: max-content;
+  gap: var(--s-3);
+}
+.sg-day-body > .tms-hint {
+  margin-top: -6px;
+}
+.sg-day-acts {
+  margin-top: var(--s-3);
 }

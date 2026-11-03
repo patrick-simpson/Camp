@@ -864,6 +864,34 @@
               <button type="button" class="daypick-btn" role="tab" aria-selected="false" data-day="sat"><span class="daypick-name">Sat</span><span class="daypick-dots" aria-hidden="true"></span><i class="daypick-warn" data-sd-warn aria-hidden="true" hidden></i></button>
             </div>
           </nav>
+          <!-- The Games screen's days (Step 21, P2 §11.14). All seven, because a
+               day that isn't a games day yet is MADE one where it is chosen (the
+               screen says "Saturday isn't a games day" with the button): "Days
+               with games" lives in this one strip, never in a second row of
+               chips that would repeat it. Shown only on data-screen="games".
+               Per day the renderer sets aria-selected, data-today (outlined),
+               data-off on a day with no competition-day tab (its count line
+               stays empty, keeping its height), the day's game count in
+               [data-sg-n] ("5"; a games day with none says "0" and carries the
+               "!"), the gold "!" [data-sd-warn] beside the count, on its line
+               (no games yet, a game that isn't on the schedule, a game that
+               still says TBA; at a 44px chip's corner it covered the name), and
+               the aria-label in
+               words, since the count and the marks are drawn: "Wednesday, today,
+               5 games" · "Saturday, not a games day" · "Thursday, no games yet,
+               needs a look". On a phone it opens with today's chip in view
+               during camp week (stripRevealChip, as the Schedule's). -->
+          <nav class="sched-days sg-days" id="sg-days" data-setup-screen="games" aria-label="Which day">
+            <div class="daypick" id="sg-days-track" role="tablist" aria-label="Which day">
+              <button type="button" class="daypick-btn" role="tab" aria-selected="false" aria-controls="setup-games" data-day="sun"><span class="daypick-name">Sun</span><span class="daypick-n" aria-hidden="true"><span data-sg-n></span><i class="daypick-warn" data-sd-warn hidden></i></span></button>
+              <button type="button" class="daypick-btn" role="tab" aria-selected="false" aria-controls="setup-games" data-day="mon"><span class="daypick-name">Mon</span><span class="daypick-n" aria-hidden="true"><span data-sg-n></span><i class="daypick-warn" data-sd-warn hidden></i></span></button>
+              <button type="button" class="daypick-btn" role="tab" aria-selected="false" aria-controls="setup-games" data-day="tue"><span class="daypick-name">Tue</span><span class="daypick-n" aria-hidden="true"><span data-sg-n></span><i class="daypick-warn" data-sd-warn hidden></i></span></button>
+              <button type="button" class="daypick-btn" role="tab" aria-selected="false" aria-controls="setup-games" data-day="wed"><span class="daypick-name">Wed</span><span class="daypick-n" aria-hidden="true"><span data-sg-n></span><i class="daypick-warn" data-sd-warn hidden></i></span></button>
+              <button type="button" class="daypick-btn" role="tab" aria-selected="false" aria-controls="setup-games" data-day="thu"><span class="daypick-name">Thu</span><span class="daypick-n" aria-hidden="true"><span data-sg-n></span><i class="daypick-warn" data-sd-warn hidden></i></span></button>
+              <button type="button" class="daypick-btn" role="tab" aria-selected="false" aria-controls="setup-games" data-day="fri"><span class="daypick-name">Fri</span><span class="daypick-n" aria-hidden="true"><span data-sg-n></span><i class="daypick-warn" data-sd-warn hidden></i></span></button>
+              <button type="button" class="daypick-btn" role="tab" aria-selected="false" aria-controls="setup-games" data-day="sat"><span class="daypick-name">Sat</span><span class="daypick-n" aria-hidden="true"><span data-sg-n></span><i class="daypick-warn" data-sd-warn hidden></i></span></button>
+            </div>
+          </nav>
         </header>
 
         <!-- ── The hub: the checklist (§11.2) ── -->
@@ -1562,6 +1590,99 @@
               <span class="gl-switch"><em class="gl-switch-state" data-switch-state="campers-skip">Off</em><jelly-switch id="campers-skip" label="Not using camper lists this year"></jelly-switch></span>
             </div>
           </div>
+        </section>
+
+        <!-- ── Games (P2 §11.14; Step 21) — the week's games by schedule item ──
+             One day at a time (#sg-days in the head), as a run sheet: each
+             schedule item that has games, or is a Games item, is a heading line
+             (its time in the tabular column, its emoji and label) over ONE
+             grouped sheet of its games in play order, then "+ Add a game here".
+             Games on no item come last, under "Not on the schedule". Nothing
+             here names a point or a place. Written by the renderer, keyed for
+             JellyMotion.flipKeyed (a game moved or reordered glides by key, a
+             new one arrives, calm: a plain replace):
+               <section class="sg-item" data-key="b-<block id>" [data-now]>
+                 <h3 class="sg-item-h">
+                   <span class="sg-item-time">10:00<small>–11:45</small></span>
+                   <span class="sg-item-name"><span class="sched-emo" aria-hidden="true">🏅</span><span>Team competitions</span></span>
+                   <span class="sg-item-now">Now</span></h3>              (data-now: today's item under way)
+                 <div class="gl cb-list sg-list">GAME ROWS</div>           (empty for a Games item with none: no box)
+                 <button type="button" class="sched-add sg-add-here" data-sg-add="<block id>">
+                   <svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span>Add a game here</span></button>
+               </section>
+             With the schedule the original (switch off: blockId links are not
+             read), the headings are the sessions instead — no time, the label
+             "Morning games" / "Evening games" — and #sg-orig says why.
+             GAME ROW (a <button>; the whole row opens #sheet-game on its form):
+               <button type="button" class="cb-row sg-game" data-key="g-<id>" data-sg-open="<id>" [data-warn]>
+                 <span class="cb-main">
+                   <span class="cb-title"><span class="sched-emo" aria-hidden="true">🛡️</span><span>Shields</span></span>
+                   <span class="cb-sub">Podium · Dining Hall</span></span>   (the format in a word — Bracket ·
+                                                       Scores · Podium — then where; "· double points"
+                                                       when it counts double; data-warn draws the gold
+                                                       "!" before it: "Podium · where: TBA")
+                 <span class="cb-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+               </button>
+             NOT ON THE SCHEDULE: a split row (two buttons can't nest): an
+             invisible full-row button opens the sheet, and "Put on the
+             schedule" — on its own line under the words, from the name's
+             column, so a long name and its "was on…" keep the row's width —
+             opens the sheet straight on its When pane:
+               <div class="cb-row sg-game gl-row-split" data-key="g-<id>">
+                 <button type="button" class="gl-row-hit" data-sg-open="<id>" aria-labelledby="sg-n-<id>"></button>
+                 <span class="cb-main"><span class="cb-title"><span class="sched-emo" aria-hidden="true">🎳</span><span id="sg-n-<id>">Rain bowling</span></span>
+                   <span class="cb-sub">Scores · Gym · was on Tue · Team competitions</span></span>
+                 <span class="cb-end"><button type="button" class="btn btn-sm sg-place" data-sg-place="<id>">Put on the schedule</button></span>
+               </div> -->
+        <section class="setup-screen sg" id="setup-games" data-setup-screen="games" role="tabpanel" aria-labelledby="sg-title">
+          <div class="setup-intro sg-intro">
+            <!-- Kicker "Games · Junior camp"; the answer is the DAY you're
+                 looking at ("Wednesday"); the lede where it stands: "Today · 5
+                 games on 2 schedule items" · "4 games · 1 isn't on the schedule"
+                 · "Not a games day" · "No games yet". The day's own sheet is a
+                 44x44 ⋯ on the headline's line, at the right (#sheet-sg-day: the
+                 note, and taking the day off the games days; its name for the
+                 screen reader only, "Wednesday's options"; hidden on a day that
+                 isn't a games day) — never a line of its own under the lede. -->
+            <h2 class="setup-kicker" id="sg-title">Games</h2>
+            <p class="setup-headline" id="sg-headline"></p>
+            <button type="button" class="sched-day-btn" id="sg-day-btn" aria-haspopup="dialog" aria-controls="sheet-sg-day" hidden><span class="visually-hidden" id="sg-day-btn-text">Wednesday’s options</span><svg class="ico" aria-hidden="true"><use href="#i-dots"/></svg></button>
+            <p class="setup-lede" id="sg-lede"></p>
+            <!-- The day's note (config.days[].note: everyone sees it above that
+                 day's games on the Games tab), as the plain line it is, with its
+                 pin; hidden when there's none. -->
+            <p class="sg-note" id="sg-note" hidden><svg class="ico" aria-hidden="true"><use href="#i-pin"/></svg><span id="sg-note-text"></span></p>
+          </div>
+          <!-- The schedule is the original (meta/on/schedule off): games are
+               grouped by session there, and a move picks a session. -->
+          <p class="setup-note" id="sg-orig" hidden><svg class="ico" aria-hidden="true"><use href="#i-calendar"/></svg><span>Games are listed by morning and evening while the schedule is the original one.</span></p>
+
+          <!-- A day that isn't a games day (no competition-day tab): the lede
+               already says so ("Not a games day"), so only the way to make it
+               one (it asks nothing: an empty games day is harmless and its ⋯
+               takes it off again). Plain, not gold — most Saturdays have no
+               games on purpose. -->
+          <div class="sched-start" id="sg-noday" hidden>
+            <button type="button" class="btn" id="sg-day-on"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span id="sg-day-on-text">Make Saturday a games day</span></button>
+          </div>
+          <!-- A games day with no games and no Games item to put one under:
+               the one main action. -->
+          <div class="sched-start" id="sg-empty" hidden>
+            <p class="sched-start-text" id="sg-empty-text">No games on Thursday yet.</p>
+            <button type="button" class="btn btn-gold" id="sg-add-first"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>Add the first game</button>
+          </div>
+
+          <div class="sg-items" id="sg-items"></div>
+
+          <div class="more-sec sg-off" id="sg-sec-off" hidden>
+            <div class="gl-head"><h3 class="gl-label" id="sg-off-label">Not on the schedule</h3><span class="gl-note" id="sg-off-note"></span></div>
+            <div class="gl cb-list sg-list" id="sg-off-list"></div>
+          </div>
+
+          <!-- Add to the day, wherever it fits (opens #sheet-game; the When
+               line starts on the day's first Games item): "Add a game to
+               Wednesday". -->
+          <button type="button" class="sched-add sg-add" id="sg-add" hidden><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span id="sg-add-text">Add a game to Wednesday</span></button>
         </section>
 
         <!-- The classic builder (Games, Days, Teams, Notice, Data) as one screen
@@ -3411,6 +3532,31 @@
       </form>
       <div class="sheet-dock">
         <button type="button" class="btn btn-gold btn-block" id="sec-verse-save">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- One games day (P2 §11.14 "Days with games"): the note shown above its
+       games on the Games tab (saved when focus leaves it, nothing else to
+       press), and taking the day off the games days (asks where its games go
+       first, as deleteDay does: a confirm that names them). -->
+  <div id="sheet-sg-day" class="sheet-overlay" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-sg-day-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-sg-day-title">Wednesday</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="sheet-body sg-day-body">
+        <label class="fld"><span class="fld-label" id="sg-day-note-label">Note on Wednesday’s games</span><textarea class="fld-input gm-grow" id="sg-day-note" rows="2" maxlength="200" placeholder="Bring a towel, these get wet"></textarea></label>
+        <p class="tms-hint">Everyone sees it above the day’s games on the Games tab.</p>
+        <div class="gl sg-day-acts">
+          <button type="button" class="gl-row gl-row-danger" data-sg-day-act="off">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-trash"/></svg></span>
+            <span class="gl-text"><span class="gl-title" id="sg-day-off-title">Take Wednesday off the games days</span><span class="gl-sub" id="sg-day-off-sub">First asks where its 5 games go</span></span>
+          </button>
+        </div>
       </div>
     </div>
   </div>
