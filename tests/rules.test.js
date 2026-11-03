@@ -355,14 +355,12 @@ test('state accepts exactly the synced keys, and each must be a branch', () => {
       assert.ok(st[k]['.validate'].includes('!newData.isString()'), `${root}/state/${k} must be a branch`);
     });
     assert.equal(st.$other['.validate'], false, `${root}/state refuses unknown keys`);
-    // `brackets4` (the 4-team bracket, BUILD-PLAN Step 22) is published AHEAD of its client in
-    // R1: until Step 22 adds it to SYNC_KEYS nothing writes it, and the rule is a branch-only
-    // gate. Drop this allowance when SYNC_KEYS carries it.
-    const allowed = SYNC_KEYS.concat(SYNC_KEYS.includes('brackets4') ? [] : ['brackets4']);
-    assert.ok(st.brackets4['.validate'].includes('!newData.isString()'), `${root}/state/brackets4 must be a branch`);
+    // `brackets4` (the 4-team bracket, BUILD-PLAN Step 22) was published AHEAD of its client in R1; since Step 22
+    // it is one of SYNC_KEYS like the rest, so the loop above already holds it to a branch.
+    assert.ok(SYNC_KEYS.includes('brackets4'), 'the client writes brackets4');
     const named = Object.keys(st).filter((k) => !k.startsWith('.') && k !== '$other').sort();
-    assert.deepEqual(named, allowed.slice().sort(),
-      `${root}/state's allowed keys must be exactly SYNC_KEYS (+ brackets4 until Step 22) — a mismatch silently drops a write`);
+    assert.deepEqual(named, SYNC_KEYS.slice().sort(),
+      `${root}/state's allowed keys must be exactly SYNC_KEYS — a mismatch silently drops a write`);
   });
 });
 

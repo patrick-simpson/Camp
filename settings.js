@@ -1000,8 +1000,8 @@ function validateGameDraft(draft) {
 const GAME_RECORD_MAPS = [
   { key: 'results', label: 'the saved result' },
   { key: 'brackets', label: 'the bracket in progress' },
-  // The four-team bracket's node (Step 22 syncs it; until then it never exists, and every reader here tolerates a missing map).
-  // A game created under a reused id must never inherit one, and a delete or a format change clears it with the rest.
+  // The four-team bracket's node. A game created under a reused id must never inherit one, and a delete or a format change
+  // clears it with the rest (every reader here still tolerates a missing map: an old cache has none).
   { key: 'brackets4', label: 'the bracket in progress' },
   { key: 'drafts', label: 'the score entry in progress' },
   { key: 'live', label: 'the live match' },
@@ -1342,7 +1342,7 @@ function deleteGame(gameId) {
   if (!g) return;
   const result = state.results[gameId];
   const day = dayById(g.dayId);
-  const inProgress = !!state.brackets[gameId] || !!state.drafts[gameId];
+  const inProgress = !!state.brackets[gameId] || !!(state.brackets4 && state.brackets4[gameId]) || !!state.drafts[gameId];
 
   let msg;
   if (result) {
@@ -1875,6 +1875,7 @@ function backupJSON() {
     teams: state.teams,
     results: state.results,
     brackets: state.brackets,
+    brackets4: state.brackets4,
     drafts: state.drafts,
     picRounds: state.picRounds,
     picSetup: state.picSetup,
@@ -2057,7 +2058,7 @@ function tryImport(text, opts) {
   if (teamsOk) state.teams = teamsFromBackup(src.teams); // only well-formed branding fields come in (never a photo version)
   // Copying from the other camp takes the Schedule, Games and Teams only — never its scores.
   if (!copyMode) {
-    ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'clocks', 'announcements'].forEach((key) => {
+    ['results', 'brackets', 'brackets4', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'clocks', 'announcements'].forEach((key) => {
       const v = src[key];
       if (!(v && typeof v === 'object' && !Array.isArray(v))) return;
       if (key === 'picSetup' && v3) { // a v3 backup carries the modes only: the words on this device are kept

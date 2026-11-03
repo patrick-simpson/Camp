@@ -4026,7 +4026,7 @@ function applyCardVisibility() {
 // and the SDK loaded, scores sync across every device in real time.
 // Otherwise the app runs exactly as before, local-only.
 
-const SYNC_KEYS = ['teams', 'results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta', 'clocks', 'announcements', 'notice'];
+const SYNC_KEYS = ['teams', 'results', 'brackets', 'brackets4', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta', 'clocks', 'announcements', 'notice'];
 let fbRef = null;
 // Per-tab id for the "who's here" presence chip — minted once per page load
 // (not persisted) so each open tab counts, and cleans up, independently. It is
@@ -5813,7 +5813,7 @@ function applyRemoteState(remote, confirmedBase, opts) {
     const s = state.picSetup[gid];
     if (s && s.words && s.words.length) localPicWords[gid] = s.words;
   });
-  ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta', 'clocks', 'announcements', 'notice'].forEach((k) => {
+  ['results', 'brackets', 'brackets4', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'meta', 'clocks', 'announcements', 'notice'].forEach((k) => {
     state[k] = remote[k] !== undefined ? remote[k] : {};
   });
   Object.keys(localPicWords).forEach((gid) => {
@@ -6051,6 +6051,7 @@ function picSetupForSync(picSetup) {
 const SYNC_ITEM_MAPS = ['results', 'brackets', 'picRounds', 'picSetup', 'bonuses', 'clocks', 'announcements'];
 // `live` is NOT here — it's diffed one level deeper (per match field) in
 // computeSyncUpdates so concurrent refs don't clobber each other's fields.
+// `brackets4` is NOT here either — it is diffed per match (brackets4/<gid>/m/<match>).
 // `notice` is the one singleton left — one composed card, always written whole.
 // (`teams` stopped being one in S2b: a rename is one field, not the whole roster.)
 const SYNC_SINGLETONS = ['notice'];
@@ -6100,6 +6101,29 @@ function computeSyncUpdates(prev, cur) {
       if (!(id in c)) up[k + '/' + id] = null; // item deleted (cleared result, removed bonus, …)
     });
   });
+  // brackets4 (the four-team bracket) is diffed per MATCH, brackets4/<gid>/m/<match>: two refs recording the two semifinals on two
+  // phones keep both (a whole-bracket write would put the stale half of each back). A bracket that is new, or changes shape, goes
+  // up whole; a finished or cancelled one is its deletion (finishing writes results/<gid> in the same batch). Absent `winner` =
+  // undecided, so RTDB's pruning is harmless.
+  {
+    const p = (prev && prev.brackets4) || {};
+    const c = (cur && cur.brackets4) || {};
+    const plain = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+    Object.keys(c).forEach((gid) => {
+      const cb = c[gid], pb = p[gid];
+      if (JSON.stringify(cb) === JSON.stringify(pb)) return;
+      if (!plain(cb) || !plain(pb)) { up['brackets4/' + gid] = cb; return; }
+      Object.keys(cb).forEach((f) => {
+        if (f !== 'm' && JSON.stringify(cb[f]) !== JSON.stringify(pb[f])) up['brackets4/' + gid + '/' + f] = cb[f];
+      });
+      Object.keys(pb).forEach((f) => { if (f !== 'm' && !(f in cb)) up['brackets4/' + gid + '/' + f] = null; });
+      const cm = plain(cb.m) ? cb.m : {};
+      const pm = plain(pb.m) ? pb.m : {};
+      Object.keys(cm).forEach((k) => { if (JSON.stringify(cm[k]) !== JSON.stringify(pm[k])) up['brackets4/' + gid + '/m/' + k] = cm[k]; });
+      Object.keys(pm).forEach((k) => { if (!(k in cm)) up['brackets4/' + gid + '/m/' + k] = null; });
+    });
+    Object.keys(p).forEach((gid) => { if (!(gid in c)) up['brackets4/' + gid] = null; });
+  }
   // `live` is diffed one level deeper — per match FIELD — so two refs editing
   // the SAME match don't clobber each other: one bumping a team's score writes
   // only live/{gid}/hr, leaving another ref's live/{gid}/inning (the half)
@@ -6455,7 +6479,7 @@ async function bisectRefusedBatch(job) {
 
 // Words for the sync line: which game, and which part of it.
 const QUARANTINE_PART_WORDS = {
-  results: 'result', brackets: 'bracket', drafts: 'draft scores', picRounds: 'Pictionary round',
+  results: 'result', brackets: 'bracket', brackets4: 'bracket', drafts: 'draft scores', picRounds: 'Pictionary round',
   picSetup: 'Pictionary setup', bonuses: 'bonus points', live: 'live score', clocks: 'game clock',
   announcements: 'announcement', teams: 'team names', notice: 'notice board', meta: 'camp settings',
 };
