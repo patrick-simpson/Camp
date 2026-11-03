@@ -1372,3 +1372,50 @@ test('a quick game takes the Games item under way at that minute (senior\'s afte
     }
   } finally { gsShut(); gsEnd(); }
 });
+
+// The ⚡ quick game follows the NOW card's own pick (app.js nowCurrentBlock): a games item that ran over with a game still live is
+// still where the camp is; an item that is not a Games item and holds no games is never where a quick game goes.
+const gsAt = (dk, minute) => '?now=' + SETUP_DK.indexOf(dk) + '-' + String(Math.floor(minute / 60)).padStart(2, '0') + String(minute % 60).padStart(2, '0');
+test('a quick game lands on the item the Now card shows: a games item that ran over with a game live; never under lunch or free time', () => {
+  gsStart();
+  try {
+    const dk = gsTwoItemDay() || gsFirstDay();
+    const items = gsBlocks(dk);
+    const a = items[0];
+    const nextGames = items.find((b) => b.start >= a.end);
+    state.ui.day = gmDayRecs(dk)[0].id;
+    // the minute after the item ended, nothing live: the card has moved on, so has the quick game (the next games item today)
+    const after = a.end + 2;
+    assert.equal(planForDow(SETUP_DK.indexOf(dk)).some((b) => b.type === 'games' && b.start <= after && after < b.end), false, 'a gap after the first item');
+    location.search = gsAt(dk, after);
+    const moved = nowCurrentBlock();
+    assert.ok(!moved || (moved.held === false && setupRichOf(moved.b).id !== a.id), 'no overrun without a live game or a director\'s word: the card has moved on');
+    assert.equal(gmQuickTarget().bid, nextGames ? nextGames.id : '', 'the next games item, never what the card has moved on to');
+    // a game in it is live (a score typed): Now holds the card on that item, so the quick game goes there too
+    const g = gmGamesOnBlock(dk, a.id)[0];
+    assert.ok(g, 'the first item holds a game');
+    state.drafts = state.drafts || {};
+    state.drafts[g.id] = { scores: { [teamIds()[0]]: '3' } };
+    const held = nowCurrentBlock();
+    assert.ok(held && held.held === true && setupRichOf(held.b).id === a.id, 'Now is still on the item that ran over');
+    assert.equal(gmQuickTarget().bid, a.id, 'the quick game follows the card');
+    assert.equal(nowModel().block.id.endsWith(a.id), true, 'and that is the block the card itself shows');
+    delete state.drafts[g.id];
+    // under lunch (not a games item, no games): the next games item, never lunch
+    const plan = planForDow(SETUP_DK.indexOf(dk));
+    const plain = plan.find((b) => b.type !== 'games' && !b.noTime && b.start > a.end && b.end - b.start >= 15 && !gmGamesOnBlock(dk, b.id).length);
+    if (plain) {
+      location.search = gsAt(dk, plain.start + 5);
+      const cur = nowCurrentBlock();
+      assert.ok(cur && setupRichOf(cur.b).id === plain.id, 'Now is on that item');
+      const t = gmQuickTarget();
+      assert.ok(t.bid !== plain.id, 'never under ' + plain.label);
+      assert.equal(t.bid, (plan.find((b) => b.type === 'games' && !b.noTime && b.start > plain.start) || {}).id || '');
+      // ...but an item that already holds a game of its own is where a quick game goes while it is on
+      const loose = gmGamesOnBlock(dk, a.id)[0];
+      const keep = { blockId: loose.blockId, ord: loose.ord };
+      loose.blockId = plain.id;
+      try { assert.equal(gmQuickTarget().bid, plain.id, 'an item that holds games'); } finally { loose.blockId = keep.blockId; loose.ord = keep.ord; }
+    }
+  } finally { gsShut(); gsEnd(); }
+});

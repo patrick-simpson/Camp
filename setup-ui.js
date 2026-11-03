@@ -7549,8 +7549,10 @@ function gmTakeDayOff(dk, moveTo) {
 
 // ── the ⚡ quick game ──
 // Where a quick game lands: the day being looked at (the Games tab's day, else today when it is a games day, else the first), and
-// on that day the Games item under way now or the next one today — on another day the first Games item — else off the
-// schedule (the printed week: its session by the clock). The old guess (`>= 720 ? 'Evening'`) put senior's afternoons wrong.
+// on that day the item Now is on — the very block the Now card shows (app.js nowCurrentBlock: a games item that ran over is still
+// the one) — when it is a Games item or already holds games; else the next such item today; on another day the first Games item;
+// else off the schedule (the printed week: its session by the clock). A quick game is never hung under lunch or free time. The old
+// guess (`>= 720 ? 'Evening'` by the clock) put senior's afternoons wrong.
 function gmQuickTarget() {
   const now = campNow();
   const viewed = dayById(state.ui && state.ui.day);
@@ -7560,8 +7562,15 @@ function gmQuickTarget() {
   const isToday = gmDow(dk) === now.dow;
   let bid = '';
   if (typeof scheduleIsShared === 'function' && scheduleIsShared()) {
-    const items = planForDow(gmDow(dk)).filter((b) => b.type === 'games' && !b.noTime);
-    const hit = isToday ? (items.find((b) => b.start <= now.minutes && now.minutes < b.end) || items.find((b) => b.start > now.minutes)) : items[0];
+    const holds = (b) => !b.noTime && (b.type === 'games' || gmGamesOnBlock(dk, b.id).length > 0);
+    const items = planForDow(gmDow(dk)).filter(holds);
+    let hit = items[0];
+    if (isToday) {
+      const cur = typeof nowCurrentBlock === 'function' ? nowCurrentBlock() : null;
+      const rich = cur && typeof setupRichOf === 'function' ? setupRichOf(cur.b) : null;
+      const under = rich ? items.find((b) => b.id === rich.id) : null;
+      hit = under || items.find((b) => b.start > now.minutes) || null;
+    }
     bid = hit ? hit.id : '';
   }
   return { dk, bid, today: isToday, minutes: now.minutes };

@@ -1867,6 +1867,17 @@ function nowHeld(ctx, blocks) {
   });
   return best;
 }
+// The schedule item Now is on at this minute, for a director's ⚡ quick game (Step 21): the very pick the Now card makes — the item
+// under way, or a games item that has run over while a game is still live or a director said "Still on this" — so a quick game
+// lands where the card says the camp is. { dow, i, b, kind, held } or null between items. `b` is the accessor's block (setupRichOf
+// reaches the rich one) and `i` its place in scheduleForDow(dow), as nowModel's `block.i`. Pure.
+function nowCurrentBlock(opts) {
+  const ctx = nowCtx(opts);
+  const blocks = nowBlocks(ctx.dow, ctx);
+  const held = nowHeld(ctx, blocks);
+  const cur = held ? held.nb : nowFind(blocks, ctx.minutes);
+  return cur ? { dow: ctx.dow, i: cur.i, b: cur.b, kind: cur.kind, held: !!held } : null;
+}
 // The director's "Still on this · +10 min": offered while a games block has ended inside its window with a game still to score
 // (it can be offered on the NEXT block's card — the clock has already moved on), or while one is held by a director's word.
 // { key, name, can, held, cap, nextUntil } or null. `nextUntil` (server ms) moves every second: it is for the tap
