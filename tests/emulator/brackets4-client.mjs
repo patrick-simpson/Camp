@@ -1,4 +1,4 @@
-// The REAL client's four-team bracket writes against the PUBLISHED rules (BUILD-PLAN Step 22, build session 1): the shipped scripts
+// The REAL client's four-team bracket writes against the PUBLISHED rules (BUILD-PLAN Step 22, build sessions 1 and 2): the shipped scripts
 // (tests/harness.js's vm and DOM stub, exactly as every unit test loads them) talk to the database emulator under database.rules.json
 // through the same thin compat adapter the other *-client suites use. Nothing here is a copy of the client's logic: a director's phone starts a
 // bracket, records the semifinals, the 3rd-place match and the final, takes one back, saves the result — and every write is judged by the real
@@ -268,6 +268,56 @@ for (const R of ROOTS) {
     if (c.run(`fourPhase(state.brackets4[${jstr(GID)}], teamIds())`) !== 'final') throw new Error('the bracket carries on at the final');
     if (c.run('Object.keys(stateQuarantine).length')) throw new Error('a write was refused and parked');
     [a, stale, c].forEach((x) => x.stop());
+  });
+
+  await s.t(`${R}: Reopen the final is ONE update (the result deleted, the bracket back without its final), the final can be played again and saved; a stray left under a saved result is discarded with one deletion`, async () => {
+    const server = await seed();
+    const d = await phone(R, ED, 'editor', server);
+    start(d);
+    ['s1:t3', 's2:t1', 'third:t0', 'final:t3'].forEach((st) => { const [k, w] = st.split(':'); if (!JSON.parse(tap(d, k, w)).ok) throw new Error(st + ' refused'); });
+    if (!JSON.parse(d.run(`JSON.stringify(fourSaveResult(gameById(${jstr(GID)})))`)).ok) throw new Error('save refused');
+    await d.flush();
+    if (d.run(`fourCanReopen(gameById(${jstr(GID)}))`) !== true) throw new Error('a saved four-team result cannot be reopened');
+    d.writes.length = 0;
+    const r = JSON.parse(d.run(`JSON.stringify(fourReopen(gameById(${jstr(GID)})))`));
+    if (!r.ok) throw new Error('reopen: ' + jstr(r));
+    await d.flush();
+    const one = d.writes.find((w) => w.keys.includes(`results/${GID}`));
+    if (!one || one.values[`results/${GID}`] !== null) throw new Error('the result was not deleted: ' + jstr(d.writes.map((w) => w.keys)));
+    if (!one.keys.some((k) => k === `brackets4/${GID}` || k.startsWith(`brackets4/${GID}/`))) throw new Error('the bracket was not written in the SAME update: ' + jstr(one.keys));
+    if ((await val(ed(), `${R}/state/results/${GID}`)) !== null) throw new Error('the result is still on the server');
+    const m = await val(ed(), `${R}/state/brackets4/${GID}/m`);
+    if (!m || !m.s1 || !m.s2 || !m.third || m.final || m.s1.winner !== 't3' || m.third.winner !== 't0') throw new Error('the reopened bracket: ' + jstr(m));
+    if (d.run(`fourPhase(state.brackets4[${jstr(GID)}], teamIds())`) !== 'final') throw new Error('the bracket is not back at the final');
+    if (d.run('Object.keys(stateQuarantine).length')) throw new Error('a write was refused and parked');
+    // the other team wins the final this time, and the new result is saved
+    if (!JSON.parse(tap(d, 'final', 't1')).ok) throw new Error('final refused');
+    // (t1 is in the semifinal that t1 won: the final is the two semifinal winners, t3 and t1)
+    if (!JSON.parse(d.run(`JSON.stringify(fourSaveResult(gameById(${jstr(GID)})))`)).ok) throw new Error('second save refused');
+    await d.flush();
+    const res = await val(ed(), `${R}/state/results/${GID}`);
+    if (!res || res.medals.gold !== 't1' || res.medals.silver !== 't3' || res.medals.bronze !== 't0') throw new Error('the new result: ' + jstr(res));
+    // a stray bracket under a saved result (a phone that had not heard yet): listed, and Discard is one deletion that leaves the result alone
+    await set(ref(ed(), `${R}/state/brackets4/${GID}/m/final`), { a: 't3', b: 't1', winner: 't3', at: 9 });
+    const e = await phone(R, ED2, 'editor', await stateOf(R));
+    const notes = JSON.parse(e.run('JSON.stringify(bracketNotes())'));
+    if (notes.late.length !== 1 || notes.late[0].id !== GID) throw new Error('bracketNotes: ' + jstr(notes));
+    e.writes.length = 0;
+    if (!JSON.parse(e.run(`JSON.stringify(discardLateBracket(${jstr(GID)}))`)).ok) throw new Error('discard refused');
+    await e.flush();
+    const sent = e.writes.flatMap((w) => w.keys).filter((k) => k !== 'meta/lastDataChangeAt');
+    if (sent.some((k) => k.startsWith('results'))) throw new Error('Discard touched the result: ' + jstr(sent));
+    if ((await val(ed(), `${R}/state/brackets4/${GID}`)) !== null) throw new Error('the stray is still on the server');
+    if (!(await val(ed(), `${R}/state/results/${GID}/medals`))) throw new Error('the result went with it');
+    if (e.run('Object.keys(stateQuarantine).length')) throw new Error('a write was refused and parked');
+    // and a counselor's phone cannot reopen or discard
+    const v = await phone(R, VW, 'viewer', await stateOf(R));
+    v.writes.length = 0;
+    const vr = JSON.parse(v.run(`JSON.stringify([fourReopen(gameById(${jstr(GID)})), discardLateBracket(${jstr(GID)})])`));
+    if (vr[0].ok || vr[1].ok) throw new Error('a counselor reopened or discarded: ' + jstr(vr));
+    await sleep(120);
+    if (v.writes.length) throw new Error('a counselor\'s phone sent something: ' + jstr(v.writes));
+    [d, e, v].forEach((x) => x.stop());
   });
 
   await s.t(`${R}: a counselor's phone: the client refuses (nothing is sent) and the rules refuse the same writes by hand`, async () => {
