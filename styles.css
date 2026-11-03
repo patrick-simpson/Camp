@@ -16941,6 +16941,489 @@ button.gs-row:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
+/* ── The game sheet (#sheet-game) ──
+   Two panes under one sheet, data-pane the switch (as the team and rain
+   sheets), and the stages: what isn't due yet is not drawn at all. */
+.gm-sheet[data-pane="form"] [data-gm-pane="when"],
+.gm-sheet[data-pane="when"] [data-gm-pane="form"],
+.gm-sheet[data-pane="when"] .gm-when-line,
+.gm-sheet[data-pane="when"] .gm-dock {
+  display: none;
+}
+.gm-sheet[data-stage="name"] [data-gm-step="format"],
+.gm-sheet[data-stage="name"] [data-gm-step="game"],
+.gm-sheet[data-stage="format"] [data-gm-step="game"],
+.gm-sheet:not([data-format="tournament"]) [data-gm-for="tournament"],
+.gm-sheet:not([data-format="tally"]) [data-gm-for="tally"],
+.gm-sheet:not([data-format="placement"]) [data-gm-for="placement"] {
+  display: none;
+}
+.gm-sheet .sheet-head .tk-back {
+  min-width: 0;
+  max-width: calc(100% - var(--target) - var(--s-2));
+  margin-left: calc(-1 * var(--gutter) + 6px);
+}
+.gm-sheet .sheet-head .tk-back .tk-back-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* With the back in the head, the title steps down to the row size, so "‹
+   Kangaroo Kickball" and "When" share the line. */
+.gm-sheet[data-pane="when"] .sheet-title {
+  font: var(--t-row);
+}
+/* When, under the title: a game on no item says so with the gold "!". */
+.gm-when-line[data-warn]::before {
+  content: '!';
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: inset 0 0 0 1.5px var(--gold-edge);
+  color: var(--gold-ink);
+  font: 900 0.6875rem/1 var(--font-ui);
+  vertical-align: 1px;
+}
+.gm-when-line[data-warn] {
+  color: var(--ink);
+}
+/* The name: the item sheet's emoji tile beside a native field of the same
+   48px height, a size up from the other fields (it is the game). */
+.gm-name {
+  min-height: 48px;
+  font: 750 1.0625rem/1.2 var(--font-ui);
+}
+.gm-hint {
+  margin-top: 1px;
+}
+/* Ways to pick (how it's scored, matchups): grouped rows, a radio ring at the
+   end that fills with ink on the chosen one — shape, not colour alone. */
+.gm-opt {
+  grid-template-columns: minmax(0, 1fr) auto;
+  min-height: 3.75rem;
+}
+.gm-opt.gm-fmt {
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+}
+.gm-opt .gl-sub {
+  margin-top: 2px;
+}
+.gm-ring {
+  display: block;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px var(--ink-3);
+}
+.gm-opt[aria-checked="true"] .gm-ring {
+  box-shadow: inset 0 0 0 7px var(--ink);
+}
+.gm-opt[aria-checked="true"] .gl-title {
+  font-weight: 850;
+}
+.gm-fmt .gl-ico .ico {
+  width: 26px;
+  height: 26px;
+  stroke-width: 2.1;
+}
+.gm-fmt[aria-checked="true"] .gl-ico {
+  color: var(--ink);
+}
+/* A saved game's choice, folded to its one row: the ring gives way to
+   "Change" (the row is the target), so it can't be read as a fourth option. */
+.gm-change {
+  display: none;
+  font: 800 0.875rem/1.2 var(--font-ui);
+  color: var(--link);
+}
+.gm-formats[data-collapsed] .gm-opt[aria-checked="false"] {
+  display: none;
+}
+.gm-formats[data-collapsed] .gm-opt[aria-checked="true"] .gm-change {
+  display: inline;
+}
+.gm-formats[data-collapsed] .gm-opt[aria-checked="true"] .gm-ring {
+  display: none;
+}
+/* Large text: the sentence under a way to pick takes the row's whole width
+   under its title (beside "Change" or the ring it was one word a line). */
+.gm-opts {
+  container-type: inline-size;
+}
+@container (max-width: 18em) {
+  .gm-opt {
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-areas: "title end" "sub sub";
+    row-gap: 2px;
+  }
+  .gm-opt.gm-fmt {
+    grid-template-columns: 30px minmax(0, 1fr) auto;
+    grid-template-areas: "ico title end" "sub sub sub";
+  }
+  .gm-opt > .gl-text {
+    display: contents;
+  }
+  .gm-opt .gl-ico {
+    grid-area: ico;
+  }
+  .gm-opt .gl-title {
+    grid-area: title;
+    align-self: center;
+  }
+  .gm-opt .gl-sub {
+    grid-area: sub;
+  }
+  .gm-opt > .gl-end {
+    grid-area: end;
+  }
+}
+.gm-warn {
+  margin: 0 0 4px;
+  color: var(--ink);
+}
+.gm-group {
+  display: grid;
+  grid-auto-rows: max-content;
+  gap: var(--s-3);
+}
+.gm-group > .tms-hint,
+.gm-group > .fld-error {
+  margin-top: -6px;
+}
+/* Short fields side by side while their words fit, stacked at large text. */
+.gm-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9em), 1fr));
+  gap: var(--s-3);
+}
+.gm-fields > .tms-hint,
+.gm-fields > .fld-error {
+  grid-column: 1 / -1;
+  margin-top: -6px;
+}
+.gm-fields .fld-wide {
+  grid-column: 1 / -1;
+}
+.gm-plain {
+  margin: 0;
+  font: 600 0.9375rem/1.4 var(--font-ui);
+  color: var(--ink-2);
+}
+/* A text box that grows with its words (the drawing prompts, a rule's points,
+   the day's note) instead of scrolling inside itself. */
+.gm-grow {
+  min-height: var(--target);
+  field-sizing: content;
+  resize: none;
+  line-height: 1.35;
+}
+
+/* Set the matchups now: the matches as a board, then ONE row of team keys
+   tapped in order (the podium picker's keys, a size down). A placed team's key
+   is dashed with its match under its name; the next empty slot is ringed in
+   link blue and says "Next". */
+.gm-pairs {
+  container: gmp / inline-size;
+  display: grid;
+  gap: var(--s-3);
+  margin-top: var(--s-3);
+}
+.gm-matches {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: hidden;
+  border: 1.5px solid var(--line-2);
+  border-radius: var(--r-group);
+  background: var(--sheet);
+}
+/* The match's name takes only its own width, so the two teams get the rest
+   (a fixed column broke "Pumpkins" in two at 390px). */
+.gm-match {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  min-height: 3.25rem;
+  padding: 6px 12px 6px 14px;
+  border-top: 1px solid var(--line);
+}
+.gm-match:first-child {
+  border-top: 0;
+}
+.gm-match-n {
+  font: var(--t-label);
+  color: var(--ink-2);
+}
+.gm-vs {
+  font: 700 0.8125rem/1 var(--font-ui);
+  color: var(--ink-2);
+}
+.gm-slot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 40px;
+  padding: 3px 8px;
+  border-radius: 10px;
+  font: 800 0.9375rem/1.15 var(--font-ui);
+  color: var(--ink);
+}
+.gm-slot b {
+  min-width: 0;
+  font: inherit;
+  overflow-wrap: break-word;
+}
+.gm-slot .tm {
+  flex: none;
+}
+/* Empty: a dashed place to fill (ink-3, 3:1 and more in both themes); the
+   next one to fill is ringed in link blue and says so. */
+.gm-slot:empty {
+  border: 2px dashed var(--ink-3);
+}
+.gm-slot[data-next] {
+  justify-content: center;
+  box-shadow: inset 0 0 0 2px var(--link);
+  color: var(--link);
+  font-size: 0.875rem;
+}
+.gm-keys {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+.gm-keys[data-n="4"] {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.gm-key {
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 4rem;
+  padding: 7px 4px 6px;
+  border: 2px solid var(--card-b);
+  border-radius: var(--r-btn);
+  background: var(--sheet);
+  box-shadow: 0 var(--edge-btn) 0 var(--edge);
+  color: var(--ink);
+  cursor: pointer;
+  transition: box-shadow var(--jm-press-ms) var(--jm-press);
+}
+.gm-key:active {
+  box-shadow: 0 1px 0 var(--edge);
+}
+.gm-key-mark {
+  display: grid;
+  place-items: center;
+  min-height: 28px;
+}
+.gm-key-nm {
+  max-width: 100%;
+  font: 800 0.875rem/1.15 var(--font-ui);
+  text-align: center;
+  overflow-wrap: break-word;
+  -webkit-hyphens: auto;
+  hyphens: auto;
+}
+.gm-key-in {
+  display: none;
+  font: 750 0.75rem/1.1 var(--font-ui);
+  color: var(--ink-2);
+}
+/* Placed: the key steps back into the well, dashed, and names its match. */
+.gm-key[aria-pressed="true"] {
+  border-style: dashed;
+  border-color: var(--ink-3);
+  background: var(--paper-2);
+  box-shadow: none;
+  color: var(--ink-2);
+}
+.gm-key[aria-pressed="true"] .gm-key-in {
+  display: block;
+}
+/* Large text: one team to a line under the match's name (side by side, a name
+   broke mid-word: "Pump / kins"). */
+@container gmp (max-width: 19rem) {
+  .gm-match {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 2px;
+    padding-block: 8px;
+  }
+  .gm-vs {
+    padding-left: 10px;
+  }
+  .gm-keys,
+  .gm-keys[data-n="4"] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* Extras and How to play: folded under a plain line that says what's inside. */
+.gm .setup-advanced {
+  margin-top: 0;
+}
+.gm-more-t {
+  display: grid;
+  gap: 2px;
+}
+.gm-more-sum {
+  font: 600 0.84375rem/1.3 var(--font-ui);
+  color: var(--ink-2);
+}
+.gm-more-body {
+  display: grid;
+  grid-auto-rows: max-content;
+  gap: var(--s-3);
+  padding: 4px 0 var(--s-2);
+}
+.gm-more-body > .tms-hint,
+.gm-more-body > .fld-error {
+  margin-top: -6px;
+}
+.gm-rules {
+  display: grid;
+  gap: var(--s-3);
+}
+.gm-rules:empty {
+  display: none;
+}
+/* A section: its heading, its points, and its two quiet actions under them. */
+.gm-rule {
+  display: grid;
+  gap: 6px;
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--line-2);
+}
+.gm-rule-h {
+  font-weight: 800;
+}
+.gm-rule-acts,
+.gm-foot {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0 var(--s-3);
+}
+.gm-rule-acts .btn-quiet,
+.gm-foot .btn-quiet {
+  margin: 0 -8px;
+  padding: 0 8px;
+}
+.gm-rule-acts .btn-quiet-danger,
+.gm-foot .btn-quiet-danger {
+  margin-left: auto;
+}
+#gm-rule-add {
+  margin-top: 0;
+}
+.gm-foot {
+  margin-top: var(--s-2);
+  padding-top: var(--s-2);
+  border-top: 1px solid var(--line-2);
+}
+.gm-form .clash-list {
+  margin: 0;
+}
+
+/* The When pane: the rain plan's move picker, as blocks. */
+.gm-when-body .si-ask,
+.gm-when-body .cb-empty {
+  margin: 0 0 var(--s-3);
+}
+.gm-when-body .cb-list + .rain-quiet {
+  margin-top: var(--s-2);
+  text-align: left; /* a link under the list, from its edge, also when it wraps */
+}
+.gm-when-body .cb-list + .si-ask,
+.gm-when-body .rain-quiet + .si-ask {
+  margin-top: var(--s-3);
+}
+.gm-when-row[aria-current="true"] .cb-end {
+  color: var(--ink);
+}
+.gm-when-row[aria-current="true"] .cb-end .ico {
+  stroke-width: 3;
+}
+
+/* The dock: before the game exists, the dashed well naming the step; after,
+   what the last save did, and Done (with the gold "Score it now" first for a
+   quick game: it is what the director is standing there to do). */
+.gm-dock {
+  container: gmd / inline-size;
+}
+.gm-sheet:not([data-stage="game"]) .gm-state,
+.gm-sheet:not([data-stage="game"]) .gm-acts,
+.gm-sheet[data-stage="game"] #gm-wait,
+.gm-sheet:has(#gm-gone:not([hidden])) .gm-state {
+  display: none; /* deleted elsewhere: nothing was saved, the question at the top says what is true */
+}
+.gm-state {
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 6px;
+  margin: 0;
+  font: 800 0.9375rem/1.35 var(--font-ui);
+  color: var(--done);
+  text-align: center;
+  overflow-wrap: break-word;
+}
+.gm-state .ico {
+  flex: none;
+  width: 19px;
+  height: 19px;
+  margin-top: 1px;
+  stroke-width: 3;
+}
+.gm-state:is([data-tone="saving"], [data-tone="offline"]) {
+  color: var(--ink-2);
+  font-weight: 700;
+}
+.gm-state[data-tone="error"] {
+  color: var(--color-danger-text);
+}
+.gm-state:not([data-tone="saved"]) .ico {
+  display: none;
+}
+.gm-acts {
+  display: grid;
+  gap: 10px;
+}
+.gm-acts:has(> #gm-score:not([hidden])) {
+  grid-template-columns: minmax(0, 11fr) minmax(0, 9fr);
+}
+.gm-acts .btn {
+  white-space: normal;
+}
+@container gmd (max-width: 19rem) {
+  .gm-acts:has(> #gm-score:not([hidden])) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* Large text: the whole sheet scrolls as one (head, form and dock) when the
+   pinned parts would leave a slot onto the form, as the item sheet does
+   (setup-ui.js sets data-flow while it is open). */
+#sheet-game .sheet[data-flow] {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+#sheet-game .sheet[data-flow] > * {
+  flex: none;
+}
+#sheet-game .sheet[data-flow] > .sheet-body {
+  overflow: visible;
+}
+
 /* ── The day's sheet (#sheet-sg-day) ── */
 .sg-day-body {
   display: grid;
@@ -16952,4 +17435,10 @@ button.gs-row:focus-visible {
 }
 .sg-day-acts {
   margin-top: var(--s-3);
+}
+
+@media (prefers-contrast: more) {
+  .gm-matches {
+    border-color: var(--ink-3);
+  }
 }

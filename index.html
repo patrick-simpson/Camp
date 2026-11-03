@@ -148,6 +148,11 @@
          hourglass is Running over's "Still on this · +10 min". -->
     <symbol id="i-play" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M10.2 8.6v6.8l5.4-3.4z"/></symbol>
     <symbol id="i-hourglass" viewBox="0 0 24 24"><path d="M6.8 3.6h10.4M6.8 20.4h10.4M7.8 3.6c0 4.4 4.2 5.8 4.2 8.4s-4.2 4-4.2 8.4M16.2 3.6c0 4.4-4.2 5.8-4.2 8.4s4.2 4 4.2 8.4"/></symbol>
+    <!-- The three ways a game is scored (Set up the week → Games, Step 21):
+         two pairs meeting in a final; five tally marks; a three-step podium. -->
+    <symbol id="i-bracket" viewBox="0 0 24 24"><path d="M3.4 4.6h5v4.8h-5M3.4 14.6h5v4.8h-5M8.4 7h4.4v10H8.4M12.8 12h7.8"/></symbol>
+    <symbol id="i-tally" viewBox="0 0 24 24"><path d="M5.6 5.2v13.6M9.6 5.2v13.6M13.6 5.2v13.6M17.6 5.2v13.6M3.4 16.2 20.6 7.8"/></symbol>
+    <symbol id="i-podium" viewBox="0 0 24 24"><path d="M2.8 20.2h18.4M3.8 20.2v-6h5.2v6M9 20.2V9.2h6v11M15 20.2v-8.4h5.2v8.4"/></symbol>
     <!-- Team flag marks (§8.4) for a team with no shield (senior today): a
          pennant on a pole, filled with the team's mark colour (currentColor,
          from .flag[data-flag] or an inline --flag-fill) and outlined in ink.
@@ -3532,6 +3537,353 @@
       </form>
       <div class="sheet-dock">
         <button type="button" class="btn btn-gold btn-block" id="sec-verse-save">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── GAMES: the game sheet and the day's sheet (P2 §11.14; Step 21) ──
+       #sheet-game is ONE sheet for a new game, an existing one and the ⚡ quick
+       game (data-mode="new|edit|quick"), with two panes (data-pane="form|when",
+       as the team and rain sheets). It is a shell sheet that may also open over
+       the Games tab (Quick game, Add games), not only inside Set up the week.
+       PROGRESSIVE (data-stage on the overlay; CSS hides what isn't due yet):
+         name   — only the name (its emoji a tile beside it) and Where. Nothing
+                  is written. The dock is the dashed #gm-wait: "Type the game's
+                  name first".
+         format — a name is in: "How is it scored?" arrives (JellyMotion arrive,
+                  unfolding from its top; calm: a fade). Still nothing written;
+                  #gm-wait: "Pick how it's scored ↑". A quick game opens here,
+                  Podium already picked, so naming it is the one step.
+         game   — a name and a format: it IS a valid game (validateGameDraft) and
+                  is created at that moment as ONE config edit; from then on every
+                  field saves as it changes (on blur / Enter for text, on tap for
+                  the rest), only the field that changed, through the config
+                  engine (§6.3.5). The format's own options, Order, Extras and How
+                  to play arrive; the dock is the saved line and Done.
+       data-format="tournament|tally|placement" on the overlay shows that
+       format's options ([data-gm-for]). Never a Save button: the dock's line
+       (#gm-state[data-tone]) says what happened — saved · saving · offline ·
+       error ("Fix the counter buttons to save them"; the field in error keeps
+       aria-invalid and its message, everything else saved). -->
+  <div id="sheet-game" class="sheet-overlay gm-sheet" data-pane="form" data-stage="name" data-mode="new" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet sheet-tall" role="dialog" aria-modal="true" aria-labelledby="sheet-game-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <!-- On the When pane: "‹ Shields" (the game's name, or "New game"),
+             back to the form. Hidden on the form, and on a When pane opened
+             straight from a "Put on the schedule" row (then it closes). -->
+        <button type="button" class="tk-back gm-pane-back" id="gm-pane-back" hidden><svg class="ico" aria-hidden="true"><use href="#i-chev-l"/></svg><span class="tk-back-label" id="gm-pane-back-label">New game</span></button>
+        <!-- "New game" · "Edit game" · "Quick game" · on the When pane "When".
+             Short and fixed: the name is the first field right under it. -->
+        <h2 class="sheet-title" id="sheet-game-title">New game</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <!-- WHEN, in words, under the title (form pane only): "Tuesday · Team
+           competitions, 10:00–11:45" with Change (→ the When pane); with the
+           schedule the original, "Tuesday · Morning games". A quick game says
+           the item it landed on ("Today · Evening competition, 6:00–6:45").
+           Not on the schedule: data-warn (the gold "!"), "Not on the schedule
+           · was on Tue · Team competitions" and "Put it on the schedule". -->
+      <p class="sheet-sub gm-when-line" id="gm-when"><span id="gm-when-text"></span> <button type="button" class="sheet-sub-act" id="gm-when-btn">Change</button></p>
+
+      <div class="sheet-body si gm-form" data-gm-pane="form">
+        <!-- Deleted on another phone while open (§11.14): the gold "!" and its
+             two answers, at the top, never a dialog over the sheet. -->
+        <div class="si-ask" id="gm-gone" hidden>
+          <p class="si-ask-q" id="gm-gone-text">Patrick deleted this game 2 minutes ago.</p>
+          <div class="si-ask-a"><button type="button" class="btn btn-sm" data-gm-gone="back">Put it back with my changes</button><button type="button" class="btn btn-sm" data-gm-gone="close">Close</button></div>
+        </div>
+
+        <!-- 1 · What and where. The emoji is a 48px tile beside the name (the
+             item sheet's), opening #gm-emoji inline: <button type="button"
+             class="si-emo" data-emoji="🛡️" aria-pressed="false"
+             aria-label="Shield">🛡️</button> per choice, then a box for any
+             other. Where starts as the item's last-used place (#gm-where-hint
+             says so: "Where the last game here was"). -->
+        <div class="fld fld-wide si-name">
+          <label class="fld-label" for="gm-name">Name</label>
+          <div class="si-name-row">
+            <button type="button" class="si-emo-pick" id="gm-emoji-btn" aria-expanded="false" aria-controls="gm-emoji" aria-label="Emoji"><span id="gm-emoji-now" aria-hidden="true">🏅</span></button>
+            <input type="text" class="fld-input gm-name" id="gm-name" maxlength="60" autocomplete="off" enterkeyhint="next" placeholder="What’s it called?">
+          </div>
+        </div>
+        <p class="fld-error" id="gm-name-error" role="alert" hidden></p>
+        <div class="si-emoji" id="gm-emoji" role="group" aria-label="Emoji" hidden>
+          <div class="si-emoji-grid" id="gm-emoji-grid"></div>
+          <input type="text" class="fld-input si-emoji-other" id="gm-emoji-other" maxlength="8" aria-label="Another emoji" placeholder="Other">
+        </div>
+        <div class="fld fld-wide">
+          <label class="fld-label" for="gm-where">Where</label>
+          <input type="text" class="fld-input" id="gm-where" maxlength="60" autocomplete="off" enterkeyhint="done" placeholder="Where it’s played">
+          <p class="tms-hint gm-hint" id="gm-where-hint"></p>
+        </div>
+
+        <!-- 2 · How is it scored? Three rows, each a sentence, a radio ring at
+             the end (filled ink on the chosen one: shape, not colour). The
+             Bracket sentence is per camp ([data-gm-fmt-sub]): junior "Teams play
+             head-to-head; winners move on", senior "2 semifinals, then the
+             3rd-place match, then the final". On a saved game the group is
+             [data-collapsed]: only the chosen row shows, ending in "Change"; a
+             tap opens all three again. A game with a saved result or a bracket
+             under way shows #gm-format-warn first, naming what a change would
+             clear ("This game has a saved podium. Scoring it another way
+             clears it."), and the change itself still asks (askDialog). -->
+        <div class="fld fld-wide gm-step" data-gm-step="format" id="gm-format-fld">
+          <span class="fld-label" id="gm-format-label">How is it scored?</span>
+          <p class="setup-note setup-bang gm-warn" id="gm-format-warn" hidden><span id="gm-format-warn-text"></span></p>
+          <div class="gl gm-opts gm-formats" id="gm-format" role="radiogroup" aria-labelledby="gm-format-label">
+            <button type="button" class="gl-row gm-opt gm-fmt" role="radio" aria-checked="false" data-gm-format="tournament">
+              <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-bracket"/></svg></span>
+              <span class="gl-text"><span class="gl-title">Bracket</span><span class="gl-sub" data-gm-fmt-sub="tournament">Teams play head-to-head; winners move on</span></span>
+              <span class="gl-end"><span class="gm-change">Change</span><i class="gm-ring" aria-hidden="true"></i></span>
+            </button>
+            <button type="button" class="gl-row gm-opt gm-fmt" role="radio" aria-checked="false" data-gm-format="tally">
+              <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-tally"/></svg></span>
+              <span class="gl-text"><span class="gl-title">Scores</span><span class="gl-sub">Every team gets a score; the top three take the medals</span></span>
+              <span class="gl-end"><span class="gm-change">Change</span><i class="gm-ring" aria-hidden="true"></i></span>
+            </button>
+            <button type="button" class="gl-row gm-opt gm-fmt" role="radio" aria-checked="false" data-gm-format="placement">
+              <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-podium"/></svg></span>
+              <span class="gl-text"><span class="gl-title">Podium</span><span class="gl-sub">Pick who took gold, silver and bronze</span></span>
+              <span class="gl-end"><span class="gm-change">Change</span><i class="gm-ring" aria-hidden="true"></i></span>
+            </button>
+          </div>
+        </div>
+
+        <!-- 3 · The format's own options (data-gm-for; one block shows). -->
+        <!-- Bracket: Matchups (→ game.bracketSeed: standings | pick | fixed),
+             then the live scoreboard. "By the standings" says the rule, never
+             today's pairs (no place is named in setup): junior "1st plays 6th,
+             2nd plays 5th, 3rd plays 4th, from the points when it starts",
+             senior "1st plays 4th, 2nd plays 3rd, from the points when it
+             starts" (#gm-seed-standings-sub). "Set them now" opens #gm-pairs
+             (→ roundOneMatchups): the matches as a board, then ONE row of team
+             keys tapped in order —
+               #gm-matches, one per match (3 junior "Match 1–3", 2 senior
+               "Semifinal 1–2"):
+                 <li class="gm-match" data-match="0">
+                   <span class="gm-match-n">Match 1</span>
+                   <span class="gm-slot" data-team="t0" style="teamAccentVars(t0)">teamMarkHtml(t0, {size: 22})<b>Foxes</b></span>
+                   <span class="gm-vs" aria-hidden="true">v</span>
+                   <span class="gm-slot" data-next>Next</span></li>      (an empty slot: <span class="gm-slot"></span>;
+                                                                         the first empty one data-next, "Next")
+               #gm-keys (data-n = the team count):
+                 <button type="button" class="gm-key" data-team="t0" style="teamAccentVars(t0)"
+                         aria-pressed="true" aria-label="Foxes, in Match 1. Tap to take them out">
+                   <span class="gm-key-mark">teamMarkHtml(t0, {size: 28})</span><span class="gm-key-nm">Foxes</span>
+                   <small class="gm-key-in">Match 1</small></button>
+               A placed team's key is dashed with its match under its name; a
+               tap takes it out (and the slots after it close up). The last pair
+               fills itself. Saved once every slot is full; until then
+               #gm-pairs-left says "Pick 2 more teams" (the format still saves
+               as "Pick them when you start"). -->
+        <div class="fld fld-wide gm-step" data-gm-step="game" data-gm-for="tournament">
+          <span class="fld-label" id="gm-seed-label">Matchups</span>
+          <div class="gl gm-opts" id="gm-seed" role="radiogroup" aria-labelledby="gm-seed-label">
+            <button type="button" class="gl-row gm-opt" role="radio" aria-checked="true" data-gm-seed="standings">
+              <span class="gl-text"><span class="gl-title">By the standings</span><span class="gl-sub" id="gm-seed-standings-sub">1st plays 6th, 2nd plays 5th, 3rd plays 4th, from the points when it starts</span></span>
+              <span class="gl-end"><i class="gm-ring" aria-hidden="true"></i></span>
+            </button>
+            <button type="button" class="gl-row gm-opt" role="radio" aria-checked="false" data-gm-seed="pick">
+              <span class="gl-text"><span class="gl-title">Pick them when you start</span><span class="gl-sub">Choose the pairs on the day</span></span>
+              <span class="gl-end"><i class="gm-ring" aria-hidden="true"></i></span>
+            </button>
+            <button type="button" class="gl-row gm-opt" role="radio" aria-checked="false" data-gm-seed="fixed">
+              <span class="gl-text"><span class="gl-title">Set them now</span><span class="gl-sub">These pairs play, in this order</span></span>
+              <span class="gl-end"><i class="gm-ring" aria-hidden="true"></i></span>
+            </button>
+          </div>
+          <div class="gm-pairs" id="gm-pairs" hidden>
+            <ol class="gm-matches" id="gm-matches"></ol>
+            <p class="tms-hint" id="gm-pairs-hint">Tap the teams in order. Tap a placed team to take it out.</p>
+            <div class="gm-keys" id="gm-keys" role="group" aria-label="Teams"></div>
+            <p class="fld-warn" id="gm-pairs-left" hidden></p>
+          </div>
+        </div>
+        <!-- Ladder Ball's own round scorer (game.ladderScoring) takes the place
+             of the live scoreboard: said, not offered as a switch that would
+             do nothing. -->
+        <p class="setup-note gm-step" id="gm-ladder" data-gm-step="game" data-gm-for="tournament" hidden><svg class="ico" aria-hidden="true"><use href="#i-tv"/></svg><span id="gm-ladder-text">This game has its own Ladder Ball scorer, first to exactly 21, with a live board for each match.</span></p>
+        <div class="gm-step gm-group" id="gm-tracker-box" data-gm-step="game" data-gm-for="tournament">
+          <div class="gl si-switches">
+            <div class="gl-row si-switch">
+              <span class="gl-text"><span class="gl-title">Live scoreboard for each match</span><span class="gl-sub">Score steppers everyone can watch while it’s played</span></span>
+              <span class="gl-switch"><em class="gl-switch-state" data-switch-state="gm-tracker">Off</em><jelly-switch id="gm-tracker" label="Live scoreboard for each match"></jelly-switch></span>
+            </div>
+          </div>
+          <div class="gm-fields" id="gm-tracker-fields" hidden>
+            <label class="fld"><span class="fld-label">What’s counted</span><input type="text" class="fld-input" id="gm-tr-unit" maxlength="30" autocomplete="off" placeholder="Goals, runs"></label>
+            <label class="fld"><span class="fld-label">A period is a</span><input type="text" class="fld-input" id="gm-tr-period" maxlength="20" autocomplete="off" placeholder="Half, inning"></label>
+            <label class="fld"><span class="fld-label">Periods</span><input type="text" class="fld-input" id="gm-tr-periods" maxlength="2" inputmode="numeric" autocomplete="off" placeholder="1"></label>
+            <label class="fld"><span class="fld-label">Outs per side</span><input type="text" class="fld-input" id="gm-tr-outs" maxlength="2" inputmode="numeric" autocomplete="off" placeholder="0"></label>
+            <p class="tms-hint">One period and no outs keeps a plain running score. Outs add kickball innings.</p>
+            <p class="fld-error" id="gm-tracker-error" role="alert" hidden></p>
+          </div>
+        </div>
+
+        <!-- Scores (tally): what's counted, the switches, the counter buttons. -->
+        <div class="gm-step gm-group" data-gm-step="game" data-gm-for="tally">
+          <label class="fld"><span class="fld-label">What’s counted</span><input type="text" class="fld-input" id="gm-unit" maxlength="30" autocomplete="off" placeholder="Points, laps, balls collected"></label>
+          <div class="gl si-switches">
+            <div class="gl-row si-switch">
+              <span class="gl-text"><span class="gl-title">Lowest score wins</span><span class="gl-sub">For times and golf-style scores</span></span>
+              <span class="gl-switch"><em class="gl-switch-state" data-switch-state="gm-lower">Off</em><jelly-switch id="gm-lower" label="Lowest score wins"></jelly-switch></span>
+            </div>
+            <div class="gl-row si-switch">
+              <span class="gl-text"><span class="gl-title">Scores are times</span><span class="gl-sub">Typed as minutes and seconds, like 1:05</span></span>
+              <span class="gl-switch"><em class="gl-switch-state" data-switch-state="gm-times">Off</em><jelly-switch id="gm-times" label="Scores are times"></jelly-switch></span>
+            </div>
+            <div class="gl-row si-switch">
+              <span class="gl-text"><span class="gl-title">Live leaderboard</span><span class="gl-sub">Everyone watches the totals climb while you score</span></span>
+              <span class="gl-switch"><em class="gl-switch-state" data-switch-state="gm-live">Off</em><jelly-switch id="gm-live" label="Live leaderboard"></jelly-switch></span>
+            </div>
+          </div>
+          <label class="fld"><span class="fld-label">Counter buttons</span><input type="text" class="fld-input" id="gm-steps" maxlength="20" autocomplete="off" inputmode="text" placeholder="1, 5"></label>
+          <p class="tms-hint">Quick +1 and +5 buttons while scoring. Leave it empty to type each score.</p>
+          <p class="fld-error" id="gm-steps-error" role="alert" hidden></p>
+          <!-- Only with counter buttons (it is about them). -->
+          <div class="gl si-switches" id="gm-negative-box" hidden>
+            <div class="gl-row si-switch">
+              <span class="gl-text"><span class="gl-title">Totals can go below zero</span></span>
+              <span class="gl-switch"><em class="gl-switch-state" data-switch-state="gm-negative">Off</em><jelly-switch id="gm-negative" label="Totals can go below zero"></jelly-switch></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Podium: nothing to set; one plain line so the step reads finished. -->
+        <p class="gm-plain gm-step" data-gm-step="game" data-gm-for="placement">When it’s over, you tap gold, silver and bronze.</p>
+
+        <!-- 4 · Order within its item (the item has two or more games):
+             Earlier | Later, the rain plan's pair; each sub names the
+             neighbour it swaps with ("Before Kangaroo Kickball"), "First" /
+             "Last" on the one that can't move (aria-disabled). -->
+        <div class="fld fld-wide gm-step" id="gm-order" data-gm-step="game" hidden>
+          <span class="fld-label" id="gm-order-label">Order in Team competitions</span>
+          <div class="gl" role="group" aria-labelledby="gm-order-label">
+            <div class="rain-pair">
+              <button type="button" class="rain-pair-btn" data-gm-order="earlier"><svg class="ico" aria-hidden="true"><use href="#i-up"/></svg><span class="rain-pair-text"><span class="gl-title">Earlier</span><span class="gl-sub" data-gm-order-sub="earlier"></span></span></button>
+              <button type="button" class="rain-pair-btn" data-gm-order="later"><svg class="ico" aria-hidden="true"><use href="#i-down"/></svg><span class="rain-pair-text"><span class="gl-title">Later</span><span class="gl-sub" data-gm-order-sub="later"></span></span></button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5 · Extras, folded: what is on rides the summary ("Double points ·
+             Timer"; empty: "None yet"), so a folded Friday game still says it
+             counts double. A quick game in the double-points window opens with
+             Double points on. -->
+        <details class="setup-advanced gm-more gm-step" id="gm-extras" data-gm-step="game">
+          <summary class="setup-advanced-sum"><span class="gm-more-t">Extras<small class="gm-more-sum" id="gm-extras-sum">None yet</small></span></summary>
+          <div class="gm-more-body">
+            <div class="gl si-switches">
+              <div class="gl-row si-switch">
+                <span class="gl-text"><span class="gl-title">Double points</span><span class="gl-sub">Its medals count twice in the standings</span></span>
+                <span class="gl-switch"><em class="gl-switch-state" data-switch-state="gm-double">Off</em><jelly-switch id="gm-double" label="Double points"></jelly-switch></span>
+              </div>
+              <div class="gl-row si-switch">
+                <span class="gl-text"><span class="gl-title">Countdown timer</span><span class="gl-sub">A clock everyone can see while it runs</span></span>
+                <span class="gl-switch"><em class="gl-switch-state" data-switch-state="gm-timer">Off</em><jelly-switch id="gm-timer" label="Countdown timer"></jelly-switch></span>
+              </div>
+            </div>
+            <div class="gm-fields" id="gm-timer-fields" hidden>
+              <label class="fld fld-wide"><span class="fld-label">What the clock says</span><input type="text" class="fld-input" id="gm-timer-label" maxlength="30" autocomplete="off" placeholder="Round timer"></label>
+              <label class="fld"><span class="fld-label">Minutes</span><input type="text" class="fld-input" id="gm-timer-presets" maxlength="20" autocomplete="off" placeholder="10, 8, 5"></label>
+              <label class="fld"><span class="fld-label">Rounds</span><input type="text" class="fld-input" id="gm-timer-rounds" maxlength="2" inputmode="numeric" autocomplete="off" placeholder="One go"></label>
+              <p class="tms-hint">One or more lengths to choose from. Rounds shows “Round 2 of 4” on the clock.</p>
+              <p class="fld-error" id="gm-timer-error" role="alert" hidden></p>
+            </div>
+            <label class="fld"><span class="fld-label">Drawing prompts</span><textarea class="fld-input gm-grow" id="gm-prompts" rows="2" placeholder="One per line, like Pumpkin"></textarea></label>
+            <p class="tms-hint">Adds the drawing round, with photos. Only one game a week can have them.</p>
+            <p class="fld-error" id="gm-prompts-error" role="alert" hidden></p>
+          </div>
+        </details>
+
+        <!-- 6 · How to play, folded ("3 sections"; empty: "Not written yet"):
+             the one-line description, then each section as a heading and its
+             points, one per line —
+               <div class="gm-rule" data-key="r-<n>">
+                 <input type="text" class="fld-input gm-rule-h" data-gm-rule-h="<n>" maxlength="60" placeholder="Heading, like Setup" aria-label="Section 1 heading">
+                 <textarea class="fld-input gm-rule-items gm-grow" data-gm-rule-items="<n>" rows="3" placeholder="One point per line" aria-label="Section 1, one point per line"></textarea>
+                 <div class="gm-rule-acts">
+                   <button type="button" class="btn-quiet" data-gm-rule-up="<n>">Move up</button>   (not on the first)
+                   <button type="button" class="btn-quiet btn-quiet-danger" data-gm-rule-remove="<n>">Remove</button></div>
+               </div> -->
+        <details class="setup-advanced gm-more gm-step" id="gm-howto" data-gm-step="game">
+          <summary class="setup-advanced-sum"><span class="gm-more-t">How to play<small class="gm-more-sum" id="gm-howto-sum">Not written yet</small></span></summary>
+          <div class="gm-more-body">
+            <label class="fld"><span class="fld-label">In one line</span><textarea class="fld-input gm-grow" id="gm-headline" rows="1" maxlength="140" placeholder="Kickball, but three-legged"></textarea></label>
+            <div class="gm-rules" id="gm-rules"></div>
+            <button type="button" class="sched-add" id="gm-rule-add"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span>Add a section</span></button>
+          </div>
+        </details>
+
+        <!-- Two directors changed one field at once: the .clash blocks
+             (styles.css, beside .clash), each saving the pick it is given. -->
+        <div class="clash-list" id="gm-clashes" hidden></div>
+
+        <div class="gm-foot gm-step" id="gm-foot" data-gm-step="game">
+          <button type="button" class="btn-quiet" id="gm-copy">Make a copy</button>
+          <button type="button" class="btn-quiet btn-quiet-danger" id="gm-delete">Delete this game…</button>
+        </div>
+      </div>
+
+      <!-- WHEN (P2 §11.14 "Move…", the rain plan's move picker): a day, then
+           an item on it, and one tap moves the game there (blockId, with dayId
+           and session derived; ord after what the item already holds). The
+           strip is all seven days (aria-checked on the chosen, default the
+           game's own; today's carries data-today). The list is that day's
+           Games items first, then every item that already has games, as
+             <button type="button" class="cb-row gm-when-row" data-gm-block="<block id>" [aria-current="true"]>
+               <span class="cb-time">10:00<small>–11:45</small></span>
+               <span class="cb-main"><span class="cb-title"><span class="sched-emo" aria-hidden="true">🏅</span><span>Team competitions</span></span>
+                 <span class="cb-sub">3 games</span></span>        (the current one: "Here now · 3 games")
+               <span class="cb-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+             </button>                                             (the current one ends in #i-check, not a chevron)
+           and the rest behind #gm-when-all ("Other items on Thursday"). With
+           the schedule the original, the rows are the day's sessions ("Morning
+           games", no time). A day that isn't a games day asks #gm-when-newday
+           first; an item in the double-points window asks #gm-when-double.
+           Not on the schedule is last. -->
+      <div class="sheet-body gm-when-body" data-gm-pane="when">
+        <div class="daypick rain-move-days" id="gm-when-days" role="radiogroup" aria-label="Which day">
+          <button type="button" class="daypick-btn" role="radio" aria-checked="false" data-dk="sun"><span class="daypick-name">Sun</span></button>
+          <button type="button" class="daypick-btn" role="radio" aria-checked="false" data-dk="mon"><span class="daypick-name">Mon</span></button>
+          <button type="button" class="daypick-btn" role="radio" aria-checked="false" data-dk="tue"><span class="daypick-name">Tue</span></button>
+          <button type="button" class="daypick-btn" role="radio" aria-checked="false" data-dk="wed"><span class="daypick-name">Wed</span></button>
+          <button type="button" class="daypick-btn" role="radio" aria-checked="false" data-dk="thu"><span class="daypick-name">Thu</span></button>
+          <button type="button" class="daypick-btn" role="radio" aria-checked="false" data-dk="fri"><span class="daypick-name">Fri</span></button>
+          <button type="button" class="daypick-btn" role="radio" aria-checked="false" data-dk="sat"><span class="daypick-name">Sat</span></button>
+        </div>
+        <div class="si-ask" id="gm-when-newday" hidden><p class="si-ask-q" id="gm-when-newday-text">Saturday isn’t a games day yet. Putting a game on it makes it one.</p><div class="si-ask-a"><button type="button" class="btn btn-sm" data-gm-newday="yes" id="gm-when-newday-yes">Make Saturday a games day</button><button type="button" class="btn btn-sm" data-gm-newday="no">Pick another day</button></div></div>
+        <div class="gl cb-list gm-when-list" id="gm-when-list"></div>
+        <p class="cb-empty" id="gm-when-empty" hidden>Nothing on the schedule that day.</p>
+        <button type="button" class="btn-quiet rain-quiet" id="gm-when-all" hidden><span id="gm-when-all-text">Other items on Thursday</span></button>
+        <div class="si-ask" id="gm-when-double" hidden><p class="si-ask-q" id="gm-when-double-text">Evening competition is in double points time. Make Shields count double too?</p><div class="si-ask-a"><button type="button" class="btn btn-sm" data-gm-double="yes">Make it double</button><button type="button" class="btn btn-sm" data-gm-double="no">Keep it single</button></div></div>
+        <div class="gl rain-move-off">
+          <button type="button" class="gl-row" id="gm-when-none">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-archive"/></svg></span>
+            <span class="gl-text"><span class="gl-title">Not on the schedule</span><span class="gl-sub">Counselors won’t see it on any item; it keeps its results</span></span>
+            <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+          </button>
+        </div>
+      </div>
+
+      <!-- The dock (form pane only). Before the game exists: the dashed
+           #gm-wait naming the step ("Type the game's name first" / "Pick how
+           it's scored ↑"), which, tapped, takes the director to it. After:
+           #gm-state, what the last save did — tone saved ("Added to Tuesday ·
+           Team competitions" when it was just created, then "Saved"), saving
+           ("Saving…", no check), offline ("Saved on this phone · it sends when
+           you're back online"), error ("Fix the counter buttons to save them",
+           danger text) — and Done. A quick game also gets the gold "Score it
+           now" (opens the game takeover on its entry). -->
+      <div class="sheet-dock gm-dock" id="gm-dock">
+        <button type="button" class="btn btn-block si-wait" id="gm-wait"><span id="gm-wait-text">Type the game’s name first</span></button>
+        <p class="gm-state" id="gm-state" data-tone="saved" role="status" hidden><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg><span id="gm-state-text"></span></p>
+        <div class="gm-acts" id="gm-acts" hidden>
+          <button type="button" class="btn btn-gold" id="gm-score" hidden>Score it now</button>
+          <button type="button" class="btn" id="gm-done">Done</button>
+        </div>
       </div>
     </div>
   </div>
