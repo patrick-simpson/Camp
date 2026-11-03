@@ -11929,8 +11929,6 @@ function closeTool() {
 //   - What a counselor may DO and a preview must not: chat (send, photo, delete), phone-alert subscribe and
 //     settings. Each refuses through previewRefuses() with one sentence. Everything else a counselor can tap is on
 //     this phone only (theme, team, dismiss), as it is for them.
-let previewReturn = null; // where Exit lands: the tab the preview began on
-
 function previewMayRun() {
   return memberRole === 'editor' && memberRoleConfirmed && tabWriter !== false;
 }
@@ -11973,14 +11971,12 @@ function previewPaint() {
 function previewEnd() {
   if (!counselorPreviewOn) return false;
   counselorPreviewOn = false;
-  previewReturn = null;
   previewPaint();
   return true;
 }
 
 function previewStart() {
   if (!previewMayStart()) return false;
-  previewReturn = { tab: activeTab() };
   counselorPreviewOn = true;
   // The sheets a counselor has no door to (What counselors see itself, Who can sign in, change history, the
   // builder's) close now; renderAll closes the director's takeovers and the builder.
@@ -11994,8 +11990,8 @@ function previewStart() {
   return true;
 }
 
-// Exit. `back` (the bar's own button, Escape) lands the director where they started: More, with What counselors
-// see open again, so a switch can be changed and checked in a loop. Every other end (an absence, a role change)
+// Exit. `back` (the bar's own button) lands the director where the preview began, which is always More: What counselors
+// see opens again, so a switch can be changed and checked in a loop. Every other end (an absence, a role change)
 // just lets go.
 function previewStop(opts) {
   if (!previewEnd()) return false;

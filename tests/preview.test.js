@@ -89,7 +89,6 @@ function seedWeek() {
 function boot(role, opts) {
   seedWeek();
   counselorPreviewOn = false;
-  previewReturn = null;
   tabWriter = true;
   setMemberRole(role === undefined ? 'editor' : role, opts);
   setMemberTeam(null);
@@ -265,23 +264,35 @@ test('a second tab taking the writer lock ends it on the next render (the view-o
   done();
 });
 
-test('the bar answers under everything: it sits outside #app and above dialogs only, and Exit is wired', () => {
-  assert.ok(INDEX.indexOf('id="preview-bar"') > -1 && INDEX.indexOf('id="preview-bar"') < INDEX.indexOf('<div id="app"') + 1 || INDEX.indexOf('id="preview-bar"') < INDEX.search(/id="app"/), 'the bar is before #app in the page');
-  const bar = INDEX.slice(INDEX.indexOf('id="preview-bar"'));
-  assert.ok(/id="preview-exit"/.test(bar.slice(0, 700)), 'its Exit button is in it');
-  assert.ok(/#preview-bar \{|\.pv-bar \{/.test(CSS) && /\.pv-bar \{[^}]*z-index: 10000/.test(CSS), 'above takeovers and sheets');
+test('the bar answers under everything: it sits outside #app, above takeovers and sheets, and the preview paints and unpaints it', () => {
+  const barAt = INDEX.indexOf('id="preview-bar"');
+  assert.ok(barAt > -1 && barAt < INDEX.search(/<div id="app"/), 'the bar is in the page before #app, so it still answers while #app is inert');
+  assert.ok(/id="preview-exit"/.test(INDEX.slice(barAt, barAt + 700)), 'its Exit button is inside it');
+  assert.ok(/\.pv-bar \{[^}]*z-index: 10000/.test(CSS), 'above takeovers and sheets (z 10000; dialogs and drawers sit at 10001)');
   assert.ok(/\.pv-frame \{[^}]*pointer-events: none/.test(CSS), 'the frame never takes a tap');
-  assert.ok(/#preview-bar/.test(APP_SRC.slice(APP_SRC.indexOf('const JOY_QUIET'), APP_SRC.indexOf('const JOY_QUIET') + 600)), 'no sparkles on the bar');
+  const quiet = APP_SRC.indexOf('const JOY_QUIET');
+  assert.ok(/#preview-bar/.test(APP_SRC.slice(quiet, quiet + 600)), 'no sparkles on the bar');
+  assert.ok(/<div id="preview-bar"[^>]*\shidden>/.test(INDEX) && /<i id="preview-frame"[^>]*\shidden>/.test(INDEX), 'both ship hidden: only a preview shows them');
   boot('editor');
-  const bars = []; const frames = [];
-  const hid = (e, a) => { const d = Object.getOwnPropertyDescriptor(e, 'hidden'); return d; };
-  assert.equal(el('preview-bar').hidden, false === true ? false : el('preview-bar').hidden); // (stub default; the real markup ships hidden)
   previewStart();
   assert.equal(el('preview-bar').hidden, false, 'the bar is up');
   assert.equal(el('preview-frame').hidden, false, 'and the frame');
   previewStop();
   assert.equal(el('preview-bar').hidden, true, 'Exit takes both down');
   assert.equal(el('preview-frame').hidden, true);
+  done();
+});
+
+test('what the preview draws for a team-less director: More\'s Your team row keeps its words in the text column when its mark is hidden', () => {
+  // A counselor with no team, and so a director in a preview with no team, sees "Your team · Pick the team you are with": with
+  // the mark out of the layout the words slid into the 30px icon column, one word to a line (found in Chromium by this step's pass).
+  assert.ok(/\.gl-ico\[hidden\] \+ \.gl-text \{\s*grid-column: 2;/.test(CSS), 'the rule is in styles.css');
+  boot('editor');
+  const row = document.querySelector('#tab-more [data-more-row="team"]');
+  state.followTeam = null; state.ui.tab = 'more';
+  previewStart();
+  assert.equal(row.hidden, false, 'a counselor with no team has the row (a director with no team does not)');
+  assert.equal(el('more-team-mark').hidden, true, 'and its mark is out of the layout');
   done();
 });
 
@@ -397,6 +408,34 @@ test('the reveal: a preview reads the counselor\'s view of it (the phone\'s hold
   assert.equal(revealRemoteIsOpen(), false);
   previewStop();
   assert.equal(revealViewRole(), 'editor');
+  done();
+});
+
+test('a live reveal in a preview is exactly the counselor\'s mirror: the same rows, the same hold on the newest place', () => {
+  boot('editor');
+  const T0 = Date.parse('2027-06-23T23:31:00Z'); const N = CAMP.teamCount; const sa = T0 + 10000;
+  const ent = (id, p) => ({ nm: 'Team ' + id, p, g: 1, s: 0, b: 0, v: 0, m: 0, c: 0 });
+  const pub = {};
+  for (let i = 0; i < 2; i++) { const tid = 't' + (N - 1 - i); pub['g' + i] = { place: N - i, e: { [tid]: ent(tid, 10 * (N - i)) } }; }
+  const ctl = { v: 1, id: 'r1kz9fxq-4hd2', seq: 3, phase: 'live', cur: 1, shown: 2, teams: N, finale: false, at: sa, sa, ca: T0, startedAt: T0, until: untilFor(T0, false) };
+  const realNow = Date.now; const wasKnown = serverOffsetKnown; const wasOffset = serverTimeOffset;
+  serverTimeOffset = 0; serverOffsetKnown = true;
+  confirmedReveal.real = { ctl, pub };
+  try {
+    const seen = {};
+    [['preview', sa + 1000], ['preview', sa + 3000]].forEach(([, at]) => {
+      Date.now = () => at;
+      if (!counselorPreviewOn) previewStart();
+      seen['p' + at] = JSON.stringify(revealMirrorView());
+    });
+    previewStop();
+    setMemberRole('viewer'); // a real counselor
+    [sa + 1000, sa + 3000].forEach((at) => { Date.now = () => at; seen['v' + at] = JSON.stringify(revealMirrorView()); });
+    assert.equal(seen['p' + (sa + 1000)], seen['v' + (sa + 1000)], 'inside the hold: the same view');
+    assert.equal(seen['p' + (sa + 3000)], seen['v' + (sa + 3000)], 'after it: the same view');
+    assert.equal(JSON.parse(seen['p' + (sa + 1000)]).rows.length, 1, 'and the newest place is withheld in both');
+    assert.equal(JSON.parse(seen['p' + (sa + 3000)]).rows.length, 2);
+  } finally { Date.now = realNow; serverOffsetKnown = wasKnown; serverTimeOffset = wasOffset; confirmedReveal.real = null; }
   done();
 });
 

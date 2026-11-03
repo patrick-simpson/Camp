@@ -1562,6 +1562,11 @@ body.kb-open .tk-dock {
 .gl-text {
   min-width: 0;
 }
+/* A row whose icon is hidden (More's Your team before a team is picked) keeps its words in the text column: with the icon out
+   of the layout they slid into the 30px icon column, one word to a line. */
+.gl-ico[hidden] + .gl-text {
+  grid-column: 2;
+}
 .gl-title {
   display: block;
   font: 750 1.03125rem/1.22 var(--font-ui);
@@ -14042,4 +14047,20 @@ html.counselor-preview .sheet {
 }
 .cs-preview .setup-note {
   margin-top: var(--s-2);
+}
+
+/* What counselors see at large text (found by the Step 24 pass at 360px, 200%): the switch and its state word took half the row
+   and the section's own words wrapped one word to a line beside them. From ~115% text the switch drops under the words, left
+   aligned with them (the container is this list, so the test follows the phone's text size, in em). */
+#sheet-counselors .gl {
+  container: cs-list / inline-size;
+}
+@container cs-list (max-width: 18em) {
+  .gl-row:has(> .gl-switch) {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+  .gl-row:has(> .gl-switch) > .gl-switch {
+    grid-column: 2;
+    justify-self: start;
+  }
 }

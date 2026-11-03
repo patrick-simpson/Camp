@@ -1298,7 +1298,7 @@ a LENS over the role, not a role: `counselorPreviewOn` (memory only, declared be
   next page is the director's own: pinned against a fresh context over this phone's cache).
 - **Start** (`previewStart`, the button `#counselors-preview-btn` in What counselors see): only a CONFIRMED director on a writer
   tab (`previewMayStart`: not a counselor, not a hint-painted phone, not a view-only second tab, not before the app started, not
-  twice). It records the tab it began on, closes every sheet the lens no longer allows (`shellCloseDisallowedSheets`, also run
+  twice). It closes every sheet the lens no longer allows (`shellCloseDisallowedSheets`, also run
   by `renderAll` whenever `canEdit()` is false, so a demotion closes a director's drawers too), paints the bar, frame and
   `html.counselor-preview`, flips `html.view-only`, renders, and puts focus on Exit. `renderAll` closes the builder, the director
   tools and the reveal remote itself.
@@ -1325,6 +1325,15 @@ a LENS over the role, not a role: `counselorPreviewOn` (memory only, declared be
   (director acts, chat, alerts) and the same writers working again after Exit; the config engine through a snapshot mid-preview;
   a source pin of the engine list. The mutation checks that were run: dropping any one of the lens reads, the engine swap, the
   chat guards, the resume rule, the reveal / chat role reads turns a case red.
+- **The Playwright pass for all of Step 24** is `docs/build-notes/verify/step24-pass.cjs` (serve the worktree with
+  `python3 -m http.server 8961`): More's Director rows, Tell everyone (empty, and every channel on with a partial-failure
+  report), Award points, What counselors see and its Preview button, and the preview itself (the bar's height equal to the
+  measured `--pv-h`, the header and takeovers and sheets sitting under it, Exit 44px, the bar capped at 200% text, every tab,
+  a game takeover, the sheets a counselor can open, the doors that stay shut, Exit's landing and what it leaves behind) as a
+  director, as the owner and as a counselor, both camps, 360 / 390 wide, light / dark, 100 / 130 / 200% text: no target under
+  44×44, no sideways scroll, no clipped label, no director row and no point or place on a preview screen. The pass found one
+  real defect in the counselor's own More tab, now fixed: a row whose icon is hidden (Your team before a team is picked) put its
+  words in the 30px icon column, one word to a line (`.gl-ico[hidden] + .gl-text { grid-column: 2 }`).
 - **Left to a real phone**: how the bar looks over the iOS status bar (the theme-color path is Android Chrome's), and whether the
   Home Screen app's reload (the auto-update) feels right when it ends a preview.
 
