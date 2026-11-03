@@ -1340,9 +1340,11 @@ function noticeZoneFor(teamId) {
   return noticeBoard().zones.find((z) => z.teamId === teamId) || null;
 }
 
-// `preview` renders the card regardless of status, for the builder's preview.
-function noticeCardHtml(preview) {
-  const n = noticeBoard();
+// `preview` renders the card regardless of status, for the builder's preview. `notice` draws
+// a notice that is not the live one (Tell everyone's "On a counselor's phone" draws the card
+// a pin WOULD post); it must already be a whole, normalized card.
+function noticeCardHtml(preview, notice) {
+  const n = notice || noticeBoard();
   if (!preview && !noticePosted()) return null;
 
   // Skip any slot whose team no longer exists (roster edited / week reset).
@@ -1391,13 +1393,15 @@ function renderNoticeBoard() {
 }
 
 // Post / un-post from the builder. Editors only — it shows on every device.
-function setNoticeStatus(status) {
+function setNoticeStatus(status, opts) {
   if (!canEdit() || !NOTICE_STATUSES.includes(status)) return;
   noticeBoard().status = status;
   // Posting/taking down is a real broadcast, same as an announcement, so it
   // stamps "Data last updated". Drafting edits deliberately don't — they're
-  // invisible to everyone else until posted.
-  touchData();
+  // invisible to everyone else until posted. (opts is touchData's: Tell everyone's
+  // Take down passes { celebrate: false }, because bringing something down is not
+  // a celebration.)
+  touchData(opts);
   saveState();
   renderAll();
 }
@@ -11162,7 +11166,8 @@ function editorMidEntry() {
   // tab is holding (tabMayPush): the timer that asked for it has already fired
   // (and a setup edit still inside its 300 ms window, or a setup push an undecided tab holds)
   return dataEditPending || pushTimer != null || pushConfigTimer != null || tabHeldState || tabHeldConfig ||
-    tabHeldSetup || (typeof setupBusy === 'function' && setupBusy());
+    tabHeldSetup || (typeof setupBusy === 'function' && setupBusy()) ||
+    (typeof tellComposerBusy === 'function' && tellComposerBusy());
 }
 
 // Send any debounced push right now (e.g. when a score field loses focus, or
@@ -11256,6 +11261,7 @@ function reloadBlocked() {
   if (typeof chatComposerBusy === 'function' && chatComposerBusy()) return true;
   // a director mid-reveal (a real reveal live on this phone, or a command not yet acknowledged): reload after it (reveal.js)
   if (typeof revealBusy === 'function' && revealBusy()) return true;
+  if (typeof tellComposerBusy === 'function' && tellComposerBusy()) return true; // a message being typed in Tell everyone, or a send going out (tell.js)
   if (typeof rainBusy === 'function' && rainBusy()) return true; // a rain plan being made (setup-ui.js: only while open and touched in the last 2 minutes)
   if (typeof schedItemBusy === 'function' && schedItemBusy()) return true; // a Schedule item with edits not yet saved (setup-ui.js)
   return false;
@@ -11357,6 +11363,12 @@ function shellSnap() {
     if (shellTabOk(state.ui.revealFrom)) o.from = state.ui.revealFrom;
     ov.push(o);
   }
+  const tool = toolOpenId();
+  if (tool) {
+    const o = { k: tool };
+    if (shellTabOk(state.ui.toolFrom)) o.from = state.ui.toolFrom;
+    ov.push(o);
+  }
   shell.sheets.forEach((id) => ov.push({ k: 'sheet', id }));
   return { tab: activeTab(), ov };
 }
@@ -11373,8 +11385,8 @@ function shellSnapFromRaw(raw) {
       const g = { k: 'game', id: o.id };
       if (shellTabOk(o.from)) g.from = o.from;
       ov.push(g);
-    } else if (o.k === 'reveal') {
-      const r = { k: 'reveal' };
+    } else if (o.k === 'reveal' || o.k === 'tell' || o.k === 'award') {
+      const r = { k: o.k };
       if (shellTabOk(o.from)) r.from = o.from;
       ov.push(r);
     } else if (o.k === 'sheet' && typeof o.id === 'string' && /^[a-z0-9-]{1,24}$/.test(o.id)) ov.push({ k: 'sheet', id: o.id });
@@ -11508,6 +11520,10 @@ function shellApply(s) {
   const rv = s.ov.find((o) => o.k === 'reveal');
   state.ui.revealOpen = !!(rv && revealRemoteMayOpen());
   if (rv && rv.from) state.ui.revealFrom = rv.from;
+  // So are the director tools (Tell everyone, Award points): one at a time, a director's only.
+  const tl = s.ov.find((o) => o.k === 'tell' || o.k === 'award');
+  state.ui.tool = tl && toolMayOpen(tl.k) ? tl.k : null;
+  if (tl && tl.from) state.ui.toolFrom = tl.from;
   state.ui.tab = s.tab;
   shell.applying = true;
   try {
@@ -11580,7 +11596,7 @@ function shellArrivePanel(root) {
 
 // A takeover is up: a game, or the director's reveal remote (one at a time).
 function shellTakeoverOpen() {
-  return !!(state.ui.gameId && gameById(state.ui.gameId)) || revealRemoteIsOpen();
+  return !!(state.ui.gameId && gameById(state.ui.gameId)) || revealRemoteIsOpen() || !!toolOpenId();
 }
 
 // Which panel shows, the tab buttons' state, the takeover's body class. Returns
@@ -11649,6 +11665,7 @@ function shellCloseOverlays() {
   shell.sheets.slice().forEach((id) => (id === 'schedule' && typeof closeSchedule === 'function' ? closeSchedule() : shellSheetClose(id)));
   state.ui.gameId = null;
   state.ui.revealOpen = false;
+  state.ui.tool = null;
   if (builderOpen()) {
     if (typeof builderDirty === 'function' && builderDirty() && !confirm('Discard your unsaved changes?')) return false;
     if (typeof discardGameDraft === 'function') discardGameDraft();
@@ -11692,6 +11709,7 @@ function openGame(gid, opts) {
   // "Next game" swap: the opener is the first one).
   if (!state.ui.gameId) shell.opener = document.activeElement || null;
   state.ui.revealOpen = false; // one takeover at a time
+  state.ui.tool = null;
   state.ui.gameId = g.id;
   state.ui.gameFrom = shellTabOk(opts.from) ? opts.from : activeTab();
   state.ui.gameDow = campNow().dow;
@@ -11728,6 +11746,7 @@ function openReveal(opts) {
   opts = opts || {};
   if (!state.ui.revealOpen) shell.opener = document.activeElement || null;
   state.ui.gameId = null; // one takeover at a time
+  state.ui.tool = null;
   state.ui.revealOpen = true;
   state.ui.revealFrom = shellTabOk(opts.from) ? opts.from : activeTab();
   shellStamp();
@@ -11742,6 +11761,54 @@ function closeReveal() {
   shellStamp();
   saveState();
   renderAll(); // renderRevealRemote slides it out and hands focus back (a Back gesture closes it too)
+}
+
+// ── takeovers (the director tools: Tell everyone, Award points) ──────
+// Two more takeovers a director opens from More → Director (tell.js and award.js hold their screens, the static markup is
+// #takeover-tell / #takeover-award in index.html). ONE at a time, like the game and the remote: `state.ui.tool`
+// ('tell' | 'award', device-local) and `state.ui.toolFrom` (the tab the labelled Back returns to). Directors only, and only
+// where the screen's script loaded (delete tell.js and More shows no Tell everyone row). Award points shows points, so it
+// also waits for a CONFIRMED director (standingsVisible): a stale hint on a demoted phone opens nothing.
+function toolScreenLoaded(id) {
+  if (id === 'tell') return typeof renderTellEveryone === 'function';
+  if (id === 'award') return typeof renderAwardPoints === 'function';
+  return false;
+}
+function toolMayOpen(id) {
+  return canEdit() && toolScreenLoaded(id) && (id !== 'award' || standingsVisible());
+}
+function toolOpenId() {
+  const t = state && state.ui && state.ui.tool;
+  return t && toolMayOpen(t) ? t : null;
+}
+function toolIsOpen(id) { return toolOpenId() === id; }
+
+function openTool(id, opts) {
+  if (!toolMayOpen(id) || builderOpen()) return false;
+  opts = opts || {};
+  if (!toolOpenId()) shell.opener = document.activeElement || null;
+  state.ui.gameId = null; // one takeover at a time
+  state.ui.revealOpen = false;
+  state.ui.tool = id;
+  state.ui.toolFrom = shellTabOk(opts.from) ? opts.from : activeTab();
+  shellStamp();
+  saveState();
+  renderAll();
+  return true;
+}
+
+function closeTool() {
+  if (!state.ui.tool) return;
+  state.ui.tool = null;
+  shellStamp();
+  saveState();
+  renderAll(); // the screen slides out and hands focus back (a Back gesture closes it too)
+}
+
+// "‹ More", "‹ Games", "‹ Now": where a tool's Back lands.
+function shellToolBackLabel() {
+  const from = shellTabOk(state.ui.toolFrom) ? state.ui.toolFrom : 'more';
+  return from === 'games' ? 'Games' : from === 'chat' ? 'Chat' : from === 'now' ? 'Now' : 'More';
 }
 
 // "‹ More", "‹ Games", "‹ Now": where the remote's Back lands.
@@ -11966,6 +12033,7 @@ function shellTick() {
   // The reveal's time-driven moments (the 8 AM hide, the 3 s look-at-the-big-screen window, an
   // unended reveal counting as over): a quiet 8:00 brings no snapshot, so no renderAll (reveal.js).
   if (typeof revealTick === 'function') revealTick('tick');
+  if (typeof tellTick === 'function') tellTick(); // Showing now's "ends in 38 min" (tell.js: only while it is open)
   SHELL_ALWAYS.forEach((fn) => fn());
   const p = SHELL_PANELS[activeTab()];
   if (p) p.tick();
@@ -12054,6 +12122,36 @@ function setHiddenIfChanged(el, hidden) {
 }
 function setClassNameIfChanged(el, name) {
   if (el && el.className !== name) el.className = name;
+}
+// An attribute / data-* only when it differs (a same-value write is still a mutation record, and
+// render-stability's MutationObserver pass counts it). null, undefined and false remove it; true is the
+// empty-string boolean attribute.
+function setAttrIfChanged(el, name, v) {
+  if (!el) return;
+  if (v === null || v === undefined || v === false) { if (el.getAttribute(name) !== null) el.removeAttribute(name); return; }
+  const s = v === true ? '' : String(v);
+  if (el.getAttribute(name) !== s) el.setAttribute(name, s);
+}
+function setDataIfChanged(el, key, v) {
+  if (!el || !el.dataset) return;
+  if (v === null || v === undefined || v === false) { if (key in el.dataset) delete el.dataset[key]; return; }
+  const s = v === true ? '' : String(v);
+  if (el.dataset[key] !== s) el.dataset[key] = s;
+}
+// Radio-group keys for a plain `.seg` of `.seg-btn[role=radio]`: the arrows move the choice and the focus
+// with it (choose(btn) does the choosing).
+function segArrowKeys(seg, choose) {
+  seg.addEventListener('keydown', (e) => {
+    const dir = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+    if (!dir) return;
+    const btns = [...seg.querySelectorAll('.seg-btn')].filter((b) => !b.hidden);
+    const i = btns.findIndex((b) => b === document.activeElement || b.getAttribute('aria-checked') === 'true');
+    const next = btns[(Math.max(0, i) + dir + btns.length) % btns.length];
+    if (!next) return;
+    e.preventDefault();
+    choose(next);
+    next.focus();
+  });
 }
 
 // ── the header (§2.2) ──────────────────────────────────────────────
@@ -12277,17 +12375,7 @@ function wireSegs() {
       if (btn) choose(btn);
     });
     // Radio-group keys: the arrows move the choice (and the focus with it).
-    seg.addEventListener('keydown', (e) => {
-      const dir = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
-      if (!dir) return;
-      const btns = [...seg.querySelectorAll('.seg-btn')];
-      const i = btns.findIndex((b) => b === document.activeElement || b.getAttribute('aria-checked') === 'true');
-      const next = btns[(Math.max(0, i) + dir + btns.length) % btns.length];
-      if (!next) return;
-      e.preventDefault();
-      choose(next);
-      next.focus();
-    });
+    segArrowKeys(seg, choose);
   });
 }
 
@@ -12405,6 +12493,8 @@ function shellHasUnsentWork() {
   if (typeof chatHasDraft === 'function' && chatHasDraft()) return true;
   // A director running the reveal is never sent back to Now by a long lock-screen pause: the remote is the work.
   if (revealRemoteIsOpen() && typeof revealBusy === 'function' && revealBusy()) return true;
+  // A director with Tell everyone open and a message typed, or a send still going out (tell.js).
+  if (typeof tellComposerBusy === 'function' && tellComposerBusy()) return true;
   return false;
 }
 
@@ -12420,6 +12510,7 @@ function shellResume() {
   shell.sheets.slice().forEach((id) => (id === 'schedule' && typeof closeSchedule === 'function' ? closeSchedule() : shellSheetClose(id)));
   state.ui.gameId = null;
   state.ui.revealOpen = false;
+  state.ui.tool = null;
   if (builderOpen()) { state.ui.view = 'home'; if (typeof discardGameDraft === 'function') discardGameDraft(); }
   state.ui.tab = 'now';
   shell.scroll.now = 0;
@@ -12486,6 +12577,7 @@ function shellBoot() {
     ui.tab = 'now';
     ui.gameId = null;
     ui.revealOpen = false;
+    ui.tool = null;
     if (ui.view === 'settings') ui.view = 'home';
   } else if (ui.gameId) {
     // a game left open yesterday must not greet someone on Wednesday
@@ -12523,6 +12615,10 @@ function wireShell() {
   if (back) back.addEventListener('click', closeGame);
   const revealBack = document.querySelector('#takeover-reveal [data-takeover-back]');
   if (revealBack) revealBack.addEventListener('click', closeReveal);
+  ['tell', 'award'].forEach((id) => {
+    const b = document.querySelector('#takeover-' + id + ' [data-takeover-back]');
+    if (b) b.addEventListener('click', closeTool);
+  });
   document.querySelectorAll('.sheet-overlay').forEach((el) => {
     const id = el.id.replace(/^sheet-/, '');
     el.querySelectorAll('[data-sheet-close]').forEach((c) => c.addEventListener('click', () => shellSheetClose(id)));
@@ -12535,6 +12631,7 @@ function wireShell() {
     if (top === 'sched-item' && typeof schedItemGuardClose === 'function' && schedItemGuardClose()) return; // a half-made edit asks first
     if (top && top !== 'schedule') shellSheetClose(top);
     else if (!top && revealRemoteIsOpen()) closeReveal();
+    else if (!top && toolOpenId()) closeTool();
     else if (!top && shellTakeoverOpen()) closeGame();
   });
   window.addEventListener('popstate', shellOnPopState);
@@ -12607,6 +12704,8 @@ function renderAll() {
   // shown) and the open takeover.
   // A remote left open for someone who is not (or no longer) a director closes here, before the shell derives what is up.
   if (state.ui.revealOpen && !revealRemoteMayOpen()) state.ui.revealOpen = false;
+  // So does a tool (Tell everyone, Award points) left open for someone who is not a director any more.
+  if (state.ui.tool && !canEdit()) state.ui.tool = null;
   const rootChanged = shellSync();
   renderHeader();
   renderTabBadges();
@@ -12616,6 +12715,9 @@ function renderAll() {
   // The reveal's screens (reveal-ui.js): the remote takeover, Now's mirror and grid, the header strip, the
   // tab dot, More's row, Games' link. Each writes only what changed.
   if (typeof renderRevealUi === 'function') renderRevealUi();
+  // The director tools' screens (tell.js, award.js): More's two rows and, while one is open, its takeover.
+  if (typeof renderTellEveryone === 'function') renderTellEveryone();
+  if (typeof renderAwardPoints === 'function') renderAwardPoints();
   // The builder's frame (setup-ui.js: hub, head, sheets) paints around the classic builder, which it still calls
   // for the Classic editor screen; without that file the builder is v197's.
   if (typeof renderSetupUi === 'function') renderSetupUi(inBuilder);
@@ -12645,6 +12747,7 @@ function openBuilder(tab) {
   if (!canEdit()) return;
   state.ui.gameId = null; // one takeover at a time
   state.ui.revealOpen = false;
+  state.ui.tool = null;
   state.ui.view = 'settings';
   if (tab) state.ui.settingsTab = tab;
   if (!state.ui.settingsTab) state.ui.settingsTab = 'games';
@@ -12959,7 +13062,8 @@ const JOY_SPARKLE = 'jelly-button, jelly-chip, .pts-btn, .btn-gold, [data-joy]';
 // Set up the week is a calm clipboard: its gold buttons (the one main action of a screen, a sheet or a
 // question) must not sparkle when tapped.
 const JOY_QUIET = '#tabbar, #app-header, .more, .tk-head, jelly-drawer, #chat-view, .lock-screen, #setup, ' +
-  '#sheet-setup-menu, #sheet-setup-changes, #sheet-setup-devices, #sheet-restore, #ask-dialog';
+  '#sheet-setup-menu, #sheet-setup-changes, #sheet-setup-devices, #sheet-restore, #ask-dialog, ' +
+  '#takeover-tell, #preview-bar'; // sending is not a celebration (the award keys name themselves with data-joy)
 document.addEventListener('click', (e) => {
   const t = e.target.closest && e.target.closest(JOY_SPARKLE);
   if (!t || t.closest(JOY_QUIET)) return;
@@ -13518,6 +13622,7 @@ function clearLocalData() {
     'campScoreboardChatSeen', 'campScoreboardChatSubs',
     'campScoreboardPushOn', 'campScoreboardPushPrefs', STRANDED_KEY, UNDO_KEY,
     'campScoreboardRevealCache', 'campScoreboardChampion', // (reveal.js: the last real reveal as the phone held it; the crowned team's name)
+    'campScoreboardTellDraft', // (tell.js: a half-typed Tell everyone message)
     'campScoreboardSetupV1', 'campSetupRpOutbox', 'campSetupRainDraft', 'campSetupAlertIntent']; // (setup-sync.js: the setup cache, the restore-point outbox; setup-ui.js: an unfinished rain plan, the alert choice kept for Step 26)
   Object.keys(CAMPS).forEach((cid) => {
     bases.forEach((b) => {

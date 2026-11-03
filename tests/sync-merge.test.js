@@ -202,6 +202,17 @@ test('the deploy auto-reload waits for unconfirmed writes, a running lap and a m
   chatSendsInFlight = 1;
   assert.ok(reloadBlocked(), 'a chat message still sending');
   chatSendsInFlight = 0;
+  // Tell everyone (tell.js): a director's half-typed alert, or a send still going out
+  setMemberRole('editor');
+  state.ui.tool = 'tell';
+  tell.d.text = 'Come inside now';
+  assert.ok(reloadBlocked(), 'a message typed in Tell everyone');
+  tell.d.text = '';
+  state.ui.tool = null;
+  tell.sending = 1;
+  assert.ok(reloadBlocked(), 'an alert still going out');
+  tell.sending = 0;
+  setMemberRole(null);
   assert.notOk(reloadBlocked());
 });
 

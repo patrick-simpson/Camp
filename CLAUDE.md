@@ -89,6 +89,11 @@ Files:
   `revealPaint`, which the engine calls; a classic script right after reveal.js,
   every hook in app.js typeof-guarded, so deleting its `<script>` leaves the engine
   running and painting nothing
+- `tell.js` — TELL EVERYONE (see "Director tools: Tell everyone, Award points, Preview as a
+  counselor"): the director's one composer (banner, buzz, the big notice; Showing now / Take
+  down, quick alerts, the notice replace rule, the Undo). An optional layer like chat.js: a
+  classic script loaded after push.js, every hook in app.js typeof-guarded, so deleting its
+  `<script>` leaves a running app with no Tell everyone row
 - `jelly-motion.js` — the SPRING SYSTEM and the ONE calm-motion switch (see
   "Motion and calm motion" below). A classic script loaded between camps.js and
   app.js with no dependency on `vendor/jelly.js` (that module can't parse on
@@ -210,10 +215,10 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
 
 **Every time any code asset changes:**
 1. Bump the `?v=N` cache-busting query string in `index.html` — there are
-   NINETEEN on the same number: `boot-guard.js`, `styles.css`, `vendor/jelly.js`,
+   TWENTY on the same number: `boot-guard.js`, `styles.css`, `vendor/jelly.js`,
    `firebase-config.js`, `defaults.js`, `camp-core.js`, `reveal-core.js`,
    `camps.js`, `jelly-motion.js`, `app.js`, `reveal.js`, `reveal-ui.js`, `setup-sync.js`, `settings.js`,
-   `setup-ui.js`, `chat.js`, `push.js`, `auth-phone.js`, `auth-email-link.js` —
+   `setup-ui.js`, `chat.js`, `push.js`, `tell.js`, `auth-phone.js`, `auth-email-link.js` —
    keep them in sync, all bumped together. Also bump
    `APP_VERSION` in `app.js` to the same number (it drives the auto-reload
    version check). `stalling.html` loads `vendor/jelly.js`, and
@@ -1146,13 +1151,78 @@ each as it wires it, so the live app never shows a dead control. Rules for whoev
   showing-now and result rows put their button under the words from ~130% at 360px; the quick alerts
   become one column; the way choices lose their indent, then stack; six keys become two rows of three;
   the quick-points amount stacks; the ledger puts points and bin under the words).
-- **Behaviour still to wire** (the build session): the shell overlays (`k: 'tell'`, `'award'`, the
-  preview's render override of the role — never `memberRole`, never the hint, never persisted — with
-  `canEdit()` false and `html.view-only` while it lasts), every handler, the draft and `composerBusy()` in
-  `reloadBlocked()` / `editorMidEntry()`, the channel sends and their per-channel report, the Undo toast,
-  the notice replace question (askDialog) and its guarded undo, JOY_QUIET gaining `#takeover-tell` and
-  `#preview-bar`, the motion named beside each root in index.html, and the frame test's "no Tell everyone or
-  Award points row" pin (it now finds the hidden rows' words).
+- **Behaviour still to wire** (Award points: build session 1 continues; Preview as a counselor and its measured
+  `--pv-h`: build session 2): see the next two sections for what is wired.
+
+## Tell everyone: behaviour (tell.js — Step 24, build session 1)
+
+Wires the markup above. `tell.js` is a classic script after push.js; every hook in app.js is typeof-guarded, and
+the More row exists only when it loaded (`#tell-row` is un-hidden by `tellPaintMoreRow`, never by the markup).
+
+- **The shell's director-tool takeovers** (app.js, "takeovers (the director tools)"): `state.ui.tool`
+  (`'tell' | 'award' | null`, device-local) and `state.ui.toolFrom`; `openTool(id, {from})` / `closeTool()`,
+  `toolMayOpen(id)` (a director — `canEdit()` — whose screen's script loaded; Award points also needs a CONFIRMED
+  director, `standingsVisible()`), `toolOpenId()`, `toolIsOpen(id)`, `shellToolBackLabel()`. ONE takeover at a time
+  (a game, the reveal remote and the builder each clear it and it clears them), one history entry (`{k: 'tell' |
+  'award', from?}` in `shellSnap` / `shellSnapFromRaw` / `shellApply`), Back and Escape close it onto the tab it
+  came from, `renderAll` drops it for anyone who stopped being a director, a reload within 10 minutes restores it,
+  a longer absence closes it unless something is half-typed (`shellHasUnsentWork` asks `tellComposerBusy`).
+  `renderAll` calls `renderTellEveryone()` / `renderAwardPoints()`; `JOY_QUIET` gains `#takeover-tell` and
+  `#preview-bar`. No deep link names a tool yet.
+- **ONE write path per channel.** A banner is app.js's `postBanner(text, ttlMs)` / `takeDownBanner(id)`, the
+  notice is `state.notice` written whole (put back to draft by `setNoticeStatus('draft', {celebrate: false})`),
+  a buzz is push.js's `pushSendAlert({text, audience, urgent})` in its DIRECT mode (audience `all` / `editors` /
+  a team id). Tell everyone never writes to the database itself and never celebrates a send
+  (`touchData({celebrate: false})`).
+- **The model** (`tellModel()`, pure over the draft and the environment): `ready`, `missing` (the dashed Send well:
+  "Type a message first" → "Tick a way to reach people" → "Pick a team to buzz"), `label` (`tellSendLabel`:
+  "Send to everyone" · "Pin the notice" · "Send + pin the notice" · "Send + buzz everyone / the Foxes / directors" ·
+  "Buzz everyone" · "Pin + buzz everyone" · "Send + pin + buzz everyone"; "Sending…" while a send is out).
+  `tellSplit(text)`: the first sentence is the notice title (a trailing full stop dropped), the rest the line
+  under it; a line break ends the title too.
+- **Buzz is disabled with its reason** until phone alerts are live (`pushConfigured()`; `PUSH_SERVICE_URL` is
+  blank today, so it reads "Phone alerts aren't switched on yet") and offline ("No signal: buzzing needs a
+  connection"). It is off by default, never restored from the saved draft, and DISARMED the moment it becomes
+  unavailable (a connection that comes back does not re-arm it). A tap on the disabled tick says why in a toast.
+- **Quick alerts** (`TELL_QUICK`, the owner's constant; the three buttons in index.html carry the same words, a
+  test pins it): a tap replaces the message and ticks Banner + All day + (phone alerts live) Buzz everyone +
+  Urgent; with no phone alerts it is the banner all day and never carries Urgent. Never a pin.
+- **A send never lies.** Order: validate → (a pin over a notice with ANY content, draft or posted, asks first
+  through `askDialog`: "Replace the notice “…”?" · Replace it / Not now; "Not now" stops the whole send) → banner
+  and pin written together and saved ONCE → the buzz awaited. Each channel reports on its own. All fine: the
+  composer closes, the draft clears, one toast with a 10-second Undo (a buzz alone has nothing to undo). Any
+  channel failed (a buzz refused, nobody has alerts on, no signal): the composer stays, "Last send" lists one line
+  per channel, the channels that went are UN-ticked (a second Send cannot post the banner twice) and **Try again**
+  re-sends only the one that failed, with the words it was sent with. `tell.sending` counts channels still out.
+- **Undo** (`tellUndo`): the banner comes down if it is still up; the notice goes back to the previous card ONLY
+  if it still equals what the send wrote, compared in RTDB-canonical form (`syncCanon`: a snapshot pruning empty
+  fields is no change). Otherwise "Someone changed the notice since, so it stays as it is." A phone that is no
+  longer a director's does nothing.
+- **Showing now / Take down** (`tellShowingNow`): `liveAnnouncements()` (a banner dismissed on THIS phone still
+  shows, it is up for everyone else) then the notice when `noticePosted()`. Take down: a banner leaves every phone
+  (the row plays out first), the notice goes back to a draft; each with a 10-second Undo that checks first (a
+  banner back only if absent and unexpired; the notice back to posted only if unchanged). Rows refresh with the
+  30 s tick while the composer is open (`tellTick`, from `shellTick`). More's row says "Up now: a banner and the
+  notice" / "Up now: 2 banners" (`data-live`) or its plain line.
+- **The draft survives**: a re-render, a tab trip and a closed-and-reopened composer (memory) and a reload
+  (`lsKey('campScoreboardTellDraft')`: the words, Banner, its duration and Pin — never the buzz, its audience or
+  Urgent — read lazily at the first open, wiped by `clearLocalData`). **`tellComposerBusy()`** — a send still out,
+  or the composer open with words in it or its box focused — joins `reloadBlocked()`, `editorMidEntry()` and
+  `shellHasUnsentWork()`. A closed composer's leftover draft does not hold a reload: it is kept on the device.
+- **"Write a full notice with team areas and steps"** opens the notice builder (`openBuilder('notice')`, which
+  closes the composer) and the builder's final Back comes home to the composer (`tell.returnToDraft`,
+  consumed once on the transition builder-open → builder-closed); the draft is as it was.
+- **The preview** is written by the SAME functions the real strip uses: `messageHtml(…, {preview: true})` and
+  `noticeCardHtml(true, tellPinnedNotice(text))`. `noticeCardHtml` gained an optional second argument, a whole
+  normalized notice that is not the live one.
+- **Not built:** the Announcements chat channel is NOT a way here (redesign §7.2 keeps it a chat channel with its
+  own 15-minute banner); a pinned notice has no author line ("Jenn's draft"), because the notice carries no author:
+  it says "a draft" / "on every phone now".
+- **Tests**: `tell.test.js` (+ `.senior`): the pure pieces, every channel combination, partial failure and Try
+  again, the replace question, Undo (restored only if unchanged, canonical compare, a colleague's edit kept),
+  Take down and its Undo, quick alerts (Urgent), Buzz disabled / disarmed, the draft (re-render, reload,
+  sign-out), `reloadBlocked`, a counselor reaching none of it, the shell stack, escaping, the preview, and that the
+  app runs without `tell.js`.
 
 ## Set up the week: the frame, the hub, the clipboard (Step 14 — markup and visual system)
 
@@ -1914,12 +1984,15 @@ What's covered, and why each file exists:
   drawer's ids, What counselors see (four switches on the existing keys, ON =
   shown, the standings row locked), the three drawers on the history stack, and
   the Your team sheet reading no standings.
+- `tell.test.js` (+ `.senior`) — Tell everyone (see "Tell everyone: behaviour"): the channel combinations, partial failure,
+  the notice replace question and an Undo that checks first, quick alerts, Buzz disabled until phone alerts are live,
+  the draft, `reloadBlocked`, the shell stack, and a counselor reaching none of it.
 - `game-view.test.js` (the rules above: live-html skip, kept forms firing real
   handlers after a state swap, celebrations only for scoring), `home.test.js`
   (home panels, toast cap, announcement composer), `overlays.test.js` (schedule
   sheet, status pill, members drawer, lock screen, scrim fade, pickers),
   `shell.test.js` (page-shell text pins: the not-yet-defined hide, the boot
-  guard, no motion media query, **index.html's nineteen versioned assets share
+  guard, no motion media query, **index.html's twenty versioned assets share
   one `?v=` equal to `APP_VERSION`, in load order**), `builder.test.js`
   (week-builder shell, drafts, joy press), `chat-view.test.js`
   (chat view lifecycle, drafts, Back), `theme.test.js` (pre-paint theme and

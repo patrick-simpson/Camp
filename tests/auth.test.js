@@ -157,6 +157,7 @@ test('clearLocalData wipes the camp data a signed-out device must not keep', () 
   Object.keys(CAMPS).forEach((cid) => {
     localStorage.setItem('campScoreboardRevealCache' + CAMPS[cid].storageSuffix, '{"ctl":{}}');
     localStorage.setItem('campScoreboardChampion' + CAMPS[cid].storageSuffix, '{"ver":1}');
+    localStorage.setItem('campScoreboardTellDraft' + CAMPS[cid].storageSuffix, '{"v":1,"text":"half typed"}'); // tell.js: a half-typed alert
   });
   localStorage.setItem('campScoreboardServerOffset', '1500'); // this phone's clock vs the server's: not camp data
 
@@ -168,7 +169,7 @@ test('clearLocalData wipes the camp data a signed-out device must not keep', () 
     assert.equal(localStorage.getItem(k), null, `${k} must be cleared`);
   });
   Object.keys(CAMPS).forEach((cid) => {
-    ['campScoreboardRevealCache', 'campScoreboardChampion'].forEach((b) => {
+    ['campScoreboardRevealCache', 'campScoreboardChampion', 'campScoreboardTellDraft'].forEach((b) => {
       assert.equal(localStorage.getItem(b + CAMPS[cid].storageSuffix), null, `${b} (${cid}) must be cleared`);
     });
   });
