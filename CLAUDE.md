@@ -1263,6 +1263,11 @@ nothing.
   confirm where the setup frame did not load) and plays the row out first.
 - **Shared helpers added to app.js**: `bonusAddFromDraft`, `removeBonusEntry`, `bonusDraftProblem`, `BONUS_PROBLEMS`,
   `bonusDowOf`, `cleanupEarned(day, meal)` (a guarded points reader), `messageClock(iso, timeOnly)`.
+- **Emulator proof (opt-in)**: `tests/emulator/director-tools-client.mjs` drives the REAL client's Tell everyone and
+  Award points writes against the published rules on both camps (8 cases, SAFE): no rules change belongs to Step 24
+  (`state/announcements`, `state/notice` and `state/bonuses` only have to stay branches, so a custom bonus's new `day`
+  field and the whole-notice write are accepted). It joined `npm run test:r1`; `export-replay.mjs` was re-run against the
+  synthetic exports with the new scripts loaded (READY, both camps).
 - **Tests**: `award.test.js` (+ `.senior`): who may open it, the day, the verse and cleanup writers and their
   deterministic ids, the shared slot, the own-team guard, the Add label and writer, the ledger (camp-time weekday, the
   filed day, ×2, legacy cleanup), removal, escaping, the shell stack, and the app running without `award.js`.
