@@ -4790,7 +4790,14 @@ More sync invariants (each fixed after it bit us — don't regress these;
     edits included). On commit `cfgPushCommitted` REBASES the local copy: committed
     server value + only the edits made since the push began, measured from the push-
     time tree (baseline + the ops sent), so a snapshot that landed mid-push can't make
-    the next diff "undo" a colleague's change. Ops the transaction dropped go to the
+    the next diff "undo" a colleague's change. The committed value is the transaction's OWN
+    output, handed over a tick after the server took it, so a colleague's commit right behind
+    ours can reach the listener FIRST; adopting the older value then moved the copy and the
+    baseline back behind it and the listener never fires again for a state it has shown (the
+    colleague's field stayed missing: found by `tests/emulator/games-client.mjs`, about one run
+    in three). So when a snapshot landed during the push (`cfgRemoteSeq`) and differs from what
+    the commit returned (`cfgLastRemote`), `cfgSettleReread` reads once more and adopts it; a push
+    nobody interrupted costs no read. Ops the transaction dropped go to the
     Put-it-back list. Sync not configured ⇒ no ref ⇒ nothing is pushed (local-only
     unchanged). `configForSync` still strips unknown keys; because the node's value
     is replaced by the transaction's result, a stray already in it is pruned by the

@@ -305,6 +305,41 @@ test('a snapshot that lands while my push is in flight is rebased, and never rev
   } finally { csTeardown(); }
 });
 
+test('a colleague\'s commit that reached the listener BEFORE my commit\'s own completion is not rolled back by it: the phone settles with one re-read and shows both', async () => {
+  const db = await csSetup();
+  try {
+    const [a, b] = [state.config.games[0].id, state.config.games[1].id];
+    let reads = 0;
+    const realOnce = fbConfigRef.once.bind(fbConfigRef);
+    fbConfigRef.once = (...args) => { reads++; return realOnce(...args); };
+    // An ordinary push (nothing lands meanwhile) never re-reads.
+    state.config.games[0].location = 'Gym';
+    saveConfig();
+    flushPendingPush();
+    await waitQuiet();
+    assert.equal(csGame(db, a).location, 'Gym');
+    assert.equal(reads, 0, 'a push that nobody interrupted costs no extra read');
+    // The race: the transaction's OWN output (my field, the older state) is what its completion hands over; the colleague's later commit has
+    // already reached the listener by then.
+    const stale = csClone(db.serverGet(CS_PATH));
+    stale.games.find((g) => g.id === a).location = 'Pool';
+    const newer = csClone(stale);
+    newer.games.find((g) => g.id === b).location = 'Theirs';
+    state.config.games[0].location = 'Pool';
+    const ops = treeDiff(cfgBaseTree(), cfgCanon(state.config), CFG_DEPTHS);
+    const seq0 = cfgRemoteSeq;
+    db.serverSet(CS_PATH, newer);                        // their commit lands (listener -> applyRemoteConfig)
+    assert.equal(gameById(b).location, 'Theirs');
+    cfgPushCommitted(stale, ops, [], seq0);              // my completion arrives late, with the older value
+    await waitQuiet();
+    assert.equal(reads, 1, 'one re-read settled it');
+    assert.equal(gameById(b).location, 'Theirs', 'their field was not rolled back behind the older commit value');
+    assert.equal(gameById(a).location, 'Pool');
+    assert.deepEqual(cfgUnconfirmed(), {});
+    assert.equal(JSON.stringify(syncCanon(cfgCanon(state.config))), JSON.stringify(cfgCanon(db.serverGet(CS_PATH))), 'the phone and the server agree');
+  } finally { csTeardown(); }
+});
+
 test('an edit made while the push is in flight is kept (and sent next), not overwritten by the commit', async () => {
   const db = await csSetup();
   try {

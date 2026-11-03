@@ -4167,6 +4167,10 @@ function writeConfirmedTree(tree, persistNow) {
 // since the config engine v2 (below) nobody writes it whole: edits travel as
 // id-keyed field ops applied by a transaction to the server's CURRENT value.
 let fbConfigRef = null;
+// The newest week-config snapshot the listener has handed over (canonical form) and how many it has handed over: a commit's own
+// completion can arrive AFTER a colleague's newer snapshot, see cfgPushCommitted.
+let cfgLastRemote = null;
+let cfgRemoteSeq = 0;
 let pushConfigTimer = null;
 let applyingRemoteConfig = false;
 
@@ -4615,6 +4619,8 @@ function applyRemoteConfig(remote, opts) {
   const beforeJson = JSON.stringify(syncCanon(state.config));
   const v0 = remote && remote.version;
   const remoteCanon = cfgCanon(remote);
+  cfgLastRemote = remoteCanon;
+  cfgRemoteSeq++;
   const localCanon = cfgCanon(state.config);
   const base = cfgBaseTree();
   const mine = opts && opts.mine ? opts.mine : (base && directorTab() ? treeDiff(base, localCanon, CFG_DEPTHS) : {}); // directorTab, not canEdit: a counselor preview must never make this phone drop its unconfirmed edits
@@ -4891,6 +4897,7 @@ function pushConfig() {
   const ops = treeDiff(base, atPush, CFG_DEPTHS);
   if (!Object.keys(ops).length) return;
   pendingConfigWrites++;
+  const seq0 = cfgRemoteSeq;
   const settle = () => {
     pendingConfigWrites = Math.max(0, pendingConfigWrites - 1);
     if (configPushOwed) { configPushOwed = false; pushConfig(); }
@@ -4909,7 +4916,7 @@ function pushConfig() {
       return JSON.parse(JSON.stringify(configForSync(cfgFromCanon(r.tree, new Date().toISOString()))));
     }, null, false).then((res) => {
       try {
-        if (res && res.committed) cfgPushCommitted(res.snapshot.val(), ops, dropped);
+        if (res && res.committed) cfgPushCommitted(res.snapshot.val(), ops, dropped, seq0);
         else console.warn('config push aborted: the node is gone on the server; it will be re-seeded');
       } finally { settle(); }
     }, (e) => { settle(); configPushFailed(e); });
@@ -4925,7 +4932,7 @@ function pushConfig() {
 // the base to the committed value without that would make the next diff "undo"
 // somebody else's change.) The push-time tree is the base plus the ops we sent — a
 // snapshot that landed mid-push has already rebased the base, and this follows it.
-function cfgPushCommitted(serverVal, ops, txnDropped) {
+function cfgPushCommitted(serverVal, ops, txnDropped, seq0) {
   const server = cfgCanon(serverVal);
   const localBefore = cfgCanon(state.config);
   const atPush = applyOpsSafe(cfgBaseTree() || {}, ops, CFG_ANCHORS).tree;
@@ -4943,6 +4950,20 @@ function cfgPushCommitted(serverVal, ops, txnDropped) {
     remoteJustApplied = true; // others' changes rode in with the commit
     renderAllWhenIdle();
   }
+  // The committed value is the transaction's OWN output, handed over a tick after the server took it. A colleague's commit right
+  // behind ours can reach the listener first and is adopted the moment it lands; adopting the older committed value just now moved this
+  // phone's copy and baseline back behind it, and the listener will not fire again for a state it has already shown, so the colleague's
+  // field would stay missing until the next change (seen in tests/emulator/games-client.mjs, two directors saving at once). Settle it
+  // by reading once more. Only when a snapshot landed during the push and differs from what the commit returned.
+  if (seq0 !== undefined && cfgRemoteSeq !== seq0 && cfgLastRemote && JSON.stringify(cfgLastRemote) !== JSON.stringify(server)) cfgSettleReread();
+}
+
+function cfgSettleReread() {
+  const ref = fbConfigRef;
+  if (!ref || typeof ref.once !== 'function') return;
+  try {
+    ref.once('value').then((snap) => { if (fbConfigRef === ref && configReady) onConfigSnapshot(snap.val()); }, () => { /* the next snapshot settles it */ });
+  } catch (e) { /* a read that cannot start leaves it to the next snapshot */ }
 }
 
 // The builder's save is the one write this app used to lose in silence (the
