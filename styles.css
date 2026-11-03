@@ -320,11 +320,18 @@ body.dark-theme,
    --team-accent. The renderer writes the light / dark pair (app.js teamAccentVars: the ONE place a team colour
    is laundered, from a palette swatch or the camp's older single colour) and these rules pick the half for the
    theme in force. A team with no colour writes neither, so --team-accent is invalid and every
-   var(--team-accent, var(--color-primary)) falls back to the app primary, as before. */
+   var(--team-accent, var(--color-primary)) falls back to the app primary, as before.
+   --team-fill is for a SOLID fill under white text (the Big Board's "+"): always the LIGHT half,
+   in both themes. The dark half is a pastel (it is text and outline colour on the dark surface), and white on
+   it measured 1.7–2.3:1; the light half carries white at 5.4:1 and up. Without a colour it is the camp-blue
+   roof (white 6.5:1), never --color-primary, which is a pastel in dark too. */
 .follow-team-card,
 .board-col,
 .board-tally-row {
   --team-accent: var(--team-accent-l);
+}
+.board-col {
+  --team-fill: var(--team-accent-l, var(--roof));
 }
 :root[data-jelly-mode="dark"] :is(.follow-team-card, .board-col, .board-tally-row) {
   --team-accent: var(--team-accent-d, var(--team-accent-l));
@@ -4392,6 +4399,12 @@ div.hub-row {
   font: 650 0.875rem/1.32 var(--font-ui);
   color: var(--ink);
 }
+/* A gentle NOTE in the same slot (a hard-to-read original colour, a day still on the sample schedule, asking left on): not a
+   problem, so it never reads as one beside a "Ready" tick — ink-2, regular weight. */
+.hub-problem[data-tone="note"] {
+  font-weight: 450;
+  color: var(--ink-2);
+}
 /* The mark: a glyph drawn here from data-mark, and its word. Never colour
    alone (§8.9): a check, a "!" disc, a ring, a dash — each also says it. */
 .hub-mark {
@@ -6661,6 +6674,39 @@ html.calm-motion .lock-box.shake { animation: none; }
 #auth-denied jelly-button {
   margin-bottom: 0.6rem;
 }
+/* The denied screen reads as one left-aligned column (its line, the ask form, the sent / closed words, the way out), the logo with
+   it: a centred heading over a left-aligned form read as two layouts. "Use a different account" is the frame's quiet button. */
+#auth-denied {
+  text-align: left;
+}
+.lock-box:has(> #auth-denied:not([hidden])) .lock-logo {
+  justify-content: flex-start;
+}
+#auth-denied .auth-switch,
+#auth-denied .ask-added {
+  display: block;
+  width: fit-content;
+}
+#auth-denied .btn-quiet:not(#ask-withdraw) {
+  justify-self: start;
+  text-align: left;
+}
+#auth-denied .ask-join {
+  margin-bottom: 0;
+}
+/* A long address at large text breaks rather than run off the screen (it is one unbreakable word otherwise). */
+#auth-denied-email {
+  overflow-wrap: anywhere;
+}
+/* A quiet button's words line up with the column's left edge (its 16px of padding hangs outside it). */
+#auth-denied .auth-switch,
+#auth-denied .ask-added,
+#auth-denied .ask-closed .btn-quiet {
+  margin-left: calc(-1 * var(--s-4));
+}
+#auth-denied .auth-switch {
+  margin-top: 4px;
+}
 .auth-denied-note {
   color: var(--color-text-muted);
   font-size: 0.9rem;
@@ -8231,15 +8277,18 @@ html.calm-motion .points-pulse td { animation: none; }
   margin-top: 0.3rem;
 }
 
-/* Rank pill in the team accent, darkened just enough that white text stays
-   legible for every team color in both light and dark themes. */
+/* Rank pill: a TAG in the team's colour (§8.4: team colour is an outline, never a fill behind small text).
+   Ink on the sheet reads at 12:1 and up in both themes whatever the team's colour; the outline is the half
+   for the theme in force (a pastel on the dark sheet, the deep value on paper). It used to be white on an 84%
+   accent fill, which fell to 1.7:1 on a palette colour's dark half and 2.9:1 on the older pumpkin orange. */
 .follow-rank-pill {
   font-size: 0.72rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 0.03em;
-  color: #fff;
-  background: color-mix(in srgb, var(--team-accent, var(--color-primary)) 84%, #000);
+  color: var(--ink);
+  background: var(--sheet);
+  box-shadow: inset 0 0 0 2px var(--team-accent, var(--color-primary));
   padding: 0.16rem 0.55rem;
   border-radius: 999px;
   white-space: nowrap;
@@ -12053,8 +12102,10 @@ select.form-input {
   min-width: 3.4rem;
   min-height: 2.9rem;
   font-size: 1.4rem;
-  background: var(--team-accent, var(--color-primary));
-  border-color: var(--team-accent, var(--color-primary));
+  /* The light half, 22% toward black: white on it is 4.6:1 or better for every palette swatch AND for the
+     camps' older single colours (junior's pumpkin orange was 2.9:1 undarkened), in both themes. */
+  background: color-mix(in srgb, var(--team-fill, var(--roof)) 78%, #000);
+  border-color: color-mix(in srgb, var(--team-fill, var(--roof)) 78%, #000);
   color: #fff;
 }
 
@@ -14284,16 +14335,46 @@ html.counselor-preview .sheet {
    boundary at 3:1 whatever the colour, and its name always follows it. */
 .tms-dot {
   display: inline-block;
-  width: 12px;
-  height: 12px;
-  margin-right: 6px;
+  width: .8em;
+  height: .8em;
+  margin-right: .4em;
   border-radius: 50%;
   background: var(--team, var(--ink-3));
   box-shadow: inset 0 0 0 1.5px var(--ink);
-  vertical-align: -1px;
+  vertical-align: -.05em;
 }
-#teams-weak .sched-add {
+/* The weak-colour note sits a step under the list, as the Cleanup fairness line does (it sat flush, 0px). Its mark is the gold "!"
+   (the pennant is the Teams icon and, on senior, the teams' own marks); the link under it names the same teams and ends in a chevron. */
+.tms-weak {
+  margin-top: var(--s-3);
+}
+.tms-weak[hidden] {
+  display: none;
+}
+.tms-weak .setup-note {
+  margin: 0 2px;
+}
+.tms-weak .sched-add {
   margin-top: var(--s-1);
+}
+.tms-weak .sched-add .gl-chev {
+  width: 16px;
+  height: 16px;
+}
+/* A plain note whose mark is the gold "!" (a gentle warning in words, never a tinted callout, §8.1 rule 7). */
+.setup-bang::before {
+  content: '!';
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: inset 0 0 0 1.5px var(--gold-edge);
+  color: var(--gold-ink);
+  font: 900 0.75rem/1 var(--font-ui);
 }
 
 /* The team sheet: two panes under one sheet, the sheet's data-pane the switch (as the rain plan's item sheet). */
@@ -14387,6 +14468,9 @@ html.counselor-preview .sheet {
   opacity: .4;
   cursor: default;
 }
+.tms-emoji-taken {
+  margin-top: 6px;
+}
 /* Twelve swatches, two to a row: each a pill with the team on a light chip and a dark chip at once, so the director sees both
    themes without switching. The chip text is 16px or more, bold, at least 4.5:1 on its own surface (palette.test.js). */
 .tms-colors {
@@ -14404,13 +14488,16 @@ html.counselor-preview .sheet {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
+/* An unpicked swatch is a hairline tile (dashed means hidden or unavailable in this app, §8.5: twelve dashed tiles read as twelve
+   choices you can't make); the picked one wears the solid ink ring and a drawn check before its name. The border is 1px + 1px of
+   padding unpicked and 2px picked, so picking never shifts the tile's contents. */
 .tms-swatch {
   display: grid;
   gap: 2px;
   min-width: 0;
   min-height: var(--target);
-  padding: 4px;
-  border: 2px dashed var(--ink-3);
+  padding: 5px;
+  border: 1px solid var(--line-2);
   border-radius: var(--r-btn);
   background: none;
   color: var(--ink-2);
@@ -14418,11 +14505,31 @@ html.counselor-preview .sheet {
   cursor: pointer;
 }
 .tms-swatch[aria-checked="true"] {
-  border-style: solid;
-  border-color: var(--ink);
+  padding: 4px;
+  border: 2px solid var(--ink);
   background: var(--sheet);
   color: var(--ink);
   box-shadow: 0 2px 0 var(--edge);
+}
+.tms-swatch[aria-checked="true"] .tms-swatch-name::before {
+  content: '';
+  display: inline-block;
+  width: 5px;
+  height: 10px;
+  margin: 0 8px 0 3px;
+  border: solid var(--ink);
+  border-width: 0 2.5px 2.5px 0;
+  transform: rotate(45deg);
+  vertical-align: 1px;
+}
+.tms-color-now {
+  margin: 0 2px 8px;
+}
+.tms-color-now[hidden] {
+  display: none;
+}
+.tms-color-now .tms-dot {
+  margin: 0 0 0 4px;
 }
 .tms-chips {
   display: grid;
@@ -14475,7 +14582,8 @@ html.counselor-preview .sheet {
   aspect-ratio: 346 / 480;
   border-radius: 12px;
   background: repeating-conic-gradient(var(--paper-2) 0 25%, var(--sheet) 0 50%) 0 0 / 16px 16px;
-  box-shadow: inset 0 0 0 2px var(--ink), 0 2px 0 var(--edge);
+  /* An outline, not a control: the 2px bottom edge is for things you press (§8.1 rule 3). */
+  box-shadow: inset 0 0 0 2px var(--ink);
   overflow: hidden;
 }
 .tms-crop-canvas {
@@ -14556,6 +14664,19 @@ html.counselor-preview .sheet {
 }
 .people-ask {
   margin-bottom: var(--s-3);
+  container: ppl-ask / inline-size;
+}
+/* The switch and its On/Off word sit under the words, left-aligned with them, as on What counselors see at large text: these captions are
+   whole sentences, so the drop happens on every phone (25em of the list's own text), not only at large text (beside the switch the words
+   had 127px at 360px / 100%, 74px at 200%: one word a line, "Off" running into them). Side by side only on a tablet. */
+@container ppl-ask (max-width: 25em) {
+  .gl-row:has(> .gl-switch) {
+    grid-template-columns: 30px minmax(0, 1fr);
+  }
+  .gl-row:has(> .gl-switch) > .gl-switch {
+    grid-column: 2;
+    justify-self: start;
+  }
 }
 .ppl-sec {
   margin: var(--s-4) 0 0;
@@ -14667,16 +14788,55 @@ html.counselor-preview .sheet {
 .ppl-quote::after {
   content: "”";
 }
-.ppl-req .cb-end {
-  align-self: center;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  color: var(--link);
-  font: 750 0.9375rem/1.2 var(--font-ui);
+/* A request's note is a stranger's words: two lines here (the sheet shows all of it), so a long note can't push the team lists off screen.
+   The address wraps only before its "@" (the renderer's <wbr>); a word longer than the row still breaks rather than overflow. */
+.ppl-req .ppl-quote {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ppl-req .ppl-id {
+  overflow-wrap: break-word;
+}
+/* An empty team: its header alone, the gold "!" before "No counselors yet" where the count goes, then one quiet Add line. */
+/* …on its own line under the name, from the name's left edge (beside it, right-aligned, it read as a stray count). */
+.ppl-count[data-warn] {
+  flex: 1 0 calc(100% - 32px);
+  margin-left: 32px;
+  color: var(--ink);
+}
+.ppl-count[data-warn]::before {
+  content: "!";
+  display: inline-grid;
+  place-items: center;
+  width: 1.1em;
+  height: 1.1em;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: inset 0 0 0 1.5px var(--gold-edge);
+  color: var(--gold-ink);
+  font: 900 0.75rem/1 var(--font-ui);
+  vertical-align: 1px;
+}
+.ppl-group[data-empty] .ppl-head {
+  margin-bottom: 0;
+}
+.ppl-add-to {
+  margin: 0 0 0 calc(24px + 8px);
+}
+/* The clipboard's time column is ~76px for "10:00 AM"; a crest (Teams) or an initial (People) needs 48. The width goes to the words
+   (a team row wrapped to four or five lines at 360px). Only above the clipboard's own large-text switch (18em): under it the rows put
+   the mark on its own line above the title (.cb-row's container query), and this must not undo that. */
+@container (min-width: 18.01em) {
+  .tms-row,
+  .ppl-row:not(.ppl-req) {
+    grid-template-columns: 3rem minmax(0, 1fr) auto;
+  }
 }
 .ppl-blocked-btn {
-  margin-top: var(--s-4);
+  margin-top: var(--s-2);
 }
 .ppl-link-btn {
   display: inline;
@@ -14788,9 +14948,12 @@ html.counselor-preview .sheet {
 .ppl-pick-list .fld-input {
   min-width: 0;
 }
-@container (max-width: 18em) {
+/* The team select goes under the name on every phone (26em of the list's own text: wider only on a tablet): beside the name it was cut
+   mid-letter ("Turkey Dinnei") at 390px, and team names are long. */
+@container (max-width: 26em) {
   .ppl-pick-list .cb-row {
     grid-template-columns: minmax(0, 1fr);
+    row-gap: 6px;
   }
 }
 .ppl-pane[hidden],
@@ -14840,10 +15003,18 @@ html.counselor-preview .sheet {
 .msg-remove[data-join-see] {
   min-width: var(--target);
   justify-content: center;
+  gap: 2px;
   padding: 0 10px;
   margin-inline: -10px 0;
   color: var(--link);
+  font: 750 1rem/1.35 var(--font-ui); /* 16px: link ink on the dark message tint is 6.3:1, which §8.1 rule 6 allows from 16px, not under */
 }
+.msg-remove[data-join-see] .ico {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.6;
+}
+
 
 /* Large text: the candidate rows (a dot, then the name) and the lists that have no time column drop the clipboard's two-line grid areas
    (.cb-row's own container query) for one plain column, so a name keeps the whole width at 200% instead of 72px. */
@@ -14935,6 +15106,7 @@ html.counselor-preview .sheet {
 }
 .cmp-held .btn-quiet {
   justify-self: start;
+  margin-left: calc(-1 * var(--s-4)); /* its words line up with the text above (the 16px of padding hangs outside) */
 }
 .cmp-undo {
   display: flex;

@@ -53,6 +53,8 @@ async function audit(page, label, scope) {
       if (r.width < 43.5 || r.height < 43.5) out.push('target ' + (el.id || (typeof el.className === 'string' ? el.className : '') || el.tagName) + ' ' + Math.round(r.width) + 'x' + Math.round(r.height) + ' "' + (el.textContent || '').trim().slice(0, 24) + '"');
     });
     root.querySelectorAll('.cb-title, .cmp-chip, .ppl-head-name').forEach((el) => { if (vis(el) && (el.textContent || '').trim().length > 12 && el.getBoundingClientRect().width < 80 && !el.classList.contains('cmp-chip')) out.push('title squeezed ' + Math.round(el.getBoundingClientRect().width) + 'px "' + el.textContent.slice(0, 20) + '"'); });
+    // A switch row's words squeezed beside its switch (the design review's People / Campers finding: 74px at 360px / 200%).
+    root.querySelectorAll('.gl-row .gl-text').forEach((el) => { if (vis(el) && el.getBoundingClientRect().width < 150) out.push('switch-row words squeezed ' + Math.round(el.getBoundingClientRect().width) + 'px "' + el.textContent.trim().slice(0, 24) + '"'); });
     if (!audited) out.push('audited NOTHING (hidden or inert scope)');
     return out;
   }, scope);

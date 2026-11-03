@@ -874,6 +874,8 @@ function paintHub() {
     const prob = st.problems[0] || st.note || '';
     setTextIfChanged(e.prob, prob);
     setHiddenIfChanged(e.prob, !prob);
+    // A note (no problem) is painted quietly: the row may say "Ready" and still carry one, and it must not read as a problem.
+    setDataIfChanged(e.prob, 'tone', !st.problems[0] && st.note ? 'note' : null);
     if (e.mark) {
       if (e.mark.dataset.mark !== st.mark) e.mark.dataset.mark = st.mark;
       setTextIfChanged(e.word, st.word);
@@ -5149,7 +5151,8 @@ const TEAM_PHOTO_AIM = 70000; // JPEG quality steps down until the data URL is t
 
 const teamUi = {
   edit: null,     // the open team sheet: { id, origin, color, asked, pane, crop, busy, touched }
-  colors: false,  // the "Pick colours for the flagged teams" sheet is meant to be open
+  colors: false,  // the "Pick new colours" sheet is meant to be open
+  colorsFor: null, // the teams it opened for (each keeps its block until the sheet closes)
 };
 
 // ── the model: everything the screen, the hub row and the colours sheet say about a team ──
@@ -5199,9 +5202,25 @@ function teamsModel() {
 
 // ── the screen ──
 
+// "Pumpkins and Pilgrims are hard to read in dark mode" / "Pumpkins is hard to read in light mode, Pilgrims in dark mode": the weak
+// colours, NAMED (the screen's note and its link must point at teams the director can find on the list above). Short names, in team order.
+function teamsWeakSentence(ids) {
+  const nameOf = (id) => teamShort(id) || teamName(id) || id;
+  const modes = (id) => hubJoin(teamColorInfo(id).weak);
+  const byModes = {};
+  ids.forEach((id) => { (byModes[modes(id)] = byModes[modes(id)] || []).push(nameOf(id)); });
+  const keys = Object.keys(byModes);
+  if (keys.length === 1) return hubJoin(byModes[keys[0]]) + (byModes[keys[0]].length === 1 ? ' is' : ' are') + ' hard to read in ' + keys[0] + ' mode.';
+  return keys.map((k, i) => hubJoin(byModes[k]) + (i ? '' : byModes[k].length === 1 ? ' is hard to read' : ' are hard to read') + ' in ' + k + ' mode').join(', ') + '.';
+}
+
 function teamRowHtml(r) {
   const dot = r.color.id || r.color.legacy ? '<i class="tms-dot" data-team="' + esc(r.id) + '"' + teamAccentAttr(r.id) + ' aria-hidden="true"></i>' : '';
-  const colorWords = r.color.name ? dot + esc(r.color.name) + (r.shares.length ? ' · same as ' + esc(r.shares.map((x) => teamShort(x) || teamName(x)).join(', ')) : '') : 'No colour yet';
+  // The camp's own built-in colour reads "Original colour" (the glossary of the shipped screens: "The original menu"); one that is weak on a
+  // theme says so on its own line's words, so the note under the list names a team the director can see here.
+  const colorName = r.color.legacy ? 'Original colour' : r.color.name;
+  const weakWords = r.color.weak.length ? ' · hard to read in ' + hubJoin(r.color.weak) + ' mode' : '';
+  const colorWords = colorName ? dot + esc(colorName) + esc(weakWords) + (r.shares.length ? ' · same as ' + esc(r.shares.map((x) => teamShort(x) || teamName(x)).join(', ')) : '') : 'No colour yet';
   const sub = [r.short ? esc(r.short) : '', r.emoji ? esc(r.emoji) : '', colorWords].filter(Boolean).join(' · ');
   return '<button type="button" class="cb-row sec-row tms-row" data-key="t-' + esc(r.id) + '" data-team-open="' + esc(r.id) + '"' + (r.warn ? ' data-warn' : '') + '>' +
     '<span class="cb-time tms-mark">' + teamMarkHtml(r.id, { size: 40 }) + '</span>' +
@@ -5222,10 +5241,11 @@ function renderTeamsScreen() {
   const repair = st.problems.find((p) => /team slots/.test(p)) || '';
   setTextIfChanged(setupEl('teams-repair-text'), repair);
   setHiddenIfChanged(setupEl('teams-repair'), !repair);
-  // Last year's colours that are hard to see on a theme: a gentle note with the one place to fix them all.
-  const weakNames = m.weak.map((id) => teamName(id));
-  setTextIfChanged(setupEl('teams-weak-text'), weakNames.length ? st.note || '' : '');
-  setHiddenIfChanged(setupEl('teams-weak'), !weakNames.length);
+  // Original colours that are hard to see on a theme: a gentle note that NAMES them, and the one place to fix them all, named too.
+  const weakShort = m.weak.map((id) => teamShort(id) || teamName(id) || id);
+  setTextIfChanged(setupEl('teams-weak-text'), weakShort.length ? teamsWeakSentence(m.weak) : '');
+  setTextIfChanged(setupEl('teams-weak-btn-text'), weakShort.length ? 'Pick new colours for ' + hubJoin(weakShort) : '');
+  setHiddenIfChanged(setupEl('teams-weak'), !weakShort.length);
   if (teamUi.colors && !m.weak.length) { teamUi.colors = false; if (shell.sheets.includes('team-colors')) shellSheetClose('team-colors'); }
 }
 
@@ -5310,13 +5330,15 @@ function renderTeamSheet() {
   const f = teamFormValues();
   setTextIfChanged(setupEl('sheet-team-edit-title'), e.pane === 'crop' ? 'Fit the photo' : 'Edit team');
   setHiddenIfChanged(setupEl('team-pane-back'), e.pane !== 'crop');
-  // The crest as it is drawn now (the photo, the shield, the flag or the emoji tile) and what the photo buttons offer.
-  paintTeamMark(setupEl('team-mark'), e.id, { size: 56 });
+  // The crest as it WILL be drawn (the photo, the shield, the flag or the emoji tile): a colour picked here shows on the flag or the
+  // tile at once, before Save, so the director sees the pick land on the team's own mark. Then what the photo buttons offer.
+  const markEl = setupEl('team-mark');
+  if (markEl) setHtmlIfChanged(markEl, teamMarkPreviewHtml(e.id, e.color, 56));
   const hasPhoto = teamPhotoVersion(e.id) !== null;
   setTextIfChanged(setupEl('team-photo-add-text'), hasPhoto ? 'Replace photo' : 'Add a photo');
   setHiddenIfChanged(setupEl('team-photo-remove'), !hasPhoto);
   const offline = !teamOnline();
-  setTextIfChanged(setupEl('team-photo-note'), offline ? 'Photos need a connection. Try again when you are back online.' : 'Cut to a shield shape. PNG if it has see-through parts, else JPEG.');
+  setTextIfChanged(setupEl('team-photo-note'), offline ? 'Photos need a connection. Try again when you are back online.' : 'We’ll fit it to the shield’s shape.');
   secSetDisabled(setupEl('team-photo-add'), e.busy);
   // Errors, each under its own field (aria-invalid on the field, the words under it).
   const probs = Object.assign({}, teamFormProblems(f), e.error || {});
@@ -5341,6 +5363,16 @@ function renderTeamSheet() {
   }).join(''));
   const swBox = setupEl('team-swatches');
   if (swBox && swBox.querySelectorAll) swBox.querySelectorAll('.tms-swatch').forEach((b) => { const on = String(b.dataset.teamColor === e.color); if (b.getAttribute('aria-checked') !== on) b.setAttribute('aria-checked', on); });
+  // No swatch picked: say what the team wears now, so twelve unpicked tiles never read as "nothing" (the camp's own colour, with its dot).
+  const nowEl = setupEl('team-color-now');
+  const legacyNow = !e.color && teamColorInfo(e.id).legacy;
+  if (nowEl) setHtmlIfChanged(nowEl, e.color ? '' : legacyNow ? 'Now: the original colour <i class="tms-dot" data-team="' + esc(e.id) + '"' + teamAccentAttr(e.id) + ' aria-hidden="true"></i>' : 'No colour yet: pick one.');
+  setHiddenIfChanged(nowEl, !!e.color);
+  // The counselor names typed here show only while nobody on this team signs in: say which is true right now.
+  const signedIn = typeof teamStaffNames === 'function' ? teamStaffNames(e.id) : [];
+  setTextIfChanged(setupEl('team-counselor-hint'), signedIn.length
+    ? 'Not shown now: ' + respellCounselorText(hubJoin(signedIn.map((n) => String(n)))) + (signedIn.length === 1 ? ' signs in for this team.' : ' sign in for this team.')
+    : 'Shown now: nobody on this team signs in yet.');
   // The emoji grid: the picked one is pressed, one another team uses is dimmed and says whose.
   const takenBy = {};
   others.forEach((x) => { const em = teamEmojiOwn(x); if (em) takenBy[em] = teamShort(x) || teamName(x); });
@@ -5348,6 +5380,9 @@ function renderTeamSheet() {
     '<button type="button" class="tms-emo" data-team-emoji="' + esc(em) + '" aria-pressed="false"' + (takenBy[em] ? ' aria-disabled="true" data-taken aria-label="' + esc(em + ', ' + takenBy[em] + ' uses it') + '"' : ' aria-label="' + esc(em) + '"') + '>' + esc(em) + '</button>').join(''));
   const grid = setupEl('team-emoji-grid');
   if (grid && grid.querySelectorAll) grid.querySelectorAll('.tms-emo').forEach((b) => { const on = String(b.dataset.teamEmoji === f.emoji); if (b.getAttribute('aria-pressed') !== on) b.setAttribute('aria-pressed', on); });
+  // Dimmed is never the only signal: one line under the grid says whose each dimmed emoji is.
+  const taken = TEAM_EMOJI_CHOICES.filter((em) => takenBy[em]).map((em) => em + ' ' + takenBy[em]);
+  setTextIfChanged(setupEl('team-emoji-taken'), taken.length ? 'Dimmed ones are taken: ' + taken.join(', ') + '.' : '');
   // The rename question, inline (never a dialog over the sheet): shown by Save when the name changed and nothing else of its identity did.
   const q = e.ask;
   setHiddenIfChanged(setupEl('team-rename-q'), !q);
@@ -5360,6 +5395,19 @@ function renderTeamSheet() {
   setTextIfChanged(setupEl('team-crop-use-text'), e.busy ? 'Saving the photo…' : 'Use this photo');
   secSetDisabled(setupEl('team-crop-use'), e.busy);
   if (rec) setTextIfChanged(setupEl('team-head-name'), rec.name || '');
+}
+
+// The team's mark with a colour picked in the sheet laid over it (unsaved): the flag's fill or the tile's edge follows the swatch for the
+// theme in force. A shield (artwork or a photo) wears no colour and is drawn as it is. The pair comes from the frozen palette constant, never
+// from anything stored, and replaces only the style teamMarkHtml wrote (its shape is fixed: `style="--tm:Npx…"`).
+function teamMarkPreviewHtml(id, cid, size) {
+  const html = teamMarkHtml(id, { size });
+  const sw = cid && cid !== teamColorId(id) && Object.prototype.hasOwnProperty.call(CAMP_TEAM_PALETTE, cid) ? CAMP_TEAM_PALETTE[cid] : null;
+  if (!sw) return html;
+  const pair = '--team-accent-l:' + sw.l + ';--team-accent-d:' + sw.d;
+  if (/^<svg class="tm flag"/.test(html)) return html.replace(/ style="--tm:(\d+)px[^"]*"/, ' style="--tm:$1px;' + pair + ';--flag-fill:var(--team)"');
+  if (/^<span class="tm tm-tile"/.test(html)) return html.replace(/ style="--tm:(\d+)px[^"]*"/, ' style="--tm:$1px;' + pair + ';--tm-accent:var(--team)"');
+  return html;
 }
 
 function teamTouched() {
@@ -5488,12 +5536,25 @@ function teamOnline() {
   return !!fbRef && !(fbConnKnown && !fbConnected);
 }
 
+// A sheet pane changing in place arrives from the side it came from, as the rain plan's panes do (§9.5): forward from the right, Back from
+// the left, the spring's overshoot spent as a small landing squash, never a slide past rest. Calm: a fade (no transform keyframe).
+function setupPaneArrive(el, back) {
+  if (!el || typeof JellyMotion === 'undefined') return;
+  const dir = back ? -1 : 1;
+  JellyMotion.play(el, 'arrive', (x) => {
+    const o = Math.max(0, x - 1);
+    return { opacity: Math.min(1, x * 1.6), transform: 'translateX(' + (dir * 24 * (1 - Math.min(1, x))) + 'px) scale(' + (1 - 0.6 * o) + ',' + (1 + 0.3 * o) + ')', transformOrigin: dir > 0 ? '0 50%' : '100% 50%' };
+  }, { calm: [{ opacity: 0 }, { opacity: 1 }] });
+}
+
 function teamSetPane(pane) {
   const e = teamUi.edit;
   if (!e) return;
+  const was = e.pane;
   e.pane = pane;
   if (pane === 'form') e.crop = null;
   renderTeamSheet();
+  if (was !== pane && typeof document !== 'undefined' && document.querySelector) setupPaneArrive(document.querySelector('#sheet-team-edit [data-team-pane="' + pane + '"]'), pane === 'form');
   const body = setupEl('team-form');
   if (pane === 'form' && body && body.scrollTo) { try { body.scrollTo(0, 0); } catch (x) { /* fine */ } }
 }
@@ -5647,29 +5708,42 @@ function teamPhotoRemove() {
 function teamColorsOpen(opener) {
   if (!canEdit() || !teamsModel().weak.length) return;
   teamUi.colors = true;
+  // The teams this sheet is FOR, fixed when it opens: a team keeps its block after its pick (now marked, "Now Teal"), so nothing moves up
+  // under the thumb between two taps (a solved block vanishing slid the next team's dots under the finger, and the second tap landed on it).
+  teamUi.colorsFor = teamsModel().weak.slice();
   setupSheet('team-colors', opener);
 }
 
 function renderTeamColorsSheet() {
   const m = teamsModel();
-  const rows = m.rows.filter((r) => r.color.weak.length);
-  setHtmlIfChanged(setupEl('team-colors-list'), rows.map((r) =>
-    '<div class="tms-flag" data-team-flag="' + esc(r.id) + '"><div class="tms-flag-head">' + teamMarkHtml(r.id, { size: 30 }) +
-    '<span class="tms-flag-name"><span class="cb-title">' + esc(r.name) + '</span><span class="cb-sub">Hard to read in ' + hubJoin(r.color.weak) + ' mode</span></span></div>' +
+  const weakNow = m.rows.filter((r) => r.color.weak.length).map((r) => r.id);
+  const ids = (teamUi.colorsFor && teamUi.colorsFor.length ? teamUi.colorsFor : weakNow).filter((id) => m.rows.some((r) => r.id === id));
+  const rows = ids.map((id) => m.rows.find((r) => r.id === id));
+  const list = setupEl('team-colors-list');
+  const act = typeof document !== 'undefined' ? document.activeElement : null;
+  const had = act && act.closest && act.closest('#team-colors-list [data-team-pick]') === act ? act : null;
+  setHtmlIfChanged(list, rows.map((r) => {
+    // What the block says under the name: still weak → why; picked → the colour it has now, in words (the dot alone has no name).
+    const sub = r.color.weak.length ? 'Hard to read in ' + hubJoin(r.color.weak) + ' mode' : r.color.id ? 'Now ' + r.color.name : '';
+    return '<div class="tms-flag" data-team-flag="' + esc(r.id) + '"' + (r.color.weak.length ? '' : ' data-done') + '><div class="tms-flag-head">' + teamMarkHtml(r.id, { size: 30 }) +
+    '<span class="tms-flag-name"><span class="cb-title">' + esc(r.name) + '</span><span class="cb-sub">' + esc(sub) + '</span></span></div>' +
     '<div class="tms-picks" role="radiogroup" aria-label="Colour for ' + esc(r.name) + '">' + Object.keys(CAMP_TEAM_PALETTE).map((cid) => {
       const sw = CAMP_TEAM_PALETTE[cid];
       const used = m.rows.filter((x) => x.id !== r.id && x.color.id === cid).map((x) => x.short || x.name);
-      return '<button type="button" class="tms-pick" role="radio" aria-checked="false" data-team-pick="' + esc(r.id) + '" data-color="' + cid + '" aria-label="' + esc(sw.name + (used.length ? ', also ' + used.join(', ') : '')) + '">' +
+      return '<button type="button" class="tms-pick" role="radio" aria-checked="' + (r.color.id === cid) + '" data-team-pick="' + esc(r.id) + '" data-color="' + cid + '" aria-label="' + esc(sw.name + (used.length ? ', also ' + used.join(', ') : '')) + '">' +
         '<span class="tms-pick-dot" style="--l:' + sw.l + ';--d:' + sw.d + '"></span></button>';
-    }).join('') + '</div></div>').join(''));
-  setTextIfChanged(setupEl('team-colors-lede'), rows.length ? 'Pick one for each. A colour another team uses stays pickable; the hub will say so.' : 'Every colour is easy to read now.');
+    }).join('') + '</div></div>';
+  }).join(''));
+  // A keyboard / switch user stays on the dot they just picked (the block was rewritten, in place).
+  if (had && list && list.querySelector) focusBack(true, list.querySelector('[data-team-pick="' + had.dataset.teamPick + '"][data-color="' + had.dataset.color + '"]'));
+  setTextIfChanged(setupEl('team-colors-lede'), weakNow.length ? 'Pick a colour for each team. Two teams can share one; Set up the week will point it out.' : 'Every colour is easy to read now.');
 }
 
 function teamColorSet(tid, cid) {
   if (!canEdit() || !teamColorValid(cid) || !teamRecord(tid)) return;
   stateEdit('Colour for ' + (teamName(tid) || tid), () => { const t = teamRecord(tid); if (!t) return false; t.color = cid; return true; });
   renderAll();
-  if (!teamsModel().weak.length) { teamUi.colors = false; shellSheetClose('team-colors'); setupSay('Every team’s colour is easy to read now.'); }
+  if (!teamsModel().weak.length) { teamUi.colors = false; teamUi.colorsFor = null; shellSheetClose('team-colors'); setupSay('Every team’s colour is easy to read now.'); }
 }
 
 // ── wiring ──
@@ -5834,12 +5908,30 @@ function peopleStatus() {
   });
 }
 
+// An address that may wrap only where it reads well: before the "@" (a phone number has none and never needs to).
+function peopleIdHtml(key) {
+  const id = String(identityFromKey(key) || '');
+  const at = id.indexOf('@');
+  return at > 0 ? esc(id.slice(0, at)) + '<wbr>' + esc(id.slice(at)) : esc(id);
+}
+
+// A request row ends in the chevron alone, as every row that opens something does (§8.1 rule 3): a "See" word beside it took the room the
+// address needed. A stranger's note is clamped to two lines here (CSS); the sheet shows all of it.
 function peopleReqRowHtml(r, now) {
-  return '<button type="button" class="cb-row ppl-row ppl-req" data-key="r-' + esc(r.key) + '" data-req="' + esc(r.key) + '">' +
+  return '<button type="button" class="cb-row ppl-row ppl-req" data-key="r-' + esc(r.key) + '" data-req="' + esc(r.key) + '" aria-label="' + esc(r.name + ', asking to join') + '">' +
     '<span class="cb-time"><small>' + esc(hubAgo(r.at, now)) + '</small></span>' +
-    '<span class="cb-main"><span class="cb-title">' + esc(r.name) + '</span><span class="cb-sub">' + esc(identityFromKey(r.key)) + '</span>' +
+    '<span class="cb-main"><span class="cb-title">' + esc(r.name) + '</span><span class="cb-sub ppl-id">' + peopleIdHtml(r.key) + '</span>' +
     (r.note ? '<span class="cb-sub ppl-quote">' + esc(r.note) + '</span>' : '') + '</span>' +
-    '<span class="cb-end">See<svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span></button>';
+    '<span class="cb-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span></button>';
+}
+
+// Somebody with no sign-in yet is what the hub counts (for a week after they were added, as hubStatus judges it): the gold "!" on their row
+// makes the headline's "N more things to check" findable on the list.
+function peoplePendingWarn(r) {
+  if (!r.pending) return false;
+  const at = Number(r.addedAt);
+  const now = typeof serverNow === 'function' ? serverNow() : Date.now();
+  return !(at > 0) || !now || now - at < HUB_PENDING_NAG_MS;
 }
 
 function peoplePersonRowHtml(r) {
@@ -5848,14 +5940,22 @@ function peoplePersonRowHtml(r) {
   const inner = '<span class="cb-time"><i class="ppl-face" aria-hidden="true">' + initial + '</i></span>' +
     '<span class="cb-main"><span class="cb-title">' + title + '</span><span class="cb-sub">' + esc(peopleStatusWords(r)) + '</span></span>';
   if (r.owner) return '<div class="cb-row ppl-row" data-key="p-' + esc(r.key) + '">' + inner + '<span class="cb-end"></span></div>';
-  return '<button type="button" class="cb-row ppl-row" data-key="p-' + esc(r.key) + '" data-person="' + esc(r.key) + '">' + inner +
+  return '<button type="button" class="cb-row ppl-row" data-key="p-' + esc(r.key) + '" data-person="' + esc(r.key) + '"' + (peoplePendingWarn(r) ? ' data-warn' : '') + '>' + inner +
     '<span class="cb-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span></button>';
 }
 
+// A team with nobody on it is its HEADER alone — the gold "!" and "No counselors yet" where the count goes, then one quiet "Add someone"
+// line for that team — never a bordered box saying "Nobody yet" (four empty teams made a screenful of identical boxes, §8.8).
 function peopleGroupHtml(key, mark, name, rows, none, campers) {
-  const counts = hubPlural(rows.length, 'person', 'people') + (campers !== null && campers !== undefined ? ' · ' + hubPlural(campers, 'camper', 'campers') : '');
+  const camp = campers !== null && campers !== undefined ? ' · ' + hubPlural(campers, 'camper', 'campers') : '';
+  if (!rows.length && none) {
+    return '<section class="ppl-group" data-key="g-' + esc(key) + '" data-empty><h3 class="ppl-head">' + mark + '<span class="ppl-head-name">' + esc(name) + '</span>' +
+      '<span class="ppl-count" data-warn>' + esc(none + camp) + '</span></h3>' +
+      '<button type="button" class="sched-add ppl-add-to" data-ppl-add-team="' + esc(key) + '" aria-label="' + esc('Add someone to ' + name) + '"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span>Add someone</span></button></section>';
+  }
+  const counts = hubPlural(rows.length, 'person', 'people') + camp;
   return '<section class="ppl-group" data-key="g-' + esc(key) + '"><h3 class="ppl-head">' + mark + '<span class="ppl-head-name">' + esc(name) + '</span><span class="ppl-count">' + esc(counts) + '</span></h3>' +
-    '<div class="gl cb-list">' + (rows.length ? rows.map(peoplePersonRowHtml).join('') : '<p class="ppl-none">' + esc(none) + '</p>') + '</div></section>';
+    '<div class="gl cb-list">' + rows.map(peoplePersonRowHtml).join('') + '</div></section>';
 }
 
 function renderPeopleScreen() {
@@ -5864,7 +5964,10 @@ function renderPeopleScreen() {
   const join = peopleJoinView();
   setTextIfChanged(setupEl('people-title'), 'People · ' + CAMP.label);
   setTextIfChanged(setupEl('people-headline'), st.problems.length ? st.problems[0] : st.summary);
-  setTextIfChanged(setupEl('people-lede'), st.problems.length > 1 ? hubPlural(st.problems.length - 1, 'more thing', 'more things') + ' to check' : st.problems.length ? 'Tap a person to see or change their access.' : 'Tap a person to change their team, role or sign-in.');
+  // The lede names the NEXT problem, as the hub's "Next:" line does (a bare "5 more things to check" pointed at nothing on the list).
+  const rest = st.problems.length - 2;
+  setTextIfChanged(setupEl('people-lede'), st.problems.length > 1 ? 'Next: ' + st.problems[1] + (rest > 0 ? ' · ' + hubPlural(rest, 'more thing', 'more things') + ' to check' : '')
+    : st.problems.length ? 'Tap a person to see or change their access.' : 'Tap a person to change their team, role or sign-in.');
   // the switch: the week's own meta/joinOpen, said in plain words either way
   const sw = setupEl('people-asking');
   if (sw && typeof sw.hasAttribute === 'function' && sw.hasAttribute('checked') !== join.on) sw.toggleAttribute('checked', join.on);
@@ -5885,7 +5988,7 @@ function renderPeopleScreen() {
   const g = peopleGroups(peopleRowsNow(), peopleTeams());
   let html = '';
   if (memberDirectoryLoaded) {
-    html = g.groups.map((x) => peopleGroupHtml(x.team.id, teamMarkHtml(x.team.id, { size: 24 }), x.team.name || x.team.id, x.rows, 'Nobody yet', campersStatus() === 'ok' ? campersCount(x.team.id) : null)).join('');
+    html = g.groups.map((x) => peopleGroupHtml(x.team.id, teamMarkHtml(x.team.id, { size: 24 }), x.team.name || x.team.id, x.rows, 'No counselors yet', campersStatus() === 'ok' ? campersCount(x.team.id) : null)).join('');
     if (g.none.length) html += peopleGroupHtml('none', '', 'Not on a team', g.none, '');
   }
   secPaintList(setupEl('people-groups'), html, 'groups', {});
@@ -6293,7 +6396,7 @@ async function peopleSaveTeamsSheet() {
 function peopleOpenAdd(opener, pane, o) {
   if (!canEdit()) return;
   if (!peopleOnline()) { setupSay(peopleWhy({ reason: 'offline' })); return; }
-  peopleUi.add = { pane: pane === 'one' ? 'one' : 'list', role: 'viewer', camps: 'active', fresh: true, busy: false, error: '', invite: (o && o.invite) || '' };
+  peopleUi.add = { pane: pane === 'one' ? 'one' : 'list', role: 'viewer', camps: 'active', fresh: true, busy: false, error: '', invite: (o && o.invite) || '', teamId: (o && o.teamId) || '' };
   setupSheet('people-add', opener);
 }
 
@@ -6312,7 +6415,7 @@ function peopleAddDirty() {
 function peopleAddPreviewHtml(parsed) {
   return parsed.rows.filter((r) => r.status !== 'empty').map((r, i) => {
     const team = r.teamId ? peopleTeamNameOf(r.teamId) : '';
-    const title = r.status === 'new' ? r.name + ' → ' + (team || 'no team')
+    const title = r.status === 'new' ? r.name + ' → ' + (team || 'Not on a team')
       : r.status === 'update' ? r.name + ' → put on ' + team
       : r.status === 'same' ? r.name + ' is already on the list'
       : r.name + ' is listed twice';
@@ -6330,7 +6433,7 @@ function renderPeopleAddSheet() {
   if (a.fresh) {
     a.fresh = false;
     ['ppa-lines', 'ppa-id', 'ppa-name'].forEach((id) => { const el = setupEl(id); if (el) el.value = ''; });
-    const sel = setupEl('ppa-team'); if (sel) { setHtmlIfChanged(sel, peopleOptionsHtml('')); sel.value = ''; }
+    const sel = setupEl('ppa-team'); if (sel) { setHtmlIfChanged(sel, peopleOptionsHtml(a.teamId || '')); sel.value = a.teamId || ''; }
   }
   if (sheet && sheet.dataset && sheet.dataset.pane !== a.pane) sheet.dataset.pane = a.pane;
   peopleSetSegChecked(setupEl('ppa-pane'), 'data-ppa-pane', a.pane);
@@ -6470,7 +6573,13 @@ function wirePeopleScreen() {
   const q = (e, sel) => (e.target && e.target.closest ? e.target.closest(sel) : null);
   on('#people-asking', 'change', (e) => { peopleToggleAsking(!!e.target.checked); });
   on('#people-requests', 'click', (e) => { const b = q(e, 'button[data-req]'); if (b) peopleOpenRequest(b.dataset.req, b); });
-  on('#people-groups', 'click', (e) => { const b = q(e, 'button[data-person]'); if (b) peopleOpenPerson(b.dataset.person, b); });
+  on('#people-groups', 'click', (e) => {
+    const b = q(e, 'button[data-person]');
+    if (b) { peopleOpenPerson(b.dataset.person, b); return; }
+    // An empty team's "Add someone": the one-person form, that team already picked.
+    const a = q(e, 'button[data-ppl-add-team]');
+    if (a && a.getAttribute('aria-disabled') !== 'true') peopleOpenAdd(a, 'one', { teamId: a.dataset.pplAddTeam });
+  });
   on('#people-teams-btn', 'click', (e) => peopleOpenTeams(e.currentTarget));
   on('#people-add-btn', 'click', (e) => peopleOpenAdd(e.currentTarget, 'list'));
   on('#people-blocked-btn', 'click', (e) => peopleOpenBlocked(e.currentTarget));
@@ -6522,7 +6631,12 @@ function wirePeopleScreen() {
       let b;
       const a = peopleUi.add;
       if (!a) return;
-      if ((b = q(e, '[data-ppa-pane]'))) { a.pane = b.dataset.ppaPane; a.error = ''; renderPeopleAddSheet(); }
+      if ((b = q(e, '[data-ppa-pane]'))) {
+        const was = a.pane;
+        a.pane = b.dataset.ppaPane; a.error = ''; renderPeopleAddSheet();
+        // the list / one-person switch is a pane change: the new pane arrives from the side its segment sits on
+        if (was !== a.pane) setupPaneArrive(document.querySelector('#sheet-people-add [data-ppa-body="' + (a.pane === 'one' ? 'one' : 'list') + '"]'), a.pane === 'list');
+      }
       else if ((b = q(e, '[data-ppa-role]'))) { a.role = b.dataset.ppaRole; renderPeopleAddSheet(); }
       else if ((b = q(e, '[data-ppa-camps]'))) { a.camps = b.dataset.ppaCamps; renderPeopleAddSheet(); }
       else if (q(e, '#ppa-roster')) peopleFillRoster();
@@ -6621,9 +6735,10 @@ function campersChipHtml(tid, c) {
 function campersGroupHtml(t) {
   const rows = campersFor(t.id);
   const name = String(t.name || '').trim() || t.id;
+  // A team with nobody says so where the count goes, and its "+ Add" chip is the row under it (a separate "Nobody yet" line, then the lone
+  // chip on a third line, repeated per empty team, made a stack of near-empty blocks).
   return '<section class="ppl-group cmp-group" data-key="g-' + esc(t.id) + '" aria-label="' + esc(name) + '"><h3 class="ppl-head">' + teamMarkHtml(t.id, { size: 24 }) +
-    '<span class="ppl-head-name">' + esc(name) + '</span><span class="ppl-count">' + esc(hubPlural(rows.length, 'camper', 'campers')) + '</span></h3>' +
-    (rows.length ? '' : '<p class="ppl-none">Nobody yet</p>') +
+    '<span class="ppl-head-name">' + esc(name) + '</span><span class="ppl-count">' + esc(rows.length ? hubPlural(rows.length, 'camper', 'campers') : 'Nobody yet') + '</span></h3>' +
     '<div class="cmp-chips">' + rows.map((c) => campersChipHtml(t.id, c)).join('') +
     '<button type="button" class="sec-chip cmp-chip cmp-add" data-key="add" data-camper-add="' + esc(t.id) + '" aria-label="Add a camper to ' + esc(name) + '"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>Add</button></div></section>';
 }
@@ -6752,7 +6867,11 @@ async function campersRemoveGo() {
   shellSheetClose('camper-edit');
   setupSay('Removed');
   campersSayUndo('Removed ' + was.name + '.', () => campersPut(was.tid, was.cid, { name: was.name, ord: was.ord }));
-  renderCampersScreen();
+  // The chip squashes out (scale and fade, as an elective chip taken off; calm: a fade), then the list closes the gap.
+  const sel = /^[\w-]+$/.test(was.tid) && /^[\w-]+$/.test(was.cid) ? '#campers-groups [data-camper="' + was.tid + '|' + was.cid + '"]' : '';
+  const chip = sel && typeof document !== 'undefined' && document.querySelector ? document.querySelector(sel) : null;
+  if (chip && typeof JellyMotion !== 'undefined' && JellyMotion.playOut) JellyMotion.playOut(chip, (x) => ({ opacity: 1 - x, transform: 'scale(' + (1 - 0.04 * x) + ')' }), 150, () => renderCampersScreen());
+  else renderCampersScreen();
 }
 
 // ── Add campers ──

@@ -11380,7 +11380,9 @@ function joinBarHtml() {
   const text = reqs.length === 1 ? reqs[0].name + ' is asking to join' : reqs.length + ' people are asking to join';
   return `<div class="msg" data-kind="join" data-key="join" role="status">` +
     `<span class="msg-ico" aria-hidden="true"><svg class="ico"><use href="#i-people"/></svg></span>` +
-    `<div class="msg-body"><p class="msg-text">${esc(text)}</p><p class="msg-meta"><span>People</span><button type="button" class="msg-remove" data-join-see>See</button></p></div>` +
+    // One link that says where it goes ("People   See" read as the phrase "People See"), at 16px: link ink on the dark message tint is
+    // 6.3:1, which clears the contrast rule from 16px, never at the 13px meta size.
+    `<div class="msg-body"><p class="msg-text">${esc(text)}</p><p class="msg-meta"><button type="button" class="msg-remove msg-join-see" data-join-see>See who’s asking<svg class="ico" aria-hidden="true"><use href="#i-chev-r"/></svg></button></p></div>` +
     `<button type="button" class="msg-x" data-join-x aria-label="Dismiss this on this phone"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button></div>`;
 }
 
@@ -12709,7 +12711,12 @@ function teamMarkSpec(id) {
   const color = CAMP.teamFlag && CAMP.teamFlag[id];
   if (TEAM_FLAG_COLORS.includes(color)) {
     const i = Math.max(0, teamIds().indexOf(id));
-    return { kind: 'flag', color, shape: TEAM_FLAG_SHAPES[i % TEAM_FLAG_SHAPES.length] };
+    // A colour picked on the Teams screen IS the team's colour (§8.1 rule 5: one team, one colour): the flag's fill comes
+    // from the palette swatch the record names (the half for the theme in force), and only the camp's built-in flag colour
+    // stands in while the team has none. The SHAPE stays the team's order. `accent` is teamAccentVars' laundered pair.
+    const accent = teamColorId(id) ? teamAccentVars(id) : '';
+    return accent ? { kind: 'flag', color, shape: TEAM_FLAG_SHAPES[i % TEAM_FLAG_SHAPES.length], accent }
+      : { kind: 'flag', color, shape: TEAM_FLAG_SHAPES[i % TEAM_FLAG_SHAPES.length] };
   }
   // The accent goes into a style attribute: only what teamAccentVars let through (hex digits and fixed names) ever does.
   return { kind: 'tile', emoji: teamEmoji(id), accent: teamAccentVars(id) };
@@ -12727,7 +12734,9 @@ function teamMarkHtml(id, opts) {
     return `<img class="tm tm-shield" data-team="${esc(id)}" src="${esc(spec.src)}" alt="${esc(label)}" style="${tm}" width="${size}" height="${Math.round(size * 667 / 480)}" decoding="async">`;
   }
   if (spec.kind === 'flag') {
-    return `<svg class="tm flag" data-team="${esc(id)}" data-flag="${spec.color}" style="${tm}" viewBox="0 0 32 32" ${a11y}><use href="#flag-${spec.shape}"/></svg>`;
+    // A picked palette colour beats the data-flag rule's fill (an inline custom property wins); [data-team] picks its theme half.
+    const fill = spec.accent ? ';' + spec.accent + ';--flag-fill:var(--team)' : '';
+    return `<svg class="tm flag" data-team="${esc(id)}" data-flag="${spec.color}" style="${tm}${fill}" viewBox="0 0 32 32" ${a11y}><use href="#flag-${spec.shape}"/></svg>`;
   }
   // The tile's edge is the team's colour for the theme in force: [data-team] turns the -l/-d pair into --team.
   return `<span class="tm tm-tile" data-team="${esc(id)}" style="${tm}${spec.accent ? ';' + spec.accent + ';--tm-accent:var(--team)' : ''}" ${a11y}>${spec.emoji}</span>`;
@@ -13901,6 +13910,7 @@ function askToJoinStart() {
   ask.busy = false;
   const panel = askEl('ask-join');
   if (panel) panel.hidden = true;
+  askPaintFrame();
   if (!ask.key || !isValidMemberKey(ask.key) || isPendingKey(ask.key)) return;
   if (typeof firebase === 'undefined' || !firebase.database) return;
   const name = askEl('ask-name');
@@ -13939,10 +13949,24 @@ function askLoadRow(campId) {
 function askNow() { return Date.now() + ask.offset; }
 
 // The panel from the state: the form, the "sent" card, or the closed words — one of them, never two.
+// The denied screen around the panel: its line says what this page offers (asking, when the panel is up), and the legacy
+// "I've been added — try again" steps aside while the panel offers its own (one way to do each job, in one button language).
+function askPaintFrame() {
+  const note = document.getElementById('auth-denied-note');
+  if (note) {
+    const t = ask.ready ? 'This account isn’t on the camp list yet. Ask to join below, or ask a director to add you.'
+      : 'This account isn’t on the camp list yet — ask a director to add you, then try again.';
+    if (note.textContent !== t) note.textContent = t;
+  }
+  const retry = document.getElementById('auth-retry-btn');
+  if (retry && retry.hidden !== !!ask.ready) retry.hidden = !!ask.ready;
+}
+
 function askPaint() {
   const panel = askEl('ask-join');
   if (!panel) return;
   panel.hidden = !ask.ready;
+  askPaintFrame();
   const row = ask.rows[ask.camp];
   const showForm = !row && !ask.closed;
   const form = askEl('ask-form');
@@ -13960,6 +13984,8 @@ function askPaint() {
   if (send) { send.disabled = ask.busy; send.setAttribute('aria-disabled', ask.busy ? 'true' : 'false'); }
   const withdraw = askEl('ask-withdraw');
   if (withdraw) withdraw.hidden = !(row && askNow() - row.at >= ASK_WITHDRAW_MS);
+  const added = askEl('ask-added');
+  if (added) added.hidden = !!row;
   askSay('ask-wait', row ? (ask.expired ? 'Still waiting? Find a director — they’ll see your request under More → People.' : 'Checking every 30 seconds while this page is open.') : '');
   if (row) askScheduleWithdraw(row);
 }
@@ -14082,6 +14108,7 @@ function wireAskToJoin() {
   on('ask-withdraw', 'click', askWithdraw);
   on('ask-check', 'click', () => askPoll(true));
   on('ask-again', 'click', () => { ask.closed = false; askPaint(); });
+  on('ask-added', 'click', () => location.reload());
   const camps = askEl('ask-camps');
   if (camps) camps.addEventListener('click', (e) => { const b = e.target && e.target.closest ? e.target.closest('[data-ask-camp]') : null; if (b) askPickCamp(b.dataset.askCamp); });
   // Coming back to the page (the tab shown, the window focused) is the moment to look — never more than once in five seconds.

@@ -627,7 +627,10 @@ never rebuilds a segmented control under a finger.
   `teamMarkSpec(id)` → a **shield** image when the camp ships artwork
   (`CAMP.teamCrest`, junior), else a **flag** (`CAMP.teamFlag`, senior: red /
   blue / green / gold; the SHAPE — plain, swallowtail, stripe, chevron — comes
-  from the team's ORDER so two teams stay apart under colour-blindness), else an
+  from the team's ORDER so two teams stay apart under colour-blindness; a palette
+  colour picked on the Teams screen FILLS the flag, `spec.accent` → an inline
+  `--flag-fill:var(--team)` beside `teamAccentVars`' pair, so one team wears one
+  colour everywhere; the TV page has no team records and keeps the built-in hue), else an
   emoji **tile** (its accent goes into `style` only if it is a plain hex).
   `teamMarkHtml(id, {size, label})` is the markup (`.tm`, sized by `--tm`);
   **`paintTeamMark(el, id, opts)` writes through `setHtmlIfChanged`**, so the
@@ -1175,8 +1178,10 @@ each as it wires it, so the live app never shows a dead control. Rules for whoev
   navy in light and near-white in dark.
 - **More**: `#tell-row` (`data-more-row="tell"`, `#tell-row-sub`; `data-live` puts a link-blue dot
   before the words while something is up: "Up now: a banner and the notice") and `#award-row`
-  (`data-more-row="award"`) open the Director group, in §7.1's order. The join badge slot on Set up the
-  week (`#more-join-count`, `.gl-count`, rides the title line) is painted by Step 25's `renderJoinBadges` ("2 asking to join").
+  (`data-more-row="award"`) open the Director group, in §7.1's order. The join count is said ONCE, on the
+  People row (`#more-join-count`, `.gl-count`, rides the title line; at the row end it squeezed the words to 21px
+  at 200%), painted by Step 25's `renderJoinBadges` ("2 asking to join"); Set up the week keeps its plain subline.
+  `#more-people-count` is a hidden, aria-hidden duplicate kept only for `people-screen.test.js`'s pin.
 - **Shared pieces**: `.dt-h` / `.dt-h-row` / `.dt-h-note` (a section's name in ink-2, sentence case,
   a note that wraps under it), `.dt-mark` (the small gold "!"), `.tell-body` / `.award-body` are grids
   with ONE gap (a hidden section takes its space with it). New icons: `#i-bolt` (double points),
@@ -1458,7 +1463,8 @@ rest of Step 14, in setup-ui.js: see "Set up the week: behaviour" below); with n
   `data-not-owner`). Rows `[data-hub-row=week|schedule|games|teams|people|
   campers|meals|verses|cleanup|electives|alerts|notice|restore]` each carry
   `[data-hub-summary]`, `[data-hub-problem]` (hidden when none; it spans the
-  row's full width), `[data-hub-here]` (another director's initial) and
+  row's full width; `data-tone="note"` when it carries a gentle note and no problem — ink-2, regular weight, so a
+  "Ready" row with a note never reads as a problem), `[data-hub-here]` (another director's initial) and
   `[data-hub-mark][data-mark=ok|warn|todo|skip|info|soon]` + `[data-hub-word]`
   — CSS draws the glyph (check / gold "!" / ring / dash), never an emoji. **A
   row whose screen exists is a `<button>` with a chevron** (games, teams,
@@ -2681,7 +2687,10 @@ reuses) an accessor in the block.
   renderers write ` style="…"` through `teamAccentAttr(id)`, the follow card patches its element
   through `paintTeamAccent(el, id)` (writes only what changed), and the emoji tile takes the pair
   too; styles.css "Team accent" turns the pair into `--team-accent` for the theme in force (and
-  `[data-team]` into `--team`). Add no new raw interpolation of a team colour: `tests/palette.test.js`
+  `[data-team]` into `--team`). **A solid fill under white text never takes the dark half** (a pastel:
+  white on it was 1.7–2.3:1): the Big Board's "+" reads `--team-fill` (the LIGHT half in both themes, 22%
+  toward black, roof blue without a colour: 4.6:1 and up for every swatch and both camps' older colours),
+  and the follow card's rank pill is an outlined tag (ink on the sheet, the theme's half as its outline). Add no new raw interpolation of a team colour: `tests/palette.test.js`
   scans app.js for one and runs a list of hostile strings through the accessor.
 - **The guard's reach** (`tests/seam.test.js`): per-line regexes for the
   constants, `CAMP.<field>` (also `CAMP?.`), `state.config.days|games` (also
@@ -3969,16 +3978,24 @@ field, to the camp's own constant while the record doesn't carry it.
 - **The Teams screen** (setup-ui.js section 13; `#setup[data-screen="teams"]`, `state.ui.builderScreen`
   `teams`; the hub's Teams row opens it, the classic Teams tab stays in the Classic editor): a fixed
   list, one clipboard row per team slot (`.cb-row.sec-row.tms-row`, keyed `t-<id>`, painted through
-  `secPaintList`): the crest in the time column, the name, `short · emoji · ● colour name` ("Last year's
-  colour" for an older one, "same as Turkey" when shared; the gold "!" marks a team the hub would flag)
-  and the counselors line. **No Add, Delete or reorder** (the slots `t0…tN` key results, the rota, alerts
+  `secPaintList`): the crest in a 3rem time column (wider rows: `.tms-row` / `.ppl-row` above the clipboard's 18em
+  switch), the name, `short · emoji · ● colour name` ("Original colour" for the camp's own, "· hard to read in dark
+  mode" when it is weak, "same as Turkey" when shared; the dot is sized in em; the gold "!" marks a team the hub would
+  flag) and the counselors line. Under the list, a weak original colour is a gold-"!" note that NAMES the teams
+  (`teamsWeakSentence`: "Pumpkins is hard to read in light mode, Pilgrims in dark mode.") and a plain link "Pick new
+  colours for Pumpkins and Pilgrims ›". **No Add, Delete or reorder** (the slots `t0…tN` key results, the rota, alerts
   and the rules; a test pins that the code never assigns `state.teams`). A row opens ONE sheet,
   `#sheet-team-edit` (`teamUi.edit`; a shell sheet, one at a time, `data-pane` form | crop):
   **Team name** (1–60), **Short name** (1–20), **Emoji** (an input and a grid; one another team uses is
   dimmed and says whose), **Colour** (twelve swatches, `role=radio`, each a pill with the team's short
-  name on a light chip and a dark chip at once, a hairline round the pair; a colour another team uses
-  stays pickable), **Shield or flag photo**, **Counselors** (the typed fallback text, "Shown only for
-  teams with no counselor accounts"). The fields show what the team shows now (its own value, else the
+  name on a light chip and a dark chip at once, a hairline round the pair; an unpicked swatch is a hairline
+  tile — dashed means unavailable in this app — the picked one the solid ink ring and a drawn check; with none picked
+  "Now: the original colour ●" says what the team wears; a colour another team uses stays pickable; the head
+  mark previews a picked colour on a flag or tile before Save, `teamMarkPreviewHtml`), **Shield or flag photo**
+  ("We'll fit it to the shield's shape."), **Counselor names to show (only if nobody on this team signs in)**
+  (the typed fallback text; the line under it says whether it is shown now). Dimmed emoji are named in one line
+  under the grid ("Dimmed ones are taken: 🦊 Foxes"). The crop pane arrives from the side (`setupPaneArrive`, the
+  rain sheet's pane motion; calm: a fade). The fields show what the team shows now (its own value, else the
   camp's default), so opening and saving with no change writes nothing; Save writes ONLY the fields
   that changed, as ONE `stateEdit` (one Undo entry, per-field `teams/<i>/<field>` paths, the record
   looked up by id when it runs, so a colleague's change to another field of the team survives); an
@@ -4008,10 +4025,12 @@ field, to the camp's own constant while the record doesn't carry it.
   resolves nor rejects (a connection that dies mid-write) leaves the busy sheet waiting; the node may
   then be newer than the record's `photoV`, and a device whose `photoV` is older shows the shield or
   flag until the record catches up (a photo is only ever shown for the version it was asked about).
-- **Pick colours for the flagged teams** (`#sheet-team-colors`, `teamUi.colors`): listed only while some
-  team's older colour is hard to read on a theme (`teamsModel().weak`); a block per flagged team, its
-  mark and name, then twelve 44px swatches (a dot split light | dark); one tap is one commit
-  (`teamColorSet`, one Undo entry); the sheet closes itself when none is left.
+- **Pick new colours** (`#sheet-team-colors`, `teamUi.colors`; the Teams screen's "Pick new colours for …" link): listed
+  only while some team's older colour is hard to read on a theme (`teamsModel().weak`); a block per team the sheet
+  OPENED for (`teamUi.colorsFor`: a picked team keeps its block, marked — the dot `aria-checked` with its ring, "Now
+  Teal" under the name — so nothing moves up under the thumb between two taps), its mark and name, then twelve 44px
+  swatches (a dot split light | dark); one tap is one commit (`teamColorSet`, one Undo entry); the sheet closes itself
+  when none is left.
 - **The judgement** (`teamsModel`, `teamsInfoView`, `teamColorInfo`): the headline is the first sentence
   of the same `hubStatus('teams')` the hub shows ("6 teams", "Two teams are Gold"). An older colour is
   weak on a theme it is under 3:1 against that theme's `--sheet` (`TEAM_SURFACE`, pinned to
@@ -4093,7 +4112,12 @@ requester's side is app.js (the denied screen).
   hint and reloads (the one-shot lifecycle): approving opens the requester's page by itself. **Withdraw** appears a
   minute after asking (the rules' own delay, judged by the DATABASE's clock — one `.info/serverTimeOffset` read —
   not the phone's), then the form is back. **No listener, no list read, no markup built from anything held** (source
-  pins: every string goes in through `textContent` / `value`).
+  pins: every string goes in through `textContent` / `value`). **The page around it** (`askPaintFrame`): while the panel is up
+  the line reads "This account isn't on the camp list yet. Ask to join below, or ask a director to add you.", the legacy
+  `#auth-retry-btn` steps aside and the panel's own quiet **I've been added — try again** (`#ask-added`, a reload) shows with
+  the form and the closed words (never beside Check again); the closed words' button is **Ask again**; "Use a different
+  account" is the frame's `.btn-quiet`; the whole denied panel is one left-aligned column (the logo with it) and a long
+  address breaks rather than run off the screen.
 - **`probeOtherCamp()` now calls `peopleOtherCampProbe()`** when the other camp's role is learned: on a device's first
   meeting with the second camp the role is known only AFTER the requests listener attached (found by the emulator suite).
 - **Emulator proof (opt-in)**: `tests/emulator/people-client.mjs` drives the REAL client's walk-up, director and counselor
@@ -4106,11 +4130,16 @@ requester's side is app.js (the denied screen).
   `peopleUi.from`); the hub's People row opens it with the hub as Back (`HUB_OPENS.people = { screen: 'people' }`). It reads the
   LIVE directory (`memberDirectory`, one `.on('value')` the app already has) and `peopleRequests()`; nothing is stored on a
   phone. Top to bottom: the headline (the hub row's first problem — "Taylor Reed is asking to join", "2 people have no sign-in
-  yet" — else its summary), **Let people ask to join** (a `jelly-switch` writing `setup/meta/joinOpen` through
+  yet" — else its summary; the lede names the NEXT one, "Next: Maples has no counselors yet · 2 more things to check"),
+  **Let people ask to join** (a `jelly-switch` writing `setup/meta/joinOpen` through
   `peopleSetAsking`; offline it says "Needs a connection"; a note "Asking to join is still on — turn it off after
-  registration?" once `pplAskingLongOn`), **Asking to join · N** (a row each, newest first, opening the request sheet), one
-  section per team (this camp's order; its mark, name and count; "Nobody yet") and "Not on a team", then **Put people on
-  teams**, **Add people** and **People you've blocked**. A person row is a `.cb-row` whose time column is an initial in a ring;
+  registration?" once `pplAskingLongOn`; on a phone its switch and On/Off word sit under the words, a container query on
+  `.people-ask`, as on Campers' switch), **Asking to join · N** (a row each, newest first, ending in the chevron alone, the
+  address wrapping only before its "@", the note clamped to two lines; the request sheet shows it all), one section per
+  team (this camp's order; its mark, name and count) and "Not on a team", then **Put people on teams**, **Add people** and
+  **People you've blocked** (a `.sched-add` line with its icon). **A team with nobody is its header alone** — the gold "!"
+  and "No counselors yet" under the name, then "+ Add someone" (the one-person form with that team picked) — never a box.
+  A pending row the hub still counts (`peoplePendingWarn`, the hub's week rule) carries the gold "!" on its status line. A person row is a `.cb-row` whose time column is an initial in a ring;
   its sub says status in words ("Signed in · Counselor", "No sign-in yet · Director"); your own row carries "you"; **the owner
   row is a `<div>`** ("Owner · managed in the Firebase console"). Rows are painted through `secPaintList` (keyed `p-<key>`,
   `r-<key>`, `g-<tid>`), so an idle pass writes nothing.
@@ -4126,14 +4155,16 @@ requester's side is app.js (the denied screen).
   clash line "There's already a Sam on the list — use a last initial?" — Counselor / Director, team pre-picked from a team the
   note names) or the Link sentence (a Director row also asks for their email or phone again); **Not now**, and **Block this
   person** (asks first and says what they are told). **Put people on teams**: everyone but the owner, a native select each,
-  written once per open (the selects ARE the draft); Save teams writes the changed rows one at a time and names a refused one.
+  written once per open (the selects ARE the draft; each select under its name on a phone, 26em, so long team names
+  aren't cut); Save teams writes the changed rows one at a time and names a refused one.
   **Add people**: "Type a list" (the live preview reads each line — "Cam → Foxes", "Sam Lee → put on Foxes", "listed
   twice" — and the button says "Add 2, update 1"; junior also "Fill in last year's printed roster") or "One person with a
   sign-in" (the old add form; the invite text to copy shows after). **People you've blocked**: one read when opened, Unblock.
 - **The join badges and bar** (app.js): `renderJoinBadges` (from `renderTabBadges`) lights More's gold dot (`#tab-dot-more`)
   for this camp's waiting requests OR the other camp's one-shot count (a director of both), and writes the counts on
-  `#more-join-count` ("2 asking to join") and `#more-people-count`. `joinBarHtml` puts ONE `.msg[data-kind="join"]` bar at the top of
-  Now's message strip ("Taylor Reed is asking to join" / "3 people are asking to join" · **See**, which opens People, and an
+  `#more-join-count` ("2 asking to join", on More's People row) and `#more-people-count` (a hidden duplicate). `joinBarHtml` puts
+  ONE `.msg[data-kind="join"]` bar at the top of Now's message strip ("Taylor Reed is asking to join" / "3 people are asking to
+  join" · **See who's asking ›** at 16px — link ink on the dark message tint (6.3:1) needs 16px — which opens People, and an
   ×), directors only (`canEdit()`), the name escaped; its dismissal is kept in MEMORY (`joinBarSeen`) so a stranger's address
   is never written to a phone. `onAccessRequestsArrived` is the toast (not for your own key, not on a counselor's phone).
   Not built: a phone alert per request (decision Q15, default no).
@@ -4178,7 +4209,8 @@ setup-sync.js's "CAMPERS" section (the last one before the cache load); the scre
   `builderLeaveWarning()` for the phone's Back and a deep link (a native confirm in the same words; Discard calls `campersDiscardHeld`).
 - **The Campers screen** (`#setup[data-screen="campers"]`; the hub's Campers row is a button now, `HUB_OPENS.campers`): the headline is the count
   ("64 campers", "No campers yet", "Loading…"); the lede is the spec's sentence — "Only directors can see camper names. Counselors never see this
-  list, and it isn't saved on any phone."; one section per team (its mark, name and "11 campers"; "Nobody yet") over a wrapping row of **chips**
+  list, and it isn't saved on any phone."; one section per team (its mark, name and "11 campers", or "Nobody yet" in the count's place — no
+  separate line) over a wrapping row of **chips**
   (`.sec-chip.cmp-chip`, 44px: one per camper, `data-camper="<tid>|<cid>"`, and a dashed **Add** chip that opens the Add sheet on that team);
   a general **Add campers** button; **Not using camper lists this year** (the week's own `setup/meta/skip/campers`, an ordinary `commitSetup`
   with no undo: the hub then shows a dash instead of the "No campers yet" to-do, and the names are kept). Painted through `secPaintList` (groups
@@ -4188,7 +4220,8 @@ setup-sync.js's "CAMPERS" section (the last one before the cache load); the scre
   team (a native select), Remove from the list; Save is ONE write (a rename + a move together is one update, never a rename that races its own
   move); a camper someone else removed while the sheet was open is said ("isn't on the list any more") with Save off. **Add campers** — Team, a
   textarea "First names, one per line or separated by commas", the live count on the button ("Add 3 campers"), a line when there is no signal ("these
-  will wait on this screen until it's back. Keep it open.") or a name is over 40 characters ("will be shortened"). **Undo is ONE line on the screen**
+  will wait on this screen until it's back. Keep it open.") or a name is over 40 characters ("will be shortened"). A removed camper's chip
+  squashes out (`playOut`, 150 ms, as an elective chip; calm: a fade) before the list closes the gap. **Undo is ONE line on the screen**
   (`#campers-undo`, 15 s): a closure holding the removed record / old place / old name in memory — Remove puts the same record back under the same id
   and place, Move goes back to its own position, Rename to its old name. It is gone with the screen (`campersUiReset` also empties the groups and
   the typed inputs when the builder closes: a closed builder leaves no name in the page).
@@ -4209,7 +4242,8 @@ setup-sync.js's "CAMPERS" section (the last one before the cache load); the scre
   DIRECTOR, the OWNER (the owner row is a `<div>`, `body.setup-owner`, the repair sentence "need repair" against a director's "Ask Patrick to repair
   team slots") and a COUNSELOR (who must reach none of it: `openBuilder` / `setupGo` / every setup sheet / the camper list / any setup element, and no
   camper name anywhere in the page), both camps, 360 and 390 wide, light and dark, 100% / 130% / 200% text: no tap target under 44x44, no sideways
-  scroll, no row title squeezed to a sliver, and two idle `renderAll`s mutate nothing on the hub, Teams, People and Campers screens. (It found one
+  scroll, no row title squeezed to a sliver, no `.gl-row` words squeezed under 150px beside a switch or a tag (added by the design fixes), and
+  two idle `renderAll`s mutate nothing on the hub, Teams, People and Campers screens. (It found one
   real defect: at 200% text the team header's name was squeezed to a sliver once the camper count joined its people count; `.ppl-head` wraps now.)
 - **Not built** (recorded): a printable sheet (decision Q7 allows one later); per-camper "absent" (cut, P2 C29); typing names into Put people on
   teams.

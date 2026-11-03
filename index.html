@@ -191,7 +191,7 @@
 
       <div id="auth-denied" hidden>
         <p class="lock-prompt">Signed in as <strong id="auth-denied-email"></strong></p>
-        <p class="auth-denied-note">This account isn't on the camp list yet — ask a director to add you, then try again.</p>
+        <p class="auth-denied-note" id="auth-denied-note">This account isn’t on the camp list yet — ask a director to add you, then try again.</p>
         <!-- ── ASK TO JOIN (P2 §11.18; app.js "Ask to join"). Shown only when a once() of this account's OWN accessRequests row
              is allowed, i.e. the rules that carry it are published (a refused read leaves the page exactly as it was). Plain
              controls on purpose: the page must work with no Jelly and before the app exists. Nothing here reads a list or attaches
@@ -210,24 +210,27 @@
                 <button type="button" class="seg-btn" role="radio" aria-checked="false" data-ask-camp="senior">Senior</button>
               </div>
             </div>
-            <label class="fld"><span class="fld-label">Anything to add (optional)</span><textarea class="fld-input ask-note" id="ask-note" rows="2" maxlength="200" placeholder="For example: I'm with the Foxes"></textarea></label>
+            <label class="fld"><span class="fld-label">Anything to add (optional)</span><textarea class="fld-input ask-note" id="ask-note" rows="2" maxlength="200" placeholder="For example: I’m with the Foxes"></textarea></label>
             <button type="submit" class="btn btn-gold btn-block" id="ask-send">Ask to join</button>
           </form>
           <div id="ask-sent" class="ask-sent" role="status" hidden>
             <p class="ask-sent-title">Sent.</p>
-            <p class="ask-sent-text"><strong>Now tell a director you've asked</strong> — they'll see it under More → People. This page will open by itself once they let you in. You can close it and come back.</p>
+            <p class="ask-sent-text"><strong>Now tell a director you’ve asked</strong> — they’ll see it under More → People. This page will open by itself once they let you in. You can close it and come back.</p>
             <p class="ask-wait" id="ask-wait"></p>
             <button type="button" class="btn btn-block" id="ask-check">Check again</button>
             <button type="button" class="btn-quiet btn-quiet-danger" id="ask-withdraw" hidden>Withdraw my request</button>
           </div>
           <div id="ask-closed" class="ask-closed" role="status" hidden>
             <p class="ask-closed-text" id="ask-closed-text"></p>
-            <button type="button" class="btn-quiet" id="ask-again">Try again</button>
+            <button type="button" class="btn-quiet" id="ask-again">Ask again</button>
           </div>
           <p class="fld-error ask-error" id="ask-error" role="alert" hidden></p>
+          <!-- The panel's own "added by a director without a request" way back (a reload, as the legacy button below): shown with the form
+               and the closed words, never beside "Check again"; while the panel is up the legacy button steps aside (askPaint). -->
+          <button type="button" class="btn-quiet ask-added" id="ask-added" hidden>I’ve been added — try again</button>
         </div>
-        <jelly-button id="auth-retry-btn" size="small" variant="platinum" block>↻ I've been added — try again</jelly-button>
-        <jelly-button id="auth-switch-btn" size="small" variant="platinum" block>Use a different account</jelly-button>
+        <jelly-button id="auth-retry-btn" size="small" variant="platinum" block>↻ I’ve been added — try again</jelly-button>
+        <button type="button" class="btn-quiet auth-switch" id="auth-switch-btn">Use a different account</button>
       </div>
 
       <p class="lock-error" id="lock-error" role="alert" hidden></p>
@@ -1166,9 +1169,11 @@
           </div>
           <p class="setup-note" id="teams-repair" hidden><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span id="teams-repair-text"></span></p>
           <div class="gl cb-list sec-list" id="teams-list"></div>
-          <div id="teams-weak" hidden>
-            <p class="setup-note"><svg class="ico" aria-hidden="true"><use href="#i-pennant"/></svg><span id="teams-weak-text"></span></p>
-            <button type="button" class="sched-add" id="teams-weak-btn"><svg class="ico" aria-hidden="true"><use href="#i-pennant"/></svg><span>Pick colours for the flagged teams</span></button>
+          <!-- Original colours that are hard to read on a theme, NAMED ("Pumpkins is hard to read in light mode, Pilgrims in dark mode."):
+               the gold "!" (never the pennant, which is the Teams icon and senior's own marks) and a plain link named for the same teams. -->
+          <div class="tms-weak" id="teams-weak" hidden>
+            <p class="setup-note setup-bang"><span id="teams-weak-text"></span></p>
+            <button type="button" class="sched-add tms-weak-btn" id="teams-weak-btn"><span id="teams-weak-btn-text"></span><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></button>
           </div>
         </section>
 
@@ -1212,7 +1217,7 @@
           <div class="ppl-groups" id="people-groups"></div>
           <button type="button" class="sched-add" id="people-teams-btn"><svg class="ico" aria-hidden="true"><use href="#i-pennant"/></svg><span>Put people on teams</span></button>
           <button type="button" class="sched-add" id="people-add-btn"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span>Add people</span></button>
-          <button type="button" class="btn-quiet ppl-blocked-btn" id="people-blocked-btn">People you’ve blocked</button>
+          <button type="button" class="sched-add ppl-blocked-btn" id="people-blocked-btn"><svg class="ico" aria-hidden="true"><use href="#i-eye-off"/></svg><span>People you’ve blocked</span></button>
         </section>
 
         <!-- ── Campers (P2 §11.9; Step 25) ──
@@ -1245,7 +1250,7 @@
           <div class="gl people-ask cmp-skip" id="campers-skip-box">
             <div class="gl-row wk-switch">
               <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-tent"/></svg></span>
-              <span class="gl-text"><span class="gl-title">Not using camper lists this year</span><span class="gl-sub">The hub shows a dash instead of asking for them. Names already here are kept.</span></span>
+              <span class="gl-text"><span class="gl-title">Not using camper lists this year</span><span class="gl-sub">Turn on if this camp doesn’t keep camper names; Set up the week stops asking for them. Names already here are kept.</span></span>
               <span class="gl-switch"><em class="gl-switch-state" data-switch-state="campers-skip">Off</em><jelly-switch id="campers-skip" label="Not using camper lists this year"></jelly-switch></span>
             </div>
           </div>
@@ -1398,7 +1403,7 @@
           </button>
           <button type="button" class="gl-row" id="builder-row" data-more-row="builder">
             <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-calendar"/></svg></span>
-            <span class="gl-text"><span class="gl-title">Set up the week <span class="gl-count" id="more-join-count" hidden></span></span><span class="gl-sub">Schedule, games, teams</span></span>
+            <span class="gl-text"><span class="gl-title">Set up the week</span><span class="gl-sub">Schedule, games, teams</span></span>
             <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
           </button>
           <button type="button" class="gl-row" id="history-row" data-more-row="history">
@@ -1406,9 +1411,12 @@
             <span class="gl-text"><span class="gl-title">Change history</span><span class="gl-sub">Who saved what, and when</span></span>
             <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
           </button>
+          <!-- Who is asking to join is said ONCE, on this row, as the gold tag riding the title line (.gl-count: it wraps under the title on a
+               narrow phone; at the row end it squeezed the words to 21px at 200%). Set up the week keeps its plain subline.
+               #more-people-count is the older bare "2" badge, kept only as a hidden duplicate until its test pin moves. -->
           <button type="button" class="gl-row" id="members-row" data-more-row="members">
             <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-people"/></svg></span>
-            <span class="gl-text"><span class="gl-title">People <span class="gl-count" id="more-people-count" hidden></span></span><span class="gl-sub">Counselors, directors and who’s asking</span></span>
+            <span class="gl-text"><span class="gl-title">People <span class="gl-count" id="more-join-count" hidden></span><span class="gl-count visually-hidden" id="more-people-count" aria-hidden="true" hidden></span></span><span class="gl-sub">Counselors, directors and who’s asking</span></span>
             <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
           </button>
         </div>
@@ -2841,10 +2849,12 @@
           <label class="fld-label" for="team-emoji">Emoji</label>
           <input type="text" class="fld-input tms-emoji-input" id="team-emoji" maxlength="16" placeholder="🦊">
           <div class="tms-emoji-grid" id="team-emoji-grid" role="group" aria-label="Pick an emoji"></div>
+          <p class="tms-hint tms-emoji-taken" id="team-emoji-taken"></p>
         </div>
         <p class="fld-error" id="team-emoji-error" role="alert" hidden></p>
         <fieldset class="tms-colors">
           <legend class="fld-label">Colour</legend>
+          <p class="tms-hint tms-color-now" id="team-color-now" hidden></p>
           <div class="tms-swatches" id="team-swatches" role="radiogroup" aria-label="Team colour"></div>
         </fieldset>
         <div class="tms-photo">
@@ -2856,11 +2866,11 @@
           <input type="file" id="team-photo-input" class="visually-hidden" accept="image/*" tabindex="-1" aria-hidden="true">
           <p class="tms-hint" id="team-photo-note"></p>
         </div>
-        <label class="fld"><span class="fld-label">Counselors</span><input type="text" class="fld-input" id="team-counselor" maxlength="80" enterkeyhint="done" placeholder="Names, if the team has none signed in"></label>
-        <p class="tms-hint">Shown only for teams with no counselor accounts.</p>
+        <label class="fld"><span class="fld-label">Counselor names to show (only if nobody on this team signs in)</span><input type="text" class="fld-input" id="team-counselor" maxlength="80" enterkeyhint="done" placeholder="Names, if nobody signs in"></label>
+        <p class="tms-hint" id="team-counselor-hint"></p>
       </form>
       <div class="sheet-body tms-crop" data-team-pane="crop">
-        <p class="setup-sheet-lede">Drag the picture to place it, and zoom to fit. The frame is the shape of a shield.</p>
+        <p class="setup-sheet-lede">Drag the picture and zoom until it fills the frame. Everything outside the frame is cut off.</p>
         <div class="tms-crop-box"><canvas class="tms-crop-canvas" id="team-crop-canvas" width="346" height="480" tabindex="0" role="img" aria-label="The photo in its frame. Drag to move it, or use the arrow keys."></canvas></div>
         <label class="fld"><span class="fld-label">Zoom</span><input type="range" class="tms-zoom" id="team-crop-zoom" min="1" max="3" step="0.01" value="1"></label>
       </div>
@@ -2992,7 +3002,7 @@
         <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
       </header>
       <div class="sheet-body ppl-form">
-        <p class="setup-sheet-lede">Pick a team for each person. Only the ones you change are saved, one at a time. <button type="button" class="ppl-link-btn" id="ppt-paste">Paste a list instead</button></p>
+        <p class="setup-sheet-lede">Pick a team for each person. Only the people you change are saved. <button type="button" class="ppl-link-btn" id="ppt-paste">Paste a list instead</button></p>
         <!-- one row per person, written once per open: name, then a native team select (data-ppt-pick=<key>) -->
         <div class="gl cb-list ppl-pick-list" id="ppt-list"></div>
         <p class="fld-error" id="ppt-error" role="alert" hidden></p>
