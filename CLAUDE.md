@@ -2883,9 +2883,8 @@ Both camps, junior and senior, run all of it.
   is the whole week, and never on the Saturday BEFORE camp, which `campWeek().phase`
   already calls "during" (the freeze window) — the snapshot note in plain words): **with no
   camp dates it renders NOTHING, on the very line it replaced**, so an untouched camp's
-  schedule sheet is byte for byte what it was — the spec's
-  disabled "Ask a director to set the camp dates" is a one-line change there when the
-  Camp week screen is how a director sets them.
+  schedule sheet is byte for byte what it was. The spec's disabled "Ask a director to set
+  the camp dates" button is NOT wanted (owner, Nov 2, 2026): leave the line empty.
 - **The real seed against the real rules**: `tests/emulator/camp-data.mjs`'s `buildSeed(id)` is
   now `setup-sync.js`'s `buildSeed` run through the unit-test harness (the hand-written copy
   it replaced is kept as `buildSeedFixture`), and the twelve R1 emulator suites were re-run
@@ -2919,7 +2918,7 @@ Both camps, junior and senior, run all of it.
 
 ## Meals, verses, cleanup, electives as data (setup-sync.js §10 — Step 19; switches PRESSED at ◆20)
 
-**Status (Mon Nov 2, 2026, ~7 PM ET): meals, verses and cleanup are ON in both camps, electives ON in junior** (◆20). Senior's "Supper and free time" got its Meal tag first (`typical/b-supper-and-free-time-1065/meal = 'supper'`). Compared in the live client before and after: menus, cleanup rota, verses and electives read exactly as built in; the one change is `staffNames()` gaining the elective stations' Patrick and Stephen (owner approved). Owner decisions recorded the same night: the three schedule changes above, the seed's `overlapOk` on junior's Tue/Thu movie nights (on purpose), and the elective names in chat mentions. Still open: the week-file entry's "Ask a director to set the camp dates" button (renders nothing with no dates today).
+**Status (Mon Nov 2, 2026, ~7 PM ET): meals, verses and cleanup are ON in both camps, electives ON in junior** (◆20). Senior's "Supper and free time" got its Meal tag first (`typical/b-supper-and-free-time-1065/meal = 'supper'`). Compared in the live client before and after: menus, cleanup rota, verses and electives read exactly as built in; the one change is `staffNames()` gaining the elective stations' Patrick and Stephen (owner approved). Owner decisions recorded the same night: the three schedule changes above, the seed's `overlapOk` on junior's Tue/Thu movie nights (on purpose), and the elective names in chat mentions. Decided the same night: with no camp dates the week-file entry stays EMPTY — no greyed "Ask a director to set the camp dates" button (counselors could not use it).
 
 Specs: P2 §5.2–5.3, §9.2, §10.2, §11.10–11.13. **Nothing here changes what anyone sees until the
 owner turns a section on** (`meta/on/<section>`; Step 20 presses them): while a section is off,
