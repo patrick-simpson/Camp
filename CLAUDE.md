@@ -100,6 +100,10 @@ Files:
 - `award.js` — AWARD POINTS (see "Award points: behaviour"): verse, cleanup and quick points on one
   takeover, for corrections and minus points. An optional layer like tell.js: a classic script right
   after it, every hook in app.js typeof-guarded, so deleting its `<script>` leaves no Award points row
+- `now-ui.js` — NOW'S RENDERERS (see "Now: the renderers"): paints `nowModel()` onto the Now tab's static
+  markup (the card in every kind, the cleanup / verse moment, Still to do today, Up next, Later today,
+  the messages strip's notice, Now's three sheets) and wires its taps. A classic script right after
+  award.js, every hook in app.js typeof-guarded; without it Now keeps only the announcements
 - `jelly-motion.js` — the SPRING SYSTEM and the ONE calm-motion switch (see
   "Motion and calm motion" below). A classic script loaded between camps.js and
   app.js with no dependency on `vendor/jelly.js` (that module can't parse on
@@ -221,10 +225,10 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
 
 **Every time any code asset changes:**
 1. Bump the `?v=N` cache-busting query string in `index.html` — there are
-   TWENTY-ONE on the same number: `boot-guard.js`, `styles.css`, `vendor/jelly.js`,
+   TWENTY-TWO on the same number: `boot-guard.js`, `styles.css`, `vendor/jelly.js`,
    `firebase-config.js`, `defaults.js`, `camp-core.js`, `reveal-core.js`,
    `camps.js`, `jelly-motion.js`, `app.js`, `reveal.js`, `reveal-ui.js`, `setup-sync.js`, `settings.js`,
-   `setup-ui.js`, `chat.js`, `push.js`, `tell.js`, `award.js`, `auth-phone.js`, `auth-email-link.js` —
+   `setup-ui.js`, `chat.js`, `push.js`, `tell.js`, `award.js`, `now-ui.js`, `auth-phone.js`, `auth-email-link.js` —
    keep them in sync, all bumped together. Also bump
    `APP_VERSION` in `app.js` to the same number (it drives the auto-reload
    version check). `stalling.html` loads `vendor/jelly.js`, and
@@ -636,7 +640,7 @@ never rebuilds a segmented control under a finger.
   `teamMarkHtml(id, {size, label})` is the markup (`.tm`, sized by `--tm`);
   **`paintTeamMark(el, id, opts)` writes through `setHtmlIfChanged`**, so the
   `<img>` of a long-lived spot (header, Your team sheet, More's team row) is
-  never re-created by a re-render. Older surfaces (the follow card, boards)
+  never re-created by a re-render. Older surfaces (the boards)
   still draw their own crests; migrate them here, not by copying the rule.
 - **Header** (`renderHeader` from `renderAll` and the 30 s tick): `headerModel()` —
   a counselor with a team: the team's mark + name, "Sam · Junior camp ·
@@ -754,12 +758,11 @@ never rebuilds a segmented control under a finger.
   app header (and anything else `position: sticky`) scrolled away with the
   page — v197 shipped that way. Don't put `hidden` back on its own.
 
-## Now, block by block (Step 17 — markup and visual system; the model is built, the renderers are not)
+## Now, block by block (Step 17 — markup and visual system; painted by now-ui.js, see "Now: the renderers")
 
-Redesign §3, mockups 01, 01b, 02, 03, 04, 12, 13. Static markup in `#tab-now` (all of it ships
-`hidden`; today's `.you-strip`, `#now-banner`, `#live-home` and `#notice-board` still render Now until
-a renderer paints `nowModel()` ("The Now engine" below) and replaces them, and their ids stay until the
-tests that look them up move), styled in styles.css's last block, "NOW, BLOCK BY BLOCK". **Every hook and every row template is
+Redesign §3, mockups 01, 01b, 02, 03, 04, 12, 13. Static markup in `#tab-now` (it ships `hidden`;
+now-ui.js un-hides what the model says is on), styled in styles.css's last block, "NOW, BLOCK BY BLOCK". The old
+`.you-strip`, `#now-banner`, `#live-home` and `#notice-board` are gone from the page. **Every hook and every row template is
 documented in index.html's comment at `#now-card`** (and at `#now-notice` for the messages strip); the
 specimens in `docs/build-notes/verify/step17-design.cjs` fill those templates in the real page and
 measure 44px targets, sideways scroll and overflowing text for every kind, both camps, 360 / 390, light /
@@ -792,10 +795,9 @@ dark, 100 / 130 / 200 % (`SHOTS=1` for screenshots).
 
 `nowModel(opts)` (app.js, "THE NOW ENGINE", after `splitNowBanner`) is the whole Now tab as PLAIN DATA — no markup, no DOM,
 no timer — computed from the week through the SEAM accessors, the state and the clock it is GIVEN (`opts.now` =
-`{ dow, minutes }`, `opts.ms` = server ms; default `campNow()` / `serverNow()`). Nothing renders it yet: `renderNow(model)`
-(a full paint), `renderNowClock(model)` and `renderNowMessages(model)` are the hooks a renderer defines (all typeof-guarded;
-`SHELL_PANELS.now` calls `nowRefresh()` on a render and `nowTick()` on the 30 s tick **only once `renderNow` exists**, so the page is
-exactly as it was until then). Rules a renderer or a later edit must not break (`tests/now-model.test.js`, + `.senior`, in the
+`{ dow, minutes }`, `opts.ms` = server ms; default `campNow()` / `serverNow()`). now-ui.js paints it: `renderNow(model)`
+(a full paint), `renderNowClock(model)` and `renderNowMessages(model)` are the hooks it defines (all typeof-guarded;
+`SHELL_PANELS.now` calls `nowRefresh()` on a render and `nowTick()` on the 30 s tick once `renderNow` exists, else only the announcements). Rules a renderer or a later edit must not break (`tests/now-model.test.js`, + `.senior`, in the
 seeded and seeded-all passes):
 
 - **SEAM.** `blockKind(b, dow)` and `blockTeams(b, dow)` are accessors in the SEAM block. A kind comes from `type` / the Meal tag
@@ -855,10 +857,50 @@ seeded and seeded-all passes):
   recorded its own `a` / `b`, drops any id that is not one of the camp's teams, and words my team's next game from the bracket's own
   order ("Red plays in the final next · 3rd place match first"). The game's row says the match under way ("semifinal 2") and a
   director on a team in it gets the own-team reason in place of Score, per match, as the six-team bracket does.
-- **Left for the next sessions**: every renderer (`renderNow`, the strip, the moment's keys through `setCleanupPoints` /
-  `setVersePoints`, the sheets `#sheet-notice` / `#sheet-messages` / `#sheet-whos-where` in `shellSheetAllowed` / `shellSheetFill`,
-  the identity change, motion), retiring the old Now sections and updating the tests that look them up, `tests/preview.test.js`'s
-  walk over the new sections, the Playwright pass, and the `?v=` / `APP_VERSION` / `CODE_UPDATED_AT` bump.
+- **Left for the next session**: delete the dormant old Now functions with the tests that pin them (see "Now: the renderers"), the
+  Playwright pass on a real phone, and the `?v=` / `APP_VERSION` / `CODE_UPDATED_AT` bump.
+
+## Now: the renderers (now-ui.js — Step 17, build session 2)
+
+`now-ui.js` draws `nowModel()` onto the markup the design pass left in `#tab-now` (every hook and row template is in index.html's
+comment at `#now-card`). Hooks app.js calls (all typeof-guarded): `renderNow(model)`, `renderNowClock(model)`, `renderNowMessages(model)`,
+`renderNowSheet(id)` and `nowSheetAllowed(id)` (`shellSheetFill` / `shellSheetAllowed` for the three sheets `notice`, `messages`,
+`whos-where`). Rules a later edit must not break (`tests/now-ui.test.js`, + `.senior`, in the seeded and seeded-all passes; the preview walk
+in `tests/preview.test.js`):
+
+- **It draws what the model holds and invents nothing.** The model already left every director-only field out of a counselor's picture, so no
+  builder asks "may this person see it": a field is there or it is not. A hidden part keeps no director words either (the moment's title
+  and body, the foot's hold text are EMPTIED when nothing is shown: the preview walk found both stale). Only a TAP that writes re-checks the role.
+- **Render stability.** `renderNow` writes through `setHtmlIfChanged` / `setTextIfChanged` / `setHiddenIfChanged` / `setDataIfChanged` only;
+  the 30 s tick between wake-ups is `renderNowClock` (the minutes left, the hairline `--p`, "Up next in N min", the arrival countdown) and
+  the strip. The still-to-do list and the cleanup moment's rows are keyed lists (`paintKeyedList`: a change waits for a finger to lift unless
+  it is the person's own act, `glideNow`). The game rows are written as one body string (no row glide yet).
+- **The moment's keys are the same writers as Award points**: `nowTapKey` calls `setCleanupPoints` / `setVersePoints` (deterministic ids, one
+  entry per slot) behind `standingsVisible()` and `canScoreRound`, only for a team the model drew a row for and a value the section has a key
+  for (cleanup 0–3, verse 0–5). `awardKeysHtml` (award.js) is the one key builder, so a key looks and taps the same in both places; verse rows are
+  `awardRowHtml`. A stale or forged tap, a counselor's, a hint-painted director's and the director's own team write nothing.
+- **Taps** (one delegated listener on `#tab-now`, wired by the first `renderNow`): a game row or Score → `openGame(id, {from: 'now'})`; a Still
+  to do row → the game / Award points (`openTool('award', {from: 'now'})`, then its section) / Who can sign in; "N more" → Award points when the
+  last row shown was its kind, else the Games tab; Whole day → `openSchedule()`; Set up the week → `openBuilder()`; "Not Sam? Change" →
+  `openIdentityPicker()`; an ask name → `state.identity` (blank = "just cheering"); Still on this → `nowHoldOverrun()`; Take down → Tell
+  everyone's `tellNoticeDown()` (the same 10-second Undo; the strip squashes out first); See all / N more messages / Who's where open their sheets.
+- **The messages strip** is `#now-notice` (now-ui.js), `#announcements` (`renderAnnouncements`, which now caps the strip: three messages, the
+  notice strip counts as one, one fewer at 130% text; the rest are `annOverflow`, "N more messages" and `#sheet-messages`) and `#now-msgs-more`.
+  `annStripClick` is the strip's one delegated handler, shared with `#sheet-messages-body`. The posted notice IS the card on the send-off, so the
+  strip leaves it out then.
+- **Motion** (calm-aware, from diffs made here): the card arrives when the block changes over (calm: a fade), the moment unfolds, a game going Live
+  → Done is remembered (`nowUi.flip`) and, once its podium is on screen, pops its check and drops the medals bronze → silver → gold, the hairline is
+  nudged from where it was (never refilled), a notice arrives and squashes out. The first paint, a repeat, a paint that brings Now back into view and
+  a paint under a takeover animate nothing.
+- **Dormant, to delete with their tests in the next session**: `renderNoticeBoard`, `renderNowBanner` + `splitNowBanner`, `renderFollowCard`,
+  `renderMyElectives`, `renderLiveHome` (each marked "DORMANT" in app.js; none is on a render path, their elements left the page; `nowBannerHtml`
+  stays: the schedule oracle in week / seed tests). The tests that still call them: home.test.js, render-stability.test.js, game-view.test.js,
+  secrecy.test.js, week.test.js, palette.test.js. `homeBoardGame` / `liveHomeGames` go with `renderLiveHome` (scoring.test.js and
+  bracket-guard.test.js read `liveHomeGames`).
+- **Not built**: a keyed glide for game rows (a re-sort jumps), the Playwright pass on a real phone, and `data-joy` on Score.
+- **Page checks**: `docs/build-notes/verify/step17-design.cjs` (the specimens) is the reference for the markup; the real-page pass is the
+  same measure over the real renderers (every kind, both camps, 360 / 390, light / dark, 100 / 130 / 200%: 222 views, no target under 44x44,
+  no sideways scroll, no overflowing text).
 
 ## The standings reveal: the screens (Step 23 — markup and visual system)
 
@@ -2266,6 +2308,12 @@ What's covered, and why each file exists:
   rows (order, podium, live boards, the own-team Score guard, the four-team bracket); the messages strip; Still to do today; the
   tick; a counselor's, a hinted director's and a previewing director's models holding no points with the guard throwing; junk
   snapshots never throwing.
+- `now-ui.test.js` (+ `.senior`; seeded and seeded-all passes) — Now's renderers ("Now: the renderers"): every kind of card from the model, a
+  counselor's markup with no key / Score / place / point (the points guard throwing), render stability per kind (an identical second paint and a
+  same-minute tick write nothing; the tick between wake-ups writes only the minutes left), motion from diffs only, the moment's keys as Award points'
+  own writers behind the own-team guard (bounds, stale taps, a hint-painted director), Still on this, Take down and its Undo, the strip's cap and
+  `#sheet-messages`, the three sheets, escaping, the app without the file. `preview.test.js` walks Now through a block of every kind in a preview
+  (no key / point / place / director control; node for node a counselor's page).
 - `backup.test.js` — restore-from-backup, including that an imported tree gets
   normalized and orphan-pruned before it can render or sync.
 - `render-stability.test.js` — re-renders that change nothing don't touch the
@@ -2321,7 +2369,7 @@ What's covered, and why each file exists:
   (home panels, toast cap, announcement composer), `overlays.test.js` (schedule
   sheet, status pill, members drawer, lock screen, scrim fade, pickers),
   `shell.test.js` (page-shell text pins: the not-yet-defined hide, the boot
-  guard, no motion media query, **index.html's twenty-one versioned assets share
+  guard, no motion media query, **index.html's twenty-two versioned assets share
   one `?v=` equal to `APP_VERSION`, in load order**), `builder.test.js`
   (week-builder shell, drafts, joy press), `chat-view.test.js`
   (chat view lifecycle, drafts, Back), `theme.test.js` (pre-paint theme and
@@ -2565,7 +2613,7 @@ What's covered, and why each file exists:
   a `setItem` of a name in the engine, or `campersFor` ignoring `canEdit()`, turns it red.
 - **The seeded pass** — `tests/run.js` re-runs `SEEDED_FILES` (week, push, chat, ics,
   tabs, frame, shell, home, render-stability, game-view, secrecy, motion, overlays,
-  boot-cache, backup, reveal-ui, reveal-remote, preview, tell, award) against a camp whose schedule is edited here
+  boot-cache, backup, reveal-ui, reveal-remote, preview, tell, award, now-model, now-ui) against a camp whose schedule is edited here
   (`makeContext({camp, seeded: true})`; junior, and senior where the file has a
   `.senior` twin). `SEEDED=all` probes every file, `SEEDED=off` skips it. A test that
   builds its own fresh context (boot-cache, secrecy's hint-paint boots, shell's
@@ -2573,7 +2621,7 @@ What's covered, and why each file exists:
   `wkSet` / `wkReset` put the seeded tree back (`wkOff` is the printed week on purpose) —
   otherwise the "seeded" rerun quietly repeats the plain one. A third pass,
   `SEEDED_ALL_FILES` (week, ics, push, chat, home, tabs, shell, render-stability, secrecy,
-  frame, tell, award, now-model), runs with `makeContext({camp, seeded: 'all'})`: the four smaller sections ON as
+  frame, tell, award, now-model, now-ui), runs with `makeContext({camp, seeded: 'all'})`: the four smaller sections ON as
   well, the page as it will be after step 20, proving their "on" half shows what the built-in
   half did.
 - `seam.test.js` — greps `app.js` (minus the SEAM block), `chat.js`, `push.js`
@@ -4402,8 +4450,8 @@ three things.
 `maybeShowTeamPicker()` and again whenever the member snapshot changes)
 points `state.followTeam` at their team and takes the picker back down if a
 hint-painted device already opened it. It **overrides a hand-picked team** on
-purpose — the account is the truth. Their follow card says "YOUR TEAM" where
-the Change button would be. Their member `name` also becomes `state.identity`,
+purpose — the account is the truth. Their Your team sheet says so where the Change team
+row would be. Their member `name` also becomes `state.identity`,
 but only when the team's printed roster (`teamRoster()`) actually lists that name — the electives data
 is keyed to those spellings, so adopting an unknown name would just look up
 nothing forever.
@@ -5146,8 +5194,9 @@ convention — never device-local time.
 ## The notice board (one big, unmissable message)
 
 `state.notice` — synced (in `SYNC_KEYS`, and a `SYNC_SINGLETON`: it's one
-composed card, always written whole). Renders into `#notice-board`, the FIRST
-section on the page, deliberately larger and louder than an announcement.
+composed card, always written whole). Posted, it is the strip `#now-notice` at the top of Now (title, first line, your team's
+line, See all → `#sheet-notice`, a director's Take down) and, on send-off Saturday, the Now card itself (now-ui.js,
+`nowNoticeHtml`; the old `#notice-board` card is gone). Tell everyone's preview and the builder's still draw `noticeCardHtml`.
 
 Built for send-off-morning cleanup, where six separate announcements filled a
 whole phone screen and buried the one line each camper needed. Reach for it

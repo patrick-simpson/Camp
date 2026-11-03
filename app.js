@@ -1511,6 +1511,7 @@ function noticeCardHtml(preview, notice) {
   </div>`;
 }
 
+// DORMANT since Step 17 build session 2: the notice is #now-notice / the send-off card (now-ui.js); only settings.js's notice editor still calls this, and it returns at once. Deleted, with the tests that pin it, in the next session.
 function renderNoticeBoard() {
   const el = document.getElementById('notice-board');
   if (!el) return;
@@ -1641,6 +1642,7 @@ function nowBannerHtml(dow, minutes) {
   return main(b.emoji, b.label, time, next, progress, blockMeal(found), blockMeal(after));
 }
 
+// DORMANT since Step 17 build session 2: nothing calls this: the Now card (now-ui.js) replaced the Happening Now banner (nowBannerHtml stays: tests and the schedule data oracle read it). Deleted, with the tests that pin it, in the next session.
 function renderNowBanner() {
   const el = document.getElementById('now-banner');
   if (!el) return;
@@ -8704,6 +8706,7 @@ function paintTeamAccent(el, id) {
 }
 
 // "Your team" summary card — rank, points, and next matchup if one's queued.
+// DORMANT since Step 17 build session 2: its #follow-team-card left the page (the header and the Your team sheet carry the team); renderStandings still calls it and it returns at once. Deleted, with the tests that pin it, in the next session.
 function renderFollowCard() {
   const card = document.getElementById('follow-team-card');
   if (!card) return;
@@ -8790,6 +8793,7 @@ function renderFollowCard() {
 // three slots (time · emoji · station, or Break). Hidden when there's nothing
 // to show (see myElectivesToday). Rendered from renderAll AND the 30s interval
 // so it follows the camp day across a midnight rollover.
+// DORMANT since Step 17 build session 2: its #my-electives-card left the page (the elective card shows my station). Deleted, with the tests that pin it, in the next session.
 function renderMyElectives() {
   const card = document.getElementById('my-electives-card');
   if (!card) return;
@@ -9983,6 +9987,7 @@ function homeBoardGame() {
 // the game. Hidden entirely when nothing is live. Kept current by renderAll,
 // which fires on every synced update. When a live-tracked match is running,
 // the FULL Big Board takes this slot (and the Happening-now banner yields).
+// DORMANT since Step 17 build session 2: its #live-home left the page (a live game is a row with a live board on the Now card); the Big Board it drew still lives in the game takeover. Deleted, with the tests that pin it, in the next session.
 function renderLiveHome() {
   const wrap = document.getElementById('live-home');
   if (!wrap) return;

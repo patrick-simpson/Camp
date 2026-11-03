@@ -875,7 +875,7 @@ test('the six bezier tokens are the spec\'s, and no hand-written cubic-bezier is
 
 test('no code path reads matchMedia for motion any more: JOY_REDUCED and the raw reads are gone', () => {
   const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-  ['../app.js', '../settings.js', '../chat.js', '../push.js'].forEach((f) => {
+  ['../app.js', '../settings.js', '../chat.js', '../push.js', '../now-ui.js'].forEach((f) => {
     const src = strip(readFixture(f));
     assert.notOk(/prefers-reduced-motion/.test(src), f + ' reads the OS setting itself');
     assert.notOk(/JOY_REDUCED/.test(src), f + ' still has the load-time const');
