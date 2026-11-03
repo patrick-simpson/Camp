@@ -1196,29 +1196,6 @@ function electiveMeOnDay(dow) {
   return electivesFor(dow).some((slot) => (slot || []).some(electiveRowHasMe));
 }
 
-// Today's three elective slots for the stored identity (state.identity), as
-// [{ slot, time, station, emoji, onBreak }], or null when there's nothing to
-// show — no identity set, a weekend / no-elective day, or the identity isn't on
-// today's elective sheet at all. Reused by renderMyElectives.
-function myElectivesToday() {
-  const { dow } = campNow();
-  const day = electivesFor(dow);
-  if (!day.length) return null;                        // dow 0/6 — no electives
-  if (!electiveMeOnDay(dow)) return null;              // no identity, or not on today's sheet
-  return [0, 1, 2].map((slot) => {
-    const stations = day[slot] || [];
-    const found = stations.find(electiveRowHasMe);
-    const station = found ? found[0] : null;
-    return {
-      slot,
-      time: schedClock(electiveSlotStart(slot, dow), true),
-      station,
-      emoji: station ? stationEmoji(station) : '☕',
-      onBreak: !station,
-    };
-  });
-}
-
 // ── Elective weather forecast ─────────────────────────────────────
 // Shows the forecast next to FUTURE electives (schedule sheet + "My electives
 // today" card). Source: Open-Meteo — free, no API key, CORS-friendly, so it
@@ -1480,18 +1457,6 @@ function noticeCardHtml(preview, notice, opts) {
   return typeof nowNoticePreviewHtml === 'function' ? nowNoticePreviewHtml(nowNoticeData(nowCtx(), notice), opts) : '';
 }
 
-// DORMANT since Step 17 build session 2: the notice is #now-notice / the send-off card (now-ui.js); only settings.js's notice editor still calls this, and it returns at once. Deleted, with the tests that pin it, in the next session.
-function renderNoticeBoard() {
-  const el = document.getElementById('notice-board');
-  if (!el) return;
-  const html = noticeCardHtml(false);
-  setHiddenIfChanged(el, !html);
-  // Runs on every renderAll and the 30 s tick; an unconditional rewrite
-  // dropped whatever text a counselor had selected in the card. It holds
-  // plain nodes only (no listeners, no jelly parts), so skipping is safe.
-  setHtmlIfChanged(el, html || '');
-}
-
 // Post / un-post from the builder. Editors only — it shows on every device.
 function setNoticeStatus(status, opts) {
   if (!canEdit() || !NOTICE_STATUSES.includes(status)) return;
@@ -1546,6 +1511,10 @@ function schedRange(start, end) {
   return schedClock(start, !sameHalf) + '–' + schedClock(end, true);
 }
 
+// THE SCHEDULE ORACLE. The "Happening now" banner as markup, for any weekday and minute. Since Step 17 NOTHING ON THE PAGE
+// CALLS THIS: the Now card paints from nowModel(). It is kept because week.test.js / seed.test.js and the verify scripts compare
+// the schedule's data through it (a 10,080-minute digest before and after the schedule is edited here), which is a check on the
+// DATA that nowModel's own walk does not replace. Do not add a caller; do not extend it.
 function nowBannerHtml(dow, minutes) {
   const blocks = scheduleForDow(dow);
   if (!blocks.length) return null;
@@ -1609,65 +1578,6 @@ function nowBannerHtml(dow, minutes) {
   const after = blocks.find((x) => x.start >= found.end);
   const next = decorateMealBlock(dow, after || null);
   return main(b.emoji, b.label, time, next, progress, blockMeal(found), blockMeal(after));
-}
-
-// DORMANT since Step 17 build session 2: nothing calls this: the Now card (now-ui.js) replaced the Happening Now banner (nowBannerHtml stays: tests and the schedule data oracle read it). Deleted, with the tests that pin it, in the next session.
-function renderNowBanner() {
-  const el = document.getElementById('now-banner');
-  if (!el) return;
-  // While a live match's Big Board owns the top of the home screen, the
-  // schedule banner yields — the game IS what's happening now. Only hide it:
-  // clearing the markup destroyed the jelly-progress, so the bar refilled
-  // from empty when the banner came back. Kept, a same-block return just
-  // nudges the live bar (a new block fails the shape check and rebuilds).
-  if (typeof homeBoardGame === 'function' && homeBoardGame()) {
-    el.hidden = true;
-    return;
-  }
-  const { dow, minutes } = campNow();
-  const html = nowBannerHtml(dow, minutes);
-  el.hidden = !html;
-  // This runs every 30 s and on every renderAll. Rebuilding the markup
-  // re-creates the jelly-progress, which animates its fill from empty on
-  // connect — so the bar visibly "reloaded" twice a minute. When only the
-  // elapsed value moved, nudge the live element instead; it glides there.
-  // The rain hint changes on its own schedule (hour rollover, each weather
-  // refresh) and sits in the same markup, so it is patched in place too —
-  // otherwise every rain-hint change counted as a new "shape" and rebuilt
-  // the bar on rainy days.
-  const { shape, wx, value } = splitNowBanner(html);
-  const bar = el.querySelector && el.querySelector('jelly-progress.now-progress');
-  if (html && bar && el.__nowShape === shape) {
-    if (value != null && bar.getAttribute('value') !== value) bar.setAttribute('value', value);
-    const wxEl = el.querySelector('.now-wx');
-    if (!wx) {
-      if (wxEl) wxEl.remove();
-    } else if (!wxEl) {
-      // Last child of .now-body in every layout that carries a bar — the
-      // same place a full rebuild puts it.
-      (el.querySelector('.now-body') || el).insertAdjacentHTML('beforeend', wx);
-    } else if (wxEl.outerHTML !== wx) {
-      wxEl.outerHTML = wx;
-    }
-    return;
-  }
-  el.__nowShape = shape;
-  setHtmlIfChanged(el, html || '');
-}
-
-// The banner markup split into what decides whether the live nodes can stay
-// (`shape`: everything except the bar's elapsed value and the rain hint) and
-// the two things that are patched in place instead. Pure — see home.test.js.
-const NOW_WX_RE = /<div class="now-wx">[\s\S]*?<\/div>/;
-function splitNowBanner(html) {
-  const src = html || '';
-  const wx = NOW_WX_RE.exec(src);
-  const val = /<jelly-progress[^>]*?value="(\d+)"/.exec(src);
-  return {
-    shape: src.replace(NOW_WX_RE, '').replace(/(<jelly-progress[^>]*?)value="\d+"/, '$1'),
-    wx: wx ? wx[0] : '',
-    value: val ? val[1] : null,
-  };
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -2469,7 +2379,7 @@ function nowTick(opts) {
   return 'clock';
 }
 
-// ── Full week schedule sheet (tap the Happening Now banner) ──────
+// ── Full week schedule sheet (Now's "Whole day" link, More → Full schedule) ──────
 // A bottom sheet with the whole printed schedule, day by day: a
 // timeline of every block, today's current block highlighted, meals
 // showing their dish, electives showing who's at each station, and
@@ -3860,10 +3770,9 @@ function migrateState(s) {
   if ((c.version || 1) < 4) {
     // Counselor Hide and Seek: all teams play at once (no bracket), so give it
     // the same all-teams liveRankings treatment as Inflatable Bowling/Cider
-    // Survivor — it now shows up in "Live Now" (home screen, big board when
-    // nothing else is live) with every team's running score, updating in real
-    // time as the ref taps points, plus its game clock. Previously it had no
-    // live-now presence at all while a game was in progress.
+    // Survivor — it now shows as a live row on Now (and a live board in its own
+    // takeover) with every team's running score, updating in real time as the
+    // ref taps points, plus its game clock.
     const hs2 = c.games.find((g) => g.id === 'counselor-hide-seek');
     if (hs2) hs2.liveRankings = true;
     c.version = 4;
@@ -8400,7 +8309,6 @@ function renderStandings() {
     lastPointsByTeam = null;
     clPrevSnap = null;
     remoteJustApplied = false;
-    renderFollowCard();
     return;
   }
   const counts = medalCounts();
@@ -8461,7 +8369,6 @@ function renderStandings() {
   lastPointsByTeam = {};
   ranked.forEach((team) => { lastPointsByTeam[team.id] = counts[team.id].points; });
   renderCatchupHint(ranked, counts);
-  renderFollowCard(ranked, counts);
   if (changedTeams.length) notifyPointChanges(changedTeams);
   // Append any local point-total changes to the change-history log. Best-effort:
   // wrapped so a logging failure can never break the standings render.
@@ -8662,129 +8569,6 @@ function teamAccentAttr(id) {
   const vars = teamAccentVars(id);
   return vars ? ` style="${vars}"` : '';
 }
-// paintTeamAccent is for an element that is kept and patched (the follow card): it writes only what changed, so an
-// idle render touches nothing, and a team with no colour leaves the CSS fallback (the app primary) in charge.
-function paintTeamAccent(el, id) {
-  const want = {};
-  (id ? teamAccentVars(id) : '').split(';').forEach((kv) => { const i = kv.indexOf(':'); if (i > 0) want[kv.slice(0, i)] = kv.slice(i + 1); });
-  ['--team-accent-l', '--team-accent-d'].forEach((prop) => {
-    const cur = el.style.getPropertyValue(prop);
-    if (want[prop]) { if (cur !== want[prop]) el.style.setProperty(prop, want[prop]); }
-    else if (cur) el.style.removeProperty(prop);
-  });
-}
-
-// "Your team" summary card — rank, points, and next matchup if one's queued.
-// DORMANT since Step 17 build session 2: its #follow-team-card left the page (the header and the Your team sheet carry the team); renderStandings still calls it and it returns at once. Deleted, with the tests that pin it, in the next session.
-function renderFollowCard() {
-  const card = document.getElementById('follow-team-card');
-  if (!card) return;
-  if (state.followTeam === undefined) { setHiddenIfChanged(card, true); return; }
-  if (state.followTeam === null) {
-    setClassNameIfChanged(card, 'follow-team-card');
-    paintTeamAccent(card, null);
-    setHiddenIfChanged(card, false);
-    if (!setHtmlIfChanged(card, `<p class="muted follow-neutral-line">🏳️ Not following a team — <button id="pick-team-link" class="link-btn">pick one</button></p>`)) return;
-    const link = document.getElementById('pick-team-link');
-    if (link) link.addEventListener('click', openTeamPicker);
-    return;
-  }
-  const team = state.teams.find((t) => t.id === state.followTeam);
-  if (!team) { setHiddenIfChanged(card, true); return; }
-  const next = findNextMatchupFor(team.id);
-  const nextLine = next
-    ? `<p class="follow-next-line">⏭️ Up next: vs ${teamEmoji(next.opponentId)} ${esc(teamName(next.opponentId))} in ${esc(next.game.name)}</p>`
-    : '';
-  const nextCleanup = findNextCleanupFor(team.id);
-  const cleanupLine = nextCleanup
-    ? `<p class="follow-next-line">🧽 Next meal cleanup:<br>${esc(dayLabel(nextCleanup.day))} ${esc(nextCleanup.meal)}</p>`
-    : '';
-  const you = canonicalCounselorName(state.identity);
-  // The "who are you" line exists to surface YOUR electives — camps without
-  // electives (senior) have nothing to show, so the line disappears.
-  const youLine = !CAMP.features.electives ? ''
-    : you
-    ? `<p class="follow-you-line">${esc(you)} <button id="change-identity-link" class="link-btn">Change</button></p>`
-    : `<p class="follow-you-line follow-you-empty"><button id="set-identity-link" class="link-btn">🙋 Tell us who you are</button> to see your electives</p>`;
-  teamPhotoNeed(team.id);
-  const shield = teamCrestSrc(team.id);
-  const crestHtml = shield
-    ? `<div class="follow-team-crest"><img class="follow-team-shield" src="${shield}" alt="${esc(team.name)} team shield" width="480" height="667" loading="lazy" decoding="async"></div>`
-    : '';
-  // Rank and points are directors' eyes only (see "Standings secrecy"): a
-  // counselor's team card carries the team, its next matchup and cleanup, and
-  // no number at all. The readers are only reached when a director is looking.
-  let statsLine = '';
-  if (standingsVisible()) {
-    const counts = medalCounts();
-    const ranked = rankTeamsByPoints(counts);
-    const rank = ranked.findIndex((t) => t.id === team.id) + 1;
-    const s = counts[team.id];
-    const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '';
-    statsLine = `<div class="follow-team-stats">
-    <span class="follow-rank-pill">${medal ? medal + ' ' : ''}${ordinal(rank)} place</span>
-    <span class="follow-points">${s.points} pts</span>
-  </div>`;
-  }
-  setClassNameIfChanged(card, 'follow-team-card' + (shield ? ' has-shield' : ''));
-  paintTeamAccent(card, team.id);
-  setHiddenIfChanged(card, false);
-  // Skipping an unchanged rebuild matters most here: the shield is a lazy,
-  // async-decoded image, and a fresh <img> can paint blank for a frame — the
-  // crest blinked every time anyone saved a score. When the card DOES change
-  // (our points moved), the old crest node is put back, still decoded.
-  const oldCrest = card.querySelector('.follow-team-crest');
-  if (!setHtmlIfChanged(card, `
-    ${crestHtml}
-    <div class="follow-team-body">
-      <div class="follow-team-head">
-        ${shield ? '' : `<span class="follow-team-emoji">${teamEmoji(team.id)}</span>`}
-        <div class="follow-team-headings">
-          <div class="follow-team-name">${esc(team.name)}</div>
-          ${statsLine}
-        </div>
-        ${memberTeamId ? '<span class="follow-your-team" title="Set by your account">Your team</span>' : '<button id="change-team-link" class="link-btn follow-change-btn">Change</button>'}
-      </div>
-      ${nextLine}
-      ${cleanupLine}
-      ${youLine}
-    </div>
-  `)) return;
-  const newCrest = card.querySelector('.follow-team-crest');
-  if (oldCrest && newCrest && oldCrest.innerHTML === newCrest.innerHTML) newCrest.replaceWith(oldCrest);
-  const changeBtn = document.getElementById('change-team-link');
-  if (changeBtn) changeBtn.addEventListener('click', openTeamPicker);
-  const idBtn = document.getElementById('change-identity-link') || document.getElementById('set-identity-link');
-  if (idBtn) idBtn.addEventListener('click', openIdentityPicker);
-}
-
-// Compact "My electives today" card in the top strip — the stored identity's
-// three slots (time · emoji · station, or Break). Hidden when there's nothing
-// to show (see myElectivesToday). Rendered from renderAll AND the 30s interval
-// so it follows the camp day across a midnight rollover.
-// DORMANT since Step 17 build session 2: its #my-electives-card left the page (the elective card shows my station). Deleted, with the tests that pin it, in the next session.
-function renderMyElectives() {
-  const card = document.getElementById('my-electives-card');
-  if (!card) return;
-  const rows = myElectivesToday();
-  if (!rows) { setHiddenIfChanged(card, true); setHtmlIfChanged(card, ''); return; }
-  setHiddenIfChanged(card, false);
-  // Same rule as the other home panels: this runs on every renderAll and the
-  // 30 s tick, so identical markup must not be rewritten (it drops a text
-  // selection and repaints the card for nothing).
-  setHtmlIfChanged(card, `
-    <div class="my-el-head"><span class="my-el-title">⭐ My electives today</span></div>
-    <div class="my-el-rows">
-      ${rows.map((r) => `
-        <div class="my-el-row ${r.onBreak ? 'is-break' : ''}">
-          <span class="my-el-time">${r.time}</span>
-          <span class="my-el-emoji">${r.emoji}</span>
-          <span class="my-el-station">${r.onBreak ? 'Break' : esc(r.station)}</span>
-          <span class="my-el-wx">${electiveWxHtml(campNow().dow, r.slot)}</span>
-        </div>`).join('')}
-    </div>`);
-}
-
 function ordinal(n) {
   const s = ['th', 'st', 'nd', 'rd'];
   const v = n % 100;
@@ -8795,7 +8579,7 @@ function ordinal(n) {
 // A tiny two-step flow in one overlay: first "which team are you rooting
 // for?", then (for a real team) "which one are you?" so a counselor's own
 // electives can be surfaced. Device-local — shown once after unlocking until
-// answered, and reachable again later via the follow-team card. Existing
+// answered, and reachable again later via the Now card's "Not Sam? Change". Existing
 // followers from before identity shipped get only the name step on next launch.
 
 // Picker step machine (module-local, not persisted).
@@ -8860,7 +8644,7 @@ function openTeamPicker() {
   showPickerOverlay();
 }
 
-// Jump straight to the identity step (from the follow card, or the launch
+// Jump straight to the identity step (from the Now card's "Not Sam? Change", or the launch
 // migration). Only meaningful when a real team is being followed.
 function openIdentityPicker() {
   if (!CAMP.features.electives) return; // no electives → no "which one are you?"
@@ -9895,8 +9679,6 @@ function renderGameView() {
   }
 }
 
-// Games with a bracket in progress (started, not yet finalized) — surfaced
-// as a highlighted "Live now" card at the top of the home screen.
 // Ranked live standings for a `liveRankings` tally game (Inflatable Bowling,
 // Pictionary), read straight from the synced draft scores so viewers see the
 // board climb in real time. For Pictionary the per-team totals are filled by
@@ -9922,189 +9704,6 @@ function tallyRankLive(g) {
 
 function tallyInProgress(g) {
   return !!g.liveRankings && !state.results[g.id] && tallyRankLive(g).length > 0;
-}
-
-function liveHomeGames() {
-  return allGames().filter((g) => {
-    const b = state.brackets && state.brackets[g.id];
-    // A bracket only means "live" for a tournament game. Changing a started
-    // game to another format leaves its bracket behind in state.brackets, and
-    // counting it here pinned the game to "Live now" on every device for good
-    // (no screen offers Cancel bracket for a non-tournament game).
-    if (b && g.format === 'tournament' && bracketKnown(b) && normalizeBracket(b).phase !== 'summary') return true;
-    return tallyInProgress(g);
-  });
-}
-
-// The game whose Big Board should take over the top of the home screen: a
-// live-tracked matchup in progress (preferred), or — if none — an
-// all-teams-at-once liveRankings tally game being scored. Either way the user
-// mustn't already be watching it in the game view (no double board).
-function homeBoardGame() {
-  const games = liveHomeGames();
-  const g = games.find((x) => {
-    if (!x.liveTracker) return false;
-    const b = state.brackets && state.brackets[x.id];
-    return b && currentMatchupOf(x, normalizeBracket(b));
-  }) || games.find((x) => x.liveRankings);
-  if (!g || state.ui.gameId === g.id) return null;
-  return g;
-}
-
-// Renders the highlighted "Live now" card(s) at the top of the home screen so
-// spectators (and refs) see the current matchup + live score without opening
-// the game. Hidden entirely when nothing is live. Kept current by renderAll,
-// which fires on every synced update. When a live-tracked match is running,
-// the FULL Big Board takes this slot (and the Happening-now banner yields).
-// DORMANT since Step 17 build session 2: its #live-home left the page (a live game is a row with a live board on the Now card); the Big Board it drew still lives in the game takeover. Deleted, with the tests that pin it, in the next session.
-function renderLiveHome() {
-  const wrap = document.getElementById('live-home');
-  if (!wrap) return;
-  let games = liveHomeGames();
-  if (!games.length) { setHiddenIfChanged(wrap, true); setLiveHtmlIfChanged(wrap, '', []); return; }
-  setHiddenIfChanged(wrap, false);
-
-  let boardHTML = '';
-  const bg = homeBoardGame();
-  if (bg) {
-    let boardBody;
-    if (bg.liveTracker) {
-      const pair = currentMatchupOf(bg, normalizeBracket(state.brackets[bg.id]));
-      boardBody = liveTrackerHTML(bg, pair[0], pair[1], true);
-    } else {
-      boardBody = tallyBoardHTML(bg);
-    }
-    boardHTML = `<div class="home-board" data-game-id="${esc(bg.id)}" role="button" tabindex="0" aria-label="Open ${esc(bg.name)}">
-      <p class="home-board-title">${esc(bg.emoji)} ${esc(bg.name)} <span class="home-board-open">tap to open ›</span></p>
-      ${boardBody}
-    </div>`;
-    games = games.filter((x) => x.id !== bg.id);
-  }
-
-  const liveHtml = boardHTML + games.map((g) => {
-    if (!(state.brackets && state.brackets[g.id])) return liveHomeTallyCard(g); // tally live board
-    const b = normalizeBracket(state.brackets[g.id]);
-    const phaseLabel = { round1: 'Round 1', bye: 'Bye', semifinal: 'Championship game', championship: 'Final', summary: 'Results' }[b.phase] || '';
-    const pair = currentMatchupOf(g, b);
-    let scoreHTML;
-    if (pair && g.ladderScoring) {
-      const l = getLadderMatch(g, pair[0], pair[1]);
-      const target = g.ladderScoring.target || 21;
-      scoreHTML = `<span class="live-home-score">
-        <span class="lh-team">${teamEmoji(pair[0])} ${esc(teamName(pair[0]))}</span>
-        <span class="lh-nums">${l.a}<span class="lh-dash">–</span>${l.b}</span>
-        <span class="lh-team">${teamEmoji(pair[1])} ${esc(teamName(pair[1]))}</span>
-      </span>
-      <span class="live-home-sub">First to ${target}</span>`;
-    } else if (pair && g.liveTracker) {
-      const l = getLiveMatch(g, pair[0], pair[1]);
-      const periodLabel = g.liveTracker.periodLabel || 'Inning';
-      scoreHTML = `<span class="live-home-score">
-        <span class="lh-team">${teamEmoji(pair[0])} ${esc(teamName(pair[0]))}</span>
-        <span class="lh-nums">${l.hr[pair[0]] || 0}<span class="lh-dash">–</span>${l.hr[pair[1]] || 0}</span>
-        <span class="lh-team">${teamEmoji(pair[1])} ${esc(teamName(pair[1]))}</span>
-      </span>
-      <span class="live-home-sub">${(g.liveTracker.innings || 3) > 1 ? `${esc(periodLabel)} ${l.inning} of ${g.liveTracker.innings || 3}` : esc(g.liveTracker.unit || 'Live score')}${g.liveTracker.outs ? ` · ${outsLabel(l.outs)} · ${teamEmoji(kickingTeamId(l, pair[0], pair[1]))} ${esc(teamName(kickingTeamId(l, pair[0], pair[1])))} ${esc(g.liveTracker.sideLabel || 'up')}` : ''}</span>`;
-    } else if (pair) {
-      scoreHTML = `<span class="live-home-matchup">${teamEmoji(pair[0])} ${esc(teamName(pair[0]))} <span class="lh-vs">vs</span> ${teamEmoji(pair[1])} ${esc(teamName(pair[1]))}</span>`;
-    } else {
-      scoreHTML = `<span class="live-home-sub">${phaseLabel} in progress — tap to watch</span>`;
-    }
-    const nxt = nextMatchupOf(g, b);
-    const onDeckHTML = nxt
-      ? `<span class="live-home-ondeck">⏭️ Up next: ${teamEmoji(nxt[0])} ${esc(teamName(nxt[0]))} vs ${teamEmoji(nxt[1])} ${esc(teamName(nxt[1]))}</span>`
-      : '';
-    return `<button class="live-home-card" data-game-id="${esc(g.id)}">
-      <span class="live-home-top"><span class="live-home-badge">🔴 LIVE</span><span class="live-home-game">${esc(g.emoji)} ${esc(g.name)} · ${phaseLabel}</span></span>
-      ${scoreHTML}
-      ${onDeckHTML}
-    </button>`;
-  }).join('');
-
-  // Rebuilt only when what it shows changed (clock digits aside — the tick
-  // owns those). It used to be rewritten on every renderAll: each LIVE card's
-  // pulse ring restarted mid-beat, goal cannons on the board were wiped
-  // mid-flight, the board's final-ten glow blinked off, and a mouse press that
-  // straddled a snapshot opened nothing (its button was replaced under it).
-  // Its listeners hold no state (openGame looks the game up by id), so they
-  // are wired only onto fresh nodes.
-  if (setLiveHtmlIfChanged(wrap, liveHtml, [])) {
-    const openFrom = (el) => openGame(el.dataset.gameId);
-    wrap.querySelectorAll('.live-home-card').forEach((btn) => {
-      btn.addEventListener('click', () => openFrom(btn));
-    });
-    const board = wrap.querySelector('.home-board');
-    if (board) {
-      board.addEventListener('click', () => openFrom(board));
-      board.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') openFrom(board); });
-    }
-  }
-  // Every render, written or not: it diffs the score against the last one.
-  const hb = wrap.querySelector('.home-board');
-  if (hb) {
-    const g = gameById(hb.dataset.gameId);
-    const b = g && state.brackets[g.id] && normalizeBracket(state.brackets[g.id]);
-    const pair = b && currentMatchupOf(g, b);
-    if (pair) boardDiffCelebrate(hb.querySelector('.big-board'), g, getLiveMatch(g, pair[0], pair[1]), pair);
-  }
-}
-
-// Compact "Live now" card for a tally game being scored (Inflatable Bowling,
-// Pictionary): the current leader + how many teams are in. Times/points only.
-// A counselor gets no leader: the first team in roster order is not the leader,
-// so the card says how many teams are in and nothing about who is ahead.
-function liveHomeTallyCard(g) {
-  const ranked = tallyRankLive(g);
-  const seeOrder = standingsVisible();
-  const top = seeOrder ? ranked[0] : null;
-  const complete = ranked.length >= state.teams.length;
-  const scoreLine = top
-    ? `<span class="live-home-score"><span class="lh-team">${teamEmoji(top.id)} ${esc(teamName(top.id))}</span><span class="lh-nums">${esc(formatScore(g, top.v))}</span></span>`
-    : '<span class="live-home-sub">Scoring under way…</span>';
-  const label = !seeOrder ? 'Scores so far' : g.lowerWins ? 'Fastest so far' : 'Leader';
-  return `<button class="live-home-card" data-game-id="${esc(g.id)}">
-    <span class="live-home-top"><span class="live-home-badge">🔴 LIVE</span><span class="live-home-game">${esc(g.emoji)} ${esc(g.name)}</span></span>
-    ${scoreLine}
-    <span class="live-home-sub">${label} · ${ranked.length}/${state.teams.length} teams in${complete && seeOrder ? ' · 🏅 medals ready' : ''}</span>
-  </button>`;
-}
-
-// Big-board treatment for an all-teams-at-once tally game (Counselor Hide and
-// Seek and any other liveRankings game), used when it's promoted to the top
-// of the home screen: every team's running score shown large, ranked live,
-// plus the game clock when the game has one (same idea as liveBoardHTML for
-// head-to-head games, just shaped for N teams instead of 2). The game's OWN
-// page uses the smaller renderLiveTallyWatch instead — its clock already
-// comes from #clock-area, so this board's clock would just duplicate it there.
-function tallyBoardHTML(g) {
-  const ranked = tallyRankLive(g);
-  // The order, the places and the podium are directors' eyes only. A counselor
-  // gets the teams in roster order with their game scores and no numerals, so
-  // nothing on the board says who leads. Medal discs on the live order say who
-  // WON before a director has saved the result, so they are directors' too.
-  const seeOrder = standingsVisible();
-  const complete = ranked.length >= state.teams.length && seeOrder;
-  const medals = ['🥇', '🥈', '🥉'];
-  const clock = g.timer ? getClock(g) : null;
-  const remaining = clock ? clockRemaining(clock) : 0;
-  const rows = ranked.length ? ranked.map((e, i) => `
-    <div class="board-tally-row${seeOrder && i < 3 ? ' board-tally-podium' : ''}"${teamAccentAttr(e.id)}>
-      <span class="board-tally-rank">${!seeOrder ? '' : complete && i < 3 ? medals[i] : (i + 1) + '.'}</span>
-      <span class="board-tally-team">${teamEmoji(e.id)} ${esc(teamName(e.id))}</span>
-      <span class="board-tally-score">${esc(formatScore(g, e.v))}</span>
-    </div>`).join('') : '<p class="muted">Scoring under way…</p>';
-  const clockHTML = clock ? `
-    <div class="board-clock-wrap">
-      <span class="board-clock ${remaining === 0 ? 'board-clock-zero' : ''}" data-game-clock data-game-id="${esc(g.id)}">${fmtBoardClock(remaining)}</span>
-    </div>` : '';
-  return `<div class="big-board viewer" data-board-game="${esc(g.id)}">
-    <div class="board-head">
-      <span class="live-home-badge">🔴 LIVE</span>
-      <span class="board-period">${!seeOrder ? 'Scores so far' : g.lowerWins ? 'Fastest so far' : 'Team totals'} · ${ranked.length}/${state.teams.length} in</span>
-    </div>
-    ${clockHTML}
-    <div class="board-tally-rows">${rows}</div>
-  </div>`;
 }
 
 // The matchup a bracket is currently waiting on a winner for — used by the
@@ -10139,8 +9738,7 @@ function nextMatchupOf(g, b) {
 // matches. Re-rendered by renderAll whenever a synced update lands.
 // Note: no clock here — for the game's OWN page, #clock-area (renderGameView)
 // already shows the standalone game clock above this view; a second one here
-// would just duplicate it. tallyBoardHTML's clock is for the home-screen
-// promoted board only, a separate spot with no clock of its own.
+// would just duplicate it.
 function renderLiveTallyWatch(container, g) {
   const ranked = tallyRankLive(g);
   if (!ranked.length) {
@@ -11132,9 +10730,8 @@ function holdBoardCelebrations() {
     const pops = [...board.querySelectorAll('[data-board-col] .score-pop')]
       .map((el) => ({ team: el.closest('[data-board-col]').dataset.boardCol, t: runningAnimTime(el) }))
       .filter((x) => x.t != null);
-    // Only onto a replacement in the SAME place: opening the game from the
-    // home board must not carry the home board's volley into the game view.
-    const host = board.closest('#live-home, #takeover-game');
+    // Only onto a replacement in the SAME place: a board in the game takeover keeps its volley across a rebuild.
+    const host = board.closest('#takeover-game');
     if (host && (cannons.length || pops.length)) held.push({ board, host, gid: board.dataset.boardGame, cannons, pops });
   });
   return () => held.forEach(({ board, host, gid, cannons, pops }) => {
@@ -11226,7 +10823,7 @@ function liveTrackerHTML(g, aId, bId, viewer) {
 
   return `<div class="big-board ${viewer ? 'viewer' : ''}" data-board-game="${esc(g.id)}">
     <div class="board-head">
-      <span class="live-home-badge">🔴 LIVE</span>
+      <span class="board-live-badge">🔴 LIVE</span>
       ${periodRow}
     </div>
     <div class="board-cols">
@@ -11269,7 +10866,7 @@ function liveBoardHTML(g, aId, bId) {
     </div>` : '';
   return `<div class="big-board viewer" data-board-game="${esc(g.id)}">
     <div class="board-head">
-      <span class="live-home-badge">🔴 LIVE</span>
+      <span class="board-live-badge">🔴 LIVE</span>
       ${sub ? `<span class="board-period">${sub}</span>` : ''}
     </div>
     <div class="board-cols">
@@ -14268,8 +13865,8 @@ function init() {
   window.addEventListener('jelly-motion-change', renderCalmRow);
   renderCalmRow();
   document.getElementById('sound-toggle').addEventListener('change', toggleSound);
-  // The Alerts sheet's "While Camp is open" pop-ups switch is the same state as
-  // the Notify me button on Now (toggleNotify keeps both in step).
+  // The Alerts sheet's "While Camp is open" pop-ups switch is the one control for state.notify
+  // (the Notify me button left Now with Step 17).
   const notifySw = document.getElementById('notify-toggle');
   // (A change event is the person's own tap — a programmatic `checked` never fires one — so it simply flips the state.)
   if (notifySw) notifySw.addEventListener('change', toggleNotify);

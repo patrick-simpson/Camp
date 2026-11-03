@@ -32,7 +32,7 @@ test('a DOM changed by something else is rebuilt even when the markup matches', 
 test('a panel cleared by another code path is refilled', () => {
   const el = fakeEl();
   setHtmlIfChanged(el, '<p>banner</p>');
-  el.innerHTML = ''; // e.g. renderNowBanner yielding to a live Big Board
+  el.innerHTML = ''; // e.g. a panel whose markup another code path cleared
   assert.ok(setHtmlIfChanged(el, '<p>banner</p>'));
 });
 
@@ -43,15 +43,14 @@ test('the home panels that re-render on every snapshot go through the guard', ()
     assert.ok(start > -1, name + ' exists');
     return src.slice(start, src.indexOf('\n}\n', start));
   };
-  ['renderFollowCard', 'renderBonuses', 'renderMemoryVerse', 'renderMealCleanup', 'renderNowBanner', 'renderDayTabs', 'renderTeamSheet']
+  ['renderBonuses', 'renderMemoryVerse', 'renderMealCleanup', 'renderDayTabs', 'renderTeamSheet']
     .forEach((fn) => assert.ok(body(fn).includes('setHtmlIfChanged('), fn + ' skips unchanged rebuilds'));
   // The frame's volatile lines are text nodes patched in place, never rewritten.
   ['renderHeader', 'renderSyncPill', 'renderMoreFoot', 'renderAlertsState']
     .forEach((fn) => assert.ok(/setTextIfChanged\(|setHiddenIfChanged\(/.test(body(fn)), fn + ' patches in place'));
   assert.ok(body('paintTeamMark').includes('setHtmlIfChanged('), 'a team mark is written only when it would change');
-  // The progress bar is nudged in place, never re-created, when only the
-  // elapsed time moved.
-  assert.ok(/bar\.setAttribute\('value'/.test(body('renderNowBanner')));
+  // The Now card's hairline is nudged in place, never refilled, when only the elapsed time moved (now-ui.test.js pins it by behaviour).
+  assert.ok(/fill\.style\.setProperty\('--p'/.test(readFixture('../now-ui.js')));
 });
 
 // ── the frame's volatile lines, by behaviour (the source-text pin above can't see a

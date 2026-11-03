@@ -506,25 +506,6 @@ test('the Pictionary tools survive a render that changes nothing — a running l
   } finally { bindPicRound = real; liveWatches[g.id].running = false; }
 });
 
-test('the home Live-now strip is rewritten only when what it shows changes', () => {
-  freshState();
-  setMemberRole('editor');
-  const g = state.config.games.find((x) => x.id === 'axe-throwing');
-  state.ui.gameId = null;
-  state.drafts[g.id] = { scores: { t0: '4', t1: '2' }, medals: {} };
-  const wrap = document.getElementById('live-home');
-  const w = countingWrites(wrap);
-  delete wrap.__liveKey; delete wrap.__liveHolds;
-  renderLiveHome();
-  assert.equal(w.writes, 1, 'first paint');
-  renderLiveHome();
-  renderLiveHome();
-  assert.equal(w.writes, 1, 'idle renders keep the cards (their pulse phase, a press in flight)');
-  state.drafts[g.id].scores.t0 = '9';
-  renderLiveHome();
-  assert.equal(w.writes, 2, 'a new score is a rewrite');
-});
-
 test('the not-started bracket card is kept by idle renders; a started bracket forgets the key', () => {
   freshState();
   setMemberRole('editor');
@@ -644,7 +625,7 @@ test('the game view head and the live panels are not rebuilt by every render', (
   assert.notOk(/\bbody\.innerHTML = html\b/.test(body('renderGameView')), 'no unconditional whole-body rewrite');
   ['rememberGameOpener', 'restoreGameOpener', 'scrollToGameView', 'setCardOpenNow', 'gameOpener'].forEach((n) =>
     assert.notOk(new RegExp('\\b' + n + '\\b').test(src.replace(/\/\/.*$/gm, '')), n + ' retired: the tab under a takeover never moves'));
-  ['renderLiveHome', 'renderLiveWatch', 'renderLiveTallyWatch', 'renderResult', 'renderTally', 'renderPlacement']
+  ['renderLiveWatch', 'renderLiveTallyWatch', 'renderResult', 'renderTally', 'renderPlacement']
     .forEach((fn) => assert.ok(body(fn).includes('setLiveHtmlIfChanged('), fn + ' skips unchanged rebuilds'));
   assert.ok(/paintBoardClocks\(\);\s*$/.test(body('renderAll')), 'renderAll ends by painting the clocks');
   assert.notOk(/if \(settled\) renderAll\(\)/.test(src), 'the clock settle no longer renders under a focused field');

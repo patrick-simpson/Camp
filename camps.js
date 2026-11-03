@@ -101,10 +101,8 @@ const TEAM_SHIELD = {
   t4: 'images/team-shields/patriotic-pilgrims.webp?v=5',
   t5: 'images/team-shields/runaway-john-deeres.webp?v=5',
 };
-// Per-team accent color, tuned to each team's shield/emoji. Drives the "Your
-// team" card's tint, border, and rank pill via the --team-accent CSS custom
-// property (see renderFollowCard / .follow-team-card). Only one team's card
-// shows at a time, so these never sit side by side.
+// Per-team accent color, tuned to each team's shield/emoji. Drives the team tint on boards and rows via the
+// --team-accent CSS custom property (see teamAccentVars in app.js).
 const TEAM_ACCENT = {
   t0: '#e2672b', // Ferocious Foxes — fox orange
   t1: '#9c6420', // Turkey Dinner — roast brown

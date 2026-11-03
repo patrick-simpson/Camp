@@ -262,7 +262,7 @@ test('a refused read is final for that version; a dropped connection is asked ab
 test('the photo is kept under a per-camp, per-version key and only crest-drawing code asks for it', () => {
   assert.equal(teamPhotoIdbKey('t2', 123), 'team:' + CAMP.id + ':t2:123');
   const callers = APP.split('\n').filter((l) => /teamPhotoNeed\(/.test(l) && !/^function teamPhotoNeed/.test(l));
-  assert.equal(callers.length, 2, 'teamMarkSpec and the Your team card, nothing else: ' + callers.join(' | '));
+  assert.equal(callers.length, 1, 'teamMarkSpec (the one place a crest is drawn from), nothing else: ' + callers.join(' | '));
   assert.ok(!/once\(['"]value['"]\)[^;]*teamPhotos/.test(SETUP_SYNC) && !/teamPhotos/.test(SETTINGS), 'the classic builder and the setup engine never read the photos');
 });
 

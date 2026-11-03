@@ -88,9 +88,9 @@ test('a viewer sees the same card instead of a live view', () => {
   assert.equal(JSON.stringify(state.brackets[g.id]), JSON.stringify(foreignBracket()));
 });
 
-test('it never shows as a live game on the home screen or in the upcoming matchups', () => {
+test('it never shows as a live game on the Now card or in the upcoming matchups', () => {
   const g = setupGuard();
-  assert.notOk(liveHomeGames().some((x) => x.id === g.id));
+  assert.notOk(gameRowStatus(g) === 'live');
   assert.deepEqual(upcomingMatchups(g), []);
   assert.doesNotThrow(() => renderAll());
 });

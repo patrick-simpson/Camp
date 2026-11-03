@@ -793,7 +793,7 @@ dark, 100 / 130 / 200 % (`SHOTS=1` for screenshots).
 
 ## The Now engine (app.js — Step 17, build session 1)
 
-`nowModel(opts)` (app.js, "THE NOW ENGINE", after `splitNowBanner`) is the whole Now tab as PLAIN DATA — no markup, no DOM,
+`nowModel(opts)` (app.js, "THE NOW ENGINE", after `nowBannerHtml`) is the whole Now tab as PLAIN DATA — no markup, no DOM,
 no timer — computed from the week through the SEAM accessors, the state and the clock it is GIVEN (`opts.now` =
 `{ dow, minutes }`, `opts.ms` = server ms; default `campNow()` / `serverNow()`). now-ui.js paints it: `renderNow(model)`
 (a full paint), `renderNowClock(model)` and `renderNowMessages(model)` are the hooks it defines (all typeof-guarded;
@@ -894,11 +894,10 @@ in `tests/preview.test.js`):
   a paint under a takeover animate nothing.
 - **Previews**: a notice drawn outside the page (Tell everyone's, the builder's) is `nowNoticeStripHtml` / `nowNoticePreviewHtml`; a test compares the strip's
   class list with index.html's static `#now-notice`, so the two cannot drift.
-- **Dormant, to delete with their tests in the next session**: `renderNoticeBoard`, `renderNowBanner` + `splitNowBanner`, `renderFollowCard`,
-  `renderMyElectives`, `renderLiveHome` (each marked "DORMANT" in app.js; none is on a render path, their elements left the page; `nowBannerHtml`
-  stays: the schedule oracle in week / seed tests). The tests that still call them: home.test.js, render-stability.test.js, game-view.test.js,
-  secrecy.test.js, week.test.js, palette.test.js. `homeBoardGame` / `liveHomeGames` go with `renderLiveHome` (scoring.test.js and
-  bracket-guard.test.js read `liveHomeGames`).
+- **Deleted (Step 17, build session 3)**: the old follow card, banner renderer, live strip, My electives card and notice board
+  (`renderFollowCard`, `renderNowBanner` + `splitNowBanner`, `renderLiveHome` + `homeBoardGame` / `liveHomeGames` / `liveHomeTallyCard` /
+  `tallyBoardHTML`, `renderMyElectives` + `myElectivesToday`, `renderNoticeBoard`, `paintTeamAccent`) and their CSS. `nowBannerHtml` stays as the
+  schedule ORACLE (week / seed tests compare the schedule's data through it; nothing on the page calls it).
 - **Not built**: a keyed glide for game rows (a re-sort jumps), the Playwright pass on a real phone, and `data-joy` on Score.
 - **Page checks**: `docs/build-notes/verify/step17-design.cjs` (the specimens) is the reference for the markup; the real-page pass is the
   same measure over the real renderers (every kind, both camps, 360 / 390, light / dark, 100 / 130 / 200%: 222 views, no target under 44x44,
@@ -2224,7 +2223,7 @@ What's covered, and why each file exists:
   ("Team colours and the Teams screen"): the twelve swatches recomputed in both themes against the
   surfaces read out of styles.css, `campContrast` against an independent WCAG implementation, a list
   of hostile `color` strings that must never reach a style attribute (they select no swatch and fall
-  back to the camp's colour), `paintTeamAccent`'s idle render writing nothing, the tile, a source
+  back to the camp's colour), the tile, a source
   scan that no raw `--team-accent: ${…}` is left, and styles.css's light / dark / OS-dark mapping.
 - `teams-screen.test.js` (+ `.senior`, which evals it) — the Teams screen ("Team colours and the Teams screen"): one case
   per sentence `hubStatus('teams')` can say (a shared colour named, three, two pairs; no short name / emoji; the slot repair
@@ -2324,10 +2323,9 @@ What's covered, and why each file exists:
   DOM. `renderAll` runs on every remote snapshot and the 30 s tick, and a
   re-created Jelly component repaints/animates from scratch (the "Happening
   now" progress bar refilled from empty twice a minute; the team shield
-  blinked; chips twitched). Home panels write through `setHtmlIfChanged`,
-  the day tabs refresh their panels in place, and the progress bar is nudged
-  rather than rebuilt (the rain hint is patched in place — `splitNowBanner`
-  keeps it out of the bar's shape check). The frame's volatile lines are pinned
+  blinked; chips twitched). Home panels write through `setHtmlIfChanged`
+  and the day tabs refresh their panels in place (the Now card's hairline is nudged,
+  never refilled: see "The Now tab"). The frame's volatile lines are pinned
   by BEHAVIOUR (write counters on the stub: a pill flip writes the pill and not
   the shield or the identity text; `renderMore` with changed alerts / presence
   writes no segmented-control attribute), and a Playwright MutationObserver pass
@@ -2713,7 +2711,7 @@ does, so an app device always chooses by its own key.
   "Alysa", a phone whose stored `state.identity` is "Lilly" — keeps matching
   through ONE function, `canonicalCounselorName()` (camps.js; table
   `COUNSELOR_NAME_ALIASES`): `missingSeedCounselors`, `adoptMemberTeam`,
-  `myStationFor` / `myElectivesToday` / the schedule "You" markers, and chat's
+  `myStationFor` / the schedule "You" markers, and chat's
   `mentionIsMine` all compare through it, and `normalizeSyncedState` rewrites a
   stored identity once. Alert block keys are unaffected (`pushHeadLabel` cuts a
   label before any name). Member rows already in the database keep the name they
@@ -2793,7 +2791,7 @@ reuses) an accessor in the block.
   (every section is, until the owner's Edit the week here) an accessor returns the
   camps.js constant itself (the same object). Verified
   byte-identical on both camps (banner at 19 times of day, schedule sheet and
-  `.ics` for all seven days, follow card, verse, cleanup, electives, identity
+  `.ics` for all seven days, the team card, verse, cleanup, electives, identity
   picker, viewer and editor) before and after.
 - **Rules of the layer:** plain data, never markup; never throw on missing data
   (a missing day is the shared frozen empty list `NO_ITEMS`, a missing verse
@@ -2850,14 +2848,13 @@ reuses) an accessor in the block.
   it becomes CSS: `safeColorVars(record.color, TEAM_ACCENT[id], CAMP_TEAM_PALETTE)` can only emit
   `--team-accent-l:#hex;--team-accent-d:#hex` (a database string only SELECTS a swatch; anything
   else falls back to the camp's older single colour, then to nothing). `teamAccent(id)` is just
-  the light half as one plain hex, for a caller that cannot take the pair. The three board
-  renderers write ` style="…"` through `teamAccentAttr(id)`, the follow card patches its element
-  through `paintTeamAccent(el, id)` (writes only what changed), and the emoji tile takes the pair
+  the light half as one plain hex, for a caller that cannot take the pair. The board
+  renderers and Now's rows write ` style="…"` through `teamAccentAttr(id)`, and the emoji tile takes the pair
   too; styles.css "Team accent" turns the pair into `--team-accent` for the theme in force (and
   `[data-team]` into `--team`). **A solid fill under white text never takes the dark half** (a pastel:
   white on it was 1.7–2.3:1): the Big Board's "+" reads `--team-fill` (the LIGHT half in both themes, 22%
   toward black, roof blue without a colour: 4.6:1 and up for every swatch and both camps' older colours),
-  and the follow card's rank pill is an outlined tag (ink on the sheet, the theme's half as its outline). Add no new raw interpolation of a team colour: `tests/palette.test.js`
+  and a small tag in a team's colour is an outline (ink on the sheet, the theme's half as its outline). Add no new raw interpolation of a team colour: `tests/palette.test.js`
   scans app.js for one and runs a list of hostile strings through the accessor.
 - **The guard's reach** (`tests/seam.test.js`): per-line regexes for the
   constants, `CAMP.<field>` (also `CAMP?.`), `state.config.days|games` (also
@@ -3926,8 +3923,8 @@ run all of it; electives only where `CAMP.features.electives` (junior).
 - **An elective person's identity**: `electiveIsMe(name, key)` — my own sign-in matches by MEMBER
   KEY first, a key that is somebody else's never matches by name, a typed name matches
   `state.identity` through `canonicalCounselorName` on both sides (Lilly = Lily, Sofie = Sofia).
-  `electiveRowHasMe(row)`, `electiveMeOnDay(dow)`; `myStationFor`, `myElectivesToday`, the Now
-  banner and the schedule sheet's chips all use them. `adoptMemberTeam` takes a name the electives
+  `electiveRowHasMe(row)`, `electiveMeOnDay(dow)`; `myStationFor`, the Now
+  card and the schedule sheet's chips all use them. `adoptMemberTeam` takes a name the electives
   list knows (`electiveKnowsName`) as the device's identity, as it did the printed roster's.
 - **The diff cuts a first write to records** (`setupTreeDiff`, `SETUP_RECORD_DEPTH`): the first
   dish into a section with nothing in it is `meals/wed/lunch`, not a whole `meals` (which would

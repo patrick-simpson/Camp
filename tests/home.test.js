@@ -1,9 +1,9 @@
 // Home-screen panels that re-render on every snapshot and every 30 s tick:
-// the rain hint must not rebuild the Happening-now bar, idle renders must not
-// rewrite plain panels (that drops selected text), a points-pulse must survive
-// the next render, toasts are capped and plain text, and a banner
-// strip write only when it changed. The visible effect of each
-// is only checkable in a browser; these pin the rules the fixes rest on.
+// idle renders must not rewrite plain panels (that drops selected text), a
+// points-pulse must survive the next render, toasts are capped and plain text,
+// and a banner strip writes only when it changed. The visible effect of each
+// is only checkable in a browser; these pin the rules the fixes rest on. (The
+// Now card's own render stability is now-ui.test.js's.)
 
 // Counts innerHTML writes on a stub element (the stub's innerHTML is a plain
 // property, so an accessor makes every rewrite observable).
@@ -22,142 +22,6 @@ function countWrites(el, keepStamp) {
   return () => writes;
 }
 
-// ── Happening now: the rain hint is patched, never part of the shape ──
-
-test('splitNowBanner: the bar value and the rain hint never change the shape', () => {
-  const main = (v, hint, label) => `<div class="now-main"><div class="now-body"><div class="now-label">${label || 'Worship'}</div>${hint}</div></div>` +
-    `<jelly-progress class="now-progress" size="small" value="${v}" max="100" aria-hidden="true"></jelly-progress>`;
-  const wx = (t) => `<div class="now-wx">🌧️ ${t}</div>`;
-  const a = splitNowBanner(main(40, wx('60% chance of rain near 8pm')));
-  const b = splitNowBanner(main(41, wx('60% chance of rain this hour')));
-  const c = splitNowBanner(main(42, ''));
-  assert.equal(a.shape, b.shape, 'the hint text changing at an hour rollover is not a new shape');
-  assert.equal(a.shape, c.shape, 'the hint appearing or clearing is not a new shape');
-  assert.equal(a.value, '40');
-  assert.equal(c.value, '42');
-  assert.equal(b.wx, wx('60% chance of rain this hour'));
-  assert.equal(c.wx, '');
-  assert.notOk(splitNowBanner(main(42, '', 'Dinner')).shape === c.shape, 'a different block IS a new shape (the bar refills for it)');
-  const none = splitNowBanner(null);
-  assert.equal(none.shape, '');
-  assert.equal(none.value, null);
-});
-
-test('nowBannerHtml: a rain hint that moves mid-block leaves the banner shape alone', () => {
-  const realNow = campNow;
-  const realWx = weatherData;
-  try {
-    campNow = () => ({ dow: 0, minutes: 900 }); // Sunday 3pm — a timed block with a bar
-    const date = campDateStr();
-    const forecast = (byHour) => {
-      const byTime = {};
-      for (let h = 0; h < 24; h++) byTime[`${date}T${String(h).padStart(2, '0')}:00`] = { temp: 60, code: 3, precip: byHour[h] == null ? 10 : byHour[h] };
-      return { dates: [date], byTime, at: Date.now() };
-    };
-    const at = (byHour) => { weatherData = forecast(byHour); return splitNowBanner(nowBannerHtml(0, 900)); };
-    const dry = at({});
-    const now = at({ 15: 60 });
-    const later = at({ 16: 70 });
-    assert.ok(dry.value != null, 'precondition: this block has a progress bar');
-    assert.equal(dry.wx, '');
-    assert.ok(/this hour/.test(now.wx), now.wx);
-    assert.ok(/near 4pm/.test(later.wx), later.wx);
-    assert.equal(now.shape, dry.shape);
-    assert.equal(later.shape, dry.shape);
-  } finally {
-    campNow = realNow;
-    weatherData = realWx;
-  }
-});
-
-// renderNowBanner against a hand-rolled banner: the stub DOM can't tell a kept
-// node from a re-created one, so this fake counts exactly what the render does.
-function fakeNowBanner() {
-  const bar = { v: '40', sets: 0, getAttribute(k) { return k === 'value' ? this.v : null }, setAttribute(k, v) { if (k === 'value') { this.v = v; this.sets++; } } };
-  const body = { inserted: [], insertAdjacentHTML(pos, html) { this.inserted.push({ pos, html }); } };
-  const banner = { hidden: false, wx: null, bar, body };
-  banner.querySelector = (sel) => {
-    if (!banner.innerHTML) return null; // nothing built yet (or cleared)
-    if (sel === 'jelly-progress.now-progress') return bar;
-    if (sel === '.now-wx') return banner.wx;
-    if (sel === '.now-body') return body;
-    return null;
-  };
-  const writes = countWrites(banner);
-  return { banner, bar, body, writes };
-}
-
-test('renderNowBanner patches the bar and the rain hint in place, rebuilding only for a new block', () => {
-  const realGet = document.getElementById;
-  const realHtml = nowBannerHtml;
-  const realBoard = homeBoardGame;
-  const realNow = campNow;
-  const { banner, bar, body, writes } = fakeNowBanner();
-  const page = (v, wx, label) => `<div class="now-main"><div class="now-body"><div class="now-label">${label || 'Worship'}</div>${wx || ''}</div></div>` +
-    `<jelly-progress class="now-progress" size="small" value="${v}" max="100" aria-hidden="true"></jelly-progress>`;
-  const wx = (t) => `<div class="now-wx">🌧️ ${t}</div>`;
-  let html = '';
-  let board = false;
-  document.getElementById = (id) => (id === 'now-banner' ? banner : realGet.call(document, id));
-  nowBannerHtml = () => html;
-  homeBoardGame = () => (board ? { id: 'g' } : null);
-  campNow = () => ({ dow: 0, minutes: 900 });
-  try {
-    html = page(40);
-    renderNowBanner();
-    assert.equal(writes(), 1, 'first paint builds the markup');
-
-    html = page(41);
-    renderNowBanner();
-    assert.equal(writes(), 1, 'only the elapsed value moved: nudge the live bar');
-    assert.equal(bar.v, '41');
-
-    html = page(42, wx('60% chance of rain this hour'));
-    renderNowBanner();
-    assert.equal(writes(), 1, 'a hint appearing does not rebuild the bar');
-    assert.deepEqual(body.inserted.map((i) => i.pos), ['beforeend']);
-    assert.equal(body.inserted[0].html, wx('60% chance of rain this hour'));
-
-    banner.wx = { outerHTML: wx('60% chance of rain this hour'), removed: false, remove() { this.removed = true; } };
-    const node = banner.wx;
-    html = page(42, wx('70% chance of rain near 4pm'));
-    renderNowBanner();
-    assert.equal(writes(), 1, 'a hint changing does not rebuild the bar');
-    assert.equal(node.outerHTML, wx('70% chance of rain near 4pm'), 'the hint is replaced in place');
-
-    const sets = bar.sets;
-    renderNowBanner();
-    assert.equal(bar.sets, sets, 'nothing moved: nothing touched');
-    assert.equal(body.inserted.length, 1);
-
-    html = page(43);
-    renderNowBanner();
-    assert.ok(node.removed, 'a cleared hint is removed in place');
-    assert.equal(writes(), 1);
-
-    // A live match's Big Board hides the banner, and the bar must survive that.
-    board = true;
-    renderNowBanner();
-    assert.equal(banner.hidden, true);
-    assert.equal(writes(), 1, 'hiding keeps the markup — a cleared bar refilled from empty when it came back');
-    board = false;
-    html = page(44);
-    renderNowBanner();
-    assert.equal(banner.hidden, false);
-    assert.equal(writes(), 1, 'same block on return: the kept bar is nudged, not re-created');
-    assert.equal(bar.v, '44');
-
-    html = page(5, '', 'Dinner');
-    renderNowBanner();
-    assert.equal(writes(), 2, 'a different block IS a rebuild');
-  } finally {
-    document.getElementById = realGet;
-    nowBannerHtml = realHtml;
-    homeBoardGame = realBoard;
-    campNow = realNow;
-  }
-});
-
 // ── Idle renders leave plain panels alone ──
 
 test('the home panels that rebuild on every snapshot go through the guard', () => {
@@ -167,44 +31,9 @@ test('the home panels that rebuild on every snapshot go through the guard', () =
     assert.ok(start > -1, name + ' exists');
     return src.slice(start, src.indexOf('\n}\n', start));
   };
-  ['renderNoticeBoard', 'renderMyElectives', 'renderCatchupHint', 'renderStandings']
+  ['renderCatchupHint', 'renderStandings']
     .forEach((fn) => assert.ok(body(fn).includes('setHtmlIfChanged('), fn + ' skips unchanged rebuilds'));
-  assert.notOk(/innerHTML\s*=/.test(body('renderNoticeBoard')), 'the notice card is never assigned directly');
   assert.notOk(/tbody\.innerHTML/.test(body('renderStandings')), 'standings rows are never assigned directly');
-});
-
-test('the posted notice card is not rewritten when nothing changed', () => {
-  freshState();
-  setMemberRole('editor');
-  setNoticeStatus('posted');
-  const writes = countWrites(document.getElementById('notice-board'));
-  renderNoticeBoard();
-  renderNoticeBoard();
-  renderNoticeBoard();
-  assert.equal(writes(), 1, 'one paint, then nothing');
-  noticeBoard().title = 'A different headline';
-  renderNoticeBoard();
-  assert.equal(writes(), 2, 'a real change still repaints');
-  setMemberRole(null);
-});
-
-test('My electives is not rewritten when nothing changed', () => {
-  freshState();
-  const realNow = campNow;
-  try {
-    campNow = () => ({ dow: 1, minutes: 600 });
-    state.identity = 'Zac'; // on Monday's elective sheet
-    const writes = countWrites(document.getElementById('my-electives-card'));
-    renderMyElectives();
-    renderMyElectives();
-    assert.equal(writes(), 1);
-    state.identity = null;
-    renderMyElectives();
-    assert.equal(document.getElementById('my-electives-card').hidden, true, 'no identity: the card hides');
-  } finally {
-    campNow = realNow;
-    state.identity = null;
-  }
 });
 
 function giveSomePoints() {
@@ -477,7 +306,9 @@ test('Now hosts the Now engine (card, runs, messages strip); Games hosts the day
   const part = (from, to) => panel.slice(panel.indexOf(from), panel.indexOf(to));
   const now = part('now: {', 'games: {');
   ['renderWhatsNew', 'nowRefresh', 'nowTick', 'renderAnnouncements'].forEach((fn) => assert.ok(now.includes(fn + '('), fn + ' renders with Now'));
-  ['renderNoticeBoard', 'renderNowBanner', 'renderLiveHome', 'renderMyElectives'].forEach((fn) => assert.notOk(now.includes(fn + '('), fn + ' retired from Now (the Now engine replaced it)'));
+  // The old Now sections are DELETED, not just unwired (Step 17): the Now card paints from nowModel().
+  ['renderNoticeBoard', 'renderNowBanner', 'splitNowBanner', 'renderFollowCard', 'renderMyElectives', 'renderLiveHome', 'homeBoardGame', 'liveHomeGames']
+    .forEach((fn) => assert.notOk(new RegExp('\\b' + fn + '\\b').test(src), fn + ' is gone from app.js (the Now engine replaced it)'));
   ['renderDayTabs', 'renderMemoryVerse', 'renderMealCleanup', 'renderBonuses', 'renderFooter']
     .forEach((fn) => assert.notOk(now.includes(fn + '('), fn + ' left Now'));
   const games = part('games: {', 'chat: {');

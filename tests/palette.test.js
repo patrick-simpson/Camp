@@ -5,7 +5,7 @@
 //      moves a surface is noticed here, not by a counselor squinting at a flag);
 //   2. a colour that comes from the database can only ever SELECT a swatch: hostile strings in a team
 //      record's `color` never reach a style attribute (teamAccentVars is the one place that launders);
-//   3. the three board renderers, the follow card and the emoji tile all take the laundered pair, and
+//   3. the board renderers and the emoji tile all take the laundered pair, and
 //      styles.css turns the pair into --team-accent for the theme in force.
 // palette.senior.test.js evals this file under the senior profile.
 
@@ -132,38 +132,6 @@ test('teamAccentVars: a record whose roster entry is junk, or a state with no ro
 });
 
 // ── where the pair goes ──
-test('paintTeamAccent writes the laundered pair onto a kept element, only when it changed', () => {
-  freshState();
-  const store = {};
-  let writes = 0;
-  const el = { style: {
-    getPropertyValue: (p) => store[p] || '',
-    setProperty: (p, v) => { writes++; store[p] = v; },
-    removeProperty: (p) => { writes++; delete store[p]; },
-  } };
-  state.teams[0].color = 'pumpkin';
-  paintTeamAccent(el, 't0');
-  assert.deepEqual(store, { '--team-accent-l': CAMP_TEAM_PALETTE.pumpkin.l, '--team-accent-d': CAMP_TEAM_PALETTE.pumpkin.d });
-  assert.equal(writes, 2);
-  paintTeamAccent(el, 't0');
-  assert.equal(writes, 2, 'an idle re-render writes nothing');
-  state.teams[0].color = 'berry';
-  paintTeamAccent(el, 't0');
-  assert.equal(store['--team-accent-l'], CAMP_TEAM_PALETTE.berry.l);
-  assert.equal(writes, 4);
-  // Not following a team: both properties go, so the CSS falls back to the app primary.
-  paintTeamAccent(el, null);
-  assert.deepEqual(store, {});
-  assert.equal(writes, 6);
-  paintTeamAccent(el, null);
-  assert.equal(writes, 6, 'and stays gone without writing again');
-  // A hostile colour paints the camp's own colour, never the string.
-  state.teams[0].color = 'red;background:url(//evil.example/x)';
-  paintTeamAccent(el, 't0');
-  Object.keys(store).forEach((k) => assert.ok(SAFE_CHARS.test(store[k]), k + ' = ' + store[k]));
-  freshState();
-});
-
 test('the emoji tile takes the pair too: its edge is the team colour for the theme in force', () => {
   freshState();
   state.teams.push({ id: 't9', name: 'Extra', counselor: '', color: 'teal' });
@@ -178,11 +146,11 @@ test('the emoji tile takes the pair too: its edge is the team colour for the the
   freshState();
 });
 
-test('the board renderers, the follow card and the tile take the laundered pair; nothing interpolates a raw colour', () => {
+test('the board renderers and the tile take the laundered pair; nothing interpolates a raw colour', () => {
   assert.notOk(/--team-accent\s*:\s*\$\{/.test(APP_SRC), 'no raw --team-accent: ${…} left in app.js');
-  assert.notOk(/setProperty\('--team-accent'/.test(APP_SRC), 'the follow card does not write a single raw colour any more');
-  assert.equal((APP_SRC.match(/\$\{teamAccentAttr\(/g) || []).length, 3, 'the three board renderers');
-  assert.ok(/paintTeamAccent\(card, team\.id\)/.test(APP_SRC), 'the follow card');
+  assert.notOk(/setProperty\('--team-accent'/.test(APP_SRC), 'nothing writes a single raw colour');
+  assert.notOk(/paintTeamAccent/.test(APP_SRC), 'the follow card (its only caller) is gone');
+  assert.equal((APP_SRC.match(/\$\{teamAccentAttr\(/g) || []).length, 2, 'the two board renderers');
   assert.ok(/accent: teamAccentVars\(id\)/.test(APP_SRC), 'the tile');
   // teamAccent() (one plain hex) is for callers that cannot take the pair; it is itself derived from the laundered pair.
   const body = APP_SRC.slice(APP_SRC.indexOf('function teamAccent(id)'), APP_SRC.indexOf('function teamAccent(id)') + 200);
@@ -190,12 +158,12 @@ test('the board renderers, the follow card and the tile take the laundered pair;
 });
 
 test('styles.css turns the pair into --team-accent for the theme in force, on every surface that reads it', () => {
-  const sel = '.follow-team-card,\n.board-col,\n.board-tally-row {\n  --team-accent: var(--team-accent-l);\n}';
+  const sel = '.board-col {\n  --team-accent: var(--team-accent-l);\n}';
   assert.ok(CSS_SRC.includes(sel), 'light: the -l half');
-  assert.ok(CSS_SRC.includes(':root[data-jelly-mode="dark"] :is(.follow-team-card, .board-col, .board-tally-row) {\n  --team-accent: var(--team-accent-d, var(--team-accent-l));'), 'an explicit Dark');
-  assert.ok(CSS_SRC.includes(':root:not([data-jelly-mode="light"]) :is(.follow-team-card, .board-col, .board-tally-row) {\n    --team-accent: var(--team-accent-d, var(--team-accent-l));'), 'Auto on a dark phone');
+  assert.ok(CSS_SRC.includes(':root[data-jelly-mode="dark"] .board-col {\n  --team-accent: var(--team-accent-d, var(--team-accent-l));'), 'an explicit Dark');
+  assert.ok(CSS_SRC.includes(':root:not([data-jelly-mode="light"]) .board-col {\n    --team-accent: var(--team-accent-d, var(--team-accent-l));'), 'Auto on a dark phone');
   // Every consumer keeps its fallback, so a team with no colour is still the app primary.
   const consumers = CSS_SRC.match(/var\(--team-accent[,)][^;]*/g) || [];
-  assert.ok(consumers.length > 8);
+  assert.ok(consumers.length > 2);
   consumers.forEach((c) => assert.ok(/^var\(--team-accent, var\(--color-primary\)\)/.test(c) || /^var\(--team-accent-[ld]/.test(c), 'a --team-accent read has a fallback: ' + c));
 });

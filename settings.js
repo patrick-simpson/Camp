@@ -1741,8 +1741,6 @@ function noticeCommit(full) {
   }
   const prev = document.getElementById('notice-preview');
   if (prev) prev.innerHTML = noticeCardHtml(true);
-  // Keep the posted card on the scoreboard page in step as it's edited.
-  if (typeof renderNoticeBoard === 'function') renderNoticeBoard();
 }
 
 function wireNoticeTab(card) {

@@ -204,10 +204,12 @@ test('POSITIVE CONTROL: the same render as a director does hit the patterns (the
   setMemberRole('editor');
   renderAll();
   const found = leaksIn(__domSweep());
-  assert.ok(found.length >= 3, 'a director\'s home carries points, places and the rest: ' + found.length);
-  assert.ok(found.some((f) => f.startsWith('points')), 'the follow card says pts');
-  assert.ok(found.some((f) => f.startsWith('an ordinal place')), 'and names a place');
+  assert.ok(found.length >= 2, 'a director\'s Games standings carry points and the ledgers\' signed numbers: ' + found.length);
+  assert.ok(found.some((f) => f.startsWith('points')), 'the standings say pts');
   assert.ok(found.some((f) => f.startsWith('a signed number')), 'the ledgers carry signed numbers');
+  // The place and gap patterns have no director surface left to hit (the follow card's "1st place" pill went with Step 17): prove they bite.
+  assert.ok(leaksIn([{ kind: 'toast', text: 'Foxes are in 2nd place' }]).some((f) => f.startsWith('an ordinal place')), 'the place pattern bites');
+  assert.ok(leaksIn([{ kind: 'toast', text: 'Maples trail the Foxes' }]).some((f) => f.startsWith('a gap word')), 'the gap pattern bites');
   // and the log half: a director\'s point toast lands in the sinks
   const toast = record(() => notifyPointChanges([{ team: state.teams[0], delta: 7, total: 23 }]));
   assert.ok(leaksIn(toast).length >= 1, 'a director\'s point toast is caught by the recorder');
@@ -229,17 +231,22 @@ test('a viewer\'s standings table and ledgers are emptied, not just hidden', () 
   assert.equal(document.getElementById('catchup-hint').hidden, true);
 });
 
-test('role flip: a demoted director\'s next render drops every editor-only number, a promoted one gets them', () => {
+test('role flip: a demoted director\'s next render drops every editor-only control and number from Now, a promoted one gets them', () => {
   seedWeek();
   setMemberRole('editor');
-  renderAll();
-  const card = document.getElementById('follow-team-card');
-  assert.ok(/pts/.test(card.innerHTML) && /place/.test(card.innerHTML), 'a director\'s team card carries rank and points');
-  asViewer(() => renderAll());
-  assert.notOk(/pts|place|\d+(st|nd|rd|th)/i.test(card.innerHTML.replace(/<[^>]+>/g, ' ')), 'a counselor\'s carries neither: ' + card.innerHTML.replace(/\s+/g, ' ').slice(0, 200));
-  assert.ok(card.innerHTML.includes(teamName('t1')), 'but it is still the team card');
+  const gb = nowBlocks(3).find((x) => x.kind === 'games' && gamesForBlock(3, x.b).length);
+  assert.ok(gb, 'precondition: a Wednesday block with games');
+  const paint = () => renderNow(nowModel({ now: { dow: 3, minutes: gb.b.start + 5 }, ms: serverNow() }));
+  const body = document.getElementById('now-card-body');
+  paint();
+  assert.ok(/data-score-game/.test(body.innerHTML), 'a director\'s games card carries Score');
+  asViewer(paint);
+  assert.notOk(/data-score-game/.test(body.innerHTML), 'a counselor\'s card has no Score');
+  assert.deepEqual(leaksIn([{ kind: 'innerHTML', text: body.innerHTML }]), [], 'and no number');
+  assert.ok(/class="gr"/.test(body.innerHTML), 'but it is still the games card');
   setMemberRole('editor');
-  assert.ok(/pts/.test(card.innerHTML), 'promoted again: the numbers come back');
+  paint();
+  assert.ok(/data-score-game/.test(body.innerHTML), 'promoted again: Score comes back');
 });
 
 test('the hide switches on the two secret cards are gone, and nothing un-hides them', () => {
@@ -273,13 +280,18 @@ test('the hide switches on the two secret cards are gone, and nothing un-hides t
 
 // ── Each viewer surface (§4.12 rows) ─────────────────────────────────
 
-test('row 5: the follow card has no rank pill and no points for a counselor', () => {
+test('row 5: the Now card, its moment and the rows under it carry no rank and no points for a counselor', () => {
   seedWeek();
-  const card = document.getElementById('follow-team-card');
-  asViewer(() => renderFollowCard());
-  const text = card.innerHTML.replace(/<[^>]+>/g, ' ');
-  assert.ok(!/place|pts|follow-rank-pill|follow-points/.test(card.innerHTML), 'no rank markup at all');
-  assert.deepEqual(leaksIn([{ kind: 'innerHTML', text: card.innerHTML }]), [], text.trim());
+  setMemberRole('editor');
+  renderAll(); // a director's page first, so every node holds director markup: the flip must clear it
+  // Bible study, a games block, lunch, the cleanup window after it, the afternoon and the evening of a Wednesday.
+  const times = [9 * 60 + 10, 10 * 60 + 30, 12 * 60 + 10, 12 * 60 + 40, 15 * 60, 19 * 60];
+  const out = record(() => asViewer(() => {
+    times.forEach((minutes) => renderNow(nowModel({ now: { dow: 3, minutes }, ms: serverNow() })));
+  }));
+  assert.ok(out.length > 10, 'the recorder is live: ' + out.length + ' sink writes seen');
+  assert.deepEqual(leaksIn(out), []);
+  assert.deepEqual(leaksIn(__domSweep()), [], 'markup left in a node after the flip');
 });
 
 test('row 6: a counselor hears no point change, a director still does', () => {
@@ -414,10 +426,11 @@ test('rows 11 and 12: a finished game shows its winners without "+N pts", a live
     asViewer(() => { openGameAsViewer(live.id); renderGameView(); });
     assert.ok(/lw-rank-list/.test(entry.innerHTML), 'the live scores are public');
     assert.notOk(/live-watch-suggest|Suggested|🥇/.test(entry.innerHTML), 'but no suggested winners before a director saves');
-    const home = asViewer(() => liveHomeTallyCard(live) + tallyBoardHTML(live));
-    assert.notOk(/medals ready|🥇/.test(home), 'nor on the home cards');
+    const nowBoard = asViewer(() => nowBoardHtml(nowLiveBoard(nowCtx(), live)));
+    assert.ok(/class="lb"/.test(nowBoard), 'the live row on Now carries the scores');
+    assert.notOk(/medals ready|🥇|lb-pl/.test(nowBoard), 'but no suggested winners and no places on Now');
     setMemberRole('editor');
-    assert.ok(/medals ready/.test(liveHomeTallyCard(live)), 'a director still sees them');
+    assert.ok(/lb-pl/.test(nowBoardHtml(nowLiveBoard(nowCtx(), live))), 'a director still sees the places');
   }
 });
 
@@ -439,28 +452,26 @@ function liveTallyUnderTest() {
 
 test('the live tally: a counselor gets the teams in roster order with no numerals, no podium and no leader', () => {
   const live = liveTallyUnderTest();
-  const rosterNames = state.teams.map((t) => teamName(t.id));
+  const rosterNames = state.teams.map((t) => nowTeamWord(t.id)); // what a Now row calls a team
   const at = (html) => rosterNames.map((n) => html.indexOf(n));
   const ascending = (xs) => xs.every((x, i) => x >= 0 && (i === 0 || x > xs[i - 1]));
   setMemberRole('editor');
-  const board = tallyBoardHTML(live);
-  assert.ok(/board-tally-podium/.test(board) && /board-tally-rank">\s*🥇/.test(board), 'positive control: a director sees the medals and the podium');
+  const board = nowBoardHtml(nowLiveBoard(nowCtx(), live));
+  assert.ok(/data-ranked/.test(board) && /lb-pl/.test(board), 'positive control: a director sees the live order and its places');
   assert.notOk(ascending(at(board)), 'a director sees the live order, which is not the roster order here');
-  const viewer = asViewer(() => tallyBoardHTML(live));
+  const viewer = asViewer(() => nowBoardHtml(nowLiveBoard(nowCtx(), live)));
   assert.ok(ascending(at(viewer)), 'a counselor sees the roster order');
   assert.ok(rosterNames.every((n) => viewer.includes(n)), 'every team is still on the board');
-  assert.notOk(/board-tally-podium/.test(viewer), 'no podium for a counselor');
-  assert.notOk(/board-tally-rank">\s*\d/.test(viewer), 'no numerals in the rank column');
+  assert.notOk(/data-ranked|lb-pl/.test(viewer), 'no places for a counselor');
+  assert.ok(/team order/.test(viewer), 'and the caption says it is not a ranking');
   const takeover = asViewer(() => { openGameAsViewer(live.id); renderGameView(); return document.getElementById('entry-area').innerHTML; });
   assert.ok(/lw-rank-list/.test(takeover), 'the game takeover still shows the live scores');
   assert.notOk(/lw-podium|lw-rank">\s*\d/.test(takeover), 'and no places, numerals or podium');
   assert.deepEqual(leaksIn([{ kind: 'innerHTML', text: viewer }, { kind: 'innerHTML', text: takeover }]), []);
-  const card = asViewer(() => liveHomeTallyCard(live));
   const n = state.teams.length; // 6 junior, 4 senior (this file also runs as senior)
-  assert.ok(/Scores so far/.test(card) && card.includes(`${n}/${n} teams in`), 'the home card counts the teams in');
-  assert.notOk(/Leader|Fastest|lh-nums|medals ready/.test(card), 'and names no leader: ' + card.replace(/\s+/g, ' ').slice(0, 160));
-  setMemberRole('editor');
-  assert.ok(/Leader/.test(liveHomeTallyCard(live)), 'a director still sees the leader');
+  const model = asViewer(() => nowLiveBoard(nowCtx(), live));
+  assert.equal(model.cap, `${n} of ${n} in`, 'the live row counts the teams in');
+  assert.notOk(model.ranked || 'place' in model.rows[0], 'and names no leader');
 });
 
 // A device whose role came only from the hint (the member record has not answered)

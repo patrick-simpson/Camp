@@ -325,19 +325,17 @@ body.dark-theme,
    in both themes. The dark half is a pastel (it is text and outline colour on the dark surface), and white on
    it measured 1.7–2.3:1; the light half carries white at 5.4:1 and up. Without a colour it is the camp-blue
    roof (white 6.5:1), never --color-primary, which is a pastel in dark too. */
-.follow-team-card,
-.board-col,
-.board-tally-row {
+.board-col {
   --team-accent: var(--team-accent-l);
 }
 .board-col {
   --team-fill: var(--team-accent-l, var(--roof));
 }
-:root[data-jelly-mode="dark"] :is(.follow-team-card, .board-col, .board-tally-row) {
+:root[data-jelly-mode="dark"] .board-col {
   --team-accent: var(--team-accent-d, var(--team-accent-l));
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-jelly-mode="light"]) :is(.follow-team-card, .board-col, .board-tally-row) {
+  :root:not([data-jelly-mode="light"]) .board-col {
     --team-accent: var(--team-accent-d, var(--team-accent-l));
   }
 }
@@ -2208,11 +2206,10 @@ jelly-switch:not([checked])::part(track) {
    at #now-reveal in index.html. */
 
 /* Now becomes the reveal: one attribute on the tab, set with #now-reveal. The
-   notice (old card and Step 17's strip), the team strip, the schedule banner, a
-   live board, the Now card and its lists, the grid and the champion line step
+   notice strip, the Now card and its lists, the grid and the champion line step
    aside; announcements and their "N more" row (an emergency outranks the
    moment) and the builder stay. */
-#tab-now[data-reveal="live"] > :is(#notice-board, #whats-new, .you-strip, #now-banner, #live-home, #now-reveal-grid, #now-champion, #now-notice, #now-card, #now-todo, #now-next, #now-later) {
+#tab-now[data-reveal="live"] > :is(#whats-new, #now-reveal-grid, #now-champion, #now-notice, #now-card, #now-todo, #now-next, #now-later) {
   display: none;
 }
 .now-reveal[hidden],
@@ -6873,107 +6870,6 @@ html.calm-motion .lock-box.shake { animation: none; }
   font-weight: 800;
 }
 
-/* "Live now" home-screen card — a game in progress, surfaced + highlighted. */
-.live-home {
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
-}
-.live-home-card {
-  width: 100%;
-  text-align: left;
-  font-family: inherit;
-  color: var(--color-text);
-  background: var(--color-gold-bg);
-  border: 2px solid var(--color-danger);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-card);
-  padding: 0.85rem 1rem;
-  cursor: pointer;
-  display: flex;
-  flex-direction: column;
-  gap: 0.45rem;
-  animation: live-pulse 2s ease-in-out infinite;
-}
-@keyframes live-pulse {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-danger) 45%, transparent); }
-  70%, 100% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--color-danger) 0%, transparent); }
-}
-html.calm-motion .live-home-card { animation: none; }
-.live-home-top {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.live-home-badge {
-  flex: 0 0 auto;
-  font-size: 0.66rem;
-  font-weight: 800;
-  letter-spacing: 0.05em;
-  color: var(--color-on-danger);
-  background: var(--color-danger);
-  border-radius: 999px;
-  padding: 0.15rem 0.5rem;
-}
-.live-home-game {
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: var(--color-text-muted);
-  overflow-wrap: anywhere;
-}
-.live-home-score {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-}
-.live-home-score .lh-team {
-  flex: 1;
-  min-width: 0;
-  font-weight: 700;
-  font-size: 0.95rem;
-  overflow-wrap: break-word;
-}
-.live-home-score .lh-team:last-child {
-  text-align: right;
-}
-.live-home-score .lh-nums {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: baseline;
-  gap: 0.35rem;
-  font-size: 1.6rem;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  color: var(--color-primary);
-}
-.live-home-score .lh-dash {
-  font-size: 1rem;
-  color: var(--color-text-muted);
-}
-.live-home-sub {
-  font-size: 0.82rem;
-  font-weight: 700;
-}
-.live-home-matchup {
-  font-size: 1rem;
-  font-weight: 700;
-}
-.live-home-matchup .lh-vs {
-  color: var(--color-text-muted);
-  font-weight: 400;
-  margin: 0 0.2rem;
-}
-.live-home-ondeck {
-  display: block;
-  font-size: 0.82rem;
-  font-weight: 700;
-  color: var(--color-text-muted);
-  border-top: 1px dashed var(--color-border);
-  padding-top: 0.4rem;
-  margin-top: 0.1rem;
-}
-
 /* "Your team + Notify" strip — always visible so viewers keep the watch
    essentials even with Current Standings collapsed. */
 .you-strip {
@@ -6981,12 +6877,7 @@ html.calm-motion .live-home-card { animation: none; }
   flex-direction: column;
   gap: 15px; /* match the 15px rhythm used between every other section */
 }
-.you-strip .notify-btn {
-  width: 100%;
-  /* Jelly's "small" button is 42px tall; every tap target in the frame is 44. An
-     outer rule on the element beats the token the component sets on its own :host. */
-  --jelly-button-height: var(--target);
-}
+
 .you-strip:empty {
   display: none;
 }
@@ -8236,196 +8127,7 @@ body.builder-open .sync-status-footer {
 }
 html.calm-motion .points-pulse td { animation: none; }
 
-/* "Your team" summary card. Each team sets --team-accent (renderFollowCard);
-   it falls back to the app primary so the neutral / no-shield states still work. */
-.follow-team-card {
-  /* Spacing to the next element comes from .you-strip's flex gap, not a
-     margin here — a margin-bottom on top of that gap is what made this
-     card sit further from Happening Now than every other 15px section gap. */
-  padding: 0.75rem 0.9rem;
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--team-accent, var(--color-primary)) 8%, var(--color-surface));
-  border: 1px solid color-mix(in srgb, var(--team-accent, var(--color-primary)) 25%, var(--color-border));
-}
-
-.follow-team-head {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.6rem;
-}
-
-.follow-team-emoji {
-  font-size: 1.6rem;
-  line-height: 1;
-}
-
-.follow-team-headings {
-  min-width: 0;
-  flex: 1 1 auto;
-}
-
-.follow-team-name {
-  font-weight: 700;
-  line-height: 1.15;
-}
-
-/* Rank + points sit under the name. */
-.follow-team-stats {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.4rem 0.5rem;
-  margin-top: 0.3rem;
-}
-
-/* Rank pill: a TAG in the team's colour (§8.4: team colour is an outline, never a fill behind small text).
-   Ink on the sheet reads at 12:1 and up in both themes whatever the team's colour; the outline is the half
-   for the theme in force (a pastel on the dark sheet, the deep value on paper). It used to be white on an 84%
-   accent fill, which fell to 1.7:1 on a palette colour's dark half and 2.9:1 on the older pumpkin orange. */
-.follow-rank-pill {
-  font-size: 0.72rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  color: var(--ink);
-  background: var(--sheet);
-  box-shadow: inset 0 0 0 2px var(--team-accent, var(--color-primary));
-  padding: 0.16rem 0.55rem;
-  border-radius: 999px;
-  white-space: nowrap;
-}
-
-.follow-points {
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--color-text-muted);
-}
-
-.follow-change-btn {
-  margin-left: auto;
-  font-size: 0.82rem;
-  white-space: nowrap;
-}
-
-/* Crest card: the large shield alone on the left, all text on the right, over
-   a soft left-to-right wash in the team's accent with an accent border. */
-.follow-team-card.has-shield {
-  display: flex;
-  align-items: center;
-  gap: 1.1rem;
-  padding: 0.9rem 1rem;
-  overflow: hidden;
-  border-radius: var(--radius-lg);
-  border: 1px solid color-mix(in srgb, var(--team-accent, var(--color-primary)) 40%, var(--color-border));
-  background:
-    radial-gradient(120% 135% at 0% 50%,
-      color-mix(in srgb, var(--team-accent, var(--color-primary)) 22%, var(--color-surface)),
-      color-mix(in srgb, var(--team-accent, var(--color-primary)) 6%, var(--color-surface)) 66%);
-}
-
-/* The shield is the only thing on the left; the text body fills the rest. */
-.follow-team-crest {
-  flex: 0 0 auto;
-  margin: 0;
-}
-
-.follow-team-shield {
-  display: block;
-  height: 132px;
-  width: auto;
-  object-fit: contain;
-  filter: drop-shadow(0 5px 10px rgba(0, 0, 0, 0.30));
-}
-
-.follow-team-card.has-shield .follow-team-body {
-  flex: 1 1 auto;
-  min-width: 0;
-}
-
-/* Team name is the hero. */
-.follow-team-card.has-shield .follow-team-name {
-  font-size: 1.3rem;
-  font-weight: 800;
-  letter-spacing: -0.01em;
-}
-
-/* Stacked detail rows (up-next, next cleanup, your name). */
-.follow-next-line,
-.follow-you-line {
-  margin: 0.4rem 0 0;
-  font-size: 0.85rem;
-  line-height: 1.3;
-  color: var(--color-text);
-}
-
-.follow-neutral-line {
-  margin: 0;
-}
-
-.follow-you-line {
-  font-weight: 600;
-}
-.follow-you-empty {
-  font-weight: 500;
-  color: var(--color-text-muted);
-}
-
-/* "My electives today" card — glanceable time · emoji · station rows, sitting
-   under the follow card in the top .you-strip. */
-.my-electives-card {
-  /* See .follow-team-card — spacing comes from .you-strip's flex gap. */
-  padding: 0.7rem 0.85rem;
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--color-primary) 6%, var(--color-surface));
-  border: 1px solid color-mix(in srgb, var(--color-primary) 22%, var(--color-border));
-}
-.my-el-head {
-  margin-bottom: 0.5rem;
-}
-.my-el-title {
-  font-weight: 800;
-  font-size: 0.9rem;
-  letter-spacing: 0.01em;
-}
-.my-el-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-.my-el-row {
-  display: grid;
-  grid-template-columns: 4.4rem 1.5rem 1fr auto;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.4rem 0.55rem;
-  border-radius: var(--radius-md);
-  background: var(--color-bg);
-}
-.my-el-wx { justify-self: end; }
-.my-el-time {
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
-  font-size: 0.82rem;
-  color: var(--color-text-muted);
-}
-.my-el-emoji {
-  font-size: 1.05rem;
-  text-align: center;
-  line-height: 1;
-}
-.my-el-station {
-  font-weight: 700;
-  font-size: 0.9rem;
-}
-.my-el-row.is-break {
-  opacity: 0.72;
-}
-.my-el-row.is-break .my-el-station {
-  font-weight: 600;
-  color: var(--color-text-muted);
-}
-
-/* Forecast badge next to a future elective (schedule sheet + my-electives). */
+/* Forecast badge next to a future elective (schedule sheet). */
 .wx-badge {
   font-size: 0.78rem;
   font-weight: 700;
@@ -9863,21 +9565,6 @@ html.calm-motion .toast-out { animation: none; }
   .score-input-row input {
     width: 5.5rem;
   }
-
-  /* Keep the shield large and on the left on phones too — just trim the
-     shield and name a touch so the text column isn't cramped. */
-  .follow-team-card.has-shield {
-    gap: 0.85rem;
-    padding: 0.8rem 0.85rem;
-  }
-
-  .follow-team-card.has-shield .follow-team-shield {
-    height: 112px;
-  }
-
-  .follow-team-card.has-shield .follow-team-name {
-    font-size: 1.15rem;
-  }
 }
 
 /* ============================================================
@@ -9932,170 +9619,9 @@ html.calm-motion .toast-out { animation: none; }
 .whats-new-dismiss:active { background: color-mix(in srgb, var(--color-text-muted) 20%, transparent); }
 
 /* ============================================================
-   NOTICE BOARD (the one big, unmissable message)
-   ------------------------------------------------------------
-   Deliberately the loudest thing on the page — it sits above every
-   other section and is meant to be readable at arm's length, on a
-   phone, outdoors, by a camper who is not looking for it. Sized in
-   rem off the same tokens as everything else so it scales with the
-   user's text size; no fixed heights, so a renamed (longer) team
-   name wraps instead of clipping.
+   NOTICE BUILDER (Set up the week → Notice; the card itself is the
+   .nb markup in NOW, BLOCK BY BLOCK, drawn by now-ui.js)
    ============================================================ */
-.notice-board {
-  margin-bottom: 0.9rem;
-}
-.notice-card {
-  background: color-mix(in srgb, var(--color-primary) 8%, var(--color-surface));
-  border: 2px solid var(--color-primary);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-card);
-  padding: 1rem 1rem 0.9rem;
-}
-.notice-eyebrow {
-  display: inline-block;
-  font-size: 0.72rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--color-on-primary);
-  background: var(--color-primary);
-  border-radius: 999px;
-  padding: 0.22rem 0.6rem;
-}
-.notice-title {
-  margin: 0.55rem 0 0.2rem;
-  font-size: 1.5rem;
-  font-weight: 800;
-  line-height: 1.15;
-  color: var(--color-text);
-}
-.notice-sub {
-  margin: 0 0 0.85rem;
-  font-size: 0.88rem;
-  line-height: 1.4;
-  color: var(--color-text-muted);
-}
-/* The viewer's own team, called out above the full list. */
-.notice-yours {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-  margin-bottom: 0.8rem;
-  padding: 0.6rem 0.75rem;
-  background: var(--color-primary);
-  border-radius: var(--radius-md);
-}
-.notice-yours-label {
-  font-size: 0.68rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--color-on-primary);
-  opacity: 0.85;
-}
-.notice-yours-place {
-  font-size: 1.05rem;
-  font-weight: 700;
-  line-height: 1.3;
-  color: var(--color-on-primary);
-}
-.notice-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-.notice-row {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.6rem;
-  padding: 0.5rem 0.65rem;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-}
-.notice-row-you {
-  border-color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
-}
-.notice-team {
-  font-size: 0.95rem;
-  font-weight: 600;
-  color: var(--color-text);
-  min-width: 0; /* let a long team name wrap rather than push the place off */
-}
-.notice-emoji {
-  font-size: 1.15rem;
-}
-.notice-place {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  flex: 0 0 auto;
-  text-align: right;
-  font-size: 1.05rem;
-  font-weight: 800;
-  color: var(--color-primary);
-}
-.notice-note {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--color-text-muted);
-}
-/* The running order below the zone list: what to do, in the order it happens. */
-.notice-step {
-  margin-top: 0.85rem;
-  padding-top: 0.75rem;
-  border-top: 1px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
-}
-.notice-step-when {
-  font-size: 0.78rem;
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  color: var(--color-primary);
-  margin-bottom: 0.35rem;
-}
-.notice-step-items {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-}
-.notice-step-items li {
-  position: relative;
-  padding-left: 1.1rem;
-  font-size: 0.95rem;
-  font-weight: 600;
-  line-height: 1.35;
-  color: var(--color-text);
-}
-.notice-signoff {
-  margin: 0.9rem 0 0;
-  padding-top: 0.7rem;
-  border-top: 1px solid color-mix(in srgb, var(--color-primary) 30%, transparent);
-  font-size: 0.92rem;
-  font-weight: 700;
-  line-height: 1.35;
-  text-align: center;
-  color: var(--color-primary);
-}
-.notice-step-items li::before {
-  content: '';
-  position: absolute;
-  left: 0.15rem;
-  top: 0.52em;
-  width: 0.4rem;
-  height: 0.4rem;
-  border-radius: 50%;
-  background: var(--color-primary);
-}
-
 /* Builder → Notice tab: status banner and the live preview frame. */
 .notice-status-row {
   display: flex;
@@ -10691,16 +10217,6 @@ html:not(.calm-motion) .pa-row-summary::after {
   color: var(--color-text-muted);
 }
 
-/* The follow card's "Change" slot when the account decides the team. */
-.follow-your-team {
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  opacity: 0.75;
-  white-space: nowrap;
-}
-
 /* ============================================================
    ANNOUNCEMENTS (Now's message strip: banners from Tell everyone and the
    Announcements chat channel). Each is a .msg (DIRECTOR TOOLS block, the
@@ -10866,11 +10382,9 @@ jelly-chip:is(.bonus-meal-chip, .bonus-cat-chip, .bonus-team-chip, .verse-day-ch
   min-height: var(--target);
 }
 /* Text links that sit alone on a line in the frame's tabs get a 44px hit box
-   (Now's follow card until Step 17 retires it, the
-   Games tab's quick-game link). The builder's inline links keep their size. */
+   (the Games tab's quick-game link). The builder's inline links keep their size. */
 .quick-game-btn,
 #clear-result-btn,
-#follow-team-card .link-btn,
 .you-strip .link-btn {
   display: inline-flex;
   align-items: center;
@@ -12038,6 +11552,18 @@ select.form-input {
   margin-bottom: 0.75rem;
 }
 
+/* The red "LIVE" pill in a Big Board's head (the game takeover's live boards). */
+.board-live-badge {
+  flex: 0 0 auto;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: var(--color-on-danger);
+  background: var(--color-danger);
+  border-radius: 999px;
+  padding: 0.15rem 0.5rem;
+}
+
 .board-period {
   display: inline-flex;
   align-items: center;
@@ -12151,49 +11677,6 @@ select.form-input {
   margin-top: 0.7rem;
 }
 
-/* All-teams-at-once big board (Counselor Hide and Seek and other liveRankings
-   games) — a ranked list instead of the 2-team .board-cols layout, sized to
-   read across a field, not just a courtside phone. */
-.board-tally-rows {
-  display: flex;
-  flex-direction: column;
-  gap: 0.4rem;
-  text-align: left;
-  margin-top: 0.5rem;
-}
-
-.board-tally-row {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  padding: 0.5rem 0.75rem;
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--team-accent, var(--color-primary)) 7%, var(--color-surface));
-}
-
-.board-tally-rank {
-  min-width: 1.9rem;
-  text-align: center;
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  color: var(--color-text-muted);
-}
-
-.board-tally-team {
-  flex: 1;
-  min-width: 0;
-  font-weight: 700;
-  overflow-wrap: break-word;
-}
-
-.board-tally-score {
-  font-weight: 800;
-  font-variant-numeric: tabular-nums;
-  color: var(--team-accent, var(--color-primary));
-}
-
-.board-tally-row.board-tally-podium { font-weight: 800; }
-
 /* Spectator mode: the board owns the screen. */
 .big-board.viewer {
   min-height: 55vh;
@@ -12206,9 +11689,6 @@ select.form-input {
 .big-board.viewer .board-name { font-size: 1rem; }
 .big-board.viewer .board-score { font-size: clamp(4rem, 24vw, 7rem); }
 .big-board.viewer .board-clock { font-size: clamp(3rem, 16vw, 5rem); }
-.big-board.viewer .board-tally-rank { font-size: clamp(1.2rem, 4.5vw, 1.7rem); }
-.big-board.viewer .board-tally-team { font-size: clamp(1.05rem, 3.8vw, 1.4rem); }
-.big-board.viewer .board-tally-score { font-size: clamp(1.6rem, 7vw, 2.6rem); }
 
 /* Goal joy: the number pops and team-emoji confetti sails up. */
 .score-pop {
@@ -12271,30 +11751,7 @@ select.form-input {
 }
 
 /* ── Home-screen takeover: the board replaces Happening Now while live ── */
-.home-board {
-  cursor: pointer;
-}
 
-.home-board .big-board {
-  margin: 0;
-}
-
-.home-board-title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem;
-  margin: 0 0 0.4rem;
-  font-weight: 800;
-  font-size: 1rem;
-}
-
-.home-board-open {
-  font-size: 0.78rem;
-  font-weight: 700;
-  color: var(--color-primary);
-  white-space: nowrap;
-}
 
 html.calm-motion .score-pop { animation: none; }
 html.calm-motion .board-cannon { display: none; }

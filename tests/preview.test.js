@@ -356,7 +356,7 @@ test('walk every tab, sheet and takeover in a preview, with the points guard thr
   state.meta.hiddenCards = { competitions: false };
   renderAll(); // a director's page first, so every node holds director markup: the preview must clear it
   const before = leaksIn(__domSweep());
-  assert.ok(before.length >= 3, 'precondition: the director\'s page does carry them (' + before.length + ')');
+  assert.ok(before.length >= 2, 'precondition: the director\'s page does carry them (' + before.length + ')'); // points and the ledgers' signed numbers (the follow card's place went with Step 17)
   previewStart();
   setStandingsGuardThrows(true);
   const out = record(() => {

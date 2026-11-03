@@ -25,10 +25,9 @@ test('every schedule day has blocks, in order, with real durations', () => {
   });
 });
 
-test('the Happening Now banner survives every minute of every day', () => {
-  // renderNowBanner runs on load and every 30 seconds on every device, for the
-  // whole week — a throw here is a blank banner (or worse) at some hour nobody
-  // tested by hand. Walk all seven days at one-minute resolution.
+test('the printed-schedule banner (the schedule oracle) survives every minute of every day', () => {
+  // nowBannerHtml has no production caller since Step 17 (the Now card paints from nowModel(), which now-model.test.js
+  // walks the same way); the seed and week tests still compare the schedule data through it. Walk all seven days at one-minute resolution.
   DOWS.forEach((dow) => {
     for (let m = 0; m <= 1440; m++) {
       try {

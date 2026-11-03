@@ -74,7 +74,8 @@ test('electives are fully inert at senior camp', () => {
   assert.notOk(CAMP.features.electives);
   assert.deepEqual(ELECTIVES, {});
   state.identity = 'Someone';
-  assert.equal(myElectivesToday(), null, 'no elective data → no card');
+  assert.equal(electiveMeOnDay(1), false, 'no elective data → nobody is at a station');
+  assert.equal(myStationFor(1, 0), null, 'and no station of mine to show');
   // The identity picker is an electives affordance — it must refuse to open.
   state.followTeam = 't1';
   state.identity = undefined;
@@ -84,7 +85,7 @@ test('electives are fully inert at senior camp', () => {
 
 test('the meal-cleanup rota is all TBA until filled in', () => {
   assert.deepEqual(cleanupTeams(1, 'Breakfast'), []);
-  assert.equal(findNextCleanupFor('t0'), null, 'no rota → no "next cleanup" line on the follow card');
+  assert.equal(findNextCleanupFor('t0'), null, 'no rota → no "next cleanup" line on the Your team sheet');
 });
 
 test('senior verse card data renders without a real sheet', () => {
