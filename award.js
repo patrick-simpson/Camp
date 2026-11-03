@@ -122,8 +122,11 @@ function awardAddLabel() {
   if (problem === 'range') return 'Points are 1 to 100';
   if (problem === 'own-team') return 'Your own team is locked';
   const mag = Math.abs(Number(d.points));
-  const pts = mag + ' point' + (mag === 1 ? '' : 's');
-  const who = d.teams.length === 1 ? 'the ' + awardTeamWord(d.teams[0]) : d.teams.length + ' teams';
+  // In the double-points window a quick point counts twice (bonusCountsDouble, by its own timestamp: now), so the
+  // button says what the standings will get, as the doubled verse keys do: "Add 5 points (counts as 10) to Turkey".
+  const pts = mag + ' point' + (mag === 1 ? '' : 's') + (inDoubleBonusWindow() ? ' (counts as ' + mag * 2 + ')' : '');
+  // A team is the chip's short name with NO article ("to the Turkey", senior's "to the Blue" was broken English).
+  const who = d.teams.length === 1 ? awardTeamWord(d.teams[0]) : d.teams.length + ' teams';
   return d.sign < 0 ? 'Take ' + pts + ' from ' + who : 'Add ' + pts + ' to ' + who;
 }
 
@@ -152,7 +155,9 @@ function awardLedgerHtml(rows) {
     return `<div class="aw-led" data-key="b-${esc(id)}"><span class="aw-mark">${teamMarkHtml(b.teamId, { size: 24 })}</span>` +
       `<span class="aw-led-text"><span class="aw-led-name">${esc(teamName(b.teamId))}</span><span class="aw-led-why">${esc(why)}${when ? ` · <span class="aw-led-when">${esc(when)}</span>` : ''}</span></span>` +
       `<span class="aw-led-pts" data-sign="${pts < 0 ? 'neg' : 'pos'}">${esc(awardPts(pts))}${bonusCountsDouble(b) ? '<small class="aw-x2">×2</small>' : ''}</span>` +
-      (locked ? '' : `<button type="button" class="aw-led-del" data-bonus-id="${esc(id)}" aria-label="Remove ${esc(awardPts(pts))} for ${esc(teamName(b.teamId))}"><svg class="ico" aria-hidden="true"><use href="#i-trash"/></svg></button>`) + '</div>';
+      // Your own team's entry: the lock where the bin would be, saying why (no button with nothing behind it).
+      (locked ? '<span class="aw-led-lock" role="img" title="Your team: another director removes these" aria-label="Your team: another director removes these"><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg></span>'
+        : `<button type="button" class="aw-led-del" data-bonus-id="${esc(id)}" aria-label="Remove ${esc(awardPts(pts))} for ${esc(teamName(b.teamId))}"><svg class="ico" aria-hidden="true"><use href="#i-trash"/></svg></button>`) + '</div>';
   }).join('');
 }
 
@@ -169,6 +174,16 @@ function awardPaintDays() {
     setAttrIfChanged(b, 'aria-selected', dow === awardUi.dow ? 'true' : 'false');
     setDataIfChanged(b, 'today', dow === today ? 'true' : null);
   });
+  // At large text the strip and the jump row scroll (one row each, like the Schedule's): fade the edge they continue past.
+  if (typeof paintStripOverflow === 'function') { paintStripOverflow(awardEl('award-days')); paintStripOverflow(awardEl('award-jump')); }
+}
+
+// Keep the chosen day whole in view (the strip scrolls at large text).
+function awardRevealDay(smooth) {
+  const track = awardEl('award-days');
+  const chip = track && track.querySelector ? track.querySelector('.daypick-btn[aria-selected="true"]') : null;
+  if (chip && typeof stripRevealChip === 'function') stripRevealChip(track, chip, smooth);
+  if (typeof paintStripOverflow === 'function') paintStripOverflow(track);
 }
 
 function awardPaint() {
@@ -177,16 +192,21 @@ function awardPaint() {
   setTextIfChanged(awardEl('takeover-award-back-label'), shellToolBackLabel());
   awardPaintDays();
 
-  setHiddenIfChanged(awardEl('award-double'), !inDoubleBonusWindow());
+  const double = inDoubleBonusWindow();
+  setHiddenIfChanged(awardEl('award-double'), !double);
   setTextIfChanged(awardEl('award-double-text'), "Double points are on: verse and quick points count twice. Cleanup doesn't.");
+  // The verse note follows the keys: they read 0 2 4 … 10 in the window, so "0–5 per team" would contradict them.
+  setTextIfChanged(awardEl('award-verse-note'), double ? 'Counts twice now · tap 0 to clear' : '0–5 per team · tap 0 to clear');
 
-  // The verse in one line.
+  // The verse in one line. The seed's "Verse to be announced." (senior) is a missing verse, as Step 19's verses screen
+  // says: a plain line, not scripture with a chevron that opens nothing.
   const verse = verseFor(dow);
   const line = awardEl('award-verse-line');
   const has = !!(verse && verse.text);
-  setAttrIfChanged(line, 'aria-disabled', has ? null : 'true');
-  setDataIfChanged(line, 'empty', has ? null : 'true');
-  setAttrIfChanged(line, 'aria-expanded', has && awardUi.verseOpen ? 'true' : 'false');
+  const real = has && !/\bto be announced\b/i.test(String(verse.text));
+  setAttrIfChanged(line, 'aria-disabled', real ? null : 'true');
+  setDataIfChanged(line, 'empty', real ? null : 'true');
+  setAttrIfChanged(line, 'aria-expanded', real && awardUi.verseOpen ? 'true' : 'false');
   setTextIfChanged(awardEl('award-verse-ref'), has ? (verse.ref || '') : 'No verse for ' + dayName + ' yet');
   setTextIfChanged(awardEl('award-verse-text'), has ? '“' + verse.text + '”' : '');
   setHtmlIfChanged(awardEl('award-verse-list'), awardVerseRows(dow));
@@ -209,7 +229,9 @@ function awardPaint() {
 
   const rows = awardLedgerEntries(dow);
   setTextIfChanged(awardEl('award-ledger-title'), 'Quick points on ' + dayName);
-  setHtmlIfChanged(awardEl('award-ledger'), awardLedgerHtml(rows));
+  // Keyed, per day: an added entry arrives and the rest glide down; a removed one squashes out and the rest glide up.
+  // Another day is a plain replace (awardSetDay slides the lists in from that side).
+  paintKeyedList(awardEl('award-ledger'), awardLedgerHtml(rows), { view: dow, arrive: awardArrive });
   setHiddenIfChanged(awardEl('award-ledger-empty'), rows.length > 0);
   setTextIfChanged(awardEl('award-ledger-empty'), 'No quick points on ' + dayName + ' yet.');
 }
@@ -252,6 +274,7 @@ function renderAwardPoints() {
   awardWire(tk);
   awardPaint();
   if (opening) {
+    awardRevealDay(false);
     if (typeof JellyMotion !== 'undefined') JellyMotion.play(tk, 'settle', (x) => ({ transform: 'translateX(' + (1 - x) * 100 + '%)' }));
     const back = tk.querySelector('[data-takeover-back]');
     if (back && typeof back.focus === 'function') { try { back.focus({ preventScroll: true }); } catch (e) { /* fine */ } }
@@ -265,6 +288,10 @@ function renderAwardPoints() {
 function awardPop(el) {
   if (!el || typeof JellyMotion === 'undefined') return;
   JellyMotion.play(el, 'press', (x) => ({ transform: 'scale(' + (0.82 + 0.18 * x) + ')' }), { calm: false });
+}
+function awardArrive(el) {
+  if (!el || typeof JellyMotion === 'undefined') return;
+  JellyMotion.play(el, 'arrive', (x) => ({ transform: 'translateY(' + 10 * (1 - Math.min(1, x)) + 'px)', opacity: Math.min(1, x * 1.6) }), { calm: [{ opacity: 0 }, { opacity: 1 }], calmMs: 120 });
 }
 function awardSlide(els, dx) {
   if (typeof JellyMotion === 'undefined') return;
@@ -287,7 +314,20 @@ function awardSetDay(dow) {
   awardUi.dow = dow;
   awardUi.verseOpen = false;
   awardPaint();
+  awardRevealDay(true);
   awardSlide([awardEl('award-verse-list'), awardEl('award-cleanup-list'), awardEl('award-ledger')], dx);
+}
+
+// The jump row: scroll the body to a section (calm: no smooth scroll) and put focus on its heading.
+function awardJump(id) {
+  const sec = awardEl(id);
+  const body = awardEl('takeover-award-body');
+  if (!sec || !body || typeof sec.getBoundingClientRect !== 'function') return;
+  const top = Math.max(0, sec.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop - 8);
+  const calm = typeof calmMotion === 'function' && calmMotion();
+  if (typeof body.scrollTo === 'function') body.scrollTo({ top, behavior: calm ? 'auto' : 'smooth' }); else body.scrollTop = top;
+  const h = sec.querySelector('.dt-h');
+  if (h && typeof h.focus === 'function') { try { h.focus({ preventScroll: true }); } catch (e) { /* fine */ } }
 }
 
 // A tap on a key: the slot is set to exactly that value through the same functions the Memory verse and Meal cleanup
@@ -337,9 +377,7 @@ function awardAdd() {
     return;
   }
   awardClearError();
-  renderAll();
-  const first = document.querySelector('#award-ledger .aw-led');
-  if (first && typeof JellyMotion !== 'undefined') JellyMotion.play(first, 'arrive', (x) => ({ transform: 'translateY(' + 10 * (1 - Math.min(1, x)) + 'px)', opacity: Math.min(1, x * 1.6) }), { calm: [{ opacity: 0 }, { opacity: 1 }], calmMs: 120 });
+  glideNow(renderAll); // the new entry arrives at the top of the ledger and the rest glide down (paintKeyedList)
 }
 
 // Removing a ledger entry confirms (it syncs everywhere; every other destructive act here is a tap on a key you can tap
@@ -358,9 +396,9 @@ async function awardRemove(id) {
   const row = document.querySelector('#award-ledger [data-key="b-' + id + '"]');
   const go = () => {
     if (!removeBonusEntry(id)) { showToast("Your own team's points are changed by another director."); return; }
-    renderAll();
+    glideNow(renderAll); // the rest of the day's ledger glides up at once
   };
-  if (row && typeof JellyMotion !== 'undefined') JellyMotion.playOut(row, (x) => ({ transform: 'translateX(' + x * 40 + 'px)', opacity: 1 - x }), 180, go); else go();
+  playRowOut(row, go); // squashes out (calm: a fade)
 }
 
 function awardWire(tk) {
@@ -371,6 +409,7 @@ function awardWire(tk) {
     if (!t) return;
     let b;
     if ((b = t.closest('#award-days .daypick-btn'))) { awardSetDay(Number(b.dataset.dow)); return; }
+    if ((b = t.closest('[data-award-jump]'))) { awardJump(b.dataset.awardJump); return; }
     if ((b = t.closest('.aw-pt'))) { awardTapKey(b); return; }
     if (t.closest('#award-verse-line')) {
       if (awardEl('award-verse-line').getAttribute('aria-disabled') === 'true') return;
@@ -389,6 +428,10 @@ function awardWire(tk) {
   if (why) why.addEventListener('input', () => { bonusDraft.custom = why.value; });
   const sign = awardEl('award-quick-sign');
   if (sign && typeof segArrowKeys === 'function') segArrowKeys(sign, (btn) => { bonusDraft.sign = Number(btn.dataset.sign) < 0 ? -1 : 1; awardPaint(); });
+  ['award-days', 'award-jump'].forEach((id) => {
+    const track = awardEl(id);
+    if (track && track.addEventListener && typeof paintStripOverflow === 'function') track.addEventListener('scroll', () => paintStripOverflow(track), { passive: true });
+  });
 }
 
 // More's row opens the screen (wired once, the row is static markup).

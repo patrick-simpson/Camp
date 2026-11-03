@@ -370,6 +370,13 @@ Design: `docs/build-notes/app-shell-redesign-spec.md` §9–10; the reference fe
   measured, and neighbours just jumped). `whenHandsOff(fn)` runs a list reflow
   only with no pointer down and 400 ms after the last touch (a pointer "down"
   for over 10 s counts as lost).
+- **A keyed list that glides** (app.js, beside `setHtmlIfChanged`): `paintKeyedList(el, html, {view, arrive})` is
+  setHtmlIfChanged for a list whose rows carry `data-key` — an unchanged list writes nothing; the first paint, a new
+  `view`, no `Element.animate` (the test harness) and calm are one plain write — and any other change keeps the rows by
+  key (`flipKeyed`) so the survivors glide; somebody else's change waits for `whenHandsOff`, the person's own act runs
+  inside `glideNow(fn)` and glides at once; a deferred paint gives way to a newer one (`__keyedWant`).
+  `playRowOut(row, done)` is §9.5's row exit (scale .96 + opacity, 180 ms; calm: the fade). Tell everyone's Showing now
+  and Award points' ledger use them; Now's banner strip has its own painter on the same rules.
 - **app.js survives a missing jelly-motion.js.** A no-op `JellyMotion` +
   `calmMotion()` / `calmReason()` stand-in at the top of app.js (nothing moves,
   nothing is calm) is installed only when the real script never defined them; chat.js and
@@ -1109,8 +1116,16 @@ each as it wires it, so the live app never shows a dead control. Rules for whoev
   tint, no badge, no emoji, no capitals. **Now's strip and the preview are written by ONE function,
   `messageHtml(m, {editor, preview})`** (app.js, beside `renderAnnouncements`), so the preview is exactly
   what counselors get; the old `.announce-banner` look, its inline composer (and its keyboard-preserving
-  node swap) are gone. `renderAnnouncements` writes `setHtmlIfChanged` and wires ONE delegated click
-  listener once (dismiss on this phone; a director's Remove for everyone, which confirms). A banner is
+  node swap) are gone. `renderAnnouncements` writes only a change and wires ONE delegated click listener
+  once (dismiss on this phone; a director's Remove for everyone, which is Tell everyone's own take down:
+  no question, the banner squashes out, a 10-second Undo that checks first — `tellTakeDown('banner', id,
+  row)`; the browser's confirm only where tell.js did not load). **It moves only for a change seen on
+  screen** (§9.5, `annPaintMoving`): a new banner drops in from 56px above with a ~6% landing squash
+  (`annArrive`), a dismissed one squashes out (`playRowOut`) and the rest glide up by key, and the
+  on-screen sections under the strip glide to their new places (`annBelow` / `annGlideBelow`). Never on
+  the first paint, on the paint that brings Now back into view (`shell.dirty.now`), before the first
+  server snapshot (`remoteReady` at the previous paint), under a takeover or the builder; somebody
+  else's change waits for `whenHandsOff`. Calm: arrivals fade, the rest jump. A banner is
   written by `postBanner(text, ttlMs)` and taken down by `takeDownBanner(id)` — plain state edits with no
   render and no save, directors only; the caller saves once. `liveAnnouncements()` is every banner still
   up (what a director's Showing now lists, dismissed on this phone or not); `activeAnnouncements()` is
@@ -1118,7 +1133,14 @@ each as it wires it, so the live app never shows a dead control. Rules for whoev
   the way to post is Tell everyone.
 - **Award points** (`#takeover-award.takeover.award`, a PAPER head: points stay with directors, so not
   a broadcast): `.award-bar` pinned under the head with `#award-days` (`.daypick` with five
-  `.daypick-btn[role=tab][data-dow=1..5]`, `aria-selected`, `data-today`; two rows at the largest text),
+  `.daypick-btn[role=tab][data-dow=1..5]`, `aria-selected`, `data-today`; ONE row that scrolls sideways
+  at large text, fading at the edge it continues past — award.js paints `data-overflow` through
+  setup-ui.js's `paintStripOverflow` and keeps the chosen day in view with `stripRevealChip`) and the
+  jump row `#award-jump` (`button.award-jump-btn[data-award-jump=award-verse|award-cleanup|award-quick]`:
+  link-blue words that scroll the body to a section and focus its `h3[tabindex=-1]`; one row, scrolling
+  the same way at large text). Under ~15em of the takeover's own width (`container: award-tk`) the head's
+  "Points stay with directors" hides and `.award-secret-body`, its copy at the top of the body, shows, so
+  the pinned head is one title line;
   `#award-double` / `#award-double-text` (a plain line with the bolt, never a tinted box), then three
   `.dt-sec`s: `#award-verse` (`#award-verse-line[aria-expanded]` with `#award-verse-ref` /
   `#award-verse-text`, the list `#award-verse-list`), `#award-cleanup` (`#award-cleanup-list`: an
@@ -1131,8 +1153,14 @@ each as it wires it, so the live app never shows a dead control. Rules for whoev
   index.html: `.aw-row[data-key][data-team]` > `.aw-mark` + `.aw-name` (+ `.aw-tag` "Not on the rota") +
   `.aw-pts[role=radiogroup][data-n=6|4]` of `button.aw-pt[role=radio][aria-checked][data-pts][data-joy]`
   (52px keys; the chosen one is a filled ink key, a chosen 0 only outlined in the well, so a team that
-  got nothing never looks awarded); own team: `data-locked`, `.aw-lock` with `.aw-given` instead of keys.
-  Verse keys show what a tap is worth NOW (doubled in the window); cleanup never doubles.
+  got nothing never looks awarded — in dark it sinks into the deeper paper with the unchosen keys' own
+  border and no edge, because an outline there was the brightest key in the row); own team:
+  `data-locked`, `.aw-lock` with `.aw-given` instead of keys, and on its ledger entries `.aw-led-lock`
+  (the lock where the bin would be, `role=img`, "Your team: another director removes these").
+  Verse keys show what a tap is worth NOW (doubled in the window); cleanup never doubles. The verse
+  head's note `#award-verse-note` follows them ("0–5 per team · tap 0 to clear" / "Counts twice now ·
+  tap 0 to clear"). A day with no verse, or the seed's "Verse to be announced." (senior), is
+  `#award-verse-line[data-empty][aria-disabled]`: a plain dashed ink-2 line, no serif, no chevron.
 - **Preview as a counselor**: `html.counselor-preview` is the one switch. `#preview-bar` (outside `#app`,
   so it answers while `#app` is inert under a takeover or sheet: `.pv-title`, `#preview-bar-sub`,
   `#preview-exit`) sits over everything but dialogs, drawers and toasts (z 10000), `#preview-frame` draws
@@ -1149,10 +1177,15 @@ each as it wires it, so the live app never shows a dead control. Rules for whoev
 - **Shared pieces**: `.dt-h` / `.dt-h-row` / `.dt-h-note` (a section's name in ink-2, sentence case,
   a note that wraps under it), `.dt-mark` (the small gold "!"), `.tell-body` / `.award-body` are grids
   with ONE gap (a hidden section takes its space with it). New icons: `#i-bolt` (double points),
-  `#i-chev-d` (the verse line opens in place). Large text is container queries keyed in rem (the
-  showing-now and result rows put their button under the words from ~130% at 360px; the quick alerts
-  become one column; the way choices lose their indent, then stack; six keys become two rows of three;
-  the quick-points amount stacks; the ledger puts points and bin under the words).
+  `#i-chev-d` (the verse line opens in place). Large text is container queries keyed in rem (Showing
+  now keeps its rows short so the Quick alerts stay near the top: from ~130% at 360px the title is ONE
+  line, the icon steps aside and Take down stays at the right, and only under ~12.5rem — 200% — does
+  Take down go under the words; the result rows put Try again under the words from ~130%; the quick
+  alerts become one column; the way choices lose their indent, then stack; six keys become two rows of
+  three; the quick-points amount stacks; the ledger puts points and bin under the words). The dock's
+  gold Send is capped (`min(1.3125rem, 25px)`, 21px while typing) so its label is two lines at most.
+  `.tell-team` is the same team chip as `.aw-team` / `.si-team` (a dashed ink-3 edge off, solid ink on,
+  lifted and bold); "On a counselor's phone" is a closed phone outline with no notch drawing.
 - **Behaviour**: wired by tell.js ("Tell everyone: behaviour"), award.js ("Award points: behaviour") and app.js ("Preview as a
   counselor: behaviour"). The preview's `--pv-h` is measured (a ResizeObserver on the bar), the CSS value stays the one-line fallback.
 
@@ -1178,8 +1211,11 @@ the More row exists only when it loaded (`#tell-row` is un-hidden by `tellPaintM
   (`touchData({celebrate: false})`).
 - **The model** (`tellModel()`, pure over the draft and the environment): `ready`, `missing` (the dashed Send well:
   "Type a message first" → "Tick a way to reach people" → "Pick a team to buzz"), `label` (`tellSendLabel`:
-  "Send to everyone" · "Pin the notice" · "Send + pin the notice" · "Send + buzz everyone / the Foxes / directors" ·
-  "Buzz everyone" · "Pin + buzz everyone" · "Send + pin + buzz everyone"; "Sending…" while a send is out).
+  "Send to everyone" · "Pin the notice" · "Send + pin the notice" · "Send + buzz everyone / Foxes / directors" ·
+  "Buzz everyone" · "Pin + buzz everyone" · "Send + pin + buzz everyone"; "Sending…" while a send is out). A team is its
+  short name with NO article (`tellWho`): "the Turkey" and senior's "the Red" were broken English. A buzz that reached
+  no phone says it per audience (`tellNobody`): "nobody has phone alerts on yet" · "no director has phone alerts on
+  yet" · "nobody on Turkey Dinner has phone alerts on yet" (a team by its whole name: a sentence, not a label).
   `tellSplit(text)`: the first sentence is the notice title (a trailing full stop dropped), the rest the line
   under it; a line break ends the title too.
 - **Buzz is disabled with its reason** until phone alerts are live (`pushConfigured()`; `PUSH_SERVICE_URL` is
@@ -1203,7 +1239,9 @@ the More row exists only when it loaded (`#tell-row` is un-hidden by `tellPaintM
 - **Showing now / Take down** (`tellShowingNow`): `liveAnnouncements()` (a banner dismissed on THIS phone still
   shows, it is up for everyone else) then the notice when `noticePosted()`. Take down: a banner leaves every phone
   (the row plays out first), the notice goes back to a draft; each with a 10-second Undo that checks first (a
-  banner back only if absent and unexpired; the notice back to posted only if unchanged). Rows refresh with the
+  banner back only if absent and unexpired; the notice back to posted only if unchanged). The row squashes out
+  (`playRowOut`) and the rows left glide up (`paintKeyedList` under `glideNow`); a change from elsewhere (an expiry,
+  another director) glides once hands are off. Rows refresh with the
   30 s tick while the composer is open (`tellTick`, from `shellTick`). More's row says "Up now: a banner and the
   notice" / "Up now: 2 banners" (`data-live`) or its plain line.
 - **The draft survives**: a re-render, a tab trip and a closed-and-reopened composer (memory) and a reload
@@ -1219,7 +1257,7 @@ the More row exists only when it loaded (`#tell-row` is un-hidden by `tellPaintM
   normalized notice that is not the live one.
 - **Not built:** the Announcements chat channel is NOT a way here (redesign §7.2 keeps it a chat channel with its
   own 15-minute banner); a pinned notice has no author line ("Jenn's draft"), because the notice carries no author:
-  it says "a draft" / "on every phone now".
+  it says "Replaces the notice everyone sees now: “…”" / "Replaces the draft notice: “…”".
 - **Tests**: `tell.test.js` (+ `.senior`): the pure pieces, every channel combination, partial failure and Try
   again, the replace question, Undo (restored only if unchanged, canonical compare, a colleague's edit kept),
   Take down and its Undo, quick alerts (Urgent), Buzz disabled / disarmed, the draft (re-render, reload,
@@ -1256,10 +1294,13 @@ nothing.
   on Wednesday. The ledger's day of an entry is `bonusDowOf(b)`: its `day` when it has one, else the camp-time
   weekday of its `at`; the older cleanup points with no day ride at the end of the first day's list ("Cleanup · no day
   set"). `×2` marks an entry that counts double (`bonusCountsDouble`, its own timestamp).
-- **The Add button** says what will happen ("Add 5 points to 2 teams" · "Take 3 points from the Foxes") or is the
-  dashed well naming what is missing ("Pick a team first" · "Type the points" · "Points are 1 to 100"); a tap on the
-  well shows the Games tab's own sentence. Removing an entry asks (`askDialog`: Remove it / Not now; the browser's
-  confirm where the setup frame did not load) and plays the row out first.
+- **The Add button** says what will happen ("Add 5 points to 2 teams" · "Take 3 points from Foxes" — a team's short
+  name with no article — and in the double-points window what the standings will get: "Add 5 points (counts as 10) to
+  Turkey") or is the dashed well naming what is missing ("Pick a team first" · "Type the points" · "Points are 1 to
+  100"); a tap on the well shows the Games tab's own sentence. Removing an entry asks (`askDialog`: Remove it / Not now;
+  the browser's confirm where the setup frame did not load), then the row squashes out (`playRowOut`) and the rest
+  glide up. The ledger is a keyed list per day (`paintKeyedList(…, {view: dow})`): an added entry arrives at the top
+  and the others glide down; another day is a plain replace that slides in.
 - **Shared helpers added to app.js**: `bonusAddFromDraft`, `removeBonusEntry`, `bonusDraftProblem`, `BONUS_PROBLEMS`,
   `bonusDowOf`, `cleanupEarned(day, meal)` (a guarded points reader), `messageClock(iso, timeOnly)`.
 - **Emulator proof (opt-in)**: `tests/emulator/director-tools-client.mjs` drives the REAL client's Tell everyone and
@@ -1301,7 +1342,10 @@ a LENS over the role, not a role: `counselorPreviewOn` (memory only, declared be
   tab (`previewMayStart`: not a counselor, not a hint-painted phone, not a view-only second tab, not before the app started, not
   twice). It closes every sheet the lens no longer allows (`shellCloseDisallowedSheets`, also run
   by `renderAll` whenever `canEdit()` is false, so a demotion closes a director's drawers too), paints the bar, frame and
-  `html.counselor-preview`, flips `html.view-only`, renders, and puts focus on Exit. `renderAll` closes the builder, the director
+  `html.counselor-preview`, flips `html.view-only`, renders, goes to the TOP of the tab (`previewScrollTop`: the button sits at
+  the foot of a scrolled More, and with the Director group gone that scroll opened the counselor's More mid-page; it scrolls
+  again once the sheet's own history Back has landed, because the browser restores the scroll it remembered for that entry),
+  and puts focus on Exit. Exit lands at the top of More too. `renderAll` closes the builder, the director
   tools and the reveal remote itself.
 - **Always one tap from leaving**: `#preview-bar` is outside `#app`, so it answers under a takeover and a sheet. **Exit**
   (`previewStop({back: true})`) returns to More with What counselors see open again, so a switch can be changed and checked in a

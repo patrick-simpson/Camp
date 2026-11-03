@@ -1787,7 +1787,8 @@
            #tell-teams shows one radio per team (teamMarkHtml 24 + the short name):
              <button type="button" class="tell-team" role="radio" aria-checked="false" data-team="t0"><span class="tell-team-mark">teamMarkHtml 24</span><span class="tell-team-name">Foxes</span></button>
            Pin: #tell-pin-replace says, before Send, which notice it replaces
-           ("Replaces “Where your team cleans” · Jenn's draft"); #tell-pin-split
+           ("Replaces the notice everyone sees now: “Where your team cleans”" ·
+           "Replaces the draft notice: “…”"); #tell-pin-split
            shows how the message is cut (the first sentence becomes the title, the
            rest the line under it); #tell-notice-full opens the full notice builder
            (Set up the week → Notice; its Back returns here, draft kept). -->
@@ -1858,7 +1859,8 @@
 
     <!-- THE DOCK. ONE gold button whose words say what will happen:
          "Send to everyone" (banner only) · "Send + buzz everyone" · "Send + buzz
-         the Foxes" · "Send + buzz directors" · "Pin the notice" (pin only) ·
+         Foxes" (a team's short name, never "the" before it) · "Send + buzz
+         directors" · "Pin the notice" (pin only) ·
          "Send + pin the notice". Not ready: aria-disabled="true" and the label
          names what's missing ("Type a message first" · "Tick a way to reach
          people" · "Pick a team to buzz") — the dashed well, never a greyed copy.
@@ -1921,9 +1923,20 @@
         <button type="button" class="daypick-btn" role="tab" aria-selected="false" aria-controls="takeover-award-body" data-dow="4">Thu</button>
         <button type="button" class="daypick-btn" role="tab" aria-selected="false" aria-controls="takeover-award-body" data-dow="5">Fri</button>
       </div>
+      <!-- A quiet way to each section (Quick points is far down a junior day):
+           a tap scrolls the body to it and puts focus on its heading. -->
+      <nav class="award-jump" id="award-jump" aria-label="Go to">
+        <button type="button" class="award-jump-btn" data-award-jump="award-verse">Verse</button>
+        <button type="button" class="award-jump-btn" data-award-jump="award-cleanup">Cleanup</button>
+        <button type="button" class="award-jump-btn" data-award-jump="award-quick">Quick points</button>
+      </nav>
     </div>
 
     <div class="tk-body award-body" id="takeover-award-body" role="tabpanel" aria-labelledby="takeover-award-title">
+      <!-- The head's "Points stay with directors" at large text (CSS: under ~15em
+           of the takeover's width the head's copy hides and this one shows), so
+           the pinned head is one line and the line scrolls with the body. -->
+      <p class="award-secret award-secret-body"><svg class="ico" aria-hidden="true"><use href="#i-eye-off"/></svg>Points stay with directors</p>
       <!-- In the double-points window only: a plain line, never a tinted box.
            The verse keys already show what a tap is worth NOW (the stored value
            stays 0–5; each entry doubles by its own timestamp, bonusIsDouble);
@@ -1952,13 +1965,14 @@
            after the name. -->
       <section class="dt-sec award-sec" id="award-verse" aria-labelledby="award-verse-label">
         <div class="dt-h-row">
-          <h3 class="dt-h" id="award-verse-label">Memory verse</h3>
-          <span class="dt-h-note">0–5 per team · 0 clears</span>
+          <h3 class="dt-h" id="award-verse-label" tabindex="-1">Memory verse</h3>
+          <span class="dt-h-note" id="award-verse-note">0–5 per team · tap 0 to clear</span>
         </div>
         <!-- The day's verse in one line; a tap opens the whole verse in place
-             (aria-expanded) in the scripture serif. No verse yet: data-empty, the
-             line reads "No verse for Wednesday yet" and is not a button's job:
-             the renderer sets aria-disabled. -->
+             (aria-expanded) in the scripture serif. No verse yet, or the seed's
+             "Verse to be announced." (senior): data-empty, a plain dashed line
+             (no serif, no chevron) that is not a button's job: the renderer sets
+             aria-disabled. -->
         <button type="button" class="aw-verse" id="award-verse-line" aria-expanded="false">
           <span class="aw-verse-ref" id="award-verse-ref">Galatians 2:20</span>
           <span class="aw-verse-text" id="award-verse-text"></span>
@@ -1973,8 +1987,8 @@
              <p class="aw-none" data-key="none-Lunch">No team on the rota</p> -->
       <section class="dt-sec award-sec" id="award-cleanup" aria-labelledby="award-cleanup-label">
         <div class="dt-h-row">
-          <h3 class="dt-h" id="award-cleanup-label">Meal cleanup</h3>
-          <span class="dt-h-note">3 = spotless · 0 clears</span>
+          <h3 class="dt-h" id="award-cleanup-label" tabindex="-1">Meal cleanup</h3>
+          <span class="dt-h-note">3 = spotless · tap 0 to clear</span>
         </div>
         <div class="gl aw-list" id="award-cleanup-list"></div>
       </section>
@@ -1988,12 +2002,13 @@
            iPhone number pad has no minus key); #award-quick-amount[data-sign]
            follows it (1 | -1), which puts "+" or a danger "−" in front of the
            number. #award-quick-add says what will
-           happen ("Add 5 points to 2 teams" · "Take 3 points from the Foxes"), or
+           happen ("Add 5 points to 2 teams" · "Take 3 points from Foxes" · in the
+           double-points window "Add 5 points (counts as 10) to Turkey"), or
            is the dashed well naming what's missing ("Pick a team first" · "Type
            the points" · "Points are 1 to 100"). -->
       <section class="dt-sec award-sec" id="award-quick" aria-labelledby="award-quick-label">
         <div class="dt-h-row">
-          <h3 class="dt-h" id="award-quick-label">Quick points</h3>
+          <h3 class="dt-h" id="award-quick-label" tabindex="-1">Quick points</h3>
           <span class="dt-h-note">For anything else, or to take points away</span>
         </div>
         <div class="gl aw-form">
@@ -2018,6 +2033,8 @@
                  <span class="aw-led-pts" data-sign="pos">+5<small class="aw-x2">×2</small></span>   (data-sign="neg": "−2", danger text)
                  <button type="button" class="aw-led-del" data-bonus-id="<id>" aria-label="Remove +5 for Ferocious Foxes"><svg class="ico" aria-hidden="true"><use href="#i-trash"/></svg></button>
                </div>
+             Your own team's entry: in the bin's place
+               <span class="aw-led-lock" role="img" title="Your team: another director removes these" aria-label="Your team: another director removes these"><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg></span>
              ×2: the entry counts double in the standings (its own timestamp).
              Older cleanup points with no day ride at the end of Monday's list,
              their why "Cleanup · no day set". -->

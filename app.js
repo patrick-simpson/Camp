@@ -5977,6 +5977,56 @@ function setHtmlIfChanged(el, html) {
   return true;
 }
 
+// A keyed list that GLIDES (redesign §9.5: a row removed squashes out and the rest glide up by key; a row added
+// arrives). Same contract as setHtmlIfChanged — an unchanged list writes nothing — but a change to a list already on
+// screen keeps its rows by data-key (JellyMotion.flipKeyed), so the survivors spring from where they were instead of
+// jumping. The first paint, a new `o.view` (another day: a plain replace, the caller slides it), a page without
+// Element.animate (the test harness) and calm motion are one plain write (calm: the rest jump). A change somebody
+// ELSE made waits until no finger is on the screen (whenHandsOff: the row about to be tapped must not slide away);
+// the person's own act glides at once (glideNow). `o.arrive(node)` runs on every row that is new. A deferred paint is
+// dropped when a newer one is asked for (`__keyedWant`), so the list always ends on the latest markup.
+let listGlideNow = false;
+function glideNow(fn) {
+  const was = listGlideNow;
+  listGlideNow = true;
+  try { return fn(); } finally { listGlideNow = was; }
+}
+function paintKeyedList(el, html, o) {
+  if (!el) return false;
+  o = o || {};
+  const sameView = el.__keyedView === o.view;
+  if (el.__html === html && el.__dom === el.innerHTML) { el.__keyedWant = html; el.__keyedView = o.view; return false; }
+  el.__keyedWant = html;
+  el.__keyedView = o.view;
+  const canMove = typeof JellyMotion !== 'undefined' && typeof el.animate === 'function' && el.__html !== undefined && sameView;
+  if (!canMove || calmMotion() || !el.children || !el.children.length) {
+    // A list that was empty (or calm motion) is one write; its new rows still arrive (calm: a fade).
+    const had = {};
+    if (el.children) Array.prototype.forEach.call(el.children, (c) => { if (c.dataset && c.dataset.key) had[c.dataset.key] = 1; });
+    setHtmlIfChanged(el, html);
+    if (canMove && o.arrive) Array.prototype.forEach.call(el.children, (c) => { if (c.dataset && c.dataset.key && !had[c.dataset.key]) o.arrive(c); });
+    return true;
+  }
+  const run = () => {
+    if (el.__keyedWant !== html || (el.__html === html && el.__dom === el.innerHTML)) return;
+    let added = [];
+    try { added = JellyMotion.flipKeyed(el, html, 'glide') || []; } catch (e) { el.innerHTML = html; added = []; }
+    el.__html = html;
+    el.__dom = el.innerHTML;
+    if (o.arrive) added.forEach((n) => o.arrive(n));
+  };
+  if (listGlideNow) run(); else JellyMotion.whenHandsOff(run);
+  return true;
+}
+// A row leaving by the person's own tap: a small squash and a fade (§9.5 "Banner dismissed": scale(.96) + opacity;
+// calm: the fade alone), then `done` (the write that removes it, run inside glideNow so the rest glide at once).
+function playRowOut(row, done) {
+  if (row && row.__leaving) return; // a second tap while it leaves
+  if (!row || typeof JellyMotion === 'undefined') { done(); return; }
+  row.__leaving = true;
+  JellyMotion.playOut(row, (x) => ({ transform: 'scale(' + (1 - 0.04 * x) + ')', opacity: 1 - x }), 180, () => { row.__leaving = false; done(); });
+}
+
 // The same skip for panels that are SUPPOSED to change under their own
 // markup: anything holding a game clock (the 500 ms tick rewrites its digits
 // and urgency classes in place), a Big Board (goal cannons get appended to
@@ -11148,7 +11198,13 @@ function messageHtml(m, opts) {
 
 // Now's message strip. Chat's Announcements channel rides it for 15 minutes per message (chat.js provides them
 // pre-filtered; same dismissed set). Runs on every renderAll and the 30 s tick, so it writes only a change
-// (setHtmlIfChanged) and its two buttons are ONE delegated listener, wired once.
+// (setHtmlIfChanged / paintKeyedList) and its two buttons are ONE delegated listener, wired once.
+// Motion (§9.5), only for a change seen on screen: a banner that arrives drops in from above and squashes on
+// landing (annArrive), one dismissed here squashes out (playRowOut) and the rest glide up by key, and the sections
+// under the strip glide to their new places instead of jumping. Never on the first paint, on the paint that brings
+// Now back into view (its whole panel arrives then), before the first server snapshot (the cache and then the
+// snapshot at boot), or under a takeover. A change somebody else made waits until no finger is on the screen.
+// Calm: arrivals fade, the rest jump.
 function renderAnnouncements() {
   const wrap = document.getElementById('announcements');
   if (!wrap) return;
@@ -11156,25 +11212,94 @@ function renderAnnouncements() {
   const active = activeAnnouncements().concat(fromChat)
     .sort((a, b) => String(b.at).localeCompare(String(a.at)));
   const editor = canEdit();
-  setHiddenIfChanged(wrap, !active.length);
-  setHtmlIfChanged(wrap, active.map((a) => messageHtml(a, { editor })).join(''));
+  const html = active.map((a) => messageHtml(a, { editor })).join('');
+  const onScreen = activeTab() === 'now' && shell.dirty.now === false && !shellTakeoverOpen() && !builderOpen();
+  const moving = onScreen && wrap.__annLive === true && typeof wrap.animate === 'function' && typeof JellyMotion !== 'undefined';
+  wrap.__annLive = onScreen && remoteReady;
+  if (!moving) {
+    wrap.__keyedWant = html;
+    setHiddenIfChanged(wrap, !active.length);
+    setHtmlIfChanged(wrap, html);
+  } else annPaintMoving(wrap, html, active.length);
   if (wrap.__wired) return;
   wrap.__wired = true;
   wrap.addEventListener('click', (e) => {
     const t = e.target && e.target.closest ? e.target : null;
     const x = t && t.closest('.msg-x');
-    if (x) { dismissAnnouncement(x.dataset.annId); renderAnnouncements(); return; }
+    if (x) {
+      const id = x.dataset.annId;
+      playRowOut(x.closest('.msg'), () => { dismissAnnouncement(id); glideNow(renderAnnouncements); });
+      return;
+    }
     const rm = t && t.closest('.msg-remove');
     if (!rm) return;
     if (!canEdit()) return;
     const a = (state.announcements || {})[rm.dataset.annId];
     if (!a) return;
+    // The same take down as Tell everyone's Showing now: no question (OK / Cancel is not how this app asks), the
+    // banner squashes out and a 10-second Undo puts it back only if it is still down and unexpired.
+    if (typeof tellTakeDown === 'function') { tellTakeDown('banner', a.id, rm.closest('.msg')); return; }
     if (!confirm(`Remove this announcement from every phone?\n\n"${a.text}"`)) return;
     takeDownBanner(a.id);
     touchData();
     saveState();
     renderAnnouncements();
   });
+}
+
+// The strip's change, painted with motion (renderAnnouncements decided it may move). The sections under the strip
+// are measured before and after, and each that is on screen glides from where it was (they are static sections whose
+// own renderers rewrite only their insides, so a WAAPI transform on the section leaves no residue).
+function annPaintMoving(wrap, html, n) {
+  if (wrap.__html === html && wrap.__dom === wrap.innerHTML) { wrap.__keyedWant = html; setHiddenIfChanged(wrap, !n); return; }
+  wrap.__keyedWant = html;
+  const run = () => {
+    if (wrap.__keyedWant !== html || (wrap.__html === html && wrap.__dom === wrap.innerHTML)) return;
+    const below = annBelow(wrap);
+    const had = {};
+    Array.prototype.forEach.call(wrap.children, (c) => { if (c.dataset && c.dataset.key) had[c.dataset.key] = 1; });
+    setHiddenIfChanged(wrap, !n);
+    if (wrap.children.length && !calmMotion()) {
+      try { JellyMotion.flipKeyed(wrap, html, 'glide'); } catch (e) { wrap.innerHTML = html; }
+    } else wrap.innerHTML = html;
+    wrap.__html = html;
+    wrap.__dom = wrap.innerHTML;
+    Array.prototype.forEach.call(wrap.children, (c) => { if (c.dataset && c.dataset.key && !had[c.dataset.key]) annArrive(c); });
+    if (!calmMotion()) annGlideBelow(below);
+  };
+  if (listGlideNow) run(); else JellyMotion.whenHandsOff(run);
+}
+
+// The sections after the strip that are on screen, with where they are now.
+function annBelow(wrap) {
+  const out = [];
+  const vh = (typeof window !== 'undefined' && window.innerHeight) || 0;
+  for (let el = wrap.nextElementSibling; el; el = el.nextElementSibling) {
+    if (el.hidden) continue;
+    const top = el.getBoundingClientRect().top;
+    if (top > vh) break;
+    out.push({ el, top });
+  }
+  return out;
+}
+function annGlideBelow(below) {
+  below.forEach(({ el, top }) => {
+    const dy = top - el.getBoundingClientRect().top;
+    if (Math.abs(dy) < 1) return;
+    JellyMotion.play(el, 'glide', (x) => ({ transform: 'translateY(' + dy * (1 - x) + 'px)' }), { calm: false });
+  });
+}
+// A banner arrives: it drops 56px from above and spends its overshoot as a ~6% landing squash, anchored at its foot
+// (scale(1+.18o, 1−.5o); arrive overshoots ~12%). Calm: a fade.
+function annArrive(node) {
+  JellyMotion.play(node, 'arrive', (x) => {
+    const o = Math.max(0, x - 1);
+    return {
+      transform: 'translateY(' + (-56 * (1 - Math.min(1, x))) + 'px) scale(' + (1 + 0.18 * o) + ', ' + (1 - 0.5 * o) + ')',
+      transformOrigin: '50% 100%',
+      opacity: Math.min(1, x * 2),
+    };
+  }, { calm: [{ opacity: 0 }, { opacity: 1 }], calmMs: 160 });
 }
 
 // The two writes of a banner, plain state edits with no render and no save (the caller — Tell everyone, a Take
@@ -11985,6 +12110,10 @@ function previewStart() {
   applyRoleClass();
   updateAccountRow();
   renderAll();
+  // The way in sits at the foot of What counselors see, usually with More scrolled down; the Director group is gone
+  // now, so that scroll would open the counselor's More mid-page under the header. Start where a counselor's tab
+  // starts: at the top (and the same again on Exit).
+  previewScrollTop();
   const exit = document.getElementById('preview-exit');
   if (exit && typeof exit.focus === 'function') { try { exit.focus({ preventScroll: true }); } catch (e) { /* fine */ } }
   return true;
@@ -12000,11 +12129,22 @@ function previewStop(opts) {
     updateAccountRow();
     renderAll();
     if (opts && opts.back && canEdit()) {
+      shell.scroll.more = 0; // the tab is restored from its slot when it is shown
       if (activeTab() !== 'more') showTab('more');
+      previewScrollTop();
       shellSheetOpen('counselors', document.getElementById('counselors-row'));
     }
   }
   return true;
+}
+
+function previewScrollTop(tries) {
+  shell.scroll[activeTab()] = 0;
+  if (activeTab() !== 'more') shell.scroll.more = 0;
+  shellScrollTo(0, false);
+  // Closing What counselors see pops its history entry, and the browser then puts back the scroll it remembered for
+  // the entry it lands on (found at 130–200% text, where More is long): go to the top again once our own Back landed.
+  if (shell.busy && (tries || 0) < 20) setTimeout(() => previewScrollTop((tries || 0) + 1), 40);
 }
 
 // A sheet that is open and not allowed for who the screen is now closes (a role the preview or a demotion took

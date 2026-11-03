@@ -13001,25 +13001,42 @@ div.sec-st-name {
   font: 600 0.84375rem/1.3 var(--font-ui);
   color: var(--ink-2);
 }
-/* Large text: Take down / Try again move under their words (whole words, no
-   squeezed column), still at the words' left edge. */
+/* Large text. Showing now keeps each row short so the Quick alerts stay near
+   the top of the screen: from ~130% the title is ONE line (the words are on
+   every phone already; the row only has to say which) and Take down stays at
+   the right, a 44px key that still fits; only at the very largest text does it
+   move under the words. Try again moves under its words from ~130%. */
 .tell-showing-list,
 .tell-res-list {
   container-type: inline-size;
 }
 @container (max-width: 17rem) {
+  /* The icon steps aside (the sub already says "Banner" / "Big notice"), so
+     the one line of title keeps a readable width beside Take down. */
   .tell-live {
-    grid-template-columns: 24px minmax(0, 1fr);
-    align-items: start;
-    gap: 6px 12px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    min-height: 60px;
+    padding-right: 10px;
   }
   .tell-live-ico {
-    margin-top: 1px;
+    display: none;
+  }
+  .tell-live-title {
+    -webkit-line-clamp: 1;
+  }
+}
+@container (max-width: 12.5rem) {
+  .tell-live {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 6px;
   }
   .tell-live .tell-down {
-    grid-column: 2;
     justify-self: start;
   }
+}
+@container (max-width: 17rem) {
   .tell-res {
     grid-template-columns: 22px minmax(0, 1fr);
     gap: 4px 10px;
@@ -13201,7 +13218,12 @@ div.sec-st-name {
 .tell-seg .seg-btn {
   padding-inline: 4px;
 }
-/* A team to buzz: one radio per team, its mark and short name. */
+/* A team to buzz: one radio per team, its mark and short name. The same team
+   chip as Award points' toggles and the item sheet's teams — a dashed ink-3
+   edge off (3:1, seen in sunlight), solid ink on, lifted and bold — so the
+   state is shape, never colour alone. (A radio ring before the mark was tried:
+   two chips a row left the short name ~60px at 360 and 390, and "Pumpkins"
+   broke mid-word.) */
 .tell-teams {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -13214,7 +13236,7 @@ div.sec-st-name {
   min-width: 0;
   min-height: var(--target);
   padding: 4px 10px 4px 6px;
-  border: 1.5px solid var(--line-2);
+  border: 2px dashed var(--ink-3);
   border-radius: var(--r-btn);
   background: none;
   color: var(--ink-2);
@@ -13223,8 +13245,8 @@ div.sec-st-name {
   cursor: pointer;
 }
 .tell-team[aria-checked="true"] {
-  border: 2px solid var(--ink);
-  padding: 3.5px 9.5px 3.5px 5.5px;
+  border-style: solid;
+  border-color: var(--ink);
   background: var(--lift);
   color: var(--ink);
   font-weight: 800;
@@ -13355,27 +13377,15 @@ div.sec-st-name {
   }
 }
 
-/* On a counselor's phone: the top of a phone (an outline and its speaker slot,
-   no notch drawing, no glow), its screen in Now's paper, holding the real
-   banner / notice markup. A picture: nothing in it takes a tap. */
+/* On a counselor's phone: a closed phone outline (no notch or speaker drawing,
+   no glow — §8.8 has no decoration), its screen in Now's paper, holding the
+   real banner / notice markup. A picture: nothing in it takes a tap. */
 .tell-phone {
   position: relative;
-  padding: 22px 10px 14px;
+  padding: 14px 10px;
   border: 2px solid var(--ink-3);
-  border-bottom: 0;
-  border-radius: 30px 30px 0 0;
+  border-radius: 26px;
   background: var(--paper);
-}
-.tell-phone::before {
-  content: '';
-  position: absolute;
-  top: 8px;
-  left: 50%;
-  width: 44px;
-  height: 5px;
-  margin-left: -22px;
-  border-radius: 3px;
-  background: var(--line-2);
 }
 .tell-phone-screen {
   display: grid;
@@ -13400,6 +13410,10 @@ div.sec-st-name {
   flex: 1 1 auto;
   min-width: 0;
   overflow-wrap: break-word;
+  /* The label grows with the phone's text size up to a ceiling, then only wraps
+     (like the preview bar and the setup headlines): uncapped, 200% text made it
+     three lines and the dock a third of the screen. Two lines at most. */
+  font-size: min(1.3125rem, 25px);
 }
 .tell-done {
   display: none;
@@ -13413,7 +13427,7 @@ body.kb-open .tell-send {
   min-height: 52px;
   border-radius: 14px;
   box-shadow: 0 4px 0 var(--gold-edge);
-  font-size: 1.125rem;
+  font-size: min(1.125rem, 21px);
 }
 body.kb-open .tell-send[aria-disabled="true"] {
   box-shadow: none;
@@ -13432,38 +13446,92 @@ body.kb-open .tell-send[aria-disabled="true"] {
   vertical-align: -2px;
   stroke-width: 2.3;
 }
-/* The day stays in view while the sections scroll under it. */
+/* The day (and the way to each section) stays in view while the sections
+   scroll under it. */
 .award-bar {
   flex: none;
-  padding: 10px var(--gutter);
+  padding: 10px var(--gutter) 0;
   border-bottom: 1px solid var(--line-2);
   background: var(--paper);
 }
-/* Five days share the width: no strip to scroll, every day a full target. The
-   track sits on paper here, so in dark it lifts (--well-paper) instead of
-   sinking into a navy it can't be told from. */
+/* The days share the width while they fit; at large text the strip keeps ONE
+   row and scrolls sideways like every other day strip (the Schedule's), fading
+   at the edge it continues past (award.js paints data-overflow and keeps the
+   chosen day in view) — never a 3 + 2 grid. The track sits on paper here, so
+   in dark it lifts (--well-paper) instead of sinking into a navy it can't be
+   told from. */
 .award-days {
-  overflow: visible;
   background: var(--well-paper);
   box-shadow: inset 0 0 0 1px var(--well-paper-line);
 }
 .award-days .daypick-btn {
-  flex: 1 1 0;
-  min-width: 0;
+  flex: 1 0 0;
+  min-width: max-content;
   min-height: var(--target);
-  padding-inline: 2px;
+  padding-inline: 10px;
 }
-/* Largest text: the week on two lines (Mon Tue Wed / Thu Fri), never a day
-   name cut by its own button. */
-.award-bar {
-  container: award-bar / inline-size;
+/* A quiet way to each section (Quick points sits ~1,700px down on a junior
+   day): link-blue words, each a 44px target, under the days. ONE row always
+   (two would make the pinned bar taller exactly when text is large): at large
+   text it scrolls sideways and fades at the edge it continues past, like the
+   strip above it (award.js paints data-overflow). */
+.award-jump {
+  display: flex;
+  align-items: center;
+  gap: 0 20px;
+  margin: 2px 0 0;
+  padding: 0 2px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
 }
-@container award-bar (max-width: 15rem) {
-  .award-days {
-    flex-wrap: wrap;
+.award-jump::-webkit-scrollbar {
+  display: none;
+}
+.award-jump[data-overflow="end"] {
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 24px), transparent);
+}
+.award-jump[data-overflow="start"] {
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 16px);
+  mask-image: linear-gradient(90deg, transparent, #000 16px);
+}
+.award-jump[data-overflow="both"] {
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 16px, #000 calc(100% - 24px), transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 16px, #000 calc(100% - 24px), transparent);
+}
+.award-jump-btn {
+  flex: none;
+  min-width: var(--target);
+  min-height: var(--target);
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: 750 0.9375rem/1.2 var(--font-ui);
+  white-space: nowrap;
+  text-align: left;
+  cursor: pointer;
+}
+/* Large text (under ~15em of the takeover's own width): "Points stay with
+   directors" leaves the pinned head and opens the body instead, so the head is
+   one title line and the screen is not a third chrome. */
+.takeover.award {
+  container: award-tk / inline-size;
+}
+.award-secret-body {
+  display: none;
+}
+@container award-tk (max-width: 15em) {
+  .award .tk-head .award-secret {
+    display: none;
   }
-  .award-days .daypick-btn {
-    flex: 1 0 30%;
+  .award-secret-body {
+    display: block;
+    margin: 0 2px;
+    font: var(--t-meta);
+    font-weight: 600;
+    color: var(--ink-2);
   }
 }
 .award .tk-body {
@@ -13533,6 +13601,19 @@ body.kb-open .tell-send[aria-disabled="true"] {
 }
 .aw-verse[aria-disabled="true"] .aw-verse-chev {
   display: none;
+}
+/* No verse yet, or the seed's "to be announced" (Step 19's verses screen calls
+   that missing too): a plain ink-2 line on the well, never scripture. */
+.aw-verse[data-empty] {
+  min-height: var(--target);
+  border-style: dashed;
+  border-color: var(--ink-3);
+  background: none;
+}
+.aw-verse[data-empty] .aw-verse-ref,
+.aw-verse[data-empty] .aw-verse-text {
+  font: 650 0.9375rem/1.35 var(--font-ui);
+  color: var(--ink-2);
 }
 
 /* One team per row: its mark and name, then its keys across the row. */
@@ -13616,6 +13697,26 @@ body.kb-open .tell-send[aria-disabled="true"] {
   background: var(--paper-2);
   color: var(--ink-2);
   box-shadow: none;
+}
+/* In dark the light theme's well (--paper-2) can't be told from the sheet and
+   the ink outline made every team's 0 the brightest key in its row: the chosen
+   0 sinks into the deeper paper (a key pressed IN: no bottom edge, the unchosen
+   keys' own border, ink-2 words), quieter than the raised keys AND the real
+   award, so "set, nothing given" never reads as a mark. (An ink-3 edge was
+   tried: still the brightest outline in the row.) */
+:root[data-jelly-mode="dark"] .aw-pt[data-pts="0"][aria-checked="true"] {
+  border-color: var(--card-b);
+  background: var(--paper);
+  color: var(--ink-2);
+  box-shadow: none;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-jelly-mode="light"]) .aw-pt[data-pts="0"][aria-checked="true"] {
+    border-color: var(--card-b);
+    background: var(--paper);
+    color: var(--ink-2);
+    box-shadow: none;
+  }
 }
 /* Six keys stop fitting once text is large: two rows of three (and the four
    cleanup keys two by two only at the very largest). */
@@ -13902,6 +14003,19 @@ body.kb-open .tell-send[aria-disabled="true"] {
 .aw-led-del:active {
   background: color-mix(in srgb, var(--ink) 8%, transparent);
 }
+/* Your own team's entry: the lock where the bin would be, and its reason as the
+   name (the verse and cleanup rows say it in words). */
+.aw-led-lock {
+  display: grid;
+  place-items: center;
+  width: var(--target);
+  height: var(--target);
+  color: var(--ink-3);
+}
+.aw-led-lock .ico {
+  width: 18px;
+  height: 18px;
+}
 .aw-empty {
   margin-top: 0;
 }
@@ -13928,7 +14042,8 @@ body.kb-open .tell-send[aria-disabled="true"] {
     display: inline;
     margin-left: 6px;
   }
-  .aw-led-del {
+  .aw-led-del,
+  .aw-led-lock {
     grid-column: 3;
   }
 }

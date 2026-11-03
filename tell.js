@@ -151,11 +151,22 @@ function tellTeamWord(id) {
   return t ? (teamShort(id) || t.name) : '';
 }
 
-// Who a buzz goes to, in words ("everyone", "the Foxes", "directors"), and the sender's audience for it.
+// Who a buzz goes to, in words ("everyone", "Foxes", "directors"), and the sender's audience for it. A team is its
+// short name with NO article, the word on the chip just tapped: "the" in front made "Send + buzz the Turkey" and, in
+// senior, "the Red" (a short name is often an adjective or a singular, never safe to put "the" before).
 function tellWho(d) {
   if (d.aud === 'directors') return 'directors';
-  if (d.aud === 'team') { const w = tellTeamWord(d.team); return w ? 'the ' + w : 'a team'; }
+  if (d.aud === 'team') return tellTeamWord(d.team) || 'a team';
   return 'everyone';
+}
+// The no-phones report, one sentence per audience (a team by its whole name: this is a sentence, not a label).
+function tellNobody(d) {
+  if (d.aud === 'directors') return 'no director has phone alerts on yet';
+  if (d.aud === 'team') {
+    const t = (state.teams || []).find((x) => x.id === d.team);
+    return t ? 'nobody on ' + (t.name || tellTeamWord(t.id)) + ' has phone alerts on yet' : 'nobody on that team has phone alerts on yet';
+  }
+  return 'nobody has phone alerts on yet';
 }
 function tellAudience(d) {
   if (d.aud === 'directors') return 'editors';
@@ -185,7 +196,7 @@ function tellModel() {
   };
 }
 
-// "Send to everyone" (banner only) · "Pin the notice" · "Send + pin the notice" · "Send + buzz everyone" · "Send + buzz the
+// "Send to everyone" (banner only) · "Pin the notice" · "Send + pin the notice" · "Send + buzz everyone" · "Send + buzz
 // Foxes" · "Send + buzz directors" · "Buzz everyone" · "Pin + buzz everyone" · "Send + pin + buzz everyone".
 function tellSendLabel(d, buzz) {
   const parts = [];
@@ -299,7 +310,8 @@ function tellPaint() {
   // Showing now.
   const rows = tellShowingNow();
   setHiddenIfChanged(tellEl('tell-showing'), !rows.length);
-  setHtmlIfChanged(tellEl('tell-showing-list'), tellShowingHtml(rows));
+  // Keyed: after a Take down (or a banner that expired, or another director's) the rows left glide up, never jump.
+  paintKeyedList(tellEl('tell-showing-list'), tellShowingHtml(rows), { arrive: tellArrive });
 
   // Quick alerts.
   const q = tellEl('tell-quick-what');
@@ -341,7 +353,7 @@ function tellPaint() {
   const cur = noticeBoard();
   const replaces = d.pin && tellNoticeHasContent(cur);
   setHiddenIfChanged(tellEl('tell-pin-replace'), !replaces);
-  if (replaces) setTextIfChanged(tellEl('tell-pin-replace-text'), 'Replaces “' + tellNoticeName(cur) + '” · ' + (cur.status === 'posted' ? 'on every phone now' : 'a draft'));
+  if (replaces) setTextIfChanged(tellEl('tell-pin-replace-text'), (cur.status === 'posted' ? 'Replaces the notice everyone sees now: “' : 'Replaces the draft notice: “') + tellNoticeName(cur) + '”');
   const split = tellSplit(d.text);
   setHiddenIfChanged(tellEl('tell-pin-split'), !(d.pin && split.title));
   setTextIfChanged(tellEl('tell-pin-title'), split.title);
@@ -553,7 +565,7 @@ function tellPlan(m) {
     text: m.text.slice(0, TELL_MAX),
     banner: d.banner ? { ttlMs: ttl.ms } : null,
     pin: d.pin ? { notice: tellPinnedNotice(m.text) } : null,
-    buzz: m.buzz ? { audience: tellAudience(d), urgent: !!d.urgent, who: tellWho(d) } : null,
+    buzz: m.buzz ? { audience: tellAudience(d), urgent: !!d.urgent, who: tellWho(d), nobody: tellNobody(d) } : null,
   };
 }
 
@@ -583,7 +595,7 @@ async function tellRunBuzz(buzz, text) {
   try { r = await pushSendAlert({ text, audience: buzz.audience, urgent: buzz.urgent }); } catch (e) { r = { ok: false, error: 'it did not go through' }; }
   if (!r || !r.ok) return { way: 'buzz', ok: false, text: "Buzz didn't go: " + tellBuzzWhy(r) };
   const n = (Number(r.sent) || 0) + (Number(r.queued) || 0);
-  if (!n) return { way: 'buzz', ok: false, text: "Buzz reached no phones: nobody in " + buzz.who + " has phone alerts on yet" };
+  if (!n) return { way: 'buzz', ok: false, text: 'Buzz reached no phones: ' + (buzz.nobody || 'nobody has phone alerts on yet') };
   return { way: 'buzz', ok: true, text: 'Buzz sent to ' + n + ' phone' + (n === 1 ? '' : 's') };
 }
 
@@ -709,21 +721,22 @@ function tellUndo(rec) {
   showToast(left.length ? (did ? 'Undone, except: ' : '') + left.join(' ') : 'Undone');
 }
 
-// "Take down" on a Showing now row: a banner leaves every phone; the notice goes back to a draft. Both with the same
-// 10-second Undo (a banner back only if it is still absent and unexpired; the notice back to posted only if nobody
-// changed it since).
-function tellTakeDown(kind, id) {
+// "Take down" on a Showing now row (and Now's "Remove for everyone", which passes its own banner as `rowEl`): a banner
+// leaves every phone; the notice goes back to a draft. Both with the same 10-second Undo (a banner back only if it is
+// still absent and unexpired; the notice back to posted only if nobody changed it since). The row squashes out
+// (playRowOut) and the rest of its list glide up at once (glideNow: the person's own act).
+function tellTakeDown(kind, id, rowEl) {
   if (!tellMayUse()) return;
   if (kind === 'banner') {
     const a = state.announcements && state.announcements[id];
     if (!a) return;
     const copy = tellClone(a);
-    const row = document.querySelector('#tell-showing-list [data-key="ann-' + id + '"]');
+    const row = rowEl || document.querySelector('#tell-showing-list [data-key="ann-' + id + '"]');
     const go = () => {
       if (!takeDownBanner(id)) return;
       touchData({ celebrate: false });
       saveState();
-      renderAll();
+      glideNow(renderAll);
       showToast('Banner taken down', {
         duration: TELL_UNDO_MS,
         action: {
@@ -739,21 +752,31 @@ function tellTakeDown(kind, id) {
         },
       });
     };
-    if (row && typeof JellyMotion !== 'undefined') JellyMotion.playOut(row, (x) => ({ transform: 'translateX(' + x * 40 + 'px)', opacity: 1 - x }), 180, go); else go();
+    playRowOut(row, go);
     return;
   }
   if (kind === 'notice') {
     if (!noticePosted()) return;
-    setNoticeStatus('draft', { celebrate: false });
-    const after = tellCanon(noticeBoard());
-    showToast('Notice taken down', {
-      duration: TELL_UNDO_MS,
-      action: {
-        label: 'Undo',
-        run: () => { if (canEdit() && tellCanon(noticeBoard()) === after) setNoticeStatus('posted', { celebrate: false }); },
-      },
-    });
+    // setNoticeStatus renders: the row's exit first, then the list closes up at once.
+    const row = document.querySelector('#tell-showing-list [data-key="notice"]');
+    if (row && typeof JellyMotion !== 'undefined' && typeof row.animate === 'function' && !row.__leaving) {
+      playRowOut(row, () => { if (noticePosted() && tellMayUse()) tellNoticeDown(); });
+      return;
+    }
+    tellNoticeDown();
   }
+}
+
+function tellNoticeDown() {
+  glideNow(() => setNoticeStatus('draft', { celebrate: false }));
+  const after = tellCanon(noticeBoard());
+  showToast('Notice taken down', {
+    duration: TELL_UNDO_MS,
+    action: {
+      label: 'Undo',
+      run: () => { if (canEdit() && tellCanon(noticeBoard()) === after) setNoticeStatus('posted', { celebrate: false }); },
+    },
+  });
 }
 
 // ════════════════════════════════════════════════════════════════════
