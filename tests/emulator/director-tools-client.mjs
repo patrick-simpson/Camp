@@ -154,6 +154,56 @@ for (const R of ROOTS) {
     d.stop();
   });
 
+  // Now's own writes (BUILD-PLAN Step 17): a key in the cleanup moment is the Award points slot writer, "Still on this" is ONE per-field
+  // meta path (state/meta/overrun, which the rules accept because state/meta only has to be a branch), Take down is the notice's status.
+  const NOW_PAGE = `campNow = () => ({ dow: 3, minutes: NOW_MIN }); serverNow = () => NOW_MS;
+    cleanupOnRota = (d) => d >= 1 && d <= 5; cleanupTeams = (d, meal) => (d >= 1 && d <= 5 && meal === 'Lunch' ? [state.teams[1].id] : []);`;
+  const nowAt = (min) => NOW_PAGE.replace('NOW_MIN', String(min)).replace('NOW_MS', String(Date.UTC(2026, 6, 22, 12, 0, 0) + min * 60000));
+
+  await s.t(`${R}: Now's writes are accepted: a key in the cleanup moment, Still on this (state/meta/overrun) and Take down of the notice`, async () => {
+    const d = await phone(R, ED, 'editor');
+    const srv = await state('');
+    d.run(`state.notice = ${JSON.stringify((srv && srv.notice) || null)}; state.bonuses = ${JSON.stringify((srv && srv.bonuses) || {})}; state.meta = ${JSON.stringify((srv && srv.meta) || {})};
+           normalizeSyncedState(); lastSyncedTree = syncedSnapshot(); appStarted = true;`);
+    // 1. the cleanup moment, just after lunch: a tap on a key
+    const lunchEnd = d.run(`nowBlocks(3).find((x) => x.meal === 'Lunch').end`);
+    d.run(nowAt(lunchEnd + 5));
+    d.run(`nowRefresh()`);
+    const team = d.run(`nowLast.moment && nowLast.moment.teams[0].team`);
+    if (!team) throw new Error('precondition: a cleanup moment with a team on it');
+    d.run(`nowTapKey({ dataset: { pts: '2' }, closest: () => ({ dataset: { team: ${JSON.stringify(team)}, key: 'c-x' } }) })`);
+    // 2. Still on this: a games block that ended with a game still to score
+    const gamesEnd = d.run(`nowBlocks(3).find((x) => x.kind === 'games' && gamesForBlock(3, x.b).length).end`);
+    d.run(nowAt(gamesEnd + 3));
+    d.run(`nowRefresh()`);
+    if (!d.run('nowHoldOverrun()')) throw new Error('the offer was not there: ' + JSON.stringify(d.run('nowLast.card.hold')));
+    // 3. the notice: posted by a director's writer, taken down from Now
+    d.run(`setNoticeStatus('posted')`);
+    await d.flush();
+    if ((await state('notice/status')) !== 'posted') throw new Error('precondition: the notice is posted');
+    d.run(`nowTakeDownNotice()`);
+    await d.flush();
+    const b = await state('bonuses');
+    const e = b && b[`cleanup-${team}-3-Lunch`];
+    if (!e || e.points !== 2 || e.category !== 'cleanup' || e.meal !== 'Lunch' || e.day !== 3) throw new Error('cleanup slot: ' + JSON.stringify(e));
+    const ov = await state('meta/overrun');
+    if (!ov || typeof ov.key !== 'string' || !/^3:/.test(ov.key) || !Number.isFinite(ov.until)) throw new Error('overrun: ' + JSON.stringify(ov));
+    if ((await state('notice/status')) !== 'draft') throw new Error('the notice is not a draft: ' + (await state('notice/status')));
+    d.stop();
+  });
+
+  await s.t(`${R}: a counselor's Now writes nothing — a key, Still on this, Take down — and a raw counselor write of state/meta/overrun is refused`, async () => {
+    const d = await phone(R, VW, 'viewer');
+    const lunchEnd = d.run(`nowBlocks(3).find((x) => x.meal === 'Lunch').end`);
+    d.run(nowAt(lunchEnd + 5));
+    d.run(`nowRefresh(); state.notice.status = 'posted';`);
+    d.run(`nowTapKey({ dataset: { pts: '3' }, closest: () => ({ dataset: { team: state.teams[1].id, key: 'c-x' } }) }); nowHoldOverrun(); nowTakeDownNotice();`);
+    await sleep(60);
+    if (d.writes.length) throw new Error('a counselor phone wrote: ' + JSON.stringify(d.writes));
+    await assertFails(update(ref(h.as(VW), `${R}/state`), { 'meta/overrun': { key: '3:x', until: Date.now() + 60000 } }));
+    d.stop();
+  });
+
   await s.t(`${R}: a director in a counselor PREVIEW writes nothing — every director act refused, the server untouched — and writes again after Exit`, async () => {
     const d = await phone(R, ED, 'editor');
     const srv = await state('');
