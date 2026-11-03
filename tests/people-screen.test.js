@@ -66,7 +66,13 @@ function psClose() {
   freshState();
 }
 const psEl = (id) => document.getElementById(id);
-const psAsk = (over) => ({ key: PS_TAYLOR, name: 'Taylor Reed', at: Date.now() - 240000, note: "I'm with the Foxes", ...(over || {}) });
+// shellHasUnsentWork() with the older "mid-entry" test (a pending write, a focused field) held off, so what is asked is the Step 25 sheets.
+const unsentWorkAlone = () => { const real = editorMidEntry; editorMidEntry = () => false; try { return shellHasUnsentWork(); } finally { editorMidEntry = real; } };
+// ONE stamp for the whole file: the join bar's dismissal key is key|at, so a stamp read from the clock on every call
+// made "the same request" differ whenever a millisecond boundary fell between two psAsk() calls (a flaky 'a newer
+// request brings it back', 1 in ~25 runs). Time is an argument here, never read twice.
+const PS_AT = Date.now() - 240000;
+const psAsk = (over) => ({ key: PS_TAYLOR, name: 'Taylor Reed', at: PS_AT, note: "I'm with the Foxes", ...(over || {}) });
 const psPut = (list) => { pplReq.list = list; };
 
 // ── the hub row's judgement ──
@@ -183,6 +189,20 @@ test('More\'s People row opens the screen straight away (Back is labelled More a
   } finally { psClose(); }
 });
 
+test('People opened from Now\'s join bar says Back is Now (not More), and Back returns there', async () => {
+  psOpen();
+  try {
+    state.ui.view = 'home'; state.ui.builderScreen = undefined; state.ui.tab = 'now';
+    assert.equal(setupOpenPeople(), true, 'the join bar\'s See calls this');
+    assert.equal(state.ui.builderScreen, 'people');
+    renderAll();
+    assert.equal(psEl('setup-back-label').textContent, 'Now', 'the tab the builder was opened from');
+    await setupBack();
+    assert.equal(builderOpen(), false);
+    assert.equal(state.ui.tab, 'now', 'and the director lands back on Now');
+  } finally { psClose(); }
+});
+
 test('a counselor reaches none of it: the row, the screen, every sheet and the bar refuse', () => {
   psOpen('viewer');
   try {
@@ -288,6 +308,7 @@ test('closing a person sheet with unsaved edits asks first, by every route; "Kee
     assert.equal(setupSheetGuardClose('people-person'), false, 'nothing at stake: it closes');
     psEl('ppl-team').value = 't1';
     assert.equal(peopleBusy(), true, 'a dirty sheet holds the deploy reload');
+    assert.equal(unsentWorkAlone(), true, 'and a long absence does not send the director home over it');
     let asked = 0;
     askDialog = async () => { asked++; return 'keep'; };
     assert.equal(setupSheetGuardClose('people-person'), true);
@@ -299,7 +320,24 @@ test('closing a person sheet with unsaved edits asks first, by every route; "Kee
     await waitUntil(() => !shell.sheets.includes('people-person'), 'Discard to close the sheet');
     assert.equal(peopleUi.person, null);
     assert.equal(peopleBusy(), false);
+    assert.equal(unsentWorkAlone(), false, 'discarded: nothing at stake any more');
   } finally { askDialog = real; psClose(); }
+});
+
+test('a director of both camps sees the OTHER camp\'s access on a person\'s sheet, never a second control for this camp\'s role', () => {
+  psOpen();
+  const realOther = otherCampRole;
+  try {
+    otherCampRole = 'editor';
+    peopleUi.other = { status: 'ok', list: { 'sam@example,com': { role: 'viewer', name: 'Sam Lee' } } };
+    peopleOpenPerson('sam@example,com');
+    renderPeopleSheet();
+    assert.equal(psEl('ppl-camps-fld').hidden, false);
+    const h = psEl('ppl-camps').innerHTML;
+    assert.ok(h.includes('data-ppl-camp="' + otherCampId() + '"') && h.includes(CAMPS[otherCampId()].label), 'the other camp\'s three choices');
+    assert.notOk(h.includes('data-ppl-camp="' + CAMP.id + '"'), 'this camp\'s role is the Role control above, written by Save: not a second, instant one that could disagree with it');
+    assert.equal((h.match(/data-ppl-access=/g) || []).length, 3, 'None, Counselor, Director');
+  } finally { otherCampRole = realOther; psClose(); }
 });
 
 test('Remove asks first (access changes have no Undo) and then removes; the person vanishing while their sheet is open closes it with a sentence', async () => {

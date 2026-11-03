@@ -305,6 +305,9 @@ test('names typed with no signal are HELD in memory (nothing sent, nothing store
     assert.deepEqual(campersHeldList().map((h) => h.tid + ':' + h.name), ['t0:Held A', 't0:Held B', 't1:Held C']);
     assert.equal(campersBusy(), true, 'the deploy\'s auto-reload waits');
     assert.equal(reloadBlocked(), true);
+    const midReal = editorMidEntry;
+    editorMidEntry = () => false;
+    try { assert.equal(shellHasUnsentWork(), true, 'held names are in memory only: a long absence must not send the director home from them'); } finally { editorMidEntry = midReal; }
     assert.equal(builderLeaveWarning(), 'These 3 names haven’t been saved yet — they’ll be lost. Discard them?');
     fbConnected = true;
     campersOnConnect();
@@ -464,6 +467,43 @@ test('the listener follows the screen: the hub, Campers, People and Teams hold i
     renderSetupUi(false);
     assert.equal(db.listenerCount(CM_ROOT + '/campers'), 0, 'closing the builder lets it go');
     assert.equal(cmEl('campers-groups').innerHTML, '', 'and the page holds no names');
+  } finally { cmTeardown(); }
+});
+
+test('the names are drawn only while the Campers screen is the one showing: any other screen (even one that still holds the list) empties the chips', async () => {
+  const { db } = cmSetup({ data: cmData() });
+  try {
+    syncStarted = true;
+    state.ui.view = 'settings';
+    state.ui.builderScreen = 'campers';
+    setupUi.wasOpen = false;
+    renderSetupUi(true);
+    await waitUntil(() => campersMem.loaded, 'the snapshot');
+    renderCampersScreen();
+    assert.ok(cmEl('campers-groups').innerHTML.includes('Maya'), 'the Campers screen draws the names');
+    // The hub holds the list for its counts but does not show names.
+    state.ui.builderScreen = 'hub';
+    renderSetupUi(true);
+    assert.equal(db.listenerCount(CM_ROOT + '/campers'), 1, 'the hub still holds the list');
+    assert.equal(cmEl('campers-groups').innerHTML, '', 'but no name stays in the page behind it');
+    // Coming back repaints them (the memo was forgotten with the markup).
+    state.ui.builderScreen = 'campers';
+    renderSetupUi(true);
+    renderCampersScreen();
+    assert.ok(cmEl('campers-groups').innerHTML.includes('Maya'), 'back on the Campers screen they are drawn again');
+    // The Classic editor holds nothing: the listener and the names both go.
+    state.ui.builderScreen = 'classic';
+    renderSetupUi(true);
+    assert.equal(db.listenerCount(CM_ROOT + '/campers'), 0);
+    assert.equal(cmEl('campers-groups').innerHTML, '');
+    // An idle paint of a screen with no names writes nothing.
+    const el = cmEl('campers-groups');
+    let writes = 0;
+    const desc = Object.getOwnPropertyDescriptor(el, 'innerHTML');
+    Object.defineProperty(el, 'innerHTML', { configurable: true, get() { return desc ? desc.get.call(el) : ''; }, set(v) { writes++; if (desc && desc.set) desc.set.call(el, v); } });
+    renderSetupUi(true);
+    renderSetupUi(true);
+    assert.equal(writes, 0, 'nothing to forget, nothing written');
   } finally { cmTeardown(); }
 });
 

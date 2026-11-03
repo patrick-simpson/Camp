@@ -2739,9 +2739,25 @@ function setupSectionLive(section) {
 }
 
 const SETUP_RICH_OF = new WeakMap(); // a legacy block an accessor handed out -> the rich block it came from
-let setupPlanMemo = null;            // the live tree's plans, rebuilt only when the tree (or its revision) changes
+let setupPlanMemo = null;            // the live tree's plans, rebuilt only when the tree (or its revision, or a team's short name / emoji) changes
 let setupBuiltInMemo = null;         // the built-in week resolved the same way (planForDow while the schedule is off)
 let setupBuiltInTreeMemo = null;     // …and the seeded tree it was resolved from (the Schedule screen's read-only preview reads it)
+
+// What a team's tail in a label reads from: the roster's ids, short names and emojis. renderLabel bakes teamEmoji /
+// teamShort into every label it builds, so a plan memoized on the tree alone kept the OLD "🦃 Turkey" in Happening
+// Now, the schedule sheet, the calendar file and the published schedule after a director renamed a team and took the
+// suggested short name (the Teams screen, a colleague's snapshot, an undo, a restore all change state.teams without
+// touching the setup tree). Both memos carry this signature and rebuild when it moves. The raw record fields are
+// compared, not the laundered ones: the same strings give the same labels, and it is cheap enough for every call.
+function setupTeamSig() {
+  const ts = typeof state !== 'undefined' && state && Array.isArray(state.teams) ? state.teams : [];
+  let s = '';
+  for (let i = 0; i < ts.length; i++) {
+    const t = ts[i];
+    s += (t ? String(t.id) + '\u0001' + String(t.short === undefined ? '' : t.short) + '\u0001' + String(t.emoji === undefined ? '' : t.emoji) : '') + '\u0002';
+  }
+  return s;
+}
 
 function setupBuildPlans(tree) {
   const rich = [];
@@ -2771,8 +2787,9 @@ function setupBuildPlans(tree) {
 // new block objects). Keyed on the tree's identity AND its revision — a test (or a restore) may swap the tree whole.
 function setupLivePlans() {
   const m = setupPlanMemo;
-  if (m && m.tree === setupTree && m.rev === setupRev) return m;
-  setupPlanMemo = Object.assign(setupBuildPlans(setupTree), { tree: setupTree, rev: setupRev });
+  const sig = setupTeamSig();
+  if (m && m.tree === setupTree && m.rev === setupRev && m.sig === sig) return m;
+  setupPlanMemo = Object.assign(setupBuildPlans(setupTree), { tree: setupTree, rev: setupRev, sig });
   return setupPlanMemo;
 }
 
@@ -2783,7 +2800,8 @@ function setupBuiltInTree() {
   return setupBuiltInTreeMemo;
 }
 function setupBuiltInPlans() {
-  if (!setupBuiltInMemo) setupBuiltInMemo = setupBuildPlans(setupBuiltInTree());
+  const sig = setupTeamSig();
+  if (!setupBuiltInMemo || setupBuiltInMemo.sig !== sig) setupBuiltInMemo = Object.assign(setupBuildPlans(setupBuiltInTree()), { sig });
   return setupBuiltInMemo;
 }
 

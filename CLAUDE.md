@@ -521,7 +521,8 @@ future edit must not break (all pinned by `tests/tabs.test.js`):
 - **Coming back** (`shellResume`): hidden more than 10 minutes → reopen on Now
   at the top with takeovers closed, unless something is half-typed
   (`shellHasUnsentWork`: a focused score field / dirty builder, a sending or
-  typed chat message). A reload restores the tab / game / builder only if
+  typed chat message, a Set up the week People / Team / Camper sheet with edits not saved or a photo going up, camper names held for a
+  signal — `peopleBusy`, `teamEditBusy`, `campersUiBusy`, `campersBusy`, the same list `reloadBlocked` asks). A reload restores the tab / game / builder only if
   `state.ui.shellAt` is within 10 minutes (`doReload` stamps it, so the auto-
   update reload keeps your place) and a game only on the same camp day.
 - **The game takeover** (`#takeover-game`, §5.5): `renderGameView` writes the
@@ -4021,10 +4022,26 @@ field, to the camp's own constant while the record doesn't carry it.
   `teamPhotos/<tid> = { v, data }` first (awaited), then `photoV` through `stateEdit` with `undo: false`
   (the node holds only the newest upload, so an older version number could not be put back); a refusal
   at either step leaves the team as it was, in a sentence (`TEAM_PHOTO_WHY`). **Remove photo** takes
-  `photoV` off (undoable) and leaves the node. Recorded, not fixed: an upload whose `set()` neither
-  resolves nor rejects (a connection that dies mid-write) leaves the busy sheet waiting; the node may
-  then be newer than the record's `photoV`, and a device whose `photoV` is older shows the shield or
-  flag until the record catches up (a photo is only ever shown for the version it was asked about).
+  `photoV` off (undoable) and leaves the node. **The wait is bounded** (`teamPhotoWaitMs`, 20 s; a variable so a
+  test can wait it out): an RTDB `set()` on a connection that dies mid-write neither resolves nor rejects, and
+  while it is pending the sheet cannot be closed and the auto-reload is held. When the wait ends the upload
+  reports `slow` ("taking a while … it will appear on its own if the connection comes back; if it does not, try
+  again"), the sheet is let go of, and the SDK's queued write is still watched: if it lands, the record's
+  `photoV` is written then (`teamPhotoFinish`, the same two halves a normal upload runs), unless a newer upload
+  for that team started meanwhile (`teamPhotoSeq`: the newest attempt wins) — so the node and `photoV` never
+  disagree for want of a signal. A device whose `photoV` is older than the node's `v` shows the shield or flag
+  until the record catches up (a photo is only ever shown for the version it was asked about).
+- **A team's short name and emoji reach the schedule's labels at once** (`setupTeamSig` in setup-sync.js). `renderLabel`
+  bakes `teamEmoji` / `teamShort` into every label a block with `teams` builds (junior's Tue / Thu / Sat morning
+  meeting), and the plans are memoized on the setup tree. Both memos (`setupLivePlans`, `setupBuiltInPlans`) therefore
+  also carry a signature of the roster's ids, short names and emojis and rebuild when it moves — the Teams screen's
+  Save, a colleague's snapshot, an Undo and a restore all change `state.teams` without touching the setup tree, and
+  before this the old "🦃 Turkey" stayed in Happening Now, the schedule sheet, the calendar file and the published
+  schedule until the tree changed or the page reloaded (`team-branding.test.js` pins it, schedule on and off, both
+  camps). An unchanged roster hands back the SAME plan objects (render-stability). A block's `alertKey` never moves
+  with a rename. The Teams screen's Save also asks the publisher to republish the schedule
+  (`pushScheduleSoon`, typeof-guarded; identical content writes nothing, and a colleague's editor device catches up on
+  its next load).
 - **Pick new colours** (`#sheet-team-colors`, `teamUi.colors`; the Teams screen's "Pick new colours for …" link): listed
   only while some team's older colour is hard to read on a theme (`teamsModel().weak`); a block per team the sheet
   OPENED for (`teamUi.colorsFor`: a picked team keeps its block, marked — the dot `aria-checked` with its ring, "Now
@@ -4044,6 +4061,10 @@ field, to the camp's own constant while the record doesn't carry it.
   hostile branding cleaned by `teamsFromBackup` before it is pushed, and a counselor's phone (nothing opens, nothing is
   written; raw writes refused). Mutation-checked (`teamColorValid` weakened: the backup case goes red). No rules change
   belongs to this step. It joined `npm run test:r1`.
+- **Known limit, recorded: the big screen keeps the camp's original look.** The TV page (`current-standings.js`) is public and reads only
+  `revealPublic`, which has no colour, emoji or photo field (and the rules must not change for this), so a director's new colour, emoji or
+  photo shows on every phone but the big screen still draws the camp's built-in crest, flag colour and mascot emoji (`teamEmojiOf`). A
+  public, laundered branding field in `revealPublic` is a future rules decision for the owner.
 - **A backup file or a restore point can only bring in well-formed branding** (`teamsFromBackup`, used by
   `tryImport`, the restore preview and `restoreApply`): id, name and counselor as they were, the other
   fields only if they pass the checks above, and `photoV` NEVER from the file, because `teamPhotos/<tid>`
@@ -4126,8 +4147,8 @@ requester's side is app.js (the denied screen).
 - **The People screen** (setup-ui.js section 14; markup index.html `#setup-people` + five `#sheet-people-*` sheets; CSS
   "SET UP THE WEEK: People"; `tests/people-screen.test.js` + senior). `#setup[data-screen="people"]`. **More's `#members-row`
   keeps its old id and now reads "People"** (a count pill `#more-people-count`) and opens the screen straight away
-  (`openMembers()` → `setupOpenPeople()` → `openBuilder(undefined, 'people')`; Back is labelled More and leaves the builder,
-  `peopleUi.from`); the hub's People row opens it with the hub as Back (`HUB_OPENS.people = { screen: 'people' }`). It reads the
+  (`openMembers()` → `setupOpenPeople()` → `openBuilder(undefined, 'people')`; Back leaves the builder and is labelled with the tab the
+  builder was opened FROM — More for the row, Now for the join bar's "See who's asking" — `peopleUi.from`); the hub's People row opens it with the hub as Back (`HUB_OPENS.people = { screen: 'people' }`). It reads the
   LIVE directory (`memberDirectory`, one `.on('value')` the app already has) and `peopleRequests()`; nothing is stored on a
   phone. Top to bottom: the headline (the hub row's first problem — "Taylor Reed is asking to join", "2 people have no sign-in
   yet" — else its summary; the lede names the NEXT one, "Next: Maples has no counselors yet · 2 more things to check"),
@@ -4146,8 +4167,10 @@ requester's side is app.js (the denied screen).
 - **The five sheets** (shell sheets, ONE at a time, `SETUP_SHEETS`; each opens only with state a tap made —
   `peopleSheetReady` — and `peopleCleanSheets` drops a closed sheet's state so a Forward never reopens a stale form; a sheet
   with unsaved edits asks before it closes by EVERY route through `setupSheetGuardClose`, and `peopleBusy()` holds the deploy
-  reload). **Person**: name, team (native select), Role (Counselor / Director — locked on your own row), for a director of both
-  camps a per-camp None / Counselor / Director switch saved at once (`peopleSetCampAccess`), for a pending row **Add their
+  reload). **Person**: name, team (native select), Role (Counselor / Director — locked on your own row; THIS camp's role is only
+  this control, written by Save), for a director of both camps the OTHER camp's None / Counselor / Director switch saved at once
+  (`peopleSetCampAccess`; never a second, instant control for this camp, which would leave the Role control and its saved baseline showing
+  a stale role), for a pending row **Add their
   sign-in** and **This is the same person as…**, Copy invite text, **Remove from this camp** (asks first: access changes have
   no Undo); Save writes only what changed, one `update()`. **Request**: who, their address, their note in quotes, when;
   **"Is this someone already on the list?"** with the candidates (nothing is guessed: until one is picked or "None of these"
@@ -4160,6 +4183,10 @@ requester's side is app.js (the denied screen).
   **Add people**: "Type a list" (the live preview reads each line — "Cam → Foxes", "Sam Lee → put on Foxes", "listed
   twice" — and the button says "Add 2, update 1"; junior also "Fill in last year's printed roster") or "One person with a
   sign-in" (the old add form; the invite text to copy shows after). **People you've blocked**: one read when opened, Unblock.
+- **Deviations from P2 §11.8 / ux-R9, recorded** (small, deliberate; each is a one-line change if the owner wants the spec's form): your OWN row
+  is a button, not a read-only line — a director may fix their own name and team (only the role is locked: "another director has to change your
+  access", and the rules agree); **Put people on teams** is the selects only and does not take pasted "name, team" lines itself (its link opens
+  **Add people**, whose "Type a list" does, with the live preview).
 - **The join badges and bar** (app.js): `renderJoinBadges` (from `renderTabBadges`) lights More's gold dot (`#tab-dot-more`)
   for this camp's waiting requests OR the other camp's one-shot count (a director of both), and writes the counts on
   `#more-join-count` ("2 asking to join", on More's People row) and `#more-people-count` (a hidden duplicate). `joinBarHtml` puts
@@ -4190,7 +4217,10 @@ setup-sync.js's "CAMPERS" section (the last one before the cache load); the scre
   sign-in resolved and sync started (`campersMayListen`: `canEdit() && memberRoleConfirmed && syncStarted`), only while a screen that shows
   counts or names asks for it — `renderSetupUi` calls `campersWant(canEdit() && CAMPERS_SCREENS.includes(screen))` on every paint:
   **hub, Campers, People, Teams** (the spec says Campers, People or Teams; the hub is added on purpose because its Campers row is judged —
-  counts only, never a name — and says "Loading…" until the list arrives). Any other screen, a closed builder (`setupUiClosed`) or a demotion
+  counts only, never a name — and says "Loading…" until the list arrives; **an owner question, recorded**: drop the hub from `CAMPERS_SCREENS` and
+  its row would have no count to show). **The names are drawn only while the Campers screen is the one showing**: `renderSetupUi` calls
+  `campersUiForget()` on every other screen (the hub, which still holds the list for its counts, included), emptying the chips and the held list
+  — a write only when something is there, so an idle paint writes nothing — and the Campers screen repaints them when it is shown again. Any other screen, a closed builder (`setupUiClosed`) or a demotion
   (`campersOnRoleChange`, from `setupOnRoleChange`) detaches it and DROPS the names (a demotion drops held names too). Its refusal sets
   `campersMem.denied` and degrades campers only — never `fbRef` / `syncDenied`, and a cancelled read is not re-armed. **Every snapshot is
   normalized on read** (`campersNorm`: only `t[0-9]` teams, `c-[a-z0-9]{6,20}` ids, a clean name and a numeric `ord`, sorted by position then

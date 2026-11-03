@@ -291,3 +291,59 @@ test('a backup file and a restore point both go through it', () => {
   assert.ok(/state\.teams = teamsFromBackup\(setupClone\(body\.state\.teams\)\)/.test(SETUP_SYNC), 'restoreApply');
   assert.ok(/teamsCanon\(teamsFromBackup\(pt\)\)/.test(SETUP_SYNC), 'the preview says what it will really change');
 });
+
+// ── the schedule's labels follow a team's short name and emoji ──
+
+test('a team\'s new short name and emoji reach the schedule\'s labels at once, with the setup tree untouched', () => {
+  freshState();
+  const saved = setupTree;
+  try {
+    // The schedule edited here: a typical-day block that names two teams. The plans are memoized on the tree, and the label
+    // bakes the teams' emoji and short name in, so the memo must also notice a roster change that never touched the tree
+    // (the Teams screen's Save, a colleague's snapshot, an undo, a restore).
+    setupTree = normalizeSetup(setupClone(syncCanon(buildSeed(CAMP))));
+    const bid = Object.keys(setupTree.typical)[0];
+    setupTree.typical[bid].teams = { t0: true, t1: true };
+    setupRev++;
+    assert.ok(scheduleIsShared(), 'the seeded tree has the schedule switch on');
+    const find = () => planForDow(1).find((b) => b.id === bid);
+    const tail = (a, b) => teamEmoji('t0') + ' ' + teamShort('t0') + ' & ' + teamEmoji('t1') + ' ' + teamShort('t1');
+    const first = find();
+    assert.ok(first && first.label.endsWith(tail()), 'the tail names both teams: ' + (first && first.label));
+    const day = planForDow(1);
+    assert.ok(planForDow(1) === day, 'nothing changed: the same objects, so an idle render writes nothing');
+    const key = first.alertKey;
+    state.teams[0].short = 'Hawks';
+    state.teams[0].emoji = '🦅';
+    const after = find();
+    assert.ok(after.label.includes('🦅 Hawks'), 'the plan follows the roster: ' + after.label);
+    assert.equal(after.label, first.label.split(' — ')[0] + ' — ' + tail());
+    assert.ok(scheduleForDow(1).some((b) => b.label === after.label), 'and so does the legacy day every renderer reads');
+    assert.equal(after.alertKey, key, 'a rename never re-keys a block: every phone\'s alert subscriptions survive');
+    assert.ok(planForDow(1) === planForDow(1), 'the rebuilt plan is memoized again');
+    // The same roster again (a snapshot echo) rebuilds nothing.
+    const stable = planForDow(1);
+    state.teams[0].short = 'Hawks';
+    assert.ok(planForDow(1) === stable, 'an echo of the same roster rebuilds nothing');
+
+    // The built-in week (the schedule off): a block of the printed week that names teams, where the camp has one.
+    freshState();
+    setupTree = normalizeSetup({}); setupRev++;
+    assert.notOk(scheduleIsShared());
+    let hit = null;
+    for (let d = 0; d < 7 && !hit; d++) {
+      planForDow(d).forEach((b) => teamIds().forEach((tid) => { if (!hit && b.label.includes(teamEmoji(tid) + ' ' + teamShort(tid))) hit = { d, tid, old: teamEmoji(tid) + ' ' + teamShort(tid) }; }));
+    }
+    if (hit) {
+      const idx = state.teams.findIndex((t) => t.id === hit.tid);
+      state.teams[idx].short = 'Zed';
+      state.teams[idx].emoji = '🦓';
+      const labels = planForDow(hit.d).map((b) => b.label);
+      assert.ok(labels.some((l) => l.includes('🦓 Zed')), 'the printed week follows the roster too: ' + labels.join(' | '));
+      assert.notOk(labels.some((l) => l.includes(hit.old)), 'and no label keeps the old tail');
+    }
+  } finally {
+    setupTree = saved; setupRev++;
+    freshState();
+  }
+});

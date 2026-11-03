@@ -939,11 +939,14 @@ function renderSetupUi(open) {
   if (root.dataset.screen !== screen) root.dataset.screen = screen;
   // The camper list (minors' names, memory only) is held only while a screen that shows counts or names is up; any other lets it go.
   if (typeof campersWant === 'function') campersWant(canEdit() && CAMPERS_SCREENS.indexOf(screen) !== -1);
+  // The chips draw names, and only the Campers screen shows them: leaving it (to the hub, which still holds the list for its
+  // counts, or to the Classic editor, which holds nothing) takes them out of the page, so a hidden screen never keeps a minor's name.
+  if (screen !== 'campers' && typeof campersUiForget === 'function') campersUiForget();
   if (typeof applyOwnerClass === 'function') applyOwnerClass();
   // Back from the hub returns to the tab the builder was opened FROM (More, or Games from an empty day's
   // "Add games"): the shell keeps state.ui.tab untouched while the builder is up.
   const cameFrom = { now: 'Now', games: 'Games', chat: 'Chat', more: 'More' }[state.ui.tab] || 'More';
-  setTextIfChanged(setupEl('setup-back-label'), screen === 'hub' ? cameFrom : screen === 'rain' ? (setupRain.cameFrom === 'now' ? 'Now' : 'Schedule') : screen === 'people' && peopleUi.from === 'more' ? 'More' : 'Set up the week');
+  setTextIfChanged(setupEl('setup-back-label'), screen === 'hub' ? cameFrom : screen === 'rain' ? (setupRain.cameFrom === 'now' ? 'Now' : 'Schedule') : screen === 'people' && peopleUi.from === 'more' ? cameFrom : 'Set up the week');
   paintSetupSync();
   paintSetupHere();
   paintSetupDock();
@@ -5503,6 +5506,9 @@ function teamCommit(f) {
     return true;
   });
   if (ok === false) { setupSay('That team is not on the list any more, so nothing was changed.'); }
+  // A team's short name and emoji end up in the schedule's labels (the morning meeting's tail), and the published schedule
+  // carries those labels: republish it (identical content writes nothing; a colleague's device catches up on its next load).
+  else if ((f.short !== o.short || f.emoji !== o.emoji) && typeof pushScheduleSoon === 'function') pushScheduleSoon();
   teamUi.edit = null;
   shellSheetClose('team-edit');
   renderAll();
@@ -5648,16 +5654,14 @@ function teamPhotoEncode(canvas, tintHex) {
 // Write teamPhotos/<tid> = { v, data } first (awaited), then the record's photoV through the state engine. A failure at either step
 // leaves the team exactly as it was. Not undoable: the node holds only the newest upload, so an older photoV would point at a photo
 // that is gone. Resolves { ok, reason? }.
-async function teamPhotoUpload(id, data) {
-  if (!teamPhotoClean(data)) return { ok: false, reason: 'format' };
-  if (!teamOnline()) return { ok: false, reason: 'offline' };
-  const prev = teamPhotoVersion(id);
-  const v = Math.max(Date.now(), prev === null ? 0 : prev + 1);
-  try {
-    await firebase.database().ref(dbPath('teamPhotos/' + id)).set({ v, data });
-  } catch (err) {
-    return { ok: false, reason: err && err.code === 'PERMISSION_DENIED' ? 'denied' : 'failed' };
-  }
+// How long a photo may take to go up before the sheet lets go of it (a variable so a test can wait it out). An RTDB set() on a
+// connection that dies mid-write neither resolves nor rejects, and while it is pending the sheet cannot be closed and the
+// deploy's auto-reload is held: a director on the camp's patchy network was trapped there until the signal came back.
+let teamPhotoWaitMs = 20000;
+const teamPhotoSeq = {}; // team id -> the newest upload attempt's number (a late landing completes only the newest)
+
+// The two halves that make a photo real once its data is on the server: this device's copies, then the record's photoV.
+function teamPhotoFinish(id, v, data) {
   teamPhotoStore(id, v, data);
   putPhoto(teamPhotoIdbKey(id, v), data).catch(() => { /* the memory copy serves this session */ });
   teamPhotoAsked.add(id + ':' + v);
@@ -5666,11 +5670,43 @@ async function teamPhotoUpload(id, data) {
   return { ok: true, v };
 }
 
+async function teamPhotoUpload(id, data) {
+  if (!teamPhotoClean(data)) return { ok: false, reason: 'format' };
+  if (!teamOnline()) return { ok: false, reason: 'offline' };
+  const prev = teamPhotoVersion(id);
+  const v = Math.max(Date.now(), prev === null ? 0 : prev + 1);
+  const seq = teamPhotoSeq[id] = (teamPhotoSeq[id] || 0) + 1;
+  let put;
+  let timer = null;
+  let outcome;
+  try {
+    put = firebase.database().ref(dbPath('teamPhotos/' + id)).set({ v, data });
+    const slow = new Promise((res) => { timer = setTimeout(() => res('slow'), teamPhotoWaitMs); });
+    outcome = await Promise.race([put.then(() => 'ok'), slow]);
+  } catch (err) {
+    clearTimeout(timer);
+    return { ok: false, reason: err && err.code === 'PERMISSION_DENIED' ? 'denied' : 'failed' };
+  }
+  clearTimeout(timer);
+  if (outcome === 'slow') {
+    // The write is queued in the SDK and lands if the connection comes back: finish the record then, so the node and photoV
+    // never disagree — unless a newer upload for this team started meanwhile (its version is the newer one).
+    put.then(() => {
+      if (teamPhotoSeq[id] !== seq || !canEdit()) return;
+      teamPhotoFinish(id, v, data);
+      renderAll();
+    }, () => { /* refused after all: nothing was written */ });
+    return { ok: false, reason: 'slow' };
+  }
+  return teamPhotoFinish(id, v, data);
+}
+
 const TEAM_PHOTO_WHY = {
   format: 'That picture could not be made small enough. Try another one.',
   offline: 'Photos need a connection. Try again when you are back online.',
   denied: 'The camp database refused the photo. The new rules may not be published yet.',
   failed: 'The photo did not go up, so nothing was changed. Try again.',
+  slow: 'The photo is taking a while to go up. It will appear on its own if the connection comes back; if it does not, try again.',
   gone: 'That team is not on the list any more, so nothing was changed.',
 };
 
@@ -5886,7 +5922,9 @@ function peopleOnline() { return typeof restoreOnline === 'function' && restoreO
 
 // ── routing ──
 
-// More → People: the builder opens straight onto this screen, and Back leaves it (the hub is not in the way).
+// More → People (and Now's join bar → People): the builder opens straight onto this screen, and Back leaves it (the hub is not in
+// the way). `from` is named 'more' for the first caller; the Back label is whatever tab the builder was opened FROM (More, or Now
+// for the join bar), because the builder keeps state.ui.tab untouched.
 function setupOpenPeople() {
   if (!canEdit()) return false;
   peopleUi.from = 'more';
@@ -6068,12 +6106,14 @@ function renderPeoplePersonSheet() {
   setTextIfChanged(setupEl('ppl-role-note'), me ? 'Another director has to change your access.' : p.role === 'editor' ? 'Directors can enter scores, change the week and manage this list.' : 'Counselors can see the schedule, the games and chat.');
   const dup = peopleNameClash(setupEl('ppl-name') ? setupEl('ppl-name').value : '', peopleRowsNow(), r.key);
   void dup;
-  // per-camp access, for a director of both camps (their own row is someone else's to change)
+  // The OTHER camp's access, for a director of both camps (their own row is someone else's to change). THIS camp's role is the Role
+  // control above (written by Save, with the name and team): a second control for it here wrote at once and left the first one, and
+  // the saved baseline behind it, showing a stale role, so a later Save could write a role the director had already changed.
   const dual = !r.pending && !me && typeof campRoleOf === 'function' && campRoleOf(otherCampId()) === 'editor' && peopleUi.other.status === 'ok';
   setHiddenIfChanged(setupEl('ppl-camps-fld'), !dual);
   if (dual) {
-    const camps = [CAMP.id, otherCampId()].map((cid) => {
-      const rec = cid === CAMP.id ? (memberDirectory || {})[r.key] : (peopleUi.other.list || {})[r.key];
+    const camps = [otherCampId()].map((cid) => {
+      const rec = (peopleUi.other.list || {})[r.key];
       const cur = rec && (rec.role === 'editor' || rec.role === 'viewer') ? rec.role : 'none';
       const seg = ['none', 'viewer', 'editor'].map((v) => '<button type="button" class="seg-btn" role="radio" aria-checked="' + (cur === v) + '" data-ppl-camp="' + esc(cid) + '" data-ppl-access="' + v + '">' + (v === 'none' ? 'None' : peopleRoleWord(v)) + '</button>').join('');
       return '<div class="ppl-camp"><span class="ppl-camp-name">' + esc(CAMPS[cid].label) + '</span><div class="seg seg-fit" role="radiogroup" aria-label="' + esc(CAMPS[cid].label + ' access') + '">' + seg + '</div></div>';
@@ -6680,11 +6720,20 @@ function campersView() {
   };
 }
 
+// The chips and the held list are the ONLY places a minor's name is drawn. Clearing writes nothing when they are already empty
+// (an idle render must not touch the DOM), so this can run on every paint of a screen that is not the Campers screen.
+function campersUiForget() {
+  ['campers-groups', 'campers-held-list'].forEach((id) => {
+    const el = setupEl(id);
+    if (el && (el.innerHTML || el.__secHtml !== undefined)) { el.innerHTML = ''; el.__secHtml = undefined; el.__secView = undefined; el.__dom = undefined; }
+  });
+}
+
 function campersUiReset() {
   if (campersUi.undo && campersUi.undo.timer) clearTimeout(campersUi.undo.timer);
   campersUi.edit = null; campersUi.add = null; campersUi.undo = null;
   // The names go with the screen: nothing a closed builder leaves behind in the page holds a minor's name (the typed inputs included).
-  ['campers-groups', 'campers-held-list'].forEach((id) => { const el = setupEl(id); if (el) { el.innerHTML = ''; el.__secHtml = undefined; el.__secView = undefined; el.__dom = undefined; } });
+  campersUiForget();
   ['cme-name', 'cma-lines'].forEach((id) => { const el = setupEl(id); if (el && typeof el.value === 'string') el.value = ''; });
 }
 

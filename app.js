@@ -13130,6 +13130,12 @@ function shellHasUnsentWork() {
   if (revealRemoteIsOpen() && typeof revealBusy === 'function' && revealBusy()) return true;
   // A director with Tell everyone open and a message typed, or a send still going out (tell.js).
   if (typeof tellComposerBusy === 'function' && tellComposerBusy()) return true;
+  // Set up the week's People, Team and Camper sheets (and a photo being cropped or going up) live in memory only, and held camper
+  // names have no stored copy at all: a director who stepped away mid-edit finds them where they left them, not discarded.
+  if (typeof teamEditBusy === 'function' && teamEditBusy()) return true;
+  if (typeof peopleBusy === 'function' && peopleBusy()) return true;
+  if (typeof campersBusy === 'function' && campersBusy()) return true;
+  if (typeof campersUiBusy === 'function' && campersUiBusy()) return true;
   return false;
 }
 

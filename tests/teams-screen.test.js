@@ -378,6 +378,9 @@ test('closing a sheet with edits asks first (✕, Escape and Back reach the same
   assert.equal(teamDirty(), true);
   assert.equal(teamEditBusy(), true, 'an edit in the form holds the auto-reload');
   assert.equal(reloadBlocked(), true, 'reloadBlocked asks it');
+  const midReal = editorMidEntry;
+  editorMidEntry = () => false;
+  try { assert.equal(shellHasUnsentWork(), true, 'and so does the shell: ten minutes away does not discard the half-made edit'); } finally { editorMidEntry = midReal; }
   const asked = [];
   const real = askDialog;
   askDialog = async (o) => { asked.push(o); return 'keep'; };
@@ -514,6 +517,38 @@ test('the upload is online-only and changes nothing when it cannot finish: offli
   assert.equal(state.teams[0].photoV, undefined, 'the record still has no photo');
   assert.equal((db.serverTree()[CAMP.dbRoot] || {}).teamPhotos, undefined, 'and the node was not written');
   tsPhotoDone();
+});
+
+test('a photo still going up when the signal dies lets go of the sheet after the wait, says so, and finishes the record if it lands', async () => {
+  const db = await tsPhotoDb();
+  const held = [];
+  // A set() whose connection died mid-write: it neither resolves nor rejects until the signal is back.
+  const hanging = { database: () => ({ ref: (p) => ({ set: (val) => new Promise((res, rej) => { held.push(() => db.ref(p).set(val).then(res, rej)); }) }) }) };
+  const normal = window.firebase;
+  window.firebase = hanging;
+  teamPhotoWaitMs = 10;
+  try {
+    const r = await teamPhotoUpload('t0', tsPng);
+    assert.deepEqual(r, { ok: false, reason: 'slow' }, 'the sheet is let go of: the wait ended with a plain sentence, not a hang');
+    assert.ok(/taking a while/.test(TEAM_PHOTO_WHY.slow) && /try again/.test(TEAM_PHOTO_WHY.slow));
+    assert.equal(state.teams[0].photoV, undefined, 'nothing is claimed yet');
+    assert.equal(held.length, 1);
+    held[0]();
+    await waitUntil(() => state.teams[0].photoV !== undefined, 'the late write to finish the record');
+    assert.equal(state.teams[0].photoV, db.serverTree()[CAMP.dbRoot].teamPhotos.t0.v, 'the node and photoV agree');
+
+    // A newer upload that has gone up since wins: a write that lands late must not put an older version on the record.
+    state.teams[0].photoV = undefined; delete state.teams[0].photoV;
+    teamPhotoSeq.t0 = 0;
+    const slowOne = await teamPhotoUpload('t0', tsPng);
+    assert.equal(slowOne.reason, 'slow');
+    window.firebase = normal;
+    const fresh = await teamPhotoUpload('t0', tsPng + 'AAAA');
+    assert.ok(fresh.ok);
+    held[1]();
+    await waitQuiet();
+    assert.equal(state.teams[0].photoV, fresh.v, 'the newest upload\'s version stays on the record');
+  } finally { teamPhotoWaitMs = 20000; tsPhotoDone(); }
 });
 
 test('Remove photo takes photoV off (the node stays, so Undo can put it back) and the shield or flag shows again', async () => {
