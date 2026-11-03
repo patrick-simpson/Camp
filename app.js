@@ -13111,6 +13111,9 @@ function shellSheetEl(id) {
 // What a deep link or a Forward may open: the director-only drawers need a director.
 function shellSheetAllowed(id) {
   if (id === 'members' || id === 'history' || id === 'counselors') return canEdit();
+  // The game sheet (setup-ui.js section 16) also opens over the Games tab, with the builder closed: Quick game and Add games are
+  // there. Directors only, and only with a game a tap named (a Forward onto a stale entry opens nothing).
+  if (id === 'game') return canEdit() && typeof gmSheetReady === 'function' && gmSheetReady();
   // Set up the week's own sheets (setup-ui.js): directors only, and only while the builder is up.
   if (typeof SETUP_SHEETS !== 'undefined' && SETUP_SHEETS.includes(id)) return canEdit() && builderOpen() && setupSheetReady(id);
   if (id === 'verse' || id === 'cleanup') return canEdit() || !cardHiddenFromViewers(id);

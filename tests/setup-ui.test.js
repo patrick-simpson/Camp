@@ -48,11 +48,11 @@ test('More → Set up the week opens the hub; a named classic tab opens the clas
   } finally { suClose(); }
 });
 
-test('hub rows open their screens: Camp week, Schedule and Teams → theirs, Games and Notice → the classic editor on that tab, Restore points → backups, People → its own screen', () => {
+test('hub rows open their screens: Camp week, Schedule, Games and Teams → theirs, Notice → the classic editor on that tab, Restore points → backups, People → its own screen', () => {
   suOpen();
   try {
     hubOpen('games');
-    assert.deepEqual([state.ui.builderScreen, state.ui.settingsTab], ['classic', 'games']);
+    assert.equal(state.ui.builderScreen, 'games', 'Step 21: Games has its own screen now (the classic Games tab is still reachable from the Classic editor)');
     hubOpen('teams');
     assert.equal(state.ui.builderScreen, 'teams', 'Step 25: Teams has its own screen now (the classic Teams tab is still reachable from the Classic editor)');
     hubOpen('notice');
@@ -173,10 +173,18 @@ test('a director sees the setup sheets only while the builder is up', () => {
     teamUi.colors = true;
     peopleUi.person = { key: 'x' }; peopleUi.request = { key: 'x' }; peopleUi.teams = { built: false }; peopleUi.add = { pane: 'list' }; peopleUi.blocked = true;
     campersUi.edit = { tid: 't0', cid: 'c-x', origin: {} }; campersUi.add = { tid: 't0' };
+    assert.equal(shellSheetAllowed('game'), false, 'the game sheet needs a game a tap named');
+    assert.equal(shellSheetAllowed('sg-day'), false, 'a day\'s sheet needs a games day');
+    gmUi.open = { mode: 'new', pane: 'form', gid: null }; gmUi.dayDk = SETUP_DK[competitionDays()[0].dow];
     SETUP_SHEETS.forEach((id) => assert.equal(shellSheetAllowed(id), true, id));
     state.ui.view = 'home';
-    SETUP_SHEETS.forEach((id) => assert.equal(shellSheetAllowed(id), false, id + ' with the builder closed'));
-  } finally { setupSched.item = null; setupRain.plan = null; setupRain.bid = null; secUi.teams = null; secUi.person = null; secUi.station = null; teamUi.edit = null; teamUi.colors = false; peopleUi.person = null; peopleUi.request = null; peopleUi.teams = null; peopleUi.add = null; peopleUi.blocked = false; campersUi.edit = null; campersUi.add = null; suClose(); }
+    // The game sheet is the one that also opens over the Games tab (Quick game, Add games) with the builder closed; never for a counselor.
+    SETUP_SHEETS.filter((id) => id !== 'game').forEach((id) => assert.equal(shellSheetAllowed(id), false, id + ' with the builder closed'));
+    assert.equal(shellSheetAllowed('game'), true, 'over the Games tab');
+    setMemberRole('viewer');
+    assert.equal(shellSheetAllowed('game'), false, 'a counselor never');
+    setMemberRole('editor');
+  } finally { gmUi.open = null; gmUi.dayDk = ''; setupSched.item = null; setupRain.plan = null; setupRain.bid = null; secUi.teams = null; secUi.person = null; secUi.station = null; teamUi.edit = null; teamUi.colors = false; peopleUi.person = null; peopleUi.request = null; peopleUi.teams = null; peopleUi.add = null; peopleUi.blocked = false; campersUi.edit = null; campersUi.add = null; suClose(); }
 });
 
 // ── askDialog ──

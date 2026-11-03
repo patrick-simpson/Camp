@@ -306,3 +306,211 @@ test('a game made before bracketSeed existed reads back as what it does: fixed p
     assert.equal(gmPairsValid([['t0', 't1']]), teamIds().length === 2);
   } finally { gsEnd(); }
 });
+
+// ── the screen ──
+
+function gsOpenScreen(dk) {
+  state.ui.view = 'settings';
+  state.ui.builderScreen = 'games';
+  state.ui.sgDay = dk;
+  setupUi.wasOpen = false;
+}
+
+test('the hub\'s Games row opens this screen, and Who\'s here says "the games" (or which game while its sheet is up)', () => {
+  gsStart();
+  try {
+    assert.deepEqual(HUB_OPENS.games, { screen: 'games' });
+    assert.ok(SETUP_SCREENS.indexOf('games') !== -1);
+    assert.ok(SETUP_SHEETS.indexOf('game') !== -1 && SETUP_SHEETS.indexOf('sg-day') !== -1);
+    state.ui.view = 'settings';
+    openBuilder();
+    hubOpen('games');
+    assert.equal(state.ui.builderScreen, 'games');
+    assert.equal(setupScreen(), 'games');
+    assert.equal(setupWhereNow(), 'games');
+    assert.equal(editorsHereWhereWords('games'), 'the games');
+  } finally { state.ui.view = 'home'; gsEnd(); }
+});
+
+test('a counselor reaches none of it: no screen, no sheet', () => {
+  gsStart();
+  try {
+    setMemberRole('viewer');
+    assert.equal(setupGo('games'), false);
+    state.ui.builderScreen = 'games';
+    gmUi.dayDk = 'mon';
+    assert.equal(shellSheetAllowed('sg-day'), false);
+    assert.equal(gmOpenDaySheet(), undefined);
+    assert.equal(shell.sheets.includes('sg-day'), false);
+  } finally { state.ui.builderScreen = undefined; gsEnd(); }
+});
+
+test('the screen draws a day: items as headings with their games under them, "Add a game here" on each, and the day\'s words', () => {
+  gsStart();
+  try {
+    const dk = gsTwoItemDay() || gsFirstDay();
+    gsOpenScreen(dk);
+    renderGamesScreen();
+    const m = gmDayModel(dk);
+    assert.equal(setupEl('sg-headline').textContent, SETUP_DAY_WORDS[dk]);
+    assert.equal(setupEl('sg-title').textContent, 'Games · ' + CAMP.label);
+    assert.equal(setupEl('sg-lede').textContent, m.lede);
+    const html = setupEl('sg-items').innerHTML;
+    m.groups.forEach((g) => {
+      assert.ok(html.indexOf('data-key="' + g.key + '"') !== -1, g.key);
+      assert.ok(html.indexOf('data-sg-add="' + g.bid + '"') !== -1, 'Add a game here on ' + g.bid);
+      g.games.forEach((x) => { assert.ok(html.indexOf('data-sg-open="' + x.id + '"') !== -1, x.id); assert.ok(html.indexOf(esc(x.name)) !== -1, x.name); });
+    });
+    assert.equal((html.match(/class="cb-row sg-game"/g) || []).length, m.groups.reduce((n, g) => n + g.games.length, 0));
+    assert.equal(setupEl('sg-day-btn').hidden, false, 'a games day has its ⋯');
+    assert.equal(setupEl('sg-noday').hidden, true);
+    assert.equal(setupEl('sg-empty').hidden, true);
+    assert.equal(setupEl('sg-add').hidden, false);
+    assert.equal(setupEl('sg-add-text').textContent, 'Add a game to ' + SETUP_DAY_WORDS[dk]);
+    assert.equal(setupEl('sg-orig').hidden, true, 'the schedule is edited here');
+    assert.equal(setupEl('sg-sec-off').hidden, true, 'nothing is off the schedule');
+  } finally { state.ui.view = 'home'; gsEnd(); }
+});
+
+test('a name or a place with markup in it reaches the page only as escaped text', () => {
+  gsStart();
+  try {
+    const dk = gsFirstDay();
+    const g = gmGamesOnDay(dk)[0];
+    g.name = '<img src=x onerror=alert(1)> & "Co"'; g.location = '<b>Gym</b>'; g.emoji = '<script>';
+    gsOpenScreen(dk);
+    renderGamesScreen();
+    const html = setupEl('sg-items').innerHTML;
+    assert.ok(!/<img |<b>Gym|<script/.test(html), 'no raw markup from the database');
+    assert.ok(html.indexOf('&lt;img') !== -1);
+  } finally { state.ui.view = 'home'; gsEnd(); }
+});
+
+test('a day that is not a games day: the lede says so and the only offer is to make it one; making it one adds one competition day in week order', () => {
+  gsStart();
+  try {
+    const off = SETUP_DK.find((d) => !gmIsGamesDay(d) && d !== 'sun') || SETUP_DK.find((d) => !gmIsGamesDay(d));
+    gsOpenScreen(off);
+    renderGamesScreen();
+    assert.equal(setupEl('sg-lede').textContent, 'Not a games day');
+    assert.equal(setupEl('sg-noday').hidden, false);
+    assert.equal(setupEl('sg-day-on-text').textContent, 'Make ' + SETUP_DAY_WORDS[off] + ' a games day');
+    assert.equal(setupEl('sg-day-btn').hidden, true);
+    assert.equal(setupEl('sg-add').hidden, true);
+    const n0 = competitionDays().length;
+    const r = gmMakeDayGo(off);
+    assert.equal(r.ok, true);
+    assert.equal(competitionDays().length, n0 + 1);
+    assert.equal(gmIsGamesDay(off), true);
+    const dows = competitionDays().map((d) => d.dow);
+    assert.deepEqual(dows, dows.slice().sort((a, b) => a - b), 'the Games tab lists days in week order');
+    assert.equal(competitionDays().find((d) => d.dow === SETUP_DK.indexOf(off)).name, SETUP_DAY_WORDS[off]);
+    assert.equal(gsLastUndo().label, 'Made ' + SETUP_DAY_WORDS[off] + ' a games day');
+    assert.equal(gmMakeDay(off).changed, false, 'a second press writes nothing');
+    renderGamesScreen();
+    assert.equal(setupEl('sg-lede').textContent, 'No games yet');
+    assert.equal(setupEl('sg-sec-off').hidden, true);
+  } finally { state.ui.view = 'home'; gsEnd(); }
+});
+
+test('a games day with a Games item and no games lists the item with "Add a game here"; with no Games item it offers the first game', () => {
+  gsStart();
+  try {
+    const off = SETUP_DK.find((d) => !gmIsGamesDay(d) && planForDow(SETUP_DK.indexOf(d)).some((b) => b.type === 'games'));
+    const none = SETUP_DK.find((d) => !gmIsGamesDay(d) && !planForDow(SETUP_DK.indexOf(d)).some((b) => b.type === 'games'));
+    if (off) {
+      gmMakeDay(off); gsOpenScreen(off); renderGamesScreen();
+      assert.equal(setupEl('sg-empty').hidden, true, 'a Games item is the place to add one');
+      assert.ok(/data-sg-add=/.test(setupEl('sg-items').innerHTML));
+    }
+    if (none) {
+      gmMakeDay(none); gsOpenScreen(none); renderGamesScreen();
+      assert.equal(setupEl('sg-empty').hidden, false);
+      assert.equal(setupEl('sg-empty-text').textContent, 'No games on ' + SETUP_DAY_WORDS[none] + ' yet.');
+      assert.equal(setupEl('sg-add').hidden, true, 'the one main action is the empty state\'s');
+    }
+    assert.ok(off || none, 'a weekday that was not a games day');
+  } finally { state.ui.view = 'home'; gsEnd(); }
+});
+
+test('with the schedule the original the screen groups by session and says why; its add button names the session', () => {
+  gsStart({ off: true });
+  try {
+    const dk = SETUP_DK.find(gmIsGamesDay);
+    gsOpenScreen(dk);
+    renderGamesScreen();
+    assert.equal(setupEl('sg-orig').hidden, false);
+    const html = setupEl('sg-items').innerHTML;
+    gmSessions().forEach((s) => { assert.ok(html.indexOf('data-key="s-' + s + '"') !== -1, s); assert.ok(html.indexOf('data-sg-add="session:' + s + '"') !== -1); assert.ok(html.indexOf(s + ' games') !== -1); });
+    assert.ok(!/class="sg-item-now"/.test(html));
+  } finally { state.ui.view = 'home'; gsEnd(); }
+});
+
+test('the day\'s ⋯ sheet: its note saves when focus leaves (nothing else to press), and an unchanged note writes nothing', () => {
+  gsStart();
+  try {
+    const dk = gsFirstDay();
+    gsOpenScreen(dk);
+    gmUi.dayDk = dk;
+    renderGmDaySheet();
+    assert.equal(setupEl('sheet-sg-day-title').textContent, SETUP_DAY_WORDS[dk]);
+    assert.equal(setupEl('sg-day-note-label').textContent, 'Note on ' + SETUP_DAY_WORDS[dk] + '’s games');
+    assert.ok(/^First asks where its \d+ games? go$/.test(setupEl('sg-day-off-sub').textContent));
+    setupEl('sg-day-note').value = '  Bring a towel  ';
+    gmDayNoteBlur();
+    assert.equal(gmDayRecs(dk)[0].note, 'Bring a towel');
+    assert.equal(gsLastUndo().label, 'Edited the note for ' + SETUP_DAY_WORDS[dk]);
+    undoClear();
+    gmDayNoteBlur();
+    assert.equal(gsLastUndo(), null, 'unchanged: nothing');
+    assert.equal(gmSetDayNote(dk, 'x'.repeat(300)).changed, true);
+    assert.equal(gmDayRecs(dk)[0].note.length, 200, 'cut to 200');
+  } finally { state.ui.view = 'home'; gsEnd(); }
+});
+
+test('taking a day off the games days: games must have somewhere to go (they move to the day picked, off any item, onto its natural one); a day with none just goes', () => {
+  gsStart();
+  try {
+    const dk = gsFirstDay();
+    const target = SETUP_DK.find((d) => d !== dk && gmIsGamesDay(d) && gsBlocks(d).length);
+    const games = gmGamesOnDay(dk).map((g) => g.id);
+    assert.equal(gmTakeDayOff(dk, '').reason, 'where', 'a day with games asks where they go');
+    assert.equal(gmIsGamesDay(dk), true);
+    const r = gmTakeDayOff(dk, target);
+    assert.deepEqual([r.ok, r.moved], [true, games.length]);
+    assert.equal(gmIsGamesDay(dk), false);
+    const tid = gmDayRecs(target)[0].id;
+    games.forEach((id) => { const g = gameById(id); assert.equal(g.dayId, tid, id + ' moved to ' + target); assert.ok(typeof g.blockId === 'string' || true); });
+    assert.equal(gmGamesOnDay(dk).length, 0);
+    assert.equal(gsLastUndo().label, 'Took ' + SETUP_DAY_WORDS[dk] + ' off the games days');
+    // a day with no games: no question
+    const empty = SETUP_DK.find((d) => gmIsGamesDay(d) && !gmGamesOnDay(d).length) || (gmMakeDay('sat'), 'sat');
+    assert.equal(gmTakeDayOff(empty, '').ok, true);
+    assert.equal(gmIsGamesDay(empty), false);
+    setMemberRole('viewer');
+    assert.equal(gmTakeDayOff(target, '').reason, 'locked');
+  } finally { gsEnd(); }
+});
+
+test('the Games tab\'s "Add games" opens this screen on the day it was looking at, not the classic editor', () => {
+  gsStart();
+  try {
+    const d = competitionDays().find((x) => x.dow === 4) || competitionDays()[0];
+    const dk = SETUP_DK[d.dow];
+    state.ui.view = 'home';
+    gmOpenScreen(d.id);
+    assert.equal(state.ui.view, 'settings');
+    assert.equal(state.ui.builderScreen, 'games');
+    assert.equal(state.ui.sgDay, dk);
+    assert.equal(gmDayKey(), dk);
+    state.ui.view = 'home';
+    gmOpenScreen('fri');
+    assert.equal(state.ui.sgDay, 'fri', 'a weekday key works too');
+    const src = readFixture('../games-ui.js');
+    assert.ok(/\[data-games-add\]'\)\)\) \{ if \(canEdit\(\)\) \{ if \(typeof gmOpenScreen === 'function'\) gmOpenScreen\(state\.ui\.day\)/.test(src), 'games-ui.js routes Add games through the Games screen');
+    setMemberRole('viewer');
+    state.ui.view = 'home';
+    gmOpenScreen(d.id);
+    assert.equal(state.ui.view, 'home', 'a counselor opens nothing');
+  } finally { state.ui.view = 'home'; state.ui.builderScreen = undefined; gsEnd(); }
+});

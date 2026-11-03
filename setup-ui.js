@@ -53,7 +53,7 @@ const HUB_OPENS = {
   verses: { screen: 'verses' },
   cleanup: { screen: 'cleanup' },
   electives: { screen: 'electives' },
-  games: { screen: 'classic', tab: 'games' },
+  games: { screen: 'games' },
   teams: { screen: 'teams' },
   notice: { screen: 'classic', tab: 'notice' },
   people: { screen: 'people' },
@@ -608,14 +608,14 @@ function hubScheduleView() {
 
 // #setup[data-screen] is the ONE switch the CSS reads (styles.css "SET UP THE WEEK"): hub | backups |
 // classic | week | schedule | rain. A step that adds a screen adds its name here and its pair of lines in the CSS.
-const SETUP_SCREENS = ['hub', 'backups', 'classic', 'week', 'schedule', 'rain', 'meals', 'verses', 'cleanup', 'electives', 'teams', 'people', 'campers'];
+const SETUP_SCREENS = ['hub', 'backups', 'classic', 'week', 'schedule', 'rain', 'meals', 'verses', 'cleanup', 'electives', 'teams', 'people', 'campers', 'games'];
 // Shell sheets this layer owns (shellSheetOpen ids; the elements are #sheet-<id>), one at a time.
-const SETUP_SHEETS = ['setup-menu', 'setup-changes', 'setup-devices', 'restore', 'sched-day', 'sched-item', 'rain-item', 'rain-done', 'sec-teams', 'sec-person', 'sec-station', 'sec-verse', 'team-edit', 'team-colors', 'people-person', 'people-request', 'people-teams', 'people-add', 'people-blocked', 'camper-edit', 'camper-add'];
+const SETUP_SHEETS = ['setup-menu', 'setup-changes', 'setup-devices', 'restore', 'sched-day', 'sched-item', 'rain-item', 'rain-done', 'sec-teams', 'sec-person', 'sec-station', 'sec-verse', 'team-edit', 'team-colors', 'people-person', 'people-request', 'people-teams', 'people-add', 'people-blocked', 'camper-edit', 'camper-add', 'game', 'sg-day'];
 // The sheets that hold a half-made edit and ask before they let it go: the id → a function that takes the close over
 // (it asks, and returns true) or returns false when nothing is at stake. app.js's Escape handler and shellApply (the
 // phone's Back) call setupSheetGuardClose; ✕ and the backdrop reach the same question through the sheet's own
 // capturing click handler.
-const SETUP_SHEET_GUARDS = { 'sched-item': () => schedItemGuardClose(), 'team-edit': () => teamGuardClose(), 'people-person': () => peoplePersonGuardClose(), 'people-teams': () => peopleTeamsGuardClose(), 'people-add': () => peopleAddGuardClose(), 'camper-edit': () => campersEditGuardClose(), 'camper-add': () => campersAddGuardClose() };
+const SETUP_SHEET_GUARDS = { 'sched-item': () => schedItemGuardClose(), 'team-edit': () => teamGuardClose(), 'people-person': () => peoplePersonGuardClose(), 'people-teams': () => peopleTeamsGuardClose(), 'people-add': () => peopleAddGuardClose(), 'camper-edit': () => campersEditGuardClose(), 'camper-add': () => campersAddGuardClose(), game: () => gmGuardClose() };
 function setupSheetGuardClose(id) {
   const g = SETUP_SHEET_GUARDS[id];
   return !!(g && g());
@@ -673,6 +673,12 @@ function setupWhereNow() {
   if (s === 'teams') return teamUi.edit && /^t[0-9]$/.test(teamUi.edit.id) && shell.sheets.includes('team-edit') ? 'team:' + teamUi.edit.id : 'teams';
   if (s === 'people') return 'people';
   if (s === 'campers') return 'campers';
+  if (s === 'games') {
+    // While a saved game's sheet is up, which game (the other directors read its name); an id past the vocabulary's 60 characters is just "the games".
+    const o = gmUi.open;
+    const w = o && o.gid && shell.sheets.includes('game') ? 'game:' + o.gid : '';
+    return /^[a-z0-9:_-]{1,60}$/.test(w) ? w : 'games';
+  }
   return SETUP_CLASSIC_WHERE[state.ui.settingsTab] || 'games';
 }
 
@@ -929,6 +935,7 @@ function renderSetupUi(open) {
     if (open && typeof renderSettings === 'function') renderSettings();
     return;
   }
+  if (typeof gmCleanSheets === 'function') gmCleanSheets(); // a sheet closed by any route leaves its state behind: drop it (a Forward must not reopen it)
   if (!open) {
     if (setupUi.wasOpen) setupUiClosed();
     return;
@@ -960,6 +967,7 @@ function renderSetupUi(open) {
   else if (screen === 'teams') renderTeamsScreen();
   else if (screen === 'people') renderPeopleScreen();
   else if (screen === 'campers') renderCampersScreen();
+  else if (screen === 'games') renderGamesScreen();
   else if (typeof renderSettings === 'function') renderSettings();
   renderSetupMenuRows();
   paintSetupFit();
@@ -1318,6 +1326,8 @@ function renderSetupSheet(id) {
   else if (PEOPLE_SHEETS.indexOf(id) !== -1) renderPeopleSheetById(id);
   else if (id === 'camper-edit') renderCamperEditSheet();
   else if (id === 'camper-add') renderCamperAddSheet();
+  else if (id === 'game') { if (typeof renderGameSheet === 'function') renderGameSheet(); }
+  else if (id === 'sg-day') renderGmDaySheet();
 }
 
 // Whether a setup sheet has anything to show (app.js shellSheetAllowed): the restore sheet needs a point
@@ -1335,6 +1345,8 @@ function setupSheetReady(id) {
   if (PEOPLE_SHEETS.indexOf(id) !== -1) return peopleSheetReady(id);
   if (id === 'camper-edit') return !!campersUi.edit;
   if (id === 'camper-add') return !!campersUi.add;
+  if (id === 'game') return typeof gmSheetReady === 'function' && gmSheetReady();
+  if (id === 'sg-day') return gmIsGamesDay(gmUi.dayDk);
   return id !== 'restore' || !!setupUi.rsheet;
 }
 
@@ -3951,6 +3963,7 @@ function wireSetupUi() {
   wireTeamsScreen();
   wirePeopleScreen();
   wireCampersScreen();
+  wireGamesScreen();
   // Camp week (§11.4): dates, the Days tick sheet, double points, the TV finale.
   on('#week-start', 'change', (e) => weekSetStart(e.target.value));
   on('#week-days', 'click', (e) => { const t = e.target.closest && e.target.closest('.wk-tick'); const row = t && t.closest('.wk-day'); if (t && row) weekTick(Number(row.dataset.dow), t.dataset.weekFollow); });
@@ -7522,3 +7535,223 @@ function gmQuickTarget() {
   }
   return { dk, bid, today: isToday, minutes: now.minutes };
 }
+
+// ── the Games screen ──
+// The state of the screen and of its sheets (device-local, in memory: a half-typed name is never synced or cached).
+const gmUi = {
+  open: null,          // the open game sheet (see gmOpenSheet)
+  dayDk: '',           // the weekday the ⋯ sheet is about
+  stripDay: undefined, // the day the strip last scrolled to
+  stripPlaced: false,  // the strip opened scrolled to today once per visit
+};
+
+// The day being looked at: the one chosen (device-local), else today during the camp week, else the first games day.
+function gmDayKey() {
+  const v = state.ui && state.ui.sgDay;
+  if (SETUP_DK.indexOf(v) !== -1) return v;
+  const wk = typeof campWeek === 'function' ? campWeek() : { phase: 'unset' };
+  const today = SETUP_DK[campNow().dow];
+  if (wk.phase === 'during' && gmIsGamesDay(today)) return today;
+  return SETUP_DK.find((dk) => gmIsGamesDay(dk)) || 'mon';
+}
+
+function gmSetDay(dk) {
+  if (SETUP_DK.indexOf(dk) === -1) return;
+  state.ui.sgDay = dk;
+  saveState();
+  renderAll();
+}
+
+// A day's emoji, drawn as the run sheet draws one (laundered: it came from the database).
+function gmEmoHtml(e) {
+  const s = safeEmoji(e, '');
+  return s ? '<span class="sched-emo" aria-hidden="true">' + esc(s) + '</span>' : '';
+}
+
+function gmGameRowHtml(g) {
+  const sub = gmGameSub(g);
+  return '<button type="button" class="cb-row sg-game" data-key="g-' + esc(g.id) + '" data-sg-open="' + esc(g.id) + '"' + (sub.warn ? ' data-warn' : '') + '>' +
+    '<span class="cb-main"><span class="cb-title">' + gmEmoHtml(g.emoji) + '<span>' + esc(g.name) + '</span></span><span class="cb-sub">' + esc(sub.text) + '</span></span>' +
+    '<span class="cb-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span></button>';
+}
+
+// Games on no item: an invisible full-row button opens the game and "Put on the schedule" (its own 44px target) opens it on When.
+function gmLooseRowHtml(g, live) {
+  const sub = gmGameSub(g);
+  return '<div class="cb-row sg-game gl-row-split" data-key="g-' + esc(g.id) + '"' + (sub.warn ? ' data-warn' : '') + '>' +
+    '<button type="button" class="gl-row-hit" data-sg-open="' + esc(g.id) + '" aria-labelledby="sg-n-' + esc(g.id) + '"></button>' +
+    '<span class="cb-main"><span class="cb-title">' + gmEmoHtml(g.emoji) + '<span id="sg-n-' + esc(g.id) + '">' + esc(g.name) + '</span></span><span class="cb-sub">' + esc(sub.text) + '</span></span>' +
+    '<span class="cb-end">' + (live ? '<button type="button" class="btn btn-sm sg-place" data-sg-place="' + esc(g.id) + '">Put on the schedule</button>' : '') + '</span></div>';
+}
+
+function gmGroupHtml(g) {
+  const label = g.block ? (g.block.base || g.block.label) : g.session + ' games';
+  const target = g.bid || 'session:' + g.session;
+  return '<section class="sg-item" data-key="' + esc(g.key) + '"' + (g.now ? ' data-now' : '') + '>' +
+    '<h3 class="sg-item-h"><span class="sg-item-time">' + esc(g.time) + (g.now ? '<span class="sg-item-now">Now</span>' : '') + '</span>' +
+    '<span class="sg-item-name">' + (g.block ? gmEmoHtml(g.block.emoji) : '') + '<span>' + esc(label) + '</span></span></h3>' +
+    '<div class="gl cb-list sg-list">' + g.games.map(gmGameRowHtml).join('') +
+    '<button type="button" class="sg-add-here" data-sg-add="' + esc(target) + '"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span>Add a game here</span></button></div></section>';
+}
+
+// The seven chips: selected, today, "not a games day" (data-off), the count and the gold "!" and the words read aloud.
+function renderGmStrip(dk) {
+  const track = setupEl('sg-days-track');
+  if (!track || typeof track.querySelectorAll !== 'function') return;
+  const chips = gmStripModel();
+  track.querySelectorAll('.daypick-btn[data-day]').forEach((btn) => {
+    const c = chips.find((x) => x.dk === btn.dataset.day);
+    if (!c) return;
+    const sel = c.dk === dk;
+    if (btn.getAttribute('aria-selected') !== String(sel)) btn.setAttribute('aria-selected', String(sel));
+    if (c.off !== btn.hasAttribute('data-off')) { if (c.off) btn.setAttribute('data-off', ''); else btn.removeAttribute('data-off'); }
+    if (c.today !== btn.hasAttribute('data-today')) { if (c.today) btn.setAttribute('data-today', ''); else btn.removeAttribute('data-today'); }
+    setTextIfChanged(btn.querySelector('[data-sg-n]'), c.n);
+    setHiddenIfChanged(btn.querySelector('[data-sd-warn]'), !c.warn);
+    if (btn.getAttribute('aria-label') !== c.label) btn.setAttribute('aria-label', c.label);
+  });
+  // Opens with today's chip at the left edge during the camp week, and keeps the chosen chip whole in view (the Schedule's rules).
+  if (!gmUi.stripPlaced) {
+    const chip = track.querySelector('.daypick-btn[data-today]');
+    if (chip && typeof chip.offsetLeft === 'number') { track.scrollLeft = chip.offsetLeft; gmUi.stripPlaced = true; }
+  }
+  const prev = gmUi.stripDay;
+  if (prev !== dk && track.clientWidth > 0) {
+    gmUi.stripDay = dk;
+    const chosen = track.querySelector('.daypick-btn[aria-selected="true"]');
+    stripRevealChip(track, chosen, prev !== undefined);
+    if (chosen && prev !== undefined) secSnap(chosen);
+  }
+  paintStripOverflow(track);
+}
+
+function renderGamesScreen() {
+  const dk = gmDayKey();
+  const m = gmDayModel(dk);
+  const word = SETUP_DAY_WORDS[dk];
+  const editable = canEdit();
+  renderGmStrip(dk);
+  setTextIfChanged(setupEl('sg-title'), 'Games · ' + CAMP.label);
+  setTextIfChanged(setupEl('sg-headline'), m.headline);
+  setTextIfChanged(setupEl('sg-lede'), m.lede);
+  setHiddenIfChanged(setupEl('sg-day-btn'), !(m.isDay && editable));
+  setTextIfChanged(setupEl('sg-day-btn-text'), word + '’s options');
+  setHiddenIfChanged(setupEl('sg-note'), !m.note);
+  setTextIfChanged(setupEl('sg-note-text'), m.note);
+  setHiddenIfChanged(setupEl('sg-orig'), m.live || !m.isDay);
+  // Not a games day: the one way to make it one (asks nothing — an empty games day is harmless, and its ⋯ takes it off again).
+  setHiddenIfChanged(setupEl('sg-noday'), m.isDay || !editable);
+  setTextIfChanged(setupEl('sg-day-on-text'), 'Make ' + word + ' a games day');
+  // A games day with nothing to put a game under: the one main action.
+  const empty = m.isDay && !m.groups.length && !m.loose.length;
+  setHiddenIfChanged(setupEl('sg-empty'), !(empty && editable));
+  setTextIfChanged(setupEl('sg-empty-text'), 'No games on ' + word + ' yet.');
+  secPaintList(setupEl('sg-items'), m.groups.map(gmGroupHtml).join(''), dk, { inner: '.sg-game', dir: secViewDir });
+  setHiddenIfChanged(setupEl('sg-sec-off'), !m.loose.length);
+  setTextIfChanged(setupEl('sg-off-note'), m.loose.length ? hubPlural(m.loose.length, 'game', 'games').replace(' ', GM_NBSP) : '');
+  secPaintList(setupEl('sg-off-list'), m.loose.map((g) => gmLooseRowHtml(g, m.live)).join(''), dk, { inner: '.sg-place' });
+  setHiddenIfChanged(setupEl('sg-add'), !(m.isDay && !empty && editable));
+  setTextIfChanged(setupEl('sg-add-text'), 'Add a game to ' + word);
+}
+
+// ── a day's own sheet (⋯): its note, and taking it off the games days ──
+function gmOpenDaySheet(opener) {
+  const dk = gmDayKey();
+  if (!canEdit() || !gmIsGamesDay(dk)) return;
+  gmUi.dayDk = dk;
+  setupSheet('sg-day', opener);
+}
+
+function renderGmDaySheet() {
+  const dk = gmUi.dayDk;
+  const rec = gmDayRecs(dk)[0];
+  if (!rec) { shellSheetClose('sg-day'); return; }
+  const word = SETUP_DAY_WORDS[dk];
+  const n = gmGamesOnDay(dk).length;
+  setTextIfChanged(setupEl('sheet-sg-day-title'), word);
+  setTextIfChanged(setupEl('sg-day-note-label'), 'Note on ' + word + '’s games');
+  const box = setupEl('sg-day-note');
+  if (box && document.activeElement !== box && box.value !== String(rec.note || '')) box.value = String(rec.note || '');
+  setTextIfChanged(setupEl('sg-day-off-title'), 'Take ' + word + ' off the games days');
+  setTextIfChanged(setupEl('sg-day-off-sub'), n ? 'First asks where its ' + hubPlural(n, 'game', 'games') + ' go' : 'It has no games');
+}
+
+// The note saves when focus leaves the box (nothing else to press).
+function gmDayNoteBlur() {
+  const box = setupEl('sg-day-note');
+  if (!box || !gmUi.dayDk) return;
+  const r = gmSetDayNote(gmUi.dayDk, box.value);
+  if (r.ok && r.changed) renderAll();
+}
+
+// Take the day off: a day with games asks where they go (every other games day is a choice); the games never just vanish.
+async function gmTakeDayOffFlow() {
+  const dk = gmUi.dayDk;
+  if (!canEdit() || !gmIsGamesDay(dk)) return { ok: false, reason: 'day' };
+  const word = SETUP_DAY_WORDS[dk];
+  const n = gmGamesOnDay(dk).length;
+  let moveTo = '';
+  if (n) {
+    const others = SETUP_DK.filter((d) => d !== dk && gmIsGamesDay(d));
+    if (!others.length) { setupSay('Make another day a games day first — ' + word + '’s games need somewhere to go.'); return { ok: false, reason: 'where' }; }
+    const pick = await askDialog({
+      title: 'Where do ' + word + '’s ' + hubPlural(n, 'game', 'games') + ' go?', body: ['They move to the day you pick, and keep their results.'], stack: true,
+      actions: others.slice(0, 6).map((d) => ({ label: 'Move them to ' + SETUP_DAY_WORDS[d], value: d })).concat([{ label: 'Not now', value: 'no', kind: 'quiet', cancel: true }]),
+    });
+    if (!pick || pick === 'no') return { ok: false, reason: 'cancelled' };
+    moveTo = pick;
+  } else {
+    const go = await askDialog({
+      title: 'Take ' + word + ' off the games days?', body: ['It has no games. “Make ' + word + ' a games day” puts it back.'],
+      actions: [{ label: 'Keep it', value: 'no', cancel: true }, { label: 'Take it off', value: 'go', kind: 'danger' }],
+    });
+    if (go !== 'go') return { ok: false, reason: 'cancelled' };
+  }
+  const r = gmTakeDayOff(dk, moveTo);
+  if (r.ok) { shellSheetClose('sg-day'); renderAll(); }
+  return r;
+}
+
+function gmMakeDayGo(dk) {
+  const r = gmMakeDay(dk);
+  if (r.ok && r.changed) renderAll();
+  return r;
+}
+
+// ── opening a game (the sheet itself is below) ──
+// The Games screen on a day: a weekday key, or a competition day's id (the Games tab's own day). Opens the builder on it.
+function gmOpenScreen(day) {
+  if (!canEdit()) return;
+  const dk = SETUP_DK.indexOf(day) !== -1 ? day : gmDkOfDayId(day);
+  if (dk) state.ui.sgDay = dk;
+  openBuilder(null, 'games');
+}
+
+function wireGamesScreen() {
+  const on = (sel, ev, fn) => { const el = document.querySelector(sel); if (el) el.addEventListener(ev, fn); };
+  on('#sg-days', 'click', (e) => { const b = e.target.closest && e.target.closest('.daypick-btn[data-day]'); if (b) gmSetDay(b.dataset.day); });
+  const track = setupEl('sg-days-track');
+  if (track) track.addEventListener('scroll', () => paintStripOverflow(track), { passive: true });
+  on('#setup-games', 'click', (e) => {
+    const q = (sel) => (e.target.closest ? e.target.closest(sel) : null);
+    let b;
+    if ((b = q('[data-sg-place]'))) { if (typeof gmOpenGame === 'function') gmOpenGame(b.dataset.sgPlace, { pane: 'when', opener: b }); }
+    else if ((b = q('[data-sg-open]'))) { if (typeof gmOpenGame === 'function') gmOpenGame(b.dataset.sgOpen, { opener: b }); }
+    else if ((b = q('[data-sg-add]'))) { if (typeof gmOpenNew === 'function') gmOpenNew({ dk: gmDayKey(), target: b.dataset.sgAdd, opener: b }); }
+    else if (q('#sg-add') || q('#sg-add-first')) { if (typeof gmOpenNew === 'function') gmOpenNew({ dk: gmDayKey(), opener: q('#sg-add') || q('#sg-add-first') }); }
+    else if (q('#sg-day-on')) gmMakeDayGo(gmDayKey());
+    else if ((b = q('#sg-day-btn'))) gmOpenDaySheet(b);
+  });
+  const day = setupEl('sheet-sg-day');
+  if (day) {
+    day.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('[data-sg-day-act="off"]')) gmTakeDayOffFlow(); });
+    day.addEventListener('focusout', (e) => { if (e.target && e.target.id === 'sg-day-note') gmDayNoteBlur(); });
+  }
+  if (typeof wireGameSheet === 'function') wireGameSheet();
+}
+
+// ── the game sheet's state, in one place (its renderer and handlers follow) ──
+function gmSheetReady() { return !!gmUi.open; }
+// A sheet closed by any route leaves its state behind; the next pass of the frame drops it (a Forward must not reopen a stale game).
+function gmCleanSheets() { if (gmUi.open && !shell.sheets.includes('game')) gmUi.open = null; }
+function gmGuardClose() { return false; }
