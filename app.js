@@ -2298,6 +2298,9 @@ function inviteText(key, role) {
 
 function openMembers() {
   if (!canEdit()) return;
+  // People (setup-ui.js) replaced this drawer: the same list, by team, with the asking switch and the requests. The drawer's own code
+  // below stays only for a build with no setup-ui.js, and for the helpers (planMemberAdd, inviteText …) People still uses.
+  if (typeof setupOpenPeople === 'function' && setupOpenPeople()) return;
   lastInvite = null;
   const overlay = membersOverlayEl();
   if (!overlay) return;
@@ -11358,6 +11361,25 @@ function messageHtml(m, opts) {
     `</div>`;
 }
 
+// The join bar (setup-rebuild-spec §11.1, ux-R10): a director's "Taylor Reed is asking to join · See" in Now's message strip, one bar for
+// everyone waiting, dismissible per phone. A requester's name is escaped; the dismissal is kept in MEMORY only (a stranger's address is never
+// written to a phone), so a reload shows the bar again until somebody decides — the badges stay until then anyway.
+const joinBarSeen = new Set();
+
+function joinBarRequests() {
+  return canEdit() && typeof peopleRequests === 'function' ? peopleRequests().filter((r) => !joinBarSeen.has(r.key + '|' + r.at)) : [];
+}
+
+function joinBarHtml() {
+  const reqs = joinBarRequests();
+  if (!reqs.length) return '';
+  const text = reqs.length === 1 ? reqs[0].name + ' is asking to join' : reqs.length + ' people are asking to join';
+  return `<div class="msg" data-kind="join" data-key="join" role="status">` +
+    `<span class="msg-ico" aria-hidden="true"><svg class="ico"><use href="#i-people"/></svg></span>` +
+    `<div class="msg-body"><p class="msg-text">${esc(text)}</p><p class="msg-meta"><span>People</span><button type="button" class="msg-remove" data-join-see>See</button></p></div>` +
+    `<button type="button" class="msg-x" data-join-x aria-label="Dismiss this on this phone"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button></div>`;
+}
+
 // Now's message strip. Chat's Announcements channel rides it for 15 minutes per message (chat.js provides them
 // pre-filtered; same dismissed set). Runs on every renderAll and the 30 s tick, so it writes only a change
 // (setHtmlIfChanged / paintKeyedList) and its two buttons are ONE delegated listener, wired once.
@@ -11374,19 +11396,27 @@ function renderAnnouncements() {
   const active = activeAnnouncements().concat(fromChat)
     .sort((a, b) => String(b.at).localeCompare(String(a.at)));
   const editor = canEdit();
-  const html = active.map((a) => messageHtml(a, { editor })).join('');
+  const joinHtml = joinBarHtml();
+  const html = joinHtml + active.map((a) => messageHtml(a, { editor })).join('');
+  const count = active.length + (joinHtml ? 1 : 0);
   const onScreen = activeTab() === 'now' && shell.dirty.now === false && !shellTakeoverOpen() && !builderOpen();
   const moving = onScreen && wrap.__annLive === true && typeof wrap.animate === 'function' && typeof JellyMotion !== 'undefined';
   wrap.__annLive = onScreen && remoteReady;
   if (!moving) {
     wrap.__keyedWant = html;
-    setHiddenIfChanged(wrap, !active.length);
+    setHiddenIfChanged(wrap, !count);
     setHtmlIfChanged(wrap, html);
-  } else annPaintMoving(wrap, html, active.length);
+  } else annPaintMoving(wrap, html, count);
   if (wrap.__wired) return;
   wrap.__wired = true;
   wrap.addEventListener('click', (e) => {
     const t = e.target && e.target.closest ? e.target : null;
+    if (t && t.closest('[data-join-see]')) { if (typeof setupOpenPeople === 'function') setupOpenPeople(); return; }
+    const jx = t && t.closest('[data-join-x]');
+    if (jx) {
+      playRowOut(jx.closest('.msg'), () => { joinBarRequests().forEach((r) => joinBarSeen.add(r.key + '|' + r.at)); glideNow(renderAnnouncements); });
+      return;
+    }
     const x = t && t.closest('.msg-x');
     if (x) {
       const id = x.dataset.annId;
@@ -11653,6 +11683,7 @@ function reloadBlocked() {
   if (typeof rainBusy === 'function' && rainBusy()) return true; // a rain plan being made (setup-ui.js: only while open and touched in the last 2 minutes)
   if (typeof schedItemBusy === 'function' && schedItemBusy()) return true; // a Schedule item with edits not yet saved (setup-ui.js)
   if (typeof teamEditBusy === 'function' && teamEditBusy()) return true; // a team sheet with edits not yet saved, or a photo going up (setup-ui.js)
+  if (typeof peopleBusy === 'function' && peopleBusy()) return true; // a People sheet with edits not yet saved, or a write still going (setup-ui.js)
   return false;
 }
 
@@ -12610,7 +12641,24 @@ function onOtherCampRequests(n) {
   showToast((n === 1 ? '1 person is' : n + ' people are') + ' asking to join ' + CAMPS[otherCampId()].label, { duration: 6000 });
 }
 
+// The join badges: More's gold dot, the counts on the Set up the week and People rows. A director's, from the requests listener (and, for a
+// director of both camps, the other camp's count read once at load). Text and `hidden` only, so an idle pass writes nothing.
+function renderJoinBadges() {
+  const mine = joinRequestCount();
+  const other = canEdit() && typeof pplReq !== 'undefined' ? pplReq.other.n : 0;
+  setHiddenIfChanged(document.getElementById('tab-dot-more'), !(mine || other));
+  const word = mine ? mine + ' asking to join' : '';
+  ['more-join-count', 'more-people-count'].forEach((id) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    setTextIfChanged(el, mine ? (id === 'more-people-count' ? String(mine) : word) : '');
+    setHiddenIfChanged(el, !mine);
+    if (id === 'more-people-count' && mine) { const t = mine + ' asking to join'; if (el.getAttribute && el.getAttribute('aria-label') !== t) el.setAttribute('aria-label', t); }
+  });
+}
+
 function renderTabBadges() {
+  renderJoinBadges();
   const chat = document.getElementById('tab-badge-chat');
   if (chat) {
     const hidden = typeof chatHiddenFromMe === 'function' && chatHiddenFromMe();
@@ -13319,7 +13367,7 @@ function builderOpen() {
 // (Where the page was scrolled is the shell's: the tab it came from keeps its
 // scroll slot and gets it back when the builder closes — shellRestoreScroll.)
 
-function openBuilder(tab) {
+function openBuilder(tab, screen) {
   if (!canEdit()) return;
   state.ui.gameId = null; // one takeover at a time
   state.ui.revealOpen = false;
@@ -13327,7 +13375,7 @@ function openBuilder(tab) {
   state.ui.view = 'settings';
   if (tab) state.ui.settingsTab = tab;
   if (!state.ui.settingsTab) state.ui.settingsTab = 'games';
-  if (typeof setupOnOpen === 'function') setupOnOpen(tab); // the hub, or a named classic tab
+  if (typeof setupOnOpen === 'function') setupOnOpen(tab, screen); // the hub, a named screen (More → People), or a named classic tab
   shellStamp();
   saveState();
   renderAll();

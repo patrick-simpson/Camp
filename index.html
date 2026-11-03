@@ -1172,6 +1172,49 @@
           </div>
         </section>
 
+        <!-- ── People (P2 §11.8; Step 25) ──
+             One list by team for everyone on THIS camp (the Members drawer's data, <root>/members), the asking switch and the
+             people asking to join. Everything a requester typed is untrusted and goes through esc(). Written by the renderer:
+               #people-requests rows (keyed r-<key>):
+                 <button class="cb-row ppl-row ppl-req" data-key="r-<key>" data-req="<key>">
+                   <span class="cb-time"><small>4 min ago</small></span>
+                   <span class="cb-main"><span class="cb-title">Taylor Reed</span><span class="cb-sub">taylor.reed@gmail.com</span>
+                     <span class="cb-sub ppl-quote">I'm with the Foxes</span></span>
+                   <span class="cb-end">See + chevron</span></button>
+               #people-groups: one <section class="ppl-group" data-key="g-t0|g-none"> per team (its mark, name and count) over a
+                 .gl.cb-list of person rows (keyed p-<key>):
+                 <button class="cb-row ppl-row" data-key="p-<key>" data-person="<key>" [data-warn]>
+                   <span class="cb-time"><i class="ppl-face">A</i></span>
+                   <span class="cb-main"><span class="cb-title">Alyssa<span class="ppl-tag">you</span></span>
+                     <span class="cb-sub">Signed in · Counselor</span></span> <span class="cb-end">chevron</span></button>
+                 The owner's row is a <div> (no chevron): "Owner · managed in the Firebase console". A pending row says "No sign-in yet".
+             Four shell sheets follow the screen (editors only, one at a time): the person, a request, Put people on teams, Add
+             people, Blocked. -->
+        <section class="setup-screen sec people" id="setup-people" data-setup-screen="people" aria-labelledby="people-title">
+          <div class="setup-intro">
+            <h2 class="setup-kicker" id="people-title">People</h2>
+            <p class="setup-headline" id="people-headline"></p>
+            <p class="setup-lede" id="people-lede"></p>
+          </div>
+          <div class="gl people-ask" id="people-ask-box">
+            <div class="gl-row wk-switch">
+              <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-people"/></svg></span>
+              <span class="gl-text"><span class="gl-title">Let people ask to join</span><span class="gl-sub" id="people-ask-sub"></span></span>
+              <span class="gl-switch"><em class="gl-switch-state" data-switch-state="people-asking">Off</em><jelly-switch id="people-asking" label="Let people ask to join"></jelly-switch></span>
+            </div>
+          </div>
+          <p class="setup-note" id="people-asking-long" hidden><svg class="ico" aria-hidden="true"><use href="#i-people"/></svg><span>Asking to join is still on — turn it off after registration?</span></p>
+          <p class="setup-note" id="people-state" hidden><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span id="people-state-text"></span></p>
+          <section class="ppl-sec" id="people-req-sec" aria-labelledby="people-req-label" hidden>
+            <h3 class="ppl-label" id="people-req-label">Asking to join</h3>
+            <div class="gl cb-list sec-list" id="people-requests"></div>
+          </section>
+          <div class="ppl-groups" id="people-groups"></div>
+          <button type="button" class="sched-add" id="people-teams-btn"><svg class="ico" aria-hidden="true"><use href="#i-pennant"/></svg><span>Put people on teams</span></button>
+          <button type="button" class="sched-add" id="people-add-btn"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span>Add people</span></button>
+          <button type="button" class="btn-quiet ppl-blocked-btn" id="people-blocked-btn">People you’ve blocked</button>
+        </section>
+
         <!-- The classic builder (Games, Days, Teams, Notice, Data) as one screen
              of the frame until each section's replacement ships (§11.1);
              renderSettings still writes #settings-view. In the frame its own
@@ -1329,7 +1372,7 @@
           </button>
           <button type="button" class="gl-row" id="members-row" data-more-row="members">
             <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-people"/></svg></span>
-            <span class="gl-text"><span class="gl-title">Who can sign in</span><span class="gl-sub">Counselors and directors</span></span>
+            <span class="gl-text"><span class="gl-title">People <span class="gl-count" id="more-people-count" hidden></span></span><span class="gl-sub">Counselors, directors and who’s asking</span></span>
             <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
           </button>
         </div>
@@ -2805,6 +2848,189 @@
         <!-- One block per flagged team (written by the renderer): its mark and name, then twelve 44px swatches
              (button[role=radio][data-team-pick][data-color], a dot split light | dark); one tap commits. -->
         <div class="tms-flags" id="team-colors-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PEOPLE: the person, a request, Put people on teams, Add people, Blocked (P2 §11.8; Step 25) ──
+       Shell sheets (editors only, ONE at a time). The forms are written once per open and the inputs ARE the draft (a repaint never
+       takes a typed word away); the dock holds the one gold action. A form that has unsaved edits asks before it closes, by every route. -->
+  <div id="sheet-people-person" class="sheet-overlay people-sheet" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet sheet-tall" role="dialog" aria-modal="true" aria-labelledby="sheet-people-person-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-people-person-title">Person</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <form class="sheet-body ppl-form" id="ppl-form" autocomplete="off">
+        <p class="setup-sheet-lede" id="ppl-id-line"></p>
+        <label class="fld"><span class="fld-label">Name</span><input type="text" class="fld-input" id="ppl-name" maxlength="60" enterkeyhint="done" placeholder="Name"></label>
+        <p class="fld-error" id="ppl-name-error" role="alert" hidden></p>
+        <label class="fld"><span class="fld-label">Team</span><select class="fld-input" id="ppl-team"></select></label>
+        <div class="fld" id="ppl-role-fld" role="radiogroup" aria-labelledby="ppl-role-label">
+          <span class="fld-label" id="ppl-role-label">Role</span>
+          <div class="seg seg-fit" id="ppl-role">
+            <button type="button" class="seg-btn" role="radio" aria-checked="true" data-ppl-role="viewer">Counselor</button>
+            <button type="button" class="seg-btn" role="radio" aria-checked="false" data-ppl-role="editor">Director</button>
+          </div>
+          <p class="tms-hint" id="ppl-role-note"></p>
+        </div>
+        <div class="fld" id="ppl-camps-fld" hidden>
+          <span class="fld-label">Camps</span>
+          <div class="ppl-camps" id="ppl-camps"></div>
+          <p class="tms-hint">A change here is saved at once. None means they can’t open that camp at all.</p>
+        </div>
+        <div class="ppl-extra" id="ppl-signin-fld" hidden>
+          <label class="fld"><span class="fld-label">Add their sign-in</span><input type="text" class="fld-input" id="ppl-signin" inputmode="email" autocapitalize="none" placeholder="name@example.com or 555-123-4567"></label>
+          <p class="fld-error" id="ppl-signin-error" role="alert" hidden></p>
+          <button type="button" class="btn btn-sm" id="ppl-signin-btn">Add sign-in</button>
+        </div>
+        <div class="ppl-extra" id="ppl-same-fld" hidden>
+          <label class="fld"><span class="fld-label">This is the same person as…</span><select class="fld-input" id="ppl-same"></select></label>
+          <p class="tms-hint">Takes this “no sign-in yet” row off the list and keeps the person who has one (their team comes across if they have none).</p>
+          <button type="button" class="btn btn-sm" id="ppl-same-btn">Merge them</button>
+        </div>
+        <div class="ppl-extra">
+          <button type="button" class="btn btn-sm" id="ppl-invite" hidden><svg class="ico" aria-hidden="true"><use href="#i-copy"/></svg><span>Copy invite text</span></button>
+          <button type="button" class="btn-quiet btn-quiet-danger" id="ppl-remove">Remove from this camp</button>
+        </div>
+      </form>
+      <div class="sheet-dock">
+        <button type="button" class="btn btn-gold btn-block" id="ppl-save">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="sheet-people-request" class="sheet-overlay people-sheet" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet sheet-tall" role="dialog" aria-modal="true" aria-labelledby="sheet-people-request-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-people-request-title">Asking to join</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <form class="sheet-body ppl-form" id="prq-form" autocomplete="off">
+        <div class="ppl-who">
+          <p class="ppl-who-name" id="prq-name"></p>
+          <p class="cb-sub" id="prq-id"></p>
+          <p class="ppl-quote" id="prq-note" hidden></p>
+          <p class="cb-sub" id="prq-when"></p>
+        </div>
+        <div class="ppl-cands" id="prq-cands-sec" hidden>
+          <p class="fld-label" id="prq-cands-label">Is this someone already on the list?</p>
+          <div class="gl cb-list" id="prq-cands" role="radiogroup" aria-labelledby="prq-cands-label"></div>
+        </div>
+        <div class="ppl-new" id="prq-new">
+          <label class="fld"><span class="fld-label">Name in the list</span><input type="text" class="fld-input" id="prq-dirname" maxlength="60" enterkeyhint="done" placeholder="Name"></label>
+          <p class="fld-warn" id="prq-clash" role="status" hidden></p>
+          <div class="fld" role="radiogroup" aria-labelledby="prq-role-label">
+            <span class="fld-label" id="prq-role-label">Let in as</span>
+            <div class="seg seg-fit" id="prq-role">
+              <button type="button" class="seg-btn" role="radio" aria-checked="true" data-prq-role="viewer">Counselor</button>
+              <button type="button" class="seg-btn" role="radio" aria-checked="false" data-prq-role="editor">Director</button>
+            </div>
+          </div>
+          <label class="fld"><span class="fld-label">Team</span><select class="fld-input" id="prq-team"></select></label>
+        </div>
+        <div class="ppl-link" id="prq-link" hidden>
+          <p class="setup-sheet-lede" id="prq-link-text"></p>
+          <label class="fld" id="prq-confirm-fld" hidden><span class="fld-label">Type their email or phone number again</span><input type="text" class="fld-input" id="prq-confirm" inputmode="email" autocapitalize="none" placeholder="name@example.com or 555-123-4567"></label>
+        </div>
+        <p class="fld-error" id="prq-error" role="alert" hidden></p>
+      </form>
+      <div class="sheet-dock ppl-dock">
+        <button type="button" class="btn btn-gold btn-block" id="prq-go">Let in</button>
+        <button type="button" class="btn btn-block" id="prq-notnow">Not now</button>
+        <button type="button" class="btn-quiet btn-quiet-danger" id="prq-block">Block this person</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="sheet-people-teams" class="sheet-overlay people-sheet" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet sheet-tall" role="dialog" aria-modal="true" aria-labelledby="sheet-people-teams-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-people-teams-title">Put people on teams</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="sheet-body ppl-form">
+        <p class="setup-sheet-lede">Pick a team for each person. Only the ones you change are saved, one at a time. <button type="button" class="ppl-link-btn" id="ppt-paste">Paste a list instead</button></p>
+        <!-- one row per person, written once per open: name, then a native team select (data-ppt-pick=<key>) -->
+        <div class="gl cb-list ppl-pick-list" id="ppt-list"></div>
+        <p class="fld-error" id="ppt-error" role="alert" hidden></p>
+      </div>
+      <div class="sheet-dock">
+        <button type="button" class="btn btn-gold btn-block" id="ppt-save">Save teams</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="sheet-people-add" class="sheet-overlay people-sheet" data-pane="list" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet sheet-tall" role="dialog" aria-modal="true" aria-labelledby="sheet-people-add-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-people-add-title">Add people</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <form class="sheet-body ppl-form" id="ppa-form" autocomplete="off">
+        <div class="seg seg-fit" id="ppa-pane" role="radiogroup" aria-label="How to add">
+          <button type="button" class="seg-btn" role="radio" aria-checked="true" data-ppa-pane="list">Type a list</button>
+          <button type="button" class="seg-btn" role="radio" aria-checked="false" data-ppa-pane="one">One person with a sign-in</button>
+        </div>
+        <div class="ppl-pane" data-ppa-body="list">
+          <p class="setup-sheet-lede">One person per line. Add a team after a comma if you know it: <em>Cam, Foxes</em>. Someone already on the list is updated, not added twice.</p>
+          <textarea class="fld-input ppa-lines" id="ppa-lines" rows="6" aria-label="People, one per line" placeholder="Cam, Foxes&#10;Sam&#10;Alyssa, Maples"></textarea>
+          <div class="gl cb-list ppa-preview" id="ppa-preview"></div>
+          <button type="button" class="btn btn-sm" id="ppa-roster" hidden>Fill in last year’s printed roster</button>
+        </div>
+        <div class="ppl-pane" data-ppa-body="one">
+          <label class="fld"><span class="fld-label">Email or phone number</span><input type="text" class="fld-input" id="ppa-id" inputmode="email" autocapitalize="none" placeholder="name@example.com or 555-123-4567"></label>
+          <label class="fld"><span class="fld-label">Name</span><input type="text" class="fld-input" id="ppa-name" maxlength="60" placeholder="First name"></label>
+          <div class="fld" role="radiogroup" aria-labelledby="ppa-role-label">
+            <span class="fld-label" id="ppa-role-label">Role</span>
+            <div class="seg seg-fit" id="ppa-role">
+              <button type="button" class="seg-btn" role="radio" aria-checked="true" data-ppa-role="viewer">Counselor</button>
+              <button type="button" class="seg-btn" role="radio" aria-checked="false" data-ppa-role="editor">Director</button>
+            </div>
+          </div>
+          <label class="fld"><span class="fld-label">Team (optional)</span><select class="fld-input" id="ppa-team"></select></label>
+          <div class="fld" id="ppa-camps-fld" role="radiogroup" aria-labelledby="ppa-camps-label" hidden>
+            <span class="fld-label" id="ppa-camps-label">Camps</span>
+            <div class="seg seg-fit" id="ppa-camps">
+              <button type="button" class="seg-btn" role="radio" aria-checked="true" data-ppa-camps="active">This camp only</button>
+              <button type="button" class="seg-btn" role="radio" aria-checked="false" data-ppa-camps="both">Both camps</button>
+            </div>
+          </div>
+          <p class="tms-hint">Leave the email or phone blank to add someone by name now and fill it in later.</p>
+        </div>
+        <p class="fld-error" id="ppa-error" role="alert" hidden></p>
+        <div class="ppl-invite" id="ppa-invite" hidden>
+          <p class="ppl-invite-title">Added. Send them this:</p>
+          <textarea class="fld-input" id="ppa-invite-text" rows="5" readonly aria-label="Invite text"></textarea>
+          <button type="button" class="btn btn-sm" id="ppa-invite-copy"><svg class="ico" aria-hidden="true"><use href="#i-copy"/></svg><span>Copy invite text</span></button>
+        </div>
+      </form>
+      <div class="sheet-dock">
+        <button type="button" class="btn btn-gold btn-block" id="ppa-go">Add people</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="sheet-people-blocked" class="sheet-overlay people-sheet" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet sheet-tall" role="dialog" aria-modal="true" aria-labelledby="sheet-people-blocked-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-people-blocked-title">People you’ve blocked</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="sheet-body">
+        <p class="setup-sheet-lede">A blocked sign-in can’t ask to join again until you unblock it. They’re told asking isn’t open, never that they were blocked.</p>
+        <div class="gl cb-list" id="blk-list"></div>
+        <p class="cb-empty" id="blk-empty" hidden></p>
       </div>
     </div>
   </div>

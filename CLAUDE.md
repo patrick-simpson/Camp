@@ -675,7 +675,7 @@ never rebuilds a segmented control under a finger.
   Who can sign in is visible, only inert while the modal is open.
 - **More** (`renderMore`, rendered with the tab; `wireMore` / `wireSegs` once):
   Director (editors only: **What counselors see**, **Set up the week** → today's
-  classic builder, **Change history**, **Who can sign in**, **Run the reveal**
+  classic builder, **Change history**, **People** (was Who can sign in: Step 25), **Run the reveal**
   (Step 23: the remote, see "The standings reveal"); **Tell everyone** /
   **Award points** are built by Step 24's design pass (`#tell-row`, `#award-row`,
   hidden until their takeovers are wired: see "Director tools")), Camp (**Full schedule**, **Memory verse**, **Meal cleanup** — the last
@@ -1176,7 +1176,7 @@ each as it wires it, so the live app never shows a dead control. Rules for whoev
 - **More**: `#tell-row` (`data-more-row="tell"`, `#tell-row-sub`; `data-live` puts a link-blue dot
   before the words while something is up: "Up now: a banner and the notice") and `#award-row`
   (`data-more-row="award"`) open the Director group, in §7.1's order. The join badge slot on Set up the
-  week (`#more-join-count`, `.gl-count`, rides the title line) is Step 25's and unchanged.
+  week (`#more-join-count`, `.gl-count`, rides the title line) is painted by Step 25's `renderJoinBadges` ("2 asking to join").
 - **Shared pieces**: `.dt-h` / `.dt-h-row` / `.dt-h-note` (a section's name in ink-2, sentence case,
   a note that wraps under it), `.dt-mark` (the small gold "!"), `.tell-body` / `.award-body` are grids
   with ONE gap (a hidden section takes its space with it). New icons: `#i-bolt` (double points),
@@ -1556,7 +1556,7 @@ into it from app.js / settings.js is typeof-guarded.
   ("Add games") lands on the classic screen on that tab; hub rows Games / Notice
   open the classic screen on that tab (`state.ui.settingsTab`; Teams has its own screen
   since Step 25), Restore points
-  opens `backups`, People opens the Who can sign in drawer. Back goes screen → hub →
+  opens `backups`, People opens its own screen (Step 25; the Members drawer is retired). Back goes screen → hub →
   closes the builder; a dirty game editor (`builderDirty()`, named by
   `builderDirtyName()`) asks through `askDialog` first, and "Keep editing" puts the
   person back on it. The classic screen still renders through `renderSettings()` and
@@ -2421,6 +2421,14 @@ What's covered, and why each file exists:
   (member key first, then name through `canonicalCounselorName`), the mutators' exact ops and
   their `off` refusal, and Turn on against the fake database (ONE restore point, ONE
   transaction, owner only, off-then-on keeps the edit).
+- `people.test.js` (+ `.senior`) — the People engine (setup-sync.js "PEOPLE"): request cleaning and hostile rows, a team named by a
+  word, candidates, the name clash, pasted lines, Put-people-on-teams changes, the listener (a director's alone; the first
+  snapshot announces nothing; the window of 25; a refused read touches neither `fbRef` nor `syncDenied`; demotion and promotion;
+  the other camp's count), Let in / Link / Not now / Block / Unblock in the order the rules need, the guards (a counselor,
+  offline, the owner row, your own role), Save person, Put people on teams, Add people, add sign-in, merge, per-camp access,
+  the switch. `people-screen.test.js` (+ senior) — the hub row, the screen, the routes in and Back, the five sheets' handlers,
+  the join badges and bar, the source pins. `access-requests.test.js` (+ senior) — the requester's side (see "People and
+  walk-ups"). `tests/emulator/people-client.mjs` is their opt-in twin against the real rules.
 - **The seeded pass** — `tests/run.js` re-runs `SEEDED_FILES` (week, push, chat, ics,
   tabs, frame, shell, home, render-stability, game-view, secrecy, motion, overlays,
   boot-cache, backup, reveal-ui, reveal-remote, preview, tell, award) against a camp whose schedule is edited here
@@ -2496,7 +2504,8 @@ does, so an app device always chooses by its own key.
   after approval (a refused `once()` is harmless), recorded in
   `localStorage.campScoreboardCampsHint` (`{junior:'editor',
   senior:'viewer'}`).
-- **The Members drawer manages BOTH camps in one list** (`renderMembers`
+- **The Members drawer (RETIRED by Step 25: More → People, setup-ui.js section 14, replaced it; its code stays for a build with no
+  setup-ui.js and for the helpers People still uses) managed BOTH camps in one list** (`renderMembers`
   loads both lists via `once()`; `mergeMemberLists` folds them to one row
   per person). Each row carries a per-camp None/Viewer/Editor switch:
   None removes that camp's record (confirmed), Viewer/Editor writes the
@@ -2954,7 +2963,7 @@ rules**; the client code only shapes the UI.
   included). (The big-screen page used to duplicate this; it signs nobody in now.)
 - **Member record**: `{ role, name?, teamId?, addedBy, addedAt }`
   (`memberRecord()`; `name`/`teamId` omitted, not null, when empty). Built at `campScoreboard/members`,
-  editor-managed via More → **Who can sign in** (`renderMembers`). Your
+  editor-managed via More → **People** (Step 25; formerly the Who can sign in drawer, `renderMembers`). Your
   own row is disabled (another editor must change your access); the owner key
   is additionally immutable in the rules (the lockout anchor).
 - **The owner row is read-only** (`OWNER_MEMBER_KEY` in app.js, the same literal
@@ -4070,6 +4079,44 @@ requester's side is app.js (the denied screen).
 - **Emulator proof (opt-in)**: `tests/emulator/people-client.mjs` drives the REAL client's walk-up, director and counselor
   phones against `database.rules.json` (18 cases, both camps, SAFE; mutation-checked: removing the `joinOpen` clause, the
   `accessBlocked` clause or the Director-link confirmation turns it red). `access-requests.mjs` stays the rules' own proof.
+- **The People screen** (setup-ui.js section 14; markup index.html `#setup-people` + five `#sheet-people-*` sheets; CSS
+  "SET UP THE WEEK: People"; `tests/people-screen.test.js` + senior). `#setup[data-screen="people"]`. **More's `#members-row`
+  keeps its old id and now reads "People"** (a count pill `#more-people-count`) and opens the screen straight away
+  (`openMembers()` → `setupOpenPeople()` → `openBuilder(undefined, 'people')`; Back is labelled More and leaves the builder,
+  `peopleUi.from`); the hub's People row opens it with the hub as Back (`HUB_OPENS.people = { screen: 'people' }`). It reads the
+  LIVE directory (`memberDirectory`, one `.on('value')` the app already has) and `peopleRequests()`; nothing is stored on a
+  phone. Top to bottom: the headline (the hub row's first problem — "Taylor Reed is asking to join", "2 people have no sign-in
+  yet" — else its summary), **Let people ask to join** (a `jelly-switch` writing `setup/meta/joinOpen` through
+  `peopleSetAsking`; offline it says "Needs a connection"; a note "Asking to join is still on — turn it off after
+  registration?" once `pplAskingLongOn`), **Asking to join · N** (a row each, newest first, opening the request sheet), one
+  section per team (this camp's order; its mark, name and count; "Nobody yet") and "Not on a team", then **Put people on
+  teams**, **Add people** and **People you've blocked**. A person row is a `.cb-row` whose time column is an initial in a ring;
+  its sub says status in words ("Signed in · Counselor", "No sign-in yet · Director"); your own row carries "you"; **the owner
+  row is a `<div>`** ("Owner · managed in the Firebase console"). Rows are painted through `secPaintList` (keyed `p-<key>`,
+  `r-<key>`, `g-<tid>`), so an idle pass writes nothing.
+- **The five sheets** (shell sheets, ONE at a time, `SETUP_SHEETS`; each opens only with state a tap made —
+  `peopleSheetReady` — and `peopleCleanSheets` drops a closed sheet's state so a Forward never reopens a stale form; a sheet
+  with unsaved edits asks before it closes by EVERY route through `setupSheetGuardClose`, and `peopleBusy()` holds the deploy
+  reload). **Person**: name, team (native select), Role (Counselor / Director — locked on your own row), for a director of both
+  camps a per-camp None / Counselor / Director switch saved at once (`peopleSetCampAccess`), for a pending row **Add their
+  sign-in** and **This is the same person as…**, Copy invite text, **Remove from this camp** (asks first: access changes have
+  no Undo); Save writes only what changed, one `update()`. **Request**: who, their address, their note in quotes, when;
+  **"Is this someone already on the list?"** with the candidates (nothing is guessed: until one is picked or "None of these"
+  the dock says "Pick one above"), then either the Let in form (the name that goes in the directory — prefilled, with the
+  clash line "There's already a Sam on the list — use a last initial?" — Counselor / Director, team pre-picked from a team the
+  note names) or the Link sentence (a Director row also asks for their email or phone again); **Not now**, and **Block this
+  person** (asks first and says what they are told). **Put people on teams**: everyone but the owner, a native select each,
+  written once per open (the selects ARE the draft); Save teams writes the changed rows one at a time and names a refused one.
+  **Add people**: "Type a list" (the live preview reads each line — "Cam → Foxes", "Sam Lee → put on Foxes", "listed
+  twice" — and the button says "Add 2, update 1"; junior also "Fill in last year's printed roster") or "One person with a
+  sign-in" (the old add form; the invite text to copy shows after). **People you've blocked**: one read when opened, Unblock.
+- **The join badges and bar** (app.js): `renderJoinBadges` (from `renderTabBadges`) lights More's gold dot (`#tab-dot-more`)
+  for this camp's waiting requests OR the other camp's one-shot count (a director of both), and writes the counts on
+  `#more-join-count` ("2 asking to join") and `#more-people-count`. `joinBarHtml` puts ONE `.msg[data-kind="join"]` bar at the top of
+  Now's message strip ("Taylor Reed is asking to join" / "3 people are asking to join" · **See**, which opens People, and an
+  ×), directors only (`canEdit()`), the name escaped; its dismissal is kept in MEMORY (`joinBarSeen`) so a stranger's address
+  is never written to a phone. `onAccessRequestsArrived` is the toast (not for your own key, not on a counselor's phone).
+  Not built: a phone alert per request (decision Q15, default no).
 - **`tests/fake-rtdb.js` gained queries** (`orderByChild` + `limitToLast` / `limitToFirst` / `equalTo`, read by a value
   listener or `once()`; `snapshot.forEach` walks query order, and a row that leaves the window is gone), because the
   requests listener is the first query the tests drive.

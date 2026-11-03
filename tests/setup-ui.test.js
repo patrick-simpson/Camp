@@ -48,11 +48,8 @@ test('More → Set up the week opens the hub; a named classic tab opens the clas
   } finally { suClose(); }
 });
 
-test('hub rows open their screens: Camp week, Schedule and Teams → theirs, Games and Notice → the classic editor on that tab, Restore points → backups, People → the members drawer', () => {
+test('hub rows open their screens: Camp week, Schedule and Teams → theirs, Games and Notice → the classic editor on that tab, Restore points → backups, People → its own screen', () => {
   suOpen();
-  const real = openMembers;
-  let members = 0;
-  openMembers = () => { members++; };
   try {
     hubOpen('games');
     assert.deepEqual([state.ui.builderScreen, state.ui.settingsTab], ['classic', 'games']);
@@ -63,15 +60,15 @@ test('hub rows open their screens: Camp week, Schedule and Teams → theirs, Gam
     hubOpen('restore');
     assert.equal(state.ui.builderScreen, 'backups');
     hubOpen('people');
-    assert.equal(members, 1);
-    assert.equal(state.ui.builderScreen, 'backups', 'the drawer opens over the screen; it does not move it');
+    assert.equal(state.ui.builderScreen, 'people', 'Step 25: People has its own screen now (the Members drawer is retired; More\'s People row opens the same one)');
+    assert.equal(peopleUi.from, '', 'opened from the hub, so Back is the hub');
     hubOpen('campers');
-    assert.equal(state.ui.builderScreen, 'backups', 'a row with no screen yet does nothing');
+    assert.equal(state.ui.builderScreen, 'people', 'a row with no screen yet does nothing');
     hubOpen('week');
     assert.equal(state.ui.builderScreen, 'week');
     hubOpen('schedule');
     assert.equal(state.ui.builderScreen, 'schedule');
-  } finally { openMembers = real; suClose(); }
+  } finally { suClose(); }
 });
 
 test('Back: a screen goes back to the hub, the hub closes the builder, and a dirty game editor asks first', async () => {
@@ -166,16 +163,17 @@ test('a director sees the setup sheets only while the builder is up', () => {
     setupRain.plan = { dk: 'wed', items: {}, games: {} };
     setupRain.bid = 'b-x';
     state.ui.setupDay = 'wed';
-    ['sec-teams', 'sec-person', 'sec-station', 'team-edit', 'team-colors'].forEach((id) => assert.equal(shellSheetAllowed(id), false, id + ' needs what a tap opened'));
+    ['sec-teams', 'sec-person', 'sec-station', 'team-edit', 'team-colors', 'people-person', 'people-request', 'people-teams', 'people-add', 'people-blocked'].forEach((id) => assert.equal(shellSheetAllowed(id), false, id + ' needs what a tap opened'));
     secUi.teams = { dk: 'mon', meal: 'lunch', name: 'Lunch', picked: [], was: [] };
     secUi.person = { dk: 'mon', slot: 0, st: 'st-x' };
     secUi.station = { mode: 'add', dk: 'mon', slot: 0, st: '' };
     teamUi.edit = { id: 't0', origin: {}, color: '', pane: 'form' };
     teamUi.colors = true;
+    peopleUi.person = { key: 'x' }; peopleUi.request = { key: 'x' }; peopleUi.teams = { built: false }; peopleUi.add = { pane: 'list' }; peopleUi.blocked = true;
     SETUP_SHEETS.forEach((id) => assert.equal(shellSheetAllowed(id), true, id));
     state.ui.view = 'home';
     SETUP_SHEETS.forEach((id) => assert.equal(shellSheetAllowed(id), false, id + ' with the builder closed'));
-  } finally { setupSched.item = null; setupRain.plan = null; setupRain.bid = null; secUi.teams = null; secUi.person = null; secUi.station = null; teamUi.edit = null; teamUi.colors = false; suClose(); }
+  } finally { setupSched.item = null; setupRain.plan = null; setupRain.bid = null; secUi.teams = null; secUi.person = null; secUi.station = null; teamUi.edit = null; teamUi.colors = false; peopleUi.person = null; peopleUi.request = null; peopleUi.teams = null; peopleUi.add = null; peopleUi.blocked = false; suClose(); }
 });
 
 // ── askDialog ──

@@ -56,7 +56,7 @@ const HUB_OPENS = {
   games: { screen: 'classic', tab: 'games' },
   teams: { screen: 'teams' },
   notice: { screen: 'classic', tab: 'notice' },
-  people: { drawer: 'members' },
+  people: { screen: 'people' },
   restore: { screen: 'backups' },
 };
 // The front door's buttons, owner only (Q8). A button exists only when its action does: the steps that
@@ -222,6 +222,9 @@ function hubStatus(section, view) {
       const problems = [];
       const members = Array.isArray(v.members) ? v.members : [];
       const now = Number(v.now) || 0;
+      // Somebody asking to join is what a director must act on first (§11.1, ux-R10); asking left on after registration is a nudge.
+      const join = v.join || {};
+      if (join.waiting > 0) problems.push(join.waiting === 1 ? (join.first ? join.first + ' is asking to join' : '1 person is asking to join') : join.waiting + ' people are asking to join');
       members.filter((m) => !m.owner).forEach((m) => {
         if ((m.role !== 'viewer' && m.role !== 'editor') || !m.addedBy || !m.addedAt) problems.push((m.name || 'Someone') + '’s sign-in record is incomplete');
       });
@@ -235,7 +238,9 @@ function hubStatus(section, view) {
       const directors = members.filter((m) => m.role === 'editor').length;
       const counselors = members.length - directors;
       const summary = hubPlural(counselors, 'counselor', 'counselors') + ' · ' + hubPlural(directors, 'director', 'directors');
-      return hubMark(problems.length ? 'warn' : members.length ? 'ok' : 'todo', summary, problems);
+      const row = hubMark(problems.length ? 'warn' : members.length ? 'ok' : 'todo', summary, problems);
+      if (join.long) row.note = 'Asking to join is still on — turn it off after registration?';
+      return row;
     }
     case 'notice': {
       const n = v.notice || {};
@@ -424,7 +429,7 @@ function hubView() {
     isOwner: typeof isOwner === 'function' && isOwner(), ownerName: typeof ownerName === 'function' ? ownerName() : 'the owner',
     now: typeof serverNow === 'function' ? serverNow() : Date.now(),
     teams: state.teams || [], teamInfo: teamsInfoView(), days: (state.config && state.config.days) || [], games: (state.config && state.config.games) || [],
-    members: hubMembers(), membersLoaded: !!memberDirectoryLoaded,
+    members: hubMembers(), membersLoaded: !!memberDirectoryLoaded, join: peopleJoinView(),
     on, skip: meta.skip && typeof meta.skip === 'object' ? meta.skip : {}, weekStart, weekRunning: hubWeekRunning(weekStart),
     newYearDue: typeof newYearDue === 'function' ? !!newYearDue() : false, nextYear: '',
     setupTooNew: typeof setupSchemaTooNew === 'function' && setupSchemaTooNew(),
@@ -592,14 +597,14 @@ function hubScheduleView() {
 
 // #setup[data-screen] is the ONE switch the CSS reads (styles.css "SET UP THE WEEK"): hub | backups |
 // classic | week | schedule | rain. A step that adds a screen adds its name here and its pair of lines in the CSS.
-const SETUP_SCREENS = ['hub', 'backups', 'classic', 'week', 'schedule', 'rain', 'meals', 'verses', 'cleanup', 'electives', 'teams'];
+const SETUP_SCREENS = ['hub', 'backups', 'classic', 'week', 'schedule', 'rain', 'meals', 'verses', 'cleanup', 'electives', 'teams', 'people'];
 // Shell sheets this layer owns (shellSheetOpen ids; the elements are #sheet-<id>), one at a time.
-const SETUP_SHEETS = ['setup-menu', 'setup-changes', 'setup-devices', 'restore', 'sched-day', 'sched-item', 'rain-item', 'rain-done', 'sec-teams', 'sec-person', 'sec-station', 'sec-verse', 'team-edit', 'team-colors'];
+const SETUP_SHEETS = ['setup-menu', 'setup-changes', 'setup-devices', 'restore', 'sched-day', 'sched-item', 'rain-item', 'rain-done', 'sec-teams', 'sec-person', 'sec-station', 'sec-verse', 'team-edit', 'team-colors', 'people-person', 'people-request', 'people-teams', 'people-add', 'people-blocked'];
 // The sheets that hold a half-made edit and ask before they let it go: the id → a function that takes the close over
 // (it asks, and returns true) or returns false when nothing is at stake. app.js's Escape handler and shellApply (the
 // phone's Back) call setupSheetGuardClose; ✕ and the backdrop reach the same question through the sheet's own
 // capturing click handler.
-const SETUP_SHEET_GUARDS = { 'sched-item': () => schedItemGuardClose(), 'team-edit': () => teamGuardClose() };
+const SETUP_SHEET_GUARDS = { 'sched-item': () => schedItemGuardClose(), 'team-edit': () => teamGuardClose(), 'people-person': () => peoplePersonGuardClose(), 'people-teams': () => peopleTeamsGuardClose(), 'people-add': () => peopleAddGuardClose() };
 function setupSheetGuardClose(id) {
   const g = SETUP_SHEET_GUARDS[id];
   return !!(g && g());
@@ -639,8 +644,10 @@ function setupScreen() {
 
 // app.js openBuilder(tab) calls this before it paints: More → Set up the week (no tab) opens the hub; a
 // caller that names a classic tab ("Add games" on an empty day) lands on that tab of the classic screen.
-function setupOnOpen(tab) {
-  state.ui.builderScreen = tab ? 'classic' : 'hub';
+function setupOnOpen(tab, screen) {
+  // A named screen opens straight onto it (More → People); a named classic tab onto the classic editor; else the hub.
+  state.ui.builderScreen = tab ? 'classic' : (screen && screen !== 'hub' && SETUP_SCREENS.indexOf(screen) !== -1 ? screen : 'hub');
+  if (state.ui.builderScreen !== 'people') peopleUi.from = '';
 }
 
 // What this device should tell the other directors it is looking at.
@@ -653,6 +660,7 @@ function setupWhereNow() {
   if (s === 'rain') return 'rain:' + ((state.ui.rainDay && SETUP_DK.indexOf(state.ui.rainDay) !== -1) ? state.ui.rainDay : 'wed');
   if (HUB_SECTIONS.indexOf(s) !== -1) return s;
   if (s === 'teams') return teamUi.edit && /^t[0-9]$/.test(teamUi.edit.id) && shell.sheets.includes('team-edit') ? 'team:' + teamUi.edit.id : 'teams';
+  if (s === 'people') return 'people';
   return SETUP_CLASSIC_WHERE[state.ui.settingsTab] || 'games';
 }
 
@@ -668,6 +676,7 @@ function setupGo(screen, opts) {
   if (SETUP_SCREENS.indexOf(screen) === -1 || !canEdit()) return false;
   const o = opts || {};
   if (o.tab) state.ui.settingsTab = o.tab;
+  if (screen !== 'people') peopleUi.from = '';
   state.ui.builderScreen = screen;
   setupUi.detailsOpen = false;
   shellStamp();
@@ -712,6 +721,7 @@ async function setupBack() {
     return;
   }
   if (screen === 'hub') setupCloseBuilder();
+  else if (screen === 'people' && peopleUi.from === 'more') { peopleUi.from = ''; setupCloseBuilder(); } // opened from More: Back goes back there
   else {
     if (typeof discardGameDraft === 'function') discardGameDraft();
     setupGo('hub');
@@ -891,6 +901,7 @@ function hubOpen(key) {
   const o = HUB_OPENS[key];
   if (!o) return;
   if (o.drawer === 'members') { if (typeof openMembers === 'function') openMembers(); return; }
+  if (o.screen === 'people') peopleUi.from = ''; // from the hub, Back is the hub
   if (o.screen === 'backups') { setupGo('backups'); refreshRestoreIndex(); return; }
   setupGo(o.screen, { tab: o.tab });
 }
@@ -915,7 +926,7 @@ function renderSetupUi(open) {
   // Back from the hub returns to the tab the builder was opened FROM (More, or Games from an empty day's
   // "Add games"): the shell keeps state.ui.tab untouched while the builder is up.
   const cameFrom = { now: 'Now', games: 'Games', chat: 'Chat', more: 'More' }[state.ui.tab] || 'More';
-  setTextIfChanged(setupEl('setup-back-label'), screen === 'hub' ? cameFrom : screen === 'rain' ? (setupRain.cameFrom === 'now' ? 'Now' : 'Schedule') : 'Set up the week');
+  setTextIfChanged(setupEl('setup-back-label'), screen === 'hub' ? cameFrom : screen === 'rain' ? (setupRain.cameFrom === 'now' ? 'Now' : 'Schedule') : screen === 'people' && peopleUi.from === 'more' ? 'More' : 'Set up the week');
   paintSetupSync();
   paintSetupHere();
   paintSetupDock();
@@ -927,6 +938,7 @@ function renderSetupUi(open) {
   else if (screen === 'rain') renderRainScreen();
   else if (HUB_SECTIONS.indexOf(screen) !== -1) renderSecScreen(screen);
   else if (screen === 'teams') renderTeamsScreen();
+  else if (screen === 'people') renderPeopleScreen();
   else if (typeof renderSettings === 'function') renderSettings();
   renderSetupMenuRows();
   paintSetupFit();
@@ -968,6 +980,7 @@ function setupUiClosed() {
   setupUi.wasOpen = false;
   setupUi.where = '';
   setupUi.detailsOpen = false;
+  peopleUi.from = '';
   if (typeof editorsHereStop === 'function') editorsHereStop();
   setupPillHide(true);
   SETUP_SHEETS.forEach((id) => { if (shell.sheets.includes(id)) shellSheetClose(id); });
@@ -978,7 +991,8 @@ function setupUiOnEvent(kind) {
   if (!setupUi.wasOpen || !builderOpen()) return;
   if (kind === 'sync') { paintSetupSync(); if (setupScreen() === 'backups') paintRestoreNote(); }
   else if (kind === 'here') { paintSetupHere(); if (setupScreen() === 'hub') paintHub(); }
-  else if (kind === 'tree' || kind === 'clashes') { paintSetupSync(); if (setupScreen() === 'hub') paintHub(); }
+  else if (kind === 'tree' || kind === 'clashes') { paintSetupSync(); if (setupScreen() === 'hub') paintHub(); else if (setupScreen() === 'people') renderPeopleScreen(); }
+  else if (kind === 'requests') { if (setupScreen() === 'hub') paintHub(); else if (setupScreen() === 'people') renderPeopleScreen(); }
   else if (kind === 'commit') { paintSetupSync(); paintSetupDock(); }
 }
 
@@ -1277,6 +1291,7 @@ function renderSetupSheet(id) {
   else if (id === 'sec-verse') renderSecVerseSheet();
   else if (id === 'team-edit') renderTeamSheet();
   else if (id === 'team-colors') renderTeamColorsSheet();
+  else if (PEOPLE_SHEETS.indexOf(id) !== -1) renderPeopleSheetById(id);
 }
 
 // Whether a setup sheet has anything to show (app.js shellSheetAllowed): the restore sheet needs a point
@@ -1291,6 +1306,7 @@ function setupSheetReady(id) {
   if (id === 'sec-station') return !!secUi.station;
   if (id === 'team-edit') return !!teamUi.edit;
   if (id === 'team-colors') return teamUi.colors === true;
+  if (PEOPLE_SHEETS.indexOf(id) !== -1) return peopleSheetReady(id);
   return id !== 'restore' || !!setupUi.rsheet;
 }
 
@@ -3905,6 +3921,7 @@ function wireSetupUi() {
   wireSchedulePlan();
   wireSecScreens();
   wireTeamsScreen();
+  wirePeopleScreen();
   // Camp week (§11.4): dates, the Days tick sheet, double points, the TV finale.
   on('#week-start', 'change', (e) => weekSetStart(e.target.value));
   on('#week-days', 'click', (e) => { const t = e.target.closest && e.target.closest('.wk-tick'); const row = t && t.closest('.wk-day'); if (t && row) weekTick(Number(row.dataset.dow), t.dataset.weekFollow); });
@@ -5704,4 +5721,792 @@ function wireTeamsScreen() {
   }
   const colors = setupEl('sheet-team-colors');
   if (colors) colors.addEventListener('click', (e) => { const b = q(e, '[data-team-pick]'); if (b) teamColorSet(b.dataset.teamPick, b.dataset.color); });
+}
+
+
+// ── 14. People (§11.8, §11.18 — Step 25, session 2) ──────────────────────────────────────────────────────────────────
+// One list by team for everyone on THIS camp (<root>/members, the retired Members drawer's data), the switch that lets people not on the
+// list ask to join, and the people asking. The data half is setup-sync.js's "PEOPLE" section (peopleRows / peopleGroups / peopleLetIn …);
+// this file paints and wires it. Each row opens ONE sheet (a person, a request) and three more hang off the screen (Put people on teams, Add
+// people, People you've blocked) — shell sheets, one at a time, editors only. Rules this file keeps:
+//   - everything a requester typed (name, note) reaches markup only through esc() and the input's own `value`;
+//   - the forms are written once per open and the INPUTS are the draft (a repaint never takes a typed word away);
+//   - a sheet with unsaved edits asks before it closes, by every route (setupSheetGuardClose), and holds the deploy's auto-reload;
+//   - "Needs a connection": every action refuses offline in words (peopleWhy) — a decision about access never queues behind a dead signal;
+//   - your own role and the owner row are read-only here ("Another director has to change your access" / "Owner · managed in the Firebase console").
+
+const peopleUi = {
+  person: null,    // the open person sheet: { key, origin, role, fresh, error, busy }
+  request: null,   // the open request sheet: { key, cand, role, fresh, busy, error }
+  teams: null,     // Put people on teams: { built, busy }
+  add: null,       // Add people: { pane, role, camps, fresh, busy, invite }
+  blocked: false,  // the Blocked sheet is meant to be open
+  other: { status: 'idle', list: null }, // the other camp's member list, ONE read, for a director of both camps' per-camp switch
+  from: '',        // 'more': opened from More's People row (Back leaves the builder)
+};
+
+const PEOPLE_SHEETS = ['people-person', 'people-request', 'people-teams', 'people-add', 'people-blocked'];
+
+function peopleRoleWord(role) { return role === 'editor' ? 'Director' : 'Counselor'; }
+
+function peopleTeamNameOf(id) {
+  return typeof teamShort === 'function' && teamShort(id) ? teamShort(id) : (typeof teamName === 'function' ? teamName(id) : id);
+}
+
+function peopleTeams() {
+  return (state.teams || []).filter((t) => t && typeof t.id === 'string');
+}
+
+function peopleMyKey() { return typeof identityKey === 'function' ? identityKey(authUser) : ''; }
+
+function peopleRowsNow() { return peopleRows(memberDirectory, peopleMyKey()); }
+
+function peopleRowOf(key) { return peopleRowsNow().find((r) => r.key === key) || null; }
+
+// "Signed in · Counselor", "No sign-in yet · Director", "Owner · managed in the Firebase console": words, never a mark alone.
+function peopleStatusWords(r) {
+  if (r.owner) return 'Owner · managed in the Firebase console';
+  return (r.pending ? 'No sign-in yet' : 'Signed in') + ' · ' + peopleRoleWord(r.role);
+}
+
+function peopleOptionsHtml(selected, none) {
+  return '<option value="">' + esc(none || 'No team') + '</option>' + peopleTeams().map((t) => '<option value="' + esc(t.id) + '"' + (t.id === selected ? ' selected' : '') + '>' + esc(t.name || t.id) + '</option>').join('');
+}
+
+function peopleSetSelect(sel, selected, none) {
+  if (!sel) return;
+  setHtmlIfChanged(sel, peopleOptionsHtml(selected, none));
+  if (sel.value !== (selected || '')) sel.value = selected || '';
+}
+
+function peopleSetSegChecked(box, attr, value) {
+  if (!box || !box.querySelectorAll) return;
+  box.querySelectorAll('[' + attr + ']').forEach((b) => { const on = String(b.getAttribute(attr) === value); if (b.getAttribute('aria-checked') !== on) b.setAttribute('aria-checked', on); });
+}
+
+function peopleOnline() { return typeof restoreOnline === 'function' && restoreOnline(); }
+
+// ── routing ──
+
+// More → People: the builder opens straight onto this screen, and Back leaves it (the hub is not in the way).
+function setupOpenPeople() {
+  if (!canEdit()) return false;
+  peopleUi.from = 'more';
+  openBuilder(undefined, 'people');
+  return true;
+}
+
+// ── the screen ──
+
+function peopleJoinView() {
+  const waiting = typeof peopleRequests === 'function' ? peopleRequests() : [];
+  return { on: pplAskingOn(), long: pplAskingLongOn(typeof serverNow === 'function' ? serverNow() : Date.now()), waiting: waiting.length, first: waiting[0] ? waiting[0].name : '' };
+}
+
+function peopleStatus() {
+  return hubStatus('people', {
+    membersLoaded: !!memberDirectoryLoaded, members: hubMembers(), teams: state.teams || [], now: typeof serverNow === 'function' ? serverNow() : Date.now(),
+    join: peopleJoinView(),
+  });
+}
+
+function peopleReqRowHtml(r, now) {
+  return '<button type="button" class="cb-row ppl-row ppl-req" data-key="r-' + esc(r.key) + '" data-req="' + esc(r.key) + '">' +
+    '<span class="cb-time"><small>' + esc(hubAgo(r.at, now)) + '</small></span>' +
+    '<span class="cb-main"><span class="cb-title">' + esc(r.name) + '</span><span class="cb-sub">' + esc(identityFromKey(r.key)) + '</span>' +
+    (r.note ? '<span class="cb-sub ppl-quote">' + esc(r.note) + '</span>' : '') + '</span>' +
+    '<span class="cb-end">See<svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span></button>';
+}
+
+function peoplePersonRowHtml(r) {
+  const initial = esc(String(r.name || '?').trim().charAt(0).toUpperCase() || '?');
+  const title = esc(r.name) + (r.self ? '<span class="ppl-tag">you</span>' : '');
+  const inner = '<span class="cb-time"><i class="ppl-face" aria-hidden="true">' + initial + '</i></span>' +
+    '<span class="cb-main"><span class="cb-title">' + title + '</span><span class="cb-sub">' + esc(peopleStatusWords(r)) + '</span></span>';
+  if (r.owner) return '<div class="cb-row ppl-row" data-key="p-' + esc(r.key) + '">' + inner + '<span class="cb-end"></span></div>';
+  return '<button type="button" class="cb-row ppl-row" data-key="p-' + esc(r.key) + '" data-person="' + esc(r.key) + '">' + inner +
+    '<span class="cb-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span></button>';
+}
+
+function peopleGroupHtml(key, mark, name, rows, none) {
+  const counts = hubPlural(rows.length, 'person', 'people');
+  return '<section class="ppl-group" data-key="g-' + esc(key) + '"><h3 class="ppl-head">' + mark + '<span class="ppl-head-name">' + esc(name) + '</span><span class="ppl-count">' + esc(counts) + '</span></h3>' +
+    '<div class="gl cb-list">' + (rows.length ? rows.map(peoplePersonRowHtml).join('') : '<p class="ppl-none">' + esc(none) + '</p>') + '</div></section>';
+}
+
+function renderPeopleScreen() {
+  peopleCleanSheets();
+  const st = peopleStatus();
+  const join = peopleJoinView();
+  setTextIfChanged(setupEl('people-title'), 'People · ' + CAMP.label);
+  setTextIfChanged(setupEl('people-headline'), st.problems.length ? st.problems[0] : st.summary);
+  setTextIfChanged(setupEl('people-lede'), st.problems.length > 1 ? hubPlural(st.problems.length - 1, 'more thing', 'more things') + ' to check' : st.problems.length ? 'Tap a person to see or change their access.' : 'Tap a person to change their team, role or sign-in.');
+  // the switch: the week's own meta/joinOpen, said in plain words either way
+  const sw = setupEl('people-asking');
+  if (sw && typeof sw.hasAttribute === 'function' && sw.hasAttribute('checked') !== join.on) sw.toggleAttribute('checked', join.on);
+  if (typeof paintSwitchWord === 'function') paintSwitchWord('people-asking', join.on);
+  setTextIfChanged(setupEl('people-ask-sub'), join.on ? 'Anyone signed in who isn’t on the list can ask from their own phone.' : 'Turn on during registration so people not on the list can ask from their own phone.');
+  setHiddenIfChanged(setupEl('people-asking-long'), !join.long);
+  // what is wrong with the data right now
+  const note = !memberDirectoryLoaded ? 'Loading the list…' : !fbRef ? 'Live sync is off on this device, so the list isn’t reachable.' : pplReq.denied ? 'Asking to join isn’t available yet — the database rules need updating.' : '';
+  setTextIfChanged(setupEl('people-state-text'), note);
+  setHiddenIfChanged(setupEl('people-state'), !note);
+  // the people asking, newest first
+  const now = typeof serverNow === 'function' ? serverNow() : Date.now();
+  const reqs = peopleRequests();
+  secPaintList(setupEl('people-requests'), reqs.map((r) => peopleReqRowHtml(r, now)).join(''), 'req', {});
+  setHiddenIfChanged(setupEl('people-req-sec'), !reqs.length);
+  setTextIfChanged(setupEl('people-req-label'), 'Asking to join · ' + reqs.length);
+  // everyone, by team
+  const g = peopleGroups(peopleRowsNow(), peopleTeams());
+  let html = '';
+  if (memberDirectoryLoaded) {
+    html = g.groups.map((x) => peopleGroupHtml(x.team.id, teamMarkHtml(x.team.id, { size: 24 }), x.team.name || x.team.id, x.rows, 'Nobody yet')).join('');
+    if (g.none.length) html += peopleGroupHtml('none', '', 'Not on a team', g.none, '');
+  }
+  secPaintList(setupEl('people-groups'), html, 'groups', {});
+  const online = peopleOnline();
+  ['people-teams-btn', 'people-add-btn'].forEach((id) => { const b = setupEl(id); if (b) { if (b.getAttribute && b.getAttribute('aria-disabled') !== String(!online)) b.setAttribute('aria-disabled', String(!online)); } });
+  setHiddenIfChanged(setupEl('people-teams-btn'), !memberDirectoryLoaded);
+  setHiddenIfChanged(setupEl('people-add-btn'), !memberDirectoryLoaded);
+}
+
+async function peopleToggleAsking(on) {
+  if (!peopleOnline()) { setupSay(peopleWhy({ reason: 'offline' })); renderPeopleScreen(); return; }
+  const r = peopleSetAsking(on === true);
+  if (!r.ok) { setupSay(r.reason === 'loading' ? 'The week is still loading. Try again in a moment.' : peopleWhy(r)); renderPeopleScreen(); return; }
+  setupSay(on ? 'People who aren’t on the list can now ask to join.' : 'Asking to join is off.');
+}
+
+// A sheet that was closed by any route leaves its state behind; the next pass of the screen drops it (a Forward must not reopen a stale form).
+function peopleCleanSheets() {
+  if (peopleUi.person && !shell.sheets.includes('people-person')) peopleUi.person = null;
+  if (peopleUi.request && !shell.sheets.includes('people-request')) peopleUi.request = null;
+  if (peopleUi.teams && !shell.sheets.includes('people-teams')) peopleUi.teams = null;
+  if (peopleUi.add && !shell.sheets.includes('people-add')) peopleUi.add = null;
+  if (peopleUi.blocked && !shell.sheets.includes('people-blocked')) peopleUi.blocked = false;
+}
+
+// ── the person sheet ──
+
+function peopleOtherLoad() {
+  if (peopleUi.other.status === 'loading' || peopleUi.other.status === 'ok') return;
+  if (typeof campRoleOf !== 'function' || campRoleOf(otherCampId()) !== 'editor' || !restoreHasFirebase()) return;
+  peopleUi.other.status = 'loading';
+  firebase.database().ref(CAMPS[otherCampId()].dbRoot + '/members').once('value').then((snap) => {
+    peopleUi.other = { status: 'ok', list: snap.val() || {} };
+    if (peopleUi.person && shell.sheets.includes('people-person')) renderPeopleSheet();
+  }, () => { peopleUi.other = { status: 'denied', list: null }; });
+}
+
+function peopleOpenPerson(key, opener) {
+  if (!canEdit()) return;
+  const r = peopleRowOf(key);
+  if (!r || r.owner) return;
+  peopleUi.person = { key, origin: { name: r.name, teamId: r.teamId, role: r.role }, role: r.role, fresh: true, error: {}, busy: false };
+  peopleOtherLoad();
+  setupSheet('people-person', opener);
+}
+
+function peoplePersonForm() {
+  const p = peopleUi.person;
+  const v = (id) => { const el = setupEl(id); return el && typeof el.value === 'string' ? el.value : ''; };
+  return { name: v('ppl-name').replace(/\s+/g, ' ').trim(), teamId: v('ppl-team'), role: p ? p.role : 'viewer' };
+}
+
+function peoplePersonDirty() {
+  const p = peopleUi.person;
+  if (!p || !shell.sheets.includes('people-person')) return false;
+  const f = peoplePersonForm();
+  return f.name !== p.origin.name || f.teamId !== p.origin.teamId || f.role !== p.origin.role;
+}
+
+function renderPeopleSheet() { renderPeoplePersonSheet(); }
+
+function renderPeoplePersonSheet() {
+  const p = peopleUi.person;
+  if (!p) return;
+  const r = peopleRowOf(p.key);
+  if (!r) { peopleUi.person = null; shellSheetClose('people-person'); setupSay('That person is no longer on the list.'); return; }
+  if (p.fresh) {
+    p.fresh = false;
+    const name = setupEl('ppl-name'); if (name) name.value = p.origin.name;
+    const si = setupEl('ppl-signin'); if (si) si.value = '';
+    const sel = setupEl('ppl-team'); if (sel) { setHtmlIfChanged(sel, peopleOptionsHtml(p.origin.teamId)); sel.value = p.origin.teamId; }
+  }
+  const me = r.self;
+  setTextIfChanged(setupEl('sheet-people-person-title'), r.name);
+  setTextIfChanged(setupEl('ppl-id-line'), r.pending ? 'No sign-in yet — a name and a team the directors typed.' : (me ? 'You · ' : '') + identityFromKey(r.key) + (me ? ' · another director has to change your access.' : ''));
+  setSegRoles(setupEl('ppl-role'), 'data-ppl-role', p.role, me);
+  setTextIfChanged(setupEl('ppl-role-note'), me ? 'Another director has to change your access.' : p.role === 'editor' ? 'Directors can enter scores, change the week and manage this list.' : 'Counselors can see the schedule, the games and chat.');
+  const dup = peopleNameClash(setupEl('ppl-name') ? setupEl('ppl-name').value : '', peopleRowsNow(), r.key);
+  void dup;
+  // per-camp access, for a director of both camps (their own row is someone else's to change)
+  const dual = !r.pending && !me && typeof campRoleOf === 'function' && campRoleOf(otherCampId()) === 'editor' && peopleUi.other.status === 'ok';
+  setHiddenIfChanged(setupEl('ppl-camps-fld'), !dual);
+  if (dual) {
+    const camps = [CAMP.id, otherCampId()].map((cid) => {
+      const rec = cid === CAMP.id ? (memberDirectory || {})[r.key] : (peopleUi.other.list || {})[r.key];
+      const cur = rec && (rec.role === 'editor' || rec.role === 'viewer') ? rec.role : 'none';
+      const seg = ['none', 'viewer', 'editor'].map((v) => '<button type="button" class="seg-btn" role="radio" aria-checked="' + (cur === v) + '" data-ppl-camp="' + esc(cid) + '" data-ppl-access="' + v + '">' + (v === 'none' ? 'None' : peopleRoleWord(v)) + '</button>').join('');
+      return '<div class="ppl-camp"><span class="ppl-camp-name">' + esc(CAMPS[cid].label) + '</span><div class="seg seg-fit" role="radiogroup" aria-label="' + esc(CAMPS[cid].label + ' access') + '">' + seg + '</div></div>';
+    }).join('');
+    setHtmlIfChanged(setupEl('ppl-camps'), camps);
+  }
+  setHiddenIfChanged(setupEl('ppl-signin-fld'), !r.pending);
+  setHiddenIfChanged(setupEl('ppl-same-fld'), !r.pending);
+  if (r.pending) {
+    const members = peopleRowsNow().filter((x) => !x.pending && !x.owner);
+    const sel = setupEl('ppl-same');
+    if (sel) {
+      const html = '<option value="">Pick someone…</option>' + members.map((m) => '<option value="' + esc(m.key) + '">' + esc(m.name + (m.teamId ? ' · ' + peopleTeamNameOf(m.teamId) : '')) + '</option>').join('');
+      setHtmlIfChanged(sel, html);
+    }
+  }
+  setHiddenIfChanged(setupEl('ppl-invite'), r.pending || me);
+  setHiddenIfChanged(setupEl('ppl-remove'), me);
+  const nameErr = (p.error && p.error.name) || '';
+  setTextIfChanged(setupEl('ppl-name-error'), nameErr);
+  setHiddenIfChanged(setupEl('ppl-name-error'), !nameErr);
+  const siErr = (p.error && p.error.signin) || '';
+  setTextIfChanged(setupEl('ppl-signin-error'), siErr);
+  setHiddenIfChanged(setupEl('ppl-signin-error'), !siErr);
+  secSetDisabled(setupEl('ppl-save'), p.busy);
+}
+
+// A Counselor / Director segmented control: the chosen one checked, the pair disabled when it is not yours to change.
+function setSegRoles(box, attr, value, locked) {
+  peopleSetSegChecked(box, attr, value);
+  if (box && box.querySelectorAll) box.querySelectorAll('[' + attr + ']').forEach((b) => { if (!!b.disabled !== !!locked) b.disabled = !!locked; });
+}
+
+async function peopleSavePersonSheet() {
+  const p = peopleUi.person;
+  if (!p || p.busy) return;
+  const f = peoplePersonForm();
+  p.error = {};
+  if (!f.name) { p.error.name = 'Give them a name.'; renderPeopleSheet(); return; }
+  const patch = {};
+  if (f.name !== p.origin.name) patch.name = f.name;
+  if (f.teamId !== p.origin.teamId) patch.teamId = f.teamId;
+  if (f.role !== p.origin.role) patch.role = f.role;
+  if (!Object.keys(patch).length) { peopleUi.person = null; shellSheetClose('people-person'); return; }
+  p.busy = true; renderPeopleSheet();
+  const res = await peopleSavePerson(p.key, patch);
+  if (peopleUi.person !== p) return;
+  p.busy = false;
+  if (!res.ok) { p.error.name = peopleWhy(res); renderPeopleSheet(); return; }
+  const who = patch.name || p.origin.name;
+  setupSay(patch.role ? who + ' is now a ' + peopleRoleWord(patch.role).toLowerCase() : patch.teamId !== undefined ? (patch.teamId ? who + ' is with ' + peopleTeamNameOf(patch.teamId) : who + ' is not on a team') : 'Saved');
+  peopleUi.person = null;
+  shellSheetClose('people-person');
+}
+
+async function peopleRemovePerson() {
+  const p = peopleUi.person;
+  const r = p && peopleRowOf(p.key);
+  if (!r || p.busy) return;
+  if (!peopleOnline()) { setupSay(peopleWhy({ reason: 'offline' })); return; }
+  const v = await askDialog({
+    title: 'Remove ' + r.name + ' from ' + CAMP.label + '?',
+    body: r.pending ? 'This takes their name off the list.' : 'They lose access to ' + CAMP.label + ' the moment this saves. Access changes can’t be undone with Undo — add them back here if you change your mind.',
+    actions: [{ label: 'Keep ' + r.name, value: 'keep', cancel: true }, { label: 'Remove', value: 'remove', kind: 'danger' }],
+  });
+  if (v !== 'remove' || peopleUi.person !== p) return;
+  const res = await peopleRemove(p.key);
+  if (!res.ok) { setupSay(peopleWhy(res)); return; }
+  setupSay(r.name + ' removed');
+  peopleUi.person = null;
+  shellSheetClose('people-person');
+}
+
+async function peoplePersonSignIn() {
+  const p = peopleUi.person;
+  if (!p || p.busy) return;
+  const el = setupEl('ppl-signin');
+  p.error = {};
+  p.busy = true; renderPeopleSheet();
+  const res = await peopleAddSignIn(p.key, el ? el.value : '');
+  if (peopleUi.person !== p) return;
+  p.busy = false;
+  if (!res.ok) { p.error.signin = peopleWhy(res); renderPeopleSheet(); return; }
+  setupSay(identityFromKey(res.key) + ' can now sign in');
+  peopleUi.person = null;
+  shellSheetClose('people-person');
+  if (res.invite) peopleOpenAdd(null, 'one', { invite: res.invite });
+}
+
+async function peoplePersonSameAs() {
+  const p = peopleUi.person;
+  const sel = setupEl('ppl-same');
+  const to = sel ? sel.value : '';
+  if (!p || p.busy) return;
+  if (!to) { p.error = { signin: 'Pick the person they are first.' }; renderPeopleSheet(); return; }
+  const target = peopleRowOf(to);
+  const me = peopleRowOf(p.key);
+  if (!target || !me) return;
+  const v = await askDialog({ title: 'Merge ' + me.name + ' into ' + target.name + '?', body: 'The “no sign-in yet” row goes away and ' + target.name + ' stays' + (me.teamId && !target.teamId ? ', on ' + peopleTeamNameOf(me.teamId) : '') + '.',
+    actions: [{ label: 'Not now', value: 'no', cancel: true }, { label: 'Merge', value: 'yes', kind: 'gold' }] });
+  if (v !== 'yes' || peopleUi.person !== p) return;
+  const res = await peopleSameAs(p.key, to);
+  if (!res.ok) { setupSay(peopleWhy(res)); return; }
+  setupSay(me.name + ' is ' + target.name);
+  peopleUi.person = null;
+  shellSheetClose('people-person');
+}
+
+async function peopleCampAccess(cid, value) {
+  const p = peopleUi.person;
+  if (!p || p.busy) return;
+  const r = peopleRowOf(p.key);
+  if (!r) return;
+  if (value === 'none') {
+    const v = await askDialog({ title: 'Remove ' + r.name + ' from ' + CAMPS[cid].label + '?', body: 'They lose access to it the moment this saves.', actions: [{ label: 'Not now', value: 'no', cancel: true }, { label: 'Remove', value: 'yes', kind: 'danger' }] });
+    if (v !== 'yes') return;
+  }
+  const res = await peopleSetCampAccess(p.key, cid, value);
+  if (!res.ok) { setupSay(peopleWhy(res)); return; }
+  if (cid !== CAMP.id && peopleUi.other.list) { if (value === 'none') delete peopleUi.other.list[p.key]; else peopleUi.other.list[p.key] = Object.assign({}, peopleUi.other.list[p.key], { role: value, name: r.name }); }
+  setupSay(value === 'none' ? r.name + ' removed from ' + CAMPS[cid].label : r.name + ' is now a ' + peopleRoleWord(value).toLowerCase() + ' at ' + CAMPS[cid].label);
+  renderPeopleSheet();
+}
+
+function peopleCopyInvite(btn) {
+  const p = peopleUi.person;
+  const r = p && peopleRowOf(p.key);
+  if (!r || typeof inviteText !== 'function') return;
+  copyTextToClipboard(inviteText(r.key, r.role), btn);
+}
+
+// ── a request ──
+
+function peopleOpenRequest(key, opener) {
+  if (!canEdit()) return;
+  const req = peopleRequests().find((r) => r.key === key);
+  if (!req) return;
+  const hint = peopleTeamInText(req.note, peopleTeams());
+  peopleUi.request = { key, cand: peopleCandidates(req, peopleRowsNow(), peopleTeams()).length ? null : '', role: 'viewer', teamId: hint, fresh: true, busy: false, error: '' };
+  setupSheet('people-request', opener);
+}
+
+function peopleReqCurrent() {
+  const q = peopleUi.request;
+  return q ? peopleRequests().find((r) => r.key === q.key) || null : null;
+}
+
+function peopleReqDirName() {
+  const el = setupEl('prq-dirname');
+  return el && typeof el.value === 'string' ? el.value.replace(/\s+/g, ' ').trim() : '';
+}
+
+function renderPeopleRequestSheet() {
+  const q = peopleUi.request;
+  if (!q) return;
+  const req = peopleReqCurrent();
+  if (!req) { peopleUi.request = null; shellSheetClose('people-request'); if (!q.done) setupSay('Someone already dealt with that request.'); return; }
+  const rows = peopleRowsNow();
+  const cands = peopleCandidates(req, rows, peopleTeams());
+  if (q.fresh) {
+    q.fresh = false;
+    const nm = setupEl('prq-dirname'); if (nm) nm.value = req.name;
+    const cf = setupEl('prq-confirm'); if (cf) cf.value = '';
+    const sel = setupEl('prq-team'); if (sel) { setHtmlIfChanged(sel, peopleOptionsHtml(q.teamId)); sel.value = q.teamId || ''; }
+  }
+  setTextIfChanged(setupEl('prq-name'), req.name);
+  setTextIfChanged(setupEl('prq-id'), identityFromKey(req.key));
+  setTextIfChanged(setupEl('prq-note'), req.note || '');
+  setHiddenIfChanged(setupEl('prq-note'), !req.note);
+  setTextIfChanged(setupEl('prq-when'), 'Asked ' + hubAgo(req.at, typeof serverNow === 'function' ? serverNow() : Date.now()));
+  // "Is this someone already on the list?" — pending rows that might be them; nothing is guessed (ux-R8)
+  setHiddenIfChanged(setupEl('prq-cands-sec'), !cands.length);
+  const rowsHtml = cands.map((c) => '<button type="button" class="cb-row" role="radio" aria-checked="' + (q.cand === c.key) + '" data-prq-cand="' + esc(c.key) + '"><span class="cb-time"><i class="ppl-cand-dot" aria-hidden="true"></i></span>' +
+    '<span class="cb-main"><span class="cb-title">' + esc(c.name) + '</span><span class="cb-sub">' + esc([c.teamId ? peopleTeamNameOf(c.teamId) : 'No team', peopleRoleWord(c.role), 'No sign-in yet'].join(' · ')) + '</span></span></button>').join('') +
+    '<button type="button" class="cb-row" role="radio" aria-checked="' + (q.cand === '') + '" data-prq-cand=""><span class="cb-time"><i class="ppl-cand-dot" aria-hidden="true"></i></span><span class="cb-main"><span class="cb-title">None of these</span><span class="cb-sub">A new person</span></span></button>';
+  setHtmlIfChanged(setupEl('prq-cands'), rowsHtml);
+  const link = q.cand ? cands.find((c) => c.key === q.cand) : null;
+  if (q.cand && !link) q.cand = cands.length ? null : '';
+  const mode = link ? 'link' : q.cand === null ? 'choose' : 'new';
+  setHiddenIfChanged(setupEl('prq-new'), mode !== 'new');
+  setHiddenIfChanged(setupEl('prq-link'), mode !== 'link');
+  if (link) {
+    setTextIfChanged(setupEl('prq-link-text'), 'Link ' + req.name + ' to ' + link.name + ' (' + [link.teamId ? peopleTeamNameOf(link.teamId) : 'No team', peopleRoleWord(link.role)].join(' · ') + ')? Their sign-in takes over that row’s name, team and role.');
+    setHiddenIfChanged(setupEl('prq-confirm-fld'), link.role !== 'editor');
+  }
+  peopleSetSegChecked(setupEl('prq-role'), 'data-prq-role', q.role);
+  // the directory name is what chat trusts: a likely clash is said before it is written
+  const clash = mode === 'new' ? peopleNameClash(peopleReqDirName(), rows, '') : null;
+  setTextIfChanged(setupEl('prq-clash'), clash ? 'There’s already a ' + (peopleFirst(clash.name) ? clash.name.split(' ')[0] : clash.name) + ' on the list — use a last initial?' : '');
+  setHiddenIfChanged(setupEl('prq-clash'), !clash);
+  setTextIfChanged(setupEl('prq-error'), q.error || '');
+  setHiddenIfChanged(setupEl('prq-error'), !q.error);
+  const go = setupEl('prq-go');
+  setTextIfChanged(go, mode === 'link' ? 'Link them' : mode === 'choose' ? 'Pick one above' : 'Let in as ' + peopleRoleWord(q.role).toLowerCase());
+  secSetDisabled(go, q.busy || mode === 'choose');
+  if (go && go.setAttribute) go.setAttribute('aria-disabled', String(q.busy || mode === 'choose'));
+  secSetDisabled(setupEl('prq-notnow'), q.busy);
+  secSetDisabled(setupEl('prq-block'), q.busy);
+}
+
+async function peopleRequestGo() {
+  const q = peopleUi.request;
+  const req = peopleReqCurrent();
+  if (!q || !req || q.busy || q.cand === null) return;
+  q.error = '';
+  q.busy = true; renderPeopleRequestSheet();
+  let res;
+  let said;
+  if (q.cand) {
+    const cf = setupEl('prq-confirm');
+    res = await peopleLink(req, q.cand, { confirm: cf ? cf.value : '' });
+    said = req.name + ' is linked and can now sign in';
+  } else {
+    const name = peopleReqDirName();
+    if (!name) { q.busy = false; q.error = 'Give them a name for the list.'; renderPeopleRequestSheet(); return; }
+    const sel = setupEl('prq-team');
+    res = await peopleLetIn(req, { name, role: q.role, teamId: sel ? sel.value : '' });
+    said = name + ' can now sign in';
+  }
+  if (peopleUi.request !== q) return;
+  q.busy = false;
+  if (!res.ok) { q.error = peopleWhy(res); renderPeopleRequestSheet(); return; }
+  q.done = true;
+  setupSay(res.already ? 'They were already on the list.' : said);
+  peopleUi.request = null;
+  shellSheetClose('people-request');
+}
+
+async function peopleRequestNotNow() {
+  const q = peopleUi.request;
+  const req = peopleReqCurrent();
+  if (!q || !req || q.busy) return;
+  q.busy = true; renderPeopleRequestSheet();
+  const res = await peopleNotNow(req);
+  if (peopleUi.request !== q) return;
+  q.busy = false;
+  if (!res.ok) { q.error = peopleWhy(res); renderPeopleRequestSheet(); return; }
+  q.done = true;
+  setupSay('Request removed');
+  peopleUi.request = null;
+  shellSheetClose('people-request');
+}
+
+async function peopleRequestBlock() {
+  const q = peopleUi.request;
+  const req = peopleReqCurrent();
+  if (!q || !req || q.busy) return;
+  if (!peopleOnline()) { q.error = peopleWhy({ reason: 'offline' }); renderPeopleRequestSheet(); return; }
+  const v = await askDialog({ title: 'Block ' + req.name + '?', body: ['They won’t be able to ask again until you unblock them (People → People you’ve blocked).', 'They’re told asking isn’t open, never that they were blocked.'],
+    actions: [{ label: 'Not now', value: 'no', cancel: true }, { label: 'Block', value: 'yes', kind: 'danger' }] });
+  if (v !== 'yes' || peopleUi.request !== q) return;
+  q.busy = true; renderPeopleRequestSheet();
+  const res = await peopleBlock(req);
+  if (peopleUi.request !== q) return;
+  q.busy = false;
+  if (!res.ok) { q.error = peopleWhy(res); renderPeopleRequestSheet(); return; }
+  q.done = true;
+  setupSay(req.name + ' blocked');
+  peopleUi.request = null;
+  shellSheetClose('people-request');
+}
+
+// ── Put people on teams ──
+
+function peopleOpenTeams(opener) {
+  if (!canEdit()) return;
+  if (!peopleOnline()) { setupSay(peopleWhy({ reason: 'offline' })); return; }
+  peopleUi.teams = { built: false, busy: false, error: '' };
+  setupSheet('people-teams', opener);
+}
+
+// The rows are written once per open; the native selects ARE the draft.
+function renderPeopleTeamsSheet() {
+  const t = peopleUi.teams;
+  if (!t) return;
+  if (!t.built) {
+    t.built = true;
+    const teams = peopleTeams();
+    const order = (r) => { const i = teams.findIndex((x) => x.id === r.teamId); return i === -1 ? 999 : i; };
+    const rows = peopleRowsNow().filter((r) => !r.owner).sort((a, b) => order(a) - order(b) || a.name.localeCompare(b.name));
+    setHtmlIfChanged(setupEl('ppt-list'), rows.map((r) => '<div class="cb-row" data-key="t-' + esc(r.key) + '"><span class="cb-main"><span class="cb-title">' + esc(r.name) + '</span><span class="cb-sub">' + esc(peopleStatusWords(r)) + '</span></span>' +
+      '<select class="fld-input" data-ppt-pick="' + esc(r.key) + '" aria-label="' + esc('Team for ' + r.name) + '">' + peopleOptionsHtml(r.teamId) + '</select></div>').join(''));
+  }
+  setTextIfChanged(setupEl('ppt-error'), t.error || '');
+  setHiddenIfChanged(setupEl('ppt-error'), !t.error);
+  secSetDisabled(setupEl('ppt-save'), t.busy);
+  setTextIfChanged(setupEl('ppt-save'), t.busy ? 'Saving…' : 'Save teams');
+}
+
+function peopleTeamsPicks() {
+  const picks = {};
+  const list = setupEl('ppt-list');
+  if (list && list.querySelectorAll) list.querySelectorAll('select[data-ppt-pick]').forEach((s) => { picks[s.dataset.pptPick] = s.value; });
+  return picks;
+}
+
+function peopleTeamsDirty() {
+  return !!(peopleUi.teams && shell.sheets.includes('people-teams') && peopleTeamChanges(peopleRowsNow(), peopleTeamsPicks()).length);
+}
+
+async function peopleSaveTeamsSheet() {
+  const t = peopleUi.teams;
+  if (!t || t.busy) return;
+  const changes = peopleTeamChanges(peopleRowsNow(), peopleTeamsPicks());
+  t.error = '';
+  if (!changes.length) { peopleUi.teams = null; shellSheetClose('people-teams'); return; }
+  t.busy = true; renderPeopleTeamsSheet();
+  const res = await peopleSaveTeams(changes);
+  if (peopleUi.teams !== t) return;
+  t.busy = false;
+  if (res.reason) { t.error = peopleWhy(res); renderPeopleTeamsSheet(); return; }
+  if (!res.ok) { t.error = 'Couldn’t save ' + hubJoin(res.failed.map((f) => f.name || 'someone')) + '. The rest are saved.'; renderPeopleTeamsSheet(); return; }
+  setupSay(res.saved === 1 ? 'Saved 1 team' : 'Saved ' + res.saved + ' teams');
+  peopleUi.teams = null;
+  shellSheetClose('people-teams');
+}
+
+// ── Add people ──
+
+function peopleOpenAdd(opener, pane, o) {
+  if (!canEdit()) return;
+  if (!peopleOnline()) { setupSay(peopleWhy({ reason: 'offline' })); return; }
+  peopleUi.add = { pane: pane === 'one' ? 'one' : 'list', role: 'viewer', camps: 'active', fresh: true, busy: false, error: '', invite: (o && o.invite) || '' };
+  setupSheet('people-add', opener);
+}
+
+function peopleAddFields() {
+  const v = (id) => { const el = setupEl(id); return el && typeof el.value === 'string' ? el.value : ''; };
+  return { lines: v('ppa-lines'), id: v('ppa-id').trim(), name: v('ppa-name').replace(/\s+/g, ' ').trim(), team: v('ppa-team') };
+}
+
+function peopleAddDirty() {
+  const a = peopleUi.add;
+  if (!a || !shell.sheets.includes('people-add') || a.busy) return false;
+  const f = peopleAddFields();
+  return !!(f.lines.trim() || f.id || f.name);
+}
+
+function peopleAddPreviewHtml(parsed) {
+  return parsed.rows.filter((r) => r.status !== 'empty').map((r, i) => {
+    const team = r.teamId ? peopleTeamNameOf(r.teamId) : '';
+    const title = r.status === 'new' ? r.name + ' → ' + (team || 'no team')
+      : r.status === 'update' ? r.name + ' → put on ' + team
+      : r.status === 'same' ? r.name + ' is already on the list'
+      : r.name + ' is listed twice';
+    const sub = r.status === 'new' ? (r.note ? r.note + ', so no team' : 'Will be added with no sign-in yet')
+      : r.status === 'update' ? 'Already on the list — only their team changes'
+      : r.status === 'same' ? (r.note || 'Nothing to change') : 'Skipped';
+    return '<div class="cb-row" data-key="a-' + i + '" data-status="' + r.status + '"><span class="cb-main"><span class="cb-title">' + esc(title) + '</span><span class="cb-sub">' + esc(sub) + '</span></span></div>';
+  }).join('');
+}
+
+function renderPeopleAddSheet() {
+  const a = peopleUi.add;
+  if (!a) return;
+  const sheet = setupEl('sheet-people-add');
+  if (a.fresh) {
+    a.fresh = false;
+    ['ppa-lines', 'ppa-id', 'ppa-name'].forEach((id) => { const el = setupEl(id); if (el) el.value = ''; });
+    const sel = setupEl('ppa-team'); if (sel) { setHtmlIfChanged(sel, peopleOptionsHtml('')); sel.value = ''; }
+  }
+  if (sheet && sheet.dataset && sheet.dataset.pane !== a.pane) sheet.dataset.pane = a.pane;
+  peopleSetSegChecked(setupEl('ppa-pane'), 'data-ppa-pane', a.pane);
+  peopleSetSegChecked(setupEl('ppa-role'), 'data-ppa-role', a.role);
+  peopleSetSegChecked(setupEl('ppa-camps'), 'data-ppa-camps', a.camps);
+  const dual = typeof campRoleOf === 'function' && campRoleOf(otherCampId()) === 'editor';
+  setHiddenIfChanged(setupEl('ppa-camps-fld'), !dual);
+  const missing = typeof missingSeedCounselors === 'function' && (CAMP.seedCounselors || []).length ? missingSeedCounselors(memberDirectory || {}) : [];
+  setHiddenIfChanged(setupEl('ppa-roster'), !missing.length);
+  const parsed = peopleParseLines(peopleAddFields().lines, peopleRowsNow(), peopleTeams());
+  setHtmlIfChanged(setupEl('ppa-preview'), a.pane === 'list' ? peopleAddPreviewHtml(parsed) : '');
+  const n = parsed.add.length, m = parsed.update.length;
+  const go = setupEl('ppa-go');
+  const label = a.pane === 'one' ? 'Add person' : !n && !m ? 'Add people' : n && m ? 'Add ' + n + ', update ' + m : n ? 'Add ' + hubPlural(n, 'person', 'people') : 'Update ' + hubPlural(m, 'person', 'people');
+  setTextIfChanged(go, a.busy ? 'Saving…' : label);
+  secSetDisabled(go, a.busy || (a.pane === 'list' && !n && !m));
+  setTextIfChanged(setupEl('ppa-error'), a.error || '');
+  setHiddenIfChanged(setupEl('ppa-error'), !a.error);
+  setHiddenIfChanged(setupEl('ppa-invite'), !a.invite);
+  const it = setupEl('ppa-invite-text'); if (it && it.value !== a.invite) it.value = a.invite || '';
+}
+
+async function peopleAddGo() {
+  const a = peopleUi.add;
+  if (!a || a.busy) return;
+  a.error = '';
+  const f = peopleAddFields();
+  if (a.pane === 'list') {
+    const parsed = peopleParseLines(f.lines, peopleRowsNow(), peopleTeams());
+    if (!parsed.add.length && !parsed.update.length) { renderPeopleAddSheet(); return; }
+    a.busy = true; renderPeopleAddSheet();
+    const res = await peopleAddLines(parsed, 'viewer');
+    if (peopleUi.add !== a) return;
+    a.busy = false;
+    if (!res.ok) { a.error = peopleWhy(res); renderPeopleAddSheet(); return; }
+    setupSay((res.added ? 'Added ' + hubPlural(res.added, 'person', 'people') : '') + (res.added && res.moved ? ' · ' : '') + (res.moved ? hubPlural(res.moved, 'person', 'people') + ' put on a team' : ''));
+    peopleUi.add = null;
+    shellSheetClose('people-add');
+    return;
+  }
+  a.busy = true; renderPeopleAddSheet();
+  const res = await peopleAddMember({ id: f.id, name: f.name, role: a.role, teamId: f.team, bothCamps: a.camps === 'both' });
+  if (peopleUi.add !== a) return;
+  a.busy = false;
+  if (!res.ok) { a.error = peopleWhy(res); renderPeopleAddSheet(); return; }
+  setupSay(res.pending ? (f.name || 'They') + ' added — no sign-in yet' : identityFromKey(res.key) + ' can now sign in');
+  a.invite = res.invite || '';
+  ['ppa-id', 'ppa-name'].forEach((id) => { const el = setupEl(id); if (el) el.value = ''; });
+  if (!a.invite) { peopleUi.add = null; shellSheetClose('people-add'); return; }
+  renderPeopleAddSheet();
+}
+
+// "Fill in last year's printed roster" (junior): the people the printed list has that the camp's list doesn't, as lines the preview reads.
+function peopleFillRoster() {
+  if (typeof missingSeedCounselors !== 'function') return;
+  const lines = missingSeedCounselors(memberDirectory || {}).map((c) => c.name + (c.teamId ? ', ' + peopleTeamNameOf(c.teamId) : ''));
+  const ta = setupEl('ppa-lines');
+  if (ta && lines.length) { ta.value = (ta.value.trim() ? ta.value.replace(/\s+$/, '') + '\n' : '') + lines.join('\n'); renderPeopleAddSheet(); }
+}
+
+// ── the Blocked list ──
+
+function peopleOpenBlocked(opener) {
+  if (!canEdit()) return;
+  peopleUi.blocked = true;
+  setupSheet('people-blocked', opener);
+  peopleLoadBlocked().then(() => { if (peopleUi.blocked && shell.sheets.includes('people-blocked')) renderPeopleBlockedSheet(); });
+}
+
+function renderPeopleBlockedSheet() {
+  const b = pplReq.blocked;
+  const now = typeof serverNow === 'function' ? serverNow() : Date.now();
+  setHtmlIfChanged(setupEl('blk-list'), b.status === 'ok' ? b.rows.map((r) => '<div class="cb-row" data-key="b-' + esc(r.key) + '"><span class="cb-main"><span class="cb-title">' + esc(identityFromKey(r.key)) + '</span>' +
+    '<span class="cb-sub">Blocked ' + esc(hubAgo(r.at, now)) + '</span></span><span class="cb-end"><button type="button" class="btn btn-sm" data-ppl-unblock="' + esc(r.key) + '">Unblock</button></span></div>').join('') : '');
+  const empty = b.status === 'ok' ? (b.rows.length ? '' : 'Nobody is blocked.') : b.status === 'loading' || b.status === 'idle' ? 'Loading…' : b.status === 'denied' ? 'Blocking isn’t available yet — the database rules need updating.' : 'Needs the camp database.';
+  setTextIfChanged(setupEl('blk-empty'), empty);
+  setHiddenIfChanged(setupEl('blk-empty'), !empty);
+}
+
+async function peopleUnblockRow(key) {
+  const res = await peopleUnblock(key);
+  if (!res.ok) { setupSay(peopleWhy(res)); return; }
+  setupSay(identityFromKey(key) + ' can ask again');
+  renderPeopleBlockedSheet();
+}
+
+// ── closing: unsaved edits ask first, by every route ──
+
+function peopleGuardClose(dirty, noun, onDiscard) {
+  if (!dirty()) return false;
+  if (askIsOpen()) return true;
+  askDialog({ title: 'Discard your changes' + (noun ? ' to ' + noun : '') + '?', body: 'They haven’t been saved yet.', actions: [{ label: 'Keep editing', value: 'keep', cancel: true }, { label: 'Discard', value: 'discard', kind: 'danger' }] })
+    .then((v) => { if (v === 'discard') onDiscard(); });
+  return true;
+}
+
+function peoplePersonGuardClose() {
+  const p = peopleUi.person;
+  return peopleGuardClose(peoplePersonDirty, p ? p.origin.name : '', () => { if (peopleUi.person === p) { peopleUi.person = null; shellSheetClose('people-person'); } });
+}
+function peopleTeamsGuardClose() {
+  const t = peopleUi.teams;
+  return peopleGuardClose(peopleTeamsDirty, 'teams', () => { if (peopleUi.teams === t) { peopleUi.teams = null; shellSheetClose('people-teams'); } });
+}
+function peopleAddGuardClose() {
+  const a = peopleUi.add;
+  return peopleGuardClose(peopleAddDirty, '', () => { if (peopleUi.add === a) { peopleUi.add = null; shellSheetClose('people-add'); } });
+}
+
+// An open sheet with unsaved edits, or one still writing, holds the deploy's auto-reload (the forms live in memory only).
+function peopleBusy() {
+  return !!((peopleUi.person && (peopleUi.person.busy || peoplePersonDirty())) || (peopleUi.request && peopleUi.request.busy) ||
+    (peopleUi.teams && (peopleUi.teams.busy || peopleTeamsDirty())) || (peopleUi.add && (peopleUi.add.busy || peopleAddDirty())));
+}
+
+function renderPeopleSheetById(id) {
+  if (id === 'people-person') renderPeoplePersonSheet();
+  else if (id === 'people-request') renderPeopleRequestSheet();
+  else if (id === 'people-teams') renderPeopleTeamsSheet();
+  else if (id === 'people-add') renderPeopleAddSheet();
+  else if (id === 'people-blocked') renderPeopleBlockedSheet();
+}
+
+function peopleSheetReady(id) {
+  if (id === 'people-person') return !!peopleUi.person;
+  if (id === 'people-request') return !!peopleUi.request;
+  if (id === 'people-teams') return !!peopleUi.teams;
+  if (id === 'people-add') return !!peopleUi.add;
+  if (id === 'people-blocked') return peopleUi.blocked === true;
+  return false;
+}
+
+// ── wiring ──
+
+function wirePeopleScreen() {
+  const on = (sel, ev, fn) => { const el = typeof sel === 'string' ? document.querySelector(sel) : sel; if (el) el.addEventListener(ev, fn); };
+  const q = (e, sel) => (e.target && e.target.closest ? e.target.closest(sel) : null);
+  on('#people-asking', 'change', (e) => { peopleToggleAsking(!!e.target.checked); });
+  on('#people-requests', 'click', (e) => { const b = q(e, 'button[data-req]'); if (b) peopleOpenRequest(b.dataset.req, b); });
+  on('#people-groups', 'click', (e) => { const b = q(e, 'button[data-person]'); if (b) peopleOpenPerson(b.dataset.person, b); });
+  on('#people-teams-btn', 'click', (e) => peopleOpenTeams(e.currentTarget));
+  on('#people-add-btn', 'click', (e) => peopleOpenAdd(e.currentTarget, 'list'));
+  on('#people-blocked-btn', 'click', (e) => peopleOpenBlocked(e.currentTarget));
+  // ✕ and the backdrop of a form ask before they throw edits away (Escape and Back reach the same question through setupSheetGuardClose).
+  const guarded = { 'sheet-people-person': peoplePersonGuardClose, 'sheet-people-teams': peopleTeamsGuardClose, 'sheet-people-add': peopleAddGuardClose };
+  Object.keys(guarded).forEach((id) => { const s = setupEl(id); if (s) s.addEventListener('click', (e) => { if (q(e, '[data-sheet-close]') && guarded[id]()) e.stopPropagation(); }, true); });
+  // the person
+  const person = setupEl('sheet-people-person');
+  if (person) {
+    person.addEventListener('click', (e) => {
+      let b;
+      if ((b = q(e, '[data-ppl-role]'))) { const p = peopleUi.person; if (p && !b.disabled) { p.role = b.dataset.pplRole; renderPeoplePersonSheet(); } }
+      else if ((b = q(e, '[data-ppl-camp]'))) peopleCampAccess(b.dataset.pplCamp, b.dataset.pplAccess);
+      else if (q(e, '#ppl-signin-btn')) peoplePersonSignIn();
+      else if (q(e, '#ppl-same-btn')) peoplePersonSameAs();
+      else if (q(e, '#ppl-remove')) peopleRemovePerson();
+      else if ((b = q(e, '#ppl-invite'))) peopleCopyInvite(b);
+    });
+    person.addEventListener('input', (e) => { if (e.target && e.target.id === 'ppl-name') { const p = peopleUi.person; if (p && p.error) { p.error = {}; } } });
+  }
+  on('#ppl-form', 'submit', (e) => { e.preventDefault(); peopleSavePersonSheet(); });
+  on('#ppl-save', 'click', () => peopleSavePersonSheet());
+  // a request
+  const req = setupEl('sheet-people-request');
+  if (req) {
+    req.addEventListener('click', (e) => {
+      let b;
+      const r = peopleUi.request;
+      if (!r) return;
+      if ((b = q(e, '[data-prq-cand]'))) { r.cand = b.dataset.prqCand; r.error = ''; renderPeopleRequestSheet(); }
+      else if ((b = q(e, '[data-prq-role]'))) { r.role = b.dataset.prqRole; renderPeopleRequestSheet(); }
+    });
+    req.addEventListener('input', (e) => { if (e.target && (e.target.id === 'prq-dirname' || e.target.id === 'prq-confirm')) { const r = peopleUi.request; if (r) { r.error = ''; renderPeopleRequestSheet(); } } });
+  }
+  on('#prq-form', 'submit', (e) => { e.preventDefault(); peopleRequestGo(); });
+  on('#prq-go', 'click', () => peopleRequestGo());
+  on('#prq-notnow', 'click', () => peopleRequestNotNow());
+  on('#prq-block', 'click', () => peopleRequestBlock());
+  // Put people on teams
+  on('#ppt-save', 'click', () => peopleSaveTeamsSheet());
+  on('#ppt-paste', 'click', () => {
+    if (peopleTeamsDirty()) { setupSay('Save your team changes first.'); return; }
+    peopleUi.teams = null; peopleOpenAdd(null, 'list');
+  });
+  // Add people
+  const add = setupEl('sheet-people-add');
+  if (add) {
+    add.addEventListener('click', (e) => {
+      let b;
+      const a = peopleUi.add;
+      if (!a) return;
+      if ((b = q(e, '[data-ppa-pane]'))) { a.pane = b.dataset.ppaPane; a.error = ''; renderPeopleAddSheet(); }
+      else if ((b = q(e, '[data-ppa-role]'))) { a.role = b.dataset.ppaRole; renderPeopleAddSheet(); }
+      else if ((b = q(e, '[data-ppa-camps]'))) { a.camps = b.dataset.ppaCamps; renderPeopleAddSheet(); }
+      else if (q(e, '#ppa-roster')) peopleFillRoster();
+      else if ((b = q(e, '#ppa-invite-copy'))) copyTextToClipboard(a.invite, b);
+    });
+    add.addEventListener('input', (e) => { if (e.target && e.target.id === 'ppa-lines') renderPeopleAddSheet(); });
+  }
+  on('#ppa-form', 'submit', (e) => { e.preventDefault(); });
+  on('#ppa-go', 'click', () => peopleAddGo());
+  on('#blk-list', 'click', (e) => { const b = q(e, 'button[data-ppl-unblock]'); if (b) peopleUnblockRow(b.dataset.pplUnblock); });
 }
