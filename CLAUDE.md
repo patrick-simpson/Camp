@@ -936,7 +936,7 @@ TAB"), **the model** (app.js "THE GAMES ENGINE": plain data from `nowCtx` — th
   with the printed week (the owner's Use the original week again) no game is linked to a block, so the leftovers keep their session's name (senior's
   Afternoon and Legacy games) and no group says "Not on the schedule". **ONE "up next"** (today: the first game not
   started from the block under way) and **ONE gold Score** (the first live game this director can score, else up next); a director's own team's round
-  (`gameRoundTeams` → `blockedByOwnTeam`) shows the reason instead of Score. An empty day names itself with Add games (the Games screen in Set up the week, on that day: `gmOpenScreen`).
+  (`gameRoundTeams` → `blockedByOwnTeam`) shows the reason instead of Score. An empty day names itself with Add games (the game sheet on that day, over the tab: `gmAddGames`).
 - **Next game** (`gamesNextAfter`, `gamesDock`, `openNextGame`): after a result the takeover's dock (`renderGameDock`, directors only) names what is left and
   offers Next game: the rest of the block, the later blocks, the games on no block, then (wrapping) what is unscored before it, skipping a round the
   director's own team plays — those are named ("1 game needs another director: X (your team plays)"). It re-asks at the tap and swaps the takeover in
@@ -1686,7 +1686,7 @@ rest of Step 14, in setup-ui.js: see "Set up the week: behaviour" below); with n
   aside and `.setup-classic-title` ("Classic editor") titles that screen.
   renderSettings still writes `#settings-view`.
 - **The head** (`.setup-head`, sticky, paper, full bleed): `#setup-back` with
-  `#setup-back-label` (the tab the builder was opened from — More, or Games from an empty day's "Add games" — on the hub, "Set up the week" on a screen),
+  `#setup-back-label` (the tab the builder was opened from — More, or Games when Add games has no games day to put a game on — on the hub, "Set up the week" on a screen),
   `#setup-undo-dock` (the docked undo; its aria-label is the entry's label),
   `#setup-menu-btn` (→ `#sheet-setup-menu`). Second row (`.setup-status`, one
   left-aligned column): the sync line
@@ -1820,8 +1820,8 @@ into it from app.js / settings.js is typeof-guarded.
   gains `#setup`, the four sheets and `#ask-dialog` (the gold buttons must not sparkle).
 - **Screens and Back**: `state.ui.builderScreen` (device-local; `hub` default,
   `backups`, `classic`; anything else reads as the hub) is mirrored into
-  `#setup[data-screen]`. More → Set up the week opens the hub; the hub's Games row (and the Games
-  tab's Add games) open the Games screen (Step 21), Notice opens the classic screen on its
+  `#setup[data-screen]`. More → Set up the week opens the hub; the hub's Games row opens
+  the Games screen (Step 21; the Games tab's Add games opens the game sheet over the tab instead, the screen only when no day takes games), Notice opens the classic screen on its
   tab (`state.ui.settingsTab`; the Classic editor in the ⋯ menu still has the old Games tab;
   Teams has its own screen since Step 25), Restore points
   opens `backups`, People opens its own screen (Step 25; the Members drawer is retired). Back goes screen → hub →
@@ -2429,7 +2429,10 @@ What's covered, and why each file exists:
   double points, not on the schedule, sessions), days with games and their note, the ⚡ quick game (now / next / none, the printed week,
   the double window; the Now card's own block, a games item that ran over, never lunch or free time), Make a copy and Delete (records gone), the
   escaped markup, the deploy hold, `bracketSuggestPair`, the Games tab's Add games / Quick game routes and the undo pill (an added game, a
-  field and a move each offered, Undo and Redo through the engine, a game edited since or with a result never undone away, quiet over the tab).
+  field and a move each offered, Undo and Redo through the engine, a game edited since or with a result never undone away, quiet over the tab),
+  a bare focus-and-blur writing nothing over a colleague's newer value (every text field, How to play, the day note), closing never making a game,
+  a closed sheet forgotten at once, a day never taken off onto itself, a tap on "here" moving nothing, and a record planted under the new id
+  (after the id scan) cleared.
   **Emulator proof (opt-in):** `tests/emulator/games-client.mjs` runs the REAL client's Games writes against `database.rules.json` on both camps
   (see its header and the README row); it found the config engine's late-completion race, now fixed (see "A push is a TRANSACTION").
 - `games-tab.test.js` (+ `.senior`; seeded and seeded-all passes) — the Games model ("The Games tab"): the status truth table (results, brackets,
@@ -4261,8 +4264,8 @@ v183 parity fixture are untouched.
   a game whose Where still says TBA. Counts are joined to their word with a non-breaking space. A weekday with no competition day says "Not a
   games day" and offers **Make Saturday a games day** (`gmMakeDay`: one `config.days` record at its place in the week, an empty games day is
   harmless); the day's ⋯ (`#sheet-sg-day`) holds its note (`gmSetDayNote`, saved when focus leaves, ≤ 200) and **Make Wednesday a day
-  with no games** (`gmTakeDayOff`: a day with games asks where they go — every other games day is a choice — and they move there, off any item, onto
-  its natural one as a new game is; they never vanish).
+  with no games** (`gmTakeDayOff`: a day with games asks where they go — every other games day is a choice, never the day itself or a non-games day — and
+  they move there, off any item, onto its natural one as a new game is; they never vanish).
 - **The sheet** `gmUi.open = { mode: new | edit | quick, pane: form | when, gid (null until created), dk, bid, form, … }` (the field list is
   in the comment above `GM_EMOJI`). **Progressive**: `data-stage` on the overlay (`name` → `format` → `game`). "How is it scored?" is drawn from
   the first paint (a way tapped before the name is kept and the name field takes the focus), so typing the name moves nothing; once the game
@@ -4274,7 +4277,10 @@ v183 parity fixture are untouched.
   (`gmTryCreate`: a format tapped with a name, or the name committed with a format already picked — the quick game's one step) it is created
   whole as ONE `configEdit` (`gmCreateGame`) and from then on every field saves alone through `gmCommit(gid, patch, label)`, which looks the
   game up BY ID when the write runs (so a colleague's edit to another field is never undone). Text saves on blur / Enter (`focusout`
-  delegated on the sheet), switches and rows on a tap. A tally game picks up the live leaderboard and a bracket the plain running scoreboard,
+  delegated on the sheet), switches and rows on a tap. **A field writes only if it was CHANGED while focused**: `gmFieldIn` (focusin) records
+  its value on arrival (`gmFocusVal`, a WeakMap) and `gmCommitText` / `gmDayNoteBlur` skip a blur that finds it unchanged, because the box
+  shows what it showed on arrival, which a colleague's edit since (a focused field is not repainted) has made stale — a bare tap in and out
+  must never put the old words back (§6.4.9). A field no focus reached through the sheet has no baseline and writes as before. A tally game picks up the live leaderboard and a bracket the plain running scoreboard,
   as the classic format pick does. The inputs' markup is static (values are set as properties, only while a field is not focused), so a
   snapshot or a save never takes a word away mid-typing or rebuilds a focused field (a Playwright MutationObserver pass sees zero mutations from two idle `renderAll`s on the screen and on every stage / pane of the sheet); inside Set up the week the docked undo pill offers each change, over the Games tab a field edit is recorded but quiet (no toast per field; creating, Make a copy and Delete still speak); the dock's line (`gmDockState`) is idle ("Changes save as you go", an existing game
   before its first save) · saved ("Added to Team competitions" — the item only — just after creating, then "Saved") · saving · offline ·
@@ -4301,7 +4307,8 @@ v183 parity fixture are untouched.
   then an item — Games items and items that already hold games first, the rest behind "Other items on Thursday" — or, with the original
   schedule, a session. One tap writes `blockId`, `dayId` (the item's weekday), `session` (`rainSessionFor`: the item's time) and `ord` (after
   what the item holds, in `SETUP_GAME_ORD_STEP`s) as ONE `gmCommit`; onto an item with double-points games it asks first (`reason: 'double'`);
-  an item a colleague removed meanwhile refuses (`reason: 'item'`) instead of quietly turning into "not on the schedule". **Not on the
+  an item a colleague removed meanwhile refuses (`reason: 'item'`) instead of quietly turning into "not on the schedule"; a tap on the item the
+  game is already on moves nothing (`changed: false`: no re-sort to the item's end, no undo entry). **Not on the
   schedule** removes `blockId` and `ord` (the game keeps its day and results). A NEW game's When only remembers the item (nothing is written
   until it exists; "Not on the schedule" is honoured at creation, A2 is skipped for it). **Earlier / Later** renumber every game of the item
   10, 20, 30… in the new order (`gmOrderGame`: ties and missing numbers never leave it ambiguous).
@@ -4323,8 +4330,12 @@ v183 parity fixture are untouched.
   was open, then `openGame`).
 - **Holding the deploy**: a NEW game with a name typed and nothing saved yet holds the auto-reload (`gmBusy`, in `reloadBlocked` and
   `shellHasUnsentWork`); a created game has no unsaved state (every change is in the config engine's own accounting). Closing by any route
-  (✕, backdrop, Escape, Back: `gmGuardClose` through `setupSheetGuardClose`) blurs a field still being typed so it saves first; a sheet closed
-  by any route is forgotten on the next paint (`gmCleanSheets`).
+  (✕, backdrop, Escape, Back: `gmGuardClose` through `setupSheetGuardClose`; Done, Score it now and Make a copy use `gmFlush`) blurs a field
+  still being typed so it saves first. **Closing never makes a game**: a name typed for a game that doesn't exist yet is dropped on every close
+  route, the quick game's included (Podium is already chosen, so its name alone would otherwise create a real game that counselors then see);
+  `gmUi.closing` holds `gmTryCreate` while the close flushes, and a press on ✕ or the backdrop raises it from `pointerdown` (on a phone the
+  press takes the focus off the field before the click). A sheet closed by any route is forgotten AT ONCE: `shellSheetClose` calls the
+  typeof-guarded `setupSheetClosed(id)` (a Forward must not reopen it on a half-typed name; `gmCleanSheets` on the next paint is the backstop).
 - **Pass**: `docs/build-notes/verify/step21-pass.cjs` drives the real page with real taps (the hub row → the screen → Add a game here → name →
   Scores → a field → When → Done → a bracket's Matchups → the day's ⋯ → the Games tab's Quick game → Score it now) on both camps at 360 / 390,
   light / dark and 100 / 130 / 200 % text, and checks what each tap wrote; `step21-states.cjs` reaches EVERY state (the screen with a loose game, a TBA place and a note,

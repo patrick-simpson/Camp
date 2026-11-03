@@ -1334,8 +1334,11 @@ test('the sheet holds the auto-reload only while a new game has a name typed and
     assert.equal(setupSheetGuardClose('game'), false, 'never asks');
     document.activeElement = real;
     assert.equal(blurred, 1);
-    // closed by any route: the next paint forgets it (a Forward must not reopen a stale game)
+    // closed by any route: forgotten AT ONCE, not at the next paint (closing paints nothing, so a Forward in between would have
+    // reopened the sheet on a half-typed name)
     shellSheetClose('game');
+    assert.equal(gmUi.open, null, 'forgotten the moment it closes');
+    assert.equal(shellSheetAllowed('game'), false, 'a Forward has nothing to reopen');
     renderAll();
     assert.equal(gmUi.open, null);
     assert.equal(gmSheetReady(), false);
@@ -1526,4 +1529,206 @@ test('a quick game lands on the item the Now card shows: a games item that ran o
       try { assert.equal(gmQuickTarget().bid, plain.id, 'an item that holds games'); } finally { loose.blockId = keep.blockId; loose.ord = keep.ord; }
     }
   } finally { gsShut(); gsEnd(); }
+});
+
+
+// ── review fixes: a bare focus-and-blur, closing, a day taken onto itself, a tap on "here", a stale record under a reused id ──
+
+// The sheet's own focusin / focusout (gmFieldIn / gmFieldOut) around an input stand-in: what the browser does when a finger taps into a
+// field and out again. `el.value` is what the field shows.
+const gsField = (id, value, cls) => ({ id, value, tagName: cls ? 'TEXTAREA' : 'INPUT', classList: { contains: (c) => c === cls } });
+
+test('a bare tap into a field and out again writes nothing, so a colleague\'s edit that landed while it was focused is never put back (name, where, unit, headline, how to play, the day note)', async () => {
+  gsStart();
+  try {
+    const o = await gsMade('tally', 'Shields');
+    gameById(o.gid).location = 'Dining Hall';
+    // Jenn taps into Where; it shows "Dining Hall". A colleague's change arrives; the field is focused, so it keeps showing the old text.
+    const where = gsField('gm-where', 'Dining Hall');
+    gmFieldIn(where);
+    gameById(o.gid).location = 'Pat moved it to the Pool';
+    undoClear();
+    // She taps the Name field next: Where blurs UNCHANGED.
+    gmFieldOut(where);
+    assert.equal(gameById(o.gid).location, 'Pat moved it to the Pool', 'their words stand');
+    assert.equal(gsLastUndo(), null, 'and no entry was recorded');
+    // Control: without the baseline the same blur writes the stale words back (this is what a bare gmCommitText would do).
+    gmCommitText(gsField('gm-where', 'Dining Hall'));
+    assert.equal(gameById(o.gid).location, 'Dining Hall', 'a field no focus ever reached still writes, as before');
+    gameById(o.gid).location = 'Pat moved it to the Pool';
+    undoClear();
+    // The same for every other text field of the sheet.
+    [['gm-name', 'name', 'Shields'], ['gm-unit', 'unit', 'points'], ['gm-headline', 'headline', 'First to ten']].forEach(([id, field, shown]) => {
+      const el = gsField(id, shown);
+      const was = gameById(o.gid)[field];
+      gmFieldIn(el);
+      gameById(o.gid)[field] = 'Colleague ' + field;
+      gmFieldOut(el);
+      assert.equal(gameById(o.gid)[field], 'Colleague ' + field, id + ' keeps their value');
+      gameById(o.gid)[field] = was;
+    });
+    assert.equal(gsLastUndo(), null, 'nothing was written by any bare blur');
+    // How to play: a rules row focused and left (the rows are read from the page, as gmCommitRules does)
+    gameById(o.gid).rules = [{ h: 'Aim', items: ['Be kind'] }];
+    renderGameSheet();
+    const rowEl = gsField('', 'Be kind', 'gm-rule-items');
+    gmFieldIn(rowEl);
+    gameById(o.gid).rules = [{ h: 'Aim', items: ['Their rule'] }];
+    gmFieldOut(rowEl);
+    assert.deepEqual(gameById(o.gid).rules, [{ h: 'Aim', items: ['Their rule'] }], 'a bare blur of a rules field puts nothing back');
+    assert.equal(gsLastUndo(), null);
+    // A change the person MADE while focused still saves (their last word wins, as every field does).
+    const where2 = gsField('gm-where', 'Their old place');
+    gmFieldIn(where2);
+    where2.value = 'The pond';
+    gmFieldOut(where2);
+    assert.equal(gameById(o.gid).location, 'The pond');
+    assert.ok(gsLastUndo(), 'recorded');
+    // The baseline is per visit: tap in, change nothing, blur: nothing; a fresh focus and a change: written.
+    undoClear();
+    const where3 = gsField('gm-where', 'The pond');
+    gmFieldIn(where3);
+    gmFieldOut(where3);
+    assert.equal(gsLastUndo(), null);
+    gmFieldIn(where3);
+    where3.value = 'The lake';
+    gmFieldOut(where3);
+    assert.equal(gameById(o.gid).location, 'The lake');
+    // The Games screen's day note
+    const dk = gmDkOfDayId(gameById(o.gid).dayId);
+    gmUi.dayDk = dk;
+    const rec = gmDayRecs(dk)[0];
+    rec.note = 'Bring a towel';
+    const box = setupEl('sg-day-note');
+    box.tagName = 'TEXTAREA'; // the page's own element says so; the stub's does not
+    box.value = 'Bring a towel';
+    gmFieldIn(box);
+    rec.note = 'Rain plan: gym';
+    undoClear();
+    gmDayNoteBlur();
+    assert.equal(rec.note, 'Rain plan: gym', 'a bare blur of the note keeps the colleague\'s newer one');
+    assert.equal(gsLastUndo(), null);
+    gmFieldIn(box);
+    box.value = 'Bring a towel and a hat';
+    gmDayNoteBlur();
+    assert.equal(rec.note, 'Bring a towel and a hat');
+  } finally { gmUi.dayDk = ''; gsShut(); gsEnd(); }
+});
+
+test('the sheet\'s focusin / focusout are wired to the baseline, and the focus-time compare lives in the one commit path', () => {
+  const src = readFixture('../setup-ui.js');
+  assert.ok(/sheet\.addEventListener\('focusin', \(e\) => gmFieldIn\(e\.target\)\)/.test(src), 'the sheet records a field\'s value when focus arrives');
+  assert.ok(/sheet\.addEventListener\('focusout', \(e\) => gmFieldOut\(e\.target\)\)/.test(src));
+  assert.ok(/day\.addEventListener\('focusin'[^\n]*sg-day-note[^\n]*gmFieldIn/.test(src), 'and the day note too');
+  assert.ok(/if \(gmFocusUntouched\(el\) && o\.gid\) return;/.test(src), 'gmCommitText skips a field that is still what it was on arrival');
+});
+
+test('closing the sheet never makes a game: a quick game\'s half-typed name is dropped on ✕ / Escape / Back; Done and Score it now still save a field being typed', async () => {
+  gsStart({ now: '3-1030' });
+  try {
+    assert.equal(gmOpenQuick(), true);
+    const n0 = allGames().length;
+    let o = gmUi.open;
+    o.form.name = 'Abandoned quick';
+    // The guard blurs the typed field; with Podium already chosen that blur would create the game, so a close holds creation.
+    const name = gsField('gm-name', 'Abandoned quick');
+    const real = document.activeElement;
+    document.activeElement = { closest: (s) => (s === '#sheet-game' ? {} : null), blur: () => { gmFieldOut(name); } };
+    assert.equal(setupSheetGuardClose('game'), false, 'never asks');
+    document.activeElement = real;
+    assert.equal(allGames().length, n0, 'nothing was created by closing');
+    assert.equal(gmUi.closing, false, 'the flag is only up while the close flushes');
+    // Control: the same blur outside a close does create it (so the hold above is what kept it from being made).
+    gmFieldOut(name);
+    assert.equal(allGames().length, n0 + 1, 'naming it on purpose still creates it');
+    gsShut();
+    // On a made game, a field being typed when Done is tapped (a phone that never blurred it) is saved first.
+    o = await gsMade('tally', 'Done probe');
+    const where = gsField('gm-where', 'Old place');
+    gmFieldIn(where);
+    where.value = 'Typed at the last second';
+    const real2 = document.activeElement;
+    document.activeElement = { closest: (s) => (s === '#sheet-game' ? {} : null), blur: () => { gmFieldOut(where); } };
+    gmFlush();
+    document.activeElement = real2;
+    assert.equal(gameById(o.gid).location, 'Typed at the last second');
+    const src = readFixture('../setup-ui.js');
+    assert.ok(/'#gm-done'\)\) \{ gmFlush\(\); shellSheetClose\('game'\); \}/.test(src), 'Done flushes first');
+    assert.ok(/function gmScoreNow\(\) \{\n  gmFlush\(\);/.test(src) && /function gmCopyGo\(\) \{\n  gmFlush\(\);/.test(src), 'so do Score it now and Make a copy');
+    assert.ok(/sheet\.addEventListener\('pointerdown', \(e\) => \{ if \(q\(e, '\[data-sheet-close\]'\)\) \{ gmUi\.closing = true;/.test(src), 'a press on ✕ or the backdrop holds creation before the focus leaves the field');
+    assert.ok(/function setupSheetClosed\(id\) \{ if \(id === 'game'\) gmUi\.open = null; \}/.test(src) && /if \(typeof setupSheetClosed === 'function'\) setupSheetClosed\(id\);/.test(readFixture('../app.js')), 'shellSheetClose lets the game sheet go at once');
+  } finally { gsShut(); gsEnd(); }
+});
+
+test('taking a day off onto itself is refused (its games would be left on a day that is gone); onto a weekday that is not a games day too', () => {
+  gsStart();
+  try {
+    const dk = gsFirstDay();
+    const games = gmGamesOnDay(dk).map((g) => g.id);
+    assert.ok(games.length);
+    const dayId = gmDayRecs(dk)[0].id;
+    assert.equal(gmTakeDayOff(dk, dk).reason, 'where');
+    assert.equal(gmIsGamesDay(dk), true, 'nothing changed');
+    games.forEach((id) => assert.equal(gameById(id).dayId, dayId));
+    const off = SETUP_DK.find((d) => !gmIsGamesDay(d));
+    assert.equal(gmTakeDayOff(dk, off).reason, 'where', 'a weekday with no games day is no destination');
+    assert.equal(gmIsGamesDay(dk), true);
+    assert.equal(gsLastUndo(), null);
+    // a day with no games may still be taken off whatever the destination says
+    const empty = SETUP_DK.find((d) => gmIsGamesDay(d) && !gmGamesOnDay(d).length) || (gmMakeDay('sat'), 'sat');
+    assert.equal(gmTakeDayOff(empty, empty).ok, true);
+    assert.equal(gmIsGamesDay(empty), false);
+  } finally { gsEnd(); }
+});
+
+test('tapping the item a game is already on changes nothing: no re-sort to the end of the item, no undo entry', () => {
+  gsStart();
+  try {
+    const dk = gsTwoItemDay() || gsFirstDay();
+    const a = gsBlocks(dk)[0];
+    const list = gmGamesOnBlock(dk, a.id);
+    const first = list[0];
+    const order = list.map((g) => g.id).join(',');
+    const r = gmMoveGame(first.id, { dk, bid: a.id });
+    assert.deepEqual([r.ok, r.changed], [true, false]);
+    assert.equal(gmGamesOnBlock(dk, a.id).map((g) => g.id).join(','), order, 'the order is as it was');
+    assert.equal(gsLastUndo(), null);
+    // through the sheet: the tap returns to the form without writing
+    gmOpenGame(first.id);
+    const o = gmUi.open;
+    gmShowWhen();
+    gmWhenPick(a.id);
+    assert.equal(o.pane, 'form');
+    assert.equal(gmGamesOnBlock(dk, a.id).map((g) => g.id).join(','), order);
+    assert.equal(gsLastUndo(), null);
+  } finally { gsShut(); gsEnd(); }
+});
+
+test('a new game never inherits a record the id scan did not see: whatever sits under the id it gets is cleared in the same step', () => {
+  gsStart();
+  const realMakeId = makeId;
+  try {
+    const dk = gsFirstDay();
+    // takenGameIds scans every per-game map on this device, so a leftover that lands AFTER the scan (another tab's sync, a late
+    // snapshot) is the case clearGameRecords exists for: plant it from inside makeId, after the scan has been read.
+    makeId = (name, taken) => {
+      const id = realMakeId(name, taken);
+      GAME_RECORD_MAPS.forEach((m) => { state[m.key] = state[m.key] || {}; state[m.key][id] = { phase: 'round1', medals: { gold: 't0', silver: 't1', bronze: 't2' } }; });
+      return id;
+    };
+    const r = gmCreateGame({ name: 'Sock Hop', format: 'placement' }, gmPlacement(dk, gsBlocks(dk)[0].id));
+    assert.ok(r.ok);
+    GAME_RECORD_MAPS.forEach((m) => assert.equal(state[m.key][r.id], undefined, m.key + ' holds nothing for the new game'));
+    assert.deepEqual(gameRecordLabels(r.id), []);
+    // ...and a copy is a fresh game too
+    makeId = (name, taken) => {
+      const id = realMakeId(name, taken);
+      state.results = state.results || {};
+      state.results[id] = { medals: { gold: 't0' } };
+      return id;
+    };
+    const c = gmDuplicate(r.id);
+    assert.ok(c.ok);
+    assert.equal(state.results[c.id], undefined, 'a copy inherits no result either');
+  } finally { makeId = realMakeId; gsEnd(); }
 });

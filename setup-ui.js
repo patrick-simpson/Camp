@@ -7429,6 +7429,8 @@ function gmMoveGame(gid, to, opts) {
   if (!place) return { ok: false, reason: 'day' };
   // An item that isn't on that day any more (a colleague removed it) must not quietly turn into "not on the schedule".
   if (to.bid && !place.blockId) return { ok: false, reason: 'item' };
+  // Already on that item: nothing moves (a re-sort to the end of the item, with an undo entry, is not what a tap on "here" means).
+  if (place.blockId && g.blockId === place.blockId && g.dayId === place.dayId) return { ok: true, changed: false };
   const patch = { dayId: place.dayId, session: place.session, blockId: place.blockId, ord: place.blockId ? place.ord : undefined };
   if (place.blockId) {
     const doubles = gmGamesOnBlock(to.dk, to.bid, gid).some((x) => x.messtival === true) && g.messtival !== true;
@@ -7529,7 +7531,9 @@ function gmTakeDayOff(dk, moveTo) {
   if (!recs.length) return { ok: true, changed: false };
   const ids = recs.map((d) => d.id);
   const games = gmGamesOnDay(dk);
-  const target = moveTo ? gmDayRecs(moveTo)[0] : null;
+  // The games go to ANOTHER games day: the day being taken off is never its own destination (its record is deleted below, which
+  // would leave them on a day that isn't there).
+  const target = moveTo && moveTo !== dk ? (gmDayRecs(moveTo)[0] || null) : null;
   if (games.length && !target) return { ok: false, reason: 'where' };
   const moved = games.map((g) => g.id);
   const ok = configEdit('Took ' + SETUP_DAY_WORDS[dk] + ' off the games days', () => {
@@ -7586,6 +7590,7 @@ const gmUi = {
   dayDk: '',           // the weekday the ⋯ sheet is about
   stripDay: undefined, // the day the strip last scrolled to
   stripPlaced: false,  // the strip opened scrolled to today once per visit
+  closing: false,      // a close is flushing the field being typed: that blur saves a game, it never makes one
 };
 
 // The day being looked at: the one chosen (device-local), else today during the camp week, else the first games day.
@@ -7723,6 +7728,7 @@ function renderGmDaySheet() {
 function gmDayNoteBlur() {
   const box = setupEl('sg-day-note');
   if (!box || !gmUi.dayDk) return;
+  if (gmFocusUntouched(box)) return; // only a changed note is written (a colleague's newer one is not put back)
   const r = gmSetDayNote(gmUi.dayDk, box.value);
   if (r.ok && r.changed) renderAll();
 }
@@ -7799,6 +7805,7 @@ function wireGamesScreen() {
   const day = setupEl('sheet-sg-day');
   if (day) {
     day.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('[data-sg-day-act="off"]')) gmTakeDayOffFlow(); });
+    day.addEventListener('focusin', (e) => { if (e.target && e.target.id === 'sg-day-note') gmFieldIn(e.target); });
     day.addEventListener('focusout', (e) => { if (e.target && e.target.id === 'sg-day-note') gmDayNoteBlur(); });
   }
   if (typeof wireGameSheet === 'function') wireGameSheet();
@@ -7973,11 +7980,36 @@ function gmShowFresh(opener) {
 function gmSheetReady() { return !!gmUi.open; }
 // A sheet closed by any route leaves its state behind; the next pass of the frame drops it (a Forward must not reopen a stale game).
 function gmCleanSheets() { if (gmUi.open && !shell.sheets.includes('game')) gmUi.open = null; }
-// Escape, Back and ✕ reach the sheet's close through here: a field still being typed saves first (nothing else is at stake — every
-// change has already been written). Never asks.
-function gmGuardClose() {
+// shellSheetClose's hook (app.js): the state goes the moment the sheet closes, not at the next paint, which closing does not trigger —
+// a Forward in between would reopen the sheet on a half-typed name. (After the opener took the focus back: a field blurred by that
+// still saves.)
+function setupSheetClosed(id) { if (id === 'game') gmUi.open = null; }
+// Each text field's value when focus arrived. A field only writes when it was CHANGED while focused: the box shows what it showed on
+// arrival, which a colleague's edit since may have made stale, so a bare tap in and out must never put the old words back over
+// theirs (setupFocusIn / Out, §6.4.9, for this sheet's own fields). A field with no baseline (focus never reached it through the
+// sheet) writes as it always did.
+const gmFocusVal = new WeakMap();
+const gmIsTextEl = (t) => !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') && t.id !== 'gm-emoji-other';
+function gmFieldIn(t) { if (gmIsTextEl(t) && typeof t === 'object') gmFocusVal.set(t, String(t.value == null ? '' : t.value)); }
+function gmFocusUntouched(t) {
+  if (!t || typeof t !== 'object' || !gmFocusVal.has(t)) return false;
+  const same = gmFocusVal.get(t) === String(t.value == null ? '' : t.value);
+  gmFocusVal.delete(t);
+  return same;
+}
+function gmFieldOut(t) { if (gmIsTextEl(t)) gmCommitText(t); }
+// A field still being typed saves first (a blur commits it).
+function gmFlush() {
   const a = typeof document !== 'undefined' ? document.activeElement : null;
   if (gmUi.open && a && a.closest && a.closest('#sheet-game') && typeof a.blur === 'function') { try { a.blur(); } catch (e) { /* fine */ } }
+}
+// Escape, Back and ✕ reach the sheet's close through here: a field still being typed saves first (nothing else is at stake — every
+// change has already been written). Never asks. Closing NEVER creates: a name typed for a game that doesn't exist yet is dropped
+// (a quick game has its way of scoring already, so its name alone would otherwise make a real game that counselors then see, on a
+// close nobody meant as "Add").
+function gmGuardClose() {
+  gmUi.closing = true;
+  try { gmFlush(); } finally { gmUi.closing = false; }
   return false;
 }
 // A new game with a name typed and nothing saved yet holds the deploy's auto-reload (it lives in memory only); once created, every
@@ -8400,7 +8432,7 @@ function gmAfter(r, o, quiet) {
 // The game is created the moment it has a name AND a way of being scored (name committed on blur / Enter, or a format tapped).
 function gmTryCreate() {
   const o = gmUi.open;
-  if (!o || o.gid || o.busy) return null;
+  if (!o || o.gid || o.busy || gmUi.closing) return null;
   const f = o.form;
   if (!f.name.trim() || !GM_FORMAT_WORDS[f.format]) return null;
   const place = gmPlacement(o.dk, o.bid, { session: o.session, minutes: o.mode === 'quick' ? o.minutes : null });
@@ -8509,6 +8541,9 @@ function gmCommitText(el) {
   if (!o || o.pane !== 'form' || !el) return;
   const id = el.id || '';
   const v = String(el.value == null ? '' : el.value);
+  // A saved game's field that is still what it was on arrival writes nothing (see gmFocusVal). Before the game exists the typed text
+  // only lands on the form, which is harmless.
+  if (gmFocusUntouched(el) && o.gid) return;
   if (id === 'gm-name') { gmNameBlur(v); return; }
   if (id === 'gm-where') {
     if (!o.gid) { o.form.location = v; o.whereAuto = false; renderGameSheet(); return; }
@@ -8649,6 +8684,7 @@ function gmWaitTap() {
   if (focus && typeof focus.focus === 'function') { try { focus.focus({ preventScroll: true }); } catch (e) { /* fine */ } }
 }
 function gmScoreNow() {
+  gmFlush();
   const o = gmUi.open;
   if (!o || !o.gid || !gameById(o.gid)) return;
   const gid = o.gid;
@@ -8657,6 +8693,7 @@ function gmScoreNow() {
   openGame(gid, { from: state.ui.tab === 'games' ? 'games' : undefined });
 }
 function gmCopyGo() {
+  gmFlush();
   const o = gmUi.open;
   if (!o || !o.gid || o.gone) return;
   const r = gmDuplicate(o.gid);
@@ -8691,6 +8728,13 @@ function wireGameSheet() {
   const q = (e, sel) => (e.target && e.target.closest ? e.target.closest(sel) : null);
   // ✕ and the backdrop: a field still being typed saves first (Escape and Back reach the same through setupSheetGuardClose).
   sheet.addEventListener('click', (e) => { if (q(e, '[data-sheet-close]')) gmGuardClose(); }, true);
+  // On a phone a press on ✕ or the backdrop takes the focus off the field BEFORE the click that closes the sheet, and that blur
+  // would make a quick game from its half-typed name. The press itself says it is a close, so creation is held from the press until
+  // a moment after it ends (the blur's own timing differs between mouse and touch).
+  let closeHold = 0;
+  const holdClose = (ms) => { clearTimeout(closeHold); closeHold = setTimeout(() => { gmUi.closing = false; }, ms); };
+  sheet.addEventListener('pointerdown', (e) => { if (q(e, '[data-sheet-close]')) { gmUi.closing = true; holdClose(1500); } }, true);
+  ['pointerup', 'pointercancel'].forEach((ev) => document.addEventListener(ev, () => { if (gmUi.closing) holdClose(700); }, true));
   sheet.addEventListener('click', (e) => {
     const o = gmUi.open;
     if (!o) return;
@@ -8710,7 +8754,7 @@ function wireGameSheet() {
     else if (q(e, '#gm-when-all')) { if (o.when) { o.when.all = true; renderGameSheet(); } }
     else if (q(e, '#gm-when-none')) gmWhenNone();
     else if (q(e, '#gm-wait')) gmWaitTap();
-    else if (q(e, '#gm-done')) shellSheetClose('game');
+    else if (q(e, '#gm-done')) { gmFlush(); shellSheetClose('game'); }
     else if (q(e, '#gm-score')) gmScoreNow();
     else if (q(e, '#gm-copy')) gmCopyGo();
     else if (q(e, '#gm-delete')) gmDeleteGo();
@@ -8720,10 +8764,8 @@ function wireGameSheet() {
     else if ((b = q(e, '[data-gm-rule-remove]'))) gmRuleRemove(Number(b.dataset.gmRuleRemove));
   });
   // Text: what is typed before the game exists is kept on the form (it creates nothing); after, a field is written when focus leaves it.
-  sheet.addEventListener('focusout', (e) => {
-    const t = e.target;
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') && t.id !== 'gm-emoji-other') gmCommitText(t);
-  });
+  sheet.addEventListener('focusin', (e) => gmFieldIn(e.target));
+  sheet.addEventListener('focusout', (e) => gmFieldOut(e.target));
   sheet.addEventListener('input', (e) => {
     const o = gmUi.open;
     const t = e.target;

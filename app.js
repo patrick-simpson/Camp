@@ -13258,6 +13258,8 @@ function shellSheetClose(id) {
     shell.opener = null;
     if (o && o.isConnected !== false && typeof o.focus === 'function') { try { o.focus({ preventScroll: true }); } catch (e) { /* gone */ } }
   }
+  // A setup sheet that keeps state of its own (the game sheet) lets go of it now, not at the next paint.
+  if (typeof setupSheetClosed === 'function') setupSheetClosed(id);
   shellReconcile();
 }
 

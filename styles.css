@@ -9782,11 +9782,13 @@ jelly-chip:is(.bonus-meal-chip, .bonus-cat-chip, .bonus-team-chip, .verse-day-ch
    (the Games tab's quick-game link). The builder's inline links keep their size. */
 .quick-game-btn,
 #clear-result-btn,
-.you-strip .link-btn {
+.you-strip .link-btn,
+.seed-suggest .link-btn { /* the bracket wizard's "Call them up" */
   display: inline-flex;
   align-items: center;
   min-height: var(--target);
 }
+.seed-suggest .link-btn { min-width: var(--target); padding: 0 0.4rem; justify-content: center; }
 jelly-icon-button.bonus-sign-btn,
 jelly-icon-button.bonus-remove-btn {
   background: none;
