@@ -316,6 +316,25 @@ body.dark-theme,
   }
 }
 
+/* Team accent: the older surfaces (the Your team card, the Big Board's team columns and tally rows) read
+   --team-accent. The renderer writes the light / dark pair (app.js teamAccentVars: the ONE place a team colour
+   is laundered, from a palette swatch or the camp's older single colour) and these rules pick the half for the
+   theme in force. A team with no colour writes neither, so --team-accent is invalid and every
+   var(--team-accent, var(--color-primary)) falls back to the app primary, as before. */
+.follow-team-card,
+.board-col,
+.board-tally-row {
+  --team-accent: var(--team-accent-l);
+}
+:root[data-jelly-mode="dark"] :is(.follow-team-card, .board-col, .board-tally-row) {
+  --team-accent: var(--team-accent-d, var(--team-accent-l));
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-jelly-mode="light"]) :is(.follow-team-card, .board-col, .board-tally-row) {
+    --team-accent: var(--team-accent-d, var(--team-accent-l));
+  }
+}
+
 /* §8.10: Jelly's tokens, mapped onto the palette in this ONE place. Unlayered,
    so they beat the module's own @layer jelly values in both modes, and they
    apply from the first frame (no shift when the deferred module lands). The

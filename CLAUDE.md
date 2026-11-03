@@ -56,7 +56,10 @@ Files:
   it and a week with no epoch is pinned to the legacy window), `liveGameIdSet`,
   and **the sanitizers** (`safeEmoji`, `safeShort`, `safeColorVars`,
   `safeCrestSrc`, `safeVideoUrl`) that every database string passes through on
-  its way into markup or an image address. Nothing runs at load and it touches
+  its way into markup or an image address, **the team colour palette**
+  (`CAMP_TEAM_PALETTE`: twelve swatches, each a light and a dark value; see
+  "Team colours and the Teams screen") and `campContrast` (the WCAG ratio of two
+  `#rrggbb` colours). Nothing runs at load and it touches
   no DOM, storage or network (a test pins that), so the TV page can load it
   without app state
 - `reveal-core.js` — the standings reveal's PURE rules, loaded right after
@@ -2053,6 +2056,12 @@ What's covered, and why each file exists:
   millisecond), DST edges, parity with the alert sender's copy of the maths,
   and every sanitizer's refusals (markup emoji, a quote-breakout data URL,
   `javascript:` / external crest URLs).
+- `palette.test.js` (+ `.senior`, which evals it) — the team colour palette and its laundering
+  ("Team colours and the Teams screen"): the twelve swatches recomputed in both themes against the
+  surfaces read out of styles.css, `campContrast` against an independent WCAG implementation, a list
+  of hostile `color` strings that must never reach a style attribute (they select no swatch and fall
+  back to the camp's colour), `paintTeamAccent`'s idle render writing nothing, the tile, a source
+  scan that no raw `--team-accent: ${…}` is left, and styles.css's light / dark / OS-dark mapping.
 - `sync.test.js` — **every invariant in the section below**, plus the deferred-
   snapshot and per-path-diff behavior. A failure here is a regression, not a
   test bug.
@@ -2590,10 +2599,10 @@ reuses) an accessor in the block.
   `verseFor`; electives — `electivesFor`, `stationEmoji`, `electiveSlotStart`;
   `doubleWindow`, `finaleDow` (the weekday the standings reveal crowns the champions, Friday by default); teams — `teamIds`, `teamEmoji`, `teamShort`, `teamAccent`,
   `teamCrestSrc` (was `teamShield`), `teamRoster(tid)`, `staffNames`, `seedTeams`,
-  `legacyRosterFor(i)`.
+  `legacyRosterFor(i)`, and (step 25) `teamRecord(id)`, `teamColorId(id)` and
+  `teamAccentVars(id)`.
 - **Deliberately not built yet** (nothing reads them, so no dead code): the spec's
-  `teamAccentVars` (needs the CSS to read a light/dark pair),
-  `hubStatus`, `campersFor` — each lands with the step that first needs it.
+  `hubStatus` (setup-ui.js has it), `campersFor` — each lands with the step that first needs it.
   **The "on" half of the schedule accessors is built (Step 15)**: `scheduleForDow`,
   `scheduleWeek`, `weekDays`, `planForDow`, `campWeek`, `blockKey`, `blockPushId`,
   `gamesForBlock`, `gamesForDay` and `unscheduledGames` choose between the built-in
@@ -2618,11 +2627,17 @@ reuses) an accessor in the block.
   load-time caller (`normalizeSyncedState`, `migrateState`) can never hit a TDZ
   error on a top-level `const` declared further down (`boot-cache.test.js`).
   Keep it that way: a new constant an accessor reads goes in the block.
-- **Colours are not laundered yet.** `teamAccent()` still returns the camps.js
-  colour raw into `style=` at three board renderers — safe only while it is a
-  code constant. The step that lets a week source team colours from the
-  database must launder them at the accessor with `safeColorVars` (BUILD-PLAN
-  Step 25, the palette and `teamAccentVars` step).
+- **Team colours ARE laundered (Step 25).** A team record's optional `color` (a palette id the
+  rules pin to `/^[a-z]{2,12}$/`) comes from the database, so `teamAccentVars(id)` is the ONE place
+  it becomes CSS: `safeColorVars(record.color, TEAM_ACCENT[id], CAMP_TEAM_PALETTE)` can only emit
+  `--team-accent-l:#hex;--team-accent-d:#hex` (a database string only SELECTS a swatch; anything
+  else falls back to the camp's older single colour, then to nothing). `teamAccent(id)` is just
+  the light half as one plain hex, for a caller that cannot take the pair. The three board
+  renderers write ` style="…"` through `teamAccentAttr(id)`, the follow card patches its element
+  through `paintTeamAccent(el, id)` (writes only what changed), and the emoji tile takes the pair
+  too; styles.css "Team accent" turns the pair into `--team-accent` for the theme in force (and
+  `[data-team]` into `--team`). Add no new raw interpolation of a team colour: `tests/palette.test.js`
+  scans app.js for one and runs a list of hostile strings through the accessor.
 - **The guard's reach** (`tests/seam.test.js`): per-line regexes for the
   constants, `CAMP.<field>` (also `CAMP?.`), `state.config.days|games` (also
   `?.`), plus the indirect shapes — a computed key (`state.config['days']`,
@@ -3861,6 +3876,28 @@ the row keeps its keyed shape, so turning the section on only swaps the inputs i
   everything on, both camps (the one difference: `staffNames()` gains the elective stations' game
   leaders, Patrick and Stephen, for the chat mention dictionary — the spec's "+ elective people
   names").
+
+## Team colours and the Teams screen (Step 25, session 1)
+
+Spec: P2 §11.7 and Appendix A. A team's identity beyond its name and counselors lives in four OPTIONAL
+fields of its `state.teams[i]` record — `short`, `emoji`, `color`, `photoV` — diffed per field like
+the rest of the roster (`teams/<i>/<field>`; the R1 rules validate each leaf and old builds adopt the
+roster whole, extra fields and all). Nothing here needs a switch: each accessor falls back, per
+field, to the camp's own constant while the record doesn't carry it.
+
+- **The palette** (`CAMP_TEAM_PALETTE` in camp-core.js, so the TV page can load it): twelve swatches
+  `red pumpkin gold green forest teal blue indigo purple berry brown slate`, each `{l, d, name}` — a
+  LIGHT value for light surfaces and a DARK one for dark. A team record's `color` is one of these
+  ids. `tests/palette.test.js` recomputes every value with its own WCAG code against `--paper` and
+  `--sheet` read out of styles.css, in both themes (4.5:1 minimum: team colour is identity, an outline
+  or a 16px+ name, never small text). **Green's light value is `#2d7830`, a shade darker than the
+  spec's table (`#2f7d32`)**: the table was measured against white, and on the cream `--paper` the
+  table's value is 4.47:1.
+- **Laundering**: see "Team colours ARE laundered" in the SEAM section. A colour never reaches CSS by
+  any other route.
+- **A legacy colour that is hard to see** (junior `#345b96` on the dark sheet, senior Red) is judged by
+  `campContrast` against each theme's `--sheet`: under 3:1 (the §8.1 boundary rule) is a gentle note on
+  the Teams row, never a warning (ux-R13).
 
 ## Counselors ↔ teams ↔ accounts
 

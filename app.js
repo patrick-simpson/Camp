@@ -704,15 +704,18 @@ function teamStaffNames(teamId) {
 //     (setup/meta/on/schedule, the owner's Edit the week here) moves the
 //     schedule accessors onto the shared copy, and each of meals, verses, cleanup
 //     and electives (setup/meta/on/<section>, step 19) moves its own accessors;
-//     teams stay built-in until step 25.
+//     a team's own branding (short, emoji, color, photoV: optional fields of
+//     state.teams, step 25) has no switch: each field falls back to the camp's
+//     own constant while the team record doesn't carry it.
 //   - They return plain data, never markup, and never throw on missing data
 //     (a missing day is a shared frozen empty list, a missing verse an empty
 //     one). Never mutate what one returns.
 //   - Text from the database passes a camp-core.js sanitizer on its way out.
 // The per-camp constants moved here unchanged from their old spots in this
 // file (tests/camps.test.js still reads them by global name). Not yet
-// accessors, because nothing reads them yet: teamAccentVars, hubStatus,
-// campersFor. (finaleDow arrived with the standings reveal, Step 23.)
+// accessors, because nothing reads them yet: hubStatus, campersFor.
+// (finaleDow arrived with the standings reveal, Step 23; teamAccentVars with
+// the palette, Step 25.)
 
 const DEFAULT_TEAM_NAMES = CAMP.defaultTeamNames;
 const TEAM_EMOJI = CAMP.teamEmoji;
@@ -996,10 +999,28 @@ function finaleDow() {
 function teamIds() { return (state.teams || NO_ITEMS).map((t) => t.id); }
 function teamEmoji(id) { return safeEmoji(TEAM_EMOJI[id], '🏳️'); }
 function teamShort(id) { return safeShort(TEAM_ABBREV[id], ''); }
-// Raw colour from camps.js, interpolated into style= by three board renderers:
-// safe only while it is a code constant. A week-data source must launder it
-// (camp-core.js safeColorVars) HERE before any database colour reaches it.
-function teamAccent(id) { return TEAM_ACCENT[id] || null; }
+// A team's own record in state.teams (null for an id the roster doesn't carry).
+function teamRecord(id) { return (state.teams || NO_ITEMS).find((t) => t && t.id === id) || null; }
+// The palette swatch a team record names: its id ('pumpkin'), or '' when the team has none yet or the
+// stored string is not one of the twelve (a database string only ever SELECTS a swatch, never becomes CSS).
+function teamColorId(id) {
+  const rec = teamRecord(id);
+  const c = rec && rec.color;
+  return typeof c === 'string' && Object.prototype.hasOwnProperty.call(CAMP_TEAM_PALETTE, c) ? c : '';
+}
+// THE one place a team colour is laundered (camp-core.js safeColorVars): the `--team-accent-l:…;--team-accent-d:…`
+// pair the CSS reads (styles.css, "Team accent"), or '' when the team has no colour at all. The palette id the
+// record names wins; without one the camp's older single hex stands in for both themes. Only hex digits and
+// fixed variable names can come out, so the result is safe in a style attribute without esc().
+function teamAccentVars(id) {
+  const rec = teamRecord(id);
+  return safeColorVars(rec ? rec.color : undefined, TEAM_ACCENT[id], CAMP_TEAM_PALETTE);
+}
+// The light value as one plain '#rrggbb', or null: for the places that cannot take the pair (a tile's edge).
+function teamAccent(id) {
+  const m = /--team-accent-l:(#[0-9a-fA-F]{6})/.exec(teamAccentVars(id));
+  return m ? m[1] : null;
+}
 // Path to a team's shield crest image, or null if we don't have one for that
 // slot — callers fall back to the emoji. Set it with src=, never concatenate.
 function teamCrestSrc(id) { return safeCrestSrc(TEAM_SHIELD[id]); }
@@ -7703,6 +7724,25 @@ function recordPointHistory(counts, isRemote) {
   });
 }
 
+// A team's colour on an element, for the CSS that reads --team-accent-l / -d (styles.css "Team accent").
+// teamAccentAttr is for markup written as a string (the board renderers): a whole ` style="…"` attribute or
+// nothing, and nothing but hex digits and the two variable names can be in it (teamAccentVars).
+function teamAccentAttr(id) {
+  const vars = teamAccentVars(id);
+  return vars ? ` style="${vars}"` : '';
+}
+// paintTeamAccent is for an element that is kept and patched (the follow card): it writes only what changed, so an
+// idle render touches nothing, and a team with no colour leaves the CSS fallback (the app primary) in charge.
+function paintTeamAccent(el, id) {
+  const want = {};
+  (id ? teamAccentVars(id) : '').split(';').forEach((kv) => { const i = kv.indexOf(':'); if (i > 0) want[kv.slice(0, i)] = kv.slice(i + 1); });
+  ['--team-accent-l', '--team-accent-d'].forEach((prop) => {
+    const cur = el.style.getPropertyValue(prop);
+    if (want[prop]) { if (cur !== want[prop]) el.style.setProperty(prop, want[prop]); }
+    else if (cur) el.style.removeProperty(prop);
+  });
+}
+
 // "Your team" summary card — rank, points, and next matchup if one's queued.
 function renderFollowCard() {
   const card = document.getElementById('follow-team-card');
@@ -7710,7 +7750,7 @@ function renderFollowCard() {
   if (state.followTeam === undefined) { setHiddenIfChanged(card, true); return; }
   if (state.followTeam === null) {
     setClassNameIfChanged(card, 'follow-team-card');
-    card.style.removeProperty('--team-accent');
+    paintTeamAccent(card, null);
     setHiddenIfChanged(card, false);
     if (!setHtmlIfChanged(card, `<p class="muted follow-neutral-line">🏳️ Not following a team — <button id="pick-team-link" class="link-btn">pick one</button></p>`)) return;
     const link = document.getElementById('pick-team-link');
@@ -7753,10 +7793,8 @@ function renderFollowCard() {
     <span class="follow-points">${s.points} pts</span>
   </div>`;
   }
-  const accent = teamAccent(team.id);
   setClassNameIfChanged(card, 'follow-team-card' + (shield ? ' has-shield' : ''));
-  if (accent) card.style.setProperty('--team-accent', accent);
-  else card.style.removeProperty('--team-accent');
+  paintTeamAccent(card, team.id);
   setHiddenIfChanged(card, false);
   // Skipping an unchanged rebuild matters most here: the shield is a lazy,
   // async-decoded image, and a fresh <img> can paint blank for a frame — the
@@ -9115,7 +9153,7 @@ function tallyBoardHTML(g) {
   const clock = g.timer ? getClock(g) : null;
   const remaining = clock ? clockRemaining(clock) : 0;
   const rows = ranked.length ? ranked.map((e, i) => `
-    <div class="board-tally-row${seeOrder && i < 3 ? ' board-tally-podium' : ''}" style="--team-accent: ${teamAccent(e.id) || 'var(--color-primary)'}">
+    <div class="board-tally-row${seeOrder && i < 3 ? ' board-tally-podium' : ''}"${teamAccentAttr(e.id)}>
       <span class="board-tally-rank">${!seeOrder ? '' : complete && i < 3 ? medals[i] : (i + 1) + '.'}</span>
       <span class="board-tally-team">${teamEmoji(e.id)} ${esc(teamName(e.id))}</span>
       <span class="board-tally-score">${esc(formatScore(g, e.v))}</span>
@@ -10202,7 +10240,7 @@ function liveTrackerHTML(g, aId, bId, viewer) {
   const remaining = clock ? clockRemaining(clock) : 0;
 
   const col = (id) => `
-    <div class="board-col" data-board-col="${esc(id)}" style="--team-accent: ${teamAccent(id) || 'var(--color-primary)'}">
+    <div class="board-col" data-board-col="${esc(id)}"${teamAccentAttr(id)}>
       <span class="board-emoji">${teamEmoji(id)}</span>
       <span class="board-name">${esc(teamName(id))}</span>
       <span class="board-score" data-hr-team="${esc(id)}">${l.hr[id] || 0}</span>
@@ -10285,7 +10323,7 @@ function liveBoardHTML(g, aId, bId) {
     sub = w ? `🏆 ${teamEmoji(w)} ${esc(teamName(w))} reached ${target}!` : `First to exactly ${target}`;
   }
   const col = (id, score) => `
-    <div class="board-col" style="--team-accent: ${teamAccent(id) || 'var(--color-primary)'}">
+    <div class="board-col"${teamAccentAttr(id)}>
       <span class="board-emoji">${teamEmoji(id)}</span>
       <span class="board-name">${esc(teamName(id))}</span>
       ${score != null ? `<span class="board-score">${score}</span>` : ''}
@@ -12473,9 +12511,8 @@ function teamMarkSpec(id) {
     const i = Math.max(0, teamIds().indexOf(id));
     return { kind: 'flag', color, shape: TEAM_FLAG_SHAPES[i % TEAM_FLAG_SHAPES.length] };
   }
-  // The accent goes into a style attribute: only a plain hex ever does.
-  const accent = teamAccent(id);
-  return { kind: 'tile', emoji: teamEmoji(id), accent: /^#[0-9a-fA-F]{3,8}$/.test(accent || '') ? accent : '' };
+  // The accent goes into a style attribute: only what teamAccentVars let through (hex digits and fixed names) ever does.
+  return { kind: 'tile', emoji: teamEmoji(id), accent: teamAccentVars(id) };
 }
 
 // opts.size: px width (default 34); opts.label: spoken name ('' = decorative,
@@ -12492,7 +12529,8 @@ function teamMarkHtml(id, opts) {
   if (spec.kind === 'flag') {
     return `<svg class="tm flag" data-team="${esc(id)}" data-flag="${spec.color}" style="${tm}" viewBox="0 0 32 32" ${a11y}><use href="#flag-${spec.shape}"/></svg>`;
   }
-  return `<span class="tm tm-tile" data-team="${esc(id)}" style="${tm}${spec.accent ? ';--tm-accent:' + spec.accent : ''}" ${a11y}>${spec.emoji}</span>`;
+  // The tile's edge is the team's colour for the theme in force: [data-team] turns the -l/-d pair into --team.
+  return `<span class="tm tm-tile" data-team="${esc(id)}" style="${tm}${spec.accent ? ';' + spec.accent + ';--tm-accent:var(--team)' : ''}" ${a11y}>${spec.emoji}</span>`;
 }
 
 function paintTeamMark(el, id, opts) {
