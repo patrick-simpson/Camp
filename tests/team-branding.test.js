@@ -114,6 +114,9 @@ function useIdb(f) { if (!savedIdb) savedIdb = { idb: indexedDB }; indexedDB = f
 function restoreIdb() { if (savedIdb) { indexedDB = savedIdb.idb; savedIdb = null; photoDBPromise = null; photoDBConn = null; } }
 
 function loaderDb(node) {
+  // Pin the camp clock to a quiet hour (Sunday 3 AM). A photo arriving re-renders the page, and the Now card draws the
+  // team marks of a meal's cleanup note: at supper time on a real clock that draws t1's crest, which "nobody draws" here.
+  location.search = '?now=0-0300';
   const db = makeFakeRtdb();
   const reads = [];
   window.firebase = { database: () => ({ ref: (p) => { reads.push(p); return db.ref(p); } }) };
@@ -122,6 +125,7 @@ function loaderDb(node) {
   return { db, reads };
 }
 function loaderDone() {
+  location.search = '';
   restoreIdb();
   fbRef = null;
   delete window.firebase;
