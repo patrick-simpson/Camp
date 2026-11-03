@@ -4001,6 +4001,55 @@ field, to the camp's own constant while the record doesn't carry it.
   fields only if they pass the checks above, and `photoV` NEVER from the file, because `teamPhotos/<tid>`
   holds only the newest upload and an old version number would point at a photo that is gone.
 
+## People and walk-ups (Step 25, session 2)
+
+P2 §11.8 / §11.18. Who is on the list (`<root>/members`, unchanged data), who is ASKING to join and who is blocked
+(`accessRequests`, `accessBlocked`, published in R1; **no rules change here**). The data half lives in setup-sync.js's
+"PEOPLE" section (beside editorsHere, which it copies the pattern of); the screen is setup-ui.js section 14; the
+requester's side is app.js (the denied screen).
+
+- **The engine** (setup-sync.js, prefix `people*` / `ppl*`; pure helpers first, then data). Pure and pinned by
+  `tests/people.test.js` (+ senior): `peopleClean` (control characters out, space folded, cut), `pplNormRequest` (a
+  request is a key that is an email or a phone — never `pending-…` — with a name and a time; name cut to 60, note to
+  200, `at` clamped like chat's; anything else is dropped), `peopleTeamByWord` / `peopleTeamInText` (a team named by
+  its name, short name or last word, singular or plural, case-blind; two answers is none, never a guess),
+  `peopleRows` / `peopleGroups` (the directory as plain rows; by team in this camp's order, directors first, then
+  people on no or an unknown team), `peopleCandidates` ("Is this someone already on the list?": pending rows with the
+  same first name — one spelling per counselor — then the team the note names, at most eight), `peopleNameClash` (the
+  directory name is what chat trusts: a whole-name match, or a lone first name another member has),
+  `peopleParseLines` ("Cam, Foxes": new / update / same / repeat / empty, the team matched on name or short name) and
+  `peopleTeamChanges` (the rows Put people on teams must write).
+- **The listener** (`peopleRequestsAttach`): ONE editor-only `.on('value')` over
+  `accessRequests.orderByChild('at').limitToLast(25)` (the rules carry `.indexOn: ['at']`), attached from `initSync`
+  after approval and when a viewer is promoted, only for a confirmed director whose sync has started
+  (`pplMayListen`); detached on demotion. A refusal sets `pplReq.denied` and degrades this feature only — never
+  `fbRef` / `syncDenied`. A non-member never gets a listener (THE INVARIANT). The first snapshot lists what is already
+  waiting and announces nothing; a request that arrives after it calls `onAccessRequestsArrived` (a toast naming the
+  person; app.js). A request from someone who has since become a member is not a request
+  (`peopleRequests()` filters against the directory). A director of BOTH camps hears once at load about the other
+  camp's waiting requests (`peopleOtherCampProbe`, a one-shot `once()`; refused for anyone who is not a director
+  there, which is harmless). **Nothing here is stored on a device**: requests, names and the Blocked list are in
+  memory only (a source pin in people.test.js).
+- **The actions** (all `Promise<{ ok, reason? }>`, never throw, every one guarded by `pplGuard`: a counselor's phone
+  says `readonly`, an offline device `offline` — "Needs a connection", a decision about access must not queue behind
+  a dead signal): `peopleLetIn` (create the member where none is, THEN delete the request; default role Counselor),
+  `peopleLink` (a pending row's record moves to the requester's key — create then delete, absent-only; **a Director
+  row needs the requester's email or phone typed again**), `peopleNotNow`, `peopleBlock` (writes `accessBlocked`
+  FIRST, then deletes the request), `peopleUnblock`, `peopleLoadBlocked` (one read, never a listener),
+  `peopleSavePerson` (only the fields that changed, ONE `update()` at the person's row; a cleared team is a removal),
+  `peopleSaveTeams` (Put people on teams: one row at a time, so a refused row is listed and the rest are saved),
+  `peopleAddLines` (new pending rows and named people's teams in ONE multi-path update), `peopleAddMember` /
+  `peopleAddSignIn` / `peopleSameAs` / `peopleSetCampAccess` (the old drawer's add, convert, merge and per-camp
+  switch, typed instead of `prompt()`ed). The owner row and your own role are never written from here
+  (`owner` / `self`). `peopleSetAsking(on)` is an ordinary setup commit of `meta/joinOpen` (the week's own field: it
+  stamps `meta/edited/week`) with no undo entry; off is written as `false`.
+- **"Asking has been on too long"** (`pplAskingLongOn`): joinOpen has no time of its own, but turning it on stamps
+  `meta/edited/week`, so while it is on that stamp is a LOWER BOUND on how long (nothing newer has touched the
+  week's fields). The hub's People row says so after 7 days.
+- **`tests/fake-rtdb.js` gained queries** (`orderByChild` + `limitToLast` / `limitToFirst` / `equalTo`, read by a value
+  listener or `once()`; `snapshot.forEach` walks query order, and a row that leaves the window is gone), because the
+  requests listener is the first query the tests drive.
+
 ## Counselors ↔ teams ↔ accounts
 
 A member record can carry a **`teamId`** (`'t0'`…`'t5'`) — the team that

@@ -26,7 +26,8 @@
 //     function is re-run on the new server value (and may abort by returning
 //     undefined, as the real SDK does).
 //
-// Not reproduced: auth, query ordering/limits, priority, onDisconnect, size
+// Queries: orderByChild / limitToLast / limitToFirst / equalTo on a ref, read with on("value") or once() (a listener sees
+// the windowed subset; snapshot.forEach walks it in query order). Not reproduced: auth, priority, onDisconnect, size
 // limits. First-snapshot timing is under test control: construct with
 // { manualFirstSnapshot: true } and call deliverFirstSnapshots() when the
 // "network answers", to test what the app does BEFORE its first pull.
@@ -159,25 +160,49 @@ function makeFakeRtdb(opts) {
     return getAt(view(), parts);
   }
 
-  function snapshotOf(parts, stored) {
+  // `order` (a query's result): the child keys in query order, so forEach walks them as the SDK does.
+  function snapshotOf(parts, stored, order) {
     const val = stored === undefined ? null : fromStored(clone(stored));
+    const kids = () => (isObj(stored) ? (order || Object.keys(stored)) : []);
     return {
       key: parts.length ? parts[parts.length - 1] : null,
       val: () => clone(val),
       exists: () => val !== null,
       child: (p) => snapshotOf(parts.concat(split(p)), getAt(stored, split(p))),
+      forEach: (fn) => { const ks = kids(); for (let i = 0; i < ks.length; i += 1) { if (fn(snapshotOf(parts.concat([ks[i]]), stored[ks[i]])) === true) return true; } return false; },
+      numChildren: () => kids().length,
+      hasChildren: () => kids().length > 0,
     };
+  }
+
+  // A query (orderByChild / limitToLast / limitToFirst): the children sorted by the child's value (then key), cut to the
+  // window. Only what the app uses; a value listener sees the windowed subset, so a row that falls out of the window is gone.
+  function shapeQuery(stored, q) {
+    if (!isObj(stored)) return { stored: undefined, order: [] };
+    let keys = Object.keys(stored);
+    if (q.child) {
+      const at = (k) => { const v = isObj(stored[k]) ? stored[k][q.child] : undefined; return v === undefined ? null : v; };
+      keys.sort((a, b) => { const x = at(a), y = at(b); return x === y ? (a < b ? -1 : a > b ? 1 : 0) : (x === null ? -1 : y === null ? 1 : x < y ? -1 : 1); });
+    }
+    if (q.equalTo !== undefined) keys = keys.filter((k) => isObj(stored[k]) && stored[k][q.child] === q.equalTo);
+    if (q.last) keys = keys.slice(-q.last);
+    if (q.first) keys = keys.slice(0, q.first);
+    const out = {};
+    keys.forEach((k) => { out[k] = stored[k]; });
+    return { stored: keys.length ? out : undefined, order: keys };
   }
 
   function fire() {
     listeners.slice().forEach((l) => {
       if (held && !l.started) return;
-      const v = valueAt(l.parts);
-      const sig = JSON.stringify(v === undefined ? null : v);
+      let v = valueAt(l.parts);
+      let order;
+      if (l.query) { const sh = shapeQuery(v, l.query); v = sh.stored; order = sh.order; }
+      const sig = JSON.stringify(v === undefined ? null : v) + (order ? '|' + order.join(',') : '');
       if (l.started && sig === l.last) return;
       l.started = true;
       l.last = sig;
-      l.cb(snapshotOf(l.parts, v));
+      l.cb(snapshotOf(l.parts, v, order));
     });
   }
 
@@ -218,6 +243,44 @@ function makeFakeRtdb(opts) {
     });
   }
 
+  function makeQuery(parts, q) {
+    const base = makeRef(parts);
+    const next = (more) => makeQuery(parts, Object.assign({}, q, more));
+    const run = (stored) => { const sh = shapeQuery(stored, q); return snapshotOf(parts, sh.stored, sh.order); };
+    return {
+      orderByChild: (f) => next({ child: f }),
+      limitToLast: (n) => next({ last: n }),
+      limitToFirst: (n) => next({ first: n }),
+      equalTo: (v) => next({ equalTo: v }),
+      on(type, cb, errCb) {
+        if (type !== 'value') throw new Error('fake-rtdb: only "value" listeners are supported');
+        if (readDenials.some((d) => d.every((seg, i) => parts[i] === seg))) {
+          if (errCb) later(() => errCb(denied(parts.join('/'))));
+          return cb;
+        }
+        listeners.push({ parts, cb, errCb, last: null, started: false, query: q });
+        if (!held) fire();
+        return cb;
+      },
+      off(type, cb) {
+        for (let i = listeners.length - 1; i >= 0; i -= 1) {
+          const l = listeners[i];
+          if (l.query === q && (!cb || l.cb === cb)) listeners.splice(i, 1);
+        }
+      },
+      once() {
+        return new Promise((resolve, reject) => {
+          const go = () => {
+            if (readDenials.some((d) => d.every((seg, i) => parts[i] === seg))) { reject(denied(parts.join('/'))); return; }
+            resolve(run(valueAt(parts)));
+          };
+          if (online) go(); else pending.push({ kind: 'read', touched: [], run: go });
+        });
+      },
+      ref: base,
+    };
+  }
+
   function makeRef(parts) {
     const ref = {
       key: parts.length ? parts[parts.length - 1] : null,
@@ -225,6 +288,11 @@ function makeFakeRtdb(opts) {
       toString: () => '/' + parts.join('/'),
       child: (p) => makeRef(parts.concat(split(p))),
       get parent() { return parts.length ? makeRef(parts.slice(0, -1)) : null; },
+
+      // Queries: orderByChild(f) with limitToLast(n) / limitToFirst(n) / equalTo(v), read through on('value') or once('value').
+      orderByChild: (f) => makeQuery(parts, { child: f }),
+      limitToLast: (n) => makeQuery(parts, { last: n }),
+      limitToFirst: (n) => makeQuery(parts, { first: n }),
 
       on(type, cb, errCb) {
         if (type !== 'value') throw new Error('fake-rtdb: only "value" listeners are supported');

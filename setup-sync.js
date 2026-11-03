@@ -1343,6 +1343,7 @@ function flushSetupPush() {
 function setupOnRoleChange(prev, next) {
   if (prev === 'editor' && next !== 'editor') { setupFocus = null; setupFocusOwed = {}; }
   if (typeof editorsHereOnRoleChange === 'function') editorsHereOnRoleChange(prev, next);
+  if (typeof peopleRequestsOnRoleChange === 'function') peopleRequestsOnRoleChange(prev, next);
 }
 
 // ── the sync line (the builder frame's `#setup-sync[data-tone]`) ─────
@@ -4096,6 +4097,572 @@ function electiveLinkPerson(pid, member) {
     })));
     if (!n) return false;
   }, { label: 'Linked ' + name + ' to their sign-in' });
+}
+
+// ════════════════════════════════════════════════════════════════════
+// PEOPLE: who is on the list, who is asking to join, who is blocked (setup-rebuild-spec §11.8, §11.18 — Step 25)
+// ════════════════════════════════════════════════════════════════════
+// The data half of the People screen (setup-ui.js section 14) and of the denied screen's Ask to join (app.js). Same data as the
+// retired Members drawer (<root>/members, through the same createMemberIfAbsent / memberRecord / planMemberAdd), plus the two
+// nodes R1 published for walk-ups:
+//   <root>/accessRequests/<key> = { name ≤ 60, note? ≤ 200, at: server time }   a signed-in NON-member writes their OWN row, only
+//        while a director has switched asking on (setup/meta/joinOpen), not blocked, at most one write a minute; editors read the
+//        list and may delete any row; the requester may delete theirs a minute after asking.
+//   <root>/accessBlocked/<key> = { at, byKey }                                  editors only.
+// Everything a requester typed is UNTRUSTED (sec-F8): names and notes are cleaned and cut to the rules' limits on the way in
+// (pplNormRequest) and escaped on the way out (esc(), setup-ui.js). The list is an editor-only `.on('value')` over the 25 newest
+// rows (`.indexOn: ['at']`) that degrades only itself; a refused read never touches fbRef / syncDenied. A non-member never gets a
+// listener (THE INVARIANT): the requester side polls with once() (app.js).
+
+const PPL_NAME_MAX = 60;
+const PPL_NOTE_MAX = 200;
+const PPL_WINDOW = 25;                       // the editor listener's limitToLast
+const PPL_THROTTLE_MS = 60000;               // the rules' floor between asks, and before a requester may withdraw
+const PPL_ASKING_NAG_MS = 7 * 24 * 3600 * 1000; // the hub nags when asking has been on this long (a lower bound: see pplAskingLongOn)
+
+const pplReq = {
+  ref: null,        // the attached query, or null
+  list: [],         // the requests, newest first: [{ key, name, note, at }]
+  loaded: false,    // the first snapshot arrived
+  denied: false,    // the read was refused (rules that predate it): the feature is just absent
+  seen: null,       // keys already shown to this device, so a toast says "just arrived" only for a new one
+  other: { n: 0, probed: false },  // the OTHER camp's count (a director of both camps), read once
+  blocked: { status: 'idle', rows: [] }, // the Blocked sheet's one-shot read
+};
+
+// ── pure helpers ─────────────────────────────────────────────────────
+
+// What a requester (or a typed line) wrote, as a name or a note: control characters out, runs of space folded, cut to the limit.
+function peopleClean(s, max) {
+  return String(s == null ? '' : s).replace(/[\u0000-\u001f\u007f\u2028\u2029]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+// A name compared as the directory compares it: one spelling per counselor (Lilly = Lily), case-blind, spaces folded.
+function peopleNameKey(name) {
+  const t = peopleClean(name, 200);
+  return (typeof canonicalCounselorName === 'function' ? canonicalCounselorName(t) : t).toLowerCase();
+}
+
+function peopleFirst(name) {
+  const w = peopleClean(name, 200).split(' ')[0] || '';
+  return (typeof canonicalCounselorName === 'function' ? canonicalCounselorName(w) : w).toLowerCase();
+}
+
+// One snapshot child → a request, or null when it is not one the rules could have let in (a key that is neither an email nor a
+// phone, no name, no time). `at` is clamped like chat's: a wild number must never reach date maths.
+function pplNormRequest(key, v) {
+  const k = String(key || '');
+  if (!(k.indexOf('@') !== -1 || k.charAt(0) === '+') || k.length > 200 || !isValidMemberKey(k) || isPendingKey(k)) return null;
+  if (!v || typeof v !== 'object') return null;
+  const name = peopleClean(v.name, PPL_NAME_MAX);
+  if (!name) return null;
+  const now = Date.now();
+  let at = typeof v.at === 'number' && isFinite(v.at) ? v.at : 0;
+  if (at > now + 86400000) at = now;
+  if (at < 0) at = 0;
+  const note = typeof v.note === 'string' ? peopleClean(v.note, PPL_NOTE_MAX) : '';
+  return note ? { key: k, name, note, at } : { key: k, name, at };
+}
+
+// The text of a typed email or phone as a member key ('' when it is neither). The same reading the Members drawer's add form has.
+function peopleKeyFromTyped(raw) {
+  const t = String(raw || '').trim();
+  if (!t) return '';
+  let key = '';
+  if (t.indexOf('@') !== -1) key = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(t) ? emailKey(t) : '';
+  else key = phoneKey(t);
+  return key && isValidMemberKey(key) ? key : '';
+}
+
+const pplNorm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+
+// The team a word names, by its name or short name, case-blind: "foxes", "Ferocious Foxes", "fox" for Foxes. '' when none or when two
+// teams answer to it (never a guess).
+function peopleTeamByWord(word, teams) {
+  const w = pplNorm(word);
+  if (!w) return '';
+  const hits = [];
+  (teams || []).forEach((t) => {
+    if (!t || typeof t.id !== 'string') return;
+    const full = pplNorm(t.name);
+    const short = pplNorm(typeof teamShort === 'function' ? teamShort(t.id) : '');
+    const last = pplNorm(String(t.name || '').trim().split(/\s+/).pop());
+    const stem = (x) => x.replace(/(?:es|s)$/, '');
+    const same = (x) => x && (x === w || (w.length > 2 && stem(x) === stem(w)));
+    if (same(full) || same(short) || same(last)) hits.push(t.id);
+  });
+  return hits.length === 1 ? hits[0] : '';
+}
+
+// The one team a free-text note names ("I'm with the Foxes"): a whole word of it that is a team's short name, the last word of its name or
+// its whole name. '' when none or when two are named.
+function peopleTeamInText(text, teams) {
+  const words = String(text || '').toLowerCase().match(/[a-z0-9’']+/g) || [];
+  if (!words.length) return '';
+  const found = {};
+  for (let i = 0; i < words.length; i++) {
+    const one = peopleTeamByWord(words[i], teams);
+    if (one) found[one] = true;
+    if (i + 1 < words.length) { const two = peopleTeamByWord(words[i] + ' ' + words[i + 1], teams); if (two) found[two] = true; }
+  }
+  const ids = Object.keys(found);
+  return ids.length === 1 ? ids[0] : '';
+}
+
+// The directory as plain rows (the screen, the hub and the tests read the same shape). `dir` is memberDirectory; `myKey` marks your own.
+function peopleRows(dir, myKey) {
+  const d = dir && typeof dir === 'object' ? dir : {};
+  return Object.keys(d).filter((k) => d[k] && typeof d[k] === 'object').map((key) => {
+    const r = d[key];
+    const name = peopleClean(r.name, PPL_NAME_MAX) || identityFromKey(key);
+    return {
+      key, name, role: r.role === 'editor' ? 'editor' : 'viewer', teamId: isTeamId(r.teamId) ? r.teamId : '',
+      pending: isPendingKey(key), owner: key === OWNER_MEMBER_KEY, self: !!myKey && key === myKey,
+      phone: key.charAt(0) === '+', hasName: !!peopleClean(r.name, PPL_NAME_MAX),
+      addedAt: r.addedAt,
+    };
+  });
+}
+
+// Rows by team (this camp's own order), then the people on no team. A person on an id the camp doesn't have counts as on no team.
+// Inside a group directors come first, then by name; "Not on a team" keeps the owner and directors at the top the same way.
+function peopleGroups(rows, teams) {
+  const ids = (teams || []).filter((t) => t && typeof t.id === 'string').map((t) => t.id);
+  const by = (a, b) => (a.owner === b.owner ? 0 : a.owner ? -1 : 1) || (a.role === b.role ? 0 : a.role === 'editor' ? -1 : 1) || a.name.localeCompare(b.name);
+  const groups = (teams || []).filter((t) => t && typeof t.id === 'string').map((t) => ({ team: t, rows: rows.filter((r) => r.teamId === t.id).sort(by) }));
+  const none = rows.filter((r) => ids.indexOf(r.teamId) === -1).sort(by);
+  return { groups, none };
+}
+
+// "Is this someone already on the list?" (ux-R8): the pending rows (people we know by name, with no sign-in yet) that might be the
+// requester — the same first name first, then the team the note names, never an auto-guess. At most eight, each with team and role.
+function peopleCandidates(req, rows, teams) {
+  const first = peopleFirst(req && req.name);
+  const hint = peopleTeamInText(req && req.note, teams);
+  const pend = (rows || []).filter((r) => r.pending);
+  const out = [];
+  const add = (r, why) => { if (!out.some((o) => o.key === r.key)) out.push({ key: r.key, name: r.name, teamId: r.teamId, role: r.role, why }); };
+  if (first) pend.filter((r) => peopleFirst(r.name) === first).forEach((r) => add(r, 'name'));
+  if (hint) pend.filter((r) => r.teamId === hint).forEach((r) => add(r, 'team'));
+  return out.slice(0, 8);
+}
+
+// The name that goes into the directory is what chat trusts, so a likely clash is said before it is written: another member whose
+// whole name is the same, or a lone first name that is another member's first name ("There's already a Patrick").
+function peopleNameClash(name, rows, exceptKey) {
+  const key = peopleNameKey(name);
+  if (!key) return null;
+  const single = key.indexOf(' ') === -1;
+  const hit = (rows || []).find((r) => {
+    if (r.key === exceptKey) return false;
+    const rk = peopleNameKey(r.name);
+    if (rk === key) return true;
+    const rSingle = rk.indexOf(' ') === -1;
+    return (single || rSingle) && peopleFirst(r.name) === peopleFirst(name);
+  });
+  return hit || null;
+}
+
+// Pasted or typed lines ("Cam, Foxes"), resolved against the list and the camp's teams: each is new (a pending row), an update (an
+// existing person put on a team), already there, a repeat, or empty. The team is matched case-blind on name or short name; a team
+// word that matches none says so and the person is added with no team.
+function peopleParseLines(text, rows, teams) {
+  const out = [];
+  const seen = {};
+  String(text == null ? '' : text).split(/\r?\n/).forEach((raw) => {
+    const line = raw.trim();
+    if (!line) return;
+    const i = line.indexOf(',');
+    const name = peopleClean(i < 0 ? line : line.slice(0, i), PPL_NAME_MAX);
+    const word = i < 0 ? '' : peopleClean(line.slice(i + 1), 60);
+    const row = { line: peopleClean(line, 200), name, word, teamId: '', status: 'new', key: '', note: '' };
+    if (!name) { row.status = 'empty'; out.push(row); return; }
+    row.teamId = word ? peopleTeamByWord(word, teams) : '';
+    if (word && !row.teamId) row.note = 'No team matched';
+    const nk = peopleNameKey(name);
+    const have = (rows || []).find((r) => !r.owner && peopleNameKey(r.name) === nk);
+    if (seen[nk]) row.status = 'repeat';
+    else if (have) {
+      row.key = have.key;
+      row.status = row.teamId && have.teamId !== row.teamId ? 'update' : 'same';
+      if (row.status === 'same' && row.teamId && have.teamId === row.teamId) row.note = 'Already on this team';
+    }
+    seen[nk] = true;
+    out.push(row);
+  });
+  return { rows: out, add: out.filter((r) => r.status === 'new'), update: out.filter((r) => r.status === 'update') };
+}
+
+// Put people on teams: the rows whose chosen team differs from what the list has, as { key, name, teamId ('' = off every team) }.
+function peopleTeamChanges(rows, picks) {
+  const out = [];
+  (rows || []).forEach((r) => {
+    if (r.owner || !Object.prototype.hasOwnProperty.call(picks || {}, r.key)) return;
+    const want = isTeamId(picks[r.key]) ? picks[r.key] : '';
+    if (want !== r.teamId) out.push({ key: r.key, name: r.name, teamId: want });
+  });
+  return out;
+}
+
+// Who is asking right now, newest first: the listener's list minus a key that has since become a member (a request left behind by a
+// director who approved it on another device) — never a row for someone already in.
+function peopleRequests() {
+  const dir = memberDirectory && typeof memberDirectory === 'object' ? memberDirectory : {};
+  return pplReq.list.filter((r) => !Object.prototype.hasOwnProperty.call(dir, r.key));
+}
+
+// Has asking been on for more than a week? joinOpen carries no time of its own, but turning it on stamps `meta/edited/week`, and
+// nothing newer has touched the week's fields: so while it is on, the stamp is a LOWER BOUND on how long it has been on.
+function pplAskingLongOn(nowMs) {
+  const at = typeof setupEditedAt === 'function' ? setupEditedAt('week') : 0;
+  return pplAskingOn() && at > 0 && Number(nowMs) - at > PPL_ASKING_NAG_MS;
+}
+
+function pplAskingOn() {
+  return !!(setupTree && setupTree.meta && setupTree.meta.joinOpen === true);
+}
+
+// ── the requests listener (editor devices only) ───────────────────────
+
+function pplMayListen() {
+  return directorTab() && memberRoleConfirmed && restoreHasFirebase() && typeof syncStarted !== 'undefined' && syncStarted === true;
+}
+
+// Called after approval (initSync) and when a viewer is promoted. One `.on('value')` over the 25 newest rows; the rules carry the
+// `at` index. A refusal (rules that predate it) is this feature's alone.
+function peopleRequestsAttach() {
+  if (pplReq.ref || !pplMayListen()) return;
+  try {
+    const q = firebase.database().ref(dbPath('accessRequests')).orderByChild('at').limitToLast(PPL_WINDOW);
+    pplReq.ref = q;
+    q.on('value', (snap) => {
+      const list = [];
+      if (snap && typeof snap.forEach === 'function') snap.forEach((c) => { const r = pplNormRequest(c.key, c.val()); if (r) list.push(r); });
+      list.sort((a, b) => b.at - a.at);
+      const had = pplReq.seen;
+      const fresh = had ? list.filter((r) => !had[r.key + '|' + r.at]) : [];
+      pplReq.seen = {};
+      list.forEach((r) => { pplReq.seen[r.key + '|' + r.at] = true; });
+      pplReq.list = list;
+      pplReq.loaded = true;
+      pplReq.denied = false;
+      setupNotify('requests');
+      if (fresh.length && typeof onAccessRequestsArrived === 'function') onAccessRequestsArrived(fresh);
+      else if (typeof onAccessRequestsChanged === 'function') onAccessRequestsChanged();
+    }, () => {
+      pplReq.ref = null; pplReq.list = []; pplReq.loaded = false; pplReq.denied = true; pplReq.seen = null;
+      setupNotify('requests');
+      if (typeof onAccessRequestsChanged === 'function') onAccessRequestsChanged();
+    });
+  } catch (e) { pplReq.ref = null; }
+  peopleOtherCampProbe();
+}
+
+function peopleRequestsDetach() {
+  if (pplReq.ref) { try { pplReq.ref.off('value'); } catch (e) { /* ignore */ } }
+  pplReq.ref = null; pplReq.list = []; pplReq.loaded = false; pplReq.seen = null;
+  pplReq.other = { n: 0, probed: false };
+  pplReq.blocked = { status: 'idle', rows: [] };
+}
+
+// A demotion or removal drops the list and the listener; a promotion (once the role is set) starts it.
+function peopleRequestsOnRoleChange(prev, next) {
+  if (prev === 'editor' && next !== 'editor') { peopleRequestsDetach(); setupNotify('requests'); if (typeof onAccessRequestsChanged === 'function') onAccessRequestsChanged(); }
+  if (next === 'editor' && prev !== 'editor' && typeof Promise !== 'undefined') Promise.resolve().then(peopleRequestsAttach);
+}
+
+// A director of BOTH camps hears, once at load, about the other camp's waiting requests ("1 person is asking to join Senior camp").
+// One read of an editor-only node: refused for anyone who is not a director there, which is harmless and says nothing.
+function peopleOtherCampProbe() {
+  if (pplReq.other.probed || typeof campRoleOf !== 'function' || campRoleOf(otherCampId()) !== 'editor') return;
+  pplReq.other.probed = true;
+  try {
+    firebase.database().ref(CAMPS[otherCampId()].dbRoot + '/accessRequests').orderByChild('at').limitToLast(PPL_WINDOW).once('value').then((snap) => {
+      let n = 0;
+      if (snap && typeof snap.forEach === 'function') snap.forEach((c) => { if (pplNormRequest(c.key, c.val())) n++; });
+      pplReq.other.n = n;
+      if (n) { setupNotify('requests'); if (typeof onAccessRequestsChanged === 'function') onAccessRequestsChanged(); if (typeof onOtherCampRequests === 'function') onOtherCampRequests(n); }
+    }).catch(() => {});
+  } catch (e) { /* the count just stays 0 */ }
+}
+
+// ── acting on the list (every one: Promise<{ ok, reason? }>, never throws) ───────────────────────
+
+// Why an action cannot even start: a viewer's phone, no connection ("Needs a connection" — a person's decision about access
+// must not queue behind a dead signal and land minutes later).
+function pplGuard() {
+  if (!canEdit()) return { ok: false, reason: 'readonly' };
+  if (!restoreOnline()) return { ok: false, reason: 'offline' };
+  return null;
+}
+
+function pplMembersRef(key) { return firebase.database().ref(dbPath('members/' + key)); }
+function pplRequestRef(key) { return firebase.database().ref(dbPath('accessRequests/' + key)); }
+
+// The switch at the top of People (setup/meta/joinOpen). An ordinary setup commit (the week's own field), no undo entry: it is a
+// setting somebody may flip back on the same screen.
+function peopleSetAsking(on) {
+  if (!canEdit()) return { ok: false, reason: 'readonly' };
+  return commitSetup((d) => { d.meta.joinOpen = on === true; }, { label: on ? 'Let people ask to join' : 'Stop people asking to join', undo: false });
+}
+
+// Let someone in from their request: create the member record where none exists, THEN delete the request (a failure part-way
+// keeps the request, never loses the person). The role defaults to Counselor (a viewer); a team is optional.
+async function peopleLetIn(req, o) {
+  const g = pplGuard();
+  if (g) return g;
+  const key = req && req.key;
+  if (!key || !isValidMemberKey(key) || isPendingKey(key)) return { ok: false, reason: 'invalid' };
+  if (key === OWNER_MEMBER_KEY) return { ok: false, reason: 'owner' };
+  const role = o && o.role === 'editor' ? 'editor' : 'viewer';
+  const name = peopleClean(o && o.name, PPL_NAME_MAX) || peopleClean(req.name, PPL_NAME_MAX);
+  const teamId = o && isTeamId(o.teamId) && (state.teams || []).some((t) => t && t.id === o.teamId) ? o.teamId : '';
+  try {
+    const created = await createMemberIfAbsent(pplMembersRef(key), memberRecord(role, name, teamId));
+    try { await pplRequestRef(key).remove(); } catch (e) { return { ok: true, already: !created, requestLeft: true }; }
+    return { ok: true, already: !created, invite: created ? inviteText(key, role) : '' };
+  } catch (e) { return { ok: false, reason: 'refused' }; }
+}
+
+// "Link": the requester IS a pending row the directors typed (a name and a team, no sign-in yet). The record moves to the
+// requester's key (create-then-delete, absent-only), then the request goes. Linking to a Director-role row asks for the
+// requester's email or phone typed again (`confirm`), so a stranger who typed a director's first name cannot be handed the role.
+async function peopleLink(req, pendKey, o) {
+  const g = pplGuard();
+  if (g) return g;
+  const key = req && req.key;
+  if (!key || !isValidMemberKey(key) || isPendingKey(key)) return { ok: false, reason: 'invalid' };
+  if (key === OWNER_MEMBER_KEY) return { ok: false, reason: 'owner' };
+  const dir = memberDirectory && typeof memberDirectory === 'object' ? memberDirectory : {};
+  const rec = isPendingKey(pendKey) ? dir[pendKey] : null;
+  if (!rec || typeof rec !== 'object') return { ok: false, reason: 'gone' };
+  const role = rec.role === 'editor' ? 'editor' : 'viewer';
+  if (role === 'editor' && peopleKeyFromTyped(o && o.confirm) !== key) return { ok: false, reason: 'confirm' };
+  try {
+    const created = await createMemberIfAbsent(pplMembersRef(key), memberRecord(role, rec.name, rec.teamId));
+    if (!created) return { ok: false, reason: 'exists' };
+    await pplMembersRef(pendKey).remove();
+    try { await pplRequestRef(key).remove(); } catch (e) { return { ok: true, requestLeft: true, invite: inviteText(key, role) }; }
+    return { ok: true, invite: inviteText(key, role) };
+  } catch (e) { return { ok: false, reason: 'refused' }; }
+}
+
+async function peopleNotNow(req) {
+  const g = pplGuard();
+  if (g) return g;
+  if (!req || !isValidMemberKey(req.key)) return { ok: false, reason: 'invalid' };
+  try { await pplRequestRef(req.key).remove(); return { ok: true }; } catch (e) { return { ok: false, reason: 'refused' }; }
+}
+
+// Block first, then delete the request, so a re-ask cannot slip in between. The block is the director's own word on one identity.
+async function peopleBlock(req) {
+  const g = pplGuard();
+  if (g) return g;
+  if (!req || !isValidMemberKey(req.key) || isPendingKey(req.key)) return { ok: false, reason: 'invalid' };
+  if (req.key === OWNER_MEMBER_KEY) return { ok: false, reason: 'owner' };
+  try {
+    await firebase.database().ref(dbPath('accessBlocked/' + req.key)).set({ at: firebase.database.ServerValue.TIMESTAMP, byKey: identityKey(authUser) });
+    try { await pplRequestRef(req.key).remove(); } catch (e) { /* the block stands; the request is just still listed */ }
+    pplReq.blocked.status = 'idle'; // the list read is stale now
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: 'refused' }; }
+}
+
+async function peopleUnblock(key) {
+  const g = pplGuard();
+  if (g) return g;
+  if (!key || !isValidMemberKey(key)) return { ok: false, reason: 'invalid' };
+  try {
+    await firebase.database().ref(dbPath('accessBlocked/' + key)).remove();
+    pplReq.blocked.rows = pplReq.blocked.rows.filter((r) => r.key !== key);
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: 'refused' }; }
+}
+
+// The Blocked sheet's list: ONE read when the sheet opens (never a listener), held in memory only.
+async function peopleLoadBlocked() {
+  if (!canEdit() || !restoreHasFirebase()) { pplReq.blocked = { status: 'nosync', rows: [] }; return pplReq.blocked; }
+  pplReq.blocked.status = 'loading';
+  try {
+    const snap = await firebase.database().ref(dbPath('accessBlocked')).once('value');
+    const rows = [];
+    if (snap && typeof snap.forEach === 'function') snap.forEach((c) => {
+      const v = c.val();
+      if (isValidMemberKey(c.key) && !isPendingKey(c.key) && v && typeof v === 'object') rows.push({ key: c.key, at: typeof v.at === 'number' ? v.at : 0, byKey: typeof v.byKey === 'string' ? v.byKey : '' });
+    });
+    rows.sort((a, b) => b.at - a.at);
+    pplReq.blocked = { status: 'ok', rows };
+  } catch (e) { pplReq.blocked = { status: 'denied', rows: [] }; }
+  return pplReq.blocked;
+}
+
+// A person's record, the fields that changed, one atomic update at their row: { name?, teamId? ('' = off the team), role? }. Your
+// own role and the owner's row are never written from here (the rules refuse the owner; your own access is another director's job).
+async function peopleSavePerson(key, patch) {
+  const g = pplGuard();
+  if (g) return g;
+  if (!key || !isValidMemberKey(key)) return { ok: false, reason: 'invalid' };
+  if (key === OWNER_MEMBER_KEY) return { ok: false, reason: 'owner' };
+  const p = patch || {};
+  const up = {};
+  if (typeof p.name === 'string') { const n = peopleClean(p.name, PPL_NAME_MAX); if (!n) return { ok: false, reason: 'name' }; up.name = n; }
+  if (typeof p.teamId === 'string') up.teamId = isTeamId(p.teamId) ? p.teamId : null; // RTDB has no "present but empty" string
+  if (p.role !== undefined) {
+    if (key === identityKey(authUser)) return { ok: false, reason: 'self' };
+    if (p.role !== 'viewer' && p.role !== 'editor') return { ok: false, reason: 'invalid' };
+    up.role = p.role;
+  }
+  if (!Object.keys(up).length) return { ok: true, nothing: true };
+  try { await pplMembersRef(key).update(up); return { ok: true }; } catch (e) { return { ok: false, reason: 'refused' }; }
+}
+
+// Put people on teams: the changed rows, one row at a time, so a refused row is listed and the rest are saved (ux-R9). Resolves
+// { ok, saved: n, failed: [{ key, name }] }.
+async function peopleSaveTeams(changes) {
+  const g = pplGuard();
+  if (g) return g;
+  let saved = 0;
+  const failed = [];
+  for (const c of changes || []) {
+    if (!c || !isValidMemberKey(c.key) || c.key === OWNER_MEMBER_KEY) { failed.push({ key: c && c.key, name: c && c.name }); continue; }
+    try { await pplMembersRef(c.key).update({ teamId: isTeamId(c.teamId) ? c.teamId : null }); saved++; } catch (e) { failed.push({ key: c.key, name: c.name }); }
+  }
+  return { ok: failed.length === 0, saved, failed };
+}
+
+// Remove one person from THIS camp (their access ends the moment it saves). Never your own row, never the owner's.
+async function peopleRemove(key) {
+  const g = pplGuard();
+  if (g) return g;
+  if (!key || !isValidMemberKey(key)) return { ok: false, reason: 'invalid' };
+  if (key === OWNER_MEMBER_KEY) return { ok: false, reason: 'owner' };
+  if (key === identityKey(authUser)) return { ok: false, reason: 'self' };
+  try { await pplMembersRef(key).remove(); return { ok: true }; } catch (e) { return { ok: false, reason: 'refused' }; }
+}
+
+// "+ Add people": pending rows for the lines that are new and a team for the lines that name someone already here, in ONE multi-path
+// update. `parsed` is peopleParseLines' answer.
+async function peopleAddLines(parsed, role) {
+  const g = pplGuard();
+  if (g) return g;
+  const patch = {};
+  let added = 0, moved = 0;
+  ((parsed && parsed.add) || []).forEach((r) => { patch[pendingKey(r.name)] = memberRecord(role === 'editor' ? 'editor' : 'viewer', r.name, r.teamId); added++; });
+  ((parsed && parsed.update) || []).forEach((r) => { if (isValidMemberKey(r.key) && r.key !== OWNER_MEMBER_KEY && isTeamId(r.teamId)) { patch[r.key + '/teamId'] = r.teamId; moved++; } });
+  if (!added && !moved) return { ok: true, added: 0, moved: 0 };
+  try { await firebase.database().ref(dbPath('members')).update(patch); return { ok: true, added, moved }; } catch (e) { return { ok: false, reason: 'refused' }; }
+}
+
+// One person with a sign-in (the old add form): an email or phone, a name, a role, a team and, for a director of both camps,
+// whether to add the other camp too. Only ever CREATES (planMemberAdd + createMemberIfAbsent): someone already on the list keeps their
+// role, name and team. Resolves { ok, key, camps, invite } or { ok: false, reason, message }.
+async function peopleAddMember(o) {
+  const g = pplGuard();
+  if (g) return g;
+  const raw = String(o && o.id || '').trim();
+  const name = peopleClean(o && o.name, PPL_NAME_MAX);
+  const role = o && o.role === 'editor' ? 'editor' : 'viewer';
+  const teamId = o && isTeamId(o.teamId) ? o.teamId : '';
+  let key, pending = false;
+  if (!raw) {
+    if (!name) return { ok: false, reason: 'input', message: 'Give at least a name — or an email or phone number to let them sign in.' };
+    key = pendingKey(name); pending = true;
+  } else if (raw.indexOf('@') !== -1) {
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(raw)) return { ok: false, reason: 'input', message: 'That doesn’t look like an email address.' };
+    key = emailKey(raw);
+  } else {
+    key = phoneKey(raw);
+    if (!key) return { ok: false, reason: 'input', message: 'That doesn’t look like a phone number. Include the area code (for example 555-123-4567).' };
+  }
+  if (!isValidMemberKey(key)) return { ok: false, reason: 'input', message: 'That address has a character the database can’t use as a key. Try another.' };
+  // The lists the plan needs: this camp's live directory, and the other camp's only when asked (a one-shot read).
+  const lists = {};
+  lists[CAMP.id] = memberDirectory || {};
+  if (o && o.bothCamps && !pending) {
+    try { lists[otherCampId()] = (await firebase.database().ref(CAMPS[otherCampId()].dbRoot + '/members').once('value')).val() || {}; } catch (e) { return { ok: false, reason: 'refused' }; }
+  }
+  const plan = planMemberAdd({ key, pending, bothCamps: !!(o && o.bothCamps), myKey: identityKey(authUser), lists });
+  if (plan.error) return { ok: false, reason: 'input', message: plan.error };
+  try {
+    const wrote = await Promise.all(plan.camps.map((cid) => createMemberIfAbsent(
+      firebase.database().ref(campMembersPath(cid, key)), cid === CAMP.id ? memberRecord(role, name, teamId) : memberRecord(role, name))));
+    if (!wrote.some(Boolean)) return { ok: false, reason: 'input', message: 'Already on the list — open their row to change their access.' };
+    return { ok: true, key, pending, camps: plan.camps, invite: pending ? '' : inviteText(key, role) };
+  } catch (e) { return { ok: false, reason: 'refused' }; }
+}
+
+// A pending row gets its real sign-in: create-then-delete, absent-only, exactly the Members drawer's convert (typed text, no prompt()).
+async function peopleAddSignIn(pendKey, typed) {
+  const g = pplGuard();
+  if (g) return g;
+  const dir = memberDirectory && typeof memberDirectory === 'object' ? memberDirectory : {};
+  const rec = isPendingKey(pendKey) ? dir[pendKey] : null;
+  if (!rec) return { ok: false, reason: 'gone' };
+  const key = peopleKeyFromTyped(typed);
+  if (!key) return { ok: false, reason: 'input', message: String(typed || '').indexOf('@') !== -1 || !String(typed || '').trim() ? 'That doesn’t look like an email address or a phone number.' : 'That doesn’t look like a phone number — include the area code.' };
+  const refusal = memberConvertRefusal(key, identityKey(authUser), { [CAMP.id]: dir });
+  if (refusal) return { ok: false, reason: 'input', message: refusal };
+  const role = rec.role === 'editor' ? 'editor' : 'viewer';
+  try {
+    const created = await createMemberIfAbsent(pplMembersRef(key), memberRecord(role, rec.name, rec.teamId));
+    if (!created) return { ok: false, reason: 'exists' };
+    await pplMembersRef(pendKey).remove();
+    return { ok: true, key, invite: inviteText(key, role) };
+  } catch (e) { return { ok: false, reason: 'refused' }; }
+}
+
+// "This is the same person as…" (ux-R8): a pending row folds into a signed-in member. The team is carried over only when the
+// member has none (a person's own team is not overwritten), then the pending row goes.
+async function peopleSameAs(pendKey, memberKey) {
+  const g = pplGuard();
+  if (g) return g;
+  const dir = memberDirectory && typeof memberDirectory === 'object' ? memberDirectory : {};
+  const pend = isPendingKey(pendKey) ? dir[pendKey] : null;
+  const mem = dir[memberKey];
+  if (!pend || !mem || isPendingKey(memberKey) || memberKey === OWNER_MEMBER_KEY) return { ok: false, reason: 'gone' };
+  try {
+    if (isTeamId(pend.teamId) && !isTeamId(mem.teamId)) await pplMembersRef(memberKey).update({ teamId: pend.teamId });
+    await pplMembersRef(pendKey).remove();
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: 'refused' }; }
+}
+
+// One person's access at ONE camp, for a director of both (None / Counselor / Director): None removes that camp's record, a role on
+// an existing record sets it, a role where there is none creates it (the name carried over; teams are per camp so not the team).
+async function peopleSetCampAccess(key, campId, value) {
+  const g = pplGuard();
+  if (g) return g;
+  if (!CAMPS[campId] || !key || !isValidMemberKey(key)) return { ok: false, reason: 'invalid' };
+  if (key === OWNER_MEMBER_KEY) return { ok: false, reason: 'owner' };
+  if (key === identityKey(authUser)) return { ok: false, reason: 'self' };
+  if (campRoleOf(campId) !== 'editor') return { ok: false, reason: 'readonly' };
+  const ref = firebase.database().ref(campMembersPath(campId, key));
+  try {
+    if (value === 'none') { await ref.remove(); return { ok: true }; }
+    if (value !== 'viewer' && value !== 'editor') return { ok: false, reason: 'invalid' };
+    const cur = (await ref.once('value')).val();
+    if (cur && typeof cur === 'object') { await ref.child('role').set(value); return { ok: true }; }
+    const nm = ((memberDirectory && memberDirectory[key]) || {}).name;
+    const made = await createMemberIfAbsent(ref, memberRecord(value, nm));
+    return made ? { ok: true } : { ok: false, reason: 'exists' };
+  } catch (e) { return { ok: false, reason: 'refused' }; }
+}
+
+// How a refusal reads, in words every caller shares.
+const PPL_WHY = {
+  readonly: 'Only directors can change who’s on the list.',
+  offline: 'Needs a connection.',
+  owner: 'The owner is managed in the Firebase console.',
+  self: 'Another director has to change your own access.',
+  invalid: 'That isn’t something the list can hold.',
+  gone: 'That person is no longer in the list.',
+  exists: 'Already on the list.',
+  confirm: 'That doesn’t match the requester’s email or phone.',
+  name: 'Give them a name first.',
+  refused: 'The database refused that — are you still a director?',
+};
+function peopleWhy(res) {
+  return (res && res.message) || PPL_WHY[res && res.reason] || PPL_WHY.refused;
 }
 
 setupLoadCache();

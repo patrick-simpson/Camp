@@ -5184,6 +5184,9 @@ function initSync() {
     // read-only listener, attached HERE and only here, i.e. after membership was
     // confirmed. Its refusals degrade the setup engine only, never fbRef/syncDenied.
     if (typeof initSetupSync === 'function') initSetupSync();
+    // Who is asking to join (setup-sync.js "PEOPLE" — optional layer, same guard): a director's device attaches ONE editor-only
+    // query here, after membership was confirmed. A viewer's phone never listens; a refusal degrades this feature only.
+    if (typeof peopleRequestsAttach === 'function') peopleRequestsAttach();
     // Staff directory: who's on the camp list and which team each is with.
     // Members may read the whole list (it's the staff roster), and this is
     // what makes the real counselor names show on each team everywhere. Only
@@ -12582,6 +12585,31 @@ function shellTick() {
 }
 
 // Counts on the tab bar. Patched in place — the buttons are static markup.
+// ── People: asking to join, told to a director (setup-sync.js peopleRequests*; setup-rebuild-spec §11.1, ux-R10) ──
+// A request arriving while a director has the app open is a toast; the same news stays on More's dot, the Set up the week count
+// and the People row until somebody decides. A director of both camps also hears once, at load, about the OTHER camp's.
+function joinRequestCount() {
+  return typeof peopleRequests === 'function' && canEdit() ? peopleRequests().length : 0;
+}
+
+function onAccessRequestsChanged() {
+  if (appStarted) renderAllWhenIdle();
+}
+
+function onAccessRequestsArrived(fresh) {
+  const mine = identityKey(authUser);
+  const others = (fresh || []).filter((r) => r && r.key !== mine);
+  if (canEdit() && others.length) {
+    showToast(others.length === 1 ? others[0].name + ' is asking to join' : others.length + ' people are asking to join', { duration: 6000 });
+  }
+  onAccessRequestsChanged();
+}
+
+function onOtherCampRequests(n) {
+  if (!canEdit() || !n) return;
+  showToast((n === 1 ? '1 person is' : n + ' people are') + ' asking to join ' + CAMPS[otherCampId()].label, { duration: 6000 });
+}
+
 function renderTabBadges() {
   const chat = document.getElementById('tab-badge-chat');
   if (chat) {

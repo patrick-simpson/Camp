@@ -171,3 +171,18 @@ test('transaction: a returned ServerValue.TIMESTAMP is resolved by the database,
   assert.equal(typeof at, 'number');
   assert.ok(Math.abs(at - db.now()) < 5000);
 });
+
+test('queries: orderByChild + limitToLast / limitToFirst / equalTo, read by a value listener or once(); forEach walks query order; a row leaving the window is gone', async () => {
+  const db = makeFakeRtdb();
+  [['a', 5], ['b', 1], ['c', 9], ['d', 3]].forEach(([k, at]) => db.serverSet('q/' + k, { at, ch: at > 4 ? 'x' : 'y' }));
+  const seen = [];
+  db.ref('q').orderByChild('at').limitToLast(2).on('value', (snap) => { const ks = []; snap.forEach((c) => { ks.push(c.key); }); seen.push(ks.join('')); });
+  assert.deepEqual(seen, ['ac'], 'the two newest, oldest first (query order)');
+  db.serverSet('q/e', { at: 7, ch: 'x' });
+  assert.deepEqual(seen, ['ac', 'ec'], 'a newer row pushes the oldest out of the window');
+  const once = await db.ref('q').orderByChild('at').limitToFirst(3).once('value');
+  assert.deepEqual(Object.keys(once.val()).sort(), ['b', 'd', 'e'.replace('e', 'a')].sort());
+  const eq = await db.ref('q').orderByChild('ch').equalTo('y').once('value');
+  assert.equal(eq.numChildren(), 2);
+  assert.equal(db.ref('q').orderByChild('at').limitToLast(1).once !== undefined, true);
+});
