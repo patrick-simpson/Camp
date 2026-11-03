@@ -916,6 +916,44 @@ function cleanupTeams(dow, meal) {
   return assigned ? (Array.isArray(assigned) ? assigned : [assigned]) : NO_ITEMS;
 }
 
+// ── Block kind (redesign §3.1): what a schedule block IS, for the Now card. An explicit field where the data has one
+// (`type`: games / elective; the Meal tag, through blockMeal), else today's label rules; arrival and send-off come from
+// the weekday. The head of a label is what is before " — " (the tail is a note or a list of people). Constants live in
+// the block (a load-time caller must never hit a TDZ read). A renderer that wants the kind asks here, never the label.
+const KIND_BIBLE_RE = /\bbible study\b/;
+const KIND_MEETING_RE = /^(rising bell|wake up)\b/;
+const KIND_BED_RE = /\b(lights out|prepare for bed|devotions?|devotional)\b/;
+const KIND_WORSHIP_RE = /\b(service|worship)\b/;
+const KIND_PREP_RE = /^(prepare|prep|cool down)\b/; // "Prepare for worship service" is preparing, not worshipping
+function kindHead(label) { return String(label == null ? '' : label).split(' — ')[0].trim().toLowerCase(); }
+// Does this block's head read as worship (a service or a worship time that is not a "Prepare for …" block)?
+function kindIsWorship(b) {
+  if (!b || b.type === 'games' || b.type === 'elective') return false;
+  const head = kindHead(b.label);
+  return KIND_WORSHIP_RE.test(head) && !KIND_PREP_RE.test(head);
+}
+// 'games' | 'elective' | 'meal' | 'bible' | 'meeting' | 'worship' | 'bedtime' | 'arrival' | 'sendoff' | 'activity'.
+// `b` is a block an accessor returned (either shape), `dow` its weekday: Saturday's blocks are the send-off, and
+// Sunday's, up to the first worship block (all of it when there is none), are the arrival.
+function blockKind(b, dow) {
+  if (!b || typeof b !== 'object') return 'activity';
+  if (b.type === 'games') return 'games';
+  if (b.type === 'elective') return CAMP.features.electives ? 'elective' : 'activity';
+  if (blockMeal(b)) return 'meal';
+  const head = kindHead(b.label);
+  if (KIND_BIBLE_RE.test(head)) return 'bible';
+  if (KIND_MEETING_RE.test(head)) return 'meeting';
+  if (KIND_BED_RE.test(head)) return 'bedtime';
+  if (kindIsWorship(b)) return 'worship';
+  const d = weekdayIndex(dow);
+  if (d === 6) return 'sendoff';
+  if (d === 0) {
+    const worship = scheduleForDow(0).find(kindIsWorship);
+    if (!worship || b.start < worship.start) return 'arrival';
+  }
+  return b.noTime ? 'bedtime' : 'activity';
+}
+
 // ── Alerts: the stable key a block is subscribed by, and its published id.
 // (pushBlockKey lives in push.js, which loads later and may be absent.) A block the shared schedule handed out carries
 // its own: the key it was seeded with (today's, and never recomputed on a rename) and the id `<dk>-<block id>`, which
@@ -1296,19 +1334,24 @@ function electiveWxHtml(dow, slot) {
 // probability crosses WEATHER_RAIN_MIN. '' when dry, no forecast, or the
 // rainy hour would fall past midnight (camp's asleep — nobody needs it).
 function upcomingRainHint() {
-  if (!weatherData) return '';
+  const r = upcomingRain();
+  return r ? `<div class="now-wx">🌧️ ${r.precip}% chance of rain ${r.when}</div>` : '';
+}
+
+// The same finding as plain data, { precip, when } or null (Now's model: no markup in it).
+function upcomingRain() {
+  if (!weatherData) return null;
   const now = campNow();
   const today = weatherData.dates[0];
-  if (today !== campDateStr()) return '';
+  if (today !== campDateStr()) return null;
   const startHour = Math.floor(now.minutes / 60);
   for (let h = startHour; h <= startHour + 3 && h <= 23; h++) {
     const w = weatherData.byTime[`${today}T${String(h).padStart(2, '0')}:00`];
     if (w && w.precip != null && w.precip >= WEATHER_RAIN_MIN) {
-      const when = h === startHour ? 'this hour' : `near ${((h + 11) % 12) + 1}${h < 12 ? 'am' : 'pm'}`;
-      return `<div class="now-wx">🌧️ ${w.precip}% chance of rain ${when}</div>`;
+      return { precip: w.precip, when: h === startHour ? 'this hour' : `near ${((h + 11) % 12) + 1}${h < 12 ? 'am' : 'pm'}` };
     }
   }
-  return '';
+  return null;
 }
 
 // ── Meal menu ────────────────────────────────────────────────────
@@ -1487,12 +1530,15 @@ function setNoticeStatus(status, opts) {
 // Current day-of-week + minutes-since-midnight, in camp time.
 // Debug/preview override: add ?now=<dow>-<hhmm> to the page URL,
 // e.g. ?now=1-1330 previews Monday 1:30pm.
-function campNow() {
+function campNowOverride() {
   const m = /[?&]now=(\d)-(\d{3,4})(?:&|$)/.exec(location.search);
-  if (m) {
-    const t = m[2].padStart(4, '0');
-    return { dow: +m[1], minutes: +t.slice(0, 2) * 60 + +t.slice(2) };
-  }
+  if (!m) return null;
+  const t = m[2].padStart(4, '0');
+  return { dow: +m[1], minutes: +t.slice(0, 2) * 60 + +t.slice(2) };
+}
+function campNow() {
+  const over = campNowOverride();
+  if (over) return over;
   try {
     const parts = new Intl.DateTimeFormat('en-US', {
       timeZone: CAMP_TZ, weekday: 'short', hour: 'numeric', minute: 'numeric', hour12: false,
