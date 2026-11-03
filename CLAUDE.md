@@ -930,9 +930,11 @@ TAB"), **the model** (app.js "THE GAMES ENGINE": plain data from `nowCtx` — th
   camp week's dates nothing is today or behind, after it everything is behind) · blank. The chosen day is `state.ui.day`, this device's own, painted at
   once by `gamesPickDay` (no renderAll round trip); "Thursday · not today" while another is chosen. ONE `.gdp-pill` rests under `--i` and springs from the
   old place on `snap` (a WAAPI translate stretched by its speed like the tab blob, none while calm); "Today" is `--link-well` (7:1 on the well and on the
-  dark pill, where `--link` is not); the tabs are a roving-tab-stop tablist with arrow keys.
+  dark pill, where `--link` is not; `contrast.test.js` pins it); the tabs are a roving-tab-stop tablist with arrow keys.
 - **Blocks** (`gamesDayGroups`): the schedule's blocks holding the day's games, by time (the run-sheet clock, "6:00–6:45 PM"), a game on ONE block only;
-  a day no block holds any game of falls back to the session names; the rest are "Not on the schedule", last. **ONE "up next"** (today: the first game not
+  a day no block holds any game of falls back to the session names; the rest are "Not on the schedule", last — but only while the schedule is edited here:
+  with the printed week (the owner's Use the original week again) no game is linked to a block, so the leftovers keep their session's name (senior's
+  Afternoon and Legacy games) and no group says "Not on the schedule". **ONE "up next"** (today: the first game not
   started from the block under way) and **ONE gold Score** (the first live game this director can score, else up next); a director's own team's round
   (`gameRoundTeams` → `blockedByOwnTeam`) shows the reason instead of Score. An empty day names itself with Add games (`openBuilder('games')` until Step 21).
 - **Next game** (`gamesNextAfter`, `gamesDock`, `openNextGame`): after a result the takeover's dock (`renderGameDock`, directors only) names what is left and
@@ -970,14 +972,18 @@ TAB"), **the model** (app.js "THE GAMES ENGINE": plain data from `nowCtx` — th
 - **Directors' standings** (`gamesStandings`): places are reveal-core's `groupPlaces` over `rankTeamsByPoints` — the call the reveal's freeze makes, so a tie
   reads the same on the remote and the big screen (`games-tab.test.js` compares them); equal points share a place ("tie"), an empty table has no places and
   keeps roster order. Arrows are this place against the day's baseline (`startOfDayPlaces`, device-local `campScoreboardDayRanks`: shared places, `flat` when
-  taken on a blank table, which keeps the arrows off that day), an arrow AND a number. Medals are numbers the renderer words ("2 gold · 2 silver · 1 bronze",
+  taken on a blank table, which keeps the arrows off that day), an arrow AND a number. **The baseline is not taken from a cache**: with sync attached
+  it waits for the first server snapshot (`dayBaselineReady`; no sync, or an SDK that never loaded, takes it at once), so a phone opened that morning
+  on an empty or yesterday's cache can't keep a flat or old baseline all day. A complete tie is ordered by `standingsTieName` (the reveal's cleaned
+  name: cut to 30, control characters gone, "Team N" for none), the same call the freeze makes, so the Games tab and the big screen agree. Medals are numbers the renderer words ("2 gold · 2 silver · 1 bronze",
   `&nbsp;` inside each count), `+N awarded` only when verse / cleanup / quick points move the total. The gap sentence (`gamesGap` → `gamesGapSentence`) is about the
   director's own (followed) team when they are on one: trail / lead / tied, how many golds (doubled in the window) put them in front or only tie them. A
   director's own team is a `div.gs-row[data-locked]` with a lock and the house "Your team" mark (a 2px outline in the team colour, never a left stripe; the saved
   result's `data-mine` row too), never a dead button; a view-only second tab gets plain rows. `#games-live[data-noarrows]` (points, no baseline) drops the arrow
   column; `[data-empty]` rows are mark and name only, with no reveal link; under ~13em of the panel's own text a row is one name and one number (no mark, no
   medals line — the quick points sheet says the medals). The panel's icons are sized in em. `#gs-sync` is the sync line
-  (`updateSyncIndicator` writes it) and `#gs-reveal` the way into the remote (reveal-ui.js).
+  (`updateSyncIndicator` writes it; never `hidden` in the markup, `:empty` hides it before the first write; `games-ui.test.js` pins that) and
+  `#gs-reveal` the way into the remote (reveal-ui.js).
 - **Quick points** (`gamesOpenQuick` → `#sheet-quick`, a shell sheet allowed only for a team a tap named and only for a confirmed director who may score
   it): +1 +2 +3 +5, an optional reason ("Other…" takes 40 characters), the dashed well until a key is chosen, the doubling said once. The write is
   `gamesQuickAdd` → the SAME `bonusAddFromDraft` as Award points (1–100, the own-team guard, a stamp of now so the window counts by its own time) on a draft of
@@ -1638,7 +1644,8 @@ a LENS over the role, not a role: `counselorPreviewOn` (memory only, declared be
   The builder's own mutators ask `configLocked()`, which now says no to anyone who may not act as a director.
 - **The bar** reads "Previewing as a counselor · Nothing you tap is sent" and the theme-color meta takes the bar's ink while it is
   up (`CHROME_INK`). Nothing sparkles on it (`JOY_QUIET`).
-- **Proof** (`tests/preview.test.js`, + `.senior`; in the seeded pass too): the lens truth table and its entry gates; nothing
+- **Proof** (`tests/preview.test.js`, + `.senior`; in the seeded pass too; it and `secrecy.test.js` pin the wall clock with `location.search = '?now=3-1000'`
+  rather than loosening the signed-number leak pattern: Now says "+10 min" in a real overrun hour, and a pattern that ignored it would ignore a real "+5"): the lens truth table and its entry gates; nothing
   stored; every exit; walking every tab, sheet, game takeover and director door with the points guard THROWING and the sink
   recorder on (no points, no places, no gap words, every director door shut, the director rows hidden); **FIDELITY**: two phones
   on one week — a real counselor's and a director's that painted its own page first and then started the preview — compared
@@ -2587,7 +2594,8 @@ What's covered, and why each file exists:
   (light `#b42318`, 6.57:1 on white; dark `#ff8a8a`). The test pins the token
   values' contrast and fails if a bare `color: var(--color-danger)` comes back.
   (A field's placeholder uses `--placeholder` — `--ink-3` 85 % over `--sheet`,
-  about 5:1 in both themes; the browser's own grey is 3.5:1 in dark.)
+  about 5:1 in both themes; the browser's own grey is 3.5:1 in dark.) It also pins the Games day picker's
+  status words (`--link-well`, `--done`, `--ink-2`) at 7:1 on the well and the lifted pill in all three palette blocks.
 - `export-guard.test.js` — a Firebase console export (members' emails, phones, chat) can't be committed by
   accident: `git check-ignore` says the names the console really writes (`<project>-default-rtdb-export.json`,
   `camp-export.json`, `*.export.json`, an `exports/` folder) are ignored at the repo root and under `tests/`,

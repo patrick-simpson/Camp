@@ -58,3 +58,28 @@ test('.danger-link uses the text token, as does the Remove-style footer link', (
   const rule = /\.danger-link\s*\{[^}]*\}/.exec(CSS_NO_COMMENTS);
   assert.ok(rule && rule[0].includes('var(--color-danger-text)'), rule && rule[0]);
 });
+
+// ── The Games tab's day picker (Step 18): its status words are 12.5px text, so they owe 7:1 (redesign §8.1 rule 6) on BOTH grounds a
+// day button has — the recessed well and the lifted pill of the chosen day — in all three palette blocks (light, explicit Dark,
+// Auto on a dark OS). "Today" had been the link blue at 6.9:1 in light; --link-well is the one blue made for these grounds.
+function palette(name) {
+  return [...CSS_NO_COMMENTS.matchAll(new RegExp('(?<![\\w-])--' + name + ':\\s*(#[0-9a-fA-F]{6})', 'g'))].map((m) => m[1]);
+}
+test('the day picker\'s Today, Done and plain status words reach 7:1 on the well and on the lifted pill, light and both dark blocks', () => {
+  const [wells, lifts] = [palette('well'), palette('lift')];
+  const ink = { 'Today (--link-well)': palette('link-well'), 'Done (--done)': palette('done'), 'games left (--ink-2)': palette('ink-2') };
+  assert.equal(wells.length, 3); assert.equal(lifts.length, 3);
+  Object.keys(ink).forEach((what) => {
+    assert.equal(ink[what].length, 3, what + ' is defined in light, explicit Dark and the Auto dark block');
+    ink[what].forEach((c, i) => {
+      const block = ['light', 'dark', 'auto dark'][i];
+      assert.ok(contrast(c, wells[i]) >= 7, what + ' on the well, ' + block + ': ' + contrast(c, wells[i]).toFixed(2));
+      assert.ok(contrast(c, lifts[i]) >= 7, what + ' on the lifted pill, ' + block + ': ' + contrast(c, lifts[i]).toFixed(2));
+    });
+  });
+  assert.equal(palette('link-well')[1], palette('link-well')[2], 'explicit Dark and Auto-on-a-dark-OS agree');
+});
+test('the day picker\'s Today word and dot use --link-well, not the thinner link blue', () => {
+  assert.ok(/\.gdp-btn\[data-st="today"\] \.gdp-st\s*\{[^}]*color:\s*var\(--link-well\)/.test(CSS_NO_COMMENTS), 'the word');
+  assert.ok(/\.gdp-btn\[data-st="today"\] \.gdp-st::before\s*\{[^}]*background:\s*var\(--link-well\)/.test(CSS_NO_COMMENTS), 'the dot at very large text');
+});

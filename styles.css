@@ -1942,17 +1942,6 @@ html.view-only #more-director {
 #tab-games > [hidden] {
   display: none;
 }
-.games-standings {
-  display: flex;
-  flex-direction: column;
-  gap: 15px;
-}
-.games-standings > .card[hidden] {
-  display: none;
-}
-.games-rows:empty {
-  display: none;
-}
 /* A tab a counselor can't use right now: one calm sentence, not a blank page. */
 .tab-off {
   margin: var(--s-6) 0;
@@ -2723,32 +2712,6 @@ html:not(.calm-motion) .rv-row[data-state="looking"] > .ico {
   margin-top: 1px;
   font: 600 0.9375rem/1.35 var(--font-ui);
   color: var(--ink-2);
-}
-
-/* Games: the directors' way into the remote, under the standings. */
-.reveal-link {
-  display: grid;
-  grid-template-columns: 24px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: var(--s-3);
-  width: 100%;
-  min-height: var(--row-min);
-  padding: var(--s-2) 14px;
-  border: 1.5px solid var(--line-2);
-  border-radius: var(--r-group);
-  background: var(--sheet);
-  color: var(--link);
-  font: 800 1rem/1.25 var(--font-ui);
-  text-align: left;
-  cursor: pointer;
-}
-.reveal-link:active {
-  background: color-mix(in srgb, var(--ink) 6%, var(--sheet));
-}
-.reveal-link-chev {
-  width: 18px;
-  height: 18px;
-  stroke-width: 2.6;
 }
 
 /* More → Run the reveal: a practice is a different mark from Live; Live breathes. */
@@ -6610,12 +6573,7 @@ html.locked #app {
   display: none;
 }
 
-/* View-only role: de-clutter — spectators don't need the share/copy tools
-   (Notify stays) or the counselor-oriented helper text. */
-html.view-only #copy-standings-btn,
-html.view-only #share-standings-btn {
-  display: none;
-}
+/* View-only role: de-clutter — spectators don't need the counselor-oriented helper text. */
 html.view-only .standings-hint,
 html.view-only .card-desc {
   display: none;
@@ -6976,58 +6934,8 @@ jelly-tabs:not(:defined) > jelly-tab-panel:not([active]) {
   gap: 0.75rem;
 }
 
-.game-card {
-  display: block;
-  width: 100%;
-  text-align: left;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-card);
-  padding: 1rem 1.1rem;
-  cursor: pointer;
-  font-family: inherit;
-  color: var(--color-text);
-  transition: border-color 0.15s ease;
-}
-
-.game-card:hover {
-  border-color: var(--color-primary);
-}
-/* No :active transform here (or on .back-pill): this is a plain <button>, so the
-   press dent (jelly-motion.js press(), started by app.js) owns the press. An
-   :active scale applies instantly, then the dent starts from identity at 80 ms —
-   the control popped back to 1.0 and dented again. */
-
-.game-card.done {
-  border-color: color-mix(in srgb, var(--color-gold) 45%, var(--color-border));
-}
-
-.game-card-top {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-}
-
 .game-emoji {
   font-size: 1.5rem;
-}
-
-.game-card-titles {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.game-name {
-  font-weight: 700;
-  font-size: 1rem;
-}
-
-.game-loc {
-  font-size: 0.8rem;
-  color: var(--color-text-muted);
 }
 
 /* Format pills are jelly-badge hosts now — the pill chrome (fill, radius,
@@ -7035,29 +6943,6 @@ jelly-tabs:not(:defined) > jelly-tab-panel:not([active]) {
 .format-badge {
   white-space: nowrap;
   flex-shrink: 0;
-}
-
-.game-headline {
-  margin: 0.55rem 0 0;
-  font-size: 0.88rem;
-  color: var(--color-text-muted);
-}
-
-.game-result-line {
-  margin-top: 0.6rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  background: var(--color-gold-bg);
-  color: var(--color-gold);
-  border-radius: var(--radius-md);
-  padding: 0.45rem 0.6rem;
-}
-
-.game-progress-line {
-  margin-top: 0.6rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--color-primary);
 }
 
 .messtival-banner {
@@ -7658,11 +7543,6 @@ html.calm-motion #takeover-game .rules-details summary::after {
   text-decoration: underline;
 }
 
-.quick-game-btn {
-  display: block;
-  margin: 0.9rem auto 0;
-}
-
 .danger-link {
   color: var(--color-danger-text);
 }
@@ -7676,17 +7556,8 @@ html.calm-motion #takeover-game .rules-details summary::after {
 }
 
 /* ============================================================
-   STANDINGS TABLE
+   THE SYNC LINE (the standings table that used to sit here is the Games tab's panel)
    ============================================================ */
-.standings-hint {
-  margin-top: 0;
-}
-
-.catchup-hint {
-  margin: 0.6rem 0 0;
-  font-size: 0.85rem;
-  color: var(--color-text-muted);
-}
 
 .sync-status {
   margin: 0 0 0.75rem;
@@ -7822,20 +7693,6 @@ body.builder-open .sync-status-footer {
   display: none;
 }
 
-.standings-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.6rem;
-  margin-bottom: 0.85rem;
-}
-
-.standings-actions .secondary-btn {
-  font-size: 0.88rem;
-  padding: 0.6rem 0.5rem;
-  flex: 1 1 auto;
-  min-width: 6rem;
-}
-
 .copy-matchup-btn {
   width: 100%;
   margin-top: 0.6rem;
@@ -7853,120 +7710,6 @@ body.builder-open .sync-status-footer {
 .copy-matchup-btn:disabled {
   opacity: 0.7;
 }
-
-.table-scroll {
-  overflow-x: auto;
-}
-
-.standings-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.95rem;
-}
-
-.standings-table th,
-.standings-table td {
-  padding: 0.5rem 0.4rem;
-  text-align: left;
-  border-bottom: 1px solid var(--color-border);
-}
-
-.standings-table th {
-  color: var(--color-text-muted);
-  font-weight: 600;
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.rank-col {
-  width: 1.75rem;
-  text-align: center !important;
-  color: var(--color-text-muted);
-}
-
-/* Movement since the device's start-of-day baseline, stacked under the rank
-   number. Colors follow the podium tints' token pairs so both themes work. */
-.rank-delta {
-  display: block;
-  font-size: 0.6rem;
-  font-weight: 800;
-  line-height: 1.1;
-  letter-spacing: 0.02em;
-}
-.rank-delta.up { color: var(--color-primary); }
-.rank-delta.down { color: var(--color-danger-text); }
-
-.medal-col {
-  width: 2.25rem;
-  text-align: center !important;
-  font-variant-numeric: tabular-nums;
-}
-
-.points-col {
-  width: 2.75rem;
-  text-align: center !important;
-  font-variant-numeric: tabular-nums;
-  font-weight: 700;
-}
-
-/* Point-source columns: Bible memorization (📖) and meal cleanup (🧽). */
-.extra-col {
-  width: 2.4rem;
-  text-align: center !important;
-  font-variant-numeric: tabular-nums;
-}
-.extra-col .zero {
-  opacity: 0.35;
-}
-
-/* Podium tint for the top 3 (only applied when points > 0). */
-.podium-row td {
-  border-bottom-color: transparent;
-}
-.podium-row .rank-col {
-  font-weight: 800;
-}
-.podium-1 {
-  background: var(--color-gold-bg);
-  box-shadow: inset 3px 0 0 var(--color-gold);
-}
-.podium-1 .rank-col { color: var(--color-gold); }
-.podium-2 {
-  background: var(--color-silver-bg);
-  box-shadow: inset 3px 0 0 var(--color-silver);
-}
-.podium-2 .rank-col { color: var(--color-silver); }
-.podium-3 {
-  background: var(--color-bronze-bg);
-  box-shadow: inset 3px 0 0 var(--color-bronze);
-}
-.podium-3 .rank-col { color: var(--color-bronze); }
-
-/* Followed-team row — a distinct visual channel (outline) from the podium
-   tint (box-shadow) so the two combine cleanly when they overlap. */
-.following-row {
-  outline: 2px solid var(--color-primary);
-  outline-offset: -2px;
-}
-.following-star {
-  font-size: 0.85em;
-}
-
-/* Dim zeroed medal counts so earned medals stand out. */
-.medal-col .zero {
-  opacity: 0.35;
-}
-
-/* Brief flash when a row's points change from a remote sync. */
-@keyframes points-pulse {
-  0% { background: color-mix(in srgb, var(--color-primary) 22%, transparent); }
-  100% { background: transparent; }
-}
-.points-pulse td {
-  animation: points-pulse 0.6s ease;
-}
-html.calm-motion .points-pulse td { animation: none; }
 
 /* Forecast badge next to a future elective (schedule sheet). */
 .wx-badge {
@@ -8035,18 +7778,6 @@ html.calm-motion .points-pulse td { animation: none; }
   white-space: nowrap;
 }
 
-/* "+N bonus" note under a team's total. */
-.bonus-hint {
-  display: block;
-  margin-top: 0.1rem;
-  font-size: 0.7rem;
-  font-weight: 700;
-  line-height: 1.1;
-  color: var(--color-primary);
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
-}
-
 .medal-points {
   margin-left: auto;
   font-size: 0.85rem;
@@ -8055,37 +7786,9 @@ html.calm-motion .points-pulse td { animation: none; }
   white-space: nowrap;
 }
 
-/* Static team identity (names are fixed for the week). */
-.team-cell {
-  padding: 0.4rem 0.4rem;
-}
-
-.team-name-line {
-  display: flex;
-  align-items: baseline;
-  gap: 0.35rem;
-  font-size: 0.95rem;
-  font-weight: 700;
-  line-height: 1.25;
-}
-
 .team-emoji {
   font-size: 1.1rem;
   flex: 0 0 auto;
-}
-
-.team-name-text {
-  min-width: 0;
-  overflow-wrap: break-word;
-}
-
-.team-counselor-text {
-  margin-top: 0.1rem;
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: var(--color-text-muted);
-  line-height: 1.3;
-  overflow-wrap: break-word;
 }
 
 .chip-sub {
@@ -8170,140 +7873,14 @@ html.calm-motion .points-pulse td { animation: none; }
 /* ============================================================
    BONUS POINTS CARD
    ============================================================ */
-.bonus-entry {
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 0.85rem;
-  margin-bottom: 1rem;
-}
-
-.bonus-cat-row,
-.bonus-meal-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-}
-
-.bonus-meal-row {
-  margin-top: 0.5rem;
-}
-
-.bonus-cat-chip,
-.bonus-meal-chip {
-  background: var(--color-surface);
-  border: 1.5px solid var(--color-border);
-  border-radius: 999px;
-  padding: 0.45rem 0.75rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: var(--color-text);
-  cursor: pointer;
-  font-family: inherit;
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
-}
-
-.bonus-meal-chip {
-  padding: 0.35rem 0.7rem;
-  font-size: 0.8rem;
-}
-
-.bonus-custom-input,
-.bonus-points-input {
-  border: 1.5px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font-family: inherit;
-  font-size: 0.95rem;
-  border-radius: var(--radius-md);
-  padding: 0.6rem 0.7rem;
-}
-
-.bonus-custom-input {
-  width: 100%;
-  margin-top: 0.5rem;
-}
-
-.bonus-custom-input:focus,
-.bonus-points-input:focus {
-  outline: none;
-  border-color: var(--color-primary);
-}
 
 .bonus-entry-hint {
   margin: 0.75rem 0 0.4rem;
   font-size: 0.8rem;
 }
 
-.bonus-team-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-}
-
-.bonus-team-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.45rem 0.7rem;
-  font-size: 0.85rem;
-  border-radius: 999px;
-}
-
 .chip-emoji {
   font-size: 1rem;
-}
-
-.bonus-add-row {
-  display: flex;
-  gap: 0.6rem;
-  margin-top: 0.75rem;
-}
-
-.bonus-points-input {
-  width: 6rem;
-  flex: 0 0 auto;
-}
-
-.bonus-add-row .primary-btn {
-  width: auto;
-  flex: 1;
-}
-
-.bonus-sign-btn {
-  flex: 0 0 auto;
-  width: 2.75rem;
-  font-size: 1.4rem;
-  font-weight: 800;
-  line-height: 1;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  color: var(--color-primary);
-  cursor: pointer;
-}
-
-.bonus-sign-btn.neg {
-  color: var(--color-danger-text);
-  border-color: var(--color-danger);
-  background: var(--color-gold-bg);
-  background: color-mix(in srgb, var(--color-danger) 12%, var(--color-surface));
-}
-
-.bonus-subtotals {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  margin-bottom: 0.85rem;
-}
-
-.bonus-subtotal-chip {
-  background: var(--color-gold-bg);
-  color: var(--color-gold);
-  border-radius: 999px;
-  padding: 0.25rem 0.7rem;
-  font-size: 0.82rem;
-  font-weight: 600;
 }
 
 .bonus-ledger {
@@ -8354,15 +7931,6 @@ html.calm-motion .points-pulse td { animation: none; }
 
 .bonus-item-pts.neg {
   color: var(--color-danger-text);
-}
-
-/* Double-points window marker on a ledger entry (see bonusCountsDouble). */
-.bonus-x2 {
-  margin-left: 0.25rem;
-  font-size: 0.62rem;
-  font-weight: 800;
-  color: var(--color-gold);
-  vertical-align: super;
 }
 
 .bonus-remove-btn {
@@ -10209,10 +9777,6 @@ jelly-chip:is(.bonus-meal-chip, .bonus-cat-chip, .bonus-team-chip, .verse-day-ch
   height: var(--target); /* the component fixes its host at 30 / 36px; an outer rule beats its :host */
   min-width: var(--target); /* "Fri" and a "0" are narrower than a finger */
 }
-.bonus-custom-input,
-.bonus-points-input {
-  min-height: var(--target);
-}
 /* Text links that sit alone on a line in the frame's tabs get a 44px hit box
    (the Games tab's quick-game link). The builder's inline links keep their size. */
 .quick-game-btn,
@@ -10221,10 +9785,6 @@ jelly-chip:is(.bonus-meal-chip, .bonus-cat-chip, .bonus-team-chip, .verse-day-ch
   display: inline-flex;
   align-items: center;
   min-height: var(--target);
-}
-.quick-game-btn {
-  display: flex;
-  justify-content: center;
 }
 jelly-icon-button.bonus-sign-btn,
 jelly-icon-button.bonus-remove-btn {
@@ -11583,7 +11143,6 @@ select.form-input {
 }
 
 /* ── Home-screen takeover: the board replaces Happening Now while live ── */
-
 
 html.calm-motion .score-pop { animation: none; }
 html.calm-motion .board-cannon { display: none; }
@@ -14307,7 +13866,6 @@ html.counselor-preview .sheet {
   height: 16px;
   stroke-width: 2.6;
 }
-
 
 /* Large text: the candidate rows (a dot, then the name) and the lists that have no time column drop the clipboard's two-line grid areas
    (.cb-row's own container query) for one plain column, so a name keeps the whole width at 200% instead of 72px. */

@@ -829,6 +829,9 @@ test('games-ui.js: the rules it lives by, pinned in the source', () => {
   ['games-live', 'gs-list', 'gs-how', 'gs-gap', 'gs-sync', 'gs-reveal', 'games-secret', 'games-week', 'games-days-pick', 'games-day-note', 'games-day', 'games-day-notes', 'games-day-body', 'games-quick', 'games-quick-sub',
     'sheet-quick', 'qp-mark', 'qp-team', 'qp-now', 'qp-keys', 'qp-why', 'qp-other', 'qp-other-text', 'qp-x2', 'qp-add', 'qp-add-label', 'sheet-standings', 'gs-more', 'gs-copy', 'gs-share', 'gs-award', 'takeover-game-dock']
     .forEach((id) => assert.equal((html.match(new RegExp('\\sid="' + id + '"', 'g')) || []).length, 1, '#' + id + ' exists once'));
+  // the director's sync line is written by updateSyncIndicator and must be SEEN: a `hidden` in the markup would keep it dark for good
+  const syncTag = (html.match(/<p[^>]*\sid="gs-sync"[^>]*>/) || [''])[0];
+  assert.ok(syncTag && !/\shidden\b/.test(syncTag), '#gs-sync is not hidden in the markup: ' + syncTag);
   ['games-days', 'games-standings', 'games-rows', 'standings-tbody', 'catchup-hint', 'bonus-body', 'games-reveal-link', 'sync-status', 'copy-standings-btn', 'day-tabs']
     .forEach((id) => assert.equal((html.match(new RegExp('\\sid="' + id + '"', 'g')) || []).length, 0, '#' + id + ' is gone (the Games engine replaced it)'));
 });

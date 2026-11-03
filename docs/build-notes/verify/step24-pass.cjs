@@ -49,7 +49,7 @@ const MEASURE = (rootSel) => {
 // What a counselor must not see, read off the page as drawn (not off the markup): a director's control that takes room, a point, a place.
 const LEAKS = () => {
   const vis = (e) => { if (!e || e.closest('[hidden]')) return false; const cs = getComputedStyle(e); const r = e.getBoundingClientRect(); return cs.display !== 'none' && cs.visibility !== 'hidden' && r.width > 0 && r.height > 0; };
-  const rows = ['more-director', 'tell-row', 'award-row', 'builder-row', 'history-row', 'members-row', 'counselors-row', 'reveal-row', 'games-standings', 'games-reveal-link', 'takeover-tell', 'takeover-award', 'takeover-reveal']
+  const rows = ['more-director', 'tell-row', 'award-row', 'builder-row', 'history-row', 'members-row', 'counselors-row', 'reveal-row', 'games-live', 'gs-reveal', 'takeover-tell', 'takeover-award', 'takeover-reveal']
     .filter((id) => vis(document.getElementById(id)));
   const text = document.body.innerText || '';
   const words = [];

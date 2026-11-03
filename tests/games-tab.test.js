@@ -218,9 +218,30 @@ test('blocks: a day no schedule item holds falls back to the session names; game
   state.ui.day = dayOf(WED).id;
   const w = at(WED, 630);
   const last = w.blocks[w.blocks.length - 1];
-  assert.equal(last.off, true, 'the games on no block are the last group');
-  assert.equal(last.title, 'Not on the schedule');
-  assert.ok(last.rows.some((r) => r.id === stray.id), 'the stray game is listed there');
+  if (scheduleIsShared()) {
+    assert.equal(last.off, true, 'the games on no block are the last group');
+    assert.equal(last.title, 'Not on the schedule');
+    assert.ok(last.rows.some((r) => r.id === stray.id), 'the stray game is listed there');
+  } else {
+    // The printed week links no game to a block, so "Not on the schedule" would be untrue: the leftovers keep their session's name.
+    assert.ok(w.blocks.every((b) => !b.off), 'no "Not on the schedule" group while the schedule is not edited here');
+    assert.equal(last.title, 'Afternoon');
+    assert.ok(last.rows.some((r) => r.id === stray.id), 'the stray game is under its session');
+  }
+  done();
+});
+
+test('blocks: with the printed week, a day\'s Afternoon games sit under "Afternoon" after the blocks, never under "Not on the schedule" (the owner\'s Use the original week again)', () => {
+  boot('editor');
+  if (scheduleIsShared()) { done(); return; } // the edited schedule links every game to a block: pinned by the case above
+  DOWS.filter((d) => dayOf(d)).forEach((dow) => {
+    state.ui.day = dayOf(dow).id;
+    const m = at(dow, 630);
+    assert.ok(m.blocks.every((b) => !b.off), 'day ' + dow + ': no group says the games are off the schedule');
+    const ids = rowsOf(m).map((r) => r.id);
+    assert.equal(new Set(ids).size, ids.length, 'day ' + dow + ': no game twice');
+    assert.equal(ids.length, gamesForDayId(dayOf(dow).id).length, 'day ' + dow + ': every game listed');
+  });
   done();
 });
 
@@ -466,6 +487,63 @@ test('standings: places are reveal-core\'s groupPlaces over the app\'s own ranki
   assert.equal(st.rows[0].place, 1);
   assert.equal(st.rows[1].place, 1);
   assert.ok(st.rows[0].tie && st.rows[1].tie);
+  done();
+});
+
+test('standings: a complete tie is ordered by the same cleaned name the reveal\'s freeze uses, so a director\'s phone and the big screen agree', () => {
+  boot('editor');
+  const t = T();
+  // Leading spaces (and a name over 30 characters) are cut by the freeze's name; compared raw they would sort a different way.
+  state.teams[0].name = '  Zed';
+  state.teams[1].name = 'Yak';
+  state.teams[2].name = 'M'.repeat(30) + 'Z';
+  state.teams[3].name = 'M'.repeat(30) + 'A';
+  t.forEach((id) => pointsFor(id, 7)); // every team level on points and medals: only the name decides
+  const st = standings();
+  const tv = [].concat(...groupPlaces(revealFreezeRows()).map((gr) => gr.entries.map((e) => e.id)));
+  assert.deepEqual(st.rows.map((r) => r.team), tv, 'the same order on the Games tab as in the freeze');
+  assert.ok(st.rows.findIndex((r) => r.team === t[1]) < st.rows.findIndex((r) => r.team === t[0]), 'Yak before Zed once the spaces are cleaned');
+  assert.equal(standingsTieName({ id: t[0], name: '  Zed' }), 'Zed');
+  assert.equal(standingsTieName({ id: t[2], name: '' }), 'Team 3', 'no usable name: Team N by position, as the freeze says it');
+  done();
+});
+
+test('standings: the day baseline is not taken from a cache — with sync attached it waits for the first server snapshot, then holds all day', () => {
+  boot('editor');
+  const t = T();
+  const realRef = fbRef, realReady = remoteReady, realFailed = sdkLoadFailed, realCfg = window.FIREBASE_CONFIG;
+  try {
+    pointsFor(t[0], 30); pointsFor(t[1], 20); pointsFor(t[2], 10);
+    fbRef = {}; remoteReady = false; // sync is attached and the server has said nothing yet: this week is only the cache
+    let st = standings();
+    assert.equal(st.arrows, false, 'no arrows from a baseline nobody could trust');
+    assert.equal(localStorage.getItem(DAY_RANK_KEY), null, 'and nothing stored to carry the cache\'s places all day');
+    remoteReady = true; // the first snapshot landed
+    standings(); // the render it triggers takes the baseline: t0 1st, t1 2nd, t2 3rd
+    assert.ok(localStorage.getItem(DAY_RANK_KEY), 'taken once the server has spoken');
+    pointsFor(t[2], 25);
+    st = standings();
+    assert.equal(st.arrows, true);
+    assert.equal(st.rows.find((r) => r.team === t[2]).mv, 2, 'a real move against the real morning');
+    // a baseline already stored for today is the day's, snapshot or not (a reload after a connection drop)
+    remoteReady = false;
+    assert.equal(standings().arrows, true, 'a stored baseline for today is returned at once');
+    // No sync attached: the local copy is the week and the baseline is taken at once
+    boot('editor');
+    fbRef = null; remoteReady = false; window.FIREBASE_CONFIG = undefined;
+    pointsFor(t[0], 30);
+    standings();
+    assert.ok(localStorage.getItem(DAY_RANK_KEY), 'local-only: the baseline is taken now');
+    // Sync configured but the SDK never loaded: the same, the cache is all there will be
+    boot('editor');
+    window.FIREBASE_CONFIG = { apiKey: 'x' }; sdkLoadFailed = false;
+    pointsFor(t[0], 30);
+    standings();
+    assert.equal(localStorage.getItem(DAY_RANK_KEY), null, 'sync expected but not attached yet: wait for it');
+    sdkLoadFailed = true;
+    standings();
+    assert.ok(localStorage.getItem(DAY_RANK_KEY), 'the SDK failed: take it from what the phone has');
+  } finally { fbRef = realRef; remoteReady = realReady; sdkLoadFailed = realFailed; window.FIREBASE_CONFIG = realCfg; }
   done();
 });
 

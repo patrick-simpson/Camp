@@ -18,6 +18,12 @@
 
 installSinks();
 const SINKS = __sinkRec;
+
+// The wall clock is pinned (a ?now= preview: Wednesday 10:00 AM camp time, inside the games block). These suites scan every
+// string the app writes for a signed number, and the Now card says "Running over · +10 min" in a real overrun hour of the real
+// clock, which is a time and not a point: loosening the pattern to ignore it would also let a real "+5" slip, so the suite
+// pins the time instead and never depends on the hour it runs.
+location.search = '?now=3-1000';
 const hostDoc = document;
 
 // What a counselor must never read: points, a place, a signed delta, a gap.
@@ -25,7 +31,7 @@ const hostDoc = document;
 // "2026-07-20" are not deltas.)
 const LEAK_PATTERNS = [
   [/\bpts?\b/i, 'points'],
-  [/(^|[\s(])[+−-]\d+(?!\d|\s*min\b)/, 'a signed number'], // ("+10 min" on a block that ran over is a time, not a point)
+  [/(^|[\s(])[+−-]\d+/, 'a signed number'],
   [/\b\d+(st|nd|rd|th)\b/i, 'an ordinal place'],
   [/\b(trail|trails|trailing|behind|ahead)\b/i, 'a gap word'],
 ];

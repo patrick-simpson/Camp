@@ -20,6 +20,12 @@ const { makeFakeRtdb } = nodeRequire('./fake-rtdb.js');
 
 installSinks();
 const SINKS = __sinkRec;
+
+// The wall clock is pinned (a ?now= preview: Wednesday 10:00 AM camp time, inside the games block). These suites scan every
+// string the app writes for a signed number, and the Now card says "Running over · +10 min" in a real overrun hour of the real
+// clock, which is a time and not a point: loosening the pattern to ignore it would also let a real "+5" slip, so the suite
+// pins the time instead and never depends on the hour it runs.
+location.search = '?now=3-1000';
 const PV_SEEDED = scheduleIsShared();
 const INDEX = readFixture('../index.html');
 const APP_SRC = readFixture('../app.js');
@@ -27,7 +33,7 @@ const CSS = readFixture('../styles.css');
 
 const LEAK_PATTERNS = [
   [/\bpts?\b/i, 'points'],
-  [/(^|[\s(])[+−-]\d+(?!\d|\s*min\b)/, 'a signed number'], // ("+10 min" on a block that ran over is a time, not a point)
+  [/(^|[\s(])[+−-]\d+/, 'a signed number'],
   [/\b\d+(st|nd|rd|th)\b/i, 'an ordinal place'],
   [/\b(trail|trails|trailing|behind|ahead)\b/i, 'a gap word'],
 ];
@@ -404,6 +410,9 @@ test('a counselor preview clears the podium picker, its Save and the saved line,
   setStandingsGuardThrows(true);
   const out = record(() => { renderAll(); shellTick(); });
   assert.notOk(/podium-picker|pp-team|pp-row/.test(entry.innerHTML), 'no keys: a counselor reads the live line');
+  assert.ok(/class="nw-note gv-wait"/.test(entry.innerHTML) && entry.innerHTML.includes('Not scored yet. The winners show here when a director saves them.'),
+    'the one plain line a counselor gets for an unscored game: ' + entry.innerHTML.slice(0, 200));
+  assert.deepEqual(leaksIn([{ kind: 'innerHTML', text: entry.innerHTML }]), [], 'and it says no point, place or gap');
   assert.equal(dock.hidden, true, 'no Save');
   assert.equal(dock.innerHTML, '');
   assert.deepEqual(leaksIn(out), [], 'a sink carried a point, a place or a gap');

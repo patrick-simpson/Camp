@@ -8295,6 +8295,23 @@ let remoteJustApplied = false;
 // against that baseline. Deliberately device-local (NOT synced): every phone keeps its own morning baseline.
 const DAY_RANK_KEY = lsKey('campScoreboardDayRanks');
 
+// The name groupPlaces breaks a COMPLETE tie by (same points, same medals), the way the reveal's freeze words it: control characters
+// gone, cut to 30, "Team N" for none. The Games tab, its arrows' baseline and the reveal's freeze all use this one, so a team name
+// over 30 characters or with an odd character in it can't be ordered one way on a director's phone and another on the big screen.
+function standingsTieName(t) {
+  const clean = revealCleanName(t.name);
+  return clean || ('Team ' + (state.teams.findIndex((x) => x.id === t.id) + 1));
+}
+
+// Whether the standings the baseline would be taken from can be trusted yet. With sync attached the week on this phone is a cache
+// until the first server snapshot lands (a phone opened that morning with an empty or yesterday's cache would take a flat or old
+// baseline and keep it all day), so the baseline waits for the snapshot; the render the snapshot triggers takes it. With no sync at
+// all (local-only, or the SDK never loaded) the local copy IS the week. Same test as settleExpiredClocks'.
+function dayBaselineReady() {
+  if (fbRef) return remoteReady;
+  return sdkLoadFailed || !(window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey);
+}
+
 // The day's baseline as SHARED PLACES (reveal-core's groupPlaces: equal points share one), for the Games standings' arrows.
 // `flat` is a baseline taken while nobody had a point: every team was level, so "moved since this morning" would say nothing
 // and the arrows stay off for the rest of that day. A record from an older build (positions, no `places`) is taken afresh.
@@ -8307,9 +8324,10 @@ function startOfDayPlaces() {
     snap = JSON.parse(localStorage.getItem(DAY_RANK_KEY) || 'null');
   } catch (e) { /* corrupt — re-snapshot below */ }
   if (!snap || snap.date !== today || !snap.places) {
+    if (!dayBaselineReady()) return null; // no arrows until the first snapshot has said what this morning's places were
     const counts = medalCounts();
     const ranked = rankTeamsByPoints(counts);
-    const groups = groupPlaces(ranked.map((t) => ({ id: t.id, nm: t.name, p: counts[t.id].points, g: counts[t.id].gold, s: counts[t.id].silver, b: counts[t.id].bronze })));
+    const groups = groupPlaces(ranked.map((t) => ({ id: t.id, nm: standingsTieName(t), p: counts[t.id].points, g: counts[t.id].gold, s: counts[t.id].silver, b: counts[t.id].bronze })));
     const places = {};
     groups.forEach((gr) => gr.entries.forEach((e) => { places[e.id] = gr.place; }));
     snap = { date: today, places, flat: ranked.every((t) => counts[t.id].points === 0) };
@@ -9316,7 +9334,10 @@ function gamesDayGroups(day, ctx, today) {
   });
   const rest = own.filter((g) => !listed.has(g));
   if (!rest.length) return groups;
-  if (!groups.length) {
+  // No schedule edited here means no game has a link to a block (gamesForBlock lists only Morning and Evening games under the
+  // printed blocks), so "Not on the schedule" would be untrue of a printed week's Afternoon or Legacy games: they stay under their
+  // session's name, as the old Games tab had them. "Not on the schedule" is for a game a director left off an edited schedule.
+  if (!groups.length || !scheduleIsShared()) {
     const known = (state.config && state.config.sessions) || [];
     const sessions = known.concat([...new Set(rest.map((g) => g.session))].filter((s) => !known.includes(s)));
     sessions.forEach((s) => {
@@ -9673,7 +9694,7 @@ function gamesStandings(ctx) {
   const ranked = rankTeamsByPoints(counts);
   const entries = ranked.map((t) => {
     const c = counts[t.id];
-    return { id: t.id, nm: t.name, p: c.points, g: c.gold, s: c.silver, b: c.bronze };
+    return { id: t.id, nm: standingsTieName(t), p: c.points, g: c.gold, s: c.silver, b: c.bronze };
   });
   const empty = entries.every((e) => e.p === 0);
   // A table nobody has scored on has no places: the teams stay in roster order (groupPlaces would sort a tie by name).

@@ -486,7 +486,8 @@ function nowPaintRuns(model) {
   setHiddenIfChanged(todo, !rows.length);
   paintKeyedList(nowEl('now-todo-list'), rows.map(nowTodoRowHtml).join(''), { view: model.at.dow });
   setHiddenIfChanged(nowEl('now-todo-more'), !model.todoMore);
-  if (model.todoMore) setTextIfChanged(nowEl('now-todo-more-text'), model.todoMore + ' more');
+  // Cleared with it: a hidden line must not keep a director's count (a counselor preview is compared node for node with a counselor's phone).
+  setTextIfChanged(nowEl('now-todo-more-text'), model.todoMore ? model.todoMore + ' more' : '');
 }
 
 // The kind's body. A games card keeps its rows by key: a game going Live moves up and one going Done moves down, so — on screen, in a

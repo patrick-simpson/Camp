@@ -1649,7 +1649,8 @@
                             trail Maples by 3. One gold for Turkey would put them in
                             front." Team names may be <b>. For a director on a
                             team, it is about their team.
-             #gs-sync       the director's sync line ("2 changes couldn't be saved …")
+             #gs-sync       the director's sync line ("☁️ Synced", "2 changes couldn't be saved …"): never `hidden` in the
+                            markup, updateSyncIndicator owns its text and :empty hides it before the first write
              #gs-reveal     "Reveal these on the big screen ›" → the remote
            COUNSELORS: no panel. #games-secret, one quiet line, unless the revealed
            grid above is showing (§5.6). -->
@@ -1664,7 +1665,7 @@
         <p class="gs-how" id="gs-how">Arrows: places moved since this morning · tap a team to give quick points</p>
         <ol class="gs-list" id="gs-list" aria-labelledby="gs-title"></ol>
         <p class="gs-gap" id="gs-gap" hidden></p>
-        <p class="gs-sync" id="gs-sync" aria-live="polite" hidden></p>
+        <p class="gs-sync" id="gs-sync" aria-live="polite"></p>
         <button type="button" class="gs-reveal" id="gs-reveal" hidden>
           <svg class="ico" aria-hidden="true"><use href="#i-tv"/></svg>
           <span class="gs-reveal-t">Reveal these on the big screen</span>

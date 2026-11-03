@@ -582,10 +582,9 @@ function revealFreezeRows() {
   const counts = medalCounts();
   return rankTeamsByPoints(counts).map((t) => {
     const c = counts[t.id] || {};
-    const at = state.teams.findIndex((x) => x.id === t.id);
     return {
       id: String(t.id),
-      nm: revealCleanName(t.name) || ('Team ' + (at + 1)),
+      nm: standingsTieName(t), // the Games tab's tie order uses the same name
       p: revealWhole(c.points, -9999, 99999),
       g: revealWhole(c.gold, 0, 99), s: revealWhole(c.silver, 0, 99), b: revealWhole(c.bronze, 0, 99),
       v: revealWhole(c.verse, -9999, 99999), m: revealWhole(c.meals, -9999, 99999), c: revealWhole(c.custom, -9999, 99999),
