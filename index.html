@@ -2028,10 +2028,12 @@
            (`press`); the next row's buttons cross-fade from waiting (colour only,
            so calm keeps it).
          ▸ THE SAVED RESULT (renderResult, mockup 14b):
-           <p class="gsv" id="game-saved" data-state="saving|saved|offline" role="status">
-             <svg class="ico" aria-hidden="true"><use href="#i-check"/></svg><span>Saved 10:52 · everyone's phone has it</span></p>
+           <p class="gsv" id="game-saved" data-state="saving|saved|offline|refused" role="status">
+             <svg class="ico" aria-hidden="true"><use href="#i-check"/></svg><span>Saved 10:52 AM · everyone's phone has it</span></p>
              saving: "Saving…" (no check yet) · offline: "Saved on this phone · it sends when you're back online"
-             · saved ONLY once the write is acknowledged.
+             · refused: "Not saved yet · the server turned it away. Use Retry in the bar at the top." (danger text)
+             · saved ONLY once the write is acknowledged. The static markup is `<p …><svg…><use…/></svg><span></span></p>`;
+             games-ui.js patches data-state, the words and the icon (#i-check / #i-phone / #i-x) in place afterwards.
            <ol class="gres" aria-label="Final results">
              <li class="gres-r" data-place="1" data-team="t3" style="teamAccentVars(t3)" data-mine?>
                <i class="pp-disc" data-place="1" aria-hidden="true">1</i><span class="gres-mark">teamMarkHtml 34</span>
@@ -2041,7 +2043,7 @@
            a tally game's scores under it: <h3 class="gv-h">Scores · pins</h3>
              <ol class="gres-scores"><li class="gres-s" data-team="t3" style="…">teamMarkHtml 22<span class="gres-s-nm">Pumpkins</span><b class="gres-s-v">48</b></li></ol>
            <button type="button" class="btn gres-change" id="game-change">Change the result</button>   (directors)
-         ▸ THE DOCK (#takeover-game-dock[data-dock], directors; hidden for a counselor):
+         ▸ THE DOCK (#takeover-game-dock, directors; hidden for a counselor and for a bracket or tally with no result yet):
            pick  <button type="button" class="btn btn-big btn-block gd-save" id="game-save" aria-disabled="true">Pick bronze, then save</button>
                  ("Pick gold, silver and bronze" · "Pick silver, then save"); a tap on the
                  well scrolls to the row still to pick. Complete: class btn-gold, no

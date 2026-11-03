@@ -7062,15 +7062,6 @@ jelly-tabs:not(:defined) > jelly-tab-panel:not([active]) {
   font-weight: 600;
 }
 
-.messtival-tag {
-  background: var(--color-gold-bg);
-  color: var(--color-gold);
-  border-radius: var(--radius-md);
-  padding: 0.5rem 0.75rem;
-  font-size: 0.85rem;
-  font-weight: 600;
-}
-
 /* ============================================================
    FULL WEEK SCHEDULE (bottom sheet)
    ============================================================ */
@@ -16763,11 +16754,9 @@ button.gs-row:focus-visible {
   min-height: 2.5rem;
 }
 .pp-nm {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
   max-width: 100%;
-  overflow: hidden;
+  /* No line clamp: a name is never cut. A 20-character name of the widest letters needs three lines in a 110px key (Playwright
+     pass); the key grows by its content, and the aria-label carries the whole name either way. */
   overflow-wrap: break-word;
   -webkit-hyphens: auto;
   hyphens: auto;
@@ -16861,6 +16850,13 @@ button.gs-row:focus-visible {
   }
   .pp-mark {
     min-height: 0;
+  }
+  /* The name beside the mark may break anywhere: `break-word` alone leaves an unbreakable 20-character name at its full width as the
+     flex item's minimum, and it spilled out of the key at 200% text (Playwright pass). */
+  .pp-nm {
+    flex: 1 1 0;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
   .pp-taken {
     left: auto;

@@ -9786,7 +9786,7 @@ function renderGameView() {
   // adds `open` to the <details>, which that would read as "DOM changed" and
   // rebuild — shut.
   const headHtml = `
-    ${g.messtival ? '<p class="messtival-tag">🎉 Double points until the end of Friday</p>' : ''}
+    ${g.messtival ? '<div class="nw-notes"><p class="nw-note" data-note="double"><svg class="ico" aria-hidden="true"><use href="#i-bolt"/></svg><span>Double points until the end of Friday</span></p></div>' : ''}
     ${(g.rules || []).length ? `<details class="rules-details">
       <summary>How to play</summary>
       ${g.rules.map((sec) => `
