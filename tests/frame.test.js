@@ -153,11 +153,12 @@ test('More keeps every id the Settings drawer had, on the row that took its plac
   assert.ok(/setHiddenIfChanged\(document\.getElementById\('more-director'\), !editor\)/.test(APP));
 });
 
-test('More only ever holds what exists today: no reveal, Tell everyone or Award points row is live', () => {
+test('More only ever holds what exists today: the Tell everyone and Award points rows stay hidden until their tools are wired', () => {
   const dir = INDEX.slice(INDEX.indexOf('id="more-director"'), INDEX.indexOf('id="more-camp"'));
   ['counselors-see', 'builder', 'history', 'members'].forEach((k) => assert.ok(dir.includes('data-more-row="' + k + '"'), k));
   assert.ok(/data-more-row="reveal" data-state="ready" hidden/.test(dir), 'Run the reveal stays built but hidden until Step 23');
-  assert.notOk(/Tell everyone|Award points/.test(dir));
+  // Step 24's two rows exist (the design pass) and ship hidden until the tool they open is wired: never a dead row.
+  ['tell', 'award'].forEach((k) => assert.ok(new RegExp('data-more-row="' + k + '" hidden').test(dir), k + ' row is built but hidden until its takeover is wired'));
 });
 
 test('the Alerts row says what actually reaches the phone, in plain words', () => {

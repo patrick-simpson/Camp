@@ -10924,28 +10924,28 @@ function renderWhatsNew() {
   });
 }
 
-// ── Broadcast announcements (📣) ─────────────────────────────────
-// Editor-posted messages that sync to every phone (state.announcements —
-// see SYNC_KEYS) and pin at the top of the page until they expire or each
-// viewer dismisses them. Dismissal is per-device (like the what's-new
-// banners); deleting is editor-only and removes the announcement for
-// everyone. Every announcement expires on its own: the composer picks a
-// duration (1 hour by default), stamped as `ttlMs` on the entry; expired
-// entries stop rendering everywhere immediately and editor devices prune
-// them from synced state (per-child null pushes) as housekeeping.
+// ── Broadcast announcements: banners (📣) ────────────────────────
+// Director-posted messages that sync to every phone (state.announcements —
+// see SYNC_KEYS) and pin at the top of Now until they expire or each viewer
+// dismisses them. Dismissal is per-device (like the what's-new banners);
+// taking one down is a director's act and removes it for everyone. Every
+// banner expires on its own: Tell everyone (tell.js) picks a duration (1 hour
+// by default), stamped as `ttlMs` on the entry; expired entries stop
+// rendering everywhere immediately and editor devices prune them from synced
+// state (per-child null pushes) as housekeeping. There is NO composer here any
+// more: the one place a banner is written is Tell everyone, through postBanner.
 const ANNOUNCE_DISMISS_KEY = lsKey('campScoreboardDismissedAnnouncements');
 const ANNOUNCE_DEFAULT_TTL_MS = 60 * 60 * 1000; // 1 hour
 const ANNOUNCE_TTL_CHOICES = [
-  { ms: 60 * 60 * 1000, label: '1 hour' },
-  { ms: 3 * 60 * 60 * 1000, label: '3 hours' },
-  { ms: 24 * 60 * 60 * 1000, label: 'All day' },
+  { key: '1h', ms: 60 * 60 * 1000, label: '1 hour' },
+  { key: '3h', ms: 3 * 60 * 60 * 1000, label: '3 hours' },
+  { key: 'day', ms: 24 * 60 * 60 * 1000, label: 'All day' },
 ];
+const BANNER_MAX = 280; // characters (Tell everyone's message limit)
 // Announcements posted before this deploy predate expiry support — treat
 // them all as already expired (the one-time "delete everything currently
 // up" cleanup, 2026-07-24).
 const ANNOUNCE_PURGE_BEFORE = Date.parse('2026-07-24T10:13:24Z');
-let announceComposerOpen = false;
-let announceTtlChoice = ANNOUNCE_DEFAULT_TTL_MS; // composer draft, not synced
 
 // When an announcement stops showing, as epoch ms. Unparseable `at` or a
 // pre-expiry-era post → 0 (already expired). Missing/invalid ttlMs (old
@@ -10987,156 +10987,110 @@ function dismissAnnouncement(id) {
   try { localStorage.setItem(ANNOUNCE_DISMISS_KEY, JSON.stringify(d)); } catch (e) { /* fine */ }
 }
 
-// Newest first; entries partially pruned by RTDB render-guarded like bonuses.
-// Expired announcements never show, on any device, even before the editor
-// prune has deleted them from synced state.
-function activeAnnouncements() {
-  const dismissed = dismissedAnnouncements();
+// Every synced banner still up, newest first (entries partially pruned by RTDB
+// are render-guarded like bonuses). Expired ones never show, on any device, even
+// before the editor prune has deleted them from synced state. A director's
+// "Showing now" (Tell everyone) lists these whether or not THIS phone dismissed
+// them: a dismissal is only ever one phone's.
+function liveAnnouncements() {
   return Object.values(state.announcements || {})
-    .filter((a) => a && a.id && a.text && !dismissed.includes(a.id) && !announcementExpired(a))
+    .filter((a) => a && a.id && a.text && !announcementExpired(a))
     .sort((x, y) => String(y.at || '').localeCompare(String(x.at || '')));
 }
 
+// What Now's strip shows: the live banners this phone hasn't dismissed.
+function activeAnnouncements() {
+  const dismissed = dismissedAnnouncements();
+  return liveAnnouncements().filter((a) => !dismissed.includes(a.id));
+}
+
+// A time of day in camp time ("4:52 PM"); with the weekday ahead of it when it
+// was not today ("Tue 4:52 PM"). Never the phone's own zone, and never the narrow
+// no-break space newer engines put before PM.
+function messageClock(iso) {
+  const d = new Date(iso);
+  if (!iso || Number.isNaN(d.getTime())) return '';
+  try {
+    const fmt = (o) => new Intl.DateTimeFormat('en-US', Object.assign({ timeZone: CAMP_TZ }, o)).formatToParts(d);
+    const t = fmt({ hour: 'numeric', minute: '2-digit', hour12: true });
+    const get = (parts, type) => ((parts.find((p) => p.type === type) || {}).value || '').replace(/[  ]/g, ' ');
+    const clock = get(t, 'hour') + ':' + get(t, 'minute') + ' ' + get(t, 'dayPeriod').toUpperCase();
+    const day = (x) => new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, year: 'numeric', month: 'numeric', day: 'numeric' }).format(x);
+    return day(d) === day(new Date()) ? clock : get(fmt({ weekday: 'short' }), 'weekday') + ' ' + clock;
+  } catch (e) { return ''; }
+}
+
+// ONE function writes a message banner (BANNER MARKUP in index.html): Now's strip draws every banner with it
+// and Tell everyone's "On a counselor's phone" draws the one it is about to send, so the preview can never
+// drift from the real thing. The one blue tint; no badge, no emoji, no capitals. `m` is a synced announcement
+// ({id, text, at, by}) or a chat-sourced one ({…, fromChat: true}). opts.preview: the meta reads "Now · Jenn",
+// no Remove, and the dismiss × is drawn but inert (the preview's CSS takes its pointer events away).
+// opts.editor: a director's "Remove for everyone" on a synced banner (never on a chat one: delete it in chat).
+function messageHtml(m, opts) {
+  opts = opts || {};
+  const chat = !!m.fromChat;
+  const when = opts.preview ? 'Now' : messageClock(m.at);
+  const metaHtml = [chat ? 'Announcements chat' : '', when, m.by || ''].filter(Boolean).map((x) => esc(x)).join(' · ');
+  const id = esc(m.id || '');
+  const remove = opts.editor && !opts.preview && !chat
+    ? `<button type="button" class="msg-remove" data-ann-id="${id}">Remove for everyone</button>` : '';
+  return `<div class="msg" data-kind="${chat ? 'chat' : 'banner'}" data-key="ann-${id}" role="status">` +
+    `<span class="msg-ico" aria-hidden="true"><svg class="ico"><use href="#${chat ? 'i-bubble' : 'i-megaphone'}"/></svg></span>` +
+    `<div class="msg-body"><p class="msg-text">${esc(m.text)}</p><p class="msg-meta"><span>${metaHtml}</span>${remove}</p></div>` +
+    `<button type="button" class="msg-x" data-ann-id="${id}" aria-label="Dismiss this announcement on this phone"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>` +
+    `</div>`;
+}
+
+// Now's message strip. Chat's Announcements channel rides it for 15 minutes per message (chat.js provides them
+// pre-filtered; same dismissed set). Runs on every renderAll and the 30 s tick, so it writes only a change
+// (setHtmlIfChanged) and its two buttons are ONE delegated listener, wired once.
 function renderAnnouncements() {
   const wrap = document.getElementById('announcements');
   if (!wrap) return;
-  // Chat's Announcements channel rides this same strip for 15 minutes per
-  // message (chat.js provides them pre-filtered; same dismissed set).
   const fromChat = (typeof chatAnnouncementBanners === 'function') ? chatAnnouncementBanners() : [];
   const active = activeAnnouncements().concat(fromChat)
     .sort((a, b) => String(b.at).localeCompare(String(a.at)));
   const editor = canEdit();
-  if (!active.length && !editor) { setHiddenIfChanged(wrap, true); if (wrap.innerHTML) wrap.innerHTML = ''; wrap.__lastHtml = ''; wrap.__lastComposerKey = ''; return; }
-
-  const banners = active.map((a) => `
-    <div class="announce-banner" role="status">
-      <button class="announce-dismiss" data-ann-id="${esc(a.id)}" aria-label="Dismiss this announcement on this phone">✕</button>
-      <span class="announce-badge">📣 ${a.fromChat ? 'Chat' : 'Announcement'}</span>
-      <span class="announce-text">${esc(a.text)}</span>
-      <span class="announce-meta">${esc(formatEasternStamp(a.at) || '')}${a.by ? ` · ${esc(a.by)}` : ''}${editor && !a.fromChat ? ` · <button class="announce-delete link-btn" data-ann-id="${esc(a.id)}">Remove for everyone</button>` : ''}</span>
-    </div>`).join('');
-
-  // Editors get a composer, collapsed behind a one-line link so the top of
-  // the page stays quiet. The duration chips pick how long the announcement
-  // stays up (stamped as ttlMs at post time; 1 hour is the default).
-  const ttlChips = `<div class="announce-ttl-row" role="group" aria-label="How long the announcement stays up">
-      <span class="announce-ttl-label">⏳ Disappears after</span>
-      ${ANNOUNCE_TTL_CHOICES.map((c) =>
-        `<jelly-chip class="announce-ttl-chip" selectable size="small" ${c.ms === announceTtlChoice ? 'selected' : ''} data-ttl-ms="${c.ms}">${esc(c.label)}</jelly-chip>`).join('')}
-    </div>`;
-  const composer = !editor ? '' : announceComposerOpen ? `
-    <form id="announce-form" class="announce-form">
-      <input id="announce-input" class="announce-input" type="text" maxlength="200"
-        placeholder="Announce to every phone…" autocomplete="off" aria-label="Announcement text">
-      <jelly-button id="announce-post-btn" size="small" class="primary-btn">📣 Post</jelly-button>
-    </form>${ttlChips}` : `<button id="announce-open-btn" class="link-btn announce-open-btn">📣 Post an announcement</button>`;
-
-  const wireBanners = () => {
-    wrap.querySelectorAll('.announce-dismiss').forEach((btn) => {
-      btn.addEventListener('click', () => { dismissAnnouncement(btn.dataset.annId); renderAnnouncements(); });
-    });
-    wrap.querySelectorAll('.announce-delete').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        if (!canEdit()) return;
-        const a = (state.announcements || {})[btn.dataset.annId];
-        if (!a) return;
-        if (!confirm(`Remove this announcement from every phone?\n\n"${a.text}"`)) return;
-        delete state.announcements[btn.dataset.annId];
-        touchData();
-        saveState();
-        renderAnnouncements();
-      });
-    });
-  };
-
-  // This runs every 30 s (and for each Announcements-channel chat message):
-  // rebuilding identical markup would wipe whatever an editor is typing in
-  // the composer and drop the keyboard. Same markup ⇒ leave the live nodes
-  // (and their listeners) alone.
-  const html = banners + composer;
-  if (wrap.__lastHtml === html && !wrap.hidden) return;
-  // Only the banners changed (a remote announcement landed, one expired or
-  // was dismissed) ⇒ swap just those nodes and keep the composer's live
-  // <input>. Replacing it moved the caret to the end, dropped an IME
-  // composition, and on a phone dismissed the keyboard — a script-called
-  // focus() outside a tap doesn't bring that back. The composer is keyed by
-  // open/closed rather than its markup: the duration chips flip in place and
-  // so make that markup differ without the nodes being stale.
-  const composerKey = !composer ? '' : announceComposerOpen ? 'open' : 'closed';
-  if (composerKey && !wrap.hidden && wrap.__lastComposerKey === composerKey && wrap.querySelector('#announce-form, #announce-open-btn')) {
-    const bannersChanged = wrap.__lastBanners !== banners;
-    wrap.__lastHtml = html;
-    wrap.__lastBanners = banners;
-    if (!bannersChanged) return; // just the chips, already flipped in place
-    wrap.querySelectorAll('.announce-banner').forEach((n) => n.remove());
-    wrap.insertAdjacentHTML('afterbegin', banners);
-    wireBanners();
-    return;
-  }
-  // A real composer change (opened, closed, posted) or the first paint ⇒
-  // rebuild, carrying any half-typed text, focus and caret across.
-  const oldInput = document.getElementById('announce-input');
-  const draft = oldInput ? oldInput.value : '';
-  const hadFocus = !!(oldInput && document.activeElement === oldInput);
-  const selStart = oldInput ? oldInput.selectionStart : null;
-  const selEnd = oldInput ? oldInput.selectionEnd : null;
-  wrap.hidden = false;
-  wrap.innerHTML = html;
-  wrap.__lastHtml = html;
-  wrap.__lastBanners = banners;
-  wrap.__lastComposerKey = composerKey;
-  const newInput = document.getElementById('announce-input');
-  if (newInput) {
-    if (draft) newInput.value = draft;
-    if (hadFocus) {
-      // Focus whether or not there is a draft (an empty, focused box lost its
-      // keyboard too), without scrolling the page to it.
-      newInput.focus({ preventScroll: true });
-      try { newInput.setSelectionRange(selStart, selEnd); } catch (e) { /* not a text-selectable input */ }
-    }
-  }
-
-  wireBanners();
-  // Duration chips flip in place (no re-render — that would wipe the text
-  // being typed in the input beside them).
-  wrap.querySelectorAll('.announce-ttl-chip').forEach((chip) => {
-    chip.addEventListener('click', () => {
-      announceTtlChoice = parseInt(chip.dataset.ttlMs, 10) || ANNOUNCE_DEFAULT_TTL_MS;
-      wrap.querySelectorAll('.announce-ttl-chip').forEach((c) => {
-        if (c === chip) c.setAttribute('selected', ''); else c.removeAttribute('selected');
-      });
-    });
-  });
-  const openBtn = document.getElementById('announce-open-btn');
-  if (openBtn) openBtn.addEventListener('click', () => {
-    announceComposerOpen = true;
-    announceTtlChoice = ANNOUNCE_DEFAULT_TTL_MS; // fresh composer, fresh default
+  setHiddenIfChanged(wrap, !active.length);
+  setHtmlIfChanged(wrap, active.map((a) => messageHtml(a, { editor })).join(''));
+  if (wrap.__wired) return;
+  wrap.__wired = true;
+  wrap.addEventListener('click', (e) => {
+    const t = e.target && e.target.closest ? e.target : null;
+    const x = t && t.closest('.msg-x');
+    if (x) { dismissAnnouncement(x.dataset.annId); renderAnnouncements(); return; }
+    const rm = t && t.closest('.msg-remove');
+    if (!rm) return;
+    if (!canEdit()) return;
+    const a = (state.announcements || {})[rm.dataset.annId];
+    if (!a) return;
+    if (!confirm(`Remove this announcement from every phone?\n\n"${a.text}"`)) return;
+    takeDownBanner(a.id);
+    touchData();
+    saveState();
     renderAnnouncements();
-    const input = document.getElementById('announce-input');
-    if (input) input.focus();
   });
-  const form = document.getElementById('announce-form');
-  if (form) form.addEventListener('submit', (e) => {
-    e.preventDefault();
-    postAnnouncement();
-  });
-  const postBtn = document.getElementById('announce-post-btn');
-  if (postBtn) postBtn.addEventListener('click', postAnnouncement);
 }
 
-function postAnnouncement() {
-  if (!canEdit()) return;
-  const input = document.getElementById('announce-input');
-  const text = input ? input.value.trim() : '';
-  if (!text) return;
+// The two writes of a banner, plain state edits with no render and no save (the caller — Tell everyone, a Take
+// down, an Undo — saves once, after everything it changed). Directors only.
+function postBanner(text, ttlMs, now) {
+  if (!canEdit()) return null;
+  const clean = String(text || '').trim().slice(0, BANNER_MAX);
+  if (!clean) return null;
   const id = newBonusId();
-  state.announcements[id] = { id, text, at: new Date().toISOString(), by: state.identity || '', ttlMs: announceTtlChoice };
-  announceComposerOpen = false;
-  announceTtlChoice = ANNOUNCE_DEFAULT_TTL_MS;
-  touchData();
-  saveState();
-  renderAnnouncements();
-  showToast('📣 Posted to every phone', { mine: true });
+  state.announcements = state.announcements || {};
+  state.announcements[id] = {
+    id, text: clean, at: (now instanceof Date ? now : new Date()).toISOString(),
+    by: frameMyName(), ttlMs: Number(ttlMs) > 0 ? Number(ttlMs) : ANNOUNCE_DEFAULT_TTL_MS,
+  };
+  return id;
+}
+
+function takeDownBanner(id) {
+  if (!canEdit() || !state.announcements || !state.announcements[id]) return false;
+  delete state.announcements[id];
+  return true;
 }
 
 // Toast (and, with notifications on, a lock-screen notification) for

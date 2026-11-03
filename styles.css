@@ -10567,108 +10567,12 @@ html:not(.calm-motion) .pa-row-summary::after {
 }
 
 /* ============================================================
-   ANNOUNCEMENTS (📣 editor broadcasts, pinned until dismissed)
+   ANNOUNCEMENTS (Now's message strip: banners from Tell everyone and the
+   Announcements chat channel). Each is a .msg (DIRECTOR TOOLS block, the
+   message banner); the composer that used to live here is Tell everyone.
    ============================================================ */
 .announcements {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-.announce-banner {
-  position: relative;
-  background: color-mix(in srgb, var(--color-primary) 10%, var(--color-surface));
-  border: 1px solid var(--color-primary);
-  border-radius: var(--radius-md);
-  padding: 0.6rem 2.2rem 0.7rem 0.8rem; /* room for the dismiss button at right */
-}
-.announce-badge {
-  display: inline-block;
-  margin-bottom: 0.35rem;
-  font-size: 0.66rem;
-  font-weight: 800;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--color-primary);
-  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
-  border-radius: 999px;
-  padding: 0.14rem 0.5rem;
-}
-.announce-text {
   display: block;
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: var(--color-text);
-  line-height: 1.35;
-}
-.announce-meta {
-  display: block;
-  margin-top: 0.25rem;
-  font-size: 0.72rem;
-  color: var(--color-text-muted);
-}
-.announce-meta .announce-delete {
-  font-size: 0.72rem;
-  color: var(--color-danger-text);
-}
-.announce-dismiss {
-  position: absolute;
-  top: 0.4rem;
-  right: 0.4rem;
-  border: none;
-  background: transparent;
-  color: var(--color-text-muted);
-  font-size: 1.1rem;
-  font-weight: 800;
-  line-height: 1;
-  padding: 0.1rem 0.35rem;
-  cursor: pointer;
-  font-family: inherit;
-  border-radius: var(--radius-md);
-}
-.announce-dismiss:active { background: color-mix(in srgb, var(--color-text-muted) 20%, transparent); }
-.announce-open-btn {
-  align-self: flex-start;
-  font-size: 0.78rem;
-  text-decoration: none;
-  color: var(--color-text-muted);
-}
-.announce-form {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-}
-/* Un-do the global full-width primary-btn treatment inside the composer row
-   (same trick as .bonus-add-row) — the input's flex:1 takes the rest. */
-.announce-form jelly-button.primary-btn {
-  width: auto;
-  flex: 0 0 auto;
-  --jelly-button-height: 40px;
-  --jelly-button-padding-inline: 14px;
-  --jelly-button-font-size: 0.9rem;
-}
-.announce-input {
-  flex: 1;
-  min-width: 0;
-  padding: 0.55rem 0.7rem;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font: inherit;
-  font-size: 0.9rem;
-}
-/* How-long-it-stays-up chips under the composer input. */
-.announce-ttl-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 0.4rem;
-  margin-top: 0.4rem;
-}
-.announce-ttl-label {
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--color-text-muted);
 }
 
 /* The sign-in screen's tap-to-reload bar (app.js showSdkDownBanner): the one
@@ -10827,12 +10731,11 @@ jelly-chip:is(.bonus-meal-chip, .bonus-cat-chip, .bonus-team-chip, .verse-day-ch
   min-height: var(--target);
 }
 /* Text links that sit alone on a line in the frame's tabs get a 44px hit box
-   (Now's follow card and announcement opener until Step 17 retires them, the
+   (Now's follow card until Step 17 retires it, the
    Games tab's quick-game link). The builder's inline links keep their size. */
 .quick-game-btn,
 #clear-result-btn,
 #follow-team-card .link-btn,
-#announcements .link-btn,
 .you-strip .link-btn {
   display: inline-flex;
   align-items: center;

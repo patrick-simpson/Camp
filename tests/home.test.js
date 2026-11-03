@@ -1,8 +1,8 @@
 // Home-screen panels that re-render on every snapshot and every 30 s tick:
 // the rain hint must not rebuild the Happening-now bar, idle renders must not
 // rewrite plain panels (that drops selected text), a points-pulse must survive
-// the next render, toasts are capped and plain text, and the announcement
-// composer's live <input> survives a banner change. The visible effect of each
+// the next render, toasts are capped and plain text, and a banner
+// strip write only when it changed. The visible effect of each
 // is only checkable in a browser; these pin the rules the fixes rest on.
 
 // Counts innerHTML writes on a stub element (the stub's innerHTML is a plain
@@ -370,88 +370,75 @@ test('up-next alerts are plain text too', () => {
   }
 });
 
-// ── Announcement composer ──
+// ── Message banners (Now's strip) ──
+// The old inline composer (and its keyboard-preserving node swap) is gone: a banner is written by Tell everyone
+// (tell.js). What is left of this panel is a list that re-renders on every snapshot and every 30 s tick, so the
+// same rules as every other home panel apply: write only a change, wire once, never rebuild what did not move.
 
-test('a remote announcement swaps the banners and leaves the open composer alone', () => {
+test('Now\'s strip draws every banner with messageHtml, and an idle re-render writes nothing', () => {
   freshState();
   setMemberRole('editor');
   const wrap = document.getElementById('announcements');
-  wrap.__lastHtml = undefined;
-  wrap.__lastComposerKey = undefined;
+  wrap.__html = undefined;
+  wrap.__dom = undefined;
   wrap.hidden = true;
-  announceComposerOpen = true;
+  const writes = countWrites(wrap, true);
   try {
-    renderAnnouncements(); // first paint builds the composer
-    const painted = wrap.innerHTML;
-    assert.ok(painted.includes('announce-input'), 'precondition: the composer is up');
-
-    const inserted = [];
-    wrap.insertAdjacentHTML = (pos, html) => inserted.push({ pos, html });
-    state.announcements = { a1: { id: 'a1', text: 'Dinner moved to six', at: new Date().toISOString(), ttlMs: 3600000, by: 'X' } };
+    state.announcements = { a1: { id: 'a1', text: 'Dinner moved to six', at: new Date().toISOString(), ttlMs: 3600000, by: 'Jenn' } };
     renderAnnouncements();
-    assert.equal(wrap.innerHTML, painted, 'the composer markup was not rewritten, so its <input> keeps caret, focus and IME');
-    assert.equal(inserted.length, 1);
-    assert.equal(inserted[0].pos, 'afterbegin', 'banners sit above the composer');
-    assert.ok(inserted[0].html.includes('Dinner moved to six'));
-
-    renderAnnouncements(); // the 30 s tick: identical markup
-    assert.equal(inserted.length, 1, 'nothing more to do');
-
-    announceComposerOpen = false; // closing it is a real composer change
+    assert.equal(writes(), 1, 'the first paint writes the banner');
+    assert.equal(wrap.hidden, false, 'and shows the strip');
+    assert.ok(wrap.innerHTML.includes('Dinner moved to six') && wrap.innerHTML.includes('class="msg"'), 'a .msg, the one banner markup');
+    assert.ok(wrap.innerHTML.includes('Remove for everyone'), 'a director may take a synced banner down from here');
+    assert.notOk(/announce-(input|form|open-btn|post-btn)/.test(wrap.innerHTML), 'no composer in the strip any more');
+    assert.equal(wrap.innerHTML, [...liveAnnouncements(), ].map((a) => messageHtml(a, { editor: true })).join(''), 'exactly what messageHtml writes');
+    renderAnnouncements(); // the 30 s tick
+    assert.equal(writes(), 1, 'identical markup is not rewritten');
+    state.announcements = {};
     renderAnnouncements();
-    assert.notOk(wrap.innerHTML === painted, 'then it rebuilds');
-    assert.ok(wrap.innerHTML.includes('announce-open-btn'));
+    assert.equal(wrap.hidden, true, 'no banner: the strip is hidden, even for a director (the composer link is gone)');
   } finally {
-    announceComposerOpen = false;
     state.announcements = {};
     setMemberRole(null);
-    delete wrap.insertAdjacentHTML;
   }
 });
 
-test('the full-rebuild path restores focus and caret even with an empty draft, and rebuilds if the composer is gone', () => {
+test('a counselor sees the same banner with no Remove, and a chat-sourced one never has one', () => {
   freshState();
+  const a = { id: 'a1', text: 'Bring a towel', at: new Date().toISOString(), ttlMs: 3600000, by: 'Jenn' };
+  const viewer = messageHtml(a, { editor: false });
+  assert.notOk(viewer.includes('msg-remove'), 'a counselor cannot take a banner down');
+  assert.ok(viewer.includes('msg-x') && viewer.includes('Dismiss this announcement on this phone'), 'but can dismiss it on this phone');
+  const chat = messageHtml(Object.assign({}, a, { fromChat: true }), { editor: true });
+  assert.ok(chat.includes('data-kind="chat"') && chat.includes('Announcements chat'), 'a chat message reads as one');
+  assert.notOk(chat.includes('msg-remove'), 'delete it in chat instead');
+  const preview = messageHtml(a, { editor: true, preview: true });
+  assert.ok(/Now · Jenn/.test(preview), 'the preview says "Now"');
+  assert.notOk(preview.includes('msg-remove'), 'and never offers Remove');
+  const hostile = messageHtml({ id: 'x"><i', text: '<img src=x onerror=alert(1)>', at: new Date().toISOString(), by: '<b>' }, { editor: true });
+  assert.notOk(/<img|<b>|<i[ >]/.test(hostile.replace(/<svg[\s\S]*?<\/svg>/g, '')), 'every database string is escaped');
+});
+
+test('a banner is written by postBanner and taken down by takeDownBanner: directors only, no render, no save', () => {
+  freshState();
+  setMemberRole('viewer');
+  assert.equal(postBanner('hi', 3600000), null, 'a counselor cannot post');
   setMemberRole('editor');
-  const wrap = document.getElementById('announcements');
-  wrap.__lastHtml = undefined;
-  wrap.__lastBanners = undefined;
-  wrap.__lastComposerKey = undefined;
-  wrap.hidden = true;
-  const realGet = document.getElementById;
-  const input = {
-    value: '', selectionStart: 3, selectionEnd: 5, focused: 0, range: null,
-    focus() { this.focused++; },
-    setSelectionRange(a, b) { this.range = [a, b]; },
-  };
-  document.getElementById = (id) => (id === 'announce-input' ? input : realGet.call(document, id));
-  announceComposerOpen = true;
   try {
-    renderAnnouncements();
-    const first = wrap.innerHTML;
-    assert.ok(first.includes('announce-input'), 'precondition: composer up');
-    assert.equal(input.focused, 0, 'not focused, so the rebuild does not grab focus');
-
-    // The composer closes while the (empty) box has focus: a real rebuild.
-    document.activeElement = input;
-    announceComposerOpen = false;
-    renderAnnouncements();
-    assert.equal(input.focused, 1, 'focus restored without a draft to carry');
-    assert.deepEqual(input.range, [3, 5], 'caret restored');
-    document.activeElement = null;
-
-    // A banner-only change takes the in-place path only while the composer
-    // node is really there; if it isn't, the whole strip is rebuilt.
-    const realQuery = wrap.querySelector;
-    wrap.querySelector = () => null;
-    const before = wrap.innerHTML;
-    state.announcements = { a2: { id: 'a2', text: 'Bring a towel', at: new Date().toISOString(), ttlMs: 3600000, by: 'X' } };
-    renderAnnouncements();
-    assert.ok(wrap.innerHTML !== before && wrap.innerHTML.includes('Bring a towel'), 'no composer node: rebuilt rather than patched');
-    wrap.querySelector = realQuery;
+    assert.equal(postBanner('   ', 3600000), null, 'nothing to say');
+    const id = postBanner('  Water break  ', 3 * 3600000);
+    const a = state.announcements[id];
+    assert.equal(a.text, 'Water break', 'trimmed');
+    assert.equal(a.ttlMs, 3 * 3600000);
+    assert.ok(Number.isFinite(Date.parse(a.at)), 'stamped with its time');
+    assert.equal(postBanner('x'.repeat(400), 0) && Object.values(state.announcements).pop().text.length, BANNER_MAX, 'cut to the message limit');
+    assert.equal(Object.values(state.announcements).pop().ttlMs, ANNOUNCE_DEFAULT_TTL_MS, 'a missing duration is the one-hour default');
+    assert.ok(liveAnnouncements().some((x) => x.id === id));
+    assert.equal(takeDownBanner(id), true);
+    assert.equal(takeDownBanner(id), false, 'a second take down finds nothing');
+    setMemberRole('viewer');
+    assert.equal(takeDownBanner(Object.keys(state.announcements)[0]), false, 'and a counselor cannot take one down');
   } finally {
-    document.getElementById = realGet;
-    document.activeElement = null;
-    announceComposerOpen = false;
     state.announcements = {};
     setMemberRole(null);
   }

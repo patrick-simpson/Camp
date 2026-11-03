@@ -1099,9 +1099,16 @@ each as it wires it, so the live app never shows a dead control. Rules for whoev
   shows only under `body.kb-open` (Send slims beside it). Nothing uses `disabled`.
 - **The message banner** (BANNER MARKUP comment in index.html): `.msg[data-kind=banner|chat]` > `.msg-ico`,
   `.msg-body` > `.msg-text` + `.msg-meta` (`.msg-remove` for directors), `.msg-x` (44×44). The one blue
-  tint, no badge, no emoji, no capitals. **Now's strip and the preview must be written by ONE function**,
-  so the preview is exactly what counselors get (today's `.announce-banner` is the old look; the build
-  session moves `renderAnnouncements` to `.msg` when it removes the old inline composer).
+  tint, no badge, no emoji, no capitals. **Now's strip and the preview are written by ONE function,
+  `messageHtml(m, {editor, preview})`** (app.js, beside `renderAnnouncements`), so the preview is exactly
+  what counselors get; the old `.announce-banner` look, its inline composer (and its keyboard-preserving
+  node swap) are gone. `renderAnnouncements` writes `setHtmlIfChanged` and wires ONE delegated click
+  listener once (dismiss on this phone; a director's Remove for everyone, which confirms). A banner is
+  written by `postBanner(text, ttlMs)` and taken down by `takeDownBanner(id)` — plain state edits with no
+  render and no save, directors only; the caller saves once. `liveAnnouncements()` is every banner still
+  up (what a director's Showing now lists, dismissed on this phone or not); `activeAnnouncements()` is
+  that minus this phone's dismissals (what Now draws). The strip is hidden when empty, for directors too:
+  the way to post is Tell everyone.
 - **Award points** (`#takeover-award.takeover.award`, a PAPER head: points stay with directors, so not
   a broadcast): `.award-bar` pinned under the head with `#award-days` (`.daypick` with five
   `.daypick-btn[role=tab][data-dow=1..5]`, `aria-selected`, `data-today`; two rows at the largest text),
