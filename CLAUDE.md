@@ -658,8 +658,9 @@ never rebuilds a segmented control under a finger.
 - **More** (`renderMore`, rendered with the tab; `wireMore` / `wireSegs` once):
   Director (editors only: **What counselors see**, **Set up the week** → today's
   classic builder, **Change history**, **Who can sign in**, **Run the reveal**
-  (Step 23: the remote, see "The standings reveal"); Tell everyone / Award points
-  arrive with Step 24), Camp (**Full schedule**, **Memory verse**, **Meal cleanup** — the last
+  (Step 23: the remote, see "The standings reveal"); **Tell everyone** /
+  **Award points** are built by Step 24's design pass (`#tell-row`, `#award-row`,
+  hidden until their takeovers are wired: see "Director tools")), Camp (**Full schedule**, **Memory verse**, **Meal cleanup** — the last
   two are reading SHEETS holding the day-by-day content and the directors' award
   buttons, `#verse-body` / `#cleanup-body`), This phone (**Alerts**, Appearance,
   Your team), Switch camp (accounts on both camps' lists), Fun, Account, footer
@@ -685,8 +686,9 @@ never rebuilds a segmented control under a finger.
   with `#games-off` "Games are turned off right now"), More's `#verse-row` /
   `#cleanup-row` (and closes their sheet if open), the standings and Quick
   points sections — and the Chat tab shows chat.js's "Chat is turned off right
-  now". **Not built: "Preview as a counselor"** (§7.4): a render override of the
-  role is a secrecy risk that wants its own step.
+  now". **Preview as a counselor** (§7.4) is Step 24's: its markup and frame are
+  built (`#counselors-preview`, `#preview-bar`, `html.counselor-preview`: see
+  "Director tools"), hidden until the render override of the role is wired.
 - **The Games tab is the interim home of the old cards** until Step 18:
   `#games-days` holds today's `#day-tabs` (every day's game list),
   `#games-standings` the Current standings table and Quick points (both
@@ -1067,13 +1069,14 @@ test clock re-arms for ever. Browser pass (Playwright against the real code; no 
 line meeting the contrast rule, no sideways scroll, in every state of the remote, the mirror, the grids, the strip,
 More, Games and the champion line.
 
-## Director tools: Tell everyone, Award points (Step 24 — markup and visual system)
+## Director tools: Tell everyone, Award points, Preview as a counselor (Step 24 — markup and visual system)
 
-Redesign §7.2–7.3, mockup 10 and 10-dark (Tell everyone), with Award points drawn in the same
-language (no mockup existed for it). Static markup in index.html (comments there name every hook and
-give the row templates), styles in styles.css's DIRECTOR TOOLS block (the last block in the file).
-**Both takeovers ship hidden and unwired**; the build session un-hides each as it wires it, so the
-live app never shows a dead control. Rules for whoever edits them:
+Redesign §7.2–7.4, mockup 10 and 10-dark (Tell everyone) and mockup 09 (More), with Award points and
+the preview drawn in the same language (no mockup existed for them). Static markup in index.html
+(comments there name every hook and give the row templates), styles in styles.css's DIRECTOR TOOLS
+block (the last block in the file). **Everything ships hidden and unwired**: the two More rows, the
+preview button in What counselors see, both takeovers and the preview bar; the build session un-hides
+each as it wires it, so the live app never shows a dead control. Rules for whoever edits them:
 
 - **Tell everyone** (`#takeover-tell.takeover.is-roof.tell`, its back `#takeover-tell-back-label`):
   top to bottom the order a director meets the decisions — `#tell-result` (after a send that did not
@@ -1116,6 +1119,33 @@ live app never shows a dead control. Rules for whoever edits them:
   (52px keys; the chosen one is a filled ink key, a chosen 0 only outlined in the well, so a team that
   got nothing never looks awarded); own team: `data-locked`, `.aw-lock` with `.aw-given` instead of keys.
   Verse keys show what a tap is worth NOW (doubled in the window); cleanup never doubles.
+- **Preview as a counselor**: `html.counselor-preview` is the one switch. `#preview-bar` (outside `#app`,
+  so it answers while `#app` is inert under a takeover or sheet: `.pv-title`, `#preview-bar-sub`,
+  `#preview-exit`) sits over everything but dialogs, drawers and toasts (z 10000), `#preview-frame` draws
+  an ink frame round the whole screen (z 9999, no taps), and the header, the Chat panel, the reveal strip,
+  takeovers and sheets move down by `--pv-h`. **`--pv-h` must be measured** into `:root` (a ResizeObserver,
+  as `--hdr-live` is): the CSS value is a one-line fallback and the bar wraps at large text (its words are
+  capped at 18 / 15px so it never takes a third of the screen). The way in is `#counselors-preview` /
+  `#counselors-preview-btn` at the foot of What counselors see. Ink flips with the theme, so the bar is
+  navy in light and near-white in dark.
+- **More**: `#tell-row` (`data-more-row="tell"`, `#tell-row-sub`; `data-live` puts a link-blue dot
+  before the words while something is up: "Up now: a banner and the notice") and `#award-row`
+  (`data-more-row="award"`) open the Director group, in §7.1's order. The join badge slot on Set up the
+  week (`#more-join-count`, `.gl-count`, rides the title line) is Step 25's and unchanged.
+- **Shared pieces**: `.dt-h` / `.dt-h-row` / `.dt-h-note` (a section's name in ink-2, sentence case,
+  a note that wraps under it), `.dt-mark` (the small gold "!"), `.tell-body` / `.award-body` are grids
+  with ONE gap (a hidden section takes its space with it). New icons: `#i-bolt` (double points),
+  `#i-chev-d` (the verse line opens in place). Large text is container queries keyed in rem (the
+  showing-now and result rows put their button under the words from ~130% at 360px; the quick alerts
+  become one column; the way choices lose their indent, then stack; six keys become two rows of three;
+  the quick-points amount stacks; the ledger puts points and bin under the words).
+- **Behaviour still to wire** (the build session): the shell overlays (`k: 'tell'`, `'award'`, the
+  preview's render override of the role — never `memberRole`, never the hint, never persisted — with
+  `canEdit()` false and `html.view-only` while it lasts), every handler, the draft and `composerBusy()` in
+  `reloadBlocked()` / `editorMidEntry()`, the channel sends and their per-channel report, the Undo toast,
+  the notice replace question (askDialog) and its guarded undo, JOY_QUIET gaining `#takeover-tell` and
+  `#preview-bar`, the motion named beside each root in index.html, and the frame test's "no Tell everyone or
+  Award points row" pin (it now finds the hidden rows' words).
 
 ## Set up the week: the frame, the hub, the clipboard (Step 14 — markup and visual system)
 

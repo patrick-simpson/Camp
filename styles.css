@@ -12863,6 +12863,31 @@ div.sec-st-name {
   color: var(--gold-ink);
   font: 900 0.8125rem/1 var(--font-ui);
 }
+/* A group whose first rows are hidden (Tell everyone and Award points ship
+   hidden in More's Director group) must not open on a hairline. */
+.gl > [hidden]:first-child + :not([hidden]),
+.gl > [hidden]:first-child + [hidden] + :not([hidden]) {
+  border-top: 0;
+}
+
+/* ── More: the two Director rows ───────────────────────────────
+   While a banner or the notice is up, Tell everyone's line says so after a
+   link-blue dot (blue = "this is current", as Today is): a director can see
+   from More that something is still showing. */
+#tell-row[data-live] .gl-sub::before {
+  content: '';
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: var(--link);
+  vertical-align: 1px;
+}
+#tell-row[data-live] .gl-sub {
+  color: var(--ink);
+  font-weight: 700;
+}
 
 /* ── The message banner (BANNER MARKUP, index.html) ─────────────
    A message is the one blue tint (§8.1 rule 7), carried by its icon tile; no
@@ -13998,4 +14023,120 @@ body.kb-open .tell-send[aria-disabled="true"] {
   .aw-led-del {
     grid-column: 3;
   }
+}
+
+/* ── Preview as a counselor (#preview-bar, html.counselor-preview) ────
+   Unmistakable and always one tap from leaving: an ink bar over everything but
+   dialogs, drawers and toasts, and an ink frame round the whole screen, so no
+   corner of the phone looks like the director's own view. Ink flips with the
+   theme (navy bar in light, near-white in dark), which keeps it the strongest
+   thing on the screen in both. */
+html.counselor-preview {
+  --pv-h: calc(54px + env(safe-area-inset-top, 0px));
+}
+.pv-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10000;
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 2px 10px;
+  min-height: calc(54px + env(safe-area-inset-top, 0px));
+  padding: calc(5px + env(safe-area-inset-top, 0px)) var(--gutter) 5px calc(var(--gutter) + 2px);
+  background: var(--ink);
+  color: var(--paper);
+}
+.pv-ico {
+  display: grid;
+  place-items: center;
+}
+.pv-ico .ico {
+  width: 22px;
+  height: 22px;
+  stroke-width: 2.3;
+}
+.pv-text {
+  min-width: 0;
+}
+/* The bar's words grow with the phone's text size up to a ceiling (like the
+   remote's big labels): past it they only wrap. Uncapped, 200% text made the bar
+   a third of a small screen, over the very app it is previewing. */
+.pv-title {
+  display: block;
+  font: 800 min(0.9375rem, 18px)/1.22 var(--font-ui);
+}
+.pv-sub {
+  display: block;
+  font: 650 min(0.8125rem, 15px)/1.3 var(--font-ui);
+  color: color-mix(in srgb, var(--paper) 84%, var(--ink));
+}
+.pv-sub:empty {
+  display: none;
+}
+/* A chunky paper key on the ink bar. */
+.pv-exit {
+  min-width: 68px;
+  min-height: var(--target);
+  padding: 0 16px;
+  border: 2px solid var(--paper);
+  border-radius: var(--r-btn);
+  background: var(--paper);
+  color: var(--ink);
+  box-shadow: 0 3px 0 color-mix(in srgb, var(--paper) 45%, var(--ink));
+  font: 850 min(0.9375rem, 18px)/1.1 var(--font-ui);
+  cursor: pointer;
+  transition: box-shadow var(--jm-press-ms) var(--jm-press);
+}
+.pv-exit:active {
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--paper) 45%, var(--ink));
+}
+.pv-exit:focus-visible {
+  outline: 2px solid var(--paper);
+  outline-offset: 3px;
+}
+/* The frame: drawn over the page, never taking a tap. */
+.pv-frame {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  border: 4px solid var(--ink);
+  pointer-events: none;
+}
+/* Everything that pins itself to the top of the screen moves down by the bar. */
+html.counselor-preview body {
+  padding-top: var(--pv-h);
+}
+html.counselor-preview .app-header {
+  top: var(--pv-h);
+  padding-top: 0;
+}
+html.counselor-preview #app[data-tab="chat"] #tab-chat {
+  top: calc(var(--pv-h) + var(--hdr-live, var(--header-h)));
+}
+html.counselor-preview .rv-strip {
+  top: calc(var(--pv-h) + var(--hdr-live, var(--header-h)));
+}
+html.counselor-preview .takeover {
+  top: var(--pv-h);
+}
+html.counselor-preview .takeover .tk-head {
+  min-height: 60px;
+  padding-top: 0;
+}
+html.counselor-preview .sheet {
+  max-height: calc(100dvh - var(--pv-h) - 32px);
+}
+/* The way in, at the foot of What counselors see. */
+.cs-preview {
+  margin-top: var(--s-4);
+}
+.cs-preview-btn .ico {
+  width: 20px;
+  height: 20px;
+}
+.cs-preview .setup-note {
+  margin-top: var(--s-2);
 }
