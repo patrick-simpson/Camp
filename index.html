@@ -144,6 +144,10 @@
          never a tinted callout), chev-d opens the verse line in place. -->
     <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13.4 3.4 5.6 13.2h5.6l-.8 7.4 7.8-9.8h-5.6z"/></symbol>
     <symbol id="i-chev-d" viewBox="0 0 24 24"><path d="m5.5 9.5 6.5 6.5 6.5-6.5"/></symbol>
+    <!-- Step 17 (Now, block by block): play opens the verse song; the
+         hourglass is Running over's "Still on this · +10 min". -->
+    <symbol id="i-play" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.6"/><path d="M10.2 8.6v6.8l5.4-3.4z"/></symbol>
+    <symbol id="i-hourglass" viewBox="0 0 24 24"><path d="M6.8 3.6h10.4M6.8 20.4h10.4M7.8 3.6c0 4.4 4.2 5.8 4.2 8.4s-4.2 4-4.2 8.4M16.2 3.6c0 4.4-4.2 5.8-4.2 8.4s4.2 4 4.2 8.4"/></symbol>
     <!-- Team flag marks (§8.4) for a team with no shield (senior today): a
          pennant on a pole, filled with the team's mark colour (currentColor,
          from .flag[data-flag] or an inline --flag-fill) and outlined in ink.
@@ -415,6 +419,276 @@
 
       <!-- ── LIVE NOW (a game in progress — surfaced + highlighted) ── -->
       <section id="live-home" class="live-home" hidden></section>
+
+      <!-- ══ NOW, BLOCK BY BLOCK (redesign §3; Step 17) ══════════════════════
+           The tab answers "what's happening now" with ONE physical object, the
+           Now card (§8.1 rule 2: the only ink border and bottom edge on Now),
+           then flat run-sheet rows on paper: Still to do today (directors), Up
+           next, Later today. The old .you-strip, #now-banner, #live-home and
+           #notice-board retire when nowModel() renders these (keep their ids
+           until the tests that look them up move: shell.test.js pins
+           #now-banner and #live-home inside #tab-now; home.test.js
+           #my-electives-card; secrecy.test.js #follow-team-card).
+
+           THE CARD (#now-card) is a static frame; the renderer patches text,
+           hidden and data-*, and writes only the roots marked ROOT (through
+           setHtmlIfChanged, or setLiveHtmlIfChanged with holds [g] for a live
+           board). Every part split by volatility (§13.1): the minutes left and
+           the hairline change every tick and are patched alone, never written.
+             data-kind   games | elective | meal | bible | meeting | worship |
+                         bedtime | activity | arrival | sendoff  (blockKind), or
+                         a state with no current block: between | morning |
+                         night | notice (send-off with a posted notice: the
+                         notice IS the card) | over (camp's over) | none (no
+                         camp week yet). CSS keys off night (the dimmed card),
+                         notice and over; the rest are for the renderer.
+             data-over   running over (§3.1): the hairline turns live red and
+                         full, #now-card-k says "Running over".
+             #now-card-k     "Now" (bold) · "Running over" · "Today" · "Tonight"
+             #now-card-when  " · 10:00–11:45" (" · Elective 1 · 1:15–2:00"); "" for none
+             #now-card-left  "63 min left" · "7 min over" · "" (tabular)
+             #now-card-bar   the 3px hairline; hidden with no timed block. Its
+                             fill #now-card-fill reads --p (0–1), set with
+                             style.setProperty('--p', v) on the FILL only; a same-
+                             block change is nudged with JellyMotion glide on the
+                             fill (§9.5: never refilled from empty; calm: jumps).
+             #now-card-over  the line above the title, for the elective card:
+                             #now-card-over-text "Your station" + #now-card-change
+                             ("Not Sam? Change", #now-card-change-text; re-opens
+                             the identity step; its hit area is 44×44).
+             #now-card-emoji / #now-card-label  the title: the block's emoji (a
+                             schedule block may have one, §8.6) and the ANSWER
+                             (the block, your station, "You're on break", "Up next
+                             in 12 min", "Good morning", "Lights out", the notice's
+                             title, "No camp week is set up yet"). An empty emoji
+                             hides its slot.
+             #now-card-sub   ROOT. One line under the title, words only, <b> for a
+                             name: "2 of 3 games still to score" (directors),
+                             "Still going · Lunch at 12:00" (running over),
+                             "with <b>William</b> · Pumpkins", the dish
+                             <span class="nw-dish"><span class="nw-dish-emo" aria-hidden="true">🌭</span>Hot Dogs</span>,
+                             "4-team bracket · Main field", "Laura's cottage ·
+                             Foxes, Pumpkins and Pilgrims", a label tail ("with
+                             Ella", "Snack Shack open"), "Registration at 2:00 ·
+                             in 3 h 10 min". "" hides it.
+             #now-card-notes ROOT. Plain lines with an icon (§8.1 rule 7: never a
+                             tinted callout), in this order: double points, rain,
+                             the bracket line, the meal's cleanup team:
+               <p class="nw-note" data-note="double"><svg class="ico" aria-hidden="true"><use href="#i-bolt"/></svg><span>Double points until the end of Friday</span></p>
+               <p class="nw-note" data-note="rain"><svg class="ico" aria-hidden="true"><use href="#i-rain"/></svg><span>Rain likely around 4 PM · indoor plan: Dining Hall</span></p>
+               <p class="nw-note" data-note="team" data-team="t0" style="safeColorVars(…)"><span class="nw-note-mark">teamMarkHtml(id, {size: 22})</span><span><b>Red</b> plays in the final next · 3rd place match first</span></p>
+               <p class="nw-note" data-note="team" data-team="t5" data-mine?><span class="nw-note-mark">…</span><span>Runaway John Deersz on cleanup after lunch</span></p>
+                             (data-mine: "<b>Your team</b> is on cleanup after lunch")
+             #now-card-body  ROOT. The kind's own content (templates below). Empty
+                             hides it.
+             #now-card-foot  directors only: #now-card-hold "Still on this · +10
+                             min" (#now-card-hold-text; shown when the block has
+                             ended and nothing in it is detectably live; each tap
+                             +10 min, capped §3.1) with #now-card-hold-note under
+                             it; or, on the send-off notice card, #now-card-down
+                             "Take down". Hidden when it holds nothing.
+             #now-moment     the gold MOMENT panel (§8.1 rule 7: the one other
+                             tint), bleeding to the card's edges at its foot:
+                             data-moment="cleanup" (the 30 min after a meal, for
+                             everyone) or "verse" (Bible study, directors only).
+                             #now-moment-title "Lunch cleanup" · "Verse points";
+                             #now-moment-secret "Points stay with directors"
+                             (directors only); #now-moment-body ROOT (rows
+                             below); #now-moment-key "3 = spotless" (cleanup,
+                             directors only).
+
+           BODY TEMPLATES (#now-card-body). Every list row is keyed (data-key) so
+           JellyMotion.morph / flipKeyed keep the real nodes (§9.4, §9.8).
+           ▸ games — the block's games, live first, then not started in config
+             order, then done. The row's open target is ONE button over the whole
+             row (.gr-hit, a stretched hit area); Score is its sibling, never
+             nested. Status is never colour alone (§8.9): the mark is a check, a
+             dot or a ring, and the button's words start with it.
+             <div class="gr-list" role="list">
+               <div class="gr" role="listitem" data-key="g-axe" data-status="done|live|todo" data-next? data-mine?>
+                 <span class="gr-st" aria-hidden="true"></span>                    (drawn from data-status)
+                 <button type="button" class="gr-hit" data-open-game="axe">
+                   <span class="visually-hidden">Done: </span>                  ("Live: " · "Not started: ")
+                   <span class="gr-name">Axe Throwing</span><span class="gr-tag" data-tag="live">Live</span>   (live only)
+                   <span class="gr-sub">Basketball Court · finished 10:31</span>
+                 </button>                                                   ("· round 2 of 3", "· <b>up next</b>", "· Being scored")
+                 <svg class="ico gr-chev" aria-hidden="true"><use href="#i-chev-r"/></svg>    (when there is no Score)
+                 <button type="button" class="btn btn-sm gr-score" data-score-game="axe">Score</button>
+                                                   (directors, not done; .btn-gold on the live / next one)
+                 <p class="gr-why"><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span>Your team plays · another director scores</span></p>
+                                                   (in place of Score: canScoreRound says no)
+                 PODIUM (done): <ol class="pd" aria-label="Medal winners">
+                   <li class="pd-c" data-place="1|2|3" data-team="t2" style="safeColorVars(…)" data-mine?>
+                     <span class="pd-top"><i class="pd-disc" aria-hidden="true">1</i>teamMarkHtml(id, {size: 24})</span>
+                     <span class="pd-nm"><span class="visually-hidden">Gold: </span>Maples</span></li> ×3 </ol>
+                 LIVE BOARD (live; setLiveHtmlIfChanged holds [g]):
+                   tally <div class="lb" data-kind="tally" data-ranked?>   (data-ranked = a director's order)
+                     <p class="lb-cap">Scores so far · 4 of 6 in</p>       (counselors: roster order, NO numerals, §4.12 rows 11–12)
+                     <ol class="lb-rows"><li class="lb-r" data-team="t3" style="…" data-mine?>
+                       <span class="lb-pl">1</span>                         (directors only)
+                       teamMarkHtml(id, {size: 20})<span class="lb-nm">Pumpkins</span><b class="lb-v">48</b></li>…</ol></div>
+                   match <div class="lb" data-kind="match">
+                     <p class="lb-cap">Round 1 · Inning 2 of 3 · 1 out</p>
+                     <div class="lb-vs"><p class="lb-side" data-team="t2" style="…" data-mine? data-up?>
+                       teamMarkHtml(id, {size: 28})<span class="lb-nm">Maples</span><b class="lb-v">3</b></p>
+                       <span class="lb-x" aria-hidden="true">vs</span><p class="lb-side" …>…</p></div>
+                     <p class="lb-next">Next: <b>Foxes</b> vs <b>Pilgrims</b></p></div>
+                   (a placement game shows no board: its sub says "Being scored")
+               </div>
+             </div>
+           ▸ games, senior Legacy Game as a 4-team bracket (Step 22 supplies the
+             data; until then it is a placement row like any other). The bracket
+             line is a #now-card-notes "team" note. Cells in order of play:
+             <div class="b4" role="list" aria-label="Legacy Game bracket">
+               <div class="b4-m" role="listitem" data-key="b4-s1" data-slot="s1|s2|third|final" data-status="done|live|todo" data-mine?>
+                 <p class="b4-h"><span class="b4-name">Semifinal 1</span><span class="gr-tag" data-tag="done|live|next">Done</span></p>
+                 <p class="b4-t" data-team="t0" style="…" data-mine?>teamMarkHtml(id, {size: 22})<span class="b4-nm">Red</span><b class="b4-v">2</b><span class="b4-won">won</span></p>
+                 <p class="b4-t" data-team="t3" style="…" data-lost>…<span class="b4-nm">Gold</span><b class="b4-v">1</b></p>
+                 <p class="b4-t" data-tbd><i class="b4-tbd" aria-hidden="true"></i><span class="b4-nm">Semi 2 loser</span></p>
+               </div> ×4 </div>
+           ▸ elective (junior). At a station: #now-card-over up, the title is the
+             station ("Crafts with Eileen"), the sub "with <b>William</b> ·
+             Pumpkins"; on break: "You're on break" and the Snack Shack note;
+             then
+             <h3 class="nw-h">Then</h3>
+             <div class="nr-list nw-then" role="list">RUN ROWS (below)</div>
+             <button type="button" class="nw-row" data-whos-where aria-haspopup="dialog" aria-controls="sheet-whos-where">
+               <span class="nw-row-text"><span class="nw-row-t">Who's where</span><span class="nw-row-s">5 stations · 8 counselors on break</span></span>
+               <svg class="ico" aria-hidden="true"><use href="#i-chev-r"/></svg></button>
+             No identity yet (the title is the block, "Elective 1"):
+             <div class="es-ask"><p class="es-ask-q">Which counselor are you?</p>
+               <p class="es-ask-s">Tap your name to see your station. This phone remembers it.</p>
+               <div class="es-ask-names"><button type="button" class="btn es-name" data-identity="Sam">Sam</button>…</div></div>
+             Directors, and counselors not on the sheet: every station, inline:
+             STATIONS (also #sheet-whos-where's body):
+             <div class="es-all" role="list">
+               <div class="es-st" role="listitem" data-key="st-crafts" data-mine?>
+                 <p class="es-st-h"><span class="es-st-emo" aria-hidden="true">🎨</span><b class="es-st-name">Crafts</b></p>
+                 <p class="es-st-who">Eileen, <b class="es-me">Sam</b>, William</p></div>
+               <div class="es-st" role="listitem" data-key="break" data-break>
+                 <p class="es-st-h"><b class="es-st-name">On break</b></p><p class="es-st-who">…</p></div></div>
+           ▸ meal: the sub is the dish; the cleanup team is a note. No body.
+           ▸ bible (the day has a verse; else it renders as activity):
+             <div class="vs"><p class="vs-k">Today's memory verse</p>
+               <blockquote class="vs-text"><p>There is therefore now no condemnation…</p></blockquote>
+               <p class="vs-ref">Romans 8:1 ESV</p>
+               <a class="btn vs-song" href="safeVideoUrl(…)" target="_blank" rel="noopener noreferrer"><svg class="ico" aria-hidden="true"><use href="#i-play"/></svg>Watch the verse song</a>   (only with a video)
+               <p class="vs-theme"><span class="vs-theme-k">Week theme</span> · Harvest of the Heart · Galatians 2:20</p></div>
+           ▸ meeting: <p class="nw-you" data-team="t0" style="…">teamMarkHtml(id, {size: 22})<span>Your team meets today</span></p>
+           ▸ arrival (counselor on a team):
+             <div class="nw-welcome" data-team="t0" style="…"><span class="nw-welcome-mark">teamMarkHtml(id, {size: 56})</span>
+               <p class="nw-welcome-t">Welcome to the <b>Ferocious Foxes</b></p>
+               <p class="nw-welcome-s">Meet your team at Team assignments · 5:30 · Chapel Lawn</p></div>
+           ▸ morning / night: the day's first three, or tomorrow's, as RUN ROWS
+             under <h3 class="nw-h">Tomorrow</h3> (night) — never a second card.
+           ▸ notice (send-off): NOTICE MARKUP (below), the viewer's team first.
+           ▸ none, directors: <button type="button" class="nw-link" data-now-setup>Set up the week<svg class="ico" aria-hidden="true"><use href="#i-chev-r"/></svg></button>
+
+           MOMENT ROWS (#now-moment-body).
+           ▸ cleanup, one per team on the rota (Friday: two):
+             <div class="nm-team" data-key="c-t5" data-team="t5" style="safeColorVars(…)" data-mine? data-locked?>
+               <span class="nm-mark">teamMarkHtml(id, {size: 52})</span>
+               <p class="nm-name">Runaway John Deersz</p>
+               <p class="nm-who">On cleanup after lunch · Lily, Jacob</p>      (+ <span class="nm-you">Your team</span>)
+               <p class="nm-label">Cleanup points</p>                          (directors)
+               <div class="aw-pts nm-pts" role="radiogroup" data-n="4" aria-label="Runaway John Deersz · lunch cleanup points">
+                 <button type="button" class="aw-pt" role="radio" aria-checked="false" data-pts="0" data-joy>0</button> … 3</div>
+               <p class="nm-saved"><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg>Saved · 2</p>   (directors, after a save)
+               <p class="aw-lock">… Your team · another director gives these …</p>                                  (directors, own team: no keys)
+             </div>
+             A counselor's row is the mark, the name and nm-who: never a number.
+           ▸ verse: the Award points rows, as award.js writes them
+             (awardRowHtml, six keys, the own-team lock) inside
+             <div class="aw-list nm-list">…</div>.
+
+           RUN ROWS (Up next, Later today, Then, Tomorrow, a morning's first
+           three): flat, time · emoji · label, a sub when it says something
+           personal. Never cards (§3.4).
+             <div class="nr" role="listitem" data-key="b-<blockId>" data-mine?>
+               <span class="nr-time">12:00</span>
+               <span class="nr-main"><span class="nr-title"><span class="nr-emo" aria-hidden="true">🌭</span><span>Lunch · Hot Dogs</span></span>
+                 <span class="nr-sub">John Deersz on cleanup</span></span></div>      (data-mine: "<b>Your team is on cleanup</b>")
+           TO-DO ROWS (#now-todo-list): a button that opens the right takeover.
+             <button type="button" class="nr nr-act" role="listitem" data-key="todo-cleanup-1-breakfast" data-todo="game|cleanup|verse|join" data-ref="…">
+               <span class="nr-ico" aria-hidden="true"><svg class="ico"><use href="#i-broom"/></svg></span>   (#i-trophy · #i-book · #i-people)
+               <span class="nr-main"><span class="nr-title">Breakfast cleanup points</span><span class="nr-sub">Foxes · not given yet</span></span>
+               <svg class="ico nr-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></button>
+
+           NOTICE MARKUP (#sheet-notice-body, and the send-off card's body):
+             <div class="nb">
+               <div class="nb-yours" data-team="t0" style="…"><p class="nb-yours-k">Your team</p>
+                 <p class="nb-yours-p">teamMarkHtml(id, {size: 34})<span><b>Dining hall</b><small>tables and floor</small></span></p></div>
+               <h3 class="nw-h">Every team</h3>
+               <ul class="nb-zones" role="list"><li class="nb-zone" data-key="z-t1" data-mine?>teamMarkHtml(id, {size: 24})
+                 <span class="nb-team">Turkey</span><span class="nb-place">Chapel<small>chairs</small></span></li>…</ul>
+               <ol class="nb-steps"><li class="nb-step"><p class="nb-when"><span class="nb-emo" aria-hidden="true">🧹</span>9:00 · Everyone</p>
+                 <ul class="nb-items"><li>Strip the beds</li>…</ul></li>…</ol>
+               <p class="nb-signoff">See you next year</p></div>
+
+           MOTION (JellyMotion, calm-aware, §9.5): a moment or a live board
+           unfolds (arrive + glide); Live → Done collapses the board, pops the
+           check and drops the medals bronze → silver → gold; a number rolls
+           (press); keyed rows glide only once hands are off (whenHandsOff). No
+           animation class is ever in this markup. -->
+      <section id="now-card" class="nw-card" data-kind="games" aria-labelledby="now-card-title" hidden>
+        <div class="nw-kick">
+          <p class="nw-when"><b class="nw-k" id="now-card-k">Now</b><span id="now-card-when"></span></p>
+          <p class="nw-left" id="now-card-left"></p>
+        </div>
+        <div class="nw-bar" id="now-card-bar" aria-hidden="true"><i class="nw-fill" id="now-card-fill"></i></div>
+        <div class="nw-over" id="now-card-over" hidden>
+          <span class="nw-over-text" id="now-card-over-text">Your station</span>
+          <button type="button" class="nw-change" id="now-card-change" hidden><span id="now-card-change-text">Not you? Change</span></button>
+        </div>
+        <h2 class="nw-title" id="now-card-title"><span class="nw-emo" id="now-card-emoji" aria-hidden="true"></span><span class="nw-label" id="now-card-label"></span></h2>
+        <p class="nw-sub" id="now-card-sub" hidden></p>
+        <div class="nw-notes" id="now-card-notes" hidden></div>
+        <div class="nw-body" id="now-card-body"></div>
+        <div class="nw-foot" id="now-card-foot" hidden>
+          <button type="button" class="btn btn-sm nw-hold" id="now-card-hold" hidden><svg class="ico" aria-hidden="true"><use href="#i-hourglass"/></svg><span id="now-card-hold-text">Still on this · +10 min</span></button>
+          <p class="nw-foot-note" id="now-card-hold-note" hidden>Keeps this on every phone's Now. Nothing else moves.</p>
+          <button type="button" class="btn btn-sm nw-down" id="now-card-down" hidden>Take down</button>
+        </div>
+        <section class="nm" id="now-moment" data-moment="cleanup" aria-labelledby="now-moment-title" hidden>
+          <div class="nm-head">
+            <h3 class="nm-title" id="now-moment-title"></h3>
+            <p class="nm-secret" id="now-moment-secret" hidden><svg class="ico" aria-hidden="true"><use href="#i-eye-off"/></svg>Points stay with directors</p>
+          </div>
+          <div class="nm-body" id="now-moment-body"></div>
+          <p class="nm-key" id="now-moment-key" hidden>3 = spotless</p>
+        </section>
+      </section>
+
+      <!-- Directors only, only when it has rows (§3.5): what the day's moments
+           left undone. At most three rows (TO-DO ROWS above), then
+           #now-todo-more "2 more" (opens Award points on today, or the Games
+           tab for games). Under the card, before Up next: an unscored game is
+           more urgent than what comes next (mockups 02 and 04). -->
+      <section class="nw-sec" id="now-todo" aria-labelledby="now-todo-h" hidden>
+        <div class="nw-sec-h"><h2 class="nw-sec-t" id="now-todo-h">Still to do today</h2></div>
+        <div class="nr-list" id="now-todo-list" role="list"></div>
+        <button type="button" class="nw-sec-more" id="now-todo-more" hidden><span id="now-todo-more-text">2 more</span><svg class="ico" aria-hidden="true"><use href="#i-chev-r"/></svg></button>
+      </section>
+
+      <!-- Up next: ONE run row (§3.4: the first block starting at or after this
+           one's end). Later today: up to three, personalised. "Whole day" opens
+           the schedule sheet on today (openSchedule): it rides the LAST list
+           head that is shown (#now-later-day, else #now-next-day). On arrival
+           Sunday #now-later-h reads "Today" and lists the whole run sheet. -->
+      <section class="nw-sec" id="now-next" aria-labelledby="now-next-h" hidden>
+        <div class="nw-sec-h">
+          <h2 class="nw-sec-t" id="now-next-h">Up next</h2>
+          <button type="button" class="nw-day" id="now-next-day" data-now-day hidden>Whole day<svg class="ico" aria-hidden="true"><use href="#i-chev-r"/></svg></button>
+        </div>
+        <div class="nr-list" id="now-next-list" role="list"></div>
+      </section>
+      <section class="nw-sec" id="now-later" aria-labelledby="now-later-h" hidden>
+        <div class="nw-sec-h">
+          <h2 class="nw-sec-t" id="now-later-h">Later today</h2>
+          <button type="button" class="nw-day" id="now-later-day" data-now-day>Whole day<svg class="ico" aria-hidden="true"><use href="#i-chev-r"/></svg></button>
+        </div>
+        <div class="nr-list" id="now-later-list" role="list"></div>
+      </section>
 
       <!-- ── THE REVEALED GRID (redesign §4.10, mockup 05b) ────────────────
            The places a reveal showed, frozen, from the final table (or an early or

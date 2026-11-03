@@ -2208,10 +2208,10 @@ jelly-switch:not([checked])::part(track) {
    at #now-reveal in index.html. */
 
 /* Now becomes the reveal: one attribute on the tab, set with #now-reveal. The
-   notice, the team strip, the schedule banner, a live board, the grid and the
-   champion line step aside; announcements (an emergency outranks the moment)
-   and the builder stay. */
-#tab-now[data-reveal="live"] > :is(#notice-board, #whats-new, .you-strip, #now-banner, #live-home, #now-reveal-grid, #now-champion) {
+   notice, the team strip, the schedule banner, a live board, the Now card and
+   its lists, the grid and the champion line step aside; announcements (an
+   emergency outranks the moment) and the builder stay. */
+#tab-now[data-reveal="live"] > :is(#notice-board, #whats-new, .you-strip, #now-banner, #live-home, #now-reveal-grid, #now-champion, #now-card, #now-todo, #now-next, #now-later) {
   display: none;
 }
 .now-reveal[hidden],
@@ -15130,4 +15130,1288 @@ html.counselor-preview .sheet {
 }
 .cmp-skip {
   margin-top: var(--s-4);
+}
+
+/* ============================================================
+   NOW, BLOCK BY BLOCK (redesign §3, §8; Step 17)
+   ============================================================
+   Markup and every hook: index.html, the "NOW, BLOCK BY BLOCK" comment at
+   #now-card (card, body templates, moment rows, run rows, to-do rows, notice
+   markup) and the messages strip's comment at #now-notice. The language:
+     · ONE physical object on the tab: the Now card (an ink border and a 4px
+       bottom edge, §8.1 rule 2). Everything after it is flat run-sheet rows on
+       paper divided by hairlines, never a second card.
+     · The answer is the headline (§8.1 rule 1): the block, your station, the
+       verse, "Lights out". Notes are plain lines with an icon (rule 7); the only
+       tints are a message (blue) and a moment (gold).
+     · Status is never colour alone (§8.9): Done is a check, Live a dot (and the
+       word), Not started a ring. Team colour only outlines (rule 5).
+   Nothing here animates the layout: a moment unfolding, a live board folding to
+   medals, a number rolling and rows gliding are JellyMotion's (§9.5), started
+   by the renderer's diff hooks. The one CSS animation is the live dot's
+   breath, which calm switches off. Sizes are rem and rows use min-height, so
+   130% and 200% text grow them; the container queries are keyed in rem, so
+   they follow the phone's text size, not only its width. */
+
+/* ── The card ────────────────────────────────────────────────── */
+.nw-card {
+  container: nw-card / inline-size;
+  position: relative;
+  padding: 12px 14px 14px;
+  border: 2px solid var(--card-b);
+  border-radius: var(--r-card);
+  background: var(--sheet);
+  box-shadow: 0 var(--edge-card) 0 var(--edge);
+  color: var(--ink);
+}
+/* The kicker: "Now · 10:00–11:45" on the left, "63 min left" on the right. It
+   wraps (the minutes drop under) before it squeezes. */
+.nw-kick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0 var(--s-3);
+}
+.nw-when,
+.nw-left {
+  margin: 0;
+  font: 700 0.8125rem/1.35 var(--font-ui);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.nw-k {
+  color: var(--ink);
+  font-weight: 800;
+}
+.nw-left {
+  margin-left: auto;
+}
+.nw-left:empty {
+  display: none;
+}
+/* The hairline (3px): the elapsed part in ink. The fill is the ONE thing a
+   tick moves, through --p on the fill itself (never a rewrite: §13.1). */
+.nw-bar {
+  height: 3px;
+  margin: 8px 0 12px;
+  border-radius: 2px;
+  background: var(--line-2);
+  overflow: hidden;
+}
+.nw-fill {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ink);
+  transform: scaleX(var(--p, 0));
+  transform-origin: left center;
+}
+/* Running over (§3.1, mockup 01b): the word and the whole hairline in live
+   red. It is information (the block should have ended), so calm keeps it. */
+.nw-card[data-over] .nw-k {
+  color: var(--live);
+}
+.nw-card[data-over] .nw-left {
+  color: var(--ink);
+  font-weight: 800;
+}
+.nw-card[data-over] .nw-fill {
+  background: var(--live);
+  transform: none;
+}
+/* With no hairline (between blocks, before / after the day) the title keeps a
+   little air under the kicker. */
+.nw-bar[hidden] + .nw-over:not([hidden]),
+.nw-bar[hidden] + .nw-over[hidden] + .nw-title {
+  margin-top: 8px;
+}
+
+/* The line above the title (the elective card): "Your station" and, at the
+   right, "Not Sam? Change" — small words, a full 44px target. */
+.nw-over {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 var(--s-3);
+  margin: -6px 0 0;
+}
+.nw-over-text {
+  font: var(--t-label);
+  color: var(--ink-2);
+}
+.nw-change {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target);
+  margin: 0 -8px 0 auto;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--link);
+  font: 750 0.9375rem/1.2 var(--font-ui);
+  text-align: right;
+  cursor: pointer;
+}
+.nw-change:active {
+  background: color-mix(in srgb, var(--link) 10%, transparent);
+}
+
+/* The title: the biggest words on the screen. The emoji hangs to the left, so
+   a title that wraps keeps its words in one column. Sized against the card
+   (cqi) as well as the type scale, so at 200% text the longest word of a block
+   ("competitions") still fits whole on a 360px phone instead of breaking. */
+.nw-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  font: var(--t-title);
+  font-size: min(1.75rem, 9.5vw);
+  font-size: min(1.75rem, 11cqi);
+  letter-spacing: var(--track-tight);
+}
+.nw-emo {
+  flex: none;
+  font-size: 0.86em;
+  line-height: 1;
+  letter-spacing: 0;
+}
+.nw-emo:empty {
+  display: none;
+}
+.nw-label {
+  min-width: 0;
+  overflow-wrap: break-word;
+  text-wrap: balance; /* "No camp week is set up / yet" leaves no word alone */
+}
+.nw-sub {
+  margin: 4px 0 0;
+  font: 600 0.9375rem/1.38 var(--font-ui);
+  color: var(--ink-2);
+  overflow-wrap: break-word;
+  text-wrap: pretty;
+}
+.nw-sub b {
+  color: var(--ink);
+  font-weight: 750;
+}
+/* A meal's dish is what people want at lunch: it gets row size, in ink. */
+.nw-dish {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  font: 750 1.1875rem/1.3 var(--font-ui);
+  letter-spacing: var(--track-row);
+  color: var(--ink);
+}
+.nw-dish-emo {
+  flex: none;
+  letter-spacing: 0;
+}
+
+/* Notes: plain lines with an icon or a team mark (never a tinted callout). */
+.nw-notes {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.nw-note {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: start;
+  column-gap: 8px;
+  margin: 0;
+  font: 650 0.9375rem/1.38 var(--font-ui);
+  color: var(--ink-2);
+  overflow-wrap: break-word;
+}
+.nw-note > .ico {
+  width: 20px;
+  height: 20px;
+  margin: 1px 0 0 2px;
+  stroke-width: 2.3;
+}
+.nw-note[data-note="double"] > .ico {
+  fill: var(--gold);
+  stroke: var(--gold-edge);
+}
+.nw-note-mark {
+  display: grid;
+  justify-items: center;
+}
+.nw-note b,
+.nw-note[data-mine] {
+  color: var(--ink);
+  font-weight: 750;
+}
+
+.nw-body {
+  margin-top: 8px;
+}
+.nw-body:empty {
+  display: none;
+}
+/* A heading inside the card ("Then", "Tomorrow", "Every team"). */
+.nw-h {
+  margin: 14px 0 0;
+  padding: 0 0 6px;
+  border-bottom: 1px solid var(--line);
+  font: var(--t-label);
+  color: var(--ink-2);
+}
+
+/* Directors' foot: "Still on this · +10 min" with what it does beside it. */
+.nw-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.nw-hold .ico {
+  width: 18px;
+  height: 18px;
+}
+.nw-foot-note {
+  flex: 1 1 11rem;
+  margin: 0;
+  font: var(--t-meta);
+  color: var(--ink-2);
+}
+
+/* Lights out (data-kind="night"): the card steps back, flat and recessed, so
+   the screen reads as asleep. Not a second object, just a quieter first one. */
+.nw-card[data-kind="night"] {
+  border: 1.5px solid var(--line-2);
+  background: var(--paper);
+  box-shadow: none;
+}
+.nw-card[data-kind="night"] .nw-title {
+  color: var(--ink-2);
+}
+
+/* ── Game rows (also the Games tab's, Step 18) ──────────────────
+   Status mark · the open target (name, live tag, sub) · chevron or Score, then
+   the medal winners or the live board across the row. ONE button opens the
+   game; its ::after stretches over the whole row, and Score sits above it. */
+.gr-list {
+  container: gr / inline-size;
+  display: grid;
+}
+.gr {
+  position: relative;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) auto;
+  align-items: start;
+  column-gap: 10px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+.gr:first-child {
+  padding-top: 6px;
+  border-top: 0;
+}
+.gr:last-child {
+  padding-bottom: 4px;
+}
+.gr-st {
+  grid-column: 1;
+  grid-row: 1;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin-top: 1px;
+  border-radius: 50%;
+}
+.gr[data-status="done"] .gr-st {
+  background: var(--done);
+}
+.gr[data-status="done"] .gr-st::after {
+  content: '';
+  width: 6px;
+  height: 11px;
+  margin-top: -3px;
+  border: solid var(--on-done);
+  border-width: 0 2.6px 2.6px 0;
+  border-radius: 1px;
+  transform: rotate(42deg);
+}
+.gr[data-status="live"] .gr-st {
+  background: var(--live-tint);
+  box-shadow: inset 0 0 0 2px var(--live);
+}
+.gr[data-status="live"] .gr-st::after {
+  content: '';
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--live);
+}
+html:not(.calm-motion) .gr[data-status="live"] .gr-st::after {
+  animation: frame-breathe 1.2s var(--jm-std) infinite;
+}
+.gr[data-status="todo"] .gr-st {
+  box-shadow: inset 0 0 0 2px var(--ink-3);
+}
+.gr-hit {
+  grid-column: 2;
+  grid-row: 1;
+  display: block;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+/* The whole row is the target, out to the card's edges. */
+.gr-hit::after {
+  content: '';
+  position: absolute;
+  inset: 0 -10px;
+  border-radius: 12px;
+}
+.gr-hit:active::after {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+.gr-hit:focus-visible {
+  outline: none;
+}
+.gr-hit:focus-visible::after {
+  box-shadow: inset 0 0 0 3px var(--blue);
+}
+.gr-name {
+  font: var(--t-row);
+  letter-spacing: var(--track-row);
+  overflow-wrap: break-word;
+}
+.gr-sub {
+  display: block;
+  margin-top: 2px;
+  font: var(--t-meta);
+  color: var(--ink-2);
+  overflow-wrap: break-word;
+}
+.gr-sub b {
+  color: var(--ink);
+  font-weight: 750;
+}
+/* A status word as a tag (§8.2 --t-tag): Live in its tint, never a pill on
+   every label. b4 cells also say Done / Next. */
+.gr-tag {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 1px 6px 2px;
+  border-radius: var(--r-tag);
+  font: var(--t-tag);
+  vertical-align: 2px;
+  white-space: nowrap;
+}
+.gr-tag[data-tag="live"] {
+  background: var(--live-tint);
+  color: var(--live);
+}
+.gr-tag[data-tag="done"] {
+  background: var(--done-tint);
+  color: var(--done);
+}
+.gr-tag[data-tag="next"] {
+  background: var(--paper-2);
+  color: var(--ink);
+}
+.gr-chev {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: center;
+  width: 20px;
+  height: 20px;
+  margin-right: -2px;
+  color: var(--ink-3);
+  stroke-width: 2.6;
+}
+.gr-score {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: center;
+  position: relative;
+  z-index: 1;
+  min-width: 5.25rem;
+}
+/* Your own team is in this round: the reason, in place of Score. */
+.gr-why {
+  grid-column: 2 / 4;
+  grid-row: 2;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 6px 0 0;
+  font: 650 0.875rem/1.35 var(--font-ui);
+  color: var(--ink-2);
+}
+.gr-why .ico {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  margin-top: 1px;
+}
+
+/* Medal winners: a 3-up podium strip (§3.3). Three equal cells, each a disc
+   with the place (22px, 13px numeral) and the mark on top, the short name
+   under them: two lines, then an ellipsis, never overflowing. Your team's
+   cell is outlined in the team colour. */
+.pd {
+  grid-column: 2 / 4;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  margin: 10px 0 0 -6px;
+  padding: 0;
+  list-style: none;
+}
+.pd-c {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px 6px 7px;
+  border-radius: 10px;
+}
+.pd-c[data-mine] {
+  box-shadow: inset 0 0 0 2px var(--team);
+}
+.pd-top {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.pd-disc {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 1.375rem;
+  height: 1.375rem;
+  border: 1.6px solid var(--medal-ink);
+  border-radius: 50%;
+  color: var(--medal-ink);
+  font: 900 0.8125rem/1 var(--font-ui);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+.pd-c[data-place="1"] .pd-disc { background: var(--medal-gold); }
+.pd-c[data-place="2"] .pd-disc { background: var(--medal-silver); }
+.pd-c[data-place="3"] .pd-disc { background: var(--medal-bronze); }
+.pd-nm {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font: 700 0.875rem/1.2 var(--font-ui);
+  overflow-wrap: anywhere;
+}
+
+/* The live board, sized to its content (never the old 55vh board): a well in
+   the card. A tally is two columns of team · score; a counselor's has no place
+   numerals and keeps the roster's order (§4.12 rows 11–12), so nothing on it
+   says who leads. One column once the names would not fit. */
+.lb {
+  container: lb / inline-size;
+  grid-column: 1 / 4;
+  margin-top: 10px;
+  padding: 6px 12px 8px;
+  border-radius: 12px;
+  background: var(--paper);
+}
+.lb-cap {
+  margin: 2px 0 2px;
+  font: var(--t-label);
+  color: var(--ink-2);
+}
+.lb-rows {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  column-gap: 16px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+@container lb (min-width: 18.5rem) {
+  .lb-rows {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.lb-r {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 2.25rem;
+  padding: 2px 0;
+  font: 650 0.875rem/1.2 var(--font-ui);
+}
+.lb-r[data-mine] {
+  margin: 0 -6px;
+  padding: 2px 6px;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 2px var(--team);
+}
+.lb-pl {
+  flex: none;
+  min-width: 0.75rem;
+  text-align: right;
+  font: 800 0.8125rem/1 var(--font-ui);
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.lb-nm {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: break-word; /* a name breaks between words, never inside one ("Pumpkin / s") */
+}
+.lb-v {
+  flex: none;
+  margin-left: auto;
+  font: 850 1.0625rem/1 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+}
+/* A match: two sides and the score, "vs" between them; the side that is up
+   (kicking, at bat) carries the dot. Stacks once the sides can't share a line. */
+.lb-vs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px 10px;
+  padding: 4px 0;
+}
+.lb-side {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  margin: 0;
+  font: 750 1rem/1.2 var(--font-ui);
+}
+.lb-vs > .lb-side:last-child {
+  flex-direction: row-reverse;
+  text-align: right;
+}
+.lb-side .lb-v {
+  margin: 0;
+  font: var(--t-num);
+}
+.lb-vs > .lb-side:first-child .lb-v {
+  margin-left: auto;
+}
+.lb-vs > .lb-side:last-child .lb-v {
+  margin-right: auto;
+}
+.lb-side[data-up] .lb-nm::after {
+  content: '';
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin: 0 0 2px 6px;
+  border-radius: 50%;
+  background: var(--live);
+  vertical-align: middle;
+}
+.lb-side[data-mine] {
+  margin: -4px -6px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 2px var(--team);
+}
+.lb-x {
+  font: var(--t-label);
+  color: var(--ink-2);
+}
+.lb-next {
+  margin: 4px 0 2px;
+  padding-top: 6px;
+  border-top: 1px solid var(--line);
+  font: var(--t-meta);
+  color: var(--ink-2);
+}
+.lb-next b {
+  color: var(--ink);
+  font-weight: 750;
+}
+@container lb (max-width: 15rem) {
+  .lb-vs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .lb-vs > .lb-side:last-child {
+    flex-direction: row;
+    text-align: left;
+  }
+  .lb-vs > .lb-side:last-child .lb-v {
+    margin: 0 0 0 auto;
+  }
+  .lb-x {
+    display: none;
+  }
+}
+
+/* Large text (the list under ~17em of its own text across: ~130% on a 360
+   phone): Score drops under the name, the podium becomes three lines. */
+@container gr (max-width: 17rem) {
+  .gr-score {
+    grid-column: 2 / 4;
+    grid-row: 2;
+    justify-self: start;
+    margin-top: 8px;
+  }
+  .gr-score ~ .gr-chev {
+    display: none;
+  }
+}
+@container gr (max-width: 15rem) {
+  .pd {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+  .pd-c {
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px;
+  }
+  .pd-nm {
+    -webkit-line-clamp: 3;
+  }
+}
+
+/* ── Senior's Legacy Game: the 4-team bracket (mockup 13) ───────
+   Four cells in a well, in order of play (Semifinal 1, Semifinal 2, 3rd place,
+   Final), cut by hairlines like a scorecard: one surface, not four boxes. The
+   live match carries the live edge; a slot nobody has won yet is a dashed
+   ring and the words "Semi 2 winner". */
+.b4 {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 12px;
+  border-radius: 12px;
+  background: var(--paper);
+}
+.b4-m {
+  position: relative;
+  min-width: 0;
+  padding: 10px 12px 12px;
+}
+.b4-m:nth-child(2n) {
+  border-left: 1px solid var(--line-2);
+}
+.b4-m:nth-child(n + 3) {
+  border-top: 1px solid var(--line-2);
+}
+.b4-m[data-status="live"]::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border: 2px solid var(--live);
+  border-radius: 10px;
+  pointer-events: none;
+}
+.b4-h {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0 0 6px;
+  font: var(--t-label);
+  color: var(--ink-2);
+}
+.b4-h .gr-tag {
+  margin: 0;
+  vertical-align: 0;
+}
+.b4-t {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 2rem;
+  margin: 0;
+  font: 750 1rem/1.2 var(--font-ui);
+}
+.b4-nm {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.b4-v {
+  flex: none;
+  font: 850 1.25rem/1 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+}
+.b4-won {
+  flex: none;
+  font: var(--t-tag);
+  color: var(--done);
+}
+.b4-t[data-lost],
+.b4-t[data-tbd] {
+  color: var(--ink-2);
+  font-weight: 650;
+}
+/* The viewer's team inside a cell: underlined in its colour (the cell itself
+   may already wear the live edge). */
+.b4-t[data-mine] .b4-nm {
+  text-decoration: underline 2px var(--team);
+  text-underline-offset: 3px;
+}
+.b4-tbd {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border: 2px dashed var(--ink-3);
+  border-radius: 6px;
+}
+@container nw-card (max-width: 17rem) {
+  .b4 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .b4-m:nth-child(2n) {
+    border-left: 0;
+  }
+  .b4-m:nth-child(n + 2) {
+    border-top: 1px solid var(--line-2);
+  }
+}
+
+/* ── Electives (mockup 03) ─────────────────────────────────────
+   Your station is the title; "Then" is your next two slots as run rows; Who's
+   where opens every station. Directors (and anyone not on the sheet) see the
+   stations inline instead. */
+.nw-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 3.5rem;
+  margin: 4px 0 -6px;
+  padding: 10px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.nw-row:active {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+.nw-row-text {
+  min-width: 0;
+}
+.nw-row-t {
+  display: block;
+  font: var(--t-row);
+  letter-spacing: var(--track-row);
+}
+.nw-row-s {
+  display: block;
+  margin-top: 2px;
+  font: var(--t-meta);
+  color: var(--ink-2);
+}
+.nw-row > .ico {
+  width: 20px;
+  height: 20px;
+  color: var(--ink-3);
+  stroke-width: 2.6;
+}
+/* "Which counselor are you?": one tap, names as buttons. */
+.es-ask {
+  margin-top: 4px;
+}
+.es-ask-q {
+  margin: 0;
+  font: var(--t-head);
+  letter-spacing: var(--track-tight);
+}
+.es-ask-s {
+  margin: 4px 0 0;
+  font: var(--t-meta);
+  color: var(--ink-2);
+}
+.es-ask-names {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 8px;
+  margin-top: 12px;
+}
+.es-name {
+  min-width: 5.5rem;
+}
+/* Every station: a hairline grid, two columns where the names fit. */
+.es-all {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  column-gap: 16px;
+}
+@container nw-card (min-width: 19rem) {
+  .es-all {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.es-st {
+  min-width: 0;
+  padding: 9px 0 10px;
+  border-top: 1px solid var(--line);
+}
+.es-st-h {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin: 0;
+  font: 750 1rem/1.25 var(--font-ui);
+}
+.es-st-emo {
+  flex: none;
+}
+.es-st-name {
+  min-width: 0;
+  font-weight: 750;
+  overflow-wrap: break-word;
+}
+.es-st-who {
+  margin: 2px 0 0;
+  font: var(--t-meta);
+  color: var(--ink-2);
+  overflow-wrap: break-word;
+}
+.es-me {
+  color: var(--ink);
+  font-weight: 800;
+}
+/* The break list closes the grid on its own line. */
+.es-st[data-break] {
+  grid-column: 1 / -1;
+}
+.es-st[data-break] .es-st-name {
+  color: var(--ink-2);
+}
+
+/* ── Meeting, arrival, empty states ── */
+/* "Your team meets today": ink words in the team's colour outline (§8.3: team
+   colour outlines, never fills behind text). */
+.nw-you {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 0;
+  padding: 5px 12px 5px 6px;
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 2px var(--team);
+  font: 750 0.9375rem/1.25 var(--font-ui);
+  color: var(--ink);
+}
+.nw-welcome {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-areas: "mark title" "mark sub";
+  align-items: center;
+  column-gap: 14px;
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.nw-welcome-mark {
+  grid-area: mark;
+  display: grid;
+  place-items: center;
+}
+.nw-welcome-t {
+  grid-area: title;
+  align-self: end;
+  margin: 0;
+  font: 650 1.125rem/1.25 var(--font-ui);
+  overflow-wrap: break-word;
+}
+.nw-welcome-t b {
+  font-weight: 850;
+}
+.nw-welcome-s {
+  grid-area: sub;
+  align-self: start;
+  margin: 3px 0 0;
+  font: var(--t-meta);
+  color: var(--ink-2);
+}
+/* "Set up the week ›" (directors, when no camp week exists). */
+.nw-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: var(--target);
+  margin: 2px 0 -8px -2px;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: 750 1rem/1.2 var(--font-ui);
+  cursor: pointer;
+}
+.nw-link .ico,
+.nw-day .ico,
+.nw-sec-more .ico {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.6;
+}
+
+/* ── Bible study: the day's verse (mockup 12) ──────────────────
+   Scripture is the one serif (§8.2); the reference in bold; the week theme
+   under a hairline that runs to the card's edges. */
+.vs {
+  margin-top: 10px;
+}
+.vs-k {
+  margin: 0 0 6px;
+  font: var(--t-label);
+  color: var(--ink-2);
+}
+.vs-text {
+  margin: 0;
+  font: var(--t-scripture);
+  letter-spacing: 0;
+  color: var(--ink);
+}
+.vs-text p {
+  margin: 0;
+}
+.vs-ref {
+  margin: 10px 0 0;
+  font: 800 1rem/1.3 var(--font-ui);
+}
+.vs-song {
+  margin-top: 14px;
+  text-decoration: none;
+}
+.vs-song .ico {
+  width: 20px;
+  height: 20px;
+}
+.vs-theme {
+  margin: 16px -14px 0;
+  padding: 12px 14px 0;
+  border-top: 1px solid var(--line);
+  font: 650 0.9375rem/1.4 var(--font-ui);
+  color: var(--ink-2);
+}
+.vs-theme-k {
+  color: var(--ink);
+  font-weight: 750;
+}
+
+/* ── The moment: the gold panel at the card's foot (mockup 04) ──
+   The one other tint on Now (§8.1 rule 7). It bleeds to the card's edges and
+   takes the card's lower corners. A team on the rota: its mark large, its name
+   at moment size, its counselors; directors get the Award points keys (the
+   same .aw-pt keys and own-team lock as the Award points screen, so the
+   container keeps award.js's name and its large-text rules apply here too). */
+.nm {
+  container: aw-list / inline-size;
+  margin: 14px -14px -14px;
+  padding: 12px 14px 16px;
+  border-top: 1.5px solid color-mix(in srgb, var(--gold-edge) 45%, transparent);
+  border-radius: 0 0 calc(var(--r-card) - 2px) calc(var(--r-card) - 2px);
+  background: var(--gold-tint);
+}
+.nm-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 2px var(--s-3);
+}
+.nm-title {
+  margin: 0;
+  font: 800 0.9375rem/1.25 var(--font-ui);
+}
+.nm-secret {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font: 700 0.8125rem/1.3 var(--font-ui);
+  color: var(--ink-2);
+}
+.nm-secret .ico {
+  width: 16px;
+  height: 16px;
+}
+.nm-team {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  grid-template-areas: "mark name" "mark who" "label label" "pts pts" "saved saved";
+  column-gap: 12px;
+  padding-top: 12px;
+}
+.nm-team + .nm-team {
+  margin-top: 14px;
+  border-top: 1px solid color-mix(in srgb, var(--gold-edge) 30%, transparent);
+}
+.nm-mark {
+  grid-area: mark;
+  align-self: center;
+  display: grid;
+  place-items: center;
+}
+.nm-name {
+  grid-area: name;
+  align-self: end;
+  margin: 0;
+  font: var(--t-head);
+  letter-spacing: var(--track-tight);
+  overflow-wrap: break-word;
+  text-wrap: balance;
+}
+.nm-who {
+  grid-area: who;
+  align-self: start;
+  margin: 3px 0 0;
+  font: 600 0.9375rem/1.32 var(--font-ui);
+  color: var(--ink-2);
+  overflow-wrap: break-word;
+}
+.nm-you {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px 2px;
+  border-radius: var(--r-tag);
+  box-shadow: inset 0 0 0 2px var(--team);
+  color: var(--ink);
+  font: var(--t-tag);
+  vertical-align: 1px;
+  white-space: nowrap;
+}
+.nm-label {
+  grid-area: label;
+  margin: 14px 0 6px;
+  font: var(--t-label);
+  color: var(--ink-2);
+}
+.nm-team > .aw-lock {
+  margin-top: 12px;
+}
+.nm-saved {
+  grid-area: saved;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 0;
+  font: 750 0.9375rem/1.25 var(--font-ui);
+  color: var(--ink);
+}
+.nm-saved .ico {
+  width: 18px;
+  height: 18px;
+  color: var(--done);
+  stroke-width: 2.8;
+}
+.nm-key {
+  margin: 8px 0 0;
+  font: 650 0.875rem/1.3 var(--font-ui);
+  color: var(--ink-2);
+}
+/* Verse points: the Award points rows, flush with the panel. */
+.nm-list > .aw-row {
+  padding-inline: 0;
+}
+.nm-list > .aw-row:first-child {
+  border-top: 0;
+}
+@container aw-list (max-width: 14rem) {
+  .nm-team {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "mark" "name" "who" "label" "pts" "saved";
+  }
+  .nm-mark {
+    justify-items: start;
+    margin-bottom: 6px;
+  }
+}
+
+/* ── Under the card: Still to do today, Up next, Later today ─────
+   Flat rows on paper (§3.4: never cards). A section's name is sentence case in
+   ink-2 with Whole day at the right; a hairline under it, hairlines between
+   rows. */
+.nw-sec {
+  margin-top: 4px;
+}
+.nw-sec-h {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0 var(--s-3);
+  min-height: 1.75rem;
+  padding: 0 2px 4px;
+  border-bottom: 1px solid var(--line-2);
+}
+.nw-sec-t {
+  margin: 0;
+  font: var(--t-label);
+  font-size: 0.875rem;
+  color: var(--ink-2);
+}
+.nw-day {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: var(--target);
+  margin: -10px -6px -10px auto;
+  padding: 0 6px 0 12px;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: 750 1rem/1.2 var(--font-ui);
+  cursor: pointer;
+}
+.nw-sec-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: var(--target);
+  margin-top: 2px;
+  padding: 0 2px;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: 750 1rem/1.2 var(--font-ui);
+  cursor: pointer;
+}
+
+/* RUN ROWS: time · emoji · label, and a personal sub. */
+.nr-list {
+  container: nr / inline-size;
+  display: grid;
+}
+.nr {
+  display: grid;
+  grid-template-columns: 3.5rem minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 12px;
+  padding: 11px 2px;
+  border-top: 1px solid var(--line);
+}
+.nr:first-child {
+  border-top: 0;
+}
+/* Inside the card the rows run to its padding. */
+.nw-card .nr {
+  padding-inline: 0;
+}
+.nr-time {
+  font: 750 0.9375rem/1.3 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.nr-main {
+  min-width: 0;
+}
+.nr-title {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font: 700 1rem/1.3 var(--font-ui);
+  overflow-wrap: break-word;
+}
+.nr-title > span:last-child {
+  min-width: 0;
+}
+.nr-emo {
+  flex: none;
+}
+.nr-sub {
+  display: block;
+  margin-top: 2px;
+  font: var(--t-meta);
+  color: var(--ink-2);
+  overflow-wrap: break-word;
+}
+.nr-sub b,
+.nr[data-mine] .nr-sub {
+  color: var(--ink);
+  font-weight: 750;
+}
+/* TO-DO ROWS: a button per thing left to do, icon · words · chevron. */
+button.nr {
+  width: 100%;
+  margin: 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+button.nr:first-child {
+  border-top: 0;
+}
+.nr-act {
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 3.75rem;
+  padding-block: 9px;
+}
+.nr-act:active {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+.nr-ico {
+  display: grid;
+  place-items: center;
+  color: var(--ink-2);
+}
+.nr-ico .ico {
+  width: 22px;
+  height: 22px;
+}
+.nr-act .nr-title {
+  display: block;
+  font: var(--t-row);
+  letter-spacing: var(--track-row);
+}
+.nr-chev {
+  width: 20px;
+  height: 20px;
+  color: var(--ink-3);
+  stroke-width: 2.6;
+}
+/* Large text: the time goes above the title, which keeps the whole width. */
+@container nr (max-width: 17rem) {
+  .nr:not(.nr-act) {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 1px;
+  }
+}
+
+/* High-contrast preference (§8.9): heavier hairlines and a heavier card. */
+@media (prefers-contrast: more) {
+  .nw-card {
+    border-width: 3px;
+  }
+  .gr,
+  .nr,
+  .nw-h,
+  .nw-sec-h,
+  .es-st {
+    border-color: var(--ink-3);
+  }
 }
