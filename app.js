@@ -10593,6 +10593,37 @@ function sixMedals(b) {
   return { gold: b.championship.winner, silver: b.championship.loser, bronze: b.semifinal.loser };
 }
 
+// Back from the championship game to the bye choice: the bye is taken back, the three round-1 winners are as they were.
+function sixBackToBye(b) {
+  if (!b || !b.semifinal || b.semifinal.winner) return false; // nothing to take back once the championship game has a winner: undo that first
+  b.byeTeamId = null;
+  b.semifinal = null;
+  b.championship = null;
+  b.phase = 'bye';
+  return true;
+}
+
+// The championship game's result comes back (the final, not played yet, goes with it).
+function sixUndoSemifinal(b) {
+  const s = b && b.semifinal;
+  if (!s || !s.winner || (b.championship && b.championship.winner)) return false; // the final's result comes back first
+  s.winner = null;
+  s.loser = null;
+  b.championship = null;
+  b.phase = 'semifinal';
+  return true;
+}
+
+// The final's result comes back, so the final can be played again.
+function sixUndoFinal(b) {
+  const c = b && b.championship;
+  if (!c || !c.winner) return false;
+  c.winner = null;
+  c.loser = null;
+  b.phase = 'championship';
+  return true;
+}
+
 // ── What both brackets share ─────────────────────────────────────────────────────────────────────
 // Which node holds a game's bracket: the six-team wizard's `brackets`, the four-team bracket's `brackets4`.
 function bracketNode(kind) { return kind === 'four' ? state.brackets4 : state.brackets; }
@@ -11914,6 +11945,23 @@ function bracketSuggestPair(g, b) {
   return ranked.length >= 2 ? [ranked[0], ranked[ranked.length - 1]] : null;
 }
 
+// The six-team bracket as it is NOW, if it is still at the step the screen drew (`phase`). A tap made on an older screen — another
+// director recorded the match, a snapshot replaced the bracket, the result was saved — is ignored, said and repainted, and never
+// applied to a copy nobody holds any more (the stale double-tap guard, as the four-team bracket's).
+function sixLive(g, phase) {
+  if (state.results && state.results[g.id]) { sixStale('This game’s result is already saved.'); return null; }
+  const raw = state.brackets && state.brackets[g.id];
+  if (!raw || !bracketKnown(raw)) { sixStale('This bracket is gone. The screen now shows where things are.'); return null; }
+  const live = normalizeBracket(raw);
+  if (live.phase !== phase) { sixStale('The bracket moved on. The screen now shows where it is.'); return null; }
+  return live;
+}
+
+function sixStale(words) {
+  showToast(words || 'That was already recorded. The screen now shows what is saved.');
+  renderAll();
+}
+
 function renderBracketRound1(body, g, b) {
   if (b.pool.length === 0) {
     b.phase = 'bye';
@@ -11957,12 +12005,22 @@ function renderBracketRound1(body, g, b) {
     bindMatchTracker(body, g, b.selectedPair[0], b.selectedPair[1]);
   }
 
+  // Every tap resolves the bracket as it is NOW (sixLive): a screen drawn before another director's tap is ignored, said and
+  // repainted, never applied to a copy nobody holds.
   const suggestBtn = body.querySelector('#seed-suggest-btn');
-  if (suggestBtn && suggest) suggestBtn.addEventListener('click', () => { b.selectedPair = suggest.slice(); saveState(); renderAll(); });
+  if (suggestBtn && suggest) suggestBtn.addEventListener('click', () => {
+    const live = sixLive(g, 'round1');
+    if (!live) return;
+    live.selectedPair = suggest.slice();
+    saveState();
+    renderAll();
+  });
 
   body.querySelectorAll('.team-chip').forEach((btn) => {
     btn.addEventListener('click', () => {
-      sixPick(b, btn.dataset.teamId);
+      const live = sixLive(g, 'round1');
+      if (!live) return;
+      sixPick(live, btn.dataset.teamId);
       saveState();
       renderAll();
     });
@@ -11970,8 +12028,10 @@ function renderBracketRound1(body, g, b) {
 
   body.querySelectorAll('.winner-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const [a, c] = b.selectedPair;
-      if (!sixRecordMatch(b, a, c, btn.dataset.winner)) return;
+      const live = sixLive(g, 'round1');
+      if (!live) return;
+      const [a, c] = live.selectedPair;
+      if (!sixRecordMatch(live, a, c, btn.dataset.winner)) { sixStale(); return; }
       touchData();
       saveState();
       renderAll();
@@ -11981,7 +12041,9 @@ function renderBracketRound1(body, g, b) {
   const undoBtn = document.getElementById('undo-match-btn');
   if (undoBtn) {
     undoBtn.addEventListener('click', () => {
-      sixUndoMatch(b);
+      const live = sixLive(g, 'round1');
+      if (!live) return;
+      sixUndoMatch(live);
       saveState();
       renderAll();
     });
@@ -12040,8 +12102,12 @@ function renderBracketRound1Fixed(body, g, b, preset) {
   body.querySelectorAll('.winner-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       if (!current) return;
+      const live = sixLive(g, 'round1');
+      if (!live) return;
+      // The match the screen showed is the one recorded only while the bracket is still at that match.
+      if (live.matches.length !== currentIndex) { sixStale(); return; }
       const [a, c] = current;
-      if (!sixRecordMatch(b, a, c, btn.dataset.winner)) return;
+      if (!sixRecordMatch(live, a, c, btn.dataset.winner)) { sixStale(); return; }
       touchData();
       saveState();
       renderAll();
@@ -12051,7 +12117,9 @@ function renderBracketRound1Fixed(body, g, b, preset) {
   const undoBtn = document.getElementById('undo-match-btn');
   if (undoBtn) {
     undoBtn.addEventListener('click', () => {
-      sixUndoMatch(b);
+      const live = sixLive(g, 'round1');
+      if (!live) return;
+      sixUndoMatch(live);
       saveState();
       renderAll();
     });
@@ -12091,7 +12159,9 @@ function renderBracketBye(body, g, b) {
 
   body.querySelectorAll('.tiebreak-chip').forEach((btn) => {
     btn.addEventListener('click', () => {
-      if (!sixChooseBye(b, btn.dataset.teamId)) return;
+      const live = sixLive(g, 'bye');
+      if (!live) return;
+      if (!sixChooseBye(live, btn.dataset.teamId)) { sixStale(); return; }
       touchData();
       saveState();
       renderAll();
@@ -12099,10 +12169,18 @@ function renderBracketBye(body, g, b) {
   });
 
   document.getElementById('undo-to-round1-btn').addEventListener('click', () => {
-    sixBackToRound1(b);
+    const live = sixLive(g, 'bye');
+    if (!live) return;
+    sixBackToRound1(live);
     saveState();
     renderAll();
   });
+}
+
+// "Undo" under a six-team step that has a result to take back. Offered only to a director who may score the match it takes back
+// (canScoreRound: a director on a team in it leaves that to another), as the four-team bracket's Undo last match.
+function sixUndoHtml(id, label, teams) {
+  return teams && canScoreRound(...teams) ? `<p class="completed-matches"><button type="button" id="${id}" class="link-btn">${label}</button></p>` : '';
 }
 
 function renderBracketSemifinal(body, g, b) {
@@ -12111,6 +12189,7 @@ function renderBracketSemifinal(body, g, b) {
     <p class="bye-note">🎟️ <strong>${esc(teamName(b.byeTeamId))}</strong> has the bye — straight to the Final.</p>
     ${matchupCalloutHTML(b.semifinal.a, b.semifinal.b)}
     ${matchTrackerHTML(g, b.semifinal.a, b.semifinal.b)}
+    <p class="completed-matches"><button type="button" id="undo-bye-btn" class="link-btn">← Back to the bye</button></p>
   `;
 
   bindMatchupCopy(body, g, 'Championship game', b.semifinal.a, b.semifinal.b);
@@ -12118,11 +12197,21 @@ function renderBracketSemifinal(body, g, b) {
 
   body.querySelectorAll('.winner-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      if (!sixRecordSemifinal(b, btn.dataset.winner)) return;
+      const live = sixLive(g, 'semifinal');
+      if (!live) return;
+      if (!sixRecordSemifinal(live, btn.dataset.winner)) { sixStale(); return; }
       touchData();
       saveState();
       renderAll();
     });
+  });
+
+  document.getElementById('undo-bye-btn').addEventListener('click', () => {
+    const live = sixLive(g, 'semifinal');
+    if (!live) return;
+    sixBackToBye(live);
+    saveState();
+    renderAll();
   });
 }
 
@@ -12133,6 +12222,7 @@ function renderBracketChampionship(body, g, b) {
     <p class="bronze-note">🥉 <strong>${esc(teamName(b.semifinal.loser))}</strong> takes the bronze medal${standingsVisible() ? ` (+${MEDAL_POINTS.bronze * mult} pts)` : ''}.</p>
     ${matchupCalloutHTML(b.championship.a, b.championship.b)}
     ${matchTrackerHTML(g, b.championship.a, b.championship.b)}
+    ${sixUndoHtml('undo-semifinal-btn', '← Undo the championship game result', [b.semifinal.a, b.semifinal.b])}
   `;
 
   bindMatchupCopy(body, g, 'Final', b.championship.a, b.championship.b);
@@ -12140,12 +12230,25 @@ function renderBracketChampionship(body, g, b) {
 
   body.querySelectorAll('.winner-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      if (!sixRecordFinal(b, btn.dataset.winner)) return;
+      const live = sixLive(g, 'championship');
+      if (!live) return;
+      if (!sixRecordFinal(live, btn.dataset.winner)) { sixStale(); return; }
       touchData();
       saveState();
       renderAll();
     });
   });
+
+  const undoBtn = document.getElementById('undo-semifinal-btn');
+  if (undoBtn) {
+    undoBtn.addEventListener('click', () => {
+      const live = sixLive(g, 'championship');
+      if (!live) return;
+      sixUndoSemifinal(live);
+      saveState();
+      renderAll();
+    });
+  }
 }
 
 function renderBracketSummary(body, g, b) {
@@ -12165,11 +12268,26 @@ function renderBracketSummary(body, g, b) {
     </div>
     <p class="muted">Eliminated in Round 1: ${eliminated.map((id) => esc(teamName(id))).join(', ')}</p>
     <jelly-button id="save-bracket-btn" class="primary-btn" block>Save Result</jelly-button>
+    ${sixUndoHtml('undo-final-btn', '← Undo the final result', [b.championship.a, b.championship.b])}
   `;
 
   document.getElementById('save-bracket-btn').addEventListener('click', () => {
-    finishBracket(g, 'six', { gold: goldId, silver: silverId, bronze: bronzeId });
+    // The podium comes from the bracket as it is when the button is tapped, never from the screen that was drawn.
+    const live = sixLive(g, 'summary');
+    if (!live) return;
+    finishBracket(g, 'six', sixMedals(live));
   });
+
+  const undoBtn = document.getElementById('undo-final-btn');
+  if (undoBtn) {
+    undoBtn.addEventListener('click', () => {
+      const live = sixLive(g, 'summary');
+      if (!live) return;
+      sixUndoFinal(live);
+      saveState();
+      renderAll();
+    });
+  }
 }
 
 // ── The four-team bracket's screens (Step 22; senior) ────────────────────────────────────────────

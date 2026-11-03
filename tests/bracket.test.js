@@ -793,3 +793,142 @@ test('finishBracket saves one result record for either kind, retires its node an
     assert.deepEqual(won, ['t0', 't3']);
   } finally { renderAll = realRender; celebrate = realCelebrate; }
 });
+
+// ── Step 22, session 2: Undo at every step, and the stale-tap guard (added after the pin; the cases above are untouched) ─────────
+
+// The wizard driver captures a click for each button it knows by id; the three Undo buttons are new.
+['undo-bye-btn', 'undo-semifinal-btn', 'undo-final-btn'].forEach((id) => BTN_IDS.push(id));
+
+test('the three new six-team helpers each take back exactly one step, and refuse what has moved on', () => {
+  const c = Object.assign(freshBracket(), { matches: [{ a: 't0', b: 't3', winner: 't0', loser: 't3' }, { a: 't1', b: 't4', winner: 't1', loser: 't4' }, { a: 't2', b: 't5', winner: 't5', loser: 't2' }], pool: [], phase: 'bye' });
+  assert.equal(sixChooseBye(c, 't1'), true);
+  assert.equal(sixRecordSemifinal(c, 't5'), true);
+  assert.equal(sixRecordFinal(c, 't1'), true);
+  // back, one step at a time, in the order they were played
+  assert.equal(sixBackToBye(c), false, 'the championship game has a winner: its result comes back first');
+  assert.equal(sixUndoSemifinal(c), false, 'the final has a winner: its result comes back first');
+  assert.equal(sixUndoFinal(c), true);
+  assert.deepEqual([c.phase, c.championship.winner, c.championship.loser, c.championship.a, c.championship.b], ['championship', null, null, 't1', 't5']);
+  assert.equal(sixUndoFinal(c), false, 'nothing to take back twice');
+  assert.equal(sixUndoSemifinal(c), true);
+  assert.deepEqual([c.phase, c.semifinal, c.championship], ['semifinal', { a: 't0', b: 't5', winner: null, loser: null }, null]);
+  assert.equal(sixUndoSemifinal(c), false);
+  assert.equal(sixBackToBye(c), true);
+  assert.deepEqual([c.phase, c.byeTeamId, c.semifinal, c.championship], ['bye', null, null, null]);
+  assert.equal(sixBackToBye(c), false);
+  assert.deepEqual(c.matches.map((m) => m.winner), ['t0', 't1', 't5'], 'the three round-1 winners are as they were');
+  assert.equal(sixChooseBye(c, 't5'), true, 'and the bye can be chosen again');
+});
+
+test('Undo at every step through the wizard: the final, the championship game, the bye, round 1 - each back to exactly what was there before', () => {
+  const g = tournament();
+  state.brackets[g.id] = freshBracket();
+  withWizard(g, (w) => {
+    toSemifinal(w, g);
+    const snaps = {};
+    snaps.semifinal = clone6(w.b());
+    w.winner('t1');
+    snaps.championship = clone6(w.b());
+    w.winner('t2');
+    assert.equal(w.b().phase, 'summary');
+    assert.ok(w.has('undo-final-btn'), 'the summary can take the final back');
+    w.press('undo-final-btn');
+    assert.deepEqual(w.b(), snaps.championship, 'back at the final, as it was before it was played');
+    assert.ok(/<h3>Final<\/h3>/.test(w.html()) && w.has('undo-semifinal-btn'));
+    w.press('undo-semifinal-btn');
+    assert.deepEqual(w.b(), snaps.semifinal, 'back at the championship game, as it was before it was played');
+    assert.ok(/Championship Game/.test(w.html()) && w.has('undo-bye-btn'));
+    w.press('undo-bye-btn');
+    assert.equal(w.b().phase, 'bye');
+    assert.equal(w.b().byeTeamId, null);
+    assert.ok(/Who gets the bye\?/.test(w.html()));
+    w.bye('t0'); // a different bye this time
+    assert.equal(w.b().byeTeamId, 't0');
+    assert.deepEqual(w.b().semifinal, { a: 't1', b: 't2', winner: null, loser: null });
+  });
+});
+
+test('the own-team guard on the new Undo buttons: a director on a team in the match leaves taking its result back to another director', () => {
+  const g = tournament();
+  state.brackets[g.id] = freshBracket();
+  withWizard(g, (w) => {
+    toSemifinal(w, g);
+    w.winner('t1'); // championship game t0 v t1 recorded; the final is t2 v t1
+    assert.ok(w.has('undo-semifinal-btn'));
+    setMemberTeam('t0');
+    w.render();
+    assert.notOk(w.has('undo-semifinal-btn'), 't0 played the championship game');
+    setMemberTeam('t4');
+    w.render();
+    assert.ok(w.has('undo-semifinal-btn'), 'a director on a team that is not in it may');
+    setMemberTeam(null);
+  });
+});
+
+// A bracket as it is stored, for comparing "as it was".
+function clone6(b) { return JSON.parse(JSON.stringify(b)); }
+
+test('a stale tap is ignored, said and repainted: the screen was drawn before another phone recorded the match', () => {
+  const g = tournament();
+  state.brackets[g.id] = freshBracket();
+  const realToast = showToast; const said = [];
+  showToast = (m) => { said.push(String(m)); };
+  try {
+    withWizard(g, (w) => {
+      w.render();
+      w.chip('t0'); w.chip('t3');
+      const handler = w.live.winner.t0; // the screen's winner button, drawn for the pair t0 v t3
+      // another phone records that very match; this phone's snapshot replaces the bracket under the screen
+      const other = clone6(state.brackets[g.id]);
+      sixRecordMatch(other, 't0', 't3', 't3');
+      state.brackets[g.id] = other;
+      const before = clone6(other);
+      const renders = w.renders;
+      handler();
+      assert.deepEqual(state.brackets[g.id], before, 'nothing was recorded, on the live bracket or any copy');
+      assert.ok(said.some((m) => /already recorded|moved on/.test(m)) || said.length === 1, said.join('|'));
+      assert.ok(w.renders > renders, 'and the screen repaints');
+    });
+    // a tap on the bye screen after the bracket moved on
+    state.brackets[g.id] = freshBracket();
+    withWizard(g, (w) => {
+      toBye(w, g);
+      const chip = w.live.tie.t0;
+      sixChooseBye(state.brackets[g.id], 't1'); // another phone chose the bye
+      const before = clone6(state.brackets[g.id]);
+      said.length = 0;
+      chip();
+      assert.deepEqual(state.brackets[g.id], before, 'the first choice stands');
+      assert.equal(said.length, 1);
+    });
+    // Save Result after the result was saved (a second tap, or another phone) saves nothing twice
+    state.brackets[g.id] = freshBracket();
+    withWizard(g, (w) => {
+      toSemifinal(w, g); w.winner('t1'); w.winner('t2');
+      const press = realGet2('save-bracket-btn').__click;
+      state.results[g.id] = { medals: { gold: 't5', silver: 't4', bronze: 't3' }, savedAt: 'other phone' };
+      press();
+      assert.equal(state.results[g.id].savedAt, 'other phone', 'the saved result is not replaced');
+      assert.deepEqual(w.celebrated, [], 'and nothing is celebrated again');
+    });
+  } finally { showToast = realToast; }
+});
+function realGet2(id) { return document.getElementById(id); }
+
+test('a stale fixed-order tap records nothing: the match on screen is not the match the bracket is at', () => {
+  const g = tournament('kangaroo-kickball');
+  state.brackets[g.id] = freshBracket();
+  const realToast = showToast; showToast = () => {};
+  try {
+    withWizard(g, (w) => {
+      w.render();
+      const handler = w.live.winner.t0; // pair t0 v t3 is on screen
+      const other = clone6(state.brackets[g.id]);
+      sixRecordMatch(other, 't0', 't3', 't3'); // another phone already recorded it
+      state.brackets[g.id] = other;
+      const before = clone6(other);
+      handler();
+      assert.deepEqual(state.brackets[g.id], before, 'the next pair is not given the first one\'s winner');
+    });
+  } finally { showToast = realToast; }
+});
