@@ -2049,7 +2049,7 @@ function tryImport(text, opts) {
   }, { undo: false });
   // Only accept correctly-typed sections — a hand-edited backup with e.g.
   // "results": null would crash every render after it had already synced.
-  if (teamsOk) state.teams = src.teams;
+  if (teamsOk) state.teams = teamsFromBackup(src.teams); // only well-formed branding fields come in (never a photo version)
   // Copying from the other camp takes the Schedule, Games and Teams only — never its scores.
   if (!copyMode) {
     ['results', 'brackets', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'clocks', 'announcements'].forEach((key) => {

@@ -2062,6 +2062,11 @@ What's covered, and why each file exists:
   of hostile `color` strings that must never reach a style attribute (they select no swatch and fall
   back to the camp's colour), `paintTeamAccent`'s idle render writing nothing, the tile, a source
   scan that no raw `--team-accent: ${…}` is left, and styles.css's light / dark / OS-dark mapping.
+- `team-branding.test.js` (+ `.senior`, which evals it) — a team's own `short` / `emoji` / `color` /
+  `photoV`: per-field fallbacks and hostile values, the validity checks against the rules' limits, the
+  crest precedence, the photo loader (only a crest about to be drawn, one `once()` per version, never a
+  listener, nothing before approval, a hostile or over-cap or other-version photo refused, an IndexedDB that
+  answers / fails / never answers, a refused read final) and `teamsFromBackup`.
 - `sync.test.js` — **every invariant in the section below**, plus the deferred-
   snapshot and per-path-diff behavior. A failure here is a regression, not a
   test bug.
@@ -2609,8 +2614,9 @@ reuses) an accessor in the block.
   copy and the shared one on `meta/on/schedule` (see "Schedule as data"); `mealFor`,
   `mealStart`, `blockMeal`, `cleanupOnRota`, `cleanupTeams`, `verseTheme`, `verseFor`,
   `electivesFor`, `stationEmoji`, `electiveSlotStart` and `staffNames` choose on their own
-  section's switch (step 19: see "Meals, verses, cleanup, electives as data"); teams' "on"
-  half arrives with step 25.
+  section's switch (step 19: see "Meals, verses, cleanup, electives as data"); a team's branding
+  (`teamShort`, `teamEmoji`, `teamAccentVars`, `teamCrestSrc`) reads the optional fields of its own
+  `state.teams` record, per field, with no switch (step 25: "Team colours and the Teams screen").
 - **The builder is the authority, not a reader.** `settings.js` still WRITES the
   catalog straight into `state.config` (`push`, `splice`, the reorder swap and
   `moveItem`) — `competitionDays()`/`allGames()` front that same array. Reads
@@ -3898,6 +3904,27 @@ field, to the camp's own constant while the record doesn't carry it.
 - **A legacy colour that is hard to see** (junior `#345b96` on the dark sheet, senior Red) is judged by
   `campContrast` against each theme's `--sheet`: under 3:1 (the §8.1 boundary rule) is a gentle note on
   the Teams row, never a warning (ux-R13).
+- **The other three fields** are read by the SEAM accessors, each per field with the camp's own constant
+  as the fallback: `teamShort` (`safeShort`, ≤ 20), `teamEmoji` (`safeEmoji`, ≤ 16; a short payload
+  loses its markup characters, a long one falls back) and `teamCrestSrc`. **The rules' limits are
+  mirrored in app.js** (`teamShortValid`, `teamEmojiValid`, `teamColorValid`, `teamPhotoVValid`: short
+  1–20 without `< > & "`, emoji 1–16 without `< > & " '`, color a palette id, photoV a number ≥ 0), so
+  the Teams screen refuses in words what the server would park as a refused write.
+- **Team photos** (`teamPhotos/<tid>` = `{v, data}`, member-read, editor-write, ≤ 100,000 characters of
+  `data:image/png|jpeg;base64,…`; the record's `photoV` is the version the device should show).
+  `teamCrestSrc` precedence: the uploaded photo (only once THIS version is on the device) > the camp's
+  shipped shield > nothing (the flag or emoji tile). A device fetches a photo only when the code that draws a
+  crest asks (`teamPhotoNeed`, called from `teamMarkSpec` and the Your team card, nothing else): one `once()` of
+  `teamPhotos/<tid>` per `photoV`, never a listener, nothing before `fbRef` exists (the member check has
+  approved), cleaned by the rules' own full-match check (`teamPhotoClean`: `safeCrestSrc` plus the size cap)
+  and used only when the node's `v` equals the record's `photoV`. It is kept in memory (`TEAM_PHOTO_MEM`,
+  declared inside the SEAM block, newest version only) and in the camp's IndexedDB store under
+  `team:<camp>:<tid>:<v>` (a miss, a failure or an open that never answers within 1.5 s just asks the
+  server). A refused read is final for that version; any other failure may be asked again.
+- **A backup file or a restore point can only bring in well-formed branding** (`teamsFromBackup`, used by
+  `tryImport`, the restore preview and `restoreApply`): id, name and counselor as they were, the other
+  fields only if they pass the checks above, and `photoV` NEVER from the file, because `teamPhotos/<tid>`
+  holds only the newest upload and an old version number would point at a photo that is gone.
 
 ## Counselors ↔ teams ↔ accounts
 

@@ -1823,7 +1823,7 @@ function restorePreview(body) {
   // Teams
   const pt = body.state.teams;
   const fits = restoreTeamsFit(pt);
-  const tops = fits ? treeDiff(teamsCanon(state.teams), teamsCanon(pt), TEAMS_DEPTHS) : {};
+  const tops = fits ? treeDiff(teamsCanon(state.teams), teamsCanon(teamsFromBackup(pt)), TEAMS_DEPTHS) : {};
   const tids = {};
   Object.keys(tops).forEach((p) => { tids[p.split('/')[1]] = true; });
   out.sections.teams = { offered: fits, count: Object.keys(tids).length, summary: Object.keys(tids).length ? 'team names' : '', reason: fits ? '' : 'differ' };
@@ -1907,7 +1907,7 @@ async function restoreApply(body, picks, opts) {
     applied.push('games');
   }
   if (want.indexOf('teams') !== -1) {
-    stateEdit(label, () => { state.teams = setupClone(body.state.teams); }, { undo: false });
+    stateEdit(label, () => { state.teams = teamsFromBackup(setupClone(body.state.teams)); }, { undo: false });
     applied.push('teams');
   }
   if (want.indexOf('notice') !== -1) {

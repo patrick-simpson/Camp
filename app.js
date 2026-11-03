@@ -997,10 +997,19 @@ function finaleDow() {
 
 // ── Teams
 function teamIds() { return (state.teams || NO_ITEMS).map((t) => t.id); }
-function teamEmoji(id) { return safeEmoji(TEAM_EMOJI[id], '🏳️'); }
-function teamShort(id) { return safeShort(TEAM_ABBREV[id], ''); }
 // A team's own record in state.teams (null for an id the roster doesn't carry).
 function teamRecord(id) { return (state.teams || NO_ITEMS).find((t) => t && t.id === id) || null; }
+// The emoji and the short name are each the team record's own optional field (what the Teams screen sets),
+// per field, else the camp's constant; both pass a camp-core sanitizer on the way out (a database string is
+// never trusted: markup in an emoji, an over-long short name).
+function teamEmoji(id) {
+  const rec = teamRecord(id);
+  return safeEmoji(rec ? rec.emoji : undefined, safeEmoji(TEAM_EMOJI[id], '🏳️'));
+}
+function teamShort(id) {
+  const rec = teamRecord(id);
+  return safeShort(rec ? rec.short : undefined, safeShort(TEAM_ABBREV[id], ''));
+}
 // The palette swatch a team record names: its id ('pumpkin'), or '' when the team has none yet or the
 // stored string is not one of the twelve (a database string only ever SELECTS a swatch, never becomes CSS).
 function teamColorId(id) {
@@ -1021,9 +1030,23 @@ function teamAccent(id) {
   const m = /--team-accent-l:(#[0-9a-fA-F]{6})/.exec(teamAccentVars(id));
   return m ? m[1] : null;
 }
-// Path to a team's shield crest image, or null if we don't have one for that
-// slot — callers fall back to the emoji. Set it with src=, never concatenate.
-function teamCrestSrc(id) { return safeCrestSrc(TEAM_SHIELD[id]); }
+// The team photos this device has in memory ('<id>:<photoV>' → a laundered data URL), filled by teamPhotoNeed
+// (app.js "Team photos"). Declared here, inside the block, so a load-time caller can never hit a TDZ read.
+const TEAM_PHOTO_MEM = new Map();
+// The version of a team's uploaded photo (the record's photoV, a non-negative number) or null.
+function teamPhotoVersion(id) {
+  const rec = teamRecord(id);
+  const v = rec ? rec.photoV : undefined;
+  return typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null;
+}
+// A team's crest image, or null if there is none — callers fall back to the emoji (or a flag). Precedence: the
+// uploaded photo (only once THIS version of it has arrived on the device) > the camp's shipped shield. Set it
+// with src=, never concatenate beyond what safeCrestSrc has matched in full.
+function teamCrestSrc(id) {
+  const v = teamPhotoVersion(id);
+  const photo = v === null ? null : safeCrestSrc(TEAM_PHOTO_MEM.get(id + ':' + v));
+  return photo || safeCrestSrc(TEAM_SHIELD[id]);
+}
 // The printed counselor names for one team (the names the electives data is
 // keyed to), and every team's, flat.
 function teamRoster(tid) { return TEAM_COUNSELORS[tid] || NO_ITEMS; }
@@ -4293,6 +4316,36 @@ function teamsCanon(teams) {
   return syncCanon({ teams: keyed }) || {};
 }
 
+// What a team's optional branding fields may hold. These are the published rules' own limits for
+// state/teams/$i/{short, emoji, color, photoV}: a value the rules would refuse is a parked, never-saved write,
+// so the Teams screen refuses it first (in words), and a backup or a restore point never carries one in.
+//   short  1–20 characters, none of  < > & "        emoji  1–16 characters, none of  < > & " '
+//   color  one of the twelve palette ids            photoV a non-negative number (the photo's version)
+const TEAM_SHORT_BAD = /[<>&"]/;
+const TEAM_EMOJI_BAD = /[<>&"']/;
+function teamShortValid(v) { return typeof v === 'string' && v.length >= 1 && v.length <= 20 && !TEAM_SHORT_BAD.test(v) && safeShort(v, '') === v; }
+function teamEmojiValid(v) { return typeof v === 'string' && v.length >= 1 && v.length <= 16 && !TEAM_EMOJI_BAD.test(v) && safeEmoji(v, '') === v; }
+function teamColorValid(v) { return typeof v === 'string' && Object.prototype.hasOwnProperty.call(CAMP_TEAM_PALETTE, v); }
+function teamPhotoVValid(v) { return typeof v === 'number' && Number.isFinite(v) && v >= 0; }
+
+// A roster out of a backup file or a restore point: id, name and counselor as they were, and only the branding
+// fields that pass the checks above. `photoV` is NEVER taken from the file: the photo node holds only the newest
+// upload, so an old version number would point at a photo that is gone — the live photo stays as it is.
+function teamsFromBackup(list) {
+  if (!Array.isArray(list)) return list;
+  return list.map((t) => {
+    if (!t || typeof t !== 'object') return t;
+    const out = Object.assign({}, t);
+    ['short', 'emoji', 'color', 'photoV'].forEach((f) => delete out[f]);
+    if (teamShortValid(t.short)) out.short = t.short;
+    if (teamEmojiValid(t.emoji)) out.emoji = t.emoji;
+    if (teamColorValid(t.color)) out.color = t.color;
+    const live = (state.teams || NO_ITEMS).find((x) => x && t.id && x.id === t.id);
+    if (live && teamPhotoVValid(live.photoV)) out.photoV = live.photoV;
+    return out;
+  });
+}
+
 function stateEdit(label, mutate, opts) {
   const before = teamsCanon(state.teams);
   if (mutate() === false) return false;
@@ -6762,6 +6815,60 @@ function picPhotoKey(teamId, idx) {
   return 'pic:' + teamId + ':' + idx;
 }
 
+// ── Team photos (P2 §11.7): an uploaded shield or flag, one per team slot ──
+// A director's upload is ONE node, <root>/teamPhotos/<tid> = { v, data }, plus the record's `photoV` (state.teams[i], set
+// only after the photo landed). A device fetches a team's photo ONLY when it is about to draw that crest
+// (teamPhotoNeed is called by the code that draws one: teamMarkSpec, the Your team card), one once() per photoV, and keeps
+// it in memory (TEAM_PHOTO_MEM, which teamCrestSrc reads) and in this camp's IndexedDB store under
+// 'team:<camp>:<tid>:<v>'. Nothing here is a listener, and nothing runs before the member check has approved the device
+// (fbRef is null until then). A photo is used only when the node's `v` equals the record's `photoV`; anything else is
+// somebody's newer upload still on its way, and the shipped shield (or the emoji) stays up meanwhile.
+const TEAM_PHOTO_MAX = 100000; // characters of data URL: the rules' own cap (the editor aims for 70,000)
+const TEAM_PHOTO_IDB_WAIT_MS = 1500; // how long the device's own copy may take before the server is asked
+const teamPhotoAsked = new Set(); // '<tid>:<v>' already asked for, so a render never asks twice
+function teamPhotoIdbKey(id, v) { return 'team:' + CAMP.id + ':' + id + ':' + v; }
+// The data URL when it is whole and one of the two image types, else null (the same full-match check the rules make).
+function teamPhotoClean(data) {
+  return typeof data === 'string' && data.length <= TEAM_PHOTO_MAX ? safeCrestSrc(data) : null;
+}
+function teamPhotoStore(id, v, data) {
+  Array.from(TEAM_PHOTO_MEM.keys()).forEach((k) => { if (k.startsWith(id + ':') && k !== id + ':' + v) TEAM_PHOTO_MEM.delete(k); }); // only the newest version is kept
+  TEAM_PHOTO_MEM.set(id + ':' + v, data);
+}
+function teamPhotoNeed(id) {
+  const v = teamPhotoVersion(id);
+  if (v === null) return;
+  const key = id + ':' + v;
+  if (TEAM_PHOTO_MEM.has(key) || teamPhotoAsked.has(key)) return;
+  if (!fbRef) return; // not approved yet (or no sync configured): a later render asks
+  teamPhotoAsked.add(key);
+  const arrived = () => { if (typeof renderAllWhenIdle === 'function') renderAllWhenIdle(); };
+  const fromServer = () => firebase.database().ref(dbPath('teamPhotos/' + id)).once('value').then((snap) => {
+    const val = snap.val();
+    const data = val && typeof val === 'object' && val.v === v ? teamPhotoClean(val.data) : null;
+    if (!data) return; // not there, not this version, or not a clean image: the shield / emoji stays
+    teamPhotoStore(id, v, data);
+    putPhoto(teamPhotoIdbKey(id, v), data).catch(() => { /* the memory copy still serves this session */ });
+    arrived();
+  });
+  // A failing IndexedDB (private mode, a dead connection) is just a miss, and so is one that never answers (an open
+  // that stays blocked would otherwise keep the server read from ever being made).
+  const local = new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(null), TEAM_PHOTO_IDB_WAIT_MS);
+    getPhoto(teamPhotoIdbKey(id, v)).catch(() => null).then((x) => { clearTimeout(timer); resolve(x); });
+  });
+  local
+    .then((cached) => {
+      const data = teamPhotoClean(cached);
+      if (data) { teamPhotoStore(id, v, data); arrived(); return null; }
+      return fromServer();
+    })
+    .catch((e) => {
+      // A refused read (rules not published for this node) is final for this version; a dropped connection can be asked again.
+      if (!(e && e.code === 'PERMISSION_DENIED')) teamPhotoAsked.delete(key);
+    });
+}
+
 function loadImage(blob) {
   if (window.createImageBitmap) {
     return createImageBitmap(blob, { imageOrientation: 'from-image' }).catch(() => loadImageViaTag(blob));
@@ -7774,6 +7881,7 @@ function renderFollowCard() {
     : you
     ? `<p class="follow-you-line">${esc(you)} <button id="change-identity-link" class="link-btn">Change</button></p>`
     : `<p class="follow-you-line follow-you-empty"><button id="set-identity-link" class="link-btn">🙋 Tell us who you are</button> to see your electives</p>`;
+  teamPhotoNeed(team.id);
   const shield = teamCrestSrc(team.id);
   const crestHtml = shield
     ? `<div class="follow-team-crest"><img class="follow-team-shield" src="${shield}" alt="${esc(team.name)} team shield" width="480" height="667" loading="lazy" decoding="async"></div>`
@@ -12504,6 +12612,7 @@ const TEAM_FLAG_SHAPES = ['plain', 'swallow', 'stripe', 'chevron'];
 const TEAM_FLAG_COLORS = ['red', 'blue', 'green', 'gold'];
 
 function teamMarkSpec(id) {
+  teamPhotoNeed(id); // an uploaded photo is fetched only when a crest is about to be drawn; the shield / flag shows meanwhile
   const src = teamCrestSrc(id);
   if (src) return { kind: 'shield', src };
   const color = CAMP.teamFlag && CAMP.teamFlag[id];
