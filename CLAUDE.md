@@ -717,7 +717,9 @@ never rebuilds a segmented control under a finger.
 - **The Games tab is the interim home of the old cards** until Step 18:
   `#games-days` holds today's `#day-tabs` (every day's game list),
   `#games-standings` the Current standings table and Quick points (both
-  `SECRET_CARDS`: directors only), `#games-rows` is reserved. The home cards no
+  `SECRET_CARDS`: directors only), `#games-rows` is reserved. Step 18's frame sits
+  beside them, hidden and unwired (see "The Games tab (Step 18 — markup and
+  visual system)"); its build session retires these three. The home cards no
   longer fold open: **the accordion, `jelly-collapsible` cards, `applyCardDefaults`,
   the 5-minute idle collapse and the `.card-opening` rise are gone**, and the
   shell's own "come back after 10 minutes" rule replaced the idle collapse.
@@ -910,6 +912,36 @@ model over the week, both camps, counselor / director / director-on-a-team / own
 at its widest, a 44-minute Running over and a held one, the three sheets, and the reveal's mirror / grid / champion line on the new Now; no target under
 44×44, no sideways scroll, no overflow, a leak scan over a counselor's text; about four minutes for both camps with `CAMPS=junior` / `CAMPS=senior` in two
 processes; `SHOTS=1` for screenshots; it found the notice sheet's squeeze and the mirror's Happening-now overflow at 200 % text on 360 px).
+
+## The Games tab (Step 18 — markup and visual system)
+
+Redesign §5, mockups 08, 14, 14b (+ dark). **Design pass only: static, hidden, unwired.** Every hook and row template is documented in
+index.html (the "STEP 18: THE GAMES TAB" comment in `#tab-games`, `#sheet-quick`, `#sheet-standings`, and the "STEP 18 TEMPLATES" comment in
+`#takeover-game`); the CSS is styles.css's last block, "THE GAMES TAB". The interim cards (`#games-days`, `#games-standings`, `#games-rows`) still
+render until the build session retires them and moves their hooks onto the new pieces: `data-card="standings"` → `#games-live`,
+`data-card="competitions"` → `#games-week`, `#sync-status` → `#gs-sync`'s place, reveal-ui.js's `#games-reveal-link` un-hide → `#gs-reveal`.
+
+- **Order** (a deliberate change from mockup 08): the week's standings first, then the day picker directly on the rows it switches.
+- **Directors' standings** `#games-live` (`[data-empty]` before any points): kicker "Counselors can’t see this" (typographic apostrophe:
+  `secrecy.test.js` counts the straight-quote phrase in the two old cards, a pin that changes when they go), `#gs-more` → `#sheet-standings`
+  (`#gs-copy`, `#gs-share`, `#gs-award`), `#gs-how`, `#gs-list` of `li.gs-item[data-key][data-team][data-tie?][data-mine?]` >
+  `button.gs-row[data-quick-team]` (`.gs-pl` / `.gs-tie`, `.gs-mv[data-mv=up|down|same]`, `.gs-mark`, `.gs-name` + `.gs-medals` in words with
+  `&nbsp;` inside each count and `.gs-x` "+N awarded", `.gs-pts`); a director's own team is a `div.gs-row[data-locked]` with `.gs-lock`, never a dead
+  button. `#gs-gap`, `#gs-sync`, `#gs-reveal`. Counselors: `#games-secret`, one ruled line (§5.6).
+- **Day picker** `#games-days-pick` (a tablist, `--n` / `--i` on it): `button.gdp-btn[role=tab][data-day][data-st=done|today|left|]` > `.gdp-d` +
+  `.gdp-st`, and ONE `.gdp-pill` at rest under `--i` (sprung with `snap`, never a CSS transition); at very large text the status words become a check
+  / dot / ring. `#games-day-note` ("Thursday · not today"), `#games-day` > `#games-day-notes` (Now's `.nw-note` lines) + `#games-day-body` (one
+  `section.gb[data-key][data-now?][data-off?]` per block: `.gb-h` > `.gb-t`, `.gb-now`, `.gb-when`, then Now's `.gr-list` rows unchanged), the
+  empty day `.gw-empty` with `[data-games-add]`, and `#games-quick`.
+- **Quick points** `#sheet-quick`: `#qp-mark` / `#qp-team`, `#qp-now`, `#qp-keys` (Award points' `.aw-pt` keys, data-pts 1 · 2 · 3 · 5), `#qp-why`
+  (`.qp-chip[role=radio][data-why]`, `other` shows `#qp-other`), `#qp-x2`, `#qp-add` (the dashed well until a key is chosen).
+- **Takeover**: the podium picker `.pp` > `.pp-row[data-medal][data-wait?]` > `.pp-h` + `.pp-teams[role=radiogroup][data-n]` >
+  `button.pp-team[role=radio][aria-checked][aria-disabled?][data-taken?]` (a chosen key takes its medal's fill and `.pp-ok`; a taken one shows
+  `.pp-taken` "① has gold", never the bare word: senior has a team called Gold); the saved result `.gsv[data-state=saving|saved|offline]`, `.gres` /
+  `.gres-r`, `.gres-scores`, `#game-change`; the dock `.gd` (`#game-save`, `#game-left`, `.gd-next` > `#game-dock-back[data-game-back]` +
+  `#game-next[data-next-game]`).
+- **Specimens**: `docs/build-notes/verify/step18-design.cjs` draws every template into the real page (both camps, director / director on a team /
+  counselor, 360 / 390, light / dark, 100 / 130 / 200 %: no target under 44×44, no sideways scroll, no overflow; `SHOTS=1`).
 
 ## The standings reveal: the screens (Step 23 — markup and visual system)
 
