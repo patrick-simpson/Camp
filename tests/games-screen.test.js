@@ -484,7 +484,7 @@ test('taking a day off the games days: games must have somewhere to go (they mov
     assert.deepEqual([r.ok, r.moved], [true, games.length]);
     assert.equal(gmIsGamesDay(dk), false);
     const tid = gmDayRecs(target)[0].id;
-    games.forEach((id) => { const g = gameById(id); assert.equal(g.dayId, tid, id + ' moved to ' + target); assert.ok(typeof g.blockId === 'string' || true); });
+    games.forEach((id) => { const g = gameById(id); assert.equal(g.dayId, tid, id + ' moved to ' + target); });
     assert.equal(gmGamesOnDay(dk).length, 0);
     assert.equal(gsLastUndo().label, 'Took ' + SETUP_DAY_WORDS[dk] + ' off the games days');
     // a day with no games: no question
@@ -747,6 +747,101 @@ test('after it exists every field saves as it changes, one field at a time (name
     assert.deepEqual(gmDockState(o), { tone: 'error', text: 'Fix the name to save it' });
     gsText('gm-name', 'Probe fixed');
     assert.equal(o.err.name, '');
+  } finally { gsShut(); gsEnd(); }
+});
+
+// Undo: inside Set up the week every Games change goes to the docked pill (never a toast) and undoes through the app's own engine;
+// over the Games tab (builder closed) the pill does not exist, so creating a game keeps the old toast action.
+const gsToasts = (fn) => { const real = showToast; const t = []; showToast = (msg, opts) => { t.push({ msg, opts }); }; try { return fn(t); } finally { showToast = real; } };
+test('inside Set up the week each Games change offers the undo pill, not a toast: Undo removes an added game, puts a field and a move back, and Redo brings them again; over the Games tab creating still toasts', async () => {
+  gsStart();
+  try {
+    const dk = gsTwoItemDay() || gsFirstDay();
+    const [a, b] = gsBlocks(dk);
+    state.ui.view = 'settings';
+    state.ui.builderScreen = 'games';
+    state.ui.sgDay = dk;
+    renderSetupUi(true);
+    await gsToastsAsync(async (toasts) => {
+      gmOpenNew({ dk, target: a.id });
+      gsText('gm-name', 'Pill game');
+      await gmPickFormat('tally');
+      const o = gmUi.open;
+      const gid = o.gid;
+      assert.ok(gid && gameById(gid), 'created');
+      assert.equal(setupEl('setup-undo').hidden, false, 'the pill is up');
+      assert.equal(setupUi.pill.id, gsLastUndo().id);
+      assert.equal(setupEl('setup-undo-label').textContent, 'Added “Pill game”');
+      assert.equal(setupEl('setup-undo').querySelector('.setup-undo-verb').textContent, 'Undo');
+      assert.equal(toasts.length, 0, 'no toast over the builder (it swallowed the next tap)');
+      // the pill undoes the add straight away: the game is gone, and the pill now says Redo
+      setupUndoRun(setupUi.pill.id);
+      assert.equal(gameById(gid), undefined, 'Undo removes the game it added');
+      assert.equal(setupEl('setup-undo').querySelector('.setup-undo-verb').textContent, 'Redo');
+      assert.equal(setupEl('setup-undo-label').textContent, 'Added “Pill game”');
+      setupUndoRun(setupUi.pill.id);
+      assert.ok(gameById(gid) && gameById(gid).name === 'Pill game', 'Redo puts it back');
+      assert.equal(gameById(gid).blockId, a.id, 'on the item it was added to');
+      // a field
+      gsText('gm-where', 'Under the oak');
+      const whereBefore = gsLastUndo().ops[0][2];
+      setupUndoRun(setupUi.pill.id);
+      assert.equal(gameById(gid).location, whereBefore === null ? undefined : whereBefore, 'the field is back');
+      assert.equal(setupEl('setup-undo').querySelector('.setup-undo-verb').textContent, 'Redo');
+      setupUndoRun(setupUi.pill.id);
+      assert.equal(gameById(gid).location, 'Under the oak', 'Redo');
+      // a move through When
+      const before = { blockId: gameById(gid).blockId, ord: gameById(gid).ord, session: gameById(gid).session, dayId: gameById(gid).dayId };
+      assert.equal(gmMoveGame(gid, { dk, bid: b.id }).ok, true);
+      assert.equal(gameById(gid).blockId, b.id);
+      assert.ok(/^Moved “Pill game”/.test(setupEl('setup-undo-label').textContent), setupEl('setup-undo-label').textContent);
+      setupUndoRun(setupUi.pill.id);
+      assert.deepEqual({ blockId: gameById(gid).blockId, ord: gameById(gid).ord, session: gameById(gid).session, dayId: gameById(gid).dayId }, before, 'the move is undone, place fields and all');
+      assert.equal(toasts.some((t) => t.opts && t.opts.action), false, 'no toast action anywhere inside the builder');
+    });
+    // a game edited since is not taken away by undoing its add (the undo only puts back what still equals what it set) ...
+    gsShut();
+    gmOpenNew({ dk, target: a.id });
+    gsText('gm-name', 'Guard game');
+    await gmPickFormat('placement');
+    const gid2 = gmUi.open.gid;
+    const entry = undoRecent().find((e) => e.label === 'Added “Guard game”');
+    assert.ok(entry, 'in Recent changes');
+    gsText('gm-where', 'By the creek');
+    undoEntry(entry.id);
+    assert.ok(gameById(gid2), 'edited since: the game stays');
+    // ... and a game that has a saved result is never undone away (the builder's own guard)
+    gsShut();
+    gmOpenNew({ dk, target: a.id });
+    gsText('gm-name', 'Scored game');
+    await gmPickFormat('placement');
+    const gid3 = gmUi.open.gid;
+    const entry3 = undoRecent().find((e) => e.label === 'Added “Scored game”');
+    state.results = state.results || {};
+    state.results[gid3] = { medals: { gold: teamIds()[0], silver: teamIds()[1], bronze: teamIds()[2] }, savedAt: Date.now() };
+    undoEntry(entry3.id);
+    assert.ok(gameById(gid3), 'a game that has a result stays');
+    delete state.results[gid3];
+  } finally { gsShut(); state.ui.view = 'home'; state.ui.builderScreen = undefined; setupUi.wasOpen = false; gsEnd(); }
+});
+async function gsToastsAsync(fn) { const real = showToast; const t = []; showToast = (msg, opts) => { t.push({ msg, opts }); }; try { return await fn(t); } finally { showToast = real; } }
+
+test('over the Games tab (builder closed) creating a game keeps the toast with its Undo; a field edit is recorded but quiet', async () => {
+  gsStart();
+  try {
+    const dk = gsFirstDay();
+    assert.equal(builderOpen(), false);
+    await gsToastsAsync(async (toasts) => {
+      gmOpenNew({ dk, target: gsBlocks(dk)[0].id });
+      gsText('gm-name', 'Tab game');
+      await gmPickFormat('placement');
+      assert.equal(toasts.length, 1, 'creating still speaks');
+      assert.equal(toasts[0].opts.action.label, 'Undo');
+      const n = toasts.length;
+      gsText('gm-where', 'The porch');
+      assert.equal(toasts.length, n, 'a field edit is recorded but quiet');
+      assert.ok(gsLastUndo(), 'and it is in Recent changes');
+    });
   } finally { gsShut(); gsEnd(); }
 });
 
