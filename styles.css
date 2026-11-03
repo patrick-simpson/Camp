@@ -2687,10 +2687,18 @@ html:not(.calm-motion) .rv-row[data-state="looking"] > .ico {
   stroke-width: 2.6;
 }
 .rv-happening-row {
-  display: grid;
-  grid-template-columns: minmax(3.25rem, auto) minmax(0, 1fr);
-  gap: 0 var(--s-3);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--s-3);
   margin: 10px 2px 0;
+}
+.rv-hn-time {
+  flex: 0 0 auto;
+  min-width: 3.25rem;
+}
+.rv-hn-text {
+  flex: 1 1 12rem; /* beside the time while it gets this much room, else under it (large text) */
+  min-width: 0;
 }
 .rv-hn-time {
   font: 700 1rem/1.3 var(--font-ui);
@@ -15811,7 +15819,11 @@ html:not(.calm-motion) .gr[data-status="live"] .gr-st::after {
   margin: 14px 0 0;
   font: 750 1rem/1.35 var(--font-ui);
 }
-@container nw-card (max-width: 16rem) {
+/* The notice is its own container (the send-off card AND #sheet-notice hold it): the zone list stacks by the list's width, not the card's. */
+.nb {
+  container: nb / inline-size;
+}
+@container nb (max-width: 16rem) {
   .nb-zone {
     grid-template-columns: 26px minmax(0, 1fr);
   }

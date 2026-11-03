@@ -272,6 +272,16 @@ test('game rows glide when a game goes Live on screen within one block; the firs
   done();
 });
 
+// Two layout rules the Playwright pass (docs/build-notes/verify/step17-pass.cjs) found by measuring, pinned as text because the stub has no layout.
+test('the notice stacks its zone list by its OWN width (the sheet as well as the send-off card), and the mirror\'s Happening-now row wraps instead of running off the screen', () => {
+  const css = readFixture('../styles.css');
+  assert.ok(/\.nb \{\s*container: nb \/ inline-size;\s*\}/.test(css), 'the notice is a container');
+  assert.ok(/@container nb \(max-width: 16rem\) \{\s*\.nb-zone \{/.test(css), 'the zone list queries it, not the card (the sheet has no card)');
+  assert.notOk(/@container nw-card \(max-width: 16rem\) \{\s*\.nb-zone/.test(css));
+  assert.ok(/\.rv-happening-row \{\s*display: flex;\s*flex-wrap: wrap;/.test(css), 'the time and the block name share a line only while the name gets room');
+  assert.ok(/\.rv-hn-text \{\s*flex: 1 1 12rem;[^}]*min-width: 0;/.test(css));
+});
+
 test('games: a director on a team in the round gets the reason where Score would be, and never the button for it', () => {
   boot('editor', null);
   const { nb, games } = gamesBlockOf(WED, 2);
