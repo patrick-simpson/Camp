@@ -63,7 +63,9 @@ test('hub rows open their screens: Camp week, Schedule and Teams → theirs, Gam
     assert.equal(state.ui.builderScreen, 'people', 'Step 25: People has its own screen now (the Members drawer is retired; More\'s People row opens the same one)');
     assert.equal(peopleUi.from, '', 'opened from the hub, so Back is the hub');
     hubOpen('campers');
-    assert.equal(state.ui.builderScreen, 'people', 'a row with no screen yet does nothing');
+    assert.equal(state.ui.builderScreen, 'campers', 'Step 25 (session 3): Campers has its own screen now (a row whose screen is still to come, Phone alerts, does nothing)');
+    hubOpen('alerts');
+    assert.equal(state.ui.builderScreen, 'campers', 'a row with no screen yet does nothing');
     hubOpen('week');
     assert.equal(state.ui.builderScreen, 'week');
     hubOpen('schedule');
@@ -163,17 +165,18 @@ test('a director sees the setup sheets only while the builder is up', () => {
     setupRain.plan = { dk: 'wed', items: {}, games: {} };
     setupRain.bid = 'b-x';
     state.ui.setupDay = 'wed';
-    ['sec-teams', 'sec-person', 'sec-station', 'team-edit', 'team-colors', 'people-person', 'people-request', 'people-teams', 'people-add', 'people-blocked'].forEach((id) => assert.equal(shellSheetAllowed(id), false, id + ' needs what a tap opened'));
+    ['sec-teams', 'sec-person', 'sec-station', 'team-edit', 'team-colors', 'people-person', 'people-request', 'people-teams', 'people-add', 'people-blocked', 'camper-edit', 'camper-add'].forEach((id) => assert.equal(shellSheetAllowed(id), false, id + ' needs what a tap opened'));
     secUi.teams = { dk: 'mon', meal: 'lunch', name: 'Lunch', picked: [], was: [] };
     secUi.person = { dk: 'mon', slot: 0, st: 'st-x' };
     secUi.station = { mode: 'add', dk: 'mon', slot: 0, st: '' };
     teamUi.edit = { id: 't0', origin: {}, color: '', pane: 'form' };
     teamUi.colors = true;
     peopleUi.person = { key: 'x' }; peopleUi.request = { key: 'x' }; peopleUi.teams = { built: false }; peopleUi.add = { pane: 'list' }; peopleUi.blocked = true;
+    campersUi.edit = { tid: 't0', cid: 'c-x', origin: {} }; campersUi.add = { tid: 't0' };
     SETUP_SHEETS.forEach((id) => assert.equal(shellSheetAllowed(id), true, id));
     state.ui.view = 'home';
     SETUP_SHEETS.forEach((id) => assert.equal(shellSheetAllowed(id), false, id + ' with the builder closed'));
-  } finally { setupSched.item = null; setupRain.plan = null; setupRain.bid = null; secUi.teams = null; secUi.person = null; secUi.station = null; teamUi.edit = null; teamUi.colors = false; peopleUi.person = null; peopleUi.request = null; peopleUi.teams = null; peopleUi.add = null; peopleUi.blocked = false; suClose(); }
+  } finally { setupSched.item = null; setupRain.plan = null; setupRain.bid = null; secUi.teams = null; secUi.person = null; secUi.station = null; teamUi.edit = null; teamUi.colors = false; peopleUi.person = null; peopleUi.request = null; peopleUi.teams = null; peopleUi.add = null; peopleUi.blocked = false; campersUi.edit = null; campersUi.add = null; suClose(); }
 });
 
 // ── askDialog ──
@@ -476,8 +479,8 @@ test('paintHub writes each row\'s summary, first problem and mark into the stati
     paintHub();
     const games = document.querySelector('[data-hub-row="games"]');
     assert.ok(/ games · 5 days$/.test(games.querySelector('[data-hub-summary]').textContent) || /games · \d+ days/.test(games.querySelector('[data-hub-summary]').textContent));
-    assert.equal(document.querySelector('[data-hub-row="campers"]').querySelector('[data-hub-mark]').dataset.mark, 'soon');
-    assert.equal(document.querySelector('[data-hub-row="campers"]').querySelector('[data-hub-word]').textContent, 'Editing comes next');
+    assert.equal(document.querySelector('[data-hub-row="campers"]').querySelector('[data-hub-mark]').dataset.mark, 'info', 'Campers is judged now (Step 25): a plain line until the editor-only list arrives');
+    assert.equal(document.querySelector('[data-hub-row="campers"]').querySelector('[data-hub-summary]').textContent, 'Needs the camp database', 'this test has no sync configured (campers.test.js has the "Loading…" case)');
     assert.equal(document.querySelector('[data-hub-row="meals"]').querySelector('[data-hub-mark]').dataset.mark, 'info', 'Meals has its screen now (step 19): the original, said plainly');
     assert.ok(/^\d+ of \d+ ready$/.test(setupEl('hub-headline').textContent));
     assert.equal(setupEl('hub-title').textContent, 'Set up the week · ' + CAMP.label);

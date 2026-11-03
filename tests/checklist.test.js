@@ -104,7 +104,8 @@ test('People problems: a team with no counselors, an incomplete record, people w
 
 // ── The rest of the rows ──
 test('rows whose screen comes later say `soon` and claim nothing; an optional one can be set aside', () => {
-  ['campers', 'alerts'].forEach((k) => {
+  // Campers has its screen now (Step 25, session 3): its row is judged (see the Campers cases below). Phone alerts is the one that is still to come.
+  ['alerts'].forEach((k) => {
     const s = hubStatus(k, clView());
     assert.equal(s.mark, 'soon', k);
     assert.equal(s.word, 'Editing comes next', k);
@@ -231,7 +232,8 @@ test('hubModel: "N of M ready" counts what can be judged, names the first thing 
   assert.equal(ok.ready, 3);
   assert.equal(ok.total, 3);
   assert.equal(ok.next, '');
-  assert.equal(ok.lede, 'Everything that can be checked is ready.');
+  // (Campers has its screen now, so no counted row is still waiting: the plain sentence. Step 25, session 3.)
+  assert.equal(ok.lede, 'Everything is ready.');
   assert.equal(ok.kicker, 'Set up the week · ' + CAMP.label);
   const v = clView();
   const bad = hubModel(clView({ teams: clTeams(CAMP.teamCount).map((t, i) => (i === 0 ? Object.assign({}, t, { name: '' }) : t)), members: v.members.filter((m) => m.teamId !== 't1') }));
@@ -330,4 +332,24 @@ test('a row that is still loading (People) is not counted either way, and a devi
   assert.equal(m.headline, '2 of 2 ready');
   assert.equal(hubStatus('restore', clView({ restore: { status: 'nosync' } })).summary, 'Needs the camp database');
   assert.equal(hubStatus('restore', clView({ restore: { status: 'offline' } })).summary, 'Needs a connection');
+});
+
+// ── Campers (Step 25, session 3): minors' names are read only while a camper-showing screen holds the listener, so the row says
+// "Loading…" until the list arrives and only ever carries counts ──
+test('Campers: loading until the list arrives, todo with none, a count when there are some, a team with none is a note once any exist', () => {
+  assert.deepEqual([hubStatus('campers', clView()).mark, hubStatus('campers', clView()).summary], ['info', 'Loading…'], 'no view of the list yet');
+  assert.equal(hubStatus('campers', clView({ campers: { status: 'nosync' } })).summary, 'Needs the camp database');
+  assert.equal(hubStatus('campers', clView({ campers: { status: 'denied' } })).summary, 'Not available yet');
+  const none = hubStatus('campers', clView({ campers: { status: 'ok', total: 0, empty: [] } }));
+  assert.deepEqual([none.mark, none.summary, none.problems.length], ['todo', 'No campers yet', 0]);
+  const some = hubStatus('campers', clView({ campers: { status: 'ok', total: 64, empty: [] } }));
+  assert.deepEqual([some.mark, some.summary], ['ok', '64 campers']);
+  assert.equal(hubStatus('campers', clView({ campers: { status: 'ok', total: 1, empty: [] } })).summary, '1 camper');
+  const gap = hubStatus('campers', clView({ campers: { status: 'ok', total: 12, empty: ['Maples'] } }));
+  assert.deepEqual([gap.mark, gap.problems], ['warn', ['Maples has no campers yet']]);
+  const skipped = hubStatus('campers', clView({ skip: { campers: true }, campers: { status: 'ok', total: 0, empty: [] } }));
+  assert.equal(skipped.mark, 'skip', 'not using camper lists this year: a dash, never a warning');
+  // the row counts toward "N of M ready" only once it can be judged
+  assert.equal(hubModel(clView()).total, 3, 'loading is not counted');
+  assert.equal(hubModel(clView({ campers: { status: 'ok', total: 64, empty: [] } })).total, 4);
 });

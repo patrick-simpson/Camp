@@ -1344,6 +1344,7 @@ function setupOnRoleChange(prev, next) {
   if (prev === 'editor' && next !== 'editor') { setupFocus = null; setupFocusOwed = {}; }
   if (typeof editorsHereOnRoleChange === 'function') editorsHereOnRoleChange(prev, next);
   if (typeof peopleRequestsOnRoleChange === 'function') peopleRequestsOnRoleChange(prev, next);
+  if (typeof campersOnRoleChange === 'function') campersOnRoleChange(prev, next);
 }
 
 // ── the sync line (the builder frame's `#setup-sync[data-tone]`) ─────
@@ -4663,6 +4664,326 @@ const PPL_WHY = {
 };
 function peopleWhy(res) {
   return (res && res.message) || PPL_WHY[res && res.reason] || PPL_WHY.refused;
+}
+
+// ════════════════════════════════════════════════════════════════════
+// CAMPERS: first names per team, directors only (setup-rebuild-spec §11.9, P12 — Step 25)
+// ════════════════════════════════════════════════════════════════════
+// Minors' names. The one place they exist on a device is THIS section's `campersMem`, in memory, for a director with a camper-showing
+// screen open; the rules make the node editor-only (`<root>/campers/<tid>/<cid> = { name ≤ 40, ord }`, both required, so a rename racing a
+// move cannot resurrect a camper). The rules of this section, each pinned by tests/campers.test.js with a source scan AND a runtime sweep:
+//   - nothing here touches localStorage, sessionStorage, IndexedDB or the console; nothing here is in `state`, `SYNC_KEYS`, a backup, a restore
+//     point, an undo entry (Camper edits are undoable from a line on the open screen, a closure in memory), a chat mention, a push payload or the TV page;
+//   - the listener is an editor-only `.on('value')` on `campers`, attached only while the hub, Campers, People or Teams is open (those show counts or
+//     names; setup-ui.js campersSync decides), detached the moment none is, dropped on a demotion, and its refusal sets `denied` and degrades campers
+//     only — it never touches fbRef / syncDenied;
+//   - what a snapshot holds is normalized on read (campersNorm): unknown teams, bad ids, nameless or ord-less rows are dropped, never rendered;
+//   - names typed while the signal is gone are HELD in memory on that open screen and sent the moment `.info/connected` is true (campersOnConnect);
+//     closing the screen with names still waiting asks first (setup-ui.js). Every other action needs a connection.
+
+const CAMPERS_NAME_MAX = 40;        // the rules' limit
+const CAMPERS_ADD_MAX = 300;        // names in one Add (a whole camp's list is ~100)
+const CAMPERS_ORD_STEP = 10;
+const CAMPERS_TEAM_RE = /^t[0-9]$/;
+const CAMPERS_ID_RE = /^c-[a-z0-9]{6,20}$/;
+
+const campersMem = {
+  ref: null,        // the attached listener, or null
+  tree: {},         // { tid: [{ id, name, ord }] } sorted, normalized
+  loaded: false,    // the first snapshot arrived
+  denied: false,    // the read was refused: campers is just absent
+  held: [],         // names typed while offline: [{ tid, names: [] }]
+  heldNote: '',     // why the last flush stopped, in words
+  busy: 0,          // writes in flight
+  flushing: false,
+};
+
+// ── pure helpers ─────────────────────────────────────────────────────
+
+// A typed name as the list holds it: control characters out, runs of space folded, cut to 40.
+function campersCleanName(s) {
+  return peopleClean(s, CAMPERS_NAME_MAX);
+}
+
+// "First names, one per line or separated by commas": { names, cut } — `cut` counts the names that were longer than the rules allow.
+// Duplicates stay (two Avas are two campers; the caption says to add a last initial).
+function campersParseNames(text) {
+  const names = [];
+  let cut = 0;
+  String(text == null ? '' : text).split(/[\n\r,;]+/).forEach((part) => {
+    const folded = String(part).replace(/\s+/g, ' ').trim();
+    if (!folded) return;
+    if (folded.length > CAMPERS_NAME_MAX) cut++;
+    const n = campersCleanName(folded);
+    if (n) names.push(n);
+  });
+  return { names: names.slice(0, CAMPERS_ADD_MAX), cut, over: names.length > CAMPERS_ADD_MAX };
+}
+
+// What a snapshot hands back, as the screens may read it. A shape this build does not know is dropped, never guessed at.
+function campersNorm(raw) {
+  const out = {};
+  if (!raw || typeof raw !== 'object') return out;
+  Object.keys(raw).forEach((tid) => {
+    const team = raw[tid];
+    if (!CAMPERS_TEAM_RE.test(tid) || !team || typeof team !== 'object') return;
+    const rows = [];
+    Object.keys(team).forEach((cid) => {
+      const r = team[cid];
+      if (!CAMPERS_ID_RE.test(cid) || !r || typeof r !== 'object') return;
+      const name = campersCleanName(r.name);
+      if (!name || typeof r.ord !== 'number' || !isFinite(r.ord)) return;
+      rows.push({ id: cid, name, ord: r.ord });
+    });
+    rows.sort((a, b) => (a.ord - b.ord) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0) || (a.id < b.id ? -1 : 1));
+    if (rows.length) out[tid] = rows;
+  });
+  return out;
+}
+
+// `c-` and ten random base36 characters (the rules want 6–20 of [a-z0-9]); `taken` is a set of ids already in use.
+function campersMintId(taken) {
+  for (let i = 0; i < 25; i++) {
+    const id = 'c-' + (Math.random().toString(36).slice(2) + '0000000000').slice(0, 10);
+    if (!taken || !taken[id]) return id;
+  }
+  return 'c-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+function campersTakenIds() {
+  const taken = {};
+  Object.keys(campersMem.tree).forEach((tid) => campersMem.tree[tid].forEach((c) => { taken[c.id] = true; }));
+  return taken;
+}
+
+// The next position at the end of a team's list (steps of 10, so a hand-edit can slot one between two).
+function campersNextOrd(tid) {
+  const rows = campersMem.tree[tid] || [];
+  return rows.length ? rows[rows.length - 1].ord + CAMPERS_ORD_STEP : CAMPERS_ORD_STEP;
+}
+
+function campersTeamOk(tid) {
+  return typeof tid === 'string' && CAMPERS_TEAM_RE.test(tid) && (state.teams || []).some((t) => t && t.id === tid);
+}
+
+function campersFind(tid, cid) {
+  return (campersMem.tree[tid] || []).find((c) => c.id === cid) || null;
+}
+
+// ── reading (directors, while a camper-showing screen holds the listener) ───────────────────────
+
+// [] for anyone who may not edit (a counselor's phone, a director's view-only second tab, a counselor preview) and until the first snapshot.
+function campersFor(tid) {
+  if (!canEdit() || !campersMem.loaded) return [];
+  return (campersMem.tree[tid] || []).map((c) => ({ id: c.id, name: c.name, ord: c.ord }));
+}
+
+function campersCount(tid) {
+  return canEdit() && campersMem.loaded ? (campersMem.tree[tid] || []).length : 0;
+}
+
+function campersTotal() {
+  if (!canEdit() || !campersMem.loaded) return 0;
+  return Object.keys(campersMem.tree).reduce((n, tid) => n + campersMem.tree[tid].length, 0);
+}
+
+// loading | ok | denied | nosync — what a screen says while it waits or cannot have the list.
+function campersStatus() {
+  if (!restoreHasFirebase()) return 'nosync';
+  if (campersMem.denied) return 'denied';
+  return campersMem.loaded ? 'ok' : 'loading';
+}
+
+// ── the listener ─────────────────────────────────────────────────────
+
+function campersMayListen() {
+  return canEdit() && memberRoleConfirmed && restoreHasFirebase() && typeof syncStarted !== 'undefined' && syncStarted === true;
+}
+
+function campersAttach() {
+  if (campersMem.ref || !campersMayListen()) return;
+  try {
+    const r = firebase.database().ref(dbPath('campers'));
+    campersMem.ref = r;
+    r.on('value', (snap) => {
+      campersMem.tree = campersNorm(snap && typeof snap.val === 'function' ? snap.val() : null);
+      campersMem.loaded = true;
+      campersMem.denied = false;
+      setupNotify('campers');
+    }, () => {
+      campersMem.ref = null; campersMem.tree = {}; campersMem.loaded = false; campersMem.denied = true;
+      setupNotify('campers');
+    });
+  } catch (e) { campersMem.ref = null; }
+}
+
+// The names go with the listener. Held (not yet sent) names are NOT dropped here: they are the open screen's own and wait for the signal.
+function campersDetach() {
+  if (campersMem.ref) { try { campersMem.ref.off('value'); } catch (e) { /* ignore */ } }
+  campersMem.ref = null;
+  campersMem.tree = {};
+  campersMem.loaded = false;
+  campersMem.denied = false;
+}
+
+// A screen that shows camper counts or names asks for the list; any other screen lets it go.
+function campersWant(on) {
+  if (on) campersAttach(); else if (campersMem.ref || campersMem.loaded || campersMem.denied) campersDetach();
+}
+
+// A demotion drops everything at once, held names included (a phone that may not edit must not keep a minor's name in memory).
+function campersOnRoleChange(prev, next) {
+  if (prev === 'editor' && next !== 'editor') { campersDetach(); campersMem.held = []; campersMem.heldNote = ''; setupNotify('campers'); }
+  if (next === 'editor' && prev !== 'editor' && typeof Promise !== 'undefined') Promise.resolve().then(() => setupNotify('campers'));
+}
+
+// ── acting on the list (every one: Promise<{ ok, reason? }>, never throws) ───────────────────────
+
+function campersGuard(needOnline) {
+  if (!canEdit()) return { ok: false, reason: 'readonly' };
+  if (!restoreHasFirebase()) return { ok: false, reason: 'nosync' };
+  if (needOnline && !restoreOnline()) return { ok: false, reason: 'offline' };
+  return null;
+}
+
+function campersRoot() { return firebase.database().ref(dbPath('campers')); }
+
+// A write, counted while it is in flight (the deploy's auto-reload waits for it).
+async function campersWrite(fn) {
+  campersMem.busy++;
+  try { await fn(); return { ok: true }; } catch (e) { return { ok: false, reason: 'refused' }; } finally { campersMem.busy--; }
+}
+
+// ONE multi-path update of whole `{ name, ord }` records under a team (the rules want both, so a rename racing a move cannot resurrect a camper).
+async function campersSend(tid, names) {
+  const taken = campersTakenIds();
+  const base = campersNextOrd(tid);
+  const patch = {};
+  names.forEach((n, i) => { const id = campersMintId(taken); taken[id] = true; patch[tid + '/' + id] = { name: n, ord: base + i * CAMPERS_ORD_STEP }; });
+  const res = await campersWrite(() => campersRoot().update(patch));
+  return res.ok ? { ok: true, added: names.length } : res;
+}
+
+// "+ Add": offline the names are held in memory on the open screen and go the moment the signal is back; online they go at once.
+async function campersAdd(tid, names) {
+  const g = campersGuard(false);
+  if (g) return g;
+  if (!campersTeamOk(tid)) return { ok: false, reason: 'team' };
+  const clean = (Array.isArray(names) ? names : []).map(campersCleanName).filter(Boolean).slice(0, CAMPERS_ADD_MAX);
+  if (!clean.length) return { ok: true, added: 0 };
+  if (!restoreOnline()) {
+    campersMem.held.push({ tid, names: clean });
+    campersMem.heldNote = '';
+    setupNotify('campers');
+    return { ok: true, held: clean.length };
+  }
+  return campersSend(tid, clean);
+}
+
+function campersHeldCount() {
+  return campersMem.held.reduce((n, h) => n + h.names.length, 0);
+}
+
+// The held names, for the screen that shows them waiting: [{ tid, name }].
+function campersHeldList() {
+  const out = [];
+  campersMem.held.forEach((h) => h.names.forEach((n) => out.push({ tid: h.tid, name: n })));
+  return out;
+}
+
+function campersDiscardHeld() {
+  campersMem.held = [];
+  campersMem.heldNote = '';
+  setupNotify('campers');
+}
+
+// The signal is back (app.js, beside editorsHereOnConnect): send what was typed while it was gone, oldest first, stopping at a refusal.
+async function campersFlushHeld() {
+  if (campersMem.flushing || !campersMem.held.length || !canEdit() || !restoreOnline()) return { ok: true, sent: 0 };
+  campersMem.flushing = true;
+  let sent = 0;
+  let failed = null;
+  try {
+    for (const h of campersMem.held.slice()) {
+      const r = await campersSend(h.tid, h.names);
+      if (!r.ok) { failed = r; break; }
+      campersMem.held = campersMem.held.filter((x) => x !== h);
+      sent += h.names.length;
+    }
+  } finally { campersMem.flushing = false; }
+  campersMem.heldNote = failed ? campersWhy(failed) : '';
+  setupNotify('campers');
+  if (sent && typeof onCampersFlushed === 'function') onCampersFlushed(sent);
+  return failed ? Object.assign({ sent }, failed) : { ok: true, sent };
+}
+
+function campersOnConnect() {
+  if (campersMem.held.length) campersFlushHeld();
+}
+
+// A held name or a write in flight holds the deploy's auto-reload (a reload would lose both: nothing is stored).
+function campersBusy() {
+  return campersMem.held.length > 0 || campersMem.busy > 0;
+}
+
+async function campersRename(tid, cid, name) {
+  const g = campersGuard(true);
+  if (g) return g;
+  const cur = campersFind(tid, cid);
+  if (!cur) return { ok: false, reason: 'gone' };
+  const n = campersCleanName(name);
+  if (!n) return { ok: false, reason: 'name' };
+  if (n === cur.name) return { ok: true, nothing: true };
+  return campersWrite(() => campersRoot().child(tid + '/' + cid + '/name').set(n));
+}
+
+// One atomic update: the camper is deleted from the old team and created, with its name and a position at the end (or `o.ord`, an undo
+// putting it back where it was), on the new one — under the same id. `o.name` renames in the same breath, so a move and a rename are ONE
+// write that never leaves the camper under a name the list has already replaced.
+async function campersMove(tid, cid, toTid, o) {
+  const g = campersGuard(true);
+  if (g) return g;
+  if (!campersTeamOk(toTid)) return { ok: false, reason: 'team' };
+  const cur = campersFind(tid, cid);
+  if (!cur) return { ok: false, reason: 'gone' };
+  const name = o && o.name !== undefined ? campersCleanName(o.name) : cur.name;
+  if (!name) return { ok: false, reason: 'name' };
+  if (toTid === tid) return { ok: true, nothing: true };
+  const ord = o && typeof o.ord === 'number' && isFinite(o.ord) ? o.ord : campersNextOrd(toTid);
+  const patch = {};
+  patch[tid + '/' + cid] = null;
+  patch[toTid + '/' + cid] = { name, ord };
+  return campersWrite(() => campersRoot().update(patch));
+}
+
+async function campersRemove(tid, cid) {
+  const g = campersGuard(true);
+  if (g) return g;
+  if (!campersFind(tid, cid)) return { ok: false, reason: 'gone' };
+  return campersWrite(() => campersRoot().child(tid + '/' + cid).remove());
+}
+
+// Undo of a removal (the open screen's line, in memory): the same whole record, back under the same id.
+async function campersPut(tid, cid, rec) {
+  const g = campersGuard(true);
+  if (g) return g;
+  if (!campersTeamOk(tid) || !CAMPERS_ID_RE.test(String(cid))) return { ok: false, reason: 'team' };
+  const n = campersCleanName(rec && rec.name);
+  if (!n || !rec || typeof rec.ord !== 'number' || !isFinite(rec.ord)) return { ok: false, reason: 'name' };
+  return campersWrite(() => campersRoot().child(tid + '/' + cid).set({ name: n, ord: rec.ord }));
+}
+
+const CAMPERS_WHY = {
+  readonly: 'Only directors can change the camper lists.',
+  offline: 'Needs a connection.',
+  nosync: 'Needs the camp database.',
+  team: 'That team isn’t on this camp.',
+  gone: 'That camper isn’t on the list any more — someone may have moved or removed them.',
+  name: 'Give them a name first.',
+  refused: 'The database refused that — are you still a director?',
+};
+function campersWhy(res) {
+  return (res && res.message) || CAMPERS_WHY[res && res.reason] || CAMPERS_WHY.refused;
 }
 
 setupLoadCache();

@@ -713,9 +713,11 @@ function teamStaffNames(teamId) {
 //   - Text from the database passes a camp-core.js sanitizer on its way out.
 // The per-camp constants moved here unchanged from their old spots in this
 // file (tests/camps.test.js still reads them by global name). Not yet
-// accessors, because nothing reads them yet: hubStatus, campersFor.
+// accessors, because nothing reads them yet: hubStatus.
 // (finaleDow arrived with the standings reveal, Step 23; teamAccentVars with
-// the palette, Step 25.)
+// the palette, Step 25. `campersFor` is NOT an accessor of this block: camper
+// names are minors' data held in memory by setup-sync.js's CAMPERS section for a
+// director with a camper-showing screen open, and nothing else may read them.)
 
 const DEFAULT_TEAM_NAMES = CAMP.defaultTeamNames;
 const TEAM_EMOJI = CAMP.teamEmoji;
@@ -5169,6 +5171,8 @@ function initSync() {
       if (fbConnected) registerPresence();
       // "Also here" (setup-sync.js): a director's builder row needs registering afresh on every connect too.
       if (fbConnected && typeof editorsHereOnConnect === 'function') editorsHereOnConnect();
+      // Camper names typed while the signal was gone (held in memory on the open screen, never stored) go now.
+      if (fbConnected && typeof campersOnConnect === 'function') campersOnConnect();
     });
     // Count listener lives here (not inside the connected handler above) so
     // it's registered exactly once — putting it there would re-subscribe on
@@ -11684,6 +11688,8 @@ function reloadBlocked() {
   if (typeof schedItemBusy === 'function' && schedItemBusy()) return true; // a Schedule item with edits not yet saved (setup-ui.js)
   if (typeof teamEditBusy === 'function' && teamEditBusy()) return true; // a team sheet with edits not yet saved, or a photo going up (setup-ui.js)
   if (typeof peopleBusy === 'function' && peopleBusy()) return true; // a People sheet with edits not yet saved, or a write still going (setup-ui.js)
+  if (typeof campersBusy === 'function' && campersBusy()) return true; // camper names waiting for the signal, or a camper write going: held in memory only, a reload would lose them (setup-sync.js)
+  if (typeof campersUiBusy === 'function' && campersUiBusy()) return true; // a camper sheet with a name typed and not yet saved (setup-ui.js)
   return false;
 }
 
@@ -11925,10 +11931,12 @@ function shellApply(s) {
     // Back out of an open game editor would strand its draft: ask first, and if
     // the answer is no the reconcile in renderAll puts the entry straight back
     // (shell.cur is the entry the browser is on, the builder is still open).
-    if (typeof builderDirty === 'function' && builderDirty() && !confirm('Discard your unsaved changes?')) {
+    const why = builderLeaveWarning();
+    if (why && !confirm(why)) {
       renderAll();
       return;
     }
+    if (why && typeof campersDiscardHeld === 'function') campersDiscardHeld();
     if (typeof discardGameDraft === 'function') discardGameDraft();
     state.ui.view = 'home';
   } else if (wantBuilder && !builderOpen() && canEdit()) {
@@ -12088,7 +12096,9 @@ function shellCloseOverlays() {
   state.ui.revealOpen = false;
   state.ui.tool = null;
   if (builderOpen()) {
-    if (typeof builderDirty === 'function' && builderDirty() && !confirm('Discard your unsaved changes?')) return false;
+    const why = builderLeaveWarning();
+    if (why && !confirm(why)) return false;
+    if (why && typeof campersDiscardHeld === 'function') campersDiscardHeld();
     if (typeof discardGameDraft === 'function') discardGameDraft();
     state.ui.view = 'home';
   }
@@ -13364,6 +13374,14 @@ function builderOpen() {
   return state.ui.view === 'settings';
 }
 
+// What leaving the builder by a route that has no dialog of its own (the phone's Back, a deep link) would throw away, as the question to ask
+// ('' = nothing): an unsaved game editor, or camper names still waiting for the signal (held in memory only, setup-sync.js "CAMPERS").
+function builderLeaveWarning() {
+  if (typeof builderDirty === 'function' && builderDirty()) return 'Discard your unsaved changes?';
+  const n = typeof campersHeldCount === 'function' ? campersHeldCount() : 0;
+  return n === 1 ? 'This name hasn’t been saved yet — it’ll be lost. Discard it?' : n ? 'These ' + n + ' names haven’t been saved yet — they’ll be lost. Discard them?' : '';
+}
+
 // (Where the page was scrolled is the shell's: the tab it came from keeps its
 // scroll slot and gets it back when the builder closes — shellRestoreScroll.)
 
@@ -14365,6 +14383,7 @@ function hasBothCamps() {
 function hasUnsyncedWork() {
   return pendingWritesTotal() > 0 || dataEditPending || pushTimer != null || pushConfigTimer != null ||
     (typeof setupBusy === 'function' && setupBusy()) ||
+    (typeof campersBusy === 'function' && campersBusy()) ||
     (typeof builderDirty === 'function' && builderDirty());
 }
 

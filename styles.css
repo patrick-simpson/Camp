@@ -14852,3 +14852,101 @@ html.counselor-preview .sheet {
     grid-area: auto;
   }
 }
+
+/* ============================================================
+   SET UP THE WEEK: Campers (P2 §11.9; Step 25)
+   ============================================================
+   Minors' first names by team, for directors only. Markup: index.html #setup-campers and the two #sheet-camper-* sheets. A name is a
+   chip (the electives' .sec-chip, 44px tall) that opens ONE sheet; the dashed "+ Add" chip ends each team's row. Names typed with no
+   signal wait in `.cmp-held` as greyed chips (they are not buttons: nothing to tap but Discard). Nothing here is a colour on its own. */
+.setup[data-screen="campers"] [data-setup-screen="campers"] {
+  display: block;
+}
+.cmp-groups {
+  display: grid;
+  gap: var(--s-2);
+}
+.cmp-groups:empty {
+  display: none;
+}
+.cmp-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 2px 0 0;
+}
+.cmp-chip {
+  min-width: var(--target);
+  justify-content: center;
+}
+.cmp-add {
+  border-style: dashed;
+  color: var(--link);
+}
+.cmp-add .ico {
+  color: var(--link);
+}
+.cmp-group .ppl-none {
+  padding: 6px 2px;
+}
+.cmp-wait {
+  cursor: default;
+  border-style: dashed;
+  color: var(--ink-2);
+}
+.cmp-wait small {
+  font: var(--t-label);
+  font-size: 0.75rem;
+  color: var(--ink-2);
+}
+.cmp-held {
+  display: grid;
+  gap: 8px;
+  margin: var(--s-3) 0 0;
+  padding: 12px 14px;
+  border: 2px solid var(--ink-3);
+  border-radius: var(--r-card, 14px);
+  background: var(--sheet);
+}
+.cmp-held[hidden] {
+  display: none;
+}
+.cmp-held-title {
+  margin: 0;
+  font: var(--t-row);
+  color: var(--ink);
+}
+.cmp-held-sub {
+  margin: 0;
+  font: var(--t-meta);
+  color: var(--ink-2);
+}
+.cmp-held .fld-error {
+  margin: 0;
+}
+.cmp-held .btn-quiet {
+  justify-self: start;
+}
+.cmp-undo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: var(--s-3) 0 0;
+  padding: 6px 6px 6px 14px;
+  border: 2px solid var(--ink);
+  border-radius: var(--r-btn);
+  background: var(--sheet);
+}
+.cmp-undo[hidden] {
+  display: none;
+}
+.cmp-undo-text {
+  min-width: 0;
+  font: var(--t-meta);
+  color: var(--ink);
+  overflow-wrap: break-word;
+}
+.cmp-skip {
+  margin-top: var(--s-4);
+}

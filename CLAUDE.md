@@ -1465,8 +1465,8 @@ rest of Step 14, in setup-ui.js: see "Set up the week: behaviour" below); with n
   people, notice, restore at Step 14; week and schedule at Step 15, which always
   open their screen — a read-only preview with the owner's Edit the week here
   while the schedule isn't edited here); **one whose screen comes later is a
-  `<div>`** (campers → 25, alerts): never a dead button — the step that brings the
-  screen turns the div into a button (Step 19 did it for meals, verses, cleanup and electives). Electives starts hidden (junior only). At
+  `<div>`** (alerts): never a dead button — the step that brings the
+  screen turns the div into a button (Step 19 did it for meals, verses, cleanup and electives, Step 25 for teams, people and campers). Electives starts hidden (junior only). At
   ~130%+ text the mark drops under the summary (a container query on
   `.hub-list`, in em, so it follows the phone's text size) and the chevron stays
   centred on the whole row at its right edge, as on More.
@@ -1581,7 +1581,8 @@ into it from app.js / settings.js is typeof-guarded.
   yet for a week), **Notice board** and **Restore points** (info; denied restore nodes warn).
   Step 19 judges **Meals, Memory verses, Cleanup rota and Electives** (`hubSectionStatus`, from
   `hubSecView()`: see "Meals, verses, cleanup, electives: the screens"); not yet (their data
-  arrives with their step): campers, phone alerts, asking-to-join. `hubModel`:
+  arrives with their step): phone alerts. (Step 25 judges **Campers** — counts only, see "Campers" below — People's waiting requests and Teams'
+  short name, emoji and colour.) `hubModel`:
   "N of M ready" counts only rows that can be judged (`soon` and `skip` are left out), "Next:
   Teams" names the first warning. `HUB_OPENS` is the table of rows that open something
   (a row whose screen exists is a `<button>`, otherwise a `<div>`: `checklist.test.js`
@@ -2429,6 +2430,18 @@ What's covered, and why each file exists:
   the switch. `people-screen.test.js` (+ senior) — the hub row, the screen, the routes in and Back, the five sheets' handlers,
   the join badges and bar, the source pins. `access-requests.test.js` (+ senior) — the requester's side (see "People and
   walk-ups"). `tests/emulator/people-client.mjs` is their opt-in twin against the real rules.
+- `campers.test.js` (+ `.senior`) — **minors' names never leave memory** (P12; see "Campers"): the pure helpers (`campersParseNames`,
+  `campersNorm` on every shape a snapshot can take, `campersMintId`); the editor-only listener (only after sync started, only while the hub,
+  Campers, People or Teams holds it, detached on any other screen / a closed builder / a demotion, a refusal degrades only itself and never touches
+  `fbRef` / `syncDenied`); every write a whole `{ name, ord }` (Add one multi-path update, Move one update that deletes and creates, Rename one
+  leaf); names typed with no signal HELD in memory and sent on reconnect; the screen (counts, escaped names, idle repaint writes nothing, Teams
+  and People counts, the hub row, every sheet's handler and its unsaved-edit guard, Undo as one in-memory line, a counselor reaching none of it);
+  **and the privacy proof twice over: a SOURCE scan** (the section and the screen touch no storage / console / network / cross-tab call; no other
+  shipped file names the list — app.js holds only a reload, a leave and the reconnect for it; the TV page, `sw.js` and the Worker never say the
+  word; the restore body, the backup and `SYNC_KEYS` never carry it) **and a RUNTIME sweep** (a whole session of adds, renames, moves, removes,
+  undo, an offline hold and flush and a demotion records every `localStorage` / `sessionStorage` / IndexedDB write and every console call and finds
+  no camper name in any of them, nor in the state, the synced snapshot, the restore body, the backup file or the undo list). Mutation-checked:
+  a `setItem` of a name in the engine, or `campersFor` ignoring `canEdit()`, turns it red.
 - **The seeded pass** — `tests/run.js` re-runs `SEEDED_FILES` (week, push, chat, ics,
   tabs, frame, shell, home, render-stability, game-view, secrecy, motion, overlays,
   boot-cache, backup, reveal-ui, reveal-remote, preview, tell, award) against a camp whose schedule is edited here
@@ -2631,7 +2644,9 @@ reuses) an accessor in the block.
   `teamAccentVars(id)`, `teamEmojiOwn(id)` (`teamEmoji` without the white-flag placeholder) and
   `teamPhotoVersion(id)`.
 - **Deliberately not built yet** (nothing reads them, so no dead code): the spec's
-  `hubStatus` (setup-ui.js has it), `campersFor` — each lands with the step that first needs it.
+  `hubStatus` (setup-ui.js has it) — it lands with the step that first needs it. (`campersFor` is NOT an accessor of this block: camper
+  names are minors' data, held in memory by setup-sync.js's CAMPERS section for a director with a camper-showing screen open, and nothing
+  else may read them — see "Campers".)
   **The "on" half of the schedule accessors is built (Step 15)**: `scheduleForDow`,
   `scheduleWeek`, `weekDays`, `planForDow`, `campWeek`, `blockKey`, `blockPushId`,
   `gamesForBlock`, `gamesForDay` and `unscheduledGames` choose between the built-in
@@ -4126,6 +4141,64 @@ requester's side is app.js (the denied screen).
   listener or `once()`; `snapshot.forEach` walks query order, and a row that leaves the window is gone), because the
   requests listener is the first query the tests drive.
 
+## Campers (Step 25, session 3)
+
+P2 §11.9, P12. **Minors' first names, per team, for directors only** — `<root>/campers/<tid>/<cid> = { name ≤ 40, ord }` (both required by the
+rules, so a rename racing a move cannot resurrect a camper; `.read` editor-only; published in R1, **no rules change here**). The data half is
+setup-sync.js's "CAMPERS" section (the last one before the cache load); the screen is setup-ui.js section 15 (markup `#setup-campers` and
+`#sheet-camper-edit` / `#sheet-camper-add` in index.html, CSS "SET UP THE WEEK: Campers" at the END of styles.css; `tests/campers.test.js`).
+
+- **The one rule: the names live in memory and nowhere else** (P12). They are in `campersMem` (setup-sync.js) for a director with a
+  camper-showing screen open, and in nothing else: not `state`, not `SYNC_KEYS`, not a localStorage / sessionStorage / IndexedDB write, not the
+  console, not the cache blob, a hint, a draft, a backup file, a restore-point body, an archive, an undo entry (the setup undo stack is
+  PERSISTED, so campers are deliberately NOT a `UNDO_DOMAINS` domain), a chat mention, a push payload, a toast (toasts say counts — "Added 3
+  campers" — never a name) or the TV page. `tests/campers.test.js` pins it with a source scan AND a runtime sweep (see "Tests"). A new reader of
+  the list goes through `campersFor(tid)` / `campersCount(tid)` / `campersTotal()` (all `[]` / 0 unless `canEdit()` — so a counselor, a director's
+  view-only second tab and a counselor PREVIEW read nothing) and adds its file to that test's allowed list on purpose.
+- **The listener** (`campersAttach` / `campersDetach` / `campersWant(on)`): ONE editor-only `.on('value')` on `campers`, attached only after
+  sign-in resolved and sync started (`campersMayListen`: `canEdit() && memberRoleConfirmed && syncStarted`), only while a screen that shows
+  counts or names asks for it — `renderSetupUi` calls `campersWant(canEdit() && CAMPERS_SCREENS.includes(screen))` on every paint:
+  **hub, Campers, People, Teams** (the spec says Campers, People or Teams; the hub is added on purpose because its Campers row is judged —
+  counts only, never a name — and says "Loading…" until the list arrives). Any other screen, a closed builder (`setupUiClosed`) or a demotion
+  (`campersOnRoleChange`, from `setupOnRoleChange`) detaches it and DROPS the names (a demotion drops held names too). Its refusal sets
+  `campersMem.denied` and degrades campers only — never `fbRef` / `syncDenied`, and a cancelled read is not re-armed. **Every snapshot is
+  normalized on read** (`campersNorm`: only `t[0-9]` teams, `c-[a-z0-9]{6,20}` ids, a clean name and a numeric `ord`, sorted by position then
+  name; anything else is dropped, never rendered). Status words (`campersStatus`): `loading | ok | denied | nosync`.
+- **The writes** (setup-sync.js; all `Promise<{ ok, reason? }>`, never throw, `campersGuard`: a counselor's phone says `readonly`, no sync
+  `nosync`): **Add** is ONE multi-path `update()` of whole `{ name, ord }` records under a team (`ord` steps of 10 after the last; duplicates are
+  allowed — "add a last initial to tell two apart"; ids are `c-` + ten base36, `campersMintId`); **Move** is ONE update that deletes the camper
+  from the old team and creates it, same id, name (optionally renamed in the same breath) and a position at the end, on the new one;
+  **Rename** is one leaf write of `name` (refused by the anchor pair if the camper was moved or removed meanwhile); **Remove** deletes the
+  record. Move, Rename and Remove need a connection (`offline`: "Needs a connection."). **Add alone works offline**: names typed with no signal
+  are HELD in memory on the open screen (`campersMem.held`; the screen shows "N names waiting to be saved — Waiting for signal, keep this screen
+  open. Camper names aren't stored on phones.", greyed chips, **Discard these names**) and `campersOnConnect` (app.js, beside
+  `editorsHereOnConnect`) sends them in one update per team the moment `.info/connected` is true, stopping at a refusal (kept, the reason shown).
+  `campersBusy()` holds the deploy's auto-reload (held names, a write in flight) and counts in `hasUnsyncedWork`; **leaving with names waiting asks
+  first** — setup-ui.js `campersConfirmLeave` (Back: "These 3 names haven't been saved yet" / Keep waiting · Discard) and app.js
+  `builderLeaveWarning()` for the phone's Back and a deep link (a native confirm in the same words; Discard calls `campersDiscardHeld`).
+- **The Campers screen** (`#setup[data-screen="campers"]`; the hub's Campers row is a button now, `HUB_OPENS.campers`): the headline is the count
+  ("64 campers", "No campers yet", "Loading…"); the lede is the spec's sentence — "Only directors can see camper names. Counselors never see this
+  list, and it isn't saved on any phone."; one section per team (its mark, name and "11 campers"; "Nobody yet") over a wrapping row of **chips**
+  (`.sec-chip.cmp-chip`, 44px: one per camper, `data-camper="<tid>|<cid>"`, and a dashed **Add** chip that opens the Add sheet on that team);
+  a general **Add campers** button; **Not using camper lists this year** (the week's own `setup/meta/skip/campers`, an ordinary `commitSetup`
+  with no undo: the hub then shows a dash instead of the "No campers yet" to-do, and the names are kept). Painted through `secPaintList` (groups
+  keyed `g-<tid>`, chips `c-<cid>`), so an idle pass writes nothing; a name goes in through `esc()` or an input's `value`, never raw.
+- **The two sheets** (shell sheets, one at a time, `SETUP_SHEETS`; each opens only with state a tap made; a sheet with a name typed and not saved
+  asks before it closes by EVERY route through `setupSheetGuardClose`, and `campersUiBusy()` holds the deploy reload): **Camper** — First name, Move to
+  team (a native select), Remove from the list; Save is ONE write (a rename + a move together is one update, never a rename that races its own
+  move); a camper someone else removed while the sheet was open is said ("isn't on the list any more") with Save off. **Add campers** — Team, a
+  textarea "First names, one per line or separated by commas", the live count on the button ("Add 3 campers"), a line when there is no signal ("these
+  will wait on this screen until it's back. Keep it open.") or a name is over 40 characters ("will be shortened"). **Undo is ONE line on the screen**
+  (`#campers-undo`, 15 s): a closure holding the removed record / old place / old name in memory — Remove puts the same record back under the same id
+  and place, Move goes back to its own position, Rename to its old name. It is gone with the screen (`campersUiReset` also empties the groups and
+  the typed inputs when the builder closes: a closed builder leaves no name in the page).
+- **Counts elsewhere** (editors, once the list is held): the Teams screen's row sub ("Sam, Alyssa · 11 campers") and the People group header
+  ("3 people · 11 campers"). **The hub row** (`hubStatus('campers', v.campers)`, pure): `Loading…` / `Needs the camp database` / `Not available yet`
+  until a list is held; `todo` "No campers yet" when there are none; "64 campers" (`ok`), or `warn` "Maples has no campers yet" once ANY camper
+  exists. It counts in "N of M ready" only once judged; a camp that does not use lists switches the row to a dash (above).
+- **Not built** (recorded): a printable sheet (decision Q7 allows one later); per-camper "absent" (cut, P2 C29); typing names into Put people on
+  teams.
+
 ## Counselors ↔ teams ↔ accounts
 
 A member record can carry a **`teamId`** (`'t0'`…`'t5'`) — the team that
@@ -4354,7 +4427,8 @@ More sync invariants (each fixed after it bit us — don't regress these;
   Jelly toaster has no action slot and is vendored, so `addToastAction` appends the
   button to the toast it returns). `undoEntry(id)` puts `before` back ONLY where the
   current value still equals `after` (canonical compare), per domain through
-  `UNDO_DOMAINS` (`config`, `teams`; setup and campers join with their engines);
+  `UNDO_DOMAINS` (`config`, `teams`; setup joins with its engine; **campers never do** — the undo stack is persisted and a minor's name must not be:
+  see "Campers");
   paths somebody changed since are left alone and said out loud ("Undid 1 of 2
   changes — someone changed game “X” · name since; left theirs." / "Can't undo —
   someone changed this since."; the config has no per-record authorship, so it says

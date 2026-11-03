@@ -618,8 +618,9 @@ test('asking on for more than a week: the week\'s own stamp is a lower bound on 
 
 test('the engine imports nothing it must not: no camper, no localStorage, no listener for a non-member (source pin)', () => {
   const src = readFixture('../setup-sync.js');
-  const part = src.slice(src.indexOf('// PEOPLE: who is on the list')).split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
+  // (to the next section: Campers is a section of its own, Step 25 session 3, with its own pins in campers.test.js)
+  const part = src.slice(src.indexOf('// PEOPLE: who is on the list'), src.indexOf('// CAMPERS: first names per team')).split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n');
   assert.ok(!/localStorage|sessionStorage|indexedDB/.test(part), 'requests and names are held in memory only');
-  assert.ok(!/campers/.test(part.replace(/camper names|Campers/g, '')), 'campers are session 3\'s and never here');
+  assert.ok(!/campers/.test(part.replace(/camper names|Campers/g, '')), 'campers are a section of their own and never here');
   assert.equal((part.match(/\.on\('value'/g) || []).length, 1, 'ONE listener: the editor-only requests query');
 });

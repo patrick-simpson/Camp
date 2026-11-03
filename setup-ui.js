@@ -57,6 +57,7 @@ const HUB_OPENS = {
   teams: { screen: 'teams' },
   notice: { screen: 'classic', tab: 'notice' },
   people: { screen: 'people' },
+  campers: { screen: 'campers' },
   restore: { screen: 'backups' },
 };
 // The front door's buttons, owner only (Q8). A button exists only when its action does: the steps that
@@ -150,8 +151,18 @@ function hubStatus(section, view) {
       if (sc.sample && sc.sample.length) row.note = hubJoin(sc.sample) + (sc.sample.length === 1 ? ' still uses' : ' still use') + ' the sample schedule';
       return row;
     }
-    case 'campers':
-      return hubMark('soon', 'Camper lists come later', []);
+    case 'campers': {
+      // Minors' names are read only while a camper-showing screen (this row's hub included) holds the editor-only listener, so the row can say
+      // "Loading…" and nothing more until the list arrives. A team with no campers is a note once ANY camper exists (Appendix B).
+      const c = v.campers || {};
+      if (c.status === 'nosync') return hubMark('info', 'Needs the camp database', [], '');
+      if (c.status === 'denied') return hubMark('info', 'Not available yet', [], '');
+      if (c.status !== 'ok') return hubMark('info', 'Loading…', [], '');
+      const total = Number(c.total) || 0;
+      if (!total) return hubMark('todo', 'No campers yet', []);
+      const problems = (Array.isArray(c.empty) ? c.empty : []).map((n) => n + ' has no campers yet');
+      return hubMark(problems.length ? 'warn' : 'ok', hubPlural(total, 'camper', 'campers'), problems);
+    }
     case 'meals': case 'verses': case 'cleanup': case 'electives':
       return hubSectionStatus(section, v);
     case 'alerts':
@@ -429,7 +440,7 @@ function hubView() {
     isOwner: typeof isOwner === 'function' && isOwner(), ownerName: typeof ownerName === 'function' ? ownerName() : 'the owner',
     now: typeof serverNow === 'function' ? serverNow() : Date.now(),
     teams: state.teams || [], teamInfo: teamsInfoView(), days: (state.config && state.config.days) || [], games: (state.config && state.config.games) || [],
-    members: hubMembers(), membersLoaded: !!memberDirectoryLoaded, join: peopleJoinView(),
+    members: hubMembers(), membersLoaded: !!memberDirectoryLoaded, join: peopleJoinView(), campers: campersView(),
     on, skip: meta.skip && typeof meta.skip === 'object' ? meta.skip : {}, weekStart, weekRunning: hubWeekRunning(weekStart),
     newYearDue: typeof newYearDue === 'function' ? !!newYearDue() : false, nextYear: '',
     setupTooNew: typeof setupSchemaTooNew === 'function' && setupSchemaTooNew(),
@@ -597,14 +608,14 @@ function hubScheduleView() {
 
 // #setup[data-screen] is the ONE switch the CSS reads (styles.css "SET UP THE WEEK"): hub | backups |
 // classic | week | schedule | rain. A step that adds a screen adds its name here and its pair of lines in the CSS.
-const SETUP_SCREENS = ['hub', 'backups', 'classic', 'week', 'schedule', 'rain', 'meals', 'verses', 'cleanup', 'electives', 'teams', 'people'];
+const SETUP_SCREENS = ['hub', 'backups', 'classic', 'week', 'schedule', 'rain', 'meals', 'verses', 'cleanup', 'electives', 'teams', 'people', 'campers'];
 // Shell sheets this layer owns (shellSheetOpen ids; the elements are #sheet-<id>), one at a time.
-const SETUP_SHEETS = ['setup-menu', 'setup-changes', 'setup-devices', 'restore', 'sched-day', 'sched-item', 'rain-item', 'rain-done', 'sec-teams', 'sec-person', 'sec-station', 'sec-verse', 'team-edit', 'team-colors', 'people-person', 'people-request', 'people-teams', 'people-add', 'people-blocked'];
+const SETUP_SHEETS = ['setup-menu', 'setup-changes', 'setup-devices', 'restore', 'sched-day', 'sched-item', 'rain-item', 'rain-done', 'sec-teams', 'sec-person', 'sec-station', 'sec-verse', 'team-edit', 'team-colors', 'people-person', 'people-request', 'people-teams', 'people-add', 'people-blocked', 'camper-edit', 'camper-add'];
 // The sheets that hold a half-made edit and ask before they let it go: the id → a function that takes the close over
 // (it asks, and returns true) or returns false when nothing is at stake. app.js's Escape handler and shellApply (the
 // phone's Back) call setupSheetGuardClose; ✕ and the backdrop reach the same question through the sheet's own
 // capturing click handler.
-const SETUP_SHEET_GUARDS = { 'sched-item': () => schedItemGuardClose(), 'team-edit': () => teamGuardClose(), 'people-person': () => peoplePersonGuardClose(), 'people-teams': () => peopleTeamsGuardClose(), 'people-add': () => peopleAddGuardClose() };
+const SETUP_SHEET_GUARDS = { 'sched-item': () => schedItemGuardClose(), 'team-edit': () => teamGuardClose(), 'people-person': () => peoplePersonGuardClose(), 'people-teams': () => peopleTeamsGuardClose(), 'people-add': () => peopleAddGuardClose(), 'camper-edit': () => campersEditGuardClose(), 'camper-add': () => campersAddGuardClose() };
 function setupSheetGuardClose(id) {
   const g = SETUP_SHEET_GUARDS[id];
   return !!(g && g());
@@ -661,6 +672,7 @@ function setupWhereNow() {
   if (HUB_SECTIONS.indexOf(s) !== -1) return s;
   if (s === 'teams') return teamUi.edit && /^t[0-9]$/.test(teamUi.edit.id) && shell.sheets.includes('team-edit') ? 'team:' + teamUi.edit.id : 'teams';
   if (s === 'people') return 'people';
+  if (s === 'campers') return 'campers';
   return SETUP_CLASSIC_WHERE[state.ui.settingsTab] || 'games';
 }
 
@@ -713,6 +725,7 @@ async function setupConfirmLeave() {
 async function setupBack() {
   const screen = setupScreen();
   if (!(await setupConfirmLeave())) return;
+  if (!(await campersConfirmLeave())) return; // camper names typed with no signal, waiting in memory
   if (screen === 'rain') {
     if (!(await rainLeave())) return;
     if (rainBackHome()) return;
@@ -922,6 +935,8 @@ function renderSetupUi(open) {
   if (justOpened) setupUiOpened();
   const screen = setupScreen();
   if (root.dataset.screen !== screen) root.dataset.screen = screen;
+  // The camper list (minors' names, memory only) is held only while a screen that shows counts or names is up; any other lets it go.
+  if (typeof campersWant === 'function') campersWant(canEdit() && CAMPERS_SCREENS.indexOf(screen) !== -1);
   if (typeof applyOwnerClass === 'function') applyOwnerClass();
   // Back from the hub returns to the tab the builder was opened FROM (More, or Games from an empty day's
   // "Add games"): the shell keeps state.ui.tab untouched while the builder is up.
@@ -939,6 +954,7 @@ function renderSetupUi(open) {
   else if (HUB_SECTIONS.indexOf(screen) !== -1) renderSecScreen(screen);
   else if (screen === 'teams') renderTeamsScreen();
   else if (screen === 'people') renderPeopleScreen();
+  else if (screen === 'campers') renderCampersScreen();
   else if (typeof renderSettings === 'function') renderSettings();
   renderSetupMenuRows();
   paintSetupFit();
@@ -981,6 +997,8 @@ function setupUiClosed() {
   setupUi.where = '';
   setupUi.detailsOpen = false;
   peopleUi.from = '';
+  campersUiReset();
+  if (typeof campersWant === 'function') campersWant(false);
   if (typeof editorsHereStop === 'function') editorsHereStop();
   setupPillHide(true);
   SETUP_SHEETS.forEach((id) => { if (shell.sheets.includes(id)) shellSheetClose(id); });
@@ -993,6 +1011,7 @@ function setupUiOnEvent(kind) {
   else if (kind === 'here') { paintSetupHere(); if (setupScreen() === 'hub') paintHub(); }
   else if (kind === 'tree' || kind === 'clashes') { paintSetupSync(); if (setupScreen() === 'hub') paintHub(); else if (setupScreen() === 'people') renderPeopleScreen(); }
   else if (kind === 'requests') { if (setupScreen() === 'hub') paintHub(); else if (setupScreen() === 'people') renderPeopleScreen(); }
+  else if (kind === 'campers') campersRepaint();
   else if (kind === 'commit') { paintSetupSync(); paintSetupDock(); }
 }
 
@@ -1292,6 +1311,8 @@ function renderSetupSheet(id) {
   else if (id === 'team-edit') renderTeamSheet();
   else if (id === 'team-colors') renderTeamColorsSheet();
   else if (PEOPLE_SHEETS.indexOf(id) !== -1) renderPeopleSheetById(id);
+  else if (id === 'camper-edit') renderCamperEditSheet();
+  else if (id === 'camper-add') renderCamperAddSheet();
 }
 
 // Whether a setup sheet has anything to show (app.js shellSheetAllowed): the restore sheet needs a point
@@ -1307,6 +1328,8 @@ function setupSheetReady(id) {
   if (id === 'team-edit') return !!teamUi.edit;
   if (id === 'team-colors') return teamUi.colors === true;
   if (PEOPLE_SHEETS.indexOf(id) !== -1) return peopleSheetReady(id);
+  if (id === 'camper-edit') return !!campersUi.edit;
+  if (id === 'camper-add') return !!campersUi.add;
   return id !== 'restore' || !!setupUi.rsheet;
 }
 
@@ -3922,6 +3945,7 @@ function wireSetupUi() {
   wireSecScreens();
   wireTeamsScreen();
   wirePeopleScreen();
+  wireCampersScreen();
   // Camp week (§11.4): dates, the Days tick sheet, double points, the TV finale.
   on('#week-start', 'change', (e) => weekSetStart(e.target.value));
   on('#week-days', 'click', (e) => { const t = e.target.closest && e.target.closest('.wk-tick'); const row = t && t.closest('.wk-day'); if (t && row) weekTick(Number(row.dataset.dow), t.dataset.weekFollow); });
@@ -5166,7 +5190,7 @@ function teamsModel() {
     const staff = counselorName(t.id);
     return {
       id: t.id, name: String(t.name || '').trim(), short: info[t.id].short, emoji: info[t.id].emoji, color: c, shares,
-      photo: teamPhotoVersion(t.id) !== null, staff,
+      photo: teamPhotoVersion(t.id) !== null, staff, campers: campersStatus() === 'ok' ? campersCount(t.id) : null,
       warn: shares.length > 0 || !info[t.id].short || !info[t.id].emoji || !String(t.name || '').trim(),
     };
   });
@@ -5183,7 +5207,7 @@ function teamRowHtml(r) {
     '<span class="cb-time tms-mark">' + teamMarkHtml(r.id, { size: 40 }) + '</span>' +
     '<span class="cb-main"><span class="cb-title">' + esc(r.name || 'Unnamed team') + '</span>' +
     '<span class="cb-sub">' + sub + '</span>' +
-    '<span class="cb-sub tms-staff">' + (r.staff ? esc(r.staff) : 'No counselors yet') + '</span></span>' +
+    '<span class="cb-sub tms-staff">' + (r.staff ? esc(r.staff) : 'No counselors yet') + (r.campers !== null && r.campers !== undefined ? ' · ' + esc(hubPlural(r.campers, 'camper', 'campers')) : '') + '</span></span>' +
     '<span class="cb-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span></button>';
 }
 
@@ -5828,8 +5852,8 @@ function peoplePersonRowHtml(r) {
     '<span class="cb-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span></button>';
 }
 
-function peopleGroupHtml(key, mark, name, rows, none) {
-  const counts = hubPlural(rows.length, 'person', 'people');
+function peopleGroupHtml(key, mark, name, rows, none, campers) {
+  const counts = hubPlural(rows.length, 'person', 'people') + (campers !== null && campers !== undefined ? ' · ' + hubPlural(campers, 'camper', 'campers') : '');
   return '<section class="ppl-group" data-key="g-' + esc(key) + '"><h3 class="ppl-head">' + mark + '<span class="ppl-head-name">' + esc(name) + '</span><span class="ppl-count">' + esc(counts) + '</span></h3>' +
     '<div class="gl cb-list">' + (rows.length ? rows.map(peoplePersonRowHtml).join('') : '<p class="ppl-none">' + esc(none) + '</p>') + '</div></section>';
 }
@@ -5861,7 +5885,7 @@ function renderPeopleScreen() {
   const g = peopleGroups(peopleRowsNow(), peopleTeams());
   let html = '';
   if (memberDirectoryLoaded) {
-    html = g.groups.map((x) => peopleGroupHtml(x.team.id, teamMarkHtml(x.team.id, { size: 24 }), x.team.name || x.team.id, x.rows, 'Nobody yet')).join('');
+    html = g.groups.map((x) => peopleGroupHtml(x.team.id, teamMarkHtml(x.team.id, { size: 24 }), x.team.name || x.team.id, x.rows, 'Nobody yet', campersStatus() === 'ok' ? campersCount(x.team.id) : null)).join('');
     if (g.none.length) html += peopleGroupHtml('none', '', 'Not on a team', g.none, '');
   }
   secPaintList(setupEl('people-groups'), html, 'groups', {});
@@ -6509,4 +6533,352 @@ function wirePeopleScreen() {
   on('#ppa-form', 'submit', (e) => { e.preventDefault(); });
   on('#ppa-go', 'click', () => peopleAddGo());
   on('#blk-list', 'click', (e) => { const b = q(e, 'button[data-ppl-unblock]'); if (b) peopleUnblockRow(b.dataset.pplUnblock); });
+}
+
+// ── 15. Campers (§11.9 — Step 25, session 3) ─────────────────────────────────────────────────────────────────────────
+// Minors' first names, per team, for directors only. The data half is setup-sync.js's "CAMPERS" section (campersFor / campersAdd / …): an
+// editor-only listener held in memory, never stored. This file paints and wires it. The rules of THIS section, pinned by tests/campers.test.js:
+//   - no storage of any kind, no console, no markup built from a name except through esc(): a camper name reaches the page only as escaped text
+//     or as an input's `value`; nothing here is mirrored into `state`, a hint, a draft cache or the undo stack;
+//   - the Add and Edit forms are written once per open and the INPUTS are the draft; a sheet with a name typed and not saved asks before it
+//     closes, by every route, and holds the deploy's auto-reload;
+//   - names typed while the signal is gone wait in memory on this open screen (setup-sync.js campersAdd) and the screen says so; leaving with
+//     names still waiting asks first (campersConfirmLeave, and app.js builderLeaveWarning for the phone's Back);
+//   - Undo is ONE line on this screen for a few seconds, a closure holding the change in memory — the setup undo stack is persisted, so a camper
+//     op must never go into it (setup-rebuild-spec §7.1);
+//   - toasts and the sync line say counts ("3 campers added"), never a name.
+
+const campersUi = {
+  edit: null,   // the open camper sheet: { tid, cid, origin: { name, tid, ord }, fresh, error, busy }
+  add: null,    // the Add sheet: { tid, fresh, busy, error }
+  undo: null,   // the one line that undoes the last change: { text, run, timer }
+};
+const CAMPERS_SCREENS = ['hub', 'campers', 'people', 'teams'];  // the screens that hold the list (counts on the hub, Teams, People)
+const CAMPERS_UNDO_MS = 15000;
+
+// The hub row's plain view: only counts, never a name.
+function campersView() {
+  const st = typeof campersStatus === 'function' ? campersStatus() : 'loading';
+  const teams = (state.teams || []).filter((t) => t && typeof t.id === 'string');
+  return {
+    status: st, total: st === 'ok' ? campersTotal() : 0,
+    empty: st === 'ok' ? teams.filter((t) => !campersCount(t.id)).map((t) => String(t.name || '').trim() || t.id) : [],
+  };
+}
+
+function campersUiReset() {
+  if (campersUi.undo && campersUi.undo.timer) clearTimeout(campersUi.undo.timer);
+  campersUi.edit = null; campersUi.add = null; campersUi.undo = null;
+  // The names go with the screen: nothing a closed builder leaves behind in the page holds a minor's name (the typed inputs included).
+  ['campers-groups', 'campers-held-list'].forEach((id) => { const el = setupEl(id); if (el) { el.innerHTML = ''; el.__secHtml = undefined; el.__secView = undefined; el.__dom = undefined; } });
+  ['cme-name', 'cma-lines'].forEach((id) => { const el = setupEl(id); if (el && typeof el.value === 'string') el.value = ''; });
+}
+
+// What a listener event repaints: whatever counts or names the open screen shows.
+function campersRepaint() {
+  const s = setupScreen();
+  if (s === 'hub') paintHub();
+  else if (s === 'teams') renderTeamsScreen();
+  else if (s === 'people') renderPeopleScreen();
+  else if (s === 'campers') renderCampersScreen();
+  if (campersUi.edit && shell.sheets.includes('camper-edit')) renderCamperEditSheet();
+  if (campersUi.add && shell.sheets.includes('camper-add')) renderCamperAddSheet();
+}
+
+// The deploy's auto-reload waits for a camper sheet with a name typed and not saved (the forms live in memory only).
+function campersUiBusy() {
+  return !!((campersUi.edit && (campersUi.edit.busy || campersEditDirty())) || (campersUi.add && (campersUi.add.busy || campersAddDirty())));
+}
+
+// "Camper names are never kept" also means Undo is a closure: the line lasts a few seconds on this screen and is gone with it.
+function campersSayUndo(text, run) {
+  if (campersUi.undo && campersUi.undo.timer) clearTimeout(campersUi.undo.timer);
+  const u = { text, run, timer: null };
+  u.timer = setTimeout(() => { if (campersUi.undo === u) { campersUi.undo = null; if (setupScreen() === 'campers') renderCampersScreen(); } }, CAMPERS_UNDO_MS);
+  campersUi.undo = u;
+}
+
+function campersUndoClear() {
+  if (campersUi.undo && campersUi.undo.timer) clearTimeout(campersUi.undo.timer);
+  campersUi.undo = null;
+}
+
+async function campersUndoGo() {
+  const u = campersUi.undo;
+  if (!u) return;
+  campersUndoClear();
+  renderCampersScreen();
+  const res = await u.run();
+  if (!res.ok) { setupSay(campersWhy(res)); return; }
+  setupSay('Undone');
+}
+
+// A name where a screen reader and a thumb both need it: "Maya" and nothing more. A team's own chip row is a group named for the team.
+function campersChipHtml(tid, c) {
+  return '<button type="button" class="sec-chip cmp-chip" data-key="c-' + esc(c.id) + '" data-camper="' + esc(tid) + '|' + esc(c.id) + '">' + esc(c.name) + '</button>';
+}
+
+function campersGroupHtml(t) {
+  const rows = campersFor(t.id);
+  const name = String(t.name || '').trim() || t.id;
+  return '<section class="ppl-group cmp-group" data-key="g-' + esc(t.id) + '" aria-label="' + esc(name) + '"><h3 class="ppl-head">' + teamMarkHtml(t.id, { size: 24 }) +
+    '<span class="ppl-head-name">' + esc(name) + '</span><span class="ppl-count">' + esc(hubPlural(rows.length, 'camper', 'campers')) + '</span></h3>' +
+    (rows.length ? '' : '<p class="ppl-none">Nobody yet</p>') +
+    '<div class="cmp-chips">' + rows.map((c) => campersChipHtml(t.id, c)).join('') +
+    '<button type="button" class="sec-chip cmp-chip cmp-add" data-key="add" data-camper-add="' + esc(t.id) + '" aria-label="Add a camper to ' + esc(name) + '"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg>Add</button></div></section>';
+}
+
+function renderCampersScreen() {
+  campersCleanSheets();
+  const status = campersStatus();
+  const total = campersTotal();
+  const ok = status === 'ok';
+  setTextIfChanged(setupEl('campers-title'), 'Campers · ' + CAMP.label);
+  setTextIfChanged(setupEl('campers-headline'), ok ? (total ? hubPlural(total, 'camper', 'campers') : 'No campers yet') : status === 'loading' ? 'Loading…' : 'The lists aren’t available');
+  const note = status === 'nosync' ? 'Live sync is off on this device, so the camper lists can’t be reached.' : status === 'denied' ? 'The camper lists aren’t available yet — the database rules need updating.' : '';
+  setTextIfChanged(setupEl('campers-state-text'), note);
+  setHiddenIfChanged(setupEl('campers-state'), !note);
+  // names typed with no signal, waiting on this screen
+  const held = campersHeldList();
+  setHiddenIfChanged(setupEl('campers-held'), !held.length);
+  setTextIfChanged(setupEl('campers-held-title'), held.length === 1 ? '1 name waiting to be saved' : held.length + ' names waiting to be saved');
+  setHtmlIfChanged(setupEl('campers-held-list'), held.map((h, i) => '<span class="sec-chip cmp-chip cmp-wait" data-key="w-' + i + '">' + esc(h.name) + '<small>' + esc(peopleTeamNameOf(h.tid)) + '</small></span>').join(''));
+  const heldNote = campersMem.heldNote || '';
+  setTextIfChanged(setupEl('campers-held-error'), heldNote);
+  setHiddenIfChanged(setupEl('campers-held-error'), !heldNote);
+  // the one line that undoes the last change
+  setTextIfChanged(setupEl('campers-undo-text'), campersUi.undo ? campersUi.undo.text : '');
+  setHiddenIfChanged(setupEl('campers-undo'), !campersUi.undo);
+  // everyone, by team
+  secPaintList(setupEl('campers-groups'), ok ? peopleTeams().map(campersGroupHtml).join('') : '', 'groups', { inner: '.cmp-chip' });
+  setHiddenIfChanged(setupEl('campers-add-btn'), !ok);
+  // "Not using camper lists this year": the week's own meta/skip/campers, said in plain words either way
+  const sw = setupEl('campers-skip');
+  const skip = !!(setupTree && setupTree.meta && setupTree.meta.skip && setupTree.meta.skip.campers === true);
+  if (sw && typeof sw.hasAttribute === 'function' && sw.hasAttribute('checked') !== skip) sw.toggleAttribute('checked', skip);
+  if (typeof paintSwitchWord === 'function') paintSwitchWord('campers-skip', skip);
+}
+
+// A sheet that was closed by any route leaves its state behind; the next pass of the screen drops it (a Forward must not reopen a stale form).
+function campersCleanSheets() {
+  if (campersUi.edit && !shell.sheets.includes('camper-edit')) campersUi.edit = null;
+  if (campersUi.add && !shell.sheets.includes('camper-add')) campersUi.add = null;
+}
+
+async function campersToggleSkip(on) {
+  if (!canEdit()) return;
+  const r = commitSetup((d) => {
+    d.meta.skip = d.meta.skip && typeof d.meta.skip === 'object' ? d.meta.skip : {};
+    if (on) d.meta.skip.campers = true; else delete d.meta.skip.campers;
+  }, { label: on ? 'Not using camper lists this year' : 'Use camper lists again', undo: false });
+  if (r && r.ok === false) { setupSay(r.reason === 'loading' ? 'The week is still loading. Try again in a moment.' : peopleWhy(r)); renderCampersScreen(); return; }
+  setupSay(on ? 'The hub will show a dash for campers.' : 'The hub will ask for camper lists again.');
+}
+
+// ── the camper sheet: rename, move, remove ──
+
+function campersOpenEdit(tid, cid, opener) {
+  if (!canEdit()) return;
+  const c = campersFor(tid).find((x) => x.id === cid);
+  if (!c) return;
+  campersUi.edit = { tid, cid, origin: { name: c.name, tid, ord: c.ord }, fresh: true, error: '', busy: false };
+  setupSheet('camper-edit', opener);
+}
+
+function campersEditForm() {
+  const v = (id) => { const el = setupEl(id); return el && typeof el.value === 'string' ? el.value : ''; };
+  return { name: campersCleanName(v('cme-name')), team: v('cme-team') };
+}
+
+function campersEditDirty() {
+  const e = campersUi.edit;
+  if (!e || !shell.sheets.includes('camper-edit') || e.busy) return false;
+  const f = campersEditForm();
+  return f.name !== e.origin.name || f.team !== e.origin.tid;
+}
+
+function renderCamperEditSheet() {
+  const e = campersUi.edit;
+  if (!e) return;
+  const here = campersFind(e.tid, e.cid);
+  if (e.fresh) {
+    e.fresh = false;
+    const nm = setupEl('cme-name'); if (nm) nm.value = e.origin.name;
+    const sel = setupEl('cme-team');
+    if (sel) { setHtmlIfChanged(sel, peopleTeams().map((t) => '<option value="' + esc(t.id) + '">' + esc(t.name || t.id) + '</option>').join('')); sel.value = e.tid; }
+  }
+  setTextIfChanged(setupEl('sheet-camper-edit-title'), e.origin.name);
+  const msg = e.error || (here ? '' : campersWhy({ reason: 'gone' }));
+  setTextIfChanged(setupEl('cme-error'), msg);
+  setHiddenIfChanged(setupEl('cme-error'), !msg);
+  const save = setupEl('cme-save');
+  setTextIfChanged(save, e.busy ? 'Saving…' : 'Save');
+  secSetDisabled(save, e.busy || !here);
+}
+
+async function campersSaveEdit() {
+  const e = campersUi.edit;
+  if (!e || e.busy) return;
+  e.error = '';
+  const f = campersEditForm();
+  if (!f.name) { e.error = campersWhy({ reason: 'name' }); renderCamperEditSheet(); return; }
+  const renamed = f.name !== e.origin.name;
+  const moved = f.team !== e.origin.tid;
+  if (!renamed && !moved) { campersUi.edit = null; shellSheetClose('camper-edit'); return; }
+  e.busy = true; renderCamperEditSheet();
+  const was = { name: e.origin.name, tid: e.tid, ord: e.origin.ord, cid: e.cid };
+  const res = moved ? await campersMove(e.tid, e.cid, f.team, { name: f.name }) : await campersRename(e.tid, e.cid, f.name);
+  if (campersUi.edit !== e) return;
+  e.busy = false;
+  if (!res.ok) { e.error = campersWhy(res); renderCamperEditSheet(); return; }
+  campersUi.edit = null;
+  shellSheetClose('camper-edit');
+  setupSay(moved ? 'Moved to ' + peopleTeamNameOf(f.team) : 'Renamed');
+  campersSayUndo(moved ? 'Moved ' + f.name + ' to ' + peopleTeamNameOf(f.team) + '.' : 'Renamed ' + was.name + ' to ' + f.name + '.',
+    () => (moved ? campersMove(f.team, was.cid, was.tid, { name: was.name, ord: was.ord }) : campersRename(was.tid, was.cid, was.name)));
+  renderCampersScreen();
+}
+
+async function campersRemoveGo() {
+  const e = campersUi.edit;
+  if (!e || e.busy) return;
+  const was = { name: e.origin.name, tid: e.tid, ord: e.origin.ord, cid: e.cid };
+  e.busy = true; renderCamperEditSheet();
+  const res = await campersRemove(e.tid, e.cid);
+  if (campersUi.edit !== e) return;
+  e.busy = false;
+  if (!res.ok) { e.error = campersWhy(res); renderCamperEditSheet(); return; }
+  campersUi.edit = null;
+  shellSheetClose('camper-edit');
+  setupSay('Removed');
+  campersSayUndo('Removed ' + was.name + '.', () => campersPut(was.tid, was.cid, { name: was.name, ord: was.ord }));
+  renderCampersScreen();
+}
+
+// ── Add campers ──
+
+function campersOpenAdd(tid, opener) {
+  if (!canEdit()) return;
+  const teams = peopleTeams();
+  if (!teams.length) return;
+  campersUi.add = { tid: teams.some((t) => t.id === tid) ? tid : teams[0].id, fresh: true, busy: false, error: '' };
+  setupSheet('camper-add', opener);
+}
+
+function campersAddFields() {
+  const v = (id) => { const el = setupEl(id); return el && typeof el.value === 'string' ? el.value : ''; };
+  return { lines: v('cma-lines'), team: v('cma-team') };
+}
+
+function campersAddDirty() {
+  const a = campersUi.add;
+  if (!a || !shell.sheets.includes('camper-add') || a.busy) return false;
+  return campersAddFields().lines.trim() !== '';
+}
+
+function renderCamperAddSheet() {
+  const a = campersUi.add;
+  if (!a) return;
+  if (a.fresh) {
+    a.fresh = false;
+    const ta = setupEl('cma-lines'); if (ta) ta.value = '';
+    const sel = setupEl('cma-team');
+    if (sel) { setHtmlIfChanged(sel, peopleTeams().map((t) => '<option value="' + esc(t.id) + '">' + esc(t.name || t.id) + '</option>').join('')); sel.value = a.tid; }
+  }
+  const f = campersAddFields();
+  const parsed = campersParseNames(f.lines);
+  const n = parsed.names.length;
+  const online = typeof restoreOnline === 'function' && restoreOnline();
+  const bits = [];
+  if (n && !online) bits.push('There’s no signal, so these will wait on this screen until it’s back. Keep it open.');
+  if (parsed.cut) bits.push(parsed.cut === 1 ? '1 name is longer than 40 characters and will be shortened.' : parsed.cut + ' names are longer than 40 characters and will be shortened.');
+  if (parsed.over) bits.push('That’s a lot at once — the first ' + CAMPERS_ADD_MAX + ' will be added.');
+  const warn = bits.join(' ');
+  setTextIfChanged(setupEl('cma-warn'), warn);
+  setHiddenIfChanged(setupEl('cma-warn'), !warn);
+  const go = setupEl('cma-go');
+  setTextIfChanged(go, a.busy ? 'Saving…' : n ? 'Add ' + hubPlural(n, 'camper', 'campers') : 'Add campers');
+  secSetDisabled(go, a.busy || !n);
+  setTextIfChanged(setupEl('cma-error'), a.error || '');
+  setHiddenIfChanged(setupEl('cma-error'), !a.error);
+}
+
+async function campersAddGo() {
+  const a = campersUi.add;
+  if (!a || a.busy) return;
+  a.error = '';
+  const f = campersAddFields();
+  const parsed = campersParseNames(f.lines);
+  if (!parsed.names.length) { renderCamperAddSheet(); return; }
+  a.busy = true; renderCamperAddSheet();
+  const res = await campersAdd(f.team, parsed.names);
+  if (campersUi.add !== a) return;
+  a.busy = false;
+  if (!res.ok) { a.error = campersWhy(res); renderCamperAddSheet(); return; }
+  campersUi.add = null;
+  shellSheetClose('camper-add');
+  setupSay(res.held ? 'No signal — ' + hubPlural(res.held, 'name', 'names') + ' will wait on this screen' : 'Added ' + hubPlural(res.added, 'camper', 'campers'));
+  renderCampersScreen();
+}
+
+// The signal came back and the held names went (setup-sync.js campersFlushHeld): counts only.
+function onCampersFlushed(n) {
+  if (canEdit()) setupSay(hubPlural(n, 'camper name', 'camper names') + ' saved');
+}
+
+// ── leaving with names still waiting, and closing a form with a name typed ──
+
+async function campersConfirmLeave() {
+  const n = typeof campersHeldCount === 'function' ? campersHeldCount() : 0;
+  if (!n) return true;
+  const choice = await askDialog({
+    title: (n === 1 ? 'This name hasn’t' : 'These ' + n + ' names haven’t') + ' been saved yet',
+    body: 'They’ll be lost if you leave. Camper names aren’t stored on phones.',
+    actions: [{ label: 'Keep waiting', value: 'keep', cancel: true }, { label: 'Discard', value: 'discard', kind: 'danger' }],
+  });
+  if (choice !== 'discard') return false;
+  campersDiscardHeld();
+  return true;
+}
+
+async function campersDiscardHeldGo() {
+  if (!campersHeldCount()) return;
+  if (await campersConfirmLeave()) renderCampersScreen();
+}
+
+function campersEditGuardClose() {
+  const e = campersUi.edit;
+  return peopleGuardClose(campersEditDirty, '', () => { if (campersUi.edit === e) { campersUi.edit = null; shellSheetClose('camper-edit'); } });
+}
+function campersAddGuardClose() {
+  const a = campersUi.add;
+  return peopleGuardClose(campersAddDirty, '', () => { if (campersUi.add === a) { campersUi.add = null; shellSheetClose('camper-add'); } });
+}
+
+// ── wiring ──
+
+function wireCampersScreen() {
+  const on = (sel, ev, fn) => { const el = typeof sel === 'string' ? document.querySelector(sel) : sel; if (el) el.addEventListener(ev, fn); };
+  const q = (e, sel) => (e.target && e.target.closest ? e.target.closest(sel) : null);
+  on('#campers-skip', 'change', (e) => { campersToggleSkip(!!e.target.checked); });
+  on('#campers-groups', 'click', (e) => {
+    let b;
+    if ((b = q(e, 'button[data-camper]'))) { const p = String(b.dataset.camper).split('|'); campersOpenEdit(p[0], p[1], b); }
+    else if ((b = q(e, 'button[data-camper-add]'))) campersOpenAdd(b.dataset.camperAdd, b);
+  });
+  on('#campers-add-btn', 'click', (e) => campersOpenAdd('', e.currentTarget));
+  on('#campers-undo-btn', 'click', () => campersUndoGo());
+  on('#campers-held-discard', 'click', () => campersDiscardHeldGo());
+  // ✕ and the backdrop of a form ask before they throw edits away (Escape and Back reach the same question through setupSheetGuardClose).
+  const guarded = { 'sheet-camper-edit': campersEditGuardClose, 'sheet-camper-add': campersAddGuardClose };
+  Object.keys(guarded).forEach((id) => { const s = setupEl(id); if (s) s.addEventListener('click', (e) => { if (q(e, '[data-sheet-close]') && guarded[id]()) e.stopPropagation(); }, true); });
+  on('#cme-form', 'submit', (e) => { e.preventDefault(); campersSaveEdit(); });
+  on('#cme-save', 'click', () => campersSaveEdit());
+  on('#cme-remove', 'click', () => campersRemoveGo());
+  const edit = setupEl('sheet-camper-edit');
+  if (edit) edit.addEventListener('input', (e) => { if (e.target && e.target.id === 'cme-name') { const c = campersUi.edit; if (c && c.error) { c.error = ''; renderCamperEditSheet(); } } });
+  on('#cma-form', 'submit', (e) => { e.preventDefault(); });
+  on('#cma-go', 'click', () => campersAddGo());
+  const add = setupEl('sheet-camper-add');
+  if (add) add.addEventListener('input', (e) => { if (e.target && e.target.id === 'cma-lines') { const a = campersUi.add; if (a) a.error = ''; renderCamperAddSheet(); } });
 }

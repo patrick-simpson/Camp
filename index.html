@@ -623,11 +623,11 @@
                 <span class="gl-text"><span class="gl-title">People</span><span class="gl-sub" data-hub-summary></span><span class="hub-problem" data-hub-problem hidden></span></span>
                 <span class="gl-end"><i class="setup-face" data-hub-here hidden></i><span class="hub-mark" data-hub-mark data-mark="info"><i aria-hidden="true"></i><span data-hub-word></span></span><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
               </button>
-              <div class="gl-row hub-row" data-hub-row="campers">
+              <button type="button" class="gl-row hub-row" data-hub-row="campers">
                 <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-tent"/></svg></span>
                 <span class="gl-text"><span class="gl-title">Campers</span><span class="gl-sub" data-hub-summary></span><span class="hub-problem" data-hub-problem hidden></span></span>
-                <span class="gl-end"><i class="setup-face" data-hub-here hidden></i><span class="hub-mark" data-hub-mark data-mark="info"><i aria-hidden="true"></i><span data-hub-word></span></span></span>
-              </div>
+                <span class="gl-end"><i class="setup-face" data-hub-here hidden></i><span class="hub-mark" data-hub-mark data-mark="info"><i aria-hidden="true"></i><span data-hub-word></span></span><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+              </button>
               <button type="button" class="gl-row hub-row" data-hub-row="meals">
                 <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-meal"/></svg></span>
                 <span class="gl-text"><span class="gl-title">Meals</span><span class="gl-sub" data-hub-summary></span><span class="hub-problem" data-hub-problem hidden></span></span>
@@ -1213,6 +1213,42 @@
           <button type="button" class="sched-add" id="people-teams-btn"><svg class="ico" aria-hidden="true"><use href="#i-pennant"/></svg><span>Put people on teams</span></button>
           <button type="button" class="sched-add" id="people-add-btn"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span>Add people</span></button>
           <button type="button" class="btn-quiet ppl-blocked-btn" id="people-blocked-btn">People you’ve blocked</button>
+        </section>
+
+        <!-- ── Campers (P2 §11.9; Step 25) ──
+             Minors' first names, per team, DIRECTORS ONLY. They are read by an editor-only listener while the hub, this screen, People or
+             Teams is open and held in memory only: never stored on a phone, in a backup, a restore point or the TV page (P12). Written by the
+             renderer:
+               #campers-groups: one <section class="ppl-group cmp-group" data-key="g-t0"> per team (its mark, name and count) over a
+                 .cmp-chips row of
+                   <button class="sec-chip cmp-chip" data-key="c-<id>" data-camper="t0|<id>">Maya</button>     (tap: rename, move or remove)
+                   <button class="sec-chip cmp-chip cmp-add" data-key="add" data-camper-add="t0">+ Add</button>
+               #campers-held: names typed while the signal was gone, waiting on this screen (greyed chips, Discard);
+               #campers-undo: the one line that undoes the last remove / move / rename, in memory, for a few seconds. -->
+        <section class="setup-screen sec campers" id="setup-campers" data-setup-screen="campers" aria-labelledby="campers-title">
+          <div class="setup-intro">
+            <h2 class="setup-kicker" id="campers-title">Campers</h2>
+            <p class="setup-headline" id="campers-headline"></p>
+            <p class="setup-lede" id="campers-lede">Only directors can see camper names. Counselors never see this list, and it isn’t saved on any phone.</p>
+          </div>
+          <p class="setup-note" id="campers-state" hidden><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span id="campers-state-text"></span></p>
+          <section class="cmp-held" id="campers-held" aria-labelledby="campers-held-title" hidden>
+            <h3 class="cmp-held-title" id="campers-held-title"></h3>
+            <p class="cmp-held-sub">Waiting for signal — keep this screen open. Camper names aren’t stored on phones.</p>
+            <div class="cmp-chips" id="campers-held-list"></div>
+            <p class="fld-error" id="campers-held-error" role="alert" hidden></p>
+            <button type="button" class="btn-quiet btn-quiet-danger" id="campers-held-discard">Discard these names</button>
+          </section>
+          <div class="cmp-undo" id="campers-undo" role="status" hidden><span class="cmp-undo-text" id="campers-undo-text"></span><button type="button" class="btn btn-sm" id="campers-undo-btn">Undo</button></div>
+          <div class="ppl-groups cmp-groups" id="campers-groups"></div>
+          <button type="button" class="sched-add" id="campers-add-btn"><svg class="ico" aria-hidden="true"><use href="#i-plus"/></svg><span>Add campers</span></button>
+          <div class="gl people-ask cmp-skip" id="campers-skip-box">
+            <div class="gl-row wk-switch">
+              <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-tent"/></svg></span>
+              <span class="gl-text"><span class="gl-title">Not using camper lists this year</span><span class="gl-sub">The hub shows a dash instead of asking for them. Names already here are kept.</span></span>
+              <span class="gl-switch"><em class="gl-switch-state" data-switch-state="campers-skip">Off</em><jelly-switch id="campers-skip" label="Not using camper lists this year"></jelly-switch></span>
+            </div>
+          </div>
         </section>
 
         <!-- The classic builder (Games, Days, Teams, Notice, Data) as one screen
@@ -3031,6 +3067,52 @@
         <p class="setup-sheet-lede">A blocked sign-in can’t ask to join again until you unblock it. They’re told asking isn’t open, never that they were blocked.</p>
         <div class="gl cb-list" id="blk-list"></div>
         <p class="cb-empty" id="blk-empty" hidden></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Campers (editors only; shell sheets, one at a time). Written once per open: the inputs ARE the draft. Names are typed text, never
+       stored on the phone (P12); a sheet with a name typed and not saved asks before it closes, by every route. -->
+  <div id="sheet-camper-edit" class="sheet-overlay people-sheet" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet sheet-tall" role="dialog" aria-modal="true" aria-labelledby="sheet-camper-edit-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-camper-edit-title">Camper</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <form class="sheet-body ppl-form" id="cme-form" autocomplete="off">
+        <label class="fld"><span class="fld-label">First name</span><input type="text" class="fld-input" id="cme-name" maxlength="40" enterkeyhint="done" placeholder="First name" autocapitalize="words"></label>
+        <p class="fld-error" id="cme-error" role="alert" hidden></p>
+        <label class="fld"><span class="fld-label">Move to team</span><select class="fld-input" id="cme-team"></select></label>
+        <div class="ppl-extra">
+          <button type="button" class="btn-quiet btn-quiet-danger" id="cme-remove">Remove from the list</button>
+        </div>
+      </form>
+      <div class="sheet-dock">
+        <button type="button" class="btn btn-gold btn-block" id="cme-save">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="sheet-camper-add" class="sheet-overlay people-sheet" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet sheet-tall" role="dialog" aria-modal="true" aria-labelledby="sheet-camper-add-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-camper-add-title">Add campers</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <form class="sheet-body ppl-form" id="cma-form" autocomplete="off">
+        <label class="fld"><span class="fld-label">Team</span><select class="fld-input" id="cma-team"></select></label>
+        <label class="fld"><span class="fld-label">First names, one per line or separated by commas</span>
+          <textarea class="fld-input ppa-lines" id="cma-lines" rows="6" placeholder="Maya&#10;Eli&#10;Grace"></textarea></label>
+        <p class="tms-hint">Two with the same name are fine — add a last initial to tell them apart (Ava R., Ava T.).</p>
+        <p class="fld-warn" id="cma-warn" hidden></p>
+        <p class="fld-error" id="cma-error" role="alert" hidden></p>
+      </form>
+      <div class="sheet-dock">
+        <button type="button" class="btn btn-gold btn-block" id="cma-go">Add campers</button>
       </div>
     </div>
   </div>
