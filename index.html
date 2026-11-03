@@ -2050,8 +2050,63 @@
         <span class="hdr-pill-face"><i class="hdr-pill-dot" aria-hidden="true"></i><span id="tk-pill-text"></span></span>
       </button>
     </div>
+    <!-- STEP 18 TEMPLATES (redesign §5.4–5.5; mockups 14, 14b + dark). The
+         renderers write these into #entry-area and the dock; the CSS is the
+         "GAMES TAB" block at the end of styles.css.
+         ▸ THE PODIUM PICKER (renderPlacement; replaces medalPickerHTML's three
+           jelly-selects): three rows of team buttons, three taps to a podium.
+           <div class="pp" id="podium-picker">
+             <div class="pp-row" data-medal="gold|silver|bronze" data-wait?>
+               <p class="pp-h" id="pp-h-gold"><i class="pp-disc" data-place="1" aria-hidden="true">1</i>
+                 <b class="pp-medal">Gold</b><span class="pp-pts">7 points</span>     (14 in double points;
+                 directors only, as every points word) <span class="pp-wait">after gold</span></p>
+               <div class="pp-teams" role="radiogroup" aria-labelledby="pp-h-gold" data-n="6|4">
+                 <button type="button" class="pp-team" role="radio" aria-checked="false" data-team="t0" style="teamAccentVars(t0)">
+                   <span class="pp-mark">teamMarkHtml(t0, {size: 28})</span><span class="pp-nm">Foxes</span></button>
+                   chosen:  aria-checked="true", the cell takes ITS medal's colour and
+                            <i class="pp-ok" aria-hidden="true"><svg class="ico"><use href="#i-check"/></svg></i>
+                            (tap it again: cleared)
+                   taken by an earlier medal: aria-disabled="true" data-taken="gold"
+                            + <span class="pp-taken"><i class="pp-disc" data-place="1" aria-hidden="true">1</i>has gold</span>
+                            (dashed, the mark faded; its aria-label ends ", has gold").
+                            Never the bare word "Gold": senior has a TEAM called Gold.
+               </div></div>
+             A row waits (data-wait, every button aria-disabled) until the medal
+             above it is picked; .pp-wait says which. The whole row is the "not yet"
+             dashed well, never a greyed copy.
+           </div>
+           Motion: a pick pops its check (`snap`, scale .3 → 1) and dents the cell
+           (`press`); the next row's buttons cross-fade from waiting (colour only,
+           so calm keeps it).
+         ▸ THE SAVED RESULT (renderResult, mockup 14b):
+           <p class="gsv" id="game-saved" data-state="saving|saved|offline" role="status">
+             <svg class="ico" aria-hidden="true"><use href="#i-check"/></svg><span>Saved 10:52 · everyone's phone has it</span></p>
+             saving: "Saving…" (no check yet) · offline: "Saved on this phone · it sends when you're back online"
+             · saved ONLY once the write is acknowledged.
+           <ol class="gres" aria-label="Final results">
+             <li class="gres-r" data-place="1" data-team="t3" style="teamAccentVars(t3)" data-mine?>
+               <i class="pp-disc" data-place="1" aria-hidden="true">1</i><span class="gres-mark">teamMarkHtml 34</span>
+               <b class="gres-nm"><span class="visually-hidden">Gold: </span>Particularly Perilous Pumpkins</b>
+               <span class="gres-pts">+7</span></li>                     (directors only)
+           </ol>
+           a tally game's scores under it: <h3 class="gv-h">Scores · pins</h3>
+             <ol class="gres-scores"><li class="gres-s" data-team="t3" style="…">teamMarkHtml 22<span class="gres-s-nm">Pumpkins</span><b class="gres-s-v">48</b></li></ol>
+           <button type="button" class="btn gres-change" id="game-change">Change the result</button>   (directors)
+         ▸ THE DOCK (#takeover-game-dock[data-dock], directors; hidden for a counselor):
+           pick  <button type="button" class="btn btn-big btn-block gd-save" id="game-save" aria-disabled="true">Pick bronze, then save</button>
+                 ("Pick gold, silver and bronze" · "Pick silver, then save"); a tap on the
+                 well scrolls to the row still to pick. Complete: class btn-gold, no
+                 aria-disabled, "Save result", data-joy.
+           next  <p class="gd-left" id="game-left">2 games left today that you can score</p>
+                 <div class="gd-next">
+                   <button type="button" class="btn btn-big gd-back" id="game-dock-back" data-game-back>‹ Back to Now</button>
+                   <button type="button" class="btn btn-big btn-gold gd-go" id="game-next" data-next-game="color-call" data-joy>
+                     <span class="gd-go-t">Next game</span><span class="gd-go-s">Color Call Chaos →</span></button></div>
+           done  <p class="gd-left" data-tone="done"><svg class="ico" aria-hidden="true"><use href="#i-check"/></svg>Every game today is scored</p>
+                 or "Nothing left that you can score. 1 game needs another director: Color
+                 Call Chaos (your team plays)", then the back button alone, full width. -->
     <div class="tk-body" id="takeover-game-body"></div>
-    <div class="tk-dock" id="takeover-game-dock" data-kb-hide hidden></div>
+    <div class="tk-dock gd" id="takeover-game-dock" data-kb-hide hidden></div>
   </section>
 
   <!-- ── THE REVEAL REMOTE (redesign §4.2, §4.8; mockups 06, 07, 07b, 07c) ──

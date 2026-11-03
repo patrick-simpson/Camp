@@ -16666,6 +16666,365 @@ button.gs-row:focus-visible {
   white-space: normal;
 }
 
+/* ── The podium picker (§5.5, mockup 14) ─────────────────────── */
+.pp {
+  container: pp / inline-size;
+  display: grid;
+  gap: 18px;
+  margin-top: 4px;
+}
+.pp-h {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0 0 13px; /* room for a taken key's tab under it */
+}
+.pp-disc {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 1.625rem;
+  height: 1.625rem;
+  border: 1.6px solid var(--medal-ink);
+  border-radius: 50%;
+  color: var(--medal-ink);
+  font: 900 0.875rem/1 var(--font-ui);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+.pp-disc[data-place="1"] { background: var(--medal-gold); }
+.pp-disc[data-place="2"] { background: var(--medal-silver); }
+.pp-disc[data-place="3"] { background: var(--medal-bronze); }
+.pp-medal {
+  font: 850 1.0625rem/1.2 var(--font-ui);
+}
+.pp-pts {
+  font: 650 0.9375rem/1.2 var(--font-ui);
+  color: var(--ink-2);
+}
+.pp-wait {
+  display: none;
+  font: 700 0.875rem/1.2 var(--font-ui);
+  color: var(--ink-2);
+}
+.pp-wait::before {
+  content: '· ';
+}
+.pp-row[data-wait] .pp-wait {
+  display: inline;
+}
+.pp-row[data-medal="gold"] { --pp-fill: var(--medal-gold); }
+.pp-row[data-medal="silver"] { --pp-fill: var(--medal-silver); }
+.pp-row[data-medal="bronze"] { --pp-fill: var(--medal-bronze); }
+.pp-teams {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px 8px; /* the row gap clears a taken key's tab above it */
+}
+.pp-teams[data-n="4"] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+/* A team key: the mark over the short name, 68px and up, chunky. */
+.pp-team {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  min-width: 0;
+  min-height: 68px; /* px: larger text grows the key by its content, not twice */
+  padding: 6px 6px 7px;
+  border: 2px solid var(--card-b);
+  border-radius: var(--r-btn);
+  background: var(--sheet);
+  color: var(--ink);
+  box-shadow: 0 var(--edge-btn) 0 var(--edge);
+  font: 800 0.90625rem/1.15 var(--font-ui);
+  text-align: center;
+  cursor: pointer;
+  transition: box-shadow var(--jm-press-ms) var(--jm-press), background-color 160ms var(--jm-std), border-color 160ms var(--jm-std), color 160ms var(--jm-std);
+}
+.pp-team:active {
+  box-shadow: 0 1px 0 var(--edge);
+}
+.pp-team:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.pp-mark {
+  display: grid;
+  place-items: center;
+  min-height: 2.5rem;
+}
+.pp-nm {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  max-width: 100%;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  -webkit-hyphens: auto;
+  hyphens: auto;
+}
+/* Chosen: the key becomes its medal (pressed in), with the check. */
+.pp-team[aria-checked="true"] {
+  border-color: var(--medal-ink);
+  background: var(--pp-fill, var(--medal-gold));
+  color: var(--medal-ink);
+  box-shadow: 0 1px 0 var(--medal-ink);
+}
+.pp-ok {
+  position: absolute;
+  top: -9px;
+  right: -8px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--done);
+  color: var(--on-done);
+  box-shadow: 0 0 0 2.5px var(--paper);
+  font-style: normal;
+}
+.pp-ok .ico {
+  width: 15px;
+  height: 15px;
+  stroke-width: 3.2;
+}
+/* Not available: waiting for the medal above (the "not yet" well), or taken by
+   an earlier medal (dashed on paper, the mark faded, its medal named on a tab
+   that sits in the top edge like a fieldset's legend). */
+.pp-team[aria-disabled="true"] {
+  border: 2px dashed var(--ink-3);
+  background: transparent;
+  color: var(--ink-2);
+  box-shadow: none;
+  cursor: default;
+}
+.pp-row[data-wait] .pp-team[aria-disabled="true"] {
+  background: var(--paper-2);
+}
+.pp-team[aria-disabled="true"] .pp-mark {
+  opacity: .45;
+}
+.pp-taken {
+  position: absolute;
+  top: -0.65rem;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  background: var(--paper);
+  color: var(--ink-2);
+  font: var(--t-tag);
+  white-space: nowrap;
+}
+.pp-taken .pp-disc {
+  width: 1.0625rem;
+  height: 1.0625rem;
+  border-width: 1.2px;
+  font-size: 0.625rem;
+}
+/* Large text: two keys a row, then one key a row with the mark beside the name. */
+@container pp (max-width: 19rem) {
+  .pp-teams {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@container pp (max-width: 12rem) {
+  .pp-teams,
+  .pp-teams[data-n="4"] {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: 14px;
+  }
+  .pp-team {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 10px;
+    min-height: 56px;
+    padding: 6px 12px;
+    text-align: left;
+  }
+  .pp-mark {
+    min-height: 0;
+  }
+  .pp-taken {
+    left: auto;
+    right: 10px;
+    transform: none;
+  }
+}
+
+/* ── The saved result (§5.4, mockup 14b) ───────────────────────
+   "Saved" only once the write is acknowledged; until then it says so. */
+.gsv {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 2px 0 10px;
+  font: 800 0.9375rem/1.35 var(--font-ui);
+  color: var(--done);
+}
+.gsv .ico {
+  width: 20px;
+  height: 20px;
+  stroke-width: 3;
+}
+.gsv[data-state="saving"],
+.gsv[data-state="offline"] {
+  color: var(--ink-2);
+}
+.gsv[data-state="saving"] .ico {
+  display: none;
+}
+.gres {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  overflow: hidden;
+  border: 1.5px solid var(--line-2);
+  border-radius: var(--r-group);
+  background: var(--sheet);
+}
+.gres-r {
+  display: grid;
+  grid-template-columns: 1.625rem 36px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 10px;
+  min-height: 3.75rem;
+  padding: 8px 14px;
+  border-top: 1px solid var(--line);
+}
+.gres-r:first-child {
+  border-top: 0;
+}
+.gres-r[data-mine] {
+  box-shadow: inset 4px 0 0 var(--team, var(--ink-3));
+}
+.gres-mark {
+  display: grid;
+  place-items: center;
+}
+.gres-nm {
+  min-width: 0;
+  font: 800 1.0625rem/1.22 var(--font-ui);
+  letter-spacing: var(--track-row);
+  overflow-wrap: break-word;
+}
+.gres-pts {
+  font: 800 1rem/1 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+.gv-h {
+  margin: 18px 0 6px;
+  padding: 0 2px 6px;
+  border-bottom: 1px solid var(--line-2);
+  font: var(--t-label);
+  font-size: 0.875rem;
+  color: var(--ink-2);
+}
+.gres-scores {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.gres-s {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 2.75rem;
+  padding: 4px 2px;
+  border-top: 1px solid var(--line);
+  font: 700 1rem/1.25 var(--font-ui);
+}
+.gres-s:first-child {
+  border-top: 0;
+}
+.gres-s-nm {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+.gres-s-v {
+  font: 850 1.0625rem/1 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+}
+.gres-change {
+  margin-top: 14px;
+}
+
+/* ── The dock: Save, then Next game (§5.4, mockup 14b) ───────── */
+.gd {
+  container: gd / inline-size;
+}
+.gd-left {
+  margin: 0 0 10px;
+  font: 650 0.875rem/1.35 var(--font-ui);
+  color: var(--ink-2);
+  text-align: center;
+  overflow-wrap: break-word;
+}
+.gd-left[data-tone="done"] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: var(--done);
+  font-weight: 800;
+}
+.gd-left .ico {
+  width: 18px;
+  height: 18px;
+  stroke-width: 3;
+}
+.gd-save {
+  white-space: normal;
+}
+.gd-next {
+  display: grid;
+  grid-template-columns: minmax(6.5rem, 2fr) 3fr;
+  gap: 12px;
+}
+/* Back is the quiet one: the same height as Next, smaller words. */
+.gd-back {
+  font: 800 1rem/1.15 var(--font-ui);
+  white-space: normal;
+}
+.gd-go {
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  white-space: normal;
+}
+.gd-go-t {
+  font: 900 1.3125rem/1.05 var(--font-ui);
+}
+.gd-go-s {
+  max-width: 100%;
+  font: 750 0.84375rem/1.2 var(--font-ui);
+  overflow-wrap: break-word;
+}
+/* Large text: stacked, Next first (it is what the thumb is there for). */
+@container gd (max-width: 19rem) {
+  .gd-next {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .gd-go {
+    order: -1;
+  }
+  /* The dock must not eat the screen it docks under. */
+  .gd-save,
+  .gd-go-t {
+    font-size: 1.125rem;
+  }
+}
+
 @media (prefers-contrast: more) {
   .gs-item,
   .gb-h,
