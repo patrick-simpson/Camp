@@ -848,7 +848,7 @@ no notice; with no layout the count stands). The notice strip's first line is cl
 `#sheet-messages`. `annStripClick` is the
 strip's one delegated handler, shared with the sheet. Take down is Tell everyone's `tellNoticeDown()` (the 10 s Undo); the strip squashes out first.
 
-**Four-team bracket** (Step 22's data, not in `SYNC_KEYS` yet): `nowBracket4` reads `state.brackets4[gid] = { m: { s1, s2, third, final } }` as four cells,
+**Four-team bracket** (synced under `brackets4`; the rules are in "The brackets" below): `nowBracket4` reads `state.brackets4[gid] = { m: { s1, s2, third, final } }` as four cells,
 derives 3rd place and the final unless a match recorded its own `a` / `b`, drops any id that is not one of the camp's teams, and words my team's next game
 ("Red plays in the final next · 3rd place match first"). A director on a team in a match gets the own-team reason in place of Score, per match.
 
@@ -2575,6 +2575,17 @@ What's covered, and why each file exists:
   Keep helpers that run at load free of later top-level `const`s.
 - `bracket-guard.test.js` — a foreign-shaped bracket renders the reload card, is
   never healed, pushed, or shown as live (see "A bracket this build can't read").
+- `bracket.test.js` — **the six-team wizard, pinned BEFORE its helpers were extracted** (Step 22) and
+  unchanged since: it drives the real `renderTournament` / `renderBracket*` handlers through stub buttons
+  (fresh bracket, Start, free-pick and fixed-order round 1, undo, the bye with and without confirmed
+  points, Back to Round 1, championship, final, Save Result's exact record, messtival doubling,
+  `medalCounts`, Cancel, Clear result, the own-team guard, the "exactly 6 teams" refusal, what spectators
+  read, the per-game sync write, a seeded random walk) plus direct tests of the extracted helpers.
+  `bracket.senior.test.js` — the four-team engine on four teams (pure rules, the re-check cases, the
+  page-state wrappers, the own-team guard, the preview refusal); `bracket-sync.senior.test.js` — the
+  `brackets4` key (snapshot, normalize, per-match writes, two phones, the first-snapshot merge, delete /
+  format change / prune / backup). `tests/emulator/brackets4-client.mjs` proves the real client's writes
+  against the published rules.
 - `config-gate.test.js` — the week-config first-pull gate (nothing pushed before the
   first snapshot is processed, the baseline-less builder read-only, the first snapshot
   waiting for the state's first pull, data applied at once mid-entry, the null-seed),
@@ -2631,7 +2642,7 @@ What's covered, and why each file exists:
   (`validateGameDraft`, `saveGameDraft`, `duplicateGame`, `deleteGame`,
   `deleteDay`, reorder, `pruneOrphanedGameData`). Everything the app keeps under
   a game id is ONE list in settings.js, `GAME_RECORD_MAPS` (result, bracket, the
-  four-team bracket `brackets4` (absent until Step 22 syncs it), score entry, live match, clock,
+  four-team bracket `brackets4`, score entry, live match, clock,
   drawing setup; `gameRecordLabels` says each kind once): a format change names and
   clears all of it after one confirm, `deleteGame` and the import / restore
   prune drop all of it (the clock used to be left behind — a "running" clock
@@ -2887,9 +2898,11 @@ does, so an app device always chooses by its own key.
   owner's call). `seniorDefaultConfig()` uses `version: 5` ON PURPOSE: the
   junior one-shot migrations in `migrateState` are gated on `version < 5`
   and must never fire against senior data.
-- **The 6-team bracket wizard refuses senior's 4 teams** (existing
-  `renderTournament` guard) — a 4-team bracket (2 semis → 3rd-place match →
-  final) is planned; until then senior uses placement/tally formats.
+- **The 6-team bracket wizard still refuses senior's 4 teams** (the
+  `renderTournament` guard). The four-team bracket (2 semis → 3rd-place match →
+  final) has its data, sync and engine (see "The brackets"); its screens in the
+  game view are the last part of Step 22, so senior plays placement/tally
+  formats until they land.
 - **Tests**: a file named `*.senior.test.js` runs against the senior
   profile (the runner seeds the camp key before scripts load —
   `makeContext({camp:'senior'})`). `week.senior.test.js` re-runs the
@@ -3403,8 +3416,8 @@ rules**; the client code only shapes the UI.
   `restoreIndex`, `restoreBody`, `editorsHere`; the standings reveal's
   `revealPublic` + `revealFull` (each with a `real` and a `practice` child; no
   `reveal`, `revealPractice` or `revealScreens` node exists); and ADDITIVE
-  amendments: `state/brackets4` (a branch, published ahead of Step 22 — the
-  rules test allows it beside `SYNC_KEYS` until then), optional
+  amendments: `state/brackets4` (a branch, published ahead of its client;
+  one of `SYNC_KEYS` since Step 22), optional
   `state/teams/$i/{emoji,short,color,photoV}` (id/name/counselor stay
   unvalidated, so a v183 whole-array write still passes), `state/meta/{epoch,
   epochAt}` and `pushSchedule/{rev,src}`. No client shipped before Step 11 touches
@@ -3594,8 +3607,8 @@ rules**; the client code only shapes the UI.
   "known hole", on the theory that RTDB never evaluates an ancestor's
   `.validate`; the live database DOES — probed at Step 11, 2026-11-02:
   `state/zzz-probe/x = 1` is refused by `state/$other: false`, exactly as in the
-  emulator.) R1 adds `brackets4` to the allowed keys ahead of its client,
-  Step 22.
+  emulator.) R1 added `brackets4` to the allowed keys ahead of its client
+  (Step 22 made it a `SYNC_KEYS` member; `rules.test.js` holds the two lists equal).
 - **`config` IS sealed** (`$other: false`, 2026-07-26 — the live node was read
   and holds exactly the five keys). Safe even if a stray ever appears, because
   `pushConfig` is a whole-node `set()` of `configForSync()` output: the write
@@ -4301,8 +4314,9 @@ v183 parity fixture are untouched.
   standings option states its rule ("Suggests 1st v 6th, 2nd v 5th and 3rd v 4th from the points"). The six-team wizard honours it with
   `bracketSuggestPair` (app.js): to a DIRECTOR only (`standingsVisible`; never a counselor or a preview) the best remaining team v the lowest
   remaining one is suggested above the team chips, with "Call them up"; nothing is stored until a pair is called up, exactly as a hand pick. The
-  four-team bracket (Step 22) reads `bracketSeed` through its own `fourSeeds`; until it exists a sheet on a camp with other than six teams says
-  so (`#gm-b4-note`, hidden for good once `bracketKindFor` exists).
+  four-team bracket reads `bracketSeed` through its own `fourSeedMode` / `fourSeeds` (first v last, second v third; fixed pairs; a pick); a sheet on a
+  camp that cannot play a bracket in the app says so (`#gm-b4-note`, hidden by `bracketPlayable(n)`: six teams always, four once a four-team flow
+  is on the page — i.e. once `renderBracketFour` exists).
 - **When** (`gmPlacement`, `gmMoveGame`, the rain plan's move picker): a day (all seven; one that isn't a games day asks first, `gmMakeDay`),
   then an item — Games items and items that already hold games first, the rest behind "Other items on Thursday" — or, with the original
   schedule, a session. One tap writes `blockId`, `dayId` (the item's weekday), `session` (`rainSessionFor`: the item's time) and `ord` (after
@@ -5153,8 +5167,10 @@ More sync invariants (each fixed after it bit us — don't regress these;
   "Clear this bracket", the same delete as Cancel this bracket, because a
   bracket that is plain garbage rather than a newer shape is otherwise
   console-only to remove); the game stays out of Live now and the upcoming
-  matchups. The 4-team bracket is planned under its own node
-  (`brackets4`); this is the belt-and-braces for a phone that predates it.
+  matchups. The 4-team bracket lives under its own node (`brackets4`, read
+  by `fourRead`); a record of its shape that strays under `brackets` is just
+  another bracket this build can't read, and a build that predates `brackets4`
+  never sees the node at all.
 - **The 2026 roster migration is legacy-week only.** `normalizeSyncedState` swaps
   generic "Team N" names and placeholder counselors for the 2026 roster on every
   remote merge; it now runs only while `state.meta.epoch` is absent (the future
@@ -5265,6 +5281,46 @@ live" by curling the raw `defaults.js` file — which only proves the static
 asset changed, not that the running week's synced config did. Curling the
 Firebase REST endpoint (as above) is the only way to confirm a game-data
 change actually reached devices mid-week.
+
+## The brackets: six-team helpers, the four-team engine (Step 22)
+
+Two bracket kinds, each under its own synced node, sharing the pieces that are not about the shape. `bracketKindFor(n)`: 6 teams = `six`
+(`state.brackets[gid]`, the wizard), 4 = `four` (`state.brackets4[gid]`), anything else neither (the wizard's "needs exactly 6 teams" card names the
+count). All of this is in app.js ("The six-team bracket's rules", "What both brackets share", "The four-team bracket's rules"), pure unless said.
+
+- **Six-team helpers** (extracted from the wizard's click handlers AFTER `bracket.test.js` pinned them): `sixPick`, `sixRecordMatch`, `sixUndoMatch`,
+  `sixBackToRound1`, `sixChooseBye`, `sixRecordSemifinal`, `sixRecordFinal`, `sixMedals`. They change the bracket in place and refuse what cannot be (a
+  winner who did not play); the handlers add touchData / saveState / renderAll as before. Not added to the wizard yet: Undo at every step and the
+  stale-tap guard (the four-team engine has both).
+- **Shared**: `finishBracket(g, kind, medals, path)` — Save Result for either kind: one `{ medals, savedAt }` result (a four-team one also keeps the
+  finished bracket as `path`), the bracket's node and the game's live tally retired, `touchData`, save, repaint, `celebrate`. `cancelBracket(g, kind)`.
+  `bracketNode(kind)`.
+- **`brackets4` data** (setup-rebuild-spec 5.7.4): `{ at, m: { s1: {a,b,winner?,at?}, s2, third: {a?,b?,winner?,at?}, final } }`. s1 / s2 are seeded at Start;
+  third and final are written when RECORDED with the two teams that played them next to the winner. **The phase is derived, never stored**: the first
+  match in `FOUR_ORDER` (s1, s2, third, final — decision Q12; the one place that names the order) with no winner, then `summary`; `recheck` when a
+  recorded match disagrees with the semifinals it came from; `broken` when `fourRead` cannot read it.
+- **`fourRead(b, ids)`** is the one reader: null for anything this build cannot read (not four different teams of this camp, a semifinal winner who did not
+  play it), else laundered cells (every id passes the roster) and `recheck` = `{ match, semi, now, was }` (who wins the semifinal now, who the later matches
+  say won it). `fourPhase`, `fourCurrent`, `fourNext`, `fourMedals` (null unless all four matches are recorded AND agree — gold wins the final, silver loses
+  it, bronze WINS the 3rd-place match), `fourPath` (laundered finished bracket) all go through it. `normalizeBracket4` heals only the `m` container RTDB
+  prunes and invents nothing (it runs at load: no later top-level `const`).
+- **Changing one**: `fourStart(pairs, ids)`, `fourRecord(b, key, winner, ids)` (refuses with a reason: `decided` = a stale second tap never overwrites,
+  `order`, `winner`, `recheck`, `broken`; stores `a` / `b` on third / final), `fourUndo` (the last recorded match in PLAY order — a phone's clock does not
+  decide it), `fourResolve(b, 'keep' | 'back')` — the two Re-check answers: keep the changed semifinal and replay what was played on the old one, or put the
+  semifinal back to who the later matches were played with (false and unchanged when they contradict each other). `fourSeedMode` / `fourSeeds` read the game's
+  Matchups setting (standings: 1st v 4th, 2nd v 3rd; fixed pairs; pick).
+- **On the page** (`fourStartGame`, `fourRecordTap`, `fourUndoTap`, `fourResolveTap`, `fourSaveResult`, `fourSeedPlan`): director only (`canEdit()`, so false in a
+  counselor preview), the own-team guard per match (`canScoreRound`), a result already saved is `saved` (a late tap after the result is ignored, the stray
+  record stays and is overwritten by a new Start), then the pure rule, then `touchData` + `saveState` + `renderAll`. Each returns `{ ok }` or `{ ok: false,
+  reason }` for the screen's sentence. The standings suggestion needs `canEdit() && standingsVisible()` (the six-team rule).
+- **Sync**: `brackets4` is in `SYNC_KEYS` (the published rules accept it as a branch; no rules change). `computeSyncUpdates` diffs it per MATCH,
+  `brackets4/<gid>/m/<match>` — two refs recording the two semifinals on two phones keep both; a new bracket goes up whole; Undo is the match's deletion;
+  finishing writes `results/<gid>` and `brackets4/<gid>: null` in the same update. Everything else is the generic engine (per-path first-snapshot merge,
+  quarantine named "bracket", `makeFreshState`, `applyRemoteState` "missing means empty", backups, `GAME_RECORD_MAPS`, restore points).
+- **Not built yet** (the rest of Step 22): the four-team screens in `renderTournament` (Start card, step bar, the current match, Re-check, summary,
+  Save Result), the readers (`currentMatchupOf` / `nextMatchupOf` / `upcomingMatchups` / `renderLiveWatch` for a four-team bracket; `nowBracket4` still
+  derives its own cells, consistent with `fourRead` for a healthy bracket), a stray bracket beside a saved result listed on the hub's Games row with
+  Discard, Reopen the final from a result's `path`, Undo at every step and the stale-tap guard in the six-team wizard.
 
 ## The TV page (current-standings.html) — both camps
 

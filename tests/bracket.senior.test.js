@@ -503,3 +503,26 @@ test('a four-team bracket is what the Now card, the live status and the own-team
     assert.deepEqual(gameRoundTeams(g), ['t1', 't2'], 'the match under way is the second semifinal');
   });
 });
+
+test('a counselor preview reaches none of it: every page-state wrapper refuses as a viewer would, and the standings suggestion goes quiet', () => {
+  const g = fourGame();
+  g.bracketSeed = 'standings';
+  seedPoints({ gold: 't2', silver: 't0', bronze: 't3' });
+  quiet(() => {
+    fourStartGame(g, [['t0', 't3'], ['t1', 't2']]);
+    fourRecordTap(g, 's1', 't0');
+    assert.ok(fourSeedPlan(g).pairs, 'a director sees the suggestion');
+    counselorPreviewOn = true;
+    try {
+      const frozen = JSON.stringify(state.brackets4[g.id]);
+      assert.deepEqual(fourRecordTap(g, 's2', 't1'), { ok: false, reason: 'readonly' });
+      assert.deepEqual(fourUndoTap(g), { ok: false, reason: 'readonly' });
+      assert.deepEqual(fourResolveTap(g, 'keep'), { ok: false, reason: 'readonly' });
+      assert.deepEqual(fourSaveResult(g), { ok: false, reason: 'readonly' });
+      assert.deepEqual(fourStartGame({ id: 'other' }, [['t0', 't3'], ['t1', 't2']]), { ok: false, reason: 'readonly' });
+      assert.equal(JSON.stringify(state.brackets4[g.id]), frozen, 'nothing changed');
+      assert.equal(fourSeedPlan(g).pairs, null, 'a preview of a counselor\'s screen has no standings to suggest from');
+    } finally { counselorPreviewOn = false; }
+    assert.ok(fourSeedPlan(g).pairs, 'and the director is back');
+  });
+});

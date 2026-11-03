@@ -537,6 +537,19 @@ Four **separate** deploys (P7), in this order, each with its own tests and live 
 - **Live check:** a senior sandbox tournament end to end, Clear result, delete the game; a junior
   6-team smoke test.
 - **Rollback:** revert (old code ignores `brackets4`).
+- **Built (Step 22, build session 1; not deployed):** `tests/bracket.test.js` pinned the six-team wizard first (it drives the real handlers and has
+  not changed since), then `sixPick` … `sixMedals` and the shared `finishBracket` / `cancelBracket` were extracted; `brackets4` joined `SYNC_KEYS` (per-match
+  diff `brackets4/<gid>/m/<match>`, normalized on read, in the backup, import, delete, format change and prune; `rules.test.js` no longer carries its
+  allowance; no rules change); the four-team engine is in app.js ("The brackets" in CLAUDE.md): `fourRead` and the pure rules (`fourRecord`, `fourUndo`,
+  `fourMedals`, `fourResolve` for the Re-check, `fourSeeds`) and the page-state wrappers (`fourStartGame`, `fourRecordTap`, `fourUndoTap`, `fourResolveTap`,
+  `fourSaveResult`: director only, own-team guard, late tap after a result ignored). Tests: `bracket.senior.test.js`, `bracket-sync.senior.test.js`,
+  `tests/emulator/brackets4-client.mjs` (the real client's writes against the published rules: SAFE). **Left for session 2:** the four-team screens in
+  `renderTournament` (Start card with "Suggested by points" / Choose different, step bar, current match with `matchupCalloutHTML` / `matchTrackerHTML`, the
+  Re-check card, summary, Save Result) — defining `renderBracketFour` turns `bracketPlayable(4)` true and hides the Games sheet's `#gm-b4-note`; the readers
+  (`currentMatchupOf` / `nextMatchupOf` / `upcomingMatchups` / `renderLiveWatch` / `findNextMatchupFor` / `gameRoundTeams`; `nowBracket4` may be rebuilt on
+  `fourRead`); the hub Games row's "a late bracket tap after the result was saved" with Discard; Reopen the final from `results[gid].path`; Undo at every step
+  and the stale-tap guard in the six-team wizard; **changed on purpose:** `week.senior.test.js:105-115` (refuses → starts a four-team bracket; a five-team
+  roster is refused with the count); a Playwright pass (360 / 390, both themes, 100 / 130 / 200 % text) and `preview.test.js` walk cases for the new screens.
 
 ### Step 23 · The reveal: remote, counselor mirror, public big screen, finale · redesign D5 · Mar · XL (6) · Opus pass, then Sonnet
 - **Ships:** `reveal.js` (`?v=` → 18): the director remote (mini TV, grouped ladder, masked
