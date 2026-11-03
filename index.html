@@ -1583,6 +1583,13 @@
           <span class="rm-stale-text">Scores changed since you started.</span>
           <button type="button" class="btn rm-restart" id="reveal-restart">Start again</button>
         </div>
+        <!-- A practice only: the real Start is one tap away while a practice plays (the practice stays in its own
+             child and the big screen switches to the real reveal at once, redesign §4.13; without this the remote
+             follows the practice and has no Start to press). Same look as the stale-freeze row above. -->
+        <div class="rm-stale rm-offer" id="reveal-offer" hidden>
+          <span class="rm-stale-text">This is a practice.</span>
+          <button type="button" class="btn rm-restart" id="reveal-start-real">Start the real reveal</button>
+        </div>
         <div class="rv-list" id="reveal-ladder" data-kind="remote" role="list"></div>
       </section>
 

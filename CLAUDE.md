@@ -998,6 +998,13 @@ More, Games and the champion line.
 P2 §11.0–11.2 ("the director's clipboard") inside redesign §8. Static markup in
 index.html (`#setup`, its four sheets, `#ask-dialog`), styled in styles.css's
 "SET UP THE WEEK" section; a renderer patches text, `hidden` and the data-*
+- **A practice hides the real Start, so it offers it** (`#reveal-offer`, `#reveal-start-real`, found by
+  the end-to-end run): `revealRemoteMode()` follows the real reveal while it is active, else a RUNNING practice,
+  so a remote showing a practice has no Start button of its own. While a practice plays (`m.practice` and the
+  director may command) a gold row at the top of the places panel says "This is a practice." with **Start the
+  real reveal**; `revealUiStartReal` runs the ordinary Start flow for a real reveal (it asks "Start a new
+  reveal?" when last night's grid would be replaced, and the unscored-games warning). The practice stays in its
+  own child, the big screen switches to the real reveal at once, and the remote then follows the real one.
 named here, never rebuilds a row. **The behaviour is wired separately** (the
 rest of Step 14, in setup-ui.js: see "Set up the week: behaviour" below); with no
 `data-screen` on `#setup` the markup is inert and the builder is v197's.

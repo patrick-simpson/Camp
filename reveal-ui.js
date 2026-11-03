@@ -642,6 +642,7 @@ function revealUiPaintLive(m) {
   setTextIfChanged(revealUiEl('reveal-count'), m.count ? m.count.shown + ' of ' + m.count.total + ' shown' : '');
   setTextIfChanged(revealUiEl('reveal-end-label'), m.practice ? 'End practice' : 'End reveal');
   setHiddenIfChanged(revealUiEl('reveal-stale'), !m.freezeStale);
+  setHiddenIfChanged(revealUiEl('reveal-offer'), !(m.practice && m.mayCommand));
   const full = revealFullFor(m.mode);
   const other = !!(full && full.by && full.by !== identityKey(authUser));
   setHiddenIfChanged(revealUiEl('reveal-started'), !other);
@@ -950,6 +951,18 @@ async function revealUiBack() {
   return res;
 }
 
+// A practice is playing and the real reveal is wanted. The remote follows a live practice (there is no other Start button
+// on screen), so this is the one way to a real Start while one plays; the practice stays in its own child until its End,
+// and the big screen switches to the real reveal at once (real wins, redesign §4.13). It asks what a real Start asks:
+// "Start a new reveal?" when last night's grid would be replaced, and the unscored-games warning.
+async function revealUiStartReal() {
+  const el = revealUiEl('reveal-start-real');
+  const rv = revealRemoteView('real');
+  const res = await revealUiStartFlow({ practice: false, stage: rv && !rv.expired ? 'ended' : 'ready' });
+  if (res && !res.ok && REVEAL_UI_REFUSED.includes(res.code)) revealUiRefused(el);
+  return res;
+}
+
 // "Scores changed since you started": a fresh freeze over the same intro (nobody has seen a place, so nothing to confirm).
 async function revealUiRestart() {
   const m = revealRemoteModel();
@@ -1009,6 +1022,7 @@ function wireRevealUi() {
   on('reveal-back', 'click', revealUiBack);
   on('reveal-end', 'click', () => { revealUiEndFlow(revealRemoteModel()); });
   on('reveal-restart', 'click', revealUiRestart);
+  on('reveal-start-real', 'click', revealUiStartReal);
   on('reveal-copy-link', 'click', revealUiCopyLink);
   // A change event is the person's own tap (a programmatic `checked` never fires one), so a switch simply flips.
   on('reveal-practice', 'change', () => { revealSetPractice(!revealPracticeSwitch()); renderRevealRemote(); });

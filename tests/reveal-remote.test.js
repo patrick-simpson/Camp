@@ -585,6 +585,51 @@ test('Start: a real Start over last night\'s asks first, a practice never does, 
   afterDirector();
 });
 
+test('while a practice plays the remote follows it, so it offers the real Start: the practice stays, the real reveal starts, last night\'s grid asks first', async () => {
+  await bootDirector();
+  await openRemote();
+  scoreEveryGameToday();
+  assert.equal(el('reveal-offer').hidden, true, 'no practice, no offer');
+  revealSetPractice(true);
+  let r = await revealUiStartFlow(revealRemoteModel());
+  assert.equal(r.ok, true, JSON.stringify(r));
+  renderRevealRemote();
+  assert.equal(data('takeover-reveal', 'mode'), 'practice', 'a live practice is what the remote follows');
+  assert.equal(el('reveal-offer').hidden, false, 'so the real Start is one tap away');
+  assert.ok(/id="reveal-start-real">Start the real reveal</.test(readFixture('../index.html')), 'a verb on the button');
+  const practiceId = confirmedReveal.practice.ctl.id;
+  asked = [];
+  r = await revealUiStartReal();
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.equal(asked.length, 0, 'nothing real to replace: nothing is asked');
+  assert.equal(confirmedReveal.real.ctl.phase, 'intro', 'the real reveal started');
+  assert.equal(confirmedReveal.practice.ctl.id, practiceId, 'the practice stays in its own child, untouched');
+  renderRevealRemote();
+  assert.equal(data('takeover-reveal', 'mode'), 'real', 'the remote now follows the real reveal (real wins)');
+  assert.equal(el('reveal-offer').hidden, true, 'and the offer is gone');
+  closeReveal();
+  afterDirector();
+
+  // last night's reveal is still on counselors' phones: the real Start asks first, and "Keep tonight's" sends nothing
+  await bootDirector();
+  await openRemote();
+  scoreEveryGameToday();
+  await setNode({ phase: 'ended', endedAt: T0 - 20000, at: T0 - 20000, cur: N - 1 }, N);
+  revealSetPractice(true);
+  r = await revealUiStartFlow(revealRemoteModel());
+  assert.equal(r.ok, true, JSON.stringify(r));
+  renderRevealRemote();
+  assert.equal(el('reveal-offer').hidden, false);
+  const lastNight = confirmedReveal.real.ctl.id;
+  asked = []; answers = ['keep'];
+  r = await revealUiStartReal();
+  assert.equal(r.code, 'cancelled');
+  assert.equal(asked[0].title, 'Start a new reveal?');
+  assert.equal(confirmedReveal.real.ctl.id, lastNight, 'nothing was written');
+  closeReveal();
+  afterDirector();
+});
+
 test('Start with a game that has no score asks "Start anyway?" and "Not now" leaves the screen as it was; Start again skips every question', async () => {
   await bootDirector();
   await openRemote();
