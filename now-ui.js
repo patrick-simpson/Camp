@@ -36,7 +36,7 @@ const nowUi = {
   noticeShown: null, // the strip's last state (null before the first paint)
   statuses: {},      // game id → last status painted, to see Live → Done
   flip: new Set(),   // games that went Live → Done and are waiting for their medals to be on screen
-  shell: '',         // the shape `#now-card-body` last had, for the kinds that keep a persistent child
+  bodyView: null,    // which picture `#now-card-body` last showed (day, kind, block): its game rows glide only within one
 };
 
 function nowEl(id) { return typeof document !== 'undefined' ? document.getElementById(id) : null; }
@@ -113,7 +113,7 @@ function nowGameRowHtml(r) {
   let end = nowIcon('i-chev-r', 'gr-chev');
   let why = '';
   if (r.score && r.score.why) why = `<p class="gr-why">${nowIcon('i-lock')}<span>${esc(r.score.why)}</span></p>`;
-  else if (r.score) end = `<button type="button" class="btn btn-sm gr-score${r.score.gold ? ' btn-gold' : ''}" data-score-game="${id}">Score</button>`;
+  else if (r.score) end = `<button type="button" class="btn btn-sm gr-score${r.score.gold ? ' btn-gold' : ''}" data-score-game="${id}" data-joy>Score</button>`;
   const extra = r.status === 'done' ? nowPodiumHtml(r.podium) : r.status === 'live' ? nowBoardHtml(r.board) : '';
   return `<div class="gr" role="listitem" data-key="${esc(r.key)}" data-status="${esc(r.status)}"${r.next ? ' data-next' : ''}${r.mine ? ' data-mine' : ''}>` +
     `<span class="gr-st" aria-hidden="true"></span>` +
@@ -251,14 +251,20 @@ function nowSubHtml(model) {
   return c.sub ? esc(c.sub) : '';
 }
 
+// A games card's body in two parts: the keyed rows (`g-<id>`, inside .gr-list) and what follows them (the four-team bracket).
+function nowGamesParts(model) {
+  const b = model.body || {};
+  return { rows: (b.rows || []).map(nowGameRowHtml).join(''), rest: nowBracket4Html(b.bracket4) };
+}
+
 // The kind's own content under the title.
 function nowBodyHtml(model) {
   const c = model.card;
   const b = model.body || {};
   switch (c.kind) {
     case 'games': {
-      const rows = (b.rows || []).map(nowGameRowHtml).join('');
-      return (rows ? `<div class="gr-list" role="list">${rows}</div>` : '') + nowBracket4Html(b.bracket4);
+      const p = nowGamesParts(model);
+      return (p.rows ? `<div class="gr-list" role="list">${p.rows}</div>` : '') + p.rest;
     }
     case 'elective': return nowElectiveBodyHtml(b);
     case 'bible': return nowVerseHtml(b.verse);
@@ -449,6 +455,39 @@ function nowPaintRuns(model) {
   if (model.todoMore) setTextIfChanged(nowEl('now-todo-more-text'), model.todoMore + ' more');
 }
 
+// The kind's body. A games card keeps its rows by key: a game going Live moves up and one going Done moves down, so — on screen, in a
+// real browser, within one block — they GLIDE to their new places (JellyMotion.flipKeyed) instead of the list jumping. The glide waits
+// for a finger to lift, which also means a snapshot never swaps the row a director is about to tap. The first paint, another block, a
+// Now that is not on screen, calm motion and a page with no Element.animate are ONE plain write. Either way the body's own stamp is brought
+// up to date, so an idle repaint writes nothing (the same rule as every other root).
+function nowPaintBody(model, live, view) {
+  const body = nowEl('now-card-body');
+  if (!body) return;
+  const html = nowBodyHtml(model);
+  const parts = model.card.kind === 'games' ? nowGamesParts(model) : null;
+  const sameView = nowUi.bodyView === view;
+  nowUi.bodyView = view;
+  body.__nowWant = html;
+  const first = body.children && body.children.length ? body.children[0] : null;
+  const list = first && first.classList && first.classList.contains('gr-list') ? first : null;
+  const canMove = !!(parts && parts.rows && list && live && sameView && body.__html !== undefined && typeof body.animate === 'function' &&
+    typeof JellyMotion !== 'undefined' && !calmMotion());
+  if (!canMove) { setHtmlIfChanged(body, html); return; }
+  if (body.__html === html && body.__dom === body.innerHTML) return;
+  JellyMotion.whenHandsOff(() => {
+    if (body.__nowWant !== html || (body.__html === html && body.__dom === body.innerHTML)) return; // a newer paint came, or nothing is left to do
+    const cur = body.children && body.children.length ? body.children[0] : null;
+    if (!cur || !cur.classList || !cur.classList.contains('gr-list') || body.__dom !== body.innerHTML) { setHtmlIfChanged(body, html); return; }
+    try { JellyMotion.flipKeyed(cur, parts.rows, 'glide'); } catch (e) { setHtmlIfChanged(body, html); return; }
+    // What follows the list (the four-team bracket) is replaced as a piece.
+    while (cur.nextSibling) cur.nextSibling.remove();
+    if (parts.rest) cur.insertAdjacentHTML('afterend', parts.rest);
+    body.__html = html;
+    body.__dom = body.innerHTML;
+    nowAfterGames(model, nowOnScreen()); // a game that finished while the finger was down gets its check and medals now
+  });
+}
+
 // ── the full paint ───────────────────────────────────────────────────
 function renderNow(model) {
   const card = nowEl('now-card');
@@ -473,7 +512,7 @@ function renderNow(model) {
   const notesHtml = nowNotesHtml(c.notes);
   setHtmlIfChanged(notes, notesHtml);
   setHiddenIfChanged(notes, !notesHtml);
-  setHtmlIfChanged(nowEl('now-card-body'), nowBodyHtml(model));
+  nowPaintBody(model, live, key);
   nowPaintFoot(model);
   nowPaintMoment(model);
   nowPaintRuns(model);

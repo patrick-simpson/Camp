@@ -193,8 +193,82 @@ test('games, a director: Score on the live and the next game, the ranked board, 
   assert.ok(/data-ranked/.test(body) && /class="lb-pl">1</.test(body), 'a director\'s board is ranked');
   assert.equal((body.match(/data-score-game="/g) || []).length, 2, 'Score on the two games that are not done');
   assert.ok(/gr-score btn-gold"[^>]*data-score-game|gr-score btn-gold" data-score-game/.test(body), 'the live / next one is the gold one');
+  assert.equal((body.match(/data-score-game="[^"]*" data-joy>Score</g) || []).length, 2, 'every Score sparkles when tapped (redesign §9.7: sparkles only on Score, Reveal and awards), gold or not');
   assert.equal(plain('now-card-sub'), m.card.sub);
   assert.ok(/still to score/.test(plain('now-card-sub')));
+  done();
+});
+
+// The game rows glide (JellyMotion.flipKeyed) when a game goes Live or Done on screen, inside one block. The body here is hand-made:
+// the stub DOM can neither keep nodes nor animate, so this counts exactly what the paint does.
+test('game rows glide when a game goes Live on screen within one block; the first paint, another block, a hidden Now and calm motion are one plain write; an idle repaint writes nothing', () => {
+  boot('editor', null);
+  const { nb, games } = gamesBlockOf(WED, 3);
+  Object.assign(games[1], { format: 'tally', liveRankings: true, lowerWins: false, timeInput: false });
+  const list = { classList: { contains: (c) => c === 'gr-list' }, nextSibling: null };
+  let inner = '';
+  let writes = 0;
+  const body = { children: [list], animate() {}, insertAdjacentHTML() {} };
+  Object.defineProperty(body, 'innerHTML', { get: () => inner, set: (v) => { inner = v; writes++; } });
+  const flips = [];
+  const realGet = document.getElementById;
+  const realFlip = JellyMotion.flipKeyed;
+  const realHands = JellyMotion.whenHandsOff;
+  const realCalm = calmMotion;
+  document.getElementById = (id) => (id === 'now-card-body' ? body : realGet.call(document, id));
+  JellyMotion.flipKeyed = (root, rows, name) => { flips.push({ root, rows, name }); return []; };
+  JellyMotion.whenHandsOff = (fn) => { fn(); };
+  calmMotion = () => false;
+  try {
+    const before = modelAt(WED, nb.start + 5);
+    nowPaintBody(before, true, 'v1');
+    assert.equal(writes, 1, 'the first paint is one plain write');
+    nowPaintBody(before, true, 'v1');
+    assert.equal(writes, 1, 'an idle repaint writes nothing');
+    assert.equal(flips.length, 0, 'and glides nothing');
+    state.drafts[games[1].id] = { scores: { [T()[3]]: '9', [T()[0]]: '4' } }; // this game goes Live: it moves up
+    const after = modelAt(WED, nb.start + 5);
+    assert.ok(nowGamesParts(after).rows !== nowGamesParts(before).rows, 'precondition: the rows changed');
+    nowPaintBody(after, true, 'v1');
+    assert.equal(flips.length, 1, 'within one block, on screen, the rows glide');
+    assert.equal(writes, 1, 'the body is not rewritten');
+    assert.equal(flips[0].root, list);
+    assert.equal(flips[0].name, 'glide');
+    assert.equal(flips[0].rows, nowGamesParts(after).rows, 'the rows, as markup, keyed g-<id>');
+    assert.ok(flips[0].rows.includes('data-key="g-' + games[1].id + '"'));
+    assert.equal(body.__html, nowBodyHtml(after), 'the body\'s stamp is brought up to date');
+    nowPaintBody(after, true, 'v1');
+    assert.equal(flips.length, 1, 'and a repeat of that picture glides nothing more');
+    // a deferred glide that a newer paint overtook is dropped
+    let held = null;
+    JellyMotion.whenHandsOff = (fn) => { held = fn; };
+    state.drafts[games[1].id].scores[T()[2]] = '12';
+    const newer = modelAt(WED, nb.start + 5);
+    nowPaintBody(newer, true, 'v1');
+    const newest = modelAt(WED, nb.start + 6);
+    body.__nowWant = 'a newer paint asked for something else';
+    held();
+    assert.equal(flips.length, 1, 'a stale deferred glide does nothing');
+    JellyMotion.whenHandsOff = (fn) => { fn(); };
+    // everything that is not "same block, on screen, motion allowed" is one plain write
+    const w0 = writes;
+    nowPaintBody(newest, true, 'v2');
+    assert.equal(writes, w0 + 1, 'another block');
+    assert.equal(flips.length, 1);
+    state.drafts[games[1].id].scores[T()[1]] = '3';
+    nowPaintBody(modelAt(WED, nb.start + 7), false, 'v2');
+    assert.equal(writes, w0 + 2, 'Now not on screen');
+    calmMotion = () => true;
+    state.drafts[games[1].id].scores[T()[4 % T().length]] = '5';
+    nowPaintBody(modelAt(WED, nb.start + 8), true, 'v2');
+    assert.equal(writes, w0 + 3, 'calm motion: the rows jump');
+    assert.equal(flips.length, 1, 'and nothing glided');
+  } finally {
+    document.getElementById = realGet;
+    JellyMotion.flipKeyed = realFlip;
+    JellyMotion.whenHandsOff = realHands;
+    calmMotion = realCalm;
+  }
   done();
 });
 
