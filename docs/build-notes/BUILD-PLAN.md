@@ -520,6 +520,11 @@ Four **separate** deploys (P7), in this order, each with its own tests and live 
   camp with other than six teams says so until `bracketKindFor` exists; a field two directors change at once is last-commit-wins per field (the
   classic editor's clash block is not used; a game deleted elsewhere asks inline). The real-tap pass is `docs/build-notes/verify/step21-pass.cjs`.
   Owner checks (real phone / real sign-in): see the session report's `ownerActions`.
+  **Build session 2:** the ⚡ quick game follows the Now card's own block (`nowCurrentBlock`); the Games tab's Add games opens the game sheet on that
+  day (the screen only when no day takes games); Undo through the setup pill is pinned; a counselor preview reaches none of the sheet
+  (`preview.test.js`); `tests/emulator/games-client.mjs` proves the real client's Games writes against the published rules on both camps and
+  found a config-engine race (a colleague's commit beating my commit's completion rolled the phone back behind it), fixed with one settle
+  re-read (`cfgSettleReread`, pinned in `config-sync.test.js`); `docs/build-notes/verify/step21-states.cjs` is the state-by-state browser pass.
 
 ### Step 22 · The 4-team bracket · P2 S6b · Mar · L (3) · Sonnet
 - **Ships:** the `brackets4` sync key, the four-team flow (semifinals, 3rd place before the final,

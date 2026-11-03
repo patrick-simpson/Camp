@@ -124,6 +124,11 @@ const STATES = [
   ['sheet-gone', async (k) => { await k.ev(() => { gmOpenScreen('wed'); renderAll(); }); await k.tap('#setup-games [data-sg-open]'); await k.ev(() => { const id = gmUi.open.gid; const i = state.config.games.findIndex((g) => g.id === id); state.config.games.splice(i, 1); renderAll(); }); await k.settle(700); }],
   ['sheet-quick', async (k) => { await k.ev(() => { setupCloseBuilder(); showTab('games'); }); await k.settle(500); await k.ev(() => startQuickGame()); await k.settle(700); }],
   ['sheet-quick-made', async (k) => { await k.ev(() => { setupCloseBuilder(); showTab('games'); }); await k.settle(500); await k.ev(() => startQuickGame()); await k.settle(500); await k.fill('#gm-name', 'Sock toss'); await k.blur(); await k.settle(700); }],
+  ['hub-warn', async (k) => { await k.ev(() => { const g = gmGamesOnDay('wed')[0]; delete g.blockId; delete g.ord; g.location = 'TBA'; openBuilder(); setupGo('hub'); renderAll(); }); await k.settle(); }],
+  ['sheet-bracket-pick', async (k) => { await k.ev(() => { gmOpenScreen('wed'); renderAll(); }); await k.tap('#setup-games [data-sg-add]'); await k.fill('#gm-name', 'Rope pull'); await k.tap('[data-gm-format="tournament"]'); await k.tap('[data-gm-seed="pick"]'); await k.settle(700); }],
+  ['sheet-emoji', async (k) => { await k.ev(() => { gmOpenScreen('wed'); renderAll(); }); await k.tap('#setup-games [data-sg-add]'); await k.tap('#gm-emoji-btn'); await k.settle(600); }],
+  ['sheet-name-original', async (k) => { await k.ev(() => { setupTree.meta = setupTree.meta || {}; setupTree.meta.on = Object.assign({}, setupTree.meta.on, { schedule: false }); setupRev++; gmOpenScreen('wed'); renderAll(); }); await k.settle(500); await k.tap('#sg-add'); await k.settle(600); }],
+  ['sheet-when-original', async (k) => { await k.ev(() => { setupTree.meta = setupTree.meta || {}; setupTree.meta.on = Object.assign({}, setupTree.meta.on, { schedule: false }); setupRev++; gmOpenScreen('wed'); renderAll(); }); await k.settle(500); await k.tap('#setup-games [data-sg-open]'); await k.tap('#gm-when-btn'); await k.settle(700); }],
   ['sheet-delete-ask', async (k) => { await k.ev(() => { gmOpenScreen('wed'); renderAll(); }); await k.tap('#setup-games [data-sg-open]'); await k.ev(() => { const d = document.querySelector('#gm-delete, [data-gm-delete]'); if (d) d.click(); }); await k.settle(700); }],
 ];
 async function page_keyTap(k) { await k.ev(() => { const b = document.querySelector('#gm-keys .gm-key[aria-pressed="false"]'); if (b) b.click(); }); await sleep(150); }
@@ -137,15 +142,39 @@ async function page_keyTap(k) { await k.ev(() => { const b = document.querySelec
   let sizes = process.env.QUICK ? [[390, 'light', 100]] : [[360, 'light', 100], [390, 'dark', 100], [360, 'dark', 130], [390, 'light', 130], [360, 'light', 200], [390, 'dark', 200]];
   if (process.env.SIZE) { const [a, b, c] = process.env.SIZE.split(','); sizes = [[Number(a), b, Number(c)]]; } // one size per process: run several in parallel
   const camps = process.env.CAMPS ? process.env.CAMPS.split(',') : ['junior', 'senior'];
+  // One page per role / camp / size; between states the page is put back as it was seeded (the catalog, the week's setup, the results, the
+  // open sheets and the builder), so a state never inherits what the one before it did.
+  const RESET = () => {
+    ['game', 'sg-day', 'setup-menu', 'setup-changes', 'setup-devices'].forEach((id) => { try { if (shell.sheets.includes(id)) shellSheetClose(id); } catch (e) {} });
+    const d = document.getElementById('ask-dialog'); if (d && d.hasAttribute('open')) { try { d.removeAttribute('open'); } catch (e) {} }
+    gmUi.open = null;
+    try { setupCloseBuilder(); } catch (e) {}
+    state.config = JSON.parse(JSON.stringify(window.__cfg0));
+    state.results = {}; state.drafts = {}; state.brackets = {};
+    setupTree = normalizeSetup(setupClone(syncCanon(buildSeed(CAMP, ['schedule', 'meals', 'verses', 'cleanup', 'electives'])))); setupRev++;
+    setupApplyGameAttachments(state.config, setupGameAttachments(state.config, (dow) => planForDow(dow), CAMP).ops);
+    undoClear();
+    state.ui.tab = 'now'; state.ui.view = 'home'; state.ui.builderScreen = undefined; state.ui.sgDay = undefined; state.ui.day = defaultDay(state.config);
+    renderAll();
+  };
   for (const role of roles) {
     for (const camp of camps) {
       for (const [w, scheme, txt] of sizes) {
+        let cur = null;
+        const fresh = async () => {
+          if (cur) await cur.ctx.close().catch(() => {});
+          cur = await openPage(browser, { camp, w, scheme, text: txt, role });
+          cur.k = kit(cur.page);
+          await cur.page.evaluate(() => { window.__cfg0 = JSON.parse(JSON.stringify(state.config)); });
+        };
+        await fresh();
         for (const [name, build] of STATES) {
           if (!only.includes(name)) continue;
           const tag = [role, camp, name, w, scheme, txt + '%'].join(' ');
-          const { ctx, page, errs } = await openPage(browser, { camp, w, scheme, text: txt, role });
-          const k = kit(page);
+          const { page, k } = cur;
           try {
+            await page.evaluate(RESET);
+            await sleep(150);
             await build(k);
             const m = await page.evaluate(MEASURE);
             if (m.issues.length || m.sideways || m.clip.length || m.narrow.length) report.push(Object.assign({ tag }, m));
@@ -161,10 +190,10 @@ async function page_keyTap(k) { await k.ev(() => { const b = document.querySelec
               }) : false;
               if (moved) { await page.waitForTimeout(150); await page.screenshot({ path: OUT + [role, camp, name, w, scheme, txt, 'p2'].join('-') + '.png' }); }
             }
-          } catch (e) { failures.push(tag + ' threw: ' + String(e).slice(0, 240)); }
-          if (errs.length) failures.push(tag + ' page errors: ' + errs.join(' | '));
-          await ctx.close();
+          } catch (e) { failures.push(tag + ' threw: ' + String(e).slice(0, 240)); await fresh(); }
+          if (cur.errs.length) { failures.push(tag + ' page errors: ' + cur.errs.splice(0).join(' | ')); }
         }
+        if (cur) await cur.ctx.close().catch(() => {});
       }
     }
   }

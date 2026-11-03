@@ -17347,6 +17347,11 @@ button.gs-row:focus-visible {
 .gm-when-body .rain-quiet + .si-ask {
   margin-top: var(--s-3);
 }
+/* A session row (the original schedule: "Morning games") has no time column; without this its title fell into the 4.75rem time track
+   and wrapped to two lines at 390px. */
+.gm-when-row.gm-when-session {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
 .gm-when-row[aria-current="true"] .cb-end {
   color: var(--ink);
 }

@@ -4321,7 +4321,11 @@ v183 parity fixture are untouched.
   by any route is forgotten on the next paint (`gmCleanSheets`).
 - **Pass**: `docs/build-notes/verify/step21-pass.cjs` drives the real page with real taps (the hub row → the screen → Add a game here → name →
   Scores → a field → When → Done → a bracket's Matchups → the day's ⋯ → the Games tab's Quick game → Score it now) on both camps at 360 / 390,
-  light / dark and 100 / 130 / 200 % text, and checks what each tap wrote; `step21-design.cjs` still draws every state for the visual pass.
+  light / dark and 100 / 130 / 200 % text, and checks what each tap wrote; `step21-states.cjs` reaches EVERY state (the screen with a loose game, a TBA place and a note,
+  not a games day, an empty day, the original schedule; the day's ⋯ and its take-off question; each stage and format of the sheet, the Matchups
+  board, How to play, the format change warning, When and its questions, deleted elsewhere, the quick game, Delete's question) through the page's
+  own engine and renderers for both camps at six width / theme / text-size combinations (`SIZE=360,light,200` runs one, so several run in parallel)
+  and shuts the counselor out of all of it; `step21-design.cjs` is the design pass's specimen drawer.
 
 ## Team colours and the Teams screen (Step 25, session 1)
 

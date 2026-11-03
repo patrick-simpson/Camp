@@ -8273,7 +8273,7 @@ function gmWhenRows(o, g) {
 function gmWhenRowHtml(r) {
   const time = r.b ? '<span class="cb-time">' + esc(schedClock(r.b.start, false)) + '<small>–' + esc(schedClockWords(r.b.end)) + '</small></span>' : '';
   const sub = (r.here ? 'Here now · ' : '') + (r.n ? hubPlural(r.n, 'game', 'games') : 'No games yet');
-  return '<button type="button" class="cb-row gm-when-row" data-gm-block="' + esc(r.key) + '"' + (r.here ? ' aria-current="true"' : '') + '>' + time +
+  return '<button type="button" class="cb-row gm-when-row' + (r.b ? '' : ' gm-when-session') + '" data-gm-block="' + esc(r.key) + '"' + (r.here ? ' aria-current="true"' : '') + '>' + time +
     '<span class="cb-main"><span class="cb-title">' + (r.b ? gmEmoHtml(r.b.emoji) : '') + '<span>' + esc(r.label) + '</span></span><span class="cb-sub">' + esc(sub) + '</span></span>' +
     '<span class="cb-end">' + (r.here ? '<svg class="ico" aria-hidden="true"><use href="#i-check"/></svg>' : '<svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg>') + '</span></button>';
 }

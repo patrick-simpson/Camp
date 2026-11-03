@@ -83,6 +83,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
         const n0 = await page.evaluate(() => allGames().length);
         await tap('#setup-games [data-sg-add]');
         check(tag + ' the sheet opens at stage name', await page.evaluate(() => document.getElementById('sheet-game').dataset.stage === 'name' && !document.getElementById('sheet-game').hidden));
+        await sleep(500); // the sheet is thrown up on a spring: measured mid-arrival its close button reads 43px wide
         await shot('sheet-name');
         note(tag + ' sheet name', await page.evaluate(MEASURE));
         await page.locator('#gm-name').fill('Rain bowling');
