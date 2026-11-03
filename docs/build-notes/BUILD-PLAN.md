@@ -543,13 +543,20 @@ Four **separate** deploys (P7), in this order, each with its own tests and live 
   allowance; no rules change); the four-team engine is in app.js ("The brackets" in CLAUDE.md): `fourRead` and the pure rules (`fourRecord`, `fourUndo`,
   `fourMedals`, `fourResolve` for the Re-check, `fourSeeds`) and the page-state wrappers (`fourStartGame`, `fourRecordTap`, `fourUndoTap`, `fourResolveTap`,
   `fourSaveResult`: director only, own-team guard, late tap after a result ignored). Tests: `bracket.senior.test.js`, `bracket-sync.senior.test.js`,
-  `tests/emulator/brackets4-client.mjs` (the real client's writes against the published rules: SAFE). **Left for session 2:** the four-team screens in
-  `renderTournament` (Start card with "Suggested by points" / Choose different, step bar, current match with `matchupCalloutHTML` / `matchTrackerHTML`, the
-  Re-check card, summary, Save Result) — defining `renderBracketFour` turns `bracketPlayable(4)` true and hides the Games sheet's `#gm-b4-note`; the readers
-  (`currentMatchupOf` / `nextMatchupOf` / `upcomingMatchups` / `renderLiveWatch` / `findNextMatchupFor` / `gameRoundTeams`; `nowBracket4` may be rebuilt on
-  `fourRead`); the hub Games row's "a late bracket tap after the result was saved" with Discard; Reopen the final from `results[gid].path`; Undo at every step
-  and the stale-tap guard in the six-team wizard; **changed on purpose:** `week.senior.test.js:105-115` (refuses → starts a four-team bracket; a five-team
-  roster is refused with the count); a Playwright pass (360 / 390, both themes, 100 / 130 / 200 % text) and `preview.test.js` walk cases for the new screens.
+  `tests/emulator/brackets4-client.mjs` (the real client's writes against the published rules: SAFE).
+- **Built (Step 22, build session 2; not deployed, no version bumped):** the four-team screens (`renderBracketFour`: the Start card — fixed pairs, "Suggested by the
+  points right now" with Choose different, or a pick — then the step bar over the match as the six-team wizard's own callout and live tally, Completed, Undo last
+  match, the Re-check card, the summary with Save Result, Cancel / Clear), `bracketPlayable(4)` true (the Games sheet's note is for any other roster size), the
+  readers on `fourRead` (`nowBracket4`, the Now row's board, `upcomingMatchups`, `findNextMatchupFor`, `gameRoundTeams`, a counselor's `renderLiveWatchFour`), Reopen
+  the final from `results[gid].path` (Change the result: Reopen the final / Start over / Keep it), `bracketNotes` on the hub's Games row and screen (a late tap after
+  a saved result, with Discard; a re-check waiting), Undo at every step and the stale-tap guard in the six-team wizard (`sixBackToBye`, `sixUndoSemifinal`,
+  `sixUndoFinal`, `sixLive`), senior's Legacy Game seeded as a bracket (`seniorDefaultConfig`: the live config is the owner's to change), a takeover that no
+  longer scrolls sideways. **Changed on purpose:** `week.senior.test.js` (a four-team roster starts the bracket; five is refused with its count),
+  `bracket.test.js` (the wizard's refusal case runs on 5 / 3 / 2 teams), `camps.test.js`, `games-screen.test.js` (two cases), `games-tab.test.js` and
+  `now-model.test.js` (an unreadable bracket is not a live game). New: `preview.test.js` walks every step of a four-team bracket;
+  `docs/build-notes/verify/step22-pass.cjs` is the browser pass (senior end to end with real taps, every state at 360 / 390, both themes, 100 / 130 / 200 % text,
+  a counselor's game view and Now card, a junior six-team smoke test). **Owner's checks** are in the session report: switch the live Legacy Game to Bracket,
+  a real-phone tournament on senior, two phones recording at once, a junior bracket.
 
 ### Step 23 · The reveal: remote, counselor mirror, public big screen, finale · redesign D5 · Mar · XL (6) · Opus pass, then Sonnet
 - **Ships:** `reveal.js` (`?v=` → 18): the director remote (mini TV, grouped ladder, masked

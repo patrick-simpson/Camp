@@ -848,9 +848,11 @@ no notice; with no layout the count stands). The notice strip's first line is cl
 `#sheet-messages`. `annStripClick` is the
 strip's one delegated handler, shared with the sheet. Take down is Tell everyone's `tellNoticeDown()` (the 10 s Undo); the strip squashes out first.
 
-**Four-team bracket** (synced under `brackets4`; the rules are in "The brackets" below): `nowBracket4` reads `state.brackets4[gid] = { m: { s1, s2, third, final } }` as four cells,
-derives 3rd place and the final unless a match recorded its own `a` / `b`, drops any id that is not one of the camp's teams, and words my team's next game
-("Red plays in the final next · 3rd place match first"). A director on a team in a match gets the own-team reason in place of Score, per match.
+**Four-team bracket** (synced under `brackets4`; the rules are in "The brackets" below): `nowBracket4` reads it through `fourRead` as four cells (3rd place and the
+final derived until a match records its own `a` / `b`; every id a roster team; null for a bracket this build cannot read, which is not a live game either) and
+words my team's next game ("Red plays in the final next · 3rd place match first"). While a recorded match disagrees with its semifinals (`hold`) no cell is live and
+no team is told what is next. The live row carries the match under way as a board with its tally and the next pair (`nowLiveBoard` → `fourLive`, shared
+`nowMatchBoard` with the six-team bracket). A director on a team in a match gets the own-team reason in place of Score, per match.
 
 **SECRECY** (the Step 3 rule). A counselor's model holds no point and no place. The director-only fields (`pts`, `locked`, `given`, `secret`, `max`, `mult`,
 `stillToScore`, a tally's `place`, `score`, `hold`, `canRemove`, `canTakeDown`, `todo`, the verse moment) carry NOTHING for anyone else: absent, or `null` where
@@ -2575,14 +2577,17 @@ What's covered, and why each file exists:
   Keep helpers that run at load free of later top-level `const`s.
 - `bracket-guard.test.js` — a foreign-shaped bracket renders the reload card, is
   never healed, pushed, or shown as live (see "A bracket this build can't read").
-- `bracket.test.js` — **the six-team wizard, pinned BEFORE its helpers were extracted** (Step 22) and
-  unchanged since: it drives the real `renderTournament` / `renderBracket*` handlers through stub buttons
+- `bracket.test.js` — **the six-team wizard, pinned BEFORE its helpers were extracted** (Step 22); its pin-first
+  cases are unchanged (one assertion moved on purpose: a roster of four is the four-team bracket's now, so the
+  refusal case runs on 5, 3 and 2 teams) and the Undo / stale-tap cases sit at its end: it drives the real `renderTournament` / `renderBracket*` handlers through stub buttons
   (fresh bracket, Start, free-pick and fixed-order round 1, undo, the bye with and without confirmed
   points, Back to Round 1, championship, final, Save Result's exact record, messtival doubling,
   `medalCounts`, Cancel, Clear result, the own-team guard, the "exactly 6 teams" refusal, what spectators
   read, the per-game sync write, a seeded random walk) plus direct tests of the extracted helpers.
   `bracket.senior.test.js` — the four-team engine on four teams (pure rules, the re-check cases, the
-  page-state wrappers, the own-team guard, the preview refusal); `bracket-sync.senior.test.js` — the
+  page-state wrappers, the own-team guard, the preview refusal) and its screens (the readers, the
+  Start card, a whole tournament through a tap driver, the stale tap, the Re-check card, Cancel, Reopen the
+  final, the hub's bracket notes, the reveal's freeze); `bracket-sync.senior.test.js` — the
   `brackets4` key (snapshot, normalize, per-match writes, two phones, the first-snapshot merge, delete /
   format change / prune / backup). `tests/emulator/brackets4-client.mjs` proves the real client's writes
   against the published rules.
@@ -2893,16 +2898,21 @@ does, so an app device always chooses by its own key.
   ⇒ TBA; empty meals ⇒ plain labels; placeholder verses).
 - **Senior seed data is placeholders**: Red/Blue/Green/Gold teams (t0..t3 —
   same id scheme, disambiguated by root+namespace), the published sample
-  day as the Mon–Fri schedule, and 5 seeded placement games per day (two
-  Team Competitions, Legacy Game, Hot Seat, Let's Make a Deal — all scored,
-  owner's call). `seniorDefaultConfig()` uses `version: 5` ON PURPOSE: the
+  day as the Mon–Fri schedule, and 5 seeded games per day (two Team
+  Competitions, Legacy Game, Hot Seat, Let's Make a Deal — all scored, owner's
+  call; placement placeholders except the Legacy Game, which is the four-team
+  bracket: `format: 'tournament'`, `bracketSeed: 'standings'`, the Games sheet's
+  plain running scoreboard `liveTracker`). **The seed reaches a NEW senior config
+  only** — the live senior config is the database's, and a director switches
+  Legacy Game to "Bracket" in Set up the week → Games for it to be played as one.
+  `seniorDefaultConfig()` uses `version: 5` ON PURPOSE: the
   junior one-shot migrations in `migrateState` are gated on `version < 5`
   and must never fire against senior data.
-- **The 6-team bracket wizard still refuses senior's 4 teams** (the
-  `renderTournament` guard). The four-team bracket (2 semis → 3rd-place match →
-  final) has its data, sync and engine (see "The brackets"); its screens in the
-  game view are the last part of Step 22, so senior plays placement/tally
-  formats until they land.
+- **Senior's four teams play the four-team bracket** (2 semis → 3rd-place match →
+  final; see "The brackets"): `renderTournament` hands a roster of four to
+  `renderBracketFour`, and a roster of neither four nor six still gets the
+  wizard's "needs exactly 6 teams — you have N" card. The six-team wizard is
+  never reached with four teams.
 - **Tests**: a file named `*.senior.test.js` runs against the senior
   profile (the runner seeds the camp key before scripts load —
   `makeContext({camp:'senior'})`). `week.senior.test.js` re-runs the
@@ -4315,8 +4325,8 @@ v183 parity fixture are untouched.
   `bracketSuggestPair` (app.js): to a DIRECTOR only (`standingsVisible`; never a counselor or a preview) the best remaining team v the lowest
   remaining one is suggested above the team chips, with "Call them up"; nothing is stored until a pair is called up, exactly as a hand pick. The
   four-team bracket reads `bracketSeed` through its own `fourSeedMode` / `fourSeeds` (first v last, second v third; fixed pairs; a pick); a sheet on a
-  camp that cannot play a bracket in the app says so (`#gm-b4-note`, hidden by `bracketPlayable(n)`: six teams always, four once a four-team flow
-  is on the page — i.e. once `renderBracketFour` exists).
+  camp that cannot play a bracket in the app says so (`#gm-b4-note`, hidden by `bracketPlayable(n)`: true for six and for four teams, so the note is for a
+  roster of any other size).
 - **When** (`gmPlacement`, `gmMoveGame`, the rain plan's move picker): a day (all seven; one that isn't a games day asks first, `gmMakeDay`),
   then an item — Games items and items that already hold games first, the rest behind "Other items on Thursday" — or, with the original
   schedule, a session. One tap writes `blockId`, `dayId` (the item's weekday), `session` (`rainSessionFor`: the item's time) and `ord` (after
@@ -5290,8 +5300,10 @@ count). All of this is in app.js ("The six-team bracket's rules", "What both bra
 
 - **Six-team helpers** (extracted from the wizard's click handlers AFTER `bracket.test.js` pinned them): `sixPick`, `sixRecordMatch`, `sixUndoMatch`,
   `sixBackToRound1`, `sixChooseBye`, `sixRecordSemifinal`, `sixRecordFinal`, `sixMedals`. They change the bracket in place and refuse what cannot be (a
-  winner who did not play); the handlers add touchData / saveState / renderAll as before. Not added to the wizard yet: Undo at every step and the
-  stale-tap guard (the four-team engine has both).
+  winner who did not play); the handlers add touchData / saveState / renderAll as before. Since session 2 the wizard also has `sixBackToBye`,
+  `sixUndoSemifinal` and `sixUndoFinal` (Undo at every step: a link under the championship game, the final and the summary, never offered to a director
+  whose own team played the match it takes back) and the stale-tap guard: every handler resolves the bracket as it is when it fires (`sixLive(g, phase)`,
+  `sixStale`), so a screen drawn before another director's tap, a snapshot that replaced the bracket or a saved result is ignored, said and repainted.
 - **Shared**: `finishBracket(g, kind, medals, path)` — Save Result for either kind: one `{ medals, savedAt }` result (a four-team one also keeps the
   finished bracket as `path`), the bracket's node and the game's live tally retired, `touchData`, save, repaint, `celebrate`. `cancelBracket(g, kind)`.
   `bracketNode(kind)`.
@@ -5317,10 +5329,35 @@ count). All of this is in app.js ("The six-team bracket's rules", "What both bra
   `brackets4/<gid>/m/<match>` — two refs recording the two semifinals on two phones keep both; a new bracket goes up whole; Undo is the match's deletion;
   finishing writes `results/<gid>` and `brackets4/<gid>: null` in the same update. Everything else is the generic engine (per-path first-snapshot merge,
   quarantine named "bracket", `makeFreshState`, `applyRemoteState` "missing means empty", backups, `GAME_RECORD_MAPS`, restore points).
-- **Not built yet** (the rest of Step 22): the four-team screens in `renderTournament` (Start card, step bar, the current match, Re-check, summary,
-  Save Result), the readers (`currentMatchupOf` / `nextMatchupOf` / `upcomingMatchups` / `renderLiveWatch` for a four-team bracket; `nowBracket4` still
-  derives its own cells, consistent with `fourRead` for a healthy bracket), a stray bracket beside a saved result listed on the hub's Games row with
-  Discard, Reopen the final from a result's `path`, Undo at every step and the stale-tap guard in the six-team wizard.
+- **The screens** (`renderBracketFour`, "The four-team bracket's screens" in app.js; `renderTournament` hands a four-team roster to it): drawn from state
+  alone through `fourRead` and written through `setLiveHtmlIfChanged(container, html, [g])` (an idle render leaves a running live tally alone; the live
+  tally and copy button are bound after a write), taps delegated ONCE per container by `data-four` / `.winner-btn` / `[data-four-match]` and resolved when
+  they fire (`fourEntryTap`; the game and the match are read at tap time, so a screen made before another phone's tap is ignored, said (`FOUR_WHY`) and
+  repainted). **Start**: the game's Matchups setting: fixed pairs (one button), "Suggested by the points right now" with Start with these / Choose
+  different (a director with confirmed points only: `fourSeedPlan`), or a pick (`fourPickTap`: the first two teams meet in Semifinal 1, the other two fill
+  Semifinal 2). **Started**: the step bar (Semifinal 1 → Semifinal 2 → 3rd place → Final → Results), the match waiting for a winner as the six-team
+  wizard's own `matchupCalloutHTML` + `matchTrackerHTML` (so the own-team guard and the live tally come with it), Completed, Undo last match (not for a
+  match the director's own team played), Cancel this bracket (asked first through `askDialog`). **Re-check** (a recorded match disagrees with its
+  semifinals): nothing can be recorded or saved, the card names what changed and offers both `fourResolve` answers in words ("Keep Blue as the winner" /
+  "Put Gold back as the winner"). **Summary**: the medals and Save Result (`fourSaveResult` → `finishBracket`: the same result record, so `medalCounts`,
+  double points, the Now card and the reveal's freeze read it exactly like any other). A bracket this build cannot read shows only Reload and Clear.
+  **Reopen the final**: a four-team result keeps the finished bracket on it (`results[gid].path`), and Change the result on that game offers Reopen the final
+  (`fourReopen`: the result comes off, the bracket is back at the final with every other match as it was, ONE write — `fourReopenBracket` refuses a path
+  that is not a consistent finished bracket) / Start over / Keep it (games-ui.js `gamesChangeResult`). **The hub**: `bracketNotes()` lists a bracket node
+  still under a game whose result is saved (`late`: a phone that had not heard yet recorded a match; every reader ignores it and a new Start replaces it) and
+  a four-team bracket waiting on a re-check; the hub's Games row says so, and the Games screen's "Brackets to look at" (`#sg-sec-bn`) lists them, the late
+  ones with Discard (`discardLateBracket`: the result is untouched).
+- **Spectators** (a counselor, a preview of one): `renderLiveWatchFour` — the match under way on the big board, "Up next" when both teams are known (the
+  3rd-place match is not known while a semifinal is on), the followed team's line, and Now's own four cells (`nowBracket4Html` inside `.gv-b4`, which is
+  its own `nw-card` size container); never a control. `upcomingMatchups` / `findNextMatchupFor` / `gameRoundTeams` read `fourLive`; `gameRowStatus` calls a
+  bracket live only when `fourRead` can read it. The preview walk (`tests/preview.test.js`) covers every step: the "3rd place" label is the bronze MATCH, never
+  a standings place, so the leak patterns read the text with it set aside.
+- **Tests**: `bracket.test.js` (the six-team wizard, pinned first; the new Undo / stale-tap cases are at its end), `bracket.senior.test.js` (engine, readers,
+  the screens through a tap driver, Reopen, the hub notes, the reveal's freeze), `bracket-sync.senior.test.js`, `week.senior.test.js` (CHANGED ON PURPOSE: a
+  four-team roster starts the four-team bracket; a five-team one is still refused with its count), `tests/emulator/brackets4-client.mjs`;
+  `docs/build-notes/verify/step22-pass.cjs` is the browser pass (senior end to end with real taps, every state at 360 / 390, light / dark, 100 / 130 / 200 %,
+  a counselor's game view and Now card, a junior six-team smoke test). The takeover's body clips horizontally (`.tk-body { overflow-x: hidden }`): a
+  full-width jelly-button paints its wobble on a canvas 28px wider than itself on each side, which used to make the takeover scroll sideways.
 
 ## The TV page (current-standings.html) — both camps
 

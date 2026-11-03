@@ -1070,3 +1070,29 @@ test('the hub\'s Games row says so in plain words, and the Games screen lists th
     assert.equal(setupEl('sg-bn-list').innerHTML, '');
   });
 });
+
+// ── the standings and the reveal read it as any other result ────────────────────────────────────────────────────
+
+test('a four-team result counts exactly like a podium: medalCounts, double points, and the reveal\'s freeze, with its kept bracket ignored', () => {
+  const g = fourGame();
+  quiet(() => {
+    g.messtival = true; // double points
+    savedBracket(g, { s1: 't0', s2: 't1', third: 't3', final: 't1' }); // gold t1, silver t0, bronze t3
+    const r = state.results[g.id];
+    assert.deepEqual(r.medals, { gold: 't1', silver: 't0', bronze: 't3' });
+    assert.ok(r.path && r.path.m, 'the finished bracket is kept on it');
+    const withPath = JSON.stringify(medalCounts());
+    const rowsWithPath = JSON.stringify(revealFreezeRows());
+    delete r.path;
+    assert.equal(JSON.stringify(medalCounts()), withPath, 'the kept bracket changes no count');
+    assert.equal(JSON.stringify(revealFreezeRows()), rowsWithPath, 'nor the rows the big screen is frozen from');
+    const c = medalCounts();
+    assert.equal(c.t1.points, MEDAL_POINTS.gold * 2, 'gold, doubled');
+    assert.equal(c.t0.points, MEDAL_POINTS.silver * 2);
+    assert.equal(c.t3.points, MEDAL_POINTS.bronze * 2);
+    assert.equal(c.t2.points, 0, 'the fourth team has nothing');
+    const rows = revealFreezeRows();
+    assert.deepEqual(rows.map((x) => x.id), ['t1', 't0', 't3', 't2']);
+    assert.deepEqual(groupPlaces(rows).map((p) => [p.place].concat(p.entries.map((x) => x.id))), [[1, 't1'], [2, 't0'], [3, 't3'], [4, 't2']], 'four places, one team each');
+  });
+});
