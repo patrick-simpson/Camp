@@ -140,6 +140,10 @@
          champions (Friday) and nothing else. -->
     <symbol id="i-rewind" viewBox="0 0 24 24"><path d="M11.6 6.2 5.8 12l5.8 5.8"/><path d="M18.4 6.2 12.6 12l5.8 5.8"/></symbol>
     <symbol id="i-crown" viewBox="0 0 24 24"><path d="M4.4 17.4 3.6 8l4.8 3.7L12 5.2l3.6 6.5L20.4 8l-.8 9.4z"/><path d="M5 20.4h14"/></symbol>
+    <!-- Step 24 (director tools): the bolt marks double points (a plain line,
+         never a tinted callout), chev-d opens the verse line in place. -->
+    <symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13.4 3.4 5.6 13.2h5.6l-.8 7.4 7.8-9.8h-5.6z"/></symbol>
+    <symbol id="i-chev-d" viewBox="0 0 24 24"><path d="m5.5 9.5 6.5 6.5 6.5-6.5"/></symbol>
     <!-- Team flag marks (§8.4) for a team with no shield (senior today): a
          pennant on a pole, filled with the team's mark colour (currentColor,
          from .flag[data-flag] or an inline --flag-fill) and outlined in ink.
@@ -1843,6 +1847,146 @@
        Jenn", no Remove (delete it in chat). Directors only: .msg-remove. The
        preview: the meta reads "Now · Jenn", no Remove, and .msg-x is drawn but
        inert. -->
+
+  <!-- ── AWARD POINTS (redesign §7.3; Step 24) ──────────────────────────
+       Directors only, from More → Director → Award points: the place for
+       corrections and minus points (the everyday paths are Now's cleanup moment
+       and the Games standings). A paper head (only directors see points, so this
+       is not a broadcast), the day pinned under it, three sections. Every tap
+       saves at once through today's functions and guards (setVersePoints,
+       setCleanupPoints, the bonus ledger; canScoreRound's own-team lock).
+       #award-days: one tab per competition day (Mon–Fri), opens on today;
+       aria-selected is the chosen day, data-today the link-blue ring (blue means
+       today across the app). The three lists are setHtmlIfChanged roots keyed
+       by data-key, so a day switch is one replace and a tap only re-checks.
+       Motion (JellyMotion, calm-aware): a tapped point pops (`press`) and, being
+       an award button (data-joy), sparkles; a day switch slides the lists in from
+       that side (`arrive`; calm: a fade); a quick-points row arrives and the
+       ledger glides (flipKeyed); a removed one leaves with playOut. -->
+  <section id="takeover-award" class="takeover award" role="dialog" aria-modal="true" aria-labelledby="takeover-award-title" hidden>
+    <header class="tk-head">
+      <button type="button" class="tk-back" data-takeover-back>
+        <svg class="ico" aria-hidden="true"><use href="#i-chev-l"/></svg><span class="tk-back-label" id="takeover-award-back-label">More</span>
+      </button>
+      <div class="tk-titles">
+        <h2 class="tk-title" id="takeover-award-title">Award points</h2>
+        <p class="tk-sub award-secret"><svg class="ico" aria-hidden="true"><use href="#i-eye-off"/></svg>Points stay with directors</p>
+      </div>
+    </header>
+    <div class="award-bar">
+      <div class="daypick award-days" id="award-days" role="tablist" aria-label="Day">
+        <button type="button" class="daypick-btn" role="tab" aria-selected="true" aria-controls="takeover-award-body" data-dow="1">Mon</button>
+        <button type="button" class="daypick-btn" role="tab" aria-selected="false" aria-controls="takeover-award-body" data-dow="2">Tue</button>
+        <button type="button" class="daypick-btn" role="tab" aria-selected="false" aria-controls="takeover-award-body" data-dow="3">Wed</button>
+        <button type="button" class="daypick-btn" role="tab" aria-selected="false" aria-controls="takeover-award-body" data-dow="4">Thu</button>
+        <button type="button" class="daypick-btn" role="tab" aria-selected="false" aria-controls="takeover-award-body" data-dow="5">Fri</button>
+      </div>
+    </div>
+
+    <div class="tk-body award-body" id="takeover-award-body" role="tabpanel" aria-labelledby="takeover-award-title">
+      <!-- In the double-points window only: a plain line, never a tinted box.
+           The verse keys already show what a tap is worth NOW (the stored value
+           stays 0–5; each entry doubles by its own timestamp, bonusIsDouble);
+           cleanup never doubles. #award-double-text is the renderer's words. -->
+      <p class="setup-note award-double" id="award-double" hidden><svg class="ico" aria-hidden="true"><use href="#i-bolt"/></svg><span id="award-double-text">Double points tonight: verse and quick points count twice. Cleanup doesn't.</span></p>
+
+      <!-- POINT ROW MARKUP (verse and cleanup; one row per team):
+             <div class="aw-row" data-key="v-t0" data-team="t0">
+               <span class="aw-mark">teamMarkHtml(id, {size: 28})</span>
+               <span class="aw-name">Ferocious Foxes</span>
+               <div class="aw-pts" role="radiogroup" aria-label="Ferocious Foxes · Wednesday verse" data-n="6">
+                 <button type="button" class="aw-pt" role="radio" aria-checked="true" data-pts="0" data-joy>0</button>
+                 <button type="button" class="aw-pt" role="radio" aria-checked="false" data-pts="1" data-joy>1</button> … 5
+               </div>
+             </div>
+           The chosen value is aria-checked: a filled ink key ("given"); a chosen
+           0 is only outlined, so a team that got nothing never looks awarded.
+           data-n is how many keys (6 for verse, 4 for cleanup). A verse key's
+           label is what a tap is worth NOW (doubled in the window), data-pts the
+           stored value; cleanup never doubles, so its labels are 0–3 always.
+           Own team (canScoreRound says no): data-locked on the row, no keys,
+           and in their place
+             <p class="aw-lock"><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span>Your team · another director gives these</span><b class="aw-given">+3</b></p>
+           A team with points on a meal it isn't on the rota for keeps its row
+           (so it stays clearable) with <span class="aw-tag">Not on the rota</span>
+           after the name. -->
+      <section class="dt-sec award-sec" id="award-verse" aria-labelledby="award-verse-label">
+        <div class="dt-h-row">
+          <h3 class="dt-h" id="award-verse-label">Memory verse</h3>
+          <span class="dt-h-note">0–5 per team · 0 clears</span>
+        </div>
+        <!-- The day's verse in one line; a tap opens the whole verse in place
+             (aria-expanded) in the scripture serif. No verse yet: data-empty, the
+             line reads "No verse for Wednesday yet" and is not a button's job:
+             the renderer sets aria-disabled. -->
+        <button type="button" class="aw-verse" id="award-verse-line" aria-expanded="false">
+          <span class="aw-verse-ref" id="award-verse-ref">Galatians 2:20</span>
+          <span class="aw-verse-text" id="award-verse-text"></span>
+          <svg class="ico aw-verse-chev" aria-hidden="true"><use href="#i-chev-d"/></svg>
+        </button>
+        <div class="gl aw-list" id="award-verse-list"></div>
+      </section>
+
+      <!-- MEAL HEAD (one per meal, before its teams' rows):
+             <div class="aw-meal" data-key="m-Lunch"><span class="aw-meal-name">Lunch</span><span class="aw-meal-time">12:30</span></div>
+           A meal with no team on the rota: the head, then
+             <p class="aw-none" data-key="none-Lunch">No team on the rota</p> -->
+      <section class="dt-sec award-sec" id="award-cleanup" aria-labelledby="award-cleanup-label">
+        <div class="dt-h-row">
+          <h3 class="dt-h" id="award-cleanup-label">Meal cleanup</h3>
+          <span class="dt-h-note">3 = spotless · 0 clears</span>
+        </div>
+        <div class="gl aw-list" id="award-cleanup-list"></div>
+      </section>
+
+      <!-- Quick points: corrections and minus points (bindBonusEntry's draft,
+           bonusDraft, kept across a re-render). #award-quick-teams holds one
+           toggle per team (several can earn the same thing):
+             <button type="button" class="aw-team" aria-pressed="false" data-team="t0"><span class="aw-team-mark">teamMarkHtml 24</span><span class="aw-team-name">Foxes</span></button>
+           own team: aria-disabled="true", data-locked, and the lock glyph after
+           the name instead of nothing. #award-quick-sign: Add | Take away (the
+           iPhone number pad has no minus key); #award-quick-amount[data-sign]
+           follows it (1 | -1), which puts "+" or a danger "−" in front of the
+           number. #award-quick-add says what will
+           happen ("Add 5 points to 2 teams" · "Take 3 points from the Foxes"), or
+           is the dashed well naming what's missing ("Pick a team first" · "Type
+           the points" · "Points are 1 to 100"). -->
+      <section class="dt-sec award-sec" id="award-quick" aria-labelledby="award-quick-label">
+        <div class="dt-h-row">
+          <h3 class="dt-h" id="award-quick-label">Quick points</h3>
+          <span class="dt-h-note">For anything else, or to take points away</span>
+        </div>
+        <div class="gl aw-form">
+          <p class="fld-label aw-form-label" id="award-quick-who">Who earned it</p>
+          <div class="aw-teams" id="award-quick-teams" role="group" aria-labelledby="award-quick-who"></div>
+          <div class="aw-amount" id="award-quick-amount" data-sign="1">
+            <div class="seg aw-sign" id="award-quick-sign" role="radiogroup" aria-label="Add or take away">
+              <button type="button" class="seg-btn" role="radio" aria-checked="true" data-sign="1">Add</button>
+              <button type="button" class="seg-btn" role="radio" aria-checked="false" data-sign="-1">Take away</button>
+            </div>
+            <label class="fld aw-pts-fld"><span class="visually-hidden">Points</span><span class="aw-num-sign" aria-hidden="true"></span><input type="number" class="fld-input aw-num" id="award-quick-pts" inputmode="numeric" min="1" max="100" step="1" placeholder="5"></label>
+          </div>
+          <label class="fld aw-why"><span class="fld-label">What for?</span><input type="text" class="fld-input" id="award-quick-reason" maxlength="40" autocomplete="off" placeholder="Helped carry the canoes"></label>
+          <p class="fld-error" id="award-quick-error" role="alert" hidden></p>
+          <button type="button" class="btn btn-gold btn-block aw-add" id="award-quick-add" aria-disabled="true" data-joy><span id="award-quick-add-label">Pick a team first</span></button>
+        </div>
+
+        <!-- The day's quick points, newest first:
+               <div class="aw-led" data-key="b-<id>">
+                 <span class="aw-mark">teamMarkHtml 24</span>
+                 <span class="aw-led-text"><span class="aw-led-name">Ferocious Foxes</span><span class="aw-led-why">Helped carry the canoes · <span class="aw-led-when">3:05 PM</span></span></span>
+                 <span class="aw-led-pts" data-sign="pos">+5<small class="aw-x2">×2</small></span>   (data-sign="neg": "−2", danger text)
+                 <button type="button" class="aw-led-del" data-bonus-id="<id>" aria-label="Remove +5 for Ferocious Foxes"><svg class="ico" aria-hidden="true"><use href="#i-trash"/></svg></button>
+               </div>
+             ×2: the entry counts double in the standings (its own timestamp).
+             Older cleanup points with no day ride at the end of Monday's list,
+             their why "Cleanup · no day set". -->
+        <h4 class="dt-h aw-led-h" id="award-ledger-title">Quick points on Wednesday</h4>
+        <div class="gl aw-ledger" id="award-ledger"></div>
+        <p class="cb-empty aw-empty" id="award-ledger-empty">No quick points on Wednesday yet.</p>
+      </section>
+    </div>
+  </section>
 
   <!-- ── SHEETS (redesign §2.1) ────────────────────────────────────
        Short reference you READ, then leave: Your team, Who's where, a team's

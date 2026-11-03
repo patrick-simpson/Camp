@@ -1067,12 +1067,13 @@ test clock re-arms for ever. Browser pass (Playwright against the real code; no 
 line meeting the contrast rule, no sideways scroll, in every state of the remote, the mirror, the grids, the strip,
 More, Games and the champion line.
 
-## Director tools: Tell everyone (Step 24 — markup and visual system)
+## Director tools: Tell everyone, Award points (Step 24 — markup and visual system)
 
-Redesign §7.2, mockup 10 and 10-dark. Static markup in index.html (comments there name every hook
-and give the row templates), styles in styles.css's DIRECTOR TOOLS block (the last block in the
-file). **It ships hidden and unwired**; the build session un-hides it as it wires it, so the live app
-never shows a dead control. Rules for whoever edits it:
+Redesign §7.2–7.3, mockup 10 and 10-dark (Tell everyone), with Award points drawn in the same
+language (no mockup existed for it). Static markup in index.html (comments there name every hook and
+give the row templates), styles in styles.css's DIRECTOR TOOLS block (the last block in the file).
+**Both takeovers ship hidden and unwired**; the build session un-hides each as it wires it, so the
+live app never shows a dead control. Rules for whoever edits them:
 
 - **Tell everyone** (`#takeover-tell.takeover.is-roof.tell`, its back `#takeover-tell-back-label`):
   top to bottom the order a director meets the decisions — `#tell-result` (after a send that did not
@@ -1098,6 +1099,23 @@ never shows a dead control. Rules for whoever edits it:
   tint, no badge, no emoji, no capitals. **Now's strip and the preview must be written by ONE function**,
   so the preview is exactly what counselors get (today's `.announce-banner` is the old look; the build
   session moves `renderAnnouncements` to `.msg` when it removes the old inline composer).
+- **Award points** (`#takeover-award.takeover.award`, a PAPER head: points stay with directors, so not
+  a broadcast): `.award-bar` pinned under the head with `#award-days` (`.daypick` with five
+  `.daypick-btn[role=tab][data-dow=1..5]`, `aria-selected`, `data-today`; two rows at the largest text),
+  `#award-double` / `#award-double-text` (a plain line with the bolt, never a tinted box), then three
+  `.dt-sec`s: `#award-verse` (`#award-verse-line[aria-expanded]` with `#award-verse-ref` /
+  `#award-verse-text`, the list `#award-verse-list`), `#award-cleanup` (`#award-cleanup-list`: an
+  `.aw-meal` head per meal, `.aw-none` for a meal with no team) and `#award-quick` (`#award-quick-teams`
+  of `button.aw-team[aria-pressed][data-team]`, own team `aria-disabled` + `data-locked`;
+  `#award-quick-amount[data-sign=1|-1]` holding `#award-quick-sign` (Add / Take away) and
+  `#award-quick-pts`, which wears a "+" or a danger "−"; `#award-quick-reason`; `#award-quick-error`;
+  `#award-quick-add` / `-label`, gold, its words say what happens; the ledger `#award-ledger` of
+  `.aw-led` rows, `#award-ledger-title`, `#award-ledger-empty`). The point rows are POINT ROW MARKUP in
+  index.html: `.aw-row[data-key][data-team]` > `.aw-mark` + `.aw-name` (+ `.aw-tag` "Not on the rota") +
+  `.aw-pts[role=radiogroup][data-n=6|4]` of `button.aw-pt[role=radio][aria-checked][data-pts][data-joy]`
+  (52px keys; the chosen one is a filled ink key, a chosen 0 only outlined in the well, so a team that
+  got nothing never looks awarded); own team: `data-locked`, `.aw-lock` with `.aw-given` instead of keys.
+  Verse keys show what a tap is worth NOW (doubled in the window); cleanup never doubles.
 
 ## Set up the week: the frame, the hub, the clipboard (Step 14 — markup and visual system)
 
