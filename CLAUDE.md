@@ -766,8 +766,9 @@ only the announcements; `tests/now-ui.test.js` boots it that way):
 - **Markup** — static, in `#tab-now` (index.html; every hook and every row template is documented in the comment at `#now-card`, and at `#now-notice`
   for the messages strip) and styles.css's last block "NOW, BLOCK BY BLOCK". A renderer only patches text, `hidden` and `data-*`. The card
   `#now-card[data-kind][data-over]`: kicker (`#now-card-k` / `-when` / `-left`), the 3px hairline (`#now-card-fill` reads `--p`, patched alone),
-  `#now-card-over` ("Your station · Not Sam? Change"), the title (`#now-card-emoji` + `#now-card-label`, capped at `11cqi` so a word stays whole at
-  200 %), and the ROOTS `#now-card-sub`, `#now-card-notes`, `#now-card-body`, `#now-card-foot` (directors: Still on this, or the send-off notice's Take
+  `#now-card-over` ("Your station · Not Sam? Change"), the title (`#now-card-emoji` + `.nw-label-w` > `#now-card-label` and `#now-card-tag`, the
+  Live / Done tag of a card that IS one game, inline after the words; sized `max(min(1.75rem, 11cqi), 1.4rem)` so it stays the biggest text on the
+  card at 130 / 200 % and a word that cannot fit breaks with a hyphen), and the ROOTS `#now-card-sub`, `#now-card-notes`, `#now-card-body`, `#now-card-foot` (directors: Still on this, or the send-off notice's Take
   down) and `#now-moment` (the gold panel: the cleanup moment for everyone, verse points for directors). Under it `#now-todo` (directors' Still to do
   today), `#now-next`, `#now-later`. Shared pieces Step 18's Games tab reuses: game rows `.gr` (ONE stretched `.gr-hit` button, a sibling
   `.gr-score`, `.gr-why` for the own-team lock), the podium `.pd`, the live board `.lb`, the 4-team bracket `.b4`, stations `.es-*`, the verse `.vs`,
@@ -784,12 +785,19 @@ only the announcements; `tests/now-ui.test.js` boots it that way):
 then also ignores the camp week's dates), and every verify script drives Now through it. It is a developer's door, not a feature: never hand out such a
 link, because a director's key in the moment still writes for the DISPLAYED day.
 
+**One game named like its block** (senior's Legacy Game, mockup 13: `body.solo`, `nowSameName`): the row is folded into the card — the sub is
+its format and place ("4-team bracket · Main field", `nowGameKindLine`; a "TBA" / "TBD" place is never shown, `nowPlaceWord`), a director's Score sits at
+the sub's right, the tag rides the title (`card.status`), and the body is a `.gr-solo` piece keyed like the row (own-team reason, board or podium) then
+the bracket. A games card has ONE gold Score (the live game's, else the one up next), and its sub counts "Not scored yet" / "3 games still to score" /
+"2 of 3 games still to score". The kicker's range is the run sheet's bare clock ("10:00–11:45", `.nw-range`, one line), and "finished 10:31" too.
+
 **Kinds.** A kind comes from `type` / the Meal tag (through `blockMeal`) first, then the label's head (before " — "): games, elective (only where
 `CAMP.features.electives`), meal, bible, meeting, worship, activity, bedtime; Saturday is the `sendoff`, Sunday up to the first worship block (all of it
 with none) the `arrival`. `card.kind` is a block kind or `between | morning | night | none | over | notice`: a `bedtime` block with no time is `night`, a
-Saturday `noTime` block is `over`, a `sendoff` block with a posted notice is `notice` (the notice IS the card, the strip leaves it out), a `bible` block
-with no verse for the day is `activity`. **Every minute of every day is a block or a named empty state.** The picture: `at`, `week { phase }`, `reveal`,
-`messages`, `card { kind, k, when, tag, title, emoji, sub, lead, over, notes, hold, down }`, `block`, `moment`, `body` (the kind's data), `next`, `later`
+Saturday `noTime` block is `over`, a `sendoff` block with a posted notice is `notice` (the notice IS the card, the strip leaves it out), a `bible` block with no verse for the day is `activity`; a verse still saying "to be announced" with no reference (senior's seed) keeps the card and its
+keys but `verse.tba` draws "Today's verse hasn't been added yet" in plain words, never scripture, and a theme titled with the camp's own name is left out.
+The generated empty states (Good morning, Lights out, Camp starts …, See you next year, No camp week …) carry no emoji (§8.6). **Every minute of every day is a block or a named empty state.** The picture: `at`, `week { phase }`, `reveal`,
+`messages`, `card { kind, k, when, tag, title, emoji, status, sub, lead, over, notes, hold, down }`, `block`, `moment`, `body` (the kind's data), `next`, `later`
 (+ `laterHeading`), `todo` + `todoMore`, `wholeDay`, the clock part and `wake`. With no camp dates anywhere (`phase: unset`) the printed weekday schedule
 runs as it always did; a date makes the days before the Sunday `none` ("Camp starts Sunday, July 18") and the days after the Saturday `over` ("See you
 next year" plus the champion's NAME from `revealChampionLine()`, never a number).
@@ -809,22 +817,27 @@ written. `card.hold` never carries the moving `nextUntil` (it would change the p
 
 **Moments.** The cleanup moment is the 30 minutes after a Meal-tagged block ends, for the teams on the rota (`cleanupOnRota` + `cleanupTeams`; an empty
 rota says nothing), with each team's counselors for everyone and, for a CONFIRMED director, the 0–3 keys. It wins over the verse moment (senior's Bible study
-starts as breakfast ends); the verse moment (0–5 keys) is Bible study's, for a confirmed director. Neither shows on a held card. A key calls
+starts as breakfast ends), and then tells a confirmed director when the verse keys follow it (`moment.then`, `#now-moment-then`: "Verse points open
+at 9:15"); the verse moment (0–5 keys) is Bible study's, for a confirmed director, drawn compact in the card (mark and name on one line over 44px keys). Neither shows on a held card. A key calls
 `setCleanupPoints` / `setVersePoints`, the very writers Award points uses (deterministic ids, one entry per slot), through `nowTapKey`: behind
 `standingsVisible()` and `canScoreRound`, only for a team the model drew a row for and a value the section has a key for, so a stale or forged tap, a
 counselor's, a hint-painted director's and the director's own team write nothing. `awardKeysHtml` (award.js) is the one key builder.
 
 **Personalisation.** My team is `state.followTeam` (a real team id, else ''). Meal rows say "Your team is on cleanup" or the other teams' short names. My
 elective station comes from `electiveRowHasMe` (identity through `canonicalCounselorName`, a member key first), `mode: station | break | ask | all` (ask = a
-counselor on a team with no identity yet; a director is never asked; a name on no sheet says nothing about breaks), and `then` = the next three blocks that
-are not preparing; the morning meeting names its day's teams (`blockTeams`); Sunday's welcome finds the "Team assignments" block.
+counselor on a team with no identity yet; a director is never asked; a name on no sheet says nothing about breaks), and `then` = the next three blocks that are not preparing (a personal card only). An elective row of mine is titled by its answer: the station with
+its emoji over "Elective 2 · with Patrick and Josh", or "Break" over "Elective 3 · you're free" (quiet ink-2: only `sub.mine` words are bold). **No block is
+listed twice**: with a Then list, Up next goes and Later today starts after the last Then row, the "Prepare for …" rows left out; the morning meeting names its day's teams (`blockTeams`); Sunday's welcome finds the "Team assignments" block.
 
-**Still to do today** (directors): an unscored game whose block has ended, a meal whose cleanup window is over with no points for a team the director may
+**Still to do today** (directors; never a game the card above already shows): an unscored game whose block has ended, a meal whose cleanup window is over with no points for a team the director may
 score, Bible study with a team not given verse points, then people asking to join; oldest first, three rows and `todoMore`.
 
 **Messages.** The posted notice (title, sub, my team's line; `canTakeDown`), the join bar, then banners newest first (synced announcements not dismissed,
 and Announcements-channel chat messages of the last 15 minutes). The model is the whole list; the strip caps at three messages (the notice counts as one,
-one fewer at 130 % text; the root font size is read at render time) and `annOverflow` ("N more messages") rides `#sheet-messages`. `annStripClick` is the
+one fewer at 130 % root text) and is then MEASURED (`annStripRoom`): trailing messages go behind "N more messages" until the notice plus the messages fit in
+`innerHeight / 3` (a hidden copy at the strip's width, made only when the messages or the width change: `annFit`; the newest message shows when there is
+no notice; with no layout the count stands). The notice strip's first line is clamped to one line (See all opens the whole). `annOverflow` rides
+`#sheet-messages`. `annStripClick` is the
 strip's one delegated handler, shared with the sheet. Take down is Tell everyone's `tellNoticeDown()` (the 10 s Undo); the strip squashes out first.
 
 **Four-team bracket** (Step 22's data, not in `SYNC_KEYS` yet): `nowBracket4` reads `state.brackets4[gid] = { m: { s1, s2, third, final } }` as four cells,
@@ -853,9 +866,11 @@ moment's title and body and the foot's hold text are EMPTIED when nothing shows)
   the last row shown was its kind, else the Games tab; Whole day → `openSchedule()`; Set up the week → `openBuilder()`; "Not Sam? Change" →
   `openIdentityPicker()`; an ask name → `state.identity` (blank = "just cheering"); Still on this → `nowHoldOverrun()`; Take down; See all / N more messages /
   Who's where open their sheets (registered in `shellSheetAllowed` / `shellSheetFill`; each opens only with something to say).
-- Motion (JellyMotion, calm-aware, from diffs made in this file, never from a render): the card arrives when the block changes over (calm: a fade), the
-  moment unfolds, a game going Live → Done pops its check and drops the medals bronze → silver → gold (also when the repaint had to wait for a finger), the
-  hairline is nudged from where it was (never refilled), a notice arrives and squashes out. The first paint, a repeat, a paint that brings Now back into
+- Motion (JellyMotion, calm-aware, from diffs made in this file, never from a render), every spring in the HOUSE PATTERN — travel clamped at rest, the
+  overshoot `o = max(0, x − 1)` spent as a landing squash: the card rises 14px and squashes from its top (`arrive`; calm: a fade), the moment unfolds
+  `scaleY(.6 → 1)` from its top, a game going Live → Done pops its check (`snap`, `scale(.3 → 1) rotate(−14° → 0)`) and drops the medals 22px bronze →
+  silver → gold 120 ms apart on `wobble` with `scale(1+.6o, 1−o)` at their foot (also when the repaint had to wait for a finger), the hairline is nudged
+  from where it was (never refilled), a notice arrives and squashes out. The first paint, a repeat, a paint that brings Now back into
   view and a paint under a takeover animate nothing.
 - Previews of a notice drawn outside the page (Tell everyone's, the builder's Notice tab) are `nowNoticeStripHtml` / `nowNoticePreviewHtml` (a test compares
   the strip's class list with index.html's static `#now-notice`, so they cannot drift). `noticeCardHtml(preview, notice, opts)` returns it as a
@@ -871,8 +886,7 @@ champion line beside either.
 **Deleted in build session 3**: the old follow card, banner renderer, live strip, My electives card and notice board (`renderFollowCard`, `renderNowBanner` +
 `splitNowBanner`, `renderLiveHome` + `homeBoardGame` / `liveHomeGames` / `liveHomeTallyCard` / `tallyBoardHTML`, `renderMyElectives` + `myElectivesToday`,
 `renderNoticeBoard`, `paintTeamAccent`) and their CSS. `nowBannerHtml` stays as the schedule ORACLE (week / seed tests compare the schedule's data through
-it; nothing on the page calls it). **Not built:** a second moment slot (senior's Bible study starts as breakfast ends, so with a filled rota the cleanup
-panel takes the one moment slot for the first 30 minutes and the verse keys follow it; Still to do today is the director's safety net), and Preview as a
+it; nothing on the page calls it). **Not built:** a second moment slot (senior's Bible study starts as breakfast ends, so with a filled rota the cleanup panel takes the one moment slot for the first 30 minutes and says when the verse keys follow it; Still to do today is the director's safety net), and Preview as a
 counselor needed nothing here: the model and renderer already read `canEdit()` / `standingsVisible()`, which a preview turns off.
 
 **Tests and passes.** `now-model.test.js` (+ `.senior`: every minute, kinds, moments, running over and the hold, personalisation, rows and boards, the

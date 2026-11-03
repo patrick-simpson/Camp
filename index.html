@@ -466,7 +466,8 @@
              data-over   running over (§3.1): the hairline turns live red and
                          full, #now-card-k says "Running over".
              #now-card-k     "Now" (bold) · "Running over" · "Today" · "Tonight"
-             #now-card-when  " · 10:00–11:45" (" · Elective 1 · 1:15–2:00"); "" for none
+             #now-card-when  " · 10:00–11:45" (" · Elective 1 · 1:15–2:00"); "" for none.
+                             The range is a <span class="nw-range"> (one line).
              #now-card-left  "63 min left" · "7 min over" · "" (tabular)
              #now-card-bar   the 3px hairline; hidden with no timed block. Its
                              fill #now-card-fill reads --p (0–1), set with
@@ -482,13 +483,16 @@
                              (the block, your station, "You're on break", "Up next
                              in 12 min", "Good morning", "Lights out", the notice's
                              title, "No camp week is set up yet"). An empty emoji
-                             hides its slot.
+                             hides its slot. #now-card-tag: the Live / Done tag
+                             (data-tag) of a card that IS one game (below).
              #now-card-sub   ROOT. One line under the title, words only, <b> for a
                              name: "2 of 3 games still to score" (directors),
                              "Still going · Lunch at 12:00" (running over),
                              "with <b>William</b> · Pumpkins", the dish
                              <span class="nw-dish"><span class="nw-dish-emo" aria-hidden="true">🌭</span>Hot Dogs</span>,
-                             "4-team bracket · Main field", "Laura's cottage ·
+                             "4-team bracket · Main field" (+ a director's Score
+                             <button class="btn btn-sm gr-score nw-sub-score btn-gold" data-score-game="…">Score</button>
+                             when the card IS one game), "Laura's cottage ·
                              Foxes, Pumpkins and Pilgrims", a label tail ("with
                              Ella", "Snack Shack open"), "Registration at 2:00 ·
                              in 3 h 10 min". "" hides it.
@@ -516,7 +520,10 @@
                              #now-moment-secret "Points stay with directors"
                              (directors only); #now-moment-body ROOT (rows
                              below); #now-moment-key "3 = spotless" (cleanup,
-                             directors only).
+                             directors only); #now-moment-then "Verse points
+                             open at 9:15" (#now-moment-then-text: the cleanup
+                             panel holds the slot as Bible study starts; a
+                             confirmed director's only).
 
            BODY TEMPLATES (#now-card-body). Every list row is keyed (data-key) so
            JellyMotion.morph / flipKeyed keep the real nodes (§9.4, §9.8).
@@ -525,6 +532,11 @@
              row (.gr-hit, a stretched hit area); Score is its sibling, never
              nested. Status is never colour alone (§8.9): the mark is a check, a
              dot or a ring, and the button's words start with it.
+             ONE game named like its block (senior's Legacy Game, mockup 13): no
+             row at all — its line and Score are the sub, its tag rides the
+             title, and the body is <div class="gr-solo" data-key="g-…"
+             data-status="…"> (the own-team .gr-why, then the .lb board or
+             the .pd podium), then the .b4 bracket.
              <div class="gr-list" role="list">
                <div class="gr" role="listitem" data-key="g-axe" data-status="done|live|todo" data-next? data-mine?>
                  <span class="gr-st" aria-hidden="true"></span>                    (drawn from data-status)
@@ -661,7 +673,7 @@
           <span class="nw-over-text" id="now-card-over-text">Your station</span>
           <button type="button" class="nw-change" id="now-card-change" hidden><span id="now-card-change-text">Not you? Change</span></button>
         </div>
-        <h2 class="nw-title" id="now-card-title"><span class="nw-emo" id="now-card-emoji" aria-hidden="true"></span><span class="nw-label" id="now-card-label"></span></h2>
+        <h2 class="nw-title" id="now-card-title"><span class="nw-emo" id="now-card-emoji" aria-hidden="true"></span><span class="nw-label-w"><span class="nw-label" id="now-card-label"></span><span class="gr-tag nw-tag" id="now-card-tag" data-tag="live" hidden>Live</span></span></h2>
         <p class="nw-sub" id="now-card-sub" hidden></p>
         <div class="nw-notes" id="now-card-notes" hidden></div>
         <div class="nw-body" id="now-card-body"></div>
@@ -677,6 +689,7 @@
           </div>
           <div class="nm-body" id="now-moment-body"></div>
           <p class="nm-key" id="now-moment-key" hidden>3 = spotless</p>
+          <p class="nm-then" id="now-moment-then" hidden><svg class="ico" aria-hidden="true"><use href="#i-clock"/></svg><span id="now-moment-then-text"></span></p>
         </section>
       </section>
 

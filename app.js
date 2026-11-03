@@ -1654,6 +1654,27 @@ function nowJoinNames(names) {
   return names.length < 2 ? names.join('') : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
 }
 function nowTeamWord(id) { return teamShort(id) || teamName(id); }
+// A game's place as a row says it: '' for nothing and for a placeholder ("TBA", "TBD"), which is no information (the copy glossary).
+function nowPlaceWord(where) {
+  const w = String(where == null ? '' : where).trim();
+  return /^(tba|tbd|to be announced|to be decided)\.?$/i.test(w) ? '' : w;
+}
+// Two names that read the same (a game named like its block): case, curly quotes and spaces aside.
+function nowSameName(a, b) {
+  const n = (t) => String(t == null ? '' : t).toLowerCase().replace(/[“”]/g, '"').replace(/[‘’]/g, "'").replace(/\s+/g, ' ').trim();
+  return !!n(a) && n(a) === n(b);
+}
+// How many of a games block's games a director still has to score: "Not scored yet" for a block of one, "3 games still to score" when
+// none is, "2 of 3 games still to score" once some are (never "1 of 1 game").
+function nowStillToScoreText(left, total) {
+  if (left >= total) return total === 1 ? 'Not scored yet' : total + ' games still to score';
+  return left + ' of ' + total + ' game' + (total === 1 ? '' : 's') + ' still to score';
+}
+// The line under a card that IS one game (mockup 13: "4-team bracket · Main field"): its format in plain words, then its place.
+function nowGameKindLine(row) {
+  const kind = row.format === 'tournament' ? teamIds().length + '-team bracket' : row.format === 'tally' ? 'Every team scores' : 'Gold, silver and bronze';
+  return [kind, row.where].filter(Boolean).join(' · ');
+}
 // "63 min left" / "7 min over" (from model.clock), and "in 3 h 10 min" for a countdown.
 function nowLeftText(c) {
   if (!c) return '';
@@ -1818,12 +1839,13 @@ function nowBracket4(ctx, g) {
 function nowGameRow(ctx, g) {
   const status = gameRowStatus(g, ctx.ms);
   const row = {
-    key: 'g-' + g.id, id: g.id, name: g.name, emoji: safeEmoji(g.emoji, ''), where: g.location || '', format: g.format || '',
+    key: 'g-' + g.id, id: g.id, name: g.name, emoji: safeEmoji(g.emoji, ''), where: nowPlaceWord(g.location), format: g.format || '',
     status, next: false, mine: false, line: '', podium: null, board: null, score: null,
   };
   if (status === 'done') {
     const r = state.results[g.id];
-    const at = r && typeof r.savedAt === 'string' ? messageClock(r.savedAt, true) : '';
+    // "finished 10:31": the run sheet's bare clock (§8.7), so a narrow row never leaves "AM" on a line of its own.
+    const at = r && typeof r.savedAt === 'string' ? messageClock(r.savedAt, true).replace(/\s*[AP]M$/i, '') : '';
     row.line = at ? 'finished ' + at : 'finished';
     row.podium = nowPodium(ctx, g);
     row.mine = !!(row.podium && row.podium.some((c) => c.mine));
@@ -1838,7 +1860,7 @@ function nowGameRow(ctx, g) {
       row.line = 'scores so far';
       row.mine = row.board.rows.some((r) => r.mine);
     } else if (cell) {
-      row.line = cell.name.toLowerCase(); // the four-team bracket's match under way: "semifinal 2", "3rd place"
+      row.line = cell.name; // the four-team bracket's match under way, named as its cell is: "Semifinal 2", "3rd place"
       row.mine = cell.teams.some((t) => t.mine);
     } else row.line = 'Being scored';
   }
@@ -1864,12 +1886,17 @@ function nowGamesBody(ctx, nb) {
   const ordered = rows.map((r, i) => ({ r, i })).sort((a, b) => (rank[a.r.status] - rank[b.r.status]) || (a.i - b.i)).map((x) => x.r);
   const firstTodo = ordered.find((r) => r.status === 'todo');
   if (firstTodo) firstTodo.next = true;
-  ordered.forEach((r) => { if (r.score) r.score.gold = r.status === 'live' || r.next; });
+  // ONE gold Score (§8.1 rule 3: gold is the single primary action): the live game's, else the one up next; the rest are outlined.
+  const lead = ordered.find((r) => r.status === 'live') || firstTodo;
+  ordered.forEach((r) => { if (r.score) r.score.gold = r === lead; });
   const left = ordered.filter((r) => r.status !== 'done').length;
   const b4 = games.map((g) => nowBracket4(ctx, g)).find(Boolean) || null;
   return {
     rows: ordered, total: ordered.length, stillToScore: ctx.director ? left : null,
     doubled: games.some((g) => g.messtival), bracket4: b4,
+    // ONE game named like its block (senior's Legacy Game): the card IS that game (mockup 13), so the renderer folds its row into
+    // the card instead of repeating the name under the title.
+    solo: games.length === 1 && nowSameName(games[0].name, nb.head),
   };
 }
 
@@ -1984,8 +2011,20 @@ function nowRow(ctx, nb) {
     if (duty.some((d) => d.mine)) { row.sub = { text: 'Your team is on cleanup', mine: true }; row.mine = true; }
     else if (duty.length) row.sub = { text: nowJoinNames(duty.map((d) => nowTeamWord(d.team))) + ' on cleanup', mine: false };
   } else if (nb.kind === 'elective') {
+    // The person's own answer is the title (mockup 03, §8.1 rule 1): their station with its emoji, the slot and who they are with
+    // under it — or "Break · Elective 3 · you're free". Someone on no elective sheet keeps the plain "Elective 2" row.
     const st = nowStationAt(ctx, nb);
-    if (st) { row.sub = { text: st.onBreak ? 'On break' : st.station, mine: true }; row.mine = true; }
+    if (st && st.onBreak) {
+      row.title = 'Break';
+      row.emoji = '';
+      row.sub = { text: nb.head + ' · you’re free', mine: false };
+      row.mine = true;
+    } else if (st) {
+      row.title = st.station;
+      row.emoji = st.emoji;
+      row.sub = { text: nb.head + (st.with.length ? ' · with ' + nowJoinNames(st.with.map((w) => w.name)) : ''), mine: false };
+      row.mine = true;
+    }
   } else if (nb.kind === 'games') {
     const games = gamesForBlock(ctx.dow, nb.b);
     if (games.length) {
@@ -2000,12 +2039,17 @@ function nowRow(ctx, nb) {
 }
 
 // ── the kinds' bodies ────────────────────────────────────────────────
+// A verse still saying the seed's "to be announced" with no reference (senior's placeholder) is NOT scripture: `tba` makes the renderer
+// say "Today's verse hasn't been added yet" in plain words (Award points and the Verses screen call it missing too). The card stays
+// Bible study's, so a director keeps the verse points. A theme titled with the camp's own name ("Senior Camp") names nothing.
 function nowVerse(dow) {
   const v = verseFor(dow);
   if (!v || !(String(v.text || '').trim() || String(v.ref || '').trim())) return null;
+  const tba = (o) => /\bto be announced\b/i.test(String(o.text || '')) && !String(o.ref || '').trim();
   const t = verseTheme();
-  const theme = t && (t.title || t.text || t.ref) ? { title: String(t.title || ''), ref: String(t.ref || '') } : null;
-  return { text: String(v.text || ''), ref: String(v.ref || ''), video: safeVideoUrl(v.video), theme };
+  const tTitle = t && String(t.title || '').trim().toLowerCase() !== String(CAMP.label || '').trim().toLowerCase() ? String(t.title || '') : '';
+  const theme = t && (tTitle || String(t.ref || '').trim()) ? { title: tTitle, ref: String(t.ref || '') } : null;
+  return { text: String(v.text || ''), ref: String(v.ref || ''), video: safeVideoUrl(v.video), theme, tba: tba(v) };
 }
 // The identity ask's choices: the team's counselors (the member directory once it has some, else the printed roster).
 function nowIdentityNames(teamId) {
@@ -2033,7 +2077,7 @@ function nowElectiveBody(ctx, nb, blocks) {
     mode, station: mode === 'station' ? st : null, stations, onBreak: breakNames.map((n) => ({ name: n, mine: electiveIsMe(n, '') })),
     count: { stations: stations.length, onBreak: breakNames.length },
     ask: mode === 'ask' ? { names: nowIdentityNames(ctx.myTeam) } : null,
-    then: after.map((x) => nowRow(ctx, x)),
+    then: mode === 'station' || mode === 'break' ? after.map((x) => nowRow(ctx, x)) : [], // only a personal card draws "Then"
   };
 }
 
@@ -2112,14 +2156,14 @@ function nowMessages(ctx, cardKind) {
 // What the day's moments left undone, oldest first: a game whose block has ended with no result, a meal whose cleanup window
 // is over with no points for a team the director may score, Bible study with a team not given verse points, and the people
 // waiting to join. Points are read only for a CONFIRMED director (the guarded readers say nothing to anyone else).
-function nowTodo(ctx, blocks) {
+function nowTodo(ctx, blocks, shown) {
   if (!ctx.director) return { rows: [], more: 0 };
   const rows = [];
   blocks.forEach((nb) => {
     if (nb.noTime) return;
     if (ctx.minutes >= nb.end) {
       gamesForBlock(ctx.dow, nb.b).forEach((g) => {
-        if (gameRowStatus(g, ctx.ms) === 'done') return;
+        if (gameRowStatus(g, ctx.ms) === 'done' || (shown && shown.has(g.id))) return; // a game the card above is holding is not listed twice
         rows.push({ at: nb.end, key: 'todo-game-' + g.id, todo: 'game', ref: g.id, title: g.name, sub: 'Not scored yet' });
       });
     }
@@ -2129,7 +2173,7 @@ function nowTodo(ctx, blocks) {
       const lacking = nowDuty(ctx, nb).map((d) => d.team).filter((id) => !(earned[id] > 0) && canScoreRound(id));
       if (lacking.length) {
         rows.push({ at: nb.end + NOW_CLEANUP_WINDOW_MIN, key: 'todo-cleanup-' + ctx.dow + '-' + nb.meal.toLowerCase(), todo: 'cleanup', ref: nb.meal,
-          title: nb.meal + ' cleanup points', sub: nowJoinNames(lacking.map(nowTeamWord)) + ' · not given yet' });
+          title: nb.meal + ' cleanup points', sub: nowJoinNames(lacking.map(nowTeamWord)) + ' · Not given yet' });
       }
     } else if (nb.kind === 'bible' && ctx.minutes >= nb.end && nowVerse(ctx.dow)) {
       const raw = (versePointsByDay()[ctx.dow] || { raw: {} }).raw;
@@ -2186,7 +2230,7 @@ function nowReveal() {
   return typeof revealLiveView === 'function' && typeof confirmedReveal !== 'undefined' && revealLiveView() ? { live: true } : null;
 }
 function nowCard(kind, o) {
-  return Object.assign({ kind, k: 'Now', when: '', tag: '', title: '', emoji: '', sub: null, lead: null, over: false, notes: [], hold: null, down: false }, o);
+  return Object.assign({ kind, k: 'Now', when: '', tag: '', title: '', emoji: '', status: '', sub: null, lead: null, over: false, notes: [], hold: null, down: false }, o);
 }
 // The first three blocks of a weekday as run rows (the morning card's "Today", the night card's "Tomorrow").
 function nowFirstRows(ctx, dow) {
@@ -2221,13 +2265,16 @@ function nowBlockCard(ctx, blocks, nb, held) {
   const upcoming = blocks.find((x) => x.start > ctx.minutes) || null;
   const card = nowCard(kind, {
     k: held ? 'Running over' : kind === 'night' ? 'Tonight' : kind === 'over' ? 'Today' : 'Now', over: !!held,
-    when: nb.noTime ? '' : schedRange(nb.start, nb.end), title: nb.head, emoji: nb.emoji,
+    when: nb.noTime ? '' : schedClock(nb.start, false) + '–' + schedClock(nb.end, false), title: nb.head, emoji: nb.emoji, // "10:00–11:45" (§8.7)
   });
   let body = {};
   if (kind === 'games') {
     body = nowGamesBody(ctx, nb);
+    const solo = body.solo ? body.rows[0] : null;
     if (held) card.sub = 'Still going' + (upcoming ? ' · ' + upcoming.head + ' at ' + schedClock(upcoming.start, false) : '');
-    else if (ctx.director && body.stillToScore) card.sub = body.stillToScore + ' of ' + body.total + ' game' + (body.total === 1 ? '' : 's') + ' still to score';
+    else if (solo) card.sub = nowGameKindLine(solo); // the card's own Score (a director's) says what is left
+    else if (ctx.director && body.stillToScore) card.sub = nowStillToScoreText(body.stillToScore, body.total);
+    if (solo && solo.status !== 'todo') card.status = solo.status; // the Live / Done tag rides the title
   } else if (kind === 'elective') {
     body = nowElectiveBody(ctx, nb, blocks);
     card.tag = 'Elective ' + ((Number(nb.slot) || 0) + 1);
@@ -2284,23 +2331,24 @@ function nowGapCard(ctx, blocks, upcoming) {
   const basis = { start: null, end: null, noTime: true, over: false, upcoming: upcoming ? upcoming.start : null };
   if (ctx.minutes < first.start) {
     if (ctx.dow === 0) {
-      return { card: nowCard('arrival', { k: 'Today', title: 'Camp starts today', emoji: '🚌', sub: first.head + ' at ' + schedClock(first.start, false) }),
+      // The generated empty states carry no emoji (§8.6: emoji are for schedule blocks, stations and dishes, never decoration).
+      return { card: nowCard('arrival', { k: 'Today', title: 'Camp starts today', sub: first.head + ' at ' + schedClock(first.start, false) }),
         body: { countdown: { title: first.head, start: first.start, place: first.place }, welcome: nowWelcome(ctx, blocks) }, basis };
     }
     if (ctx.minutes < NOW_MORNING_FROM_MIN) {
-      return { card: nowCard('night', { k: 'Tonight', title: 'Lights out', emoji: '🌙', sub: "Everyone's sleeping" }), body: { heading: 'Today', rows: nowFirstRows(ctx, ctx.dow) }, basis };
+      return { card: nowCard('night', { k: 'Tonight', title: 'Lights out', sub: "Everyone's sleeping" }), body: { heading: 'Today', rows: nowFirstRows(ctx, ctx.dow) }, basis };
     }
-    return { card: nowCard('morning', { k: 'Today', title: 'Good morning', emoji: '☀️' }), body: { heading: 'Today', rows: nowFirstRows(ctx, ctx.dow) }, basis };
+    return { card: nowCard('morning', { k: 'Today', title: 'Good morning' }), body: { heading: 'Today', rows: nowFirstRows(ctx, ctx.dow) }, basis };
   }
   if (ctx.minutes >= lastEnd || !upcoming) {
-    return { card: nowCard('night', { k: 'Tonight', title: 'Lights out', emoji: '🌙' }), body: { heading: 'Tomorrow', rows: nowFirstRows(ctx, (ctx.dow + 1) % 7) }, basis: { start: null, end: null, noTime: true, over: false, upcoming: null } };
+    return { card: nowCard('night', { k: 'Tonight', title: 'Lights out' }), body: { heading: 'Tomorrow', rows: nowFirstRows(ctx, (ctx.dow + 1) % 7) }, basis: { start: null, end: null, noTime: true, over: false, upcoming: null } };
   }
   return { card: nowCard('between', { k: 'Today', title: 'Up next', emoji: '' }), body: { rows: [nowRow(ctx, upcoming)] }, basis };
 }
 
 // THE function. See the section's head for what it promises; the fields:
 //   at { dow, minutes, ms, forced } · week { phase, start } · reveal { live } | null · messages [notice? join? banners…]
-//   card { kind, k, when, tag, title, emoji, sub, lead, over, notes, hold, down } — kind is a block kind or one of
+//   card { kind, k, when, tag, title, emoji, status, sub, lead, over, notes, hold, down } — kind is a block kind or one of
 //     between | morning | night | none | over | notice (the posted notice is the send-off's card)
 //   block (the schedule block behind the card, or null) · moment { kind: 'cleanup' | 'verse', … } | null · body (the kind's data)
 //   next · later · laterHeading · todo · todoMore · wholeDay · basis / clock (the minute-by-minute part) · wake (see nowWake)
@@ -2315,13 +2363,13 @@ function nowModel(opts) {
   };
   let live = false;
   if (week.phase === 'before') {
-    m.card = nowCard('none', { k: 'Today', title: 'Camp starts ' + (nowDateLong(week.start) || 'soon'), emoji: '🏕️' });
+    m.card = nowCard('none', { k: 'Today', title: 'Camp starts ' + (nowDateLong(week.start) || 'soon') });
     m.body = { cta: ctx.director ? 'setup' : null };
   } else if (week.phase === 'after') {
-    m.card = nowCard('over', { k: 'Today', title: 'See you next year', emoji: '👋' });
+    m.card = nowCard('over', { k: 'Today', title: 'See you next year' });
     m.body = { champion: nowChampion() };
   } else if (!blocks.length) {
-    m.card = nowCard('none', { k: 'Today', title: week.phase === 'unset' ? 'No camp week is set up yet' : 'Nothing is planned for today', emoji: '🗓️' });
+    m.card = nowCard('none', { k: 'Today', title: week.phase === 'unset' ? 'No camp week is set up yet' : 'Nothing is planned for today' });
     m.body = { cta: ctx.director ? 'setup' : null };
   } else {
     live = true;
@@ -2335,7 +2383,14 @@ function nowModel(opts) {
       m.card = r.card; m.body = r.body; m.basis = r.basis;
       m.block = { id: cur.id, key: ctx.dow + ':' + cur.id, i: cur.i, kind: r.kind, label: cur.b.label, title: cur.head, place: cur.place, tail: cur.tail, emoji: cur.emoji, start: cur.start, end: cur.end, noTime: cur.noTime, meal: cur.meal, overrun: held ? { by: held.by, cap: held.cap } : null };
       // Cleanup first (it is the shorter window: senior's Bible study starts the minute breakfast ends), then Bible study's verse points.
-      if (!held && r.kind !== 'night' && r.kind !== 'over') m.moment = nowCleanupMoment(ctx, blocks) || (r.kind === 'bible' ? nowVerseMoment(ctx, cur) : null);
+      if (!held && r.kind !== 'night' && r.kind !== 'over') {
+        const cm = nowCleanupMoment(ctx, blocks);
+        const vm = r.kind === 'bible' ? nowVerseMoment(ctx, cur) : null;
+        m.moment = cm || vm;
+        // The cleanup panel holds the one moment slot first; a director is told when the verse keys follow it (they open when the
+        // cleanup window closes, a minute already in `wake`). Only a confirmed director has a verse moment, so only they read this.
+        if (cm && vm && cm.until < cur.end) cm.then = 'Verse points open at ' + schedClock(cm.until, false);
+      }
       nl = nowNextLater(ctx, blocks, r.kind === 'night' || r.kind === 'over' ? null : cur, r.kind === 'night' || r.kind === 'over' ? null : upcoming);
       if (r.kind === 'night' || r.kind === 'over') nl = { next: null, later: [] };
     } else {
@@ -2347,11 +2402,23 @@ function nowModel(opts) {
     }
     m.next = nl.next;
     m.later = nl.later;
+    // No block is listed twice on the tab. The elective card's "Then" already lists what comes next, so Up next goes and Later
+    // today starts after the last Then row, leaving out the "Prepare for …" rows the same way Then does (mockup 03).
+    const then = m.body && Array.isArray(m.body.then) ? m.body.then : [];
+    if (then.length) {
+      const lastI = Math.max(...then.map((r) => blocks.findIndex((x) => x.id === r.id)));
+      m.next = null;
+      m.later = blocks.slice(lastI + 1).filter((x) => !/^prepare\b/i.test(x.head)).slice(0, NOW_LATER_MAX).map((x) => nowRow(ctx, x));
+    }
     const offer = nowHoldOffer(ctx, blocks, held);
     m.card.hold = offer ? { key: offer.key, name: offer.name, can: offer.can, held: offer.held, cap: offer.cap } : null;
   }
   m.messages = nowMessages(ctx, m.card.kind);
-  if (live) { const t = nowTodo(ctx, blocks); m.todo = t.rows; m.todoMore = t.more; }
+  if (live) {
+    const shown = new Set(m.card.kind === 'games' && Array.isArray(m.body.rows) ? m.body.rows.map((r) => r.id) : []);
+    const t = nowTodo(ctx, blocks, shown);
+    m.todo = t.rows; m.todoMore = t.more;
+  }
   m.clock = nowClockOf(m.basis, ctx.minutes);
   m.wake = nowWake(ctx, blocks);
   return m;
@@ -11806,15 +11873,51 @@ function joinBarHtml() {
 // Now back into view (its whole panel arrives then), before the first server snapshot (the cache and then the
 // snapshot at boot), or under a takeover. A change somebody else made waits until no finger is on the screen.
 // Calm: arrivals fade, the rest jump.
-// How many messages the strip holds before the rest go behind "N more messages" (redesign §3.2: about a third of the screen, which
-// is the posted notice + 2 banners or 3 banners on a 390x844 phone at normal text; one fewer once the text is 130% or more). The
-// notice strip counts as one. Without now-ui.js there is no strip to cap, so everything shows as it always did.
+// How many messages the strip holds before the rest go behind "N more messages" (redesign §3.2: about a third of the screen). This
+// COUNT is the upper bound: three messages, the notice strip counting as one, one fewer once the root text is 130% or more. Without
+// now-ui.js there is no strip to cap, so everything shows as it always did.
 function annStripCap() {
   if (typeof renderNow !== 'function') return Infinity;
   let scale = 1;
   try { scale = parseFloat(getComputedStyle(document.documentElement).fontSize) / 16; } catch (e) { /* no layout: the normal cap */ }
   const noticeUp = noticePosted() && !(nowLast && nowLast.card && nowLast.card.kind === 'notice');
   return Math.max(1, (scale >= 1.3 ? 2 : 3) - (noticeUp ? 1 : 0));
+}
+// …and then the strip is MEASURED, because a count cannot see how tall a message really is (a long banner, a notice with its
+// team line, iOS large text, which never changes the root font size): trailing messages go behind "N more messages" until the
+// notice plus the messages shown fit in a third of the window. The messages are measured at the strip's own width in a hidden
+// copy that is added and removed at once, and only when the messages or the width changed (`annFit`), so an idle render writes
+// nothing. With no layout (the test harness, Now not on screen) the count stands. With no notice the newest message always shows.
+let annFit = { sig: '', ext: [] };
+function annStripRoom(items) {
+  const cap = Math.min(items.length, annStripCap());
+  const tab = document.getElementById('tab-now');
+  if (!cap || !tab || typeof tab.getBoundingClientRect !== 'function' || typeof window === 'undefined') return cap;
+  const box = tab.getBoundingClientRect();
+  const vh = window.innerHeight || 0;
+  if (!(box.width > 0) || !(vh > 0)) return cap;
+  let cs = null;
+  try { cs = getComputedStyle(tab); } catch (e) { return cap; }
+  const w = Math.round(box.width - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0));
+  const sig = w + '|' + items.join('\u0001');
+  if (annFit.sig !== sig) {
+    const m = document.createElement('div');
+    m.className = 'announcements';
+    m.setAttribute('aria-hidden', 'true');
+    m.style.cssText = 'position:absolute;left:-10000px;top:0;visibility:hidden;pointer-events:none;width:' + w + 'px';
+    m.innerHTML = items.join('');
+    tab.appendChild(m);
+    const top = m.getBoundingClientRect().top;
+    annFit = { sig, ext: Array.prototype.map.call(m.children, (c) => c.getBoundingClientRect().bottom - top) };
+    m.remove();
+  }
+  if (!(annFit.ext[0] > 0)) return cap;
+  const notice = document.getElementById('now-notice');
+  const nh = notice && !notice.hidden ? notice.getBoundingClientRect().height : 0;
+  const budget = vh / 3 - (nh > 0 ? nh + (parseFloat(cs.rowGap) || 0) : 0);
+  let k = 0;
+  while (k < cap && annFit.ext[k] <= budget) k++;
+  return nh > 0 ? k : Math.max(1, k);
 }
 // What the strip had no room for, as markup (#sheet-messages' body) and a count (#now-msgs-more).
 let annOverflow = { n: 0, html: '' };
@@ -11828,7 +11931,7 @@ function renderAnnouncements() {
   const editor = canEdit();
   const joinHtml = joinBarHtml();
   const items = (joinHtml ? [joinHtml] : []).concat(active.map((a) => messageHtml(a, { editor })));
-  const room = annStripCap();
+  const room = annStripRoom(items);
   const html = items.slice(0, room).join('');
   const count = Math.min(items.length, room);
   annOverflow = { n: items.length - count, html: items.slice(count).join('') };

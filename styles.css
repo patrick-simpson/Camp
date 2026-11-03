@@ -14728,18 +14728,20 @@ html.counselor-preview .sheet {
   background: color-mix(in srgb, var(--link) 10%, transparent);
 }
 
-/* The title: the biggest words on the screen. The emoji hangs to the left, so
-   a title that wraps keeps its words in one column. Sized against the card
-   (cqi) as well as the type scale, so at 200% text the longest word of a block
-   ("competitions") still fits whole on a 360px phone instead of breaking. */
+/* The title: the biggest words on the screen (§8.1 rule 1) at EVERY text size.
+   The emoji hangs to the left, so a title that wraps keeps its words in one
+   column. Sized against the card (cqi) so a long word stays whole where it can,
+   but never under 1.4rem: that floor keeps it above a game name (--t-row) and a
+   moment's team name (--t-head) at 130% and 200% text too, and the label
+   breaks a word that cannot fit with a hyphen (hyphens, lang="en") instead. */
 .nw-title {
   display: flex;
   align-items: baseline;
   gap: 10px;
   margin: 0;
   font: var(--t-title);
-  font-size: min(1.75rem, 9.5vw);
-  font-size: min(1.75rem, 11cqi);
+  font-size: max(min(1.75rem, 9.5vw), 1.4rem);
+  font-size: max(min(1.75rem, 11cqi), 1.4rem);
   letter-spacing: var(--track-tight);
 }
 .nw-emo {
@@ -14751,9 +14753,14 @@ html.counselor-preview .sheet {
 .nw-emo:empty {
   display: none;
 }
-.nw-label {
+/* The words and, for a card that IS one game, its Live / Done tag flowing
+   after them inline (as a game row's name and tag do): a tag beside the label
+   as a flex item squeezed "Legacy" to "Lega / cy" at 200% text. */
+.nw-label-w {
   min-width: 0;
   overflow-wrap: break-word;
+  -webkit-hyphens: auto;
+  hyphens: auto;
   text-wrap: balance; /* "No camp week is set up / yet" leaves no word alone */
 }
 .nw-sub {
@@ -14766,6 +14773,34 @@ html.counselor-preview .sheet {
 .nw-sub b {
   color: var(--ink);
   font-weight: 750;
+}
+/* A card that IS one game (mockup 13, senior's Legacy Game): "4-team bracket ·
+   Main field" with a director's Score at the right of it; the Score drops under
+   the words when they can't share the line. */
+.nw-sub:has(> .nw-sub-score) {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+}
+.nw-sub-score {
+  flex: none;
+  margin-left: auto;
+}
+/* …and its Live / Done tag rides the title (the row that carried it is folded
+   into the card), inline after the last word, raised to sit on the x-height. */
+.nw-tag {
+  margin-left: 10px;
+  letter-spacing: 0;
+  vertical-align: 0.3em;
+}
+.gr-solo > .gr-why {
+  margin-top: 4px;
+}
+/* The kicker's time range stays whole ("10:00–11:45" never breaks at its dash). */
+.nw-range {
+  white-space: nowrap;
 }
 /* A meal's dish is what people want at lunch: it gets row size, in ink. */
 .nw-dish {
@@ -14974,6 +15009,7 @@ html:not(.calm-motion) .gr[data-status="live"] .gr-st::after {
 .gr-sub b {
   color: var(--ink);
   font-weight: 750;
+  white-space: nowrap; /* "up next" stays one phrase */
 }
 /* A status word as a tag (§8.2 --t-tag): Live in its tint, never a pill on
    every label. b4 cells also say Done / Next. */
@@ -15085,7 +15121,11 @@ html:not(.calm-motion) .gr[data-status="live"] .gr-st::after {
   -webkit-line-clamp: 2;
   overflow: hidden;
   font: 700 0.875rem/1.2 var(--font-ui);
-  overflow-wrap: anywhere;
+  /* Whole words wrap; a word too long for the cell breaks with a hyphen, never
+     "Magnifice / nt". The two-line clamp still ends in an ellipsis. */
+  overflow-wrap: break-word;
+  -webkit-hyphens: auto;
+  hyphens: auto;
 }
 
 /* The live board, sized to its content (never the old 55vh board): a well in
@@ -15565,6 +15605,12 @@ html:not(.calm-motion) .gr[data-status="live"] .gr-st::after {
 .vs-text p {
   margin: 0;
 }
+/* No verse yet (the seed's "to be announced"): plain words, never scripture. */
+.vs-none {
+  margin: 0;
+  font: 650 0.9375rem/1.4 var(--font-ui);
+  color: var(--ink-2);
+}
 .vs-ref {
   margin: 10px 0 0;
   font: 800 1rem/1.3 var(--font-ui);
@@ -15695,17 +15741,62 @@ html:not(.calm-motion) .gr[data-status="live"] .gr-st::after {
   color: var(--done);
   stroke-width: 2.8;
 }
+/* "Verse points open at 9:15": the cleanup panel holds the one moment slot
+   while Bible study starts, and says when the verse keys follow it. */
+.nm-then {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--gold-edge) 30%, transparent);
+  font: 650 0.875rem/1.3 var(--font-ui);
+  color: var(--ink-2);
+}
+.nm-then .ico {
+  flex: none;
+  width: 16px;
+  height: 16px;
+}
 .nm-key {
   margin: 8px 0 0;
   font: 650 0.875rem/1.3 var(--font-ui);
   color: var(--ink-2);
 }
-/* Verse points: the Award points rows, flush with the panel. */
+/* Verse points: the Award points rows, flush with the panel and COMPACT
+   (§3.3: "a compact 0–5 row per team"): the mark and the name on one line that
+   ends in an ellipsis, 4px above 44px keys (the Award points screen keeps its
+   52px ones), a hairline and a little air between teams. About 86px a team
+   instead of ~116, so six teams don't bury the verse that heads the card. */
 .nm-list > .aw-row {
-  padding-inline: 0;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  gap: 4px 8px;
+  padding: 6px 0 8px;
 }
 .nm-list > .aw-row:first-child {
+  padding-top: 8px;
   border-top: 0;
+}
+.nm-list .aw-mark .tm-shield {
+  width: 20px;
+}
+.nm-list .aw-mark .tm.flag,
+.nm-list .aw-mark .tm-tile {
+  width: 24px;
+  height: 24px;
+}
+.nm-list .aw-mark .tm-tile {
+  font-size: 0.8125rem;
+}
+.nm-list .aw-name {
+  overflow: hidden;
+  font-size: 0.9375rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.nm-list .aw-pt {
+  min-height: var(--target);
+  font-size: 1.125rem;
 }
 @container aw-list (max-width: 14rem) {
   .nm-team {
@@ -15850,6 +15941,14 @@ html:not(.calm-motion) .gr[data-status="live"] .gr-st::after {
 .nn-sub {
   margin-top: 2px;
   font-weight: 600;
+  /* ONE line, then an ellipsis: the strip is a pointer to the notice, and See
+     all opens the whole of it (§3.2: the strip stays under a third of the
+     screen). A clamp, so the words still wrap at a space before they cut. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 1;
+  line-clamp: 1;
+  overflow: hidden;
 }
 .nn-sub:empty {
   display: none;
@@ -16019,8 +16118,10 @@ html:not(.calm-motion) .gr[data-status="live"] .gr-st::after {
   color: var(--ink-2);
   overflow-wrap: break-word;
 }
-.nr-sub b,
-.nr[data-mine] .nr-sub {
+/* Only the personal words are bold ("Your team is on cleanup"): an elective
+   row of mine keeps "Elective 2 · with Patrick and Josh" quiet under its
+   station, which is the answer. */
+.nr-sub b {
   color: var(--ink);
   font-weight: 750;
 }

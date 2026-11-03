@@ -171,6 +171,8 @@ function nowVerseHtml(v) {
   const video = safeVideoUrl(v.video);
   const th = v.theme;
   const theme = th && (th.title || th.ref) ? `<p class="vs-theme"><span class="vs-theme-k">Week theme</span> · ${[th.title, th.ref].filter(Boolean).map(esc).join(' · ')}</p>` : '';
+  // A placeholder ("Verse to be announced.") is never set as scripture: one quiet line in the sans instead.
+  if (v.tba) return `<div class="vs" data-tba><p class="vs-k">Today’s memory verse</p><p class="vs-none">Today’s verse hasn’t been added yet.</p>${theme}</div>`;
   return `<div class="vs"><p class="vs-k">Today’s memory verse</p>${v.text ? `<blockquote class="vs-text"><p>${esc(v.text)}</p></blockquote>` : ''}` +
     `${v.ref ? `<p class="vs-ref">${esc(v.ref)}</p>` : ''}` +
     `${video ? `<a class="btn vs-song" href="${esc(video)}" target="_blank" rel="noopener noreferrer">${nowIcon('i-play')}Watch the verse song</a>` : ''}${theme}</div>`;
@@ -227,7 +229,18 @@ function nowNotesHtml(notes) {
 function nowSubHtml(model) {
   const c = model.card;
   const b = model.body || {};
-  if (c.kind === 'meal') return b.dish && b.dish.text ? `<span class="nw-dish">${b.dish.emoji ? `<span class="nw-dish-emo" aria-hidden="true">${safeEmoji(b.dish.emoji, '')}</span>` : ''}${esc(b.dish.text)}</span>` : '';
+  if (c.kind === 'meal') {
+    // The dish's emoji already heads the title when it took the block's place there: never the same emoji twice.
+    const emo = b.dish && b.dish.emoji && safeEmoji(b.dish.emoji, '') !== safeEmoji(c.emoji, '') ? safeEmoji(b.dish.emoji, '') : '';
+    return b.dish && b.dish.text ? `<span class="nw-dish">${emo ? `<span class="nw-dish-emo" aria-hidden="true">${emo}</span>` : ''}${esc(b.dish.text)}</span>` : '';
+  }
+  if (c.kind === 'games' && b.solo && b.rows && b.rows[0]) {
+    // A card that IS one game (mockup 13): its line, and a director's Score at the right of it (the row it replaces carried it).
+    const r = b.rows[0];
+    const score = r.score && !r.score.why
+      ? `<button type="button" class="btn btn-sm gr-score nw-sub-score${r.score.gold ? ' btn-gold' : ''}" data-score-game="${esc(r.id)}" data-joy>Score</button>` : '';
+    return c.sub || score ? `<span class="nw-sub-t">${esc(c.sub || '')}</span>${score}` : '';
+  }
   if (c.kind === 'elective' && b.mode === 'station' && b.station && b.station.with && b.station.with.length) {
     const w = b.station.with;
     const names = nowJoinNames(w.map((x) => '<b>' + esc(x.name) + '</b>'));
@@ -252,8 +265,17 @@ function nowSubHtml(model) {
 }
 
 // A games card's body in two parts: the keyed rows (`g-<id>`, inside .gr-list) and what follows them (the four-team bracket).
+// A card that IS one game has no rows: its own-team reason, its live board or medal winners, then the bracket follow the notes
+// straight away, in a piece that keeps the row's key and status (so Live → Done still drops the medals).
 function nowGamesParts(model) {
   const b = model.body || {};
+  if (b.solo && b.rows && b.rows[0]) {
+    const r = b.rows[0];
+    const why = r.score && r.score.why ? `<p class="gr-why">${nowIcon('i-lock')}<span>${esc(r.score.why)}</span></p>` : '';
+    const extra = r.status === 'done' ? nowPodiumHtml(r.podium) : r.status === 'live' ? nowBoardHtml(r.board) : '';
+    const piece = why || extra ? `<div class="gr-solo" data-key="${esc(r.key)}" data-status="${esc(r.status)}">${why}${extra}</div>` : '';
+    return { rows: '', rest: piece + nowBracket4Html(b.bracket4) };
+  }
   return { rows: (b.rows || []).map(nowGameRowHtml).join(''), rest: nowBracket4Html(b.bracket4) };
 }
 
@@ -323,14 +345,15 @@ function nowMomentBodyHtml(m) {
 // ════════════════════════════════════════════════════════════════════
 // PAINTERS (change-only writes)
 // ════════════════════════════════════════════════════════════════════
-function nowWhenText(model) {
+// The kicker after "Now": the tag and the time, the range kept on one line ("10:00–11:45" never breaks at its dash).
+function nowWhenHtml(model) {
   const c = model.card;
   let when = c.when;
   if (!when) {
     if (c.kind === 'between') { const r = model.body.rows && model.body.rows[0]; when = r && r.time ? 'free until ' + r.time : ''; }
     else if (c.kind === 'morning' || c.kind === 'arrival' || c.kind === 'none' || c.kind === 'over') when = dayLabel(model.at.dow);
   }
-  const parts = [c.tag, when].filter(Boolean);
+  const parts = [c.tag ? esc(c.tag) : '', when ? `<span class="nw-range">${esc(when)}</span>` : ''].filter(Boolean);
   return parts.length ? ' · ' + parts.join(' · ') : '';
 }
 
@@ -375,7 +398,7 @@ function nowPaintClock(model, animate) {
 function nowPaintHead(model) {
   const c = model.card;
   setTextIfChanged(nowEl('now-card-k'), c.k);
-  setTextIfChanged(nowEl('now-card-when'), nowWhenText(model));
+  setHtmlIfChanged(nowEl('now-card-when'), nowWhenHtml(model));
   const over = nowEl('now-card-over');
   setHiddenIfChanged(over, !c.lead);
   if (c.lead) {
@@ -386,6 +409,10 @@ function nowPaintHead(model) {
   }
   setTextIfChanged(nowEl('now-card-emoji'), safeEmoji(c.emoji, ''));
   setTextIfChanged(nowEl('now-card-label'), nowTitleText(model));
+  // A card that IS one game wears its Live / Done tag on the title line (its row, which carried it, is folded in).
+  const tag = nowEl('now-card-tag');
+  setHiddenIfChanged(tag, !c.status);
+  if (c.status) { setDataIfChanged(tag, 'tag', c.status); setTextIfChanged(tag, c.status === 'done' ? 'Done' : 'Live'); }
 }
 
 function nowPaintFoot(model) {
@@ -415,6 +442,8 @@ function nowPaintMoment(model) {
     // A hidden panel must not keep a director's keys or words (a demotion, a preview): its title and body are emptied too.
     setHtmlIfChanged(nowEl('now-moment-body'), '');
     setTextIfChanged(nowEl('now-moment-title'), '');
+    setTextIfChanged(nowEl('now-moment-then-text'), '');
+    setHiddenIfChanged(nowEl('now-moment-then'), true);
     nowUi.momentShown = false;
     return;
   }
@@ -424,6 +453,9 @@ function nowPaintMoment(model) {
   setTextIfChanged(nowEl('now-moment-title'), m.title);
   setHiddenIfChanged(nowEl('now-moment-secret'), !m.secret);
   setHiddenIfChanged(nowEl('now-moment-key'), !(m.kind === 'cleanup' && m.max));
+  // When the verse keys follow this cleanup panel (a confirmed director's model only carries `then`).
+  setTextIfChanged(nowEl('now-moment-then-text'), m.then || '');
+  setHiddenIfChanged(nowEl('now-moment-then'), !m.then);
   const body = nowEl('now-moment-body');
   const html = nowMomentBodyHtml(m);
   if (m.kind === 'cleanup') paintKeyedList(body, html, { view: m.kind + ':' + m.dow + ':' + m.meal });
@@ -589,19 +621,34 @@ function nowSheetAllowed(id) {
 // ════════════════════════════════════════════════════════════════════
 // MOTION (JellyMotion, calm-aware; every one starts from a diff made above)
 // ════════════════════════════════════════════════════════════════════
-// A block changing over: the card arrives (calm: a fade).
+// THE HOUSE PATTERN (shellArrivePanel, annArrive): the travel is clamped at rest (min(1, x)) and the spring's overshoot past it,
+// o = max(0, x − 1), is spent as a volume-keeping landing squash, wider while shorter. Clamping alone threw the overshoot away and
+// left a plain eased slide; the squash is where the eye reads jelly (§9.2 "minimum visible deformation").
+// A block changing over: the card rises 14px and lands with its squash at its top edge (calm: a fade).
 function nowArrive(el) {
   if (!el || typeof JellyMotion === 'undefined') return;
-  JellyMotion.play(el, 'arrive', (x) => ({ transform: 'translateY(' + 14 * (1 - Math.min(1, x)) + 'px)', opacity: Math.min(1, x * 1.6) }), { calm: [{ opacity: 0 }, { opacity: 1 }], calmMs: 140 });
+  JellyMotion.play(el, 'arrive', (x) => {
+    const o = Math.max(0, x - 1);
+    return { transform: 'translateY(' + 14 * (1 - Math.min(1, x)) + 'px) scale(' + (1 + 0.12 * o) + ', ' + (1 - 0.3 * o) + ')', transformOrigin: '50% 0', opacity: Math.min(1, x * 1.6) };
+  }, { calm: [{ opacity: 0 }, { opacity: 1 }], calmMs: 140 });
 }
-// The moment unfolds from the card's foot.
+// The moment unfolds from its top (§9.5 "panel appears": scaleY .6 → 1, then the same landing squash).
 function nowUnfold(el) {
   if (!el || typeof JellyMotion === 'undefined') return;
-  JellyMotion.play(el, 'arrive', (x) => ({ transform: 'translateY(' + 10 * (1 - Math.min(1, x)) + 'px)', opacity: Math.min(1, x * 1.6) }), { calm: [{ opacity: 0 }, { opacity: 1 }], calmMs: 140 });
+  JellyMotion.play(el, 'arrive', (x) => {
+    const o = Math.max(0, x - 1);
+    return { transform: 'scale(' + (1 + 0.12 * o) + ', ' + (0.6 + 0.4 * Math.min(1, x)) * (1 - 0.3 * o) + ')', transformOrigin: '50% 0', opacity: Math.min(1, x * 1.6) };
+  }, { calm: [{ opacity: 0 }, { opacity: 1 }], calmMs: 160 });
 }
+// A key or a number: a small press pop.
 function nowPop(el) {
   if (!el || typeof JellyMotion === 'undefined') return;
   JellyMotion.play(el, 'press', (x) => ({ transform: 'scale(' + (0.82 + 0.18 * x) + ')' }), { calm: false });
+}
+// Live → Done: the check pops in turning (§9.5: scale .3 → 1, rotate −14° → 0, on snap).
+function nowCheckPop(el) {
+  if (!el || typeof JellyMotion === 'undefined') return;
+  JellyMotion.play(el, 'snap', (x) => ({ transform: 'scale(' + (0.3 + 0.7 * x) + ') rotate(' + (-14 * (1 - Math.min(1, x))) + 'deg)' }), { calm: false });
 }
 // Live → Done: the check pops and the medals drop bronze → silver → gold. Waits (in `nowUi.flip`) until the row with its
 // podium is really on screen, which a repaint that had to wait for a finger to lift is not yet.
@@ -619,10 +666,14 @@ function nowAfterGames(model, live) {
     if (!row || !row.dataset || row.dataset.status !== 'done') return;
     const medals = row.querySelectorAll ? Array.prototype.slice.call(row.querySelectorAll('.pd-c')) : [];
     nowUi.flip.delete(id);
-    nowPop(row.querySelector('.gr-st'));
+    nowCheckPop(row.querySelector('.gr-st'));
+    // The medals fall 22px bronze → silver → gold, 120 ms apart, and land with a wobble's squash at their foot (§9.5). Calm: they fade.
     medals.reverse().forEach((m, i) => {
       if (typeof JellyMotion === 'undefined') return;
-      JellyMotion.play(m, 'arrive', (x) => ({ transform: 'translateY(' + (-12 * (1 - Math.min(1, x))) + 'px)', opacity: Math.min(1, x * 1.8) }), { calm: [{ opacity: 0 }, { opacity: 1 }], calmMs: 140, delay: i * 90 });
+      JellyMotion.play(m, 'wobble', (x) => {
+        const o = Math.max(0, x - 1);
+        return { transform: 'translateY(' + (-22 * (1 - Math.min(1, x))) + 'px) scale(' + (1 + 0.6 * o) + ', ' + (1 - o) + ')', transformOrigin: '50% 100%', opacity: Math.min(1, x * 1.8) };
+      }, { calm: [{ opacity: 0 }, { opacity: 1 }], calmMs: 160, delay: i * 120 });
     });
   });
 }
