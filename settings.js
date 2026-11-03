@@ -525,6 +525,9 @@ function newGameShape() {
 // normal editor flow: name it, save, score it.
 function startQuickGame() {
   if (!canEdit() || configLocked()) return;
+  // Step 21: the game sheet (setup-ui.js section 16) is the quick game now — Podium already picked, naming it is the one step, and it
+  // lands on the Games item under way now or next. The classic editor below stays only where that file never loaded.
+  if (typeof gmOpenQuick === 'function') { gmOpenQuick(); return; }
   const sess = campNow().minutes >= 720 ? 'Evening' : 'Morning';
   quickGamePrefill = { format: 'placement' };
   if ((state.config.sessions || []).includes(sess)) quickGamePrefill.session = sess;

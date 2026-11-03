@@ -11283,6 +11283,22 @@ function bindMatchTracker(container, g, aId, bId) {
   else bindLiveTracker(container, g, aId, bId);
 }
 
+// "By the standings" (Set up the week → Games → Matchups, game.bracketSeed): the director who calls the next match up is SUGGESTED the best
+// remaining team against the lowest remaining one (1st v 6th, then 2nd v 5th, then 3rd v 4th), from the points as they are right now,
+// and taps to call them up. A suggestion for a director only (standingsVisible: never a counselor's screen, never a preview of one) and
+// never written anywhere: nothing about who plays whom is stored until the director calls a pair up, exactly as a hand pick. A game with
+// fixed pairs, or on "Pick them when you start", has none. The four-team bracket (Step 22) reads bracketSeed through its own fourSeeds.
+function bracketSuggestPair(g, b) {
+  if (!g || g.bracketSeed !== 'standings' || !b || b.phase !== 'round1') return null;
+  if (Array.isArray(g.roundOneMatchups) && g.roundOneMatchups.length) return null;
+  if (b.selectedPair && b.selectedPair.length) return null;
+  if (!canEdit() || !standingsVisible()) return null;
+  const pool = Array.isArray(b.pool) ? b.pool : [];
+  if (pool.length < 2) return null;
+  const ranked = rankTeamsByPoints(medalCounts()).map((t) => t.id).filter((id) => pool.indexOf(id) !== -1);
+  return ranked.length >= 2 ? [ranked[0], ranked[ranked.length - 1]] : null;
+}
+
 function renderBracketRound1(body, g, b) {
   if (b.pool.length === 0) {
     b.phase = 'bye';
@@ -11298,8 +11314,10 @@ function renderBracketRound1(body, g, b) {
     return;
   }
 
+  const suggest = bracketSuggestPair(g, b);
   let html = `<h3>Round 1 — Match ${b.matches.length + 1} of 3</h3>
     <p class="muted">Pick the two teams to call up next.</p>
+    ${suggest ? `<p class="muted seed-suggest">Suggested by the points: ${esc(teamName(suggest[0]))} v ${esc(teamName(suggest[1]))} <button type="button" id="seed-suggest-btn" class="link-btn">Call them up</button></p>` : ''}
     <div class="team-chip-grid">
       ${b.pool.map((id) => `<button class="team-chip ${b.selectedPair.includes(id) ? 'selected' : ''}" data-team-id="${id}">${esc(teamName(id))}<span class="chip-sub">${esc(counselorName(id))}</span></button>`).join('')}
     </div>`;
@@ -11323,6 +11341,9 @@ function renderBracketRound1(body, g, b) {
     bindMatchupCopy(body, g, `Round 1 (match ${b.matches.length + 1})`, b.selectedPair[0], b.selectedPair[1]);
     bindMatchTracker(body, g, b.selectedPair[0], b.selectedPair[1]);
   }
+
+  const suggestBtn = body.querySelector('#seed-suggest-btn');
+  if (suggestBtn && suggest) suggestBtn.addEventListener('click', () => { b.selectedPair = suggest.slice(); saveState(); renderAll(); });
 
   body.querySelectorAll('.team-chip').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -12370,6 +12391,7 @@ function reloadBlocked() {
   if (typeof peopleBusy === 'function' && peopleBusy()) return true; // a People sheet with edits not yet saved, or a write still going (setup-ui.js)
   if (typeof campersBusy === 'function' && campersBusy()) return true; // camper names waiting for the signal, or a camper write going: held in memory only, a reload would lose them (setup-sync.js)
   if (typeof campersUiBusy === 'function' && campersUiBusy()) return true; // a camper sheet with a name typed and not yet saved (setup-ui.js)
+  if (typeof gmBusy === 'function' && gmBusy()) return true; // a new game with a name typed and nothing saved yet (setup-ui.js: the game sheet)
   return false;
 }
 
@@ -13829,6 +13851,7 @@ function shellHasUnsentWork() {
   if (typeof peopleBusy === 'function' && peopleBusy()) return true;
   if (typeof campersBusy === 'function' && campersBusy()) return true;
   if (typeof campersUiBusy === 'function' && campersUiBusy()) return true;
+  if (typeof gmBusy === 'function' && gmBusy()) return true; // a new game's name, typed and not yet a game
   return false;
 }
 

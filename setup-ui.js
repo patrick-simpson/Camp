@@ -1019,6 +1019,8 @@ function setupUiClosed() {
 
 // Engine events (setup-sync.js onSetupEvent): the cheap targeted paints, only while the builder is up.
 function setupUiOnEvent(kind) {
+  // The game sheet's dock ("Saving…" → "Saved") follows the sync line, over the Games tab too (the builder need not be open).
+  if ((kind === 'sync' || kind === 'commit') && gmUi.open && shell.sheets.includes('game') && typeof renderGameSheet === 'function') renderGameSheet();
   if (!setupUi.wasOpen || !builderOpen()) return;
   if (kind === 'sync') { paintSetupSync(); if (setupScreen() === 'backups') paintRestoreNote(); }
   else if (kind === 'here') { paintSetupHere(); if (setupScreen() === 'hub') paintHub(); }
@@ -2698,7 +2700,8 @@ function renderSchedItemSheet() {
   setHiddenIfChanged(setupEl('si-games-fld'), !games.length);
   if (games.length) setHtmlIfChanged(setupEl('si-games'), games.map((g) =>
     '<div class="cb-row"><span class="cb-main"><span class="cb-title"><span class="sched-emo" aria-hidden="true">' + esc(g.emoji) + '</span><span>' + esc(g.name) + '</span></span></span></div>').join(''));
-  setHiddenIfChanged(setupEl('si-add-game'), true);
+  // Add a game here: a Games item that exists (an item being made has no id to hold a game yet) opens the game sheet on it.
+  setHiddenIfChanged(setupEl('si-add-game'), !(it.mode === 'edit' && f.kind === 'games' && it.dayKey !== 'typical' && scheduleIsShared() && canEdit()));
   // Reminders
   setTextIfChanged(setupEl('si-alert-text'), it.mode === 'edit' ? 'People who follow “' + setupHeadLabel(it.label0) + '” get reminded before this.' : '');
   setHiddenIfChanged(setupEl('si-alert'), it.mode !== 'edit');
@@ -3034,6 +3037,7 @@ function wireSchedItemSheet() {
     }
     else if ((b = q('[data-si-ownday]'))) { const m = schedItemModel(it); it.ask.own = b.dataset.siOwnday; it.ask.ownKey = m.ownKey; renderSchedItemSheet(); }
     else if ((b = q('[data-si-rekey]'))) { const m = schedItemModel(it); it.ask.rekey = b.dataset.siRekey; it.ask.rekeyKey = m.headNew; renderSchedItemSheet(); }
+    else if (q('#si-add-game')) schedItemAddGame();
     else if (q('#si-reset')) schedItemReset();
     else if (q('#si-remove')) schedRemoveItem();
     else if (q('#si-save-day')) { if (!q('#si-save-day').hasAttribute('aria-disabled')) schedSaveItem('day'); }
@@ -3058,6 +3062,18 @@ function schedItemGuardClose() {
   askDialog({ title: 'Discard your changes to ' + (it.form.label || it.label0 || 'this item') + '?', body: 'They haven’t been saved yet.', actions: [{ label: 'Keep editing', value: 'keep', cancel: true }, { label: 'Discard', value: 'discard', kind: 'danger' }] })
     .then((ok) => { if (ok === 'discard' && setupSched.item === it) { setupSched.item = null; shellSheetClose('sched-item'); } });
   return true;
+}
+
+// "Add a game here" on a Games item's own sheet: the game sheet on that item (edits not yet saved ask first, as any way out does).
+function schedItemAddGame() {
+  const it = setupSched.item;
+  if (!it || it.mode !== 'edit' || it.dayKey === 'typical' || typeof gmOpenNew !== 'function') return;
+  if (schedItemGuardClose()) return;
+  const dk = it.dayKey;
+  const bid = it.bid;
+  shellSheetClose('sched-item');
+  setupSched.item = null;
+  gmOpenNew({ dk, target: bid });
 }
 
 // An open item sheet with edits that are not saved holds the deploy's auto-reload (reloadBlocked), as the game editor's
@@ -7224,6 +7240,19 @@ function gmDefaultWhere(dk, bid) {
   return last ? String(last.location).trim() : '';
 }
 
+// What a game picks up with its way of being scored: live scoring is the house default (owner's call, 2026-07-24), as the classic
+// editor's format pick sets it — Scores come with the live leaderboard, a bracket with the plain running scoreboard — and a bracket
+// starts by the standings.
+function gmFormatDefaults(format, from) {
+  const out = {};
+  if (format === 'tally') { if (!from || from.liveRankings === undefined) out.liveRankings = true; }
+  if (format === 'tournament') {
+    out.bracketSeed = from && GM_SEEDS.indexOf(from.bracketSeed) !== -1 ? from.bracketSeed : 'standings';
+    if (!from || from.liveTracker === undefined) out.liveTracker = { unit: 'Points', periodLabel: 'Round', innings: 1, outs: 0 };
+  }
+  return out;
+}
+
 // ── creating a game ──
 // One config edit that adds the whole record. The id is makeId's over takenGameIds; a game with no item named on a schedule
 // edited here is offered A2's natural item (setupAttachNewGame), as every new game is. `form`: { name, emoji, location, format,
@@ -7242,13 +7271,13 @@ function gmCreateGame(form, place) {
   };
   if (place.blockId) { rec.blockId = place.blockId; rec.ord = place.ord; }
   if (form.messtival === true) rec.messtival = true;
-  if (form.format === 'tournament') rec.bracketSeed = GM_SEEDS.indexOf(form.bracketSeed) !== -1 ? form.bracketSeed : 'standings';
+  Object.assign(rec, gmFormatDefaults(form.format, form));
   let id = null;
   const ok = configEdit('Added “' + name + '”', () => {
     id = makeId(name, takenGameIds());
     rec.id = id;
     state.config.games.push(rec);
-    if (!rec.blockId && typeof setupAttachNewGame === 'function') setupAttachNewGame(state.config, rec);
+    if (!rec.blockId && !place.none && typeof setupAttachNewGame === 'function') setupAttachNewGame(state.config, rec);
   });
   if (ok === false) return { ok: false, reason: 'locked' };
   // The id is new to every per-game map on this device (takenGameIds); make sure of it anyway: a leftover is cleared, never inherited.
@@ -7305,7 +7334,7 @@ function gmChangeFormat(gid, format, opts) {
   if (going.length && !(opts && opts.confirmed)) return { ok: false, reason: 'confirm', going: gmGoingWords(gid) };
   const patch = { format };
   (format === 'tally' ? GM_BRACKET_ONLY : format === 'tournament' ? GM_TALLY_ONLY : GM_TALLY_ONLY.concat(GM_BRACKET_ONLY)).forEach((f) => { patch[f] = undefined; });
-  if (format === 'tournament') patch.bracketSeed = 'standings';
+  Object.assign(patch, gmFormatDefaults(format, g));
   if (going.length) { clearGameRecords(gid); saveState(); }
   return gmCommit(gid, patch, going.length ? null : 'Changed how “' + g.name + '” is scored');
 }
@@ -7750,8 +7779,869 @@ function wireGamesScreen() {
   if (typeof wireGameSheet === 'function') wireGameSheet();
 }
 
-// ── the game sheet's state, in one place (its renderer and handlers follow) ──
+// ── the sheet's fields, as the classic editor's own rules read them (validateGameDraft / saveGameDraft) ──
+// Each parser takes what was typed and returns { ok: true, value } (`value` undefined removes the field) or { ok: false, error }
+// in words. Nothing is written for a field in error: it keeps aria-invalid and its message, everything else is saved.
+function gmParseSteps(text) {
+  const t = String(text || '').trim();
+  if (!t) return { ok: true, value: undefined };
+  const tokens = t.split(',').map((x) => x.trim());
+  if (tokens.some((x) => !x || !isFinite(Number(x)) || isNaN(parseFloat(x)) || parseFloat(x) <= 0)) return { ok: false, error: 'Counter buttons must be numbers above zero, like 1, 5.' };
+  return { ok: true, value: tokens.map((x) => parseFloat(x)) };
+}
+// The countdown: minutes typed, seconds saved; rounds a whole number from 2 up (blank = one go). `on: false` removes it.
+function gmParseTimer(label, presets, rounds) {
+  const tokens = String(presets || '').split(',').map((x) => x.trim()).filter(Boolean);
+  if (!tokens.length || tokens.some((x) => isNaN(parseFloat(x)) || parseFloat(x) <= 0)) return { ok: false, error: 'Timer lengths must be numbers of minutes, like 5, 3.' };
+  const r = String(rounds || '').trim();
+  if (r && (!/^\d+$/.test(r) || parseInt(r, 10) < 1)) return { ok: false, error: 'Rounds must be a whole number like 4, or blank for one go.' };
+  const out = { label: String(label || '').trim().slice(0, 30), presets: tokens.map((x) => Math.round(parseFloat(x) * 60)) };
+  if (parseInt(r, 10) > 1) out.rounds = parseInt(r, 10);
+  return { ok: true, value: out };
+}
+// The live match scoreboard. Keys the sheet doesn't show (Kickball's sideLabel) ride along untouched.
+function gmParseTracker(prev, unit, period, periods, outs) {
+  const innings = String(periods == null ? '' : periods).trim();
+  if (innings && (!/^\d+$/.test(innings) || parseInt(innings, 10) < 1)) return { ok: false, error: 'Periods must be a whole number, like 1 or 2.' };
+  const o = String(outs == null ? '' : outs).trim();
+  if (o && !/^\d+$/.test(o)) return { ok: false, error: 'Outs per side must be 0 or a whole number.' };
+  const out = Object.assign({}, prev && typeof prev === 'object' ? prev : {});
+  out.unit = String(unit || '').trim().slice(0, 30) || 'Points';
+  out.periodLabel = String(period || '').trim().slice(0, 20) || 'Round';
+  out.innings = Math.max(1, parseInt(innings, 10) || 1);
+  out.outs = Math.max(0, parseInt(o, 10) || 0);
+  return { ok: true, value: out };
+}
+// Drawing prompts: one per line. Only one game a week can have them (the drawing round is keyed by team, not by game).
+function gmParsePrompts(text, gid) {
+  const lines = String(text || '').split('\n').map((x) => x.trim()).filter(Boolean);
+  if (!lines.length) return { ok: true, value: undefined };
+  const other = allGames().find((g) => g.id !== gid && Array.isArray(g.prompts) && g.prompts.length);
+  if (other) return { ok: false, error: 'Only one game can have drawing prompts — take them off “' + other.name + '” first.' };
+  return { ok: true, value: lines };
+}
+// How to play: sections of a heading and points, one per line; a section with neither is dropped.
+function gmRulesFrom(rows) {
+  return (rows || []).map((r) => ({ h: String(r.h || '').trim().slice(0, 60), items: String(r.items || '').split('\n').map((x) => x.trim()).filter(Boolean) })).filter((r) => r.h || r.items.length);
+}
+// The one-line summary of a folded section ("Double points · Timer"; "None yet").
+function gmExtrasSummary(g) {
+  const bits = [];
+  if (g.messtival === true) bits.push('Double points');
+  if (g.timer) bits.push('Timer');
+  if (Array.isArray(g.prompts) && g.prompts.length) bits.push('Drawing prompts');
+  return bits.join(' · ') || 'None yet';
+}
+function gmHowtoSummary(g) {
+  const n = Array.isArray(g.rules) ? g.rules.length : 0;
+  return n ? hubPlural(n, 'section', 'sections') : (String(g.headline || '').trim() ? 'One line' : 'Not written yet');
+}
+// The scoring sentence under "Bracket" and the rule under "By the standings", per camp (the pairs are never named: no place is
+// said in setup).
+function gmBracketSub() {
+  return teamIds().length === 4 ? '2 semifinals, then the 3rd-place match, then the final' : 'Teams play head-to-head; winners move on';
+}
+function gmStandingsRule() {
+  const n = teamIds().length;
+  const ord = (i) => i + (i === 1 ? 'st' : i === 2 ? 'nd' : i === 3 ? 'rd' : 'th');
+  const pairs = [];
+  for (let i = 1; i <= Math.floor(n / 2); i++) pairs.push(ord(i) + ' v ' + ord(n + 1 - i));
+  return 'Suggests ' + (pairs.length > 1 ? pairs.slice(0, -1).join(', ') + ' and ' + pairs[pairs.length - 1] : pairs[0] || 'the pairs') + ' from the points';
+}
+function gmMatchName(i) { return teamIds().length === 4 ? 'Semifinal ' + (i + 1) : 'Match ' + (i + 1); }
+
+// ── the game sheet (#sheet-game): one sheet for a new game, an existing one and the ⚡ quick game ──
+// PROGRESSIVE (the overlay's data-stage; the CSS shows what is due): name → how is it scored? → the game exists. Nothing is written
+// before the game has a name AND a way of being scored; at that moment it is created whole (gmCreateGame) and from then on every
+// field saves as it changes — on blur / Enter for text, on tap for the rest — one field at a time through gmCommit. There is no Save.
+// The inputs hold what is typed (their markup is static: a value is set only while the field is not focused, so a colleague's
+// snapshot never takes a word away mid-typing and a re-render never rebuilds a focused field). Two panes (data-pane): the form and
+// When (the rain plan's move picker). A game deleted elsewhere while the sheet is open asks inline (#gm-gone), never silently.
+//   gmUi.open = { mode: 'new' | 'edit' | 'quick', pane: 'form' | 'when', gid (null until created), dk, bid, session, minutes,
+//     form: { name, emoji, location, format, messtival }, made (just created: "Added to …"), err: { field: message }, formatOpen,
+//     seedUi ('fixed' while the pairs board is open), order (the board's teams in tap order), emojiOpen, when: { dk, all, newDay,
+//     double }, whenOnly (opened on When from "Put on the schedule": it closes instead of going back), gone, last (the game as last
+//     seen, for "Put it back"), blank (empty How-to-play sections added and not yet written), stageSeen }
+
+const GM_EMOJI = [['🏅', 'Medal'], ['🛡️', 'Shield'], ['🎯', 'Target'], ['⚽', 'Soccer'], ['🏀', 'Basketball'], ['🏐', 'Volleyball'], ['🎳', 'Bowling'], ['🪁', 'Kite'],
+  ['🏹', 'Archery'], ['🪢', 'Rope'], ['🎲', 'Dice'], ['🏊', 'Swim'], ['🚣', 'Boat'], ['🏃', 'Run'], ['🎨', 'Art'], ['🎪', 'Circus'],
+  ['🎃', 'Pumpkin'], ['🍂', 'Leaves'], ['🏆', 'Trophy'], ['🧩', 'Puzzle'], ['🎈', 'Balloon'], ['💦', 'Splash'], ['🏁', 'Finish'], ['🏕️', 'Camp']];
+// What a field in error is called in the dock's sentence ("Fix the counter buttons to save them").
+const GM_ERR_WORDS = { name: ['the name', 'it'], steps: ['the counter buttons', 'them'], tracker: ['the scoreboard', 'it'], timer: ['the timer', 'it'], prompts: ['the drawing prompts', 'them'] };
+
+function gmClone(v) { return JSON.parse(JSON.stringify(v)); }
+function gmSheetState(o) {
+  return Object.assign({
+    mode: 'new', pane: 'form', gid: null, dk: '', bid: '', session: '', minutes: null,
+    form: { name: '', emoji: '', location: '', format: '', messtival: false }, whereAuto: false,
+    made: false, err: {}, formatOpen: false, seedUi: '', order: null, emojiOpen: false, when: null, whenOnly: false,
+    gone: null, last: null, blank: 0, stageSeen: '', paneSeen: 'form',
+  }, o);
+}
+
+// ── opening ──
+// "Add a game here" / "Add a game to Wednesday": a new game on an item (or a session, with the original schedule); with none
+// named the day's first Games item. Where starts as the last-used place on that item.
+function gmOpenNew(o) {
+  if (!canEdit() || configLocked()) return false;
+  const dk = SETUP_DK.indexOf(o && o.dk) !== -1 ? o.dk : gmDayKey();
+  if (!gmIsGamesDay(dk)) { setupSay('Make ' + SETUP_DAY_WORDS[dk] + ' a games day first.'); return false; }
+  const t = String(o && o.target || '');
+  let bid = '';
+  let session = '';
+  if (t.indexOf('session:') === 0) session = t.slice(8);
+  else if (t) bid = t;
+  else if (scheduleIsShared()) { const first = planForDow(gmDow(dk)).find((b) => b.type === 'games' && !b.noTime); bid = first ? first.id : ''; }
+  const where = gmDefaultWhere(dk, bid);
+  gmUi.open = gmSheetState({ mode: 'new', dk, bid, session, form: { name: '', emoji: '', location: where, format: '', messtival: false }, whereAuto: !!where });
+  setupSheet('game', o && o.opener);
+  return true;
+}
+
+// An existing game (its row), or straight on When ("Put on the schedule").
+function gmOpenGame(gid, o) {
+  if (!canEdit()) return false;
+  const g = gameById(gid);
+  if (!g) return false;
+  const pane = o && o.pane === 'when' ? 'when' : 'form';
+  const st = gmSheetState({ mode: 'edit', gid, dk: gmDkOfDayId(g.dayId), last: gmClone(g), pane, whenOnly: pane === 'when' });
+  if (pane === 'when') st.when = { dk: st.dk || gmDayKey(), all: false, newDay: '', double: null };
+  gmUi.open = st;
+  setupSheet('game', o && o.opener);
+  return true;
+}
+
+// ⚡ Quick game: Podium already picked, so naming it is the one step; it lands on the Games item under way now or next (or off the
+// schedule), counting double inside the double-points window.
+function gmOpenQuick(opener) {
+  if (!canEdit() || configLocked()) return false;
+  const t = gmQuickTarget();
+  if (!t) { setupSay('Make a games day first (Set up the week → Games).'); return false; }
+  const where = gmDefaultWhere(t.dk, t.bid);
+  const dbl = typeof inDoubleBonusWindow === 'function' && inDoubleBonusWindow();
+  gmUi.open = gmSheetState({ mode: 'quick', dk: t.dk, bid: t.bid, minutes: t.minutes, form: { name: '', emoji: '', location: where, format: 'placement', messtival: !!dbl }, whereAuto: !!where });
+  setupSheet('game', opener);
+  return true;
+}
+
 function gmSheetReady() { return !!gmUi.open; }
 // A sheet closed by any route leaves its state behind; the next pass of the frame drops it (a Forward must not reopen a stale game).
 function gmCleanSheets() { if (gmUi.open && !shell.sheets.includes('game')) gmUi.open = null; }
-function gmGuardClose() { return false; }
+// Escape, Back and ✕ reach the sheet's close through here: a field still being typed saves first (nothing else is at stake — every
+// change has already been written). Never asks.
+function gmGuardClose() {
+  const a = typeof document !== 'undefined' ? document.activeElement : null;
+  if (gmUi.open && a && a.closest && a.closest('#sheet-game') && typeof a.blur === 'function') { try { a.blur(); } catch (e) { /* fine */ } }
+  return false;
+}
+// A new game with a name typed and nothing saved yet holds the deploy's auto-reload (it lives in memory only); once created, every
+// change is in the config engine and its own accounting.
+function gmBusy() {
+  const o = gmUi.open;
+  return !!(o && !o.gid && o.form.name.trim() && shell.sheets.includes('game'));
+}
+
+// ── what the sheet says ──
+function gmSrc(o) { return (o.gid && gameById(o.gid)) || o.last || null; }
+function gmFormatOf(o) { const g = gmSrc(o); return g ? g.format : o.form.format; }
+function gmStageOf(o) { return o.gid ? 'game' : (o.form.name.trim() || o.mode === 'quick') ? 'format' : 'name'; }
+
+// "Tuesday · Team competitions, 10:00–11:45 AM" · "Tuesday · Morning games" · "Wednesday · Not on the schedule" (the gold "!").
+function gmWhenInfo(o) {
+  const g = gmSrc(o);
+  const dk = (g && gmDkOfDayId(g.dayId)) || o.dk;
+  const todayDk = SETUP_DK[campNow().dow];
+  const word = o.mode === 'quick' && !g && dk === todayDk ? 'Today' : SETUP_DAY_WORDS[dk] || 'This week';
+  if (scheduleIsShared()) {
+    const bid = g ? g.blockId : o.bid;
+    const blk = typeof bid === 'string' && bid ? gmBlock(dk, bid) : null;
+    if (blk) return { text: word + ' · ' + (blk.base || blk.label) + (blk.noTime ? '' : ', ' + setupRange(blk.start, blk.end)), warn: false, btn: 'Change' };
+    return { text: word + ' · Not on the schedule', warn: true, btn: 'Put it on the schedule' };
+  }
+  const sess = g ? g.session : (o.session || gmSessions()[0]);
+  return { text: word + (sess ? ' · ' + sess + ' games' : ''), warn: false, btn: 'Change' };
+}
+
+// The line in the dock: saved · saving · offline · error (a field in error is named; everything else was saved).
+function gmDockState(o) {
+  const errs = Object.keys(o.err || {}).filter((k) => o.err[k]);
+  if (errs.length) { const w = GM_ERR_WORDS[errs[0]] || ['it', 'it']; return { tone: 'error', text: 'Fix ' + w[0] + ' to save ' + w[1] }; }
+  const line = typeof setupUiSyncLine === 'function' ? setupUiSyncLine() : { tone: 'saved' };
+  if (line.tone === 'offline') return { tone: 'offline', text: 'Saved on this phone · it sends when you’re back online' };
+  if (line.tone === 'error') return { tone: 'error', text: 'Couldn’t save — see the bar at the top' };
+  if (line.tone === 'saving') return { tone: 'saving', text: 'Saving…' };
+  return { tone: 'saved', text: o.made ? 'Added to ' + gmWhenInfo(o).text.replace(' · Not on the schedule', ' (not on the schedule)') : 'Saved' };
+}
+// What the dashed well before the game exists says (and, tapped, takes the director to).
+function gmWaitInfo(o) {
+  if (!o.form.name.trim()) return { text: 'Type the game’s name first', to: 'gm-name' };
+  return { text: 'Pick how it’s scored ↑', to: 'gm-format' };
+}
+
+// The game's current choice of Matchups as the radios show it: what the director tapped, else what is saved.
+function gmSeedUi(o) {
+  const g = gmSrc(o);
+  return o.seedUi || (g ? gmSeedOf(g) : 'standings');
+}
+function gmBoardOrder(o) {
+  if (Array.isArray(o.order)) return o.order;
+  const g = gmSrc(o);
+  return g && gmPairsValid(g.roundOneMatchups) ? [].concat.apply([], g.roundOneMatchups) : [];
+}
+
+// ── paint ──
+function gmSetData(el, name, v) { if (el && el.dataset && el.dataset[name] !== v) { if (v === '' || v == null) delete el.dataset[name]; else el.dataset[name] = v; } }
+function gmSetValue(el, v) { if (el && document.activeElement !== el && el.value !== v) el.value = v; }
+function gmSetSwitch(id, on) {
+  const sw = setupEl(id);
+  if (sw && typeof sw.hasAttribute === 'function' && sw.hasAttribute('checked') !== !!on) sw.toggleAttribute('checked', !!on);
+  paintSwitchWord(id, !!on);
+}
+function gmSetInvalid(el, bad) {
+  if (!el || typeof el.setAttribute !== 'function') return;
+  if (bad) el.setAttribute('aria-invalid', 'true'); else if (el.getAttribute('aria-invalid')) el.removeAttribute('aria-invalid');
+}
+function gmSetError(id, msg) {
+  setTextIfChanged(setupEl(id), msg || '');
+  setHiddenIfChanged(setupEl(id), !msg);
+}
+
+function gmBoardHtml(order) {
+  const slot = (tid, i) => (tid
+    ? '<span class="gm-slot" data-team="' + esc(tid) + '" style="' + teamAccentVars(tid) + '">' + teamMarkHtml(tid, { size: 22 }) + '<b>' + esc(teamShort(tid) || tid) + '</b></span>'
+    : i === order.length ? '<span class="gm-slot" data-next>Next</span>' : '<span class="gm-slot"></span>');
+  return gmPairsBoard(order).map((p, m) => '<li class="gm-match" data-match="' + m + '"><span class="gm-match-n">' + esc(gmMatchName(m)) + '</span>' + slot(p[0], m * 2) + '<span class="gm-vs" aria-hidden="true">v</span>' + slot(p[1], m * 2 + 1) + '</li>').join('');
+}
+function gmKeysHtml(order) {
+  return teamIds().map((tid) => {
+    const at = order.indexOf(tid);
+    const where = at === -1 ? '' : gmMatchName(Math.floor(at / 2));
+    const nm = teamShort(tid) || tid;
+    return '<button type="button" class="gm-key" data-team="' + esc(tid) + '" style="' + teamAccentVars(tid) + '" aria-pressed="' + (at !== -1) + '" aria-label="' + esc(nm + (where ? ', in ' + where + '. Tap to take them out' : '')) + '">' +
+      '<span class="gm-key-mark">' + teamMarkHtml(tid, { size: 28 }) + '</span><span class="gm-key-nm">' + esc(nm) + '</span><small class="gm-key-in">' + esc(where) + '</small></button>';
+  }).join('');
+}
+// The How-to-play sections: STATIC markup (no value attribute) so a snapshot or a save never rebuilds a row under a focused field;
+// the words are set as properties when the field is not focused. Rebuilt only when the number of sections changes.
+function gmRuleRowsHtml(n) {
+  let h = '';
+  for (let i = 0; i < n; i++) {
+    h += '<div class="gm-rule" data-key="r-' + i + '"><input type="text" class="fld-input gm-rule-h" data-gm-rule-h="' + i + '" maxlength="60" placeholder="Heading, like Setup" aria-label="Section ' + (i + 1) + ' heading">' +
+      '<textarea class="fld-input gm-rule-items gm-grow" data-gm-rule-items="' + i + '" rows="3" placeholder="One point per line" aria-label="Section ' + (i + 1) + ', one point per line"></textarea>' +
+      '<div class="gm-rule-acts">' + (i ? '<button type="button" class="btn-quiet" data-gm-rule-up="' + i + '">Move up</button>' : '') + '<button type="button" class="btn-quiet btn-quiet-danger" data-gm-rule-remove="' + i + '">Remove</button></div></div>';
+  }
+  return h;
+}
+
+function renderGameSheet() {
+  const o = gmUi.open;
+  const overlay = setupEl('sheet-game');
+  if (!o || !overlay) return;
+  let g = o.gid ? gameById(o.gid) : null;
+  if (o.gid && !g && !o.gone) o.gone = { at: Date.now() };
+  if (g) { o.last = gmClone(g); if (o.gone) o.gone = null; }
+  const src = g || o.last;
+  const stage = gmStageOf(o);
+  const format = src ? src.format : o.form.format;
+  const lost = !!o.gone;
+  gmSetData(overlay, 'mode', o.mode);
+  gmSetData(overlay, 'pane', o.pane);
+  gmSetData(overlay, 'stage', stage);
+  gmSetData(overlay, 'format', format || '');
+  setTextIfChanged(setupEl('sheet-game-title'), o.pane === 'when' ? 'When' : o.mode === 'new' ? 'New game' : o.mode === 'quick' ? 'Quick game' : 'Edit game');
+  if (o.pane === 'when') { renderGmWhen(o, g); } else { renderGmForm(o, g, src, stage, format, lost); }
+  // The pane that came in arrives from its side (forward from the right, Back from the left); calm: a fade.
+  if (o.paneSeen !== o.pane) {
+    const pane = document.querySelector('#sheet-game [data-gm-pane="' + o.pane + '"]');
+    if (o.paneSeen) setupPaneArrive(pane, o.pane === 'form');
+    o.paneSeen = o.pane;
+  }
+  gmFitSheet();
+}
+
+function renderGmForm(o, g, src, stage, format, lost) {
+  const form = o.form;
+  setHiddenIfChanged(setupEl('gm-pane-back'), true);
+  const w = gmWhenInfo(o);
+  setTextIfChanged(setupEl('gm-when-text'), w.text);
+  setTextIfChanged(setupEl('gm-when-btn'), w.btn);
+  const whenLine = setupEl('gm-when');
+  if (whenLine && typeof whenLine.toggleAttribute === 'function') { if (w.warn !== whenLine.hasAttribute('data-warn')) whenLine.toggleAttribute('data-warn', w.warn); }
+  // The deleted-elsewhere question.
+  setHiddenIfChanged(setupEl('gm-gone'), !lost);
+  if (lost) setTextIfChanged(setupEl('gm-gone-text'), 'This game was deleted on another phone' + (o.gone.at ? ' ' + hubAgo(o.gone.at, Date.now()) : '') + '.');
+  // 1 · name, emoji, where
+  gmSetValue(setupEl('gm-name'), src ? String(src.name || '') : form.name);
+  setTextIfChanged(setupEl('gm-emoji-now'), safeEmoji(src ? src.emoji : form.emoji, '') || '🏅');
+  const eb = setupEl('gm-emoji-btn');
+  if (eb && eb.getAttribute('aria-expanded') !== String(!!o.emojiOpen)) eb.setAttribute('aria-expanded', String(!!o.emojiOpen));
+  setHiddenIfChanged(setupEl('gm-emoji'), !o.emojiOpen);
+  const grid = setupEl('gm-emoji-grid');
+  const cur = safeEmoji(src ? src.emoji : form.emoji, '');
+  if (grid) setHtmlIfChanged(grid, GM_EMOJI.map((e) => '<button type="button" class="si-emo" data-emoji="' + e[0] + '" aria-pressed="' + (e[0] === cur) + '" aria-label="' + esc(e[1]) + '">' + e[0] + '</button>').join(''));
+  gmSetValue(setupEl('gm-where'), src ? String(src.location || '') : form.location);
+  setTextIfChanged(setupEl('gm-where-hint'), !src && o.whereAuto && form.location ? 'Where the last game here was' : '');
+  gmSetError('gm-name-error', o.err.name || '');
+  gmSetInvalid(setupEl('gm-name'), !!o.err.name);
+  // 2 · How is it scored?
+  const fmt = setupEl('gm-format');
+  const collapsed = !!o.gid && !o.formatOpen;
+  if (fmt && typeof fmt.toggleAttribute === 'function' && fmt.hasAttribute('data-collapsed') !== collapsed) fmt.toggleAttribute('data-collapsed', collapsed);
+  document.querySelectorAll('#gm-format [data-gm-format]').forEach((b) => { const on = b.dataset.gmFormat === format; if (b.getAttribute('aria-checked') !== String(on)) b.setAttribute('aria-checked', String(on)); });
+  setTextIfChanged(document.querySelector('[data-gm-fmt-sub="tournament"]'), gmBracketSub());
+  const going = o.gid ? gmGoingWords(o.gid) : '';
+  const warnOn = !!o.gid && !!going && o.formatOpen;
+  setHiddenIfChanged(setupEl('gm-format-warn'), !warnOn);
+  if (warnOn) setTextIfChanged(setupEl('gm-format-warn-text'), 'This game has ' + going + '. Scoring it another way clears ' + (/,| and /.test(going) ? 'them' : 'it') + '.');
+  // 3 · the format's own options
+  if (stage === 'game' && src) renderGmOptions(o, g, src, format);
+  // dock
+  setHiddenIfChanged(setupEl('gm-wait'), stage === 'game');
+  const wait = gmWaitInfo(o);
+  setTextIfChanged(setupEl('gm-wait-text'), wait.text);
+  const dock = gmDockState(o);
+  const st = setupEl('gm-state');
+  gmSetData(st, 'tone', dock.tone);
+  const was = st ? st.textContent : '';
+  setTextIfChanged(setupEl('gm-state-text'), dock.text);
+  setHiddenIfChanged(st, stage !== 'game');
+  setHiddenIfChanged(setupEl('gm-acts'), stage !== 'game');
+  setHiddenIfChanged(setupEl('gm-score'), !(o.mode === 'quick' && o.gid && !lost));
+  if (stage === 'game' && was && was !== dock.text && dock.tone === 'saved' && st) secSnap(st);
+  // stages unfold (calm: a fade); the first paint of a sheet does not
+  if (o.stageSeen !== stage) {
+    if (o.stageSeen) gmArrive(stage === 'format' ? document.querySelectorAll('#sheet-game [data-gm-step="format"]') : document.querySelectorAll('#sheet-game [data-gm-step="game"]'));
+    o.stageSeen = stage;
+  }
+}
+
+// The sections that arrive as the sheet grows.
+function gmArrive(list) {
+  if (typeof JellyMotion === 'undefined' || !list) return;
+  Array.prototype.forEach.call(list, (n) => JellyMotion.play(n, 'arrive', (x) => ({ opacity: Math.min(1, x), transform: 'translateY(' + (-12 * (1 - Math.min(1, x))) + 'px)', transformOrigin: '50% 0' }), { calm: [{ opacity: 0 }, { opacity: 1 }] }));
+}
+
+function renderGmOptions(o, g, src, format) {
+  // Bracket: Matchups and the live scoreboard
+  if (format === 'tournament') {
+    const seed = gmSeedUi(o);
+    document.querySelectorAll('#gm-seed [data-gm-seed]').forEach((b) => { const on = b.dataset.gmSeed === seed; if (b.getAttribute('aria-checked') !== String(on)) b.setAttribute('aria-checked', String(on)); });
+    setTextIfChanged(setupEl('gm-seed-standings-sub'), gmStandingsRule());
+    setHiddenIfChanged(setupEl('gm-pairs'), seed !== 'fixed');
+    if (seed === 'fixed') {
+      const order = gmBoardOrder(o);
+      setHtmlIfChanged(setupEl('gm-matches'), gmBoardHtml(order));
+      const keys = setupEl('gm-keys');
+      if (keys) { gmSetData(keys, 'n', String(teamIds().length)); setHtmlIfChanged(keys, gmKeysHtml(order)); }
+      const left = teamIds().length - order.length;
+      setHiddenIfChanged(setupEl('gm-pairs-left'), !left);
+      setTextIfChanged(setupEl('gm-pairs-left'), left ? 'Pick ' + hubPlural(left, 'more team', 'more teams') + '. Until then it plays as “Pick them when you start”.' : '');
+    }
+    const ladder = !!src.ladderScoring;
+    setHiddenIfChanged(setupEl('gm-ladder'), !ladder);
+    setHiddenIfChanged(setupEl('gm-tracker-box'), ladder);
+    if (ladder) setTextIfChanged(setupEl('gm-ladder-text'), 'This game has its own Ladder Ball scorer, first to exactly ' + (Number(src.ladderScoring.target) || 21) + ', with a live board for each match.');
+    const t = src.liveTracker && typeof src.liveTracker === 'object' ? src.liveTracker : null;
+    gmSetSwitch('gm-tracker', !!t);
+    setHiddenIfChanged(setupEl('gm-tracker-fields'), !t);
+    if (t) {
+      gmSetValue(setupEl('gm-tr-unit'), String(t.unit || ''));
+      gmSetValue(setupEl('gm-tr-period'), String(t.periodLabel || ''));
+      gmSetValue(setupEl('gm-tr-periods'), t.innings == null ? '' : String(t.innings));
+      gmSetValue(setupEl('gm-tr-outs'), t.outs == null ? '' : String(t.outs));
+    }
+    gmSetError('gm-tracker-error', o.err.tracker || '');
+    const b4 = setupEl('gm-b4-note');
+    setHiddenIfChanged(b4, !(teamIds().length !== 6 && typeof bracketKindFor !== 'function'));
+  }
+  // Scores
+  if (format === 'tally') {
+    gmSetValue(setupEl('gm-unit'), String(src.unit || ''));
+    gmSetSwitch('gm-lower', src.lowerWins === true);
+    gmSetSwitch('gm-times', src.timeInput === true);
+    gmSetSwitch('gm-live', src.liveRankings === true);
+    const steps = Array.isArray(src.counterSteps) ? src.counterSteps : [];
+    gmSetValue(setupEl('gm-steps'), steps.join(', '));
+    gmSetError('gm-steps-error', o.err.steps || '');
+    gmSetInvalid(setupEl('gm-steps'), !!o.err.steps);
+    setHiddenIfChanged(setupEl('gm-negative-box'), !steps.length);
+    gmSetSwitch('gm-negative', src.counterAllowNegative === true);
+  }
+  // Order inside its item
+  const dk = gmDkOfDayId(src.dayId);
+  const sibs = scheduleIsShared() && typeof src.blockId === 'string' && dk ? gmGamesOnBlock(dk, src.blockId) : [];
+  const at = sibs.findIndex((x) => x.id === src.id);
+  setHiddenIfChanged(setupEl('gm-order'), !(sibs.length > 1 && at > -1));
+  if (sibs.length > 1 && at > -1) {
+    const blk = gmBlock(dk, src.blockId);
+    setTextIfChanged(setupEl('gm-order-label'), 'Order in ' + (blk ? (blk.base || blk.label) : 'this item'));
+    const set = (dir, ok, sub) => {
+      const b = document.querySelector('[data-gm-order="' + dir + '"]');
+      if (b) { b.setAttribute('aria-disabled', ok ? 'false' : 'true'); }
+      setTextIfChanged(document.querySelector('[data-gm-order-sub="' + dir + '"]'), sub);
+    };
+    set('earlier', at > 0, at > 0 ? 'Before ' + sibs[at - 1].name : 'First');
+    set('later', at < sibs.length - 1, at < sibs.length - 1 ? 'After ' + sibs[at + 1].name : 'Last');
+  }
+  // Extras
+  gmSetSwitch('gm-double', src.messtival === true);
+  const timer = src.timer && typeof src.timer === 'object' ? src.timer : null;
+  gmSetSwitch('gm-timer', !!timer);
+  setHiddenIfChanged(setupEl('gm-timer-fields'), !timer);
+  if (timer) {
+    gmSetValue(setupEl('gm-timer-label'), String(timer.label || ''));
+    gmSetValue(setupEl('gm-timer-presets'), (Array.isArray(timer.presets) ? timer.presets : []).map((x) => Math.round(x / 6) / 10).join(', '));
+    gmSetValue(setupEl('gm-timer-rounds'), timer.rounds ? String(timer.rounds) : '');
+  }
+  gmSetError('gm-timer-error', o.err.timer || '');
+  gmSetValue(setupEl('gm-prompts'), Array.isArray(src.prompts) ? src.prompts.join('\n') : '');
+  gmSetError('gm-prompts-error', o.err.prompts || '');
+  setTextIfChanged(setupEl('gm-extras-sum'), gmExtrasSummary(src));
+  // How to play
+  setTextIfChanged(setupEl('gm-howto-sum'), gmHowtoSummary(src));
+  gmSetValue(setupEl('gm-headline'), String(src.headline || ''));
+  const rules = Array.isArray(src.rules) ? src.rules : [];
+  const n = rules.length + (o.blank || 0);
+  setHtmlIfChanged(setupEl('gm-rules'), gmRuleRowsHtml(n));
+  const rows = document.querySelectorAll('#gm-rules .gm-rule');
+  Array.prototype.forEach.call(rows, (row, i) => {
+    const h = row.querySelector('.gm-rule-h');
+    const it = row.querySelector('.gm-rule-items');
+    const r = rules[i];
+    gmSetValue(h, r ? String(r.h || '') : '');
+    gmSetValue(it, r ? (Array.isArray(r.items) ? r.items.join('\n') : String(r.items || '')) : '');
+    if (it) secGrow(it);
+  });
+  // Make a copy / Delete
+  setHiddenIfChanged(setupEl('gm-foot'), !o.gid);
+}
+
+// When the pinned parts of the sheet (grab, head, When line, dock) take more than 45% of its height (large text), the WHOLE sheet
+// scrolls as one (the item sheet's rule): decided per open and only ever switched on while open, so the form never jumps mid-edit.
+function gmFitSheet() {
+  const o = gmUi.open;
+  const sheet = document.querySelector('#sheet-game .sheet');
+  if (!o || !sheet || !sheet.children || o.flow) return;
+  const h = Number(sheet.clientHeight) || 0;
+  if (!h) return;
+  let fixed = 0;
+  Array.prototype.forEach.call(sheet.children, (c) => { if (!(c.classList && c.classList.contains('sheet-body'))) fixed += Number(c.offsetHeight) || 0; });
+  if (fixed > h * 0.45) { o.flow = true; sheet.setAttribute('data-flow', ''); }
+}
+
+// ── the When pane ──
+function gmWhenDays() { return SETUP_DK; }
+// Rows: with the schedule edited here the day's items (Games items and items that already have games first, the rest behind
+// "Other items on Thursday"); with the original one the day's sessions.
+function gmWhenRows(o, g) {
+  const w = o.when;
+  const dow = gmDow(w.dk);
+  const curDk = g ? gmDkOfDayId(g.dayId) : o.dk;
+  if (!scheduleIsShared()) {
+    const curSession = g ? g.session : (o.session || gmSessions()[0]);
+    return { first: gmSessions().map((s) => ({ key: 'session:' + s, label: s + ' games', here: s === curSession && curDk === w.dk, n: gmGamesOnDay(w.dk).filter((x) => x.session === s).length })), rest: [] };
+  }
+  const cur = g ? g.blockId : (o.none ? '' : o.bid);
+  const rows = planForDow(dow).filter((b) => !b.noTime).map((b) => ({ key: b.id, b, label: b.base || b.label, here: b.id === cur && curDk === w.dk, n: gmGamesOnBlock(w.dk, b.id).length }));
+  return { first: rows.filter((r) => r.b.type === 'games' || r.n || r.here), rest: rows.filter((r) => !(r.b.type === 'games' || r.n || r.here)) };
+}
+
+function gmWhenRowHtml(r) {
+  const time = r.b ? '<span class="cb-time">' + esc(schedClock(r.b.start, false)) + '<small>–' + esc(schedClockWords(r.b.end)) + '</small></span>' : '';
+  const sub = (r.here ? 'Here now · ' : '') + (r.n ? hubPlural(r.n, 'game', 'games') : 'No games yet');
+  return '<button type="button" class="cb-row gm-when-row" data-gm-block="' + esc(r.key) + '"' + (r.here ? ' aria-current="true"' : '') + '>' + time +
+    '<span class="cb-main"><span class="cb-title">' + (r.b ? gmEmoHtml(r.b.emoji) : '') + '<span>' + esc(r.label) + '</span></span><span class="cb-sub">' + esc(sub) + '</span></span>' +
+    '<span class="cb-end">' + (r.here ? '<svg class="ico" aria-hidden="true"><use href="#i-check"/></svg>' : '<svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg>') + '</span></button>';
+}
+
+function renderGmWhen(o, g) {
+  if (!o.when) o.when = { dk: o.dk || gmDayKey(), all: false, newDay: '', double: null };
+  const w = o.when;
+  const live = scheduleIsShared();
+  const name = (g && g.name) || o.form.name.trim() || 'New game';
+  setHiddenIfChanged(setupEl('gm-pane-back'), !!o.whenOnly);
+  setTextIfChanged(setupEl('gm-pane-back-label'), name);
+  const todayDk = SETUP_DK[campNow().dow];
+  const wk = typeof campWeek === 'function' ? campWeek() : { phase: 'unset' };
+  const strip = setupEl('gm-when-days');
+  document.querySelectorAll('#gm-when-days [data-dk]').forEach((btn) => {
+    const dk = btn.dataset.dk;
+    const on = dk === w.dk;
+    if (btn.getAttribute('aria-checked') !== String(on)) btn.setAttribute('aria-checked', String(on));
+    const today = dk === todayDk && wk.phase === 'during';
+    if (today !== btn.hasAttribute('data-today')) { if (today) btn.setAttribute('data-today', ''); else btn.removeAttribute('data-today'); }
+    setTextIfChanged(btn.querySelector('.daypick-name'), today ? 'Today' : SETUP_DAY_WORDS[dk].slice(0, 3));
+    btn.setAttribute('aria-label', SETUP_DAY_WORDS[dk] + (today ? ', today' : '') + (gmIsGamesDay(dk) ? '' : ', not a games day'));
+  });
+  if (strip && strip.dataset.shown !== w.dk && strip.clientWidth > 0) { strip.dataset.shown = w.dk; stripRevealChip(strip, strip.querySelector('[aria-checked="true"]'), false); }
+  paintStripOverflow(strip);
+  const isDay = gmIsGamesDay(w.dk);
+  const asking = !isDay && !!w.newDay;
+  setHiddenIfChanged(setupEl('gm-when-newday'), !asking);
+  if (asking) {
+    setTextIfChanged(setupEl('gm-when-newday-text'), SETUP_DAY_WORDS[w.dk] + ' isn’t a games day yet. Putting a game on it makes it one.');
+    setTextIfChanged(setupEl('gm-when-newday-yes'), 'Make ' + SETUP_DAY_WORDS[w.dk] + ' a games day');
+  }
+  const rows = isDay ? gmWhenRows(o, g) : { first: [], rest: [] };
+  const shown = rows.first.concat(w.all ? rows.rest : []);
+  setHtmlIfChanged(setupEl('gm-when-list'), shown.map(gmWhenRowHtml).join(''));
+  setHiddenIfChanged(setupEl('gm-when-all'), !isDay || w.all || !rows.rest.length);
+  setTextIfChanged(setupEl('gm-when-all-text'), w.dk === todayDk ? 'Other items today' : 'Other items on ' + SETUP_DAY_WORDS[w.dk]);
+  setHiddenIfChanged(setupEl('gm-when-empty'), !(isDay && !shown.length));
+  setHiddenIfChanged(setupEl('gm-when-double'), !w.double);
+  if (w.double) setTextIfChanged(setupEl('gm-when-double-text'), w.double.label + ' is in double points time. Make ' + name + ' count double too?');
+  // Not on the schedule: only where the schedule is edited here (the original one reads no links)
+  const none = document.querySelector('#sheet-game .rain-move-off');
+  setHiddenIfChanged(none, !live);
+}
+
+// ── what a tap or a blur does ──
+// After an engine call: a write that landed repaints the frame (the screen behind the sheet follows), a game that was deleted
+// meanwhile is noticed (the question appears), a refusal says nothing here (configLocked already toasted a loading list).
+function gmAfter(r, o, quiet) {
+  if (!r) return r;
+  if (r.ok) { if (r.changed !== false) { if (!quiet) o.made = false; renderAll(); } }
+  else if (r.reason === 'gone') { if (!o.gone) o.gone = { at: Date.now() }; renderGameSheet(); }
+  return r;
+}
+
+// The game is created the moment it has a name AND a way of being scored (name committed on blur / Enter, or a format tapped).
+function gmTryCreate() {
+  const o = gmUi.open;
+  if (!o || o.gid || o.busy) return null;
+  const f = o.form;
+  if (!f.name.trim() || !GM_FORMAT_WORDS[f.format]) return null;
+  const place = gmPlacement(o.dk, o.bid, { session: o.session, minutes: o.mode === 'quick' ? o.minutes : null });
+  if (!place) { setupSay('Make ' + (SETUP_DAY_WORDS[o.dk] || 'that day') + ' a games day first.'); return null; }
+  if (o.none) place.none = true;
+  const r = gmCreateGame(f, place);
+  if (!r.ok) { if (r.reason === 'name') { o.err.name = 'Give the game a name.'; renderGameSheet(); } return r; }
+  o.gid = r.id;
+  o.made = true;
+  o.last = gmClone(gameById(r.id));
+  renderAll();
+  return r;
+}
+
+function gmNameBlur(v) {
+  const o = gmUi.open;
+  if (!o) return;
+  if (!o.gid) { o.form.name = v; o.err.name = ''; renderGameSheet(); gmTryCreate(); return; }
+  if (!v.trim()) { o.err.name = 'Give the game a name.'; renderGameSheet(); return; }
+  o.err.name = '';
+  gmAfter(gmRename(o.gid, v), o);
+}
+
+function gmSetEmoji(e) {
+  const o = gmUi.open;
+  if (!o || safeEmoji(e, '') !== e || !e) return;
+  o.emojiOpen = false;
+  if (!o.gid) { o.form.emoji = e; renderGameSheet(); return; }
+  gmAfter(gmCommit(o.gid, { emoji: e }), o);
+  renderGameSheet();
+}
+
+async function gmPickFormat(f) {
+  const o = gmUi.open;
+  if (!o || o.gone || !GM_FORMAT_WORDS[f]) return;
+  if (!o.gid) { o.form.format = f; renderGameSheet(); gmTryCreate(); return; }
+  const g = gameById(o.gid);
+  if (!g) { gmAfter({ ok: false, reason: 'gone' }, o); return; }
+  if (!o.formatOpen) { o.formatOpen = true; renderGameSheet(); return; } // folded: a tap opens all three
+  if (g.format === f) { o.formatOpen = false; renderGameSheet(); return; }
+  let r = gmChangeFormat(o.gid, f);
+  if (r.reason === 'confirm') {
+    const go = await askDialog({
+      title: 'Score “' + g.name + '” another way?', body: ['This clears ' + r.going + '. It can’t be undone.'],
+      actions: [{ label: 'Keep it as it is', value: 'no', cancel: true }, { label: 'Clear it and change', value: 'go', kind: 'danger' }],
+    });
+    if (go !== 'go' || gmUi.open !== o) return;
+    r = gmChangeFormat(o.gid, f, { confirmed: true });
+  }
+  if (r.ok) { o.formatOpen = false; o.seedUi = ''; o.order = null; }
+  gmAfter(r, o);
+}
+
+function gmPickSeed(mode) {
+  const o = gmUi.open;
+  if (!o || !o.gid || o.gone || GM_SEEDS.indexOf(mode) === -1) return;
+  if (mode === 'fixed') { o.seedUi = 'fixed'; o.order = gmBoardOrder(o).slice(); }
+  else { o.seedUi = ''; o.order = null; }
+  gmAfter(gmSetSeed(o.gid, mode, o.order), o);
+  renderGameSheet();
+}
+
+function gmBoardTap(tid) {
+  const o = gmUi.open;
+  if (!o || !o.gid || o.gone) return;
+  o.seedUi = 'fixed';
+  o.order = gmPairsTap(gmBoardOrder(o), tid);
+  gmAfter(gmSetSeed(o.gid, 'fixed', o.order), o);
+  renderGameSheet();
+}
+
+function gmOrderTap(dir) {
+  const o = gmUi.open;
+  if (!o || !o.gid || o.gone) return;
+  gmAfter(gmOrderGame(o.gid, dir === 'earlier' ? -1 : 1), o);
+}
+
+// A switch was turned: one field, written now.
+function gmSwitch(id, on) {
+  const o = gmUi.open;
+  if (!o || !o.gid || o.gone) return;
+  const g = gameById(o.gid);
+  if (!g) { gmAfter({ ok: false, reason: 'gone' }, o); return; }
+  let patch = null;
+  if (id === 'gm-lower') patch = { lowerWins: on ? true : undefined };
+  else if (id === 'gm-times') patch = { timeInput: on ? true : undefined };
+  else if (id === 'gm-live') patch = { liveRankings: on ? true : undefined };
+  else if (id === 'gm-negative') patch = { counterAllowNegative: on ? true : undefined };
+  else if (id === 'gm-double') patch = { messtival: on ? true : undefined };
+  else if (id === 'gm-tracker') patch = { liveTracker: on ? (g.liveTracker || gmFormatDefaults('tournament', {}).liveTracker) : undefined };
+  else if (id === 'gm-timer') patch = { timer: on ? (g.timer || { label: '', presets: [300] }) : undefined };
+  if (!patch) return;
+  if (id === 'gm-tracker') o.err.tracker = '';
+  if (id === 'gm-timer') o.err.timer = '';
+  gmAfter(gmCommit(o.gid, patch), o);
+}
+
+// A text field lost focus (or Enter): one field, written if it changed and passes the classic editor's own checks.
+function gmCommitText(el) {
+  const o = gmUi.open;
+  if (!o || o.pane !== 'form' || !el) return;
+  const id = el.id || '';
+  const v = String(el.value == null ? '' : el.value);
+  if (id === 'gm-name') { gmNameBlur(v); return; }
+  if (id === 'gm-where') {
+    if (!o.gid) { o.form.location = v; o.whereAuto = false; renderGameSheet(); return; }
+    if (!o.gone) gmAfter(gmCommit(o.gid, { location: v.trim().slice(0, 60) }), o);
+    return;
+  }
+  if (!o.gid || o.gone) return;
+  const field = (name, r, key) => { // a parse result: an error stays on the field and nothing is written; a value is one commit
+    if (!r.ok) { o.err[key] = r.error; renderGameSheet(); return; }
+    o.err[key] = '';
+    gmAfter(gmCommit(o.gid, { [name]: r.value }), o);
+  };
+  const g = gameById(o.gid);
+  if (!g) { gmAfter({ ok: false, reason: 'gone' }, o); return; }
+  const val = (i) => { const e2 = setupEl(i); return e2 && typeof e2.value === 'string' ? e2.value : ''; };
+  if (id === 'gm-unit') gmAfter(gmCommit(o.gid, { unit: v.trim().slice(0, 30) || undefined }), o);
+  else if (id === 'gm-steps') field('counterSteps', gmParseSteps(v), 'steps');
+  else if (id === 'gm-headline') gmAfter(gmCommit(o.gid, { headline: v.replace(/\s+/g, ' ').trim().slice(0, 140) }), o);
+  else if (id === 'gm-prompts') field('prompts', gmParsePrompts(v, o.gid), 'prompts');
+  else if (/^gm-tr-/.test(id)) field('liveTracker', gmParseTracker(g.liveTracker, val('gm-tr-unit'), val('gm-tr-period'), val('gm-tr-periods'), val('gm-tr-outs')), 'tracker');
+  else if (/^gm-timer-/.test(id)) field('timer', gmParseTimer(val('gm-timer-label'), val('gm-timer-presets'), val('gm-timer-rounds')), 'timer');
+  else if (el.classList && (el.classList.contains('gm-rule-h') || el.classList.contains('gm-rule-items'))) gmCommitRules();
+}
+
+// How to play: every section as typed → the saved list (a section with neither heading nor points is dropped; a blank one added
+// and not yet filled stays on the sheet).
+function gmCommitRules() {
+  const o = gmUi.open;
+  if (!o || !o.gid || o.gone) return;
+  const rows = Array.prototype.map.call(document.querySelectorAll('#gm-rules .gm-rule'), (row) => {
+    const h = row.querySelector('.gm-rule-h');
+    const it = row.querySelector('.gm-rule-items');
+    return { h: h ? h.value : '', items: it ? it.value : '' };
+  });
+  const list = gmRulesFrom(rows);
+  o.blank = Math.max(0, rows.length - list.length);
+  gmAfter(gmCommit(o.gid, { rules: list.length ? list : undefined }), o);
+  renderGameSheet();
+}
+function gmRuleMoveUp(i) {
+  const o = gmUi.open;
+  const g = o && o.gid ? gameById(o.gid) : null;
+  if (!g || !Array.isArray(g.rules) || i < 1 || i >= g.rules.length) return;
+  const list = gmClone(g.rules);
+  const t = list[i]; list[i] = list[i - 1]; list[i - 1] = t;
+  gmAfter(gmCommit(o.gid, { rules: list }), o);
+}
+function gmRuleRemove(i) {
+  const o = gmUi.open;
+  const g = o && o.gid ? gameById(o.gid) : null;
+  if (!g) return;
+  const list = Array.isArray(g.rules) ? gmClone(g.rules) : [];
+  if (i < list.length) { list.splice(i, 1); gmAfter(gmCommit(o.gid, { rules: list.length ? list : undefined }), o); }
+  else { o.blank = Math.max(0, (o.blank || 0) - 1); renderGameSheet(); }
+}
+
+// ── When ──
+function gmShowWhen() {
+  const o = gmUi.open;
+  if (!o || o.gone) return;
+  const g = o.gid ? gameById(o.gid) : null;
+  o.when = { dk: (g && gmDkOfDayId(g.dayId)) || o.dk || gmDayKey(), all: false, newDay: '', double: null };
+  o.pane = 'when';
+  renderGameSheet();
+}
+function gmShowForm() {
+  const o = gmUi.open;
+  if (!o) return;
+  if (o.whenOnly) { shellSheetClose('game'); return; }
+  o.pane = 'form';
+  o.when = null;
+  renderGameSheet();
+}
+function gmWhenDay(dk) {
+  const o = gmUi.open;
+  if (!o || !o.when || SETUP_DK.indexOf(dk) === -1) return;
+  o.when.dk = dk;
+  o.when.all = false;
+  o.when.double = null;
+  o.when.newDay = gmIsGamesDay(dk) ? '' : dk;
+  renderGameSheet();
+}
+function gmWhenNewDay(answer) {
+  const o = gmUi.open;
+  if (!o || !o.when) return;
+  if (answer === 'yes') {
+    const r = gmMakeDay(o.when.dk);
+    if (r.ok) { o.when.newDay = ''; renderAll(); } else renderGameSheet();
+    return;
+  }
+  const g = o.gid ? gameById(o.gid) : null;
+  o.when.dk = (g && gmDkOfDayId(g.dayId)) || o.dk || SETUP_DK.find(gmIsGamesDay) || o.when.dk;
+  o.when.newDay = '';
+  renderGameSheet();
+}
+// A row of the When list: an item (or a session). A new game only remembers it; a saved one moves, asking first about double points.
+function gmWhenPick(key, answer) {
+  const o = gmUi.open;
+  if (!o || !o.when || o.gone || !gmIsGamesDay(o.when.dk)) return;
+  const w = o.when;
+  const session = key.indexOf('session:') === 0 ? key.slice(8) : '';
+  if (!o.gid) {
+    o.dk = w.dk; o.bid = session ? '' : key; o.session = session; o.none = false; o.whereAuto = false;
+    gmShowForm();
+    return;
+  }
+  const r = gmMoveGame(o.gid, session ? { dk: w.dk, session } : { dk: w.dk, bid: key }, answer ? { double: answer } : undefined);
+  if (r.reason === 'double') {
+    const b = gmBlock(w.dk, key);
+    w.double = { key, label: b ? (b.base || b.label) : 'That item' };
+    renderGameSheet();
+    return;
+  }
+  if (!r.ok) { if (r.reason === 'item') setupSay('That item isn’t on the schedule any more.'); gmAfter(r, o); return; }
+  w.double = null;
+  o.dk = w.dk;
+  gmAfter(r, o);
+  gmShowForm();
+}
+function gmWhenNone() {
+  const o = gmUi.open;
+  if (!o || o.gone) return;
+  if (!o.gid) { o.bid = ''; o.none = true; gmShowForm(); return; }
+  const r = gmMoveGame(o.gid, { none: true });
+  gmAfter(r, o);
+  if (r.ok) gmShowForm();
+}
+
+// ── the dock and the foot ──
+function gmWaitTap() {
+  const o = gmUi.open;
+  if (!o) return;
+  const w = gmWaitInfo(o);
+  const el = setupEl(w.to);
+  if (!el) return;
+  if (typeof el.scrollIntoView === 'function') { try { el.scrollIntoView({ block: 'nearest' }); } catch (e) { /* fine */ } }
+  const focus = w.to === 'gm-format' ? document.querySelector('#gm-format [data-gm-format]') : el;
+  if (focus && typeof focus.focus === 'function') { try { focus.focus({ preventScroll: true }); } catch (e) { /* fine */ } }
+}
+function gmScoreNow() {
+  const o = gmUi.open;
+  if (!o || !o.gid || !gameById(o.gid)) return;
+  const gid = o.gid;
+  shellSheetClose('game');
+  if (builderOpen()) setupCloseBuilder();
+  openGame(gid, { from: state.ui.tab === 'games' ? 'games' : undefined });
+}
+function gmCopyGo() {
+  const o = gmUi.open;
+  if (!o || !o.gid || o.gone) return;
+  const r = gmDuplicate(o.gid);
+  if (!r.ok) { gmAfter(r, o); return; }
+  const g = gameById(r.id);
+  gmUi.open = gmSheetState({ mode: 'edit', gid: r.id, dk: g ? gmDkOfDayId(g.dayId) : o.dk, last: g ? gmClone(g) : null, stageSeen: 'game' });
+  setupSay('Made a copy. Rename it when you like.');
+  renderAll();
+}
+async function gmDeleteGo() {
+  const o = gmUi.open;
+  if (!o || !o.gid) return;
+  const r = await gmDeleteGame(o.gid);
+  if (r.ok) { shellSheetClose('game'); renderAll(); } else if (r.reason === 'gone') gmAfter(r, o);
+}
+// Deleted on another phone: put it back with what is on the sheet, or close.
+function gmGoneAnswer(answer) {
+  const o = gmUi.open;
+  if (!o) return;
+  if (answer === 'close') { shellSheetClose('game'); return; }
+  if (!o.last || gameById(o.last.id)) { o.gone = null; renderAll(); return; }
+  const rec = gmClone(o.last);
+  const ok = configEdit('Put back “' + rec.name + '”', () => { if (gameById(rec.id)) return false; state.config.games.push(rec); return undefined; });
+  if (ok !== false) { o.gone = null; saveState(); renderAll(); }
+}
+
+// ── wiring ──
+function wireGameSheet() {
+  const sheet = setupEl('sheet-game');
+  if (!sheet) return;
+  const q = (e, sel) => (e.target && e.target.closest ? e.target.closest(sel) : null);
+  // ✕ and the backdrop: a field still being typed saves first (Escape and Back reach the same through setupSheetGuardClose).
+  sheet.addEventListener('click', (e) => { if (q(e, '[data-sheet-close]')) gmGuardClose(); }, true);
+  sheet.addEventListener('click', (e) => {
+    const o = gmUi.open;
+    if (!o) return;
+    let b;
+    if (q(e, '#gm-pane-back')) gmShowForm();
+    else if (q(e, '#gm-when-btn')) gmShowWhen();
+    else if (q(e, '#gm-emoji-btn')) { o.emojiOpen = !o.emojiOpen; renderGameSheet(); }
+    else if ((b = q(e, '.si-emo'))) gmSetEmoji(b.dataset.emoji);
+    else if ((b = q(e, '[data-gm-format]'))) gmPickFormat(b.dataset.gmFormat);
+    else if ((b = q(e, '[data-gm-seed]'))) gmPickSeed(b.dataset.gmSeed);
+    else if ((b = q(e, '.gm-key[data-team]'))) gmBoardTap(b.dataset.team);
+    else if ((b = q(e, '[data-gm-order]'))) { if (b.getAttribute('aria-disabled') !== 'true') gmOrderTap(b.dataset.gmOrder); }
+    else if ((b = q(e, '.gm-when-row[data-gm-block]'))) gmWhenPick(b.dataset.gmBlock);
+    else if ((b = q(e, '#gm-when-days [data-dk]'))) gmWhenDay(b.dataset.dk);
+    else if ((b = q(e, '[data-gm-newday]'))) gmWhenNewDay(b.dataset.gmNewday);
+    else if ((b = q(e, '[data-gm-double]'))) { if (o.when && o.when.double) gmWhenPick(o.when.double.key, b.dataset.gmDouble); }
+    else if (q(e, '#gm-when-all')) { if (o.when) { o.when.all = true; renderGameSheet(); } }
+    else if (q(e, '#gm-when-none')) gmWhenNone();
+    else if (q(e, '#gm-wait')) gmWaitTap();
+    else if (q(e, '#gm-done')) shellSheetClose('game');
+    else if (q(e, '#gm-score')) gmScoreNow();
+    else if (q(e, '#gm-copy')) gmCopyGo();
+    else if (q(e, '#gm-delete')) gmDeleteGo();
+    else if ((b = q(e, '[data-gm-gone]'))) gmGoneAnswer(b.dataset.gmGone);
+    else if (q(e, '#gm-rule-add')) { o.blank = (o.blank || 0) + 1; renderGameSheet(); const rows = document.querySelectorAll('#gm-rules .gm-rule-h'); const last = rows[rows.length - 1]; if (last && last.focus) { try { last.focus(); } catch (x) { /* fine */ } } }
+    else if ((b = q(e, '[data-gm-rule-up]'))) gmRuleMoveUp(Number(b.dataset.gmRuleUp));
+    else if ((b = q(e, '[data-gm-rule-remove]'))) gmRuleRemove(Number(b.dataset.gmRuleRemove));
+  });
+  // Text: what is typed before the game exists is kept on the form (it creates nothing); after, a field is written when focus leaves it.
+  sheet.addEventListener('focusout', (e) => {
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA') && t.id !== 'gm-emoji-other') gmCommitText(t);
+  });
+  sheet.addEventListener('input', (e) => {
+    const o = gmUi.open;
+    const t = e.target;
+    if (!o || !t) return;
+    if (t.id === 'gm-name' && !o.gid) { o.form.name = t.value; o.err.name = ''; renderGameSheet(); }
+    else if (t.id === 'gm-where' && !o.gid) { o.form.location = t.value; o.whereAuto = false; }
+    if (t.classList && t.classList.contains('gm-grow')) secGrow(t);
+  });
+  sheet.addEventListener('keydown', (e) => {
+    const t = e.target;
+    if (e.key === 'Enter' && t && t.tagName === 'INPUT' && t.type !== 'checkbox' && typeof t.blur === 'function') { e.preventDefault(); t.blur(); }
+  });
+  sheet.addEventListener('change', (e) => {
+    const t = e.target;
+    if (!t) return;
+    if (t.id === 'gm-emoji-other') { const v = String(t.value || '').trim(); if (v) { gmSetEmoji(v); t.value = ''; } return; }
+    if (/^gm-(lower|times|live|negative|double|tracker|timer)$/.test(t.id || '')) gmSwitch(t.id, !!t.checked);
+  });
+}
