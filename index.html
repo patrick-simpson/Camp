@@ -1112,6 +1112,32 @@
           <button type="button" class="btn-quiet sec-original" id="electives-original" data-sec-original="electives" data-owner-only hidden>Use the original stations again</button>
         </section>
 
+        <!-- ── Teams (P2 §11.7; Step 25) ──
+             A fixed list: one row per team slot (6 junior, 4 senior), never an Add or a Delete — the slots t0…tN key results, the
+             rota, alerts and the rules. A row is written by the renderer (keyed data-key="t-<id>"):
+               <button class="cb-row sec-row tms-row" data-key="t-t0" data-team-open="t0" [data-warn]>
+                 <span class="cb-time tms-mark">the team's mark (shield, flag, photo or emoji tile)</span>
+                 <span class="cb-main"><span class="cb-title">Ferocious Foxes</span>
+                   <span class="cb-sub">Foxes · 🦊 · ● Pumpkin</span>            (short · emoji · colour dot + name; "same as Turkey" when shared)
+                   <span class="cb-sub tms-staff">Sam, Alyssa</span></span>      (or "No counselors yet")
+                 <span class="cb-end">chevron</span></button>
+             The gold "!" before the sub (data-warn) marks a team the hub would flag (two teams on one colour, a missing name).
+             #teams-weak is the gentle note about last year's colours that are hard to read on a theme, with the one place to fix
+             them all. A tap on a row opens #sheet-team-edit. -->
+        <section class="setup-screen sec teams" id="setup-teams" data-setup-screen="teams" aria-labelledby="teams-title">
+          <div class="setup-intro">
+            <h2 class="setup-kicker" id="teams-title">Teams</h2>
+            <p class="setup-headline" id="teams-headline"></p>
+            <p class="setup-lede" id="teams-lede"></p>
+          </div>
+          <p class="setup-note" id="teams-repair" hidden><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span id="teams-repair-text"></span></p>
+          <div class="gl cb-list sec-list" id="teams-list"></div>
+          <div id="teams-weak" hidden>
+            <p class="setup-note"><svg class="ico" aria-hidden="true"><use href="#i-pennant"/></svg><span id="teams-weak-text"></span></p>
+            <button type="button" class="sched-add" id="teams-weak-btn"><svg class="ico" aria-hidden="true"><use href="#i-pennant"/></svg><span>Pick colours for the flagged teams</span></button>
+          </div>
+        </section>
+
         <!-- The classic builder (Games, Days, Teams, Notice, Data) as one screen
              of the frame until each section's replacement ships (§11.1);
              renderSettings still writes #settings-view. In the frame its own
@@ -2662,6 +2688,89 @@
       </form>
       <div class="sheet-dock">
         <button type="button" class="btn btn-gold btn-block" id="sec-verse-save">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── TEAMS: the team sheet and the colours sheet (P2 §11.7; Step 25) ──
+       Shell sheets again (editors only, ONE at a time). #sheet-team-edit[data-pane] is the switch, as the rain plan's item sheet:
+         form — Team name, Short name, the inline rename question (#team-rename-q: the gold "!" + a sentence + its two answers, never
+                a dialog over the sheet), Emoji (input + a grid; one another team uses is dimmed and says whose), Colour (twelve
+                swatches, each a pill with the team on a light chip and a dark chip at once; a colour another team uses stays
+                pickable), the photo (Add / Replace / Remove) and the counselors' fallback text. Save is docked.
+         crop — the picture under a fixed frame of the shield's shape: drag it, zoom it, "Use this photo" is docked.
+       #sheet-team-colors: every team whose older colour is hard to read, a row of twelve small swatches each, one tap commits. -->
+  <div id="sheet-team-edit" class="sheet-overlay team-sheet" data-pane="form" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet sheet-tall" role="dialog" aria-modal="true" aria-labelledby="sheet-team-edit-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <button type="button" class="tk-back team-pane-back" id="team-pane-back" hidden><svg class="ico" aria-hidden="true"><use href="#i-chev-l"/></svg><span class="tk-back-label">Edit team</span></button>
+        <h2 class="sheet-title" id="sheet-team-edit-title">Edit team</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <form class="sheet-body tms-form" id="team-form" data-team-pane="form" autocomplete="off">
+        <div class="tms-head"><span class="tms-head-mark" id="team-mark"></span><span class="tms-head-name" id="team-head-name"></span></div>
+        <label class="fld"><span class="fld-label">Team name</span><input type="text" class="fld-input" id="team-name" maxlength="60" enterkeyhint="next" placeholder="Team name"></label>
+        <p class="fld-error" id="team-name-error" role="alert" hidden></p>
+        <label class="fld"><span class="fld-label">Short name</span><input type="text" class="fld-input" id="team-short" maxlength="20" enterkeyhint="next" placeholder="Short name"></label>
+        <p class="tms-hint">Used where space is tight, and when people mention the team in chat (for example Foxes).</p>
+        <p class="fld-error" id="team-short-error" role="alert" hidden></p>
+        <!-- Save asks this once when the name changed and the short name and emoji didn't (ux-R13). Both answers save. -->
+        <div class="si-ask" id="team-rename-q" role="group" aria-labelledby="team-rename-q-text" hidden>
+          <p class="si-ask-q" id="team-rename-q-text"></p>
+          <div class="si-ask-a">
+            <button type="button" class="btn btn-sm" data-team-rename="suggest"><span id="team-rename-suggest-text"></span></button>
+            <button type="button" class="btn btn-sm" data-team-rename="keep">Keep them</button>
+          </div>
+        </div>
+        <div class="fld">
+          <label class="fld-label" for="team-emoji">Emoji</label>
+          <input type="text" class="fld-input tms-emoji-input" id="team-emoji" maxlength="16" placeholder="🦊">
+          <div class="tms-emoji-grid" id="team-emoji-grid" role="group" aria-label="Pick an emoji"></div>
+        </div>
+        <p class="fld-error" id="team-emoji-error" role="alert" hidden></p>
+        <fieldset class="tms-colors">
+          <legend class="fld-label">Colour</legend>
+          <div class="tms-swatches" id="team-swatches" role="radiogroup" aria-label="Team colour"></div>
+        </fieldset>
+        <div class="tms-photo">
+          <span class="fld-label">Shield or flag photo</span>
+          <div class="tms-photo-acts">
+            <button type="button" class="btn btn-sm" id="team-photo-add"><svg class="ico" aria-hidden="true"><use href="#i-camera"/></svg><span id="team-photo-add-text">Add a photo</span></button>
+            <button type="button" class="btn-quiet btn-quiet-danger" id="team-photo-remove" hidden>Remove photo</button>
+          </div>
+          <input type="file" id="team-photo-input" class="visually-hidden" accept="image/*" tabindex="-1" aria-hidden="true">
+          <p class="tms-hint" id="team-photo-note"></p>
+        </div>
+        <label class="fld"><span class="fld-label">Counselors</span><input type="text" class="fld-input" id="team-counselor" maxlength="80" enterkeyhint="done" placeholder="Names, if the team has none signed in"></label>
+        <p class="tms-hint">Shown only for teams with no counselor accounts.</p>
+      </form>
+      <div class="sheet-body tms-crop" data-team-pane="crop">
+        <p class="setup-sheet-lede">Drag the picture to place it, and zoom to fit. The frame is the shape of a shield.</p>
+        <div class="tms-crop-box"><canvas class="tms-crop-canvas" id="team-crop-canvas" width="346" height="480" tabindex="0" role="img" aria-label="The photo in its frame. Drag to move it, or use the arrow keys."></canvas></div>
+        <label class="fld"><span class="fld-label">Zoom</span><input type="range" class="tms-zoom" id="team-crop-zoom" min="1" max="3" step="0.01" value="1"></label>
+      </div>
+      <div class="sheet-dock">
+        <button type="button" class="btn btn-gold btn-block" id="team-save">Save</button>
+        <button type="button" class="btn btn-gold btn-block" id="team-crop-use" hidden><span id="team-crop-use-text">Use this photo</span></button>
+      </div>
+    </div>
+  </div>
+
+  <div id="sheet-team-colors" class="sheet-overlay" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet sheet-tall" role="dialog" aria-modal="true" aria-labelledby="sheet-team-colors-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-team-colors-title">Pick colours</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="sheet-body">
+        <p class="setup-sheet-lede" id="team-colors-lede"></p>
+        <!-- One block per flagged team (written by the renderer): its mark and name, then twelve 44px swatches
+             (button[role=radio][data-team-pick][data-color], a dot split light | dark); one tap commits. -->
+        <div class="tms-flags" id="team-colors-list"></div>
       </div>
     </div>
   </div>

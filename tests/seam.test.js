@@ -79,7 +79,7 @@ test('the SEAM block exists once in app.js, whole, and holds every week constant
     'stationEmoji', 'electiveSlotStart', 'doubleWindow', 'teamIds', 'teamEmoji', 'teamShort', 'teamAccent',
     'teamCrestSrc', 'teamRoster', 'staffNames', 'seedTeams', 'legacyRosterFor',
     // step 25: a team's own record and its laundered colour
-    'teamRecord', 'teamColorId', 'teamAccentVars',
+    'teamRecord', 'teamColorId', 'teamAccentVars', 'teamEmojiOwn', 'teamPhotoVersion',
     // step 15: the schedule's "on" half (planForDow, campWeek) and the game links
     'scheduleIsShared', 'weekdayIndex', 'planForDow', 'campWeek', 'gamesForDay', 'unscheduledGames',
   ].forEach((fn) => {

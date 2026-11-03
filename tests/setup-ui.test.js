@@ -48,7 +48,7 @@ test('More → Set up the week opens the hub; a named classic tab opens the clas
   } finally { suClose(); }
 });
 
-test('hub rows open their screens: Camp week and Schedule → theirs, Games, Teams and Notice → the classic editor on that tab, Restore points → backups, People → the members drawer', () => {
+test('hub rows open their screens: Camp week, Schedule and Teams → theirs, Games and Notice → the classic editor on that tab, Restore points → backups, People → the members drawer', () => {
   suOpen();
   const real = openMembers;
   let members = 0;
@@ -57,7 +57,7 @@ test('hub rows open their screens: Camp week and Schedule → theirs, Games, Tea
     hubOpen('games');
     assert.deepEqual([state.ui.builderScreen, state.ui.settingsTab], ['classic', 'games']);
     hubOpen('teams');
-    assert.deepEqual([state.ui.builderScreen, state.ui.settingsTab], ['classic', 'teams']);
+    assert.equal(state.ui.builderScreen, 'teams', 'Step 25: Teams has its own screen now (the classic Teams tab is still reachable from the Classic editor)');
     hubOpen('notice');
     assert.deepEqual([state.ui.builderScreen, state.ui.settingsTab], ['classic', 'notice']);
     hubOpen('restore');
@@ -166,14 +166,16 @@ test('a director sees the setup sheets only while the builder is up', () => {
     setupRain.plan = { dk: 'wed', items: {}, games: {} };
     setupRain.bid = 'b-x';
     state.ui.setupDay = 'wed';
-    ['sec-teams', 'sec-person', 'sec-station'].forEach((id) => assert.equal(shellSheetAllowed(id), false, id + ' needs what a tap opened'));
+    ['sec-teams', 'sec-person', 'sec-station', 'team-edit', 'team-colors'].forEach((id) => assert.equal(shellSheetAllowed(id), false, id + ' needs what a tap opened'));
     secUi.teams = { dk: 'mon', meal: 'lunch', name: 'Lunch', picked: [], was: [] };
     secUi.person = { dk: 'mon', slot: 0, st: 'st-x' };
     secUi.station = { mode: 'add', dk: 'mon', slot: 0, st: '' };
+    teamUi.edit = { id: 't0', origin: {}, color: '', pane: 'form' };
+    teamUi.colors = true;
     SETUP_SHEETS.forEach((id) => assert.equal(shellSheetAllowed(id), true, id));
     state.ui.view = 'home';
     SETUP_SHEETS.forEach((id) => assert.equal(shellSheetAllowed(id), false, id + ' with the builder closed'));
-  } finally { setupSched.item = null; setupRain.plan = null; setupRain.bid = null; secUi.teams = null; secUi.person = null; secUi.station = null; suClose(); }
+  } finally { setupSched.item = null; setupRain.plan = null; setupRain.bid = null; secUi.teams = null; secUi.person = null; secUi.station = null; teamUi.edit = null; teamUi.colors = false; suClose(); }
 });
 
 // ── askDialog ──

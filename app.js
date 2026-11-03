@@ -1002,9 +1002,12 @@ function teamRecord(id) { return (state.teams || NO_ITEMS).find((t) => t && t.id
 // The emoji and the short name are each the team record's own optional field (what the Teams screen sets),
 // per field, else the camp's constant; both pass a camp-core sanitizer on the way out (a database string is
 // never trusted: markup in an emoji, an over-long short name).
-function teamEmoji(id) {
+function teamEmoji(id) { return teamEmojiOwn(id) || '🏳️'; }
+// The same, '' when neither the record nor the camp has an emoji for the team (teamEmoji then shows the white flag): what the
+// Teams screen shows in its field and what the hub judges ("Foxes has no emoji").
+function teamEmojiOwn(id) {
   const rec = teamRecord(id);
-  return safeEmoji(rec ? rec.emoji : undefined, safeEmoji(TEAM_EMOJI[id], '🏳️'));
+  return safeEmoji(rec ? rec.emoji : undefined, safeEmoji(TEAM_EMOJI[id], ''));
 }
 function teamShort(id) {
   const rec = teamRecord(id);
@@ -11646,6 +11649,7 @@ function reloadBlocked() {
   if (typeof tellComposerBusy === 'function' && tellComposerBusy()) return true; // a message being typed in Tell everyone, or a send going out (tell.js)
   if (typeof rainBusy === 'function' && rainBusy()) return true; // a rain plan being made (setup-ui.js: only while open and touched in the last 2 minutes)
   if (typeof schedItemBusy === 'function' && schedItemBusy()) return true; // a Schedule item with edits not yet saved (setup-ui.js)
+  if (typeof teamEditBusy === 'function' && teamEditBusy()) return true; // a team sheet with edits not yet saved, or a photo going up (setup-ui.js)
   return false;
 }
 
@@ -11875,8 +11879,9 @@ function shellOnPopState(e) {
 function shellApply(s) {
   // A Schedule item with unsaved edits is asked about first: Back keeps the sheet up (the reconcile in renderAll puts
   // the entry straight back) and the answer closes it, which files the pop again. Before anything below moves.
-  if (shell.sheets.includes('sched-item') && !s.ov.some((o) => o.k === 'sheet' && o.id === 'sched-item') &&
-      typeof schedItemGuardClose === 'function' && schedItemGuardClose()) {
+  // (Step 25 generalised this to every setup sheet that holds an edit: the Schedule item and a team: setupSheetGuardClose.)
+  if (typeof setupSheetGuardClose === 'function' &&
+      shell.sheets.some((id) => !s.ov.some((o) => o.k === 'sheet' && o.id === id) && setupSheetGuardClose(id))) {
     renderAll();
     return;
   }
@@ -13167,7 +13172,7 @@ function wireShell() {
     if (e.key !== 'Escape') return;
     if (typeof askIsOpen === 'function' && askIsOpen()) return; // a question over a sheet takes the Escape; the sheet stays
     const top = shell.sheets[shell.sheets.length - 1];
-    if (top === 'sched-item' && typeof schedItemGuardClose === 'function' && schedItemGuardClose()) return; // a half-made edit asks first
+    if (top && typeof setupSheetGuardClose === 'function' && setupSheetGuardClose(top)) return; // a half-made edit (a Schedule item, a team) asks first
     if (top && top !== 'schedule') shellSheetClose(top);
     else if (!top && revealRemoteIsOpen()) closeReveal();
     else if (!top && toolOpenId()) closeTool();

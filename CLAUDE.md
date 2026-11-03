@@ -1410,7 +1410,7 @@ rest of Step 14, in setup-ui.js: see "Set up the week: behaviour" below); with n
 `data-screen` on `#setup` the markup is inert and the builder is v197's.
 
 - **`#setup[data-screen]` is the one switch** (`hub | backups | classic`, and
-  Step 15's `week | schedule | rain`, Step 19's `meals | verses | cleanup | electives`; a later
+  Step 15's `week | schedule | rain`, Step 19's `meals | verses | cleanup | electives`, Step 25's `teams`; a later
   screen adds its own pair of lines in the CSS). `#setup` wraps `#settings-view`
   inside `#tab-now`, shown only under `body.builder-open` (which hides every
   other child of main-wrap: `:not(#setup)`). **No `data-screen` = the v197
@@ -1553,8 +1553,9 @@ into it from app.js / settings.js is typeof-guarded.
 - **Screens and Back**: `state.ui.builderScreen` (device-local; `hub` default,
   `backups`, `classic`; anything else reads as the hub) is mirrored into
   `#setup[data-screen]`. More → Set up the week opens the hub; `openBuilder('games')`
-  ("Add games") lands on the classic screen on that tab; hub rows Games / Teams /
-  Notice open the classic screen on that tab (`state.ui.settingsTab`), Restore points
+  ("Add games") lands on the classic screen on that tab; hub rows Games / Notice
+  open the classic screen on that tab (`state.ui.settingsTab`; Teams has its own screen
+  since Step 25), Restore points
   opens `backups`, People opens the Who can sign in drawer. Back goes screen → hub →
   closes the builder; a dirty game editor (`builderDirty()`, named by
   `builderDirtyName()`) asks through `askDialog` first, and "Keep editing" puts the
@@ -1572,12 +1573,15 @@ into it from app.js / settings.js is typeof-guarded.
   comes next" and a plain summary — "The original menu" — and claims nothing). Evaluated
   today: **Games** (a game on no day, a day with no games, a tournament with no bracket for
   the camp's team count, "N games still say TBA"), **Teams** (wrong count / bad id →
-  "Ask Patrick to repair team slots", an unnamed team), **People** (a team with no counselor
+  "Ask Patrick to repair team slots", an unnamed team; Step 25 adds "Foxes has no short
+  name" / "has no emoji", "Two teams are Blue", and a gentle `note` — never a counted
+  warning — for an older colour that is hard to read on a theme: see "Team colours and the
+  Teams screen"), **People** (a team with no counselor
   accounts, an incomplete member record — the owner row is exempt, people with no sign-in
   yet for a week), **Notice board** and **Restore points** (info; denied restore nodes warn).
   Step 19 judges **Meals, Memory verses, Cleanup rota and Electives** (`hubSectionStatus`, from
   `hubSecView()`: see "Meals, verses, cleanup, electives: the screens"); not yet (their data
-  arrives with their step): campers, phone alerts, asking-to-join, team colours. `hubModel`:
+  arrives with their step): campers, phone alerts, asking-to-join. `hubModel`:
   "N of M ready" counts only rows that can be judged (`soon` and `skip` are left out), "Next:
   Teams" names the first warning. `HUB_OPENS` is the table of rows that open something
   (a row whose screen exists is a `<button>`, otherwise a `<div>`: `checklist.test.js`
@@ -2062,6 +2066,16 @@ What's covered, and why each file exists:
   of hostile `color` strings that must never reach a style attribute (they select no swatch and fall
   back to the camp's colour), `paintTeamAccent`'s idle render writing nothing, the tile, a source
   scan that no raw `--team-accent: ${…}` is left, and styles.css's light / dark / OS-dark mapping.
+- `teams-screen.test.js` (+ `.senior`, which evals it) — the Teams screen ("Team colours and the Teams screen"): one case
+  per sentence `hubStatus('teams')` can say (a shared colour named, three, two pairs; no short name / emoji; the slot repair
+  for the owner and for everyone else; a legacy colour that is hard to read is a note and the row still reads ready), the
+  weak-colour judgement against the stylesheet's own `--sheet`, `teamsModel`, the hub row opening its screen, the screen's
+  rows and headline, hostile text inert, the sheet (open and save with no change writes nothing, the rename question and both
+  answers, Suggest, per-field paths and one Undo entry, a colleague's change to another field surviving, the rules' limits in
+  words, an emoji another team uses refused), a counselor reaching none of it, the close guard and the auto-reload hold, "Pick
+  colours for the flagged teams", the crop maths (the picture always covers the frame), `teamPhotoFit`, `teamSuggest`, the
+  upload against the in-memory database (online-only, the rules' shape, not undoable, every refusal changing nothing), Remove
+  photo and its Undo, and source pins (every id in index.html, 44px targets, no whole-roster write, no native dialog).
 - `team-branding.test.js` (+ `.senior`, which evals it) — a team's own `short` / `emoji` / `color` /
   `photoV`: per-field fallbacks and hostile values, the validity checks against the rules' limits, the
   crest precedence, the photo loader (only a crest about to be drawn, one `once()` per version, never a
@@ -2604,8 +2618,9 @@ reuses) an accessor in the block.
   `verseFor`; electives — `electivesFor`, `stationEmoji`, `electiveSlotStart`;
   `doubleWindow`, `finaleDow` (the weekday the standings reveal crowns the champions, Friday by default); teams — `teamIds`, `teamEmoji`, `teamShort`, `teamAccent`,
   `teamCrestSrc` (was `teamShield`), `teamRoster(tid)`, `staffNames`, `seedTeams`,
-  `legacyRosterFor(i)`, and (step 25) `teamRecord(id)`, `teamColorId(id)` and
-  `teamAccentVars(id)`.
+  `legacyRosterFor(i)`, and (step 25) `teamRecord(id)`, `teamColorId(id)`,
+  `teamAccentVars(id)`, `teamEmojiOwn(id)` (`teamEmoji` without the white-flag placeholder) and
+  `teamPhotoVersion(id)`.
 - **Deliberately not built yet** (nothing reads them, so no dead code): the spec's
   `hubStatus` (setup-ui.js has it), `campersFor` — each lands with the step that first needs it.
   **The "on" half of the schedule accessors is built (Step 15)**: `scheduleForDow`,
@@ -3577,7 +3592,8 @@ Both camps, junior and senior, run all of it.
   date is set, the freeze as a question the owner can override in words, every refusal a
   sentence — `TURNON_WHY`) and `SETUP_OWNER_ACTIONS.original` (`setupUseOriginalFlow`, greyed
   with "Already using the original week." while off). **Not built here:** team branding (`short` / `emoji` written to `state.teams`, A1 step 3)
-  waits for step 25, the first reader of those fields. Nothing pressed the switch in this
+  is not part of turning a section on (Step 25 reads and writes those fields per field with no switch: "Team colours and the
+  Teams screen"). Nothing pressed the switch in this
   step (◆16 did, Nov 2, 2026: see the status line above). **The seed marks the
   printed week's own overlaps `overlapOk`** (junior's Tue and Thu cabin movie nights run over
   Prepare for bed and the devotional: the longer item of each overlapping pair), so a freshly
@@ -3921,6 +3937,65 @@ field, to the camp's own constant while the record doesn't carry it.
   declared inside the SEAM block, newest version only) and in the camp's IndexedDB store under
   `team:<camp>:<tid>:<v>` (a miss, a failure or an open that never answers within 1.5 s just asks the
   server). A refused read is final for that version; any other failure may be asked again.
+- **The Teams screen** (setup-ui.js section 13; `#setup[data-screen="teams"]`, `state.ui.builderScreen`
+  `teams`; the hub's Teams row opens it, the classic Teams tab stays in the Classic editor): a fixed
+  list, one clipboard row per team slot (`.cb-row.sec-row.tms-row`, keyed `t-<id>`, painted through
+  `secPaintList`): the crest in the time column, the name, `short · emoji · ● colour name` ("Last year's
+  colour" for an older one, "same as Turkey" when shared; the gold "!" marks a team the hub would flag)
+  and the counselors line. **No Add, Delete or reorder** (the slots `t0…tN` key results, the rota, alerts
+  and the rules; a test pins that the code never assigns `state.teams`). A row opens ONE sheet,
+  `#sheet-team-edit` (`teamUi.edit`; a shell sheet, one at a time, `data-pane` form | crop):
+  **Team name** (1–60), **Short name** (1–20), **Emoji** (an input and a grid; one another team uses is
+  dimmed and says whose), **Colour** (twelve swatches, `role=radio`, each a pill with the team's short
+  name on a light chip and a dark chip at once, a hairline round the pair; a colour another team uses
+  stays pickable), **Shield or flag photo**, **Counselors** (the typed fallback text, "Shown only for
+  teams with no counselor accounts"). The fields show what the team shows now (its own value, else the
+  camp's default), so opening and saving with no change writes nothing; Save writes ONLY the fields
+  that changed, as ONE `stateEdit` (one Undo entry, per-field `teams/<i>/<field>` paths, the record
+  looked up by id when it runs, so a colleague's change to another field of the team survives); an
+  empty short name or emoji removes the field (the camp's own shows again). **Renaming asks about the
+  rest of its identity** (ux-R13), inline (`.si-ask`, never a dialog over the sheet), when the name
+  changed and the short name and emoji did not: "Also change the short name (Turkey) and emoji (🦃)?"
+  with **Suggest: Hawks · 🦅** (`teamSuggest`: the new name's last word, and an emoji when it is a
+  word in `TEAM_NAME_EMOJI`) and **Keep them**; both answers save. The rules' limits are said in words
+  before anything is written (`teamFormProblems`). Closing with unsaved edits asks first by any route
+  (✕ / backdrop through the sheet's own capturing click handler; Escape and the phone's Back through
+  **`setupSheetGuardClose(id)`**, which app.js's Escape handler and `shellApply` now call in place of the
+  old hard-wired `sched-item` check: `SETUP_SHEET_GUARDS` maps `sched-item` and `team-edit` to their
+  guards); an open team sheet with edits, or a photo going up, holds the deploy's auto-reload
+  (`teamEditBusy` in `reloadBlocked`).
+- **Photos, in the sheet**: Add / Replace opens the file picker, then the **crop pane**: the picture
+  under a fixed frame of the shield's shape (346 × 480, the 480:667 shape with its long edge 480 px),
+  dragged with a finger (or the arrow keys) and zoomed 1–3× (`teamCropRect`, pure: the picture always
+  covers the frame, the offset is clamped). The pane's canvas IS the export, so what is seen is what
+  is saved. `teamPhotoEncode`: **PNG when any pixel is see-through (and it fits 100,000 characters),
+  else JPEG** (a see-through one is flattened onto the team's light tint), JPEG quality stepping down
+  until the data URL is under 70,000 (`teamPhotoFit`: the first under the aim, else the best under the
+  cap, else nothing and the sheet says so). `teamPhotoUpload` is **online-only** (`teamOnline`) and writes
+  `teamPhotos/<tid> = { v, data }` first (awaited), then `photoV` through `stateEdit` with `undo: false`
+  (the node holds only the newest upload, so an older version number could not be put back); a refusal
+  at either step leaves the team as it was, in a sentence (`TEAM_PHOTO_WHY`). **Remove photo** takes
+  `photoV` off (undoable) and leaves the node. Recorded, not fixed: an upload whose `set()` neither
+  resolves nor rejects (a connection that dies mid-write) leaves the busy sheet waiting; the node may
+  then be newer than the record's `photoV`, and a device whose `photoV` is older shows the shield or
+  flag until the record catches up (a photo is only ever shown for the version it was asked about).
+- **Pick colours for the flagged teams** (`#sheet-team-colors`, `teamUi.colors`): listed only while some
+  team's older colour is hard to read on a theme (`teamsModel().weak`); a block per flagged team, its
+  mark and name, then twelve 44px swatches (a dot split light | dark); one tap is one commit
+  (`teamColorSet`, one Undo entry); the sheet closes itself when none is left.
+- **The judgement** (`teamsModel`, `teamsInfoView`, `teamColorInfo`): the headline is the first sentence
+  of the same `hubStatus('teams')` the hub shows ("6 teams", "Two teams are Gold"). An older colour is
+  weak on a theme it is under 3:1 against that theme's `--sheet` (`TEAM_SURFACE`, pinned to
+  styles.css by a test): junior's Pilgrims navy and senior's Red in dark, junior's Pumpkins orange in
+  light. `editorsHere` says `teams`, or `team:<tid>` while a team's sheet is open.
+- **Emulator proof (opt-in)**: `tests/emulator/teams-client.mjs` drives the REAL client's Teams-screen writes against the
+  published rules on both camps (14 cases, SAFE): a rename taking the suggested short name and emoji is per-field
+  `teams/0/*` paths, a colour from the sheet and from "Pick colours for the flagged teams", a photo (one `set()` of `{v, data}`
+  at the 100,000-character cap, then `photoV`, which a counselor can read), Remove photo and its Undo, what the client refuses
+  to send (hostile short / emoji, a photo over the cap or of another type: nothing reaches the database), a backup full of
+  hostile branding cleaned by `teamsFromBackup` before it is pushed, and a counselor's phone (nothing opens, nothing is
+  written; raw writes refused). Mutation-checked (`teamColorValid` weakened: the backup case goes red). No rules change
+  belongs to this step. It joined `npm run test:r1`.
 - **A backup file or a restore point can only bring in well-formed branding** (`teamsFromBackup`, used by
   `tryImport`, the restore preview and `restoreApply`): id, name and counselor as they were, the other
   fields only if they pass the checks above, and `photoV` NEVER from the file, because `teamPhotos/<tid>`

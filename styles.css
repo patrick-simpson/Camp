@@ -14198,3 +14198,290 @@ html.counselor-preview .sheet {
     justify-self: start;
   }
 }
+
+/* ============================================================
+   SET UP THE WEEK: Teams (P2 §11.7; Step 25)
+   ============================================================
+   The clipboard once more: a row per team slot (the crest in the time column, the name, then the short name · emoji · colour, then
+   its counselors), and ONE sheet per team. Markup: index.html #setup-teams, #sheet-team-edit, #sheet-team-colors. Team colour is
+   identity, never decoration: a dot that always has its name beside it, a swatch pill, an outline — never a fill behind small text. */
+.setup[data-screen="teams"] [data-setup-screen="teams"] {
+  display: block;
+}
+.tms-row .tms-mark {
+  display: flex;
+  align-items: flex-start;
+  min-height: 40px;
+  padding-top: 0;
+}
+.tms-row .tms-staff {
+  margin-top: 0;
+  color: var(--ink-2);
+}
+/* The gold "!" belongs to the line that says what is wrong (the colour or the identity), not to the counselors under it. */
+.tms-row[data-warn] .tms-staff::before {
+  content: none;
+}
+/* The colour's dot: the team's colour for the theme in force (the -l / -d pair rides on the element), outlined in ink so it is a
+   boundary at 3:1 whatever the colour, and its name always follows it. */
+.tms-dot {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--team, var(--ink-3));
+  box-shadow: inset 0 0 0 1.5px var(--ink);
+  vertical-align: -1px;
+}
+#teams-weak .sched-add {
+  margin-top: var(--s-1);
+}
+
+/* The team sheet: two panes under one sheet, the sheet's data-pane the switch (as the rain plan's item sheet). */
+.team-sheet[data-pane="form"] [data-team-pane="crop"],
+.team-sheet[data-pane="crop"] [data-team-pane="form"] {
+  display: none;
+}
+.team-sheet .sheet-head .tk-back {
+  margin-left: calc(-1 * var(--gutter) + 6px);
+}
+.team-sheet .sheet-head .tk-back[hidden] {
+  display: none;
+}
+.team-sheet:not([data-pane="form"]) .sheet-title {
+  font: var(--t-row);
+}
+.tms-form,
+.tms-crop {
+  display: grid;
+  grid-auto-rows: max-content;
+  align-content: start;
+  gap: 12px;
+  overflow-x: hidden;
+}
+.tms-form > .fld-error,
+.tms-form > .tms-hint {
+  margin-top: -6px;
+}
+.tms-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+}
+.tms-head-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  min-width: 56px;
+}
+.tms-head-name {
+  min-width: 0;
+  font: var(--t-row);
+  letter-spacing: var(--track-row);
+  overflow-wrap: break-word;
+}
+.tms-hint {
+  margin: 0 2px;
+  font: var(--t-meta);
+  font-size: 0.875rem;
+  color: var(--ink-2);
+}
+.tms-hint:empty {
+  display: none;
+}
+.tms-form .si-ask[hidden] {
+  display: none;
+}
+.tms-emoji-input {
+  max-width: 9rem;
+  font-size: 1.375rem;
+}
+/* One wrapping grid of emoji, 44px each; the chosen one is lifted with a ring, one another team uses is dimmed (and its
+   accessible name says whose, so dimmed is never the only signal). */
+.tms-emoji-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  margin-top: 6px;
+  padding: 2px;
+  border-radius: var(--r-btn);
+  background: var(--well);
+}
+.tms-emo {
+  flex: none;
+  width: var(--target);
+  height: var(--target);
+  padding: 0;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+.tms-emo[aria-pressed="true"] {
+  background: var(--lift);
+  box-shadow: 0 0 0 1.5px var(--seg-ring), 0 2px 0 var(--edge);
+}
+.tms-emo[data-taken] {
+  opacity: .4;
+  cursor: default;
+}
+/* Twelve swatches, two to a row: each a pill with the team on a light chip and a dark chip at once, so the director sees both
+   themes without switching. The chip text is 16px or more, bold, at least 4.5:1 on its own surface (palette.test.js). */
+.tms-colors {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.tms-colors .fld-label {
+  padding: 0;
+  margin-bottom: 6px;
+}
+.tms-swatches {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+.tms-swatch {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  min-height: var(--target);
+  padding: 4px;
+  border: 2px dashed var(--ink-3);
+  border-radius: var(--r-btn);
+  background: none;
+  color: var(--ink-2);
+  text-align: left;
+  cursor: pointer;
+}
+.tms-swatch[aria-checked="true"] {
+  border-style: solid;
+  border-color: var(--ink);
+  background: var(--sheet);
+  color: var(--ink);
+  box-shadow: 0 2px 0 var(--edge);
+}
+.tms-chips {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-radius: 8px;
+  overflow: hidden;
+  /* A hairline round the pair: in dark the dark chip is the sheet's own colour and would otherwise float as bare text. */
+  box-shadow: 0 0 0 1px var(--line-2);
+}
+.tms-chip {
+  min-width: 0;
+  padding: 6px 8px;
+  overflow: hidden;
+  color: var(--c);
+  font: 800 1rem/1.2 var(--font-ui);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tms-chip-l {
+  background: #fffdf8; /* --sheet, light */
+}
+.tms-chip-d {
+  background: #161c4b; /* --sheet, dark */
+}
+.tms-swatch-name {
+  padding: 0 4px 2px;
+  font: 700 0.875rem/1.25 var(--font-ui);
+  overflow-wrap: break-word;
+}
+/* Photo: the buttons, then the one line about what it needs. */
+.tms-photo {
+  display: grid;
+  gap: 6px;
+}
+.tms-photo-acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.tms-photo-acts .btn .ico {
+  width: 18px;
+  height: 18px;
+  margin-right: 6px;
+}
+/* The crop pane: the picture under a frame of the shield's shape (346 × 480, drawn at up to 260px wide), moved with a finger. */
+.tms-crop-box {
+  width: min(100%, 260px);
+  margin: 0 auto;
+  aspect-ratio: 346 / 480;
+  border-radius: 12px;
+  background: repeating-conic-gradient(var(--paper-2) 0 25%, var(--sheet) 0 50%) 0 0 / 16px 16px;
+  box-shadow: inset 0 0 0 2px var(--ink), 0 2px 0 var(--edge);
+  overflow: hidden;
+}
+.tms-crop-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none;
+  cursor: grab;
+}
+.tms-crop-canvas:active {
+  cursor: grabbing;
+}
+.tms-zoom {
+  width: 100%;
+  min-height: var(--target);
+  accent-color: var(--link);
+}
+/* Pick colours for the flagged teams: a block per team, its mark and name, then twelve 44px swatches (a dot split light | dark). */
+.tms-flags {
+  display: grid;
+  gap: var(--s-4);
+}
+.tms-flag {
+  display: grid;
+  gap: 6px;
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--line);
+}
+.tms-flag:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+.tms-flag-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tms-flag-name {
+  min-width: 0;
+}
+.tms-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+}
+.tms-pick {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: var(--target);
+  height: var(--target);
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+.tms-pick-dot {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--l) 0 50%, var(--d) 50% 100%);
+  box-shadow: inset 0 0 0 1.5px var(--ink);
+}
+.tms-pick[aria-checked="true"] .tms-pick-dot {
+  box-shadow: inset 0 0 0 1.5px var(--ink), 0 0 0 3px var(--sheet), 0 0 0 5px var(--ink);
+}
