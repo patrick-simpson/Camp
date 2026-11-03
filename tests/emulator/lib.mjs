@@ -20,6 +20,9 @@ export { ref, set, get, update, remove, serverTimestamp, runTransaction, onValue
 export const NEW_RULES = readFileSync(process.env.R1_RULES || new URL('../../database.rules.json', import.meta.url), 'utf8');
 export const OLD_RULES = readFileSync(new URL('./pre-r1.rules.json', import.meta.url), 'utf8');
 export const ROOTS = ['campScoreboard', 'seniorScoreboard'];
+// The database emulator's port (firebase.json says 9000). EMULATOR_PORT lets a second checkout run its own beside one already up;
+// the older suites still say 9000 themselves.
+export const EMULATOR_PORT = Number(process.env.EMULATOR_PORT) || 9000;
 
 // People. Keys are what the rules compute from a verified email: lowercase, every dot a comma.
 export const OWNER = { email: 'patricksimpson.fx@gmail.com', key: 'patricksimpson,fx@gmail,com' };
@@ -35,7 +38,7 @@ let counter = 0;
 export async function harness(label, rules) {
   const env = await initializeTestEnvironment({
     projectId: `camp-r1-${label}-${Date.now().toString(36)}-${counter++}`,
-    database: { rules, host: '127.0.0.1', port: 9000 },
+    database: { rules, host: '127.0.0.1', port: EMULATOR_PORT },
   });
   await env.clearDatabase();
   const h = {

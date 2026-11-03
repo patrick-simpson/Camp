@@ -2427,7 +2427,11 @@ What's covered, and why each file exists:
   per-game map, `brackets4` too), one field per write onto the game as it is now, a game deleted elsewhere (noticed, never resurrected; Put it
   back / Close), the format change and what it clears, Matchups and the board, Earlier / Later, When (an item, another day, a new games day,
   double points, not on the schedule, sessions), days with games and their note, the ⚡ quick game (now / next / none, the printed week,
-  the double window), Make a copy and Delete (records gone), the escaped markup, the deploy hold, and `bracketSuggestPair`.
+  the double window; the Now card's own block, a games item that ran over, never lunch or free time), Make a copy and Delete (records gone), the
+  escaped markup, the deploy hold, `bracketSuggestPair`, the Games tab's Add games / Quick game routes and the undo pill (an added game, a
+  field and a move each offered, Undo and Redo through the engine, a game edited since or with a result never undone away, quiet over the tab).
+  **Emulator proof (opt-in):** `tests/emulator/games-client.mjs` runs the REAL client's Games writes against `database.rules.json` on both camps
+  (see its header and the README row); it found the config engine's late-completion race, now fixed (see "A push is a TRANSACTION").
 - `games-tab.test.js` (+ `.senior`; seeded and seeded-all passes) — the Games model ("The Games tab"): the status truth table (results, brackets,
   four-team brackets, drafts, clocks, and what only looks live), the day picker across the camp week's phases, the blocks and the one up next / one gold, Next game's
   order and its own-team skip, the dock's words, shared places equal to the reveal's grouping, arrows and a flat baseline, the gap sentence, quick points
