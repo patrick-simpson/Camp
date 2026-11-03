@@ -629,7 +629,7 @@ test('the join bar: one bar in Now\'s strip, the name escaped, See opens People,
     const src = readFixture('../app.js');
     const part = src.slice(src.indexOf('const joinBarSeen = new Set()'), src.indexOf('// Now\'s message strip. Chat'));
     assert.ok(!/localStorage|sessionStorage|setItem/.test(part), 'a stranger\'s address is never written to a phone');
-    assert.ok(/renderAnnouncements/.test(src) && /joinHtml \+ active\.map/.test(src), 'the bar rides the strip, ahead of the announcements');
+    assert.ok(/renderAnnouncements/.test(src) && /\(joinHtml \? \[joinHtml\] : \[\]\)\.concat\(active\.map/.test(src), 'the bar rides the strip, ahead of the announcements');
   } finally { psClose(); }
 });
 

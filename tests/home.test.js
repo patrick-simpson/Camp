@@ -471,13 +471,13 @@ test('the pill snap is creation-only — the change handler never calls it', () 
   assert.ok(handler.length > 0 && !handler.includes('settleDayTabPill'), 'the spring is the point of a tap');
 });
 
-test('Now hosts the banner, the live strip and messages; Games hosts the day tabs; More hosts the rest; renderAll gives each to ITS tab only', () => {
+test('Now hosts the Now engine (card, runs, messages strip); Games hosts the day tabs; More hosts the rest; renderAll gives each to ITS tab only', () => {
   const src = readFixture('../app.js');
   const panel = src.slice(src.indexOf('const SHELL_PANELS = {'), src.indexOf('const SHELL_ALWAYS'));
   const part = (from, to) => panel.slice(panel.indexOf(from), panel.indexOf(to));
   const now = part('now: {', 'games: {');
-  ['renderNoticeBoard', 'renderAnnouncements', 'renderNowBanner', 'renderLiveHome', 'renderMyElectives']
-    .forEach((fn) => assert.ok(now.includes(fn + '('), fn + ' renders with Now'));
+  ['renderWhatsNew', 'nowRefresh', 'nowTick', 'renderAnnouncements'].forEach((fn) => assert.ok(now.includes(fn + '('), fn + ' renders with Now'));
+  ['renderNoticeBoard', 'renderNowBanner', 'renderLiveHome', 'renderMyElectives'].forEach((fn) => assert.notOk(now.includes(fn + '('), fn + ' retired from Now (the Now engine replaced it)'));
   ['renderDayTabs', 'renderMemoryVerse', 'renderMealCleanup', 'renderBonuses', 'renderFooter']
     .forEach((fn) => assert.notOk(now.includes(fn + '('), fn + ' left Now'));
   const games = part('games: {', 'chat: {');

@@ -1279,12 +1279,11 @@ function processWeather(json) {
   return { dates, byTime, at: Date.now() };
 }
 
-// Paint badges in-place once weather lands (schedule sheet + my-electives
-// card + the banner's rain hint).
+// Paint badges in-place once weather lands (schedule sheet + the Now card's
+// rain note).
 function repaintWeather() {
-  renderMyElectives();
   refreshOpenSchedule();
-  renderNowBanner();
+  if (typeof renderNow === 'function') nowRefresh(); // the card's rain note
 }
 
 function loadWeatherCache() {
@@ -2550,8 +2549,9 @@ function closeSchedule(fromDy) {
     document.body.classList.remove('no-scroll');
     const app = document.getElementById('app');
     if (app) app.inert = false;
-    const banner = document.getElementById('now-banner');
-    if (banner && !banner.hidden) banner.focus({ preventScroll: true });
+    // Focus goes back to the Whole day link that opened it (the Now card's list head), when Now shows one.
+    const day = document.querySelector('#now-later-day:not([hidden]), #now-next-day:not([hidden])');
+    if (day && typeof day.focus === 'function') day.focus({ preventScroll: true });
   };
   if (calmMotion()) { finish(); return; }
   overlay.classList.add('closing'); // play the slide-down, then hide
@@ -2917,14 +2917,6 @@ function weekIcsFileName(now) {
 }
 
 function wireSchedule() {
-  const banner = document.getElementById('now-banner');
-  banner.setAttribute('role', 'button');
-  banner.tabIndex = 0;
-  banner.setAttribute('aria-label', 'Happening now — tap for the full week schedule');
-  banner.addEventListener('click', openSchedule);
-  banner.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openSchedule(); }
-  });
   document.getElementById('schedule-close').addEventListener('click', closeSchedule);
   scheduleOverlayEl().querySelector('.schedule-backdrop').addEventListener('click', closeSchedule);
   document.addEventListener('keydown', (e) => {
@@ -7220,13 +7212,6 @@ function toggleNotify() {
 }
 
 function updateNotifyButton() {
-  const btn = document.getElementById('notify-toggle-btn');
-  if (btn) {
-    btn.hidden = !!state.notify;
-    btn.textContent = '🔕 Notify me';
-    btn.classList.toggle('active', !!state.notify);
-    btn.setAttribute('aria-pressed', String(!!state.notify));
-  }
   const sw = document.getElementById('notify-toggle');
   if (sw) sw.toggleAttribute('checked', !!state.notify);
   paintSwitchWord('notify-toggle', !!state.notify);
@@ -12250,6 +12235,19 @@ function joinBarHtml() {
 // Now back into view (its whole panel arrives then), before the first server snapshot (the cache and then the
 // snapshot at boot), or under a takeover. A change somebody else made waits until no finger is on the screen.
 // Calm: arrivals fade, the rest jump.
+// How many messages the strip holds before the rest go behind "N more messages" (redesign §3.2: about a third of the screen, which
+// is the posted notice + 2 banners or 3 banners on a 390x844 phone at normal text; one fewer once the text is 130% or more). The
+// notice strip counts as one. Without now-ui.js there is no strip to cap, so everything shows as it always did.
+function annStripCap() {
+  if (typeof renderNow !== 'function') return Infinity;
+  let scale = 1;
+  try { scale = parseFloat(getComputedStyle(document.documentElement).fontSize) / 16; } catch (e) { /* no layout: the normal cap */ }
+  const noticeUp = noticePosted() && !(nowLast && nowLast.card && nowLast.card.kind === 'notice');
+  return Math.max(1, (scale >= 1.3 ? 2 : 3) - (noticeUp ? 1 : 0));
+}
+// What the strip had no room for, as markup (#sheet-messages' body) and a count (#now-msgs-more).
+let annOverflow = { n: 0, html: '' };
+
 function renderAnnouncements() {
   const wrap = document.getElementById('announcements');
   if (!wrap) return;
@@ -12258,8 +12256,11 @@ function renderAnnouncements() {
     .sort((a, b) => String(b.at).localeCompare(String(a.at)));
   const editor = canEdit();
   const joinHtml = joinBarHtml();
-  const html = joinHtml + active.map((a) => messageHtml(a, { editor })).join('');
-  const count = active.length + (joinHtml ? 1 : 0);
+  const items = (joinHtml ? [joinHtml] : []).concat(active.map((a) => messageHtml(a, { editor })));
+  const room = annStripCap();
+  const html = items.slice(0, room).join('');
+  const count = Math.min(items.length, room);
+  annOverflow = { n: items.length - count, html: items.slice(count).join('') };
   const onScreen = activeTab() === 'now' && shell.dirty.now === false && !shellTakeoverOpen() && !builderOpen();
   const moving = onScreen && wrap.__annLive === true && typeof wrap.animate === 'function' && typeof JellyMotion !== 'undefined';
   wrap.__annLive = onScreen && remoteReady;
@@ -12268,36 +12269,44 @@ function renderAnnouncements() {
     setHiddenIfChanged(wrap, !count);
     setHtmlIfChanged(wrap, html);
   } else annPaintMoving(wrap, html, count);
+  const more = document.getElementById('now-msgs-more');
+  setHiddenIfChanged(more, !annOverflow.n);
+  if (annOverflow.n) setTextIfChanged(document.getElementById('now-msgs-more-text'), annOverflow.n + ' more message' + (annOverflow.n === 1 ? '' : 's'));
+  if (typeof renderNowSheet === 'function' && shell.sheets.includes('messages')) renderNowSheet('messages');
   if (wrap.__wired) return;
   wrap.__wired = true;
-  wrap.addEventListener('click', (e) => {
-    const t = e.target && e.target.closest ? e.target : null;
-    if (t && t.closest('[data-join-see]')) { if (typeof setupOpenPeople === 'function') setupOpenPeople(); return; }
-    const jx = t && t.closest('[data-join-x]');
-    if (jx) {
-      playRowOut(jx.closest('.msg'), () => { joinBarRequests().forEach((r) => joinBarSeen.add(r.key + '|' + r.at)); glideNow(renderAnnouncements); });
-      return;
-    }
-    const x = t && t.closest('.msg-x');
-    if (x) {
-      const id = x.dataset.annId;
-      playRowOut(x.closest('.msg'), () => { dismissAnnouncement(id); glideNow(renderAnnouncements); });
-      return;
-    }
-    const rm = t && t.closest('.msg-remove');
-    if (!rm) return;
-    if (!canEdit()) return;
-    const a = (state.announcements || {})[rm.dataset.annId];
-    if (!a) return;
-    // The same take down as Tell everyone's Showing now: no question (OK / Cancel is not how this app asks), the
-    // banner squashes out and a 10-second Undo puts it back only if it is still down and unexpired.
-    if (typeof tellTakeDown === 'function') { tellTakeDown('banner', a.id, rm.closest('.msg')); return; }
-    if (!confirm(`Remove this announcement from every phone?\n\n"${a.text}"`)) return;
-    takeDownBanner(a.id);
-    touchData();
-    saveState();
-    renderAnnouncements();
-  });
+  wrap.addEventListener('click', annStripClick);
+}
+
+// The strip's taps (one delegated listener, here and on #sheet-messages-body): See who's asking, dismiss on this phone, and a
+// director's Remove for everyone.
+function annStripClick(e) {
+  const t = e.target && e.target.closest ? e.target : null;
+  if (t && t.closest('[data-join-see]')) { if (typeof setupOpenPeople === 'function') setupOpenPeople(); return; }
+  const jx = t && t.closest('[data-join-x]');
+  if (jx) {
+    playRowOut(jx.closest('.msg'), () => { joinBarRequests().forEach((r) => joinBarSeen.add(r.key + '|' + r.at)); glideNow(renderAnnouncements); });
+    return;
+  }
+  const x = t && t.closest('.msg-x');
+  if (x) {
+    const id = x.dataset.annId;
+    playRowOut(x.closest('.msg'), () => { dismissAnnouncement(id); glideNow(renderAnnouncements); });
+    return;
+  }
+  const rm = t && t.closest('.msg-remove');
+  if (!rm) return;
+  if (!canEdit()) return;
+  const a = (state.announcements || {})[rm.dataset.annId];
+  if (!a) return;
+  // The same take down as Tell everyone's Showing now: no question (OK / Cancel is not how this app asks), the
+  // banner squashes out and a 10-second Undo puts it back only if it is still down and unexpired.
+  if (typeof tellTakeDown === 'function') { tellTakeDown('banner', a.id, rm.closest('.msg')); return; }
+  if (!confirm(`Remove this announcement from every phone?\n\n"${a.text}"`)) return;
+  takeDownBanner(a.id);
+  touchData();
+  saveState();
+  renderAnnouncements();
 }
 
 // The strip's change, painted with motion (renderAnnouncements decided it may move). The sections under the strip
@@ -13291,6 +13300,9 @@ function shellSheetAllowed(id) {
   // Set up the week's own sheets (setup-ui.js): directors only, and only while the builder is up.
   if (typeof SETUP_SHEETS !== 'undefined' && SETUP_SHEETS.includes(id)) return canEdit() && builderOpen() && setupSheetReady(id);
   if (id === 'verse' || id === 'cleanup') return canEdit() || !cardHiddenFromViewers(id);
+  // Now's three reading sheets (now-ui.js): each only while it has something to say (a notice taken down or a banner
+  // dismissed closes its sheet through the next fill; a Forward onto a stale entry opens nothing).
+  if (id === 'notice' || id === 'messages' || id === 'whos-where') return typeof nowSheetAllowed === 'function' && nowSheetAllowed(id);
   return true;
 }
 
@@ -13400,30 +13412,22 @@ function wireSheetDrag(overlay) {
 }
 
 // ── dirty render ────────────────────────────────────────────────────
-// What each tab renders. Now: the banner, the live strip, messages. Games: today's
+// What each tab renders. Now: the Now card and what hangs off it, the messages strip. Games: today's
 // Competitions day tabs and the directors' quick points (the standings table is in
 // SHELL_ALWAYS below). More: its volatile lines. Memory verse and Meal cleanup are
 // reading SHEETS opened from More: they render while open (renderShellSheets).
 const SHELL_PANELS = {
   now: {
+    // The Now engine (nowModel, now-ui.js) paints the card, the moment, Still to do / Up next / Later today and the messages
+    // strip: a full picture whenever the data moved. Without that file Now keeps the banners and nothing else.
     render() {
-      renderNoticeBoard();
       renderWhatsNew();
-      renderAnnouncements();
-      renderNowBanner();
-      renderLiveHome();
-      renderMyElectives();
-      // The Now engine (nowModel): a full picture whenever the data moved. Nothing runs until a renderer defines renderNow.
-      if (typeof renderNow === 'function') nowRefresh();
+      if (typeof renderNow === 'function') nowRefresh(); else renderAnnouncements();
     },
-    // What changes with the clock alone (the 30 s tick).
+    // What changes with the clock alone (the 30 s tick): a full recompute only at a wake-up, else the clock part and the strip.
     tick() {
-      renderNowBanner();
-      renderNoticeBoard();
       renderWhatsNew();
-      renderMyElectives();
-      renderAnnouncements();
-      if (typeof renderNow === 'function') nowTick(); // a full recompute only at a wake-up, else the clock part and the strip
+      if (typeof renderNow === 'function') nowTick(); else renderAnnouncements();
       // the mirror's "Happening now" row follows the clock too (it is not a snapshot's business)
       if (typeof renderRevealMirror === 'function' && typeof confirmedReveal !== 'undefined') renderRevealMirror();
     },
@@ -13941,6 +13945,7 @@ function shellSheetFill(id) {
   if (id === 'team') renderTeamSheet();
   else if (id === 'verse') renderMemoryVerse();
   else if (id === 'cleanup') renderMealCleanup();
+  else if (id === 'notice' || id === 'messages' || id === 'whos-where') { if (typeof renderNowSheet === 'function') renderNowSheet(id); }
   else if (typeof SETUP_SHEETS !== 'undefined' && SETUP_SHEETS.includes(id)) renderSetupSheet(id);
 }
 function renderShellSheets() {
@@ -14324,7 +14329,6 @@ function init() {
   wireShell();
   wireMore();
 
-  document.getElementById('notify-toggle-btn').addEventListener('click', toggleNotify);
   updateNotifyButton();
   wireTeamPicker();
 

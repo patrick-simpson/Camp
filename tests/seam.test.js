@@ -9,7 +9,7 @@
 
 const SEAM_OPEN = '// ── SEAM: week data accessors';
 const SEAM_CLOSE = '// ── end SEAM';
-const SEAM_FILES = ['app.js', 'chat.js', 'push.js', 'settings.js', 'tell.js', 'award.js'];
+const SEAM_FILES = ['app.js', 'chat.js', 'push.js', 'settings.js', 'tell.js', 'award.js', 'now-ui.js'];
 
 // The camps.js constants the SEAM block aliases (and the retired ones they replace).
 const SEAM_CONSTANTS = /\b(?:DAY_SCHEDULE|SCHED_DAYS|MEALS|ELECTIVES|STATION_EMOJI|ELECTIVE_SLOT_MIN|MEMORY_VERSE[A-Z_]*|MEAL_CLEANUP_SCHEDULE|MEAL_START_MINUTES|TEAM_(?:EMOJI|SHIELD|ACCENT|ABBREV|COUNSELORS)|DEFAULT_[A-Z_]+|OLD_PLACEHOLDER_[A-Z_]+|DAY_NAMES|DOUBLE_BONUS_[A-Z]+|DOUBLE_WINDOW_LEGACY)\b/;

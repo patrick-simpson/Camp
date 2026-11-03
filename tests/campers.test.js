@@ -792,7 +792,7 @@ test('P12 (source): no other file reads the camper list — app.js only holds a 
   // (index.html names it in its own markup: ids like #setup-campers, never data)
   assert.deepEqual(found['app.js'].slice().sort(), ['campersBusy', 'campersDiscardHeld', 'campersHeldCount', 'campersOnConnect', 'campersUiBusy'],
     'app.js holds a reload, a leave and the reconnect for it, and reads no name');
-  ['chat.js', 'push.js', 'settings.js', 'camps.js', 'camp-core.js', 'reveal-core.js', 'reveal.js', 'reveal-ui.js', 'tell.js', 'award.js', 'current-standings.js', 'tv-camp.js',
+  ['chat.js', 'push.js', 'settings.js', 'camps.js', 'camp-core.js', 'reveal-core.js', 'reveal.js', 'reveal-ui.js', 'tell.js', 'award.js', 'now-ui.js', 'current-standings.js', 'tv-camp.js',
     'sw.js', 'stalling.html', 'current-standings.html', 'boot-guard.js'].forEach((f) => assert.ok(!found[f], f + ' must not touch the camper list'));
 });
 

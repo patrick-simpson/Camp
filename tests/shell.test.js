@@ -192,13 +192,13 @@ test('boot-guard paints the first frame calm for the OS setting or a calm last s
 
 // A deploy bumps every ?v= together (CLAUDE.md's checklist). One missed bump
 // strands phones on a mix of builds, and the new script is the easiest to
-// forget: jelly-motion.js is the fifteenth, setup-sync.js the sixteenth, setup-ui.js the seventeenth, reveal.js the eighteenth, reveal-ui.js the nineteenth, tell.js the twentieth, award.js the twenty-first.
-test('index.html: the twenty-one versioned assets share ONE ?v=, which is APP_VERSION, and jelly-motion.js loads between camps.js and app.js', () => {
+// forget: jelly-motion.js is the fifteenth, setup-sync.js the sixteenth, setup-ui.js the seventeenth, reveal.js the eighteenth, reveal-ui.js the nineteenth, tell.js the twentieth, award.js the twenty-first, now-ui.js the twenty-second.
+test('index.html: the twenty-two versioned assets share ONE ?v=, which is APP_VERSION, and jelly-motion.js loads between camps.js and app.js', () => {
   const refs = [...INDEX.matchAll(/<(?:script|link)\b[^>]*?(?:src|href)="([^"]+\?v=(\d+))"/g)]
     .filter((m) => !/^https?:/.test(m[1]) && !/manifest\.json|apple-touch-icon/.test(m[1]));
   const files = refs.map((m) => m[1].split('?')[0]);
   assert.deepEqual(files, ['vendor/jelly.js', 'styles.css', 'boot-guard.js', 'firebase-config.js', 'defaults.js', 'camp-core.js',
-    'reveal-core.js', 'camps.js', 'jelly-motion.js', 'app.js', 'reveal.js', 'reveal-ui.js', 'setup-sync.js', 'settings.js', 'setup-ui.js', 'chat.js', 'push.js', 'tell.js', 'award.js', 'auth-phone.js', 'auth-email-link.js'],
+    'reveal-core.js', 'camps.js', 'jelly-motion.js', 'app.js', 'reveal.js', 'reveal-ui.js', 'setup-sync.js', 'settings.js', 'setup-ui.js', 'chat.js', 'push.js', 'tell.js', 'award.js', 'now-ui.js', 'auth-phone.js', 'auth-email-link.js'],
   'every code asset, in load order');
   const versions = [...new Set(refs.map((m) => m[2]))];
   assert.equal(versions.length, 1, 'one number on all of them: ' + versions.join(', '));
@@ -251,7 +251,10 @@ test('the frame\'s roots are where the shell expects them: chat in its tab, the 
   ['now', 'games', 'chat', 'more'].forEach((t) => {
     assert.ok(INDEX.includes('id="tab-btn-' + t + '"') && INDEX.includes('id="tab-' + t + '"'), t + ' has its button and its panel');
   });
-  assert.ok(between('tab-now', 'tab-games').includes('id="now-banner"') && between('tab-now', 'tab-games').includes('id="live-home"'),
-    'Now hosts today\'s banner and live home unchanged');
+  // Step 17: the old banner, live strip, follow card and notice board are gone; the Now card and what hangs off it are there.
+  ['now-card', 'now-moment', 'now-todo', 'now-next', 'now-later', 'now-notice', 'announcements', 'now-msgs-more'].forEach((id) =>
+    assert.ok(between('tab-now', 'tab-games').includes('id="' + id + '"'), 'Now hosts #' + id));
+  ['now-banner', 'live-home', 'follow-team-card', 'my-electives-card', 'notice-board', 'notify-toggle-btn'].forEach((id) =>
+    assert.notOk(INDEX.includes('id="' + id + '"'), '#' + id + ' retired with the Now engine'));
   assert.notOk(/chat-open/.test(CSS) || /chat-open/.test(readFixture('../app.js')) || /chat-open/.test(readFixture('../chat.js')), 'no body.chat-open anywhere: chat is a tab');
 });

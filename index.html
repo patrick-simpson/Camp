@@ -391,15 +391,6 @@
         </div>
       </section>
 
-      <!-- ── NOTICE BOARD (the one big, unmissable message) ─────────────
-           Deliberately the FIRST thing on the page and much larger than an
-           announcement — one of these replaces the six separate notices that
-           send-off cleanup used to take. Composed in the week builder
-           (Settings → Set up the week → Notice) and stored in synced state as
-           either a draft or a posted card; nothing renders here until it's
-           posted. See the notice board comment block in app.js. -->
-      <section id="notice-board" class="notice-board" hidden></section>
-
       <!-- ── WHAT'S NEW (queued banners; roll in one every 15 min, 7am–9pm) —
            kept at the very top of the page so notices are the first thing seen. -->
       <section id="whats-new" class="whats-new" hidden></section>
@@ -452,33 +443,18 @@
         <span id="now-msgs-more-text">2 more messages</span><svg class="ico" aria-hidden="true"><use href="#i-chev-r"/></svg>
       </button>
 
-      <!-- ── YOUR TEAM + NOTIFY (right under the role line) ── -->
-      <section class="you-strip">
-        <div id="follow-team-card" class="follow-team-card" hidden></div>
-        <div id="my-electives-card" class="my-electives-card" hidden></div>
-        <jelly-button id="notify-toggle-btn" class="notify-btn" size="small" variant="platinum" block aria-pressed="false">🔕 Notify me</jelly-button>
-      </section>
-
-      <!-- ── HAPPENING NOW (live schedule banner) ───────── -->
-      <section id="now-banner" class="now-banner" hidden></section>
-
-      <!-- ── LIVE NOW (a game in progress — surfaced + highlighted) ── -->
-      <section id="live-home" class="live-home" hidden></section>
-
       <!-- ══ NOW, BLOCK BY BLOCK (redesign §3; Step 17) ══════════════════════
            The tab answers "what's happening now" with ONE physical object, the
            Now card (§8.1 rule 2: the only ink border and bottom edge on Now),
            then flat run-sheet rows on paper: Still to do today (directors), Up
-           next, Later today. The old .you-strip, #now-banner, #live-home and
-           #notice-board retire when nowModel() renders these (keep their ids
-           until the tests that look them up move: shell.test.js pins
-           #now-banner and #live-home inside #tab-now; home.test.js
-           #my-electives-card; secrecy.test.js #follow-team-card).
+           next, Later today. nowModel() (app.js) computes them and now-ui.js
+           paints them; the old .you-strip, #now-banner, #live-home and
+           #notice-board are gone.
 
            THE CARD (#now-card) is a static frame; the renderer patches text,
            hidden and data-*, and writes only the roots marked ROOT (through
-           setHtmlIfChanged, or setLiveHtmlIfChanged with holds [g] for a live
-           board). Every part split by volatility (§13.1): the minutes left and
+           setHtmlIfChanged; a keyed list through paintKeyedList). Every part
+           split by volatility (§13.1): the minutes left and
            the hairline change every tick and are patched alone, never written.
              data-kind   games | elective | meal | bible | meeting | worship |
                          bedtime | activity | arrival | sendoff  (blockKind), or
@@ -3892,6 +3868,8 @@
        optional-layer contract: without this tag More has no Award points row. Every tap goes through app.js's own
        writers (setVersePoints, setCleanupPoints, bonusAddFromDraft), so nothing here is a second write path. -->
   <script src="award.js?v=203"></script>
+  <!-- Now's renderers (nowModel's picture painted onto the markup in #tab-now; the Now tab is empty without it but the app runs). -->
+  <script src="now-ui.js?v=203"></script>
   <!-- Optional alternative sign-in methods. Delete a tag to remove that
        method (app.js only touches them through window.CampPhone /
        window.CampEmailLink); the Google button always remains. -->

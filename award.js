@@ -58,6 +58,16 @@ function awardTeamWord(id) {
 // ════════════════════════════════════════════════════════════════════
 function awardPts(n) { return (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n); }
 
+// The keys alone (verse: 6, cleanup: 4): a radiogroup of `.aw-pt` buttons, the chosen one aria-checked. Now's cleanup moment
+// (now-ui.js) draws the same keys, so a key looks and taps the same in both places. `o`: { n, pts, mult, label, cls? }.
+function awardKeysHtml(o) {
+  const keys = [];
+  for (let i = 0; i < o.n; i++) {
+    keys.push(`<button type="button" class="aw-pt" role="radio" aria-checked="${o.pts === i}" data-pts="${i}" data-joy>${i * o.mult}</button>`);
+  }
+  return `<div class="aw-pts${o.cls ? ' ' + o.cls : ''}" role="radiogroup" aria-label="${esc(o.label)}" data-n="${o.n}">${keys.join('')}</div>`;
+}
+
 // One team's row of keys (verse: 6 keys, cleanup: 4). `o`: { key, team, meal?, name, tag?, pts (the stored value), n, label,
 // mult (what a key is worth: 2 in the window for the verse), locked, given (its shown total, for a locked row) }.
 function awardRowHtml(o) {
@@ -69,12 +79,7 @@ function awardRowHtml(o) {
     return `<div class="aw-row" data-key="${esc(o.key)}" data-team="${esc(o.team)}"${meal} data-locked>${mark}${name}` +
       `<p class="aw-lock"><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span>Your team · another director gives these</span>${given}</p></div>`;
   }
-  const keys = [];
-  for (let i = 0; i < o.n; i++) {
-    keys.push(`<button type="button" class="aw-pt" role="radio" aria-checked="${o.pts === i}" data-pts="${i}" data-joy>${i * o.mult}</button>`);
-  }
-  return `<div class="aw-row" data-key="${esc(o.key)}" data-team="${esc(o.team)}"${meal}>${mark}${name}` +
-    `<div class="aw-pts" role="radiogroup" aria-label="${esc(o.label)}" data-n="${o.n}">${keys.join('')}</div></div>`;
+  return `<div class="aw-row" data-key="${esc(o.key)}" data-team="${esc(o.team)}"${meal}>${mark}${name}${awardKeysHtml(o)}</div>`;
 }
 
 // The Memory verse rows for a day: every team, in roster order.
