@@ -1319,3 +1319,56 @@ test('"By the standings" on a six-team bracket: the director who calls a match u
     assert.ok(/function bracketSuggestPair[\s\S]*?\n}\n/.exec(src)[0].indexOf('saveState') === -1, 'the suggestion writes nothing');
   } finally { gsEnd(); }
 });
+
+test('a preview as a counselor (or a demotion) closes an open game sheet and forgets it; the game sheet never opens for a counselor', () => {
+  gsStart({ now: '3-1030' });
+  try {
+    state.ui.day = gmDayRecs(SETUP_DK[3])[0].id;
+    gmOpenQuick();
+    gsText('gm-name', 'Open when demoted');
+    assert.ok(shell.sheets.includes('game') && gmUi.open.gid);
+    setMemberRole('viewer');
+    renderAll();
+    assert.equal(shell.sheets.includes('game'), false, 'the next paint closes it');
+    assert.equal(gmUi.open, null, 'and forgets it');
+    assert.equal(setupEl('gm-name').value, 'Open when demoted', 'whatever was typed stays in the page only as a closed, hidden sheet');
+    // nothing a counselor's screen reads about standings comes from this layer: the suggestion is a director's alone
+    assert.equal(bracketSuggestPair({ bracketSeed: 'standings' }, freshBracket()), null);
+    assert.equal(gmOpenNew({ dk: gsFirstDay() }), false);
+    assert.equal(gmOpenQuick(), false);
+  } finally { gsShut(); gsEnd(); }
+});
+
+test('a quick game takes the Games item under way at that minute (senior\'s afternoon item too, with its Afternoon session), else the next one, never a guess from the clock alone', () => {
+  gsStart();
+  try {
+    // find a weekday and minute inside a Games item that starts after noon (senior: the 3:00 PM Team competitions)
+    const dk = SETUP_DK.find((d) => gmIsGamesDay(d) && gsBlocks(d).some((b) => b.start >= 720 && b.start < 1020));
+    if (dk) {
+      const blk = gsBlocks(dk).find((b) => b.start >= 720 && b.start < 1020);
+      const minute = blk.start + 20;
+      location.search = '?now=' + SETUP_DK.indexOf(dk) + '-' + String(Math.floor(minute / 60)).padStart(2, '0') + String(minute % 60).padStart(2, '0');
+      state.ui.day = gmDayRecs(dk)[0].id;
+      assert.equal(gmQuickTarget().bid, blk.id, 'the afternoon item under way');
+      gmOpenQuick();
+      gsText('gm-name', 'Afternoon quick');
+      const g = gameById(gmUi.open.gid);
+      assert.equal(g.blockId, blk.id);
+      assert.equal(g.session, rainSessionFor(state.config, blk));
+      assert.equal(g.session, 'Afternoon', 'the old >= 720 guess would have said Evening');
+      assert.equal(gmWhenInfo(gmUi.open).text.indexOf('Today'), -1, 'a saved game names its day');
+      gsShut();
+    } else {
+      assert.equal(gmSessions().indexOf('Afternoon'), -1, 'only senior has afternoon games items, and it has them');
+    }
+    // between two items: the next one today
+    const d2 = SETUP_DK.find((d) => gmIsGamesDay(d) && gsBlocks(d).length >= 2);
+    const [a, b] = gsBlocks(d2);
+    const gap = a.end + 1;
+    if (gap < b.start) {
+      location.search = '?now=' + SETUP_DK.indexOf(d2) + '-' + String(Math.floor(gap / 60)).padStart(2, '0') + String(gap % 60).padStart(2, '0');
+      state.ui.day = gmDayRecs(d2)[0].id;
+      assert.equal(gmQuickTarget().bid, b.id);
+    }
+  } finally { gsShut(); gsEnd(); }
+});

@@ -936,7 +936,7 @@ TAB"), **the model** (app.js "THE GAMES ENGINE": plain data from `nowCtx` — th
   with the printed week (the owner's Use the original week again) no game is linked to a block, so the leftovers keep their session's name (senior's
   Afternoon and Legacy games) and no group says "Not on the schedule". **ONE "up next"** (today: the first game not
   started from the block under way) and **ONE gold Score** (the first live game this director can score, else up next); a director's own team's round
-  (`gameRoundTeams` → `blockedByOwnTeam`) shows the reason instead of Score. An empty day names itself with Add games (`openBuilder('games')` until Step 21).
+  (`gameRoundTeams` → `blockedByOwnTeam`) shows the reason instead of Score. An empty day names itself with Add games (the Games screen in Set up the week, on that day: `gmOpenScreen`).
 - **Next game** (`gamesNextAfter`, `gamesDock`, `openNextGame`): after a result the takeover's dock (`renderGameDock`, directors only) names what is left and
   offers Next game: the rest of the block, the later blocks, the games on no block, then (wrapping) what is unscored before it, skipping a round the
   director's own team plays — those are named ("1 game needs another director: X (your team plays)"). It re-asks at the tap and swaps the takeover in
@@ -1820,10 +1820,10 @@ into it from app.js / settings.js is typeof-guarded.
   gains `#setup`, the four sheets and `#ask-dialog` (the gold buttons must not sparkle).
 - **Screens and Back**: `state.ui.builderScreen` (device-local; `hub` default,
   `backups`, `classic`; anything else reads as the hub) is mirrored into
-  `#setup[data-screen]`. More → Set up the week opens the hub; `openBuilder('games')`
-  ("Add games") lands on the classic screen on that tab; hub rows Games / Notice
-  open the classic screen on that tab (`state.ui.settingsTab`; Teams has its own screen
-  since Step 25), Restore points
+  `#setup[data-screen]`. More → Set up the week opens the hub; the hub's Games row (and the Games
+  tab's Add games) open the Games screen (Step 21), Notice opens the classic screen on its
+  tab (`state.ui.settingsTab`; the Classic editor in the ⋯ menu still has the old Games tab;
+  Teams has its own screen since Step 25), Restore points
   opens `backups`, People opens its own screen (Step 25; the Members drawer is retired). Back goes screen → hub →
   closes the builder; a dirty game editor (`builderDirty()`, named by
   `builderDirtyName()`) asks through `askDialog` first, and "Keep editing" puts the
@@ -2421,6 +2421,13 @@ What's covered, and why each file exists:
   rows (order, podium, live boards, the own-team Score guard, the four-team bracket); the messages strip; Still to do today; the
   tick; a counselor's, a hinted director's and a previewing director's models holding no points with the guard throwing; junk
   snapshots never throwing.
+- `games-screen.test.js` (+ `.senior`) — Step 21 ("Set up the week: Games"): the day model over the accessors (items, sessions with the original
+  schedule, loose games, the strip's counts and "!"), creating a game (ONE whole-record edit, on the item, after what it holds, random-tail id,
+  nothing written before a name and a way of being scored), two directors adding one name, no stale record under a reused id (every
+  per-game map, `brackets4` too), one field per write onto the game as it is now, a game deleted elsewhere (noticed, never resurrected; Put it
+  back / Close), the format change and what it clears, Matchups and the board, Earlier / Later, When (an item, another day, a new games day,
+  double points, not on the schedule, sessions), days with games and their note, the ⚡ quick game (now / next / none, the printed week,
+  the double window), Make a copy and Delete (records gone), the escaped markup, the deploy hold, and `bracketSuggestPair`.
 - `games-tab.test.js` (+ `.senior`; seeded and seeded-all passes) — the Games model ("The Games tab"): the status truth table (results, brackets,
   four-team brackets, drafts, clocks, and what only looks live), the day picker across the camp week's phases, the blocks and the one up next / one gold, Next game's
   order and its own-team skip, the dock's words, shared places equal to the reveal's grouping, arrows and a flat baseline, the gap sentence, quick points
@@ -2616,8 +2623,9 @@ What's covered, and why each file exists:
 - `settings-crud.test.js` — the classic builder's create / edit / delete paths
   (`validateGameDraft`, `saveGameDraft`, `duplicateGame`, `deleteGame`,
   `deleteDay`, reorder, `pruneOrphanedGameData`). Everything the app keeps under
-  a game id is ONE list in settings.js, `GAME_RECORD_MAPS` (result, bracket,
-  score entry, live match, clock, drawing setup): a format change names and
+  a game id is ONE list in settings.js, `GAME_RECORD_MAPS` (result, bracket, the
+  four-team bracket `brackets4` (absent until Step 22 syncs it), score entry, live match, clock,
+  drawing setup; `gameRecordLabels` says each kind once): a format change names and
   clears all of it after one confirm, `deleteGame` and the import / restore
   prune drop all of it (the clock used to be left behind — a "running" clock
   with no game to settle it). Add a new per-game synced map there.
@@ -3876,7 +3884,7 @@ Both camps, junior and senior, run all of it.
   (Morning → 10:00 Team competitions, Evening → 18:00 Evening competition, Team Skits →
   Fri 19:00 Team Skits); senior 25/25 (9:45 / 3:00 PM Team competitions, Legacy Game →
   16:50, Hot Seat and Let's Make a Deal → 18:50). **A game created in the classic builder
-  (Add game, ⚡ quick game) while the schedule is edited here is placed at once**:
+  (Add game) or from the Games screen's sheet with no item named, while the schedule is edited here, is placed at once**:
   `setupAttachNewGame(config, game)` runs A2's rules for that ONE game inside the config
   edit that adds it (`saveGameDraft`), so it shows on its natural block, in the calendar
   file and on counselors' phones; a duplicate keeps its original's link (the copy is a clone).
@@ -4225,41 +4233,87 @@ the row keeps its keyed shape, so turning the section on only swaps the inputs i
   leaders, Patrick and Stephen, for the chat mention dictionary — the spec's "+ elective people
   names").
 
-## Set up the week: Games (Step 21 — markup and visual system; NOT wired yet)
+## Set up the week: Games (Step 21 — the screen and the progressive game sheet)
 
-P2 §11.14 in the Step 14 / 15 / 19 frame. Static markup in index.html (full row templates in the comments beside
-`#setup-games` and `#sheet-game`), styled in styles.css's last block, "SET UP THE WEEK: Games". Until the build session
-wires it, nothing routes here (`SETUP_SCREENS`, `HUB_OPENS.games`, `SETUP_SHEETS` are unchanged), so the hub's Games
-row, Add games and Quick game still open the classic builder. Hooks prefixed `sg-` (the screen) and `gm-` (the sheet):
-`gs-` / `gw-` / `games-` belong to the Games tab.
+P2 §11.14 in the Step 14 / 15 / 19 frame. Markup in index.html (templates in the comments beside `#setup-games` and `#sheet-game`),
+styles in styles.css's last block, "SET UP THE WEEK: Games"; behaviour in setup-ui.js section 16 (engine first, then the screen, then
+the sheet), pinned by `tests/games-screen.test.js` (+ senior). Hooks are prefixed `sg-` (the screen) and `gm-` (the sheet): `gs-` /
+`gw-` / `games-` belong to the Games tab. **The catalog is written ONLY through `configEdit` (field ops, one undo entry per change);
+there is no draft and no Save.** The classic Games tab stays reachable from the ⋯ menu's Classic editor, and `saveGameDraft` / the
+v183 parity fixture are untouched.
 
-- **The screen** (`data-screen="games"`; CSS switch line in place). `#sg-days` in the head: all seven days
-  (`data-day`, `aria-selected`, `data-today`, `data-off` = not a games day, the count in `[data-sg-n]` with the gold
-  `[data-sd-warn]` beside it, the aria-label in words). "Days with games" (ux-R14) lives in this strip: a day that isn't
-  one shows `#sg-noday` (`#sg-day-on` "Make Saturday a games day"), and the day's ⋯ (`#sg-day-btn`, on the headline's
-  line) opens `#sheet-sg-day` (the note `#sg-day-note`, saved on blur; `[data-sg-day-act="off"]` takes the day off,
-  asking where its games go). Intro `#sg-title` / `#sg-headline` (the day) / `#sg-lede` / `#sg-note` (the day's note,
-  a plain line). `#sg-items` takes one `section.sg-item[data-key="b-<bid>"][data-now]` per item that holds games or is
-  a Games item: `.sg-item-h` (time kicker, emoji + label set in to the rows' inset) over a `.gl.cb-list.sg-list` of
-  `button.cb-row.sg-game[data-sg-open][data-warn]` rows (the format in a word, then where) closed by
-  `button.sg-add-here[data-sg-add="<bid>"]`. `#sg-sec-off` / `#sg-off-list`: games on no item, split rows
-  (`.gl-row-hit` + `.sg-place[data-sg-place]` "Put on the schedule"). `#sg-empty` / `#sg-add-first`, `#sg-add`,
-  `#sg-orig` (the schedule is the original: session headings, no time).
-- **The sheet** `#sheet-game[data-mode=new|edit|quick][data-pane=form|when][data-stage=name|format|game][data-format]`.
-  The stages are the progressive save: name (`#gm-name`, emoji `#gm-emoji-btn` / `#gm-emoji`, `#gm-where`), then How
-  is it scored? (`#gm-format`, `[data-gm-format]` radios, `[data-collapsed]` folds a saved game to its row with
-  "Change"; `#gm-format-warn`), then the game is created and everything else appears: Bracket (`#gm-seed`
-  `[data-gm-seed=standings|pick|fixed]` → `bracketSeed`; `#gm-pairs` with `#gm-matches` and `#gm-keys` →
-  `roundOneMatchups`; `#gm-ladder`; `#gm-tracker` + `#gm-tracker-fields`), Scores (`#gm-unit`, `#gm-lower`, `#gm-times`,
-  `#gm-live`, `#gm-steps`, `#gm-negative`), Podium (one plain line), `#gm-order` (`[data-gm-order=earlier|later]`),
-  `#gm-extras` (`#gm-double`, `#gm-timer` + fields, `#gm-prompts`), `#gm-howto` (`#gm-headline`, `#gm-rules` of
-  `.gm-rule[data-key]`, `#gm-rule-add`), `#gm-clashes`, `#gm-copy`, `#gm-delete`, `#gm-gone`. When line `#gm-when` /
-  `#gm-when-btn` (data-warn on no item). When pane: `#gm-when-days`, `#gm-when-list` (`.gm-when-row[data-gm-block]`,
-  `aria-current` on the game's own), `#gm-when-all`, `#gm-when-newday`, `#gm-when-double`, `#gm-when-none`. Dock:
-  `#gm-wait` (before the game exists), `#gm-state[data-tone=saved|saving|offline|error]`, `#gm-score` (quick game),
-  `#gm-done`. `#sheet-game .sheet[data-flow]` = the item sheet's large-text scroll-as-one.
-- **Specimens**: `docs/build-notes/verify/step21-design.cjs` draws every state from the real week into the real page
-  (both camps, 360 / 390, light / dark, 100 / 130 / 200 %): no target under 44×44, no sideways scroll, nothing squeezed.
+- **Routing**: the hub's Games row (`HUB_OPENS.games`), the Games tab's Add games (`gmOpenScreen(dayId)`, games-ui.js) and the schedule
+  item sheet's "Add a game here" (`#si-add-game`, a Games item of a day that exists: `schedItemAddGame`) lead here. `SETUP_SCREENS` has
+  `games`; `SETUP_SHEETS` has `game` and `sg-day`. **`#sheet-game` also opens over the Games tab with the builder closed** (the ⚡ Quick
+  game, `startQuickGame` → `gmOpenQuick`): `shellSheetAllowed('game')` is `canEdit() && gmSheetReady()` (app.js), ahead of the SETUP_SHEETS
+  rule, and `setupUiClosed` closes it with the builder. Who's here: `games`, or `game:<id>` while a saved game's sheet is up (an id past the
+  vocabulary's 60 characters is just `games`). `state.ui.sgDay` (a weekday key, device-local) is the day looked at.
+- **The day model** (`gmDayModel(dk)`, `gmStripModel()`, pure over the accessors: `competitionDays`, `scheduleForDow` + `setupRichOf`,
+  `gamesForBlock`, `unscheduledGames`, `allGames`): with the schedule edited here a group is a schedule item that holds games OR is a Games
+  item (to put some under); with the original schedule a group is a session ("Morning games": the printed week's `blockId` links are not
+  read) and nothing is "not on the schedule". `loose` = `unscheduledGames`. The day's `warn` (the gold "!"): no games yet, a game on no item,
+  a game whose Where still says TBA. Counts are joined to their word with a non-breaking space. A weekday with no competition day says "Not a
+  games day" and offers **Make Saturday a games day** (`gmMakeDay`: one `config.days` record at its place in the week, an empty games day is
+  harmless); the day's ⋯ (`#sheet-sg-day`) holds its note (`gmSetDayNote`, saved when focus leaves, ≤ 200) and **Take it off the games
+  days** (`gmTakeDayOff`: a day with games asks where they go — every other games day is a choice — and they move there, off any item, onto
+  its natural one as a new game is; they never vanish).
+- **The sheet** `gmUi.open = { mode: new | edit | quick, pane: form | when, gid (null until created), dk, bid, form, … }` (the field list is
+  in the comment above `GM_EMOJI`). **Progressive**: `data-stage` on the overlay (`name` → `format` → `game`; the CSS shows what is due and each
+  section arrives with a spring, calm: a fade). Nothing is written before the game has a name AND a way of being scored; at that moment
+  (`gmTryCreate`: a format tapped with a name, or the name committed with a format already picked — the quick game's one step) it is created
+  whole as ONE `configEdit` (`gmCreateGame`) and from then on every field saves alone through `gmCommit(gid, patch, label)`, which looks the
+  game up BY ID when the write runs (so a colleague's edit to another field is never undone). Text saves on blur / Enter (`focusout`
+  delegated on the sheet), switches and rows on a tap. A tally game picks up the live leaderboard and a bracket the plain running scoreboard,
+  as the classic format pick does. The inputs' markup is static (values are set as properties, only while a field is not focused), so a
+  snapshot or a save never takes a word away mid-typing or rebuilds a focused field (a Playwright MutationObserver pass sees zero mutations from two idle `renderAll`s on the screen and on every stage / pane of the sheet); inside Set up the week the docked undo pill offers each change, over the Games tab a field edit is recorded but quiet (no toast per field; creating, Make a copy and Delete still speak); the dock's line (`gmDockState`) is saved · saving ·
+  offline · error, and it follows the sync line (`setupUiOnEvent` repaints it even with the builder closed).
+- **Field rules** are the classic editor's own (`gmParseSteps`, `gmParseTimer`, `gmParseTracker`, `gmParsePrompts`): counter buttons are positive
+  numbers, the timer is minutes typed / seconds saved with rounds from 2, the scoreboard's periods and outs whole numbers, **only one game a
+  week may have drawing prompts**. A field in error keeps `aria-invalid` and its message and writes nothing; every other field still saves.
+  The name can't be emptied. How to play is `gmRulesFrom(rows)` (a section with neither heading nor points is dropped; a blank one added and
+  not yet filled stays on the sheet, `open.blank`).
+- **How is it scored?** is three rows (Bracket / Scores / Podium). On a saved game it folds to its one row with "Change"; a tap opens all
+  three; another way on a game with records asks first (`gmChangeFormat` → `reason: 'confirm'`, `going` named in words: "the saved result and the
+  bracket in progress"), then removes the old format's fields (`GM_TALLY_ONLY` / `GM_BRACKET_ONLY`) and every record under the id, and is **not
+  undoable** (an Undo that brought the format back would not bring the result back).
+- **Matchups** (a bracket): `By the standings` / `Pick them when you start` / `Set them now` → `bracketSeed` `standings | pick | fixed` and, for
+  fixed, `roundOneMatchups` (`gmSetSeed`; a game from before reads back as what it does, `gmSeedOf`). The board (`gmPairsBoard`, `gmPairsTap`)
+  takes teams in tap order, a tap on a placed team takes it out (the rest close up), the last two teams fill the last match themselves; a
+  complete board saves `fixed` with the pairs, an incomplete one saves `pick`. **Who plays whom is never named in setup** (no place is said): the
+  standings option states its rule ("Suggests 1st v 6th, 2nd v 5th and 3rd v 4th from the points"). The six-team wizard honours it with
+  `bracketSuggestPair` (app.js): to a DIRECTOR only (`standingsVisible`; never a counselor or a preview) the best remaining team v the lowest
+  remaining one is suggested above the team chips, with "Call them up"; nothing is stored until a pair is called up, exactly as a hand pick. The
+  four-team bracket (Step 22) reads `bracketSeed` through its own `fourSeeds`; until it exists a sheet on a camp with other than six teams says
+  so (`#gm-b4-note`, hidden for good once `bracketKindFor` exists).
+- **When** (`gmPlacement`, `gmMoveGame`, the rain plan's move picker): a day (all seven; one that isn't a games day asks first, `gmMakeDay`),
+  then an item — Games items and items that already hold games first, the rest behind "Other items on Thursday" — or, with the original
+  schedule, a session. One tap writes `blockId`, `dayId` (the item's weekday), `session` (`rainSessionFor`: the item's time) and `ord` (after
+  what the item holds, in `SETUP_GAME_ORD_STEP`s) as ONE `gmCommit`; onto an item with double-points games it asks first (`reason: 'double'`);
+  an item a colleague removed meanwhile refuses (`reason: 'item'`) instead of quietly turning into "not on the schedule". **Not on the
+  schedule** removes `blockId` and `ord` (the game keeps its day and results). A NEW game's When only remembers the item (nothing is written
+  until it exists; "Not on the schedule" is honoured at creation, A2 is skipped for it). **Earlier / Later** renumber every game of the item
+  10, 20, 30… in the new order (`gmOrderGame`: ties and missing numbers never leave it ambiguous).
+- **Ids and records**: a new game's id is `makeId`'s (the name's slug + 4 random base36) over `takenGameIds` (every `GAME_RECORD_MAPS` key,
+  `brackets4` included), so two directors adding "Rain bowling" at once make two games and a new game never meets a leftover bracket, clock
+  or result (`clearGameRecords` runs on its id as well). **Make a copy** (`gmDuplicate`) opens the copy; **Delete** asks, names what goes with
+  the game, takes a `pre-delete` restore point when it has a saved result (`schedSafetyPoint`) and removes every record under the id.
+- **Deleted on another phone while the sheet is open**: the next paint notices (`open.gone`, the sheet keeps showing the game as last seen,
+  `open.last`), the gold "!" question appears at the top (`#gm-gone`) and **no write is made or resurrected**; "Put it back with my changes"
+  re-adds the record as the sheet last saw it (one undoable edit), Close leaves. The classic editor's clash block (`#gm-clashes`) is not
+  used: a field two directors change at once is last-commit-wins per field (the config engine's own rule), and a colleague's other fields
+  are never touched.
+- **The ⚡ quick game** (`gmQuickTarget`): the day being looked at (the Games tab's day, else today when it is a games day, else the first),
+  and on it the Games item under way now or the next one today (another day: its first Games item), else off the schedule; with the original
+  schedule its session by the clock (`rainSessionFor`, so senior's afternoons are right — the old `>= 720 ? 'Evening'` guess is gone). Podium
+  is already picked, Double points is on inside the double-points window, and once named it offers **Score it now** (closes the builder if it
+  was open, then `openGame`).
+- **Holding the deploy**: a NEW game with a name typed and nothing saved yet holds the auto-reload (`gmBusy`, in `reloadBlocked` and
+  `shellHasUnsentWork`); a created game has no unsaved state (every change is in the config engine's own accounting). Closing by any route
+  (✕, backdrop, Escape, Back: `gmGuardClose` through `setupSheetGuardClose`) blurs a field still being typed so it saves first; a sheet closed
+  by any route is forgotten on the next paint (`gmCleanSheets`).
+- **Pass**: `docs/build-notes/verify/step21-pass.cjs` drives the real page with real taps (the hub row → the screen → Add a game here → name →
+  Scores → a field → When → Done → a bracket's Matchups → the day's ⋯ → the Games tab's Quick game → Score it now) on both camps at 360 / 390,
+  light / dark and 100 / 130 / 200 % text, and checks what each tap wrote; `step21-design.cjs` still draws every state for the visual pass.
 
 ## Team colours and the Teams screen (Step 25, session 1)
 

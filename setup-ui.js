@@ -7265,7 +7265,7 @@ function gmCreateGame(form, place) {
   if (!place || !place.dayId) return { ok: false, reason: 'day' };
   const emoji = String(form.emoji || '').trim();
   const rec = {
-    id: null, name, emoji: emoji && safeEmoji(emoji, '') === emoji ? emoji : '🏕️',
+    id: null, name, emoji: emoji && safeEmoji(emoji, '') === emoji ? emoji : '🏅',
     dayId: place.dayId, session: place.session || gmSessions()[0], location: String(form.location || '').trim().slice(0, 60),
     format: form.format, headline: '', rules: [],
   };
@@ -7298,12 +7298,14 @@ function gmCommit(gid, patch, label) {
   const fields = Object.keys(patch).filter((f) => f !== 'id' && gmCanon(g[f]) !== gmCanon(patch[f]));
   if (!fields.length) return { ok: true, changed: false };
   const was = g.name;
+  // Inside Set up the week the docked undo pill offers each change; over the Games tab (the ⚡ quick game) a toast per field would stack
+  // up, so a field edit is recorded (Recent changes, Undo there) but quiet — the dock's saved line is what says it landed.
   const ok = configEdit(label === undefined ? 'Edited “' + was + '”' : label, () => {
     const x = gameById(gid); // by id, when the write runs (P10)
     if (!x) return false;
     fields.forEach((f) => { if (patch[f] === undefined || patch[f] === null) delete x[f]; else x[f] = JSON.parse(JSON.stringify(patch[f])); });
     return undefined;
-  });
+  }, builderOpen() ? undefined : { quiet: true });
   if (ok === false) return { ok: false, reason: 'gone' };
   return { ok: true, changed: true };
 }
@@ -7958,7 +7960,9 @@ function gmWhenInfo(o) {
     if (blk) return { text: word + ' · ' + (blk.base || blk.label) + (blk.noTime ? '' : ', ' + setupRange(blk.start, blk.end)), warn: false, btn: 'Change' };
     return { text: word + ' · Not on the schedule', warn: true, btn: 'Put it on the schedule' };
   }
-  const sess = g ? g.session : (o.session || gmSessions()[0]);
+  // The printed week: the session it is (or will be) in — a new game's is the one the clock says for a quick game, else the one named.
+  const place = g ? null : gmPlacement(dk, '', { session: o.session, minutes: o.mode === 'quick' ? o.minutes : null });
+  const sess = g ? g.session : (place ? place.session : (o.session || gmSessions()[0]));
   return { text: word + (sess ? ' · ' + sess + ' games' : ''), warn: false, btn: 'Change' };
 }
 
@@ -8177,7 +8181,7 @@ function renderGmOptions(o, g, src, format) {
     setTextIfChanged(setupEl('gm-order-label'), 'Order in ' + (blk ? (blk.base || blk.label) : 'this item'));
     const set = (dir, ok, sub) => {
       const b = document.querySelector('[data-gm-order="' + dir + '"]');
-      if (b) { b.setAttribute('aria-disabled', ok ? 'false' : 'true'); }
+      if (b && b.getAttribute('aria-disabled') !== (ok ? 'false' : 'true')) b.setAttribute('aria-disabled', ok ? 'false' : 'true');
       setTextIfChanged(document.querySelector('[data-gm-order-sub="' + dir + '"]'), sub);
     };
     set('earlier', at > 0, at > 0 ? 'Before ' + sibs[at - 1].name : 'First');
@@ -8271,7 +8275,8 @@ function renderGmWhen(o, g) {
     const today = dk === todayDk && wk.phase === 'during';
     if (today !== btn.hasAttribute('data-today')) { if (today) btn.setAttribute('data-today', ''); else btn.removeAttribute('data-today'); }
     setTextIfChanged(btn.querySelector('.daypick-name'), today ? 'Today' : SETUP_DAY_WORDS[dk].slice(0, 3));
-    btn.setAttribute('aria-label', SETUP_DAY_WORDS[dk] + (today ? ', today' : '') + (gmIsGamesDay(dk) ? '' : ', not a games day'));
+    const label = SETUP_DAY_WORDS[dk] + (today ? ', today' : '') + (gmIsGamesDay(dk) ? '' : ', not a games day');
+    if (btn.getAttribute('aria-label') !== label) btn.setAttribute('aria-label', label);
   });
   if (strip && strip.dataset.shown !== w.dk && strip.clientWidth > 0) { strip.dataset.shown = w.dk; stripRevealChip(strip, strip.querySelector('[aria-checked="true"]'), false); }
   paintStripOverflow(strip);
@@ -8378,6 +8383,9 @@ function gmBoardTap(tid) {
   o.order = gmPairsTap(gmBoardOrder(o), tid);
   gmAfter(gmSetSeed(o.gid, 'fixed', o.order), o);
   renderGameSheet();
+  // The keys are rewritten with the board (a placed team's key is dashed and says where): focus stays on the one that was tapped.
+  const key = /^t\d+$/.test(tid) ? document.querySelector('#gm-keys .gm-key[data-team="' + tid + '"]') : null;
+  if (key && typeof key.focus === 'function') { try { key.focus({ preventScroll: true }); } catch (e) { /* fine */ } }
 }
 
 function gmOrderTap(dir) {
