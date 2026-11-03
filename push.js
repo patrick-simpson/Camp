@@ -826,6 +826,8 @@ function pushPrefsChanged() {
 }
 
 async function pushRewriteRecord() {
+  // A bell flipped inside a counselor preview is kept on this phone; the record is rewritten once the preview is over.
+  if (counselorPreviewOn) { clearTimeout(pushPrefsTimer); pushPrefsTimer = setTimeout(pushRewriteRecord, 5000); return; }
   try {
     const reg = await pushExistingRegistration();
     const sub = reg && reg.pushManager ? await reg.pushManager.getSubscription() : null;
@@ -858,6 +860,7 @@ function pushSetBusy(on) {
 // "Turn on phone alerts" (and "Reconnect"). MUST run straight from the tap.
 async function pushEnable() {
   if (pushBusy || !pushConfigured() || !pushSyncReady) return;
+  if (previewRefuses()) return; // a counselor preview subscribes nothing (it would write this phone's alert record)
   if (pushEnvironment() !== 'ready') {
     renderPushDrawerIfOpen();
     return;
@@ -899,6 +902,7 @@ async function pushEnable() {
 
 async function pushDisable() {
   if (pushBusy) return;
+  if (previewRefuses()) return;
   pushSetBusy(true);
   try {
     let removed = true;
@@ -926,6 +930,7 @@ async function pushDisable() {
 
 async function pushSendTest() {
   if (pushBusy) return;
+  if (previewRefuses()) return;
   pushSetBusy(true);
   try {
     const res = await pushPost('/notify', { camp: CAMP.id, kind: 'test', deviceId: pushDeviceId(false) || undefined }, true);
@@ -1119,7 +1124,7 @@ async function pushPublishSchedule(weekStart) {
 async function pushRepublishSchedule(opts) {
   const o = opts || {};
   if (!pushConfigured() || typeof firebase === 'undefined' || !firebase.database) return { published: false, why: 'off' };
-  if (!(typeof canEdit === 'function' && canEdit())) return { published: false, why: 'readonly' };
+  if (!(typeof directorTab === 'function' && directorTab())) return { published: false, why: 'readonly' }; // the schedule a director already committed is published in a preview too
   const weekStart = typeof campWeek === 'function' ? campWeek().start : pushKnownWeekStart();
   if (!weekStart) return { published: false, why: 'no-week' };
   if (!o.force && pushScheduleSrc(weekStart, pushScheduleBlocks(scheduleWeek())) === pushPublishedSrc) return { published: false, why: 'same' };

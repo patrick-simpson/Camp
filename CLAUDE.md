@@ -694,9 +694,8 @@ never rebuilds a segmented control under a finger.
   with `#games-off` "Games are turned off right now"), More's `#verse-row` /
   `#cleanup-row` (and closes their sheet if open), the standings and Quick
   points sections — and the Chat tab shows chat.js's "Chat is turned off right
-  now". **Preview as a counselor** (§7.4) is Step 24's: its markup and frame are
-  built (`#counselors-preview`, `#preview-bar`, `html.counselor-preview`: see
-  "Director tools"), hidden until the render override of the role is wired.
+  now". **Preview as a counselor** (§7.4) is built (Step 24): a lens over the role,
+  not a role — see "Preview as a counselor: behaviour".
 - **The Games tab is the interim home of the old cards** until Step 18:
   `#games-days` holds today's `#day-tabs` (every day's game list),
   `#games-standings` the Current standings table and Quick points (both
@@ -1154,8 +1153,8 @@ each as it wires it, so the live app never shows a dead control. Rules for whoev
   showing-now and result rows put their button under the words from ~130% at 360px; the quick alerts
   become one column; the way choices lose their indent, then stack; six keys become two rows of three;
   the quick-points amount stacks; the ledger puts points and bin under the words).
-- **Behaviour still to wire** (Preview as a counselor and its measured `--pv-h`: build session 2): see the next two
-  sections for what is wired (Tell everyone, Award points).
+- **Behaviour**: wired by tell.js ("Tell everyone: behaviour"), award.js ("Award points: behaviour") and app.js ("Preview as a
+  counselor: behaviour"). The preview's `--pv-h` is measured (a ResizeObserver on the bar), the CSS value stays the one-line fallback.
 
 ## Tell everyone: behaviour (tell.js — Step 24, build session 1)
 
@@ -1271,6 +1270,63 @@ nothing.
 - **Tests**: `award.test.js` (+ `.senior`): who may open it, the day, the verse and cleanup writers and their
   deterministic ids, the shared slot, the own-team guard, the Add label and writer, the ledger (camp-time weekday, the
   filed day, ×2, legacy cleanup), removal, escaping, the shell stack, and the app running without `award.js`.
+
+## Preview as a counselor: behaviour (app.js — Step 24, build session 2)
+
+Redesign §7.4. The markup is in "Director tools" above; this is the code, and the rules that make it unable to leak or trap. It is
+a LENS over the role, not a role: `counselorPreviewOn` (memory only, declared beside `memberRole`) and four reads.
+
+- **The lens** (app.js, beside `canEdit`): `canEdit()` = `directorTab() && !counselorPreviewOn` (so every "directors only" gate
+  — the ~70 that already existed, the director tools, the builder, the reveal remote, the drawers — refuses in a preview with no
+  second list to keep); `standingsVisible()` and `isOwner()` also say no; **`viewRole()`** is `'viewer'` in a preview, else
+  `memberRole`. **`directorTab()`** is the OLD `canEdit()` (`memberRole === 'editor' && tabWriter !== false`) and is what the
+  ENGINES ask. Rule of thumb: code that PROTECTS or SENDS work that already exists asks `directorTab()` (merging a config / setup
+  snapshot over unconfirmed edits — `applyRemoteConfig`, `firstConfigMerge`, `cfgFollowStateEpoch`, `processFirstSetup`,
+  `firstSetupMerge` — pushing it (`pushSetup`), re-sending a refused batch (the bisect triggers, `autoRetryQuarantined`), the
+  restore outbox, the schedule publisher, `reloadBlocked`, `shellHasUnsentWork`, `hasUnconfirmedLocalWork`); code that CREATES a
+  write or offers a director's control asks `canEdit()` and pauses while a preview is up (clock settling, announcement pruning,
+  the secrecy seed, a migration re-push, editors-here). Getting this backwards is the one way to lose data: a viewer's rule is
+  "adopt the server's copy", which would drop a director's unconfirmed week, so **never write `canEdit()` into an engine**.
+  `tests/preview.test.js` pins the list by function name (a source scan) and runs the config engine through a real snapshot
+  mid-preview. Where a screen decides what to SHOW (not what a tap may DO) it asks `viewRole()` — `applyCardVisibility`, More's
+  Director group and team row, the frame's role word, the view-only-tab bar, chat.js's `chatHiddenFromMe`, reveal.js's
+  `revealViewRole` (so the mirror takes the phone's 3-second hold and never the remote's data) and reveal-ui.js's
+  `revealUiIsDirector`. A new "may this person SEE it" test uses `viewRole()`.
+- **It never touches the sign-in's own state**: not `memberRole` (so the writer election, the undo history, the reveal
+  listeners and the pre-paint hint run as they did), not `memberRoleConfirmed`, not `tabWriter`, not the auth hint, not storage.
+  Nothing about it is in `state` or any cache key; a reload, a sign-out, a camp switch and the auto-update reload all end it (the
+  next page is the director's own: pinned against a fresh context over this phone's cache).
+- **Start** (`previewStart`, the button `#counselors-preview-btn` in What counselors see): only a CONFIRMED director on a writer
+  tab (`previewMayStart`: not a counselor, not a hint-painted phone, not a view-only second tab, not before the app started, not
+  twice). It records the tab it began on, closes every sheet the lens no longer allows (`shellCloseDisallowedSheets`, also run
+  by `renderAll` whenever `canEdit()` is false, so a demotion closes a director's drawers too), paints the bar, frame and
+  `html.counselor-preview`, flips `html.view-only`, renders, and puts focus on Exit. `renderAll` closes the builder, the director
+  tools and the reveal remote itself.
+- **Always one tap from leaving**: `#preview-bar` is outside `#app`, so it answers under a takeover and a sheet. **Exit**
+  (`previewStop({back: true})`) returns to More with What counselors see open again, so a switch can be changed and checked in a
+  loop. Every other end just lets go: an absence longer than the shell's 10 minutes (`shellResume`: a preview has no unsent work
+  of its own, so the long-absence rule never holds it), `setMemberRole` for anything but a confirmed director (a demotion, a
+  removal, a provisional answer: it runs before the role moves, so no half-previewed render), and a second tab taking the
+  writer lock (`previewMayRun`, checked at the top of every `renderAll`). Phone Back is the shell's and the preview files no
+  history entry of its own. A repeat of the same confirmed answer keeps the preview.
+- **What a preview refuses that a counselor could do**: a chat send, a photo and a delete (`previewRefuses()`, one toast: "You
+  are previewing as a counselor. Nothing is sent. Tap Exit to go back."; the words stay in the composer; `chatAtomicSend` has a
+  second backstop), phone-alert enable / disable / test (push.js), and the record rewrite after a bell (re-armed every 5 s until
+  the preview is over). Everything else a counselor can tap is local to the phone (theme, calm motion, team, dismiss, unread).
+  The builder's own mutators ask `configLocked()`, which now says no to anyone who may not act as a director.
+- **The bar** reads "Previewing as a counselor · Nothing you tap is sent" and the theme-color meta takes the bar's ink while it is
+  up (`CHROME_INK`). Nothing sparkles on it (`JOY_QUIET`).
+- **Proof** (`tests/preview.test.js`, + `.senior`; in the seeded pass too): the lens truth table and its entry gates; nothing
+  stored; every exit; walking every tab, sheet, game takeover and director door with the points guard THROWING and the sink
+  recorder on (no points, no places, no gap words, every director door shut, the director rows hidden); **FIDELITY**: two phones
+  on one week — a real counselor's and a director's that painted its own page first and then started the preview — compared
+  node for node on every tab (the only differences allowed are two pieces of director text inside rows whose own `hidden` flag
+  the test checks), with a negative control (the same comparison with no preview must differ); no database write from any tap
+  (director acts, chat, alerts) and the same writers working again after Exit; the config engine through a snapshot mid-preview;
+  a source pin of the engine list. The mutation checks that were run: dropping any one of the lens reads, the engine swap, the
+  chat guards, the resume rule, the reveal / chat role reads turns a case red.
+- **Left to a real phone**: how the bar looks over the iOS status bar (the theme-color path is Android Chrome's), and whether the
+  Home Screen app's reload (the auto-update) feels right when it ends a preview.
 
 ## Set up the week: the frame, the hub, the clipboard (Step 14 — markup and visual system)
 
@@ -2034,6 +2090,10 @@ What's covered, and why each file exists:
   the Your team sheet reading no standings.
 - `award.test.js` (+ `.senior`) — Award points (see "Award points: behaviour"): one write path per slot, the own-team
   guard, the ledger by day, secrecy (only a confirmed director opens it).
+- `preview.test.js` (+ `.senior`) — Preview as a counselor (see "Preview as a counselor: behaviour"): the lens, who may start it,
+  that nothing is stored, every way out, the walk through every tab / sheet / takeover with the points guard throwing, FIDELITY
+  against a real counselor's phone (with a negative control), the write gates (no database write from any tap), the engines
+  staying a director's (a config snapshot mid-preview, `reloadBlocked`, a source pin of the engine list).
 - `tell.test.js` (+ `.senior`) — Tell everyone (see "Tell everyone: behaviour"): the channel combinations, partial failure,
   the notice replace question and an Undo that checks first, quick alerts, Buzz disabled until phone alerts are live,
   the draft, `reloadBlocked`, the shell stack, and a counselor reaching none of it.
@@ -4085,8 +4145,9 @@ More sync invariants (each fixed after it bit us — don't regress these;
     record's role (`memberRole`), so a director's second tab shows every card and
     the standings and opens chat even when it is hidden from viewers
     (`ensureSecrecySeed` writes only when `canEdit()`). Any NEW "is this person a
-    viewer, for what they may see" test uses `memberRole`; `canEdit()` means "may
-    write" and is false in this tab. A bar in the `#sync-alert` strip (never wanted
+    viewer, for what they may see" test uses `viewRole()` (= `memberRole`, except
+    in a counselor preview: see "Preview as a counselor: behaviour"); `canEdit()`
+    means "may write" and is false in this tab. A bar in the `#sync-alert` strip (never wanted
     at the same time as a parked score, since a view-only tab cannot park one) says
     "View-only: another tab is editing." with **Use this tab instead** (kept to two
     lines at 320px: the copy is short and `styles.css` drops both one step under

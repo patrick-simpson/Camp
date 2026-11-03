@@ -254,6 +254,15 @@ function makeContext(opts) {
     __domSweep: () => [...byId.values(), ...bySelector.values()]
       .map((e) => ({ kind: 'innerHTML', text: String(e.innerHTML || '') + ' ' + String(e.textContent || '') }))
       .filter((e) => e.text.trim()),
+    // The same sweep keyed by what the page looked the node up with (an id, or a selector), for tests that compare two
+    // pages node for node (preview.test.js: a preview against a real counselor's phone).
+    __domEntries: () => {
+      const out = {};
+      byId.forEach((e, k) => { out['#' + k] = String(e.innerHTML || '') + ' ' + String(e.textContent || ''); });
+      bySelector.forEach((e, k) => { out[k] = String(e.innerHTML || '') + ' ' + String(e.textContent || ''); });
+      return out;
+    },
+    __domHidden: (id) => !!(byId.has(id) && byId.get(id).hidden),
     __docListeners: docListeners,
     __reloads: 0,
     // Cancels every timer this context still has pending. run.js calls it when

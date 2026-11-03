@@ -214,11 +214,12 @@
                                  fallback is one line.
        Outside #app on purpose: #app goes inert under a takeover or a sheet, and
        Exit must still answer. #preview-bar-sub is a text slot (default "Nothing
-       you tap is saved"). Both ship hidden; nothing here is persisted (never the role, never the
-       auth hint), so a reload is always the director's own view. -->
+       you tap is sent"). Both ship hidden and app.js's previewPaint() shows them; nothing
+       here is persisted (never the role, never the auth hint), so a reload is always
+       the director's own view. -->
   <div id="preview-bar" class="pv-bar" role="region" aria-label="Counselor preview" hidden>
     <span class="pv-ico" aria-hidden="true"><svg class="ico"><use href="#i-eye"/></svg></span>
-    <span class="pv-text"><span class="pv-title">Previewing as a counselor</span><span class="pv-sub" id="preview-bar-sub">Nothing you tap is saved</span></span>
+    <span class="pv-text"><span class="pv-title">Previewing as a counselor</span><span class="pv-sub" id="preview-bar-sub">Nothing you tap is sent</span></span>
     <button type="button" class="pv-exit" id="preview-exit">Exit</button>
   </div>
   <i id="preview-frame" class="pv-frame" aria-hidden="true" hidden></i>
@@ -1253,7 +1254,7 @@
           </button>
           <button type="button" class="gl-row" id="counselors-row" data-more-row="counselors-see">
             <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-eye"/></svg></span>
-            <span class="gl-text"><span class="gl-title">What counselors see</span><span class="gl-sub">Which sections counselors can open</span></span>
+            <span class="gl-text"><span class="gl-title">What counselors see</span><span class="gl-sub">Sections on or off · preview</span></span>
             <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
           </button>
           <button type="button" class="gl-row" id="builder-row" data-more-row="builder">
@@ -2141,12 +2142,12 @@
             <span class="gl-text"><span class="gl-title">Standings and points</span><span class="gl-sub">Secret until you reveal them</span></span>
           </div>
         </div>
-        <!-- Preview as a counselor (redesign §7.4; Step 24 un-hides it when the
-             preview is wired). A plain chunky button, not gold: it changes what
-             THIS phone shows, nobody else's. -->
-        <div class="cs-preview" id="counselors-preview" hidden>
+        <!-- Preview as a counselor (redesign §7.4; wired in app.js, "Preview as a
+             counselor"). A plain chunky button, not gold: it changes what THIS
+             phone shows, nobody else's. -->
+        <div class="cs-preview" id="counselors-preview">
           <button type="button" class="btn btn-block cs-preview-btn" id="counselors-preview-btn"><svg class="ico" aria-hidden="true"><use href="#i-eye"/></svg>Preview as a counselor</button>
-          <p class="setup-note">This phone shows the app the way counselors see it, until you tap Exit. Nothing you tap is saved.</p>
+          <p class="setup-note">This phone shows the app the way counselors see it, until you tap Exit. Nothing you tap is sent to anyone.</p>
         </div>
       </div>
     </div>

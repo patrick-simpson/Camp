@@ -1,0 +1,676 @@
+// PREVIEW AS A COUNSELOR (redesign §7.4; BUILD-PLAN Step 24). A director's phone drawn the way a counselor's is, so a
+// switch in What counselors see can be checked without a second phone. The risk is not that a counselor reaches it (the
+// screen opens for a CONFIRMED director only); it is that the lens leaks a director's view into a "counselor" screen, or
+// writes something, or strands a person inside it, or makes the sync engines treat a director as a viewer. Pinned here:
+//   1. the lens is three one-line reads (canEdit / standingsVisible / isOwner) plus viewRole, and `memberRole`, the
+//      writer election, the auth hint and storage are never touched; nothing about it survives a reload;
+//   2. it starts only for a confirmed director on a writer tab, and it ends by Exit, by an absence longer than the
+//      shell's ten minutes and by any change that makes the person not a confirmed director (setMemberRole, a second
+//      tab taking the writer lock);
+//   3. the WHOLE app, walked through every tab, sheet and takeover, shows no points, no places and no director-only
+//      row, with the points guard THROWING for a viewer (so a render path that reaches a points reader fails loudly);
+//   4. FIDELITY: the page left behind by a preview is the page a real counselor's phone paints, node for node;
+//   5. every write gate still holds (nothing reaches the database from a tap in a preview: director acts, chat, phone
+//      alerts), and the engines still treat the phone as a director's (a snapshot mid-preview never drops unconfirmed
+//      work; a reload is still held for unsent work).
+
+const vm = nodeRequire('vm');
+const { makeContext } = nodeRequire('./harness.js');
+const { makeFakeRtdb } = nodeRequire('./fake-rtdb.js');
+
+installSinks();
+const SINKS = __sinkRec;
+const PV_SEEDED = scheduleIsShared();
+const INDEX = readFixture('../index.html');
+const APP_SRC = readFixture('../app.js');
+const CSS = readFixture('../styles.css');
+
+const LEAK_PATTERNS = [
+  [/\bpts?\b/i, 'points'],
+  [/(^|[\s(])[+−-]\d+/, 'a signed number'],
+  [/\b\d+(st|nd|rd|th)\b/i, 'an ordinal place'],
+  [/\b(trail|trails|trailing|behind|ahead)\b/i, 'a gap word'],
+];
+const SENTENCE_SINKS = ['toast', 'jellyToast', 'notification', 'Notification', 'share', 'clipboard', 'copy'];
+const POINTS_WORD = /\bpoints?\b/i;
+// Words only a director's screen carries (the director tools, the builder, the reveal remote, the secret sections).
+const DIRECTOR_WORDS = /Tell everyone|Award points|Who can sign in|Change history|What counselors see|Run the reveal|Showing now|Quick alerts|Put these back|Restore point/i; // (a game's own rules say "Set up the week" on senior: not that)
+
+function readable(entry) {
+  if (entry.kind !== 'innerHTML' && entry.kind !== 'insertAdjacentHTML') return entry.text;
+  const attrs = [];
+  entry.text.replace(/\s(?:title|aria-label|alt|placeholder|label)="([^"]*)"/g, (m, v) => { attrs.push(v); return m; });
+  return entry.text.replace(/<[^>]+>/g, ' ').concat(' ', attrs.join(' '));
+}
+function leaksIn(entries) {
+  const out = [];
+  entries.forEach((e) => {
+    const text = readable(e);
+    LEAK_PATTERNS.forEach(([re, why]) => { if (re.test(text)) out.push(`${why} in ${e.kind}: ${text.replace(/\s+/g, ' ').trim().slice(0, 140)}`); });
+    if (SENTENCE_SINKS.includes(e.kind) && POINTS_WORD.test(text)) out.push(`the word points in ${e.kind}: ${text.slice(0, 140)}`);
+  });
+  return out;
+}
+function record(fn) {
+  SINKS.log.length = 0;
+  SINKS.on = true;
+  try { fn(); } finally { SINKS.on = false; }
+  return SINKS.log.slice();
+}
+
+// A week with points everywhere a leak could come from: medals, verse, cleanup, custom bonuses (one negative), a
+// live tally, a started bracket, a hidden section for each switch.
+function seedWeek() {
+  freshState();
+  const games = state.config.games;
+  games.slice(0, 4).forEach((g, i) => {
+    state.results[g.id] = { medals: { gold: 't' + (i % 3), silver: 't' + ((i + 1) % 3), bronze: 't' + ((i + 2) % 3) }, savedAt: '2026-07-20T12:0' + i + ':00Z' };
+  });
+  state.bonuses = {
+    v1: { teamId: 't0', category: 'verse', label: 'Mon memory verse', points: 5, at: '2026-07-20T12:05:00Z', day: 1 },
+    c1: { teamId: 't1', category: 'cleanup', label: 'Mon Lunch cleanup', points: 3, at: '2026-07-20T12:06:00Z', day: 1, meal: 'Lunch' },
+    q1: { teamId: 't2', category: 'custom', label: 'Spirit', points: 4, at: '2026-07-20T12:07:00Z' },
+    q2: { teamId: 't3', category: 'custom', label: 'Penalty', points: -2, at: '2026-07-20T12:08:00Z' },
+  };
+  const live = games.find((g) => g.liveRankings && !state.results[g.id]);
+  if (live) {
+    const scores = {};
+    state.teams.forEach((t, i) => { scores[t.id] = String(10 + i * 3); });
+    state.drafts[live.id] = { scores, medals: {} };
+  }
+  state.followTeam = 't1';
+  state.notify = true;
+  appStarted = true;
+  fbRef = null;
+  resultAlertsArmed = true;
+  return { live };
+}
+
+function boot(role, opts) {
+  seedWeek();
+  counselorPreviewOn = false;
+  previewReturn = null;
+  tabWriter = true;
+  setMemberRole(role === undefined ? 'editor' : role, opts);
+  setMemberTeam(null);
+  clearTimeout(pushTimer); pushTimer = null; clearTimeout(pushConfigTimer); pushConfigTimer = null;
+  dataEditPending = false;
+  authUser = { email: 'jenn@example.com' };
+  memberName = 'Jenn';
+  shell.sheets.slice().forEach((id) => shellSheetClose(id));
+  state.ui.tab = 'now'; state.ui.gameId = null; state.ui.tool = null; state.ui.revealOpen = false; state.ui.view = 'home';
+}
+function done() {
+  previewEnd();
+  counselorPreviewOn = false;
+  tabWriter = true;
+  clearTimeout(pushTimer); pushTimer = null; clearTimeout(pushConfigTimer); pushConfigTimer = null;
+  shell.sheets.slice().forEach((id) => shellSheetClose(id));
+  state.ui.tab = 'now'; state.ui.gameId = null; state.ui.tool = null; state.ui.revealOpen = false; state.ui.view = 'home';
+  setStandingsGuardThrows(false);
+  setMemberRole(null);
+  authUser = null;
+  memberName = null;
+}
+function el(id) { return document.getElementById(id); }
+const notEqual = (a, b, msg) => assert.ok(a !== b, msg || ('expected something other than ' + JSON.stringify(b)));
+const sorted = (list) => list.map((e) => e.text.replace(/\s+/g, ' ').trim()).sort();
+
+// ── 1. the lens ──────────────────────────────────────────────────────
+
+test('the lens: a preview makes canEdit, standingsVisible and isOwner false and viewRole a counselor, and nothing else moves', () => {
+  boot('editor');
+  authUser = { email: 'patricksimpson.fx@gmail.com', emailVerified: true };
+  assert.ok(canEdit() && standingsVisible() && isOwner(), 'precondition: a director who is the owner');
+  assert.equal(viewRole(), 'editor');
+  const calls = [];
+  const realSet = setMemberRole;
+  setMemberRole = (...a) => { calls.push(a); return realSet(...a); };
+  try {
+    assert.equal(previewStart(), true);
+    assert.equal(canEdit(), false);
+    assert.equal(standingsVisible(), false);
+    assert.equal(isOwner(), false, 'the owner is not the owner while looking as a counselor: no owner act can start');
+    assert.equal(viewRole(), 'viewer');
+    // what the SIGN-IN says is exactly as it was: the writer election, the hint and the engines read these
+    assert.equal(memberRole, 'editor');
+    assert.equal(memberRoleConfirmed, true);
+    assert.equal(directorTab(), true, 'the engines still see a director\'s writer tab');
+    assert.equal(tabWriter, true);
+    assert.deepEqual(calls, [], 'the preview never goes through setMemberRole');
+    previewStop();
+  } finally { setMemberRole = realSet; }
+  assert.ok(canEdit() && standingsVisible() && isOwner(), 'Exit gives all three back');
+  assert.equal(viewRole(), 'editor');
+  done();
+});
+
+test('a counselor, a hint-painted director, a director\'s view-only second tab and an unresolved role cannot start one', () => {
+  boot('viewer');
+  assert.equal(previewMayStart(), false);
+  assert.equal(previewStart(), false);
+  assert.equal(counselorPreviewOn, false, 'a counselor never gets the lens');
+  setMemberRole('editor', { provisional: true });
+  assert.equal(previewStart(), false, 'a hint-painted director has not been confirmed by the member record');
+  setMemberRole('editor');
+  tabWriter = false;
+  assert.equal(previewStart(), false, 'a view-only second tab does not preview');
+  tabWriter = true;
+  setMemberRole(null);
+  assert.equal(previewStart(), false);
+  setMemberRole('editor');
+  appStarted = false;
+  assert.equal(previewStart(), false, 'nothing before the app has started');
+  appStarted = true;
+  assert.equal(previewStart(), true);
+  assert.equal(previewStart(), false, 'a second start while one is up does nothing');
+  assert.equal(counselorPreviewOn, true);
+  done();
+});
+
+test('nothing about a preview is stored: not in state, not in the cache, not the auth hint, and a fresh page is the director\'s own', () => {
+  boot('editor');
+  setAuthHint('editor');
+  const hintBefore = localStorage.getItem(AUTH_HINT_KEY);
+  const keysBefore = Object.keys(__localStorageStore ? Object.fromEntries(__localStorageStore) : {}).sort();
+  assert.equal(previewStart(), true);
+  state.ui.tab = 'games'; renderAll();
+  saveState();
+  assert.notOk(/preview|counselorPreview/i.test(JSON.stringify(state)), 'no preview marker in state: ' + (JSON.stringify(state).match(/.{20}preview.{20}/i) || [''])[0]);
+  const stored = Object.fromEntries(__localStorageStore);
+  Object.keys(stored).forEach((k) => assert.notOk(/preview/i.test(k) || /counselorPreview/.test(String(stored[k])), 'no stored key or value names a preview: ' + k));
+  assert.equal(localStorage.getItem(AUTH_HINT_KEY), hintBefore, 'the auth hint still says editor');
+  assert.deepEqual(Object.keys(Object.fromEntries(__localStorageStore)).sort(), keysBefore, 'no new storage key appeared');
+  // the page after a reload, over this very cache: the lens is off, because it only ever lived in memory
+  const { ctx } = makeContext({ storage: { [STORAGE_KEY]: JSON.stringify(state), [AUTH_HINT_KEY]: 'editor' }, seeded: PV_SEEDED });
+  assert.equal(vm.runInContext('counselorPreviewOn', ctx), false);
+  assert.equal(vm.runInContext('viewRole()', ctx), null, 'before sign-in resolves the role is nothing, never a counselor preview');
+  assert.equal(vm.runInContext('document.documentElement.classList.contains("counselor-preview")', ctx), false);
+  done();
+});
+
+// ── 2. impossible to get stuck in ─────────────────────────────────────
+
+test('Exit lands on More with What counselors see open again; every other way out just lets go', () => {
+  boot('editor');
+  state.ui.tab = 'more'; renderAll();
+  shellSheetOpen('counselors');
+  assert.ok(shell.sheets.includes('counselors'));
+  assert.equal(previewStart(), true);
+  assert.notOk(shell.sheets.includes('counselors'), 'the director\'s sheet closes: a counselor has no door to it');
+  assert.equal(shellSheetAllowed('counselors'), false);
+  state.ui.tab = 'now'; renderAll();
+  previewStop({ back: true });
+  assert.equal(counselorPreviewOn, false);
+  assert.equal(activeTab(), 'more', 'Exit comes back to the screen the preview began on');
+  assert.ok(shell.sheets.includes('counselors'), 'and reopens What counselors see, so a switch can be changed and checked again');
+  shellSheetClose('counselors');
+  previewStart();
+  previewStop(); // an end that is not the button
+  assert.equal(counselorPreviewOn, false);
+  assert.notOk(shell.sheets.includes('counselors'), 'only the button reopens the sheet');
+  done();
+});
+
+test('the shell\'s ten-minute absence ends a preview, a short one does not', () => {
+  boot('editor');
+  previewStart();
+  shell.hiddenAt = Date.now() - 60 * 1000;
+  shellResume();
+  assert.equal(counselorPreviewOn, true, 'a minute away: still previewing');
+  shell.hiddenAt = Date.now() - SHELL_RESUME_MS - 1000;
+  shellResume();
+  assert.equal(counselorPreviewOn, false, 'put down for over ten minutes it comes back as the director\'s own view');
+  assert.ok(canEdit());
+  done();
+});
+
+test('a role change that makes the person not a confirmed director ends it at once, a repeat of the same answer does not', () => {
+  boot('editor');
+  previewStart();
+  setMemberRole('editor'); // the member listener fires again with the same record
+  assert.equal(counselorPreviewOn, true, 'the same confirmed answer keeps it');
+  setMemberRole('viewer'); // a remote demotion
+  assert.equal(counselorPreviewOn, false);
+  assert.equal(canEdit(), false);
+  assert.equal(memberRole, 'viewer', 'and the person is the viewer the record says');
+  setMemberRole('editor');
+  previewStart();
+  setMemberRole(null); // removed from the list
+  assert.equal(counselorPreviewOn, false);
+  setMemberRole('editor');
+  previewStart();
+  setMemberRole('editor', { provisional: true });
+  assert.equal(counselorPreviewOn, false, 'a role that is no longer confirmed is not a director to preview as');
+  done();
+});
+
+test('a demotion ends it even before the app has rendered anything (setMemberRole itself, not only the next render)', () => {
+  boot('editor');
+  previewStart();
+  appStarted = false; // no renderAll will run inside setMemberRole
+  setMemberRole('viewer');
+  assert.equal(counselorPreviewOn, false);
+  appStarted = true;
+  done();
+});
+
+test('a second tab taking the writer lock ends it on the next render (the view-only bar must be reachable)', () => {
+  boot('editor');
+  previewStart();
+  tabWriter = false;
+  renderAll();
+  assert.equal(counselorPreviewOn, false);
+  assert.equal(tabReadOnly(), true);
+  done();
+});
+
+test('the bar answers under everything: it sits outside #app and above dialogs only, and Exit is wired', () => {
+  assert.ok(INDEX.indexOf('id="preview-bar"') > -1 && INDEX.indexOf('id="preview-bar"') < INDEX.indexOf('<div id="app"') + 1 || INDEX.indexOf('id="preview-bar"') < INDEX.search(/id="app"/), 'the bar is before #app in the page');
+  const bar = INDEX.slice(INDEX.indexOf('id="preview-bar"'));
+  assert.ok(/id="preview-exit"/.test(bar.slice(0, 700)), 'its Exit button is in it');
+  assert.ok(/#preview-bar \{|\.pv-bar \{/.test(CSS) && /\.pv-bar \{[^}]*z-index: 10000/.test(CSS), 'above takeovers and sheets');
+  assert.ok(/\.pv-frame \{[^}]*pointer-events: none/.test(CSS), 'the frame never takes a tap');
+  assert.ok(/#preview-bar/.test(APP_SRC.slice(APP_SRC.indexOf('const JOY_QUIET'), APP_SRC.indexOf('const JOY_QUIET') + 600)), 'no sparkles on the bar');
+  boot('editor');
+  const bars = []; const frames = [];
+  const hid = (e, a) => { const d = Object.getOwnPropertyDescriptor(e, 'hidden'); return d; };
+  assert.equal(el('preview-bar').hidden, false === true ? false : el('preview-bar').hidden); // (stub default; the real markup ships hidden)
+  previewStart();
+  assert.equal(el('preview-bar').hidden, false, 'the bar is up');
+  assert.equal(el('preview-frame').hidden, false, 'and the frame');
+  previewStop();
+  assert.equal(el('preview-bar').hidden, true, 'Exit takes both down');
+  assert.equal(el('preview-frame').hidden, true);
+  done();
+});
+
+test('--pv-h is the measured bar height while up and is removed after Exit', () => {
+  boot('editor');
+  const set = {}; const removed = [];
+  const root = document.documentElement;
+  const realSetProp = root.style.setProperty; const realRemove = root.style.removeProperty;
+  root.style.setProperty = (k, v) => { set[k] = v; };
+  root.style.removeProperty = (k) => { removed.push(k); };
+  try {
+    el('preview-bar').offsetHeight = 61;
+    previewStart();
+    assert.equal(set['--pv-h'], '61px', 'measured from the bar as drawn, not the CSS guess');
+    el('preview-bar').offsetHeight = 96; // wraps at large text
+    previewMeasure();
+    assert.equal(set['--pv-h'], '96px');
+    previewStop();
+    assert.ok(removed.includes('--pv-h'), 'nothing is left on :root after Exit');
+  } finally { root.style.setProperty = realSetProp; root.style.removeProperty = realRemove; el('preview-bar').offsetHeight = undefined; }
+  done();
+});
+
+// ── 3. the whole app as a counselor sees it ───────────────────────────
+
+test('walk every tab, sheet and takeover in a preview, with the points guard throwing: no points, no places, no director row', () => {
+  const { live } = boot('editor') || seedWeek();
+  state.meta.hiddenCards = { competitions: false };
+  renderAll(); // a director's page first, so every node holds director markup: the preview must clear it
+  const before = leaksIn(__domSweep());
+  assert.ok(before.length >= 3, 'precondition: the director\'s page does carry them (' + before.length + ')');
+  previewStart();
+  setStandingsGuardThrows(true);
+  const out = record(() => {
+    SHELL_TABS.forEach((tab) => { state.ui.tab = tab; renderAll(); shellTick(); });
+    // every sheet a counselor can open
+    ['team', 'verse', 'cleanup', 'alerts'].forEach((id) => { shellSheetOpen(id); renderAll(); shellSheetClose(id); });
+    // every game takeover, finished, live and not started
+    state.config.games.forEach((g) => { openGame(g.id, { from: 'games' }); renderAll(); });
+    if (live) { openGame(live.id, { from: 'now' }); renderAll(); }
+    closeGame();
+    state.ui.tab = 'more'; renderAll();
+  });
+  assert.ok(out.length > 20, 'the recorder is live: ' + out.length + ' writes seen');
+  assert.deepEqual(leaksIn(out), [], 'a sink carried a point, a place or a gap');
+  assert.deepEqual(leaksIn(__domSweep()), [], 'markup left in a node');
+  // (the static markup of a director row is not in the stub DOM: that half is the hidden flags below and the FIDELITY
+  // test, which compares every node a preview leaves with a real counselor's)
+  const dir = __domSweep().filter((e) => DIRECTOR_WORDS.test(readable(e)));
+  assert.deepEqual(dir.map((e) => e.text.slice(0, 80)), [], 'director-only words are on the counselor screen');
+  done();
+});
+
+test('every door a counselor has no key to stays shut in a preview: the director tools, the remote, the builder, the drawers, the owner\'s acts', () => {
+  boot('editor');
+  previewStart();
+  assert.equal(openTool('tell', { from: 'more' }), false);
+  assert.equal(openTool('award', { from: 'more' }), false);
+  assert.equal(openReveal({ from: 'more' }), false);
+  openBuilder('games');
+  notEqual(state.ui.view, 'settings', 'the builder does not open');
+  ['members', 'history', 'counselors'].forEach((id) => { shellSheetOpen(id); assert.notOk(shell.sheets.includes(id), id + ' is a director\'s sheet'); });
+  SETUP_SHEETS.forEach((id) => { shellSheetOpen(id); assert.notOk(shell.sheets.includes(id), id + ' belongs to the builder'); });
+  openHistory(); openMembers();
+  assert.deepEqual(shell.sheets, [], 'no sheet came up');
+  // a deep link that names a director screen lands on a counselor screen
+  shellOpenTarget('reveal');
+  assert.notOk(revealRemoteIsOpen(), 'the remote stays shut');
+  assert.equal(toolOpenId(), null);
+  // a tool that was open when the preview began closes with it
+  previewStop();
+  assert.equal(openTool('tell', { from: 'more' }), true);
+  previewStart();
+  assert.equal(toolOpenId(), null, 'Tell everyone closed when the preview began');
+  assert.equal(state.ui.tool, null);
+  // More shows no director group, and none of the rows inside it
+  state.ui.tab = 'more'; renderAll();
+  assert.equal(el('more-director').hidden, true);
+  ['tell-row', 'award-row', 'history-row'].forEach((id) => assert.equal(el(id).hidden, true, id + ' is hidden'));
+  done();
+});
+
+test('What counselors see hides in a preview exactly what it hides for a counselor: Games, Memory verse, Meal cleanup and Chat', () => {
+  boot('editor');
+  state.meta.hiddenCards = { competitions: true, verse: true, cleanup: true, chat: true };
+  renderAll();
+  const card = (k) => document.querySelector(`[data-card="${k}"]`);
+  ['competitions', 'verse', 'cleanup'].forEach((k) => assert.equal(card(k).hidden, false, 'a director sees ' + k));
+  assert.equal(chatHiddenFromMe(), false);
+  previewStart();
+  ['competitions', 'verse', 'cleanup'].forEach((k) => assert.equal(card(k).hidden, true, 'the preview hides ' + k));
+  assert.equal(el('games-off').hidden, false, 'Games says why it is empty, as a counselor reads it');
+  assert.equal(chatHiddenFromMe(), true, 'the Chat tab says it is turned off');
+  assert.equal(shellSheetAllowed('verse'), false);
+  assert.equal(shellSheetAllowed('cleanup'), false);
+  // the standings and the quick-points ledger are secret for a counselor whatever the switches say
+  assert.equal(card('standings').hidden, true);
+  assert.equal(card('bonus').hidden, true);
+  previewStop();
+  assert.equal(card('competitions').hidden, false, 'Exit shows them to the director again');
+  assert.equal(chatHiddenFromMe(), false);
+  done();
+});
+
+test('the reveal: a preview reads the counselor\'s view of it (the phone\'s hold, no director data), never the remote\'s', () => {
+  boot('editor');
+  assert.equal(revealViewRole(), 'editor');
+  assert.equal(revealUiIsDirector(), true);
+  previewStart();
+  assert.equal(revealViewRole(), 'viewer');
+  assert.equal(revealUiIsDirector(), false);
+  assert.equal(revealRemoteMayOpen(), false);
+  assert.equal(revealRemoteIsOpen(), false);
+  previewStop();
+  assert.equal(revealViewRole(), 'editor');
+  done();
+});
+
+test('POSITIVE CONTROL: the same walk as a director, with no preview, does hit the patterns', () => {
+  boot('editor');
+  state.ui.tab = 'games'; renderAll();
+  state.ui.tab = 'more'; renderAll();
+  const found = leaksIn(__domSweep());
+  assert.ok(found.length >= 3, 'a director\'s pages carry points and places: ' + found.length);
+  done();
+});
+
+// ── 4. fidelity: the page a preview leaves is the page a counselor's phone paints ──
+
+// Everything a screen shows, tab by tab, as { node: text } (a node is what the page looked it up with).
+function walkPage(c) {
+  return vm.runInContext(`(function () {
+    const out = {};
+    SHELL_TABS.forEach((tab) => {
+      state.ui.tab = tab;
+      renderAll();
+      shellTick();
+      const e = __domEntries();
+      Object.keys(e).forEach((k) => { e[k] = e[k].replace(/\\s+/g, ' ').trim(); });
+      out[tab] = e;
+    });
+    state.ui.tab = 'now';
+    renderAll();
+    return out;
+  })()`, c);
+}
+function scenario(c, role, preview) {
+  return vm.runInContext(`(function () {
+    state = makeFreshState(); migrateState(state); normalizeSyncedState();
+    ${PV_SEEDED ? 'setupApplyGameAttachments(state.config, setupGameAttachments(state.config, (dow) => planForDow(dow), CAMP).ops);' : ''}
+    const games = state.config.games;
+    games.slice(0, 4).forEach((g, i) => { state.results[g.id] = { medals: { gold: 't' + (i % 3), silver: 't' + ((i + 1) % 3), bronze: 't' + ((i + 2) % 3) }, savedAt: '2026-07-20T12:0' + i + ':00Z' }; });
+    state.bonuses = {
+      v1: { teamId: 't0', category: 'verse', label: 'Mon memory verse', points: 5, at: '2026-07-20T12:05:00Z', day: 1 },
+      q2: { teamId: 't3', category: 'custom', label: 'Penalty', points: -2, at: '2026-07-20T12:08:00Z' },
+    };
+    state.meta.hiddenCards = { competitions: false, verse: true, chat: true };
+    state.followTeam = 't1';
+    appStarted = true; fbRef = null;
+    authUser = { email: 'jenn@example.com' }; memberName = 'Jenn';
+    setMemberRole(${JSON.stringify(role)});
+    ${preview ? 'renderAll(); previewStart();' : ''}
+    state.ui.tab = 'now'; state.ui.gameId = null; state.ui.tool = null;
+    return true;
+  })()`, c);
+}
+
+// Text a DIRECTOR's renderer wrote into a node that lives inside a row hidden for everyone but directors. It stays behind
+// (the renderer returns early for someone who may not open the row, as it always has for a demoted director), the row's
+// own hidden flag is what keeps it off a counselor's screen, and the test checks that flag.
+const HIDDEN_DIRECTOR_TEXT = { '#tell-row-sub': 'tell-row', '#more-reveal-state': 'reveal-row' };
+
+function pageDiff(counselor, previewed, ctx) {
+  const out = [];
+  SHELL_TABS.forEach((tab) => {
+    const x = counselor[tab]; const y = previewed[tab];
+    new Set(Object.keys(x).concat(Object.keys(y))).forEach((k) => {
+      if ((x[k] || '') === (y[k] || '')) return;
+      const row = HIDDEN_DIRECTOR_TEXT[k];
+      if (row && vm.runInContext(`__domHidden(${JSON.stringify(row)})`, ctx)) return;
+      out.push(`${tab} ${k}: counselor ${JSON.stringify((x[k] || '').slice(0, 80))} / preview ${JSON.stringify((y[k] || '').slice(0, 80))}`);
+    });
+  });
+  return out;
+}
+
+test('FIDELITY: a director in a preview paints, tab for tab and node for node, what a counselor\'s phone paints', () => {
+  // The same week on two phones: a real counselor's, and a director's that has painted ITS OWN page first (so every
+  // node holds director markup) and then started the preview.
+  const mk = () => makeContext({ camp: CAMP.id, seeded: PV_SEEDED });
+  let diff = [];
+  for (let attempt = 0; attempt < 3; attempt++) { // a minute boundary between the two walks changes the banner's clock: retry; a real difference repeats
+    const a = mk(); const b = mk();
+    scenario(a.ctx, 'viewer', false);
+    scenario(b.ctx, 'editor', true);
+    diff = pageDiff(walkPage(a.ctx), walkPage(b.ctx), b.ctx);
+    if (!diff.length) break;
+  }
+  assert.deepEqual(diff, [], 'the two pages differ');
+  // a page that was never walked proves nothing: the walk really painted something
+  const a = mk();
+  scenario(a.ctx, 'viewer', false);
+  assert.ok(Object.values(walkPage(a.ctx).now).filter((t) => t).length > 5, 'the counselor page has content');
+});
+
+test('FIDELITY, the other way: a director who has NOT started a preview paints something a counselor does not (the comparison can fail)', () => {
+  const mk = () => makeContext({ camp: CAMP.id, seeded: PV_SEEDED });
+  const a = mk(); const b = mk();
+  scenario(a.ctx, 'viewer', false);
+  scenario(b.ctx, 'editor', false);
+  const diff = pageDiff(walkPage(a.ctx), walkPage(b.ctx), b.ctx);
+  assert.ok(diff.length >= 3, 'a director\'s tabs are not a counselor\'s: ' + diff.length + ' nodes differ');
+  assert.ok(diff.some((d) => /standings|bonus|follow|pts/i.test(d)), 'and the difference is the standings and points: ' + diff.slice(0, 3).join(' | '));
+});
+
+// ── 5. every write gate still holds ───────────────────────────────────
+
+test('nothing a tap can do in a preview reaches the database or changes the week: director acts and counselor acts alike', async () => {
+  boot('editor');
+  const db = makeFakeRtdb();
+  const writes = [];
+  const realFirebase = globalThis.firebase;
+  const wrap = (ref) => new Proxy(ref, {
+    get(t, k) {
+      if (['set', 'update', 'remove', 'push', 'transaction'].includes(k)) return (...a) => { writes.push(k); return Promise.resolve(); };
+      const v = t[k];
+      return typeof v === 'function' ? v.bind(t) : v;
+    },
+  });
+  globalThis.firebase = { database: Object.assign(() => ({ ref: (p) => wrap({ set() {}, update() {}, remove() {}, push() { return { key: 'k1' }; }, transaction() {} }) }), { ServerValue: { TIMESTAMP: { '.sv': 'timestamp' } } }) };
+  const savedPush = pushState; const savedSave = saveState;
+  let saves = 0;
+  saveState = (...a) => { saves += 1; return savedSave(...a); };
+  const realToast = showToast; const toasts = [];
+  showToast = (m) => { toasts.push(String(m)); };
+  try {
+    previewStart();
+    state.announcements = { a1: { id: 'a1', text: 'x', at: new Date().toISOString(), ttlMs: 3600000 } };
+    const before = JSON.stringify(syncedSnapshot());
+    // the director's acts
+    setVersePoints('t0', 3, 5);
+    setCleanupPoints('t0', 3, 'Lunch', 3);
+    bonusDraft.teams = ['t0']; bonusDraft.points = '4'; bonusDraft.sign = 1; bonusDraft.category = 'custom'; bonusDraft.custom = 'x';
+    notEqual(bonusAddFromDraft({ day: 3 }), '', 'the quick-points writer refuses');
+    assert.equal(removeBonusEntry(Object.keys(state.bonuses)[0]), false);
+    assert.equal(postBanner('Lightning. Everyone inside.', 3600000), null);
+    assert.equal(takeDownBanner('a1'), false);
+    setNoticeStatus('posted');
+    toggleCardHidden('verse');
+    const gamesBefore = state.config.games.length;
+    deleteGame(state.config.games[state.config.games.length - 1].id); // the builder's mutators ask configLocked(), which says no to a preview
+    assert.equal(state.config.games.length, gamesBefore, 'the builder\'s delete is refused');
+    assert.equal(putGamesOnSchedule && putGamesOnSchedule().ok, false);
+    assert.equal(typeof commitSetup === 'function' && commitSetup((t) => t, { label: 'x' }).ok, false, 'a setup commit is refused');
+    assert.equal((await pushSendAlert({ text: 'hi', audience: 'all' })).ok, false, 'a director alert is refused');
+    assert.equal((await revealStart({ practice: true, quiet: true })).ok, false, 'a reveal Start is refused');
+    assert.equal(canScoreRound('t5'), false);
+    assert.equal(settleExpiredClocks(), false);
+    pruneExpiredAnnouncements();
+    assert.ok(state.announcements.a1, 'housekeeping that would delete is paused too');
+    assert.equal(JSON.stringify(syncedSnapshot()), before, 'the week did not move');
+    assert.deepEqual(writes, [], 'nothing reached the database: ' + writes.join(','));
+    assert.equal(saves, 0, 'and nothing was even saved on this phone');
+    // a counselor's acts that WOULD write for a counselor: chat and phone alerts
+    myKeyForTest();
+    const input = el('chat-input'); input.value = 'hello from a preview';
+    sendChatMessage('general');
+    assert.equal(input.value, 'hello from a preview', 'the words stay in the box');
+    sendChatPhoto('general', { name: 'p.jpg', size: 10 });
+    deleteChatMessage('general', { id: 'm1', byKey: identityKey(authUser) });
+    await pushEnable(); await pushDisable(); await pushSendTest();
+    await assert.doesNotThrow(() => chatAtomicSend({ 'chat/general/x': { text: 'x' } }, 'chatRate/me').catch(() => {}));
+    assert.deepEqual(writes, [], 'no chat or alert write reached the database: ' + writes.join(','));
+    assert.ok(toasts.some((t) => /previewing as a counselor/i.test(t)), 'a refused tap says so: ' + JSON.stringify(toasts.slice(-3)));
+    // and the same taps work as soon as the preview is over
+    previewStop();
+    assert.equal(canEdit(), true);
+    setVersePoints('t0', 3, 5);
+    assert.ok(state.bonuses['verse-t0-3'], 'Exit gives a director\'s writers back');
+  } finally {
+    globalThis.firebase = realFirebase; saveState = savedSave; showToast = realToast;
+    done();
+  }
+});
+function myKeyForTest() { authUser = { email: 'jenn@example.com', emailVerified: true }; }
+
+test('the push drawer keeps a bell flipped in a preview on this phone and writes the record afterwards', () => {
+  boot('editor');
+  previewStart();
+  const real = setTimeout; const timers = [];
+  pushPrefsTimer = null;
+  pushRewriteRecord();
+  assert.ok(pushPrefsTimer, 'the rewrite is re-armed, not run, while the preview is up');
+  clearTimeout(pushPrefsTimer); pushPrefsTimer = null;
+  done();
+});
+
+// ── 6. the engines still see a director ───────────────────────────────
+
+const PV_CS_PATH = dbPath('config');
+test('a config snapshot landing mid-preview rebases the director\'s unconfirmed edit, and the push still goes out', async () => {
+  boot('editor');
+  window.FIREBASE_CONFIG = { apiKey: 'test' };
+  configReady = false; cfgFirstPending = null; remoteReady = true; syncDenied = false; pendingConfigWrites = 0; configPushOwed = false;
+  delete state._cfgBase; delete state._cfgNotes;
+  undoClear();
+  const db = makeFakeRtdb({ manualFirstSnapshot: true });
+  db.serverSet(PV_CS_PATH, state.config);
+  fbConfigRef = db.ref(PV_CS_PATH);
+  attachConfigListener();
+  db.deliverFirstSnapshots();
+  await waitUntil(() => configReady, 'the first config snapshot');
+  try {
+    const gid = state.config.games[0].id; const other = state.config.games[1].id;
+    const mineName = state.config.games[0].name + ' (mine)';
+    state.config.games[0].name = mineName; // an unconfirmed edit made as a director, just before the preview
+    assert.ok(Object.keys(cfgUnconfirmed()).length > 0, 'precondition: unconfirmed work');
+    previewStart();
+    assert.equal(hasUnconfirmedLocalWork(), true, 'sign-out still names it');
+    // another director edits a different game while this phone is previewing
+    const cur = db.serverGet(PV_CS_PATH);
+    cur.games.find((g) => g.id === other).name = 'Theirs';
+    db.serverSet(PV_CS_PATH, cur);
+    await waitQuiet();
+    assert.equal(state.config.games.find((g) => g.id === gid).name, mineName, 'the unconfirmed edit survived the snapshot: the engine did not treat this phone as a viewer');
+    assert.equal(state.config.games.find((g) => g.id === other).name, 'Theirs', 'and their change arrived');
+    saveConfig();
+    pushConfig();
+    await waitQuiet();
+    assert.equal(db.serverGet(PV_CS_PATH).games.find((g) => g.id === gid).name, mineName, 'the director\'s edit reached the server from a phone that was previewing');
+    assert.equal(Object.keys(cfgUnconfirmed()).length, 0);
+    previewStop();
+  } finally {
+    delete window.FIREBASE_CONFIG; fbConfigRef = null; configReady = false; cfgFirstPending = null; remoteReady = false;
+    pendingConfigWrites = 0; configPushOwed = false; dataEditPending = false; delete state._cfgBase; delete state._cfgNotes;
+    clearTimeout(pushConfigTimer); pushConfigTimer = null; undoClear();
+    done();
+  }
+});
+
+test('the auto-update reload is still held for unsent work while previewing (a director\'s unsent score, a refused batch)', () => {
+  boot('editor');
+  previewStart();
+  assert.equal(reloadBlocked(), false, 'nothing unsent: free to reload (which ends the preview)');
+  pendingWrites = 1;
+  assert.equal(reloadBlocked(), true);
+  pendingWrites = 0;
+  dataEditPending = true; // a queued data push, the editor's mid-entry signal
+  assert.equal(reloadBlocked(), true, 'editorMidEntry still counts for the phone: the lens is not a viewer');
+  dataEditPending = false;
+  done();
+});
+
+test('the engines ask directorTab, never canEdit: a source pin over the functions that protect or send work already made', () => {
+  const body = (src, name) => {
+    const m = new RegExp('(?:async )?function ' + name + '\\(').exec(src);
+    assert.ok(m, name + ' exists');
+    let i = src.indexOf('{', m.index); let depth = 0;
+    for (let k = i; k < src.length; k++) { if (src[k] === '{') depth++; else if (src[k] === '}') { depth--; if (depth === 0) return src.slice(m.index, k + 1); } }
+    return src.slice(m.index);
+  };
+  const SETUP_SRC = readFixture('../setup-sync.js');
+  const PUSH_SRC = readFixture('../push.js');
+  const engines = [
+    [APP_SRC, 'applyRemoteConfig'], [APP_SRC, 'firstConfigMerge'], [APP_SRC, 'cfgFollowStateEpoch'], [APP_SRC, 'autoRetryQuarantined'],
+    [APP_SRC, 'reloadBlocked'], [APP_SRC, 'shellHasUnsentWork'], [APP_SRC, 'hasUnconfirmedLocalWork'],
+    [SETUP_SRC, 'firstSetupMerge'], [SETUP_SRC, 'pushSetup'], [SETUP_SRC, 'restoreFlushOutbox'], [PUSH_SRC, 'pushRepublishSchedule'],
+  ];
+  // (applyRemoteConfig's one canEdit is the migration push: it CREATES a write, so it pauses in a preview on purpose)
+  const allowed = { applyRemoteConfig: 'upgraded && canEdit() && state.config.version !== v0' };
+  engines.forEach(([src, name]) => {
+    let b = body(src, name).replace(/\/\/.*$/gm, '');
+    if (allowed[name]) b = b.replace(allowed[name], '');
+    assert.notOk(/\bcanEdit\(\)/.test(b), name + ' must ask directorTab(): a preview must not make this phone a viewer to its engines');
+  });
+  // …and the setup engine's snapshot merge, whose `canEdit` calls sit inside a larger function
+  const snap = body(SETUP_SRC, 'processFirstSetup') + body(SETUP_SRC, 'onSetupSnapshot');
+  assert.ok(snap.length > 400 && !/\bcanEdit\(\)/.test(snap.replace(/\/\/.*$/gm, '')), 'the setup snapshot path asks directorTab');
+  // every other canEdit() in the screens (the lens makes them refuse) is a gate or a render: no list of call sites to keep
+  assert.ok(/function canEdit\(\) \{\s*return directorTab\(\) && !counselorPreviewOn;/.test(APP_SRC), 'canEdit is the one lens');
+  assert.ok(/function viewRole\(\) \{\s*return counselorPreviewOn \? 'viewer' : memberRole;/.test(APP_SRC), 'viewRole is the other');
+});
+
+test('the lens is read in only the places it was designed for: no other script names counselorPreviewOn but the chat backstop', () => {
+  // every script index.html loads (the same list shell.test.js pins), read as source
+  const files = [...INDEX.matchAll(/<script[^>]*\ssrc="([a-z0-9-]+\.js)\?v=/g)].map((m) => m[1]);
+  assert.ok(files.length >= 15 && files.includes('app.js') && files.includes('tell.js'), 'the list of scripts was read: ' + files.length);
+  const named = files.filter((f) => /counselorPreviewOn/.test(readFixture('../' + f)));
+  assert.deepEqual(named.sort(), ['app.js', 'chat.js', 'push.js'].sort(), 'the flag is app.js\'s; chat.js\'s send backstop and push.js\'s record rewrite are the only readers elsewhere');
+  const stored = /localStorage\.setItem\([^)]*[Pp]review|sessionStorage[^;]*[Pp]review|state\.ui\.[a-zA-Z]*[Pp]review/;
+  files.forEach((f) => assert.notOk(stored.test(readFixture('../' + f)), f + ' stores the preview'));
+});

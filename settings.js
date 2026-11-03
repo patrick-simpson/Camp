@@ -109,6 +109,9 @@ function renderConfigLoading(card, key) {
 // Delete, Delete day, Restore defaults, Import, the ⚡ quick game). The loading
 // card above hides their controls, so this only catches a stale handler.
 function configLocked() {
+  // The builder is a director's screen and its mutators ask here first: nothing in it writes for a phone that may not
+  // act as a director (a counselor preview included), whatever stale handler asks.
+  if (!canEdit()) return true;
   if (configEditable()) return false;
   showToast('The games list is still loading — try again in a moment.');
   return true;

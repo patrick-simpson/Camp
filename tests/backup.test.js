@@ -125,7 +125,8 @@ test('restoring the default catalog keeps the teams and their scores', () => {
   });
   state.results['my-custom-game'] = { medals: { gold: 't1', silver: 't0', bronze: 't2' } };
 
-  restoreDefaults();
+  setMemberRole('editor'); // the builder's restore is a director's act: configLocked() refuses anyone else (and a counselor preview)
+  try { restoreDefaults(); } finally { setMemberRole(null); }
 
   assert.equal(state.teams.length, 6, 'teams are kept');
   assert.notOk(state.config.games.some((g) => g.id === 'my-custom-game'), 'the custom game is gone');

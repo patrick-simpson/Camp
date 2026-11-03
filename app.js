@@ -84,6 +84,11 @@ const THEME_HINT_KEY = 'campScoreboardTheme'; // 'light' | 'dark'
 
 let authUser = null;       // firebase.auth() user, once signed in
 let memberRole = null;     // 'viewer' | 'editor' | null (not resolved / not approved)
+// Preview as a counselor (redesign §7.4, Step 24): a director's phone shown the app the way a counselor's phone
+// renders it. MEMORY ONLY (never in state, never in storage, never the role or the auth hint: a reload is always
+// the director's own view) and declared up here beside memberRole because canEdit() reads it at load time.
+// See "Preview as a counselor" below for the lens (viewRole, directorTab, canEdit, standingsVisible, isOwner).
+let counselorPreviewOn = false;
 // True only once the member record itself has answered for this role. A role
 // painted from a device-stored hint (boot) is provisional: it can paint the
 // shell, but standingsVisible() waits for the answer (see setMemberRole).
@@ -116,6 +121,9 @@ function setMemberRole(role, opts) {
   // A device that stops being an editor keeps no undo history: it could not use it,
   // and the next person to sign in on it must not find the last director's changes.
   if (memberRole === 'editor' && next !== 'editor') undoClear();
+  // A counselor preview belongs to a CONFIRMED director: anything else (demoted, removed, not yet answered) ends it
+  // here, before the role moves, so no render in between draws a half-previewed screen.
+  if (counselorPreviewOn && !(next === 'editor' && confirmed)) previewEnd();
   if (typeof setupOnRoleChange === 'function') setupOnRoleChange(memberRole, next);
   memberRole = next;
   memberRoleConfirmed = confirmed;
@@ -207,8 +215,28 @@ function tabReadOnly() {
   return tabWriter === false;
 }
 
+// The ONE question every screen and every action asks: may this phone act as a director right now? False in a
+// counselor preview (see "Preview as a counselor"), so every gate that already says "directors only" holds there
+// with no second list to keep.
 function canEdit() {
+  return directorTab() && !counselorPreviewOn;
+}
+
+// The same test without the preview: "this tab IS a director's writer tab". Only the ENGINES that protect or send
+// work that already exists ask it — merging a snapshot over unconfirmed edits, pushing them, re-sending a refused
+// batch, holding a reload while something is unsent, naming it at sign-out. A preview changes what the screen
+// shows and what a tap may do; it must never make the engines treat this phone as a viewer, because a viewer's
+// rules are "adopt the server's copy", which would drop a director's unconfirmed week. Code that CREATES a write
+// or offers a director's control asks canEdit() and so pauses while a preview is up.
+function directorTab() {
   return memberRole === 'editor' && tabWriter !== false;
+}
+
+// The role the SCREEN is drawn for: a counselor's while a preview is up, else the member record's. For what the
+// person may SEE (which sections show, which words, which reveal view). Never for what they may DO (canEdit) and
+// never for the sign-in's own bookkeeping (memberRole: the hint, the listeners, the writer election).
+function viewRole() {
+  return counselorPreviewOn ? 'viewer' : memberRole;
 }
 
 // The ONE writer of the cache. A no-op unless this tab owns it; while undecided
@@ -438,15 +466,16 @@ function tabBarHtml() {
 // not enough, because the first frame can paint a director from the device hint
 // before any answer arrives. A hint-painted (provisional) role, a role that has
 // not resolved (null), and an unreachable database are all NOT a director: fail
-// closed. The shell may still paint as a director; the numbers wait. The
-// director-only "Preview as a counselor" switch (a later step) will join it here.
+// closed. The shell may still paint as a director; the numbers wait.
+// A counselor preview (counselorPreviewOn) joins it here: while one is up this says no.
 let standingsGuardThrows = false; // test seam only, off in the browser
 function setStandingsGuardThrows(on) { standingsGuardThrows = !!on; }
 
 function standingsVisible() {
   // The member record's role, not canEdit(): a director's SECOND tab is view-only
   // (see tabWriter) but the person is still a director and still sees standings.
-  return memberRole === 'editor' && memberRoleConfirmed;
+  // A counselor preview is the one exception: it shows what a counselor sees, which is no points and no places.
+  return memberRole === 'editor' && memberRoleConfirmed && !counselorPreviewOn;
 }
 
 function pointsReadAllowed(reader) {
@@ -571,7 +600,7 @@ const OWNER_MEMBER_KEY = 'patricksimpson,fx@gmail,com';
 //   ownerSays(rest)  "Patrick turns on editing." / "The owner turns on editing."
 //               — the sentence every other director sees in place of the button.
 function isOwner() {
-  if (!authUser || memberRole !== 'editor' || !memberRoleConfirmed) return false;
+  if (!authUser || memberRole !== 'editor' || !memberRoleConfirmed || counselorPreviewOn) return false;
   if (authUser.emailVerified === false) return false;
   return identityKey(authUser) === OWNER_MEMBER_KEY;
 }
@@ -3128,6 +3157,7 @@ function cardHiddenFromViewers(card) {
 }
 
 function toggleCardHidden(card) {
+  if (!canEdit()) return; // the switch lives in a director's sheet; the function holds the same line (and a preview's)
   if (!HIDEABLE_CARDS.includes(card) || SECRET_CARDS.includes(card)) return;
   if (!state.meta) state.meta = {};
   const wasHidden = cardHiddenFromViewers(card);
@@ -3150,8 +3180,9 @@ function toggleCardHidden(card) {
 // never surfaces it already on screen.
 function applyCardVisibility() {
   // The person's ROLE, not this tab's write lock (tabWriter): a director's second,
-  // view-only tab still shows every section the first one does.
-  const editor = memberRole === 'editor';
+  // view-only tab still shows every section the first one does. (viewRole, not memberRole: a counselor preview
+  // hides exactly what a counselor's phone hides.)
+  const editor = viewRole() === 'editor';
   const seeStandings = standingsVisible(); // the secret sections follow the confirmed role
   // styles.css shows the footer sync line for a view-only device ONLY while the
   // Current Standings section (which carries the same line) is not on the page — a
@@ -3777,7 +3808,7 @@ function applyRemoteConfig(remote, opts) {
   const remoteCanon = cfgCanon(remote);
   const localCanon = cfgCanon(state.config);
   const base = cfgBaseTree();
-  const mine = opts && opts.mine ? opts.mine : (base && canEdit() ? treeDiff(base, localCanon, CFG_DEPTHS) : {});
+  const mine = opts && opts.mine ? opts.mine : (base && directorTab() ? treeDiff(base, localCanon, CFG_DEPTHS) : {}); // directorTab, not canEdit: a counselor preview must never make this phone drop its unconfirmed edits
   const rebased = applyOpsSafe(remoteCanon, mine, CFG_ANCHORS);
   if (opts && opts.reorder) rebased.tree = opts.reorder(rebased.tree); // the first-snapshot merge settles positions
   applyingRemoteConfig = true;
@@ -3818,7 +3849,7 @@ function applyRemoteConfig(remote, opts) {
 // there is nothing of mine to protect (the caller adopts plainly). Work from an
 // earlier camp year is stranded, never merged; work older than 36 h asks first.
 function firstConfigMerge(remote) {
-  if (!canEdit()) return false; // a viewer / read-only tab has no edits of its own to keep
+  if (!directorTab()) return false; // a viewer / read-only tab has no edits of its own to keep (a preview is not one: see directorTab)
   const base = cfgBaseTree();
   if (!base) return false;
   const baseAt = Number(state._cfgBaseAt) || 0;
@@ -3968,7 +3999,7 @@ function cfgFollowStateEpoch() {
   const was = state._cfgBaseEpoch || '';
   if (was === e) return;
   const localCanon = cfgCanon(state.config);
-  const mine = canEdit() ? treeDiff(base, localCanon, CFG_DEPTHS) : {};
+  const mine = directorTab() ? treeDiff(base, localCanon, CFG_DEPTHS) : {};
   if (Object.keys(mine).length) {
     cfgStrand(mine, localCanon, was, e, Number(state._cfgBaseAt) || 0);
     state.config = cfgFromCanon(base, state.config.updatedAt, state.config);
@@ -5336,7 +5367,7 @@ function pushState() {
       // wedged every score behind it. Every other failure (a dropped connection,
       // an SDK error) and a view-only device's stray diff (nothing a counselor
       // needs to be told about) keep the original quiet handling below.
-      if (e && e.code === 'PERMISSION_DENIED' && canEdit()) { startStateBisect(updates, prevBaseline, settle); return; }
+      if (e && e.code === 'PERMISSION_DENIED' && directorTab()) { startStateBisect(updates, prevBaseline, settle); return; }
       console.warn('sync push failed', e);
       lastSyncedTree = prevBaseline; // re-send these changes (still per-path) next push
       settle();
@@ -5632,7 +5663,7 @@ function scheduleQuarantineAutoRetry() {
 
 function autoRetryQuarantined() {
   const fresh = Object.keys(stateQuarantine).filter((p) => !quarantineAutoRetried[p]);
-  if (!fresh.length || !fbRef || !remoteReady || !canEdit()) return;
+  if (!fresh.length || !fbRef || !remoteReady || !directorTab()) return; // the parked work is the director's, preview or not
   fresh.forEach((p) => { quarantineAutoRetried[p] = true; });
   rebaseQuarantined(fresh);
   pushState();
@@ -5822,7 +5853,7 @@ function updateSyncAlert() {
   // A director's SECOND tab is view-only (tabWriter): the same strip says so and
   // offers the switch. canEdit() is false there, so nothing is ever parked and the
   // two messages can never want the strip at once.
-  const viewOnlyTab = memberRole === 'editor' && tabReadOnly();
+  const viewOnlyTab = viewRole() === 'editor' && tabReadOnly();
   const stateParked = !viewOnlyTab && canEdit() && Object.keys(stateQuarantine).length > 0;
   // A refused path of the week's setup (setup-sync.js) uses the same bar when no score is parked.
   const setupParked = !viewOnlyTab && !stateParked && canEdit() && typeof setupParkedCount === 'function' && setupParkedCount() > 0;
@@ -10768,6 +10799,7 @@ function applyTheme() {
 // and with the pre-paint <meta name="theme-color"> pair in index.html.
 const CHROME_PAPER = { light: '#f5efe2', dark: '#0c1030' };
 const CHROME_ROOF = '#2c47ee';
+const CHROME_INK = { light: '#141a48', dark: '#f3f4ff' }; // the preview bar (styles.css --ink in each theme)
 
 function roofUp() {
   const el = document.querySelector && document.querySelector('.takeover.is-roof:not([hidden])');
@@ -10784,7 +10816,9 @@ function applyChromeColor() {
     meta.id = 'dynamic-theme-color';
     document.head.appendChild(meta);
   }
-  const color = roofUp() ? CHROME_ROOF : CHROME_PAPER[appliedLook === 'dark' ? 'dark' : 'light'];
+  const look = appliedLook === 'dark' ? 'dark' : 'light';
+  // The preview bar is the strongest thing on the screen, so the status bar takes its ink (the bar reaches under it).
+  const color = counselorPreviewOn ? CHROME_INK[look] : roofUp() ? CHROME_ROOF : CHROME_PAPER[look];
   if (meta.content !== color) meta.content = color;
 }
 
@@ -11323,7 +11357,7 @@ function reloadBlocked() {
   // A refused batch being re-sent path by path already counts in pendingWrites;
   // named here too so the union stays readable (see "Refused writes").
   if (stateBisecting) return true;
-  if (canEdit() && editorMidEntry()) return true;
+  if (directorTab() && editorMidEntry()) return true;
   if (Object.values(liveWatches || {}).some((w) => w && w.running)) return true;
   if (typeof chatComposerBusy === 'function' && chatComposerBusy()) return true;
   // a director mid-reveal (a real reveal live on this phone, or a command not yet acknowledged): reload after it (reveal.js)
@@ -11872,6 +11906,128 @@ function closeTool() {
   renderAll(); // the screen slides out and hands focus back (a Back gesture closes it too)
 }
 
+// ── Preview as a counselor (redesign §7.4; Step 24) ─────────────────────────
+// A director's phone shown the app the way a counselor's phone draws it, so a switch in What counselors see can be
+// checked without a second phone. It is a LENS over the role, and every rule below is there so it can never leak or
+// trap:
+//   - It is `counselorPreviewOn`, memory only: never in state, never in storage, never the role or the auth hint.
+//     A reload, a sign-out, a camp switch and the auto-update reload all end it; it is always the director's own
+//     view the next time the page loads.
+//   - It never touches `memberRole`. That would run the sign-in's own bookkeeping (the writer election, the undo
+//     history, the reveal listeners, the pre-paint hint) for a person who is still a director. The lens is three
+//     one-line reads and nothing else: canEdit() is false (every "directors only" gate refuses, with no second
+//     list to keep), standingsVisible() is false (the ONE place that says who may see points: nothing computes or
+//     draws one), isOwner() is false, and viewRole() says 'viewer' where the screen decides what to SHOW. The
+//     renderers, the reveal's mirror view and the chat's hidden-section rule all follow those, so the preview is
+//     the counselor's code path, not a copy of it.
+//   - The engines do not follow it (directorTab): a snapshot arriving mid-preview still merges over unconfirmed
+//     work, a queued push still goes out, a reload is still held for unsent work.
+//   - Only a CONFIRMED director on a writer tab starts it (previewMayStart), from What counselors see. It ends by
+//     the bar's Exit (always on screen, outside #app so it answers under a takeover or a sheet), by an absence
+//     longer than the shell's 10 minutes, and by any change that makes the person not a confirmed director
+//     (setMemberRole, a second tab taking the writer lock: previewMayRun, checked at the top of every render).
+//   - What a counselor may DO and a preview must not: chat (send, photo, delete), phone-alert subscribe and
+//     settings. Each refuses through previewRefuses() with one sentence. Everything else a counselor can tap is on
+//     this phone only (theme, team, dismiss), as it is for them.
+let previewReturn = null; // where Exit lands: the tab the preview began on
+
+function previewMayRun() {
+  return memberRole === 'editor' && memberRoleConfirmed && tabWriter !== false;
+}
+
+function previewMayStart() {
+  return !!(appStarted && !counselorPreviewOn && previewMayRun());
+}
+
+function previewIsOn() { return counselorPreviewOn; }
+
+// The one sentence every refused write says (a toast; chat's composer and the alert switches ask first).
+function previewRefuses() {
+  if (!counselorPreviewOn) return false;
+  showToast('You are previewing as a counselor. Nothing is sent. Tap Exit to go back.');
+  return true;
+}
+
+// The bar's height, measured into :root the way the header's is (it wraps at large text; the CSS value is only the
+// one-line fallback). Never set while the bar is hidden, so nothing is left behind after Exit.
+function previewMeasure() {
+  const root = document.documentElement;
+  const bar = document.getElementById('preview-bar');
+  const h = counselorPreviewOn && bar ? Math.round(Number(bar.offsetHeight) || 0) : 0;
+  if (h > 0) root.style.setProperty('--pv-h', h + 'px');
+  else root.style.removeProperty('--pv-h');
+}
+
+// Everything that DRAWS the preview: the switch class (CSS moves the header, the Chat panel, the reveal strip, the
+// takeovers and the sheets down by the bar), the bar, the frame, the browser chrome colour.
+function previewPaint() {
+  const on = counselorPreviewOn;
+  document.documentElement.classList.toggle('counselor-preview', on);
+  setHiddenIfChanged(document.getElementById('preview-bar'), !on);
+  setHiddenIfChanged(document.getElementById('preview-frame'), !on);
+  previewMeasure();
+  applyChromeColor();
+}
+
+// The flag off and the bar down, with no render of its own (setMemberRole and renderAll call it from inside one).
+function previewEnd() {
+  if (!counselorPreviewOn) return false;
+  counselorPreviewOn = false;
+  previewReturn = null;
+  previewPaint();
+  return true;
+}
+
+function previewStart() {
+  if (!previewMayStart()) return false;
+  previewReturn = { tab: activeTab() };
+  counselorPreviewOn = true;
+  // The sheets a counselor has no door to (What counselors see itself, Who can sign in, change history, the
+  // builder's) close now; renderAll closes the director's takeovers and the builder.
+  shellCloseDisallowedSheets();
+  previewPaint();
+  applyRoleClass();
+  updateAccountRow();
+  renderAll();
+  const exit = document.getElementById('preview-exit');
+  if (exit && typeof exit.focus === 'function') { try { exit.focus({ preventScroll: true }); } catch (e) { /* fine */ } }
+  return true;
+}
+
+// Exit. `back` (the bar's own button, Escape) lands the director where they started: More, with What counselors
+// see open again, so a switch can be changed and checked in a loop. Every other end (an absence, a role change)
+// just lets go.
+function previewStop(opts) {
+  if (!previewEnd()) return false;
+  if (appStarted) {
+    applyRoleClass();
+    updateAccountRow();
+    renderAll();
+    if (opts && opts.back && canEdit()) {
+      if (activeTab() !== 'more') showTab('more');
+      shellSheetOpen('counselors', document.getElementById('counselors-row'));
+    }
+  }
+  return true;
+}
+
+// A sheet that is open and not allowed for who the screen is now closes (a role the preview or a demotion took
+// away): the drawers and sheets only ask shellSheetAllowed when they OPEN, so nothing else would.
+function shellCloseDisallowedSheets() {
+  shell.sheets.slice().forEach((id) => {
+    if (id !== 'schedule' && !shellSheetAllowed(id)) shellSheetClose(id);
+  });
+}
+
+function wirePreview() {
+  const go = document.getElementById('counselors-preview-btn');
+  if (go) go.addEventListener('click', () => previewStart());
+  const exit = document.getElementById('preview-exit');
+  if (exit) exit.addEventListener('click', () => previewStop({ back: true }));
+  const bar = document.getElementById('preview-bar');
+  if (bar && typeof ResizeObserver === 'function') new ResizeObserver(previewMeasure).observe(bar);
+}
+
 // "‹ More", "‹ Games", "‹ Now": where a tool's Back lands.
 function shellToolBackLabel() {
   const from = shellTabOk(state.ui.toolFrom) ? state.ui.toolFrom : 'more';
@@ -12222,7 +12378,7 @@ function segArrowKeys(seg, choose) {
 }
 
 // ── the header (§2.2) ──────────────────────────────────────────────
-function frameRoleWord() { return memberRole === 'editor' ? 'Director' : 'Counselor'; }
+function frameRoleWord() { return viewRole() === 'editor' ? 'Director' : 'Counselor'; }
 
 // A person's own name as the app knows it: the member record's, else the
 // "which one are you?" pick. '' when neither is set (never a guess from the email).
@@ -12451,7 +12607,7 @@ function renderMoreTeamRow() {
   if (!row) return;
   const team = followedTeam();
   // A director with no team has no "your team" to show.
-  setHiddenIfChanged(row, !team && memberRole === 'editor');
+  setHiddenIfChanged(row, !team && viewRole() === 'editor');
   if (row.hidden) return;
   const me = frameMyName();
   const mark = document.getElementById('more-team-mark');
@@ -12479,7 +12635,7 @@ function renderMoreFoot() {
 }
 
 function renderMore() {
-  const editor = memberRole === 'editor';
+  const editor = viewRole() === 'editor';
   setHiddenIfChanged(document.getElementById('more-director'), !editor);
   renderAlertsState();
   renderCalmRow();
@@ -12555,7 +12711,7 @@ function shellSyncViewport() {
 
 // ── coming back, boot, deep links ───────────────────────────────────
 function shellHasUnsentWork() {
-  if (typeof editorMidEntry === 'function' && canEdit() && editorMidEntry()) return true;
+  if (typeof editorMidEntry === 'function' && directorTab() && editorMidEntry()) return true;
   if (typeof chatComposerBusy === 'function' && chatComposerBusy()) return true;
   if (typeof chatHasDraft === 'function' && chatHasDraft()) return true;
   // A director running the reveal is never sent back to Now by a long lock-screen pause: the remote is the work.
@@ -12571,9 +12727,13 @@ function shellHasUnsentWork() {
 function shellResume() {
   const away = shell.hiddenAt ? Date.now() - shell.hiddenAt : 0;
   shell.hiddenAt = 0;
+  // A counselor preview does not survive the same absence that sends everyone home: a phone put down for ten
+  // minutes comes back as the director's own (it has no unsent work of its own, so the check below never holds it).
+  const previewEnded = away > SHELL_RESUME_MS && previewEnd();
+  if (previewEnded) { applyRoleClass(); updateAccountRow(); }
   // iOS restores a frozen page without firing the interval, so waking up runs the
   // time-driven pass itself (the block that changed, a banner that expired).
-  if (away <= SHELL_RESUME_MS || shellHasUnsentWork()) { shellTick(); return; }
+  if (away <= SHELL_RESUME_MS || shellHasUnsentWork()) { shellTick(); if (previewEnded) renderAll(); return; }
   shell.sheets.slice().forEach((id) => (id === 'schedule' && typeof closeSchedule === 'function' ? closeSchedule() : shellSheetClose(id)));
   state.ui.gameId = null;
   state.ui.revealOpen = false;
@@ -12716,6 +12876,7 @@ function wireShell() {
     shellOpenTarget(hash);
   });
   window.addEventListener('scroll', shellOnScroll, { passive: true });
+  wirePreview();
   // The header's real height (it wraps for a long status pill or large text, and
   // carries the sync bar): the fixed Chat panel starts under it, never behind it.
   const header = document.getElementById('app-header');
@@ -12750,6 +12911,9 @@ function shellSync() {
 }
 
 function renderAll() {
+  // A preview outlives nothing it depends on: a phone that is no longer a confirmed director's writer tab (a second
+  // tab took the lock) ends it before anything is drawn.
+  if (counselorPreviewOn && !previewMayRun() && previewEnd()) { applyRoleClass(); updateAccountRow(); }
   const setDownBoardCelebrations = holdBoardCelebrations(); // see there
   // Builder visibility is derived from state every render — settings.js
   // navigates by mutating state.ui.view, not by calling open/close helpers.
@@ -12763,7 +12927,7 @@ function renderAll() {
   const builderView = document.getElementById('settings-view');
   setHiddenIfChanged(builderView, !inBuilder); // renderAll runs on every snapshot: write only a change
   applyCardVisibility(); // before the shell derives what is open — it may close a hidden card's game
-  if (!canEdit()) closeHistoryForViewer(); // a demoted editor's open change history
+  if (!canEdit()) { closeHistoryForViewer(); shellCloseDisallowedSheets(); } // a demoted editor's (or a preview's) open director sheets
   const historyRow = document.getElementById('history-row');
   setHiddenIfChanged(historyRow, !canEdit()); // editors' only in code too, not just in CSS (html.view-only)
   // The shell (§13.2): paint the visible root, reconcile the history stack,
@@ -12930,7 +13094,7 @@ function updateAccountRow() {
   const label = document.getElementById('account-label');
   if (label) {
     const who = identityLabel(authUser); // email or phone number
-    const role = canEdit() ? 'Director' : tabReadOnly() ? 'Director (view-only tab)' : 'Counselor';
+    const role = canEdit() ? 'Director' : tabReadOnly() && !counselorPreviewOn ? 'Director (view-only tab)' : 'Counselor';
     const text = (who ? who + ' · ' : '') + role;
     setTextIfChanged(label, text);
   }
@@ -13564,9 +13728,9 @@ function hasUnconfirmedLocalWork() {
   if (pendingConfigWrites > 0) return true; // a builder save the server hasn't acknowledged
   // Saved on this phone but never confirmed — including a builder edit from an
   // earlier session, which only the persisted baseline (_cfgBase) can tell apart.
-  if (canEdit() && Object.keys(cfgUnconfirmed()).length) return true;
+  if (directorTab() && Object.keys(cfgUnconfirmed()).length) return true;
   // The same for the week's setup (setup-sync.js): an unconfirmed path, a parked refusal.
-  if (canEdit() && typeof setupHasUnconfirmed === 'function' && setupHasUnconfirmed()) return true;
+  if (directorTab() && typeof setupHasUnconfirmed === 'function' && setupHasUnconfirmed()) return true;
   try {
     const base = confirmedTree || bootSyncedTree;
     if (!base) return false;

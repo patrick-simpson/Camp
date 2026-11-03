@@ -272,6 +272,8 @@ function chatDisplayName() {
 // so we retry once without it. That makes this deploy safe to ship BEFORE the
 // paste, and once the paste lands the retry simply stops happening.
 function chatAtomicSend(updates, rateKey) {
+  // The backstop under the entry points' own check: nothing reaches the database from a counselor preview.
+  if (counselorPreviewOn) return Promise.reject(new Error('preview'));
   const rootRef = () => firebase.database().ref(CAMP.dbRoot);
   // Spacing runs on a MONOTONIC clock: a phone whose wall clock gets
   // corrected backwards mid-session would otherwise stall every later send
@@ -370,6 +372,7 @@ function sendChatMessage(ch) {
   const input = document.getElementById('chat-input');
   const text = ((input && input.value) || '').trim().slice(0, CHAT_TEXT_MAX);
   if (!text) return;
+  if (previewRefuses()) return; // a counselor preview sends nothing; the words stay in the box
   const myKey = identityKey(authUser);
   if (!myKey || typeof firebase === 'undefined') { showToast("Couldn't send — you're not signed in."); return; }
   if (!chatSendAllowed()) return; // a double-tap shouldn't post twice
@@ -423,6 +426,7 @@ function chatNotifyPhones(ch, msgId, text) {
 function sendChatPhoto(ch, file) {
   const myKey = identityKey(authUser);
   if (!file || !myKey || typeof firebase === 'undefined') return;
+  if (previewRefuses()) return; // a counselor preview sends nothing
   if (!chatSendAllowed()) return;
   const btn = document.getElementById('chat-photo-btn');
   if (btn) btn.setAttribute('disabled', '');
@@ -495,6 +499,7 @@ function makeChatImages(file) {
 }
 
 function deleteChatMessage(ch, msg) {
+  if (previewRefuses()) return; // a counselor preview deletes nothing
   if (!confirm('Delete this message for everyone?')) return;
   firebase.database().ref(dbPath('chat/' + ch + '/' + msg.id)).remove()
     .then(() => {
@@ -835,7 +840,7 @@ function chatHiddenFromMe() {
   // view-only second tab): this is a question about what I may SEE, and it must
   // answer exactly as app.js's renderAll / applyCardVisibility do, or the tab is
   // drawn but shows the wrong thing.
-  return memberRole !== 'editor' && typeof cardHiddenFromViewers === 'function' && cardHiddenFromViewers('chat');
+  return viewRole() !== 'editor' && typeof cardHiddenFromViewers === 'function' && cardHiddenFromViewers('chat'); // viewRole: a counselor preview hides Chat when counselors' phones do
 }
 
 // A notification tap or the push layer asks for a channel: switch to the Chat

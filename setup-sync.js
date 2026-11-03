@@ -596,7 +596,7 @@ function processFirstSetup(remote) {
     const toEpoch = epochOfTree(remoteCanon);
     if (fromEpoch !== toEpoch) {
       const local = setupCanon(setupTree);
-      const mine = canEdit() ? setupTreeDiff(setupBase, local) : {};
+      const mine = directorTab() ? setupTreeDiff(setupBase, local) : {}; // directorTab, not canEdit: a counselor preview must never make this phone drop its unconfirmed week
       setupStrand(mine, local, fromEpoch, toEpoch);
       setupForgetLastYear();
       adoptSetup(remote, {});
@@ -608,7 +608,7 @@ function processFirstSetup(remote) {
       return;
     }
     if (firstSetupMerge(remote)) return;
-    if (!canEdit()) { adoptSetup(remote, {}); return; } // a viewer / read-only tab has no edits of its own to keep
+    if (!directorTab()) { adoptSetup(remote, {}); return; } // a viewer / read-only tab has no edits of its own to keep (a preview is not one)
   }
   adoptSetup(remote);
 }
@@ -621,7 +621,7 @@ function processFirstSetup(remote) {
 // goes to the Put-it-back list instead of being pushed into a refusal. Returns false
 // when there is nothing of mine to protect (the caller adopts plainly).
 function firstSetupMerge(remote) {
-  if (!canEdit()) return false;
+  if (!directorTab()) return false;
   const base = setupBase;
   const localCanon = setupCanon(setupTree);
   const mine = setupTreeDiff(base, localCanon);
@@ -1054,7 +1054,7 @@ function setupStamps(diff) {
 // gate: a ref, the FIRST PULL (never push before it: a stale cache would wipe everyone's
 // newer setup), no refusal of the read, an editor, and a tab that owns the cache.
 function pushSetup() {
-  if (!setupRef || !setupReady || setupDenied || setupWriteRefused || !canEdit()) return;
+  if (!setupRef || !setupReady || setupDenied || setupWriteRefused || !directorTab()) return; // work already made goes out in a preview too
   if (!tabMayPush('setup')) return; // undecided tabs hold (and remember); a read-only tab has no edits of its own
   if (setupBisecting) { setupBisectHeld = true; return; }
   if (!setupLast) return;
@@ -1079,7 +1079,7 @@ function pushSetup() {
     }, (e) => {
       // ONLY a rules refusal is quarantined, and only for an editor (the person who typed it
       // and can Retry or Discard). Every other failure (a dropped connection) keeps the diff.
-      if (e && e.code === 'PERMISSION_DENIED' && canEdit()) { startSetupBisect(diff, prev, settle); return; }
+      if (e && e.code === 'PERMISSION_DENIED' && directorTab()) { startSetupBisect(diff, prev, settle); return; }
       console.warn('setup push failed', e);
       setupLast = prev; // re-diffed (and re-sent) next time
       showToast('Couldn’t save the week setup — check your connection and try again.');
@@ -1659,7 +1659,7 @@ async function restoreSave(kind, label, opts) {
 // A point that was waiting for a connection: send it now, once. Idempotent — a rid that already exists
 // on the server (the SDK's own queue delivered it) is just dropped from the outbox.
 async function restoreFlushOutbox() {
-  if (rpFlushing || !canEdit() || !restoreOnline()) return;
+  if (rpFlushing || !directorTab() || !restoreOnline()) return; // a point already saved waits in the outbox whatever the screen shows
   const list = rpOutboxRead();
   const key = identityKey(authUser);
   if (!list.length || !key) return;

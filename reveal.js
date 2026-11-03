@@ -60,7 +60,7 @@ function revealClone(v) {
 // ── who is looking, and when ────────────────────────────────────────
 // Phones hold the newest place back for REVEAL_LOOK_MS ('viewer' | 'editor'); a
 // director's remote and the big screen ARE the show and never lag.
-function revealViewRole() { return memberRole === 'editor' ? 'editor' : 'viewer'; }
+function revealViewRole() { return viewRole() === 'editor' ? 'editor' : 'viewer'; } // viewRole: a counselor preview reads the counselor's view (the phone's 3 s hold, no remote data)
 
 // A reveal from another camp year (wizard epoch) is ignored; '' = the legacy week.
 function revealEpoch() {
@@ -271,7 +271,7 @@ function revealArmTimer() {
 function revealTimeSig() {
   const f = (v) => (v ? [v.live, v.phase, v.expired, v.looking, v.onScreen, v.rows.length].join('|') : '-');
   // The camp day rides along: the grid's "Tonight's" becomes "Last night's" at midnight, with no snapshot to say so.
-  return f(revealMirrorView()) + '/' + (memberRole === 'editor' ? f(revealRemoteView('practice')) : '-') + '/' + revealYmdOf(serverNow());
+  return f(revealMirrorView()) + '/' + (viewRole() === 'editor' ? f(revealRemoteView('practice')) : '-') + '/' + revealYmdOf(serverNow());
 }
 
 // The 30 s tick (shellTick), a wake, a corrected clock and the timer all land here.

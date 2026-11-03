@@ -352,7 +352,7 @@ function revealUiTotal(v) {
 }
 
 // The reveal is the director's own work: they see live standings in Games and no frozen grid (§4.1).
-function revealUiIsDirector() { return memberRole === 'editor'; }
+function revealUiIsDirector() { return viewRole() === 'editor'; } // viewRole, not memberRole: a counselor preview draws the mirror and the grid, never the director's rows
 
 // "Happening now", the current block shrunk to one row under the mirror. Read from the schedule accessors, which are
 // the one door to the week's data; plain text only.
