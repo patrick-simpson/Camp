@@ -2159,11 +2159,13 @@ function nowCleanupMoment(ctx, blocks) {
       kind: 'cleanup', dow: ctx.dow, meal: nb.meal, title: nb.meal + ' cleanup', until: nb.end + NOW_CLEANUP_WINDOW_MIN,
       teams: duty.map((d) => {
         const t = { key: 'c-' + d.team, team: d.team, name: teamName(d.team), mine: d.mine, who: counselorName(d.team) };
-        if (ctx.director) { t.locked = !canScoreRound(d.team); t.pts = ctx.points ? earned[d.team] || 0 : 0; }
+        if (ctx.points) { t.locked = !canScoreRound(d.team); t.pts = earned[d.team] || 0; }
         return t;
       }),
     };
-    if (ctx.director) { moment.secret = true; moment.max = 3; } // a counselor's moment has no such field at all
+    // The keys are a CONFIRMED director's (Award points' rule): a counselor's, a preview's and a hinted director's moment has
+    // no such field at all, only whose turn it is.
+    if (ctx.points) { moment.secret = true; moment.max = 3; }
     return moment;
   }
   return null;
@@ -13401,6 +13403,8 @@ const SHELL_PANELS = {
       renderNowBanner();
       renderLiveHome();
       renderMyElectives();
+      // The Now engine (nowModel): a full picture whenever the data moved. Nothing runs until a renderer defines renderNow.
+      if (typeof renderNow === 'function') nowRefresh();
     },
     // What changes with the clock alone (the 30 s tick).
     tick() {
@@ -13409,6 +13413,7 @@ const SHELL_PANELS = {
       renderWhatsNew();
       renderMyElectives();
       renderAnnouncements();
+      if (typeof renderNow === 'function') nowTick(); // a full recompute only at a wake-up, else the clock part and the strip
       // the mirror's "Happening now" row follows the clock too (it is not a snapshot's business)
       if (typeof renderRevealMirror === 'function' && typeof confirmedReveal !== 'undefined') renderRevealMirror();
     },

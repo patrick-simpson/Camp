@@ -233,6 +233,20 @@ test('nowModel: a counselor on a team, walked every 7th minute with the points g
       assert.equal(model.card.down, false);
     }
   });
+  // a director in a counselor preview is a counselor: the same walk, the same guard
+  setMemberRole('editor');
+  counselorPreviewOn = true;
+  DOWS.forEach((dow) => {
+    for (let m = 0; m < 1440; m += 11) {
+      const model = at(dow, m);
+      walk(model, `preview dow ${dow} minute ${m}`);
+      assert.equal(model.todo.length, 0);
+      assert.equal(model.card.hold, null);
+      assert.ok(model.messages.every((x) => !x.canRemove && !x.canTakeDown));
+    }
+  });
+  counselorPreviewOn = false;
+  setMemberRole('viewer');
   // the live tally of that game (competitions with a draft): roster order, no place numerals, scores public
   const m = at(WED, gb.nb.start + 5);
   const live = m.body.rows.find((r) => r.status === 'live');
@@ -421,6 +435,15 @@ test('nowModel: a director sees the cleanup keys with the lock on their own team
   counselorPreviewOn = false;
   setMemberRole('editor', { provisional: true });
   assert.equal(at(WED, vm).moment, null, 'a hinted director has not been confirmed: no points');
+  setStandingsGuardThrows(true);
+  const hinted = at(WED, bf.end + 1).moment;
+  assert.ok(hinted && hinted.kind === 'cleanup' && hinted.teams.every((x) => !('pts' in x) && !('locked' in x)) && !('secret' in hinted) && !('max' in hinted), 'a hinted director sees whose turn it is, not the keys');
+  setStandingsGuardThrows(false);
+  counselorPreviewOn = true;
+  setMemberRole('editor');
+  const pv = at(WED, bf.end + 1).moment;
+  assert.ok(pv && !('secret' in pv) && pv.teams.every((x) => !('pts' in x)), 'a counselor preview shows the cleanup panel as a counselor sees it');
+  counselorPreviewOn = false;
   // no verse for the day: the block is an ordinary one
   const realVerse = verseFor;
   verseFor = () => NO_VERSE;
@@ -842,5 +865,228 @@ test('nowModel: the four-team bracket reads state.brackets4 (Step 22\'s shape) a
   state.brackets4 = { [g.id]: 'junk' };
   assert.equal(at(WED, nb.start + 1).body.bracket4, null);
   delete state.brackets4;
+  done();
+});
+
+
+// ════════════════════════════════════════════════════════════════════
+// the messages strip, Still to do today, the tick
+// ════════════════════════════════════════════════════════════════════
+function banner(id, text, agoMs) {
+  state.announcements[id] = { id, text, at: new Date(Date.now() - agoMs).toISOString(), by: 'Jenn', ttlMs: 3600000 };
+}
+
+test('nowModel: the messages strip — the posted notice with my team\'s line, the join bar for a director, banners newest first', () => {
+  boot('viewer', T()[0]);
+  assert.deepEqual(at(WED, 600).messages, [], 'a draft notice and no banners: nothing');
+  state.notice.status = 'posted';
+  state.notice.title = 'Saturday cleanup';
+  state.notice.sub = 'Everyone helps';
+  state.notice.zones = [{ teamId: T()[0], place: 'Dining hall', note: 'tables and floor' }, { teamId: T()[1], place: 'Chapel', note: '' }];
+  banner('a1', 'Lunch is in the pavilion', 5 * 60000);
+  banner('a2', 'Bring a hat', 1 * 60000);
+  banner('a3', 'Old news', 20 * 60000);
+  const realChat = chatMsgs.announcements;
+  chatMsgs.announcements = [{ id: 'c1', at: Date.now() - 3 * 60000, byKey: 'x', text: 'Cabin 3 has a surprise' }, { id: 'c0', at: Date.now() - 20 * 60 * 1000, byKey: 'x', text: 'too old for the strip' }];
+  let m = at(WED, 600);
+  assert.deepEqual(m.messages.map((x) => x.kind + ':' + (x.id || x.key)), ['notice:notice', 'banner:a2', 'chat:c1', 'banner:a1', 'banner:a3']);
+  assert.deepEqual(m.messages[0], { kind: 'notice', key: 'notice', title: 'Saturday cleanup', sub: 'Everyone helps', yours: { team: T()[0], place: 'Dining hall', note: 'tables and floor' }, canTakeDown: false });
+  assert.ok(m.messages.slice(1).every((x) => x.canRemove === false), 'a counselor removes nothing');
+  assert.equal(m.messages[2].text, 'Cabin 3 has a surprise');
+  // a phone that dismissed one does not see it again
+  dismissAnnouncement('a2');
+  assert.deepEqual(at(WED, 600).messages.map((x) => x.id || x.key), ['notice', 'c1', 'a1', 'a3']);
+  // a director: Take down on the notice, Remove for everyone on a synced banner (never a chat one), the join bar between
+  setMemberRole('editor');
+  pplReq.list = [{ key: 'new@x', at: 1, name: 'Taylor Reed' }];
+  m = at(WED, 600);
+  assert.deepEqual(m.messages.map((x) => x.kind), ['notice', 'join', 'chat', 'banner', 'banner']);
+  assert.equal(m.messages[0].canTakeDown, true);
+  assert.equal(m.messages[1].text, 'Taylor Reed is asking to join');
+  assert.deepEqual(m.messages.filter((x) => x.kind !== 'notice' && x.kind !== 'join').map((x) => x.canRemove), [false, true, true]);
+  pplReq.list = [{ key: 'a', at: 1, name: 'A' }, { key: 'b', at: 2, name: 'B' }];
+  assert.equal(at(WED, 600).messages[1].text, '2 people are asking to join');
+  pplReq.list = [];
+  // an expired banner never shows, a banner with a missing text is not a message
+  state.announcements.a1.at = new Date(Date.now() - 2 * 3600000).toISOString();
+  state.announcements.junk = { id: 'junk', at: new Date().toISOString() };
+  assert.ok(!at(WED, 600).messages.some((x) => x.id === 'a1' || x.id === 'junk'));
+  // the model leaves the notice out of the strip when it IS the card
+  state.notice.status = 'draft';
+  assert.ok(!at(WED, 600).messages.some((x) => x.kind === 'notice'));
+  chatMsgs.announcements = realChat;
+  dismissAnnouncement('a2');
+  done();
+});
+
+test('nowModel: Still to do today — what the day\'s moments left, for directors, oldest first, three rows then "N more"', () => {
+  boot('editor', null);
+  stubRota();
+  const gb = gamesBlockOf(WED, 3);
+  const nb = gb.nb;
+  const ids = gb.games.map((g) => g.id);
+  // the morning's moments are done (verse for everyone, breakfast cleanup), so only the games can be left: the list holds three rows
+  const give = () => {
+    T().forEach((id) => { state.bonuses['verse-' + id + '-3'] = { teamId: id, category: 'verse', points: 1, day: 3, at: new Date(BASE_MS).toISOString() }; });
+    state.bonuses['cleanup-t0-3-Breakfast'] = { teamId: T()[0], category: 'cleanup', points: 2, day: 3, meal: 'Breakfast', at: new Date(BASE_MS).toISOString() };
+  };
+  give();
+  // before the block ends: no game row; after: one row per game with no result, opening that game
+  assert.ok(!at(WED, nb.end - 1).todo.some((r) => r.todo === 'game'));
+  let m = at(WED, nb.end + 1);
+  assert.deepEqual(m.todo.filter((r) => r.todo === 'game').map((r) => r.ref).sort(), ids.slice().sort());
+  const r0 = m.todo.find((r) => r.todo === 'game');
+  assert.equal(r0.sub, 'Not scored yet');
+  assert.equal(r0.key, 'todo-game-' + r0.ref);
+  state.results[ids[0]] = medals(T()[0], T()[1], T()[2]);
+  assert.ok(!at(WED, nb.end + 1).todo.some((r) => r.ref === ids[0]), 'scored: gone');
+  // the breakfast cleanup, once its window is over with no points; the director's own team cannot be awarded by them
+  state.bonuses = {};
+  const bf = nowBlocks(WED).find((x) => x.meal === 'Breakfast');
+  assert.ok(!at(WED, bf.end + 29).todo.some((r) => r.todo === 'cleanup'), 'still inside the window');
+  m = at(WED, bf.end + 30);
+  const c = m.todo.find((r) => r.todo === 'cleanup' && r.ref === 'Breakfast');
+  assert.ok(c, 'the window is over');
+  assert.equal(c.title, 'Breakfast cleanup points');
+  assert.equal(c.sub, nowTeamWord(T()[0]) + ' · not given yet');
+  assert.equal(c.key, 'todo-cleanup-3-breakfast');
+  state.bonuses['cleanup-t0-3-Breakfast'] = { teamId: T()[0], category: 'cleanup', points: 2, day: 3, meal: 'Breakfast', at: new Date(BASE_MS).toISOString() };
+  assert.ok(!at(WED, bf.end + 30).todo.some((r) => r.ref === 'Breakfast'), 'given: gone');
+  delete state.bonuses['cleanup-t0-3-Breakfast'];
+  setMemberTeam(T()[0]);
+  assert.ok(!at(WED, bf.end + 30).todo.some((r) => r.ref === 'Breakfast'), 'a team the director is on is another director\'s to award');
+  setMemberTeam(null);
+  // Bible study: nobody given → "Not given yet", some → "N of M teams given", all → gone
+  const bible = nowBlocks(WED).find((x) => x.kind === 'bible');
+  assert.ok(!at(WED, bible.end - 1).todo.some((r) => r.todo === 'verse'));
+  assert.equal(at(WED, bible.end).todo.find((r) => r.todo === 'verse').sub, 'Not given yet');
+  state.bonuses['verse-t0-3'] = { teamId: T()[0], category: 'verse', points: 3, day: 3, at: new Date(BASE_MS).toISOString() };
+  state.bonuses['verse-t1-3'] = { teamId: T()[1], category: 'verse', points: 5, day: 3, at: new Date(BASE_MS).toISOString() };
+  assert.equal(at(WED, bible.end).todo.find((r) => r.todo === 'verse').sub, '2 of ' + T().length + ' teams given');
+  T().forEach((id) => { state.bonuses['verse-' + id + '-3'] = { teamId: id, category: 'verse', points: 1, day: 3, at: new Date(BASE_MS).toISOString() }; });
+  assert.ok(!at(WED, bible.end).todo.some((r) => r.todo === 'verse'));
+  state.bonuses = {};
+  // the weekend is no competition: no cleanup or verse rows
+  assert.ok(!at(0, 23 * 60).todo.some((r) => r.todo === 'cleanup' || r.todo === 'verse'));
+  // people asking to join close the list: with everything else done the join row is the whole list
+  gamesForDay(WED).forEach((x) => x.games.forEach((g) => { state.results[g.id] = medals(T()[0], T()[1], T()[2]); }));
+  give();
+  state.bonuses['cleanup-t1-3-Lunch'] = { teamId: T()[1], category: 'cleanup', points: 1, day: 3, meal: 'Lunch', at: new Date(BASE_MS).toISOString() };
+  state.bonuses['cleanup-t2-3-Lunch'] = { teamId: T()[2], category: 'cleanup', points: 1, day: 3, meal: 'Lunch', at: new Date(BASE_MS).toISOString() };
+  assert.deepEqual(at(WED, 23 * 60).todo, [], 'a finished day leaves nothing to do');
+  pplReq.list = [{ key: 'new@x', at: 1, name: 'Taylor Reed' }];
+  assert.deepEqual(at(WED, 23 * 60).todo, [{ key: 'todo-join', todo: 'join', ref: '', title: 'Taylor Reed is asking to join', sub: 'People' }]);
+  pplReq.list = [];
+  // no overflow beyond three
+  state.bonuses = {};
+  state.results = {};
+  const many = at(WED, 23 * 60);
+  assert.equal(many.todo.length, 3);
+  assert.ok(many.todoMore >= 1);
+  // not for a counselor, a preview, or (points rows) a director who is not confirmed yet
+  setMemberRole('viewer');
+  assert.deepEqual([at(WED, 23 * 60).todo, at(WED, 23 * 60).todoMore], [[], 0]);
+  setMemberRole('editor');
+  counselorPreviewOn = true;
+  assert.deepEqual([at(WED, 23 * 60).todo, at(WED, 23 * 60).todoMore], [[], 0]);
+  counselorPreviewOn = false;
+  setMemberRole('editor', { provisional: true });
+  setStandingsGuardThrows(true);
+  const hint = at(WED, 23 * 60);
+  assert.ok(hint.todo.every((r) => r.todo === 'game'), 'a hinted director gets the unscored games and reads no points');
+  setStandingsGuardThrows(false);
+  done();
+});
+
+test('nowModel: the tick — a full picture at a wake-up or a new day, otherwise the clock part and the strip; nothing without a renderer', () => {
+  boot('viewer', T()[0]);
+  const calls = [];
+  const realNow = nowModel;
+  renderNow = (m) => calls.push('full');
+  renderNowClock = (m) => calls.push('clock:' + m.clock.left);
+  renderNowMessages = (m) => calls.push('messages');
+  const tick = (dow, minutes) => nowTick({ now: { dow, minutes }, ms: BASE_MS + minutes * 60000 });
+  // a block with no wake-up inside it (no full hour, no window's end), so only its end is one
+  const nb = nowBlocks(WED).find((b) => !b.noTime && b.end - b.start >= 5 && at(WED, b.start + 1).wake[0] === b.end);
+  assert.ok(nb, 'a block with nothing inside');
+  assert.equal(tick(WED, nb.start + 1), 'full', 'the first tick paints the whole picture');
+  assert.deepEqual(calls.splice(0), ['full']);
+  assert.equal(tick(WED, nb.start + 1), 'clock');
+  assert.deepEqual(calls.splice(0), ['clock:' + (nb.end - nb.start - 1), 'messages']);
+  assert.equal(tick(WED, nb.start + 2), 'clock', 'a minute later inside the block: only the clock');
+  assert.deepEqual(calls.splice(0), ['clock:' + (nb.end - nb.start - 2), 'messages']);
+  assert.equal(nowLast.clock.left, nb.end - nb.start - 2);
+  assert.equal(tick(WED, nb.end - 1), 'clock');
+  calls.length = 0;
+  assert.equal(tick(WED, nb.end), 'full', 'the block ends: a new card');
+  assert.deepEqual(calls.splice(0), ['full']);
+  assert.equal(tick(WED + 1, nb.end), 'full', 'a new day');
+  calls.length = 0;
+  assert.equal(tick(WED + 1, nb.end - 5), 'full', 'the clock went back (a ?now= preview was changed)');
+  calls.length = 0;
+  // a banner whose time is up leaves the strip on a clock tick (no wake-up needed)
+  banner('b1', 'short lived', 0);
+  state.announcements.b1.ttlMs = 61 * 1000;
+  assert.equal(tick(WED + 1, nb.end - 5), 'clock');
+  // the shell's panels call it only when a renderer exists
+  let n = 0;
+  nowModel = (o) => { n++; return realNow(o); };
+  const realCampNowFn = campNow;
+  campNow = () => ({ dow: WED, minutes: nb.start + 1 });
+  nowLast = null;
+  calls.length = 0;
+  SHELL_PANELS.now.render();
+  assert.equal(n, 1, 'render: a full picture');
+  assert.ok(calls.includes('full'));
+  SHELL_PANELS.now.tick();
+  assert.equal(n, 1, 'the tick, a moment later in the same minute: the clock part only');
+  renderNow = undefined; renderNowClock = undefined; renderNowMessages = undefined;
+  n = 0;
+  SHELL_PANELS.now.render();
+  SHELL_PANELS.now.tick();
+  assert.equal(n, 0, 'without a renderer the model is never computed: the page is as it was');
+  campNow = realCampNowFn;
+  nowModel = realNow;
+  done();
+});
+
+test('nowModel: a live reveal is named so the renderer can put the rest away, and the model reads nothing of it', () => {
+  boot('viewer', T()[0]);
+  assert.equal(at(WED, 600).reveal, null);
+  const realLive = revealLiveView;
+  revealLiveView = () => ({ live: true, rows: [{ secret: 'never read' }] });
+  const m = at(WED, 600);
+  assert.deepEqual(m.reveal, { live: true });
+  assert.ok(JSON.stringify(m).indexOf('never read') < 0);
+  revealLiveView = realLive;
+  done();
+});
+
+
+test('nowModel: whatever a snapshot hands back (junk results, brackets, drafts, clocks, meta, banners), the model never throws', () => {
+  boot('editor', T()[0]);
+  stubRota();
+  const gb = gamesBlockOf(WED, 3);
+  const [g0, g1, g2] = gb.games;
+  const junk = [null, 'z', 5, [], [1], {}, { medals: null }, { medals: 'x' }, { medals: { gold: {} } }, { scores: 'abc', medals: [] }];
+  junk.forEach((a, i) => {
+    state.results = { [g0.id]: a, [g1.id]: junk[(i + 3) % junk.length] };
+    state.drafts = { [g2.id]: junk[(i + 5) % junk.length] };
+    state.brackets = { [g1.id]: junk[(i + 1) % junk.length] };
+    state.brackets4 = { [g0.id]: junk[(i + 2) % junk.length], [g2.id]: { m: { s1: junk[i], s2: { a: [], b: {}, winner: 5 }, third: 'x', final: null } } };
+    state.clocks = { [g1.id]: junk[(i + 4) % junk.length] };
+    state.meta.overrun = junk[(i + 6) % junk.length];
+    state.announcements = { a: junk[i], b: { id: 'b', text: 5, at: 'never' } };
+    state.bonuses = { x: junk[i] === null ? {} : junk[i], y: { category: 'verse', day: 'x', points: 'y' } };
+    [g0, g1, g2].forEach((g) => { g.format = ['tournament', 'tally', 'placement'][i % 3]; });
+    [[WED, gb.nb.start + 1], [WED, gb.nb.end + 3], [WED, 12 * 60 + 40], [WED, 8 * 60 + 40], [2, 8 * 60 + 5], [6, 11 * 60], [0, 15 * 60]].forEach(([d, m]) => {
+      assert.doesNotThrow(() => { JSON.stringify(at(d, m)); }, `junk ${i} at ${d}:${m}`);
+    });
+  });
+  // a day, a week and a notice that are not what the code expects
+  state.notice = { status: 'posted', zones: 'x', steps: [null, 5, { items: [1] }], title: 7 };
+  assert.doesNotThrow(() => at(6, 9 * 60 + 40));
+  state.teams = [];
+  assert.doesNotThrow(() => at(WED, 12 * 60 + 40));
   done();
 });

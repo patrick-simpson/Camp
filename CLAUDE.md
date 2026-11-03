@@ -754,12 +754,12 @@ never rebuilds a segmented control under a finger.
   app header (and anything else `position: sticky`) scrolled away with the
   page — v197 shipped that way. Don't put `hidden` back on its own.
 
-## Now, block by block (Step 17 — markup and visual system; NOT wired yet)
+## Now, block by block (Step 17 — markup and visual system; the model is built, the renderers are not)
 
 Redesign §3, mockups 01, 01b, 02, 03, 04, 12, 13. Static markup in `#tab-now` (all of it ships
 `hidden`; today's `.you-strip`, `#now-banner`, `#live-home` and `#notice-board` still render Now until
-the build session's `nowModel()` replaces them, and their ids stay until the tests that look them up
-move), styled in styles.css's last block, "NOW, BLOCK BY BLOCK". **Every hook and every row template is
+a renderer paints `nowModel()` ("The Now engine" below) and replaces them, and their ids stay until the
+tests that look them up move), styled in styles.css's last block, "NOW, BLOCK BY BLOCK". **Every hook and every row template is
 documented in index.html's comment at `#now-card`** (and at `#now-notice` for the messages strip); the
 specimens in `docs/build-notes/verify/step17-design.cjs` fill those templates in the real page and
 measure 44px targets, sideways scroll and overflowing text for every kind, both camps, 360 / 390, light /
@@ -787,6 +787,77 @@ dark, 100 / 130 / 200 % (`SHOTS=1` for screenshots).
 - **Copy**: no "Counselors can't see this" on Now (`secrecy.test.js` counts that phrase: exactly two);
   points never appear in a counselor's markup (the moment's keys, `.nm-saved`, `.lb-pl` and the
   director sub "2 of 3 games still to score" are directors' only).
+
+## The Now engine (app.js — Step 17, build session 1)
+
+`nowModel(opts)` (app.js, "THE NOW ENGINE", after `splitNowBanner`) is the whole Now tab as PLAIN DATA — no markup, no DOM,
+no timer — computed from the week through the SEAM accessors, the state and the clock it is GIVEN (`opts.now` =
+`{ dow, minutes }`, `opts.ms` = server ms; default `campNow()` / `serverNow()`). Nothing renders it yet: `renderNow(model)`
+(a full paint), `renderNowClock(model)` and `renderNowMessages(model)` are the hooks a renderer defines (all typeof-guarded;
+`SHELL_PANELS.now` calls `nowRefresh()` on a render and `nowTick()` on the 30 s tick **only once `renderNow` exists**, so the page is
+exactly as it was until then). Rules a renderer or a later edit must not break (`tests/now-model.test.js`, + `.senior`, in the
+seeded and seeded-all passes):
+
+- **SEAM.** `blockKind(b, dow)` and `blockTeams(b, dow)` are accessors in the SEAM block. A kind comes from `type` / the Meal tag
+  (through `blockMeal`) first, the label's head (before " — ") after: Bible study, Rising bell / Wake up, a service or worship that
+  is not "Prepare…", Lights out / Prepare for bed / devotion(al); Saturday is the `sendoff`, Sunday up to the first worship block
+  (all of it with none) the `arrival`; a `noTime` leftover is `bedtime`. `elective` only where `CAMP.features.electives`.
+  `nowBlocks(dow)` pairs each accessor block with its id (`blockPushId`), kind, head / tail / place and teams.
+- **The picture** (`nowModel` fields): `at`, `week { phase: unset | before | during | after }`, `reveal { live } | null` (a live
+  reveal wins the top; reveal-ui paints it, the model reads nothing of it), `messages`, `card { kind, k, when, tag, title, emoji,
+  sub, lead, over, notes, hold, down }`, `block` (the schedule block behind the card), `moment`, `body` (the kind's data),
+  `next`, `later` (+ `laterHeading`: Sunday lists its whole run sheet under "Today"), `todo` + `todoMore`, `wholeDay`, and the
+  clock part. `card.kind` is a block kind or `between | morning | night | none | over | notice`; a `bedtime` block with no time is
+  `night`, a Saturday `noTime` block is `over`, a `sendoff` block with a posted notice is `notice` (the notice IS the card, and the
+  strip leaves it out), a `bible` block with no verse for the day is `activity`. **Every minute of every day is a block or a named
+  empty state** (the walk test).
+- **The week.** With no camp dates anywhere (`phase: unset`) the printed weekday schedule runs as it always did; a date makes
+  the days before the Sunday `none` ("Camp starts Sunday, July 18") and the days after the Saturday `over` ("See you next year",
+  plus the champion's NAME from `revealChampionLine()`, never a number). A `?now=` preview (`campNowOverride()`) ignores the dates.
+- **The clock part is `model.clock` and nothing else** (`left` / `over` minutes, `progress`, `untilNext`, from `model.basis`);
+  everything else changes only at a minute in `model.wake` (block starts and ends, the end of a meal's 30-minute cleanup window, a
+  games block's hold cap, every full hour for the rain line, 06:00, midnight, the minute a director's hold runs out) or with the
+  data. The walk test fails if any minute that changes the picture is missing from `wake`; add a new time-driven field to `clock`,
+  or its minute to `nowWake`. `nowTick` is a full recompute at a wake-up, a new day or a clock that went back, otherwise only
+  `clock` and `messages` (a banner's time is up, a chat banner's 15 minutes).
+- **Running over** (§3.1): a games block whose end has passed keeps the card while a game in it is Live (`gameRowStatus`, the §5.3
+  truth table: a result = Done; a tournament bracket in progress, a draft with a score or medal, or a running game clock = Live) or a
+  director said "Still on this" (`state.meta.overrun = { key: '<dow>:<block id>', until: <server ms> }`, one per-field meta
+  path; rules accept it, `meta` only has to be a branch), for at most 45 minutes and never past the start of the next games block
+  (`nowGamesCap`). `card.hold` ({ key, name, can, held, cap }, directors only) is offered while such a block has ended inside its
+  window with a game still to score — on the NEXT block's card, the clock having moved on — and while it is held by a director's
+  word; `nowHoldOverrun()` is the tap: +10 minutes, capped, no `touchData`, nothing else written. `card.hold` never holds the
+  moving `nextUntil` (it would change the picture every second).
+- **SECRECY.** A counselor's model holds no point and no place: the director-only fields (`pts`, `locked`, `given`, `secret`,
+  `max`, `mult`, `stillToScore`, a tally's `place`, `score`, `hold`, `canRemove`, `canTakeDown`, `todo`, the verse moment) are
+  not there at all, not false or zero. They exist only for `canEdit()` (may act as a director now: false in a counselor preview)
+  and the points ones only for `standingsVisible()` (a CONFIRMED director outside a preview), so a hint-painted director sees a
+  counselor's moment. A live tally keeps roster order unless a director looks; medal winners and live scores are public
+  (§4.12). The tests run the walk with `setStandingsGuardThrows(true)` and in a preview.
+- **Moments.** The cleanup moment is the 30 minutes after a Meal-tagged block ends, for the teams on the rota (`cleanupOnRota` +
+  `cleanupTeams`; an empty rota says nothing), with each team's counselors for everyone and, for a confirmed director, the 0–3 keys'
+  data (`pts`, `locked` = `!canScoreRound`). It wins over the verse moment (senior's Bible study starts as breakfast ends); the verse
+  moment (0–5 keys) is Bible study's for a confirmed director. Neither is shown on a held card.
+- **Personalisation.** My team is `state.followTeam` (a real team id, else ''). Meal rows say "Your team is on cleanup" (`mine`) or
+  the other teams' short names; my elective station comes from `electiveRowHasMe` (identity compared through
+  `canonicalCounselorName`, a member key first), with `mode: station | break | ask | all` (ask = a counselor on a team with no
+  identity yet; a director is never asked; a name on no sheet says nothing about breaks) and `then` = the next three blocks that
+  are not preparing; the morning meeting names its day's teams (`blockTeams`) and "your team meets"; Sunday's welcome finds the
+  "Team assignments" block. `nowRow` is the run row: `{ key: 'b-<id>', time, emoji, title, dish, sub: { text, mine } }`.
+- **Still to do today** (directors): an unscored game whose block has ended, a meal whose cleanup window is over with no points for
+  a team the director may score, Bible study with a team not given verse points, then people asking to join; oldest first, three
+  rows and `todoMore`. Cleanup and verse rows read points, so they need `ctx.points`.
+- **Messages**: the posted notice (title, sub, my team's line; `canTakeDown`), the join bar (directors), then banners newest
+  first — synced announcements this phone has not dismissed and Announcements-channel chat messages of the last 15 minutes
+  (`canRemove` on a synced one, a director's). The renderer caps the strip to a third of the screen; the model is the whole list.
+- **Four-team bracket**: `nowBracket4` reads Step 22's `state.brackets4[gid] = { m: { s1, s2, third, final } }` (null until it
+  exists; not in `SYNC_KEYS` yet) as four cells, derives 3rd place (the semifinal losers) and the final (the winners) unless a match
+  recorded its own `a` / `b`, drops any id that is not one of the camp's teams, and words my team's next game from the bracket's own
+  order ("Red plays in the final next · 3rd place match first").
+- **Left for the next sessions**: every renderer (`renderNow`, the strip, the moment's keys through `setCleanupPoints` /
+  `setVersePoints`, the sheets `#sheet-notice` / `#sheet-messages` / `#sheet-whos-where` in `shellSheetAllowed` / `shellSheetFill`,
+  the identity change, motion), retiring the old Now sections and updating the tests that look them up, `tests/preview.test.js`'s
+  walk over the new sections, the Playwright pass, and the `?v=` / `APP_VERSION` / `CODE_UPDATED_AT` bump.
 
 ## The standings reveal: the screens (Step 23 — markup and visual system)
 
@@ -2186,6 +2257,14 @@ What's covered, and why each file exists:
   formats), the meal-cleanup rota's team ids, announcement expiry, `.ics`
   export, and the notice board (draft stays invisible, posting is editor-only,
   every shape RTDB can prune is healed).
+- `now-model.test.js` (+ `.senior`; in the seeded and seeded-all passes) — the Now engine ("The Now engine"): `blockKind` over both
+  camps' printed weeks; **every minute of every day** a block or a named empty state with no throw and the picture changing only at a
+  `wake` minute (every third minute in the seeded passes); the empty states and the week's dates; the cleanup / verse moment
+  windows; running over (Live, a director's word, the 45-minute cap, never past the next games block, `nowHoldOverrun`); Up next /
+  Later today; personalisation (my team, my station, break, the ask, the spelling merge, the morning meeting, the welcome); games
+  rows (order, podium, live boards, the own-team Score guard, the four-team bracket); the messages strip; Still to do today; the
+  tick; a counselor's, a hinted director's and a previewing director's models holding no points with the guard throwing; junk
+  snapshots never throwing.
 - `backup.test.js` — restore-from-backup, including that an imported tree gets
   normalized and orphan-pruned before it can render or sync.
 - `render-stability.test.js` — re-renders that change nothing don't touch the
@@ -2493,7 +2572,7 @@ What's covered, and why each file exists:
   `wkSet` / `wkReset` put the seeded tree back (`wkOff` is the printed week on purpose) —
   otherwise the "seeded" rerun quietly repeats the plain one. A third pass,
   `SEEDED_ALL_FILES` (week, ics, push, chat, home, tabs, shell, render-stability, secrecy,
-  frame, tell, award), runs with `makeContext({camp, seeded: 'all'})`: the four smaller sections ON as
+  frame, tell, award, now-model), runs with `makeContext({camp, seeded: 'all'})`: the four smaller sections ON as
   well, the page as it will be after step 20, proving their "on" half shows what the built-in
   half did.
 - `seam.test.js` — greps `app.js` (minus the SEAM block), `chat.js`, `push.js`
@@ -2677,7 +2756,7 @@ reuses) an accessor in the block.
   cleanup — `legacyMealOf(label)`, `mealFor`, `mealStart`,
   `cleanupOnRota(dow)` (is the day on the rota at all: untracked says nothing, a
   tracked day with no team reads "TBA"), `cleanupTeams(dow, meal)` (always an
-  array, `[]` = TBA); alerts — `blockKey`, `blockPushId`; verses — `verseTheme`,
+  array, `[]` = TBA); alerts — `blockKey`, `blockPushId`; what a block is — `blockKind(b, dow)`, `blockTeams(b, dow)` (the Now engine's); verses — `verseTheme`,
   `verseFor`; electives — `electivesFor`, `stationEmoji`, `electiveSlotStart`;
   `doubleWindow`, `finaleDow` (the weekday the standings reveal crowns the champions, Friday by default); teams — `teamIds`, `teamEmoji`, `teamShort`, `teamAccent`,
   `teamCrestSrc` (was `teamShield`), `teamRoster(tid)`, `staffNames`, `seedTeams`,
@@ -3731,7 +3810,7 @@ Both camps, junior and senior, run all of it.
   backup tests re-run against it, junior and (where the file has a `.senior` twin)
   senior — `SEEDED=all` probes every file (only the off-mode pins — `accessors`,
   `checklist`, `owner-only`, `setup-ui` — assume an empty tree), `SEEDED=off` skips the
-  pass. A redesign test joins `SEEDED_FILES` when it ships (steps 17 and 18: `now-model`,
+  pass. A redesign test joins `SEEDED_FILES` when it ships (`now-model` has; step 18 adds
   `games-tab`).
 - **Tests**: `seed.test.js` (+ `.senior`: round trip of all seven days through the fake
   RTDB, the measured shape, the rules' record shapes, the frozen id fixtures, the
