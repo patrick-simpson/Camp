@@ -868,9 +868,15 @@ test('nowModel: the four-team bracket reads state.brackets4 (Step 22\'s shape) a
   assert.deepEqual(b.cells[2].teams.map((t) => t.team), [T()[1], T()[2]]);
   // junk never throws and never names a team the camp does not have
   state.brackets4 = { [g.id]: { m: { s1: { a: 'zz', b: T()[1], winner: 'zz' }, s2: 'x' } } };
+  assert.equal(at(WED, nb.start + 1).body.bracket4, null, 'a bracket this build cannot read (fourRead) shows nothing, and never a team the camp does not have');
+  assert.equal(gameRowStatus(g, BASE_MS), 'todo', 'and it is not a live game');
+  // a recorded match that disagrees with its semifinals: nothing is live and no team is told what is next, until a director settles it
+  state.brackets4 = { [g.id]: { m: { s1: { a: T()[0], b: T()[1], winner: T()[0] }, s2: { a: T()[2], b: T()[3], winner: T()[2] }, third: { a: T()[1], b: T()[3], winner: T()[1] } } } };
+  state.followTeam = T()[0];
+  state.brackets4[g.id].m.s1.winner = T()[1]; // someone changed the first semifinal after the 3rd-place match was played
   b = at(WED, nb.start + 1).body.bracket4;
-  assert.equal(b.cells[0].teams[0].team, '');
-  assert.equal(b.cells[0].status, 'live', 'an unreadable winner is no winner');
+  assert.equal(b.hold, true);
+  assert.ok(b.cells.every((c) => c.status !== 'live') && b.note === null);
   state.brackets4 = { [g.id]: { m: [] } };
   assert.equal(at(WED, nb.start + 1).body.bracket4, null);
   state.brackets4 = { [g.id]: 'junk' };

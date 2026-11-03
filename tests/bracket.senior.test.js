@@ -526,3 +526,98 @@ test('a counselor preview reaches none of it: every page-state wrapper refuses a
     assert.ok(fourSeedPlan(g).pairs, 'and the director is back');
   });
 });
+
+// ── what spectators read (Step 22, session 2) ───────────────────────────────────────────────────────────────────
+
+test('upcomingMatchups / findNextMatchupFor / gameRoundTeams follow the four-team bracket: the match under way, and the next one only when both its teams are known', () => {
+  const g = fourGame();
+  quiet(() => {
+    assert.deepEqual(gameRoundTeams(g), [], 'no bracket, no fixed pairs: no round');
+    fourStartGame(g, [['t0', 't3'], ['t1', 't2']]);
+    const keys = () => upcomingMatchups(g).map((s) => s.key);
+    assert.deepEqual(keys(), ['t0|t3', 't1|t2'], 'semifinal 1 now, semifinal 2 after it');
+    assert.deepEqual(gameRoundTeams(g), ['t0', 't3']);
+    assert.deepEqual(findNextMatchupFor('t3'), { game: g, opponentId: 't0' });
+    assert.deepEqual(findNextMatchupFor('t2'), { game: g, opponentId: 't1' }, 'a team on deck is found too');
+    fourRecordTap(g, 's1', 't0');
+    assert.deepEqual(keys(), ['t1|t2'], 'the 3rd-place match is not known while a semifinal is on');
+    fourRecordTap(g, 's2', 't2');
+    assert.deepEqual(upcomingMatchups(g).map((s) => [s.aId, s.bId]), [['t3', 't1'], ['t0', 't2']], '3rd place (the two losers), then the final (the two winners)');
+    assert.deepEqual(gameRoundTeams(g), ['t3', 't1']);
+    fourRecordTap(g, 'third', 't3');
+    assert.deepEqual(upcomingMatchups(g).map((s) => [s.aId, s.bId]), [['t0', 't2']], 'the final is the last: nothing after it');
+    fourRecordTap(g, 'final', 't2');
+    assert.deepEqual(upcomingMatchups(g), [], 'all four played: nothing is up');
+    assert.deepEqual(gameRoundTeams(g), []);
+    assert.equal(findNextMatchupFor('t0'), null);
+  });
+});
+
+test('a bracket waiting on a re-check, or one this build cannot read, has no match up and no team in a round', () => {
+  const g = fourGame();
+  quiet(() => {
+    fourStartGame(g, [['t0', 't3'], ['t1', 't2']]);
+    ['s1:t0', 's2:t1', 'third:t3'].forEach((st) => { const [k, w] = st.split(':'); fourRecordTap(g, k, w); });
+    state.brackets4[g.id].m.s1.winner = 't3';
+    assert.deepEqual(upcomingMatchups(g), []);
+    assert.deepEqual(gameRoundTeams(g), []);
+    assert.equal(gameRowStatus(g), 'live', 'it is still a game under way');
+    state.brackets4[g.id] = { m: { final: { a: 't0', b: 't1', winner: 't0' } } }; // a stray, seedless late tap
+    assert.equal(gameRowStatus(g), 'todo', 'a bracket nobody can read does not make a live game');
+    assert.deepEqual(upcomingMatchups(g), []);
+    assert.deepEqual(gameRoundTeams(g), []);
+  });
+});
+
+test('the Now row and its board name the four-team match under way, with the live tally and the next pair', () => {
+  const g = fourGame();
+  g.liveTracker = { unit: 'Points', periodLabel: 'Round', innings: 1, outs: 0 };
+  quiet(() => {
+    fourStartGame(g, [['t0', 't3'], ['t1', 't2']]);
+    state.live[g.id] = { key: 't0|t3', inning: 1, outs: 0, half: 0, hr: { t0: 4, t3: 2 } };
+    const board = nowLiveBoard({ myTeam: 't3', points: false }, g);
+    assert.equal(board.kind, 'match');
+    assert.equal(board.cap, 'Semifinal 1', 'a one-period tracker adds no round counter');
+    assert.deepEqual(board.sides.map((s) => [s.team, s.v, s.mine]), [['t0', 4, false], ['t3', 2, true]]);
+    assert.deepEqual(board.next, ['t1', 't2']);
+    fourRecordTap(g, 's1', 't0');
+    fourRecordTap(g, 's2', 't1');
+    assert.equal(nowLiveBoard({ myTeam: '' }, g).cap, '3rd place');
+    assert.deepEqual(nowLiveBoard({ myTeam: '' }, g).next, ['t0', 't1'], 'after 3rd place: the final');
+  });
+});
+
+test('a counselor\'s game view of a four-team bracket: the match on the big board, who is next, the four cells, never a control', () => {
+  const g = fourGame();
+  quiet(() => {
+    fourStartGame(g, [['t0', 't3'], ['t1', 't2']]);
+    fourRecordTap(g, 's1', 't0');
+    setMemberRole('viewer');
+    state.followTeam = 't0';
+    const box = document.getElementById('entry-area');
+    box.innerHTML = '';
+    renderLiveWatch(box, g);
+    const html = box.innerHTML;
+    assert.ok(/Live now · Semifinal 2/.test(html), html);
+    assert.ok(/Up next/.test(html) === false, 'the 3rd-place match is not known while semifinal 2 is on');
+    assert.ok(/plays in the final next/.test(html), 'the followed team is told what it plays next');
+    assert.ok(/class="b4"/.test(html), 'the four cells are Now\'s own card');
+    assert.notOk(/winner-btn|data-live=|data-four=/.test(html), 'a spectator\'s view holds no control');
+    fourRecordTap(g, 's2', 't1'); // (fails as a viewer: nothing changes)
+    setMemberRole('editor');
+    fourRecordTap(g, 's2', 't1');
+    setMemberRole('viewer');
+    renderLiveWatch(box, g);
+    assert.ok(/Live now · 3rd place/.test(box.innerHTML) && /Up next:/.test(box.innerHTML), 'now the final is known and is on deck');
+    setMemberRole('editor');
+    fourRecordTap(g, 'third', 't3');
+    fourRecordTap(g, 'final', 't0');
+    setMemberRole('viewer');
+    renderLiveWatch(box, g);
+    assert.ok(/All four matches are played/.test(box.innerHTML));
+    // a stray value this build cannot read is one quiet line, never a throw
+    state.brackets4[g.id] = { m: { final: { a: 't0', b: 'zz', winner: 'zz' } } };
+    assert.doesNotThrow(() => renderLiveWatch(box, g));
+    assert.ok(/Not scored yet/.test(box.innerHTML));
+  });
+});

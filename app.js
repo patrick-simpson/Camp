@@ -1672,7 +1672,7 @@ function gameRowStatus(g, ms) {
   if (state.results && state.results[g.id]) return 'done';
   const b = state.brackets && state.brackets[g.id];
   if (b && g.format === 'tournament' && bracketKnown(b) && normalizeBracket(b).phase !== 'summary') return 'live';
-  if (g.format === 'tournament' && state.brackets4 && state.brackets4[g.id] && typeof state.brackets4[g.id] === 'object') return 'live';
+  if (g.format === 'tournament' && state.brackets4 && fourRead(state.brackets4[g.id], teamIds())) return 'live'; // a bracket this build cannot read does not count, as the six-team one
   const d = state.drafts && state.drafts[g.id];
   if (d && ((d.scores && Object.values(d.scores).some((v) => String(v).trim() !== '')) || (d.medals && Object.values(d.medals).some(Boolean)))) return 'live';
   const c = state.clocks && state.clocks[g.id];
@@ -1698,27 +1698,12 @@ function nowLiveBoard(ctx, g) {
     const nb = normalizeBracket(b);
     if (nb.phase === 'summary') return null;
     const phase = { round1: 'Round 1', bye: 'Bye', semifinal: 'Championship game', championship: 'Final' }[nb.phase] || '';
-    const pair = currentMatchupOf(g, nb);
-    let cap = phase;
-    let scores = null;
-    if (pair && g.ladderScoring) {
-      const l = getLadderMatch(g, pair[0], pair[1]);
-      scores = [l.a, l.b];
-      cap += ' · First to ' + (g.ladderScoring.target || 21);
-    } else if (pair && g.liveTracker) {
-      const l = getLiveMatch(g, pair[0], pair[1]);
-      scores = [l.hr[pair[0]] || 0, l.hr[pair[1]] || 0];
-      const innings = g.liveTracker.innings || 3;
-      if (innings > 1) cap += ' · ' + (g.liveTracker.periodLabel || 'Inning') + ' ' + l.inning + ' of ' + innings;
-      if (g.liveTracker.outs) cap += ' · ' + outsLabel(l.outs);
-    }
     const next = nextMatchupOf(g, nb);
-    return {
-      kind: 'match', cap,
-      sides: pair ? pair.map((id, i) => ({ team: id, name: teamName(id), v: scores ? scores[i] : null, mine: id === ctx.myTeam })) : [],
-      next: next ? next.slice(0, 2) : null,
-    };
+    return nowMatchBoard(ctx, g, currentMatchupOf(g, nb), phase, next ? next.slice(0, 2) : null);
   }
+  // The four-team bracket: the match waiting for a winner is named as its cell is ("Semifinal 2", "3rd place").
+  const f = g.format === 'tournament' && !b ? fourLive(g) : null;
+  if (f) return nowMatchBoard(ctx, g, f.pair, FOUR_NAMES[f.key], f.next);
   if (g.liveRankings && tallyInProgress(g)) {
     const ranked = tallyRankLive(g);
     return {
@@ -1730,28 +1715,45 @@ function nowLiveBoard(ctx, g) {
   return null;
 }
 
-// The four-team bracket (Step 22's data: state.brackets4[gid] = { m: { s1, s2, third, final } }) as four cells in the order of
-// play; null while no such bracket exists (nothing reads it today). Normalised on read: a team id that is not one of the camp's
-// is dropped, third place is the two semifinal losers and the final the two winners unless a match recorded its own.
+// The 'match' board of a bracket game: the pair playing now (with the live tally when the game keeps one) and the pair after it.
+function nowMatchBoard(ctx, g, pair, phase, nextPair) {
+  let cap = phase;
+  let scores = null;
+  if (pair && g.ladderScoring) {
+    const l = getLadderMatch(g, pair[0], pair[1]);
+    scores = [l.a, l.b];
+    cap += ' · First to ' + (g.ladderScoring.target || 21);
+  } else if (pair && g.liveTracker) {
+    const l = getLiveMatch(g, pair[0], pair[1]);
+    scores = [l.hr[pair[0]] || 0, l.hr[pair[1]] || 0];
+    const innings = g.liveTracker.innings || 3;
+    if (innings > 1) cap += ' · ' + (g.liveTracker.periodLabel || 'Inning') + ' ' + l.inning + ' of ' + innings;
+    if (g.liveTracker.outs) cap += ' · ' + outsLabel(l.outs);
+  }
+  return {
+    kind: 'match', cap,
+    sides: pair ? pair.map((id, i) => ({ team: id, name: teamName(id), v: scores ? scores[i] : null, mine: id === ctx.myTeam })) : [],
+    next: nextPair || null,
+  };
+}
+
+// The four-team bracket (state.brackets4[gid] = { m: { s1, s2, third, final } }) as four cells in the order of play, read through
+// fourRead (every team a roster id; third place is the two semifinal losers and the final the two winners until a match records
+// its own); null while no bracket exists or this build cannot read the one that does. While a recorded match disagrees with the
+// semifinals it came from (`hold`) no cell is live and no team is told what is next: a director is settling it.
 function nowBracket4(ctx, g) {
-  const raw = state.brackets4 && state.brackets4[g.id];
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !raw.m || typeof raw.m !== 'object' || Array.isArray(raw.m)) return null;
   const ids = teamIds();
-  const pick = (v) => (typeof v === 'string' && ids.includes(v) ? v : '');
-  const cell = (k) => { const r = raw.m[k] && typeof raw.m[k] === 'object' ? raw.m[k] : {}; return { a: pick(r.a), b: pick(r.b), winner: pick(r.winner) }; };
-  const m = { s1: cell('s1'), s2: cell('s2'), third: cell('third'), final: cell('final') };
-  const loser = (c) => (c.winner ? (c.winner === c.a ? c.b : c.a) : '');
-  m.third.a = m.third.a || loser(m.s1); m.third.b = m.third.b || loser(m.s2);
-  m.final.a = m.final.a || m.s1.winner; m.final.b = m.final.b || m.s2.winner;
-  const order = ['s1', 's2', 'third', 'final'];
-  const names = { s1: 'Semifinal 1', s2: 'Semifinal 2', third: '3rd place', final: 'Final' };
+  const v = fourRead(state.brackets4 && state.brackets4[g.id], ids);
+  if (!v) return null;
+  const m = v.m;
+  const hold = !!v.recheck;
   const tbd = { third: ['Semifinal 1 loser', 'Semifinal 2 loser'], final: ['Semifinal 1 winner', 'Semifinal 2 winner'] };
-  const live = order.find((k) => !m[k].winner);
-  const cells = order.map((k, i) => {
+  const live = hold ? undefined : FOUR_ORDER.find((k) => !m[k].winner);
+  const cells = FOUR_ORDER.map((k) => {
     const c = m[k];
     return {
-      key: 'b4-' + k, slot: k, name: names[k],
-      status: c.winner ? 'done' : k === live ? 'live' : 'todo', next: !!live && order[order.indexOf(live) + 1] === k,
+      key: 'b4-' + k, slot: k, name: FOUR_NAMES[k],
+      status: c.winner ? 'done' : k === live ? 'live' : 'todo', next: !!live && FOUR_ORDER[FOUR_ORDER.indexOf(live) + 1] === k,
       teams: [c.a, c.b].map((id, j) => ({
         team: id, name: id ? teamName(id) : '', tbd: id ? '' : (tbd[k] ? tbd[k][j] : 'To be decided'),
         won: !!id && c.winner === id, lost: !!id && !!c.winner && c.winner !== id, mine: !!id && id === ctx.myTeam,
@@ -1761,15 +1763,15 @@ function nowBracket4(ctx, g) {
   // The line for MY team, from the bracket's own order (never "the last game today": the block can hold other games).
   let note = null;
   const me = ctx.myTeam;
-  if (me) {
+  if (me && !hold && !m.final.winner) {
     const word = nowTeamWord(me);
     const inSemi = ['s1', 's2'].find((k) => m[k].a === me || m[k].b === me);
     const thirdLeft = !m.third.winner;
-    if (inSemi && !m[inSemi].winner) note = { lead: word, rest: ' plays in ' + names[inSemi].toLowerCase().replace('semifinal', 'semifinal') };
+    if (inSemi && !m[inSemi].winner) note = { lead: word, rest: ' plays in ' + FOUR_NAMES[inSemi].toLowerCase() };
     else if (inSemi && m[inSemi].winner === me) note = { lead: word, rest: ' plays in the final next' + (thirdLeft ? ' · 3rd place match first' : '') };
     else if (inSemi && thirdLeft) note = { lead: word, rest: ' plays the 3rd place match next' };
   }
-  return { cells, note: note ? Object.assign({ team: me, mine: true }, note) : null };
+  return { cells, hold, note: note ? Object.assign({ team: me, mine: true }, note) : null };
 }
 
 // One game as a row of the Now card (and, later, the Games tab).
@@ -6673,8 +6675,10 @@ function matchupSlot(aId, bId) {
 // bracket screens use, so it stays correct now that fixed-order Round 1 no
 // longer sets selectedPair.
 function upcomingMatchups(g) {
+  if (g.format !== 'tournament') return [];
   const raw = state.brackets && state.brackets[g.id];
-  if (!raw || g.format !== 'tournament' || !bracketKnown(raw)) return [];
+  if (!raw) return fourUpcoming(g);
+  if (!bracketKnown(raw)) return [];
   const b = normalizeBracket(raw);
   const out = [];
   const cur = currentMatchupOf(g, b);
@@ -6682,6 +6686,28 @@ function upcomingMatchups(g) {
   const nxt = nextMatchupOf(g, b);
   if (nxt) out.push(matchupSlot(nxt[0], nxt[1]));
   return out.filter(Boolean);
+}
+
+// The same for a four-team bracket: the match waiting for a winner, and the one after it when BOTH its teams are known (the
+// second semifinal after the first, the final after the 3rd-place match; the 3rd-place match is not known while a semifinal is on).
+function fourUpcoming(g) {
+  const f = fourLive(g);
+  if (!f) return [];
+  const out = [matchupSlot(f.pair[0], f.pair[1])];
+  if (f.next) out.push(matchupSlot(f.next[0], f.next[1]));
+  return out.filter(Boolean);
+}
+
+// A four-team bracket's live part as plain data, for every reader that wants "who plays now and who after": { key, pair, nextKey,
+// next } — `next` only when both its teams are known — or null (no bracket, one this build cannot read, one waiting on a
+// re-check, one that is finished).
+function fourLive(g) {
+  const b = g && state.brackets4 ? state.brackets4[g.id] : null;
+  const ids = teamIds();
+  const cur = fourCurrent(b, ids);
+  if (!cur) return null;
+  const nx = fourNext(b, ids);
+  return { key: cur.key, pair: [cur.a, cur.b], nextKey: nx ? nx.key : '', next: nx && nx.a && nx.b ? [nx.a, nx.b] : null };
 }
 
 // gameId -> [slot,...] snapshot of known upcoming matchups, so a genuinely NEW
@@ -9335,11 +9361,9 @@ function gameRoundTeams(g) {
     const pair = currentMatchupOf(g, nb);
     return pair ? pair.slice(0, 2).filter(Boolean) : [];
   }
-  const b4 = nowBracket4({ myTeam: '' }, g);
-  if (b4) {
-    const cell = b4.cells.find((c) => c.status === 'live');
-    return cell ? cell.teams.map((t) => t.team).filter(Boolean) : [];
-  }
+  const f = fourLive(g);
+  if (f) return f.pair.slice();
+  if (g.format === 'tournament' && state.brackets4 && state.brackets4[g.id]) return []; // a four-team bracket that is finished, waiting on a re-check or unreadable
   const first = Array.isArray(g.roundOneMatchups) && g.roundOneMatchups.length ? g.roundOneMatchups[0] : null;
   return Array.isArray(first) ? first.slice(0, 2).filter(Boolean) : [];
 }
@@ -10039,6 +10063,7 @@ function renderLiveWatch(container, g) {
     return;
   }
   const raw = state.brackets && state.brackets[g.id];
+  if (!raw && state.brackets4 && state.brackets4[g.id]) { renderLiveWatchFour(container, g); return; }
   if (!raw) {
     // One plain line with a line icon (§8.6, §8.8): never an emoji in a dashed, tinted box.
     setLiveHtmlIfChanged(container, '<p class="nw-note gv-wait"><svg class="ico" aria-hidden="true"><use href="#i-clock"/></svg>' +
@@ -10089,6 +10114,34 @@ function renderLiveWatch(container, g) {
   if (boardEl && g.liveTracker) {
     boardDiffCelebrate(boardEl, g, getLiveMatch(g, pair[0], pair[1]), pair);
   }
+}
+
+// The same for a four-team bracket (senior): the match under way on the big board, who plays next, the four cells in order of play
+// (Now's own card, so a counselor reads one picture of it everywhere) and, for the team this phone follows, what it plays next.
+// Display only, and built from fourRead, so nothing a stray database value says reaches the markup as anything but a team of this camp.
+function renderLiveWatchFour(container, g) {
+  const b4 = nowBracket4({ myTeam: nowMyTeam() }, g);
+  if (!b4) {
+    // Something is there that this build cannot read (or a bracket still being set up): one quiet line, never a throw.
+    setLiveHtmlIfChanged(container, '<p class="nw-note gv-wait"><svg class="ico" aria-hidden="true"><use href="#i-clock"/></svg>' +
+      '<span>Not scored yet. The winners show here when a director saves them.</span></p>', [g]);
+    return;
+  }
+  const f = fourLive(g);
+  const grid = typeof nowBracket4Html === 'function' ? `<div class="gv-b4">${nowBracket4Html(b4)}</div>` : '';
+  const note = b4.note
+    ? `<p class="gv-b4-note" data-team="${esc(b4.note.team)}">${typeof nowMark === 'function' ? nowMark(b4.note.team, 22) : ''}<span><b>${esc(b4.note.lead)}</b>${esc(b4.note.rest)}</span></p>` : '';
+  let head;
+  if (f) head = `<p class="live-watch-label">Live now · ${esc(FOUR_NAMES[f.key])}</p>`;
+  else head = `<p class="live-watch-label">${b4.hold ? 'A director is double-checking a result.' : 'All four matches are played. A director saves the result next.'}</p>`;
+  const board = f ? liveBoardHTML(g, f.pair[0], f.pair[1]) : '';
+  const onDeck = f && f.next
+    ? `<p class="live-watch-ondeck">Up next: ${teamEmoji(f.next[0])} ${esc(teamName(f.next[0]))} vs ${teamEmoji(f.next[1])} ${esc(teamName(f.next[1]))}</p>` : '';
+  setLiveHtmlIfChanged(container, `<div class="live-watch live-watch-four">${head}${board}${onDeck}${note}${grid}` +
+    '<p class="muted live-watch-note">Updates automatically as the ref scores — no refresh needed.</p></div>', [g]);
+  // Every render, written or not: it diffs the score against the last one.
+  const boardEl = container.querySelector('.big-board');
+  if (f && boardEl && g.liveTracker) boardDiffCelebrate(boardEl, g, getLiveMatch(g, f.pair[0], f.pair[1]), f.pair);
 }
 
 // The "+7 pts" chip beside a medal. The winner stays visible to everyone; what
@@ -10587,6 +10640,8 @@ function cancelBracket(g, kind) {
 // Nothing here reads state, the DOM or the clock: every function takes the bracket and the camp's team ids, and the ones that
 // change a bracket change it in place and say what they did. The page-state wrappers (fourRecordTap …) are below.
 const FOUR_ORDER = ['s1', 's2', 'third', 'final'];
+// What each match is called on every screen (the step bar, the Now card's four cells, a live row's line, a toast).
+const FOUR_NAMES = { s1: 'Semifinal 1', s2: 'Semifinal 2', third: '3rd place', final: 'Final' };
 
 // How many teams a tournament can be played with: six (the wizard, `brackets`), four (`brackets4`), or neither.
 function bracketKindFor(n) { return n === 6 ? 'six' : n === 4 ? 'four' : null; }
