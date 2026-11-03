@@ -267,7 +267,14 @@ function renderGamesPanel(m) {
   if (!m) return;
   gamesWire();
   const live = gamesOnScreen();
-  if (m.off) { gamesUi.painted = true; return; } // What counselors see turned Games off: applyCardVisibility hides the sections, #games-off says so
+  if (m.off) { // What counselors see turned Games off: applyCardVisibility hides the sections, #games-off says so; nothing stays in them
+    setHtmlIfChanged(gamesEl('games-day-body'), '');
+    setHtmlIfChanged(gamesEl('games-days-pick'), '');
+    gamesUi.painted = true;
+    gamesUi.dayId = null;
+    gamesUi.dayIdx = -1;
+    return;
+  }
   renderGamesSecret();
   gamesPaintStandings(m, live);
   gamesPaintPicker(m, live);

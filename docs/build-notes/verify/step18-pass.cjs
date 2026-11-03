@@ -166,6 +166,7 @@ async function audit(page, label, scope) {
     const addDisabled = await page.getAttribute('#qp-add', 'aria-disabled');
     if (addDisabled === 'true') ok('Add is the dashed well until a key is chosen'); else say('Add not disabled');
     await audit(page, 'quick sheet', '#sheet-quick');
+    if (process.env.SHOTS) { await page.click('#qp-keys .qp-key[data-pts="2"]'); await page.screenshot({ path: OUT + 'quick-sheet.png' }); }
     const beforePts = await page.evaluate((t) => medalCounts()[t].points, team);
     await page.click('#qp-keys .qp-key[data-pts="3"]');
     await page.click('#qp-why .qp-chip[data-why="Team spirit"]');
@@ -187,6 +188,7 @@ async function audit(page, label, scope) {
     const copyRow = await page.evaluate(() => !document.getElementById('sheet-standings').hidden && !!document.getElementById('gs-copy'));
     if (copyRow) ok('standings sheet opens'); else say('standings sheet did not open');
     await audit(page, 'standings sheet', '#sheet-standings');
+    if (process.env.SHOTS) await page.screenshot({ path: OUT + 'standings-sheet.png' });
     await page.click('#sheet-standings .sheet-close');
     await page.waitForTimeout(400);
     // Score opens the takeover, a saved game shows Next game
