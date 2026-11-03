@@ -11805,9 +11805,16 @@ function dismissChange(id) {
 const QUIET_START_HOUR = 21; // 9pm — pause the timer
 const QUIET_END_HOUR = 7;    // 7am — resume the timer (first notice rolls in at 7am)
 
+let _campHourFmt = null;
 function campHour(ms) {
-  const h = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: '2-digit', hour12: false }).format(new Date(ms));
-  return parseInt(h, 10) % 24; // some engines format midnight as "24"
+  try {
+    if (!_campHourFmt) _campHourFmt = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: '2-digit', hour12: false });
+    const h = _campHourFmt.format(new Date(ms));
+    return parseInt(h, 10) % 24; // some engines format midnight as "24"
+  } catch (e) {
+    const d = new Date(ms); // fallback
+    return d.getHours();
+  }
 }
 
 function isAwakeHours(ms) {
@@ -12002,16 +12009,22 @@ function activeAnnouncements() {
 // A time of day in camp time ("4:52 PM"); with the weekday ahead of it when it
 // was not today ("Tue 4:52 PM") unless `timeOnly`. Never the phone's own zone, and never the narrow
 // no-break space newer engines put before PM.
+let _mcFmtTime = null;
+let _mcFmtDay = null;
+let _mcFmtWeek = null;
 function messageClock(iso, timeOnly) {
   const d = new Date(iso);
   if (!iso || Number.isNaN(d.getTime())) return '';
   try {
-    const fmt = (o) => new Intl.DateTimeFormat('en-US', Object.assign({ timeZone: CAMP_TZ }, o)).formatToParts(d);
-    const t = fmt({ hour: 'numeric', minute: '2-digit', hour12: true });
+    if (!_mcFmtTime) {
+      _mcFmtTime = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: 'numeric', minute: '2-digit', hour12: true });
+      _mcFmtDay = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, year: 'numeric', month: 'numeric', day: 'numeric' });
+      _mcFmtWeek = new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, weekday: 'short' });
+    }
+    const t = _mcFmtTime.formatToParts(d);
     const get = (parts, type) => ((parts.find((p) => p.type === type) || {}).value || '').replace(/[  ]/g, ' ');
     const clock = get(t, 'hour') + ':' + get(t, 'minute') + ' ' + get(t, 'dayPeriod').toUpperCase();
-    const day = (x) => new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, year: 'numeric', month: 'numeric', day: 'numeric' }).format(x);
-    return timeOnly || day(d) === day(new Date()) ? clock : get(fmt({ weekday: 'short' }), 'weekday') + ' ' + clock;
+    return timeOnly || _mcFmtDay.format(d) === _mcFmtDay.format(new Date()) ? clock : get(_mcFmtWeek.formatToParts(d), 'weekday') + ' ' + clock;
   } catch (e) { return ''; }
 }
 

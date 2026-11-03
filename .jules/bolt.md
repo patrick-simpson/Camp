@@ -1,0 +1,3 @@
+## 2024-05-19 - Intl.DateTimeFormat instantiation bottleneck
+**Learning:** Instantiating `Intl.DateTimeFormat` dynamically inside tight loops (like `awakeElapsedMs` which iteratively steps through time) or heavily-rendered UI functions (like `messageClock` for banners) creates severe performance bottlenecks. Browsers take significant time parsing the locale, timezone, and options.
+**Action:** Always lazily cache and reuse `Intl.DateTimeFormat` instances. Initialize them once via top-level closures or lazy singletons wrapped in a `try...catch` block to preserve fallback behaviors on older engines without triggering `RangeError` on script load.
