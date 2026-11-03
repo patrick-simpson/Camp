@@ -621,3 +621,290 @@ test('a counselor\'s game view of a four-team bracket: the match on the big boar
     assert.ok(/Not scored yet/.test(box.innerHTML));
   });
 });
+
+// ── the screens (Step 22, session 2) ────────────────────────────────────────────────────────────────────────────
+// renderBracketFour draws the game's entry area from state alone; a tap is `fourEntryTap(target, container)` with the target resolved
+// by data-four / .winner-btn / data-four-match, exactly what the delegated listener passes. The driver below is that listener.
+
+function screen(g) {
+  const box = document.getElementById('entry-area');
+  if (box.__fourGid !== g.id) { box.innerHTML = ''; box.__liveKey = null; box.__liveHolds = null; }
+  renderTournament(box, g); // the same door the game takeover uses
+  return box;
+}
+
+// A tap on what the screen holds: { winner: 't0', match: 's1' } or { four: 'undo', team?: 't1' }.
+function tap(box, what) {
+  const els = {};
+  if (what.winner) {
+    els['.winner-btn'] = { dataset: { winner: what.winner } };
+    els['[data-four-match]'] = { dataset: { fourMatch: what.match } };
+  }
+  if (what.four) els['[data-four]'] = { dataset: { four: what.four, team: what.team } };
+  const t = { closest: (sel) => els[sel] || null };
+  return fourEntryTap(t, box);
+}
+
+// The screen's offers, read from its markup: which data-four actions and winner buttons it holds.
+const offers = (box) => [...String(box.innerHTML).matchAll(/data-four="([a-z-]+)"/g)].map((m) => m[1]);
+const winnerBtns = (box) => [...String(box.innerHTML).matchAll(/class="winner-btn"[^>]*data-winner="([^"]+)"/g)].map((m) => m[1]);
+
+function withToasts(fn) {
+  const real = showToast; const said = [];
+  showToast = (m) => { said.push(String(m)); };
+  try { return fn(said); } finally { showToast = real; }
+}
+
+test('Start card, fixed pairs: the pairs are shown as set, one button starts them, and a started bracket shows the first semifinal', () => {
+  const g = fourGame();
+  g.bracketSeed = 'fixed';
+  g.roundOneMatchups = [['t0', 't3'], ['t1', 't2']];
+  quiet(() => {
+    let box = screen(g);
+    assert.ok(/The semifinals for this game/.test(box.innerHTML));
+    assert.deepEqual(offers(box), ['start-plan'], 'fixed pairs offer no choice');
+    assert.notOk(state.brackets4[g.id], 'a render writes nothing');
+    tap(box, { four: 'start-plan' });
+    assert.deepEqual(state.brackets4[g.id].m.s1, { a: 't0', b: 't3' });
+    box = screen(g);
+    assert.ok(/<h3 data-four-h tabindex="-1">Semifinal 1<\/h3>/.test(box.innerHTML));
+    assert.deepEqual(winnerBtns(box), ['t0', 't3']);
+    assert.ok(/data-four-match="s1"/.test(box.innerHTML));
+    assert.ok(/wizard-step active"[^>]*aria-current="step">Semifinal 1/.test(box.innerHTML), 'the step bar says where it is');
+    assert.deepEqual(offers(box), ['cancel'], 'Cancel only: nothing to undo yet');
+  });
+});
+
+test('Start card, by the standings: suggested pairs with Choose different; picking two teams fills the rest; Start with a pick', () => {
+  const g = fourGame();
+  g.bracketSeed = 'standings';
+  seedPoints({ gold: 't2', silver: 't0', bronze: 't3' }); // t2 leads, then t0, t3, t1
+  quiet(() => {
+    let box = screen(g);
+    assert.ok(/Suggested by the points right now/.test(box.innerHTML));
+    assert.deepEqual(offers(box), ['start-plan', 'choose']);
+    assert.deepEqual(fourSeedPlan(g).pairs, [['t2', 't1'], ['t0', 't3']], 'best v worst, second v third');
+    tap(box, { four: 'choose' });
+    box = screen(g);
+    assert.deepEqual(offers(box).filter((x) => x !== 'pick'), ['unchoose'], 'no Start until four are placed');
+    tap(box, { four: 'pick', team: 't1' });
+    tap(box, { four: 'pick', team: 't3' });
+    box = screen(g);
+    assert.ok(offers(box).includes('start-pick'), 'two picks fill the other semifinal');
+    assert.ok(/Semifinal 1<\/span>/.test(box.innerHTML) && /Semifinal 2<\/span>/.test(box.innerHTML));
+    tap(box, { four: 'pick', team: 't1' }); // take one out again
+    box = screen(g);
+    assert.notOk(offers(box).includes('start-pick'));
+    tap(box, { four: 'pick', team: 't1' });
+    tap(box, { four: 'start-pick' });
+    assert.deepEqual([state.brackets4[g.id].m.s1, state.brackets4[g.id].m.s2], [{ a: 't3', b: 't0' }, { a: 't2', b: 't1' }],
+      'the order the teams were placed in: the first two meet in Semifinal 1, the other two in Semifinal 2');
+  });
+});
+
+test('Start card, a pick, and "by the standings" on a phone with no confirmed points: the director picks, and is told why', () => {
+  const g = fourGame();
+  g.bracketSeed = 'standings';
+  setMemberRole('editor', { provisional: true });
+  quiet(() => {
+    const box = screen(g);
+    assert.ok(/once your sign-in is confirmed/.test(box.innerHTML));
+    assert.notOk(offers(box).includes('start-plan'));
+    assert.deepEqual(offers(box).filter((x) => x !== 'pick'), [], 'nothing to go back to');
+  });
+  g.bracketSeed = 'pick';
+  setMemberRole('editor');
+  quiet(() => {
+    const box = screen(g);
+    assert.notOk(/once your sign-in is confirmed/.test(box.innerHTML));
+    assert.equal(offers(box).filter((x) => x === 'pick').length, 4);
+  });
+});
+
+test('the whole tournament through the screens: winner taps, the step bar, 3rd place before the final, the summary, Save Result', () => {
+  const g = fourGame();
+  g.bracketSeed = 'fixed';
+  g.roundOneMatchups = [['t0', 't3'], ['t1', 't2']];
+  quiet((log) => {
+    let box = screen(g);
+    tap(box, { four: 'start-plan' });
+    const play = (key, winner, headline) => {
+      box = screen(g);
+      assert.ok(new RegExp('<h3 data-four-h tabindex="-1">' + headline + '</h3>').test(box.innerHTML), key + ': ' + box.innerHTML.slice(0, 300));
+      assert.ok(winnerBtns(box).includes(winner));
+      tap(box, { winner, match: key });
+    };
+    play('s1', 't3', 'Semifinal 1');
+    play('s2', 't1', 'Semifinal 2');
+    box = screen(g);
+    assert.deepEqual(winnerBtns(box), ['t0', 't2'], '3rd place: the two losers');
+    assert.ok(/3rd place match<\/h3>/.test(box.innerHTML) && /bronze/.test(box.innerHTML));
+    assert.ok(/Completed:[\s\S]*Semifinal 1: [^<]*def\./.test(box.innerHTML));
+    assert.ok(offers(box).includes('undo'));
+    play('third', 't2', '3rd place match');
+    play('final', 't3', 'Final');
+    box = screen(g);
+    assert.ok(/Game results/.test(box.innerHTML) && /id="save-bracket-btn"/.test(box.innerHTML));
+    assert.deepEqual(offers(box).filter((x) => x === 'save').length, 1);
+    assert.ok(/wizard-step active"[^>]*aria-current="step">Results/.test(box.innerHTML));
+    tap(box, { four: 'save' });
+    assert.deepEqual(state.results[g.id].medals, { gold: 't3', silver: 't1', bronze: 't2' });
+    assert.notOk(state.brackets4[g.id], 'the bracket is retired with the result');
+    assert.ok(log.celebrated.includes('t3'));
+  });
+});
+
+test('a stale tap is ignored and said: the screen was drawn before another phone recorded the match', () => {
+  const g = fourGame();
+  quiet(() => withToasts((said) => {
+    fourStartGame(g, [['t0', 't3'], ['t1', 't2']]);
+    const box = screen(g);
+    fourRecord(state.brackets4[g.id], 's1', 't3', IDS, 9); // the other phone's tap lands under this screen
+    const before = clone(state.brackets4[g.id]);
+    tap(box, { winner: 't0', match: 's1' });
+    assert.deepEqual(state.brackets4[g.id], before, 'the winner already recorded is not overwritten');
+    assert.ok(said.some((m) => /already recorded/.test(m)), said.join('|'));
+    // a tap for a match that is not up any more
+    tap(box, { winner: 't0', match: 'third' });
+    assert.deepEqual(state.brackets4[g.id], before);
+    // a late tap after the result was saved
+    state.results[g.id] = { medals: { gold: 't0', silver: 't1', bronze: 't2' }, savedAt: 'x' };
+    tap(box, { winner: 't1', match: 's2' });
+    assert.deepEqual(state.brackets4[g.id], before);
+    assert.ok(said.some((m) => /result is already saved/.test(m)));
+  }));
+});
+
+test('Undo last match: offered from the first recorded match on, takes back the last one, and is not offered for a match the director\'s own team played', () => {
+  const g = fourGame();
+  quiet(() => {
+    fourStartGame(g, [['t0', 't3'], ['t1', 't2']]);
+    fourRecordTap(g, 's1', 't0');
+    let box = screen(g);
+    assert.ok(offers(box).includes('undo'));
+    tap(box, { four: 'undo' });
+    assert.notOk(state.brackets4[g.id].m.s1.winner, 'semifinal 1 is open again');
+    fourRecordTap(g, 's1', 't0');
+    setMemberTeam('t0');
+    box = screen(g);
+    assert.notOk(offers(box).includes('undo'), 't0 played that match: another director undoes it');
+    assert.deepEqual(winnerBtns(box), ['t1', 't2'], 'semifinal 2 is theirs to record');
+    setMemberTeam(null);
+  });
+});
+
+test('the own-team guard on the screen: no winner buttons for a match the director\'s team plays, and the reason is said', () => {
+  const g = fourGame();
+  quiet(() => {
+    fourStartGame(g, [['t0', 't3'], ['t1', 't2']]);
+    setMemberTeam('t3');
+    const box = screen(g);
+    assert.deepEqual(winnerBtns(box), []);
+    assert.ok(/read-only for you/.test(box.innerHTML));
+    const before = clone(state.brackets4[g.id]);
+    tap(box, { winner: 't0', match: 's1' });
+    assert.deepEqual(state.brackets4[g.id], before, 'and a forged tap does nothing');
+    setMemberTeam(null);
+  });
+});
+
+test('the Re-check card: names what changed, offers both answers in words, and records nothing until one is chosen', () => {
+  const g = fourGame();
+  quiet(() => withToasts((said) => {
+    fourStartGame(g, [['t0', 't3'], ['t1', 't2']]);
+    ['s1:t0', 's2:t1', 'third:t3'].forEach((st) => { const [k, w] = st.split(':'); fourRecordTap(g, k, w); });
+    state.brackets4[g.id].m.s1.winner = 't3'; // another phone changed semifinal 1 after the 3rd-place match
+    let box = screen(g);
+    assert.ok(/Please check a result/.test(box.innerHTML));
+    assert.ok(/Semifinal 1 now says <b>Gold Team<\/b> won/.test(box.innerHTML), box.innerHTML);
+    assert.deepEqual(offers(box).filter((x) => x !== 'cancel'), ['keep', 'back']);
+    assert.ok(/Keep Gold Team as the winner/.test(box.innerHTML));
+    assert.ok(/Put Red Team back as the winner/.test(box.innerHTML));
+    assert.deepEqual(winnerBtns(box), [], 'no match can be recorded while it is waiting');
+    assert.notOk(/id="save-bracket-btn"/.test(box.innerHTML), 'and no result can be saved');
+    assert.ok(/class="wizard-step done/.test(box.innerHTML) && !/wizard-step active/.test(box.innerHTML), 'no step is "where it is"');
+    tap(box, { four: 'back' });
+    assert.equal(state.brackets4[g.id].m.s1.winner, 't0');
+    box = screen(g);
+    assert.deepEqual(winnerBtns(box), ['t0', 't1'], 'the final is on again');
+    // keep: the matches played on the old semifinal are thrown out
+    state.brackets4[g.id].m.s2.winner = 't2';
+    box = screen(g);
+    assert.ok(/Please check a result/.test(box.innerHTML));
+    tap(box, { four: 'keep' });
+    assert.notOk(state.brackets4[g.id].m.third, 'the 3rd-place match is to be played again');
+    assert.deepEqual(said, []);
+  }));
+});
+
+test('Cancel this bracket asks first and takes the bracket and its tally away; a bracket this build cannot read can be cleared, nothing else', async () => {
+  const g = fourGame();
+  const realRender = renderAll;
+  const realAsk = typeof askDialog === 'function' ? askDialog : undefined;
+  renderAll = () => {};
+  try {
+    fourStartGame(g, [['t0', 't3'], ['t1', 't2']]);
+    state.live[g.id] = { key: 't0|t3', inning: 1, outs: 0, half: 0, hr: { t0: 1 } };
+    const asked = [];
+    askDialog = async (o) => { asked.push(o.title); return 'cancel'; };
+    await fourCancelTap(g, false);
+    assert.ok(state.brackets4[g.id], 'Keep it: nothing changed');
+    askDialog = async (o) => { asked.push(o.title); return 'yes'; };
+    await fourCancelTap(g, false);
+    assert.notOk(state.brackets4[g.id]);
+    assert.notOk(state.live[g.id], 'the live tally goes with it');
+    assert.deepEqual(asked, ['Cancel this bracket?', 'Cancel this bracket?']);
+    // an unreadable one: only the way out
+    state.brackets4[g.id] = { m: { final: { a: 't0', b: 't1', winner: 't0' } } };
+    const box = screen(g);
+    assert.ok(/can’t be read here/.test(box.innerHTML));
+    assert.deepEqual(offers(box), ['reload', 'clear']);
+    assert.notOk(/winner-btn/.test(box.innerHTML));
+    await fourCancelTap(g, true);
+    assert.notOk(state.brackets4[g.id]);
+    // a result saved while the question was open is not undone by the answer
+    fourStartGame(g, [['t0', 't3'], ['t1', 't2']]);
+    askDialog = async () => { state.results[g.id] = { medals: { gold: 't0', silver: 't1', bronze: 't2' }, savedAt: 'x' }; return 'yes'; };
+    assert.equal(await fourCancelTap(g, false), false);
+    assert.ok(state.brackets4[g.id], 'the bracket stays once a result exists');
+  } finally { renderAll = realRender; askDialog = realAsk; }
+});
+
+test('an idle repaint writes nothing and re-binds nothing; a database string never reaches the markup as anything but text', () => {
+  const g = fourGame();
+  quiet(() => {
+    state.teams[0].name = '<img src=x onerror=alert(1)> Reds';
+    fourStartGame(g, [['t0', 't3'], ['t1', 't2']]);
+    const box = screen(g);
+    const html = box.innerHTML;
+    assert.notOk(/<img src=x/.test(html), 'the team name is escaped');
+    assert.ok(/&lt;img src=x/.test(html));
+    const realBind = bindMatchTracker; let binds = 0;
+    bindMatchTracker = (...a) => { binds += 1; return realBind(...a); };
+    try {
+      renderTournament(box, g); renderTournament(box, g);
+      assert.equal(binds, 0, 'nothing changed, so nothing was rebuilt or re-bound');
+      fourRecordTap(g, 's1', 't0');
+      renderTournament(box, g);
+      assert.equal(binds, 1, 'a recorded match rebuilds the screen once');
+    } finally { bindMatchTracker = realBind; }
+  });
+});
+
+test('a counselor preview and a viewer reach none of the screen\'s controls: the screen is not drawn for them, and a forged tap does nothing', () => {
+  const g = fourGame();
+  quiet(() => {
+    fourStartGame(g, [['t0', 't3'], ['t1', 't2']]);
+    const box = screen(g);
+    const before = clone(state.brackets4[g.id]);
+    counselorPreviewOn = true;
+    try {
+      assert.equal(tap(box, { winner: 't0', match: 's1' }), false);
+      assert.equal(tap(box, { four: 'cancel' }), false);
+      assert.deepEqual(state.brackets4[g.id], before);
+    } finally { counselorPreviewOn = false; }
+    setMemberRole('viewer');
+    assert.equal(tap(box, { winner: 't0', match: 's1' }), false);
+    assert.deepEqual(state.brackets4[g.id], before);
+  });
+});

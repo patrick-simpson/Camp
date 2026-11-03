@@ -994,15 +994,17 @@ test('Matchups on the sheet: Set them now shows the board, taps fill it in order
   } finally { gsShut(); gsEnd(); }
 });
 
-test('a bracket on a camp the app has no bracket for says so (the four-team bracket arrives with Step 22); a six-team camp says nothing', async () => {
+test('a bracket on a camp the app has no bracket for says so (a roster of neither four nor six); a four- or six-team camp says nothing', async () => {
   gsStart();
   try {
     const o = await gsMade('tournament', 'Note probe');
     renderGameSheet();
-    const expectNote = !bracketPlayable(teamIds().length);
-    assert.equal(setupEl('gm-b4-note').hidden, !expectNote);
+    assert.equal(bracketPlayable(teamIds().length), true, 'six and four teams both have a bracket now (Step 22)');
+    assert.equal(setupEl('gm-b4-note').hidden, true);
     assert.equal(gmBracketSub(), teamIds().length === 4 ? '2 semifinals, then the 3rd-place match, then the final' : 'Teams play head-to-head; winners move on');
-    assert.ok(/four-team bracket isn’t in the app yet/.test(readFixture('../index.html')), 'the note is in the markup');
+    assert.ok(/A bracket needs four or six teams/.test(readFixture('../index.html')), 'the note is in the markup, for every other roster');
+    assert.equal(bracketPlayable(5), false);
+    assert.equal(bracketPlayable(8), false);
   } finally { gsShut(); gsEnd(); }
 });
 

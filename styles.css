@@ -17482,3 +17482,69 @@ button.gs-row:focus-visible {
     border-color: var(--ink-3);
   }
 }
+
+/* ── The four-team bracket's screens (Step 22; senior's Legacy Game) ──────────────────────────
+   The six-team wizard's own look (step pills, team chips, the call-up callout, the medal rows) carries the flow, so the two
+   brackets look alike; these are the few pieces it has no word for, and the 44px target the wizard's links never had. */
+.four-entry .link-btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target);
+  padding: 0 0.35rem;
+  font-size: 0.95rem;
+}
+.four-entry .wizard-footer {
+  margin-top: 0.75rem;
+}
+.four-alt {
+  margin: 0.4rem 0 0;
+  text-align: center;
+}
+.four-pick .team-chip {
+  min-height: var(--target);
+}
+.four-pick .matchup-order {
+  margin-top: 0;
+}
+.four-open {
+  color: var(--ink-2);
+  font-weight: 500;
+}
+.four-entry [data-four-h]:focus {
+  outline: none;
+}
+/* The Re-check: the one place the bracket stops and asks, so it wears the gold edge and nothing else does. */
+.four-recheck {
+  display: grid;
+  gap: var(--s-2, 8px);
+  padding: 14px 16px 16px;
+  border: 2px solid var(--gold-edge);
+  border-radius: var(--r-group);
+  background: var(--sheet);
+}
+.four-recheck h3 {
+  margin: 0;
+}
+.four-recheck p {
+  margin: 0;
+  overflow-wrap: break-word;
+}
+.four-recheck .four-sub {
+  margin: -2px 0 6px;
+  font-size: 0.875rem;
+}
+/* A counselor's view of the bracket: Now's four cells under the board, and the followed team's line. A size container of its own,
+   as the Now card is, so the cells go to one column when the line is short (the rule at nw-card). */
+.gv-b4 {
+  container: nw-card / inline-size;
+}
+.gv-b4-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 0;
+  font: 650 1rem/1.3 var(--font-ui);
+}
+.live-watch-four .live-watch-label {
+  margin: 0 0 8px;
+}

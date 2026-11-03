@@ -529,8 +529,11 @@ test('Clear result takes the points off and brings back no bracket (asked first,
   assert.notOk(state.brackets4 && state.brackets4[g.id], 'and no four-team one either');
 });
 
+// CHANGED ON PURPOSE (Step 22, session 2): a roster of four used to be refused here like any other size. It is now the four-team
+// bracket's (renderTournament hands it to renderBracketFour: bracket.senior.test.js runs it), so the wizard's refusal is for the
+// sizes that still have no bracket.
 test('the six-team wizard refuses any other roster size and says how many teams there are', () => {
-  [5, 4, 3].forEach((n) => {
+  [5, 3, 2].forEach((n) => {
     const g = tournament();
     state.teams = state.teams.slice(0, n);
     withWizard(g, (w) => {
