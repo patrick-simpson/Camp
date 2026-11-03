@@ -14580,6 +14580,15 @@ html.counselor-preview .sheet {
   min-width: 0;
   overflow-wrap: break-word;
 }
+/* A team's header carries its people AND camper counts ("3 people · 16 campers"): at large text the count drops under the name instead of
+   squeezing it to a sliver (Playwright, 200% text). */
+.ppl-head {
+  flex-wrap: wrap;
+  row-gap: 0;
+}
+.ppl-head .ppl-head-name {
+  flex: 1 1 7em;
+}
 .ppl-count {
   margin-left: auto;
   flex: none;

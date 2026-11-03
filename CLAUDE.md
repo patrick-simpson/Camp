@@ -4201,6 +4201,16 @@ setup-sync.js's "CAMPERS" section (the last one before the cache load); the scre
   the `name` anchor, either alone is covered by the other — turns it red). It covers the listener, Add (one update, 300 names, a 40-character name,
   markup typed as a name), Rename / Move / Remove / Undo, the stale-view rename the rules refuse, the offline hold and its flush, a counselor's phone
   and a counselor preview writing nothing, and a demotion; `campers.mjs` stays the rules' own proof.
+- **The Playwright pass for all of Step 25** is `docs/build-notes/verify/step25-pass.cjs` (serve the worktree with `python3 -m http.server 8961`;
+  no Firebase — the page is blocked from it, the role is set in the page and the database is a stub that says yes; `OUT=<dir>` for screenshots,
+  `QUICK=junior`, `ONLY=360/dark/200`). Every Step 25 surface — the hub's Teams / People / Campers rows, the Teams screen with its team and colours
+  sheets, the People screen with its five sheets, the join bar on Now and More's People row, the Campers screen (loaded, with names waiting for
+  signal and its Undo line) with its two sheets (including the offline line), and the denied screen's Ask to join (form, sent, closed) — as a
+  DIRECTOR, the OWNER (the owner row is a `<div>`, `body.setup-owner`, the repair sentence "need repair" against a director's "Ask Patrick to repair
+  team slots") and a COUNSELOR (who must reach none of it: `openBuilder` / `setupGo` / every setup sheet / the camper list / any setup element, and no
+  camper name anywhere in the page), both camps, 360 and 390 wide, light and dark, 100% / 130% / 200% text: no tap target under 44x44, no sideways
+  scroll, no row title squeezed to a sliver, and two idle `renderAll`s mutate nothing on the hub, Teams, People and Campers screens. (It found one
+  real defect: at 200% text the team header's name was squeezed to a sliver once the camper count joined its people count; `.ppl-head` wraps now.)
 - **Not built** (recorded): a printable sheet (decision Q7 allows one later); per-camper "absent" (cut, P2 C29); typing names into Put people on
   teams.
 
