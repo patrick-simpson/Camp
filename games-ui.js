@@ -126,7 +126,9 @@ function gamesDockHtml(d) {
     return d.save.ready ? '<button type="button" class="btn btn-big btn-block btn-gold gd-save" id="game-save" data-joy>Save result</button>'
       : `<button type="button" class="btn btn-big btn-block gd-save" id="game-save" aria-disabled="true">${esc(d.save.label)}</button>`;
   }
-  const back = (cls) => `<button type="button" class="btn btn-big ${cls} gd-back" id="game-dock-back" data-game-back>‹ ${esc(d.back)}</button>`;
+  // The button shows the header back's own short words ("‹ Wednesday games", "‹ Now": two lines at most beside Next game); its
+  // spoken name is the whole sentence ("Back to Wednesday games"), which contains the words it shows.
+  const back = (cls) => `<button type="button" class="btn btn-big ${cls} gd-back" aria-label="${esc(d.back)}" id="game-dock-back" data-game-back>‹ ${esc(d.to || d.back)}</button>`;
   if (d.tone === 'next') {
     return `<p class="gd-left" id="game-left">${esc(d.left)}</p><div class="gd-next">${back('')}` +
       `<button type="button" class="btn btn-big btn-gold gd-go" id="game-next" data-next-game="${esc(d.next.id)}" data-joy><span class="gd-go-t">Next game</span><span class="gd-go-s">${esc(d.next.name)} →</span></button></div>`;
@@ -151,6 +153,8 @@ function gamesPaintStandings(m, live) {
     return;
   }
   setDataIfChanged(root, 'empty', st.empty);
+  // Arrows off (no baseline this morning: a first competition day) takes the arrow column away, or it leaves a hole by the place.
+  setDataIfChanged(root, 'noarrows', !st.empty && !st.arrows);
   const taps = st.rows.some((r) => r.tap);
   const how = taps ? (st.arrows ? 'Arrows: places moved since this morning · tap a team to give quick points' : 'Tap a team to give quick points')
     : (st.arrows ? 'Arrows: places moved since this morning' : '');
@@ -172,7 +176,8 @@ function gamesPaintStandings(m, live) {
     st.rows.forEach((r) => {
       if (gamesUi.pts[r.team] === undefined || gamesUi.pts[r.team] === r.pts) return;
       const el = list.querySelector('[data-team="' + r.team + '"] .gs-pts');
-      if (el) JellyMotion.play(el, 'press', (x) => ({ transform: 'scale(' + (1 + 0.3 * (1 - Math.min(1, x))) + ')', transformOrigin: '100% 50%' }), { calm: false });
+      // §9.5's points pop: the new number rolls up 10px and settles from 1.12 (calm: nothing moves, the number is simply new).
+      if (el) JellyMotion.play(el, 'press', (x) => { const r = 1 - Math.min(1, x); return { transform: 'translateY(' + 10 * r + 'px) scale(' + (1 + 0.12 * r) + ')', transformOrigin: '100% 50%' }; }, { calm: false });
     });
   }
   gamesUi.pts = {};
@@ -225,7 +230,11 @@ function gamesPaintPicker(m, live) {
   const step = btns.length > 1 ? btns[1].offsetLeft - btns[0].offsetLeft : 0;
   if (!pill || !(step > 0)) return;
   const from = (prevIdx - idx) * step; // the pill rests under the new day; it springs from where the old one was
-  JellyMotion.play(pill, 'snap', (x) => ({ transform: 'translateX(' + from * (1 - Math.min(1, x)) + 'px)' }), { calm: false });
+  // §9.5: translateX with a stretch from the pill's own speed (the tab blob's rule: scale(1+s, 1−0.4s), s = min(.5, |v|/1600)).
+  JellyMotion.play(pill, 'snap', (x, v) => {
+    const s = Math.min(0.5, Math.abs(v * from) / 1600);
+    return { transform: 'translateX(' + from * (1 - Math.min(1, x)) + 'px) scale(' + (1 + s) + ', ' + (1 - 0.4 * s) + ')' };
+  }, { calm: false });
 }
 
 // A day arrives from the side it came from (calm: a fade).
@@ -338,12 +347,14 @@ function renderQuickSheet() {
   const q = gamesUi.quick;
   const info = q.team ? gamesQuickInfo(q.team) : null;
   if (!info) return;
-  const sig = JSON.stringify([q, info.now, info.name, info.doubled, !!canScoreRound(q.team)]);
+  const sig = JSON.stringify([q, info.now, info.medals, info.short, info.doubled, !!canScoreRound(q.team)]);
   if (gamesUi.quickWas === sig) return;
   gamesUi.quickWas = sig;
   setHtmlIfChanged(gamesEl('qp-mark'), teamMarkHtml(q.team, { size: 34 }));
-  setTextIfChanged(gamesEl('qp-team'), info.name);
-  setTextIfChanged(gamesEl('qp-now'), info.now);
+  // The title is the short name the tapped row and the Add button say ("Maples", not three lines of the full name at large text).
+  setTextIfChanged(gamesEl('qp-team'), info.short);
+  // The place and points, then the medals on a line of their own (the row leaves them out at very large text).
+  setTextIfChanged(gamesEl('qp-now'), info.medals ? info.now + '\n' + info.medals : info.now);
   const keys = gamesEl('qp-keys');
   if (keys && keys.querySelectorAll) {
     const btns = keys.querySelectorAll('.qp-key');
@@ -456,8 +467,9 @@ function gamesOpenAward() {
 // picker is built ONCE per game and team list and then PATCHED in place (attributes and two small slots per key), so a pick
 // cross-fades the next row from waiting, a finger and the keyboard focus stay on the key they pressed, and a snapshot that changes
 // nothing writes nothing. Its taps write the draft's own leaves (podiumPick), never a form: two directors can pick at once.
+// data-joy: a pick is a sparkle place (§9.7), a key that can't be pressed is not.
 function gamesPodiumKeyAttrs(k) {
-  return { 'aria-pressed': k.picked ? 'true' : 'false', 'aria-disabled': k.disabled ? 'true' : null, 'data-taken': k.taken || null, 'aria-label': k.label };
+  return { 'aria-pressed': k.picked ? 'true' : 'false', 'aria-disabled': k.disabled ? 'true' : null, 'data-taken': k.taken || null, 'aria-label': k.label, 'data-joy': k.disabled ? null : '' };
 }
 function gamesPodiumTakenHtml(k) {
   const place = PODIUM_MEDALS.indexOf(k.taken) + 1;
@@ -567,7 +579,30 @@ function gamesSaveTap(btn) {
   const body = gamesEl('takeover-game-body');
   if (body) body.scrollTop = 0; // the saved line and the winners, from the top
   if (had) focusBack(true, gamesEl('game-next') || gamesEl('game-dock-back'));
+  gamesSavedArrive(body);
   return r;
+}
+
+// The save just landed (podiumSave rendered the result synchronously): the winners drop in bronze → silver → gold, 120 ms apart,
+// landing with a wobble's squash at their foot (Now's medals, §9.5), and the Next game dock arrives from below. Started by THIS
+// tap, never by a render, so a re-render or a snapshot never replays it. Calm: they fade.
+function gamesSavedArrive(body) {
+  if (typeof JellyMotion === 'undefined') return;
+  const rows = body && body.querySelectorAll ? Array.prototype.slice.call(body.querySelectorAll('.gres-r')) : [];
+  rows.reverse().forEach((m, i) => {
+    JellyMotion.play(m, 'wobble', (x) => {
+      const o = Math.max(0, x - 1);
+      return { transform: 'translateY(' + (-22 * (1 - Math.min(1, x))) + 'px) scale(' + (1 + 0.6 * o) + ', ' + (1 - o) + ')', transformOrigin: '50% 100%', opacity: Math.min(1, x * 1.8) };
+    }, { calm: [{ opacity: 0 }, { opacity: 1 }], calmMs: 160, delay: i * 120 });
+  });
+  const dock = gamesEl('takeover-game-dock');
+  const inner = dock && dock.querySelector ? dock.querySelector('.gd-next') || dock.querySelector('.gd-back') : null;
+  if (inner) {
+    JellyMotion.play(inner, 'arrive', (x) => {
+      const o = Math.max(0, x - 1);
+      return { transform: 'translateY(' + 18 * (1 - Math.min(1, x)) + 'px) scale(' + (1 + 0.04 * o) + ', ' + (1 - 0.08 * o) + ')', transformOrigin: '50% 100%', opacity: Math.min(1, x * 1.6) };
+    }, { calm: [{ opacity: 0 }, { opacity: 1 }], calmMs: 160, delay: rows.length * 120 });
+  }
 }
 
 // A saved result: the line (director only), the winners as a hairline list, a tally's scores under it, Change the result.

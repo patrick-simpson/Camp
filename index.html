@@ -1607,10 +1607,13 @@
 
            DIRECTORS: #games-live, one flat panel (a sheet with a hairline edge:
            the Now card stays the app's ONE physical object).
-             [data-empty]   no points yet: no places, no arrows, no gap sentence;
+             [data-empty]   no points yet: each row is its mark and name only (no
+                            places, arrows, medals or zeros), no #gs-reveal;
                             #gs-how reads "Tap a team to give quick points" and
                             #gs-gap says "No points yet. The first saved game
                             starts the table."
+             [data-noarrows] points but no arrows (no baseline this morning: a
+                            first competition day): the arrow column goes.
              .gs-kick       eye-off · "Counselors can’t see this" (a constant
                             reminder, so it is the panel's kicker, read first)
              .gs-title      "Live standings"; #gs-more the "…" (44×44) → #sheet-standings
@@ -1640,7 +1643,8 @@
                <div class="gs-row" data-locked> (never a dead button), with
                <svg class="ico gs-lock" aria-hidden="true"><use href="#i-lock"/></svg>
                after .gs-name and a visually-hidden "Your team: another director
-               gives these points" at the end. The li also carries data-mine.
+               gives these points" at the end. The li also carries data-mine
+               (CSS: a 2px outline in the team's colour round the row).
              #gs-gap        the gap sentence (renderCatchupHint, moved up): "Turkey
                             trail Maples by 3. One gold for Turkey would put them in
                             front." Team names may be <b>. For a director on a
@@ -1685,8 +1689,8 @@
              <button type="button" class="gdp-btn" role="tab" id="gdp-d-wed" data-day="d-wed"
                      aria-selected="true" aria-controls="games-day" data-st="today|done|left|">
                <span class="gdp-d">Wed</span><span class="gdp-st">Today</span></button>
-             data-st: "done" (green, every game has a result) · "today" (link
-             blue) · "left" ("2 left": a PAST day with games still unscored, ink-2)
+             data-st: "done" (green, every game has a result) · "today" (--link-well
+             blue: 7:1 on the well and the pill) · "left" ("2 left": a PAST day with games still unscored, ink-2)
              · "" (blank, the line keeps its height). The aria-label says it in
              words: "Wednesday, today" · "Monday, every game done".
            #games-day-note: "Thursday · not today" while another day is chosen
@@ -2844,7 +2848,7 @@
           </button>
           <button type="button" class="gl-row" id="gs-award">
             <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-star"/></svg></span>
-            <span class="gl-text"><span class="gl-title">Award points</span><span class="gl-sub">Verse, cleanup and quick points by day · fix a mistake</span></span>
+            <span class="gl-text"><span class="gl-title">Award points</span><span class="gl-sub">Fix a mistake, or give verse and cleanup points day by day</span></span>
             <span class="gl-end" aria-hidden="true"><svg class="ico gl-chev"><use href="#i-chev-r"/></svg></span>
           </button>
         </div>

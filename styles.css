@@ -52,6 +52,11 @@
   --blue-tint: #e1e6ff;      /* a message's fill (one tint per meaning) */
   --on-blue: #ffffff;
   --link: #2234c4;           /* blue TEXT: links, "Today", badges (7.8:1) */
+  /* Small blue words ON a well or a lifted segment (the Games day picker's
+     "Today"): --link is 6.9:1 on the light well and 6.7:1 on the dark lifted
+     pill, under §8.1's 7:1 for text under 16px. 8.4:1 on the light well,
+     8.2:1 on the dark pill, 10.7:1 on the dark well. */
+  --link-well: #1c2aa8;
   --roof: #2c47ee;           /* the broadcast roof; the same in dark */
   --roof-edge: #18299c;
   --on-roof: #ffffff;        /* 6.5:1; every roof label is 16px or more */
@@ -203,6 +208,7 @@
   --blue-tint: #262f74;
   --on-blue: #0c1030;
   --link: #aab8ff;
+  --link-well: #c3cdff;
   --gold-tint: #3b3213;
   --live: #ff8a7f;
   --live-tint: #33121a;
@@ -246,6 +252,7 @@
     --blue-tint: #262f74;
     --on-blue: #0c1030;
     --link: #aab8ff;
+    --link-well: #c3cdff;
     --gold-tint: #3b3213;
     --live: #ff8a7f;
     --live-tint: #33121a;
@@ -16024,7 +16031,8 @@ button.nr {
        never three bare digits under emoji headers.
      · Status is never colour alone: a place moved is an arrow AND a number, a
        day is "Done" / "Today" in words, a picked team carries a check.
-     · Team colour only marks: your own team's edge, never a fill behind text.
+     · Team colour only marks: your own team's 2px outline (§8.4), never a fill
+       behind text and never a left stripe.
        The podium picker's chosen cell takes its MEDAL's colour (gold, silver,
        bronze, ink numerals on all three in both themes, 7.6:1 and up), so the
        answer reads as the podium it is.
@@ -16062,9 +16070,12 @@ button.nr {
   font: 750 0.8125rem/1.3 var(--font-ui);
   color: var(--ink-2);
 }
+/* The panel's icons are sized in em so they grow with their words at large
+   text (a 14px arrow beside a 26px numeral read as no arrow at all). */
 .gs-kick .ico {
-  width: 16px;
-  height: 16px;
+  flex: none;
+  width: 1.2em;
+  height: 1.2em;
   stroke-width: 2.4;
 }
 .gs-title {
@@ -16086,6 +16097,10 @@ button.nr {
   background: none;
   color: var(--ink-2);
   cursor: pointer;
+}
+.gs-more .ico {
+  width: max(24px, 1.25rem);
+  height: max(24px, 1.25rem);
 }
 .gs-more:active {
   background: color-mix(in srgb, var(--ink) 7%, var(--sheet));
@@ -16162,8 +16177,8 @@ button.gs-row:focus-visible {
   color: var(--ink-2);
 }
 .gs-mv .ico {
-  width: 14px;
-  height: 14px;
+  width: 1.05em;
+  height: 1.05em;
   stroke-width: 3;
 }
 .gs-mv[data-mv="up"] {
@@ -16201,29 +16216,50 @@ button.gs-row:focus-visible {
   text-align: right;
 }
 .gs-lock {
-  width: 15px;
-  height: 15px;
-  margin-left: 6px;
-  vertical-align: -2px;
+  width: 0.95em;
+  height: 0.95em;
+  margin-left: 0.375em;
+  vertical-align: -0.125em;
   color: var(--ink-2);
   stroke-width: 2.4;
 }
-/* Your own team (a director on a team): its colour as the row's edge; the row
-   is a plain div with the lock (another director gives these points). */
+/* Your own team (a director on a team): the house "Your team" mark, a 2px
+   outline in the team's colour round the row (§8.4), drawn inside the hairlines
+   so it never doubles the panel's own edge. Never a left stripe (§8.1 rule 5).
+   The row is a plain div with the lock (another director gives these points). */
 .gs-item[data-mine] .gs-row {
-  box-shadow: inset 4px 0 0 var(--team, var(--ink-3));
+  position: relative;
 }
-/* No points yet (Monday morning): no places, no arrows, nothing to compare. */
-.gs[data-empty] .gs-row {
-  grid-template-columns: 30px minmax(0, 1fr) auto;
-  grid-template-areas: "mark nm pts";
+.gs-item[data-mine] .gs-row::before {
+  content: '';
+  position: absolute;
+  inset: 3px 6px;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 2px var(--team, var(--ink-3));
+  pointer-events: none;
 }
-.gs[data-empty] .gs-pl,
-.gs[data-empty] .gs-mv {
+/* Arrows off (a first competition day, before anyone had points this morning):
+   the arrow column goes, so the place sits beside the mark with no hole. */
+.gs[data-noarrows] .gs-row {
+  grid-template-columns: 1.625rem 30px minmax(0, 1fr) auto;
+  grid-template-areas: "pl mark nm pts";
+}
+.gs[data-noarrows] .gs-mv {
   display: none;
 }
-.gs[data-empty] .gs-pts {
-  color: var(--ink-2);
+/* No points yet (Monday morning): no places, no arrows, nothing to compare, and
+   no row of zeros either. Each team is its mark and name (still the quick
+   points button); the gap line says why, and there is nothing to reveal yet. */
+.gs[data-empty] .gs-row {
+  grid-template-columns: 30px minmax(0, 1fr);
+  grid-template-areas: "mark nm";
+}
+.gs[data-empty] .gs-pl,
+.gs[data-empty] .gs-mv,
+.gs[data-empty] .gs-medals,
+.gs[data-empty] .gs-pts,
+.gs[data-empty] .gs-reveal {
+  display: none;
 }
 /* The gap sentence: the panel's one line of prose, in ink (it is an answer). */
 .gs-gap,
@@ -16247,7 +16283,7 @@ button.gs-row:focus-visible {
 }
 .gs-reveal {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) auto;
+  grid-template-columns: 1.375em minmax(0, 1fr) auto;
   align-items: center;
   column-gap: 10px;
   width: calc(100% + 28px);
@@ -16271,12 +16307,12 @@ button.gs-row:focus-visible {
   box-shadow: inset 0 0 0 3px var(--blue);
 }
 .gs-reveal > .ico:first-child {
-  width: 22px;
-  height: 22px;
+  width: 1.375em;
+  height: 1.375em;
 }
 .gs-chev {
-  width: 18px;
-  height: 18px;
+  width: 1.125em;
+  height: 1.125em;
   stroke-width: 2.6;
 }
 /* Large text (the panel under ~20em of its own text across): the arrow goes
@@ -16294,14 +16330,33 @@ button.gs-row:focus-visible {
     align-self: start;
     justify-self: center;
   }
+  .gs[data-noarrows] .gs-row {
+    grid-template-columns: 2.125rem 30px minmax(0, 1fr) auto;
+    grid-template-areas: "pl mark nm pts";
+  }
+  .gs[data-noarrows] .gs-pl {
+    align-self: center;
+  }
 }
+/* Very large text: one name and one number a team. The mark goes, and so does
+   the medals line (a row grew to ~150px when it wrapped to three lines); the
+   quick points sheet still says the medals for the team you tap. */
 @container gs (max-width: 13rem) {
   .gs-row {
     grid-template-columns: 2.125rem minmax(0, 1fr) auto;
     grid-template-areas: "pl nm pts" "mv nm pts";
   }
-  .gs-mark {
+  .gs[data-noarrows] .gs-row {
+    grid-template-columns: 2.125rem minmax(0, 1fr) auto;
+    grid-template-areas: "pl nm pts";
+  }
+  .gs-mark,
+  .gs-medals {
     display: none;
+  }
+  /* With no place to show, the mark stays: it is the row's only picture. */
+  .gs[data-empty] .gs-mark {
+    display: grid;
   }
 }
 
@@ -16400,7 +16455,7 @@ button.gs-row:focus-visible {
   color: var(--done);
 }
 .gdp-btn[data-st="today"] .gdp-st {
-  color: var(--link);
+  color: var(--link-well);
 }
 /* Very large text: five words no longer fit under five day names, so the
    status becomes its shape (check = done, dot = today, ring = games left); the
@@ -16428,7 +16483,7 @@ button.gs-row:focus-visible {
     border-radius: 50%;
   }
   .gdp-btn[data-st="today"] .gdp-st::before {
-    background: var(--link);
+    background: var(--link-well);
   }
   .gdp-btn[data-st="left"] .gdp-st::before {
     box-shadow: inset 0 0 0 2px var(--ink-2);
@@ -16510,6 +16565,13 @@ button.gs-row:focus-visible {
 }
 .gb .gr-list {
   margin-top: 2px;
+}
+/* A live board on the Games tab sits on paper, where Now's paper well vanishes:
+   it is a sheet with a hairline edge instead (the standings panel's language),
+   so it reads as part of its row. */
+.gb .lb {
+  background: var(--sheet);
+  box-shadow: inset 0 0 0 1px var(--line-2);
 }
 .gb .gr:first-child {
   padding-top: 10px;
@@ -16599,6 +16661,7 @@ button.gs-row:focus-visible {
 }
 .qp-now {
   margin-top: 0;
+  white-space: pre-line; /* "1st · 27 points so far" over "2 gold · 2 silver · 1 bronze" */
 }
 .qp-label {
   display: block;
@@ -16620,12 +16683,13 @@ button.gs-row:focus-visible {
   flex-wrap: wrap;
   gap: 8px;
 }
-/* A reason is a choice you may skip: dashed until chosen (Award points' team
-   toggles), then solid with the chunky edge. */
+/* A reason is a choice you may skip: a solid quiet outline until chosen, then
+   ink with the chunky edge. Never dashed: dashed is the app's "not yet / can't"
+   (the Add button's well right under these says "Pick how many points"). */
 .qp-chip {
   min-height: var(--target);
   padding: 4px 14px;
-  border: 2px dashed var(--ink-3);
+  border: 2px solid var(--ink-3);
   border-radius: var(--r-btn);
   background: none;
   color: var(--ink-2);
@@ -16633,7 +16697,6 @@ button.gs-row:focus-visible {
   cursor: pointer;
 }
 .qp-chip[aria-checked="true"] {
-  border-style: solid;
   border-color: var(--ink);
   background: var(--lift);
   color: var(--ink);
@@ -16911,8 +16974,17 @@ button.gs-row:focus-visible {
 .gres-r:first-child {
   border-top: 0;
 }
+/* My own team: the "Your team" outline (§8.4), inside the row, never a stripe. */
 .gres-r[data-mine] {
-  box-shadow: inset 4px 0 0 var(--team, var(--ink-3));
+  position: relative;
+}
+.gres-r[data-mine]::before {
+  content: '';
+  position: absolute;
+  inset: 3px 5px;
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 2px var(--team, var(--ink-3));
+  pointer-events: none;
 }
 .gres-mark {
   display: grid;
@@ -16922,12 +16994,20 @@ button.gs-row:focus-visible {
   min-width: 0;
   font: 800 1.0625rem/1.22 var(--font-ui);
   letter-spacing: var(--track-row);
+  /* Whole words wrap; one too long for the column breaks with a hyphen at
+     large text, never "Ferocio / us" (Now's podium names, Step 17). */
   overflow-wrap: break-word;
+  -webkit-hyphens: auto;
+  hyphens: auto;
 }
 .gres-pts {
   font: 800 1rem/1 var(--font-ui);
   font-variant-numeric: tabular-nums;
   color: var(--ink-2);
+}
+/* A counselor's game nobody has scored yet: Now's plain note line. */
+.gv-wait {
+  margin: 6px 0 2px;
 }
 .gv-h {
   margin: 18px 0 6px;
@@ -16994,13 +17074,17 @@ button.gs-row:focus-visible {
 .gd-save {
   white-space: normal;
 }
+/* 45 / 55: the gold Next game stays the wider one, and Back (the header
+   back's own short words, "‹ Wednesday games", with its padding trimmed) is
+   two lines at most beside it — never three. */
 .gd-next {
   display: grid;
-  grid-template-columns: minmax(6.5rem, 2fr) 3fr;
+  grid-template-columns: minmax(0, 9fr) minmax(0, 11fr);
   gap: 12px;
 }
 /* Back is the quiet one: the same height as Next, smaller words. */
 .gd-back {
+  padding-inline: 10px;
   font: 800 1rem/1.15 var(--font-ui);
   white-space: normal;
 }
@@ -17030,6 +17114,13 @@ button.gs-row:focus-visible {
   .gd-save,
   .gd-go-t {
     font-size: 1.125rem;
+  }
+  /* Stacked, Back is a plain 44px button on one line: the big gold Next game
+     above it is the one the thumb is there for. */
+  .gd-back {
+    min-height: var(--target);
+    font-size: 0.875rem;
+    box-shadow: 0 var(--edge-btn) 0 var(--edge);
   }
 }
 

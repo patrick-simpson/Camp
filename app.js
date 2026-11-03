@@ -1790,11 +1790,13 @@ function nowGameRow(ctx, g) {
     row.board = nowLiveBoard(ctx, g);
     const b4 = row.board ? null : nowBracket4(ctx, g);
     const cell = b4 ? b4.cells.find((c) => c.status === 'live') : null;
+    // ONE live line per format, the same on Now and Games: the round ("Round 1"; the board under it carries the inning and the
+    // target) and the count ("2 of 6 teams in"; the board's head then just says what it is), never the same fact twice.
     if (row.board && row.board.kind === 'match') {
-      row.line = row.board.cap.split(' · ').slice(0, 2).join(' · ').toLowerCase();
+      row.line = String(row.board.cap).split(' · ')[0];
       row.mine = row.board.sides.some((s) => s.mine);
     } else if (row.board && row.board.kind === 'tally') {
-      row.line = 'scores so far';
+      row.line = row.board.inCount + ' of ' + row.board.total + ' teams in';
       row.mine = row.board.rows.some((r) => r.mine);
     } else if (cell) {
       row.line = cell.name; // the four-team bracket's match under way, named as its cell is: "Semifinal 2", "3rd place"
@@ -9425,26 +9427,28 @@ function gamesNextAfter(gid, opts) {
 // The takeover dock's words (directors): WHILE a podium is being picked, the Save button and what is missing; once a result is
 // saved, what is left, the Next game button and where Back goes.
 // { tone: 'pick', save: { ready, label, target } } | { tone: 'next' | 'wait' | 'done', left: text, next: { id, name } | null,
-// back: 'Back to Now' } or null (no director, or a game with nothing to dock: a bracket or a tally keeps its own Save in the body).
+// back: 'Back to Now', to: 'Now' (the header back's own words, what the button shows) } or null (no director, or a game with nothing to
+// dock: a bracket or a tally keeps its own Save in the body).
 function gamesDock(gid, opts) {
   const g = gameById(gid);
   if (!g || !canEdit()) return null;
   if (!(state.results && state.results[g.id])) return gameIsPodium(g) ? { tone: 'pick', save: gamesPodium(g).save } : null;
   const n = gamesNextAfter(gid, opts);
   const when = n.isToday || !n.day ? 'today' : 'on ' + n.day.name;
-  const back = 'Back to ' + shellGameBackLabel(g);
+  const to = shellGameBackLabel(g);
+  const back = 'Back to ' + to;
   const names = (list) => nowJoinNames(list.map((w) => w.name));
   if (n.game) {
-    return { tone: 'next', left: n.left + ' game' + (n.left === 1 ? '' : 's') + ' left ' + when + ' that you can score', next: { id: n.game.id, name: n.game.name }, back };
+    return { tone: 'next', left: n.left + ' game' + (n.left === 1 ? '' : 's') + ' left ' + when + ' that you can score', next: { id: n.game.id, name: n.game.name }, back, to };
   }
   if (n.waiting.length) {
     const w = n.waiting.length;
     return {
-      tone: 'wait', next: null, back,
+      tone: 'wait', next: null, back, to,
       left: 'Nothing left that you can score. ' + (w === 1 ? '1 game needs' : w + ' games need') + ' another director: ' + names(n.waiting) + ' (your team plays)',
     };
   }
-  return { tone: 'done', next: null, back, left: n.allDone ? 'Every game ' + (n.isToday || !n.day ? 'today' : 'on ' + n.day.name) + ' is scored' : 'Nothing left that you can score' };
+  return { tone: 'done', next: null, back, to, left: n.allDone ? 'Every game ' + (n.isToday || !n.day ? 'today' : 'on ' + n.day.name) + ' is scored' : 'Nothing left that you can score' };
 }
 
 // A director taps Next game: re-asked at the tap (the data may have moved since the dock was drawn), and the takeover swaps
@@ -9698,7 +9702,9 @@ function gamesQuickInfo(teamId) {
   const r = st && st.rows.find((x) => x.team === teamId);
   if (!r) return null;
   const pts = r.pts + ' point' + (r.pts === 1 ? '' : 's') + ' so far';
-  return { team: r.team, name: r.name, short: r.short, pts: r.pts, now: st.empty ? pts : gamesOrdinal(r.place) + (r.tie ? ', tied' : '') + ' · ' + pts, doubled: inDoubleBonusWindow() };
+  // medals: the row's medal line in words, for the sheet (the standings row drops it at very large text).
+  const medals = st.empty ? '' : r.gold + ' gold · ' + r.silver + ' silver · ' + r.bronze + ' bronze';
+  return { team: r.team, name: r.name, short: r.short, pts: r.pts, now: st.empty ? pts : gamesOrdinal(r.place) + (r.tie ? ', tied' : '') + ' · ' + pts, medals, doubled: inDoubleBonusWindow() };
 }
 
 // Quick points: the same ledger write as Award points (bonusAddFromDraft: the 1–100 range, the own-team guard, one entry per
@@ -9956,7 +9962,9 @@ function renderLiveWatch(container, g) {
   }
   const raw = state.brackets && state.brackets[g.id];
   if (!raw) {
-    setLiveHtmlIfChanged(container, `<p class="view-only-note">👀 This game hasn't been scored yet. Scores show here as soon as a director enters them.</p>`, [g]);
+    // One plain line with a line icon (§8.6, §8.8): never an emoji in a dashed, tinted box.
+    setLiveHtmlIfChanged(container, '<p class="nw-note gv-wait"><svg class="ico" aria-hidden="true"><use href="#i-clock"/></svg>' +
+      '<span>Not scored yet. The winners show here when a director saves them.</span></p>', [g]);
     return;
   }
   if (!bracketKnown(raw)) {

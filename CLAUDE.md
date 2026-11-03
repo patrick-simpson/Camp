@@ -153,7 +153,7 @@ Files:
   Cloudflare dashboard. `README.md` there is the plain-English setup guide
 - `styles.css` — all styling. The VISUAL SYSTEM block at the top (redesign
   §8) is the one source of colour, type and shape: palette literals (`--paper`,
-  `--sheet`, `--ink`/`-2`/`-3`, `--blue`, `--link`, `--roof`, `--gold`, `--live`,
+  `--sheet`, `--ink`/`-2`/`-3`, `--blue`, `--link` (and `--link-well`, small blue words on a well or a lifted segment), `--roof`, `--gold`, `--live`,
   `--done`, `--well`/`--lift`, medal and flag colours), whole-`font` type tokens
   (`--t-title`, `--t-row`, `--t-meta`, …), the 4px space grid, radii, edges,
   `--target` (44) and the frame heights. Light on `:root`; dark under
@@ -923,11 +923,14 @@ TAB"), **the model** (app.js "THE GAMES ENGINE": plain data from `nowCtx` — th
 - **Status of a game** (`gameRowStatus`, redesign §5.3; `games-tab.test.js` pins it as a truth table): Done = a result; Live = a six-team bracket not at its
   summary (and only on a bracket game), a four-team bracket node, a draft with any score or medal, a synced clock running with time left; everything else
   is Not started — a clock that ran out, a paused one, a bracket left by a format change, a blank draft and a stray live-match tally are not Live. The live
-  line is said per format in `.gr-sub` (`gamesRow`): a round, "4 of 6 teams in", "Clock running", "Being scored" (a podium draft never says which team).
+  line is said per format in `.gr-sub`, the SAME on Now and Games (`nowGameRow`, `gamesRow`): a round, "4 of 6 teams in", "Clock running", "Being scored" (a
+  podium draft never says which team); the live board under it never repeats it (its head is "Scores so far"). On Games the board is a sheet with a hairline
+  edge (Now's paper well vanishes on paper).
 - **Day picker** (`m.days`): Done (every game has a result, also on today) · Today · "N left" (a day behind the clock with games unscored; before the
   camp week's dates nothing is today or behind, after it everything is behind) · blank. The chosen day is `state.ui.day`, this device's own, painted at
   once by `gamesPickDay` (no renderAll round trip); "Thursday · not today" while another is chosen. ONE `.gdp-pill` rests under `--i` and springs from the
-  old place on `snap` (a WAAPI translate, none while calm); the tabs are a roving-tab-stop tablist with arrow keys.
+  old place on `snap` (a WAAPI translate stretched by its speed like the tab blob, none while calm); "Today" is `--link-well` (7:1 on the well and on the
+  dark pill, where `--link` is not); the tabs are a roving-tab-stop tablist with arrow keys.
 - **Blocks** (`gamesDayGroups`): the schedule's blocks holding the day's games, by time (the run-sheet clock, "6:00–6:45 PM"), a game on ONE block only;
   a day no block holds any game of falls back to the session names; the rest are "Not on the schedule", last. **ONE "up next"** (today: the first game not
   started from the block under way) and **ONE gold Score** (the first live game this director can score, else up next); a director's own team's round
@@ -956,7 +959,10 @@ TAB"), **the model** (app.js "THE GAMES ENGINE": plain data from `nowCtx` — th
   that row and focuses its first free key), then the gold **Save result** (it lands on `snap`). After a save the takeover is the result — the line, the winners
   as a hairline list (the medal named in words for a screen reader, "+7" a director's word, `data-mine` for the followed team, a tally's scores under it) and
   **Change the result** (a director's; asks through `askDialog`, native `confirm` without it: "Clear it and pick again" / "Keep it") — and the dock is the Next
-  game dock, with the keyboard focus moved onto Next game. **"Saved 10:52 AM · everyone's phone has it" only once the write is ACKNOWLEDGED**
+  game dock, with the keyboard focus moved onto Next game. Its Back shows the header back's own words (`gamesDock().to`: "‹ Wednesday games", "‹ Now"; its
+  spoken name is `back`, "Back to …"), 45 / 55 beside the gold Next game, two lines at most; stacked at large text it is a plain 44px button under Next game.
+  The save's tap (never a render) drops the winners in bronze → silver → gold, 120 ms apart, and brings the dock up (`gamesSavedArrive`; calm: a fade). The
+  podium keys carry `data-joy` while they can be pressed. **"Saved 10:52 AM · everyone's phone has it" only once the write is ACKNOWLEDGED**
   (`gameResultState`: the confirmed tree holds the same record): "Saving…" until then, "Saved on this phone · it sends when you're back online" with no
   connection (or no sync at all), "Not saved yet · the server turned it away. Use Retry in the bar at the top." when the rules refused it (`results/<game>` is in
   `stateQuarantine`). The line's state is PATCHED (`gamesPaintSaved`) so an acknowledgement never rebuilds the list; `gamesSavedRefresh` is called after an
@@ -967,16 +973,22 @@ TAB"), **the model** (app.js "THE GAMES ENGINE": plain data from `nowCtx` — th
   taken on a blank table, which keeps the arrows off that day), an arrow AND a number. Medals are numbers the renderer words ("2 gold · 2 silver · 1 bronze",
   `&nbsp;` inside each count), `+N awarded` only when verse / cleanup / quick points move the total. The gap sentence (`gamesGap` → `gamesGapSentence`) is about the
   director's own (followed) team when they are on one: trail / lead / tied, how many golds (doubled in the window) put them in front or only tie them. A
-  director's own team is a `div.gs-row[data-locked]` with a lock, never a dead button; a view-only second tab gets plain rows. `#gs-sync` is the sync line
+  director's own team is a `div.gs-row[data-locked]` with a lock and the house "Your team" mark (a 2px outline in the team colour, never a left stripe; the saved
+  result's `data-mine` row too), never a dead button; a view-only second tab gets plain rows. `#games-live[data-noarrows]` (points, no baseline) drops the arrow
+  column; `[data-empty]` rows are mark and name only, with no reveal link; under ~13em of the panel's own text a row is one name and one number (no mark, no
+  medals line — the quick points sheet says the medals). The panel's icons are sized in em. `#gs-sync` is the sync line
   (`updateSyncIndicator` writes it) and `#gs-reveal` the way into the remote (reveal-ui.js).
 - **Quick points** (`gamesOpenQuick` → `#sheet-quick`, a shell sheet allowed only for a team a tap named and only for a confirmed director who may score
   it): +1 +2 +3 +5, an optional reason ("Other…" takes 40 characters), the dashed well until a key is chosen, the doubling said once. The write is
   `gamesQuickAdd` → the SAME `bonusAddFromDraft` as Award points (1–100, the own-team guard, a stamp of now so the window counts by its own time) on a draft of
   its own (Award points' form is not disturbed); the toast's Undo (10 s) takes back exactly those entries (`gamesQuickUndo`). Award points stays the ledger.
+  The sheet is titled by the team's SHORT name; under it the place and points, then the medals (`gamesQuickInfo().medals`). Reason chips are a solid quiet
+  outline (dashed is the app's "not yet"). A changed total rolls up (`translateY(10→0) scale(1.12→1)`, none while calm).
   The standings "…" sheet has Copy, Share and Award points.
 - **Counselors** (§5.6): `m.secret` — one quiet line (`#games-secret`) that gives way to the revealed grid (`gamesSecretShown`, refreshed by reveal-ui.js);
   `standings` is null and no row has a Score, a place or a leader (the model walk in `games-tab.test.js` and the preview walk in `preview.test.js` run with
-  the points guard throwing). Games switched off in What counselors see: nothing is computed (`m.off`; `applyCardVisibility` hides `#games-week`, whose
+  the points guard throwing). An unscored game in a counselor's takeover is one plain `.nw-note` line ("Not scored yet. The winners show here when a
+  director saves them."). Games switched off in What counselors see: nothing is computed (`m.off`; `applyCardVisibility` hides `#games-week`, whose
   `data-card="competitions"` it owns, and `#games-off` says why).
 - **Standings side effects lifted (§13.9).** `runStandingsSideEffects()` is in `SHELL_ALWAYS` and touches no DOM: the day baseline, the point alerts for a
   change that arrived from another phone, the change history. Because the panel now paints only while Games is on screen, the same pass EMPTIES the standings

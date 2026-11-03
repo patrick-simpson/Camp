@@ -89,7 +89,8 @@ function nowPodiumHtml(podium) {
 function nowBoardHtml(b) {
   if (!b) return '';
   if (b.kind === 'tally') {
-    const cap = 'Scores so far · ' + (b.ranked ? b.cap : 'team order');
+    // The count is the row's live line just above ("2 of 6 teams in"): the head only says what the board is.
+    const cap = 'Scores so far' + (b.ranked ? '' : ' · team order');
     const rows = (b.rows || []).map((r) =>
       `<li class="lb-r" data-team="${esc(r.team)}"${nowAccent(r.team)}${r.mine ? ' data-mine' : ''}>${b.ranked && r.place ? `<span class="lb-pl">${r.place}</span>` : ''}` +
       `${nowMark(r.team, 20)}<span class="lb-nm">${esc(nowTeamWord(r.team))}</span><b class="lb-v">${esc(r.v)}</b></li>`).join('');
