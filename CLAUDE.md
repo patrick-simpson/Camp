@@ -4196,6 +4196,11 @@ setup-sync.js's "CAMPERS" section (the last one before the cache load); the scre
   ("3 people · 11 campers"). **The hub row** (`hubStatus('campers', v.campers)`, pure): `Loading…` / `Needs the camp database` / `Not available yet`
   until a list is held; `todo` "No campers yet" when there are none; "64 campers" (`ok`), or `warn` "Maples has no campers yet" once ANY camper
   exists. It counts in "N of M ready" only once judged; a camp that does not use lists switches the row to a dash (above).
+- **Emulator proof (opt-in)**: `tests/emulator/campers-client.mjs` drives the REAL client's Campers writes against `database.rules.json` (14
+  cases, both camps, SAFE; mutation-checked: weakening the read clause, or both halves of the name / ord anchor pair — the `$cid` `hasChildren` AND
+  the `name` anchor, either alone is covered by the other — turns it red). It covers the listener, Add (one update, 300 names, a 40-character name,
+  markup typed as a name), Rename / Move / Remove / Undo, the stale-view rename the rules refuse, the offline hold and its flush, a counselor's phone
+  and a counselor preview writing nothing, and a demotion; `campers.mjs` stays the rules' own proof.
 - **Not built** (recorded): a printable sheet (decision Q7 allows one later); per-camper "absent" (cut, P2 C29); typing names into Put people on
   teams.
 
