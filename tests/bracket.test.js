@@ -726,3 +726,67 @@ test('fuzz: a random walk of taps, undos and back-steps never breaks the six-tea
     });
   }
 });
+
+// ── the extracted helpers, called directly (added with the extraction; the cases above never changed) ─────────────
+
+test('the six-team helpers: each does one thing to the bracket and refuses what cannot be', () => {
+  const b = freshBracket();
+  assert.deepEqual(sixPick(b, 't1'), ['t1']);
+  assert.deepEqual(sixPick(b, 't2'), ['t1', 't2']);
+  assert.deepEqual(sixPick(b, 't3'), ['t1', 't2'], 'no third');
+  assert.deepEqual(sixPick(b, 't1'), ['t2'], 'a picked team comes out');
+
+  assert.equal(sixRecordMatch(b, 't1', 't1', 't1'), null, 'a team does not play itself');
+  assert.equal(sixRecordMatch(b, 't1', 't2', 't4'), null, 'the winner played');
+  assert.equal(sixRecordMatch(b, '', 't2', 't2'), null);
+  assert.deepEqual(b.matches, [], 'a refusal changes nothing');
+  assert.deepEqual(sixRecordMatch(b, 't1', 't2', 't2'), { a: 't1', b: 't2', winner: 't2', loser: 't1' });
+  assert.deepEqual(b.pool, ['t0', 't3', 't4', 't5']);
+  assert.deepEqual(b.selectedPair, []);
+
+  assert.deepEqual(sixUndoMatch(b), { a: 't1', b: 't2', winner: 't2', loser: 't1' });
+  assert.deepEqual(b.pool, ['t0', 't3', 't4', 't5', 't1', 't2']);
+  assert.equal(sixUndoMatch(b), null, 'nothing to take back');
+  assert.deepEqual(b.pool, ['t0', 't3', 't4', 't5', 't1', 't2']);
+
+  const c = Object.assign(freshBracket(), { matches: [{ a: 't0', b: 't3', winner: 't0', loser: 't3' }, { a: 't1', b: 't4', winner: 't1', loser: 't4' }, { a: 't2', b: 't5', winner: 't5', loser: 't2' }], pool: [], phase: 'bye' });
+  assert.equal(sixChooseBye(c, 't3'), false, 'a team that lost cannot have the bye');
+  assert.equal(c.phase, 'bye');
+  assert.equal(sixChooseBye(c, 't1'), true);
+  assert.deepEqual([c.byeTeamId, c.semifinal, c.phase], ['t1', { a: 't0', b: 't5', winner: null, loser: null }, 'semifinal']);
+  assert.equal(sixRecordSemifinal(c, 't2'), false, 'only a team in the game wins it');
+  assert.equal(sixRecordSemifinal(c, 't5'), true);
+  assert.deepEqual(c.championship, { a: 't1', b: 't5', winner: null, loser: null });
+  assert.equal(c.phase, 'championship');
+  assert.equal(sixRecordFinal(c, 't0'), false);
+  assert.equal(sixRecordFinal(c, 't1'), true);
+  assert.equal(c.phase, 'summary');
+  assert.deepEqual(sixMedals(c), { gold: 't1', silver: 't5', bronze: 't0' });
+  assert.equal(sixBackToRound1(c).phase, 'round1');
+  assert.deepEqual(c.matches.map((m) => m.winner), ['t0', 't1'], 'and the last match is taken back with it');
+});
+
+test('finishBracket saves one result record for either kind, retires its node and the tally, and celebrates the winner', () => {
+  const g = tournament();
+  state.brackets4 = state.brackets4 || {};
+  state.brackets[g.id] = freshBracket();
+  state.live[g.id] = { key: 't0|t1', inning: 1, outs: 0, half: 0, hr: {} };
+  const realRender = renderAll; const realCelebrate = celebrate;
+  const won = [];
+  renderAll = () => {}; celebrate = (id) => won.push(id);
+  try {
+    finishBracket(g, 'six', { gold: 't0', silver: 't1', bronze: 't2' });
+    assert.deepEqual(Object.keys(state.results[g.id]).sort(), ['medals', 'savedAt'], 'a six-team result carries no path');
+    assert.notOk(state.brackets[g.id]); assert.notOk(state.live[g.id]);
+    delete state.results[g.id];
+    state.brackets4[g.id] = { at: 1, m: { s1: { a: 't0', b: 't1' } } };
+    state.brackets[g.id] = freshBracket(); // a six-team leftover must not be touched by a four-team finish
+    const path = { at: 1, m: { s1: { a: 't0', b: 't1', winner: 't0' } } };
+    finishBracket(g, 'four', { gold: 't3', silver: 't2', bronze: 't1' }, path);
+    assert.deepEqual(state.results[g.id].medals, { gold: 't3', silver: 't2', bronze: 't1' });
+    assert.deepEqual(state.results[g.id].path, path, 'the finished bracket stays on the result');
+    assert.notOk(state.brackets4[g.id]);
+    assert.ok(state.brackets[g.id], 'only the finished kind\'s node is cleared');
+    assert.deepEqual(won, ['t0', 't3']);
+  } finally { renderAll = realRender; celebrate = realCelebrate; }
+});

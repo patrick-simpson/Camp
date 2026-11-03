@@ -10440,6 +10440,110 @@ function freshBracket() {
   };
 }
 
+// ── The six-team bracket's rules (pure) ──────────────────────────────────────────────────────────
+// What the wizard's taps DO to a bracket, with no DOM and no state read: each takes the bracket (the object
+// in state.brackets[gid]) and changes it in place, returning what it recorded (null / false when it
+// refused). The click handlers below call these, then touchData / saveState / renderAll. They were
+// written down from the handlers' own bodies and pinned first (tests/bracket.test.js), so nothing about what
+// a director sees changed when they moved out.
+
+// Round 1, free pick: tap a team to pick it, tap it again to put it back; at most two at a time.
+function sixPick(b, id) {
+  const at = b.selectedPair.indexOf(id);
+  if (at > -1) b.selectedPair.splice(at, 1);
+  else if (b.selectedPair.length < 2) b.selectedPair.push(id);
+  return b.selectedPair;
+}
+
+// Round 1 (free pick or a fixed order): a and c played, `winner` won. The pair leaves the pool.
+function sixRecordMatch(b, a, c, winner) {
+  if (!b || !a || !c || a === c || (winner !== a && winner !== c)) return null;
+  const rec = { a, b: c, winner, loser: winner === a ? c : a };
+  b.matches.push(rec);
+  b.pool = b.pool.filter((id) => id !== a && id !== c);
+  b.selectedPair = [];
+  return rec;
+}
+
+// The last round-1 match comes back: both teams re-join the END of the pool. A pair being picked is left alone.
+function sixUndoMatch(b) {
+  const last = b.matches.pop();
+  if (last) b.pool.push(last.a, last.b);
+  return last || null;
+}
+
+// Back from the bye to round 1 (the same undo, and the phase).
+function sixBackToRound1(b) {
+  sixUndoMatch(b);
+  b.phase = 'round1';
+  return b;
+}
+
+// The three round-1 winners; the one who gets the bye goes straight to the final, the other two meet.
+function sixChooseBye(b, byeId) {
+  const winners = b.matches.map((m) => m.winner);
+  if (winners.indexOf(byeId) === -1) return false;
+  const others = winners.filter((id) => id !== byeId);
+  b.byeTeamId = byeId;
+  b.semifinal = { a: others[0], b: others[1], winner: null, loser: null };
+  b.phase = 'semifinal';
+  return true;
+}
+
+// The championship game's winner meets the bye team in the final; its loser has the bronze.
+function sixRecordSemifinal(b, winner) {
+  const s = b && b.semifinal;
+  if (!s || (winner !== s.a && winner !== s.b)) return false;
+  s.winner = winner;
+  s.loser = winner === s.a ? s.b : s.a;
+  b.championship = { a: b.byeTeamId, b: winner, winner: null, loser: null };
+  b.phase = 'championship';
+  return true;
+}
+
+function sixRecordFinal(b, winner) {
+  const c = b && b.championship;
+  if (!c || (winner !== c.a && winner !== c.b)) return false;
+  c.winner = winner;
+  c.loser = winner === c.a ? c.b : c.a;
+  b.phase = 'summary';
+  return true;
+}
+
+// The podium of a finished six-team bracket: gold wins the final, silver loses it, bronze lost the championship game.
+function sixMedals(b) {
+  return { gold: b.championship.winner, silver: b.championship.loser, bronze: b.semifinal.loser };
+}
+
+// ── What both brackets share ─────────────────────────────────────────────────────────────────────
+// Which node holds a game's bracket: the six-team wizard's `brackets`, the four-team bracket's `brackets4`.
+function bracketNode(kind) { return kind === 'four' ? state.brackets4 : state.brackets; }
+
+// Save a finished bracket's podium as the game's result (the same record a tally or a placement game saves, so
+// medalCounts, the Now card and the reveal read it identically), retire the bracket and the game's live tally with it,
+// and celebrate the winner. `path` is the finished bracket itself, kept on the result for a four-team game.
+function finishBracket(g, kind, medals, path) {
+  const rec = { medals: { gold: medals.gold, silver: medals.silver, bronze: medals.bronze }, savedAt: new Date().toISOString() };
+  if (path) rec.path = path;
+  state.results[g.id] = rec;
+  const node = bracketNode(kind);
+  if (node) delete node[g.id];
+  clearLiveMatch(g);
+  touchData();
+  saveState();
+  renderAll();
+  celebrate(medals.gold);
+}
+
+// Throw a bracket away, and the live tally of its current match with it (Cancel this bracket; Clear this bracket).
+function cancelBracket(g, kind) {
+  const node = bracketNode(kind);
+  if (node) delete node[g.id];
+  clearLiveMatch(g);
+  saveState();
+  renderAll();
+}
+
 // Realtime Database can't represent "present but empty" for arrays/nulls —
 // it prunes those keys on write, so a bracket round-tripped through sync
 // can come back missing matches/selectedPair/etc. This restores a safe,
@@ -10493,10 +10597,7 @@ function wireUnknownBracketCard(container, g) {
     clear.addEventListener('click', () => {
       if (!canEdit()) return;
       if (!confirm('Clear this bracket for everyone? Reload first if a newer version might be able to read it — clearing deletes it on every phone and cannot be undone.')) return;
-      delete state.brackets[g.id];
-      clearLiveMatch(g);
-      saveState();
-      renderAll();
+      cancelBracket(g, 'six');
     });
   }
 }
@@ -10669,10 +10770,7 @@ function renderTournament(container, g) {
 
   document.getElementById('cancel-bracket-btn').addEventListener('click', () => {
     if (!confirm('Cancel this bracket? Nothing will be saved.')) return;
-    delete state.brackets[g.id];
-    clearLiveMatch(g);
-    saveState();
-    renderAll();
+    cancelBracket(g, 'six');
   });
 
   const body = document.getElementById('bracket-body');
@@ -11379,10 +11477,7 @@ function renderBracketRound1(body, g, b) {
 
   body.querySelectorAll('.team-chip').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const id = btn.dataset.teamId;
-      const idx = b.selectedPair.indexOf(id);
-      if (idx > -1) b.selectedPair.splice(idx, 1);
-      else if (b.selectedPair.length < 2) b.selectedPair.push(id);
+      sixPick(b, btn.dataset.teamId);
       saveState();
       renderAll();
     });
@@ -11390,12 +11485,8 @@ function renderBracketRound1(body, g, b) {
 
   body.querySelectorAll('.winner-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const winner = btn.dataset.winner;
       const [a, c] = b.selectedPair;
-      const loser = winner === a ? c : a;
-      b.matches.push({ a, b: c, winner, loser });
-      b.pool = b.pool.filter((id) => id !== a && id !== c);
-      b.selectedPair = [];
+      if (!sixRecordMatch(b, a, c, btn.dataset.winner)) return;
       touchData();
       saveState();
       renderAll();
@@ -11405,8 +11496,7 @@ function renderBracketRound1(body, g, b) {
   const undoBtn = document.getElementById('undo-match-btn');
   if (undoBtn) {
     undoBtn.addEventListener('click', () => {
-      const last = b.matches.pop();
-      if (last) b.pool.push(last.a, last.b);
+      sixUndoMatch(b);
       saveState();
       renderAll();
     });
@@ -11465,12 +11555,8 @@ function renderBracketRound1Fixed(body, g, b, preset) {
   body.querySelectorAll('.winner-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
       if (!current) return;
-      const winner = btn.dataset.winner;
       const [a, c] = current;
-      const loser = winner === a ? c : a;
-      b.matches.push({ a, b: c, winner, loser });
-      b.pool = b.pool.filter((id) => id !== a && id !== c);
-      b.selectedPair = [];
+      if (!sixRecordMatch(b, a, c, btn.dataset.winner)) return;
       touchData();
       saveState();
       renderAll();
@@ -11480,8 +11566,7 @@ function renderBracketRound1Fixed(body, g, b, preset) {
   const undoBtn = document.getElementById('undo-match-btn');
   if (undoBtn) {
     undoBtn.addEventListener('click', () => {
-      const last = b.matches.pop();
-      if (last) b.pool.push(last.a, last.b);
+      sixUndoMatch(b);
       saveState();
       renderAll();
     });
@@ -11521,11 +11606,7 @@ function renderBracketBye(body, g, b) {
 
   body.querySelectorAll('.tiebreak-chip').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const byeId = btn.dataset.teamId;
-      const others = winners.filter((id) => id !== byeId);
-      b.byeTeamId = byeId;
-      b.semifinal = { a: others[0], b: others[1], winner: null, loser: null };
-      b.phase = 'semifinal';
+      if (!sixChooseBye(b, btn.dataset.teamId)) return;
       touchData();
       saveState();
       renderAll();
@@ -11533,9 +11614,7 @@ function renderBracketBye(body, g, b) {
   });
 
   document.getElementById('undo-to-round1-btn').addEventListener('click', () => {
-    const last = b.matches.pop();
-    if (last) b.pool.push(last.a, last.b);
-    b.phase = 'round1';
+    sixBackToRound1(b);
     saveState();
     renderAll();
   });
@@ -11554,12 +11633,7 @@ function renderBracketSemifinal(body, g, b) {
 
   body.querySelectorAll('.winner-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const winner = btn.dataset.winner;
-      const loser = winner === b.semifinal.a ? b.semifinal.b : b.semifinal.a;
-      b.semifinal.winner = winner;
-      b.semifinal.loser = loser;
-      b.championship = { a: b.byeTeamId, b: winner, winner: null, loser: null };
-      b.phase = 'championship';
+      if (!sixRecordSemifinal(b, btn.dataset.winner)) return;
       touchData();
       saveState();
       renderAll();
@@ -11581,11 +11655,7 @@ function renderBracketChampionship(body, g, b) {
 
   body.querySelectorAll('.winner-btn').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const winner = btn.dataset.winner;
-      const loser = winner === b.championship.a ? b.championship.b : b.championship.a;
-      b.championship.winner = winner;
-      b.championship.loser = loser;
-      b.phase = 'summary';
+      if (!sixRecordFinal(b, btn.dataset.winner)) return;
       touchData();
       saveState();
       renderAll();
@@ -11594,9 +11664,10 @@ function renderBracketChampionship(body, g, b) {
 }
 
 function renderBracketSummary(body, g, b) {
-  const goldId = b.championship.winner;
-  const silverId = b.championship.loser;
-  const bronzeId = b.semifinal.loser;
+  const medals = sixMedals(b);
+  const goldId = medals.gold;
+  const silverId = medals.silver;
+  const bronzeId = medals.bronze;
   const eliminated = b.matches.map((m) => m.loser);
   const mult = g.messtival ? 2 : 1; // match medalCounts()'s weighting
 
@@ -11612,16 +11683,7 @@ function renderBracketSummary(body, g, b) {
   `;
 
   document.getElementById('save-bracket-btn').addEventListener('click', () => {
-    state.results[g.id] = {
-      medals: { gold: goldId, silver: silverId, bronze: bronzeId },
-      savedAt: new Date().toISOString(),
-    };
-    delete state.brackets[g.id];
-    clearLiveMatch(g);
-    touchData();
-    saveState();
-    renderAll();
-    celebrate(goldId);
+    finishBracket(g, 'six', { gold: goldId, silver: silverId, bronze: bronzeId });
   });
 }
 
