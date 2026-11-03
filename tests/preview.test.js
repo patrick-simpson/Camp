@@ -549,6 +549,72 @@ test('FIDELITY, Now at every kind of card: a director in a preview paints, node 
   assert.ok(differs, 'a director with no preview paints something a counselor does not');
 });
 
+// ── a four-team bracket under way (Step 22) ──────────────────────────
+// The four cells name "3rd place" — the match for the bronze medal, never a standings place — so that label is set aside before the
+// leak patterns read the text (the ordinal-place pattern is for a team's rank, and a real rank would still be caught).
+const B4_LABEL = /\b3rd place( match)?\b/gi;
+const noB4Label = (entries) => entries.map((e) => Object.assign({}, e, { text: String(e.text).replace(B4_LABEL, '[bracket match]') }));
+
+test('a four-team bracket under way, in a preview: the counselor\'s view of it at every step - no control, no suggestion, no point, no place - and no tap records anything', () => {
+  boot('editor');
+  const g = state.config.games.find((x) => x.format === 'tournament') || state.config.games[state.config.games.length - 1];
+  g.format = 'tournament';
+  delete state.results[g.id];
+  const stage = {
+    's1 on': { s1: { a: 't0', b: 't3' }, s2: { a: 't1', b: 't2' } },
+    's2 on': { s1: { a: 't0', b: 't3', winner: 't0' }, s2: { a: 't1', b: 't2' } },
+    'third on': { s1: { a: 't0', b: 't3', winner: 't0' }, s2: { a: 't1', b: 't2', winner: 't2' } },
+    'final on': { s1: { a: 't0', b: 't3', winner: 't0' }, s2: { a: 't1', b: 't2', winner: 't2' }, third: { a: 't3', b: 't1', winner: 't1' } },
+    'all played': { s1: { a: 't0', b: 't3', winner: 't0' }, s2: { a: 't1', b: 't2', winner: 't2' }, third: { a: 't3', b: 't1', winner: 't1' }, final: { a: 't0', b: 't2', winner: 't0' } },
+    're-check': { s1: { a: 't0', b: 't3', winner: 't3' }, s2: { a: 't1', b: 't2', winner: 't2' }, third: { a: 't3', b: 't1', winner: 't1' } },
+  };
+  state.followTeam = 't0';
+  state.ui.tab = 'games';
+  // a director's own page first, with the director's controls in it (only where the camp plays the four-team bracket)
+  state.brackets4 = { [g.id]: { at: 1, m: JSON.parse(JSON.stringify(stage['s1 on'])) } };
+  openGame(g.id, { from: 'games' }); renderAll();
+  if (teamIds().length === 4) assert.ok(/data-four=|winner-btn/.test(el('entry-area').innerHTML), 'precondition: the director\'s screen carries the bracket controls');
+  previewStart();
+  setStandingsGuardThrows(true);
+  const seen = [];
+  const out = record(() => {
+    Object.keys(stage).forEach((k) => {
+      state.brackets4 = { [g.id]: { at: 1, m: JSON.parse(JSON.stringify(stage[k])) } };
+      openGame(g.id, { from: 'games' }); renderAll(); shellTick();
+      seen.push([k, el('entry-area').innerHTML]);
+    });
+  });
+  seen.forEach(([k, html]) => {
+    assert.notOk(/winner-btn|data-four=|data-live=|save-bracket-btn|Suggested by the points|undo-match-btn/.test(html), k + ': a control or a suggestion on a counselor\'s screen: ' + html.slice(0, 160));
+    assert.ok(/live-watch/.test(html), k + ': the spectator\'s view');
+  });
+  assert.ok(/Live now · Semifinal 1/.test(seen[0][1]) && /plays in semifinal 1/i.test(seen[0][1]), 'the followed team is told where it plays');
+  assert.ok(/Live now · 3rd place/.test(seen[2][1].replace(/\s+/g, ' ')), 'the 3rd-place match is named as one');
+  assert.ok(/double-checking a result/.test(seen[5][1]) && !/plays in the final next/.test(seen[5][1]), 'a re-check holds the view and tells no team what is next');
+  assert.deepEqual(leaksIn(noB4Label(out)), [], 'a sink carried a point, a place or a gap');
+  assert.deepEqual(leaksIn(noB4Label(__domSweep())), [], 'markup left in a node');
+  // no tap can record anything: the wrappers refuse, and a forged tap on the entry area does nothing
+  const before = JSON.stringify(state.brackets4);
+  const box = el('entry-area'); box.__fourGid = g.id;
+  const tapAt = (els) => fourEntryTap({ closest: (sel) => els[sel] || null }, box);
+  assert.equal(tapAt({ '.winner-btn': { dataset: { winner: 't0' } }, '[data-four-match]': { dataset: { fourMatch: 's1' } } }), false);
+  assert.equal(tapAt({ '[data-four]': { dataset: { four: 'cancel' } } }), false);
+  assert.equal(tapAt({ '[data-four]': { dataset: { four: 'save' } } }), false);
+  ['s1', 's2', 'third', 'final'].forEach((k) => assert.equal(fourRecordTap(g, k, 't0').ok, false));
+  assert.equal(fourSaveResult(g).ok, false);
+  assert.equal(fourReopen(g).ok, false);
+  assert.equal(discardLateBracket(g.id).ok, false);
+  assert.equal(JSON.stringify(state.brackets4), before, 'nothing changed');
+  // a saved four-team result is the podium a counselor already sees: its kept bracket path says nothing a counselor must not see
+  state.results[g.id] = { medals: { gold: 't0', silver: 't2', bronze: 't1' }, savedAt: '2026-07-20T12:09:00Z', path: { at: 1, m: JSON.parse(JSON.stringify(stage['all played'])) } };
+  delete state.brackets4[g.id];
+  openGame(g.id, { from: 'games' }); renderAll();
+  assert.equal(fourCanReopen(g), false, 'no Reopen the final in a preview');
+  assert.notOk(/Reopen|Change the result/.test(el('entry-area').innerHTML), 'and no way to change the result');
+  assert.deepEqual(leaksIn(noB4Label(__domSweep())), [], 'the saved result leaves no point or place behind either');
+  done();
+});
+
 test('every door a counselor has no key to stays shut in a preview: the director tools, the remote, the builder, the drawers, the owner\'s acts', () => {
   boot('editor');
   previewStart();
