@@ -192,6 +192,24 @@ function nowNoticeHtml(n) {
   return `<div class="nb">${yours}${zhtml}${steps}${n.signoff ? `<p class="nb-signoff">${esc(n.signoff)}</p>` : ''}</div>`;
 }
 
+// The strip on Now as markup (index.html's static #now-notice, which renderNowMessages patches in place, has the same parts: a test
+// compares their class lists), for the two previews that draw a notice that is not on the page: Tell everyone's "On a counselor's
+// phone" and the builder's Notice tab. A picture: the See all in it answers nothing (the previews' CSS turns pointer events off).
+function nowNoticeStripHtml(n) {
+  if (!n) return '';
+  const y = n.yours && n.yours.place ? n.yours : null;
+  const yours = y ? `<p class="nn-yours"><span class="nn-mark">${nowMark(y.team, 24)}</span><span class="nn-words"><b>${esc(nowTeamWord(y.team))}</b> · ${esc(y.place)}${y.note ? `<small>${esc(y.note)}</small>` : ''}</span></p>` : '';
+  return `<section class="msg nn" data-kind="notice"><span class="msg-ico" aria-hidden="true">${nowIcon('i-pin')}</span><div class="msg-body">` +
+    `<h2 class="nn-title">${esc(n.title || n.eyebrow || 'Notice')}</h2>${n.sub ? `<p class="msg-text nn-sub">${esc(n.sub)}</p>` : ''}${yours}` +
+    `<p class="msg-meta nn-acts"><button type="button" class="nn-all" tabindex="-1">See all${NOW_CHEV}</button></p></div></section>`;
+}
+// A notice as a counselor's phone shows it: the strip, then (`opts.strip` leaves it out: Tell everyone's preview) what See all opens.
+function nowNoticePreviewHtml(n, opts) {
+  const strip = nowNoticeStripHtml(n);
+  if (opts && opts.strip) return strip;
+  return strip + `<div class="nb-preview"><h3 class="nw-h">Tap See all, and they read</h3>${nowNoticeHtml(n)}</div>`;
+}
+
 // Notes under the title: plain lines with an icon or a team mark, never a tinted callout.
 function nowNotesHtml(notes) {
   return (notes || []).map((n) => {

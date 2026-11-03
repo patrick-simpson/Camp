@@ -1470,45 +1470,14 @@ function noticeZoneFor(teamId) {
   return noticeBoard().zones.find((z) => z.teamId === teamId) || null;
 }
 
-// `preview` renders the card regardless of status, for the builder's preview. `notice` draws
-// a notice that is not the live one (Tell everyone's "On a counselor's phone" draws the card
-// a pin WOULD post); it must already be a whole, normalized card.
-function noticeCardHtml(preview, notice) {
-  const n = notice || noticeBoard();
+// The notice as a counselor's phone draws it (now-ui.js: the strip on Now and, behind See all, the whole notice), for the two
+// previews that must not drift from the real thing: Tell everyone's "On a counselor's phone" (`opts.strip`: the strip alone, which
+// is all Now shows) and the builder's Notice tab (the strip and what See all opens). `preview` draws it regardless of status;
+// `notice` draws one that is not the live one (what a pin WOULD post): it must already be a whole, normalized card. null when
+// the notice is not posted and this is not a preview; '' without now-ui.js (there is no Now to show it on).
+function noticeCardHtml(preview, notice, opts) {
   if (!preview && !noticePosted()) return null;
-
-  // Skip any slot whose team no longer exists (roster edited / week reset).
-  const zones = n.zones.filter((z) => z.place && state.teams.some((t) => t.id === z.teamId));
-
-  const mine = state.followTeam ? zones.find((z) => z.teamId === state.followTeam) : null;
-  // Viewers following a team get their own line spelled out first — it's the
-  // only row most people actually need.
-  const yours = mine ? `<div class="notice-yours">
-      <span class="notice-yours-label">Your team</span>
-      <span class="notice-yours-place">${teamEmoji(mine.teamId)} ${esc(teamName(mine.teamId))} → <strong>${esc(mine.place)}</strong></span>
-    </div>` : '';
-
-  const rows = zones.map((z) => `
-    <li class="notice-row${z.teamId === state.followTeam ? ' notice-row-you' : ''}">
-      <span class="notice-team"><span class="notice-emoji" aria-hidden="true">${teamEmoji(z.teamId)}</span> ${esc(teamName(z.teamId))}</span>
-      <span class="notice-place">${esc(z.place)}${z.note ? `<span class="notice-note">${esc(z.note)}</span>` : ''}</span>
-    </li>`).join('');
-
-  const steps = n.steps.filter((s) => s.when || s.items.length).map((s) => `
-    <div class="notice-step">
-      <div class="notice-step-when">${s.emoji ? `<span aria-hidden="true">${esc(s.emoji)}</span> ` : ''}${esc(s.when)}</div>
-      <ul class="notice-step-items">${s.items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>
-    </div>`).join('');
-
-  return `<div class="notice-card">
-    ${n.eyebrow ? `<div class="notice-eyebrow">${esc(n.eyebrow)}</div>` : ''}
-    ${n.title ? `<h2 class="notice-title">${esc(n.title)}</h2>` : ''}
-    ${n.sub ? `<p class="notice-sub">${esc(n.sub)}</p>` : ''}
-    ${yours}
-    ${rows ? `<ul class="notice-list">${rows}</ul>` : ''}
-    ${steps}
-    ${n.signoff ? `<p class="notice-signoff">${esc(n.signoff)}</p>` : ''}
-  </div>`;
+  return typeof nowNoticePreviewHtml === 'function' ? nowNoticePreviewHtml(nowNoticeData(nowCtx(), notice), opts) : '';
 }
 
 // DORMANT since Step 17 build session 2: the notice is #now-notice / the send-off card (now-ui.js); only settings.js's notice editor still calls this, and it returns at once. Deleted, with the tests that pin it, in the next session.
@@ -2195,10 +2164,10 @@ function nowVerseMoment(ctx, nb) {
 }
 
 // ── the notice (a posted message with structure: the send-off cleanup plan) ──
-function nowNoticeData(ctx) {
-  const n = noticeBoard();
+function nowNoticeData(ctx, notice) {
+  const n = notice || noticeBoard(); // a notice that is not the live one (Tell everyone's and the builder's previews) must already be whole
   const ids = teamIds();
-  const yours = ctx.myTeam ? noticeZoneFor(ctx.myTeam) : null;
+  const yours = ctx.myTeam ? n.zones.find((z) => z.teamId === ctx.myTeam) || null : null; // from THIS notice (a preview draws one that is not live)
   return {
     eyebrow: n.eyebrow, title: n.title, sub: n.sub, signoff: n.signoff,
     yours: yours && ids.includes(yours.teamId) ? { team: yours.teamId, place: yours.place, note: yours.note } : null,

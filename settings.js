@@ -1664,7 +1664,7 @@ function renderNoticeTab(card) {
 
     <div class="data-block">
       <h3>Preview</h3>
-      <p class="muted">Exactly how it looks at the top of the page${posted ? '' : ' once posted'}.</p>
+      <p class="muted">Exactly how it looks at the top of Now${posted ? '' : ' once posted'}, and what opens when someone taps See all.</p>
       <div class="notice-preview" id="notice-preview">${noticeCardHtml(true)}</div>
     </div>
 

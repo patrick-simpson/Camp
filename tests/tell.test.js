@@ -875,7 +875,8 @@ test('the preview draws the notice card then the banner, written by the same fun
   assert.equal(tellPreviewHtml(), messageHtml({ id: 'preview', text: 'Rain plan. Games move indoors.', at: new Date().toISOString(), by: 'Jenn' }, { preview: true }).replace(/> ?\d+:\d\d [AP]M/, ''), 'banner only: exactly messageHtml in preview mode');
   tell.d.pin = true;
   const both = tellPreviewHtml();
-  assert.ok(both.indexOf('notice-card') > -1 && both.indexOf('notice-card') < both.indexOf('class="msg"'), 'the notice first, then the banner (Now\'s order)');
+  assert.ok(both.indexOf('class="msg nn"') > -1 && both.indexOf('class="msg nn"') < both.indexOf('class="msg" data-kind="banner"'), 'the notice strip first, then the banner (Now\'s order)');
+  assert.ok(!both.includes('nb-preview') && !both.includes('class="nb"'), 'Now shows the strip; See all is the builder\'s preview');
   assert.ok(both.includes('Rain plan') && both.includes('Games move indoors.'));
   tell.d.banner = false;
   assert.notOk(tellPreviewHtml().includes('class="msg"'), 'pin only: no banner');

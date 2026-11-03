@@ -10131,6 +10131,9 @@ html.calm-motion .toast-out { animation: none; }
   background: var(--color-bg);
   border: 1px dashed var(--color-border);
 }
+.notice-preview .nb-preview {
+  margin-top: 0.75rem;
+}
 .notice-emoji-field {
   flex: 0 0 5.5rem;
 }
@@ -13523,7 +13526,7 @@ div.sec-st-name {
   -webkit-user-select: none;
   user-select: none;
 }
-.tell-phone-screen > .notice-card {
+.tell-phone-screen > .nn {
   margin: 0;
 }
 

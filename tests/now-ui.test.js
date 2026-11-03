@@ -858,6 +858,32 @@ test('the join bar rides the strip first for a director; "See who is asking" and
   done();
 });
 
+test('the notice as a preview (Tell everyone\'s, the builder\'s) is the strip Now shows — the same parts as the page\'s own — and the builder\'s adds what See all opens', () => {
+  boot('editor', T()[0]);
+  state.notice.status = 'draft';
+  state.notice.zones = [{ teamId: T()[0], place: 'Dining hall', note: 'tables' }];
+  assert.equal(noticeCardHtml(false), null, 'a draft is nothing on a phone');
+  const strip = noticeCardHtml(true, undefined, { strip: true });
+  const full = noticeCardHtml(true);
+  assert.ok(strip.startsWith('<section class="msg nn" data-kind="notice">'), 'the strip');
+  assert.ok(full.startsWith(strip) && /class="nb-preview"/.test(full) && /class="nb"/.test(full) && /nb-yours/.test(full), 'the builder\'s: the strip, then the whole notice');
+  assert.ok(!/class="nb"/.test(strip), 'Tell\'s: the strip alone');
+  // the strip's parts are the page\'s own (index.html's static #now-notice, which renderNowMessages patches in place)
+  const staticStrip = INDEX_HTML.slice(INDEX_HTML.indexOf('id="now-notice"'), INDEX_HTML.indexOf('</section>', INDEX_HTML.indexOf('id="now-notice"')));
+  const classes = (h) => new Set([...h.matchAll(/class="([^"]+)"/g)].flatMap((m) => m[1].split(/\s+/)));
+  const want = classes(staticStrip);
+  const got = classes(strip);
+  ['msg-remove', 'nn-down'].forEach((c) => want.delete(c)); // a director's Take down is not in a picture
+  want.forEach((c) => assert.ok(got.has(c), 'the preview lacks .' + c));
+  got.forEach((c) => assert.ok(want.has(c) || ['nn-mark', 'nn-words', 'tm', 'tm-shield', 'ico', 'flag', 'tm-tile'].includes(c), 'the preview has .' + c + ' which the page\'s strip does not'));
+  // the member of the team named on the notice reads their own line first
+  assert.ok(/nn-yours/.test(strip) && /tables/.test(strip));
+  // a pin Tell everyone WOULD post has no team areas: the live notice's must not leak into its picture
+  const pin = noticeCardHtml(true, tellPinnedNotice('Rain plan. Games move indoors.'), { strip: true });
+  assert.ok(/Rain plan/.test(pin) && !/nn-yours/.test(pin) && !/Dining hall/.test(pin), 'the picture is of the notice it was handed');
+  done();
+});
+
 // ════════════════════════════════════════════════════════════════════
 // escaping and sanitizers
 // ════════════════════════════════════════════════════════════════════

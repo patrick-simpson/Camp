@@ -262,13 +262,13 @@ function tellResultHtml(items) {
     (it.ok ? '' : `<button type="button" class="btn btn-sm" data-tell-retry="${it.way}">Try again</button>`) + '</li>').join('');
 }
 
-// "On a counselor's phone": the notice card this would post, then the banner, in Now's order — written by the same
+// "On a counselor's phone": the notice strip this would post, then the banner, in Now's order — written by the same
 // functions the real strip uses. '' while there is nothing to show.
 function tellPreviewHtml() {
   const d = tell.d;
   const text = d.text.trim();
   if (!text || (!d.banner && !d.pin)) return '';
-  const notice = d.pin ? noticeCardHtml(true, tellPinnedNotice(text)) : '';
+  const notice = d.pin ? noticeCardHtml(true, tellPinnedNotice(text), { strip: true }) : ''; // Now shows the strip; See all is the builder's preview
   const banner = d.banner ? messageHtml({ id: 'preview', text, at: new Date().toISOString(), by: frameMyName() }, { preview: true }) : '';
   return (notice || '') + banner;
 }

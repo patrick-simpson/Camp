@@ -246,13 +246,14 @@ test('a posted notice calls out the team you follow', () => {
   freshState();
   setNoticeStatus('posted');
   state.followTeam = noticeBoard().zones[0].teamId;
-  assert.ok(noticeCardHtml(false).includes('notice-yours'), 'your own line is spelled out');
-  assert.ok(noticeCardHtml(false).includes('notice-row-you'), 'and your row is marked');
+  assert.ok(noticeCardHtml(false).includes('nn-yours'), 'your own line is spelled out on the strip');
+  assert.ok(noticeCardHtml(false).includes('nb-yours'), 'and first in the whole notice');
+  assert.ok(/class="nb-zone" data-key="z-\w+" data-mine/.test(noticeCardHtml(false)), 'and your row is marked');
 
   state.followTeam = null;
   const neutral = noticeCardHtml(false);
-  assert.notOk(neutral.includes('notice-yours'), 'nothing personal for a neutral viewer');
-  assert.notOk(neutral.includes('notice-row-you'));
+  assert.notOk(neutral.includes('nn-yours') || neutral.includes('nb-yours'), 'nothing personal for a neutral viewer');
+  assert.notOk(neutral.includes('data-mine'));
 });
 
 test('a notice survives a roster that no longer matches', () => {
@@ -261,7 +262,7 @@ test('a notice survives a roster that no longer matches', () => {
   state.teams = [{ id: noticeBoard().zones[0].teamId, name: 'Only Team Left' }];
   const html = noticeCardHtml(false);
   assert.ok(html.includes('Only Team Left'), 'the team that still exists is listed');
-  assert.equal((html.match(/notice-row/g) || []).length, 1, 'deleted teams are skipped, not rendered blank');
+  assert.equal((html.match(/class="nb-zone"/g) || []).length, 1, 'deleted teams are skipped, not rendered blank');
 });
 
 test('a team with no place set is left off the list', () => {
@@ -269,7 +270,7 @@ test('a team with no place set is left off the list', () => {
   setNoticeStatus('posted');
   const n = noticeBoard();
   n.zones.forEach((z, i) => { if (i > 0) z.place = ''; });
-  assert.equal((noticeCardHtml(false).match(/notice-row/g) || []).length, 1);
+  assert.equal((noticeCardHtml(false).match(/class="nb-zone"/g) || []).length, 1);
 });
 
 test('a renamed team is named correctly, and everything is escaped', () => {

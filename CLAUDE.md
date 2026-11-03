@@ -892,6 +892,8 @@ in `tests/preview.test.js`):
   → Done is remembered (`nowUi.flip`) and, once its podium is on screen, pops its check and drops the medals bronze → silver → gold, the hairline is
   nudged from where it was (never refilled), a notice arrives and squashes out. The first paint, a repeat, a paint that brings Now back into view and
   a paint under a takeover animate nothing.
+- **Previews**: a notice drawn outside the page (Tell everyone's, the builder's) is `nowNoticeStripHtml` / `nowNoticePreviewHtml`; a test compares the strip's
+  class list with index.html's static `#now-notice`, so the two cannot drift.
 - **Dormant, to delete with their tests in the next session**: `renderNoticeBoard`, `renderNowBanner` + `splitNowBanner`, `renderFollowCard`,
   `renderMyElectives`, `renderLiveHome` (each marked "DORMANT" in app.js; none is on a render path, their elements left the page; `nowBannerHtml`
   stays: the schedule oracle in week / seed tests). The tests that still call them: home.test.js, render-stability.test.js, game-view.test.js,
@@ -5198,7 +5200,10 @@ convention — never device-local time.
 `state.notice` — synced (in `SYNC_KEYS`, and a `SYNC_SINGLETON`: it's one
 composed card, always written whole). Posted, it is the strip `#now-notice` at the top of Now (title, first line, your team's
 line, See all → `#sheet-notice`, a director's Take down) and, on send-off Saturday, the Now card itself (now-ui.js,
-`nowNoticeHtml`; the old `#notice-board` card is gone). Tell everyone's preview and the builder's still draw `noticeCardHtml`.
+`nowNoticeHtml`; the old `#notice-board` card is gone). `noticeCardHtml(preview, notice, opts)` is now the notice AS A COUNSELOR'S PHONE DRAWS IT
+(`nowNoticePreviewHtml`: the strip, plus what See all opens unless `opts.strip`): Tell everyone's "On a counselor's phone" passes `{ strip: true }`, the
+builder's Notice tab takes both, and `nowNoticeData(ctx, notice)` reads the notice it is handed (a pin that WOULD post has no team areas). The old
+`.notice-card` / `.notice-row` / `.notice-step*` rules in styles.css are dead; delete them with the dormant functions.
 
 Built for send-off-morning cleanup, where six separate announcements filled a
 whole phone screen and buried the one line each camper needed. Reach for it
