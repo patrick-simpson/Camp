@@ -1263,7 +1263,8 @@ nothing.
 - **Shared helpers added to app.js**: `bonusAddFromDraft`, `removeBonusEntry`, `bonusDraftProblem`, `BONUS_PROBLEMS`,
   `bonusDowOf`, `cleanupEarned(day, meal)` (a guarded points reader), `messageClock(iso, timeOnly)`.
 - **Emulator proof (opt-in)**: `tests/emulator/director-tools-client.mjs` drives the REAL client's Tell everyone and
-  Award points writes against the published rules on both camps (8 cases, SAFE): no rules change belongs to Step 24
+  Award points writes against the published rules on both camps (10 cases, SAFE; two are a counselor's phone and a director in a
+  counselor preview, which write nothing): no rules change belongs to Step 24
   (`state/announcements`, `state/notice` and `state/bonuses` only have to stay branches, so a custom bonus's new `day`
   field and the whole-notice write are accepted). It joined `npm run test:r1`; `export-replay.mjs` was re-run against the
   synthetic exports with the new scripts loaded (READY, both camps).

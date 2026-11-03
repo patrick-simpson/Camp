@@ -153,6 +153,35 @@ for (const R of ROOTS) {
     await assertFails(update(ref(vw, `${R}/state`), { 'bonuses/zz': { teamId: 't0', category: 'custom', label: 'x', points: 5, at, day: 3 } }));
     d.stop();
   });
+
+  await s.t(`${R}: a director in a counselor PREVIEW writes nothing — every director act refused, the server untouched — and writes again after Exit`, async () => {
+    const d = await phone(R, ED, 'editor');
+    const srv = await state('');
+    d.run(`state.announcements = ${JSON.stringify((srv && srv.announcements) || {})}; state.notice = ${JSON.stringify(srv && srv.notice)}; state.bonuses = ${JSON.stringify((srv && srv.bonuses) || {})}; normalizeSyncedState();
+           lastSyncedTree = syncedSnapshot(); appStarted = true; campNow = () => ({ dow: 3, minutes: 780 });`);
+    if (!d.run('previewStart()')) throw new Error('the preview did not start for a confirmed director');
+    const before = JSON.stringify(await state(''));
+    const t0 = d.run('state.teams[0].id');
+    // everything a director can do, asked of a phone that is previewing (the screens refuse to open; the writers refuse too)
+    d.run(`openTool('tell', { from: 'more' }); openTool('award', { from: 'more' }); openBuilder('games');
+           postBanner('Lightning. Everyone inside.', 3600000); setNoticeStatus('posted'); toggleCardHidden('verse');
+           setVersePoints(${JSON.stringify(t0)}, 3, 4); setCleanupPoints(${JSON.stringify(t0)}, 3, 'Lunch', 3);
+           bonusDraft.teams = [${JSON.stringify(t0)}]; bonusDraft.points = '5'; bonusDraft.category = 'custom'; bonusDraft.custom = 'Spirit'; bonusAddFromDraft({ day: 3 });
+           const first = Object.keys(state.announcements || {})[0]; if (first) takeDownBanner(first);
+           deleteGame(state.config.games[state.config.games.length - 1].id);
+           saveState();`);
+    await d.flush();
+    await sleep(80);
+    if (d.writes.length) throw new Error('a previewing phone wrote: ' + JSON.stringify(d.writes));
+    if (JSON.stringify(await state('')) !== before) throw new Error('the server moved under a preview');
+    // Exit gives the director's writers back: the same slot, through the same writer, now lands
+    d.run('previewStop()');
+    d.run(`setVersePoints(${JSON.stringify(t0)}, 3, 4); saveState();`);
+    await d.flush();
+    const v = (await state('bonuses')) || {};
+    if (!v[`verse-${t0}-3`] || v[`verse-${t0}-3`].points !== 4) throw new Error('after Exit the verse write did not land: ' + JSON.stringify(v));
+    d.stop();
+  });
 }
 
 clearAllTimers();
