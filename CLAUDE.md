@@ -104,6 +104,10 @@ Files:
   markup (the card in every kind, the cleanup / verse moment, Still to do today, Up next, Later today,
   the messages strip's notice, Now's three sheets) and wires its taps. A classic script right after
   award.js, every hook in app.js typeof-guarded; without it Now keeps only the announcements
+- `games-ui.js` — THE GAMES TAB'S RENDERERS (see "The Games tab"): paints `gamesModel()` onto `#tab-games` (the day picker, the day's blocks
+  with Now's own game rows, the directors' standings), runs the quick-points sheet and the standings "…" sheet, and draws the takeover's
+  Next game dock. A classic script right after now-ui.js (its rows are Now's), every hook in app.js typeof-guarded; without it the Games tab
+  is an empty page and the app runs
 - `jelly-motion.js` — the SPRING SYSTEM and the ONE calm-motion switch (see
   "Motion and calm motion" below). A classic script loaded between camps.js and
   app.js with no dependency on `vendor/jelly.js` (that module can't parse on
@@ -225,10 +229,10 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
 
 **Every time any code asset changes:**
 1. Bump the `?v=N` cache-busting query string in `index.html` — there are
-   TWENTY-TWO on the same number: `boot-guard.js`, `styles.css`, `vendor/jelly.js`,
+   TWENTY-THREE on the same number: `boot-guard.js`, `styles.css`, `vendor/jelly.js`,
    `firebase-config.js`, `defaults.js`, `camp-core.js`, `reveal-core.js`,
    `camps.js`, `jelly-motion.js`, `app.js`, `reveal.js`, `reveal-ui.js`, `setup-sync.js`, `settings.js`,
-   `setup-ui.js`, `chat.js`, `push.js`, `tell.js`, `award.js`, `now-ui.js`, `auth-phone.js`, `auth-email-link.js` —
+   `setup-ui.js`, `chat.js`, `push.js`, `tell.js`, `award.js`, `now-ui.js`, `games-ui.js`, `auth-phone.js`, `auth-email-link.js` —
    keep them in sync, all bumped together. Also bump
    `APP_VERSION` in `app.js` to the same number (it drives the auto-reload
    version check). `stalling.html` loads `vendor/jelly.js`, and
@@ -506,9 +510,10 @@ future edit must not break (all pinned by `tests/tabs.test.js`):
   boot, consumed). A takeover opened cold first tags the base entry Now, then
   pushes, so the label and the gesture agree. Back out of an open game editor
   with unsaved edits asks first (and re-pushes on "no").
-- **Dirty render.** `renderShellTabs()` runs `SHELL_ALWAYS` (renderers with
-  side effects: `renderStandings` — the change history, point alerts, rank
-  baseline, §13.9 — plus pruning and the open schedule), the VISIBLE tab's
+- **Dirty render.** `renderShellTabs()` runs `SHELL_ALWAYS` (work with side
+  effects: `runStandingsSideEffects` — the change history, point alerts, the
+  day's place baseline, §13.9, drawing nothing — plus pruning and the open
+  schedule), the VISIBLE tab's
   `SHELL_PANELS[tab].render`, and marks the others dirty; a tab renders when
   shown. The 30 s tick (`shellTick`) runs only the visible tab's time-driven
   part. The Competitions / Standings / Cleanup / Verse / Bonus cards still sit
@@ -581,7 +586,7 @@ Static markup in index.html, styled in styles.css's THE FRAME section; a
 renderer only patches text, `hidden` and a few attributes. **`#app[data-tab]`**
 (`now | games | chat | more`; absent reads as Now) is the one switch the CSS
 reads: which `[data-tab-panel]` shows (`#tab-now` = today's `main-wrap`,
-unchanged; `#tab-games` with `#games-days` / `#games-standings` / `#games-rows`;
+unchanged; `#tab-games`: the standings panel `#games-live`, the day picker and the day's blocks `#games-week`;
 `#tab-chat`, a fixed keyboard-riding panel; `#tab-more`), the header's form and
 where the tab blob rests. The switcher sets it together with `aria-current="page"` on
 the `#tabbar .tab[data-tab]` button. Header `#app-header`: `#hdr-id` (Now: who
@@ -708,23 +713,16 @@ never rebuilds a segmented control under a finger.
   word "Shown" / "Hidden" beside it (`data-hide-state`). Standings are a locked
   row, "Secret until you reveal them": the old standings switch is retired (the
   key stays seeded true for old builds, `ensureSecrecySeed`). `applyCardVisibility`
-  hides the section WHERE IT LIVES — `#games-days` (`data-card="competitions"`,
+  hides the section WHERE IT LIVES — `#games-week` (`data-card="competitions"`,
   with `#games-off` "Games are turned off right now"), More's `#verse-row` /
-  `#cleanup-row` (and closes their sheet if open), the standings and Quick
-  points sections — and the Chat tab shows chat.js's "Chat is turned off right
+  `#cleanup-row` (and closes their sheet if open), the standings panel
+  `#games-live` (`data-card="standings"`) — and the Chat tab shows chat.js's "Chat is turned off right
   now". **Preview as a counselor** (§7.4) is built (Step 24): a lens over the role,
   not a role — see "Preview as a counselor: behaviour".
-- **The Games tab is the interim home of the old cards** until Step 18:
-  `#games-days` holds today's `#day-tabs` (every day's game list),
-  `#games-standings` the Current standings table and Quick points (both
-  `SECRET_CARDS`: directors only), `#games-rows` is reserved. Step 18's frame sits
-  beside them, hidden and unwired (see "The Games tab (Step 18 — markup and
-  visual system)"); its build session retires these three. The home cards no
+- **The Games tab** is built (Step 18, "The Games tab"): the Competitions, Current standings and Quick points cards are gone. The home cards no
   longer fold open: **the accordion, `jelly-collapsible` cards, `applyCardDefaults`,
   the 5-minute idle collapse and the `.card-opening` rise are gone**, and the
   shell's own "come back after 10 minutes" rule replaced the idle collapse.
-  `renderStandings` stays in `SHELL_ALWAYS` (its side effects are not lifted
-  out yet, §13.9).
 - **The 44px rule reaches everything that moved into the frame** (Playwright
   audit, 360 and 390 px, 100 / 130 / 200% text via the root font size, both
   themes, both camps, counselor and director: header, tab bar, Games, Chat, More,
@@ -775,7 +773,7 @@ only the announcements; `tests/now-ui.test.js` boots it that way):
   today), `#now-next`, `#now-later`. Shared pieces Step 18's Games tab reuses: game rows `.gr` (ONE stretched `.gr-hit` button, a sibling
   `.gr-score`, `.gr-why` for the own-team lock), the podium `.pd`, the live board `.lb`, the 4-team bracket `.b4`, stations `.es-*`, the verse `.vs`,
   run rows `.nr` / `.nr-act` (a to-do row is a `.nr-item` list item wrapping its button, so the button keeps its role), the notice the notice `.nb-*` (its own `container: nb`, so the zone list stacks by ITS width in the sheet as well as on the send-off card). `#tab-now[data-reveal="live"]` puts every one of these away except the banners and their "more" row.
-  No "Counselors can't see this" on Now (`secrecy.test.js` counts that phrase: exactly two in index.html).
+  No "Counselors can't see this" on Now (`secrecy.test.js` counts the phrase in index.html's markup: none in straight quotes, one in the Games standings panel's kicker, in typographic quotes).
 - **The model** — `nowModel(opts)` (app.js, "THE NOW ENGINE"): the whole tab as PLAIN DATA (no markup, no DOM, no timer) from the
   week through the SEAM accessors, the state and the clock it is GIVEN (`opts.now` = `{ dow, minutes }`, `opts.ms` = server ms; default `campNow()` /
   `serverNow()`). `blockKind(b, dow)` / `blockTeams(b, dow)` are SEAM accessors. `tests/now-model.test.js` (+ `.senior`, in the seeded passes) walks every
@@ -913,35 +911,59 @@ at its widest, a 44-minute Running over and a held one, the three sheets, and th
 44×44, no sideways scroll, no overflow, a leak scan over a counselor's text; about four minutes for both camps with `CAMPS=junior` / `CAMPS=senior` in two
 processes; `SHOTS=1` for screenshots; it found the notice sheet's squeeze and the mirror's Happening-now overflow at 200 % text on 360 px).
 
-## The Games tab (Step 18 — markup and visual system)
+## The Games tab (Step 18 — `gamesModel()` in app.js, painted by games-ui.js)
 
-Redesign §5, mockups 08, 14, 14b (+ dark). **Design pass only: static, hidden, unwired.** Every hook and row template is documented in
-index.html (the "STEP 18: THE GAMES TAB" comment in `#tab-games`, `#sheet-quick`, `#sheet-standings`, and the "STEP 18 TEMPLATES" comment in
-`#takeover-game`); the CSS is styles.css's last block, "THE GAMES TAB". The interim cards (`#games-days`, `#games-standings`, `#games-rows`) still
-render until the build session retires them and moves their hooks onto the new pieces: `data-card="standings"` → `#games-live`,
-`data-card="competitions"` → `#games-week`, `#sync-status` → `#gs-sync`'s place, reveal-ui.js's `#games-reveal-link` un-hide → `#gs-reveal`.
+Redesign §5, mockups 08, 14, 14b (+ dark). Three layers like Now's, each replaceable: **markup** (static, index.html: the comment at `#tab-games`,
+`#sheet-quick`, `#sheet-standings` and "STEP 18 TEMPLATES" in `#takeover-game` document every hook and row template; styles.css's last block "THE GAMES
+TAB"), **the model** (app.js "THE GAMES ENGINE": plain data from `nowCtx` — the same role read as Now's — and Now's own rows, `nowGameRow`; no DOM),
+**the renderers** (games-ui.js; `renderGamesPanel(model)`, called by `gamesRefresh()` from `SHELL_PANELS.games.render` and the 30 s tick). Names are all
+`games…`; `renderGamesTab` is the week BUILDER's, hence `renderGamesPanel`.
 
 - **Order** (a deliberate change from mockup 08): the week's standings first, then the day picker directly on the rows it switches.
-- **Directors' standings** `#games-live` (`[data-empty]` before any points): kicker "Counselors can’t see this" (typographic apostrophe:
-  `secrecy.test.js` counts the straight-quote phrase in the two old cards, a pin that changes when they go), `#gs-more` → `#sheet-standings`
-  (`#gs-copy`, `#gs-share`, `#gs-award`), `#gs-how`, `#gs-list` of `li.gs-item[data-key][data-team][data-tie?][data-mine?]` >
-  `button.gs-row[data-quick-team]` (`.gs-pl` / `.gs-tie`, `.gs-mv[data-mv=up|down|same]`, `.gs-mark`, `.gs-name` + `.gs-medals` in words with
-  `&nbsp;` inside each count and `.gs-x` "+N awarded", `.gs-pts`); a director's own team is a `div.gs-row[data-locked]` with `.gs-lock`, never a dead
-  button. `#gs-gap`, `#gs-sync`, `#gs-reveal`. Counselors: `#games-secret`, one ruled line (§5.6).
-- **Day picker** `#games-days-pick` (a tablist, `--n` / `--i` on it): `button.gdp-btn[role=tab][data-day][data-st=done|today|left|]` > `.gdp-d` +
-  `.gdp-st`, and ONE `.gdp-pill` at rest under `--i` (sprung with `snap`, never a CSS transition); at very large text the status words become a check
-  / dot / ring. `#games-day-note` ("Thursday · not today"), `#games-day` > `#games-day-notes` (Now's `.nw-note` lines) + `#games-day-body` (one
-  `section.gb[data-key][data-now?][data-off?]` per block: `.gb-h` > `.gb-t`, `.gb-now`, `.gb-when`, then Now's `.gr-list` rows unchanged), the
-  empty day `.gw-empty` with `[data-games-add]`, and `#games-quick`.
-- **Quick points** `#sheet-quick`: `#qp-mark` / `#qp-team`, `#qp-now`, `#qp-keys` (Award points' `.aw-pt` keys, data-pts 1 · 2 · 3 · 5), `#qp-why`
-  (`.qp-chip[role=radio][data-why]`, `other` shows `#qp-other`), `#qp-x2`, `#qp-add` (the dashed well until a key is chosen).
-- **Takeover**: the podium picker `.pp` > `.pp-row[data-medal][data-wait?]` > `.pp-h` + `.pp-teams[role=radiogroup][data-n]` >
-  `button.pp-team[role=radio][aria-checked][aria-disabled?][data-taken?]` (a chosen key takes its medal's fill and `.pp-ok`; a taken one shows
-  `.pp-taken` "① has gold", never the bare word: senior has a team called Gold); the saved result `.gsv[data-state=saving|saved|offline]`, `.gres` /
-  `.gres-r`, `.gres-scores`, `#game-change`; the dock `.gd` (`#game-save`, `#game-left`, `.gd-next` > `#game-dock-back[data-game-back]` +
-  `#game-next[data-next-game]`).
-- **Specimens**: `docs/build-notes/verify/step18-design.cjs` draws every template into the real page (both camps, director / director on a team /
-  counselor, 360 / 390, light / dark, 100 / 130 / 200 %: no target under 44×44, no sideways scroll, no overflow; `SHOTS=1`).
+- **Status of a game** (`gameRowStatus`, redesign §5.3; `games-tab.test.js` pins it as a truth table): Done = a result; Live = a six-team bracket not at its
+  summary (and only on a bracket game), a four-team bracket node, a draft with any score or medal, a synced clock running with time left; everything else
+  is Not started — a clock that ran out, a paused one, a bracket left by a format change, a blank draft and a stray live-match tally are not Live. The live
+  line is said per format in `.gr-sub` (`gamesRow`): a round, "4 of 6 teams in", "Clock running", "Being scored" (a podium draft never says which team).
+- **Day picker** (`m.days`): Done (every game has a result, also on today) · Today · "N left" (a day behind the clock with games unscored; before the
+  camp week's dates nothing is today or behind, after it everything is behind) · blank. The chosen day is `state.ui.day`, this device's own, painted at
+  once by `gamesPickDay` (no renderAll round trip); "Thursday · not today" while another is chosen. ONE `.gdp-pill` rests under `--i` and springs from the
+  old place on `snap` (a WAAPI translate, none while calm); the tabs are a roving-tab-stop tablist with arrow keys.
+- **Blocks** (`gamesDayGroups`): the schedule's blocks holding the day's games, by time (the run-sheet clock, "6:00–6:45 PM"), a game on ONE block only;
+  a day no block holds any game of falls back to the session names; the rest are "Not on the schedule", last. **ONE "up next"** (today: the first game not
+  started from the block under way) and **ONE gold Score** (the first live game this director can score, else up next); a director's own team's round
+  (`gameRoundTeams` → `blockedByOwnTeam`) shows the reason instead of Score. An empty day names itself with Add games (`openBuilder('games')` until Step 21).
+- **Next game** (`gamesNextAfter`, `gamesDock`, `openNextGame`): after a result the takeover's dock (`renderGameDock`, directors only) names what is left and
+  offers Next game: the rest of the block, the later blocks, the games on no block, then (wrapping) what is unscored before it, skipping a round the
+  director's own team plays — those are named ("1 game needs another director: X (your team plays)"). It re-asks at the tap and swaps the takeover in
+  place (`openGame` keeps the labelled Back's origin and the shell replaces the history entry). **Not built (build session 2):** the podium picker, the
+  saved-result block and Save in the dock; the dock appears only once a result exists.
+- **Directors' standings** (`gamesStandings`): places are reveal-core's `groupPlaces` over `rankTeamsByPoints` — the call the reveal's freeze makes, so a tie
+  reads the same on the remote and the big screen (`games-tab.test.js` compares them); equal points share a place ("tie"), an empty table has no places and
+  keeps roster order. Arrows are this place against the day's baseline (`startOfDayPlaces`, device-local `campScoreboardDayRanks`: shared places, `flat` when
+  taken on a blank table, which keeps the arrows off that day), an arrow AND a number. Medals are numbers the renderer words ("2 gold · 2 silver · 1 bronze",
+  `&nbsp;` inside each count), `+N awarded` only when verse / cleanup / quick points move the total. The gap sentence (`gamesGap` → `gamesGapSentence`) is about the
+  director's own (followed) team when they are on one: trail / lead / tied, how many golds (doubled in the window) put them in front or only tie them. A
+  director's own team is a `div.gs-row[data-locked]` with a lock, never a dead button; a view-only second tab gets plain rows. `#gs-sync` is the sync line
+  (`updateSyncIndicator` writes it) and `#gs-reveal` the way into the remote (reveal-ui.js).
+- **Quick points** (`gamesOpenQuick` → `#sheet-quick`, a shell sheet allowed only for a team a tap named and only for a confirmed director who may score
+  it): +1 +2 +3 +5, an optional reason ("Other…" takes 40 characters), the dashed well until a key is chosen, the doubling said once. The write is
+  `gamesQuickAdd` → the SAME `bonusAddFromDraft` as Award points (1–100, the own-team guard, a stamp of now so the window counts by its own time) on a draft of
+  its own (Award points' form is not disturbed); the toast's Undo (10 s) takes back exactly those entries (`gamesQuickUndo`). Award points stays the ledger.
+  The standings "…" sheet has Copy, Share and Award points.
+- **Counselors** (§5.6): `m.secret` — one quiet line (`#games-secret`) that gives way to the revealed grid (`gamesSecretShown`, refreshed by reveal-ui.js);
+  `standings` is null and no row has a Score, a place or a leader (the model walk in `games-tab.test.js` and the preview walk in `preview.test.js` run with
+  the points guard throwing). Games switched off in What counselors see: nothing is computed (`m.off`; `applyCardVisibility` hides `#games-week`, whose
+  `data-card="competitions"` it owns, and `#games-off` says why).
+- **Standings side effects lifted (§13.9).** `runStandingsSideEffects()` is in `SHELL_ALWAYS` and touches no DOM: the day baseline, the point alerts for a
+  change that arrived from another phone, the change history. Because the panel now paints only while Games is on screen, the same pass EMPTIES the standings
+  (`gamesClearStandings`) for any phone that may not read points — a demoted director, a counselor preview, an unconfirmed hint — whichever tab shows:
+  hiding is not enough (`secrecy.test.js` flips the role from More). `renderStandings`, `renderCatchupHint`, `startOfDayRanks`, `renderDayTabs`, `renderBonuses`
+  and the old cards are gone; `data-card="standings"` is `#games-live`, `data-card="competitions"` is `#games-week`.
+- **Motion** (calm-aware, from diffs only): the pill's `snap`, the standings and blocks glide by key (`paintKeyedList`, never under a thumb), a changed number
+  pops (`press`), a game going Live → Done pops its check (`nowCheckPop`), a new day arrives from its side. A paint on another tab or under a takeover is a plain write.
+- **Passes:** `docs/build-notes/verify/step18-design.cjs` (specimens of the templates) and **`step18-pass.cjs`** (the real renderers: both camps, director /
+  director on a team / counselor, 360 / 390, light / dark, 100 / 130 / 200 %: no target under 44×44, no sideways scroll, no clipped text, no console error;
+  then a day tap, arrow keys, quick points to Undo, the standings sheet, a saved game's dock and Next game, the own team's lock; `SHOTS=1`).
 
 ## The standings reveal: the screens (Step 23 — markup and visual system)
 
@@ -1004,8 +1026,8 @@ sections). Rules for whoever edits them:
   so a dot at the start of a wrapped line is cut away; the strips' dot sits on the
   words' FIRST line.
 - **Other hooks:** `#reveal-strip-count` (the header strip's "3 of 6 shown"),
-  `#reveal-row` (More's gold row; `data-state` adds `practice`), `#games-reveal-link`
-  (the remote's way in from Games), `#now-reveal-remote` (directors on Now),
+  `#reveal-row` (More's gold row; `data-state` adds `practice`), `#gs-reveal`
+  (the remote's way in from the Games standings), `#now-reveal-remote` (directors on Now),
   `#now-champion` (the Saturday champion line, name and mark only),
   `#now-reveal-grid` and `#games-reveal-grid` (the frozen grid). New icons:
   `#i-rewind` (Back moves the room's screen: never a chevron) and `#i-crown`.
@@ -2351,6 +2373,13 @@ What's covered, and why each file exists:
   rows (order, podium, live boards, the own-team Score guard, the four-team bracket); the messages strip; Still to do today; the
   tick; a counselor's, a hinted director's and a previewing director's models holding no points with the guard throwing; junk
   snapshots never throwing.
+- `games-tab.test.js` (+ `.senior`; seeded and seeded-all passes) — the Games model ("The Games tab"): the status truth table (results, brackets,
+  four-team brackets, drafts, clocks, and what only looks live), the day picker across the camp week's phases, the blocks and the one up next / one gold, Next game's
+  order and its own-team skip, the dock's words, shared places equal to the reveal's grouping, arrows and a flat baseline, the gap sentence, quick points
+  and their Undo, and a counselor's model (every day and minute, a preview) holding no point, place or leader with the guard throwing.
+- `games-ui.test.js` (+ `.senior`; seeded and seeded-all passes) — the Games renderers: a standings row (tie, medals in words, the lock row, a second tab),
+  the tablist, blocks / notes / dock markup and their escaping, an idle paint writing nothing, the quiet line and the revealed grid, the quick-points sheet
+  from tap to Undo, the standings sheet, the dock, motion from diffs, and source pins (no `innerHTML =`, no week data read, the markup's roots).
 - `now-ui.test.js` (+ `.senior`; seeded and seeded-all passes) — Now's renderers ("The Now tab"): every kind of card from the model, a
   counselor's markup with no key / Score / place / point (the points guard throwing), render stability per kind (an identical second paint and a
   same-minute tick write nothing; the tick between wake-ups writes only the minutes left), motion from diffs only (the games rows' glide, with a hand-made
@@ -2409,10 +2438,10 @@ What's covered, and why each file exists:
   the draft, `reloadBlocked`, the shell stack, and a counselor reaching none of it.
 - `game-view.test.js` (the rules above: live-html skip, kept forms firing real
   handlers after a state swap, celebrations only for scoring), `home.test.js`
-  (home panels, toast cap, announcement composer), `overlays.test.js` (schedule
+  (the Games panels' render stability and the standings side effects, toast cap, announcement composer), `overlays.test.js` (schedule
   sheet, status pill, members drawer, lock screen, scrim fade, pickers),
   `shell.test.js` (page-shell text pins: the not-yet-defined hide, the boot
-  guard, no motion media query, **index.html's twenty-two versioned assets share
+  guard, no motion media query, **index.html's twenty-three versioned assets share
   one `?v=` equal to `APP_VERSION`, in load order**), `builder.test.js`
   (week-builder shell, drafts, joy press), `chat-view.test.js`
   (chat view lifecycle, drafts, Back), `theme.test.js` (pre-paint theme and
@@ -4846,7 +4875,7 @@ More sync invariants (each fixed after it bit us — don't regress these;
     cache the writer kept). A parked change loaded from the cache shows in its sync
     line WITHOUT Retry / Discard (`quarantineLineHtml`; both functions also return
     unless `canEdit()`): the writer tab owns it. The footer copy of the sync line
-    (`html.view-only`) is shown only while the Current standings section is NOT on the
+    (`html.view-only`) is shown only while the Games standings panel is NOT on the
     page — `applyCardVisibility` sets `html.standings-shown` from
     `standingsVisible()`, so a director's view-only tab does not read it twice.
   - **A lock request that never answers fails open.** Throw, rejection and a
@@ -4878,7 +4907,7 @@ More sync invariants (each fixed after it bit us — don't regress these;
   first). A path the server takes advances `confirmedTree` exactly as an ack does;
   a path refused ALONE goes to `stateQuarantine[path] = value`, is treated as sent
   (`lastSyncedTree` already holds it, so it is not retried forever), and the
-  sync line (`#sync-status`, both copies) reads "⚠️ N changes couldn't be saved:
+  sync line (`#gs-sync` and the footer copy) reads "⚠️ N changes couldn't be saved:
   Kickball → result" with **Retry** (put the paths back into the diff and push the
   CURRENT value) and **Discard** (confirm first; puts the server-confirmed value
   back into state AND baseline, sends nothing). **Every other error keeps the

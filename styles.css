@@ -16523,6 +16523,10 @@ button.gs-row:focus-visible {
 .gb .gr:first-child {
   padding-top: 10px;
 }
+/* A lone one-line row (a game with no place, first AND last in its block) is still a 44px target: the whole row is the button. */
+.gb .gr {
+  min-height: var(--target);
+}
 /* A day with no games: one line, and for a director the way to add some. */
 .gw-empty {
   display: grid;

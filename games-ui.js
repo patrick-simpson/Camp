@@ -142,7 +142,7 @@ function gamesPaintStandings(m, live) {
     gamesUi.pts = {};
     return;
   }
-  setAttrIfChanged(root, 'data-empty', st.empty);
+  setDataIfChanged(root, 'empty', st.empty);
   const taps = st.rows.some((r) => r.tap);
   const how = taps ? (st.arrows ? 'Arrows: places moved since this morning · tap a team to give quick points' : 'Tap a team to give quick points')
     : (st.arrows ? 'Arrows: places moved since this morning' : '');

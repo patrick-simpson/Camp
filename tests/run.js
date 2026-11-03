@@ -28,7 +28,7 @@ const files = fs.readdirSync(__dirname)
 // SEEDED=all runs every file seeded (a probe for which tests still assume an empty setup tree).
 const SEEDED_FILES = [
   'week', 'push', 'chat', 'ics', 'tabs', 'frame', 'shell', 'home', 'render-stability', 'game-view', 'secrecy', 'motion', 'overlays', 'boot-cache', 'backup',
-  'reveal-ui', 'reveal-remote', 'preview', 'tell', 'award', 'now-model', 'now-ui', 'games-tab',
+  'reveal-ui', 'reveal-remote', 'preview', 'tell', 'award', 'now-model', 'now-ui', 'games-tab', 'games-ui',
 ];
 const seededAll = process.env.SEEDED === 'all';
 const plain = fs.readdirSync(__dirname).filter((f) => f.endsWith('.test.js') && !f.includes('.senior.'));
@@ -47,7 +47,7 @@ const seededJobs = process.env.SEEDED === 'off' ? [] : [].concat(...plain
 // turned everything on). Passing proves the sections' "on" half shows exactly what the built-in half did, on both camps.
 // Award points reads the verse, the rota and the meal times, so it runs here as well as seeded; Tell everyone reads none of them but
 // is the director's other live tool, and both camps run with every section on.
-const SEEDED_ALL_FILES = ['week', 'ics', 'push', 'chat', 'home', 'tabs', 'shell', 'render-stability', 'secrecy', 'frame', 'tell', 'award', 'now-model', 'now-ui', 'games-tab'];
+const SEEDED_ALL_FILES = ['week', 'ics', 'push', 'chat', 'home', 'tabs', 'shell', 'render-stability', 'secrecy', 'frame', 'tell', 'award', 'now-model', 'now-ui', 'games-tab', 'games-ui'];
 const seededAllJobs = seededJobs.filter((j) => SEEDED_ALL_FILES.indexOf(j.file.replace('.senior', '').replace('.test.js', '')) !== -1);
 
 let passed = 0;
