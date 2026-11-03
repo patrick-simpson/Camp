@@ -999,7 +999,7 @@ test('a bracket on a camp the app has no bracket for says so (the four-team brac
   try {
     const o = await gsMade('tournament', 'Note probe');
     renderGameSheet();
-    const expectNote = teamIds().length !== 6 && typeof bracketKindFor !== 'function';
+    const expectNote = !bracketPlayable(teamIds().length);
     assert.equal(setupEl('gm-b4-note').hidden, !expectNote);
     assert.equal(gmBracketSub(), teamIds().length === 4 ? '2 semifinals, then the 3rd-place match, then the final' : 'Teams play head-to-head; winners move on');
     assert.ok(/four-team bracket isn’t in the app yet/.test(readFixture('../index.html')), 'the note is in the markup');

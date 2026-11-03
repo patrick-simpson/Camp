@@ -3720,7 +3720,8 @@ function makeFreshState() {
     config: CAMP.defaultConfig(), // editable days/games catalog (More → Set up the week)
     teams: seedTeams(),
     results: {},   // gameId -> { medals: {gold, silver, bronze}, scores?, savedAt }
-    brackets: {},  // gameId -> in-progress tournament
+    brackets: {},  // gameId -> in-progress six-team tournament
+    brackets4: {}, // gameId -> in-progress four-team tournament (its own node: a six-team build never reads or heals it)
     drafts: {},    // gameId -> in-progress tally/placement entry
     bonuses: {},   // bonusId -> { teamId, category, label, points, at }
     picSetup: {},  // gameId -> { source: 'pregenerated'|'own'|'numbered', words: [] } (Pictionary item source)
@@ -10544,6 +10545,337 @@ function cancelBracket(g, kind) {
   renderAll();
 }
 
+// ── The four-team bracket's rules (pure) ─────────────────────────────────────────────────────────
+// A tournament on exactly four teams (senior camp): two semifinals, the 3rd-place match, the final.
+//
+//   state.brackets4[gid] = { at: <ms>, m: { s1:    { a, b, winner?, at? },
+//                                          s2:    { a, b, winner?, at? },
+//                                          third: { a?, b?, winner?, at? },
+//                                          final: { a?, b?, winner?, at? } } }
+//
+// s1 and s2 are seeded when it starts. third and final are written when they are RECORDED, with the two teams that played
+// them next to the winner, so a record can always be checked against the bracket it was made in (a second ref on a second phone
+// can change a semifinal after the match that follows it was played — setup-rebuild-spec sync-F9). The PHASE is never stored: it
+// is the first match with no winner, in FOUR_ORDER: s1 → s2 → third → final → summary (decision Q12: 3rd place before the final;
+// should the owner ever flip it, FOUR_ORDER is the one place — nothing else names the order),
+// 'recheck' when a recorded match disagrees with the semifinals it came from, 'broken' when the bracket cannot be read at all.
+//
+// Nothing here reads state, the DOM or the clock: every function takes the bracket and the camp's team ids, and the ones that
+// change a bracket change it in place and say what they did. The page-state wrappers (fourRecordTap …) are below.
+const FOUR_ORDER = ['s1', 's2', 'third', 'final'];
+
+// How many teams a tournament can be played with: six (the wizard, `brackets`), four (`brackets4`), or neither.
+function bracketKindFor(n) { return n === 6 ? 'six' : n === 4 ? 'four' : null; }
+
+// Can this many teams be played as a bracket in the app right now? (The Games sheet says so when they cannot.)
+function bracketPlayable(n) {
+  const kind = bracketKindFor(n);
+  return kind === 'six' || (kind === 'four' && typeof renderBracketFour === 'function');
+}
+
+// RTDB prunes an empty map: a four-team bracket whose matches are all gone reads back with no `m`. This restores the one container
+// the rest relies on and nothing else — healing must never invent a value (the next push would write it as somebody's edit), and a
+// stored value that is not a match is left for fourRead to refuse. It runs at load (a cached week), so it reads nothing declared
+// further down this file.
+function normalizeBracket4(b) {
+  if (!b || typeof b !== 'object' || Array.isArray(b)) return b;
+  if (!b.m || typeof b.m !== 'object' || Array.isArray(b.m)) b.m = {};
+  return b;
+}
+
+// One look at a stored four-team bracket as plain, laundered data — or null when this build cannot read it (not an object, a
+// semifinal without two different teams of this camp, four teams that are not four, a semifinal winner who did not play it).
+// Every id passes the roster (`ids`), so a stored string can never reach markup as a team. Cells are { a, b, winner, at, recorded }:
+// a recorded match keeps the teams it was played with, an unrecorded third / final shows the teams it WILL have ('' while unknown).
+// `recheck` is null while every recorded match agrees with the semifinals; else { match, semi, now, was } — the later match that
+// disagrees, the semifinal it was played on, who wins that semifinal now ('' = nobody) and who the later matches say won it (null
+// when they do not agree). `vouch` is that per-semifinal answer, which fourResolve('back') puts back.
+function fourRead(b, ids) {
+  if (!b || typeof b !== 'object' || Array.isArray(b) || !b.m || typeof b.m !== 'object' || Array.isArray(b.m)) return null;
+  const roster = Array.isArray(ids) ? ids : [];
+  const id = (v) => (typeof v === 'string' && roster.indexOf(v) !== -1 ? v : '');
+  const rec = (k) => (b.m[k] && typeof b.m[k] === 'object' && !Array.isArray(b.m[k]) ? b.m[k] : null);
+  const cell = (k) => {
+    const r = rec(k);
+    if (!r) return { a: '', b: '', winner: '', at: 0, recorded: false };
+    return { a: id(r.a), b: id(r.b), winner: id(r.winner), at: Number(r.at) > 0 ? Number(r.at) : 0, recorded: false };
+  };
+  const m = { s1: cell('s1'), s2: cell('s2'), third: cell('third'), final: cell('final') };
+  const seeds = [m.s1.a, m.s1.b, m.s2.a, m.s2.b];
+  if (seeds.some((x) => !x) || new Set(seeds).size !== 4) return null;
+  for (const k of ['s1', 's2']) {
+    const raw = rec(k).winner;
+    if (raw !== undefined && raw !== null && raw !== '' && raw !== m[k].a && raw !== m[k].b) return null;
+    m[k].recorded = !!m[k].winner;
+  }
+  const loser = (c) => (c.winner ? (c.winner === c.a ? c.b : c.a) : '');
+  const want = { third: [loser(m.s1), loser(m.s2)], final: [m.s1.winner, m.s2.winner] };
+  const sameTeams = (c, w) => !!c.a && !!c.b && !!w[0] && !!w[1] && c.a !== c.b && ((c.a === w[0] && c.b === w[1]) || (c.a === w[1] && c.b === w[0]));
+  ['third', 'final'].forEach((k) => {
+    const r = rec(k);
+    const c = m[k];
+    c.recorded = !!(r && typeof r.winner === 'string' && r.winner);
+    if (!c.recorded) { c.a = want[k][0]; c.b = want[k][1]; c.winner = ''; c.at = 0; return; }
+    c.fits = sameTeams(c, want[k]) && (c.winner === c.a || c.winner === c.b);
+  });
+  // Who do the matches played AFTER a semifinal say won it? The final has its winner in it, the 3rd-place match its loser.
+  const vouch = {};
+  ['s1', 's2'].forEach((k) => {
+    const c = m[k];
+    const says = [];
+    [['final', true], ['third', false]].forEach(([mk, winnerSide]) => {
+      const x = m[mk];
+      if (!x.recorded) return;
+      const hitA = x.a === c.a || x.b === c.a;
+      const hitB = x.a === c.b || x.b === c.b;
+      if (hitA === hitB) return; // both or neither: it says nothing about this semifinal
+      const played = hitA ? c.a : c.b;
+      says.push(winnerSide ? played : (played === c.a ? c.b : c.a));
+    });
+    vouch[k] = says.length && says.every((x) => x === says[0]) ? says[0] : '';
+  });
+  let recheck = null;
+  const bad = ['third', 'final'].filter((k) => m[k].recorded && !m[k].fits);
+  if (bad.length) {
+    const semi = ['s1', 's2'].find((k) => vouch[k] && vouch[k] !== m[k].winner) || null;
+    recheck = { match: bad[0], semi, now: semi ? m[semi].winner : '', was: semi ? vouch[semi] : null };
+  }
+  return { m, recheck, vouch };
+}
+
+// Where a bracket is: 's1' | 's2' | 'third' | 'final' (the match waiting for a winner), 'summary' (all four decided),
+// 'recheck' (a recorded match disagrees with its semifinals: nothing more is recorded until it is settled) or 'broken'.
+function fourPhase(b, ids) {
+  const v = fourRead(b, ids);
+  if (!v) return 'broken';
+  if (v.recheck) return 'recheck';
+  return FOUR_ORDER.find((k) => !v.m[k].winner) || 'summary';
+}
+
+// The match waiting for a winner, { key, a, b } (both teams are known: the order never reaches a match before its teams), or null.
+function fourCurrent(b, ids) {
+  const v = fourRead(b, ids);
+  if (!v || v.recheck) return null;
+  const k = FOUR_ORDER.find((x) => !v.m[x].winner);
+  return k ? { key: k, a: v.m[k].a, b: v.m[k].b } : null;
+}
+
+// The match after the current one, { key, a, b } with '' for a team not decided yet (the 3rd-place match while the second
+// semifinal is on), or null when the current one is the last.
+function fourNext(b, ids) {
+  const v = fourRead(b, ids);
+  if (!v || v.recheck) return null;
+  const at = FOUR_ORDER.findIndex((x) => !v.m[x].winner);
+  const k = at === -1 ? undefined : FOUR_ORDER[at + 1];
+  return k ? { key: k, a: v.m[k].a, b: v.m[k].b } : null;
+}
+
+// Two pairs that can start a four-team bracket: exactly two pairs, four different teams of this camp.
+function fourPairsValid(pairs, ids) {
+  if (!Array.isArray(pairs) || pairs.length !== 2 || !Array.isArray(ids) || ids.length !== 4) return false;
+  const flat = [].concat(...pairs.map((p) => (Array.isArray(p) && p.length === 2 ? p : [])));
+  return flat.length === 4 && flat.every((t) => ids.indexOf(t) !== -1) && new Set(flat).size === 4;
+}
+
+// How a game's semifinals are chosen, from its Matchups setting (the game sheet's choice, read the way it reads it):
+// 'standings' (best v worst, second v third), 'fixed' (the pairs saved with the game), or 'pick' (the director picks both pairs).
+function fourSeedMode(g, ids) {
+  const kinds = ['standings', 'pick', 'fixed'];
+  const fixed = fourPairsValid(g && g.roundOneMatchups, ids);
+  if (g && kinds.indexOf(g.bracketSeed) !== -1 && (g.bracketSeed !== 'fixed' || fixed)) return g.bracketSeed;
+  return fixed ? 'fixed' : 'pick';
+}
+
+// The two semifinals a mode suggests, [[a, b], [c, d]], or null (a pick has none; 'standings' needs the four teams ranked, best
+// first, which only a director with confirmed points has). Ties are the caller's: `ranked` already breaks them (golds, silvers,
+// bronzes, then the roster's order).
+function fourSeeds(mode, g, ranked, ids) {
+  if (mode === 'fixed') return fourPairsValid(g && g.roundOneMatchups, ids) ? g.roundOneMatchups.map((p) => p.slice()) : null;
+  if (mode === 'standings') {
+    const r = (Array.isArray(ranked) ? ranked : []).filter((t, i, a) => ids.indexOf(t) !== -1 && a.indexOf(t) === i);
+    return r.length === 4 ? [[r[0], r[3]], [r[1], r[2]]] : null;
+  }
+  return null;
+}
+
+// A new four-team bracket from two pairs (null when they cannot start one).
+function fourStart(pairs, ids, now) {
+  if (!fourPairsValid(pairs, ids)) return null;
+  return { at: Number(now) > 0 ? Number(now) : Date.now(), m: { s1: { a: pairs[0][0], b: pairs[0][1] }, s2: { a: pairs[1][0], b: pairs[1][1] } } };
+}
+
+// Record the winner of the match that is waiting. Refuses (and changes nothing) with a reason: 'broken' | 'recheck' | 'match' (not
+// one of the four) | 'decided' (a stale second tap, or another ref got there first: the winner is NOT overwritten) | 'summary' |
+// 'order' (it is not this match's turn) | 'winner' (not one of the two teams). A recorded third / final stores the two teams that
+// played it next to the winner; a semifinal keeps the seeds it was created with.
+function fourRecord(b, key, winner, ids, now) {
+  const v = fourRead(b, ids);
+  if (!v) return { ok: false, reason: 'broken' };
+  if (v.recheck) return { ok: false, reason: 'recheck' };
+  if (FOUR_ORDER.indexOf(key) === -1) return { ok: false, reason: 'match' };
+  if (v.m[key].winner) return { ok: false, reason: 'decided' };
+  const cur = fourCurrent(b, ids);
+  if (!cur) return { ok: false, reason: 'summary' };
+  if (cur.key !== key) return { ok: false, reason: 'order' };
+  if (winner !== cur.a && winner !== cur.b) return { ok: false, reason: 'winner' };
+  const at = Number(now) > 0 ? Number(now) : Date.now();
+  if (key === 's1' || key === 's2') { b.m[key].winner = winner; b.m[key].at = at; }
+  else b.m[key] = { a: cur.a, b: cur.b, winner, at };
+  return { ok: true, match: key, a: cur.a, b: cur.b, winner };
+}
+
+// Take the most recently recorded match back (the last one in play order — a phone's clock does not decide it) and say which; null
+// when nothing is recorded. A semifinal keeps its seeds, a 3rd-place match or final is removed.
+function fourUndo(b, ids) {
+  const v = fourRead(b, ids);
+  if (!v) return null;
+  const k = FOUR_ORDER.slice().reverse().find((x) => v.m[x].recorded);
+  if (!k) return null;
+  if (k === 's1' || k === 's2') { delete b.m[k].winner; delete b.m[k].at; }
+  else delete b.m[k];
+  return k;
+}
+
+// The podium of a finished bracket: gold wins the final, silver loses it, bronze wins the 3rd-place match — or null unless all four
+// matches are recorded AND agree (a bracket that is waiting on a re-check never pays out a medal).
+function fourMedals(b, ids) {
+  const v = fourRead(b, ids);
+  if (!v || v.recheck || !v.m.third.recorded || !v.m.final.recorded) return null;
+  const f = v.m.final;
+  return { gold: f.winner, silver: f.winner === f.a ? f.b : f.a, bronze: v.m.third.winner };
+}
+
+// Settle a re-check (the two buttons). 'keep': the semifinals stand as they are now and every later match that was played on the old
+// ones is thrown out to be replayed. 'back': the semifinal(s) go back to who the later matches were played with. Returns true when
+// the bracket is consistent afterwards, false (nothing changed) when there was nothing to settle, the choice is not one, or putting it
+// back would not make it agree (the later matches contradict each other).
+function fourResolve(b, choice, ids, now) {
+  const v = fourRead(b, ids);
+  if (!v || !v.recheck) return false;
+  if (choice === 'keep') {
+    ['third', 'final'].forEach((k) => { if (v.m[k].recorded && !v.m[k].fits) delete b.m[k]; });
+    return true;
+  }
+  if (choice !== 'back') return false;
+  const at = Number(now) > 0 ? Number(now) : Date.now();
+  const next = JSON.parse(JSON.stringify(b.m));
+  ['s1', 's2'].forEach((k) => { if (v.vouch[k] && v.vouch[k] !== v.m[k].winner) { next[k].winner = v.vouch[k]; next[k].at = at; } });
+  const after = fourRead({ m: next }, ids);
+  if (!after || after.recheck) return false;
+  b.m = next;
+  return true;
+}
+
+// The finished bracket as it is kept on the result (results[gid].path, so a later "Clear result" can reopen the final): only
+// laundered fields, every team a roster id.
+function fourPath(b, ids) {
+  const v = fourRead(b, ids);
+  if (!v) return null;
+  const out = { at: Number(b.at) > 0 ? Number(b.at) : 0, m: {} };
+  FOUR_ORDER.forEach((k) => {
+    const c = v.m[k];
+    if (!c.recorded && k !== 's1' && k !== 's2') return;
+    const o = { a: c.a, b: c.b };
+    if (c.winner) { o.winner = c.winner; if (c.at) o.at = c.at; }
+    out.m[k] = o;
+  });
+  return out;
+}
+
+// ── The four-team bracket on the page's state (effects) ──────────────────────────────────────────
+// What a tap does: check the person may (a director; not on a team in the match: canScoreRound), check the bracket still says what the
+// screen said (a result already saved, a match already recorded: ignored and said), change it through the pure rules above, then touch the
+// data, save and repaint exactly as the six-team wizard's handlers do. Each returns { ok } or { ok: false, reason } for the toast.
+function fourBracketOf(g) {
+  const b = g && state.brackets4 ? state.brackets4[g.id] : null;
+  return b && typeof b === 'object' && !Array.isArray(b) ? b : null;
+}
+
+// The semifinals the Start card offers: { mode, pairs } — pairs null for a free pick, and for "by the standings" on a screen with no
+// confirmed points (never the zeros medalCounts returns to a hint-painted device: the same rule as the six-team suggestion).
+function fourSeedPlan(g) {
+  const ids = teamIds();
+  const mode = fourSeedMode(g, ids);
+  if (mode === 'fixed') return { mode, pairs: fourSeeds(mode, g, [], ids) };
+  if (mode === 'standings' && canEdit() && standingsVisible()) {
+    return { mode, pairs: fourSeeds(mode, g, rankTeamsByPoints(medalCounts()).map((t) => t.id), ids) };
+  }
+  return { mode, pairs: null };
+}
+
+function fourStartGame(g, pairs) {
+  if (!canEdit()) return { ok: false, reason: 'readonly' };
+  const n = teamIds().length;
+  if (bracketKindFor(n) !== 'four') return { ok: false, reason: 'teams', count: n };
+  if (state.results[g.id]) return { ok: false, reason: 'saved' };
+  if (fourBracketOf(g)) return { ok: false, reason: 'started' };
+  const b = fourStart(pairs, teamIds(), serverNow());
+  if (!b) return { ok: false, reason: 'pairs' };
+  if (!state.brackets4) state.brackets4 = {};
+  state.brackets4[g.id] = b; // overwrites anything a late tap left behind: this is a new bracket
+  clearLiveMatch(g); // a new bracket starts with a clean tally
+  saveState();
+  renderAll();
+  return { ok: true };
+}
+
+function fourRecordTap(g, key, winner) {
+  if (!canEdit()) return { ok: false, reason: 'readonly' };
+  if (state.results[g.id]) return { ok: false, reason: 'saved' }; // a late tap after the result was saved: ignored
+  const b = fourBracketOf(g);
+  if (!b) return { ok: false, reason: 'none' };
+  const v = fourRead(b, teamIds());
+  const c = v && v.m[key];
+  if (c && !canScoreRound(c.a, c.b)) return { ok: false, reason: 'team' };
+  const r = fourRecord(b, key, winner, teamIds(), serverNow());
+  if (!r.ok) return r;
+  touchData();
+  saveState();
+  renderAll();
+  return r;
+}
+
+function fourUndoTap(g) {
+  if (!canEdit()) return { ok: false, reason: 'readonly' };
+  if (state.results[g.id]) return { ok: false, reason: 'saved' };
+  const b = fourBracketOf(g);
+  if (!b) return { ok: false, reason: 'none' };
+  const v = fourRead(b, teamIds());
+  const last = v ? FOUR_ORDER.slice().reverse().find((k) => v.m[k].recorded) : null;
+  if (last && !canScoreRound(v.m[last].a, v.m[last].b)) return { ok: false, reason: 'team' };
+  const k = fourUndo(b, teamIds());
+  if (!k) return { ok: false, reason: 'none' };
+  touchData();
+  saveState();
+  renderAll();
+  return { ok: true, match: k };
+}
+
+function fourResolveTap(g, choice) {
+  if (!canEdit()) return { ok: false, reason: 'readonly' };
+  if (state.results[g.id]) return { ok: false, reason: 'saved' };
+  const b = fourBracketOf(g);
+  if (!b) return { ok: false, reason: 'none' };
+  if (!fourResolve(b, choice, teamIds(), serverNow())) return { ok: false, reason: 'unresolved' };
+  touchData();
+  saveState();
+  renderAll();
+  return { ok: true };
+}
+
+// Save Result: the podium of a consistent, finished bracket becomes the game's result — the same record, and so the same medalCounts,
+// as a six-team bracket's — with the finished bracket kept on it as `path`.
+function fourSaveResult(g) {
+  if (!canEdit()) return { ok: false, reason: 'readonly' };
+  if (state.results[g.id]) return { ok: false, reason: 'saved' };
+  const b = fourBracketOf(g);
+  if (!b) return { ok: false, reason: 'none' };
+  const medals = fourMedals(b, teamIds());
+  if (!medals) return { ok: false, reason: 'unfinished' };
+  finishBracket(g, 'four', medals, fourPath(b, teamIds()));
+  return { ok: true, medals };
+}
+
 // Realtime Database can't represent "present but empty" for arrays/nulls —
 // it prunes those keys on write, so a bracket round-tripped through sync
 // can come back missing matches/selectedPair/etc. This restores a safe,
@@ -10551,7 +10883,8 @@ function cancelBracket(g, kind) {
 // bug) actually handed us.
 // The six-team wizard's phases, and the fields only it writes. A bracket this
 // build doesn't understand — a `kind` it has never heard of (the 4-team bracket
-// is meant to live under its own node, so this is belt and braces), a phase it
+// lives under its own node, `brackets4`, with its own reader fourRead: a record
+// of its shape that strays in here is not a six-team bracket), a phase it
 // can't place, or keys with none of the six-team fields — must be left EXACTLY
 // as found: healing would stamp round1/pool/matches onto it and the next push
 // would write that over another version's bracket on every device. A truly
@@ -10654,6 +10987,10 @@ function normalizeLiveMatch(l) {
 // Called after loading from localStorage and after every remote merge.
 function normalizeSyncedState() {
   Object.values(state.brackets || {}).forEach(normalizeBracket);
+  // The four-team bracket's own node. RTDB prunes an empty map to nothing, and a stored value that is not an object under a
+  // game id is somebody's junk (the rules only make the node itself a branch): normalizeBracket4 leaves what it cannot read.
+  if (!state.brackets4 || typeof state.brackets4 !== 'object' || Array.isArray(state.brackets4)) state.brackets4 = {};
+  Object.values(state.brackets4).forEach(normalizeBracket4);
   Object.values(state.picRounds || {}).forEach(normalizePicRound);
   Object.values(state.drafts || {}).forEach(normalizeDraft);
   if (!state.bonuses) state.bonuses = {}; // RTDB prunes an empty ledger to nothing

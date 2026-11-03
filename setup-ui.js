@@ -8265,7 +8265,9 @@ function renderGmOptions(o, g, src, format) {
     }
     gmSetError('gm-tracker-error', o.err.tracker || '');
     const b4 = setupEl('gm-b4-note');
-    setHiddenIfChanged(b4, !(teamIds().length !== 6 && typeof bracketKindFor !== 'function'));
+    // The note says so only while this many teams cannot be played as a bracket in the app (bracketPlayable: six always, four once
+    // its flow is on the page).
+    setHiddenIfChanged(b4, bracketPlayable(teamIds().length));
   }
   // Scores
   if (format === 'tally') {
