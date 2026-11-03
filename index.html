@@ -192,6 +192,40 @@
       <div id="auth-denied" hidden>
         <p class="lock-prompt">Signed in as <strong id="auth-denied-email"></strong></p>
         <p class="auth-denied-note">This account isn't on the camp list yet — ask a director to add you, then try again.</p>
+        <!-- ── ASK TO JOIN (P2 §11.18; app.js "Ask to join"). Shown only when a once() of this account's OWN accessRequests row
+             is allowed, i.e. the rules that carry it are published (a refused read leaves the page exactly as it was). Plain
+             controls on purpose: the page must work with no Jelly and before the app exists. Nothing here reads a list or attaches
+             a listener (a non-member gets none: THE INVARIANT); the page polls members/<me> with once() while it is visible.
+               #ask-form    the question: name (prefilled from the sign-in), camp, an optional note, Ask to join
+               #ask-sent    after asking: what to do next, a wait line, Check again, Withdraw (a minute after asking)
+               #ask-closed  the same words whether asking is closed or this sign-in was blocked, so a block is never announced
+               #ask-error   a plain sentence for anything else (a missing name, no connection) -->
+        <div id="ask-join" class="ask-join" hidden>
+          <form id="ask-form" class="ask-form" autocomplete="off" novalidate>
+            <label class="fld"><span class="fld-label">Your name</span><input type="text" class="fld-input" id="ask-name" maxlength="60" autocomplete="name" enterkeyhint="next" placeholder="First and last name"></label>
+            <div class="fld" role="radiogroup" aria-labelledby="ask-camp-label">
+              <span class="fld-label" id="ask-camp-label">Which camp</span>
+              <div class="seg seg-fit" id="ask-camps">
+                <button type="button" class="seg-btn" role="radio" aria-checked="true" data-ask-camp="junior">Junior</button>
+                <button type="button" class="seg-btn" role="radio" aria-checked="false" data-ask-camp="senior">Senior</button>
+              </div>
+            </div>
+            <label class="fld"><span class="fld-label">Anything to add (optional)</span><textarea class="fld-input ask-note" id="ask-note" rows="2" maxlength="200" placeholder="For example: I'm with the Foxes"></textarea></label>
+            <button type="submit" class="btn btn-gold btn-block" id="ask-send">Ask to join</button>
+          </form>
+          <div id="ask-sent" class="ask-sent" role="status" hidden>
+            <p class="ask-sent-title">Sent.</p>
+            <p class="ask-sent-text"><strong>Now tell a director you've asked</strong> — they'll see it under More → People. This page will open by itself once they let you in. You can close it and come back.</p>
+            <p class="ask-wait" id="ask-wait"></p>
+            <button type="button" class="btn btn-block" id="ask-check">Check again</button>
+            <button type="button" class="btn-quiet btn-quiet-danger" id="ask-withdraw" hidden>Withdraw my request</button>
+          </div>
+          <div id="ask-closed" class="ask-closed" role="status" hidden>
+            <p class="ask-closed-text" id="ask-closed-text"></p>
+            <button type="button" class="btn-quiet" id="ask-again">Try again</button>
+          </div>
+          <p class="fld-error ask-error" id="ask-error" role="alert" hidden></p>
+        </div>
         <jelly-button id="auth-retry-btn" size="small" variant="platinum" block>↻ I've been added — try again</jelly-button>
         <jelly-button id="auth-switch-btn" size="small" variant="platinum" block>Use a different account</jelly-button>
       </div>

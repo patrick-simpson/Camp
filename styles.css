@@ -6667,6 +6667,64 @@ html.calm-motion .lock-box.shake { animation: none; }
   line-height: 1.4;
   margin: 0 0 1rem;
 }
+/* ASK TO JOIN on the denied screen (P2 §11.18; markup index.html #ask-join). Plain controls from the frame's own kit (.fld, .seg,
+   .btn): the page has no Jelly to lean on and no app around it. Left-aligned inside the centred lock box; every control 44px. */
+.ask-join {
+  margin: 0 0 1rem;
+  text-align: left;
+}
+.ask-form {
+  display: grid;
+  gap: 12px;
+}
+.ask-note {
+  min-height: calc(var(--target) * 1.5);
+  resize: vertical;
+}
+.ask-sent {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 2px solid var(--card-b);
+  border-radius: var(--r-card, 14px);
+  background: var(--sheet);
+  color: var(--ink);
+}
+.ask-sent[hidden],
+.ask-closed[hidden],
+.ask-form[hidden] {
+  display: none;
+}
+.ask-sent-title {
+  margin: 0;
+  font: var(--t-row);
+}
+.ask-sent-text,
+.ask-closed-text,
+.ask-wait {
+  margin: 0;
+  font-size: 0.9rem;
+  line-height: 1.4;
+  color: var(--ink);
+}
+.ask-wait {
+  color: var(--ink-2);
+  font-size: 0.85rem;
+}
+.ask-wait:empty {
+  display: none;
+}
+.ask-closed {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+}
+.ask-error {
+  margin-top: 8px;
+}
+#ask-withdraw {
+  justify-self: center;
+}
 /* "Alternative sign in" disclosure — holds the optional phone + email-link
    methods (auth-phone.js / auth-email-link.js). Google stays the primary
    button above it. */

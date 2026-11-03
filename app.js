@@ -13691,6 +13691,7 @@ function showAuthScreen(mode, opts) {
     errEl.textContent = (opts && opts.error) || '';
     errEl.hidden = !(opts && opts.error);
   }
+  if (mode !== 'denied') askToJoinStop();
   const who = document.getElementById('auth-denied-email');
   if (who && opts && opts.email) who.textContent = opts.email;
   // The alternative sign-in methods mount lazily into their slots inside the
@@ -13772,6 +13773,259 @@ function wireAuthScreen() {
   }
   const retryBtn = document.getElementById('auth-retry-btn');
   if (retryBtn) retryBtn.addEventListener('click', () => location.reload());
+  wireAskToJoin();
+}
+
+// ── Ask to join: the requester's side (setup-rebuild-spec §11.18; Step 25) ───────────────────────────────
+// A signed-in account that is on NO list can ask a director to add it — but only while a director has switched asking on
+// (setup/meta/joinOpen), and the rules, not this code, enforce that. One `set()` of { name, note?, at: server time } to
+// <camp root>/accessRequests/<identityKey>. A non-member has NO listener (THE INVARIANT: a cancelled read is terminal): the page reads
+// its own request with once(), and polls members/<me> with once() every 30 s while it is visible (and on focus), for at most 30
+// minutes, until a director lets it in — then the camp is made the active one and the page reloads (one-shot lifecycle).
+// Nothing a director typed or the database holds is ever put into markup here: every string goes in through textContent / value.
+const ASK_POLL_MS = 30000;            // the page asks "am I on the list yet?" this often while it is visible
+const ASK_POLL_MAX_MS = 30 * 60000;   // …for this long, then it says "Still waiting?" and waits to be asked
+const ASK_FOCUS_MIN_MS = 5000;        // a focus never polls more than once in this
+const ASK_WITHDRAW_MS = 62000;        // the rules let a requester delete their row 60 s after asking (a little slack for the clock)
+const ASK_NAME_MAX = 60;
+const ASK_NOTE_MAX = 200;
+
+const ask = {
+  key: '',          // this account's member key ('' = nothing to ask with)
+  camp: '',         // the camp the form is about
+  rows: {},         // campId → this account's own request row there ({ name, note, at }) or null
+  ready: false,     // the rules that carry accessRequests answered a read of our own row
+  closed: false,    // the last ask was refused: asking is closed (or this sign-in is blocked — the same words)
+  busy: false,      // a send or a withdraw is in flight
+  timer: null,
+  withdrawTimer: null,
+  since: 0,         // when this stretch of polling started
+  last: 0,          // when it last asked
+  expired: false,   // 30 minutes passed
+  offset: 0,        // the database's clock minus ours (the page has no .info listener), for the withdraw delay
+  wired: false,
+};
+
+function askEl(id) { return document.getElementById(id); }
+
+function askClean(s, max) {
+  return String(s == null ? '' : s).replace(/[\u0000-\u001f\u007f]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+}
+
+function askRef(campId) {
+  return firebase.database().ref(CAMPS[campId].dbRoot + '/accessRequests/' + ask.key);
+}
+
+function askSay(id, text) {
+  const el = askEl(id);
+  if (!el) return;
+  el.textContent = text || '';
+  el.hidden = !text;
+}
+
+// Starts from denyMemberFinal, on the denied screen only. Hidden unless the rules answer a read of our own row (R1 published).
+function askToJoinStart() {
+  askToJoinStop();
+  ask.key = identityKey(authUser);
+  ask.camp = CAMP.id;
+  ask.rows = {};
+  ask.ready = false;
+  ask.closed = false;
+  ask.expired = false;
+  ask.busy = false;
+  const panel = askEl('ask-join');
+  if (panel) panel.hidden = true;
+  if (!ask.key || !isValidMemberKey(ask.key) || isPendingKey(ask.key)) return;
+  if (typeof firebase === 'undefined' || !firebase.database) return;
+  const name = askEl('ask-name');
+  if (name && !name.value) name.value = askClean(authUser && authUser.displayName, ASK_NAME_MAX); // phone sign-ins start empty
+  try {
+    // The clock offset is a convenience for the withdraw delay; a refusal or no answer just leaves it 0.
+    firebase.database().ref('.info/serverTimeOffset').once('value').then((s) => { const v = Number(s && s.val()); if (isFinite(v)) ask.offset = v; }).catch(() => {});
+  } catch (e) { /* the device clock it is */ }
+  askLoadRow(ask.camp).then((ok) => {
+    if (!ok) return; // rules not published (a refused read): the page stays exactly as it was
+    ask.ready = true;
+    askPaint();
+    askPollStart();
+  });
+}
+
+function askToJoinStop() {
+  clearTimeout(ask.timer);
+  clearTimeout(ask.withdrawTimer);
+  ask.timer = null;
+  ask.withdrawTimer = null;
+}
+
+// One read of our own row at a camp. Resolves true when the read was allowed (even if there is no row), false when refused.
+function askLoadRow(campId) {
+  try {
+    return askRef(campId).once('value').then((snap) => {
+      const v = snap && snap.val();
+      ask.rows[campId] = v && typeof v === 'object' && typeof v.at === 'number'
+        ? { name: askClean(v.name, ASK_NAME_MAX), note: askClean(v.note, ASK_NOTE_MAX), at: v.at } : null;
+      return true;
+    }, () => false);
+  } catch (e) { return Promise.resolve(false); }
+}
+
+function askNow() { return Date.now() + ask.offset; }
+
+// The panel from the state: the form, the "sent" card, or the closed words — one of them, never two.
+function askPaint() {
+  const panel = askEl('ask-join');
+  if (!panel) return;
+  panel.hidden = !ask.ready;
+  const row = ask.rows[ask.camp];
+  const showForm = !row && !ask.closed;
+  const form = askEl('ask-form');
+  if (form) form.hidden = !showForm;
+  const sent = askEl('ask-sent');
+  if (sent) sent.hidden = !row;
+  const closed = askEl('ask-closed');
+  if (closed) closed.hidden = !(ask.closed && !row);
+  const phone = String(ask.key).charAt(0) === '+';
+  askSay('ask-closed-text', ask.closed && !row
+    ? 'Asking to join isn’t open right now. Tell a director your ' + (phone ? 'phone number' : 'email') + ' (' + identityFromKey(ask.key) + ') and they’ll add you.' : '');
+  const camps = askEl('ask-camps');
+  if (camps) Array.prototype.forEach.call(camps.querySelectorAll('[data-ask-camp]'), (b) => { b.setAttribute('aria-checked', b.dataset.askCamp === ask.camp ? 'true' : 'false'); });
+  const send = askEl('ask-send');
+  if (send) { send.disabled = ask.busy; send.setAttribute('aria-disabled', ask.busy ? 'true' : 'false'); }
+  const withdraw = askEl('ask-withdraw');
+  if (withdraw) withdraw.hidden = !(row && askNow() - row.at >= ASK_WITHDRAW_MS);
+  askSay('ask-wait', row ? (ask.expired ? 'Still waiting? Find a director — they’ll see your request under More → People.' : 'Checking every 30 seconds while this page is open.') : '');
+  if (row) askScheduleWithdraw(row);
+}
+
+// The Withdraw button appears a minute after asking (the rules' own delay), without anyone touching the page.
+function askScheduleWithdraw(row) {
+  clearTimeout(ask.withdrawTimer);
+  const wait = ASK_WITHDRAW_MS - (askNow() - row.at);
+  if (wait > 0 && wait < 120000) ask.withdrawTimer = setTimeout(askPaint, wait + 50);
+}
+
+function askSend() {
+  if (ask.busy) return;
+  const nameEl = askEl('ask-name');
+  const noteEl = askEl('ask-note');
+  const name = askClean(nameEl && nameEl.value, ASK_NAME_MAX);
+  const note = askClean(noteEl && noteEl.value, ASK_NOTE_MAX);
+  askSay('ask-error', '');
+  if (!name) { askSay('ask-error', 'Type your name so a director knows who you are.'); if (nameEl && nameEl.focus) nameEl.focus(); return; }
+  const campId = ask.camp;
+  ask.busy = true;
+  askPaint();
+  const at = firebase.database.ServerValue.TIMESTAMP;
+  askRef(campId).set(note ? { name, note, at } : { name, at }).then(() => askLoadRow(campId)).then(() => {
+    ask.busy = false;
+    ask.closed = false;
+    ask.expired = false;
+    askPaint();
+    askPollStart();
+  }, (e) => {
+    ask.busy = false;
+    // PERMISSION_DENIED covers every refusal the rules make — asking switched off, this sign-in blocked, an unverified address — and
+    // they are said in the same words, so a block is never announced.
+    if (e && e.code === 'PERMISSION_DENIED') ask.closed = true;
+    else askSay('ask-error', 'Couldn’t send that — check your connection and try again.');
+    askPaint();
+  });
+}
+
+function askWithdraw() {
+  const row = ask.rows[ask.camp];
+  if (ask.busy || !row) return;
+  ask.busy = true;
+  askSay('ask-error', '');
+  askRef(ask.camp).remove().then(() => {
+    ask.busy = false;
+    ask.rows[ask.camp] = null;
+    askPaint();
+  }, () => {
+    ask.busy = false;
+    askSay('ask-error', 'You can take your request back a minute after you sent it. Try again in a moment.');
+    askPaint();
+  });
+}
+
+function askPickCamp(campId) {
+  if (!CAMPS[campId] || campId === ask.camp || ask.busy) return;
+  ask.camp = campId;
+  ask.closed = false;
+  askSay('ask-error', '');
+  askPaint();
+  // The other camp's own row, once, so "Sent." is true for the camp the form is about.
+  if (!Object.prototype.hasOwnProperty.call(ask.rows, campId)) askLoadRow(campId).then(() => { askPaint(); askPollStart(); });
+  else askPollStart();
+}
+
+// Polling: while a request is out (at any camp), ask members/<me> with once() every 30 s while the page is visible, for 30 minutes.
+function askPollStart() {
+  if (!Object.keys(ask.rows).some((c) => ask.rows[c])) return;
+  ask.since = Date.now();
+  ask.expired = false;
+  askSchedulePoll();
+}
+
+function askSchedulePoll() {
+  clearTimeout(ask.timer);
+  ask.timer = null;
+  if (ask.expired || !Object.keys(ask.rows).some((c) => ask.rows[c])) return;
+  ask.timer = setTimeout(() => askPoll(false), ASK_POLL_MS);
+}
+
+// `manual`: the person tapped Check again — a new thirty minutes, and an answer whatever the tab is doing.
+function askPoll(manual) {
+  clearTimeout(ask.timer);
+  ask.timer = null;
+  if (manual) { ask.since = Date.now(); ask.expired = false; }
+  else if (document.visibilityState === 'hidden') return; // visibilitychange re-arms it
+  else if (Date.now() - ask.since > ASK_POLL_MAX_MS) { ask.expired = true; askPaint(); return; }
+  ask.last = Date.now();
+  const camps = Object.keys(ask.rows).filter((c) => ask.rows[c]);
+  const next = () => { askPaint(); askSchedulePoll(); };
+  const one = (i) => {
+    if (i >= camps.length) { next(); return; }
+    let p;
+    try { p = firebase.database().ref(CAMPS[camps[i]].dbRoot + '/members/' + ask.key).once('value'); } catch (e) { one(i + 1); return; }
+    p.then((snap) => {
+      const rec = snap && snap.val();
+      if (rec && (rec.role === 'editor' || rec.role === 'viewer')) askOpenCamp(camps[i], rec.role);
+      else one(i + 1);
+    }, () => one(i + 1)); // a refused read is just "not on that list yet"
+  };
+  one(0);
+}
+
+// Approved: make that camp the one this device opens, and reload — the sign-in then finds the record and starts the app.
+function askOpenCamp(campId, role) {
+  try {
+    localStorage.setItem(ACTIVE_CAMP_KEY, campId);
+    localStorage.setItem(AUTH_HINT_KEY, role);
+  } catch (e) { /* storage blocked: the reload lands on the default camp, and the sign-in's own camp bounce still finds this one */ }
+  writeCampsHint(campId, role);
+  location.reload();
+}
+
+function wireAskToJoin() {
+  if (ask.wired) return;
+  ask.wired = true;
+  const on = (id, ev, fn) => { const el = askEl(id); if (el) el.addEventListener(ev, fn); };
+  on('ask-form', 'submit', (e) => { e.preventDefault(); askSend(); });
+  on('ask-withdraw', 'click', askWithdraw);
+  on('ask-check', 'click', () => askPoll(true));
+  on('ask-again', 'click', () => { ask.closed = false; askPaint(); });
+  const camps = askEl('ask-camps');
+  if (camps) camps.addEventListener('click', (e) => { const b = e.target && e.target.closest ? e.target.closest('[data-ask-camp]') : null; if (b) askPickCamp(b.dataset.askCamp); });
+  // Coming back to the page (the tab shown, the window focused) is the moment to look — never more than once in five seconds.
+  const again = () => {
+    if (!ask.ready || document.visibilityState === 'hidden' || Date.now() - ask.last < ASK_FOCUS_MIN_MS) return;
+    if (!Object.keys(ask.rows).some((c) => ask.rows[c]) || ask.expired) return;
+    askPoll(false);
+  };
+  document.addEventListener('visibilitychange', again);
+  window.addEventListener('focus', again);
 }
 
 // True only when all three Firebase SDK scripts (app + auth + database)
@@ -13990,6 +14244,7 @@ function denyMemberFinal() {
   // (the hint is cleared above, so the reloaded page paints locked).
   if (syncStarted) { location.reload(); return; }
   showAuthScreen('denied', { email: who });
+  askToJoinStart(); // the walk-up's way in (setup-rebuild-spec §11.18): shown only if the published rules answer a read of our own row
 }
 
 // ── Pre-paint hint ───────────────────────────────────────────────
@@ -14131,6 +14386,9 @@ function probeOtherCamp() {
       updateAccountRow();
       maybeShowCampPicker();
     }
+    // A director of both camps hears about the other camp's waiting requests once (setup-sync.js peopleOtherCampProbe): the first
+    // time this device meets the second camp the role is not known until HERE, after the requests listener has attached.
+    if (typeof peopleOtherCampProbe === 'function') peopleOtherCampProbe();
   };
   try {
     firebase.database().ref(other.dbRoot + '/members/' + key).once('value')

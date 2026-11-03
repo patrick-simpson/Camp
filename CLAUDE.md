@@ -4046,6 +4046,30 @@ requester's side is app.js (the denied screen).
 - **"Asking has been on too long"** (`pplAskingLongOn`): joinOpen has no time of its own, but turning it on stamps
   `meta/edited/week`, so while it is on that stamp is a LOWER BOUND on how long (nothing newer has touched the
   week's fields). The hub's People row says so after 7 days.
+- **Ask to join: the requester's side** (app.js, after `wireAuthScreen`; markup index.html `#ask-join` inside `#auth-denied`;
+  `tests/access-requests.test.js` + senior). `denyMemberFinal` calls `askToJoinStart()` after it shows the denied panel. The
+  form appears ONLY when a `once()` of the account's OWN `accessRequests/<key>` at the active camp is allowed (the
+  published rules answer; a refusal leaves the page exactly as it was) and the key is one the database can hold (an
+  email or a phone, never `pending-…`). It is plain controls (`.fld`, `.seg`, `.btn` — no Jelly: the page must work
+  before the app and without the component library): Your name (prefilled from the sign-in's display name, cut to 60;
+  phone sign-ins start empty), Which camp (Junior / Senior, the active camp first), an optional note (200). **Ask to join
+  is ONE `set()` of `{ name, note?, at: server time }` to the chosen camp's own row** and nothing else. A refusal of any
+  kind (asking switched off, this sign-in blocked, an unverified address) is `PERMISSION_DENIED` and is said in ONE
+  sentence — "Asking to join isn’t open right now. Tell a director your email (…) and they’ll add you." — so a block is
+  never announced (a source pin: the requester's code never mentions one); any other failure is "check your connection".
+  After asking the card says **"Now tell a director you've asked"** (they see it under More → People) and the page
+  polls `members/<me>` with `once()` at each camp it has a request at, every 30 s while visible and on focus (never
+  more than once in 5 s), for at most 30 minutes ("Still waiting? Find a director…", **Check again** gives another
+  thirty); a refused read is just "not on that list yet". On approval it sets `campScoreboardActiveCamp` and the role
+  hint and reloads (the one-shot lifecycle): approving opens the requester's page by itself. **Withdraw** appears a
+  minute after asking (the rules' own delay, judged by the DATABASE's clock — one `.info/serverTimeOffset` read —
+  not the phone's), then the form is back. **No listener, no list read, no markup built from anything held** (source
+  pins: every string goes in through `textContent` / `value`).
+- **`probeOtherCamp()` now calls `peopleOtherCampProbe()`** when the other camp's role is learned: on a device's first
+  meeting with the second camp the role is known only AFTER the requests listener attached (found by the emulator suite).
+- **Emulator proof (opt-in)**: `tests/emulator/people-client.mjs` drives the REAL client's walk-up, director and counselor
+  phones against `database.rules.json` (18 cases, both camps, SAFE; mutation-checked: removing the `joinOpen` clause, the
+  `accessBlocked` clause or the Director-link confirmation turns it red). `access-requests.mjs` stays the rules' own proof.
 - **`tests/fake-rtdb.js` gained queries** (`orderByChild` + `limitToLast` / `limitToFirst` / `equalTo`, read by a value
   listener or `once()`; `snapshot.forEach` walks query order, and a row that leaves the window is gone), because the
   requests listener is the first query the tests drive.
