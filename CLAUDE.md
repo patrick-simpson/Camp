@@ -772,9 +772,9 @@ only the announcements; `tests/now-ui.test.js` boots it that way):
   down) and `#now-moment` (the gold panel: the cleanup moment for everyone, verse points for directors). Under it `#now-todo` (directors' Still to do
   today), `#now-next`, `#now-later`. Shared pieces Step 18's Games tab reuses: game rows `.gr` (ONE stretched `.gr-hit` button, a sibling
   `.gr-score`, `.gr-why` for the own-team lock), the podium `.pd`, the live board `.lb`, the 4-team bracket `.b4`, stations `.es-*`, the verse `.vs`,
-  run rows `.nr` / `.nr-act`, the notice the notice `.nb-*` (its own `container: nb`, so the zone list stacks by ITS width in the sheet as well as on the send-off card). `#tab-now[data-reveal="live"]` puts every one of these away except the banners and their "more" row.
+  run rows `.nr` / `.nr-act` (a to-do row is a `.nr-item` list item wrapping its button, so the button keeps its role), the notice the notice `.nb-*` (its own `container: nb`, so the zone list stacks by ITS width in the sheet as well as on the send-off card). `#tab-now[data-reveal="live"]` puts every one of these away except the banners and their "more" row.
   No "Counselors can't see this" on Now (`secrecy.test.js` counts that phrase: exactly two in index.html).
-- **The model** — `nowModel(opts)` (app.js, "THE NOW ENGINE", after `nowBannerHtml`): the whole tab as PLAIN DATA (no markup, no DOM, no timer) from the
+- **The model** — `nowModel(opts)` (app.js, "THE NOW ENGINE"): the whole tab as PLAIN DATA (no markup, no DOM, no timer) from the
   week through the SEAM accessors, the state and the clock it is GIVEN (`opts.now` = `{ dow, minutes }`, `opts.ms` = server ms; default `campNow()` /
   `serverNow()`). `blockKind(b, dow)` / `blockTeams(b, dow)` are SEAM accessors. `tests/now-model.test.js` (+ `.senior`, in the seeded passes) walks every
   minute of every day.
@@ -790,6 +790,13 @@ its format and place ("4-team bracket · Main field", `nowGameKindLine`; a "TBA"
 the sub's right, the tag rides the title (`card.status`), and the body is a `.gr-solo` piece keyed like the row (own-team reason, board or podium) then
 the bracket. A games card has ONE gold Score (the live game's, else the one up next), and its sub counts "Not scored yet" / "3 games still to score" /
 "2 of 3 games still to score". The kicker's range is the run sheet's bare clock ("10:00–11:45", `.nw-range`, one line), and "finished 10:31" too.
+
+**What counselors see** (More → Director → What counselors see: `nowHiddenSections()` → `ctx.hidden`, read through `viewRole()` so a counselor preview
+honours it and a director's own screen never does). Games off: a games block is a plain `activity` card (`nowBlocks(dow, ctx)` maps the kind, so no rows,
+podium, board, "Running over", double-points note, hold or game names in Up next); Memory verse off: Bible study is a plain activity (`nowVerse` is null);
+Meal cleanup off: no duty line, note, "Your team is on cleanup" or cleanup panel (`nowDuty` is empty). The Games tab, More's two rows and the sheets honour
+the same switches through `applyCardVisibility`. **Not yet:** the Your team sheet's "Up next" / "Next meal cleanup" facts and the schedule sheet's game and
+cleanup lines still ignore them (both predate Step 17).
 
 **Kinds.** A kind comes from `type` / the Meal tag (through `blockMeal`) first, then the label's head (before " — "): games, elective (only where
 `CAMP.features.electives`), meal, bible, meeting, worship, activity, bedtime; Saturday is the `sendoff`, Sunday up to the first worship block (all of it
@@ -808,7 +815,8 @@ every full hour for the rain line, 06:00, midnight, the minute a director's hold
 a new day or a clock that went back, otherwise it patches `clock` and `messages` only (a banner's time is up, a chat banner's 15 minutes). A new
 time-driven field goes in `clock`, or its minute in `nowWake`: the walk test fails for a minute that changes the picture and is missing from `wake`.
 
-**Running over** (§3.1). A games block whose end has passed keeps the card while a game in it is Live (`gameRowStatus`, the §5.3 truth table: a result =
+**Running over** (§3.1). While a block is held, Up next is the first later block that has NOT ended (`nowAfterHeld`), saying "Already started" when it is under way
+(and the card's sub "Still going · Lunch has started"); Later today follows it. A games block whose end has passed keeps the card while a game in it is Live (`gameRowStatus`, the §5.3 truth table: a result =
 Done; a tournament bracket in progress, a draft with a score or medal, or a running game clock = Live) or a director said "Still on this"
 (`state.meta.overrun = { key: '<dow>:<block id>', until: <server ms> }`, one per-field meta path; the rules accept it), for at most 45 minutes and never
 past the start of the next games block (`nowGamesCap`). `card.hold` (directors only) is offered on the NEXT block's card while such a block has ended
@@ -816,11 +824,11 @@ inside its window with a game still to score, and while it is held; `nowHoldOver
 written. `card.hold` never carries the moving `nextUntil` (it would change the picture every second).
 
 **Moments.** The cleanup moment is the 30 minutes after a Meal-tagged block ends, for the teams on the rota (`cleanupOnRota` + `cleanupTeams`; an empty
-rota says nothing), with each team's counselors for everyone and, for a CONFIRMED director, the 0–3 keys. It wins over the verse moment (senior's Bible study
+rota says nothing), with each team's counselors for everyone and, for a CONFIRMED director in a tab that may write (`canEdit()`: not a view-only second tab, not a preview), the 0–3 keys. It wins over the verse moment (senior's Bible study
 starts as breakfast ends), and then tells a confirmed director when the verse keys follow it (`moment.then`, `#now-moment-then`: "Verse points open
 at 9:15"); the verse moment (0–5 keys) is Bible study's, for a confirmed director, drawn compact in the card (mark and name on one line over 44px keys). Neither shows on a held card. A key calls
 `setCleanupPoints` / `setVersePoints`, the very writers Award points uses (deterministic ids, one entry per slot), through `nowTapKey`: behind
-`standingsVisible()` and `canScoreRound`, only for a team the model drew a row for and a value the section has a key for, so a stale or forged tap, a
+`standingsVisible()`, `canEdit()` and `canScoreRound`, only for a team the model drew a row for and a value the section has a key for, so a stale or forged tap, a
 counselor's, a hint-painted director's and the director's own team write nothing. `awardKeysHtml` (award.js) is the one key builder.
 
 **Personalisation.** My team is `state.followTeam` (a real team id, else ''). Meal rows say "Your team is on cleanup" or the other teams' short names. My
@@ -844,11 +852,13 @@ strip's one delegated handler, shared with the sheet. Take down is Tell everyone
 derives 3rd place and the final unless a match recorded its own `a` / `b`, drops any id that is not one of the camp's teams, and words my team's next game
 ("Red plays in the final next · 3rd place match first"). A director on a team in a match gets the own-team reason in place of Score, per match.
 
-**SECRECY** (the Step 3 rule). A counselor's model holds no point and no place: the director-only fields (`pts`, `locked`, `given`, `secret`, `max`, `mult`,
-`stillToScore`, a tally's `place`, `score`, `hold`, `canRemove`, `canTakeDown`, `todo`, the verse moment) are NOT THERE, not false or zero. They exist only
-for `canEdit()` (may act as a director now: false in a counselor preview) and the points ones only for `standingsVisible()` (a confirmed director outside a
-preview). A live tally keeps roster order unless a director looks; medal winners and live scores are public (§4.12). The renderer therefore asks no "may
-this person see it": it draws what the model holds, and only a TAP that writes re-checks the role. A hidden part keeps no director words either (the
+**SECRECY** (the Step 3 rule). A counselor's model holds no point and no place. The director-only fields (`pts`, `locked`, `given`, `secret`, `max`, `mult`,
+`stillToScore`, a tally's `place`, `score`, `hold`, `canRemove`, `canTakeDown`, `todo`, the verse moment) carry NOTHING for anyone else: absent, or `null` where
+the shape wants a key (`score`, `hold`, `podium`, `board`), never a `false` that draws a control or a zero that reads as a score. The director CONTROLS (Score,
+Still to do, Still on this, the notice's Take down) exist for `canEdit()` (may act as a director now: true for a director's writer tab, a hint-painted director
+included; false in a counselor preview and a view-only second tab), and every POINT only for `standingsVisible()` plus, for the keys, `canEdit()` (a confirmed
+director outside a preview). A live tally keeps roster order unless a director looks; medal winners and live scores are public (§4.12). The renderer therefore asks
+no "may this person see it": it draws what the model holds, and only a TAP that writes re-checks the role. A hidden part keeps no director words either (the
 moment's title and body and the foot's hold text are EMPTIED when nothing shows).
 
 **Renderer rules** (now-ui.js; `tests/now-ui.test.js`, the preview walk in `tests/preview.test.js`).
@@ -876,17 +886,17 @@ moment's title and body and the foot's hold text are EMPTIED when nothing shows)
   the strip's class list with index.html's static `#now-notice`, so they cannot drift). `noticeCardHtml(preview, notice, opts)` returns it as a
   counselor's phone draws it.
 
-**What must never regress** (each is pinned by a test): (1) no point, place or director control in a counselor's, a hint-painted director's or a previewing
-director's Now; (2) every minute is a block or a named state, and every minute that changes the picture is in `wake`; (3) an idle repaint writes nothing,
-a tick between wake-ups writes only the clock; (4) the moment's keys are Award points' writers behind `canScoreRound`; (5) the model is pure (the clock is an
-argument), and week data reaches it only through the SEAM accessors; (6) no transform keyframe while calm; (7) every target is 44×44 or more at 360 / 390 px
+**What must never regress** (each is pinned by a test): (1) no point or place in a counselor's, a hint-painted director's, a view-only second tab's or a
+previewing director's Now, and no director control in a counselor's or a previewing director's; (2) every minute is a block or a named state, and every minute that changes the picture is in `wake`; (3) an idle repaint writes nothing,
+a tick between wake-ups writes only the clock; (4) the moment's keys are Award points' writers behind `canScoreRound`; (5) the model reads the clock it is GIVEN (the rain line takes it as an argument too) and week data only through the SEAM accessors; the one impure read is the
+champion line (`revealChampionLine()`: server time, the camp week, a local key it may drop), which only the `over` cards use; (6) no transform keyframe while calm; (7) every target is 44×44 or more at 360 / 390 px
 and 100 / 130 / 200 % text, with no sideways scroll; (8) the reveal's mirror puts the card and lists away and the grid sits beside the card, never the
 champion line beside either.
 
 **Deleted in build session 3**: the old follow card, banner renderer, live strip, My electives card and notice board (`renderFollowCard`, `renderNowBanner` +
 `splitNowBanner`, `renderLiveHome` + `homeBoardGame` / `liveHomeGames` / `liveHomeTallyCard` / `tallyBoardHTML`, `renderMyElectives` + `myElectivesToday`,
-`renderNoticeBoard`, `paintTeamAccent`) and their CSS. `nowBannerHtml` stays as the schedule ORACLE (week / seed tests compare the schedule's data through
-it; nothing on the page calls it). **Not built:** a second moment slot (senior's Bible study starts as breakfast ends, so with a filled rota the cleanup panel takes the one moment slot for the first 30 minutes and says when the verse keys follow it; Still to do today is the director's safety net), and Preview as a
+`renderNoticeBoard`, `paintTeamAccent`) and their CSS. `nowBannerHtml` (the schedule ORACLE the week / seed tests compare the schedule's data through) moved out of the page into
+`tests/schedule-oracle.js`, which the harness loads after the app's scripts (`docs/build-notes/verify/step19-same.cjs` injects it into a page). **Not built:** a second moment slot (senior's Bible study starts as breakfast ends, so with a filled rota the cleanup panel takes the one moment slot for the first 30 minutes and says when the verse keys follow it; Still to do today is the director's safety net), and Preview as a
 counselor needed nothing here: the model and renderer already read `canEdit()` / `standingsVisible()`, which a preview turns off.
 
 **Tests and passes.** `now-model.test.js` (+ `.senior`: every minute, kinds, moments, running over and the hold, personalisation, rows and boards, the
@@ -2296,7 +2306,7 @@ What's covered, and why each file exists:
   `boot-cache.test.js` pins that `_quarantine` loads at boot.
 - `clock.test.js` — the synced countdown, including clock-skew between devices.
 - `week.test.js` — structural checks on the hand-edited data: `DAY_SCHEDULE`
-  block ordering/durations, `nowBannerHtml` fuzzed over every minute of every
+  block ordering/durations, `nowBannerHtml` (the oracle in `tests/schedule-oracle.js`, never shipped) fuzzed over every minute of every
   day, `defaultConfig()` integrity (unique game ids, real dayIds/sessions/
   formats), the meal-cleanup rota's team ids, announcement expiry, `.ics`
   export, and the notice board (draft stays invisible, posting is editor-only,

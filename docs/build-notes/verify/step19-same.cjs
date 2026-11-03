@@ -5,10 +5,11 @@
 // which is the spec's "+ elective people names" for the chat mention dictionary.
 // node step19-same.cjs   (serve the worktree on :8943 first: python3 -m http.server 8943)
 const { chromium } = require('playwright');
+const path = require('path');
 (async () => {
   const browser = await chromium.launch();
   for (const camp of ['junior', 'senior']) {
-    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'en-US', timezoneId: 'America/New_York' });
+    const ctx = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true, locale: 'en-US', timezoneId: 'America/New_York', bypassCSP: true });
     await ctx.addInitScript(({ camp }) => { localStorage.setItem('campScoreboardAuthHint', 'viewer'); if (camp === 'senior') localStorage.setItem('campScoreboardActiveCamp', 'senior'); }, { camp });
     const page = await ctx.newPage();
     const errs = [];
@@ -17,6 +18,8 @@ const { chromium } = require('playwright');
     await page.goto('http://localhost:8943/index.html?cb=' + Date.now(), { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => typeof APP_VERSION !== 'undefined' && !!document.getElementById('tab-btn-more') && typeof setMemberRole === 'function' && !!customElements.get('jelly-drawer'), null, { timeout: 25000 }).catch(() => {});
     await page.waitForTimeout(1200);
+    // The page no longer ships the old banner renderer: the tests' schedule oracle is injected (hence bypassCSP above).
+    await page.addScriptTag({ path: path.join(__dirname, '..', '..', '..', 'tests', 'schedule-oracle.js') });
     const res = await page.evaluate(() => {
       const snap = () => {
         const out = [];

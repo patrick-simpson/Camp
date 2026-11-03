@@ -395,7 +395,9 @@ test('Bible study: the verse, its reference, the song link only through safeVide
   const m = paintAt(when.dow, when.minutes);
   if (m.card.kind !== 'bible') return; // a day with no verse reads as an activity (now-model.test.js)
   const b = html('now-card-body');
-  assert.ok(/class="vs-text"/.test(b) || /class="vs-ref"/.test(b), 'the verse or its reference (senior\'s placeholder has no reference yet)');
+  // senior's seeded placeholder ("to be announced", no reference) is not scripture: it says so in plain words instead of drawing it
+  assert.ok(/class="vs-text"/.test(b) || /class="vs-ref"/.test(b) || /class="vs-none"/.test(b), 'the verse, its reference, or the plain "not added yet" line');
+  if (/data-tba/.test(b)) assert.ok(/hasn’t been added yet/.test(b) && !/class="vs-text"/.test(b), 'a placeholder verse is not drawn as scripture');
   assert.ok(!/class="btn vs-song"/.test(b) || /href="https:\/\//.test(b), 'a song link is https only');
   const real = verseFor;
   verseFor = () => ({ text: 'A verse', ref: 'John 1:1', video: 'javascript:alert(1)' });
@@ -490,6 +492,9 @@ test('Up next, Later today, Still to do today: the lists, Whole day on the last 
   const m = paintAt(WED, after);
   assert.ok(m.todo.length >= 1, 'a game left unscored shows as a row');
   assert.ok(!el('now-todo').hidden && /class="nr nr-act"/.test(html('now-todo-list')) && /data-todo="game"/.test(html('now-todo-list')));
+  // the list item is a wrapper: a button given role="listitem" stops being announced as a button
+  assert.ok(/<div class="nr-item" role="listitem" data-key="[^"]+"><button type="button" class="nr nr-act"/.test(html('now-todo-list')));
+  assert.ok(!/<button[^>]*role=/.test(html('now-todo-list')), 'no button carries a role of its own');
   assert.ok(el('now-next-day').hidden !== el('now-later-day').hidden || el('now-later').hidden, '"Whole day" rides ONE list head');
   nowOpenTodo({ dataset: { todo: 'game', ref: games[0].id } });
   assert.equal(state.ui.gameId, games[0].id);
@@ -737,6 +742,54 @@ test('a counselor sees the cleanup moment as whose turn it is — the team, its 
   assert.ok(/class="nm-name"/.test(b) && /class="nm-you">Your team</.test(b));
   assert.ok(!/aw-pt|nm-label|nm-saved|aw-lock|data-pts/.test(b));
   assert.ok(el('now-moment-secret').hidden && el('now-moment-key').hidden);
+  done();
+});
+
+test('a director\'s view-only second tab sees the cleanup moment as whose turn it is — no key, no lock line — and a tap on a stale key writes nothing', () => {
+  boot('editor', null);
+  stubRota();
+  const { minutes } = lunchMoment();
+  const writer = paintAt(WED, minutes);
+  assert.ok(/class="aw-pt"/.test(html('now-moment-body')), 'the writer tab has keys');
+  const team = writer.moment.teams[0].team;
+  const realTab = tabWriter;
+  try {
+    tabWriter = false; // another tab of this camp holds the writer lock
+    assert.equal(standingsVisible(), true);
+    const ro = paintAt(WED, minutes);
+    assert.ok(ro.moment && ro.moment.max === undefined, 'a moment with no keys');
+    const b = html('now-moment-body');
+    assert.ok(/class="nm-name"/.test(b), 'whose turn it is still shows');
+    assert.ok(!/aw-pt|aw-lock|data-locked|nm-label|nm-saved|data-pts/.test(b), 'no key, no lock');
+    assert.ok(!/another director/.test(plain('now-moment-body')), 'every team is not "another director gives these"');
+    assert.ok(el('now-moment-secret').hidden && el('now-moment-key').hidden);
+    nowLast = writer; // a stale picture that still has keys
+    nowTapKey(keyBtn({ team, key: 'c-' + team }, 2));
+    assert.deepEqual(state.bonuses, {}, 'canEdit() is checked at call time');
+  } finally { tabWriter = realTab; }
+  done();
+});
+
+test('with Games, Memory verse and Meal cleanup switched off a counselor\'s Now draws a games block as a plain card and a meal with no cleanup line or panel', () => {
+  boot('viewer', T()[0]);
+  stubRota();
+  const g = gamesBlockOf(WED, 2);
+  state.results[g.games[0].id] = medals(T()[2], T()[1], T()[0]);
+  const { nb: lunch } = lunchMoment();
+  paintAt(WED, g.nb.start + 5);
+  assert.equal(el('now-card').dataset.kind, 'games', 'switched on: the games card');
+  state.meta.hiddenCards = { competitions: true, verse: true, cleanup: true };
+  paintAt(WED, g.nb.start + 5);
+  assert.equal(el('now-card').dataset.kind, 'activity');
+  assert.ok(!/class="gr"|class="gr-list"|data-open-game|gr-score|class="pd/.test(html('now-card-body')), 'no game rows, podium or tap to a game');
+  paintAt(WED, lunch.end + 5);
+  assert.ok(el('now-moment').hidden, 'no cleanup panel');
+  paintAt(WED, lunch.start + 5);
+  assert.ok(!/on cleanup/.test(html('now-card-notes') + html('now-card-body') + html('now-next-list') + html('now-later-list')), 'no cleanup line anywhere on the tab');
+  // a director\'s own screen draws every section whatever the switches say
+  setMemberRole('editor');
+  paintAt(WED, g.nb.start + 5);
+  assert.equal(el('now-card').dataset.kind, 'games');
   done();
 });
 

@@ -542,6 +542,35 @@ test('What counselors see hides in a preview exactly what it hides for a counsel
   done();
 });
 
+test('What counselors see on Now: a preview draws a games block, Bible study and a meal exactly as a counselor\'s phone does with the switches off', () => {
+  const realOnRota = cleanupOnRota; const realRota = cleanupTeams;
+  try {
+    boot('editor');
+    cleanupOnRota = (d) => d >= 1 && d <= 5;
+    cleanupTeams = (d, meal) => (d < 1 || d > 5 ? [] : meal === 'Breakfast' ? ['t0'] : meal === 'Lunch' ? ['t1', 't2'] : []);
+    state.meta.hiddenCards = { competitions: true, verse: true, cleanup: true };
+    const day = nowBlocks(3);
+    const games = day.find((x) => x.kind === 'games' && gamesForBlock(3, x.b).length);
+    const lunch = day.find((x) => x.kind === 'meal' && x.meal === 'Lunch');
+    const picture = (m) => { const x = nowModel({ now: { dow: 3, minutes: m }, ms: Date.UTC(2026, 6, 22, 12, 0, 0) + m * 60000 }); return [x.card.kind, !!x.moment, x.body.duty ? x.body.duty.length : 0, (x.body.rows || []).filter((r) => 'status' in r).length]; };
+    const times = [games.start + 5, lunch.start + 5, lunch.end + 5];
+    const own = times.map(picture);
+    assert.equal(own[0][0], 'games', 'a director sees Games on Now');
+    assert.equal(own[2][1], true, 'and the cleanup panel');
+    previewStart();
+    const prev = times.map(picture);
+    previewStop();
+    // a real counselor's phone with the same switches
+    setMemberRole('viewer');
+    const real = times.map(picture);
+    assert.deepEqual(prev, real, 'a preview draws what a counselor draws');
+    assert.equal(prev[0][0], 'activity');
+    assert.equal(prev[1][2], 0);
+    assert.equal(prev[2][1], false);
+    done();
+  } finally { cleanupOnRota = realOnRota; cleanupTeams = realRota; }
+});
+
 test('the reveal: a preview reads the counselor\'s view of it (the phone\'s hold, no director data), never the remote\'s', () => {
   boot('editor');
   assert.equal(revealViewRole(), 'editor');

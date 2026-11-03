@@ -1315,22 +1315,15 @@ function electiveWxHtml(dow, slot) {
   return `<span class="wx-badge" title="${esc(info.label)} · forecast">${info.emoji} ${Math.round(w.temp)}°${rain}</span>`;
 }
 
-// Rain warning for the Happening Now banner: the first hour within the next
-// three (starting from the current hour, camp time) whose precipitation
-// probability crosses WEATHER_RAIN_MIN. '' when dry, no forecast, or the
-// rainy hour would fall past midnight (camp's asleep — nobody needs it).
-function upcomingRainHint() {
-  const r = upcomingRain();
-  return r ? `<div class="now-wx">🌧️ ${r.precip}% chance of rain ${r.when}</div>` : '';
-}
-
-// The same finding as plain data, { precip, when } or null (Now's model: no markup in it).
-function upcomingRain() {
+// The first hour within the next three (from the current hour, camp time) whose rain chance crosses WEATHER_RAIN_MIN, as plain data,
+// { precip, when } or null: no forecast, a dry stretch, or an hour past midnight (camp's asleep) is null. Now's model reads it.
+// The clock is an argument (Now's model passes the one it is given, so a picture at any minute is the same whatever the wall clock says);
+// with none it is the camp's.
+function upcomingRain(minutes, date) {
   if (!weatherData) return null;
-  const now = campNow();
   const today = weatherData.dates[0];
-  if (today !== campDateStr()) return null;
-  const startHour = Math.floor(now.minutes / 60);
+  if (today !== (date || campDateStr())) return null;
+  const startHour = Math.floor((Number.isFinite(minutes) ? minutes : campNow().minutes) / 60);
   for (let h = startHour; h <= startHour + 3 && h <= 23; h++) {
     const w = weatherData.byTime[`${today}T${String(h).padStart(2, '0')}:00`];
     if (w && w.precip != null && w.precip >= WEATHER_RAIN_MIN) {
@@ -1511,75 +1504,6 @@ function schedRange(start, end) {
   return schedClock(start, !sameHalf) + '–' + schedClock(end, true);
 }
 
-// THE SCHEDULE ORACLE. The "Happening now" banner as markup, for any weekday and minute. Since Step 17 NOTHING ON THE PAGE
-// CALLS THIS: the Now card paints from nowModel(). It is kept because week.test.js / seed.test.js and the verify scripts compare
-// the schedule's data through it (a 10,080-minute digest before and after the schedule is edited here), which is a check on the
-// DATA that nowModel's own walk does not replace. Do not add a caller; do not extend it.
-function nowBannerHtml(dow, minutes) {
-  const blocks = scheduleForDow(dow);
-  if (!blocks.length) return null;
-
-  const eyebrow = `<div class="now-eyebrow-row">
-    <span class="now-eyebrow">Happening now</span>
-    <span class="now-open-hint">📅 Full schedule ›</span>
-  </div>`;
-  // progress is the elapsed fraction of the current timed block (0–1), or null
-  // to omit the bar (untimed blocks, or before the day's first block).
-  const progressBar = (progress) => progress == null ? '' :
-    `<jelly-progress class="now-progress" size="small" value="${Math.round(Math.max(0, Math.min(1, progress)) * 100)}" max="100" aria-hidden="true"></jelly-progress>`;
-  // `meal` / `nextMeal`: the Meal tag of the block and of the one after it (blockMeal), for the cleanup note.
-  const main = (emoji, label, time, next, progress, meal, nextMeal) => eyebrow +
-    `<div class="now-main"><span class="now-emoji">${emoji}</span><div class="now-body">
-      <div class="now-label">${esc(label)}${time ? ` <span class="now-time">${time}</span>` : ''}${mealCleanupNote(dow, label, meal)}</div>
-      ${next ? `<div class="now-next">Up next: ${next.emoji} ${esc(next.label)} at ${schedClock(next.start, true)}${mealCleanupNote(dow, next.label, nextMeal)}</div>` : ''}
-      ${upcomingRainHint()}
-    </div></div>` + progressBar(progress);
-
-  // Early morning, before the first block of the day.
-  if (minutes < blocks[0].start) {
-    const first = decorateMealBlock(dow, blocks[0]);
-    if (dow === 0) return main('🚌', 'Camp starts today!', null, first, null, undefined, blockMeal(blocks[0]));
-    return main('🛏️', "Lights out — everyone's sleeping", null, first, null, undefined, blockMeal(blocks[0]));
-  }
-
-  const found = blocks.find((x) => minutes >= x.start && minutes < x.end);
-  if (!found) return null;
-
-  // During competition blocks the scoreboard is the main event — keep the
-  // banner to a slim, tappable one-liner rather than hiding it entirely, so the
-  // schedule sheet stays reachable.
-  if (found.type === 'games') {
-    // Named after the actual block — junior's say "Team competitions" /
-    // "Evening competition", senior's include the Legacy Game by name.
-    return `<div class="now-slim"><span class="now-slim-label">${esc(found.emoji)} ${esc(found.label)}</span><span class="now-open-hint">📅 Full schedule ›</span></div>` + upcomingRainHint();
-  }
-
-  const b = decorateMealBlock(dow, found);
-  const time = b.noTime ? null : schedRange(b.start, b.end);
-  const progress = b.noTime ? null : (minutes - b.start) / (b.end - b.start);
-  if (b.type === 'elective') {
-    const chip = (k, key) => { const you = electiveIsMe(k, key || ''); return `<span class="kid-chip${you ? ' kid-chip-you' : ''}">${esc(k)}${you ? ' ⭐' : ''}</span>`; };
-    const stations = electivesFor(dow)[b.slot] || [];
-    let rows = stations.map((row) =>
-      `<div class="now-station${electiveRowHasMe(row) ? ' now-station-you' : ''}"><span class="now-station-name">${stationEmoji(row[0])} ${esc(row[0])}</span>
-        <span class="now-kids">${row[1].map((k, i) => chip(k, row[2] && row[2][i])).join('')}</span></div>`).join('');
-    const breakKids = electiveBreakKids(dow, b.slot);
-    if (breakKids.length) {
-      rows += `<div class="now-station now-break${breakKids.some((k) => electiveIsMe(k, '')) ? ' now-station-you' : ''}"><span class="now-station-name">☕ Break</span>
-        <span class="now-kids">${breakKids.map((k) => chip(k)).join('')}</span></div>`;
-    }
-    return main(b.emoji, b.label, time, null, progress) + `<div class="now-stations">${rows}</div>`;
-  }
-
-  // "Up next" = the next block that starts at or after this one ends. Using
-  // the end time (not just index+1) keeps it correct when blocks overlap
-  // (e.g. tonight's movie night sitting over the wind-down) — for a normal,
-  // non-overlapping day this is the very next block, exactly as before.
-  const after = blocks.find((x) => x.start >= found.end);
-  const next = decorateMealBlock(dow, after || null);
-  return main(b.emoji, b.label, time, next, progress, blockMeal(found), blockMeal(after));
-}
-
 // ════════════════════════════════════════════════════════════════════
 // THE NOW ENGINE — nowModel() and what hangs off it (redesign §3; BUILD-PLAN Step 17, build session 1)
 // ════════════════════════════════════════════════════════════════════
@@ -1629,7 +1553,16 @@ function nowCtx(opts) {
     points: standingsVisible(),
     myTeam: nowMyTeam(),
     identity: state.identity,
+    hidden: nowHiddenSections(),
   };
+}
+// The sections the directors switched off in More → What counselors see, as THIS screen is drawn (viewRole: a counselor preview
+// honours them, a director's own screen does not): `games` (the Games tab's switch), `verse`, `cleanup`. A hidden section is not
+// on Now either: its card is a plain activity card and its lines are not there at all (applyCardVisibility is the same rule for
+// the tabs and sheets).
+function nowHiddenSections() {
+  const seeAll = viewRole() === 'editor';
+  return { games: !seeAll && cardHiddenFromViewers('competitions'), verse: !seeAll && cardHiddenFromViewers('verse'), cleanup: !seeAll && cardHiddenFromViewers('cleanup') };
 }
 
 // ── words ────────────────────────────────────────────────────────────
@@ -1698,14 +1631,18 @@ function nowDateLong(str) {
 // One weekday's blocks as the engine reads them (schedule order, so the first block that holds a minute wins, as the old
 // banner found it): the accessor's block plus what the card needs. `id` is the published block id: `<dk>-<id>` once the
 // schedule is edited here, `d<dow>-<start>-<position>` while it is the printed copy: unique either way.
-function nowBlocks(dow) {
+// With Games switched off for this screen (`ctx.hidden.games`) a games block is a plain activity: no rows, no podium, no
+// "Running over", no game names in Up next.
+function nowBlocks(dow, ctx) {
+  const noGames = !!(ctx && ctx.hidden && ctx.hidden.games);
   return scheduleForDow(dow).map((b, i) => {
     const sp = nowSplitLabel(b.label);
     const teams = blockTeams(b, dow);
+    const kind = blockKind(b, dow);
     return {
       i, dow, b, id: blockPushId(b, dow, i), start: b.start, end: b.end, noTime: !!b.noTime,
       emoji: safeEmoji(b.emoji, ''), type: b.type || 'activity', slot: b.slot,
-      kind: blockKind(b, dow), meal: blockMeal(b), head: sp.head, place: sp.place, tail: teams.length ? '' : sp.tail, teams,
+      kind: noGames && kind === 'games' ? 'activity' : kind, meal: blockMeal(b), head: sp.head, place: sp.place, tail: teams.length ? '' : sp.tail, teams,
     };
   });
 }
@@ -1960,7 +1897,7 @@ function nowHoldOffer(ctx, blocks, held) {
 function nowHoldOverrun(opts) {
   if (!canEdit()) return false;
   const ctx = nowCtx(opts);
-  const blocks = nowBlocks(ctx.dow);
+  const blocks = nowBlocks(ctx.dow, ctx);
   const offer = nowHoldOffer(ctx, blocks, nowHeld(ctx, blocks));
   if (!offer || !offer.can) return false;
   if (!state.meta || typeof state.meta !== 'object') state.meta = {};
@@ -1974,7 +1911,7 @@ function nowHoldOverrun(opts) {
 // The teams on cleanup after a meal block, [{ team, mine }] ([] for a block that is no meal, a day off the rota or a meal with
 // nobody on it — senior's empty rota says nothing).
 function nowDuty(ctx, nb) {
-  if (!nb.meal || !cleanupOnRota(ctx.dow)) return [];
+  if (!nb.meal || ctx.hidden.cleanup || !cleanupOnRota(ctx.dow)) return []; // Meal cleanup switched off: not a line, not a moment
   return cleanupTeams(ctx.dow, nb.meal).map((id) => ({ team: id, mine: id === ctx.myTeam }));
 }
 // The team a counselor's NAME belongs to ('' when nobody's roster has it): the printed roster and the member directory, both
@@ -2042,7 +1979,8 @@ function nowRow(ctx, nb) {
 // A verse still saying the seed's "to be announced" with no reference (senior's placeholder) is NOT scripture: `tba` makes the renderer
 // say "Today's verse hasn't been added yet" in plain words (Award points and the Verses screen call it missing too). The card stays
 // Bible study's, so a director keeps the verse points. A theme titled with the camp's own name ("Senior Camp") names nothing.
-function nowVerse(dow) {
+function nowVerse(dow, ctx) {
+  if (ctx && ctx.hidden.verse) return null; // Memory verse switched off: Bible study is a plain card
   const v = verseFor(dow);
   if (!v || !(String(v.text || '').trim() || String(v.ref || '').trim())) return null;
   const tba = (o) => /\bto be announced\b/i.test(String(o.text || '')) && !String(o.ref || '').trim();
@@ -2088,18 +2026,21 @@ function nowCleanupMoment(ctx, blocks) {
     if (!(ctx.minutes >= nb.end && ctx.minutes < nb.end + NOW_CLEANUP_WINDOW_MIN)) continue;
     const duty = nowDuty(ctx, nb);
     if (!duty.length) continue;
-    const earned = ctx.points ? cleanupEarned(ctx.dow, nb.meal) : {};
+    // The keys, their points and the lock are a director's WRITER tab's (as the verse moment's are): in a director's second,
+    // view-only tab (`canEdit()` false) every team would read "another director gives these", so it shows only whose turn it is.
+    const keys = ctx.points && ctx.director;
+    const earned = keys ? cleanupEarned(ctx.dow, nb.meal) : {};
     const moment = {
       kind: 'cleanup', dow: ctx.dow, meal: nb.meal, title: nb.meal + ' cleanup', until: nb.end + NOW_CLEANUP_WINDOW_MIN,
       teams: duty.map((d) => {
         const t = { key: 'c-' + d.team, team: d.team, name: teamName(d.team), mine: d.mine, who: counselorName(d.team) };
-        if (ctx.points) { t.locked = !canScoreRound(d.team); t.pts = earned[d.team] || 0; }
+        if (keys) { t.locked = !canScoreRound(d.team); t.pts = earned[d.team] || 0; }
         return t;
       }),
     };
-    // The keys are a CONFIRMED director's (Award points' rule): a counselor's, a preview's and a hinted director's moment has
-    // no such field at all, only whose turn it is.
-    if (ctx.points) { moment.secret = true; moment.max = 3; }
+    // The keys are a CONFIRMED director's (Award points' rule): a counselor's, a preview's, a hinted director's and a view-only
+    // tab's moment has no such field at all, only whose turn it is.
+    if (keys) { moment.secret = true; moment.max = 3; }
     return moment;
   }
   return null;
@@ -2175,7 +2116,7 @@ function nowTodo(ctx, blocks, shown) {
         rows.push({ at: nb.end + NOW_CLEANUP_WINDOW_MIN, key: 'todo-cleanup-' + ctx.dow + '-' + nb.meal.toLowerCase(), todo: 'cleanup', ref: nb.meal,
           title: nb.meal + ' cleanup points', sub: nowJoinNames(lacking.map(nowTeamWord)) + ' · Not given yet' });
       }
-    } else if (nb.kind === 'bible' && ctx.minutes >= nb.end && nowVerse(ctx.dow)) {
+    } else if (nb.kind === 'bible' && ctx.minutes >= nb.end && nowVerse(ctx.dow, ctx)) {
       const raw = (versePointsByDay()[ctx.dow] || { raw: {} }).raw;
       const all = teamIds();
       const lacking = all.filter((id) => !(raw[id] > 0) && canScoreRound(id));
@@ -2235,14 +2176,21 @@ function nowCard(kind, o) {
 // The first three blocks of a weekday as run rows (the morning card's "Today", the night card's "Tomorrow").
 function nowFirstRows(ctx, dow) {
   const tctx = Object.assign({}, ctx, { dow });
-  return nowBlocks(dow).slice(0, 3).map((nb) => nowRow(tctx, nb));
+  return nowBlocks(dow, tctx).slice(0, 3).map((nb) => nowRow(tctx, nb));
 }
 // Up next = the first block starting at or after the card's block ends (today's rule: it keeps Tuesday's overlapping movie night
 // right); with no card block, the first block still to start. Later today = the three after it (all of Sunday's run sheet).
-function nowNextLater(ctx, blocks, cur, upcoming) {
-  const after = cur ? blocks.find((x) => x.start >= cur.end) || null : upcoming;
+// A games block HELD past its end (a game still Live, or a director's "Still on this") may have run into the block after it: Up next is
+// then the first block after it that has not ended, and one already under way says so instead of passing for upcoming.
+function nowNextLater(ctx, blocks, cur, upcoming, held) {
+  const after = held ? nowAfterHeld(ctx, blocks, cur) : cur ? blocks.find((x) => x.start >= cur.end) || null : upcoming;
   const rest = after ? blocks.slice(blocks.indexOf(after) + 1) : [];
-  return { next: after ? nowRow(ctx, after) : null, later: (ctx.dow === 0 ? rest : rest.slice(0, NOW_LATER_MAX)).map((x) => nowRow(ctx, x)) };
+  const next = after ? nowRow(ctx, after) : null;
+  if (next && held && after.start <= ctx.minutes) next.sub = { text: next.sub && next.sub.text ? 'Already started · ' + next.sub.text : 'Already started', mine: !!(next.sub && next.sub.mine) };
+  return { next, later: (ctx.dow === 0 ? rest : rest.slice(0, NOW_LATER_MAX)).map((x) => nowRow(ctx, x)) };
+}
+function nowAfterHeld(ctx, blocks, nb) {
+  return blocks.slice(blocks.indexOf(nb) + 1).find((x) => x.end > ctx.minutes) || null;
 }
 // Sunday's welcome for a counselor on a team: "Meet your team at Team assignments · 5:30 · Chapel Lawn".
 function nowWelcome(ctx, blocks) {
@@ -2257,12 +2205,11 @@ function nowChampion() {
 // The card of a block (the clock's, or the games block that is running over).
 function nowBlockCard(ctx, blocks, nb, held) {
   let kind = nb.kind;
-  const verse = kind === 'bible' ? nowVerse(ctx.dow) : null;
+  const verse = kind === 'bible' ? nowVerse(ctx.dow, ctx) : null;
   if (kind === 'bible' && !verse) kind = 'activity';
   if (kind === 'bedtime' && nb.noTime) kind = 'night';
   else if (kind === 'sendoff' && nb.noTime) kind = 'over';
   else if (kind === 'sendoff' && noticePosted()) kind = 'notice';
-  const upcoming = blocks.find((x) => x.start > ctx.minutes) || null;
   const card = nowCard(kind, {
     k: held ? 'Running over' : kind === 'night' ? 'Tonight' : kind === 'over' ? 'Today' : 'Now', over: !!held,
     when: nb.noTime ? '' : schedClock(nb.start, false) + '–' + schedClock(nb.end, false), title: nb.head, emoji: nb.emoji, // "10:00–11:45" (§8.7)
@@ -2271,7 +2218,10 @@ function nowBlockCard(ctx, blocks, nb, held) {
   if (kind === 'games') {
     body = nowGamesBody(ctx, nb);
     const solo = body.solo ? body.rows[0] : null;
-    if (held) card.sub = 'Still going' + (upcoming ? ' · ' + upcoming.head + ' at ' + schedClock(upcoming.start, false) : '');
+    if (held) {
+      const after = nowAfterHeld(ctx, blocks, nb); // the block that is next in the day, which may already have begun
+      card.sub = 'Still going' + (after ? ' · ' + after.head + (after.start > ctx.minutes ? ' at ' + schedClock(after.start, false) : ' has started') : '');
+    }
     else if (solo) card.sub = nowGameKindLine(solo); // the card's own Score (a director's) says what is left
     else if (ctx.director && body.stillToScore) card.sub = nowStillToScoreText(body.stillToScore, body.total);
     if (solo && solo.status !== 'todo') card.status = solo.status; // the Live / Done tag rides the title
@@ -2314,7 +2264,7 @@ function nowBlockCard(ctx, blocks, nb, held) {
   } else card.sub = nowTailText(nb.tail) || nb.place || null; // worship, activity, bedtime: the label's note
   card.notes = [];
   if (kind === 'games' && body.doubled) card.notes.push({ kind: 'double', text: 'Double points until the end of Friday' });
-  const rain = kind === 'night' || kind === 'over' ? null : upcomingRain();
+  const rain = kind === 'night' || kind === 'over' ? null : upcomingRain(ctx.minutes, ctx.date);
   if (rain) card.notes.push({ kind: 'rain', text: rain.precip + '% chance of rain ' + rain.when });
   if (kind === 'games' && body.bracket4 && body.bracket4.note) card.notes.push(Object.assign({ kind: 'team' }, body.bracket4.note));
   if (kind === 'meal') {
@@ -2355,7 +2305,7 @@ function nowGapCard(ctx, blocks, upcoming) {
 function nowModel(opts) {
   const ctx = nowCtx(opts);
   const week = nowWeek(ctx);
-  const blocks = nowBlocks(ctx.dow);
+  const blocks = nowBlocks(ctx.dow, ctx);
   const m = {
     at: { dow: ctx.dow, minutes: ctx.minutes, ms: ctx.ms, forced: ctx.forced }, week, reveal: nowReveal(), messages: [], card: null, block: null,
     moment: null, body: {}, next: null, later: [], laterHeading: ctx.dow === 0 ? 'Today' : 'Later today', todo: [], todoMore: 0, wholeDay: false,
@@ -2391,7 +2341,7 @@ function nowModel(opts) {
         // cleanup window closes, a minute already in `wake`). Only a confirmed director has a verse moment, so only they read this.
         if (cm && vm && cm.until < cur.end) cm.then = 'Verse points open at ' + schedClock(cm.until, false);
       }
-      nl = nowNextLater(ctx, blocks, r.kind === 'night' || r.kind === 'over' ? null : cur, r.kind === 'night' || r.kind === 'over' ? null : upcoming);
+      nl = nowNextLater(ctx, blocks, r.kind === 'night' || r.kind === 'over' ? null : cur, r.kind === 'night' || r.kind === 'over' ? null : upcoming, !!held);
       if (r.kind === 'night' || r.kind === 'over') nl = { next: null, later: [] };
     } else {
       const r = nowGapCard(ctx, blocks, upcoming);

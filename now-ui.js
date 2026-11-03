@@ -66,12 +66,13 @@ function nowRunRowHtml(r) {
 }
 function nowRunListHtml(rows) { return (rows || []).map(nowRunRowHtml).join(''); }
 
-// Still to do today: a button that opens the right takeover.
+// Still to do today: a button that opens the right takeover. The list item is a wrapper (the keyed glide's node): a button with
+// role="listitem" would stop being announced as a button, which is the whole point of the row.
 const NOW_TODO_ICONS = { game: 'i-trophy', cleanup: 'i-broom', verse: 'i-book', join: 'i-people' };
 function nowTodoRowHtml(r) {
-  return `<button type="button" class="nr nr-act" role="listitem" data-key="${esc(r.key)}" data-todo="${esc(r.todo)}" data-ref="${esc(r.ref)}">` +
+  return `<div class="nr-item" role="listitem" data-key="${esc(r.key)}"><button type="button" class="nr nr-act" data-todo="${esc(r.todo)}" data-ref="${esc(r.ref)}">` +
     `<span class="nr-ico" aria-hidden="true">${nowIcon(NOW_TODO_ICONS[r.todo] || 'i-chev-r')}</span>` +
-    `<span class="nr-main"><span class="nr-title">${esc(r.title)}</span><span class="nr-sub">${esc(r.sub)}</span></span>${nowIcon('i-chev-r', 'nr-chev')}</button>`;
+    `<span class="nr-main"><span class="nr-title">${esc(r.title)}</span><span class="nr-sub">${esc(r.sub)}</span></span>${nowIcon('i-chev-r', 'nr-chev')}</button></div>`;
 }
 
 // The medal winners of a finished game (public: names only).
@@ -682,10 +683,11 @@ function nowAfterGames(model, live) {
 // TAPS (wired once; every handler reads the model and the state AT CALL TIME)
 // ════════════════════════════════════════════════════════════════════
 // A key in the moment: the slot is set to exactly that value through the same functions Award points and the Memory verse /
-// Meal cleanup sheets call. Only a CONFIRMED director (standingsVisible), only a team the model drew a row for, only a value the
-// section has a key for (cleanup 0–3, verse 0–5), never the director's own team (canScoreRound): a stale or forged tap writes nothing.
+// Meal cleanup sheets call. Only a CONFIRMED director (standingsVisible) in a tab that may write (canEdit: not a view-only second
+// tab, not a preview, like Award points' awardMayUse), only a team the model drew a row for, only a value the section has a key
+// for (cleanup 0–3, verse 0–5), never the director's own team (canScoreRound): a stale or forged tap writes nothing.
 function nowTapKey(btn) {
-  if (!standingsVisible()) return;
+  if (!standingsVisible() || !canEdit()) return;
   const m = typeof nowLast !== 'undefined' ? nowLast && nowLast.moment : null;
   const row = btn.closest ? btn.closest('.nm-team, .aw-row') : null;
   if (!m || !row || !m.max) return;

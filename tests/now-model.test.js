@@ -662,10 +662,8 @@ test('nowModel: personalisation — my team on the rows, the morning meeting, th
   weatherData = { dates: [campDateStr()], byTime: {}, at: Date.now() };
   const h = Math.floor((nowBlocks(WED)[0].start + 5) / 60);
   weatherData.byTime[campDateStr() + 'T' + String(h).padStart(2, '0') + ':00'] = { temp: 60, code: 61, precip: 70 };
-  const realNow = campNow;
-  campNow = () => ({ dow: WED, minutes: nowBlocks(WED)[0].start + 5 });
+  // the clock is the model's argument: the hour comes from the minute asked for, never from the wall clock
   assert.deepEqual(at(WED, nowBlocks(WED)[0].start + 5).card.notes.filter((n) => n.kind === 'rain'), [{ kind: 'rain', text: '70% chance of rain this hour' }]);
-  campNow = realNow;
   weatherData = null;
   done();
 });
@@ -712,7 +710,10 @@ test('nowModel: electives (junior) — my station first, on break, the ask with 
   const before = nowBlocks(dow)[blocks[0].i - 1];
   const rowsNow = [at(dow, before.start + 1).next].concat(at(dow, before.start + 1).later).filter(Boolean);
   const er = rowsNow.find((r) => r.id === blocks[0].id);
-  assert.ok(er && er.sub.mine && er.sub.text === row[0]);
+  // The person's own answer is the row's title (mockup 03): their station, with the slot and who they are with under it, quiet.
+  assert.ok(er && er.mine && er.title === row[0], 'the station is the title of my row');
+  assert.equal(er.sub.text, 'Elective 1 · with ' + nowJoinNames(row[1].filter((n) => n !== me)));
+  assert.equal(er.sub.mine, false, 'the sub is quiet: the title is the answer');
   // no identity yet: the ask, with the team's counselors; a skipped identity (null) and a director get every station
   state.identity = undefined;
   state.followTeam = 't0';
@@ -765,12 +766,12 @@ test('nowModel: a games block — live first, then not started, then done, a pod
   state.results[g0.id] = { medals: { gold: 'zz', silver: T()[1], bronze: 7 }, savedAt: 'x' };
   assert.deepEqual(at(WED, nb.start + 10).body.rows[2].podium.map((c) => c.team), [T()[1]]);
   state.results[g0.id] = medals(T()[2], T()[1], T()[0]);
-  // a director: Score on every row that is not done, gold on the live and the next one, "2 of 3 games still to score"
+  // a director: Score on every row that is not done, ONE gold (the live game's: §8.1 rule 3), "2 of 3 games still to score"
   setMemberRole('editor');
   m = at(WED, nb.start + 10);
   assert.equal(m.body.stillToScore, 2);
   assert.equal(m.card.sub, '2 of 3 games still to score');
-  assert.deepEqual(m.body.rows.map((r) => r.score && r.score.gold), [true, true, null]);
+  assert.deepEqual(m.body.rows.map((r) => r.score && r.score.gold), [true, false, null], 'one gold Score: the live game; the one up next is outlined');
   assert.ok(m.body.rows.every((r) => !r.score || r.score.why === null), 'a placement or tally game is not guarded at the game level');
   state.results[g1.id] = medals(T()[0], T()[1], T()[2]);
   state.results[g2.id] = medals(T()[0], T()[1], T()[2]);
@@ -847,7 +848,7 @@ test('nowModel: the four-team bracket reads state.brackets4 (Step 22\'s shape) a
   assert.ok(card.notes.some((n) => n.kind === 'team' && /3rd place match first/.test(n.rest)));
   const b4row = at(WED, nb.start + 1).body.rows.find((r) => r.id === g.id);
   assert.equal(b4row.status, 'live');
-  assert.equal(b4row.line, 'semifinal 2', 'the match under way');
+  assert.equal(b4row.line, 'Semifinal 2', 'the match under way, named as its cell is');
   setMemberRole('editor');
   setMemberTeam(T()[2]);
   assert.equal(at(WED, nb.start + 1).body.rows.find((r) => r.id === g.id).score.why, 'Your team plays · another director scores', 'own-team guard per match');
@@ -958,7 +959,7 @@ test('nowModel: Still to do today — what the day\'s moments left, for director
   const c = m.todo.find((r) => r.todo === 'cleanup' && r.ref === 'Breakfast');
   assert.ok(c, 'the window is over');
   assert.equal(c.title, 'Breakfast cleanup points');
-  assert.equal(c.sub, nowTeamWord(T()[0]) + ' · not given yet');
+  assert.equal(c.sub, nowTeamWord(T()[0]) + ' · Not given yet');
   assert.equal(c.key, 'todo-cleanup-3-breakfast');
   state.bonuses['cleanup-t0-3-Breakfast'] = { teamId: T()[0], category: 'cleanup', points: 2, day: 3, meal: 'Breakfast', at: new Date(BASE_MS).toISOString() };
   assert.ok(!at(WED, bf.end + 30).todo.some((r) => r.ref === 'Breakfast'), 'given: gone');
@@ -1098,5 +1099,171 @@ test('nowModel: whatever a snapshot hands back (junk results, brackets, drafts, 
   assert.doesNotThrow(() => at(6, 9 * 60 + 40));
   state.teams = [];
   assert.doesNotThrow(() => at(WED, 12 * 60 + 40));
+  done();
+});
+
+
+// ════════════════════════════════════════════════════════════════════
+// What counselors see (More → Director): a section the directors switched off is not on Now either
+// ════════════════════════════════════════════════════════════════════
+var HIDDEN_ALL = () => ({ competitions: true, verse: true, cleanup: true, chat: true });
+
+// A counselor's model with every switch off, every 5th minute of the week: no games card, rows or podium (a games block is a plain
+// activity), no verse (Bible study is a plain activity), no cleanup line, note or moment — and nothing else about the day changes.
+function walkHidden(label) {
+  stubRota();
+  const gb = gamesBlockOf(WED, 3);
+  state.results[gb.games[0].id] = medals(T()[2], T()[1], T()[0]);
+  state.drafts[gb.games[1].id] = { scores: { [T()[3]]: '9' } };
+  state.meta.hiddenCards = HIDDEN_ALL();
+  let games = 0; let verses = 0; let meals = 0;
+  DOWS.forEach((dow) => {
+    for (let m = 0; m < 1440; m += 5) {
+      const x = at(dow, m);
+      const where = `${label} dow ${dow} minute ${m}`;
+      assert.ok(x.card.kind !== 'games', where + ': a games card');
+      assert.ok((x.body.rows || []).every((r) => !('status' in r)) && !x.body.stillToScore && !x.body.bracket4 && !('total' in x.body), where + ': game rows (a run row has no status)');
+      assert.ok(!x.card.notes.some((n) => n.kind === 'double'), where + ': the double-points note belongs to a games card');
+      assert.equal(x.card.over, false, where + ': "Running over" is a games card\'s');
+      assert.equal(x.moment, null, where + ': a moment (the cleanup panel is switched off; the verse keys are a director\'s)');
+      assert.ok(!x.body.verse, where + ': a verse');
+      assert.ok(!x.body.duty || x.body.duty.length === 0, where + ': cleanup duty');
+      assert.ok(!x.card.notes.some((n) => n.kind === 'team' && /cleanup/.test(n.rest || '')), where + ': a cleanup note');
+      [x.next].concat(x.later, x.body.then || [], x.body.rows || []).filter(Boolean).forEach((r) => {
+        assert.ok(!r.sub || !/on cleanup|play first| and \d+ more$/.test(r.sub.text), where + ': a row says ' + (r.sub && r.sub.text));
+        assert.ok(r.kind !== 'games', where + ': a games row');
+      });
+      if (x.block && nowBlocks(dow).find((b) => b.id === x.block.id && b.b.type === 'games')) games++;
+      if (x.block && x.block.kind === 'activity' && /bible/i.test(x.block.title)) verses++;
+      if (x.card.kind === 'meal') meals++;
+    }
+  });
+  assert.ok(games > 0 && meals > 0, 'the walk met a games block and a meal: ' + games + ' / ' + meals);
+  return verses;
+}
+
+test('nowModel: with Games, Memory verse and Meal cleanup switched off a counselor\'s Now shows none of them, and a director\'s own Now shows all', () => {
+  boot('viewer', T()[0]);
+  setMemberTeam(T()[0]);
+  const verses = walkHidden('counselor');
+  state.drafts = {}; // the walk left a game live (a live game past its block holds the card, and a held card has no moment)
+  // Bible study is the plain card (a verse needs its switch)
+  assert.ok(verses > 0 || !nowBlocks(WED).some((b) => b.kind === 'bible'), 'Bible study drew as an activity');
+  // the same week, switched ON for a director: the model is what it was before any switch existed
+  const gb = gamesBlockOf(WED, 1);
+  const lunch = nowBlocks(WED).find((x) => x.kind === 'meal' && x.meal === 'Lunch');
+  const bible = nowBlocks(WED).find((x) => x.kind === 'bible');
+  setMemberRole('editor');
+  const sig = (hid) => { state.meta.hiddenCards = hid; return [at(WED, gb.nb.start + 1), at(WED, lunch.end + 1), at(WED, (bible ? bible.start : 540) + 3)].map(sigOf).join('|'); };
+  assert.equal(sig({ competitions: true, verse: true, cleanup: true }), sig({}), 'a director is shown every section whatever the switches say');
+  state.meta.hiddenCards = { competitions: true, verse: true, cleanup: true };
+  assert.equal(at(WED, gb.nb.start + 1).card.kind, 'games');
+  assert.ok(at(WED, lunch.end + 1).moment && at(WED, lunch.end + 1).moment.kind === 'cleanup');
+  // one switch at a time: Games off leaves the verse and the cleanup alone, and the other way round
+  setMemberRole('viewer');
+  state.meta.hiddenCards = { competitions: true };
+  assert.equal(at(WED, gb.nb.start + 1).card.kind, 'activity');
+  assert.ok(at(WED, lunch.end + 1).moment, 'cleanup is still shown');
+  state.meta.hiddenCards = { cleanup: true };
+  assert.equal(at(WED, gb.nb.start + 1).card.kind, 'games', 'Games is still shown');
+  assert.equal(at(WED, lunch.end + 1).moment, null);
+  if (bible && verseFor(WED) && String(verseFor(WED).text || verseFor(WED).ref || '').trim()) {
+    state.meta.hiddenCards = { verse: true };
+    assert.equal(at(WED, bible.start + 3).card.kind, 'activity');
+    state.meta.hiddenCards = {};
+    assert.equal(at(WED, bible.start + 3).card.kind, 'bible');
+  }
+  done();
+});
+
+test('nowModel: a counselor PREVIEW honours the switches as a counselor\'s phone does; leaving it gives the director every section back', () => {
+  boot('editor', null);
+  state.meta.hiddenCards = HIDDEN_ALL();
+  stubRota();
+  const gb = gamesBlockOf(WED, 1);
+  assert.equal(at(WED, gb.nb.start + 1).card.kind, 'games');
+  counselorPreviewOn = true;
+  assert.equal(at(WED, gb.nb.start + 1).card.kind, 'activity');
+  assert.ok(!('total' in at(WED, gb.nb.start + 1).body), 'no game rows');
+  counselorPreviewOn = false;
+  assert.equal(at(WED, gb.nb.start + 1).card.kind, 'games');
+  done();
+});
+
+test('nowModel: a game on a hidden Games card is not held, offered or named: no "Running over", no hold, no Up next game names', () => {
+  boot('viewer', T()[0]);
+  const gb = gamesBlockOf(WED, 1);
+  state.drafts[gb.games[0].id] = { scores: { [T()[0]]: '3' } };
+  assert.equal(at(WED, gb.nb.end + 2).card.over, true, 'visible: the live game holds the card');
+  state.meta.hiddenCards = { competitions: true };
+  const x = at(WED, gb.nb.end + 2);
+  assert.equal(x.card.over, false);
+  assert.ok(!x.block || x.block.id !== gb.nb.id, 'the clock moved on: a hidden section holds nothing');
+  const before = nowBlocks(WED)[gb.nb.i - 1];
+  if (before) assert.ok(!/ and \d+ more|play first/.test(((at(WED, before.start + 1).next || {}).sub || {}).text || ''), 'Up next names no game');
+  done();
+});
+
+// ════════════════════════════════════════════════════════════════════
+// A director's second, view-only tab (canEdit() false, the person still a confirmed director)
+// ════════════════════════════════════════════════════════════════════
+test('nowModel: the cleanup moment in a director\'s view-only second tab says only whose turn it is — no keys, no lock, no points — as the verse moment does', () => {
+  boot('editor', null);
+  stubRota();
+  const lunch = nowBlocks(WED).find((x) => x.kind === 'meal' && x.meal === 'Lunch');
+  const writer = at(WED, lunch.end + 2).moment;
+  assert.ok(writer && writer.secret === true && writer.max === 3 && writer.teams.every((t) => t.locked === false && t.pts === 0), 'a writer tab has the keys');
+  const realTab = tabWriter;
+  try {
+    tabWriter = false;
+    assert.equal(canEdit(), false);
+    assert.equal(standingsVisible(), true, 'the person is still a director');
+    const ro = at(WED, lunch.end + 2).moment;
+    assert.ok(ro && ro.kind === 'cleanup' && ro.teams.length === writer.teams.length, 'whose turn it is still shows');
+    assert.ok(ro.secret === undefined && ro.max === undefined, 'no secret line, no keys');
+    assert.ok(ro.teams.every((t) => !('locked' in t) && !('pts' in t)), 'no lock and no points on a row');
+    const bible = nowBlocks(WED).find((x) => x.kind === 'bible');
+    if (bible) { const vm = at(WED, bible.start + 3).moment; assert.ok(!vm || vm.kind === 'cleanup', 'the verse moment is not there either'); }
+  } finally { tabWriter = realTab; }
+  done();
+});
+
+// ════════════════════════════════════════════════════════════════════
+// A games block held past the start of the next block
+// ════════════════════════════════════════════════════════════════════
+test('nowModel: while a games block is held, Up next is the first block that has NOT ended — one already under way says so — and Later today follows it', () => {
+  boot('viewer', T()[0]);
+  let crossed = 0;
+  DOWS.forEach((dow) => {
+    const day = nowBlocks(dow);
+    day.filter((x) => x.kind === 'games' && !x.noTime && gamesForBlock(dow, x.b).length).forEach((nb) => {
+      const g = gamesForBlock(dow, nb.b)[0];
+      state.drafts = { [g.id]: { scores: { [T()[0]]: '3' } } }; // a live game holds the card
+      const cap = nowGamesCap(day, nb);
+      for (let m = nb.end; m < cap; m++) {
+        const x = at(dow, m);
+        const where = `dow ${dow} ${nb.head} minute ${m}`;
+        assert.equal(x.card.over, true, where);
+        const after = day.slice(day.indexOf(nb) + 1).find((b) => b.end > m);
+        if (!after) { assert.equal(x.next, null, where); continue; }
+        assert.equal(x.next && x.next.id, after.id, where + ': Up next is the first block not yet ended');
+        assert.ok(x.next.start >= 0 && after.end > m, where);
+        const started = after.start <= m;
+        assert.equal(/^Already started/.test((x.next.sub && x.next.sub.text) || ''), started, where + ': "Already started" exactly when it is under way');
+        assert.ok(x.later.every((r) => day.find((b) => b.id === r.id).start > day.find((b) => b.id === after.id).start - 1 && r.id !== after.id), where + ': Later today follows Up next');
+        assert.ok(x.later.every((r) => day.find((b) => b.id === r.id).end > m), where + ': nothing that has ended');
+        assert.ok(x.card.sub.indexOf(after.head) > 0, where + ': Still going names it');
+        assert.equal(/has started$/.test(x.card.sub), started, where);
+        if (started) crossed++;
+      }
+    });
+  });
+  state.drafts = {};
+  assert.ok(crossed > 0 || CAMP.id === 'senior', 'a hold ran into the next block somewhere in the week (junior\'s Team competitions into lunch)');
+  // a block held but not run into: Up next is the very block it always was
+  const gb = gamesBlockOf(WED, 1);
+  state.drafts[gb.games[0].id] = { scores: { [T()[0]]: '3' } };
+  const nextBlock = nowBlocks(WED).find((x) => x.start >= gb.nb.end);
+  assert.equal(at(WED, gb.nb.end + 1).next.id, nextBlock.id);
   done();
 });

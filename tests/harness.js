@@ -282,6 +282,9 @@ function makeContext(opts) {
   APP_FILES.filter((f) => !(opts && opts.without && opts.without.includes(f))).forEach((f) => {
     vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
   });
+  // The schedule oracle (nowBannerHtml) is a test-only script: the page no longer ships the old banner renderer, but the week / seed
+  // tests compare the schedule's data through it. It needs the app's functions, so it loads after them.
+  vm.runInContext(fs.readFileSync(path.join(__dirname, 'schedule-oracle.js'), 'utf8'), ctx, { filename: 'tests/schedule-oracle.js' });
 
   // makeContext({ seeded: true }): a camp whose schedule is already edited here — what the page holds once the owner
   // has pressed Edit the week here and the first setup snapshot has landed: the seed (through RTDB's canonical form,
