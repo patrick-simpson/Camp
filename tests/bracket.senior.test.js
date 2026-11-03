@@ -1004,3 +1004,69 @@ test('Change the result on a four-team game offers Reopen the final, Start over 
     assert.deepEqual(shown.actions.map((a) => a.label), ['Clear it and pick again', 'Keep it']);
   } finally { renderAll = realRender; askDialog = realAsk; celebrate = realCelebrate; state.ui.gameId = null; }
 });
+
+// ── brackets that need a director's eye (the hub's Games row, the Games screen) ─────────────────────────────────
+
+test('bracketNotes lists a bracket left under a saved result (late) and a four-team bracket waiting for a re-check; Discard takes the stray away and leaves the result alone', () => {
+  const g = fourGame();
+  quiet(() => {
+    assert.deepEqual(bracketNotes(), { late: [], recheck: [] });
+    savedBracket(g);
+    assert.deepEqual(bracketNotes(), { late: [], recheck: [] }, 'a finished game leaves nothing behind');
+    // a phone that had not heard yet records the final: a stray, seedless bracket under a saved result
+    state.brackets4[g.id] = { m: { final: { a: 't0', b: 't1', winner: 't0', at: 5 } } };
+    assert.deepEqual(bracketNotes().late, [{ id: g.id, name: g.name }]);
+    assert.equal(gameRowStatus(g), 'done', 'the result still decides the row');
+    assert.deepEqual(gameRoundTeams(g), [], 'and no round is waiting');
+    const result = clone(state.results[g.id]);
+    setMemberRole('viewer');
+    assert.deepEqual(discardLateBracket(g.id), { ok: false, reason: 'readonly' });
+    setMemberRole('editor');
+    assert.deepEqual(discardLateBracket(g.id), { ok: true });
+    assert.deepEqual(state.results[g.id], result, 'the result is untouched');
+    assert.notOk(state.brackets4[g.id]);
+    assert.deepEqual(discardLateBracket(g.id), { ok: false, reason: 'none' }, 'nothing left to discard');
+    // a re-check
+    delete state.results[g.id];
+    fourStartGame(g, [['t0', 't3'], ['t1', 't2']]);
+    ['s1:t0', 's2:t1', 'third:t3'].forEach((st) => { const [k, w] = st.split(':'); fourRecordTap(g, k, w); });
+    assert.deepEqual(bracketNotes().recheck, []);
+    state.brackets4[g.id].m.s1.winner = 't3';
+    assert.deepEqual(bracketNotes(), { late: [], recheck: [{ id: g.id, name: g.name }] });
+    // never a game that is not a bracket game, whatever sits under its id
+    g.format = 'placement';
+    assert.deepEqual(bracketNotes(), { late: [], recheck: [] });
+  });
+});
+
+test('the hub\'s Games row says so in plain words, and the Games screen lists them with Discard (editors only)', () => {
+  const g = fourGame();
+  quiet(() => {
+    savedBracket(g);
+    const view = () => hubView();
+    assert.deepEqual(view().brackets, { late: [], recheck: [] });
+    state.brackets4[g.id] = { m: { final: { a: 't0', b: 't1', winner: 't0' } } };
+    let row = hubStatus('games', view());
+    assert.ok(row.problems.some((p) => p === 'A late bracket tap came in for ' + g.name + ' after its result was saved'), JSON.stringify(row.problems));
+    assert.equal(row.mark, 'warn');
+    renderGamesScreen();
+    assert.notOk(setupEl('sg-sec-bn').hidden, 'the section shows');
+    assert.ok(/data-sg-discard="legacy-game-d1"/.test(setupEl('sg-bn-list').innerHTML));
+    assert.ok(/Discard/.test(setupEl('sg-bn-list').innerHTML) && /not changed/.test(setupEl('sg-bn-list').innerHTML));
+    // a re-check names the game and has no Discard (it is settled on the game's own screen)
+    delete state.results[g.id]; delete state.brackets4[g.id];
+    fourStartGame(g, [['t0', 't3'], ['t1', 't2']]);
+    ['s1:t0', 's2:t1', 'third:t3'].forEach((st) => { const [k, w] = st.split(':'); fourRecordTap(g, k, w); });
+    state.brackets4[g.id].m.s1.winner = 't3';
+    row = hubStatus('games', view());
+    assert.ok(row.problems.some((p) => p === g.name + '’s bracket is waiting for a re-check'), JSON.stringify(row.problems));
+    renderGamesScreen();
+    assert.ok(/waiting|Open the game on Games to settle it/.test(setupEl('sg-bn-list').innerHTML));
+    assert.notOk(/data-sg-discard/.test(setupEl('sg-bn-list').innerHTML));
+    // a counselor's phone reaches none of it
+    setMemberRole('viewer');
+    renderGamesScreen();
+    assert.equal(setupEl('sg-sec-bn').hidden, true);
+    assert.equal(setupEl('sg-bn-list').innerHTML, '');
+  });
+});

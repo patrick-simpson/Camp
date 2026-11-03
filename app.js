@@ -10955,6 +10955,41 @@ function fourSaveResult(g) {
   return { ok: true, medals };
 }
 
+// Brackets that need a director's eye, for Set up the week's Games row and screen: `late` — a bracket node still under a game whose
+// result is saved (a phone that had not heard yet recorded a match: the engine and every reader ignore it, a new Start replaces it,
+// and Discard removes it); `recheck` — a four-team bracket waiting on a re-check (a recorded match disagrees with its semifinals).
+// Plain data over state, never throws: [{ id, name }].
+function bracketNotes() {
+  const out = { late: [], recheck: [] };
+  const ids = teamIds();
+  allGames().forEach((g) => {
+    if (!g || g.format !== 'tournament') return;
+    const name = String(g.name || '').trim() || 'A game';
+    const six = state.brackets && state.brackets[g.id];
+    const four = state.brackets4 && state.brackets4[g.id];
+    if (state.results && state.results[g.id]) {
+      if ((six && typeof six === 'object') || (four && typeof four === 'object')) out.late.push({ id: g.id, name });
+    } else if (four) {
+      const v = fourRead(four, ids);
+      if (v && v.recheck) out.recheck.push({ id: g.id, name });
+    }
+  });
+  return out;
+}
+
+// Discard what a late tap left under a game whose result is saved. Only while that is what is there: the result is untouched.
+function discardLateBracket(gid) {
+  if (!canEdit()) return { ok: false, reason: 'readonly' };
+  if (!(state.results && state.results[gid])) return { ok: false, reason: 'none' };
+  const had = !!((state.brackets && state.brackets[gid]) || (state.brackets4 && state.brackets4[gid]));
+  if (!had) return { ok: false, reason: 'none' };
+  if (state.brackets) delete state.brackets[gid];
+  if (state.brackets4) delete state.brackets4[gid];
+  saveState();
+  renderAll();
+  return { ok: true };
+}
+
 // Reopen the final: a saved four-team result keeps the finished bracket (results[gid].path), so "Change the result" can put it back
 // as a bracket to play on, with the final thrown out and every other match as it was, instead of only clearing everything. null when
 // the result carries no bracket this build can read and call consistent (a six-team result, a podium game, an older record).

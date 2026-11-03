@@ -180,6 +180,13 @@ function hubStatus(section, view) {
       // With the schedule edited here a game must sit on one of its items, or no counselor sees it in the schedule.
       const loose = Array.isArray(v.unscheduled) ? v.unscheduled : [];
       if (loose.length) problems.push(loose.length === 1 ? loose[0] + ' isn’t on the schedule' : loose.length + ' games aren’t on the schedule');
+      // A bracket that needs a director's eye (Appendix B): a four-team one waiting for a re-check, or a tap that came in after its
+      // result was saved. The Games screen lists them, the late ones with Discard.
+      const bn = v.brackets || {};
+      const re = Array.isArray(bn.recheck) ? bn.recheck : [];
+      if (re.length) problems.push(re.length === 1 ? re[0] + '’s bracket is waiting for a re-check' : re.length + ' brackets are waiting for a re-check');
+      const late = Array.isArray(bn.late) ? bn.late : [];
+      if (late.length) problems.push(late.length === 1 ? 'A late bracket tap came in for ' + late[0] + ' after its result was saved' : 'Late bracket taps came in for ' + late.length + ' games after their results were saved');
       const tc = Number(v.teamCount) || 0;
       if (tc !== 4 && tc !== 6) {
         const bad = games.filter((g) => g && g.format === 'tournament').map((g) => g.name || 'A tournament');
@@ -449,6 +456,7 @@ function hubView() {
     doorActions,
     held: ['schedule'].concat(HUB_SECTIONS).reduce((o, s) => { o[s] = !!(hubSetupMeta().on && hubSetupMeta().on[s] === false); return o; }, {}),
     unscheduled: hubUnscheduledGames(),
+    brackets: (function () { const b = typeof bracketNotes === 'function' ? bracketNotes() : { late: [], recheck: [] }; return { late: b.late.map((x) => x.name), recheck: b.recheck.map((x) => x.name) }; })(),
     schedule: hubScheduleView(),
     sec: hubSecView(),
   };
@@ -7700,6 +7708,24 @@ function renderGamesScreen() {
   secPaintList(setupEl('sg-off-list'), m.loose.map((g) => gmLooseRowHtml(g, m.live)).join(''), dk, { inner: '.sg-place' });
   setHiddenIfChanged(setupEl('sg-add'), !(m.isDay && !empty && editable));
   setTextIfChanged(setupEl('sg-add-text'), 'Add a game to ' + word);
+  renderGmBracketNotes(editable);
+}
+
+// Brackets that need a look, whichever day is open (the hub's Games row says so, and this is where it is put right): a late tap after
+// a result was saved (Discard removes what it left; the result is not touched) and a four-team bracket waiting for a re-check.
+function gmBracketNoteRowHtml(n, kind) {
+  const sub = kind === 'late' ? 'A bracket tap came in after the result was saved. The result is not changed.'
+    : 'Two phones recorded different winners. Open the game on Games to settle it.';
+  return '<div class="cb-row sg-game gl-row-split" data-key="bn-' + kind + '-' + esc(n.id) + '"><span class="cb-main"><span class="cb-title"><span id="sg-bn-' + kind + '-' + esc(n.id) + '">' + esc(n.name) + '</span></span>' +
+    '<span class="cb-sub">' + esc(sub) + '</span></span>' +
+    (kind === 'late' ? '<span class="cb-end"><button type="button" class="btn btn-sm" data-sg-discard="' + esc(n.id) + '" aria-describedby="sg-bn-late-' + esc(n.id) + '">Discard</button></span>' : '') + '</div>';
+}
+
+function renderGmBracketNotes(editable) {
+  const bn = typeof bracketNotes === 'function' ? bracketNotes() : { late: [], recheck: [] };
+  const rows = bn.late.map((n) => gmBracketNoteRowHtml(n, 'late')).concat(bn.recheck.map((n) => gmBracketNoteRowHtml(n, 'recheck')));
+  setHiddenIfChanged(setupEl('sg-sec-bn'), !(editable && rows.length));
+  setHtmlIfChanged(setupEl('sg-bn-list'), editable ? rows.join('') : '');
 }
 
 // ── a day's own sheet (⋯): its note, and taking it off the games days ──
@@ -7795,6 +7821,7 @@ function wireGamesScreen() {
   on('#setup-games', 'click', (e) => {
     const q = (sel) => (e.target.closest ? e.target.closest(sel) : null);
     let b;
+    if ((b = q('[data-sg-discard]'))) { const r = typeof discardLateBracket === 'function' ? discardLateBracket(b.dataset.sgDiscard) : null; if (r && r.ok) showToast('Discarded.'); return; }
     if ((b = q('[data-sg-place]'))) { if (typeof gmOpenGame === 'function') gmOpenGame(b.dataset.sgPlace, { pane: 'when', opener: b }); }
     else if ((b = q('[data-sg-open]'))) { if (typeof gmOpenGame === 'function') gmOpenGame(b.dataset.sgOpen, { opener: b }); }
     else if ((b = q('[data-sg-add]'))) { if (typeof gmOpenNew === 'function') gmOpenNew({ dk: gmDayKey(), target: b.dataset.sgAdd, opener: b }); }
