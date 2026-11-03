@@ -146,6 +146,12 @@ function tellBuzzState() {
   return { available: true, reason: '' };
 }
 
+// True while sync is set up and this phone is not connected: what a banner or a pin writes then waits in this phone's
+// queue, and nobody else has it yet. A send must say so (the takeover covers the header's status pill), never "posted".
+function tellOffline() {
+  return typeof syncEnabled === 'function' && syncEnabled() && !fbConnected;
+}
+
 function tellTeamWord(id) {
   const t = (state.teams || []).find((x) => x.id === id);
   return t ? (teamShort(id) || t.name) : '';
@@ -506,10 +512,12 @@ function tellSetAudience(aud) {
   if (aud === 'team') tellArrive(tellEl('tell-teams'));
 }
 
-function tellSetTeam(id) {
+function tellSetTeam(id, btn) {
   if (!tellTeamWord(id)) return;
+  const had = focusWas(btn); // tellChanged repaints the chips: a keyboard user keeps their place (focusBack)
   tell.d.team = id;
   tellChanged();
+  if (had) focusBack(had, document.querySelector('#tell-teams .tell-team[data-team="' + id + '"]'));
 }
 
 // The fast path (§7.2): the words go in the message and the ways are ticked — Banner all day, and when phone alerts are
@@ -599,6 +607,20 @@ async function tellRunBuzz(buzz, text) {
   return { way: 'buzz', ok: true, text: 'Buzz sent to ' + n + ' phone' + (n === 1 ? '' : 's') };
 }
 
+// The report line for a local way (banner, pin) once it was written. Written while offline it says where it is, and
+// carries `offline` so the toast can say when it goes out.
+function tellLocalItem(way, ok) {
+  if (!ok) return { way, ok: false, text: way === 'banner' ? "Banner didn't post" : "Notice didn't pin" };
+  const off = tellOffline();
+  const text = off ? (way === 'banner' ? 'Banner' : 'Notice') + ' saved on this phone' : way === 'banner' ? 'Banner posted' : 'Notice pinned';
+  return off ? { way, ok: true, text, offline: true } : { way, ok: true, text };
+}
+
+// What the toast after a send says: every report line, and, for what was only saved on this phone, when it goes out.
+function tellSaid(items) {
+  return items.map((it) => it.text).join(' · ') + (items.some((it) => it.offline) ? '. It goes out when you’re back online.' : '');
+}
+
 // The two local ways (banner, pin): plain state edits, saved ONCE. Returns what an Undo needs.
 function tellApplyLocal(plan) {
   const rec = { bannerId: '', banner: null, notice: null };
@@ -635,8 +657,8 @@ async function tellSend() {
   let rec = { bannerId: '', banner: null, notice: null };
   try {
     rec = tellApplyLocal(plan);
-    if (plan.banner) items.push({ way: 'banner', ok: !!rec.banner, text: rec.banner ? 'Banner posted' : "Banner didn't post" });
-    if (plan.pin) items.push({ way: 'pin', ok: !!rec.notice, text: rec.notice ? 'Notice pinned' : "Notice didn't pin" });
+    if (plan.banner) items.push(tellLocalItem('banner', !!rec.banner));
+    if (plan.pin) items.push(tellLocalItem('pin', !!rec.notice));
     if (plan.buzz) items.push(await tellRunBuzz(plan.buzz, plan.text));
   } finally {
     tell.sending = Math.max(0, tell.sending - 1);
@@ -648,7 +670,7 @@ async function tellSend() {
 // that already went (a second Send must not post the banner again; Try again re-sends only the one that failed).
 function tellFinishSend(plan, items, rec) {
   const failed = items.filter((it) => !it.ok);
-  const said = items.map((it) => it.text).join(' · ');
+  const said = tellSaid(items);
   const undoable = !!(rec.banner || rec.notice);
   if (undoable) {
     showToast(said, {
@@ -685,17 +707,17 @@ async function tellRetry(way) {
       else item = await tellRunBuzz(r.plan.buzz, r.text);
     } else if (way === 'banner' && r.plan.banner) {
       rec = tellApplyLocal({ text: r.text, banner: r.plan.banner, pin: null, buzz: null });
-      item = { way, ok: !!rec.banner, text: rec.banner ? 'Banner posted' : "Banner didn't post" };
+      item = tellLocalItem('banner', !!rec.banner);
     } else if (way === 'pin' && r.plan.pin) {
       rec = tellApplyLocal({ text: r.text, banner: null, pin: r.plan.pin, buzz: null });
-      item = { way, ok: !!rec.notice, text: rec.notice ? 'Notice pinned' : "Notice didn't pin" };
+      item = tellLocalItem('pin', !!rec.notice);
     }
   } finally {
     tell.sending = Math.max(0, tell.sending - 1);
   }
   if (!item) return;
   r.items[i] = item;
-  if (rec.banner || rec.notice) showToast(item.text, { mine: true, duration: TELL_UNDO_MS, action: { label: 'Undo', run: () => tellUndo(rec) } });
+  if (rec.banner || rec.notice) showToast(tellSaid([item]), { mine: true, duration: TELL_UNDO_MS, action: { label: 'Undo', run: () => tellUndo(rec) } });
   if (r.items.every((it) => it.ok)) {
     tell.result = null;
     tellResetDraft();
@@ -795,7 +817,7 @@ function tellWire(tk) {
     if ((b = t.closest('.tell-tick'))) { tellToggle(b.id.replace(/^tell-/, '')); return; }
     if ((b = t.closest('#tell-ttl .seg-btn'))) { tellSetTtl(b.dataset.ttl); return; }
     if ((b = t.closest('#tell-aud .seg-btn'))) { tellSetAudience(b.dataset.aud); return; }
-    if ((b = t.closest('.tell-team'))) { tellSetTeam(b.dataset.team); return; }
+    if ((b = t.closest('.tell-team'))) { tellSetTeam(b.dataset.team, b); return; }
     if (t.closest('#tell-notice-full')) { tellOpenFullNotice(); return; }
     if (t.closest('#tell-done')) { const ta = tellEl('tell-text'); if (ta && typeof ta.blur === 'function') ta.blur(); return; }
     if (t.closest('#tell-send')) { tellSend(); }

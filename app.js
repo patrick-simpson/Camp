@@ -5977,6 +5977,16 @@ function setHtmlIfChanged(el, html) {
   return true;
 }
 
+// A tap on a button inside a list the screen repaints through setHtmlIfChanged replaces that very button, and focus falls
+// to <body>: a keyboard, switch or screen-reader user would have to find their way back from the top after EVERY tap (a
+// point key, a team chip). Ask `focusWas(btn)` BEFORE the act that repaints and `focusBack(had, fresh)` after it with the
+// button that now sits where it was. A tap that never focused the button (iOS Safari, which doesn't) changes nothing.
+function focusWas(el) { return !!el && typeof document !== 'undefined' && document.activeElement === el; }
+function focusBack(had, el) {
+  if (!had || !el || el === document.activeElement || typeof el.focus !== 'function') return;
+  try { el.focus({ preventScroll: true }); } catch (e) { /* fine */ }
+}
+
 // A keyed list that GLIDES (redesign §9.5: a row removed squashes out and the rest glide up by key; a row added
 // arrives). Same contract as setHtmlIfChanged — an unchanged list writes nothing — but a change to a list already on
 // screen keeps its rows by data-key (JellyMotion.flipKeyed), so the survivors spring from where they were instead of
@@ -12100,6 +12110,25 @@ function previewEnd() {
   return true;
 }
 
+// Why a tap on Preview as a counselor did nothing, in one sentence ('' when there is no reason to say). The screen opens
+// for any phone that paints as a director, but a director whose role is only the stored hint (before the member record
+// answers, or offline for a long time) cannot start one: a button that does nothing and says nothing is a dead button.
+function previewWhyNot() {
+  if (counselorPreviewOn) return '';
+  if (!appStarted) return 'Still opening. Try again in a moment.';
+  if (memberRole !== 'editor' || !memberRoleConfirmed) return 'Still signing you in. Try again in a moment.';
+  if (tabWriter === false) return 'This tab is view-only. Preview from the tab that edits.';
+  return '';
+}
+
+// The button's tap: start it, or say why not.
+function previewTap() {
+  if (previewStart()) return true;
+  const why = previewWhyNot();
+  if (why) showToast(why);
+  return false;
+}
+
 function previewStart() {
   if (!previewMayStart()) return false;
   counselorPreviewOn = true;
@@ -12157,7 +12186,7 @@ function shellCloseDisallowedSheets() {
 
 function wirePreview() {
   const go = document.getElementById('counselors-preview-btn');
-  if (go) go.addEventListener('click', () => previewStart());
+  if (go) go.addEventListener('click', () => previewTap());
   const exit = document.getElementById('preview-exit');
   if (exit) exit.addEventListener('click', () => previewStop({ back: true }));
   const bar = document.getElementById('preview-bar');

@@ -167,6 +167,39 @@ test('a counselor, a hint-painted director, a director\'s view-only second tab a
   done();
 });
 
+test('the Preview button is never dead: a tap that cannot start one says why, and one that can says nothing', () => {
+  const realToast = showToast; const toasts = [];
+  showToast = (m) => { toasts.push(String(m)); };
+  try {
+    // a hint-painted director (the stored role, the member record not yet answered): What counselors see opens, the tap used to do nothing
+    boot('editor', { provisional: true });
+    assert.equal(previewTap(), false);
+    assert.equal(counselorPreviewOn, false);
+    assert.deepEqual(toasts, ['Still signing you in. Try again in a moment.']);
+    // a second tab that does not hold the writer lock
+    toasts.length = 0;
+    setMemberRole('editor');
+    tabWriter = false;
+    assert.equal(previewTap(), false);
+    assert.deepEqual(toasts, ['This tab is view-only. Preview from the tab that edits.']);
+    // before the app has started
+    toasts.length = 0;
+    tabWriter = true;
+    appStarted = false;
+    assert.equal(previewTap(), false);
+    assert.equal(toasts.length, 1, 'one sentence');
+    appStarted = true;
+    // a confirmed director on a writer tab: it starts, and a tap while one is up says nothing (the bar's Exit is on screen)
+    toasts.length = 0;
+    assert.equal(previewTap(), true);
+    assert.equal(counselorPreviewOn, true);
+    assert.equal(previewTap(), false);
+    assert.deepEqual(toasts, [], 'starting says nothing, and a second tap while one is up is quiet');
+  } finally { showToast = realToast; }
+  assert.ok(/addEventListener\('click', \(\) => previewTap\(\)\)/.test(APP_SRC), 'the button is wired to the tap that says why');
+  done();
+});
+
 test('nothing about a preview is stored: not in state, not in the cache, not the auth hint, and a fresh page is the director\'s own', () => {
   boot('editor');
   setAuthHint('editor');

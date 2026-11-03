@@ -1232,6 +1232,11 @@ the More row exists only when it loaded (`#tell-row` is un-hidden by `tellPaintM
   channel failed (a buzz refused, nobody has alerts on, no signal): the composer stays, "Last send" lists one line
   per channel, the channels that went are UN-ticked (a second Send cannot post the banner twice) and **Try again**
   re-sends only the one that failed, with the words it was sent with. `tell.sending` counts channels still out.
+  **A send while OFFLINE says so** (`tellOffline()`: sync is set up and `fbConnected` is false; with sync off nothing is
+  "going out", so nothing says it): the banner / notice line reads "Banner saved on this phone" / "Notice saved on this
+  phone" (`tellLocalItem`, never "posted"), and the toast adds "It goes out when you’re back online." (`tellSaid`) with
+  the same 10-second Undo. The takeover covers the header's status pill, so the toast is where the director learns it;
+  once the composer closes, the pill is back.
 - **Undo** (`tellUndo`): the banner comes down if it is still up; the notice goes back to the previous card ONLY
   if it still equals what the send wrote, compared in RTDB-canonical form (`syncCanon`: a snapshot pruning empty
   fields is no change). Otherwise "Someone changed the notice since, so it stays as it is." A phone that is no
@@ -1244,6 +1249,10 @@ the More row exists only when it loaded (`#tell-row` is un-hidden by `tellPaintM
   another director) glides once hands are off. Rows refresh with the
   30 s tick while the composer is open (`tellTick`, from `shellTick`). More's row says "Up now: a banner and the
   notice" / "Up now: 2 banners" (`data-live`) or its plain line.
+- **Focus survives a repaint.** A team chip is repainted through `setHtmlIfChanged`, which replaces the button, and focus
+  would fall to `<body>`: `tellSetTeam(id, btn)` asks `focusWas(btn)` first and `focusBack(had, fresh)` after (app.js,
+  beside `setHtmlIfChanged`; a pointer tap that never focused the button, as in iOS Safari, changes nothing). Award points
+  does the same for its point keys and team chips.
 - **The draft survives**: a re-render, a tab trip and a closed-and-reopened composer (memory) and a reload
   (`lsKey('campScoreboardTellDraft')`: the words, Banner, its duration and Pin — never the buzz, its audience or
   Urgent — read lazily at the first open, wiped by `clearLocalData`). **`tellComposerBusy()`** — a send still out,
@@ -1311,7 +1320,10 @@ nothing.
   synthetic exports with the new scripts loaded (READY, both camps).
 - **Tests**: `award.test.js` (+ `.senior`): who may open it, the day, the verse and cleanup writers and their
   deterministic ids, the shared slot, the own-team guard, the Add label and writer, the ledger (camp-time weekday, the
-  filed day, ×2, legacy cleanup), removal, escaping, the shell stack, and the app running without `award.js`.
+  filed day, ×2, legacy cleanup), removal, escaping, the shell stack, focus going back onto a key or chip after its list
+  repaints, and the app running without `award.js`. Like `tell.test.js` it joins the seeded and seeded-all passes
+  (`tests/run.js`): both live camps run with every Edit-the-week-here section on, and Award points reads the verse, the
+  rota and the meal times from the setup tree.
 
 ## Preview as a counselor: behaviour (app.js — Step 24, build session 2)
 
@@ -1340,7 +1352,10 @@ a LENS over the role, not a role: `counselorPreviewOn` (memory only, declared be
   next page is the director's own: pinned against a fresh context over this phone's cache).
 - **Start** (`previewStart`, the button `#counselors-preview-btn` in What counselors see): only a CONFIRMED director on a writer
   tab (`previewMayStart`: not a counselor, not a hint-painted phone, not a view-only second tab, not before the app started, not
-  twice). It closes every sheet the lens no longer allows (`shellCloseDisallowedSheets`, also run
+  twice). **A tap that cannot start one says why** (`previewTap`, the button's handler; `previewWhyNot`): What counselors
+  see opens for any phone that paints as a director, including one whose role is only the stored hint (the member record has
+  not answered, or it has been offline a long while), so "Still signing you in. Try again in a moment." (also "This tab is
+  view-only…" and "Still opening…") is the answer, never a button that does nothing. It closes every sheet the lens no longer allows (`shellCloseDisallowedSheets`, also run
   by `renderAll` whenever `canEdit()` is false, so a demotion closes a director's drawers too), paints the bar, frame and
   `html.counselor-preview`, flips `html.view-only`, renders, goes to the TOP of the tab (`previewScrollTop`: the button sits at
   the foot of a scrolled More, and with the Director group gone that scroll opened the counselor's More mid-page; it scrolls
@@ -2380,7 +2395,7 @@ What's covered, and why each file exists:
   transaction, owner only, off-then-on keeps the edit).
 - **The seeded pass** — `tests/run.js` re-runs `SEEDED_FILES` (week, push, chat, ics,
   tabs, frame, shell, home, render-stability, game-view, secrecy, motion, overlays,
-  boot-cache, backup) against a camp whose schedule is edited here
+  boot-cache, backup, reveal-ui, reveal-remote, preview, tell, award) against a camp whose schedule is edited here
   (`makeContext({camp, seeded: true})`; junior, and senior where the file has a
   `.senior` twin). `SEEDED=all` probes every file, `SEEDED=off` skips it. A test that
   builds its own fresh context (boot-cache, secrecy's hint-paint boots, shell's
@@ -2388,7 +2403,7 @@ What's covered, and why each file exists:
   `wkSet` / `wkReset` put the seeded tree back (`wkOff` is the printed week on purpose) —
   otherwise the "seeded" rerun quietly repeats the plain one. A third pass,
   `SEEDED_ALL_FILES` (week, ics, push, chat, home, tabs, shell, render-stability, secrecy,
-  frame), runs with `makeContext({camp, seeded: 'all'})`: the four smaller sections ON as
+  frame, tell, award), runs with `makeContext({camp, seeded: 'all'})`: the four smaller sections ON as
   well, the page as it will be after step 20, proving their "on" half shows what the built-in
   half did.
 - `seam.test.js` — greps `app.js` (minus the SEAM block), `chat.js`, `push.js`

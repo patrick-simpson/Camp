@@ -105,6 +105,43 @@ test('a counselor-side call to every writer does nothing', () => {
   done();
 });
 
+test('a tap on a key or a team chip repaints its list, so a keyboard user\'s focus goes back onto the button that took its place', () => {
+  boot();
+  openAward();
+  awardUi.dow = WED;
+  const t0 = T()[0];
+  const focused = [];
+  const freshKey = document.querySelector('#takeover-award [data-key="v-' + t0 + '"] .aw-pt[data-pts="3"]');
+  freshKey.focus = () => focused.push('key');
+  const freshChip = document.querySelector('#award-quick-teams [data-team="' + t0 + '"]');
+  freshChip.focus = () => focused.push('chip');
+  const prev = document.activeElement;
+  try {
+    // a pointer tap in Safari never focuses the button: nothing is moved
+    document.activeElement = null;
+    awardTapKey(key({ team: t0, key: 'v-' + t0 }, 3, true));
+    assert.deepEqual(focused, [], 'focus was not on the key, so nothing is focused for it');
+    // keyboard / switch / screen reader: the key had focus, the list is repainted, focus is put back
+    const btn = key({ team: t0, key: 'v-' + t0 }, 3, true);
+    document.activeElement = btn;
+    awardTapKey(btn);
+    assert.deepEqual(focused, ['key']);
+    assert.equal(state.bonuses[Object.keys(state.bonuses).find((k) => state.bonuses[k].category === 'verse')].points, 3);
+    // a team chip in Quick points
+    const chip = { dataset: { team: t0 } };
+    document.activeElement = chip;
+    awardToggleTeam(chip);
+    assert.deepEqual(focused, ['key', 'chip']);
+    // focus already on the new button (nothing replaced it): not asked again
+    document.activeElement = freshChip;
+    focused.length = 0;
+    awardToggleTeam(chip);
+    assert.deepEqual(focused, []);
+  } finally { document.activeElement = prev; }
+  assert.ok(/focusWas\(btn\)/.test(readFixture('../award.js')) && /focusBack\(had, fresh\)/.test(readFixture('../award.js')), 'the key tap asks before and puts focus back after');
+  done();
+});
+
 // ── the day ─────────────────────────────────────────────────────────
 
 test('it opens on today; on a weekend it opens on Monday; the day picker moves the lists', () => {
@@ -297,13 +334,13 @@ test('the Add button says what will happen, or the dashed well names what is mis
   bonusDraft.points = '2.5';
   assert.equal(awardAddLabel(), 'Points are 1 to 100', 'whole numbers only');
   bonusDraft.points = '5';
-  assert.equal(awardAddLabel(), 'Add 5 points to the ' + awardTeamWord(t0));
+  assert.equal(awardAddLabel(), 'Add 5 points to ' + awardTeamWord(t0));
   bonusDraft.points = '1';
-  assert.equal(awardAddLabel(), 'Add 1 point to the ' + awardTeamWord(t0));
+  assert.equal(awardAddLabel(), 'Add 1 point to ' + awardTeamWord(t0));
   bonusDraft.teams = [t0, t1]; bonusDraft.points = '5';
   assert.equal(awardAddLabel(), 'Add 5 points to 2 teams');
   bonusDraft.teams = [t1]; bonusDraft.points = '3'; bonusDraft.sign = -1;
-  assert.equal(awardAddLabel(), 'Take 3 points from the ' + awardTeamWord(t1));
+  assert.equal(awardAddLabel(), 'Take 3 points from ' + awardTeamWord(t1));
   assert.equal(bonusDraftProblem(bonusDraft), '');
   done();
 });

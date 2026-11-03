@@ -109,7 +109,28 @@ test('the Send button says what will happen, for every combination', () => {
   assert.equal(tellSendLabel(d({ pin: true }), true), 'Send + pin + buzz everyone');
   boot();
   const t1 = state.teams[1];
-  assert.equal(tellSendLabel(d({ aud: 'team', team: t1.id }), true), 'Send + buzz the ' + (teamShort(t1.id) || t1.name), 'a team by its short name');
+  assert.equal(tellSendLabel(d({ aud: 'team', team: t1.id }), true), 'Send + buzz ' + (teamShort(t1.id) || t1.name), 'a team by its short name, no "the" before it');
+  done();
+});
+
+test('a team chip tap repaints the chips, so a keyboard user\'s focus goes back onto the chip that took its place', () => {
+  boot();
+  openTool('tell', { from: 'more' });
+  const id = state.teams[1].id;
+  const focused = [];
+  const fresh = document.querySelector('#tell-teams .tell-team[data-team="' + id + '"]');
+  fresh.focus = () => focused.push(id);
+  const chip = { dataset: { team: id } };
+  const prev = document.activeElement;
+  try {
+    document.activeElement = null; // a pointer tap that never focused the chip (Safari)
+    tellSetTeam(id, chip);
+    assert.deepEqual(focused, []);
+    assert.equal(tell.d.team, id);
+    document.activeElement = chip; // keyboard / switch
+    tellSetTeam(id, chip);
+    assert.deepEqual(focused, [id]);
+  } finally { document.activeElement = prev; }
   done();
 });
 
@@ -253,6 +274,48 @@ test('banner only: one announcement with its duration, the notice untouched, the
   done();
 });
 
+test('a send while offline says it is only saved on this phone and when it goes out; Undo is still there, and online it is unchanged', async () => {
+  boot();
+  const realSync = syncEnabled;
+  syncEnabled = () => true; // sync is set up; the connection is what is missing
+  try {
+    openTool('tell', { from: 'more' });
+    type('Come inside now');
+    fbConnected = false;
+    await tellSend();
+    assert.equal(posted().length, 1, 'the banner is written (to this phone\'s queue)');
+    const t = toasts[toasts.length - 1];
+    assert.equal(t.m, 'Banner saved on this phone. It goes out when you’re back online.', 'never plain "posted"');
+    assert.equal(t.o.action.label, 'Undo', 'and the 10-second Undo stays');
+    // a pin and a banner together, offline: one line each, then the one sentence
+    openTool('tell', { from: 'more' });
+    state.notice = { status: 'draft', eyebrow: '', title: '', sub: '', signoff: '', zones: [], steps: [] };
+    type('Rain plan. Games move to the gym.');
+    tell.d.pin = true;
+    await tellSend();
+    assert.equal(toasts[toasts.length - 1].m, 'Banner saved on this phone · Notice saved on this phone. It goes out when you’re back online.');
+    // Try again on a banner that failed to post says the same when it lands offline
+    tell.result = { items: [{ way: 'banner', ok: false, text: "Banner didn't post" }], text: 'Water break', plan: { text: 'Water break', banner: { ttlMs: 3600000 }, pin: null, buzz: null } };
+    await tellRetry('banner');
+    assert.equal(toasts[toasts.length - 1].m, 'Banner saved on this phone. It goes out when you’re back online.');
+    // connected: the plain words, as before
+    fbConnected = true;
+    state.announcements = {};
+    openTool('tell', { from: 'more' });
+    type('Water break');
+    await tellSend();
+    assert.equal(toasts[toasts.length - 1].m, 'Banner posted');
+    // sync not set up at all (local only): nothing is "going out", so nothing says so
+    syncEnabled = () => false;
+    fbConnected = false;
+    openTool('tell', { from: 'more' });
+    type('Local only');
+    await tellSend();
+    assert.equal(toasts[toasts.length - 1].m, 'Banner posted');
+  } finally { syncEnabled = realSync; fbConnected = true; }
+  done();
+});
+
 test('pin only: the first sentence becomes the title, the rest the intro; the notice is posted whole; no banner', async () => {
   boot();
   state.notice = { status: 'draft', eyebrow: '', title: '', sub: '', signoff: '', zones: [], steps: [] }; // an empty notice: no question
@@ -351,7 +414,7 @@ test('a buzz that reached nobody is a warning, not a success: nobody has phone a
   buzzResult = { ok: true, sent: 0, queued: 0, failed: 0 };
   await tellSend();
   assert.equal(tell.result.items[1].ok, false);
-  assert.ok(/Buzz reached no phones: nobody in the .+ has phone alerts on yet/.test(tell.result.items[1].text), tell.result.items[1].text);
+  assert.ok(/Buzz reached no phones: nobody on .+ has phone alerts on yet/.test(tell.result.items[1].text), tell.result.items[1].text);
   assert.equal(state.ui.tool, 'tell');
   done();
 });

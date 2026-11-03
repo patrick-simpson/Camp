@@ -343,11 +343,13 @@ function awardTapKey(btn) {
   if (!Number.isInteger(pts) || pts < 0 || pts > (inVerse ? 5 : 3) || !competitionDows().includes(awardUi.dow)) return;
   if (!canScoreRound(team)) { showToast("Your own team's points are given by another director."); return; }
   const key = row.dataset.key;
+  const had = focusWas(btn); // the render below replaces this button: a keyboard user keeps their place (focusBack)
   if (inVerse) setVersePoints(team, awardUi.dow, pts);
   else if (row.dataset.meal && MEAL_CLEANUP_MEALS.includes(row.dataset.meal)) setCleanupPoints(team, awardUi.dow, row.dataset.meal, pts);
   else return;
   const fresh = document.querySelector('#takeover-award [data-key="' + key + '"] .aw-pt[data-pts="' + pts + '"]');
   awardPop(fresh);
+  focusBack(had, fresh);
 }
 
 function awardToggleTeam(btn) {
@@ -356,10 +358,13 @@ function awardToggleTeam(btn) {
   if (!canScoreRound(id)) { showToast("Your own team's points are given by another director."); return; }
   const d = bonusDraft;
   const i = d.teams.indexOf(id);
+  const had = focusWas(btn);
   if (i > -1) d.teams.splice(i, 1); else d.teams.push(id);
   awardClearError();
   awardPaint();
-  awardPop(document.querySelector('#award-quick-teams [data-team="' + id + '"]'));
+  const fresh = document.querySelector('#award-quick-teams [data-team="' + id + '"]');
+  awardPop(fresh);
+  focusBack(had, fresh);
 }
 
 function awardClearError() {
