@@ -7050,3 +7050,475 @@ function wireCampersScreen() {
   const add = setupEl('sheet-camper-add');
   if (add) add.addEventListener('input', (e) => { if (e.target && e.target.id === 'cma-lines') { const a = campersUi.add; if (a) a.error = ''; renderCamperAddSheet(); } });
 }
+
+// ── 16. Games (§11.14 — Step 21) ─────────────────────────────────────────────────────────────────────────────────────────
+// The week's games by schedule item (the Games screen, `#setup-games`) and ONE progressive sheet for a new game, an existing
+// one and the ⚡ quick game (`#sheet-game`). Hooks are prefixed `sg-` (the screen) and `gm-` (the sheet): see index.html's
+// templates and CLAUDE.md. The rules of this section, pinned by tests/games-screen.test.js:
+//   - the catalog is written ONLY through configEdit (settings.js / app.js: the config engine's field ops, one undo entry per
+//     change). There is no draft and no Save: a game is created whole the moment it has a name and a way of being scored, and from
+//     then on every field saves as it changes, ONE field at a time, onto the game as it is NOW (looked up by id when the write
+//     runs, so a colleague's edit to another field is never undone and a game deleted elsewhere is noticed, not resurrected);
+//   - a new game's id is makeId's (the name's slug + a random tail) over takenGameIds (every per-game map, brackets4 included), so
+//     two directors adding "Rain bowling" at once make two games and a new game never meets a leftover bracket, clock or result;
+//   - the week's data is read through the accessors (allGames, competitionDays, gamesForBlock, unscheduledGames, planForDow);
+//   - a game's place is `blockId` (+ `ord`) once the schedule is edited here, with `dayId` and `session` DERIVED from it exactly as
+//     the rain plan's move does (setup-sync.js rainSessionFor, SETUP_GAME_ORD_STEP); with the original schedule only `dayId` +
+//     `session` are read, and the screen groups by session.
+
+const GM_FORMAT_WORDS = { tournament: 'Bracket', tally: 'Scores', placement: 'Podium' };
+// The fields that belong to one way of scoring: a format change drops the other formats' (the classic editor's own rule).
+const GM_TALLY_ONLY = ['unit', 'counterSteps', 'counterStepLabels', 'counterAllowNegative', 'lowerWins', 'timeInput', 'liveRankings'];
+const GM_BRACKET_ONLY = ['liveTracker', 'ladderScoring', 'roundOneMatchups', 'bracketSeed'];
+const GM_SEEDS = ['standings', 'pick', 'fixed'];
+const GM_NBSP = ' ';
+
+// ── the week's days and games, by weekday ──
+
+function gmDow(dk) { return SETUP_DK.indexOf(dk); }
+// The competition days (config.days) that fall on this weekday (normally one).
+function gmDayRecs(dk) {
+  const dow = gmDow(dk);
+  return dow < 0 ? [] : competitionDays().filter((d) => d && d.dow === dow);
+}
+function gmIsGamesDay(dk) { return gmDayRecs(dk).length > 0; }
+// The weekday key a competition day id falls on ('' for a day with no weekday).
+function gmDkOfDayId(dayId) {
+  const d = dayById(dayId);
+  return d && Number.isInteger(d.dow) && d.dow >= 0 && d.dow <= 6 ? SETUP_DK[d.dow] : '';
+}
+function gmGamesOnDay(dk) {
+  const ids = gmDayRecs(dk).map((d) => d.id);
+  return allGames().filter((g) => g && ids.indexOf(g.dayId) !== -1);
+}
+// The games linked to one schedule item on this weekday, in the order everyone sees them (ord, ties by catalog position:
+// gamesForBlock's own order), without `exceptId`.
+function gmGamesOnBlock(dk, bid, exceptId) {
+  const ids = gmDayRecs(dk).map((d) => d.id);
+  return allGames().map((g, i) => ({ g, i }))
+    .filter((x) => x.g && x.g.blockId === bid && ids.indexOf(x.g.dayId) !== -1 && x.g.id !== exceptId)
+    .sort((a, b) => ((Number.isFinite(a.g.ord) ? a.g.ord : 1e9) - (Number.isFinite(b.g.ord) ? b.g.ord : 1e9)) || (a.i - b.i))
+    .map((x) => x.g);
+}
+// One item of that weekday, as the schedule's rich block (null for an item that isn't there any more).
+function gmBlock(dk, bid) {
+  const dow = gmDow(dk);
+  return dow < 0 || !bid ? null : (planForDow(dow).find((b) => b.id === bid) || null);
+}
+function gmSessions() {
+  const s = state.config && state.config.sessions;
+  return Array.isArray(s) && s.length ? s.filter((x) => typeof x === 'string' && x) : ['Morning', 'Evening'];
+}
+function gmIsTba(g) { return /^tba$/i.test(String(g && g.location || '').trim()); }
+
+// A game's row: the format in a word, then where, then "double points". A place that still says TBA is flagged.
+function gmGameSub(g) {
+  const where = String(g.location || '').trim();
+  const bits = [GM_FORMAT_WORDS[g.format] || 'No scoring yet'];
+  if (gmIsTba(g)) bits.push('where: TBA'); else if (where) bits.push(where);
+  if (g.messtival === true) bits.push('double points');
+  return { text: bits.join(' · '), warn: gmIsTba(g) };
+}
+
+// ── the day: what the screen draws ──
+// { dk, dow, isDay, live, games, groups: [{ key, bid, block, session, time, now, games }], loose, n, warn, today, lede, headline, note }
+// With the schedule edited here a group is a schedule item (one that holds games, or a Games item to put some under); with the
+// original schedule a group is a session ("Morning games"), because the printed week's blockId links are not read. `loose`
+// is the games on no item (unscheduledGames: in either mode the same list the rest of the app uses).
+function gmDayModel(dk) {
+  const dow = gmDow(dk);
+  const recs = gmDayRecs(dk);
+  const isDay = recs.length > 0;
+  const live = typeof scheduleIsShared === 'function' && scheduleIsShared();
+  const games = isDay ? gmGamesOnDay(dk) : [];
+  const wk = typeof campWeek === 'function' ? campWeek() : { phase: 'unset' };
+  const today = dk === SETUP_DK[campNow().dow] && wk.phase === 'during';
+  const nowMin = campNow().minutes;
+  let groups = [];
+  let loose = [];
+  if (isDay && live) {
+    scheduleForDow(dow).forEach((legacy) => {
+      const rich = typeof setupRichOf === 'function' ? setupRichOf(legacy) : null;
+      if (!rich) return;
+      const here = gamesForBlock(dow, legacy);
+      if (!here.length && rich.type !== 'games') return;
+      groups.push({
+        key: 'b-' + rich.id, bid: rich.id, block: rich, session: '', games: here.slice(),
+        time: rich.noTime ? '' : setupRange(rich.start, rich.end),
+        now: today && !rich.noTime && rich.start <= nowMin && nowMin < rich.end,
+      });
+    });
+    loose = unscheduledGames(dow).slice();
+  } else if (isDay) {
+    const sessions = gmSessions();
+    games.forEach((g) => { if (g.session && sessions.indexOf(g.session) === -1) sessions.push(g.session); });
+    groups = sessions.map((s) => ({ key: 's-' + s, bid: '', block: null, session: s, time: '', now: false, games: games.filter((g) => g.session === s) }));
+    loose = games.filter((g) => !g.session);
+  }
+  const withGames = groups.filter((x) => x.games.length).length;
+  const n = games.length;
+  const warn = isDay && (n === 0 || loose.length > 0 || games.some(gmIsTba));
+  const dayWord = SETUP_DAY_WORDS[dk];
+  let lede;
+  if (!isDay) lede = 'Not a games day';
+  else if (!n) lede = (today ? 'Today · ' : '') + 'No games yet';
+  else {
+    const bits = [hubPlural(n, 'game', 'games').replace(' ', GM_NBSP)];
+    if (live && withGames) bits[0] += ' on ' + hubPlural(withGames, 'schedule item', 'schedule items').replace(' ', GM_NBSP);
+    if (loose.length) bits.push((loose.length === 1 ? '1' + GM_NBSP + 'isn’t' : loose.length + GM_NBSP + 'aren’t') + ' on the schedule');
+    lede = (today ? 'Today · ' : '') + bits.join(' · ');
+  }
+  return { dk, dow, isDay, live, games, groups, loose, n, warn, today, lede, headline: dayWord, note: isDay ? String(recs[0].note || '').trim() : '' };
+}
+
+// The seven day chips: the count under the name (empty for a day that isn't a games day), the gold "!" and the words a screen
+// reader hears — the count and the mark are drawn, so the label says them.
+function gmStripModel() {
+  return SETUP_DK.map((dk) => {
+    const m = gmDayModel(dk);
+    const word = SETUP_DAY_WORDS[dk];
+    const label = m.isDay
+      ? word + (m.today ? ', today' : '') + ', ' + (m.n ? hubPlural(m.n, 'game', 'games') : 'no games yet') + (m.warn ? ', needs a look' : '')
+      : word + (m.today ? ', today' : '') + ', not a games day';
+    return { dk, off: !m.isDay, n: m.isDay ? String(m.n) : '', warn: m.warn, today: m.today, label };
+  });
+}
+
+// ── where a game goes ──
+// The place a NEW game (or one being moved) takes on a weekday: with the schedule edited here and an item named, its `blockId`
+// after what the item already holds (`ord`, in SETUP_GAME_ORD_STEPs) and the session that item's time belongs to (the rain
+// plan's rainSessionFor); else only the day and a session. null for a weekday that isn't a games day (the caller makes it one).
+function gmPlacement(dk, bid, hint) {
+  const recs = gmDayRecs(dk);
+  const rec = (hint && hint.dayId && recs.find((d) => d.id === hint.dayId)) || recs[0];
+  if (!rec) return null;
+  const block = typeof scheduleIsShared === 'function' && scheduleIsShared() && bid ? gmBlock(dk, bid) : null;
+  if (block) {
+    const top = gmGamesOnBlock(dk, bid, hint && hint.exceptId).reduce((o, x) => Math.max(o, Number.isFinite(x.ord) ? x.ord : 0), 0);
+    return { dayId: rec.id, session: rainSessionFor(state.config, block), blockId: bid, ord: top + SETUP_GAME_ORD_STEP };
+  }
+  const sessions = gmSessions();
+  const session = hint && hint.session && sessions.indexOf(hint.session) !== -1 ? hint.session : (hint && hint.minutes != null ? rainSessionFor(state.config, { start: hint.minutes }) : sessions[0]);
+  return { dayId: rec.id, session };
+}
+
+// Where the last game on this item (else on this day) was played: what a new game's Where starts as (never a TBA).
+function gmDefaultWhere(dk, bid) {
+  const usable = (g) => String(g.location || '').trim() && !gmIsTba(g);
+  const there = (bid ? gmGamesOnBlock(dk, bid) : []).filter(usable);
+  const day = gmGamesOnDay(dk).filter(usable);
+  const last = there[there.length - 1] || day[day.length - 1];
+  return last ? String(last.location).trim() : '';
+}
+
+// ── creating a game ──
+// One config edit that adds the whole record. The id is makeId's over takenGameIds; a game with no item named on a schedule
+// edited here is offered A2's natural item (setupAttachNewGame), as every new game is. `form`: { name, emoji, location, format,
+// messtival?, bracketSeed? }. Returns { ok, id } or { ok: false, reason: 'locked' | 'name' | 'format' | 'day' }.
+function gmCreateGame(form, place) {
+  if (configLocked()) return { ok: false, reason: 'locked' };
+  const name = String(form && form.name || '').trim().slice(0, 60);
+  if (!name) return { ok: false, reason: 'name' };
+  if (!GM_FORMAT_WORDS[form.format]) return { ok: false, reason: 'format' };
+  if (!place || !place.dayId) return { ok: false, reason: 'day' };
+  const emoji = String(form.emoji || '').trim();
+  const rec = {
+    id: null, name, emoji: emoji && safeEmoji(emoji, '') === emoji ? emoji : '🏕️',
+    dayId: place.dayId, session: place.session || gmSessions()[0], location: String(form.location || '').trim().slice(0, 60),
+    format: form.format, headline: '', rules: [],
+  };
+  if (place.blockId) { rec.blockId = place.blockId; rec.ord = place.ord; }
+  if (form.messtival === true) rec.messtival = true;
+  if (form.format === 'tournament') rec.bracketSeed = GM_SEEDS.indexOf(form.bracketSeed) !== -1 ? form.bracketSeed : 'standings';
+  let id = null;
+  const ok = configEdit('Added “' + name + '”', () => {
+    id = makeId(name, takenGameIds());
+    rec.id = id;
+    state.config.games.push(rec);
+    if (!rec.blockId && typeof setupAttachNewGame === 'function') setupAttachNewGame(state.config, rec);
+  });
+  if (ok === false) return { ok: false, reason: 'locked' };
+  // The id is new to every per-game map on this device (takenGameIds); make sure of it anyway: a leftover is cleared, never inherited.
+  clearGameRecords(id);
+  saveState();
+  return { ok: true, id };
+}
+
+// ── changing one game ──
+function gmCanon(v) { const c = syncCanon(v); return JSON.stringify(c === undefined ? null : c); }
+
+// Write some fields of one game (`patch`: field → value, `undefined` removes it), as ONE config edit, onto the game as it is
+// now. Returns { ok: true, changed } | { ok: false, reason: 'locked' | 'gone' }.
+function gmCommit(gid, patch, label) {
+  if (configLocked()) return { ok: false, reason: 'locked' };
+  const g = gameById(gid);
+  if (!g) return { ok: false, reason: 'gone' };
+  const fields = Object.keys(patch).filter((f) => f !== 'id' && gmCanon(g[f]) !== gmCanon(patch[f]));
+  if (!fields.length) return { ok: true, changed: false };
+  const was = g.name;
+  const ok = configEdit(label === undefined ? 'Edited “' + was + '”' : label, () => {
+    const x = gameById(gid); // by id, when the write runs (P10)
+    if (!x) return false;
+    fields.forEach((f) => { if (patch[f] === undefined || patch[f] === null) delete x[f]; else x[f] = JSON.parse(JSON.stringify(patch[f])); });
+    return undefined;
+  });
+  if (ok === false) return { ok: false, reason: 'gone' };
+  return { ok: true, changed: true };
+}
+
+function gmRename(gid, name) {
+  const g = gameById(gid);
+  const v = String(name || '').trim().slice(0, 60);
+  if (!g) return { ok: false, reason: 'gone' };
+  if (!v) return { ok: false, reason: 'name' };
+  return gmCommit(gid, { name: v }, v === g.name ? undefined : 'Renamed “' + g.name + '”');
+}
+
+// The words for what a format change would clear, "the saved result, the bracket in progress and the live match".
+function gmGoingWords(gid) {
+  const list = gameRecordLabels(gid);
+  return list.length > 1 ? list.slice(0, -1).join(', ') + ' and ' + list[list.length - 1] : (list[0] || '');
+}
+
+// How is it scored? On a game with records under its old format the caller asks first (`confirmed`); the records go with the old
+// format's fields, and the change is then not undoable (an Undo that brought the format back would not bring the result back).
+function gmChangeFormat(gid, format, opts) {
+  const g = gameById(gid);
+  if (configLocked()) return { ok: false, reason: 'locked' };
+  if (!g) return { ok: false, reason: 'gone' };
+  if (!GM_FORMAT_WORDS[format]) return { ok: false, reason: 'format' };
+  if (g.format === format) return { ok: true, changed: false };
+  const going = gameRecordLabels(gid);
+  if (going.length && !(opts && opts.confirmed)) return { ok: false, reason: 'confirm', going: gmGoingWords(gid) };
+  const patch = { format };
+  (format === 'tally' ? GM_BRACKET_ONLY : format === 'tournament' ? GM_TALLY_ONLY : GM_TALLY_ONLY.concat(GM_BRACKET_ONLY)).forEach((f) => { patch[f] = undefined; });
+  if (format === 'tournament') patch.bracketSeed = 'standings';
+  if (going.length) { clearGameRecords(gid); saveState(); }
+  return gmCommit(gid, patch, going.length ? null : 'Changed how “' + g.name + '” is scored');
+}
+
+// ── Matchups (bracket games) ──
+// The saved choice: an explicit bracketSeed, else what the game already does (fixed pairs, or the free pick the wizard has
+// always offered). A game on `fixed` with no complete set of pairs reads as `pick`.
+function gmSeedOf(g) {
+  if (GM_SEEDS.indexOf(g && g.bracketSeed) !== -1 && (g.bracketSeed !== 'fixed' || gmPairsValid(g.roundOneMatchups))) return g.bracketSeed;
+  return gmPairsValid(g && g.roundOneMatchups) ? 'fixed' : 'pick';
+}
+// Pairs that cover every team exactly once, a pair per match.
+function gmPairsValid(pairs) {
+  const ids = teamIds();
+  if (!Array.isArray(pairs) || ids.length < 2 || pairs.length !== ids.length / 2) return false;
+  const seen = {};
+  const ok = pairs.every((p) => Array.isArray(p) && p.length === 2 && p.every((t) => ids.indexOf(t) !== -1 && !seen[t] && (seen[t] = true)));
+  return ok;
+}
+// The board: teams in the order they were tapped → matches [[a, b], …] (a missing slot is null).
+function gmPairsBoard(order) {
+  const n = teamIds().length;
+  const out = [];
+  for (let m = 0; m < n / 2; m++) out.push([order[m * 2] || null, order[m * 2 + 1] || null]);
+  return out;
+}
+// One tap on a team key: a placed team comes out (the ones after it close up), a free one is placed next; with two teams left
+// they fill the last match themselves (in the roster's order). Returns the new order.
+function gmPairsTap(order, tid) {
+  const ids = teamIds();
+  if (ids.indexOf(tid) === -1) return order.slice();
+  if (order.indexOf(tid) !== -1) return order.filter((t) => t !== tid);
+  const next = order.concat([tid]);
+  const free = ids.filter((t) => next.indexOf(t) === -1);
+  return free.length === 2 && ids.length > 2 ? next.concat(free) : next;
+}
+function gmPairsFromOrder(order) {
+  const b = gmPairsBoard(order);
+  return b.every((p) => p[0] && p[1]) ? b.map((p) => p.slice()) : null;
+}
+// Save the Matchups choice. standings / pick drop any fixed pairs; fixed needs the whole board (a partly filled one is saved as
+// "Pick them when you start", which is what the game will do).
+function gmSetSeed(gid, mode, order) {
+  if (GM_SEEDS.indexOf(mode) === -1) return { ok: false, reason: 'mode' };
+  const pairs = mode === 'fixed' ? gmPairsFromOrder(order || []) : null;
+  const eff = mode === 'fixed' && !pairs ? 'pick' : mode;
+  return gmCommit(gid, { bracketSeed: eff, roundOneMatchups: pairs || undefined }, 'Matchups for “' + ((gameById(gid) || {}).name || 'this game') + '”');
+}
+
+// ── order inside an item ──
+// Earlier / Later: the game trades places with its neighbour on the same item. Every game of the item is renumbered 10, 20, 30…
+// in the new order (only the ones whose `ord` changes are written), so ties and missing numbers never leave it ambiguous.
+function gmOrderGame(gid, dir) {
+  if (configLocked()) return { ok: false, reason: 'locked' };
+  const g = gameById(gid);
+  if (!g) return { ok: false, reason: 'gone' };
+  const dk = gmDkOfDayId(g.dayId);
+  if (!dk || typeof g.blockId !== 'string' || !(typeof scheduleIsShared === 'function' && scheduleIsShared())) return { ok: false, reason: 'no-item' };
+  const list = gmGamesOnBlock(dk, g.blockId);
+  const i = list.findIndex((x) => x.id === gid);
+  const j = i + (dir < 0 ? -1 : 1);
+  if (i < 0 || j < 0 || j >= list.length) return { ok: false, reason: 'edge' };
+  const next = list.slice();
+  next[i] = list[j];
+  next[j] = list[i];
+  const ords = {};
+  next.forEach((x, k) => { ords[x.id] = (k + 1) * SETUP_GAME_ORD_STEP; });
+  const ok = configEdit('Moved “' + g.name + '” ' + (dir < 0 ? 'earlier' : 'later'), () => {
+    next.forEach((x) => { const y = gameById(x.id); if (y && y.ord !== ords[x.id]) y.ord = ords[x.id]; });
+  });
+  return { ok: ok !== false };
+}
+
+// ── When (the move picker) ──
+// A game moves to an item (with the schedule edited here), or to a session on a day (the original schedule), or off the
+// schedule. Its day follows the item's weekday, its session the item's time, its order goes after what the item holds. Onto
+// an item that has double-points games the caller asks first (`opts.double` 'yes' | 'no'). A weekday that isn't a games day
+// is made one first by the caller (gmMakeDay). `to`: { dk, bid } | { dk, session } | { none: true }.
+function gmMoveGame(gid, to, opts) {
+  if (configLocked()) return { ok: false, reason: 'locked' };
+  const g = gameById(gid);
+  if (!g) return { ok: false, reason: 'gone' };
+  if (to && to.none) {
+    return gmCommit(gid, { blockId: undefined, ord: undefined }, 'Took “' + g.name + '” off the schedule');
+  }
+  const place = gmPlacement(to.dk, to.bid, { dayId: g.dayId, exceptId: gid, session: to.session });
+  if (!place) return { ok: false, reason: 'day' };
+  // An item that isn't on that day any more (a colleague removed it) must not quietly turn into "not on the schedule".
+  if (to.bid && !place.blockId) return { ok: false, reason: 'item' };
+  const patch = { dayId: place.dayId, session: place.session, blockId: place.blockId, ord: place.blockId ? place.ord : undefined };
+  if (place.blockId) {
+    const doubles = gmGamesOnBlock(to.dk, to.bid, gid).some((x) => x.messtival === true) && g.messtival !== true;
+    if (doubles && !(opts && (opts.double === 'yes' || opts.double === 'no'))) return { ok: false, reason: 'double' };
+    if (doubles && opts.double === 'yes') patch.messtival = true;
+  }
+  const block = place.blockId ? gmBlock(to.dk, to.bid) : null;
+  const where = block ? (block.base || block.label) : SETUP_DAY_WORDS[to.dk] + ' ' + (place.session || '').toLowerCase();
+  return gmCommit(gid, patch, 'Moved “' + g.name + '” to ' + where);
+}
+
+// ── make a copy, delete ──
+function gmDuplicate(gid) {
+  if (configLocked()) return { ok: false, reason: 'locked' };
+  const orig = gameById(gid);
+  if (!orig) return { ok: false, reason: 'gone' };
+  const copy = JSON.parse(JSON.stringify(orig));
+  copy.name = (orig.name + ' (copy)').slice(0, 60);
+  delete copy.prompts; // only one drawing-prompts game is supported per week
+  let id = null;
+  const ok = configEdit('Made a copy of “' + orig.name + '”', () => {
+    const idx = allGames().findIndex((x) => x.id === gid);
+    id = makeId(copy.name, takenGameIds());
+    copy.id = id;
+    if (idx > -1) state.config.games.splice(idx + 1, 0, copy); else state.config.games.push(copy);
+  });
+  if (ok === false) return { ok: false, reason: 'locked' };
+  clearGameRecords(id);
+  saveState();
+  return { ok: true, id };
+}
+
+// Delete: asks first (what goes with it, in words), takes a `pre-delete` restore point when it has a saved result, then removes
+// the game and everything kept under its id (GAME_RECORD_MAPS). With records the delete is not undoable.
+async function gmDeleteGame(gid) {
+  if (configLocked()) return { ok: false, reason: 'locked' };
+  const g = gameById(gid);
+  if (!g) return { ok: false, reason: 'gone' };
+  const going = gmGoingWords(gid);
+  const hasResult = !!(state.results && state.results[gid]);
+  const day = dayById(g.dayId);
+  const body = [going ? 'This also removes ' + going + '. It can’t be undone.' : 'It comes off ' + (day ? day.name + '’s' : 'the') + ' list of games. “Undo” puts it back.'];
+  const go = await askDialog({
+    title: 'Delete “' + g.name + '”?', body,
+    actions: [{ label: 'Keep it', value: 'no', cancel: true }, { label: 'Delete it', value: 'go', kind: 'danger' }],
+  });
+  if (go !== 'go') return { ok: false, reason: 'cancelled' };
+  if (!gameById(gid)) return { ok: true, gone: true };
+  if (hasResult && typeof schedSafetyPoint === 'function' && !(await schedSafetyPoint('Before deleting ' + g.name))) return { ok: false, reason: 'safety' };
+  const hadRecords = gameRecordLabels(gid).length > 0;
+  configEdit(hadRecords ? null : 'Deleted “' + g.name + '”', () => {
+    const idx = allGames().findIndex((x) => x.id === gid);
+    if (idx > -1) state.config.games.splice(idx, 1);
+  });
+  clearGameRecords(gid);
+  if (state.ui.gameId === gid) state.ui.gameId = null;
+  saveState();
+  return { ok: true };
+}
+
+// ── days with games (ux-R14: moved here from Camp week) ──
+// Make a weekday a games day: one competition day at its place in the week (the order the Games tab lists them). An empty
+// games day is harmless; Take it off again from its ⋯.
+function gmMakeDay(dk) {
+  if (configLocked()) return { ok: false, reason: 'locked' };
+  const dow = gmDow(dk);
+  if (dow < 0) return { ok: false, reason: 'day' };
+  if (gmIsGamesDay(dk)) return { ok: true, changed: false };
+  let id = null;
+  const ok = configEdit('Made ' + SETUP_DAY_WORDS[dk] + ' a games day', () => {
+    id = 'd-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    const days = state.config.days;
+    const at = days.findIndex((d) => d && Number.isInteger(d.dow) && d.dow > dow);
+    const rec = { id, name: SETUP_DAY_WORDS[dk], dow, note: '' };
+    if (at === -1) days.push(rec); else days.splice(at, 0, rec);
+  });
+  return ok === false ? { ok: false, reason: 'locked' } : { ok: true, changed: true, id };
+}
+
+// The day's note (the banner above its games on the Games tab).
+function gmSetDayNote(dk, text) {
+  if (configLocked()) return { ok: false, reason: 'locked' };
+  const rec = gmDayRecs(dk)[0];
+  if (!rec) return { ok: false, reason: 'day' };
+  const v = String(text || '').trim().slice(0, 200);
+  if (v === String(rec.note || '').trim()) return { ok: true, changed: false };
+  const id = rec.id;
+  const ok = configEdit('Edited the note for ' + SETUP_DAY_WORDS[dk], () => { const d = dayById(id); if (!d) return false; d.note = v; return undefined; });
+  return ok === false ? { ok: false, reason: 'gone' } : { ok: true, changed: true };
+}
+
+// Take a weekday off the games days. A day with games asks where they go (every other games day is a choice; they never just
+// vanish): the games move to that day, off any item they were on (they get their natural one there, as a new game does).
+// `moveTo`: the weekday key the games go to ('' when the day holds none).
+function gmTakeDayOff(dk, moveTo) {
+  if (configLocked()) return { ok: false, reason: 'locked' };
+  const recs = gmDayRecs(dk);
+  if (!recs.length) return { ok: true, changed: false };
+  const ids = recs.map((d) => d.id);
+  const games = gmGamesOnDay(dk);
+  const target = moveTo ? gmDayRecs(moveTo)[0] : null;
+  if (games.length && !target) return { ok: false, reason: 'where' };
+  const moved = games.map((g) => g.id);
+  const ok = configEdit('Took ' + SETUP_DAY_WORDS[dk] + ' off the games days', () => {
+    moved.forEach((id) => {
+      const g = gameById(id);
+      if (!g) return;
+      g.dayId = target.id;
+      delete g.blockId;
+      delete g.ord;
+      if (typeof setupAttachNewGame === 'function') setupAttachNewGame(state.config, g);
+    });
+    const list = state.config.days;
+    for (let i = list.length - 1; i >= 0; i--) if (list[i] && ids.indexOf(list[i].id) !== -1) list.splice(i, 1);
+  });
+  if (ok === false) return { ok: false, reason: 'locked' };
+  if (ids.indexOf(state.ui.day) !== -1) state.ui.day = defaultDay(state.config);
+  saveState();
+  return { ok: true, changed: true, moved: moved.length };
+}
+
+// ── the ⚡ quick game ──
+// Where a quick game lands: the day being looked at (the Games tab's day, else today when it is a games day, else the first), and
+// on that day the Games item under way now or the next one today — on another day the first Games item — else off the
+// schedule (the printed week: its session by the clock). The old guess (`>= 720 ? 'Evening'`) put senior's afternoons wrong.
+function gmQuickTarget() {
+  const now = campNow();
+  const viewed = dayById(state.ui && state.ui.day);
+  let dk = viewed && Number.isInteger(viewed.dow) ? SETUP_DK[viewed.dow] : '';
+  if (!dk || !gmIsGamesDay(dk)) dk = gmIsGamesDay(SETUP_DK[now.dow]) ? SETUP_DK[now.dow] : (competitionDays().filter((d) => Number.isInteger(d.dow)).map((d) => SETUP_DK[d.dow])[0] || '');
+  if (!dk) return null;
+  const isToday = gmDow(dk) === now.dow;
+  let bid = '';
+  if (typeof scheduleIsShared === 'function' && scheduleIsShared()) {
+    const items = planForDow(gmDow(dk)).filter((b) => b.type === 'games' && !b.noTime);
+    const hit = isToday ? (items.find((b) => b.start <= now.minutes && now.minutes < b.end) || items.find((b) => b.start > now.minutes)) : items[0];
+    bid = hit ? hit.id : '';
+  }
+  return { dk, bid, today: isToday, minutes: now.minutes };
+}

@@ -8,7 +8,8 @@ const { makeFakeRtdb } = nodeRequire('./fake-rtdb.js');
 const TS_INDEX = readFixture('../index.html');
 const TS_CSS = readFixture('../styles.css');
 const TS_UI = readFixture('../setup-ui.js');
-const TS_TEAMS_SRC = TS_UI.slice(TS_UI.indexOf('// ── 13. Teams (§11.7'));
+// Section 13 only: it ends where People (14) begins (later sections have their own pins and write the catalog, not the roster).
+const TS_TEAMS_SRC = TS_UI.slice(TS_UI.indexOf('// ── 13. Teams (§11.7'), TS_UI.indexOf('// ── 14. People'));
 
 const tsPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ';
 const tsRatio = (a, b) => {

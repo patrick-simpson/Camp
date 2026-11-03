@@ -127,6 +127,7 @@ test('saveGameDraft: a new game gets a slug id with a random tail that dodges ex
       crudSetup();
       const dice = [0.5, 0.25]; // 0.5 -> 'i000', 0.25 -> '9000'
       Math.random = () => (dice.length ? dice.shift() : realRandom());
+      state[m.key] = state[m.key] || {}; // brackets4 does not exist until Step 22 syncs it
       state[m.key]['sock-hop-i000'] = { medals: { gold: 't0', silver: 't1', bronze: 't2' } };
       state.ui.editGameId = 'new';
       ensureGameDraft();

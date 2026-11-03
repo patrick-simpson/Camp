@@ -997,6 +997,9 @@ function validateGameDraft(draft) {
 const GAME_RECORD_MAPS = [
   { key: 'results', label: 'the saved result' },
   { key: 'brackets', label: 'the bracket in progress' },
+  // The four-team bracket's node (Step 22 syncs it; until then it never exists, and every reader here tolerates a missing map).
+  // A game created under a reused id must never inherit one, and a delete or a format change clears it with the rest.
+  { key: 'brackets4', label: 'the bracket in progress' },
   { key: 'drafts', label: 'the score entry in progress' },
   { key: 'live', label: 'the live match' },
   { key: 'clocks', label: 'the game clock' },
@@ -1013,7 +1016,8 @@ function takenGameIds() {
 
 // Labels of whatever is recorded for this game right now (empty ⇒ nothing).
 function gameRecordLabels(gameId) {
-  return GAME_RECORD_MAPS.filter((m) => state[m.key] && state[m.key][gameId]).map((m) => m.label);
+  // One word per KIND of record: a game can hold a six-team and a four-team bracket label at once, and the question says it once.
+  return GAME_RECORD_MAPS.filter((m) => state[m.key] && state[m.key][gameId]).map((m) => m.label).filter((l, i, a) => a.indexOf(l) === i);
 }
 
 function clearGameRecords(gameId) {
