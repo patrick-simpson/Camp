@@ -875,6 +875,10 @@ body.builder-open .main-wrap {
   width: 9px;
   height: 9px;
   flex: none;
+  /* On the FIRST line of the words (the body's 6px padding, then half a line),
+     not centred on a strip that large text has wrapped to three lines. */
+  align-self: flex-start;
+  margin-top: calc(6px + (1.125rem - 9px) / 2);
   border-radius: 50%;
   background: currentColor;
   box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 26%, transparent);
@@ -882,20 +886,34 @@ body.builder-open .main-wrap {
 }
 /* "Live on the big screen · 3 of 6 shown": the count is patched alone and
    brings its own separator, so an empty count (intro) leaves no stray dot. At
-   large text it wraps under the words instead of pushing the chevron off. */
+   large text it wraps under the words instead of pushing the chevron off, and
+   its separator must not start that line: every part hangs its separator in a
+   1.1em slot left of itself, the body is pulled 1.1em left and clips that strip,
+   so a separator at the start of a line is cut away and one mid-line shows. */
 .reveal-strip-body {
   display: flex;
   flex-wrap: wrap;
   min-width: 0;
+  margin-left: -1.1em;
   padding: 6px 0;
+  clip-path: inset(0 0 0 1.1em);
+}
+.reveal-strip-body > * {
+  padding-left: 1.1em;
 }
 .reveal-strip-count {
   font-weight: 650;
 }
-.reveal-strip-count:not(:empty)::before {
+.reveal-strip-count:empty {
+  display: none;
+}
+.reveal-strip-count::before {
   content: '·';
-  margin: 0 .45em;
+  display: inline-block;
+  width: 1.1em;
+  margin-left: -1.1em;
   font-weight: 800;
+  text-align: center;
 }
 .reveal-strip-chev {
   width: 20px;
@@ -1051,6 +1069,14 @@ body.takeover-open jelly-toaster[position="bottom"] {
 }
 body:has(.takeover:not([hidden]) > .tk-dock:not([hidden])) jelly-toaster[position="bottom"] {
   bottom: calc(env(safe-area-inset-bottom, 0px) + 104px);
+}
+/* The reveal remote's dock is taller than a game's (a 92px button on its 7px
+   edge, Back stacked over it at large text), and a refused tap's toast is about
+   what the gold button says: it must never cover it, or Back. reveal-ui.js
+   measures the dock (home-indicator inset included) into --reveal-dock-h; the
+   fallback is the dock's height at 100% text. */
+body:has(#takeover-reveal:not([hidden])) jelly-toaster[position="bottom"] {
+  bottom: calc(var(--reveal-dock-h, 132px) + var(--s-3));
 }
 
 /* On the Chat tab the composer sits on top of the tab bar: toasts clear both,
@@ -2175,9 +2201,11 @@ jelly-switch:not([checked])::part(track) {
   position: sticky;
   top: var(--hdr-live, calc(env(safe-area-inset-top, 0px) + var(--header-h)));
   z-index: 30;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  /* dot · words · time: the words wrap in their own column, so at large text the
+     dot never sits alone on a line above them. */
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr) auto;
+  align-items: baseline;
   gap: 2px var(--s-2);
   min-height: var(--strip-h);
   margin: calc(-1 * var(--s-1)) -1rem 0;
@@ -2189,6 +2217,8 @@ jelly-switch:not([checked])::part(track) {
   width: 10px;
   height: 10px;
   flex: none;
+  align-self: start; /* level with the words' first line (0.9375rem at 1.2) */
+  margin-top: calc((1.125rem - 10px) / 2);
   border-radius: 50%;
   background: currentColor;
   box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 26%, transparent);
@@ -2200,9 +2230,24 @@ html:not(.calm-motion) .rv-strip-dot {
   font: 800 0.9375rem/1.2 var(--font-ui);
 }
 .rv-strip-at {
-  margin-left: auto;
+  text-align: right;
   font: 700 0.875rem/1.2 var(--font-ui);
   font-variant-numeric: tabular-nums;
+}
+/* Large text (the mirror under 18rem of its own text across: from ~115% on a 360
+   phone, ~125% on a 390): "Started 7:31" goes under the words, which keep the
+   width beside the dot instead of a one-word column. */
+#now-reveal {
+  container: now-reveal / inline-size;
+}
+@container now-reveal (max-width: 18rem) {
+  .rv-strip {
+    grid-template-columns: 10px minmax(0, 1fr);
+  }
+  .rv-strip-at {
+    grid-column: 2;
+    text-align: left;
+  }
 }
 
 /* A reveal section's head: the title, and the count on the same baseline. */
@@ -2484,17 +2529,18 @@ html:not(.calm-motion) .rv-strip-dot {
 }
 
 /* Larger text (§8.9): the list is a size container, and the thresholds are in
-   rem, so they move with the reader's text size, not the phone. From about 120%
-   the points join the name's column ("22 points" under the counts) so the name
-   keeps its width; from about 170% the place sits above the team too. The
-   compact remote ladder keeps one line (its names ellipsise). Thresholds:
-   19rem is 304px at 100% (under the 325px list of a 360 phone) and 395px at
-   130% (over the 355px list of a 390 phone); 13rem is 270px at 130% and 416px at
-   200%. */
+   rem, so they move with the reader's text size, not the phone. Points are the
+   scanning axis of a scoreboard (05, 05b), so they keep the right-hand column
+   as long as they can: at 130% the counts wrap at their " · " boundaries and the
+   points stay right. From about 150% (a 360 phone) / 160% (a 390) the points
+   join the name's column ("22 points" under the counts) so the name keeps its
+   width; from about 180% the place sits above the team too. Thresholds: 14rem
+   is 291px at 130% (under the 325px list of a 360 phone) and 358px at 160% (over
+   the 355px list of a 390 phone); 11.5rem is 239px at 130% and 368px at 200%. */
 .rv-list:is([data-kind="mirror"], [data-kind="grid"]) {
   container: rv-list / inline-size;
 }
-@container rv-list (max-width: 19rem) {
+@container rv-list (max-width: 14rem) {
   .rv-team {
     grid-template-columns: 36px minmax(0, 1fr);
     align-items: start; /* the mark stays beside the name, not mid-row */
@@ -2517,7 +2563,7 @@ html:not(.calm-motion) .rv-strip-dot {
     margin: 0;
   }
 }
-@container rv-list (max-width: 13rem) {
+@container rv-list (max-width: 11.5rem) {
   .rv-row,
   .rv-list[data-kind="grid"] .rv-row {
     grid-template-columns: minmax(0, 1fr);
@@ -2851,6 +2897,32 @@ html:not(.calm-motion) .rm-chip[data-tone="live"] i {
   -webkit-user-select: all;
   user-select: all;
 }
+/* The page and camp move to the next line WHOLE after the host's slash (the
+   <wbr>): breaking at "current-" left a director copying it by hand unsure the
+   hyphen was part of it. An inline-block only breaks inside itself when even a
+   line of its own is too narrow for it. */
+.rm-url-host,
+#reveal-screen-path {
+  display: inline-block;
+}
+/* Large text (~130% and up): Copy goes under the words, so the address gets the
+   row's whole width and the host and the page each keep a line of their own. */
+.rm-checks {
+  container: rm-checks / inline-size;
+}
+@container rm-checks (max-width: 18rem) {
+  .rm-check-screen {
+    grid-template-columns: 26px minmax(0, 1fr);
+  }
+  .rm-check-screen .rm-copy {
+    grid-column: 2;
+    justify-self: start;
+    flex-direction: row;
+    gap: 6px;
+    min-height: var(--target);
+    padding: 4px 14px;
+  }
+}
 /* A small chunky button: a mini .btn, icon over the word. */
 .rm-copy {
   display: inline-flex;
@@ -2907,7 +2979,12 @@ html:not(.calm-motion) .rm-chip[data-tone="live"] i {
   color: var(--ink-2);
 }
 
-/* The places: "Places · 3 of 6 shown", End reveal far from the thumb. */
+/* The places: "Places · 3 of 6 shown", End reveal far from the thumb. The panel
+   is a size container: at large text End reveal goes under the heading (beside
+   it, "Started by another director at 8:05 PM" was a four-line column). */
+.rm-live {
+  container: rm-live / inline-size;
+}
 .rm-ladh {
   display: flex;
   align-items: center;
@@ -2921,37 +2998,110 @@ html:not(.calm-motion) .rm-chip[data-tone="live"] i {
 .rm-ladh .rm-h {
   margin: 0 2px;
 }
+/* "Places · 3 of 6 shown": when the count wraps it must not start its line with
+   the dot. The strip's way (.reveal-strip-body): each part hangs its separator
+   in a 1.1em slot left of itself, the heading is pulled 1.1em left and clips
+   that strip, so a dot at the start of a line is cut away. */
+#reveal-live-title {
+  display: flex;
+  flex-wrap: wrap;
+  margin-left: calc(2px - 1.1em);
+  clip-path: inset(0 0 0 1.1em);
+}
+#reveal-live-title > * {
+  padding-left: 1.1em;
+}
 .rm-count {
   font-weight: 700;
   color: var(--ink-2);
+  white-space: nowrap; /* "3 of 6 shown" is one unit */
 }
-.rm-count:not(:empty)::before {
+.rm-count:empty {
+  display: none;
+}
+.rm-count::before {
   content: '·';
-  margin: 0 .35em 0 .2em;
+  display: inline-block;
+  width: 1.1em;
+  margin-left: -1.1em;
+  text-align: center;
 }
 .rm-started {
   margin: 2px 2px 0;
   font: 600 0.8125rem/1.3 var(--font-ui);
   color: var(--ink-2);
+  text-wrap: balance; /* never "PM" alone on its line */
+}
+/* ~150% text and up (14rem: 291px at 130%, 358px at 160%): the count gets its
+   own line (no separator to start it), End reveal its own row under the
+   heading, and the ladder's names two lines instead of five letters. */
+@container rm-live (max-width: 14rem) {
+  .rm-ladh {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--s-2);
+  }
+  /* The short name ("Foxes", "John Deersz"), whole words on up to two lines.
+     (.rm-live first: these must beat the ladder's own rules further down.) */
+  .rm-live .rv-list[data-kind="remote"] .rv-name {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    white-space: normal;
+    overflow-wrap: break-word; /* a word breaks only when even its own line is too narrow */
+  }
+  /* the place takes only its numeral's width, so the name gets the rest */
+  .rm-live .rv-list[data-kind="remote"] .rv-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .rm-live .rv-name-full {
+    display: none;
+  }
+  .rm-live .rv-name-short {
+    display: inline;
+  }
+  .rm-live .rv-list[data-kind="remote"] .rv-team {
+    padding: 6px 0;
+  }
+}
+.rv-name-short {
+  display: none;
 }
 .rm-end {
   flex: none;
   padding: 4px 14px;
 }
+/* "Scores changed since you started. [Start again]" and "This is a practice.
+   [Start the real reveal]": the config notes' and clash rows' look (the gold
+   "!", a sentence, the outlined button, on paper between hairlines), never a
+   third tinted callout beside the gold hatch and the gold dock (§8.1 rule 7). */
 .rm-stale {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: var(--s-2) var(--s-3);
+  gap: var(--s-2) 9px;
   margin-bottom: var(--s-2);
-  padding: 8px 8px 8px 14px;
-  border-radius: var(--r-btn);
-  background: var(--gold-tint);
+  padding: var(--s-2) 2px;
+  border-top: 1px solid var(--line-2);
+  border-bottom: 1px solid var(--line);
+}
+.rm-stale::before {
+  content: '!';
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--gold);
   box-shadow: inset 0 0 0 1.5px var(--gold-edge);
+  color: var(--gold-ink);
+  font: 900 0.75rem/1 var(--font-ui);
 }
 .rm-stale-text {
-  font: 750 0.9375rem/1.3 var(--font-ui);
+  flex: 1 1 10em;
+  min-width: 0;
+  font: 650 0.9375rem/1.4 var(--font-ui);
 }
 .rm-restart {
   padding: 4px 14px;
@@ -3150,10 +3300,11 @@ html:not(.calm-motion) .mtv-wait .mtv-marks > :nth-child(even) {
 @keyframes mtv-bob {
   50% { transform: translateY(calc(var(--u) * -4)); }
 }
+/* Sentence case, never letter-spaced capitals (§8.2, §8.8): the big screen's
+   own words, as the waiting frame already says them. */
 .mtv-intro-title {
-  font: 900 calc(var(--u) * 34)/0.95 var(--font-ui);
-  letter-spacing: -0.01em;
-  text-transform: uppercase;
+  font: 850 calc(var(--u) * 34)/0.95 var(--font-ui);
+  letter-spacing: -0.025em;
 }
 .mtv-intro .mtv-marks {
   --mk: calc(var(--u) * 36);
@@ -3217,7 +3368,10 @@ html:not(.calm-motion) .mtv-wait .mtv-marks > :nth-child(even) {
 html.calm-motion .mtv-hero-name {
   transition: none;
 }
-/* The board fills from the bottom, like the big screen's. */
+/* The board fills from the bottom, like the big screen's: one sheet with
+   hairline rows (§8.1 rule 2), "Still to come" rows on top for the teams not
+   shown yet, the place just shown with the gold inner edge. Medal colours mean
+   a place won, never a row fill (§8.3). */
 .mtv-board {
   flex-direction: column;
   justify-content: flex-end;
@@ -3231,9 +3385,12 @@ html.calm-motion .mtv-hero-name {
 }
 .mtv-rows {
   display: grid;
-  gap: calc(var(--u) * 3.5);
+  overflow: hidden;
   margin: 0;
   padding: 0;
+  border: calc(var(--u) * 1.2) solid rgba(20, 26, 72, .26);
+  border-radius: calc(var(--u) * 8);
+  background: #fffdf8;
   list-style: none;
 }
 .mtv-row {
@@ -3242,16 +3399,37 @@ html.calm-motion .mtv-hero-name {
   grid-template-columns: calc(var(--u) * 28) calc(var(--u) * 13) minmax(0, 1fr) auto;
   align-items: center;
   gap: calc(var(--u) * 7);
-  height: calc(var(--u) * 21);
+  height: calc(var(--u) * 19);
   padding: 0 calc(var(--u) * 9);
-  border: calc(var(--u) * 1.4) solid #141a48;
-  border-radius: calc(var(--u) * 6);
-  background: #fffdf8;
+  border-top: calc(var(--u) * 0.8) solid rgba(20, 26, 72, .13);
   font: 800 calc(var(--u) * 12)/1.1 var(--font-ui);
 }
-.mtv-row[data-pl="1"] { background: #fff0c2; border-color: #986409; }
-.mtv-row[data-pl="2"] { background: #edeef1; border-color: #7d8894; }
-.mtv-row[data-pl="3"] { background: #f6e3d0; border-color: #a9682f; }
+.mtv-row:first-child {
+  border-top: 0;
+}
+.mtv-row[data-now] {
+  box-shadow: inset calc(var(--u) * 4) 0 0 #f7b928;
+}
+.mtv-row[data-state="still"] {
+  display: flex;
+  background: #ebe2cf; /* the light --well: the TV never follows the theme */
+  color: #43497a;
+  font: 700 calc(var(--u) * 10.5)/1.1 var(--font-ui);
+}
+.mtv-pl {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--u) * 2);
+  font-variant-numeric: tabular-nums;
+}
+.mtv-row-crown {
+  width: calc(var(--u) * 11);
+  height: calc(var(--u) * 11);
+  flex: none;
+  fill: #f7b928;
+  stroke: #986409;
+  stroke-width: 2;
+}
 .mtv-nm {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3272,9 +3450,8 @@ html.calm-motion .mtv-hero-name {
   stroke-width: 1.8;
 }
 .mtv-champ-lead {
-  font: 900 calc(var(--u) * 11)/1 var(--font-ui);
-  letter-spacing: .12em;
-  text-transform: uppercase;
+  font: 850 calc(var(--u) * 13)/1 var(--font-ui);
+  letter-spacing: -0.01em;
 }
 .mtv-champ-marks {
   --mk: calc(var(--u) * 64);
@@ -3349,25 +3526,35 @@ html.calm-motion .mtv-hero-name {
 .rm-go:active {
   box-shadow: 0 2px 0 var(--gold-edge);
 }
-.rm-go-k {
-  position: relative;
-  font: 800 min(0.9375rem, 20px)/1.15 var(--font-ui);
+/* Both lines are sized against the BUTTON, not the phone (cqi: 1% of the
+   button's width): beside Back the button is ~165px of text on a 360 phone and
+   ~195px on a 390, full width it is ~295px. overflow:hidden would hide a label
+   that ran past the edge, so the sizes are what keep every face inside it. */
+.rm-go {
+  container: rm-go / inline-size;
 }
-/* Huge, but capped: past ~40px a wider label only wraps, it reads no better. */
-.rm-go-m {
+.rm-go-k {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: .22em;
-  font: 900 min(2.125rem, 9.2vw, 40px)/1.02 var(--font-ui);
+  gap: .35em;
+  font: 800 min(0.9375rem, 20px)/1.15 var(--font-ui);
+}
+/* Huge, but capped: past ~40px a wider label only wraps, it reads no better.
+   18cqi keeps the longest word a face can carry ("champions") on one line. */
+.rm-go-m {
+  position: relative;
+  font: 900 min(2.125rem, 40px, 18cqi)/1.02 var(--font-ui);
   letter-spacing: -0.03em;
   text-wrap: balance;
 }
+/* Friday's crown rides the small line ("[crown] Friday finale"): beside the big
+   one it took the width "champions" needed and the label ran off the button. */
 .rm-go-crown {
   display: none;
-  width: .78em;
-  height: .78em;
+  width: 1.15em;
+  height: 1.15em;
   flex: none;
   fill: #ffffff;
   stroke-width: 2.4;
@@ -3393,8 +3580,16 @@ html.calm-motion .mtv-hero-name {
   background: var(--charge);
   cursor: default;
 }
+/* The wait is two calm lines (§4.2, 07c): "Showing the name… 2" never lets its
+   count drop onto a line of its own (the line is sized to fit the button and
+   kept whole), and "3rd place next" fits one line beside Back. */
+.rm-go[data-state="charging"] .rm-go-k {
+  font-size: min(0.9375rem, 20px, 8.6cqi);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
 .rm-go[data-state="charging"] .rm-go-m {
-  font-size: min(1.75rem, 6.9vw, 34px);
+  font-size: min(1.75rem, 34px, 12.5cqi);
 }
 .rm-go[data-state="charging"] .rm-go-fill {
   display: block;

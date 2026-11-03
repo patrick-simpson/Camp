@@ -313,8 +313,10 @@ alone** (styles.css, THE BOTTOM STACK note): the update bar and the SDK-down
 pill moved into the header's status pill (both of the bar's layouts, and the
 `has-update-banner` footer room, are gone). Toasts take taps, so they clear the
 tab bar (`--tabbar-h` = the bar as drawn, 58px + the home-indicator inset), the
-chat composer on the Chat tab (`+ 76px`), and a takeover's dock; while typing in
-chat they ride the keyboard (`--kb-h`). Change the offsets together
+chat composer on the Chat tab (`+ 76px`), and a takeover's dock (the reveal
+remote's taller dock by its MEASURED height, `--reveal-dock-h`, written by a
+ResizeObserver in reveal-ui.js: a refused tap's toast must never cover the gold
+button it is about, or Back); while typing in chat they ride the keyboard (`--kb-h`). Change the offsets together
 (`overlays.test.js` pins their order, in all three layers). The ONE bottom bar
 left is the sign-in screen's tap-to-reload (`showSdkDownBanner`, `.update-banner`,
 only while the app has not started: a lock screen has no header to hold a pill).
@@ -767,12 +769,28 @@ sections). Rules for whoever edits them:
   (`ready | locked | first | offline`). The recharge fill is CSS on `width` (a
   progress bar: it runs under calm too) from `--charge-ms` / `--charge-from` set on
   the button. Locked / first are pressed flat into the well, never faded (the reason
-  must read in sunlight).
-- **Larger text** is handled by size containers keyed in rem (`rv-list`: points join
-  the name's column from ~120%, the place stacks above the team from ~170%;
-  `rm-dock`: Back gets its own row above the gold from ~170%). The place columns are
-  rem; the marks stay px. The big button's labels have ceilings (past ~40 / 20px
-  they only wrap).
+  must read in sunlight). **The gold button is a size container** (`rm-go`): both
+  lines are sized in `cqi` against the BUTTON, never the phone (beside Back it is
+  ~165px of text at 360, ~195px at 390), because its `overflow: hidden` hides a label
+  that runs off it from any box-size audit: the big line `min(2.125rem, 40px, 18cqi)`
+  keeps "champions" on one line, the charging lines are `12.5cqi` / `8.6cqi` and the
+  wait ("Showing the name… 2") is one `nowrap` line so the count never drops onto a
+  line of its own. Friday's crown rides the SMALL line ("[crown] Friday finale"),
+  never beside "Crown the champions". `docs/build-notes/verify/step23-dock.cjs` checks
+  every face's text rects against the button and the refused-tap toast against the dock.
+- **Larger text** is handled by size containers keyed in rem (`rv-list`: points keep
+  the right-hand column at 130% — the counts wrap at their " · " — and join the name's
+  column from ~150% (360) / ~160% (390), the place stacks above the team from ~180%;
+  `rm-live`: from ~150% End reveal goes under the heading and the ladder shows each
+  team's SHORT name, `.rv-name-short`, whole words on up to two lines, instead of a
+  full name cut to five letters; `now-reveal`: "Started 7:31" goes under the strip's
+  words; `rm-dock`: Back gets its own row above the gold from ~170%). The place
+  columns are rem; the marks stay px. The big button's labels have ceilings (past
+  ~40 / 20px they only wrap). **A separator never starts a line**: "Live on the big
+  screen · 3 of 6 shown" and "Places · 3 of 6 shown" hang each dot in a 1.1em slot
+  left of its part and clip that strip (`.reveal-strip-body`, `#reveal-live-title`),
+  so a dot at the start of a wrapped line is cut away; the strips' dot sits on the
+  words' FIRST line.
 - **Other hooks:** `#reveal-strip-count` (the header strip's "3 of 6 shown"),
   `#reveal-row` (More's gold row; `data-state` adds `practice`), `#games-reveal-link`
   (the remote's way in from Games), `#now-reveal-remote` (directors on Now),
@@ -984,7 +1002,16 @@ writes nothing (`reveal-ui.test.js` and `reveal-remote.test.js` count the writes
   (`revealUiLadderModel`: hidden rows carry a place and nothing else, ONE masked next row, shown rows with
   their team; without the private freeze the hidden rows have no place numbers and there is no peek), "Started by
   Pat at 7:21 PM" from the member list for another director's reveal (`revealFull` keeps the starter's key,
-  editor-only), "Scores changed since you started" at the intro.
+  editor-only), "Scores changed since you started" at the intro (a plain row: the gold "!", a sentence and the
+  outlined button between hairlines, the config notes' look, never a tinted callout; so is the practice's offer).
+  The place on the big screen / the masked next row is scrolled into view on every new command AND on the first
+  paint after the remote opens. The mini TV's board is the big screen's: one sheet, a "Still to come" row per TEAM
+  not shown yet (never per place), the place just shown gold-edged, the crown on 1st only at the final table of a
+  finale.
+- **The crown waits for the crowning** (`revealUiCrowned`): `revealView` names the champions the moment a
+  finale's 1st place is shown, but the mirror's and the ladder's crown (and the crown's confetti) wait for phase
+  `champion` (then `table` / `ended`), so no phone celebrates ahead of the room while the remote still says
+  "Crown the champions". The champion LINE keeps the view's own trigger.
 - **The dock**: `#reveal-go` / `#reveal-back` carry `data-state` and `aria-disabled`, never `disabled` (a tap
   during the wait must reach the handler: the engine's toast says why and the button wobbles once, calm: a
   200 ms dim via `data-refused`). The recharge fill's `--charge-ms` / `--charge-from` are written once per command
@@ -4100,8 +4127,26 @@ directors…" (mockup 11). The old signed-in, directors-only interim page is gon
 - **Marks are by team id, from files that ship with the page** (`teamMark`): a
   shield that passes `safeCrestSrc` (junior), else the camp's flag drawn from the
   page's own `#flag-*` symbols (senior; the SHAPE by the team's slot, so two flags
-  stay apart without colour), else an emoji tile through `safeEmoji`. No P2 team
-  photo, colour or emoji a director typed ever reaches this public page. Names come
+  stay apart without colour), else an emoji tile through `safeEmoji`. EVERY team
+  appearance goes through it — waiting, intro, the hero, the board's rows (a node put
+  into each row's empty `.em` after the markup: `paintBoard`) and the champions — and a
+  mascot emoji is never drawn beside a name (§8.6); the mascots fly only as confetti.
+  No P2 team photo, colour or emoji a director typed ever reaches this public page.
+- **One visual system with the phones** (§8): sentence case and Inter 850 with a
+  slightly negative track, never letter-spaced capitals ("Current standings", "3rd
+  place", "points", "Camp champions" — the markup's "Camp Champions" and "TIE" are
+  lowered by CSS until tv.test.js's pins move); the board is ONE `.board-sheet` with
+  hairline rows (§8.1 rule 2: the phones' row — place, mark, name with the counts in
+  words under it, points right; `.row.ghost` "Still to come" per TEAM, `.row.now` the
+  place just shown with the gold inner edge, `.row.crowned` 1st at a finale's final
+  table), never medal-filled boxes (§8.3). Sizes take the smaller of the width and the
+  height, so six rows plus the top band fit a 720p projector; the band (`--tv-band`)
+  is where the Practice tag (sized for the back of the room) and the chips sit, so
+  "Reconnecting…" never covers 1st place. The confetti canvas is UNDER every frame,
+  each particle's drift is held to the outer eighth of the width (`EDGE_DRIFT`), and a
+  place's stream starts at the score beat, never while the room reads the name. The
+  motion tokens are styles.css's `--jm-*` (pasted, keep equal); the page does not
+  load jelly-motion.js (its frames are CSS keyframes on those tokens). Names come
   from the node through `normalizeRevealPub` (control characters spaced out, cut to
   30) and are `esc()`'d; crests are DOM nodes with `img.src = …`, never concatenated.
 - **Connection**: the status line (`#wait-status[data-tone]`) says `connecting`

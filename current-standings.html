@@ -73,7 +73,28 @@
       --card: var(--sheet);
       --card-line: var(--ink);
       --pole: #3b3f58;
+      --line: rgba(20, 26, 72, .13);   /* hairlines between rows (styles.css, light) */
+      --line-2: rgba(20, 26, 72, .26); /* the edge of a group */
+      --well: #ebe2cf;                 /* a recessed row: places still to come */
       --sans: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+      /* The top band the page's own chrome sits in (the Practice tag, the chips):
+         the board and the final table start under it, so "Reconnecting…" never
+         covers 1st place on a 720p projector. The tag's own height is 1.81em. */
+      --tv-chrome-top: max(clamp(0.9rem, 2.6vh, 2.2rem), env(safe-area-inset-top));
+      --tv-band: calc(var(--tv-chrome-top) + clamp(1.2rem, 2.6vw, 3rem) * 1.81 + 12px);
+      /* The motion tokens of the app's spring system (styles.css :root, redesign
+         §9): the bezier stand-ins, then the springs themselves where linear()
+         exists. Pasted, not shared (the page loads no styles.css): keep them equal
+         to styles.css's. */
+      --jm-press: cubic-bezier(.34, 1.7, .5, 1);
+      --jm-arrive: cubic-bezier(.3, 1.6, .45, 1);
+      --jm-std: cubic-bezier(.4, 0, .2, 1);
+    }
+    @supports (animation-timing-function: linear(0, 1)) {
+      :root {
+        --jm-press: linear(0, 0.15 4.3%, 0.38 8.7%, 0.624 13%, 0.829 17.4%, 0.979 21.7%, 1.069 26.1%, 1.108 30.4%, 1.112 34.8%, 1.094 39.1%, 1.068 43.5%, 1.04 47.8%, 1.017 52.2%, 1.001 56.5%, 0.992 60.9%, 0.988 65.2%, 0.987 69.6%, 0.99 73.9%, 0.993 78.3%, 0.996 82.6%, 0.998 87%, 1 91.3%, 1.001 95.7%, 1);
+        --jm-arrive: linear(0, 0.163 4.3%, 0.422 8.7%, 0.682 13%, 0.893 17.4%, 1.032 21.7%, 1.104 26.1%, 1.124 30.4%, 1.109 34.8%, 1.079 39.1%, 1.046 43.5%, 1.018 47.8%, 0.999 52.2%, 0.989 56.5%, 0.985 60.9%, 0.986 65.2%, 0.989 69.6%, 0.993 73.9%, 0.997 78.3%, 1 82.6%, 1.001 87%, 1.002 91.3%, 1.002 95.7%, 1);
+      }
     }
     html, body {
       margin: 0;
@@ -88,6 +109,9 @@
     .tv-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 
     /* ── Confetti canvas ─────────────────────────────────── */
+    /* UNDER every frame (#screen 20, #finale 35): a particle never covers a name.
+       current-standings.js also keeps the particles to the frame's edges and
+       starts a place's stream only once its name has landed (the score beat). */
     #confetti { position: fixed; inset: 0; z-index: 1; pointer-events: none; }
 
     /* ── Corner cannons (the 🎉 the confetti visibly fires from) ──
@@ -99,7 +123,7 @@
       position: fixed; bottom: -0.15em; z-index: 0; font-size: clamp(3.5rem, 12vh, 8rem);
       line-height: 1; pointer-events: none; opacity: 0; transform: scale(0.2) translateY(0.4em);
       transform-origin: 50% 85%;
-      transition: opacity 0.22s ease, transform 0.3s cubic-bezier(.2, .9, .3, 1.5);
+      transition: opacity 0.22s ease, transform 0.3s var(--jm-press);
     }
     .corner-cannon.left { left: max(0.5rem, env(safe-area-inset-left)); }
     .corner-cannon.right { right: max(0.5rem, env(safe-area-inset-right)); }
@@ -127,14 +151,17 @@
        Fixed above every frame (the finale included). Nothing here is a control
        the room needs: the page has no account and advances only from a
        director's remote. */
+    /* A practice shows the real standings in public (owner's answer): "Practice"
+       is the one thing telling a passer-by it is not the real reveal, so it is
+       sized for the back of the room and stays up on every frame (z 45). */
     .tv-tag {
       position: fixed; z-index: 45;
-      top: max(clamp(0.9rem, 2.6vh, 2.2rem), env(safe-area-inset-top));
+      top: var(--tv-chrome-top);
       left: max(clamp(1rem, 2.4vw, 2.6rem), env(safe-area-inset-left));
       margin: 0; padding: 0.32em 0.85em 0.34em 1.05em; border-radius: 0.4em;
       background: var(--ink); color: #ffffff;
       box-shadow: inset 0.32em 0 0 var(--gold);
-      font: 850 clamp(1rem, 2.1vw, 2.6rem)/1.15 var(--sans); letter-spacing: -0.01em;
+      font: 850 clamp(1.2rem, 2.6vw, 3rem)/1.15 var(--sans); letter-spacing: -0.01em;
     }
     .tv-chip {
       position: fixed; z-index: 45; display: inline-flex; align-items: center; gap: 0.55em;
@@ -147,7 +174,7 @@
        fills the bottom of the screen. */
     .tv-chips {
       position: fixed; z-index: 45; display: flex; flex-direction: column; align-items: flex-end; gap: 0.6rem;
-      top: max(clamp(0.9rem, 2.6vh, 2.2rem), env(safe-area-inset-top));
+      top: var(--tv-chrome-top);
       right: max(clamp(1rem, 2.4vw, 2.6rem), env(safe-area-inset-right));
     }
     .tv-chips .tv-chip { position: static; }
@@ -220,11 +247,11 @@
       text-align: center; gap: 1.2rem; padding: 2rem;
     }
     #intro.hide { opacity: 0; transform: scale(1.08); pointer-events: none; transition: opacity 0.5s, transform 0.5s; }
-    .intro-kicker { font-size: clamp(1rem, 3vw, 3rem); font-weight: 800; letter-spacing: 2px;
-      color: var(--ink); text-transform: uppercase; opacity: 0; animation: popIn 0.6s 0.1s forwards; }
+    /* Sentence case and Inter at 850 with a slightly negative track, as the
+       waiting headline says it (§8.2): never letter-spaced capitals (§8.8). */
     .intro-title {
-      margin: 0; line-height: 0.95; font-weight: 900; color: var(--ink);
-      font-size: clamp(2.6rem, 12vw, 14rem); letter-spacing: -1px;
+      margin: 0; line-height: 0.95; font-weight: 850; color: var(--ink);
+      font-size: clamp(2.6rem, 11vw, 13rem); letter-spacing: -0.03em;
     }
     .intro-title .word { display: inline-block; white-space: nowrap; }
     .intro-title .word span { display: inline-block; opacity: 0; transform: translateY(40px) rotate(-6deg);
@@ -255,17 +282,19 @@
     .hero {
       display: flex; flex-direction: column; align-items: center; gap: clamp(0.4rem, 1.4vh, 1rem);
       width: 100%; max-width: 1800px;
-      transition: transform 0.45s cubic-bezier(.5,-0.2,.3,1.4), opacity 0.4s;
+      transition: transform 0.45s var(--jm-std), opacity 0.4s;
     }
-    .hero.enter { animation: heroIn 0.55s cubic-bezier(.2,.9,.3,1.3); }
+    .hero.enter { animation: heroIn 0.55s var(--jm-arrive); }
     .hero.dock { transform: translateY(46vh) scale(0.18); opacity: 0; }
     @keyframes heroIn { from { transform: scale(0.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
     .hero-place {
-      font-size: clamp(1.6rem, 6vw, 7rem); font-weight: 900; letter-spacing: 1px;
-      color: var(--ink); text-transform: uppercase;
+      font-size: clamp(1.6rem, 6vw, 7rem); font-weight: 850; letter-spacing: -0.02em;
+      color: var(--ink);
     }
+    /* The phones' "tie" tag: a word, lower case (the markup's TIE is lowered here). */
     .hero-place .tie { font-size: 0.5em; vertical-align: middle; margin-left: 0.5rem;
-      background: var(--ink); color: #ffffff; padding: 0.15em 0.6em; border-radius: 999px; }
+      background: var(--ink); color: #ffffff; padding: 0.15em 0.6em; border-radius: 999px;
+      text-transform: lowercase; letter-spacing: 0; }
     .hero-entries { display: flex; gap: clamp(1.4rem, 5vw, 6rem); align-items: center; justify-content: center; flex-wrap: wrap; }
     /* Shield large on the LEFT, bold text on the RIGHT. */
     .hero-entry { display: flex; flex-direction: row; align-items: center; gap: clamp(1rem, 3.5vw, 4.5rem); text-align: left; }
@@ -273,14 +302,13 @@
       filter: drop-shadow(0 12px 22px rgba(20,26,72,0.28)); animation: bob 3.4s ease-in-out infinite; }
     .hero-shield.tv-flag { height: clamp(200px, 50vh, 600px); filter: none; }
     .hero-info { display: flex; flex-direction: column; align-items: flex-start; gap: clamp(0.3rem, 1.4vh, 1.1rem); min-width: 0; }
-    .hero-emoji { font-size: 0.9em; line-height: 1; }
-    .hero-name { font-size: clamp(1.8rem, 6vw, 7rem); font-weight: 900; color: var(--ink); text-align: left; line-height: 1.02; letter-spacing: -0.02em; transition: font-size 0.55s cubic-bezier(.4, 0, .2, 1); }
+    .hero-name { font-size: clamp(1.8rem, 6vw, 7rem); font-weight: 900; color: var(--ink); text-align: left; line-height: 1.02; letter-spacing: -0.02em; transition: font-size 0.55s var(--jm-std); }
     /* two-beat: points show first, then the breakdown appears BELOW it
        (points stays fully visible the whole time). */
     .hero-stats { display: flex; flex-direction: column; align-items: flex-start; gap: clamp(0.3rem, 1.4vh, 1rem); }
     .hero-points { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
     .hero-points .num { font-size: clamp(3rem, 15vh, 12rem); font-weight: 900; line-height: 0.85; color: var(--ink); letter-spacing: -0.03em; }
-    .hero-points .lbl { font-size: clamp(0.9rem, 2.8vw, 3rem); font-weight: 800; letter-spacing: 2px; text-transform: uppercase; color: var(--ink); }
+    .hero-points .lbl { font-size: clamp(1rem, 3vw, 3.2rem); font-weight: 800; letter-spacing: -0.01em; color: var(--ink); }
     .hero-break { opacity: 0; transform: translateY(14px); transition: opacity 0.45s ease, transform 0.45s ease; }
     .hero.beat2 .hero-break { opacity: 1; transform: none; }
     /* First 3s of the spotlight: only the shield + a super-large team name;
@@ -341,39 +369,72 @@
     }
 
     /* ── Standings board (grows) ─────────────────────────── */
+    /* One grouped sheet with hairline rows, as the phones' mirror and grid draw it
+       (§8.1 rule 2), never a stack of bordered boxes; medal colours mean a place
+       won, never a row fill (§8.3). Rows (current-standings.js paintBoard):
+       .row.ghost "Still to come", one per TEAM not shown yet; .row.now the place
+       just shown, with the gold inner edge; .row.crowned 1st, once the champions
+       were crowned. A row's mark is a node put into its .em after the markup. */
     #board {
       position: fixed; left: 0; right: 0; bottom: 0; z-index: 22; margin: 0 auto; width: min(96vw, 1600px);
       padding: 0 0.6rem calc(2.2rem + env(safe-area-inset-bottom));
-      display: flex; flex-direction: column; gap: clamp(0.3rem, 0.9vh, 0.7rem);
-      transition: transform 0.55s cubic-bezier(.4, 0, .2, 1), opacity 0.45s ease;
+      display: flex; flex-direction: column;
+      transition: transform 0.55s var(--jm-std), opacity 0.45s ease;
+    }
+    .board-sheet {
+      overflow: hidden; border: 2px solid var(--line-2); border-radius: 16px; background: var(--sheet);
     }
     /* During a team spotlight the board drops off the bottom so the hero owns
        the whole screen; it slides back up as the team docks into place. */
     #board.dropped { transform: translateY(115%); opacity: 0; pointer-events: none; }
-    #board.final { position: fixed; inset: 0; justify-content: center; padding-top: 1rem; transform: none; opacity: 1; }
+    #board.final { position: fixed; inset: 0; justify-content: center; padding-top: var(--tv-band); transform: none; opacity: 1; }
+    /* A row is the phones' row (05): the place, the mark, the name with the counts
+       in words under it, the points on the right. .who and .score step out of the
+       box tree (display: contents) so their parts sit on the row's own grid; the
+       markup stays one text-only line per team. Sizes take the smaller of the
+       width and the height, so six rows and the chrome band fit a 720p projector. */
     .row {
-      display: grid; grid-template-columns: clamp(3rem,7vw,5rem) 1fr auto;
-      align-items: center; gap: clamp(0.6rem, 2vw, 1.6rem);
-      background: var(--sheet); border: 2px solid var(--ink); color: var(--ink);
-      border-radius: 16px; padding: clamp(0.5rem, 1.5vh, 1.05rem) clamp(0.8rem, 2vw, 1.5rem);
-      box-shadow: 0 clamp(3px, 0.5vh, 6px) 0 var(--ink);
-      animation: rowPop 0.45s cubic-bezier(.2,.9,.3,1.35);
+      display: grid;
+      grid-template-columns: clamp(3rem, 7vw, 5rem) auto minmax(0, 1fr) auto;
+      grid-template-areas: "rank em nm pts" "rank em med pts";
+      align-items: center; column-gap: clamp(0.6rem, 1.6vw, 1.4rem); row-gap: 0.15em;
+      border-top: 2px solid var(--line); color: var(--ink);
+      padding: clamp(0.4rem, 1.2vh, 1rem) clamp(0.8rem, 2vw, 1.5rem);
+      animation: rowPop 0.45s var(--jm-arrive);
+    }
+    .row:first-child { border-top: 0; }
+    .row.now { box-shadow: inset clamp(6px, 0.7vw, 12px) 0 0 var(--gold); }
+    .row.ghost {
+      display: flex; align-items: center; min-height: clamp(2.4rem, 6vh, 4.2rem);
+      padding-block: 0.3em; background: var(--well); color: var(--ink-3);
+      font: 750 min(2.2vw, 3.6vh)/1.2 var(--sans); animation: none;
+    }
+    .row.ghost::before {
+      content: ''; width: calc(clamp(3rem, 7vw, 5rem) + clamp(0.6rem, 1.6vw, 1.4rem)); flex: none;
     }
     @keyframes rowPop { from { opacity: 0; transform: translateY(-24px) scale(0.9); } to { opacity: 1; transform: none; } }
     /* A screen that joined (or was reloaded) with the board already up shows it as it
        stands: no rows popping in for places the room saw minutes ago. */
     #board.still .row { animation: none; }
-    .row.p1 { background: var(--gold-tint); border-color: var(--gold-edge); box-shadow: 0 clamp(3px, 0.5vh, 6px) 0 var(--gold-edge); }
-    .row.p2 { background: #edeef1; border-color: #7d8894; box-shadow: 0 clamp(3px, 0.5vh, 6px) 0 #7d8894; }
-    .row.p3 { background: #f6e3d0; border-color: #a9682f; box-shadow: 0 clamp(3px, 0.5vh, 6px) 0 #a9682f; }
-    .row .rank { font-size: clamp(1.5rem, 3.6vw, 4rem); font-weight: 900; text-align: center; color: var(--ink); }
-    .row .who { display: flex; align-items: center; gap: 0.7rem; min-width: 0; }
-    .row .who .em { font-size: clamp(1.7rem, 4vw, 4rem); }
-    .row .who .nm { font-size: clamp(1.3rem, 3.4vw, 3.6rem); font-weight: 900; color: var(--ink); line-height: 1.05; letter-spacing: -0.015em; }
-    .row .score { display: flex; align-items: center; gap: clamp(0.5rem, 1.8vw, 1.3rem); }
-    .row .pts { font-size: clamp(1.7rem, 4.4vw, 4.4rem); font-weight: 900; color: var(--ink); font-variant-numeric: tabular-nums; }
+    .row .who, .row .score { display: contents; }
+    .row .rank { grid-area: rank; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.05em;
+      font-size: clamp(1.5rem, min(3.6vw, 5.6vh), 4rem); font-weight: 900; line-height: 1; letter-spacing: -0.02em; color: var(--ink); font-variant-numeric: tabular-nums; }
+    /* The champions' crown over 1st, drawn by CSS (the row's markup is text only). */
+    .row.crowned .rank::before {
+      content: ''; width: 0.62em; height: 0.62em; flex: none;
+      background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath d='M4.4 17.4 3.6 8l4.8 3.7L12 5.2l3.6 6.5L20.4 8l-.8 9.4z' fill='%23f7b928' stroke='%23986409' stroke-width='1.8' stroke-linejoin='round'/%3E%3Cpath d='M5 20.4h14' stroke='%23986409' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E") center / contain no-repeat;
+    }
+    /* The team's mark: the camp's shield or flag (a tile only for a camp with
+       neither), never a mascot emoji: senior's colours alone don't survive
+       colour-blindness (§8.4), and junior's shields are the camp's own art. */
+    .row .em { grid-area: em; display: grid; place-items: center; width: 1.55em; height: 1.55em; font-size: clamp(1.3rem, min(3.4vw, 5.2vh), 3.6rem); }
+    .row-crest { display: block; max-width: 100%; max-height: 100%; width: auto; height: 100%; filter: drop-shadow(0 2px 3px rgba(20, 26, 72, .25)); }
+    .row-crest.tv-flag { width: 100%; filter: none; }
+    .row-crest.crest-tile { width: 100%; font-size: 0.85em; border-width: 2px; filter: none; }
+    .row .nm { grid-area: nm; align-self: end; font-size: clamp(1.3rem, min(3.4vw, 5.2vh), 3.6rem); font-weight: 900; color: var(--ink); line-height: 1.05; letter-spacing: -0.015em; }
+    .row .pts { grid-area: pts; font-size: clamp(1.7rem, min(4.4vw, 7vh), 4.4rem); font-weight: 900; color: var(--ink); font-variant-numeric: tabular-nums; text-align: right; }
     .row .pts small { font-size: 0.42em; font-weight: 800; color: var(--ink-2); margin-left: 0.15em; }
-    .row .med { font-size: clamp(1.05rem, 2.7vw, 2.6rem); font-weight: 800; color: var(--ink); white-space: nowrap; }
+    .row .med { grid-area: med; align-self: start; font-size: clamp(0.95rem, min(2.1vw, 3.4vh), 2.2rem); font-weight: 750; line-height: 1.2; color: var(--ink-2); }
 
     /* ── Champion finale banner ──────────────────────────── */
     #finale {
@@ -383,11 +444,15 @@
     }
     #finale.show { display: flex; }
     .champ {
-      text-align: center; animation: champIn 0.8s cubic-bezier(.2,.9,.3,1.4); color: var(--ink);
+      text-align: center; animation: champIn 0.8s var(--jm-arrive); color: var(--ink);
       display: flex; flex-direction: column; align-items: center; gap: clamp(0.3rem, 1.3vh, 0.9rem);
     }
-    .champ .crown { font-size: clamp(2.4rem, 9vh, 8rem); animation: bob 2.4s ease-in-out infinite; }
-    .champ .lead { font-size: clamp(1rem, 3.4vw, 3rem); font-weight: 900; letter-spacing: 4px; text-transform: uppercase; color: var(--ink); }
+    /* The app's crown (#i-crown), gold on its edge, as the phones and the remote draw it. */
+    .champ .crown { display: grid; place-items: center; animation: bob 2.4s ease-in-out infinite; }
+    .champ .crown svg { width: clamp(2.6rem, 10vh, 8.5rem); height: clamp(2.6rem, 10vh, 8.5rem); fill: var(--gold); stroke: var(--gold-edge); stroke-width: 1.6; stroke-linejoin: round; stroke-linecap: round; }
+    /* Sentence case (§8.2): the markup's "Camp Champions" reads "Camp champions". */
+    .champ .lead { font-size: clamp(1.2rem, 3.8vw, 3.6rem); font-weight: 850; letter-spacing: -0.015em; color: var(--ink); text-transform: lowercase; }
+    .champ .lead::first-letter { text-transform: uppercase; }
     .champ-shields { display: flex; gap: clamp(1rem, 3vw, 2.5rem); justify-content: center; flex-wrap: wrap; }
     .champ-shields > * { width: clamp(150px, 40vh, 520px); height: auto;
       filter: drop-shadow(0 12px 22px rgba(20,26,72,0.28)); animation: bob 3s ease-in-out infinite; }
@@ -403,6 +468,7 @@
     @media (prefers-reduced-motion: reduce) {
       .hero.fight .hero-entry:first-child, .hero.fight .hero-entry:last-child { animation: none; }
       .wait-shields > *, #tv-reconnect i { animation: none; }
+      .row, .hero.enter, .champ { animation: none; }
     }
   </style>
 </head>
@@ -415,6 +481,7 @@
     <symbol id="flag-plain" viewBox="0 0 32 32"><rect x="5" y="2.5" width="2.6" height="27.5" rx="1.3" stroke="none"/><path fill="currentColor" stroke-linejoin="round" d="M7.6 4.4c5.4-2.6 9.4 2.4 19.4-.6v14c-10 3-14-2-19.4.6z"/></symbol>
     <symbol id="flag-swallow" viewBox="0 0 32 32"><rect x="5" y="2.5" width="2.6" height="27.5" rx="1.3" stroke="none"/><path fill="currentColor" stroke-linejoin="round" d="M7.6 4.4c5.4-2.6 9.4 2.4 19.4-.6l-4.6 7 4.6 7c-10 3-14-2-19.4.6z"/></symbol>
     <symbol id="flag-stripe" viewBox="0 0 32 32"><rect x="5" y="2.5" width="2.6" height="27.5" rx="1.3" stroke="none"/><path fill="currentColor" stroke-linejoin="round" d="M7.6 4.4c5.4-2.6 9.4 2.4 19.4-.6v14c-10 3-14-2-19.4.6z"/><path fill="#ffffff" stroke="none" opacity=".85" d="M7.6 9.6c5.4-2.6 9.4 2.4 19.4-.6v3.6c-10 3-14-2-19.4.6z"/></symbol>
+    <symbol id="i-crown" viewBox="0 0 24 24"><path d="M4.4 17.4 3.6 8l4.8 3.7L12 5.2l3.6 6.5L20.4 8l-.8 9.4z"/><path d="M5 20.4h14"/></symbol>
     <symbol id="flag-chevron" viewBox="0 0 32 32"><rect x="5" y="2.5" width="2.6" height="27.5" rx="1.3" stroke="none"/><path fill="currentColor" stroke-linejoin="round" d="M7.6 4.4c5.4-2.6 9.4 2.4 19.4-.6v14c-10 3-14-2-19.4.6z"/><path fill="#141a48" stroke="none" opacity=".85" d="M7.6 6.2l8.4 5.4-8.4 5.4z"/></symbol>
   </svg>
 

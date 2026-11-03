@@ -115,8 +115,15 @@ function revealUiTeamHtml(kind, e, mine) {
   const name = kind === 'grid' ? (teamShort(e.id) || e.nm) : e.nm;
   const you = kind !== 'remote' && mine && mine === e.id ? '<span class="rv-you">Your team</span>' : '';
   const counts = kind === 'remote' ? '' : '<small class="rv-medals">' + revealUiMedals(e) + '</small>' + (kind === 'grid' ? '<small class="rv-extra">' + revealUiExtras(e) + '</small>' : '');
+  // The remote's compact ladder carries the short name too: at large text CSS shows it instead of a full name cut to
+  // five letters ("Feroci…"), so the director can still read who is on the big screen. One shows at a time
+  // (display:none takes the other out of the accessibility tree too).
+  const shortName = kind === 'remote' ? teamShort(e.id) : '';
+  const nameHtml = shortName && shortName !== name
+    ? '<span class="rv-name-full">' + esc(name) + '</span><span class="rv-name-short">' + esc(shortName) + '</span>'
+    : esc(name);
   return '<div class="rv-team" data-team="' + esc(e.id) + '"><span class="rv-mark">' + teamMarkHtml(e.id, { size: kind === 'remote' ? 32 : 34 }) + '</span>' +
-    '<span class="rv-nm"><b class="rv-name">' + esc(name) + '</b>' + you + counts + '</span>' +
+    '<span class="rv-nm"><b class="rv-name">' + nameHtml + '</b>' + you + counts + '</span>' +
     '<span class="rv-pts">' + e.p + '<small> points</small></span></div>';
 }
 
@@ -138,6 +145,14 @@ function revealUiStillRowHtml(i, label, state) {
 
 function revealUiLookingRowHtml() {
   return '<div class="rv-row" role="listitem" data-key="look" data-state="looking">' + REVEAL_UI_ICON('i-tv') + '<span class="rv-msg">Look at the big screen</span><span class="rv-os">On the big screen now</span></div>';
+}
+
+// The champions as the ROWS may show them: revealView names them the moment a finale's 1st place is shown, but the
+// crown and its confetti wait for the crowning itself (phase champion, then the final table or the end), so no phone
+// celebrates ahead of the room while the remote still says "Crown the champions". The champion LINE keeps the view's
+// own trigger (revealChampionLine).
+function revealUiCrowned(v) {
+  return v && v.champion && v.phase !== 'intro' && v.phase !== 'live' ? v.champion : null;
 }
 
 // The Now mirror (a counselor's, or a director's) from a live revealView: the teams still to come first (one row
@@ -178,7 +193,7 @@ function revealUiLadderModel(m) {
   pub.forEach((g) => { byIdx[g.idx] = g; });
   const full = revealFullFor(m.mode);
   const view = m.view;
-  const champion = !!(view && view.champion);
+  const champion = !!revealUiCrowned(view);
   const items = [];
   const html = [];
   const push = (key, state, h) => { items.push({ key, state }); html.push(h); };
@@ -372,7 +387,8 @@ function renderRevealMirror() {
   const active = activeTab() === 'now' && !builderOpen();
   setTextIfChanged(revealUiEl('now-reveal-started'), 'Started ' + revealUiClock(v.startedAt, false));
   setTextIfChanged(revealUiEl('now-reveal-count'), t.shown + ' of ' + t.total + ' shown');
-  revealUiPaintList(revealUiEl('now-reveal-list'), revealUiMirrorHtml(v, mine), {
+  const crowned = revealUiCrowned(v);
+  revealUiPaintList(revealUiEl('now-reveal-list'), revealUiMirrorHtml(crowned === v.champion ? v : Object.assign({}, v, { champion: null }), mine), {
     animate: active, handsOff: true, after: (added) => revealUiLanded(added, { mine, rid: v.id }),
   });
   // The panel appears while this phone is looking at Now: it unfolds from its top (never on a cold load: prev is undefined).
@@ -383,7 +399,7 @@ function renderRevealMirror() {
     }, { calmMs: 160 });
   }
   // A champion crowned in front of the whole camp: the crown drops (once, and only for a phone that was watching).
-  if (revealUiNote('champ:' + v.id, !!v.champion) && v.champion && active) revealUiCrownMoment(revealUiEl('now-reveal-list'));
+  if (revealUiNote('champ:' + v.id, !!crowned) && crowned && active) revealUiCrownMoment(revealUiEl('now-reveal-list'));
   setHiddenIfChanged(revealUiEl('now-reveal-remote'), !revealRemoteMayOpen());
   const hn = revealUiHappening();
   setHiddenIfChanged(revealUiEl('now-reveal-happening'), !hn);
@@ -490,11 +506,21 @@ function revealUiMarksHtml(ids, size) {
   return ids.map((id) => teamMarkHtml(id, { size })).join('');
 }
 
-function revealUiBoardHtml(groups) {
+// The board as the big screen draws it (current-standings.js paintBoard): one sheet, best place first, a faint "Still to
+// come" row per TEAM not yet shown above them (never per place, so no tie can be read off the count; it also keeps the
+// frame from being two rows at the foot of a blank picture), the place just shown with the gold edge (o.nowIdx), and
+// the crown on 1st only once the champions were crowned (o.crown).
+function revealUiBoardHtml(groups, o) {
+  o = o || {};
   const rows = [];
+  const shownTeams = groups.reduce((n, g) => n + g.entries.length, 0);
+  for (let i = 0; i < Math.max(0, (o.teams || 0) - shownTeams); i++) {
+    rows.push('<li class="mtv-row" data-key="still-' + i + '" data-state="still"><span class="mtv-still">Still to come</span></li>');
+  }
   groups.slice().sort((a, b) => b.idx - a.idx).forEach((g) => {
     g.entries.forEach((e) => {
-      rows.push('<li class="mtv-row" data-key="g' + g.place + '-' + esc(e.id) + '" data-pl="' + g.place + '"><span class="mtv-pl">' + esc(ordinal(g.place)) + '</span>' +
+      const crown = o.crown && g.place === 1 ? '<svg class="ico mtv-row-crown" aria-hidden="true"><use href="#i-crown"/></svg>' : '';
+      rows.push('<li class="mtv-row" data-key="g' + g.place + '-' + esc(e.id) + '" data-pl="' + g.place + '"' + (o.nowIdx === g.idx ? ' data-now' : '') + '><span class="mtv-pl">' + crown + esc(ordinal(g.place)) + '</span>' +
         '<span class="mtv-mk">' + teamMarkHtml(e.id, { size: 24 }) + '</span><span class="mtv-nm">' + esc(e.nm) + '</span><span class="mtv-pts">' + e.p + '</span></li>');
     });
   });
@@ -535,7 +561,10 @@ function revealUiPaintTv(m) {
   } else if (frame.mode === 'board' || frame.mode === 'table') {
     setTextIfChanged(revealUiEl('mtv-board-title'), frame.mode === 'table' ? 'Final standings' : 'Standings so far');
     const docked = frame.groups.filter((x) => x.idx < frame.docked);
-    setHtmlIfChanged(revealUiEl('mtv-board'), revealUiBoardHtml(docked));
+    const c = normalizeRevealCtl(node && node.ctl);
+    setHtmlIfChanged(revealUiEl('mtv-board'), revealUiBoardHtml(docked, {
+      teams: c ? c.teams : 0, nowIdx: frame.mode === 'board' ? frame.docked - 1 : -1, crown: frame.mode === 'table' && !!(c && c.finale),
+    }));
   } else if (frame.mode === 'champion') {
     const first = frame.groups.find((x) => x.place === 1);
     setHtmlIfChanged(revealUiEl('mtv-champ-marks'), first ? revealUiMarksHtml(first.entries.map((e) => e.id), 64) : '');
@@ -661,7 +690,9 @@ function revealUiPaintLive(m) {
   const seqKey = c ? c.id + ':' + c.seq : null;
   if (seqKey && revealUi.seq !== seqKey && list && list.querySelector) {
     const target = list.querySelector('[data-onscreen]') || list.querySelector('[data-state="next"]');
-    if (target && target.scrollIntoView && revealUi.seq !== null) { try { target.scrollIntoView({ block: 'nearest', behavior: revealUiCalm() ? 'auto' : 'smooth' }); } catch (e) { /* fine */ } }
+    // Also on the first paint after the remote opens (revealUi.seq is null then), at once: a "Scores changed" row above
+    // the ladder could otherwise leave the masked next place under the dock on a fresh open.
+    if (target && target.scrollIntoView) { try { target.scrollIntoView({ block: 'nearest', behavior: revealUi.seq === null || revealUiCalm() ? 'auto' : 'smooth' }); } catch (e) { /* fine */ } }
   }
   revealUi.seq = seqKey;
 }
@@ -669,7 +700,7 @@ function revealUiPaintLive(m) {
 // The two buttons. The dock never takes `disabled` (a tap during the wait must still reach the handler, which answers
 // with the wobble and one toast): "can't press" is aria-disabled plus data-state.
 function revealUiBlockedWords(m, gate) {
-  if (m.loading) return 'Checking the big screen…';
+  if (m.loading) return 'Loading the reveal…'; // the phone reads the database here, not the TV: never send anyone to look at it
   if (m.why === 'no-sync') return 'Sync is off on this phone';
   if (m.stage === 'ready' || m.stage === 'ended') return 'Waiting for this phone to catch up…';
   return 'Loading the places…';
@@ -684,7 +715,7 @@ function revealUiPaintDock(m, gate) {
   const big = m.go.big;
   if (startStage && st === 'ready') {
     if (!gate.canStart) st = 'blocked';
-    else if (m.stage === 'ready') kicker = m.practice ? 'Rehearsal · uses the real standings' : 'Freezes the standings when you tap';
+    else if (m.stage === 'ready') kicker = m.practice ? 'Practice · uses the real standings' : 'Freezes the standings when you tap';
   }
   if (st === 'blocked') kicker = revealUiBlockedWords(m, gate);
   const prevState = revealUi.go.state;
@@ -1032,6 +1063,21 @@ function wireRevealUi() {
   on('now-reveal-remote', 'click', () => openReveal({ from: 'now' }));
   on('now-reveal-day', 'click', () => { if (typeof openSchedule === 'function') openSchedule(); });
   revealUiWirePeek(revealUiEl('reveal-ladder'));
+  // The dock's drawn height lifts the toasts clear of it (styles.css, THE BOTTOM STACK): a refused tap's toast must not
+  // land on the gold button it is talking about. Measured, not guessed: the dock grows with the text size, the face and
+  // the home-indicator inset. A hidden remote measures 0, which the CSS never reads (it applies only while it is open).
+  const dock = revealUiEl('reveal-dock');
+  if (dock && typeof ResizeObserver === 'function' && typeof document !== 'undefined' && document.documentElement) {
+    let last = -1;
+    try {
+      new ResizeObserver(() => {
+        const h = Math.round(dock.offsetHeight || 0);
+        if (!h || h === last) return;
+        last = h;
+        document.documentElement.style.setProperty('--reveal-dock-h', h + 'px');
+      }).observe(dock);
+    } catch (e) { /* the fallback height stands */ }
+  }
   // What the big screen is showing is also said to a screen reader as it changes.
   revealUiAttr(revealUiEl('reveal-tv-now'), 'aria-live', 'polite');
   document.addEventListener('visibilitychange', () => { if (document.hidden) revealUiPeek(false); });

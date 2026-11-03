@@ -208,21 +208,26 @@
     }, 1500);
     return wasHidden ? 230 : 0;
   }
-  // Fire from both bottom corners toward the upper-middle. Real bursts (count > 1)
-  // summon the visible corner cannons; the per-220ms hero stream (count 1) stays
-  // cannon-less so they remain a moment, not permanent furniture.
+  // Fire from both bottom corners, UP THE EDGES. Real bursts (count > 1) summon the
+  // visible corner cannons; the hero's stream (count 1, every 220 ms) stays
+  // cannon-less so they remain a moment, not permanent furniture. The name in the
+  // middle is the answer (§8.1 rule 1) and the room is reading it, so no particle
+  // may cross it: each one's sideways drift over its whole flight (up and back
+  // down, 2·|vy|/g frames) is held to EDGE_DRIFT of the width.
+  var EDGE_DRIFT = 0.12;
   function cannon(emojis, count, power) {
     if (!emojis || !emojis.length || reduceMotion()) return;
     var delay = count > 1 ? showCornerCannons() : 0;
     var fire = function () {
       var W = cvs.width, H = cvs.height;
+      var g = 0.16 * dpr; // tick()'s gravity
       for (var side = 0; side < 2; side++) {
         var baseX = side === 0 ? W * 0.04 : W * 0.96;
         for (var i = 0; i < count; i++) {
           var e = emojis[i % emojis.length];
           var toCenter = side === 0 ? 1 : -1;
-          var vx = toCenter * (0.6 + Math.random() * 0.9) * power;
           var vy = -(1.4 + Math.random() * 0.9) * power;
+          var vx = toCenter * (0.15 + Math.random() * 0.85) * EDGE_DRIFT * W * g / (2 * -vy);
           var size = (34 + Math.random() * 44) * dpr;
           launch(e, baseX, H * 0.99, vx, vy, size);
         }
@@ -232,7 +237,7 @@
   }
   function tick() {
     ctx.clearRect(0, 0, cvs.width, cvs.height);
-    var g = 0.16 * dpr;
+    var g = 0.16 * dpr; // cannon() aims with the same gravity
     // light continuous stream while a hero is up
     if (streamEmojis) {
       var now = performance.now();
@@ -286,7 +291,7 @@
       if (f.mode === 'board' && !f.groups.length) continue;
       var c = normalizeRevealCtl(n.ctl);
       if (!c) continue;
-      return { mode: modes[i], frame: f, id: c.id, seq: c.seq };
+      return { mode: modes[i], frame: f, id: c.id, seq: c.seq, teams: c.teams, finale: !!c.finale };
     }
     return null;
   }
@@ -441,7 +446,7 @@
   }
 
   function buildIntro() {
-    var words = ['CURRENT', 'STANDINGS'];
+    var words = ['Current', 'standings']; // sentence case, as every other line on this page (§8.2)
     var i = 0;
     // Wrap each word so it never splits mid-word when the line wraps;
     // letters still drop in one by one.
@@ -496,24 +501,38 @@
     if (kind !== 'hero') { streamEmojis = null; if (kind !== 'board') { clearHeroTimers(); heroWrap.innerHTML = ''; } }
   }
 
-  // Board holds the docked places; the best on top, and a tie keeps reveal-core's order inside it.
-  function paintBoard(groups, docked) {
+  // Board holds the docked places in ONE sheet (the phones' mirror, mockup 05): a "Still to come" row per TEAM not
+  // shown yet on top (never per place, so no tie can be read off the count), then the places, the best on top, a tie
+  // keeping reveal-core's order inside it. o: { teams, nowIdx (the place just shown: the gold edge), crown (1st, once
+  // the champions were crowned) }. A row's mark is the camp's shield or flag as a DOM node, put into its empty .em
+  // after the markup is written (a shipped address is a property, never concatenated into markup).
+  function paintBoard(groups, docked, o) {
+    o = o || {};
     var rows = [];
-    groups.filter(function (g) { return g.idx < docked; }).sort(function (a, b) { return b.idx - a.idx; }).forEach(function (g) {
+    var ids = [];
+    var placed = groups.filter(function (g) { return g.idx < docked; });
+    var shownTeams = placed.reduce(function (n, g) { return n + g.entries.length; }, 0);
+    for (var i = 0; i < Math.max(0, (o.teams || 0) - shownTeams); i++) rows.push('<div class="row ghost">Still to come</div>');
+    placed.sort(function (a, b) { return b.idx - a.idx; }).forEach(function (g) {
       g.entries.forEach(function (e) {
-        var pcls = g.place <= 3 ? ' p' + g.place : '';
+        var cls = 'row' + (g.idx === o.nowIdx ? ' now' : '') + (o.crown && g.place === 1 ? ' crowned' : '');
+        ids.push(e.id);
         rows.push(
-          '<div class="row' + pcls + '">' +
+          '<div class="' + cls + '">' +
             '<div class="rank">' + esc(ordinal(g.place)) + '</div>' +
-            '<div class="who"><span class="em">' + esc(teamEmojiOf(e.id)) + '</span><span class="nm">' + esc(e.nm) + '</span></div>' +
+            '<div class="who"><span class="em"></span><span class="nm">' + esc(e.nm) + '</span></div>' +
             '<div class="score"><span class="pts">' + esc(String(e.p)) + '<small>pts</small></span>' +
               '<span class="med">' + esc(medalWords(e)) + '</span></div>' +
           '</div>'
         );
       });
     });
-    var html = rows.join('');
-    if (html !== boardHtml) { boardHtml = html; boardEl.innerHTML = html; }
+    var html = rows.length ? '<div class="board-sheet">' + rows.join('') + '</div>' : '';
+    if (html === boardHtml) return;
+    boardHtml = html;
+    boardEl.innerHTML = html;
+    var slots = boardEl.querySelectorAll ? boardEl.querySelectorAll('.em') : [];
+    for (var k = 0; k < slots.length && k < ids.length; k++) slots[k].appendChild(teamMark(ids[k], 'row-crest'));
   }
 
   // The beat inside one place's moment: the name alone, then the place and score, then the breakdown.
@@ -521,6 +540,8 @@
     if (beat === 'name') hero.classList.add('solo'); else hero.classList.remove('solo');
     if (beat === 'breakdown') hero.classList.add('beat2'); else hero.classList.remove('beat2');
     if (beat !== 'name') hero.classList.remove('fight');
+    // The name has landed: the place's light stream starts (only for a place this screen saw arrive).
+    if (beat !== 'name' && hero.__stream) { streamEmojis = hero.__stream; hero.__stream = null; kick(); }
   }
 
   // One place on the big screen. `f.fresh` is true only inside the place's first 3 s: the one time a
@@ -531,14 +552,14 @@
     // Built from DOM nodes: the mark is created, not concatenated, and every string that came from the
     // database is esc()'d (names) or already laundered (emoji) before it lands in a markup fragment.
     var hero = box('hero');
-    hero.appendChild(box('hero-place', esc(ordinal(g.place)) + (tie ? '<span class="tie">TIE</span>' : '')));
+    hero.appendChild(box('hero-place', esc(ordinal(g.place)) + ' place' + (tie ? '<span class="tie">TIE</span>' : '')));
     var entriesEl = box('hero-entries');
     g.entries.forEach(function (e) {
       var entry = box('hero-entry');
       entry.appendChild(teamMark(e.id, 'hero-shield'));
       var extra = extraWords(e);
       entry.appendChild(box('hero-info',
-        '<div class="hero-name"><span class="hero-emoji">' + esc(teamEmojiOf(e.id)) + '</span> ' + esc(e.nm) + '</div>' +
+        '<div class="hero-name">' + esc(e.nm) + '</div>' +
         '<div class="hero-stats">' +
           '<div class="hero-points"><span class="num">' + esc(String(e.p)) + '</span><span class="lbl">points</span></div>' +
           '<div class="hero-break"><div class="words">' + esc(medalWords(e)) + '</div>' +
@@ -566,14 +587,14 @@
         }, wait));
       });
     }
+    streamEmojis = null;
     if (f.fresh) {
-      // confetti: fire the team mascot(s), then keep a light stream while the place is up.
+      // confetti: the team mascot(s) up the edges as the place arrives; the light stream waits for the score beat
+      // (setBeat), so nothing moves around the name while the room reads it.
       var emojis = g.entries.map(function (e) { return teamEmojiOf(e.id); });
       cannon(emojis, 8, 11 * dpr);
-      streamEmojis = reduceMotion() ? null : emojis;
+      hero.__stream = reduceMotion() ? null : emojis; // fresh is the name beat: setBeat starts it at the next one
       kick();
-    } else {
-      streamEmojis = null;
     }
     return hero;
   }
@@ -598,15 +619,24 @@
   // The champions' celebration (a finale day): a full-screen crowning, a sustained barrage while it is fresh.
   function paintChampion(g, animate) {
     var names = g.entries.map(function (e) { return esc(e.nm); }).join(' &amp; ');
-    var emojis = g.entries.map(function (e) { return teamEmojiOf(e.id); });
+    var emojis = g.entries.map(function (e) { return teamEmojiOf(e.id); }); // the confetti only, never beside a name
     var pts = g.entries[0].p;
     var champ = $('champ');
-    champ.innerHTML = '<div class="crown">👑</div><div class="lead">Camp Champions</div>';
+    champ.innerHTML = '<div class="crown" aria-hidden="true"></div><div class="lead">Camp Champions</div>';
+    var crownSlot = champ.querySelector('.crown');
+    if (crownSlot) {
+      var crown = document.createElementNS(SVG_NS, 'svg');
+      crown.setAttribute('viewBox', '0 0 24 24');
+      var cu = document.createElementNS(SVG_NS, 'use');
+      cu.setAttribute('href', '#i-crown');
+      crown.appendChild(cu);
+      crownSlot.appendChild(crown);
+    }
     var crests = box('champ-shields');
     g.entries.forEach(function (e) { crests.appendChild(teamMark(e.id, 'champ-crest')); });
     champ.appendChild(crests);
     champ.insertAdjacentHTML('beforeend',
-      '<div class="name">' + emojis.map(esc).join(' ') + ' ' + names + '</div>' +
+      '<div class="name">' + names + '</div>' +
       '<div class="pts">' + esc(String(pts)) + ' points</div>');
     finaleEl.classList.add('show');
     if (finaleIv) { clearInterval(finaleIv); finaleIv = null; }
@@ -657,17 +687,17 @@
       if (!introBuilt) { buildIntro(); introBuilt = true; startIntroBlast(); }
     } else if (kind === 'hero') {
       heroKey = sel.id + ':' + sel.seq + ':' + f.heroIdx;
-      paintBoard(f.groups, f.docked);
+      paintBoard(f.groups, f.docked, { teams: sel.teams });
       var hero = heroWrap.querySelector('.hero');
       if (hero && sameReveal && prev.heroKey === heroKey) setBeat(hero, f.beat);
       else buildHero(g, f, animate);
     } else if (kind === 'board') {
       dockHero(animate && wasKind === 'hero');
-      paintBoard(f.groups, f.docked);
+      paintBoard(f.groups, f.docked, { teams: sel.teams, nowIdx: f.docked - 1 });
     } else if (kind === 'table') {
-      paintBoard(f.groups, f.docked);
+      paintBoard(f.groups, f.docked, { teams: sel.teams, crown: sel.finale });
     } else if (kind === 'champion') {
-      paintBoard(f.groups, f.docked); // behind the crowning, ready for Back / the final table
+      paintBoard(f.groups, f.docked, { teams: sel.teams }); // behind the crowning, ready for Back / the final table
       paintChampion(g, animate && wasKind !== 'champion');
     }
     painted = { sig: sig, id: sel.id, mode: sel.mode, kind: kind, heroKey: heroKey };
