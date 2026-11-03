@@ -559,6 +559,21 @@ test('every door a counselor has no key to stays shut in a preview: the director
   notEqual(state.ui.view, 'settings', 'the builder does not open');
   ['members', 'history', 'counselors'].forEach((id) => { shellSheetOpen(id); assert.notOk(shell.sheets.includes(id), id + ' is a director\'s sheet'); });
   SETUP_SHEETS.forEach((id) => { shellSheetOpen(id); assert.notOk(shell.sheets.includes(id), id + ' belongs to the builder'); });
+  // The game sheet (Step 21) also opens over the Games tab with the builder closed — its Add games, Quick game and a game's row — and is a
+  // director's alone: in a preview none of the doors opens it, and no engine call writes a game.
+  const nGames = allGames().length;
+  shellSheetOpen('game');
+  assert.notOk(shell.sheets.includes('game'), 'the game sheet is a director\'s');
+  assert.equal(shellSheetAllowed('game'), false);
+  assert.equal(gmAddGames('wed'), false);
+  assert.equal(gmOpenQuick(), false);
+  assert.equal(gmOpenNew({ dk: 'wed' }), false);
+  assert.equal(gmOpenGame(allGames()[0].id), false);
+  startQuickGame();
+  assert.equal(gmUi.open, null, 'nothing opened');
+  assert.equal(gmCommit(allGames()[0].id, { location: 'Mine' }).ok, false, 'and the engine writes nothing');
+  assert.equal(gmMakeDay('sat').ok, false);
+  assert.equal(allGames().length, nGames);
   openHistory(); openMembers();
   assert.deepEqual(shell.sheets, [], 'no sheet came up');
   // a deep link that names a director screen lands on a counselor screen
