@@ -2762,7 +2762,12 @@ so nobody can post as someone else).
 - **Mentions are AUTOMATIC** (no @ syntax): `chatMentionTargets()` = every
   member-directory name (+ first names), the printed roster
   (`staffNames()`), team names, short team names (`teamShort()`); `mentionScan` is word-boundary, case-insensitive,
-  longest-match-wins (pure — tests/chat.test.js). "Mine" = my
+  longest-match-wins (pure — tests/chat.test.js). **The capitalised-team-word rule (Step 25, ux-R19)**: a team named by ONE word (a short name like "Red",
+  or a one-word full name) pings only when typed with a capital first letter ("Red meet at the flagpole") or when followed by
+  "team" / "campers" ("go red team"); a full name of two words or more ("Red Team", "Turkey Dinner") still matches in any case. So
+  "a red shirt" and "feeling blue" ping nobody — the senior "Red" fix, and what makes it safe for a director to give a team a
+  short name (`chatTeamWordOk`, applied in `mentionScan` from the text as typed; people are never subject to it). The alert
+  sender's `teamNamedIn` is Step 26's and still the old rule. "Mine" = my
   `memberName`/`state.identity`/identity key/`memberTeamId`/
   `state.followTeam`. Rendering walks the RAW string and escapes each
   segment (`renderChatText`) — never regex over escaped HTML.

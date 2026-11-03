@@ -16,6 +16,18 @@ test('senior team names and colors are mentionable', () => {
   assert.ok(hits.some((h) => h.kind === 'team' && h.teamId === 't3'), '"gold" pings the Gold team');
 });
 
+test('senior "Red" (the capitalised-team-word rule): Red and "red team" ping, "a red shirt" and "feeling blue" do not', () => {
+  freshState();
+  const targets = chatMentionTargets();
+  const teamsOf = (text) => mentionScan(text, targets).filter((h) => h.kind === 'team').map((h) => h.teamId);
+  assert.deepEqual(teamsOf('Red meet at the flagpole'), ['t0']);
+  assert.deepEqual(teamsOf('go red team'), ['t0']);
+  assert.deepEqual(teamsOf('Red Team won'), ['t0'], 'the full name, in any case');
+  assert.deepEqual(teamsOf('a red shirt'), []);
+  assert.deepEqual(teamsOf('feeling blue today'), []);
+  assert.deepEqual(teamsOf('gold star for everyone'), [], '"gold" in an ordinary sentence no longer pings the Gold team');
+});
+
 test('a senior counselor following Blue gets pinged on "Blue"', () => {
   freshState();
   state.followTeam = 't1';

@@ -594,19 +594,31 @@ function chatIsWordChar(c) {
 // All non-overlapping mention hits in `text`: word-boundary, case-
 // insensitive, longer labels beat shorter ones at the same spot (so
 // "Patriotic Pilgrims" wins over a member named "Pat").
+// The capitalised-team-word rule (setup-rebuild-spec S7, ux-R19): a team named by ONE word — its short name ("Red", "Gold"), or a
+// full name that is a single word — is a mention only when that word is typed with a capital first letter ("Red", "Gold") or is
+// followed by "team" / "campers" ("red team"). A team's full name of two words or more ("Red Team", "Turkey Dinner") still matches in
+// any case. So an ordinary "a red shirt" or "feeling blue" pings nobody, while "Gold meet at the waterfront" still does. Decided
+// from the text as typed (this function sees the raw string), never from the dictionary's spelling.
+function chatTeamWordOk(raw, at, len) {
+  const c = raw[at];
+  if (c && c !== c.toLowerCase()) return true; // typed with a capital first letter
+  return /^\s+(?:team|campers)(?![a-z0-9])/i.test(raw.slice(at + len));
+}
+
 function mentionScan(text, targets) {
   const raw = String(text || '');
   const lower = raw.toLowerCase();
   if (!raw || !targets || !targets.length) return [];
   const candidates = [];
   targets.forEach((t) => {
+    const oneWord = t.kind === 'team' && !/\s/.test(String(t.label || '').trim());
     let from = 0;
     while (from <= lower.length - t.lower.length) {
       const i = lower.indexOf(t.lower, from);
       if (i === -1) break;
       const before = raw[i - 1];
       const after = raw[i + t.lower.length];
-      if (!chatIsWordChar(before) && !chatIsWordChar(after)) {
+      if (!chatIsWordChar(before) && !chatIsWordChar(after) && (!oneWord || chatTeamWordOk(raw, i, t.lower.length))) {
         candidates.push({ start: i, end: i + t.lower.length, label: t.label, kind: t.kind, key: t.key || null, teamId: t.teamId || null });
       }
       from = i + 1;
