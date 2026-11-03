@@ -100,7 +100,7 @@ Files:
 - `award.js` — AWARD POINTS (see "Award points: behaviour"): verse, cleanup and quick points on one
   takeover, for corrections and minus points. An optional layer like tell.js: a classic script right
   after it, every hook in app.js typeof-guarded, so deleting its `<script>` leaves no Award points row
-- `now-ui.js` — NOW'S RENDERERS (see "Now: the renderers"): paints `nowModel()` onto the Now tab's static
+- `now-ui.js` — NOW'S RENDERERS (see "The Now tab"): paints `nowModel()` onto the Now tab's static
   markup (the card in every kind, the cleanup / verse moment, Still to do today, Up next, Later today,
   the messages strip's notice, Now's three sheets) and wires its taps. A classic script right after
   award.js, every hook in app.js typeof-guarded; without it Now keeps only the announcements
@@ -758,150 +758,134 @@ never rebuilds a segmented control under a finger.
   app header (and anything else `position: sticky`) scrolled away with the
   page — v197 shipped that way. Don't put `hidden` back on its own.
 
-## Now, block by block (Step 17 — markup and visual system; painted by now-ui.js, see "Now: the renderers")
+## The Now tab (Step 17 — `nowModel()` in app.js, painted by now-ui.js)
 
-Redesign §3, mockups 01, 01b, 02, 03, 04, 12, 13. Static markup in `#tab-now` (it ships `hidden`;
-now-ui.js un-hides what the model says is on), styled in styles.css's last block, "NOW, BLOCK BY BLOCK". The old
-`.you-strip`, `#now-banner`, `#live-home` and `#notice-board` are gone from the page. **Every hook and every row template is
-documented in index.html's comment at `#now-card`** (and at `#now-notice` for the messages strip); the
-specimens in `docs/build-notes/verify/step17-design.cjs` fill those templates in the real page and
-measure 44px targets, sideways scroll and overflowing text for every kind, both camps, 360 / 390, light /
-dark, 100 / 130 / 200 % (`SHOTS=1` for screenshots).
+Redesign §3, mockups 01, 01b, 02, 03, 04, 12, 13. Three layers, each replaceable without the others (with `now-ui.js` deleted the page runs and Now keeps
+only the announcements; `tests/now-ui.test.js` boots it that way):
 
-- **The card** `#now-card[data-kind][data-over]`: kicker (`#now-card-k` / `-when` / `-left`), the 3px
-  hairline (`#now-card-fill` reads `--p`, patched alone), `#now-card-over` (Your station · Not Sam?
-  Change), the title (`#now-card-emoji` + `#now-card-label`, capped at `11cqi` so the longest word stays
-  whole at 200 %), and the roots `#now-card-sub`, `#now-card-notes` (plain `.nw-note` lines),
-  `#now-card-body` (the kind's own content), `#now-card-foot` (directors: Still on this · +10 min, or
-  the send-off notice's Take down) and `#now-moment` (the gold panel at the card's foot: the cleanup
-  moment for everyone, verse points for directors, using award.js's `.aw-pt` keys and lock). `night`
-  is the one dimmed card; `data-over` turns the hairline and the word live red.
-- **Shared pieces**: game rows `.gr` (status mark drawn by CSS from `data-status`, ONE stretched
-  `.gr-hit` button, a sibling `.gr-score`, `.gr-why` for the own-team lock) with the podium strip `.pd`
-  and the live board `.lb` (a counselor's tally has no place numerals and keeps roster order — §4.12);
-  Step 18's Games tab reuses them. The 4-team bracket `.b4` (Step 22 data), stations `.es-*`, the verse
-  `.vs`, notice markup `.nb-*`, run rows `.nr` and to-do rows `.nr-act`.
-- **Under the card**: `#now-todo` (directors' Still to do today, right under the card as in mockups 02
-  / 04), `#now-next`, `#now-later` (Whole day rides the last shown head). **The messages strip** is
-  `#now-notice` (the posted notice as one `.msg` strip with See all → `#sheet-notice` and directors'
-  Take down), `#announcements` (unchanged) and `#now-msgs-more` → `#sheet-messages`. `#sheet-whos-where`
-  holds every station. `#tab-now[data-reveal="live"]` puts all of the new sections away except the
-  banners and their "more" row.
-- **Copy**: no "Counselors can't see this" on Now (`secrecy.test.js` counts that phrase: exactly two);
-  points never appear in a counselor's markup (the moment's keys, `.nm-saved`, `.lb-pl` and the
-  director sub "2 of 3 games still to score" are directors' only).
+- **Markup** — static, in `#tab-now` (index.html; every hook and every row template is documented in the comment at `#now-card`, and at `#now-notice`
+  for the messages strip) and styles.css's last block "NOW, BLOCK BY BLOCK". A renderer only patches text, `hidden` and `data-*`. The card
+  `#now-card[data-kind][data-over]`: kicker (`#now-card-k` / `-when` / `-left`), the 3px hairline (`#now-card-fill` reads `--p`, patched alone),
+  `#now-card-over` ("Your station · Not Sam? Change"), the title (`#now-card-emoji` + `#now-card-label`, capped at `11cqi` so a word stays whole at
+  200 %), and the ROOTS `#now-card-sub`, `#now-card-notes`, `#now-card-body`, `#now-card-foot` (directors: Still on this, or the send-off notice's Take
+  down) and `#now-moment` (the gold panel: the cleanup moment for everyone, verse points for directors). Under it `#now-todo` (directors' Still to do
+  today), `#now-next`, `#now-later`. Shared pieces Step 18's Games tab reuses: game rows `.gr` (ONE stretched `.gr-hit` button, a sibling
+  `.gr-score`, `.gr-why` for the own-team lock), the podium `.pd`, the live board `.lb`, the 4-team bracket `.b4`, stations `.es-*`, the verse `.vs`,
+  run rows `.nr` / `.nr-act`, the notice the notice `.nb-*` (its own `container: nb`, so the zone list stacks by ITS width in the sheet as well as on the send-off card). `#tab-now[data-reveal="live"]` puts every one of these away except the banners and their "more" row.
+  No "Counselors can't see this" on Now (`secrecy.test.js` counts that phrase: exactly two in index.html).
+- **The model** — `nowModel(opts)` (app.js, "THE NOW ENGINE", after `nowBannerHtml`): the whole tab as PLAIN DATA (no markup, no DOM, no timer) from the
+  week through the SEAM accessors, the state and the clock it is GIVEN (`opts.now` = `{ dow, minutes }`, `opts.ms` = server ms; default `campNow()` /
+  `serverNow()`). `blockKind(b, dow)` / `blockTeams(b, dow)` are SEAM accessors. `tests/now-model.test.js` (+ `.senior`, in the seeded passes) walks every
+  minute of every day.
+- **The renderers** — now-ui.js: `renderNow(model)` (a full paint), `renderNowClock(model)` (the tick), `renderNowMessages(model)`, `renderNowSheet(id)` /
+  `nowSheetAllowed(id)` (all typeof-guarded in app.js; `SHELL_PANELS.now` calls `nowRefresh()` on a render and `nowTick()` on the 30 s tick).
 
-## The Now engine (app.js — Step 17, build session 1)
+**The clock door.** `?now=<dow>-<hhmm>` (dow 0 = Sunday, e.g. `?now=3-1030`) is `campNowOverride()`: it changes only what THIS device draws (the model
+then also ignores the camp week's dates), and every verify script drives Now through it. It is a developer's door, not a feature: never hand out such a
+link, because a director's key in the moment still writes for the DISPLAYED day.
 
-`nowModel(opts)` (app.js, "THE NOW ENGINE", after `nowBannerHtml`) is the whole Now tab as PLAIN DATA — no markup, no DOM,
-no timer — computed from the week through the SEAM accessors, the state and the clock it is GIVEN (`opts.now` =
-`{ dow, minutes }`, `opts.ms` = server ms; default `campNow()` / `serverNow()`). now-ui.js paints it: `renderNow(model)`
-(a full paint), `renderNowClock(model)` and `renderNowMessages(model)` are the hooks it defines (all typeof-guarded;
-`SHELL_PANELS.now` calls `nowRefresh()` on a render and `nowTick()` on the 30 s tick once `renderNow` exists, else only the announcements). Rules a renderer or a later edit must not break (`tests/now-model.test.js`, + `.senior`, in the
-seeded and seeded-all passes):
+**Kinds.** A kind comes from `type` / the Meal tag (through `blockMeal`) first, then the label's head (before " — "): games, elective (only where
+`CAMP.features.electives`), meal, bible, meeting, worship, activity, bedtime; Saturday is the `sendoff`, Sunday up to the first worship block (all of it
+with none) the `arrival`. `card.kind` is a block kind or `between | morning | night | none | over | notice`: a `bedtime` block with no time is `night`, a
+Saturday `noTime` block is `over`, a `sendoff` block with a posted notice is `notice` (the notice IS the card, the strip leaves it out), a `bible` block
+with no verse for the day is `activity`. **Every minute of every day is a block or a named empty state.** The picture: `at`, `week { phase }`, `reveal`,
+`messages`, `card { kind, k, when, tag, title, emoji, sub, lead, over, notes, hold, down }`, `block`, `moment`, `body` (the kind's data), `next`, `later`
+(+ `laterHeading`), `todo` + `todoMore`, `wholeDay`, the clock part and `wake`. With no camp dates anywhere (`phase: unset`) the printed weekday schedule
+runs as it always did; a date makes the days before the Sunday `none` ("Camp starts Sunday, July 18") and the days after the Saturday `over` ("See you
+next year" plus the champion's NAME from `revealChampionLine()`, never a number).
 
-- **SEAM.** `blockKind(b, dow)` and `blockTeams(b, dow)` are accessors in the SEAM block. A kind comes from `type` / the Meal tag
-  (through `blockMeal`) first, the label's head (before " — ") after: Bible study, Rising bell / Wake up, a service or worship that
-  is not "Prepare…", Lights out / Prepare for bed / devotion(al); Saturday is the `sendoff`, Sunday up to the first worship block
-  (all of it with none) the `arrival`; a `noTime` leftover is `bedtime`. `elective` only where `CAMP.features.electives`.
-  `nowBlocks(dow)` pairs each accessor block with its id (`blockPushId`), kind, head / tail / place and teams.
-- **The picture** (`nowModel` fields): `at`, `week { phase: unset | before | during | after }`, `reveal { live } | null` (a live
-  reveal wins the top; reveal-ui paints it, the model reads nothing of it), `messages`, `card { kind, k, when, tag, title, emoji,
-  sub, lead, over, notes, hold, down }`, `block` (the schedule block behind the card), `moment`, `body` (the kind's data),
-  `next`, `later` (+ `laterHeading`: Sunday lists its whole run sheet under "Today"), `todo` + `todoMore`, `wholeDay`, and the
-  clock part. `card.kind` is a block kind or `between | morning | night | none | over | notice`; a `bedtime` block with no time is
-  `night`, a Saturday `noTime` block is `over`, a `sendoff` block with a posted notice is `notice` (the notice IS the card, and the
-  strip leaves it out), a `bible` block with no verse for the day is `activity`. **Every minute of every day is a block or a named
-  empty state** (the walk test).
-- **The week.** With no camp dates anywhere (`phase: unset`) the printed weekday schedule runs as it always did; a date makes
-  the days before the Sunday `none` ("Camp starts Sunday, July 18") and the days after the Saturday `over` ("See you next year",
-  plus the champion's NAME from `revealChampionLine()`, never a number). A `?now=` preview (`campNowOverride()`) ignores the dates.
-- **The clock part is `model.clock` and nothing else** (`left` / `over` minutes, `progress`, `untilNext`, from `model.basis`);
-  everything else changes only at a minute in `model.wake` (block starts and ends, the end of a meal's 30-minute cleanup window, a
-  games block's hold cap, every full hour for the rain line, 06:00, midnight, the minute a director's hold runs out) or with the
-  data. The walk test fails if any minute that changes the picture is missing from `wake`; add a new time-driven field to `clock`,
-  or its minute to `nowWake`. `nowTick` is a full recompute at a wake-up, a new day or a clock that went back, otherwise only
-  `clock` and `messages` (a banner's time is up, a chat banner's 15 minutes).
-- **Running over** (§3.1): a games block whose end has passed keeps the card while a game in it is Live (`gameRowStatus`, the §5.3
-  truth table: a result = Done; a tournament bracket in progress, a draft with a score or medal, or a running game clock = Live) or a
-  director said "Still on this" (`state.meta.overrun = { key: '<dow>:<block id>', until: <server ms> }`, one per-field meta
-  path; rules accept it, `meta` only has to be a branch), for at most 45 minutes and never past the start of the next games block
-  (`nowGamesCap`). `card.hold` ({ key, name, can, held, cap }, directors only) is offered while such a block has ended inside its
-  window with a game still to score — on the NEXT block's card, the clock having moved on — and while it is held by a director's
-  word; `nowHoldOverrun()` is the tap: +10 minutes, capped, no `touchData`, nothing else written. `card.hold` never holds the
-  moving `nextUntil` (it would change the picture every second).
-- **SECRECY.** A counselor's model holds no point and no place: the director-only fields (`pts`, `locked`, `given`, `secret`,
-  `max`, `mult`, `stillToScore`, a tally's `place`, `score`, `hold`, `canRemove`, `canTakeDown`, `todo`, the verse moment) are
-  not there at all, not false or zero. They exist only for `canEdit()` (may act as a director now: false in a counselor preview)
-  and the points ones only for `standingsVisible()` (a CONFIRMED director outside a preview), so a hint-painted director sees a
-  counselor's moment. A live tally keeps roster order unless a director looks; medal winners and live scores are public
-  (§4.12). The tests run the walk with `setStandingsGuardThrows(true)` and in a preview.
-- **Moments.** The cleanup moment is the 30 minutes after a Meal-tagged block ends, for the teams on the rota (`cleanupOnRota` +
-  `cleanupTeams`; an empty rota says nothing), with each team's counselors for everyone and, for a confirmed director, the 0–3 keys'
-  data (`pts`, `locked` = `!canScoreRound`). It wins over the verse moment (senior's Bible study starts as breakfast ends); the verse
-  moment (0–5 keys) is Bible study's for a confirmed director. Neither is shown on a held card.
-- **Personalisation.** My team is `state.followTeam` (a real team id, else ''). Meal rows say "Your team is on cleanup" (`mine`) or
-  the other teams' short names; my elective station comes from `electiveRowHasMe` (identity compared through
-  `canonicalCounselorName`, a member key first), with `mode: station | break | ask | all` (ask = a counselor on a team with no
-  identity yet; a director is never asked; a name on no sheet says nothing about breaks) and `then` = the next three blocks that
-  are not preparing; the morning meeting names its day's teams (`blockTeams`) and "your team meets"; Sunday's welcome finds the
-  "Team assignments" block. `nowRow` is the run row: `{ key: 'b-<id>', time, emoji, title, dish, sub: { text, mine } }`.
-- **Still to do today** (directors): an unscored game whose block has ended, a meal whose cleanup window is over with no points for
-  a team the director may score, Bible study with a team not given verse points, then people asking to join; oldest first, three
-  rows and `todoMore`. Cleanup and verse rows read points, so they need `ctx.points`.
-- **Messages**: the posted notice (title, sub, my team's line; `canTakeDown`), the join bar (directors), then banners newest
-  first — synced announcements this phone has not dismissed and Announcements-channel chat messages of the last 15 minutes
-  (`canRemove` on a synced one, a director's). The renderer caps the strip to a third of the screen; the model is the whole list.
-- **Four-team bracket**: `nowBracket4` reads Step 22's `state.brackets4[gid] = { m: { s1, s2, third, final } }` (null until it
-  exists; not in `SYNC_KEYS` yet) as four cells, derives 3rd place (the semifinal losers) and the final (the winners) unless a match
-  recorded its own `a` / `b`, drops any id that is not one of the camp's teams, and words my team's next game from the bracket's own
-  order ("Red plays in the final next · 3rd place match first"). The game's row says the match under way ("semifinal 2") and a
-  director on a team in it gets the own-team reason in place of Score, per match, as the six-team bracket does.
-- **Left for the next session**: delete the dormant old Now functions with the tests that pin them (see "Now: the renderers"), the
-  Playwright pass on a real phone, and the `?v=` / `APP_VERSION` / `CODE_UPDATED_AT` bump.
+**The tick and the wake-up list.** `model.clock` (minutes left / over, `progress`, `untilNext`, from `model.basis`) is the ONLY part that moves with the clock
+alone; everything else changes at a minute in `model.wake` (block starts and ends, the end of a meal's 30-minute cleanup window, a games block's hold cap,
+every full hour for the rain line, 06:00, midnight, the minute a director's hold runs out) or with the data. `nowTick` is a full recompute at a wake-up, on
+a new day or a clock that went back, otherwise it patches `clock` and `messages` only (a banner's time is up, a chat banner's 15 minutes). A new
+time-driven field goes in `clock`, or its minute in `nowWake`: the walk test fails for a minute that changes the picture and is missing from `wake`.
 
-## Now: the renderers (now-ui.js — Step 17, build session 2)
+**Running over** (§3.1). A games block whose end has passed keeps the card while a game in it is Live (`gameRowStatus`, the §5.3 truth table: a result =
+Done; a tournament bracket in progress, a draft with a score or medal, or a running game clock = Live) or a director said "Still on this"
+(`state.meta.overrun = { key: '<dow>:<block id>', until: <server ms> }`, one per-field meta path; the rules accept it), for at most 45 minutes and never
+past the start of the next games block (`nowGamesCap`). `card.hold` (directors only) is offered on the NEXT block's card while such a block has ended
+inside its window with a game still to score, and while it is held; `nowHoldOverrun()` is the tap: +10 minutes, capped, no `touchData`, nothing else
+written. `card.hold` never carries the moving `nextUntil` (it would change the picture every second).
 
-`now-ui.js` draws `nowModel()` onto the markup the design pass left in `#tab-now` (every hook and row template is in index.html's
-comment at `#now-card`). Hooks app.js calls (all typeof-guarded): `renderNow(model)`, `renderNowClock(model)`, `renderNowMessages(model)`,
-`renderNowSheet(id)` and `nowSheetAllowed(id)` (`shellSheetFill` / `shellSheetAllowed` for the three sheets `notice`, `messages`,
-`whos-where`). Rules a later edit must not break (`tests/now-ui.test.js`, + `.senior`, in the seeded and seeded-all passes; the preview walk
-in `tests/preview.test.js`):
+**Moments.** The cleanup moment is the 30 minutes after a Meal-tagged block ends, for the teams on the rota (`cleanupOnRota` + `cleanupTeams`; an empty
+rota says nothing), with each team's counselors for everyone and, for a CONFIRMED director, the 0–3 keys. It wins over the verse moment (senior's Bible study
+starts as breakfast ends); the verse moment (0–5 keys) is Bible study's, for a confirmed director. Neither shows on a held card. A key calls
+`setCleanupPoints` / `setVersePoints`, the very writers Award points uses (deterministic ids, one entry per slot), through `nowTapKey`: behind
+`standingsVisible()` and `canScoreRound`, only for a team the model drew a row for and a value the section has a key for, so a stale or forged tap, a
+counselor's, a hint-painted director's and the director's own team write nothing. `awardKeysHtml` (award.js) is the one key builder.
 
-- **It draws what the model holds and invents nothing.** The model already left every director-only field out of a counselor's picture, so no
-  builder asks "may this person see it": a field is there or it is not. A hidden part keeps no director words either (the moment's title
-  and body, the foot's hold text are EMPTIED when nothing is shown: the preview walk found both stale). Only a TAP that writes re-checks the role.
-- **Render stability.** `renderNow` writes through `setHtmlIfChanged` / `setTextIfChanged` / `setHiddenIfChanged` / `setDataIfChanged` only;
-  the 30 s tick between wake-ups is `renderNowClock` (the minutes left, the hairline `--p`, "Up next in N min", the arrival countdown) and
-  the strip. The still-to-do list and the cleanup moment's rows are keyed lists (`paintKeyedList`: a change waits for a finger to lift unless
-  it is the person's own act, `glideNow`). The game rows are written as one body string (no row glide yet).
-- **The moment's keys are the same writers as Award points**: `nowTapKey` calls `setCleanupPoints` / `setVersePoints` (deterministic ids, one
-  entry per slot) behind `standingsVisible()` and `canScoreRound`, only for a team the model drew a row for and a value the section has a key
-  for (cleanup 0–3, verse 0–5). `awardKeysHtml` (award.js) is the one key builder, so a key looks and taps the same in both places; verse rows are
-  `awardRowHtml`. A stale or forged tap, a counselor's, a hint-painted director's and the director's own team write nothing.
-- **Taps** (one delegated listener on `#tab-now`, wired by the first `renderNow`): a game row or Score → `openGame(id, {from: 'now'})`; a Still
-  to do row → the game / Award points (`openTool('award', {from: 'now'})`, then its section) / Who can sign in; "N more" → Award points when the
-  last row shown was its kind, else the Games tab; Whole day → `openSchedule()`; Set up the week → `openBuilder()`; "Not Sam? Change" →
-  `openIdentityPicker()`; an ask name → `state.identity` (blank = "just cheering"); Still on this → `nowHoldOverrun()`; Take down → Tell
-  everyone's `tellNoticeDown()` (the same 10-second Undo; the strip squashes out first); See all / N more messages / Who's where open their sheets.
-- **The messages strip** is `#now-notice` (now-ui.js), `#announcements` (`renderAnnouncements`, which now caps the strip: three messages, the
-  notice strip counts as one, one fewer at 130% text; the rest are `annOverflow`, "N more messages" and `#sheet-messages`) and `#now-msgs-more`.
-  `annStripClick` is the strip's one delegated handler, shared with `#sheet-messages-body`. The posted notice IS the card on the send-off, so the
-  strip leaves it out then.
-- **Motion** (calm-aware, from diffs made here): the card arrives when the block changes over (calm: a fade), the moment unfolds, a game going Live
-  → Done is remembered (`nowUi.flip`) and, once its podium is on screen, pops its check and drops the medals bronze → silver → gold, the hairline is
-  nudged from where it was (never refilled), a notice arrives and squashes out. The first paint, a repeat, a paint that brings Now back into view and
-  a paint under a takeover animate nothing.
-- **Previews**: a notice drawn outside the page (Tell everyone's, the builder's) is `nowNoticeStripHtml` / `nowNoticePreviewHtml`; a test compares the strip's
-  class list with index.html's static `#now-notice`, so the two cannot drift.
-- **Deleted (Step 17, build session 3)**: the old follow card, banner renderer, live strip, My electives card and notice board
-  (`renderFollowCard`, `renderNowBanner` + `splitNowBanner`, `renderLiveHome` + `homeBoardGame` / `liveHomeGames` / `liveHomeTallyCard` /
-  `tallyBoardHTML`, `renderMyElectives` + `myElectivesToday`, `renderNoticeBoard`, `paintTeamAccent`) and their CSS. `nowBannerHtml` stays as the
-  schedule ORACLE (week / seed tests compare the schedule's data through it; nothing on the page calls it).
-- **Not built**: a keyed glide for game rows (a re-sort jumps), the Playwright pass on a real phone, and `data-joy` on Score.
-- **Page checks**: `docs/build-notes/verify/step17-design.cjs` (the specimens) is the reference for the markup; the real-page pass is the
-  same measure over the real renderers (every kind, both camps, 360 / 390, light / dark, 100 / 130 / 200%: 222 views, no target under 44x44,
-  no sideways scroll, no overflowing text).
+**Personalisation.** My team is `state.followTeam` (a real team id, else ''). Meal rows say "Your team is on cleanup" or the other teams' short names. My
+elective station comes from `electiveRowHasMe` (identity through `canonicalCounselorName`, a member key first), `mode: station | break | ask | all` (ask = a
+counselor on a team with no identity yet; a director is never asked; a name on no sheet says nothing about breaks), and `then` = the next three blocks that
+are not preparing; the morning meeting names its day's teams (`blockTeams`); Sunday's welcome finds the "Team assignments" block.
+
+**Still to do today** (directors): an unscored game whose block has ended, a meal whose cleanup window is over with no points for a team the director may
+score, Bible study with a team not given verse points, then people asking to join; oldest first, three rows and `todoMore`.
+
+**Messages.** The posted notice (title, sub, my team's line; `canTakeDown`), the join bar, then banners newest first (synced announcements not dismissed,
+and Announcements-channel chat messages of the last 15 minutes). The model is the whole list; the strip caps at three messages (the notice counts as one,
+one fewer at 130 % text; the root font size is read at render time) and `annOverflow` ("N more messages") rides `#sheet-messages`. `annStripClick` is the
+strip's one delegated handler, shared with the sheet. Take down is Tell everyone's `tellNoticeDown()` (the 10 s Undo); the strip squashes out first.
+
+**Four-team bracket** (Step 22's data, not in `SYNC_KEYS` yet): `nowBracket4` reads `state.brackets4[gid] = { m: { s1, s2, third, final } }` as four cells,
+derives 3rd place and the final unless a match recorded its own `a` / `b`, drops any id that is not one of the camp's teams, and words my team's next game
+("Red plays in the final next · 3rd place match first"). A director on a team in a match gets the own-team reason in place of Score, per match.
+
+**SECRECY** (the Step 3 rule). A counselor's model holds no point and no place: the director-only fields (`pts`, `locked`, `given`, `secret`, `max`, `mult`,
+`stillToScore`, a tally's `place`, `score`, `hold`, `canRemove`, `canTakeDown`, `todo`, the verse moment) are NOT THERE, not false or zero. They exist only
+for `canEdit()` (may act as a director now: false in a counselor preview) and the points ones only for `standingsVisible()` (a confirmed director outside a
+preview). A live tally keeps roster order unless a director looks; medal winners and live scores are public (§4.12). The renderer therefore asks no "may
+this person see it": it draws what the model holds, and only a TAP that writes re-checks the role. A hidden part keeps no director words either (the
+moment's title and body and the foot's hold text are EMPTIED when nothing shows).
+
+**Renderer rules** (now-ui.js; `tests/now-ui.test.js`, the preview walk in `tests/preview.test.js`).
+- Render stability: `renderNow` writes through `setHtmlIfChanged` / `setTextIfChanged` / `setHiddenIfChanged` / `setDataIfChanged` only; an identical second
+  paint and a same-minute tick write nothing; the 30 s tick between wake-ups is `renderNowClock` (minutes left, the hairline, "Up next in N min", the arrival
+  countdown) plus the strip. Still to do and the cleanup moment's rows are keyed lists (`paintKeyedList`: a change waits for a finger to lift unless it is
+  the person's own act, `glideNow`). **The games rows glide too** (`nowPaintBody`): rows are keyed `g-<id>`, and when a game goes Live (up) or Done (down) on
+  screen, within one block, with motion allowed and `Element.animate` present, `JellyMotion.flipKeyed` moves them (waiting for a finger, so a snapshot never
+  swaps the row about to be tapped); the first paint, another block, a hidden Now, calm motion and the test stub are one plain write, and the body's
+  `__html` / `__dom` stamp is brought up to date either way.
+- Every database string is escaped (`esc`) and every emoji, link and colour passes its camp-core.js sanitizer on the way in (`safeEmoji`, `safeVideoUrl`
+  for the verse song, `teamMarkHtml` / `teamAccentAttr`). Markup never carries an animation class.
+- Taps (one delegated listener on `#tab-now`, wired by the first `renderNow`): a game row or Score → `openGame(id, {from: 'now'})` (Score carries
+  `data-joy`: §9.7 puts sparkles on Score, Reveal and awards only); a Still to do row → the game / Award points / Who can sign in; "N more" → Award points when
+  the last row shown was its kind, else the Games tab; Whole day → `openSchedule()`; Set up the week → `openBuilder()`; "Not Sam? Change" →
+  `openIdentityPicker()`; an ask name → `state.identity` (blank = "just cheering"); Still on this → `nowHoldOverrun()`; Take down; See all / N more messages /
+  Who's where open their sheets (registered in `shellSheetAllowed` / `shellSheetFill`; each opens only with something to say).
+- Motion (JellyMotion, calm-aware, from diffs made in this file, never from a render): the card arrives when the block changes over (calm: a fade), the
+  moment unfolds, a game going Live → Done pops its check and drops the medals bronze → silver → gold (also when the repaint had to wait for a finger), the
+  hairline is nudged from where it was (never refilled), a notice arrives and squashes out. The first paint, a repeat, a paint that brings Now back into
+  view and a paint under a takeover animate nothing.
+- Previews of a notice drawn outside the page (Tell everyone's, the builder's Notice tab) are `nowNoticeStripHtml` / `nowNoticePreviewHtml` (a test compares
+  the strip's class list with index.html's static `#now-notice`, so they cannot drift). `noticeCardHtml(preview, notice, opts)` returns it as a
+  counselor's phone draws it.
+
+**What must never regress** (each is pinned by a test): (1) no point, place or director control in a counselor's, a hint-painted director's or a previewing
+director's Now; (2) every minute is a block or a named state, and every minute that changes the picture is in `wake`; (3) an idle repaint writes nothing,
+a tick between wake-ups writes only the clock; (4) the moment's keys are Award points' writers behind `canScoreRound`; (5) the model is pure (the clock is an
+argument), and week data reaches it only through the SEAM accessors; (6) no transform keyframe while calm; (7) every target is 44×44 or more at 360 / 390 px
+and 100 / 130 / 200 % text, with no sideways scroll; (8) the reveal's mirror puts the card and lists away and the grid sits beside the card, never the
+champion line beside either.
+
+**Deleted in build session 3**: the old follow card, banner renderer, live strip, My electives card and notice board (`renderFollowCard`, `renderNowBanner` +
+`splitNowBanner`, `renderLiveHome` + `homeBoardGame` / `liveHomeGames` / `liveHomeTallyCard` / `tallyBoardHTML`, `renderMyElectives` + `myElectivesToday`,
+`renderNoticeBoard`, `paintTeamAccent`) and their CSS. `nowBannerHtml` stays as the schedule ORACLE (week / seed tests compare the schedule's data through
+it; nothing on the page calls it). **Not built:** a second moment slot (senior's Bible study starts as breakfast ends, so with a filled rota the cleanup
+panel takes the one moment slot for the first 30 minutes and the verse keys follow it; Still to do today is the director's safety net), and Preview as a
+counselor needed nothing here: the model and renderer already read `canEdit()` / `standingsVisible()`, which a preview turns off.
+
+**Tests and passes.** `now-model.test.js` (+ `.senior`: every minute, kinds, moments, running over and the hold, personalisation, rows and boards, the
+bracket, messages, Still to do, the tick, secrecy with the guard throwing), `now-ui.test.js` (+ `.senior`: every kind drawn, a counselor's markup with no
+key / Score / place / point, render stability per kind, motion from diffs, the keys as Award points' writers, Still on this, Take down and its Undo, the
+strip's cap, the sheets, escaping, the app without the file), `preview.test.js` (Now walked in a preview at every kind, node for node a counselor's page),
+`secrecy.test.js` (rows 5, 11, 12 and the role flip over Now), `tests/emulator/director-tools-client.mjs` (the real client's Now writes under the
+published rules: a moment key, Still on this, Take down; a counselor's raw write of `state/meta/overrun` is refused). Browser passes:
+`docs/build-notes/verify/step17-design.cjs` (specimens of every template), **`step17-pass.cjs`** (the real renderers: every kind found by scanning the
+model over the week, both camps, counselor / director / director-on-a-team / owner, 360 / 390, light / dark, 100 / 130 / 200 %, the 20-character podium
+at its widest, a 44-minute Running over and a held one, the three sheets, and the reveal's mirror / grid / champion line on the new Now; no target under
+44×44, no sideways scroll, no overflow, a leak scan over a counselor's text; about four minutes for both camps with `CAMPS=junior` / `CAMPS=senior` in two
+processes; `SHOTS=1` for screenshots; it found the notice sheet's squeeze and the mirror's Happening-now overflow at 200 % text on 360 px).
 
 ## The standings reveal: the screens (Step 23 — markup and visual system)
 
@@ -2303,7 +2287,7 @@ What's covered, and why each file exists:
   formats), the meal-cleanup rota's team ids, announcement expiry, `.ics`
   export, and the notice board (draft stays invisible, posting is editor-only,
   every shape RTDB can prune is healed).
-- `now-model.test.js` (+ `.senior`; in the seeded and seeded-all passes) — the Now engine ("The Now engine"): `blockKind` over both
+- `now-model.test.js` (+ `.senior`; in the seeded and seeded-all passes) — the Now model ("The Now tab"): `blockKind` over both
   camps' printed weeks; **every minute of every day** a block or a named empty state with no throw and the picture changing only at a
   `wake` minute (every third minute in the seeded passes); the empty states and the week's dates; the cleanup / verse moment
   windows; running over (Live, a director's word, the 45-minute cap, never past the next games block, `nowHoldOverrun`); Up next /
@@ -2311,9 +2295,10 @@ What's covered, and why each file exists:
   rows (order, podium, live boards, the own-team Score guard, the four-team bracket); the messages strip; Still to do today; the
   tick; a counselor's, a hinted director's and a previewing director's models holding no points with the guard throwing; junk
   snapshots never throwing.
-- `now-ui.test.js` (+ `.senior`; seeded and seeded-all passes) — Now's renderers ("Now: the renderers"): every kind of card from the model, a
+- `now-ui.test.js` (+ `.senior`; seeded and seeded-all passes) — Now's renderers ("The Now tab"): every kind of card from the model, a
   counselor's markup with no key / Score / place / point (the points guard throwing), render stability per kind (an identical second paint and a
-  same-minute tick write nothing; the tick between wake-ups writes only the minutes left), motion from diffs only, the moment's keys as Award points'
+  same-minute tick write nothing; the tick between wake-ups writes only the minutes left), motion from diffs only (the games rows' glide, with a hand-made
+  body that counts what the paint does), the moment's keys as Award points'
   own writers behind the own-team guard (bounds, stale taps, a hint-painted director), Still on this, Take down and its Undo, the strip's cap and
   `#sheet-messages`, the three sheets, escaping, the app without the file. `preview.test.js` walks Now through a block of every kind in a preview
   (no key / point / place / director control; node for node a counselor's page).
@@ -5197,10 +5182,9 @@ convention — never device-local time.
 `state.notice` — synced (in `SYNC_KEYS`, and a `SYNC_SINGLETON`: it's one
 composed card, always written whole). Posted, it is the strip `#now-notice` at the top of Now (title, first line, your team's
 line, See all → `#sheet-notice`, a director's Take down) and, on send-off Saturday, the Now card itself (now-ui.js,
-`nowNoticeHtml`; the old `#notice-board` card is gone). `noticeCardHtml(preview, notice, opts)` is now the notice AS A COUNSELOR'S PHONE DRAWS IT
+`nowNoticeHtml`). `noticeCardHtml(preview, notice, opts)` is the notice AS A COUNSELOR'S PHONE DRAWS IT
 (`nowNoticePreviewHtml`: the strip, plus what See all opens unless `opts.strip`): Tell everyone's "On a counselor's phone" passes `{ strip: true }`, the
-builder's Notice tab takes both, and `nowNoticeData(ctx, notice)` reads the notice it is handed (a pin that WOULD post has no team areas). The old
-`.notice-card` / `.notice-row` / `.notice-step*` rules in styles.css are dead; delete them with the dormant functions.
+builder's Notice tab takes both, and `nowNoticeData(ctx, notice)` reads the notice it is handed (a pin that WOULD post has no team areas).
 
 Built for send-off-morning cleanup, where six separate announcements filled a
 whole phone screen and buried the one line each camper needed. Reach for it
