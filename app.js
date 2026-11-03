@@ -954,6 +954,16 @@ function blockKind(b, dow) {
   return b.noTime ? 'bedtime' : 'activity';
 }
 
+// The teams a block is FOR (the morning meeting's group of teams, a team's own item): ids in the camp's order, [] when it is for
+// everyone. Built in, the printed label's team tail is the seed's `teams` set (the built-in plan carries it); edited here, it is the
+// item's own `teams`.
+function blockTeams(b, dow) {
+  if (!b || typeof b !== 'object') return NO_ITEMS;
+  let rich = scheduleIsShared() && typeof setupRichOf === 'function' ? setupRichOf(b) : null;
+  if (!rich) rich = planForDow(dow).find((p) => p.start === b.start && p.end === b.end && p.label === b.label) || null;
+  return rich && rich.teams ? teamIds().filter((id) => rich.teams[id]) : NO_ITEMS;
+}
+
 // ── Alerts: the stable key a block is subscribed by, and its published id.
 // (pushBlockKey lives in push.js, which loads later and may be absent.) A block the shared schedule handed out carries
 // its own: the key it was seeded with (today's, and never recomputed on a rename) and the id `<dk>-<block id>`, which
@@ -1688,6 +1698,793 @@ function splitNowBanner(html) {
     wx: wx ? wx[0] : '',
     value: val ? val[1] : null,
   };
+}
+
+// ════════════════════════════════════════════════════════════════════
+// THE NOW ENGINE — nowModel() and what hangs off it (redesign §3; BUILD-PLAN Step 17, build session 1)
+// ════════════════════════════════════════════════════════════════════
+// ONE function computes the whole Now tab from the week's data (through the SEAM accessors), the state and the clock it is
+// GIVEN, so a test can walk every minute of every day in both camps (tests/now-model.test.js), as week.test.js walks the old
+// banner. It returns PLAIN DATA — no markup, no DOM, no timer — and the renderers (later Step 17 sessions) only paint it.
+// Rules of the layer:
+//   - SECRECY. A counselor's model holds no point and no place: points come from the guarded readers (cleanupEarned,
+//     versePointsByDay: they return nothing for a counselor) and only for `ctx.points`; a live tally is in roster order unless
+//     a director looks at it. A game's medal winners and live scores are public (redesign §4.12 rows 11-12).
+//   - THE CLOCK IS AN ARGUMENT (`opts.now` = { dow, minutes }, `opts.ms` = server ms), never read inside the picture. Every
+//     minute of every day is a block or a named empty state (`card.kind`: between | morning | night | none | over).
+//   - What changes with the clock alone lives in `clock` (minutes left, the hairline, minutes until the next block) and is
+//     patched by the tick; everything else changes only at a minute listed in `wake`, or with the data (a snapshot's
+//     renderAll). A test pins that: no minute that changes the picture is missing from `wake`.
+//   - Week data only through the SEAM accessors (tests/seam.test.js); text from the database is escaped by the renderer
+//     (esc) and every emoji, link and colour that reaches markup passes a camp-core.js sanitizer.
+// Hooks a renderer provides (all typeof-guarded, so the page runs without them): renderNow(model) for a full paint,
+// renderNowClock(model) when only model.clock moved, renderNowMessages(model) when only the message strip moved.
+
+const NOW_CLEANUP_WINDOW_MIN = 30;      // the cleanup moment: this long after a meal's end (redesign §3.3)
+const NOW_OVERRUN_MAX_MIN = 45;         // a games block past its end stays the card at most this long (§3.1)
+const NOW_HOLD_STEP_MS = 10 * 60000;    // "Still on this · +10 min": each tap adds this much
+const NOW_MORNING_FROM_MIN = 6 * 60;    // before this hour, before the day's first block, the card is the night one
+const NOW_LATER_MAX = 3;                // Later today: the three after Up next
+const NOW_TODO_MAX = 3;                 // Still to do today: three rows, then "N more"
+
+function nowMyTeam() {
+  const t = state.followTeam;
+  return typeof t === 'string' && teamIds().includes(t) ? t : '';
+}
+
+// The context one picture is computed in. The role is read here, once: `director` = may act as a director right now
+// (false in a counselor preview), `points` = may see points (a CONFIRMED director outside a preview).
+function nowCtx(opts) {
+  opts = opts || {};
+  const n = opts.now || campNow();
+  const dow = weekdayIndex(n.dow);
+  const minutes = Number(n.minutes);
+  return {
+    dow: dow < 0 ? 0 : dow,
+    minutes: Number.isFinite(minutes) ? Math.max(0, Math.min(1439, Math.floor(minutes))) : 0,
+    ms: Number.isFinite(opts.ms) ? opts.ms : serverNow(),
+    date: typeof opts.date === 'string' ? opts.date : campDateStr(),
+    forced: opts.forced !== undefined ? !!opts.forced : !!campNowOverride(), // a ?now= preview ignores the camp week's dates
+    director: canEdit(),
+    points: standingsVisible(),
+    myTeam: nowMyTeam(),
+    identity: state.identity,
+  };
+}
+
+// ── words ────────────────────────────────────────────────────────────
+// A label as { head, tail, place }: the head is what is before " — ", a trailing "(Laura's cottage)" is the place.
+function nowSplitLabel(label) {
+  const s = String(label == null ? '' : label);
+  const at = s.indexOf(' — ');
+  let head = (at < 0 ? s : s.slice(0, at)).trim();
+  const tail = at < 0 ? '' : s.slice(at + 3).trim();
+  let place = '';
+  const m = /^(.*\S)\s*\(([^()]+)\)$/.exec(head);
+  if (m) { head = m[1].trim(); place = m[2].trim(); }
+  return { head, tail, place };
+}
+// A tail that is only people ("Jenn, Laura, Erica & Patrick") reads "with …"; any other tail is a note ("Snack Shack open").
+function nowTailText(tail) {
+  if (!tail) return '';
+  const people = tail.split(/\s*(?:,|&|\band\b)\s*/).every((w) => /^[A-Z][^\s,&]*(?:\s+[A-Z][^\s,&]*)*$/.test(w));
+  return people ? 'with ' + tail : tail;
+}
+function nowJoinNames(names) {
+  return names.length < 2 ? names.join('') : names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1];
+}
+function nowTeamWord(id) { return teamShort(id) || teamName(id); }
+// "63 min left" / "7 min over" (from model.clock), and "in 3 h 10 min" for a countdown.
+function nowLeftText(c) {
+  if (!c) return '';
+  if (c.over) return c.over + ' min over';
+  return c.left == null ? '' : c.left + ' min left';
+}
+function nowSpanText(mins) {
+  const m = Math.max(0, Math.round(mins));
+  return m < 60 ? m + ' min' : Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : '');
+}
+// 'YYYY-MM-DD' → "Sunday, June 21" (the date as written, no time zone to get wrong).
+function nowDateLong(str) {
+  const p = String(str || '').split('-').map(Number);
+  if (p.length !== 3 || p.some((x) => !Number.isFinite(x))) return '';
+  try {
+    return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'long', month: 'long', day: 'numeric' }).format(new Date(Date.UTC(p[0], p[1] - 1, p[2])));
+  } catch (e) { return ''; }
+}
+
+// ── the day ──────────────────────────────────────────────────────────
+// One weekday's blocks as the engine reads them (schedule order, so the first block that holds a minute wins, as the old
+// banner found it): the accessor's block plus what the card needs. `id` is the published block id: `<dk>-<id>` once the
+// schedule is edited here, `d<dow>-<start>-<position>` while it is the printed copy: unique either way.
+function nowBlocks(dow) {
+  return scheduleForDow(dow).map((b, i) => {
+    const sp = nowSplitLabel(b.label);
+    const teams = blockTeams(b, dow);
+    return {
+      i, dow, b, id: blockPushId(b, dow, i), start: b.start, end: b.end, noTime: !!b.noTime,
+      emoji: safeEmoji(b.emoji, ''), type: b.type || 'activity', slot: b.slot,
+      kind: blockKind(b, dow), meal: blockMeal(b), head: sp.head, place: sp.place, tail: teams.length ? '' : sp.tail, teams,
+    };
+  });
+}
+function nowFind(blocks, minutes) { return blocks.find((x) => minutes >= x.start && minutes < x.end) || null; }
+
+// What camp week the clock is in: 'unset' (no dates anywhere: the printed weekday schedule runs, as it always did),
+// 'before' / 'during' / 'after' from the Sunday the week starts. A previewed clock (?now=) is always 'during'.
+function nowDayGap(startStr, dateStr) {
+  const a = String(startStr).split('-').map(Number);
+  const b = String(dateStr).split('-').map(Number);
+  if (a.length !== 3 || b.length !== 3 || a.some((x) => !Number.isFinite(x)) || b.some((x) => !Number.isFinite(x))) return 0;
+  return Math.round((Date.UTC(b[0], b[1] - 1, b[2]) - Date.UTC(a[0], a[1] - 1, a[2])) / 86400000);
+}
+function nowWeek(ctx) {
+  if (ctx.forced) return { phase: 'during', start: null };
+  const start = campWeek().start;
+  if (!start) return { phase: 'unset', start: null };
+  const gap = nowDayGap(start, ctx.date);
+  return { phase: gap < 0 ? 'before' : gap > 6 ? 'after' : 'during', start };
+}
+
+// ── games ────────────────────────────────────────────────────────────
+// The status model of redesign §5.3 (the Games tab reuses it): Done = a result; Live = a bracket in progress, a draft with any
+// score or medal, or a game clock that is running; else Not started. A bracket left behind by a format change does not count.
+function gameRowStatus(g, ms) {
+  if (!g) return 'todo';
+  if (state.results && state.results[g.id]) return 'done';
+  const b = state.brackets && state.brackets[g.id];
+  if (b && g.format === 'tournament' && bracketKnown(b) && normalizeBracket(b).phase !== 'summary') return 'live';
+  if (g.format === 'tournament' && state.brackets4 && state.brackets4[g.id] && typeof state.brackets4[g.id] === 'object') return 'live';
+  const d = state.drafts && state.drafts[g.id];
+  if (d && ((d.scores && Object.values(d.scores).some((v) => String(v).trim() !== '')) || (d.medals && Object.values(d.medals).some(Boolean)))) return 'live';
+  const c = state.clocks && state.clocks[g.id];
+  if (c && c.running === true && Number(c.endAt) > (Number.isFinite(ms) ? ms : serverNow())) return 'live';
+  return 'todo';
+}
+
+// The three medal winners of a finished game, [{ place: 1|2|3, team, mine }] — public, read from the result directly.
+function nowPodium(ctx, g) {
+  const r = state.results && state.results[g.id];
+  const ids = teamIds();
+  if (!r || !r.medals) return null;
+  return [['gold', 1], ['silver', 2], ['bronze', 3]]
+    .filter(([k]) => ids.includes(r.medals[k]))
+    .map(([k, place]) => ({ place, team: r.medals[k], name: teamName(r.medals[k]), mine: r.medals[k] === ctx.myTeam }));
+}
+
+// A live game's board as data. Tally: the teams that are in (roster order — the ORDER is a director's), match: the pair
+// playing now with their score and the next pair when it is known. Placement: nothing (the sub says "Being scored").
+function nowLiveBoard(ctx, g) {
+  const b = state.brackets && state.brackets[g.id];
+  if (g.format === 'tournament' && b && bracketKnown(b)) {
+    const nb = normalizeBracket(b);
+    if (nb.phase === 'summary') return null;
+    const phase = { round1: 'Round 1', bye: 'Bye', semifinal: 'Championship game', championship: 'Final' }[nb.phase] || '';
+    const pair = currentMatchupOf(g, nb);
+    let cap = phase;
+    let scores = null;
+    if (pair && g.ladderScoring) {
+      const l = getLadderMatch(g, pair[0], pair[1]);
+      scores = [l.a, l.b];
+      cap += ' · First to ' + (g.ladderScoring.target || 21);
+    } else if (pair && g.liveTracker) {
+      const l = getLiveMatch(g, pair[0], pair[1]);
+      scores = [l.hr[pair[0]] || 0, l.hr[pair[1]] || 0];
+      const innings = g.liveTracker.innings || 3;
+      if (innings > 1) cap += ' · ' + (g.liveTracker.periodLabel || 'Inning') + ' ' + l.inning + ' of ' + innings;
+      if (g.liveTracker.outs) cap += ' · ' + outsLabel(l.outs);
+    }
+    const next = nextMatchupOf(g, nb);
+    return {
+      kind: 'match', cap,
+      sides: pair ? pair.map((id, i) => ({ team: id, name: teamName(id), v: scores ? scores[i] : null, mine: id === ctx.myTeam })) : [],
+      next: next ? next.slice(0, 2) : null,
+    };
+  }
+  if (g.liveRankings && tallyInProgress(g)) {
+    const ranked = tallyRankLive(g);
+    return {
+      kind: 'tally', ranked: ctx.points, inCount: ranked.length, total: state.teams.length,
+      cap: ranked.length + ' of ' + state.teams.length + ' in',
+      rows: ranked.map((e, i) => Object.assign({ team: e.id, name: teamName(e.id), v: formatScore(g, e.v), mine: e.id === ctx.myTeam }, ctx.points ? { place: i + 1 } : {})),
+    };
+  }
+  return null;
+}
+
+// The four-team bracket (Step 22's data: state.brackets4[gid] = { m: { s1, s2, third, final } }) as four cells in the order of
+// play; null while no such bracket exists (nothing reads it today). Normalised on read: a team id that is not one of the camp's
+// is dropped, third place is the two semifinal losers and the final the two winners unless a match recorded its own.
+function nowBracket4(ctx, g) {
+  const raw = state.brackets4 && state.brackets4[g.id];
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw) || !raw.m || typeof raw.m !== 'object' || Array.isArray(raw.m)) return null;
+  const ids = teamIds();
+  const pick = (v) => (typeof v === 'string' && ids.includes(v) ? v : '');
+  const cell = (k) => { const r = raw.m[k] && typeof raw.m[k] === 'object' ? raw.m[k] : {}; return { a: pick(r.a), b: pick(r.b), winner: pick(r.winner) }; };
+  const m = { s1: cell('s1'), s2: cell('s2'), third: cell('third'), final: cell('final') };
+  const loser = (c) => (c.winner ? (c.winner === c.a ? c.b : c.a) : '');
+  m.third.a = m.third.a || loser(m.s1); m.third.b = m.third.b || loser(m.s2);
+  m.final.a = m.final.a || m.s1.winner; m.final.b = m.final.b || m.s2.winner;
+  const order = ['s1', 's2', 'third', 'final'];
+  const names = { s1: 'Semifinal 1', s2: 'Semifinal 2', third: '3rd place', final: 'Final' };
+  const tbd = { third: ['Semifinal 1 loser', 'Semifinal 2 loser'], final: ['Semifinal 1 winner', 'Semifinal 2 winner'] };
+  const live = order.find((k) => !m[k].winner);
+  const cells = order.map((k, i) => {
+    const c = m[k];
+    return {
+      key: 'b4-' + k, slot: k, name: names[k],
+      status: c.winner ? 'done' : k === live ? 'live' : 'todo', next: !!live && order[order.indexOf(live) + 1] === k,
+      teams: [c.a, c.b].map((id, j) => ({
+        team: id, name: id ? teamName(id) : '', tbd: id ? '' : (tbd[k] ? tbd[k][j] : 'To be decided'),
+        won: !!id && c.winner === id, lost: !!id && !!c.winner && c.winner !== id, mine: !!id && id === ctx.myTeam,
+      })),
+    };
+  });
+  // The line for MY team, from the bracket's own order (never "the last game today": the block can hold other games).
+  let note = null;
+  const me = ctx.myTeam;
+  if (me) {
+    const word = nowTeamWord(me);
+    const inSemi = ['s1', 's2'].find((k) => m[k].a === me || m[k].b === me);
+    const thirdLeft = !m.third.winner;
+    if (inSemi && !m[inSemi].winner) note = { lead: word, rest: ' plays in ' + names[inSemi].toLowerCase().replace('semifinal', 'semifinal') };
+    else if (inSemi && m[inSemi].winner === me) note = { lead: word, rest: ' plays in the final next' + (thirdLeft ? ' · 3rd place match first' : '') };
+    else if (inSemi && thirdLeft) note = { lead: word, rest: ' plays the 3rd place match next' };
+  }
+  return { cells, note: note ? Object.assign({ team: me, mine: true }, note) : null };
+}
+
+// One game as a row of the Now card (and, later, the Games tab).
+function nowGameRow(ctx, g) {
+  const status = gameRowStatus(g, ctx.ms);
+  const row = {
+    key: 'g-' + g.id, id: g.id, name: g.name, emoji: safeEmoji(g.emoji, ''), where: g.location || '', format: g.format || '',
+    status, next: false, mine: false, line: '', podium: null, board: null, score: null,
+  };
+  if (status === 'done') {
+    const r = state.results[g.id];
+    const at = r && typeof r.savedAt === 'string' ? messageClock(r.savedAt, true) : '';
+    row.line = at ? 'finished ' + at : 'finished';
+    row.podium = nowPodium(ctx, g);
+    row.mine = !!(row.podium && row.podium.some((c) => c.mine));
+  } else if (status === 'live') {
+    row.board = nowLiveBoard(ctx, g);
+    if (row.board && row.board.kind === 'match') {
+      row.line = row.board.cap.split(' · ').slice(0, 2).join(' · ').toLowerCase();
+      row.mine = row.board.sides.some((s) => s.mine);
+    } else if (row.board && row.board.kind === 'tally') {
+      row.line = 'scores so far';
+      row.mine = row.board.rows.some((r) => r.mine);
+    } else row.line = 'Being scored';
+  }
+  if (ctx.director && status !== 'done') {
+    // A bracket's current round that has my own team in it is another director's to score (canScoreRound); a tally or a
+    // podium game is not guarded at the game level.
+    const pair = status === 'live' && row.board && row.board.kind === 'match' ? row.board.sides.map((s) => s.team) : [];
+    row.score = { gold: false, why: pair.length && blockedByOwnTeam(...pair) ? 'Your team plays · another director scores' : null };
+  }
+  return row;
+}
+
+// A games block's body: live first, then not started in the block's own order, then done.
+function nowGamesBody(ctx, nb) {
+  const games = gamesForBlock(ctx.dow, nb.b);
+  const rows = games.map((g) => nowGameRow(ctx, g));
+  const rank = { live: 0, todo: 1, done: 2 };
+  const ordered = rows.map((r, i) => ({ r, i })).sort((a, b) => (rank[a.r.status] - rank[b.r.status]) || (a.i - b.i)).map((x) => x.r);
+  const firstTodo = ordered.find((r) => r.status === 'todo');
+  if (firstTodo) firstTodo.next = true;
+  ordered.forEach((r) => { if (r.score) r.score.gold = r.status === 'live' || r.next; });
+  const left = ordered.filter((r) => r.status !== 'done').length;
+  const b4 = games.map((g) => nowBracket4(ctx, g)).find(Boolean) || null;
+  return {
+    rows: ordered, total: ordered.length, stillToScore: ctx.director ? left : null,
+    doubled: games.some((g) => g.messtival), bracket4: b4,
+  };
+}
+
+// ── running over (§3.1) ──────────────────────────────────────────────
+function nowOverrunRec() {
+  const o = state.meta && state.meta.overrun;
+  const until = o && typeof o === 'object' ? Number(o.until) : NaN;
+  return o && typeof o.key === 'string' && Number.isFinite(until) ? { key: o.key, until } : null;
+}
+// The minute at which a games block can no longer be held over: 45 minutes past its end, never past the start of the next one.
+function nowGamesCap(blocks, nb) {
+  const nextGames = blocks.find((x) => x !== nb && x.kind === 'games' && !x.noTime && x.start >= nb.end);
+  const cap = nb.end + NOW_OVERRUN_MAX_MIN;
+  return nextGames ? Math.min(cap, nextGames.start) : cap;
+}
+// The games block that still holds the card although its end has passed: a game in it is Live, or a director said "Still on
+// this" (state.meta.overrun, until a server time) — within the cap. The latest-ending one when two qualify.
+function nowHeld(ctx, blocks) {
+  const rec = nowOverrunRec();
+  let best = null;
+  blocks.forEach((nb) => {
+    if (nb.kind !== 'games' || nb.noTime) return;
+    const cap = nowGamesCap(blocks, nb);
+    if (!(ctx.minutes >= nb.end && ctx.minutes < cap)) return;
+    const live = gamesForBlock(ctx.dow, nb.b).some((g) => gameRowStatus(g, ctx.ms) === 'live');
+    const said = !!rec && rec.key === ctx.dow + ':' + nb.id && ctx.ms < rec.until;
+    if (!live && !said) return;
+    if (!best || nb.end > best.nb.end) best = { nb, cap, by: live ? 'live' : 'director' };
+  });
+  return best;
+}
+// The director's "Still on this · +10 min": offered while a games block has ended inside its window with a game still to score
+// (it can be offered on the NEXT block's card — the clock has already moved on), or while one is held by a director's word.
+// { key, name, can, held, cap, nextUntil } or null. `nextUntil` (server ms) moves every second: it is for the tap
+// (nowHoldOverrun), never part of the picture (the model leaves it out, so the picture is the same all minute).
+function nowHoldOffer(ctx, blocks, held) {
+  if (!ctx.director) return null;
+  let nb = held ? held.nb : null;
+  if (held && held.by === 'live') return null; // something is live: nothing to ask for
+  if (!nb) {
+    blocks.forEach((x) => {
+      if (x.kind !== 'games' || x.noTime) return;
+      const cap = nowGamesCap(blocks, x);
+      if (ctx.minutes >= x.end && ctx.minutes < cap && (!nb || x.end > nb.end)) nb = x;
+    });
+    if (!nb) return null;
+    if (!gamesForBlock(ctx.dow, nb.b).some((g) => gameRowStatus(g, ctx.ms) !== 'done')) return null;
+  }
+  const cap = nowGamesCap(blocks, nb);
+  const key = ctx.dow + ':' + nb.id;
+  const rec = nowOverrunRec();
+  const eff = rec && rec.key === key && rec.until > ctx.ms ? rec.until : ctx.ms;
+  const effMin = ctx.minutes + Math.ceil((eff - ctx.ms) / 60000); // the minute the hold reaches, so "can" holds still all minute
+  return {
+    key, name: nb.head, can: effMin < cap, held: !!held, cap,
+    nextUntil: Math.min(eff + NOW_HOLD_STEP_MS, ctx.ms + (cap - ctx.minutes) * 60000),
+  };
+}
+// A director taps "Still on this · +10 min". Display only: nothing but this one meta field is written, so no other block
+// moves and two directors cannot clobber anything else (meta is diffed per field). Not scoreboard activity: no touchData.
+function nowHoldOverrun(opts) {
+  if (!canEdit()) return false;
+  const ctx = nowCtx(opts);
+  const blocks = nowBlocks(ctx.dow);
+  const offer = nowHoldOffer(ctx, blocks, nowHeld(ctx, blocks));
+  if (!offer || !offer.can) return false;
+  if (!state.meta || typeof state.meta !== 'object') state.meta = {};
+  state.meta.overrun = { key: offer.key, until: offer.nextUntil };
+  saveState();
+  renderAll();
+  return true;
+}
+
+// ── personalisation ──────────────────────────────────────────────────
+// The teams on cleanup after a meal block, [{ team, mine }] ([] for a block that is no meal, a day off the rota or a meal with
+// nobody on it — senior's empty rota says nothing).
+function nowDuty(ctx, nb) {
+  if (!nb.meal || !cleanupOnRota(ctx.dow)) return [];
+  return cleanupTeams(ctx.dow, nb.meal).map((id) => ({ team: id, mine: id === ctx.myTeam }));
+}
+// The team a counselor's NAME belongs to ('' when nobody's roster has it): the printed roster and the member directory, both
+// compared through the one spelling per counselor.
+function nowTeamOfName(name) {
+  const c = canonicalCounselorName(name);
+  return teamIds().find((id) => teamRoster(id).some((n) => canonicalCounselorName(n) === c) || teamStaffNames(id).some((n) => canonicalCounselorName(n) === c)) || '';
+}
+// Where I am during one elective block: { station, emoji, onBreak, with: [{ name, team }] }, or null when this phone's
+// identity is on no elective sheet that day (a counselor not on it, a parent) — which says nothing, not "On break".
+function nowStationAt(ctx, nb) {
+  if (nb.kind !== 'elective' || typeof nb.slot !== 'number' || !electiveMeOnDay(ctx.dow)) return null;
+  const rows = electivesFor(ctx.dow)[nb.slot] || [];
+  const mine = rows.find((r) => electiveRowHasMe(r));
+  if (!mine) return { station: '', emoji: '☕', onBreak: true, with: [] };
+  const keys = mine[2] || [];
+  return {
+    station: mine[0], emoji: safeEmoji(stationEmoji(mine[0]), '🌟'), onBreak: false,
+    with: (mine[1] || []).filter((n, i) => !electiveIsMe(n, keys[i] || '')).map((n) => ({ name: n, team: nowTeamOfName(n) })),
+  };
+}
+
+// A run row (Up next, Later today, Then, Tomorrow): flat, time · emoji · title, with a sub only when it says something
+// personal. `sub` = { text, mine } — mine means the renderer bolds "Your team".
+function nowRow(ctx, nb) {
+  const dish = nb.kind === 'meal' ? mealInfo(ctx.dow, nb.b) : null;
+  const row = {
+    key: 'b-' + nb.id, id: nb.id, kind: nb.kind, start: nb.start, time: nb.noTime ? '' : schedClock(nb.start, false),
+    noTime: nb.noTime, emoji: dish && dish.emoji ? safeEmoji(dish.emoji, nb.emoji) : nb.emoji, title: nb.head,
+    dish: dish ? { emoji: safeEmoji(dish.emoji, ''), text: String(dish.dish) } : null, sub: null, mine: false,
+  };
+  if (nb.kind === 'meal') {
+    const duty = nowDuty(ctx, nb);
+    if (duty.some((d) => d.mine)) { row.sub = { text: 'Your team is on cleanup', mine: true }; row.mine = true; }
+    else if (duty.length) row.sub = { text: nowJoinNames(duty.map((d) => nowTeamWord(d.team))) + ' on cleanup', mine: false };
+  } else if (nb.kind === 'elective') {
+    const st = nowStationAt(ctx, nb);
+    if (st) { row.sub = { text: st.onBreak ? 'On break' : st.station, mine: true }; row.mine = true; }
+  } else if (nb.kind === 'games') {
+    const games = gamesForBlock(ctx.dow, nb.b);
+    if (games.length) {
+      let text = games[0].name + (games.length > 1 ? ' and ' + (games.length - 1) + ' more' : '');
+      // "Foxes play first": my team's next matchup is the first one of a bracket game in this block.
+      const first = ctx.myTeam ? games.find((g) => g.format === 'tournament' && !(state.results && state.results[g.id]) && upcomingMatchups(g)[0] && (upcomingMatchups(g)[0].aId === ctx.myTeam || upcomingMatchups(g)[0].bId === ctx.myTeam)) : null;
+      if (first) { text += ' · ' + nowTeamWord(ctx.myTeam) + ' play first'; row.mine = true; }
+      row.sub = { text, mine: !!first };
+    }
+  } else if (nb.tail) row.sub = { text: nowTailText(nb.tail), mine: false };
+  return row;
+}
+
+// ── the kinds' bodies ────────────────────────────────────────────────
+function nowVerse(dow) {
+  const v = verseFor(dow);
+  if (!v || !(String(v.text || '').trim() || String(v.ref || '').trim())) return null;
+  const t = verseTheme();
+  const theme = t && (t.title || t.text || t.ref) ? { title: String(t.title || ''), ref: String(t.ref || '') } : null;
+  return { text: String(v.text || ''), ref: String(v.ref || ''), video: safeVideoUrl(v.video), theme };
+}
+// The identity ask's choices: the team's counselors (the member directory once it has some, else the printed roster).
+function nowIdentityNames(teamId) {
+  const staff = teamStaffNames(teamId);
+  return (staff.length ? staff : teamRoster(teamId)).slice();
+}
+// An elective block: my station (or break), the ask when this phone has no identity yet, or every station. `then` = the next
+// three blocks that are not just preparing, an elective one personalised.
+function nowElectiveBody(ctx, nb, blocks) {
+  const me = electiveMeOnDay(ctx.dow);
+  const st = nowStationAt(ctx, nb);
+  const mode = me ? (st && !st.onBreak ? 'station' : 'break')
+    : !ctx.director && ctx.myTeam && ctx.identity === undefined ? 'ask' : 'all';
+  const rows = electivesFor(ctx.dow)[nb.slot] || [];
+  const stations = rows.map((r) => {
+    const keys = r[2] || [];
+    return {
+      key: 'st-' + String(r[0]).toLowerCase().replace(/[^a-z0-9]+/g, '-'), station: r[0], emoji: safeEmoji(stationEmoji(r[0]), '🌟'),
+      people: (r[1] || []).map((n, i) => ({ name: n, mine: electiveIsMe(n, keys[i] || '') })), mine: electiveRowHasMe(r),
+    };
+  });
+  const breakNames = electiveBreakKids(ctx.dow, nb.slot);
+  const after = blocks.slice(nb.i + 1).filter((x) => !/^prepare\b/i.test(x.head)).slice(0, 3);
+  return {
+    mode, station: mode === 'station' ? st : null, stations, onBreak: breakNames.map((n) => ({ name: n, mine: electiveIsMe(n, '') })),
+    count: { stations: stations.length, onBreak: breakNames.length },
+    ask: mode === 'ask' ? { names: nowIdentityNames(ctx.myTeam) } : null,
+    then: after.map((x) => nowRow(ctx, x)),
+  };
+}
+
+// ── moments (§3.3): the cleanup panel after a meal, the verse points in Bible study ──
+function nowCleanupMoment(ctx, blocks) {
+  for (const nb of blocks) {
+    if (!nb.meal || nb.noTime) continue;
+    if (!(ctx.minutes >= nb.end && ctx.minutes < nb.end + NOW_CLEANUP_WINDOW_MIN)) continue;
+    const duty = nowDuty(ctx, nb);
+    if (!duty.length) continue;
+    const earned = ctx.points ? cleanupEarned(ctx.dow, nb.meal) : {};
+    const moment = {
+      kind: 'cleanup', dow: ctx.dow, meal: nb.meal, title: nb.meal + ' cleanup', until: nb.end + NOW_CLEANUP_WINDOW_MIN,
+      teams: duty.map((d) => {
+        const t = { key: 'c-' + d.team, team: d.team, name: teamName(d.team), mine: d.mine, who: counselorName(d.team) };
+        if (ctx.director) { t.locked = !canScoreRound(d.team); t.pts = ctx.points ? earned[d.team] || 0 : 0; }
+        return t;
+      }),
+    };
+    if (ctx.director) { moment.secret = true; moment.max = 3; } // a counselor's moment has no such field at all
+    return moment;
+  }
+  return null;
+}
+// Bible study's verse points: a CONFIRMED director's alone (a counselor's model has no verse moment at all).
+function nowVerseMoment(ctx, nb) {
+  if (!ctx.points || !ctx.director || nb.kind !== 'bible') return null;
+  const earned = versePointsByDay()[ctx.dow] || { raw: {}, effective: {} };
+  return {
+    kind: 'verse', dow: ctx.dow, title: 'Verse points', until: nb.end, secret: true, max: 5, mult: inDoubleBonusWindow() ? 2 : 1,
+    teams: teamIds().map((id) => ({
+      key: 'v-' + id, team: id, name: teamName(id), mine: id === ctx.myTeam, locked: !canScoreRound(id),
+      pts: earned.raw[id] || 0, given: earned.effective[id] || 0,
+    })),
+  };
+}
+
+// ── the notice (a posted message with structure: the send-off cleanup plan) ──
+function nowNoticeData(ctx) {
+  const n = noticeBoard();
+  const ids = teamIds();
+  const yours = ctx.myTeam ? noticeZoneFor(ctx.myTeam) : null;
+  return {
+    eyebrow: n.eyebrow, title: n.title, sub: n.sub, signoff: n.signoff,
+    yours: yours && ids.includes(yours.teamId) ? { team: yours.teamId, place: yours.place, note: yours.note } : null,
+    zones: n.zones.filter((z) => ids.includes(z.teamId)).map((z) => ({ key: 'z-' + z.teamId, team: z.teamId, place: z.place, note: z.note, mine: z.teamId === ctx.myTeam })),
+    steps: n.steps.filter((s) => s.when || s.items.length).map((s) => ({ emoji: safeEmoji(s.emoji, ''), when: s.when, items: s.items.slice() })),
+  };
+}
+
+// ── the messages strip (§3.2) ────────────────────────────────────────
+// In order: the posted notice (unless it IS the card), the join bar (a director's), then banners newest first — the synced
+// announcements this phone has not dismissed and the Announcements-channel chat messages of the last 15 minutes. A renderer
+// caps the strip to a third of the screen and sends the rest to a sheet; this is the whole list.
+function nowMessages(ctx, cardKind) {
+  const out = [];
+  if (cardKind !== 'notice' && noticePosted()) {
+    const d = nowNoticeData(ctx);
+    out.push({ kind: 'notice', key: 'notice', title: d.title || d.eyebrow || 'Notice', sub: d.sub, yours: d.yours, canTakeDown: ctx.director });
+  }
+  const reqs = ctx.director ? joinBarRequests() : [];
+  if (reqs.length) out.push({ kind: 'join', key: 'join', n: reqs.length, text: reqs.length === 1 ? reqs[0].name + ' is asking to join' : reqs.length + ' people are asking to join' });
+  const fromChat = typeof chatAnnouncementBanners === 'function' ? chatAnnouncementBanners() : [];
+  activeAnnouncements().concat(fromChat).sort((a, b) => String(b.at).localeCompare(String(a.at))).forEach((a) => {
+    out.push({
+      kind: a.fromChat ? 'chat' : 'banner', key: 'ann-' + a.id, id: a.id, text: String(a.text), at: a.at, by: a.by || '',
+      canRemove: ctx.director && !a.fromChat,
+    });
+  });
+  return out;
+}
+
+// ── Still to do today (§3.5, directors) ──────────────────────────────
+// What the day's moments left undone, oldest first: a game whose block has ended with no result, a meal whose cleanup window
+// is over with no points for a team the director may score, Bible study with a team not given verse points, and the people
+// waiting to join. Points are read only for a CONFIRMED director (the guarded readers say nothing to anyone else).
+function nowTodo(ctx, blocks) {
+  if (!ctx.director) return { rows: [], more: 0 };
+  const rows = [];
+  blocks.forEach((nb) => {
+    if (nb.noTime) return;
+    if (ctx.minutes >= nb.end) {
+      gamesForBlock(ctx.dow, nb.b).forEach((g) => {
+        if (gameRowStatus(g, ctx.ms) === 'done') return;
+        rows.push({ at: nb.end, key: 'todo-game-' + g.id, todo: 'game', ref: g.id, title: g.name, sub: 'Not scored yet' });
+      });
+    }
+    if (!ctx.points || !competitionDows().includes(ctx.dow)) return;
+    if (nb.meal && ctx.minutes >= nb.end + NOW_CLEANUP_WINDOW_MIN) {
+      const earned = cleanupEarned(ctx.dow, nb.meal);
+      const lacking = nowDuty(ctx, nb).map((d) => d.team).filter((id) => !(earned[id] > 0) && canScoreRound(id));
+      if (lacking.length) {
+        rows.push({ at: nb.end + NOW_CLEANUP_WINDOW_MIN, key: 'todo-cleanup-' + ctx.dow + '-' + nb.meal.toLowerCase(), todo: 'cleanup', ref: nb.meal,
+          title: nb.meal + ' cleanup points', sub: nowJoinNames(lacking.map(nowTeamWord)) + ' · not given yet' });
+      }
+    } else if (nb.kind === 'bible' && ctx.minutes >= nb.end && nowVerse(ctx.dow)) {
+      const raw = (versePointsByDay()[ctx.dow] || { raw: {} }).raw;
+      const all = teamIds();
+      const lacking = all.filter((id) => !(raw[id] > 0) && canScoreRound(id));
+      if (lacking.length) {
+        const given = all.filter((id) => raw[id] > 0).length;
+        rows.push({ at: nb.end, key: 'todo-verse-' + ctx.dow, todo: 'verse', ref: String(ctx.dow), title: 'Verse points',
+          sub: given ? given + ' of ' + all.length + ' teams given' : 'Not given yet' });
+      }
+    }
+  });
+  rows.sort((a, b) => a.at - b.at);
+  const reqs = joinBarRequests();
+  if (reqs.length) rows.push({ at: Infinity, key: 'todo-join', todo: 'join', ref: '', title: reqs.length === 1 ? reqs[0].name + ' is asking to join' : reqs.length + ' people are asking to join', sub: 'People' });
+  return { rows: rows.slice(0, NOW_TODO_MAX).map((r) => ({ key: r.key, todo: r.todo, ref: r.ref, title: r.title, sub: r.sub })), more: Math.max(0, rows.length - NOW_TODO_MAX) };
+}
+
+// ── the clock part and the wake-up list ──────────────────────────────
+// What moves with the clock alone, from the model's `basis` ({ start, end, noTime, over, upcoming }): minutes left (or minutes
+// over), the hairline's 0–1, minutes until the next block starts. The tick recomputes only this between wake-ups.
+function nowClockOf(basis, minutes) {
+  const out = { left: null, over: 0, progress: null, untilNext: null };
+  if (!basis) return out;
+  if (basis.upcoming != null) out.untilNext = Math.max(0, basis.upcoming - minutes);
+  if (basis.end == null || basis.noTime) return out;
+  if (basis.over) { out.over = Math.max(0, minutes - basis.end); out.progress = 1; return out; }
+  out.left = Math.max(0, basis.end - minutes);
+  out.progress = basis.end > basis.start ? Math.max(0, Math.min(1, (minutes - basis.start) / (basis.end - basis.start))) : null;
+  return out;
+}
+// The minutes (today, after now) at which the picture can change: every block's start and end, the end of a meal's cleanup
+// window, the cap of a games block's hold, each full hour (the rain hint reads the hour), the morning threshold, midnight,
+// and the minute a director's "Still on this" runs out. A superset is harmless (the tick recomputes and the renderer
+// compares); a missing minute is a stale card, which tests/now-model.test.js hunts minute by minute.
+function nowWake(ctx, blocks) {
+  const set = new Set([NOW_MORNING_FROM_MIN, 1440]);
+  for (let h = 1; h <= 24; h++) set.add(h * 60);
+  blocks.forEach((nb) => {
+    set.add(nb.start);
+    set.add(nb.end);
+    if (nb.meal && !nb.noTime) set.add(nb.end + NOW_CLEANUP_WINDOW_MIN);
+    if (nb.kind === 'games' && !nb.noTime) set.add(nowGamesCap(blocks, nb));
+  });
+  const rec = nowOverrunRec();
+  if (rec && rec.until > ctx.ms) set.add(ctx.minutes + Math.ceil((rec.until - ctx.ms) / 60000));
+  return [...set].filter((m) => m > ctx.minutes).sort((a, b) => a - b);
+}
+
+// ── the picture ──────────────────────────────────────────────────────
+// A live reveal wins the top of the tab (reveal-ui.js paints the mirror itself; the renderer puts the rest away). Nothing of
+// the reveal's content is read here.
+function nowReveal() {
+  return typeof revealLiveView === 'function' && typeof confirmedReveal !== 'undefined' && revealLiveView() ? { live: true } : null;
+}
+function nowCard(kind, o) {
+  return Object.assign({ kind, k: 'Now', when: '', tag: '', title: '', emoji: '', sub: null, lead: null, over: false, notes: [], hold: null, down: false }, o);
+}
+// The first three blocks of a weekday as run rows (the morning card's "Today", the night card's "Tomorrow").
+function nowFirstRows(ctx, dow) {
+  const tctx = Object.assign({}, ctx, { dow });
+  return nowBlocks(dow).slice(0, 3).map((nb) => nowRow(tctx, nb));
+}
+// Up next = the first block starting at or after the card's block ends (today's rule: it keeps Tuesday's overlapping movie night
+// right); with no card block, the first block still to start. Later today = the three after it (all of Sunday's run sheet).
+function nowNextLater(ctx, blocks, cur, upcoming) {
+  const after = cur ? blocks.find((x) => x.start >= cur.end) || null : upcoming;
+  const rest = after ? blocks.slice(blocks.indexOf(after) + 1) : [];
+  return { next: after ? nowRow(ctx, after) : null, later: (ctx.dow === 0 ? rest : rest.slice(0, NOW_LATER_MAX)).map((x) => nowRow(ctx, x)) };
+}
+// Sunday's welcome for a counselor on a team: "Meet your team at Team assignments · 5:30 · Chapel Lawn".
+function nowWelcome(ctx, blocks) {
+  if (!ctx.myTeam) return null;
+  const meet = blocks.find((x) => /^team assignments\b/i.test(x.head));
+  return { team: ctx.myTeam, name: teamName(ctx.myTeam), meet: meet ? { title: meet.head, time: schedClock(meet.start, false), place: meet.place } : null };
+}
+function nowChampion() {
+  return typeof revealChampionLine === 'function' ? revealChampionLine() : null;
+}
+
+// The card of a block (the clock's, or the games block that is running over).
+function nowBlockCard(ctx, blocks, nb, held) {
+  let kind = nb.kind;
+  const verse = kind === 'bible' ? nowVerse(ctx.dow) : null;
+  if (kind === 'bible' && !verse) kind = 'activity';
+  if (kind === 'bedtime' && nb.noTime) kind = 'night';
+  else if (kind === 'sendoff' && nb.noTime) kind = 'over';
+  else if (kind === 'sendoff' && noticePosted()) kind = 'notice';
+  const upcoming = blocks.find((x) => x.start > ctx.minutes) || null;
+  const card = nowCard(kind, {
+    k: held ? 'Running over' : kind === 'night' ? 'Tonight' : kind === 'over' ? 'Today' : 'Now', over: !!held,
+    when: nb.noTime ? '' : schedRange(nb.start, nb.end), title: nb.head, emoji: nb.emoji,
+  });
+  let body = {};
+  if (kind === 'games') {
+    body = nowGamesBody(ctx, nb);
+    if (held) card.sub = 'Still going' + (upcoming ? ' · ' + upcoming.head + ' at ' + schedClock(upcoming.start, false) : '');
+    else if (ctx.director && body.stillToScore) card.sub = body.stillToScore + ' of ' + body.total + ' game' + (body.total === 1 ? '' : 's') + ' still to score';
+  } else if (kind === 'elective') {
+    body = nowElectiveBody(ctx, nb, blocks);
+    card.tag = 'Elective ' + ((Number(nb.slot) || 0) + 1);
+    if (body.mode === 'station' || body.mode === 'break') card.lead = { text: 'Your station', change: ctx.identity || null };
+    if (body.mode === 'station') {
+      card.title = body.station.station;
+      card.emoji = body.station.emoji;
+      card.sub = body.station.with.length ? 'with ' + nowJoinNames(body.station.with.map((w) => w.name)) : null;
+    } else if (body.mode === 'break') {
+      card.title = "You're on break";
+      card.emoji = '☕';
+    }
+  } else if (kind === 'meal') {
+    const dish = mealInfo(ctx.dow, nb.b);
+    body = { dish: dish ? { emoji: safeEmoji(dish.emoji, ''), text: String(dish.dish) } : null, duty: nowDuty(ctx, nb) };
+    if (body.dish && body.dish.emoji) card.emoji = body.dish.emoji;
+  } else if (kind === 'bible') {
+    body = { verse };
+  } else if (kind === 'meeting') {
+    const names = nb.teams.map(nowTeamWord);
+    body = { teams: nb.teams.slice(), place: nb.place, youMeet: !!ctx.myTeam && nb.teams.includes(ctx.myTeam) };
+    card.sub = [nb.place, names.length ? nowJoinNames(names) : nowTailText(nb.tail)].filter(Boolean).join(' · ') || null;
+  } else if (kind === 'arrival') {
+    body = { welcome: nowWelcome(ctx, blocks) };
+    card.sub = nowTailText(nb.tail) || nb.place || null;
+  } else if (kind === 'night') {
+    card.title = 'Lights out';
+    body = { heading: 'Tomorrow', rows: nowFirstRows(ctx, (ctx.dow + 1) % 7) };
+  } else if (kind === 'over') {
+    card.title = 'See you next year';
+    body = { champion: nowChampion() };
+  } else if (kind === 'notice') {
+    body = { notice: nowNoticeData(ctx) };
+    card.title = body.notice.title || nb.head;
+    card.emoji = '';
+    card.down = ctx.director;
+  } else card.sub = nowTailText(nb.tail) || nb.place || null; // worship, activity, bedtime: the label's note
+  card.notes = [];
+  if (kind === 'games' && body.doubled) card.notes.push({ kind: 'double', text: 'Double points until the end of Friday' });
+  const rain = kind === 'night' || kind === 'over' ? null : upcomingRain();
+  if (rain) card.notes.push({ kind: 'rain', text: rain.precip + '% chance of rain ' + rain.when });
+  if (kind === 'games' && body.bracket4 && body.bracket4.note) card.notes.push(Object.assign({ kind: 'team' }, body.bracket4.note));
+  if (kind === 'meal') {
+    body.duty.forEach((d) => card.notes.push({ kind: 'team', team: d.team, mine: d.mine, lead: d.mine ? 'Your team' : teamName(d.team), rest: (d.mine ? ' is' : '') + ' on cleanup after ' + nb.meal.toLowerCase() }));
+  }
+  return { card, body, kind, basis: { start: nb.start, end: nb.end, noTime: nb.noTime || kind === 'night' || kind === 'over', over: !!held, upcoming: null } };
+}
+
+// The card when no block holds this minute: the arrival countdown (Sunday before the first block), the morning, the night
+// (before dawn, or after the day's last block), or the gap between two blocks.
+function nowGapCard(ctx, blocks, upcoming) {
+  const first = blocks[0];
+  const lastEnd = Math.max(...blocks.map((x) => x.end));
+  const basis = { start: null, end: null, noTime: true, over: false, upcoming: upcoming ? upcoming.start : null };
+  if (ctx.minutes < first.start) {
+    if (ctx.dow === 0) {
+      return { card: nowCard('arrival', { k: 'Today', title: 'Camp starts today', emoji: '🚌', sub: first.head + ' at ' + schedClock(first.start, false) }),
+        body: { countdown: { title: first.head, start: first.start, place: first.place }, welcome: nowWelcome(ctx, blocks) }, basis };
+    }
+    if (ctx.minutes < NOW_MORNING_FROM_MIN) {
+      return { card: nowCard('night', { k: 'Tonight', title: 'Lights out', emoji: '🌙', sub: "Everyone's sleeping" }), body: { heading: 'Today', rows: nowFirstRows(ctx, ctx.dow) }, basis };
+    }
+    return { card: nowCard('morning', { k: 'Today', title: 'Good morning', emoji: '☀️' }), body: { heading: 'Today', rows: nowFirstRows(ctx, ctx.dow) }, basis };
+  }
+  if (ctx.minutes >= lastEnd || !upcoming) {
+    return { card: nowCard('night', { k: 'Tonight', title: 'Lights out', emoji: '🌙' }), body: { heading: 'Tomorrow', rows: nowFirstRows(ctx, (ctx.dow + 1) % 7) }, basis: { start: null, end: null, noTime: true, over: false, upcoming: null } };
+  }
+  return { card: nowCard('between', { k: 'Today', title: 'Up next', emoji: '' }), body: { rows: [nowRow(ctx, upcoming)] }, basis };
+}
+
+// THE function. See the section's head for what it promises; the fields:
+//   at { dow, minutes, ms, forced } · week { phase, start } · reveal { live } | null · messages [notice? join? banners…]
+//   card { kind, k, when, tag, title, emoji, sub, lead, over, notes, hold, down } — kind is a block kind or one of
+//     between | morning | night | none | over | notice (the posted notice is the send-off's card)
+//   block (the schedule block behind the card, or null) · moment { kind: 'cleanup' | 'verse', … } | null · body (the kind's data)
+//   next · later · laterHeading · todo · todoMore · wholeDay · basis / clock (the minute-by-minute part) · wake (see nowWake)
+function nowModel(opts) {
+  const ctx = nowCtx(opts);
+  const week = nowWeek(ctx);
+  const blocks = nowBlocks(ctx.dow);
+  const m = {
+    at: { dow: ctx.dow, minutes: ctx.minutes, ms: ctx.ms, forced: ctx.forced }, week, reveal: nowReveal(), messages: [], card: null, block: null,
+    moment: null, body: {}, next: null, later: [], laterHeading: ctx.dow === 0 ? 'Today' : 'Later today', todo: [], todoMore: 0, wholeDay: false,
+    basis: null, clock: null, wake: [],
+  };
+  let live = false;
+  if (week.phase === 'before') {
+    m.card = nowCard('none', { k: 'Today', title: 'Camp starts ' + (nowDateLong(week.start) || 'soon'), emoji: '🏕️' });
+    m.body = { cta: ctx.director ? 'setup' : null };
+  } else if (week.phase === 'after') {
+    m.card = nowCard('over', { k: 'Today', title: 'See you next year', emoji: '👋' });
+    m.body = { champion: nowChampion() };
+  } else if (!blocks.length) {
+    m.card = nowCard('none', { k: 'Today', title: week.phase === 'unset' ? 'No camp week is set up yet' : 'Nothing is planned for today', emoji: '🗓️' });
+    m.body = { cta: ctx.director ? 'setup' : null };
+  } else {
+    live = true;
+    m.wholeDay = true;
+    const held = nowHeld(ctx, blocks);
+    const cur = held ? held.nb : nowFind(blocks, ctx.minutes);
+    const upcoming = blocks.find((x) => x.start > ctx.minutes) || null;
+    let nl;
+    if (cur) {
+      const r = nowBlockCard(ctx, blocks, cur, held);
+      m.card = r.card; m.body = r.body; m.basis = r.basis;
+      m.block = { id: cur.id, key: ctx.dow + ':' + cur.id, i: cur.i, kind: r.kind, label: cur.b.label, title: cur.head, place: cur.place, tail: cur.tail, emoji: cur.emoji, start: cur.start, end: cur.end, noTime: cur.noTime, meal: cur.meal, overrun: held ? { by: held.by, cap: held.cap } : null };
+      // Cleanup first (it is the shorter window: senior's Bible study starts the minute breakfast ends), then Bible study's verse points.
+      if (!held && r.kind !== 'night' && r.kind !== 'over') m.moment = nowCleanupMoment(ctx, blocks) || (r.kind === 'bible' ? nowVerseMoment(ctx, cur) : null);
+      nl = nowNextLater(ctx, blocks, r.kind === 'night' || r.kind === 'over' ? null : cur, r.kind === 'night' || r.kind === 'over' ? null : upcoming);
+      if (r.kind === 'night' || r.kind === 'over') nl = { next: null, later: [] };
+    } else {
+      const r = nowGapCard(ctx, blocks, upcoming);
+      m.card = r.card; m.body = r.body; m.basis = r.basis;
+      nl = nowNextLater(ctx, blocks, null, upcoming);
+      if (r.card.kind === 'between') nl = { next: null, later: nl.later };
+      else if (r.card.kind === 'morning' || r.card.kind === 'night') nl = { next: null, later: [] };
+    }
+    m.next = nl.next;
+    m.later = nl.later;
+    const offer = nowHoldOffer(ctx, blocks, held);
+    m.card.hold = offer ? { key: offer.key, name: offer.name, can: offer.can, held: offer.held, cap: offer.cap } : null;
+  }
+  m.messages = nowMessages(ctx, m.card.kind);
+  if (live) { const t = nowTodo(ctx, blocks); m.todo = t.rows; m.todoMore = t.more; }
+  m.clock = nowClockOf(m.basis, ctx.minutes);
+  m.wake = nowWake(ctx, blocks);
+  return m;
+}
+
+// ── the tick ─────────────────────────────────────────────────────────
+// renderAll's Now panel asks for a full picture (the data moved); the 30-second tick asks the clock only: a full recompute at
+// a wake-up (or when the day or the previewed clock changed), otherwise just the clock part and the message strip (a banner's
+// time is up, a chat banner's 15 minutes). Without a renderer (renderNow) none of it runs, so the page is as it was.
+let nowLast = null;
+function nowRefresh(opts) {
+  const model = nowModel(opts);
+  nowLast = model;
+  if (typeof renderNow === 'function') renderNow(model);
+  return model;
+}
+function nowTick(opts) {
+  const ctx = nowCtx(opts);
+  const last = nowLast;
+  if (!last || last.at.dow !== ctx.dow || ctx.minutes < last.at.minutes || ctx.minutes >= last.wake[0]) { nowRefresh(opts); return 'full'; }
+  last.clock = nowClockOf(last.basis, ctx.minutes);
+  last.messages = nowMessages(ctx, last.card.kind);
+  if (typeof renderNowClock === 'function') renderNowClock(last);
+  if (typeof renderNowMessages === 'function') renderNowMessages(last);
+  return 'clock';
 }
 
 // ── Full week schedule sheet (tap the Happening Now banner) ──────

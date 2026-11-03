@@ -97,3 +97,750 @@ test('blockKind: the Meal tag makes a meal of a block the label does not, and ju
   assert.equal(blockKind({ label: 'Bible study — with Sam', start: 540, end: 585 }, 3), 'bible', 'the tail is not read');
   assert.equal(blockKind({ label: 'Whatever', start: 0, end: 5, noTime: true }, 2), 'bedtime', 'a block with no time is the end of the day');
 });
+
+
+// ════════════════════════════════════════════════════════════════════
+// nowModel
+// ════════════════════════════════════════════════════════════════════
+var CARD_KINDS = KINDS.concat(['between', 'morning', 'night', 'none', 'over', 'notice']);
+var BASE_MS = Date.UTC(2026, 6, 22, 12, 0, 0);
+var T = () => state.teams.map((t) => t.id);
+var LAST = () => T()[T().length - 1];
+var realOnRota = cleanupOnRota;
+var realRotaTeams = cleanupTeams;
+var realCampWeek = campWeek;
+var realMealInfo = mealInfo;
+
+function boot(role, team) {
+  freshState();
+  setMemberRole(role === undefined ? 'editor' : role);
+  setMemberTeam(null);
+  state.followTeam = team || null;
+  state.identity = undefined;
+  clearTimeout(pushTimer); pushTimer = null; clearTimeout(pushConfigTimer); pushConfigTimer = null;
+  dataEditPending = false;
+  state.bonuses = {}; state.results = {}; state.drafts = {}; state.brackets = {}; state.clocks = {}; state.meta.overrun = undefined;
+  state.announcements = {};
+  weatherData = null;
+  setStandingsGuardThrows(false);
+  counselorPreviewOn = false;
+  cleanupOnRota = realOnRota; cleanupTeams = realRotaTeams; campWeek = realCampWeek;
+  state.notice = defaultNotice();
+  nowLast = null;
+}
+function done() {
+  cleanupOnRota = realOnRota; cleanupTeams = realRotaTeams; campWeek = realCampWeek;
+  setStandingsGuardThrows(false);
+  counselorPreviewOn = false;
+  clearTimeout(pushTimer); pushTimer = null; clearTimeout(pushConfigTimer); pushConfigTimer = null;
+  setMemberTeam(null);
+  setMemberRole(null);
+  state.followTeam = undefined;
+  nowLast = null;
+}
+// A rota that is the same on both camps: breakfast the first team, lunch the second and third, supper nobody (Mon–Fri).
+function stubRota() {
+  cleanupOnRota = (d) => d >= 1 && d <= 5;
+  cleanupTeams = (d, meal) => (d < 1 || d > 5 ? [] : meal === 'Breakfast' ? [T()[0]] : meal === 'Lunch' ? [T()[1], T()[2]] : []);
+}
+function at(dow, minutes, extra) {
+  return nowModel(Object.assign({ now: { dow, minutes }, ms: BASE_MS + minutes * 60000 }, extra || {}));
+}
+// What the picture is made of, without what moves with the clock alone (clock), the strip (messages) or the wake list itself.
+function sigOf(m) {
+  return JSON.stringify([m.card, m.block, m.moment, m.body, m.next, m.later, m.laterHeading, m.todo, m.todoMore, m.wholeDay, m.reveal, m.week, m.basis]);
+}
+// the first games block of a day that holds games, with its games (cloned up to `n` when the camp has fewer there)
+function gamesBlockOf(dow, n) {
+  const nb = nowBlocks(dow).find((x) => x.kind === 'games' && gamesForBlock(dow, x.b).length);
+  assert.ok(nb, 'no games block with games on day ' + dow);
+  let games = gamesForBlock(dow, nb.b);
+  for (let i = games.length; i < (n || 0); i++) {
+    const g0 = games[0];
+    state.config.games.push(Object.assign({}, g0, { id: g0.id + '-t' + i, name: g0.name + ' ' + (i + 1), ord: (Number(g0.ord) || 0) + i + 1 }));
+  }
+  games = gamesForBlock(dow, nb.b);
+  return { nb, games };
+}
+function medals(a, b, c) { return { medals: { gold: a, silver: b, bronze: c }, savedAt: new Date(BASE_MS).toISOString() }; }
+var WED = 3;
+
+test('nowModel: every minute of every day is a block or a named empty state, nothing throws, and the picture changes only at a wake-up', () => {
+  boot('editor', null); // a director with no team: the richest model; nothing is running, so no card is held
+  stubRota(); // a rota whose windows end inside a block on both camps (senior's own is empty), so the cleanup window's end must be a wake-up
+  // Every minute against the printed week; the seeded passes (the same week as data) every third, which still checks that a
+  // wake-up lies between any two minutes whose pictures differ (the printed week is the exact walk) and keeps the suite's time.
+  const step = scheduleIsShared() ? 3 : 1;
+  let walked = 0;
+  DOWS.forEach((dow) => {
+    let prev = null;
+    let prevSig = null;
+    let prevM = -1;
+    for (let m = 0; m < 1440; m += step) {
+      const model = at(dow, m);
+      walked++;
+      const where = `dow ${dow} minute ${m}`;
+      assert.ok(CARD_KINDS.includes(model.card.kind), `${where}: card kind ${model.card.kind}`);
+      assert.ok(typeof model.card.title === 'string' && model.card.title.length, `${where}: a card with no title`);
+      if (model.block) {
+        assert.ok(m >= model.block.start && m < model.block.end, `${where}: the card's block does not hold the minute`);
+        assert.equal(model.block.id, model.block.id);
+      } else {
+        assert.ok(['between', 'morning', 'night', 'arrival', 'none', 'over'].includes(model.card.kind), `${where}: no block and kind ${model.card.kind}`);
+      }
+      const c = model.clock;
+      assert.ok(c.left === null || c.left >= 0, where);
+      assert.ok(c.progress === null || (c.progress >= 0 && c.progress <= 1), where);
+      assert.ok(model.later.length <= (dow === 0 ? 40 : 3), `${where}: Later today has ${model.later.length}`);
+      assert.ok(model.wake.length && model.wake[model.wake.length - 1] === 1440, where);
+      assert.ok(model.wake.every((w, i) => w > m && (i === 0 || w > model.wake[i - 1])), `${where}: wake list not ascending and after now`);
+      JSON.stringify(model);
+      const sig = sigOf(model);
+      if (prev && sig !== prevSig) assert.ok(prev.wake.some((w) => w > prevM && w <= m), `${where}: the picture changed since minute ${prevM} but no wake-up lies in between (${prev.wake.slice(0, 6)}…)`);
+      prev = model;
+      prevSig = sig;
+      prevM = m;
+    }
+  });
+  assert.equal(walked, 7 * Math.ceil(1440 / step));
+  done();
+});
+
+test('nowModel: a counselor on a team, walked every 7th minute with the points guard throwing, holds no point and no place', () => {
+  boot('viewer', T()[0]);
+  setMemberTeam(T()[0]);
+  stubRota();
+  state.bonuses = { 'cleanup-t0-3-Lunch': { teamId: T()[0], category: 'cleanup', points: 3, day: 3, meal: 'Lunch', at: new Date(BASE_MS).toISOString() }, 'verse-t0-3': { teamId: T()[0], category: 'verse', points: 5, day: 3, at: new Date(BASE_MS).toISOString() } };
+  const gb = gamesBlockOf(WED, 2);
+  state.results[gb.games[0].id] = medals(T()[2], T()[1], T()[0]);
+  state.drafts[gb.games[1].id] = { scores: { [T()[3]]: '9', [T()[0]]: '4' } };
+  setStandingsGuardThrows(true); // a points reader reached by a counselor's model throws
+  const bad = ['pts', 'given', 'locked', 'secret', 'max', 'mult', 'stillToScore'];
+  const walk = (v, where) => {
+    if (Array.isArray(v)) return v.forEach((x, i) => walk(x, where + '[' + i + ']'));
+    if (v && typeof v === 'object') Object.keys(v).forEach((k) => {
+      assert.ok(!bad.includes(k) || v[k] === null || v[k] === undefined, `${where}.${k}: a director's field in a counselor's model`);
+      walk(v[k], where + '.' + k);
+    });
+  };
+  DOWS.forEach((dow) => {
+    for (let m = 0; m < 1440; m += 7) {
+      const model = at(dow, m);
+      walk(model, `dow ${dow} minute ${m}`);
+      assert.equal(model.todo.length, 0);
+      assert.ok(!model.moment || model.moment.kind === 'cleanup', 'a counselor has no verse moment');
+      assert.equal(model.card.hold, null);
+      assert.equal(model.card.down, false);
+    }
+  });
+  // the live tally of that game (competitions with a draft): roster order, no place numerals, scores public
+  const m = at(WED, gb.nb.start + 5);
+  const live = m.body.rows.find((r) => r.status === 'live');
+  assert.ok(live, 'the drafted game is live');
+  gb.games[1].liveRankings = true;
+  const board = at(WED, gb.nb.start + 5).body.rows.find((r) => r.status === 'live').board;
+  if (board) {
+    assert.equal(board.ranked, false);
+    assert.deepEqual(board.rows.map((r) => r.team), T().filter((id) => board.rows.some((r) => r.team === id)), 'roster order');
+    assert.ok(board.rows.every((r) => !('place' in r)));
+  }
+  done();
+});
+
+test('nowModel: the empty states are named — none, over, between, morning, night, the arrival countdown', () => {
+  boot('viewer', T()[0]);
+  // no camp week set up and no blocks that day
+  const realSched = scheduleForDow;
+  scheduleForDow = (d) => (d === 4 ? [] : realSched(d));
+  let m = at(4, 600);
+  assert.equal(m.card.kind, 'none');
+  assert.equal(m.card.title, 'No camp week is set up yet');
+  assert.equal(m.body.cta, null, 'a counselor is not offered the setup');
+  assert.equal(m.wholeDay, false);
+  campWeek = () => ({ start: '2027-07-18', phase: 'during' });
+  m = at(4, 600, { date: '2027-07-21' });
+  assert.equal(m.card.title, 'Nothing is planned for today');
+  scheduleForDow = realSched;
+  // before the week: "Camp starts Sunday, July 18", the Saturday before included; a ?now= preview ignores the dates
+  m = at(WED, 600, { date: '2027-07-17' });
+  assert.equal(m.card.kind, 'none');
+  assert.equal(m.card.title, 'Camp starts Sunday, July 18');
+  assert.equal(at(WED, 600, { date: '2027-07-20' }).card.kind, 'games');
+  assert.equal(at(WED, 600, { date: '2027-07-17', forced: true }).card.kind, 'games');
+  // after it: See you next year (the Sunday after is already over)
+  m = at(WED, 600, { date: '2027-07-25' });
+  assert.equal(m.card.kind, 'over');
+  assert.equal(m.card.title, 'See you next year');
+  assert.equal(at(WED, 600, { date: '2027-07-24' }).card.kind, 'games', 'Saturday is still in the week');
+  campWeek = realCampWeek;
+  // before the first block: Sunday counts down to it, other days are Good morning after 6 and Lights out before
+  const first = nowBlocks(0)[0];
+  m = at(0, first.start - 90);
+  assert.equal(m.card.kind, 'arrival');
+  assert.equal(m.card.title, 'Camp starts today');
+  assert.equal(m.clock.untilNext, 90);
+  assert.equal(m.body.countdown.start, first.start);
+  assert.equal(m.next.start, first.start, 'Up next is the first block');
+  assert.equal(m.laterHeading, 'Today');
+  assert.equal(at(WED, 3 * 60).card.kind, 'night');
+  assert.equal(at(WED, 3 * 60).body.heading, 'Today');
+  assert.equal(at(WED, 6 * 60 + 30).card.kind, 'morning');
+  assert.equal(at(WED, 6 * 60 + 30).card.title, 'Good morning');
+  assert.equal(at(WED, 6 * 60 + 30).body.rows.length, 3);
+  assert.equal(at(WED, 6 * 60 + 30).next, null, 'the first three are the card\'s own rows');
+  // after the last block: tomorrow's first three
+  const lastEnd = Math.max(...nowBlocks(WED).map((x) => x.end));
+  const night = at(WED, 23 * 60 + 30);
+  assert.equal(night.card.kind, 'night');
+  assert.equal(night.card.title, 'Lights out');
+  assert.equal(night.card.k, 'Tonight');
+  assert.equal(night.body.heading, 'Tomorrow');
+  assert.deepEqual(night.body.rows.map((r) => r.title), nowBlocks(4).slice(0, 3).map((x) => x.head));
+  assert.equal(night.next, null);
+  assert.equal(night.later.length, 0);
+  assert.ok(lastEnd <= 1440);
+  // the gap between two blocks (a day with a hole in it)
+  scheduleForDow = (d) => (d === 4 ? realSched(4).filter((b) => !(b.start >= 720 && b.start < 750)) : realSched(d));
+  const day = nowBlocks(4);
+  const gapStart = day.find((x, i) => day[i + 1] && day[i + 1].start > x.end);
+  assert.ok(gapStart, 'the day has a gap now');
+  const g = at(4, gapStart.end + 3);
+  assert.equal(g.card.kind, 'between');
+  assert.equal(g.card.title, 'Up next');
+  assert.equal(g.body.rows[0].start, day[gapStart.i + 1].start);
+  assert.equal(g.clock.untilNext, day[gapStart.i + 1].start - (gapStart.end + 3));
+  assert.equal(g.next, null);
+  assert.equal(g.later.length, 3);
+  scheduleForDow = realSched;
+  done();
+});
+
+test('nowModel: the saturday send-off is the card, its last block is the over card, a posted notice becomes the send-off card', () => {
+  boot('editor', T()[0]);
+  const blocks = nowBlocks(6);
+  const send = blocks.find((x) => x.kind === 'sendoff' && !x.noTime);
+  const over = blocks.find((x) => x.kind === 'sendoff' && x.noTime);
+  assert.ok(send && over);
+  assert.equal(at(6, send.start).card.kind, 'sendoff');
+  assert.equal(at(6, over.start).card.kind, 'over');
+  assert.equal(at(6, over.start).card.title, 'See you next year');
+  assert.equal(at(6, over.start).body.champion, null, 'no champion remembered on this phone');
+  // post the notice: the send-off block shows it as the card, your team's assignment first; the strip then leaves it out
+  state.notice.status = 'posted';
+  state.notice.title = 'Cleanup plan';
+  state.notice.zones = [{ teamId: T()[1], place: 'Chapel', note: '' }, { teamId: T()[0], place: 'Dining hall', note: 'tables' }];
+  const m = at(6, send.start);
+  assert.equal(m.card.kind, 'notice');
+  assert.equal(m.card.title, 'Cleanup plan');
+  assert.equal(m.card.down, true, 'a director may take it down from here');
+  assert.equal(m.body.notice.yours.place, 'Dining hall');
+  assert.ok(m.body.notice.zones.find((z) => z.team === T()[0]).mine);
+  assert.equal(m.messages.filter((x) => x.kind === 'notice').length, 0);
+  // on any other day it is a strip, not the card
+  const wed = at(WED, 600);
+  assert.equal(wed.card.kind, 'games');
+  assert.equal(wed.messages.filter((x) => x.kind === 'notice').length, 1);
+  done();
+});
+
+test('nowModel: the cleanup moment is the 30 minutes after a meal, with the teams on the rota and nothing else', () => {
+  boot('viewer', T()[3]);
+  stubRota();
+  const meals = nowBlocks(WED).filter((x) => x.meal && !x.noTime);
+  assert.ok(meals.length >= 2, 'both camps have a breakfast and a lunch');
+  meals.forEach((nb) => {
+    const expect = nb.meal === 'Breakfast' ? [T()[0]] : nb.meal === 'Lunch' ? [T()[1], T()[2]] : [];
+    for (let m = nb.end - 2; m < nb.end + 33; m++) {
+      const mom = at(WED, m).moment;
+      const inside = m >= nb.end && m < nb.end + 30 && expect.length;
+      if (!inside) { assert.ok(!mom || mom.meal !== nb.meal, `minute ${m} after ${nb.meal}: ${mom && mom.meal}`); continue; }
+      assert.ok(mom && mom.kind === 'cleanup' && mom.meal === nb.meal, `minute ${m} is inside ${nb.meal}'s window`);
+      assert.deepEqual(mom.teams.map((t) => t.team), expect);
+      assert.equal(mom.title, nb.meal + ' cleanup');
+      assert.equal(mom.until, nb.end + 30);
+      assert.ok(mom.teams.every((t) => typeof t.who === 'string' && !('pts' in t) && !('locked' in t)), 'a counselor sees whose turn it is');
+    }
+  });
+  // not during the meal itself, and the meal card names the team on cleanup after it (my team in bold)
+  const lunch = meals.find((x) => x.meal === 'Lunch');
+  const during = at(WED, lunch.start + 1);
+  assert.equal(during.moment, null);
+  assert.equal(during.card.kind, 'meal');
+  assert.deepEqual(during.card.notes.filter((n) => n.kind === 'team').map((n) => n.lead), [teamName(T()[1]), teamName(T()[2])]);
+  state.followTeam = T()[2];
+  const mine = at(WED, lunch.start + 1).card.notes.find((n) => n.mine);
+  assert.equal(mine.lead, 'Your team');
+  assert.equal(mine.rest, ' is on cleanup after lunch');
+  // a camp whose rota is empty says nothing: no moment, no note, at any minute
+  cleanupOnRota = realOnRota; cleanupTeams = () => [];
+  cleanupOnRota = () => true;
+  for (let m = 0; m < 1440; m += 5) { const x = at(WED, m); assert.equal(x.moment, null); assert.equal(x.card.notes.filter((n) => n.kind === 'team').length, 0); }
+  done();
+});
+
+test('nowModel: a director sees the cleanup keys with the lock on their own team; the verse moment is a confirmed director\'s alone', () => {
+  boot('editor', T()[0]);
+  setMemberTeam(T()[0]);
+  stubRota();
+  state.bonuses = { 'cleanup-t0-3-Breakfast': { teamId: T()[0], category: 'cleanup', points: 2, day: 3, meal: 'Breakfast', at: new Date(BASE_MS).toISOString() } };
+  const bf = nowBlocks(WED).find((x) => x.meal === 'Breakfast');
+  const mom = at(WED, bf.end + 1).moment;
+  assert.equal(mom.kind, 'cleanup');
+  assert.equal(mom.secret, true);
+  assert.equal(mom.max, 3);
+  assert.equal(mom.teams[0].locked, true, 'the breakfast team is the director\'s own');
+  assert.equal(mom.teams[0].pts, 2);
+  setMemberTeam(LAST());
+  const mom2 = at(WED, bf.end + 1).moment;
+  assert.equal(mom2.teams[0].locked, false);
+  assert.equal(mom2.teams[0].pts, 2);
+  // verse: Bible study, six keys' worth of teams, the day's stored points
+  const bible = nowBlocks(WED).find((x) => x.kind === 'bible');
+  assert.ok(bible);
+  state.bonuses['verse-t1-3'] = { teamId: T()[1], category: 'verse', points: 4, day: 3, at: new Date(BASE_MS).toISOString() };
+  // senior's Bible study starts the minute breakfast ends: look past breakfast's cleanup window, which takes the panel first
+  const vm = Math.max(bible.start + 5, ...nowBlocks(WED).filter((x) => x.meal).map((x) => x.end + 30).filter((e) => e > bible.start && e < bible.end));
+  const v = at(WED, vm);
+  assert.equal(v.card.kind, 'bible');
+  assert.ok(v.body.verse.text, 'the verse (senior\'s is a placeholder with no reference yet)');
+  assert.equal(v.moment.kind, 'verse');
+  assert.equal(v.moment.max, 5);
+  assert.deepEqual(v.moment.teams.map((t) => t.team), T());
+  assert.equal(v.moment.teams.find((t) => t.team === T()[1]).pts, 4);
+  assert.equal(v.moment.teams.find((t) => t.team === LAST()).locked, true, 'the director\'s own team is locked');
+  assert.equal(v.moment.teams.find((t) => t.team === T()[2]).locked, false);
+  setMemberTeam(T()[1]);
+  assert.equal(at(WED, vm).moment.teams.find((t) => t.team === T()[1]).locked, true);
+  // a counselor, a hint-painted phone and a counselor preview get the verse and no moment
+  setMemberRole('viewer');
+  assert.equal(at(WED, vm).moment, null);
+  assert.equal(at(WED, vm).body.verse.ref, v.body.verse.ref);
+  setMemberRole('editor');
+  counselorPreviewOn = true;
+  assert.equal(at(WED, vm).moment, null);
+  counselorPreviewOn = false;
+  setMemberRole('editor', { provisional: true });
+  assert.equal(at(WED, vm).moment, null, 'a hinted director has not been confirmed: no points');
+  // no verse for the day: the block is an ordinary one
+  const realVerse = verseFor;
+  verseFor = () => NO_VERSE;
+  assert.equal(at(WED, vm).card.kind, 'activity');
+  verseFor = realVerse;
+  done();
+});
+
+
+test('nowModel: a live game past its block keeps the card — capped 45 minutes, never past the next games block', () => {
+  boot('viewer', T()[0]);
+  DOWS.forEach((dow) => {
+    const day = nowBlocks(dow);
+    day.filter((x) => x.kind === 'games').forEach((nb) => {
+      const next = day.find((x) => x !== nb && x.kind === 'games' && x.start >= nb.end);
+      const cap = nowGamesCap(day, nb);
+      assert.equal(cap, next ? Math.min(nb.end + 45, next.start) : nb.end + 45, `day ${dow} ${nb.head}: the cap`);
+    });
+  });
+  const dow = WED;
+  const gb = gamesBlockOf(dow, 1);
+  const nb = gb.nb;
+  const cap = nowGamesCap(nowBlocks(dow), nb);
+  // nothing live: the clock moves on at the block's end
+  assert.equal(at(dow, nb.end).card.over, false);
+  assert.ok(at(dow, nb.end).block.id !== nb.id, 'the clock has moved on');
+  // a game with a score in its draft is Live
+  state.drafts[gb.games[0].id] = { scores: { [T()[0]]: '3' } };
+  assert.equal(gameRowStatus(gb.games[0], BASE_MS), 'live');
+  assert.equal(at(dow, nb.end - 1).card.over, false, 'still inside the block: an ordinary card');
+  for (let m = nb.end; m < cap; m++) {
+    const x = at(dow, m);
+    assert.equal(x.block.id, nb.id, `minute ${m} is held`);
+    assert.equal(x.card.kind, 'games');
+    assert.equal(x.card.over, true);
+    assert.equal(x.card.k, 'Running over');
+    assert.equal(x.block.overrun.by, 'live');
+    assert.equal(x.clock.over, m - nb.end);
+    assert.equal(x.clock.left, null);
+    assert.equal(x.clock.progress, 1);
+    assert.ok(/^Still going/.test(x.card.sub), x.card.sub);
+    assert.equal(x.moment, null, 'no moment on a held card');
+  }
+  assert.equal(nowLeftText(at(dow, nb.end + 7).clock), '7 min over');
+  const first = nowBlocks(dow).find((x) => x.start >= nb.end);
+  assert.equal(at(dow, nb.end + 2).next.id, first.id, 'the next block shows as Up next as usual');
+  assert.equal(at(dow, cap).card.over, false, 'the cap ends it');
+  assert.ok(!at(dow, cap).block || at(dow, cap).block.id !== nb.id);
+  // the game is scored: nothing holds the card any more
+  state.results[gb.games[0].id] = medals(T()[0], T()[1], T()[2]);
+  assert.equal(at(dow, nb.end + 1).card.over, false);
+  // a clock still running counts as live, a finished one does not
+  delete state.results[gb.games[0].id];
+  delete state.drafts[gb.games[0].id];
+  state.clocks[gb.games[0].id] = { running: true, endAt: BASE_MS + (nb.end + 5) * 60000 + 600000 };
+  assert.equal(at(dow, nb.end + 1).card.over, true);
+  state.clocks[gb.games[0].id] = { running: true, endAt: BASE_MS };
+  assert.equal(at(dow, nb.end + 1).card.over, false);
+  // a bracket left behind by a format change is not live
+  state.clocks = {};
+  const g = gb.games[0];
+  state.brackets[g.id] = { phase: 'round1', matches: [] };
+  const fmt = g.format;
+  g.format = 'tally';
+  assert.equal(gameRowStatus(g, BASE_MS), 'todo', 'only a tournament counts its bracket');
+  g.format = 'tournament';
+  assert.equal(gameRowStatus(g, BASE_MS), 'live');
+  g.format = fmt;
+  done();
+});
+
+test('nowModel: "Still on this" — a director\'s word holds the card, +10 minutes a tap, never past the cap, display only', () => {
+  boot('editor', null);
+  const dow = WED;
+  const gb = gamesBlockOf(dow, 1);
+  const nb = gb.nb;
+  const cap = nowGamesCap(nowBlocks(dow), nb);
+  const key = dow + ':' + nb.id;
+  // offered on the card the clock moved on to, while something is still to score; not when everything is scored
+  let x = at(dow, nb.end + 1);
+  assert.deepEqual(x.card.hold, { key, name: nb.head, can: true, held: false, cap });
+  assert.equal(x.card.over, false);
+  state.results[gb.games[0].id] = medals(T()[0], T()[1], T()[2]);
+  gamesForBlock(dow, nb.b).forEach((g) => { state.results[g.id] = state.results[gb.games[0].id]; });
+  assert.equal(at(dow, nb.end + 1).card.hold, null, 'every game is scored: nothing to hold');
+  state.results = {};
+  assert.equal(at(dow, nb.end - 1).card.hold, null, 'not before the block has ended');
+  assert.equal(at(dow, cap).card.hold, null, 'not past the cap');
+  // the word is a stamp in state.meta.overrun; it holds the card until its server time
+  const ms0 = BASE_MS + (nb.end + 1) * 60000;
+  state.meta.overrun = { key, until: ms0 + 4 * 60000 };
+  x = at(dow, nb.end + 1);
+  assert.equal(x.card.over, true);
+  assert.equal(x.block.overrun.by, 'director');
+  assert.equal(at(dow, nb.end + 4).card.over, true);
+  assert.equal(at(dow, nb.end + 5).card.over, false, 'its time is up');
+  assert.ok(at(dow, nb.end + 1).wake.includes(nb.end + 5), 'the minute it runs out is a wake-up');
+  assert.equal(at(dow, nb.end + 1).card.hold.held, true);
+  // somebody else's key, a junk stamp and a stamp for another day hold nothing
+  state.meta.overrun = { key: dow + ':other', until: ms0 + 600000 };
+  assert.equal(at(dow, nb.end + 1).card.over, false);
+  state.meta.overrun = { key, until: 'soon' };
+  assert.equal(at(dow, nb.end + 1).card.over, false);
+  state.meta.overrun = 'junk';
+  assert.equal(at(dow, nb.end + 1).card.over, false);
+  // a tap writes one meta field, +10 minutes, and no other block moves
+  delete state.meta.overrun;
+  const opts = { now: { dow, minutes: nb.end + 1 }, ms: ms0 };
+  const before = JSON.stringify(state.results) + JSON.stringify(state.config);
+  assert.equal(nowHoldOverrun(opts), true);
+  assert.deepEqual(state.meta.overrun, { key, until: ms0 + 600000 });
+  assert.equal(JSON.stringify(state.results) + JSON.stringify(state.config), before);
+  assert.equal(nowHoldOverrun(opts), true, 'each tap adds ten more');
+  assert.equal(state.meta.overrun.until, ms0 + 1200000);
+  let taps = 2;
+  while (nowHoldOverrun(opts) && taps < 20) taps++;
+  assert.ok(state.meta.overrun.until <= ms0 + (cap - (nb.end + 1)) * 60000, 'never past the cap');
+  assert.equal(nowHoldOverrun(opts), false, 'at the cap there is nothing to add');
+  assert.equal(at(dow, nb.end + 1).card.hold.can, false);
+  // a counselor cannot tap; neither can a director who is only previewing
+  delete state.meta.overrun;
+  setMemberRole('viewer');
+  assert.equal(nowHoldOverrun(opts), false);
+  assert.equal(state.meta.overrun, undefined);
+  setMemberRole('editor');
+  counselorPreviewOn = true;
+  assert.equal(nowHoldOverrun(opts), false);
+  counselorPreviewOn = false;
+  // the stamp rides the existing per-field meta diff (no whole-meta write)
+  const up = computeSyncUpdates({ meta: {} }, { meta: { overrun: { key, until: 5 } } });
+  assert.deepEqual(Object.keys(up), ['meta/overrun']);
+  done();
+});
+
+test('nowModel: Up next and Later today — the first block starting at or after this one ends, then three; Sunday lists the whole day', () => {
+  boot('viewer', T()[0]);
+  const day = nowBlocks(1);
+  const cur = day[2];
+  const m = at(1, cur.start + 1);
+  assert.equal(m.next.id, day.find((x) => x.start >= cur.end).id);
+  assert.deepEqual(m.later.map((r) => r.id), day.slice(day.indexOf(day.find((x) => x.start >= cur.end)) + 1).slice(0, 3).map((x) => x.id));
+  assert.equal(m.laterHeading, 'Later today');
+  assert.equal(m.next.time, schedClock(m.next.start, false));
+  // Tuesday's overlapping evening (a movie night over the wind-down): the card is the first block listed, Up next the one after it ends
+  if (CAMP.id === 'junior') {
+    const tue = nowBlocks(2);
+    const movie = tue.find((x) => /movie night/i.test(x.head));
+    const x = at(2, movie.start + 2);
+    assert.equal(x.block.id, movie.id);
+    assert.equal(x.next.start, movie.end, 'Up next skips what the movie night overlaps');
+  }
+  const sunDay = nowBlocks(0);
+  const sun = at(0, sunDay[0].start + 1);
+  assert.equal(sun.laterHeading, 'Today');
+  const sunAfter = sunDay.find((x) => x.start >= sunDay[0].end);
+  assert.equal(sun.later.length, sunDay.length - 1 - sunDay.indexOf(sunAfter), 'Sunday\'s run sheet is not cut at three rows');
+  // the last block of the day has no Up next
+  const lastBlock = nowBlocks(WED).slice(-1)[0];
+  const end = at(WED, lastBlock.start + 1);
+  assert.equal(end.next, null);
+  assert.equal(end.later.length, 0);
+  done();
+});
+
+test('nowModel: personalisation — my team on the rows, the morning meeting, the welcome, the notes under a title', () => {
+  boot('viewer', T()[1]);
+  stubRota();
+  // Up next shows who is on cleanup after a meal; my team in bold words
+  const lunch = nowBlocks(WED).find((x) => x.meal === 'Lunch');
+  const before = nowBlocks(WED)[lunch.i - 1];
+  let x = at(WED, before.start + 1);
+  const rows = [x.next].concat(x.later);
+  const row = rows.find((r) => r && r.id === lunch.id);
+  assert.ok(row, 'lunch is within the next four rows of the block before it');
+  assert.equal(row.sub.text, 'Your team is on cleanup');
+  assert.equal(row.sub.mine, true);
+  assert.equal(row.mine, true);
+  state.followTeam = T()[3];
+  x = at(WED, before.start + 1);
+  const other = [x.next].concat(x.later).find((r) => r && r.id === lunch.id);
+  assert.equal(other.sub.text, nowJoinNames([nowTeamWord(T()[1]), nowTeamWord(T()[2])]) + ' on cleanup');
+  assert.equal(other.sub.mine, false);
+  // the meal during: the dish, with its emoji, from mealFor
+  const mealWord = lunch.head.toLowerCase();
+  const dish = mealInfo(WED, lunch.b);
+  if (dish) assert.deepEqual(at(WED, lunch.start + 1).body.dish, { emoji: dish.emoji || '', text: dish.dish });
+  // the morning meeting (junior): the day's group of teams and "your team meets today"
+  if (CAMP.id === 'junior') {
+    const meeting = nowBlocks(2).find((b) => b.kind === 'meeting');
+    assert.deepEqual(meeting.teams, ['t0', 't3', 't4'], 'Tuesday: Foxes, Pumpkins, Pilgrims');
+    state.followTeam = 't0';
+    x = at(2, meeting.start + 1);
+    assert.equal(x.card.kind, 'meeting');
+    assert.equal(x.card.sub, "Laura's cottage · Foxes, Pumpkins and Pilgrims");
+    assert.equal(x.body.youMeet, true);
+    assert.equal(at(1, nowBlocks(1).find((b) => b.kind === 'meeting').start + 1).body.youMeet, false, "Monday's group is the other three");
+    assert.equal(x.card.title, 'Rising bell, shower & morning meeting');
+  } else {
+    const wake = nowBlocks(WED).find((b) => b.kind === 'meeting');
+    assert.equal(at(WED, wake.start + 1).card.sub, null, 'a Wake up block is a plain card');
+  }
+  // Sunday's welcome for a counselor on a team; a label's note under the title
+  state.followTeam = T()[0];
+  const assign = nowBlocks(0).find((b) => /^team assignments/i.test(b.head));
+  if (assign) {
+    const w = at(0, assign.start + 1);
+    assert.equal(w.card.kind, 'arrival');
+    assert.equal(w.body.welcome.team, T()[0]);
+    assert.deepEqual(w.body.welcome.meet, { title: assign.head, time: schedClock(assign.start, false), place: assign.place });
+  }
+  const camp = nowBlocks(1).find((b) => /^snack and campfire/i.test(b.head));
+  if (camp) assert.ok(/^with [A-Z]/.test(at(1, camp.start + 1).card.sub), 'a name in the tail reads "with …"');
+  const free = nowBlocks(1).find((b) => /^free time/i.test(b.head));
+  if (free) assert.equal(at(1, free.start + 1).card.sub, 'Snack Shack open', 'a note in the tail is the sub');
+  // the rain hint rides every card as plain data; the double-points line only the games card
+  weatherData = { dates: [campDateStr()], byTime: {}, at: Date.now() };
+  const h = Math.floor((nowBlocks(WED)[0].start + 5) / 60);
+  weatherData.byTime[campDateStr() + 'T' + String(h).padStart(2, '0') + ':00'] = { temp: 60, code: 61, precip: 70 };
+  const realNow = campNow;
+  campNow = () => ({ dow: WED, minutes: nowBlocks(WED)[0].start + 5 });
+  assert.deepEqual(at(WED, nowBlocks(WED)[0].start + 5).card.notes.filter((n) => n.kind === 'rain'), [{ kind: 'rain', text: '70% chance of rain this hour' }]);
+  campNow = realNow;
+  weatherData = null;
+  done();
+});
+
+test('nowModel: electives (junior) — my station first, on break, the ask with no identity, every station for a director', () => {
+  if (!CAMP.features.electives) {
+    boot('viewer', T()[0]);
+    for (let m = 0; m < 1440; m += 10) assert.ok(at(WED, m).card.kind !== 'elective', 'senior has no electives');
+    done();
+    return;
+  }
+  boot('viewer', 't0');
+  const dow = 1;
+  const blocks = nowBlocks(dow).filter((b) => b.kind === 'elective');
+  assert.equal(blocks.length, 3);
+  const slot0 = electivesFor(dow)[0];
+  const row = slot0.find((r) => r[1].length > 1);
+  const me = row[1][0];
+  const mate = row[1][1];
+  state.identity = me;
+  state.followTeam = nowTeamOfName(me) || 't0';
+  let x = at(dow, blocks[0].start + 3);
+  assert.equal(x.card.kind, 'elective');
+  assert.equal(x.card.tag, 'Elective 1');
+  assert.equal(x.body.mode, 'station');
+  assert.equal(x.card.title, row[0]);
+  assert.deepEqual(x.card.lead, { text: 'Your station', change: me });
+  assert.equal(x.card.sub, 'with ' + nowJoinNames(row[1].filter((n) => n !== me)));
+  assert.equal(x.body.station.with.find((w) => w.name === mate).team, nowTeamOfName(mate));
+  assert.equal(x.body.stations.find((s) => s.mine).station, row[0], 'the station list marks mine');
+  assert.ok(x.body.then.length >= 1 && x.body.then.length <= 3);
+  assert.ok(x.body.then.every((r) => !/^prepare/i.test(r.title)), '"Then" skips the preparing blocks');
+  assert.equal(x.body.count.stations, slot0.length);
+  // a later elective slot where I am on break
+  const slotOf = (s) => electivesFor(dow)[s].find(electiveRowHasMe);
+  const breakSlot = [0, 1, 2].find((s) => !slotOf(s));
+  if (breakSlot !== undefined) {
+    const b = at(dow, blocks[breakSlot].start + 1);
+    assert.equal(b.body.mode, 'break');
+    assert.equal(b.card.title, "You're on break");
+    assert.equal(b.card.lead.text, 'Your station');
+  }
+  // the rows: my station on an elective row of Up next / Later today
+  const before = nowBlocks(dow)[blocks[0].i - 1];
+  const rowsNow = [at(dow, before.start + 1).next].concat(at(dow, before.start + 1).later).filter(Boolean);
+  const er = rowsNow.find((r) => r.id === blocks[0].id);
+  assert.ok(er && er.sub.mine && er.sub.text === row[0]);
+  // no identity yet: the ask, with the team's counselors; a skipped identity (null) and a director get every station
+  state.identity = undefined;
+  state.followTeam = 't0';
+  x = at(dow, blocks[0].start + 3);
+  assert.equal(x.body.mode, 'ask');
+  assert.deepEqual(x.body.ask.names, teamRoster('t0'));
+  assert.equal(x.card.title, 'Elective 1');
+  assert.equal(x.card.lead, null);
+  state.identity = null;
+  assert.equal(at(dow, blocks[0].start + 3).body.mode, 'all');
+  state.identity = 'Zed';
+  assert.equal(at(dow, blocks[0].start + 3).body.mode, 'all', 'a name on no sheet says nothing about breaks');
+  state.identity = undefined;
+  setMemberRole('editor');
+  assert.equal(at(dow, blocks[0].start + 3).body.mode, 'all', 'a director is not asked');
+  assert.equal(at(dow, blocks[0].start + 3).body.stations.length, slot0.length);
+  // the spelling merge: Lilly on this phone is Lily on the sheet
+  state.identity = 'Lilly';
+  const lily = [0, 1, 2].map((s) => electivesFor(dow)[s].find((r) => r[1].includes('Lily'))).find(Boolean);
+  if (lily) assert.equal(at(dow, blocks[[0, 1, 2].findIndex((s) => electivesFor(dow)[s].includes(lily))].start + 1).body.mode, 'station');
+  done();
+});
+
+
+test('nowModel: a games block — live first, then not started, then done, a podium of the medal winners, Score for directors only', () => {
+  boot('viewer', T()[0]);
+  const { nb, games } = gamesBlockOf(WED, 3);
+  const [g0, g1, g2] = games;
+  state.results[g0.id] = medals(T()[2], T()[1], T()[0]);
+  state.drafts[g1.id] = { scores: { [T()[3]]: '9' } };
+  let m = at(WED, nb.start + 10);
+  assert.equal(m.card.kind, 'games');
+  assert.deepEqual(m.body.rows.map((r) => r.id), [g1.id, g2.id, g0.id], 'live, not started, done');
+  assert.deepEqual(m.body.rows.map((r) => r.status), ['live', 'todo', 'done']);
+  assert.deepEqual(m.body.rows.map((r) => r.next), [false, true, false], 'the first not-started game says up next');
+  const done0 = m.body.rows[2];
+  assert.deepEqual(done0.podium.map((c) => [c.place, c.team, c.mine]), [[1, T()[2], false], [2, T()[1], false], [3, T()[0], true]]);
+  assert.equal(done0.mine, true, 'my team is on the podium');
+  assert.ok(/^finished /.test(done0.line));
+  assert.equal(m.body.rows[1].podium, null);
+  assert.ok(m.body.rows.every((r) => r.score === null), 'a counselor has no Score');
+  assert.equal(m.body.stillToScore, null);
+  assert.equal(m.card.sub, null, 'a counselor is not told how many are left to score');
+  // a placement game being judged says so and shows nobody the picked teams (a tally game with live rankings has its board)
+  if (g1.format === 'placement') {
+    assert.equal(m.body.rows[0].board, null);
+    assert.equal(m.body.rows[0].line, 'Being scored');
+  } else assert.ok(m.body.rows[0].line === 'Being scored' || (m.body.rows[0].board && m.body.rows[0].board.kind === 'tally'));
+  // a junk result (a team the camp does not have) keeps only the medals it can name
+  state.results[g0.id] = { medals: { gold: 'zz', silver: T()[1], bronze: 7 }, savedAt: 'x' };
+  assert.deepEqual(at(WED, nb.start + 10).body.rows[2].podium.map((c) => c.team), [T()[1]]);
+  state.results[g0.id] = medals(T()[2], T()[1], T()[0]);
+  // a director: Score on every row that is not done, gold on the live and the next one, "2 of 3 games still to score"
+  setMemberRole('editor');
+  m = at(WED, nb.start + 10);
+  assert.equal(m.body.stillToScore, 2);
+  assert.equal(m.card.sub, '2 of 3 games still to score');
+  assert.deepEqual(m.body.rows.map((r) => r.score && r.score.gold), [true, true, null]);
+  assert.ok(m.body.rows.every((r) => !r.score || r.score.why === null), 'a placement or tally game is not guarded at the game level');
+  state.results[g1.id] = medals(T()[0], T()[1], T()[2]);
+  state.results[g2.id] = medals(T()[0], T()[1], T()[2]);
+  assert.equal(at(WED, nb.start + 10).body.stillToScore, 0);
+  assert.equal(at(WED, nb.start + 10).card.sub, null);
+  done();
+});
+
+test('nowModel: a live tally is in roster order for a counselor and ranked for a director; a live match is the pair and the next pair', () => {
+  boot('viewer', T()[0]);
+  const { nb, games } = gamesBlockOf(WED, 2);
+  const g = games[0];
+  const keep = { format: g.format, liveRankings: g.liveRankings, lowerWins: g.lowerWins, timeInput: g.timeInput };
+  Object.assign(g, { format: 'tally', liveRankings: true, lowerWins: false, timeInput: false });
+  state.drafts[g.id] = { scores: { [T()[3]]: '9', [T()[0]]: '4', [T()[1]]: '12' } };
+  let b = at(WED, nb.start + 1).body.rows.find((r) => r.id === g.id).board;
+  assert.equal(b.kind, 'tally');
+  assert.equal(b.ranked, false);
+  assert.equal(b.cap, '3 of ' + T().length + ' in');
+  assert.deepEqual(b.rows.map((r) => r.team), [T()[0], T()[1], T()[3]], 'roster order: the leader is not shown');
+  assert.deepEqual(b.rows.map((r) => r.v), ['4', '12', '9'], 'the scores themselves are public');
+  assert.ok(b.rows.every((r) => !('place' in r)));
+  assert.equal(b.rows[0].mine, true);
+  setMemberRole('editor');
+  b = at(WED, nb.start + 1).body.rows.find((r) => r.id === g.id).board;
+  assert.equal(b.ranked, true);
+  assert.deepEqual(b.rows.map((r) => r.team), [T()[1], T()[3], T()[0]], 'a director sees the order');
+  assert.deepEqual(b.rows.map((r) => r.place), [1, 2, 3]);
+  // a bracket game: the pair playing, my team outlined, the next pair when the order is fixed
+  delete state.drafts[g.id];
+  Object.assign(g, { format: 'tournament', liveRankings: false, roundOneMatchups: [[T()[0], T()[1]], [T()[2], T()[3]], [T()[3], T()[1]]] });
+  state.brackets[g.id] = { phase: 'round1', matches: [] };
+  setMemberRole('viewer');
+  let row = at(WED, nb.start + 1).body.rows.find((r) => r.id === g.id);
+  assert.equal(row.status, 'live');
+  assert.equal(row.board.kind, 'match');
+  assert.deepEqual(row.board.sides.map((x) => x.team), [T()[0], T()[1]]);
+  assert.deepEqual(row.board.sides.map((x) => x.mine), [true, false]);
+  assert.equal(row.board.cap, 'Round 1');
+  assert.deepEqual(row.board.next, [T()[2], T()[3]]);
+  assert.equal(row.mine, true);
+  // "Foxes play first" on the Up next row of the block before it, when my team is in the first matchup
+  const before = nowBlocks(WED)[nb.i - 1];
+  const pre = at(WED, before.start + 1);
+  const hit = [pre.next].concat(pre.later).find((r) => r && r.id === nb.id);
+  if (hit) assert.ok(/play first/.test(hit.sub.text) && hit.sub.mine, hit.sub.text);
+  // a director on a team in the live round is told, in place of Score, that another director scores it
+  setMemberRole('editor');
+  setMemberTeam(T()[0]);
+  row = at(WED, nb.start + 1).body.rows.find((r) => r.id === g.id);
+  assert.deepEqual(row.score, { gold: true, why: 'Your team plays · another director scores' });
+  setMemberTeam(T()[4] || T()[3]);
+  assert.equal(at(WED, nb.start + 1).body.rows.find((r) => r.id === g.id).score.why, null);
+  Object.assign(g, keep);
+  done();
+});
+
+test('nowModel: the four-team bracket reads state.brackets4 (Step 22\'s shape) as four cells, derives 3rd place and the final, and tells my team what is next', () => {
+  boot('viewer', T()[0]);
+  const { nb, games } = gamesBlockOf(WED, 1);
+  const g = games[0];
+  g.format = 'tournament';
+  assert.equal(nowBracket4(nowCtx(), g), null, 'no such bracket: nothing');
+  state.brackets4 = { [g.id]: { at: 1, m: { s1: { a: T()[0], b: T()[1], winner: T()[0] }, s2: { a: T()[2], b: T()[3] } } } };
+  assert.equal(gameRowStatus(g, BASE_MS), 'live');
+  let b = at(WED, nb.start + 1).body.bracket4;
+  assert.deepEqual(b.cells.map((c) => [c.slot, c.status, c.next]), [['s1', 'done', false], ['s2', 'live', false], ['third', 'todo', true], ['final', 'todo', false]]);
+  assert.deepEqual(b.cells[0].teams.map((t) => [t.team, t.won, t.lost, t.mine]), [[T()[0], true, false, true], [T()[1], false, true, false]]);
+  assert.deepEqual(b.cells[2].teams.map((t) => [t.team, t.tbd]), [[T()[1], ''], ['', 'Semifinal 2 loser']], 'third place: the semifinal losers, as far as they are known');
+  assert.deepEqual(b.cells[3].teams.map((t) => [t.team, t.tbd]), [[T()[0], ''], ['', 'Semifinal 2 winner']]);
+  assert.equal(b.note.rest, ' plays in the final next · 3rd place match first');
+  assert.equal(b.note.mine, true);
+  const card = at(WED, nb.start + 1).card;
+  assert.ok(card.notes.some((n) => n.kind === 'team' && /3rd place match first/.test(n.rest)));
+  state.followTeam = T()[1];
+  assert.equal(at(WED, nb.start + 1).body.bracket4.note.rest, ' plays the 3rd place match next');
+  state.followTeam = T()[2];
+  assert.equal(at(WED, nb.start + 1).body.bracket4.note.rest, ' plays in semifinal 2');
+  state.followTeam = T()[0];
+  state.brackets4[g.id].m.s2.winner = T()[3];
+  b = at(WED, nb.start + 1).body.bracket4;
+  assert.deepEqual(b.cells.map((c) => c.status), ['done', 'done', 'live', 'todo']);
+  assert.deepEqual(b.cells[3].teams.map((t) => t.team), [T()[0], T()[3]]);
+  assert.deepEqual(b.cells[2].teams.map((t) => t.team), [T()[1], T()[2]]);
+  // junk never throws and never names a team the camp does not have
+  state.brackets4 = { [g.id]: { m: { s1: { a: 'zz', b: T()[1], winner: 'zz' }, s2: 'x' } } };
+  b = at(WED, nb.start + 1).body.bracket4;
+  assert.equal(b.cells[0].teams[0].team, '');
+  assert.equal(b.cells[0].status, 'live', 'an unreadable winner is no winner');
+  state.brackets4 = { [g.id]: { m: [] } };
+  assert.equal(at(WED, nb.start + 1).body.bracket4, null);
+  state.brackets4 = { [g.id]: 'junk' };
+  assert.equal(at(WED, nb.start + 1).body.bracket4, null);
+  delete state.brackets4;
+  done();
+});
