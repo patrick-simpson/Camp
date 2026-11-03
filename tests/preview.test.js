@@ -379,6 +379,118 @@ test('walk every tab, sheet and takeover in a preview, with the points guard thr
   done();
 });
 
+// ── Now, every kind of card (Step 17): the picture is a function of the clock, so a preview is walked through each ──
+// The times of one picture of every kind: a block of each kind on Wednesday (inside it and just after its end, where the cleanup
+// moment, Running over and Still to do live), Sunday's arrival, Saturday's send-off, the night and the early morning.
+const NOW_WALK_BASE = Date.UTC(2026, 6, 22, 12, 0, 0);
+function nowWalkTimes() {
+  const out = [];
+  const bl = nowBlocks(3);
+  ['games', 'elective', 'meal', 'bible', 'meeting', 'worship', 'bedtime', 'activity'].forEach((k) => {
+    const nb = bl.find((x) => x.kind === k && !x.noTime);
+    if (nb) { out.push([3, nb.start + 3]); out.push([3, nb.end + 5]); }
+  });
+  const meal = bl.filter((x) => x.kind === 'meal' && !x.noTime).pop();
+  if (meal) out.push([3, meal.end + 12]);
+  const a = nowBlocks(0).find((x) => x.kind === 'arrival' && !x.noTime);
+  if (a) out.push([0, a.start + 3]);
+  const sf = nowBlocks(6).find((x) => x.kind === 'sendoff' && !x.noTime);
+  if (sf) out.push([6, sf.start + 3]);
+  out.push([3, 23 * 60 + 30], [3, 6 * 60 + 5]);
+  return out;
+}
+// A week with something in every corner for Now: a podium, a live tally, a notice with a team line, banners, a rota.
+const NOW_WALK_SETUP = `
+  const gb = nowBlocks(3).find((x) => x.kind === 'games' && gamesForBlock(3, x.b).length);
+  const gs = gb ? gamesForBlock(3, gb.b) : [];
+  if (gs[0]) state.results[gs[0].id] = { medals: { gold: 't2', silver: 't1', bronze: 't0' }, savedAt: '2026-07-22T14:00:00Z' };
+  if (gs[1]) { Object.assign(gs[1], { format: 'tally', liveRankings: true, lowerWins: false, timeInput: false }); state.drafts[gs[1].id] = { scores: { t3: '9', t0: '4', t1: '6' } }; }
+  state.bonuses = { 'cleanup-t1-3-Lunch': { teamId: 't1', category: 'cleanup', points: 3, day: 3, meal: 'Lunch', at: '2026-07-22T14:00:00Z' }, 'verse-t0-3': { teamId: 't0', category: 'verse', points: 5, day: 3, at: '2026-07-22T14:00:00Z' } };
+  Object.assign(state.notice, { status: 'posted', eyebrow: '', title: 'Saturday cleanup', sub: 'Every team has one place', signoff: 'See you next year',
+    zones: [{ teamId: 't1', place: 'Dining hall', note: 'tables' }], steps: [{ emoji: '🧹', when: '9:00 · Everyone', items: ['Strip the beds'] }] });
+  state.announcements = { p1: { id: 'p1', text: 'Water break', at: new Date().toISOString(), by: 'Jenn', ttlMs: 3600000 }, p2: { id: 'p2', text: 'Supper moves', at: new Date(Date.now() - 1000).toISOString(), by: 'Jenn', ttlMs: 3600000 } };
+  cleanupOnRota = (d) => d >= 1 && d <= 5;
+  cleanupTeams = (d, meal) => (d < 1 || d > 5 ? [] : meal === 'Breakfast' ? ['t0'] : meal === 'Lunch' ? ['t1', 't2'] : []);
+`;
+const NOW_NODE = /^#(?:now-(?!reveal|champion)|announcements$|sheet-(?:notice|messages|whos-where)|whos-where)/;
+function nowAtJs(d, m) { return `campNow = () => ({ dow: ${d}, minutes: ${m} }); serverNow = () => ${NOW_WALK_BASE + m * 60000};`; }
+// What only a director's Now carries: keys, Score, a place numeral, the foot, Still to do, Take down, the moment's secret line.
+const NOW_DIRECTOR_MARKUP = [/class="aw-pt"|class="aw-pts|class="aw-row"|class="aw-lock"/, /nm-saved|nm-label/, /class="lb-pl"|data-ranked/, /data-score-game|gr-score|gr-why/, /data-todo|nr-act/, /Points stay|3 = spotless|Still to do|Take down|Still on /];
+
+test('Now, every kind of card, walked in a preview with the points guard throwing: no key, no Score, no point, no place, no director control', () => {
+  const realNow = campNow; const realServer = serverNow; const realOnRota = cleanupOnRota; const realRota = cleanupTeams;
+  try {
+    boot('editor');
+    eval(NOW_WALK_SETUP);
+    const times = nowWalkTimes();
+    assert.ok(times.length >= 10, 'a real list of times: ' + times.length);
+    // a director's own Now first, at the Bible study that carries the most director markup, so every node holds it
+    const bible = times.find(([d, m]) => nowBlocks(d).some((x) => x.kind === 'bible' && m === x.start + 3)) || times[0];
+    eval(nowAtJs(bible[0], bible[1]));
+    renderAll();
+    assert.ok(NOW_DIRECTOR_MARKUP.some((re) => re.test(NOW_ID_MARKUP())), 'precondition: the director\'s Now does carry director markup');
+    previewStart();
+    setStandingsGuardThrows(true);
+    const found = [];
+    const out = record(() => {
+      times.forEach(([d, m]) => {
+        eval(nowAtJs(d, m));
+        renderAll(); shellTick();
+        const markup = NOW_ID_MARKUP();
+        NOW_DIRECTOR_MARKUP.forEach((re) => { if (re.test(markup)) found.push(`dow ${d} minute ${m}: ${re} in ${markup.match(re)[0]}`); });
+      });
+    });
+    assert.ok(out.length > 20, 'the recorder is live: ' + out.length + ' writes seen');
+    assert.deepEqual(found.slice(0, 4), [], 'director markup on a counselor\'s Now');
+    assert.deepEqual(leaksIn(out), [], 'a sink carried a point, a place or a gap');
+    done();
+  } finally { campNow = realNow; serverNow = realServer; cleanupOnRota = realOnRota; cleanupTeams = realRota; }
+});
+function NOW_ID_MARKUP() {
+  return Object.entries(__domEntries()).filter(([k]) => NOW_NODE.test(k)).map(([, v]) => v).join(' ');
+}
+
+test('FIDELITY, Now at every kind of card: a director in a preview paints, node for node, what a real counselor\'s phone paints', () => {
+  const mk = () => makeContext({ camp: CAMP.id, seeded: PV_SEEDED });
+  const a = mk(); const b = mk();
+  scenario(a.ctx, 'viewer', false);
+  scenario(b.ctx, 'editor', false);
+  vm.runInContext(NOW_WALK_SETUP, a.ctx);
+  vm.runInContext(NOW_WALK_SETUP, b.ctx);
+  const times = nowWalkTimes();
+  const bible = times.find(([d, m]) => nowBlocks(d).some((x) => x.kind === 'bible' && m === x.start + 3)) || times[0];
+  // the director's own page first, at the moment with keys: every node holds director markup before the preview starts
+  vm.runInContext(nowAtJs(bible[0], bible[1]) + 'renderAll(); previewStart();', b.ctx);
+  const entries = (c) => {
+    const e = JSON.parse(JSON.stringify(vm.runInContext('__domEntries()', c)));
+    const out = {};
+    Object.keys(e).filter((k) => NOW_NODE.test(k)).forEach((k) => { out[k] = e[k].replace(/\s+/g, ' ').trim(); });
+    return out;
+  };
+  const diff = [];
+  times.forEach(([d, m]) => {
+    vm.runInContext(nowAtJs(d, m) + 'renderAll(); shellTick();', a.ctx);
+    vm.runInContext(nowAtJs(d, m) + 'renderAll(); shellTick();', b.ctx);
+    const x = entries(a.ctx); const y = entries(b.ctx);
+    new Set(Object.keys(x).concat(Object.keys(y))).forEach((k) => {
+      if ((x[k] || '') !== (y[k] || '')) diff.push(`dow ${d} minute ${m} ${k}: counselor ${JSON.stringify((x[k] || '').slice(0, 90))} / preview ${JSON.stringify((y[k] || '').slice(0, 90))}`);
+    });
+  });
+  assert.deepEqual(diff.slice(0, 6), [], 'Now differs between a counselor and a preview');
+  // the comparison can fail: the same walk as a director with NO preview differs (it carries keys, Score and Still to do)
+  const c = mk();
+  scenario(c.ctx, 'editor', false);
+  vm.runInContext(NOW_WALK_SETUP, c.ctx);
+  let differs = false;
+  times.forEach(([d, m]) => {
+    vm.runInContext(nowAtJs(d, m) + 'renderAll(); shellTick();', a.ctx);
+    vm.runInContext(nowAtJs(d, m) + 'renderAll(); shellTick();', c.ctx);
+    const x = entries(a.ctx); const y = entries(c.ctx);
+    if (Object.keys(x).concat(Object.keys(y)).some((k) => (x[k] || '') !== (y[k] || ''))) differs = true;
+  });
+  assert.ok(differs, 'a director with no preview paints something a counselor does not');
+});
+
 test('every door a counselor has no key to stays shut in a preview: the director tools, the remote, the builder, the drawers, the owner\'s acts', () => {
   boot('editor');
   previewStart();

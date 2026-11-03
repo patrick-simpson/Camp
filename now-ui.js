@@ -373,10 +373,9 @@ function nowPaintFoot(model) {
   const down = nowEl('now-card-down');
   setHiddenIfChanged(hold, !(h && h.can));
   setHiddenIfChanged(note, !h);
-  if (h) {
-    setTextIfChanged(nowEl('now-card-hold-text'), h.held ? 'Still on this · +10 min' : 'Still on ' + h.name + ' · +10 min');
-    setTextIfChanged(note, h.can ? (h.held ? 'Keeps this on every phone’s Now. Nothing else moves.' : 'Keeps ' + h.name + ' on every phone’s Now. Nothing else moves.') : 'This is the longest it can stay on Now.');
-  }
+  // A foot nobody may see holds no words either (the same rule as the moment's keys).
+  setTextIfChanged(nowEl('now-card-hold-text'), h ? (h.held ? 'Still on this · +10 min' : 'Still on ' + h.name + ' · +10 min') : '');
+  setTextIfChanged(note, h ? (h.can ? (h.held ? 'Keeps this on every phone’s Now. Nothing else moves.' : 'Keeps ' + h.name + ' on every phone’s Now. Nothing else moves.') : 'This is the longest it can stay on Now.') : '');
   setHiddenIfChanged(down, !c.down);
   setHiddenIfChanged(foot, !(h || c.down));
 }
@@ -389,6 +388,9 @@ function nowPaintMoment(model) {
   if (!sec) return;
   if (!m) {
     setHiddenIfChanged(sec, true);
+    // A hidden panel must not keep a director's keys or words (a demotion, a preview): its title and body are emptied too.
+    setHtmlIfChanged(nowEl('now-moment-body'), '');
+    setTextIfChanged(nowEl('now-moment-title'), '');
     nowUi.momentShown = false;
     return;
   }
