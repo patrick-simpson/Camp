@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "test": "node run.mjs && node rate.mjs",
-    "test:r1": "node compat-old-client.mjs && node compat-new-client-old-rules.mjs && node setup.mjs && node restore.mjs && node campers.mjs && node access-requests.mjs && node editors-here.mjs && node teams-fields.mjs && node teams-client.mjs && node people-client.mjs && node campers-client.mjs && node games-client.mjs && node brackets4.mjs && node owner-only.mjs && node reveal.mjs && node reveal-client.mjs && node director-tools-client.mjs && node ancestor-validate.mjs",
+    "test:r1": "node compat-old-client.mjs && node compat-new-client-old-rules.mjs && node setup.mjs && node restore.mjs && node campers.mjs && node access-requests.mjs && node editors-here.mjs && node teams-fields.mjs && node teams-client.mjs && node people-client.mjs && node campers-client.mjs && node games-client.mjs && node brackets4.mjs && node brackets4-client.mjs && node owner-only.mjs && node reveal.mjs && node reveal-client.mjs && node director-tools-client.mjs && node ancestor-validate.mjs",
     "test:all": "npm test && npm run test:r1",
     "test:e2e": "node reveal-e2e.cjs",
     "replay": "node export-replay.mjs",
