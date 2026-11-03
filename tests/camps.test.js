@@ -111,7 +111,16 @@ test('the senior seeded config is internally consistent', () => {
     assert.ok(cfg.sessions.includes(g.session), `${g.id} session is real`);
     assert.ok(['placement', 'tally', 'tournament'].includes(g.format), `${g.id} format known`);
     assert.ok(Array.isArray(g.rules) && g.rules.length, `${g.id} has rules sections`);
-    assert.equal(g.format, 'placement', 'placeholders are placement — the one format that works at any team count');
+    // CHANGED ON PURPOSE (Step 22): the Legacy Game is the four-team bracket. Every other placeholder stays a placement game,
+    // the one format that works at any team count.
+    if (g.id.startsWith('legacy-game-')) {
+      assert.equal(g.format, 'tournament', `${g.id} is the four-team bracket`);
+      assert.equal(g.bracketSeed, 'standings', 'its semifinals are suggested from the points');
+      assert.deepEqual(g.liveTracker, { unit: 'Points', periodLabel: 'Round', innings: 1, outs: 0 }, 'with the plain running scoreboard the Games sheet gives a bracket');
+      assert.notOk(g.roundOneMatchups, 'and no fixed pairs');
+    } else {
+      assert.equal(g.format, 'placement', `${g.id}: placeholders are placement — the one format that works at any team count`);
+    }
   });
   // Patrick's call: the big daily events are all SCORED games.
   ['legacy-game', 'hot-seat', 'lets-make-a-deal'].forEach((base) => {

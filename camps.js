@@ -581,22 +581,34 @@ const SCHED_DAYS = [
 // The seeded senior week: five days, and per day the sample-day program —
 // two team-competition blocks, the Legacy Game, and the two evening crowd
 // games (all SCORED, per Patrick). Every game is a placement placeholder
-// (works at any team count) that Patrick renames/retypes in the builder.
+// (works at any team count) that Patrick renames/retypes in the builder —
+// except the Legacy Game, which is the four-team bracket (two semifinals, the
+// 3rd-place match, the final; setup-rebuild-spec decision Q10, BUILD-PLAN
+// Step 22): format 'tournament', semifinals suggested from the standings, a
+// plain running scoreboard per match (the Games sheet's own default for a
+// bracket). This seeds a NEW senior config only: the live config is a
+// director's to change in Set up the week → Games (nothing here reaches it).
 function seniorDefaultConfig() {
   const names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
   const games = [];
   names.forEach(function (name, i) {
     const dayId = 'd' + (i + 1);
-    function mk(idBase, gname, emoji, session, headline) {
-      games.push({
+    function mk(idBase, gname, emoji, session, headline, bracket) {
+      const game = {
         id: idBase + '-' + dayId, name: gname, emoji: emoji, dayId: dayId, session: session,
         location: 'TBA', format: 'placement', headline: headline,
         rules: [{ h: 'How it works', items: ['Details to come — edit this game in Settings → Set up the week.'] }],
-      });
+      };
+      if (bracket) {
+        game.format = 'tournament';
+        game.bracketSeed = 'standings';
+        game.liveTracker = { unit: 'Points', periodLabel: 'Round', innings: 1, outs: 0 };
+      }
+      games.push(game);
     }
     mk('team-comp-am', 'Team Competition (Morning)', '🏅', 'Morning', 'Morning team-competition block.');
     mk('team-comp-pm', 'Team Competition (Afternoon)', '🎽', 'Afternoon', 'Afternoon team-competition block.');
-    mk('legacy-game', 'Legacy Game', '🏆', 'Afternoon', 'The ultimate version of a camp classic.');
+    mk('legacy-game', 'Legacy Game', '🏆', 'Afternoon', 'The ultimate version of a camp classic.', true);
     mk('hot-seat', 'Hot Seat', '🎤', 'Evening', 'Evening crowd game — scored.');
     mk('lets-make-a-deal', "Let's Make a Deal", '🤝', 'Evening', 'Evening crowd game — scored.');
   });

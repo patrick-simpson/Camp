@@ -301,7 +301,9 @@ test('a game made before bracketSeed existed reads back as what it does: fixed p
   try {
     const t = allGames().filter((g) => g.format === 'tournament');
     t.forEach((g) => {
-      if (Array.isArray(g.roundOneMatchups) && g.roundOneMatchups.length) assert.equal(gmSeedOf(g), gmPairsValid(g.roundOneMatchups) ? 'fixed' : 'pick', g.id);
+      // senior's seeded Legacy Game (Step 22) carries its choice: "by the standings"; every other seeded bracket predates the field
+      if (g.bracketSeed) assert.equal(gmSeedOf(g), g.bracketSeed, g.id + ' keeps its saved choice');
+      else if (Array.isArray(g.roundOneMatchups) && g.roundOneMatchups.length) assert.equal(gmSeedOf(g), gmPairsValid(g.roundOneMatchups) ? 'fixed' : 'pick', g.id);
       else assert.equal(gmSeedOf(g), 'pick', g.id);
     });
     assert.equal(gmSeedOf({ format: 'tournament', bracketSeed: 'fixed' }), 'pick', 'a fixed game with no pairs is not fixed');
