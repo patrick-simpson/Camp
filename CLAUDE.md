@@ -4260,19 +4260,25 @@ v183 parity fixture are untouched.
   read) and nothing is "not on the schedule". `loose` = `unscheduledGames`. The day's `warn` (the gold "!"): no games yet, a game on no item,
   a game whose Where still says TBA. Counts are joined to their word with a non-breaking space. A weekday with no competition day says "Not a
   games day" and offers **Make Saturday a games day** (`gmMakeDay`: one `config.days` record at its place in the week, an empty games day is
-  harmless); the day's ⋯ (`#sheet-sg-day`) holds its note (`gmSetDayNote`, saved when focus leaves, ≤ 200) and **Take it off the games
-  days** (`gmTakeDayOff`: a day with games asks where they go — every other games day is a choice — and they move there, off any item, onto
+  harmless); the day's ⋯ (`#sheet-sg-day`) holds its note (`gmSetDayNote`, saved when focus leaves, ≤ 200) and **Make Wednesday a day
+  with no games** (`gmTakeDayOff`: a day with games asks where they go — every other games day is a choice — and they move there, off any item, onto
   its natural one as a new game is; they never vanish).
 - **The sheet** `gmUi.open = { mode: new | edit | quick, pane: form | when, gid (null until created), dk, bid, form, … }` (the field list is
-  in the comment above `GM_EMOJI`). **Progressive**: `data-stage` on the overlay (`name` → `format` → `game`; the CSS shows what is due and each
-  section arrives with a spring, calm: a fade). Nothing is written before the game has a name AND a way of being scored; at that moment
+  in the comment above `GM_EMOJI`). **Progressive**: `data-stage` on the overlay (`name` → `format` → `game`). "How is it scored?" is drawn from
+  the first paint (a way tapped before the name is kept and the name field takes the focus), so typing the name moves nothing; once the game
+  exists its own options unfold from their tops (`gmArrive`, §9.5 scaleY .6 → 1) while the sheet's top edge glides up from where it was
+  (`gmGlideEdge`, a FLIP; calm: a fade, no movement). ONE sheet serves every game: each open (and Make a copy) starts it at its top with the
+  large-text layout decided again (`gmShowFresh` / `gmFreshSheet`), and `gmFitSheet` measures the pinned parts against the sheet's cap (90dvh),
+  never its current height (a short new-game sheet looked like large text and stuck in `data-flow`). On When the back names the game and the
+  title "When" is for the screen reader only (`data-title-quiet`, as the rain sheet). Nothing is written before the game has a name AND a way of being scored; at that moment
   (`gmTryCreate`: a format tapped with a name, or the name committed with a format already picked — the quick game's one step) it is created
   whole as ONE `configEdit` (`gmCreateGame`) and from then on every field saves alone through `gmCommit(gid, patch, label)`, which looks the
   game up BY ID when the write runs (so a colleague's edit to another field is never undone). Text saves on blur / Enter (`focusout`
   delegated on the sheet), switches and rows on a tap. A tally game picks up the live leaderboard and a bracket the plain running scoreboard,
   as the classic format pick does. The inputs' markup is static (values are set as properties, only while a field is not focused), so a
-  snapshot or a save never takes a word away mid-typing or rebuilds a focused field (a Playwright MutationObserver pass sees zero mutations from two idle `renderAll`s on the screen and on every stage / pane of the sheet); inside Set up the week the docked undo pill offers each change, over the Games tab a field edit is recorded but quiet (no toast per field; creating, Make a copy and Delete still speak); the dock's line (`gmDockState`) is saved · saving ·
-  offline · error, and it follows the sync line (`setupUiOnEvent` repaints it even with the builder closed).
+  snapshot or a save never takes a word away mid-typing or rebuilds a focused field (a Playwright MutationObserver pass sees zero mutations from two idle `renderAll`s on the screen and on every stage / pane of the sheet); inside Set up the week the docked undo pill offers each change, over the Games tab a field edit is recorded but quiet (no toast per field; creating, Make a copy and Delete still speak); the dock's line (`gmDockState`) is idle ("Changes save as you go", an existing game
+  before its first save) · saved ("Added to Team competitions" — the item only — just after creating, then "Saved") · saving · offline ·
+  error, and it follows the sync line (`setupUiOnEvent` repaints it even with the builder closed).
 - **Field rules** are the classic editor's own (`gmParseSteps`, `gmParseTimer`, `gmParseTracker`, `gmParsePrompts`): counter buttons are positive
   numbers, the timer is minutes typed / seconds saved with rounds from 2, the scoreboard's periods and outs whole numbers, **only one game a
   week may have drawing prompts**. A field in error keeps `aria-invalid` and its message and writes nothing; every other field still saves.

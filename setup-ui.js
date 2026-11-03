@@ -7192,7 +7192,10 @@ function gmDayModel(dk) {
   if (!isDay) lede = 'Not a games day';
   else if (!n) lede = (today ? 'Today · ' : '') + 'No games yet';
   else {
-    const bits = [hubPlural(n, 'game', 'games').replace(' ', GM_NBSP)];
+    // With items shown, the count before "on N schedule items" is the games ON them: counting the loose ones too read "6 games on 2
+    // schedule items · 1 isn't on the schedule" when only 5 were.
+    const onItems = groups.reduce((s, x) => s + x.games.length, 0);
+    const bits = [hubPlural(live && withGames ? onItems : n, 'game', 'games').replace(' ', GM_NBSP)];
     if (live && withGames) bits[0] += ' on ' + hubPlural(withGames, 'schedule item', 'schedule items').replace(' ', GM_NBSP);
     if (loose.length) bits.push((loose.length === 1 ? '1' + GM_NBSP + 'isn’t' : loose.length + GM_NBSP + 'aren’t') + ' on the schedule');
     lede = (today ? 'Today · ' : '') + bits.join(' · ');
@@ -7712,7 +7715,7 @@ function renderGmDaySheet() {
   setTextIfChanged(setupEl('sg-day-note-label'), 'Note on ' + word + '’s games');
   const box = setupEl('sg-day-note');
   if (box && document.activeElement !== box && box.value !== String(rec.note || '')) box.value = String(rec.note || '');
-  setTextIfChanged(setupEl('sg-day-off-title'), 'Take ' + word + ' off the games days');
+  setTextIfChanged(setupEl('sg-day-off-title'), 'Make ' + word + ' a day with no games');
   setTextIfChanged(setupEl('sg-day-off-sub'), n ? 'First asks where its ' + hubPlural(n, 'game', 'games') + ' go' : 'It has no games');
 }
 
@@ -7916,7 +7919,7 @@ function gmOpenNew(o) {
   else if (scheduleIsShared()) { const first = planForDow(gmDow(dk)).find((b) => b.type === 'games' && !b.noTime); bid = first ? first.id : ''; }
   const where = gmDefaultWhere(dk, bid);
   gmUi.open = gmSheetState({ mode: 'new', dk, bid, session, form: { name: '', emoji: '', location: where, format: '', messtival: false }, whereAuto: !!where });
-  setupSheet('game', o && o.opener);
+  gmShowFresh(o && o.opener);
   return true;
 }
 
@@ -7929,7 +7932,7 @@ function gmOpenGame(gid, o) {
   const st = gmSheetState({ mode: 'edit', gid, dk: gmDkOfDayId(g.dayId), last: gmClone(g), pane, whenOnly: pane === 'when' });
   if (pane === 'when') st.when = { dk: st.dk || gmDayKey(), all: false, newDay: '', double: null };
   gmUi.open = st;
-  setupSheet('game', o && o.opener);
+  gmShowFresh(o && o.opener);
   return true;
 }
 
@@ -7942,8 +7945,29 @@ function gmOpenQuick(opener) {
   const where = gmDefaultWhere(t.dk, t.bid);
   const dbl = typeof inDoubleBonusWindow === 'function' && inDoubleBonusWindow();
   gmUi.open = gmSheetState({ mode: 'quick', dk: t.dk, bid: t.bid, minutes: t.minutes, form: { name: '', emoji: '', location: where, format: 'placement', messtival: !!dbl }, whereAuto: !!where });
-  setupSheet('game', opener);
+  gmShowFresh(opener);
   return true;
+}
+
+// ONE sheet serves every game, so a game it takes starts afresh: at its top (the sheet kept the last game's scroll, and the next
+// game opened 600px down its form with its name out of view), with Extras and How to play folded (the static <details> kept the
+// last game's open ones), and with the large-text layout decided again (a data-flow left over from the last open kept the whole
+// sheet scrolling at normal text, its dock below the screen). The flag goes BEFORE the sheet is painted (the paint decides it
+// again); the scroll is reset AFTER it is shown (a hidden box has no scroll position to set).
+function gmFreshSheet() {
+  const sheet = document.querySelector('#sheet-game .sheet');
+  if (sheet && typeof sheet.removeAttribute === 'function') sheet.removeAttribute('data-flow');
+  Array.prototype.forEach.call(document.querySelectorAll('#sheet-game details[open]') || [], (d) => { d.open = false; });
+  gmScrollTop();
+}
+function gmScrollTop() {
+  const els = [document.querySelector('#sheet-game .sheet')].concat(Array.prototype.slice.call(document.querySelectorAll('#sheet-game .sheet-body') || []));
+  els.forEach((el) => { if (el && el.scrollTop) el.scrollTop = 0; });
+}
+function gmShowFresh(opener) {
+  gmFreshSheet();
+  setupSheet('game', opener);
+  gmScrollTop();
 }
 
 function gmSheetReady() { return !!gmUi.open; }
@@ -7972,21 +7996,23 @@ function gmStageOf(o) { return o.gid ? 'game' : (o.form.name.trim() || o.mode ==
 function gmWhenInfo(o) {
   const g = gmSrc(o);
   const dk = (g && gmDkOfDayId(g.dayId)) || o.dk;
-  const todayDk = SETUP_DK[campNow().dow];
-  const word = o.mode === 'quick' && !g && dk === todayDk ? 'Today' : SETUP_DAY_WORDS[dk] || 'This week';
+  // One word for the day, before and after the game exists (a quick game said "Today" until it was named, then "Wednesday").
+  const word = SETUP_DAY_WORDS[dk] || 'This week';
   if (scheduleIsShared()) {
     const bid = g ? g.blockId : o.bid;
     const blk = typeof bid === 'string' && bid ? gmBlock(dk, bid) : null;
-    if (blk) return { text: word + ' · ' + (blk.base || blk.label) + (blk.noTime ? '' : ', ' + setupRange(blk.start, blk.end)), warn: false, btn: 'Change' };
-    return { text: word + ' · Not on the schedule', warn: true, btn: 'Put it on the schedule' };
+    if (blk) return { text: word + ' · ' + (blk.base || blk.label) + (blk.noTime ? '' : ', ' + gmNoBreak(setupRange(blk.start, blk.end))), warn: false, btn: 'Change', item: blk.base || blk.label };
+    return { text: word + ' · Not on the schedule', warn: true, btn: 'Put it on the schedule', item: '' };
   }
   // The printed week: the session it is (or will be) in — a new game's is the one the clock says for a quick game, else the one named.
   const place = g ? null : gmPlacement(dk, '', { session: o.session, minutes: o.mode === 'quick' ? o.minutes : null });
   const sess = g ? g.session : (place ? place.session : (o.session || gmSessions()[0]));
-  return { text: word + (sess ? ' · ' + sess + ' games' : ''), warn: false, btn: 'Change' };
+  return { text: word + (sess ? ' · ' + sess + ' games' : ''), warn: false, btn: 'Change', item: sess ? sess + ' games' : '' };
 }
+// A run sheet's time range never breaks across lines ("10:00–11:45 / AM" at 360px): no-break spaces, and word joiners round the dash.
+function gmNoBreak(range) { return String(range).replace(/ /g, GM_NBSP).replace(/–/g, '\u2060–\u2060'); }
 
-// The line in the dock: saved · saving · offline · error (a field in error is named; everything else was saved).
+// The line in the dock: idle · saved · saving · offline · error (a field in error is named; everything else was saved).
 function gmDockState(o) {
   const errs = Object.keys(o.err || {}).filter((k) => o.err[k]);
   if (errs.length) { const w = GM_ERR_WORDS[errs[0]] || ['it', 'it']; return { tone: 'error', text: 'Fix ' + w[0] + ' to save ' + w[1] }; }
@@ -7994,7 +8020,10 @@ function gmDockState(o) {
   if (line.tone === 'offline') return { tone: 'offline', text: 'Saved on this phone · it sends when you’re back online' };
   if (line.tone === 'error') return { tone: 'error', text: 'Couldn’t save — see the bar at the top' };
   if (line.tone === 'saving') return { tone: 'saving', text: 'Saving…' };
-  return { tone: 'saved', text: o.made ? 'Added to ' + gmWhenInfo(o).text.replace(' · Not on the schedule', ' (not on the schedule)') : 'Saved' };
+  // Just created: where it went, the ITEM only (the day and time are right under the title). An existing game says nothing has
+  // been saved until something has ("✓ Saved" on opening read as if a tap had already done something).
+  if (o.made) { const w = gmWhenInfo(o); return { tone: 'saved', text: w.item ? 'Added to ' + w.item : 'Added to ' + (SETUP_DAY_WORDS[o.dk] || 'the week') + ', not on the schedule' }; }
+  return o.saved ? { tone: 'saved', text: 'Saved' } : { tone: 'idle', text: 'Changes save as you go' };
 }
 // What the dashed well before the game exists says (and, tapped, takes the director to).
 function gmWaitInfo(o) {
@@ -8068,11 +8097,19 @@ function renderGameSheet() {
   const stage = gmStageOf(o);
   const format = src ? src.format : o.form.format;
   const lost = !!o.gone;
+  // The game's own options unfold the moment it exists, and the sheet grows: its top edge is measured before and glides up from
+  // where it was after (a FLIP), so nothing jumps under the director's thumb.
+  const sheet = typeof overlay.querySelector === 'function' ? overlay.querySelector('.sheet') : null;
+  const top0 = o.pane === 'form' && o.stageSeen && o.stageSeen !== stage && stage === 'game' ? gmTopOf(sheet) : null;
   gmSetData(overlay, 'mode', o.mode);
   gmSetData(overlay, 'pane', o.pane);
   gmSetData(overlay, 'stage', stage);
   gmSetData(overlay, 'format', format || '');
   setTextIfChanged(setupEl('sheet-game-title'), o.pane === 'when' ? 'When' : o.mode === 'new' ? 'New game' : o.mode === 'quick' ? 'Quick game' : 'Edit game');
+  // On When the back already names the game ("‹ Capture the Flag"): the title "When" is then for the screen reader only, so the
+  // two never fight over the ✕ (the rain sheet's data-title-quiet).
+  const quiet = o.pane === 'when' && !o.whenOnly;
+  if (typeof overlay.toggleAttribute === 'function' && overlay.hasAttribute('data-title-quiet') !== quiet) overlay.toggleAttribute('data-title-quiet', quiet);
   if (o.pane === 'when') { renderGmWhen(o, g); } else { renderGmForm(o, g, src, stage, format, lost); }
   // The pane that came in arrives from its side (forward from the right, Back from the left); calm: a fade.
   if (o.paneSeen !== o.pane) {
@@ -8081,6 +8118,18 @@ function renderGameSheet() {
     o.paneSeen = o.pane;
   }
   gmFitSheet();
+  if (top0 != null) gmGlideEdge(sheet, top0);
+}
+
+function gmTopOf(el) { return el && typeof el.getBoundingClientRect === 'function' ? el.getBoundingClientRect().top : null; }
+// The FLIP: the grown sheet starts where its top edge was and glides up to its new height (glide: no overshoot, so it never rises
+// past where it ends). Calm: no movement (the unfolding sections fade in).
+function gmGlideEdge(sheet, top0) {
+  const top1 = gmTopOf(sheet);
+  if (typeof JellyMotion === 'undefined' || top1 == null) return;
+  const dy = top0 - top1;
+  if (!(Math.abs(dy) > 2)) return;
+  JellyMotion.play(sheet, 'glide', (x) => ({ transform: 'translateY(' + dy * (1 - x) + 'px)' }), { calm: false });
 }
 
 function renderGmForm(o, g, src, stage, format, lost) {
@@ -8132,17 +8181,25 @@ function renderGmForm(o, g, src, stage, format, lost) {
   setHiddenIfChanged(setupEl('gm-acts'), stage !== 'game');
   setHiddenIfChanged(setupEl('gm-score'), !(o.mode === 'quick' && o.gid && !lost));
   if (stage === 'game' && was && was !== dock.text && dock.tone === 'saved' && st) secSnap(st);
-  // stages unfold (calm: a fade); the first paint of a sheet does not
+  // The game's own options unfold once it exists (calm: a fade); the first paint of a sheet does not. "How is it scored?" is drawn
+  // from the first paint, so naming the game moves nothing.
   if (o.stageSeen !== stage) {
-    if (o.stageSeen) gmArrive(stage === 'format' ? document.querySelectorAll('#sheet-game [data-gm-step="format"]') : document.querySelectorAll('#sheet-game [data-gm-step="game"]'));
+    if (o.stageSeen && stage === 'game') gmArrive(document.querySelectorAll('#sheet-game [data-gm-step="game"]'));
     o.stageSeen = stage;
   }
 }
 
-// The sections that arrive as the sheet grows.
+// The sections that arrive as the sheet grows unfold from their top (§9.5 "panel appears": scaleY .6 → 1, the overshoot spent as a
+// landing squash), while the sheet's edge glides (gmGlideEdge). Only what is drawn moves.
 function gmArrive(list) {
   if (typeof JellyMotion === 'undefined' || !list) return;
-  Array.prototype.forEach.call(list, (n) => JellyMotion.play(n, 'arrive', (x) => ({ opacity: Math.min(1, x), transform: 'translateY(' + (-12 * (1 - Math.min(1, x))) + 'px)', transformOrigin: '50% 0' }), { calm: [{ opacity: 0 }, { opacity: 1 }] }));
+  Array.prototype.forEach.call(list, (n) => {
+    if (n && n.getClientRects && !n.getClientRects().length) return;
+    JellyMotion.play(n, 'arrive', (x) => {
+      const o = Math.max(0, x - 1);
+      return { transform: 'scale(' + (1 + 0.12 * o) + ', ' + (0.6 + 0.4 * Math.min(1, x)) * (1 - 0.3 * o) + ')', transformOrigin: '50% 0', opacity: Math.min(1, x * 1.6) };
+    }, { calm: [{ opacity: 0 }, { opacity: 1 }], calmMs: 160 });
+  });
 }
 
 function renderGmOptions(o, g, src, format) {
@@ -8240,17 +8297,27 @@ function renderGmOptions(o, g, src, format) {
   setHiddenIfChanged(setupEl('gm-foot'), !o.gid);
 }
 
-// When the pinned parts of the sheet (grab, head, When line, dock) take more than 45% of its height (large text), the WHOLE sheet
-// scrolls as one (the item sheet's rule): decided per open and only ever switched on while open, so the form never jumps mid-edit.
+// When the pinned parts of the sheet (grab, head, When line, dock) take more than 45% of the height the sheet may GROW to (large
+// text), the WHOLE sheet scrolls as one (the item sheet's rule): decided per open and only ever switched on while open, so the form
+// never jumps mid-edit. Measured against the cap (90dvh), never the sheet's current height: a new game's sheet starts short, and
+// against that every phone at normal text looked like large text and went on scrolling as one with its dock below the screen.
 function gmFitSheet() {
   const o = gmUi.open;
   const sheet = document.querySelector('#sheet-game .sheet');
   if (!o || !sheet || !sheet.children || o.flow) return;
-  const h = Number(sheet.clientHeight) || 0;
+  const h = gmSheetCap(sheet);
   if (!h) return;
   let fixed = 0;
   Array.prototype.forEach.call(sheet.children, (c) => { if (!(c.classList && c.classList.contains('sheet-body'))) fixed += Number(c.offsetHeight) || 0; });
   if (fixed > h * 0.45) { o.flow = true; sheet.setAttribute('data-flow', ''); }
+}
+// The tallest the sheet may be (styles.css .sheet-tall: min(90dvh, the screen less 40px)), in px.
+function gmSheetCap(sheet) {
+  let cap = 0;
+  try { cap = parseFloat(getComputedStyle(sheet).maxHeight) || 0; } catch (e) { /* no layout here */ }
+  const vh = typeof window !== 'undefined' ? Number(window.innerHeight) || 0 : 0;
+  if (!cap && vh) cap = Math.min(vh * 0.9, vh - 40);
+  return cap || Number(sheet.clientHeight) || 0;
 }
 
 // ── the When pane ──
@@ -8325,7 +8392,7 @@ function renderGmWhen(o, g) {
 // meanwhile is noticed (the question appears), a refusal says nothing here (configLocked already toasted a loading list).
 function gmAfter(r, o, quiet) {
   if (!r) return r;
-  if (r.ok) { if (r.changed !== false) { if (!quiet) o.made = false; renderAll(); } }
+  if (r.ok) { if (r.changed !== false) { if (!quiet) o.made = false; o.saved = true; renderAll(); } }
   else if (r.reason === 'gone') { if (!o.gone) o.gone = { at: Date.now() }; renderGameSheet(); }
   return r;
 }
@@ -8369,7 +8436,9 @@ function gmSetEmoji(e) {
 async function gmPickFormat(f) {
   const o = gmUi.open;
   if (!o || o.gone || !GM_FORMAT_WORDS[f]) return;
-  if (!o.gid) { o.form.format = f; renderGameSheet(); gmTryCreate(); return; }
+  // Before the game exists the three ways are there from the start (nothing jumps as a name is typed): one tapped first is kept,
+  // and the name field, the one thing still missing, takes the focus.
+  if (!o.gid) { o.form.format = f; renderGameSheet(); if (!gmTryCreate() && !o.form.name.trim()) gmWaitTap(); return; }
   const g = gameById(o.gid);
   if (!g) { gmAfter({ ok: false, reason: 'gone' }, o); return; }
   if (!o.formatOpen) { o.formatOpen = true; renderGameSheet(); return; } // folded: a tap opens all three
@@ -8594,6 +8663,7 @@ function gmCopyGo() {
   if (!r.ok) { gmAfter(r, o); return; }
   const g = gameById(r.id);
   gmUi.open = gmSheetState({ mode: 'edit', gid: r.id, dk: g ? gmDkOfDayId(g.dayId) : o.dk, last: g ? gmClone(g) : null, stageSeen: 'game' });
+  gmFreshSheet();
   setupSay('Made a copy. Rename it when you like.');
   renderAll();
 }

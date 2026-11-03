@@ -16730,11 +16730,11 @@ button.gs-row:focus-visible {
 }
 .sg-days .daypick-warn {
   position: static;
-  width: 12px;
-  height: 12px;
+  width: 0.92em; /* the count's em: 12px at 100%, and it grows with its "!" */
+  height: 0.92em;
 }
 .sg-days .daypick-warn::after {
-  font-size: 0.5625rem;
+  font-size: 0.7em;
 }
 /* Not a games day: the name a step quieter in weight (never lighter than ink-2). */
 .sg-days .daypick-btn[data-off]:not([aria-selected="true"]) {
@@ -16865,15 +16865,15 @@ button.gs-row:focus-visible {
   content: '!';
   display: inline-grid;
   place-items: center;
-  width: 15px;
-  height: 15px;
-  margin-right: 6px;
+  width: 1.1em; /* in em: a fixed disc stayed small while its "!" grew at 200% */
+  height: 1.1em;
+  margin-right: 0.43em;
   border-radius: 50%;
   background: var(--gold);
   box-shadow: inset 0 0 0 1.5px var(--gold-edge);
   color: var(--gold-ink);
-  font: 900 0.6875rem/1 var(--font-ui);
-  vertical-align: -2px;
+  font: 900 0.8em/1 var(--font-ui);
+  vertical-align: -0.15em;
 }
 /* Not on the schedule: an invisible full-row button opens the game; "Put on
    the schedule" sits above it with its own 44px target, on its own line under
@@ -16933,6 +16933,12 @@ button.gs-row:focus-visible {
   height: 20px;
   stroke-width: 2.6;
 }
+/* A games day with nothing on it: the lede already says "No games yet", so the
+   sentence beside the gold button is not drawn twice (setup-ui.js still writes
+   it; the next step may drop it). */
+#sg-empty-text {
+  display: none;
+}
 /* The day's own add, under everything. */
 .sg-add {
   margin-top: var(--s-4);
@@ -16943,14 +16949,16 @@ button.gs-row:focus-visible {
 
 /* ── The game sheet (#sheet-game) ──
    Two panes under one sheet, data-pane the switch (as the team and rain
-   sheets), and the stages: what isn't due yet is not drawn at all. */
+   sheets), and the stages: the game's own options are not drawn until it
+   exists. "How is it scored?" IS drawn from the first paint (a way tapped
+   before the name is kept): appearing on the first letter typed, it threw the
+   sheet's top edge 248px up under the director's thumb. */
 .gm-sheet[data-pane="form"] [data-gm-pane="when"],
 .gm-sheet[data-pane="when"] [data-gm-pane="form"],
 .gm-sheet[data-pane="when"] .gm-when-line,
 .gm-sheet[data-pane="when"] .gm-dock {
   display: none;
 }
-.gm-sheet[data-stage="name"] [data-gm-step="format"],
 .gm-sheet[data-stage="name"] [data-gm-step="game"],
 .gm-sheet[data-stage="format"] [data-gm-step="game"],
 .gm-sheet:not([data-format="tournament"]) [data-gm-for="tournament"],
@@ -16969,25 +16977,40 @@ button.gs-row:focus-visible {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-/* With the back in the head, the title steps down to the row size, so "‹
-   Kangaroo Kickball" and "When" share the line. */
+/* With the back in the head, the title steps down to the row size; and when
+   the back already names the game ("‹ Kangaroo Kickball", data-title-quiet)
+   "When" is kept for the screen reader only, as the rain sheet does: sharing
+   the row, it was drawn over the ✕ with a long name or at large text. */
 .gm-sheet[data-pane="when"] .sheet-title {
   font: var(--t-row);
 }
-/* When, under the title: a game on no item says so with the gold "!". */
+.gm-sheet[data-title-quiet] .sheet-title {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+/* The back takes the spare room, so the ✕ stays at the right edge. */
+.gm-sheet .gm-pane-back:not([hidden]) {
+  margin-right: auto;
+}
+/* When, under the title: a game on no item says so with the gold "!" (sized
+   in em, so the disc grows with its glyph at large text). */
 .gm-when-line[data-warn]::before {
   content: '!';
   display: inline-grid;
   place-items: center;
-  width: 16px;
-  height: 16px;
-  margin-right: 6px;
+  width: 1.07em;
+  height: 1.07em;
+  margin-right: 0.4em;
   border-radius: 50%;
   background: var(--gold);
   box-shadow: inset 0 0 0 1.5px var(--gold-edge);
   color: var(--gold-ink);
-  font: 900 0.6875rem/1 var(--font-ui);
-  vertical-align: 1px;
+  font: 900 0.73em/1 var(--font-ui);
+  vertical-align: 0.07em;
 }
 .gm-when-line[data-warn] {
   color: var(--ink);
@@ -17267,8 +17290,10 @@ button.gs-row:focus-visible {
   }
 }
 
-/* Extras and How to play: folded under a plain line that says what's inside. */
-.gm .setup-advanced {
+/* Extras and How to play: folded under a plain line that says what's inside,
+   on the form's own 16px rhythm (the Restore points screen's 24px margin above
+   its Advanced fold left both floating 40px under the block before). */
+.gm-form .setup-advanced {
   margin-top: 0;
 }
 .gm-more-t {
@@ -17334,7 +17359,13 @@ button.gs-row:focus-visible {
   margin: 0;
 }
 
-/* The When pane: the rain plan's move picker, as blocks. */
+/* The When pane: the rain plan's move picker, as blocks. Its days take the
+   Games screen strip's sizing, so all seven fit a 360px phone at normal text
+   (Sunday was clipped to "un" at the left fade). */
+.gm-when-body .daypick-btn {
+  min-width: 44px;
+  padding-inline: 3px;
+}
 .gm-when-body .si-ask,
 .gm-when-body .cb-empty {
   margin: 0 0 var(--s-3);
@@ -17372,24 +17403,26 @@ button.gs-row:focus-visible {
   display: none; /* deleted elsewhere: nothing was saved, the question at the top says what is true */
 }
 .gm-state {
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 6px;
+  display: block;
   margin: 0;
   font: 800 0.9375rem/1.35 var(--font-ui);
   color: var(--done);
   text-align: center;
   overflow-wrap: break-word;
 }
+/* The check rides the start of the sentence's first line, so a sentence that
+   wraps stays centred with its mark (a flex row left the mark at the far left
+   of a centred two-line sentence). */
 .gm-state .ico {
-  flex: none;
-  width: 19px;
-  height: 19px;
-  margin-top: 1px;
+  width: 1.2em;
+  height: 1.2em;
+  margin-right: 6px;
+  vertical-align: -0.24em;
   stroke-width: 3;
 }
-.gm-state:is([data-tone="saving"], [data-tone="offline"]) {
+/* An existing game before anything has been changed: "Changes save as you go",
+   quiet, no check (it said "✓ Saved" before anything was done). */
+.gm-state:is([data-tone="saving"], [data-tone="offline"], [data-tone="idle"]) {
   color: var(--ink-2);
   font-weight: 700;
 }
