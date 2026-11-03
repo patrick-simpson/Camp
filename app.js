@@ -6191,6 +6191,7 @@ function pushState() {
       writeConfirmedTree(applySyncPaths(confirmedTree || prevBaseline || {}, updates), true);
       pruneQuarantineAndRepaint(); // a Retry that got through clears its line
       settle();
+      if (typeof gamesSavedRefresh === 'function') gamesSavedRefresh(); // "Saving…" → "Saved … everyone's phone has it" (the open game's line)
     }, (e) => {
       // ONLY a rules refusal is quarantined (S2a), and only for an editor — the
       // person who typed the value and can Retry or Discard it. One refused path
@@ -6719,6 +6720,7 @@ function paintTakeoverStatus() {
 function updateSyncIndicator() {
   updateSyncAlert();
   renderSyncPill();
+  if (typeof gamesSavedRefresh === 'function') gamesSavedRefresh(); // a connection change or a refused write moves the open result's saved line
   if (typeof setupNotify === 'function') setupNotify('sync'); // the builder frame's own sync line follows the same truth
   // Two copies of the line: the one in the Games standings panel (directors)
   // and a footer one that only view-only devices WITHOUT the standings panel show
@@ -9420,11 +9422,14 @@ function gamesNextAfter(gid, opts) {
   };
 }
 
-// The takeover dock's words for a game whose result is saved (directors): what is left, the Next game button, where Back goes.
-// { tone: 'next' | 'wait' | 'done', left: text, next: { id, name } | null, back: 'Back to Now' } or null (no director, or not done).
+// The takeover dock's words (directors): WHILE a podium is being picked, the Save button and what is missing; once a result is
+// saved, what is left, the Next game button and where Back goes.
+// { tone: 'pick', save: { ready, label, target } } | { tone: 'next' | 'wait' | 'done', left: text, next: { id, name } | null,
+// back: 'Back to Now' } or null (no director, or a game with nothing to dock: a bracket or a tally keeps its own Save in the body).
 function gamesDock(gid, opts) {
   const g = gameById(gid);
-  if (!g || !canEdit() || !(state.results && state.results[g.id])) return null;
+  if (!g || !canEdit()) return null;
+  if (!(state.results && state.results[g.id])) return gameIsPodium(g) ? { tone: 'pick', save: gamesPodium(g).save } : null;
   const n = gamesNextAfter(gid, opts);
   const when = n.isToday || !n.day ? 'today' : 'on ' + n.day.name;
   const back = 'Back to ' + shellGameBackLabel(g);
@@ -9450,6 +9455,153 @@ function openNextGame() {
   const n = gamesNextAfter(cur);
   if (!n.game) { renderAll(); return false; }
   return openGame(n.game.id, { from: state.ui.gameFrom });
+}
+
+// ── The podium picker (redesign §5.5; games-ui.js draws it) ─────────────────────────────────────────────────────────
+// A podium game (anything that is not a bracket or a tally) is scored by choosing three DIFFERENT teams: three rows of team keys,
+// three taps and Save. The picks are the draft's own `medals` leaves (`drafts/<game>/medals/<medal>`), the same ones the three
+// dropdowns wrote, so two directors never clobber each other (computeSyncUpdates diffs them per leaf) and the counselors' "Being
+// scored" line behaves as before. A format allows no tie on a medal: one team per medal, which is also what a result stores.
+const PODIUM_MEDALS = ['gold', 'silver', 'bronze'];
+const PODIUM_WORDS = { gold: 'Gold', silver: 'Silver', bronze: 'Bronze' };
+function gameIsPodium(g) { return !!g && g.format !== 'tournament' && g.format !== 'tally'; }
+
+// The draft's picks as the picker reads them. Never trust the snapshot's shape: a stale team id (a roster change) is no pick, and a
+// team that two directors wrote to two medals at the same moment keeps only its first (gold before silver before bronze), so the
+// picker can never show one team twice or save a podium the format forbids.
+function podiumPicks(g) {
+  const d = state.drafts && g ? state.drafts[g.id] : null;
+  const raw = d && typeof d === 'object' && d.medals && typeof d.medals === 'object' ? d.medals : {};
+  const ids = teamIds();
+  const used = {};
+  const out = {};
+  PODIUM_MEDALS.forEach((m) => {
+    const t = raw[m];
+    out[m] = typeof t === 'string' && ids.includes(t) && !used[t] ? (used[t] = true, t) : null;
+  });
+  return out;
+}
+
+// The picker as plain data: a row per medal, a key per team, and the Save button's words.
+//   row: { medal, place, word, pts (number | null: only a phone that may read points), wait (the medal above it is still empty and
+//   this one holds nothing: its keys are the dashed "not yet" well), waitFor ('gold' | null), pick, teams: [key] }
+//   key: { team, name, short, picked, taken ('gold' | … | '': held by ANOTHER medal), disabled, label }
+//   save: { ready, label, target (the first medal still to pick: a tap on the dashed well goes there) | null }
+// A row that already holds a pick never waits, so a pick left by an older build or another director can always be cleared.
+function gamesPodium(g) {
+  const picks = podiumPicks(g);
+  const mult = g && g.messtival ? 2 : 1;
+  const pts = standingsVisible();
+  const holder = {};
+  PODIUM_MEDALS.forEach((m) => { if (picks[m]) holder[picks[m]] = m; });
+  const ids = teamIds();
+  const rows = PODIUM_MEDALS.map((medal, i) => {
+    const above = i ? PODIUM_MEDALS[i - 1] : null;
+    const wait = !!above && !picks[above] && !picks[medal];
+    const teams = ids.map((team) => {
+      const picked = picks[medal] === team;
+      const taken = !picked && holder[team] ? holder[team] : '';
+      const name = teamName(team);
+      const short = nowTeamWord(team);
+      const label = name + (taken ? ', has ' + taken : wait ? ', waiting for ' + above : '');
+      return { team, name, short, picked, taken, disabled: !picked && (!!taken || wait), label };
+    });
+    return { medal, place: i + 1, word: PODIUM_WORDS[medal], pts: pts ? MEDAL_POINTS[medal] * mult : null, wait, waitFor: wait ? above : null, pick: picks[medal], teams };
+  });
+  const missing = PODIUM_MEDALS.filter((m) => !picks[m]);
+  const label = !missing.length ? 'Save result'
+    : missing.length === 1 ? 'Pick ' + missing[0] + ', then save'
+    : missing.length === 2 ? 'Pick ' + missing[0] + ' and ' + missing[1]
+    : 'Pick gold, silver and bronze';
+  return { gid: g ? g.id : null, doubled: mult === 2, rows, picks, save: { ready: !missing.length, label, target: missing[0] || null } };
+}
+
+// A tap on a key: pick the team for that medal, or (the same key again) clear it. Refused, saying why, when the game is not a
+// podium, already has a result (a second director saved first), the row is still waiting for the medal above, or the team already
+// holds another medal. Writes the draft leaf and saves (the per-leaf push); the caller renders. { ok, action: 'pick' | 'clear',
+// medal, team } or { ok: false, problem: 'unavailable' | 'unknown' | 'wait' | 'taken', by? }.
+function podiumPick(gid, medal, team) {
+  const g = gameById(gid);
+  if (!g || !canEdit() || !gameIsPodium(g) || (state.results && state.results[g.id])) return { ok: false, problem: 'unavailable' };
+  if (!PODIUM_MEDALS.includes(medal) || !teamIds().includes(team)) return { ok: false, problem: 'unknown' };
+  const row = gamesPodium(g).rows.find((r) => r.medal === medal);
+  const key = row.teams.find((t) => t.team === team);
+  let action = 'pick';
+  if (key.picked) action = 'clear';
+  else if (key.taken) return { ok: false, problem: 'taken', by: key.taken };
+  else if (row.wait) return { ok: false, problem: 'wait' };
+  const d = normalizeDraft(state.drafts[g.id] || (state.drafts[g.id] = { medals: {} }));
+  if (action === 'clear') delete d.medals[medal]; else d.medals[medal] = team;
+  saveState();
+  return { ok: true, action, medal, team };
+}
+
+// Save: the same record the Save Result button wrote (medals + savedAt, the draft removed, the stamp, the confetti). Refused
+// while the podium is incomplete or a result already exists (a second director's save is not overwritten by a stale form).
+// { ok: true, medals } or { ok: false, problem: 'unavailable' | 'incomplete', target? }.
+function podiumSave(gid) {
+  const g = gameById(gid);
+  if (!g || !canEdit() || !gameIsPodium(g) || (state.results && state.results[g.id])) return { ok: false, problem: 'unavailable' };
+  const picks = podiumPicks(g);
+  const missing = PODIUM_MEDALS.filter((m) => !picks[m]);
+  if (missing.length) return { ok: false, problem: 'incomplete', target: missing[0] };
+  state.results[g.id] = { medals: { gold: picks.gold, silver: picks.silver, bronze: picks.bronze }, savedAt: new Date().toISOString() };
+  delete state.drafts[g.id];
+  touchData();
+  saveState();
+  renderAll();
+  celebrate(picks.gold);
+  return { ok: true, medals: state.results[g.id].medals };
+}
+
+// ── The saved result (mockup 14b) ───────────────────────────────────────────────────────────────────────────────────
+// Has the server confirmed this result? 'saved' only once the write is ACKNOWLEDGED (the confirmed tree holds the same record),
+// so "everyone's phone has it" is never a hope. 'saving' while it goes up, 'offline' while it cannot (no connection, or this
+// device keeps no sync at all), 'refused' when the rules turned it away (the bar at the top has Retry / Discard). null: no result.
+function gameResultState(gid) {
+  const r = state.results && state.results[gid];
+  if (!r) return null;
+  if (stateQuarantine && ('results/' + gid) in stateQuarantine) return 'refused';
+  if (!syncEnabled()) return 'offline';
+  if (fbConnKnown && !fbConnected) return 'offline';
+  const held = confirmedTree && confirmedTree.results ? confirmedTree.results[gid] : undefined;
+  return JSON.stringify(syncCanon(held)) === JSON.stringify(syncCanon(r)) ? 'saved' : 'saving';
+}
+
+// The words of the line above the winners ("Saved 10:52 AM · everyone's phone has it"), camp time.
+function gameSavedWords(state_, savedAt) {
+  const d = savedAt ? new Date(savedAt) : null;
+  const at = d && !Number.isNaN(d.getTime())
+    ? ' ' + new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, hour: 'numeric', minute: '2-digit', hour12: true }).format(d)
+    : '';
+  if (state_ === 'saved') return 'Saved' + at + ' · everyone’s phone has it';
+  if (state_ === 'saving') return 'Saving…';
+  if (state_ === 'refused') return 'Not saved yet · the server turned it away. Use Retry in the bar at the top.';
+  return 'Saved on this phone' + (syncEnabled() ? ' · it sends when you’re back online' : '');
+}
+
+// A saved result as plain data. The winners are public (a counselor reads them); what a medal is worth in the standings is a
+// point, so `pts` is only on a phone that may read points; the "Saved … everyone's phone has it" line and the Change button are
+// a director's (`saved` null, `change` false for everyone else).
+//   { saved: { state, text } | null, places: [{ place, medal, word, team, name, short, pts, mine }], scores: { cap, rows } | null, change }
+function gamesResultModel(g, result) {
+  const mult = g && g.messtival ? 2 : 1;
+  const pts = standingsVisible();
+  const me = state.followTeam || null;
+  const medals = result && result.medals && typeof result.medals === 'object' ? result.medals : {};
+  const places = PODIUM_MEDALS.map((medal, i) => ({
+    place: i + 1, medal, word: PODIUM_WORDS[medal], team: medals[medal], name: teamName(medals[medal]), short: nowTeamWord(medals[medal]),
+    pts: pts ? MEDAL_POINTS[medal] * mult : null, mine: !!me && medals[medal] === me,
+  })).filter((p) => typeof p.team === 'string' && p.team);
+  let scores = null;
+  if (result && result.scores && typeof result.scores === 'object' && Object.keys(result.scores).length) {
+    const rows = Object.entries(result.scores).filter((e) => Number.isFinite(Number(e[1])))
+      .sort((a, b) => (g.lowerWins ? a[1] - b[1] : b[1] - a[1]))
+      .map(([team, v]) => ({ team, name: teamName(team), short: nowTeamWord(team), v: formatScore(g, v) }));
+    if (rows.length) scores = { cap: 'Scores · ' + (g.unit || 'points') + (g.lowerWins ? ' · lowest wins' : ''), rows };
+  }
+  const st = canEdit() ? gameResultState(g.id) : null;
+  return { saved: st ? { state: st, text: gameSavedWords(st, result && result.savedAt) } : null, places, scores, change: canEdit() };
 }
 
 // ── The directors' standings ─────────────────────────────────────────
@@ -9861,6 +10013,9 @@ function medalWorthChip(points) {
 }
 
 function renderResult(container, g, result) {
+  // The saved result is games-ui.js's (mockup 14b: the "Saved … everyone's phone has it" line, the winners as a list). The page
+  // below is what a phone shows when that script never loaded: the same facts, plainly.
+  if (typeof renderSavedResult === 'function') { renderSavedResult(container, g, result); return; }
   let extra = '';
   if (result.scores) {
     const rows = Object.entries(result.scores)
@@ -10163,6 +10318,9 @@ function updateTallyMedals(g) {
 // ── Placement format ─────────────────────────────────────────────
 
 function renderPlacement(container, g) {
+  // The podium picker (redesign §5.5, games-ui.js): three rows of team keys, Save in the dock. Without that script the three
+  // dropdowns below still score the game — score entry must never depend on one more file loading over bad wifi.
+  if (typeof renderPodiumPicker === 'function') { renderPodiumPicker(container, g); return; }
   if (!state.drafts[g.id]) state.drafts[g.id] = { medals: {} };
   const draft = normalizeDraft(state.drafts[g.id]);
 

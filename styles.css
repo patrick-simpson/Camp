@@ -16773,7 +16773,7 @@ button.gs-row:focus-visible {
   hyphens: auto;
 }
 /* Chosen: the key becomes its medal (pressed in), with the check. */
-.pp-team[aria-checked="true"] {
+.pp-team[aria-pressed="true"] {
   border-color: var(--medal-ink);
   background: var(--pp-fill, var(--medal-gold));
   color: var(--medal-ink);
@@ -16797,6 +16797,11 @@ button.gs-row:focus-visible {
   width: 15px;
   height: 15px;
   stroke-width: 3.2;
+}
+/* The check and the "has gold" tab are permanent slots the renderer shows with `hidden` (the key's nodes outlive a pick). */
+.pp-ok[hidden],
+.pp-taken[hidden] {
+  display: none;
 }
 /* Not available: waiting for the medal above (the "not yet" well), or taken by
    an earlier medal (dashed on paper, the mark faded, its medal named on a tab
@@ -16885,6 +16890,9 @@ button.gs-row:focus-visible {
 }
 .gsv[data-state="saving"] .ico {
   display: none;
+}
+.gsv[data-state="refused"] {
+  color: var(--color-danger-text);
 }
 .gres {
   margin: 0;

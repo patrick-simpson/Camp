@@ -27,7 +27,7 @@ const CSS = readFixture('../styles.css');
 
 const LEAK_PATTERNS = [
   [/\bpts?\b/i, 'points'],
-  [/(^|[\s(])[+−-]\d+/, 'a signed number'],
+  [/(^|[\s(])[+−-]\d+(?!\d|\s*min\b)/, 'a signed number'], // ("+10 min" on a block that ran over is a time, not a point)
   [/\b\d+(st|nd|rd|th)\b/i, 'an ordinal place'],
   [/\b(trail|trails|trailing|behind|ahead)\b/i, 'a gap word'],
 ];
@@ -382,6 +382,49 @@ test('walk every tab, sheet and takeover in a preview, with the points guard thr
   // test, which compares every node a preview leaves with a real counselor's)
   const dir = __domSweep().filter((e) => DIRECTOR_WORDS.test(readable(e)));
   assert.deepEqual(dir.map((e) => e.text.slice(0, 80)), [], 'director-only words are on the counselor screen');
+  done();
+});
+
+// ── The game takeover's director pieces (Step 18, build session 2): the podium picker, its Save, the saved line ──
+// What a director has on the screen while picking names teams in every key's label, and the Save well names what is missing;
+// a finished game's director view carries the points and the Change button. A counselor preview must clear all of it at once
+// (the entry area and the dock are written by the renderers a role flip re-runs) and the picker must never be reachable.
+test('a counselor preview clears the podium picker, its Save and the saved line, and a preview can pick and save nothing', () => {
+  boot('editor');
+  const t = teamIds();
+  const g = state.config.games.find((x) => x.format !== 'tournament' && x.format !== 'tally' && !state.results[x.id]);
+  assert.ok(g, 'a podium game with no result');
+  state.drafts[g.id] = { medals: {} };
+  podiumPick(g.id, 'gold', t[0]); podiumPick(g.id, 'silver', t[1]);
+  state.ui.gameId = g.id; state.ui.gameFrom = 'games';
+  renderAll();
+  const entry = el('entry-area'); const dock = el('takeover-game-dock');
+  assert.ok(/id="podium-picker"/.test(entry.innerHTML) && /Pick bronze, then save/.test(dock.innerHTML), 'precondition: the director\'s picker and Save');
+  previewStart();
+  setStandingsGuardThrows(true);
+  const out = record(() => { renderAll(); shellTick(); });
+  assert.notOk(/podium-picker|pp-team|pp-row/.test(entry.innerHTML), 'no keys: a counselor reads the live line');
+  assert.equal(dock.hidden, true, 'no Save');
+  assert.equal(dock.innerHTML, '');
+  assert.deepEqual(leaksIn(out), [], 'a sink carried a point, a place or a gap');
+  assert.deepEqual(leaksIn(__domSweep()), [], 'markup left in a node');
+  // nothing can be picked, saved, cleared or re-opened from a preview, whoever calls it
+  const draft = JSON.stringify(state.drafts[g.id]);
+  assert.equal(podiumPick(g.id, 'bronze', t[2]).problem, 'unavailable');
+  assert.equal(podiumPick(g.id, 'gold', t[0]).problem, 'unavailable', 'not even the clear');
+  assert.equal(podiumSave(g.id).problem, 'unavailable');
+  assert.equal(JSON.stringify(state.drafts[g.id]), draft);
+  assert.equal(state.results[g.id], undefined);
+  assert.equal(gamesDock(g.id), null);
+  // a finished game: the winners, and none of the director's saved line, points or Change button
+  const done_ = state.config.games.find((x) => state.results[x.id]);
+  state.ui.gameId = done_.id;
+  const out2 = record(() => renderAll());
+  assert.ok(/gres-r/.test(entry.innerHTML), 'the winners are public');
+  assert.notOk(/gres-pts|game-saved|game-change/.test(entry.innerHTML), 'but not what they are worth, the saved line or Change: ' + entry.innerHTML.slice(0, 300));
+  assert.deepEqual(leaksIn(out2), []);
+  assert.deepEqual(leaksIn(__domSweep()), []);
+  state.ui.gameId = null;
   done();
 });
 

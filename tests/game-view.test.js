@@ -253,33 +253,54 @@ function placementGame() {
   return g;
 }
 
-test('a podium pick on a kept placement form lands in the live draft', () => {
-  const g = placementGame();
-  const el = fakeArea(parseMedals);
-  withEntryDom(() => {
-    renderPlacement(el, g);
-    const gold = el.querySelectorAll('[data-medal]')[0];
-    assert.equal(gold.value, 't0');
-    const orphan = swapDrafts()[g.id];
-    renderPlacement(el, g);
-    assert.ok(el.querySelectorAll('[data-medal]')[0] === gold, 'identical draft → the form is kept');
-    gold.value = 't3';
-    gold.fire('change');
-    assert.equal(state.drafts[g.id].medals.gold, 't3', 'the pick is in the live draft');
-    assert.equal(orphan.medals.gold, 't0', 'the orphan is untouched');
-  });
+// CHANGED ON PURPOSE (Step 18, build session 2): the three jelly-selects of a placement game became the podium picker
+// (games-ui.js). The two pins that used to live here — "a pick on a kept form lands in the live draft" and "a form whose select
+// drifted from the draft is rebuilt" — are replaced by their podium forms. The first rule is unchanged (a tap resolves the draft
+// when it FIRES, so a snapshot that swapped state.drafts can't make it write into an orphan). The second has no counterpart
+// any more: the picker is PATCHED from the draft every render, so a key can never show something the draft does not say.
+test('a podium pick lands in the live draft even when a snapshot swapped state.drafts under the picker', () => {
+  const g = placementGame(); // the draft holds t0 t1 t2
+  state.drafts[g.id].medals = {};
+  const orphan = swapDrafts()[g.id]; // a snapshot replaced state.drafts with a copy; `orphan` is the object the picker was built from
+  assert.ok(state.drafts[g.id] !== orphan);
+  assert.equal(podiumPick(g.id, 'gold', 't3').ok, true);
+  assert.equal(state.drafts[g.id].medals.gold, 't3', 'the pick is in the live draft');
+  assert.notOk(orphan.medals.gold, 'not in the orphan');
 });
 
-test('a placement form whose select drifted from the draft is rebuilt', () => {
+test('the picker is built once and patched: an unchanged render, a pick and a clear write no markup', () => {
   const g = placementGame();
-  const el = fakeArea(parseMedals);
-  renderPlacement(el, g);
-  const gold = el.querySelectorAll('[data-medal]')[0];
-  gold.value = 't5'; // picked on screen …
-  state.drafts[g.id].medals.gold = 't0'; // … then a snapshot put it back
-  renderPlacement(el, g);
-  const now = el.querySelectorAll('[data-medal]')[0];
-  assert.ok(now !== gold && now.value === 't0', 'rebuilt from the draft');
+  state.drafts[g.id] = { medals: {} };
+  const root = { querySelector: () => null, querySelectorAll: () => [] };
+  let writes = 0;
+  let html = '';
+  const el = { get innerHTML() { return html; }, set innerHTML(v) { html = v; writes++; }, addEventListener() {}, querySelector: (sel) => (sel === '#podium-picker' && html ? root : null) };
+  renderPodiumPicker(el, g);
+  assert.equal(writes, 1, 'built on the first paint');
+  assert.ok(html.includes('id="podium-picker"') && !html.includes('jelly-select'), 'the keys, not the dropdowns');
+  renderPodiumPicker(el, g);
+  podiumPick(g.id, 'gold', 't0');
+  renderPodiumPicker(el, g);
+  podiumPick(g.id, 'gold', 't0'); // the same key again clears it
+  renderPodiumPicker(el, g);
+  assert.equal(writes, 1, 'a pick and its clear are attribute patches on the nodes that are there');
+  // a different game, or a renamed team, is another picker
+  state.teams[0].name = 'Renamed Foxes';
+  renderPodiumPicker(el, g);
+  assert.equal(writes, 2, 'the team list changed: rebuilt');
+  assert.ok(html.includes('Renamed Foxes'), 'with the new name');
+});
+
+test('without games-ui.js the three dropdowns still score a podium game (score entry never waits on one more file)', () => {
+  const src = readFixture('../app.js');
+  const start = src.indexOf('function renderPlacement(');
+  const body = src.slice(start, src.indexOf('\n}\n', start));
+  assert.ok(/typeof renderPodiumPicker === 'function'\) \{ renderPodiumPicker\(container, g\); return; \}/.test(body), 'delegates when the script is there');
+  assert.ok(body.includes('medalPickerHTML(draft.medals, g)') && body.includes('save-result-btn'), 'and keeps the old form behind it');
+  const rstart = src.indexOf('function renderResult(');
+  const rbody = src.slice(rstart, src.indexOf('\n}\n', rstart));
+  assert.ok(/typeof renderSavedResult === 'function'\) \{ renderSavedResult\(container, g, result\); return; \}/.test(rbody));
+  assert.ok(rbody.includes('clear-result-btn'), 'the plain result keeps its Clear button');
 });
 
 // ── Celebrations and the "Data last updated" stamp ───────────────
@@ -625,8 +646,13 @@ test('the game view head and the live panels are not rebuilt by every render', (
   assert.notOk(/\bbody\.innerHTML = html\b/.test(body('renderGameView')), 'no unconditional whole-body rewrite');
   ['rememberGameOpener', 'restoreGameOpener', 'scrollToGameView', 'setCardOpenNow', 'gameOpener'].forEach((n) =>
     assert.notOk(new RegExp('\\b' + n + '\\b').test(src.replace(/\/\/.*$/gm, '')), n + ' retired: the tab under a takeover never moves'));
+  // (renderResult and renderPlacement hand their work to games-ui.js's renderSavedResult / renderPodiumPicker, which skip the
+  // same way; the plain forms they keep behind a missing file still go through setLiveHtmlIfChanged.)
   ['renderLiveWatch', 'renderLiveTallyWatch', 'renderResult', 'renderTally', 'renderPlacement']
     .forEach((fn) => assert.ok(body(fn).includes('setLiveHtmlIfChanged('), fn + ' skips unchanged rebuilds'));
+  const gui = readFixture('../games-ui.js');
+  assert.ok(/function renderSavedResult[\s\S]*?setLiveHtmlIfChanged\(container/.test(gui), 'the saved result is compared, not rewritten');
+  assert.ok(/function renderPodiumPicker[\s\S]*?gamesPodiumPatch\(root, m\)/.test(gui), 'the picker is patched in place after its first build');
   assert.ok(/paintBoardClocks\(\);\s*$/.test(body('renderAll')), 'renderAll ends by painting the clocks');
   assert.notOk(/if \(settled\) renderAll\(\)/.test(src), 'the clock settle no longer renders under a focused field');
 });

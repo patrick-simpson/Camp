@@ -372,7 +372,10 @@ test('Next game: the dock says what is left, what needs another director, and wh
   boot('editor');
   const { a, b, c, d, e } = nextDay();
   const opts = { now: { dow: WED, minutes: 630 }, ms: BASE_MS };
-  assert.equal(gamesDock(a.id, opts), null, 'a game with no result has no dock yet');
+  // CHANGED ON PURPOSE (build session 2): a podium game with no result now has the dock's Save; a bracket or a tally keeps its own Save in the body
+  assert.equal(gamesDock(a.id, opts).tone, 'pick', 'a podium game with no result docks its Save');
+  assert.equal(gamesDock(b.id, opts), null, 'a bracket has no dock until it has a result');
+  assert.equal(gamesDock(c.id, opts), null, 'a tally has no dock until it has a result');
   state.results[a.id] = medals(T()[1], T()[2], T()[3]);
   state.ui.gameId = a.id; state.ui.gameFrom = 'games';
   let dock = gamesDock(a.id, opts);
@@ -741,6 +744,301 @@ test('quick points: one ledger entry through the shared writer, Undo takes back 
   setMemberRole('viewer');
   assert.equal(gamesQuickInfo(t[0]), null, 'a counselor is told nothing');
   bonusDraft = JSON.parse(keep);
+  done();
+});
+
+// ════════════════════════════════════════════════════════════════════
+// The podium picker (redesign §5.5; BUILD-PLAN Step 18, build session 2)
+// ════════════════════════════════════════════════════════════════════
+function podiumGame(extra) {
+  const g = addGame(dayOf(WED).id, 'pp-' + Math.random().toString(36).slice(2, 7), 'placement', extra);
+  return g;
+}
+function rowOf(m, medal) { return m.rows.find((r) => r.medal === medal); }
+function keyOf(m, medal, team) { return rowOf(m, medal).teams.find((k) => k.team === team); }
+
+test('podium: three rows, later rows wait for the medal above, a taken team is disabled and named, a picked one clears', () => {
+  boot('editor');
+  const g = podiumGame();
+  const t = T();
+  let m = gamesPodium(g);
+  assert.deepEqual(m.rows.map((r) => [r.medal, r.place, r.word]), [['gold', 1, 'Gold'], ['silver', 2, 'Silver'], ['bronze', 3, 'Bronze']]);
+  assert.ok(m.rows.every((r) => r.teams.length === t.length && r.teams.every((k, i) => k.team === t[i])), 'a key per team, in roster order');
+  assert.deepEqual(m.rows.map((r) => r.wait), [false, true, true], 'nothing picked: only gold is open');
+  assert.deepEqual(m.rows.map((r) => r.waitFor), [null, 'gold', 'silver']);
+  assert.ok(rowOf(m, 'silver').teams.every((k) => k.disabled && !k.picked && !k.taken), 'a waiting row is all disabled, none "taken"');
+  assert.equal(m.save.label, 'Pick gold, silver and bronze');
+  assert.deepEqual([m.save.ready, m.save.target], [false, 'gold']);
+  // pick gold: gold's team is picked there and TAKEN (named) in the other rows; silver opens
+  assert.equal(podiumPick(g.id, 'gold', t[3]).ok, true);
+  m = gamesPodium(g);
+  assert.deepEqual([keyOf(m, 'gold', t[3]).picked, keyOf(m, 'gold', t[3]).disabled], [true, false]);
+  const inSilver = keyOf(m, 'silver', t[3]);
+  assert.deepEqual([inSilver.taken, inSilver.disabled, inSilver.picked], ['gold', true, false], 'the same team is "has gold" in the next row');
+  assert.ok(/, has gold$/.test(inSilver.label), 'and its spoken label says so: ' + inSilver.label);
+  assert.deepEqual(m.rows.map((r) => r.wait), [false, false, true], 'silver is open now, bronze waits for silver');
+  assert.equal(rowOf(m, 'bronze').waitFor, 'silver');
+  assert.equal(m.save.label, 'Pick silver and bronze');
+  // silver, then bronze: complete
+  assert.equal(podiumPick(g.id, 'silver', t[0]).ok, true);
+  assert.equal(gamesPodium(g).save.label, 'Pick bronze, then save');
+  assert.equal(podiumPick(g.id, 'bronze', t[1]).ok, true);
+  m = gamesPodium(g);
+  assert.deepEqual([m.save.label, m.save.ready, m.save.target], ['Save result', true, null]);
+  assert.deepEqual(m.rows.map((r) => r.pick), [t[3], t[0], t[1]]);
+  // a team that holds one medal is disabled in the other two rows (never the bare word: the tab names the medal)
+  assert.deepEqual(rowOf(m, 'bronze').teams.filter((k) => k.taken).map((k) => [k.team, k.taken]), [[t[0], 'silver'], [t[3], 'gold']], 'in roster order');
+  // re-tap clears: the key is free again, the row below waits again only if it holds nothing
+  assert.deepEqual(podiumPick(g.id, 'bronze', t[1]), { ok: true, action: 'clear', medal: 'bronze', team: t[1] });
+  m = gamesPodium(g);
+  assert.equal(rowOf(m, 'bronze').pick, null);
+  assert.equal(keyOf(m, 'bronze', t[1]).disabled, false);
+  assert.equal(m.save.label, 'Pick bronze, then save');
+  done();
+});
+
+test('podium: a pick can only go where it may — a taken team, a waiting row, a stranger, a second director\'s result — and says why', () => {
+  boot('editor');
+  const g = podiumGame();
+  const t = T();
+  assert.deepEqual(podiumPick(g.id, 'silver', t[0]), { ok: false, problem: 'wait' }, 'silver waits for gold');
+  assert.equal(state.drafts[g.id], undefined, 'and a refusal writes nothing');
+  assert.equal(podiumPick(g.id, 'gold', t[0]).ok, true);
+  assert.deepEqual(podiumPick(g.id, 'silver', t[0]), { ok: false, problem: 'taken', by: 'gold' });
+  assert.equal(podiumPick(g.id, 'bronze', t[1]).problem, 'wait', 'bronze waits for silver');
+  assert.equal(podiumPick(g.id, 'gold', 'zz').problem, 'unknown');
+  assert.equal(podiumPick(g.id, 'platinum', t[1]).problem, 'unknown');
+  assert.equal(podiumPick('nope', 'gold', t[1]).problem, 'unavailable');
+  // a bracket or a tally is not a podium game
+  const tl = addGame(dayOf(WED).id, 'pp-tally', 'tally');
+  const tt = addGame(dayOf(WED).id, 'pp-bracket', 'tournament');
+  assert.equal(podiumPick(tl.id, 'gold', t[0]).problem, 'unavailable');
+  assert.equal(podiumPick(tt.id, 'gold', t[0]).problem, 'unavailable');
+  // a result exists (another director saved first): the stale form saves nothing and changes nothing
+  state.results[g.id] = medals(t[2], t[3], t[4] || t[0]);
+  assert.equal(podiumPick(g.id, 'silver', t[1]).problem, 'unavailable');
+  assert.equal(podiumSave(g.id).problem, 'unavailable');
+  assert.deepEqual(state.results[g.id].medals.gold, t[2], 'the first director\'s result stands');
+  // a counselor, a counselor preview and a view-only second tab write nothing
+  delete state.results[g.id];
+  [() => setMemberRole('viewer'), () => { setMemberRole('editor'); counselorPreviewOn = true; }, () => { counselorPreviewOn = false; tabWriter = false; }].forEach((mode) => {
+    mode();
+    const before = JSON.stringify(state.drafts);
+    assert.equal(podiumPick(g.id, 'silver', t[1]).problem, 'unavailable');
+    assert.equal(podiumSave(g.id).problem, 'unavailable');
+    assert.equal(JSON.stringify(state.drafts), before);
+  });
+  tabWriter = true;
+  setMemberRole('editor');
+  done();
+});
+
+test('podium: a director on a team picks their own team like anyone else (a podium is one act with no round to withhold)', () => {
+  boot('editor', T()[0]);
+  const g = podiumGame();
+  assert.equal(podiumPick(g.id, 'gold', T()[0]).ok, true);
+  assert.equal(gamesPodium(g).rows[0].pick, T()[0]);
+  setMemberTeam(null);
+  done();
+});
+
+test('podium: the draft is read defensively — a stale team id is no pick, a team written to two medals keeps its first, junk is ignored', () => {
+  boot('editor');
+  const g = podiumGame();
+  const t = T();
+  state.drafts[g.id] = { medals: { gold: t[0], silver: t[0], bronze: 'gone' } };
+  assert.deepEqual(podiumPicks(g), { gold: t[0], silver: null, bronze: null }, 'two directors wrote one team to two medals: gold keeps it; a stale id is nothing');
+  state.drafts[g.id] = { medals: { gold: 7, silver: { a: 1 }, bronze: null } };
+  assert.deepEqual(podiumPicks(g), { gold: null, silver: null, bronze: null });
+  state.drafts[g.id] = 'garbage';
+  assert.deepEqual(podiumPicks(g), { gold: null, silver: null, bronze: null });
+  delete state.drafts[g.id];
+  assert.deepEqual(podiumPicks(g), { gold: null, silver: null, bronze: null });
+  // a hole (gold cleared by one director while silver and bronze stayed): the row holding a pick never waits, so it can still be cleared
+  state.drafts[g.id] = { medals: { silver: t[1], bronze: t[2] } };
+  const m = gamesPodium(g);
+  assert.deepEqual(m.rows.map((r) => r.wait), [false, false, false]);
+  assert.equal(m.save.label, 'Pick gold, then save');
+  assert.equal(keyOf(m, 'gold', t[1]).taken, 'silver', 'and a team held by a LATER medal is named in the row above as well');
+  assert.equal(podiumPick(g.id, 'gold', t[1]).problem, 'taken');
+  assert.equal(podiumPick(g.id, 'silver', t[1]).action, 'clear');
+  done();
+});
+
+test('podium: the points words are a director\'s, doubled for a double-points game; a counselor\'s model holds none', () => {
+  boot('editor');
+  const g = podiumGame();
+  assert.deepEqual(gamesPodium(g).rows.map((r) => r.pts), [7, 5, 3]);
+  const dbl = podiumGame({ messtival: true });
+  assert.deepEqual(gamesPodium(dbl).rows.map((r) => r.pts), [14, 10, 6], 'Messtival pays double, as medalCounts does');
+  setStandingsGuardThrows(true);
+  setMemberRole('viewer');
+  assert.deepEqual(gamesPodium(g).rows.map((r) => r.pts), [null, null, null], 'no points for a phone that may not read them');
+  setStandingsGuardThrows(false);
+  setMemberRole('editor');
+  counselorPreviewOn = true;
+  assert.deepEqual(gamesPodium(g).rows.map((r) => r.pts), [null, null, null], 'nor in a counselor preview');
+  counselorPreviewOn = false;
+  done();
+});
+
+test('podium: drafts are written PER LEAF — two directors picking different medals at once both land, a clear is a delete of one leaf', () => {
+  boot('editor');
+  const g = podiumGame();
+  const t = T();
+  const snap = () => syncCanonTree(syncedSnapshot());
+  let before = snap();
+  podiumPick(g.id, 'gold', t[0]);
+  let up = computeSyncUpdates(before, snap());
+  assert.deepEqual(Object.keys(up).filter((k) => k.startsWith('drafts/')), ['drafts/' + g.id + '/medals/gold'], 'one leaf, not the whole draft: ' + JSON.stringify(up));
+  assert.equal(up['drafts/' + g.id + '/medals/gold'], t[0]);
+  before = snap();
+  podiumPick(g.id, 'silver', t[1]);
+  up = computeSyncUpdates(before, snap());
+  assert.deepEqual(Object.keys(up).filter((k) => k.startsWith('drafts/')), ['drafts/' + g.id + '/medals/silver'], 'a second pick is a second leaf: gold is not re-sent');
+  before = snap();
+  podiumPick(g.id, 'silver', t[1]); // the same key again
+  up = computeSyncUpdates(before, snap());
+  assert.deepEqual(up['drafts/' + g.id + '/medals/silver'], null, 'a clear removes that one leaf');
+  assert.equal(Object.keys(up).filter((k) => k.startsWith('drafts/')).length, 1);
+  // the counselors' "Being scored" line: a draft with a medal is Live, a cleared one is not
+  const ctx = nowCtxAt(WED, 630);
+  assert.equal(gamesRow(ctx, g).status, 'live');
+  podiumPick(g.id, 'gold', t[0]);
+  assert.equal(gamesRow(ctx, g).status, 'todo', 'an emptied draft is a blank one');
+  done();
+});
+
+// Save's confetti is a canvas the stub DOM cannot draw: record who it was for instead.
+var celebrated = [];
+var realCelebrate = celebrate;
+function stubCelebrate() { celebrated = []; celebrate = (id) => { celebrated.push(id); }; }
+function unstubCelebrate() { celebrate = realCelebrate; }
+
+test('podium: Save writes the result the old button wrote, removes the draft, stamps the data, refuses an incomplete podium and a second save', () => {
+  boot('editor');
+  stubCelebrate();
+  const g = podiumGame();
+  const t = T();
+  podiumPick(g.id, 'gold', t[2]); podiumPick(g.id, 'silver', t[0]);
+  state.meta.lastDataChangeAt = 'before';
+  assert.deepEqual(podiumSave(g.id), { ok: false, problem: 'incomplete', target: 'bronze' });
+  assert.equal(state.results[g.id], undefined, 'nothing saved');
+  assert.equal(state.meta.lastDataChangeAt, 'before');
+  podiumPick(g.id, 'bronze', t[1]);
+  const r = podiumSave(g.id);
+  assert.equal(r.ok, true);
+  assert.deepEqual(celebrated, [t[2]], 'the confetti is for the gold team');
+  assert.deepEqual(state.results[g.id].medals, { gold: t[2], silver: t[0], bronze: t[1] });
+  assert.ok(/^\d{4}-\d\d-\d\dT/.test(state.results[g.id].savedAt), 'stamped');
+  assert.equal(state.drafts[g.id], undefined, 'the draft is gone');
+  assert.ok(state.meta.lastDataChangeAt !== 'before', 'a real save stamps "data last updated"');
+  assert.equal(medalCounts()[t[2]].points >= 7, true, 'the points are in the standings');
+  assert.equal(podiumSave(g.id).problem, 'unavailable', 'a second tap saves nothing');
+  // the saved game's dock is the Next game dock
+  assert.ok(['next', 'wait', 'done'].includes(gamesDock(g.id).tone));
+  unstubCelebrate();
+  done();
+});
+
+test('podium: after Save the dock offers Next game (skipping a round my own team plays), and Back names where this game was opened from', () => {
+  boot('editor');
+  stubCelebrate();
+  const day = dayOf(WED).id;
+  const g1 = addGame(day, 'sv-1', 'placement', { session: 'Morning' });
+  const g2 = addGame(day, 'sv-2', 'placement', { session: 'Morning' });
+  state.ui.gameId = g1.id; state.ui.gameFrom = 'now';
+  const opts = { now: { dow: WED, minutes: 630 }, ms: BASE_MS + 630 * 60000 };
+  assert.equal(gamesDock(g1.id, opts).tone, 'pick', 'picking: the Save');
+  const t = T();
+  podiumPick(g1.id, 'gold', t[0]); podiumPick(g1.id, 'silver', t[1]); podiumPick(g1.id, 'bronze', t[2]);
+  assert.equal(gamesDock(g1.id, opts).save.ready, true);
+  podiumSave(g1.id);
+  const d = gamesDock(g1.id, opts);
+  assert.equal(d.tone, 'next');
+  assert.ok(d.left.includes(' left today that you can score') || /that you can score$/.test(d.left), d.left);
+  assert.equal(d.back, 'Back to Now');
+  assert.ok(d.next && d.next.id !== g1.id, 'Next game names another game: ' + JSON.stringify(d.next));
+  state.ui.gameId = null;
+  unstubCelebrate();
+  done();
+});
+
+test('the saved result: winners as plain data; points and the saved line are a director\'s; the own team is marked; a tally keeps its scores', () => {
+  boot('editor');
+  const g = podiumGame({ unit: 'pins' });
+  const t = T();
+  const res = medals(t[3], t[0], t[1]);
+  state.results[g.id] = res; // the saved line reads the game's own result
+  let r = gamesResultModel(g, res);
+  assert.deepEqual(r.places.map((p) => [p.place, p.medal, p.word, p.team, p.pts, p.mine]), [[1, 'gold', 'Gold', t[3], 7, false], [2, 'silver', 'Silver', t[0], 5, false], [3, 'bronze', 'Bronze', t[1], 3, false]]);
+  assert.equal(r.change, true);
+  assert.ok(r.saved && r.saved.text.length > 3);
+  assert.equal(r.scores, null, 'a podium game has no scores');
+  // double points
+  assert.deepEqual(gamesResultModel(podiumGame({ messtival: true }), res).places.map((p) => p.pts), [14, 10, 6]);
+  // my team
+  state.followTeam = t[0];
+  assert.equal(gamesResultModel(g, res).places.find((p) => p.team === t[0]).mine, true);
+  state.followTeam = undefined;
+  // a tally result keeps its scores, in the game's order
+  const tl = addGame(dayOf(WED).id, 'sv-tally', 'tally', { unit: 'pins' });
+  r = gamesResultModel(tl, { medals: res.medals, scores: { [t[0]]: 12, [t[1]]: 30, [t[2]]: 7 }, savedAt: res.savedAt });
+  assert.equal(r.scores.cap, 'Scores · pins');
+  assert.deepEqual(r.scores.rows.map((x) => [x.team, x.v]), [[t[1], '30'], [t[0], '12'], [t[2], '7']]);
+  const low = addGame(dayOf(WED).id, 'sv-low', 'tally', { unit: 'seconds', lowerWins: true });
+  r = gamesResultModel(low, { medals: res.medals, scores: { [t[0]]: 12, [t[1]]: 30 }, savedAt: res.savedAt });
+  assert.equal(r.scores.cap, 'Scores · seconds · lowest wins');
+  assert.deepEqual(r.scores.rows.map((x) => x.team), [t[0], t[1]]);
+  // junk in a result never throws: a medal with no team is not a row
+  assert.equal(gamesResultModel(g, { medals: { gold: t[0] }, savedAt: 'x' }).places.length, 1);
+  assert.equal(gamesResultModel(g, {}).places.length, 0);
+  // a counselor: the winners, no points, no saved line, no Change
+  setStandingsGuardThrows(true);
+  setMemberRole('viewer');
+  r = gamesResultModel(g, res);
+  assert.deepEqual(r.places.map((p) => p.pts), [null, null, null]);
+  assert.deepEqual([r.saved, r.change], [null, false]);
+  assert.equal(r.places.length, 3, 'the winners are public');
+  setStandingsGuardThrows(false);
+  setMemberRole('editor');
+  counselorPreviewOn = true;
+  r = gamesResultModel(g, res);
+  assert.deepEqual([r.places.map((p) => p.pts), r.saved, r.change], [[null, null, null], null, false], 'a preview is exactly a counselor\'s');
+  counselorPreviewOn = false;
+  done();
+});
+
+test('the saved line is "Saved" only once the server has it: saving → saved, offline, no sync, refused', () => {
+  boot('editor');
+  const g = podiumGame();
+  const t = T();
+  state.results[g.id] = medals(t[0], t[1], t[2]);
+  const keep = { fbRef, fbConnKnown, fbConnected, confirmedTree, q: stateQuarantine };
+  try {
+    fbRef = null;
+    assert.equal(gameResultState(g.id), 'offline', 'a device with no sync keeps it on the phone');
+    assert.equal(gameSavedWords('offline', state.results[g.id].savedAt), 'Saved on this phone');
+    fbRef = {}; fbConnKnown = true; fbConnected = true; confirmedTree = syncCanonTree({ results: {} });
+    assert.equal(gameResultState(g.id), 'saving', 'connected, but the server has not confirmed it yet');
+    assert.equal(gameSavedWords('saving'), 'Saving…');
+    confirmedTree = syncCanonTree({ results: { [g.id]: JSON.parse(JSON.stringify(state.results[g.id])) } });
+    assert.equal(gameResultState(g.id), 'saved', 'the confirmed tree holds this very record');
+    assert.ok(/^Saved \d{1,2}:\d\d [AP]M · everyone’s phone has it$/.test(gameSavedWords('saved', state.results[g.id].savedAt)), gameSavedWords('saved', state.results[g.id].savedAt));
+    assert.equal(gameSavedWords('saved', undefined), 'Saved · everyone’s phone has it', 'an old result with no stamp has no time');
+    confirmedTree = syncCanonTree({ results: { [g.id]: medals(t[3], t[1], t[2]) } });
+    assert.equal(gameResultState(g.id), 'saving', 'someone else\'s different record is not ours');
+    fbConnected = false;
+    assert.equal(gameResultState(g.id), 'offline', 'no connection: it sends when you are back');
+    assert.ok(/it sends when you’re back online$/.test(gameSavedWords('offline', 'x')));
+    fbConnected = true;
+    stateQuarantine = { ['results/' + g.id]: state.results[g.id] };
+    assert.equal(gameResultState(g.id), 'refused');
+    assert.ok(/Retry/.test(gameSavedWords('refused')));
+    delete state.results[g.id];
+    stateQuarantine = {};
+    assert.equal(gameResultState(g.id), null, 'no result, no line');
+  } finally { fbRef = keep.fbRef; fbConnKnown = keep.fbConnKnown; fbConnected = keep.fbConnected; confirmedTree = keep.confirmedTree; stateQuarantine = keep.q; }
   done();
 });
 

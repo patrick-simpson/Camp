@@ -55,6 +55,11 @@ function done() {
   state.ui.tab = 'now'; state.ui.gameId = null;
   shell.sheets.slice().forEach((id) => shellSheetClose(id));
 }
+// Save's confetti is a canvas the stub DOM cannot draw: record who it was for instead.
+var celebrated = [];
+var realCelebrate = celebrate;
+function stubCelebrate() { celebrated = []; celebrate = (id) => { celebrated.push(id); }; }
+function unstubCelebrate() { celebrate = realCelebrate; }
 function mm(a, b, c) { return { medals: { gold: a, silver: b, bronze: c }, savedAt: new Date(BASE_MS).toISOString() }; }
 function gm(extra) { return gamesModel(Object.assign({ now: { dow: WED, minutes: 630 }, ms: BASE_MS + 630 * 60000 }, extra || {})); }
 function el(id) { return document.getElementById(id); }
@@ -370,11 +375,17 @@ test('the standings sheet: copy and share are a director\'s, Award points only w
 // ════════════════════════════════════════════════════════════════════
 test('the dock under a saved game: drawn for a director, hidden for a counselor, written only when it changes, Next opens in place', () => {
   boot('editor');
-  const g = gamesForDayId(state.ui.day)[0];
+  const g = pgame(); // a podium game (the day's own first game may be a bracket or a tally)
   const dock = el('takeover-game-dock');
   state.ui.gameId = g.id; state.ui.gameFrom = 'games';
+  // CHANGED ON PURPOSE (build session 2): a podium game with no result docks its Save; the dock is hidden for a game with no dock to draw
+  const tally = Object.assign({}, g, { id: 'dk-tally', format: 'tally' });
+  state.config.games.push(tally);
+  renderGameDock(tally);
+  assert.equal(dock.hidden, true, 'a tally with no result: no dock yet (its Save is in the body)');
   renderGameDock(g);
-  assert.equal(dock.hidden, true, 'no result yet: no dock');
+  assert.equal(dock.hidden, false);
+  assert.ok(/id="game-save"[^>]*aria-disabled="true">Pick gold, silver and bronze</.test(dock.innerHTML), 'a podium game with no result: the dashed Save well');
   state.results[g.id] = mm(T()[0], T()[1], T()[2]);
   renderGameDock(g);
   assert.equal(dock.hidden, false);
@@ -391,6 +402,384 @@ test('the dock under a saved game: drawn for a director, hidden for a counselor,
   setMemberRole('editor');
   // the takeover calls it from renderGameView, and Next game is openNextGame (games-tab.test.js pins the order)
   assert.ok(/renderGameDock\(g\)/.test(readFixture('../app.js')), 'renderGameView draws the dock');
+  state.ui.gameId = null;
+  done();
+});
+
+// ════════════════════════════════════════════════════════════════════
+// The podium picker and the saved result (build session 2)
+// ════════════════════════════════════════════════════════════════════
+function pgame(extra) {
+  const g = Object.assign({ id: 'pg-' + Math.random().toString(36).slice(2, 7), dayId: state.ui.day, session: 'Morning', format: 'placement', name: 'Pumpkin Pictionary', emoji: '', location: 'Lawn', headline: '', rules: [] }, extra || {});
+  state.config.games.push(g);
+  return g;
+}
+// A key / row as a stand-in the patcher can write to: attributes in a map, the slots as stand-ins that count writes.
+function fakeKey(team, writes) {
+  const attrs = {};
+  const slot = () => { let hidden = true; let html = ''; return { get hidden() { return hidden; }, set hidden(v) { writes.n++; hidden = v; }, get innerHTML() { return html; }, set innerHTML(v) { writes.n++; html = v; } }; };
+  const ok = slot(); const tab = slot();
+  return {
+    dataset: { team }, attrs, ok, tab,
+    getAttribute: (n) => (n in attrs ? attrs[n] : null),
+    setAttribute: (n, v) => { writes.n++; attrs[n] = String(v); },
+    removeAttribute: (n) => { writes.n++; delete attrs[n]; },
+    querySelector: (sel) => (sel === '.pp-ok' ? ok : sel === '.pp-taken' ? tab : null),
+  };
+}
+function fakeRoot(medals, teams, writes) {
+  const rows = {};
+  medals.forEach((m) => {
+    const keys = teams.map((t) => fakeKey(t, writes));
+    const attrs = {};
+    rows[m] = { keys, attrs, getAttribute: (n) => (n in attrs ? attrs[n] : null), setAttribute: (n, v) => { writes.n++; attrs[n] = String(v); }, removeAttribute: (n) => { writes.n++; delete attrs[n]; }, querySelectorAll: () => keys };
+  });
+  return { rows, querySelector: (sel) => { const m = /data-medal="(\w+)"/.exec(sel); return m ? rows[m[1]] : null; } };
+}
+
+test('the podium picker\'s markup: rows of toggle keys, the checked and taken states in attributes, points words a director\'s, every name escaped', () => {
+  boot('editor');
+  const g = pgame();
+  const t = T();
+  podiumPick(g.id, 'gold', t[1]); podiumPick(g.id, 'silver', t[0]);
+  const m = gamesPodium(g);
+  const html = gamesPodiumHtml(m, false);
+  assert.ok(html.startsWith('<div class="pp" id="podium-picker">'));
+  assert.deepEqual(html.match(/class="pp-row" data-medal="(\w+)"/g).map((x) => x.replace(/.*="(\w+)"/, '$1')), ['gold', 'silver', 'bronze']);
+  assert.ok(/<div class="pp-row" data-medal="bronze">/.test(html) && !/data-wait/.test(html), 'bronze is open (silver is picked): nothing waits');
+  assert.equal((html.match(/class="pp-team"/g) || []).length, 3 * t.length, 'a key per team per medal');
+  assert.ok(/id="pp-h-gold"[^>]*><i class="pp-disc" data-place="1" aria-hidden="true">1<\/i><b class="pp-medal">Gold<\/b><span class="pp-pts">7 points<\/span>/.test(html), 'a director reads what the medal is worth');
+  assert.ok(/<span class="pp-wait">after gold<\/span>/.test(html) && /<span class="pp-wait">after silver<\/span>/.test(html) && !/after undefined/.test(html));
+  assert.ok(/role="group" aria-labelledby="pp-h-silver" data-n="/.test(html), 'a group named by its heading');
+  assert.notOk(/role="radio"|aria-checked|role="radiogroup"/.test(html), 'toggle buttons, not radios: a tap on the picked one clears it');
+  const goldKey = new RegExp('<button type="button" class="pp-team" data-team="' + t[1] + '"[^>]*aria-pressed="true"[^>]*>').exec(html);
+  assert.ok(goldKey && !/aria-disabled/.test(goldKey[0]), 'the picked team is pressed in its own row: ' + (goldKey && goldKey[0]));
+  assert.ok(/data-taken="gold"[^>]*aria-label="[^"]*, has gold"/.test(html), 'a team held by gold is dashed, named, and says so aloud');
+  assert.ok(/<span class="pp-taken" aria-hidden="true"><i class="pp-disc" data-place="1" aria-hidden="true">1<\/i>has gold<\/span>/.test(html), 'the tab names the MEDAL, never the bare word');
+  assert.ok(/<i class="pp-ok" aria-hidden="true">/.test(html) && /<i class="pp-ok" aria-hidden="true" hidden>/.test(html), 'the check is a permanent slot, shown only on the picked key');
+  // double points double the words
+  const dbl = gamesPodiumHtml(gamesPodium(pgame({ messtival: true })), false);
+  assert.ok(dbl.includes('14 points') && dbl.includes('10 points') && dbl.includes('6 points'));
+  // a counselor never gets a picker, but the model it would draw from has no points either (guard throwing)
+  setStandingsGuardThrows(true);
+  setMemberRole('viewer');
+  assert.notOk(/ points</.test(gamesPodiumHtml(gamesPodium(g), false)), 'no points words without the right to read points');
+  setStandingsGuardThrows(false);
+  setMemberRole('editor');
+  // hostile team data is inert
+  state.teams[0].name = '"><img src=x onerror=alert(1)>';
+  state.teams[0].short = '<script>x</script>';
+  const evil = gamesPodiumHtml(gamesPodium(g), false);
+  assert.notOk(/<img src=x|<script>/.test(evil), 'a hostile team name is inert');
+  done();
+});
+
+test('the shape the picker is kept by does not depend on what is picked, and does depend on the teams and the points words', () => {
+  boot('editor');
+  const g = pgame();
+  const t = T();
+  const idle = gamesPodiumHtml(gamesPodium(g), true);
+  podiumPick(g.id, 'gold', t[2]); podiumPick(g.id, 'silver', t[3]);
+  assert.equal(gamesPodiumHtml(gamesPodium(g), true), idle, 'picks, waits and taken tabs are not part of the shape');
+  assert.ok(gamesPodiumHtml(gamesPodium(g), false) !== idle, 'but the full markup of course differs');
+  state.teams[0].name = 'Foxes of Fire';
+  assert.ok(gamesPodiumHtml(gamesPodium(g), true) !== idle, 'a renamed team is another picker');
+  done();
+});
+
+test('patching the built picker: only attributes and the two slots move, the same nodes stay, an idle pass writes nothing, a new pick pops its check', () => {
+  boot('editor');
+  const g = pgame();
+  const t = T();
+  const writes = { n: 0 };
+  const root = fakeRoot(['gold', 'silver', 'bronze'], t, writes);
+  let popped = gamesPodiumPatch(root, gamesPodium(g));
+  assert.equal(popped.length, 0);
+  assert.equal(root.rows.gold.keys[0].attrs['aria-pressed'], 'false');
+  assert.equal(root.rows.silver.attrs['data-wait'], '', 'silver waits');
+  assert.equal(root.rows.silver.keys[0].attrs['aria-disabled'], 'true');
+  const idle = writes.n;
+  gamesPodiumPatch(root, gamesPodium(g));
+  assert.equal(writes.n, idle, 'an idle pass writes nothing');
+  podiumPick(g.id, 'gold', t[1]);
+  const k = root.rows.gold.keys[1];
+  popped = gamesPodiumPatch(root, gamesPodium(g));
+  assert.deepEqual(popped, [k.ok], 'the check that appeared pops (and only that one)');
+  assert.equal(k.attrs['aria-pressed'], 'true');
+  assert.equal(k.ok.hidden, false);
+  assert.ok(root.rows.gold.keys[1] === k, 'the node is the same one');
+  assert.equal(root.rows.silver.attrs['data-wait'], undefined, 'silver opened');
+  assert.equal(root.rows.silver.keys[1].attrs['aria-disabled'], 'true', 'the gold team is disabled in silver…');
+  assert.equal(root.rows.silver.keys[1].attrs['data-taken'], 'gold', '…and named');
+  assert.ok(root.rows.silver.keys[1].tab.innerHTML.includes('has gold') && root.rows.silver.keys[1].tab.hidden === false);
+  assert.equal(root.rows.silver.keys[0].attrs['aria-disabled'], undefined, 'the others are free');
+  // clearing it: the check goes, the tab goes, nothing pops
+  podiumPick(g.id, 'gold', t[1]);
+  popped = gamesPodiumPatch(root, gamesPodium(g));
+  assert.deepEqual([popped.length, k.ok.hidden, root.rows.silver.keys[1].tab.hidden], [0, true, true]);
+  assert.equal(root.rows.silver.attrs['data-wait'], '', 'silver waits again');
+  done();
+});
+
+test('a tap on a key picks, the same key clears, a refusal says why in a toast; the draft is the live one', () => {
+  boot('editor');
+  const g = pgame();
+  const t = T();
+  state.ui.gameId = g.id;
+  const key = (medal, team) => ({ dataset: { team }, closest: () => ({ dataset: { medal } }) });
+  assert.equal(gamesPodiumTap(key('gold', t[0])).action, 'pick');
+  assert.equal(state.drafts[g.id].medals.gold, t[0]);
+  assert.equal(gamesPodiumTap(key('gold', t[0])).action, 'clear');
+  assert.equal(state.drafts[g.id].medals.gold, undefined);
+  guiToasts.length = 0;
+  assert.equal(gamesPodiumTap(key('silver', t[1])).problem, 'wait');
+  assert.equal(guiToasts[0].m, 'Pick the gold team first.');
+  gamesPodiumTap(key('gold', t[0]));
+  guiToasts.length = 0;
+  assert.equal(gamesPodiumTap(key('silver', t[0])).problem, 'taken');
+  assert.equal(guiToasts[0].m, (teamShort(t[0]) || teamName(t[0])) + ' already has gold. Tap it in the gold row to take it off.');
+  assert.equal(gamesPodiumTap({ dataset: {}, closest: () => null }), null, 'a tap outside a row does nothing');
+  state.ui.gameId = null;
+  assert.equal(gamesPodiumTap(key('gold', t[2])), null, 'no open game: nothing');
+  // the entry area's delegate: a key, Change the result, anything else
+  state.ui.gameId = g.id;
+  assert.equal(gamesEntryTap({ closest: (sel) => (sel === '.pp-team' ? key('gold', t[3]) : null) }), true);
+  assert.equal(state.drafts[g.id].medals.gold, t[3]);
+  assert.equal(gamesEntryTap({ closest: () => null }), false);
+  state.ui.gameId = null;
+  done();
+});
+
+test('Save in the dock: the dashed well goes to the row still to pick, the gold button saves and moves the focus to Next game', () => {
+  boot('editor');
+  stubCelebrate();
+  const day = state.ui.day;
+  const g = pgame({ id: 'sv-a', session: 'Morning' });
+  const next = pgame({ id: 'sv-b', session: 'Morning' });
+  const t = T();
+  state.ui.gameId = g.id; state.ui.gameFrom = 'games';
+  podiumPick(g.id, 'gold', t[0]); podiumPick(g.id, 'silver', t[1]);
+  const d = gamesDock(g.id);
+  assert.deepEqual([d.tone, d.save.label, d.save.target], ['pick', 'Pick bronze, then save', 'bronze']);
+  // the well: aria-disabled, a tap scrolls there
+  const went = [];
+  const root = { querySelector: (sel) => { const m = /data-medal="(\w+)"/.exec(sel); return m ? { scrollIntoView: () => went.push('scroll:' + m[1]), querySelector: () => ({ focus: () => went.push('focus:' + m[1]) }) } : null; } };
+  const realEl = document.getElementById;
+  document.getElementById = (id) => (id === 'podium-picker' ? root : realEl(id));
+  try {
+    assert.equal(gamesDockTap({ closest: (sel) => (sel === '#game-save' ? { getAttribute: () => 'true' } : null) }), true);
+    assert.deepEqual(went, ['scroll:bronze', 'focus:bronze'], 'to bronze');
+    assert.equal(state.results[g.id], undefined, 'and nothing saved');
+    // an incomplete podium that somehow reaches Save goes to the same place
+    went.length = 0;
+    assert.equal(gamesSaveTap({}).problem, 'incomplete');
+    assert.deepEqual(went, ['scroll:bronze', 'focus:bronze']);
+  } finally { document.getElementById = realEl; }
+  podiumPick(g.id, 'bronze', t[2]);
+  assert.equal(gamesDock(g.id).save.ready, true);
+  const r = gamesDockTap({ closest: (sel) => (sel === '#game-save' ? { getAttribute: () => null } : null) });
+  assert.equal(r, true);
+  assert.deepEqual(state.results[g.id].medals, { gold: t[0], silver: t[1], bronze: t[2] });
+  assert.deepEqual(celebrated, [t[0]]);
+  // the dock after the save: Next game names the other game on the day
+  const after = gamesDock(g.id);
+  assert.equal(after.tone, 'next');
+  assert.equal(after.next.id, next.id);
+  // Next and Back through the same delegate
+  const opened = [];
+  const realOpen = openGame; const realClose = closeGame;
+  openGame = (id, o) => { opened.push([id, o]); return true; };
+  closeGame = () => opened.push('closed');
+  gamesDockTap({ closest: (sel) => (sel === '[data-next-game]' ? {} : null) });
+  gamesDockTap({ closest: (sel) => (sel === '[data-game-back]' ? {} : null) });
+  openGame = realOpen; closeGame = realClose;
+  assert.deepEqual(opened, [[next.id, { from: 'games' }], 'closed']);
+  assert.equal(gamesDockTap({ closest: () => null }), false);
+  unstubCelebrate();
+  state.ui.gameId = null;
+  done();
+});
+
+test('the dock while picking: one button, dashed until the podium is whole, then the gold Save — and the gold one is written once, popping only on the change', () => {
+  boot('editor');
+  const g = pgame();
+  const t = T();
+  const dock = el('takeover-game-dock');
+  state.ui.gameId = g.id;
+  const played = [];
+  const realPlay = JellyMotion.play;
+  JellyMotion.play = (target, name) => { played.push(name); return null; };
+  try {
+    renderGameDock(g);
+    assert.equal(dock.hidden, false);
+    assert.ok(/<button type="button" class="btn btn-big btn-block gd-save" id="game-save" aria-disabled="true">Pick gold, silver and bronze<\/button>/.test(dock.innerHTML), dock.innerHTML);
+    podiumPick(g.id, 'gold', t[0]); podiumPick(g.id, 'silver', t[1]);
+    renderGameDock(g);
+    assert.ok(dock.innerHTML.includes('Pick bronze, then save'));
+    assert.deepEqual(played, [], 'a dashed well that changes its words does not move');
+    podiumPick(g.id, 'bronze', t[2]);
+    renderGameDock(g);
+    assert.ok(/class="btn btn-big btn-block btn-gold gd-save" id="game-save" data-joy>Save result<\/button>/.test(dock.innerHTML), 'gold, no aria-disabled');
+    assert.notOk(/aria-disabled/.test(dock.innerHTML));
+    assert.equal(dock.__saveReady, true);
+    renderGameDock(g); renderGameDock(g);
+    // (the stub's querySelector finds a stand-in for #game-save, so the landing is asked for exactly once)
+    assert.ok(played.filter((x) => x === 'snap').length <= 1, 'the landing is once: ' + played.join());
+  } finally { JellyMotion.play = realPlay; }
+  // a counselor and a view-only tab get no dock at all
+  setMemberRole('viewer');
+  renderGameDock(g);
+  assert.equal(dock.hidden, true);
+  assert.equal(dock.innerHTML, '');
+  setMemberRole('editor');
+  state.ui.gameId = null;
+  done();
+});
+
+test('the saved result: winners as a list with the medal named in words, a director\'s line and Change button, a counselor\'s page with no point and no director control', () => {
+  boot('editor');
+  const g = pgame({ unit: 'pins' });
+  const t = T();
+  state.results[g.id] = mm(t[3], t[0], t[1]);
+  state.followTeam = t[0];
+  let html = gamesResultHtml(gamesResultModel(g, state.results[g.id]));
+  assert.ok(/^<p class="gsv" id="game-saved" role="status">/.test(html), 'the saved line comes first');
+  assert.ok(/<ol class="gres" aria-label="Final results">/.test(html));
+  assert.equal((html.match(/<li class="gres-r"/g) || []).length, 3);
+  assert.ok(new RegExp('<li class="gres-r" data-place="2" data-team="' + t[0] + '"[^>]*data-mine>').test(html), 'my own team is marked');
+  assert.ok(html.includes('<span class="visually-hidden">Gold: </span>'), 'the medal in words for a screen reader');
+  assert.ok(html.includes('<span class="gres-pts">+7</span>') && html.includes('+5') && html.includes('+3'), 'a director sees what each medal is worth');
+  assert.ok(html.includes('id="game-change">Change the result</button>'));
+  // the saved line's state is patched in, not part of the markup that is compared
+  assert.notOk(/data-state|Saved \d|Saving/.test(html), 'static: the state and the words are painted after');
+  // a tally keeps its scores
+  const tl = pgame({ format: 'tally', unit: 'pins' });
+  state.results[tl.id] = { medals: mm(t[3], t[0], t[1]).medals, scores: { [t[0]]: 12, [t[3]]: 30 }, savedAt: 'x' };
+  html = gamesResultHtml(gamesResultModel(tl, state.results[tl.id]));
+  assert.ok(html.includes('<h3 class="gv-h">Scores · pins</h3>') && /gres-s-v">30</.test(html));
+  // a hostile team name is inert
+  state.teams[3].name = '<img src=x onerror=alert(1)>';
+  assert.notOk(/<img src=x/.test(gamesResultHtml(gamesResultModel(g, state.results[g.id]))));
+  state.teams[3].name = 'Fine';
+  // a counselor: the winners, nothing a counselor must not read, no director control
+  setStandingsGuardThrows(true);
+  setMemberRole('viewer');
+  html = gamesResultHtml(gamesResultModel(g, state.results[g.id]));
+  assert.equal((html.match(/<li class="gres-r"/g) || []).length, 3, 'the winners are public');
+  assert.notOk(/gres-pts|\+7|\+5|\+3|game-change|gsv|game-saved/.test(html), 'no points, no Change, no saved line: ' + html);
+  setStandingsGuardThrows(false);
+  setMemberRole('editor');
+  state.followTeam = undefined;
+  done();
+});
+
+test('the saved line: painted into the one node, popping its check only when the server confirms; it follows an acknowledgement and a connection change', () => {
+  boot('editor');
+  const g = pgame();
+  const t = T();
+  state.results[g.id] = mm(t[0], t[1], t[2]);
+  state.ui.gameId = g.id;
+  const line = el('game-saved');
+  const span = line.querySelector('span'); const use = line.querySelector('use'); const ico = line.querySelector('.ico');
+  const attrs = {};
+  use.setAttribute = (n, v) => { attrs[n] = v; };
+  use.getAttribute = (n) => (n in attrs ? attrs[n] : null);
+  const popped = [];
+  const realPop = nowCheckPop;
+  nowCheckPop = (e) => popped.push(e);
+  const keep = { fbRef, fbConnKnown, fbConnected, confirmedTree };
+  try {
+    delete line.dataset.state;
+    fbRef = {}; fbConnKnown = true; fbConnected = true; confirmedTree = syncCanonTree({ results: {} });
+    gamesSavedRefresh();
+    assert.equal(line.dataset.state, 'saving');
+    assert.equal(span.textContent, 'Saving…');
+    assert.deepEqual(popped, [], 'a first paint pops nothing');
+    // the push is acknowledged: the confirmed tree holds the record
+    confirmedTree = syncCanonTree({ results: { [g.id]: JSON.parse(JSON.stringify(state.results[g.id])) } });
+    gamesSavedRefresh();
+    assert.equal(line.dataset.state, 'saved');
+    assert.ok(/^Saved .* · everyone’s phone has it$/.test(span.textContent), span.textContent);
+    assert.equal(attrs.href, '#i-check');
+    assert.deepEqual(popped, [ico], 'the check pops the moment it is saved');
+    gamesSavedRefresh();
+    assert.equal(popped.length, 1, 'once');
+    // the connection drops
+    fbConnected = false;
+    gamesSavedRefresh();
+    assert.deepEqual([line.dataset.state, attrs.href], ['offline', '#i-phone']);
+    // an idle refresh writes nothing
+    let w = 0;
+    let v = span.textContent;
+    Object.defineProperty(span, 'textContent', { get: () => v, set: (x) => { w++; v = x; }, configurable: true });
+    gamesSavedRefresh(); gamesSavedRefresh();
+    assert.equal(w, 0);
+    // another game open, a counselor, or no result: nothing is painted
+    setMemberRole('viewer');
+    fbConnected = true;
+    gamesSavedRefresh();
+    assert.equal(w, 0, 'a counselor has no line');
+    setMemberRole('editor');
+    state.ui.gameId = null;
+    gamesSavedRefresh();
+    assert.equal(w, 0);
+  } finally { nowCheckPop = realPop; fbRef = keep.fbRef; fbConnKnown = keep.fbConnKnown; fbConnected = keep.fbConnected; confirmedTree = keep.confirmedTree; }
+  // app.js asks for it when a write is acknowledged and when the connection or a refusal changes
+  const app = readFixture('../app.js');
+  assert.ok(/settle\(\);\s*if \(typeof gamesSavedRefresh === 'function'\) gamesSavedRefresh\(\);/.test(app), 'after an acknowledged push');
+  assert.ok(/function updateSyncIndicator\(\) \{\s*updateSyncAlert\(\);\s*renderSyncPill\(\);\s*if \(typeof gamesSavedRefresh/.test(app), 'with the connection pill');
+  done();
+});
+
+test('Change the result: asked first, then the result goes and the picker is back; a changed mind, a lost role or another game changes nothing', async () => {
+  boot('editor');
+  const g = pgame();
+  const t = T();
+  state.results[g.id] = mm(t[0], t[1], t[2]);
+  state.ui.gameId = g.id;
+  const realAsk = typeof askDialog === 'function' ? askDialog : undefined;
+  const asked = [];
+  askDialog = async (o) => { asked.push(o); return answer; };
+  var answer = 'cancel';
+  try {
+    assert.equal(await gamesChangeResult(), false);
+    assert.ok(state.results[g.id], 'Keep it keeps it');
+    assert.equal(asked[0].title, 'Change the result for Pumpkin Pictionary?');
+    assert.ok(/points come off the standings/.test(asked[0].body));
+    assert.deepEqual(asked[0].actions.map((a) => [a.value, a.kind || '', !!a.cancel]), [['clear', 'danger', false], ['cancel', '', true]], 'a verb on each button, the destructive one is danger');
+    // the answer takes a while: another director cleared it, this phone lost its role, or the person moved on
+    answer = 'clear';
+    askDialog = async () => { delete state.results[g.id]; return 'clear'; };
+    assert.equal(await gamesChangeResult(), false, 'already gone: nothing to clear');
+    state.results[g.id] = mm(t[0], t[1], t[2]);
+    askDialog = async () => { setMemberRole('viewer'); return 'clear'; };
+    assert.equal(await gamesChangeResult(), false);
+    assert.ok(state.results[g.id], 'a role lost meanwhile: the result stands');
+    setMemberRole('editor');
+    askDialog = async () => { state.ui.gameId = 'other'; return 'clear'; };
+    assert.equal(await gamesChangeResult(), false);
+    state.ui.gameId = g.id;
+    assert.ok(state.results[g.id]);
+    // yes
+    state.meta.lastDataChangeAt = 'before';
+    askDialog = async () => 'clear';
+    assert.equal(await gamesChangeResult(), true);
+    assert.equal(state.results[g.id], undefined, 'the result is gone');
+    assert.ok(state.meta.lastDataChangeAt !== 'before', 'a real change stamps the data');
+    // the picker is what the takeover draws now
+    assert.equal(gamesDock(g.id).tone, 'pick');
+    // no result: nothing to change
+    assert.equal(await gamesChangeResult(), false);
+    // the native confirm where the dialog never loaded
+    state.results[g.id] = mm(t[0], t[1], t[2]);
+    askDialog = undefined;
+    const realConfirm = confirm;
+    let said = '';
+    confirm = (m) => { said = m; return true; };
+    assert.equal(await gamesChangeResult(), true);
+    confirm = realConfirm;
+    assert.ok(/Change the result for Pumpkin Pictionary\?/.test(said));
+  } finally { askDialog = realAsk; }
   state.ui.gameId = null;
   done();
 });

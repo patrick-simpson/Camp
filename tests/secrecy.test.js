@@ -25,7 +25,7 @@ const hostDoc = document;
 // "2026-07-20" are not deltas.)
 const LEAK_PATTERNS = [
   [/\bpts?\b/i, 'points'],
-  [/(^|[\s(])[+−-]\d+/, 'a signed number'],
+  [/(^|[\s(])[+−-]\d+(?!\d|\s*min\b)/, 'a signed number'], // ("+10 min" on a block that ran over is a time, not a point)
   [/\b\d+(st|nd|rd|th)\b/i, 'an ordinal place'],
   [/\b(trail|trails|trailing|behind|ahead)\b/i, 'a gap word'],
 ];
@@ -447,10 +447,13 @@ test('rows 11 and 12: a finished game shows its winners without "+N pts", a live
   const g = state.config.games.find((x) => state.results[x.id]);
   asViewer(() => { openGameAsViewer(g.id); renderGameView(); });
   assert.ok(entry.innerHTML.includes(teamName(state.results[g.id].medals.gold)), 'the gold winner is named');
-  assert.notOk(/medal-points|pts/.test(entry.innerHTML), 'but not what it is worth: ' + entry.innerHTML.replace(/\s+/g, ' ').slice(0, 200));
+  assert.notOk(/medal-points|gres-pts|pts|\+\d/.test(entry.innerHTML), 'but not what it is worth: ' + entry.innerHTML.replace(/\s+/g, ' ').slice(0, 200));
+  assert.notOk(/game-saved|game-change/.test(entry.innerHTML), 'and none of the director\'s saved line or Change button');
   setMemberRole('editor');
   openGameAsViewer(g.id); renderGameView();
-  assert.ok(/medal-points/.test(entry.innerHTML) && /\+\d+ pts/.test(entry.innerHTML), 'a director\'s result keeps the chips');
+  // CHANGED ON PURPOSE (Step 18, build session 2): the saved result is games-ui.js's list (mockup 14b), where what a medal is worth is
+  // the "+7" column (.gres-pts) rather than the old "+7 pts" chip (.medal-points). Still a director's alone.
+  assert.ok(/gres-pts">\+\d+</.test(entry.innerHTML), 'a director\'s result keeps what each medal is worth');
   if (live) {
     asViewer(() => { openGameAsViewer(live.id); renderGameView(); });
     assert.ok(/lw-rank-list/.test(entry.innerHTML), 'the live scores are public');

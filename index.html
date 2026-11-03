@@ -2006,14 +2006,17 @@
                <p class="pp-h" id="pp-h-gold"><i class="pp-disc" data-place="1" aria-hidden="true">1</i>
                  <b class="pp-medal">Gold</b><span class="pp-pts">7 points</span>     (14 in double points;
                  directors only, as every points word) <span class="pp-wait">after gold</span></p>
-               <div class="pp-teams" role="radiogroup" aria-labelledby="pp-h-gold" data-n="6|4">
-                 <button type="button" class="pp-team" role="radio" aria-checked="false" data-team="t0" style="teamAccentVars(t0)">
-                   <span class="pp-mark">teamMarkHtml(t0, {size: 28})</span><span class="pp-nm">Foxes</span></button>
-                   chosen:  aria-checked="true", the cell takes ITS medal's colour and
-                            <i class="pp-ok" aria-hidden="true"><svg class="ico"><use href="#i-check"/></svg></i>
-                            (tap it again: cleared)
-                   taken by an earlier medal: aria-disabled="true" data-taken="gold"
-                            + <span class="pp-taken"><i class="pp-disc" data-place="1" aria-hidden="true">1</i>has gold</span>
+               <div class="pp-teams" role="group" aria-labelledby="pp-h-gold" data-n="6|4">
+                 <button type="button" class="pp-team" aria-pressed="false" data-team="t0" style="teamAccentVars(t0)">
+                   <span class="pp-mark">teamMarkHtml(t0, {size: 28})</span><span class="pp-nm">Foxes</span>
+                   <i class="pp-ok" aria-hidden="true" hidden>…check</i><span class="pp-taken" aria-hidden="true" hidden></span></button>
+                   (a toggle button, NOT a radio: tapping a picked team again clears it, which a radio group cannot say. The
+                   group is role="group" aria-labelledby the heading. The check and the tab are permanent slots shown with
+                   `hidden`, so the key's nodes outlive a pick and the next row can cross-fade; games-ui.js builds the picker
+                   once and PATCHES it.)
+                   chosen:  aria-pressed="true", the cell takes ITS medal's colour and the check shows (tap it again: cleared)
+                   taken by another medal: aria-disabled="true" data-taken="gold"
+                            + the tab shows <i class="pp-disc" data-place="1" aria-hidden="true">1</i>has gold
                             (dashed, the mark faded; its aria-label ends ", has gold").
                             Never the bare word "Gold": senior has a TEAM called Gold.
                </div></div>

@@ -5,7 +5,9 @@
 // Same contract as now-ui.js / award.js / tell.js: a classic script loaded after app.js and now-ui.js, every hook in app.js
 // typeof-guarded (delete the <script> and the Games tab is an empty page, the app still runs), static markup, change-only writes.
 // Hooks app.js calls: renderGamesPanel(model) for a paint, renderQuickSheet() / renderStandingsSheet() when those sheets fill,
-// gamesQuickReady() to decide whether the quick-points sheet may open, renderGameDock(game) from the game takeover.
+// gamesQuickReady() to decide whether the quick-points sheet may open, renderGameDock(game) from the game takeover, and (build
+// session 2) renderPodiumPicker(container, game) / renderSavedResult(container, game, result) for the takeover's entry area and
+// gamesSavedRefresh() when a write is acknowledged or the connection changes.
 //
 // THE RULES THIS FILE LIVES BY
 //  - IT DRAWS WHAT THE MODEL HOLDS AND NOTHING ELSE. A counselor's model has no standings, no points and no place, so there
@@ -118,6 +120,12 @@ function gamesGapHtml(sentence) {
 // The takeover dock after a result is saved (directors): what is left, Next game, where Back goes.
 function gamesDockHtml(d) {
   if (!d) return '';
+  // While a podium is being picked: ONE button. The dashed well names what is still to pick (a tap on it goes there); complete,
+  // it is the gold Save.
+  if (d.tone === 'pick') {
+    return d.save.ready ? '<button type="button" class="btn btn-big btn-block btn-gold gd-save" id="game-save" data-joy>Save result</button>'
+      : `<button type="button" class="btn btn-big btn-block gd-save" id="game-save" aria-disabled="true">${esc(d.save.label)}</button>`;
+  }
   const back = (cls) => `<button type="button" class="btn btn-big ${cls} gd-back" id="game-dock-back" data-game-back>‹ ${esc(d.back)}</button>`;
   if (d.tone === 'next') {
     return `<p class="gd-left" id="game-left">${esc(d.left)}</p><div class="gd-next">${back('')}` +
@@ -441,15 +449,239 @@ function gamesOpenAward() {
   if (typeof openTool === 'function') openTool('award', { from: 'games' });
 }
 
-// The takeover's dock (directors, after a result): Back and Next game. Written only when it changes.
+// ════════════════════════════════════════════════════════════════════
+// THE PODIUM PICKER (mockup 14) AND THE SAVED RESULT (mockup 14b)
+// ════════════════════════════════════════════════════════════════════
+// app.js's renderPlacement / renderResult hand the takeover's entry area here (gamesPodium / gamesResultModel are the data). The
+// picker is built ONCE per game and team list and then PATCHED in place (attributes and two small slots per key), so a pick
+// cross-fades the next row from waiting, a finger and the keyboard focus stay on the key they pressed, and a snapshot that changes
+// nothing writes nothing. Its taps write the draft's own leaves (podiumPick), never a form: two directors can pick at once.
+function gamesPodiumKeyAttrs(k) {
+  return { 'aria-pressed': k.picked ? 'true' : 'false', 'aria-disabled': k.disabled ? 'true' : null, 'data-taken': k.taken || null, 'aria-label': k.label };
+}
+function gamesPodiumTakenHtml(k) {
+  const place = PODIUM_MEDALS.indexOf(k.taken) + 1;
+  return place ? `<i class="pp-disc" data-place="${place}" aria-hidden="true">${place}</i>has ${esc(k.taken)}` : '';
+}
+// A key: the team's mark over its short name; the check and the "has gold" tab are permanent slots, shown with `hidden`. Taken
+// is a tab with the MEDAL named, never the bare word (senior has a team called Gold); the spoken label says it too.
+function gamesPodiumKeyHtml(k) {
+  const attrs = gamesPodiumKeyAttrs(k);
+  const at = Object.keys(attrs).filter((n) => attrs[n] !== null).map((n) => ` ${n}="${esc(attrs[n])}"`).join('');
+  return `<button type="button" class="pp-team" data-team="${esc(k.team)}"${gamesAccent(k.team)}${at}>` +
+    `<span class="pp-mark">${teamMarkHtml(k.team, { size: 28 })}</span><span class="pp-nm">${esc(k.short)}</span>` +
+    `<i class="pp-ok" aria-hidden="true"${k.picked ? '' : ' hidden'}>${gamesIcon('i-check')}</i>` +
+    `<span class="pp-taken" aria-hidden="true"${k.taken ? '' : ' hidden'}>${gamesPodiumTakenHtml(k)}</span></button>`;
+}
+// `shapeOnly` draws every key idle (nothing picked, nothing waiting): what must match for the built picker to be kept.
+function gamesPodiumHtml(m, shapeOnly) {
+  const idle = (k) => (shapeOnly ? { team: k.team, short: k.short, label: k.name, picked: false, taken: '', disabled: false } : k);
+  const rows = m.rows.map((r) => {
+    const above = r.place > 1 ? PODIUM_MEDALS[r.place - 2] : null;
+    return `<div class="pp-row" data-medal="${r.medal}"${!shapeOnly && r.wait ? ' data-wait' : ''}>` +
+      `<p class="pp-h" id="pp-h-${r.medal}"><i class="pp-disc" data-place="${r.place}" aria-hidden="true">${r.place}</i><b class="pp-medal">${r.word}</b>` +
+      (r.pts !== null ? `<span class="pp-pts">${r.pts} points</span>` : '') + (above ? `<span class="pp-wait">after ${above}</span>` : '') + '</p>' +
+      `<div class="pp-teams" role="group" aria-labelledby="pp-h-${r.medal}" data-n="${r.teams.length}">${r.teams.map((k) => gamesPodiumKeyHtml(idle(k))).join('')}</div></div>`;
+  }).join('');
+  return `<div class="pp" id="podium-picker"><p class="visually-hidden">Pick the gold, silver and bronze teams. Tap a picked team again to clear it.</p>${rows}</div>`;
+}
+
+// Bring the built picker up to date with the model, in place. Returns the check marks that just appeared (they pop).
+function gamesPodiumPatch(root, m) {
+  const popped = [];
+  m.rows.forEach((r) => {
+    const row = root.querySelector('.pp-row[data-medal="' + r.medal + '"]');
+    if (!row) return;
+    setAttrIfChanged(row, 'data-wait', r.wait);
+    const keys = Array.prototype.slice.call(row.querySelectorAll('.pp-team'));
+    r.teams.forEach((k) => {
+      const b = keys.find((x) => x.dataset && x.dataset.team === k.team);
+      if (!b) return;
+      const was = b.getAttribute('aria-pressed') === 'true';
+      const attrs = gamesPodiumKeyAttrs(k);
+      Object.keys(attrs).forEach((n) => setAttrIfChanged(b, n, attrs[n]));
+      const ok = b.querySelector('.pp-ok');
+      setHiddenIfChanged(ok, !k.picked);
+      if (k.picked && !was && ok) popped.push(ok);
+      const tab = b.querySelector('.pp-taken');
+      setHiddenIfChanged(tab, !k.taken);
+      if (k.taken) setHtmlIfChanged(tab, gamesPodiumTakenHtml(k));
+    });
+  });
+  return popped;
+}
+
+function renderPodiumPicker(container, g) {
+  if (!container || !g) return;
+  gamesWireEntry(container);
+  const m = gamesPodium(g);
+  const shape = gamesPodiumHtml(m, true);
+  const root = container.querySelector ? container.querySelector('#podium-picker') : null;
+  if (!root || container.__ppShape !== shape || container.__ppGid !== g.id) {
+    setHtmlIfChanged(container, gamesPodiumHtml(m, false));
+    container.__ppShape = shape;
+    container.__ppGid = g.id;
+    container.__liveKey = null; // the result view compares against its own last write: that key is no longer what is on screen
+    container.__liveHolds = null;
+    return;
+  }
+  const popped = gamesPodiumPatch(root, m);
+  if (typeof JellyMotion !== 'undefined') popped.forEach((el) => JellyMotion.play(el, 'snap', (x) => ({ transform: 'scale(' + (0.3 + 0.7 * x) + ')' }), { calm: false }));
+}
+
+// A tap on a key: pick, or the same key again clears. A refusal says why in a few words (the key itself reads "has gold").
+function gamesPodiumTap(btn) {
+  const row = btn && btn.closest ? btn.closest('.pp-row') : null;
+  const gid = state.ui && state.ui.gameId;
+  if (!row || !gid) return null;
+  const r = podiumPick(gid, row.dataset.medal, btn.dataset.team);
+  if (!r.ok) {
+    if (r.problem === 'taken') showToast(nowTeamWord(btn.dataset.team) + ' already has ' + r.by + '. Tap it in the ' + r.by + ' row to take it off.');
+    else if (r.problem === 'wait') showToast('Pick the ' + PODIUM_MEDALS[PODIUM_MEDALS.indexOf(row.dataset.medal) - 1] + ' team first.');
+    return r;
+  }
+  renderAll();
+  return r;
+}
+
+// The dashed Save well names what is missing; a tap on it goes to that row (and its first free key).
+function gamesPodiumGoto(medal) {
+  const root = gamesEl('podium-picker');
+  const row = root && root.querySelector ? root.querySelector('.pp-row[data-medal="' + medal + '"]') : null;
+  if (!row) return;
+  const key = row.querySelector('.pp-team:not([aria-disabled="true"])') || row.querySelector('.pp-team');
+  try { row.scrollIntoView({ block: 'center', behavior: calmMotion() ? 'auto' : 'smooth' }); } catch (e) { /* fine */ }
+  if (key && typeof key.focus === 'function') { try { key.focus({ preventScroll: true }); } catch (e) { /* fine */ } }
+}
+
+// Save: the dock's gold button. Then the takeover is the saved result and Next game is what the thumb is there for.
+function gamesSaveTap(btn) {
+  const gid = state.ui && state.ui.gameId;
+  if (!gid) return null;
+  const had = focusWas(btn);
+  const r = podiumSave(gid);
+  if (!r.ok) {
+    if (r.problem === 'incomplete') gamesPodiumGoto(r.target);
+    return r;
+  }
+  const body = gamesEl('takeover-game-body');
+  if (body) body.scrollTop = 0; // the saved line and the winners, from the top
+  if (had) focusBack(true, gamesEl('game-next') || gamesEl('game-dock-back'));
+  return r;
+}
+
+// A saved result: the line (director only), the winners as a hairline list, a tally's scores under it, Change the result.
+// The static markup is compared (setLiveHtmlIfChanged); the line's state and words are patched in place after it, so a write being
+// acknowledged never rebuilds the list.
+function gamesResultHtml(r) {
+  const saved = r.saved ? `<p class="gsv" id="game-saved" role="status">${gamesIcon('i-check')}<span></span></p>` : '';
+  const list = `<ol class="gres" aria-label="Final results">${r.places.map((p) =>
+    `<li class="gres-r" data-place="${p.place}" data-team="${esc(p.team)}"${gamesAccent(p.team)}${p.mine ? ' data-mine' : ''}>` +
+    `<i class="pp-disc" data-place="${p.place}" aria-hidden="true">${p.place}</i><span class="gres-mark">${teamMarkHtml(p.team, { size: 34 })}</span>` +
+    `<b class="gres-nm"><span class="visually-hidden">${esc(p.word)}: </span>${esc(p.name)}</b>${p.pts !== null ? `<span class="gres-pts">+${p.pts}</span>` : ''}</li>`).join('')}</ol>`;
+  const scores = r.scores ? `<h3 class="gv-h">${esc(r.scores.cap)}</h3><ol class="gres-scores">${r.scores.rows.map((x) =>
+    `<li class="gres-s" data-team="${esc(x.team)}"${gamesAccent(x.team)}>${teamMarkHtml(x.team, { size: 22 })}<span class="gres-s-nm">${esc(x.short)}</span><b class="gres-s-v">${esc(x.v)}</b></li>`).join('')}</ol>` : '';
+  return saved + list + scores + (r.change ? '<button type="button" class="btn gres-change" id="game-change">Change the result</button>' : '');
+}
+
+const GAMES_SAVED_ICON = { saved: 'i-check', saving: 'i-check', offline: 'i-phone', refused: 'i-x' };
+function gamesPaintSaved(saved) {
+  const el = gamesEl('game-saved');
+  if (!el || !saved) return;
+  const was = el.dataset ? el.dataset.state : undefined;
+  setDataIfChanged(el, 'state', saved.state);
+  setTextIfChanged(el.querySelector('span'), saved.text);
+  setAttrIfChanged(el.querySelector('use'), 'href', '#' + (GAMES_SAVED_ICON[saved.state] || 'i-check'));
+  // The moment the server says it has it, the check pops (a first paint, and a result that was already saved, are plain writes).
+  if (was && was !== 'saved' && saved.state === 'saved' && typeof nowCheckPop === 'function') nowCheckPop(el.querySelector('.ico'));
+}
+// A write was acknowledged, or the connection / a refusal changed: the open game's line follows (it is the only part that does).
+function gamesSavedRefresh() {
+  const gid = state.ui && state.ui.gameId;
+  const result = gid && state.results ? state.results[gid] : null;
+  if (!result || !canEdit() || !gameById(gid)) return;
+  const st = gameResultState(gid);
+  if (st) gamesPaintSaved({ state: st, text: gameSavedWords(st, result.savedAt) });
+}
+
+function renderSavedResult(container, g, result) {
+  if (!container || !g) return;
+  gamesWireEntry(container);
+  const r = gamesResultModel(g, result);
+  container.__ppShape = null;
+  setLiveHtmlIfChanged(container, gamesResultHtml(r), []);
+  gamesPaintSaved(r.saved);
+}
+
+// Change the result: clears it (its points come off the standings for everyone) and opens the picker again. Asked first.
+async function gamesChangeResult() {
+  const gid = state.ui && state.ui.gameId;
+  const g = gid ? gameById(gid) : null;
+  if (!g || !canEdit() || !(state.results && state.results[gid])) return false;
+  const opts = {
+    title: 'Change the result for ' + g.name + '?',
+    body: 'Its points come off the standings until you save it again.',
+    actions: [{ label: 'Clear it and pick again', value: 'clear', kind: 'danger' }, { label: 'Keep it', value: 'cancel', cancel: true }],
+  };
+  const yes = typeof askDialog === 'function' ? (await askDialog(opts)) === 'clear' : confirm(opts.title + '\n\n' + opts.body);
+  // The answer may have taken a while: another director may have changed it, or this phone lost its right to.
+  if (!yes || !canEdit() || !(state.results && state.results[gid]) || state.ui.gameId !== gid) return false;
+  delete state.results[gid];
+  touchData();
+  saveState();
+  renderAll();
+  gamesPodiumGoto('gold');
+  return true;
+}
+
+// The entry area's own taps (the picker's keys, Change the result), delegated once per node.
+function gamesWireEntry(container) {
+  if (container.__gamesWired || typeof container.addEventListener !== 'function') return;
+  container.__gamesWired = true;
+  container.addEventListener('click', (e) => {
+    const t = e.target && e.target.closest ? e.target : null;
+    if (t) gamesEntryTap(t);
+  });
+}
+function gamesEntryTap(t) {
+  let b;
+  if ((b = t.closest('.pp-team'))) { gamesPodiumTap(b); return true; }
+  if (t.closest('#game-change')) { gamesChangeResult(); return true; }
+  return false;
+}
+
+// A tap inside the dock: the Save (the dashed well goes to what is missing, the gold one saves), Next game, Back.
+function gamesDockTap(t) {
+  let b;
+  if ((b = t.closest('#game-save'))) {
+    if (b.getAttribute('aria-disabled') === 'true') {
+      const d = gamesDock(state.ui && state.ui.gameId);
+      if (d && d.save && d.save.target) gamesPodiumGoto(d.save.target);
+    } else gamesSaveTap(b);
+    return true;
+  }
+  if (t.closest('[data-next-game]')) { openNextGame(); return true; }
+  if (t.closest('[data-game-back]')) { closeGame(); return true; }
+  return false;
+}
+
+// The takeover's dock (directors): Save while a podium is picked, Back and Next game once a result is saved. Written only when it changes.
 function renderGameDock(g) {
   const dock = gamesEl('takeover-game-dock');
   if (!dock) return;
   gamesWire();
   const d = g ? gamesDock(g.id) : null;
   const html = gamesDockHtml(d);
-  setHtmlIfChanged(dock, html);
+  const wrote = setHtmlIfChanged(dock, html);
   setHiddenIfChanged(dock, !d);
+  const pick = !!d && d.tone === 'pick';
+  const ready = pick && d.save.ready;
+  // The dashed well turning into the gold Save: it lands (a first paint, and a dock that was not picking, are plain writes).
+  if (wrote && ready && dock.__saveReady === false && typeof JellyMotion !== 'undefined' && dock.querySelector) {
+    const b = dock.querySelector('#game-save');
+    if (b) JellyMotion.play(b, 'snap', (x) => ({ transform: 'scale(' + (0.94 + 0.06 * Math.min(1, x)) + ')' }), { calm: false });
+  }
+  dock.__saveReady = pick ? ready : undefined;
 }
 
 function gamesWire() {
@@ -503,9 +735,7 @@ function gamesWire() {
   if (dock && dock.addEventListener) {
     dock.addEventListener('click', (e) => {
       const t = e.target && e.target.closest ? e.target : null;
-      if (!t) return;
-      if (t.closest('[data-next-game]')) { openNextGame(); return; }
-      if (t.closest('[data-game-back]')) closeGame();
+      if (t) gamesDockTap(t);
     });
   }
 }
