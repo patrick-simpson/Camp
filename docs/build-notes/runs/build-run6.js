@@ -70,11 +70,15 @@ const STEPS = [
   },
 ]
 
+const SWITCHES_OLD = `Owner Steps 16 and 20 (pressing "Edit the week here") have NOT been done yet, so every setup section's switch is off and the app reads the built-in week — your code must work either way.`
+const SWITCHES_NEW = `Owner Steps 16 and 20 were DONE on Mon Nov 2, about 7 PM ET: every "Edit the week here" switch is ON in both camps (schedule, meals, verses, cleanup; electives in junior), so the LIVE app reads the week from <root>/setup (CLAUDE.md's status lines say what changed) — your code must still work either way, and the seeded test passes cover both.`
 const results = {}
 for (const s of STEPS) {
   const P = `Step ${s.n}`
   phase(P)
-  const C = COMMON(s.n)
+  // The switches were pressed (◆16/◆20) while Step 23 was building. Step 23's design pass and builds already ran
+  // with the old note (their prompts must stay byte-identical so the resume reuses them); everything after says it is done.
+  let C = s.n === 23 ? COMMON(s.n) : COMMON(s.n).replace(SWITCHES_OLD, SWITCHES_NEW)
   let design = null
   if (s.design) {
     design = await agent(`${C}
@@ -99,6 +103,7 @@ YOUR JOB (build session ${i + 1} of ${s.sessions.length} of Step ${s.n}): ${i > 
   }
   const IN_WT = `Work IN the existing worktree ${WT} (branch ${BR}); cd there for every command and do not create another worktree.`
   const reports = JSON.stringify({ design, builds })
+  C = C.replace(SWITCHES_OLD, SWITCHES_NEW)
   // One agent at a time (owner's rule): the two reviews run one after the other.
   const funcReview = await agent(`${C}
 ADVERSARIAL REVIEW (function) of BUILD-PLAN Step ${s.n} as built in the worktree ${WT} (branch ${BR}). Read-only for you: do not edit or commit there; probe scripts go under ${SCR}/build-review/step${s.n}/. Diff: git -C ${WT} diff origin/main...HEAD (fetch first). Check against Step ${s.n}'s block in BUILD-PLAN §5 and the cited spec sections: missing items, wrong behaviour, regressions — especially ${s.reviewFocus}; plus CLAUDE.md sync invariants, render stability, reload blocking, editor vs viewer vs owner, junior vs senior, the Step 3 secrecy rule, security (every database string laundered before markup), weak or missing tests (and any short fixed sleep in a test), CLAUDE.md drift. Run node tests/run.js, the emulator suites the step names, and a Playwright pass of both camps as viewer, editor and owner. Builders' reports: ${reports}`,
