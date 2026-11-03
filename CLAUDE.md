@@ -853,7 +853,8 @@ seeded and seeded-all passes):
 - **Four-team bracket**: `nowBracket4` reads Step 22's `state.brackets4[gid] = { m: { s1, s2, third, final } }` (null until it
   exists; not in `SYNC_KEYS` yet) as four cells, derives 3rd place (the semifinal losers) and the final (the winners) unless a match
   recorded its own `a` / `b`, drops any id that is not one of the camp's teams, and words my team's next game from the bracket's own
-  order ("Red plays in the final next · 3rd place match first").
+  order ("Red plays in the final next · 3rd place match first"). The game's row says the match under way ("semifinal 2") and a
+  director on a team in it gets the own-team reason in place of Score, per match, as the six-team bracket does.
 - **Left for the next sessions**: every renderer (`renderNow`, the strip, the moment's keys through `setCleanupPoints` /
   `setVersePoints`, the sheets `#sheet-notice` / `#sheet-messages` / `#sheet-whos-where` in `shellSheetAllowed` / `shellSheetFill`,
   the identity change, motion), retiring the old Now sections and updating the tests that look them up, `tests/preview.test.js`'s

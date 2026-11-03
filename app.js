@@ -1949,18 +1949,28 @@ function nowGameRow(ctx, g) {
     row.mine = !!(row.podium && row.podium.some((c) => c.mine));
   } else if (status === 'live') {
     row.board = nowLiveBoard(ctx, g);
+    const b4 = row.board ? null : nowBracket4(ctx, g);
+    const cell = b4 ? b4.cells.find((c) => c.status === 'live') : null;
     if (row.board && row.board.kind === 'match') {
       row.line = row.board.cap.split(' · ').slice(0, 2).join(' · ').toLowerCase();
       row.mine = row.board.sides.some((s) => s.mine);
     } else if (row.board && row.board.kind === 'tally') {
       row.line = 'scores so far';
       row.mine = row.board.rows.some((r) => r.mine);
+    } else if (cell) {
+      row.line = cell.name.toLowerCase(); // the four-team bracket's match under way: "semifinal 2", "3rd place"
+      row.mine = cell.teams.some((t) => t.mine);
     } else row.line = 'Being scored';
   }
   if (ctx.director && status !== 'done') {
     // A bracket's current round that has my own team in it is another director's to score (canScoreRound); a tally or a
     // podium game is not guarded at the game level.
-    const pair = status === 'live' && row.board && row.board.kind === 'match' ? row.board.sides.map((s) => s.team) : [];
+    let pair = status === 'live' && row.board && row.board.kind === 'match' ? row.board.sides.map((s) => s.team) : [];
+    if (!pair.length && status === 'live' && !row.board) {
+      const b4 = nowBracket4(ctx, g);
+      const cell = b4 ? b4.cells.find((c) => c.status === 'live') : null;
+      if (cell) pair = cell.teams.map((t) => t.team).filter(Boolean);
+    }
     row.score = { gold: false, why: pair.length && blockedByOwnTeam(...pair) ? 'Your team plays · another director scores' : null };
   }
   return row;

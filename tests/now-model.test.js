@@ -845,6 +845,16 @@ test('nowModel: the four-team bracket reads state.brackets4 (Step 22\'s shape) a
   assert.equal(b.note.mine, true);
   const card = at(WED, nb.start + 1).card;
   assert.ok(card.notes.some((n) => n.kind === 'team' && /3rd place match first/.test(n.rest)));
+  const b4row = at(WED, nb.start + 1).body.rows.find((r) => r.id === g.id);
+  assert.equal(b4row.status, 'live');
+  assert.equal(b4row.line, 'semifinal 2', 'the match under way');
+  setMemberRole('editor');
+  setMemberTeam(T()[2]);
+  assert.equal(at(WED, nb.start + 1).body.rows.find((r) => r.id === g.id).score.why, 'Your team plays · another director scores', 'own-team guard per match');
+  setMemberTeam(T()[0]);
+  assert.equal(at(WED, nb.start + 1).body.rows.find((r) => r.id === g.id).score.why, null, 'the director\'s team is not in the match under way');
+  setMemberTeam(null);
+  setMemberRole('viewer');
   state.followTeam = T()[1];
   assert.equal(at(WED, nb.start + 1).body.bracket4.note.rest, ' plays the 3rd place match next');
   state.followTeam = T()[2];
