@@ -16016,3 +16016,662 @@ button.nr {
     border-color: var(--ink-3);
   }
 }
+
+/* ============================================================
+   THE GAMES TAB (redesign §5, §8; Step 18)
+   ============================================================
+   Markup and every hook: index.html, the "STEP 18: THE GAMES TAB" comment in
+   #tab-games, the quick points and standings sheets (#sheet-quick,
+   #sheet-standings), and the "STEP 18 TEMPLATES" comment in #takeover-game
+   (the podium picker, the saved result, the dock). The language is Now's:
+     · The Now card is the app's ONE physical object. The standings are a flat
+       panel (a sheet with a hairline edge), the games are run-sheet rows on
+       paper, and the only chunky things are things you press: Score, the
+       podium picker's team keys, the quick points keys, the dock.
+     · The answer first: the place numeral and the points are the biggest
+       numbers on the panel; medals are WORDS ("2 gold · 2 silver · 2 bronze"),
+       never three bare digits under emoji headers.
+     · Status is never colour alone: a place moved is an arrow AND a number, a
+       day is "Done" / "Today" in words, a picked team carries a check.
+     · Team colour only marks: your own team's edge, never a fill behind text.
+       The podium picker's chosen cell takes its MEDAL's colour (gold, silver,
+       bronze, ink numerals on all three in both themes, 7.6:1 and up), so the
+       answer reads as the podium it is.
+   Nothing here animates the layout: the day pill's slide, rows gliding to new
+   places, a points pop and a podium pick's check are JellyMotion's (§9.5),
+   started by the renderer from a diff. The CSS transitions below are colour
+   only (calm keeps them). Sizes are rem; rows use min-height; the container
+   queries are keyed in rem so they follow the phone's text size. */
+
+/* ── Directors' live standings (§5.2, mockup 08) ─────────────── */
+.gs {
+  container: gs / inline-size;
+  padding: 10px 14px 4px;
+  border: 1.5px solid var(--line-2);
+  border-radius: var(--r-group);
+  background: var(--sheet);
+  color: var(--ink);
+}
+/* Kicker over the title, the "…" spanning both: the secrecy reminder is the
+   first thing read, and the head costs no more height than the mockup's one
+   crowded line. */
+.gs-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas: "kick more" "title more";
+  align-items: center;
+  column-gap: var(--s-2);
+}
+.gs-kick {
+  grid-area: kick;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font: 750 0.8125rem/1.3 var(--font-ui);
+  color: var(--ink-2);
+}
+.gs-kick .ico {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.4;
+}
+.gs-title {
+  grid-area: title;
+  margin: 1px 0 0;
+  font: 850 1.1875rem/1.15 var(--font-ui);
+  letter-spacing: var(--track-row);
+}
+.gs-more {
+  grid-area: more;
+  display: grid;
+  place-items: center;
+  width: var(--target);
+  height: var(--target);
+  margin-right: -10px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.gs-more:active {
+  background: color-mix(in srgb, var(--ink) 7%, var(--sheet));
+}
+.gs-more:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.gs-how {
+  margin: 6px 0 4px;
+  font: var(--t-meta);
+  color: var(--ink-2);
+}
+
+/* One two-line row per team: place · moved · mark · name over medals · points.
+   The row IS the button (quick points), out to the panel's edges. */
+.gs-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.gs-item {
+  border-top: 1px solid var(--line);
+}
+.gs-row {
+  display: grid;
+  grid-template-columns: 1.625rem 2.125rem 30px minmax(0, 1fr) auto;
+  grid-template-areas: "pl mv mark nm pts";
+  align-items: center;
+  column-gap: 7px;
+  width: calc(100% + 28px);
+  min-height: 3.25rem;
+  margin: 0 -14px;
+  padding: 5px 14px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+button.gs-row {
+  cursor: pointer;
+  transition: background-color var(--jm-exit-ms) var(--jm-std);
+}
+button.gs-row:active {
+  background: color-mix(in srgb, var(--ink) 6%, var(--sheet));
+}
+button.gs-row:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 3px var(--blue);
+}
+.gs-pl {
+  grid-area: pl;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+}
+.gs-pl-n {
+  font: 850 1.25rem/1 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+}
+.gs-tie {
+  margin-top: 2px;
+  font: var(--t-tag);
+  color: var(--ink-2);
+}
+.gs-mv {
+  grid-area: mv;
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  font: 800 0.84375rem/1 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+.gs-mv .ico {
+  width: 14px;
+  height: 14px;
+  stroke-width: 3;
+}
+.gs-mv[data-mv="up"] {
+  color: var(--done);
+}
+.gs-mv[data-mv="down"] {
+  color: var(--live);
+}
+.gs-mark {
+  grid-area: mark;
+  display: grid;
+  place-items: center;
+}
+.gs-nm {
+  grid-area: nm;
+  min-width: 0;
+}
+.gs-name {
+  display: block;
+  font: 800 1rem/1.2 var(--font-ui);
+  letter-spacing: var(--track-row);
+  overflow-wrap: break-word;
+}
+.gs-medals {
+  display: block;
+  margin-top: 1px;
+  font: 600 0.8125rem/1.3 var(--font-ui);
+  color: var(--ink-2);
+}
+.gs-pts {
+  grid-area: pts;
+  min-width: 2ch;
+  font: var(--t-num);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.gs-lock {
+  width: 15px;
+  height: 15px;
+  margin-left: 6px;
+  vertical-align: -2px;
+  color: var(--ink-2);
+  stroke-width: 2.4;
+}
+/* Your own team (a director on a team): its colour as the row's edge; the row
+   is a plain div with the lock (another director gives these points). */
+.gs-item[data-mine] .gs-row {
+  box-shadow: inset 4px 0 0 var(--team, var(--ink-3));
+}
+/* No points yet (Monday morning): no places, no arrows, nothing to compare. */
+.gs[data-empty] .gs-row {
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  grid-template-areas: "mark nm pts";
+}
+.gs[data-empty] .gs-pl,
+.gs[data-empty] .gs-mv {
+  display: none;
+}
+.gs[data-empty] .gs-pts {
+  color: var(--ink-2);
+}
+/* The gap sentence: the panel's one line of prose, in ink (it is an answer). */
+.gs-gap,
+.gs-sync {
+  margin: 0 -14px;
+  padding: 10px 14px 11px;
+  border-top: 1px solid var(--line);
+  font: 650 0.9375rem/1.38 var(--font-ui);
+  color: var(--ink);
+  overflow-wrap: break-word;
+}
+.gs-gap b {
+  font-weight: 800;
+}
+.gs-sync {
+  font: var(--t-meta);
+  color: var(--ink-2);
+}
+.gs-sync:empty {
+  display: none;
+}
+.gs-reveal {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 10px;
+  width: calc(100% + 28px);
+  min-height: 3.25rem;
+  margin: 0 -14px -4px;
+  padding: 4px 14px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 calc(var(--r-group) - 1.5px) calc(var(--r-group) - 1.5px);
+  background: none;
+  color: var(--link);
+  font: 800 1rem/1.25 var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.gs-reveal:active {
+  background: color-mix(in srgb, var(--ink) 6%, var(--sheet));
+}
+.gs-reveal:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 3px var(--blue);
+}
+.gs-reveal > .ico:first-child {
+  width: 22px;
+  height: 22px;
+}
+.gs-chev {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.6;
+}
+/* Large text (the panel under ~20em of its own text across): the arrow goes
+   under the place numeral, so the name keeps a readable column. */
+@container gs (max-width: 20rem) {
+  .gs-row {
+    grid-template-columns: 2.125rem 30px minmax(0, 1fr) auto;
+    grid-template-areas: "pl mark nm pts" "mv mark nm pts";
+    row-gap: 3px;
+  }
+  .gs-pl {
+    align-self: end;
+  }
+  .gs-mv {
+    align-self: start;
+    justify-self: center;
+  }
+}
+@container gs (max-width: 13rem) {
+  .gs-row {
+    grid-template-columns: 2.125rem minmax(0, 1fr) auto;
+    grid-template-areas: "pl nm pts" "mv nm pts";
+  }
+  .gs-mark {
+    display: none;
+  }
+}
+
+/* Counselors (§5.6): the one quiet line in the panel's place, ruled above and
+   below like a line on the run sheet, never a tinted box. */
+.gs-secret {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: start;
+  column-gap: 10px;
+  margin: 0;
+  padding: 12px 2px;
+  border-block: 1px solid var(--line-2);
+  font: 650 0.9375rem/1.4 var(--font-ui);
+  color: var(--ink-2);
+}
+.gs-secret .ico {
+  width: 20px;
+  height: 20px;
+  margin-top: 1px;
+}
+
+/* ── The week's games: the day picker (§5.1) ─────────────────── */
+.gw {
+  display: grid;
+  gap: 14px;
+}
+.gdp {
+  container: gdp / inline-size;
+}
+.gdp-track {
+  --gdp-gap: 4px;
+  --gdp-pad: 4px;
+  --gdp-w: calc((100% - 2 * var(--gdp-pad) - (var(--n, 5) - 1) * var(--gdp-gap)) / var(--n, 5));
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--n, 5), minmax(0, 1fr));
+  gap: var(--gdp-gap);
+  padding: var(--gdp-pad);
+  border-radius: 14px;
+  background: var(--well-paper);
+  box-shadow: inset 0 0 0 1px var(--well-paper-line);
+}
+/* The lifted pill: ONE element, at rest under the chosen day (--i). The slide
+   is JellyMotion's `snap` (a transform from the old place to 0), never a CSS
+   transition on `left`, so calm can simply skip it. */
+.gdp-pill {
+  position: absolute;
+  top: var(--gdp-pad);
+  bottom: var(--gdp-pad);
+  left: calc(var(--gdp-pad) + var(--i, 0) * (var(--gdp-w) + var(--gdp-gap)));
+  width: var(--gdp-w);
+  border-radius: 10px;
+  background: var(--lift);
+  box-shadow: 0 0 0 2px var(--seg-ring), 0 3px 0 var(--edge);
+  pointer-events: none;
+}
+.gdp-btn {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  justify-items: center;
+  align-content: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 3rem;
+  padding: 4px 2px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--ink-2);
+  font: 750 0.9375rem/1.1 var(--font-ui);
+  cursor: pointer;
+}
+.gdp-btn[aria-selected="true"] {
+  color: var(--ink);
+  font-weight: 850;
+}
+.gdp-btn:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 3px var(--blue);
+}
+.gdp-d {
+  max-width: 100%;
+  white-space: nowrap;
+}
+/* The status under the day: the line keeps its height when it is blank, so the
+   names stay level. */
+.gdp-st {
+  min-height: 1.2em;
+  font: 800 0.78125rem/1.2 var(--font-ui);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.gdp-btn[data-st="done"] .gdp-st {
+  color: var(--done);
+}
+.gdp-btn[data-st="today"] .gdp-st {
+  color: var(--link);
+}
+/* Very large text: five words no longer fit under five day names, so the
+   status becomes its shape (check = done, dot = today, ring = games left); the
+   button's aria-label keeps the words. */
+@container gdp (max-width: 14rem) {
+  .gdp-track {
+    --gdp-gap: 2px;
+    --gdp-pad: 2px;
+  }
+  .gdp-btn {
+    padding-inline: 0;
+  }
+  .gdp-btn .gdp-st {
+    position: relative;
+    width: 0.7rem;
+    min-height: 0.7rem;
+    height: 0.7rem;
+    overflow: hidden;
+    font-size: 0;
+  }
+  .gdp-st::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 50%;
+  }
+  .gdp-btn[data-st="today"] .gdp-st::before {
+    background: var(--link);
+  }
+  .gdp-btn[data-st="left"] .gdp-st::before {
+    box-shadow: inset 0 0 0 2px var(--ink-2);
+  }
+  .gdp-btn[data-st="done"] .gdp-st::before {
+    inset: 1px 3px 3px 3px;
+    border-radius: 0;
+    border: solid var(--done);
+    border-width: 0 2.5px 2.5px 0;
+    transform: rotate(40deg);
+  }
+  .gdp-d {
+    font-size: 0.875rem;
+    letter-spacing: -0.02em;
+  }
+}
+.gdp-note {
+  margin: -2px 2px 0;
+  font: var(--t-meta);
+  color: var(--ink-2);
+}
+
+/* ── The day: its notes, then a section per block (§5.3) ─────── */
+.gday {
+  display: grid;
+  gap: 20px;
+}
+.gday[hidden] {
+  display: none;
+}
+.gw-notes {
+  display: grid;
+  gap: 8px;
+  margin-top: 2px;
+}
+.gw-notes[hidden] {
+  display: none;
+}
+.gw-body {
+  display: grid;
+  gap: 22px;
+}
+.gw-body:empty {
+  display: none;
+}
+/* A block's head is Now's section head (sentence case, ink-2, a line-2 rule
+   under it), with the run sheet's bare clock at the right. */
+.gb-h {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  margin: 0;
+  padding: 0 2px 6px;
+  border-bottom: 1px solid var(--line-2);
+  font: var(--t-label);
+  font-size: 0.875rem;
+  color: var(--ink-2);
+}
+.gb-t {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+.gb-when {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.gb[data-now] .gb-t {
+  color: var(--ink);
+}
+.gb-now {
+  padding: 1px 6px 2px;
+  border-radius: var(--r-tag);
+  background: var(--ink);
+  color: var(--paper);
+  font: var(--t-tag);
+  white-space: nowrap;
+}
+.gb .gr-list {
+  margin-top: 2px;
+}
+.gb .gr:first-child {
+  padding-top: 10px;
+}
+/* A day with no games: one line, and for a director the way to add some. */
+.gw-empty {
+  display: grid;
+  justify-items: start;
+  gap: 12px;
+  padding: 14px 2px 4px;
+}
+.gw-empty-t {
+  margin: 0;
+  font: 650 1rem/1.4 var(--font-ui);
+  color: var(--ink-2);
+}
+/* Quick game: the day's last row, an action row like Still to do's. */
+.gw-quick {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 12px;
+  width: 100%;
+  min-height: 3.5rem;
+  margin: 0;
+  padding: 8px 2px;
+  border: 0;
+  border-top: 1px solid var(--line-2);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.gw-quick:active {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+}
+.gw-quick:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 3px var(--blue);
+}
+.gw-quick-ico {
+  display: grid;
+  place-items: center;
+  color: var(--ink-2);
+}
+.gw-quick-text {
+  min-width: 0;
+}
+.gw-quick-t {
+  display: block;
+  font: var(--t-row);
+  letter-spacing: var(--track-row);
+}
+.gw-quick-s {
+  display: block;
+  margin-top: 2px;
+  font: var(--t-meta);
+  color: var(--ink-2);
+  overflow-wrap: break-word;
+}
+.gw-quick .gs-chev {
+  color: var(--ink-3);
+}
+
+/* ── Quick points (#sheet-quick) ───────────────────────────────── */
+.qp-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.qp-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+}
+.qp-mark:empty {
+  display: none;
+}
+.qp-team {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+.qp-now {
+  margin-top: 0;
+}
+.qp-label {
+  display: block;
+  margin: 16px 0 8px;
+}
+.qp-opt {
+  font-weight: 550;
+}
+.qp-keys {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.qp-key {
+  font-size: 1.375rem;
+}
+.qp-why {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* A reason is a choice you may skip: dashed until chosen (Award points' team
+   toggles), then solid with the chunky edge. */
+.qp-chip {
+  min-height: var(--target);
+  padding: 4px 14px;
+  border: 2px dashed var(--ink-3);
+  border-radius: var(--r-btn);
+  background: none;
+  color: var(--ink-2);
+  font: 700 0.9375rem/1.15 var(--font-ui);
+  cursor: pointer;
+}
+.qp-chip[aria-checked="true"] {
+  border-style: solid;
+  border-color: var(--ink);
+  background: var(--lift);
+  color: var(--ink);
+  font-weight: 800;
+  box-shadow: 0 2px 0 var(--edge);
+}
+.qp-chip:focus-visible,
+.qp-key:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+.qp-other {
+  margin-top: 10px;
+}
+.qp-other[hidden],
+.qp-x2[hidden] {
+  display: none;
+}
+.qp-x2 {
+  margin-top: 16px;
+}
+.qp-add {
+  min-height: 3.25rem;
+  font-size: 1.0625rem;
+  white-space: normal;
+}
+
+@media (prefers-contrast: more) {
+  .gs-item,
+  .gb-h,
+  .gs-gap,
+  .gs-reveal,
+  .gres-r {
+    border-color: var(--ink-3);
+  }
+}

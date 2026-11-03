@@ -1592,6 +1592,149 @@
         <div class="rv-list" id="games-reveal-grid-list" data-kind="grid" role="list"></div>
       </section>
       <p id="games-off" class="tab-off" role="status" hidden>Games are turned off right now.</p>
+
+      <!-- ── STEP 18: THE GAMES TAB (redesign §5; mockup 08 + dark) ──────────
+           Design pass: static frame, every piece hidden and nothing wired. The
+           build session's renderer shows these and retires the interim cards
+           below (#games-days, #games-standings, #games-rows) in the same commit,
+           moving their hooks here: data-card="standings" onto #games-live,
+           data-card="competitions" onto #games-week, #sync-status into
+           #gs-sync's place, and reveal-ui.js's #games-reveal-link un-hide onto
+           #gs-reveal (ids are unique, so the moves wait for the old cards to go).
+           ORDER, on purpose: the week's standings come FIRST (they are the whole
+           week, not the chosen day), then the day picker sits directly on top of
+           the rows it switches. Mockup 08 put the picker above the standings,
+           which parted the control from what it controls by a whole screen.
+
+           DIRECTORS: #games-live, one flat panel (a sheet with a hairline edge:
+           the Now card stays the app's ONE physical object).
+             [data-empty]   no points yet: no places, no arrows, no gap sentence;
+                            #gs-how reads "Tap a team to give quick points" and
+                            #gs-gap says "No points yet. The first saved game
+                            starts the table."
+             .gs-kick       eye-off · "Counselors can’t see this" (a constant
+                            reminder, so it is the panel's kicker, read first)
+             .gs-title      "Live standings"; #gs-more the "…" (44×44) → #sheet-standings
+             #gs-how        said ONCE: "Arrows: places moved since this morning ·
+                            tap a team to give quick points"
+             #gs-list       an <ol> of team rows in place order, keyed by team
+                            (JellyMotion.flipKeyed glides them when places change;
+                            a points change pops .gs-pts with `press`, nothing
+                            while calm):
+               <li class="gs-item" data-key="t3" data-team="t3" style="teamAccentVars(t3)" data-tie? data-mine?>
+                 <button type="button" class="gs-row" data-quick-team="t3"
+                         aria-haspopup="dialog" aria-controls="sheet-quick"
+                         aria-label="Maples · 2nd, tied · up 1 since this morning · 30 points. Give quick points">
+                   <span class="gs-pl" aria-hidden="true"><b class="gs-pl-n">2</b><small class="gs-tie">tie</small></span>
+                                                         (.gs-tie only with data-tie: equal points share a place, reveal-core's groupPlaces)
+                   <span class="gs-mv" data-mv="up|down|same" aria-hidden="true"><svg class="ico"><use href="#i-up"/></svg>1</span>
+                                                         (down: #i-down; same: no icon, "–"; none at all with [data-empty])
+                   <span class="gs-mark">teamMarkHtml(t3, {size: 28})</span>
+                   <span class="gs-nm"><b class="gs-name">Maples</b>
+                     <small class="gs-medals">2&nbsp;gold · 2&nbsp;silver · 2&nbsp;bronze<span class="gs-x"> · +6&nbsp;awarded</span></small></span>
+                                                         (medals in WORDS, never "2 · 2 · 2", each count kept to its word
+                                                          with &nbsp; so a wrap falls at a "·"; .gs-x only when Award
+                                                          points (verse, cleanup, quick points) add to the total, so the sum reads true)
+                   <b class="gs-pts">30</b>
+                 </button></li>
+               A director's OWN team (canScoreRound says no): the same parts in a
+               <div class="gs-row" data-locked> (never a dead button), with
+               <svg class="ico gs-lock" aria-hidden="true"><use href="#i-lock"/></svg>
+               after .gs-name and a visually-hidden "Your team: another director
+               gives these points" at the end. The li also carries data-mine.
+             #gs-gap        the gap sentence (renderCatchupHint, moved up): "Turkey
+                            trail Maples by 3. One gold for Turkey would put them in
+                            front." Team names may be <b>. For a director on a
+                            team, it is about their team.
+             #gs-sync       the director's sync line ("2 changes couldn't be saved …")
+             #gs-reveal     "Reveal these on the big screen ›" → the remote
+           COUNSELORS: no panel. #games-secret, one quiet line, unless the revealed
+           grid above is showing (§5.6). -->
+      <section id="games-live" class="gs" aria-labelledby="gs-title" hidden>
+        <header class="gs-head">
+          <p class="gs-kick"><svg class="ico" aria-hidden="true"><use href="#i-eye-off"/></svg><span>Counselors can’t see this</span></p>
+          <h2 class="gs-title" id="gs-title">Live standings</h2>
+          <button type="button" class="gs-more" id="gs-more" aria-haspopup="dialog" aria-controls="sheet-standings" aria-label="Copy or share the standings">
+            <svg class="ico" aria-hidden="true"><use href="#i-dots"/></svg>
+          </button>
+        </header>
+        <p class="gs-how" id="gs-how">Arrows: places moved since this morning · tap a team to give quick points</p>
+        <ol class="gs-list" id="gs-list" aria-labelledby="gs-title"></ol>
+        <p class="gs-gap" id="gs-gap" hidden></p>
+        <p class="gs-sync" id="gs-sync" aria-live="polite" hidden></p>
+        <button type="button" class="gs-reveal" id="gs-reveal" hidden>
+          <svg class="ico" aria-hidden="true"><use href="#i-tv"/></svg>
+          <span class="gs-reveal-t">Reveal these on the big screen</span>
+          <svg class="ico gs-chev" aria-hidden="true"><use href="#i-chev-r"/></svg>
+        </button>
+      </section>
+      <p id="games-secret" class="gs-secret" hidden>
+        <svg class="ico" aria-hidden="true"><use href="#i-eye-off"/></svg>
+        <span>Standings stay secret until the directors reveal them on the big screen.</span>
+      </p>
+
+      <!-- THE WEEK'S GAMES (#games-week; everyone). Hidden as one when What
+           counselors see turns Games off (it takes data-card="competitions").
+           DAY PICKER (§5.1): five equal segments from competitionDays(), plain
+           buttons in a tablist (not a jelly-segmented). The chosen one is the
+           lifted pill, ONE element (.gdp-pill) whose rest place is the track's
+           --i (the chosen index, set by the renderer with --n = the day count):
+           a day change springs it from the old place with `snap` (a WAAPI
+           translateX from the old offset to 0, the overshoot spent as a squash;
+           calm: no slide, it is simply there). Under each day name a short
+           status, 12.5px 800, never colour alone:
+             <button type="button" class="gdp-btn" role="tab" id="gdp-d-wed" data-day="d-wed"
+                     aria-selected="true" aria-controls="games-day" data-st="today|done|left|">
+               <span class="gdp-d">Wed</span><span class="gdp-st">Today</span></button>
+             data-st: "done" (green, every game has a result) · "today" (link
+             blue) · "left" ("2 left": a PAST day with games still unscored, ink-2)
+             · "" (blank, the line keeps its height). The aria-label says it in
+             words: "Wednesday, today" · "Monday, every game done".
+           #games-day-note: "Thursday · not today" while another day is chosen
+           (hidden on today, and when no camp day is today).
+           #games-day (the tabpanel, aria-labelledby the chosen tab's id):
+             #games-day-notes  plain lines (.nw-note, Now's): the double points
+                               line (data-note="double", #i-bolt) and the day's
+                               own notes (data-note="day", #i-pin).
+             #games-day-body   one section per block that has games, in time order:
+               <section class="gb" data-key="b-<block id>" data-now?>
+                 <h3 class="gb-h"><span class="gb-t">Team competitions</span>
+                   <span class="gb-now">Now</span>                 (today's block under way)
+                   <span class="gb-when">10:00–11:45</span></h3>   (the run sheet's bare clock;
+                   with the built-in week's session grouping: .gb-t "Morning", no .gb-when)
+                 <div class="gr-list" role="list">  GAME ROWS: Now's .gr, exactly
+                   (index.html, the BODY TEMPLATES comment at #now-card): the status
+                   mark, ONE stretched .gr-hit, Score (gold on the live / next one)
+                   or the own-team .gr-why, the podium .pd on a done row, the live
+                   board .lb on a live one. The sub carries the live line per format
+                   ("Round 1 · Maples 3, Foxes 1", "4 of 6 teams in", "Being scored",
+                   "Clock running"); a counselor's never names a leader.
+                 </div></section>
+               then, last, the games on no schedule item:
+               <section class="gb" data-key="none" data-off><h3 class="gb-h"><span class="gb-t">Not on the schedule</span></h3>…</section>
+               A day with no games:
+               <div class="gw-empty"><p class="gw-empty-t">No games on Thursday yet.</p>
+                 <button type="button" class="btn" data-games-add>Add games</button></div>   (directors: today's builder until Step 21)
+             #games-quick      directors, under a day that has games: "Quick game"
+                               (#games-quick-sub "Add a one-off game to Wednesday"). -->
+      <section id="games-week" class="gw" aria-label="The week's games" hidden>
+        <nav class="gdp" aria-label="Competition days">
+          <div class="gdp-track" id="games-days-pick" role="tablist" aria-label="Competition days" style="--n:5;--i:0">
+            <i class="gdp-pill" aria-hidden="true"></i>
+          </div>
+        </nav>
+        <p class="gdp-note" id="games-day-note" hidden></p>
+        <section class="gday" id="games-day" role="tabpanel">
+          <div class="gw-notes" id="games-day-notes" hidden></div>
+          <div class="gw-body" id="games-day-body"></div>
+        </section>
+        <button type="button" class="gw-quick" id="games-quick" data-quick-game hidden>
+          <span class="gw-quick-ico" aria-hidden="true"><svg class="ico"><use href="#i-plus"/></svg></span>
+          <span class="gw-quick-text"><span class="gw-quick-t">Quick game</span><span class="gw-quick-s" id="games-quick-sub">Add a one-off game to Wednesday</span></span>
+          <svg class="ico gs-chev" aria-hidden="true"><use href="#i-chev-r"/></svg>
+        </button>
+      </section>
+
       <section id="games-days" class="games-days" data-card="competitions">
         <div id="day-tabs"></div>
       </section>
@@ -2614,6 +2757,91 @@
       <div class="sheet-body">
         <p class="nw-sheet-lede" id="whos-where-when"></p>
         <div id="whos-where-body"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Quick points from the Games standings (redesign §5.2): a team row's tap,
+       the team already chosen. Directors only (opened only for a team the
+       director may score: the own team's row is no button). The same write as
+       Award points' quick points (bindBonusEntry's bonus entry, double points
+       counted by its own timestamp) and the 10-second Undo toast after Add.
+         #qp-mark / #qp-team    the team's mark (teamMarkHtml 34) and full name
+         #qp-now                "2nd · 30 points so far" (directors' numbers)
+         #qp-keys               a radiogroup of four .aw-pt keys (Award points' own
+                                key, a pen mark when chosen): data-pts 1 · 2 · 3 · 5,
+                                labelled "+1" …; aria-checked on the chosen one
+         #qp-why                a radiogroup of reasons, optional:
+                                <button type="button" class="qp-chip" role="radio" aria-checked="false" data-why="Sportsmanship">Sportsmanship</button>
+                                "Team spirit" · "Helping out" · data-why="other" "Other…"
+                                (Other shows #qp-other, 40 characters, and focuses it)
+         #qp-x2                 inside the double-points window: "Double points
+                                today · +3 counts as 6" (hidden otherwise; it is the
+                                one place the doubling is said, so the button stays short)
+         #qp-add                gold; the dashed well "Pick how many points" until a
+                                key is chosen, then "Add 3 points to Maples". -->
+  <div id="sheet-quick" class="sheet-overlay" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-quick-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title qp-title" id="sheet-quick-title"><span class="qp-mark" id="qp-mark" aria-hidden="true"></span><span class="qp-team" id="qp-team">Quick points</span></h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="sheet-body qp">
+        <p class="nw-sheet-lede qp-now" id="qp-now"></p>
+        <p class="fld-label qp-label" id="qp-keys-label">How many points?</p>
+        <div class="qp-keys" id="qp-keys" role="radiogroup" aria-labelledby="qp-keys-label">
+          <button type="button" class="aw-pt qp-key" role="radio" aria-checked="false" data-pts="1">+1</button>
+          <button type="button" class="aw-pt qp-key" role="radio" aria-checked="false" data-pts="2">+2</button>
+          <button type="button" class="aw-pt qp-key" role="radio" aria-checked="false" data-pts="3">+3</button>
+          <button type="button" class="aw-pt qp-key" role="radio" aria-checked="false" data-pts="5">+5</button>
+        </div>
+        <p class="fld-label qp-label" id="qp-why-label">What for? <span class="qp-opt">If you like</span></p>
+        <div class="qp-why" id="qp-why" role="radiogroup" aria-labelledby="qp-why-label">
+          <button type="button" class="qp-chip" role="radio" aria-checked="false" data-why="Sportsmanship">Sportsmanship</button>
+          <button type="button" class="qp-chip" role="radio" aria-checked="false" data-why="Team spirit">Team spirit</button>
+          <button type="button" class="qp-chip" role="radio" aria-checked="false" data-why="Helping out">Helping out</button>
+          <button type="button" class="qp-chip" role="radio" aria-checked="false" data-why="other">Other…</button>
+        </div>
+        <label class="fld qp-other" id="qp-other" hidden><span class="visually-hidden">What for</span><input type="text" class="fld-input" id="qp-other-text" maxlength="40" autocomplete="off" placeholder="Helped carry the canoes"></label>
+        <p class="nw-note qp-x2" id="qp-x2" data-note="double" hidden><svg class="ico" aria-hidden="true"><use href="#i-bolt"/></svg><span>Double points today · +3 counts as 6</span></p>
+      </div>
+      <div class="sheet-dock">
+        <button type="button" class="btn btn-gold btn-block qp-add" id="qp-add" aria-disabled="true" data-joy><span id="qp-add-label">Pick how many points</span></button>
+      </div>
+    </div>
+  </div>
+
+  <!-- The standings panel's "…" (#gs-more): what the old table's buttons did.
+       #gs-share only where the phone can share (navigator.share). Award points
+       is where a director fixes a mistake (verse, cleanup, quick points by day). -->
+  <div id="sheet-standings" class="sheet-overlay" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-standings-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-standings-title">Live standings</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="sheet-body">
+        <div class="gl">
+          <button type="button" class="gl-row" id="gs-copy">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-copy"/></svg></span>
+            <span class="gl-text"><span class="gl-title">Copy the standings</span><span class="gl-sub">Points and medals for every team, ready to paste</span></span>
+            <span class="gl-end" aria-hidden="true"></span>
+          </button>
+          <button type="button" class="gl-row" id="gs-share" hidden>
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-upload"/></svg></span>
+            <span class="gl-text"><span class="gl-title">Share the standings</span><span class="gl-sub">Send them to another director</span></span>
+            <span class="gl-end" aria-hidden="true"></span>
+          </button>
+          <button type="button" class="gl-row" id="gs-award">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-star"/></svg></span>
+            <span class="gl-text"><span class="gl-title">Award points</span><span class="gl-sub">Verse, cleanup and quick points by day · fix a mistake</span></span>
+            <span class="gl-end" aria-hidden="true"><svg class="ico gl-chev"><use href="#i-chev-r"/></svg></span>
+          </button>
+        </div>
       </div>
     </div>
   </div>
