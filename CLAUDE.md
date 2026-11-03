@@ -94,6 +94,9 @@ Files:
   down, quick alerts, the notice replace rule, the Undo). An optional layer like chat.js: a
   classic script loaded after push.js, every hook in app.js typeof-guarded, so deleting its
   `<script>` leaves a running app with no Tell everyone row
+- `award.js` — AWARD POINTS (see "Award points: behaviour"): verse, cleanup and quick points on one
+  takeover, for corrections and minus points. An optional layer like tell.js: a classic script right
+  after it, every hook in app.js typeof-guarded, so deleting its `<script>` leaves no Award points row
 - `jelly-motion.js` — the SPRING SYSTEM and the ONE calm-motion switch (see
   "Motion and calm motion" below). A classic script loaded between camps.js and
   app.js with no dependency on `vendor/jelly.js` (that module can't parse on
@@ -215,10 +218,10 @@ not actually be `main` (Settings → Pages → Build and deployment → Branch)
 
 **Every time any code asset changes:**
 1. Bump the `?v=N` cache-busting query string in `index.html` — there are
-   TWENTY on the same number: `boot-guard.js`, `styles.css`, `vendor/jelly.js`,
+   TWENTY-ONE on the same number: `boot-guard.js`, `styles.css`, `vendor/jelly.js`,
    `firebase-config.js`, `defaults.js`, `camp-core.js`, `reveal-core.js`,
    `camps.js`, `jelly-motion.js`, `app.js`, `reveal.js`, `reveal-ui.js`, `setup-sync.js`, `settings.js`,
-   `setup-ui.js`, `chat.js`, `push.js`, `tell.js`, `auth-phone.js`, `auth-email-link.js` —
+   `setup-ui.js`, `chat.js`, `push.js`, `tell.js`, `award.js`, `auth-phone.js`, `auth-email-link.js` —
    keep them in sync, all bumped together. Also bump
    `APP_VERSION` in `app.js` to the same number (it drives the auto-reload
    version check). `stalling.html` loads `vendor/jelly.js`, and
@@ -1151,8 +1154,8 @@ each as it wires it, so the live app never shows a dead control. Rules for whoev
   showing-now and result rows put their button under the words from ~130% at 360px; the quick alerts
   become one column; the way choices lose their indent, then stack; six keys become two rows of three;
   the quick-points amount stacks; the ledger puts points and bin under the words).
-- **Behaviour still to wire** (Award points: build session 1 continues; Preview as a counselor and its measured
-  `--pv-h`: build session 2): see the next two sections for what is wired.
+- **Behaviour still to wire** (Preview as a counselor and its measured `--pv-h`: build session 2): see the next two
+  sections for what is wired (Tell everyone, Award points).
 
 ## Tell everyone: behaviour (tell.js — Step 24, build session 1)
 
@@ -1223,6 +1226,46 @@ the More row exists only when it loaded (`#tell-row` is un-hidden by `tellPaintM
   Take down and its Undo, quick alerts (Urgent), Buzz disabled / disarmed, the draft (re-render, reload,
   sign-out), `reloadBlocked`, a counselor reaching none of it, the shell stack, escaping, the preview, and that the
   app runs without `tell.js`.
+
+## Award points: behaviour (award.js — Step 24, build session 1)
+
+Wires the markup above. `award.js` is a classic script right after tell.js; every hook in app.js is typeof-guarded and
+the More row (`#award-row`) is un-hidden by `awardPaintMoreRow`, never by the markup. The takeover is the shell's
+director-tool takeover (see "Tell everyone: behaviour"); Award points also needs a CONFIRMED director
+(`standingsVisible()`), because it shows points: a counselor, a hint-painted phone and a view-only second tab open
+nothing.
+
+- **NEVER A SECOND WRITE PATH FOR THE SAME SLOT.** A verse tap is `setVersePoints` (the deterministic id
+  `verse-<team>-<dow>`, replacing what the slot held, 0 clears), a cleanup tap is `setCleanupPoints`
+  (`cleanup-<team>-<dow>-<meal>`), Quick points are `bonusAddFromDraft({day})` / `removeBonusEntry(id)` on the shared
+  `bonusDraft`. The Memory verse and Meal cleanup sheets in More and this screen can be open in turn and always agree
+  (`tests/award.test.js` writes through both and finds ONE entry). The Games tab's entry row calls the same two
+  writers, so no rule (the own-team guard, 1–100, the sign) lives twice; `BONUS_PROBLEMS` is the one set of words and
+  `bonusDraftProblem(d)` the one check ('teams' | 'points' | 'range' | 'own-team'). A tap on a key is bounded by the
+  section (verse 0–5, cleanup 0–3): a stale or forged tap never writes 9 points.
+- **The own-team guard** (`canScoreRound`): a director on a team gets a locked row for it ("Your team · another
+  director gives these", `data-locked`, what it has shown as `+3`), a locked quick-points toggle, no remove button
+  on its ledger entries, and every writer refuses it as well (`removeBonusEntry` now guards the Games tab's remove too).
+- **A stored 0 is not a mark**: the chosen 0 is outlined only (CSS), so a team that got nothing never looks awarded.
+  Verse keys show what a tap is worth NOW (doubled in the double-points window; the stored value stays 0–5);
+  cleanup never doubles. A team with cleanup points for a meal it is not on the rota for keeps its row, tagged "Not
+  on the rota", so it stays clearable; a meal with no team reads "No team on the rota".
+- **The day picker** opens on today (a weekend on the first competition day) and hides days that are not competition
+  days; a switch slides the three lists in from that side. **Quick points are filed under the day on screen**:
+  `bonusAddFromDraft({day})` stamps `day` on the custom entry (the standings never read it for a custom bonus, and
+  the double-points window still goes by the entry's own timestamp), so a Wednesday correction typed on Thursday lists
+  on Wednesday. The ledger's day of an entry is `bonusDowOf(b)`: its `day` when it has one, else the camp-time
+  weekday of its `at`; the older cleanup points with no day ride at the end of the first day's list ("Cleanup · no day
+  set"). `×2` marks an entry that counts double (`bonusCountsDouble`, its own timestamp).
+- **The Add button** says what will happen ("Add 5 points to 2 teams" · "Take 3 points from the Foxes") or is the
+  dashed well naming what is missing ("Pick a team first" · "Type the points" · "Points are 1 to 100"); a tap on the
+  well shows the Games tab's own sentence. Removing an entry asks (`askDialog`: Remove it / Not now; the browser's
+  confirm where the setup frame did not load) and plays the row out first.
+- **Shared helpers added to app.js**: `bonusAddFromDraft`, `removeBonusEntry`, `bonusDraftProblem`, `BONUS_PROBLEMS`,
+  `bonusDowOf`, `cleanupEarned(day, meal)` (a guarded points reader), `messageClock(iso, timeOnly)`.
+- **Tests**: `award.test.js` (+ `.senior`): who may open it, the day, the verse and cleanup writers and their
+  deterministic ids, the shared slot, the own-team guard, the Add label and writer, the ledger (camp-time weekday, the
+  filed day, ×2, legacy cleanup), removal, escaping, the shell stack, and the app running without `award.js`.
 
 ## Set up the week: the frame, the hub, the clipboard (Step 14 — markup and visual system)
 
@@ -1984,6 +2027,8 @@ What's covered, and why each file exists:
   drawer's ids, What counselors see (four switches on the existing keys, ON =
   shown, the standings row locked), the three drawers on the history stack, and
   the Your team sheet reading no standings.
+- `award.test.js` (+ `.senior`) — Award points (see "Award points: behaviour"): one write path per slot, the own-team
+  guard, the ledger by day, secrecy (only a confirmed director opens it).
 - `tell.test.js` (+ `.senior`) — Tell everyone (see "Tell everyone: behaviour"): the channel combinations, partial failure,
   the notice replace question and an Undo that checks first, quick alerts, Buzz disabled until phone alerts are live,
   the draft, `reloadBlocked`, the shell stack, and a counselor reaching none of it.
@@ -1992,7 +2037,7 @@ What's covered, and why each file exists:
   (home panels, toast cap, announcement composer), `overlays.test.js` (schedule
   sheet, status pill, members drawer, lock screen, scrim fade, pickers),
   `shell.test.js` (page-shell text pins: the not-yet-defined hide, the boot
-  guard, no motion media query, **index.html's twenty versioned assets share
+  guard, no motion media query, **index.html's twenty-one versioned assets share
   one `?v=` equal to `APP_VERSION`, in load order**), `builder.test.js`
   (week-builder shell, drafts, joy press), `chat-view.test.js`
   (chat view lifecycle, drafts, Back), `theme.test.js` (pre-paint theme and

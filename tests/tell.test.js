@@ -58,6 +58,22 @@ function undoOf(t) { return t && t.o && t.o.action; }
 function lastUndo() { return undoOf([...toasts].reverse().find((t) => undoOf(t))); }
 function posted() { return Object.values(state.announcements || {}); }
 
+
+// Counts every innerHTML / textContent write to an element (the stub keeps them as plain properties, so an accessor
+// makes each rewrite observable), for the idle-render checks below.
+function countAllWrites(ids) {
+  const counts = {};
+  ids.forEach((id) => {
+    const e = document.getElementById(id);
+    let html = e.innerHTML || '';
+    let text = e.textContent || '';
+    counts[id] = 0;
+    Object.defineProperty(e, 'innerHTML', { get: () => html, set: (v) => { html = v; counts[id]++; }, configurable: true });
+    Object.defineProperty(e, 'textContent', { get: () => text, set: (v) => { text = v; counts[id]++; }, configurable: true });
+  });
+  return counts;
+}
+
 // ── the pure pieces ─────────────────────────────────────────────────
 
 test('the first sentence is the notice title and the rest the line under it; a line break ends the title too', () => {
@@ -802,5 +818,25 @@ test('the preview draws the notice card then the banner, written by the same fun
   assert.notOk(tellPreviewHtml().includes('class="msg"'), 'pin only: no banner');
   tell.d.pin = false;
   assert.equal(tellPreviewHtml(), '', 'neither way ticked: nothing to preview');
+  done();
+});
+
+test('an idle re-render of the open composer writes nothing (render stability): every list and line is written only when it changes', () => {
+  boot();
+  state.announcements = { a1: { id: 'a1', text: 'Water break', at: new Date().toISOString(), ttlMs: 3600000, by: 'Jenn' } };
+  openTool('tell', { from: 'more' });
+  type('Rain plan. Games move indoors.');
+  tell.d.pin = true;
+  tellPaint();
+  const ids = ['tell-showing-list', 'tell-preview-body', 'tell-result-list', 'tell-teams', 'tell-send-label', 'tell-count', 'tell-buzz-sub', 'tell-quick-what',
+    'tell-pin-title', 'tell-pin-rest', 'tell-pin-replace-text', 'tell-urgent-state', 'takeover-tell-back-label', 'tell-row-sub'];
+  const writes = countAllWrites(ids);
+  renderAll();
+  renderAll();
+  tellTick();
+  assert.deepEqual(Object.entries(writes).filter(([, n]) => n), [], 'nothing rewritten by an idle render');
+  type('Rain plan. Games move indoors tonight.');
+  renderAll();
+  assert.ok(writes['tell-preview-body'] > 0 && writes['tell-count'] > 0, 'but a change is written');
   done();
 });

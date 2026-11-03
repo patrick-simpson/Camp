@@ -8070,9 +8070,7 @@ function renderBonuses() {
       const pts = Number(b.points) || 0;
       // Removals sync everywhere; every other destructive action confirms.
       if (!confirm(`Remove "${label}" (${pts > 0 ? '+' : ''}${pts} pts) for ${teamName(b.teamId)}?`)) return;
-      delete state.bonuses[id];
-      touchData();
-      saveState();
+      if (!removeBonusEntry(id)) { showToast("Your own team's points are changed by another director."); return; }
       renderAll();
     });
   });
@@ -8108,25 +8106,94 @@ function bindBonusEntry(wrap) {
   const addBtn = wrap.querySelector('#bonus-add-btn');
   if (addBtn) addBtn.addEventListener('click', () => {
     const errEl = wrap.querySelector('#bonus-error');
-    const showErr = (msg) => { errEl.textContent = msg; errEl.hidden = false; };
-    const mag = Math.abs(Number(d.points));
-    const pts = d.sign * mag;
-    if (!d.teams.length) return showErr('Pick at least one team.');
-    if (d.points === '' || isNaN(mag) || mag === 0) return showErr('Enter a non-zero point value.');
-    if (!Number.isInteger(pts) || Math.abs(pts) > 100) return showErr('Points must be a whole number from 1 to 100.');
-    const label = bonusLabelFor(d);
-    const at = new Date().toISOString();
-    d.teams.forEach((teamId) => {
-      state.bonuses[newBonusId()] = { teamId, category: d.category, label, points: pts, at };
-    });
-    d.teams = [];
-    d.points = '';
-    d.sign = 1; // back to the default (+) for the next entry
-    if (d.category === 'custom') d.custom = '';
-    touchData();
-    saveState();
+    const problem = bonusAddFromDraft();
+    if (problem) { errEl.textContent = BONUS_PROBLEMS[problem]; errEl.hidden = false; return; }
     renderAll();
   });
+}
+
+// ── The quick-points writers (the Games tab's entry row and Award points share them) ──
+// ONE way to add a custom bonus and ONE way to remove a ledger entry, so the two screens that show the ledger can
+// never disagree about a rule (the own-team guard, the 1–100 range, the sign). Both work on the shared `bonusDraft`.
+const BONUS_PROBLEMS = {
+  teams: 'Pick at least one team.',
+  points: 'Enter a non-zero point value.',
+  range: 'Points must be a whole number from 1 to 100.',
+  'own-team': "Your own team's points are awarded by another director.",
+};
+
+// What is wrong with the draft, as a code ('' = nothing): the message above, or Award points' button words.
+function bonusDraftProblem(d) {
+  const mag = Math.abs(Number(d.points));
+  if (!d.teams.length) return 'teams';
+  if (d.points === '' || isNaN(mag) || mag === 0) return 'points';
+  if (!Number.isInteger(mag) || mag > 100) return 'range';
+  if (d.teams.some((id) => !canScoreRound(id))) return 'own-team';
+  return '';
+}
+
+// Writes the draft as one ledger entry per picked team (the same label and timestamp), then clears what was entered
+// (the teams, the points, the sign back to +, a custom reason). Returns '' on success, else the problem code. Saves,
+// does not render: the caller renders. `opts.day` (1–7) is the camp day the entry belongs to when that is not today —
+// Award points records a correction for Wednesday on Thursday morning under Wednesday's list. It is stamped on the
+// entry as `day` (verse and cleanup entries carry one already); the standings never read it for a custom bonus, and
+// the double-points window still goes by the entry's own timestamp. The Games tab passes nothing: an entry with no
+// `day` belongs to the weekday it was recorded on.
+function bonusAddFromDraft(opts) {
+  const d = bonusDraft;
+  if (!canEdit()) return 'own-team';
+  const problem = bonusDraftProblem(d);
+  if (problem) return problem;
+  const pts = d.sign * Math.abs(Number(d.points));
+  const label = bonusLabelFor(d);
+  const at = new Date().toISOString();
+  const day = Number(opts && opts.day);
+  d.teams.forEach((teamId) => {
+    const entry = { teamId, category: d.category, label, points: pts, at };
+    if (d.category === 'custom' && Number.isInteger(day) && day >= 1 && day <= 7) entry.day = day;
+    state.bonuses[newBonusId()] = entry;
+  });
+  d.teams = [];
+  d.points = '';
+  d.sign = 1; // back to the default (+) for the next entry
+  if (d.category === 'custom') d.custom = '';
+  touchData();
+  saveState();
+  return '';
+}
+
+// Removes one ledger entry (a director's act; the own team's are another director's to change). Does not confirm, save
+// or render: callers confirm in their own words and render after. Returns whether it removed one.
+function removeBonusEntry(id) {
+  const b = state.bonuses && state.bonuses[id];
+  if (!b || !canEdit() || !canScoreRound(b.teamId)) return false;
+  delete state.bonuses[id];
+  touchData();
+  saveState();
+  return true;
+}
+
+// The camp day (0 Sun … 6 Sat) a ledger entry belongs to: the `day` it was filed under (Award points stamps one), else the
+// camp-time weekday it was recorded on. Award points' day list.
+function bonusDowOf(b) {
+  const filed = Number(b && b.day);
+  if (Number.isInteger(filed) && filed >= 1 && filed <= 7) return filed === 7 ? 0 : filed;
+  const ms = Date.parse(b && b.at);
+  if (!Number.isFinite(ms)) return -1;
+  const p = etParts(ms);
+  return new Date(Date.UTC(p.year, p.month - 1, p.day)).getUTCDay();
+}
+
+// What each team earned for one day + meal of meal cleanup, by team id (a points reader: directors only).
+function cleanupEarned(day, meal) {
+  const out = {};
+  if (!pointsReadAllowed('cleanupEarned')) return out;
+  Object.values(state.bonuses || {}).forEach((b) => {
+    if (b && b.category === 'cleanup' && (Number(b.day) || 0) === day && (b.meal || 'Breakfast') === meal) {
+      out[b.teamId] = (out[b.teamId] || 0) + (Number(b.points) || 0);
+    }
+  });
+  return out;
 }
 
 // ── Memory verses ────────────────────────────────────────────────
@@ -11009,9 +11076,9 @@ function activeAnnouncements() {
 }
 
 // A time of day in camp time ("4:52 PM"); with the weekday ahead of it when it
-// was not today ("Tue 4:52 PM"). Never the phone's own zone, and never the narrow
+// was not today ("Tue 4:52 PM") unless `timeOnly`. Never the phone's own zone, and never the narrow
 // no-break space newer engines put before PM.
-function messageClock(iso) {
+function messageClock(iso, timeOnly) {
   const d = new Date(iso);
   if (!iso || Number.isNaN(d.getTime())) return '';
   try {
@@ -11020,7 +11087,7 @@ function messageClock(iso) {
     const get = (parts, type) => ((parts.find((p) => p.type === type) || {}).value || '').replace(/[  ]/g, ' ');
     const clock = get(t, 'hour') + ':' + get(t, 'minute') + ' ' + get(t, 'dayPeriod').toUpperCase();
     const day = (x) => new Intl.DateTimeFormat('en-US', { timeZone: CAMP_TZ, year: 'numeric', month: 'numeric', day: 'numeric' }).format(x);
-    return day(d) === day(new Date()) ? clock : get(fmt({ weekday: 'short' }), 'weekday') + ' ' + clock;
+    return timeOnly || day(d) === day(new Date()) ? clock : get(fmt({ weekday: 'short' }), 'weekday') + ' ' + clock;
   } catch (e) { return ''; }
 }
 
