@@ -8316,6 +8316,9 @@ body.builder-open .sync-status-footer {
 .live-btn {
   width: 2.4rem;
   height: 2.4rem;
+  /* The live tally's steppers are scoring controls under a thumb mid-game: a 44px target at any text size (they were 38px). */
+  min-width: var(--target);
+  min-height: var(--target);
   border-radius: 50%;
   border: 1.5px solid var(--color-border);
   background: var(--color-surface);
@@ -8357,9 +8360,13 @@ body.builder-open .sync-status-footer {
 }
 
 .live-reset {
-  display: block;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   margin: 0.5rem auto 0;
   font-size: 0.8rem;
+  min-height: var(--target); /* a scoring control: a 44px target (it was 15px tall) */
+  min-width: var(--target);
 }
 
 /* Read-only spectator view of a live match */
@@ -17488,8 +17495,12 @@ button.gs-row:focus-visible {
 
 /* ── The four-team bracket's screens (Step 22; senior's Legacy Game) ──────────────────────────
    The six-team wizard's own look (step pills, team chips, the call-up callout, the medal rows) carries the flow, so the two
-   brackets look alike; these are the few pieces it has no word for, and the 44px target the wizard's links never had. */
-.four-entry .link-btn {
+   brackets look alike; these are the few pieces it has no word for, and the 44px target the wizard's links never had (the
+   six-team wizard's Undo, Back and Cancel links get it here too). */
+.four-entry .link-btn,
+.wizard-footer .link-btn,
+.completed-matches .link-btn,
+#undo-to-round1-btn {
   display: inline-flex;
   align-items: center;
   min-height: var(--target);
