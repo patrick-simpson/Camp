@@ -404,8 +404,53 @@
            kept at the very top of the page so notices are the first thing seen. -->
       <section id="whats-new" class="whats-new" hidden></section>
 
+      <!-- ── THE MESSAGES STRIP (redesign §3.2; Step 17) ─────────────────────
+           Three siblings, in this order, so annBelow()'s "sections under the
+           strip" still starts at #announcements' next sibling:
+             #now-notice     a posted notice, cut to ONE strip: its title, its
+                             first line, the viewer's own team's assignment, "See
+                             all" (opens #sheet-notice: the whole notice) and, for
+                             directors, "Take down" (setNoticeStatus('draft'), the
+                             10-second Undo). Hidden while no notice is posted, on
+                             send-off Saturday (the notice IS the Now card there)
+                             and under a live reveal. No × : a notice stays until
+                             a director takes it down.
+             #announcements  the banners (BANNER MARKUP, after Tell everyone),
+                             unchanged: join bar first, then newest first.
+             #now-msgs-more  "2 more messages" when the strip would pass a third
+                             of the screen (§3.2: about 280px on a 390×844 phone;
+                             measured here, the notice strip is ~118px and a one-
+                             line banner ~72px, so: the notice + 2 banners, or 3
+                             banners, then this row). Opens #sheet-messages with
+                             every banner. Its count is #now-msgs-more-text.
+           The notice strip's parts are static and patched in place:
+             #now-notice-title     the notice's title (else its first line)
+             #now-notice-sub       its first line ("" hides it)
+             #now-notice-yours     the viewer's team's line, written whole
+                                   (setHtmlIfChanged), hidden when the viewer has no
+                                   team on it:
+                <span class="nn-mark">teamMarkHtml(id, {size: 24})</span>
+                <span class="nn-words"><b>Foxes</b> · Dining hall<small>tables and floor</small></span>
+             #now-notice-all       See all
+             #now-notice-down      Take down (editors only; hidden otherwise) -->
+      <section id="now-notice" class="msg nn" data-kind="notice" aria-labelledby="now-notice-title" hidden>
+        <span class="msg-ico" aria-hidden="true"><svg class="ico"><use href="#i-pin"/></svg></span>
+        <div class="msg-body">
+          <h2 class="nn-title" id="now-notice-title"></h2>
+          <p class="msg-text nn-sub" id="now-notice-sub"></p>
+          <p class="nn-yours" id="now-notice-yours" hidden></p>
+          <p class="msg-meta nn-acts">
+            <button type="button" class="nn-all" id="now-notice-all" aria-haspopup="dialog" aria-controls="sheet-notice">See all<svg class="ico" aria-hidden="true"><use href="#i-chev-r"/></svg></button>
+            <button type="button" class="msg-remove nn-down" id="now-notice-down" hidden>Take down</button>
+          </p>
+        </div>
+      </section>
+
       <!-- ── ANNOUNCEMENTS (📣 editor broadcasts; expire on their own, 1h default) ── -->
       <section id="announcements" class="announcements" hidden></section>
+      <button type="button" class="nw-more-msgs" id="now-msgs-more" aria-haspopup="dialog" aria-controls="sheet-messages" hidden>
+        <span id="now-msgs-more-text">2 more messages</span><svg class="ico" aria-hidden="true"><use href="#i-chev-r"/></svg>
+      </button>
 
       <!-- ── YOUR TEAM + NOTIFY (right under the role line) ── -->
       <section class="you-strip">
@@ -2525,6 +2570,61 @@
       <div class="sheet-body">
         <p id="cleanup-desc" class="muted card-desc">Each meal a team is on cleanup — pick a day to see the rota.</p>
         <div id="cleanup-body"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Now's three reading sheets (Step 17). Shell sheets, opened from Now:
+         #sheet-notice      "See all" on the notice strip: the whole posted
+                            notice. #sheet-notice-title = its title,
+                            #sheet-notice-sub its first line, #sheet-notice-body
+                            NOTICE MARKUP (index.html, at #now-card).
+         #sheet-messages    "2 more messages": every banner the strip had no room
+                            for, as BANNER MARKUP (the strip's own delegated × and
+                            Remove for everyone work the same here).
+         #sheet-whos-where  "Who's where": every station of this elective slot
+                            and the break list (STATIONS markup), the viewer's
+                            name in bold. #whos-where-when "Elective 1 · 1:15–2:00". -->
+  <div id="sheet-notice" class="sheet-overlay" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-notice-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-notice-title">Notice</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="sheet-body">
+        <p class="nw-sheet-lede" id="sheet-notice-sub"></p>
+        <div id="sheet-notice-body"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="sheet-messages" class="sheet-overlay" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-messages-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-messages-title">Messages</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="sheet-body">
+        <div class="nw-msgs" id="sheet-messages-body"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="sheet-whos-where" class="sheet-overlay" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-whos-where-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-whos-where-title">Who's where</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="sheet-body">
+        <p class="nw-sheet-lede" id="whos-where-when"></p>
+        <div id="whos-where-body"></div>
       </div>
     </div>
   </div>

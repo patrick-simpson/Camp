@@ -2208,10 +2208,11 @@ jelly-switch:not([checked])::part(track) {
    at #now-reveal in index.html. */
 
 /* Now becomes the reveal: one attribute on the tab, set with #now-reveal. The
-   notice, the team strip, the schedule banner, a live board, the Now card and
-   its lists, the grid and the champion line step aside; announcements (an
-   emergency outranks the moment) and the builder stay. */
-#tab-now[data-reveal="live"] > :is(#notice-board, #whats-new, .you-strip, #now-banner, #live-home, #now-reveal-grid, #now-champion, #now-card, #now-todo, #now-next, #now-later) {
+   notice (old card and Step 17's strip), the team strip, the schedule banner, a
+   live board, the Now card and its lists, the grid and the champion line step
+   aside; announcements and their "N more" row (an emergency outranks the
+   moment) and the builder stay. */
+#tab-now[data-reveal="live"] > :is(#notice-board, #whats-new, .you-strip, #now-banner, #live-home, #now-reveal-grid, #now-champion, #now-notice, #now-card, #now-todo, #now-next, #now-later) {
   display: none;
 }
 .now-reveal[hidden],
@@ -16068,7 +16069,9 @@ html:not(.calm-motion) .gr[data-status="live"] .gr-st::after {
 }
 .nw-link .ico,
 .nw-day .ico,
-.nw-sec-more .ico {
+.nw-sec-more .ico,
+.nw-more-msgs .ico,
+.nn-all .ico {
   width: 16px;
   height: 16px;
   stroke-width: 2.6;
@@ -16247,6 +16250,205 @@ html:not(.calm-motion) .gr[data-status="live"] .gr-st::after {
   }
 }
 
+/* ── Notice markup (#sheet-notice, the send-off card) ──────────
+   Your team's spot first, in the team's outline; every team as hairline rows;
+   the running order as plain lists. No pills, no capitals, no blue wash. */
+.nb-yours {
+  margin: 4px 0 0;
+  padding: 10px 12px 12px;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 2px var(--team);
+}
+.nb-yours-k {
+  margin: 0;
+  font: var(--t-label);
+  color: var(--ink-2);
+}
+.nb-yours-p {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 6px 0 0;
+  font: 800 1.25rem/1.2 var(--font-ui);
+  letter-spacing: var(--track-row);
+  overflow-wrap: break-word;
+}
+.nb-yours-p > span {
+  min-width: 0;
+}
+.nb-yours-p small,
+.nb-place small {
+  display: block;
+  margin-top: 2px;
+  font: var(--t-meta);
+  letter-spacing: 0;
+  color: var(--ink-2);
+}
+.nb-zones {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.nb-zone {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr) minmax(0, auto);
+  align-items: center;
+  column-gap: 10px;
+  min-height: 3rem;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+}
+.nb-zone:first-child {
+  border-top: 0;
+}
+.nb-zone > .tm {
+  justify-self: center;
+}
+.nb-team {
+  min-width: 0;
+  font: 650 0.9375rem/1.3 var(--font-ui);
+  color: var(--ink-2);
+  overflow-wrap: break-word;
+}
+.nb-zone[data-mine] .nb-team {
+  color: var(--ink);
+  font-weight: 800;
+}
+.nb-place {
+  min-width: 0;
+  text-align: right;
+  font: 800 1rem/1.25 var(--font-ui);
+  overflow-wrap: break-word;
+}
+.nb-steps {
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.nb-step + .nb-step {
+  margin-top: 12px;
+}
+.nb-when {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  margin: 0;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--line);
+  font: 800 1rem/1.3 var(--font-ui);
+}
+.nb-items {
+  margin: 6px 0 0;
+  padding-left: 1.25rem;
+}
+.nb-items li {
+  font: 600 0.9375rem/1.45 var(--font-ui);
+}
+.nb-items li::marker {
+  color: var(--ink-3);
+}
+.nb-signoff {
+  margin: 14px 0 0;
+  font: 750 1rem/1.35 var(--font-ui);
+}
+@container nw-card (max-width: 16rem) {
+  .nb-zone {
+    grid-template-columns: 26px minmax(0, 1fr);
+  }
+  .nb-place {
+    grid-column: 2;
+    text-align: left;
+  }
+}
+
+/* ── The messages strip (§3.2) ─────────────────────────────────
+   The notice as ONE strip in the message tint: its pin tile, the title, its
+   first line, YOUR team's spot, then See all (and Take down for directors).
+   Nothing to dismiss: a notice stays until a director takes it down. */
+.nn {
+  grid-template-columns: 34px minmax(0, 1fr);
+  padding-right: 14px;
+}
+.nn-title {
+  margin: 0;
+  font: 800 1.0625rem/1.28 var(--font-ui);
+  letter-spacing: var(--track-row);
+  overflow-wrap: break-word;
+}
+.nn-sub {
+  margin-top: 2px;
+  font-weight: 600;
+}
+.nn-sub:empty {
+  display: none;
+}
+.nn-yours {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 9px;
+  margin: 8px 0 0;
+  font: 650 0.9375rem/1.3 var(--font-ui);
+  overflow-wrap: break-word;
+}
+.nn-mark {
+  display: grid;
+  place-items: center;
+}
+.nn-words b {
+  font-weight: 800;
+}
+.nn-words small {
+  display: block;
+  font: 600 0.875rem/1.3 var(--font-ui);
+  color: var(--ink-2);
+}
+.nn-acts {
+  gap: 0 18px;
+  margin-top: 6px;
+}
+/* 16px link words: link blue on the message tint clears 4.5:1 from 16px. */
+.nn-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-height: var(--target);
+  margin: -12px 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: 750 1rem/1.2 var(--font-ui);
+  cursor: pointer;
+}
+/* "2 more messages": the strip's tail, tucked under it, not a new section. */
+.nw-more-msgs {
+  display: inline-flex;
+  align-self: flex-start;
+  align-items: center;
+  gap: 2px;
+  min-height: var(--target);
+  margin: -12px 0 -6px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: 750 1rem/1.2 var(--font-ui);
+  cursor: pointer;
+}
+/* The sheet that holds the rest: banners as the strip draws them. */
+.nw-msgs > .msg + .msg {
+  margin-top: var(--s-2);
+}
+.nw-sheet-lede {
+  margin: 0 0 var(--s-3);
+  font: 600 0.9375rem/1.4 var(--font-ui);
+  color: var(--ink-2);
+}
+.nw-sheet-lede:empty {
+  display: none;
+}
+
 /* ── Under the card: Still to do today, Up next, Later today ─────
    Flat rows on paper (§3.4: never cards). A section's name is sentence case in
    ink-2 with Whole day at the right; a hairline under it, hairlines between
@@ -16411,7 +16613,8 @@ button.nr:first-child {
   .nr,
   .nw-h,
   .nw-sec-h,
-  .es-st {
+  .es-st,
+  .nb-zone {
     border-color: var(--ink-3);
   }
 }

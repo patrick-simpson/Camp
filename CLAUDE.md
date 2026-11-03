@@ -754,6 +754,40 @@ never rebuilds a segmented control under a finger.
   app header (and anything else `position: sticky`) scrolled away with the
   page — v197 shipped that way. Don't put `hidden` back on its own.
 
+## Now, block by block (Step 17 — markup and visual system; NOT wired yet)
+
+Redesign §3, mockups 01, 01b, 02, 03, 04, 12, 13. Static markup in `#tab-now` (all of it ships
+`hidden`; today's `.you-strip`, `#now-banner`, `#live-home` and `#notice-board` still render Now until
+the build session's `nowModel()` replaces them, and their ids stay until the tests that look them up
+move), styled in styles.css's last block, "NOW, BLOCK BY BLOCK". **Every hook and every row template is
+documented in index.html's comment at `#now-card`** (and at `#now-notice` for the messages strip); the
+specimens in `docs/build-notes/verify/step17-design.cjs` fill those templates in the real page and
+measure 44px targets, sideways scroll and overflowing text for every kind, both camps, 360 / 390, light /
+dark, 100 / 130 / 200 % (`SHOTS=1` for screenshots).
+
+- **The card** `#now-card[data-kind][data-over]`: kicker (`#now-card-k` / `-when` / `-left`), the 3px
+  hairline (`#now-card-fill` reads `--p`, patched alone), `#now-card-over` (Your station · Not Sam?
+  Change), the title (`#now-card-emoji` + `#now-card-label`, capped at `11cqi` so the longest word stays
+  whole at 200 %), and the roots `#now-card-sub`, `#now-card-notes` (plain `.nw-note` lines),
+  `#now-card-body` (the kind's own content), `#now-card-foot` (directors: Still on this · +10 min, or
+  the send-off notice's Take down) and `#now-moment` (the gold panel at the card's foot: the cleanup
+  moment for everyone, verse points for directors, using award.js's `.aw-pt` keys and lock). `night`
+  is the one dimmed card; `data-over` turns the hairline and the word live red.
+- **Shared pieces**: game rows `.gr` (status mark drawn by CSS from `data-status`, ONE stretched
+  `.gr-hit` button, a sibling `.gr-score`, `.gr-why` for the own-team lock) with the podium strip `.pd`
+  and the live board `.lb` (a counselor's tally has no place numerals and keeps roster order — §4.12);
+  Step 18's Games tab reuses them. The 4-team bracket `.b4` (Step 22 data), stations `.es-*`, the verse
+  `.vs`, notice markup `.nb-*`, run rows `.nr` and to-do rows `.nr-act`.
+- **Under the card**: `#now-todo` (directors' Still to do today, right under the card as in mockups 02
+  / 04), `#now-next`, `#now-later` (Whole day rides the last shown head). **The messages strip** is
+  `#now-notice` (the posted notice as one `.msg` strip with See all → `#sheet-notice` and directors'
+  Take down), `#announcements` (unchanged) and `#now-msgs-more` → `#sheet-messages`. `#sheet-whos-where`
+  holds every station. `#tab-now[data-reveal="live"]` puts all of the new sections away except the
+  banners and their "more" row.
+- **Copy**: no "Counselors can't see this" on Now (`secrecy.test.js` counts that phrase: exactly two);
+  points never appear in a counselor's markup (the moment's keys, `.nm-saved`, `.lb-pl` and the
+  director sub "2 of 3 games still to score" are directors' only).
+
 ## The standings reveal: the screens (Step 23 — markup and visual system)
 
 Redesign §4, mockups 05, 05b, 06, 07, 07b, 07c, 09, 11 with the Appendix A
