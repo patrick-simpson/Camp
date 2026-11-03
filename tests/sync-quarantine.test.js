@@ -360,7 +360,7 @@ test('a batch that is refused as a whole (every path) parks them all and still s
     assert.equal(stateBisecting, false);
     fbConnKnown = true; fbConnected = true; syncDenied = false; sdkLoadFailed = false;
     updateSyncIndicator();
-    assert.ok(document.getElementById('sync-status').innerHTML.includes('2 changes couldn’t be saved'));
+    assert.ok(document.getElementById('gs-sync').innerHTML.includes('2 changes couldn’t be saved'));
   } finally { fbConnKnown = false; fbConnected = false; teardown(); }
 });
 
@@ -526,7 +526,7 @@ test('the sync line names what was refused, escaped, with Retry and Discard — 
     await settled();
     fbConnKnown = true; fbConnected = true; syncDenied = false; sdkLoadFailed = false;
     updateSyncIndicator();
-    const html = document.getElementById('sync-status').innerHTML;
+    const html = document.getElementById('gs-sync').innerHTML;
     const foot = document.getElementById('sync-status-footer').innerHTML;
     assert.equal(html, foot, 'both copies of the line say it');
     assert.ok(html.includes('1 change couldn’t be saved'), html);
@@ -539,14 +539,14 @@ test('the sync line names what was refused, escaped, with Retry and Discard — 
     // Cleared: the ordinary line is back.
     stateQuarantine = {};
     updateSyncIndicator();
-    assert.equal(document.getElementById('sync-status').textContent, '☁️ Synced');
+    assert.equal(document.getElementById('gs-sync').textContent, '☁️ Synced');
   } finally { fbConnKnown = false; fbConnected = false; teardown(); }
 });
 
 test('the card line says Offline first, the top bar still carries the parked edit, and a blocked or failed connection outranks both lines', async () => {
   await boot();
   try {
-    const line = () => document.getElementById('sync-status');
+    const line = () => document.getElementById('gs-sync');
     const bar = () => document.getElementById('sync-alert');
     stateQuarantine = { 'results/gB': res(1) };
     fbConnKnown = true; fbConnected = false; syncDenied = false; sdkLoadFailed = false;

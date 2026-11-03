@@ -201,13 +201,15 @@ test('a full viewer renderAll with the guard throwing completes and leaks nothin
 
 test('POSITIVE CONTROL: the same render as a director does hit the patterns (the recorder is not blind)', () => {
   seedWeek();
+  state.ui.tab = 'games'; // the standings live on the Games tab, and only the visible tab renders
   setMemberRole('editor');
   renderAll();
   const found = leaksIn(__domSweep());
-  assert.ok(found.length >= 2, 'a director\'s Games standings carry points and the ledgers\' signed numbers: ' + found.length);
-  assert.ok(found.some((f) => f.startsWith('points')), 'the standings say pts');
-  assert.ok(found.some((f) => f.startsWith('a signed number')), 'the ledgers carry signed numbers');
-  // The place and gap patterns have no director surface left to hit (the follow card's "1st place" pill went with Step 17): prove they bite.
+  assert.ok(found.length >= 3, 'a director\'s Games standings carry places, awarded points and the gap sentence: ' + found.length);
+  assert.ok(found.some((f) => f.startsWith('an ordinal place')), 'the standings say who is 1st');
+  assert.ok(found.some((f) => f.startsWith('a signed number')), 'and the points Award points added (+5 awarded)');
+  assert.ok(found.some((f) => f.startsWith('a gap word')), 'and the gap sentence says who trails');
+  // The bare "points" pattern needs a dynamic sentence sink (a toast): prove it and the place / gap patterns bite there too.
   assert.ok(leaksIn([{ kind: 'toast', text: 'Foxes are in 2nd place' }]).some((f) => f.startsWith('an ordinal place')), 'the place pattern bites');
   assert.ok(leaksIn([{ kind: 'toast', text: 'Maples trail the Foxes' }]).some((f) => f.startsWith('a gap word')), 'the gap pattern bites');
   // and the log half: a director\'s point toast lands in the sinks
@@ -215,20 +217,40 @@ test('POSITIVE CONTROL: the same render as a director does hit the patterns (the
   assert.ok(leaksIn(toast).length >= 1, 'a director\'s point toast is caught by the recorder');
 });
 
-test('a viewer\'s standings table and ledgers are emptied, not just hidden', () => {
+test('a viewer\'s standings list and gap sentence are emptied, not just hidden — from the Games tab and from any other tab', () => {
   seedWeek();
-  const tbody = document.getElementById('standings-tbody');
-  const bonus = document.getElementById('bonus-body');
-  state.ui.tab = 'games'; // the ledger lives on the Games tab, and only the visible tab renders
+  const list = document.getElementById('gs-list');
+  const gap = document.getElementById('gs-gap');
+  state.ui.tab = 'games'; // the standings live on the Games tab, and only the visible tab renders
   setMemberRole('editor');
   renderAll();
-  assert.ok(tbody.innerHTML.length > 100, 'precondition: a director\'s table has rows');
-  assert.ok(bonus.innerHTML.length > 50, 'and a ledger');
+  assert.ok(list.innerHTML.length > 100, 'precondition: a director\'s list has rows');
+  assert.ok(gap.innerHTML.length > 10, 'and a gap sentence');
   asViewer(() => renderAll()); // the role flip: a demoted editor's next render
-  assert.equal(tbody.innerHTML, '', 'the standings root is emptied');
-  assert.equal(bonus.innerHTML, '', 'the quick-points root is emptied');
-  assert.equal(document.getElementById('catchup-hint').innerHTML, '', 'and the catch-up sentence');
-  assert.equal(document.getElementById('catchup-hint').hidden, true);
+  assert.equal(list.innerHTML, '', 'the standings root is emptied');
+  assert.equal(gap.innerHTML, '', 'and the gap sentence');
+  assert.equal(gap.hidden, true);
+  // The same flip seen from ANOTHER tab: the Games panel renders only while it is showing, so the empty-out must not depend on it
+  // (runStandingsSideEffects, which runs on every pass, does it).
+  setMemberRole('editor');
+  renderAll();
+  assert.ok(list.innerHTML.length > 100, 'the director\'s list is back');
+  state.ui.tab = 'more';
+  asViewer(() => renderAll());
+  assert.equal(list.innerHTML, '', 'emptied from the More tab too: a role flip never leaves the standings in a node');
+  assert.equal(gap.innerHTML, '');
+  state.ui.tab = 'now';
+  // the quick-points sheet's own words go too (the team it was opened for, its place and points)
+  setMemberRole('editor');
+  state.ui.tab = 'games';
+  renderAll();
+  gamesOpenQuick('t1', null);
+  renderQuickSheet();
+  assert.ok(/point/.test(document.getElementById('qp-now').textContent), 'precondition: the sheet says "… points so far"');
+  asViewer(() => renderAll());
+  assert.equal(document.getElementById('qp-now').textContent, '', 'a demoted director\'s quick-points sheet says nothing');
+  assert.equal(gamesQuickReady(), false, 'and cannot open for a team');
+  state.ui.tab = 'now';
 });
 
 test('role flip: a demoted director\'s next render drops every editor-only control and number from Now, a promoted one gets them', () => {
@@ -261,7 +283,14 @@ test('the hide switches on the two secret cards are gone, and nothing un-hides t
   assert.notOk(state.meta.hiddenCards.bonus);
   const html = readFixture('../index.html');
   assert.notOk(/data-hide-card="standings"/.test(html) || /data-hide-card="bonus"/.test(html), 'no switch markup for them');
-  assert.ok((html.match(/Counselors can't see this/g) || []).length === 2, 'each carries the note instead');
+  // The standings panel is the one secret section left on the Games tab; it carries the note instead of a switch (the quick-points
+  // CARD left with Step 18: quick points are a sheet opened from a standings row, so they are as secret as the panel).
+  const markup = html.replace(/<!--[\s\S]*?-->/g, ''); // the comments describe the page; the markup is the page
+  assert.equal((markup.match(/Counselors can't see this/g) || []).length, 0, 'the old cards, which said it in straight quotes, are gone');
+  assert.equal((markup.match(/Counselors can’t see this/g) || []).length, 1, 'one panel says it');
+  const panel = html.slice(html.indexOf('<section id="games-live"'), html.indexOf('</section>', html.indexOf('<section id="games-live"')));
+  assert.ok(/data-card="standings"/.test(panel) && /Counselors can’t see this/.test(panel), 'and it is the panel that carries data-card="standings"');
+  assert.notOk(/data-card="bonus"/.test(html.replace(/<!--[\s\S]*?-->/g, '')), 'there is no quick-points card left to hide');
   // and a viewer's applyCardVisibility hides both cards
   const cards = {};
   const realQuery = document.querySelector;
@@ -491,12 +520,14 @@ test('a hint-painted director with no answer yet gets no standings anywhere, and
       log = record(() => renderAll());
     } finally { setStandingsGuardThrows(false); }
     assert.deepEqual(leaksIn(log), [], 'no sink carries a number');
-    assert.equal(document.getElementById('standings-tbody').innerHTML, '', 'no standings table');
+    assert.equal(document.getElementById('gs-list').innerHTML, '', 'no standings list');
     setMemberRole('editor');
     assert.equal(standingsVisible(), true, 'the answer confirms the director');
     assert.ok(env.saves() > 0, 'and a confirmed director writes the seed');
+    state.ui.tab = 'games';
     renderAll();
-    assert.ok(/class="points-col">\d/.test(document.getElementById('standings-tbody').innerHTML), 'the table fills in');
+    assert.ok(/class="gs-pts">\d/.test(document.getElementById('gs-list').innerHTML), 'the list fills in');
+    state.ui.tab = 'now';
   } finally { env.restore(); }
 });
 
@@ -571,15 +602,15 @@ test('a demoted director\'s change history is shut and its rows cleared on the n
 test('the readers that had no guard of their own now start with one: a viewer reaching them throws under test', () => {
   seedWeek();
   asViewer(() => {
-    assert.throws(() => startOfDayRanks([{ id: 't0' }]), 'startOfDayRanks');
+    assert.throws(() => startOfDayPlaces(), 'startOfDayPlaces');
     assert.throws(() => snapshotForLog({}), 'snapshotForLog');
-    assert.throws(() => renderCatchupHint([{ id: 't0' }, { id: 't1' }], {}), 'renderCatchupHint');
+    assert.throws(() => gamesStandings({ points: true, director: false }), 'the standings model: its own guard is the readers it calls');
     // recordPointHistory no longer reads points for a viewer at all: it returns before building a snapshot.
     assert.doesNotThrow(() => recordPointHistory({}, false), 'recordPointHistory returns before any read');
   });
   setStandingsGuardThrows(false);
   assert.deepEqual(snapshotForLog({}), { points: {}, results: {}, bonuses: {} }, 'in production a viewer gets an empty snapshot');
-  assert.deepEqual(startOfDayRanks([{ id: 't0' }]), {}, 'and no day baseline');
+  assert.equal(startOfDayPlaces(), null, 'and no day baseline');
   assert.equal(clPrevSnap, null, 'a viewer keeps no change baseline');
 });
 
@@ -610,14 +641,22 @@ test('a director demoted with a live tally and a placement game open loses every
   assert.ok(seen > 0, 'precondition: a director\'s open games carry entry controls');
 });
 
-test('the quick-points card for a counselor is empty even when called directly', () => {
+test('quick points for a counselor: no sheet opens, no write happens, and the model\'s standings are not there even when called directly', () => {
   seedWeek();
-  const wrap = document.getElementById('bonus-body');
   setMemberRole('editor');
-  renderBonuses();
-  assert.ok(/bonus-ledger/.test(wrap.innerHTML));
-  asViewer(() => renderBonuses());
-  assert.equal(wrap.innerHTML, '');
+  gamesOpenQuick('t2', null);
+  assert.equal(gamesQuickReady(), true, 'a director\'s tap on a team opens it');
+  assert.ok(gamesQuickInfo('t2'), 'and it knows the team\'s place');
+  asViewer(() => {
+    assert.equal(gamesQuickReady(), false, 'a counselor\'s sheet is not allowed');
+    assert.equal(shellSheetAllowed('quick'), false);
+    assert.equal(shellSheetAllowed('standings'), false);
+    assert.equal(gamesQuickInfo('t2'), null, 'it says nothing about a team');
+    const before = Object.keys(state.bonuses).length;
+    assert.equal(gamesQuickAdd('t2', 3, 'x').problem, 'not-director');
+    assert.equal(Object.keys(state.bonuses).length, before, 'and writes nothing');
+    assert.equal(gamesModel({ now: { dow: 3, minutes: 630 } }).standings, null);
+  });
 });
 
 // ── The first frame ──────────────────────────────────────────────────

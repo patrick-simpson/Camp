@@ -354,9 +354,10 @@ test('--pv-h is the measured bar height while up and is removed after Exit', () 
 test('walk every tab, sheet and takeover in a preview, with the points guard throwing: no points, no places, no director row', () => {
   const { live } = boot('editor') || seedWeek();
   state.meta.hiddenCards = { competitions: false };
+  state.ui.tab = 'games'; // the standings are on the Games tab, and only the visible tab renders
   renderAll(); // a director's page first, so every node holds director markup: the preview must clear it
   const before = leaksIn(__domSweep());
-  assert.ok(before.length >= 2, 'precondition: the director\'s page does carry them (' + before.length + ')'); // points and the ledgers' signed numbers (the follow card's place went with Step 17)
+  assert.ok(before.length >= 3, 'precondition: the director\'s page does carry them (' + before.length + ')'); // the standings' places, awarded points and gap sentence (the follow card's place went with Step 17)
   previewStart();
   setStandingsGuardThrows(true);
   const out = record(() => {
@@ -369,6 +370,11 @@ test('walk every tab, sheet and takeover in a preview, with the points guard thr
     closeGame();
     state.ui.tab = 'more'; renderAll();
   });
+  // The Games tab's own director pieces stay shut: the two sheets that read points and write them, the dock, the standings.
+  ['quick', 'standings'].forEach((id) => assert.equal(shellSheetAllowed(id), false, 'the ' + id + ' sheet is not a counselor\'s'));
+  assert.equal(gamesQuickReady(), false);
+  assert.equal(document.getElementById('takeover-game-dock').hidden, true, 'no Next game dock on a counselor\'s takeover');
+  assert.equal(document.getElementById('gs-list').innerHTML, '', 'and no standings rows');
   assert.ok(out.length > 20, 'the recorder is live: ' + out.length + ' writes seen');
   assert.deepEqual(leaksIn(out), [], 'a sink carried a point, a place or a gap');
   assert.deepEqual(leaksIn(__domSweep()), [], 'markup left in a node');
@@ -707,7 +713,7 @@ test('FIDELITY, the other way: a director who has NOT started a preview paints s
   scenario(b.ctx, 'editor', false);
   const diff = pageDiff(walkPage(a.ctx), walkPage(b.ctx), b.ctx);
   assert.ok(diff.length >= 3, 'a director\'s tabs are not a counselor\'s: ' + diff.length + ' nodes differ');
-  assert.ok(diff.some((d) => /standings|bonus|follow|pts/i.test(d)), 'and the difference is the standings and points: ' + diff.slice(0, 3).join(' | '));
+  assert.ok(diff.some((d) => /#gs-list|#gs-gap|#qp-now|standings|bonus|follow|pts/i.test(d)), 'and the difference is the standings and points: ' + diff.slice(0, 3).join(' | '));
 });
 
 // ── 5. every write gate still holds ───────────────────────────────────

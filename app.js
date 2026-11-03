@@ -4620,7 +4620,7 @@ function applyRemoteConfig(remote, opts) {
   if (upgraded && canEdit() && state.config.version !== v0) schedulePushConfig();
   if (appStarted && JSON.stringify(syncCanon(state.config)) !== beforeJson) {
     // A config change can move points (double-points flag, a deleted game with
-    // a result, a restore). It arrived from ELSEWHERE, so renderStandings must
+    // a result, a restore). It arrived from ELSEWHERE, so runStandingsSideEffects must
     // treat the totals shift as remote — exactly as applyRemoteState does —
     // and advance its baseline without logging. Left unset, every online
     // editor's device wrote its own "Points updated" changelog entries for an
@@ -5833,7 +5833,7 @@ function applyRemoteState(remote, confirmedBase, opts) {
     ? detectResultChanges(prevRefs.results, state.results) : [];
   resultAlertsArmed = true;
   if (appStarted && syncSignature() !== beforeSig) {
-    remoteJustApplied = !(opts && opts.asLocalEdit); // let renderStandings pulse rows that changed
+    remoteJustApplied = !(opts && opts.asLocalEdit); // let runStandingsSideEffects raise the point alerts for it
     const matchupChanges = detectMatchupChanges();
     renderAll();
     notifyMatchupChanges(matchupChanges);
@@ -6581,7 +6581,7 @@ function onSyncStatusClick(e) {
 }
 
 function wireSyncStatus() {
-  ['sync-status', 'sync-status-footer', 'sync-alert', 'tk-sync-alert', 'setup-sync-alert'].forEach((id) => {
+  ['gs-sync', 'sync-status-footer', 'sync-alert', 'tk-sync-alert', 'setup-sync-alert'].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.addEventListener('click', onSyncStatusClick);
   });
@@ -6720,11 +6720,11 @@ function updateSyncIndicator() {
   updateSyncAlert();
   renderSyncPill();
   if (typeof setupNotify === 'function') setupNotify('sync'); // the builder frame's own sync line follows the same truth
-  // Two copies of the line: the one in the Current Standings card (directors)
-  // and a footer one that only view-only devices WITHOUT the standings card show
-  // (styles.css, html.standings-shown), because the card is not rendered for them
+  // Two copies of the line: the one in the Games standings panel (directors)
+  // and a footer one that only view-only devices WITHOUT the standings panel show
+  // (styles.css, html.standings-shown), because the panel is not rendered for them
   // any more (see "Standings secrecy").
-  const els = ['sync-status', 'sync-status-footer'].map((id) => document.getElementById(id)).filter(Boolean);
+  const els = ['gs-sync', 'sync-status-footer'].map((id) => document.getElementById(id)).filter(Boolean);
   if (!els.length) return;
   const spinner = '<jelly-spinner type="dots" size="small" label="Connecting"></jelly-spinner> Connecting…';
   let text = null; // plain text, or
@@ -8071,6 +8071,7 @@ async function exportTeamPhotos(g, teamId, btn) {
 
 function copyTextToClipboard(text, btn) {
   const done = () => {
+    if (typeof btn === 'function') { btn(); return; } // a caller that says "Copied" its own way
     if (!btn) return;
     const orig = btn.textContent;
     btn.textContent = '✓ Copied!';
@@ -8282,37 +8283,18 @@ function rankTeamsByPoints(counts) {
   });
 }
 
-let lastPointsByTeam = null; // for the remote-change pulse
-const POINTS_PULSE_MS = 700; // styles.css .points-pulse runs 0.6 s; a little margin
-const pointsPulseUntil = {}; // team id → ms timestamp its pulse class stays in the markup
+let lastPointsByTeam = null; // for the point alerts (a change that arrived from another phone)
 let remoteJustApplied = false;
 
 // ── Rank-change arrows (vs the start of the camp day) ─────────────
-// Each device snapshots the standings order the first time it renders on a
-// new camp date, then shows ↑n/↓n per row against that baseline. Deliberately
-// device-local (NOT synced): every phone keeps its own morning baseline.
+// Each device snapshots the standings the first time it renders on a new camp date, then the Games tab shows an arrow per team
+// against that baseline. Deliberately device-local (NOT synced): every phone keeps its own morning baseline.
 const DAY_RANK_KEY = lsKey('campScoreboardDayRanks');
 
-function startOfDayRanks(ranked) {
-  if (!pointsReadAllowed('startOfDayRanks')) return {}; // a points reader: no baseline for a viewer
-  const today = campDateStr();
-  let snap = null;
-  try {
-    snap = JSON.parse(localStorage.getItem(DAY_RANK_KEY) || 'null');
-  } catch (e) { /* corrupt — re-snapshot below */ }
-  if (!snap || snap.date !== today || !snap.ranks) {
-    const ranks = {};
-    ranked.forEach((t, i) => { ranks[t.id] = i + 1; });
-    snap = { date: today, ranks };
-    try { localStorage.setItem(DAY_RANK_KEY, JSON.stringify(snap)); } catch (e) { /* fine */ }
-  }
-  return snap.ranks;
-}
-
-// The same baseline as SHARED PLACES (reveal-core's groupPlaces: equal points share one), for the Games standings' arrows.
+// The day's baseline as SHARED PLACES (reveal-core's groupPlaces: equal points share one), for the Games standings' arrows.
 // `flat` is a baseline taken while nobody had a point: every team was level, so "moved since this morning" would say nothing
-// and the arrows stay off for the rest of that day. One stored record with startOfDayRanks' (a phone's older one has no
-// `places` and is taken afresh). Null for a phone that may not read points.
+// and the arrows stay off for the rest of that day. A record from an older build (positions, no `places`) is taken afresh.
+// Null for a phone that may not read points.
 function startOfDayPlaces() {
   if (!pointsReadAllowed('startOfDayPlaces')) return null;
   const today = campDateStr();
@@ -8320,135 +8302,52 @@ function startOfDayPlaces() {
   try {
     snap = JSON.parse(localStorage.getItem(DAY_RANK_KEY) || 'null');
   } catch (e) { /* corrupt — re-snapshot below */ }
-  if (!snap || snap.date !== today || !snap.ranks || !snap.places) {
+  if (!snap || snap.date !== today || !snap.places) {
     const counts = medalCounts();
     const ranked = rankTeamsByPoints(counts);
     const groups = groupPlaces(ranked.map((t) => ({ id: t.id, nm: t.name, p: counts[t.id].points, g: counts[t.id].gold, s: counts[t.id].silver, b: counts[t.id].bronze })));
-    const ranks = {};
-    ranked.forEach((t, i) => { ranks[t.id] = i + 1; });
     const places = {};
     groups.forEach((gr) => gr.entries.forEach((e) => { places[e.id] = gr.place; }));
-    snap = { date: today, ranks, places, flat: ranked.every((t) => counts[t.id].points === 0) };
+    snap = { date: today, places, flat: ranked.every((t) => counts[t.id].points === 0) };
     try { localStorage.setItem(DAY_RANK_KEY, JSON.stringify(snap)); } catch (e) { /* fine */ }
   }
   return { places: snap.places, flat: !!snap.flat };
 }
 
-function renderStandings() {
-  // (Card visibility + the hide switches are handled centrally by
-  // applyCardVisibility, called at the top of renderAll.)
-  const tbody = document.getElementById('standings-tbody');
+// Everything the standings DO besides being drawn — for every render pass, whatever tab is showing (§13.9: the Games panel that
+// draws them paints only while it is on screen, so these could not live in it). Directors only: the start-of-day place baseline
+// (the Games arrows' "since this morning"), the point alerts for a change that arrived from another phone, and the change
+// history. No DOM. A phone that may not read points computes nothing about them and forgets what it had (a demoted editor's
+// next render drops the baseline of the pulse and the history with it).
+function runStandingsSideEffects() {
   if (!standingsVisible()) {
-    // Not a director: nothing about points, places or gaps is computed or drawn
-    // (see "Standings secrecy"). The card is hidden for them by
-    // applyCardVisibility; this empties it too, so a demoted editor's next
-    // render drops every editor-only node instead of leaving the table in the
-    // DOM behind a hidden card. The next director render starts clean: no
-    // pulse baseline, no point-history baseline carried across the role flip.
-    setHtmlIfChanged(tbody, '');
-    const hint = document.getElementById('catchup-hint');
-    if (hint) { setHiddenIfChanged(hint, true); setHtmlIfChanged(hint, ''); }
     lastPointsByTeam = null;
     clPrevSnap = null;
     remoteJustApplied = false;
+    // The standings panel renders only while Games is showing, so a role flip seen from another tab must still empty it.
+    if (typeof gamesClearStandings === 'function') gamesClearStandings();
     return;
   }
   const counts = medalCounts();
   const ranked = rankTeamsByPoints(counts);
-  // Pulse rows whose points changed because of a remote sync (invisible
-  // otherwise). Skip the very first render and local edits (those already
-  // get confetti / direct feedback).
+  // A change that came from ANOTHER phone (a remote sync, not this director's own edit — those already get direct feedback).
+  // Skip the very first pass (nothing to compare with).
   const remoteOrigin = remoteJustApplied; // capture before reset — drives change-history logging
-  const pulseFromRemote = remoteOrigin && lastPointsByTeam !== null;
+  const fromRemote = remoteOrigin && lastPointsByTeam !== null;
   remoteJustApplied = false;
   const changedTeams = []; // {team, delta, total} — for the notify option
-  const dayRanks = startOfDayRanks(ranked);
-
-  // Rows are built as one string and written through setHtmlIfChanged: this
-  // runs on every renderAll and the 30 s tick, and re-creating identical rows
-  // dropped any text selected in the table and cut a running points-pulse off
-  // mid-fade. The pulse class is held in the markup for POINTS_PULSE_MS after
-  // it starts (below), so a render inside that window is an identical string
-  // and leaves the animating rows alone.
-  const now = Date.now();
-  const rowsHtml = ranked.map((team, i) => {
-    const s = counts[team.id];
-    // Movement since this device's start-of-day baseline. Zero-point tables
-    // stay arrow-free (same gate as the podium tint).
-    const moved = s.points > 0 && dayRanks[team.id] ? dayRanks[team.id] - (i + 1) : 0;
-    const rankDelta = moved
-      ? `<span class="rank-delta ${moved > 0 ? 'up' : 'down'}" title="${moved > 0 ? 'Up' : 'Down'} ${Math.abs(moved)} since this morning">${moved > 0 ? '↑' : '↓'}${Math.abs(moved)}</span>`
-      : '';
-    // Podium tint for the top 3 — but only once real points exist, so
-    // Monday's all-zero table stays neutral.
-    const cls = [];
-    if (i < 3 && s.points > 0) cls.push('podium-row', 'podium-' + (i + 1));
-    if (team.id === state.followTeam) cls.push('following-row');
-    if (pulseFromRemote && lastPointsByTeam[team.id] !== undefined && lastPointsByTeam[team.id] !== s.points) {
-      pointsPulseUntil[team.id] = now + POINTS_PULSE_MS;
-      changedTeams.push({ team, delta: s.points - lastPointsByTeam[team.id], total: s.points });
+  startOfDayPlaces(); // takes the day's baseline the first time a director's phone renders on a new camp date
+  ranked.forEach((team) => {
+    if (fromRemote && lastPointsByTeam[team.id] !== undefined && lastPointsByTeam[team.id] !== counts[team.id].points) {
+      changedTeams.push({ team, delta: counts[team.id].points - lastPointsByTeam[team.id], total: counts[team.id].points });
     }
-    if ((pointsPulseUntil[team.id] || 0) > now) cls.push('points-pulse');
-    const medalCell = (n) => `<td class="medal-col">${n ? n : '<span class="zero">0</span>'}</td>`;
-    // Signed cell for the point-source columns (verse / meals): dim a zero,
-    // show a leading + only for positive tallies (deductions keep their −).
-    const extraCell = (n) => `<td class="extra-col">${n ? (n > 0 ? '+' + n : n) : '<span class="zero">0</span>'}</td>`;
-    return `<tr class="${cls.join(' ')}">
-      <td class="rank-col">${i + 1}${rankDelta}</td>
-      <td class="team-cell">
-        <div class="team-name-line"><span class="team-emoji">${teamEmoji(team.id)}</span> <span class="team-name-text">${esc(team.name)}</span>${team.id === state.followTeam ? ' <span class="following-star" title="You\'re following this team">⭐</span>' : ''}</div>
-        ${counselorName(team.id) ? `<div class="team-counselor-text">${esc(counselorName(team.id))}</div>` : ''}
-      </td>
-      <td class="points-col">${s.points}${s.custom ? `<span class="bonus-hint">${s.custom > 0 ? '+' : ''}${s.custom} bonus</span>` : ''}</td>
-      ${medalCell(s.gold)}
-      ${medalCell(s.silver)}
-      ${medalCell(s.bronze)}
-      ${extraCell(s.verse)}
-      ${extraCell(s.meals)}
-    </tr>`;
-  }).join('');
-  setHtmlIfChanged(tbody, rowsHtml);
+  });
   lastPointsByTeam = {};
   ranked.forEach((team) => { lastPointsByTeam[team.id] = counts[team.id].points; });
-  renderCatchupHint(ranked, counts);
   if (changedTeams.length) notifyPointChanges(changedTeams);
   // Append any local point-total changes to the change-history log. Best-effort:
   // wrapped so a logging failure can never break the standings render.
   try { recordPointHistory(counts, remoteOrigin); } catch (e) { /* never break rendering */ }
-}
-
-// One-line rally cry under the standings table: how far a chasing team is
-// from first place, in gold-medal terms. Focuses on the viewer's followed
-// team when it's trailing; otherwise the 2nd-place team. Hidden until real
-// points exist so Monday's all-zero table stays neutral.
-function renderCatchupHint(ranked, counts) {
-  const el = document.getElementById('catchup-hint');
-  if (!el) return;
-  if (!pointsReadAllowed('renderCatchupHint')) { setHiddenIfChanged(el, true); setHtmlIfChanged(el, ''); return; }
-  const leader = ranked[0];
-  if (!leader || ranked.length < 2 || counts[leader.id].points <= 0) {
-    setHiddenIfChanged(el, true);
-    setHtmlIfChanged(el, '');
-    return;
-  }
-  let chaser = null;
-  if (state.followTeam && state.followTeam !== leader.id) {
-    chaser = ranked.find((t) => t.id === state.followTeam);
-  }
-  if (!chaser) chaser = ranked[1];
-  const gap = counts[leader.id].points - counts[chaser.id].points;
-  const pair = `${teamEmoji(chaser.id)} <strong>${esc(chaser.name)}</strong>`;
-  const leaderBit = `${teamEmoji(leader.id)} ${esc(leader.name)}`;
-  if (gap <= 0) {
-    setHtmlIfChanged(el, `🤝 ${pair} is tied on points with ${leaderBit} — next medal breaks it!`);
-  } else {
-    // During the double-points window every remaining game is a doubled
-    // (messtival) game, so a gold won now is worth 2× — count with that.
-    const doubled = inDoubleBonusWindow();
-    const golds = Math.ceil(gap / (MEDAL_POINTS.gold * (doubled ? 2 : 1)));
-    setHtmlIfChanged(el, `🥇 ${pair} needs ${golds}${doubled ? ' double-points' : ''} gold${golds === 1 ? '' : 's'} (${gap} pt${gap === 1 ? '' : 's'}) to catch ${leaderBit}.`);
-  }
-  setHiddenIfChanged(el, false);
 }
 
 // ── Change history (append-only log at a SEPARATE Firebase path) ──────────────
@@ -8838,21 +8737,10 @@ function wireTeamPicker() {
   });
 }
 
-// ── Bonus points (extra points, entered + viewed here) ───────────
+// ── Bonus points (extra points, entered here and in Award points) ──
 
-const BONUS_CATEGORIES = {
-  verse:   { icon: '📖', label: 'Memory verse' },
-  cleanup: { icon: '🧽', label: 'Meal cleanup' },
-  custom:  { icon: '✨', label: 'Bonus' },
-};
-// Categories offered in the bonus entry row. 'verse' and 'cleanup' are
-// intentionally excluded — they have their own cards (Memory Verse, Meal
-// Cleanup) — but stay in BONUS_CATEGORIES so any legacy entry still resolves
-// an icon/label. Only free-form 'custom' bonuses are entered here now.
-const BONUS_ENTRY_CATEGORIES = ['custom'];
-
-// Form state for the entry row — lives outside state so it isn't synced
-// or persisted; the fields persist across adds for fast nightly entry.
+// Form state of Award points' quick-points entry — lives outside state so it isn't synced or persisted; the fields persist
+// across adds for fast nightly entry. (The Games standings' quick-points sheet keeps a draft of its own: gamesQuickAdd.)
 let bonusDraft = { category: 'custom', meal: 'Breakfast', teams: [], points: '', custom: '', sign: 1 };
 
 function bonusLabelFor(d) {
@@ -8865,144 +8753,8 @@ function newBonusId() {
   return 'b' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
 
-function renderBonuses() {
-  const wrap = document.getElementById('bonus-body');
-  if (!wrap) return;
-  // Quick points — the entry form, the per-team subtotals and the ledger — are
-  // directors' eyes only (see "Standings secrecy"). The card is hidden for
-  // everyone else; this empties it too, so a demoted editor's next render drops
-  // the ledger from the DOM instead of leaving it behind a hidden card.
-  if (!standingsVisible()) { setHtmlIfChanged(wrap, ''); return; }
-  const d = bonusDraft;
-
-  let entryHTML = '';
-  if (canEdit()) {
-    const mealRow = d.category === 'cleanup'
-      ? `<div class="bonus-meal-row">${['Breakfast', 'Lunch', 'Supper'].map((m) =>
-          `<jelly-chip class="bonus-meal-chip" selectable size="small" ${d.meal === m ? 'selected' : ''} data-meal="${m}">${esc(m)}</jelly-chip>`).join('')}</div>`
-      : '';
-    const customRow = d.category === 'custom'
-      ? `<input type="text" id="bonus-custom" class="bonus-custom-input" placeholder="What for?" value="${esc(d.custom)}" maxlength="40" />`
-      : '';
-    // Only show the category chooser if there's more than one category.
-    const catRow = BONUS_ENTRY_CATEGORIES.length > 1
-      ? `<div class="bonus-cat-row">${BONUS_ENTRY_CATEGORIES.map((key) => { const c = BONUS_CATEGORIES[key]; return `<jelly-chip class="bonus-cat-chip" selectable size="small" ${d.category === key ? 'selected' : ''} data-cat="${key}">${c.icon} ${esc(c.label)}</jelly-chip>`; }).join('')}</div>`
-      : '';
-    entryHTML = `
-      <div class="bonus-entry">
-        ${catRow}
-        ${mealRow}
-        ${customRow}
-        <p class="bonus-entry-hint muted">Pick the team(s) that earned it:</p>
-        <div class="bonus-team-chips">
-          ${state.teams.map((t) => {
-            // The own-team guard: an assigned editor can award anyone but
-            // their own team (see canScoreRound).
-            const locked = blockedByOwnTeam(t.id);
-            return `<jelly-chip class="bonus-team-chip" selectable ${d.teams.includes(t.id) ? 'selected' : ''} ${locked ? 'disabled' : ''} data-team-id="${esc(t.id)}" ${locked ? 'title="Your own team — another editor awards these"' : ''}><span class="chip-emoji">${teamEmoji(t.id)}</span> ${esc(t.name)}${locked ? ' 🛡️' : ''}</jelly-chip>`;
-          }).join('')}
-        </div>
-        <div class="bonus-add-row">
-          <jelly-icon-button id="bonus-sign" class="bonus-sign-btn ${d.sign < 0 ? 'neg' : ''}" ${d.sign < 0 ? 'variant="rose"' : ''} label="${d.sign < 0 ? 'Subtracting points — tap to add' : 'Adding points — tap to subtract'}">${d.sign < 0 ? '−' : '+'}</jelly-icon-button>
-          <input type="number" id="bonus-points" class="bonus-points-input" inputmode="numeric" placeholder="Points" value="${esc(d.points)}" />
-          <jelly-button id="bonus-add-btn" class="primary-btn" block>${d.sign < 0 ? 'Subtract points' : 'Add points'}</jelly-button>
-        </div>
-        <p id="bonus-error" class="entry-error" role="alert" hidden></p>
-      </div>`;
-  }
-
-  // Verse and cleanup points have their own cards, so this card shows only
-  // the free-form 'custom' bonuses in its subtotals and ledger.
-  const extra = {};
-  Object.values(state.bonuses || {}).forEach((b) => {
-    if (b.category === 'verse' || b.category === 'cleanup') return;
-    extra[b.teamId] = (extra[b.teamId] || 0) + (Number(b.points) || 0);
-  });
-  const withBonus = state.teams.filter((t) => extra[t.id]).sort((a, b) => extra[b.id] - extra[a.id]);
-  const subtotalsHTML = withBonus.length
-    ? `<div class="bonus-subtotals">${withBonus.map((t) =>
-        `<span class="bonus-subtotal-chip">${teamEmoji(t.id)} ${esc(t.name)} <strong>${extra[t.id] > 0 ? '+' : ''}${extra[t.id]}</strong></span>`).join('')}</div>`
-    : '';
-
-  const entries = Object.entries(state.bonuses || {})
-    .filter(([, b]) => b.category !== 'verse' && b.category !== 'cleanup')
-    .sort((a, b) => (b[1].at || '').localeCompare(a[1].at || ''));
-  const ledgerHTML = entries.length
-    ? `<ul class="bonus-ledger">${entries.map(([id, b]) => {
-        const cat = BONUS_CATEGORIES[b.category] || BONUS_CATEGORIES.custom;
-        const when = formatEasternStamp(b.at);
-        // Guard against a partially-synced entry (RTDB can prune a field).
-        const pts = Number(b.points) || 0;
-        return `<li class="bonus-item">
-          <span class="bonus-item-main">
-            <span class="bonus-item-team">${teamEmoji(b.teamId)} ${esc(teamName(b.teamId))}</span>
-            <span class="bonus-item-label">${cat.icon} ${esc(b.label || 'Bonus')}${when ? ` · ${esc(when)}` : ''}</span>
-          </span>
-          <span class="bonus-item-pts ${pts < 0 ? 'neg' : ''}">${pts > 0 ? '+' : ''}${esc(String(pts))}${bonusCountsDouble(b) ? `<span class="bonus-x2" title="Double-points window — counts as ${pts * 2} in the standings">×2</span>` : ''}</span>
-          ${canEdit() ? `<jelly-icon-button class="bonus-remove-btn" variant="rose" label="Remove this bonus" data-bonus-id="${esc(id)}">✕</jelly-icon-button>` : ''}
-        </li>`;
-      }).join('')}</ul>`
-    : `<p class="muted bonus-empty">No bonus points yet.</p>`;
-
-  const doubleNote = inDoubleBonusWindow()
-    ? `<div class="messtival-banner">⚡ Double points tonight &amp; Friday — bonus points count double in the standings (meal cleanup stays normal)!</div>`
-    : '';
-  if (!setHtmlIfChanged(wrap, doubleNote + entryHTML + subtotalsHTML + ledgerHTML)) return;
-
-  if (canEdit()) bindBonusEntry(wrap);
-  wrap.querySelectorAll('.bonus-remove-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const id = btn.dataset.bonusId;
-      const b = state.bonuses[id];
-      if (!b) return;
-      const label = b.label || 'Bonus';
-      const pts = Number(b.points) || 0;
-      // Removals sync everywhere; every other destructive action confirms.
-      if (!confirm(`Remove "${label}" (${pts > 0 ? '+' : ''}${pts} pts) for ${teamName(b.teamId)}?`)) return;
-      if (!removeBonusEntry(id)) { showToast("Your own team's points are changed by another director."); return; }
-      renderAll();
-    });
-  });
-}
-
-function bindBonusEntry(wrap) {
-  const d = bonusDraft;
-
-  wrap.querySelectorAll('.bonus-cat-chip').forEach((btn) => {
-    btn.addEventListener('click', () => { d.category = btn.dataset.cat; renderBonuses(); });
-  });
-  wrap.querySelectorAll('.bonus-meal-chip').forEach((btn) => {
-    btn.addEventListener('click', () => { d.meal = btn.dataset.meal; renderBonuses(); });
-  });
-  wrap.querySelectorAll('.bonus-team-chip').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const id = btn.dataset.teamId;
-      if (!canScoreRound(id)) return; // own-team guard (the chip is disabled too)
-      const i = d.teams.indexOf(id);
-      if (i > -1) d.teams.splice(i, 1); else d.teams.push(id);
-      renderBonuses();
-    });
-  });
-  const customInput = wrap.querySelector('#bonus-custom');
-  if (customInput) customInput.addEventListener('input', () => { d.custom = customInput.value; });
-  const ptsInput = wrap.querySelector('#bonus-points');
-  if (ptsInput) ptsInput.addEventListener('input', () => { d.points = ptsInput.value; });
-  // The iOS numeric keypad has no minus key, so the sign is a toggle button
-  // (points can be deducted, e.g. penalties).
-  const signBtn = wrap.querySelector('#bonus-sign');
-  if (signBtn) signBtn.addEventListener('click', () => { d.sign = d.sign < 0 ? 1 : -1; renderBonuses(); });
-
-  const addBtn = wrap.querySelector('#bonus-add-btn');
-  if (addBtn) addBtn.addEventListener('click', () => {
-    const errEl = wrap.querySelector('#bonus-error');
-    const problem = bonusAddFromDraft();
-    if (problem) { errEl.textContent = BONUS_PROBLEMS[problem]; errEl.hidden = false; return; }
-    renderAll();
-  });
-}
-
-// ── The quick-points writers (the Games tab's entry row and Award points share them) ──
-// ONE way to add a custom bonus and ONE way to remove a ledger entry, so the two screens that show the ledger can
+// ── The quick-points writers (the Games standings' quick-points sheet and Award points share them) ──
+// ONE way to add a custom bonus and ONE way to remove a ledger entry, so the two screens that give points can
 // never disagree about a rule (the own-team guard, the 1–100 range, the sign). Both work on the shared `bonusDraft`.
 const BONUS_PROBLEMS = {
   teams: 'Pick at least one team.',
@@ -9428,175 +9180,13 @@ function setCleanupPoints(teamId, dow, meal, pts) {
   renderAll();
 }
 
-// ── Day tabs + game list ─────────────────────────────────────────
-
-// The day nav is a jelly-tabs: one jelly-tab-panel per configured day, each
-// pre-rendered with that day's full lineup. Switching days is handled
-// entirely by the component (panel fade, pill spring) — the change handler
-// only records state.ui.day, no renderAll round-trip. jelly-tabs builds its
-// tab bar once at connect from the panels present, so a change to the day
-// set or a tab label (builder edits, the "today" dot moving at midnight)
-// writes a fresh element; anything else updates the panels in place.
-function renderDayTabs() {
-  const nav = document.getElementById('day-tabs');
-  if (!nav) return;
-  const days = competitionDays();
-  const todayDow = campNow().dow; // camp time, not device time
-  if (!days.some((d) => d.id === state.ui.day)) state.ui.day = defaultDay(state.config);
-  const todayDay = days.find((d) => d.dow === todayDow);
-
-  // Same day set and labels as the tab bar already on screen ⇒ refresh just
-  // the panels that changed, in place. A fresh <jelly-tabs> rebuilds its
-  // canvas tab bar, and this runs on every remote snapshot — the bar blinked
-  // each time anyone saved a score.
-  const label = (d) => d.name.slice(0, 3) + (d.dow === todayDow ? ' •' : '');
-  const inners = days.map((d) => `${dayNoteHTML(d, todayDay)}<div class="day-panel-body">${dayGamesHTML(d)}</div>`);
-  const tabsSig = JSON.stringify(days.map((d) => [d.id, label(d)]));
-  const live = nav.querySelector('jelly-tabs');
-  const panels = live ? [...live.querySelectorAll('jelly-tab-panel')] : [];
-  if (live && nav.__tabsShell === tabsSig && panels.length === days.length) {
-    panels.forEach((p, i) => { if (setHtmlIfChanged(p, inners[i])) wireDayPanels(p); });
-    if (live.getAttribute('value') !== state.ui.day) live.setAttribute('value', state.ui.day);
-    return;
-  }
-  nav.__tabsShell = tabsSig;
-
-  nav.innerHTML = `<jelly-tabs class="day-tabs" size="small" value="${esc(state.ui.day)}">` +
-    days.map((d, i) =>
-      `<jelly-tab-panel value="${esc(d.id)}" label="${esc(label(d))}"${d.id === state.ui.day ? ' active' : ''}>${inners[i]}</jelly-tab-panel>`).join('') +
-    '</jelly-tabs>';
-  // Stamp each panel the way setHtmlIfChanged would have, so the first
-  // in-place refresh can tell an unchanged panel from a changed one.
-  nav.querySelectorAll('jelly-tab-panel').forEach((p, i) => { p.__html = inners[i]; p.__dom = p.innerHTML; });
-
-  const tabs = nav.querySelector('jelly-tabs');
-  tabs.addEventListener('change', (e) => {
-    const value = e.detail && e.detail.value;
-    if (!value || value === state.ui.day) return;
-    state.ui.day = value;
-    // The component's own panel transition is the animation: no renderAll.
-    saveState();
-  });
-
-  settleDayTabPill(tabs);
-  wireDayPanels(nav);
-}
-
-// A fresh <jelly-tabs> whose active day isn't the first one used to start its
-// blue pill over "Mon" and spring across to the real day: jelly-segmented
-// places the pill from its first sync(), which runs before its jelly-segment
-// children have upgraded (no values yet ⇒ index 0), and the corrected sync a
-// microtask later only moves the TARGET. Snap the pill onto the target once
-// the component has re-synced. Creation only — never in the change handler,
-// where the spring is the whole point.
-function settleDayTabPill(tabs) {
-  const seg = tabs && tabs.shadowRoot && tabs.shadowRoot.querySelector('jelly-segmented');
-  if (!seg) return;
-  const snap = () => {
-    if (seg.reflecting || !('pillTarget' in seg)) return;
-    seg.pillX = seg.pillTarget;
-    seg.pillXVelocity = 0;
-    if (seg.requestFrame) seg.requestFrame();
-  };
-  snap();
-  Promise.resolve().then(snap); // after the segmented's own mutation-observer re-sync
-}
-
-// The "you're not looking at today" note, now rendered per panel.
-function dayNoteHTML(day, todayDay) {
-  let text = null;
-  if (!todayDay) text = 'No games today — showing ' + day.name + "'s lineup.";
-  else if (todayDay.id !== day.id) text = 'Heads up: today is ' + todayDay.name + ' — you are viewing ' + day.name + '.';
-  return text ? `<p class="day-note">${esc(text)}</p>` : '';
-}
+// ── Game formats ─────────────────────────────────────────────────
 
 const FORMAT_BADGES = {
   tournament: { label: 'Bracket', cls: 'badge-bracket', variant: 'azure' },
   tally: { label: 'Score entry', cls: 'badge-tally', variant: 'amber' },
   placement: { label: 'Podium pick', cls: 'badge-podium', variant: 'platinum' },
 };
-
-function gameStatus(g) {
-  if (state.results[g.id]) return 'done';
-  if (state.brackets[g.id]) return 'in-progress';
-  const d = state.drafts[g.id];
-  if (d && ((d.scores && Object.values(d.scores).some((v) => String(v).trim() !== '')) || (d.medals && Object.values(d.medals).some(Boolean)))) return 'in-progress';
-  return 'ready';
-}
-
-// One day's full lineup, rendered into its jelly-tab-panel by renderDayTabs.
-function dayGamesHTML(day) {
-  const dayGames = gamesForDayId(day.id);
-  const knownSessions = state.config.sessions;
-  // Defensive: still show games whose session isn't in the configured list.
-  const sessions = knownSessions.concat(
-    [...new Set(dayGames.map((g) => g.session))].filter((s) => !knownSessions.includes(s))
-  );
-
-  let html = '';
-  // Double-points banner — day-agnostic (the flag started as Messtival-only
-  // but Thursday evening + all Friday are doubled too). Name the games when
-  // only some of the day is doubled.
-  const doubledGames = dayGames.filter((g) => g.messtival);
-  if (doubledGames.length === dayGames.length && dayGames.length) {
-    html += `<div class="messtival-banner">🎉 Double points until the end of Friday</div>`;
-  } else if (doubledGames.length) {
-    html += `<div class="messtival-banner">⚡ Double points until the end of Friday: ${doubledGames.map((g) => `${esc(g.emoji)} ${esc(g.name)}`).join(', ')}</div>`;
-  }
-  if (day.note) {
-    html += day.note.split('\n').map((l) => l.trim()).filter(Boolean)
-      .map((l) => `<div class="messtival-banner">${esc(l)}</div>`).join('');
-  }
-  if (!dayGames.length) {
-    html += `<p class="muted session-empty">No games scheduled for ${esc(day.name)} yet.</p>`;
-    if (canEdit()) {
-      html += `<button class="link-btn empty-day-builder-btn">🛠️ Set up games in More</button>`;
-    }
-  }
-
-  sessions.forEach((session) => {
-    const games = dayGames.filter((g) => g.session === session);
-    if (!games.length) return;
-    html += `<h2 class="session-heading">${esc(session)}</h2>`;
-    games.forEach((g) => {
-      const status = gameStatus(g);
-      const badge = FORMAT_BADGES[g.format] || { label: g.format || '?', cls: '' };
-      const res = state.results[g.id];
-      html += `<button class="game-card ${status}" data-game-id="${esc(g.id)}">
-        <div class="game-card-top">
-          <span class="game-emoji">${esc(g.emoji)}</span>
-          <div class="game-card-titles">
-            <span class="game-name">${esc(g.name)}</span>
-            <span class="game-loc">📍 ${esc(g.location)}</span>
-          </div>
-          <jelly-badge class="format-badge" variant="${esc(badge.variant || 'platinum')}" size="small">${esc(badge.label)}</jelly-badge>
-        </div>
-        <p class="game-headline">${esc(g.headline)}</p>
-        ${res ? `<div class="game-result-line">🥇 ${esc(teamName(res.medals.gold))} · 🥈 ${esc(teamName(res.medals.silver))} · 🥉 ${esc(teamName(res.medals.bronze))}</div>`
-          : status === 'in-progress' ? `<div class="game-progress-line">⏱️ In progress — tap to continue</div>` : ''}
-      </button>`;
-    });
-  });
-
-  // Editors get a one-tap way to slot in an unplanned game (rainy-day pivot,
-  // spontaneous rematch) without digging through the week builder.
-  if (canEdit() && dayGames.length) {
-    html += `<button class="link-btn quick-game-btn">⚡ Quick game — add a one-off to ${esc(day.name)}</button>`;
-  }
-  return html;
-}
-
-// Wire every panel's game cards + editor shortcuts (classes, not ids — the
-// same controls now exist once per day panel).
-function wireDayPanels(nav) {
-  nav.querySelectorAll('.game-card').forEach((card) => {
-    card.addEventListener('click', () => openGame(card.dataset.gameId));
-  });
-  nav.querySelectorAll('.empty-day-builder-btn').forEach((btn) =>
-    btn.addEventListener('click', () => openBuilder('games')));
-  nav.querySelectorAll('.quick-game-btn').forEach((btn) =>
-    btn.addEventListener('click', () => startQuickGame()));
-}
 
 // ════════════════════════════════════════════════════════════════════
 // THE GAMES ENGINE — gamesModel() and what hangs off it (redesign §5; BUILD-PLAN Step 18, build session 1)
@@ -10014,7 +9604,7 @@ function renderGameView() {
       } else tk.hidden = true;
     } else if (!tk.hidden && !tk.style.pointerEvents) tk.hidden = true;
     tk.__gid = null;
-    body.__headHtml = null; // the next open builds afresh
+    body.__headHtml = null; // the next open builds afresh (and the dock is drawn again for the game it opens)
     return;
   }
   const opening = tk.hidden || tk.__gid !== g.id;
@@ -10105,6 +9695,8 @@ function renderGameView() {
   } else {
     renderPlacement(entry, g);
   }
+  // The dock under the body: Back and Next game once a result is saved (directors; games-ui.js).
+  if (typeof renderGameDock === 'function') renderGameDock(g);
 }
 
 // Ranked live standings for a `liveRankings` tally game (Inflatable Bowling,
@@ -13335,6 +12927,10 @@ function shellSheetAllowed(id) {
   // Set up the week's own sheets (setup-ui.js): directors only, and only while the builder is up.
   if (typeof SETUP_SHEETS !== 'undefined' && SETUP_SHEETS.includes(id)) return canEdit() && builderOpen() && setupSheetReady(id);
   if (id === 'verse' || id === 'cleanup') return canEdit() || !cardHiddenFromViewers(id);
+  // The Games standings' two sheets (games-ui.js): quick points opens only for a team a tap named (a director's, never their
+  // own team: a Forward onto a stale entry opens nothing); the copy / share / Award points sheet is a confirmed director's.
+  if (id === 'quick') return typeof gamesQuickReady === 'function' && gamesQuickReady();
+  if (id === 'standings') return standingsVisible() && typeof renderStandingsSheet === 'function';
   // Now's three reading sheets (now-ui.js): each only while it has something to say (a notice taken down or a banner
   // dismissed closes its sheet through the next fill; a Forward onto a stale entry opens nothing).
   if (id === 'notice' || id === 'messages' || id === 'whos-where') return typeof nowSheetAllowed === 'function' && nowSheetAllowed(id);
@@ -13447,10 +13043,19 @@ function wireSheetDrag(overlay) {
 }
 
 // ── dirty render ────────────────────────────────────────────────────
-// What each tab renders. Now: the Now card and what hangs off it, the messages strip. Games: today's
-// Competitions day tabs and the directors' quick points (the standings table is in
+// What each tab renders. Now: the Now card and what hangs off it, the messages strip. Games: the day picker, the day's
+// blocks and the directors' standings (gamesModel, painted by games-ui.js; what the standings DO besides being drawn is in
 // SHELL_ALWAYS below). More: its volatile lines. Memory verse and Meal cleanup are
 // reading SHEETS opened from More: they render while open (renderShellSheets).
+// The Games tab: the model painted by games-ui.js. Without that file the tab is empty (the standings' side effects still
+// run). A stale day choice (a day the builder removed) is put right here, as the old day tabs did.
+function gamesRefresh() {
+  if (typeof renderGamesPanel !== 'function') return;
+  const days = competitionDays();
+  if (days.length && !days.some((d) => d.id === state.ui.day)) state.ui.day = defaultDay(state.config);
+  renderGamesPanel(gamesModel());
+}
+
 const SHELL_PANELS = {
   now: {
     // The Now engine (nowModel, now-ui.js) paints the card, the moment, Still to do / Up next / Later today and the messages
@@ -13468,11 +13073,9 @@ const SHELL_PANELS = {
     },
   },
   games: {
-    render() {
-      renderDayTabs(); // includes every day panel's game list
-      renderBonuses();
-    },
-    tick() {},
+    render() { gamesRefresh(); },
+    // The block under way, "up next" and a day's "Today" move with the clock alone.
+    tick() { gamesRefresh(); },
   },
   chat: {
     render() { if (typeof renderChatView === 'function') renderChatView(); },
@@ -13484,14 +13087,14 @@ const SHELL_PANELS = {
   },
 };
 
-// Renderers that run on every pass whatever tab is showing: they have side
-// effects (renderStandings records the change history, raises the point
-// alerts and keeps the start-of-day rank baseline for directors) or keep
-// state honest (pruning expired announcements). A renderer moves out of here
-// only when its side effects have been lifted out of it (§13.9).
+// Work that runs on every pass whatever tab is showing: it has side effects
+// (runStandingsSideEffects records the change history, raises the point alerts and
+// keeps the start-of-day place baseline for directors — lifted out of the old
+// standings card, §13.9, so the Games panel that draws them paints only while it is
+// on screen) or keeps state honest (pruning expired announcements).
 const SHELL_ALWAYS = [
   () => pruneExpiredAnnouncements(),
-  () => renderStandings(),
+  () => runStandingsSideEffects(),
   () => refreshOpenSchedule(),
 ];
 
@@ -13980,6 +13583,8 @@ function shellSheetFill(id) {
   if (id === 'team') renderTeamSheet();
   else if (id === 'verse') renderMemoryVerse();
   else if (id === 'cleanup') renderMealCleanup();
+  else if (id === 'quick') { if (typeof renderQuickSheet === 'function') renderQuickSheet(); }
+  else if (id === 'standings') { if (typeof renderStandingsSheet === 'function') renderStandingsSheet(); }
   else if (id === 'notice' || id === 'messages' || id === 'whos-where') { if (typeof renderNowSheet === 'function') renderNowSheet(id); }
   else if (typeof SETUP_SHEETS !== 'undefined' && SETUP_SHEETS.includes(id)) renderSetupSheet(id);
 }
@@ -14340,16 +13945,6 @@ function init() {
   document.querySelectorAll('.hide-card-toggle[data-hide-card]').forEach((sw) => {
     sw.addEventListener('change', () => toggleCardHidden(sw.dataset.hideCard));
   });
-
-  const copyBtn = document.getElementById('copy-standings-btn');
-  copyBtn.addEventListener('click', () => copyTextToClipboard(standingsSummaryText(), copyBtn));
-  const shareBtn = document.getElementById('share-standings-btn');
-  if (navigator.share) {
-    shareBtn.hidden = false;
-    shareBtn.addEventListener('click', () => {
-      navigator.share({ text: standingsSummaryText() }).catch(() => {});
-    });
-  }
 
   // Account row (settings sheet): shows who's signed in; the button signs out.
   const signoutBtn = document.getElementById('signout-btn');

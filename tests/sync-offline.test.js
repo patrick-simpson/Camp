@@ -427,7 +427,7 @@ test('scores entered in an offline session reach the server but never the change
   fbRef = fakeRef(); remoteReady = true; document.activeElement = null; clearTimeout(pushConfigTimer); pushConfigTimer = null; clearTimeout(pushTimer); pushTimer = null;
   const serverRaw = prune(syncedSnapshot());
   applyRemoteState(clone(serverRaw));
-  renderStandings();                                  // baseline
+  runStandingsSideEffects();                                  // baseline
   // App opened OFFLINE: member read can't resolve, so initSync never ran (fbRef null).
   fbRef = null; remoteReady = false; lastSyncedTree = null;
   bootSyncedTree = readConfirmedTree();

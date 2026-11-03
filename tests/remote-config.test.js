@@ -1,7 +1,7 @@
 // A week-config change that arrives from another device (applyRemoteConfig)
 // must not be logged to the changelog by THIS device. Points depend on config
 // (a game's double-points flag, a deleted game's result), so such a change moves
-// totals — and renderStandings used to read that as a local edit and push
+// totals — and runStandingsSideEffects used to read that as a local edit and push
 // "Points updated" entries under every online editor's own name.
 
 function setUpEditorWithLog() {
@@ -37,7 +37,7 @@ function seedScoredGame() {
 test('a remote config change that moves points is NOT logged by this device', () => {
   const pushed = setUpEditorWithLog();
   const g = seedScoredGame();
-  renderStandings(); // baseline render (the first render is never logged)
+  runStandingsSideEffects(); // baseline render (the first render is never logged)
   assert.equal(pushed.length, 0);
 
   // Editor A turns on double points for that game; the config arrives here.
@@ -51,7 +51,7 @@ test('a remote config change that moves points is NOT logged by this device', ()
 
   // ...and the baseline advanced, so the NEXT local edit diffs against the new totals.
   state.results[g.id].medals = { gold: 't1', silver: 't0', bronze: 't2' };
-  renderStandings();
+  runStandingsSideEffects();
   assert.ok(pushed.length > 0, 'a genuine local change is still logged');
   pushed.forEach((e) => assert.equal(e.byKey, 'bob@example,com'));
   tearDown();
@@ -60,10 +60,10 @@ test('a remote config change that moves points is NOT logged by this device', ()
 test('a LOCAL config edit still logs (the originating device is the one that records it)', () => {
   const pushed = setUpEditorWithLog();
   const g = seedScoredGame();
-  renderStandings();
+  runStandingsSideEffects();
 
   g.messtival = true; // what the week builder does to this device's own config
-  renderStandings();
+  runStandingsSideEffects();
   assert.ok(pushed.length >= 1, 'the editor who made the change logs it');
   tearDown();
 });
@@ -71,7 +71,7 @@ test('a LOCAL config edit still logs (the originating device is the one that rec
 test('an unchanged remote config re-render sets nothing', () => {
   const pushed = setUpEditorWithLog();
   seedScoredGame();
-  renderStandings();
+  runStandingsSideEffects();
   applyRemoteConfig(JSON.parse(JSON.stringify(state.config)));
   assert.equal(pushed.length, 0);
   assert.notOk(remoteJustApplied, 'no render happened, so no stale remote flag is left armed');

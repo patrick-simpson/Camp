@@ -474,9 +474,9 @@ test('a snapshot applied while another tab shows leaves Now to catch up, but the
   useFakeRef();
   state.ui.tab = 'chat';
   renderAll();
-  const realStandings = renderStandings;
+  const realStandings = runStandingsSideEffects;
   let standings = 0;
-  renderStandings = () => { standings += 1; };
+  runStandingsSideEffects = () => { standings += 1; };
   try {
     applyRemoteState({ teams: state.teams, results: { g1: { medals: { gold: 't0' } } } });
     renderAll();
@@ -484,5 +484,5 @@ test('a snapshot applied while another tab shows leaves Now to catch up, but the
     assert.ok(shell.dirty.now, 'Now is marked stale, not rendered under the Chat tab');
     showTab('now');
     assert.notOk(shell.dirty.now, 'and renders once, when shown');
-  } finally { renderStandings = realStandings; state.ui.tab = 'now'; }
+  } finally { runStandingsSideEffects = realStandings; state.ui.tab = 'now'; }
 });

@@ -495,7 +495,7 @@ function renderRevealMoreRow() {
 }
 
 function renderRevealGamesLink() {
-  setHiddenIfChanged(revealUiEl('games-reveal-link'), !(revealUiIsDirector() && revealRemoteMayOpen()));
+  setHiddenIfChanged(revealUiEl('gs-reveal'), !(revealUiIsDirector() && revealRemoteMayOpen())); // the Games standings panel's way in
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -884,6 +884,7 @@ function renderRevealUi() {
   if (typeof confirmedReveal === 'undefined') return;
   renderRevealMirror();
   renderRevealGrids();
+  if (typeof renderGamesSecret === 'function') renderGamesSecret(); // a counselor's "stays secret" line gives way to the grid (§5.6)
   renderRevealChampion();
   renderRevealStrip();
   renderRevealMoreRow();
@@ -1065,7 +1066,7 @@ function wireRevealUi() {
   on('reveal-practice', 'change', () => { revealSetPractice(!revealPracticeSwitch()); renderRevealRemote(); });
   on('reveal-buzz', 'change', () => { revealSetBuzz(!revealBuzzState('real').on); renderRevealRemote(); });
   on('reveal-row', 'click', (e) => openReveal({ from: 'more' }));
-  on('games-reveal-link', 'click', () => openReveal({ from: 'games' }));
+  on('gs-reveal', 'click', () => openReveal({ from: 'games' }));
   on('now-reveal-remote', 'click', () => openReveal({ from: 'now' }));
   on('now-reveal-day', 'click', () => { if (typeof openSchedule === 'function') openSchedule(); });
   revealUiWirePeek(revealUiEl('reveal-ladder'));

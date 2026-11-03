@@ -82,7 +82,7 @@ function tname(tid) { return 'Zed' + 'abcdef'[Number(String(tid).slice(1))]; }
 const WATCHED = ['now-reveal', 'now-reveal-started', 'now-reveal-count', 'now-reveal-list', 'now-reveal-remote', 'now-reveal-happening', 'now-reveal-hn-time',
   'now-reveal-hn-emoji', 'now-reveal-hn-label', 'now-reveal-hn-sub', 'tab-now', 'now-reveal-grid', 'now-reveal-grid-title', 'now-reveal-grid-sub',
   'now-reveal-grid-list', 'games-reveal-grid', 'games-reveal-grid-title', 'games-reveal-grid-sub', 'games-reveal-grid-list', 'now-champion',
-  'now-champion-mark', 'now-champion-name', 'reveal-strip', 'reveal-strip-count', 'tab-dot-now', 'reveal-row', 'more-reveal-state', 'games-reveal-link'];
+  'now-champion-mark', 'now-champion-name', 'reveal-strip', 'reveal-strip-count', 'tab-dot-now', 'reveal-row', 'more-reveal-state', 'gs-reveal'];
 function watchWrites(ids) {
   const tally = { n: 0, what: [] };
   const undo = [];
@@ -298,7 +298,7 @@ test('More\'s row and Games\' link are directors\' only, in words, and never a c
   bootUi('viewer');
   renderRevealUi();
   assert.equal(el('reveal-row').hidden, true, 'not a counselor\'s');
-  assert.equal(el('games-reveal-link').hidden, true);
+  assert.equal(el('gs-reveal').hidden, true);
   setMemberRole('editor');
   atTime(T0 + 60000);
   renderRevealUi();

@@ -1593,14 +1593,13 @@
       </section>
       <p id="games-off" class="tab-off" role="status" hidden>Games are turned off right now.</p>
 
-      <!-- ── STEP 18: THE GAMES TAB (redesign §5; mockup 08 + dark) ──────────
-           Design pass: static frame, every piece hidden and nothing wired. The
-           build session's renderer shows these and retires the interim cards
-           below (#games-days, #games-standings, #games-rows) in the same commit,
-           moving their hooks here: data-card="standings" onto #games-live,
-           data-card="competitions" onto #games-week, #sync-status into
-           #gs-sync's place, and reveal-ui.js's #games-reveal-link un-hide onto
-           #gs-reveal (ids are unique, so the moves wait for the old cards to go).
+      <!-- ── THE GAMES TAB (redesign §5; mockup 08 + dark; BUILD-PLAN Step 18) ──────────
+           gamesModel() (app.js) is the tab as plain data and games-ui.js paints it onto this markup: the renderer shows,
+           hides and patches these roots and nothing else. What counselors see and the role decide which pieces exist
+           (applyCardVisibility owns the two data-card sections' `hidden`): data-card="standings" is #games-live, a
+           confirmed director's; data-card="competitions" is #games-week, switched off for counselors in More → Director →
+           What counselors see (the tab then says #games-off). #gs-sync is the director's sync line (app.js's
+           updateSyncIndicator writes it) and #gs-reveal the way into the reveal remote (reveal-ui.js un-hides it).
            ORDER, on purpose: the week's standings come FIRST (they are the whole
            week, not the chosen day), then the day picker sits directly on top of
            the rows it switches. Mockup 08 put the picker above the standings,
@@ -1650,7 +1649,7 @@
              #gs-reveal     "Reveal these on the big screen ›" → the remote
            COUNSELORS: no panel. #games-secret, one quiet line, unless the revealed
            grid above is showing (§5.6). -->
-      <section id="games-live" class="gs" aria-labelledby="gs-title" hidden>
+      <section id="games-live" class="gs" aria-labelledby="gs-title" data-card="standings" hidden>
         <header class="gs-head">
           <p class="gs-kick"><svg class="ico" aria-hidden="true"><use href="#i-eye-off"/></svg><span>Counselors can’t see this</span></p>
           <h2 class="gs-title" id="gs-title">Live standings</h2>
@@ -1717,7 +1716,7 @@
                  <button type="button" class="btn" data-games-add>Add games</button></div>   (directors: today's builder until Step 21)
              #games-quick      directors, under a day that has games: "Quick game"
                                (#games-quick-sub "Add a one-off game to Wednesday"). -->
-      <section id="games-week" class="gw" aria-label="The week's games" hidden>
+      <section id="games-week" class="gw" aria-label="The week's games" data-card="competitions" hidden>
         <nav class="gdp" aria-label="Competition days">
           <div class="gdp-track" id="games-days-pick" role="tablist" aria-label="Competition days" style="--n:5;--i:0">
             <i class="gdp-pill" aria-hidden="true"></i>
@@ -1735,59 +1734,6 @@
         </button>
       </section>
 
-      <section id="games-days" class="games-days" data-card="competitions">
-        <div id="day-tabs"></div>
-      </section>
-
-      <section id="games-standings" class="games-standings" aria-label="Directors' standings">
-        <!-- Counselors never see standings (the owner's rule), so there is no
-             switch on these two sections: they are hidden from non-directors in
-             code (SECRET_CARDS in app.js). -->
-        <div class="card standings-card" data-card="standings">
-          <h2 class="card-title">Current standings</h2>
-          <p class="card-secret-note"><span aria-hidden="true">🔒</span> Counselors can't see this</p>
-          <p class="muted standings-hint">Only counts games saved in this app — your paper scoreboard is the official one.</p>
-          <p id="sync-status" class="sync-status" aria-live="polite"></p>
-          <div class="standings-actions">
-            <jelly-button id="copy-standings-btn" class="secondary-btn" variant="platinum">📋 Copy scores &amp; points</jelly-button>
-            <jelly-button id="share-standings-btn" class="secondary-btn" variant="platinum" hidden>📤 Share</jelly-button>
-          </div>
-          <div class="table-scroll">
-            <table id="standings-table" class="standings-table">
-              <thead>
-                <tr>
-                  <th class="rank-col" aria-label="Rank">#</th>
-                  <th>Team</th>
-                  <th class="points-col">Pts</th>
-                  <th class="medal-col"><span role="img" aria-label="Gold medals">🥇</span></th>
-                  <th class="medal-col"><span role="img" aria-label="Silver medals">🥈</span></th>
-                  <th class="medal-col"><span role="img" aria-label="Bronze medals">🥉</span></th>
-                  <th class="extra-col"><span role="img" aria-label="Bible memorization points">📖</span></th>
-                  <th class="extra-col"><span role="img" aria-label="Meal cleanup points">🧽</span></th>
-                </tr>
-              </thead>
-              <tbody id="standings-tbody"></tbody>
-            </table>
-          </div>
-          <p id="catchup-hint" class="catchup-hint" hidden></p>
-        </div>
-
-        <!-- The remote's second way in (§4.8): directors only, right under the
-             standings they would reveal. Un-hidden with the rest of the reveal. -->
-        <button type="button" class="reveal-link" id="games-reveal-link" hidden>
-          <svg class="ico" aria-hidden="true"><use href="#i-tv"/></svg>
-          <span class="reveal-link-text">Reveal these on the big screen</span>
-          <svg class="ico reveal-link-chev" aria-hidden="true"><use href="#i-chev-r"/></svg>
-        </button>
-
-        <div class="card bonus-card" data-card="bonus">
-          <h2 class="card-title">Quick points</h2>
-          <p class="card-secret-note"><span aria-hidden="true">🔒</span> Counselors can't see this</p>
-          <p class="muted card-desc">Extra one-off points for other tasks — added to each team's total above.</p>
-          <div id="bonus-body"></div>
-        </div>
-      </section>
-      <div id="games-rows" class="games-rows"></div>
     </section>
 
     <!-- ── CHAT (redesign §6) ── A fixed panel between the header and the tab
@@ -4166,6 +4112,8 @@
   <script src="award.js?v=204"></script>
   <!-- Now's renderers (nowModel's picture painted onto the markup in #tab-now; the Now tab is empty without it but the app runs). -->
   <script src="now-ui.js?v=204"></script>
+  <!-- The Games tab's renderers (gamesModel's picture painted onto #tab-games, the quick-points and standings sheets, the takeover's Next game dock; the Games tab is empty without it but the app runs). After now-ui.js: its game rows are Now's. -->
+  <script src="games-ui.js?v=204"></script>
   <!-- Optional alternative sign-in methods. Delete a tag to remove that
        method (app.js only touches them through window.CampPhone /
        window.CampEmailLink); the Google button always remains. -->

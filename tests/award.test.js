@@ -372,9 +372,9 @@ test('Add writes one custom bonus per picked team (same label and time), then cl
   awardAdd();
   assert.ok(entries('custom').some(([, b]) => b.label === 'Bonus'));
   const app = readFixture('../app.js');
-  const bind = app.slice(app.indexOf('function bindBonusEntry'), app.indexOf('const BONUS_PROBLEMS'));
-  assert.ok(/bonusAddFromDraft\(\)/.test(bind), 'the Games tab calls the same writer');
-  assert.ok(!/state\.bonuses\[newBonusId\(\)\]/.test(bind), 'and writes nothing itself');
+  const quick = app.slice(app.indexOf('function gamesQuickAdd'), app.indexOf('function gamesQuickUndo'));
+  assert.ok(/bonusAddFromDraft\(\{ draft, made \}\)/.test(quick), 'the Games standings\' quick points call the same writer');
+  assert.ok(!/state\.bonuses\[/.test(quick), 'and write nothing themselves');
   done();
 });
 

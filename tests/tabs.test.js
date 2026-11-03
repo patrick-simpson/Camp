@@ -171,9 +171,9 @@ test('a hidden tab does not re-render on every snapshot; it catches up when show
   const n = { now: 0, games: 0, chat: 0, more: 0 };
   const real = {};
   Object.keys(n).forEach((t) => { real[t] = SHELL_PANELS[t].render; SHELL_PANELS[t].render = () => { n[t] += 1; }; });
-  const realStandings = renderStandings;
+  const realStandings = runStandingsSideEffects;
   let standings = 0;
-  renderStandings = () => { standings += 1; };
+  runStandingsSideEffects = () => { standings += 1; };
   try {
     renderAll(); renderAll(); renderAll(); // three snapshots land while Now is showing
     assert.deepEqual(n, { now: 3, games: 0, chat: 0, more: 0 }, 'only the visible tab renders');
@@ -197,7 +197,7 @@ test('a hidden tab does not re-render on every snapshot; it catches up when show
     SHELL_PANELS.now.tick = realTick;
   } finally {
     Object.keys(n).forEach((t) => { SHELL_PANELS[t].render = real[t]; });
-    renderStandings = realStandings;
+    runStandingsSideEffects = realStandings;
   }
 });
 

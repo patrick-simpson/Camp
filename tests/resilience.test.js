@@ -79,7 +79,7 @@ test('no Firebase config at all (local dev) still just runs the app', () => {
 test('a failed SDK says so in the sync indicator and in the header pill (a returning device has a header)', () => {
   seedReturningEditor();
   globalThis.firebase = { apps: [], auth: () => ({}) };
-  const status = document.getElementById('sync-status');
+  const status = document.getElementById('gs-sync');
   const appended = [];
   const real = { appendChild: document.body.appendChild };
   document.body.appendChild = (el) => appended.push(el);

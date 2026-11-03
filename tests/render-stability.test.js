@@ -43,8 +43,14 @@ test('the home panels that re-render on every snapshot go through the guard', ()
     assert.ok(start > -1, name + ' exists');
     return src.slice(start, src.indexOf('\n}\n', start));
   };
-  ['renderBonuses', 'renderMemoryVerse', 'renderMealCleanup', 'renderDayTabs', 'renderTeamSheet']
+  ['renderMemoryVerse', 'renderMealCleanup', 'renderTeamSheet']
     .forEach((fn) => assert.ok(body(fn).includes('setHtmlIfChanged('), fn + ' skips unchanged rebuilds'));
+  // The Games tab's panels (games-ui.js): the day tabs, the day's blocks and the standings list write through the guard.
+  const ui = readFixture('../games-ui.js');
+  ['gamesPaintPicker', 'gamesPaintDay', 'gamesPaintStandings'].forEach((fn) => {
+    const start = ui.indexOf('function ' + fn + '(');
+    assert.ok(start > -1 && /setHtmlIfChanged\(|paintKeyedList\(/.test(ui.slice(start, ui.indexOf('\n}\n', start))), fn + ' skips unchanged rebuilds');
+  });
   // The frame's volatile lines are text nodes patched in place, never rewritten.
   ['renderHeader', 'renderSyncPill', 'renderMoreFoot', 'renderAlertsState']
     .forEach((fn) => assert.ok(/setTextIfChanged\(|setHiddenIfChanged\(/.test(body(fn)), fn + ' patches in place'));

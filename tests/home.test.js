@@ -1,6 +1,6 @@
 // Home-screen panels that re-render on every snapshot and every 30 s tick:
-// idle renders must not rewrite plain panels (that drops selected text), a
-// points-pulse must survive the next render, toasts are capped and plain text,
+// idle renders must not rewrite plain panels (that drops selected text), what the
+// standings do besides being drawn runs on every pass and draws nothing, toasts are capped and plain text,
 // and a banner strip writes only when it changed. The visible effect of each
 // is only checkable in a browser; these pin the rules the fixes rest on. (The
 // Now card's own render stability is now-ui.test.js's.)
@@ -25,61 +25,72 @@ function countWrites(el, keepStamp) {
 // ── Idle renders leave plain panels alone ──
 
 test('the home panels that rebuild on every snapshot go through the guard', () => {
-  const src = readFixture('../app.js');
+  const src = readFixture('../app.js') + '\n' + readFixture('../games-ui.js');
   const body = (name) => {
     const start = src.indexOf('function ' + name + '(');
     assert.ok(start > -1, name + ' exists');
     return src.slice(start, src.indexOf('\n}\n', start));
   };
-  ['renderCatchupHint', 'renderStandings']
-    .forEach((fn) => assert.ok(body(fn).includes('setHtmlIfChanged('), fn + ' skips unchanged rebuilds'));
-  assert.notOk(/tbody\.innerHTML/.test(body('renderStandings')), 'standings rows are never assigned directly');
+  ['gamesPaintStandings', 'gamesPaintPicker', 'gamesPaintDay']
+    .forEach((fn) => assert.ok(/setHtmlIfChanged\(|paintKeyedList\(/.test(body(fn)), fn + ' skips unchanged rebuilds'));
+  assert.notOk(/\.innerHTML\s*=[^=]/.test(body('gamesPaintStandings') + body('gamesPaintPicker') + body('gamesPaintDay')), 'the Games panels never assign markup directly');
+  // §13.9: what the standings DO (the change history, the point alerts, the day baseline) draws nothing
+  const side = body('runStandingsSideEffects');
+  assert.notOk(/getElementById|querySelector|innerHTML|textContent|\.hidden/.test(side), 'runStandingsSideEffects touches no DOM');
 });
 
 function giveSomePoints() {
   freshState();
-  setMemberRole('editor'); // the standings panels are directors' (standings secrecy); secrecy.test.js pins what a counselor sees
+  setMemberRole('editor'); // the standings panel is directors' (standings secrecy); secrecy.test.js pins what a counselor sees
   state.config.games.slice(0, 3).forEach((g, i) => {
     state.results[g.id] = { medals: { gold: 't' + (i % 3), silver: 't' + ((i + 1) % 3), bronze: 't' + ((i + 2) % 3) }, savedAt: '2026-07-20T12:00:00Z' };
   });
   lastPointsByTeam = null;
   remoteJustApplied = false;
-  Object.keys(pointsPulseUntil).forEach((k) => delete pointsPulseUntil[k]);
+  try { localStorage.removeItem(DAY_RANK_KEY); } catch (e) { /* none */ }
 }
 
-test('the standings table and catch-up hint are not rewritten by a render that changes nothing', () => {
+test('the standings list and gap sentence are not rewritten by a render that changes nothing', () => {
   giveSomePoints();
-  const tbody = countWrites(document.getElementById('standings-tbody'));
-  const hint = countWrites(document.getElementById('catchup-hint'));
-  renderStandings();
-  renderStandings();
-  renderStandings();
-  assert.equal(tbody(), 1, 'rows built once');
-  assert.equal(hint(), 1, 'hint built once');
+  const list = countWrites(document.getElementById('gs-list'));
+  const gap = countWrites(document.getElementById('gs-gap'));
+  renderGamesPanel(gamesModel());
+  renderGamesPanel(gamesModel());
+  renderGamesPanel(gamesModel());
+  assert.equal(list(), 1, 'rows built once');
+  assert.equal(gap(), 1, 'sentence built once');
   state.bonuses.pts1 = { id: 'pts1', teamId: 't0', category: 'custom', label: 'x', points: 4, at: '2026-07-20T12:05:00Z' };
-  renderStandings();
-  assert.equal(tbody(), 2, 'a points change still repaints the rows');
+  renderGamesPanel(gamesModel());
+  assert.equal(list(), 2, 'a points change still repaints the rows');
 });
 
-test('a points-pulse is held through the next render, then ends by itself', () => {
+test('the standings side effects run without the Games tab: the day baseline, the alert for a change from another phone, nothing drawn', () => {
   giveSomePoints();
-  const tbody = document.getElementById('standings-tbody');
-  renderStandings(); // baseline: the first render never pulses
-  assert.notOk(tbody.innerHTML.includes('points-pulse'));
-
-  state.bonuses.pulse1 = { id: 'pulse1', teamId: 't0', category: 'custom', label: 'x', points: 3, at: '2026-07-20T12:05:00Z' };
-  remoteJustApplied = true;
-  renderStandings();
-  assert.ok(tbody.innerHTML.includes('points-pulse'), 'the remote change pulses its row');
-
-  const writes = countWrites(tbody, true);
-  renderStandings(); // an unrelated snapshot / the 30 s tick lands inside the 0.6 s fade
-  assert.ok(tbody.innerHTML.includes('points-pulse'), 'still pulsing — the animation is not cut off');
-  assert.equal(writes(), 0, 'and the animating rows were not re-created');
-
-  pointsPulseUntil.t0 = Date.now() - 1; // the window has passed
-  renderStandings();
-  assert.notOk(tbody.innerHTML.includes('points-pulse'), 'the class ends so the next change can pulse again');
+  const list = countWrites(document.getElementById('gs-list'));
+  const alerts = [];
+  const realNotify = notifyPointChanges;
+  notifyPointChanges = (changed) => { alerts.push(changed); };
+  try {
+    runStandingsSideEffects(); // baseline: the first pass raises nothing
+    assert.deepEqual(alerts, []);
+    const snap = JSON.parse(localStorage.getItem(DAY_RANK_KEY));
+    assert.equal(snap.date, campDateStr(), 'the day\'s baseline was taken on the first pass');
+    assert.ok(snap.places && typeof snap.flat === 'boolean');
+    state.bonuses.pulse1 = { id: 'pulse1', teamId: 't0', category: 'custom', label: 'x', points: 3, at: '2026-07-20T12:05:00Z' };
+    remoteJustApplied = true;
+    runStandingsSideEffects();
+    assert.equal(alerts.length, 1, 'a change that arrived from elsewhere is alerted');
+    assert.deepEqual(alerts[0].map((c) => [c.team.id, c.delta]), [['t0', 3]]);
+    assert.equal(remoteJustApplied, false, 'and the flag is spent');
+    runStandingsSideEffects();
+    assert.equal(alerts.length, 1, 'a pass with nothing new alerts nothing');
+    assert.equal(list(), 0, 'and not one pass wrote the standings list');
+    // a phone that may not read points computes nothing and forgets what it had
+    setMemberRole('viewer');
+    setStandingsGuardThrows(true);
+    try { runStandingsSideEffects(); } finally { setStandingsGuardThrows(false); }
+    assert.equal(lastPointsByTeam, null);
+  } finally { notifyPointChanges = realNotify; setMemberRole(null); }
 });
 
 // ── Toasts ──
@@ -273,31 +284,25 @@ test('a banner is written by postBanner and taken down by takeDownBanner: direct
   }
 });
 
-// ── Day-tab pill ──
+// ── Day picker ──
 
-test('settleDayTabPill snaps the pill onto its target at creation, and again after the re-sync', async () => {
-  const seg = { pillX: -123, pillTarget: 62, pillXVelocity: 9, reflecting: false, frames: 0, requestFrame() { this.frames++; } };
-  const tabs = { shadowRoot: { querySelector: (sel) => (sel === 'jelly-segmented' ? seg : null) } };
-  settleDayTabPill(tabs);
-  assert.equal(seg.pillX, 62, 'no spring from the first tab');
-  assert.equal(seg.pillXVelocity, 0);
-  assert.ok(seg.frames > 0, 'repaints at the new spot');
-  seg.pillTarget = 124; // the segmented's own corrected sync lands a microtask later
-  await Promise.resolve();
-  await Promise.resolve();
-  assert.equal(seg.pillX, 124);
-  assert.doesNotThrow(() => settleDayTabPill(null));
-  assert.doesNotThrow(() => settleDayTabPill({}));
-  assert.doesNotThrow(() => settleDayTabPill({ shadowRoot: { querySelector: () => ({}) } }), 'an element that is not a jelly-segmented is left alone');
-});
-
-test('the pill snap is creation-only — the change handler never calls it', () => {
-  const src = readFixture('../app.js');
-  const start = src.indexOf('function renderDayTabs(');
-  const body = src.slice(start, src.indexOf('\n}\n', start));
-  assert.ok(body.includes('settleDayTabPill(tabs)'), 'a freshly built tab bar is settled');
-  const handler = body.slice(body.indexOf("addEventListener('change'"), body.indexOf('settleDayTabPill(tabs)'));
-  assert.ok(handler.length > 0 && !handler.includes('settleDayTabPill'), 'the spring is the point of a tap');
+test('the day picker rewrites nothing when nothing changed, and the chosen day is this device\'s own', () => {
+  freshState();
+  setMemberRole('editor');
+  const track = countWrites(document.getElementById('games-days-pick'));
+  state.ui.day = state.config.days[0].id;
+  renderGamesPanel(gamesModel());
+  renderGamesPanel(gamesModel());
+  assert.equal(track(), 1, 'the tabs are written once');
+  const other = state.config.days[1].id;
+  gamesPickDay(other);
+  assert.equal(state.ui.day, other, 'a tap chooses the day');
+  assert.equal(track(), 2, 'and rewrites the tabs once');
+  gamesPickDay(other);
+  gamesPickDay('not-a-day');
+  assert.equal(track(), 2, 'a repeat tap and a stale id change nothing');
+  assert.equal(state.ui.day, other);
+  setMemberRole(null);
 });
 
 test('Now hosts the Now engine (card, runs, messages strip); Games hosts the day tabs; More hosts the rest; renderAll gives each to ITS tab only', () => {
@@ -309,17 +314,22 @@ test('Now hosts the Now engine (card, runs, messages strip); Games hosts the day
   // The old Now sections are DELETED, not just unwired (Step 17): the Now card paints from nowModel().
   ['renderNoticeBoard', 'renderNowBanner', 'splitNowBanner', 'renderFollowCard', 'renderMyElectives', 'renderLiveHome', 'homeBoardGame', 'liveHomeGames']
     .forEach((fn) => assert.notOk(new RegExp('\\b' + fn + '\\b').test(src), fn + ' is gone from app.js (the Now engine replaced it)'));
-  ['renderDayTabs', 'renderMemoryVerse', 'renderMealCleanup', 'renderBonuses', 'renderFooter']
+  ['gamesRefresh', 'renderMemoryVerse', 'renderMealCleanup', 'renderFooter']
     .forEach((fn) => assert.notOk(now.includes(fn + '('), fn + ' left Now'));
+  // The old Games cards are DELETED too (Step 18): the Games tab paints from gamesModel().
+  ['renderDayTabs', 'renderBonuses', 'bindBonusEntry', 'renderCatchupHint', 'renderStandings', 'dayGamesHTML', 'wireDayPanels', 'settleDayTabPill']
+    .forEach((fn) => assert.notOk(new RegExp('\\b' + fn + '\\b').test(src.replace(/\/\/.*$/gm, '')), fn + ' is gone from app.js (the Games engine replaced it)'));
   const games = part('games: {', 'chat: {');
-  ['renderDayTabs', 'renderBonuses'].forEach((fn) => assert.ok(games.includes(fn + '('), fn + ' renders with Games'));
+  assert.ok(games.includes('gamesRefresh('), 'the Games panel renders with Games');
   assert.ok(part('more: {', '};').includes('renderMore()'), 'More renders its volatile lines');
   // The reading sheets render while they are open, whatever tab is under them.
   assert.ok(/function renderShellSheets\(\)[\s\S]*shellSheetFill/.test(src));
   assert.ok(/function shellSheetFill[\s\S]*renderMemoryVerse\(\)[\s\S]*renderMealCleanup\(\)/.test(src));
   const all = src.slice(src.indexOf('function renderAll() {'), src.indexOf('// ── Week builder'));
-  assert.notOk(/renderNowBanner\(\)|renderLiveHome\(\)|renderDayTabs\(\)/.test(all), 'renderAll no longer renders them unconditionally');
+  assert.notOk(/renderNowBanner\(\)|renderLiveHome\(\)|renderDayTabs\(\)|gamesRefresh\(\)/.test(all), 'renderAll no longer renders them unconditionally');
   assert.ok(all.includes('renderShellTabs()'));
-  assert.ok(/pruneExpiredAnnouncements\(\)/.test(src.slice(src.indexOf('const SHELL_ALWAYS'), src.indexOf('function renderTab('))), 'announcement pruning still runs on every pass');
+  const always = src.slice(src.indexOf('const SHELL_ALWAYS'), src.indexOf('function renderTab('));
+  assert.ok(/pruneExpiredAnnouncements\(\)/.test(always), 'announcement pruning still runs on every pass');
+  assert.ok(/runStandingsSideEffects\(\)/.test(always), 'and so do the standings\' side effects (§13.9)');
 });
 
