@@ -1643,6 +1643,207 @@
     </div>
   </section>
 
+  <!-- ── TELL EVERYONE (redesign §7.2; mockup 10 and 10-dark; Step 24) ──────
+       Directors only, from More → Director → Tell everyone. The camp-blue roof:
+       every button here changes what everyone sees. Top to bottom, the order a
+       director meets the decisions: what is up now, the fast path, the words,
+       how they travel, what a counselor will see, then ONE gold Send.
+       The renderer patches text / hidden / aria-* / data-* on this static
+       markup; only the two lists (#tell-showing-list, #tell-teams) and the
+       preview (#tell-preview-body) are setHtmlIfChanged roots. Nothing here uses
+       the `disabled` attribute: "can't" is aria-disabled="true" plus the reason
+       in words, so a tap still reaches the handler (it can say why).
+       Motion (JellyMotion, calm-aware): ticking a way opens its .tell-more with
+       `arrive` (calm: a fade) and pops the box (`press`); a quick alert fills the
+       message with a `snap` on the field and ticks its ways one after another
+       (40 ms apart); a Take down row leaves with playOut and the rest glide
+       (flipKeyed); the dock rides the keyboard (body.kb-open puts it on
+       --kb-h, the takeover rule already does). JOY_QUIET gains #takeover-tell:
+       sending is not a celebration. -->
+  <section id="takeover-tell" class="takeover is-roof tell" role="dialog" aria-modal="true" aria-labelledby="takeover-tell-title" hidden>
+    <header class="tk-head">
+      <button type="button" class="tk-back" data-takeover-back>
+        <svg class="ico" aria-hidden="true"><use href="#i-chev-l"/></svg><span class="tk-back-label" id="takeover-tell-back-label">More</span>
+      </button>
+      <div class="tk-titles">
+        <h2 class="tk-title" id="takeover-tell-title">Tell everyone</h2>
+      </div>
+    </header>
+
+    <div class="tk-body tell-body" id="takeover-tell-body">
+      <!-- After a Send that did not fully work (a send that fully worked closes the
+           composer and leaves a 10-second Undo toast): one line per channel, the
+           mark repeating the words; a failed one ends in its own Try again.
+             <li class="tell-res" data-tone="ok"><i class="tell-res-mark" aria-hidden="true"></i><span class="tell-res-text">Banner posted</span></li>
+             <li class="tell-res" data-tone="warn"><i class="tell-res-mark" aria-hidden="true"></i><span class="tell-res-text">Buzz didn't go: no signal</span><button type="button" class="btn btn-sm" data-tell-retry="buzz">Try again</button></li>
+           data-tell-retry = banner | buzz | pin. -->
+      <section class="tell-result" id="tell-result" role="status" aria-labelledby="tell-result-title" hidden>
+        <h3 class="dt-h" id="tell-result-title">Last send</h3>
+        <ul class="tell-res-list" id="tell-result-list"></ul>
+      </section>
+
+      <!-- What everyone sees right now (only when something is): each synced
+           banner and the posted notice, newest first. Chat's Announcements
+           messages are not here (they come down by deleting them in chat).
+             <div class="tell-live" data-key="ann-<id>" data-kind="banner">
+               <span class="tell-live-ico" aria-hidden="true"><svg class="ico"><use href="#i-megaphone"/></svg></span>
+               <span class="tell-live-text"><span class="tell-live-title">Water break at the Snack Shack</span><span class="tell-live-sub">Banner · ends in 38 min</span></span>
+               <button type="button" class="btn btn-sm tell-down" data-tell-down="banner" data-id="<id>">Take down</button>
+             </div>
+           The notice: data-kind="notice", data-key="notice", the #i-pin icon, the
+           sub "Big notice · posted 4:10 PM", data-tell-down="notice" (back to
+           draft). The title is the banner's words / the notice's title, up to
+           two lines then an ellipsis. -->
+      <section class="tell-sec" id="tell-showing" aria-labelledby="tell-showing-label" hidden>
+        <h3 class="dt-h" id="tell-showing-label">Showing now</h3>
+        <div class="gl tell-showing-list" id="tell-showing-list"></div>
+      </section>
+
+      <!-- The fast path (§7.2): a tap fills the message and ticks Banner (all
+           day) + Buzz everyone + Urgent; Send is the next tap. The words are a
+           constant the owner can change (data-quick names it); the button whose
+           words are still in the message wears aria-pressed="true".
+           #tell-quick-what says what a quick alert ticks on THIS phone right now:
+           "Banner all day · buzz everyone · urgent", or "Banner all day" while
+           phone alerts aren't on. -->
+      <section class="tell-sec" aria-labelledby="tell-quick-label">
+        <div class="dt-h-row">
+          <h3 class="dt-h" id="tell-quick-label">Quick alerts</h3>
+          <span class="dt-h-note" id="tell-quick-what">Banner all day · buzz everyone · urgent</span>
+        </div>
+        <div class="tell-quick">
+          <div class="tell-quick-row" role="group" aria-labelledby="tell-quick-label">
+            <button type="button" class="btn tell-q" data-quick="inside" aria-pressed="false">Come inside now</button>
+            <button type="button" class="btn tell-q" data-quick="dining" aria-pressed="false">All to the Dining Hall</button>
+            <button type="button" class="btn tell-q" data-quick="stay" aria-pressed="false">Stay where you are</button>
+          </div>
+        </div>
+      </section>
+
+      <!-- The words. A native textarea that grows (field-sizing: content; the
+           renderer sizes it where that is unknown), 280 characters. #tell-count
+           is "118 / 280"; data-near (from 250) turns it ink and bold. The draft
+           lives on this device until sent (composerBusy holds reloads). -->
+      <div class="tell-msg">
+        <label class="visually-hidden" for="tell-text">Message</label>
+        <textarea id="tell-text" class="tell-text" rows="3" maxlength="280" placeholder="Type a message, or tap a quick alert" autocomplete="off" enterkeyhint="done" aria-describedby="tell-count"></textarea>
+        <span class="tell-count" id="tell-count">0 / 280</span>
+      </div>
+
+      <!-- How it reaches people: ONE grouped sheet, a way per row. Each way's head
+           IS its checkbox (a <button role="checkbox">, aria-checked), so the whole
+           line toggles it; its choices (.tell-more) sit under it, hidden while it
+           is off (the renderer sets hidden).
+           Buzz is OFF by default and can't be taken back, which its sub says
+           BEFORE anything is sent. While phone alerts aren't live, or the phone is
+           offline, #tell-way-buzz takes data-off, #tell-buzz aria-disabled="true"
+           (a dashed box, never ticked) and #tell-buzz-sub gives the reason ("Phone
+           alerts aren't switched on yet" · "No signal: buzzing needs a
+           connection"). #tell-aud: everyone | team | directors; with "team",
+           #tell-teams shows one radio per team (teamMarkHtml 24 + the short name):
+             <button type="button" class="tell-team" role="radio" aria-checked="false" data-team="t0"><span class="tell-team-mark">teamMarkHtml 24</span><span class="tell-team-name">Foxes</span></button>
+           Pin: #tell-pin-replace says, before Send, which notice it replaces
+           ("Replaces “Where your team cleans” · Jenn's draft"); #tell-pin-split
+           shows how the message is cut (the first sentence becomes the title, the
+           rest the line under it); #tell-notice-full opens the full notice builder
+           (Set up the week → Notice; its Back returns here, draft kept). -->
+      <section class="tell-sec" aria-labelledby="tell-how-label">
+        <h3 class="dt-h" id="tell-how-label">How it reaches people</h3>
+        <div class="gl tell-ways">
+          <div class="tell-way" id="tell-way-banner">
+            <button type="button" class="tell-tick" id="tell-banner" role="checkbox" aria-checked="true" aria-describedby="tell-banner-sub">
+              <span class="tell-box" aria-hidden="true"><svg class="ico"><use href="#i-check"/></svg></span>
+              <span class="tell-tick-text"><span class="tell-tick-title">Banner at the top of the app</span><span class="tell-tick-sub" id="tell-banner-sub">Everyone sees it on Now until it ends</span></span>
+            </button>
+            <div class="tell-more" id="tell-banner-more">
+              <div class="seg tell-seg" id="tell-ttl" role="radiogroup" aria-label="How long the banner stays up">
+                <button type="button" class="seg-btn" role="radio" aria-checked="true" data-ttl="1h">1 hour</button>
+                <button type="button" class="seg-btn" role="radio" aria-checked="false" data-ttl="3h">3 hours</button>
+                <button type="button" class="seg-btn" role="radio" aria-checked="false" data-ttl="day">All day</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="tell-way" id="tell-way-buzz">
+            <button type="button" class="tell-tick" id="tell-buzz" role="checkbox" aria-checked="false" aria-describedby="tell-buzz-sub">
+              <span class="tell-box" aria-hidden="true"><svg class="ico"><use href="#i-check"/></svg></span>
+              <span class="tell-tick-text"><span class="tell-tick-title">Buzz phones</span><span class="tell-tick-sub" id="tell-buzz-sub">Off unless you tick it · can't be taken back</span></span>
+            </button>
+            <div class="tell-more" id="tell-buzz-more" hidden>
+              <div class="seg tell-seg" id="tell-aud" role="radiogroup" aria-label="Whose phones buzz">
+                <button type="button" class="seg-btn" role="radio" aria-checked="true" data-aud="everyone">Everyone</button>
+                <button type="button" class="seg-btn" role="radio" aria-checked="false" data-aud="team">A team</button>
+                <button type="button" class="seg-btn" role="radio" aria-checked="false" data-aud="directors">Directors</button>
+              </div>
+              <div class="tell-teams" id="tell-teams" role="radiogroup" aria-label="Which team" hidden></div>
+              <div class="tell-urgent">
+                <span class="tell-urgent-text"><span class="tell-urgent-title" id="tell-urgent-title">Urgent</span><span class="tell-urgent-sub">Rings even if someone muted director alerts</span></span>
+                <span class="gl-switch"><jelly-switch id="tell-urgent" label="Urgent"></jelly-switch><em class="gl-switch-state" id="tell-urgent-state">Off</em></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="tell-way" id="tell-way-pin">
+            <button type="button" class="tell-tick" id="tell-pin" role="checkbox" aria-checked="false" aria-describedby="tell-pin-sub">
+              <span class="tell-box" aria-hidden="true"><svg class="ico"><use href="#i-check"/></svg></span>
+              <span class="tell-tick-text"><span class="tell-tick-title">Pin as the big notice</span><span class="tell-tick-sub" id="tell-pin-sub">Stays at the top of Now until someone takes it down</span></span>
+            </button>
+            <div class="tell-more" id="tell-pin-more" hidden>
+              <p class="tell-replace" id="tell-pin-replace" hidden><b class="dt-mark" aria-hidden="true">!</b><span id="tell-pin-replace-text"></span></p>
+              <p class="tell-split" id="tell-pin-split" hidden><span class="tell-split-k">Title</span><span class="tell-split-v" id="tell-pin-title"></span><span class="tell-split-k">Under it</span><span class="tell-split-v" id="tell-pin-rest"></span></p>
+              <button type="button" class="tell-full" id="tell-notice-full"><span>Write a full notice with team areas and steps</span><svg class="ico" aria-hidden="true"><use href="#i-chev-r"/></svg></button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- On a counselor's phone: exactly what Now will show, in Now's order (the
+           notice, then the banner). The renderer writes the SAME markup the real
+           strip writes — the banner is BANNER MARKUP below (.msg), the notice is
+           noticeCardHtml's card for the notice this would post — so the preview
+           can never drift from the real thing. Hidden while the message is empty
+           or neither Banner nor Pin is ticked. A picture: nothing in it answers a
+           tap (the CSS turns pointer events off). -->
+      <section class="tell-sec" id="tell-preview" aria-labelledby="tell-preview-label" hidden>
+        <h3 class="dt-h" id="tell-preview-label">On a counselor's phone</h3>
+        <div class="tell-phone">
+          <div class="tell-phone-screen" id="tell-preview-body"></div>
+        </div>
+      </section>
+    </div>
+
+    <!-- THE DOCK. ONE gold button whose words say what will happen:
+         "Send to everyone" (banner only) · "Send + buzz everyone" · "Send + buzz
+         the Foxes" · "Send + buzz directors" · "Pin the notice" (pin only) ·
+         "Send + pin the notice". Not ready: aria-disabled="true" and the label
+         names what's missing ("Type a message first" · "Tick a way to reach
+         people" · "Pick a team to buzz") — the dashed well, never a greyed copy.
+         While the message is being typed (body.kb-open) the dock rides the
+         keyboard and Done shows beside Send: it blurs the field (iOS multi-line
+         fields have no Done key), which brings the options back into view. -->
+    <div class="tk-dock tell-dock" id="tell-dock">
+      <button type="button" class="btn tell-done" id="tell-done">Done</button>
+      <button type="button" class="btn btn-gold btn-big tell-send" id="tell-send"><span id="tell-send-label">Send to everyone</span></button>
+    </div>
+  </section>
+
+  <!-- BANNER MARKUP (redesign §3.2, §8.1 rule 7): one banner as Now's message
+       strip shows it, and as Tell everyone's preview shows it — ONE function
+       writes both. A message is the one blue tint, with its icon tile; no badge,
+       no emoji, no capitals. The × draws small and is a 44×44 target.
+         <div class="msg" data-kind="banner|chat" data-key="ann-<id>" role="status">
+           <span class="msg-ico" aria-hidden="true"><svg class="ico"><use href="#i-megaphone"/></svg></span>   (chat: #i-bubble)
+           <div class="msg-body">
+             <p class="msg-text">Supper moves to 5:30. The kitchen is running late.</p>
+             <p class="msg-meta"><span>4:52 PM · Jenn</span><button type="button" class="msg-remove" data-ann-id="<id>">Remove for everyone</button></p>
+           </div>
+           <button type="button" class="msg-x" data-ann-id="<id>" aria-label="Dismiss this announcement on this phone"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+         </div>
+       Chat-sourced: data-kind="chat", the meta "Announcements chat · 4:52 PM ·
+       Jenn", no Remove (delete it in chat). Directors only: .msg-remove. The
+       preview: the meta reads "Now · Jenn", no Remove, and .msg-x is drawn but
+       inert. -->
+
   <!-- ── SHEETS (redesign §2.1) ────────────────────────────────────
        Short reference you READ, then leave: Your team, Who's where, a team's
        day, the Alerts sheet. Drag the grab strip down (or tap outside, ✕,

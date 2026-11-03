@@ -12804,3 +12804,684 @@ div.sec-st-name {
 .sec-list:empty {
   display: none;
 }
+
+/* ============================================================
+   DIRECTOR TOOLS (redesign §7.2–7.4; Step 24): Tell everyone, Award points,
+   Preview as a counselor, the message banner
+   ============================================================
+   Markup and every hook: index.html (#takeover-tell, #takeover-award,
+   #preview-bar, the BANNER MARKUP comment). The same clipboard language as the
+   setup screens and the remote: flat paper, ONE grouped sheet per group with
+   hairline rows, chunky only where a press does something, gold for the ONE
+   action, ink ticks like a pen on a run sheet. Nothing here animates in CSS:
+   the motion is JellyMotion's (named in index.html beside each root), so calm
+   needs no override here. Every colour is a palette token, so dark follows. */
+
+/* ── Shared: the body and section heads ─────────────────────────
+   Sections stack in a grid with ONE gap, so a section the renderer hides takes
+   its space with it (a sibling margin would leave a hole above Quick alerts
+   whenever nothing is showing). A section's name is sentence case (never
+   spaced capitals), ink-2, with an optional note at the right that wraps under
+   it rather than squeezing it. */
+.tell-body,
+.award-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  gap: 20px;
+}
+.dt-h {
+  margin: 0 2px 8px;
+  font: 750 0.90625rem/1.25 var(--font-ui);
+  color: var(--ink-2);
+}
+.dt-h-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0 var(--s-3);
+  margin: 0 2px 8px;
+}
+.dt-h-row .dt-h {
+  margin: 0;
+}
+.dt-h-note {
+  font: 650 0.84375rem/1.3 var(--font-ui);
+  color: var(--ink-2);
+}
+/* The gold "!" a decision is waiting on (the hub's mark, drawn small). */
+.dt-mark {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: inset 0 0 0 1.5px var(--gold-edge);
+  color: var(--gold-ink);
+  font: 900 0.8125rem/1 var(--font-ui);
+}
+
+/* ── The message banner (BANNER MARKUP, index.html) ─────────────
+   A message is the one blue tint (§8.1 rule 7), carried by its icon tile; no
+   badge, no emoji, no capitals. Now's strip and Tell everyone's preview draw
+   the same element. */
+.msg {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) 30px;
+  align-items: start;
+  gap: 10px;
+  padding: 11px 6px 11px 12px;
+  border-radius: 14px;
+  background: var(--blue-tint);
+  color: var(--ink);
+}
+.msg + .msg {
+  margin-top: var(--s-2);
+}
+/* Danger text on the blue tint: the page's danger red is 7.3:1 on the light
+   tint but only 5.3:1 on the dark one, under the 7:1 small text needs, so the
+   dark tint gets a lighter red (7.5:1). */
+.msg {
+  --msg-danger: var(--color-danger-text);
+}
+:root[data-jelly-mode="dark"] .msg {
+  --msg-danger: #ffbcb6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-jelly-mode="light"]) .msg {
+    --msg-danger: #ffbcb6;
+  }
+}
+.msg-ico {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  background: var(--blue);
+  color: var(--on-blue);
+}
+.msg-ico .ico {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2.3;
+}
+.msg-body {
+  min-width: 0;
+  padding-top: 1px;
+}
+.msg-text {
+  margin: 0;
+  font: 650 0.96875rem/1.38 var(--font-ui);
+  overflow-wrap: break-word;
+}
+.msg-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0 10px;
+  margin: 3px 0 0;
+  font: 600 0.8125rem/1.35 var(--font-ui);
+  color: var(--ink-2);
+}
+/* Directors' "Remove for everyone": danger TEXT, its 44px hit area padded
+   round the words (it rides a meta line). */
+.msg-remove {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target);
+  margin: -12px 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--msg-danger);
+  font: 750 0.8125rem/1.35 var(--font-ui);
+  cursor: pointer;
+}
+/* The × draws small and is a full 44×44 target, bleeding into the padding. */
+.msg-x {
+  display: grid;
+  place-items: center;
+  width: var(--target);
+  height: var(--target);
+  margin: -8px -6px -8px -8px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  background: none;
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.msg-x .ico {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.6;
+}
+.msg-x:active {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+.msg[data-kind="chat"] .msg-ico {
+  background: var(--sheet);
+  color: var(--link);
+  box-shadow: inset 0 0 0 2px var(--link);
+}
+
+/* ── Tell everyone (#takeover-tell) ─────────────────────────────
+   Roof, then: Showing now → Quick alerts → the message → How it reaches
+   people → On a counselor's phone, and one gold Send in the dock. */
+.tell .tk-body {
+  padding-top: var(--s-4);
+}
+.tell .tk-titles {
+  flex: 1 1 auto;
+}
+
+/* After a Send that did not fully work: one line per channel. Plain lines with
+   marks (done-green check, the gold "!"), never a tinted box. */
+.tell-result {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line-2);
+}
+.tell-res-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.tell-res {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: var(--target);
+  font: 700 0.96875rem/1.3 var(--font-ui);
+}
+.tell-res-mark {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+}
+.tell-res[data-tone="ok"] .tell-res-mark {
+  background: var(--done);
+}
+.tell-res[data-tone="ok"] .tell-res-mark::before {
+  content: '';
+  width: 9px;
+  height: 5px;
+  margin-top: -2px;
+  border: solid var(--on-done);
+  border-width: 0 0 2.5px 2.5px;
+  transform: rotate(-45deg);
+}
+.tell-res[data-tone="warn"] .tell-res-mark {
+  background: var(--gold);
+  box-shadow: inset 0 0 0 1.5px var(--gold-edge);
+}
+.tell-res[data-tone="warn"] .tell-res-mark::before {
+  content: '!';
+  color: var(--gold-ink);
+  font: 900 0.8125rem/1 var(--font-ui);
+}
+
+/* Showing now: what everyone sees this minute, each with its Take down. */
+.tell-live {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 66px;
+  padding: 10px 12px 10px 14px;
+  border-top: 1px solid var(--line);
+}
+.gl > .tell-live:first-child {
+  border-top: 0;
+}
+.tell-live-ico {
+  display: grid;
+  place-items: center;
+  color: var(--ink-2);
+}
+.tell-live-ico .ico {
+  width: 22px;
+  height: 22px;
+}
+.tell-live-text {
+  min-width: 0;
+}
+.tell-live-title {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  font: 750 1rem/1.25 var(--font-ui);
+  overflow-wrap: break-word;
+}
+.tell-live-sub {
+  display: block;
+  margin-top: 2px;
+  font: 600 0.84375rem/1.3 var(--font-ui);
+  color: var(--ink-2);
+}
+/* Large text: Take down / Try again move under their words (whole words, no
+   squeezed column), still at the words' left edge. */
+.tell-showing-list,
+.tell-res-list {
+  container-type: inline-size;
+}
+@container (max-width: 17rem) {
+  .tell-live {
+    grid-template-columns: 24px minmax(0, 1fr);
+    align-items: start;
+    gap: 6px 12px;
+  }
+  .tell-live-ico {
+    margin-top: 1px;
+  }
+  .tell-live .tell-down {
+    grid-column: 2;
+    justify-self: start;
+  }
+  .tell-res {
+    grid-template-columns: 22px minmax(0, 1fr);
+    gap: 4px 10px;
+    padding: 6px 0;
+  }
+  .tell-res .btn {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+
+/* Quick alerts: three equal, chunky buttons (58px), the words centred and
+   allowed two lines. From ~130% text they become one full-width column, so a
+   label never splits a word across three lines. */
+.tell-quick {
+  container: tell-quick / inline-size;
+}
+.tell-quick-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--s-2);
+}
+.tell-q {
+  min-height: 58px;
+  padding: 6px 8px;
+  font: 800 0.9375rem/1.18 var(--font-ui);
+  white-space: normal;
+  overflow-wrap: break-word;
+}
+/* The one whose words are still in the message: pressed in, ink ring. */
+.tell-q[aria-pressed="true"] {
+  border-color: var(--ink);
+  background: var(--lift);
+  box-shadow: inset 0 0 0 1.5px var(--ink), 0 1px 0 var(--edge);
+}
+@container tell-quick (max-width: 18rem) {
+  .tell-quick-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .tell-q {
+    min-height: 52px;
+  }
+}
+
+/* The message: the thing being made, so it is drawn as a physical sheet (the
+   approved mockup), 17px words, the count tucked into its corner. */
+.tell-msg {
+  position: relative;
+}
+.tell-text {
+  display: block;
+  width: 100%;
+  min-height: calc(3 * 1.4em + 42px);
+  margin: 0;
+  padding: 12px 14px 30px;
+  border: 2px solid var(--field-b);
+  border-radius: 16px;
+  background: var(--sheet);
+  color: var(--ink);
+  box-shadow: 0 var(--edge-btn) 0 var(--edge);
+  font: 600 1.0625rem/1.4 var(--font-ui);
+  field-sizing: content;
+  resize: none;
+  overflow-wrap: break-word;
+}
+.tell-text::placeholder {
+  color: var(--placeholder);
+  opacity: 1;
+}
+/* Focus is a camp-blue edge (non-text blue, 3:1 and up), not a second ring. */
+.tell-text:focus {
+  outline: none;
+  border-color: var(--blue);
+}
+.tell-count {
+  position: absolute;
+  right: 14px;
+  bottom: 10px;
+  font: 700 0.8125rem/1 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+  pointer-events: none;
+}
+.tell-count[data-near] {
+  color: var(--ink);
+  font-weight: 850;
+}
+
+/* How it reaches people: one sheet, a way per row. The row's head IS the
+   checkbox: an ink tick in a chunky box, like a pen on a run sheet. */
+.tell-ways {
+  container: tell-ways / inline-size;
+}
+.tell-way + .tell-way {
+  border-top: 1px solid var(--line);
+}
+.tell-tick {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 66px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 0;
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tell-tick:active {
+  background: color-mix(in srgb, var(--ink) 5%, var(--sheet));
+}
+.tell-box {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border: 2px solid var(--field-b);
+  border-radius: 8px;
+  background: var(--sheet);
+  box-shadow: 0 2px 0 var(--edge);
+  color: var(--paper);
+}
+.tell-box .ico {
+  width: 18px;
+  height: 18px;
+  stroke-width: 3.2;
+  visibility: hidden;
+}
+.tell-tick[aria-checked="true"] .tell-box {
+  border-color: var(--ink);
+  background: var(--ink);
+}
+.tell-tick[aria-checked="true"] .tell-box .ico {
+  visibility: visible;
+}
+/* Can't be used right now (phone alerts not live, no signal): the dashed well
+   that every "not yet" wears; the sub line says why in words. */
+.tell-tick[aria-disabled="true"] {
+  cursor: default;
+}
+.tell-tick[aria-disabled="true"] .tell-box {
+  border: 2px dashed var(--ink-3);
+  background: var(--paper-2);
+  box-shadow: none;
+}
+.tell-tick[aria-disabled="true"] .tell-box .ico {
+  visibility: hidden;
+}
+.tell-tick[aria-disabled="true"]:active {
+  background: none;
+}
+.tell-tick-text {
+  min-width: 0;
+}
+.tell-tick-title {
+  display: block;
+  font: 800 1rem/1.25 var(--font-ui);
+  letter-spacing: var(--track-row);
+}
+.tell-tick-sub {
+  display: block;
+  margin-top: 2px;
+  font: 600 0.84375rem/1.35 var(--font-ui);
+  color: var(--ink-2);
+}
+.tell-way[data-off] .tell-tick-title {
+  color: var(--ink-2);
+}
+/* A way's choices, under its words (the box's column stays clear). */
+.tell-more {
+  display: grid;
+  gap: 10px;
+  padding: 0 14px 14px 58px;
+}
+.tell-seg .seg-btn {
+  padding-inline: 4px;
+}
+/* A team to buzz: one radio per team, its mark and short name. */
+.tell-teams {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+.tell-team {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  min-height: var(--target);
+  padding: 4px 10px 4px 6px;
+  border: 1.5px solid var(--line-2);
+  border-radius: var(--r-btn);
+  background: none;
+  color: var(--ink-2);
+  font: 700 0.90625rem/1.15 var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.tell-team[aria-checked="true"] {
+  border: 2px solid var(--ink);
+  padding: 3.5px 9.5px 3.5px 5.5px;
+  background: var(--lift);
+  color: var(--ink);
+  font-weight: 800;
+  box-shadow: 0 2px 0 var(--edge);
+}
+.tell-team-mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+}
+.tell-team-mark .tm-shield {
+  width: 22px;
+}
+.tell-team-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+/* Urgent: a switch whose state is said in words beside it. */
+.tell-urgent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s-3);
+}
+.tell-urgent-text {
+  min-width: 0;
+}
+.tell-urgent-title {
+  display: block;
+  font: 800 0.96875rem/1.25 var(--font-ui);
+}
+.tell-urgent-sub {
+  display: block;
+  margin-top: 1px;
+  font: 600 0.8125rem/1.35 var(--font-ui);
+  color: var(--ink-2);
+}
+/* Pin: which notice this replaces (said before Send, then asked at Send), and
+   how the message will be cut into the card's title and the line under it. */
+.tell-replace {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
+  font: 650 0.875rem/1.4 var(--font-ui);
+  color: var(--ink);
+}
+.tell-split {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 3px 10px;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1.5px solid var(--line-2);
+  border-radius: var(--r-btn);
+}
+.tell-split-k {
+  padding-top: 2px;
+  font: var(--t-label);
+  color: var(--ink-2);
+}
+.tell-split-v {
+  font: 650 0.9375rem/1.35 var(--font-ui);
+  overflow-wrap: break-word;
+}
+.tell-split-v:empty::before {
+  content: '—';
+  color: var(--ink-3);
+}
+.tell-full {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  justify-self: start;
+  min-height: var(--target);
+  margin: -4px 0 -8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  font: 750 0.9375rem/1.3 var(--font-ui);
+  text-align: left;
+  cursor: pointer;
+}
+.tell-full .ico {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.6;
+}
+/* At large text the choices take the row's whole width, then each segmented
+   control stacks (a label like "Directors" must never run out of its segment). */
+@container tell-ways (max-width: 19rem) {
+  .tell-more {
+    padding-left: 14px;
+  }
+  /* The box stays level with the title when the words run to many lines. */
+  .tell-tick {
+    align-items: start;
+  }
+  .tell-box {
+    margin-top: 1px;
+  }
+}
+@container tell-ways (max-width: 16.5rem) {
+  .tell-seg {
+    grid-auto-flow: row;
+  }
+  .tell-teams {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* The switch and its word under Urgent's words, never beside a column one
+     word wide; the title / under-it pairs stack too. */
+  .tell-urgent {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+  .tell-urgent-text {
+    flex-basis: 100%;
+  }
+  .tell-split {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1px;
+  }
+  .tell-split-v + .tell-split-k {
+    margin-top: 8px;
+  }
+}
+
+/* On a counselor's phone: the top of a phone (an outline and its speaker slot,
+   no notch drawing, no glow), its screen in Now's paper, holding the real
+   banner / notice markup. A picture: nothing in it takes a tap. */
+.tell-phone {
+  position: relative;
+  padding: 22px 10px 14px;
+  border: 2px solid var(--ink-3);
+  border-bottom: 0;
+  border-radius: 30px 30px 0 0;
+  background: var(--paper);
+}
+.tell-phone::before {
+  content: '';
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  width: 44px;
+  height: 5px;
+  margin-left: -22px;
+  border-radius: 3px;
+  background: var(--line-2);
+}
+.tell-phone-screen {
+  display: grid;
+  gap: var(--s-2);
+  pointer-events: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.tell-phone-screen > .notice-card {
+  margin: 0;
+}
+
+/* The dock: Send is the one gold action and says what will happen. Done shows
+   only while the keyboard is up (iOS multi-line fields have no Done key), and
+   then Send slims so more of the message shows above the keyboard. */
+.tell-dock {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+}
+.tell-send {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+.tell-done {
+  display: none;
+  flex: none;
+  min-width: 76px;
+}
+body.kb-open .tell-done {
+  display: inline-flex;
+}
+body.kb-open .tell-send {
+  min-height: 52px;
+  border-radius: 14px;
+  box-shadow: 0 4px 0 var(--gold-edge);
+  font-size: 1.125rem;
+}
+body.kb-open .tell-send[aria-disabled="true"] {
+  box-shadow: none;
+}

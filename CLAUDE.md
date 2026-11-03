@@ -1067,6 +1067,38 @@ test clock re-arms for ever. Browser pass (Playwright against the real code; no 
 line meeting the contrast rule, no sideways scroll, in every state of the remote, the mirror, the grids, the strip,
 More, Games and the champion line.
 
+## Director tools: Tell everyone (Step 24 — markup and visual system)
+
+Redesign §7.2, mockup 10 and 10-dark. Static markup in index.html (comments there name every hook
+and give the row templates), styles in styles.css's DIRECTOR TOOLS block (the last block in the
+file). **It ships hidden and unwired**; the build session un-hides it as it wires it, so the live app
+never shows a dead control. Rules for whoever edits it:
+
+- **Tell everyone** (`#takeover-tell.takeover.is-roof.tell`, its back `#takeover-tell-back-label`):
+  top to bottom the order a director meets the decisions — `#tell-result` (after a send that did not
+  fully work: `#tell-result-list` of `li.tell-res[data-tone=ok|warn]`, a failed channel ending in
+  `[data-tell-retry=banner|buzz|pin]`), `#tell-showing` / `#tell-showing-list` (`.tell-live[data-key]
+  [data-kind=banner|notice]` rows with `.btn.btn-sm.tell-down[data-tell-down=banner|notice][data-id]`),
+  Quick alerts (`.tell-q[data-quick=inside|dining|stay][aria-pressed]`, the note `#tell-quick-what`),
+  the message (`#tell-text`, 280, `#tell-count` with `data-near`), How it reaches people (three
+  `.tell-way`s: `#tell-way-banner|buzz|pin`, each head a `button.tell-tick[role=checkbox][aria-checked]`
+  — `#tell-banner`, `#tell-buzz`, `#tell-pin` — and its choices in `#tell-banner-more` (`#tell-ttl`:
+  `data-ttl=1h|3h|day`), `#tell-buzz-more` (`#tell-aud`: `data-aud=everyone|team|directors`;
+  `#tell-teams` of `button.tell-team[role=radio][data-team]`; Urgent `jelly-switch#tell-urgent` +
+  `#tell-urgent-state`), `#tell-pin-more` (`#tell-pin-replace` / `-text`, `#tell-pin-split` with
+  `#tell-pin-title` / `#tell-pin-rest`, `#tell-notice-full`)); the renderer sets each `-more`'s
+  `hidden`. Buzz unavailable (phone alerts not live, offline): `#tell-way-buzz[data-off]`,
+  `#tell-buzz[aria-disabled="true"]` (a dashed box) and the reason in `#tell-buzz-sub`. Then
+  `#tell-preview` / `#tell-preview-body` ("On a counselor's phone", a picture: no pointer events) and
+  the dock `#tell-dock`: `#tell-send` / `#tell-send-label` (the ONE gold action, its words say what
+  happens; not ready = `aria-disabled` + the missing step as its label) and `#tell-done`, which CSS
+  shows only under `body.kb-open` (Send slims beside it). Nothing uses `disabled`.
+- **The message banner** (BANNER MARKUP comment in index.html): `.msg[data-kind=banner|chat]` > `.msg-ico`,
+  `.msg-body` > `.msg-text` + `.msg-meta` (`.msg-remove` for directors), `.msg-x` (44×44). The one blue
+  tint, no badge, no emoji, no capitals. **Now's strip and the preview must be written by ONE function**,
+  so the preview is exactly what counselors get (today's `.announce-banner` is the old look; the build
+  session moves `renderAnnouncements` to `.msg` when it removes the old inline composer).
+
 ## Set up the week: the frame, the hub, the clipboard (Step 14 — markup and visual system)
 
 P2 §11.0–11.2 ("the director's clipboard") inside redesign §8. Static markup in
