@@ -105,9 +105,9 @@ Files:
   the messages strip's notice, Now's three sheets) and wires its taps. A classic script right after
   award.js, every hook in app.js typeof-guarded; without it Now keeps only the announcements
 - `games-ui.js` — THE GAMES TAB'S RENDERERS (see "The Games tab"): paints `gamesModel()` onto `#tab-games` (the day picker, the day's blocks
-  with Now's own game rows, the directors' standings), runs the quick-points sheet and the standings "…" sheet, and draws the takeover's
-  Next game dock. A classic script right after now-ui.js (its rows are Now's), every hook in app.js typeof-guarded; without it the Games tab
-  is an empty page and the app runs
+  with Now's own game rows, the directors' standings), runs the quick-points sheet and the standings "…" sheet, and draws the game takeover's
+  podium picker, saved result and dock (Save, then Next game). A classic script right after now-ui.js (its rows are Now's), every hook in app.js
+  typeof-guarded; without it the Games tab is an empty page and a podium game is scored with the old three dropdowns, the app runs
 - `jelly-motion.js` — the SPRING SYSTEM and the ONE calm-motion switch (see
   "Motion and calm motion" below). A classic script loaded between camps.js and
   app.js with no dependency on `vendor/jelly.js` (that module can't parse on
@@ -935,8 +935,32 @@ TAB"), **the model** (app.js "THE GAMES ENGINE": plain data from `nowCtx` — th
 - **Next game** (`gamesNextAfter`, `gamesDock`, `openNextGame`): after a result the takeover's dock (`renderGameDock`, directors only) names what is left and
   offers Next game: the rest of the block, the later blocks, the games on no block, then (wrapping) what is unscored before it, skipping a round the
   director's own team plays — those are named ("1 game needs another director: X (your team plays)"). It re-asks at the tap and swaps the takeover in
-  place (`openGame` keeps the labelled Back's origin and the shell replaces the history entry). **Not built (build session 2):** the podium picker, the
-  saved-result block and Save in the dock; the dock appears only once a result exists.
+  place (`openGame` keeps the labelled Back's origin and the shell replaces the history entry). The same dock holds the Save while a podium is picked (below).
+- **The podium picker** (redesign §5.5, mockup 14; `gamesPodium`, `podiumPick`, `podiumSave` in app.js, `renderPodiumPicker` in games-ui.js) replaces the three
+  `jelly-select`s of a PODIUM game (`gameIsPodium`: neither a bracket nor a tally; those keep their own forms, and `medalPickerHTML` stays for the tally). Three
+  rows of team keys (Gold / Silver / Bronze, "7 points", doubled for a double-points game, a director's word), three taps and Save. **A later row waits until the
+  medal above is picked** (`data-wait`, the dashed "not yet" well — except a row that already holds a pick, which is always clearable); **a team holding another
+  medal is dashed, disabled and named by a tab "② has silver"** (never the bare word: senior has a TEAM called Gold; the spoken label ends ", has gold"); **a tap on
+  the picked key clears it**. No ties: a result has one team per medal. The keys are **toggle buttons** (`aria-pressed`, a `role="group"` named by the row's
+  heading), not radios, because a radio cannot be un-picked. The picks are the draft's OWN medal leaves (`drafts/<game>/medals/<medal>`), so `computeSyncUpdates`
+  writes one path per pick (a clear is a `null` on that leaf), two directors picking at once both land, and the counselors' "Being scored" line behaves as
+  before (a draft with a medal is Live, an emptied one is blank); `podiumPicks` reads the draft defensively (a stale team id is no pick; a team written to two
+  medals by two phones keeps its first). `podiumSave` writes the SAME result record the old button wrote (`medals` + `savedAt`, the draft removed, `touchData`,
+  the confetti for the gold team) and refuses an incomplete podium and a game another director already saved (a stale form never overwrites). A podium is NOT
+  guarded by the own-team rule. **The picker is built once per game and team list, then PATCHED in place** (`gamesPodiumPatch`: attributes, the check slot and the
+  "has gold" slot, shown with `hidden`), so the next row cross-fades from waiting, a finger and the keyboard focus stay on the key they pressed and an idle
+  snapshot writes nothing; a rename or a different game rebuilds it (`gamesPodiumHtml(m, true)` is the shape compared). A pick's check pops on `snap` (none while
+  calm). A counselor, a preview and a view-only tab get no picker, no Save and `podiumPick` / `podiumSave` refuse them. A refused tap says why in a toast.
+- **The dock and the saved result** (`gamesDock`, `renderGameDock`, `gamesResultModel`, `renderSavedResult`; mockup 14b): while a podium is picked the dock is ONE
+  button — the dashed well naming what is missing ("Pick bronze, then save", "Pick silver and bronze", "Pick gold, silver and bronze"; a tap on it scrolls to
+  that row and focuses its first free key), then the gold **Save result** (it lands on `snap`). After a save the takeover is the result — the line, the winners
+  as a hairline list (the medal named in words for a screen reader, "+7" a director's word, `data-mine` for the followed team, a tally's scores under it) and
+  **Change the result** (a director's; asks through `askDialog`, native `confirm` without it: "Clear it and pick again" / "Keep it") — and the dock is the Next
+  game dock, with the keyboard focus moved onto Next game. **"Saved 10:52 AM · everyone's phone has it" only once the write is ACKNOWLEDGED**
+  (`gameResultState`: the confirmed tree holds the same record): "Saving…" until then, "Saved on this phone · it sends when you're back online" with no
+  connection (or no sync at all), "Not saved yet · the server turned it away. Use Retry in the bar at the top." when the rules refused it (`results/<game>` is in
+  `stateQuarantine`). The line's state is PATCHED (`gamesPaintSaved`) so an acknowledgement never rebuilds the list; `gamesSavedRefresh` is called after an
+  acknowledged push and from `updateSyncIndicator`. The line, the points and Change are a director's: a counselor reads the winners only.
 - **Directors' standings** (`gamesStandings`): places are reveal-core's `groupPlaces` over `rankTeamsByPoints` — the call the reveal's freeze makes, so a tie
   reads the same on the remote and the big screen (`games-tab.test.js` compares them); equal points share a place ("tie"), an empty table has no places and
   keeps roster order. Arrows are this place against the day's baseline (`startOfDayPlaces`, device-local `campScoreboardDayRanks`: shared places, `flat` when
@@ -961,9 +985,13 @@ TAB"), **the model** (app.js "THE GAMES ENGINE": plain data from `nowCtx` — th
   and the old cards are gone; `data-card="standings"` is `#games-live`, `data-card="competitions"` is `#games-week`.
 - **Motion** (calm-aware, from diffs only): the pill's `snap`, the standings and blocks glide by key (`paintKeyedList`, never under a thumb), a changed number
   pops (`press`), a game going Live → Done pops its check (`nowCheckPop`), a new day arrives from its side. A paint on another tab or under a takeover is a plain write.
+  In the takeover: a pick's check and the Save landing on `snap`, the saved line's check popping when the server confirms (none of it while calm).
 - **Passes:** `docs/build-notes/verify/step18-design.cjs` (specimens of the templates) and **`step18-pass.cjs`** (the real renderers: both camps, director /
   director on a team / counselor, 360 / 390, light / dark, 100 / 130 / 200 %: no target under 44×44, no sideways scroll, no clipped text, no console error;
-  then a day tap, arrow keys, quick points to Undo, the standings sheet, a saved game's dock and Next game, the own team's lock; `SHOTS=1`).
+  then a day tap, arrow keys, quick points to Undo, the standings sheet, a saved game's dock and Next game, the own team's lock; `SHOTS=1`) and
+  **`step18-podium.cjs`** (the takeover: both camps, the same roles / widths / themes / text sizes, the widest podium — three teams with 20-character names — through
+  nothing picked, two picked, all three, saved; then the behaviour: waiting rows, the taken tab, the SAME nodes after a pick, a clear, per-leaf draft paths, a pick
+  moved by a snapshot, Save with its focus, saving → saved → offline, Next game and one Back, Change the result, calm motion making no transform keyframe).
 
 ## The standings reveal: the screens (Step 23 — markup and visual system)
 
@@ -2376,10 +2404,14 @@ What's covered, and why each file exists:
 - `games-tab.test.js` (+ `.senior`; seeded and seeded-all passes) — the Games model ("The Games tab"): the status truth table (results, brackets,
   four-team brackets, drafts, clocks, and what only looks live), the day picker across the camp week's phases, the blocks and the one up next / one gold, Next game's
   order and its own-team skip, the dock's words, shared places equal to the reveal's grouping, arrows and a flat baseline, the gap sentence, quick points
-  and their Undo, and a counselor's model (every day and minute, a preview) holding no point, place or leader with the guard throwing.
+  and their Undo, and a counselor's model (every day and minute, a preview) holding no point, place or leader with the guard throwing; and the podium picker
+  (rows that wait, taken teams named, re-tap clears, refusals, a defensively read draft, points words, drafts written per leaf, Save and its refusals, Next game
+  after Save), the saved result's model and the saved line's truth table (saving / saved / offline / refused).
 - `games-ui.test.js` (+ `.senior`; seeded and seeded-all passes) — the Games renderers: a standings row (tie, medals in words, the lock row, a second tab),
   the tablist, blocks / notes / dock markup and their escaping, an idle paint writing nothing, the quiet line and the revealed grid, the quick-points sheet
-  from tap to Undo, the standings sheet, the dock, motion from diffs, and source pins (no `innerHTML =`, no week data read, the markup's roots).
+  from tap to Undo, the standings sheet, the dock, motion from diffs, and source pins (no `innerHTML =`, no week data read, the markup's roots); and the podium
+  picker's markup (toggle keys, escaping), its in-place patch (same nodes, an idle pass writes nothing, a new pick pops its check), the tap and Save paths, the dock
+  while picking, the saved result's markup (a counselor's has no point and no director control), the saved line and Change the result.
 - `now-ui.test.js` (+ `.senior`; seeded and seeded-all passes) — Now's renderers ("The Now tab"): every kind of card from the model, a
   counselor's markup with no key / Score / place / point (the points guard throwing), render stability per kind (an identical second paint and a
   same-minute tick write nothing; the tick between wake-ups writes only the minutes left), motion from diffs only (the games rows' glide, with a hand-made
@@ -2437,7 +2469,8 @@ What's covered, and why each file exists:
   the notice replace question and an Undo that checks first, quick alerts, Buzz disabled until phone alerts are live,
   the draft, `reloadBlocked`, the shell stack, and a counselor reaching none of it.
 - `game-view.test.js` (the rules above: live-html skip, kept forms firing real
-  handlers after a state swap, celebrations only for scoring), `home.test.js`
+  handlers after a state swap, celebrations only for scoring; a podium pick resolving the LIVE draft, the picker built once and patched, the dropdowns
+  kept behind a missing games-ui.js), `home.test.js`
   (the Games panels' render stability and the standings side effects, toast cap, announcement composer), `overlays.test.js` (schedule
   sheet, status pill, members drawer, lock screen, scrim fade, pickers),
   `shell.test.js` (page-shell text pins: the not-yet-defined hide, the boot
