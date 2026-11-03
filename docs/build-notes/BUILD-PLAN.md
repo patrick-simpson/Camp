@@ -513,6 +513,13 @@ Four **separate** deploys (P7), in this order, each with its own tests and live 
   bracket or clock).
 - **Live check:** both camps: add a game to an item, see it on Now and Games.
 - **Rollback:** revert (`blockId` is inert to old code).
+- **Built (Step 21, build session 1, not yet deployed):** the Games screen and the progressive game sheet, in `setup-ui.js` section 16 (no new
+  file, so **no new versioned asset**: the deploy bumps every `?v=` in index.html, `APP_VERSION` and `CODE_UPDATED_AT`, and the TV page's references
+  are unchanged). No rules change. What differs from the plan: Matchups' "By the standings" is honoured in the six-team wizard as a suggestion to
+  the director who calls a match up (`bracketSuggestPair`, app.js; the four-team bracket reads `bracketSeed` itself in Step 22), and a bracket on a
+  camp with other than six teams says so until `bracketKindFor` exists; a field two directors change at once is last-commit-wins per field (the
+  classic editor's clash block is not used; a game deleted elsewhere asks inline). The real-tap pass is `docs/build-notes/verify/step21-pass.cjs`.
+  Owner checks (real phone / real sign-in): see the session report's `ownerActions`.
 
 ### Step 22 · The 4-team bracket · P2 S6b · Mar · L (3) · Sonnet
 - **Ships:** the `brackets4` sync key, the four-team flow (semifinals, 3rd place before the final,
