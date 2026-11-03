@@ -8309,6 +8309,31 @@ function startOfDayRanks(ranked) {
   return snap.ranks;
 }
 
+// The same baseline as SHARED PLACES (reveal-core's groupPlaces: equal points share one), for the Games standings' arrows.
+// `flat` is a baseline taken while nobody had a point: every team was level, so "moved since this morning" would say nothing
+// and the arrows stay off for the rest of that day. One stored record with startOfDayRanks' (a phone's older one has no
+// `places` and is taken afresh). Null for a phone that may not read points.
+function startOfDayPlaces() {
+  if (!pointsReadAllowed('startOfDayPlaces')) return null;
+  const today = campDateStr();
+  let snap = null;
+  try {
+    snap = JSON.parse(localStorage.getItem(DAY_RANK_KEY) || 'null');
+  } catch (e) { /* corrupt — re-snapshot below */ }
+  if (!snap || snap.date !== today || !snap.ranks || !snap.places) {
+    const counts = medalCounts();
+    const ranked = rankTeamsByPoints(counts);
+    const groups = groupPlaces(ranked.map((t) => ({ id: t.id, nm: t.name, p: counts[t.id].points, g: counts[t.id].gold, s: counts[t.id].silver, b: counts[t.id].bronze })));
+    const ranks = {};
+    ranked.forEach((t, i) => { ranks[t.id] = i + 1; });
+    const places = {};
+    groups.forEach((gr) => gr.entries.forEach((e) => { places[e.id] = gr.place; }));
+    snap = { date: today, ranks, places, flat: ranked.every((t) => counts[t.id].points === 0) };
+    try { localStorage.setItem(DAY_RANK_KEY, JSON.stringify(snap)); } catch (e) { /* fine */ }
+  }
+  return { places: snap.places, flat: !!snap.flat };
+}
+
 function renderStandings() {
   // (Card visibility + the hide switches are handled centrally by
   // applyCardVisibility, called at the top of renderAll.)
@@ -9004,7 +9029,7 @@ function bonusDraftProblem(d) {
 // the double-points window still goes by the entry's own timestamp. The Games tab passes nothing: an entry with no
 // `day` belongs to the weekday it was recorded on.
 function bonusAddFromDraft(opts) {
-  const d = bonusDraft;
+  const d = (opts && opts.draft) || bonusDraft; // the Games tab's quick points use a draft of their own (gamesQuickAdd)
   if (!canEdit()) return 'own-team';
   const problem = bonusDraftProblem(d);
   if (problem) return problem;
@@ -9015,7 +9040,9 @@ function bonusAddFromDraft(opts) {
   d.teams.forEach((teamId) => {
     const entry = { teamId, category: d.category, label, points: pts, at };
     if (d.category === 'custom' && Number.isInteger(day) && day >= 1 && day <= 7) entry.day = day;
-    state.bonuses[newBonusId()] = entry;
+    const id = newBonusId();
+    state.bonuses[id] = entry;
+    if (opts && Array.isArray(opts.made)) opts.made.push(id); // for an Undo that takes back exactly these
   });
   d.teams = [];
   d.points = '';
@@ -9569,6 +9596,390 @@ function wireDayPanels(nav) {
     btn.addEventListener('click', () => openBuilder('games')));
   nav.querySelectorAll('.quick-game-btn').forEach((btn) =>
     btn.addEventListener('click', () => startQuickGame()));
+}
+
+// ════════════════════════════════════════════════════════════════════
+// THE GAMES ENGINE — gamesModel() and what hangs off it (redesign §5; BUILD-PLAN Step 18, build session 1)
+// ════════════════════════════════════════════════════════════════════
+// The Games tab as PLAIN DATA — no markup, no DOM — computed in the Now engine's own context (nowCtx: the role is read
+// once, `director` = may act as a director right now, `points` = may see points) and from its own rows (nowGameRow), so a
+// game reads the same on Now and here. games-ui.js paints it onto the static markup in #tab-games; a test walks it.
+// Rules of the layer:
+//   - SECRECY. The directors' standings (`standings`) are null unless `ctx.points`; a counselor's model holds no point, no
+//     place, no leader's name and no picked team of a game still being scored (nowGameRow's rows carry a live tally in
+//     roster order for a counselor, and "Being scored" for a draft). `secret` is the line a counselor reads instead.
+//   - THE CLOCK IS AN ARGUMENT (`opts.now`, `opts.ms`), so a test can put "today" anywhere in the week.
+//   - Week data only through the SEAM accessors (tests/seam.test.js).
+
+const GAMES_QUICK_KEYS = [1, 2, 3, 5];                                // the points a director can give from the standings
+const GAMES_QUICK_WHY = ['Sportsmanship', 'Team spirit', 'Helping out']; // the reasons offered (and "Other…")
+const GAMES_QUICK_UNDO_MS = 10000;                                    // the Undo toast after quick points (§5.2)
+
+// A block's run-sheet clock ("10:00–11:45"; from noon on, "6:00–6:45 PM": the part of day said once, at the end).
+function gamesWhen(start, end) {
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return '';
+  return schedClock(start, false) + '–' + schedClock(end, false) + (start >= 720 ? ' PM' : '');
+}
+
+function gamesOrdinal(n) {
+  const s = ['th', 'st', 'nd', 'rd'];
+  const v = n % 100;
+  return n + (s[(v - 20) % 10] || s[v] || s[0]);
+}
+
+// The day the clock is in, as a competition day: none before or after the camp week's dates (a Wednesday of last year is not
+// "today"), else the day whose weekday it is.
+function gamesToday(ctx, week) {
+  if (week.phase === 'before' || week.phase === 'after') return null;
+  return competitionDays().find((d) => d.dow === ctx.dow) || null;
+}
+// Is this day behind the clock? Sunday (the week's start) has nothing behind it, Saturday has the whole competition week.
+function gamesDayIsPast(day, ctx, week) {
+  if (week.phase === 'after') return true;
+  if (week.phase === 'before') return false;
+  return Number.isInteger(day.dow) && day.dow < ctx.dow;
+}
+
+// The picker's one status under a day name: 'done' (it has games and every one has a result — also on today), 'today', 'left'
+// (a day behind us with games still unscored: `left` of them), else ''. A day with no games says nothing.
+function gamesDayStatus(day, ctx, week, today) {
+  const games = gamesForDayId(day.id);
+  const total = games.length;
+  const left = games.filter((g) => !(state.results && state.results[g.id])).length;
+  let st = '';
+  if (total && !left) st = 'done';
+  else if (today && today.id === day.id) st = 'today';
+  else if (total && left && gamesDayIsPast(day, ctx, week)) st = 'left';
+  return { st, left, total };
+}
+
+// The two teams whose round a game is waiting on ([] when it names none): a bracket's current matchup, a bracket not yet
+// started with a fixed first matchup, a four-team bracket's match under way. A tally or a podium game is never guarded at
+// the game level (canScoreRound only bites a round with a team in it).
+function gameRoundTeams(g) {
+  if (!g || g.format !== 'tournament') return [];
+  const raw = state.brackets && state.brackets[g.id];
+  if (raw) {
+    if (!bracketKnown(raw)) return [];
+    const nb = normalizeBracket(raw);
+    if (nb.phase === 'summary') return [];
+    const pair = currentMatchupOf(g, nb);
+    return pair ? pair.slice(0, 2).filter(Boolean) : [];
+  }
+  const b4 = nowBracket4({ myTeam: '' }, g);
+  if (b4) {
+    const cell = b4.cells.find((c) => c.status === 'live');
+    return cell ? cell.teams.map((t) => t.team).filter(Boolean) : [];
+  }
+  const first = Array.isArray(g.roundOneMatchups) && g.roundOneMatchups.length ? g.roundOneMatchups[0] : null;
+  return Array.isArray(first) ? first.slice(0, 2).filter(Boolean) : [];
+}
+// Would the own-team guard keep THIS director from scoring this game's round? (a director on a team; false for everyone else)
+function gameBlockedForMe(g) {
+  const t = gameRoundTeams(g);
+  return t.length > 0 && blockedByOwnTeam(...t);
+}
+
+// One game as a row of the Games tab: Now's row (status, place, medals, board, the Score button) with the live line said
+// per format — a round, "4 of 6 teams in", "Clock running", "Being scored" — and the own-team reason for every game a
+// director's team plays the next round of, not only a live one.
+function gamesRow(ctx, g) {
+  const row = nowGameRow(ctx, g);
+  if (row.status === 'live') {
+    const b = row.board;
+    const c = state.clocks && state.clocks[g.id];
+    if (b && b.kind === 'match') row.line = String(b.cap).split(' · ')[0];
+    else if (b && b.kind === 'tally') row.line = b.inCount + ' of ' + b.total + ' teams in';
+    else if (row.line === 'Being scored' && c && c.running === true && Number(c.endAt) > ctx.ms) row.line = 'Clock running';
+  }
+  if (ctx.director && row.status !== 'done') {
+    row.score = row.score || { gold: false, why: null };
+    if (!row.score.why && gameBlockedForMe(g)) row.score.why = 'Your team plays · another director scores';
+  }
+  return row;
+}
+
+// One competition day's games in the order a director walks them: the schedule's blocks by time (each block's games in its
+// own order), then the games on no block. [{ key, title, when, start, end, now, off, games }]. A day no block holds any of
+// the games of (a camp whose schedule has none of them yet) falls back to the session names — Morning, Evening — rather
+// than calling every game "not on the schedule".
+function gamesDayGroups(day, ctx, today) {
+  const own = gamesForDayId(day.id);
+  const mine = new Set(own);
+  const isToday = !!today && today.id === day.id;
+  const groups = [];
+  const listed = new Set();
+  scheduleForDow(day.dow).forEach((b, i) => {
+    // A game sits on ONE block here (the built-in senior rule lists its Evening pair under every games block after noon).
+    const games = gamesForBlock(day.dow, b).filter((g) => mine.has(g) && !listed.has(g));
+    if (!games.length) return;
+    games.forEach((g) => listed.add(g));
+    const timed = !b.noTime && Number.isFinite(b.start) && Number.isFinite(b.end);
+    groups.push({
+      key: 'b-' + blockPushId(b, day.dow, i), title: nowSplitLabel(b.label).head, when: timed ? gamesWhen(b.start, b.end) : '',
+      start: timed ? b.start : null, end: timed ? b.end : null, now: isToday && timed && ctx.minutes >= b.start && ctx.minutes < b.end, off: false, games,
+    });
+  });
+  const rest = own.filter((g) => !listed.has(g));
+  if (!rest.length) return groups;
+  if (!groups.length) {
+    const known = (state.config && state.config.sessions) || [];
+    const sessions = known.concat([...new Set(rest.map((g) => g.session))].filter((s) => !known.includes(s)));
+    sessions.forEach((s) => {
+      const games = rest.filter((g) => g.session === s);
+      if (games.length) groups.push({ key: 's-' + s, title: String(s), when: '', start: null, end: null, now: false, off: false, games });
+    });
+    return groups;
+  }
+  groups.push({ key: 'none', title: 'Not on the schedule', when: '', start: null, end: null, now: false, off: true, games: rest });
+  return groups;
+}
+
+// The rows of a day's groups, with the two marks a director reads the day by: "up next" (today only: the first game not yet
+// started in the block under way or the first block still to come) and the ONE gold Score (§8.1 rule 3): the first live game
+// this director can score, else the one up next.
+function gamesDayRows(ctx, day, today) {
+  const groups = gamesDayGroups(day, ctx, today);
+  const isToday = !!today && today.id === day.id;
+  const out = groups.map((gr) => ({ key: gr.key, title: gr.title, when: gr.when, now: gr.now, off: gr.off, rows: gr.games.map((g) => gamesRow(ctx, g)) }));
+  let next = null;
+  if (isToday) {
+    const from = groups.findIndex((gr) => gr.end != null && gr.end > ctx.minutes);
+    for (let i = from < 0 ? groups.length : from; i < out.length && !next; i++) next = out[i].rows.find((r) => r.status === 'todo') || null;
+  }
+  if (next) next.next = true;
+  if (ctx.director) {
+    const rows = [];
+    out.forEach((b) => b.rows.forEach((r) => rows.push(r)));
+    const can = (r) => r.score && !r.score.why;
+    const lead = rows.find((r) => r.status === 'live' && can(r)) || (next && can(next) ? next : null);
+    rows.forEach((r) => { if (r.score) r.score.gold = r === lead; });
+  }
+  return out;
+}
+
+// The day's lines under the picker: the double-points line (every game of the day, or only some, named) and the day's own notes.
+function gamesDayNotes(day, games) {
+  const notes = [];
+  const doubled = games.filter((g) => g.messtival);
+  if (doubled.length) {
+    notes.push({ kind: 'double', text: 'Double points until the end of Friday' + (doubled.length === games.length ? '' : ': ' + doubled.map((g) => g.name).join(', ')) });
+  }
+  String(day.note || '').split('\n').map((l) => l.trim()).filter(Boolean).forEach((l) => notes.push({ kind: 'day', text: l }));
+  return notes;
+}
+
+function gamesModel(opts) {
+  const ctx = nowCtx(opts);
+  const week = nowWeek(ctx);
+  const days = competitionDays();
+  const today = gamesToday(ctx, week);
+  const m = {
+    at: { dow: ctx.dow, minutes: ctx.minutes, ms: ctx.ms, forced: ctx.forced }, week, director: ctx.director, points: ctx.points,
+    off: false, secret: false, days: [], day: null, dayNote: '', notes: [], blocks: [], empty: null, quick: null, standings: null,
+  };
+  if (ctx.hidden.games) { m.off = true; return m; } // What counselors see turned Games off: nothing is computed
+  m.secret = !ctx.points;
+  const chosen = days.find((d) => d.id === state.ui.day) || today || days[0] || null;
+  m.days = days.map((d) => {
+    const s = gamesDayStatus(d, ctx, week, today);
+    const name = String(d.name || '');
+    const words = s.st === 'done' ? 'every game done' : s.st === 'today' ? 'today' : s.st === 'left' ? s.left + ' game' + (s.left === 1 ? '' : 's') + ' left' : '';
+    return {
+      id: d.id, dow: d.dow, name, short: name.slice(0, 3), st: s.st, left: s.left, total: s.total, today: !!today && today.id === d.id,
+      selected: !!chosen && chosen.id === d.id, label: name + (words ? ', ' + words : ''),
+    };
+  });
+  if (!chosen) {
+    m.empty = { text: 'No competition days are set up yet.', add: ctx.director };
+  } else {
+    m.day = { id: chosen.id, dow: chosen.dow, name: String(chosen.name || ''), today: !!today && today.id === chosen.id };
+    m.dayNote = today && today.id !== chosen.id ? m.day.name + ' · not today' : '';
+    const games = gamesForDayId(chosen.id);
+    m.notes = gamesDayNotes(chosen, games);
+    m.blocks = gamesDayRows(ctx, chosen, today);
+    if (!games.length) m.empty = { text: 'No games on ' + m.day.name + ' yet.', add: ctx.director };
+    else if (ctx.director) m.quick = { sub: 'Add a one-off game to ' + m.day.name };
+  }
+  m.standings = ctx.points ? gamesStandings(ctx) : null;
+  return m;
+}
+
+// ── Next game ─────────────────────────────────────────────────────────
+// After a result is saved the takeover offers the next game of the SAME DAY in the order a director walks it: the rest of
+// the block, then the later blocks, then the games on no block, then (wrapping round) whatever is still unscored before the
+// game just done. A game whose round is the director's own team's is skipped and named instead ("needs another director").
+// { game, left, waiting: [{id, name}], allDone, day, isToday }: `left` is every game this director can still score
+// (`game` is the first of them), `allDone` is every game of the day having a result.
+function gamesNextAfter(gid, opts) {
+  const g = gameById(gid);
+  const day = g ? dayById(g.dayId) : null;
+  const none = { game: null, left: 0, waiting: [], allDone: false, day: null, isToday: false };
+  if (!g || !day) return none;
+  const ctx = nowCtx(opts);
+  const today = gamesToday(ctx, nowWeek(ctx));
+  const list = [];
+  gamesDayGroups(day, ctx, today).forEach((gr) => gr.games.forEach((x) => list.push(x)));
+  const at = list.indexOf(g);
+  const order = at < 0 ? list : list.slice(at + 1).concat(list.slice(0, at));
+  const open = order.filter((x) => x.id !== g.id && !(state.results && state.results[x.id]));
+  const can = open.filter((x) => !gameBlockedForMe(x));
+  return {
+    game: can[0] || null, left: can.length, waiting: open.filter((x) => gameBlockedForMe(x)).map((x) => ({ id: x.id, name: x.name })),
+    allDone: list.every((x) => state.results && state.results[x.id]), day: { id: day.id, name: String(day.name || '') }, isToday: !!today && today.id === day.id,
+  };
+}
+
+// The takeover dock's words for a game whose result is saved (directors): what is left, the Next game button, where Back goes.
+// { tone: 'next' | 'wait' | 'done', left: text, next: { id, name } | null, back: 'Back to Now' } or null (no director, or not done).
+function gamesDock(gid, opts) {
+  const g = gameById(gid);
+  if (!g || !canEdit() || !(state.results && state.results[g.id])) return null;
+  const n = gamesNextAfter(gid, opts);
+  const when = n.isToday || !n.day ? 'today' : 'on ' + n.day.name;
+  const back = 'Back to ' + shellGameBackLabel(g);
+  const names = (list) => nowJoinNames(list.map((w) => w.name));
+  if (n.game) {
+    return { tone: 'next', left: n.left + ' game' + (n.left === 1 ? '' : 's') + ' left ' + when + ' that you can score', next: { id: n.game.id, name: n.game.name }, back };
+  }
+  if (n.waiting.length) {
+    const w = n.waiting.length;
+    return {
+      tone: 'wait', next: null, back,
+      left: 'Nothing left that you can score. ' + (w === 1 ? '1 game needs' : w + ' games need') + ' another director: ' + names(n.waiting) + ' (your team plays)',
+    };
+  }
+  return { tone: 'done', next: null, back, left: n.allDone ? 'Every game ' + (n.isToday || !n.day ? 'today' : 'on ' + n.day.name) + ' is scored' : 'Nothing left that you can score' };
+}
+
+// A director taps Next game: re-asked at the tap (the data may have moved since the dock was drawn), and the takeover swaps
+// to it — one history entry replaced, never one pushed, and the labelled Back still names where the first game was opened from.
+function openNextGame() {
+  const cur = state.ui && state.ui.gameId;
+  if (!cur || !canEdit()) return false;
+  const n = gamesNextAfter(cur);
+  if (!n.game) { renderAll(); return false; }
+  return openGame(n.game.id, { from: state.ui.gameFrom });
+}
+
+// ── The directors' standings ─────────────────────────────────────────
+// Places are reveal-core's groupPlaces over the app's own ranking — the same call the reveal's freeze makes — so a tie reads
+// the same on this phone, the remote and the big screen: equal points share a place (1, 2, 2, 4), and inside a tie the golds,
+// then silvers, then bronzes, then the name decide the order. Arrows compare this place with the one this device took at the
+// start of the camp day (a baseline taken while nobody had a point says nothing: no arrows that day).
+const GAMES_NUMBER_WORDS = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten'];
+
+// "Turkey trail Maples by 3. One gold for Turkey would put them in front." — about the director's own team when they are on one
+// (the followed team, which an account's team sets), else the team in second. Data, not words: the renderer says it and bolds
+// the names. { kind: 'trail' | 'lead' | 'tie', teams: [ids the sentence is about], lead: id, gap, golds, tie, gold } or null.
+//   trail: `teams` trail `lead` by `gap`; `golds` golds (worth `gold` each now) would put them in front, or just tie them
+//          (`tie`) when the gap is a whole number of golds.   lead: `teams` (one) lead `lead` by `gap`.
+//   tie: `teams` are level at the top.
+function gamesGap(rows) {
+  const leader = rows[0];
+  if (!leader || rows.length < 2 || leader.pts <= 0) return null;
+  const gold = MEDAL_POINTS.gold * (inDoubleBonusWindow() ? 2 : 1);
+  const tops = rows.filter((r) => r.pts === leader.pts).map((r) => r.team);
+  const mine = state.followTeam ? rows.find((r) => r.team === state.followTeam) : null;
+  if (tops.length > 1 && (!mine || mine.pts === leader.pts)) return { kind: 'tie', teams: tops, lead: leader.team, gap: 0, golds: 0, tie: false, gold };
+  if (mine && mine.team === leader.team) {
+    const second = rows[1];
+    return { kind: 'lead', teams: [leader.team], lead: second.team, gap: leader.pts - second.pts, golds: 0, tie: false, gold };
+  }
+  const chase = mine || rows[1];
+  const gap = leader.pts - chase.pts;
+  const teams = mine ? [mine.team] : rows.filter((r) => r.pts === chase.pts && r.team !== leader.team).map((r) => r.team);
+  const exact = gap % gold === 0;
+  return { kind: 'trail', teams, lead: leader.team, gap, golds: exact ? gap / gold : Math.floor(gap / gold) + 1, tie: exact, gold };
+}
+
+// The gap as a sentence: `parts` ([{ text } | { team }], the renderer bolds a team's short name) and the same as plain `text`.
+function gamesGapSentence(gap) {
+  if (!gap) return null;
+  const parts = [];
+  const names = (ids) => ids.map((id) => nowTeamWord(id));
+  const say = (t) => parts.push({ text: t });
+  const sayTeams = (ids) => {
+    ids.forEach((id, i) => {
+      if (i) say(i === ids.length - 1 ? ' and ' : ', ');
+      parts.push({ team: id });
+    });
+  };
+  if (gap.kind === 'tie') {
+    sayTeams(gap.teams); say(' are tied on points. The next medal breaks it.');
+  } else if (gap.kind === 'lead') {
+    sayTeams(gap.teams); say(' lead '); parts.push({ team: gap.lead }); say(' by ' + gap.gap + '.');
+  } else {
+    sayTeams(gap.teams); say(' trail '); parts.push({ team: gap.lead }); say(' by ' + gap.gap + '. ');
+    const n = gap.golds;
+    const doubled = gap.gold > MEDAL_POINTS.gold;
+    say((GAMES_NUMBER_WORDS[n] || String(n)) + (doubled ? ' double-points gold' : ' gold') + (n === 1 ? '' : 's') + ' for ');
+    if (gap.teams.length === 1) parts.push({ team: gap.teams[0] }); else say(gap.teams.length === 2 ? 'either' : 'any of them');
+    say(' would ' + (gap.tie ? 'tie them.' : 'put them in front.'));
+  }
+  const text = parts.map((p) => (p.team ? nowTeamWord(p.team) : p.text)).join('');
+  return { parts, text, names: names(gap.teams) };
+}
+
+function gamesStandings(ctx) {
+  if (!ctx.points) return null;
+  const counts = medalCounts();
+  const ranked = rankTeamsByPoints(counts);
+  const entries = ranked.map((t) => {
+    const c = counts[t.id];
+    return { id: t.id, nm: t.name, p: c.points, g: c.gold, s: c.silver, b: c.bronze };
+  });
+  const empty = entries.every((e) => e.p === 0);
+  // A table nobody has scored on has no places: the teams stay in roster order (groupPlaces would sort a tie by name).
+  const groups = empty ? [{ place: 1, entries }] : groupPlaces(entries);
+  const base = startOfDayPlaces();
+  const arrows = !empty && !!base && !base.flat;
+  const rows = [];
+  groups.forEach((gr) => gr.entries.forEach((e) => {
+    const c = counts[e.id];
+    const was = base && base.places ? base.places[e.id] : null;
+    rows.push({
+      key: e.id, team: e.id, name: teamName(e.id), short: teamShort(e.id) || teamName(e.id), place: empty ? 0 : gr.place,
+      tie: !empty && gr.entries.length > 1, pts: e.p, gold: c.gold, silver: c.silver, bronze: c.bronze, awarded: c.bonus,
+      mv: arrows && Number.isFinite(was) ? was - gr.place : 0, locked: ctx.director && !canScoreRound(e.id), tap: ctx.director,
+    });
+  }));
+  const gap = empty ? null : gamesGap(rows);
+  return { empty, arrows, rows, gap, sentence: gamesGapSentence(gap) };
+}
+
+// What the quick-points sheet says about a team: "4th · 22 points so far" (tied: "2nd, tied"). null for a team that is not
+// one of the camp's or when this phone may not see points.
+function gamesQuickInfo(teamId) {
+  if (!standingsVisible()) return null;
+  const st = gamesStandings({ points: true, director: canEdit() });
+  const r = st && st.rows.find((x) => x.team === teamId);
+  if (!r) return null;
+  const pts = r.pts + ' point' + (r.pts === 1 ? '' : 's') + ' so far';
+  return { team: r.team, name: r.name, short: r.short, pts: r.pts, now: st.empty ? pts : gamesOrdinal(r.place) + (r.tie ? ', tied' : '') + ' · ' + pts, doubled: inDoubleBonusWindow() };
+}
+
+// Quick points: the same ledger write as Award points (bonusAddFromDraft: the 1–100 range, the own-team guard, one entry per
+// team stamped now, so the double-points window counts by its own timestamp), on a draft of its own so the Award points form is
+// not disturbed. { ok, ids, pts, counted, team } or { ok: false, problem } — 'not-director' | 'team' | 'points' | an own-team
+// refusal from the writer. Saves; the caller renders.
+function gamesQuickAdd(teamId, pts, why) {
+  if (!canEdit() || !standingsVisible()) return { ok: false, problem: 'not-director' };
+  if (!teamIds().includes(teamId)) return { ok: false, problem: 'team' };
+  if (!GAMES_QUICK_KEYS.includes(pts)) return { ok: false, problem: 'points' };
+  if (!canScoreRound(teamId)) return { ok: false, problem: 'own-team' };
+  const draft = { category: 'custom', meal: 'Breakfast', teams: [teamId], points: String(pts), custom: String(why == null ? '' : why).trim().slice(0, 40), sign: 1 };
+  const made = [];
+  const problem = bonusAddFromDraft({ draft, made });
+  if (problem) return { ok: false, problem };
+  return { ok: true, ids: made, pts, counted: pts * (inDoubleBonusWindow() ? 2 : 1), team: teamId };
+}
+// The Undo for it: takes back exactly the entries that add made (each only while it is still there and may be removed).
+function gamesQuickUndo(ids) {
+  let n = 0;
+  (ids || []).forEach((id) => { if (removeBonusEntry(id)) n += 1; });
+  if (n) renderAll();
+  return n;
 }
 
 // ── Game view ────────────────────────────────────────────────────
