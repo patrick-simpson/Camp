@@ -1676,7 +1676,8 @@ rest of Step 14, in setup-ui.js: see "Set up the week: behaviour" below); with n
 `data-screen` on `#setup` the markup is inert and the builder is v197's.
 
 - **`#setup[data-screen]` is the one switch** (`hub | backups | classic`, and
-  Step 15's `week | schedule | rain`, Step 19's `meals | verses | cleanup | electives`, Step 25's `teams`; a later
+  Step 15's `week | schedule | rain`, Step 19's `meals | verses | cleanup | electives`, Step 25's `teams`, Step 21's
+  `games` (its CSS line exists; the routing doesn't yet); a later
   screen adds its own pair of lines in the CSS). `#setup` wraps `#settings-view`
   inside `#tab-now`, shown only under `body.builder-open` (which hides every
   other child of main-wrap: `:not(#setup)`). **No `data-screen` = the v197
@@ -4223,6 +4224,42 @@ the row keeps its keyed shape, so turning the section on only swaps the inputs i
   everything on, both camps (the one difference: `staffNames()` gains the elective stations' game
   leaders, Patrick and Stephen, for the chat mention dictionary — the spec's "+ elective people
   names").
+
+## Set up the week: Games (Step 21 — markup and visual system; NOT wired yet)
+
+P2 §11.14 in the Step 14 / 15 / 19 frame. Static markup in index.html (full row templates in the comments beside
+`#setup-games` and `#sheet-game`), styled in styles.css's last block, "SET UP THE WEEK: Games". Until the build session
+wires it, nothing routes here (`SETUP_SCREENS`, `HUB_OPENS.games`, `SETUP_SHEETS` are unchanged), so the hub's Games
+row, Add games and Quick game still open the classic builder. Hooks prefixed `sg-` (the screen) and `gm-` (the sheet):
+`gs-` / `gw-` / `games-` belong to the Games tab.
+
+- **The screen** (`data-screen="games"`; CSS switch line in place). `#sg-days` in the head: all seven days
+  (`data-day`, `aria-selected`, `data-today`, `data-off` = not a games day, the count in `[data-sg-n]` with the gold
+  `[data-sd-warn]` beside it, the aria-label in words). "Days with games" (ux-R14) lives in this strip: a day that isn't
+  one shows `#sg-noday` (`#sg-day-on` "Make Saturday a games day"), and the day's ⋯ (`#sg-day-btn`, on the headline's
+  line) opens `#sheet-sg-day` (the note `#sg-day-note`, saved on blur; `[data-sg-day-act="off"]` takes the day off,
+  asking where its games go). Intro `#sg-title` / `#sg-headline` (the day) / `#sg-lede` / `#sg-note` (the day's note,
+  a plain line). `#sg-items` takes one `section.sg-item[data-key="b-<bid>"][data-now]` per item that holds games or is
+  a Games item: `.sg-item-h` (time kicker, emoji + label set in to the rows' inset) over a `.gl.cb-list.sg-list` of
+  `button.cb-row.sg-game[data-sg-open][data-warn]` rows (the format in a word, then where) closed by
+  `button.sg-add-here[data-sg-add="<bid>"]`. `#sg-sec-off` / `#sg-off-list`: games on no item, split rows
+  (`.gl-row-hit` + `.sg-place[data-sg-place]` "Put on the schedule"). `#sg-empty` / `#sg-add-first`, `#sg-add`,
+  `#sg-orig` (the schedule is the original: session headings, no time).
+- **The sheet** `#sheet-game[data-mode=new|edit|quick][data-pane=form|when][data-stage=name|format|game][data-format]`.
+  The stages are the progressive save: name (`#gm-name`, emoji `#gm-emoji-btn` / `#gm-emoji`, `#gm-where`), then How
+  is it scored? (`#gm-format`, `[data-gm-format]` radios, `[data-collapsed]` folds a saved game to its row with
+  "Change"; `#gm-format-warn`), then the game is created and everything else appears: Bracket (`#gm-seed`
+  `[data-gm-seed=standings|pick|fixed]` → `bracketSeed`; `#gm-pairs` with `#gm-matches` and `#gm-keys` →
+  `roundOneMatchups`; `#gm-ladder`; `#gm-tracker` + `#gm-tracker-fields`), Scores (`#gm-unit`, `#gm-lower`, `#gm-times`,
+  `#gm-live`, `#gm-steps`, `#gm-negative`), Podium (one plain line), `#gm-order` (`[data-gm-order=earlier|later]`),
+  `#gm-extras` (`#gm-double`, `#gm-timer` + fields, `#gm-prompts`), `#gm-howto` (`#gm-headline`, `#gm-rules` of
+  `.gm-rule[data-key]`, `#gm-rule-add`), `#gm-clashes`, `#gm-copy`, `#gm-delete`, `#gm-gone`. When line `#gm-when` /
+  `#gm-when-btn` (data-warn on no item). When pane: `#gm-when-days`, `#gm-when-list` (`.gm-when-row[data-gm-block]`,
+  `aria-current` on the game's own), `#gm-when-all`, `#gm-when-newday`, `#gm-when-double`, `#gm-when-none`. Dock:
+  `#gm-wait` (before the game exists), `#gm-state[data-tone=saved|saving|offline|error]`, `#gm-score` (quick game),
+  `#gm-done`. `#sheet-game .sheet[data-flow]` = the item sheet's large-text scroll-as-one.
+- **Specimens**: `docs/build-notes/verify/step21-design.cjs` draws every state from the real week into the real page
+  (both camps, 360 / 390, light / dark, 100 / 130 / 200 %): no target under 44×44, no sideways scroll, nothing squeezed.
 
 ## Team colours and the Teams screen (Step 25, session 1)
 
