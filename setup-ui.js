@@ -7767,6 +7767,17 @@ function gmOpenScreen(day) {
   openBuilder(null, 'games');
 }
 
+// The Games tab's "Add games" on a day with none: the game sheet itself, on that day's first Games item, over the tab (the builder
+// stays closed, so Done lands back on the day with the game on it). With no games day to put it on (a camp with no competition days
+// at all) it is the Games screen, where a weekday is made a games day. Returns whether a sheet or a screen opened.
+function gmAddGames(day) {
+  if (!canEdit()) return false;
+  const dk = SETUP_DK.indexOf(day) !== -1 ? day : gmDkOfDayId(day);
+  if (dk && gmIsGamesDay(dk)) { state.ui.sgDay = dk; return gmOpenNew({ dk }); }
+  gmOpenScreen(day);
+  return builderOpen();
+}
+
 function wireGamesScreen() {
   const on = (sel, ev, fn) => { const el = document.querySelector(sel); if (el) el.addEventListener(ev, fn); };
   on('#sg-days', 'click', (e) => { const b = e.target.closest && e.target.closest('.daypick-btn[data-day]'); if (b) gmSetDay(b.dataset.day); });

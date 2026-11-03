@@ -4242,8 +4242,10 @@ the sheet), pinned by `tests/games-screen.test.js` (+ senior). Hooks are prefixe
 there is no draft and no Save.** The classic Games tab stays reachable from the ⋯ menu's Classic editor, and `saveGameDraft` / the
 v183 parity fixture are untouched.
 
-- **Routing**: the hub's Games row (`HUB_OPENS.games`), the Games tab's Add games (`gmOpenScreen(dayId)`, games-ui.js) and the schedule
-  item sheet's "Add a game here" (`#si-add-game`, a Games item of a day that exists: `schedItemAddGame`) lead here. `SETUP_SCREENS` has
+- **Routing**: the hub's Games row (`HUB_OPENS.games`) and the schedule item sheet's "Add a game here" (`#si-add-game`, a Games item of a
+  day that exists: `schedItemAddGame`) lead to the screen; the Games tab's **Add games** (an empty day) is `gmAddGames(dayId)`: the game
+  SHEET on that day's first Games item, over the tab with the builder closed (the Games screen only when no day takes games, where a weekday
+  is made one; `gmOpenScreen(day)` is that screen on a day). `SETUP_SCREENS` has
   `games`; `SETUP_SHEETS` has `game` and `sg-day`. **`#sheet-game` also opens over the Games tab with the builder closed** (the ⚡ Quick
   game, `startQuickGame` → `gmOpenQuick`): `shellSheetAllowed('game')` is `canEdit() && gmSheetReady()` (app.js), ahead of the SETUP_SHEETS
   rule, and `setupUiClosed` closes it with the builder. Who's here: `games`, or `game:<id>` while a saved game's sheet is up (an id past the
@@ -4303,7 +4305,9 @@ v183 parity fixture are untouched.
   used: a field two directors change at once is last-commit-wins per field (the config engine's own rule), and a colleague's other fields
   are never touched.
 - **The ⚡ quick game** (`gmQuickTarget`): the day being looked at (the Games tab's day, else today when it is a games day, else the first),
-  and on it the Games item under way now or the next one today (another day: its first Games item), else off the schedule; with the original
+  and on it **the item the Now card shows** (`nowCurrentBlock`, app.js: the very pick `nowModel` makes, so a games item that ran over with a
+  game live or a director's "Still on this" is still where it goes) when that is a Games item or already holds games, else the next such item
+  today (another day: its first Games item) — never lunch or free time — else off the schedule; with the original
   schedule its session by the clock (`rainSessionFor`, so senior's afternoons are right — the old `>= 720 ? 'Evening'` guess is gone). Podium
   is already picked, Double points is on inside the double-points window, and once named it offers **Score it now** (closes the builder if it
   was open, then `openGame`).

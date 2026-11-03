@@ -496,27 +496,40 @@ test('taking a day off the games days: games must have somewhere to go (they mov
   } finally { gsEnd(); }
 });
 
-test('the Games tab\'s "Add games" opens this screen on the day it was looking at, not the classic editor', () => {
+test('the Games tab\'s "Add games" opens the game sheet on that day (builder closed); with no games day it is the Games screen; Quick game opens the sheet too', () => {
   gsStart();
   try {
     const d = competitionDays().find((x) => x.dow === 4) || competitionDays()[0];
     const dk = SETUP_DK[d.dow];
     state.ui.view = 'home';
-    gmOpenScreen(d.id);
+    assert.equal(gmAddGames(d.id), true);
+    assert.equal(state.ui.view, 'home', 'the builder stays closed: Done lands back on the Games tab');
+    assert.ok(gmUi.open && gmUi.open.mode === 'new' && gmUi.open.dk === dk, 'a new game on that day');
+    assert.equal(gmUi.open.bid, (gsBlocks(dk)[0] || {}).id || '', 'on its first Games item');
+    assert.ok(shell.sheets.includes('game'));
+    assert.equal(state.ui.sgDay, dk);
+    gsShut();
+    // the screen is still one call away (the hub row, a weekday key)
+    gmOpenScreen('fri');
     assert.equal(state.ui.view, 'settings');
     assert.equal(state.ui.builderScreen, 'games');
-    assert.equal(state.ui.sgDay, dk);
-    assert.equal(gmDayKey(), dk);
-    state.ui.view = 'home';
-    gmOpenScreen('fri');
     assert.equal(state.ui.sgDay, 'fri', 'a weekday key works too');
+    state.ui.view = 'home'; state.ui.builderScreen = undefined;
+    // no competition day at all: the screen, where a weekday is made a games day
+    const days = state.config.days.slice();
+    state.config.days = [];
+    try { assert.equal(gmAddGames('wed'), true); assert.equal(state.ui.builderScreen, 'games'); assert.equal(gmUi.open, null); } finally { state.config.days = days; }
+    state.ui.view = 'home'; state.ui.builderScreen = undefined;
     const src = readFixture('../games-ui.js');
-    assert.ok(/\[data-games-add\]'\)\)\) \{ if \(canEdit\(\)\) \{ if \(typeof gmOpenScreen === 'function'\) gmOpenScreen\(state\.ui\.day\)/.test(src), 'games-ui.js routes Add games through the Games screen');
+    assert.ok(/\[data-games-add\]'\)\)\) \{ if \(canEdit\(\)\) \{ if \(typeof gmAddGames === 'function'\) gmAddGames\(state\.ui\.day\)/.test(src), 'games-ui.js routes Add games to the sheet');
+    assert.ok(/#games-quick'\)\) \{ if \(typeof startQuickGame === 'function'\) startQuickGame\(\)/.test(src), 'and Quick game to startQuickGame');
     setMemberRole('viewer');
     state.ui.view = 'home';
     gmOpenScreen(d.id);
+    assert.equal(gmAddGames(d.id), false);
     assert.equal(state.ui.view, 'home', 'a counselor opens nothing');
-  } finally { state.ui.view = 'home'; state.ui.builderScreen = undefined; gsEnd(); }
+    assert.equal(gmUi.open, null);
+  } finally { gsShut(); state.ui.view = 'home'; state.ui.builderScreen = undefined; gsEnd(); }
 });
 
 // ── the game sheet ──

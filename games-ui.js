@@ -732,8 +732,9 @@ function gamesWire() {
     if ((b = t.closest('.gdp-btn'))) { gamesPickDay(b.dataset.day); return; }
     if ((b = t.closest('[data-score-game]'))) { openGame(b.dataset.scoreGame, { from: 'games' }); return; }
     if ((b = t.closest('[data-open-game]'))) { openGame(b.dataset.openGame, { from: 'games' }); return; }
-    // "Add games" on a day with none: the Games screen in Set up the week, on that day (not the classic builder's Games tab).
-    if ((b = t.closest('[data-games-add]'))) { if (canEdit()) { if (typeof gmOpenScreen === 'function') gmOpenScreen(state.ui.day); else openBuilder('games'); } return; }
+    // "Add games" on a day with none: the game sheet on that day (setup-ui.js; the Games screen when no day takes games), never the
+    // classic builder's Games tab.
+    if ((b = t.closest('[data-games-add]'))) { if (canEdit()) { if (typeof gmAddGames === 'function') gmAddGames(state.ui.day); else openBuilder('games'); } return; }
     if (t.closest('#games-quick')) { if (typeof startQuickGame === 'function') startQuickGame(); return; }
     if (t.closest('#gs-more')) { shellSheetOpen('standings', t.closest('#gs-more')); return; }
   });
