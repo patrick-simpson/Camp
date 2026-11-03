@@ -1240,6 +1240,9 @@ body.kb-open .takeover {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
+  /* A full-width jelly-button paints its wobble on a canvas 28px wider than itself on each side; that overhang made the takeover
+     scroll sideways (the six-team wizard's Start and Save too). The body's own gutter holds every ring and shadow that matters. */
+  overflow-x: hidden;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   padding: var(--s-3) var(--gutter) calc(var(--s-6) + env(safe-area-inset-bottom, 0px));

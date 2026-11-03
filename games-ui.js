@@ -648,19 +648,31 @@ function renderSavedResult(container, g, result) {
   gamesPaintSaved(r.saved);
 }
 
-// Change the result: clears it (its points come off the standings for everyone) and opens the picker again. Asked first.
+// Change the result: clears it (its points come off the standings for everyone) and opens the picker again. Asked first. A four-team
+// bracket's result can also Reopen the final: the bracket comes back at the final with every other match as it was.
 async function gamesChangeResult() {
   const gid = state.ui && state.ui.gameId;
   const g = gid ? gameById(gid) : null;
   if (!g || !canEdit() || !(state.results && state.results[gid])) return false;
+  const reopen = typeof fourCanReopen === 'function' && fourCanReopen(g);
   const opts = {
     title: 'Change the result for ' + g.name + '?',
-    body: 'Its points come off the standings until you save it again.',
-    actions: [{ label: 'Clear it and pick again', value: 'clear', kind: 'danger' }, { label: 'Keep it', value: 'cancel', cancel: true }],
+    body: reopen
+      ? 'Its points come off the standings until you save it again. Reopen the final keeps the semifinals and the 3rd-place match as they were. Start over clears the whole bracket.'
+      : 'Its points come off the standings until you save it again.',
+    actions: reopen
+      ? [{ label: 'Reopen the final', value: 'reopen' }, { label: 'Start over', value: 'clear', kind: 'danger' }, { label: 'Keep it', value: 'cancel', cancel: true }]
+      : [{ label: 'Clear it and pick again', value: 'clear', kind: 'danger' }, { label: 'Keep it', value: 'cancel', cancel: true }],
   };
-  const yes = typeof askDialog === 'function' ? (await askDialog(opts)) === 'clear' : confirm(opts.title + '\n\n' + opts.body);
-  // The answer may have taken a while: another director may have changed it, or this phone lost its right to.
-  if (!yes || !canEdit() || !(state.results && state.results[gid]) || state.ui.gameId !== gid) return false;
+  const answer = typeof askDialog === 'function' ? await askDialog(opts) : (confirm(opts.title + '\n\n' + opts.body) ? 'clear' : 'cancel');
+  // The answer may have taken a while: another director may have changed it, or this phone may have lost its right to.
+  if ((answer !== 'clear' && answer !== 'reopen') || !canEdit() || !(state.results && state.results[gid]) || state.ui.gameId !== gid) return false;
+  if (answer === 'reopen') {
+    if (!fourReopen(g).ok) return false;
+    const body = gamesEl('takeover-game-body');
+    if (body) body.scrollTop = 0;
+    return true;
+  }
   delete state.results[gid];
   touchData();
   saveState();

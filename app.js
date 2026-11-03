@@ -10955,6 +10955,38 @@ function fourSaveResult(g) {
   return { ok: true, medals };
 }
 
+// Reopen the final: a saved four-team result keeps the finished bracket (results[gid].path), so "Change the result" can put it back
+// as a bracket to play on, with the final thrown out and every other match as it was, instead of only clearing everything. null when
+// the result carries no bracket this build can read and call consistent (a six-team result, a podium game, an older record).
+function fourReopenBracket(result, ids) {
+  const v = result && fourRead(result.path, ids);
+  if (!v || v.recheck || !v.m.final.recorded || !v.m.third.recorded) return null;
+  const p = fourPath(result.path, ids);
+  delete p.m.final;
+  return fourPhase(p, ids) === 'final' ? p : null;
+}
+
+function fourCanReopen(g) {
+  return !!(g && canEdit() && g.format === 'tournament' && state.results && state.results[g.id] && bracketKindFor(teamIds().length) === 'four' &&
+    fourReopenBracket(state.results[g.id], teamIds()));
+}
+
+// Reopen the final: the result comes off (its points leave the standings until it is saved again) and the bracket is back at the
+// final, for everyone, in one write. Whatever a late tap left under the game's bracket is replaced.
+function fourReopen(g) {
+  if (!canEdit()) return { ok: false, reason: 'readonly' };
+  const b = state.results && state.results[g.id] ? fourReopenBracket(state.results[g.id], teamIds()) : null;
+  if (!b) return { ok: false, reason: 'none' };
+  delete state.results[g.id];
+  if (!state.brackets4) state.brackets4 = {};
+  state.brackets4[g.id] = b;
+  clearLiveMatch(g);
+  touchData();
+  saveState();
+  renderAll();
+  return { ok: true };
+}
+
 // Realtime Database can't represent "present but empty" for arrays/nulls —
 // it prunes those keys on write, so a bracket round-tripped through sync
 // can come back missing matches/selectedPair/etc. This restores a safe,
@@ -12337,10 +12369,18 @@ function fourEntryTap(t, container) {
   const btn = t.closest('[data-four]');
   const had = focusWas(win || btn);
   const heading = () => (container.querySelector ? container.querySelector('[data-four-h]') : null);
+  // A tap that moved the bracket on lands the director at the top of the new screen (the step bar and the heading), with focus on
+  // the heading when it was on the button that was tapped; a refusal is said, and the screen repainted.
+  const moved = (r) => {
+    fourSay(r);
+    if (!r || !r.ok) return;
+    const body = document.getElementById('takeover-game-body');
+    if (body) body.scrollTop = 0;
+    focusBack(had, heading());
+  };
   if (win) {
     const host = t.closest('[data-four-match]');
-    fourSay(fourRecordTap(g, host ? host.dataset.fourMatch : '', win.dataset.winner));
-    focusBack(had, heading());
+    moved(fourRecordTap(g, host ? host.dataset.fourMatch : '', win.dataset.winner));
     return true;
   }
   if (!btn) return false;
@@ -12352,11 +12392,12 @@ function fourEntryTap(t, container) {
   if (act === 'start-plan' || act === 'start-pick') {
     const pairs = act === 'start-plan' ? fourSeedPlan(g).pairs : fourPairsValid([fourUi.order.slice(0, 2), fourUi.order.slice(2, 4)], ids) ? [fourUi.order.slice(0, 2), fourUi.order.slice(2, 4)] : null;
     const r = fourStartGame(g, pairs);
-    if (r.ok) { fourUi.choosing = false; fourUi.order = []; focusBack(had, heading()); } else fourSay(r);
+    if (r.ok) { fourUi.choosing = false; fourUi.order = []; }
+    moved(r);
     return true;
   }
-  if (act === 'undo') { fourSay(fourUndoTap(g)); focusBack(had, heading()); return true; }
-  if (act === 'keep' || act === 'back') { fourSay(fourResolveTap(g, act)); focusBack(had, heading()); return true; }
+  if (act === 'undo') { moved(fourUndoTap(g)); return true; }
+  if (act === 'keep' || act === 'back') { moved(fourResolveTap(g, act)); return true; }
   if (act === 'save') { fourSay(fourSaveResult(g)); return true; }
   if (act === 'cancel' || act === 'clear') { fourCancelTap(g, act === 'clear'); return true; }
   if (act === 'reload') {

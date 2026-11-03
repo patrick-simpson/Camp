@@ -908,3 +908,99 @@ test('a counselor preview and a viewer reach none of the screen\'s controls: the
     assert.deepEqual(state.brackets4[g.id], before);
   });
 });
+
+// ── Reopen the final (results[gid].path) ────────────────────────────────────────────────────────────────────────
+
+// Play a whole bracket through the page and save it.
+function savedBracket(g, winners) {
+  const w = Object.assign({ s1: 't0', s2: 't1', third: 't3', final: 't0' }, winners || {});
+  fourStartGame(g, [['t0', 't3'], ['t1', 't2']]);
+  ['s1', 's2', 'third', 'final'].forEach((k) => assert.ok(fourRecordTap(g, k, w[k]).ok, k));
+  assert.ok(fourSaveResult(g).ok);
+}
+
+test('Reopen the final: the saved result comes off, the bracket is back at the final with every other match as it was, and the final can be played again', () => {
+  const g = fourGame();
+  quiet(() => {
+    savedBracket(g);
+    assert.equal(fourCanReopen(g), true);
+    assert.deepEqual(medalCounts().t0.gold, 1, 'the result counts');
+    assert.deepEqual(fourReopen(g), { ok: true });
+    assert.notOk(state.results[g.id], 'the result is gone, and its points with it');
+    assert.equal(medalCounts().t0.gold, 0);
+    assert.equal(fourPhase(state.brackets4[g.id], IDS), 'final');
+    const v = fourRead(state.brackets4[g.id], IDS);
+    assert.deepEqual([v.m.s1.winner, v.m.s2.winner, v.m.third.winner, v.m.final.recorded], ['t0', 't1', 't3', false], 'every other match is as it was');
+    assert.equal(gameRowStatus(g), 'live');
+    assert.ok(fourRecordTap(g, 'final', 't1').ok, 'the other team wins the final this time');
+    assert.ok(fourSaveResult(g).ok);
+    assert.deepEqual(state.results[g.id].medals, { gold: 't1', silver: 't0', bronze: 't3' });
+    // not offered for what carries no bracket
+    delete state.results[g.id].path;
+    assert.equal(fourCanReopen(g), false);
+    assert.deepEqual(fourReopen(g), { ok: false, reason: 'none' });
+    assert.ok(state.results[g.id], 'and nothing was removed');
+  });
+});
+
+test('Reopen the final is refused for a viewer, for junk, and for a path that is not a consistent finished bracket; and it syncs as one change', () => {
+  const g = fourGame();
+  quiet(() => {
+    savedBracket(g);
+    const good = JSON.stringify(state.results[g.id]);
+    const set = (f) => { const r = JSON.parse(good); f(r); state.results[g.id] = r; return fourCanReopen(g); };
+    assert.equal(set(() => {}), true);
+    setMemberRole('viewer');
+    assert.equal(fourCanReopen(g), false);
+    assert.deepEqual(fourReopen(g), { ok: false, reason: 'readonly' });
+    setMemberRole('editor');
+    assert.equal(set((r) => { r.path = 'x'; }), false, 'a string');
+    assert.equal(set((r) => { r.path = { m: [] }; }), false, 'an array');
+    assert.equal(set((r) => { r.path.m = { s1: { a: 't0', b: 't1' } }; }), false, 'one semifinal');
+    assert.equal(set((r) => { delete r.path.m.third; }), false, 'no 3rd-place match');
+    assert.equal(set((r) => { r.path.m.final = { a: 't1', b: 't2', winner: 't1' }; }), false, 'a final between the wrong teams');
+    assert.equal(set((r) => { r.path.m.s1.winner = 't3'; }), false, 'a semifinal that now disagrees with the matches after it');
+    assert.equal(set((r) => { r.path.m.final.winner = 'zz'; }), false, 'a winner who is no team of this camp');
+    assert.equal(set((r) => { delete r.path; }), false, 'a result with no bracket on it (a podium game, an older record)');
+    // one change: the result deleted and the bracket back, in one push
+    state.results[g.id] = JSON.parse(good);
+    const before = clone(state);
+    assert.deepEqual(fourReopen(g), { ok: true });
+    const up = computeSyncUpdates(before, state);
+    assert.equal(up['results/' + g.id], null, 'the result is deleted');
+    assert.ok(up['brackets4/' + g.id] && up['brackets4/' + g.id].m && up['brackets4/' + g.id].m.third, 'and the bracket is back, whole');
+    assert.notOk(Object.keys(up).some((k) => /^brackets4\/[^/]+\/m\/final/.test(k)), 'with no final in it');
+  });
+});
+
+test('Change the result on a four-team game offers Reopen the final, Start over and Keep it; a podium game offers only the old pair', async () => {
+  const g = fourGame();
+  const realRender = renderAll; const realAsk = typeof askDialog === 'function' ? askDialog : undefined; const realCelebrate = celebrate;
+  renderAll = () => {}; celebrate = () => {};
+  try {
+    savedBracket(g);
+    state.ui.gameId = g.id;
+    let shown = null;
+    askDialog = async (o) => { shown = o; return 'cancel'; };
+    assert.equal(await gamesChangeResult(), false);
+    assert.deepEqual(shown.actions.map((a) => a.label), ['Reopen the final', 'Start over', 'Keep it']);
+    assert.ok(state.results[g.id], 'Keep it changes nothing');
+    askDialog = async () => 'reopen';
+    assert.equal(await gamesChangeResult(), true);
+    assert.equal(fourPhase(state.brackets4[g.id], IDS), 'final');
+    assert.notOk(state.results[g.id]);
+    // Start over: the result AND its bracket path are gone, and the Start card is what is left
+    assert.ok(fourRecordTap(g, 'final', 't0').ok && fourSaveResult(g).ok);
+    askDialog = async () => 'clear';
+    assert.equal(await gamesChangeResult(), true);
+    assert.notOk(state.results[g.id]);
+    assert.notOk(state.brackets4[g.id], 'no bracket either: a fresh Start');
+    // a podium game keeps the old two answers
+    const other = state.config.games.find((x) => x.id === 'team-comp-am-d1');
+    state.results[other.id] = { medals: { gold: 't0', silver: 't1', bronze: 't2' }, savedAt: 'x' };
+    state.ui.gameId = other.id;
+    askDialog = async (o) => { shown = o; return 'cancel'; };
+    await gamesChangeResult();
+    assert.deepEqual(shown.actions.map((a) => a.label), ['Clear it and pick again', 'Keep it']);
+  } finally { renderAll = realRender; askDialog = realAsk; celebrate = realCelebrate; state.ui.gameId = null; }
+});
