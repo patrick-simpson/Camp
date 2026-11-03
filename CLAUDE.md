@@ -2703,7 +2703,9 @@ and until then every commit into a section is refused ("off").
 - **Step 15 adds** the schedule maths, the seed, the plans the accessors read and
   Put games on the schedule to the END of this file — see the next section.
 
-## Schedule as data: the seed, the plans, A2 (setup-sync.js §5 — Step 15, switch unpressed)
+## Schedule as data: the seed, the plans, A2 (setup-sync.js §5 — Step 15; switch PRESSED at ◆16)
+
+**Status (Mon Nov 2, 2026, ~7 PM ET): the schedule switch is ON in both camps** (◆16, pressed through the real client signed in as the owner, after `tests/emulator/export-replay.mjs` said READY on a read of the live data). A1 wrote a `pre-seed` restore point first and A2 placed every game (junior 23/23, senior 25/25). What counselors see changed only as approved: junior Friday's Team Skits item lists its game; senior's 3:00 PM and 4:50 PM items list their own afternoon games (no longer the evening pair); senior's meal starts follow the schedule (lunch 12:30, supper 5:45 PM after its Meal tag); calendar UIDs follow block ids. The banner and every day's schedule are unchanged. The owner-facing text below that says "until the owner presses it" is history.
 
 Specs: P2 §5.4–5.6, §9, §10. **Nothing here changes what anyone sees until the owner
 presses Edit the week here** (`meta/on/schedule`, section 5's A1, built in the same
@@ -2832,8 +2834,8 @@ Both camps, junior and senior, run all of it.
   date is set, the freeze as a question the owner can override in words, every refusal a
   sentence — `TURNON_WHY`) and `SETUP_OWNER_ACTIONS.original` (`setupUseOriginalFlow`, greyed
   with "Already using the original week." while off). **Not built here:** team branding (`short` / `emoji` written to `state.teams`, A1 step 3)
-  waits for step 25, the first reader of those fields. Nothing presses the switch in this
-  step: both camps stay on the built-in week until the owner does. **The seed marks the
+  waits for step 25, the first reader of those fields. Nothing pressed the switch in this
+  step (◆16 did, Nov 2, 2026: see the status line above). **The seed marks the
   printed week's own overlaps `overlapOk`** (junior's Tue and Thu cabin movie nights run over
   Prepare for bed and the devotional: the longer item of each overlapping pair), so a freshly
   seeded camp warns about nothing; the frozen id fixtures are unaffected (they pin ids and
@@ -2915,7 +2917,9 @@ Both camps, junior and senior, run all of it.
   `games-blocks.test.js` (+ `.senior`: the A2 oracle, never-touches-attached,
   re-homing, unplaced, each rule, exactly-once listing, `putGamesOnSchedule`).
 
-## Meals, verses, cleanup, electives as data (setup-sync.js §10 — Step 19, switches unpressed)
+## Meals, verses, cleanup, electives as data (setup-sync.js §10 — Step 19; switches PRESSED at ◆20)
+
+**Status (Mon Nov 2, 2026, ~7 PM ET): meals, verses and cleanup are ON in both camps, electives ON in junior** (◆20). Senior's "Supper and free time" got its Meal tag first (`typical/b-supper-and-free-time-1065/meal = 'supper'`). Compared in the live client before and after: menus, cleanup rota, verses and electives read exactly as built in; the one change is `staffNames()` gaining the elective stations' Patrick and Stephen (owner approved). Owner decisions recorded the same night: the three schedule changes above, the seed's `overlapOk` on junior's Tue/Thu movie nights (on purpose), and the elective names in chat mentions. Still open: the week-file entry's "Ask a director to set the camp dates" button (renders nothing with no dates today).
 
 Specs: P2 §5.2–5.3, §9.2, §10.2, §11.10–11.13. **Nothing here changes what anyone sees until the
 owner turns a section on** (`meta/on/<section>`; Step 20 presses them): while a section is off,
