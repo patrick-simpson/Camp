@@ -893,6 +893,22 @@ scope with reveal-core.js).
   and `retireExpiredReveal` run for real. Mutation-checked: a stale `sa`, a Start written as
   `ctl` alone, a `seq` that does not advance, a place published one early and a member key
   in the public ctl each turn it red. Re-run it after ANY change to a builder in reveal.js.
+- **Proved in real browsers** by `tests/emulator/reveal-e2e.cjs` (opt-in; Playwright, the
+  database AND auth emulators: `npx firebase emulators:start --only auth,database --project
+  camp-89cea`, then `NODE_PATH=$(npm root -g) node reveal-e2e.cjs`): the SHIPPED pages, two director
+  phones as remotes and a counselor phone (signed in through the Auth emulator with a fake Google
+  credential) and a SIGNED-OUT big screen, against the real `database.rules.json`. The script serves the
+  worktree itself and, for the test only, swaps in a `firebase-config.js` that points the SDK at the
+  emulators and lets the pages' CSP reach them (`firebase-config.js` is never edited); the SDK files are
+  the pinned 10.12.0 builds, checked against the hashes the pages carry. 34 checks: Start, three places
+  (the counselor three seconds behind, "Look at the big screen" meanwhile), both remotes pressing at once
+  (one place, the loser told), Back, End early (the frozen grid with "Not revealed"), an anonymous
+  read of `revealPublic` showing only the places shown, `revealFull` refused to a stranger, a practice that
+  plays tagged on the big screen and never reaches the counselor, a real Start taking the big screen over
+  from the practice (via the remote's "Start the real reveal", which a remote following a live practice
+  offers because it has no other Start to press), the practice returning when the real reveal ends and
+  leaving no trace at its End, and the big screen having loaded no Auth SDK and talked to nothing but the
+  database. Re-run it after any change to current-standings.js, reveal-core.js or the remote.
 - **Paint hook contract** (reveal-ui.js defines `revealPaint(why, mode)`, which the engine
   calls after every confirmed change and time-driven change; `why` is `snapshot`,
   `reread`, `denied`, `role`, `rescan`, `tick`, `timer`, `wake`, `clock`, `connection`,
@@ -982,6 +998,13 @@ writes nothing (`reveal-ui.test.js` and `reveal-remote.test.js` count the writes
 - **Confirms** (`askDialog`): End the reveal / the practice (the sentence names 8 AM, "tomorrow" only when it
   is), Start a new reveal over last night's (a real Start only), "N games have no score yet / Start anyway?",
   never for a practice that replaces nothing and never for Start again.
+- **A practice hides the real Start, so it offers it** (`#reveal-offer`, `#reveal-start-real`, found by
+  the end-to-end run): `revealRemoteMode()` follows the real reveal while it is active, else a RUNNING practice,
+  so a remote showing a practice has no Start button of its own. While a practice plays (`m.practice` and the
+  director may command) a gold row at the top of the places panel says "This is a practice." with **Start the
+  real reveal**; `revealUiStartReal` runs the ordinary Start flow for a real reveal (it asks "Start a new
+  reveal?" when last night's grid would be replaced, and the unscored-games warning). The practice stays in its
+  own child, the big screen switches to the real reveal at once, and the remote then follows the real one.
 
 **Tests:** `reveal-ui.test.js` (the phones' screens, secrecy, idle repaint, ids in index.html, loads without
 either file) and `reveal-remote.test.js` (the shell, every stage and dock state, tvFrame beats, the ladder, the peek,
@@ -998,13 +1021,6 @@ More, Games and the champion line.
 P2 §11.0–11.2 ("the director's clipboard") inside redesign §8. Static markup in
 index.html (`#setup`, its four sheets, `#ask-dialog`), styled in styles.css's
 "SET UP THE WEEK" section; a renderer patches text, `hidden` and the data-*
-- **A practice hides the real Start, so it offers it** (`#reveal-offer`, `#reveal-start-real`, found by
-  the end-to-end run): `revealRemoteMode()` follows the real reveal while it is active, else a RUNNING practice,
-  so a remote showing a practice has no Start button of its own. While a practice plays (`m.practice` and the
-  director may command) a gold row at the top of the places panel says "This is a practice." with **Start the
-  real reveal**; `revealUiStartReal` runs the ordinary Start flow for a real reveal (it asks "Start a new
-  reveal?" when last night's grid would be replaced, and the unscored-games warning). The practice stays in its
-  own child, the big screen switches to the real reveal at once, and the remote then follows the real one.
 named here, never rebuilds a row. **The behaviour is wired separately** (the
 rest of Step 14, in setup-ui.js: see "Set up the week: behaviour" below); with no
 `data-screen` on `#setup` the markup is inert and the builder is v197's.

@@ -69,6 +69,17 @@ suites keep working after R1 is live.
 | `reveal-client.mjs` | the REAL client against these rules: reveal.js (the shipped scripts, through the unit tests' vm and DOM stub) talks to the emulator through a thin adapter from the SDK's modular API to the compat shape the app calls. A director's phone's Start (ctl + `pub: null` + the private order), every command of the state machine (each place, Back, the replay, the final table, End; the Friday crowning and an early End), a practice (only its own nodes, `real` byte-identical, End deletes both), two remotes pressing at once (one wins, the other is refused, says so and follows), a stale-`ca` Start refused, a counselor's mirror (three seconds behind a new place, no practice, no `revealFull`, the grid kept after End) and `retireExpiredReveal` (refused by the server before `until`, accepted after). **Mutation-checked:** a stale `sa`, a Start written as `ctl` alone, a `seq` that does not advance, a place published one early and a member key in the public ctl each turn it red |
 | `ancestor-validate.mjs` | prints what the emulator says to the one-line ancestor-validate probe, and proves the design doesn't depend on the answer: with every record-level and `teams`-node `.validate` stripped, the leaf anchors alone still refuse the field writes, a team flag included |
 
+`reveal-e2e.cjs` is the same reveal in real browsers (BUILD-PLAN Step 23's live check, run locally; needs Playwright and the **auth**
+emulator as well: `npx firebase emulators:start --only auth,database --project camp-89cea`, then `node reveal-e2e.cjs`, or
+`npm run test:e2e`; `playwright` must resolve from here — `npm i -D playwright`, or a global one with `NODE_PATH=$(npm root -g)`; the pinned
+SDK builds are fetched once with `curl` into the temp folder, or point `SDK_DIR` at them). It serves the worktree itself, signs two director
+phones and a counselor phone in through the Auth emulator (a fake Google credential), opens the signed-out big screen, and holds the pages'
+own CSP except for the emulator hosts it adds for the run; `firebase-config.js` is never edited. 34 checks: Start, three places (the
+counselor three seconds behind), both remotes pressing at once, Back, End early, an anonymous read of `revealPublic` showing only the places
+shown, a practice that never reaches the counselor, a real Start taking the big screen over from a practice, and the big screen never
+loading an Auth SDK or talking to anything but the database. `E2E_SHOTS=<dir>` writes screenshots when a check fails, `E2E_DEBUG=1` prints
+the pages' console errors.
+
 `camp-data.mjs` builds the `setup` seed the suites use. `buildSeed(id, sections)` is now the REAL seed (Step 15's `buildSeed`, run
 through the unit-test harness's vm; the schedule alone by default, `ALL_SECTIONS` for Step 20's switches). `buildSeedFixture(id)` is
 the hand-written copy (junior: 26 typical blocks, patches Tue 2 / Wed 1 / Thu 2 / Fri 8, one-offs 26; senior: 20 typical, no
