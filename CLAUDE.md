@@ -545,9 +545,10 @@ future edit must not break (all pinned by `tests/tabs.test.js`):
   `alert:<id>` (Now). **sw.js needed no change**: nothing sends the three new
   targets yet (the Worker emits `chat:<ch>`, `schedule` or none; sw.js's
   validator drops anything else to "", which opens Now — where `reveal` and
-  `alert:<id>` land anyway), so `PUSH_SW_VERSION` stays. When Step 23 starts
-  sending `reveal`, the Worker, sw.js's regex and `PUSH_SW_VERSION` change
-  together.
+  `alert:<id>` land anyway), so `PUSH_SW_VERSION` stays. Step 23's Buzz on a reveal's Start is an
+  ordinary director alert (`pushSendAlert`, no `reveal` target, and dark until
+  Step 27 sets the Worker's URL); when something does start sending `reveal`, the
+  Worker, sw.js's regex and `PUSH_SW_VERSION` change together.
 
 ## The shell frame (Step 13 — markup and visual system)
 
@@ -654,9 +655,9 @@ never rebuilds a segmented control under a finger.
   Who can sign in is visible, only inert while the modal is open.
 - **More** (`renderMore`, rendered with the tab; `wireMore` / `wireSegs` once):
   Director (editors only: **What counselors see**, **Set up the week** → today's
-  classic builder, **Change history**, **Who can sign in**; Run the reveal is
-  built but `hidden` until Step 23, Tell everyone / Award points arrive with Step
-  24), Camp (**Full schedule**, **Memory verse**, **Meal cleanup** — the last
+  classic builder, **Change history**, **Who can sign in**, **Run the reveal**
+  (Step 23: the remote, see "The standings reveal"); Tell everyone / Award points
+  arrive with Step 24), Camp (**Full schedule**, **Memory verse**, **Meal cleanup** — the last
   two are reading SHEETS holding the day-by-day content and the directors' award
   buttons, `#verse-body` / `#cleanup-body`), This phone (**Alerts**, Appearance,
   Your team), Switch camp (accounts on both camps' lists), Fun, Account, footer

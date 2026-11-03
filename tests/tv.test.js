@@ -493,6 +493,23 @@ test('a tie is one place with two teams side by side; a two-way tie fights in th
   assert.equal(h.entries.length, 3);
 });
 
+test('a TV that asks for reduced motion gets no confetti, no cannons and no shield fight (it has no Calm switch, so it honours the OS setting itself)', () => {
+  const tie2 = [grp(2, ent('t3', 'Pumpkins', 30, { g: 2 }), ent('t1', 'Turkeys', 30, { g: 1 })), grp(1, ent('t0', 'Foxes', 44))];
+  const calm = loadTv({ reducedMotion: true });
+  calm.online(0);
+  calm.feed({ real: nodeOf(calm, tie2, { cur: 0, shown: 1, teams: 3, seq: 2 }) });
+  assert.ok(calm.hero().has('tied') && !calm.hero().has('fight'), 'a two-way tie stands side by side without the fight');
+  assert.ok(!calm.cannonsShown(), 'no cannons');
+  calm.feed({ real: nodeOf(calm, six(), { phase: 'champion', cur: 5, shown: 6, finale: true, seq: 3 }) });
+  assert.ok(calm.finale() && !calm.cannonsShown(), 'the crowning is still shown, without the barrage');
+  calm.advance(10000);
+  assert.ok(calm.finale(), 'and nothing is left running that would fire later');
+  const lively = loadTv({});
+  lively.online(0);
+  lively.feed({ real: nodeOf(lively, tie2, { cur: 0, shown: 1, teams: 3, seq: 2 }) });
+  assert.ok(lively.hero().has('fight') && lively.cannonsShown(), 'without the setting the same frame fights and fires');
+});
+
 test('senior: four teams, flags for marks, the same frames', () => {
   const tv = loadTv({ search: '?camp=senior' });
   tv.online(0);

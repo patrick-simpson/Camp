@@ -567,6 +567,14 @@ Four **separate** deploys (P7), in this order, each with its own tests and live 
   27. An old TV page (a Step 2 or 3 build) reloads into the new page, or is simply reloaded.
 - **Rollback:** revert the client; the rules stay (inert for everything else). The old signed-in TV
   page returns with the revert.
+- **Built (Step 23 sessions, not yet deployed):** the engine is `reveal.js` and the screens are
+  `reveal-ui.js` (a separate file, so **nineteen** versioned assets, not eighteen: the deploy bumps
+  every `?v=` in index.html, `APP_VERSION`, `CODE_UPDATED_AT`, the TV page's own `?v=` references and
+  its two-place stamp, and `tests/shell.test.js` pins the count); the big screen is
+  `current-standings.js`, a public read-only subscriber. The end-to-end run is
+  `tests/emulator/reveal-e2e.cjs`. **Ship the big-screen page's markup and script in ONE deploy** (the
+  markup has no sign-in overlay). What stays for the owner: the live check above on real phones and a
+  real TV, and Buzz stays dark until Step 27.
 - **Owner:** a TV or screen, two director phones, 30 minutes; reload the TV once after the deploy.
   **Nothing to decide:** redesign §18 Q2 (the big screen is public) and Q3 (practice uses the real
   standings) are answered and built in.
