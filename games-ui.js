@@ -673,11 +673,13 @@ async function gamesChangeResult() {
   const g = gid ? gameById(gid) : null;
   if (!g || !canEdit() || !(state.results && state.results[gid])) return false;
   const reopen = typeof fourCanReopen === 'function' && fourCanReopen(g);
+  // A director whose own team played the final is not offered Reopen (it decides the final again, as Undo does): the dialog says so.
+  const ownFinal = !reopen && typeof fourReopenOwnTeam === 'function' && fourReopenOwnTeam(g);
   // Reopen the final is the main way back (gold, and what it keeps said inside it); Start over, the destructive one, sits under it on
   // its own line, never beside it as an equal; Keep it is the quiet way out.
   const opts = {
     title: 'Change the result for ' + g.name + '?',
-    body: 'Its points come off the standings until you save it again.',
+    body: 'Its points come off the standings until you save it again.' + (ownFinal ? ' Your team played the final, so another director can reopen it instead.' : ''),
     stack: reopen,
     actions: reopen
       ? [{ label: 'Reopen the final', sub: 'The semifinals and 3rd place stay as they were', value: 'reopen', kind: 'gold' },
@@ -695,6 +697,9 @@ async function gamesChangeResult() {
     return true;
   }
   delete state.results[gid];
+  // "Start over" clears the whole bracket: a node a late tap left under the saved result goes with it, or it would come back as a
+  // bracket nobody started (or block the next Start as "already started").
+  if (typeof dropBracketNodes === 'function') dropBracketNodes(gid);
   touchData();
   saveState();
   renderAll();

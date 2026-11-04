@@ -6,7 +6,9 @@
 // those rules accept, and what makes the per-match diff worth having:
 //   - Start is ONE write of brackets4/<gid> (whole); a recorded match is ONE path, brackets4/<gid>/m/<match>, beside the data stamp; Undo is that
 //     match's deletion; none of it is refused or parked;
-//   - two directors on two phones record the two semifinals at once and BOTH land (a whole-bracket write would put the stale half of each back);
+//   - two phones' writes to DIFFERENT matches of one bracket both land (a whole-bracket write would put the stale half of each back): the screen
+//     walks the matches in order, so it takes a phone that is a step behind to do it, and the SAME match from two phones is last-write-wins;
+//   - Reopen the final is one update (the result off, the bracket back at the final); Start over deletes the result and any stray bracket under it in one update;
 //   - Save Result is one multi-path update: results/<gid> (medals + the finished bracket as `path`) and brackets4/<gid>: null together, and a
 //     counselor's phone reads the result and the winner;
 //   - a semifinal changed from a stale phone after the 3rd-place match was played lands (last write wins for THAT match), every phone that adopts
@@ -270,7 +272,7 @@ for (const R of ROOTS) {
     [a, stale, c].forEach((x) => x.stop());
   });
 
-  await s.t(`${R}: Reopen the final is ONE update (the result deleted, the bracket back without its final), the final can be played again and saved; a stray left under a saved result is discarded with one deletion`, async () => {
+  await s.t(`${R}: Reopen the final is ONE update (the result deleted, the bracket back without its final), the final can be played again and saved; a stray left under a saved result is discarded with one deletion, and Start over deletes the result and the stray together`, async () => {
     const server = await seed();
     const d = await phone(R, ED, 'editor', server);
     start(d);
@@ -310,6 +312,20 @@ for (const R of ROOTS) {
     if ((await val(ed(), `${R}/state/brackets4/${GID}`)) !== null) throw new Error('the stray is still on the server');
     if (!(await val(ed(), `${R}/state/results/${GID}/medals`))) throw new Error('the result went with it');
     if (e.run('Object.keys(stateQuarantine).length')) throw new Error('a write was refused and parked');
+    // Change the result -> Start over clears the whole bracket: a stray left under the saved result goes with it, in the SAME update
+    await set(ref(ed(), `${R}/state/brackets4/${GID}/m/final`), { a: 't3', b: 't1', winner: 't3', at: 9 });
+    const f = await phone(R, ED2, 'editor', await stateOf(R));
+    f.writes.length = 0;
+    const cleared = await f.run(`(async () => { state.ui.gameId = ${jstr(GID)}; askDialog = async () => 'clear'; return await gamesChangeResult(); })()`);
+    if (cleared !== true) throw new Error('Start over did not clear the result: ' + jstr(cleared));
+    await f.flush();
+    const wipe = f.writes.find((w) => w.keys.includes(`results/${GID}`));
+    if (!wipe || wipe.values[`results/${GID}`] !== null) throw new Error('the result was not deleted: ' + jstr(f.writes.map((w) => w.keys)));
+    if (!wipe.keys.some((k) => k === `brackets4/${GID}`) || wipe.values[`brackets4/${GID}`] !== null) throw new Error('the stray bracket was not deleted in the SAME update: ' + jstr(wipe.keys));
+    if ((await val(ed(), `${R}/state/results/${GID}`)) !== null || (await val(ed(), `${R}/state/brackets4/${GID}`)) !== null) throw new Error('something is left on the server after Start over');
+    if (f.run('Object.keys(stateQuarantine).length')) throw new Error('a write was refused and parked');
+    if (!JSON.parse(f.run(`JSON.stringify(fourStartGame(gameById(${jstr(GID)}), [['t0', 't3'], ['t1', 't2']]))`)).ok) throw new Error('a fresh Start after Start over was refused');
+    f.stop();
     // and a counselor's phone cannot reopen or discard
     const v = await phone(R, VW, 'viewer', await stateOf(R));
     v.writes.length = 0;

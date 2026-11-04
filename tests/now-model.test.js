@@ -831,6 +831,7 @@ test('nowModel: a live tally is in roster order for a counselor and ranked for a
 
 test('nowModel: the four-team bracket reads state.brackets4 (Step 22\'s shape) as four cells, derives 3rd place and the final, and tells my team what is next', () => {
   boot('viewer', T()[0]);
+  state.teams = state.teams.slice(0, 4); // a four-team bracket belongs to a four-team camp (fourRead needs exactly four teams)
   const { nb, games } = gamesBlockOf(WED, 1);
   const g = games[0];
   g.format = 'tournament';

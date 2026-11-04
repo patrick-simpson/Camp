@@ -128,25 +128,29 @@ test('computeSyncUpdates: a new bracket goes up whole; a recorded match is brack
   });
 });
 
-test('two phones record the two semifinals at once: per-match writes keep both (a whole-bracket write would not)', () => {
+test('two phones write DIFFERENT matches of one bracket: per-match writes keep both (a whole-bracket write would not)', () => {
+  // The screen walks the matches in order, so only one match is ever up to be recorded; two phones write different matches when one is
+  // a step behind (its screen still shows the match the other phone has already recorded and moved on from).
   const g = fourGame();
   const seedB = fourStart([['t0', 't3'], ['t1', 't2']], IDS, 1000);
+  seedB.m.s1.winner = 't0'; seedB.m.s1.at = 1;
   state.brackets4[g.id] = clone(seedB);
   const server0 = syncedSnapshot();
-  // phone A records Semifinal 1; phone B records Semifinal 2 — each diff is made against what the server confirmed
-  const A = clone(server0); A.brackets4[g.id].m.s1.winner = 't0'; A.brackets4[g.id].m.s1.at = 1;
-  const B = clone(server0); B.brackets4[g.id].m.s2.winner = 't2'; B.brackets4[g.id].m.s2.at = 2;
+  // phone A records Semifinal 2; phone B, from the same base with a stale screen, records Semifinal 1 the other way — each diff is made
+  // against what the server confirmed
+  const A = clone(server0); A.brackets4[g.id].m.s2.winner = 't2'; A.brackets4[g.id].m.s2.at = 2;
+  const B = clone(server0); B.brackets4[g.id].m.s1.winner = 't3'; B.brackets4[g.id].m.s1.at = 3;
   const pa = computeSyncUpdates(server0, A);
   const pb = computeSyncUpdates(server0, B);
-  assert.deepEqual(Object.keys(pa), ['brackets4/' + g.id + '/m/s1']);
-  assert.deepEqual(Object.keys(pb), ['brackets4/' + g.id + '/m/s2']);
+  assert.deepEqual(Object.keys(pa), ['brackets4/' + g.id + '/m/s2']);
+  assert.deepEqual(Object.keys(pb), ['brackets4/' + g.id + '/m/s1']);
   const merged = applySyncPaths(applySyncPaths(server0, pa), pb);
-  assert.equal(merged.brackets4[g.id].m.s1.winner, 't0');
-  assert.equal(merged.brackets4[g.id].m.s2.winner, 't2', 'both survive');
+  assert.equal(merged.brackets4[g.id].m.s2.winner, 't2');
+  assert.equal(merged.brackets4[g.id].m.s1.winner, 't3', 'both survive');
   // the same match on both phones with different winners: last write wins for THAT match only (the re-check catches the rest)
-  const C = clone(server0); C.brackets4[g.id].m.s1.winner = 't3'; C.brackets4[g.id].m.s1.at = 3;
-  const last = applySyncPaths(applySyncPaths(server0, pa), computeSyncUpdates(server0, C));
-  assert.equal(last.brackets4[g.id].m.s1.winner, 't3');
+  const C = clone(server0); C.brackets4[g.id].m.s1.winner = 't0'; C.brackets4[g.id].m.s1.at = 4;
+  const last = applySyncPaths(applySyncPaths(server0, pb), computeSyncUpdates(server0, C));
+  assert.equal(last.brackets4[g.id].m.s1.winner, 't0');
 });
 
 test('a match recorded offline merges through the real first snapshot beside one another phone recorded; the same match keeps the server\'s', () => {

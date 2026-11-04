@@ -556,7 +556,21 @@ Four **separate** deploys (P7), in this order, each with its own tests and live 
   `now-model.test.js` (an unreadable bracket is not a live game). New: `preview.test.js` walks every step of a four-team bracket;
   `docs/build-notes/verify/step22-pass.cjs` is the browser pass (senior end to end with real taps, every state at 360 / 390, both themes, 100 / 130 / 200 % text,
   a counselor's game view and Now card, a junior six-team smoke test). **Owner's checks** are in the session report: switch the live Legacy Game to Bracket,
-  a real-phone tournament on senior, two phones recording at once, a junior bracket.
+  a real-phone tournament on senior, two phones where one screen is a step behind (the same match recorded twice: the Re-check card), a junior bracket.
+- **Function review fixes (Step 22; not deployed, no version bumped):** (1) one thumb, one result: a screen repaints in place, so a real double tap on one phone
+  recorded the NEXT match with the first team (the stale-tap guard cannot see it: the new match is what the screen shows). `bracketTapHeld` / `bracketTapDone`
+  hold record taps for 700 ms after a record (four-team and six-team wizard alike; Start and the Re-check answers too), and an Undo after an Undo; an Undo right
+  after a record is not held (the "wrong team" reflex). (2) Start over / Clear it and pick again now removes whatever bracket node a late tap left under the saved
+  result (`dropBracketNodes`); it used to leave it, where it came back as a bracket nobody started or blocked the next Start as "already started". (3) The own-team
+  guard (`canScoreRound`) now also covers the Re-check answers (`fourResolveTeams`: the semifinal that changed and every later match thrown out or put back) and
+  Reopen the final (the final's two teams); the card and the dialog say why the buttons are not offered. (4) `fourRead` returns null unless the camp has exactly
+  four teams, so a stray `brackets4` under a junior game is no live game, matchup or alert. (5) A stale second tap says what is saved ("Already recorded: Gold Team
+  won Semifinal 1."). **Recorded cuts and decisions:** the screen walks the matches in order (Q12, the step bar; P2's drafts list parallel semifinals on two fields
+  as a non-goal), so two phones recording the two semifinals at once is not a flow the app offers: per-match sync paths still keep two phones' writes to DIFFERENT
+  matches, which is what a phone one step behind produces, and the same match from two phones is last-write-wins and audited by the Re-check card. Not built:
+  "Already recorded by <name>" (a match record has no author, and the published rules' `brackets4` shape would need one) and the 60 s "changed this right after
+  you" toast for the director whose recorded match another ref overwrote (a director sees the change when the screen repaints; a later match that no longer fits
+  raises the Re-check card). The Discard button's browser hit-test is in the Step 22 pass.
 
 ### Step 23 · The reveal: remote, counselor mirror, public big screen, finale · redesign D5 · Mar · XL (6) · Opus pass, then Sonnet
 - **Ships:** `reveal.js` (`?v=` → 18): the director remote (mini TV, grouped ladder, masked

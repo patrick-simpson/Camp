@@ -6,9 +6,11 @@
 //           result -> Reopen the final -> record it again; Choose different (the pick); Cancel this bracket; the screen survives an idle repaint
 //   STATES  every screen at 360 and 390 px, light and dark, 100 / 130 / 200 % text: tap targets under 44x44, sideways scroll, errors; a counselor's
 //           game view and Now card with the bracket under way (and a Re-check holding it)
+//   GUARDS  real touches and a real mouse: a double tap on one winner button records ONE match (four-team and six-team wizard alike), and the
+//           Games screen's Discard for a late tap can be clicked (it once sat under pointer-events: none)
 //   JUNIOR  the six-team wizard to a saved result (a smoke test: nothing about it should have changed)
 //   node step22-pass.cjs [baseUrl]      (serve the worktree first: python3 -m http.server 8961)
-//   SHOTS=1 OUT=<dir> writes screenshots; QUICK=1 runs the e2e only
+//   SHOTS=1 OUT=<dir> writes screenshots; QUICK=1 uses one text size; ONLY=guards runs the real-touch / real-click part alone
 const { chromium } = require('playwright');
 const BASE = (process.argv[2] || 'http://localhost:8961').replace(/\/$/, '');
 const OUT = (process.env.OUT || require('os').tmpdir()) + '/s22/';
@@ -74,7 +76,16 @@ async function measure(page, where, allow) {
 const text = (page, sel) => page.evaluate((sel) => { const e = document.querySelector(sel); return e ? e.innerText : null; }, sel);
 const entry = (page) => text(page, '#entry-area');
 const hasSel = (page, sel) => page.evaluate((sel) => !!document.querySelector(sel), sel);
-async function tap(page, sel) { const loc = page.locator(sel).first(); await loc.scrollIntoViewIfNeeded().catch(() => {}); await loc.tap(); await sleep(350); }
+// A person's taps are further apart than the double-tap guard's moment (700 ms after a record, see bracketTapHeld): wait that out before a
+// tap that records, takes back or settles something, so the pass drives separate taps. The GUARDS part below taps twice on purpose.
+let lastMoveTap = 0;
+async function tap(page, sel) {
+  const moves = /winner-btn|tiebreak-chip|data-four="(undo|keep|back|start-plan|start-pick)"|start-bracket|undo-/.test(sel);
+  if (moves) { const wait = 780 - (Date.now() - lastMoveTap); if (wait > 0) await sleep(wait); }
+  const loc = page.locator(sel).first(); await loc.scrollIntoViewIfNeeded().catch(() => {}); await loc.tap();
+  if (moves) lastMoveTap = Date.now();
+  await sleep(350);
+}
 
 // Points so the suggestion has something to say: the standings are Gold, Red, Green, Blue (best first).
 const SEED_POINTS = () => {
@@ -91,7 +102,7 @@ async function e2e(browser) {
   await sleep(700);
   let t = await entry(page);
   ok(/Run the bracket/.test(t) && /Suggested by the points right now/i.test(t), 'start', 'the Start card suggests the pairs: ' + (t || '').slice(0, 120));
-  ok(/Gold Team\s+vs\s+\S+\s+Blue Team/.test(t) && /Red Team\s+vs\s+\S+\s+Green Team/.test(t), 'start', 'best v worst, second v third: ' + (t || '').replace(/\s+/g, ' ').slice(0, 260));
+  ok(/Gold Team\s+vs\s+Blue Team/.test(t) && /Red Team\s+vs\s+Green Team/.test(t), 'start', 'best v worst, second v third: ' + (t || '').replace(/\s+/g, ' ').slice(0, 260));
   await shot(page, 'start-suggested'); await measure(page, 'start (suggested)');
   // Choose different, then pick
   await tap(page, '[data-four="choose"]');
@@ -106,7 +117,7 @@ async function e2e(browser) {
   await tap(page, '[data-four="start-plan"]');
   t = await entry(page);
   ok(/Semifinal 1/.test(t) && await hasSel(page, '.winner-btn'), 'semifinal 1', 'the first match is up: ' + (t || '').slice(0, 100));
-  ok(await hasSel(page, '.bracket-steps .wizard-step.active'), 'semifinal 1', 'the step bar says where it is');
+  ok(await hasSel(page, '.four-steps .wizard-step.active'), 'semifinal 1', 'the step line says where it is');
   await shot(page, 'semifinal-1'); await measure(page, 'semifinal 1');
   // an idle repaint leaves the screen (and its live tally) alone
   const same = await page.evaluate(() => { const el = document.querySelector('#entry-area .four-entry'); renderAll(); renderAll(); return el === document.querySelector('#entry-area .four-entry'); });
@@ -135,7 +146,7 @@ async function e2e(browser) {
   await shot(page, 'final');
   await tap(page, '.winner-btn[data-winner="t3"]');
   t = await entry(page);
-  ok(/Game results/.test(t) && await hasSel(page, '#save-bracket-btn'), 'summary', 'the summary offers Save Result: ' + (t || '').slice(0, 80));
+  ok(/Ready to save/.test(t) && await hasSel(page, '#save-bracket-btn'), 'summary', 'the summary offers Save result in the dock: ' + (t || '').slice(0, 80));
   await shot(page, 'summary'); await measure(page, 'summary');
   // Save Result
   await tap(page, '#save-bracket-btn');
@@ -235,6 +246,62 @@ async function statesPass(browser) {
   }
 }
 
+// Real touches and a real mouse. A double tap on one winner button must record ONE match: the screen repaints in place and the next match's
+// first winner button sits at the very same spot. The Discard button of the Games screen's "Brackets to look at" must take a click.
+async function guards(browser) {
+  console.log('GUARDS senior double tap, Discard click; junior double tap');
+  {
+    const { ctx, page, errs } = await open(browser);
+    await page.evaluate(() => { window.celebrate = () => {}; fourStartGame(gameById('legacy-game-d4'), [['t3', 't1'], ['t0', 't2']]); openGame('legacy-game-d4', { from: 'now' }); });
+    await sleep(700);
+    const box = await page.locator('#entry-area .winner-btn').first().boundingBox();
+    await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+    await sleep(60);
+    await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+    await sleep(500);
+    const m = await page.evaluate(() => state.brackets4['legacy-game-d4'].m);
+    ok(!!m.s1.winner && !m.s2.winner, 'double tap (four-team)', 'a double tap recorded more than one match: ' + JSON.stringify(m));
+    await sleep(800);
+    await tap(page, '[data-four="undo"]');
+    ok(await page.evaluate(() => !state.brackets4['legacy-game-d4'].m.s1.winner), 'double tap (four-team)', 'a separate tap undoes');
+    // a stray under a saved result: its Discard on the Games screen takes a real click
+    await page.evaluate(() => {
+      const g = gameById('legacy-game-d4'); delete state.brackets4[g.id]; fourStartGame(g, [['t3', 't1'], ['t0', 't2']]);
+      ['s1:t3', 's2:t0', 'third:t2', 'final:t3'].forEach((x) => { const [k, w] = x.split(':'); fourRecordTap(g, k, w); }); fourSaveResult(g);
+      state.brackets4[g.id] = { m: { s1: { a: 't3', b: 't1', winner: 't3', at: 1 } } };
+      closeGame(); openBuilder(); renderAll();
+    });
+    await sleep(500);
+    await page.evaluate(() => { setupGo('games'); renderAll(); });
+    await sleep(700);
+    const discard = page.locator('#sg-bn-list button[data-sg-discard]').first();
+    await discard.scrollIntoViewIfNeeded(); await sleep(300);
+    const hit = await page.evaluate(() => { const b = document.querySelector('#sg-bn-list button[data-sg-discard]'); const r = b.getBoundingClientRect(); const e = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return !!e && (e === b || b.contains(e)); });
+    ok(hit, 'discard', 'something else is on top of the Discard button');
+    const db = await discard.boundingBox();
+    await page.mouse.click(db.x + db.width / 2, db.y + db.height / 2);
+    await sleep(500);
+    ok(await page.evaluate(() => !state.brackets4['legacy-game-d4'] && !!state.results['legacy-game-d4']), 'discard', 'a real click on Discard removed the stray and left the result');
+    ok(errs.length === 0, 'guards (senior)', 'page errors: ' + errs.join(' | '));
+    await ctx.close();
+  }
+  {
+    const { ctx, page, errs } = await open(browser, { camp: 'junior', now: '2-1005' });
+    await page.evaluate(() => { window.celebrate = () => {}; openGame('kangaroo-kickball', { from: 'now' }); });
+    await sleep(600);
+    await tap(page, '#start-bracket-btn');
+    await sleep(800);
+    const box = await page.locator('#entry-area .winner-btn').first().boundingBox();
+    await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+    await sleep(60);
+    await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+    await sleep(500);
+    ok(await page.evaluate(() => state.brackets['kangaroo-kickball'].matches.length) === 1, 'double tap (six-team)', 'a double tap recorded more than one round-1 match');
+    ok(errs.length === 0, 'guards (junior)', 'page errors: ' + errs.join(' | '));
+    await ctx.close();
+  }
+}
+
 async function juniorSmoke(browser) {
   console.log('JUNIOR six-team smoke, 390 light');
   const { ctx, page, errs } = await open(browser, { camp: 'junior', now: '2-1005' });
@@ -277,10 +344,13 @@ async function juniorSmoke(browser) {
 (async () => {
   const browser = await chromium.launch();
   try {
-    await e2e(browser);
-    if (!process.env.QUICK) { await statesPass(browser); }
-    else await statesPass(browser);
-    await juniorSmoke(browser);
+    if (process.env.ONLY === 'guards') await guards(browser); // the guards alone (a mutation check: take the guard out and these turn red)
+    else {
+      await e2e(browser);
+      await statesPass(browser);
+      await guards(browser);
+      await juniorSmoke(browser);
+    }
   } finally { await browser.close(); }
   console.log(problems.length ? '\n' + problems.length + ' problem(s) in ' + checks + ' checks' : '\nall ' + checks + ' checks passed');
   process.exit(problems.length ? 1 : 0);

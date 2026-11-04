@@ -5314,22 +5314,29 @@ count). All of this is in app.js ("The six-team bracket's rules", "What both bra
   third and final are written when RECORDED with the two teams that played them next to the winner. **The phase is derived, never stored**: the first
   match in `FOUR_ORDER` (s1, s2, third, final — decision Q12; the one place that names the order) with no winner, then `summary`; `recheck` when a
   recorded match disagrees with the semifinals it came from; `broken` when `fourRead` cannot read it.
-- **`fourRead(b, ids)`** is the one reader: null for anything this build cannot read (not four different teams of this camp, a semifinal winner who did not
-  play it), else laundered cells (every id passes the roster) and `recheck` = `{ match, semi, now, was }` (who wins the semifinal now, who the later matches
+- **`fourRead(b, ids)`** is the one reader: null for anything this build cannot read (a camp that does not have exactly four teams, so a stray under a
+  junior game is no live bracket; not four different teams of this camp; a semifinal winner who did not play it), else laundered cells (every id passes the roster) and `recheck` = `{ match, semi, now, was }` (who wins the semifinal now, who the later matches
   say won it). `fourPhase`, `fourCurrent`, `fourNext`, `fourMedals` (null unless all four matches are recorded AND agree — gold wins the final, silver loses
   it, bronze WINS the 3rd-place match), `fourPath` (laundered finished bracket) all go through it. `normalizeBracket4` heals only the `m` container RTDB
   prunes and invents nothing (it runs at load: no later top-level `const`).
-- **Changing one**: `fourStart(pairs, ids)`, `fourRecord(b, key, winner, ids)` (refuses with a reason: `decided` = a stale second tap never overwrites,
-  `order`, `winner`, `recheck`, `broken`; stores `a` / `b` on third / final), `fourUndo` (the last recorded match in PLAY order — a phone's clock does not
+- **Changing one**: `fourStart(pairs, ids)`, `fourRecord(b, key, winner, ids)` (refuses with a reason: `decided` = a stale second tap never overwrites, and
+  says which match and who won it; `order`, `winner`, `recheck`, `broken`; stores `a` / `b` on third / final), `fourUndo` (the last recorded match in PLAY order — a phone's clock does not
   decide it), `fourResolve(b, 'keep' | 'back')` — the two Re-check answers: keep the changed semifinal and replay what was played on the old one, or put the
   semifinal back to who the later matches were played with (false and unchanged when they contradict each other). `fourSeedMode` / `fourSeeds` read the game's
   Matchups setting (standings: 1st v 4th, 2nd v 3rd; fixed pairs; pick).
 - **On the page** (`fourStartGame`, `fourRecordTap`, `fourUndoTap`, `fourResolveTap`, `fourSaveResult`, `fourSeedPlan`): director only (`canEdit()`, so false in a
-  counselor preview), the own-team guard per match (`canScoreRound`), a result already saved is `saved` (a late tap after the result is ignored, the stray
-  record stays and is overwritten by a new Start), then the pure rule, then `touchData` + `saveState` + `renderAll`. Each returns `{ ok }` or `{ ok: false,
-  reason }` for the screen's sentence. The standings suggestion needs `canEdit() && standingsVisible()` (the six-team rule).
+  counselor preview), the own-team guard per match (`canScoreRound`: record, Undo, the Re-check answers via `fourResolveTeams` — the semifinal that changed and
+  every later match thrown out or put back — and Reopen the final, which decides the final again), a result already saved is `saved` (a late tap after the result
+  is ignored and its stray bracket node stays, listed on the hub and removed by Discard or by Change the result → Start over: `dropBracketNodes`), then the pure
+  rule, then `touchData` + `saveState` + `renderAll`. Each returns `{ ok }` or `{ ok: false, reason }` for the screen's sentence. The standings suggestion needs
+  `canEdit() && standingsVisible()` (the six-team rule). **One thumb, one result** (`bracketTapHeld` / `bracketTapDone`, shared by both brackets): a bracket
+  repaints in place, so after a recorded winner the NEXT match's first winner button sits under the same thumb and a real double tap recorded it with the
+  first team (no stale screen is involved, so the re-read-at-tap-time guards cannot see it). For 700 ms after a record, record / Start / Re-check taps are
+  ignored and said ("That tap came right after the last one…"), and an Undo after an Undo; an Undo right after a record is not held (the "wrong team" reflex);
+  a clock that stepped backwards never locks. Tests that play a whole bracket call `bracketTapReset()` between taps.
 - **Sync**: `brackets4` is in `SYNC_KEYS` (the published rules accept it as a branch; no rules change). `computeSyncUpdates` diffs it per MATCH,
-  `brackets4/<gid>/m/<match>` — two refs recording the two semifinals on two phones keep both; a new bracket goes up whole; Undo is the match's deletion;
+  `brackets4/<gid>/m/<match>` — two phones writing DIFFERENT matches keep both (the screen walks the matches in order, Q12, so only a phone a step behind does
+  it; the SAME match from two phones is last-write-wins and the Re-check card audits it; parallel semifinals are a non-goal); a new bracket goes up whole; Undo is the match's deletion;
   finishing writes `results/<gid>` and `brackets4/<gid>: null` in the same update. Everything else is the generic engine (per-path first-snapshot merge,
   quarantine named "bracket", `makeFreshState`, `applyRemoteState` "missing means empty", backups, `GAME_RECORD_MAPS`, restore points).
 - **The screens** (`renderBracketFour`, "The four-team bracket's screens" in app.js; `renderTournament` hands a four-team roster to it): drawn from state
@@ -5345,7 +5352,7 @@ count). All of this is in app.js ("The six-team bracket's rules", "What both bra
   not for a match the director's own team played; the six-team wizard's Undo links are named and placed the same way), then the bracket so far as Now's own
   2×2 cells with the match under way outlined (`fourMapHtml`, the map: it replaced the "Completed" bullets), and Cancel this bracket (asked first through
   `askDialog`). **Re-check** (a recorded match disagrees with its semifinals): nothing can be recorded or saved, the card names what changed and offers both
-  `fourResolve` answers as two EQUAL buttons, each saying inside it what it does to the rest ("Keep Blue Team as the winner · The 3rd place match is played
+  `fourResolve` answers (to a director whose own team is in one of the matches in question: only a line saying another director decides) as two EQUAL buttons, each saying inside it what it does to the rest ("Keep Blue Team as the winner · The 3rd place match is played
   again" / "Put Gold Team back as the winner · Nothing else changes"). **Summary**: "Ready to save" over the saved result's own `.gres` list
   (`gamesResultHtml`), and the Save is the takeover dock's gold button (`gamesDock` tone `four` while `fourReadyToSave(g)`; games-ui.js
   `gamesFourSaveTap` → `fourSaveResult` → `finishBracket`: the same result record, so `medalCounts`, double points, the Now card and the reveal's freeze
@@ -5354,11 +5361,11 @@ count). All of this is in app.js ("The six-team bracket's rules", "What both bra
   and the map's changed cells pop (`nowB4Motion`); the dock's Save comes up from the foot. Calm: fades only.
   **Reopen the final**: a four-team result keeps the finished bracket on it (`results[gid].path`), and Change the result on that game offers Reopen the final
   (`fourReopen`: the result comes off, the bracket is back at the final with every other match as it was, ONE write — `fourReopenBracket` refuses a path
-  that is not a consistent finished bracket; the gold main action) / Start over (danger, on its own line) / Keep it (quiet), stacked, each with what it
+  that is not a consistent finished bracket, and `fourReopenOwnTeam` a director whose team played the final, whose dialog says so; the gold main action) / Start over (danger, on its own line; it clears the whole bracket node too) / Keep it (quiet), stacked, each with what it
   does inside the button (games-ui.js `gamesChangeResult`; `askDialog` actions take an optional `sub`). **The hub**: `bracketNotes()` lists a bracket node
-  still under a game whose result is saved (`late`: a phone that had not heard yet recorded a match; every reader ignores it and a new Start replaces it) and
+  still under a game whose result is saved (`late`: a phone that had not heard yet recorded a match; every reader ignores it; Discard and Start over remove it) and
   a four-team bracket waiting on a re-check; the hub's Games row says so, and the Games screen's "Brackets to look at" (`#sg-sec-bn`) lists them named
-  with their day ("Legacy Game · Wednesday"), the late ones with Discard (`discardLateBracket`: the result is untouched), a re-check as a row that closes
+  with their day ("Legacy Game · Wednesday"), the late ones with Discard (`discardLateBracket`: the result is untouched; the row is a plain `.sg-bn-row`, never `.gl-row-split`, whose CSS switches off pointer events on every child but its own hit button — a real mouse click is in the Step 22 pass), a re-check as a row that closes
   the builder and opens the game on its Re-check card (`gmSettleBracket`).
 - **Spectators** (a counselor, a preview of one): `renderLiveWatchFour` — in reading order: the followed team's line (or the hold note while a result is
   checked, or "All four matches are played"), the match under way on the big board (no half-screen minimum here), "Up next" when both teams are known (the
@@ -5374,7 +5381,8 @@ count). All of this is in app.js ("The six-team bracket's rules", "What both bra
   the screens through a tap driver, Reopen, the hub notes, the reveal's freeze), `bracket-sync.senior.test.js`, `week.senior.test.js` (CHANGED ON PURPOSE: a
   four-team roster starts the four-team bracket; a five-team one is still refused with its count), `tests/emulator/brackets4-client.mjs`;
   `docs/build-notes/verify/step22-pass.cjs` is the browser pass (senior end to end with real taps, every state at 360 / 390, light / dark, 100 / 130 / 200 %,
-  a counselor's game view and Now card, a junior six-team smoke test). The takeover's body clips horizontally (`.tk-body { overflow-x: hidden }`): a
+  a counselor's game view and Now card, real double taps on a winner button in both brackets and a real mouse click on the hub's Discard — `ONLY=guards` runs
+  just those, which turn red with the tap guard taken out — and a junior six-team smoke test). The takeover's body clips horizontally (`.tk-body { overflow-x: hidden }`): a
   full-width jelly-button paints its wobble on a canvas 28px wider than itself on each side, which used to make the takeover scroll sideways.
 
 ## The TV page (current-standings.html) — both camps

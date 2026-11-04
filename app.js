@@ -6124,10 +6124,11 @@ function computeSyncUpdates(prev, cur) {
       if (!(id in c)) up[k + '/' + id] = null; // item deleted (cleared result, removed bonus, …)
     });
   });
-  // brackets4 (the four-team bracket) is diffed per MATCH, brackets4/<gid>/m/<match>: two refs recording the two semifinals on two
-  // phones keep both (a whole-bracket write would put the stale half of each back). A bracket that is new, or changes shape, goes
-  // up whole; a finished or cancelled one is its deletion (finishing writes results/<gid> in the same batch). Absent `winner` =
-  // undecided, so RTDB's pruning is harmless.
+  // brackets4 (the four-team bracket) is diffed per MATCH, brackets4/<gid>/m/<match>: two phones writing DIFFERENT matches keep both
+  // (a whole-bracket write would put the stale half of each back; the screen walks the matches in order, so it takes a phone that
+  // is a step behind to do it, and two phones recording the SAME match is last-write-wins, which the Re-check step then audits). A
+  // bracket that is new, or changes shape, goes up whole; a finished or cancelled one is its deletion (finishing writes
+  // results/<gid> in the same batch). Absent `winner` = undecided, so RTDB's pruning is harmless.
   {
     const p = (prev && prev.brackets4) || {};
     const c = (cur && cur.brackets4) || {};
@@ -10693,6 +10694,41 @@ function cancelBracket(g, kind) {
   renderAll();
 }
 
+// Whatever either kind of bracket still holds for a game (a late tap's stray included), thrown away. Returns whether there was any.
+function dropBracketNodes(gid) {
+  let had = false;
+  ['brackets', 'brackets4'].forEach((k) => {
+    if (state[k] && state[k][gid]) { delete state[k][gid]; had = true; }
+  });
+  return had;
+}
+
+// One device, one result at a time. A bracket repaints in place, so the screen that follows a recorded winner has ITS first winner
+// button at the very same spot as the one just tapped (and the Undo link that follows an Undo is under the same thumb too): a quick
+// second tap (a double tap, a nervous thumb) lands on the NEXT match and records it with the wrong team, or takes back a second
+// match. No stale screen is involved (the new match IS what the screen shows), so the "read the match again when the tap fires"
+// guards cannot see it. For a moment after this device records a result, further record taps are ignored and said; the same for
+// Undo after an Undo. A record then an Undo is NOT held (the "oops, wrong team" reflex), and a clock that stepped backwards never
+// locks anything. Tests that play a whole bracket call bracketTapReset() between taps, as a person's separate taps would be further apart.
+const BRACKET_TAP_SETTLE_MS = 700;
+const BRACKET_TAP_WORDS = 'That tap came right after the last one, so it was ignored. Tap again if you meant it.';
+const bracketTapLast = { record: 0, undo: 0 };
+function bracketTapHeld(kind) {
+  const at = bracketTapLast[kind || 'record'];
+  const gap = Date.now() - at;
+  if (at > 0 && gap >= 0 && gap < BRACKET_TAP_SETTLE_MS) { showToast(BRACKET_TAP_WORDS); return true; }
+  return false;
+}
+function bracketTapDone(kind) { bracketTapLast[kind || 'record'] = Date.now(); }
+function bracketTapReset() { bracketTapLast.record = 0; bracketTapLast.undo = 0; }
+// A six-team wizard handler behind that guard: `fn` returns false when it did nothing.
+function sixTap(fn, kind) {
+  return () => {
+    if (bracketTapHeld(kind)) return;
+    if (fn() !== false) bracketTapDone(kind);
+  };
+}
+
 // ── The four-team bracket's rules (pure) ─────────────────────────────────────────────────────────
 // A tournament on exactly four teams (senior camp): two semifinals, the 3rd-place match, the final.
 //
@@ -10735,8 +10771,9 @@ function normalizeBracket4(b) {
   return b;
 }
 
-// One look at a stored four-team bracket as plain, laundered data — or null when this build cannot read it (not an object, a
-// semifinal without two different teams of this camp, four teams that are not four, a semifinal winner who did not play it).
+// One look at a stored four-team bracket as plain, laundered data — or null when this build cannot read it (not an object, a camp
+// that does not have exactly four teams, a semifinal without two different teams of this camp, four teams that are not four, a
+// semifinal winner who did not play it).
 // Every id passes the roster (`ids`), so a stored string can never reach markup as a team. Cells are { a, b, winner, at, recorded }:
 // a recorded match keeps the teams it was played with, an unrecorded third / final shows the teams it WILL have ('' while unknown).
 // `recheck` is null while every recorded match agrees with the semifinals; else { match, semi, now, was } — the later match that
@@ -10745,6 +10782,9 @@ function normalizeBracket4(b) {
 function fourRead(b, ids) {
   if (!b || typeof b !== 'object' || Array.isArray(b) || !b.m || typeof b.m !== 'object' || Array.isArray(b.m)) return null;
   const roster = Array.isArray(ids) ? ids : [];
+  // A four-team bracket only exists on a camp with four teams: a stray under a six-team (junior) game, which names four of its six,
+  // would otherwise read as a live bracket (marking the game live and feeding matchup alerts) that no screen there can show.
+  if (roster.length !== 4) return null;
   const id = (v) => (typeof v === 'string' && roster.indexOf(v) !== -1 ? v : '');
   const rec = (k) => (b.m[k] && typeof b.m[k] === 'object' && !Array.isArray(b.m[k]) ? b.m[k] : null);
   const cell = (k) => {
@@ -10857,7 +10897,8 @@ function fourStart(pairs, ids, now) {
 }
 
 // Record the winner of the match that is waiting. Refuses (and changes nothing) with a reason: 'broken' | 'recheck' | 'match' (not
-// one of the four) | 'decided' (a stale second tap, or another ref got there first: the winner is NOT overwritten) | 'summary' |
+// one of the four) | 'decided' (a stale second tap, or another ref got there first: the winner is NOT overwritten; says which match
+// and who won it) | 'summary' |
 // 'order' (it is not this match's turn) | 'winner' (not one of the two teams). A recorded third / final stores the two teams that
 // played it next to the winner; a semifinal keeps the seeds it was created with.
 function fourRecord(b, key, winner, ids, now) {
@@ -10865,7 +10906,7 @@ function fourRecord(b, key, winner, ids, now) {
   if (!v) return { ok: false, reason: 'broken' };
   if (v.recheck) return { ok: false, reason: 'recheck' };
   if (FOUR_ORDER.indexOf(key) === -1) return { ok: false, reason: 'match' };
-  if (v.m[key].winner) return { ok: false, reason: 'decided' };
+  if (v.m[key].winner) return { ok: false, reason: 'decided', match: key, winner: v.m[key].winner };
   const cur = fourCurrent(b, ids);
   if (!cur) return { ok: false, reason: 'summary' };
   if (cur.key !== key) return { ok: false, reason: 'order' };
@@ -10972,7 +11013,7 @@ function fourStartGame(g, pairs) {
   const b = fourStart(pairs, teamIds(), serverNow());
   if (!b) return { ok: false, reason: 'pairs' };
   if (!state.brackets4) state.brackets4 = {};
-  state.brackets4[g.id] = b; // overwrites anything a late tap left behind: this is a new bracket
+  state.brackets4[g.id] = b;
   clearLiveMatch(g); // a new bracket starts with a clean tally
   saveState();
   renderAll();
@@ -11016,6 +11057,7 @@ function fourResolveTap(g, choice) {
   if (state.results[g.id]) return { ok: false, reason: 'saved' };
   const b = fourBracketOf(g);
   if (!b) return { ok: false, reason: 'none' };
+  if (!fourCanResolve(fourRead(b, teamIds()))) return { ok: false, reason: 'team' };
   if (!fourResolve(b, choice, teamIds(), serverNow())) return { ok: false, reason: 'unresolved' };
   touchData();
   saveState();
@@ -11034,6 +11076,21 @@ function fourSaveResult(g) {
   if (!medals) return { ok: false, reason: 'unfinished' };
   finishBracket(g, 'four', medals, fourPath(b, teamIds()));
   return { ok: true, medals };
+}
+
+// The matches a Re-check answer decides again, as [a, b] pairs: the semifinal that changed and every later match that is thrown out or
+// whose winner is put back. A director whose own team played one of them leaves the answer to another (canScoreRound, as Undo does).
+function fourResolveTeams(v) {
+  if (!v || !v.recheck) return [];
+  const keys = [];
+  if (v.recheck.semi) keys.push(v.recheck.semi);
+  ['third', 'final'].forEach((k) => { if (v.m[k].recorded && !v.m[k].fits) keys.push(k); });
+  ['s1', 's2'].forEach((k) => { if (v.vouch[k] && v.vouch[k] !== v.m[k].winner && keys.indexOf(k) === -1) keys.push(k); });
+  return keys.map((k) => [v.m[k].a, v.m[k].b]);
+}
+
+function fourCanResolve(v) {
+  return fourResolveTeams(v).every((pair) => canScoreRound(pair[0], pair[1]));
 }
 
 // Brackets that need a director's eye, for Set up the week's Games row and screen: `late` — a bracket node still under a game whose
@@ -11062,10 +11119,7 @@ function bracketNotes() {
 function discardLateBracket(gid) {
   if (!canEdit()) return { ok: false, reason: 'readonly' };
   if (!(state.results && state.results[gid])) return { ok: false, reason: 'none' };
-  const had = !!((state.brackets && state.brackets[gid]) || (state.brackets4 && state.brackets4[gid]));
-  if (!had) return { ok: false, reason: 'none' };
-  if (state.brackets) delete state.brackets[gid];
-  if (state.brackets4) delete state.brackets4[gid];
+  if (!dropBracketNodes(gid)) return { ok: false, reason: 'none' };
   saveState();
   renderAll();
   return { ok: true };
@@ -11082,9 +11136,22 @@ function fourReopenBracket(result, ids) {
   return fourPhase(p, ids) === 'final' ? p : null;
 }
 
-function fourCanReopen(g) {
+// Is there a finished bracket on this game's result that a director could reopen, whoever that director is? (The dialog says why a
+// director whose own team played the final is not offered it.)
+function fourHasReopenable(g) {
   return !!(g && canEdit() && g.format === 'tournament' && state.results && state.results[g.id] && bracketKindFor(teamIds().length) === 'four' &&
     fourReopenBracket(state.results[g.id], teamIds()));
+}
+
+// Reopening the final decides the final again, so, as Undo, it is left to a director whose own team did not play it.
+function fourReopenOwnTeam(g) {
+  if (!fourHasReopenable(g)) return false;
+  const f = fourRead(state.results[g.id].path, teamIds()).m.final;
+  return !canScoreRound(f.a, f.b);
+}
+
+function fourCanReopen(g) {
+  return fourHasReopenable(g) && !fourReopenOwnTeam(g);
 }
 
 // Reopen the final: the result comes off (its points leave the standings until it is saved again) and the bracket is back at the
@@ -11093,6 +11160,7 @@ function fourReopen(g) {
   if (!canEdit()) return { ok: false, reason: 'readonly' };
   const b = state.results && state.results[g.id] ? fourReopenBracket(state.results[g.id], teamIds()) : null;
   if (!b) return { ok: false, reason: 'none' };
+  if (fourReopenOwnTeam(g)) return { ok: false, reason: 'team' };
   delete state.results[g.id];
   if (!state.brackets4) state.brackets4 = {};
   state.brackets4[g.id] = b;
@@ -12077,26 +12145,26 @@ function renderBracketRound1(body, g, b) {
   });
 
   body.querySelectorAll('.winner-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', sixTap(() => {
       const live = sixLive(g, 'round1');
-      if (!live) return;
+      if (!live) return false;
       const [a, c] = live.selectedPair;
-      if (!sixRecordMatch(live, a, c, btn.dataset.winner)) { sixStale(); return; }
+      if (!sixRecordMatch(live, a, c, btn.dataset.winner)) { sixStale(); return false; }
       touchData();
       saveState();
       renderAll();
-    });
+    }));
   });
 
   const undoBtn = document.getElementById('undo-match-btn');
   if (undoBtn) {
-    undoBtn.addEventListener('click', () => {
+    undoBtn.addEventListener('click', sixTap(() => {
       const live = sixLive(g, 'round1');
-      if (!live) return;
+      if (!live) return false;
       sixUndoMatch(live);
       saveState();
       renderAll();
-    });
+    }, 'undo'));
   }
 }
 
@@ -12151,29 +12219,29 @@ function renderBracketRound1Fixed(body, g, b, preset) {
   }
 
   body.querySelectorAll('.winner-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      if (!current) return;
+    btn.addEventListener('click', sixTap(() => {
+      if (!current) return false;
       const live = sixLive(g, 'round1');
-      if (!live) return;
+      if (!live) return false;
       // The match the screen showed is the one recorded only while the bracket is still at that match.
-      if (live.matches.length !== currentIndex) { sixStale(); return; }
+      if (live.matches.length !== currentIndex) { sixStale(); return false; }
       const [a, c] = current;
-      if (!sixRecordMatch(live, a, c, btn.dataset.winner)) { sixStale(); return; }
+      if (!sixRecordMatch(live, a, c, btn.dataset.winner)) { sixStale(); return false; }
       touchData();
       saveState();
       renderAll();
-    });
+    }));
   });
 
   const undoBtn = document.getElementById('undo-match-btn');
   if (undoBtn) {
-    undoBtn.addEventListener('click', () => {
+    undoBtn.addEventListener('click', sixTap(() => {
       const live = sixLive(g, 'round1');
-      if (!live) return;
+      if (!live) return false;
       sixUndoMatch(live);
       saveState();
       renderAll();
-    });
+    }, 'undo'));
   }
 }
 
@@ -12209,23 +12277,23 @@ function renderBracketBye(body, g, b) {
   `;
 
   body.querySelectorAll('.tiebreak-chip').forEach((btn) => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', sixTap(() => {
       const live = sixLive(g, 'bye');
-      if (!live) return;
-      if (!sixChooseBye(live, btn.dataset.teamId)) { sixStale(); return; }
+      if (!live) return false;
+      if (!sixChooseBye(live, btn.dataset.teamId)) { sixStale(); return false; }
       touchData();
       saveState();
       renderAll();
-    });
+    }));
   });
 
-  document.getElementById('undo-to-round1-btn').addEventListener('click', () => {
+  document.getElementById('undo-to-round1-btn').addEventListener('click', sixTap(() => {
     const live = sixLive(g, 'bye');
-    if (!live) return;
+    if (!live) return false;
     sixBackToRound1(live);
     saveState();
     renderAll();
-  });
+  }, 'undo'));
 }
 
 // "Undo" under a six-team step that has a result to take back. Offered only to a director who may score the match it takes back
@@ -12247,23 +12315,23 @@ function renderBracketSemifinal(body, g, b) {
   bindMatchTracker(body, g, b.semifinal.a, b.semifinal.b);
 
   body.querySelectorAll('.winner-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', sixTap(() => {
       const live = sixLive(g, 'semifinal');
-      if (!live) return;
-      if (!sixRecordSemifinal(live, btn.dataset.winner)) { sixStale(); return; }
+      if (!live) return false;
+      if (!sixRecordSemifinal(live, btn.dataset.winner)) { sixStale(); return false; }
       touchData();
       saveState();
       renderAll();
-    });
+    }));
   });
 
-  document.getElementById('undo-bye-btn').addEventListener('click', () => {
+  document.getElementById('undo-bye-btn').addEventListener('click', sixTap(() => {
     const live = sixLive(g, 'semifinal');
-    if (!live) return;
+    if (!live) return false;
     sixBackToBye(live);
     saveState();
     renderAll();
-  });
+  }, 'undo'));
 }
 
 function renderBracketChampionship(body, g, b) {
@@ -12280,25 +12348,25 @@ function renderBracketChampionship(body, g, b) {
   bindMatchTracker(body, g, b.championship.a, b.championship.b);
 
   body.querySelectorAll('.winner-btn').forEach((btn) => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', sixTap(() => {
       const live = sixLive(g, 'championship');
-      if (!live) return;
-      if (!sixRecordFinal(live, btn.dataset.winner)) { sixStale(); return; }
+      if (!live) return false;
+      if (!sixRecordFinal(live, btn.dataset.winner)) { sixStale(); return false; }
       touchData();
       saveState();
       renderAll();
-    });
+    }));
   });
 
   const undoBtn = document.getElementById('undo-semifinal-btn');
   if (undoBtn) {
-    undoBtn.addEventListener('click', () => {
+    undoBtn.addEventListener('click', sixTap(() => {
       const live = sixLive(g, 'championship');
-      if (!live) return;
+      if (!live) return false;
       sixUndoSemifinal(live);
       saveState();
       renderAll();
-    });
+    }, 'undo'));
   }
 }
 
@@ -12331,13 +12399,13 @@ function renderBracketSummary(body, g, b) {
 
   const undoBtn = document.getElementById('undo-final-btn');
   if (undoBtn) {
-    undoBtn.addEventListener('click', () => {
+    undoBtn.addEventListener('click', sixTap(() => {
       const live = sixLive(g, 'summary');
-      if (!live) return;
+      if (!live) return false;
       sixUndoFinal(live);
       saveState();
       renderAll();
-    });
+    }, 'undo'));
   }
 }
 
@@ -12462,14 +12530,17 @@ function fourRecheckHtml(v) {
     : `The ${esc(r.match === 'third' ? '3rd place match' : 'final')} result doesn’t fit the semifinals it was played on.`;
   const keepT = r.semi && r.now ? `Keep ${esc(teamName(r.now))} as the winner` : 'Play the later matches again';
   const keepS = `${esc(Played)} ${played.length > 1 ? 'are' : 'is'} played again`;
+  // A director whose own team played one of the matches in question leaves the answer to another (canScoreRound, as Undo does): the
+  // two buttons are not offered, and the card says why.
+  const mine = fourCanResolve(v);
   return `<div class="four-recheck" role="alert">
     <h3 data-four-h tabindex="-1">Please check a result</h3>
     <p>${what}</p>
-    <p class="four-meta">Another director may have changed it. Which one is right?</p>
-    <div class="four-choices">
+    <p class="four-meta">${mine ? 'Another director may have changed it. Which one is right?' : 'Your team plays in one of these matches, so another director decides which one is right.'}</p>
+    ${mine ? `<div class="four-choices">
       <button type="button" class="btn btn-block four-choice" data-four="keep"><span class="four-choice-t">${keepT}</span><span class="four-choice-s">${keepS}</span></button>
       ${r.semi && r.was ? `<button type="button" class="btn btn-block four-choice four-back" data-four="back"><span class="four-choice-t">Put ${esc(teamName(r.was))} back as the winner</span><span class="four-choice-s">Nothing else changes</span></button>` : ''}
-    </div>
+    </div>` : ''}
   </div>`;
 }
 
@@ -12581,7 +12652,7 @@ function fourWire(container) {
 const FOUR_WHY = {
   readonly: 'Only a director can record the bracket.',
   saved: 'This game’s result is already saved.',
-  team: 'Your team plays in this match, so another director records it.',
+  team: 'Your team plays in this match, so another director decides it.',
   decided: 'That match was already recorded. The screen now shows what is saved.',
   order: 'The bracket moved on. The screen now shows where it is.',
   recheck: 'A result needs checking first.',
@@ -12593,9 +12664,13 @@ const FOUR_WHY = {
   winner: 'The screen now shows who plays.',
   unresolved: 'That did not settle it. The screen now shows what is left.',
 };
+const FOUR_THE = { s1: 'Semifinal 1', s2: 'Semifinal 2', third: 'the 3rd place match', final: 'the final' };
 function fourSay(r) {
   if (!r || r.ok) return;
-  showToast(FOUR_WHY[r.reason] || 'That did not go through.');
+  // A match that was already recorded says who won it, so the director sees at once whether it is the result they meant to record.
+  const decided = r.reason === 'decided' && r.winner && FOUR_THE[r.match]
+    ? 'Already recorded: ' + teamName(r.winner) + ' won ' + FOUR_THE[r.match] + '. The screen now shows what is saved.' : '';
+  showToast(decided || FOUR_WHY[r.reason] || 'That did not go through.');
   if (['decided', 'order', 'recheck', 'none', 'match', 'winner', 'unresolved', 'started'].indexOf(r.reason) !== -1) renderAll();
 }
 
@@ -12616,10 +12691,17 @@ function fourEntryTap(t, container) {
     if (body) body.scrollTop = 0;
     focusBack(had, heading());
   };
+  // The acts that move the bracket on to a screen whose first button sits under the same thumb (see bracketTapHeld): one at a time.
+  const once = (run, kind) => {
+    if (bracketTapHeld(kind)) return true;
+    const r = run();
+    if (r && r.ok) bracketTapDone(kind);
+    moved(r);
+    return true;
+  };
   if (win) {
     const host = t.closest('[data-four-match]');
-    moved(fourRecordTap(g, host ? host.dataset.fourMatch : '', win.dataset.winner));
-    return true;
+    return once(() => fourRecordTap(g, host ? host.dataset.fourMatch : '', win.dataset.winner));
   }
   if (!btn) return false;
   const act = btn.dataset.four;
@@ -12629,13 +12711,14 @@ function fourEntryTap(t, container) {
   if (act === 'pick') { fourUi.order = fourPickTap(fourUi.order, btn.dataset.team, ids); renderAll(); return true; }
   if (act === 'start-plan' || act === 'start-pick') {
     const pairs = act === 'start-plan' ? fourSeedPlan(g).pairs : fourPairsValid([fourUi.order.slice(0, 2), fourUi.order.slice(2, 4)], ids) ? [fourUi.order.slice(0, 2), fourUi.order.slice(2, 4)] : null;
-    const r = fourStartGame(g, pairs);
-    if (r.ok) { fourUi.choosing = false; fourUi.order = []; }
-    moved(r);
-    return true;
+    return once(() => {
+      const r = fourStartGame(g, pairs);
+      if (r.ok) { fourUi.choosing = false; fourUi.order = []; }
+      return r;
+    });
   }
-  if (act === 'undo') { moved(fourUndoTap(g)); return true; }
-  if (act === 'keep' || act === 'back') { moved(fourResolveTap(g, act)); return true; }
+  if (act === 'undo') return once(() => fourUndoTap(g), 'undo');
+  if (act === 'keep' || act === 'back') return once(() => fourResolveTap(g, act));
   if (act === 'save') { fourSay(fourSaveResult(g)); return true; }
   if (act === 'cancel' || act === 'clear') { fourCancelTap(g, act === 'clear'); return true; }
   if (act === 'reload') {

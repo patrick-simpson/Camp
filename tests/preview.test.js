@@ -557,6 +557,7 @@ const noB4Label = (entries) => entries.map((e) => Object.assign({}, e, { text: S
 
 test('a four-team bracket under way, in a preview: the counselor\'s view of it at every step - no control, no suggestion, no point, no place - and no tap records anything', () => {
   boot('editor');
+  state.teams = state.teams.slice(0, 4); // a four-team bracket belongs to a four-team camp (fourRead needs exactly four teams)
   const g = state.config.games.find((x) => x.format === 'tournament') || state.config.games[state.config.games.length - 1];
   g.format = 'tournament';
   delete state.results[g.id];

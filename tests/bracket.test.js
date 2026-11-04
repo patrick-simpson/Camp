@@ -65,10 +65,10 @@ function wizard(g) {
   };
   w.html = () => String(w.container.innerHTML || '') + ' ' + String(bodyEl.innerHTML || '');
   w.has = (id) => w.html().indexOf('id="' + id + '"') !== -1;
-  w.press = (id) => { const el = realGet(id); assert.ok(el.__click, 'a button #' + id + ' is bound'); el.__click(); return w.render(); };
-  w.winner = (team) => { const h = w.live.winner[team]; assert.ok(h, 'a winner button for ' + team + ' in: ' + bodyEl.innerHTML); h(); return w.render(); };
+  w.press = (id) => { bracketTapReset(); const el = realGet(id); assert.ok(el.__click, 'a button #' + id + ' is bound'); el.__click(); return w.render(); };
+  w.winner = (team) => { bracketTapReset(); const h = w.live.winner[team]; assert.ok(h, 'a winner button for ' + team + ' in: ' + bodyEl.innerHTML); h(); return w.render(); };
   w.chip = (team) => { const h = w.live.chip[team]; assert.ok(h, 'a team chip for ' + team); h(); return w.render(); };
-  w.bye = (team) => { const h = w.live.tie[team]; assert.ok(h, 'a bye chip for ' + team); h(); return w.render(); };
+  w.bye = (team) => { bracketTapReset(); const h = w.live.tie[team]; assert.ok(h, 'a bye chip for ' + team); h(); return w.render(); };
   w.suggest = () => { assert.ok(w.live.suggest, 'a suggestion button'); w.live.suggest(); return w.render(); };
   w.winners = () => Object.keys(w.live.winner);
   w.b = () => state.brackets[g.id];
@@ -88,6 +88,7 @@ function withWizard(g, fn) {
 
 function tournament(name) {
   freshState();
+  bracketTapReset(); // the double-tap guard (see its cases at the end of this file) is per device: a new test starts with no recent tap
   setMemberRole('editor');
   const g = state.config.games.find((x) => x.id === (name || 'jeb-ball'));
   assert.ok(g && g.format === 'tournament', 'the sandbox game exists');
@@ -884,6 +885,7 @@ test('a stale tap is ignored, said and repainted: the screen was drawn before an
       state.brackets[g.id] = other;
       const before = clone6(other);
       const renders = w.renders;
+      bracketTapReset(); // the stale screen's tap comes later than the device's own last one: this is the stale-screen guard, not the double-tap one
       handler();
       assert.deepEqual(state.brackets[g.id], before, 'nothing was recorded, on the live bracket or any copy');
       assert.ok(said.some((m) => /already recorded|moved on/.test(m)) || said.length === 1, said.join('|'));
@@ -897,6 +899,7 @@ test('a stale tap is ignored, said and repainted: the screen was drawn before an
       sixChooseBye(state.brackets[g.id], 't1'); // another phone chose the bye
       const before = clone6(state.brackets[g.id]);
       said.length = 0;
+      bracketTapReset();
       chip();
       assert.deepEqual(state.brackets[g.id], before, 'the first choice stands');
       assert.equal(said.length, 1);
@@ -927,8 +930,47 @@ test('a stale fixed-order tap records nothing: the match on screen is not the ma
       sixRecordMatch(other, 't0', 't3', 't3'); // another phone already recorded it
       state.brackets[g.id] = other;
       const before = clone6(other);
+      bracketTapReset();
       handler();
       assert.deepEqual(state.brackets[g.id], before, 'the next pair is not given the first one\'s winner');
     });
   } finally { showToast = realToast; }
+});
+
+// ── function review of Step 22 ──────────────────────────────────────────────────────────────────────────────────
+
+test('a quick second tap on a six-team winner button is ignored and said: the next pair is not recorded with the first one\'s team', () => {
+  const g = tournament('kangaroo-kickball');
+  state.brackets[g.id] = freshBracket();
+  const realToast = showToast; const said = []; showToast = (m) => { said.push(String(m)); };
+  try {
+    withWizard(g, (w) => {
+      w.render();
+      bracketTapReset();
+      w.live.winner.t0(); // the first tap: pair t0 v t3 is recorded
+      assert.equal(state.brackets[g.id].matches.length, 1);
+      w.render();
+      const second = Object.keys(w.live.winner)[0]; // the next pair's first winner button sits at the same spot
+      assert.ok(second, 'the next pair is on screen');
+      w.live.winner[second](); // the double tap's second tap, no reset
+      assert.equal(state.brackets[g.id].matches.length, 1, 'recorded nothing');
+      assert.ok(said.some((m) => /came right after the last one, so it was ignored/.test(m)), said.join('|'));
+      bracketTapLast.record -= BRACKET_TAP_SETTLE_MS + 1;
+      w.live.winner[second]();
+      assert.equal(state.brackets[g.id].matches.length, 2, 'a moment later it is recorded');
+    });
+  } finally { showToast = realToast; }
+});
+
+test('a four-team record under a six-team camp reads as nothing: no live game, no matchups, no alert (fourRead needs exactly four teams)', () => {
+  const g = tournament();
+  const stray = { at: 1, m: { s1: { a: 't0', b: 't3' }, s2: { a: 't1', b: 't2' } } };
+  state.brackets4[g.id] = stray;
+  assert.equal(teamIds().length, 6);
+  assert.equal(fourRead(stray, teamIds()), null);
+  assert.equal(fourPhase(stray, teamIds()), 'broken');
+  assert.ok(gameRowStatus(g) !== 'live', 'not live');
+  assert.deepEqual(upcomingMatchups(g), []);
+  assert.ok(fourRead(stray, ['t0', 't1', 't2', 't3']), 'the same record reads on a four-team roster');
+  delete state.brackets4[g.id];
 });

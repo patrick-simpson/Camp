@@ -302,6 +302,7 @@ test('games: a director on a team in the round gets the reason where Score would
 
 test('a four-team bracket paints four cells in the order of play, my team marked, a team that lost struck, a place to be decided drawn empty', () => {
   boot('viewer', T()[0]);
+  state.teams = state.teams.slice(0, 4); // a four-team bracket belongs to a four-team camp (fourRead needs exactly four teams)
   const { nb, games } = gamesBlockOf(WED, 1);
   const g = games[0];
   state.brackets4 = { [g.id]: { m: { s1: { a: T()[0], b: T()[3], winner: T()[0] }, s2: { a: T()[1], b: T()[2] }, third: {}, final: {} } } };
