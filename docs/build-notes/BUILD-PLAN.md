@@ -537,14 +537,14 @@ Four **separate** deploys (P7), in this order, each with its own tests and live 
 - **Live check:** a senior sandbox tournament end to end, Clear result, delete the game; a junior
   6-team smoke test.
 - **Rollback:** revert (old code ignores `brackets4`).
-- **Built (Step 22, build session 1; not deployed):** `tests/bracket.test.js` pinned the six-team wizard first (it drives the real handlers and has
+- **Built (Step 22, build session 1; LIVE at v207):** `tests/bracket.test.js` pinned the six-team wizard first (it drives the real handlers and has
   not changed since), then `sixPick` … `sixMedals` and the shared `finishBracket` / `cancelBracket` were extracted; `brackets4` joined `SYNC_KEYS` (per-match
   diff `brackets4/<gid>/m/<match>`, normalized on read, in the backup, import, delete, format change and prune; `rules.test.js` no longer carries its
   allowance; no rules change); the four-team engine is in app.js ("The brackets" in CLAUDE.md): `fourRead` and the pure rules (`fourRecord`, `fourUndo`,
   `fourMedals`, `fourResolve` for the Re-check, `fourSeeds`) and the page-state wrappers (`fourStartGame`, `fourRecordTap`, `fourUndoTap`, `fourResolveTap`,
   `fourSaveResult`: director only, own-team guard, late tap after a result ignored). Tests: `bracket.senior.test.js`, `bracket-sync.senior.test.js`,
   `tests/emulator/brackets4-client.mjs` (the real client's writes against the published rules: SAFE).
-- **Built (Step 22, build session 2; not deployed, no version bumped):** the four-team screens (`renderBracketFour`: the Start card — fixed pairs, "Suggested by the
+- **Built (Step 22, build session 2; LIVE at v207):** the four-team screens (`renderBracketFour`: the Start card — fixed pairs, "Suggested by the
   points right now" with Choose different, or a pick — then the step bar over the match as the six-team wizard's own callout and live tally, Completed, Undo last
   match, the Re-check card, the summary with Save Result, Cancel / Clear), `bracketPlayable(4)` true (the Games sheet's note is for any other roster size), the
   readers on `fourRead` (`nowBracket4`, the Now row's board, `upcomingMatchups`, `findNextMatchupFor`, `gameRoundTeams`, a counselor's `renderLiveWatchFour`), Reopen
@@ -557,7 +557,7 @@ Four **separate** deploys (P7), in this order, each with its own tests and live 
   `docs/build-notes/verify/step22-pass.cjs` is the browser pass (senior end to end with real taps, every state at 360 / 390, both themes, 100 / 130 / 200 % text,
   a counselor's game view and Now card, a junior six-team smoke test). **Owner's checks** are in the session report: switch the live Legacy Game to Bracket,
   a real-phone tournament on senior, two phones where one screen is a step behind (the same match recorded twice: the Re-check card), a junior bracket.
-- **Function review fixes (Step 22; not deployed, no version bumped):** (1) one thumb, one result: a screen repaints in place, so a real double tap on one phone
+- **Function review fixes (Step 22; LIVE at v207):** (1) one thumb, one result: a screen repaints in place, so a real double tap on one phone
   recorded the NEXT match with the first team (the stale-tap guard cannot see it: the new match is what the screen shows). `bracketTapHeld` / `bracketTapDone`
   hold record taps for 700 ms after a record (four-team and six-team wizard alike; Start and the Re-check answers too), and an Undo after an Undo; an Undo right
   after a record is not held (the "wrong team" reflex). (2) Start over / Clear it and pick again now removes whatever bracket node a late tap left under the saved
