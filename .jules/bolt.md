@@ -1,0 +1,3 @@
+## 2024-03-24 - `Intl.DateTimeFormat` Bottleneck in Synchronous Render Loop
+**Learning:** The application architecture relies on a synchronous `renderAll()` loop that runs frequently. Uncached instantiations of `Intl.DateTimeFormat` inside utility functions (e.g., `campDateStr`, `campNow`, `messageClock`) called by this loop create a severe performance bottleneck. A quick benchmark showed uncached formatting can be ~30x slower than using a cached formatter.
+**Action:** When working with `Intl.DateTimeFormat` (or similar expensive constructors) within frequently invoked synchronous pathways, always implement lazy-instantiated caches at the module or closure level, keeping them inside `try...catch` blocks to preserve fallback behavior.
