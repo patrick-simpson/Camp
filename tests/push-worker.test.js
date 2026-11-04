@@ -2126,3 +2126,537 @@ test('review #8: a bad database URL can never arm the test overrides, even one t
   assert.equal(await W.adminToken(ictx), 'tok-1');
   assert.equal(net.tokenMints, 1);
 });
+
+// ── Step 26 (S9): schedule-change alerts — POST /notify kind 'schedule' ──────
+// The page publishes the new schedule (pushSchedule) and asks the Worker to tell the phones that follow the changed
+// blocks. The Worker writes every word itself, from the published schedule against a private per-block baseline
+// (pushServer/schedSeen/<camp>: what followers were last told). NOW is Tue Jul 20 2027, 11:00 AM Eastern, in the week
+// that starts Sunday Jul 18: "today" is Tuesday, "tomorrow" Wednesday, the window ends at midnight after Wednesday.
+
+const SCHED_WEEK = '2027-07-18';
+const blk = (dow, start, label, emoji, key) => ({ dow, start, label, emoji, key });
+// What followers were last told.
+const SCHED_THEN = () => ({
+  'tue-teamcomp': blk(2, 600, 'Team competitions', '🏅', 'team-competitions'),     // Tue 10:00 AM (already started)
+  'tue-campfire': blk(2, 1200, 'Campfire', '🔥', 'campfire'),                       // Tue 8:00 PM
+  'tue-supper': blk(2, 1020, 'Supper', '🍽️', 'supper'),
+  'wed-eveningcomp': blk(3, 1080, 'Evening competition', '🏆', 'evening-competition'), // Wed 6:00 PM
+  'mon-supper': blk(1, 1020, 'Supper', '🍽️', 'supper'),                             // Monday: over
+});
+// What the schedule says now: Team competitions slid to 1:15 PM, the campfire moved to Thursday (a new id), the
+// Wednesday evening competition is gone, Monday's supper moved (but Monday is over).
+const SCHED_NOW = () => ({
+  'tue-teamcomp': blk(2, 795, 'Team competitions', '🏅', 'team-competitions'),
+  'thu-campfire': blk(4, 1200, 'Campfire', '🔥', 'campfire'),
+  'tue-supper': blk(2, 1020, 'Supper', '🍽️', 'supper'),
+  'mon-supper': blk(1, 1080, 'Supper', '🍽️', 'supper'),
+});
+const SCHED_ALL_IDS = ['tue-teamcomp', 'tue-campfire', 'thu-campfire', 'wed-eveningcomp', 'tue-supper', 'mon-supper'];
+
+function schedAlertWorld(opts) {
+  const members = Object.assign(baseMembers(), { [DEE]: { role: 'viewer', name: 'Dee', teamId: 't4', addedBy: 'x', addedAt: 1 } });
+  const w = world(Object.assign({ members }, opts || {}));
+  w.net.db.set('campScoreboard/pushSchedule', { weekStart: SCHED_WEEK, at: NOW, by: ALICE, rev: 4, src: 'abcd1234', blocks: SCHED_NOW() });
+  w.net.db.set('pushServer/schedSeen/junior', { weekStart: SCHED_WEEK, blocks: SCHED_THEN() });
+  w.addDevice('campScoreboard', ALICE, 'alice-phone', { prefs: { blocks: { supper: true } } });
+  w.addDevice('campScoreboard', BOB, 'bob-phone-1', { prefs: { blocksAll: true } });
+  w.addDevice('campScoreboard', CARL, 'carl-phone-1', { prefs: { blocks: { campfire: true } } });
+  w.addDevice('campScoreboard', DEE, 'dee-phone-1', { prefs: { blocks: { 'team-competitions': true, campfire: true }, director: false, lead: 15 } });
+  return w;
+}
+// The token is minted at the world's own clock, so a test can move time.
+const schedTell = (w, body, as) => w.request('POST', '/notify', Object.assign({ camp: 'junior', kind: 'schedule', alert: true }, body),
+  { Authorization: 'Bearer ' + idToken({ email: as || 'alice@camp.org', email_verified: true }, { now: w.net.now }), Origin: SITE });
+// Keys in any order: the real database hands them back sorted, the fake keeps insertion order.
+const canonJson = (v) => (Array.isArray(v) ? v.map(canonJson) : isObj(v) ? Object.keys(v).sort().reduce((o, k) => { o[k] = canonJson(v[k]); return o; }, {}) : v);
+const sameTree = (a, b, msg) => assert.deepEqual(canonJson(a), canonJson(b), msg);
+// who got what: { '<phone id>': { payload, ttl } }
+const digests = (w) => {
+  const o = {};
+  for (const p of w.net.pushes) if (w.net.subs[p.url]) o[p.url.split('/').pop()] = { payload: decrypt(w.net, p).payload, ttl: p.headers.ttl };
+  return o;
+};
+const seenNode = (w) => w.net.db.get('pushServer/schedSeen/junior');
+
+test('schedule alert: one digest per phone, only the changes that phone follows, in plain words, with its own deadline', async () => {
+  await load();
+  const w = schedAlertWorld();
+  const r = await schedTell(w, { ids: SCHED_ALL_IDS });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.json.ok, true);
+  assert.equal(r.json.items, 3, 'Team competitions moved, the campfire moved (a cancelled + a new id with one key are ONE move), the Wednesday evening competition is cancelled; Monday is over and Supper is unchanged');
+  assert.equal(r.json.devices, 3, 'Bob follows everything, Carl the campfire, Dee two blocks; Alice follows only supper, which has nothing to tell');
+  assert.equal(r.json.sent, 3);
+  assert.ok(w.maxCalls() <= 45, 'inside the subrequest budget, cold isolate included');
+  const d = digests(w);
+  assert.deepEqual(Object.keys(d).sort(), ['bob-phone-1', 'carl-phone-1', 'dee-phone-1']);
+
+  const bob = d['bob-phone-1'].payload;
+  assert.equal(bob.title, '📅 The schedule changed', 'two different days');
+  assert.equal(bob.body, '🏅 Team competitions → 1:15 PM (was 10:00 AM)\n🔥 Campfire moved to Thu 8:00 PM\n🏆 Evening competition cancelled tomorrow');
+  assert.equal(bob.kind, 'block', 'sw.js already knows this kind');
+  assert.equal(bob.open, 'schedule');
+  assert.equal(bob.tag, 'sched-junior-4', 'the published rev: a later change replaces this notification, an old one is never resurrected');
+  assert.equal(bob.camp, 'junior');
+  assert.equal(bob.urgent, false);
+  assert.equal(d['bob-phone-1'].ttl, String(36 * 3600), 'to the end of Wednesday, capped at 36 h');
+
+  const carl = d['carl-phone-1'].payload;
+  assert.equal(carl.title, "📅 Today's schedule changed");
+  assert.equal(carl.body, '🔥 Campfire moved to Thu 8:00 PM', 'only the block Carl follows — by the key it had OR has');
+  assert.equal(d['carl-phone-1'].ttl, String(13 * 3600), 'tonight’s campfire is stale at midnight: 11 AM + 13 h');
+
+  const dee = d['dee-phone-1'].payload;
+  assert.equal(dee.body, '🏅 Team competitions → 1:15 PM (was 10:00 AM)\n🔥 Campfire moved to Thu 8:00 PM', 'her lead and her director-alerts switch play no part');
+  assert.equal(dee.title, "📅 Today's schedule changed");
+  assert.notOk(d['alice-phone'], 'a phone that follows nothing that changed hears nothing');
+
+  // The audit row, written by the Worker: an alert that went out is always on the list.
+  const rows = w.net.db.get('campScoreboard/pushAlerts');
+  const ids = Object.keys(rows);
+  assert.equal(ids.length, 1);
+  assert.equal(r.json.alertId, ids[0]);
+  const row = rows[ids[0]];
+  assert.equal(row.kind, 'schedule');
+  assert.equal(row.byKey, ALICE);
+  assert.equal(row.byName, 'Alice');
+  assert.equal(row.sent, 3);
+  assert.equal(row.audience, 'followers');
+  assert.ok(row.text.startsWith('📅 Schedule changed: ') && row.text.includes('Campfire moved to Thu 8:00 PM'));
+
+  // The baseline moved for every id the request named — Monday's too, though nobody was told about it.
+  sameTree(seenNode(w), { weekStart: SCHED_WEEK, blocks: SCHED_NOW() });
+  // And so the same request again has nothing left to tell.
+  w.net.pushes = [];
+  w.net.now += 11000;
+  const again = await schedTell(w, { ids: SCHED_ALL_IDS });
+  assert.equal(again.json.reason, 'no-change');
+  assert.equal(w.net.pushes.length, 0);
+});
+
+test('schedule alert: an unticked save tells nobody but moves the baseline; two editors with different choices send only the ticked change', async () => {
+  await load();
+  const w = schedAlertWorld();
+  w.net.db.set('campScoreboard/members/erin@camp,org', { role: 'editor', name: 'Erin', addedBy: 'x', addedAt: 1 });
+  // Alice fixes Team competitions' time with the box unticked; Erin, a moment later, moves the campfire and ticks it.
+  let r = await schedTell(w, { alert: false, ids: ['tue-teamcomp'] });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.reason, 'quiet');
+  assert.equal(w.net.pushes.length, 0);
+  assert.equal(seenNode(w).blocks['tue-teamcomp'].start, 795, 'followers are now "told" the new time');
+  assert.equal(seenNode(w).blocks['tue-campfire'].start, 1200, 'a block nobody named keeps its baseline');
+  assert.equal(w.net.db.get('campScoreboard/pushAlerts'), null, 'no audit row for a quiet save');
+  assert.equal(w.net.db.get('pushServer/rate/junior/sched'), null, 'and no rate slot spent');
+
+  r = await schedTell(w, { ids: ['tue-campfire', 'thu-campfire'] }, 'erin@camp.org');
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.json.items, 1);
+  const d = digests(w);
+  assert.deepEqual(Object.keys(d).sort(), ['bob-phone-1', 'carl-phone-1', 'dee-phone-1']);
+  assert.equal(d['bob-phone-1'].payload.body, '🔥 Campfire moved to Thu 8:00 PM', 'only the ticked change — Alice’s quiet one is not smuggled in');
+  assert.equal(w.net.db.get('campScoreboard/pushAlerts/' + r.json.alertId + '/byName'), 'Erin');
+
+  // Alice's quiet change can never be alerted later: it is already what followers were last told.
+  w.net.pushes = [];
+  w.net.now += 11000;
+  r = await schedTell(w, { ids: ['tue-teamcomp'] });
+  assert.equal(r.json.reason, 'no-change');
+  assert.equal(w.net.pushes.length, 0);
+});
+
+test('schedule alert: the baseline is made, never alerted, when there is nothing to compare — first call, a new week, a reset, a switch of id style', async () => {
+  await load();
+  const w = schedAlertWorld();
+  const published = () => w.net.db.get('campScoreboard/pushSchedule/blocks');
+  // 1. Never told anyone: the very first call makes the baseline from what is published (nothing to say yet).
+  w.net.db.set('pushServer/schedSeen/junior', null);
+  let r = await schedTell(w, { ids: SCHED_ALL_IDS });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.json.reason, 'baseline');
+  assert.equal(r.json.sent, 0);
+  sameTree(seenNode(w), { weekStart: SCHED_WEEK, blocks: published() });
+  assert.equal(w.net.pushes.length, 0);
+  // …and the next real change is compared against it.
+  w.net.db.set('campScoreboard/pushSchedule/blocks/tue-supper/start', 1050);
+  r = await schedTell(w, { ids: ['tue-supper'] });
+  assert.equal(r.json.items, 1);
+  assert.equal(digests(w)['alice-phone'].payload.body, '🍽️ Supper → 5:30 PM (was 5:00 PM)');
+
+  // 2. A baseline from another week is no baseline.
+  w.net.pushes = [];
+  w.net.now += 11000;
+  w.net.db.set('pushServer/schedSeen/junior', { weekStart: '2026-07-19', blocks: SCHED_THEN() });
+  w.net.db.set('campScoreboard/pushSchedule/blocks/tue-supper/start', 1080);
+  r = await schedTell(w, { ids: ['tue-supper'] });
+  assert.equal(r.json.reason, 'baseline');
+  assert.equal(w.net.pushes.length, 0);
+  assert.equal(seenNode(w).weekStart, SCHED_WEEK);
+
+  // 3. The page's reset: {alert: false, ids: ['*']} makes it again, whatever it held.
+  w.net.db.set('pushServer/schedSeen/junior/blocks/tue-campfire/start', 5);
+  r = await schedTell(w, { alert: false, ids: ['*'] });
+  assert.equal(r.json.reason, 'baseline');
+  sameTree(seenNode(w), { weekStart: SCHED_WEEK, blocks: published() });
+
+  // 4. The schedule switch moved: every id changed style (d<dow>-<start>-<n> → <day>-<block id>). A baseline made of
+  // the old ids is not a list of cancelled blocks — it is made again, and nobody hears "everything moved".
+  const old = {};
+  for (const b of Object.values(SCHED_THEN())) old[`d${b.dow}-${b.start}-${Object.keys(old).length}`] = b;
+  w.net.db.set('pushServer/schedSeen/junior', { weekStart: SCHED_WEEK, blocks: old });
+  w.net.pushes = [];
+  r = await schedTell(w, { ids: [...Object.keys(old), ...Object.keys(published())] });
+  assert.equal(r.json.reason, 'baseline');
+  assert.equal(w.net.pushes.length, 0);
+  sameTree(seenNode(w).blocks, published());
+
+  // Nothing published at all: nothing to do, and nothing written.
+  w.net.db.set('campScoreboard/pushSchedule', null);
+  const before = JSON.stringify(seenNode(w));
+  r = await schedTell(w, { ids: ['tue-supper'] });
+  assert.equal(r.json.reason, 'no-schedule');
+  assert.equal(JSON.stringify(seenNode(w)), before);
+  w.net.db.set('campScoreboard/pushSchedule', { weekStart: 'not-a-date', at: NOW, by: ALICE, blocks: SCHED_NOW() });
+  assert.equal((await schedTell(w, { ids: ['tue-supper'] })).json.reason, 'no-schedule', 'a week date that is junk is no schedule');
+});
+
+test('schedule alert: only an editor of that camp, and only a well-formed list of ids', async () => {
+  await load();
+  const w = schedAlertWorld();
+  let r = await schedTell(w, { ids: ['tue-supper'] }, 'bob.smith@camp.org');
+  assert.equal(r.status, 403);
+  assert.equal(r.json.error, 'not-editor', 'a counselor cannot trigger it');
+  r = await schedTell(w, { ids: ['tue-supper'] }, 'stranger@camp.org');
+  assert.equal(r.status, 403);
+  assert.equal(r.json.error, 'not-member');
+  r = await w.request('POST', '/notify', { camp: 'junior', kind: 'schedule', alert: true, ids: ['tue-supper'] }, { Origin: SITE });
+  assert.equal(r.status, 401, 'no token');
+  // The camp in the request is the camp whose member list is checked: Alice IS a senior editor, and finds no schedule there.
+  r = await w.notify('alice@camp.org', { camp: 'senior', kind: 'schedule', alert: true, ids: ['tue-supper'] });
+  assert.equal(r.status, 200);
+  assert.equal(r.json.reason, 'no-schedule');
+  assert.equal(w.net.db.get('campScoreboard/pushAlerts'), null);
+  // A junior-only editor is nobody in the senior camp.
+  w.net.db.set('campScoreboard/members/erin@camp,org', { role: 'editor', name: 'Erin', addedBy: 'x', addedAt: 1 });
+  r = await w.notify('erin@camp.org', { camp: 'senior', kind: 'schedule', alert: true, ids: ['tue-supper'] });
+  assert.equal(r.status, 403);
+  assert.equal(r.json.error, 'not-member');
+
+  const bad = async (body, why) => {
+    const x = await schedTell(w, body);
+    assert.equal(x.status, 400, why + ': ' + x.text);
+    assert.equal(x.json.error, 'bad-ids', why);
+  };
+  await bad({}, 'no ids');
+  await bad({ ids: 'tue-supper' }, 'not a list');
+  await bad({ ids: [5] }, 'not a string');
+  await bad({ ids: ['Tue Supper'] }, 'not the id charset');
+  await bad({ ids: ['../tue'] }, 'a path is not an id');
+  await bad({ ids: ['x'.repeat(41)] }, 'longer than a published id can be');
+  await bad({ ids: Array.from({ length: 201 }, (_, i) => 'b-' + i) }, '201 ids');
+  await bad({ ids: ['*'], alert: true }, 'a reset cannot alert');
+  await bad({ ids: ['*', 'tue-supper'], alert: false }, 'a reset names nothing else');
+  assert.equal((await schedTell(w, { ids: Array.from({ length: 200 }, (_, i) => 'b-' + i), alert: false })).status, 200, '200 is the limit');
+  const empty = await schedTell(w, { ids: [] });
+  assert.equal(empty.json.reason, 'no-change', 'an empty list is just nothing to do');
+  assert.equal(w.net.pushes.length, 0);
+});
+
+test('schedule alert: only times between now and the end of tomorrow that have not started are told', async () => {
+  await load();
+  const run = async (then, nowBlocks, at) => {
+    const w = schedAlertWorld();
+    if (at) w.net.now = at;
+    w.net.db.set('pushServer/schedSeen/junior', { weekStart: SCHED_WEEK, blocks: then });
+    w.net.db.set('campScoreboard/pushSchedule/blocks', nowBlocks);
+    const r = await schedTell(w, { ids: Array.from(new Set([...Object.keys(then), ...Object.keys(nowBlocks)])) });
+    return { w, r, d: digests(w) };
+  };
+  const body = (x) => x.d['bob-phone-1'].payload.body;
+  // Already started (10:00 AM → 10:30 AM, now 11:00): past on both sides.
+  let x = await run({ a: blk(2, 600, 'Team competitions', '🏅', 'tc') }, { a: blk(2, 630, 'Team competitions', '🏅', 'tc') });
+  assert.equal(x.r.json.reason, 'nothing-to-tell');
+  assert.equal(x.w.net.pushes.length, 0);
+  assert.equal(x.w.net.db.get('pushServer/schedSeen/junior/blocks/a/start'), 630, 'but the baseline still moved');
+  // The old time was tomorrow evening: that is worth telling, wherever it went.
+  x = await run({ a: blk(3, 1080, 'Games', '🏆', 'g') }, { a: blk(5, 1080, 'Games', '🏆', 'g') });
+  assert.equal(body(x), '🏆 Games moved to Fri 6:00 PM');
+  // Both sides beyond tomorrow (Fri → Sat): nothing.
+  x = await run({ a: blk(5, 1080, 'Games', '🏆', 'g') }, { a: blk(6, 1080, 'Games', '🏆', 'g') });
+  assert.equal(x.r.json.reason, 'nothing-to-tell');
+  // The last minutes of tomorrow count; Thursday's first minute does not.
+  x = await run({ a: blk(3, 1439, 'Lights', '🌙', 'l') }, { a: blk(3, 1380, 'Lights', '🌙', 'l') });
+  assert.equal(body(x), '🌙 Lights → 11:00 PM (was 11:59 PM)');
+  x = await run({ a: blk(4, 0, 'Wake up', '⏰', 'w') }, { a: blk(4, 30, 'Wake up', '⏰', 'w') });
+  assert.equal(x.r.json.reason, 'nothing-to-tell', 'Thursday 12:00 AM is past the end of tomorrow');
+  // A new item: today (already started: dropped), tomorrow (told), and a cancelled one today.
+  x = await run({}, { a: blk(2, 630, 'Snack', '🍎', 's'), b: blk(3, 1380, 'Movie', '🎬', 'm') });
+  assert.equal(body(x), '🎬 Movie added tomorrow at 11:00 PM');
+  x = await run({ a: blk(2, 1200, 'Campfire', '🔥', 'c') }, {});
+  assert.equal(body(x), '🔥 Campfire cancelled today');
+  assert.equal(x.d['bob-phone-1'].payload.title, "📅 Today's schedule changed");
+  // A rename tells the new name; a change to only the team list in the rendered label says so.
+  x = await run({ a: blk(2, 1200, 'Campfire', '🔥', 'c') }, { a: blk(2, 1200, 'Campfire and songs', '🔥', 'c') });
+  assert.equal(body(x), '🔥 Campfire is now Campfire and songs');
+  x = await run({ a: blk(2, 1200, 'Morning meeting — 🦃 Turkey', '☀️', 'mm') }, { a: blk(2, 1200, 'Morning meeting — 🍁 Maples', '☀️', 'mm') });
+  assert.equal(body(x), '☀️ Morning meeting details changed');
+  // Emoji or key edits alone are invisible: nothing to tell, baseline moved.
+  x = await run({ a: blk(2, 1200, 'Campfire', '🔥', 'c') }, { a: blk(2, 1200, 'Campfire', '🪵', 'c') });
+  assert.equal(x.r.json.reason, 'nothing-to-tell');
+  assert.equal(x.w.net.db.get('pushServer/schedSeen/junior/blocks/a/emoji'), '🪵');
+
+  // The Saturday before camp is inside the camp window (a day of slack): "tomorrow" is the arrival Sunday.
+  x = await run({ a: blk(0, 900, 'Arrival', '🚌', 'arrival') }, { a: blk(0, 960, 'Arrival', '🚌', 'arrival') }, Date.UTC(2027, 6, 17, 16, 0));
+  assert.equal(body(x), '🚌 Arrival → 4:00 PM (was 3:00 PM)');
+  assert.equal(x.d['bob-phone-1'].payload.title, "📅 Sunday's schedule changed", 'a day that is not today is named');
+  // Outside the camp week: nobody is told, the baseline still moves.
+  x = await run({ a: blk(2, 1200, 'Campfire', '🔥', 'c') }, { a: blk(2, 1260, 'Campfire', '🔥', 'c') }, Date.UTC(2027, 8, 1, 16, 0));
+  assert.equal(x.r.json.reason, 'not-camp-week');
+  assert.equal(x.w.net.pushes.length, 0);
+  assert.equal(x.w.net.db.get('pushServer/schedSeen/junior/blocks/a/start'), 1260);
+  x = await run({ a: blk(2, 1200, 'Campfire', '🔥', 'c') }, { a: blk(2, 1260, 'Campfire', '🔥', 'c') }, Date.UTC(2027, 6, 16, 3, 0));
+  assert.equal(x.r.json.reason, 'not-camp-week', 'Thursday 11 PM Eastern is more than a day before the week');
+});
+
+test('moved-pairing: a block that is gone and a block that is new with one alert key are ONE move (same day first); everything else stays what it is', async () => {
+  const W = await load();
+  const S = (o) => W.slimBlocks(o);
+  const ch = (was, now, ids) => W.scheduleChanges(S(was), S(now), ids || Array.from(new Set([...Object.keys(was), ...Object.keys(now)])));
+  const sig = (items) => items.map((i) => `${i.kind}:${i.id}${i.was ? '<' + i.was.dow + '/' + i.was.start : ''}${i.now ? '>' + i.now.dow + '/' + i.now.start : ''}`).sort();
+  // The built-in schedule's ids carry the start time, so a time change is a new id.
+  assert.deepEqual(sig(ch({ 'd1-1020-5': blk(1, 1020, 'Supper', '🍽️', 'supper') }, { 'd1-1050-5': blk(1, 1050, 'Supper', '🍽️', 'supper') })),
+    ['moved:d1-1050-5<1/1020>1/1050']);
+  // Two days' suppers moved at once: each pairs with its own day, not with the other's.
+  assert.deepEqual(sig(ch(
+    { 'd1-1020-5': blk(1, 1020, 'Supper', '', 'supper'), 'd2-1020-5': blk(2, 1020, 'Supper', '', 'supper') },
+    { 'd2-1080-5': blk(2, 1080, 'Supper', '', 'supper'), 'd1-1050-5': blk(1, 1050, 'Supper', '', 'supper') })),
+    ['moved:d1-1050-5<1/1020>1/1050', 'moved:d2-1080-5<2/1020>2/1080']);
+  // A different day pairs when no same-day partner is left; a different key never pairs.
+  assert.deepEqual(sig(ch({ a: blk(2, 1200, 'Campfire', '', 'campfire') }, { b: blk(4, 1200, 'Campfire', '', 'campfire') })), ['moved:b<2/1200>4/1200']);
+  assert.deepEqual(sig(ch({ a: blk(2, 1200, 'Campfire', '', 'campfire') }, { b: blk(2, 1200, 'Bonfire', '', 'bonfire') })),
+    ['cancelled:a<2/1200', 'new:b>2/1200']);
+  // More gone than new (or the reverse): the extras stay cancelled / new.
+  assert.deepEqual(sig(ch({ a: blk(1, 600, 'Swim', '', 'swim'), b: blk(2, 600, 'Swim', '', 'swim') }, { c: blk(2, 660, 'Swim', '', 'swim') })),
+    ['cancelled:a<1/600', 'moved:c<2/600>2/660']);
+  // Same id: a time change is a move, a name change a rename, a bare emoji edit nothing.
+  assert.deepEqual(sig(ch({ a: blk(1, 600, 'Swim', '🏊', 'swim') }, { a: blk(1, 660, 'Swim', '🏊', 'swim') })), ['moved:a<1/600>1/660']);
+  assert.deepEqual(sig(ch({ a: blk(1, 600, 'Swim', '🏊', 'swim') }, { a: blk(1, 600, 'Swim lessons', '🏊', 'swim') })), ['renamed:a<1/600>1/600']);
+  assert.deepEqual(sig(ch({ a: blk(1, 600, 'Swim', '🏊', 'swim') }, { a: blk(1, 600, 'Swim', '🏄', 'swim') })), []);
+  // Only the named ids are compared: an unnamed change is somebody else's alert to send.
+  assert.deepEqual(sig(ch({ a: blk(1, 600, 'Swim', '', 'swim'), b: blk(1, 700, 'Art', '', 'art') }, { a: blk(1, 660, 'Swim', '', 'swim'), b: blk(1, 760, 'Art', '', 'art') }, ['b'])),
+    ['moved:b<1/700>1/760']);
+  // Ids that are built-in property names are ordinary ids.
+  assert.deepEqual(sig(ch({}, { constructor: blk(1, 600, 'Swim', '', 'swim') })), ['new:constructor>1/600']);
+  assert.deepEqual(sig(ch({}, {}, ['constructor', 'toString'])), []);
+  // The id-style test behind "the switch moved".
+  assert.equal(W.blockIdStyle({}), '');
+  assert.equal(W.blockIdStyle({ 'd1-1020-5': 1, 'd6-60-12': 1 }), 'built-in');
+  assert.equal(W.blockIdStyle({ 'mon-b-supper-1020': 1 }), 'setup');
+  assert.equal(W.blockIdStyle({ 'd1-1020-5': 1, 'mon-supper': 1 }), 'setup');
+});
+
+test('digest wording: day-aware titles, up to three lines then "+N more", head labels only', async () => {
+  const W = await load();
+  const mk = (kind, was, now, extra) => Object.assign({ kind, id: 'x', was, now, oldMs: NaN, newMs: NaN }, extra || {});
+  const at = (dow, mins) => W.etWallToEpoch(W.addDaysYmd(SCHED_WEEK, dow), mins);
+  const endOf = (dow) => W.etWallToEpoch(W.addDaysYmd(SCHED_WEEK, dow + 1), 0);
+  assert.equal(W.headLabel('Morning meeting — 🦃 Turkey, 🍁 Maples'), 'Morning meeting');
+  assert.equal(W.headLabel('Elective 1 (Group A)'), 'Elective 1');
+  assert.equal(W.headLabel('  Supper '), 'Supper');
+  assert.equal(W.clockMin(0), '12:00 AM');
+  assert.equal(W.clockMin(795), '1:15 PM');
+  assert.equal(W.clockMin(720), '12:00 PM');
+  const items = [];
+  for (let i = 0; i < 5; i++) {
+    const w0 = blk(2, 600 + i * 60, `Block ${i} — extra`, '⭐', 'k' + i), n0 = blk(2, 630 + i * 60, `Block ${i} — extra`, '⭐', 'k' + i);
+    items.push(mk('moved', w0, n0, { id: 'b' + i, newMs: at(2, 630 + i * 60), endMs: endOf(2) }));
+  }
+  const d = W.scheduleDigest({ camp: 'junior', items, weekStart: SCHED_WEEK, rev: 9, now: NOW });
+  assert.equal(d.payload.title, "📅 Today's schedule changed");
+  assert.equal(d.payload.body, ['⭐ Block 0 → 10:30 AM (was 10:00 AM)', '⭐ Block 1 → 11:30 AM (was 11:00 AM)', '⭐ Block 2 → 12:30 PM (was 12:00 PM)', '+2 more'].join('\n'));
+  assert.equal(d.payload.tag, 'sched-junior-9');
+  assert.equal(d.ttl, 13 * 3600, 'the day ends 13 h after 11 AM');
+  assert.ok(Buffer.from(JSON.stringify(d.payload)).length < W.PAYLOAD_LIMIT);
+  // A title names the weekday when the day is not today.
+  const wed = W.scheduleDigest({ camp: 'junior', weekStart: SCHED_WEEK, rev: undefined, now: NOW, items: [mk('new', null, blk(3, 1380, 'Movie', '🎬', 'm'), { id: 'm', newMs: at(3, 1380), endMs: endOf(3) })] });
+  assert.equal(wed.payload.title, "📅 Wednesday's schedule changed");
+  assert.equal(wed.payload.tag, 'sched-junior-' + Math.floor(NOW / 60000), 'with no published rev the tag still differs minute to minute');
+  assert.equal(wed.ttl, 36 * 3600, 'never longer than 36 h (Wednesday ends 37 h after Tuesday 11 AM)');
+  // A deadline is never under a minute: half a second before midnight, the day's end is a second away.
+  const soon = W.scheduleDigest({ camp: 'junior', weekStart: SCHED_WEEK, rev: 1, now: at(2, 1439) + 59000, items: [mk('moved', blk(2, 1439, 'X', '', 'x'), blk(2, 1439, 'X', '', 'x'), { newMs: at(2, 1439) + 59500, endMs: endOf(2) })] });
+  assert.equal(soon.ttl, 60);
+  // Very long labels and a hostile label cannot overflow the payload or inject lines.
+  const wild = W.slimBlocks({ 'tue-x': { dow: 2, start: 600, label: 'x'.repeat(500) + '\n\n\nsecond', emoji: '😀'.repeat(40), key: 'x' } });
+  assert.equal(Array.from(wild['tue-x'].label).length, 120);
+  assert.equal(Array.from(wild['tue-x'].emoji).length, 16);
+  assert.deepEqual(W.slimBlocks({ 'Bad Id': blk(1, 1, 'x', '', 'k'), ok: { dow: 9, start: 1, label: 'x', emoji: '', key: 'k' }, ok2: { dow: 1, start: 1440, label: 'x', emoji: '', key: 'k' }, ok3: { dow: 1, start: 1, label: 'x', emoji: '', key: 'Bad Key' }, ok4: 7 }), {}, 'only blocks the rules would have accepted');
+});
+
+test('schedule alert: one per camp per 10 s — a refused one leaves the baseline alone, so it can be sent again', async () => {
+  await load();
+  const w = schedAlertWorld();
+  let r = await schedTell(w, { ids: ['tue-teamcomp'] });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.json.items, 1);
+  w.net.db.set('campScoreboard/pushSchedule/blocks/tue-campfire', blk(2, 1260, 'Campfire', '🔥', 'campfire'));
+  w.net.pushes = [];
+  r = await schedTell(w, { ids: ['tue-campfire'] }, 'alice@camp.org');
+  assert.equal(r.status, 429);
+  assert.equal(r.json.error, 'rate');
+  assert.equal(w.net.pushes.length, 0);
+  assert.equal(seenNode(w).blocks['tue-campfire'].start, 1200, 'the change is still waiting to be told');
+  w.net.now += 9999;
+  assert.equal((await schedTell(w, { ids: ['tue-campfire'] })).status, 429, 'still inside the 10 s');
+  w.net.now += 2;
+  r = await schedTell(w, { ids: ['tue-campfire'] });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(digests(w)['carl-phone-1'].payload.body, '🔥 Campfire → 9:00 PM (was 8:00 PM)');
+  // A quiet save never spends the slot, a baseline reset neither.
+  w.net.db.set('campScoreboard/pushSchedule/blocks/tue-supper/start', 1050);
+  assert.equal((await schedTell(w, { alert: false, ids: ['tue-supper'] })).json.reason, 'quiet');
+  assert.equal((await schedTell(w, { alert: false, ids: ['*'] })).json.reason, 'baseline');
+});
+
+test('schedule alert: two requests racing for one change tell the phones once; a baseline that keeps moving gives up politely', async () => {
+  await load();
+  // A rival request lands its claim between our read and our write: ours is refused (412), re-reads, and finds nothing left to tell.
+  let w = schedAlertWorld();
+  let rival = 0;
+  w.net.db.beforeWrite = async (method, path) => {
+    if (method === 'PUT' && path === 'pushServer/schedSeen/junior' && !rival++) {
+      w.net.db.set('pushServer/schedSeen/junior', { weekStart: SCHED_WEEK, blocks: SCHED_NOW() });
+    }
+  };
+  let r = await schedTell(w, { ids: SCHED_ALL_IDS });
+  assert.equal(r.status, 200, r.text);
+  assert.equal(r.json.reason, 'no-change', 'the rival told them');
+  assert.equal(w.net.pushes.length, 0);
+  assert.equal(rival, 1);
+
+  // Both go at once. The rate slot and the baseline claim are both conditional writes, so however the two interleave,
+  // exactly one of them tells the phones, and nobody is told twice.
+  w = schedAlertWorld();
+  const [a, b] = await Promise.all([schedTell(w, { ids: SCHED_ALL_IDS }), schedTell(w, { ids: SCHED_ALL_IDS })]);
+  assert.equal(w.net.pushes.length, 3, 'one digest each for Bob, Carl and Dee — not six');
+  assert.ok([a, b].every((x) => x.status === 200 || x.status === 429), 'the other is told to wait, or finds nothing to tell');
+  assert.equal([a, b].filter((x) => x.status === 200 && x.json.sent === 3).length, 1);
+  assert.equal(Object.keys(w.net.db.get('campScoreboard/pushAlerts')).length, 1);
+
+  // A baseline that changes under every attempt: three tries, then a plain "try again" — and nothing was told.
+  w = schedAlertWorld();
+  let tick = 0;
+  w.net.db.beforeWrite = async (method, path) => {
+    if (method === 'PUT' && path === 'pushServer/schedSeen/junior') w.net.db.set('pushServer/schedSeen/junior/tick', ++tick);
+  };
+  r = (await quietly(() => schedTell(w, { ids: SCHED_ALL_IDS }))).result;
+  assert.equal(r.status, 503);
+  assert.equal(r.json.error, 'busy');
+  assert.equal(w.net.pushes.length, 0);
+  assert.equal(tick, 3);
+});
+
+test('schedule alert: a send that fails before anything went out gives the baseline back, so the director can send it again', async () => {
+  await load();
+  const w = schedAlertWorld();
+  // The sender's signing key is damaged: deliverJobs fails before a single phone is reached.
+  w.net.db.set('pushServer/vapid', { publicKey: 'nope' });
+  const { result: r } = await quietly(() => schedTell(w, { ids: SCHED_ALL_IDS }));
+  assert.equal(r.status, 503);
+  assert.equal(r.json.error, 'not-configured');
+  assert.equal(w.net.pushes.length, 0);
+  sameTree(seenNode(w), { weekStart: SCHED_WEEK, blocks: SCHED_THEN() }, 'the named ids are back exactly as they were');
+  // Fixed; the same request now tells everyone.
+  w.net.db.set('pushServer/vapid', null);
+  w.net.now += 11000;
+  const again = await schedTell(w, { ids: SCHED_ALL_IDS });
+  assert.equal(again.status, 200, again.text);
+  assert.equal(again.json.sent, 3);
+  sameTree(seenNode(w), { weekStart: SCHED_WEEK, blocks: SCHED_NOW() });
+
+  // Nobody reachable (every phone is gone): nothing sent, nothing queued — also given back.
+  const w2 = schedAlertWorld();
+  for (const id of ['bob-phone-1', 'carl-phone-1', 'dee-phone-1']) w2.net.pushStatus[`https://fcm.googleapis.com/fcm/send/${id}`] = 410;
+  const r2 = await schedTell(w2, { ids: SCHED_ALL_IDS });
+  assert.equal(r2.json.sent, 0);
+  sameTree(seenNode(w2), { weekStart: SCHED_WEEK, blocks: SCHED_THEN() });
+});
+
+test('schedule alert: nobody follows the change — baseline moves, no audit row, no rate slot spent', async () => {
+  await load();
+  const w = schedAlertWorld();
+  w.net.db.set('campScoreboard/push/' + BOB, null);
+  w.net.db.set('campScoreboard/push/' + CARL, null);
+  w.net.db.set('campScoreboard/push/' + DEE, null);
+  const r = await schedTell(w, { ids: SCHED_ALL_IDS });
+  assert.equal(r.json.reason, 'no-followers');
+  assert.equal(r.json.items, 3);
+  assert.equal(r.json.sent, 0);
+  assert.equal(w.net.pushes.length, 0);
+  assert.equal(w.net.db.get('campScoreboard/pushAlerts'), null);
+  assert.equal(w.net.db.get('pushServer/rate/junior/sched'), null);
+  sameTree(seenNode(w), { weekStart: SCHED_WEEK, blocks: SCHED_NOW() });
+});
+
+test('schedule alert: one buzz per browser however many people it is registered under; ex-members and off-list endpoints are skipped', async () => {
+  await load();
+  const w = schedAlertWorld();
+  // The same browser left registered under Carl as well as Bob (a shared phone): it follows the union, once.
+  const bobRec = w.net.db.get(`campScoreboard/push/${BOB}/bob-phone-1`);
+  w.net.db.set(`campScoreboard/push/${CARL}/carl-shared-01`, Object.assign({}, bobRec, { prefs: { blocks: { campfire: true } } }));
+  // A person who left the camp, and a record pointing off the push services.
+  w.net.db.set('campScoreboard/push/gone@camp,org/gone-phone-1', device(w.net, { id: 'gone-phone-1', prefs: { blocksAll: true } }));
+  w.net.db.set(`campScoreboard/push/${DEE}/dee-evil-01`, Object.assign(device(w.net, { id: 'evil', prefs: { blocksAll: true } }), { endpoint: 'https://evil.example/push/1' }));
+  const r = await schedTell(w, { ids: SCHED_ALL_IDS });
+  assert.equal(r.status, 200, r.text);
+  const urls = w.net.pushes.map((p) => p.url).sort();
+  assert.equal(new Set(urls).size, urls.length, 'no endpoint twice');
+  assert.equal(r.json.devices, 3);
+  assert.ok(!urls.some((u) => u.includes('evil') || u.includes('gone')));
+  assert.equal(digests(w)['bob-phone-1'].payload.body.split('\n').length, 3, 'the shared browser got the longer digest (the union)');
+});
+
+test('schedule alert: 25 followers with PUSH_BATCH 20 — 20 inline, the rest drained from the outbox with the same words, counted on the audit row', async () => {
+  await load();
+  const w = schedAlertWorld();
+  for (const k of [BOB, CARL, DEE]) w.net.db.set('campScoreboard/push/' + k, null);
+  w.net.db.set('campScoreboard/pushSchedule/blocks/tue-campfire', blk(2, 1260, 'Campfire', '🔥', 'campfire'));
+  const members = w.net.db.get('campScoreboard/members');
+  for (let i = 0; i < 25; i++) members[`kid${i}@camp,org`] = { role: 'viewer', name: `Kid ${i}`, addedBy: 'x', addedAt: 1 };
+  w.net.db.set('campScoreboard/members', members);
+  for (let i = 0; i < 25; i++) w.addDevice('campScoreboard', `kid${i}@camp,org`, `kid-phone-${i}`, { prefs: { blocks: { campfire: true } } });
+  const r = await schedTell(w, { ids: ['tue-campfire'] });
+  assert.equal(r.status, 200, r.text);
+  assert.ok(w.maxCalls() <= 45, `the budget held (${w.maxCalls()} subrequests)`);
+  assert.equal(r.json.sent, 20, 'PUSH_BATCH inline');
+  assert.equal(r.json.queued, 5, 'the rest wait in the outbox');
+  assert.equal(r.json.batches.length, 1);
+  const drained = await w.request('POST', '/drain', { batch: r.json.batches[0] });
+  assert.equal(drained.json.sent, 5);
+  assert.equal(w.net.pushes.length, 25);
+  const bodies = new Set(w.net.pushes.map((p) => decrypt(w.net, p).payload.body));
+  assert.deepEqual([...bodies], ['🔥 Campfire → 9:00 PM (was 8:00 PM)'], 'a drained batch is not rewritten as a block reminder');
+  assert.equal(w.net.db.get('campScoreboard/pushAlerts/' + r.json.alertId + '/sent'), 25);
+  assert.equal(w.net.db.get('pushServer/outbox'), null);
+});
+
+test('cron maintenance deletes a schedule baseline once its camp window is long over — and nothing earlier', async () => {
+  await load();
+  const w = schedAlertWorld();
+  w.net.db.set('pushServer/schedSeen/senior', { weekStart: '2027-07-25', blocks: { a: blk(1, 600, 'x', '', 'k') } });
+  const minute17 = (d, h) => Date.UTC(2027, 6, d, h, 17, 0);
+  // The camp window of the week of Jul 18 ends Monday Jul 26 00:00 Eastern.
+  w.net.now = minute17(25, 20);
+  await w.cron();
+  assert.ok(seenNode(w), 'still inside the window');
+  w.net.now = minute17(26, 5);
+  await w.cron();
+  assert.equal(seenNode(w), null, 'the week of Jul 18 is over');
+  assert.ok(w.net.db.get('pushServer/schedSeen/senior'), 'the other camp’s week (Jul 25) is untouched');
+  w.net.now = minute17(26, 5) + 86400000 * 7;
+  await w.cron();
+  assert.equal(w.net.db.get('pushServer/schedSeen/senior'), null, 'and goes the same way a week later');
+  // A node with no usable week date is left for notifySchedule to remake, never guessed at.
+  w.net.db.set('pushServer/schedSeen/junior', { weekStart: 'junk', blocks: { a: blk(1, 600, 'x', '', 'k') } });
+  w.net.now = minute17(26, 5) + 86400000 * 9;
+  await w.cron();
+  assert.ok(seenNode(w));
+});

@@ -268,10 +268,13 @@ Worker does nothing.
   no access, and the Worker uses admin access). `pushServer/vapid` is the
   sender's signing key — **never delete it** casually: every phone would have
   to turn alerts on again. Per-camp data the app reads/writes: `push/`,
-  `pushSchedule`, `pushAlerts`.
+  `pushSchedule`, `pushAlerts`. `pushServer/schedSeen/<camp>` is the sender's
+  memory of what phones were last told about each schedule block (for "the
+  schedule changed" alerts); it tidies itself away a week after camp.
 - **Endpoints.** `GET /` status page · `GET /health` (JSON, for the app's
   director status line) · `GET /vapid-key` · `POST /notify` (Firebase ID token
-  required) · `POST /drain` · `POST /resubscribe`. Errors are always
+  required; a chat message, a director alert, a test, or — directors only — a
+  schedule change) · `POST /drain` · `POST /resubscribe`. Errors are always
   `{ ok: false, error, message }` with a plain-English `message`.
 - **Free-plan budget.** Every network call goes through one counter capped at
   45 per run (the plan allows 50), and each run sends at most `PUSH_BATCH`

@@ -2177,7 +2177,7 @@ setup-ui.js sections 8–11. No new file, so no new `?v=` entry.
   of a copied day) — never the seed's slug id (`setupMintId`, seed only), which two directors
   adding the same name at once would mint twice and which a collision suffix could push past
   the 40 characters `pushSchedule` allows once published as `<dk>-<id>`. "Tell people who
-  follow this" is not built (the alert sender is Step 26).
+  follow this" is not built in the page yet (the sender's half is: "Schedule-change alerts" under "Phone alerts").
 - **Day operations** are shared by Camp week and Schedule: give a day its own schedule (same
   ids, `typical:false`, patches gone, one commit), follow again / clear (confirm, a
   `pre-delete` restore point first — a device with no sync has nowhere to keep one and goes
@@ -2207,7 +2207,7 @@ setup-ui.js sections 8–11. No new file, so no new `?v=` entry.
   item sheet in staging mode (`it.stage`): a whole one-off record staged under
   `dayBlocks/<dk>/<id>`. The "Tell people" choice is kept as an intent in
   `lsKey('campSetupAlertIntent')` only when phone alerts are live (nothing sends it until
-  Step 26). Motion: `JellyMotion.flipKeyed` glides survivors when a staged row re-sorts (not
+  Step 26's client session). Motion: `JellyMotion.flipKeyed` glides survivors when a staged row re-sorts (not
   under a thumb: `whenHandsOff`), the Changed tag pops (`press`), panes arrive from the side;
   calm is a plain replace / fade.
 - **The home schedule sheet's way in** (`renderSchedulePlan`, called from `renderSchedule`):
@@ -3256,11 +3256,36 @@ ignores the "director alerts" opt-out). Design spec:
   add that origin to `connect-src` in index.html's CSP (otherwise the browser
   silently blocks it — the drawer's sender line will say "blocked"); (3)
   publish `database.rules.json` (push/pushSchedule/pushAlerts blocks).
+- **Schedule-change alerts** (Step 26 / P2 S9; Worker version 2026-11-04.1, built and tested, NOT pasted until Step 27):
+  `POST /notify` `{camp, kind: 'schedule', alert, ids}` — an EDITOR of that camp only (403 `not-editor`). `ids` are published
+  block ids (`^[a-z0-9-]{1,40}$`, at most 200) or exactly `['*']` with `alert: false` (the baseline reset; anything else
+  malformed is 400 `bad-ids`). The Worker takes no words from the request: it compares the published schedule NOW
+  (`pushSchedule`, written by editors under the rules) with a private per-block baseline, `pushServer/schedSeen/<camp> =
+  { weekStart, blocks: { id: { dow, start, label, emoji, key } } }` — "what followers were last told about this block" — and
+  writes the digest itself. The baseline moves for the NAMED ids only, whether or not `alert` was set, so one director's quiet
+  save can never swallow another's alert; it is claimed with an ETag-conditional PUT BEFORE sending (two requests racing for
+  one change tell the phones once; a lost claim re-reads up to 3 times, then 503 `busy`) and is given back when nothing was
+  sent or queued (a retry still finds the change). With no baseline, a baseline from another week, a `'*'` reset, or a
+  switch of id style (`d<dow>-<start>-<n>` ↔ `<day>-<block id>`: the schedule switch moved) the baseline is simply made from
+  the published blocks (`reason: 'baseline'`, nobody told — which is also what the first ever call for a camp does). A moved
+  (day or start), renamed or cancelled block, or a new one, is an item; a cancelled + new pair sharing one alert `key` is ONE
+  move (same day paired first). Only items with an old or new occurrence between now and the end of TOMORROW (Eastern) that
+  has not started are told, and only inside the camp window (week start − 1 day … + 8 days). Recipients: phones (the 4-newest
+  cap, one buzz per browser) whose prefs say `blocksAll` or the item's old or new key; `lead` and the "director alerts" mute
+  play no part. ONE digest per distinct set of followed items: title "📅 Today's schedule changed" / "📅 Tuesday's schedule
+  changed" / "📅 The schedule changed", up to 3 lines ("🏅 Team competitions → 1:15 PM (was 10:00 AM)", "🔥 Campfire moved to
+  Thu 8:00 PM", "🏆 Evening competition cancelled tomorrow", …) then "+N more"; payload kind `block` (sw.js unchanged), `open:
+  'schedule'`, tag `sched-<camp>-<published rev>`, TTL to the end of the latest affected camp day (60 s – 36 h). One alert per
+  camp per 10 s (429 `rate`, checked BEFORE the baseline is claimed). Audit row `pushAlerts/<id>` `{kind: 'schedule', audience:
+  'followers', byKey, byName, text, sent, failed}` — `push.js`'s recent-alerts list still words every audience as "Everyone"
+  (a client follow-up). Replies are the usual tally plus `devices`, `items` and, when nothing went out, `reason` ∈ `baseline |
+  no-schedule | quiet | no-change | not-camp-week | nothing-to-tell | no-followers`. `cronMaintenance` deletes a camp's
+  `schedSeen` once `weekStart + 8 days` has passed. An older Worker answers 400 `bad-kind` (the client hides its checkbox).
 - **Tests**: `tests/push.test.js` (+ `.senior`) pin the client helpers and
   sw.js's payload mapping; `tests/push-worker.test.js` loads the Worker module
   and checks encryption against an independent node:crypto decryption, VAPID,
   ID-token verification, recipient selection, cron window math, batching and
-  the subrequest cap. `tests/push-e2e/` (opt-in) runs the real Worker in
+  the subrequest cap (and, since Step 26, schedule-change alerts and the short-name team rule). `tests/push-e2e/` (opt-in) runs the real Worker in
   workerd against the RTDB emulator with ~30 mock phones — run it after any
   worker.js change.
 - **`pushSendAlert(opts)`**: with no argument it is the director's composer; with
@@ -3987,8 +4012,9 @@ Both camps, junior and senior, run all of it.
   `pushRepublishSchedule({force})` is the hub's Publish-now seam. `pushMigrateWeekStart`
   copies the date alerts were set up with into `setup/meta/weekStart` once (retried on
   setup events), and the drawer's Save now writes the setup date before publishing.
-  The schedule-change ALERT (`/notify` kind `schedule`, the baseline reset on a switch)
-  is the Worker's step 26 (S9) and is not here.
+  The schedule-change ALERT is the Worker's (`POST /notify` kind `schedule`, see "Phone alerts"); the client half — the
+  "Tell people" choice, the intent queue, and the `{alert: false, ids: ['*']}` baseline reset when the switch or the week
+  date moves — is Step 26's second session.
 - **The whole-week calendar file** (app.js next to `buildDayIcs`, P2 §12.4):
   `buildWeekIcs({dows, fromDow, now})` is null with no camp dates (`campWeek().start`); else
   one VEVENT per TIMED block of `planForDow` for every day of `weekDays()` — dates are
