@@ -2120,6 +2120,18 @@ jelly-dialog.ask {
 .ask-actions > .btn-quiet {
   align-self: center;
 }
+/* A choice that says what it does under its label, inside the button. */
+.ask-actions > .btn.ask-sub {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  height: auto;
+  padding-block: 9px;
+  white-space: normal;
+}
+.ask-sub-s {
+  font: 600 0.8125rem/1.3 var(--font-ui);
+}
 /* Fill evenly's preview: a day label, then a hairline row per meal (time ·
    meal, the teams under it). */
 .ask-table {
@@ -7785,8 +7797,8 @@ body.builder-open .sync-status-footer {
 .medal-points {
   margin-left: auto;
   font-size: 0.85rem;
-  font-weight: 600;
-  opacity: 0.85;
+  font-weight: 650;
+  color: var(--ink-2); /* the medal's own colour at 85% was 4.95–6.5:1 on the medal tints */
   white-space: nowrap;
 }
 
@@ -7830,8 +7842,9 @@ body.builder-open .sync-status-footer {
 }
 
 .wizard-step.active {
-  background: var(--color-primary);
-  color: var(--color-on-primary);
+  /* Link ink, not --color-primary: white on the camp blue was 6.48:1 at 12.5px (§8.1 rule 6 asks 7:1); on --link it is 8.9:1. */
+  background: var(--link);
+  color: var(--on-link);
 }
 
 .wizard-step.done {
@@ -7869,9 +7882,11 @@ body.builder-open .sync-status-footer {
 }
 
 .team-chip.selected {
-  border-color: var(--color-primary);
+  /* Ink words inside a 2px link-blue edge: the camp blue as TEXT on its own tint was 5.65:1. */
+  border-color: var(--link);
+  box-shadow: inset 0 0 0 1px var(--link);
   background: color-mix(in srgb, var(--color-primary) 12%, var(--color-surface));
-  color: var(--color-primary);
+  color: var(--ink);
 }
 
 /* ============================================================
@@ -8314,16 +8329,17 @@ body.builder-open .sync-status-footer {
 }
 
 .live-btn {
-  width: 2.4rem;
-  height: 2.4rem;
-  /* The live tally's steppers are scoring controls under a thumb mid-game: a 44px target at any text size (they were 38px). */
+  /* The live tally's steppers are scoring controls under a thumb mid-game: a 44px target at any text size (they were 38px), and
+     never wider than 56px, or at 200% text two of them no longer fit a team's column and were cut off by it. */
+  width: clamp(var(--target), 2.4rem, 56px);
+  height: clamp(var(--target), 2.4rem, 56px);
   min-width: var(--target);
   min-height: var(--target);
   border-radius: 50%;
   border: 1.5px solid var(--color-border);
   background: var(--color-surface);
-  color: var(--color-primary);
-  font-size: 1.5rem;
+  color: var(--link);
+  font-size: min(1.5rem, 32px);
   font-weight: 800;
   line-height: 1;
   cursor: pointer;
@@ -8404,11 +8420,8 @@ body.builder-open .sync-status-footer {
 
 .call-next-label {
   margin: 0 0 0.25rem;
-  font-size: 0.8rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--color-text-muted);
-  font-weight: 700;
+  font: var(--t-label); /* sentence case (§8.8: no letter-spaced capitals) */
+  color: var(--ink-2);
 }
 
 .matchup-mascots {
@@ -8423,8 +8436,11 @@ body.builder-open .sync-status-footer {
   font-size: 2.75rem;
 }
 .matchup-vs-emoji {
-  font-size: 1.4rem;
-  opacity: 0.85;
+  font: 650 0.9375rem/1 var(--font-ui);
+  color: var(--ink-2);
+}
+.matchup-mascot .tm {
+  margin: 0 auto;
 }
 
 .call-next-teams {
@@ -9592,14 +9608,28 @@ html:not(.calm-motion) .pa-row-summary::after {
    OWN-TEAM GUARD (assigned staff don't score their own rounds)
    ============================================================ */
 .own-team-note {
+  /* A plain line with the lock (§8.1 rule 7: never another tinted callout with a coloured left edge). */
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr);
+  align-items: start;
+  column-gap: 8px;
   margin: 0 0 0.75rem;
-  padding: 0.55rem 0.7rem;
-  border: 1px solid var(--color-border);
-  border-left: 4px solid var(--color-primary);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface));
-  font-size: 0.85rem;
-  line-height: 1.45;
+  font: 650 0.9375rem/1.38 var(--font-ui);
+  color: var(--ink-2);
+  overflow-wrap: break-word;
+}
+.own-team-note > .ico {
+  width: 20px;
+  height: 20px;
+  margin: 1px 0 0 2px;
+  stroke-width: 2.3;
+}
+.own-team-note strong {
+  color: var(--ink);
+}
+.own-team-note .tm {
+  display: inline-block;
+  vertical-align: -4px;
 }
 .score-row-locked {
   opacity: 0.72;
@@ -9725,11 +9755,30 @@ jelly-button.timer-side-btn {
 jelly-button.winner-btn {
   flex: 1;
   --jelly-button-height: 48px;
+  --jelly-button-font-size: 1rem; /* in rem, so the label follows the phone's text size (it stayed 16px at 200%) */
 }
 jelly-button.copy-matchup-btn {
   width: 100%;
   --jelly-button-height: 44px;
   --jelly-button-font-size: 0.9rem;
+}
+/* A long team name or large text wraps INSIDE the pill: the button grows to fit (the painted pill follows the host's size) instead
+   of the words spilling out of a fixed 48px. */
+jelly-button.winner-btn::part(button),
+jelly-button.copy-matchup-btn::part(button) {
+  height: auto;
+  min-height: var(--jelly-button-height);
+  padding-block: 10px;
+  line-height: 1.2;
+  text-align: center;
+  white-space: normal;
+}
+jelly-button.copy-matchup-btn .ico {
+  width: 1.1em;
+  height: 1.1em;
+  margin-right: 6px;
+  vertical-align: -0.2em;
+  stroke-width: 2.3;
 }
 
 /* Week-builder controls on Jelly hosts: strip the legacy field/button chrome
@@ -11018,7 +11067,19 @@ select.form-input {
   font-weight: 800;
   line-height: 1;
   font-variant-numeric: tabular-nums;
-  color: var(--team-accent, var(--color-primary));
+  /* The team colour taken a little toward ink: a camp's older single colour has no measured half per theme, and senior's gold
+     on the sheet was 3.2:1 for the biggest number on the screen (§8.1 rule 6 asks 4.5:1); it keeps its hue at 5.4:1. */
+  color: color-mix(in oklab, var(--team-accent, var(--color-primary)) 72%, var(--ink));
+}
+/* In dark it goes halfway toward ink (which is light there): on navy senior's red, blue and green were 3.0–3.2:1. A palette
+   swatch's own dark half only gets lighter. */
+:root[data-jelly-mode="dark"] .board-score {
+  color: color-mix(in oklab, var(--team-accent, var(--color-primary)) 55%, var(--ink));
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-jelly-mode="light"]) .board-score {
+    color: color-mix(in oklab, var(--team-accent, var(--color-primary)) 55%, var(--ink));
+  }
 }
 
 .board-dash {
@@ -11029,14 +11090,16 @@ select.form-input {
 
 .board-stepper {
   display: flex;
+  flex-wrap: wrap; /* a narrow column (360px at 200% text) stacks − over + instead of cutting one off */
+  justify-content: center;
   gap: 0.5rem;
   margin-top: 0.5rem;
 }
 
 .board-stepper .board-plus {
-  min-width: 3.4rem;
-  min-height: 2.9rem;
-  font-size: 1.4rem;
+  min-width: clamp(var(--target), 3.4rem, 72px);
+  min-height: clamp(var(--target), 2.9rem, 56px);
+  font-size: min(1.4rem, 32px);
   /* The light half, 22% toward black: white on it is 4.6:1 or better for every palette swatch AND for the
      camps' older single colours (junior's pumpkin orange was 2.9:1 undarkened), in both themes. */
   background: color-mix(in srgb, var(--team-fill, var(--roof)) 78%, #000);
@@ -17494,40 +17557,191 @@ button.gs-row:focus-visible {
 }
 
 /* ── The four-team bracket's screens (Step 22; senior's Legacy Game) ──────────────────────────
-   The six-team wizard's own look (step pills, team chips, the call-up callout, the medal rows) carries the flow, so the two
-   brackets look alike; these are the few pieces it has no word for, and the 44px target the wizard's links never had (the
-   six-team wizard's Undo, Back and Cancel links get it here too). */
+   The director's clipboard language (§8, §11.0): a sentence-case title over one meta line, the pairs as one hairline list, the
+   step as one line ("Step 2 of 5 · Semifinal 2"), the bracket so far as Now's own 2×2 cells (the map), and the summary as the saved
+   result's own list with the gold Save docked. The call-up and the live tally are the six-team wizard's, shared. Every link here and
+   in the six-team wizard (Undo, Back, Cancel) is a 44px target in link ink (--link, 7.8:1; the old --color-primary text was 5.65:1). */
 .four-entry .link-btn,
 .wizard-footer .link-btn,
 .completed-matches .link-btn,
+.four-undo .link-btn,
 #undo-to-round1-btn {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   min-height: var(--target);
   padding: 0 0.35rem;
   font-size: 0.95rem;
 }
+.four-entry .link-btn:not(.danger-link),
+.wizard-footer .link-btn:not(.danger-link),
+.completed-matches .link-btn,
+.four-undo .link-btn,
+#undo-to-round1-btn,
+.live-reset {
+  color: var(--link);
+}
+.four-entry .link-btn .ico,
+.completed-matches .link-btn .ico,
+#undo-to-round1-btn .ico {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.4;
+}
 .four-entry .wizard-footer {
   margin-top: 0.75rem;
+}
+.four-entry h3 {
+  margin: 4px 0 2px;
+}
+.four-meta {
+  margin: 0 0 12px;
+  font: var(--t-meta);
+  color: var(--ink-2);
+  overflow-wrap: break-word;
+}
+.four-label {
+  margin: 14px 0 6px;
+  font: var(--t-label);
+  color: var(--ink-2);
 }
 .four-alt {
   margin: 0.4rem 0 0;
   text-align: center;
 }
+/* The two semifinals: one hairline list, "Semifinal 1" over its two teams (never a box per pair inside a box). */
+.four-pairs {
+  margin: 0 0 14px;
+  padding: 0;
+  list-style: none;
+  border: 1.5px solid var(--line-2);
+  border-radius: var(--r-group);
+  background: var(--sheet);
+  overflow: hidden;
+}
+.four-pair {
+  display: grid;
+  gap: 4px;
+  padding: 10px 14px 12px;
+}
+.four-pair + .four-pair {
+  border-top: 1px solid var(--line);
+}
+.four-pair-k {
+  font: var(--t-label);
+  color: var(--ink-2);
+}
+.four-pair-t {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 10px;
+}
+.four-team {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font: 750 1rem/1.25 var(--font-ui);
+  color: var(--ink);
+}
+.four-team-nm {
+  min-width: 0;
+  overflow-wrap: break-word;
+}
+.four-vs {
+  font: 650 0.875rem/1.2 var(--font-ui);
+  color: var(--ink-2);
+}
+.four-open {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: 650 1rem/1.25 var(--font-ui);
+  color: var(--ink-2);
+}
+/* The pick: a placed team carries its semifinal's number in an ink disc, so the two pairs read apart at a glance. */
 .four-pick .team-chip {
   min-height: var(--target);
 }
-.four-pick .matchup-order {
+.four-chip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  text-align: left;
+}
+.four-chip .chip-sub {
+  flex-basis: 100%;
+  font-size: 0.75rem; /* the 12px floor (§8.2) */
+  color: var(--ink-2);
+}
+.four-disc {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background: var(--ink);
+  color: var(--paper);
+  font: 900 0.8125rem/1 var(--font-ui);
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+}
+.four-pick .four-pairs {
   margin-top: 0;
 }
-.four-open {
+/* Where the bracket is, as one sentence-case line (the six-team wizard keeps its own step pills). */
+.four-steps {
+  margin: 0 0 10px;
+  font: var(--t-meta);
   color: var(--ink-2);
-  font-weight: 500;
+}
+.four-steps .wizard-step.active {
+  display: inline-block;
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  color: var(--ink);
+  font-weight: 800;
 }
 .four-entry [data-four-h]:focus {
   outline: none;
 }
-/* The Re-check: the one place the bracket stops and asks, so it wears the gold edge and nothing else does. */
+/* A plain note line with a mark (a medal disc, an icon): never a tinted callout, never an emoji as the icon. */
+.four-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  font: 650 0.9375rem/1.35 var(--font-ui);
+  color: var(--ink-2);
+}
+.four-note > .ico {
+  flex: none;
+  width: 20px;
+  height: 20px;
+}
+.four-undo {
+  margin: 4px 0 0;
+}
+/* The bracket so far: Now's own cells, under whatever is being done. */
+.four-map {
+  margin-top: 18px;
+}
+.four-map .b4 {
+  margin-top: 0;
+}
+/* In the takeover the cells sit on the page itself: the grouped list's sheet and edge make them one picture, as the Now card's well does. */
+.gv-b4 .b4 {
+  border: 1.5px solid var(--line-2);
+  border-radius: var(--r-group);
+  background: var(--sheet);
+  overflow: hidden;
+}
+/* The Re-check: the one place the bracket stops and asks, so it wears the gold edge and nothing else does. Its two answers are equal
+   buttons, each saying what it does to the rest of the bracket inside it. */
 .four-recheck {
   display: grid;
   gap: var(--s-2, 8px);
@@ -17543,12 +17757,42 @@ button.gs-row:focus-visible {
   margin: 0;
   overflow-wrap: break-word;
 }
-.four-recheck .four-sub {
-  margin: -2px 0 6px;
-  font-size: 0.875rem;
+.four-recheck .four-meta {
+  margin: 0;
 }
-/* A counselor's view of the bracket: Now's four cells under the board, and the followed team's line. A size container of its own,
-   as the Now card is, so the cells go to one column when the line is short (the rule at nw-card). */
+.four-choices {
+  display: grid;
+  gap: 10px;
+  margin-top: 6px;
+}
+.btn.four-choice {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr); /* one full-width column: .btn centres its content, which centred the shorter answer */
+  justify-content: stretch;
+  justify-items: start;
+  gap: 2px;
+  height: auto;
+  min-height: var(--target);
+  padding-block: 10px;
+  text-align: left;
+  white-space: normal;
+}
+.four-choice-t {
+  font: 800 1rem/1.25 var(--font-ui);
+}
+.four-choice-s {
+  font: 600 0.875rem/1.3 var(--font-ui);
+  color: var(--ink-2);
+}
+/* A counselor's view (renderLiveWatchFour): no tinted box and nothing centred but the board itself — the followed team's line, the
+   board, who plays after it, then Now's four cells, in a size container of their own as the Now card is (the cells go to one column
+   when the line is short: the rule at nw-card). */
+.live-watch-four {
+  text-align: left;
+}
+.live-watch-four .big-board.viewer {
+  min-height: 0; /* a mostly empty half-screen pushed the answer and the cells below the fold */
+}
 .gv-b4 {
   container: nw-card / inline-size;
 }
@@ -17556,9 +17800,44 @@ button.gs-row:focus-visible {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 10px 0 0;
+  margin: 2px 0 10px;
   font: 650 1rem/1.3 var(--font-ui);
+  color: var(--ink-2);
+  text-align: left;
+}
+.gv-b4-note b {
+  color: var(--ink);
+  font-weight: 750;
+}
+.gv-b4-hold {
+  margin: 2px 0 10px;
 }
 .live-watch-four .live-watch-label {
-  margin: 0 0 8px;
+  margin: 4px 0 0;
+  font: var(--t-label);
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--ink-2);
+}
+.live-watch-four .live-watch-ondeck {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  margin: 0 0 4px;
+  font: 650 0.9375rem/1.3 var(--font-ui);
+  color: var(--ink-2);
+}
+.live-watch-four .live-watch-ondeck .four-team {
+  font-size: 0.9375rem;
+}
+/* A result being checked: an ink outline, never Done's green (nobody can say who won it yet). */
+.gr-tag[data-tag="check"] {
+  background: none;
+  box-shadow: inset 0 0 0 1.5px var(--ink);
+  color: var(--ink);
+}
+/* The emoji a shield team keeps where a bracket rebuilds on every render (bracketMarkHtml). */
+.bk-emoji {
+  line-height: 1;
 }

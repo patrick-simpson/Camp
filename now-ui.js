@@ -37,6 +37,7 @@ const nowUi = {
   statuses: {},      // game id → last status painted, to see Live → Done
   flip: new Set(),   // games that went Live → Done and are waiting for their medals to be on screen
   bodyView: null,    // which picture `#now-card-body` last showed (day, kind, block): its game rows glide only within one
+  b4: { sig: null, pending: new Map() }, // the four-team cells' last status / winner, and the changes waiting to be seen (nowB4Motion)
 };
 
 function nowEl(id) { return typeof document !== 'undefined' ? document.getElementById(id) : null; }
@@ -127,7 +128,8 @@ function nowGameRowHtml(r) {
 // The four-team bracket (Step 22's data), in the order of play.
 function nowBracket4Html(b4) {
   if (!b4 || !b4.cells) return '';
-  const tag = { done: 'Done', live: 'Live', todo: 'Next' };
+  // `check`: the result a director is double-checking (an ink outline, never Done: nobody can say who won it yet).
+  const tag = { done: 'Done', live: 'Live', todo: 'Next', check: 'Checking' };
   const cells = b4.cells.map((c) => {
     const mine = c.teams.some((t) => t.mine);
     const t = c.teams.map((x) => (x.team
@@ -219,6 +221,7 @@ function nowNotesHtml(notes) {
   return (notes || []).map((n) => {
     if (n.kind === 'double') return `<p class="nw-note" data-note="double">${nowIcon('i-bolt')}<span>${esc(n.text)}</span></p>`;
     if (n.kind === 'rain') return `<p class="nw-note" data-note="rain">${nowIcon('i-rain')}<span>${esc(n.text)}</span></p>`;
+    if (n.kind === 'hold') return `<p class="nw-note" data-note="hold">${nowIcon('i-clock')}<span>${esc(n.text)}</span></p>`;
     if (n.kind === 'team' && n.team) {
       return `<p class="nw-note" data-note="team" data-team="${esc(n.team)}"${nowAccent(n.team)}${n.mine ? ' data-mine' : ''}><span class="nw-note-mark">${nowMark(n.team, 22)}</span>` +
         `<span><b>${esc(n.lead)}</b>${esc(n.rest)}</span></p>`;
@@ -656,9 +659,10 @@ function nowCheckPop(el) {
 // Live → Done: the check pops and the medals drop bronze → silver → gold. Waits (in `nowUi.flip`) until the row with its
 // podium is really on screen, which a repaint that had to wait for a finger to lift is not yet.
 function nowAfterGames(model, live) {
-  if (model.card.kind !== 'games') { nowUi.statuses = {}; nowUi.flip.clear(); return; }
+  if (model.card.kind !== 'games') { nowUi.statuses = {}; nowUi.flip.clear(); nowUi.b4 = { sig: null, pending: new Map() }; return; }
   const rows = (model.body && model.body.rows) || [];
   const body = nowEl('now-card-body');
+  nowB4Motion(body, model.body && model.body.bracket4, nowUi.b4, live);
   rows.forEach((r) => {
     if (nowUi.statuses[r.id] === 'live' && r.status === 'done') nowUi.flip.add(r.id);
     nowUi.statuses[r.id] = r.status;
@@ -678,6 +682,32 @@ function nowAfterGames(model, live) {
         return { transform: 'translateY(' + (-22 * (1 - Math.min(1, x))) + 'px) scale(' + (1 + 0.6 * o) + ', ' + (1 - o) + ')', transformOrigin: '50% 100%', opacity: Math.min(1, x * 1.8) };
       }, { calm: [{ opacity: 0 }, { opacity: 1 }], calmMs: 160, delay: i * 120 });
     });
+  });
+}
+
+// The four-team cells (Now's card, the game view, the director's map in the takeover): a cell whose status or winner changed —
+// Next → Live, Live → Done, "won" appearing, a result going to Checking — snaps its tag in and pops its "won" (§9.5: a status
+// changing). `memo` is the caller's own { sig, pending }: the first paint only records what it saw, and a change waits in
+// `pending` until the cell on the page really shows it (a repaint that waited for a finger to lift has not drawn it yet).
+// Calm: nothing moves ({ calm: false }), the words change in place.
+function nowB4Motion(root, b4, memo, live) {
+  if (!memo) return;
+  const sig = {};
+  ((b4 && b4.cells) || []).forEach((c) => {
+    const won = (c.teams.find((t) => t.won) || {}).team || '';
+    sig[c.key] = c.status + '|' + won;
+    if (memo.sig && memo.sig[c.key] !== undefined && memo.sig[c.key] !== sig[c.key]) memo.pending.set(c.key, c.status);
+  });
+  memo.sig = b4 ? sig : null;
+  if (!live || !root || typeof root.querySelector !== 'function' || typeof JellyMotion === 'undefined') { memo.pending.clear(); return; }
+  memo.pending.forEach((status, key) => {
+    const cell = root.querySelector('.b4-m[data-key="' + key + '"]');
+    if (!cell || !cell.dataset || cell.dataset.status !== status) return;
+    memo.pending.delete(key);
+    const tag = cell.querySelector('.b4-h .gr-tag');
+    if (tag) JellyMotion.play(tag, 'snap', (x) => ({ transform: 'scale(' + (0.6 + 0.4 * x) + ')' }), { calm: false });
+    const won = cell.querySelector('.b4-won');
+    if (won) JellyMotion.play(won, 'press', (x) => ({ transform: 'scale(' + (0.82 + 0.18 * x) + ')' }), { calm: false });
   });
 }
 

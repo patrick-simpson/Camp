@@ -511,7 +511,8 @@ function blockedByOwnTeam(...teamIds) {
 
 // The standard explanation, shown wherever the guard takes controls away.
 function ownTeamNoteHTML(what) {
-  return `<p class="own-team-note">🛡️ You're on ${teamEmoji(memberTeamId)} <strong>${esc(teamName(memberTeamId))}</strong>, so ${esc(what)} is read-only for you. Another editor records it.</p>`;
+  const mark = typeof bracketMarkHtml === 'function' ? bracketMarkHtml(memberTeamId, 20) : teamEmoji(memberTeamId);
+  return `<p class="own-team-note"><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span>You're on ${mark} <strong>${esc(teamName(memberTeamId))}</strong>, so ${esc(what)} is read-only for you. Another director records it.</span></p>`;
 }
 
 // The member list is keyed by a person's SIGN-IN IDENTITY: their email (for
@@ -1749,15 +1750,33 @@ function nowBracket4(ctx, g) {
   const hold = !!v.recheck;
   const tbd = { third: ['Semifinal 1 loser', 'Semifinal 2 loser'], final: ['Semifinal 1 winner', 'Semifinal 2 winner'] };
   const live = hold ? undefined : FOUR_ORDER.find((k) => !m[k].winner);
+  // While a result is being checked the picture must never show an impossible chain (Semifinal 1 "Blue won" beside a final
+  // that Blue also plays): the questioned match says Checking and shows no winner, and the side of the 3rd place match and the
+  // final that comes from it is the dashed "Semifinal 1 winner / loser" again, as it was before that semifinal was played.
+  const checking = hold ? (v.recheck.semi || v.recheck.match) : '';
+  const fromSemi = (k, j) => (k === 'third' || k === 'final' ? (j === 0 ? 's1' : 's2') : '');
   const cells = FOUR_ORDER.map((k) => {
     const c = m[k];
+    const isCheck = k === checking;
+    const other = (j) => {
+      // The side that comes from the semifinal nobody questions keeps its team (its winner for the final, its loser for 3rd place).
+      const s = m[fromSemi(k, j)];
+      if (!s || !s.winner) return '';
+      return k === 'final' ? s.winner : (s.winner === s.a ? s.b : s.a);
+    };
+    const settled = hold && v.recheck.semi && (k === 'third' || k === 'final');
     return {
       key: 'b4-' + k, slot: k, name: FOUR_NAMES[k],
-      status: c.winner ? 'done' : k === live ? 'live' : 'todo', next: !!live && FOUR_ORDER[FOUR_ORDER.indexOf(live) + 1] === k,
-      teams: [c.a, c.b].map((id, j) => ({
-        team: id, name: id ? teamName(id) : '', tbd: id ? '' : (tbd[k] ? tbd[k][j] : 'To be decided'),
-        won: !!id && c.winner === id, lost: !!id && !!c.winner && c.winner !== id, mine: !!id && id === ctx.myTeam,
-      })),
+      status: isCheck ? 'check' : settled ? 'todo' : c.winner ? 'done' : k === live ? 'live' : 'todo',
+      next: !!live && FOUR_ORDER[FOUR_ORDER.indexOf(live) + 1] === k,
+      teams: [0, 1].map((j) => {
+        const id = settled ? (fromSemi(k, j) === v.recheck.semi ? '' : other(j)) : [c.a, c.b][j];
+        const shown = !isCheck && !settled;
+        return {
+          team: id, name: id ? teamName(id) : '', tbd: id ? '' : (tbd[k] ? tbd[k][j] : 'To be decided'),
+          won: shown && !!id && c.winner === id, lost: shown && !!id && !!c.winner && c.winner !== id, mine: !!id && id === ctx.myTeam,
+        };
+      }),
     };
   });
   // The line for MY team, from the bracket's own order (never "the last game today": the block can hold other games).
@@ -2282,6 +2301,8 @@ function nowBlockCard(ctx, blocks, nb, held) {
   const rain = kind === 'night' || kind === 'over' ? null : upcomingRain(ctx.minutes, ctx.date);
   if (rain) card.notes.push({ kind: 'rain', text: rain.precip + '% chance of rain ' + rain.when });
   if (kind === 'games' && body.bracket4 && body.bracket4.note) card.notes.push(Object.assign({ kind: 'team' }, body.bracket4.note));
+  // A result being checked: said in the slot the team's line sits in, so the cells are never left to explain themselves.
+  else if (kind === 'games' && body.bracket4 && body.bracket4.hold) card.notes.push({ kind: 'hold', text: FOUR_HOLD_NOTE });
   if (kind === 'meal') {
     body.duty.forEach((d) => card.notes.push({ kind: 'team', team: d.team, mine: d.mine, lead: d.mine ? 'Your team' : teamName(d.team), rest: (d.mine ? ' is' : '') + ' on cleanup after ' + nb.meal.toLowerCase() }));
   }
@@ -8189,14 +8210,22 @@ function matchupText(g, stage, aId, bId) {
   return `${g.name} ${stage}: ${withC(aId)} vs ${withC(bId)} — head to ${g.location}!`;
 }
 
+// A team's mark where a bracket shows a match (the call-up, the live board, the own-team note): the flag with its shape, or the
+// emoji tile, from teamMarkHtml (§8.4: colour alone — senior's 🔴 🔵 🟢 🟡 circles — fails red vs gold under deuteranopia). A
+// team whose mark is an IMAGE (junior's shields) keeps its emoji here: the six-team wizard rebuilds these views on every render,
+// and an <img> re-created twice a minute blinks. Its emoji is a mascot with a shape of its own, never a bare colour.
+function bracketMarkHtml(id, size) {
+  return teamMarkSpec(id).kind === 'shield' ? `<span class="bk-emoji" aria-hidden="true">${teamEmoji(id)}</span>` : teamMarkHtml(id, { size });
+}
+
 function matchupCalloutHTML(aId, bId) {
   const counselors = [counselorName(aId), counselorName(bId)].filter(Boolean);
   return `<div class="matchup-callout">
-    <p class="call-next-label">Call up next:</p>
+    <p class="call-next-label">Call up next</p>
     <div class="matchup-mascots" aria-hidden="true">
-      <span class="matchup-mascot">${teamEmoji(aId)}</span>
-      <span class="matchup-vs-emoji">⚔️</span>
-      <span class="matchup-mascot">${teamEmoji(bId)}</span>
+      <span class="matchup-mascot">${bracketMarkHtml(aId, 52)}</span>
+      <span class="matchup-vs-emoji">vs</span>
+      <span class="matchup-mascot">${bracketMarkHtml(bId, 52)}</span>
     </div>
     <p class="call-next-teams">${esc(teamName(aId))} <span class="vs">vs</span> ${esc(teamName(bId))}</p>
     ${counselors.length === 2 ? `<p class="call-next-counselors">Counselors: ${esc(counselors[0])} &amp; ${esc(counselors[1])}</p>` : ''}
@@ -8204,7 +8233,7 @@ function matchupCalloutHTML(aId, bId) {
       <jelly-button class="winner-btn" variant="azure" block data-winner="${aId}">${esc(teamName(aId))} won</jelly-button>
       <jelly-button class="winner-btn" variant="azure" block data-winner="${bId}">${esc(teamName(bId))} won</jelly-button>
     </div>`}
-    <jelly-button class="copy-matchup-btn" variant="platinum" block>📋 Copy matchup for text</jelly-button>
+    <jelly-button class="copy-matchup-btn" variant="platinum" block><svg class="ico" aria-hidden="true"><use href="#i-copy"/></svg>Copy matchup for text</jelly-button>
   </div>`;
 }
 
@@ -9534,7 +9563,12 @@ function gamesNextAfter(gid, opts) {
 function gamesDock(gid, opts) {
   const g = gameById(gid);
   if (!g || !canEdit()) return null;
-  if (!(state.results && state.results[g.id])) return gameIsPodium(g) ? { tone: 'pick', save: gamesPodium(g).save } : null;
+  if (!(state.results && state.results[g.id])) {
+    if (gameIsPodium(g)) return { tone: 'pick', save: gamesPodium(g).save };
+    // A four-team bracket whose four matches all agree saves from the same gold dock button as a podium (its Save was a pill in
+    // the middle of the page, the one tap of the flow that looked like nothing else in the app).
+    return fourReadyToSave(g) ? { tone: 'four' } : null;
+  }
   const n = gamesNextAfter(gid, opts);
   const when = n.isToday || !n.day ? 'today' : 'on ' + n.day.name;
   const to = shellGameBackLabel(g);
@@ -10116,9 +10150,11 @@ function renderLiveWatch(container, g) {
   }
 }
 
-// The same for a four-team bracket (senior): the match under way on the big board, who plays next, the four cells in order of play
-// (Now's own card, so a counselor reads one picture of it everywhere) and, for the team this phone follows, what it plays next.
-// Display only, and built from fourRead, so nothing a stray database value says reaches the markup as anything but a team of this camp.
+// The same for a four-team bracket (senior), in the order a counselor reads it (mockup 13): the followed team's line first (what it
+// plays next, the answer), then the match under way on the big board, who plays after it, and the four cells in order of play (Now's
+// own card, so a counselor reads one picture of it everywhere). While a result is being checked, the line says so in place of the
+// team's. Display only, and built from fourRead, so nothing a stray database value says reaches the markup as anything but a team
+// of this camp. No tinted box around it (the cells are a well of their own) and nothing centred but the board.
 function renderLiveWatchFour(container, g) {
   const b4 = nowBracket4({ myTeam: nowMyTeam() }, g);
   if (!b4) {
@@ -10129,19 +10165,23 @@ function renderLiveWatchFour(container, g) {
   }
   const f = fourLive(g);
   const grid = typeof nowBracket4Html === 'function' ? `<div class="gv-b4">${nowBracket4Html(b4)}</div>` : '';
-  const note = b4.note
-    ? `<p class="gv-b4-note" data-team="${esc(b4.note.team)}">${typeof nowMark === 'function' ? nowMark(b4.note.team, 22) : ''}<span><b>${esc(b4.note.lead)}</b>${esc(b4.note.rest)}</span></p>` : '';
-  let head;
-  if (f) head = `<p class="live-watch-label">Live now · ${esc(FOUR_NAMES[f.key])}</p>`;
-  else head = `<p class="live-watch-label">${b4.hold ? 'A director is double-checking a result.' : 'All four matches are played. A director saves the result next.'}</p>`;
+  const clock = (text) => `<p class="nw-note gv-b4-hold"><svg class="ico" aria-hidden="true"><use href="#i-clock"/></svg><span>${esc(text)}</span></p>`;
+  let line = '';
+  if (b4.hold) line = clock(FOUR_HOLD_NOTE);
+  else if (b4.note) line = `<p class="gv-b4-note" data-team="${esc(b4.note.team)}">${typeof nowMark === 'function' ? nowMark(b4.note.team, 22) : ''}<span><b>${esc(b4.note.lead)}</b>${esc(b4.note.rest)}</span></p>`;
+  if (!f && !b4.hold) line += clock('All four matches are played. A director saves the result next.');
+  const head = f ? `<p class="live-watch-label">Live now · ${esc(FOUR_NAMES[f.key])}</p>` : '';
   const board = f ? liveBoardHTML(g, f.pair[0], f.pair[1]) : '';
   const onDeck = f && f.next
-    ? `<p class="live-watch-ondeck">Up next: ${teamEmoji(f.next[0])} ${esc(teamName(f.next[0]))} vs ${teamEmoji(f.next[1])} ${esc(teamName(f.next[1]))}</p>` : '';
-  setLiveHtmlIfChanged(container, `<div class="live-watch live-watch-four">${head}${board}${onDeck}${note}${grid}` +
-    '<p class="muted live-watch-note">Updates automatically as the ref scores — no refresh needed.</p></div>', [g]);
+    ? `<p class="live-watch-ondeck">Up next: ${fourTeamHtml(f.next[0])} <span class="four-vs">vs</span> ${fourTeamHtml(f.next[1])}</p>` : '';
+  setLiveHtmlIfChanged(container, `<div class="live-watch-four">${line}${head}${board}${onDeck}${grid}</div>`, [g]);
   // Every render, written or not: it diffs the score against the last one.
   const boardEl = container.querySelector('.big-board');
   if (f && boardEl && g.liveTracker) boardDiffCelebrate(boardEl, g, getLiveMatch(g, f.pair[0], f.pair[1]), f.pair);
+  // A cell that changed under the counselor's eyes pops its tag (the same motion as Now's card).
+  const memo = container.__b4Gid === g.id && container.__b4Memo ? container.__b4Memo : (container.__b4Memo = { sig: null, pending: new Map() });
+  container.__b4Gid = g.id;
+  if (typeof nowB4Motion === 'function') nowB4Motion(container, b4, memo, typeof shellTakeoverOpen === 'function' ? shellTakeoverOpen() : true);
 }
 
 // The "+7 pts" chip beside a medal. The winner stays visible to everyone; what
@@ -10266,7 +10306,7 @@ function renderTally(container, g) {
         return `
         <div class="score-input-row ${steps && !locked ? 'with-counter' : ''}${locked ? ' score-row-locked' : ''}">
           <div class="score-row-top">
-            <span class="score-team"><span class="chip-emoji">${teamEmoji(t.id)}</span> ${esc(t.name)}<span class="chip-sub">${locked ? 'your team — another editor scores this' : esc(counselorName(t.id))}</span></span>
+            <span class="score-team"><span class="chip-emoji">${teamEmoji(t.id)}</span> ${esc(t.name)}<span class="chip-sub">${locked ? 'your team — another director scores this' : esc(counselorName(t.id))}</span></span>
             <input type="text" inputmode="${g.timeInput ? 'numeric' : 'decimal'}" placeholder="${g.timeInput ? 'm:ss' : '0'}"
               data-team-id="${esc(t.id)}" value="${esc(draft.scores[t.id] || '')}" ${locked ? 'readonly disabled' : ''} />
           </div>
@@ -10673,6 +10713,8 @@ function cancelBracket(g, kind) {
 const FOUR_ORDER = ['s1', 's2', 'third', 'final'];
 // What each match is called on every screen (the step bar, the Now card's four cells, a live row's line, a toast).
 const FOUR_NAMES = { s1: 'Semifinal 1', s2: 'Semifinal 2', third: '3rd place', final: 'Final' };
+// The one line everybody but the deciding director reads while a result is being checked (Now's card and the game view).
+const FOUR_HOLD_NOTE = 'A director is double-checking a result. The bracket carries on soon.';
 
 // How many teams a tournament can be played with: six (the wizard, `brackets`), four (`brackets4`), or neither.
 function bracketKindFor(n) { return n === 6 ? 'six' : n === 4 ? 'four' : null; }
@@ -10899,6 +10941,14 @@ function fourPath(b, ids) {
 function fourBracketOf(g) {
   const b = g && state.brackets4 ? state.brackets4[g.id] : null;
   return b && typeof b === 'object' && !Array.isArray(b) ? b : null;
+}
+
+// Is this game's four-team bracket finished and consistent, so its result can be saved (the summary screen)? Never for a game whose
+// result is saved, or a camp that plays the six-team wizard.
+function fourReadyToSave(g) {
+  if (!g || g.format !== 'tournament' || (state.results && state.results[g.id]) || bracketKindFor(teamIds().length) !== 'four') return false;
+  const b = fourBracketOf(g);
+  return !!b && fourPhase(b, teamIds()) === 'summary';
 }
 
 // The semifinals the Start card offers: { mode, pairs } — pairs null for a free pick, and for "by the standings" on a screen with no
@@ -11626,7 +11676,7 @@ function liveTrackerHTML(g, aId, bId, viewer) {
 
   const col = (id) => `
     <div class="board-col" data-board-col="${esc(id)}"${teamAccentAttr(id)}>
-      <span class="board-emoji">${teamEmoji(id)}</span>
+      <span class="board-emoji">${bracketMarkHtml(id, viewer ? 52 : 40)}</span>
       <span class="board-name">${esc(teamName(id))}</span>
       <span class="board-score" data-hr-team="${esc(id)}">${l.hr[id] || 0}</span>
       ${viewer ? '' : `<div class="board-stepper">
@@ -11709,7 +11759,7 @@ function liveBoardHTML(g, aId, bId) {
   }
   const col = (id, score) => `
     <div class="board-col"${teamAccentAttr(id)}>
-      <span class="board-emoji">${teamEmoji(id)}</span>
+      <span class="board-emoji">${bracketMarkHtml(id, 52)}</span>
       <span class="board-name">${esc(teamName(id))}</span>
       ${score != null ? `<span class="board-score">${score}</span>` : ''}
     </div>`;
@@ -11910,7 +11960,7 @@ function bindLadderMatch(container, g, aId, bId) {
 function liveMatchWatchHTML(g, aId, bId) {
   return `<div class="live-watch">
     ${liveBoardHTML(g, aId, bId)}
-    <p class="muted live-watch-note">Updates automatically as another editor scores — no refresh needed.</p>
+    <p class="muted live-watch-note">Updates by itself as another director scores.</p>
   </div>`;
 }
 
@@ -12089,7 +12139,8 @@ function renderBracketRound1Fixed(body, g, b, preset) {
   }
 
   if (b.matches.length > 0) {
-    html += `<div class="completed-matches"><button id="undo-match-btn" class="link-btn">Undo last match</button></div>`;
+    // Named for the match it takes back, in the same place and look as every bracket's Undo (the four-team one too).
+    html += `<div class="completed-matches"><button id="undo-match-btn" class="link-btn"><svg class="ico" aria-hidden="true"><use href="#i-undo"/></svg>Undo Round 1, match ${b.matches.length}</button></div>`;
   }
 
   body.innerHTML = html;
@@ -12154,7 +12205,7 @@ function renderBracketBye(body, g, b) {
         return `<button class="team-chip tiebreak-chip ${sug ? 'suggested-chip' : ''}" data-team-id="${id}">${sug ? '⭐ ' : ''}${esc(teamName(id))}${sub}</button>`;
       }).join('')}
     </div>
-    <button id="undo-to-round1-btn" class="link-btn">← Back to Round 1</button>
+    <button id="undo-to-round1-btn" class="link-btn"><svg class="ico" aria-hidden="true"><use href="#i-chev-l"/></svg>Back to Round 1</button>
   `;
 
   body.querySelectorAll('.tiebreak-chip').forEach((btn) => {
@@ -12180,7 +12231,7 @@ function renderBracketBye(body, g, b) {
 // "Undo" under a six-team step that has a result to take back. Offered only to a director who may score the match it takes back
 // (canScoreRound: a director on a team in it leaves that to another), as the four-team bracket's Undo last match.
 function sixUndoHtml(id, label, teams) {
-  return teams && canScoreRound(...teams) ? `<p class="completed-matches"><button type="button" id="${id}" class="link-btn">${label}</button></p>` : '';
+  return teams && canScoreRound(...teams) ? `<p class="completed-matches"><button type="button" id="${id}" class="link-btn"><svg class="ico" aria-hidden="true"><use href="#i-undo"/></svg>${esc(label)}</button></p>` : '';
 }
 
 function renderBracketSemifinal(body, g, b) {
@@ -12189,7 +12240,7 @@ function renderBracketSemifinal(body, g, b) {
     <p class="bye-note">🎟️ <strong>${esc(teamName(b.byeTeamId))}</strong> has the bye — straight to the Final.</p>
     ${matchupCalloutHTML(b.semifinal.a, b.semifinal.b)}
     ${matchTrackerHTML(g, b.semifinal.a, b.semifinal.b)}
-    <p class="completed-matches"><button type="button" id="undo-bye-btn" class="link-btn">← Back to the bye</button></p>
+    <p class="completed-matches"><button type="button" id="undo-bye-btn" class="link-btn"><svg class="ico" aria-hidden="true"><use href="#i-chev-l"/></svg>Back to the bye</button></p>
   `;
 
   bindMatchupCopy(body, g, 'Championship game', b.semifinal.a, b.semifinal.b);
@@ -12222,7 +12273,7 @@ function renderBracketChampionship(body, g, b) {
     <p class="bronze-note">🥉 <strong>${esc(teamName(b.semifinal.loser))}</strong> takes the bronze medal${standingsVisible() ? ` (+${MEDAL_POINTS.bronze * mult} pts)` : ''}.</p>
     ${matchupCalloutHTML(b.championship.a, b.championship.b)}
     ${matchTrackerHTML(g, b.championship.a, b.championship.b)}
-    ${sixUndoHtml('undo-semifinal-btn', '← Undo the championship game result', [b.semifinal.a, b.semifinal.b])}
+    ${sixUndoHtml('undo-semifinal-btn', 'Undo the championship game', [b.semifinal.a, b.semifinal.b])}
   `;
 
   bindMatchupCopy(body, g, 'Final', b.championship.a, b.championship.b);
@@ -12267,8 +12318,8 @@ function renderBracketSummary(body, g, b) {
       <div class="medal-row bronze-row">🥉 ${teamEmoji(bronzeId)} <strong>${esc(teamName(bronzeId))}</strong>${medalWorthChip(MEDAL_POINTS.bronze * mult)}</div>
     </div>
     <p class="muted">Eliminated in Round 1: ${eliminated.map((id) => esc(teamName(id))).join(', ')}</p>
-    <jelly-button id="save-bracket-btn" class="primary-btn" block>Save Result</jelly-button>
-    ${sixUndoHtml('undo-final-btn', '← Undo the final result', [b.championship.a, b.championship.b])}
+    <jelly-button id="save-bracket-btn" class="primary-btn" block>Save result</jelly-button>
+    ${sixUndoHtml('undo-final-btn', 'Undo the final', [b.championship.a, b.championship.b])}
   `;
 
   document.getElementById('save-bracket-btn').addEventListener('click', () => {
@@ -12312,141 +12363,150 @@ function fourPickTap(order, tid, ids) {
   return free.length === 2 && ids.length === 4 ? next.concat(free) : next;
 }
 
-function fourPairText(a, b) {
-  return `<span class="mo-teams">${teamEmoji(a)} ${esc(teamName(a))} <span class="mo-vs">vs</span> ${teamEmoji(b)} ${esc(teamName(b))}</span>`;
+// A team as the four-team screens show it: its mark (the flag with its shape, §8.4 — never the colour-only circle emoji, which
+// fails red vs gold under deuteranopia) and its name. These screens rebuild only when their markup changes (setLiveHtmlIfChanged).
+function fourTeamHtml(id, size) {
+  return `<span class="four-team">${teamMarkHtml(id, { size: size || 22 })}<span class="four-team-nm">${esc(teamName(id))}</span></span>`;
 }
 
+// The two semifinals as one hairline list: "Semifinal 1" over its two teams.
 function fourPairsListHtml(label, pairs) {
-  return `<div class="matchup-order">
-    <p class="matchup-order-label">${esc(label)}</p>
-    <ol class="matchup-order-list">${pairs.map((p) => `<li class="matchup-order-item">${fourPairText(p[0], p[1])}</li>`).join('')}</ol>
-  </div>`;
+  return `<p class="four-label">${esc(label)}</p>
+    <ol class="four-pairs">${pairs.map((p, i) => `<li class="four-pair"><span class="four-pair-k">Semifinal ${i + 1}</span>` +
+      `<span class="four-pair-t">${fourTeamHtml(p[0])}<span class="four-vs">vs</span>${fourTeamHtml(p[1])}</span></li>`).join('')}</ol>`;
 }
 
-// No bracket yet: the three ways a game's Matchups setting starts one.
+// No bracket yet: the three ways a game's Matchups setting starts one. One meta line says how it runs (§8.8: no paragraph above
+// the content); the main action is the one blue Start.
 function fourStartHtml(g) {
   const ids = teamIds();
   const plan = fourSeedPlan(g);
   const choosing = fourUi.gid === g.id && fourUi.choosing;
-  const intro = '<p class="muted">Two semifinals, then the 3rd-place match, then the Final. The two winners play for gold; the two losers play for the bronze.</p>';
+  const head = '<h3 class="four-h">Run the bracket</h3><p class="four-meta">Two semifinals, then the 3rd place match and the final.</p>';
   if (plan.mode === 'fixed' && plan.pairs) {
-    return `<h3>Run the bracket</h3>${intro}${fourPairsListHtml('The semifinals for this game', plan.pairs)}
-      <jelly-button class="primary-btn" block data-four="start-plan">Start the bracket</jelly-button>`;
+    return `${head}${fourPairsListHtml('The semifinals for this game', plan.pairs)}
+      <jelly-button class="primary-btn four-go" block data-four="start-plan">Start the bracket</jelly-button>`;
   }
   if (plan.mode === 'standings' && plan.pairs && !choosing) {
-    return `<h3>Run the bracket</h3>${intro}${fourPairsListHtml('Suggested by the points right now', plan.pairs)}
-      <jelly-button class="primary-btn" block data-four="start-plan">Start with these</jelly-button>
+    return `${head}${fourPairsListHtml('Suggested by the points right now', plan.pairs)}
+      <jelly-button class="primary-btn four-go" block data-four="start-plan">Start with these</jelly-button>
       <p class="four-alt"><button type="button" class="link-btn" data-four="choose">Choose different</button></p>`;
   }
   // A pick (the game's own setting, or Choose different, or "by the standings" on a phone with no confirmed points to judge by).
   const order = fourUi.gid === g.id ? fourUi.order.filter((t) => ids.indexOf(t) !== -1) : [];
   const pairs = fourPairsValid([order.slice(0, 2), order.slice(2, 4)], ids) ? [order.slice(0, 2), order.slice(2, 4)] : null;
   const why = plan.mode === 'standings' && !plan.pairs
-    ? '<p class="muted">The points that suggest the pairs show once your sign-in is confirmed. Pick them yourself for now.</p>' : '';
-  const slot = (i) => (order[i] ? `${teamEmoji(order[i])} ${esc(teamName(order[i]))}` : '<span class="four-open">Pick a team</span>');
+    ? '<p class="four-meta">The points that suggest the pairs show once your sign-in is confirmed. Pick them yourself for now.</p>' : '';
+  const slot = (i) => (order[i] ? fourTeamHtml(order[i]) : '<span class="four-open"><i class="b4-tbd" aria-hidden="true"></i>Pick a team</span>');
+  // A placed team carries its semifinal's number in an ink disc (the words are there for a screen reader), so the teams you
+  // tapped and the two filled in for you read as two pairs, not four look-alike chips.
   const chips = ids.map((id) => {
     const at = order.indexOf(id);
-    return `<button type="button" class="team-chip ${at !== -1 ? 'selected' : ''}" data-four="pick" data-team="${esc(id)}" aria-pressed="${at !== -1 ? 'true' : 'false'}">${teamEmoji(id)} ${esc(teamName(id))}<span class="chip-sub">${at === -1 ? esc(counselorName(id)) : 'Semifinal ' + (at < 2 ? 1 : 2)}</span></button>`;
+    const semi = at < 2 ? 1 : 2;
+    return `<button type="button" class="team-chip four-chip ${at !== -1 ? 'selected' : ''}" data-four="pick" data-team="${esc(id)}" aria-pressed="${at !== -1 ? 'true' : 'false'}">` +
+      `${at !== -1 ? `<i class="four-disc" aria-hidden="true">${semi}</i>` : ''}${fourTeamHtml(id)}` +
+      `${at === -1 ? (counselorName(id) ? `<span class="chip-sub">${esc(counselorName(id))}</span>` : '') : `<span class="visually-hidden">Semifinal ${semi}</span>`}</button>`;
   }).join('');
-  return `<h3>Run the bracket</h3>${intro}${why}
-    <p class="muted">Tap the two teams that play Semifinal 1. The other two play Semifinal 2.</p>
+  return `${head}${why}
+    <p class="four-label">Tap the two teams that play Semifinal 1. The other two play Semifinal 2.</p>
     <div class="four-pick">
       <div class="team-chip-grid">${chips}</div>
-      <div class="matchup-order"><ol class="matchup-order-list">
-        <li class="matchup-order-item"><span class="mo-teams">${slot(0)} <span class="mo-vs">vs</span> ${slot(1)}</span></li>
-        <li class="matchup-order-item"><span class="mo-teams">${slot(2)} <span class="mo-vs">vs</span> ${slot(3)}</span></li>
-      </ol></div>
+      <ol class="four-pairs">
+        <li class="four-pair"><span class="four-pair-k">Semifinal 1</span><span class="four-pair-t">${slot(0)}<span class="four-vs">vs</span>${slot(1)}</span></li>
+        <li class="four-pair"><span class="four-pair-k">Semifinal 2</span><span class="four-pair-t">${slot(2)}<span class="four-vs">vs</span>${slot(3)}</span></li>
+      </ol>
     </div>
-    ${pairs ? '<jelly-button class="primary-btn" block data-four="start-pick">Start the bracket</jelly-button>' : ''}
+    ${pairs ? '<jelly-button class="primary-btn four-go" block data-four="start-pick">Start the bracket</jelly-button>' : ''}
     ${plan.pairs ? '<p class="four-alt"><button type="button" class="link-btn" data-four="unchoose">Back to the suggestion</button></p>' : ''}`;
 }
 
-// The step bar: where the bracket is, in the order of play.
+// Where the bracket is: one sentence-case line ("Step 2 of 5 · Semifinal 2"), never a row of pills that wraps to four lines at
+// large text (the map under the match shows the whole bracket). Nothing during a re-check: its card says what is going on.
 function fourStepsHtml(v, phase) {
-  const labels = [['s1', FOUR_NAMES.s1], ['s2', FOUR_NAMES.s2], ['third', FOUR_NAMES.third], ['final', FOUR_NAMES.final], ['summary', 'Results']];
-  return `<div class="bracket-steps" role="group" aria-label="Bracket steps">${labels.map(([k, label], i) => {
-    const on = k === phase;
-    const done = !on && k !== 'summary' && !!v.m[k].winner;
-    return `<span class="wizard-step ${on ? 'active' : done ? 'done' : ''}"${on ? ' aria-current="step"' : ''}>${esc(label)}</span>${i < 4 ? '<span class="wizard-step-arrow" aria-hidden="true">→</span>' : ''}`;
-  }).join('')}</div>`;
+  const labels = [['s1', FOUR_NAMES.s1], ['s2', FOUR_NAMES.s2], ['third', '3rd place match'], ['final', 'Final'], ['summary', 'Results']];
+  const i = labels.findIndex(([k]) => k === phase);
+  if (i === -1) return '';
+  return `<p class="four-steps" data-four-step="${esc(phase)}">Step ${i + 1} of ${labels.length} · <span class="wizard-step active" aria-current="step">${esc(labels[i][1])}</span></p>`;
 }
 
-// The matches played so far, in order of play, as the six-team wizard's "Completed" list.
-function fourCompletedHtml(v) {
-  const rows = FOUR_ORDER.filter((k) => v.m[k].winner).map((k) => {
-    const c = v.m[k];
-    const loser = c.winner === c.a ? c.b : c.a;
-    return `<li>${esc(FOUR_NAMES[k])}: ${esc(teamName(c.winner))} def. ${esc(teamName(loser))}</li>`;
-  });
-  return rows.length ? `<div class="completed-matches"><p class="muted">Completed:</p><ul>${rows.join('')}</ul></div>` : '';
+// The bracket so far as Now's own 2×2 picture (the same cells a counselor reads), with the match under way outlined: the map of
+// the whole bracket under whatever the director is doing now.
+function fourMapHtml(g) {
+  if (typeof nowBracket4Html !== 'function') return '';
+  const b4 = nowBracket4({ myTeam: nowMyTeam() }, g);
+  return b4 ? `<div class="gv-b4 four-map"><p class="four-label">The bracket</p>${nowBracket4Html(b4)}</div>` : '';
 }
 
-// "Undo last match": only the last match in play order, and only for a director who may score it (canScoreRound).
+// Undo, named for the match it takes back ("Undo Semifinal 2", "Undo the final"): only the last match in play order, and only for
+// a director who may score it (canScoreRound). The six-team wizard's Undo links sit in the same place and look.
+const FOUR_UNDO_WORDS = { s1: 'Undo Semifinal 1', s2: 'Undo Semifinal 2', third: 'Undo the 3rd place match', final: 'Undo the final' };
 function fourUndoHtml(v) {
   const last = FOUR_ORDER.slice().reverse().find((k) => v.m[k].recorded);
   if (!last || !canScoreRound(v.m[last].a, v.m[last].b)) return '';
-  return '<p class="four-alt"><button type="button" class="link-btn" data-four="undo">Undo last match</button></p>';
+  return `<p class="four-undo"><button type="button" class="link-btn" data-four="undo"><svg class="ico" aria-hidden="true"><use href="#i-undo"/></svg>${esc(FOUR_UNDO_WORDS[last])}</button></p>`;
 }
 
 // A recorded match disagrees with the semifinals it was played on (two phones recorded different winners, or a semifinal was
-// changed after the 3rd-place match): nothing more is recorded and no medal paid until a director answers.
+// changed after the 3rd place match): nothing more is recorded and no medal paid until a director answers. Two equal buttons (a
+// real choice, neither the "main" one), each saying what it does to the rest of the bracket INSIDE it, so a consequence can never
+// be read as the next button's.
 function fourRecheckHtml(v) {
   const r = v.recheck;
   const nm = (id) => `<b>${esc(teamName(id))}</b>`;
+  const played = ['third', 'final'].filter((k) => v.m[k].recorded);
+  const playedWords = played.map((k) => (k === 'third' ? 'the 3rd place match' : 'the final')).join(' and ');
+  const Played = playedWords ? playedWords.charAt(0).toUpperCase() + playedWords.slice(1) : 'The later matches';
+  const was = played.length > 1 ? 'were' : 'was';
   const what = r.semi
-    ? `${esc(FOUR_NAMES[r.semi])} now says ${r.now ? nm(r.now) + ' won' : 'nobody won'}, but the matches played after it were played with ${r.was ? nm(r.was) : 'a different team'} as its winner.`
-    : `The ${esc(FOUR_NAMES[r.match].toLowerCase())} result doesn’t fit the semifinals it was played on.`;
-  const keep = r.semi && r.now ? `Keep ${esc(teamName(r.now))} as the winner` : 'Play the later matches again';
+    ? `${esc(FOUR_NAMES[r.semi])} now says ${r.now ? nm(r.now) + ' won' : 'nobody won'}. ${esc(Played)} ${was} played as if ${r.was ? nm(r.was) : 'a different team'} had won it.`
+    : `The ${esc(r.match === 'third' ? '3rd place match' : 'final')} result doesn’t fit the semifinals it was played on.`;
+  const keepT = r.semi && r.now ? `Keep ${esc(teamName(r.now))} as the winner` : 'Play the later matches again';
+  const keepS = `${esc(Played)} ${played.length > 1 ? 'are' : 'is'} played again`;
   return `<div class="four-recheck" role="alert">
     <h3 data-four-h tabindex="-1">Please check a result</h3>
     <p>${what}</p>
-    <p class="muted">Another director may have changed it. Choose which one is right.</p>
-    <jelly-button class="primary-btn" block data-four="keep">${keep}</jelly-button>
-    <p class="muted four-sub">The matches played after it are thrown out, and you play them again.</p>
-    ${r.semi && r.was ? `<jelly-button class="secondary-btn four-back" block data-four="back">Put ${esc(teamName(r.was))} back as the winner</jelly-button>
-    <p class="muted four-sub">Everything played since stays as it is.</p>` : ''}
+    <p class="four-meta">Another director may have changed it. Which one is right?</p>
+    <div class="four-choices">
+      <button type="button" class="btn btn-block four-choice" data-four="keep"><span class="four-choice-t">${keepT}</span><span class="four-choice-s">${keepS}</span></button>
+      ${r.semi && r.was ? `<button type="button" class="btn btn-block four-choice four-back" data-four="back"><span class="four-choice-t">Put ${esc(teamName(r.was))} back as the winner</span><span class="four-choice-s">Nothing else changes</span></button>` : ''}
+    </div>
   </div>`;
 }
 
-// The match waiting for a winner: its own heading and note, then the callout with the winner buttons and the live tally. The
-// wrapper names the match, so a winner tap says which match the screen showed.
+// The match waiting for a winner: its own heading and one line on what the winner plays next, then the callout with the winner
+// buttons and the live tally. The wrapper names the match, so a winner tap says which match the screen showed.
 function fourMatchHtml(g, v, cur) {
   const mult = g.messtival ? 2 : 1; // match medalCounts()'s weighting
   const pts = (m) => (standingsVisible() ? ` (+${MEDAL_POINTS[m] * mult} pts)` : '');
-  const heads = {
-    s1: ['Semifinal 1', 'The winner plays in the Final. The loser plays for 3rd place.'],
-    s2: ['Semifinal 2', 'The winner plays in the Final. The loser plays for 3rd place.'],
-    third: ['3rd place match', null],
-    final: ['Final', null],
-  };
-  const [title, line] = heads[cur.key];
-  const note = cur.key === 'third' ? `<p class="bronze-note">🥉 The winner takes the bronze medal${pts('bronze')}.</p>`
-    : cur.key === 'final' ? `<p class="bronze-note">🥇 The winner takes gold${pts('gold')}; the other team takes silver${pts('silver')}.</p>`
-    : `<p class="muted">${esc(line)}</p>`;
-  return `<h3 data-four-h tabindex="-1">${esc(title)}</h3>${note}
+  const heads = { s1: 'Semifinal 1', s2: 'Semifinal 2', third: '3rd place match', final: 'Final' };
+  // A medal is a numbered disc (§8.3), never 🥇 / 🥉 used as an icon.
+  const disc = (n) => `<i class="pp-disc" data-place="${n}" aria-hidden="true">${n}</i>`;
+  const note = cur.key === 'third' ? `<p class="four-note">${disc(3)}<span>The winner takes the bronze medal${pts('bronze')}.</span></p>`
+    : cur.key === 'final' ? `<p class="four-note">${disc(1)}<span>The winner takes gold${pts('gold')}. The other team takes silver${pts('silver')}.</span></p>`
+    : '<p class="four-meta">The winner plays in the final. The loser plays for 3rd place.</p>';
+  return `<h3 data-four-h tabindex="-1">${esc(heads[cur.key])}</h3>${note}
     <div data-four-match="${esc(cur.key)}">${matchupCalloutHTML(cur.a, cur.b)}${matchTrackerHTML(g, cur.a, cur.b)}</div>`;
 }
 
+// All four matches agree: the winners as the saved result's own hairline list (medal disc, flag, name, the worth for directors),
+// so the screen does not change its look at the moment of saving. The Save itself is the dock's gold button (renderGameDock:
+// gamesDock's 'four' tone), as a podium game's is.
 function fourSummaryHtml(g, v) {
   const f = v.m.final;
-  const gold = f.winner;
-  const silver = f.winner === f.a ? f.b : f.a;
-  const bronze = v.m.third.winner;
-  const mult = g.messtival ? 2 : 1;
-  return `<h3 data-four-h tabindex="-1">Game results</h3>
-    <div class="medal-summary">
-      <div class="medal-row gold-row">🥇 ${teamEmoji(gold)} <strong>${esc(teamName(gold))}</strong>${medalWorthChip(MEDAL_POINTS.gold * mult)}</div>
-      <div class="medal-row silver-row">🥈 ${teamEmoji(silver)} <strong>${esc(teamName(silver))}</strong>${medalWorthChip(MEDAL_POINTS.silver * mult)}</div>
-      <div class="medal-row bronze-row">🥉 ${teamEmoji(bronze)} <strong>${esc(teamName(bronze))}</strong>${medalWorthChip(MEDAL_POINTS.bronze * mult)}</div>
-    </div>
-    <jelly-button id="save-bracket-btn" class="primary-btn" block data-four="save">Save Result</jelly-button>`;
+  const medals = { gold: f.winner, silver: f.winner === f.a ? f.b : f.a, bronze: v.m.third.winner };
+  const list = typeof gamesResultHtml === 'function'
+    ? gamesResultHtml(Object.assign(gamesResultModel(g, { medals }), { saved: null, scores: null, change: false }))
+    : `<ol class="gres">${PODIUM_MEDALS.map((k, i) => `<li class="gres-r" data-place="${i + 1}">${fourTeamHtml(medals[k], 34)}</li>`).join('')}</ol>`;
+  return `<h3 data-four-h tabindex="-1">Ready to save</h3>
+    <p class="four-meta">Check the winners, then save the result for everyone.</p>${list}`;
 }
 
 // What this build cannot read (a half-written bracket a late tap left behind, a value from a newer build): no controls that write
-// but the director's own way out.
+// but the director's own way out. What to do, in order, without guessing whether a newer version exists.
 function fourUnreadableHtml() {
   return `<h3>Run the bracket</h3>
-    <p class="tie-note">⚠️ This bracket can’t be read here, so nothing on it can change. If a newer version of the app is on its way, reload first; otherwise clear it and start again. <button type="button" class="link-btn" data-four="reload">Reload now</button></p>
+    <p class="four-meta">This bracket can’t be read here, so nothing on it can change. Reload to get the newest version of the app. If it still can’t be read, clear it and start again.</p>
+    <p class="four-alt"><button type="button" class="link-btn" data-four="reload">Reload now</button></p>
     <div class="wizard-footer"><button type="button" class="link-btn danger-link" data-four="clear">Clear this bracket</button></div>`;
 }
 
@@ -12463,7 +12523,7 @@ function fourScreenHtml(g) {
   if (phase === 'recheck') body = fourRecheckHtml(v);
   else if (cur) body = fourMatchHtml(g, v, cur);
   else body = fourSummaryHtml(g, v);
-  return `${fourStepsHtml(v, phase)}<div id="bracket-body">${body}${fourCompletedHtml(v)}${phase === 'recheck' ? '' : fourUndoHtml(v)}</div>
+  return `${fourStepsHtml(v, phase)}<div id="bracket-body" data-four-phase="${esc(phase)}">${body}${phase === 'recheck' ? '' : fourUndoHtml(v)}${fourMapHtml(g)}</div>
     <div class="wizard-footer"><button type="button" class="link-btn danger-link" data-four="cancel">Cancel this bracket</button></div>`;
 }
 
@@ -12472,14 +12532,39 @@ function renderBracketFour(container, g) {
   container.__fourGid = g.id;
   fourWire(container);
   const html = `<div class="four-entry">${fourScreenHtml(g)}</div>`;
+  const raw = fourBracketOf(g);
+  const ids = teamIds();
+  const phase = raw ? fourPhase(raw, ids) : 'start';
   if (!setLiveHtmlIfChanged(container, html, [g])) return;
   // Rebuilt: the live tally and the copy button of the match under way are bound to the new nodes.
-  const raw = fourBracketOf(g);
-  const cur = raw ? fourCurrent(raw, teamIds()) : null;
+  const cur = raw ? fourCurrent(raw, ids) : null;
   if (cur) {
     bindMatchupCopy(container, g, FOUR_NAMES[cur.key], cur.a, cur.b);
     bindMatchTracker(container, g, cur.a, cur.b);
   }
+  fourMotion(container, g, phase);
+}
+
+// The flow moving on (a winner recorded, the next step, an Undo, the Re-check card appearing): the step line's current step
+// snaps in, the new match arrives the way Now's card does (up 14px, landing with its squash), the Re-check card unfolds from its
+// top, and the map's cells that changed pop their tags (nowB4Motion). Only for a change made while the takeover was showing this
+// game (a first paint is a plain write). Calm: the match and the card fade, nothing else moves (no transform keyframe while calm).
+function fourMotion(container, g, phase) {
+  const was = container.__fourPhase;
+  const same = container.__fourMotionGid === g.id;
+  container.__fourPhase = phase;
+  container.__fourMotionGid = g.id;
+  const memo = same && container.__fourB4 ? container.__fourB4 : (container.__fourB4 = { sig: null, pending: new Map() });
+  const b4 = fourBracketOf(g) ? nowBracket4({ myTeam: nowMyTeam() }, g) : null;
+  const live = same && was !== undefined && typeof JellyMotion !== 'undefined' && typeof container.querySelector === 'function';
+  if (typeof nowB4Motion === 'function') nowB4Motion(container, b4, memo, live);
+  if (!live || was === phase) return;
+  const step = container.querySelector('.four-steps .wizard-step');
+  if (step) JellyMotion.play(step, 'snap', (x) => ({ transform: 'scale(' + (0.6 + 0.4 * x) + ')' }), { calm: false });
+  const card = container.querySelector('.four-recheck');
+  const match = container.querySelector('[data-four-match]') || container.querySelector('.gres') || container.querySelector('.four-pairs');
+  if (card && typeof nowUnfold === 'function') nowUnfold(card);
+  else if (match && typeof nowArrive === 'function') nowArrive(match);
 }
 
 function fourWire(container) {

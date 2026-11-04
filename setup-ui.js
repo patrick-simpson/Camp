@@ -1047,7 +1047,8 @@ function setupUiOnEvent(kind) {
 //            place of body + list in the dialog; `body` stays the same words in plain text, which is
 //            what the browser's own confirm shows where Jelly's dialog never loaded
 //   stack    true: one full-width button a line (a list of choices, e.g. the days to copy from)
-//   actions  [{ label, value, kind: 'gold' | 'danger' | 'quiet', cancel: true }] in the order shown. A
+//   actions  [{ label, value, kind: 'gold' | 'danger' | 'quiet', cancel: true, sub }] in the order shown (`sub`: one short
+//            line under the label, inside the button, saying what that choice does). A
 //            verb on every button ("Keep editing", "Discard"), never OK / Cancel. At most one `gold` (THE
 //            main action) or `danger` (destructive: danger text, never a red fill); `quiet` is a plain
 //            link-like line (a way out after a list of choices). The `cancel` action is what Escape,
@@ -1079,8 +1080,9 @@ function askBodyHtml(o) {
 }
 
 function askActionsHtml(actions) {
+  // `sub` (optional) is what the choice does, said INSIDE its own button, so a consequence is never read as the next button's.
   return actions.map((a, i) => '<button type="button" class="' + (a.kind === 'quiet' ? 'btn-quiet' : 'btn') + (a.kind === 'gold' ? ' btn-gold' : a.kind === 'danger' ? ' btn-danger' : '') +
-    '" data-ask-i="' + i + '">' + esc(a.label) + '</button>').join('');
+    (a.sub ? ' ask-sub' : '') + '" data-ask-i="' + i + '">' + (a.sub ? '<span class="ask-sub-t">' + esc(a.label) + '</span><span class="ask-sub-s">' + esc(a.sub) + '</span>' : esc(a.label)) + '</button>').join('');
 }
 
 function askFinish(i, fromClose) {
@@ -7714,11 +7716,20 @@ function renderGamesScreen() {
 // Brackets that need a look, whichever day is open (the hub's Games row says so, and this is where it is put right): a late tap after
 // a result was saved (Discard removes what it left; the result is not touched) and a four-team bracket waiting for a re-check.
 function gmBracketNoteRowHtml(n, kind) {
-  const sub = kind === 'late' ? 'A bracket tap came in after the result was saved. The result is not changed.'
-    : 'Two phones recorded different winners. Open the game on Games to settle it.';
-  return '<div class="cb-row sg-game gl-row-split" data-key="bn-' + kind + '-' + esc(n.id) + '"><span class="cb-main"><span class="cb-title"><span id="sg-bn-' + kind + '-' + esc(n.id) + '">' + esc(n.name) + '</span></span>' +
-    '<span class="cb-sub">' + esc(sub) + '</span></span>' +
-    (kind === 'late' ? '<span class="cb-end"><button type="button" class="btn btn-sm" data-sg-discard="' + esc(n.id) + '" aria-describedby="sg-bn-late-' + esc(n.id) + '">Discard</button></span>' : '') + '</div>';
+  // Named with its day ("Legacy Game · Wednesday"): senior plays one every day, and a name alone does not say which.
+  const g = typeof gameById === 'function' ? gameById(n.id) : null;
+  const day = g && typeof dayById === 'function' ? dayById(g.dayId) : null;
+  const title = esc(n.name) + (day && day.name ? ' · ' + esc(day.name) : '');
+  const id = 'sg-bn-' + kind + '-' + esc(n.id);
+  if (kind === 'late') {
+    return '<div class="cb-row sg-game sg-bn-row" data-key="bn-late-' + esc(n.id) + '"><span class="cb-main"><span class="cb-title"><span id="' + id + '">' + title + '</span></span>' +
+      '<span class="cb-sub">A match was recorded after the result was saved. The result is not changed.</span></span>' +
+      '<span class="cb-end"><button type="button" class="btn btn-sm" data-sg-discard="' + esc(n.id) + '" aria-describedby="' + id + '">Discard</button></span></div>';
+  }
+  // A re-check is settled in the game itself: the whole row opens it (never a sentence telling the director where to go).
+  return '<button type="button" class="cb-row sg-game sg-bn-row" data-key="bn-recheck-' + esc(n.id) + '" data-sg-settle="' + esc(n.id) + '"><span class="cb-main"><span class="cb-title">' + title + '</span>' +
+    '<span class="cb-sub">Two phones recorded different winners. It’s waiting for a director to choose which is right.</span></span>' +
+    '<span class="cb-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span></button>';
 }
 
 function renderGmBracketNotes(editable) {
@@ -7822,6 +7833,7 @@ function wireGamesScreen() {
     const q = (sel) => (e.target.closest ? e.target.closest(sel) : null);
     let b;
     if ((b = q('[data-sg-discard]'))) { const r = typeof discardLateBracket === 'function' ? discardLateBracket(b.dataset.sgDiscard) : null; if (r && r.ok) showToast('Discarded.'); return; }
+    if ((b = q('[data-sg-settle]'))) { gmSettleBracket(b.dataset.sgSettle); return; }
     if ((b = q('[data-sg-place]'))) { if (typeof gmOpenGame === 'function') gmOpenGame(b.dataset.sgPlace, { pane: 'when', opener: b }); }
     else if ((b = q('[data-sg-open]'))) { if (typeof gmOpenGame === 'function') gmOpenGame(b.dataset.sgOpen, { opener: b }); }
     else if ((b = q('[data-sg-add]'))) { if (typeof gmOpenNew === 'function') gmOpenNew({ dk: gmDayKey(), target: b.dataset.sgAdd, opener: b }); }
@@ -8717,6 +8729,13 @@ function gmScoreNow() {
   if (!o || !o.gid || !gameById(o.gid)) return;
   const gid = o.gid;
   shellSheetClose('game');
+  if (builderOpen()) setupCloseBuilder();
+  openGame(gid, { from: state.ui.tab === 'games' ? 'games' : undefined });
+}
+// A bracket waiting for a re-check: the builder closes and the game's takeover opens on its Re-check card (the same way Score now
+// leaves the builder for the game).
+function gmSettleBracket(gid) {
+  if (!canEdit() || !gid || !gameById(gid)) return;
   if (builderOpen()) setupCloseBuilder();
   openGame(gid, { from: state.ui.tab === 'games' ? 'games' : undefined });
 }

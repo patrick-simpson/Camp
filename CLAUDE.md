@@ -850,8 +850,11 @@ strip's one delegated handler, shared with the sheet. Take down is Tell everyone
 
 **Four-team bracket** (synced under `brackets4`; the rules are in "The brackets" below): `nowBracket4` reads it through `fourRead` as four cells (3rd place and the
 final derived until a match records its own `a` / `b`; every id a roster team; null for a bracket this build cannot read, which is not a live game either) and
-words my team's next game ("Red plays in the final next · 3rd place match first"). While a recorded match disagrees with its semifinals (`hold`) no cell is live and
-no team is told what is next. The live row carries the match under way as a board with its tally and the next pair (`nowLiveBoard` → `fourLive`, shared
+words my team's next game ("Red plays in the final next · 3rd place match first"). While a recorded match disagrees with its semifinals (`hold`) no cell is live,
+no team is told what is next, the questioned match's cell says Checking (an ink-outline tag, no winner) and the side of the 3rd place match and the final that
+comes from it is the dashed "Semifinal 1 winner / loser" again (never an impossible chain); the card's note slot says `FOUR_HOLD_NOTE` ("A director is
+double-checking a result. The bracket carries on soon.", `kind: 'hold'`, the clock icon). A cell whose status or winner changed snaps its tag and pops its
+"won" (`nowB4Motion`, now-ui.js: shared by Now, the game view and the director's map; a change waits until the cell is on the page; calm: nothing moves). The live row carries the match under way as a board with its tally and the next pair (`nowLiveBoard` → `fourLive`, shared
 `nowMatchBoard` with the six-team bracket). A director on a team in a match gets the own-team reason in place of Score, per match.
 
 **SECRECY** (the Step 3 rule). A counselor's model holds no point and no place. The director-only fields (`pts`, `locked`, `given`, `secret`, `max`, `mult`,
@@ -5335,21 +5338,36 @@ count). All of this is in app.js ("The six-team bracket's rules", "What both bra
   they fire (`fourEntryTap`; the game and the match are read at tap time, so a screen made before another phone's tap is ignored, said (`FOUR_WHY`) and
   repainted). **Start**: the game's Matchups setting: fixed pairs (one button), "Suggested by the points right now" with Start with these / Choose
   different (a director with confirmed points only: `fourSeedPlan`), or a pick (`fourPickTap`: the first two teams meet in Semifinal 1, the other two fill
-  Semifinal 2). **Started**: the step bar (Semifinal 1 → Semifinal 2 → 3rd place → Final → Results), the match waiting for a winner as the six-team
-  wizard's own `matchupCalloutHTML` + `matchTrackerHTML` (so the own-team guard and the live tally come with it), Completed, Undo last match (not for a
-  match the director's own team played), Cancel this bracket (asked first through `askDialog`). **Re-check** (a recorded match disagrees with its
-  semifinals): nothing can be recorded or saved, the card names what changed and offers both `fourResolve` answers in words ("Keep Blue as the winner" /
-  "Put Gold back as the winner"). **Summary**: the medals and Save Result (`fourSaveResult` → `finishBracket`: the same result record, so `medalCounts`,
-  double points, the Now card and the reveal's freeze read it exactly like any other). A bracket this build cannot read shows only Reload and Clear.
+  Semifinal 2; a placed team's chip carries its semifinal's number in an ink disc). The pairs are one hairline list (`fourPairsListHtml`), a team is its
+  mark + name (`fourTeamHtml`: the flag with its shape, never senior's colour-only circle emoji). **Started**: one sentence-case line, "Step 2 of 5 ·
+  Semifinal 2" (`fourStepsHtml`; none during a re-check), the match waiting for a winner as the six-team wizard's own `matchupCalloutHTML` +
+  `matchTrackerHTML` (so the own-team guard and the live tally come with it), Undo named for the match it takes back ("Undo Semifinal 2", "Undo the final":
+  not for a match the director's own team played; the six-team wizard's Undo links are named and placed the same way), then the bracket so far as Now's own
+  2×2 cells with the match under way outlined (`fourMapHtml`, the map: it replaced the "Completed" bullets), and Cancel this bracket (asked first through
+  `askDialog`). **Re-check** (a recorded match disagrees with its semifinals): nothing can be recorded or saved, the card names what changed and offers both
+  `fourResolve` answers as two EQUAL buttons, each saying inside it what it does to the rest ("Keep Blue Team as the winner · The 3rd place match is played
+  again" / "Put Gold Team back as the winner · Nothing else changes"). **Summary**: "Ready to save" over the saved result's own `.gres` list
+  (`gamesResultHtml`), and the Save is the takeover dock's gold button (`gamesDock` tone `four` while `fourReadyToSave(g)`; games-ui.js
+  `gamesFourSaveTap` → `fourSaveResult` → `finishBracket`: the same result record, so `medalCounts`, double points, the Now card and the reveal's freeze
+  read it exactly like any other). A bracket this build cannot read shows only Reload and Clear. **Motion** (`fourMotion`): on a rebuild whose phase
+  changed while the takeover showed this game, the step snaps, the new match / result list arrives (`nowArrive`), the Re-check card unfolds (`nowUnfold`)
+  and the map's changed cells pop (`nowB4Motion`); the dock's Save comes up from the foot. Calm: fades only.
   **Reopen the final**: a four-team result keeps the finished bracket on it (`results[gid].path`), and Change the result on that game offers Reopen the final
   (`fourReopen`: the result comes off, the bracket is back at the final with every other match as it was, ONE write — `fourReopenBracket` refuses a path
-  that is not a consistent finished bracket) / Start over / Keep it (games-ui.js `gamesChangeResult`). **The hub**: `bracketNotes()` lists a bracket node
+  that is not a consistent finished bracket; the gold main action) / Start over (danger, on its own line) / Keep it (quiet), stacked, each with what it
+  does inside the button (games-ui.js `gamesChangeResult`; `askDialog` actions take an optional `sub`). **The hub**: `bracketNotes()` lists a bracket node
   still under a game whose result is saved (`late`: a phone that had not heard yet recorded a match; every reader ignores it and a new Start replaces it) and
-  a four-team bracket waiting on a re-check; the hub's Games row says so, and the Games screen's "Brackets to look at" (`#sg-sec-bn`) lists them, the late
-  ones with Discard (`discardLateBracket`: the result is untouched).
-- **Spectators** (a counselor, a preview of one): `renderLiveWatchFour` — the match under way on the big board, "Up next" when both teams are known (the
-  3rd-place match is not known while a semifinal is on), the followed team's line, and Now's own four cells (`nowBracket4Html` inside `.gv-b4`, which is
-  its own `nw-card` size container); never a control. `upcomingMatchups` / `findNextMatchupFor` / `gameRoundTeams` read `fourLive`; `gameRowStatus` calls a
+  a four-team bracket waiting on a re-check; the hub's Games row says so, and the Games screen's "Brackets to look at" (`#sg-sec-bn`) lists them named
+  with their day ("Legacy Game · Wednesday"), the late ones with Discard (`discardLateBracket`: the result is untouched), a re-check as a row that closes
+  the builder and opens the game on its Re-check card (`gmSettleBracket`).
+- **Spectators** (a counselor, a preview of one): `renderLiveWatchFour` — in reading order: the followed team's line (or the hold note while a result is
+  checked, or "All four matches are played"), the match under way on the big board (no half-screen minimum here), "Up next" when both teams are known (the
+  3rd place match is not known while a semifinal is on), and Now's own four cells (`nowBracket4Html` inside `.gv-b4`, which is its own `nw-card` size
+  container, on the sheet surface); no tinted box, left-aligned, never a control.
+- **Marks in a match** (`bracketMarkHtml`, app.js): the call-up, the live board's team column and the own-team note show the team's flag / tile from
+  `teamMarkHtml`; a SHIELD team (junior) keeps its emoji there, because the six-team wizard rebuilds those views on every render and an `<img>` re-created
+  twice a minute blinks. The board's score numerals are the team colour taken toward ink (72 % light, 55 % dark): a camp's older single colour has no
+  measured half per theme. The live steppers are clamped to 44–56 px and wrap, the winner and copy jelly-buttons grow with their label (`::part(button)`). `upcomingMatchups` / `findNextMatchupFor` / `gameRoundTeams` read `fourLive`; `gameRowStatus` calls a
   bracket live only when `fourRead` can read it. The preview walk (`tests/preview.test.js`) covers every step: the "3rd place" label is the bronze MATCH, never
   a standings place, so the leak patterns read the text with it set aside.
 - **Tests**: `bracket.test.js` (the six-team wizard, pinned first; the new Undo / stale-tap cases are at its end), `bracket.senior.test.js` (engine, readers,

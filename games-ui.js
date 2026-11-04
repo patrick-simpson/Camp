@@ -122,6 +122,8 @@ function gamesDockHtml(d) {
   if (!d) return '';
   // While a podium is being picked: ONE button. The dashed well names what is still to pick (a tap on it goes there); complete,
   // it is the gold Save.
+  // A four-team bracket ready to save: the same gold button (its id is the bracket's own Save, fourSaveResult behind it).
+  if (d.tone === 'four') return '<button type="button" class="btn btn-big btn-block btn-gold gd-save" id="save-bracket-btn" data-joy>Save result</button>';
   if (d.tone === 'pick') {
     return d.save.ready ? '<button type="button" class="btn btn-big btn-block btn-gold gd-save" id="game-save" data-joy>Save result</button>'
       : `<button type="button" class="btn btn-big btn-block gd-save" id="game-save" aria-disabled="true">${esc(d.save.label)}</button>`;
@@ -583,6 +585,22 @@ function gamesSaveTap(btn) {
   return r;
 }
 
+// The four-team bracket's Save (the dock's gold button while the summary shows): resolved at the tap, the refusal said in words,
+// then the same landing as a podium's Save — the saved winners from the top, focus on Next game.
+function gamesFourSaveTap(btn) {
+  const gid = state.ui && state.ui.gameId;
+  const g = gid ? gameById(gid) : null;
+  if (!g || typeof fourSaveResult !== 'function') return null;
+  const had = focusWas(btn);
+  const r = fourSaveResult(g);
+  if (!r.ok) { if (typeof fourSay === 'function') fourSay(r); return r; }
+  const body = gamesEl('takeover-game-body');
+  if (body) body.scrollTop = 0;
+  if (had) focusBack(true, gamesEl('game-next') || gamesEl('game-dock-back'));
+  gamesSavedArrive(body);
+  return r;
+}
+
 // The save just landed (podiumSave rendered the result synchronously): the winners drop in bronze → silver → gold, 120 ms apart,
 // landing with a wobble's squash at their foot (Now's medals, §9.5), and the Next game dock arrives from below. Started by THIS
 // tap, never by a render, so a re-render or a snapshot never replays it. Calm: they fade.
@@ -655,13 +673,16 @@ async function gamesChangeResult() {
   const g = gid ? gameById(gid) : null;
   if (!g || !canEdit() || !(state.results && state.results[gid])) return false;
   const reopen = typeof fourCanReopen === 'function' && fourCanReopen(g);
+  // Reopen the final is the main way back (gold, and what it keeps said inside it); Start over, the destructive one, sits under it on
+  // its own line, never beside it as an equal; Keep it is the quiet way out.
   const opts = {
     title: 'Change the result for ' + g.name + '?',
-    body: reopen
-      ? 'Its points come off the standings until you save it again. Reopen the final keeps the semifinals and the 3rd-place match as they were. Start over clears the whole bracket.'
-      : 'Its points come off the standings until you save it again.',
+    body: 'Its points come off the standings until you save it again.',
+    stack: reopen,
     actions: reopen
-      ? [{ label: 'Reopen the final', value: 'reopen' }, { label: 'Start over', value: 'clear', kind: 'danger' }, { label: 'Keep it', value: 'cancel', cancel: true }]
+      ? [{ label: 'Reopen the final', sub: 'The semifinals and 3rd place stay as they were', value: 'reopen', kind: 'gold' },
+        { label: 'Start over', sub: 'The whole bracket is cleared', value: 'clear', kind: 'danger' },
+        { label: 'Keep it', value: 'cancel', kind: 'quiet', cancel: true }]
       : [{ label: 'Clear it and pick again', value: 'clear', kind: 'danger' }, { label: 'Keep it', value: 'cancel', cancel: true }],
   };
   const answer = typeof askDialog === 'function' ? await askDialog(opts) : (confirm(opts.title + '\n\n' + opts.body) ? 'clear' : 'cancel');
@@ -700,6 +721,7 @@ function gamesEntryTap(t) {
 // A tap inside the dock: the Save (the dashed well goes to what is missing, the gold one saves), Next game, Back.
 function gamesDockTap(t) {
   let b;
+  if ((b = t.closest('#save-bracket-btn'))) { gamesFourSaveTap(b); return true; }
   if ((b = t.closest('#game-save'))) {
     if (b.getAttribute('aria-disabled') === 'true') {
       const d = gamesDock(state.ui && state.ui.gameId);
@@ -729,6 +751,21 @@ function renderGameDock(g) {
     if (b) JellyMotion.play(b, 'snap', (x) => ({ transform: 'scale(' + (0.94 + 0.06 * Math.min(1, x)) + ')' }), { calm: false });
   }
   dock.__saveReady = pick ? ready : undefined;
+  // A four-team bracket's last winner was just recorded: its Save comes up from the foot of the screen (§9.5 "panel appears";
+  // calm: a fade). A first paint of the takeover is a plain write.
+  const four = !!d && d.tone === 'four';
+  const sameGame = !!g && dock.__fourGid === g.id;
+  if (wrote && four && sameGame && !dock.__four && typeof JellyMotion !== 'undefined' && dock.querySelector) {
+    const b = dock.querySelector('#save-bracket-btn');
+    if (b) {
+      JellyMotion.play(b, 'arrive', (x) => {
+        const o = Math.max(0, x - 1);
+        return { transform: 'translateY(' + 18 * (1 - Math.min(1, x)) + 'px) scale(' + (1 + 0.04 * o) + ', ' + (1 - 0.08 * o) + ')', transformOrigin: '50% 100%', opacity: Math.min(1, x * 1.6) };
+      }, { calm: [{ opacity: 0 }, { opacity: 1 }], calmMs: 160 });
+    }
+  }
+  dock.__four = four;
+  dock.__fourGid = g ? g.id : null;
 }
 
 function gamesWire() {
