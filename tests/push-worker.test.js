@@ -1701,24 +1701,139 @@ test('review #4: names with regex metacharacters, accents, emoji — whole words
   assert.notOk(W.memberNamedIn(undefined, 'anything'));
   assert.notOk(W.memberNamedIn({ evil: true }, 'anything'));
   assert.notOk(W.mentionedAsWord('x'.repeat(5000), 'a'.repeat(300)), 'a long name against long text is just a miss');
-  // Teams: the whole name, or one word of it that is 4+ letters.
+  // Teams: the full name, or the short name — the two labels chat's dictionary holds for a team. Changed on purpose at
+  // Step 26 (S9): the old "any word of the name that is 4+ letters" rule is gone (the page never claimed on those words,
+  // and it let a lower-case "blue" ping the Blue team); a short name is accepted instead, under the capitalised-team-word rule.
   const maples = 'Methodic Mediocre Maples';
-  assert.ok(W.teamNamedIn(maples, 'we love MAPLES!'));
-  assert.ok(W.teamNamedIn(maples, 'Methodic Mediocre Maples rule'));
-  assert.ok(W.teamNamedIn(maples, 'mediocre'));
-  assert.notOk(W.teamNamedIn(maples, 'maple syrup'), 'Maple is not Maples');
-  assert.notOk(W.teamNamedIn('Red Fox', 'red'), '"Red" is under 4 letters');
+  assert.ok(W.teamNamedIn(maples, 'we love MAPLES!', 'Maples'), 'the short name, in capitals');
+  assert.ok(W.teamNamedIn(maples, 'Methodic Mediocre Maples rule'), 'the whole name needs no short name');
+  assert.ok(W.teamNamedIn(maples, 'methodic mediocre maples rule'), 'a full name of two words or more matches in any case');
+  assert.notOk(W.teamNamedIn(maples, 'mediocre', 'Maples'), 'a word of the name that is not the short name names nobody');
+  assert.notOk(W.teamNamedIn(maples, 'Mediocre', 'Maples'), 'not even capitalised');
+  assert.notOk(W.teamNamedIn(maples, 'we love MAPLES!'), 'with no short name, only the whole name counts');
+  assert.notOk(W.teamNamedIn(maples, 'maple syrup', 'Maples'), 'Maple is not Maples');
+  assert.notOk(W.teamNamedIn('Red Fox', 'red'), 'one word of a two-word name is not the name');
   assert.ok(W.teamNamedIn('Red Fox', 'the red fox!'), 'but the whole name still counts');
-  assert.ok(W.teamNamedIn('Runaway John Deersz', 'go john deersz'), 'a multi-word name as written');
-  assert.ok(W.teamNamedIn('The 49ers', 'go 49ers'), 'digits count toward a word');
+  assert.ok(W.teamNamedIn('Runaway John Deersz', 'go john deersz', 'John Deersz'), 'a two-word short name matches as written, in any case');
+  assert.notOk(W.teamNamedIn('Runaway John Deersz', 'go john deersz'), 'and only when it is the short name or the name');
+  assert.notOk(W.teamNamedIn('The 49ers', 'go 49ers', '49ers'), 'a one-word label with no capital to type needs "team" after it…');
+  assert.ok(W.teamNamedIn('The 49ers', 'go 49ers team', '49ers'), '…and has it here');
   assert.notOk(W.teamNamedIn('', 'x'));
+  assert.notOk(W.teamNamedIn(undefined, 'Red', undefined));
+  assert.notOk(W.teamNamedIn('Red Team', undefined, 'Red'), 'no text names nobody');
   // The senior camp's teams are "Red Team", "Blue Team"…: the filler word
   // "team" must not vouch for a team claim, or any message saying "team" would.
   assert.notOk(W.teamNamedIn('Red Team', 'team competitions at 3'), '"team" alone names nobody');
-  assert.notOk(W.teamNamedIn('Gold Team', 'which team won?'));
+  assert.notOk(W.teamNamedIn('Gold Team', 'which team won?', 'Gold'));
+  assert.notOk(W.teamNamedIn('Team', 'Team competitions', 'Team'), 'a team named (or shortened to) "Team" names nobody');
   assert.ok(W.teamNamedIn('Red Team', 'Red Team, line up'), 'the whole name does');
-  assert.ok(W.teamNamedIn('Blue Team', 'go blue!'), 'and so does its distinctive word');
-  assert.ok(W.teamNamedIn('Gold Team', 'GOLD wins'));
+  assert.ok(W.teamNamedIn('Gold Team', 'GOLD wins', 'Gold'));
+});
+
+// ── Step 26 (S9): a team's short name, under the capitalised-team-word rule ──
+
+test('the pasted default short names are exactly the printed ones in camps.js, for both camps', async () => {
+  const W = await load();
+  assert.deepEqual(W.TEAM_SHORT_DEFAULTS.junior, CAMPS.junior.teamAbbrev);
+  assert.deepEqual(W.TEAM_SHORT_DEFAULTS.senior, CAMPS.senior.teamAbbrev);
+  assert.deepEqual(Object.keys(W.TEAM_SHORT_DEFAULTS), ['junior', 'senior']);
+});
+
+test('short names: "Red" and "red team" match, "a red shirt" and "feeling blue" do not', async () => {
+  const W = await load();
+  // The senior camp's names are "Red Team"…: its short name is the word people actually type.
+  assert.ok(W.teamNamedIn('Red Team', 'Red meet at the waterfront', 'Red'), 'typed with a capital');
+  assert.ok(W.teamNamedIn('Red Team', 'RED wins it', 'Red'), 'all capitals is a capital');
+  assert.ok(W.teamNamedIn('Red Team', 'go red team', 'Red'), 'followed by "team"');
+  assert.ok(W.teamNamedIn('Blue Team', 'all blue campers to the lake', 'Blue'), 'followed by "campers"');
+  assert.ok(W.teamNamedIn('Red Team', 'red  \n team', 'Red'), 'any run of spaces before "team"');
+  assert.notOk(W.teamNamedIn('Red Team', 'a red shirt', 'Red'));
+  assert.notOk(W.teamNamedIn('Blue Team', 'feeling blue', 'Blue'));
+  assert.notOk(W.teamNamedIn('Red Team', 'red teamwork is key', 'Red'), '"team" must be a whole word');
+  assert.notOk(W.teamNamedIn('Red Team', 'redhead and bluebird', 'Red'), 'inside a longer word is nothing');
+  assert.notOk(W.teamNamedIn('Red Team', 'Red2', 'Red'));
+  assert.ok(W.teamNamedIn('Red Team', 'the red one (Red)', 'Red'), 'a later capitalised one counts even if an earlier one did not');
+  // The three-character floor and the "team" guard apply to the short name too.
+  assert.notOk(W.teamNamedIn('Ab Team', 'Ab', 'Ab'), 'two characters name nobody');
+  assert.ok(W.teamNamedIn('Zed Team', 'Zed!', 'Zed'), 'three do');
+  assert.notOk(W.teamNamedIn('Red Team', 'Team', 'team'));
+  // A short name is laundered like the app's safeShort: control characters, runs of spaces, 20 characters.
+  assert.equal(W.cleanShort('  Wild \u0000  Wolves '), 'Wild Wolves');
+  assert.equal(W.cleanShort('x'.repeat(40)).length, 20);
+  assert.equal(W.cleanShort(`${'x'.repeat(19)}😀`), 'x'.repeat(19), 'never half an emoji');
+  assert.equal(W.cleanShort({ short: 1 }), '');
+  assert.equal(W.cleanShort(undefined), '');
+});
+
+test('short names: the Worker accepts exactly what chat\'s own scanner claims (a seeded fuzz against mentionScan)', async () => {
+  const W = await load();
+  const fillers = ['team', 'Team', 'campers', 'teamwork', 'a', 'shirt', 'the', 'go', 'feeling', 'redhead', 'Red2', 'to', 'lake'];
+  const seps = [' ', ' ', ' ', ', ', '! ', '\n', '  ', ' (', ') ', '-'];
+  const labelsets = [
+    { name: 'Red Team', short: 'Red' }, { name: 'Blue Team', short: 'Blue' }, { name: 'Turkey Dinner', short: 'Turkey' },
+    { name: 'Ferocious Foxes', short: 'Foxes' }, { name: 'Runaway John Deersz', short: 'John Deersz' }, { name: 'The 49ers', short: '49ers' },
+    { name: 'Methodic Mediocre Maples', short: 'Maples' }, { name: 'Pilgrims', short: 'Pilgrims' },
+  ];
+  // Each team's own words, as typed three ways, mixed with ordinary words — so both outcomes turn up often.
+  const wordsFor = (ls) => {
+    const own = [];
+    ls.name.split(' ').concat(ls.short.split(' ')).forEach((w) => own.push(w, w.toLowerCase(), w.toUpperCase()));
+    return own.concat(own, fillers);
+  };
+  let seed = 12345;
+  const rnd = (n) => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed % n; };
+  let positives = 0, negatives = 0;
+  for (let i = 0; i < 6000; i++) {
+    const ls = labelsets[rnd(labelsets.length)];
+    const words = wordsFor(ls);
+    const text = Array.from({ length: 1 + rnd(5) }, () => words[rnd(words.length)]).reduce((acc, w) => acc + (acc ? seps[rnd(seps.length)] : '') + w, '');
+    // The page's dictionary holds these two labels for the team (chatMentionTargets), each at least three characters.
+    const targets = [ls.name, ls.short].filter((l) => l.length >= 3).map((l) => ({ label: l, lower: l.toLowerCase(), kind: 'team', teamId: 't0' }));
+    const page = mentionScan(text, targets).some((h) => h.teamId === 't0');
+    const worker = W.teamNamedIn(ls.name, text, ls.short);
+    assert.equal(worker, page, `${JSON.stringify(ls)} in ${JSON.stringify(text)}: page ${page}, Worker ${worker}`);
+    if (page) positives++; else negatives++;
+  }
+  assert.ok(positives > 300 && negatives > 300, `both outcomes are well covered (${positives} / ${negatives})`);
+});
+
+test('short names end to end: senior "Red" pings the Red team, "a red shirt" pings nobody, a record\'s own short name replaces the printed one', async () => {
+  await load();
+  const w = world();
+  const RED = 'rita@camp,org', BLUE = 'bea@camp,org';
+  w.net.db.set('seniorScoreboard/members', {
+    [ALICE]: { role: 'editor', name: 'Alice S', addedBy: 'x', addedAt: 1 },
+    [RED]: { role: 'viewer', name: 'Rita', teamId: 't0', addedBy: 'x', addedAt: 1 },
+    [BLUE]: { role: 'viewer', name: 'Bea', teamId: 't1', addedBy: 'x', addedAt: 1 },
+  });
+  w.net.db.set('seniorScoreboard/state/teams', [{ id: 't0', name: 'Red Team' }, { id: 't1', name: 'Blue Team' }, { id: 't2', name: 'Green Team' }, { id: 't3', name: 'Gold Team' }]);
+  w.addDevice('seniorScoreboard', RED, 'rita-phone-1', {});
+  w.addDevice('seniorScoreboard', BLUE, 'bea-phone-1', {});
+  let n = 0;
+  const say = async (text, teams) => {
+    const msgId = 'sr' + (++n);
+    w.net.db.set('seniorScoreboard/chat/general/' + msgId, { at: NOW, byKey: ALICE, text });
+    w.net.pushes = [];
+    const r = await w.notify('alice@camp.org', { camp: 'senior', kind: 'chat', ch: 'general', msgId, mentionTeams: teams });
+    assert.equal(r.status, 200, r.text);
+    return w.net.pushes.map((p) => p.url.split('/').pop()).sort();
+  };
+  assert.deepEqual(await say('Red meet at the waterfront', ['t0']), ['rita-phone-1'], 'the senior short name now vouches for the claim');
+  assert.deepEqual(await say('go blue team', ['t1']), ['bea-phone-1']);
+  assert.deepEqual(await say('a red shirt and feeling blue', ['t0', 't1']), [], 'ordinary words ping nobody, even when the page (an old build) claims them');
+  assert.deepEqual(await say('Red Team, line up', ['t0', 't1']), ['rita-phone-1'], 'only the team named; Blue was claimed but not named');
+  // A director gave the Red team a short name of its own: that replaces the printed one.
+  w.net.db.set('seniorScoreboard/state/teams', [{ id: 't0', name: 'Red Team', short: 'Rouge' }, { id: 't1', name: 'Blue Team' }, { id: 't2', name: 'Green Team' }, { id: 't3', name: 'Gold Team' }]);
+  assert.deepEqual(await say('Rouge to the lake', ['t0']), ['rita-phone-1'], 'the record\'s own short name');
+  assert.deepEqual(await say('Red to the lake', ['t0']), [], 'the printed one no longer applies once the record has its own');
+  // Junior, with no short on any record: the printed ones ("Maples") still stand in, as they do in the page.
+  const m = mentionWorld();
+  let r = await sayIn(m, 'we love Maples', { mentionTeams: ['t2'] });
+  assert.deepEqual(kindsByUrl(m), { [ep('bob-phone-1')]: 'mention' }, 'Bob is on the Maples');
+  r = await sayIn(m, 'we love maples', { mentionTeams: ['t2'] });
+  assert.deepEqual(kindsByUrl(m), {}, 'lower-case, no "team" after it: an ordinary word');
+  r = await sayIn(m, 'go maples team', { mentionTeams: ['t2'] });
+  assert.deepEqual(kindsByUrl(m), { [ep('bob-phone-1')]: 'mention' }, 'but "maples team" is addressing them');
 });
 
 test('review #4: odd names end to end — only the genuinely named are buzzed', async () => {

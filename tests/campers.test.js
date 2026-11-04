@@ -802,7 +802,16 @@ test('P12 (source): the TV page, the service worker, the alert sender and the st
   ['current-standings.js', 'current-standings.html', 'tv-camp.js', 'sw.js', 'push-worker/worker.js', 'stalling.html'].forEach((f) => {
     const p = cmPath.join(root, f);
     if (!fs.existsSync(p)) return;
-    assert.ok(!/camper/i.test(fs.readFileSync(p, 'utf8')), f + ' mentions campers');
+    let src = fs.readFileSync(p, 'utf8');
+    // The ONE exception (Step 26): the alert sender re-checks a team mention with chat's capitalised-team-word rule, which counts a
+    // one-word team name followed by "team" or "campers" ("go red team", "all blue campers"). That is a word of English inside a
+    // pattern, not data and not a node name; the pattern's exact text is cut out and nothing else is.
+    if (f === 'push-worker/worker.js') {
+      const word = '(?:team|campers)';
+      assert.equal(src.split(word).length - 1, 1, 'the sender spells that pattern exactly once');
+      src = src.replace(word, '');
+    }
+    assert.ok(!/camper/i.test(src), f + ' mentions campers');
   });
 });
 

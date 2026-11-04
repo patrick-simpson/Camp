@@ -43,7 +43,7 @@
 
 // Bump when the Worker changes, so /health and the status page say which copy
 // is pasted into Cloudflare.
-const VERSION = '2026-10-26.2';
+const VERSION = '2026-11-04.1';
 
 // Camp id → Firebase root. Hardcoded on purpose (camps.js is browser code the
 // Worker can't load); the two roots are a contract with database.rules.json.
@@ -125,7 +125,8 @@ const NEG_CACHE_MS = MINUTE;        // how long an isolate remembers that Google
 const MAX_MENTION_KEYS = 10;        // people one chat message can buzz as "mentioned"
 const MAX_MENTION_TEAMS = 3;
 const MIN_MENTION_CHARS = 2;        // a one-letter "name" would match half the alphabet
-const MIN_TEAM_WORD_CHARS = 4;      // a team can be named by a long-enough word of its name ("Maples")
+const MIN_TEAM_LABEL_CHARS = 3;     // a team label (its name or short name) shorter than this names nobody (chat.js add(): clean.length < 3)
+const TEAM_SHORT_MAX = 20;          // camp-core.js CAMP_SHORT_MAX: the longest short name the app keeps
 // The only push services a subscription may point at. A device record's
 // endpoint is client-written (the rules check only `https://`), so without
 // this the Worker would POST — signed with our VAPID key — to any address a
@@ -1668,29 +1669,79 @@ function memberNamedIn(name, text) {
   return mentionedAsWord(text, capped) || mentionedAsWord(text, capped.split(' ')[0]);
 }
 
-// A team is mentioned if its whole name is, or any word of it that is long
-// enough to be distinctive ("Maples" for "Methodic Mediocre Maples"). The one
-// word that is never distinctive is "team" itself: the senior camp's teams are
-// "Red Team", "Blue Team"… and a message saying "team competitions at 3" would
-// otherwise vouch for any team claim at all, which is the very forgery this
-// check exists to stop. (The whole name, "Red Team", still counts.)
-function teamNamedIn(name, text) {
-  const n = cleanText(name);
-  if (!n) return false;
-  if (mentionedAsWord(text, n)) return true;
-  return n.split(/[^\p{L}\p{N}]+/u).some((w) => Array.from(w).length >= MIN_TEAM_WORD_CHARS
-    && w.toLowerCase() !== 'team' && mentionedAsWord(text, w));
+// Each camp's printed team short names (camps.js TEAM_ABBREV, which the chat
+// dictionary falls back to for a team whose record has no `short` of its own).
+// The Worker can't load camps.js, so they are pasted here — the way CAMPS pastes
+// the database roots — and tests/push-worker.test.js pins them to camps.js so a
+// change there can't leave the sender behind.
+const TEAM_SHORT_DEFAULTS = {
+  junior: { t0: 'Foxes', t1: 'Turkey', t2: 'Maples', t3: 'Pumpkins', t4: 'Pilgrims', t5: 'John Deersz' },
+  senior: { t0: 'Red', t1: 'Blue', t2: 'Green', t3: 'Gold' },
+};
+
+// A short name as camp-core.js safeShort keeps it: control characters to
+// spaces, runs of whitespace to one, trimmed, cut to 20 (never mid-emoji).
+// '' when there is nothing usable.
+function cleanShort(v) {
+  if (typeof v !== 'string') return '';
+  let s = v.replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/g, ' ').replace(/\s+/g, ' ').trim();
+  if (s.length > TEAM_SHORT_MAX) {
+    s = s.slice(0, TEAM_SHORT_MAX);
+    if (/[\ud800-\udbff]$/.test(s)) s = s.slice(0, -1);
+    s = s.trim();
+  }
+  return s;
 }
 
-// The camp's teams ({id, name}), read only when a request actually claimed a
-// team mention — most messages claim none, and every read is a subrequest
-// out of the 45. Teams live in the synced state (state/teams: an array, or an
-// object if RTDB turned it into one).
+// One-word team labels ("Red", "Pilgrims") are ordinary English words too, so
+// they only count when typed the way a person addresses a team: with a capital
+// first letter ("Red meet at the dock", "RED wins"), or followed by "team" (or
+// the one other word chat accepts there: "go red team"). This is chat.js
+// chatTeamWordOk — the page decides what it claims with that rule, the Worker
+// re-checks the claim with the same one, so an alert pings exactly where chat
+// does.
+function teamWordNamedIn(text, label) {
+  let re;
+  try { re = new RegExp('(?<![A-Za-z0-9])' + reEscape(label) + '(?![A-Za-z0-9])', 'giu'); } catch (e) { return false; }
+  for (const m of text.matchAll(re)) {
+    const c = m[0][0];
+    if (c !== c.toLowerCase()) return true;
+    if (/^\s+(?:team|campers)(?![a-z0-9])/i.test(text.slice(m.index + m[0].length))) return true;
+  }
+  return false;
+}
+
+// A team is mentioned if its full name or its short name is — the two labels
+// chat.js's mention dictionary holds for a team. A label of two words or more
+// ("Turkey Dinner", "Red Team") matches in any case; a one-word label follows
+// the capitalised-team-word rule above. A label under three characters names
+// nobody, and neither does "team" itself: the senior camp's teams are "Red
+// Team", "Blue Team"… and a message saying "team competitions at 3" would
+// otherwise vouch for any team claim at all, which is the very forgery this
+// check exists to stop. `short` is the record's own short name, else the camp's
+// printed one (campTeams resolves which).
+function teamNamedIn(name, text, short) {
+  const t = String(text == null ? '' : text);
+  for (const label of [cleanText(name), cleanShort(short)]) {
+    if (Array.from(label).length < MIN_TEAM_LABEL_CHARS || label.toLowerCase() === 'team') continue;
+    if (/\s/.test(label)) { if (mentionedAsWord(t, label)) return true; }
+    else if (teamWordNamedIn(t, label)) return true;
+  }
+  return false;
+}
+
+// The camp's teams ({id, name, short}), read only when a request actually
+// claimed a team mention — most messages claim none, and every read is a
+// subrequest out of the 45. Teams live in the synced state (state/teams: an
+// array, or an object if RTDB turned it into one). `short` is the record's own
+// short name (what the Teams screen sets) or, when it has none, the camp's
+// printed one — the fallback the chat dictionary makes (app.js teamShort).
 async function campTeams(ictx, camp) {
   if (!hasOwn(ictx.memo.teams, camp)) {
     const v = await dbGet(ictx, `${CAMPS[camp]}/state/teams`);
     const list = Array.isArray(v) ? v : isObj(v) ? Object.values(v) : [];
-    ictx.memo.teams[camp] = list.filter((t) => isObj(t) && typeof t.id === 'string' && TEAM_RE.test(t.id) && typeof t.name === 'string');
+    ictx.memo.teams[camp] = list.filter((t) => isObj(t) && typeof t.id === 'string' && TEAM_RE.test(t.id) && typeof t.name === 'string')
+      .map((t) => ({ id: t.id, name: t.name, short: cleanShort(t.short) || (TEAM_SHORT_DEFAULTS[camp] || {})[t.id] || '' }));
   }
   return ictx.memo.teams[camp];
 }
@@ -1715,7 +1766,7 @@ async function verifiedMentions(ictx, camp, members, text, body) {
   for (const id of claimedTeams) {
     if (out.teams.length >= MAX_MENTION_TEAMS) break;
     const team = teams.find((t) => t.id === id);
-    if (team && teamNamedIn(team.name, msgText)) out.teams.push(id);
+    if (team && teamNamedIn(team.name, msgText, team.short)) out.teams.push(id);
   }
   return out;
 }
@@ -2274,6 +2325,7 @@ Object.defineProperty(handler, '_test', {
     verifyIdToken, adminToken, ensureVapid, vapidAuthorization, encryptPayload, ephemeralKey,
     deliverJobs, packBatches, drainBatch, classifyPushStatus, BudgetError, HttpError,
     pushHostAllowed, memberDevices, mentionedAsWord, memberNamedIn, teamNamedIn, verifiedMentions,
+    TEAM_SHORT_DEFAULTS, cleanShort,
     MAX_DEVICES_PER_MEMBER, PUSH_HOST_SUFFIXES,
   },
 });

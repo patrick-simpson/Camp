@@ -3120,7 +3120,9 @@ so nobody can post as someone else).
   "team" / "campers" ("go red team"); a full name of two words or more ("Red Team", "Turkey Dinner") still matches in any case. So
   "a red shirt" and "feeling blue" ping nobody — the senior "Red" fix, and what makes it safe for a director to give a team a
   short name (`chatTeamWordOk`, applied in `mentionScan` from the text as typed; people are never subject to it). The alert
-  sender's `teamNamedIn` is Step 26's and still the old rule. "Mine" = my
+  sender re-checks a claimed team with the SAME rule (`teamNamedIn(name, text, short)`, Step 26: the team's full name, or its
+  short name — the record's own, else the camp's printed one, pasted in `TEAM_SHORT_DEFAULTS` and pinned to camps.js by a test; a
+  seeded fuzz in push-worker.test.js proves it accepts exactly what `mentionScan` claims). "Mine" = my
   `memberName`/`state.identity`/identity key/`memberTeamId`/
   `state.followTeam`. Rendering walks the RAW string and escapes each
   segment (`renderChatText`) — never regex over escaped HTML.
