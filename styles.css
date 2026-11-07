@@ -17850,3 +17850,654 @@ button.gs-row:focus-visible {
 .bk-emoji {
   line-height: 1;
 }
+
+/* ============================================================
+   SET UP THE WEEK: the new-year setup (P2 §11.3, §7.3, §10.1, §11.16; Step 28)
+   ============================================================
+   The owner's five steps in the clipboard's language: the step's question is the
+   headline; its answers are a printed form (the Camp week screen's tick sheet,
+   pen-mark radios, the phone's own date and time fields); counts are a tally
+   sheet with the number in its own tabular column; the ONE action is docked at
+   the foot. Nothing is a tinted box: the claim, the questions and the warnings
+   are plain lines with the gold "!" or an icon (§8.1 rule 7). The clear is the
+   restore sheet's hold button (.btn-hold) with its two-tap alternative.
+   Markup: index.html #setup-wizard, #sheet-nyw-staff, #sheet-nyw-undo,
+   #sheet-setup-advanced, the hub door's claim pair and #sheet-restore's #rp-year.
+   Nothing here animates: a step arriving from its side, the now-bar filling and
+   step 5's check are JellyMotion's, from the build session's diffs (calm: fades). */
+.setup[data-screen="wizard"] [data-setup-screen="wizard"] {
+  display: block;
+}
+.setup-screen.nyw {
+  padding-bottom: 0; /* the dock rides the foot */
+}
+/* Each group is the container the tick sheet's and the field rows' large-text
+   layouts measure (their rules are the Camp week screen's, written in em). */
+.nyw .gl,
+.nyu .gl {
+  container-type: inline-size;
+}
+
+/* ── Where you are: five short rules, and the count in words ──
+   A picture of the run of steps, not a progress bar: it stops at ~13rem so it
+   reads as five marks, and the words beside it say it for everyone. */
+.nyw-progress {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  margin: 10px 0 0;
+}
+.nyw-track {
+  flex: 0 1 13rem;
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.nyw-bar {
+  flex: 1 1 0;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--line-2);
+}
+.nyw-bar[data-state="done"] {
+  background: var(--done);
+}
+.nyw-bar[data-state="now"] {
+  background: var(--ink);
+}
+.nyw-count {
+  flex: none;
+  font: var(--t-label);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+.nyw-intro .setup-headline {
+  margin-top: 10px;
+}
+/* Step 5's answer wears the done check (drawn, never an emoji), level with its
+   first line at any text size. */
+.nyw[data-step="5"] #nyw-headline {
+  position: relative;
+  padding-left: calc(1.08em + 10px);
+}
+.nyw[data-step="5"] #nyw-headline::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1.08em;
+  height: 1.08em;
+  border-radius: 50%;
+  background: var(--done);
+}
+.nyw[data-step="5"] #nyw-headline::after {
+  content: '';
+  position: absolute;
+  left: 0.39em;
+  top: 0.19em;
+  width: 0.27em;
+  height: 0.52em;
+  border: solid var(--on-done);
+  border-width: 0 0.11em 0.11em 0;
+  transform: rotate(45deg);
+}
+
+/* ── One step at a time (#setup-wizard[data-step]) ── */
+.nyw-step {
+  display: none;
+}
+.nyw[data-step="1"] > [data-nyw-step="1"],
+.nyw[data-step="2"] > [data-nyw-step="2"],
+.nyw[data-step="3"] > [data-nyw-step="3"],
+.nyw[data-step="4"] > [data-nyw-step="4"],
+.nyw[data-step="5"] > [data-nyw-step="5"] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--s-6);
+}
+/* The step's gap is the rhythm; a group's own top margin would double it. */
+.nyw-step > .more-sec + .more-sec {
+  margin-top: 0;
+}
+/* Another device drives and this one isn't watching: only the claim. Watching:
+   the step reads, nothing in it takes a tap, and there is no dock. */
+.nyw[data-drive="other"] > :not(.setup-intro):not(.nyw-claim) {
+  display: none;
+}
+.nyw[data-drive="watch"] .nyw-step {
+  pointer-events: none;
+}
+.nyw:not([data-drive="me"]) .nyw-dock {
+  display: none;
+}
+/* Plain lines between the intro and the step (older devices, the schedule
+   turned on first, no signal). */
+.nyw > .setup-note {
+  margin: 0 2px var(--s-4);
+}
+
+/* ── The claim: the owner's other device ── */
+.nyw-claim {
+  margin: 0 0 var(--s-6);
+  padding: 0 2px;
+}
+.nyw-claim-lead {
+  margin: 0;
+  font: var(--t-row);
+  letter-spacing: var(--track-row);
+  color: var(--ink);
+}
+.nyw-claim-sub {
+  margin: 4px 0 0;
+  font: var(--t-meta);
+  font-size: 0.9375rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-2);
+}
+.nyw-claim-sub:empty {
+  display: none;
+}
+/* Two equal choices: neither is the safe default (§11.3), so neither is gold. */
+.nyw-claim-acts,
+.hub-door-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 8.5rem), 1fr));
+  gap: 12px;
+  margin-top: var(--s-3);
+}
+.nyw-claim .setup-note {
+  margin: var(--s-3) 0 0;
+}
+/* Watching: one quiet line over the read-only step, Take over at its end (the
+   screens' short door, .setup-door, in the same shape). */
+.nyw-claim[data-claim="watching"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px var(--s-3);
+  margin-bottom: var(--s-4);
+}
+.nyw-claim[data-claim="watching"] .nyw-claim-lead {
+  flex: 1 1 12rem;
+  font: var(--t-meta);
+  font-size: 0.9375rem;
+  color: var(--ink-2);
+}
+.nyw-claim[data-claim="watching"] :is(.nyw-claim-sub, #nyw-watch, .setup-note) {
+  display: none;
+}
+.nyw-claim[data-claim="watching"] .nyw-claim-acts {
+  display: flex;
+  margin: 0;
+}
+/* The eye is the watching line's: it says the screen only shows. */
+.nyw-claim-ico {
+  display: none;
+}
+.nyw-claim[data-claim="watching"] .nyw-claim-ico {
+  display: inline-block;
+  width: 1.2em;
+  height: 1.2em;
+  margin-right: 6px;
+  vertical-align: -0.25em;
+  color: var(--ink-2);
+}
+/* Not watching: the headline IS the claim's sentence (the renderer's), so the
+   panel keeps only the time and the two choices. */
+.nyw[data-drive="other"] .nyw-claim-lead {
+  display: none;
+}
+.nyw[data-drive="other"] .nyw-claim-sub {
+  margin-top: 0;
+}
+
+/* ── An inline question above the step (take-over answers, the camp-week
+   freeze): the gold "!" sentence, between hairlines, its answers under it. ── */
+.nyw-ask {
+  margin: 0 0 var(--s-6);
+  padding: var(--s-3) 0 var(--s-4);
+  border-block: 1px solid var(--line-2);
+}
+.nyw-ask-list {
+  margin: 8px 0 0;
+  padding: 0 0 0 27px;
+  list-style: none;
+  font: 650 0.9375rem/1.4 var(--font-ui);
+  color: var(--ink);
+}
+.nyw-ask-list > li + li {
+  margin-top: 3px;
+}
+.nyw-ask .btn[data-danger] {
+  border-color: var(--color-danger-text);
+  color: var(--color-danger-text);
+  box-shadow: 0 var(--edge-btn) 0 var(--color-danger-text);
+}
+.nyw-ask .btn:empty {
+  display: none;
+}
+
+/* ── Step 1: the date, the week it makes, double points ── */
+/* Not a Sunday: a nudge under the field, inside its sheet. */
+.nyw-snap {
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--line);
+}
+.nyw-snap .si-ask-a {
+  margin-top: 8px;
+}
+/* The week as a printed calendar: day, date, last year's tag, each in its own
+   column so the dates read down like a wall planner. */
+.nyw-days {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.nyw-day {
+  display: grid;
+  grid-template-columns: 2.5rem 2.75rem minmax(0, 1fr);
+  align-items: baseline;
+  gap: 0 var(--s-3);
+  padding: 9px 14px;
+  border-top: 1px solid var(--line);
+}
+.nyw-days > .nyw-day:first-child {
+  border-top: 0;
+}
+.nyw-day-wd {
+  font: var(--t-label);
+  color: var(--ink-2);
+}
+.nyw-day-n {
+  font: 800 1.0625rem/1.2 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  text-align: right;
+}
+.nyw-day-tag {
+  min-width: 0;
+  font: var(--t-meta);
+  color: var(--ink-2);
+  overflow-wrap: break-word;
+}
+/* Arrival and send-off are the week's two bookends: their tags in ink. */
+.nyw-day:is([data-dow="0"], [data-dow="6"]) .nyw-day-tag {
+  color: var(--ink);
+  font-weight: 650;
+}
+@container (max-width: 18em) {
+  .nyw-day {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+  .nyw-day-n {
+    text-align: left;
+  }
+  .nyw-day-tag {
+    grid-column: 1 / -1;
+  }
+}
+/* Three answers as the clipboard's pen marks (the Camp week screen's ring and
+   disc): a row each, the whole row the radio. */
+.nyw-opt {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  align-items: center;
+  gap: var(--s-3);
+  width: 100%;
+  min-height: var(--row-min);
+  margin: 0;
+  padding: var(--s-2) 14px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  background: none;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.nyw-opts > .nyw-opt:first-child {
+  border-top: 0;
+}
+.nyw-opt:active {
+  background: color-mix(in srgb, var(--ink) 6%, var(--sheet));
+}
+.nyw-opt .wk-tick-mark {
+  justify-self: center;
+}
+.nyw-opt[aria-checked="true"] .wk-tick-mark {
+  box-shadow: inset 0 0 0 2px var(--ink), inset 0 0 0 6px var(--sheet);
+  background: var(--ink);
+}
+.nyw-opt[aria-disabled="true"] {
+  cursor: default;
+}
+.nyw-opt-text {
+  min-width: 0;
+}
+.nyw-opt-t {
+  display: block;
+  font: 750 1.03125rem/1.22 var(--font-ui);
+  letter-spacing: var(--track-row);
+}
+.nyw-opt-s {
+  display: block;
+  margin-top: 1px;
+  font: 550 0.84375rem/1.32 var(--font-ui);
+  color: var(--ink-2);
+}
+.nyw-opt-s:empty {
+  display: none;
+}
+.nyw-double-form {
+  margin-top: var(--s-2);
+  padding: 14px;
+}
+
+/* ── Step 2: the tick sheet (the .wk-* rows: Keep | Clear) ── */
+/* The note that says what will happen follows the row's choice. */
+.nyw-item[data-choice="keep"] [data-when="clear"],
+.nyw-item[data-choice="clear"] [data-when="keep"] {
+  display: none;
+}
+.nyw-carry .wk-day-name {
+  font: 750 1rem/1.25 var(--font-ui);
+}
+/* A schedule label that names someone: the gold "!" (it needs a look), and
+   Review them as a link in the line. */
+.nyw-staff {
+  position: relative;
+  flex-basis: 100%;
+  margin-top: 6px;
+  padding-left: 25px;
+  font: 650 0.875rem/1.4 var(--font-ui);
+  letter-spacing: 0;
+  color: var(--ink);
+}
+.nyw-staff::before {
+  content: '!';
+  position: absolute;
+  left: 0;
+  top: 1px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: inset 0 0 0 1.5px var(--gold-edge);
+  color: var(--gold-ink);
+  font: 900 0.75rem/1 var(--font-ui);
+}
+.nyw-staff .gl-link {
+  margin: -12px 0;
+  font-size: 0.9375rem;
+  vertical-align: baseline;
+}
+/* What happens every year: a word at the row's end, no control. */
+.nyw-fixed-row {
+  cursor: default;
+}
+.nyw-fixed-word {
+  font: var(--t-tag);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.nyw-fixed-word[data-kept] {
+  color: var(--done);
+}
+/* Large text: the word goes under the words, so the title keeps the width. */
+@container (max-width: 18em) {
+  .nyw-fixed-row {
+    grid-template-columns: 30px minmax(0, 1fr);
+    row-gap: 2px;
+  }
+  .nyw-fixed-word {
+    grid-column: 2;
+  }
+}
+
+/* ── Steps 3 and 4: the state line (the head's sync-line marks, larger) ── */
+.nyw-state {
+  margin: 0;
+  padding: 0 2px;
+  font: 700 1rem/1.35 var(--font-ui);
+  color: var(--ink);
+}
+.nyw-state .setup-sync-mark {
+  margin-top: calc((1.35em - 14px) / 2);
+}
+.nyw-state[data-tone="saved"] {
+  color: var(--done);
+  font-weight: 800;
+}
+.nyw-retry {
+  justify-self: start;
+}
+.nyw-dl {
+  margin: calc(-1 * var(--s-3)) 0 0;
+}
+
+/* ── Tally rows: the count in its own tabular column (steps 3–5, Undo) ── */
+.nyw-tally:empty {
+  display: none;
+}
+.nyw-t {
+  display: grid;
+  grid-template-columns: 3.5rem minmax(0, 1fr);
+  align-items: center;
+  gap: var(--s-3);
+  min-height: 52px;
+  padding: 8px 14px 8px 8px;
+  border-top: 1px solid var(--line);
+}
+.nyw-tally > .nyw-t:first-child {
+  border-top: 0;
+}
+.nyw-t-n {
+  justify-self: end;
+  font: var(--t-num);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+}
+.nyw-t-text {
+  min-width: 0;
+}
+.nyw-t-what {
+  display: block;
+  font: 700 1rem/1.28 var(--font-ui);
+  letter-spacing: var(--track-row);
+  overflow-wrap: break-word;
+}
+.nyw-t-sub {
+  display: block;
+  margin-top: 1px;
+  font: 550 0.84375rem/1.32 var(--font-ui);
+  color: var(--ink-2);
+  overflow-wrap: break-word;
+}
+.nyw-t-sub:empty {
+  display: none;
+}
+/* No count: a drawn mark in the number's column — the done check (what was
+   done), or a small ink dot (a thing, not a number: a dash there read as
+   "minus"). */
+.nyw-t-n[data-mark] {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  margin-right: 4px;
+  border-radius: 50%;
+}
+.nyw-t-n[data-mark="check"] {
+  background: var(--done);
+}
+.nyw-t-n[data-mark="check"]::after {
+  content: '';
+  position: absolute;
+  left: 7.6px;
+  top: 4px;
+  width: 5px;
+  height: 10px;
+  border: solid var(--on-done);
+  border-width: 0 2.4px 2.4px 0;
+  transform: rotate(45deg);
+}
+.nyw-t-n[data-mark="item"]::after {
+  content: '';
+  position: absolute;
+  inset: 7px;
+  border-radius: 50%;
+  background: var(--ink-3);
+}
+/* A list of marks only (step 5's done list) takes the grouped list's icon
+   column, so its words start where every other row's do. */
+.nyw-tally-done .nyw-t {
+  grid-template-columns: 30px minmax(0, 1fr);
+  padding-left: 14px;
+}
+.nyw-tally-done .nyw-t-n[data-mark] {
+  justify-self: center;
+  margin-right: 0;
+}
+/* The year's champion leads step 3's receipt, with the team's own mark. */
+.nyw-champ {
+  min-height: 64px;
+}
+.nyw-champ .nyw-t-n {
+  justify-self: center;
+}
+.nyw-champ .nyw-t-what {
+  font: var(--t-row);
+  letter-spacing: var(--track-row);
+}
+/* Large text: the count sits over its words, so a long word ("announcements")
+   keeps the row's whole width instead of breaking; a mark keeps its column. */
+@container (max-width: 18em) {
+  .nyw-t {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+    padding-left: 14px;
+  }
+  .nyw-t-n {
+    justify-self: start;
+  }
+  .nyw-t:has(> .nyw-t-n[data-mark]),
+  .nyw-tally-done .nyw-t {
+    grid-template-columns: 22px minmax(0, 1fr);
+    gap: var(--s-3);
+  }
+  /* The champion keeps the mark beside the name. */
+  .nyw-t.nyw-champ {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--s-3);
+  }
+}
+
+/* ── Step 4: what stays, and incomplete sign-ins ── */
+.nyw-kept {
+  margin: calc(-1 * var(--s-3)) 2px 0;
+  font: var(--t-meta);
+  font-size: 0.9375rem;
+  color: var(--ink-2);
+}
+.nyw-kept-label {
+  font-weight: 800;
+  color: var(--ink);
+}
+.nyw-warn .gl-link,
+.nyw-left .gl-link {
+  margin: -12px 0;
+  font-size: 0.9375rem;
+}
+
+/* ── Step 5: anyone the follow-up couldn't move, then what's next ── */
+.nyw-left {
+  padding-top: var(--s-3);
+  border-top: 1px solid var(--line-2);
+}
+.nyw-left-list {
+  margin: 6px 0 2px;
+  padding: 0 0 0 27px;
+  list-style: none;
+  font: 650 0.9375rem/1.4 var(--font-ui);
+  color: var(--ink);
+}
+.nyw-left .gl-link {
+  margin: -6px 0 -12px 27px;
+}
+/* A numbered run sheet: the next one is filled, the rest are rings. */
+.gl-ico.nyw-num {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 2px var(--ink-3);
+  color: var(--ink);
+  font: 850 0.875rem/1 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+}
+.nyw-next > :first-child .nyw-num {
+  background: var(--ink);
+  box-shadow: none;
+  color: var(--sheet);
+}
+.nyw-step > #nyw-done-undo {
+  margin: calc(-1 * var(--s-2)) 2px 0;
+}
+
+/* ── The dock: the step's one action (steps 1–3, 5) or the hold (step 4) ── */
+.nyw-dock {
+  display: grid;
+  gap: 10px;
+  container: nywdock / inline-size;
+}
+/* 2 : 3, the gold Next the wider; Back is the plain one (§11.0). */
+.nyw-dock-pair {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+  gap: 12px;
+}
+.nyw-dock-pair:has(> .nyw-back[hidden]) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.nyw-dock-pair:not(:has(> :not([hidden]))) {
+  display: none;
+}
+.nyw-dock-pair .btn {
+  min-height: 52px;
+  white-space: normal;
+}
+.nyw-next {
+  font: 850 1.0625rem/1.15 var(--font-ui);
+}
+/* The hold is the climax of the wizard: a deliberate, bigger target. */
+.btn.nyw-hold {
+  min-height: 56px;
+  font: 850 1.0625rem/1.15 var(--font-ui);
+  white-space: normal;
+}
+.nyw-back-quiet {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+.nyw-back-quiet .ico {
+  width: 16px;
+  height: 16px;
+  stroke-width: 2.6;
+}
+/* Large text: stacked, the gold first (it is what the thumb is there for). */
+@container nywdock (max-width: 19rem) {
+  .nyw-dock-pair {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .nyw-next {
+    order: -1;
+  }
+  .nyw-dock-pair .btn {
+    min-height: var(--target);
+  }
+}

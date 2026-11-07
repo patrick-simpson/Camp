@@ -1082,6 +1082,352 @@
           </div>
         </section>
 
+        <!-- ── The new-year setup (P2 §11.3; Step 28; the OWNER's alone) ──
+             data-screen="wizard". Five steps, one per screen; #setup-wizard[data-step]
+             (1–5) is the ONE switch the CSS reads to show a step's body, and
+             [data-drive] says whose hands it is in: "me" (this device drives:
+             the dock shows), "watch" (the owner watching another device: the
+             step reads only, no dock, the claim line on top), "other" (another
+             device holds the claim and this one hasn't chosen to watch: only the
+             claim panel). Nothing here is rebuilt: the renderer patches text,
+             `hidden`, aria-checked / aria-disabled and the data-* named in each
+             comment, and fills the lists marked "renderer:" with the row
+             templates given. Every other director never reaches this screen
+             (owner-only route); what they read is the hub door's sentence.
+             Copy, step by step (headline · lede), the renderer's:
+               1  When is camp? · Pick the Sunday it starts. → (with a date)
+                  Sun, Jul 18 to Sat, Jul 24, 2027
+               2  What carries over from 2026? · Keep what still fits. Scores
+                  are always cleared.
+               3  Saving 2026… → 2026 is saved · You can look back at it any
+                  time in Restore points.
+               4  Clear the scoreboard · Junior camp starts 2027 with no
+                  results and no points.
+               5  Junior camp is set up for 2027 · Jul 18–24, 2027 -->
+        <section class="setup-screen nyw" id="setup-wizard" data-setup-screen="wizard" data-step="1" data-drive="me" aria-labelledby="nyw-title">
+          <div class="setup-intro nyw-intro">
+            <!-- "New-year setup · Junior camp" -->
+            <h2 class="setup-kicker" id="nyw-title">New-year setup</h2>
+            <!-- Where you are, as five short rules and the count in words. Each
+                 bar's data-state: done (done-green) · now (ink) · todo
+                 (hairline). The words carry it; the bars are a picture. -->
+            <div class="nyw-progress">
+              <ol class="nyw-track" id="nyw-track" aria-hidden="true">
+                <li class="nyw-bar" data-nyw-bar="1" data-state="now"></li>
+                <li class="nyw-bar" data-nyw-bar="2" data-state="todo"></li>
+                <li class="nyw-bar" data-nyw-bar="3" data-state="todo"></li>
+                <li class="nyw-bar" data-nyw-bar="4" data-state="todo"></li>
+                <li class="nyw-bar" data-nyw-bar="5" data-state="todo"></li>
+              </ol>
+              <span class="nyw-count" id="nyw-count">Step 1 of 5</span>
+            </div>
+            <p class="setup-headline" id="nyw-headline"></p>
+            <p class="setup-lede" id="nyw-lede"></p>
+          </div>
+
+          <!-- The claim (§11.3), for the owner on a device that is NOT driving.
+               data-claim: "other" (with data-drive="other") — the headline is the
+               claim ("You’re setting up 2027 on another device", no lede; the
+               progress shows that device's step), the panel its time in
+               #nyw-claim-sub ("Last tap there 4 min ago"), Watch and (only once
+               that device has gone 15 minutes without a tap) Take over, else the
+               note says when it will appear; "watching" (with data-drive="watch")
+               — the step's own headline, then one line with the eye over the
+               read-only step, #nyw-claim-lead "Watching your other device · last
+               tap 2 min ago", with Take over at its end when it is offered. -->
+          <section class="nyw-claim" id="nyw-claim" data-claim="other" aria-labelledby="nyw-headline" hidden>
+            <p class="nyw-claim-lead"><svg class="ico nyw-claim-ico" aria-hidden="true"><use href="#i-eye"/></svg><span id="nyw-claim-lead">Watching your other device</span></p>
+            <p class="nyw-claim-sub" id="nyw-claim-sub"></p>
+            <div class="nyw-claim-acts">
+              <button type="button" class="btn" id="nyw-watch"><svg class="ico" aria-hidden="true"><use href="#i-eye"/></svg>Watch</button>
+              <button type="button" class="btn" id="nyw-takeover" hidden>Take over</button>
+            </div>
+            <p class="setup-note" id="nyw-takeover-note"><svg class="ico" aria-hidden="true"><use href="#i-clock"/></svg><span>Take over appears once that device has gone 15 minutes without a tap.</span></p>
+          </section>
+
+          <!-- ONE inline question at a time, above the step (§11.0: never a
+               dialog over the screen). The gold "!" sentence, an optional list,
+               then its answers; #nyw-ask-b carries data-danger when its answer
+               is the risky one. Used for:
+                 · after Take over: "You chose on your other device:" + the
+                   answers as list items (#nyw-ask-list: "Camp starts Sun, Jul
+                   18", "Double points Thu 5 PM – end of Fri", "Keep the
+                   schedule, clear the menus…") · [Use these] · [Start over]
+                 · no camp dates anywhere: "Is a camp week running right now?"
+                   · [No] · [Yes, it is]
+                 · inside a camp week (the freeze, §10.6): "Camp week is running
+                   (Jul 19–25). The new-year setup clears its scoreboard."
+                   · [Not now] · [Carry on anyway] (data-danger) -->
+          <section class="nyw-ask" id="nyw-ask" hidden>
+            <p class="si-ask-q" id="nyw-ask-q"></p>
+            <ul class="nyw-ask-list" id="nyw-ask-list" hidden></ul>
+            <div class="si-ask-a">
+              <button type="button" class="btn btn-sm" id="nyw-ask-a"></button>
+              <button type="button" class="btn btn-sm" id="nyw-ask-b"></button>
+            </div>
+          </section>
+
+          <!-- Plain lines with an icon (§8.1 rule 7), each hidden unless true:
+               the Devices list's warning (it never blocks), the schedule being
+               turned on first (A1, §11.3), and no signal. -->
+          <p class="setup-note" id="nyw-older" hidden><svg class="ico" aria-hidden="true"><use href="#i-phone"/></svg><span id="nyw-older-text">2 director devices are on an older version. They update when they’re reopened.</span></p>
+          <p class="setup-note" id="nyw-a1" hidden><svg class="ico" aria-hidden="true"><use href="#i-calendar"/></svg><span>Starting also turns on editing here for the schedule. A restore point is saved before it.</span></p>
+          <p class="setup-note" id="nyw-offline" hidden><svg class="ico" aria-hidden="true"><use href="#i-hourglass"/></svg><span id="nyw-offline-text">No signal. Your answers are kept on this phone; saving 2026 needs a connection.</span></p>
+
+          <!-- ── Step 1 · When is camp? ── -->
+          <div class="nyw-step" data-nyw-step="1">
+            <div class="more-sec">
+              <div class="gl-head"><h3 class="gl-label">Dates</h3><span class="gl-note" id="nyw-start-was"></span></div>
+              <div class="gl">
+                <!-- The whole row focuses the native date picker. #nyw-start-sub:
+                     "A Sunday" → "Sun, Jul 18 to Sat, Jul 24". -->
+                <label class="gl-row wk-field" for="nyw-start">
+                  <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-calendar"/></svg></span>
+                  <span class="gl-text"><span class="gl-title">Camp starts on</span><span class="gl-sub" id="nyw-start-sub">A Sunday</span></span>
+                  <span class="wk-ctl"><input type="date" class="fld-input" id="nyw-start"></span>
+                </label>
+                <!-- A date that isn't a Sunday: never an error, a nudge to the
+                     nearest one ("Camp weeks start on a Sunday. Did you mean Sun,
+                     Jul 18?" · [Use Sun, Jul 18]). -->
+                <div class="nyw-snap" id="nyw-snap" hidden>
+                  <p class="si-ask-q" id="nyw-snap-q"></p>
+                  <div class="si-ask-a"><button type="button" class="btn btn-sm" id="nyw-snap-use"></button></div>
+                </div>
+              </div>
+            </div>
+            <!-- The week it makes, as a printed calendar: day, date, and the tag
+                 each day had in 2026 (tags carry over with the schedule). Shown
+                 once a Sunday is picked. Per day the renderer sets [data-nyw-date]
+                 ("18"; "Aug 1" when the month turns) and [data-nyw-tag]
+                 ("Arrival day"); #nyw-week-month says the month(s): "July 2027". -->
+            <div class="more-sec" id="nyw-sec-week" hidden>
+              <div class="gl-head"><h3 class="gl-label" id="nyw-week-month">The week</h3><span class="gl-note">Day names from 2026</span></div>
+              <ol class="gl nyw-days" id="nyw-days" aria-labelledby="nyw-week-month">
+                <li class="nyw-day" data-dow="0"><span class="nyw-day-wd">Sun</span><span class="nyw-day-n" data-nyw-date></span><span class="nyw-day-tag" data-nyw-tag></span></li>
+                <li class="nyw-day" data-dow="1"><span class="nyw-day-wd">Mon</span><span class="nyw-day-n" data-nyw-date></span><span class="nyw-day-tag" data-nyw-tag></span></li>
+                <li class="nyw-day" data-dow="2"><span class="nyw-day-wd">Tue</span><span class="nyw-day-n" data-nyw-date></span><span class="nyw-day-tag" data-nyw-tag></span></li>
+                <li class="nyw-day" data-dow="3"><span class="nyw-day-wd">Wed</span><span class="nyw-day-n" data-nyw-date></span><span class="nyw-day-tag" data-nyw-tag></span></li>
+                <li class="nyw-day" data-dow="4"><span class="nyw-day-wd">Thu</span><span class="nyw-day-n" data-nyw-date></span><span class="nyw-day-tag" data-nyw-tag></span></li>
+                <li class="nyw-day" data-dow="5"><span class="nyw-day-wd">Fri</span><span class="nyw-day-n" data-nyw-date></span><span class="nyw-day-tag" data-nyw-tag></span></li>
+                <li class="nyw-day" data-dow="6"><span class="nyw-day-wd">Sat</span><span class="nyw-day-n" data-nyw-date></span><span class="nyw-day-tag" data-nyw-tag></span></li>
+              </ol>
+            </div>
+            <!-- Double points: three choices as the clipboard's pen marks
+                 (aria-checked on the chosen .nyw-opt). "Same as 2026" carries
+                 last year's window in its sub (#nyw-double-same-sub: "Thursday
+                 5:00 PM until the end of Friday"); "Change the times" unfolds
+                 #nyw-double-form under the group (the Camp week screen's three
+                 native fields). -->
+            <div class="more-sec" id="nyw-sec-double">
+              <div class="gl-head"><h3 class="gl-label" id="nyw-double-label">Double points</h3></div>
+              <div class="gl nyw-opts" role="radiogroup" aria-labelledby="nyw-double-label">
+                <button type="button" class="nyw-opt" role="radio" aria-checked="true" data-nyw-double="same"><i class="wk-tick-mark" aria-hidden="true"></i><span class="nyw-opt-text"><span class="nyw-opt-t">Same as 2026</span><span class="nyw-opt-s" id="nyw-double-same-sub"></span></span></button>
+                <button type="button" class="nyw-opt" role="radio" aria-checked="false" data-nyw-double="none"><i class="wk-tick-mark" aria-hidden="true"></i><span class="nyw-opt-text"><span class="nyw-opt-t">No double points this year</span></span></button>
+                <button type="button" class="nyw-opt" role="radio" aria-checked="false" data-nyw-double="change"><i class="wk-tick-mark" aria-hidden="true"></i><span class="nyw-opt-text"><span class="nyw-opt-t">Change the times</span></span></button>
+              </div>
+              <div class="gl wk-double nyw-double-form" id="nyw-double-form" hidden>
+                <label class="fld"><span class="fld-label">From</span><select class="fld-input" id="nyw-double-from"></select></label>
+                <label class="fld"><span class="fld-label">At</span><input type="time" step="300" class="fld-input" id="nyw-double-at"></label>
+                <label class="fld fld-wide"><span class="fld-label">Until</span><select class="fld-input" id="nyw-double-until"></select></label>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Step 2 · What carries over from 2026? ──
+               A printed form: one row per thing, two tick columns under one
+               header ("Keep" | "Clear"), so what carries over reads down the
+               first column at a glance (the Camp week screen's tick sheet: the
+               same .wk-* rows and their large-text layout). Per row the renderer
+               sets data-choice="keep|clear" and aria-checked on the two ticks;
+               the note that matches the choice shows (CSS, from data-choice), so
+               the row always says what will happen. The defaults are the spec's
+               (§11.3): Keep the schedule, games, teams, cleanup rota and
+               elective stations; Clear the typed counselor names, team photos,
+               menus, verses, who's at each station and the counselors' teams.
+               The two elective rows are junior's: data-feature="electives",
+               un-hidden by the renderer where CAMP.features.electives. -->
+          <div class="nyw-step" data-nyw-step="2">
+            <div class="more-sec">
+              <div class="gl-head"><h3 class="gl-label">You choose</h3></div>
+              <div class="gl wk-days nyw-carry" id="nyw-carry">
+                <div class="wk-day wk-head" aria-hidden="true"><span></span><span class="wk-col">Keep</span><span class="wk-col">Clear</span></div>
+                <div class="wk-day nyw-item" data-nyw-item="schedule" data-choice="keep">
+                  <span class="wk-day-name">Schedule<span class="wk-day-tag" data-when="keep">The typical day, arrival and send-off. You can change anything after.</span><span class="wk-day-tag" data-when="clear">Back to the schedule the app came with.</span>
+                    <!-- Schedule items whose label names someone (ux-R9): "4 items
+                         name people: Snack and campfire — TJ, Laura’s cottage…"
+                         and Review them (opens #sheet-nyw-staff). Nothing is
+                         changed automatically. -->
+                    <span class="nyw-staff" id="nyw-staff" hidden><span id="nyw-staff-text"></span> <button type="button" class="gl-link nyw-staff-btn" id="nyw-staff-btn">Review them</button></span></span>
+                  <div class="wk-ticks" role="radiogroup" aria-label="Schedule"><button type="button" class="wk-tick" role="radio" aria-checked="true" data-nyw-pick="keep"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Keep</span></button><button type="button" class="wk-tick" role="radio" aria-checked="false" data-nyw-pick="clear"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">The app’s schedule</span></button></div>
+                </div>
+                <div class="wk-day nyw-item" data-nyw-item="games" data-choice="keep">
+                  <span class="wk-day-name">Games<span class="wk-day-tag" data-when="keep">On the same schedule items. Their results are always cleared.</span><span class="wk-day-tag" data-when="clear">Back to the games the app came with.</span></span>
+                  <div class="wk-ticks" role="radiogroup" aria-label="Games"><button type="button" class="wk-tick" role="radio" aria-checked="true" data-nyw-pick="keep"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Keep</span></button><button type="button" class="wk-tick" role="radio" aria-checked="false" data-nyw-pick="clear"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">The app’s games</span></button></div>
+                </div>
+                <div class="wk-day nyw-item" data-nyw-item="teams" data-choice="keep">
+                  <span class="wk-day-name">Team names, emoji and colours<span class="wk-day-tag" data-when="keep">Rename them in a minute if the teams are new.</span><span class="wk-day-tag" data-when="clear">Back to the names the app came with.</span></span>
+                  <div class="wk-ticks" role="radiogroup" aria-label="Team names, emoji and colours"><button type="button" class="wk-tick" role="radio" aria-checked="true" data-nyw-pick="keep"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Keep</span></button><button type="button" class="wk-tick" role="radio" aria-checked="false" data-nyw-pick="clear"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">The app’s names</span></button></div>
+                </div>
+                <div class="wk-day nyw-item" data-nyw-item="counselors" data-choice="clear">
+                  <span class="wk-day-name">Counselor names typed on teams<span class="wk-day-tag" data-when="keep">Last year’s names show on the teams until people are put on them.</span><span class="wk-day-tag" data-when="clear">Each team shows its counselors once you put people on teams.</span></span>
+                  <div class="wk-ticks" role="radiogroup" aria-label="Counselor names typed on teams"><button type="button" class="wk-tick" role="radio" aria-checked="false" data-nyw-pick="keep"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Keep</span></button><button type="button" class="wk-tick" role="radio" aria-checked="true" data-nyw-pick="clear"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Clear</span></button></div>
+                </div>
+                <div class="wk-day nyw-item" data-nyw-item="photos" data-choice="clear">
+                  <span class="wk-day-name">Team photos<span class="wk-day-tag" data-when="keep">Last year’s shields stay on the teams.</span><span class="wk-day-tag" data-when="clear">Last year’s shields belong to last year’s teams.</span></span>
+                  <div class="wk-ticks" role="radiogroup" aria-label="Team photos"><button type="button" class="wk-tick" role="radio" aria-checked="false" data-nyw-pick="keep"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Keep</span></button><button type="button" class="wk-tick" role="radio" aria-checked="true" data-nyw-pick="clear"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Clear</span></button></div>
+                </div>
+                <div class="wk-day nyw-item" data-nyw-item="cleanup" data-choice="keep">
+                  <span class="wk-day-name">Cleanup rota<span class="wk-day-tag" data-when="keep">The same teams on the same meals.</span><span class="wk-day-tag" data-when="clear">An empty rota to fill in again.</span></span>
+                  <div class="wk-ticks" role="radiogroup" aria-label="Cleanup rota"><button type="button" class="wk-tick" role="radio" aria-checked="true" data-nyw-pick="keep"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Keep</span></button><button type="button" class="wk-tick" role="radio" aria-checked="false" data-nyw-pick="clear"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Clear</span></button></div>
+                </div>
+                <div class="wk-day nyw-item" data-nyw-item="meals" data-choice="clear">
+                  <span class="wk-day-name">Meal menus<span class="wk-day-tag" data-when="keep">Last year’s dishes stay on each day.</span><span class="wk-day-tag" data-when="clear">Empty menus to fill in again.</span></span>
+                  <div class="wk-ticks" role="radiogroup" aria-label="Meal menus"><button type="button" class="wk-tick" role="radio" aria-checked="false" data-nyw-pick="keep"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Keep</span></button><button type="button" class="wk-tick" role="radio" aria-checked="true" data-nyw-pick="clear"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Clear</span></button></div>
+                </div>
+                <div class="wk-day nyw-item" data-nyw-item="verses" data-choice="clear">
+                  <span class="wk-day-name">Memory verses and theme<span class="wk-day-tag" data-when="keep">Last year’s verses stay on each day.</span><span class="wk-day-tag" data-when="clear">Empty, ready for this year’s theme.</span></span>
+                  <div class="wk-ticks" role="radiogroup" aria-label="Memory verses and theme"><button type="button" class="wk-tick" role="radio" aria-checked="false" data-nyw-pick="keep"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Keep</span></button><button type="button" class="wk-tick" role="radio" aria-checked="true" data-nyw-pick="clear"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Clear</span></button></div>
+                </div>
+                <div class="wk-day nyw-item" data-nyw-item="stations" data-choice="keep" data-feature="electives" hidden>
+                  <span class="wk-day-name">Elective stations<span class="wk-day-tag" data-when="keep">The same stations in each elective.</span><span class="wk-day-tag" data-when="clear">No stations: add them again.</span></span>
+                  <div class="wk-ticks" role="radiogroup" aria-label="Elective stations"><button type="button" class="wk-tick" role="radio" aria-checked="true" data-nyw-pick="keep"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Keep</span></button><button type="button" class="wk-tick" role="radio" aria-checked="false" data-nyw-pick="clear"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Clear</span></button></div>
+                </div>
+                <div class="wk-day nyw-item" data-nyw-item="stationPeople" data-choice="clear" data-feature="electives" hidden>
+                  <span class="wk-day-name">Who’s at each station<span class="wk-day-tag" data-when="keep">Last year’s people stay at their stations.</span><span class="wk-day-tag" data-when="clear">The stations stay, with nobody on them yet.</span></span>
+                  <div class="wk-ticks" role="radiogroup" aria-label="Who’s at each station"><button type="button" class="wk-tick" role="radio" aria-checked="false" data-nyw-pick="keep"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Keep</span></button><button type="button" class="wk-tick" role="radio" aria-checked="true" data-nyw-pick="clear"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Clear</span></button></div>
+                </div>
+                <!-- Decision Q22: the default is No. Undo the new-year setup does
+                     NOT put member teams back, so the "clear" note says so. -->
+                <div class="wk-day nyw-item" data-nyw-item="memberTeams" data-choice="clear">
+                  <span class="wk-day-name">Counselors on their teams<span class="wk-day-tag" data-when="keep">Everyone stays on last year’s team.</span><span class="wk-day-tag" data-when="clear">Everyone keeps their sign-in. You’ll put them on teams again in one list. Undo doesn’t put teams back.</span></span>
+                  <div class="wk-ticks" role="radiogroup" aria-label="Counselors on their teams"><button type="button" class="wk-tick" role="radio" aria-checked="false" data-nyw-pick="keep"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">They stay on them</span></button><button type="button" class="wk-tick" role="radio" aria-checked="true" data-nyw-pick="clear"><i class="wk-tick-mark" aria-hidden="true"></i><span class="wk-tick-word">Take them off</span></button></div>
+                </div>
+              </div>
+            </div>
+            <!-- What happens whatever is ticked: a word at the end of each row,
+                 never a tick that can't be moved. -->
+            <div class="more-sec">
+              <div class="gl-head"><h3 class="gl-label">Every year</h3></div>
+              <div class="gl nyw-fixed">
+                <div class="gl-row nyw-fixed-row"><span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-trophy"/></svg></span><span class="gl-text"><span class="gl-title">Scores, results and the reveal</span><span class="gl-sub">Cleared in step 4, once 2026 is saved</span></span><span class="nyw-fixed-word">Cleared</span></div>
+                <div class="gl-row nyw-fixed-row"><span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-tent"/></svg></span><span class="gl-text"><span class="gl-title">Campers</span><span class="gl-sub">Camper names are never kept between years</span></span><span class="nyw-fixed-word">Cleared</span></div>
+                <div class="gl-row nyw-fixed-row"><span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-megaphone"/></svg></span><span class="gl-text"><span class="gl-title">Notice board</span><span class="gl-sub">Kept, but nobody sees it until it’s posted again</span></span><span class="nyw-fixed-word">Draft</span></div>
+                <div class="gl-row nyw-fixed-row"><span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-people"/></svg></span><span class="gl-text"><span class="gl-title">People asking to join</span><span class="gl-sub">Waiting requests are cleared</span></span><span class="nyw-fixed-word">Cleared</span></div>
+                <div class="gl-row nyw-fixed-row"><span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-lock"/></svg></span><span class="gl-text"><span class="gl-title">Sign-ins, chat and restore points</span><span class="gl-sub">Everyone can still sign in</span></span><span class="nyw-fixed-word" data-kept>Kept</span></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Step 3 · Save 2026 ──
+               Runs on arrival: the pre-wizard point, the archive point, both read
+               back and compared. #nyw-save-state wears the head's sync-line marks
+               (.setup-sync[data-tone]): saving ("Saving 2026…" → "Checking the
+               copy…") · saved ("Saved and checked: the copy on the server
+               matches") · offline ("Needs a connection. Nothing is saved yet.") ·
+               error ("Couldn’t check the copy." + #nyw-save-retry). The receipt
+               (renderer: TALLY ROWS, below) is what the point holds; its first row
+               is the year's champion with the team's mark. -->
+          <div class="nyw-step" data-nyw-step="3">
+            <p class="setup-sync nyw-state" id="nyw-save-state" data-tone="saving" aria-live="polite"><i class="setup-sync-mark" aria-hidden="true"></i><span class="setup-sync-body" id="nyw-save-text">Saving 2026…</span></p>
+            <button type="button" class="btn nyw-retry" id="nyw-save-retry" hidden><svg class="ico" aria-hidden="true"><use href="#i-undo"/></svg>Try again</button>
+            <div class="more-sec" id="nyw-sec-saved">
+              <div class="gl-head"><h3 class="gl-label" id="nyw-saved-label">In the 2026 restore point</h3></div>
+              <!-- TALLY ROWS (shared by steps 3, 4, 5 and the Undo sheet): the
+                   count in its own tabular column, like a printed tally sheet.
+                     <div class="nyw-t" data-key="results">
+                       <span class="nyw-t-n">22</span>
+                       <span class="nyw-t-text"><span class="nyw-t-what">game results</span>
+                         <span class="nyw-t-sub">Monday to Friday</span></span></div>
+                   No count: <span class="nyw-t-n" data-mark="check"></span> (a drawn
+                   done check: step 5) or data-mark="item" (a small dot: a thing, not a number).
+                   The champion (first row of step 3):
+                     <div class="nyw-t nyw-champ" data-key="champion">
+                       <span class="nyw-t-n">{teamMarkHtml(id, {size: 34})}</span>
+                       <span class="nyw-t-text"><span class="nyw-t-what">Ferocious Foxes won 2026</span>
+                         <span class="nyw-t-sub">211 points</span></span></div>
+                   Every name passes esc(); the mark is teamMarkHtml's. -->
+              <div class="gl nyw-tally" id="nyw-saved-list"></div>
+            </div>
+            <!-- The same body as a file (§7.3: the wizard offers a JSON download). -->
+            <button type="button" class="sched-add nyw-dl" id="nyw-save-download"><svg class="ico" aria-hidden="true"><use href="#i-download"/></svg><span>Download a copy of 2026</span></button>
+          </div>
+
+          <!-- ── Step 4 · Clear the scoreboard ──
+               Exactly what goes, with counts (renderer: TALLY ROWS, in this order:
+               game results · bonus points · brackets in progress · announcements ·
+               campers · requests to join · then the step 2 choices that clear:
+               "Meal menus" (item) … · "Notice board · back to a draft" (item) ·
+               last "14 counselors taken off their teams · after the clear").
+               #nyw-members-warn is the preflight (§11.3 step 5): incomplete
+               sign-in records, named, that will stay on their teams. During and
+               after the hold, #nyw-clear-state (sync-line marks): saving
+               "Clearing…" · error "Nothing was cleared: the server turned it
+               away (Teams)." + #nyw-clear-retry · offline "Needs a connection.
+               Nothing was cleared." -->
+          <div class="nyw-step" data-nyw-step="4">
+            <div class="more-sec">
+              <div class="gl-head"><h3 class="gl-label">Cleared for 2027</h3><span class="gl-note">All of it is in the 2026 restore point</span></div>
+              <div class="gl nyw-tally nyw-tally-clear" id="nyw-clear-list"></div>
+            </div>
+            <p class="nyw-kept" id="nyw-kept"><span class="nyw-kept-label">Stays:</span> <span id="nyw-kept-text">the schedule, games, team names, cleanup rota and every sign-in.</span></p>
+            <p class="si-ask-q nyw-warn" id="nyw-members-warn" hidden><span id="nyw-members-warn-text"></span> <button type="button" class="gl-link" id="nyw-members-warn-btn">Open People</button></p>
+            <p class="setup-sync nyw-state" id="nyw-clear-state" data-tone="saving" aria-live="polite" hidden><i class="setup-sync-mark" aria-hidden="true"></i><span class="setup-sync-body" id="nyw-clear-text">Clearing…</span></p>
+            <button type="button" class="btn nyw-retry" id="nyw-clear-retry" hidden><svg class="ico" aria-hidden="true"><use href="#i-undo"/></svg>Try again</button>
+          </div>
+
+          <!-- ── Step 5 · Next steps ──
+               What was done (renderer: TALLY ROWS with data-mark="check", in
+               #nyw-done-list.nyw-tally-done: "Editing turned on for the schedule"
+               when the wizard ran A1, "2026 saved · in Restore points, under Past
+               years", "Scoreboard cleared", "14 counselors taken off their teams"), anyone the follow-up
+               couldn't move (#nyw-left: "Couldn’t take 2 people off their teams:
+               their sign-in records are incomplete." + names as <li> + Open
+               People), then what to do next as a numbered run sheet
+               (data-nyw-go: people-teams | teams | campers | hub; the renderer
+               hides Campers where the camp doesn't use camper lists), and Undo's
+               deadline (#nyw-done-undo-text: "Changed your mind? Undo the
+               new-year setup is in the ⋯ menu until Jul 25."). -->
+          <div class="nyw-step" data-nyw-step="5">
+            <div class="gl nyw-tally nyw-tally-done" id="nyw-done-list"></div>
+            <section class="nyw-left" id="nyw-left" hidden>
+              <p class="si-ask-q" id="nyw-left-q"></p>
+              <ul class="nyw-left-list" id="nyw-left-list"></ul>
+              <button type="button" class="gl-link" id="nyw-left-btn">Open People</button>
+            </section>
+            <div class="more-sec">
+              <div class="gl-head"><h3 class="gl-label">Next</h3></div>
+              <div class="gl nyw-next">
+                <button type="button" class="gl-row" data-nyw-go="people-teams"><span class="gl-ico nyw-num" aria-hidden="true">1</span><span class="gl-text"><span class="gl-title">Put people on teams</span><span class="gl-sub">Everyone in one list</span></span><span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span></button>
+                <button type="button" class="gl-row" data-nyw-go="teams"><span class="gl-ico nyw-num" aria-hidden="true">2</span><span class="gl-text"><span class="gl-title">Teams</span><span class="gl-sub">New names, emoji and colours</span></span><span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span></button>
+                <button type="button" class="gl-row" data-nyw-go="campers"><span class="gl-ico nyw-num" aria-hidden="true">3</span><span class="gl-text"><span class="gl-title">Campers</span><span class="gl-sub">This year’s first names, by team</span></span><span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span></button>
+              </div>
+            </div>
+            <p class="setup-note" id="nyw-done-undo"><svg class="ico" aria-hidden="true"><use href="#i-undo"/></svg><span id="nyw-done-undo-text">Changed your mind? Undo the new-year setup is in the ⋯ menu for 14 days.</span></p>
+          </div>
+
+          <!-- The dock: the step's ONE action at the foot, where a thumb is.
+               Steps 1–3: #nyw-back (plain) beside the gold #nyw-next, whose words
+               say what happens ("Next: what carries over", "Next: save 2026",
+               "Next: clear the scoreboard"); not ready = aria-disabled (the dashed
+               well) with the missing step as its label ("Pick the Sunday camp
+               starts", "Saving 2026…", "Needs a connection"). Step 1 hides Back.
+               Step 4: the hold button alone ("Hold to clear Junior camp’s
+               scoreboard"; a tap or a key reveals #nyw-hold-confirm and
+               #nyw-hold-cancel in its place, §11.0), and Back as a quiet line
+               under it, never beside it. Step 5: #nyw-next alone, "Go to the
+               checklist". Hidden unless data-drive="me". -->
+          <div class="setup-dock nyw-dock" id="nyw-dock">
+            <div class="nyw-dock-pair">
+              <button type="button" class="btn nyw-back" id="nyw-back">Back</button>
+              <button type="button" class="btn btn-gold nyw-next" id="nyw-next">Next: what carries over</button>
+            </div>
+            <button type="button" class="btn btn-danger btn-block btn-hold nyw-hold" id="nyw-hold-btn" hidden><span class="btn-hold-label" id="nyw-hold-label">Hold to clear Junior camp’s scoreboard</span><span class="btn-hold-fill" aria-hidden="true"><span class="btn-hold-label" id="nyw-hold-fill-label"></span></span></button>
+            <button type="button" class="btn btn-danger btn-danger-fill btn-block nyw-hold" id="nyw-hold-confirm" hidden>Yes, clear Junior camp’s scoreboard</button>
+            <button type="button" class="btn-quiet" id="nyw-hold-cancel" hidden>Cancel</button>
+            <button type="button" class="btn-quiet nyw-back-quiet" id="nyw-back-quiet" hidden><svg class="ico" aria-hidden="true"><use href="#i-chev-l"/></svg>Back to Save 2026</button>
+          </div>
+        </section>
+
         <!-- ── Camp week (P2 §11.4; Step 15) ──
              The dates, which days follow the typical day, double points and
              the TV finale. Static markup; the renderer patches values, `hidden`
