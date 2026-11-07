@@ -4548,8 +4548,9 @@ async function wizardStartOver() {
 
 // This phone's own writes (a push a tap just queued, an acknowledgement on its way) are finished before a step that insists the
 // engines are quiet looks: wait for them, a few seconds at most (a parked refusal never clears: the step then says busy).
-async function wizardWaitQuiet(ms) {
-  const end = Date.now() + (ms || 8000);
+let wizardQuietMs = 8000; // a variable so a test can ask for "no waiting"
+async function wizardWaitQuiet() {
+  const end = Date.now() + wizardQuietMs;
   for (;;) {
     flushPendingPush();
     if (pendingWritesTotal() === 0 && !hasUnconfirmedLocalWork() && !setupBisecting && !setupPushTimer) return true;

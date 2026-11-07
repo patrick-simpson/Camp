@@ -716,7 +716,9 @@ test('the clear re-checks before it writes: unsent work of this phone, no archiv
     // an unconfirmed edit of this phone's own
     setupPushMs = 100000;
     commitSetup((d) => { d.meta.finaleDow = 3; }, { undo: false });
+    wizardQuietMs = 0; // no waiting: the edit is still unacknowledged when the clear looks
     assert.equal((await wizardClear(WZ_QUIET)).reason, 'busy');
+    wizardQuietMs = 8000;
     clearTimeout(setupPushTimer); setupPushTimer = null;
     setupPushMs = 40;
     pushSetup();
@@ -824,7 +826,9 @@ test('Undo is owner-only, only for the NEWEST archive, and only with nothing of 
     assert.equal((await wizardUndo('rp-archive-pre20200101-zzzz')).reason, 'not-newest');
     setupPushMs = 100000;
     commitSetup((d) => { d.meta.finaleDow = 2; }, { undo: false });
+    wizardQuietMs = 0;
     assert.equal((await wizardUndo(arch.rid)).reason, 'busy');
+    wizardQuietMs = 8000;
     clearTimeout(setupPushTimer); setupPushTimer = null; setupPushMs = 40; pushSetup(); await wzSettle();
   } finally { wzTeardown(); }
   const db2 = await wzSetup({ user: WZ_JENN, role: 'editor' });
