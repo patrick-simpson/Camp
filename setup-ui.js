@@ -9729,7 +9729,7 @@ function nywClearRows(a) {
   const req = typeof peopleRequests === 'function' ? peopleRequests().length : 0;
   const kids = typeof campersTotal === 'function' ? campersTotal() : 0;
   let rows = '';
-  const add = (key, n, what, sub) => { rows += nywTallyRow(key, n, what, sub); };
+  const add = (key, n, what, sub) => { if (n === 0) return; rows += nywTallyRow(key, n, what, sub); }; // a count of nothing is no row
   add('results', c.results, nywWord(c.results, 'game result', 'game results'), c.results ? 'Monday to Friday' : '');
   add('bonuses', c.bonuses, nywWord(c.bonuses, 'bonus point entry', 'bonus point entries'), '');
   add('brackets', c.brackets, nywWord(c.brackets, 'bracket in progress', 'brackets in progress'), '');

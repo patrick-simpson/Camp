@@ -131,7 +131,7 @@ test('the whole walk on screen: Start, a date, what carries over, save and check
     renderNywScreen();
     assert.equal(nywEl('nyw-hold-btn').hidden, false, 'step 4 is the hold button alone');
     assert.equal(nywEl('nyw-hold-confirm').hidden, true);
-    assert.ok(/game result/.test(nywEl('nyw-clear-list').innerHTML) && /camper name/.test(nywEl('nyw-clear-list').innerHTML), nywEl('nyw-clear-list').innerHTML);
+    assert.ok(/game result/.test(nywEl('nyw-clear-list').innerHTML) && !/data-key="campers"/.test(nywEl('nyw-clear-list').innerHTML), 'a count of nothing is no row (the camper list is only held while a screen asks for it): ' + nywEl('nyw-clear-list').innerHTML);
     assert.ok(/counselors? taken off/.test(nywEl('nyw-clear-list').innerHTML), 'the members that will move: ' + nywEl('nyw-clear-list').innerHTML);
     assert.equal(nywEl('nyw-members-warn').hidden, false, 'the incomplete sign-in is named before the hold');
     // a tap reveals the two-tap alternative in the hold's place

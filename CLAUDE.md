@@ -1874,7 +1874,7 @@ into it from app.js / settings.js is typeof-guarded.
   order. **Owner-only (Q8)**: the owner's gold button and the sentence every other director
   reads ("Patrick turns on editing.", via `ownerName()`) exist only when the door's action
   exists — `HUB_DOOR_ACTIONS.original` is Step 15's Edit the week here (`setupEditTheWeek`),
-  `['new-year']` stays `null` until Step 28 puts
+  `['new-year']` was `null` until Step 28 (now `nywStart`) put
   a function there — nobody is offered a button that can only fail, and a door with no
   action is just its lead as one plain line (`data-quiet`; the model's text, "comes in the
   next update", is not shown). The menu's owner rows work the same way
@@ -4224,9 +4224,8 @@ the row keeps its keyed shape, so turning the section on only swaps the inputs i
   override in words; every refusal a sentence from `TURNON_WHY`), and refuses a non-owner before it
   asks anything. The way back is a quiet owner-only line at the foot of each screen
   (`#<s>-original`, `data-sec-original`): `secUseOriginal(section)` = one `setupUseOriginal([section])`
-  after a question; the edits are kept. **Not built here: Advanced → "Start this section again from the
-  original"** (the re-seed of a section that has ever been on, §10.1; the menu's Advanced row stays
-  unwired, `SETUP_OWNER_ACTIONS` has only `original`; BUILD-PLAN assigns it to Step 28, the wizard).
+  after a question; the edits are kept. Advanced → "Start this section again from the
+  original" (the owner-only re-seed of a section that has ever been on) is Step 28's: see "The new-year wizard: the screens".
 - **Meals** (`renderMealsScreen`): a row per Meal-tagged item of the day, once per meal (`secMealItems`:
   the plan's items in time order, tag from the SCHEDULE, so a "Supper and free time" item tagged Supper
   is a row; an item that READS like a meal — a label beginning Breakfast / Lunch / Supper — but has no tag
@@ -4773,9 +4772,9 @@ setup-sync.js's "CAMPERS" section (the last one before the cache load); the scre
 P2 §11.3, §7.3, §10.1, §11.16 in the clipboard language. Static markup in index.html (every hook, the copy per step and
 the row templates are in the comments at `#setup-wizard`, `#nyw-saved-list` (TALLY ROWS), `#sheet-nyw-staff`,
 `#sheet-nyw-undo`, `#sheet-setup-advanced`, `#hub-door`, `#rp-year` and `#sync-alert` (STRANDED WORK)); styles in
-styles.css's last block, "SET UP THE WEEK: the new-year setup". **Nothing is wired yet** (the build session does it):
-the screen has no route, the sheets aren't in `SETUP_SHEETS`, `HUB_DOOR_ACTIONS['new-year']` and the menu's owner rows
-have no action. `docs/build-notes/verify/step28-design.cjs` draws every state (specimens; `SHOTS=1`).
+styles.css's last block, "SET UP THE WEEK: the new-year setup". **Wired in session 2** (next section but one: "The new-year
+wizard: the screens"). `docs/build-notes/verify/step28-design.cjs` draws every state as specimens (`SHOTS=1`);
+`step28-pass.cjs` drives the real renderers.
 
 - **The screen** `#setup-wizard.nyw` (`data-screen="wizard"`): `[data-step]` 1–5 shows one `.nyw-step[data-nyw-step]`;
   `[data-drive]` = `me` (the dock shows) · `watch` (the owner watching another device: read only, no dock) · `other`
@@ -4847,9 +4846,51 @@ owner acts: with no claim and no epoch every other engine is untouched.
 - **Tests**: `wizard.test.js` (+ `.senior`) against `fake-rtdb.js`; `tests/emulator/wizard-client.mjs` (opt-in, in `npm run test:r1`) runs
   the real client's whole wizard on both camps under the published rules and replays its exact payloads as a non-owner director and a
   counselor: refused, the clear and the undo as a whole. No rules change belongs to this step.
-- **Not built yet (session 2):** routing (`wizard` in `SETUP_SCREENS`, the three sheets in `SETUP_SHEETS`), `HUB_DOOR_ACTIONS['new-year']`
-  and the hub's `wizard` door, `SETUP_OWNER_ACTIONS` for new-year / undo-new-year / advanced, the screen's painters and motion, the
-  `#sheet-restore[data-kind=archive]` fill, and `strandedBarHtml`'s new template.
+
+## The new-year wizard: the screens (setup-ui.js §17 — Step 28, session 2)
+
+Paints the markup above from the engine; every write goes through the engine's functions. **Owner only**: `setupScreen()` reads a
+stored `wizard` as the hub unless `nywMayShow()` (`isOwner()` and a run, or step 5, to show), every entry asks `requireOwner`, the three
+sheets are `isOwner()` in `setupSheetReady`; every other director reads the hub door's sentence (`hubDoor`'s `wizard` case, `ownerSays`).
+
+- **Modes** (`nywModelNow()`): `me` (this device drives the claim, or step 5 from the device's own `done` record, 3 days), `watch`, `other`
+  (the CSS reads `#setup-wizard[data-drive]`, `[data-step]`). The step is the CLAIM's (a reload resumes on it); the answers are
+  the device draft (`wizardAnswers()`; a lost draft resumes from the claim's copy). An acknowledged write's claim is held 8 s
+  (`nywUi.claim`) until the tree catches up. `renderNywScreen()` is idempotent (text / hidden / data-* only; the tally lists are
+  `setHtmlIfChanged` roots) and runs from `renderSetupUi` and the engine's `'tree'` event.
+- **Doors**: `nywStart` (`HUB_DOOR_ACTIONS['new-year']` and `.wizard`, the menu's "Start the new-year setup", Camp week's route) asks the
+  freeze in words (`ask-camp-week` / `camp-week`) then `wizardStart`, which turns on the schedule first (A1) when it isn't edited
+  here; `newYearDue()` = the camp week is `after`. The hub door (`nywDoorView`): driving device Carry on, the owner's other device
+  Watch (+ Take over once idle 15 min), anyone else a sentence. `nywTakeOver` brings the other device's answers and asks "You chose
+  on your other device: Use these / Start over". Back on step 1 with no date offers Cancel (`wizardRelease`); any other Back
+  leaves the run open for Carry on.
+- **Steps**: 1 date (a non-Sunday is a nudge, never an answer; Next is the dashed well until a Sunday), the week as a calendar
+  from the 2026 day tags, double points (same / none / change, validated before it is stored). 2 the Keep | Clear ticks
+  (`wizardAnswer({carry})`, junk taps write nothing), the staff line (`nywStaffItems`: schedule labels naming someone, listed only).
+  3 arrival runs `wizardArchive` (saved and READ BACK) by itself, with Try again / Download a copy; Next stays the well until it
+  verified. 4 the clear's tally (counts of nothing are no row; members from `wizardMembersPreflight`, incomplete ones named), the
+  hold (`wireHold`) with the two-tap alternative, then `wizardClear`: `ask-camp-week` / `camp-week` become the one inline question and
+  the answer re-runs the clear. 5 the done list (check marks), people the follow-up couldn't move, the numbered next list,
+  when Undo runs out.
+- **Undo the new-year setup** (`#sheet-nyw-undo`): the menu row's `why()` greys it with "Nothing to undo yet" or past 14 days ("find it
+  under Past years"); the sheet reads the archive (`restoreRead`), lists what comes back and what stays, and the hold runs
+  `wizardUndo` (only while the sheet is up). **A past year's restore sheet** (`#sheet-restore[data-kind=archive]`, `paintArchiveYear`):
+  Download, and on the newest archive Undo for the owner; `rpApply` refuses an archive (never put back section by section: its
+  scores would count against this year's window).
+- **Advanced** (`#sheet-setup-advanced`, the ⋯ row and Restore points' owner row): a row per section with where it stands; a tap asks
+  once (askDialog stack: Show the original instead / Use our edits again, **Start again from the original**, Not now). The re-seed is
+  setup-sync.js `setupRestartSection(section, opts)`: owner only, only a section that has EVER been on (`meta/on/<s>` is a boolean),
+  the camp-week freeze, a `pre-seed` restore point first (required, online), then ONE transaction of the pure `restartSeed` on the
+  setup node (the section's keys replaced by the seed, the switch on, the section's `meta/edited` stamp: the rules' meta has no room
+  for a field of its own); the schedule's games are re-placed after it (A2, only unresolved links).
+- **The stranded bar** (app.js `strandedBarHtml`): "3 changes from 2026 weren't added" (the year when every entry agrees), Dismiss asks
+  through `askDialog` (the browser's confirm where the setup frame didn't load).
+- **Tests**: `wizard-ui.test.js` (+ senior): the pure pieces, the hub door's three readers, a non-owner shut out, the whole walk through
+  the real engine (date, ticks, save and check, hold to clear, step 5), the claim's other views and Take over, Undo, a past year,
+  Advanced's re-seed (pure and against the database); `owner-only.test.js` / `checklist.test.js` pin the owner gates and the door.
+  Browser pass: `docs/build-notes/verify/step28-pass.cjs` (owner / director / counselor, both camps, 360 / 390, light / dark,
+  100 / 130 / 200 %). **Left to a real phone and the real sign-in**: the whole wizard end to end as the owner (junior, then senior),
+  a second owner device's Watch / Take over, and Undo.
 
 ## Counselors ↔ teams ↔ accounts
 
