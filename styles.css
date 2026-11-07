@@ -18811,12 +18811,14 @@ jelly-chip.sched-day-chip {
   color: var(--ink-2);
 }
 .sched-you-chip {
+  max-width: 100%;
   margin-left: 6px;
   padding: 1px 7px;
   border: 1.5px solid var(--ink);
   background: none;
   color: var(--ink);
   font: var(--t-tag);
+  white-space: normal; /* "You: Laser Tag" ran off a 360px screen at 200 % text on one line */
 }
 .sched-ics-row {
   margin-top: var(--s-4, 16px);
@@ -18931,12 +18933,35 @@ jelly-chip.sched-day-chip[selected] {
   border-top: 0;
 }
 .score-input-row input {
+  flex: 0 1 7rem;
+  width: 7rem;
+  min-width: 4.5rem;
+  min-height: var(--target);
   border: 2px solid var(--line-2);
   border-radius: 10px;
   background: var(--paper);
   color: var(--ink);
   font: 750 1.125rem/1.2 var(--font-ui);
   font-variant-numeric: tabular-nums;
+}
+/* The team's words keep a readable width and the score box drops under them at large text, instead of
+   being pushed off the screen or squeezing "Ferociou / s Foxes". */
+.score-input-row .score-row-top {
+  flex-wrap: wrap;
+}
+.score-input-row .score-team {
+  flex: 1 1 9em;
+  min-width: 0;
+  overflow-wrap: break-word;
+  hyphens: auto;
+}
+.score-input-row .score-row-top input {
+  margin-left: auto;
+}
+.reset-scores-btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target);
 }
 .score-input-row input:focus {
   border-color: var(--ink);

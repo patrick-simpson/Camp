@@ -757,6 +757,16 @@ never rebuilds a segmented control under a finger.
   body's `hidden` made body a scroll container that never scrolls, and the
   app header (and anything else `position: sticky`) scrolled away with the
   page — v197 shipped that way. Don't put `hidden` back on its own.
+- **The older surfaces wear the one language** (Step 29's design pass; styles.css's block "STEP 29: THE OLDER
+  SURFACES IN THE ONE LANGUAGE", restyles of the renderers' own classes, nothing re-created): the full schedule
+  sheet (`#schedule-overlay`, titled "Full schedule") is the run sheet's hairline rows with the ink "Now" tag and a
+  segmented day well that wraps at large text; the Memory verse / Meal cleanup sheets' `jelly-chip.pts-btn` follow
+  Award points' key rule (chosen = ink, a chosen 0 only outlined: `[data-pts="0"][selected]`); in the game takeover
+  score entry is one sheet of rows, the bracket call-up has no gold tint, the Big Board no team wash, `… won` keys are
+  ink and Save is gold (camp blue is never a button fill); fifteen older labels lost their letter-spaced capitals.
+  The sign-in's logo is the big screen's camp mark; its words are `.lock-logo-name`. What the renderers still draw
+  the old way (team emoji in place of `teamMarkHtml`, "🔴 LIVE", jelly-buttons where `.btn` belongs) is the build
+  sessions' punch list, not CSS.
 
 ## The Now tab (Step 17 — `nowModel()` in app.js, painted by now-ui.js)
 
