@@ -815,8 +815,7 @@ the bracket. A games card has ONE gold Score (the live game's, else the one up n
 honours it and a director's own screen never does). Games off: a games block is a plain `activity` card (`nowBlocks(dow, ctx)` maps the kind, so no rows,
 podium, board, "Running over", double-points note, hold or game names in Up next); Memory verse off: Bible study is a plain activity (`nowVerse` is null);
 Meal cleanup off: no duty line, note, "Your team is on cleanup" or cleanup panel (`nowDuty` is empty). The Games tab, More's two rows and the sheets honour
-the same switches through `applyCardVisibility`. **Not yet:** the Your team sheet's "Up next" / "Next meal cleanup" facts and the schedule sheet's game and
-cleanup lines still ignore them (both predate Step 17).
+the same switches through `applyCardVisibility`. The Your team sheet's facts and the schedule sheet's game and cleanup lines honour them too (`nowHiddenSections()`).
 
 **Kinds.** A kind comes from `type` / the Meal tag (through `blockMeal`) first, then the label's head (before " — "): games, elective (only where
 `CAMP.features.electives`), meal, bible, meeting, worship, activity, bedtime; Saturday is the `sendoff`, Sunday up to the first worship block (all of it
@@ -2813,6 +2812,15 @@ What's covered, and why each file exists:
   builder's WRITES to the catalog (`.push`/`.splice`/`[i] =`/`moveItem`) are
   recognised by shape and allowed. It also tests its own scan, so it can't go
   quietly vacuous.
+
+- **The two Step 29 audits** (opt-in Playwright, real renderers, no Firebase and the alert sender route-aborted; serve the worktree with
+  `python3 -m http.server 8977`; the screens, both camps' roles and the page-side helpers are `docs/build-notes/verify/step29-views.cjs`, which
+  both scripts load): `step29-pass.cjs` walks EVERY mockup screen and every screen built since (Set up the week, People / Teams / Campers, the
+  new-year steps, the reveal in each state, the drawers) at 360 / 390, light / dark, 100 / 130 / 200 % and reports a target under 44×44, sideways
+  scroll, a clipped or squeezed label, a console error and (counselor / preview views) a point or a place in the text;
+  `step29-contrast.cjs` checks every visible text node against its effective background in both themes (7:1 under 16px, 4.5:1 at 16px+), a
+  field's edge at 3:1 and the keyboard focus ring of the first controls. Both take `CAMPS=`, `SIZES=`, `VIEWS=` and `SHARD=i/n` (run n processes);
+  fix a finding at the token (styles.css's VISUAL SYSTEM block) and pin it in `contrast.test.js`.
 
 The stub is deliberately minimal, and DOM lookups return a memoized stub element
 rather than null (closer to the real page, where a render function's container
