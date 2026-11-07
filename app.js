@@ -4101,6 +4101,9 @@ function applyCardVisibility() {
   }
 }
 
+// ONE way to write the camp's name in the frame (§8.2, sentence case): "Junior camp". The calendar's X-WR-CALNAME keeps the plain label.
+function campWord() { return String(CAMP.label || 'Camp').replace(/\bCamp\b/, 'camp'); }
+
 // ── Cloud sync (Firebase Realtime Database) ──────────────────────
 // Optional. If window.FIREBASE_CONFIG is filled in (firebase-config.js)
 // and the SDK loaded, scores sync across every device in real time.
@@ -14782,7 +14785,7 @@ function headerModel() {
   const role = frameRoleWord();
   const day = dayLabel(campNow().dow);
   // Sentence case, as everywhere in the frame (§8.2): "Junior camp".
-  const camp = String(CAMP.label || '').replace(/\bCamp\b/, 'camp');
+  const camp = campWord();
   // The headline is what you're FOR: your team, or, with no team, the camp. A
   // director on both camps must never lose which one this is to a long name
   // (mockup 02: "Junior camp" over "Jenn · Director · Wednesday").
@@ -16588,7 +16591,8 @@ function boot() {
   if (CAMP.id === 'senior') {
     document.title = 'Camp · Senior';
     const logo = document.querySelector('.lock-logo');
-    if (logo) logo.innerHTML = '<span>🚩</span> Camp · Senior';
+    const nm = logo && logo.querySelector('.lock-logo-name');
+    if (nm) nm.textContent = 'Camp · Senior'; // the big screen's camp mark stays; only its words change
   }
   wireAuthScreen();
   // A device that was approved last time paints the app immediately from

@@ -6433,7 +6433,7 @@ async function peopleRemovePerson() {
   if (!r || p.busy) return;
   if (!peopleOnline()) { setupSay(peopleWhy({ reason: 'offline' })); return; }
   const v = await askDialog({
-    title: 'Remove ' + r.name + ' from ' + CAMP.label + '?',
+    title: 'Remove ' + r.name + ' from ' + campWord() + '?',
     body: r.pending ? 'This takes their name off the list.' : 'They lose access to ' + CAMP.label + ' the moment this saves. Access changes can’t be undone with Undo — add them back here if you change your mind.',
     actions: [{ label: 'Keep ' + r.name, value: 'keep', cancel: true }, { label: 'Remove', value: 'remove', kind: 'danger' }],
   });

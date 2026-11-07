@@ -294,8 +294,8 @@ test('?camp= picks the camp, then the presenter\'s app choice, then junior', () 
   assert.equal(loadTv({ search: '?camp=bogus', storage: { campScoreboardActiveCamp: 'senior' } }).camp, 'senior', 'junk is ignored');
   assert.equal(loadTv({ search: '?camp=constructor' }).camp, 'junior', 'an inherited property name is not a camp');
   assert.equal(loadTv({ search: '?camp=' }).camp, 'junior');
-  assert.equal(loadTv({ search: '?camp=senior' }).run('document.title'), 'Current Standings — Senior Camp', 'the tab names its camp');
-  assert.equal(loadTv({}).run('document.title'), 'Current Standings — Junior Camp');
+  assert.equal(loadTv({ search: '?camp=senior' }).run('document.title'), 'Current standings — Senior camp', 'the tab names its camp');
+  assert.equal(loadTv({}).run('document.title'), 'Current standings — Junior camp');
 });
 
 // ── What the page may touch: a public path, a clock, a connection ────
@@ -360,7 +360,7 @@ test('with no reveal it says Waiting for the directors…, shows the camp\'s mar
     const tv = loadTv({ search: '?camp=' + camp });
     assert.ok(tv.waiting(), 'Waiting from the first frame');
     assert.deepEqual(tv.status(), { tone: 'connecting', text: 'Connecting…' }, 'nothing has answered yet');
-    assert.equal(tv.byId('wait-camp').textContent, (camp === 'senior' ? 'Senior Camp' : 'Junior Camp') + ' · Standings');
+    assert.equal(tv.byId('wait-camp').textContent, (camp === 'senior' ? 'Senior camp' : 'Junior camp') + ' · Standings');
     tv.sdk.deliver('.info/connected', true);
     assert.equal(tv.status().tone, 'connecting', 'a socket alone is not "ready": the clock and the feed have not answered');
     tv.sdk.deliver('.info/serverTimeOffset', 0);
