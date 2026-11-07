@@ -2584,6 +2584,7 @@ function renderScheduleBody() {
   const isToday = dow === nowDow;
   const day = weekDays()[dow] || weekDays()[0];
   const blocks = scheduleForDow(dow);
+  const hid = nowHiddenSections(); // What counselors see: a switched-off section's games and cleanup lines are left out
 
   const rows = blocks.map((raw) => {
     const b = decorateMealBlock(dow, raw);
@@ -2595,7 +2596,7 @@ function renderScheduleBody() {
     // The games played in this item. Competition days are editable; gamesForBlock maps this block's real day-of-week to
     // whichever configured day(s) carry that dow. Any kind of block can hold games once the schedule is edited here
     // (junior's Team Skits, a game the rain plan moved onto lunch); built-in, only a games block does, as it always has.
-    const games = gamesForBlock(dow, raw);
+    const games = hid.games ? [] : gamesForBlock(dow, raw);
     if (games.length) {
       extra = `<div class="sched-games">${games.map((g) =>
         `<span class="sched-game-chip ${state.results[g.id] ? 'played' : ''}">${esc(g.emoji)} ${esc(g.name)}</span>`).join('')}</div>`;
@@ -2625,7 +2626,7 @@ function renderScheduleBody() {
       <div class="sched-rail"><span class="sched-dot"></span></div>
       <div class="sched-card">
         <div class="sched-time">${raw.noTime ? '' : gamesWhen(raw.start, raw.end)}${status === 'now' ? '<span class="sched-now-pill">Now</span>' : ''}</div>
-        <div class="sched-label"><span class="sched-emoji">${b.emoji}</span> ${esc(b.label)}${mealCleanupNote(dow, b.label, blockMeal(raw))}${labelBadge}</div>
+        <div class="sched-label"><span class="sched-emoji">${b.emoji}</span> ${esc(b.label)}${hid.cleanup ? '' : mealCleanupNote(dow, b.label, blockMeal(raw))}${labelBadge}</div>
         ${extra}
       </div>
     </div>`;
@@ -14909,8 +14910,10 @@ function renderTeamSheet() {
   setTextIfChanged(nameEl, team.name);
   const staff = counselorName(team.id);
   setTextIfChanged(subEl, staff ? 'Counselors: ' + staff : '');
-  const next = findNextMatchupFor(team.id);
-  const cleanup = findNextCleanupFor(team.id);
+  // What counselors see: a section a director switched off (or senior's empty ones) leaves its fact out, as it does on Now.
+  const hid = nowHiddenSections();
+  const next = hid.games ? null : findNextMatchupFor(team.id);
+  const cleanup = hid.cleanup ? null : findNextCleanupFor(team.id);
   const facts = [];
   // Plain hairline rows with a line icon, not tinted boxes (§8.1 rule 7).
   const fact = (ico, label, text) => `<div class="ts-fact"><svg class="ico ts-fact-ico" aria-hidden="true"><use href="#i-${ico}"/></svg><span class="ts-fact-words"><span class="ts-fact-label">${label}</span><span class="ts-fact-text">${text}</span></span></div>`;

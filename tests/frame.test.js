@@ -293,6 +293,11 @@ test('the Your team sheet never shows a number, and says what is set by the acco
   assert.ok(/CAMP\.features\.electives/.test(body), '"Not you? Change" exists only where electives do');
 });
 
+test('the Your team sheet leaves a fact out when What counselors see hides its section', () => {
+  const body = APP.slice(APP.indexOf('function renderTeamSheet()'), APP.indexOf('function wireTeamSheetActions'));
+  assert.ok(/nowHiddenSections\(\)/.test(body) && /hid\.games \? null : findNextMatchupFor/.test(body) && /hid\.cleanup \? null : findNextCleanupFor/.test(body));
+});
+
 // ── the 44px rule reaches what moved into the frame ─────────────────
 
 test('the 44px target rule: switches, the chips that moved into Games and the sheets, "How to play", lone text links', () => {
