@@ -17599,6 +17599,10 @@ button.gs-row:focus-visible {
 #undo-to-round1-btn,
 .live-reset {
   color: var(--link);
+  min-height: var(--target); /* Step 29: a 44px hit box, as the other lone links */
+  min-width: var(--target);
+  display: inline-flex;
+  align-items: center;
 }
 .four-entry .link-btn .ico,
 .completed-matches .link-btn .ico,

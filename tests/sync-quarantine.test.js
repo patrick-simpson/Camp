@@ -539,7 +539,7 @@ test('the sync line names what was refused, escaped, with Retry and Discard — 
     // Cleared: the ordinary line is back.
     stateQuarantine = {};
     updateSyncIndicator();
-    assert.equal(document.getElementById('gs-sync').textContent, '☁️ Synced');
+    assert.equal(document.getElementById('gs-sync').textContent, 'Synced');
   } finally { fbConnKnown = false; fbConnected = false; teardown(); }
 });
 

@@ -6955,15 +6955,15 @@ function updateSyncIndicator() {
     // A live listener was cancelled by the security rules — this device's
     // access changed mid-session. The member listener handles the kick; this
     // just keeps the indicator honest until it lands.
-    text = '🔒 Sync blocked — your access changed';
+    text = 'Sync blocked · your access changed';
   } else if (sdkLoadFailed) {
-    text = '⚠️ Couldn’t connect — read-only copy';
+    text = 'Couldn’t connect · read-only copy';
   } else if (!syncEnabled() && !syncStarted && window.FIREBASE_CONFIG && window.FIREBASE_CONFIG.apiKey && typeof firebase !== 'undefined' && firebase.auth) {
     // Sync exists but hasn't been allowed to attach yet — sign-in and the
     // membership check are still resolving in the background.
     html = spinner;
   } else if (!syncEnabled()) {
-    text = '📱 This device only';
+    text = 'Saved on this phone only';
   } else if (!fbConnKnown) {
     // Startup gap before Firebase reports the connection state either way —
     // previously blank; a small jelly spinner reads as "working on it".
@@ -6972,7 +6972,7 @@ function updateSyncIndicator() {
     // Ahead of the quarantine line: offline is the bigger news (new scores are
     // not uploading at all), and the top bar (updateSyncAlert) still carries
     // any refused edits.
-    text = '⚠️ Offline — will sync when back';
+    text = 'Offline · saved on this phone';
   } else if (Object.keys(stateQuarantine).length) {
     // The rules refused some of this device's edits and sync moved on without
     // them (see "Refused writes" above). Named, with Retry / Discard, ahead of
@@ -6980,7 +6980,7 @@ function updateSyncIndicator() {
     html = quarantineLineHtml();
     quarantined = true;
   } else {
-    text = '☁️ Synced';
+    text = 'Synced';
     synced = true;
   }
   els.forEach((el) => {
@@ -11650,17 +11650,17 @@ function clockBlockHTML(g) {
     : '';
   let mainBtn;
   if (live) {
-    mainBtn = '<button class="timer-main-btn" data-clock="pause">⏸ Pause</button>';
+    mainBtn = '<button class="timer-main-btn" data-clock="pause">Pause</button>';
   } else if (remaining === 0 && !onLastRound) {
     mainBtn = '<button class="timer-main-btn" data-clock="next-round">Next round →</button>';
   } else {
-    mainBtn = `<button class="timer-main-btn" data-clock="start">▶ ${remaining === clock.duration ? 'Start' : remaining === 0 ? 'Restart' : 'Resume'}</button>`;
+    mainBtn = `<button class="timer-main-btn" data-clock="start">${remaining === clock.duration ? 'Start' : remaining === 0 ? 'Restart' : 'Resume'}</button>`;
   }
   const controls = viewer ? '' : `
     ${presets}
     <div class="board-clock-btns">
       ${mainBtn}
-      ${remaining !== clock.duration ? '<button class="timer-side-btn" data-clock="reset">↺ Reset</button>' : ''}
+      ${remaining !== clock.duration ? '<button class="timer-side-btn" data-clock="reset">Reset</button>' : ''}
     </div>`;
   return `<div class="tool-box game-clock-box ${remaining === 0 ? 'alarming' : ''}" data-tool="game-clock">
     <div class="tool-label">⏱️ ${esc(g.timer.label || 'Game clock')}</div>
@@ -11884,9 +11884,9 @@ function liveTrackerHTML(g, aId, bId, viewer) {
           `<button class="preset-chip ${clock.duration === p * 1000 ? 'selected' : ''}" data-clock="preset" data-secs="${p}">${fmtBoardClock(p * 1000)}</button>`).join('')}</div>` : ''}
         <div class="board-clock-btns">
           ${clockLive(clock)
-            ? `<button class="timer-main-btn" data-clock="pause">⏸ Pause</button>`
-            : `<button class="timer-main-btn" data-clock="start">▶ ${remaining === clock.duration ? 'Start' : remaining === 0 ? 'Restart' : 'Resume'}</button>`}
-          ${remaining !== clock.duration ? `<button class="timer-side-btn" data-clock="reset">↺ Reset</button>` : ''}
+            ? `<button class="timer-main-btn" data-clock="pause">Pause</button>`
+            : `<button class="timer-main-btn" data-clock="start">${remaining === clock.duration ? 'Start' : remaining === 0 ? 'Restart' : 'Resume'}</button>`}
+          ${remaining !== clock.duration ? `<button class="timer-side-btn" data-clock="reset">Reset</button>` : ''}
         </div>`}
     </div>` : '';
 
