@@ -1682,7 +1682,7 @@ rest of Step 14, in setup-ui.js: see "Set up the week: behaviour" below); with n
 
 - **`#setup[data-screen]` is the one switch** (`hub | backups | classic`, and
   Step 15's `week | schedule | rain`, Step 19's `meals | verses | cleanup | electives`, Step 25's `teams`, Step 21's
-  `games` (its CSS line exists; the routing doesn't yet); a later
+  `games`, Step 28's `wizard` (its CSS line exists; the routing doesn't yet); a later
   screen adds its own pair of lines in the CSS). `#setup` wraps `#settings-view`
   inside `#tab-now`, shown only under `body.builder-open` (which hides every
   other child of main-wrap: `:not(#setup)`). **No `data-screen` = the v197
@@ -1755,7 +1755,8 @@ rest of Step 14, in setup-ui.js: see "Set up the week: behaviour" below); with n
   `#rp-note-text` (rules refused), `#rp-sec-kept` / `#rp-kept`, `#rp-sec-recent` /
   `#rp-list` / `#rp-recent-note` / `#rp-empty`, `#rp-sec-years` / `#rp-years`,
   `#backup-download-btn`, `#backup-restore-row` (a label for the visually hidden
-  `#backup-file-input`), the owner's `#setup-advanced` / `#setup-advanced-body`.
+  `#backup-file-input`), the owner's `#setup-advanced` (one row, `#setup-advanced-open`, into
+  Step 28's `#sheet-setup-advanced`).
 - **Clipboard rows** (`.cb-row` in a `.gl.cb-list`): `.cb-time` (a tabular
   column, `<small>` for the day or date; a past year's point shows the YEAR, its
   date under it), `.cb-main` > `.cb-title` + `.cb-sub` (whole words wrap,
@@ -4766,6 +4767,52 @@ setup-sync.js's "CAMPERS" section (the last one before the cache load); the scre
   real defect: at 200% text the team header's name was squeezed to a sliver once the camper count joined its people count; `.ppl-head` wraps now.)
 - **Not built** (recorded): a printable sheet (decision Q7 allows one later); per-camper "absent" (cut, P2 C29); typing names into Put people on
   teams.
+
+## The new-year setup (Step 28 — markup and visual system)
+
+P2 §11.3, §7.3, §10.1, §11.16 in the clipboard language. Static markup in index.html (every hook, the copy per step and
+the row templates are in the comments at `#setup-wizard`, `#nyw-saved-list` (TALLY ROWS), `#sheet-nyw-staff`,
+`#sheet-nyw-undo`, `#sheet-setup-advanced`, `#hub-door`, `#rp-year` and `#sync-alert` (STRANDED WORK)); styles in
+styles.css's last block, "SET UP THE WEEK: the new-year setup". **Nothing is wired yet** (the build session does it):
+the screen has no route, the sheets aren't in `SETUP_SHEETS`, `HUB_DOOR_ACTIONS['new-year']` and the menu's owner rows
+have no action. `docs/build-notes/verify/step28-design.cjs` draws every state (specimens; `SHOTS=1`).
+
+- **The screen** `#setup-wizard.nyw` (`data-screen="wizard"`): `[data-step]` 1–5 shows one `.nyw-step[data-nyw-step]`;
+  `[data-drive]` = `me` (the dock shows) · `watch` (the owner watching another device: read only, no dock) · `other`
+  (only the claim). The intro: `#nyw-title` kicker, five `.nyw-bar[data-state=done|now|todo]` + `#nyw-count` ("Step 2 of
+  5"), `#nyw-headline` (the step's question; step 5 wears a drawn done check), `#nyw-lede`. Then the claim
+  `#nyw-claim[data-claim=other|watching]` (`#nyw-claim-lead`, `#nyw-claim-sub`, `#nyw-watch`, `#nyw-takeover`,
+  `#nyw-takeover-note`), ONE inline question `#nyw-ask` (`#nyw-ask-q`, `#nyw-ask-list`, `#nyw-ask-a`, `#nyw-ask-b`
+  with `data-danger`: take-over answers, "is a camp week running?", the freeze), and the notes `#nyw-older`, `#nyw-a1`,
+  `#nyw-offline`.
+- **Step 1**: `#nyw-start` (native date in a `.wk-field` row, `#nyw-start-sub`, `#nyw-start-was`), the not-a-Sunday
+  nudge `#nyw-snap` (`#nyw-snap-q`, `#nyw-snap-use`), the week as a printed calendar `#nyw-sec-week` / `#nyw-days`
+  (`.nyw-day[data-dow]` with `[data-nyw-date]`, `[data-nyw-tag]`, `#nyw-week-month`), double points as three pen-mark
+  radios `.nyw-opt[data-nyw-double=same|none|change]` (`#nyw-double-same-sub`) and `#nyw-double-form` (`#nyw-double-from`
+  / `-at` / `-until`). **Step 2**: the Camp week screen's tick sheet (`.wk-*` rows: Keep | Clear) in `#nyw-carry`, one
+  `.nyw-item[data-nyw-item][data-choice=keep|clear]` per thing (schedule, games, teams, counselors, photos, cleanup,
+  meals, verses, junior's stations / stationPeople with `data-feature="electives"`, memberTeams), ticks
+  `[data-nyw-pick]`, the note matching the choice shown by CSS (`[data-when]`), the staff line `#nyw-staff`
+  (`#nyw-staff-text`, `#nyw-staff-btn` → `#sheet-nyw-staff`, `#nyw-staff-list`), then "Every year" (fixed rows, a word
+  each). **Step 3**: `#nyw-save-state` (the head's sync-line marks: `.setup-sync[data-tone]`), `#nyw-save-text`,
+  `#nyw-save-retry`, the receipt `#nyw-sec-saved` / `#nyw-saved-list` (its first row the champion, `.nyw-champ`),
+  `#nyw-save-download`. **Step 4**: `#nyw-clear-list`, `#nyw-kept-text`, `#nyw-members-warn` (`-text`, `-btn`),
+  `#nyw-clear-state` / `#nyw-clear-text`, `#nyw-clear-retry`. **Step 5**: `#nyw-done-list.nyw-tally-done`, `#nyw-left`
+  (`-q`, `-list`, `-btn`), the numbered next rows `[data-nyw-go=people-teams|teams|campers]`, `#nyw-done-undo-text`.
+- **Tally rows** (`.nyw-t` > `.nyw-t-n` + `.nyw-t-text` > `.nyw-t-what` / `.nyw-t-sub`): the count in its own tabular
+  column; with no count `.nyw-t-n[data-mark=check|item]` (a drawn done check, or a small dot — a dash there read as
+  "minus"). Steps 3–5 and the Undo sheet use them.
+- **The dock** `#nyw-dock` (`.setup-dock`): `#nyw-back` beside the gold `#nyw-next` (2 : 3; its words say what happens;
+  not ready = `aria-disabled`, the dashed well naming what's missing); step 4 is the hold alone, `#nyw-hold-btn`
+  (`#nyw-hold-label`, `#nyw-hold-fill-label`; the restore sheet's `.btn-hold`) → `#nyw-hold-confirm` / `#nyw-hold-cancel`,
+  with `#nyw-back-quiet` under it, never beside it. Large text stacks it, gold first.
+- **Elsewhere**: the hub door's `data-door="wizard"` with the owner's equal pair `#hub-door-pair` (`#hub-door-watch`,
+  `#hub-door-takeover`; `data-owner-only hidden`); the menu rows' default sublines; `#sheet-restore[data-kind="archive"]`
+  steps the section ticks, keep / delete and the dock aside for `#rp-year` (`#rp-year-download`, the owner's
+  `#rp-year-undo` / `#rp-year-undo-sub`, everyone else's `#rp-year-owner` / `-text`); `#sheet-nyw-undo.nyu`
+  (`#nyu-sub`, `#nyu-lede`, `#nyu-back`, `#nyu-stay`, `#nyu-state` / `-text`, `#nyu-hold-btn` / `-label` /
+  `-fill-label`, `#nyu-hold-confirm`, `#nyu-hold-cancel`); `#sheet-setup-advanced` (`.adv-row[data-adv-section]` buttons
+  with `[data-adv-state]`, each opening ONE askDialog); the stranded bar's `.sync-alert-ico`.
 
 ## Counselors ↔ teams ↔ accounts
 

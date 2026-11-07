@@ -18501,3 +18501,58 @@ button.gs-row:focus-visible {
     min-height: var(--target);
   }
 }
+
+/* ── #sheet-restore for a PAST YEAR: its own two rows instead of the section
+   ticks, the keep / delete rows and the dock (an archive put back section by
+   section would score last year's bonuses against this year's window, §7.3) ── */
+#sheet-restore[data-kind="archive"] :is(.rp-pick, .sheet-body > .gl-head, #rp-manage, .sheet-dock) {
+  display: none;
+}
+.rp-year {
+  margin-top: var(--s-2);
+}
+.rp-year .hub-door-owner {
+  margin: var(--s-3) 2px 0;
+}
+
+/* ── Undo the new-year setup (#sheet-nyw-undo) ── */
+.nyu-lede {
+  margin: 0 0 var(--s-4);
+  font: var(--t-body);
+  color: var(--ink);
+}
+.nyu-lede:empty {
+  display: none;
+}
+.nyu .more-sec + .more-sec {
+  margin-top: var(--s-6);
+}
+.nyu .more-sec + .setup-note {
+  margin-top: var(--s-4);
+}
+.nyu .nyw-state {
+  margin-top: var(--s-3);
+}
+
+/* ── Advanced (#sheet-setup-advanced): a row per section and where it stands;
+   a row asks its one question (askDialog), so the sheet stays a calm list ── */
+.adv-warn {
+  margin: 0 2px var(--s-4);
+}
+.adv-list + .setup-note {
+  margin-top: var(--s-4);
+}
+
+/* ── The stranded-work bar (app.js strandedBarHtml; the template is in the
+   comment at #sync-alert): the calm strip, its download icon first ── */
+.sync-alert-ico {
+  flex: none;
+  display: grid;
+  place-items: center;
+  color: var(--ink-2);
+}
+.sync-alert-ico .ico {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.3;
+}

@@ -310,7 +310,16 @@
            tab / stranded-work strips): app.js updateSyncAlert. In the header, in
            flow, so it sticks under the identity row on every tab instead of
            floating over it; hidden unless something is parked. Retry / Discard /
-           Download live inside it, so it stays a bar rather than a pill. -->
+           Download live inside it, so it stays a bar rather than a pill.
+           STRANDED WORK (a phone back after the new-year setup, §6.11; app.js
+           strandedBarHtml; Step 28's template — the calm "tab" look, two lines at
+           most, the year named once an epoch says which):
+             <span class="sync-alert-ico" aria-hidden="true"><svg class="ico"><use href="#i-download"/></svg></span>
+             <span class="sync-alert-text">3 changes from 2026 weren’t added</span>
+             <span class="sync-quarantine-actions"><button … data-stranded="download">Download</button>
+               <button … data-stranded="dismiss">Dismiss</button></span>
+           Dismiss asks through askDialog ("Delete these 3 changes from this
+           phone?" · Delete them · Keep them), not the browser's confirm. -->
       <section id="sync-alert" class="sync-alert" role="alert" hidden></section>
       <!-- The live-reveal strip (§2.2): every tab but Now, only while places
            are still being revealed (phases intro, live, champion; gone at the
@@ -916,7 +925,8 @@
           </div>
 
           <!-- One front door at a time (§11.2, ux-R4), chosen in order:
-               data-door = running | new-year | original (none: hidden). The gold
+               data-door = running | new-year | wizard (a new-year setup is under
+               way: Step 28) | original | sections (none: hidden). The gold
                button is the owner's (Q8); every other director reads the same
                lead with the owner's name in #hub-door-owner-text instead
                ("Patrick turns on editing."). -->
@@ -924,6 +934,19 @@
             <p class="hub-door-lead" id="hub-door-lead"></p>
             <p class="hub-door-text" id="hub-door-text"></p>
             <button type="button" class="btn btn-gold btn-block hub-door-btn" id="hub-door-btn" data-owner-only hidden></button>
+            <!-- data-door="wizard" on the owner's OTHER device (§11.3, the claim):
+                 two equal choices instead of the gold button — Watch, and Take
+                 over once the driving device has gone 15 minutes without a tap.
+                 The lead says "You’re setting up 2027 on another device", the
+                 text "Step 3 of 5 · last tap 4 min ago". On the driving device the
+                 same door has the gold "Carry on" (step 3 of 5) instead; every
+                 other director reads the lead "Patrick is setting up 2027 (step 3
+                 of 5)." over the text "Scores saved before Patrick finishes are
+                 cleared with the rest.", and no button. -->
+            <div class="hub-door-pair" id="hub-door-pair" data-owner-only hidden>
+              <button type="button" class="btn" id="hub-door-watch"><svg class="ico" aria-hidden="true"><use href="#i-eye"/></svg>Watch</button>
+              <button type="button" class="btn" id="hub-door-takeover" hidden>Take over</button>
+            </div>
             <p class="hub-door-owner" id="hub-door-owner" data-not-owner hidden><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span id="hub-door-owner-text"></span></p>
           </section>
 
@@ -1066,14 +1089,19 @@
               </label>
             </div>
           </div>
-          <!-- Advanced (owner only, §11.16): collapsed, with its warning line;
-               per-section "Show the original instead" switches and "Start this
-               section again from the original" arrive with Step 15. -->
-          <details class="setup-advanced" id="setup-advanced" data-owner-only hidden>
-            <summary class="setup-advanced-sum">Advanced</summary>
-            <p class="setup-note"><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span>Emergency switches. Each one changes what every phone shows.</span></p>
-            <div id="setup-advanced-body"></div>
-          </details>
+          <!-- Advanced (owner only, §11.16): ONE row into the Advanced sheet
+               (#sheet-setup-advanced, the same sheet the hub ⋯ opens), never a
+               second copy of its switches folded away here. -->
+          <div class="more-sec rp-sec" id="setup-advanced" data-owner-only hidden>
+            <div class="gl-head"><h3 class="gl-label">Owner</h3><span class="gl-note"><svg class="ico" aria-hidden="true"><use href="#i-eye-off"/></svg>Only you see this</span></div>
+            <div class="gl">
+              <button type="button" class="gl-row" id="setup-advanced-open" aria-haspopup="dialog" aria-controls="sheet-setup-advanced">
+                <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-lock"/></svg></span>
+                <span class="gl-text"><span class="gl-title">Advanced</span><span class="gl-sub">Show the original, or start a section again</span></span>
+                <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+              </button>
+            </div>
+          </div>
           <!-- The screen's one gold action, docked at the foot (the takeover has no
                tab bar there): in reach of a thumb, not in the upper third.
                Asks for a name (askDialog), then saves a manual point. -->
@@ -3445,12 +3473,12 @@
           <div class="gl">
             <button type="button" class="gl-row" data-setup-act="new-year" data-owner-only hidden>
               <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-sun"/></svg></span>
-              <span class="gl-text"><span class="gl-title">Start the new-year setup</span><span class="gl-sub" data-setup-why></span></span>
+              <span class="gl-text"><span class="gl-title">Start the new-year setup</span><span class="gl-sub" data-setup-why>Dates, what carries over, save this year, clear</span></span>
               <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
             </button>
             <button type="button" class="gl-row" data-setup-act="undo-new-year" data-owner-only hidden>
               <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-undo"/></svg></span>
-              <span class="gl-text"><span class="gl-title">Undo the new-year setup</span><span class="gl-sub" data-setup-why></span></span>
+              <span class="gl-text"><span class="gl-title">Undo the new-year setup</span><span class="gl-sub" data-setup-why>Puts last year’s scores and dates back</span></span>
               <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
             </button>
             <button type="button" class="gl-row" data-setup-act="original" data-owner-only hidden>
@@ -3460,7 +3488,7 @@
             </button>
             <button type="button" class="gl-row" data-setup-act="advanced" data-owner-only hidden>
               <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-lock"/></svg></span>
-              <span class="gl-text"><span class="gl-title">Advanced</span><span class="gl-sub" data-setup-why>Section switches and fresh starts</span></span>
+              <span class="gl-text"><span class="gl-title">Advanced</span><span class="gl-sub" data-setup-why>Show the original, or start a section again</span></span>
               <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
             </button>
           </div>
@@ -3544,6 +3572,30 @@
         <!-- Games kept because they have scores (sync-F8): "Rain bowling · 🥇 Foxes". -->
         <p class="setup-note" id="rp-kept-note" hidden><svg class="ico" aria-hidden="true"><use href="#i-trophy"/></svg><span id="rp-kept-text"></span></p>
         <p class="setup-note" id="rp-not-offered" hidden><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span id="rp-not-offered-text"></span></p>
+        <!-- A PAST YEAR (an archive point, §7.3, §11.16): instead of the section ticks
+             (#sheet-restore[data-kind="archive"] steps them, the dock and the keep /
+             delete rows aside: an archive's data under this year's epoch would score
+             last year's bonuses against this year's window), its own two rows:
+             Download it as a file, and — on the NEWEST archive, while no newer one
+             exists, for the owner — Undo the new-year setup, which opens
+             #sheet-nyw-undo. Every other director reads #rp-year-owner instead
+             ("Only Patrick can undo the new-year setup."). #rp-year-undo-sub:
+             "Puts 2026 back: its scores, dates and history". -->
+        <div class="more-sec rp-year" id="rp-year" hidden>
+          <div class="gl">
+            <button type="button" class="gl-row" id="rp-year-download">
+              <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-download"/></svg></span>
+              <span class="gl-text"><span class="gl-title" id="rp-year-download-title">Download this year</span><span class="gl-sub">The whole week as a file, for safe keeping</span></span>
+              <span class="gl-end"></span>
+            </button>
+            <button type="button" class="gl-row" id="rp-year-undo" data-owner-only hidden>
+              <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-undo"/></svg></span>
+              <span class="gl-text"><span class="gl-title">Undo the new-year setup</span><span class="gl-sub" id="rp-year-undo-sub"></span></span>
+              <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+            </button>
+          </div>
+          <p class="hub-door-owner" id="rp-year-owner" data-not-owner hidden><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span id="rp-year-owner-text"></span></p>
+        </div>
         <!-- This point's own actions (§7.2): keep it (write-once; kept points can't be deleted from the
              app) or delete it. Shown for a point from the list, never for a backup file. -->
         <div class="more-sec rp-manage" id="rp-manage" hidden>
@@ -3570,6 +3622,130 @@
              the filled commit, and Cancel back to the hold. -->
         <button type="button" class="btn btn-danger btn-danger-fill btn-block" id="rp-hold-confirm" hidden></button>
         <button type="button" class="btn-quiet" id="rp-hold-cancel" hidden>Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── THE NEW-YEAR SETUP: its sheets (P2 §7.3, §10.1, §11.3, §11.16; Step 28) ──
+       Shell sheets like the setup sheets above (editors only, one at a time).
+       The staff review is the wizard's (step 2); Undo the new-year setup and
+       Advanced are the OWNER's alone: the renderer opens them only for
+       isOwner(), and the rules refuse their writes from anyone else. -->
+
+  <!-- Step 2's "Review them": the schedule items whose label names someone,
+       as clipboard rows (renderer: <div class="cb-row">{setupTimeCell}<span
+       class="cb-main"><span class="cb-title"><span class="sched-emo">🔥</span>
+       <span>Snack and campfire — TJ</span></span><span class="cb-sub">Every
+       day · names TJ</span></span></div>), the name found shown in the sub.
+       Read only: nothing is changed automatically. -->
+  <div id="sheet-nyw-staff" class="sheet-overlay" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-nyw-staff-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-nyw-staff-title">Items that name people</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="sheet-body">
+        <p class="setup-sheet-lede" id="nyw-staff-lede">Last year’s staff may not be back. Nothing here changes by itself.</p>
+        <div class="gl cb-list" id="nyw-staff-list"></div>
+        <p class="setup-note"><svg class="ico" aria-hidden="true"><use href="#i-clock"/></svg><span>Change them on the Schedule screen once the new year is set up.</span></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Undo the new-year setup (§7.3; owner only): what comes back, what
+       stays, the pre-restore point, then the hold. Opened from the hub ⋯ (14
+       days after a run) and from the newest Past years point. Lists are TALLY
+       ROWS (see #nyw-saved-list): #nyu-back "22 game results", "Camp week ·
+       Jul 19–25, 2026", "Double points · Thu 5 PM – end of Fri", "The
+       schedule, games, menus and verses as they were", "History shows 2026
+       again" (item rows); #nyu-stay "Counselors' teams · as they are now",
+       "Campers · not in the saved copy", and, when 2027 was edited since,
+       "Changes made for 2027 · kept in a restore point first". #nyu-state
+       (sync-line marks) while it runs or when it was refused. -->
+  <div id="sheet-nyw-undo" class="sheet-overlay nyu" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet sheet-tall" role="dialog" aria-modal="true" aria-labelledby="sheet-nyw-undo-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-nyw-undo-title">Undo the new-year setup</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <!-- "Saved Jul 11, 9:12 PM, just before the setup" -->
+      <p class="sheet-sub" id="nyu-sub"></p>
+      <div class="sheet-body">
+        <!-- "Junior camp goes back to the 2026 week, exactly as it was saved." -->
+        <p class="nyu-lede" id="nyu-lede"></p>
+        <div class="more-sec">
+          <div class="gl-head"><h3 class="gl-label">Comes back</h3></div>
+          <div class="gl nyw-tally" id="nyu-back"></div>
+        </div>
+        <div class="more-sec">
+          <div class="gl-head"><h3 class="gl-label">Stays as it is now</h3></div>
+          <div class="gl nyw-tally nyw-tally-stay" id="nyu-stay"></div>
+        </div>
+        <p class="setup-note"><svg class="ico" aria-hidden="true"><use href="#i-archive"/></svg><span>A restore point of today’s week is saved first.</span></p>
+        <p class="setup-sync nyw-state" id="nyu-state" data-tone="saving" aria-live="polite" hidden><i class="setup-sync-mark" aria-hidden="true"></i><span class="setup-sync-body" id="nyu-state-text"></span></p>
+      </div>
+      <div class="sheet-dock">
+        <button type="button" class="btn btn-danger btn-block btn-hold nyw-hold" id="nyu-hold-btn"><span class="btn-hold-label" id="nyu-hold-label">Hold to undo Junior camp’s new-year setup</span><span class="btn-hold-fill" aria-hidden="true"><span class="btn-hold-label" id="nyu-hold-fill-label"></span></span></button>
+        <button type="button" class="btn btn-danger btn-danger-fill btn-block nyw-hold" id="nyu-hold-confirm" hidden>Yes, undo the new-year setup</button>
+        <button type="button" class="btn-quiet" id="nyu-hold-cancel" hidden>Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Advanced (§11.16, §10.1; owner only): the emergency valves, a row per
+       section with where it stands in [data-adv-state] ("Edited here · 3
+       changed items, 2 one-offs" / "Showing the original · your edits are kept").
+       A row opens ONE askDialog (stack: true) that names the section's state
+       and what starting again replaces ("Replaces this camp's edited schedule —
+       3 changed items, 2 one-offs — with the schedule that came with the app.
+       Games keep their schedule items where the item still exists.") with its
+       choices: "Show the original instead" (while on; "Use our edits again"
+       while off), "Start again from the original" (kind: 'danger': a pre-seed
+       point, then one commit) and "Not now" (quiet). A section that was never
+       turned on is aria-disabled with "Never turned on" as its sub: there is
+       nothing to start again. Electives is junior's (data-feature="electives"). -->
+  <div id="sheet-setup-advanced" class="sheet-overlay adv" hidden>
+    <div class="sheet-backdrop" data-sheet-close></div>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-setup-advanced-title">
+      <div class="sheet-grab" data-sheet-grab aria-hidden="true"></div>
+      <header class="sheet-head">
+        <h2 class="sheet-title" id="sheet-setup-advanced-title">Advanced</h2>
+        <button type="button" class="sheet-close" data-sheet-close aria-label="Close"><svg class="ico" aria-hidden="true"><use href="#i-x"/></svg></button>
+      </header>
+      <div class="sheet-body">
+        <p class="setup-note adv-warn"><svg class="ico" aria-hidden="true"><use href="#i-lock"/></svg><span>Emergency switches. Each one changes what every phone shows, and each asks first.</span></p>
+        <div class="gl adv-list">
+          <button type="button" class="gl-row adv-row" data-adv-section="schedule">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-clock"/></svg></span>
+            <span class="gl-text"><span class="gl-title">Schedule</span><span class="gl-sub" data-adv-state></span></span>
+            <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+          </button>
+          <button type="button" class="gl-row adv-row" data-adv-section="meals">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-meal"/></svg></span>
+            <span class="gl-text"><span class="gl-title">Meal menus</span><span class="gl-sub" data-adv-state></span></span>
+            <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+          </button>
+          <button type="button" class="gl-row adv-row" data-adv-section="verses">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-book"/></svg></span>
+            <span class="gl-text"><span class="gl-title">Memory verses</span><span class="gl-sub" data-adv-state></span></span>
+            <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+          </button>
+          <button type="button" class="gl-row adv-row" data-adv-section="cleanup">
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-broom"/></svg></span>
+            <span class="gl-text"><span class="gl-title">Cleanup rota</span><span class="gl-sub" data-adv-state></span></span>
+            <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+          </button>
+          <button type="button" class="gl-row adv-row" data-adv-section="electives" data-feature="electives" hidden>
+            <span class="gl-ico" aria-hidden="true"><svg class="ico"><use href="#i-shapes"/></svg></span>
+            <span class="gl-text"><span class="gl-title">Electives</span><span class="gl-sub" data-adv-state></span></span>
+            <span class="gl-end"><svg class="ico gl-chev" aria-hidden="true"><use href="#i-chev-r"/></svg></span>
+          </button>
+        </div>
+        <p class="setup-note"><svg class="ico" aria-hidden="true"><use href="#i-archive"/></svg><span>Starting a section again saves a restore point first.</span></p>
       </div>
     </div>
   </div>
