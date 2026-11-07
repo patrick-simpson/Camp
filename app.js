@@ -2596,15 +2596,15 @@ function renderScheduleBody() {
     const games = gamesForBlock(dow, raw);
     if (games.length) {
       extra = `<div class="sched-games">${games.map((g) =>
-        `<span class="sched-game-chip ${state.results[g.id] ? 'played' : ''}">${esc(g.emoji)} ${esc(g.name)}${state.results[g.id] ? ' ✓' : ''}</span>`).join('')}</div>`;
+        `<span class="sched-game-chip ${state.results[g.id] ? 'played' : ''}">${esc(g.emoji)} ${esc(g.name)}</span>`).join('')}</div>`;
     }
     if (raw.type === 'elective') {
       labelBadge = electiveWxHtml(dow, raw.slot);
       // Pin the viewer's own station at the top of the block so they don't
       // have to scan every roster for their name.
       const mine = myStationFor(dow, raw.slot);
-      if (mine) labelBadge += `<span class="sched-you-chip">⭐ You: ${mine.emoji} ${esc(mine.station)}</span>`;
-      const kidText = (kids, keys) => kids.map((k, i) => electiveIsMe(k, keys && keys[i]) ? `<span class="sched-you">⭐ ${esc(k)}</span>` : esc(k)).join(' · ');
+      if (mine) labelBadge += `<span class="sched-you-chip">Your station: ${mine.emoji} ${esc(mine.station)}</span>`;
+      const kidText = (kids, keys) => kids.map((k, i) => electiveIsMe(k, keys && keys[i]) ? `<span class="sched-you">${esc(k)}</span>` : esc(k)).join(' · ');
       const stations = electivesFor(dow)[raw.slot] || [];
       if (stations.length) {
         let stationRows = stations.map((row) =>
@@ -2612,7 +2612,7 @@ function renderScheduleBody() {
             <span class="sched-station-kids">${kidText(row[1], row[2])}</span></div>`).join('');
         const breakKids = electiveBreakKids(dow, raw.slot);
         if (breakKids.length) {
-          stationRows += `<div class="sched-station sched-break${breakKids.some((k) => electiveIsMe(k, '')) ? ' sched-station-you' : ''}"><span class="sched-station-name">☕ Break</span>
+          stationRows += `<div class="sched-station sched-break${breakKids.some((k) => electiveIsMe(k, '')) ? ' sched-station-you' : ''}"><span class="sched-station-name">Break</span>
             <span class="sched-station-kids">${kidText(breakKids)}</span></div>`;
         }
         extra += `<div class="sched-stations">${stationRows}</div>`;
@@ -2622,7 +2622,7 @@ function renderScheduleBody() {
     return `<div class="sched-block ${status} ${meal ? 'meal' : ''}">
       <div class="sched-rail"><span class="sched-dot"></span></div>
       <div class="sched-card">
-        <div class="sched-time">${raw.noTime ? '' : schedRange(raw.start, raw.end)}${status === 'now' ? '<span class="sched-now-pill">Now</span>' : ''}</div>
+        <div class="sched-time">${raw.noTime ? '' : gamesWhen(raw.start, raw.end)}${status === 'now' ? '<span class="sched-now-pill">Now</span>' : ''}</div>
         <div class="sched-label"><span class="sched-emoji">${b.emoji}</span> ${esc(b.label)}${mealCleanupNote(dow, b.label, blockMeal(raw))}${labelBadge}</div>
         ${extra}
       </div>
@@ -2638,7 +2638,7 @@ function renderScheduleBody() {
   const html = `
     <h3 class="sched-day-title">${day.full} <span class="sched-day-tag">· ${esc(day.tag)}</span></h3>
     <div class="sched-timeline">${rows || '<p class="muted">Nothing scheduled.</p>'}</div>
-    ${blocks.some((b) => !b.noTime) ? `<div class="sched-ics-row"><jelly-button id="sched-ics-btn" class="secondary-btn" variant="platinum" size="small">📆 Add ${day.full} to calendar</jelly-button></div>` : ''}${renderWeekIcsEntry()}
+    ${blocks.some((b) => !b.noTime) ? `<div class="sched-ics-row"><jelly-button id="sched-ics-btn" class="secondary-btn" variant="platinum" size="small">Add ${day.full} to calendar</jelly-button></div>` : ''}${renderWeekIcsEntry()}
   `;
   if (!setHtmlIfChanged(wrap, html)) return; // the live button already has its handler (same dow/day: the day title is in the markup)
   const icsBtn = document.getElementById('sched-ics-btn');
@@ -2767,8 +2767,8 @@ function renderWeekIcsEntry() {
   // 'during' starts a day early (the freeze window), so the Saturday BEFORE camp is 'during' too: from there "the days
   // from today" would be only the camp's own Saturday. Offer it from the Sunday on, and not ON the Sunday (the whole week).
   const fromToday = wk.phase === 'during' && campDateStr() >= wk.start && campNow().dow > 0;
-  return `<div class="sched-ics-row sched-ics-week"><jelly-button id="sched-ics-week-btn" class="secondary-btn" variant="platinum" size="small">📆 Add the whole week to my calendar</jelly-button>`
-    + (fromToday ? `<jelly-button id="sched-ics-from-btn" class="secondary-btn" variant="platinum" size="small">📆 Only the days from today</jelly-button>` : '')
+  return `<div class="sched-ics-row sched-ics-week"><jelly-button id="sched-ics-week-btn" class="secondary-btn" variant="platinum" size="small">Add the whole week to my calendar</jelly-button>`
+    + (fromToday ? `<jelly-button id="sched-ics-from-btn" class="secondary-btn" variant="platinum" size="small">Only the days from today</jelly-button>` : '')
     + `<p class="sched-ics-note">This is a snapshot of the schedule as it is now. Your calendar won’t update itself: if the schedule changes, download it again and delete the old camp events first.</p></div>`;
 }
 

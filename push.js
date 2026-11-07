@@ -416,6 +416,7 @@ function pushValidVapidKey(key) {
 function pushAudienceLabel(audience) {
   if (audience === 'all') return 'Everyone';
   if (audience === 'editors') return 'Directors only';
+  if (audience === 'followers') return 'People who follow these items';
   if (PUSH_TEAM_RE.test(String(audience || '')) && typeof teamName === 'function') {
     const t = (typeof state !== 'undefined' && state.teams || []).find((x) => x.id === audience);
     return t ? `${teamEmoji(audience)} ${t.name} counselors` : 'One team';
