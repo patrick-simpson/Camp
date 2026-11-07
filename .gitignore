@@ -6,3 +6,7 @@
 *.export.json
 *export*.json
 exports/
+
+# tests/push-live (opt-in live alert check): browser profiles hold a signed-in session; results are per run
+tests/push-live/profiles/
+tests/push-live/results.json

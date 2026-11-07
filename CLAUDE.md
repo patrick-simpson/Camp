@@ -3261,6 +3261,9 @@ ignores the "director alerts" opt-out). Design spec:
   deployed by re-uploading it to `camp-alerts` (the README's "Updating the sender later"; secrets and the timer stay).
   The Cloudflare account also hosts the owner's Awana site (`kvbcawana` Pages + `awana-sync` Worker): the free plan's
   100,000 requests a day are shared, and the camp timer alone uses about 1,440.
+  **Proved live with pretend phones** (Sat Nov 7, 2026, 10 of 10; `tests/push-live/`, opt-in, writes to the live
+  database, run only with the owner's yes): every alert kind reached exactly the phones it should within about a second.
+  A practice reveal is `revealStart({ practice: true })`; without it a Start is REAL and buzzes everyone.
 - **Schedule-change alerts** (Step 26 / P2 S9; Worker version 2026-11-04.1, deployed at Step 27):
   `POST /notify` `{camp, kind: 'schedule', alert, ids}` — an EDITOR of that camp only (403 `not-editor`). `ids` are published
   block ids (`^[a-z0-9-]{1,40}$`, at most 200) or exactly `['*']` with `alert: false` (the baseline reset; anything else
