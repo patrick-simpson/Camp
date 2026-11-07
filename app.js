@@ -3218,7 +3218,7 @@ function missingSeedCounselors(members) {
 function memberTeamSelectHTML(cls, teamId, label) {
   return `<jelly-select class="${cls}" placeholder="— no team —" ${isTeamId(teamId) ? `value="${esc(teamId)}"` : ''} label="${esc(label)}" size="small">
     <jelly-option value="">— no team —</jelly-option>
-    ${state.teams.map((t) => `<jelly-option value="${esc(t.id)}">${teamEmoji(t.id)} ${esc(t.name)}</jelly-option>`).join('')}
+    ${state.teams.map((t) => `<jelly-option value="${esc(t.id)}">${esc(t.name)}</jelly-option>`).join('')}
   </jelly-select>`;
 }
 
@@ -10345,9 +10345,9 @@ function medalPickerHTML(picks, game) {
   // The worth of each medal is points text: shown to directors only.
   const worth = (n) => (standingsVisible() ? ` · ${n} pts` : '');
   const slots = [
-    { key: 'gold', label: `🥇 Gold${worth(MEDAL_POINTS.gold * mult)}` },
-    { key: 'silver', label: `🥈 Silver${worth(MEDAL_POINTS.silver * mult)}` },
-    { key: 'bronze', label: `🥉 Bronze${worth(MEDAL_POINTS.bronze * mult)}` },
+    { key: 'gold', label: `Gold${worth(MEDAL_POINTS.gold * mult)}` },
+    { key: 'silver', label: `Silver${worth(MEDAL_POINTS.silver * mult)}` },
+    { key: 'bronze', label: `Bronze${worth(MEDAL_POINTS.bronze * mult)}` },
   ];
   return `<div class="medal-picker">
     ${slots.map((s) => `
@@ -10355,7 +10355,7 @@ function medalPickerHTML(picks, game) {
         <span>${s.label}</span>
         <jelly-select data-medal="${s.key}" placeholder="— pick team —" ${picks[s.key] ? `value="${esc(picks[s.key])}"` : ''} label="${s.key} medal team">
           ${state.teams.map((t) =>
-            `<jelly-option value="${esc(t.id)}">${teamEmoji(t.id)} ${esc(t.name)}</jelly-option>`
+            `<jelly-option value="${esc(t.id)}">${esc(t.name)}</jelly-option>`
           ).join('')}
         </jelly-select>
       </div>
@@ -11931,7 +11931,7 @@ function liveBoardHTML(g, aId, bId) {
     aScore = l.a; bScore = l.b;
     const target = g.ladderScoring.target || 21;
     const w = ladderWinnerId(g, l, aId, bId);
-    sub = w ? `🏆 ${teamEmoji(w)} ${esc(teamName(w))} reached ${target}!` : `First to exactly ${target}`;
+    sub = w ? `${esc(teamName(w))} reached ${target}` : `First to exactly ${target}`;
   }
   const col = (id, score) => `
     <div class="board-col"${teamAccentAttr(id)}>
@@ -12053,7 +12053,7 @@ function ladderMatchHTML(g, aId, bId) {
       </div>
     </div>`;
   const wonBanner = winner
-    ? `<p class="ladder-won">🏆 ${teamEmoji(winner)} ${esc(teamName(winner))} reached ${target}! Tap their <strong>“won”</strong> button above to lock it in.</p>`
+    ? `<p class="ladder-won">${esc(teamName(winner))} reached ${target}. Tap their <strong>“won”</strong> button above to lock it in.</p>`
     : '';
   return `<div class="ladder-tracker">
     <p class="ladder-target">🪜 First to exactly ${target} · cancellation scoring each round</p>
