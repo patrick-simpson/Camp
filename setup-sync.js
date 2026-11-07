@@ -555,7 +555,30 @@ function onSetupSnapshot(remote) {
   // snapshot is gone: remember a read is owed and re-read (never replay) when quiet.
   if (setupPending > 0 || setupBisecting) { deferSetupSnapshot(); return; }
   if (!remote && setupBase && Object.keys(setupBase).length) { setupStrandWiped(); adoptSetup(remote, {}); return; }
+  setupAdoptNewSnapshot(remote);
+}
+
+// A snapshot after the first can carry ANOTHER camp year's epoch than the one this phone last confirmed (the new-year setup
+// ran while this phone was open, or Undo the new-year setup put the old year back): its unconfirmed edits are the old year's,
+// so they are STRANDED as a download, never applied to the new one (§6.4.4 / §6.11, as the state and config engines do), and
+// last year's clashes and undo history go. Otherwise an ordinary adopt (rebasing unsent edits). An empty node is the console
+// wipe's business (the caller handles it), not an epoch change.
+function setupAdoptNewSnapshot(remote) {
+  const remoteCanon = setupCanon(remote || {});
+  if (setupBase && Object.keys(remoteCanon).length) {
+    const from = epochOfTree(setupBase);
+    const to = epochOfTree(remoteCanon);
+    if (from !== to) {
+      const local = setupCanon(setupTree);
+      const mine = directorTab() ? setupTreeDiff(setupBase, local) : {}; // directorTab, not canEdit: a counselor preview must never make a director's phone drop its unconfirmed week
+      setupStrand(mine, local, from, to);
+      setupForgetLastYear();
+      adoptSetup(remote, {});
+      return true;
+    }
+  }
   adoptSetup(remote);
+  return false;
 }
 
 function deferSetupSnapshot() {
@@ -4116,6 +4139,797 @@ function electiveLinkPerson(pid, member) {
     })));
     if (!n) return false;
   }, { label: 'Linked ' + name + ' to their sign-in' });
+}
+
+// ════════════════════════════════════════════════════════════════════
+// ── 11. THE NEW-YEAR WIZARD (P2 §11.3, §7.3, §6.11 — build step 28, session 1: the engine) ──────────────
+// ════════════════════════════════════════════════════════════════════
+// Five steps (When is camp? · What carries over · Save last year · Clear the scoreboard · Next steps). OWNER-ONLY
+// (decision Q8): every entry point asks isOwner() and the rules refuse the claim and the commit from anyone else.
+// The screens are session 2 (setup-ui.js); everything they need is here, as functions that say a reason instead of
+// throwing, so a caller always has a sentence to show.
+//
+//   THE CLAIM  setup/meta/wizard = { step, byKey, at, fromEpoch, archiveId?, answers? }, always written whole by a
+//              transaction. `answers` is a JSON string (≤ 2,000 chars) holding the device that drives the wizard
+//              (`dev`: how a reload knows the claim is its own), the step-1/2 answers and nothing else. A second device,
+//              or a director who is not the owner, reads the claim and Watches; the owner's other device may Take over once
+//              the driver has been idle 15 minutes (the claim's `at` is refreshed by every step, answer and tap).
+//   THE ARCHIVE  step 3: a `pre-wizard` point and a pinned `archive` point, READ BACK and compared (length and hash) before
+//              anything can be cleared. Idempotent (an archiveId already in the claim is verified and reused or replaced).
+//   THE CLEAR  step 4: ONE atomic multi-path update at the camp root with exactly the paths wizardClearUpdate lists —
+//              never members/*. Any refused path refuses all of it. Members' teams follow, one small update each.
+//   UNDO  wizardUndo: the newest archive's data AND epoch back in one atomic update (owner-only).
+// Nothing here runs until the owner acts; with no claim and no epoch every other engine is untouched.
+
+const WIZARD_IDLE_MS = 15 * 60 * 1000;     // Take over appears only when the driver has been idle this long
+const WIZARD_TOUCH_MS = 60 * 1000;         // a tap refreshes the claim's `at` at most this often
+const WIZARD_ANSWER_MS = 10 * 1000;        // a changed answer reaches the claim at most this often
+const WIZARD_BUSY_MS = 2 * 60 * 1000;      // an open wizard touched in the last 2 minutes holds the auto-reload
+const WIZARD_UNDO_DAYS = 14;               // the hub's Undo is offered this long after a run (Past years: while it is the newest archive)
+const WIZARD_DRAFT_KEY = 'campWizardDraft';   // lsKey()'d; wiped by clearLocalData and by a new epoch
+const WIZARD_DEVICE_KEY = 'campWizardDevice'; // device-wide (like the push device id): which phone drives a claim
+const WIZARD_ITEMS = ['schedule', 'games', 'teams', 'counselors', 'photos', 'cleanup', 'meals', 'verses', 'stations', 'stationPeople', 'memberTeams'];
+// Step 2's defaults (§11.3): Keep what is a setting, Clear what belongs to last year's people.
+const WIZARD_CARRY_DEFAULTS = Object.freeze({ schedule: 'keep', games: 'keep', teams: 'keep', counselors: 'clear', photos: 'clear', cleanup: 'keep', meals: 'clear', verses: 'clear', stations: 'keep', stationPeople: 'clear', memberTeams: 'clear' });
+const WIZARD_STATE_CLEAR = ['results', 'brackets', 'brackets4', 'drafts', 'picRounds', 'picSetup', 'bonuses', 'live', 'clocks', 'announcements'];
+const WIZARD_DOUBLE_SAME_LEGACY = Object.freeze({ fromDow: 4, fromMin: 1020, toDow: 6, toMin: 0 }); // Thursday 5:00 PM until the end of Friday (camp-core's legacy window)
+const WIZARD_EPOCH_RE = /^w20[0-9]{6}(-[2-9])?$/;
+
+let wizardCommitInFlight = false;   // the clear (or the undo) is on the wire: all three engines hold their pushes
+let wizardOpenNow = false;          // the wizard screen is up on this device (setup-ui.js tells us)
+let wizardTouchedAt = 0;            // the last tap on it (the auto-reload holds for 2 minutes after)
+let wizardDraft = null;             // { answers, preWizard?, done? } — the memory copy of the device draft
+let wizardClaimWroteAt = 0;         // when this device last wrote the claim (a tap refreshes at most once a minute)
+let wizardAnswersSentAt = 0;
+let wizardAnswersTimer = null;
+let wizardAnswersDirty = false;
+
+function wizardHoldsPushes() { return wizardCommitInFlight; }
+function wizardBusy() { return wizardCommitInFlight || (wizardOpenNow && Date.now() - wizardTouchedAt < WIZARD_BUSY_MS); }
+function wizardSetOpen(on) { wizardOpenNow = !!on; if (on) wizardTouchedAt = Date.now(); }
+
+// The held pushes (an undecided tab's flags, set by tabMayPush while the commit was out) go now: the server's new year is
+// adopted, so each diff is against it and sends nothing of last year's.
+function wizardReleaseHolds() {
+  wizardCommitInFlight = false;
+  if (tabWriter !== true) return;
+  if (tabHeldState) { tabHeldState = false; pushState(); }
+  if (tabHeldConfig) { tabHeldConfig = false; pushConfig(); }
+  if (tabHeldSetup) { tabHeldSetup = false; pushSetup(); }
+}
+
+function wizardDeviceId() {
+  try {
+    let id = localStorage.getItem(WIZARD_DEVICE_KEY);
+    if (!id || !/^[A-Za-z0-9_-]{8,64}$/.test(id)) {
+      id = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : 'w' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+      localStorage.setItem(WIZARD_DEVICE_KEY, id);
+    }
+    return id;
+  } catch (e) { return typeof presenceId === 'string' ? presenceId : 'device-unknown'; }
+}
+
+// ── answers (pure) ───────────────────────────────────────────────────
+
+function wizardIsSunday(ymd) {
+  if (typeof ymd !== 'string' || !/^20\d{2}-\d{2}-\d{2}$/.test(ymd)) return false;
+  const [y, m, d] = ymd.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d));
+  return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d && t.getUTCDay() === 0;
+}
+
+function wizardDoubleOk(d) {
+  return setupIsMap(d) && Number.isInteger(d.fromDow) && d.fromDow >= 0 && d.fromDow <= 6 && Number.isInteger(d.toDow) && d.toDow >= 0 && d.toDow <= 7
+    && Number.isInteger(d.fromMin) && d.fromMin >= 0 && d.fromMin <= 1439 && Number.isInteger(d.toMin) && d.toMin >= 0 && d.toMin <= 1439
+    && d.toDow * 1440 + d.toMin > d.fromDow * 1440 + d.fromMin;
+}
+
+// What a claim, a draft or a typed form says, as exactly this shape: { weekStart ('' until a Sunday is picked), double ('same' |
+// 'none' | a window), carry (every item 'keep' | 'clear') }. Unknown fields drop; a junk value takes its default.
+function wizardNormAnswers(raw) {
+  const r = setupIsMap(raw) ? raw : {};
+  const carry = {};
+  WIZARD_ITEMS.forEach((k) => {
+    const v = setupIsMap(r.carry) ? r.carry[k] : undefined;
+    carry[k] = v === 'keep' || v === 'clear' ? v : WIZARD_CARRY_DEFAULTS[k];
+  });
+  const dbl = r.double === 'none' ? 'none' : (wizardDoubleOk(r.double) ? { fromDow: r.double.fromDow, fromMin: r.double.fromMin, toDow: r.double.toDow, toMin: r.double.toMin } : 'same');
+  return { weekStart: wizardIsSunday(r.weekStart) ? r.weekStart : '', double: dbl, carry };
+}
+
+// The double window the new week gets, as setup/meta/double would hold it (null = none). "Same" is last year's: in the legacy
+// epoch the printed Thursday 5 PM to the end of Friday, else whatever the week held.
+function wizardDoubleValue(choice, cur) {
+  if (choice === 'none') return null;
+  if (wizardDoubleOk(choice)) return setupClone(choice);
+  if (!cur || !cur.epoch) return setupClone(WIZARD_DOUBLE_SAME_LEGACY);
+  return wizardDoubleOk(cur.double) ? setupClone(cur.double) : null;
+}
+
+// ── the claim (pure reads) ───────────────────────────────────────────
+
+// The claim as a tree holds it, or null: exactly this shape, junk dropped. `dev` is read out of the answers.
+function wizardClaimOf(tree) {
+  const w = tree && tree.meta ? tree.meta.wizard : null;
+  if (!setupIsMap(w)) return null;
+  const step = Number(w.step);
+  const at = Number(w.at);
+  if (!Number.isInteger(step) || step < 1 || step > 5 || typeof w.byKey !== 'string' || !isFinite(at) || at <= 0) return null;
+  if (typeof w.fromEpoch !== 'string' || !w.fromEpoch || w.fromEpoch.length > 40) return null;
+  let ans = null;
+  if (typeof w.answers === 'string' && w.answers.length <= 2000) { try { ans = JSON.parse(w.answers); } catch (e) { ans = null; } }
+  return {
+    step, byKey: w.byKey, at, fromEpoch: w.fromEpoch,
+    archiveId: typeof w.archiveId === 'string' && RP_ID_RE.test(w.archiveId) ? w.archiveId : '',
+    dev: setupIsMap(ans) && typeof ans.dev === 'string' && /^[A-Za-z0-9_-]{8,64}$/.test(ans.dev) ? ans.dev : '',
+    answers: wizardNormAnswers(ans),
+  };
+}
+
+// The claim value written (always whole). `at` is the server's clock.
+function wizardClaimValue(c) {
+  const ans = JSON.stringify(Object.assign({ dev: c.dev }, wizardNormAnswers(c.answers)));
+  const out = { step: c.step, byKey: c.byKey, at: firebase.database.ServerValue.TIMESTAMP, fromEpoch: c.fromEpoch, answers: ans };
+  if (c.archiveId) out.archiveId = c.archiveId;
+  return out;
+}
+
+function wizardCurrentEpoch() { return (state.meta && typeof state.meta.epoch === 'string' && state.meta.epoch) || 'legacy'; }
+
+// Who has the wizard, for the screen: { state, claim, idleMs, canTakeOver, byName }.
+//   none      nobody started one (or the claim is a leftover from another camp year: `stale`, the owner may start over)
+//   mine      this device drives it (a reload resumes here)
+//   other     the owner's other device drives it and was touched recently: Watch, or Take over once idle 15 minutes
+//   watching  not the owner: a read-only line, never a control
+function wizardModel(nowMs) {
+  const claim = wizardClaimOf(setupTree);
+  if (!claim) return { state: 'none', claim: null, idleMs: 0, canTakeOver: false, byName: '' };
+  const now = isFinite(nowMs) ? nowMs : serverNow();
+  const idleMs = Math.max(0, now - claim.at);
+  const byName = setupEditorName(claim.byKey);
+  if (claim.fromEpoch !== wizardCurrentEpoch()) return { state: 'stale', claim, idleMs, canTakeOver: isOwner(), byName };
+  if (!isOwner()) return { state: 'watching', claim, idleMs, canTakeOver: false, byName };
+  if (claim.dev && claim.dev === wizardDeviceId()) return { state: 'mine', claim, idleMs, canTakeOver: false, byName };
+  return { state: 'other', claim, idleMs, canTakeOver: idleMs >= WIZARD_IDLE_MS, byName };
+}
+
+// ── the device draft (§5.11, ux-R5) ──────────────────────────────────
+
+function wizardDraftRead() {
+  if (wizardDraft) return wizardDraft;
+  let d = null;
+  try { d = JSON.parse(localStorage.getItem(lsKey(WIZARD_DRAFT_KEY)) || 'null'); } catch (e) { d = null; }
+  wizardDraft = setupIsMap(d) && d.v === 1
+    ? { answers: wizardNormAnswers(d.answers), preWizard: typeof d.preWizard === 'string' && RP_ID_RE.test(d.preWizard) ? d.preWizard : '', done: setupIsMap(d.done) ? d.done : null }
+    : { answers: wizardNormAnswers({}), preWizard: '', done: null };
+  return wizardDraft;
+}
+
+function wizardDraftWrite() {
+  const d = wizardDraftRead();
+  try { localStorage.setItem(lsKey(WIZARD_DRAFT_KEY), JSON.stringify({ v: 1, answers: d.answers, preWizard: d.preWizard, done: d.done })); } catch (e) { /* private mode: the claim still holds the answers */ }
+}
+
+// A new camp year (or a sign-out) forgets it: app.js epochDeviceReset calls this.
+function wizardDraftForget() {
+  wizardDraft = null;
+  clearTimeout(wizardAnswersTimer); wizardAnswersTimer = null; wizardAnswersDirty = false;
+  try { localStorage.removeItem(lsKey(WIZARD_DRAFT_KEY)); } catch (e) { /* fine */ }
+}
+
+// The answers in force: this device's draft; with none, a claim's.
+function wizardAnswers() { return wizardDraftRead().answers; }
+
+// ── the gates ────────────────────────────────────────────────────────
+
+// Every refusal is said BEFORE anything is written: owner, loading, denied, schema, tab, offline.
+function wizardGate() {
+  const g = ownerGate('set up the new year');
+  if (!g.ok) return { reason: 'owner', message: g.reason };
+  if (!setupRef || !setupReady) return { reason: 'loading' };
+  if (setupDenied || setupWriteRefused) return { reason: 'denied' };
+  if (setupSchemaTooNew()) return { reason: 'schema' };
+  if (!tabMayPush('setup')) return { reason: 'tab' }; // a view-only second tab never writes
+  if (!restoreOnline()) return { reason: 'offline' };
+  return null;
+}
+
+// The freeze (§10.6): not inside a camp week, unless the owner says so in words.
+function wizardFreeze(o) {
+  if (o.overrideCampWeek) return null;
+  const wk = campWeek();
+  if (wk.phase === 'during') return { reason: 'camp-week' };
+  if (wk.phase === 'unset') {
+    if (o.campRunning === undefined) return { reason: 'ask-camp-week' };
+    if (o.campRunning === true) return { reason: 'camp-week' };
+  }
+  return null;
+}
+
+async function wizardTxn(fn) {
+  setupPending++;
+  setupNotify('sync');
+  try {
+    return await setupRef.child('meta/wizard').transaction(fn, null, false);
+  } finally {
+    setupPending = Math.max(0, setupPending - 1);
+    setupNotify('sync');
+    if (typeof setupIdleTick === 'function') setupIdleTick(); // the claim's own snapshot was turned away while it was in flight: read it now
+  }
+}
+
+// Update MY claim by a mutator over its parsed form ({} → the new fields); refused when it is not mine any more. One at a
+// time, in the order asked (an answer's send and the step change after it must not race, and a later step that checks the
+// engines are quiet waits for the claim writes still out: wizardSettled).
+let wizardChain = Promise.resolve();
+function wizardSettled() { return wizardChain; }
+function wizardClaimUpdate(mutate) {
+  const run = wizardChain.then(() => wizardClaimUpdateNow(mutate));
+  wizardChain = run.then(() => {}, () => {});
+  return run;
+}
+async function wizardClaimUpdateNow(mutate) {
+  const dev = wizardDeviceId();
+  const gate = wizardGate();
+  if (gate) return Object.assign({ ok: false }, gate);
+  let seen = null;
+  let res;
+  try {
+    res = await wizardTxn((cur) => {
+      const c = wizardClaimOf({ meta: { wizard: cur } });
+      seen = c;
+      if (!c || c.dev !== dev || c.fromEpoch !== wizardCurrentEpoch()) return undefined;
+      return wizardClaimValue(Object.assign({}, c, mutate(c), { dev }));
+    });
+  } catch (e) { return { ok: false, reason: e && e.code === 'PERMISSION_DENIED' ? 'refused' : 'failed', code: e && e.code }; }
+  if (!res || !res.committed) return { ok: false, reason: seen && seen.dev !== dev ? 'not-mine' : 'gone' };
+  wizardClaimWroteAt = Date.now();
+  return { ok: true, claim: wizardClaimOf({ meta: { wizard: res.snapshot.val() } }) };
+}
+
+// ── starting, resuming, taking over, leaving ─────────────────────────
+
+// Start the new-year setup, or resume it on the device that already drives it. If the camp's schedule isn't edited here
+// yet, the first action is A1 for the schedule (with its pre-seed point): one front door (ux-R4).
+// → { ok, started | resumed } or { ok:false, reason } — owner, loading, denied, schema, tab, offline, other (the claim
+// belongs to the owner's other device: `model` says how long it has been idle), camp-week, ask-camp-week, a1 (A1 said
+// no: `a1` is its reason), failed, refused. `opts`: { campRunning, overrideCampWeek }.
+async function wizardStart(opts) {
+  const o = opts || {};
+  const refuse = (reason, extra) => Object.assign({ ok: false, reason }, extra || {});
+  const gate = wizardGate();
+  if (gate) return refuse(gate.reason, gate);
+  const model = wizardModel();
+  if (model.state === 'mine') { wizardTouchedAt = Date.now(); return { ok: true, resumed: true, claim: model.claim }; }
+  if (model.state === 'other') return refuse('other', { model });
+  const frozen = wizardFreeze(o);
+  if (frozen) return refuse(frozen.reason);
+  if (!setupOn('schedule')) {
+    const r = await setupTurnOn(['schedule'], { campRunning: o.campRunning, overrideCampWeek: o.overrideCampWeek });
+    if (!r.ok && r.reason !== 'already') return refuse('a1', { a1: r.reason, message: r.message });
+  }
+  const dev = wizardDeviceId();
+  const key = identityKey(authUser);
+  const fromEpoch = wizardCurrentEpoch();
+  const val = wizardClaimValue({ step: 1, byKey: key, fromEpoch, answers: wizardAnswers(), dev, archiveId: '' });
+  let res;
+  try {
+    res = await wizardTxn((cur) => {
+      const c = wizardClaimOf({ meta: { wizard: cur } });
+      if (c && c.fromEpoch === fromEpoch) return undefined; // somebody holds a live claim: never overwritten from here
+      return val; // none, or a leftover from another year
+    });
+  } catch (e) { return refuse(e && e.code === 'PERMISSION_DENIED' ? 'refused' : 'failed', { code: e && e.code }); }
+  if (!res || !res.committed) {
+    const now = wizardClaimOf({ meta: { wizard: res && res.snapshot ? res.snapshot.val() : null } });
+    if (now && now.dev === dev) { wizardTouchedAt = Date.now(); return { ok: true, resumed: true, claim: now }; }
+    return refuse('other', { model: wizardModel() });
+  }
+  wizardClaimWroteAt = Date.now();
+  wizardTouchedAt = Date.now();
+  return { ok: true, started: true, claim: wizardClaimOf({ meta: { wizard: res.snapshot.val() } }) };
+}
+
+// Take the wizard over from the owner's other device. Allowed once that driver has been idle 15 minutes (`opts.force`: the
+// owner's own "Take over anyway", for a phone that is gone). The answers made there come with it (`inherited`); the screen
+// asks "Use these / Start over". The step and the archive carry over.
+async function wizardTakeOver(opts) {
+  const o = opts || {};
+  const gate = wizardGate();
+  if (gate) return Object.assign({ ok: false }, gate);
+  const model = wizardModel();
+  if (model.state === 'none') return { ok: false, reason: 'gone' };
+  if (model.state === 'mine') return { ok: true, claim: model.claim, already: true };
+  if (model.state === 'other' && !model.canTakeOver && !o.force) return { ok: false, reason: 'busy', model };
+  const dev = wizardDeviceId();
+  const key = identityKey(authUser);
+  const fromEpoch = wizardCurrentEpoch();
+  let taken = null;
+  let res;
+  try {
+    res = await wizardTxn((cur) => {
+      const c = wizardClaimOf({ meta: { wizard: cur } });
+      if (!c) return undefined;
+      taken = c;
+      return wizardClaimValue(Object.assign({}, c, { byKey: key, dev, fromEpoch: c.fromEpoch === fromEpoch ? c.fromEpoch : fromEpoch, step: c.fromEpoch === fromEpoch ? c.step : 1 }));
+    });
+  } catch (e) { return { ok: false, reason: e && e.code === 'PERMISSION_DENIED' ? 'refused' : 'failed', code: e && e.code }; }
+  if (!res || !res.committed || !taken) return { ok: false, reason: 'gone' };
+  const d = wizardDraftRead();
+  d.answers = taken.answers; // inherit what the other device chose
+  wizardDraftWrite();
+  wizardClaimWroteAt = Date.now();
+  wizardTouchedAt = Date.now();
+  return { ok: true, claim: wizardClaimOf({ meta: { wizard: res.snapshot.val() } }), inherited: taken.answers, from: model.state };
+}
+
+// Give the claim up (Cancel, or Start over on a stale one): the claim goes, the device draft stays.
+async function wizardRelease() {
+  const model = wizardModel();
+  if (model.state === 'none') return { ok: true, noop: true };
+  if (model.state !== 'mine' && model.state !== 'stale') return { ok: false, reason: 'not-mine' };
+  const gate = wizardGate();
+  if (gate) return Object.assign({ ok: false }, gate);
+  try {
+    const res = await wizardTxn((cur) => (cur === null ? undefined : null));
+    return { ok: true, released: !!(res && res.committed) };
+  } catch (e) { return { ok: false, reason: e && e.code === 'PERMISSION_DENIED' ? 'refused' : 'failed', code: e && e.code }; }
+}
+
+// May the wizard go to step `n`? 1 → 2 needs the camp's Sunday; → 4 needs a verified archive in the claim. Pure.
+function wizardCanGo(n, claim, answers) {
+  if (!Number.isInteger(n) || n < 1 || n > 4) return { ok: false, reason: 'step' };
+  if (n >= 2 && !wizardNormAnswers(answers).weekStart) return { ok: false, reason: 'dates' };
+  if (n >= 4 && !(claim && claim.archiveId)) return { ok: false, reason: 'archive' };
+  return { ok: true };
+}
+
+// Move to a step (Back is allowed until step 4 runs). The answers go with it, whole.
+async function wizardSetStep(n) {
+  const model = wizardModel();
+  if (model.state !== 'mine') return { ok: false, reason: 'not-mine' };
+  const can = wizardCanGo(n, model.claim, wizardAnswers());
+  if (!can.ok) return can;
+  wizardTouchedAt = Date.now();
+  clearTimeout(wizardAnswersTimer); wizardAnswersTimer = null; wizardAnswersDirty = false;
+  const answers = wizardAnswers();
+  return wizardClaimUpdate(() => ({ step: n, answers }));
+}
+
+// An answer changed: kept on this device at once and in the claim at most every 10 s (a step change or wizardFlushAnswers
+// sends it sooner), so a reload resumes with it and a Take over inherits it. `patch` is a partial of the answers shape.
+function wizardAnswer(patch) {
+  const d = wizardDraftRead();
+  const p = setupIsMap(patch) ? patch : {};
+  d.answers = wizardNormAnswers({
+    weekStart: p.weekStart !== undefined ? p.weekStart : d.answers.weekStart,
+    double: p.double !== undefined ? p.double : d.answers.double,
+    carry: Object.assign({}, d.answers.carry, setupIsMap(p.carry) ? p.carry : {}),
+  });
+  wizardDraftWrite();
+  wizardTouchedAt = Date.now();
+  wizardAnswersDirty = true;
+  const wait = WIZARD_ANSWER_MS - (Date.now() - wizardAnswersSentAt);
+  if (wait <= 0) { wizardFlushAnswers(); return d.answers; }
+  if (!wizardAnswersTimer) wizardAnswersTimer = setTimeout(() => { wizardAnswersTimer = null; wizardFlushAnswers(); }, wait);
+  return d.answers;
+}
+
+async function wizardFlushAnswers() {
+  clearTimeout(wizardAnswersTimer); wizardAnswersTimer = null;
+  if (!wizardAnswersDirty) return { ok: true, noop: true };
+  if (wizardModel().state !== 'mine') return { ok: false, reason: 'not-mine' };
+  wizardAnswersDirty = false;
+  wizardAnswersSentAt = Date.now();
+  const answers = wizardAnswers();
+  const r = await wizardClaimUpdate(() => ({ answers }));
+  if (!r.ok) wizardAnswersDirty = true;
+  return r;
+}
+
+// Any tap on the wizard: this device is awake (the reload holds) and the claim's `at` is refreshed at most once a minute, so
+// Take over only ever appears for a driver who really left.
+function wizardTouch() {
+  wizardTouchedAt = Date.now();
+  if (Date.now() - wizardClaimWroteAt < WIZARD_TOUCH_MS || wizardModel().state !== 'mine') return Promise.resolve({ ok: true, noop: true });
+  wizardClaimWroteAt = Date.now();
+  return wizardClaimUpdate(() => ({}));
+}
+
+// "Start over" after a Take over: back to the defaults and the first step.
+async function wizardStartOver() {
+  const d = wizardDraftRead();
+  d.answers = wizardNormAnswers({});
+  d.preWizard = '';
+  wizardDraftWrite();
+  const answers = d.answers;
+  return wizardClaimUpdate(() => ({ step: 1, answers, archiveId: '' }));
+}
+
+// ── step 3: save last year (§7.3) ────────────────────────────────────
+
+// The year the outgoing week was: its Sunday's year, else the year of its last scored change, else this year.
+function wizardOutgoingYear() {
+  const ws = typeof setupWeekStart === 'function' ? setupWeekStart() : null;
+  if (ws) return ws.slice(0, 4);
+  const last = state.meta && state.meta.lastDataChangeAt;
+  const y = typeof last === 'string' ? last.slice(0, 4) : (typeof last === 'number' && isFinite(last) ? String(new Date(last).getUTCFullYear()) : '');
+  return /^20\d\d$/.test(y) ? y : campDateStr().slice(0, 4);
+}
+
+// "Ferocious Foxes won with 211 points" — for the archive's note. Directors only (the points guard); '' with nothing scored.
+function wizardChampionNote() {
+  if (!standingsVisible()) return '';
+  const counts = medalCounts();
+  const ranked = rankTeamsByPoints(counts);
+  const top = ranked[0];
+  if (!top || !(counts[top.id] && counts[top.id].points > 0)) return '';
+  const n = counts[top.id].points;
+  const tied = ranked[1] && counts[ranked[1].id] && counts[ranked[1].id].points === n;
+  return (tied ? 'Tied for first with ' + n + ' points' : String(top.name || '').replace(/[\u0000-\u001f]/g, ' ').slice(0, 60) + ' won with ' + n + ' points').slice(0, 200);
+}
+
+// What a body (or the live state) holds that step 3's receipt and step 4's list count. Pure over a state-like object.
+function wizardCounts(st, notice) {
+  const s = setupIsMap(st) ? st : {};
+  const size = (v) => (setupIsMap(v) ? Object.keys(v).length : 0);
+  const n = setupIsMap(notice) ? notice : (setupIsMap(s.notice) ? s.notice : null);
+  return {
+    results: size(s.results),
+    bonuses: size(s.bonuses),
+    announcements: size(s.announcements),
+    brackets: size(s.brackets) + size(s.brackets4),
+    noticePosted: !!(n && n.status === 'posted'),
+  };
+}
+
+async function wizardVerifyArchive(rid) {
+  try { return await restoreVerify(rid); } catch (e) { return { ok: false, reason: 'offline' }; }
+}
+
+// Step 3. Fresh reads first (what is saved is what the server holds), then: an archiveId already in the claim that still
+// verifies against the data is REUSED; otherwise the `pre-wizard` point (once per run) and a pinned `archive` point are
+// written, the archive READ BACK and compared (length and hash), and its id recorded in the claim. Back-then-Next, a reload,
+// a failed read-back's Try again and a Take over all land here, so a create-only rule can never strand the wizard.
+// → { ok, rid, reused?, label, note, counts } or { ok:false, reason: owner | not-mine | busy | offline | save | verify | claim }.
+async function wizardArchive() {
+  const model = wizardModel();
+  if (!isOwner()) return { ok: false, reason: 'owner', message: ownerGate('set up the new year').reason };
+  if (model.state !== 'mine') return { ok: false, reason: 'not-mine' };
+  const gate = wizardGate();
+  if (gate) return Object.assign({ ok: false }, gate);
+  await wizardFlushAnswers(); // the answers reach the claim first
+  await wizardSettled();
+  const pre = await restorePreflight();
+  if (!pre.ok) return { ok: false, reason: pre.reason };
+  const claim = wizardModel().claim;
+  if (claim && claim.archiveId) {
+    const v = await wizardVerifyArchive(claim.archiveId);
+    if (v.ok && v.row.hash === restoreHash(restoreBodyObject())) {
+      return { ok: true, rid: claim.archiveId, reused: true, label: v.row.label, note: v.row.note, counts: wizardCounts(v.body.state) };
+    }
+  }
+  const body = restoreBodyObject();
+  const d = wizardDraftRead();
+  if (!d.preWizard) {
+    const p = await restoreSave('pre-wizard', 'Before the new-year setup', { requireOnline: true, body });
+    if (!p.ok) return { ok: false, reason: p.reason === 'offline' ? 'offline' : 'save', detail: p.reason };
+    d.preWizard = p.rid;
+    wizardDraftWrite();
+  }
+  const year = wizardOutgoingYear();
+  const label = year + ' week (' + CAMP.id + ')';
+  const note = wizardChampionNote();
+  const rid = restoreArchiveId(body.epoch, campDateStr());
+  const a = await restoreSave('archive', label, { requireOnline: true, id: rid, note, pinned: true, body });
+  if (!a.ok) return { ok: false, reason: a.reason === 'offline' ? 'offline' : 'save', detail: a.reason };
+  const v = await wizardVerifyArchive(rid);
+  if (!v.ok) return { ok: false, reason: 'verify', detail: v.reason, rid };
+  const c = await wizardClaimUpdate(() => ({ archiveId: rid }));
+  if (!c.ok) return { ok: false, reason: 'claim', detail: c.reason };
+  return { ok: true, rid, reused: false, label, note, counts: wizardCounts(v.body.state) };
+}
+
+// ── step 4: the clear ────────────────────────────────────────────────
+
+// The new epoch: w<YYYYMMDD> in camp time, `-2`… when that is today's own and already taken.
+function wizardNewEpoch(ymd, cur) {
+  const base = 'w' + String(ymd || campDateStr()).replace(/-/g, '');
+  if (cur !== base) return base;
+  for (let i = 2; i <= 9; i++) if (cur !== base + '-' + i) return base + '-' + i;
+  return base + '-9';
+}
+
+// The updates of step 4, root-relative — EXACTLY what the clear writes, never members/*. PURE over `inp`:
+//   { answers, newEpoch, ts (the server timestamp placeholder), state (teams, notice, meta, results…), tree (the canonical setup
+//     tree), config, curMeta ({epoch, double}), requestKeys, nowIso }
+// → { ok, updates, counts, problems:[] } (a roster that is not whole, or no Sunday picked, refuses: nothing is half-built).
+function wizardClearUpdate(inp) {
+  const a = wizardNormAnswers(inp.answers);
+  const carry = a.carry;
+  const st = setupIsMap(inp.state) ? inp.state : {};
+  const tree = setupIsMap(inp.tree) ? inp.tree : {};
+  const problems = [];
+  if (!a.weekStart) problems.push('dates');
+  const teams = Array.isArray(st.teams) ? st.teams : null;
+  if (!teams || !rosterIsWhole(teams)) problems.push('teams');
+  if (problems.length) return { ok: false, problems, updates: {}, counts: wizardCounts(st) };
+  const u = {};
+  WIZARD_STATE_CLEAR.forEach((k) => { u['state/' + k] = null; });
+  u['state/meta/lastDataChangeAt'] = null;
+  u['state/meta/epoch'] = inp.newEpoch;
+  u['state/meta/epochAt'] = inp.ts;
+  if (setupIsMap(st.notice) && st.notice.status === 'posted') u['state/notice/status'] = 'draft';
+  // Teams, per field (a colleague's rename elsewhere is not overwritten by a whole roster).
+  teams.forEach((t, i) => {
+    const p = 'state/teams/' + i + '/';
+    if (carry.counselors === 'clear' && t.counselor !== undefined && t.counselor !== '') u[p + 'counselor'] = null;
+    if (carry.photos === 'clear' && t.photoV !== undefined) u[p + 'photoV'] = null;
+    if (carry.teams === 'clear') {
+      const dflt = DEFAULT_TEAM_NAMES[i];
+      if (dflt !== undefined && t.name !== dflt) u[p + 'name'] = dflt;
+      ['short', 'emoji', 'color'].forEach((f) => { if (t[f] !== undefined) u[p + f] = null; });
+    }
+  });
+  // The week's own settings.
+  const meta = setupIsMap(tree.meta) ? tree.meta : {};
+  u['setup/meta/epoch'] = inp.newEpoch;
+  u['setup/meta/epochAt'] = inp.ts;
+  u['setup/meta/weekStart'] = a.weekStart;
+  u['setup/meta/double'] = wizardDoubleValue(a.double, inp.curMeta);
+  u['setup/meta/wizard'] = null;
+  // What carries over. A section that is off is the original week, which can't be emptied: Clear turns it on, empty.
+  let schedule = tree;
+  if (carry.schedule === 'clear') {
+    const seed = buildSeed(CAMP, ['schedule']);
+    RP_SETUP_KEYS.schedule.forEach((k) => { u['setup/' + k] = seed[k] !== undefined ? setupClone(seed[k]) : null; });
+    schedule = normalizeSetup(setupClone(Object.assign({}, tree, seed)));
+  }
+  const on = setupIsMap(meta.on) ? meta.on : {};
+  const empty = (s, paths) => {
+    paths.forEach((p) => { u[p] = null; });
+    if (on[s] !== true) u['setup/meta/on/' + s] = true;
+  };
+  if (carry.meals === 'clear') empty('meals', ['setup/meals']);
+  if (carry.verses === 'clear') empty('verses', ['setup/verses']);
+  if (carry.cleanup === 'clear') empty('cleanup', ['setup/cleanup']);
+  if (CAMP.features && CAMP.features.electives) {
+    if (carry.stations === 'clear') empty('electives', ['setup/electives']);
+    else if (carry.stationPeople === 'clear') {
+      const slots = setupIsMap(tree.electives) && setupIsMap(tree.electives.slots) ? tree.electives.slots : {};
+      Object.keys(slots).forEach((dk) => Object.keys(setupMapOf(slots[dk])).forEach((sl) => Object.keys(setupMapOf(slots[dk][sl])).forEach((stId) => {
+        const rec = slots[dk][sl][stId];
+        if (setupIsMap(rec) && rec.people !== undefined) u['setup/electives/slots/' + dk + '/' + sl + '/' + stId + '/people'] = null;
+      })));
+      if (on.electives !== true) u['setup/meta/on/electives'] = true;
+    }
+  }
+  // Games: the app's own catalog, or the kept one with a link wherever the schedule no longer holds it.
+  if (carry.games === 'clear' || carry.schedule === 'clear') {
+    const cfg = carry.games === 'clear' ? configForSync(CAMP.defaultConfig()) : setupClone(configForSync(inp.config));
+    const resolve = (dow) => resolveDay(schedule, dow).map(setupRichBlock);
+    const plan = setupGameAttachments(cfg, resolve, CAMP);
+    if (plan.ops.length) setupApplyGameAttachments(cfg, plan.ops);
+    cfg.updatedAt = inp.nowIso;
+    u.config = cfg;
+  }
+  // Everything else the year held.
+  u.campers = null;
+  u.revealPublic = null;
+  u.revealFull = null;
+  (inp.requestKeys || []).forEach((k) => { u['accessRequests/' + k] = null; });
+  const counts = wizardCounts(st);
+  counts.requests = (inp.requestKeys || []).length;
+  return { ok: true, updates: u, counts, problems: [] };
+}
+
+// A preflight read of the member list: who has a team (the counselors' teams follow the clear) and which rows are incomplete
+// (the rules validate a whole member record, so one row missing role / addedBy / addedAt would refuse its own write). Never in the
+// atomic update (sec-F4).
+async function wizardMembersPreflight() {
+  try {
+    const snap = await restoreRootRef().child('members').once('value');
+    const v = snap.val();
+    const withTeam = [];
+    const incomplete = [];
+    if (setupIsMap(v)) {
+      Object.keys(v).forEach((k) => {
+        const r = v[k];
+        if (k === OWNER_MEMBER_KEY || !setupIsMap(r)) return;
+        const name = typeof r.name === 'string' && r.name ? r.name.slice(0, 60) : identityFromKey(k);
+        if (typeof r.role !== 'string' || typeof r.addedBy !== 'string' || r.addedAt === undefined || r.addedAt === null) incomplete.push({ key: k, name });
+        if (r.teamId) withTeam.push({ key: k, name });
+      });
+    }
+    return { ok: true, withTeam, incomplete };
+  } catch (e) { return { ok: false, reason: 'offline', withTeam: [], incomplete: [] }; }
+}
+
+// Best-effort, after the clear: one small update per member with a team, the owner skipped (rules#5). A row that refuses is
+// listed, never retried in a loop. → { cleared, failed: [{ key, name }] }
+async function wizardTakeMembersOff(list) {
+  const out = { cleared: 0, failed: [] };
+  for (const m of list || []) {
+    if (!m || m.key === OWNER_MEMBER_KEY) continue;
+    try { await restoreRootRef().update({ ['members/' + m.key + '/teamId']: null }); out.cleared++; } catch (e) { out.failed.push({ key: m.key, name: m.name }); }
+  }
+  return out;
+}
+
+// Adopt what the server holds after the clear or the undo: state, config and setup read with once() and taken as the new
+// confirmed baselines (nothing is unsent, so nothing is lost), the setup tree through the epoch-aware adopt.
+async function wizardAdoptFresh() {
+  const [st, cf, su] = await Promise.all([
+    fbRef ? fbRef.once('value') : null,
+    fbConfigRef ? fbConfigRef.once('value') : null,
+    setupRef ? setupRef.once('value') : null,
+  ]);
+  if (st) handleRemoteSnapshot(st.val() || {});
+  if (cf && cf.val()) applyRemoteConfig(cf.val());
+  if (su) setupAdoptNewSnapshot(su.val());
+}
+
+// Step 4. Re-checks everything, then the one atomic update. → { ok, epoch, counts, members: { cleared, failed, incomplete },
+// archiveId } or { ok:false, reason }: owner · not-mine · dates · teams · camp-week · ask-camp-week · loading · denied · tab · offline ·
+// busy (something of this phone's is unsent) · archive (not saved and checked yet) · requests · refused (nothing changed) · failed.
+// `opts`: { campRunning, overrideCampWeek }.
+async function wizardClear(opts) {
+  const o = opts || {};
+  const refuse = (reason, extra) => Object.assign({ ok: false, reason }, extra || {});
+  if (wizardCommitInFlight) return refuse('busy');
+  const gate = wizardGate();
+  if (gate) return refuse(gate.reason, gate);
+  const model = wizardModel();
+  if (model.state !== 'mine') return refuse('not-mine');
+  const frozen = wizardFreeze(o);
+  if (frozen) return refuse(frozen.reason);
+  await wizardFlushAnswers();
+  await wizardSettled();
+  if (!wizardClaimOf(setupTree) || !wizardClaimOf(setupTree).archiveId) return refuse('archive');
+  // 1. Caught up, and the archive still matches the data (sync-F18a): anything written since step 3 gets a fresh point first.
+  const pre = await restorePreflight();
+  if (!pre.ok) return refuse(pre.reason === 'busy' ? 'busy' : pre.reason);
+  let archiveId = model.claim.archiveId;
+  const v = await wizardVerifyArchive(archiveId);
+  if (!v.ok || v.row.hash !== restoreHash(restoreBodyObject())) {
+    const fresh = await wizardArchive();
+    if (!fresh.ok) return refuse('archive', { detail: fresh.reason });
+    archiveId = fresh.rid;
+  }
+  const claim = wizardModel().claim;
+  if (!claim || claim.archiveId !== archiveId) return refuse('not-mine');
+  // 2. The things the update needs from the server.
+  let requestKeys = [];
+  try {
+    const rs = await restoreRootRef().child('accessRequests').once('value');
+    requestKeys = setupIsMap(rs.val()) ? Object.keys(rs.val()).filter((k) => /^[^.#$\[\]\/]{1,200}$/.test(k)) : [];
+  } catch (e) { return refuse('requests'); }
+  const members = await wizardMembersPreflight();
+  if (!members.ok) return refuse('offline');
+  // 3. Nothing of this phone's in flight, and the answers are the claim's (the draft is newer: it is what the screen shows).
+  const answers = wizardAnswers();
+  const plan = wizardClearUpdate({
+    answers, newEpoch: wizardNewEpoch(campDateStr(), (state.meta && state.meta.epoch) || ''), ts: firebase.database.ServerValue.TIMESTAMP,
+    state, tree: setupCanon(setupTree), config: state.config,
+    curMeta: { epoch: (state.meta && state.meta.epoch) || '', double: setupTree.meta && setupTree.meta.double },
+    requestKeys, nowIso: new Date().toISOString(),
+  });
+  if (!plan.ok) return refuse(plan.problems[0], { problems: plan.problems });
+  if (pendingWritesTotal() > 0 || hasUnconfirmedLocalWork() || setupBisecting) return refuse('busy');
+  const carryMembers = answers.carry.memberTeams === 'clear' ? members.withTeam : [];
+  wizardCommitInFlight = true; // all three engines hold their pushes from here
+  setupPending++;
+  setupNotify('sync');
+  try {
+    try {
+      await restoreRootRef().update(plan.updates);
+    } catch (e) {
+      return refuse(e && e.code === 'PERMISSION_DENIED' ? 'refused' : 'failed', { code: e && e.code }); // nothing changed
+    }
+    try { await wizardAdoptFresh(); } catch (e) { /* the live listeners bring the new year in; the commit itself is done */ }
+  } finally {
+    setupPending = Math.max(0, setupPending - 1);
+    setupNotify('sync');
+    wizardReleaseHolds();
+  }
+  if (typeof pushRepublishSchedule === 'function') { try { pushRepublishSchedule({ force: true }); } catch (e) { /* alerts catch up on the next editor load */ } }
+  // 4. Then, best-effort, the counselors' teams.
+  const moved = await wizardTakeMembersOff(carryMembers);
+  const epoch = plan.updates['state/meta/epoch'];
+  const done = { epoch, at: Date.now(), archiveId, counts: plan.counts, members: { cleared: moved.cleared, failed: moved.failed, incomplete: members.incomplete } };
+  const d = wizardDraftRead();
+  d.done = { epoch, at: done.at, archiveId, counts: plan.counts, cleared: moved.cleared, failed: moved.failed.length };
+  d.preWizard = '';
+  wizardDraftWrite();
+  setupNotify('tree');
+  return Object.assign({ ok: true }, done);
+}
+
+// ── Undo the new-year setup (§7.3, sync-F7) ──────────────────────────
+
+// The newest archive is offered while no newer one exists and the epoch it was taken under is not the one in force. → { rid, row,
+// days (since the run), recent (inside the hub's 14 days) } or null. Reads the list: online only.
+async function wizardUndoOffer() {
+  let rows;
+  try { rows = await restoreList(); } catch (e) { return null; }
+  const row = rows.find((r) => r.kind === 'archive');
+  if (!row) return null;
+  if ((row.epoch || '') === ((state.meta && state.meta.epoch) || '')) return null; // taken under this year's own epoch: nothing to undo
+  const days = Math.floor(Math.max(0, serverNow() - ((state.meta && state.meta.epochAt) || row.at)) / 86400000);
+  return { rid: row.rid, row, days, recent: days <= WIZARD_UNDO_DAYS };
+}
+
+// The updates of the undo: root-relative, PURE over the archive's body. Every archived state section including the scores, the
+// epoch pair back to the archived values (DELETED for the legacy epoch, which re-enables the 2026 constant pin), the setup
+// sections and the week's own settings, the games. Members' teams, campers, requests and the reveal nodes stay as they are.
+function wizardUndoUpdate(body, ctx) {
+  const st = setupIsMap(body.state) ? body.state : {};
+  const setup = setupIsMap(body.setup) ? body.setup : {};
+  const wk = setupIsMap(setup.meta) ? setup.meta : {};
+  const stMeta = setupIsMap(st.meta) ? st.meta : {};
+  const u = {};
+  WIZARD_STATE_CLEAR.forEach((k) => { u['state/' + k] = st[k] !== undefined ? setupClone(st[k]) : null; });
+  if (setupIsMap(st.notice)) u['state/notice'] = setupClone(st.notice);
+  if (Array.isArray(st.teams) && rosterIsWhole(st.teams)) {
+    u['state/teams'] = teamsFromBackup(setupClone(st.teams)).map((t, i) => (teamPhotoVValid(st.teams[i] && st.teams[i].photoV) ? Object.assign({}, t, { photoV: st.teams[i].photoV }) : t));
+  }
+  const epoch = typeof body.epoch === 'string' && WIZARD_EPOCH_RE.test(body.epoch) ? body.epoch : null;
+  const epochAt = typeof stMeta.epochAt === 'number' && stMeta.epochAt > 0 ? stMeta.epochAt : null;
+  u['state/meta/epoch'] = epoch;
+  u['state/meta/epochAt'] = epoch ? epochAt : null;
+  u['state/meta/lastDataChangeAt'] = stMeta.lastDataChangeAt !== undefined ? stMeta.lastDataChangeAt : null;
+  SETUP_SECTIONS.forEach((s) => {
+    RP_SETUP_KEYS[s].forEach((k) => { u['setup/' + k] = setup[k] !== undefined ? setupClone(setup[k]) : null; });
+    const wasOn = (body.sectionsOn || []).indexOf(s) !== -1;
+    const nowOn = ctx && ctx.on && ctx.on[s] === true;
+    if (wasOn) { if (!nowOn) u['setup/meta/on/' + s] = true; }
+    else if (nowOn) u['setup/meta/on/' + s] = RP_SETUP_KEYS[s].some((k) => setup[k] !== undefined) ? false : null; // off again; never "turned off" if it was never on (that would stop its first seed)
+  });
+  u['setup/meta/epoch'] = epoch;
+  u['setup/meta/epochAt'] = epoch ? epochAt : null;
+  ['weekStart', 'double', 'finaleDow'].forEach((f) => { u['setup/meta/' + f] = wk[f] !== undefined ? setupClone(wk[f]) : null; });
+  u['setup/meta/wizard'] = null;
+  u.config = configForSync(setupClone(body.config));
+  return u;
+}
+
+// Undo the new-year setup: owner-only, the restore preconditions (a director's writer tab, online, nothing in flight, fresh reads), a
+// `pre-restore` point, then ONE atomic root update. Every device sees an epoch change and runs the §6.11 reset and stranding.
+// → { ok, epoch (the one back in force, '' = legacy), pre } or { ok:false, reason }: owner · not-newest · nothing · verify ·
+// pre-restore · busy · offline · refused · failed.
+async function wizardUndo(rid) {
+  const refuse = (reason, extra) => Object.assign({ ok: false, reason }, extra || {});
+  const g = ownerGate('undo the new-year setup');
+  if (!g.ok) return refuse('owner', { message: g.reason });
+  if (wizardCommitInFlight) return refuse('busy');
+  const gate = wizardGate();
+  if (gate) return refuse(gate.reason, gate);
+  const offer = await wizardUndoOffer();
+  if (!offer) return refuse('nothing');
+  if (offer.rid !== rid) return refuse('not-newest');
+  const pre = await restorePreflight();
+  if (!pre.ok) return refuse(pre.reason);
+  const v = await wizardVerifyArchive(rid);
+  if (!v.ok) return refuse('verify', { detail: v.reason });
+  const saved = await restoreSave('pre-restore', 'Before undoing the new-year setup', { requireOnline: true });
+  if (!saved.ok) return refuse(saved.reason === 'offline' ? 'offline' : 'pre-restore', { detail: saved.reason });
+  const updates = wizardUndoUpdate(v.body, { on: setupTree.meta && setupTree.meta.on });
+  if (pendingWritesTotal() > 0 || hasUnconfirmedLocalWork() || setupBisecting) return refuse('busy');
+  wizardCommitInFlight = true;
+  setupPending++;
+  setupNotify('sync');
+  try {
+    try { await restoreRootRef().update(updates); }
+    catch (e) { return refuse(e && e.code === 'PERMISSION_DENIED' ? 'refused' : 'failed', { code: e && e.code }); }
+    try { await wizardAdoptFresh(); } catch (e) { /* the listeners bring it in */ }
+  } finally {
+    setupPending = Math.max(0, setupPending - 1);
+    setupNotify('sync');
+    wizardReleaseHolds();
+  }
+  if (typeof pushRepublishSchedule === 'function') { try { pushRepublishSchedule({ force: true }); } catch (e) { /* catches up */ } }
+  setupNotify('tree');
+  return { ok: true, epoch: updates['state/meta/epoch'] || '', pre: saved.rid };
 }
 
 // ════════════════════════════════════════════════════════════════════
