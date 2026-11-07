@@ -316,6 +316,13 @@ function flushTabPushes() {
 // pushState / pushConfig ask this first. Undecided tabs hold (and remember that
 // they did); a read-only tab has no edits of its own to send.
 function tabMayPush(kind) {
+  // The new-year setup's commit is in flight (setup-sync.js "The new-year wizard"): all three engines hold their pushes
+  // until it has been acknowledged and the server's new year adopted, so nothing of last year's is diffed against it.
+  // Held like an undecided tab's push (the flags are paid by wizardReleaseHolds). typeof: setup-sync.js loads after this file.
+  if (typeof wizardHoldsPushes === 'function' && wizardHoldsPushes()) {
+    if (kind === 'config') tabHeldConfig = true; else if (kind === 'setup') tabHeldSetup = true; else tabHeldState = true;
+    return false;
+  }
   if (tabWriter === null) {
     if (kind === 'config') tabHeldConfig = true; else if (kind === 'setup') tabHeldSetup = true; else tabHeldState = true;
     return false;
@@ -1036,9 +1043,19 @@ function electiveKnowsName(name) {
 
 // ── Double points
 // The window, { start, end } epoch ms (camp-core.js doubleWindowFor shape).
-// This week is the legacy one, so it is pinned to DOUBLE_WINDOW_LEGACY until a
-// week sets its own; once it can, a week with no window will return null.
-function doubleWindow() { return DOUBLE_WINDOW_LEGACY; }
+// A week with no epoch (every week until the new-year setup) is pinned to the legacy window, whatever the setup data says.
+// With an epoch the window is the week's own: setup/meta/double over setup/meta/weekStart (no `double` = no doubling).
+// Memoised on its three inputs: bonusCountsDouble asks once per bonus entry.
+let doubleWindowMemo = null;
+function doubleWindow() {
+  const epoch = state && state.meta && typeof state.meta.epoch === 'string' ? state.meta.epoch : '';
+  if (!epoch) return DOUBLE_WINDOW_LEGACY;
+  const meta = typeof setupTree !== 'undefined' && setupTree && setupTree.meta ? setupTree.meta : {};
+  const start = campWeek().start;
+  const key = epoch + '|' + start + '|' + JSON.stringify(meta.double || null);
+  if (!doubleWindowMemo || doubleWindowMemo.key !== key) doubleWindowMemo = { key, win: doubleWindowFor({ epoch, weekStart: start, double: meta.double }) };
+  return doubleWindowMemo.win;
+}
 // The weekday (0 = Sunday … 6 = Saturday) on which the standings reveal ends in the champions' crowning
 // (setup/meta/finaleDow, always read like the week's start date; absent or junk = Friday).
 function finaleDow() {
@@ -2963,8 +2980,22 @@ function openHistory() {
   if (!canEdit()) return;
   const overlay = historyOverlayEl();
   if (!overlay) return;
+  historyShowEarlier = false;
   renderHistory();
   shellSheetOpen('history');
+}
+
+// The history drawer shows this camp year only: from the moment the new-year setup stamped (`state.meta.epochAt`, the
+// server's clock; absent = the legacy week, no filter). `historyShowEarlier` is the drawer's own "Show earlier years".
+let historyShowEarlier = false;
+function historyEpochFloor() {
+  const a = state && state.meta ? state.meta.epochAt : null;
+  return typeof a === 'number' && isFinite(a) && a > 0 ? a : 0;
+}
+function historyFilterRows(rows, epochAt, showEarlier) {
+  if (!epochAt || showEarlier) return { rows, hidden: 0 };
+  const keep = rows.filter((r) => changelogTime(r) >= epochAt);
+  return { rows: keep, hidden: rows.length - keep.length };
 }
 
 function renderHistory() {
@@ -2990,9 +3021,16 @@ function renderHistory() {
       // silently interleave them wrongly (every number sorts before "2…"), so
       // normalize first. formatEasternStamp already accepts either shape.
       rows.sort((a, b) => changelogTime(b) - changelogTime(a));
-      body.innerHTML = rows.length
-        ? renderHistoryRows(rows)
-        : '<p class="muted">No point changes recorded yet.</p>';
+      // This camp year only (§6.11): changes older than the new-year setup are behind "Show earlier years".
+      const f = historyFilterRows(rows, historyEpochFloor(), historyShowEarlier);
+      const toggle = historyEpochFloor()
+        ? (historyShowEarlier
+          ? '<button type="button" class="btn btn-sm" id="history-earlier">Show this year only</button>'
+          : (f.hidden ? '<button type="button" class="btn btn-sm" id="history-earlier">Show earlier years</button>' : ''))
+        : '';
+      body.innerHTML = (f.rows.length ? renderHistoryRows(f.rows) : '<p class="muted">No point changes recorded yet' + (historyEpochFloor() && !historyShowEarlier ? ' this year' : '') + '.</p>') + toggle;
+      const tb = document.getElementById('history-earlier');
+      if (tb) tb.addEventListener('click', () => { historyShowEarlier = !historyShowEarlier; renderHistory(); });
     })
     .catch(() => {
       body.innerHTML = '<p class="muted">Couldn\'t load the history (offline?). Close and reopen to try again.</p>';
@@ -4856,6 +4894,37 @@ function cfgForgetLastYear() {
   undoClear();
 }
 
+// ── A new camp year on this phone (§6.11) ────────────────────────────
+// The first time this device adopts a state epoch other than the one it last saw (`campScoreboardEpochSeen`, per camp),
+// what it remembered about the old year is cleared: the team it follows and who it is (the account's team comes straight
+// back through adoptMemberTeam, and the picker is asked again), its morning standings baseline, dismissed banners, the
+// undo history, the setup clashes, the unfinished rain plan and the wizard's draft. A device with no record yet is
+// treated as the legacy week (every phone that ran before this existed), so the first sight of the legacy epoch just
+// records it. An epoch going BACK (Undo the new-year setup) is a change like any other. Nothing here is camp data on the
+// server, and nothing is written to it.
+const EPOCH_SEEN_KEY = 'campScoreboardEpochSeen';
+function epochDeviceReset() {
+  if (!state || !state.meta) return false;
+  const now = typeof state.meta.epoch === 'string' ? state.meta.epoch : '';
+  let seen = null;
+  try { seen = localStorage.getItem(lsKey(EPOCH_SEEN_KEY)); } catch (e) { /* private mode: nothing to compare with */ }
+  const was = seen === null || seen === 'legacy' ? '' : seen;
+  if (was === now) { if (seen === null && now === '') { try { localStorage.setItem(lsKey(EPOCH_SEEN_KEY), 'legacy'); } catch (e) { /* fine */ } } return false; }
+  try { localStorage.setItem(lsKey(EPOCH_SEEN_KEY), now || 'legacy'); } catch (e) { /* fine */ }
+  const had = state.followTeam !== undefined || state.identity !== undefined;
+  delete state.followTeam;
+  delete state.identity;
+  [DAY_RANK_KEY, CHANGE_DISMISS_KEY, ANNOUNCE_DISMISS_KEY, lsKey('campSetupRainDraft'), lsKey('campWizardDraft')].forEach((k) => {
+    try { localStorage.removeItem(k); } catch (e) { /* fine */ }
+  });
+  undoClear();
+  if (typeof setupForgetLastYear === 'function') { setupForgetLastYear(); if (typeof persistSetup === 'function') persistSetup(); }
+  if (typeof wizardDraftForget === 'function') wizardDraftForget();
+  persistState();
+  if (had && typeof appStarted !== 'undefined' && appStarted) { renderAll(); maybeShowTeamPicker(); }
+  return true;
+}
+
 // ── Sending the config ───────────────────────────────────────────────
 
 // Settings code calls this after mutating state.config (configEdit does, for the
@@ -5899,6 +5968,7 @@ function applyRemoteState(remote, confirmedBase, opts) {
     notifyNewAnnouncements(annBefore);
   }
   cfgFollowStateEpoch(); // the week config's baseline follows the epoch this snapshot carries (sync-F11)
+  epochDeviceReset(); // a new camp year clears what this phone remembered about the last one (§6.11)
   ensureSecrecySeed(); // after the snapshot is in place, so the one-key write diffs against it
 }
 
@@ -13539,6 +13609,7 @@ function reloadBlocked() {
   if (typeof peopleBusy === 'function' && peopleBusy()) return true; // a People sheet with edits not yet saved, or a write still going (setup-ui.js)
   if (typeof campersBusy === 'function' && campersBusy()) return true; // camper names waiting for the signal, or a camper write going: held in memory only, a reload would lose them (setup-sync.js)
   if (typeof campersUiBusy === 'function' && campersUiBusy()) return true; // a camper sheet with a name typed and not yet saved (setup-ui.js)
+  if (typeof wizardBusy === 'function' && wizardBusy()) return true; // the new-year setup: a commit going out, or the wizard open and touched in the last 2 minutes (setup-sync.js)
   if (typeof gmBusy === 'function' && gmBusy()) return true; // a new game with a name typed and nothing saved yet (setup-ui.js: the game sheet)
   return false;
 }
@@ -16412,7 +16483,8 @@ function clearLocalData() {
     'campScoreboardPushOn', 'campScoreboardPushPrefs', STRANDED_KEY, UNDO_KEY,
     'campScoreboardRevealCache', 'campScoreboardChampion', // (reveal.js: the last real reveal as the phone held it; the crowned team's name)
     'campScoreboardTellDraft', // (tell.js: a half-typed Tell everyone message)
-    'campScoreboardSetupV1', 'campSetupRpOutbox', 'campSetupRainDraft', 'campSetupAlertIntent']; // (setup-sync.js: the setup cache, the restore-point outbox; setup-ui.js: an unfinished rain plan, a leftover alert choice from before Step 26, wiped only)
+    'campScoreboardSetupV1', 'campSetupRpOutbox', 'campSetupRainDraft', 'campSetupAlertIntent',
+    'campScoreboardEpochSeen', 'campWizardDraft']; // (the camp year this device last saw; the new-year setup's unfinished answers) (setup-sync.js: the setup cache, the restore-point outbox; setup-ui.js: an unfinished rain plan, a leftover alert choice from before Step 26, wiped only)
   Object.keys(CAMPS).forEach((cid) => {
     bases.forEach((b) => {
       try { localStorage.removeItem(b + CAMPS[cid].storageSuffix); } catch (e) { /* ignore */ }
