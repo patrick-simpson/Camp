@@ -537,6 +537,11 @@ jelly-dialog:not(:defined)[open]::before {
   outline-offset: 2px;
 }
 
+/* On the camp-blue roof (the takeover's head only: its body is paper) the blue ring vanishes (1:1 on the Back key): the ring there is white. */
+.takeover.is-roof .tk-head :is(button, [role="button"], a):focus-visible {
+  outline-color: #ffffff; /* the roof is camp blue in both themes */
+}
+
 /* Kill the mobile browser's built-in tap flash — a translucent blue
    rectangle painted over the element's whole hit box the moment a finger
    goes down, squared-off regardless of border-radius. Every tappable
@@ -3435,7 +3440,7 @@ html.calm-motion .mtv-hero-name {
 .mtv-row[data-state="still"] {
   display: flex;
   background: #ebe2cf; /* the light --well: the TV never follows the theme */
-  color: #43497a;
+  color: #3c4272; /* 7.4:1 on that well (the earlier #43497a was 6.6:1 at this 11px size: Step 29 contrast audit) */
   font: 700 calc(var(--u) * 10.5)/1.1 var(--font-ui);
 }
 .mtv-pl {
@@ -5068,6 +5073,11 @@ button.cb-row:active {
   letter-spacing: 0;
   white-space: nowrap;
   vertical-align: 1px;
+}
+/* At 200% text on a 360px phone "Own version on 3 days" is wider than the row: a tag that cannot fit may wrap inside its own box
+   rather than run past the screen edge (Step 29 pass). */
+@supports (width: 1cqi) {
+  .sched-tag { max-width: 100%; white-space: normal; }
 }
 .cb-sub > .sched-tag:first-child {
   margin-left: 0;
@@ -16460,9 +16470,12 @@ button.gs-row:focus-visible {
 .pp-team:active {
   box-shadow: 0 1px 0 var(--edge);
 }
-.pp-team:focus-visible {
+.pp-team:focus-visible,
+.pp-team[aria-pressed="true"]:focus-visible,
+.pp-team[aria-disabled="true"]:focus-visible,
+.pp-row[data-wait] .pp-team[aria-disabled="true"]:focus-visible {
   outline: none;
-  box-shadow: var(--focus-ring);
+  box-shadow: var(--focus-ring); /* a picked or taken key (higher specificity) used to lose its ring: Step 29 audit */
 }
 .pp-mark {
   display: grid;
@@ -18941,7 +18954,7 @@ jelly-chip.sched-day-chip[selected] {
   width: 7rem;
   min-width: 4.5rem;
   min-height: var(--target);
-  border: 2px solid var(--line-2);
+  border: 2px solid var(--ink-3); /* a field's edge is a boundary: 3:1 (--line-2 was 1.7:1 light / 2.2:1 dark) */
   border-radius: 10px;
   background: var(--paper);
   color: var(--ink);
@@ -18969,6 +18982,7 @@ jelly-chip.sched-day-chip[selected] {
 }
 .score-input-row input:focus {
   border-color: var(--ink);
+  box-shadow: var(--focus-ring);
 }
 
 /* ── Sentence case, everywhere (§8.2: never letter-spaced capitals) ──

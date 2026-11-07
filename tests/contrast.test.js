@@ -83,3 +83,21 @@ test('the day picker\'s Today word and dot use --link-well, not the thinner link
   assert.ok(/\.gdp-btn\[data-st="today"\] \.gdp-st\s*\{[^}]*color:\s*var\(--link-well\)/.test(CSS_NO_COMMENTS), 'the word');
   assert.ok(/\.gdp-btn\[data-st="today"\] \.gdp-st::before\s*\{[^}]*background:\s*var\(--link-well\)/.test(CSS_NO_COMMENTS), 'the dot at very large text');
 });
+
+// Step 29 contrast audit (docs/build-notes/verify/step29-contrast.cjs) — what it found and what is pinned.
+test('the mini TV\'s "Still to come" row is 7:1 on its light well (it is 11px text and the TV never follows the theme)', () => {
+  const m = /\.mtv-row\[data-state="still"\]\s*\{[^}]*background:\s*(#[0-9a-fA-F]{6})[^}]*color:\s*(#[0-9a-fA-F]{6})/.exec(CSS_NO_COMMENTS);
+  assert.ok(m, 'the rule');
+  assert.ok(contrast(m[2], m[1]) >= 7, m[2] + ' on ' + m[1] + ': ' + contrast(m[2], m[1]).toFixed(2));
+});
+test('a score box\'s edge is a boundary: --ink-3 against the paper is 3:1 or better in light and both dark blocks', () => {
+  const [ink3, paper] = [palette('ink-3'), palette('paper')];
+  assert.equal(ink3.length, 3); assert.equal(paper.length, 3);
+  ink3.forEach((c, i) => assert.ok(contrast(c, paper[i]) >= 3, ['light', 'dark', 'auto dark'][i] + ': ' + contrast(c, paper[i]).toFixed(2)));
+  assert.ok(/\.score-input-row input\s*\{[^}]*border:\s*2px solid var\(--ink-3\)/.test(CSS_NO_COMMENTS), 'the Step 29 score box edge uses it (--line-2 was 1.7:1)');
+});
+test('a taken or picked podium key keeps its keyboard ring, and the roof\'s Back key rings in white', () => {
+  assert.ok(/\.pp-team\[aria-disabled="true"\]:focus-visible[\s\S]{0,200}box-shadow:\s*var\(--focus-ring\)/.test(CSS_NO_COMMENTS), 'a taken key');
+  assert.ok(/\.pp-team\[aria-pressed="true"\]:focus-visible/.test(CSS_NO_COMMENTS), 'a picked key');
+  assert.ok(/\.takeover\.is-roof \.tk-head :is\([^)]*\):focus-visible\s*\{[^}]*outline-color:\s*#ffffff/.test(CSS_NO_COMMENTS), 'the roof head ring is white (blue on the blue roof was 1:1)');
+});
