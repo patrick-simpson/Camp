@@ -1209,6 +1209,23 @@ function pushScheduleAlertOffered(dow) {
   return dow === today || dow === (today + 1) % 7;
 }
 
+// Would the sender tell anyone about this time? Its own window (worker.js windowScheduleItems): the occurrence — the
+// camp week's Sunday + `dow`, at `start` minutes, camp time — hasn't started yet and is before the end of tomorrow, by
+// the SERVER's clock. The sheets offer the tick only for a change with such a time (before or after it), so a box is
+// never ticked for a change that can only end in "nobody was alerted".
+function pushScheduleTimeTellable(dow, start) {
+  const ws = typeof campWeek === 'function' ? campWeek().start : '';
+  if (!ws || !Number.isInteger(dow) || dow < 0 || dow > 6 || !Number.isInteger(start) || start < 0 || start >= 1440) return false;
+  try {
+    const ymd = (base, add) => { const p = String(base).split('-').map(Number); return new Date(Date.UTC(p[0], p[1] - 1, p[2] + add)).toISOString().slice(0, 10); };
+    const now = typeof serverNow === 'function' ? serverNow() : Date.now();
+    const t = etParts(now);
+    const today = t.year + '-' + String(t.month).padStart(2, '0') + '-' + String(t.day).padStart(2, '0');
+    const at = etWallToEpoch(ymd(ws, dow), start);
+    return at > now && at < etWallToEpoch(ymd(today, 2), 0);
+  } catch (e) { return false; }
+}
+
 // Publish, then name what changed since `before` (a pushScheduleSnapshot taken before the commit). Resolves
 // { ok, reason?, sent, queued, failed, devices, items } and never rejects.
 async function pushScheduleTell(before, alert) {
@@ -1227,18 +1244,32 @@ async function pushScheduleTell(before, alert) {
   } catch (e) {
     if (e && e.serverError === 'bad-kind') pushSchedAlertsOff = true; // an older Worker: hide the tick, change nothing else
     console.warn('[push] schedule alert failed', e);
-    return { ok: false, reason: 'failed', error: pushErrorMessage(e) };
+    return { ok: false, reason: 'failed', code: (e && (e.serverError || e.pushCode || e.code)) || '', error: pushErrorMessage(e) };
   }
 }
 
-// One plain sentence for what a tick did ('' = say nothing).
-function pushScheduleTellWords(r) {
+// One plain sentence for what a tick did ('' = say nothing). A director who ticked must never be left believing phones
+// were told when they weren't (Tell everyone's rule: a send never lies), so every outcome the sender can give a ticked
+// request is worded; "Tell people in person" wherever nobody heard. `many`: the change named several items (the rain
+// plan). A failure's "Try again" is the toast's own button (setup-ui.js setupTellAfter), never words in the sentence.
+function pushScheduleTellWords(r, many) {
   if (!r) return '';
-  if (r.ok === false) return r.reason === 'failed' ? "The change is saved, but the alert didn't go out. " + (r.error || '') : '';
+  const item = many ? 'these items' : 'this item';
+  if (r.ok === false) {
+    if (r.reason !== 'failed') return '';
+    if (r.code === 'bad-kind') {
+      const who = typeof ownerName === 'function' ? ownerName() : 'the owner';
+      return 'The change is saved, but the alert sender needs an update before it can send schedule alerts. Tell ' + who + '.';
+    }
+    if (r.code === 'rate') return "The change is saved, but the alert didn't go out yet: alerts go out at most once every 10 seconds.";
+    return "The change is saved, but the alert didn't go out. Check your signal.";
+  }
   const n = (r.sent || 0) + (r.queued || 0);
-  if (n) return 'Told ' + n + ' phone' + (n === 1 ? '' : 's') + ' that follow' + (n === 1 ? 's' : '') + ' this.';
-  if (r.reason === 'no-followers') return 'Nobody has reminders on for this item, so nobody was alerted. Tell people in person.';
-  if (r.reason === 'nothing-to-tell') return 'That time is too far off for an alert, so nobody was alerted.';
+  if (n) return 'Told ' + n + ' phone' + (n === 1 ? '' : 's') + ' that follow' + (n === 1 ? 's' : '') + (many ? ' these.' : ' this.');
+  if (r.reason === 'no-followers') return 'Nobody has reminders on for ' + item + ', so nobody was alerted. Tell people in person.';
+  if (r.reason === 'nothing-to-tell') return (many ? 'Those times have' : 'That time has') + ' already started or ' + (many ? 'are' : 'is') + ' too far off for an alert, so nobody was alerted. Tell people in person.';
+  if (r.reason === 'baseline') return 'Alerts were only just set up for this week, so this change wasn’t sent. Tell people in person.';
+  if (r.reason === 'not-camp-week' || r.reason === 'no-schedule') return 'Alerts only go out during camp week, so nobody was alerted.';
   return '';
 }
 

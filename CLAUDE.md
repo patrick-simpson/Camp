@@ -2050,7 +2050,8 @@ every handler in setup-ui.js sections 8–11; the mutators in setup-sync.js sect
   dashed well `#si-wait` / `#si-wait-text` that names the step ("Answer the overlap question
   first ↑", "Type what happens, then add"; `schedItemWait`) and, tapped, scrolls to it and
   focuses it — the real buttons step aside (still `aria-disabled`); otherwise `#si-tell`
-  (`.sheet-tell`, `#si-tell-check`), the scope
+  (`.sheet-tell`: ONE 44px row, `#si-tell-check` + `#si-tell-label`, `#si-tell-off` with no signal; its caveat is the
+  body's bell note `#si-alert`, never the pinned dock), the scope
   pair `#si-scope` > `#si-save-day` / `#si-save-all` (texts in `#si-save-day-text` /
   `#si-save-all-text`; the live caption `#si-scope-caption` rides INSIDE the second, so it
   is read as that choice) — two EQUAL plain buttons, stacked — or the single gold `#si-save`.
@@ -2099,7 +2100,8 @@ every handler in setup-ui.js sections 8–11; the mutators in setup-sync.js sect
 - **`#sheet-rain-done`**: `#rain-sum-title`, `#rain-clashes` (the game editor's `.clash`
   Keep his / Use yours), `#rain-sum-list` (`li.rain-sum-li`), the verdict that is ALWAYS
   said `#rain-verdict[data-tone=ok|warn]` > `#rain-verdict-lines` (`.rain-verdict-line`),
-  `#rain-tell` (`.sheet-tell`, `#rain-tell-check`), `#rain-offline`; the dock `#rain-commit`
+  `#rain-tell-note` (the tick's caveat), `#rain-offline`; the dock: `#rain-tell` (the same 44px `.sheet-tell` row,
+  right above Done so it is in view at every text size), `#rain-commit`
   (gold; with an unpicked clash the dashed `aria-disabled` "Pick one for Lunch first"),
   `#rain-keep`, `#rain-discard` (`.btn-quiet-danger`).
 - **The way in from the home schedule sheet**: `#schedule-plan` docked under
@@ -2177,7 +2179,7 @@ setup-ui.js sections 8–11. No new file, so no new `?v=` entry.
   of a copied day) — never the seed's slug id (`setupMintId`, seed only), which two directors
   adding the same name at once would mint twice and which a collision suffix could push past
   the 40 characters `pushSchedule` allows once published as `<dk>-<id>`. "Tell people who
-  follow this" is not built in the page yet (the sender's half is: "Schedule-change alerts" under "Phone alerts").
+  follow Supper" (`#si-tell`): see "The published schedule".
 - **Day operations** are shared by Camp week and Schedule: give a day its own schedule (same
   ids, `typical:false`, patches gone, one commit), follow again / clear (confirm, a
   `pre-delete` restore point first — a device with no sync has nowhere to keep one and goes
@@ -2205,10 +2207,8 @@ setup-ui.js sections 8–11. No new file, so no new `?v=` entry.
   `commitSetup`) + ONE setup commit + ONE config change + ONE undo entry "Rain plan for
   Wednesday" (`setupCombined`). Offline it says so in words. "Add something for today" is the
   item sheet in staging mode (`it.stage`): a whole one-off record staged under
-  `dayBlocks/<dk>/<id>`. "Tell people who get reminders for these" (`#rain-tell`) is shown only when push.js's
-  `pushScheduleAlertOffered()` says so (phone alerts live, a director who may act, camp week running, no "unknown
-  kind" answer yet) and the day is today or later, ticked to start with; Done sends it through `setupTellAfter`
-  AFTER the commit (see "The published schedule"). Motion: `JellyMotion.flipKeyed` glides survivors when a staged row re-sorts (not
+  `dayBlocks/<dk>/<id>`. "Tell people who follow these" (`#rain-tell`, docked above Done): see "The published
+  schedule". Motion: `JellyMotion.flipKeyed` glides survivors when a staged row re-sorts (not
   under a thumb: `whenHandsOff`), the Changed tag pops (`press`), panes arrive from the side;
   calm is a plain replace / fade.
 - **The home schedule sheet's way in** (`renderSchedulePlan`, called from `renderSchedule`):
@@ -4024,10 +4024,24 @@ Both camps, junior and senior, run all of it.
   bring an item back, remove…) is settled quietly by `pushScheduleSettle` 5 s later, on the publisher's timer, from
   `pushSchedSent` (what the sender was last told, this device's view); that is also where the `ids: ['*']` baseline reset
   goes when the schedule switch moved (`pushSchedResetOwed`; the Worker also remakes it itself on a change of id style).
-  The tick (`#si-tell` on the item sheet, `#rain-tell` on Done) is hidden unless `pushScheduleAlertOffered(dow)`: phone
-  alerts live (`PUSH_SERVICE_URL` set — blank today), `canEdit()`, `campWeek().phase === 'during'`, a day that is today or
-  tomorrow (the Worker tells only about those), and a Worker that knows the kind: a `bad-kind` answer sets
-  `pushSchedAlertsOff` and hides it for the page's life. `campSetupAlertIntent` (the old kept intent) is gone; its key is
+  **The tick** (`#si-tell` on the item sheet, `#rain-tell` docked above Done; ONE compact 44px row, its caveat a bell note
+  in the body, and left out of `schedItemFit`'s measure so it can never flip the sheet into flow mid-edit) needs
+  `pushScheduleAlertOffered()` (phone alerts live — `PUSH_SERVICE_URL`, blank today —, `canEdit()`, the camp week running,
+  no `bad-kind` answer this page load: `pushSchedAlertsOff`) AND a change the sender would actually tell: item sheet
+  (`schedItemTell`) a moved start, a new NAME (not just a team list) or a new item; rain plan a moved start or a skip —
+  with a time, before or after, still to come today or tomorrow by the sender's own window (`pushScheduleTimeTellable`:
+  the camp week's Sunday + dow at that start, camp time, server clock). An end time, emoji or kind alone offers nothing.
+  Ticked to start with only for a moved start on a real day (and the rain plan); a name, a new item ("Tell people who get
+  all reminders") and a typical-day edit start unticked; once the director touches the box (`tellChose`) it is
+  theirs. With no signal the row is the line "No signal: the alert can't go out. Tell people in person." It unfolds from
+  its top when it appears on a sheet already up (calm: a fade). **Every ticked outcome is said**
+  (`pushScheduleTellWords(r, many)`: told N phones, nobody follows, started or too far off, alerts only just set up,
+  not camp week, the sender needs an update — "Tell <owner>" —, failed); phones told goes on the undo pill while it shows
+  that change ("… · told 23 phones", `setupPillNote`), a "nobody" outcome is an 8 s toast, a failure a toast with **Try
+  again** (the sender gave the claim back, so the same ids find the change); a 10-second-rate refusal is retried once by
+  itself. **Undoing a told change tells the same phones** (`setupTellLog`, in memory: `setupUndoRun` sends `alert:true`
+  for the undo's ids — "Undone. Told 23 phones it's back as it was." — and so does its Redo). Not built: a tick on the
+  item sheet's Remove… (skip / remove is settled quietly). `campSetupAlertIntent` (the old kept intent) is gone; its key is
   only wiped on sign-out. Tests: `push-schedule-tell.test.js` (+ senior), `schedule-screen.test.js`, `rain-plan.test.js`.
 - **The whole-week calendar file** (app.js next to `buildDayIcs`, P2 §12.4):
   `buildWeekIcs({dows, fromDow, now})` is null with no camp dates (`campWeek().start`); else

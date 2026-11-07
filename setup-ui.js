@@ -1259,7 +1259,15 @@ function paintSetupDock() {
 function setupUndoRun(id) {
   if (!id) return null;
   setupPillHide(true);
+  // A change whose alert went to phones: its undo (and a redo of that) tells the same phones, or they would keep a buzz
+  // saying Supper is at 6:30 while it is at 6:00 again. The Worker words it ("Supper → 6:00 PM (was 6:30 PM)").
+  const told = setupTellLog.has(id);
+  const before = told && typeof pushScheduleSnapshot === 'function' ? pushScheduleSnapshot() : null;
   const r = undoEntry(id);
+  if (told && r && r.applied) {
+    const redo = typeof undoLastRecorded !== 'undefined' && undoLastRecorded ? undoLastRecorded.id : '';
+    setupTellAfter(before, true, { entry: redo, undo: true });
+  }
   paintSetupDock();
   if (shell.sheets.includes('setup-changes')) renderSetupChanges();
   return r;
@@ -2712,9 +2720,7 @@ function renderSchedItemSheet() {
     '<div class="cb-row"><span class="cb-main"><span class="cb-title"><span class="sched-emo" aria-hidden="true">' + esc(g.emoji) + '</span><span>' + esc(g.name) + '</span></span></span></div>').join(''));
   // Add a game here: a Games item that exists (an item being made has no id to hold a game yet) opens the game sheet on it.
   setHiddenIfChanged(setupEl('si-add-game'), !(it.mode === 'edit' && f.kind === 'games' && it.dayKey !== 'typical' && scheduleIsShared() && canEdit()));
-  // Reminders
-  setTextIfChanged(setupEl('si-alert-text'), it.mode === 'edit' ? 'People who follow “' + setupHeadLabel(it.label0) + '” get reminded before this.' : '');
-  setHiddenIfChanged(setupEl('si-alert'), it.mode !== 'edit');
+  const tell = schedItemTell(it, m);
   // Questions
   setHiddenIfChanged(setupEl('si-overlap'), !m.overlap);
   if (m.overlap) {
@@ -2754,13 +2760,20 @@ function renderSchedItemSheet() {
   setTextIfChanged(setupEl('si-wait-text'), wait ? wait.text : '');
   setHiddenIfChanged(setupEl('si-scope'), !dayScoped || !!wait);
   setHiddenIfChanged(setupEl('si-save'), dayScoped || !!wait);
-  // "Tell people who follow this": only for a change to an existing day's item that today / tomorrow can feel, with phone
-  // alerts live (push.js decides; with it dormant or an older Worker the row never shows). Ticked once per open.
-  const tellDow = it.dayKey === 'typical' ? null : SETUP_DK.indexOf(it.dayKey);
-  const tellShown = !it.stage && !wait && typeof pushScheduleAlertOffered === 'function' && pushScheduleAlertOffered(tellDow);
-  setHiddenIfChanged(setupEl('si-tell'), !tellShown);
-  const tellBox = setupEl('si-tell-check');
-  if (tellShown && tellBox && !it.tellSet) { it.tellSet = true; tellBox.toggleAttribute('checked', true); }
+  // "Tell people who follow Supper": ONE 44px row above the save, only for a change the alert sender would tell
+  // (schedItemTell); with no signal a plain line in its place. Its state follows the change until the director
+  // touches the box (it.tellChose), so a name fix that came after a time move doesn't keep the old default.
+  setupTellPaint('si-tell', tell.show && !wait, it, it.tellPainted);
+  setTextIfChanged(setupEl('si-tell-label'), tell.label || '');
+  setupTellTick('si-tell-check', tell.show && !wait && !tell.offline, tell.def, it.tellChose);
+  it.tellPainted = true;
+  // Reminders. The tick's caveat lives here, in the body, never in the pinned dock (it pushed Save below the fold), and
+  // only while the tick is there to be read with.
+  const caveat = tell.show && !wait && !tell.offline ? (tell.kind === 'new' ? 'Only phones that get every schedule reminder hear about a new item, so tell everyone else in person.'
+    : 'Only they get an alert about a change, so tell everyone else in person.') : '';
+  const remind = it.mode === 'edit' ? 'People who follow “' + setupHeadLabel(it.label0) + '” get reminded before this.' : '';
+  setTextIfChanged(setupEl('si-alert-text'), [remind, caveat].filter(Boolean).join(' '));
+  setHiddenIfChanged(setupEl('si-alert'), !remind && !caveat);
   const setDisabled = (el, off) => { if (!el) return; if (off) el.setAttribute('aria-disabled', 'true'); else el.removeAttribute('aria-disabled'); };
   const save = setupEl('si-save');
   setTextIfChanged(save, it.mode === 'add' ? (it.stage ? 'Add for ' + (it.dayKey === schedTodayKey() ? 'today' : dayWord) : it.dayKey === 'typical' ? 'Add to the typical day' : 'Add to ' + dayWord) : 'Save');
@@ -2826,7 +2839,68 @@ function schedItemFit() {
   if (!h) return;
   let fixed = 0;
   Array.prototype.forEach.call(sheet.children, (c) => { if (!(c.classList && c.classList.contains('sheet-body'))) fixed += Number(c.offsetHeight) || 0; });
+  // The tick row comes and goes with the edit (a typed name, an answered question): measured, it switched the sheet
+  // into flow under the finger and put the scope buttons below the fold. It is one compact row, so it is left out.
+  const tell = setupEl('si-tell');
+  if (tell && !tell.hidden) fixed -= Number(tell.offsetHeight) || 0;
   if (fixed > h * 0.45) { it.flow = true; sheet.setAttribute('data-flow', ''); }
+}
+
+// "Tell people who follow …" (ux-R11, P2 §12.2): offered only for a change the alert sender would actually tell — the
+// start moved, the NAME changed (not just its team list, which the sender calls "details changed"), or a new item —
+// when one of its times on the day being edited (the typical day: the days that follow it) is still to come today or
+// tomorrow (push.js pushScheduleTimeTellable, the sender's own window). An end time, an emoji or a kind alone is never
+// news to the sender, so it offers nothing. Ticked to start with only for a moved start on a real day; a new item, a
+// name fix and a typical-day edit start unticked. `offline`: with no signal the row is a plain line instead.
+function schedItemTell(it, m) {
+  const none = { show: false, kind: '', def: false, label: '', offline: false };
+  if (it.stage || typeof pushScheduleAlertOffered !== 'function' || typeof pushScheduleTimeTellable !== 'function' || !pushScheduleAlertOffered()) return none;
+  const item = m.item;
+  let kind = '';
+  if (it.mode === 'add') kind = 'new';
+  else if (m.changed.indexOf('start') !== -1) kind = 'move';
+  else if (m.changed.indexOf('label') !== -1 && setupNameKey(setupHeadLabel(it.label0)) !== setupNameKey(setupHeadLabel(item.label))) kind = 'name';
+  if (!kind || item.noTime || (it.rec && it.rec.noTime)) return none; // a block with no time is never published
+  const typicalDays = () => SETUP_DK.filter((dk) => setupMapOf(setupMapOf(setupTree.days)[dk]).typical === true);
+  const dks = it.dayKey === 'typical' ? (m.scopeInfo.change.length ? m.scopeInfo.change : typicalDays()) : [it.dayKey];
+  const starts = [item.start].concat(it.rec ? [it.rec.start] : []);
+  if (!dks.some((dk) => starts.some((st) => pushScheduleTimeTellable(SETUP_DK.indexOf(dk), st)))) return none;
+  const name = setupHeadLabel(it.label0 || item.label);
+  const label = kind === 'new' ? 'Tell people who get all reminders' : 'Tell people who follow ' + (name && name.length <= 22 ? name : 'this item');
+  return { show: true, kind, def: kind === 'move' && it.dayKey !== 'typical', label, offline: setupNoSignal() };
+}
+
+// Known to have no connection (a device with no sync set up is not "offline": nothing would go out anyway).
+function setupNoSignal() {
+  return typeof restoreHasFirebase === 'function' && restoreHasFirebase() && typeof fbConnKnown !== 'undefined' && fbConnKnown && !fbConnected;
+}
+
+// The tick row (#si-tell / #rain-tell): shown or not, and with no signal its plain line (#…-off) instead of the box.
+// It unfolds from its top when it appears on a sheet already on screen (§9.5, Now's moment: scaleY .6 → 1 on arrive,
+// the overshoot spent as a landing squash), from the diff, never on the sheet's first paint; calm: a 120 ms fade.
+function setupTellPaint(id, show, holder, painted) {
+  const row = setupEl(id);
+  if (!row) return;
+  const was = !row.hidden;
+  setHiddenIfChanged(row, !show);
+  const off = !!(show && setupNoSignal());
+  setHiddenIfChanged(setupEl(id + '-check'), off);
+  setHiddenIfChanged(setupEl(id + '-off'), !off);
+  if (show && !was && painted && typeof JellyMotion !== 'undefined') {
+    JellyMotion.play(row, 'arrive', (x) => {
+      const o = Math.max(0, x - 1);
+      return { transform: 'scale(' + (1 + 0.04 * o) + ', ' + (0.6 + 0.4 * Math.min(1, x)) * (1 - 0.3 * o) + ')', transformOrigin: '50% 0', opacity: Math.min(1, x * 1.6) };
+    }, { calm: [{ opacity: 0 }, { opacity: 1 }], calmMs: 120 });
+  }
+}
+
+// The box follows the default until the director touches it; hidden, it is never left ticked (nothing reads a hidden
+// box, but the next time it appears it starts from the default again).
+function setupTellTick(id, shown, def, chose) {
+  const box = setupEl(id);
+  if (!box || chose) return;
+  const want = !!(shown && def);
+  if (box.hasAttribute('checked') !== want) box.toggleAttribute('checked', want);
 }
 
 // A field changed: whatever it was, the questions the old answer belonged to are asked again.
@@ -2863,7 +2937,8 @@ async function schedSaveItem(scope) {
   if (it.mode === 'edit' && it.ask.rekey === 'fresh' && it.ask.rekeyKey === m.headNew) p.alertKey = setupAlertKey(m.item.label);
   const tellBefore = typeof pushScheduleSnapshot === 'function' ? pushScheduleSnapshot() : null;
   const tellEl = setupEl('si-tell-check');
-  const tellOn = !!(tellEl && !setupEl('si-tell').hidden && tellEl.hasAttribute('checked'));
+  const tellOn = !!(tellEl && !setupEl('si-tell').hidden && !tellEl.hidden && tellEl.hasAttribute('checked'));
+  const recWas = typeof undoLastRecorded !== 'undefined' ? undoLastRecorded : null;
   const r = schedCommit(p);
   if (!r.ok) {
     if (r.reason === 'unpatchable') setupSay('Just ' + SETUP_DAY_WORDS[it.dayKey] + ' can’t change the ' + r.fields + '. Use “Every day like ' + SETUP_DAY_WORDS[it.dayKey] + '”.');
@@ -2871,20 +2946,75 @@ async function schedSaveItem(scope) {
     else weekRefused(Object.assign({}, r, { byName: r.byName }));
     return;
   }
-  setupTellAfter(tellBefore, tellOn);
+  const tellWhat = setupHeadLabel(m.item.label) + (it.mode === 'add' ? ' added' : m.changed.indexOf('start') !== -1 ? ' moved' : ' renamed');
+  setupTellAfter(tellBefore, tellOn, { entry: setupTellEntry(recWas), what: tellWhat });
   setupSched.item = null;
   shellSheetClose('sched-item');
 }
 
 // After a schedule commit: publish and name what changed to the alert sender (push.js). Fire and forget: the
 // commit is done and saved whatever happens here, and a failure is one sentence, never an error on the setup.
-function setupTellAfter(before, alert) {
+// opts: `entry` — the undo entry the commit made (a ticked one is remembered, so undoing it tells the same phones it is
+// back: setupUndoRun); `many` — the change named several items (the rain plan); `what` — the change in two or three words
+// for the pill ("Supper moved"); `undo` — this is that undo's alert.
+// Where the outcome is said (§9.8, the undo pill's reason for being: a toast over the builder swallowed the next tap):
+// phones told → on the pill while it still shows this change, else a short toast; nobody told / a failure → a toast that
+// stays 8 s, a failure with its own "Try again" (the sender gave the claim back, so a retry still finds the change). A
+// "wait 10 seconds" refusal is retried once by itself, quietly (an Undo tapped right after the alert always meets it).
+const setupTellLog = new Set(); // undo entry ids whose change was told to phones (this page's memory only)
+const SETUP_TELL_SLOW_MS = 8000;
+const SETUP_TELL_RATE_MS = 10500;
+
+function setupTellEntry(was) {
+  const now = typeof undoLastRecorded !== 'undefined' ? undoLastRecorded : null;
+  return now && now !== was ? now.id : '';
+}
+
+function setupTellAfter(before, alert, opts) {
   if (typeof pushScheduleTell !== 'function' || !before) return;
+  const o = opts || {};
+  if (alert && o.entry) setupTellLog.add(o.entry);
   Promise.resolve(pushScheduleTell(before, alert)).then((r) => {
-    if (!alert) return;
-    const w = typeof pushScheduleTellWords === 'function' ? pushScheduleTellWords(r) : '';
-    if (w) setupSay(w);
+    if (!alert || !r) return;
+    if (r.ok === false && r.reason === 'failed' && r.code === 'rate' && !o.retried) {
+      setTimeout(() => setupTellAfter(before, true, Object.assign({}, o, { retried: true, entry: '' })), SETUP_TELL_RATE_MS);
+      return;
+    }
+    const n = (r.sent || 0) + (r.queued || 0);
+    if (o.undo) { // the change was undone: only "told them it's back" or "they still have the old news" are worth saying
+      if (r.ok !== false && n) setupSay('Undone. Told ' + n + ' phone' + (n === 1 ? '' : 's') + ' it’s back as it was.');
+      else if (r.ok === false && r.reason === 'failed') setupTellSay('Phones were already told about the change, and the alert that it’s back didn’t go out. Tell people in person.', before, o, true);
+      return;
+    }
+    const w = typeof pushScheduleTellWords === 'function' ? pushScheduleTellWords(r, o.many) : '';
+    if (!w) return;
+    if (r.ok !== false && n) { if (!setupPillNote(o.entry, o.what, 'told ' + n + ' phone' + (n === 1 ? '' : 's'))) setupSay(w); return; }
+    setupTellSay(w, before, o, r.ok === false && r.reason === 'failed');
   }).catch(() => {});
+}
+
+// A tick's outcome that needs reading (nobody heard, or it failed): longer than a toast's 4 s, and a failure carries its
+// own Try again, which re-names the same change.
+function setupTellSay(text, before, o, retry) {
+  if (typeof showToast !== 'function') return;
+  showToast(text, retry ? { duration: SETUP_TELL_SLOW_MS + 2000, action: { label: 'Try again', run: () => setupTellAfter(before, true, Object.assign({}, o, { retried: false, entry: '' })) } } : { duration: SETUP_TELL_SLOW_MS });
+}
+
+// The pill still offers this change's Undo: its words say the phones were told ("Undo  Supper moved · told 23 phones"),
+// so the Undo is an informed one, and it stays long enough to be read. The change is said SHORT (`what`): the pill is one
+// line and the entry's own label ("Changed Supper · start time, end time on Wednesday") cut the count off. false = say it
+// elsewhere.
+function setupPillNote(id, what, words) {
+  const pill = setupEl('setup-undo');
+  if (!id || !pill || pill.hidden || setupUi.pill.id !== id || typeof undoRecent !== 'function') return false;
+  const entry = undoRecent().find((e) => e.id === id);
+  if (!entry) return false;
+  const label = setupEl('setup-undo-label');
+  setTextIfChanged(label, (what || undoShape(entry).label) + ' · ' + words);
+  clearTimeout(setupUi.pill.timer);
+  setupUi.pill.timer = setTimeout(setupPillDock, 4500);
+  // At large text the one-line pill cuts the words off: then the count is said in a toast as well.
+  return !(label && Number(label.scrollWidth) > Number(label.clientWidth) + 1);
 }
 
 // "Back to the usual": the day's patch on this item goes.
@@ -3034,6 +3164,7 @@ function wireSchedItemSheet() {
       if (!Number.isNaN(v)) { f.end = v === 0 ? 1440 : v; schedItemTouched('time'); }
     } else if (t.id === 'si-allday') { f.end = t.checked ? 1440 : Math.min(1439, f.start + 45); schedItemTouched('time'); }
     else if (t.id === 'si-showtime') { f.noTime = !t.checked; schedItemTouched('time'); }
+    else if (t.id === 'si-tell-check' && setupSched.item) setupSched.item.tellChose = true; // the director's choice from now on
   });
   root.addEventListener('click', (e) => {
     const f = form();
@@ -3231,7 +3362,7 @@ async function rainOpen(dayKey, opts) {
   setupRain.restored = restored;
   setupRain.expanded = false;
   setupRain.picks = {};
-  setupRain.tellSet = false;
+  setupRain.tellChose = false;
   setupRain.painted = false;
   state.ui.rainDay = dk;
   setupRain.touchedAt = Date.now();
@@ -3798,13 +3929,19 @@ function renderRainDoneSheet() {
   const tone = verdict.length ? 'warn' : 'ok';
   if (vEl && vEl.dataset && vEl.dataset.tone !== tone) vEl.dataset.tone = tone;
   setHtmlIfChanged(setupEl('rain-verdict-lines'), (lines.length ? lines : ['Nothing overlaps.']).map((t) => '<p class="rain-verdict-line">' + esc(t) + '</p>').join(''));
-  // "Tell people who get reminders for these": only when phone alerts are live and the day is today or later in the camp
-  // week; ticked for a time that moved or an item skipped (ux-R11). Done sends it (rainCommit → setupTellAfter).
-  const tellable = typeof pushScheduleAlertOffered === 'function' && pushScheduleAlertOffered() && dow >= campNow().dow && c.lines.some((l) => l.kind === 'time' || l.kind === 'skip');
-  setHiddenIfChanged(setupEl('rain-tell'), !tellable);
-  const tellBox = setupEl('rain-tell-check');
-  if (tellable && tellBox && !setupRain.tellSet) { setupRain.tellSet = true; tellBox.toggleAttribute('checked', true); }
+  // "Tell people who follow these" (ux-R11): one 44px row docked above Done, so at any text size the choice is in view
+  // beside the button that acts on it. Offered only when the alert sender would tell someone: a start that moved or an
+  // item skipped whose time (before or after) is still to come today or tomorrow (push.js pushScheduleTimeTellable, the
+  // sender's own window) — a plan for Friday made on Wednesday offers nothing. Ticked to start with (those are exactly
+  // the changes people act on) until the director touches it. Its caveat is the body note #rain-tell-note.
+  const tellable = typeof pushScheduleAlertOffered === 'function' && typeof pushScheduleTimeTellable === 'function' && pushScheduleAlertOffered() &&
+    c.lines.some((l) => (l.kind === 'skip' && pushScheduleTimeTellable(dow, l.start)) ||
+      (l.kind === 'time' && l.start !== l.was.start && (pushScheduleTimeTellable(dow, l.start) || pushScheduleTimeTellable(dow, l.was.start))));
+  setupTellPaint('rain-tell', tellable, setupRain, setupRain.donePainted);
+  setupTellTick('rain-tell-check', tellable && !setupNoSignal(), true, setupRain.tellChose);
+  setHiddenIfChanged(setupEl('rain-tell-note'), !tellable || setupNoSignal());
   setHiddenIfChanged(setupEl('rain-offline'), restoreOnline() || !restoreHasFirebase());
+  setupRain.donePainted = true;
   const waiting = clashRows.find((r) => !setupRain.picks[r.key]);
   const commit = setupEl('rain-commit');
   if (commit) {
@@ -3817,6 +3954,7 @@ function rainOpenDone() {
   const plan = rainEnsure();
   if (!Object.keys(plan.items).length && !Object.keys(plan.games).length) { rainFinish(false); return; }
   setupRain.picks = {};
+  setupRain.donePainted = false; // the tick row unfolds only when it appears on a sheet already up
   setupSheet('rain-done', setupEl('rain-done'));
 }
 
@@ -3852,6 +3990,8 @@ async function rainCommit() {
   const hasGames = Object.keys(plan.games).length > 0;
   const label = 'Rain plan for ' + day;
   const tellBefore = typeof pushScheduleSnapshot === 'function' ? pushScheduleSnapshot() : null;
+  const recWas = typeof undoLastRecorded !== 'undefined' ? undoLastRecorded : null;
+  const tellItems = rainChanges(setupTree, plan, dow, state.config).lines.filter((l) => l.kind !== 'game').length; // before: the commit makes the plan the tree
   const r = setupCombined(label, (d) => rainCommitMutate(d, plan, keepPaths), hasGames ? () => rainApplyGames(state.config, plan, keepGames) : null);
   if (!r.ok) {
     if (r.reason === 'config-loading') setupSay('Still loading the games list — try again in a moment.');
@@ -3859,7 +3999,7 @@ async function rainCommit() {
     return;
   }
   const tell = setupEl('rain-tell-check');
-  setupTellAfter(tellBefore, !!(tell && !setupEl('rain-tell').hidden && tell.hasAttribute('checked')));
+  setupTellAfter(tellBefore, !!(tell && !setupEl('rain-tell').hidden && !tell.hidden && tell.hasAttribute('checked')), { entry: setupTellEntry(recWas), many: tellItems !== 1, what: 'Rain plan' });
   const online = restoreOnline() || !restoreHasFirebase();
   rainFinish(true);
   if (!online) setupSay('Saved on your phone only. Nobody else has this yet — it goes out when you have signal.');
@@ -3926,6 +4066,7 @@ function wireRainPlan() {
     });
   }
   const done = setupEl('sheet-rain-done');
+  if (done) done.addEventListener('change', (e) => { if (e.target && e.target.id === 'rain-tell-check') setupRain.tellChose = true; });
   if (done) done.addEventListener('click', (e) => {
     const q = (sel) => (e.target.closest ? e.target.closest(sel) : null);
     let b;

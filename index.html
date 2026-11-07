@@ -3296,8 +3296,13 @@
            relabelled; #si-save is then hidden);
          - anything else (the typical day itself, a one-off, an own day): the
            single #si-save "Save".
-       #si-tell (☐ Tell people who follow this) shows only when the change
-       touches today or tomorrow in camp week with phone alerts live. -->
+       #si-tell (☐ Tell people who follow Supper, #si-tell-label; "Tell people
+       who get all reminders" for a new item) is ONE compact 44px row
+       above the save, shown only for a change the alert sender would tell: a
+       moved start, a new name or a new item, with a time still to come today
+       or tomorrow, phone alerts live, in camp week (setup-ui.js schedItemTell).
+       With no signal #si-tell-off takes the box's place. Its caveat is the
+       body's bell note #si-alert, never the dock (pinned: it must stay short). -->
   <div id="sheet-sched-item" class="sheet-overlay" hidden>
     <div class="sheet-backdrop" data-sheet-close></div>
     <div class="sheet sheet-tall" role="dialog" aria-modal="true" aria-labelledby="sheet-sched-item-title">
@@ -3417,8 +3422,8 @@
       <div class="sheet-dock si-dock">
         <button type="button" class="btn btn-block si-wait" id="si-wait" hidden><span id="si-wait-text"></span></button>
         <div class="sheet-tell" id="si-tell" hidden>
-          <jelly-checkbox class="rp-check" id="si-tell-check"><span class="gl-title">Tell people who follow this</span></jelly-checkbox>
-          <p class="setup-note">Only phones that turned on reminders for this item get it — tell everyone else in person.</p>
+          <jelly-checkbox class="rp-check" id="si-tell-check"><span class="gl-title" id="si-tell-label">Tell people who follow this item</span></jelly-checkbox>
+          <p class="sheet-tell-off" id="si-tell-off" hidden>No signal: the alert can’t go out. Tell people in person.</p>
         </div>
         <div class="si-scope" id="si-scope" hidden>
           <button type="button" class="btn" id="si-save-day"><span id="si-save-day-text">Just Wednesday</span></button>
@@ -4434,16 +4439,21 @@
           <i class="rain-verdict-mark" aria-hidden="true"></i>
           <div class="rain-verdict-lines" id="rain-verdict-lines"><p class="rain-verdict-line">Nothing overlaps.</p></div>
         </div>
-        <div class="sheet-tell" id="rain-tell" hidden>
-          <jelly-checkbox class="rp-check" id="rain-tell-check"><span class="gl-title">Tell people who get reminders for these</span></jelly-checkbox>
-          <p class="setup-note"><svg class="ico" aria-hidden="true"><use href="#i-bell"/></svg><span>Only phones that turned on reminders for these items get it — tell everyone else in person.</span></p>
-        </div>
+        <!-- The tick's caveat (shown with #rain-tell, which is docked above Done). -->
+        <p class="setup-note" id="rain-tell-note" hidden><svg class="ico" aria-hidden="true"><use href="#i-bell"/></svg><span>Only phones with reminders on for these get the alert. Tell everyone else in person.</span></p>
         <p class="setup-note" id="rain-offline" hidden><svg class="ico" aria-hidden="true"><use href="#i-phone"/></svg><span>No signal. This saves on your phone and goes out when you’re back online.</span></p>
       </div>
       <!-- Done is the one gold action. While a clash has no pick it is the
            dashed "not yet" well with the reason ("Pick one for Lunch first",
-           aria-disabled="true"). Keep editing closes the sheet; Discard asks. -->
+           aria-disabled="true"). Keep editing closes the sheet; Discard asks.
+           #rain-tell ("Tell people who follow these") is the item sheet's
+           compact 44px tick row, docked right above Done so the choice is in
+           view at every text size (#rain-tell-off with no signal). -->
       <div class="sheet-dock rain-sum-dock">
+        <div class="sheet-tell" id="rain-tell" hidden>
+          <jelly-checkbox class="rp-check" id="rain-tell-check"><span class="gl-title">Tell people who follow these</span></jelly-checkbox>
+          <p class="sheet-tell-off" id="rain-tell-off" hidden>No signal: the alert can’t go out. Tell people in person.</p>
+        </div>
         <button type="button" class="btn btn-gold btn-block" id="rain-commit">Done</button>
         <div class="rain-sum-alt">
           <button type="button" class="btn-quiet" id="rain-keep">Keep editing</button>

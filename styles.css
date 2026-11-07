@@ -4672,9 +4672,10 @@ button.cb-row:active {
 }
 .setup-note .ico {
   flex: none;
-  width: 18px;
-  height: 18px;
-  margin-top: 1px;
+  /* in em: the bell grows with the words at 130% / 200% text (18px at 100%) */
+  width: 1.2857em;
+  height: 1.2857em;
+  margin-top: 0.07em;
 }
 .setup-sheet-lede {
   margin: 0 0 var(--s-3);
@@ -5925,23 +5926,31 @@ button.cb-row:active {
 #sheet-sched-item .sheet[data-flow] > .sheet-body {
   overflow: visible;
 }
-/* "Tell people who follow this" (the item sheet's dock, the rain plan's Done):
-   the ink tick of the restore sheet, its plain caveat under the label. */
+/* "Tell people who follow Supper" (the item sheet's dock, the rain plan's dock
+   above Done): ONE compact row, the restore sheet's ink tick and a short label,
+   44px tall. Its caveat is a bell note in the sheet's body, never here: the dock
+   is pinned, and a three-line block in it pushed Save below the fold. With no
+   signal a plain line (.sheet-tell-off) takes the box's place. */
 .sheet-tell {
-  margin-top: var(--s-4);
-  padding-top: var(--s-3);
-  border-top: 1px solid var(--line-2);
+  display: flex;
+  align-items: center;
+  min-height: var(--target);
 }
-.sheet-dock .sheet-tell {
-  margin-top: 0;
-  padding-top: 0;
-  border-top: 0;
+.sheet-tell[hidden],
+.sheet-tell > [hidden] {
+  display: none; /* .rp-check's display:flex would beat the hidden attribute */
 }
-.sheet-tell[hidden] {
-  display: none;
+.sheet-tell .rp-check {
+  flex: 1 1 auto;
+  min-width: 0;
 }
-.sheet-tell .setup-note {
-  margin: 4px 0 0 42px;
+.sheet-tell .gl-title {
+  font: 650 0.9375rem/1.25 var(--font-ui);
+}
+.sheet-tell-off {
+  margin: 0;
+  font: 600 0.875rem/1.4 var(--font-ui);
+  color: var(--ink-2);
 }
 /* A destructive row or quiet action ("Clear all of Wednesday's changes",
    "Discard the plan"): danger TEXT, never a red fill. */
