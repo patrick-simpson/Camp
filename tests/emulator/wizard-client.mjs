@@ -108,6 +108,7 @@ async function phone(R, person, role) {
 // (the root itself is nobody's to read: rules grant per child)
 const CAMP_NODES = ['state', 'config', 'setup', 'members', 'campers', 'accessRequests', 'revealPublic', 'revealFull', 'restoreIndex', 'restoreBody'];
 const wholeCamp = async (R) => jstr(await Promise.all(CAMP_NODES.map((k) => val(h.as(OWNER), `${R}/${k}`))));
+const wholeDiff = async (R, before) => { const now = JSON.parse(await wholeCamp(R)); const was = JSON.parse(before); return CAMP_NODES.filter((k, i) => jstr(now[i]) !== jstr(was[i])).join(','); };
 
 for (const R of ROOTS) {
   const owner = () => h.as(OWNER);
@@ -204,6 +205,9 @@ for (const R of ROOTS) {
       if (p.writes.length !== n) fail('the client wrote: ' + jstr(p.writes.slice(n).map((w) => w.op + ' ' + w.path)));
       if (!captured) fail('nothing was captured from the owner\'s run');
       const db = who === ED ? h.as(ED) : h.as(VW);
+      // the phone's own first-snapshot work (a push its attach queued) is finished before the camp is measured: it is not what is under test
+      await p.until('pendingWritesTotal() === 0 && !hasUnconfirmedLocalWork() && !pushTimer', 'the phone to be quiet');
+      await new Promise((r) => setTimeout(r, 700));
       const camp0 = await wholeCamp(R);
       // the claim, the way the client writes it
       await assertFails(runTransaction(ref(db, `${R}/setup/meta/wizard`), () => captured.claim.value));
@@ -212,15 +216,15 @@ for (const R of ROOTS) {
       for (const pts of captured.points) await assertFails(update(ref(db, R), pts));
       // the commit and the undo, as a whole
       await assertFails(update(ref(db, R), captured.clear));
-      if (await wholeCamp(R) !== camp0) fail('the clear landed in part');
+      if (await wholeCamp(R) !== camp0) fail('the clear landed in part: ' + await wholeDiff(R, camp0));
       // An undo that puts a YEAR's epoch back (an archive of a later year) writes owner-only values: refused as a whole.
       const toYear = Object.assign({}, captured.undo, { 'state/meta/epoch': 'w20260101', 'setup/meta/epoch': 'w20260101' });
       await assertFails(update(ref(db, R), toYear));
-      if (await wholeCamp(R) !== camp0) fail('the undo to a year\'s epoch landed in part');
+      if (await wholeCamp(R) !== camp0) fail('the undo to a year\'s epoch landed in part: ' + await wholeDiff(R, camp0));
       // the epoch pair on its own, and the clear without it (a director's ordinary clean-up paths): the epoch is what the rules hold back
       await assertFails(update(ref(db, R), { 'state/meta/epoch': 'w20270405', 'state/meta/epochAt': { '.sv': 'timestamp' } }));
       await assertFails(update(ref(db, R), { 'setup/meta/epoch': 'w20270405', 'setup/meta/epochAt': { '.sv': 'timestamp' } }));
-      if (await wholeCamp(R) !== camp0) fail('something landed');
+      if (await wholeCamp(R) !== camp0) fail('something landed: ' + await wholeDiff(R, camp0));
       // RECORDED, not asserted either way (setup-rebuild-spec §1.4 limit b, owner-only.mjs): `.validate` is not evaluated for a DELETE, so the undo of a
       // LEGACY-epoch archive — which only DELETES the epoch pair — is not refused to a director who sends it by hand. The app refuses it before sending
       // (above); the rules cannot. The data it puts back is the owner's own archive, and every director could already delete these keys.
