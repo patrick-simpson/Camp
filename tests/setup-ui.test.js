@@ -63,9 +63,9 @@ test('hub rows open their screens: Camp week, Schedule, Games and Teams → thei
     assert.equal(state.ui.builderScreen, 'people', 'Step 25: People has its own screen now (the Members drawer is retired; More\'s People row opens the same one)');
     assert.equal(peopleUi.from, '', 'opened from the hub, so Back is the hub');
     hubOpen('campers');
-    assert.equal(state.ui.builderScreen, 'campers', 'Step 25 (session 3): Campers has its own screen now (a row whose screen is still to come, Phone alerts, does nothing)');
+    assert.equal(state.ui.builderScreen, 'campers', 'Step 25 (session 3): Campers has its own screen now (Phone alerts opens the Alerts drawer instead)');
     hubOpen('alerts');
-    assert.equal(state.ui.builderScreen, 'campers', 'a row with no screen yet does nothing');
+    assert.equal(state.ui.builderScreen, 'campers', 'Phone alerts opens its drawer over the builder, not a screen of its own');
     hubOpen('week');
     assert.equal(state.ui.builderScreen, 'week');
     hubOpen('schedule');

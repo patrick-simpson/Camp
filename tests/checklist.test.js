@@ -103,14 +103,13 @@ test('People problems: a team with no counselors, an incomplete record, people w
 });
 
 // ── The rest of the rows ──
-test('rows whose screen comes later say `soon` and claim nothing; an optional one can be set aside', () => {
-  // Campers has its screen now (Step 25, session 3): its row is judged (see the Campers cases below). Phone alerts is the one that is still to come.
-  ['alerts'].forEach((k) => {
-    const s = hubStatus(k, clView());
-    assert.equal(s.mark, 'soon', k);
-    assert.equal(s.word, 'Editing comes next', k);
-    assert.deepEqual(s.problems, [], k + ' has nothing to check yet');
-  });
+test('the Phone alerts row is judged (Step 29): off, no dates, sending, sent — never a warning; an optional row can be set aside', () => {
+  const al = (o) => hubStatus('alerts', clView({ alerts: o }));
+  assert.deepEqual([al({ live: false }).mark, al({ live: false }).summary], ['info', 'Phone alerts aren’t switched on yet']);
+  assert.deepEqual([al({ live: true, weekStart: '' }).mark, al({ live: true, weekStart: '' }).summary], ['info', 'Reminders start once the camp week has dates']);
+  assert.deepEqual([al({ live: true, weekStart: '2027-07-18', sent: false }).mark, al({ live: true, weekStart: '2027-07-18', sent: false }).summary], ['info', 'Sending the schedule to phones…']);
+  assert.deepEqual([al({ live: true, weekStart: '2027-07-18', sent: true }).mark, al({ live: true, weekStart: '2027-07-18', sent: true }).summary], ['ok', 'Schedule sent to phones']);
+  ['live', 'nothing'].forEach((k) => assert.deepEqual(al(k === 'live' ? { live: true, weekStart: '2027-07-18' } : undefined).problems, [], 'never a problem line'));
   // Meals, verses, the rota and electives have their screens now (Step 19): while the section is the original the row is a plain
   // "info" line that claims nothing (their judging is sections.test.js's hub cases).
   [['meals', 'The original menu'], ['verses', 'The original verses'], ['cleanup', 'The original rota'], ['electives', 'The original stations']].forEach(([k, line]) => {

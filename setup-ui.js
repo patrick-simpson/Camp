@@ -59,6 +59,7 @@ const HUB_OPENS = {
   people: { screen: 'people' },
   campers: { screen: 'campers' },
   restore: { screen: 'backups' },
+  alerts: { drawer: 'alerts' },
 };
 // The front door's buttons, owner only (Q8). A button exists only when its action does: the steps that
 // build Edit the week here (15) and the new-year wizard (28) put a function here. Until then the door
@@ -165,8 +166,15 @@ function hubStatus(section, view) {
     }
     case 'meals': case 'verses': case 'cleanup': case 'electives':
       return hubSectionStatus(section, v);
-    case 'alerts':
-      return hubMark('soon', 'Reminders follow the original schedule', []);
+    case 'alerts': {
+      // Phone alerts (live since Step 27): is the sender switched on, does the week have dates, did the schedule reach the sender?
+      // Never a warning: a phone that has not heard yet is the publisher catching up, and no dates is not a chore (P2 Appendix B).
+      const a = v.alerts || {};
+      if (!a.live) return hubMark('info', 'Phone alerts aren’t switched on yet', []);
+      if (!a.weekStart) return hubMark('info', 'Reminders start once the camp week has dates', []);
+      if (a.sent) return hubMark('ok', 'Schedule sent to phones', []);
+      return hubMark('info', 'Sending the schedule to phones…', []);
+    }
     case 'games': {
       const problems = [];
       const days = Array.isArray(v.days) ? v.days : [];
@@ -473,7 +481,21 @@ function hubView() {
     brackets: (function () { const b = typeof bracketNotes === 'function' ? bracketNotes() : { late: [], recheck: [] }; return { late: b.late.map((x) => x.name), recheck: b.recheck.map((x) => x.name) }; })(),
     schedule: hubScheduleView(),
     sec: hubSecView(),
+    alerts: hubAlertsView(weekStart),
   };
+}
+
+// What the Phone alerts row judges. `sent` = the schedule on the sender is what this device would publish now (push.js keeps the
+// published src); both halves are typeof-guarded, so a build with no push.js says the sender is off.
+function hubAlertsView(weekStart) {
+  const live = typeof pushConfigured === 'function' && pushConfigured();
+  let sent = false;
+  try {
+    if (live && weekStart && typeof pushScheduleSrc === 'function' && typeof pushScheduleBlocks === 'function' && typeof pushPublishedSrc !== 'undefined' && pushPublishedSrc) {
+      sent = pushScheduleSrc(weekStart, pushScheduleBlocks(scheduleWeek())) === pushPublishedSrc;
+    }
+  } catch (e) { sent = false; }
+  return { live, weekStart: weekStart || '', sent };
 }
 
 // ── what the four smaller sections' rows judge (read from the live tree, only for a section that is on) ──
@@ -952,6 +974,7 @@ function paintHubDoor(door) {
 function hubOpen(key) {
   const o = HUB_OPENS[key];
   if (!o) return;
+  if (o.drawer === 'alerts') { if (typeof openPushDrawer === 'function') openPushDrawer(); return; }
   if (o.drawer === 'members') { if (typeof openMembers === 'function') openMembers(); return; }
   if (o.screen === 'people') peopleUi.from = ''; // from the hub, Back is the hub
   if (o.screen === 'backups') { setupGo('backups'); refreshRestoreIndex(); return; }
