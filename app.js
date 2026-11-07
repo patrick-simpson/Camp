@@ -3024,12 +3024,8 @@ function renderHistory() {
     body.innerHTML = '<p class="muted">Needs a connection: there’s no shared change history to show right now.</p>';
     return;
   }
-  // Skeleton rows while the changelog fetch is in flight — varied widths so
-  // the placeholder reads as a list of entries, not a repeated bar.
-  body.innerHTML = '<div class="history-skeleton" aria-label="Loading change history">' +
-    [92, 68, 84, 58, 76, 88].map((w) =>
-      `<jelly-skeleton shape="line" style="width: ${w}%"></jelly-skeleton>`).join('') +
-    '</div>';
+  // One quiet line while the changelog fetch is in flight (§8.8: no skeleton bars).
+  body.innerHTML = '<p class="muted" role="status">Loading the change history…</p>';
   firebase.database().ref(dbPath('changelog')).limitToLast(500).once('value')
     .then((snap) => {
       const val = snap.val() || {};
@@ -3163,9 +3159,7 @@ function renderMembers() {
   const seq = renderMembers.seq = (renderMembers.seq || 0) + 1;
   if (body.querySelector('.member-list')) body.classList.add('is-refreshing');
   else {
-    body.innerHTML = '<div class="history-skeleton">' +
-      [90, 70, 80].map((w) => `<div class="skeleton-row" style="width:${w}%"><jelly-skeleton style="height:2.6rem"></jelly-skeleton></div>`).join('') +
-      '</div>';
+    body.innerHTML = '<p class="muted" role="status">Loading the list…</p>';
   }
   // Both camps' lists load side by side. The other camp's read succeeds for
   // anyone who is a member THERE (the list is that camp's staff directory);
@@ -9430,8 +9424,8 @@ function setCleanupPoints(teamId, dow, meal, pts) {
 
 const FORMAT_BADGES = {
   tournament: { label: 'Bracket', cls: 'badge-bracket', variant: 'azure' },
-  tally: { label: 'Score entry', cls: 'badge-tally', variant: 'amber' },
-  placement: { label: 'Podium pick', cls: 'badge-podium', variant: 'platinum' },
+  tally: { label: 'Scores', cls: 'badge-tally', variant: 'amber' },
+  placement: { label: 'Podium', cls: 'badge-podium', variant: 'platinum' },
 };
 
 // ════════════════════════════════════════════════════════════════════
@@ -10027,7 +10021,7 @@ function renderGameView() {
   };
   // Plain words (§8.6: no emoji in a heading or a status line; mockup 14).
   setText('takeover-game-title', g.name);
-  setText('takeover-game-sub', [g.location, g.session, badge.label].filter(Boolean).join(' · '));
+  setText('takeover-game-sub', [nowPlaceWord(g.location), g.session, badge.label].filter(Boolean).join(' · '));
   const backLabel = shellGameBackLabel(g);
   setText('takeover-game-back-label', backLabel);
   const backBtn = tk.querySelector('[data-takeover-back]');

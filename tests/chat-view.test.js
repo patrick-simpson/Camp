@@ -26,7 +26,7 @@ test('"sync is off" is only said when sync really is off, not while it is still 
     fbRef = null; sdkLoadFailed = false; syncDenied = false;
     chatDenied = false; chatReady = {};
     assert.notOk(chatSyncOff(), 'cold start, sync not started yet');
-    assert.ok(chatListHTML('general').includes('skeleton'), 'an open view shows the skeleton, not the sentence');
+    assert.ok(chatListHTML('general').includes('Loading messages…'), 'an open view says it is loading, not that sync is off');
     sdkLoadFailed = true;
     assert.ok(chatSyncOff(), 'SDK never loaded → really off');
     assert.ok(chatListHTML('general').includes('live sync'));

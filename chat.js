@@ -981,9 +981,7 @@ function chatListHTML(ch) {
   if (chatDenied) return `<p class="muted chat-note">Chat isn't available yet — the database rules need updating (ask Patrick).</p>`;
   if (chatSyncOff()) return `<p class="muted chat-note">Chat needs live sync, which is off on this device.</p>`;
   if (!chatReady[ch]) {
-    return '<div class="history-skeleton">' +
-      [80, 60, 75].map((w) => `<div class="skeleton-row" style="width:${w}%"><jelly-skeleton style="height:3rem"></jelly-skeleton></div>`).join('') +
-      '</div>';
+    return '<p class="muted chat-note" role="status">Loading messages…</p>'; // one quiet line, no skeleton bars (§8.8)
   }
   const list = chatMsgs[ch] || [];
   if (!list.length) return `<p class="muted chat-note">No messages here yet — say hi! 👋</p>`;
