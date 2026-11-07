@@ -2660,3 +2660,31 @@ test('cron maintenance deletes a schedule baseline once its camp window is long 
   await w.cron();
   assert.ok(seenNode(w));
 });
+
+test('cron maintenance makes the schedule baseline inside the camp window when there is none (or one for another week), so the first ticked change of camp week is not lost to "baseline"', async () => {
+  await load();
+  const w = schedAlertWorld();
+  const minute17 = (d, h) => Date.UTC(2027, 6, d, h, 17, 0);
+  w.net.db.set('pushServer/schedSeen/junior', null);
+  w.net.now = minute17(16, 20); // Friday before: the window opens a day ahead of the week's Sunday
+  await w.cron();
+  assert.equal(seenNode(w), null, 'too early: more than a day before the week');
+  w.net.now = minute17(17, 20);
+  await w.cron();
+  assert.equal(seenNode(w).weekStart, SCHED_WEEK);
+  sameTree(seenNode(w).blocks, SCHED_NOW(), 'the baseline is what is published');
+  // an existing baseline for this week is never overwritten
+  w.net.db.set('pushServer/schedSeen/junior', { weekStart: SCHED_WEEK, blocks: SCHED_THEN() });
+  w.net.now = minute17(18, 20);
+  await w.cron();
+  sameTree(seenNode(w).blocks, SCHED_THEN(), 'left alone');
+  // one for last year's week is replaced
+  w.net.db.set('pushServer/schedSeen/junior', { weekStart: '2026-07-19', blocks: SCHED_THEN() });
+  w.net.now = minute17(19, 20);
+  await w.cron();
+  assert.equal(seenNode(w).weekStart, SCHED_WEEK);
+  // and the first ticked change after that tells the phones instead of only making a baseline
+  w.net.now = NOW;
+  const r = await schedTell(w, { ids: ['tue-teamcomp'] });
+  assert.ok(r.json.reason !== 'baseline', 'not just a baseline');
+});

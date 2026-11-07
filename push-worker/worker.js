@@ -2613,6 +2613,19 @@ async function cronMaintenance(ictx) {
     const seenWeek = await dbGet(ictx, `pushServer/schedSeen/${camp}/weekStart`);
     if (isValidWeekStart(seenWeek) && now > etWallToEpoch(seenWeek, 0) + 8 * DAY) await dbDelete(ictx, `pushServer/schedSeen/${camp}`);
 
+    // Make the schedule-change baseline before the first alert needs it: with none (or one for another week) the
+    // first ticked change of camp week would only make it and tell nobody. Inside the camp window only, never
+    // over an existing baseline for this week (an ETag-conditional put against what we just read).
+    try {
+      const sched = await dbGet(ictx, `${CAMPS[camp]}/pushSchedule`);
+      const wk = isObj(sched) && isValidWeekStart(sched.weekStart) ? sched.weekStart : '';
+      if (wk && now >= etWallToEpoch(wk, 0) - DAY && now <= etWallToEpoch(wk, 0) + 8 * DAY && ictx.left() >= 4) {
+        const tagged = await dbGetTagged(ictx, `pushServer/schedSeen/${camp}`);
+        const node = isObj(tagged.value) ? tagged.value : null;
+        if (!node || node.weekStart !== wk) await claimSchedSeen(ictx, camp, { weekStart: wk, blocks: slimBlocks(sched.blocks) }, tagged.etag);
+      }
+    } catch (e) { if (!(e instanceof BudgetError)) console.warn('camp-alerts: schedule baseline', e && e.message); }
+
     // Device records of people no longer on the member list. NEVER when the
     // list reads empty: that is a read problem, not a camp with no staff, and
     // acting on it would switch off everybody's alerts.

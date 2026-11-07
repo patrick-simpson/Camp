@@ -1185,6 +1185,7 @@ let pushSchedResetOwed = false;  // the schedule switch moved: the baseline is r
 const PUSH_SCHED_IDS_MAX = 200;  // the Worker's own cap on one request
 
 function pushScheduleSnapshot() {
+  if (!pushConfigured()) return null; // dormant: nothing is ever told, so don't build the snapshot
   try { return pushScheduleBlocks(scheduleWeek()); } catch (e) { return null; }
 }
 
@@ -1231,6 +1232,7 @@ function pushScheduleTimeTellable(dow, start) {
 async function pushScheduleTell(before, alert) {
   const after = pushScheduleSnapshot();
   const ids = pushScheduleChangedIds(before, after);
+  const sentWas = pushSchedSent; // given back if the send fails: the sender's baseline did not move, so ours must not
   if (after) pushSchedSent = after;
   if (!pushConfigured() || pushSchedAlertsOff) return { ok: false, reason: 'off' };
   if (!(typeof directorTab === 'function' && directorTab())) return { ok: false, reason: 'readonly' };
@@ -1243,6 +1245,7 @@ async function pushScheduleTell(before, alert) {
     return { ok: true, reason: res.reason || '', sent: Number(res.sent) || 0, queued: Number(res.queued) || 0, failed: Number(res.failed) || 0, devices: Number(res.devices) || 0, items: Number(res.items) || 0 };
   } catch (e) {
     if (e && e.serverError === 'bad-kind') pushSchedAlertsOff = true; // an older Worker: hide the tick, change nothing else
+    pushSchedSent = sentWas;
     console.warn('[push] schedule alert failed', e);
     return { ok: false, reason: 'failed', code: (e && (e.serverError || e.pushCode || e.code)) || '', error: pushErrorMessage(e) };
   }

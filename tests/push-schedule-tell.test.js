@@ -169,3 +169,37 @@ test('the schedule switch moving owes a baseline reset', () => {
     assert.equal(pushSchedResetOwed, true);
   } finally { ptEnd(ctx); }
 });
+
+test('a send that fails gives the sender-state back, so the next quiet settle still names the change', async () => {
+  const ctx = ptStart({ answer: () => { throw new Error('network'); } });
+  const real = pushScheduleSnapshot;
+  try {
+    const before = ptBlocks();
+    const old = JSON.parse(JSON.stringify(before));
+    pushSchedSent = old;
+    pushScheduleSnapshot = () => Object.assign(JSON.parse(JSON.stringify(before)), { 'wed-supper': Object.assign({}, before['wed-supper'], { start: 1110 }) });
+    const r = await pushScheduleTell(before, true);
+    assert.equal(r.reason, 'failed');
+    assert.equal(pushSchedSent, old, 'the failed send did not move what the sender was told');
+  } finally { pushScheduleSnapshot = real; ptEnd(ctx); }
+});
+
+test('pushScheduleTimeTellable: only a time still to come, before the end of tomorrow, in the camp week (camp time, server clock)', () => {
+  const real = { week: campWeek, now: serverNow };
+  try {
+    campWeek = () => ({ start: '2027-07-18', phase: 'during' });
+    serverNow = () => etWallToEpoch('2027-07-20', 600); // Tuesday 10:00
+    assert.equal(pushScheduleTimeTellable(2, 660), true, 'later today');
+    assert.equal(pushScheduleTimeTellable(2, 540), false, 'already started');
+    assert.equal(pushScheduleTimeTellable(3, 1430), true, 'tomorrow, up to the end of the day');
+    assert.equal(pushScheduleTimeTellable(4, 600), false, 'two days off');
+    assert.equal(pushScheduleTimeTellable(2, -1), false);
+    campWeek = () => ({ start: '', phase: 'unset' });
+    assert.equal(pushScheduleTimeTellable(2, 660), false, 'no camp date');
+    // the spring-forward edge: Sunday 2027-03-14 has no 02:30, and the window still ends at tomorrow's midnight
+    campWeek = () => ({ start: '2027-03-14', phase: 'during' });
+    serverNow = () => etWallToEpoch('2027-03-14', 60);
+    assert.equal(pushScheduleTimeTellable(0, 1200), true);
+    assert.equal(pushScheduleTimeTellable(2, 600), false);
+  } finally { campWeek = real.week; serverNow = real.now; }
+});

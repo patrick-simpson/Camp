@@ -400,36 +400,45 @@ function ssTrackBox(id) { // the stub's elements keep no attributes: this one re
   return box;
 }
 
-test('the tick on the item sheet: hidden while phone alerts are dormant, shown (ticked) for today with them live, and a save tells the sender; unticked it is a quiet baseline move', async () => {
+test('the tick on the item sheet: hidden while phone alerts are dormant, shown only for a change someone could be told about (a moved start, a new name) and then ticked for a move on a real day; a save tells the sender; unticked it is a quiet baseline move', async () => {
+  // Moved on purpose with the Step 26 review: an emoji-only change no longer offers the tick (the sender would alert
+  // "details changed" for nothing), and the tick needs a time still to come inside the sender's window.
   const todayDow = campNow().dow;
   const todayKey = SETUP_DK[todayDow];
-  const real = { cfg: pushConfigured, week: campWeek, tell: pushScheduleTell };
+  const real = { cfg: pushConfigured, week: campWeek, tell: pushScheduleTell, now: serverNow };
   const told = [];
   ssStart({ day: todayKey });
   try {
-    const target = planForDow(todayDow).find((b) => !b.noTime && b.type !== 'games' && !b.meal);
+    const target = planForDow(todayDow).find((b) => !b.noTime && b.type !== 'games' && !b.meal && b.start >= 120 && b.start <= 1000);
     assert.ok(target, 'a plain item today');
     ssTrackBox('si-tell-check');
     pushScheduleTell = async (before, alert) => { told.push({ before, alert }); return { ok: true, sent: 1, queued: 0 }; };
+    const ymd = (add) => new Date(Date.UTC(2027, 6, 18 + add)).toISOString().slice(0, 10);
     // dormant: PUSH_SERVICE_URL is blank
     schedOpenItem({ bid: target.id });
-    setupSched.item.form.emoji = '🎉'; schedItemTouched('emoji');
+    setupSched.item.form.start = target.start + 5; schedItemTouched('start');
     assert.equal(setupEl('si-tell').hidden, true, 'dormant: never shown');
     ssSheetClose(); setupSched.item = null;
-    // live, camp week running
+    // live, camp week running, one o'clock in the morning of today's date in the camp week
     pushConfigured = () => true;
     campWeek = () => ({ start: '2027-07-18', phase: 'during' });
+    serverNow = () => etWallToEpoch(ymd(todayDow), 60);
     schedOpenItem({ bid: target.id });
     setupSched.item.form.emoji = '🎉'; schedItemTouched('emoji');
+    assert.equal(setupEl('si-tell').hidden, true, 'an emoji alone is nothing to tell');
+    ssSheetClose(); setupSched.item = null;
+    schedOpenItem({ bid: target.id });
+    setupSched.item.form.start = target.start + 5; schedItemTouched('start');
     assert.equal(setupEl('si-tell').hidden, false);
-    assert.equal(setupEl('si-tell-check').hasAttribute('checked'), true, 'ticked to start with');
+    assert.equal(setupEl('si-tell-check').hasAttribute('checked'), true, 'a moved start today starts ticked');
     await schedSaveItem('day');
     assert.equal(told.length, 1);
     assert.equal(told[0].alert, true);
     assert.ok(told[0].before && typeof told[0].before === 'object', 'the blocks as they were before the commit');
     // unticked: still named to the sender, so its baseline keeps up, but nobody is told
     schedOpenItem({ bid: target.id });
-    setupSched.item.form.emoji = '🎊'; schedItemTouched('emoji');
+    const t1 = planForDow(todayDow).find((b) => b.id === target.id);
+    setupSched.item.form.start = t1.start + 5; schedItemTouched('start');
     setupEl('si-tell-check').toggleAttribute('checked', false);
     await schedSaveItem('day');
     assert.equal(told.length, 2);
@@ -444,7 +453,8 @@ test('the tick on the item sheet: hidden while phone alerts are dormant, shown (
     // an older Worker hid the tick
     pushScheduleTell = real.tell; pushSchedAlertsOff = true;
     schedOpenItem({ bid: target.id });
-    setupSched.item.form.emoji = '🎁'; schedItemTouched('emoji');
+    const t2 = planForDow(todayDow).find((b) => b.id === target.id);
+    setupSched.item.form.start = t2.start + 5; schedItemTouched('start');
     assert.equal(setupEl('si-tell').hidden, true);
-  } finally { pushSchedAlertsOff = false; pushConfigured = real.cfg; campWeek = real.week; pushScheduleTell = real.tell; ssSheetClose(); ssEnd(); }
+  } finally { pushSchedAlertsOff = false; pushConfigured = real.cfg; campWeek = real.week; serverNow = real.now; pushScheduleTell = real.tell; ssSheetClose(); ssEnd(); }
 });

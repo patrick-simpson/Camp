@@ -3268,7 +3268,7 @@ ignores the "director alerts" opt-out). Design spec:
   one change tell the phones once; a lost claim re-reads up to 3 times, then 503 `busy`) and is given back when nothing was
   sent or queued (a retry still finds the change). With no baseline, a baseline from another week, a `'*'` reset, or a
   switch of id style (`d<dow>-<start>-<n>` ↔ `<day>-<block id>`: the schedule switch moved) the baseline is simply made from
-  the published blocks (`reason: 'baseline'`, nobody told — which is also what the first ever call for a camp does). A moved
+  the published blocks (`reason: 'baseline'`, nobody told — which is also what the first ever call for a camp does; so the hourly maintenance pass makes the baseline itself from the published schedule inside the camp window, one day ahead of the week, whenever there is none for this week, and never over an existing one, so the first ticked change of camp week is not lost to it). A moved
   (day or start), renamed or cancelled block, or a new one, is an item; a cancelled + new pair sharing one alert `key` is ONE
   move (same day paired first). Only items with an old or new occurrence between now and the end of TOMORROW (Eastern) that
   has not started are told, and only inside the camp window (week start − 1 day … + 8 days). Recipients: phones (the 4-newest

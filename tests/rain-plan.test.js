@@ -487,8 +487,11 @@ test('M2 in handler calls (junior Wednesday): open, Team competitions, Swap with
 // ── "Tell people who get reminders for these" (Step 26): Done sends it, quietly or not ─────────────────────────────
 
 test('Done: the tell tick is hidden while phone alerts are dormant; live, it is ticked and Done tells the sender after the commit; unticked it is only a quiet baseline move; a failing sender never undoes the plan', async () => {
-  const real = { cfg: pushConfigured, week: campWeek, tell: pushScheduleTell, now: campNow };
+  const real = { cfg: pushConfigured, week: campWeek, tell: pushScheduleTell, now: campNow, sn: serverNow };
   const told = [];
+  // Moved on purpose with the Step 26 review: the tick needs a changed time still inside the sender's window, so the
+  // server clock is set to Tuesday morning of the camp week and the plan is Wednesday's.
+  serverNow = () => etWallToEpoch('2027-07-20', 600);
   rpStart();
   try {
     campNow = () => ({ dow: 1, minutes: 600 });
@@ -533,5 +536,5 @@ test('Done: the tell tick is hidden while phone alerts are dormant; live, it is 
     await stage();
     await rainCommit();
     assert.equal(setupRain.plan, null, 'the plan is committed whatever the sender does');
-  } finally { pushConfigured = real.cfg; campWeek = real.week; pushScheduleTell = real.tell; campNow = real.now; rpEnd(); }
+  } finally { pushConfigured = real.cfg; campWeek = real.week; pushScheduleTell = real.tell; campNow = real.now; serverNow = real.sn; rpEnd(); }
 });
