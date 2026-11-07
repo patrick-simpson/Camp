@@ -378,7 +378,7 @@ test('the screen says why there is no list: sync off, a refused read; and offers
     delete window.FIREBASE_CONFIG;
     renderCampersScreen();
     assert.equal(cmEl('campers-state').hidden, false);
-    assert.ok(/Live sync is off/.test(cmEl('campers-state-text').textContent));
+    assert.ok(/Needs a connection/.test(cmEl('campers-state-text').textContent));
     assert.equal(cmEl('campers-add-btn').hidden, true);
     window.FIREBASE_CONFIG = { apiKey: 'test' };
     campersMem.denied = true;

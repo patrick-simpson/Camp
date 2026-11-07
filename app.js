@@ -581,7 +581,7 @@ function identityFromKey(key) {
 // The owner's member key, the lockout anchor. The security rules refuse EVERY
 // write to this key in both camps' member lists (`$memberKey != '…'`), so the
 // Members drawer must not offer controls that can only fail: its row shows
-// "Owner · managed in the Firebase console" and nothing else, for the owner
+// "Owner · only the owner can change this row" and nothing else, for the owner
 // themselves and for every other editor. The same literal is in
 // database.rules.json (tests/owner-row.test.js pins that they agree). Any bulk
 // member write must skip this key and be per-row and best-effort, never folded
@@ -3002,7 +3002,7 @@ function renderHistory() {
   const body = document.getElementById('history-body');
   if (!body) return;
   if (!fbRef) {
-    body.innerHTML = '<p class="muted">Live sync is off on this device, so there\'s no shared change history to show.</p>';
+    body.innerHTML = '<p class="muted">Needs a connection: there’s no shared change history to show right now.</p>';
     return;
   }
   // Skeleton rows while the changelog fetch is in flight — varied widths so
@@ -3133,7 +3133,7 @@ function renderMembers() {
   const body = document.getElementById('members-body');
   if (!body) return;
   if (!fbRef) {
-    body.innerHTML = '<p class="muted">Live sync is off on this device, so the member list isn\'t reachable.</p>';
+    body.innerHTML = '<p class="muted">Needs a connection: the member list can’t be reached right now.</p>';
     return;
   }
   // Loading bars only on the first fill. Every role/team/remove tap calls
@@ -3348,7 +3348,7 @@ function renderMemberList(body, lists) {
         ${accessHTML}
         ${teamHTML}
       </div>`}
-      ${owner ? '<p class="muted member-self-note member-owner-note">👑 Owner · managed in the Firebase console</p>'
+      ${owner ? '<p class="muted member-self-note member-owner-note">👑 Owner · only the owner can change this row</p>'
         : self ? '<p class="muted member-self-note">That\'s you — another editor has to change or remove your access.</p>' : ''}
     </div>`;
   }).join('');
@@ -8855,12 +8855,12 @@ function renderPickerStep() {
   const title = document.querySelector('.team-picker-title');
   const hint = document.querySelector('.team-picker-hint');
   if (pickerStep === 'identity') {
-    if (title) title.textContent = '🙋 Which one are you?';
+    if (title) title.textContent = 'Which counselor are you?';
     if (hint) hint.textContent = "So we can show your electives whenever you check in. Just cheering? Skip it.";
     renderIdentityOptions();
   } else {
     if (title) title.textContent = '👋 Which team are you rooting for?';
-    if (hint) hint.textContent = "You'll get alerts when your team plays and wins medals.";
+    if (hint) hint.textContent = 'You’ll get alerts when your team plays and wins medals.';
     renderTeamPickerOptions();
   }
 }
@@ -10388,7 +10388,7 @@ function renderTally(container, g) {
     .every((input) => input.value === (draft.scores[input.dataset.teamId] || ''));
   if (!showsDraft) container.__liveKey = null;
   const fresh = setLiveHtmlIfChanged(container, `
-    <h3>Enter team scores <span class="unit-tag">(${esc(g.unit || 'points')}${g.lowerWins ? ' — lowest wins' : ''})</span></h3>
+    <h3>Scores <span class="unit-tag">(${esc(g.unit || 'points')}${g.lowerWins ? ' — lowest wins' : ''})</span></h3>
     ${blockedTeam ? ownTeamNoteHTML('your own team\u2019s score') : ''}
     <div class="score-input-grid">
       ${state.teams.map((t) => {
@@ -10411,10 +10411,10 @@ function renderTally(container, g) {
       `;
       }).join('')}
     </div>
-    ${g.liveRankings ? '<button id="reset-scores-btn" class="link-btn danger-link reset-scores-btn">↺ Reset all scores</button>' : ''}
+    ${g.liveRankings ? '<button id="reset-scores-btn" class="link-btn danger-link reset-scores-btn">Reset all scores</button>' : ''}
     <div id="tally-medals"></div>
     <p id="entry-error" class="entry-error" role="alert" hidden></p>
-    <jelly-button id="save-result-btn" class="primary-btn" block>Save Result</jelly-button>
+    <jelly-button id="save-result-btn" class="primary-btn" block>Save result</jelly-button>
   `, [g]);
   if (!fresh) {
     // The picks aren't part of the form's markup (another editor may have
@@ -10604,7 +10604,7 @@ function renderPlacement(container, g) {
     <p class="muted">No score-keeping needed — just record who placed.</p>
     <div id="placement-medals">${medalPickerHTML(draft.medals, g)}</div>
     <p id="entry-error" class="entry-error" role="alert" hidden></p>
-    <jelly-button id="save-result-btn" class="primary-btn" block>Save Result</jelly-button>
+    <jelly-button id="save-result-btn" class="primary-btn" block>Save result</jelly-button>
   `, [g]);
   if (!fresh) return;
 
@@ -11883,7 +11883,7 @@ function liveTrackerHTML(g, aId, bId, viewer) {
 
   return `<div class="big-board ${viewer ? 'viewer' : ''}" data-board-game="${esc(g.id)}">
     <div class="board-head">
-      <span class="board-live-badge">🔴 LIVE</span>
+      <span class="board-live-badge">Live</span>
       ${periodRow}
     </div>
     <div class="board-cols">
@@ -11926,7 +11926,7 @@ function liveBoardHTML(g, aId, bId) {
     </div>` : '';
   return `<div class="big-board viewer" data-board-game="${esc(g.id)}">
     <div class="board-head">
-      <span class="board-live-badge">🔴 LIVE</span>
+      <span class="board-live-badge">Live</span>
       ${sub ? `<span class="board-period">${sub}</span>` : ''}
     </div>
     <div class="board-cols">
@@ -13233,7 +13233,7 @@ function messageHtml(m, opts) {
   const metaHtml = [chat ? 'Announcements chat' : '', when, m.by || ''].filter(Boolean).map((x) => esc(x)).join(' · ');
   const id = esc(m.id || '');
   const remove = opts.editor && !opts.preview && !chat
-    ? `<button type="button" class="msg-remove" data-ann-id="${id}">Remove for everyone</button>` : '';
+    ? `<button type="button" class="msg-remove" data-ann-id="${id}">Take down for everyone</button>` : '';
   return `<div class="msg" data-kind="${chat ? 'chat' : 'banner'}" data-key="ann-${id}" role="status">` +
     `<span class="msg-ico" aria-hidden="true"><svg class="ico"><use href="#${chat ? 'i-bubble' : 'i-megaphone'}"/></svg></span>` +
     `<div class="msg-body"><p class="msg-text">${esc(m.text)}</p><p class="msg-meta"><span>${metaHtml}</span>${remove}</p></div>` +
@@ -14902,7 +14902,7 @@ function renderTeamSheet() {
   if (CAMP.features.electives) {
     acts.push(me
       ? `<p class="ts-you">You’re ${esc(me)}</p><button type="button" class="btn btn-block" data-ts="identity">Not you? Change</button>`
-      : '<button type="button" class="btn btn-block" data-ts="identity">Tell us who you are</button>');
+      : '<button type="button" class="btn btn-block" data-ts="identity">Which counselor are you?</button>');
   }
   acts.push(memberTeamId
     ? '<p class="ts-note">Your team is set by your account.</p>'
@@ -14980,7 +14980,7 @@ function renderMoreTeamRow() {
   setTextIfChanged(document.getElementById('more-team-you'), team ? (me ? 'You’re ' + me : '') : 'Pick the team you are with');
   const link = row.querySelector('[data-more-team-change]');
   if (link) {
-    const label = CAMP.features.electives ? (me ? 'Not you? Change' : 'Tell us who you are') : 'Not you? Sign out';
+    const label = CAMP.features.electives ? (me ? 'Not you? Change' : 'Which counselor are you?') : 'Not you? Sign out';
     setTextIfChanged(link, label);
     setHiddenIfChanged(link, !team || (!CAMP.features.electives && !me));
   }

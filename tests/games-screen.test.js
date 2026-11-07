@@ -88,7 +88,7 @@ test('a game on no item is listed under "not on the schedule" and the day gets t
     assert.equal(gmDayModel(dk).warn, false, 'linked again');
     g.location = 'TBA';
     assert.equal(gmDayModel(dk).warn, true, 'TBA for where is a thing to look at');
-    assert.deepEqual(gmGameSub(g), { text: GM_FORMAT_WORDS[g.format] + ' · where: TBA', warn: true });
+    assert.deepEqual(gmGameSub(g), { text: GM_FORMAT_WORDS[g.format] + ' · no place yet', warn: true });
     g.location = 'Gym'; g.messtival = true;
     assert.equal(gmGameSub(g).text, GM_FORMAT_WORDS[g.format] + ' · Gym · double points');
   } finally { gsEnd(); }

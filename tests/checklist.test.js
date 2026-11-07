@@ -51,8 +51,8 @@ test('Games problems: a game on no day, a day with no games, a tournament with n
   assert.deepEqual(tour.problems, ['Kickball is a tournament, but there is no bracket for 5 teams']);
   assert.deepEqual(hubStatus('games', clView({ games: v.games.concat([{ id: 't', name: 'Kickball', dayId: 'd1', format: 'tournament', location: 'Lawn' }]) })).problems, [], 'four and six teams both have a bracket');
   const tba = (n) => v.games.map((g, i) => (i < n ? Object.assign({}, g, { location: ' TBA ' }) : g));
-  assert.deepEqual(hubStatus('games', clView({ games: tba(1) })).problems, ['1 game still says TBA for where']);
-  assert.deepEqual(hubStatus('games', clView({ games: tba(4) })).problems, ['4 games still say TBA for where']);
+  assert.deepEqual(hubStatus('games', clView({ games: tba(1) })).problems, ['1 game has no place yet']);
+  assert.deepEqual(hubStatus('games', clView({ games: tba(4) })).problems, ['4 games have no place yet']);
 });
 
 // ── Teams ──

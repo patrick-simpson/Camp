@@ -11,5 +11,5 @@ test('senior: four flags, four shapes, four colours; "Not you?" signs out instea
   assert.deepEqual(specs.map((s) => s.shape), ['plain', 'swallow', 'stripe', 'chevron']);
   assert.equal(CAMP.features.electives, false);
   const body = readFixture('../app.js');
-  assert.ok(/CAMP\.features\.electives \? \(me \? 'Not you\? Change' : 'Tell us who you are'\) : 'Not you\? Sign out'/.test(body));
+  assert.ok(/CAMP\.features\.electives \? \(me \? 'Not you\? Change' : 'Which counselor are you\?'\) : 'Not you\? Sign out'/.test(body));
 });

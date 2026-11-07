@@ -229,7 +229,7 @@ test('Now\'s strip draws every banner with messageHtml, and an idle re-render wr
     assert.equal(writes(), 1, 'the first paint writes the banner');
     assert.equal(wrap.hidden, false, 'and shows the strip');
     assert.ok(wrap.innerHTML.includes('Dinner moved to six') && wrap.innerHTML.includes('class="msg"'), 'a .msg, the one banner markup');
-    assert.ok(wrap.innerHTML.includes('Remove for everyone'), 'a director may take a synced banner down from here');
+    assert.ok(wrap.innerHTML.includes('Take down for everyone'), 'a director may take a synced banner down from here');
     assert.notOk(/announce-(input|form|open-btn|post-btn)/.test(wrap.innerHTML), 'no composer in the strip any more');
     assert.equal(wrap.innerHTML, [...liveAnnouncements(), ].map((a) => messageHtml(a, { editor: true })).join(''), 'exactly what messageHtml writes');
     renderAnnouncements(); // the 30 s tick

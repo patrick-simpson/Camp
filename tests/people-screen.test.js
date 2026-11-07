@@ -102,7 +102,7 @@ test('the screen paints the headline, the asking switch, a row per person by tea
     assert.ok(g.includes('data-person="sam@example,com"') && g.includes('data-person="' + PS_JENN_KEY + '"'));
     assert.ok(g.includes('data-person="pending-taylor-ab12c"') && /No sign-in yet · Counselor/.test(g), 'a pending row says so in words');
     assert.ok(!g.includes('data-person="' + OWNER_MEMBER_KEY + '"'), 'the owner row is not a button');
-    assert.ok(/Owner · managed in the Firebase console/.test(g));
+    assert.ok(/Owner · only the owner can change this row/.test(g));
     assert.ok(/class="ppl-tag">you</.test(g), 'your own row says "you"');
     assert.equal((g.match(/class="ppl-group"/g) || []).length, 1 + state.teams.length, 'a section per team, and one for people on no team');
     assert.equal(psEl('people-req-sec').hidden, true, 'nobody asking: no section');
@@ -128,7 +128,7 @@ test('the asking switch shows the week\'s joinOpen; asking on for a week raises 
     fbRef = null;
     renderPeopleScreen();
     assert.equal(psEl('people-state').hidden, false);
-    assert.ok(/Live sync is off/.test(psEl('people-state-text').textContent));
+    assert.ok(/Needs a connection/.test(psEl('people-state-text').textContent));
   } finally { delete setupEdited.week; psClose(); }
 });
 

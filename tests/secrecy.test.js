@@ -574,7 +574,7 @@ test('row 16: the copy no longer promises point alerts to a counselor', () => {
     assert.ok(/team's points change/.test(shown[0]), 'a director is still told about points');
   } finally { showToast = real; }
   const html = readFixture('../index.html');
-  assert.ok(html.includes("You'll get alerts when your team plays and wins medals."), 'the picker says it plainly');
+  assert.ok(html.includes("You’ll get alerts when your team plays and wins medals."), 'the picker says it plainly');
   assert.notOk(/when they score/.test(html + readFixture('../app.js')), 'no "when they score" anywhere');
 });
 

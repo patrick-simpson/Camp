@@ -536,7 +536,7 @@ function revealUiTvWords(frame, m) {
   else if (frame.mode === 'board') w = 'The standings so far on the big screen';
   else if (frame.mode === 'table') w = 'The final table on the big screen';
   else if (frame.mode === 'champion') w = 'The champions on the big screen';
-  else w = 'Waiting for the directors';
+  else w = 'Waiting for the directors…';
   return m.practice && frame.mode !== 'waiting' ? 'Practice · ' + w : w;
 }
 
@@ -622,7 +622,7 @@ function revealUiBuzzTitle() {
   if (memberDirectoryLoaded && memberDirectory) {
     Object.keys(memberDirectory).forEach((k) => { const r = memberDirectory[k]; if (r && r.role !== 'editor' && !/^pending-/.test(k)) n += 1; });
   }
-  return n > 0 ? 'Buzz all ' + n + ' counselors' : 'Buzz all counselors';
+  return n > 1 ? 'Buzz all ' + n + ' counselors' : n === 1 ? 'Buzz the 1 counselor' : 'Buzz all counselors';
 }
 
 function revealUiPaintReady(m, gate) {

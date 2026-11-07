@@ -45,7 +45,7 @@ test('OWNER_MEMBER_KEY is the literal the rules protect, in both camps', () => {
 test('another editor sees the owner row read-only: no switches, no team, no remove', () => {
   setMemberRole('editor');
   const row = rowOf(renderDrawer(lists(), SOMEONE), OWNER_MEMBER_KEY);
-  assert.ok(row.includes('Owner · managed in the Firebase console'), row);
+  assert.ok(row.includes('Owner · only the owner can change this row'), row);
   ['member-access', 'member-team', 'member-role', 'member-remove', 'member-controls'].forEach((c) =>
     assert.notOk(row.includes(c), 'the owner row has no ' + c));
 });
@@ -53,7 +53,7 @@ test('another editor sees the owner row read-only: no switches, no team, no remo
 test('the owner sees their own row the same way, still marked as them', () => {
   setMemberRole('editor');
   const row = rowOf(renderDrawer(lists(), { email: 'Patricksimpson.FX@gmail.com' }), OWNER_MEMBER_KEY);
-  assert.ok(row.includes('Owner · managed in the Firebase console'));
+  assert.ok(row.includes('Owner · only the owner can change this row'));
   assert.ok(row.includes('(you)'));
   assert.notOk(row.includes("another editor has to change"), 'the generic self sentence would be wrong here');
   assert.notOk(row.includes('member-access'));

@@ -483,7 +483,7 @@ test('removing an entry asks, then removes it; "Not now" keeps it; the own team\
   answer = 'cancel';
   await awardRemove('w1');
   assert.equal(asked.length, 1);
-  assert.ok(/^Remove \+5 for /.test(asked[0].title) && /comes off the standings on every phone/.test(asked[0].body));
+  assert.ok(/^Remove \+5 for /.test(asked[0].title) && /comes off the standings/.test(asked[0].body));
   assert.deepEqual(asked[0].actions.map((a) => [a.label, a.kind || '', !!a.cancel]), [['Remove it', 'danger', false], ['Not now', '', true]]);
   assert.ok(state.bonuses.w1, 'Not now: kept');
   answer = 'remove';

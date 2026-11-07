@@ -398,7 +398,7 @@ async function awardRemove(id) {
   if (!b) return;
   const pts = Number(b.points) || 0;
   const title = 'Remove ' + awardPts(pts) + ' for ' + teamName(b.teamId) + '?';
-  const body = '“' + (b.label || 'Bonus') + '” comes off the standings on every phone.';
+  const body = '“' + (b.label || 'Bonus') + '” comes off the standings.';
   let yes;
   if (typeof askDialog === 'function') yes = (await askDialog({ title, body, actions: [{ label: 'Remove it', value: 'remove', kind: 'danger' }, { label: 'Not now', value: 'cancel', cancel: true }] })) === 'remove';
   else yes = confirm(title + '\n\n' + body);

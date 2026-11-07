@@ -197,7 +197,7 @@ function hubStatus(section, view) {
         }
       }
       const tba = games.filter((g) => g && String(g.location || '').trim().toLowerCase() === 'tba').length;
-      if (tba) problems.push(tba === 1 ? '1 game still says TBA for where' : tba + ' games still say TBA for where');
+      if (tba) problems.push(tba === 1 ? '1 game has no place yet' : tba + ' games have no place yet');
       const summary = games.length ? hubPlural(games.length, 'game', 'games') + ' · ' + hubPlural(days.length, 'day', 'days') : 'No games yet';
       return hubMark(problems.length ? 'warn' : games.length ? 'ok' : 'todo', summary, problems);
     }
@@ -6102,7 +6102,7 @@ function wireTeamsScreen() {
 //   - the forms are written once per open and the INPUTS are the draft (a repaint never takes a typed word away);
 //   - a sheet with unsaved edits asks before it closes, by every route (setupSheetGuardClose), and holds the deploy's auto-reload;
 //   - "Needs a connection": every action refuses offline in words (peopleWhy) — a decision about access never queues behind a dead signal;
-//   - your own role and the owner row are read-only here ("Another director has to change your access" / "Owner · managed in the Firebase console").
+//   - your own role and the owner row are read-only here ("Another director has to change your access" / "Owner · only the owner can change this row").
 
 const peopleUi = {
   person: null,    // the open person sheet: { key, origin, role, fresh, error, busy }
@@ -6132,9 +6132,9 @@ function peopleRowsNow() { return peopleRows(memberDirectory, peopleMyKey()); }
 
 function peopleRowOf(key) { return peopleRowsNow().find((r) => r.key === key) || null; }
 
-// "Signed in · Counselor", "No sign-in yet · Director", "Owner · managed in the Firebase console": words, never a mark alone.
+// "Signed in · Counselor", "No sign-in yet · Director", "Owner · only the owner can change this row": words, never a mark alone.
 function peopleStatusWords(r) {
-  if (r.owner) return 'Owner · managed in the Firebase console';
+  if (r.owner) return 'Owner · only the owner can change this row';
   return (r.pending ? 'No sign-in yet' : 'Signed in') + ' · ' + peopleRoleWord(r.role);
 }
 
@@ -6248,7 +6248,7 @@ function renderPeopleScreen() {
   setTextIfChanged(setupEl('people-ask-sub'), join.on ? 'Anyone signed in who isn’t on the list can ask from their own phone.' : 'Turn on during registration so people not on the list can ask from their own phone.');
   setHiddenIfChanged(setupEl('people-asking-long'), !join.long);
   // what is wrong with the data right now
-  const note = !memberDirectoryLoaded ? 'Loading the list…' : !fbRef ? 'Live sync is off on this device, so the list isn’t reachable.' : pplReq.denied ? 'Asking to join isn’t available yet — the database rules need updating.' : '';
+  const note = !memberDirectoryLoaded ? 'Loading the list…' : !fbRef ? 'Needs a connection: the list can’t be reached right now.' : pplReq.denied ? 'Asking to join isn’t available yet — the database rules need updating.' : '';
   setTextIfChanged(setupEl('people-state-text'), note);
   setHiddenIfChanged(setupEl('people-state'), !note);
   // the people asking, newest first
@@ -7035,7 +7035,7 @@ function renderCampersScreen() {
   const ok = status === 'ok';
   setTextIfChanged(setupEl('campers-title'), 'Campers · ' + CAMP.label);
   setTextIfChanged(setupEl('campers-headline'), ok ? (total ? hubPlural(total, 'camper', 'campers') : 'No campers yet') : status === 'loading' ? 'Loading…' : 'The lists aren’t available');
-  const note = status === 'nosync' ? 'Live sync is off on this device, so the camper lists can’t be reached.' : status === 'denied' ? 'The camper lists aren’t available yet — the database rules need updating.' : '';
+  const note = status === 'nosync' ? 'Needs a connection: the camper lists can’t be reached right now.' : status === 'denied' ? 'The camper lists aren’t available yet — the database rules need updating.' : '';
   setTextIfChanged(setupEl('campers-state-text'), note);
   setHiddenIfChanged(setupEl('campers-state'), !note);
   // names typed with no signal, waiting on this screen
@@ -7351,7 +7351,7 @@ function gmIsTba(g) { return /^tba$/i.test(String(g && g.location || '').trim())
 function gmGameSub(g) {
   const where = String(g.location || '').trim();
   const bits = [GM_FORMAT_WORDS[g.format] || 'No scoring yet'];
-  if (gmIsTba(g)) bits.push('where: TBA'); else if (where) bits.push(where);
+  if (gmIsTba(g)) bits.push('no place yet'); else if (where) bits.push(where);
   if (g.messtival === true) bits.push('double points');
   return { text: bits.join(' · '), warn: gmIsTba(g) };
 }
