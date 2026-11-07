@@ -4546,6 +4546,18 @@ async function wizardStartOver() {
   return wizardClaimUpdate(() => ({ step: 1, answers, archiveId: '' }));
 }
 
+// This phone's own writes (a push a tap just queued, an acknowledgement on its way) are finished before a step that insists the
+// engines are quiet looks: wait for them, a few seconds at most (a parked refusal never clears: the step then says busy).
+async function wizardWaitQuiet(ms) {
+  const end = Date.now() + (ms || 8000);
+  for (;;) {
+    flushPendingPush();
+    if (pendingWritesTotal() === 0 && !hasUnconfirmedLocalWork() && !setupBisecting && !setupPushTimer) return true;
+    if (Date.now() > end) return false;
+    await new Promise((r) => setTimeout(r, 60));
+  }
+}
+
 // ── step 3: save last year (§7.3) ────────────────────────────────────
 
 // The year the outgoing week was: its Sunday's year, else the year of its last scored change, else this year.
@@ -4600,6 +4612,7 @@ async function wizardArchive() {
   if (gate) return Object.assign({ ok: false }, gate);
   await wizardFlushAnswers(); // the answers reach the claim first
   await wizardSettled();
+  await wizardWaitQuiet();
   const pre = await restorePreflight();
   if (!pre.ok) return { ok: false, reason: pre.reason };
   const claim = wizardModel().claim;
@@ -4785,6 +4798,7 @@ async function wizardClear(opts) {
   if (frozen) return refuse(frozen.reason);
   await wizardFlushAnswers();
   await wizardSettled();
+  await wizardWaitQuiet();
   if (!wizardClaimOf(setupTree) || !wizardClaimOf(setupTree).archiveId) return refuse('archive');
   // 1. Caught up, and the archive still matches the data (sync-F18a): anything written since step 3 gets a fresh point first.
   const pre = await restorePreflight();
@@ -4907,6 +4921,7 @@ async function wizardUndo(rid) {
   const offer = await wizardUndoOffer();
   if (!offer) return refuse('nothing');
   if (offer.rid !== rid) return refuse('not-newest');
+  await wizardWaitQuiet();
   const pre = await restorePreflight();
   if (!pre.ok) return refuse(pre.reason);
   const v = await wizardVerifyArchive(rid);
