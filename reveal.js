@@ -953,8 +953,8 @@ function revealBusy() {
 
 // ── Buzz on a real Start ──────────────────────────────────────────────
 // Calls everyone to the big screen through the director-alert path (push.js), only for a REAL start
-// and only once phone alerts are live (PUSH_SERVICE_URL set: Step 27). Until then it is disabled with its
-// reason. A practice has NO path to pushSendAlert: it is greyed with its own sentence.
+// and only while phone alerts are live (PUSH_SERVICE_URL set, as it is since Step 27). Without them it is disabled
+// with its reason. A practice has NO path to pushSendAlert: it is greyed with its own sentence.
 function revealBuzzState(mode) {
   if (mode === 'practice') return { available: false, on: false, forced: true, reason: 'Practice runs never buzz phones.' };
   const live = typeof pushConfigured === 'function' && pushConfigured();
