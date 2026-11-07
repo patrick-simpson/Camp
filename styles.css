@@ -18977,3 +18977,29 @@ jelly-chip.sched-day-chip[selected] {
 .danger-zone h3 {
   font-size: 0.8125rem; /* the label token's size: the old 11–12px capitals read as 10px words */
 }
+
+/* ── The sign-in screen's mark: the big screen's camp mark (current-standings.html .wait-mark), not an emoji
+   (§8.6: emoji never in headings). The camp-blue roof never flips, so the tile is the same in dark. */
+.lock-mark {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 1.9em;
+  height: 1.9em;
+  border-radius: 0.55em;
+  background: var(--roof);
+  color: #fff;
+}
+.lock-mark svg {
+  width: 1.1em;
+  height: 1.1em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+.lock-logo {
+  gap: 0.5rem;
+  font: 850 1.5rem/1.1 var(--font-ui);
+  letter-spacing: var(--track-tight);
+}
