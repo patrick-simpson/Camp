@@ -199,7 +199,7 @@ function awardPaint() {
 
   const double = inDoubleBonusWindow();
   setHiddenIfChanged(awardEl('award-double'), !double);
-  setTextIfChanged(awardEl('award-double-text'), "Double points are on: verse and quick points count twice. Cleanup doesn't.");
+  setTextIfChanged(awardEl('award-double-text'), 'Double points are on: verse and quick points count twice. Cleanup doesn’t.');
   // The verse note follows the keys: they read 0 2 4 … 10 in the window, so "0–5 per team" would contradict them.
   setTextIfChanged(awardEl('award-verse-note'), double ? 'Counts twice now · tap 0 to clear' : '0–5 per team · tap 0 to clear');
 

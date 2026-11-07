@@ -37,7 +37,7 @@ const TELL_QUICK = {
   dining: { text: 'All to the Dining Hall' },
   stay: { text: 'Stay where you are' },
 };
-const TELL_BUZZ_SUB = "Off unless you tick it · can't be taken back";
+const TELL_BUZZ_SUB = 'Off unless you tick it · can’t be taken back';
 const TELL_TEAM_RE = /^t[0-9]$/;
 
 function tellFreshDraft() {
@@ -594,7 +594,8 @@ function tellBuzzWhy(r) {
   if (!r) return 'no answer';
   if (r.error === 'not-configured') return "phone alerts aren't switched on yet";
   if (r.error === 'not-editor') return 'only directors can buzz';
-  return String(r.error || 'it did not go through').replace(/\.$/, '');
+  // it follows "Buzz didn't go: ", so a sentence from the sender starts in lower case (but "SMS" or "CORS" stays)
+  return String(r.error || 'it did not go through').replace(/\.$/, '').replace(/^([A-Z])(?![A-Z])/, (c) => c.toLowerCase());
 }
 
 // One buzz through push.js's direct sender; always resolves a report line, never throws.

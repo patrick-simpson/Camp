@@ -389,7 +389,7 @@ test('a buzz that did not go leaves the banner posted, says so per channel, keep
   const items = tell.result.items;
   assert.deepEqual(items.map((i) => [i.way, i.ok]), [['banner', true], ['buzz', false]]);
   assert.equal(items[0].text, 'Banner posted');
-  assert.equal(items[1].text, "Buzz didn't go: Couldn't reach the alert sender — check your connection");
+  assert.equal(items[1].text, "Buzz didn't go: couldn't reach the alert sender — check your connection");
   assert.equal(tell.d.banner, false, 'the banner is un-ticked so a second Send cannot post it twice');
   assert.equal(tell.d.buzz, true, 'the buzz stays ticked for Try again');
   assert.equal(tell.d.text, 'Come inside now', 'and the words stay');
