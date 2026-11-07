@@ -1826,7 +1826,8 @@ function nowBracket4(ctx, g) {
     else if (inSemi && m[inSemi].winner === me) note = { lead: word, rest: ' plays in the final next' + (thirdLeft ? ' · 3rd place match first' : '') };
     else if (inSemi && thirdLeft) note = { lead: word, rest: ' plays the 3rd place match next' };
   }
-  return { cells, hold, note: note ? Object.assign({ team: me, mine: true }, note) : null };
+  const played = !hold && FOUR_ORDER.every((k) => !!m[k].winner); // every match recorded, the result not saved yet
+  return { cells, hold, played, note: note ? Object.assign({ team: me, mine: true }, note) : null };
 }
 
 // One game as a row of the Now card (and, later, the Games tab).
@@ -2339,6 +2340,7 @@ function nowBlockCard(ctx, blocks, nb, held) {
   if (kind === 'games' && body.bracket4 && body.bracket4.note) card.notes.push(Object.assign({ kind: 'team' }, body.bracket4.note));
   // A result being checked: said in the slot the team's line sits in, so the cells are never left to explain themselves.
   else if (kind === 'games' && body.bracket4 && body.bracket4.hold) card.notes.push({ kind: 'hold', text: FOUR_HOLD_NOTE });
+  else if (kind === 'games' && body.bracket4 && body.bracket4.played) card.notes.push({ kind: 'hold', text: FOUR_PLAYED_NOTE });
   if (kind === 'meal') {
     body.duty.forEach((d) => card.notes.push({ kind: 'team', team: d.team, mine: d.mine, lead: d.mine ? 'Your team' : teamName(d.team), rest: (d.mine ? ' is' : '') + ' on cleanup after ' + nb.meal.toLowerCase() }));
   }
@@ -10855,6 +10857,7 @@ const FOUR_ORDER = ['s1', 's2', 'third', 'final'];
 // What each match is called on every screen (the step bar, the Now card's four cells, a live row's line, a toast).
 const FOUR_NAMES = { s1: 'Semifinal 1', s2: 'Semifinal 2', third: '3rd place', final: 'Final' };
 // The one line everybody but the deciding director reads while a result is being checked (Now's card and the game view).
+const FOUR_PLAYED_NOTE = 'All four matches are played. The result shows once a director saves it.';
 const FOUR_HOLD_NOTE = 'A director is double-checking a result. The bracket carries on soon.';
 
 // How many teams a tournament can be played with: six (the wizard, `brackets`), four (`brackets4`), or neither.

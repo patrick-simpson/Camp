@@ -879,6 +879,12 @@ test('nowModel: the four-team bracket reads state.brackets4 (Step 22\'s shape) a
   b = at(WED, nb.start + 1).body.bracket4;
   assert.equal(b.hold, true);
   assert.ok(b.cells.every((c) => c.status !== 'live') && b.note === null);
+  // every match recorded but the result not saved yet (Step 29): the card says so in words, never leaving the cells to explain themselves
+  state.followTeam = null;
+  state.brackets4 = { [g.id]: { m: { s1: { a: T()[0], b: T()[1], winner: T()[0] }, s2: { a: T()[2], b: T()[3], winner: T()[2] }, third: { a: T()[1], b: T()[3], winner: T()[1] }, final: { a: T()[0], b: T()[2], winner: T()[0] } } } };
+  const played = at(WED, nb.start + 1);
+  assert.equal(played.body.bracket4.played, true);
+  assert.ok(played.card.notes.some((n) => n.kind === 'hold' && n.text === FOUR_PLAYED_NOTE), 'All four matches are played. The result shows once a director saves it.');
   state.brackets4 = { [g.id]: { m: [] } };
   assert.equal(at(WED, nb.start + 1).body.bracket4, null);
   state.brackets4 = { [g.id]: 'junk' };
