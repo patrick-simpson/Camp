@@ -80,5 +80,20 @@ console.log('cron deliveries →', got.map((g) => g.name + ':' + g.payload?.titl
 console.log('cron state', JSON.stringify(await get('pushServer/cron')));
 got.length = 0; await fetch(W + '/__scheduled?cron=*+*+*+*+*'); await new Promise((r) => setTimeout(r, 1000));
 console.log('second cron run (must not repeat):', got.length);
+// 8. schedule-change alert (kind 'schedule'): baseline, then a moved block tells only the phones that follow it
+{
+  const bid = 'tue-supper';
+  const s0 = Math.min(startMin + 60, 1380), s1 = s0 + 30;
+  const sched = (start, rev) => put(`${root}/pushSchedule`, { weekStart: sun, at: Date.now(), by: 'dir@camp,org', rev, blocks: { [bid]: { dow, start, label: 'Supper', emoji: '🍽️', key: 'supper' }, 'tue-games': { dow, start: Math.min(s0 + 120, 1430), label: 'Games', emoji: '🏆', key: 'games' } } });
+  await del('pushServer/schedSeen'); await del('pushServer/rate');
+  await sched(s0, 10); got.length = 0;
+  [st, r] = await call({ camp: 'junior', kind: 'schedule', alert: false, ids: ['*'] }); console.log('sched baseline', st, r.reason);
+  [st, r] = await call({ camp: 'junior', kind: 'schedule', alert: true, ids: [bid] }, 'c2@camp.org'); console.log('sched viewer', st, r.error);
+  await sched(s1, 11);
+  [st, r] = await call({ camp: 'junior', kind: 'schedule', alert: true, ids: [bid] });
+  await settle(); console.log('sched alert', st, JSON.stringify(r), '->', got.map((g) => g.name + ':' + g.payload?.title + ' / ' + String(g.payload?.body).replace(/\n/g, ' | ')).join(' ; '), 'errors', got.filter((g) => g.error).length);
+  await new Promise((r) => setTimeout(r, 10500)); got.length = 0;
+  [st, r] = await call({ camp: 'junior', kind: 'schedule', alert: true, ids: [bid] }); console.log('sched repeat (no change)', st, r.reason, got.length);
+}
 summary('overall:');
 srv.close(); jwksSrv.close(); process.exit(0);
