@@ -4639,10 +4639,15 @@ async function wizardWaitQuiet() {
 
 // ── step 3: save last year (§7.3) ────────────────────────────────────
 
-// The year the outgoing week was: its Sunday's year, else the year of its last scored change, else this year.
+// The year the outgoing week was, said the way the screens say it (setup-ui.js nywYears): the camp's own Sunday, else one year before the
+// Sunday the director chose; only with neither, the year of the last scored change, else this year.
 function wizardOutgoingYear() {
-  const ws = typeof setupWeekStart === 'function' ? setupWeekStart() : null;
-  if (ws) return ws.slice(0, 4);
+  const yr = (ymd) => (/^20\d\d-\d\d-\d\d$/.test(String(ymd || '')) ? String(ymd).slice(0, 4) : '');
+  const cur = yr(typeof campWeek === 'function' ? campWeek().start : '');
+  if (cur) return cur;
+  let chosen = '';
+  try { const a = wizardAnswers(); chosen = yr(a && a.weekStart); } catch (e) { chosen = ''; }
+  if (chosen) return String(Number(chosen) - 1);
   const last = state.meta && state.meta.lastDataChangeAt;
   const y = typeof last === 'string' ? last.slice(0, 4) : (typeof last === 'number' && isFinite(last) ? String(new Date(last).getUTCFullYear()) : '');
   return /^20\d\d$/.test(y) ? y : campDateStr().slice(0, 4);
@@ -4710,7 +4715,7 @@ async function wizardArchive() {
     wizardDraftWrite();
   }
   const year = wizardOutgoingYear();
-  const label = year + ' week (' + CAMP.id + ')';
+  const label = year + ' camp week \u00b7 ' + CAMP.label;
   const note = wizardChampionNote();
   const rid = restoreArchiveId(body.epoch, campDateStr());
   const a = await restoreSave('archive', label, { requireOnline: true, id: rid, note, pinned: true, body });
@@ -4769,6 +4774,7 @@ function wizardClearUpdate(inp) {
   u['setup/meta/epochAt'] = inp.ts;
   u['setup/meta/weekStart'] = a.weekStart;
   u['setup/meta/double'] = wizardDoubleValue(a.double, inp.curMeta);
+  u['setup/meta/finaleDow'] = null; // last year's finale day does not carry (spec 11.3 step 4); Undo puts it back from the archive
   u['setup/meta/wizard'] = null;
   // What carries over. A section that is off is the original week, which can't be emptied: Clear turns it on, empty.
   let schedule = tree;

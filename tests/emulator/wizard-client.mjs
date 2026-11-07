@@ -132,6 +132,7 @@ for (const R of ROOTS) {
     const p = await phone(R, OWNER, 'editor');
     p.arrange();
     await seedServer(p);
+    await h.seed(async (db) => { await set(ref(db, `${R}/setup/meta/finaleDow`), 3); }); // last year's finale day: the clear takes it, Undo brings it back
     await p.attach();
     const ok = (r, what) => { if (!r || !r.ok) fail(what + ': ' + jstr(r)); return r; };
     ok(await p.run(`wizardStart({ campRunning: false })`), 'start');
@@ -154,6 +155,7 @@ for (const R of ROOTS) {
     if (await val(owner(), `${R}/setup/meta/epoch`) !== clear.epoch) fail('setup epoch');
     if (await val(owner(), `${R}/setup/meta/weekStart`) !== '2027-07-18') fail('weekStart');
     if (await val(owner(), `${R}/setup/meta/wizard`) !== null) fail('the claim was not released by the commit');
+    if (await val(owner(), `${R}/setup/meta/finaleDow`) !== null) fail('last year\'s finale day carried over');
     for (const k of ['campers', 'accessRequests', 'revealPublic', 'revealFull']) if (await val(owner(), `${R}/${k}`) !== null) fail(k + ' was not cleared');
     if ((await val(owner(), `${R}/state/notice/status`)) !== 'draft') fail('the notice is not a draft');
     if ((await val(owner(), `${R}/state/teams/0/counselor`)) != null) fail('the typed counselor name is still there');
@@ -178,6 +180,7 @@ for (const R of ROOTS) {
     if ((await val(owner(), `${R}/state/meta/epoch`)) !== null) fail('the legacy epoch is not back (the key must be deleted)');
     if ((await val(owner(), `${R}/setup/meta/epoch`)) !== null) fail('setup epoch not deleted');
     if ((await val(owner(), `${R}/setup/meta/weekStart`)) != null) fail('the dates did not go back');
+    if ((await val(owner(), `${R}/setup/meta/finaleDow`)) !== 3) fail('the finale day did not come back');
     if ((await val(owner(), `${R}/state/notice/status`)) !== 'posted') fail('the notice did not come back');
     if ((await val(owner(), `${R}/state/teams/0/counselor`)) !== 'Last Year Lee') fail('the typed counselor did not come back');
     const undoUpdates = p.writes.filter((w) => w.op === 'update' && w.path === R && w.values && 'state/meta/epoch' in w.values && w.values['state/meta/epoch'] === null);
@@ -234,6 +237,40 @@ for (const R of ROOTS) {
       p.stop();
     });
   }
+
+
+  // Advanced -> Start this section again from the original (setupRestartSection): ONE whole-`setup` transaction replacing a section's keys and
+  // stamping meta/edited. Owner-only in the client; proved here against the published rules for every section the camp has, on a section that
+  // is ON and EDITED (a planted dish), and refused for a director's phone before anything is sent.
+  await s.t(`${R}: Start a section again from the original — the owner's phone, every section, accepted by the rules; a non-owner director's phone sends nothing`, async () => {
+    const p = await phone(R, OWNER, 'editor');
+    p.arrange();
+    await seedServer(p);
+    await h.seed(async (db) => { await set(ref(db, `${R}/setup/meals/tue/lunch`), { dish: 'PLANTED' }); });
+    await p.attach();
+    const sections = jstr(p.run(`SETUP_SECTIONS.filter((x) => x !== 'electives' || setupHasElectives())`));
+    for (const sec of JSON.parse(sections)) {
+      await p.until('pendingWritesTotal() === 0 && !hasUnconfirmedLocalWork()', 'the phone to be quiet');
+      const r = await p.run(`setupRestartSection(${jstr(sec)}, { campRunning: false })`);
+      if (!r || !r.ok) fail(sec + ' restart: ' + jstr(r));
+      if (await val(owner(), `${R}/setup/meta/on/${sec}`) !== true) fail(sec + ': the switch is not on');
+      const stamp = await val(owner(), `${R}/setup/meta/edited/${sec}`);
+      if (!stamp || stamp.byKey !== OWNER.key) fail(sec + ': stamp ' + jstr(stamp));
+    }
+    if (await val(owner(), `${R}/setup/meals/tue/lunch/dish`) === 'PLANTED') fail('the planted dish survived Start again');
+    s.note(`${camp}: ${JSON.parse(sections).length} sections started again from the original, all accepted`);
+    p.stop();
+    const d = await phone(R, ED, 'editor');
+    d.arrange();
+    await seedServer(d);
+    await d.attach();
+    const before = await wholeCamp(R);
+    const n = d.writes.length;
+    const r = await d.run(`setupRestartSection('meals', { campRunning: false })`);
+    if (!r || r.ok || r.reason !== 'owner') fail('a non-owner director was not refused by the client: ' + jstr(r));
+    if (d.writes.length !== n || await wholeCamp(R) !== before) fail('a refused restart still wrote');
+    d.stop();
+  });
 
   await s.t(`${R}: the owner's PHONE-account lookalike (a phone sign-in is never the owner) cannot claim or commit either`, async () => {
     const claim = captured && captured.claim;

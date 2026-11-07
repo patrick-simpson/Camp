@@ -4833,7 +4833,7 @@ owner acts: with no claim and no epoch every other engine is untouched.
 - **The claim** `setup/meta/wizard = { step, byKey, at, fromEpoch, archiveId?, answers? }`, always written whole by a transaction
   (`wizardTxn`); `answers` is a JSON string (the driving device id, the step 1-2 answers). Another device or a non-owner reads it and
   Watches; the owner's other device may Take over (`wizardTakeOver`) once the driver has been idle 15 minutes (`at` is refreshed by
-  every step, answer and tap). `wizardModel()` is the one reader (`mine | other | none`, `canTakeOver`). `wizardStart` refuses
+  every step, answer and tap; there is no "Take over anyway" button, so a driving phone that dies costs the owner those 15 minutes). `wizardModel()` is the one reader (`mine | other | none`, `canTakeOver`). `wizardStart` refuses
   (`camp-week`, `ask-camp-week`, `dates`, `offline`, ...) before it writes.
 - **The archive** (`wizardArchive`, step 3): a `pre-wizard` point and a pinned `archive` point written, READ BACK and compared (length and
   hash: `wizardVerifyArchive`) before anything can be cleared. `wizardWaitQuiet` first lets this phone's own pushes finish (a few seconds;
@@ -4856,7 +4856,10 @@ owner acts: with no claim and no epoch every other engine is untouched.
   unconfirmed week (a download, nothing applied), like the state and config engines; the engine never applies old-year work to a new year.
 - **Tests**: `wizard.test.js` (+ `.senior`) against `fake-rtdb.js`; `tests/emulator/wizard-client.mjs` (opt-in, in `npm run test:r1`) runs
   the real client's whole wizard on both camps under the published rules and replays its exact payloads as a non-owner director and a
-  counselor: refused, the clear and the undo as a whole. No rules change belongs to this step.
+  counselor: refused, the clear and the undo as a whole. It also runs Advanced's Start a section again (`setupRestartSection`, every section, on
+  an edited one) and checks that the clear takes `setup/meta/finaleDow` (last year's finale day; Undo brings it back). The archive's label is
+  "2026 camp week · Junior Camp", its year the same `campWeek().start` year the screens say (`wizardOutgoingYear`). Team names' Clear (step 2)
+  resets them to the generic names: kept as built, an owner question. No rules change belongs to this step.
 
 ## The new-year wizard: the screens (setup-ui.js §17 — Step 28, session 2)
 

@@ -544,7 +544,7 @@ test('step 3: the pre-wizard point and a PINNED archive are written, READ BACK a
     assert.ok(/^rp-archive-pre-\d{8}-[a-z0-9]{4}$/.test(a.rid), 'the legacy epoch has no id of its own');
     assert.equal(a.counts.results, 2);
     assert.equal(a.counts.bonuses, 1);
-    assert.ok(/^\d{4} week \((junior|senior)\)$/.test(a.label));
+    assert.ok(/^\d{4} camp week \u00b7 (Junior|Senior) Camp$/.test(a.label), a.label); // changed on purpose: the label names the camp in words
     const index = wzServer(db, 'restoreIndex');
     const rows = Object.values(index);
     assert.equal(rows.filter((r) => r.kind === 'pre-wizard').length, 1);
@@ -648,7 +648,7 @@ test('step 4: ONE atomic update with exactly the listed paths, after a verified 
     assert.equal(rootUpdates.length, 1, 'ONE atomic update');
     const paths = rootUpdates[0].paths;
     assert.ok(paths.every((p) => p.indexOf(WZ_ROOT + '/members') !== 0), 'no member row in it');
-    ['state/results', 'state/bonuses', 'state/announcements', 'state/meta/epoch', 'state/meta/epochAt', 'setup/meta/epoch', 'setup/meta/weekStart', 'setup/meta/double', 'setup/meta/wizard', 'campers', 'revealPublic', 'revealFull', 'accessRequests/new@example,com', 'accessRequests/new2@example,com', 'state/notice/status', 'state/teams/0/counselor', 'state/teams/0/photoV']
+    ['state/results', 'state/bonuses', 'state/announcements', 'state/meta/epoch', 'state/meta/epochAt', 'setup/meta/epoch', 'setup/meta/weekStart', 'setup/meta/double', 'setup/meta/finaleDow', 'setup/meta/wizard', 'campers', 'revealPublic', 'revealFull', 'accessRequests/new@example,com', 'accessRequests/new2@example,com', 'state/notice/status', 'state/teams/0/counselor', 'state/teams/0/photoV']
       .forEach((p) => assert.ok(paths.indexOf(WZ_ROOT + '/' + p) !== -1, 'the update carries ' + p));
     // the archive was verified BEFORE the update: its writes and its read-back come first
     const order = db.log.slice(from);
