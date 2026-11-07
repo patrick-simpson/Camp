@@ -18635,3 +18635,345 @@ button.gs-row:focus-visible {
   flex-wrap: wrap;
   justify-content: flex-end;
 }
+
+/* ============================================================
+   STEP 29: THE OLDER SURFACES IN THE ONE LANGUAGE (redesign §8, D7)
+   ============================================================
+   The screens built before the redesign keep their renderers (app.js builds their markup) but now read
+   like the rest of the app: rows on a sheet divided by hairlines (§8.1 rule 2), sentence case (§8.2),
+   one tint per meaning (§8.1 rule 7: the blue message and the gold moment, nothing else), team colour
+   as identity only (rule 5), and no opacity on text (rule 6: a faded row fails 7:1). Restyles only:
+   every class here is the renderer's own, so nothing is re-created and nothing animates. */
+
+/* ── The full schedule sheet (#schedule-overlay: Now's "Whole day", More → Full schedule) ──
+   Now's run sheet, not a timeline of bordered cards: one sheet, a hairline between items, the time
+   as a small line over the label (the clipboard's large-text row, which fits "9:45am–12:20pm"),
+   the item under way marked by the ink "Now" tag the Games tab's block heads use. No rail, no dots,
+   no tinted meal cards, no faded past (it read 3:1); a past item is ink-2 words. */
+.schedule-sheet,
+.schedule-header {
+  background: var(--sheet);
+}
+.schedule-header {
+  border-bottom: 1px solid var(--line);
+}
+.schedule-grabber {
+  background: var(--line-2);
+}
+.schedule-title {
+  font: var(--t-head);
+  letter-spacing: var(--track-tight);
+}
+.schedule-close {
+  flex: none;
+  width: var(--target);
+  height: var(--target);
+  margin-right: -6px;
+  background: none;
+  color: var(--ink-2);
+}
+.schedule-close .ico {
+  width: 22px;
+  height: 22px;
+}
+.schedule-close:hover {
+  background: var(--well);
+  color: var(--ink);
+}
+/* The day chips share one row while they fit and wrap onto a second at large text (seven fixed
+   columns squeezed "SunMonTue" into each other at 200 % on a 360px phone). */
+.schedule-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+jelly-chip.sched-day-chip {
+  flex: 1 1 0;
+  min-width: max-content;
+}
+.sched-day-title {
+  margin: 0 0 4px;
+  font: var(--t-row);
+}
+.sched-day-tag {
+  font: var(--t-meta);
+  color: var(--ink-2);
+}
+.sched-block {
+  display: block;
+  border-top: 1px solid var(--line);
+}
+.sched-block:first-child {
+  border-top: 0;
+}
+.sched-rail {
+  display: none;
+}
+.sched-card,
+.sched-block.now .sched-card,
+.sched-block.meal .sched-card,
+.sched-block.meal.now .sched-card {
+  margin: 0;
+  padding: 11px 2px 12px;
+  background: none;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+.sched-block.past .sched-card {
+  opacity: 1;
+}
+.sched-time {
+  gap: 8px;
+  font: 750 0.8125rem/1.25 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  color: var(--ink-2);
+}
+.sched-now-pill {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  font: var(--t-tag);
+  text-transform: none;
+  letter-spacing: 0;
+}
+.sched-label {
+  margin-top: 3px;
+  font: 700 1rem/1.3 var(--font-ui);
+  color: var(--ink);
+  overflow-wrap: break-word;
+}
+.sched-block.now .sched-label {
+  font-weight: 800;
+}
+.sched-block.past .sched-label {
+  font-weight: 600;
+  color: var(--ink-2);
+}
+.sched-emoji {
+  font-size: 1em;
+}
+.meal-cleanup-note {
+  font: var(--t-meta);
+  color: var(--ink-2);
+}
+/* The games in an item: a quiet line of names, not a row of pills (§8.8). */
+.sched-games {
+  gap: 2px 0;
+  margin-top: 3px;
+}
+.sched-game-chip,
+.sched-game-chip.played {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  font: var(--t-meta);
+  color: var(--ink-2);
+}
+/* The dot hangs at the END of a name, so a wrapped line never starts with one. */
+.sched-game-chip:not(:last-child)::after {
+  content: '·';
+  margin: 0 7px;
+}
+/* Electives: who's at each station, a line each; my station has the house "yours" mark (a 2px ink
+   outline), never a tinted box. */
+.sched-stations {
+  gap: 4px;
+  margin-top: 6px;
+}
+.sched-station {
+  font: var(--t-meta);
+}
+.sched-station-name {
+  font-weight: 750;
+  color: var(--ink);
+}
+.sched-station-kids {
+  color: var(--ink-2);
+  font-weight: 550;
+}
+.sched-station-you {
+  margin-inline: -6px;
+  padding: 4px 6px;
+  background: none;
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 2px var(--ink);
+}
+.sched-station-you .sched-station-name,
+.sched-you {
+  color: var(--ink);
+}
+.sched-break .sched-station-name {
+  font-style: normal;
+  color: var(--ink-2);
+}
+.sched-you-chip {
+  margin-left: 6px;
+  padding: 1px 7px;
+  border: 1.5px solid var(--ink);
+  background: none;
+  color: var(--ink);
+  font: var(--t-tag);
+}
+.sched-ics-row {
+  margin-top: var(--s-4, 16px);
+  padding-top: var(--s-4, 16px);
+  border-top: 1px solid var(--line);
+}
+.sched-ics-note {
+  font: var(--t-meta);
+  color: var(--ink-2);
+}
+
+/* Its day picker is the shell's segmented well (the Memory verse and Meal cleanup sheets' own look): a
+   fourth picker style of solid blue pills is gone. Tokens on the chips, which the component draws. */
+.schedule-days {
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--r-btn);
+  background: var(--well);
+}
+jelly-chip.sched-day-chip {
+  height: var(--target);
+  min-width: var(--target);
+  --jelly-fill: var(--well);
+  --jelly-on: var(--lift);
+  --jelly-label: var(--ink-2);
+  --jelly-label-on: var(--ink);
+  --jelly-chip-radius: 10px;
+}
+jelly-chip.sched-day-chip[selected] {
+  --jelly-ring: var(--seg-ring);
+}
+
+/* ── The Memory verse / Meal cleanup sheets' point keys (More → Camp) ──
+   Award points' rule (§7.3): the chosen key is filled ink; a chosen 0 is only outlined in the well, so
+   a team that got nothing never looks awarded. They were filled camp blue, 0 included. */
+:is(#sheet-verse, #sheet-cleanup) jelly-chip.pts-btn {
+  --jelly-fill: var(--well);
+  --jelly-on: var(--ink);
+  --jelly-label: var(--ink);
+  --jelly-label-on: var(--paper);
+  --jelly-chip-radius: 10px;
+}
+:is(#sheet-verse, #sheet-cleanup) jelly-chip.pts-btn[data-pts="0"][selected] {
+  --jelly-on: var(--well);
+  --jelly-label-on: var(--ink);
+  border-radius: 10px;
+  box-shadow: inset 0 0 0 2px var(--ink-3); /* the host's own outline: the component draws no ring at rest */
+}
+
+/* ── The game takeover's older entry surfaces (the Big Board, the bracket call-up, score entry) ── */
+/* The Big Board is one sheet with a hairline edge, like Now's live board: no card shadow, and no team
+   colour washed behind a column (rule 5: team colour marks the numbers and the marks, never a fill). */
+.big-board {
+  border: 1.5px solid var(--line-2);
+  border-radius: 16px;
+  background: var(--sheet);
+  box-shadow: none;
+}
+.board-col {
+  background: none;
+}
+.board-live-badge {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--live-tint);
+  color: var(--live);
+  font: var(--t-tag);
+  letter-spacing: 0;
+}
+.board-name {
+  font: 750 0.9375rem/1.2 var(--font-ui);
+}
+/* The call-up is a plain section between hairlines: gold tint is the cleanup moment's alone (rule 7). */
+.matchup-callout {
+  padding: 16px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  background: none;
+}
+/* The bracket's "… won" keys are equal choices: ink, not the camp blue (which is the tab blob and focus,
+   never a button, §8.3). The one gold action of the score screens is Save. */
+#takeover-game jelly-button.winner-btn {
+  --jelly-fill: var(--ink);
+  --jelly-label: var(--paper);
+}
+#takeover-game jelly-button.primary-btn {
+  --jelly-fill: var(--gold);
+  --jelly-label: var(--gold-ink);
+}
+#takeover-game jelly-button.counter-btn.plus {
+  --jelly-fill: var(--well);
+  --jelly-label: var(--ink);
+}
+/* Score entry: one sheet of team rows divided by hairlines (§8.1 rule 2), not a stack of bordered boxes. */
+.score-input-grid {
+  gap: 0;
+  border: 1.5px solid var(--line-2);
+  border-radius: 16px;
+  background: var(--sheet);
+  overflow: hidden;
+}
+.score-input-row,
+.score-input-row.with-counter {
+  margin: 0;
+  padding: 12px 14px;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+}
+.score-input-row:first-child {
+  border-top: 0;
+}
+.score-input-row input {
+  border: 2px solid var(--line-2);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--ink);
+  font: 750 1.125rem/1.2 var(--font-ui);
+  font-variant-numeric: tabular-nums;
+}
+.score-input-row input:focus {
+  border-color: var(--ink);
+}
+
+/* ── Sentence case, everywhere (§8.2: never letter-spaced capitals) ──
+   The labels the older renderers still draw: How to play's headings, the Big Board's period and its
+   kicking / outs labels, the bracket's order label, the spectator's label, the tool and prompt labels,
+   the counter keys' small words, the change history's days, the alerts drawer's week label and Urgent
+   tag, the classic editor's field labels and danger zone, the verse sheet's labels. */
+.rules-details h4,
+.verse-theme-label,
+.verse-day-name,
+.matchup-order-label,
+.live-label,
+.live-watch-label,
+.tool-label,
+.counter-btn-sub,
+.pic-prompt-label,
+.pa-week-field .pa-week-label,
+.pa-urgent-tag,
+.cl-day,
+.form-label,
+.danger-zone h3,
+.board-period {
+  text-transform: none;
+  letter-spacing: 0;
+}
+.rules-details h4,
+.matchup-order-label,
+.live-label,
+.live-watch-label,
+.tool-label,
+.pic-prompt-label,
+.pa-week-field .pa-week-label,
+.cl-day,
+.form-label,
+.danger-zone h3 {
+  font-size: 0.8125rem; /* the label token's size: the old 11–12px capitals read as 10px words */
+}
